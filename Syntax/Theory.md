@@ -16,7 +16,16 @@
 
     string TestArray:3 = { 'one', 'two', 'three' };
 
-    log 'Name: ' . Name; //print string
+    log 'Name: '. Name; //print string
+
+    // if statement example
+    if Greetings == 'hello, world';
+
+    log 'Greetings message hasn't changed'; // "'" denotes start "';" or "'." denotes end so "hasn't doesn't need "\"
+    ;;
+    else
+          log 'Greetings message has changed';
+    ;;
 
 
     // function that returns a value
@@ -24,7 +33,7 @@
 
     float Minutes = 12; //first parameter with default value
 
-    : // start of function
+    :: // start of function
 
     float Seconds = Minutes * 60;
 
@@ -36,9 +45,41 @@
 
     string NewGreeting = '';
 
-    :Greetings = NewGreeting;
+    ::Greetings = NewGreeting;
 
     [end]
+
+    //class test
+    [TestClass]
+
+    safe string days: = {'Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'};
+
+    ::
+
+        [ListDays]//function inside class
+
+        ::
+
+        //foreach loop style
+        for days:i
+            log days:i;    
+        ;; //end loop or other enclosing condition
+
+        //traditional for loop
+        for int i = 0; i < days.length; i++;
+            log days:i;
+        ;; 
+
+        // while loop
+        for Age == 30;
+            log 'Still: '. Age;
+        ;;
+
+        [end]
+
+
+    [classend]
+    
 
 
     // ASM integration 
@@ -52,6 +93,12 @@
             syscall
     }
 
+    C. 
+    {
+        // maybe allow for other language integration using .LANGUAGE {}
+    }
+
+    ASM:_start; // call ASM from PHI
 
 
 
