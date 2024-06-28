@@ -96,6 +96,11 @@
             int 0x10
     }
 
+    arm.
+    {
+        
+    }
+
     c. 
     {
         // maybe allow for other language integration using .LANGUAGE {}
