@@ -3,7 +3,7 @@
 
 
 
-### SYNTAX THEORY #1
+### SYNTAX THEORY #2
 
 ```
     // Memory safe variables 
