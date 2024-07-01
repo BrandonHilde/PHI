@@ -11,15 +11,39 @@ start:
 
     call loop_start
 
-    mov si, phiMsg
+    mov si, phi_msg
+    call print_string
+
+    mov si, next_msg
     call print_string
 
     ; Wait for key press
     mov ah, 0x00
     int 0x16
 
-    cli
-    hlt
+    mov ah, 0x02    ; BIOS read sector function
+    mov al, 1       ; Number of sectors to read
+    mov ch, 0       ; Cylinder number
+    mov dh, 0       ; Head number
+    mov cl, 2       ; Sector number (1-based, sector 1 is the boot sector)
+    mov bx, 0x7E00  ; Load address (just after boot sector)
+    int 0x13        ; BIOS interrupt
+
+    jmp 0x7E00
+
+   ; call set_video_mode
+    ;xor bh,bh
+        ; Draw a red pixel at (32, 32)
+   ; mov ah, 0x0C    ; Function to draw pixel
+    ;mov al, 0x04    ; Color (4 = red in default palette)
+   ; mov bh, 0x00    ; Page number
+    ;mov cx, 32      ; X coordinate
+   ; mov dx, 32      ; Y coordinate
+   ; int 0x10
+
+set_video_mode:
+    mov ax, 0x13
+    int 0x10
 
 print_string:
     mov ah, 0x0E
@@ -27,6 +51,18 @@ print_string:
     lodsb
     cmp al, 0
     je .done
+    int 0x10
+    jmp .loop
+.done:
+    ret
+
+print_number:
+    mov ah, 0x0E
+.loop:
+    lodsb
+    cmp al, 0
+    je .done
+    ;add al, 0x01
     int 0x10
     jmp .loop
 .done:
@@ -51,10 +87,10 @@ loop_start:
     mov [loop_count], cx
     ret
 
-loop_limit dw 20
+loop_limit dw 3
 loop_count dw 0
 hello db 'Hello, World', 13, 10, 0
-phiMsg db 'PHI', 13, 10, 0
-
+phi_msg db 'Welcome to PHI', 13, 10, 0
+next_msg db 'Press any key to continue...', 13, 10, 0
 times 510-($-$$) db 0
 dw 0xaa55
