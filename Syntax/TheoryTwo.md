@@ -11,8 +11,8 @@
     var Greetings = 'hello, world';
     int Age = 30;
 
-    // Unsafe variable examples
-    string Name = 'Brandon';
+    // Unsafe public variable examples
+    string _Name = 'Brandon';
     // Unsafe non-public examples start with lowercase and underscore
     string _birthday = 'Dec 29';
     int _birthyear = 1993;
