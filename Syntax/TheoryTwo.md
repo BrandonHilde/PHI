@@ -6,20 +6,22 @@
 ### SYNTAX THEORY #2
 
 ```
-    // Memory safe variables 
-    public safe var Greetings = 'hello, world';
-    public safe int Age = 30;
+    // Memory safe variables
+    //public varables start with upercase and no underscore
+    var Greetings = 'hello, world';
+    int Age = 30;
 
     // Unsafe variable examples
-    public string Name = 'Brandon';
-    // Unsafe non-public examples
-    string Birthday = 'Dec 29';
-    int Birthyear = 1993;
+    string Name = 'Brandon';
+    // Unsafe non-public examples start with lowercase and underscore
+    string _birthday = 'Dec 29';
+    int _birthyear = 1993;
 
-    string ArrayOne:3;
-    string TestArray: = { 'one', 'two', 'three' };
+    // memory safe start without underscore _
+    string arrayOne:3;
+    string testArray: = { 'one', 'two', 'three' };
 
-    log 'Name: ': Name : Birthyear; // print string
+    log 'Name: ': Name : _birthyear; // print string
 
     // if statement example
     if Greetings == 'hello, world';
