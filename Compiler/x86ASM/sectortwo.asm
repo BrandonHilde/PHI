@@ -22,6 +22,13 @@ second_sector_start:
     mov si, name_buffer
     call print_string
 
+    mov si, newline
+    call print_string
+
+    xor ax,ax
+    mov ax, [to_string_number_test]   ; load the number into ax
+    call int_to_string
+
     ; Wait for key press
     mov ah, 0x00
     int 0x16
@@ -62,11 +69,43 @@ get_input:
     mov byte [di], 0  ; 0 terminate the string
     ret 
 
+int_to_string:
+    push bp
+    mov bp, sp
+    push dx  
+
+    cmp ax, 10
+    jge .div_num
+
+    add al, '0'
+    mov ah, 0x0E  
+    int 0x10
+    jmp .done
+
+.div_num:
+    xor dx, dx    ; clear
+    mov bx, 10
+    div bx        
+    push dx       ; save value
+    call int_to_string  
+    pop dx        ; retreive value
+    add dl, '0'   ; convert to ASCII
+    mov ah, 0x0E  
+    mov al, dl
+    int 0x10
+
+.done:
+    pop dx
+    mov sp, bp
+    pop bp
+    ret
+
 welcome_msg db 'Welcome to sector two', 13, 10, 0
 name_prompt db 'Please enter your name: ', 0
 input_prompt db 'Enter some text: ', 0
 greeting db 'Hello, ', 0
 newline db 0x0D, 0x0A, 0
+to_string_number_test dd 1618
 ; Buffers for user input
 name_buffer times 32 db 0
 input_buffer times 64 db 0
