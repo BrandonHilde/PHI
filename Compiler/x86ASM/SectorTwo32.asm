@@ -76,8 +76,10 @@ init_pm:
 ; Start of protected mode code
 BEGIN_PM:
     call clear_screen
-    mov esi, PROTECTED_MODE_MSG
-    call print_string32
+
+    mov edi, 0xA0000  ; Start of VGA memory for mode 13h (320x200)
+    mov byte [edi + (30 * 320) + 32], 0x04 
+
     jmp $
 
 

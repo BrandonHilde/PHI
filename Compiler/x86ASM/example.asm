@@ -29,21 +29,11 @@ start:
     mov bx, 0x7E00  ; Load address (just after boot sector)
     int 0x13        ; BIOS interrupt
 
-    jmp 0x7E00
-
-   ; call set_video_mode
-    ;xor bh,bh
-        ; Draw a red pixel at (32, 32)
-   ; mov ah, 0x0C    ; Function to draw pixel
-    ;mov al, 0x04    ; Color (4 = red in default palette)
-   ; mov bh, 0x00    ; Page number
-    ;mov cx, 32      ; X coordinate
-   ; mov dx, 32      ; Y coordinate
-   ; int 0x10
-
-set_video_mode:
+    ;video mode
     mov ax, 0x13
     int 0x10
+
+    jmp 0x7E00 ; jump to sector two
 
 print_string:
     mov ah, 0x0E
