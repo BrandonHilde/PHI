@@ -77,20 +77,28 @@ init_pm:
 BEGIN_PM:
     call clear_screen
 
+    mov eax, SCREEN_WIDTH
+    mov ecx, SCREEN_HEIGHT
+    mul ecx
+    add eax, DRAW_START
+    mov [BUFFER_SIZE], eax
+
     ; set square x coord
-    mov eax, 30
+    mov eax, 300
     mov [SQX], eax
 
     ; set square y coord
-    mov eax, 100
+    mov eax, 180
     mov [SQY], eax
 
     call draw_square
 
     jmp $
 
+
+
 draw_square:
-    mov edi, 0xA0000  ; Start of VGA memory for mode 13h (320x200)
+    mov edi, DRAW_START  ; Start of VGA memory for mode 13h (320x200)
     xor eax, eax
     xor ecx, ecx
     mov eax, [SQY]
@@ -104,16 +112,24 @@ draw_square:
 .draw_row:
     mov ecx, 0      ; Reset X counter
 
+.check_value:
+    cmp edi, [BUFFER_SIZE]
+    jl .draw_pixel
+    mov edi, DRAW_START
+
 .draw_pixel:
+
+   
     mov byte [edi], 4 ; Set pixel color to red (color index 4 in default palette)
     inc edi
     inc ecx
-    cmp ecx, SQ_WIDTH
+    cmp ecx, [SQ_WIDTH]
     jl .draw_pixel
 
-    add edi, (SCREEN_WIDTH - SQ_WIDTH) ; Move to the next row (320 - square width)
+    add edi, SCREEN_WIDTH ; 
+    sub edi, [SQ_WIDTH] ;Move to the next row (320 - square width)
     inc edx
-    cmp edx, SQ_WIDTH
+    cmp edx, [SQ_HEIGHT]
     jl .draw_row
 
     ret
@@ -154,8 +170,13 @@ print_string32:
 ; Data
 SQX dd 10
 SQY dd 10
+SQ_WIDTH dd 50
+SQ_HEIGHT dd 50
 
+BUFFER_SIZE dd 0
+
+DRAW_START equ 0xA0000
 SCREEN_WIDTH equ 320
-SQ_WIDTH equ 50
+SCREEN_HEIGHT equ 200
 REAL_MODE_MSG db 'Started in 16-bit Real Mode', 0
 PROTECTED_MODE_MSG db 'Now in 32-bit Protected Mode', 0
