@@ -6,34 +6,40 @@
 ### SYNTAX THEORY #2
 
 ```
-    // Memory safe variables
-    //public varables start with upercase and no underscore
+    # <- single line comment
+    #
+        Multiline
+        Comment
+    #
+
+    # Memory safe variables
+    #public varables start with upercase and no underscore
     var Greetings = 'hello, world';
     int Age = 30;
 
-    // Unsafe public variable examples
+    # Unsafe public variable examples
     string _Name = 'Brandon';
-    // Unsafe non-public examples start with lowercase and underscore
+    # Unsafe non-public examples start with lowercase and underscore
     string _birthday = 'Dec 29';
     int _birthyear = 1993;
 
-    // memory safe start without underscore _
+    # memory safe start without underscore _  
     string arrayOne:3;
     string testArray: = { 'one', 'two', 'three' };
 
-    log 'Name: ': Name : _birthyear; // print string
+    log 'Name: ': Name : _birthyear; # print string 
 
-    // if statement example
+    # if statement example
     if Greetings == 'hello, world';
 
-        log 'Greetings message hasn't changed'; // "'" denotes start "';" or "'." denotes end so "hasn't doesn't need "\"
+        log 'Greetings message hasn't changed'; # "'" denotes start "';" or "'." denotes end so "hasn't doesn't need "\"
     ;;
     else
           log 'Greetings message has changed';
     ;;
 
 
-    // function that returns a value
+    # function that returns a value
     [ConvertToSeconds:
         float Minutes = 12;
     ]
@@ -42,7 +48,7 @@
 
     [end: Seconds]
 
-    //function that doesn't return a value
+    #function that doesn't return a value
 
     [UpdateGreetings:string nGreeting = '']
         
@@ -50,11 +56,10 @@
 
     [end]
 
-    //class test
-    phi.
-    {
-        TestClass: 
-            safe string days: = 
+    #class test
+    phi.TestClass
+    { 
+            string days: = 
             {
                 'Monday',
                 'Tuesday',
@@ -64,21 +69,25 @@
                 'Saturday',
                 'Sunday'
             };
+
+        [phi.TestClass] # constructor
+
+        [end]
     
 
-        [ListDays]//function inside class
+        [ListDays] # function inside class
 
-            //foreach loop style
+            # foreach loop style
             while days:i
                 log days:i;    
-            ;; //end loop or other enclosing condition
+            ;; # end loop or other enclosing condition
 
-            //traditional for loop
+            # traditional for loop
             while int i = 0; i < days.length; i++;
                 log days:i;
             ;; 
 
-            // while loop
+            # while loop
             while Age == 30;
                 log 'Still: '. Age;
             ;;
@@ -87,7 +96,7 @@
     }
 
 
-    // ASM integration 
+    # ASM integration 
 
     asm.
     {
@@ -105,10 +114,10 @@
 
     c. 
     {
-        // maybe allow for other language integration using .LANGUAGE {}
+        # maybe allow for other language integration using .LANGUAGE {}
     }
 
-    asm._start; // call ASM from PHI
+    asm._start; # call ASM from PHI
 
 
 
