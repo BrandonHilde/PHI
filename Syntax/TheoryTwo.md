@@ -14,20 +14,21 @@
 
     # Memory safe variables
     #public varables start with upercase and no underscore
-    var Greetings = 'hello, world';
-    int Age = 30;
+    var Greetings: 'hello, world';
+    int Age: 30;
 
     # Unsafe public variable examples
-    string _Name = 'Brandon';
+    str _Name: 'Brandon';
     # Unsafe non-public examples start with lowercase and underscore
-    string _birthday = 'Dec 29';
-    int _birthyear = 1993;
+    str _birthday: 'Dec 29';
+    int _birthyear: 1993;
 
     # memory safe start without underscore _  
-    string arrayOne:3;
-    string testArray: = { 'one', 'two', 'three' };
+    str arrayOne[3];
+    int numberArray: 1 3 5 9 2;
+    str testArray: 'one' 'two' 'three';
 
-    log 'Name: ': Name : _birthyear; # print string 
+    log 'Name: ' Name _birthyear; # print string 
 
     # if statement example
     if Greetings == 'hello, world';
@@ -41,16 +42,16 @@
 
     # function that returns a value
     [ConvertToSeconds:
-        float Minutes = 12;
+        dec Minutes = 12;
     ]
 
-        float Seconds = Minutes * 60;
+        dec Seconds = Minutes * 60;
 
     [end: Seconds]
 
     #function that doesn't return a value
 
-    [UpdateGreetings:string nGreeting = '']
+    [UpdateGreetings:str nGreeting: '']
         
         Greetings = nGreeting;
 
@@ -59,16 +60,15 @@
     #class test
     phi.TestClass
     { 
-            string days: = 
-            {
-                'Monday',
-                'Tuesday',
-                'Wednesday',
-                'Thursday',
-                'Friday',
-                'Saturday',
-                'Sunday'
-            };
+            str days:
+
+                'Monday'
+                'Tuesday'
+                'Wednesday'
+                'Thursday'
+                'Friday'
+                'Saturday'
+                'Sunday';
 
         [phi.TestClass] # constructor
 
@@ -89,7 +89,7 @@
 
             # while loop
             while Age == 30;
-                log 'Still: '. Age;
+                log 'Still: ' Age;
             ;;
 
         [end]
