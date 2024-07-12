@@ -30,8 +30,8 @@ start:
     int 0x13        ; BIOS interrupt
 
     ;video mode
-    mov ax, 0x13
-    int 0x10
+    ;mov ax, 0x13
+    ;int 0x10
 
     jmp 0x7E00 ; jump to sector two
 
@@ -41,18 +41,6 @@ print_string:
     lodsb
     cmp al, 0
     je .done
-    int 0x10
-    jmp .loop
-.done:
-    ret
-
-print_number:
-    mov ah, 0x0E
-.loop:
-    lodsb
-    cmp al, 0
-    je .done
-    ;add al, 0x01
     int 0x10
     jmp .loop
 .done:
