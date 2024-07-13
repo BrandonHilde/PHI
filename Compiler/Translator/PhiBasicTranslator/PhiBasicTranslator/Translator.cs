@@ -109,7 +109,38 @@ namespace PhiBasicTranslator
 
             return string.Empty;
         }
+        public List<string> extractIntContent(string content)
+        {
+            List<string> value = new List<string>();
 
+            string build = string.Empty;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                if (Defs.VariableSetClosure.Contains(content[i]))
+                {
+                    value.Add(build);
+
+                    break;
+                }
+                else if(Defs.Numbers.Contains(content[i])) 
+                {
+                    build += content[i];    
+                }
+
+                if (content[i] == ' ' && build != string.Empty)
+                {
+                    if (build.Length > 0)
+                    {
+                        value.Add(build);
+
+                        build = string.Empty;
+                    }
+                }
+            }
+
+            return value;
+        }
         public List<string> extractStrContent(string content)
         {
             List<string> value = new List<string>();
@@ -168,7 +199,7 @@ namespace PhiBasicTranslator
                 if (Defs.NameClosureCharacters.Contains(sub[i])
                     && phiClass.Name == string.Empty)
                 {
-                    string nm = sub.Substring(cutfrom, i);
+                    string nm = sub.Substring(cutfrom, i - cutfrom);
 
                     if (Defs.Alphabet.Contains(nm.First().ToString().ToLower()))
                     {
@@ -189,12 +220,17 @@ namespace PhiBasicTranslator
                    && phiClass.Name != string.Empty
                    && phiClass.Inherit == string.Empty)
                 {
-                    string nm = sub.Substring(cutfrom, i);
-
-                    if (Defs.Alphabet.Contains(nm.First().ToString()))
+                    string nm = sub.Substring(cutfrom, i - cutfrom);
+                    if(nm != null)
                     {
-                        phiClass.Inherit = nm;
-                    }
+                        if(nm != string.Empty)
+                        {
+                            if (Defs.Alphabet.Contains(nm.First().ToString()))
+                            {
+                                phiClass.Inherit = nm;
+                            }
+                        }
+                    }                    
                 }
 
                 if (sub[i].ToString() == Defs.curlyOpen)
@@ -241,7 +277,22 @@ namespace PhiBasicTranslator
                     }
                     else if (val == Defs.varINT)
                     {
+                        int inx = cut.IndexOf(Defs.VariableSet, val.Length + 1);
+                        int len = inx - val.Length - 1;
 
+                        string nme = cut.Substring(val.Length + 1, len);
+                        string vle = cut.Substring(inx);
+
+                        nme = ClearLabel(nme, Defs.Alphabet);
+
+                        List<string> raw = extractIntContent(vle);
+
+                        phiVariables.Add(new PhiVariables
+                        {
+                            Name = nme,
+                            ValueRaw = "",
+                            Values = raw
+                        });
                     }
                     else if (val == Defs.varDEC)
                     {

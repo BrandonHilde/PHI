@@ -6,6 +6,8 @@ Console.WriteLine("Hello, World!");
 
 Translator translator = new Translator();
 
-string code = "";
+//string code = "";
 
-translator.TranslateCode(code);
+string asm = translator.TranslateFile("../../../code.phi");
+
+Console.WriteLine(asm);

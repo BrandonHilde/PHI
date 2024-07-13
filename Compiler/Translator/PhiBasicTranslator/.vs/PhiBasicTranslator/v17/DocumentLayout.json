@@ -3,24 +3,28 @@
   "WorkspaceRootPath": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\",
   "Documents": [
     {
-      "AbsoluteMoniker": "D:0:0:{5B7E13D0-1D25-4C05-AB8E-EFAA880BFADA}|ConvertFile\\ConvertFile.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\convertfile\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{5B7E13D0-1D25-4C05-AB8E-EFAA880BFADA}|ConvertFile\\ConvertFile.csproj|solutionrelative:convertfile\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
-      "AbsoluteMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\phibasictranslator\\structure\\phiclass.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|solutionrelative:phibasictranslator\\structure\\phiclass.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
-    },
-    {
       "AbsoluteMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\phibasictranslator\\translator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|solutionrelative:phibasictranslator\\translator.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\phibasictranslator\\structure\\defs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|solutionrelative:phibasictranslator\\structure\\defs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
       "AbsoluteMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\phibasictranslator\\structure\\termpair.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
       "RelativeMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|solutionrelative:phibasictranslator\\structure\\termpair.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     },
     {
-      "AbsoluteMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\phibasictranslator\\structure\\defs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
-      "RelativeMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|solutionrelative:phibasictranslator\\structure\\defs.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+      "AbsoluteMoniker": "D:0:0:{5B7E13D0-1D25-4C05-AB8E-EFAA880BFADA}|ConvertFile\\ConvertFile.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\convertfile\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{5B7E13D0-1D25-4C05-AB8E-EFAA880BFADA}|ConvertFile\\ConvertFile.csproj|solutionrelative:convertfile\\program.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{5B7E13D0-1D25-4C05-AB8E-EFAA880BFADA}|ConvertFile\\ConvertFile.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\convertfile\\code.phi||{8B382828-6202-11D1-8870-0000F87579D2}",
+      "RelativeMoniker": "D:0:0:{5B7E13D0-1D25-4C05-AB8E-EFAA880BFADA}|ConvertFile\\ConvertFile.csproj|solutionrelative:convertfile\\code.phi||{8B382828-6202-11D1-8870-0000F87579D2}"
+    },
+    {
+      "AbsoluteMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|d:\\labs\\js apps\\kurntstone\\phi\\compiler\\translator\\phibasictranslator\\phibasictranslator\\structure\\phiclass.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}",
+      "RelativeMoniker": "D:0:0:{20EC340F-FF89-4B57-9488-F87DE4A2FC4D}|PhiBasicTranslator\\PhiBasicTranslator.csproj|solutionrelative:phibasictranslator\\structure\\phiclass.cs||{A6C744A8-0E4A-4FC6-886A-064283054674}"
     }
   ],
   "DocumentGroupContainers": [
@@ -30,11 +34,24 @@
       "DocumentGroups": [
         {
           "DockedWidth": 200,
-          "SelectedChildIndex": 1,
+          "SelectedChildIndex": 5,
           "Children": [
             {
               "$type": "Document",
-              "DocumentIndex": 1,
+              "DocumentIndex": 4,
+              "Title": "code.phi",
+              "DocumentMoniker": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\ConvertFile\\code.phi",
+              "RelativeDocumentMoniker": "ConvertFile\\code.phi",
+              "ToolTip": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\ConvertFile\\code.phi",
+              "RelativeToolTip": "ConvertFile\\code.phi",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAcAAAAFAAAA",
+              "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.001001|",
+              "WhenOpened": "2024-07-13T19:31:21.671Z",
+              "EditorCaption": ""
+            },
+            {
+              "$type": "Document",
+              "DocumentIndex": 5,
               "Title": "PhiClass.cs",
               "DocumentMoniker": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\PhiBasicTranslator\\Structure\\PhiClass.cs",
               "RelativeDocumentMoniker": "PhiBasicTranslator\\Structure\\PhiClass.cs",
@@ -47,20 +64,20 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 0,
+              "DocumentIndex": 3,
               "Title": "Program.cs",
               "DocumentMoniker": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\ConvertFile\\Program.cs",
               "RelativeDocumentMoniker": "ConvertFile\\Program.cs",
               "ToolTip": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\ConvertFile\\Program.cs",
               "RelativeToolTip": "ConvertFile\\Program.cs",
-              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAgAAAAPAAAA",
+              "ViewState": "AQIAAAAAAAAAAAAAAAAAAAwAAAAAAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2024-07-12T20:59:16.796Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 3,
+              "DocumentIndex": 2,
               "Title": "TermPair.cs",
               "DocumentMoniker": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\PhiBasicTranslator\\Structure\\TermPair.cs",
               "RelativeDocumentMoniker": "PhiBasicTranslator\\Structure\\TermPair.cs",
@@ -73,26 +90,26 @@
             },
             {
               "$type": "Document",
-              "DocumentIndex": 4,
+              "DocumentIndex": 1,
               "Title": "Defs.cs",
               "DocumentMoniker": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\PhiBasicTranslator\\Structure\\Defs.cs",
               "RelativeDocumentMoniker": "PhiBasicTranslator\\Structure\\Defs.cs",
               "ToolTip": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\PhiBasicTranslator\\Structure\\Defs.cs",
               "RelativeToolTip": "PhiBasicTranslator\\Structure\\Defs.cs",
-              "ViewState": "AQIAAAAAAAAAAAAAAAAAADIAAAAJAAAA",
+              "ViewState": "AQIAABoAAAAAAAAAAAAAwB4AAAAtAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2024-07-12T20:56:59.309Z",
               "EditorCaption": ""
             },
             {
               "$type": "Document",
-              "DocumentIndex": 2,
+              "DocumentIndex": 0,
               "Title": "Translator.cs",
               "DocumentMoniker": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\PhiBasicTranslator\\Translator.cs",
               "RelativeDocumentMoniker": "PhiBasicTranslator\\Translator.cs",
               "ToolTip": "D:\\Labs\\js apps\\KurntStone\\PHI\\Compiler\\Translator\\PhiBasicTranslator\\PhiBasicTranslator\\Translator.cs",
               "RelativeToolTip": "PhiBasicTranslator\\Translator.cs",
-              "ViewState": "AQIAAAIAAAAAAAAAAAAuwAgAAAAJAAAA",
+              "ViewState": "AQIAABEAAAAAAAAAAAD4vxkAAAAQAAAA",
               "Icon": "ae27a6b0-e345-4288-96df-5eaf394ee369.000738|",
               "WhenOpened": "2024-07-12T20:55:20.463Z",
               "EditorCaption": ""
