@@ -16,7 +16,11 @@ namespace PhiBasicTranslator.Structure
 
     public class PhiMethod
     {
+        public string Name = string.Empty;
+        public string End = string.Empty;
+        public string Content = string.Empty;
 
+        public List<PhiVariables> Variables = new List<PhiVariables>();
     }
 
     public class PhiVariables
@@ -24,5 +28,7 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string ValueRaw = string.Empty;
         public List<string> Values { get; set; } = new List<string>();
+
+        public List<PhiVariables> SubVariables { get; set; }
     }
 }

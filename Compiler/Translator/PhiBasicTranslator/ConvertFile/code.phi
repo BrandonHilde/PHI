@@ -13,7 +13,7 @@ phi.TestClass
     int numberArray: 1 3 5 9 2;
     str testArray: 'one' 'two' 'three';
 
-    str days:
+    str Days:
 
         'Monday'
         'Tuesday'
@@ -22,4 +22,17 @@ phi.TestClass
         'Friday'
         'Saturday'
         'Sunday';
+
+        [SayHello:str message: '']
+            log message;
+        [end]
+
+         [ListDays] # function inside class
+
+            # traditional for loop
+            while int i = 0; i < days.len; i++;
+                log days:i;
+            ;; 
+
+        [end]
 }

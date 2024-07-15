@@ -1,4 +1,5 @@
 ﻿using PhiBasicTranslator.Structure;
+using System.ComponentModel.Design;
 
 namespace PhiBasicTranslator
 {
@@ -242,6 +243,106 @@ namespace PhiBasicTranslator
             }
 
             return phiClass;
+        }
+
+        public List<PhiMethod> GetPhiMethods(string content)
+        {
+            List<PhiMethod> phiMethods = new List<PhiMethod>();
+
+            bool startName = false;
+            bool startArgs = false;
+            bool endMethod = false;
+            bool startContent = false;
+
+            string name = string.Empty;
+            string end = string.Empty;
+
+            string value = string.Empty;
+
+            for(int i = 0; i < content.Length; i++)
+            {
+                if (content[i].ToString() == Defs.squareOpen)
+                {
+                    if (name == string.Empty)
+                    { // if name is empty then startName
+                        if (i > 0)
+                        {
+                            // check for array pattern and ignore if array "str testArray[3];" vs "[Method]"
+                            if (!Defs.Alphabet.Contains(content[i - 1].ToString()))
+                            {
+                                startName = true;
+                            }
+                        }
+                    }
+                    else
+                    {
+                        endMethod = true;
+                    }
+                }
+
+                if(startName || startArgs)
+                {
+                    if (content[i].ToString() == Defs.squareClose)
+                    {
+                        startContent = true;
+                    }
+                    else if (content[i].ToString() == Defs.VariableSet)
+                    {
+                        startName = false;
+                        startArgs = true;
+                    }
+                    else
+                    {
+                        if (startName)
+                        {
+                            name += content[i];
+                        }
+                    }
+                }
+
+                if(startContent)
+                {
+                    value += content[i];
+                }
+
+                if(startArgs)
+                {
+
+                    if (content[i].ToString() == Defs.squareClose)
+                    {
+                        startContent = true;
+                        startArgs = false;
+                    }
+                }
+
+                if(endMethod)
+                {
+                    if (content[i].ToString() == Defs.squareClose)
+                    {
+                        end = end.Replace(Defs.squareOpen, string.Empty);
+                        end = end.Replace(Defs.VariableSet, string.Empty);
+                        end = end.Replace(Defs.squareClose, string.Empty);
+                        end = end.Replace(Defs.MethodEndDeclare, string.Empty);
+
+                        phiMethods.Add(new PhiMethod
+                        {
+                            Name = name,
+                            End = end,
+                            Content = value
+                        });
+                    }
+                    else if (content[i].ToString() == Defs.VariableSet)
+                    {
+
+                    }
+                    else
+                    {
+                        end += content[i];
+                    }
+                }
+            }
+
+            return phiMethods;
         }
 
         public List<PhiVariables> GetPhiVariables(string content)

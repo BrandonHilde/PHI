@@ -13,12 +13,15 @@ namespace PhiBasicTranslator.Structure
         public static readonly string classStartArmASM = "arm.";
         public static readonly string curlyOpen = "{";
         public static readonly string curlyClose = "}";
+        public static readonly string squareOpen = "[";
+        public static readonly string squareClose = "]";
         public static readonly string Sys = "sys.";
         public static readonly string SysVideoMode = "videoMode";
         public static readonly string SysTextMode = "textMode";
         public static readonly string AccessDeclarePublic = "public";
         //public static readonly string AccessDeclarePrivate = "private";
         public static readonly string AccessDeclareSafe = "safe";
+        public static readonly string MethodEndDeclare = "end";
         public static readonly string ValueStringDelcare = "'";
         public static readonly string TypeRawDeclare = "~";
         public static readonly string ClassInherit = ":";
