@@ -17,6 +17,10 @@ namespace PhiBasicTranslator
         {
             string ASM = "";
 
+            // remember to check for string ignore
+            string rawContent = ClearComments(content);
+            rawContent = ClearMiltiLineComments(rawContent);
+
             for (int i = 0; i < content.Length; i++)
             {
                 string sub = content.Substring(i);
@@ -189,6 +193,10 @@ namespace PhiBasicTranslator
         {
             PhiClass phiClass = new PhiClass();
 
+            string rawContent = string.Empty;
+
+            #region Class Internals
+
             int cutfrom = 0;
 
             bool startContent = false;
@@ -239,15 +247,54 @@ namespace PhiBasicTranslator
                     string cont = sub.Substring(i);
                     string value = ExtractContent(sub, Defs.curlyOpen);
                     phiClass.Variables = GetPhiVariables(value);
+
+                    int inx = value.IndexOf(Defs.curlyOpen, 0);
+
+                    rawContent = value.Substring(inx + 1);
                 }
             }
+
+            #endregion
+
+            #region MethodInternals
+
+            phiClass.RawContent = rawContent;
+
+           phiClass.Methods = GetPhiMethods(phiClass.RawContent);
+
+            #endregion
 
             return phiClass;
         }
 
         public List<PhiMethod> GetPhiMethods(string content)
         {
-            List<PhiMethod> phiMethods = new List<PhiMethod>();
+            List<PhiMethod> methods = new List<PhiMethod>();
+
+            string raw = content;
+
+            while (true)
+            {
+                PhiMethod mthd =  GetNextPhiMethod(raw);
+
+                if(mthd.Name != string.Empty)
+                {
+                    methods.Add(mthd);
+
+                    // cut last part off
+                    raw = mthd.Remainer;
+                }
+                else
+                {
+                    break;
+                }
+            }
+
+            return methods;
+        }
+        public PhiMethod GetNextPhiMethod(string content)
+        {
+            PhiMethod phiMethod = new PhiMethod();
 
             bool startName = false;
             bool startArgs = false;
@@ -258,6 +305,8 @@ namespace PhiBasicTranslator
             string end = string.Empty;
 
             string value = string.Empty;
+
+            int start = 0;
 
             for(int i = 0; i < content.Length; i++)
             {
@@ -271,6 +320,7 @@ namespace PhiBasicTranslator
                             if (!Defs.Alphabet.Contains(content[i - 1].ToString()))
                             {
                                 startName = true;
+                                start = i;
                             }
                         }
                     }
@@ -293,7 +343,7 @@ namespace PhiBasicTranslator
                     }
                     else
                     {
-                        if (startName)
+                        if (startName && content[i].ToString() != Defs.squareOpen)
                         {
                             name += content[i];
                         }
@@ -324,12 +374,11 @@ namespace PhiBasicTranslator
                         end = end.Replace(Defs.squareClose, string.Empty);
                         end = end.Replace(Defs.MethodEndDeclare, string.Empty);
 
-                        phiMethods.Add(new PhiMethod
-                        {
-                            Name = name,
-                            End = end,
-                            Content = value
-                        });
+                        phiMethod.Name = name;
+                        phiMethod.End = end;
+                        phiMethod.Content = content.Substring(start, i - start + 1);
+                        phiMethod.Remainer = content.Substring(i + 1);
+                        break;
                     }
                     else if (content[i].ToString() == Defs.VariableSet)
                     {
@@ -342,7 +391,7 @@ namespace PhiBasicTranslator
                 }
             }
 
-            return phiMethods;
+            return phiMethod;
         }
 
         public List<PhiVariables> GetPhiVariables(string content)
@@ -410,6 +459,71 @@ namespace PhiBasicTranslator
             return phiVariables;
         }
 
+
+        public string ClearMiltiLineComments(string content)
+        {
+            bool inside = false;
+            bool lineEnd = false;
+
+            string rawContent = string.Empty;
+
+            for (int i = 0; i < content.Length - 1; i++)
+            {
+                string letter = content[i].ToString();
+                lineEnd = Defs.CommentLine.Contains(content[i + 1]);
+
+                if (letter == Defs.Comment && lineEnd)
+                {
+                    // exit comment if line has ended
+                    inside = !inside;
+                }
+                else
+                {
+                    if (!inside)
+                    {
+                        rawContent += letter;
+                    }
+                }
+            }
+
+            return rawContent;
+        }
+
+        public string ClearComments(string content)
+        {
+            bool inside = false;
+            bool lineEnd = false;
+
+            string rawContent = string.Empty;
+
+            for (int i = 0; i < content.Length - 2; i++)
+            {
+                string letter = content[i].ToString();
+                lineEnd = Defs.CommentLine.Contains(content[i + 1]);
+
+                if (letter == Defs.Comment && !lineEnd)
+                {
+                    // exit comment if line has ended
+                    inside = true;
+                }
+
+                if (Defs.CommentLine.Contains(letter))
+                {
+                    if (inside)
+                    {
+                        //only end if inside comment
+                        inside = false;
+                    }
+                }
+
+                if (!inside)
+                {
+                    rawContent += letter;
+                }
+            }
+
+            return rawContent;  
+        }
         public string ClearLabel(string label, string allowed)
         {
             string clear = string.Empty;

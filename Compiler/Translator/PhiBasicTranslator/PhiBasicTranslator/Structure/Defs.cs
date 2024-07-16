@@ -26,6 +26,8 @@ namespace PhiBasicTranslator.Structure
         public static readonly string TypeRawDeclare = "~";
         public static readonly string ClassInherit = ":";
         public static readonly string VariableSet = ":";
+        public static readonly string Comment = "#";
+        public static readonly string CommentLine = "\r\n";
         public static readonly string IgnoreCharacter = "\\";
 
         public static readonly string NameClosureCharacters = " \t\r\n{:";

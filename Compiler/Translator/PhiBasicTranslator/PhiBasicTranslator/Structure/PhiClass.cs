@@ -10,6 +10,8 @@ namespace PhiBasicTranslator.Structure
     {
         public string Name { get; set; } = string.Empty;
         public string Inherit { get; set; } = string.Empty;
+
+        public string RawContent { get; set; } = string.Empty;
         public List<PhiMethod> Methods { get; set; }
         public List<PhiVariables> Variables { get; set; }
     }
@@ -19,6 +21,7 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string End = string.Empty;
         public string Content = string.Empty;
+        public string Remainer = string.Empty;
 
         public List<PhiVariables> Variables = new List<PhiVariables>();
     }
