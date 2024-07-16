@@ -7,6 +7,20 @@ phi.TestClass
     Comment
     #
 
+    str commentTest: '#test ignore ####';
+
+    str mutliline: '
+    
+    #
+        ignore this
+        comment becuase
+        its actually a string
+
+    #
+
+
+    ';
+
     str Greetings: 'hello, world';
     int Age: 30;
 

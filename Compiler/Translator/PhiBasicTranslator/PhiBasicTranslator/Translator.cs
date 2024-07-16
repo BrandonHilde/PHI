@@ -1,5 +1,6 @@
 ﻿using PhiBasicTranslator.Structure;
 using System.ComponentModel.Design;
+using System.Diagnostics.Metrics;
 
 namespace PhiBasicTranslator
 {
@@ -142,6 +143,34 @@ namespace PhiBasicTranslator
                         build = string.Empty;
                     }
                 }
+            }
+
+            return value;
+        }
+
+        public bool[] ProfileStringContent(string content) 
+        {
+            bool[] value = new bool[content.Length];
+
+            string build = string.Empty;
+
+            bool inside = false;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+
+                if (content[i].ToString() == Defs.ValueStringDelcare)
+                {
+                    if (!IsIgnorable(content, i))
+                    {
+                        inside = !inside;
+
+                        continue;
+                    }
+                }
+
+                value[i] = inside;
+
             }
 
             return value;
@@ -465,17 +494,27 @@ namespace PhiBasicTranslator
             bool inside = false;
             bool lineEnd = false;
 
+            bool[] insideString = ProfileStringContent(content);
+
             string rawContent = string.Empty;
 
             for (int i = 0; i < content.Length - 1; i++)
             {
                 string letter = content[i].ToString();
-                lineEnd = Defs.CommentLine.Contains(content[i + 1]);
+
+                if (!insideString[i])
+                {
+                    lineEnd = Defs.CommentLine.Contains(content[i + 1]);
+
+                    if (letter == Defs.Comment && lineEnd)
+                    {
+                        // exit comment if line has ended
+                        inside = !inside;
+                    }
+                }
 
                 if (letter == Defs.Comment && lineEnd)
                 {
-                    // exit comment if line has ended
-                    inside = !inside;
                 }
                 else
                 {
@@ -494,25 +533,32 @@ namespace PhiBasicTranslator
             bool inside = false;
             bool lineEnd = false;
 
+            bool[] insideString = ProfileStringContent(content);
+
+
             string rawContent = string.Empty;
 
             for (int i = 0; i < content.Length - 2; i++)
             {
                 string letter = content[i].ToString();
-                lineEnd = Defs.CommentLine.Contains(content[i + 1]);
 
-                if (letter == Defs.Comment && !lineEnd)
+                if (!insideString[i])
                 {
-                    // exit comment if line has ended
-                    inside = true;
-                }
+                    lineEnd = Defs.CommentLine.Contains(content[i + 1]);
 
-                if (Defs.CommentLine.Contains(letter))
-                {
-                    if (inside)
+                    if (letter == Defs.Comment && !lineEnd)
                     {
-                        //only end if inside comment
-                        inside = false;
+                        // exit comment if line has ended
+                        inside = true;
+                    }
+
+                    if (Defs.CommentLine.Contains(letter))
+                    {
+                        if (inside)
+                        {
+                            //only end if inside comment
+                            inside = false;
+                        }
                     }
                 }
 
@@ -522,7 +568,7 @@ namespace PhiBasicTranslator
                 }
             }
 
-            return rawContent;  
+            return rawContent;
         }
         public string ClearLabel(string label, string allowed)
         {
