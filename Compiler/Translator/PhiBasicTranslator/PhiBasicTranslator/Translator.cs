@@ -1,6 +1,7 @@
 ﻿using PhiBasicTranslator.Structure;
 using System.ComponentModel.Design;
 using System.Diagnostics.Metrics;
+using PhiBasicTranslator.ParseEngine;
 
 namespace PhiBasicTranslator
 {
@@ -19,8 +20,8 @@ namespace PhiBasicTranslator
             string ASM = "";
 
             // remember to check for string ignore
-            string rawContent = ClearComments(content);
-            rawContent = ClearMiltiLineComments(rawContent);
+            string rawContent = ParseUtilities.ClearComments(content);
+            rawContent = ParseUtilities.ClearMiltiLineComments(rawContent);
 
             for (int i = 0; i < content.Length; i++)
             {
@@ -37,24 +38,6 @@ namespace PhiBasicTranslator
             }
 
             return ASM;
-        }
-
-        public bool IsIgnorable(string content, int index)
-        {
-            if (index > 1 && content.Length > index)
-            {
-                if (content[index - 1].ToString() == Defs.IgnoreCharacter
-                    && content[index - 2].ToString() == Defs.IgnoreCharacter)
-                {
-                    return false;
-                }
-                if (content[index - 1].ToString() == Defs.IgnoreCharacter)
-                {
-                    return true;
-                }
-            }
-
-            return false;
         }
 
         public string ExtractContent(string content, string begin)
@@ -75,7 +58,7 @@ namespace PhiBasicTranslator
             {
                 if (sub[i].ToString() == Defs.ValueStringDelcare)
                 {
-                    if (!IsIgnorable(sub, i))
+                    if (!ParseUtilities.IsIgnorable(sub, i))
                     {
                         insideString = !insideString;
                     }
@@ -147,34 +130,6 @@ namespace PhiBasicTranslator
 
             return value;
         }
-
-        public bool[] ProfileStringContent(string content) 
-        {
-            bool[] value = new bool[content.Length];
-
-            string build = string.Empty;
-
-            bool inside = false;
-
-            for (int i = 0; i < content.Length; i++)
-            {
-
-                if (content[i].ToString() == Defs.ValueStringDelcare)
-                {
-                    if (!IsIgnorable(content, i))
-                    {
-                        inside = !inside;
-
-                        continue;
-                    }
-                }
-
-                value[i] = inside;
-
-            }
-
-            return value;
-        }
         public List<string> extractStrContent(string content)
         {
             List<string> value = new List<string>();
@@ -188,7 +143,7 @@ namespace PhiBasicTranslator
 
                 if (content[i].ToString() == Defs.ValueStringDelcare)
                 {
-                    if (!IsIgnorable(content, i))
+                    if (!ParseUtilities.IsIgnorable(content, i))
                     {
                         inside = !inside;
 
@@ -431,7 +386,7 @@ namespace PhiBasicTranslator
             {
                 string cut = content.Substring(i);
 
-                string val = MatchesVariable(cut);
+                string val = ParseUtilities.MatchesVariable(cut);
 
                 if (val != string.Empty)
                 {
@@ -443,7 +398,7 @@ namespace PhiBasicTranslator
                         string nme = cut.Substring(val.Length + 1, len);
                         string vle = cut.Substring(inx);
 
-                        nme = ClearLabel(nme, Defs.Alphabet);
+                        nme = ParseUtilities.ClearLabel(nme, Defs.Alphabet);
 
                         List<string> raw = extractStrContent(vle);
 
@@ -462,7 +417,7 @@ namespace PhiBasicTranslator
                         string nme = cut.Substring(val.Length + 1, len);
                         string vle = cut.Substring(inx);
 
-                        nme = ClearLabel(nme, Defs.Alphabet);
+                        nme = ParseUtilities.ClearLabel(nme, Defs.Alphabet);
 
                         List<string> raw = extractIntContent(vle);
 
@@ -489,114 +444,6 @@ namespace PhiBasicTranslator
         }
 
 
-        public string ClearMiltiLineComments(string content)
-        {
-            bool inside = false;
-            bool lineEnd = false;
 
-            bool[] insideString = ProfileStringContent(content);
-
-            string rawContent = string.Empty;
-
-            for (int i = 0; i < content.Length - 1; i++)
-            {
-                string letter = content[i].ToString();
-
-                if (!insideString[i])
-                {
-                    lineEnd = Defs.CommentLine.Contains(content[i + 1]);
-
-                    if (letter == Defs.Comment && lineEnd)
-                    {
-                        // exit comment if line has ended
-                        inside = !inside;
-                    }
-                }
-
-                if (letter == Defs.Comment && lineEnd)
-                {
-                }
-                else
-                {
-                    if (!inside)
-                    {
-                        rawContent += letter;
-                    }
-                }
-            }
-
-            return rawContent;
-        }
-
-        public string ClearComments(string content)
-        {
-            bool inside = false;
-            bool lineEnd = false;
-
-            bool[] insideString = ProfileStringContent(content);
-
-
-            string rawContent = string.Empty;
-
-            for (int i = 0; i < content.Length - 2; i++)
-            {
-                string letter = content[i].ToString();
-
-                if (!insideString[i])
-                {
-                    lineEnd = Defs.CommentLine.Contains(content[i + 1]);
-
-                    if (letter == Defs.Comment && !lineEnd)
-                    {
-                        // exit comment if line has ended
-                        inside = true;
-                    }
-
-                    if (Defs.CommentLine.Contains(letter))
-                    {
-                        if (inside)
-                        {
-                            //only end if inside comment
-                            inside = false;
-                        }
-                    }
-                }
-
-                if (!inside)
-                {
-                    rawContent += letter;
-                }
-            }
-
-            return rawContent;
-        }
-        public string ClearLabel(string label, string allowed)
-        {
-            string clear = string.Empty;
-
-            for (int i = 0; i < label.Length; i++)
-            {
-                if (allowed.Contains(label[i]))
-                {
-                    clear += label[i];
-                }
-            }
-
-            return clear;
-        }
-        public string MatchesVariable(string content)
-        {
-            string vname = string.Empty;
-
-            foreach (string val in Defs.VariableTypes)
-            {
-                if (content.StartsWith(val))
-                {
-                    vname = val;
-                }
-            }
-
-            return vname;
-        }
     }
 }
