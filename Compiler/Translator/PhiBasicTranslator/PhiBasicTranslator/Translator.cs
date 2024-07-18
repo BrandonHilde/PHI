@@ -7,6 +7,29 @@ namespace PhiBasicTranslator
 {
     public class Translator
     {
+        public Translator() { }
+        public Translator(string file) 
+        {
+            string content = File.ReadAllText(file);
+
+            ContentProfile prf = ParseUtilities.ProfileContent(content);
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                Console.ForegroundColor = ConsoleColor.White;
+
+                if (prf.ContentInside[i] == Inside.String)
+                    Console.ForegroundColor = ConsoleColor.Magenta;
+
+                if (prf.ContentInside[i] == Inside.Comment)
+                    Console.ForegroundColor = ConsoleColor.Green;
+
+                if (prf.ContentInside[i] == Inside.MultiComment)
+                    Console.ForegroundColor = ConsoleColor.DarkGreen;
+
+                Console.Write(content[i]);  
+            }
+        }
 
         public string TranslateFile(string file)
         {
@@ -21,7 +44,6 @@ namespace PhiBasicTranslator
 
             // remember to check for string ignore
             string rawContent = ParseUtilities.ClearComments(content);
-            rawContent = ParseUtilities.ClearMiltiLineComments(rawContent);
 
             for (int i = 0; i < content.Length; i++)
             {

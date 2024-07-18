@@ -4,7 +4,7 @@ phi.TestClass
     # <- single line comment
     #
     Multiline
-    Comment
+    Comment '
     #
 
     str commentTest: '#test ignore ####';

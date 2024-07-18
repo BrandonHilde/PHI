@@ -4,7 +4,7 @@ using PhiBasicTranslator;
 Console.WriteLine("Hello, World!");
 
 
-Translator translator = new Translator();
+Translator translator = new Translator("../../../code.phi");
 
 //string code = "";
 

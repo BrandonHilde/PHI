@@ -1,6 +1,7 @@
 ﻿using PhiBasicTranslator.Structure;
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
@@ -27,33 +28,97 @@ namespace PhiBasicTranslator.ParseEngine
 
             return false;
         }
-        public static bool[] ProfileStringContent(string content)
+
+        public static string ClearComments(string content)
         {
-            bool[] value = new bool[content.Length];
+            ContentProfile prf = ProfileContent(content);
 
-            string build = string.Empty;
-
-            bool inside = false;
+            string raw = "";
 
             for (int i = 0; i < content.Length; i++)
             {
-
-                if (content[i].ToString() == Defs.ValueStringDelcare)
+                if (prf.ContentInside[i] == Inside.None || prf.ContentInside[i] == Inside.String)
                 {
-                    if (!IsIgnorable(content, i))
-                    {
-                        inside = !inside;
+                    raw += content[i];
+                }
+            }
 
-                        continue;
+            return raw;
+        }
+        public static ContentProfile ProfileContent(string content)
+        {
+            ContentProfile profile = new ContentProfile(content.Length);
+
+            string letter = string.Empty;
+            Inside inside = Inside.None;
+            Inside exitType = Inside.None;
+
+            int lastExit = -1;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                letter = content[i].ToString();
+
+                if (inside == Inside.String || inside == Inside.None)
+                {
+                    if (letter == Defs.ValueStringDelcare)
+                    {
+                        if (!IsIgnorable(content, i))
+                        {
+                            if (inside == Inside.String)
+                            {
+                                inside = Inside.None;
+                                exitType = Inside.String;
+                                lastExit = i;
+                            }
+                            else
+                            {
+                                inside = Inside.String;
+                            }
+                        }
                     }
                 }
 
-                value[i] = inside;
+                if (inside != Inside.None)
+                {
+                    if (Defs.CommentLine.Contains(letter))
+                    {
+                        if (inside == Inside.Comment)
+                        {
+                            inside = Inside.None;
+                            exitType = Inside.Comment;
+                            lastExit = i;
+                        }
+                    }
+                    else if (letter == Defs.Comment)
+                    {
+                        if (inside == Inside.MultiComment)
+                        {
+                            inside = Inside.None;
+                            exitType = Inside.MultiComment;
+                            lastExit = i;
+                        }
+                    }
+                }
+                else if (i < content.Length - 1)
+                {
+                    bool lineEnd = Defs.CommentLine.Contains(content[i + 1]);
 
+                    if (letter == Defs.Comment)
+                    {
+                        if(lineEnd) inside = Inside.MultiComment;
+                        else inside = Inside.Comment;
+                    }
+                }
+
+                if (lastExit != i)
+                    profile.ContentInside[i] = inside;
+                else profile.ContentInside[i] = exitType;
             }
 
-            return value;
+            return profile;
         }
+        /*
         public static string ClearMiltiLineComments(string content)
         {
             bool inside = false;
@@ -135,6 +200,7 @@ namespace PhiBasicTranslator.ParseEngine
 
             return rawContent;
         }
+        */
         public static string ClearLabel(string label, string allowed)
         {
             string clear = string.Empty;
