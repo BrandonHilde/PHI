@@ -3,8 +3,18 @@ using PhiBasicTranslator;
 
 Console.WriteLine("Hello, World!");
 
+string file = string.Empty;
 
-Translator translator = new Translator("../../../code.phi");
+
+while (file == string.Empty)
+{
+    Console.Write("File: ");
+    file = Console.ReadLine();  
+}
+
+if (file == ".") file = "../../../code.phi";
+
+Translator translator = new Translator(file);
 
 //string code = "";
 

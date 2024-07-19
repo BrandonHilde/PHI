@@ -12,23 +12,42 @@ namespace PhiBasicTranslator
         {
             string content = File.ReadAllText(file);
 
-            ContentProfile prf = ParseUtilities.ProfileContent(content);
+            ContentProfile prf = ParseUtilities.ProfilePrepare(content);
+            prf = ParseUtilities.ProfileClasses(content, prf);
+            prf = ParseUtilities.ProfileVariables(content, prf);
+
+            ConsoleColor[] clrs =
+            {
+                ConsoleColor.White,  // None
+                ConsoleColor.Green,                     // MultiComment, 
+                ConsoleColor.Green,                     // Comment, 
+                ConsoleColor.Red, // String, 
+                ConsoleColor.Gray,                     // AsmClassStart, 
+                ConsoleColor.DarkGray,                  // ArmClassStart,
+                ConsoleColor.DarkBlue,                 // PhiClassStart, 
+                ConsoleColor.DarkBlue,// Curly, 
+                ConsoleColor.DarkBlue,// Square, 
+                ConsoleColor.DarkBlue,                     // Parenthesis, 
+                ConsoleColor.DarkMagenta,                     // Colon, 
+                ConsoleColor.DarkMagenta,
+                ConsoleColor.DarkCyan,                     // ClassName, 
+                ConsoleColor.DarkCyan,// ClassInherit,
+                ConsoleColor.DarkCyan,// VariableName
+                ConsoleColor.DarkBlue, // VariableType
+                ConsoleColor.Yellow,
+                ConsoleColor.Red,
+                ConsoleColor.Red
+
+            };
 
             for (int i = 0; i < content.Length; i++)
             {
-                Console.ForegroundColor = ConsoleColor.White;
-
-                if (prf.ContentInside[i] == Inside.String)
-                    Console.ForegroundColor = ConsoleColor.Magenta;
-
-                if (prf.ContentInside[i] == Inside.Comment)
-                    Console.ForegroundColor = ConsoleColor.Green;
-
-                if (prf.ContentInside[i] == Inside.MultiComment)
-                    Console.ForegroundColor = ConsoleColor.DarkGreen;
+                Console.ForegroundColor = clrs[(int)prf.ContentInside[i]];
 
                 Console.Write(content[i]);  
             }
+
+            Console.ForegroundColor = ConsoleColor.White;   
         }
 
         public string TranslateFile(string file)

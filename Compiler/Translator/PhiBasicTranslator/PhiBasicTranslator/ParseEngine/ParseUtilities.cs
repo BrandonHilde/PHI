@@ -31,7 +31,7 @@ namespace PhiBasicTranslator.ParseEngine
 
         public static string ClearComments(string content)
         {
-            ContentProfile prf = ProfileContent(content);
+            ContentProfile prf = ProfilePrepare(content);
 
             string raw = "";
 
@@ -45,7 +45,146 @@ namespace PhiBasicTranslator.ParseEngine
 
             return raw;
         }
-        public static ContentProfile ProfileContent(string content)
+
+        public static ContentProfile ProfileVariables(string content, ContentProfile previous)
+        {
+            for (int i = 0; i < content.Length; i++)
+            {
+                string cut = content.Substring(i);
+
+                string val = MatchesVariable(cut);
+
+                if (val != string.Empty && previous.ContentInside[i] == Inside.None)
+                {
+                    if (val == Defs.varSTR)
+                    {
+                        previous = ParseVariables.ProfileSTR(content, i, previous);
+                    }
+                    else if (val == Defs.varINT)
+                    {
+                        previous = ParseVariables.ProfileINT(content, i, previous);
+                    }
+                    else if (val == Defs.varBYT)
+                    {
+
+                    }
+                    else if (val == Defs.varDEC)
+                    {
+
+                    }
+                    else if (val == Defs.varFIN)
+                    {
+
+                    }
+                    else if (val == Defs.varVAR)
+                    {
+
+                    }
+                }
+            }
+
+            return previous;
+        }
+        public static ContentProfile ProfileClasses(string content, ContentProfile previous)
+        {
+            Inside inside = Inside.None;
+
+            bool startName = false;
+
+            if(previous.ContentInside.Length == content.Length)
+            {
+                for (int i = 0; i < content.Length; ++i)
+                {
+                    string remaining = content.Substring(i);
+
+                    if(remaining.StartsWith(Defs.classStartPHI))
+                    {
+                        inside = Inside.PhiClassStart;
+
+                        for (int m = i; m < Defs.classStartPHI.Length + i; m++)
+                        {
+                            previous.ContentInside[m] = inside;
+                        }
+
+                        i += Defs.classStartPHI.Length;
+
+                        startName = true;
+                    }
+                    else if (remaining.StartsWith(Defs.classStartx86ASM))
+                    {
+                        inside = Inside.AsmClassStart;
+
+                        for (int m = i; m < Defs.classStartPHI.Length + i; m++)
+                        {
+                            previous.ContentInside[m] = inside;
+                        }
+
+                        i += Defs.classStartx86ASM.Length;
+
+                        startName = true;
+                    }
+                    else if (remaining.StartsWith(Defs.classStartArmASM))
+                    {
+                        inside = Inside.ArmClassStart;
+
+                        for (int m = i; m < Defs.classStartPHI.Length + i; m++)
+                        {
+                            previous.ContentInside[m] = inside;
+                        }
+
+                        i += Defs.classStartArmASM.Length;
+
+                        startName = true;
+                    }
+
+                    if (startName)
+                    {
+                        inside = Inside.ClassName;
+
+                        for (int m = i; m < content.Length; m++)
+                        {
+                            string letter = content[m].ToString();
+
+                            if (inside == Inside.Colon)
+                            {
+                                inside = Inside.ClassInherit;
+                            }
+
+                            if (letter == Defs.ClassInherit) //":"
+                            {
+                                inside = Inside.Colon;
+                            }
+
+                            previous.ContentInside[m] = inside;
+
+                            if (letter == Defs.curlyOpen)
+                            {
+                                inside = Inside.Curly;
+                                previous.ContentInside[m] = inside;
+                                break;
+                            }
+                        }
+
+                        startName = false;
+                    }
+
+                    if (content[i].ToString() == Defs.curlyClose
+                        || content[i].ToString() == Defs.curlyOpen)
+                    {
+                        inside = Inside.Curly;
+                        previous.ContentInside[i] = inside;
+                    }
+
+                    if (inside != Inside.None)
+                    {
+                        inside = Inside.None;
+                    }
+                }
+            }
+
+            return previous;
+        }
+        public static ContentProfile ProfilePrepare(string content)
         {
             ContentProfile profile = new ContentProfile(content.Length);
 

@@ -1,5 +1,5 @@
 ﻿
-phi.TestClass
+phi.TestClass:OtherClass
 {
     # <- single line comment
     #
@@ -37,14 +37,14 @@ phi.TestClass
         'Saturday'
         'Sunday';
 
-        [SayHello:str message: '']
+        [SayHello:str message: '';]
             log message;
         [end]
 
          [ListDays] # function inside class
 
             # traditional for loop
-            while int i = 0; i < days.len; i++;
+            while int i: 0; i < days.len; i++;
                 log days:i;
             ;; 
 

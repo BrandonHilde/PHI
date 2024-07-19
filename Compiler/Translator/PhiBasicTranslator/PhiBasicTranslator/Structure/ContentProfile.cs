@@ -6,7 +6,26 @@ using System.Threading.Tasks;
 
 namespace PhiBasicTranslator.Structure
 {
-    public enum Inside { MultiComment, Comment, String, None };
+    public enum Inside 
+    { 
+        None, 
+        MultiComment, 
+        Comment, 
+        String, 
+        AsmClassStart, 
+        ArmClassStart,
+        PhiClassStart, 
+        Curly, 
+        Square, 
+        Parenthesis, 
+        Colon, 
+        SemiColon,
+        ClassName, 
+        ClassInherit, 
+        VariableName,
+        VariableType,
+        VariableValue,
+    };
     public class ContentProfile
     {
         public Inside[] ContentInside = { Inside.None };
