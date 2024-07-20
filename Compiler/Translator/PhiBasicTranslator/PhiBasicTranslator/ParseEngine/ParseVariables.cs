@@ -9,13 +9,13 @@ namespace PhiBasicTranslator.ParseEngine
 {
     public class ParseVariables
     {
-        public static ContentProfile ProfileSTR(string content, int index, ContentProfile previous)
+        public static ContentProfile ProfileVAR(string content, int index, string varType, ContentProfile previous)
         {
-            previous = ProfileVarType(content, Defs.varSTR, index, previous);
+            previous = ProfileVarType(content, varType, index, previous);
 
             Inside inside = Inside.VariableName;
 
-            for (int i = index + Defs.varSTR.Length; i < content.Length; i++)
+            for (int i = index + varType.Length; i < content.Length; i++)
             {
                 if (content[i] != ' ' && previous.ContentInside[i] == Inside.None)
                 {

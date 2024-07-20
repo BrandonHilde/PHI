@@ -15,27 +15,36 @@ namespace PhiBasicTranslator
             ContentProfile prf = ParseUtilities.ProfilePrepare(content);
             prf = ParseUtilities.ProfileClasses(content, prf);
             prf = ParseUtilities.ProfileVariables(content, prf);
+            prf = ParseUtilities.ProfileMethods(content, prf);
+            prf = ParseUtilities.ProfileInstructs(content, prf);
+            prf = ParseUtilities.ProfileBasics(content, prf);   
 
             ConsoleColor[] clrs =
             {
-                ConsoleColor.White,  // None
-                ConsoleColor.Green,                     // MultiComment, 
-                ConsoleColor.Green,                     // Comment, 
-                ConsoleColor.Red, // String, 
-                ConsoleColor.Gray,                     // AsmClassStart, 
-                ConsoleColor.DarkGray,                  // ArmClassStart,
-                ConsoleColor.DarkBlue,                 // PhiClassStart, 
-                ConsoleColor.DarkBlue,// Curly, 
-                ConsoleColor.DarkBlue,// Square, 
-                ConsoleColor.DarkBlue,                     // Parenthesis, 
-                ConsoleColor.DarkMagenta,                     // Colon, 
-                ConsoleColor.DarkMagenta,
-                ConsoleColor.DarkCyan,                     // ClassName, 
-                ConsoleColor.DarkCyan,// ClassInherit,
-                ConsoleColor.DarkCyan,// VariableName
-                ConsoleColor.DarkBlue, // VariableType
-                ConsoleColor.Yellow,
-                ConsoleColor.Red,
+                ConsoleColor.White,  // None                                        None, 
+                ConsoleColor.Green,                     // MultiComment,            MultiComment, 
+                ConsoleColor.Green,                     // Comment,                 Comment, 
+                ConsoleColor.Red, // String,                                        String, 
+                ConsoleColor.Gray,                     // AsmClassStart,            AsmClassStart, 
+                ConsoleColor.DarkGray,                  // ArmClassStart,           ArmClassStart,
+                ConsoleColor.DarkBlue,                 // PhiClassStart,            PhiClassStart, 
+                ConsoleColor.DarkBlue,// Curly,                                     Curly, 
+                ConsoleColor.DarkBlue,// Square,                                    Square, 
+                ConsoleColor.DarkBlue,                     // Parenthesis,          Parenthesis, 
+                ConsoleColor.DarkMagenta,                     // Colon,             Colon, 
+                ConsoleColor.DarkMagenta,                         //                SemiColon,
+                ConsoleColor.DarkCyan,                     // ClassName,            ClassName, 
+                ConsoleColor.DarkCyan,// ClassInherit,                              ClassInherit, 
+                ConsoleColor.DarkCyan,// VariableName                               VariableName,
+                ConsoleColor.DarkBlue, // VariableType                              VariableType,
+                ConsoleColor.Yellow,                                 //             VariableValue,
+                ConsoleColor.DarkBlue,                               //             MethodOpen,
+                ConsoleColor.DarkBlue,                               //             MethodClose,
+                ConsoleColor.DarkMagenta,                            //             MethodSet,
+                ConsoleColor.DarkBlue,                               //             MethodEnd,
+                ConsoleColor.DarkMagenta,                            //             MethodReturn,
+                ConsoleColor.DarkCyan,                               //             MethodName
+                ConsoleColor.Cyan,                                   //             Instruct
                 ConsoleColor.Red
 
             };
@@ -427,7 +436,14 @@ namespace PhiBasicTranslator
             {
                 string cut = content.Substring(i);
 
-                string val = ParseUtilities.MatchesVariable(cut);
+                string prev = string.Empty;
+
+                if (i > 0)
+                {
+                    prev = content[i - 1].ToString();
+                }
+
+                string val = ParseUtilities.MatchesVariable(cut, prev);
 
                 if (val != string.Empty)
                 {

@@ -21,7 +21,7 @@ namespace PhiBasicTranslator.Structure
         public static readonly string AccessDeclarePublic = "public";
         //public static readonly string AccessDeclarePrivate = "private";
         public static readonly string AccessDeclareSafe = "safe";
-        public static readonly string MethodEndDeclare = "end";
+        public static readonly string MethodEndDeclare = "[end";
         public static readonly string ValueStringDelcare = "'";
         public static readonly string TypeRawDeclare = "~";
         public static readonly string ClassInherit = ":";
@@ -37,11 +37,10 @@ namespace PhiBasicTranslator.Structure
 
         public static readonly string varSTR = "str";
         public static readonly string varINT = "int";
-        public static readonly string varDEC = "dec";
-        public static readonly string varFIN = "fin";
+        public static readonly string varDEC = "dec"; // decimal
+        public static readonly string varFIN = "fin"; // float int
         public static readonly string varVAR = "var";
-        public static readonly string varBYT = "byt";
-
+        public static readonly string varBYT = "byt"; // byte
 
         public static readonly List<string> VariableTypes = new List<string>()
         {
@@ -51,6 +50,57 @@ namespace PhiBasicTranslator.Structure
             varVAR,
             varBYT,
             varFIN
+        };
+
+        public static readonly string instWhile = "while";
+        public static readonly string instOrder = "order";
+        public static readonly string instIf = "if";
+        public static readonly string instElse = "else";
+        public static readonly string instLog = "log";
+        public static readonly string instIs = "is";      // ==
+        public static readonly string instIsAlt = "==";   // ==
+        public static readonly string instHas = "has";    // contians()
+        public static readonly string instNot = "not";    // !=
+        public static readonly string instNotAlt = "!=";  // !=
+        public static readonly string instGreater = ">";    // >
+        public static readonly string instLesser = "<";     // <
+        public static readonly string instGreaterEqu = ">=";    // >=
+        public static readonly string instLesserEqu = "<=";     // <=
+        public static readonly string instAnd = "and";    // &&
+        public static readonly string instOr = "or";      // ||
+        public static readonly string instPlus = "+";
+        public static readonly string instMinus = "-";
+        public static readonly string instMult = "*";
+        public static readonly string instDivide = "/";
+        public static readonly string instMod = "%";
+
+        public static readonly List<string> instructCommandList = new List<string>()
+        {
+            instWhile,
+            instOrder,
+            instIf,
+            instElse,
+            instLog,
+            instIs,
+            instHas,
+            instNot,
+            instAnd,
+            instOr
+        };
+
+        public static readonly List<string> instructModifyList = new List<string>()
+        {
+            instIsAlt,
+            instNotAlt,
+            instGreater,
+            instLesser,
+            instGreaterEqu,
+            instLesserEqu,
+            instPlus,
+            instMinus,
+            instMult,
+            instDivide,
+            instMod
         };
 
         public static readonly List<TermPair> SysList = new List<TermPair>()

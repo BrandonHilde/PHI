@@ -1,8 +1,10 @@
 ﻿using PhiBasicTranslator.Structure;
 using System;
 using System.Collections.Generic;
+using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Linq;
+using System.Reflection;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -46,40 +48,157 @@ namespace PhiBasicTranslator.ParseEngine
             return raw;
         }
 
+        public static ContentProfile ProfileInstructs(string content, ContentProfile previous)
+        {
+            for (int i = 0; i < content.Length; i++)
+            {
+                if (previous.ContentInside[i] == Inside.None)
+                {
+                    string cut = content.Substring(i);
+
+                    string letter = content[i].ToString();
+
+                    string prev = string.Empty;
+
+                    if (i > 0)
+                    {
+                        prev = content[i - 1].ToString();
+                    }
+
+                    string inst = MatchesInstruct(cut, prev);
+
+                    if (inst != string.Empty)
+                    {
+                        for (int j = i; j < inst.Length + i; j++)
+                        {
+                            previous.ContentInside[j] = Inside.Instruct;
+                        }
+                    }  
+                }
+            }
+                
+            return previous;
+        }
+
+        public static ContentProfile ProfileBasics(string content, ContentProfile previous)
+        {
+            for (int i = 0; i < content.Length; i++)
+            {
+                string letter = content[i].ToString();
+
+                if (previous.ContentInside[i] == Inside.None)
+                {
+                    if(letter == Defs.VariableSetClosure) //;
+                    {
+                        previous.ContentInside[i] = Inside.SemiColon;
+                    }
+                }
+            }
+
+            return previous;
+        }
+
+        public static ContentProfile ProfileMethods(string content, ContentProfile previous)
+        {
+            Inside inside = Inside.None;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                if (previous.ContentInside[i] == Inside.None)
+                {
+                    string cut = content.Substring(i);
+
+                    string letter = content[i].ToString();
+
+                    string prev = string.Empty;
+
+                    if (i > 0)
+                    {
+                        prev = content[i - 1].ToString();
+                    }
+
+                    if (inside == Inside.MethodName)
+                    {
+                        if (letter == Defs.VariableSet) //:
+                        {
+                            inside = Inside.MethodSet;
+                        }
+                        else if (letter == Defs.squareClose)
+                        {
+                            inside = Inside.MethodClose;
+                            previous.ContentInside[i] = inside;
+                        }
+
+                        previous.ContentInside[i] = inside;
+                    }
+
+                    if (!Defs.Alphabet.Contains(prev))
+                    {
+                        if (letter == Defs.squareOpen)
+                        {
+                            previous.ContentInside[i] = Inside.MethodOpen;
+
+                            inside = Inside.MethodName;
+                        }
+                    }
+
+                    if (inside == Inside.MethodSet)
+                    {
+                        if (letter == Defs.squareClose)
+                        {
+                            inside = Inside.MethodClose;
+                            previous.ContentInside[i] = inside;
+                        }
+                    }
+
+                    if (inside == Inside.MethodClose)
+                    {
+                        if (cut.StartsWith(Defs.MethodEndDeclare))
+                        {
+                            inside = Inside.MethodEnd;
+                        }
+                    }
+
+                    if (inside == Inside.MethodEnd)
+                    {
+                        if (letter == Defs.VariableSet) //:
+                        {
+                            inside = Inside.MethodReturn;
+                        }
+
+                        previous.ContentInside[i] = inside;
+                    }
+
+                    if (inside == Inside.MethodReturn)
+                    {
+                        if (letter == Defs.squareClose)
+                        {
+                            previous.ContentInside[i] = Inside.MethodEnd;
+                        }
+                    }
+                }
+            }
+
+            return previous;
+        }
         public static ContentProfile ProfileVariables(string content, ContentProfile previous)
         {
             for (int i = 0; i < content.Length; i++)
             {
                 string cut = content.Substring(i);
 
-                string val = MatchesVariable(cut);
+                string prev = string.Empty;
+
+                if (i > 0)
+                {
+                    prev = content[i - 1].ToString();
+                }
+
+                string val = MatchesVariable(cut, prev);
 
                 if (val != string.Empty && previous.ContentInside[i] == Inside.None)
                 {
-                    if (val == Defs.varSTR)
-                    {
-                        previous = ParseVariables.ProfileSTR(content, i, previous);
-                    }
-                    else if (val == Defs.varINT)
-                    {
-                        previous = ParseVariables.ProfileINT(content, i, previous);
-                    }
-                    else if (val == Defs.varBYT)
-                    {
-
-                    }
-                    else if (val == Defs.varDEC)
-                    {
-
-                    }
-                    else if (val == Defs.varFIN)
-                    {
-
-                    }
-                    else if (val == Defs.varVAR)
-                    {
-
-                    }
+                    previous = ParseVariables.ProfileVAR(content, i, val, previous);
                 }
             }
 
@@ -354,11 +473,44 @@ namespace PhiBasicTranslator.ParseEngine
 
             return clear;
         }
-        public static string MatchesVariable(string content)
+        public static string MatchesVariable(string content, string prev)
         {
             string vname = string.Empty;
 
+            if (Defs.Alphabet.Contains(prev))
+            {
+                return vname;
+            }
+
             foreach (string val in Defs.VariableTypes)
+            {
+                if (content.StartsWith(val))
+                {
+                    vname = val;
+                }
+            }
+
+            return vname;
+        }
+
+        public static string MatchesInstruct(string content, string prev)
+        {
+            string vname = string.Empty;
+
+            foreach (string val in Defs.instructModifyList)
+            {
+                if (content.StartsWith(val))
+                {
+                    return val;
+                }
+            }
+
+            if (Defs.Alphabet.Contains(prev))
+            {
+                return vname;
+            }
+
+            foreach (string val in Defs.instructCommandList)
             {
                 if (content.StartsWith(val))
                 {

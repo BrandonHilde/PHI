@@ -25,6 +25,13 @@ namespace PhiBasicTranslator.Structure
         VariableName,
         VariableType,
         VariableValue,
+        MethodOpen,
+        MethodClose,
+        MethodSet,
+        MethodEnd,
+        MethodReturn,
+        MethodName,
+        Instruct
     };
     public class ContentProfile
     {
