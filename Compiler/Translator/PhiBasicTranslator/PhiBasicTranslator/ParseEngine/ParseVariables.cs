@@ -75,7 +75,7 @@ namespace PhiBasicTranslator.ParseEngine
         {
             string cut = content.Substring(index);
 
-            if (cut.StartsWith(vType))
+            if (cut.StartsWith(vType + " "))
             {
                 for (int i = index; i < index + vType.Length && i < content.Length; i++)
                 {

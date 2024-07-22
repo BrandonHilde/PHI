@@ -12,7 +12,18 @@ namespace PhiBasicTranslator.ParseEngine
 {
     public class ParseUtilities
     {
+        public static ContentProfile ProfileContent(string content)
+        {
+            ContentProfile prf = ProfilePrepare(content);
 
+            prf = ProfileClasses(content, prf);
+            prf = ProfileVariables(content, prf);
+            prf = ProfileMethods(content, prf);
+            prf = ProfileInstructs(content, prf);
+            prf = ProfileBasics(content, prf);
+
+            return prf;
+        }
         public static bool IsIgnorable(string content, int index)
         {
             if (index > 1 && content.Length > index)
@@ -212,7 +223,7 @@ namespace PhiBasicTranslator.ParseEngine
 
             if(previous.ContentInside.Length == content.Length)
             {
-                for (int i = 0; i < content.Length; ++i)
+                for (int i = 0; i < content.Length; i++)
                 {
                     string remaining = content.Substring(i);
 

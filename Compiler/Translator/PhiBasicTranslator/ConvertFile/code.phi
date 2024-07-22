@@ -7,6 +7,12 @@ phi.TestClass:OtherClass
     Comment '
     #
 
+    [TestClass:int value: 0;]
+
+        
+        
+    [end]
+
     str commentTest: '#test ignore ####';
 
     str mutliline: '

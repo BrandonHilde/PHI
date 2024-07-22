@@ -12,12 +12,7 @@ namespace PhiBasicTranslator
         {
             string content = File.ReadAllText(file);
 
-            ContentProfile prf = ParseUtilities.ProfilePrepare(content);
-            prf = ParseUtilities.ProfileClasses(content, prf);
-            prf = ParseUtilities.ProfileVariables(content, prf);
-            prf = ParseUtilities.ProfileMethods(content, prf);
-            prf = ParseUtilities.ProfileInstructs(content, prf);
-            prf = ParseUtilities.ProfileBasics(content, prf);   
+            ContentProfile prf = ParseUtilities.ProfileContent(content);
 
             ConsoleColor[] clrs =
             {
