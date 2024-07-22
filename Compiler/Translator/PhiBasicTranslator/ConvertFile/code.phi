@@ -33,6 +33,7 @@ phi.TestClass:OtherClass
     var test: 'sfdfsdf';
     dec pi: 3.14;
     fin phi: 1.618;
+    bln active: true;
 
     int numberArray: 1 3 5 9 2;
     str testArray: 'one' 'two' 'three';

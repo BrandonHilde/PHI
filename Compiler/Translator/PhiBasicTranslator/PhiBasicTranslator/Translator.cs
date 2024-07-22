@@ -32,6 +32,12 @@ namespace PhiBasicTranslator
                 ConsoleColor.DarkCyan,// ClassInherit,                              ClassInherit, 
                 ConsoleColor.DarkCyan,// VariableName                               VariableName,
                 ConsoleColor.DarkBlue, // VariableType                              VariableType,
+                ConsoleColor.DarkBlue,
+                ConsoleColor.DarkBlue,
+                ConsoleColor.DarkBlue,
+                ConsoleColor.DarkBlue,
+                ConsoleColor.DarkBlue,
+                ConsoleColor.DarkBlue,
                 ConsoleColor.Yellow,                                 //             VariableValue,
                 ConsoleColor.DarkBlue,                               //             MethodOpen,
                 ConsoleColor.DarkBlue,                               //             MethodClose,
@@ -40,6 +46,14 @@ namespace PhiBasicTranslator
                 ConsoleColor.DarkMagenta,                            //             MethodReturn,
                 ConsoleColor.DarkCyan,                               //             MethodName
                 ConsoleColor.Cyan,                                   //             Instruct
+                ConsoleColor.Red,
+                ConsoleColor.Red,
+                ConsoleColor.Red,
+                ConsoleColor.Red,
+                ConsoleColor.Red,
+                ConsoleColor.Red,
+                ConsoleColor.Red,
+                ConsoleColor.Red,
                 ConsoleColor.Red
 
             };
@@ -74,7 +88,7 @@ namespace PhiBasicTranslator
 
                 if (sub.StartsWith(Defs.classStartPHI)) //.phi:name {}
                 {
-                    PhiClass ph = extractClassContent(sub);
+                    PhiClass ph = ExtractClassContent(sub);
                 }
                 else if (sub.StartsWith(Defs.classStartx86ASM)) //.asm {}
                 {
@@ -175,7 +189,7 @@ namespace PhiBasicTranslator
 
             return value;
         }
-        public List<string> extractStrContent(string content)
+        public List<string> ExtractStrContent(string content)
         {
             List<string> value = new List<string>();
 
@@ -218,7 +232,7 @@ namespace PhiBasicTranslator
 
             return value;
         }
-        public PhiClass extractClassContent(string content)
+        public PhiClass ExtractClassContent(string content)
         {
             PhiClass phiClass = new PhiClass();
 
@@ -438,21 +452,21 @@ namespace PhiBasicTranslator
                     prev = content[i - 1].ToString();
                 }
 
-                string val = ParseUtilities.MatchesVariable(cut, prev);
+                Inside val = ParseUtilities.MatchesVariable(cut, prev);
 
-                if (val != string.Empty)
+                if (val != Inside.None)
                 {
-                    if (val == Defs.varSTR)
+                    if (val == Inside.VariableTypeStr)
                     {
-                        int inx = cut.IndexOf(Defs.VariableSet, val.Length + 1);
-                        int len = inx - val.Length - 1;
+                        int inx = cut.IndexOf(Defs.VariableSet, val.ToString().Length + 1);
+                        int len = inx - val.ToString().Length - 1;
 
-                        string nme = cut.Substring(val.Length + 1, len);
+                        string nme = cut.Substring(val.ToString().Length + 1, len);
                         string vle = cut.Substring(inx);
 
                         nme = ParseUtilities.ClearLabel(nme, Defs.Alphabet);
 
-                        List<string> raw = extractStrContent(vle);
+                        List<string> raw = ExtractStrContent(vle);
 
                         phiVariables.Add(new PhiVariables
                         {
@@ -461,12 +475,12 @@ namespace PhiBasicTranslator
                             Values = raw
                         });
                     }
-                    else if (val == Defs.varINT)
+                    else if (val == Inside.VariableTypeInt)
                     {
-                        int inx = cut.IndexOf(Defs.VariableSet, val.Length + 1);
-                        int len = inx - val.Length - 1;
+                        int inx = cut.IndexOf(Defs.VariableSet, val.ToString().Length + 1);
+                        int len = inx - val.ToString().Length - 1;
 
-                        string nme = cut.Substring(val.Length + 1, len);
+                        string nme = cut.Substring(val.ToString().Length + 1, len);
                         string vle = cut.Substring(inx);
 
                         nme = ParseUtilities.ClearLabel(nme, Defs.Alphabet);
@@ -479,14 +493,6 @@ namespace PhiBasicTranslator
                             ValueRaw = "",
                             Values = raw
                         });
-                    }
-                    else if (val == Defs.varDEC)
-                    {
-
-                    }
-                    else if (val == Defs.varVAR)
-                    {
-
                     }
                 }
 

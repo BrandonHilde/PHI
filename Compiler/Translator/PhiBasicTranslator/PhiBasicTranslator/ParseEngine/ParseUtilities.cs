@@ -205,9 +205,9 @@ namespace PhiBasicTranslator.ParseEngine
                     prev = content[i - 1].ToString();
                 }
 
-                string val = MatchesVariable(cut, prev);
+                Inside val = MatchesVariable(cut, prev);
 
-                if (val != string.Empty && previous.ContentInside[i] == Inside.None)
+                if (val != Inside.None && previous.ContentInside[i] == Inside.None)
                 {
                     previous = ParseVariables.ProfileVAR(content, i, val, previous);
                 }
@@ -484,24 +484,28 @@ namespace PhiBasicTranslator.ParseEngine
 
             return clear;
         }
-        public static string MatchesVariable(string content, string prev)
+        public static Inside MatchesVariable(string content, string prev)
         {
-            string vname = string.Empty;
-
             if (Defs.Alphabet.Contains(prev))
             {
-                return vname;
+                return Inside.None;
             }
 
             foreach (string val in Defs.VariableTypes)
             {
                 if (content.StartsWith(val))
                 {
-                    vname = val;
+                    if (val.ToString() == Defs.varBLN) return Inside.VariableTypeBln;
+                    if (val.ToString() == Defs.varBYT) return Inside.VariableTypeByt;
+                    if (val.ToString() == Defs.varDEC) return Inside.VariableTypeDec;
+                    if (val.ToString() == Defs.varFIN) return Inside.VariableTypeFin;
+                    if (val.ToString() == Defs.varINT) return Inside.VariableTypeInt;
+                    if (val.ToString() == Defs.varSTR) return Inside.VariableTypeStr;
+                    if (val.ToString() == Defs.varVAR) return Inside.VariableTypeVar;
                 }
             }
 
-            return vname;
+            return Inside.None;
         }
 
         public static string MatchesInstruct(string content, string prev)

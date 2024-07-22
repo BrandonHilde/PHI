@@ -41,6 +41,7 @@ namespace PhiBasicTranslator.Structure
         public static readonly string varFIN = "fin"; // float int
         public static readonly string varVAR = "var";
         public static readonly string varBYT = "byt"; // byte
+        public static readonly string varBLN = "bln"; // boolean
 
         public static readonly List<string> VariableTypes = new List<string>()
         {
@@ -49,7 +50,8 @@ namespace PhiBasicTranslator.Structure
             varDEC,
             varVAR,
             varBYT,
-            varFIN
+            varFIN,
+            varBLN
         };
 
         public static readonly string instWhile = "while";
