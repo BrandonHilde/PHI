@@ -30,5 +30,14 @@ namespace PhiBasicTranslator.GeneralUtilities
 
             File.WriteAllText(fileName, content);
         }
+
+        public static List<T> CopyList<T>(List<T> list)
+        {
+            List<T> list2 = new List<T>();
+
+            foreach (T item in list) { list2.Add(item); }
+
+            return list2;
+        }
     }
 }

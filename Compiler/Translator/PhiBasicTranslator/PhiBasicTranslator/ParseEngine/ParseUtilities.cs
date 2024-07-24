@@ -149,7 +149,14 @@ namespace PhiBasicTranslator.ParseEngine
                         {
                             previous.ContentInside[i] = Inside.MethodOpen;
 
-                            inside = Inside.MethodName;
+                            if (cut.StartsWith(Defs.MethodEndDeclare))
+                            {
+                                inside = Inside.MethodEnd;
+                            }
+                            else
+                            {
+                                inside = Inside.MethodName;
+                            }
                         }
                     }
 
@@ -162,13 +169,13 @@ namespace PhiBasicTranslator.ParseEngine
                         }
                     }
 
-                    if (inside == Inside.MethodClose)
-                    {
-                        if (cut.StartsWith(Defs.MethodEndDeclare))
-                        {
-                            inside = Inside.MethodEnd;
-                        }
-                    }
+                    //if (inside == Inside.MethodOpen)
+                    //{
+                    //    if (cut.StartsWith(Defs.MethodEndDeclare))
+                    //    {
+                    //        inside = Inside.MethodEnd;
+                    //    }
+                    //}
 
                     if (inside == Inside.MethodEnd)
                     {
@@ -180,11 +187,12 @@ namespace PhiBasicTranslator.ParseEngine
                         previous.ContentInside[i] = inside;
                     }
 
-                    if (inside == Inside.MethodReturn)
+                    if (inside == Inside.MethodReturn || inside == Inside.MethodEnd)
                     {
                         if (letter == Defs.squareClose)
                         {
                             previous.ContentInside[i] = Inside.MethodEnd;
+                            inside = Inside.None;
                         }
                     }
                 }
@@ -289,7 +297,7 @@ namespace PhiBasicTranslator.ParseEngine
 
                             if (letter == Defs.curlyOpen)
                             {
-                                inside = Inside.Curly;
+                                inside = Inside.CurlyOpen;
                                 previous.ContentInside[m] = inside;
                                 break;
                             }
@@ -298,10 +306,15 @@ namespace PhiBasicTranslator.ParseEngine
                         startName = false;
                     }
 
-                    if (content[i].ToString() == Defs.curlyClose
-                        || content[i].ToString() == Defs.curlyOpen)
+                    if (content[i].ToString() == Defs.curlyOpen)
                     {
-                        inside = Inside.Curly;
+                        inside = Inside.CurlyOpen;
+                        previous.ContentInside[i] = inside;
+                    }
+
+                    if (content[i].ToString() == Defs.curlyClose)
+                    {
+                        inside = Inside.CurlyClose;
                         previous.ContentInside[i] = inside;
                     }
 

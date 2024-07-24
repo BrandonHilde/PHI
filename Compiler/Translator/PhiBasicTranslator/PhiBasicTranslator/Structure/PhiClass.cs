@@ -14,16 +14,28 @@ namespace PhiBasicTranslator.Structure
     {
         public PhiCodebase() { }
 
-        public List<PhiClass> ClassList { get; set; }
+        public List<PhiClass> ClassList { get; set; } = new List<PhiClass>();
 
         public void Save(string File)
         {
-            FileManager.SaveToFile<PhiCodebase>(File, this);
+            FileManager.SaveToFile(File, this);
         }
 
         public static PhiCodebase Load(string File)
         {
             return FileManager.LoadFromFile<PhiCodebase>(File);
+        }
+
+        public PhiCodebase Copy()
+        {
+            List<PhiClass> clst = new List<PhiClass>();
+
+            foreach (PhiClass cl in ClassList) clst.Add(cl.Copy());
+
+            return new PhiCodebase
+            {
+                ClassList = clst
+            };
         }
     }
 
@@ -37,8 +49,29 @@ namespace PhiBasicTranslator.Structure
         public string RawContent { get; set; } = string.Empty;
 
         public PhiClass() { }
-        public List<PhiMethod> Methods { get; set; }
-        public List<PhiVariables> Variables { get; set; }
+        public List<PhiMethod> Methods { get; set; } = new List<PhiMethod>();
+        public List<PhiVariables> Variables { get; set; } = new List<PhiVariables>();
+
+        public PhiClass Copy()
+        {
+            List<PhiVariables> vars = new List<PhiVariables>();
+
+            foreach (PhiVariables v in Variables) vars.Add(v.Copy());
+
+            List<PhiMethod> mthds = new List<PhiMethod>();
+
+            foreach (PhiMethod mth in Methods) mthds.Add(mth.Copy());
+
+            return new PhiClass
+            {
+                Type = Type,
+                Name = Name,
+                Inherit = Inherit,
+                RawContent = RawContent,
+                Methods = mthds,
+                Variables = vars
+            };
+        }
     }
 
     public class PhiMethod
@@ -52,6 +85,22 @@ namespace PhiBasicTranslator.Structure
         public PhiMethod() { }
 
         public List<PhiVariables> Variables = new List<PhiVariables>();
+
+        public PhiMethod Copy()
+        {
+            List<PhiVariables> vars = new List<PhiVariables>();
+
+            foreach (var v in Variables) vars.Add(v.Copy());
+
+            return new PhiMethod
+            {
+                Name = Name,
+                End = End,
+                Content = Content,
+                Remainer = Remainer,
+                Variables = vars
+            };
+        }
     }
 
     public class PhiVariables
@@ -63,6 +112,22 @@ namespace PhiBasicTranslator.Structure
         public string ValueRaw = string.Empty;
         public List<string> Values { get; set; } = new List<string>();
 
-        public List<PhiVariables> SubVariables { get; set; }
+        public List<PhiVariables> SubVariables { get; set; } = new List<PhiVariables>();
+
+        public PhiVariables Copy()
+        {
+            List<PhiVariables> vars = new List<PhiVariables>();
+
+            foreach (var v in SubVariables) vars.Add(v.Copy());
+
+            return new PhiVariables
+            {
+                Name = Name,
+                varType = varType,
+                ValueRaw = ValueRaw,
+                Values = FileManager.CopyList(Values),
+                SubVariables = vars
+            };
+        }
     }
 }

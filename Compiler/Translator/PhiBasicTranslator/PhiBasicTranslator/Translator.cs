@@ -42,10 +42,13 @@ namespace PhiBasicTranslator
                 ConsoleColor.DarkBlue,
                 ConsoleColor.Yellow,                                 //             VariableValue,
                 ConsoleColor.DarkBlue,                               //             MethodOpen,
-                ConsoleColor.DarkBlue,                               //             MethodClose,
+                ConsoleColor.Gray,                               //             MethodClose,
+                ConsoleColor.Gray,
+                ConsoleColor.Gray,
+                ConsoleColor.Gray,
                 ConsoleColor.DarkMagenta,                            //             MethodSet,
-                ConsoleColor.DarkBlue,                               //             MethodEnd,
-                ConsoleColor.DarkMagenta,                            //             MethodReturn,
+                ConsoleColor.Cyan,                               //             MethodEnd,
+                ConsoleColor.DarkYellow,                            //             MethodReturn,
                 ConsoleColor.DarkCyan,                               //             MethodName
                 ConsoleColor.Cyan,                                   //             Instruct
                 ConsoleColor.Red,
@@ -81,6 +84,7 @@ namespace PhiBasicTranslator
         {
             string name = "";
             string vnme = "";
+            string mnme = "";
             string vval = "";
             string inherit = "";
 
@@ -89,10 +93,13 @@ namespace PhiBasicTranslator
             List<PhiClass> classes = new List<PhiClass>();
 
             PhiClass current = new PhiClass();
+            PhiMethod method = new PhiMethod();
             PhiVariables varble = new PhiVariables();
 
             Inside last = Inside.None;
             Inside inside = Inside.None;
+
+            bool insideMethod = false;
 
             for (int i = 0; i < content.Length; i++)
             {
@@ -112,6 +119,20 @@ namespace PhiBasicTranslator
                     else if (inside == Inside.AsmClassStart)
                         current.Type = PhiType.ASM;
                     #endregion
+
+                    if(inside == Inside.MethodOpen)
+                    {
+                        insideMethod = true;
+                    }
+                    
+                    if(last == Inside.MethodEnd && insideMethod)
+                    {
+                        insideMethod = false;
+
+                        current.Methods.Add(method.Copy());
+                        
+                        method = new PhiMethod();
+                    }
                 }
 
                 #region Class Values
@@ -132,7 +153,7 @@ namespace PhiBasicTranslator
                     inherit += letter;
                 }
 
-                if(inside == Inside.Curly)
+                if(inside == Inside.CurlyOpen)
                 {
                     if(current.Inherit == string.Empty)
                     {
@@ -179,14 +200,39 @@ namespace PhiBasicTranslator
 
                     if (last == Inside.VariableName)
                     {
-                        varble.Name = vnme;
+                        varble.Name = ParseUtilities.ClearLabel(vnme, Defs.Alphabet);
+                        vnme = string.Empty;
                     }
 
                     if(last == Inside.VariableEnd)
                     {
                         varble.ValueRaw = vval;
 
-                        current.Variables.Add(varble);
+                        vval = string.Empty;
+
+                        if (insideMethod)
+                        {
+                            method.Variables.Add(varble.Copy());
+                        }
+                        else
+                        {
+                            current.Variables.Add(varble.Copy());
+                        }
+
+                        varble = new PhiVariables();
+                    }
+
+                    if(last == Inside.MethodName)
+                    {
+                        method.Name = ParseUtilities.ClearLabel(mnme, Defs.Alphabet);
+                        mnme = string.Empty;
+                    }
+
+                    if(inside == Inside.CurlyClose)
+                    {
+                        classes.Add(current.Copy());
+
+                        current = new PhiClass();
                     }
                 }
 
@@ -195,11 +241,20 @@ namespace PhiBasicTranslator
                     vnme += letter;
                 }
 
-                if(inside == Inside.VariableValue)
+                if(inside == Inside.VariableValue || inside == Inside.String)
                 {
                     vval += letter;
                 }
 
+
+                #endregion
+
+                #region Methods
+
+                if (inside == Inside.MethodName)
+                {
+                    mnme += letter;
+                }
 
                 #endregion
 
