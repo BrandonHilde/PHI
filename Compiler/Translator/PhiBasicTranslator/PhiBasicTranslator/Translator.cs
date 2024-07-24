@@ -12,6 +12,8 @@ namespace PhiBasicTranslator
         {
             string content = File.ReadAllText(file);
 
+            TranslateCode(content);
+
             ContentProfile prf = ParseUtilities.ProfileContent(content);
 
             ConsoleColor[] clrs =
@@ -68,35 +70,143 @@ namespace PhiBasicTranslator
             Console.ForegroundColor = ConsoleColor.White;   
         }
 
-        public string TranslateFile(string file)
+        public List<PhiClass> TranslateFile(string file)
         {
             string content = File.ReadAllText(file);
 
             return TranslateCode(content);
         }
 
-        public string TranslateCode(string content)
+        public List<PhiClass> TranslateCode(string content)
         {
-            string ASM = "";
+            string name = "";
+            string vnme = "";
+            string vval = "";
+            string inherit = "";
 
-            // remember to check for string ignore
-            string rawContent = ParseUtilities.ClearComments(content);
+            ContentProfile profile = ParseUtilities.ProfileContent(content);
+
+            List<PhiClass> classes = new List<PhiClass>();
+
+            PhiClass current = new PhiClass();
+            PhiVariables varble = new PhiVariables();
+
+            Inside last = Inside.None;
+            Inside inside = Inside.None;
 
             for (int i = 0; i < content.Length; i++)
             {
-                string sub = content.Substring(i);
+                string letter = content[i].ToString();
 
-                if (sub.StartsWith(Defs.classStartPHI)) //.phi:name {}
+                inside = profile.ContentInside[i];
+
+                bool match = last == inside;
+
+                if (!match)
                 {
-                    PhiClass ph = ExtractClassContent(sub);
+                    #region Class Type Set
+                    if (inside == Inside.PhiClassStart)
+                        current.Type = PhiType.PHI;
+                    else if (inside == Inside.ArmClassStart)
+                        current.Type = PhiType.ARM;
+                    else if (inside == Inside.AsmClassStart)
+                        current.Type = PhiType.ASM;
+                    #endregion
                 }
-                else if (sub.StartsWith(Defs.classStartx86ASM)) //.asm {}
+
+                #region Class Values
+
+                if (inside == Inside.ClassName)
                 {
-                    ASM += ExtractContent(sub, Defs.classStartx86ASM);
+                    name += letter;
                 }
+
+                if (inside == Inside.ClassInherit)
+                {
+                    if (current.Name == string.Empty)
+                    {
+                        current.Name = ParseUtilities.ClearLabel(name, Defs.Alphabet);
+                        name = string.Empty;
+                    }
+                    
+                    inherit += letter;
+                }
+
+                if(inside == Inside.Curly)
+                {
+                    if(current.Inherit == string.Empty)
+                    {
+                        current.Inherit = ParseUtilities.ClearLabel(inherit, Defs.Alphabet);    
+                        inherit = string.Empty;
+                    }
+                }
+                #endregion
+
+                #region Variables
+
+                if(!match)
+                {
+                    #region var type set
+                    if (inside == Inside.VariableTypeBln)
+                    {
+                        varble.varType = Inside.VariableTypeBln;
+                    }
+                    else if (inside == Inside.VariableTypeByt)
+                    {
+                        varble.varType = Inside.VariableTypeByt;
+                    }
+                    else if (inside == Inside.VariableTypeDec)
+                    {
+                        varble.varType = Inside.VariableTypeDec;
+                    }
+                    else if (inside == Inside.VariableTypeFin)
+                    {
+                        varble.varType = Inside.VariableTypeFin;
+                    }
+                    else if (inside == Inside.VariableTypeInt)
+                    {
+                        varble.varType = Inside.VariableTypeInt;
+                    }
+                    else if (inside == Inside.VariableTypeStr)
+                    {
+                        varble.varType = Inside.VariableTypeStr;
+                    }
+                    else if (inside == Inside.VariableTypeVar)
+                    {
+                        varble.varType = Inside.VariableTypeVar;
+                    }
+                    #endregion
+
+                    if (last == Inside.VariableName)
+                    {
+                        varble.Name = vnme;
+                    }
+
+                    if(last == Inside.VariableEnd)
+                    {
+                        varble.ValueRaw = vval;
+
+                        current.Variables.Add(varble);
+                    }
+                }
+
+                if (inside == Inside.VariableName)
+                {
+                    vnme += letter;
+                }
+
+                if(inside == Inside.VariableValue)
+                {
+                    vval += letter;
+                }
+
+
+                #endregion
+
+                last = inside;
             }
 
-            return ASM;
+            return classes;
         }
 
         public string ExtractContent(string content, string begin)

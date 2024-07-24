@@ -33,7 +33,7 @@ namespace PhiBasicTranslator.ParseEngine
 
                     if (content[i].ToString() == Defs.VariableSetClosure) // ;
                     {
-                        previous.ContentInside[i] = Inside.SemiColon;
+                        previous.ContentInside[i] = Inside.VariableEnd;
                         break;
                     }
                 }

@@ -18,6 +18,6 @@ Translator translator = new Translator(file);
 
 //string code = "";
 
-string asm = translator.TranslateFile("../../../code.phi");
+//string asm = translator.TranslateFile("../../../code.phi");
 
-Console.WriteLine(asm);
+//Console.WriteLine(asm);

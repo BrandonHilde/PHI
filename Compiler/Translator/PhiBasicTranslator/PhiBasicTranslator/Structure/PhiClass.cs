@@ -26,13 +26,17 @@ namespace PhiBasicTranslator.Structure
             return FileManager.LoadFromFile<PhiCodebase>(File);
         }
     }
+
+    public enum PhiType { ASM, ARM, PHI }
     public class PhiClass
     {
-        public PhiClass() { }   
+        public PhiType Type { get; set; } = PhiType.PHI;
         public string Name { get; set; } = string.Empty;
         public string Inherit { get; set; } = string.Empty;
-
+       
         public string RawContent { get; set; } = string.Empty;
+
+        public PhiClass() { }
         public List<PhiMethod> Methods { get; set; }
         public List<PhiVariables> Variables { get; set; }
     }
@@ -54,6 +58,7 @@ namespace PhiBasicTranslator.Structure
     {
         public PhiVariables() { }
 
+        public Inside varType = Inside.VariableTypeVar;
         public string Name = string.Empty;
         public string ValueRaw = string.Empty;
         public List<string> Values { get; set; } = new List<string>();
