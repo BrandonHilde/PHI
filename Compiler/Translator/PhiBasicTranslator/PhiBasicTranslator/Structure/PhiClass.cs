@@ -51,6 +51,7 @@ namespace PhiBasicTranslator.Structure
         public PhiClass() { }
         public List<PhiMethod> Methods { get; set; } = new List<PhiMethod>();
         public List<PhiVariables> Variables { get; set; } = new List<PhiVariables>();
+        public List<PhiInstruct> Instructs { get; set; } = new List<PhiInstruct>();
 
         public PhiClass Copy()
         {
@@ -62,6 +63,10 @@ namespace PhiBasicTranslator.Structure
 
             foreach (PhiMethod mth in Methods) mthds.Add(mth.Copy());
 
+            List<PhiInstruct> insts = new List<PhiInstruct>();
+
+            foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
+
             return new PhiClass
             {
                 Type = Type,
@@ -69,7 +74,8 @@ namespace PhiBasicTranslator.Structure
                 Inherit = Inherit,
                 RawContent = RawContent,
                 Methods = mthds,
-                Variables = vars
+                Variables = vars,
+                Instructs = insts
             };
         }
     }
@@ -127,6 +133,27 @@ namespace PhiBasicTranslator.Structure
                 ValueRaw = ValueRaw,
                 Values = FileManager.CopyList(Values),
                 SubVariables = vars
+            };
+        }
+    }
+
+    public class PhiInstruct
+    {
+        public string Name = string.Empty;
+        public string Value = string.Empty;
+        public string Content = string.Empty;
+        public PhiInstruct()
+        {
+
+        }
+
+        public PhiInstruct Copy()
+        {
+            return new PhiInstruct
+            {
+                Name = Name,
+                Value = Value,
+                Content = Content
             };
         }
     }

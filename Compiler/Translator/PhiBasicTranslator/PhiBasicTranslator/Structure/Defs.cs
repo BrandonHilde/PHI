@@ -8,6 +8,11 @@ namespace PhiBasicTranslator.Structure
 {
     public static class Defs
     {
+        public static readonly string os16bit = "OS16BIT";
+        public static readonly string replaceValueStart = ";{VALUE:";
+        public static readonly string replaceCodeStart = ";{CODE:";
+        public static readonly string replaceVarStart = ";{VARIABLE:";
+
         public static readonly string classStartPHI = "phi.";
         public static readonly string classStartx86ASM = "asm.";
         public static readonly string classStartArmASM = "arm.";
@@ -32,6 +37,7 @@ namespace PhiBasicTranslator.Structure
 
         public static readonly string NameClosureCharacters = " \t\r\n{:";
         public static readonly string VariableSetClosure = ";";
+        public static readonly string InstructSetClosure = ";;";
         public static readonly string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_1234567890";
         public static readonly string Numbers = "1234567890.-";
 

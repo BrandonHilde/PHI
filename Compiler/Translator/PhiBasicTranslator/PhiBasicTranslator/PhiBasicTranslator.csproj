@@ -10,4 +10,10 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Reference Include="PhiBasicTranslator">
+      <HintPath>bin\Debug\net8.0\PhiBasicTranslator.dll</HintPath>
+    </Reference>
+  </ItemGroup>
+
 </Project>

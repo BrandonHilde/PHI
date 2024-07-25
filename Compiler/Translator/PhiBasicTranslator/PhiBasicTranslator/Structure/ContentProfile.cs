@@ -41,7 +41,9 @@ namespace PhiBasicTranslator.Structure
         MethodEnd,
         MethodReturn,
         MethodName,
-        Instruct
+        Instruct,
+        InstructValue,
+        InstructClose
     };
     public class ContentProfile
     {

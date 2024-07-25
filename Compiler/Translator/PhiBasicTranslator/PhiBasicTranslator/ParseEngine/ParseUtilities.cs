@@ -61,6 +61,8 @@ namespace PhiBasicTranslator.ParseEngine
 
         public static ContentProfile ProfileInstructs(string content, ContentProfile previous)
         {
+            bool start = false;
+
             for (int i = 0; i < content.Length; i++)
             {
                 if (previous.ContentInside[i] == Inside.None)
@@ -80,11 +82,24 @@ namespace PhiBasicTranslator.ParseEngine
 
                     if (inst != string.Empty)
                     {
+                        start = true;
+
                         for (int j = i; j < inst.Length + i; j++)
                         {
                             previous.ContentInside[j] = Inside.Instruct;
                         }
-                    }  
+                    } 
+                    
+                    if(start && letter + prev == Defs.InstructSetClosure)
+                    {
+                        previous.ContentInside[i] = Inside.InstructClose;
+                        start = false;
+                    }
+
+                    if (start && letter != Defs.VariableSetClosure)
+                    {
+                        //previous.ContentInside[i] = Inside.InstructValue;
+                    }
                 }
             }
                 

@@ -1,0 +1,10 @@
+﻿#
+
+Hello world program
+
+#
+
+phi.Hello:OS16BIT
+{
+	log 'hello, world';;
+}

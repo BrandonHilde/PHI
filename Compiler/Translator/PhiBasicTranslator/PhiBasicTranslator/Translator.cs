@@ -7,77 +7,31 @@ namespace PhiBasicTranslator
 {
     public class Translator
     {
+        public string FileContent = string.Empty;
         public Translator() { }
         public Translator(string file) 
         {
             string content = File.ReadAllText(file);
 
-            TranslateCode(content);
+            FileContent = content;
 
-            ContentProfile prf = ParseUtilities.ProfileContent(content);
-
-            ConsoleColor[] clrs =
-            {
-                ConsoleColor.White,  // None                                        None, 
-                ConsoleColor.Green,                     // MultiComment,            MultiComment, 
-                ConsoleColor.Green,                     // Comment,                 Comment, 
-                ConsoleColor.Red, // String,                                        String, 
-                ConsoleColor.Gray,                     // AsmClassStart,            AsmClassStart, 
-                ConsoleColor.DarkGray,                  // ArmClassStart,           ArmClassStart,
-                ConsoleColor.DarkBlue,                 // PhiClassStart,            PhiClassStart, 
-                ConsoleColor.DarkBlue,// Curly,                                     Curly, 
-                ConsoleColor.DarkBlue,// Square,                                    Square, 
-                ConsoleColor.DarkBlue,                     // Parenthesis,          Parenthesis, 
-                ConsoleColor.DarkMagenta,                     // Colon,             Colon, 
-                ConsoleColor.DarkMagenta,                         //                SemiColon,
-                ConsoleColor.DarkCyan,                     // ClassName,            ClassName, 
-                ConsoleColor.DarkCyan,// ClassInherit,                              ClassInherit, 
-                ConsoleColor.DarkCyan,// VariableName                               VariableName,
-                ConsoleColor.DarkBlue, // VariableType                              VariableType,
-                ConsoleColor.DarkBlue,
-                ConsoleColor.DarkBlue,
-                ConsoleColor.DarkBlue,
-                ConsoleColor.DarkBlue,
-                ConsoleColor.DarkBlue,
-                ConsoleColor.DarkBlue,
-                ConsoleColor.Yellow,                                 //             VariableValue,
-                ConsoleColor.DarkBlue,                               //             MethodOpen,
-                ConsoleColor.Gray,                               //             MethodClose,
-                ConsoleColor.Gray,
-                ConsoleColor.Gray,
-                ConsoleColor.Gray,
-                ConsoleColor.DarkMagenta,                            //             MethodSet,
-                ConsoleColor.Cyan,                               //             MethodEnd,
-                ConsoleColor.DarkYellow,                            //             MethodReturn,
-                ConsoleColor.DarkCyan,                               //             MethodName
-                ConsoleColor.Cyan,                                   //             Instruct
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red,
-                ConsoleColor.Red
-
-            };
-
-            for (int i = 0; i < content.Length; i++)
-            {
-                Console.ForegroundColor = clrs[(int)prf.ContentInside[i]];
-
-                Console.Write(content[i]);  
-            }
-
-            Console.ForegroundColor = ConsoleColor.White;   
+            TranslateCode(content);  
         }
 
-        public List<PhiClass> TranslateFile(string file)
+        public void Highlight(string content)
+        {
+
+        }
+
+        public List<string> TranslateFile(string file)
         {
             string content = File.ReadAllText(file);
 
-            return TranslateCode(content);
+            PhiCodebase code = new PhiCodebase();
+
+            code.ClassList = TranslateCode(content);
+
+            return TranslateUtilities.TranslateToX86.ToX86(code);
         }
 
         public List<PhiClass> TranslateCode(string content)
@@ -95,6 +49,7 @@ namespace PhiBasicTranslator
             PhiClass current = new PhiClass();
             PhiMethod method = new PhiMethod();
             PhiVariables varble = new PhiVariables();
+            PhiInstruct instruct = new PhiInstruct();
 
             Inside last = Inside.None;
             Inside inside = Inside.None;
@@ -104,6 +59,9 @@ namespace PhiBasicTranslator
             for (int i = 0; i < content.Length; i++)
             {
                 string letter = content[i].ToString();
+                string prev = string.Empty;
+
+                if(i > 0) prev = content[i - 1].ToString();
 
                 inside = profile.ContentInside[i];
 
@@ -132,6 +90,39 @@ namespace PhiBasicTranslator
                         current.Methods.Add(method.Copy());
                         
                         method = new PhiMethod();
+                    }
+
+                    if(inside == Inside.Instruct)
+                    {
+                        if (i > 1)
+                        {
+                            string cut = content.Substring(i);
+                            string nme = ParseUtilities.MatchesInstruct(cut, prev);
+
+                            if (nme != string.Empty)
+                            {
+                                instruct.Name = nme;
+
+                                #region Instructs
+
+                                for (int j = i + nme.Length; j < content.Length; j++)
+                                {
+                                    if (profile.ContentInside[j] != Inside.InstructClose)
+                                    {
+                                        instruct.Value += content[j];
+                                    }
+                                    else
+                                    {
+                                        current.Instructs.Add(instruct.Copy());
+                                        instruct = new PhiInstruct();
+
+                                        break;
+                                    }
+                                }
+
+                                #endregion
+                            }
+                        }
                     }
                 }
 
