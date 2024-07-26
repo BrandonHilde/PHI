@@ -96,9 +96,9 @@ namespace PhiBasicTranslator.ParseEngine
                         start = false;
                     }
 
-                    if (start && letter != Defs.VariableSetClosure)
+                    if (start)
                     {
-                        //previous.ContentInside[i] = Inside.InstructValue;
+                        previous.Labels[i] = RegionLabel.InstructValue;
                     }
                 }
             }

@@ -25,6 +25,11 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 List<string> values = new List<string>();
 
+                foreach(PhiVariables vrbl in cls.Variables)
+                {
+
+                }
+
                 foreach(PhiInstruct inst in cls.Instructs)
                 {
                     if(inst.Name == Defs.instLog)
@@ -46,7 +51,6 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return ASM;
         }
-
         public static PhiVariables ConvertValue(string value, PhiClass cls, Inside ValueType = Inside.VariableTypeStr, int vcount = 0)
         {
             if(ValueType == Inside.VariableTypeStr)

@@ -9,9 +9,9 @@ namespace PhiBasicTranslator.Structure
     public static class Defs
     {
         public static readonly string os16bit = "OS16BIT";
-        public static readonly string replaceValueStart = ";{VALUE:";
-        public static readonly string replaceCodeStart = ";{CODE:";
-        public static readonly string replaceVarStart = ";{VARIABLE:";
+        public static readonly string replaceValueStart = ";{VALUES}";
+        public static readonly string replaceCodeStart = ";{CODE}";
+        public static readonly string replaceVarStart = ";{VARIABLE}";
 
         public static readonly string classStartPHI = "phi.";
         public static readonly string classStartx86ASM = "asm.";
@@ -64,6 +64,7 @@ namespace PhiBasicTranslator.Structure
         public static readonly string instOrder = "order";
         public static readonly string instIf = "if";
         public static readonly string instElse = "else";
+        public static readonly string instIfElse = instIf + " " + instElse;
         public static readonly string instLog = "log";
         public static readonly string instIs = "is";      // ==
         public static readonly string instIsAlt = "==";   // ==
@@ -88,6 +89,7 @@ namespace PhiBasicTranslator.Structure
             instOrder,
             instIf,
             instElse,
+            instIfElse,
             instLog,
             instIs,
             instHas,

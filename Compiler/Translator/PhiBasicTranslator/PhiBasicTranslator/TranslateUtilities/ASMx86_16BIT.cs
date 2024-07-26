@@ -32,7 +32,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 for (int i = 0; i < Code.Count; i++)
                 {
-                    string val = Defs.replaceVarStart + v + Defs.curlyClose;
+                    string val = Defs.replaceVarStart;
 
                     if (Code[i].Contains(val))
                     {
@@ -44,13 +44,52 @@ namespace PhiBasicTranslator.TranslateUtilities
             return Code;
         }
 
+        public static List<string> MergeValues(List<string> Code, List<string> Values, string key)
+        {
+            List<string> result = new List<string>();
+
+            int c = 0;
+            int v = 0;
+
+            while (c < Code.Count)
+            {
+                NextLinePair pair = NextLine(Code, Values, key, c, v);
+
+                c = pair.IndexOne;
+                v = pair.IndexTwo;
+
+                result.Add(pair.Value);
+            }
+
+            return result;
+        }
+
+        private static NextLinePair NextLine(List<string> Code, List<string> Values, string key, int c, int v)
+        {
+            NextLinePair next = new NextLinePair();
+
+            if (Code[c].Contains(key))
+            {
+                next.Value = Values[v++];
+            }
+            else
+            {
+                next.Value = Code[c++];
+            }
+
+            next.IndexOne = c;
+            next.IndexTwo = v;
+
+            return next;
+        }
+
         public static List<string> InsertValues(List<string> Code, List<string> Values)
         {
             for (int v = 0; v < Values.Count; v++)
             {
                 for (int i = 0; i < Code.Count; i++)
                 {
-                    string val = Defs.replaceValueStart + v + Defs.curlyClose;
+                    string val = Defs.replaceValueStart;
 
                     if (Code[i].Contains(val))
                     {
@@ -68,7 +107,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             for (int i = 0; i < Code.Count; i++)
             {
-                string val = Defs.replaceCodeStart + index + Defs.curlyClose; //;{CODE:0}
+                string val = Defs.replaceCodeStart; //;{CODE:0}
 
                 if (Code[i].Contains(val))
                 {
@@ -88,7 +127,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> InstructLogBITS16 = new List<string>()
         {
-            "   mov si, " + Defs.replaceValueStart + "0" + Defs.curlyClose,
+            "   mov si, " + Defs.replaceValueStart,
             "   call print_log"
         };
 
@@ -104,7 +143,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov ss, ax",
             "   mov sp, 0x7c00",
             "",
-            Defs.replaceCodeStart + "0" + Defs.curlyClose,
+            Defs.replaceCodeStart, //;{CODE:0}
             "",
             "print_log:",
             "   mov ah, 0x0E",
@@ -118,7 +157,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   ret",
             "",
             "",
-            Defs.replaceVarStart + "0" + Defs.curlyClose,
+            Defs.replaceVarStart,//;{VALUES:0}
             "times 510-($-$$) db 0",
             "dw 0xaa55"
         };

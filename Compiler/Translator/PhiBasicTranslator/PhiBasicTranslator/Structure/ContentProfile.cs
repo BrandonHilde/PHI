@@ -33,6 +33,7 @@ namespace PhiBasicTranslator.Structure
         VariableTypeDec,
         VariableTypeBln,
         VariableTypeFin,
+        VariableTypeMixed,
         VariableValue,
         VariableEnd,
         MethodOpen,
@@ -42,15 +43,23 @@ namespace PhiBasicTranslator.Structure
         MethodReturn,
         MethodName,
         Instruct,
-        InstructValue,
         InstructClose
     };
+
+    public enum RegionLabel
+    {
+        None,
+        Declaration,
+        InstructValue
+    }
     public class ContentProfile
     {
         public Inside[] ContentInside = { Inside.None };
+        public RegionLabel[] Labels = { RegionLabel.None };
         public ContentProfile(int len) 
         { 
             ContentInside = new Inside[len];
+            Labels = new RegionLabel[len];
         }
     }
 }
