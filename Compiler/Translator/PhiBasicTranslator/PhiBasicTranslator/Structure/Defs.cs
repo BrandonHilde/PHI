@@ -83,13 +83,17 @@ namespace PhiBasicTranslator.Structure
         public static readonly string instDivide = "/";
         public static readonly string instMod = "%";
 
-        public static readonly List<string> instructCommandList = new List<string>()
+        public static readonly List<string> instructContainers = new List<string>()
         {
             instWhile,
-            instOrder,
             instIf,
             instElse,
             instIfElse,
+        };
+
+        public static readonly List<string> instructCommandList = new List<string>()
+        {
+            instOrder,
             instLog,
             instIs,
             instHas,

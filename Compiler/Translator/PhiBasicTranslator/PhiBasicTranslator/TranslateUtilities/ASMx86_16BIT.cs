@@ -51,7 +51,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             int c = 0;
             int v = 0;
 
-            while (c < Code.Count)
+            int t = 0;
+
+            while (t++ < Values.Count + Code.Count)
             {
                 NextLinePair pair = NextLine(Code, Values, key, c, v);
 
@@ -68,13 +70,24 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             NextLinePair next = new NextLinePair();
 
-            if (Code[c].Contains(key))
+            if (c < Code.Count)
             {
-                next.Value = Values[v++];
-            }
-            else
-            {
-                next.Value = Code[c++];
+                if (Code[c].Contains(key))
+                {
+                    if (v < Values.Count)
+                    {
+                        next.Value = Values[v++];
+                    }
+                    else
+                    {
+                        next.Value = key;
+                        c++;
+                    }
+                }
+                else
+                {
+                    next.Value = Code[c++];
+                }
             }
 
             next.IndexOne = c;

@@ -63,6 +63,8 @@ namespace PhiBasicTranslator.ParseEngine
         {
             bool start = false;
 
+            bool container = false;
+
             for (int i = 0; i < content.Length; i++)
             {
                 if (previous.ContentInside[i] == Inside.None)
@@ -80,6 +82,11 @@ namespace PhiBasicTranslator.ParseEngine
 
                     string inst = MatchesInstruct(cut, prev);
 
+                    if(Defs.instructContainers.Contains(inst))
+                    {
+                        container = true;
+                    }
+
                     if (inst != string.Empty)
                     {
                         start = true;
@@ -90,15 +97,34 @@ namespace PhiBasicTranslator.ParseEngine
                         }
                     } 
                     
-                    if(start && letter + prev == Defs.InstructSetClosure)
+                    if(start)
                     {
-                        previous.ContentInside[i] = Inside.InstructClose;
-                        start = false;
+                        if (container)
+                        {
+                            if (letter + prev == Defs.InstructSetClosure)
+                            {
+                                previous.ContentInside[i] = Inside.InstructClose;
+                                container = false;
+                                start = false;
+                            }
+                        }
+                        else
+                        {
+                            if(letter == Defs.VariableSetClosure)
+                            {
+                                previous.ContentInside[i] = Inside.InstructClose;
+                                container = false;
+                                start = false;
+                            }
+                        }
                     }
 
                     if (start)
                     {
-                        previous.Labels[i] = RegionLabel.InstructValue;
+                        if(container)
+                            previous.Labels[i] = RegionLabel.InstructContent;
+                        else
+                            previous.Labels[i] = RegionLabel.InstructValue;
                     }
                 }
             }
@@ -541,6 +567,14 @@ namespace PhiBasicTranslator.ParseEngine
             string vname = string.Empty;
 
             foreach (string val in Defs.instructModifyList)
+            {
+                if (content.StartsWith(val))
+                {
+                    return val;
+                }
+            }
+
+            foreach (string val in Defs.instructContainers)
             {
                 if (content.StartsWith(val))
                 {

@@ -142,6 +142,8 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string Value = string.Empty;
         public string Content = string.Empty;
+        public Inside InType = Inside.VariableTypeMixed;
+
         public PhiInstruct()
         {
 
@@ -153,7 +155,8 @@ namespace PhiBasicTranslator.Structure
             {
                 Name = Name,
                 Value = Value,
-                Content = Content
+                Content = Content,
+                InType = InType
             };
         }
     }

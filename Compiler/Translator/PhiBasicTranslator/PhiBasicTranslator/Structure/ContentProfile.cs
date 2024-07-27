@@ -50,7 +50,8 @@ namespace PhiBasicTranslator.Structure
     {
         None,
         Declaration,
-        InstructValue
+        InstructValue,
+        InstructContent
     }
     public class ContentProfile
     {

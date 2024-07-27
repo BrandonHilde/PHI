@@ -54,6 +54,8 @@ namespace PhiBasicTranslator
             Inside last = Inside.None;
             Inside inside = Inside.None;
 
+            int typeCount = 0;
+
             bool insideMethod = false;
 
             for (int i = 0; i < content.Length; i++)
@@ -107,14 +109,40 @@ namespace PhiBasicTranslator
 
                                 for (int j = i + nme.Length; j < content.Length; j++)
                                 {
-                                    if (profile.ContentInside[j] != Inside.InstructClose)
+                                    Inside sidej = profile.ContentInside[j];
+                                  
+
+                                    if (sidej != Inside.InstructClose)
                                     {
                                         instruct.Value += content[j];
+
+                                        if(j > 0)
+                                        {
+                                            Inside lastj = profile.ContentInside[j - 1];
+
+                                            if (lastj != sidej)
+                                            {
+                                                if(lastj != Inside.Instruct 
+                                                    &&  lastj != Inside.None 
+                                                    && lastj != Inside.SemiColon)
+                                                {
+                                                    typeCount++;
+                                                }
+                                               
+                                            }
+                                        }
                                     }
                                     else
                                     {
+                                        if(typeCount > 0)
+                                        {
+                                            instruct.InType = Inside.VariableTypeMixed;
+                                        }
+
                                         current.Instructs.Add(instruct.Copy());
                                         instruct = new PhiInstruct();
+
+                                        typeCount = 0;
 
                                         break;
                                     }

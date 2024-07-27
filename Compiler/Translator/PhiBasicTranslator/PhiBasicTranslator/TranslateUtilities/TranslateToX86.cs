@@ -23,14 +23,12 @@ namespace PhiBasicTranslator.TranslateUtilities
                     ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
                 }
 
-                List<string> values = new List<string>();
+                List<string> values = ConvertVarsToASM(cls.Variables);
 
-                foreach(PhiVariables vrbl in cls.Variables)
-                {
 
-                }
+                ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
 
-                foreach(PhiInstruct inst in cls.Instructs)
+                foreach (PhiInstruct inst in cls.Instructs)
                 {
                     if(inst.Name == Defs.instLog)
                     {
@@ -39,20 +37,49 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                         values.Clear();
 
-                        PhiVariables val = ConvertValue(inst.Value, cls);
+                        List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
 
-                        values.Add(val.Name + val.ValueRaw);
+                        foreach (PhiVariables v in val) values.Add(v.Name + v.ValueRaw);
 
-                        ASM = ASMx86_16BIT.InsertVars(ASM, values);
-                        ASM = ASMx86_16BIT.InsertValues(ASM, new List<string> { val.Name });
+                        ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
+                        //ASM = ASMx86_16BIT.MergeValues(ASM, new List<string> { val.Name }, Defs.replaceValueStart);
+                        //ASM = ASMx86_16BIT.InsertVars(ASM, values);
+                        ASM = ASMx86_16BIT.InsertValues(ASM, val.Select(x=>x.Name).ToList());
                     }
                 }
             }
 
             return ASM;
         }
-        public static PhiVariables ConvertValue(string value, PhiClass cls, Inside ValueType = Inside.VariableTypeStr, int vcount = 0)
+
+        public static List<string> ConvertVarsToASM(List<PhiVariables> phiVariables)
         {
+            List<string> vals = new List<string>();
+
+            foreach (PhiVariables vbl in phiVariables)
+            {
+                string build = vbl.Name;
+
+                if(vbl.varType == Inside.VariableTypeStr)
+                {
+                    build += " db ";
+                }
+                else if(vbl.varType == Inside.VariableTypeInt)
+                {
+                    build += " dd ";
+                }
+
+                build += vbl.ValueRaw;
+
+                vals.Add(build);
+            }
+
+            return vals;
+        }
+        public static List<PhiVariables> ConvertValue(string value, PhiClass cls, Inside ValueType = Inside.VariableTypeStr, int vcount = 0)
+        {
+            List<PhiVariables> varbls = new List<PhiVariables>();
+
             if(ValueType == Inside.VariableTypeStr)
             {
                 if (value[value.Length - 1].ToString() == Defs.VariableSetClosure)
@@ -64,14 +91,35 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 }
 
-                return new PhiVariables 
+                varbls.Add(new PhiVariables 
                 { 
                     Name = "VALUE_" + vcount, 
                     ValueRaw = " db " + value + ",0" 
-                };
+                });
+            }
+            else if(ValueType == Inside.VariableTypeInt)
+            {
+
+            }
+            else if(ValueType == Inside.VariableTypeMixed)
+            {
+                for (int i = 0; i < value.Length; i++)
+                {
+                    string cut = value.Substring(i);
+
+                    for (int j = 0; j < cls.Variables.Count; j++)
+                    {
+                        // " " space determines if its actually a
+                        // name or just a part of another variable
+                        if (cut.StartsWith(cls.Variables[j].Name + " ")) 
+                        {
+                            Console.WriteLine(cls.Variables[j].Name + " ");
+                        }
+                    }
+                }
             }
 
-            return new PhiVariables();
+            return varbls;
         }
     }
 }

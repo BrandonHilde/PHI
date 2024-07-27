@@ -10,9 +10,9 @@ phi.Hello:OS16BIT
 	int value: 10;
 	
 	if value < 10:
-		log message value;;
+		log message value;
 	;;
 	else
-		log message
+		log message ' greater than ten';
 	;;
 }
