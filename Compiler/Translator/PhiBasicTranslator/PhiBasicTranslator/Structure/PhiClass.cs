@@ -144,6 +144,8 @@ namespace PhiBasicTranslator.Structure
         public string Content = string.Empty;
         public Inside InType = Inside.VariableTypeMixed;
 
+        public List<PhiVariables> SubVariables = new List<PhiVariables>();  
+
         public PhiInstruct()
         {
 
@@ -151,12 +153,17 @@ namespace PhiBasicTranslator.Structure
 
         public PhiInstruct Copy()
         {
+            List<PhiVariables> vars = new List<PhiVariables>();
+
+            foreach (var v in SubVariables) vars.Add(v.Copy());
+
             return new PhiInstruct
             {
                 Name = Name,
                 Value = Value,
                 Content = Content,
-                InType = InType
+                InType = InType,
+                SubVariables = vars
             };
         }
     }

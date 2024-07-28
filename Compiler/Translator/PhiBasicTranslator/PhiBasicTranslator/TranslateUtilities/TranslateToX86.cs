@@ -21,10 +21,10 @@ namespace PhiBasicTranslator.TranslateUtilities
                 if(cls.Inherit == Defs.os16bit)
                 {
                     ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
+                    ASM = AutoInclude_BITS16(ASM);
                 }
 
                 List<string> values = ConvertVarsToASM(cls.Variables);
-
 
                 ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
 
@@ -33,23 +33,51 @@ namespace PhiBasicTranslator.TranslateUtilities
                     if(inst.Name == Defs.instLog)
                     {
                         // remember to add includes check to prevent duplicates
-                        ASM = ASMx86_16BIT.InsertCodeLines(ASM, ASMx86_16BIT.InstructLogBITS16, 0);
-
+                        
                         values.Clear();
 
                         List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
 
-                        foreach (PhiVariables v in val) values.Add(v.Name + v.ValueRaw);
+                        foreach (PhiVariables v in val)
+                        {
+                            if(v.varType == Inside.VariableTypeStr)
+                            {
+                                ASM = ASMx86_16BIT.MergeValues(ASM, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
+                            }
+                            else if(v.varType == Inside.VariableTypeInt)
+                            {
+                                ASM = ASMx86_16BIT.MergeValues(ASM, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
+                            }
+
+                            if (v.ValueRaw != string.Empty)
+                            {
+                                values.Add(v.Name + v.ValueRaw);
+                            }
+                            else
+                            {
+                                if (v.varType == Inside.VariableTypeInt)
+                                {
+                                    v.Name = "[" + v.Name + "]";
+                                }
+                                
+                                ASM = ASMx86_16BIT.ReplaceValue(ASM, Defs.replaceValueStart, v.Name);
+                            }
+                        }
 
                         ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
-                        //ASM = ASMx86_16BIT.MergeValues(ASM, new List<string> { val.Name }, Defs.replaceValueStart);
-                        //ASM = ASMx86_16BIT.InsertVars(ASM, values);
-                        ASM = ASMx86_16BIT.InsertValues(ASM, val.Select(x=>x.Name).ToList());
                     }
                 }
             }
 
             return ASM;
+        }
+
+        public static List<string> AutoInclude_BITS16(List<string> Code)
+        {
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintInt_x86BITS16, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintLog_x86BITS16, Defs.replaceIncludes);
+
+            return Code;
         }
 
         public static List<string> ConvertVarsToASM(List<PhiVariables> phiVariables)
@@ -63,13 +91,14 @@ namespace PhiBasicTranslator.TranslateUtilities
                 if(vbl.varType == Inside.VariableTypeStr)
                 {
                     build += " db ";
+                    build += vbl.ValueRaw;
+                    build += ",0";
                 }
                 else if(vbl.varType == Inside.VariableTypeInt)
                 {
                     build += " dd ";
+                    build += vbl.ValueRaw;
                 }
-
-                build += vbl.ValueRaw;
 
                 vals.Add(build);
             }
@@ -80,7 +109,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             List<PhiVariables> varbls = new List<PhiVariables>();
 
-            if(ValueType == Inside.VariableTypeStr)
+            if(ValueType == Inside.String)
             {
                 if (value[value.Length - 1].ToString() == Defs.VariableSetClosure)
                 {
@@ -94,7 +123,8 @@ namespace PhiBasicTranslator.TranslateUtilities
                 varbls.Add(new PhiVariables 
                 { 
                     Name = "VALUE_" + vcount, 
-                    ValueRaw = " db " + value + ",0" 
+                    ValueRaw = " db " + value + ",0" ,
+                    varType = Inside.VariableTypeStr
                 });
             }
             else if(ValueType == Inside.VariableTypeInt)
@@ -109,11 +139,16 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                     for (int j = 0; j < cls.Variables.Count; j++)
                     {
-                        // " " space determines if its actually a
+                        // " " or ";" determines if its actually a
                         // name or just a part of another variable
-                        if (cut.StartsWith(cls.Variables[j].Name + " ")) 
+                        if (cut.StartsWith(cls.Variables[j].Name + " ")
+                         || cut.StartsWith(cls.Variables[j].Name + Defs.VariableSetClosure)) 
                         {
-                            Console.WriteLine(cls.Variables[j].Name + " ");
+                            varbls.Add(new PhiVariables
+                            {
+                                Name = cls.Variables[j].Name,
+                                varType= cls.Variables[j].varType
+                            });
                         }
                     }
                 }

@@ -43,6 +43,7 @@ namespace PhiBasicTranslator.Structure
         MethodReturn,
         MethodName,
         Instruct,
+        InstructContainer,
         InstructClose
     };
 

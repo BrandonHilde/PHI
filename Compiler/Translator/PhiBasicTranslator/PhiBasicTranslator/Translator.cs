@@ -107,36 +107,37 @@ namespace PhiBasicTranslator
 
                                 #region Instructs
 
+                                Inside lastj = Inside.None;
+
                                 for (int j = i + nme.Length; j < content.Length; j++)
                                 {
                                     Inside sidej = profile.ContentInside[j];
-                                  
+
+                                    string letterj = content[j].ToString();
 
                                     if (sidej != Inside.InstructClose)
                                     {
-                                        instruct.Value += content[j];
+                                        instruct.Value += letterj;
 
-                                        if(j > 0)
+                                        if(sidej != Inside.String && letterj == " ")
                                         {
-                                            Inside lastj = profile.ContentInside[j - 1];
-
-                                            if (lastj != sidej)
-                                            {
-                                                if(lastj != Inside.Instruct 
-                                                    &&  lastj != Inside.None 
-                                                    && lastj != Inside.SemiColon)
-                                                {
-                                                    typeCount++;
-                                                }
-                                               
-                                            }
+                                            typeCount++;
                                         }
                                     }
                                     else
                                     {
-                                        if(typeCount > 0)
+
+                                        if(Defs.instructContainers.Contains(instruct.Name))
+                                        {
+                                            instruct.InType = Inside.InstructContainer;
+                                        }
+                                        else if(typeCount > 1)
                                         {
                                             instruct.InType = Inside.VariableTypeMixed;
+                                        }
+                                        else
+                                        {
+                                            instruct.InType = lastj;
                                         }
 
                                         current.Instructs.Add(instruct.Copy());
@@ -146,6 +147,7 @@ namespace PhiBasicTranslator
 
                                         break;
                                     }
+                                    lastj = sidej;
                                 }
 
                                 #endregion

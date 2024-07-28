@@ -8,6 +8,8 @@ phi.Hello:OS16BIT
 {
 	str message: 'hello, world';
 	int value: 10;
+
+	log 'test';
 	
 	if value < 10:
 		log message value;
