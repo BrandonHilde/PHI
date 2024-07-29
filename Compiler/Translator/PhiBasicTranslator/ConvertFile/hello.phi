@@ -7,14 +7,10 @@ Hello world program
 phi.Hello:OS16BIT
 {
 	str message: 'hello, world';
+	str something: 'hello\nworld\r\nsomething\ttabbed';
 	int value: 10;
 
-	log 'test';
+	log 'test' something;
 	
-	if value < 10:
-		log message value;
-	;;
-	else
-		log message ' greater than ten';
-	;;
+	log message value;
 }

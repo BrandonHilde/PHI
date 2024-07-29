@@ -38,6 +38,7 @@ namespace PhiBasicTranslator.Structure
 
         public static readonly string NameClosureCharacters = " \t\r\n{:";
         public static readonly string VariableSetClosure = ";";
+        public static readonly string VariableOpenDeclare = "VALUE_";
         public static readonly string InstructSetClosure = ";;";
         public static readonly string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_1234567890";
         public static readonly string Numbers = "1234567890.-";

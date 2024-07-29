@@ -116,6 +116,7 @@ namespace PhiBasicTranslator.Structure
         public Inside varType = Inside.VariableTypeVar;
         public string Name = string.Empty;
         public string ValueRaw = string.Empty;
+        public bool preExisting = true;
         public List<string> Values { get; set; } = new List<string>();
 
         public List<PhiVariables> SubVariables { get; set; } = new List<PhiVariables>();
@@ -132,7 +133,8 @@ namespace PhiBasicTranslator.Structure
                 varType = varType,
                 ValueRaw = ValueRaw,
                 Values = FileManager.CopyList(Values),
-                SubVariables = vars
+                SubVariables = vars,
+                preExisting = preExisting
             };
         }
     }

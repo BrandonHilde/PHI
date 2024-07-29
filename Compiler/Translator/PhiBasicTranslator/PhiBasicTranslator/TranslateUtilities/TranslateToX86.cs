@@ -4,6 +4,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using PhiBasicTranslator;
+using PhiBasicTranslator.ParseEngine;
 using PhiBasicTranslator.Structure;
 
 namespace PhiBasicTranslator.TranslateUtilities
@@ -13,6 +14,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> ToX86(PhiCodebase code)
         {
             List<string> ASM = new List<string>();
+
+            int varStart = 0;
 
             for(int i = 0; i < code.ClassList.Count; i++)
             {
@@ -36,22 +39,30 @@ namespace PhiBasicTranslator.TranslateUtilities
                         
                         values.Clear();
 
-                        List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
+                        //List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
 
-                        foreach (PhiVariables v in val)
+                        List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(inst, cls.Variables, varStart);
+
+                        varStart += vrs.Count;
+
+                        foreach (PhiVariables v in vrs)
                         {
-                            if(v.varType == Inside.VariableTypeStr)
+                            if (v.varType == Inside.VariableTypeStr)
                             {
+                                // adds function call code
                                 ASM = ASMx86_16BIT.MergeValues(ASM, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
                             }
-                            else if(v.varType == Inside.VariableTypeInt)
+                            else if (v.varType == Inside.VariableTypeInt)
                             {
+                                // adds function call code
                                 ASM = ASMx86_16BIT.MergeValues(ASM, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
                             }
 
                             if (v.ValueRaw != string.Empty)
                             {
-                                values.Add(v.Name + v.ValueRaw);
+                                if(!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
+
+                                ASM = ASMx86_16BIT.ReplaceValue(ASM, Defs.replaceValueStart, v.Name);
                             }
                             else
                             {
@@ -90,9 +101,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 if(vbl.varType == Inside.VariableTypeStr)
                 {
-                    build += " db ";
-                    build += vbl.ValueRaw;
-                    build += ",0";
+                    build = ASMx86_16BIT.VarTypeConvert(vbl);
                 }
                 else if(vbl.varType == Inside.VariableTypeInt)
                 {

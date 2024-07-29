@@ -7,11 +7,18 @@ using System.Text;
 using System.Threading.Tasks;
 using PhiBasicTranslator.Structure;
 using System.Runtime.ConstrainedExecution;
+using PhiBasicTranslator.ParseEngine;
 
 namespace PhiBasicTranslator.TranslateUtilities
 {
     internal class ASMx86_16BIT
     {
+        public static readonly string varStrTyp = " db ";
+        public static readonly string varIntTyp = " dd ";
+        public static readonly string varStrNewLine = "10";
+        public static readonly string varStrReturn = "13";
+        public static readonly string varStrTab = "9";
+        public static readonly string varStrEnd = "0";
         public enum InheritType { External, BITS16 }
         public static List<string> GetInheritance(InheritType type)
         {
@@ -25,6 +32,79 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
 
             return new List<string>();
+        }
+
+        public static string FormatStringConvert(string value)
+        {
+            string vl = string.Empty;
+
+            bool lastExit = false;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                if(ParseUtilities.IsIgnorable(value, i))
+                {
+                    if (!lastExit) vl += "'";
+
+                    if (value[i] == 'n')
+                    {
+                        vl += "," + varStrNewLine;
+                        lastExit = true;
+                    }
+                    else if (value[i] == 'r')
+                    {
+                        vl += "," + varStrReturn;
+                        lastExit = true;
+                    }
+                    else if (value[i] == 't')
+                    {
+                        vl += "," + varStrTab;
+                        lastExit = true;
+                    }
+                    else if (value[i] == 'u')
+                    {
+                        //unimplemented
+                    }
+                }
+                else if(value[i] != '\\')
+                {
+                    if (lastExit)
+                    {
+                        vl += ",'";
+                        lastExit = false;
+                    }
+
+                    vl += value[i];
+                }
+                
+            }
+
+            if (vl.Length > 0)
+            {
+
+                if (vl.Last() == ',') vl += varStrEnd;
+                else vl += "," + varStrEnd;
+            }
+
+            return vl;
+        }
+        public static string VarTypeConvert(PhiVariables varble)
+        {
+            string vr = string.Empty;
+
+            if (varble != null)
+            {
+                if (varble.varType == Inside.VariableTypeStr)
+                {
+                    vr = varble.Name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                }
+                else if (varble.varType == Inside.VariableTypeInt)
+                {
+
+                }
+            }
+
+            return vr;
         }
 
         public static List<string> InsertVars(List<string> Code, List<string> Values)
@@ -175,11 +255,13 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov ss, ax",
             "   mov sp, 0x7c00",
             "",
-            Defs.replaceCodeStart, //;{CODE:0}
+            Defs.replaceCodeStart, //;{CODE}
             "",
-            Defs.replaceIncludes,
+            "   jmp $",
             "",
-            Defs.replaceVarStart,//;{VALUES:0}
+            Defs.replaceIncludes, // ;{INCLUDES}
+            "",
+            Defs.replaceVarStart,//;{VALUES}
             "times 510-($-$$) db 0",
             "dw 0xaa55"
         };
@@ -202,11 +284,11 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> PrintInt_x86BITS16 = new List<string>()
         {
             "print_int:",
-            "    push ebp",
-            "    mov ebp, esp",
-            "    push edx",
+            "    push bp",
+            "    mov bp, sp",
+            "    push dx",
             "",
-            "    cmp eax, 10",
+            "    cmp ax, 10",
             "    jge .div_num",
             "",
             "    add al, '0'",
@@ -215,21 +297,21 @@ namespace PhiBasicTranslator.TranslateUtilities
             "    jmp .done",
             "",
             ".div_num:",
-            "    xor edx, edx",
-            "    mov ebx, 10",
-            "    div ebx",
-            "    push edx",
+            "    xor dx, dx",
+            "    mov bx, 10",
+            "    div bx",
+            "    push dx",
             "    call print_int",
-            "    pop edx",
+            "    pop dx",
             "    add dl, '0'",
             "    mov ah, 0x0E",
             "    mov al, dl",
             "    int 0x10",
             "",
             ".done:",
-            "    pop edx",
-            "    mov esp, ebp",
-            "    pop ebp",
+            "    pop dx",
+            "    mov sp, bp",
+            "    pop bp",
             "    ret",
             ""
         };

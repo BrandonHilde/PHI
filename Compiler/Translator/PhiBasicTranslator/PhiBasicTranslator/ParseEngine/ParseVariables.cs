@@ -110,5 +110,95 @@ namespace PhiBasicTranslator.ParseEngine
             return str;
         }
 
+        public static List<PhiVariables> GetInstructSubVariables(PhiInstruct instruct, List<PhiVariables> predefinedVars, int VarStart = 0)
+        {
+            List<PhiVariables> varbles = new List<PhiVariables>();
+
+            string content = instruct.Value;
+
+            ContentProfile profile = ParseUtilities.ProfilePrepare(content);
+
+            List<string> vals = new List<string>();
+            string vl = string.Empty;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                Inside inside = profile.ContentInside[i];
+
+                if (inside != Inside.Comment
+                    && inside != Inside.MultiComment)
+                {
+                    if (content[i] != ' ' || inside == Inside.String)
+                    {
+                        vl += content[i];
+                    }
+                    else
+                    {
+                        if (vl != string.Empty)
+                        { 
+                            vals.Add(vl);
+                            vl = string.Empty;
+                        }
+                    }
+
+                    if (content[i].ToString() == Defs.VariableSetClosure)
+                    {
+                        if (vl != string.Empty)
+                        {
+                            vals.Add(vl);
+                            vl = string.Empty;
+                        }
+                    }
+                }
+            }
+
+            if (vl != string.Empty)
+            {
+                vals.Add(vl);
+                vl = string.Empty;
+            }
+
+            foreach (string v in vals)
+            {
+                PhiVariables? vbl = predefinedVars.Where(x => x.Name == v).FirstOrDefault();
+
+                if(vbl != null)
+                {
+                    varbles.Add(vbl);
+                }
+                else if(v.StartsWith(Defs.ValueStringDelcare))
+                {
+                    varbles.Add(new PhiVariables
+                    {
+                        Name = Defs.VariableOpenDeclare + (VarStart++),
+                        ValueRaw = v,
+                        varType = Inside.VariableTypeStr,
+                        preExisting = false
+                    });
+                }
+                else if(v.Contains('.')) // defs.decimaldeclare?
+                {
+                    varbles.Add(new PhiVariables
+                    {
+                        Name = Defs.VariableOpenDeclare + (VarStart++),
+                        ValueRaw = v,
+                        varType = Inside.VariableTypeDec,
+                        preExisting = false
+                    });
+                }
+                else
+                {
+                    varbles.Add(new PhiVariables
+                    {
+                        Name = Defs.VariableOpenDeclare + (VarStart++),
+                        ValueRaw = v,
+                        varType = Inside.VariableTypeInt,
+                        preExisting = false
+                    });
+                }
+            }
+
+            return varbles;
+        }
     }
 }
