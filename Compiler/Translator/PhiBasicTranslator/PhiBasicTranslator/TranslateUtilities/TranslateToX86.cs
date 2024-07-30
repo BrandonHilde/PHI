@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using Newtonsoft.Json.Linq;
 using PhiBasicTranslator;
 using PhiBasicTranslator.ParseEngine;
 using PhiBasicTranslator.Structure;
@@ -35,52 +36,57 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     if(inst.Name == Defs.instLog)
                     {
-                        // remember to add includes check to prevent duplicates
-                        
-                        values.Clear();
-
-                        //List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
-
-                        List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(inst, cls.Variables, varStart);
-
-                        varStart += vrs.Count;
-
-                        foreach (PhiVariables v in vrs)
-                        {
-                            if (v.varType == Inside.VariableTypeStr)
-                            {
-                                // adds function call code
-                                ASM = ASMx86_16BIT.MergeValues(ASM, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
-                            }
-                            else if (v.varType == Inside.VariableTypeInt)
-                            {
-                                // adds function call code
-                                ASM = ASMx86_16BIT.MergeValues(ASM, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
-                            }
-
-                            if (v.ValueRaw != string.Empty)
-                            {
-                                if(!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
-
-                                ASM = ASMx86_16BIT.ReplaceValue(ASM, Defs.replaceValueStart, v.Name);
-                            }
-                            else
-                            {
-                                if (v.varType == Inside.VariableTypeInt)
-                                {
-                                    v.Name = "[" + v.Name + "]";
-                                }
-                                
-                                ASM = ASMx86_16BIT.ReplaceValue(ASM, Defs.replaceValueStart, v.Name);
-                            }
-                        }
-
-                        ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
+                        BuildInstructLog(inst, cls, ASM, varStart);
+                    }
+                    else if(inst.Name == Defs.instWhile)
+                    {
+                        BuildInstructWhile(inst, cls, ASM, varStart);
                     }
                 }
             }
 
             return ASM;
+        }
+
+        public static List<string> BuildInstructWhile(PhiInstruct instruct, PhiClass cls, List<string> Code, int varStart = 0)
+        {
+
+            return Code;
+        }
+
+        public static List<string> BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<string> Code, int varStart = 0)
+        {
+            // remember to add includes check to prevent duplicates
+
+            List<string> values = new List<string>();
+
+            //List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
+
+            List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(instruct, cls.Variables, varStart);
+
+            varStart += vrs.Count;
+
+            foreach (PhiVariables v in vrs)
+            {
+                if (v.varType == Inside.VariableTypeStr)
+                {
+                    // adds function call code
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
+                }
+                else if (v.varType == Inside.VariableTypeInt)
+                {
+                    // adds function call code
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
+                }
+
+                if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
+
+                Code = ASMx86_16BIT.ReplaceValue(Code, Defs.replaceValueStart, v.Name);
+            }
+
+            Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
+
+            return Code;
         }
 
         public static List<string> AutoInclude_BITS16(List<string> Code)

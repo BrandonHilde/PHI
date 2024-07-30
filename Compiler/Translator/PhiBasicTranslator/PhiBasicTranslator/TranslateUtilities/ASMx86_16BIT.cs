@@ -19,6 +19,11 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varStrReturn = "13";
         public static readonly string varStrTab = "9";
         public static readonly string varStrEnd = "0";
+        public static readonly string replaceLoopCondition = "{LOOP CONDITION}";
+        public static readonly string replaceLoopLimit = "{LOOP LIMIT}";
+        public static readonly string replaceLoopContent = "{LOOP CONTENT}";
+        public static readonly string replaceLoopContentName = "{LOOP CONTENT NAME}";
+        public static readonly string replaceLoopIncrement = "{LOOP INCREMENT}";
         public enum InheritType { External, BITS16 }
         public static List<string> GetInheritance(InheritType type)
         {
@@ -100,7 +105,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
                 else if (varble.varType == Inside.VariableTypeInt)
                 {
-
+                    vr = varble.Name + varIntTyp + varble.ValueRaw;
                 }
             }
 
@@ -231,6 +236,37 @@ namespace PhiBasicTranslator.TranslateUtilities
             return CodeLines;
         }
 
+        #region WHILE LOOPS
+        public static List<string> InstructWhileStart_BITS16 = new List<string>()
+        {
+            "loop_start:",
+            "   mov cx, [" + Defs.replaceValueStart +"]"
+        };
+
+        public static List<string> InstructWhileCheck_BITS16 = new List<string>()
+        {
+            ".loop_check:",
+            "   mov cx, [" + Defs.replaceValueStart + "]",
+            "   cmp cx, [" + replaceLoopLimit + "]",
+            "   " + replaceLoopCondition + " .done", //jge jg je jl jle etc...
+            "   " + replaceLoopIncrement, // inc cx
+            "   call " + replaceLoopContentName
+        };
+
+        public static List<string> InstructWhileContent_BITS16 = new List<string>()
+        {
+            replaceLoopContentName,
+            replaceLoopContent,
+        };
+
+        public static List<string> InstructWhileDone_BITS16 = new List<string>()
+        {
+            ".loop_done:",
+            "   mov [" + Defs.replaceValueStart + "], cx",
+            "   ret"
+        };
+        #endregion
+        #region LOGS
         public static List<string> InstructLogString_BITS16 = new List<string>()
         {
             "   mov si, " + Defs.replaceValueStart,
@@ -239,9 +275,10 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> InstructLogInt_BITS16 = new List<string>()
         {
-            "   mov ax, " + Defs.replaceValueStart,
+            "   mov ax, [" + Defs.replaceValueStart + "]",
             "   call print_int"
         };
+        #endregion
 
         public static List<string> BIT16x86 = new List<string>()
         {

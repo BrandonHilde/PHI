@@ -99,23 +99,17 @@ namespace PhiBasicTranslator.ParseEngine
                     
                     if(start)
                     {
-                        if (container)
+                        if (letter + prev == Defs.InstructSetClosure)
                         {
-                            if (letter + prev == Defs.InstructSetClosure)
-                            {
-                                previous.ContentInside[i] = Inside.InstructClose;
-                                container = false;
-                                start = false;
-                            }
+                            previous.ContentInside[i] = Inside.InstructClose;
+                            container = false;
+                            start = false;
                         }
-                        else
+                        else if(letter == Defs.VariableSetClosure)
                         {
-                            if(letter == Defs.VariableSetClosure)
-                            {
-                                previous.ContentInside[i] = Inside.InstructClose;
-                                container = false;
-                                start = false;
-                            }
+                            previous.ContentInside[i] = Inside.InstructClose;
+                            container = false;
+                            start = false;
                         }
                     }
 
