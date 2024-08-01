@@ -105,7 +105,7 @@ namespace PhiBasicTranslator.ParseEngine
                             container = false;
                             start = false;
                         }
-                        else if(letter == Defs.VariableSetClosure)
+                        else if(letter == Defs.VariableSetClosure && !container)
                         {
                             previous.ContentInside[i] = Inside.InstructClose;
                             container = false;
@@ -560,17 +560,9 @@ namespace PhiBasicTranslator.ParseEngine
         {
             string vname = string.Empty;
 
-            foreach (string val in Defs.instructModifyList)
-            {
-                if (content.StartsWith(val))
-                {
-                    return val;
-                }
-            }
-
             foreach (string val in Defs.instructContainers)
             {
-                if (content.StartsWith(val))
+                if (content.StartsWith(val + " "))
                 {
                     return val;
                 }
@@ -583,7 +575,7 @@ namespace PhiBasicTranslator.ParseEngine
 
             foreach (string val in Defs.instructCommandList)
             {
-                if (content.StartsWith(val))
+                if (content.StartsWith(val + " "))
                 {
                     vname = val;
                 }

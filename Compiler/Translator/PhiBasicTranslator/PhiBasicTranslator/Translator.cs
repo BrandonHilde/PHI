@@ -57,6 +57,7 @@ namespace PhiBasicTranslator
             int typeCount = 0;
 
             bool insideMethod = false;
+            bool insideInstructContainer = false;
 
             for (int i = 0; i < content.Length; i++)
             {
@@ -94,7 +95,8 @@ namespace PhiBasicTranslator
                         method = new PhiMethod();
                     }
 
-                    if(inside == Inside.Instruct)
+                    //you will need to do subinstruct parsing
+                    if (inside == Inside.Instruct && instruct.Name == string.Empty)
                     {
                         if (i > 1)
                         {
@@ -107,54 +109,57 @@ namespace PhiBasicTranslator
 
                                 #region Instructs
 
-                                Inside lastj = Inside.None;
 
-                                for (int j = i + nme.Length; j < content.Length; j++)
+                                if (Defs.instructContainers.Contains(instruct.Name)
+                                    && !insideInstructContainer)
                                 {
-                                    Inside sidej = profile.ContentInside[j];
-
-                                    string letterj = content[j].ToString();
-
-                                    if (sidej != Inside.InstructClose)
-                                    {
-                                        instruct.Value += letterj;
-
-                                        if(sidej != Inside.String && letterj == " ")
-                                        {
-                                            typeCount++;
-                                        }
-                                    }
-                                    else
-                                    {
-
-                                        if(Defs.instructContainers.Contains(instruct.Name))
-                                        {
-                                            instruct.InType = Inside.InstructContainer;
-                                        }
-                                        else if(typeCount > 1)
-                                        {
-                                            instruct.InType = Inside.VariableTypeMixed;
-                                        }
-                                        else
-                                        {
-                                            instruct.InType = lastj;
-                                        }
-
-                                        current.Instructs.Add(instruct.Copy());
-                                        instruct = new PhiInstruct();
-
-                                        typeCount = 0;
-
-                                        break;
-                                    }
-                                    lastj = sidej;
+                                    instruct.InType = Inside.InstructContainer;
+                                    insideInstructContainer = true;
                                 }
-
-                                #endregion
                             }
+                        }
+                    }                                
+                    #endregion
+
+                }
+
+                #region Instruct Close and Value
+
+                if (inside != Inside.InstructClose) //;;
+                {
+                    if (instruct.Name != string.Empty)
+                    {
+                        instruct.Value += letter;
+
+                        if (inside != Inside.String && letter == " ")
+                        {
+                            typeCount++;
                         }
                     }
                 }
+                else
+                {
+                    //remember subinstruct parsing
+                    if (Defs.instructContainers.Contains(instruct.Name))
+                    {
+                        instruct.InType = Inside.InstructContainer;
+                    }
+                    else if (typeCount > 1)
+                    {
+                        instruct.InType = Inside.VariableTypeMixed;
+                    }
+                    else
+                    {
+                        instruct.InType = last;
+                    }
+
+                    current.Instructs.Add(instruct.Copy());
+                    instruct = new PhiInstruct();
+                    insideInstructContainer = false;
+
+                    typeCount = 0;
+                }
+                #endregion
 
                 #region Class Values
 
@@ -234,6 +239,10 @@ namespace PhiBasicTranslator
                         if (insideMethod)
                         {
                             method.Variables.Add(varble.Copy());
+                        }
+                        else if(insideInstructContainer)
+                        {
+                            instruct.Variables.Add(varble.Copy());
                         }
                         else
                         {

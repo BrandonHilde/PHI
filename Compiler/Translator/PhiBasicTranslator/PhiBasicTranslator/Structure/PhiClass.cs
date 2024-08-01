@@ -91,6 +91,7 @@ namespace PhiBasicTranslator.Structure
         public PhiMethod() { }
 
         public List<PhiVariables> Variables = new List<PhiVariables>();
+        public List<PhiInstruct> Instructs { get; set; } = new List<PhiInstruct>();
 
         public PhiMethod Copy()
         {
@@ -98,13 +99,18 @@ namespace PhiBasicTranslator.Structure
 
             foreach (var v in Variables) vars.Add(v.Copy());
 
+            List<PhiInstruct> insts = new List<PhiInstruct>();
+
+            foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
+
             return new PhiMethod
             {
                 Name = Name,
                 End = End,
                 Content = Content,
                 Remainer = Remainer,
-                Variables = vars
+                Variables = vars,
+                Instructs = insts
             };
         }
     }
@@ -144,9 +150,11 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string Value = string.Empty;
         public string Content = string.Empty;
+        public Inside[] ContentLabels { get; set; } = new Inside[0];
         public Inside InType = Inside.VariableTypeMixed;
 
-        public List<PhiVariables> SubVariables = new List<PhiVariables>();  
+        public List<PhiVariables> Variables = new List<PhiVariables>(); 
+        public List<PhiInstruct> Instructs = new List<PhiInstruct>();
 
         public PhiInstruct()
         {
@@ -157,7 +165,11 @@ namespace PhiBasicTranslator.Structure
         {
             List<PhiVariables> vars = new List<PhiVariables>();
 
-            foreach (var v in SubVariables) vars.Add(v.Copy());
+            foreach (var v in Variables) vars.Add(v.Copy());
+
+            List<PhiInstruct> insts = new List<PhiInstruct>();
+
+            foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
 
             return new PhiInstruct
             {
@@ -165,7 +177,8 @@ namespace PhiBasicTranslator.Structure
                 Value = Value,
                 Content = Content,
                 InType = InType,
-                SubVariables = vars
+                Variables = vars,
+                Instructs = insts
             };
         }
     }

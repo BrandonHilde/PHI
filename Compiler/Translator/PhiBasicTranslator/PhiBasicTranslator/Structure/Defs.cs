@@ -68,22 +68,22 @@ namespace PhiBasicTranslator.Structure
         public static readonly string instElse = "else";
         public static readonly string instIfElse = instIf + " " + instElse;
         public static readonly string instLog = "log";
-        public static readonly string instIs = "is";      // ==
-        public static readonly string instIsAlt = "==";   // ==
-        public static readonly string instHas = "has";    // contians()
-        public static readonly string instNot = "not";    // !=
-        public static readonly string instNotAlt = "!=";  // !=
-        public static readonly string instGreater = ">";    // >
-        public static readonly string instLesser = "<";     // <
-        public static readonly string instGreaterEqu = ">=";    // >=
-        public static readonly string instLesserEqu = "<=";     // <=
-        public static readonly string instAnd = "and";    // &&
-        public static readonly string instOr = "or";      // ||
-        public static readonly string instPlus = "+";
-        public static readonly string instMinus = "-";
-        public static readonly string instMult = "*";
-        public static readonly string instDivide = "/";
-        public static readonly string instMod = "%";
+        public static readonly string opperIs = "is";      // ==
+        public static readonly string opperIsAlt = "==";   // ==
+        public static readonly string opperHas = "has";    // contians()
+        public static readonly string opperNot = "not";    // !=
+        public static readonly string opperNotAlt = "!=";  // !=
+        public static readonly string opperGreater = ">";    // >
+        public static readonly string opperLesser = "<";     // <
+        public static readonly string opperGreaterEqu = ">=";    // >=
+        public static readonly string opperLesserEqu = "<=";     // <=
+        public static readonly string opperAnd = "and";    // &&
+        public static readonly string opperOr = "or";      // ||
+        public static readonly string opperPlus = "+";
+        public static readonly string opperMinus = "-";
+        public static readonly string opperMult = "*";
+        public static readonly string opperDivide = "/";
+        public static readonly string opperMod = "%";
 
         public static readonly List<string> instructContainers = new List<string>()
         {
@@ -96,27 +96,22 @@ namespace PhiBasicTranslator.Structure
         public static readonly List<string> instructCommandList = new List<string>()
         {
             instOrder,
-            instLog,
-            instIs,
-            instHas,
-            instNot,
-            instAnd,
-            instOr
+            instLog
         };
 
-        public static readonly List<string> instructModifyList = new List<string>()
+        public static readonly List<string> OpperatorModifyList = new List<string>()
         {
-            instIsAlt,
-            instNotAlt,
-            instGreater,
-            instLesser,
-            instGreaterEqu,
-            instLesserEqu,
-            instPlus,
-            instMinus,
-            instMult,
-            instDivide,
-            instMod
+            opperIsAlt,
+            opperNotAlt,
+            opperGreater,
+            opperLesser,
+            opperGreaterEqu,
+            opperLesserEqu,
+            opperPlus,
+            opperMinus,
+            opperMult,
+            opperDivide,
+            opperMod
         };
 
         public static readonly List<TermPair> SysList = new List<TermPair>()
