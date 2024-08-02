@@ -1,6 +1,7 @@
 ﻿using System;
 using System.Collections.Generic;
 using System.Linq;
+using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json.Serialization;
 using System.Threading.Tasks;
@@ -150,7 +151,7 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string Value = string.Empty;
         public string Content = string.Empty;
-        public Inside[] ContentLabels { get; set; } = new Inside[0];
+        public List<Inside> ContentLabels { get; set; } = new List<Inside>();
         public Inside InType = Inside.VariableTypeMixed;
 
         public List<PhiVariables> Variables = new List<PhiVariables>(); 

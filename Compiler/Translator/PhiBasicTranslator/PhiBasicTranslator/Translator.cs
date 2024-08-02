@@ -53,7 +53,7 @@ namespace PhiBasicTranslator
 
             Inside last = Inside.None;
             Inside inside = Inside.None;
-
+            
             int typeCount = 0;
 
             bool insideMethod = false;
@@ -130,6 +130,7 @@ namespace PhiBasicTranslator
                     if (instruct.Name != string.Empty)
                     {
                         instruct.Value += letter;
+                        instruct.ContentLabels.Add(inside);
 
                         if (inside != Inside.String && letter == " ")
                         {
@@ -153,6 +154,7 @@ namespace PhiBasicTranslator
                         instruct.InType = last;
                     }
 
+                    instruct = TranslateSubInstructs(instruct);
                     current.Instructs.Add(instruct.Copy());
                     instruct = new PhiInstruct();
                     insideInstructContainer = false;
@@ -292,6 +294,57 @@ namespace PhiBasicTranslator
             }
 
             return classes;
+        }
+
+        public PhiInstruct TranslateSubInstructs(PhiInstruct instr)
+        {
+            Inside last = instr.ContentLabels.First();
+
+            PhiVariables varble = new PhiVariables();
+
+            for(int i = 0; i < instr.Value.Length; i++)
+            {
+                Inside inside = instr.ContentLabels[i];
+                string letter = instr.Value[i].ToString();
+
+                bool match = inside == last;
+
+                if(!match)
+                {
+                    if(inside == Inside.VariableTypeInt)
+                    {
+                        varble.varType = inside;
+                    }
+                    if(inside == Inside.VariableName)
+                    {
+                        varble.Name += letter;
+                    }
+
+                    if (inside == Inside.VariableEnd)
+                    {
+                        instr.Variables.Add(varble);
+                        //Preexisting?
+                        varble = new PhiVariables();
+                    }
+                }
+                else if(varble.Name != string.Empty)
+                {
+                    if(inside == Inside.VariableName)
+                        varble.Name += letter;
+                }
+
+                if(inside == Inside.VariableValue)
+                {
+                    varble.ValueRaw += letter;
+                }
+
+                if(i > 0)
+                {
+                    last = inside;
+                }
+            }
+
+            return instr;
         }
 
         public string ExtractContent(string content, string begin)
