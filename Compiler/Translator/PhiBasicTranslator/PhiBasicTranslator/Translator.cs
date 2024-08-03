@@ -2,6 +2,10 @@
 using System.ComponentModel.Design;
 using System.Diagnostics.Metrics;
 using PhiBasicTranslator.ParseEngine;
+using System.ComponentModel;
+using System;
+using static System.Runtime.InteropServices.JavaScript.JSType;
+using System.Reflection.Metadata;
 
 namespace PhiBasicTranslator
 {
@@ -49,7 +53,6 @@ namespace PhiBasicTranslator
             PhiClass current = new PhiClass();
             PhiMethod method = new PhiMethod();
             PhiVariables varble = new PhiVariables();
-            PhiInstruct instruct = new PhiInstruct();
 
             Inside last = Inside.None;
             Inside inside = Inside.None;
@@ -57,7 +60,6 @@ namespace PhiBasicTranslator
             int typeCount = 0;
 
             bool insideMethod = false;
-            bool insideInstructContainer = false;
 
             for (int i = 0; i < content.Length; i++)
             {
@@ -94,73 +96,103 @@ namespace PhiBasicTranslator
                         
                         method = new PhiMethod();
                     }
+                    #region Instructs
 
-                    //you will need to do subinstruct parsing
-                    if (inside == Inside.Instruct && instruct.Name == string.Empty)
+                    PhiInstruct instr = ExtractInstruct(inside, content, prev, profile, i);
+
+                    if(instr.Name != string.Empty)
                     {
-                        if (i > 1)
-                        {
-                            string cut = content.Substring(i);
-                            string nme = ParseUtilities.MatchesInstruct(cut, prev);
+                        i += instr.Value.Length; // check for accuracy
 
-                            if (nme != string.Empty)
-                            {
-                                instruct.Name = nme;
+                        instr = TranslateSubInstructs(instr);
+                        current.Instructs.Add(instr.Copy());
+                    }
+                    //you will need to do subinstruct parsing
+                    //if (inside == Inside.Instruct && instruct.Name == string.Empty)
+                    //{
+                    //    if (i > 1)
+                    //    {
+                    //        string cut = content.Substring(i);
+                    //        string nme = ParseUtilities.MatchesInstruct(cut, prev);
 
-                                #region Instructs
+                    //        if (nme != string.Empty)
+                    //        {
+                    //            instruct.Name = nme;
 
+                                
 
-                                if (Defs.instructContainers.Contains(instruct.Name)
-                                    && !insideInstructContainer)
-                                {
-                                    instruct.InType = Inside.InstructContainer;
-                                    insideInstructContainer = true;
-                                }
-                            }
-                        }
-                    }                                
+                    //            if (Defs.instructContainers.Contains(instruct.Name))
+                    //            {
+                    //                instruct.InType = Inside.InstructContainer;
+
+                    //                int len = MeasureContainerInstruct(content, profile.ContentInside, i);
+
+                    //                string instructValue = content.Substring(i, len);
+
+                    //                instruct.Value = instructValue;
+                    //            }
+                    //            else
+                    //            {
+                    //                instruct.InType = Inside.VariableTypeMixed;
+                    //                int len = MeasureInstruct(content, profile.ContentInside, i);
+
+                    //                string instructValue = content.Substring(i, len);
+
+                    //                instruct.Value = instructValue;
+                    //            }
+
+                    //            for (int j = i; j < i + instruct.Value.Length; j++)
+                    //            {
+                    //                instruct.ContentLabels.Add(profile.ContentInside[j]);
+                    //            }
+                                
+                    //            i += instruct.Value.Length; // check for accuracy
+
+                    //            instruct = TranslateSubInstructs(instruct);
+                    //            current.Instructs.Add(instruct.Copy());
+                    //            instruct = new PhiInstruct();
+                    //        }
+                    //    }
+                    //}                                
                     #endregion
 
                 }
 
                 #region Instruct Close and Value
 
-                if (inside != Inside.InstructClose) //;;
-                {
-                    if (instruct.Name != string.Empty)
-                    {
-                        instruct.Value += letter;
-                        instruct.ContentLabels.Add(inside);
+                //if (inside != Inside.InstructClose) //;;
+                //{
+                //    if (instruct.Name != string.Empty)
+                //    {
+                //        if (inside != Inside.String && letter == " ")
+                //        {
+                //            typeCount++;
+                //        }
+                //    }
+                //}
+                //else
+                //{
+                //    //remember subinstruct parsing
+                //    if (Defs.instructContainers.Contains(instruct.Name))
+                //    {
+                //        instruct.InType = Inside.InstructContainer;
+                //    }
+                //    else if (typeCount > 1)
+                //    {
+                //        instruct.InType = Inside.VariableTypeMixed;
+                //    }
+                //    else
+                //    {
+                //        instruct.InType = last;
+                //    }
 
-                        if (inside != Inside.String && letter == " ")
-                        {
-                            typeCount++;
-                        }
-                    }
-                }
-                else
-                {
-                    //remember subinstruct parsing
-                    if (Defs.instructContainers.Contains(instruct.Name))
-                    {
-                        instruct.InType = Inside.InstructContainer;
-                    }
-                    else if (typeCount > 1)
-                    {
-                        instruct.InType = Inside.VariableTypeMixed;
-                    }
-                    else
-                    {
-                        instruct.InType = last;
-                    }
+                //    instruct = TranslateSubInstructs(instruct);
+                //    current.Instructs.Add(instruct.Copy());
+                //    instruct = new PhiInstruct();
+                //    insideInstructContainer = false;
 
-                    instruct = TranslateSubInstructs(instruct);
-                    current.Instructs.Add(instruct.Copy());
-                    instruct = new PhiInstruct();
-                    insideInstructContainer = false;
-
-                    typeCount = 0;
-                }
+                //    typeCount = 0;
+                //}
                 #endregion
 
                 #region Class Values
@@ -242,10 +274,6 @@ namespace PhiBasicTranslator
                         {
                             method.Variables.Add(varble.Copy());
                         }
-                        else if(insideInstructContainer)
-                        {
-                            instruct.Variables.Add(varble.Copy());
-                        }
                         else
                         {
                             current.Variables.Add(varble.Copy());
@@ -296,55 +324,194 @@ namespace PhiBasicTranslator
             return classes;
         }
 
+
+        public PhiInstruct ExtractInstruct(Inside inside, string content, string prev, ContentProfile profile, int i)
+        {
+            PhiInstruct instruct = new PhiInstruct();
+            //you will need to do subinstruct parsing
+            if (inside == Inside.Instruct && instruct.Name == string.Empty)
+            {
+                if (i > 1)
+                {
+                    string cut = content.Substring(i);
+                    string nme = ParseUtilities.MatchesInstruct(cut, prev);
+
+                    if (nme != string.Empty)
+                    {
+                        instruct.Name = nme;
+
+                        if (Defs.instructContainers.Contains(instruct.Name))
+                        {
+                            instruct.InType = Inside.InstructContainer;
+                            int len = MeasureContainerInstruct(content, profile.ContentInside, i);
+
+                            string instructValue = content.Substring(i, len);
+
+                            instruct.Value = instructValue;
+                        }
+                        else
+                        {
+                            instruct.InType = Inside.VariableTypeMixed;
+                            int len = MeasureInstruct(content, profile.ContentInside, i);
+
+                            string instructValue = content.Substring(i, len);
+
+                            instruct.Value = instructValue;
+                        }
+
+                        for (int j = i; j < i + instruct.Value.Length; j++)
+                        {
+                            instruct.ContentLabels.Add(profile.ContentInside[j]);
+                        }
+
+                        instruct = TranslateSubInstructs(instruct);
+                    }
+                }
+            }
+
+            return instruct;
+        }
         public PhiInstruct TranslateSubInstructs(PhiInstruct instr)
         {
-            Inside last = instr.ContentLabels.First();
-
-            PhiVariables varble = new PhiVariables();
-
-            for(int i = 0; i < instr.Value.Length; i++)
+            if (instr.Name != string.Empty)
             {
-                Inside inside = instr.ContentLabels[i];
-                string letter = instr.Value[i].ToString();
+                Inside last = instr.ContentLabels.First();
 
-                bool match = inside == last;
+                PhiVariables varble = new PhiVariables();
+                PhiInstruct subInstr = new PhiInstruct();
 
-                if(!match)
+                string prev = string.Empty;
+
+                for (int i = 0; i < instr.Value.Length; i++)
                 {
-                    if(inside == Inside.VariableTypeInt)
+                    Inside inside = instr.ContentLabels[i];
+                    string letter = instr.Value[i].ToString();
+
+                    bool match = inside == last;
+
+                    if (!match)
                     {
-                        varble.varType = inside;
+                        if (inside == Inside.VariableTypeInt)
+                        {
+                            varble.varType = inside;
+                        }
+                        else if (inside == Inside.VariableName)
+                        {
+                            varble.Name += letter;
+                        }
+                        else if (inside == Inside.VariableEnd)
+                        {
+                            instr.Variables.Add(varble);
+                            //Preexisting?
+                            varble = new PhiVariables();
+                        }
+                        else if (inside == Inside.Instruct)
+                        {
+                            string instName = ParseUtilities.MatchesInstruct(instr.Value, prev);
+
+                            if (instName != string.Empty)
+                            {
+                                // instructContainers remember to work on unified parsing
+                                if (Defs.instructContainers.Contains(instName))
+                                {
+
+                                }
+                            }
+                        }
                     }
-                    if(inside == Inside.VariableName)
+                    else if (varble.Name != string.Empty)
                     {
-                        varble.Name += letter;
+                        if (inside == Inside.VariableName)
+                            varble.Name += letter;
                     }
 
-                    if (inside == Inside.VariableEnd)
+                    if (inside == Inside.VariableValue)
                     {
-                        instr.Variables.Add(varble);
-                        //Preexisting?
-                        varble = new PhiVariables();
+                        varble.ValueRaw += letter;
                     }
-                }
-                else if(varble.Name != string.Empty)
-                {
-                    if(inside == Inside.VariableName)
-                        varble.Name += letter;
-                }
 
-                if(inside == Inside.VariableValue)
-                {
-                    varble.ValueRaw += letter;
-                }
-
-                if(i > 0)
-                {
-                    last = inside;
+                    if (i > 0)
+                    {
+                        last = inside;
+                        prev = letter;
+                    }
                 }
             }
 
             return instr;
+        }
+        public int MeasureInstruct(string content, Inside[] contentLabels, int begin)
+        {
+            int len = 0;
+
+            string prev = string.Empty;
+
+            if (content.Length == contentLabels.Length)
+            {
+                for (int i = begin; i < content.Length; i++)
+                {
+                    Inside inside = contentLabels[i];
+
+                    len++;
+
+                    if (inside == Inside.InstructClose)
+                    {
+                        return len;
+                    }
+
+                    if (i > 0) { prev = content[i].ToString(); }
+                }
+            }
+
+            return len;
+        }
+        public int MeasureContainerInstruct(string content, Inside[] contentLabels, int begin)
+        {
+            int len = 0;
+
+            int depth = 0;
+
+            string prev = string.Empty;
+
+            if (content.Length == contentLabels.Length)
+            {
+                for (int i = begin; i < content.Length; i++)
+                {
+                    Inside inside = contentLabels[i];
+
+                    len++;
+
+                    string cut = content.Substring(i);
+
+                    if (inside == Inside.Instruct)
+                    {
+                        string instName = ParseUtilities.MatchesInstruct(cut, prev);
+
+                        if (instName != string.Empty)
+                        {
+                            // instructContainers remember to work on unified parsing
+                            if (Defs.instructContainers.Contains(instName))
+                            {
+                                depth++;
+                            }
+                        }
+                    }
+
+                    if (inside == Inside.InstructClose)
+                    {
+                        depth--;
+
+                        if (depth <= 0)
+                        {
+                            return len;
+                        }
+                    }
+
+                    if(i > 0) { prev = content[i].ToString(); }
+                }
+            }
+
+            return len;
         }
 
         public string ExtractContent(string content, string begin)

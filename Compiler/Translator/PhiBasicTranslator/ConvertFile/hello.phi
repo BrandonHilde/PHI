@@ -15,7 +15,10 @@ phi.Hello:OS16BIT
 	log message value;
 
 	while int i: 0; i < value; i++;
-        log i;
+
+		if i is 0:
+			log i;
+		;;
     ;;
 
 	str test: 'hi';

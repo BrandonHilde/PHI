@@ -172,6 +172,9 @@ namespace PhiBasicTranslator.Structure
 
             foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
 
+            List<Inside> labels = new List<Inside>();
+            foreach (Inside i in ContentLabels) labels.Add(i);
+
             return new PhiInstruct
             {
                 Name = Name,
@@ -179,7 +182,8 @@ namespace PhiBasicTranslator.Structure
                 Content = Content,
                 InType = InType,
                 Variables = vars,
-                Instructs = insts
+                Instructs = insts,
+                ContentLabels = labels
             };
         }
     }
