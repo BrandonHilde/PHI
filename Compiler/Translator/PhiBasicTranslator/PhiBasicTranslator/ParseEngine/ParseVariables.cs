@@ -172,7 +172,7 @@ namespace PhiBasicTranslator.ParseEngine
                 {
                     varbles.Add(new PhiVariables
                     {
-                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarStart++),
+                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarCount++),
                         ValueRaw = v,
                         varType = Inside.VariableTypeStr,
                         preExisting = false
@@ -182,7 +182,7 @@ namespace PhiBasicTranslator.ParseEngine
                 {
                     varbles.Add(new PhiVariables
                     {
-                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarStart++),
+                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarCount++),
                         ValueRaw = v,
                         varType = Inside.VariableTypeDec,
                         preExisting = false
@@ -192,7 +192,7 @@ namespace PhiBasicTranslator.ParseEngine
                 {
                     varbles.Add(new PhiVariables
                     {
-                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarStart++),
+                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarCount++),
                         ValueRaw = v,
                         varType = Inside.VariableTypeInt,
                         preExisting = false

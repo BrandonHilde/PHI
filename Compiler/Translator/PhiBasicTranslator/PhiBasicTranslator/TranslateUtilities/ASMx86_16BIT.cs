@@ -25,6 +25,10 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceLoopContentName = "{LOOP CONTENT NAME}";
         public static readonly string replaceLoopIncrement = "{LOOP INCREMENT}";
 
+
+        public static readonly string loopSubIncrementByOne = "inc cx";
+        public static readonly string jumpIfGreaterThan = "jg";
+
         public static readonly string prefixVariable = "VALUE_";
         public enum InheritType { External, BITS16 }
         public static List<string> GetInheritance(InheritType type)
@@ -262,7 +266,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> InstructWhileContent_BITS16 = new List<string>()
         {
-            replaceLoopContentName,
+            replaceLoopContentName + ":",
             replaceLoopContent,
         };
 
