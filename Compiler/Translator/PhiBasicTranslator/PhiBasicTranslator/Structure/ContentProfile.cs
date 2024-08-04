@@ -44,7 +44,8 @@ namespace PhiBasicTranslator.Structure
         MethodName,
         Instruct,
         InstructContainer,
-        InstructClose
+        InstructClose,
+        StandAloneInt
     };
 
     public enum RegionLabel

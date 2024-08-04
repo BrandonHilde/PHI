@@ -98,13 +98,12 @@ namespace PhiBasicTranslator
                     }
                     #region Instructs
 
-                    PhiInstruct instr = ExtractInstruct(inside, content, prev, profile, i);
+                    PhiInstruct instr = ExtractInstruct(inside, content, prev, profile.ContentInside, i);
 
                     if(instr.Name != string.Empty)
                     {
                         i += instr.Value.Length; // check for accuracy
 
-                        instr = TranslateSubInstructs(instr);
                         current.Instructs.Add(instr.Copy());
                     }
                     //you will need to do subinstruct parsing
@@ -325,7 +324,7 @@ namespace PhiBasicTranslator
         }
 
 
-        public PhiInstruct ExtractInstruct(Inside inside, string content, string prev, ContentProfile profile, int i)
+        public PhiInstruct ExtractInstruct(Inside inside, string content, string prev, Inside[] profile, int i)
         {
             PhiInstruct instruct = new PhiInstruct();
             //you will need to do subinstruct parsing
@@ -343,7 +342,7 @@ namespace PhiBasicTranslator
                         if (Defs.instructContainers.Contains(instruct.Name))
                         {
                             instruct.InType = Inside.InstructContainer;
-                            int len = MeasureContainerInstruct(content, profile.ContentInside, i);
+                            int len = MeasureContainerInstruct(content, profile, i);
 
                             string instructValue = content.Substring(i, len);
 
@@ -352,7 +351,7 @@ namespace PhiBasicTranslator
                         else
                         {
                             instruct.InType = Inside.VariableTypeMixed;
-                            int len = MeasureInstruct(content, profile.ContentInside, i);
+                            int len = MeasureInstruct(content, profile, i);
 
                             string instructValue = content.Substring(i, len);
 
@@ -361,7 +360,7 @@ namespace PhiBasicTranslator
 
                         for (int j = i; j < i + instruct.Value.Length; j++)
                         {
-                            instruct.ContentLabels.Add(profile.ContentInside[j]);
+                            instruct.ContentLabels.Add(profile[j]);
                         }
 
                         instruct = TranslateSubInstructs(instruct);
@@ -405,6 +404,25 @@ namespace PhiBasicTranslator
                             //Preexisting?
                             varble = new PhiVariables();
                         }
+                        else if (inside == Inside.StandAloneInt)
+                        {
+                            varble.varType = Inside.StandAloneInt;
+                            varble.Name = Defs.replaceUnsetName;
+
+                            for(int j = i; j < instr.Value.Length; j++)
+                            {
+                                if(instr.ContentLabels[j] != Inside.StandAloneInt)
+                                {
+                                    break;
+                                }
+                                else
+                                {
+                                    varble.ValueRaw += instr.Value[j];
+                                }
+                            }
+
+                            instr.Variables.Add(varble);
+                        }
                         else if (inside == Inside.Instruct)
                         {
                             string instName = ParseUtilities.MatchesInstruct(instr.Value, prev);
@@ -414,7 +432,10 @@ namespace PhiBasicTranslator
                                 // instructContainers remember to work on unified parsing
                                 if (Defs.instructContainers.Contains(instName))
                                 {
+                                    PhiInstruct subInstruct = ExtractInstruct(inside, instr.Value, prev, instr.ContentLabels.ToArray(), i);
+                                    instr.Instructs.Add(subInstruct);
 
+                                    i += subInstruct.Value.Length;
                                 }
                             }
                         }
@@ -586,7 +607,7 @@ namespace PhiBasicTranslator
 
                     break;
                 }
-                else if(Defs.Numbers.Contains(content[i])) 
+                else if(Defs.Numeric.Contains(content[i])) 
                 {
                     build += content[i];    
                 }

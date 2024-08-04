@@ -12,7 +12,9 @@ namespace PhiBasicTranslator.Structure
         public static readonly string replaceValueStart = ";{VALUES}";
         public static readonly string replaceCodeStart = ";{CODE}";
         public static readonly string replaceVarStart = ";{VARIABLE}";
-        public static readonly string replaceIncludes = ";{Include}";
+        public static readonly string replaceIncludes = ";{INCLUDE}";
+
+        public static readonly string replaceUnsetName = ";{UNSET}";
 
         public static readonly string classStartPHI = "phi.";
         public static readonly string classStartx86ASM = "asm.";
@@ -41,7 +43,8 @@ namespace PhiBasicTranslator.Structure
         public static readonly string VariableOpenDeclare = "VALUE_";
         public static readonly string InstructSetClosure = ";;";
         public static readonly string Alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_1234567890";
-        public static readonly string Numbers = "1234567890.-";
+        public static readonly string Numeric = "1234567890.-";
+        public static readonly string RawNumberCut = ":;,=*+-!&|$/%^()[]{}";
 
         public static readonly string varSTR = "str";
         public static readonly string varINT = "int";

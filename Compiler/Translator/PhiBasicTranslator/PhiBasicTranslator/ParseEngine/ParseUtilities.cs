@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Reflection;
+using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
 
@@ -124,17 +125,61 @@ namespace PhiBasicTranslator.ParseEngine
 
         public static ContentProfile ProfileBasics(string content, ContentProfile previous)
         {
+            string prev = string.Empty;
+
             for (int i = 0; i < content.Length; i++)
             {
                 string letter = content[i].ToString();
 
-                if (previous.ContentInside[i] == Inside.None)
+                string cut = content.Substring(i);
+
+                Inside inside = previous.ContentInside[i];
+
+                if (inside == Inside.None)
                 {
                     if(letter == Defs.VariableSetClosure) //;
                     {
                         previous.ContentInside[i] = Inside.SemiColon;
                     }
+
+                    if(Defs.Numeric.Contains(letter))
+                    {
+                        if(!Defs.Alphabet.Contains(prev))
+                        {
+                            string num = string.Empty;
+                            bool valid = false;
+
+                            for(int j = i; j < content.Length;  j++)
+                            {
+                                string add = content[j].ToString();
+
+                                if (Defs.Numeric.Contains(add))
+                                {
+                                    num += add;
+                                }
+                                else
+                                {
+                                    valid = Defs.RawNumberCut.Contains(add);
+
+                                    break;
+                                }
+                            }
+
+                            if (valid)
+                            {
+                                for (int k = i; k < i + num.Length; k++)
+                                {
+                                    previous.ContentInside[k] = Inside.StandAloneInt;
+                                }
+
+                                i += num.Length;
+                            }
+                        }
+                    }
+                    
                 }
+
+                prev = letter;
             }
 
             return previous;

@@ -24,6 +24,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceLoopContent = "{LOOP CONTENT}";
         public static readonly string replaceLoopContentName = "{LOOP CONTENT NAME}";
         public static readonly string replaceLoopIncrement = "{LOOP INCREMENT}";
+
+        public static readonly string prefixVariable = "VALUE_";
         public enum InheritType { External, BITS16 }
         public static List<string> GetInheritance(InheritType type)
         {
@@ -101,15 +103,20 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 if (varble.varType == Inside.VariableTypeStr)
                 {
-                    vr = varble.Name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                    vr = UpdateName(varble.Name) + varStrTyp + FormatStringConvert(varble.ValueRaw);
                 }
                 else if (varble.varType == Inside.VariableTypeInt)
                 {
-                    vr = varble.Name + varIntTyp + varble.ValueRaw;
+                    vr = UpdateName(varble.Name) + varIntTyp + varble.ValueRaw;
                 }
             }
 
             return vr;
+        }
+
+        public static string UpdateName(string name)
+        {
+            return ASMx86_16BIT.prefixVariable + name;
         }
 
         public static List<string> InsertVars(List<string> Code, List<string> Values)

@@ -12,11 +12,10 @@ namespace PhiBasicTranslator.TranslateUtilities
 {
     public class TranslateToX86
     {
+        public static int VarStart = 0;
         public static List<string> ToX86(PhiCodebase code)
         {
             List<string> ASM = new List<string>();
-
-            int varStart = 0;
 
             for(int i = 0; i < code.ClassList.Count; i++)
             {
@@ -28,7 +27,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                     ASM = AutoInclude_BITS16(ASM);
                 }
 
-                List<string> values = ConvertVarsToASM(cls.Variables);
+                List<string> values = ConvertAllVariables(cls);
 
                 ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
 
@@ -36,11 +35,11 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     if(inst.Name == Defs.instLog)
                     {
-                        BuildInstructLog(inst, cls, ASM, varStart);
+                        ASM = BuildInstructLog(inst, cls, ASM);
                     }
                     else if(inst.Name == Defs.instWhile)
                     {
-                        BuildInstructWhile(inst, cls, ASM, varStart);
+                        ASM = BuildInstructWhile(inst, cls, ASM);
                     }
                 }
             }
@@ -48,23 +47,71 @@ namespace PhiBasicTranslator.TranslateUtilities
             return ASM;
         }
 
-        public static List<string> BuildInstructWhile(PhiInstruct instruct, PhiClass cls, List<string> Code, int varStart = 0)
+        public static List<string> ConvertAllVariables(PhiClass cls)
         {
+            List<string> values = ConvertVarsToASM(UpdateUnsetVars(cls.Variables));
+
+            foreach (PhiMethod methods in cls.Methods)
+            {
+                values.AddRange(ConvertVarsToASM(UpdateUnsetVars(methods.Variables)));
+            }
+
+            foreach(PhiInstruct inst in cls.Instructs)
+            {
+                values.AddRange(ConvertAllSubVariables(inst));
+            }
+
+            return values;
+        }
+
+        public static List<string> ConvertAllSubVariables(PhiInstruct inst)
+        {
+            List<string> values = ConvertVarsToASM(UpdateUnsetVars(inst.Variables));
+
+            foreach(PhiInstruct instruct in inst.Instructs)
+            {
+                values.AddRange(ConvertAllSubVariables(instruct));
+            }
+
+            return values;
+        }
+
+        public static List<PhiVariables> UpdateUnsetVars(List<PhiVariables> varbles)
+        {
+            foreach (PhiVariables vbl in varbles)
+            {
+                if (vbl.Name == Defs.replaceUnsetName)
+                {
+                    vbl.Name = ASMx86_16BIT.UpdateName((VarStart++).ToString());
+                    
+                    if(vbl.varType == Inside.StandAloneInt)
+                    {
+                        vbl.varType = Inside.VariableTypeInt;
+                    }
+                }
+            }
+
+            return varbles;
+        }
+
+        public static List<string> BuildInstructWhile(PhiInstruct instruct, PhiClass cls, List<string> Code)
+        {
+            List<string> values = ConvertVarsToASM(instruct.Variables);
+
+            Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
 
             return Code;
         }
 
-        public static List<string> BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<string> Code, int varStart = 0)
+        public static List<string> BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<string> Code)
         {
             // remember to add includes check to prevent duplicates
 
             List<string> values = new List<string>();
 
-            //List<PhiVariables> val = ConvertValue(inst.Value, cls, inst.InType);
+            List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(instruct, cls.Variables);
 
-            List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(instruct, cls.Variables, varStart);
-
-            varStart += vrs.Count;
+            VarStart += vrs.Count;
 
             foreach (PhiVariables v in vrs)
             {
@@ -81,7 +128,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
 
-                Code = ASMx86_16BIT.ReplaceValue(Code, Defs.replaceValueStart, v.Name);
+                Code = ASMx86_16BIT.ReplaceValue(Code, Defs.replaceValueStart, ASMx86_16BIT.UpdateName(v.Name));
             }
 
             Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
@@ -103,7 +150,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             foreach (PhiVariables vbl in phiVariables)
             {
-                string build = vbl.Name;
+                string build = ASMx86_16BIT.UpdateName(vbl.Name);
 
                 if(vbl.varType == Inside.VariableTypeStr)
                 {
@@ -111,7 +158,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
                 else if(vbl.varType == Inside.VariableTypeInt)
                 {
-                    build += " dd ";
+                    build += ASMx86_16BIT.varIntTyp;
                     build += vbl.ValueRaw;
                 }
 
@@ -137,8 +184,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 varbls.Add(new PhiVariables 
                 { 
-                    Name = "VALUE_" + vcount, 
-                    ValueRaw = " db " + value + ",0" ,
+                    Name = ASMx86_16BIT.prefixVariable + vcount, 
+                    ValueRaw = ASMx86_16BIT.varStrTyp + value + ",0" , // db 'value',0
                     varType = Inside.VariableTypeStr
                 });
             }
@@ -161,7 +208,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                         {
                             varbls.Add(new PhiVariables
                             {
-                                Name = cls.Variables[j].Name,
+                                Name = ASMx86_16BIT.prefixVariable + cls.Variables[j].Name,
                                 varType= cls.Variables[j].varType
                             });
                         }
