@@ -19,11 +19,12 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varStrReturn = "13";
         public static readonly string varStrTab = "9";
         public static readonly string varStrEnd = "0";
-        public static readonly string replaceLoopCondition = "{LOOP CONDITION}";
-        public static readonly string replaceLoopLimit = "{LOOP LIMIT}";
-        public static readonly string replaceLoopContent = "{LOOP CONTENT}";
-        public static readonly string replaceLoopContentName = "{LOOP CONTENT NAME}";
-        public static readonly string replaceLoopIncrement = "{LOOP INCREMENT}";
+        public static readonly string replaceLoopCondition = ";{LOOP CONDITION}";
+        public static readonly string replaceLoopLimit = ";{LOOP LIMIT}";
+        public static readonly string replaceLoopName = ";{LOOP NAME}";
+        public static readonly string replaceLoopContent = ";{LOOP CONTENT}";
+        public static readonly string replaceLoopContentName = ";{LOOP CONTENT NAME}";
+        public static readonly string replaceLoopIncrement = ";{LOOP INCREMENT}";
 
 
         public static readonly string loopSubIncrementByOne = "inc cx";
@@ -99,19 +100,23 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return vl;
         }
-        public static string VarTypeConvert(PhiVariables varble)
+        public static string VarTypeConvert(PhiVariables varble, bool update = true)
         {
             string vr = string.Empty;
 
             if (varble != null)
             {
+                string name = varble.Name;
+
+                if(update) name = UpdateName(varble.Name);
+
                 if (varble.varType == Inside.VariableTypeStr)
                 {
-                    vr = UpdateName(varble.Name) + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                    vr = name + varStrTyp + FormatStringConvert(varble.ValueRaw);
                 }
                 else if (varble.varType == Inside.VariableTypeInt)
                 {
-                    vr = UpdateName(varble.Name) + varIntTyp + varble.ValueRaw;
+                    vr = name + varIntTyp + varble.ValueRaw;
                 }
             }
 
@@ -193,6 +198,15 @@ namespace PhiBasicTranslator.TranslateUtilities
             return next;
         }
 
+
+        public static List<string> MergeSubCode(List<string> Code, List<string> SubCode, string Key)
+        {
+            List<string> sub = SubCode.Where(x=> x != Key).ToList();
+
+            List<string> result = MergeValues(Code, sub, Key);
+
+            return result;
+        }
         public static List<string> ReplaceValue(List<string> Code, string Key, string Value)
         {
             for (int i = 0; i < Code.Count; i++)
@@ -248,26 +262,33 @@ namespace PhiBasicTranslator.TranslateUtilities
         }
 
         #region WHILE LOOPS
+
+        public static List<string> InstructWhileContent_BITS16 = new List<string>()
+        {
+            replaceLoopContentName + ":",
+            replaceLoopContent,
+        };
+
+        public static List<string> InstructWhileCall_BITS16 = new List<string>()
+        {
+            "   call " + replaceLoopName,
+        };
+
         public static List<string> InstructWhileStart_BITS16 = new List<string>()
         {
-            "loop_start:",
+            replaceLoopName + ":",
             "   mov cx, [" + Defs.replaceValueStart +"]"
         };
 
         public static List<string> InstructWhileCheck_BITS16 = new List<string>()
         {
             ".loop_check:",
-            "   mov cx, [" + Defs.replaceValueStart + "]",
             "   cmp cx, [" + replaceLoopLimit + "]",
-            "   " + replaceLoopCondition + " .done", //jge jg je jl jle etc...
+            "   " + replaceLoopCondition + " .loop_done", //jge jg je jl jle etc...
             "   " + replaceLoopIncrement, // inc cx
-            "   call " + replaceLoopContentName
-        };
-
-        public static List<string> InstructWhileContent_BITS16 = new List<string>()
-        {
-            replaceLoopContentName + ":",
-            replaceLoopContent,
+            "   mov [" + Defs.replaceValueStart +"], cx",
+            "   call " + replaceLoopContentName,
+            "   jmp .loop_check"
         };
 
         public static List<string> InstructWhileDone_BITS16 = new List<string>()
@@ -276,6 +297,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov [" + Defs.replaceValueStart + "], cx",
             "   ret"
         };
+
         #endregion
         #region LOGS
         public static List<string> InstructLogString_BITS16 = new List<string>()

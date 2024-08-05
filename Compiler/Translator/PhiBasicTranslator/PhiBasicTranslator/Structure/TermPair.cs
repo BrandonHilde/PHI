@@ -16,4 +16,10 @@ namespace PhiBasicTranslator.Structure
 
         public List<TermPair> SubTerms { get; set; } = new List<TermPair>();
     }
+
+    public class BuildPair
+    {
+        public List<string> CoreCode { get; set; } = new List<string>();
+        public List<string> SubCode { get; set; } = new List<string>();
+    }
 }

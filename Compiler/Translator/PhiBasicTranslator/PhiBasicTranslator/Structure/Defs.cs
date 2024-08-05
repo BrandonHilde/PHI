@@ -71,6 +71,8 @@ namespace PhiBasicTranslator.Structure
         public static readonly string instElse = "else";
         public static readonly string instIfElse = instIf + " " + instElse;
         public static readonly string instLog = "log";
+        public static readonly string instAsk = "ask";
+        public static readonly string instCall = "call";
         public static readonly string opperIs = "is";      // ==
         public static readonly string opperIsAlt = "==";   // ==
         public static readonly string opperHas = "has";    // contians()
@@ -99,7 +101,9 @@ namespace PhiBasicTranslator.Structure
         public static readonly List<string> instructCommandList = new List<string>()
         {
             instOrder,
-            instLog
+            instLog,
+            instAsk,
+            instCall
         };
 
         public static readonly List<string> OpperatorModifyList = new List<string>()

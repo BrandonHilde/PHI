@@ -22,85 +22,145 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 PhiClass cls = code.ClassList[i];
 
-                if(cls.Inherit == Defs.os16bit)
+                if (cls.Inherit == Defs.os16bit)
                 {
                     ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
                     ASM = AutoInclude_BITS16(ASM);
+
+                    List<PhiVariables> allVars = ConvertAllVariables(cls);
+
+                    List<string> values = ConvertVarsToASM(allVars); 
+
+                    List<string> SubCode = new List<string> 
+                    { 
+                        "",
+                        "  " + Defs.replaceCodeStart,
+                        "" 
+                    };
+
+                    ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
+
+                    BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
+
+                    ASM = pair.CoreCode;
                 }
-
-                List<string> values = ConvertAllVariables(cls);
-
-                ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
-
-                ASM = BuildAllInstructs(ASM, cls);
             }
 
             return ASM;
         }
 
-        public static List<string> BuildAllInstructs(List<string> Code, PhiClass cls)
+        public static BuildPair BuildAllInstructs(List<string> Code, List<string> SubCode, PhiClass cls, List<PhiVariables> predefined)
         {
             foreach (PhiInstruct inst in cls.Instructs)
             { 
-                Code = BuildSubInstructs(Code, inst, cls);
+                BuildPair pair = BuildSubInstructs(Code, SubCode, inst, cls, predefined, false);
+
+                Code = pair.CoreCode;
+
+                Code = ASMx86_16BIT.MergeSubCode(Code, pair.SubCode, Defs.replaceCodeStart);
             }
 
-            return Code;
+            return new BuildPair
+            {
+                CoreCode = Code,
+                SubCode = SubCode
+            };
         }
 
-        public static List<string> BuildSubInstructs(List<string> Code, PhiInstruct instrct, PhiClass cls)
+        public static BuildPair BuildSubInstructs(List<string> Code, List<string> SubCode, PhiInstruct instrct, PhiClass cls, List<PhiVariables> predefined, bool sub = true)
         {
+            List<string> cde = Code;
+            List<string> scd = SubCode;
+
+            foreach (PhiInstruct inst in instrct.Instructs)
+            {
+                BuildPair pair = BuildSubInstructs(cde, scd, inst, cls, predefined);
+
+                //needs to change probably
+                scd = pair.SubCode;
+                cde = pair.CoreCode;
+            }
+
             if (instrct.Name == Defs.instLog)
             {
-                Code = BuildInstructLog(instrct, cls, Code);
+                BuildPair pair = BuildInstructLog(instrct, cls, predefined, Code, SubCode);
+
+                if(!sub)
+                {
+                    //pair.CoreCode = ASMx86_16BIT.MergeValues(Code, SubCode, Defs.replaceCodeStart);
+                }
+
+                return pair;
             }
             else if (instrct.Name == Defs.instWhile)
             {
-                List<string> values = ConvertVarsToASM(instrct.Variables);
+                //List<string> values = ConvertVarsToASM(instrct.Variables);
 
-                Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
+                // Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
 
-                List<string> buildcode = BuildInstructWhile(instrct, cls);
+                string name = "WHILE_" + (LoopCount++);
+
+                List<string> buildcode = BuildInstructWhile(name, instrct, cls);
+
+                List<string> callWhile = ASMx86_16BIT.ReplaceValue(
+                    ASMx86_16BIT.InstructWhileCall_BITS16,
+                    ASMx86_16BIT.replaceLoopName,
+                    name);
 
                 Code = ASMx86_16BIT.MergeValues(Code, buildcode, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, callWhile, Defs.replaceCodeStart);
+
+                if (instrct.Instructs.Count > 0)
+                {
+                    Code = ASMx86_16BIT.MergeSubCode(Code, scd, ASMx86_16BIT.replaceLoopContent);
+                }
             }
-            else if(instrct.Name == Defs.instIf)
+            else if (instrct.Name == Defs.instIf)
             {
-
+                Console.WriteLine(instrct.Name + " Unimplemented");
             }
-            else if(instrct.Name == Defs.instElse)
+            else if (instrct.Name == Defs.instElse)
             {
-
+                Console.WriteLine(instrct.Name + " Unimplemented");
             }
-
-            foreach(PhiInstruct inst in instrct.Instructs)
+            else if (instrct.Name == Defs.instAsk)
             {
-                Code = BuildSubInstructs(Code, inst, cls);
+                Console.WriteLine(instrct.Name + " Unimplemented");
             }
+            else if (instrct.Name == Defs.instCall)
+            {
+                Console.WriteLine(instrct.Name + " Unimplemented");
+            }
+ 
 
-            return Code;
+
+            return new BuildPair 
+            { 
+                CoreCode = Code, 
+                SubCode = SubCode 
+            };
         }
 
-        public static List<string> ConvertAllVariables(PhiClass cls)
+        public static List<PhiVariables> ConvertAllVariables(PhiClass cls)
         {
-            List<string> values = ConvertVarsToASM(UpdateUnsetVars(cls.Variables));
+            List<PhiVariables> allv = UpdateUnsetVars(cls.Variables);
 
             foreach (PhiMethod methods in cls.Methods)
             {
-                values.AddRange(ConvertVarsToASM(UpdateUnsetVars(methods.Variables)));
+                allv.AddRange(UpdateUnsetVars(methods.Variables));
             }
 
             foreach(PhiInstruct inst in cls.Instructs)
             {
-                values.AddRange(ConvertAllSubVariables(inst));
+                allv.AddRange(ConvertAllSubVariables(inst));
             }
 
-            return values;
+            return allv;
         }
 
-        public static List<string> ConvertAllSubVariables(PhiInstruct inst)
+        public static List<PhiVariables> ConvertAllSubVariables(PhiInstruct inst)
         {
-            List<string> values = ConvertVarsToASM(UpdateUnsetVars(inst.Variables));
+            List<PhiVariables> values = UpdateUnsetVars(inst.Variables);
 
             foreach(PhiInstruct instruct in inst.Instructs)
             {
@@ -116,7 +176,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 if (vbl.Name == Defs.replaceUnsetName)
                 {
-                    vbl.Name = ASMx86_16BIT.UpdateName((VarCount++).ToString());
+                    vbl.Name = (VarCount++).ToString();
                     
                     if(vbl.varType == Inside.StandAloneInt)
                     {
@@ -128,7 +188,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             return varbles;
         }
 
-        public static List<string> BuildInstructWhile(PhiInstruct instruct, PhiClass cls)
+        public static List<string> BuildInstructWhile(string name, PhiInstruct instruct, PhiClass cls)
         {            
             List<string> loopStart = new List<string>();
 
@@ -140,23 +200,38 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
 
             //remember to check for different while loop formats and math example: (6 + (4/i))
-            if (values.Count == 2)
+            if (values.Count >= 2)
             {
-                string name = "WHILE_" + (LoopCount++);
+                string nameCont = name + "_CONTENT";
 
                 string vStart = values.FirstOrDefault() ?? string.Empty;
                 string vLimit = values.LastOrDefault() ?? string.Empty;
 
                 #region Loop Construction
+
+                loopStart.AddRange(ASMx86_16BIT.InstructWhileContent_BITS16);
+
                 loopStart = ASMx86_16BIT.ReplaceValue(
+                   loopStart,
+                   ASMx86_16BIT.replaceLoopContentName,
+                   nameCont
+                );
+
+                loopStart.AddRange(ASMx86_16BIT.ReplaceValue(
                     ASMx86_16BIT.InstructWhileStart_BITS16,
                     Defs.replaceValueStart,
                     vStart
-                );
+                ));
 
                 loopStart.AddRange(ASMx86_16BIT.InstructWhileCheck_BITS16);
 
                 #region LOOP CHECK
+
+                loopStart = ASMx86_16BIT.ReplaceValue(
+                    loopStart,
+                    ASMx86_16BIT.replaceLoopName,
+                    name
+                );
 
                 loopStart = ASMx86_16BIT.ReplaceValue(
                     loopStart,
@@ -185,22 +260,16 @@ namespace PhiBasicTranslator.TranslateUtilities
                 loopStart = ASMx86_16BIT.ReplaceValue(
                     loopStart,
                     ASMx86_16BIT.replaceLoopContentName,
-                    name
+                    nameCont
                 );
 
                 #endregion
 
-                loopStart.AddRange(ASMx86_16BIT.InstructWhileContent_BITS16);
-
                 loopStart.AddRange(ASMx86_16BIT.InstructWhileDone_BITS16);
 
-                #region LOOP END
 
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                   loopStart,
-                   ASMx86_16BIT.replaceLoopContentName,
-                   name
-                );
+
+                #region LOOP END
 
                 // loop content gets added after sub-instructs are built
 
@@ -223,13 +292,13 @@ namespace PhiBasicTranslator.TranslateUtilities
             return loopStart;
         }
 
-        public static List<string> BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<string> Code)
+        public static BuildPair BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<PhiVariables> predefined, List<string> Code, List<string> SubCode)
         {
             // remember to add includes check to prevent duplicates
 
             List<string> values = new List<string>();
 
-            List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(instruct, cls.Variables);
+            List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(instruct, predefined);
 
             VarCount += vrs.Count;
 
@@ -238,22 +307,26 @@ namespace PhiBasicTranslator.TranslateUtilities
                 if (v.varType == Inside.VariableTypeStr)
                 {
                     // adds function call code
-                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
+                    SubCode = ASMx86_16BIT.MergeValues(SubCode, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
                 }
                 else if (v.varType == Inside.VariableTypeInt)
                 {
                     // adds function call code
-                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
+                    SubCode = ASMx86_16BIT.MergeValues(SubCode, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
                 }
 
                 if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
 
-                Code = ASMx86_16BIT.ReplaceValue(Code, Defs.replaceValueStart, ASMx86_16BIT.UpdateName(v.Name));
+                SubCode = ASMx86_16BIT.ReplaceValue(SubCode, Defs.replaceValueStart, ASMx86_16BIT.UpdateName(v.Name));
             }
 
             Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
 
-            return Code;
+            return new BuildPair
+            {
+                CoreCode = Code,
+                SubCode = SubCode
+            };
         }
 
         public static List<string> AutoInclude_BITS16(List<string> Code)

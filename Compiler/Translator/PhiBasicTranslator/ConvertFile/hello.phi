@@ -16,9 +16,7 @@ phi.Hello:OS16BIT
 
 	while int i: 0; i < 10; i++;
 
-		if i is 0:
-			log i;
-		;;
+		log i;
     ;;
 
 	str test: 'hi';

@@ -117,6 +117,13 @@ namespace PhiBasicTranslator.ParseEngine
 
             string content = instruct.Value;
 
+            bool singleline = false;
+
+            if(Defs.instructCommandList.Contains(instruct.Name)) 
+            {
+                singleline = true;
+            }
+
             List<string> vals = new List<string>();
             string vl = string.Empty;
 
@@ -148,7 +155,11 @@ namespace PhiBasicTranslator.ParseEngine
                             vl = vl.Replace(Defs.VariableSetClosure, "");
 
                             vals.Add(vl);
+
                             vl = string.Empty;
+
+                            //comes after the clear because it will double add otherwise
+                            if (singleline) break;
                         }
                     }
                 }
@@ -172,7 +183,7 @@ namespace PhiBasicTranslator.ParseEngine
                 {
                     varbles.Add(new PhiVariables
                     {
-                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarCount++),
+                        Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
                         varType = Inside.VariableTypeStr,
                         preExisting = false
@@ -182,7 +193,7 @@ namespace PhiBasicTranslator.ParseEngine
                 {
                     varbles.Add(new PhiVariables
                     {
-                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarCount++),
+                        Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
                         varType = Inside.VariableTypeDec,
                         preExisting = false
@@ -192,7 +203,7 @@ namespace PhiBasicTranslator.ParseEngine
                 {
                     varbles.Add(new PhiVariables
                     {
-                        Name = Defs.VariableOpenDeclare + (TranslateToX86.VarCount++),
+                        Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
                         varType = Inside.VariableTypeInt,
                         preExisting = false
