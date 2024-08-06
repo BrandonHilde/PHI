@@ -100,7 +100,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return vl;
         }
-        public static string VarTypeConvert(PhiVariables varble, bool update = true)
+        public static string VarTypeConvert(PhiVariable varble, bool update = true)
         {
             string vr = string.Empty;
 
@@ -315,8 +315,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86 = new List<string>()
         {
-            "BITS 16",
-            "org 0x7c00",
+            "[BITS 16]",
+            "[ORG 0x7c00]",
             "",
             "start:",
             "   xor ax, ax",

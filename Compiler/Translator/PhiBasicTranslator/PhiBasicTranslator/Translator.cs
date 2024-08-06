@@ -52,7 +52,7 @@ namespace PhiBasicTranslator
 
             PhiClass current = new PhiClass();
             PhiMethod method = new PhiMethod();
-            PhiVariables varble = new PhiVariables();
+            PhiVariable varble = new PhiVariable();
 
             Inside last = Inside.None;
             Inside inside = Inside.None;
@@ -278,7 +278,7 @@ namespace PhiBasicTranslator
                             current.Variables.Add(varble.Copy());
                         }
 
-                        varble = new PhiVariables();
+                        varble = new PhiVariable();
                     }
 
                     if(last == Inside.MethodName)
@@ -376,7 +376,7 @@ namespace PhiBasicTranslator
             {
                 Inside last = instr.ContentLabels.First();
 
-                PhiVariables varble = new PhiVariables();
+                PhiVariable varble = new PhiVariable();
                 PhiInstruct subInstr = new PhiInstruct();
 
                 string prev = string.Empty;
@@ -402,7 +402,7 @@ namespace PhiBasicTranslator
                         {
                             instr.Variables.Add(varble);
                             //Preexisting?
-                            varble = new PhiVariables();
+                            varble = new PhiVariable();
                         }
                         else if (inside == Inside.StandAloneInt)
                         {
@@ -873,9 +873,9 @@ namespace PhiBasicTranslator
             return phiMethod;
         }
 
-        public List<PhiVariables> GetPhiVariables(string content)
+        public List<PhiVariable> GetPhiVariables(string content)
         {
-            List<PhiVariables> phiVariables = new List<PhiVariables>();
+            List<PhiVariable> phiVariables = new List<PhiVariable>();
 
             for (int i = 0; i < content.Length; i++)
             {
@@ -904,7 +904,7 @@ namespace PhiBasicTranslator
 
                         List<string> raw = ExtractStrContent(vle);
 
-                        phiVariables.Add(new PhiVariables
+                        phiVariables.Add(new PhiVariable
                         {
                             Name = nme,
                             ValueRaw = "",
@@ -923,7 +923,7 @@ namespace PhiBasicTranslator
 
                         List<string> raw = extractIntContent(vle);
 
-                        phiVariables.Add(new PhiVariables
+                        phiVariables.Add(new PhiVariable
                         {
                             Name = nme,
                             ValueRaw = "",

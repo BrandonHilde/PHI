@@ -14,10 +14,28 @@ phi.Hello:OS16BIT
 	
 	log message value;
 
-	while int i: 0; i < 10; i++;
+	while int i: 0; i < (10 + 1); i++;
 
 		log i;
     ;;
 
 	str test: 'hi';
 }
+
+
+#
+
+		if(4 * y + (t/2) is (67 or 84) + y) and value > 5:
+
+			log 'very complex conditional';
+
+		;;
+
+		if(value: 8 * y):
+
+		if(str test: 'hello')
+
+		;;
+	
+
+#

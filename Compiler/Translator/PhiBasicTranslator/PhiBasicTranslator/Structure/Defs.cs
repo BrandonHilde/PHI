@@ -19,6 +19,8 @@ namespace PhiBasicTranslator.Structure
         public static readonly string classStartPHI = "phi.";
         public static readonly string classStartx86ASM = "asm.";
         public static readonly string classStartArmASM = "arm.";
+        public static readonly string paraOpen = "(";
+        public static readonly string paraClose = ")";
         public static readonly string curlyOpen = "{";
         public static readonly string curlyClose = "}";
         public static readonly string squareOpen = "[";

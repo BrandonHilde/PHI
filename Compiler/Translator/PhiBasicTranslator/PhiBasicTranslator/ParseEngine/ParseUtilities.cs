@@ -5,6 +5,7 @@ using System.ComponentModel;
 using System.Diagnostics.Metrics;
 using System.Linq;
 using System.Reflection;
+using System.Reflection.Metadata;
 using System.Security.Cryptography;
 using System.Text;
 using System.Threading.Tasks;
@@ -16,7 +17,7 @@ namespace PhiBasicTranslator.ParseEngine
         public static ContentProfile ProfileContent(string content)
         {
             ContentProfile prf = ProfilePrepare(content);
-
+            prf = ProfileParenthesis(content, prf);
             prf = ProfileClasses(content, prf);
             prf = ProfileVariables(content, prf);
             prf = ProfileMethods(content, prf);
@@ -172,7 +173,7 @@ namespace PhiBasicTranslator.ParseEngine
                                     previous.ContentInside[k] = Inside.StandAloneInt;
                                 }
 
-                                i += num.Length;
+                                i += num.Length - 1;
                             }
                         }
                     }
@@ -293,7 +294,10 @@ namespace PhiBasicTranslator.ParseEngine
 
                 if (val != Inside.None && previous.ContentInside[i] == Inside.None)
                 {
-                    previous = ParseVariables.ProfileVAR(content, i, val, previous);
+                    if (previous.Labels[i] != RegionLabel.Conditional)
+                    {
+                        previous = ParseVariables.ProfileVAR(content, i, val, previous);
+                    }
                 }
             }
 
@@ -475,6 +479,49 @@ namespace PhiBasicTranslator.ParseEngine
             }
 
             return profile;
+        }
+      
+        public static ContentProfile ProfileParenthesis(string content, ContentProfile previous)
+        {
+            bool parenthesisStart = false;
+
+            int condStart = 0;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                string letter = content[i].ToString();
+
+                if (previous.ContentInside[i] == Inside.None)
+                {
+                    if (letter == Defs.paraOpen)
+                    {
+                        parenthesisStart = true;
+                        condStart = i;
+                    }
+
+                    if (parenthesisStart)
+                    {
+                        if (letter == Defs.paraClose)
+                        {
+                            parenthesisStart = false;
+
+                            RegionLabel regionLabel = RegionLabel.ConditionalBoolean;
+                            string rvalue = content.Substring(condStart, i - condStart + 1);
+
+                            if (rvalue.Contains(Defs.VariableSet))
+                            {
+                            }
+
+                            for (int j = condStart; j <= i; j++)
+                            {
+                                previous.Labels[j] = regionLabel;
+                            }
+                        }
+                    }
+                }
+            }
+
+            return previous;
         }
         /*
         public static string ClearMiltiLineComments(string content)

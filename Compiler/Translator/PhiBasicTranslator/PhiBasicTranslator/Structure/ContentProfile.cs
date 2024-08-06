@@ -53,7 +53,12 @@ namespace PhiBasicTranslator.Structure
         None,
         Declaration,
         InstructValue,
-        InstructContent
+        InstructContent,
+        Conditional,
+        ConditionalBoolean,
+        ConditionalValueSet,
+        ConditionalOperation,
+        ConditionalAssessMath,
     }
     public class ContentProfile
     {

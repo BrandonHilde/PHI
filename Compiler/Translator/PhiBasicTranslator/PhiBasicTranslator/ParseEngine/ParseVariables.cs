@@ -111,9 +111,9 @@ namespace PhiBasicTranslator.ParseEngine
             return str;
         }
 
-        public static List<PhiVariables> GetInstructSubVariables(PhiInstruct instruct, List<PhiVariables> predefinedVars)
+        public static List<PhiVariable> GetInstructSubVariables(PhiInstruct instruct, List<PhiVariable> predefinedVars)
         {
-            List<PhiVariables> varbles = new List<PhiVariables>();
+            List<PhiVariable> varbles = new List<PhiVariable>();
 
             string content = instruct.Value;
 
@@ -173,7 +173,7 @@ namespace PhiBasicTranslator.ParseEngine
 
             foreach (string v in vals)
             {
-                PhiVariables? vbl = predefinedVars.Where(x => x.Name == v).FirstOrDefault();
+                PhiVariable? vbl = predefinedVars.Where(x => x.Name == v).FirstOrDefault();
 
                 if(vbl != null)
                 {
@@ -181,7 +181,7 @@ namespace PhiBasicTranslator.ParseEngine
                 }
                 else if(v.StartsWith(Defs.ValueStringDelcare))
                 {
-                    varbles.Add(new PhiVariables
+                    varbles.Add(new PhiVariable
                     {
                         Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
@@ -191,7 +191,7 @@ namespace PhiBasicTranslator.ParseEngine
                 }
                 else if(v.Contains('.')) // defs.decimaldeclare?
                 {
-                    varbles.Add(new PhiVariables
+                    varbles.Add(new PhiVariable
                     {
                         Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
@@ -201,7 +201,7 @@ namespace PhiBasicTranslator.ParseEngine
                 }
                 else
                 {
-                    varbles.Add(new PhiVariables
+                    varbles.Add(new PhiVariable
                     {
                         Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,

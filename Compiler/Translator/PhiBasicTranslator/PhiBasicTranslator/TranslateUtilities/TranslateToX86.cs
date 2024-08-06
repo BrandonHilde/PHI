@@ -27,7 +27,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                     ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
                     ASM = AutoInclude_BITS16(ASM);
 
-                    List<PhiVariables> allVars = ConvertAllVariables(cls);
+                    List<PhiVariable> allVars = ConvertAllVariables(cls);
 
                     List<string> values = ConvertVarsToASM(allVars); 
 
@@ -49,7 +49,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             return ASM;
         }
 
-        public static BuildPair BuildAllInstructs(List<string> Code, List<string> SubCode, PhiClass cls, List<PhiVariables> predefined)
+        public static BuildPair BuildAllInstructs(List<string> Code, List<string> SubCode, PhiClass cls, List<PhiVariable> predefined)
         {
             foreach (PhiInstruct inst in cls.Instructs)
             { 
@@ -67,7 +67,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             };
         }
 
-        public static BuildPair BuildSubInstructs(List<string> Code, List<string> SubCode, PhiInstruct instrct, PhiClass cls, List<PhiVariables> predefined, bool sub = true)
+        public static BuildPair BuildSubInstructs(List<string> Code, List<string> SubCode, PhiInstruct instrct, PhiClass cls, List<PhiVariable> predefined, bool sub = true)
         {
             List<string> cde = Code;
             List<string> scd = SubCode;
@@ -141,9 +141,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             };
         }
 
-        public static List<PhiVariables> ConvertAllVariables(PhiClass cls)
+        public static List<PhiVariable> ConvertAllVariables(PhiClass cls)
         {
-            List<PhiVariables> allv = UpdateUnsetVars(cls.Variables);
+            List<PhiVariable> allv = UpdateUnsetVars(cls.Variables);
 
             foreach (PhiMethod methods in cls.Methods)
             {
@@ -158,9 +158,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             return allv;
         }
 
-        public static List<PhiVariables> ConvertAllSubVariables(PhiInstruct inst)
+        public static List<PhiVariable> ConvertAllSubVariables(PhiInstruct inst)
         {
-            List<PhiVariables> values = UpdateUnsetVars(inst.Variables);
+            List<PhiVariable> values = UpdateUnsetVars(inst.Variables);
 
             foreach(PhiInstruct instruct in inst.Instructs)
             {
@@ -170,9 +170,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             return values;
         }
 
-        public static List<PhiVariables> UpdateUnsetVars(List<PhiVariables> varbles)
+        public static List<PhiVariable> UpdateUnsetVars(List<PhiVariable> varbles)
         {
-            foreach (PhiVariables vbl in varbles)
+            foreach (PhiVariable vbl in varbles)
             {
                 if (vbl.Name == Defs.replaceUnsetName)
                 {
@@ -292,17 +292,17 @@ namespace PhiBasicTranslator.TranslateUtilities
             return loopStart;
         }
 
-        public static BuildPair BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<PhiVariables> predefined, List<string> Code, List<string> SubCode)
+        public static BuildPair BuildInstructLog(PhiInstruct instruct, PhiClass cls, List<PhiVariable> predefined, List<string> Code, List<string> SubCode)
         {
             // remember to add includes check to prevent duplicates
 
             List<string> values = new List<string>();
 
-            List<PhiVariables> vrs = ParseVariables.GetInstructSubVariables(instruct, predefined);
+            List<PhiVariable> vrs = ParseVariables.GetInstructSubVariables(instruct, predefined);
 
             VarCount += vrs.Count;
 
-            foreach (PhiVariables v in vrs)
+            foreach (PhiVariable v in vrs)
             {
                 if (v.varType == Inside.VariableTypeStr)
                 {
@@ -337,11 +337,11 @@ namespace PhiBasicTranslator.TranslateUtilities
             return Code;
         }
 
-        public static List<string> ConvertVarsToASM(List<PhiVariables> phiVariables)
+        public static List<string> ConvertVarsToASM(List<PhiVariable> phiVariables)
         {
             List<string> vals = new List<string>();
 
-            foreach (PhiVariables vbl in phiVariables)
+            foreach (PhiVariable vbl in phiVariables)
             {
                 string build = ASMx86_16BIT.UpdateName(vbl.Name);
 
@@ -360,9 +360,9 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return vals;
         }
-        public static List<PhiVariables> ConvertValue(string value, PhiClass cls, Inside ValueType = Inside.VariableTypeStr, int vcount = 0)
+        public static List<PhiVariable> ConvertValue(string value, PhiClass cls, Inside ValueType = Inside.VariableTypeStr, int vcount = 0)
         {
-            List<PhiVariables> varbls = new List<PhiVariables>();
+            List<PhiVariable> varbls = new List<PhiVariable>();
 
             if(ValueType == Inside.String)
             {
@@ -375,7 +375,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 }
 
-                varbls.Add(new PhiVariables 
+                varbls.Add(new PhiVariable 
                 { 
                     Name = ASMx86_16BIT.prefixVariable + vcount, 
                     ValueRaw = ASMx86_16BIT.varStrTyp + value + ",0" , // db 'value',0
@@ -399,7 +399,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                         if (cut.StartsWith(cls.Variables[j].Name + " ")
                          || cut.StartsWith(cls.Variables[j].Name + Defs.VariableSetClosure)) 
                         {
-                            varbls.Add(new PhiVariables
+                            varbls.Add(new PhiVariable
                             {
                                 Name = ASMx86_16BIT.prefixVariable + cls.Variables[j].Name,
                                 varType= cls.Variables[j].varType
