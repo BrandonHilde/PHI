@@ -207,6 +207,16 @@ namespace PhiBasicTranslator.TranslateUtilities
                 string vStart = values.FirstOrDefault() ?? string.Empty;
                 string vLimit = values.LastOrDefault() ?? string.Empty;
 
+                string jmpCon = ASMx86_16BIT.jumpIfGreaterThan;
+                string incVal = ASMx86_16BIT.loopSubIncrementByOne;
+
+                PhiConditional? condit = instruct.Conditionals.FirstOrDefault();
+
+                if (condit != null)
+                {
+                    jmpCon = ConvertConditional(condit);
+                }
+
                 #region Loop Construction
 
                 loopStart.AddRange(ASMx86_16BIT.InstructWhileContent_BITS16);
@@ -248,13 +258,13 @@ namespace PhiBasicTranslator.TranslateUtilities
                 loopStart = ASMx86_16BIT.ReplaceValue(
                     loopStart,
                     ASMx86_16BIT.replaceLoopCondition,
-                    ASMx86_16BIT.jumpIfGreaterThan
+                    jmpCon
                 );
 
                 loopStart = ASMx86_16BIT.ReplaceValue(
                     loopStart,
                     ASMx86_16BIT.replaceLoopIncrement,
-                    ASMx86_16BIT.loopSubIncrementByOne
+                    incVal
                 );
 
                 loopStart = ASMx86_16BIT.ReplaceValue(
@@ -410,6 +420,59 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
 
             return varbls;
+        }
+
+        public static string ConvertConditional(PhiConditional condition)
+        {
+            string cond = string.Empty;
+
+            if(condition != null)
+            {
+                ConditionalPairs.ConditionType tp = condition.PhiConditionals.First().type;
+
+                if(tp == ConditionalPairs.ConditionType.JumpIfLessEqual)
+                {
+                    cond = ASMx86_16BIT.jumpIfLessThanEqual; // <=
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfEqual)
+                {
+                    cond = ASMx86_16BIT.jumpIfEqual; // ==
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfLess)
+                {
+                    cond = ASMx86_16BIT.jumpIfLessThan; // <
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfGreater)
+                {
+                    cond = ASMx86_16BIT.jumpIfGreaterThan; // >
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfNotEqual)
+                {
+                    cond = ASMx86_16BIT.jumpIfNotEqual; // != 
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfGreaterEqual)
+                {
+                    cond = ASMx86_16BIT.jumpIfGreaterThanEqual;
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfCarry)
+                {
+                    cond = ASMx86_16BIT.jumpIfCarry;
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfNoCarry)
+                {
+                    cond = ASMx86_16BIT.jumpIfNoCarry;
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfOverflow)
+                {
+                    cond = ASMx86_16BIT.jumpIfOverflow;
+                }
+                else if (tp == ConditionalPairs.ConditionType.JumpIfNoOverflow)
+                {
+                    cond = ASMx86_16BIT.jumpIfNoOverflow;
+                }
+            }
+
+            return cond;
         }
     }
 }

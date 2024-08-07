@@ -8,7 +8,32 @@ namespace PhiBasicTranslator.Structure
 {
     public class ConditionalPairs
     {
-        public PhiVariable LeftValue { get; set; }
-        public PhiVariable RightValue { get;set; }
+        public enum ConditionType 
+        { 
+            None,
+            JumpIfGreater, 
+            JumpIfLess, 
+            JumpIfEqual, 
+            JumpIfNotEqual,
+            JumpIfGreaterEqual,
+            JumpIfLessEqual,
+            JumpIfCarry,
+            JumpIfNoCarry,
+            JumpIfOverflow,
+            JumpIfNoOverflow
+        }
+        public string LeftValue { get; set; }
+        public string RightValue { get;set; }
+        public ConditionType type = ConditionType.None;
+
+        public ConditionalPairs Copy()
+        {
+            return new ConditionalPairs 
+            { 
+                LeftValue = LeftValue, 
+                RightValue = RightValue,
+                type = type
+            };
+        }
     }
 }

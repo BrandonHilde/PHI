@@ -380,6 +380,8 @@ namespace PhiBasicTranslator
                 PhiInstruct subInstr = new PhiInstruct();
 
                 string prev = string.Empty;
+                string cond = string.Empty;
+                string cRaw = string.Empty;
 
                 for (int i = 0; i < instr.Value.Length; i++)
                 {
@@ -446,6 +448,44 @@ namespace PhiBasicTranslator
                             varble.Name += letter;
                     }
 
+                    if(inside == Inside.Conditonal)
+                    {
+                        cond += letter;
+
+                        string cr = string.Empty;
+
+                        int bgn = 0;
+                        int end = 0;
+
+                        #region clip
+
+                        for (int j = i; j < instr.Value.Length; j++)
+                        {
+                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            {
+                                end = j;
+                                break;
+                            }
+                        }
+
+                        for (int j = i; j >= 0; j--)
+                        {
+                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            {
+                                bgn = j;
+                                break;
+                            }
+                        }
+                        #endregion
+                    
+                        cr = instr.Value.Substring(bgn + 1, end - bgn - 1).Trim();
+
+                        if(cRaw == string.Empty) 
+                        { 
+                            cRaw = cr; 
+                        }
+                    }
+
                     if (inside == Inside.VariableValue)
                     {
                         varble.ValueRaw += letter;
@@ -455,6 +495,41 @@ namespace PhiBasicTranslator
                     {
                         last = inside;
                         prev = letter;
+                    }
+                }
+
+                if(cond != string.Empty)
+                {
+                    Console.WriteLine(cond);
+
+                    string? select = Defs.OpperCompareList.Where(x => x == cond).FirstOrDefault();
+
+                    if (select != null)
+                    {
+                        string left = string.Empty;
+                        string right = string.Empty;
+
+                        string[] two = cRaw.Split(cond);
+
+                        if (two.Length == 2)
+                        {
+                            left = two[0].Trim();
+                            right = two[1].Trim();
+                        }
+
+                        instr.Conditionals.Add(new PhiConditional
+                        {
+                            PhiConditionals = new List<ConditionalPairs>
+                            {
+                                new ConditionalPairs 
+                                { 
+                                    type = ParseUtilities.MatchesCondition(cond),
+                                    LeftValue = left,
+                                    RightValue = right
+                                }
+                            },
+                            RawValue = cRaw
+                        });
                     }
                 }
             }

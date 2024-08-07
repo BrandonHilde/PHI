@@ -108,6 +108,19 @@ namespace PhiBasicTranslator.Structure
             instCall
         };
 
+        public static readonly List<string> OpperCompareList = new List<string>()
+        {
+            opperIs,
+            opperIsAlt,
+            opperHas,
+            opperGreater,
+            opperLesser,
+            opperGreaterEqu,
+            opperLesserEqu,
+            opperNot,
+            opperNotAlt
+        };
+
         public static readonly List<string> OpperatorModifyList = new List<string>()
         {
             opperIsAlt,

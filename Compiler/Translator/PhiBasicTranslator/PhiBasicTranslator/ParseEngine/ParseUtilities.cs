@@ -138,6 +138,18 @@ namespace PhiBasicTranslator.ParseEngine
 
                 if (inside == Inside.None)
                 {
+                    string? opr = Defs.OpperCompareList.Where(
+                        x => cut.StartsWith(x)
+                        ).FirstOrDefault();
+
+                    if(opr != null)
+                    {
+                        for(int j = i; j < i + opr.Length; j++)
+                        {
+                            previous.ContentInside[j] = Inside.Conditonal;
+                        }
+                    }
+
                     if(letter == Defs.VariableSetClosure) //;
                     {
                         previous.ContentInside[i] = Inside.SemiColon;
@@ -606,6 +618,51 @@ namespace PhiBasicTranslator.ParseEngine
             return rawContent;
         }
         */
+
+        public static ConditionalPairs.ConditionType MatchesCondition(string condition)
+        {
+            ConditionalPairs.ConditionType typ = ConditionalPairs.ConditionType.None;
+
+            for (int i = 0; i < condition.Length; i++)
+            {
+                string? match = Defs.OpperCompareList.Where(
+                    x => condition.Contains(x)
+                    ).FirstOrDefault();
+
+                bool cont = (match != null);
+
+                if(cont)
+                {
+                    //remember it only jumps if it fails so use opposites
+                    if (match == Defs.opperIs || match == Defs.opperIsAlt)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfNotEqual;
+                    }
+                    else if (match == Defs.opperNot || match == Defs.opperNotAlt)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfEqual;
+                    }
+                    else if (match == Defs.opperLesser)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfGreaterEqual;
+                    }
+                    else if (match == Defs.opperLesserEqu)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfGreater;
+                    }
+                    else if (match == Defs.opperGreater)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfLessEqual;
+                    }
+                    else if (match == Defs.opperGreaterEqu)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfLess;
+                    }
+                }
+            }
+
+            return typ;
+        }
         public static string ClearLabel(string label, string allowed)
         {
             string clear = string.Empty;

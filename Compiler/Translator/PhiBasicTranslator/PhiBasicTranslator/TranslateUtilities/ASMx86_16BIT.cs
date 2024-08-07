@@ -29,6 +29,16 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static readonly string loopSubIncrementByOne = "inc cx";
         public static readonly string jumpIfGreaterThan = "jg";
+        public static readonly string jumpIfLessThan = "jl";
+        public static readonly string jumpIfGreaterThanEqual = "jge";
+        public static readonly string jumpIfLessThanEqual = "jle";
+        public static readonly string jumpIfEqual = "je";
+        public static readonly string jumpIfNotEqual = "jne";
+
+        public static readonly string jumpIfCarry = "jc";
+        public static readonly string jumpIfNoCarry = "jnc";
+        public static readonly string jumpIfOverflow = "jo";
+        public static readonly string jumpIfNoOverflow = "jno";
 
         public static readonly string prefixVariable = "VALUE_";
         public enum InheritType { External, BITS16 }

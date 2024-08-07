@@ -33,6 +33,8 @@ namespace PhiBasicTranslator.Structure
 
             foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
 
+            //
+
             //maybe unecessary 
             List<Inside> labels = new List<Inside>();
             foreach (Inside i in ContentLabels) labels.Add(i);
