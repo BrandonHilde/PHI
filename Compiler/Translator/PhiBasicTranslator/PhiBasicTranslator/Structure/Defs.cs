@@ -48,6 +48,48 @@ namespace PhiBasicTranslator.Structure
         public static readonly string Numeric = "1234567890.-";
         public static readonly string RawNumberCut = ":;,=*+-!&|$/%^()[]{}";
 
+        public static readonly string MathInc = "++";
+        public static readonly string MathDec = "--";
+        public static readonly string MathMultEq = "**";
+        public static readonly string MathDivEq = "//";
+        public static readonly string MathModEq = "%%";
+        public static readonly string MathPowEq = "^^";
+        public static readonly string MathPlus = "+";
+        public static readonly string MathMinus = "-";
+        public static readonly string MathMult = "*";
+        public static readonly string MathDiv = "/";
+        public static readonly string MathMod = "%";
+        public static readonly string MathPow = "^";
+
+        public static readonly string BoolAnd = "&";
+        public static readonly string BoolOr = "?";
+        public static readonly string BoolXor = "|";
+        public static readonly string BoolNot = "!";
+
+        public static readonly List<string> MathSmallOpsList = new List<string>()
+        {
+            MathPlus,
+            MathMinus,
+            MathMult,
+            MathDiv,
+            MathMod,
+            MathPow,
+            BoolAnd,
+            BoolOr,
+            BoolXor,
+            BoolNot
+        };
+
+        public static readonly List<string> MathOpsList = new List<string>()
+        {
+            MathInc,
+            MathDec,
+            MathMultEq,
+            MathDivEq,
+            MathModEq,
+            MathPowEq
+        };
+
         public static readonly string varSTR = "str";
         public static readonly string varINT = "int";
         public static readonly string varDEC = "dec"; // decimal

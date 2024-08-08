@@ -1,6 +1,7 @@
 ﻿// See https://aka.ms/new-console-template for more information
 using ConvertFile;
 using PhiBasicTranslator;
+using PhiBasicTranslator.Structure;
 
 Console.WriteLine("Hello, World!");
 
@@ -26,6 +27,10 @@ List<string> lines = new List<string>();
 lines = translator.TranslateFile(file);
 
 Console.WriteLine();
+
+PhiMath math = new PhiMath();
+
+MathPair pr = PhiMath.Parse("67 ** 4");
 
 
 Console.WriteLine("\r\n;ASMx86 CODE\r\n");
