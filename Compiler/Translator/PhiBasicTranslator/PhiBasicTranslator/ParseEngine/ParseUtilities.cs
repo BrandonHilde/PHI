@@ -739,7 +739,10 @@ namespace PhiBasicTranslator.ParseEngine
 
             foreach (string val in Defs.instructContainers)
             {
-                if (content.StartsWith(val + " "))
+                if (ParseMisc.StartsWithAppendedValue(
+                    content, 
+                    val, 
+                    Defs.TabSpaceClosureCharacters.ToList()))
                 {
                     return val;
                 }
@@ -752,7 +755,10 @@ namespace PhiBasicTranslator.ParseEngine
 
             foreach (string val in Defs.instructCommandList)
             {
-                if (content.StartsWith(val + " "))
+                if (ParseMisc.StartsWithAppendedValue(
+                    content,
+                    val,
+                    Defs.TabSpaceClosureCharacters.ToList()))
                 {
                     vname = val;
                 }

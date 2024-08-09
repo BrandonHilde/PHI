@@ -26,6 +26,11 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceLoopContentName = ";{LOOP CONTENT NAME}";
         public static readonly string replaceLoopIncrement = ";{LOOP INCREMENT}";
 
+        public static readonly string replaceIfCondition = ";{IF CONDITION}";
+        public static readonly string replaceIfRightCompare = ";{IF COMPARE RIGHT}";
+        public static readonly string replaceIfLeftCompare = ";{IF COMPARE LEFT}";
+        public static readonly string replaceIfSkip = ";{IF SKIP}";
+
 
         public static readonly string loopSubIncrementByOne = "inc cx";
         public static readonly string loopSubDecrementByOne = "dec cx";
@@ -272,6 +277,16 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return CodeLines;
         }
+
+        #region IF ELSE
+
+        public static List<string> InstructIfContent_BITS16 = new List<string>()
+        {
+            "   cmp " + replaceIfLeftCompare + ", " + replaceIfRightCompare,
+            "   " + replaceIfCondition + ", " + replaceIfSkip
+        };
+
+        #endregion
 
         #region WHILE LOOPS
 

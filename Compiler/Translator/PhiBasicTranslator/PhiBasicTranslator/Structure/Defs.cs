@@ -41,6 +41,8 @@ namespace PhiBasicTranslator.Structure
         public static readonly string IgnoreCharacter = "\\";
 
         public static readonly string NameClosureCharacters = " \t\r\n{:";
+        public static readonly string ConditionalClosureCharacters = "\r\n\t;:";
+        public static readonly string TabSpaceClosureCharacters = "\r\n\t ";
         public static readonly string VariableSetClosure = ";";
         public static readonly string VariableOpenDeclare = "VALUE_";
         public static readonly string InstructSetClosure = ";;";
@@ -113,7 +115,7 @@ namespace PhiBasicTranslator.Structure
         public static readonly string instOrder = "order";
         public static readonly string instIf = "if";
         public static readonly string instElse = "else";
-        public static readonly string instIfElse = instIf + " " + instElse;
+        public static readonly string instIfElse = "elif";
         public static readonly string instLog = "log";
         public static readonly string instAsk = "ask";
         public static readonly string instCall = "call";

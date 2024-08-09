@@ -427,7 +427,8 @@ namespace PhiBasicTranslator
                         }
                         else if (inside == Inside.Instruct)
                         {
-                            string instName = ParseUtilities.MatchesInstruct(instr.Value, prev);
+                            string cut = instr.Value.Substring(i);
+                            string instName = ParseUtilities.MatchesInstruct(cut, prev);
 
                             if (instName != string.Empty)
                             {
@@ -459,7 +460,7 @@ namespace PhiBasicTranslator
 
                         for (int j = i; j < instr.Value.Length; j++)
                         {
-                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            if (Defs.ConditionalClosureCharacters.Contains(instr.Value[j]))
                             {
                                 end = j;
                                 break;
@@ -468,7 +469,9 @@ namespace PhiBasicTranslator
 
                         for (int j = i; j >= 0; j--)
                         {
-                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            string ltr = instr.Value[j].ToString();
+
+                            if (Defs.ConditionalClosureCharacters.Contains(ltr))
                             {
                                 bgn = j;
                                 break;
@@ -503,7 +506,9 @@ namespace PhiBasicTranslator
 
                         for (int j = i; j < instr.Value.Length; j++)
                         {
-                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            string ltr = instr.Value[j].ToString();
+
+                            if (Defs.ConditionalClosureCharacters.Contains(ltr))
                             {
                                 end = j;
                                 break;
@@ -512,7 +517,9 @@ namespace PhiBasicTranslator
 
                         for (int j = i; j >= 0; j--)
                         {
-                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            string ltr = instr.Value[j].ToString();
+
+                            if (Defs.ConditionalClosureCharacters.Contains(ltr))
                             {
                                 bgn = j;
                                 break;

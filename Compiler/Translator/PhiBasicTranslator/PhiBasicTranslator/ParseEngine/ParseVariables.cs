@@ -82,8 +82,7 @@ namespace PhiBasicTranslator.ParseEngine
 
             if (vstr != string.Empty)
             {
-
-                if (cut.StartsWith(vstr + " "))
+                if (ParseMisc.StartsWithAppendedValue(cut, vstr, Defs.TabSpaceClosureCharacters.ToList()))
                 {
                     for (int i = index; i < index + vstr.Length && i < content.Length; i++)
                     {

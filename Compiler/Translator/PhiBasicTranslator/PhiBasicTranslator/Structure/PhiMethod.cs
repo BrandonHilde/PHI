@@ -12,6 +12,7 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string End = string.Empty;
         public string Content = string.Empty;
+
         [JsonIgnore]
         public string Remainer = string.Empty;
 

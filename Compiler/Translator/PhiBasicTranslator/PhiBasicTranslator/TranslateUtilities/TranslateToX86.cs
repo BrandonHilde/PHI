@@ -131,8 +131,6 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 Console.WriteLine(instrct.Name + " Unimplemented");
             }
- 
-
 
             return new BuildPair 
             { 
@@ -410,10 +408,12 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                     for (int j = 0; j < cls.Variables.Count; j++)
                     {
-                        // " " or ";" determines if its actually a
-                        // name or just a part of another variable
-                        if (cut.StartsWith(cls.Variables[j].Name + " ")
-                         || cut.StartsWith(cls.Variables[j].Name + Defs.VariableSetClosure)) 
+                        // checks if name or just a part of another variable
+                        if (ParseMisc.StartsWithAppendedValue(
+                            cut, 
+                            cls.Variables[j].Name, 
+                            Defs.ConditionalClosureCharacters.ToList()
+                            ))
                         {
                             varbls.Add(new PhiVariable
                             {
