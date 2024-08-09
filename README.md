@@ -18,7 +18,7 @@ phi.Hello:OS16BIT
     4. Specify the file (hello.phi)
     5. After it runs it will produce a phi.ASM file
     6. cd into the folder
-    7. & .\buildSingleASM.bat phi
+    7. & [insert path]\buildSingleASM.bat phi
 
 <h4>Goals:</h4>
     
