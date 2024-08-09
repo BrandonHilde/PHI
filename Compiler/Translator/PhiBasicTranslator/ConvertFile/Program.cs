@@ -30,7 +30,7 @@ Console.WriteLine();
 
 PhiMath math = new PhiMath();
 
-MathPair pr = PhiMath.Parse("67 ** 4");
+MathPair pr = PhiMath.Parse(";i++;");
 
 
 Console.WriteLine("\r\n;ASMx86 CODE\r\n");

@@ -150,6 +150,16 @@ namespace PhiBasicTranslator.ParseEngine
                         }
                     }
 
+                    string? math = MatchesMath(cut);
+
+                    if(math != string.Empty)
+                    {
+                        for (int j = i; j < i + math.Length; j++)
+                        {
+                            previous.ContentInside[j] = Inside.Opperation;
+                        }
+                    }
+
                     if(letter == Defs.VariableSetClosure) //;
                     {
                         previous.ContentInside[i] = Inside.SemiColon;
@@ -700,7 +710,29 @@ namespace PhiBasicTranslator.ParseEngine
 
             return Inside.None;
         }
+        public static string MatchesMath(string value)
+        {
+            string str = string.Empty;
 
+            //later matches will override previous ones
+            foreach (string m in Defs.MathSmallOpsList)
+            {
+                if (value.StartsWith(m))
+                {
+                    str = m;
+                }
+            }
+
+            foreach (string m in Defs.MathOpsList)
+            {
+                if (value.StartsWith(m))
+                {
+                    str = m;
+                }
+            }
+
+            return str;
+        }
         public static string MatchesInstruct(string content, string prev)
         {
             string vname = string.Empty;

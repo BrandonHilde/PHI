@@ -28,6 +28,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
 
         public static readonly string loopSubIncrementByOne = "inc cx";
+        public static readonly string loopSubDecrementByOne = "dec cx";
+
         public static readonly string jumpIfGreaterThan = "jg";
         public static readonly string jumpIfLessThan = "jl";
         public static readonly string jumpIfGreaterThanEqual = "jge";

@@ -17,6 +17,7 @@ namespace PhiBasicTranslator.Structure
         public List<PhiVariable> Variables = new List<PhiVariable>();
         public List<PhiInstruct> Instructs = new List<PhiInstruct>();
         public List<PhiConditional> Conditionals = new List<PhiConditional>();
+        public List<PhiMath> Maths = new List<PhiMath>();
 
         public PhiInstruct()
         {
@@ -33,6 +34,14 @@ namespace PhiBasicTranslator.Structure
 
             foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
 
+            List<PhiConditional> cond = new List<PhiConditional>();
+
+            foreach (PhiConditional cnd in Conditionals) cond.Add(cnd.Copy());
+
+            List<PhiMath> maths = new List<PhiMath>();
+
+            foreach (PhiMath mt in Maths) maths.Add(mt.Copy());
+
             //
 
             //maybe unecessary 
@@ -47,7 +56,9 @@ namespace PhiBasicTranslator.Structure
                 InType = InType,
                 Variables = vars,
                 Instructs = insts,
-                ContentLabels = labels
+                ContentLabels = labels,
+                Conditionals = cond,
+                Maths = maths
             };
         }
     }

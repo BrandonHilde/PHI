@@ -448,6 +448,48 @@ namespace PhiBasicTranslator
                             varble.Name += letter;
                     }
 
+                    if(inside == Inside.Opperation)
+                    {
+                        string cr = string.Empty;
+
+                        int bgn = 0;
+                        int end = 0;
+
+                        #region clip
+
+                        for (int j = i; j < instr.Value.Length; j++)
+                        {
+                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            {
+                                end = j;
+                                break;
+                            }
+                        }
+
+                        for (int j = i; j >= 0; j--)
+                        {
+                            if (instr.Value[j].ToString() == Defs.VariableSetClosure)
+                            {
+                                bgn = j;
+                                break;
+                            }
+                        }
+                        #endregion
+
+                        cr = instr.Value.Substring(bgn + 1, end - bgn - 1).Trim();
+
+                        i = end;
+
+                        MathPair mpar = PhiMath.Parse(cr);
+
+                        instr.Maths.Add(new PhiMath
+                        {
+                            Math = mpar,
+                            RawValue = cr
+                        });
+                        
+                    }
+
                     if(inside == Inside.Conditonal)
                     {
                         cond += letter;

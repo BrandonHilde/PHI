@@ -1,4 +1,5 @@
-﻿using System;
+﻿using PhiBasicTranslator.ParseEngine;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -10,7 +11,16 @@ namespace PhiBasicTranslator.Structure
     {
         public string RawValue { get; set; } = string.Empty;
 
-        public MathPair Math { get; set; }  
+        public MathPair Math { get; set; }
+
+        public PhiMath Copy()
+        {
+            return new PhiMath
+            {
+                Math = Math.Copy(),
+                RawValue = RawValue
+            };
+        }
 
         public static MathPair Parse(string value)
         {
@@ -24,7 +34,7 @@ namespace PhiBasicTranslator.Structure
             {
                 string cut = value.Substring(i);
 
-                string match = MatchesMath(cut);
+                string match = ParseUtilities.MatchesMath(cut);
 
                 if(match != string.Empty)
                 {
@@ -33,6 +43,14 @@ namespace PhiBasicTranslator.Structure
                     val1 = value.Substring(0, i).Trim();
                     val2 = value.Substring(i + match.Length).Trim();
 
+                    Defs.RawNumberCut.ToList().ForEach(
+                        x => val1 = val1.Replace(x.ToString(), "")
+                        );
+
+                    Defs.RawNumberCut.ToList().ForEach(
+                     x => val2 = val2.Replace(x.ToString(), "")
+                     );
+
                     mth = new MathPair(val1, val2, math);   
 
                     break;
@@ -40,30 +58,6 @@ namespace PhiBasicTranslator.Structure
             }
 
             return mth;
-        }
-
-        private static string MatchesMath(string value)
-        {
-            string str = string.Empty;
-
-            //later matches will override previous ones
-            foreach (string m in Defs.MathSmallOpsList)
-            {
-                if(value.StartsWith(m))
-                {
-                    str = m;
-                }
-            }
-
-            foreach (string m in Defs.MathOpsList)
-            {
-                if (value.StartsWith(m))
-                {
-                    str = m;
-                }
-            }
-
-            return str;
         }
     }
 
@@ -76,6 +70,11 @@ namespace PhiBasicTranslator.Structure
         public MathPair()
         {
 
+        }
+
+        public MathPair Copy()
+        {
+            return new MathPair(ValueOne, ValueTwo, MathOp);
         }
         public MathPair(string valueOne, string valueTwo, string mathOp)
         {

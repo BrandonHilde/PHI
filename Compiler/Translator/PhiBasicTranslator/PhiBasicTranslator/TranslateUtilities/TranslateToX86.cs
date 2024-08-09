@@ -211,10 +211,16 @@ namespace PhiBasicTranslator.TranslateUtilities
                 string incVal = ASMx86_16BIT.loopSubIncrementByOne;
 
                 PhiConditional? condit = instruct.Conditionals.FirstOrDefault();
+                PhiMath? mths = instruct.Maths.FirstOrDefault();
 
                 if (condit != null)
                 {
                     jmpCon = ConvertConditional(condit);
+                }
+
+                if (mths != null)
+                {
+                    incVal = ConvertIncrement(mths);
                 }
 
                 #region Loop Construction
@@ -420,6 +426,19 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
 
             return varbls;
+        }
+        public static string ConvertIncrement(PhiMath math)
+        {
+            if(math.Math.MathOp == Defs.MathInc)
+            {
+                return ASMx86_16BIT.loopSubIncrementByOne;
+            }
+            else if (math.Math.MathOp == Defs.MathDec)
+            {
+                return ASMx86_16BIT.loopSubDecrementByOne;
+            }
+
+            return string.Empty;
         }
 
         public static string ConvertConditional(PhiConditional condition)
