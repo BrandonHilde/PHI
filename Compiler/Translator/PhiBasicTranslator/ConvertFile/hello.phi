@@ -1,26 +1,33 @@
 ﻿#
 
 Hello world program
-
+str message: 'hello, world\r\n';
 #
 
 phi.Hello:OS16BIT
 {
-	str message: 'hello, world';
-	str something: 'hello\nworld\r\nsomething\ttabbed';
-	int value: 10;
-
-	log 'test' something;
 	
+	log 'Hello, World!';
+
+}
+	
+#
 	log message value;
 
 	while int i: 0; i < 10; i++;
 
-		log i;
+		log message;
     ;;
 
 	str test: 'hi';
-}
+
+
+
+#
+
+
+
+#}
 
 
 #
