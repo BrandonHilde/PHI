@@ -1,6 +1,25 @@
 <img src="/resources/phi.png" width="80">
 <h1>PHI Language</h1>
 <h3>Soon operating systems will be as easy to code as desktop apps</h3>
+
+```phi
+phi.Hello:OS16BIT
+{
+	
+	log 'Hello, World!';
+
+}
+```
+<h4>To Build:</h4>
+
+    1. Install NASM (Netwide Assembler)
+    2. Install QEMU (qemu-system-x86_64)
+    3. Run the ConvertFile program
+    4. Specify the file (hello.phi)
+    5. After it runs it will produce a phi.ASM file
+    6. cd into the folder
+    7. & .\buildSingleASM.bat phi
+
 <h4>Goals:</h4>
     
     1. Direct access to ASM
