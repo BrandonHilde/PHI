@@ -12,13 +12,15 @@ phi.Hello:OS16BIT
 ```
 <h4>To Build:</h4>
 
-    1. Install NASM (Netwide Assembler)
+    1. Install NASM (Netwide Assembler) (can also use FASM Flat Assembler)
     2. Install QEMU (qemu-system-x86_64)
     3. Run the ConvertFile program
     4. Specify the file (hello.phi)
     5. After it runs it will produce a phi.ASM file
     6. cd into the folder
     7. & [insert path]\buildSingleASM.bat phi
+
+[More Build Info](./Compiler/x86ASM/buildSingleASM.bat)
 
 <h4>Goals:</h4>
     
