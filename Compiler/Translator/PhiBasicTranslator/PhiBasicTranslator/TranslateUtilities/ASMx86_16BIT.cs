@@ -342,8 +342,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86 = new List<string>()
         {
-            "[BITS 16]",
-            "[ORG 0x7c00]",
+            //"[BITS 16]",
+            "ORG 0x7c00",
             "",
             "start:",
             "   xor ax, ax",
