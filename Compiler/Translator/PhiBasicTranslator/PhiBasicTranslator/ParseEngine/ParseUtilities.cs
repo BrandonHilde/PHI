@@ -17,8 +17,8 @@ namespace PhiBasicTranslator.ParseEngine
         public static ContentProfile ProfileContent(string content)
         {
             ContentProfile prf = ProfilePrepare(content);
-            prf = ProfileParenthesis(content, prf);
             prf = ProfileClasses(content, prf);
+            prf = ProfileParenthesis(content, prf);
             prf = ProfileVariables(content, prf);
             prf = ProfileMethods(content, prf);
             prf = ProfileInstructs(content, prf);
@@ -331,98 +331,115 @@ namespace PhiBasicTranslator.ParseEngine
 
             bool startName = false;
 
+            int curlycount = 0;
+
             if(previous.ContentInside.Length == content.Length)
             {
                 for (int i = 0; i < content.Length; i++)
                 {
                     string remaining = content.Substring(i);
 
-                    if(remaining.StartsWith(Defs.classStartPHI))
+                    if (previous.ContentInside[i] == Inside.None)
                     {
-                        inside = Inside.PhiClassStart;
-
-                        for (int m = i; m < Defs.classStartPHI.Length + i; m++)
+                        if (remaining.StartsWith(Defs.classStartPHI))
                         {
-                            previous.ContentInside[m] = inside;
-                        }
+                            inside = Inside.PhiClassStart;
 
-                        i += Defs.classStartPHI.Length;
-
-                        startName = true;
-                    }
-                    else if (remaining.StartsWith(Defs.classStartx86ASM))
-                    {
-                        inside = Inside.AsmClassStart;
-
-                        for (int m = i; m < Defs.classStartPHI.Length + i; m++)
-                        {
-                            previous.ContentInside[m] = inside;
-                        }
-
-                        i += Defs.classStartx86ASM.Length;
-
-                        startName = true;
-                    }
-                    else if (remaining.StartsWith(Defs.classStartArmASM))
-                    {
-                        inside = Inside.ArmClassStart;
-
-                        for (int m = i; m < Defs.classStartPHI.Length + i; m++)
-                        {
-                            previous.ContentInside[m] = inside;
-                        }
-
-                        i += Defs.classStartArmASM.Length;
-
-                        startName = true;
-                    }
-
-                    if (startName)
-                    {
-                        inside = Inside.ClassName;
-
-                        for (int m = i; m < content.Length; m++)
-                        {
-                            string letter = content[m].ToString();
-
-                            if (inside == Inside.Colon)
+                            for (int m = i; m < Defs.classStartPHI.Length + i; m++)
                             {
-                                inside = Inside.ClassInherit;
-                            }
-
-                            if (letter == Defs.ClassInherit) //":"
-                            {
-                                inside = Inside.Colon;
-                            }
-
-                            previous.ContentInside[m] = inside;
-
-                            if (letter == Defs.curlyOpen)
-                            {
-                                inside = Inside.CurlyOpen;
                                 previous.ContentInside[m] = inside;
-                                break;
                             }
+
+                            i += Defs.classStartPHI.Length;
+
+                            startName = true;
+                        }
+                        else if (remaining.StartsWith(Defs.classStartx86ASM))
+                        {
+                            inside = Inside.AsmClassStart;
+
+                            for (int m = i; m < Defs.classStartPHI.Length + i; m++)
+                            {
+                                previous.ContentInside[m] = inside;
+                            }
+
+                            i += Defs.classStartx86ASM.Length;
+
+                            startName = true;
+                        }
+                        else if (remaining.StartsWith(Defs.classStartArmASM))
+                        {
+                            inside = Inside.ArmClassStart;
+
+                            for (int m = i; m < Defs.classStartPHI.Length + i; m++)
+                            {
+                                previous.ContentInside[m] = inside;
+                            }
+
+                            i += Defs.classStartArmASM.Length;
+
+                            startName = true;
                         }
 
-                        startName = false;
-                    }
+                        if (startName)
+                        {
+                            curlycount = 0;
 
-                    if (content[i].ToString() == Defs.curlyOpen)
-                    {
-                        inside = Inside.CurlyOpen;
-                        previous.ContentInside[i] = inside;
-                    }
+                            inside = Inside.ClassName;
 
-                    if (content[i].ToString() == Defs.curlyClose)
-                    {
-                        inside = Inside.CurlyClose;
-                        previous.ContentInside[i] = inside;
-                    }
+                            for (int m = i; m < content.Length; m++)
+                            {
+                                string letter = content[m].ToString();
 
-                    if (inside != Inside.None)
-                    {
-                        inside = Inside.None;
+                                if (inside == Inside.Colon)
+                                {
+                                    inside = Inside.ClassInherit;
+                                }
+
+                                if (letter == Defs.ClassInherit) //":"
+                                {
+                                    inside = Inside.Colon;
+                                }
+
+                                previous.ContentInside[m] = inside;
+
+                                if (letter == Defs.curlyOpen)
+                                {
+                                    inside = Inside.CurlyOpen;
+                                    previous.ContentInside[m] = inside;
+                                    break;
+                                }
+                            }
+
+                            startName = false;
+                        }
+
+                        if (content[i].ToString() == Defs.curlyOpen)
+                        {
+                            curlycount++;
+                            inside = Inside.CurlyOpen;
+                            previous.ContentInside[i] = inside;
+                        }
+
+                        if (content[i].ToString() == Defs.curlyClose)
+                        {
+                            curlycount--;
+
+                            if (curlycount >= 0)
+                            {
+                                inside = Inside.CurlyClose;
+                            }
+                            else
+                            {
+                                inside = Inside.ClassClose;
+                            }
+                            previous.ContentInside[i] = inside;
+                        }
+
+                        if (inside != Inside.None)
+                        {
+                            inside = Inside.None;
+                        }
                     }
                 }
             }

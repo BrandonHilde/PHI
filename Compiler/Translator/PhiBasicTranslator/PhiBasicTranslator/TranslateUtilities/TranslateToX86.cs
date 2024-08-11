@@ -21,31 +21,53 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             List<string> ASM = new List<string>();
 
-            for(int i = 0; i < code.ClassList.Count; i++)
+            List<PhiVariable> allVars = new List<PhiVariable>();
+
+            for (int i = 0; i < code.ClassList.Count; i++)
             {
                 PhiClass cls = code.ClassList[i];
 
-                if (cls.Inherit == Defs.os16bit)
+                if (cls.Type == PhiType.PHI)
                 {
-                    ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
-                    ASM = AutoInclude_BITS16(ASM);
 
-                    List<PhiVariable> allVars = ConvertAllVariables(cls);
+                    if (cls.Inherit == Defs.os16bit)
+                    {
+                        ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
+                        ASM = AutoInclude_BITS16(ASM);
 
-                    List<string> values = ConvertVarsToASM(allVars); 
+                        allVars.AddRange(ConvertAllVariables(cls));
 
-                    List<string> SubCode = new List<string> 
-                    { 
+                        List<string> values = ConvertVarsToASM(allVars);
+
+                        List<string> SubCode = new List<string>
+                    {
                         "",
                         "  " + Defs.replaceCodeStart,
-                        "" 
+                        ""
                     };
 
-                    ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
+                        ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
 
-                    BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
+                        BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
 
-                    ASM = pair.CodeBase;
+                        ASM = pair.CodeBase;
+                    }
+                }
+                else if(cls.Type == PhiType.ASM)
+                {
+                    List<string> values = new List<string>()
+                    {
+                        cls.Name + ":",
+                    };
+
+                    string[] splt = cls.RawContent.Split("\n");
+
+                    values.AddRange(splt);
+
+                    for(int v = 0; v < values.Count; v++) 
+                        values[v] = ParseVariables.ReplaceASMVar(values[v], allVars);
+
+                    ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceIncludes);
                 }
             }
 
@@ -61,9 +83,11 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             BuildPair build = new BuildPair();
 
+            build.CodeBase = Code;
+
             foreach (PhiInstruct inst in cls.Instructs)
             { 
-                BuildPair pair = BuildSubInstructs(Code, SubCode, inst, cls, predefined, false);
+                BuildPair pair = BuildSubInstructs(build.CodeBase, SubCode, inst, cls, predefined, false);
 
                 build.CodeBase = pair.CodeBase;
 
@@ -89,13 +113,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if (instrct.Name == Defs.instLog)
             {
-                //fix to just be segment
                 BuildPair pair = BuildInstructLog(instrct, cls, predefined, Code, SubCode);
-
-                if(!sub)
-                {
-                    pair.CoreCode = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceCodeStart);
-                }
 
                 pair.CodeBase = Code;
 
@@ -174,7 +192,26 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
             else if (instrct.Name == Defs.instCall)
             {
-                Console.WriteLine(instrct.Name + " Unimplemented");
+                BuildPair pair = new BuildPair();
+
+                string callname = "";
+
+                for(int i = 0; i < instrct.Value.Length; i++)
+                {
+                    if (instrct.ContentLabels[i] == Inside.None)
+                    {
+                        callname += instrct.Value[i];
+                    }
+                }
+
+                pair.SubCode = new List<string>
+                {
+                   "    " + ASMx86_16BIT.callLabel + " " + callname.Trim()
+                };
+
+                pair.CodeBase = Code;
+
+                return pair;
             }
 
             return new BuildPair 

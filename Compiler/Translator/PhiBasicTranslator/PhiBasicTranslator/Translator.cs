@@ -83,118 +83,31 @@ namespace PhiBasicTranslator
                         current.Type = PhiType.ASM;
                     #endregion
 
-                    if(inside == Inside.MethodOpen)
+
+                    if (inside == Inside.MethodOpen)
                     {
                         insideMethod = true;
                     }
-                    
-                    if(last == Inside.MethodEnd && insideMethod)
+
+                    if (last == Inside.MethodEnd && insideMethod)
                     {
                         insideMethod = false;
 
                         current.Methods.Add(method.Copy());
-                        
+
                         method = new PhiMethod();
                     }
                     #region Instructs
 
                     PhiInstruct instr = ExtractInstruct(inside, content, prev, profile.ContentInside, i);
 
-                    if(instr.Name != string.Empty)
+                    if (instr.Name != string.Empty)
                     {
                         i += instr.Value.Length; // check for accuracy
 
                         current.Instructs.Add(instr.Copy());
                     }
-                    //you will need to do subinstruct parsing
-                    //if (inside == Inside.Instruct && instruct.Name == string.Empty)
-                    //{
-                    //    if (i > 1)
-                    //    {
-                    //        string cut = content.Substring(i);
-                    //        string nme = ParseUtilities.MatchesInstruct(cut, prev);
-
-                    //        if (nme != string.Empty)
-                    //        {
-                    //            instruct.Name = nme;
-
-                                
-
-                    //            if (Defs.instructContainers.Contains(instruct.Name))
-                    //            {
-                    //                instruct.InType = Inside.InstructContainer;
-
-                    //                int len = MeasureContainerInstruct(content, profile.ContentInside, i);
-
-                    //                string instructValue = content.Substring(i, len);
-
-                    //                instruct.Value = instructValue;
-                    //            }
-                    //            else
-                    //            {
-                    //                instruct.InType = Inside.VariableTypeMixed;
-                    //                int len = MeasureInstruct(content, profile.ContentInside, i);
-
-                    //                string instructValue = content.Substring(i, len);
-
-                    //                instruct.Value = instructValue;
-                    //            }
-
-                    //            for (int j = i; j < i + instruct.Value.Length; j++)
-                    //            {
-                    //                instruct.ContentLabels.Add(profile.ContentInside[j]);
-                    //            }
-                                
-                    //            i += instruct.Value.Length; // check for accuracy
-
-                    //            instruct = TranslateSubInstructs(instruct);
-                    //            current.Instructs.Add(instruct.Copy());
-                    //            instruct = new PhiInstruct();
-                    //        }
-                    //    }
-                    //}                                
-                    #endregion
-
                 }
-
-                #region Instruct Close and Value
-
-                //if (inside != Inside.InstructClose) //;;
-                //{
-                //    if (instruct.Name != string.Empty)
-                //    {
-                //        if (inside != Inside.String && letter == " ")
-                //        {
-                //            typeCount++;
-                //        }
-                //    }
-                //}
-                //else
-                //{
-                //    //remember subinstruct parsing
-                //    if (Defs.instructContainers.Contains(instruct.Name))
-                //    {
-                //        instruct.InType = Inside.InstructContainer;
-                //    }
-                //    else if (typeCount > 1)
-                //    {
-                //        instruct.InType = Inside.VariableTypeMixed;
-                //    }
-                //    else
-                //    {
-                //        instruct.InType = last;
-                //    }
-
-                //    instruct = TranslateSubInstructs(instruct);
-                //    current.Instructs.Add(instruct.Copy());
-                //    instruct = new PhiInstruct();
-                //    insideInstructContainer = false;
-
-                //    typeCount = 0;
-                //}
-                #endregion
-
-                #region Class Values
 
                 if (inside == Inside.ClassName)
                 {
@@ -214,17 +127,40 @@ namespace PhiBasicTranslator
 
                 if(inside == Inside.CurlyOpen)
                 {
-                    if(current.Inherit == string.Empty)
+                    if (current.Name == string.Empty)
+                    {
+                        current.Name = ParseUtilities.ClearLabel(name, Defs.Alphabet);
+                        name = string.Empty;
+                    }
+
+                    if (current.Inherit == string.Empty)
                     {
                         current.Inherit = ParseUtilities.ClearLabel(inherit, Defs.Alphabet);    
                         inherit = string.Empty;
+                    }
+
+                    if(current.Type == PhiType.ASM || current.Type== PhiType.ARM)
+                    {
+                        for(int j = i + 1; j < content.Length; j++)
+                        {
+                            if (profile.ContentInside[j] == Inside.ClassClose)
+                            {
+                                break;
+                            }
+                            current.RawContent += content[j];
+                        }
+
+                        i += current.RawContent.Length + 2; // +2 is for the {} curly brackets
+
+                        classes.Add(current.Copy());
+                        current = new PhiClass();
                     }
                 }
                 #endregion
 
                 #region Variables
 
-                if(!match)
+                if (!match)
                 {
                     #region var type set
                     if (inside == Inside.VariableTypeBln)
@@ -263,7 +199,7 @@ namespace PhiBasicTranslator
                         vnme = string.Empty;
                     }
 
-                    if(last == Inside.VariableEnd)
+                    if (last == Inside.VariableEnd)
                     {
                         varble.ValueRaw = vval;
 
@@ -281,13 +217,14 @@ namespace PhiBasicTranslator
                         varble = new PhiVariable();
                     }
 
-                    if(last == Inside.MethodName)
+                    if (last == Inside.MethodName)
                     {
                         method.Name = ParseUtilities.ClearLabel(mnme, Defs.Alphabet);
                         mnme = string.Empty;
                     }
 
-                    if(inside == Inside.CurlyClose)
+
+                    if (inside == Inside.ClassClose)
                     {
                         classes.Add(current.Copy());
 
@@ -295,27 +232,29 @@ namespace PhiBasicTranslator
                     }
                 }
 
-                if (inside == Inside.VariableName)
-                {
-                    vnme += letter;
-                }
+ 
+                    if (inside == Inside.VariableName)
+                    {
+                        vnme += letter;
+                    }
 
-                if(inside == Inside.VariableValue || inside == Inside.String)
-                {
-                    vval += letter;
-                }
+                    if (inside == Inside.VariableValue || inside == Inside.String)
+                    {
+                        vval += letter;
+                    }
 
 
-                #endregion
+                    #endregion
 
-                #region Methods
+                    #region Methods
 
-                if (inside == Inside.MethodName)
-                {
-                    mnme += letter;
-                }
+                    if (inside == Inside.MethodName)
+                    {
+                        mnme += letter;
+                    }
 
-                #endregion
+                    #endregion
+                
 
                 last = inside;
             }

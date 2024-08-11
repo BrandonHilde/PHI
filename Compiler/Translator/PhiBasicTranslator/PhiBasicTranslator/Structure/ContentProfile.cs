@@ -25,6 +25,7 @@ namespace PhiBasicTranslator.Structure
         SemiColon,
         ClassName, 
         ClassInherit, 
+        ClassClose,
         VariableName,
         VariableTypeStr,
         VariableTypeInt,

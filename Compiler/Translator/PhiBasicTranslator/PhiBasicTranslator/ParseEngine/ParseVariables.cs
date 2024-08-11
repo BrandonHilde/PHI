@@ -110,6 +110,55 @@ namespace PhiBasicTranslator.ParseEngine
             return str;
         }
 
+        public static string ReplaceASMVar(string content, List<PhiVariable> preexisting)
+        {
+            bool startname = false;
+
+            string cont = string.Empty;
+            string name = string.Empty;
+
+            
+            ContentProfile profile = ParseUtilities.ProfilePrepare(content);
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                if (profile.ContentInside[i] == Inside.None)
+                {
+                    if (content[i].ToString() == Defs.curlyOpen)
+                    {
+                        startname = true;
+                    }
+
+                    if (content[i].ToString() == Defs.curlyClose)
+                    {
+                        if (startname)
+                        {
+                            if (name.Length > 0)
+                            {
+                                name = name.Replace("{", "");
+                                name = name.Replace("}", "");
+
+                                cont += ASMx86_16BIT.UpdateName(name);
+
+                                continue;
+                            }
+                            startname = false;
+                        }
+                    }
+                }
+
+                if(!startname)
+                {
+                    cont += content[i];
+                }
+                else
+                {
+                    name += content[i];
+                }
+            }
+            return cont;
+        }
+
         public static List<PhiVariable> GetInstructSubVariables(PhiInstruct instruct, List<PhiVariable> predefinedVars)
         {
             List<PhiVariable> varbles = new List<PhiVariable>();
