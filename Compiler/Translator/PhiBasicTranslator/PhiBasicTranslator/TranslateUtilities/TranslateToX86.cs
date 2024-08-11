@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
+using System.Xml.Linq;
 using Newtonsoft.Json.Linq;
 using PhiBasicTranslator;
 using PhiBasicTranslator.ParseEngine;
@@ -14,6 +15,7 @@ namespace PhiBasicTranslator.TranslateUtilities
     {
         public static int VarCount = 0;
         public static int LoopCount = 0;
+        public static int IfCount = 0;
         public static List<string> ToX86(PhiCodebase code)
         {
             List<string> ASM = new List<string>();
@@ -46,6 +48,11 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
             }
 
+            //reset after complete
+            VarCount = 0;
+            LoopCount = 0; 
+            IfCount = 0;
+
             return ASM;
         }
 
@@ -76,28 +83,25 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 BuildPair pair = BuildSubInstructs(cde, scd, inst, cls, predefined);
 
-                //needs to change probably
+                Code = pair.CoreCode;
+
                 scd = pair.SubCode;
-                cde = pair.CoreCode;
             }
 
             if (instrct.Name == Defs.instLog)
             {
+                //fix to just be segment
                 BuildPair pair = BuildInstructLog(instrct, cls, predefined, Code, SubCode);
 
                 if(!sub)
                 {
-                    //pair.CoreCode = ASMx86_16BIT.MergeValues(Code, SubCode, Defs.replaceCodeStart);
+                    //pair.CoreCode = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceCodeStart);
                 }
 
                 return pair;
             }
             else if (instrct.Name == Defs.instWhile)
             {
-                //List<string> values = ConvertVarsToASM(instrct.Variables);
-
-                // Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
-
                 string name = "WHILE_" + (LoopCount++);
 
                 List<string> buildcode = BuildInstructWhile(name, instrct, cls);
@@ -107,6 +111,12 @@ namespace PhiBasicTranslator.TranslateUtilities
                     ASMx86_16BIT.replaceLoopName,
                     name);
 
+                if (sub)
+                {
+                    //remove because sub
+                    buildcode = ASMx86_16BIT.ReplaceValue(buildcode, Defs.replaceCodeStart, "");
+                }
+
                 Code = ASMx86_16BIT.MergeValues(Code, buildcode, Defs.replaceIncludes);
                 Code = ASMx86_16BIT.MergeValues(Code, callWhile, Defs.replaceCodeStart);
 
@@ -114,10 +124,40 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     Code = ASMx86_16BIT.MergeSubCode(Code, scd, ASMx86_16BIT.replaceLoopContent);
                 }
+
+
             }
             else if (instrct.Name == Defs.instIf)
             {
-                Console.WriteLine(instrct.Name + " Unimplemented");
+                string name = "IF_" + (IfCount++);
+
+                BuildPair pair = BuildInstructIf(name, instrct, cls);
+
+                if (instrct.Instructs.Count > 0)
+                {
+                    pair.CoreCode = ASMx86_16BIT.MergeSubCode(pair.CoreCode, scd, ASMx86_16BIT.replaceIfContent);
+                }
+
+                if (sub)
+                {
+                    //remove because sub
+                    pair.CoreCode = ASMx86_16BIT.ReplaceValue(pair.CoreCode, Defs.replaceCodeStart, "");
+                }
+
+                if (sub)
+                {
+                    pair.CoreCode = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
+                    // SubCode = ASMx86_16BIT.MergeValues(SubCode, pair.SubCode, Defs.replaceCodeStart);
+
+                }
+                else
+                {
+                    // add methods into the includes
+                    pair.CoreCode = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
+                    pair.CoreCode = ASMx86_16BIT.MergeValues(pair.CoreCode, pair.SubCode, Defs.replaceCodeStart);
+                }
+
+                return pair;
             }
             else if (instrct.Name == Defs.instElse)
             {
@@ -186,6 +226,106 @@ namespace PhiBasicTranslator.TranslateUtilities
             return varbles;
         }
 
+        public static BuildPair BuildInstructIf(string Name, PhiInstruct instruct, PhiClass cls)
+        {
+            List<string> buildcode = new List<string>();
+            List<string> buildsub = new List<string>();
+
+
+            List<string> values = instruct.Variables.Select(x => x.Name).ToList();
+
+            for (int i = 0; i < values.Count; i++)
+            {
+                values[i] = ASMx86_16BIT.UpdateName(values[i]);
+            }
+
+            string jmpCon = ASMx86_16BIT.jumpIfGreaterThan;
+
+            PhiConditional? condit = instruct.Conditionals.FirstOrDefault();
+
+            if (condit != null)
+            {
+                jmpCon = ConvertConditional(condit);
+
+                ConditionalPairs? pair = condit.PhiConditionalPairs.FirstOrDefault();
+
+                if (pair != null)
+                {
+                   
+
+                    string left = pair.LeftValue;
+                    string right = pair.RightValue;
+
+                    PhiVariable? vl = cls.Variables.Where(c => c.Name == left).FirstOrDefault();
+                    if (vl != null)
+                    {
+                        left = ASMx86_16BIT.UpdateName(left);
+                        left = "[" + left + "]";
+                    }
+
+                    PhiVariable? vr = cls.Variables.Where(c => c.Name == right).FirstOrDefault();
+                    if (vr != null)
+                    {
+                        right = ASMx86_16BIT.UpdateName(right);
+
+                        if(vr.varType == Inside.VariableTypeInt)
+                        {
+                            right = "[" + right + "]";  
+                        }
+                    }
+                    #region BUILD VALUES
+                    buildcode.AddRange(ASMx86_16BIT.InstructIfCheck_BITS16);
+
+                    buildcode = ASMx86_16BIT.ReplaceValue(
+                      buildcode,
+                      ASMx86_16BIT.replaceIfName,
+                      Name
+                   );
+                    buildcode = ASMx86_16BIT.ReplaceValue(
+                      buildcode,
+                      ASMx86_16BIT.replaceIfJump,
+                      jmpCon
+                   );
+                    buildcode = ASMx86_16BIT.ReplaceValue(
+                       buildcode,
+                       ASMx86_16BIT.replaceIfLeftCompare,
+                       left
+                    );
+
+                    buildcode = ASMx86_16BIT.ReplaceValue(
+                      buildcode,
+                      ASMx86_16BIT.replaceIfRightCompare,
+                      right
+                    );
+
+                    // build content
+
+                    buildcode.AddRange(ASMx86_16BIT.InstructIfContent_BITS16);
+
+                    buildcode = ASMx86_16BIT.ReplaceValue(
+                      buildcode,
+                      ASMx86_16BIT.replaceIfName,
+                      Name
+                    );
+
+                    #endregion
+
+                    buildsub.AddRange(ASMx86_16BIT.InstructIfCall_BITS16);
+
+                    buildsub = ASMx86_16BIT.ReplaceValue(
+                        buildsub,
+                        ASMx86_16BIT.replaceIfName,
+                        Name
+                        );
+                }
+            }
+
+            return new BuildPair
+            {
+                CoreCode = buildcode,
+                SubCode = buildsub
+            };
+        }
         public static List<string> BuildInstructWhile(string name, PhiInstruct instruct, PhiClass cls)
         {            
             List<string> loopStart = new List<string>();
@@ -200,7 +340,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             //remember to check for different while loop formats and math example: (6 + (4/i))
             if (values.Count >= 2)
             {
-                string nameCont = name + "_CONTENT";
+                string nameCont = name;
 
                 string vStart = values.FirstOrDefault() ?? string.Empty;
                 string vLimit = values.LastOrDefault() ?? string.Empty;
@@ -314,7 +454,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             List<PhiVariable> vrs = ParseVariables.GetInstructSubVariables(instruct, predefined);
 
-            VarCount += vrs.Count;
+            //VarCount += vrs.Count;
 
             foreach (PhiVariable v in vrs)
             {
@@ -447,7 +587,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if(condition != null)
             {
-                ConditionalPairs.ConditionType tp = condition.PhiConditionals.First().type;
+                ConditionalPairs.ConditionType tp = condition.PhiConditionalPairs.First().type;
 
                 if(tp == ConditionalPairs.ConditionType.JumpIfLessEqual)
                 {

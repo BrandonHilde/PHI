@@ -440,6 +440,13 @@ namespace PhiBasicTranslator
 
                                     i += subInstruct.Value.Length;
                                 }
+                                else
+                                {
+                                    PhiInstruct subInstruct = ExtractInstruct(inside, instr.Value, prev, instr.ContentLabels.ToArray(), i);
+                                    instr.Instructs.Add(subInstruct);
+
+                                    i += subInstruct.Value.Length;
+                                }
                             }
                         }
                     }
@@ -568,7 +575,7 @@ namespace PhiBasicTranslator
 
                         instr.Conditionals.Add(new PhiConditional
                         {
-                            PhiConditionals = new List<ConditionalPairs>
+                            PhiConditionalPairs = new List<ConditionalPairs>
                             {
                                 new ConditionalPairs 
                                 { 
@@ -599,7 +606,7 @@ namespace PhiBasicTranslator
 
                     len++;
 
-                    if (inside == Inside.InstructClose)
+                    if (inside == Inside.InstructClose || inside == Inside.SemiColon)
                     {
                         return len;
                     }

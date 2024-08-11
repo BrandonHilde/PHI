@@ -29,11 +29,15 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceIfCondition = ";{IF CONDITION}";
         public static readonly string replaceIfRightCompare = ";{IF COMPARE RIGHT}";
         public static readonly string replaceIfLeftCompare = ";{IF COMPARE LEFT}";
-        public static readonly string replaceIfSkip = ";{IF SKIP}";
+        public static readonly string replaceIfName = ";{IF NAME}";
+        public static readonly string replaceIfJump = ";{IF JUMP}";
+        public static readonly string replaceIfContent = ";{IF CONTENT}";
 
 
         public static readonly string loopSubIncrementByOne = "inc cx";
         public static readonly string loopSubDecrementByOne = "dec cx";
+
+        public static readonly string callLabel = "call ";
 
         public static readonly string jumpIfGreaterThan = "jg";
         public static readonly string jumpIfLessThan = "jl";
@@ -48,6 +52,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string jumpIfNoOverflow = "jno";
 
         public static readonly string prefixVariable = "VALUE_";
+        public static readonly string suffixContent = "_CONTENT";
         public enum InheritType { External, BITS16 }
         public static List<string> GetInheritance(InheritType type)
         {
@@ -280,10 +285,25 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         #region IF ELSE
 
+        public static List<string> InstructIfCheck_BITS16 = new List<string>()
+        {
+            replaceIfName + ":",
+            "   mov ax, " + replaceIfLeftCompare,
+            "   cmp ax, " +  replaceIfRightCompare,
+            "   " + replaceIfJump + " " + replaceIfName + suffixContent,
+            "   ret"
+        };
+
         public static List<string> InstructIfContent_BITS16 = new List<string>()
         {
-            "   cmp " + replaceIfLeftCompare + ", " + replaceIfRightCompare,
-            "   " + replaceIfCondition + ", " + replaceIfSkip
+            replaceIfName + suffixContent+ ":",
+            "   " + replaceIfContent,
+            "   ret"
+        };
+
+        public static List<string> InstructIfCall_BITS16 = new List<string>()
+        {
+            "   call " + replaceIfName,
         };
 
         #endregion
@@ -292,8 +312,9 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> InstructWhileContent_BITS16 = new List<string>()
         {
-            replaceLoopContentName + ":",
+            replaceLoopContentName + suffixContent+ ":",
             replaceLoopContent,
+            "   ret"
         };
 
         public static List<string> InstructWhileCall_BITS16 = new List<string>()
@@ -314,7 +335,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   " + replaceLoopCondition + " .loop_done", //jge jg je jl jle etc...
             "   " + replaceLoopIncrement, // inc cx
             "   mov [" + Defs.replaceValueStart +"], cx",
-            "   call " + replaceLoopContentName,
+            "   call " + replaceLoopContentName + suffixContent,
             "   jmp .loop_check"
         };
 

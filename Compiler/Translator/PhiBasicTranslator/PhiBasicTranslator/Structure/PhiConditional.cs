@@ -9,18 +9,18 @@ namespace PhiBasicTranslator.Structure
     public class PhiConditional
     {
         public string RawValue { get; set; } = string.Empty;
-        public List<ConditionalPairs> PhiConditionals { get; set; } = new List<ConditionalPairs>();
+        public List<ConditionalPairs> PhiConditionalPairs { get; set; } = new List<ConditionalPairs>();
 
         public PhiConditional Copy()
         {
             List<ConditionalPairs> conds = new List<ConditionalPairs>();
 
-            foreach (ConditionalPairs pair in PhiConditionals) 
+            foreach (ConditionalPairs pair in PhiConditionalPairs) 
                 conds.Add(pair.Copy());
 
             return new PhiConditional
             {
-                PhiConditionals = conds,
+                PhiConditionalPairs = conds,
                 RawValue = RawValue,
             };
         }

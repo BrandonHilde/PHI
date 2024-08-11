@@ -6,17 +6,12 @@ str message: 'hello, world\r\n';
 
 phi.Hello:OS16BIT
 {
-	str message: 'hello, world\r\n';
-	int value: 44;
-
-	log message 'test' value;
+	log 'test';
 
 	while int i: 0; i < 10; i++;
-
-		log message;
-
-		if	i < 5
-			log i;
+		
+		if	i < 4
+			log 'hello, world\r\n';
 		;;
     ;;
 
