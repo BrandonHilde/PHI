@@ -1,37 +1,15 @@
-﻿#
-
-Hello world program
-str message: 'hello, world\r\n';
-#
-
-phi.Hello:OS16BIT
+﻿phi.Hello:OS16BIT
 {
-	log 'test';
+	str hello: 'Hello, World!';
+	str large: 'Large Number';
 
 	while int i: 0; i < 10; i++;
+	
+		log	hello;
 		
-		if	i < 4
-			log 'hello, world\r\n';
+		if		i > 4
+			log large;
 		;;
     ;;
 
 }
-
-
-#
-
-		if(4 * y + (t/2) is (67 or 84) + y) and value > 5:
-
-			log 'very complex conditional';
-
-		;;
-
-		if(value: 8 * y):
-
-		if(str test: 'hello')
-
-		;;
-	
-
-#
-

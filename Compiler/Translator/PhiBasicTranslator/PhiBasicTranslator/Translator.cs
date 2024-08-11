@@ -573,13 +573,24 @@ namespace PhiBasicTranslator
                             right = two[1].Trim();
                         }
 
+                        ConditionalPairs.ConditionType ctyp = ConditionalPairs.ConditionType.None;
+
+                        if (instr.Name == Defs.instWhile)
+                        {
+                            ctyp = ParseUtilities.MatchesInvertedCondition(cond);
+                        }
+                        else
+                        {
+                            ctyp = ParseUtilities.MatchesCondition(cond);
+                        }
+
                         instr.Conditionals.Add(new PhiConditional
                         {
                             PhiConditionalPairs = new List<ConditionalPairs>
                             {
                                 new ConditionalPairs 
                                 { 
-                                    type = ParseUtilities.MatchesCondition(cond),
+                                    type = ctyp,
                                     LeftValue = left,
                                     RightValue = right
                                 }

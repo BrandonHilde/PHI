@@ -19,7 +19,18 @@ namespace PhiBasicTranslator.Structure
 
     public class BuildPair
     {
+        public List<string> CodeBase { get; set; } = new List<string>();
         public List<string> CoreCode { get; set; } = new List<string>();
         public List<string> SubCode { get; set; } = new List<string>();
+
+        public BuildPair Copy()
+        {
+            return new BuildPair      
+            { 
+                CoreCode = CoreCode, 
+                SubCode = SubCode,
+                CodeBase = CodeBase
+            };
+        }
     }
 }

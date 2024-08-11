@@ -134,7 +134,7 @@ namespace PhiBasicTranslator.ParseEngine
                     && inside != Inside.MultiComment
                     && inside != Inside.Instruct)
                 {
-                    if (content[i] != ' ' || inside == Inside.String)
+                    if (!Defs.TabSpaceClosureCharacters.Contains(content[i]) || inside == Inside.String)
                     {
                         vl += content[i];
                     }

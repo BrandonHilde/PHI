@@ -19,6 +19,8 @@ namespace PhiBasicTranslator.Structure
         public List<PhiConditional> Conditionals = new List<PhiConditional>();
         public List<PhiMath> Maths = new List<PhiMath>();
 
+        public List<BuildPair> BuildPairs = new List<BuildPair>();
+
         public PhiInstruct()
         {
 
@@ -42,6 +44,9 @@ namespace PhiBasicTranslator.Structure
 
             foreach (PhiMath mt in Maths) maths.Add(mt.Copy());
 
+            List<BuildPair> build = new List<BuildPair>();
+
+            foreach (BuildPair bp in BuildPairs) build.Add(bp.Copy());
             //
 
             //maybe unecessary 
@@ -58,7 +63,8 @@ namespace PhiBasicTranslator.Structure
                 Instructs = insts,
                 ContentLabels = labels,
                 Conditionals = cond,
-                Maths = maths
+                Maths = maths,
+                BuildPairs = build
             };
         }
     }

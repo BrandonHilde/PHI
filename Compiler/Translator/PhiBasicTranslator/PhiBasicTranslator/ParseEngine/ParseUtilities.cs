@@ -628,8 +628,51 @@ namespace PhiBasicTranslator.ParseEngine
             return rawContent;
         }
         */
-
         public static ConditionalPairs.ConditionType MatchesCondition(string condition)
+        {
+            ConditionalPairs.ConditionType typ = ConditionalPairs.ConditionType.None;
+
+            for (int i = 0; i < condition.Length; i++)
+            {
+                string? match = Defs.OpperCompareList.Where(
+                    x => condition.Contains(x)
+                    ).FirstOrDefault();
+
+                bool cont = (match != null);
+
+                if (cont)
+                {
+                    //remember it only jumps if it fails so use opposites
+                    if (match == Defs.opperIs || match == Defs.opperIsAlt)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfEqual;
+                    }
+                    else if (match == Defs.opperNot || match == Defs.opperNotAlt)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfNotEqual;
+                    }
+                    else if (match == Defs.opperLesser)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfLess;
+                    }
+                    else if (match == Defs.opperLesserEqu)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfLessEqual;
+                    }
+                    else if (match == Defs.opperGreater)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfGreater;
+                    }
+                    else if (match == Defs.opperGreaterEqu)
+                    {
+                        typ = ConditionalPairs.ConditionType.JumpIfGreaterEqual;
+                    }
+                }
+            }
+
+            return typ;
+        }
+        public static ConditionalPairs.ConditionType MatchesInvertedCondition(string condition)
         {
             ConditionalPairs.ConditionType typ = ConditionalPairs.ConditionType.None;
 
