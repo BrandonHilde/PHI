@@ -115,8 +115,6 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 BuildPair pair = BuildInstructLog(instrct, cls, predefined, Code, SubCode);
 
-                pair.CodeBase = Code;
-
                 return pair;
             }
             else if (instrct.Name == Defs.instWhile)
@@ -240,11 +238,23 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<PhiVariable> ConvertAllSubVariables(PhiInstruct inst)
         {
-            List<PhiVariable> values = UpdateUnsetVars(inst.Variables);
+            List<PhiVariable> values = new List<PhiVariable>();
+                
+            List<PhiVariable> up = UpdateUnsetVars(inst.Variables);
 
-            foreach(PhiInstruct instruct in inst.Instructs)
+            foreach (PhiVariable v in up)
             {
-                values.AddRange(ConvertAllSubVariables(instruct));
+                values.Add(v.Copy());
+            }
+
+            foreach (PhiInstruct instruct in inst.Instructs)
+            {
+                List<PhiVariable> sub = ConvertAllSubVariables(instruct);
+
+                foreach(PhiVariable v in sub)
+                {
+                    values.Add(v.Copy());
+                }
             }
 
             return values;
@@ -424,6 +434,17 @@ namespace PhiBasicTranslator.TranslateUtilities
                     vStart
                 ));
 
+                PhiVariable? startValue = instruct.Variables.Where(x => ASMx86_16BIT.UpdateName(x.Name) == vStart).FirstOrDefault();
+
+                if (startValue != null)
+                {
+                    loopStart = ASMx86_16BIT.ReplaceValue(
+                       loopStart,
+                       ASMx86_16BIT.replaceLoopStart,
+                       startValue.ValueRaw
+                   );
+                }
+
                 loopStart.AddRange(ASMx86_16BIT.InstructWhileCheck_BITS16);
 
                 #region LOOP CHECK
@@ -530,6 +551,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return new BuildPair
             {
+                CodeBase = Code,
                 CoreCode = new List<string>(),
                 SubCode = subCde
             };

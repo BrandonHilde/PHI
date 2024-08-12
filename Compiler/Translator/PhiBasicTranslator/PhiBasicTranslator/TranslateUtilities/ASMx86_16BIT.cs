@@ -25,6 +25,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceLoopContent = ";{LOOP CONTENT}";
         public static readonly string replaceLoopContentName = ";{LOOP CONTENT NAME}";
         public static readonly string replaceLoopIncrement = ";{LOOP INCREMENT}";
+        public static readonly string replaceLoopStart = ";{LOOP Start}";
 
         public static readonly string replaceIfCondition = ";{IF CONDITION}";
         public static readonly string replaceIfRightCompare = ";{IF COMPARE RIGHT}";
@@ -231,15 +232,19 @@ namespace PhiBasicTranslator.TranslateUtilities
         }
         public static List<string> ReplaceValue(List<string> Code, string Key, string Value)
         {
-            for (int i = 0; i < Code.Count; i++)
+            List<string> cde = new List<string>();
+
+            cde.AddRange(Code);
+
+            for (int i = 0; i < cde.Count; i++)
             {
-                if (Code[i].Contains(Key)) 
-                { 
-                    Code[i] = Code[i].Replace(Key, Value); 
+                if (cde[i].Contains(Key)) 
+                {
+                    cde[i] = cde[i].Replace(Key, Value); 
                 }
             }
 
-            return Code;
+            return cde;
         }
         public static List<string> InsertValues(List<string> Code, List<string> Values)
         {
@@ -325,24 +330,26 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> InstructWhileStart_BITS16 = new List<string>()
         {
             replaceLoopName + ":",
-            "   mov cx, [" + Defs.replaceValueStart +"]"
+            "   mov cx, " + replaceLoopStart,
+            "   mov [" + Defs.replaceValueStart +"], cx"
         };
 
         public static List<string> InstructWhileCheck_BITS16 = new List<string>()
         {
             ".loop_check:",
+            "   mov cx, [" + Defs.replaceValueStart +"]",
             "   cmp cx, [" + replaceLoopLimit + "]",
             "   " + replaceLoopCondition + " .loop_done", //jge jg je jl jle etc...
+            "   call " + replaceLoopContentName + suffixContent,
+            "   mov cx, [" + Defs.replaceValueStart +"]",
             "   " + replaceLoopIncrement, // inc cx
             "   mov [" + Defs.replaceValueStart +"], cx",
-            "   call " + replaceLoopContentName + suffixContent,
             "   jmp .loop_check"
         };
 
         public static List<string> InstructWhileDone_BITS16 = new List<string>()
         {
             ".loop_done:",
-            "   mov [" + Defs.replaceValueStart + "], cx",
             "   ret"
         };
 

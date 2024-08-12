@@ -1,24 +1,11 @@
 ﻿phi.Hello:OS16BIT
 {
 	str hello: 'Hello, World!\r\n';
-	str large: 'Large Number\r\n';
-	str testv: 'testsing';
 
-	while int i: 0; i < 10; i++;
+	while int v: 0; v < 3; v++;
 	
-		log	hello;
-		
-		if		i > 4
-			log large;
+		while int i: 0; i < 10; i++;
+			log	v '   ' i '   ' hello;
 		;;
-    ;;
-	
-	call Test;
-}
-
-asm.Test
-{
-	mov si, {testv}
-	call print_log
-	ret
+	;; 
 }
