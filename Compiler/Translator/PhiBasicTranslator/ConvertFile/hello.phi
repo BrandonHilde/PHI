@@ -1,15 +1,16 @@
 ﻿phi.Hello:OS16BIT
 {
 	str hello: 'Hello, World!\r\n';
-	str Name:[40];
-
-	ask Name;
-
-	log Name;
+	str greet: 'Tell me your name: ';
+    str name: [69];
+	
+	log greet;
+	ask name;
+	log '\r\nhello: '  name '\r\n';
 
 	while int v: 0; v < 3; v++;
-	
-		while int i: 0; i < 10; i++;
+
+		while int i: 0; i < 3; i++;
 			log	v '   ' i '   ' hello;
 		;;
 	;; 
