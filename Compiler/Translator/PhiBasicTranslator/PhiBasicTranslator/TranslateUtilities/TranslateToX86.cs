@@ -186,7 +186,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
             else if (instrct.Name == Defs.instAsk)
             {
-                Console.WriteLine(instrct.Name + " Unimplemented");
+                BuildPair pair = BuildInstructAsk(instrct, cls, predefined, Code, SubCode);
+
+                return pair;
             }
             else if (instrct.Name == Defs.instCall)
             {
@@ -557,10 +559,45 @@ namespace PhiBasicTranslator.TranslateUtilities
             };
         }
 
+        public static BuildPair BuildInstructAsk(PhiInstruct instruct, PhiClass cls, List<PhiVariable> predefined, List<string> Code, List<string> SubCode)
+        {
+            List<string> subCde = new List<string>() { Defs.replaceCodeStart };
+            // remember to add includes check to prevent duplicates
+
+            List<string> values = new List<string>();
+
+            List<PhiVariable> vrs = ParseVariables.GetInstructSubVariables(instruct, predefined);
+
+            //VarCount += vrs.Count;
+
+            foreach (PhiVariable v in vrs)
+            {
+                if (v.varType == Inside.VariableTypeStr)
+                {
+                    // adds function call code
+                    subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructASK_BITS16, Defs.replaceCodeStart);
+                }
+
+                if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
+
+                subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, ASMx86_16BIT.UpdateName(v.Name));
+            }
+
+            Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
+
+            return new BuildPair
+            {
+                CodeBase = Code,
+                CoreCode = new List<string>(),
+                SubCode = subCde
+            };
+        }
+
         public static List<string> AutoInclude_BITS16(List<string> Code)
         {
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintInt_x86BITS16, Defs.replaceIncludes);
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintLog_x86BITS16, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.AskInput_x86BITS16, Defs.replaceIncludes);
 
             return Code;
         }

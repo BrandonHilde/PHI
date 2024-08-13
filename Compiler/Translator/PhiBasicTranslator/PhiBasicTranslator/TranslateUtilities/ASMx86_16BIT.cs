@@ -8,6 +8,8 @@ using System.Threading.Tasks;
 using PhiBasicTranslator.Structure;
 using System.Runtime.ConstrainedExecution;
 using PhiBasicTranslator.ParseEngine;
+using static System.Formats.Asn1.AsnWriter;
+using System.Diagnostics.Metrics;
 
 namespace PhiBasicTranslator.TranslateUtilities
 {
@@ -15,6 +17,7 @@ namespace PhiBasicTranslator.TranslateUtilities
     {
         public static readonly string varStrTyp = " db ";
         public static readonly string varIntTyp = " dd ";
+        public static readonly string varTimes = " times ";
         public static readonly string varStrNewLine = "10";
         public static readonly string varStrReturn = "13";
         public static readonly string varStrTab = "9";
@@ -133,9 +136,18 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 if(update) name = UpdateName(varble.Name);
 
+                string arr = ParseVariables.GetRawValueArrayLength(varble.ValueRaw);
+
                 if (varble.varType == Inside.VariableTypeStr)
                 {
-                    vr = name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                    if (arr != string.Empty)
+                    {
+                        vr = name + varTimes + arr + varStrTyp + varStrEnd;
+                    }
+                    else
+                    {
+                        vr = name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                    }
                 }
                 else if (varble.varType == Inside.VariableTypeInt)
                 {
@@ -368,6 +380,15 @@ namespace PhiBasicTranslator.TranslateUtilities
         };
         #endregion
 
+
+        #region ASK
+        public static List<string> InstructASK_BITS16 = new List<string>()
+        {
+            "   mov di, " + Defs.replaceValueStart,
+            "   call get_input"
+        };
+        #endregion
+
         public static List<string> BIT16x86 = new List<string>()
         {
             //"[BITS 16]",
@@ -389,6 +410,26 @@ namespace PhiBasicTranslator.TranslateUtilities
             Defs.replaceVarStart,//;{VALUES}
             "times 510-($-$$) db 0",
             "dw 0xaa55"
+        };
+
+        public static List<string> AskInput_x86BITS16 = new List<string>()
+        {
+            "get_input:",
+            "   xor cx, cx",
+            ".loop:",
+            "    mov ah, 0",
+            "    int 0x16",
+            "    cmp al, 0x0D",
+            "    je .done",
+            "    stosb   ",
+            "    inc cx  ",
+            "    mov ah, 0x0E",
+            "    int 0x10",
+            "    jmp .loop",
+            "",
+            ".done:",
+            "    mov byte [di], 0 ",
+            "    ret"
         };
 
         public static List<string> PrintLog_x86BITS16 = new List<string>()

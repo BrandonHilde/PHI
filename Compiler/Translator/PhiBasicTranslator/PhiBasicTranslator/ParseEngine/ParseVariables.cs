@@ -110,6 +110,45 @@ namespace PhiBasicTranslator.ParseEngine
             return str;
         }
 
+        public static string GetRawValueArrayLength(string rawValue)
+        {
+            bool start = false;
+
+            string val = string.Empty;
+
+            ContentProfile prf = ParseUtilities.ProfilePrepare(rawValue);
+
+            for (int i = 0; i < rawValue.Length; i++)
+            {
+                Inside inside = prf.ContentInside[i];
+
+                if (inside != Inside.String && 
+                    inside != Inside.Comment && 
+                    inside != Inside.MultiComment)
+                {
+                    if (rawValue[i].ToString() == Defs.squareOpen)
+                    {
+                        start = true;
+                    }
+                    else if (rawValue[i].ToString() == Defs.squareClose && start)
+                    {
+                        start = false;
+                    }
+                    else
+                    {
+                        if (start) val += rawValue[i];
+                    }
+                }
+            }
+
+            if (!start)
+            {
+                return val;
+            }
+
+            return string.Empty;
+        }
+
         public static string ReplaceASMVar(string content, List<PhiVariable> preexisting)
         {
             bool startname = false;
