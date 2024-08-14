@@ -2,12 +2,37 @@
 <h1>PHI Language</h1>
 <h3>Soon operating systems will be as easy to code as desktop apps</h3>
 
+<h3>Example Program:</h3>
+
 ```phi
+
 phi.Hello:OS16BIT
 {
+	str hello: 'Hello, World!\r\n';
+    	str newline: '\r\n';
+	str name:[40];
 	
-	log 'Hello, World!';
+	log 'What is your name: ';
+	ask name;
+	log newline;
+	log 'hello: ' name;
+	log newline;
+	log 'Press any key to continue...';
+	
+	call WaitForKeyPress;
+	call EnableVideoMode;
+}
 
+asm.WaitForKeyPress
+{
+    	mov ah, 0x00
+    	int 0x16
+}
+
+asm.EnableVideoMode
+{
+    	mov ax, 0x13
+    	int 0x10
 }
 ```
 <h4>To Build:</h4>
