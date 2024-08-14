@@ -1,4 +1,4 @@
-<img src="/resources/phi.png" width="80">
+<img src="/resources/phialt.png" width="80">
 <h1>PHI Language</h1>
 <h3>Soon operating systems will be as easy to code as desktop apps</h3>
 
