@@ -21,6 +21,7 @@ start:
 
     jc error        ; If carry flag is set, there was an error
 
+    ; video
     mov ax, 0x13
     int 0x10
 
@@ -69,6 +70,7 @@ print_stringQ:
 .done:
     ret
 
+VALUE_name times 40 db 0
 error_msg db 'Error loading sector 2', 13, 10, 0
 hello db 'Hello, World', 13, 10, 0
 phi_msg db 'Welcome to PHI', 13, 10, 0

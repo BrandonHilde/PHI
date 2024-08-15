@@ -13,7 +13,7 @@ using System.Reflection;
 [assembly: System.Reflection.AssemblyCompanyAttribute("PhiBasicTranslator")]
 [assembly: System.Reflection.AssemblyConfigurationAttribute("Debug")]
 [assembly: System.Reflection.AssemblyFileVersionAttribute("1.0.0.0")]
-[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+104eb940b7582014fb266a9a1ed1c59b808d60fd")]
+[assembly: System.Reflection.AssemblyInformationalVersionAttribute("1.0.0+be0fa3e252bf20523f264aed24fb77c4f8283422")]
 [assembly: System.Reflection.AssemblyProductAttribute("PhiBasicTranslator")]
 [assembly: System.Reflection.AssemblyTitleAttribute("PhiBasicTranslator")]
 [assembly: System.Reflection.AssemblyVersionAttribute("1.0.0.0")]

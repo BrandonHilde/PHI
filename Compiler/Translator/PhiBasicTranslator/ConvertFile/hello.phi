@@ -1,17 +1,18 @@
-﻿phi.Hello:OS16BIT
+﻿phi.Hello:OS16BITVideo
 {
 	str hello: 'Hello, World!\r\n';
-	str greet: 'Tell me your name: ';
-    str name: [69];
+    str newline: '\r\n';
+	str name:[40];
 	
-	log greet;
+	log 'What is your name: ';
 	ask name;
-	log '\r\nhello: '  name '\r\n';
-
-	while int v: 0; v < 3; v++;
-
-		while int i: 0; i < 3; i++;
-			log	v '   ' i '   ' hello;
-		;;
-	;; 
+	log newline;
+	log 'hello: ' name;
+	log newline;
+	log 'Press any key to continue...';
+	
+	call OS16BITVideo.WaitForKeyPress;
+	
+	call OS16BITVideo.EnableVideoMode;
+	call OS16BITVideo.JumpToSectorTwo;
 }

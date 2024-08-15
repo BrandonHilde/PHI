@@ -1,67 +1,114 @@
-; pit_example.asm
-BITS 16
-ORG 0x7C00
+ORG 0x7c00
 
 start:
-    ; Set up segments
-    xor ax, ax
-    mov ds, ax
-    mov es, ax
-    mov ss, ax
-    mov sp, 0x7C00
+   xor ax, ax
+   mov ds, ax
+   mov es, ax
+   mov ss, ax
+   mov sp, 0x7c00
 
-    mov si, msg
-    call print_string  
+   mov si, VALUE_0
+   call print_log
+   mov di, VALUE_name
+   call get_input
+   mov si, VALUE_1
+   call print_log
+   mov si, VALUE_name
+   call print_log
+   mov si, VALUE_2
+   call print_log
+    call  OS16BITVideo_WaitForKeyPress
+    call  OS16BITVideo_EnableVideoMode
+    call  OS16BITVideo_JumpToSectorTwo
+;{CODE}
 
-    ; Set up PIT
-    cli                     ; Disable interrupts
-    mov al, 00110100b       ; Channel 0, lobyte/hibyte, rate generator
-    out 0x43, al            ; Send to PIT command port
-    
-     mov si, msg
-    call print_string
+   jmp $
 
-    mov ax, 11932           ; Set frequency to ~100 Hz (1193182 / 100)
-    out 0x40, al            ; Send low byte
-    mov al, ah
-    out 0x40, al            ; Send high byte
+print_int:
+    push bp
+    mov bp, sp
+    push dx
 
-     mov si, msg
-    call print_string
+    cmp ax, 10
+    jge .div_num
 
-    ; Set up interrupt handler
-    mov word [0x0020], timer_interrupt  ; Set offset
-    mov word [0x0022], 0x0000           ; Set segment
-
-    mov si, msg
-    call print_string
-
-    ; Enable interrupts
-    sti
-
-main_loop:
-    hlt                     ; Halt until next interrupt
-    jmp main_loop
-
-timer_interrupt:
-    mov si, hello
-    call print_string          
-    mov al, 0x20            ; End of Interrupt (EOI)
-    out 0x20, al            ; Send EOI to PIC
-    iret
-
-print_string:
+    add al, '0'
     mov ah, 0x0E
-.loop:
-    lodsb
-    cmp al, 0
-    je .done
     int 0x10
-    jmp .loop
+    jmp .done
+
+.div_num:
+    xor dx, dx
+    mov bx, 10
+    div bx
+    push dx
+    call print_int
+    pop dx
+    add dl, '0'
+    mov ah, 0x0E
+    mov al, dl
+    int 0x10
+
 .done:
+    pop dx
+    mov sp, bp
+    pop bp
     ret
 
-msg db 'hi', 0
-hello db 'hello',0
+print_log:
+   mov ah, 0x0E
+.loop:
+   lodsb
+   cmp al, 0
+   je .done
+   int 0x10
+   jmp .loop
+.done:
+   ret
+
+get_input:
+   xor cx, cx
+.loop:
+    mov ah, 0
+    int 0x16
+    cmp al, 0x0D
+    je .done
+    stosb   
+    inc cx  
+    mov ah, 0x0E
+    int 0x10
+    jmp .loop
+
+.done:
+    mov byte [di], 0 
+    ret
+OS16BITVideo_EnableVideoMode:
+   mov ax, 0x13
+   int 0x10
+   ret
+OS16BITVideo_PrepSectorTwo:
+   mov ah, 0x02    ; BIOS read sector
+   mov al, 1       ; Number of sectors
+   mov ch, 0       ; Cylinder number
+   mov dh, 0       ; Head number
+   mov cl, 2       ; Sector number
+   mov bx, 0x7E00  ; Load address
+   int 0x13
+   ret
+OS16BITVideo_JumpToSectorTwo:
+   call OS16BITVideo_PrepSectorTwo
+   jmp 0x7E00 ; jump to sector two
+   ret
+OS16BITVideo_WaitForKeyPress:
+   mov ah, 0x00
+   int 0x16
+   ret
+;{INCLUDE}
+
+VALUE_name: times 40 db 0
+VALUE_0 db 'What is your name: ',0
+VALUE_1 db '',13,10,'hello: ',0
+VALUE_2 db '',13,10,'Press any key to continue...',0
+;{VARIABLE}
 times 510-($-$$) db 0
-dw 0xAA55
+dw 0xaa55

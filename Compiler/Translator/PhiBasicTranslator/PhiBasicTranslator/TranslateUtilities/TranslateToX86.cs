@@ -30,7 +30,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 if (cls.Type == PhiType.PHI)
                 {
 
-                    if (cls.Inherit == Defs.os16bit)
+                    if (cls.Inherit == Defs.OS16BIT)
                     {
                         ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
                         ASM = AutoInclude_BITS16(ASM);
@@ -40,11 +40,33 @@ namespace PhiBasicTranslator.TranslateUtilities
                         List<string> values = ConvertVarsToASM(allVars);
 
                         List<string> SubCode = new List<string>
+                        {
+                            "",
+                            "  " + Defs.replaceCodeStart,
+                            ""
+                        };
+
+                        ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
+
+                        BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
+
+                        ASM = pair.CodeBase;
+                    }
+                    else if (cls.Inherit == Defs.OS16BitVideo)
                     {
-                        "",
-                        "  " + Defs.replaceCodeStart,
-                        ""
-                    };
+                        ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
+                        ASM = AutoInclude_BITS16(ASM);
+
+                        allVars.AddRange(ConvertAllVariables(cls));
+
+                        List<string> values = ConvertVarsToASM(allVars);
+
+                        List<string> SubCode = new List<string>
+                        {
+                            "",
+                            "  " + Defs.replaceCodeStart,
+                            ""
+                        };
 
                         ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
 
@@ -203,6 +225,8 @@ namespace PhiBasicTranslator.TranslateUtilities
                         callname += instrct.Value[i];
                     }
                 }
+
+                callname = callname.Replace('.', '_');
 
                 pair.SubCode = new List<string>
                 {
@@ -598,6 +622,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintInt_x86BITS16, Defs.replaceIncludes);
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintLog_x86BITS16, Defs.replaceIncludes);
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.AskInput_x86BITS16, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_VideoMode, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_SectorPrep, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_JumpSectorTwo, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_WaitForKeyPress, Defs.replaceIncludes);
 
             return Code;
         }

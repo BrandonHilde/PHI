@@ -8,7 +8,8 @@ namespace PhiBasicTranslator.Structure
 {
     public static class Defs
     {
-        public static readonly string os16bit = "OS16BIT";
+        public static readonly string OS16BIT = "OS16BIT";
+        public static readonly string OS16BitVideo = "OS16BITVideo";
         public static readonly string replaceValueStart = ";{VALUES}";
         public static readonly string replaceCodeStart = ";{CODE}";
         public static readonly string replaceVarStart = ";{VARIABLE}";

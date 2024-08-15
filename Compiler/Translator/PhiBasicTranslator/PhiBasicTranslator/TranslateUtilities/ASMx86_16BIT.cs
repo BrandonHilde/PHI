@@ -57,7 +57,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static readonly string prefixVariable = "VALUE_";
         public static readonly string suffixContent = "_CONTENT";
-        public enum InheritType { External, BITS16 }
+        public enum InheritType { External, BITS16, BITS16Video }
         public static List<string> GetInheritance(InheritType type)
         {
             if (type == InheritType.External)
@@ -67,6 +67,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             else if (type == InheritType.BITS16)
             {
                 return BIT16x86;
+            }
+            else if(type == InheritType.BITS16Video)
+            {
+                return BIT16x86_Bootloader;
             }
 
             return new List<string>();
@@ -142,7 +146,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     if (arr != string.Empty)
                     {
-                        vr = name + varTimes + arr + varStrTyp + varStrEnd;
+                        vr = name + ":" + varTimes + arr + varStrTyp + varStrEnd;
                     }
                     else
                     {
@@ -410,6 +414,102 @@ namespace PhiBasicTranslator.TranslateUtilities
             Defs.replaceVarStart,//;{VALUES}
             "times 510-($-$$) db 0",
             "dw 0xaa55"
+        };
+
+        public static List<string> BIT16x86_Bootloader = new List<string>()
+        {
+            //"[BITS 16]",
+            "ORG 0x7c00",
+            "",
+            "start:",
+            "   xor ax, ax",
+            "   mov ds, ax",
+            "   mov es, ax",
+            "   mov ss, ax",
+            "   mov sp, 0x7c00",
+            "",
+            Defs.replaceCodeStart, //;{CODE}
+            "",
+            Defs.replaceIncludes, // ;{INCLUDES}
+            "",
+            Defs.replaceVarStart,//;{VALUES}
+            "times 510-($-$$) db 0",
+            "dw 0xaa55"
+        };
+
+        /// <summary>
+        ///  remember to add additional options
+        /// </summary>
+        public static List<string> BIT16x86_SectorPrep = new List<string>()
+        {
+            "OS16BITVideo_PrepSectorTwo:",
+            "   mov ah, 0x02    ; BIOS read sector",
+            "   mov al, 1       ; Number of sectors",
+            "   mov ch, 0       ; Cylinder number",
+            "   mov dh, 0       ; Head number",
+            "   mov cl, 2       ; Sector number",
+            "   mov bx, 0x7E00  ; Load address",
+            "   int 0x13",
+            "   ret"
+        };
+
+        public static List<string> BIT16x86_ProgramableInteruptTimer = new List<string>()
+        {
+            "OS16BITVideo_PrepInteruptTimer:",
+            "   cli    ; Set up the PIT",
+            "   mov al, 00110100b    ; Channel 0, lobyte/hibyte, rate generator",
+            "   out PIT_COMMAND, al",
+            "       ; Set the divisor",
+            "   mov ax, DIVISOR",
+            "   out PIT_CHANNEL_0, al    ; Low byte",
+            "   mov al, ah",
+            "   out PIT_CHANNEL_0, al    ; High byte",
+            "   ; Set up the timer ISR",
+            "   mov word [0x0020], timer_interrupt",
+            "   mov word [0x0022], 0x0000    ; Enable interrupts",
+            "   sti",
+            "   ret"
+        };
+
+        public static List<string> BIT16x86_MainLoop = new List<string>()
+        {
+            "OS16BITVideo_main_loop:",
+            "   hlt                     ; Halt until next interrupt",
+            "   jmp main_loop"
+        };
+
+        public static List<string> BIT16x86_InteruptEvent = new List<string>()
+        {
+            "OS16BITVideo_timer_interrupt:",
+            Defs.replaceCodeStart,
+            "   mov al, 0x20",
+            "   out 0x20, al",
+            "   iret"
+        };
+
+
+        public static List<string> BIT16x86_JumpSectorTwo = new List<string>()
+        {
+            "OS16BITVideo_JumpToSectorTwo:",
+            "   call OS16BITVideo_PrepSectorTwo",
+            "   jmp 0x7E00 ; jump to sector two", // jump to sector two"
+             "   ret"
+        };
+
+        public static List<string> BIT16x86_VideoMode = new List<string>()
+        {
+            "OS16BITVideo_EnableVideoMode:",
+            "   mov ax, 0x13",
+            "   int 0x10",
+            "   ret"
+        };
+
+        public static List<string> BIT16x86_WaitForKeyPress = new List<string>()
+        {
+            "OS16BITVideo_WaitForKeyPress:",
+            "   mov ah, 0x00",
+            "   int 0x16",
+            "   ret"
         };
 
         public static List<string> AskInput_x86BITS16 = new List<string>()
