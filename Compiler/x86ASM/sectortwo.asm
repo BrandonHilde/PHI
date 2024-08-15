@@ -1,114 +1,119 @@
 ; second sector
-BITS 16
 org 0x7E00
 
 second_sector_start:
-
-    mov si, welcome_msg
-    call print_string
-
-    mov si, name_prompt
-    call print_string
-
-    ; Get u    
-    mov di, name_buffer
-    call get_input
-
-    ; Print greeting with name
-    mov si, newline
-    call print_string
-    mov si, greeting
-    call print_string
-    mov si, name_buffer
-    call print_string
-
-    mov si, newline
-    call print_string
-
-    xor eax,eax
-    mov eax, [to_string_number_test]   ; load the number into ax
-    call int_to_string
-
-    mov si, newline
-    call print_string
-
-    xor eax,eax
-    mov eax, [dec_number]
-    mov ecx, [dec_mul]
-    mul ecx
-    ;mov eax, [dec_number]   ; load the number into eax
-    mov edx, eax
-    call int_to_string
-
-    ; Wait for key press
-    mov ah, 0x00
-    int 0x16
-
-    ; Halt the system
     cli
-    hlt
+    ; Set up the PIT
+    mov al, 00110100b    ; Channel 0, lobyte/hibyte, rate generator
+    out PIT_COMMAND, al
+    
+    ; Set the divisor
+    mov ax, DIVISOR
+    out PIT_CHANNEL_0, al    ; Low byte
+    mov al, ah
+    out PIT_CHANNEL_0, al    ; High byte
 
-print_string:
-    mov ah, 0x0E
-.loop:
-    lodsb
-    cmp al, 0 ;check for 0
-    je .done
-    int 0x10
-    jmp .loop
-.done:
+    ; Set up the timer ISR
+    mov word [0x0020], timer_interrupt
+    mov word [0x0022], 0x0000  
+
+    ; Enable interrupts
+    sti
+
+    mov eax, SCREEN_WIDTH
+    mov ecx, SCREEN_HEIGHT
+    mul ecx
+    add eax, DRAW_START
+    mov [BUFFER_SIZE], eax
+
+    ; set square x coord
+    mov eax, 100
+    mov [SQX], eax
+
+    ; set square y coord
+    mov eax, 100
+    mov [SQY], eax
+
+main_loop:
+    hlt                     ; Halt until next interrupt
+    jmp main_loop
+timer_interrupt:
+
+    ;mov di, DRAW_START
+    call set_color_black
+    call draw_square
+    call set_color_red
+    call move_square
+
+    mov al, 0x20
+    out 0x20, al
+    iret
+
+move_square:
+    ; set square x coord
+    mov eax, [SQX]
+    inc eax
+    mov [SQX], eax
+
+   ; call set_color_red
+    call draw_square
     ret
 
-get_input:
-    xor cx, cx        ; set to 0
-.loop:
-    mov ah, 0         ; read keyboard input
-    int 0x16       
-    
-    cmp al, 0x0D      ; if Enter key was pressed
-    je .done       
-    
-    stosb             ; Store character
-    inc cx            ; count increment
-    
-    mov ah, 0x0E      ; print character
-    int 0x10          
-    
-    jmp .loop         
+draw_square:
+    mov edi, DRAW_START  ; Start of VGA memory for mode 13h (320x200)
+    mov eax, [SQY]
+    mov ecx, SCREEN_WIDTH
+    mul ecx
+    add eax, [SQX]
+    add edi, eax
+    mov edx, 0       ; Y counter
 
-.done:
-    mov byte [di], 0  ; 0 terminate the string
-    ret 
+.draw_row:
+    mov ecx, 0      ; Reset X counter
 
-int_to_string:
-    push ebp
-    mov ebp, esp
-    push edx  
+.draw_pixel:
+    cmp edi, [BUFFER_SIZE]
+    jl .continue_draw
+    mov edi, DRAW_START
 
-    cmp eax, 10
-    jge .div_num
+.continue_draw:
+    mov al, [COLOR]
+    mov byte [edi], al; Set pixel color to red (color index 4 in default palette)
+    inc edi
+    inc ecx
+    cmp ecx, [SQ_WIDTH]
+    jl .draw_pixel
 
-    add al, '0'
-    mov ah, 0x0E  
-    int 0x10
-    jmp .done
+    add edi, SCREEN_WIDTH
+    sub edi, [SQ_WIDTH] ;Move to the next row (320 - square width)
+    inc edx
+    cmp edx, [SQ_HEIGHT]
+    jl .draw_row
 
-.div_num:
-    xor edx, edx    ; clear
-    mov ebx, 10
-    div ebx        
-    push edx       ; save value
-    call int_to_string  
-    pop edx        ; retreive value
-    add dl, '0'   ; convert to ASCII
-    mov ah, 0x0E  
-    mov al, dl
-    int 0x10
+    ret
+clear_screen:
+    push eax
+    push ecx
+    push edi
 
-.done:
-    pop edx
-    mov esp, ebp
-    pop ebp
+    mov edi, DRAW_START
+    xor eax, eax
+    mov ecx, SCREEN_WIDTH * SCREEN_HEIGHT
+
+    rep stosb
+
+    pop edi
+    pop ecx
+    pop eax
+    ret
+
+set_color_red:
+    mov al, 0x04
+    mov [COLOR], al
+    ret
+set_color_black:
+    mov al, 0x00
+    mov [COLOR], al
     ret
 
 welcome_msg db 'Welcome to sector two', 13, 10, 0
@@ -122,5 +127,22 @@ dec_mul dd 100.0
 ; Buffers for user input
 name_buffer times 32 db 0
 input_buffer times 64 db 0
+; PIT-related constants
+PIT_COMMAND    equ 0x43
+PIT_CHANNEL_0  equ 0x40
+PIT_FREQUENCY  equ 1193180  ; Base frequency of the PIT
+DESIRED_FREQ   equ 144      ; Desired interrupt frequency (Hz)
+DIVISOR        equ PIT_FREQUENCY / DESIRED_FREQ
 
-times 512-($-$$) db 0  ; fill extra bytes
+COLOR db 0x04 ; default red
+; Data
+SQX dd 10
+SQY dd 10
+SQ_WIDTH dd 50
+SQ_HEIGHT dd 50
+
+BUFFER_SIZE dd 0
+
+DRAW_START equ 0xA0000
+SCREEN_WIDTH equ 320
+SCREEN_HEIGHT equ 200
