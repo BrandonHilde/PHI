@@ -13,6 +13,7 @@ namespace PhiBasicTranslator.Structure
         public static readonly string replaceValueStart = ";{VALUES}";
         public static readonly string replaceCodeStart = ";{CODE}";
         public static readonly string replaceVarStart = ";{VARIABLE}";
+        public static readonly string replaceConstStart = ";{CONSTANTS}";
         public static readonly string replaceIncludes = ";{INCLUDE}";
 
         public static readonly string replaceUnsetName = ";{UNSET}";

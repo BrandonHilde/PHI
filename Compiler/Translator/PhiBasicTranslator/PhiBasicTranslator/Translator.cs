@@ -53,6 +53,7 @@ namespace PhiBasicTranslator
             PhiClass current = new PhiClass();
             PhiMethod method = new PhiMethod();
             PhiVariable varble = new PhiVariable();
+            //PhiVariable varble = new PhiVariable();
 
             Inside last = Inside.None;
             Inside inside = Inside.None;
@@ -318,6 +319,8 @@ namespace PhiBasicTranslator
                 PhiVariable varble = new PhiVariable();
                 PhiInstruct subInstr = new PhiInstruct();
 
+                bool startParams = false;
+
                 string prev = string.Empty;
                 string cond = string.Empty;
                 string cRaw = string.Empty;
@@ -338,6 +341,10 @@ namespace PhiBasicTranslator
                         else if (inside == Inside.VariableName)
                         {
                             varble.Name += letter;
+                        }
+                        else if(inside == Inside.Colon)
+                        {
+                            startParams = true;
                         }
                         else if (inside == Inside.VariableEnd)
                         {
@@ -393,6 +400,62 @@ namespace PhiBasicTranslator
                     {
                         if (inside == Inside.VariableName)
                             varble.Name += letter;
+                    }
+
+                    if(startParams)
+                    {
+                        string parms = instr.Value.Substring(i + 1).Trim();
+
+                        ContentProfile subprf = ParseUtilities.ProfilePrepare(parms);
+
+                        List<PhiVariable> vars = new List<PhiVariable>();
+
+                        string vName = "";
+
+                        for (int j = 0; j < parms.Length; j++)
+                        {
+                            if (subprf.ContentInside[j] != Inside.InstructClose)
+                            {
+                                if (Defs.TabSpaceClosureCharacters.Contains(parms[j])
+                                    && subprf.ContentInside[j] != Inside.String)
+                                {
+                                    vName = vName.Replace(";", "");
+
+                                    if (vName != string.Empty)
+                                    {
+                                        vars.Add(new PhiVariable
+                                        {
+                                            varType = Inside.VariableTypeInsert,
+                                            Name = vName
+                                        });
+
+                                        vName = "";
+                                    }
+                                }
+                                else
+                                {
+                                    vName += parms[j];
+                                }
+
+                            }
+
+                           
+                        }
+
+                        vName = vName.Replace(";", "");
+
+                        if (vName.Replace(" ", string.Empty) != string.Empty)
+                        {
+                            vars.Add(new PhiVariable
+                            {
+                                varType = Inside.VariableTypeInsert,
+                                Name = vName.Replace(Defs.VariableSetClosure, string.Empty)
+                            });
+                        }
+
+                        instr.Variables.AddRange(vars);
+
+                        startParams = false;
                     }
 
                     if(inside == Inside.Opperation)

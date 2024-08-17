@@ -220,18 +220,63 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 for(int i = 0; i < instrct.Value.Length; i++)
                 {
+                    if (instrct.Value[i].ToString() == Defs.VariableSet)
+                    {
+                        break;
+                    }
+
                     if (instrct.ContentLabels[i] == Inside.None)
                     {
                         callname += instrct.Value[i];
                     }
                 }
 
-                callname = callname.Replace('.', '_');
+                callname = callname.Replace('.', '_').Trim();
 
-                pair.SubCode = new List<string>
+                pair.SubCode = new List<string>();
+
+                if (instrct.Variables.Count > 0)
                 {
-                   "    " + ASMx86_16BIT.callLabel + " " + callname.Trim()
-                };
+                    if(callname == ASMx86_16BIT.incDrawRectangle)
+                    {
+                        for(int i = 0; i < instrct.Variables.Count; i++)
+                        {
+                            Inside vtyp = ASMx86_16BIT.VarType_DrawRectangle[i];
+
+                            List<string> setcode = new List<string>();
+
+                            if (vtyp == Inside.VariableTypeByt)
+                            {
+                                setcode.AddRange(ASMx86_16BIT.BIT8x86_SetVariable);
+                            }
+                            else
+                            {
+                                setcode.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+                            }
+
+                            setcode = ASMx86_16BIT.ReplaceValue(
+                                setcode,
+                                Defs.replaceValueStart,
+                                instrct.Variables[i].Name
+                                );
+
+                            setcode = ASMx86_16BIT.ReplaceValue(
+                                setcode,
+                                ASMx86_16BIT.replaceVarName,
+                                ASMx86_16BIT.VarList_DrawRectangle[i]
+                             );
+
+                            pair.SubCode.AddRange(setcode);
+                        }
+                    }
+                }
+
+                pair.SubCode.Add(
+                   "    " 
+                   + ASMx86_16BIT.callLabel 
+                   + " " 
+                   + callname.Trim()
+                   );
 
                 pair.CodeBase = Code;
 
@@ -270,7 +315,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             foreach (PhiVariable v in up)
             {
-                values.Add(v.Copy());
+                if(v.varType != Inside.VariableTypeInsert)
+                    values.Add(v.Copy());
             }
 
             foreach (PhiInstruct instruct in inst.Instructs)
@@ -626,6 +672,13 @@ namespace PhiBasicTranslator.TranslateUtilities
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_SectorPrep, Defs.replaceIncludes);
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_JumpSectorTwo, Defs.replaceIncludes);
             Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_WaitForKeyPress, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_Interupt, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_InteruptEvent, Defs.replaceIncludes);
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawRectangle, Defs.replaceIncludes);
+
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawConstants, Defs.replaceConstStart);
+
+            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawVariables, Defs.replaceVarStart);
 
             return Code;
         }

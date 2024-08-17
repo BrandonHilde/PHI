@@ -22,6 +22,9 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varStrReturn = "13";
         public static readonly string varStrTab = "9";
         public static readonly string varStrEnd = "0";
+
+        public static readonly string incDrawRectangle = "OS16BITVideo_DrawRectangle";
+
         public static readonly string replaceLoopCondition = ";{LOOP CONDITION}";
         public static readonly string replaceLoopLimit = ";{LOOP LIMIT}";
         public static readonly string replaceLoopName = ";{LOOP NAME}";
@@ -36,6 +39,9 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceIfName = ";{IF NAME}";
         public static readonly string replaceIfJump = ";{IF JUMP}";
         public static readonly string replaceIfContent = ";{IF CONTENT}";
+
+        public static readonly string replaceColorset = ";{COLOR SET}";
+        public static readonly string replaceVarName = ";{VAR NAME}";
 
 
         public static readonly string loopSubIncrementByOne = "inc cx";
@@ -398,6 +404,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             //"[BITS 16]",
             "ORG 0x7c00",
             "",
+            Defs.replaceConstStart,
+            "",
             "start:",
             "   xor ax, ax",
             "   mov ds, ax",
@@ -420,6 +428,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             //"[BITS 16]",
             "ORG 0x7c00",
+            "",
+            Defs.replaceConstStart,
             "",
             "start:",
             "   xor ax, ax",
@@ -465,26 +475,26 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov al, ah",
             "   out PIT_CHANNEL_0, al    ; High byte",
             "   ; Set up the timer ISR",
-            "   mov word [0x0020], timer_interrupt",
+            "   mov word [0x0020], OS16BITVideo_timer_interrupt",
             "   mov word [0x0022], 0x0000    ; Enable interrupts",
             "   sti",
             "   ret"
         };
 
-        public static List<string> BIT16x86_MainLoop = new List<string>()
+        public static List<string> BIT16x86_Interupt = new List<string>()
         {
-            "OS16BITVideo_main_loop:",
-            "   hlt                     ; Halt until next interrupt",
-            "   jmp main_loop"
+            "OS16BITVideo_timer_interrupt:",
+            "   call OS16BITVideo_timer_event",
+            "   mov al, 0x20",
+            "   out 0x20, al",
+            "   iret"
         };
 
         public static List<string> BIT16x86_InteruptEvent = new List<string>()
         {
-            "OS16BITVideo_timer_interrupt:",
+            "OS16BITVideo_timer_event:",
             Defs.replaceCodeStart,
-            "   mov al, 0x20",
-            "   out 0x20, al",
-            "   iret"
+            "   ret"
         };
 
 
@@ -503,6 +513,95 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   int 0x10",
             "   ret"
         };
+
+        public static List<string> VarList_DrawRectangle = new List<string>()
+        {
+            "DrawRectX",
+            "DrawRectY",
+            "DrawRectW",
+            "DrawRectH",
+            "DrawRectColor"
+        };
+
+        public static List<Inside> VarType_DrawRectangle = new List<Inside>()
+        {
+            Inside.VariableTypeInt,
+            Inside.VariableTypeInt,
+            Inside.VariableTypeInt,
+            Inside.VariableTypeInt,
+            Inside.VariableTypeByt
+        };
+
+        public static List<string> BIT16x86_DrawVariables = new List<string>()
+        {
+             "; drawing variables",
+            VarList_DrawRectangle[0] + " dd 0",
+            VarList_DrawRectangle[1] + " dd 0",
+            VarList_DrawRectangle[2] + " dd 10",
+            VarList_DrawRectangle[3] + " dd 10",
+            VarList_DrawRectangle[4] + " db 0xA"
+        };
+
+        public static List<string> BIT16x86_DrawConstants = new List<string>()
+        {
+           
+            "; drawing constants",
+            "DRAW_START equ 0xA0000",
+            "SCREEN_WIDTH equ 320",
+            "SCREEN_HEIGHT equ 200",
+            "BUFFER_SIZE equ DRAW_START + (SCREEN_WIDTH * SCREEN_HEIGHT)",
+            ";color array",
+            "Colors.Black equ 0x0  ;Black\r\nColors.Blue equ 0x1  ;Blue\r\nColors.Green equ 0x2  ;Green\r\nColors.Cyan equ 0x3  ;Cyan\r\nColors.Red equ 0x4  ;Red\r\nColors.Magenta equ  0x5  ;Magenta\r\nColors.Brown equ  0x6  ;Brown\r\nColors.LightGray equ  0x7  ;Light Gray\r\nColors.Gray equ  0x8  ;Gray\r\nColors.LightBlue equ  0x9  ;Light Blue\r\nColors.LightGreen equ 0xA  ;Light Green\r\nColors.LightCyan   equ 0xB  ;Light Cyan\r\nColors.LightRed   equ 0xC  ;Light Red\r\nColors.LightMagenta   equ 0xD  ;Light Magenta\r\nColors.Yellow equ 0xE  ;Yellow \r\nColors.White equ 0xF  ;White",
+            ""
+        };
+
+        public static List<string> BIT16x86_DrawRectangle = new List<string>()
+        {
+            incDrawRectangle + ":",
+            "   mov edi, DRAW_START; Start of VGA memory",
+            "   mov eax, [" + VarList_DrawRectangle[0] + "]", //rx
+            "   mov ecx, SCREEN_WIDTH",
+            "   mul ecx",
+            "   add eax, [" + VarList_DrawRectangle[1] + "]", //ry
+            "   add edi, eax",
+            "   mov edx, 0",
+            ".draw_row:",
+            "   mov ecx, 0",
+            ".draw_pixel:",
+            "   cmp edi, BUFFER_SIZE",
+            "   jl .continue_draw",
+            "   mov edi, DRAW_START",
+            ".continue_draw:",
+            "   mov al, [" + VarList_DrawRectangle[4] + "]",
+            "   mov byte [edi], al",
+            "   inc edi",
+            "   inc ecx",
+            "   cmp ecx, [" + VarList_DrawRectangle[2] + "]", //rw
+            "   jl .draw_pixel",
+            "   add edi, SCREEN_WIDTH",
+            "   sub edi, [" + VarList_DrawRectangle[2] + "]", //rw
+            "   inc edx",
+            "   cmp edx, [" + VarList_DrawRectangle[3] + "]", //rh
+            "   jl .draw_row",
+            "   ret"
+        };
+
+        public static List<string> BIT32x86_SetVariable = new List<string>()
+        {
+            "",
+            "   mov eax, " + Defs.replaceValueStart,
+            "   mov [" + replaceVarName + "], eax",
+            ""
+        };
+
+        public static List<string> BIT8x86_SetVariable = new List<string>()
+        {
+            "",
+            "   mov al, " + Defs.replaceValueStart,
+            "   mov [" + replaceVarName + "], al",
+            ""
+        };
+
 
         public static List<string> BIT16x86_WaitForKeyPress = new List<string>()
         {

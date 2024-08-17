@@ -1,5 +1,11 @@
 ORG 0x7c00
 
+Colors.LightGreen equ 0xA  ;Light Green
+DRAW_START equ 0xA0000
+SCREEN_WIDTH equ 320
+SCREEN_HEIGHT equ 200
+BUFFER_SIZE equ DRAW_START + (SCREEN_WIDTH * SCREEN_HEIGHT)
+;color array
 start:
    xor ax, ax
    mov ds, ax
@@ -7,19 +13,33 @@ start:
    mov ss, ax
    mov sp, 0x7c00
 
+   mov si, VALUE_hello
+   call print_log
    mov si, VALUE_0
-   call print_log
-   mov di, VALUE_name
-   call get_input
-   mov si, VALUE_1
-   call print_log
-   mov si, VALUE_name
-   call print_log
-   mov si, VALUE_2
    call print_log
     call  OS16BITVideo_WaitForKeyPress
     call  OS16BITVideo_EnableVideoMode
-    call  OS16BITVideo_JumpToSectorTwo
+
+   mov eax, 100
+   mov [DrawRectX], eax
+
+
+   mov eax, 20
+   mov [DrawRectY], eax
+
+
+   mov eax, 50
+   mov [DrawRectW], eax
+
+
+   mov eax, 25
+   mov [DrawRectH], eax
+
+
+   mov al, Colors.LightGreen
+   mov [DrawRectColor], al
+
+    call  OS16BITVideo_DrawRectangle
 ;{CODE}
 
    jmp $
@@ -103,12 +123,57 @@ OS16BITVideo_WaitForKeyPress:
    mov ah, 0x00
    int 0x16
    ret
+OS16BITVideo_timer_interrupt:
+   call OS16BITVideo_timer_event
+   mov al, 0x20
+   out 0x20, al
+   iret
+OS16BITVideo_timer_event:
+;{CODE}
+   ret
+OS16BITVideo_DrawRectangle:
+   mov edi, DRAW_START; Start of VGA memory
+   mov eax, [DrawRectX]
+   mov ecx, SCREEN_WIDTH
+   mul ecx
+   add eax, [DrawRectY]
+   add edi, eax
+   mov edx, 0
+.draw_row:
+   mov ecx, 0
+.draw_pixel:
+   cmp edi, BUFFER_SIZE
+   jl .continue_draw
+   mov edi, DRAW_START
+.continue_draw:
+   mov al, [DrawRectColor]
+   mov byte [edi], al
+   inc edi
+   inc ecx
+   cmp ecx, [DrawRectW]
+   jl .draw_pixel
+   add edi, SCREEN_WIDTH
+   sub edi, [DrawRectW]
+   inc edx
+   cmp edx, [DrawRectH]
+   jl .draw_row
+   ret
 ;{INCLUDE}
 
+; drawing variables
+DrawRectX dd 0
+DrawRectY dd 0
+DrawRectW dd 10
+DrawRectH dd 10
+DrawRectColor db 0xA
+; drawing constant
+
+
+
+VALUE_hello db 'Hello, World!',13,10,'',0
+VALUE_newline db '',13,10,'',0
 VALUE_name: times 40 db 0
-VALUE_0 db 'What is your name: ',0
-VALUE_1 db '',13,10,'hello: ',0
-VALUE_2 db '',13,10,'Press any key to continue...',0
+VALUE_0 db 'Press any key to continue...',0
 ;{VARIABLE}
 times 510-($-$$) db 0
 dw 0xaa55

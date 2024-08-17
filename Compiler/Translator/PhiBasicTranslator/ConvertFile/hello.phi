@@ -4,15 +4,17 @@
     str newline: '\r\n';
 	str name:[40];
 	
-	log 'What is your name: ';
-	ask name;
-	log newline;
-	log 'hello: ' name;
-	log newline;
+	log hello;
 	log 'Press any key to continue...';
 	
 	call OS16BITVideo.WaitForKeyPress;
 	
 	call OS16BITVideo.EnableVideoMode;
 	call OS16BITVideo.JumpToSectorTwo;
+
+	call OS16BITVideo.DrawRectangle:
+		100	20
+		50	25	
+		Colors.LightGreen
+	;
 }

@@ -35,6 +35,7 @@ namespace PhiBasicTranslator.Structure
         VariableTypeBln,
         VariableTypeFin,
         VariableTypeMixed,
+        VariableTypeInsert,
         VariableValue,
         VariableEnd,
         MethodOpen,

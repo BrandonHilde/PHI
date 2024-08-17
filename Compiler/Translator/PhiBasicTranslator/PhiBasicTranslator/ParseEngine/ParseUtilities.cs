@@ -97,7 +97,12 @@ namespace PhiBasicTranslator.ParseEngine
                         {
                             previous.ContentInside[j] = Inside.Instruct;
                         }
-                    } 
+                    }
+
+                    if (letter == Defs.VariableSet && !container)
+                    {
+                        previous.ContentInside[i] = Inside.Colon;
+                    }
 
                     if (letter + prev == Defs.InstructSetClosure)
                     {
