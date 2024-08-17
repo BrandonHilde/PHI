@@ -551,7 +551,22 @@ namespace PhiBasicTranslator.TranslateUtilities
             "SCREEN_HEIGHT equ 200",
             "BUFFER_SIZE equ DRAW_START + (SCREEN_WIDTH * SCREEN_HEIGHT)",
             ";color array",
-            "Colors.Black equ 0x0  ;Black\r\nColors.Blue equ 0x1  ;Blue\r\nColors.Green equ 0x2  ;Green\r\nColors.Cyan equ 0x3  ;Cyan\r\nColors.Red equ 0x4  ;Red\r\nColors.Magenta equ  0x5  ;Magenta\r\nColors.Brown equ  0x6  ;Brown\r\nColors.LightGray equ  0x7  ;Light Gray\r\nColors.Gray equ  0x8  ;Gray\r\nColors.LightBlue equ  0x9  ;Light Blue\r\nColors.LightGreen equ 0xA  ;Light Green\r\nColors.LightCyan   equ 0xB  ;Light Cyan\r\nColors.LightRed   equ 0xC  ;Light Red\r\nColors.LightMagenta   equ 0xD  ;Light Magenta\r\nColors.Yellow equ 0xE  ;Yellow \r\nColors.White equ 0xF  ;White",
+            Defs.VariableOpenDeclare + "Colors.Black equ 0x0  ;Black",
+            Defs.VariableOpenDeclare + "Colors.Blue equ 0x1  ;Blue",
+            Defs.VariableOpenDeclare + "Colors.Green equ 0x2  ;Green",
+            Defs.VariableOpenDeclare + "Colors.Cyan equ 0x3  ;Cyan",
+            Defs.VariableOpenDeclare + "Colors.Red equ 0x4  ;Red",
+            Defs.VariableOpenDeclare + "Colors.Magenta equ  0x5  ;Magenta",
+            Defs.VariableOpenDeclare + "Colors.Brown equ  0x6  ;Brown",
+            Defs.VariableOpenDeclare + "Colors.LightGray equ  0x7  ;Light Gray",
+            Defs.VariableOpenDeclare + "Colors.Gray equ  0x8  ;Gray",
+            Defs.VariableOpenDeclare + "Colors.LightBlue equ  0x9  ;Light Blue",
+            Defs.VariableOpenDeclare + "Colors.LightGreen equ 0xA  ;Light Green",
+            Defs.VariableOpenDeclare + "Colors.LightCyan   equ 0xB  ;Light Cyan",
+            Defs.VariableOpenDeclare + "Colors.LightRed   equ 0xC  ;Light Red",
+            Defs.VariableOpenDeclare + "Colors.LightMagenta   equ 0xD  ;Light Magenta",
+            Defs.VariableOpenDeclare + "Colors.Yellow equ 0xE  ;Yellow ",
+            Defs.VariableOpenDeclare + "Colors.White equ 0xF  ;White",
             ""
         };
 
@@ -559,10 +574,10 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             incDrawRectangle + ":",
             "   mov edi, DRAW_START; Start of VGA memory",
-            "   mov eax, [" + VarList_DrawRectangle[0] + "]", //rx
+            "   mov eax, [" + VarList_DrawRectangle[1] + "]", //rx
             "   mov ecx, SCREEN_WIDTH",
             "   mul ecx",
-            "   add eax, [" + VarList_DrawRectangle[1] + "]", //ry
+            "   add eax, [" + VarList_DrawRectangle[0] + "]", //ry
             "   add edi, eax",
             "   mov edx, 0",
             ".draw_row:",

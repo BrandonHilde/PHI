@@ -254,10 +254,31 @@ namespace PhiBasicTranslator.TranslateUtilities
                                 setcode.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
                             }
 
+                            string mname = instrct.Variables[i].Name;
+
+                            if(mname.StartsWith("'") && mname.EndsWith("'"))
+                            {
+                                // do nothing for now
+                            }
+                            else
+                            {
+                                if(!ParseMisc.IsNumber(mname))
+                                {
+                                    PhiVariable? vbr = cls.Variables.Where(x => x.Name == mname).FirstOrDefault();
+
+                                    mname = ASMx86_16BIT.UpdateName(mname);
+
+                                    if (vbr != null)
+                                    {
+                                        mname = "[" + mname + "]";
+                                    }
+                                }
+                            }
+
                             setcode = ASMx86_16BIT.ReplaceValue(
                                 setcode,
                                 Defs.replaceValueStart,
-                                instrct.Variables[i].Name
+                                mname
                                 );
 
                             setcode = ASMx86_16BIT.ReplaceValue(

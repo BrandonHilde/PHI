@@ -8,6 +8,13 @@ namespace PhiBasicTranslator.ParseEngine
 {
     public class ParseMisc
     {
+
+        public static bool IsNumber(string str)
+        {
+            double d = 0;
+
+            return double.TryParse(str, out d);
+        }
         public static bool StartsWithAppendedValue(string content, string value, List<string> appendedValues)
         {
             bool result = false;
