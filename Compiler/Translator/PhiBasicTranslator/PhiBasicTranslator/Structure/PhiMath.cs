@@ -1,9 +1,4 @@
 ﻿using PhiBasicTranslator.ParseEngine;
-using System;
-using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 
 namespace PhiBasicTranslator.Structure
 {
@@ -63,8 +58,8 @@ namespace PhiBasicTranslator.Structure
 
     public class MathPair
     {
-        public string ValueOne { get; set; } = string.Empty;
-        public string ValueTwo { get; set; } = string.Empty;
+        public string ValueLeft { get; set; } = string.Empty;
+        public string ValueRight { get; set; } = string.Empty;
         public string MathOp { get; set; } = string.Empty;
 
         public MathPair()
@@ -74,12 +69,12 @@ namespace PhiBasicTranslator.Structure
 
         public MathPair Copy()
         {
-            return new MathPair(ValueOne, ValueTwo, MathOp);
+            return new MathPair(ValueLeft, ValueRight, MathOp);
         }
-        public MathPair(string valueOne, string valueTwo, string mathOp)
+        public MathPair(string valueLeft, string valueRight, string mathOp)
         {
-            ValueOne = valueOne;
-            ValueTwo = valueTwo;
+            ValueRight = valueRight;
+            ValueLeft = valueLeft;
             MathOp = mathOp;
         }
     }

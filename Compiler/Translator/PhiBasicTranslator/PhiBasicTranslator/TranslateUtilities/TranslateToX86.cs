@@ -101,6 +101,10 @@ namespace PhiBasicTranslator.TranslateUtilities
                         BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
 
                         ASM = pair.CodeBase;
+
+                        BuildPair mpar = BuildAllMethods(ASM, SubCode, cls, allVars);
+
+                        ASM = mpar.CodeBase;
                     }
                 }
                 else if(cls.Type == PhiType.ASM)
@@ -132,6 +136,23 @@ namespace PhiBasicTranslator.TranslateUtilities
             return codebase;
         }
 
+        public static BuildPair BuildAllMethods(List<string> Code, List<string> SubCode, PhiClass cls, List<PhiVariable> predefined)
+        {
+            BuildPair build = new BuildPair();
+
+            build.CodeBase = Code;
+
+            foreach (PhiMethod method in cls.Methods)
+            {
+                BuildPair pair = BuildAllMethodInstructs(Code, SubCode, method, cls, predefined);
+
+                build.CodeBase = pair.CodeBase;
+
+                build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, pair.SubCode, Defs.replaceIncludes);
+            }
+
+            return build;
+        }
         public static BuildPair BuildAllInstructs(List<string> Code, List<string> SubCode, PhiClass cls, List<PhiVariable> predefined)
         {
             BuildPair build = new BuildPair();
@@ -145,6 +166,35 @@ namespace PhiBasicTranslator.TranslateUtilities
                 build.CodeBase = pair.CodeBase;
 
                 build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, pair.SubCode, Defs.replaceCodeStart);
+            }
+
+            return build;
+        }
+
+        public static BuildPair BuildAllMethodInstructs(List<string> Code, List<string> SubCode, PhiMethod mthd, PhiClass cls, List<PhiVariable> predefined)
+        {
+            BuildPair build = new BuildPair();
+
+            build.CodeBase = Code;
+
+            List<string> mthdCode = new List<string>()
+            {
+                mthd.Name + ":",
+                Defs.replaceCodeStart,
+                "   ret"
+            };
+
+            foreach (PhiInstruct inst in mthd.Instructs)
+            {
+                BuildPair pair = BuildSubInstructs(build.CodeBase, SubCode, inst, cls, predefined, false);
+
+                build.CodeBase = pair.CodeBase;
+
+                mthdCode = ASMx86_16BIT.MergeSubCode(mthdCode, pair.SubCode, Defs.replaceCodeStart);
+
+                mthdCode = ASMx86_16BIT.ReplaceValue(mthdCode, Defs.replaceCodeStart, string.Empty);
+
+                build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, mthdCode, Defs.replaceIncludes);
             }
 
             return build;
@@ -737,11 +787,19 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if (cls.Includes.Contains(PhiInclude.Timer))
             {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_TimerConstants, Defs.replaceConstStart);
+
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_Interupt, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_ProgramableInteruptTimer, Defs.replaceIncludes);
+                
+                bool overwriteEvent = cls.Methods.Where(
+                    x => x.Name == ASMx86_16BIT.incTimerEvent
+                    ).FirstOrDefault() != null ? true : false;
 
-                bool overwriteEvent = cls.Methods.Where(x => x.Name == ASMx86_16BIT.incTimerEvent).FirstOrDefault() != null ? true : false;
-
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_InteruptEvent, Defs.replaceIncludes);
+                if (!overwriteEvent)
+                {
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_InteruptEvent, Defs.replaceIncludes);
+                }
             }           
             
             if (cls.Includes.Contains(PhiInclude.Graphics))

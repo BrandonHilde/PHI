@@ -8,6 +8,11 @@ namespace PhiBasicTranslator.Structure
 {
     public class ConditionalPairs
     {
+        public enum ConditionOpperation
+        {
+            AssignValue,
+            Comparision
+        };
         public enum ConditionType 
         { 
             None,
@@ -25,6 +30,7 @@ namespace PhiBasicTranslator.Structure
         public string LeftValue { get; set; }
         public string RightValue { get;set; }
         public ConditionType type = ConditionType.None;
+        public ConditionOpperation opperation = ConditionOpperation.Comparision;
 
         public ConditionalPairs Copy()
         {
@@ -32,7 +38,8 @@ namespace PhiBasicTranslator.Structure
             { 
                 LeftValue = LeftValue, 
                 RightValue = RightValue,
-                type = type
+                type = type,
+                opperation = opperation
             };
         }
     }

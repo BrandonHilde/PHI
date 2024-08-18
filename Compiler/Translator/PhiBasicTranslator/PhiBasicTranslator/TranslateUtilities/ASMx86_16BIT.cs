@@ -539,6 +539,17 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         #region Timers
 
+
+        public static List<string> BIT16x86_TimerConstants = new List<string>()
+        {
+            "; interupt timer constants",
+            "PIT_COMMAND    equ 0x43",
+            "PIT_CHANNEL_0  equ 0x40",
+            "PIT_FREQUENCY  equ 1193180  ; Base frequency",
+            "DESIRED_FREQ   equ 60      ; Desired interrupt frequency ",
+            "DIVISOR        equ PIT_FREQUENCY / DESIRED_FREQ"
+        };
+
         public static List<string> BIT16x86_ProgramableInteruptTimer = new List<string>()
         {
             "OS16BIT_SetupInteruptTimer:",
@@ -569,7 +580,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> BIT16x86_InteruptEvent = new List<string>()
         {
             "OS16BIT_TimerEvent:",
-            Defs.replaceCodeStart,
+            "",
             "   ret"
         };
 
