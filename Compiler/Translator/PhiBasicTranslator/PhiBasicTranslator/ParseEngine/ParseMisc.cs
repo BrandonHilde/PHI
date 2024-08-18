@@ -1,4 +1,5 @@
-﻿using System;
+﻿using PhiBasicTranslator.Structure;
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using System.Text;
@@ -37,6 +38,24 @@ namespace PhiBasicTranslator.ParseEngine
             }
 
             return result;
+        }
+
+        public static bool ContainsAny(string content, List<string> values)
+        {
+            foreach (string value in values)
+            {
+                if(content.Contains(value)) return true;
+            }
+
+            return false;   
+        }
+
+        public static string ClearMethodName(string methodName)
+        {
+            methodName = methodName.Replace('.', '_');
+            methodName = ParseUtilities.ClearLabel(methodName, Defs.Alphabet);
+
+            return methodName;
         }
     }
 }

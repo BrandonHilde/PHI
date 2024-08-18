@@ -27,7 +27,7 @@ namespace PhiBasicTranslator
 
         }
 
-        public List<string> TranslateFile(string file)
+        public PhiCodebase TranslateFile(string file)
         {
             string content = File.ReadAllText(file);
 
@@ -105,6 +105,8 @@ namespace PhiBasicTranslator
                     if (instr.Name != string.Empty)
                     {
                         i += instr.Value.Length; // check for accuracy
+
+                        current.AddInclude(instr);
 
                         current.Instructs.Add(instr.Copy());
                     }
@@ -220,7 +222,7 @@ namespace PhiBasicTranslator
 
                     if (last == Inside.MethodName)
                     {
-                        method.Name = ParseUtilities.ClearLabel(mnme, Defs.Alphabet);
+                        method.Name = ParseMisc.ClearMethodName(mnme);
                         mnme = string.Empty;
                     }
 

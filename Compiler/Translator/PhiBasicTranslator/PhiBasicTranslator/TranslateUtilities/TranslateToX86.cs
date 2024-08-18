@@ -17,8 +17,10 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static int VarCount = 0;
         public static int LoopCount = 0;
         public static int IfCount = 0;
-        public static List<string> ToX86(PhiCodebase code)
+        public static PhiCodebase ToX86(PhiCodebase code)
         {
+            PhiCodebase codebase = new PhiCodebase();
+
             List<string> ASM = new List<string>();
 
             List<PhiVariable> allVars = new List<PhiVariable>();
@@ -27,13 +29,14 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 PhiClass cls = code.ClassList[i];
 
+                ASM.Clear();
+
                 if (cls.Type == PhiType.PHI)
                 {
-
                     if (cls.Inherit == Defs.OS16BIT)
                     {
                         ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
-                        ASM = AutoInclude_BITS16(ASM);
+                        ASM = AutoInclude_BITS16(ASM, cls);
 
                         allVars.AddRange(ConvertAllVariables(cls));
 
@@ -55,7 +58,32 @@ namespace PhiBasicTranslator.TranslateUtilities
                     else if (cls.Inherit == Defs.OS16BitVideo)
                     {
                         ASM.AddRange(ASMx86_16BIT.GetInheritance(ASMx86_16BIT.InheritType.BITS16));
-                        ASM = AutoInclude_BITS16(ASM);
+                        ASM = AutoInclude_BITS16(ASM, cls);
+
+                        allVars.AddRange(ConvertAllVariables(cls));
+
+                        List<string> values = ConvertVarsToASM(allVars);
+
+                        List<string> SubCode = new List<string>
+                        {
+                            "",
+                            "  " + Defs.replaceCodeStart,
+                            ""
+                        };
+
+                        ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceVarStart);
+
+                        BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
+
+                        ASM = pair.CodeBase;
+                    }
+                    else if(cls.Inherit == Defs.OS16BitSectorTwo)
+                    {
+                        ASM.AddRange(
+                            ASMx86_16BIT.GetInheritance(
+                                ASMx86_16BIT.InheritType.BITS16SectorTwo));
+
+                        ASM = AutoInclude_BITS16(ASM, cls);
 
                         allVars.AddRange(ConvertAllVariables(cls));
 
@@ -91,6 +119,9 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                     ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceIncludes);
                 }
+
+                cls.translatedASM = ASM;
+                codebase.ClassList.Add(cls.Copy());
             }
 
             //reset after complete
@@ -98,7 +129,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             LoopCount = 0; 
             IfCount = 0;
 
-            return ASM;
+            return codebase;
         }
 
         public static BuildPair BuildAllInstructs(List<string> Code, List<string> SubCode, PhiClass cls, List<PhiVariable> predefined)
@@ -684,22 +715,44 @@ namespace PhiBasicTranslator.TranslateUtilities
             };
         }
 
-        public static List<string> AutoInclude_BITS16(List<string> Code)
+        public static List<string> AutoInclude_BITS16(List<string> Code, PhiClass cls)
         {
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintInt_x86BITS16, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintLog_x86BITS16, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.AskInput_x86BITS16, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_VideoMode, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_SectorPrep, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_JumpSectorTwo, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_WaitForKeyPress, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_Interupt, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_InteruptEvent, Defs.replaceIncludes);
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawRectangle, Defs.replaceIncludes);
+            if (cls.Includes.Contains(PhiInclude.Sectors))
+            {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_SectorPrep, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_JumpSectorTwo, Defs.replaceIncludes);
+            }
 
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawConstants, Defs.replaceConstStart);
+            if (cls.Includes.Contains(PhiInclude.Text))
+            {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintInt_x86BITS16, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintLog_x86BITS16, Defs.replaceIncludes);
+            }
 
-            Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawVariables, Defs.replaceVarStart);
+            if (cls.Includes.Contains(PhiInclude.Keyboard))
+            {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.AskInput_x86BITS16, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_WaitForKeyPress, Defs.replaceIncludes);
+            }
+
+            if (cls.Includes.Contains(PhiInclude.Timer))
+            {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_Interupt, Defs.replaceIncludes);
+
+                bool overwriteEvent = cls.Methods.Where(x => x.Name == ASMx86_16BIT.incTimerEvent).FirstOrDefault() != null ? true : false;
+
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_InteruptEvent, Defs.replaceIncludes);
+            }           
+            
+            if (cls.Includes.Contains(PhiInclude.Graphics))
+            {            
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_VideoMode, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawRectangle, Defs.replaceIncludes);
+
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawConstants, Defs.replaceConstStart);
+
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawVariables, Defs.replaceVarStart);
+            }
 
             return Code;
         }

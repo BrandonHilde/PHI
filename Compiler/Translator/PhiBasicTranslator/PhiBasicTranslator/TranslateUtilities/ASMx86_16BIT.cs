@@ -23,7 +23,43 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varStrTab = "9";
         public static readonly string varStrEnd = "0";
 
+        public static readonly string incJumpToSectorTwo = "OS16BIT_JumpToSectorTwo";
+        public static readonly string incPrepSectorTwo = "OS16BIT_PrepToSectorTwo";
+
+        public static readonly List<string> incSectorsList = new List<string>()
+        {
+            incJumpToSectorTwo.Replace('_', '.'),
+            incPrepSectorTwo.Replace('_', '.'),
+        };
+
+        public static readonly string incWaitForKey = "OS16BIT_WaitForKeyPress";
+
+        public static readonly List<string> incKeyboardList = new List<string>()
+        {
+            incWaitForKey.Replace('_', '.'),
+        };
+
+        public static readonly string incTimerEvent = "OS16BIT_TimerEvent";
+        public static readonly string incSetupTimerInterupt = "OS16BIT_SetupInteruptTimer";
+        public static readonly string incTimerInterupt = "OS16BIT_timer_interrupt";
+
+        public static readonly List<string> incTimerList = new List<string>()
+        {
+            incTimerEvent.Replace('_', '.'),
+            incSetupTimerInterupt.Replace('_', '.'),
+            incTimerInterupt.Replace('_', '.'),
+        };
+
+        public static readonly string incEnableVideo = "OS16BITVideo_EnableVideoMode";
         public static readonly string incDrawRectangle = "OS16BITVideo_DrawRectangle";
+        public static readonly string incDrawPixel = "OS16BITVideo_DrawPixel";
+
+        public static readonly List<string> incDrawingList = new List<string>()
+        {
+            incEnableVideo.Replace('_', '.'),
+            incDrawRectangle.Replace('_', '.'),
+            incDrawPixel.Replace('_', '.'),
+        };
 
         public static readonly string replaceLoopCondition = ";{LOOP CONDITION}";
         public static readonly string replaceLoopLimit = ";{LOOP LIMIT}";
@@ -63,7 +99,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static readonly string prefixVariable = "VALUE_";
         public static readonly string suffixContent = "_CONTENT";
-        public enum InheritType { External, BITS16, BITS16Video }
+        public enum InheritType { External, BITS16, BITS16Video, BITS16SectorTwo }
         public static List<string> GetInheritance(InheritType type)
         {
             if (type == InheritType.External)
@@ -77,6 +113,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             else if(type == InheritType.BITS16Video)
             {
                 return BIT16x86_Bootloader;
+            }
+            else if(type== InheritType.BITS16SectorTwo)
+            {
+                return BIT16x86_SectorTwo;
             }
 
             return new List<string>();
@@ -376,6 +416,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         };
 
         #endregion
+        
         #region LOGS
         public static List<string> InstructLogString_BITS16 = new List<string>()
         {
@@ -398,6 +439,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   call get_input"
         };
         #endregion
+
+        #region Bootloaders
 
         public static List<string> BIT16x86 = new List<string>()
         {
@@ -424,6 +467,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             "dw 0xaa55"
         };
 
+
+
         public static List<string> BIT16x86_Bootloader = new List<string>()
         {
             //"[BITS 16]",
@@ -447,12 +492,31 @@ namespace PhiBasicTranslator.TranslateUtilities
             "dw 0xaa55"
         };
 
+        public static List<string> BIT16x86_SectorTwo = new List<string>()
+        {
+            "ORG 0x7E00",
+            "",
+            Defs.replaceConstStart,
+            "",
+            "start:",
+            "",
+            Defs.replaceCodeStart, //;{CODE}
+            "",
+            Defs.replaceIncludes, // ;{INCLUDES}
+            "",
+            Defs.replaceVarStart,//;{VALUES}
+            ""
+        };
+        #endregion
+
+
+        #region Sectors
         /// <summary>
         ///  remember to add additional options
         /// </summary>
         public static List<string> BIT16x86_SectorPrep = new List<string>()
         {
-            "OS16BITVideo_PrepSectorTwo:",
+            "OS16BIT_PrepSectorTwo:",
             "   mov ah, 0x02    ; BIOS read sector",
             "   mov al, 1       ; Number of sectors",
             "   mov ch, 0       ; Cylinder number",
@@ -463,9 +527,21 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   ret"
         };
 
+        public static List<string> BIT16x86_JumpSectorTwo = new List<string>()
+        {
+            "OS16BIT_JumpToSectorTwo:",
+            "   call OS16BIT_PrepSectorTwo",
+            "   jmp 0x7E00 ; jump to sector two", // jump to sector two"
+             "   ret"
+        };
+
+        #endregion
+
+        #region Timers
+
         public static List<string> BIT16x86_ProgramableInteruptTimer = new List<string>()
         {
-            "OS16BITVideo_PrepInteruptTimer:",
+            "OS16BIT_SetupInteruptTimer:",
             "   cli    ; Set up the PIT",
             "   mov al, 00110100b    ; Channel 0, lobyte/hibyte, rate generator",
             "   out PIT_COMMAND, al",
@@ -475,7 +551,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov al, ah",
             "   out PIT_CHANNEL_0, al    ; High byte",
             "   ; Set up the timer ISR",
-            "   mov word [0x0020], OS16BITVideo_timer_interrupt",
+            "   mov word [0x0020], OS16BIT_timer_interrupt",
             "   mov word [0x0022], 0x0000    ; Enable interrupts",
             "   sti",
             "   ret"
@@ -483,8 +559,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_Interupt = new List<string>()
         {
-            "OS16BITVideo_timer_interrupt:",
-            "   call OS16BITVideo_timer_event",
+            "OS16BIT_timer_interrupt:",
+            "   call OS16BIT_TimerEvent",
             "   mov al, 0x20",
             "   out 0x20, al",
             "   iret"
@@ -492,20 +568,14 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_InteruptEvent = new List<string>()
         {
-            "OS16BITVideo_timer_event:",
+            "OS16BIT_TimerEvent:",
             Defs.replaceCodeStart,
             "   ret"
         };
 
+        #endregion
 
-        public static List<string> BIT16x86_JumpSectorTwo = new List<string>()
-        {
-            "OS16BITVideo_JumpToSectorTwo:",
-            "   call OS16BITVideo_PrepSectorTwo",
-            "   jmp 0x7E00 ; jump to sector two", // jump to sector two"
-             "   ret"
-        };
-
+        #region Graphics
         public static List<string> BIT16x86_VideoMode = new List<string>()
         {
             "OS16BITVideo_EnableVideoMode:",
@@ -601,6 +671,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   ret"
         };
 
+        #endregion
+
         public static List<string> BIT32x86_SetVariable = new List<string>()
         {
             "",
@@ -617,10 +689,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             ""
         };
 
-
+        #region Keyboard
         public static List<string> BIT16x86_WaitForKeyPress = new List<string>()
         {
-            "OS16BITVideo_WaitForKeyPress:",
+            "OS16BIT_WaitForKeyPress:", 
             "   mov ah, 0x00",
             "   int 0x16",
             "   ret"
@@ -645,6 +717,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             "    mov byte [di], 0 ",
             "    ret"
         };
+
+        #endregion
 
         public static List<string> PrintLog_x86BITS16 = new List<string>()
         {

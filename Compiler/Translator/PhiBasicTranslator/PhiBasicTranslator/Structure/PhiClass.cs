@@ -7,52 +7,61 @@ using System.Text.Json.Serialization;
 using System.Threading.Tasks;
 using Newtonsoft;
 using PhiBasicTranslator.GeneralUtilities;
+using PhiBasicTranslator.ParseEngine;
+using PhiBasicTranslator.TranslateUtilities;
 
 namespace PhiBasicTranslator.Structure
 {
-
-    public class PhiCodebase
-    {
-        public PhiCodebase() { }
-
-        public List<PhiClass> ClassList { get; set; } = new List<PhiClass>();
-
-        public void Save(string File)
-        {
-            FileManager.SaveToFile(File, this);
-        }
-
-        public static PhiCodebase Load(string File)
-        {
-            return FileManager.LoadFromFile<PhiCodebase>(File);
-        }
-
-        public PhiCodebase Copy()
-        {
-            List<PhiClass> clst = new List<PhiClass>();
-
-            foreach (PhiClass cl in ClassList) clst.Add(cl.Copy());
-
-            return new PhiCodebase
-            {
-                ClassList = clst
-            };
-        }
-    }
-
     public enum PhiType { ASM, ARM, PHI }
+    public enum PhiInclude { Graphics, Text, Timer, Keyboard, Mouse, Sectors };
     public class PhiClass
     {
         public PhiType Type { get; set; } = PhiType.PHI;
+        public List<PhiInclude> Includes { get; set; } = new List<PhiInclude>();
         public string Name { get; set; } = string.Empty;
         public string Inherit { get; set; } = string.Empty;
-       
         public string RawContent { get; set; } = string.Empty;
 
-        public PhiClass() { }
+        public List<string> translatedASM = new List<string>();
         public List<PhiMethod> Methods { get; set; } = new List<PhiMethod>();
         public List<PhiVariable> Variables { get; set; } = new List<PhiVariable>();
         public List<PhiInstruct> Instructs { get; set; } = new List<PhiInstruct>();
+
+        public PhiClass() { }
+
+        public void AddInclude(PhiInstruct instruct)
+        {
+            if (instruct.Name == Defs.instLog) Includes.Add(PhiInclude.Text);
+            if (instruct.Name == Defs.instAsk) Includes.Add(PhiInclude.Keyboard);
+
+            if (instruct.Name == Defs.instCall)
+            {
+                if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incDrawingList))
+                {
+                    Includes.Add(PhiInclude.Graphics);
+                }
+
+                if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incTimerList))
+                {
+                    Includes.Add(PhiInclude.Timer);
+                }
+
+                if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incSectorsList))
+                {
+                    Includes.Add(PhiInclude.Sectors);
+                }
+
+                if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incKeyboardList))
+                {
+                    Includes.Add(PhiInclude.Keyboard);
+                }
+            }
+        }
+
+        public void CheckForOverrides()
+        {
+
+        }
 
         public PhiClass Copy()
         {
@@ -68,6 +77,12 @@ namespace PhiBasicTranslator.Structure
 
             foreach (PhiInstruct nst in Instructs) insts.Add(nst.Copy());
 
+            List<string> asm = new List<string>();
+            asm.AddRange(translatedASM);
+
+            List<PhiInclude> inc = new List<PhiInclude>();
+            inc.AddRange(Includes);
+
             return new PhiClass
             {
                 Type = Type,
@@ -76,7 +91,9 @@ namespace PhiBasicTranslator.Structure
                 RawContent = RawContent,
                 Methods = mthds,
                 Variables = vars,
-                Instructs = insts
+                Instructs = insts,
+                translatedASM = asm,
+                Includes = inc,
             };
         }
     }

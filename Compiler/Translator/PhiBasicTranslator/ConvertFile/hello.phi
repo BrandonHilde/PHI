@@ -2,19 +2,31 @@
 {
 	str hello: 'Hello, World!\r\n';
     str newline: '\r\n';
-	str name:[40];
 	
-	log hello;
+	log hello newline;
 	log 'Press any key to continue...';
 	
-	call OS16BITVideo.WaitForKeyPress;
+	call OS16BIT.WaitForKeyPress;
 	
 	call OS16BITVideo.EnableVideoMode;
-	call OS16BITVideo.JumpToSectorTwo;
+	call OS16BIT.JumpToSectorTwo;
+}
 
-	call OS16BITVideo.DrawRectangle:
-		100	20
-		50	25	
-		Colors.LightGreen
-	;
+phi.Drawing:OS16BITSectorTwo
+{
+	int lefty: 50;
+	int leftBot: 100;
+
+	call OS16BIT.SetupInteruptTimer;
+
+	[OS16BIT.TimerEvent]
+		
+		call OS16BITVideo.DrawRectangle:
+			10	lefty
+			10	100	
+			Colors.LightGreen
+		;
+
+	[end]
+	
 }

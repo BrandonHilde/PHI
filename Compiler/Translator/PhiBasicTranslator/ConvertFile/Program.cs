@@ -24,20 +24,18 @@ highlighter.ColorCode(translator.FileContent);
 
 List<string> lines = new List<string>();
 
-lines = translator.TranslateFile(file);
+PhiCodebase codebase = translator.TranslateFile(file);
 
-Console.WriteLine();
+foreach (PhiClass codeclass in codebase.ClassList)
+{
+    lines = codeclass.translatedASM;
 
-PhiMath math = new PhiMath();
+    Console.WriteLine("\r\n;ASMx86 CODE\r\n");
 
-MathPair pr = PhiMath.Parse(";i++;");
+    foreach (string line in lines) Console.WriteLine(line);
 
-
-Console.WriteLine("\r\n;ASMx86 CODE\r\n");
-
-foreach (string line in lines) Console.WriteLine(line);
-
-File.WriteAllLines("phi.ASM", lines);
+    File.WriteAllLines("phi.ASM", lines);
+}
 
 //string code = "";
 
