@@ -39,47 +39,6 @@ start:
 
    jmp $
 
-print_int:
-    push bp
-    mov bp, sp
-    push dx
-
-    cmp ax, 10
-    jge .div_num
-
-    add al, '0'
-    mov ah, 0x0E
-    int 0x10
-    jmp .done
-
-.div_num:
-    xor dx, dx
-    mov bx, 10
-    div bx
-    push dx
-    call print_int
-    pop dx
-    add dl, '0'
-    mov ah, 0x0E
-    mov al, dl
-    int 0x10
-
-.done:
-    pop dx
-    mov sp, bp
-    pop bp
-    ret
-
-print_log:
-   mov ah, 0x0E
-.loop:
-   lodsb
-   cmp al, 0
-   je .done
-   int 0x10
-   jmp .loop
-.done:
-   ret
 get_input:
    xor cx, cx
 .loop:
@@ -104,12 +63,11 @@ keyboard_handler:
    push ax
    push bx
    in al, 0x60             ; Read scan code 
+   xor bh, bh
    mov bl, al
    ; Convert scan code to ASCII (simplified)
-   mov bx, scan_code_table
-   xlat
+   mov al, [scan_code_table + bx]
    call OS16BIT_KeyboardEvent
-
    mov al, 0x20            ; Send End of Interrupt
    out 0x20, al
    pop bx
@@ -394,21 +352,15 @@ OS16BIT_KeyboardEvent:
 OS16BIT_GetKey:
    mov [KeyCodeValue], al
    mov al, [KeyCodeValue]
-   mov [VALUE_key], al
-
-   mov ax, [VALUE_key]
-   call print_int
-   
+   mov byte [VALUE_key], al
    ret
 ;{INCLUDE}
 
 scan_code_table:
    db 0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0
    db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0, 0
-   db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`', 0, '\\'
-   db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' ' 
-
-;test
+   db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`', 0, '\'
+   db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
 KeyCodeValue db 0
 ; drawing variables
 DrawRectX dd 0

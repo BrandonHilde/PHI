@@ -26,6 +26,7 @@ phi.Drawing:OS16BITSectorTwo
 	int key: 0;
 
 	call OS16BIT.SetupInteruptTimer;
+	call OS16BIT.SetupKeyboardInterupt;
 
 	[OS16BIT.TimerEvent]
 
@@ -64,25 +65,16 @@ phi.Drawing:OS16BITSectorTwo
 		;;
 		
 		#right		
-if righty > 0
-
-			if key > 55
+		if righty > 0
+			if key is 'w'
 				righty--;
-
 			;;
-			if key < 55
+		;;
+
+		if righty < Bot
+			if key is 's'
 				righty++;
 			;;
-		;;
-
-		if righty < 2
-			
-			directr is 1;
-		;;
-
-		if righty > Bot
-
-			directr is 0;
 		;;
 
 		#draw rectangles
@@ -90,13 +82,13 @@ if righty > 0
 		call OS16BITVideo.DrawRectangle:
 			10	lefty
 			10	100	
-			Colors.LightGreen
+			Colors.LightRed
 		;
 		
 		call OS16BITVideo.DrawRectangle:
 			300	righty
 			10	100	
-			Colors.LightBlue
+			Colors.LightGreen
 		;
 
 	[end]

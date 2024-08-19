@@ -743,7 +743,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> KeyCodeValue = new List<string>()
         {
-            KeyCodeVar + varWrdTyp + "0"
+            KeyCodeVar + varStrTyp + "0"
         };
 
         public static List<string> BIT16x86_ScanKeyTable = new List<string>()
@@ -774,10 +774,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   push ax",
             "   push bx",
             "   in al, 0x60             ; Read scan code ",
+            "   xor bh, bh",
             "   mov bl, al",
             "   ; Convert scan code to ASCII (simplified)",
-            "   mov bx, scan_code_table",
-            "   xlat",
+            "   mov al, [scan_code_table + bx]",
             "   call " + incKeyboardEvent,
             "   mov al, 0x20            ; Send End of Interrupt",
             "   out 0x20, al",
@@ -790,9 +790,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             incGetKey + ":",
             "   mov [" + KeyCodeVar + "], al",
-            "   xor eax, eax",
-            "   mov eax, " + "[" + KeyCodeVar + "]",
-            "   mov [" + replaceVarName + "], eax",
+            "   mov al, " + "[" + KeyCodeVar + "]",
+            "   mov byte [" + replaceVarName + "], al",
             "   ret"
         };
 
