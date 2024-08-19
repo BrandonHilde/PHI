@@ -15,14 +15,32 @@
 phi.Drawing:OS16BITSectorTwo
 {
 	int lefty: 50;
-	int leftBot: 100;
+	int Bot: 100;
 	int direction: 0;
+	
+	
+	int directr: 1;
+	
+	int righty: 50;
 
 	int key: 0;
 
 	call OS16BIT.SetupInteruptTimer;
 
 	[OS16BIT.TimerEvent]
+
+		call OS16BITVideo.DrawRectangle:
+			10	lefty
+			10	100	
+			Colors.Black
+		;
+		
+		call OS16BITVideo.DrawRectangle:
+			300	righty
+			10	100	
+			Colors.Black
+		;
+		
 
 		if lefty > 0
 
@@ -35,23 +53,59 @@ phi.Drawing:OS16BITSectorTwo
 			;;
 		;;
 
-		if lefty is 0
+		if lefty < 2
 			
 			direction is 1;
 		;;
 
-		if lefty > leftbot
+		if lefty > Bot
 
-			direction is 3;
+			direction is 0;
 		;;
+		
+		#right		
+if righty > 0
+
+			if key > 55
+				righty--;
+
+			;;
+			if key < 55
+				righty++;
+			;;
+		;;
+
+		if righty < 2
+			
+			directr is 1;
+		;;
+
+		if righty > Bot
+
+			directr is 0;
+		;;
+
+		#draw rectangles
 		
 		call OS16BITVideo.DrawRectangle:
 			10	lefty
 			10	100	
 			Colors.LightGreen
 		;
+		
+		call OS16BITVideo.DrawRectangle:
+			300	righty
+			10	100	
+			Colors.LightBlue
+		;
 
-		#call key is OS16BIT.GetKey;
+	[end]
+	
+	
+	
+	[OS16BIT.KeyboardEvent]
+
+		call key is OS16BIT.GetKey;
 
 	[end]
 	

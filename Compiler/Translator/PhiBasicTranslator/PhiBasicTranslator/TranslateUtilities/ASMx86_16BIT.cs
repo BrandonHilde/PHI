@@ -16,6 +16,7 @@ namespace PhiBasicTranslator.TranslateUtilities
     internal class ASMx86_16BIT
     {
         public static readonly string varStrTyp = " db ";
+        public static readonly string varWrdTyp = " dw ";
         public static readonly string varIntTyp = " dd ";
         public static readonly string varBytTyp = " db ";
         public static readonly string varTimes = " times ";
@@ -34,10 +35,16 @@ namespace PhiBasicTranslator.TranslateUtilities
         };
 
         public static readonly string incWaitForKey = "OS16BIT_WaitForKeyPress";
+        public static readonly string incKeyboardInterupt = "OS16BIT_SetupKeyboardInterupt";
+        public static readonly string incKeyboardEvent = "OS16BIT_KeyboardEvent";
+        public static readonly string incGetKey = "OS16BIT_GetKey";
 
         public static readonly List<string> incKeyboardList = new List<string>()
         {
             incWaitForKey.Replace('_', '.'),
+            incKeyboardInterupt.Replace('_', '.'),
+            incKeyboardEvent.Replace('_', '.'),
+            incGetKey.Replace('_', '.')
         };
 
         public static readonly string incTimerEvent = "OS16BIT_TimerEvent";
@@ -80,6 +87,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceColorset = ";{COLOR SET}";
         public static readonly string replaceVarName = ";{VAR NAME}";
 
+        public static readonly string KeyCodeVar = "KeyCodeValue";
 
         public static readonly string loopSubIncrementByOne = "inc cx";
         public static readonly string loopSubDecrementByOne = "dec cx";
@@ -521,7 +529,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             "OS16BIT_PrepSectorTwo:",
             "   mov ah, 0x02    ; BIOS read sector",
-            "   mov al, 1       ; Number of sectors",
+            "   mov al, 4       ; Number of sectors", // may need to change number later
             "   mov ch, 0       ; Cylinder number",
             "   mov dh, 0       ; Head number",
             "   mov cl, 2       ; Sector number",
@@ -580,10 +588,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   iret"
         };
 
-        public static List<string> BIT16x86_InteruptEvent = new List<string>()
+        public static List<string> BIT16x86_TimerEvent = new List<string>()
         {
-            "OS16BIT_TimerEvent:",
-            "",
+            incTimerEvent + ":",
+            Defs.replaceCodeStart,
             "   ret"
         };
 
@@ -687,6 +695,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         #endregion
 
+        #region MATH
         public static List<string> BIT32x86_AddVariable = new List<string>()
         {
             "",
@@ -728,8 +737,72 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov [" + replaceVarName + "], al",
             ""
         };
+        #endregion
 
         #region Keyboard
+
+        public static List<string> KeyCodeValue = new List<string>()
+        {
+            KeyCodeVar + varWrdTyp + "0"
+        };
+
+        public static List<string> BIT16x86_ScanKeyTable = new List<string>()
+        {
+            "scan_code_table:",
+            "   db 0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0",
+            "   db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0, 0",
+            "   db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', \"'\", '`', 0, '\\'",
+            "   db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '"
+        };
+
+        public static List<string> BIT16x86_KeyboardSetup = new List<string>()
+        {
+            incKeyboardInterupt + ":",
+            "   ; Set up the interrupt handler",
+            "   cli                     ; Disable interrupts",
+            "   mov ax, 0",
+            "   mov es, ax",
+            "   mov word [es:9*4], keyboard_handler",
+            "   mov [es:9*4+2], cs",
+            "   sti                     ; Enable interrupts",
+            "   ret"
+        };
+
+        public static List<string> BIT16x86_KeyboardInterupt = new List<string>()
+        {
+            "keyboard_handler:",
+            "   push ax",
+            "   push bx",
+            "   in al, 0x60             ; Read scan code ",
+            "   mov bl, al",
+            "   ; Convert scan code to ASCII (simplified)",
+            "   mov bx, scan_code_table",
+            "   xlat",
+            "   call " + incKeyboardEvent,
+            "   mov al, 0x20            ; Send End of Interrupt",
+            "   out 0x20, al",
+            "   pop bx",
+            "   pop ax",
+            "   iret"
+        };
+
+        public static List<string> BIT16x86_GetKey = new List<string>()
+        {
+            incGetKey + ":",
+            "   mov [" + KeyCodeVar + "], al",
+            "   xor eax, eax",
+            "   mov eax, " + "[" + KeyCodeVar + "]",
+            "   mov [" + replaceVarName + "], eax",
+            "   ret"
+        };
+
+        public static List<string> BIT16x86_KeyboardEvent = new List<string>()
+        {
+            incKeyboardEvent + ":",
+            Defs.replaceCodeStart,
+            "   ret"
+        };
+
         public static List<string> BIT16x86_WaitForKeyPress = new List<string>()
         {
             "OS16BIT_WaitForKeyPress:", 
