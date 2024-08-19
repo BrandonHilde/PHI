@@ -115,6 +115,7 @@ namespace PhiBasicTranslator.Structure
             varBLN
         };
 
+        public static readonly string instMath = "{Math}";
         public static readonly string instWhile = "while";
         public static readonly string instOrder = "order";
         public static readonly string instIf = "if";

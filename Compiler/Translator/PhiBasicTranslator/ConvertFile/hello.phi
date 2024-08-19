@@ -30,12 +30,12 @@ phi.Drawing:OS16BITSectorTwo
 				lefty--;
 
 			;;
-			else
+			if direction is 1
 				lefty++;
 			;;
 		;;
 
-		else
+		if lefty is 0
 			
 			direction is 1;
 		;;

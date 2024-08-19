@@ -507,10 +507,18 @@ namespace PhiBasicTranslator
 
                         MathPair mpar = PhiMath.Parse(cr);
 
-                        instr.Maths.Add(new PhiMath
+                        instr.Instructs.Add(new PhiInstruct
                         {
-                            Math = mpar,
-                            RawValue = cr
+                            Name = Defs.instMath,
+                            Value = cr,
+                            Maths = new List<PhiMath>
+                            {
+                                new PhiMath
+                                {
+                                    Math = mpar,
+                                    RawValue = cr
+                                }
+                            }
                         });
 
                     }
@@ -593,8 +601,6 @@ namespace PhiBasicTranslator
 
                     if (cond != string.Empty)
                     {
-                        Console.WriteLine(cond);
-
                         string? select = Defs.OpperCompareList.Where(x => x == cond).FirstOrDefault();
 
                         if (select != null)
@@ -640,15 +646,22 @@ namespace PhiBasicTranslator
                             }
                             else
                             {
-                                instr.Maths.Add(new PhiMath
+                                instr.Instructs.Add(new PhiInstruct
                                 {
-                                    Math = new MathPair
+                                    Name = Defs.instMath,
+                                    Maths = new List<PhiMath>
                                     {
-                                        MathOp = cond,
-                                        ValueRight = left,
-                                        ValueLeft = right,
-                                    },
-                                    RawValue = cRaw
+                                        new PhiMath
+                                        {
+                                            Math = new MathPair
+                                            {
+                                                MathOp = cond,
+                                                ValueRight = right,
+                                                ValueLeft = left,
+                                            },
+                                            RawValue = cRaw
+                                        }
+                                    }
                                 });
                             }
                         }

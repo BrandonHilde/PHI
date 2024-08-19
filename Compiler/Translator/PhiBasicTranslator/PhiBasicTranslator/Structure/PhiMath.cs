@@ -4,6 +4,18 @@ namespace PhiBasicTranslator.Structure
 {
     public class PhiMath
     {
+        public enum Opperation
+        {
+            None,
+            PlusEquals,
+            MinusEquals,
+            Plus,
+            Minus,
+            MultiplyEquals,
+            Multiply,
+            DivideEquals,
+            Divide
+        }
         public string RawValue { get; set; } = string.Empty;
 
         public MathPair Math { get; set; }

@@ -650,6 +650,21 @@ namespace PhiBasicTranslator.ParseEngine
             return rawContent;
         }
         */
+
+        public static PhiMath.Opperation MatchesOpperation(string condition)
+        {
+            PhiMath.Opperation typ = PhiMath.Opperation.None;
+
+            string? val = Defs.MathOpsList.Where(x => x == condition).FirstOrDefault();
+
+            if (val != null)
+            {
+                if (val == Defs.MathInc) typ = PhiMath.Opperation.PlusEquals;
+                if (val == Defs.MathDec) typ = PhiMath.Opperation.MinusEquals;
+            }
+
+            return typ;
+        }
         public static ConditionalPairs.ConditionType MatchesCondition(string condition)
         {
             ConditionalPairs.ConditionType typ = ConditionalPairs.ConditionType.None;

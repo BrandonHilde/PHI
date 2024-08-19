@@ -115,7 +115,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                     };
 
                     string[] splt = cls.RawContent.Split("\n");
-
+                    
                     values.AddRange(splt);
 
                     for(int v = 0; v < values.Count; v++) 
@@ -148,7 +148,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 build.CodeBase = pair.CodeBase;
 
-                build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, pair.SubCode, Defs.replaceIncludes);
+                //build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, pair.SubCode, Defs.replaceIncludes);
             }
 
             return build;
@@ -190,29 +190,37 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 build.CodeBase = pair.CodeBase;
 
-                mthdCode = ASMx86_16BIT.MergeSubCode(mthdCode, pair.SubCode, Defs.replaceCodeStart);
-
-                mthdCode = ASMx86_16BIT.ReplaceValue(mthdCode, Defs.replaceCodeStart, string.Empty);
-
-                build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, mthdCode, Defs.replaceIncludes);
+                mthdCode = ASMx86_16BIT.MergeSubCode(mthdCode, pair.SubCode, Defs.replaceCodeStart);              
             }
+
+            mthdCode = ASMx86_16BIT.ReplaceValue(mthdCode, Defs.replaceCodeStart, string.Empty);
+
+            build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, mthdCode, Defs.replaceIncludes);
 
             return build;
         }
 
         public static BuildPair BuildSubInstructs(List<string> Code, List<string> SubCode, PhiInstruct instrct, PhiClass cls, List<PhiVariable> predefined, bool sub = true)
         {
-            List<string> cde = Code;
-            List<string> scd = SubCode;
 
-            foreach (PhiInstruct inst in instrct.Instructs)
+            for (int i = 0; i < instrct.Instructs.Count; i++)
             {
-                BuildPair pair = BuildSubInstructs(cde, scd, inst, cls, predefined);
+                PhiInstruct inst = instrct.Instructs[i];
+
+                BuildPair pair = BuildSubInstructs(Code, SubCode, inst, cls, predefined);
 
                 Code = pair.CodeBase;
 
                 instrct.BuildPairs.Add(pair);
             }
+
+
+
+            //foreach are the bane of my existance because they dont allow modification
+            //foreach (PhiInstruct inst in instrct.Instructs)
+            //{
+              
+            //}
 
             if (instrct.Name == Defs.instLog)
             {
@@ -250,7 +258,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 string name = "IF_" + (IfCount++);
 
-                BuildPair pair = BuildInstructIf(name, instrct, cls);
+                BuildPair pair = BuildInstructIf(Code, SubCode, name, instrct, cls);
 
                 if (instrct.BuildPairs.Count > 0)
                 {
@@ -268,18 +276,16 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 if (sub)
                 {
-                    Code = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
+                    pair.CodeBase = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
                     // SubCode = ASMx86_16BIT.MergeValues(SubCode, pair.SubCode, Defs.replaceCodeStart);
 
                 }
                 else
                 {
                     // add methods into the includes
-                    Code = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
+                    pair.CodeBase = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
                     pair.CoreCode = ASMx86_16BIT.MergeValues(pair.CoreCode, pair.SubCode, Defs.replaceCodeStart);
                 }
-
-                pair.CodeBase = Code;
 
                 return pair;
             }
@@ -384,14 +390,141 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 return pair;
             }
+            else if (instrct.Name == Defs.instMath)
+            {
+                BuildPair pair = new BuildPair();
+
+                foreach (PhiMath math in instrct.Maths)
+                {
+                    pair.SubCode.AddRange(BuildMathInstruct(math, predefined));
+                }
+
+                pair.CodeBase = Code;   
+
+                return pair;
+            }
 
             return new BuildPair 
             { 
-                CoreCode = Code, 
+                CodeBase = Code,
+                CoreCode = new List<string>(), 
                 SubCode = SubCode 
             };
         }
 
+        public static List<string> BuildMathInstruct(PhiMath math, List<PhiVariable> predefined)
+        {
+            List<string> list = new List<string>();
+
+            string left = "";
+            string right = "";
+
+            PhiVariable? varbleL = predefined.Where(x => x.Name == math.Math.ValueLeft).FirstOrDefault();
+
+            PhiVariable? varbleR = predefined.Where(x => x.Name == math.Math.ValueRight).FirstOrDefault();
+
+            if (varbleL != null)
+            {
+                left = ASMx86_16BIT.UpdateName(varbleL.Name);
+            }
+            else
+            {
+                left = math.Math.ValueLeft;
+            }
+
+            if (varbleR != null)
+            {
+                right = ASMx86_16BIT.UpdateName(varbleR.Name);
+            }
+            else
+            {
+                right = math.Math.ValueRight;
+            }
+
+            if(right == string.Empty)
+            {
+                right = "1"; // for i++; and i--;
+            }
+
+            ConditionalPairs.ConditionType typ = ParseUtilities.MatchesCondition(math.Math.MathOp);
+            string val = ConvertConditional(typ);
+
+            if (typ == ConditionalPairs.ConditionType.None)
+            {
+                PhiMath.Opperation op = ParseUtilities.MatchesOpperation(math.Math.MathOp);
+
+                if(op == PhiMath.Opperation.None)
+                {
+
+                }
+                else
+                {
+                    if(op == PhiMath.Opperation.PlusEquals)
+                    {
+                        list.AddRange(ASMx86_16BIT.BIT32x86_AddVariable);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                           list,
+                           Defs.replaceValueStart,
+                           right);
+                    }
+
+                    if(op == PhiMath.Opperation.MinusEquals)
+                    {
+                        list.AddRange(ASMx86_16BIT.BIT32x86_SubVariable);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                           list,
+                           Defs.replaceValueStart,
+                           right);
+                    }
+                }
+            }
+            else
+            {
+                if (typ == ConditionalPairs.ConditionType.JumpIfEqual)
+                {
+                    list.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+
+                    list = ASMx86_16BIT.ReplaceValue(
+                        list,
+                        ASMx86_16BIT.replaceVarName,
+                        left);
+
+                    list = ASMx86_16BIT.ReplaceValue(
+                       list,
+                       Defs.replaceValueStart,
+                       right);
+                }
+            }
+
+            return list;
+        }
+
+
+        public static BuildPair BuildMath(List<string> Code, List<string> SubCode, List<PhiMath> maths, PhiClass cls, List<PhiVariable> predefined)
+        {
+            BuildPair pair = new BuildPair();
+
+            foreach (PhiMath math in maths)
+            {
+
+            }
+
+            return pair;
+        }
+
+        //public static 
         public static List<PhiVariable> ConvertAllVariables(PhiClass cls)
         {
             List<PhiVariable> allv = UpdateUnsetVars(cls.Variables);
@@ -452,7 +585,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             return varbles;
         }
 
-        public static BuildPair BuildInstructIf(string Name, PhiInstruct instruct, PhiClass cls)
+        public static BuildPair BuildInstructIf(List<string> Code, List<string> SubCode, string Name, PhiInstruct instruct, PhiClass cls)
         {
             List<string> buildcode = new List<string>();
             List<string> buildsub = new List<string>();
@@ -548,6 +681,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return new BuildPair
             {
+                CodeBase = Code,
                 CoreCode = buildcode,
                 SubCode = buildsub
             };
@@ -913,46 +1047,55 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 ConditionalPairs.ConditionType tp = condition.PhiConditionalPairs.First().type;
 
-                if(tp == ConditionalPairs.ConditionType.JumpIfLessEqual)
-                {
-                    cond = ASMx86_16BIT.jumpIfLessThanEqual; // <=
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfEqual)
-                {
-                    cond = ASMx86_16BIT.jumpIfEqual; // ==
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfLess)
-                {
-                    cond = ASMx86_16BIT.jumpIfLessThan; // <
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfGreater)
-                {
-                    cond = ASMx86_16BIT.jumpIfGreaterThan; // >
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfNotEqual)
-                {
-                    cond = ASMx86_16BIT.jumpIfNotEqual; // != 
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfGreaterEqual)
-                {
-                    cond = ASMx86_16BIT.jumpIfGreaterThanEqual;
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfCarry)
-                {
-                    cond = ASMx86_16BIT.jumpIfCarry;
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfNoCarry)
-                {
-                    cond = ASMx86_16BIT.jumpIfNoCarry;
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfOverflow)
-                {
-                    cond = ASMx86_16BIT.jumpIfOverflow;
-                }
-                else if (tp == ConditionalPairs.ConditionType.JumpIfNoOverflow)
-                {
-                    cond = ASMx86_16BIT.jumpIfNoOverflow;
-                }
+                return ConvertConditional(tp);
+            }
+
+            return cond;
+        }
+
+        public static string ConvertConditional(ConditionalPairs.ConditionType tp)
+        {
+            string cond = string.Empty;
+
+            if (tp == ConditionalPairs.ConditionType.JumpIfLessEqual)
+            {
+                cond = ASMx86_16BIT.jumpIfLessThanEqual; // <=
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfEqual)
+            {
+                cond = ASMx86_16BIT.jumpIfEqual; // ==
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfLess)
+            {
+                cond = ASMx86_16BIT.jumpIfLessThan; // <
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfGreater)
+            {
+                cond = ASMx86_16BIT.jumpIfGreaterThan; // >
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfNotEqual)
+            {
+                cond = ASMx86_16BIT.jumpIfNotEqual; // != 
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfGreaterEqual)
+            {
+                cond = ASMx86_16BIT.jumpIfGreaterThanEqual;
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfCarry)
+            {
+                cond = ASMx86_16BIT.jumpIfCarry;
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfNoCarry)
+            {
+                cond = ASMx86_16BIT.jumpIfNoCarry;
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfOverflow)
+            {
+                cond = ASMx86_16BIT.jumpIfOverflow;
+            }
+            else if (tp == ConditionalPairs.ConditionType.JumpIfNoOverflow)
+            {
+                cond = ASMx86_16BIT.jumpIfNoOverflow;
             }
 
             return cond;

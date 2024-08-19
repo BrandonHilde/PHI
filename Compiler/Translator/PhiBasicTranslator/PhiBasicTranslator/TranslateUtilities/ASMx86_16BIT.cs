@@ -17,6 +17,7 @@ namespace PhiBasicTranslator.TranslateUtilities
     {
         public static readonly string varStrTyp = " db ";
         public static readonly string varIntTyp = " dd ";
+        public static readonly string varBytTyp = " db ";
         public static readonly string varTimes = " times ";
         public static readonly string varStrNewLine = "10";
         public static readonly string varStrReturn = "13";
@@ -355,8 +356,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> InstructIfCheck_BITS16 = new List<string>()
         {
             replaceIfName + ":",
-            "   mov ax, " + replaceIfLeftCompare,
-            "   cmp ax, " +  replaceIfRightCompare,
+            "   mov eax, " + replaceIfLeftCompare,
+            "   cmp eax, " +  replaceIfRightCompare,
             "   " + replaceIfJump + " " + replaceIfName + suffixContent,
             "   ret"
         };
@@ -502,6 +503,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             "",
             Defs.replaceCodeStart, //;{CODE}
             "",
+            "   jmp $",
+            "",
             Defs.replaceIncludes, // ;{INCLUDES}
             "",
             Defs.replaceVarStart,//;{VALUES}
@@ -616,11 +619,11 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> BIT16x86_DrawVariables = new List<string>()
         {
              "; drawing variables",
-            VarList_DrawRectangle[0] + " dd 0",
-            VarList_DrawRectangle[1] + " dd 0",
-            VarList_DrawRectangle[2] + " dd 10",
-            VarList_DrawRectangle[3] + " dd 10",
-            VarList_DrawRectangle[4] + " db 0xA"
+            VarList_DrawRectangle[0] + varIntTyp + "0",
+            VarList_DrawRectangle[1] + varIntTyp + "0",
+            VarList_DrawRectangle[2] + varIntTyp + "10",
+            VarList_DrawRectangle[3] + varIntTyp + "10",
+            VarList_DrawRectangle[4] + varBytTyp + "0xA"
         };
 
         public static List<string> BIT16x86_DrawConstants = new List<string>()
@@ -684,11 +687,37 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         #endregion
 
+        public static List<string> BIT32x86_AddVariable = new List<string>()
+        {
+            "",
+            "   mov eax, [" + replaceVarName + "]",
+            "   add eax," + Defs.replaceValueStart,
+            "   mov [" + replaceVarName + "], eax",
+            ""
+        };
+
+        public static List<string> BIT32x86_SubVariable = new List<string>()
+        {
+            "",
+            "   mov eax, [" + replaceVarName + "]",
+            "   sub eax," + Defs.replaceValueStart,
+            "   mov [" + replaceVarName + "], eax",
+            ""
+        };
+
         public static List<string> BIT32x86_SetVariable = new List<string>()
         {
             "",
             "   mov eax, " + Defs.replaceValueStart,
             "   mov [" + replaceVarName + "], eax",
+            ""
+        };
+
+        public static List<string> BIT16x86_SetVariable = new List<string>()
+        {
+            "",
+            "   mov ax, " + Defs.replaceValueStart,
+            "   mov [" + replaceVarName + "], ax",
             ""
         };
 
