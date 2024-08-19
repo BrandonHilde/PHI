@@ -15,15 +15,27 @@
 phi.Drawing:OS16BITSectorTwo
 {
 	int lefty: 50;
-	int Bot: 100;
+	int Bot: 90;
+	int botR: 0;
+	int botL: 0;
 	int direction: 0;
 	
+	int ballspeed: 1;
+	
+	int ballx: 160;
+	int bally: 100;
+	
+	int leftColx: 50;
+	int rightColx: 50;
 	
 	int directr: 1;
 	
 	int righty: 50;
 
 	int key: 0;
+	
+	int leftPoints: 0;
+	int rightPoints: 0;
 
 	call OS16BIT.SetupInteruptTimer;
 	call OS16BIT.SetupKeyboardInterupt;
@@ -31,14 +43,8 @@ phi.Drawing:OS16BITSectorTwo
 	[OS16BIT.TimerEvent]
 
 		call OS16BITVideo.DrawRectangle:
-			10	lefty
-			10	100	
-			Colors.Black
-		;
-		
-		call OS16BITVideo.DrawRectangle:
-			300	righty
-			10	100	
+			0	0
+			320	200	
 			Colors.Black
 		;
 		
@@ -47,47 +53,101 @@ phi.Drawing:OS16BITSectorTwo
 
 			if direction is 0
 				lefty--;
-
-			;;
-			if direction is 1
-				lefty++;
+				botL is lefty;
+				botL++Bot;
 			;;
 		;;
-
-		if lefty < 2
+		
+		if direction is 1
+			lefty++;
+			botL is lefty;
+			botL++Bot;
 			
-			direction is 1;
 		;;
-
-		if lefty > Bot
+		
+		if lefty is 100
 
 			direction is 0;
+		;;
+		
+		if lefty < 1
+			direction is 1;
 		;;
 		
 		#right		
 		if righty > 0
 			if key is 'w'
-				righty--;
+				righty--2;
 			;;
 		;;
 
 		if righty < Bot
 			if key is 's'
-				righty++;
+				righty++2;
+			;;
+		;;
+		
+		#ball stuff
+		
+		if ballx is 0
+			ballx is 160;
+			directr is 1;
+			rightPoints++;
+		;;
+		
+		if ballx is 310
+			ballx is 160;
+			directr is 0;
+			leftPoints++;
+		;;
+		
+		if directr is 0
+			ballx -- ballspeed;
+			
+			if ballx is 20
+				if	bally > lefty
+					leftColx is lefty;
+					leftColx++Bot;
+					
+					if	bally < leftColx
+						directr is 1;
+					;;
+				;;
+			;;
+		;;
+		
+		if directr is 1
+			ballx ++ ballspeed;
+			
+			if ballx is 290
+				if	bally > righty
+					rightColx is righty;
+					rightColx++Bot;
+					
+					if	bally < rightColx
+						directr is 0;
+					;;
+				;;
 			;;
 		;;
 
 		#draw rectangles
 		
 		call OS16BITVideo.DrawRectangle:
+			ballx	bally
+			10	10	
+			Colors.White
+		;
+		
+		call OS16BITVideo.DrawRectangle:
 			10	lefty
-			10	100	
+			10	Bot	
 			Colors.LightRed
 		;
 		
 		call OS16BITVideo.DrawRectangle:
 			300	righty
-			10	100	
+			10	Bot
 			Colors.LightGreen
 		;
 

@@ -500,7 +500,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if (varbleR != null)
             {
-                right = ASMx86_16BIT.UpdateName(varbleR.Name);
+                right = "[" + ASMx86_16BIT.UpdateName(varbleR.Name) + "]";
             }
             else
             {
