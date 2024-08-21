@@ -50,6 +50,77 @@ namespace PhiBasicTranslator.ParseEngine
             return false;   
         }
 
+        public static bool IsElsePair(PhiClass cls, PhiInstruct instruct)
+        {
+            PhiInstruct? inst = cls.Instructs.LastOrDefault();
+
+            if (inst != null)
+            {
+                if(inst.Name == Defs.instIf && instruct.Name == Defs.instElse)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsElsePair(PhiMethod mthd, PhiInstruct instruct)
+        {
+            PhiInstruct? inst = mthd.Instructs.LastOrDefault();
+
+            if (inst != null)
+            {
+                if (inst.Name == Defs.instIf && instruct.Name == Defs.instElse)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static bool IsElsePair(PhiInstruct parentInst, PhiInstruct instruct)
+        {
+            PhiInstruct? inst = parentInst.Instructs.LastOrDefault();
+
+            if (inst != null)
+            {
+                if (inst.Name == Defs.instIf && instruct.Name == Defs.instElse)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        public static int GetPrevIndexOfAny(string Content, string Match, int Start)
+        {
+            for (int i = Start; i >= 0; i--)
+            {
+                if (Match.Contains(Content[i]))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
+        public static int GetNextIndexOfAny(string Content, string Match, int Start)
+        {
+            for (int i = Start; i < Content.Length; i++)
+            {
+                if (Match.Contains(Content[i]))
+                {
+                    return i;
+                }
+            }
+
+            return -1;
+        }
+
         public static string ClearMethodName(string methodName)
         {
             methodName = methodName.Replace('.', '_');

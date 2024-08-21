@@ -19,6 +19,7 @@ namespace PhiBasicTranslator.Structure
 
     public class BuildPair
     {
+        public string Label { get; set; } = string.Empty;
         public List<string> CodeBase { get; set; } = new List<string>();
         public List<string> CoreCode { get; set; } = new List<string>();
         public List<string> SubCode { get; set; } = new List<string>();
@@ -27,6 +28,7 @@ namespace PhiBasicTranslator.Structure
         {
             return new BuildPair      
             { 
+                Label = Label,
                 CoreCode = CoreCode, 
                 SubCode = SubCode,
                 CodeBase = CodeBase

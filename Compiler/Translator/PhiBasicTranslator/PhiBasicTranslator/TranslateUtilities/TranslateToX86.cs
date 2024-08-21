@@ -271,7 +271,14 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     foreach (BuildPair bp in instrct.BuildPairs)
                     {
-                        pair.CoreCode = ASMx86_16BIT.MergeSubCode(pair.CoreCode, bp.SubCode, ASMx86_16BIT.replaceIfContent);
+                        if (bp.Label == Defs.instElse)
+                        {
+                            pair.CoreCode = ASMx86_16BIT.MergeSubCode(pair.CoreCode, bp.SubCode, ASMx86_16BIT.replaceElseContent);
+                        }
+                        else
+                        {
+                            pair.CoreCode = ASMx86_16BIT.MergeSubCode(pair.CoreCode, bp.SubCode, ASMx86_16BIT.replaceIfContent);
+                        }
                     }
                 }
 
@@ -298,7 +305,53 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
             else if (instrct.Name == Defs.instElse)
             {
-                Console.WriteLine(instrct.Name + " Unimplemented");
+                BuildPair pair = new BuildPair();
+
+                pair.CodeBase = Code;
+
+                pair.Label = Defs.instElse;
+
+                pair.SubCode = new List<string>()
+                {
+                    ASMx86_16BIT.replaceElseContent
+                };
+
+                if (instrct.BuildPairs.Count > 0)
+                {
+                    foreach (BuildPair bp in instrct.BuildPairs)
+                    {
+                        pair.SubCode = ASMx86_16BIT.MergeSubCode(pair.SubCode, bp.SubCode, ASMx86_16BIT.replaceElseContent);
+                    }
+                }
+
+                pair.SubCode = ASMx86_16BIT.ReplaceValue(
+                    pair.SubCode, 
+                    ASMx86_16BIT.replaceElseContent, 
+                    string.Empty
+                    );
+
+                pair.SubCode = ASMx86_16BIT.ReplaceValue(
+                   pair.SubCode,
+                   Defs.replaceCodeStart,
+                   string.Empty
+                   );
+
+                pair.SubCode.RemoveAll(x=> x == string.Empty);
+
+                //if (sub)
+                //{
+                //    pair.CodeBase = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
+                //    // SubCode = ASMx86_16BIT.MergeValues(SubCode, pair.SubCode, Defs.replaceCodeStart);
+
+                //}
+                //else
+                //{
+                //    // add methods into the includes
+                //    pair.CodeBase = ASMx86_16BIT.MergeValues(Code, pair.CoreCode, Defs.replaceIncludes);
+                //    pair.CoreCode = ASMx86_16BIT.MergeValues(pair.CoreCode, pair.SubCode, Defs.replaceCodeStart);
+                //}
+
+                return pair;
             }
             else if (instrct.Name == Defs.instAsk)
             {

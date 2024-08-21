@@ -46,6 +46,7 @@ namespace PhiBasicTranslator.Structure
 
         public static readonly string NameClosureCharacters = " \t\r\n{:";
         public static readonly string ConditionalClosureCharacters = "\r\n\t;:";
+        public static readonly string ConditionalStartCharacters = "\r\n;:";
         public static readonly string TabSpaceClosureCharacters = "\r\n\t ";
         public static readonly string VariableSetClosure = ";";
         public static readonly string VariableOpenDeclare = "VALUE_";

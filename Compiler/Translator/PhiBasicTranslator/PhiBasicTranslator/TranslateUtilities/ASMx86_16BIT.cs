@@ -83,6 +83,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string replaceIfName = ";{IF NAME}";
         public static readonly string replaceIfJump = ";{IF JUMP}";
         public static readonly string replaceIfContent = ";{IF CONTENT}";
+        public static readonly string replaceElseContent = ";{ELSE CONTENT}";
 
         public static readonly string replaceColorset = ";{COLOR SET}";
         public static readonly string replaceVarName = ";{VAR NAME}";
@@ -367,6 +368,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov eax, " + replaceIfLeftCompare,
             "   cmp eax, " +  replaceIfRightCompare,
             "   " + replaceIfJump + " " + replaceIfName + suffixContent,
+            "",
+            replaceElseContent,
+            "",
             "   ret"
         };
 
@@ -435,7 +439,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> InstructLogInt_BITS16 = new List<string>()
         {
-            "   mov ax, [" + Defs.replaceValueStart + "]",
+            "   mov ax, word [" + Defs.replaceValueStart + "]",
             "   call print_int"
         };
         #endregion
@@ -519,7 +523,6 @@ namespace PhiBasicTranslator.TranslateUtilities
             ""
         };
         #endregion
-
 
         #region Sectors
         /// <summary>

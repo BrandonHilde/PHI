@@ -86,6 +86,51 @@ namespace PhiBasicTranslator
                     #endregion
 
 
+                    if(inside == Inside.Opperation || inside == Inside.Conditonal)
+                    {
+                        int ic = ParseMisc.GetPrevIndexOfAny(
+                            content, 
+                            Defs.ConditionalStartCharacters, 
+                            i);
+
+                        int nx = ParseMisc.GetNextIndexOfAny(
+                            content,
+                            Defs.ConditionalStartCharacters,
+                            i);
+
+                        if (ic > 0 && nx > 0)
+                        {
+                            string cut = content.Substring(ic, nx - ic + 1);
+                            Console.WriteLine(cut);
+
+                            List<Inside> contentL = new List<Inside>();
+
+                            for (int m = ic; m <= nx; m++) 
+                                contentL.Add(profile.ContentInside[m]);
+
+                            PhiInstruct temp = new PhiInstruct
+                            {
+                                Name = "Raw",
+                                Value = cut,
+                                ContentLabels = contentL
+                            };
+
+                            PhiInstruct maths = TranslateSubInstructs(temp);
+
+                            foreach (PhiInstruct mth in maths.Instructs)
+                            {
+                                if (method.Name != string.Empty)
+                                {
+                                    method.Instructs.Add(mth.Copy());
+                                }
+                                else
+                                {
+                                    current.Instructs.Add(mth.Copy());
+                                }
+                            }
+                        }
+                    }
+
                     if (inside == Inside.MethodOpen)
                     {
                         insideMethod = true;
@@ -111,11 +156,26 @@ namespace PhiBasicTranslator
 
                         if (method.Name != string.Empty)
                         {
-                            method.Instructs.Add(instr.Copy());
+                            if (ParseMisc.IsElsePair(method, instr))
+                            {
+                                method.Instructs.Last().Instructs.Add(instr.Copy());
+                            }
+                            else
+                            {
+                                method.Instructs.Add(instr.Copy());
+                            }
                         }
                         else
                         {
-                            current.Instructs.Add(instr.Copy());
+
+                            if (ParseMisc.IsElsePair(current, instr))
+                            {
+                                current.Instructs.Last().Instructs.Add(instr.Copy());
+                            }
+                            else
+                            {
+                                current.Instructs.Add(instr.Copy());
+                            }
                         }
                     }
                 }
@@ -395,14 +455,30 @@ namespace PhiBasicTranslator
                                 if (Defs.instructContainers.Contains(instName))
                                 {
                                     PhiInstruct subInstruct = ExtractInstruct(inside, instr.Value, prev, instr.ContentLabels.ToArray(), i);
-                                    instr.Instructs.Add(subInstruct);
+
+                                    if (ParseMisc.IsElsePair(instr, subInstruct))
+                                    {
+                                        instr.Instructs.Last().Instructs.Add(subInstruct.Copy());
+                                    }
+                                    else
+                                    {
+                                        instr.Instructs.Add(subInstruct.Copy());
+                                    }
 
                                     i += subInstruct.Value.Length;
                                 }
                                 else
                                 {
                                     PhiInstruct subInstruct = ExtractInstruct(inside, instr.Value, prev, instr.ContentLabels.ToArray(), i);
-                                    instr.Instructs.Add(subInstruct);
+
+                                    if (ParseMisc.IsElsePair(instr, subInstruct))
+                                    {
+                                        instr.Instructs.Last().Instructs.Add(subInstruct.Copy());
+                                    }
+                                    else
+                                    {
+                                        instr.Instructs.Add(subInstruct.Copy());
+                                    }
 
                                     i += subInstruct.Value.Length;
                                 }

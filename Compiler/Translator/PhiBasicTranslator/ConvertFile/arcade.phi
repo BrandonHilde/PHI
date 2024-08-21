@@ -14,6 +14,10 @@
 
 phi.Drawing:OS16BITSectorTwo
 {
+
+	int ScreenW: 320;
+	int ScreenH: 200;
+	
 	int lefty: 50;
 	int Bot: 90;
 	int botR: 0;
@@ -21,9 +25,15 @@ phi.Drawing:OS16BITSectorTwo
 	int direction: 0;
 	
 	int ballspeed: 1;
+	int ballspeedy: 1;
+	
+	int maxspeed: 8;
+	int paddleSpeed: 2;
 	
 	int ballx: 160;
 	int bally: 100;
+	
+	int ballyDir: 0;
 	
 	int leftColx: 50;
 	int rightColx: 50;
@@ -37,8 +47,6 @@ phi.Drawing:OS16BITSectorTwo
 	int leftPoints: 0;
 	int rightPoints: 0;
 
-	botR is 29;
-
 	call OS16BIT.SetupInteruptTimer;
 	call OS16BIT.SetupKeyboardInterupt;
 
@@ -50,91 +58,120 @@ phi.Drawing:OS16BITSectorTwo
 			Colors.Black
 		;
 		
+		
+		if ballspeed > maxspeed
+			ballspeed is maxspeed;
+		;;
 
+
+		
+		#leftcontrol
+		
 		if lefty > 0
-
-			if direction is 0
-				lefty--;
-				botL is lefty;
-				botL++Bot;
+			if key is 'w'
+				lefty--paddleSpeed;
 			;;
 		;;
-		
-		if direction is 1
-			lefty++;
+		else
+			lefty is 0;
+		;;
+
 			botL is lefty;
 			botL++Bot;
-			
-		;;
-		
-		if lefty is 100
 
-			direction is 0;
-		;;
-		
-		if lefty < 1
-			direction is 1;
+		if key is 's'
+
+			if botL < ScreenH
+			
+				lefty++paddleSpeed;
+			;;
 		;;
 		
 		#right		
 		if righty > 0
-			if key is 'w'
-				righty--2;
+			if key is 'o'
+				righty--paddleSpeed;
 			;;
 		;;
+		else
+			righty is 0;
+		;;
 
-		if righty < Bot
-			if key is 's'
-				righty++2;
+			botR is righty;
+			botR++Bot;
+
+		if key is 'l'
+
+			if botR < ScreenH
+			
+				righty++paddleSpeed;
 			;;
 		;;
 		
 		#ball stuff
 		
-		if ballx is 0
-			ballx is 160;
-			directr is 1;
-			rightPoints++;
-		;;
-		
-		if ballx is 310
-			ballx is 160;
-			directr is 0;
-			leftPoints++;
-		;;
-		
 		if directr is 0
 			ballx -- ballspeed;
 			
-			if ballx is 20
+			if ballx < 20
 				if	bally > lefty
 					leftColx is lefty;
 					leftColx++Bot;
 					
 					if	bally < leftColx
 						directr is 1;
+						ballspeed++; #collision
 					;;
 				;;
 			;;
 		;;
-		
-		if directr is 1
+		else	
 			ballx ++ ballspeed;
 			
-			if ballx is 290
+			if ballx > 290
 				if	bally > righty
 					rightColx is righty;
 					rightColx++Bot;
 					
 					if	bally < rightColx
 						directr is 0;
+						ballspeed++; #collision
 					;;
 				;;
 			;;
 		;;
-
+		
+		if ballyDir is 0
+			bally--ballspeedy;
+		;;
 		else
-			log 'hello';
+			bally++ballspeedy;
+		;;
+		
+		if bally < 0
+			#bounce
+			ballyDir is 1;
+		;;
+		
+		if bally > 190
+			#bounce
+			ballyDir is 0;
+		;;
+		
+		#score
+		
+		if ballx < 0
+			ballx is 160;
+			directr is 1;
+			rightPoints++; #points scored
+			ballspeed is 1;
+		;;
+		
+		if ballx > 310
+			ballx is 160;
+			directr is 0;
+			leftPoints++; #points scored
+			ballspeed is 1;
 		;;
 
 		#draw rectangles
@@ -148,7 +185,7 @@ phi.Drawing:OS16BITSectorTwo
 		call OS16BITVideo.DrawRectangle:
 			10	lefty
 			10	Bot	
-			Colors.LightRed
+			Colors.LightGreen
 		;
 		
 		call OS16BITVideo.DrawRectangle:
