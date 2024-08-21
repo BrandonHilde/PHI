@@ -8,7 +8,6 @@ using System.Threading.Tasks;
 using PhiBasicTranslator.Structure;
 using System.Runtime.ConstrainedExecution;
 using PhiBasicTranslator.ParseEngine;
-using static System.Formats.Asn1.AsnWriter;
 using System.Diagnostics.Metrics;
 
 namespace PhiBasicTranslator.TranslateUtilities
@@ -37,14 +36,15 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string incWaitForKey = "OS16BIT_WaitForKeyPress";
         public static readonly string incKeyboardInterupt = "OS16BIT_SetupKeyboardInterupt";
         public static readonly string incKeyboardEvent = "OS16BIT_KeyboardEvent";
+
         public static readonly string incGetKey = "OS16BIT_GetKey";
+        public static readonly string incIsKeyDown = "OS16BIT_IsKeyDown";
 
         public static readonly List<string> incKeyboardList = new List<string>()
         {
             incWaitForKey.Replace('_', '.'),
             incKeyboardInterupt.Replace('_', '.'),
-            incKeyboardEvent.Replace('_', '.'),
-            incGetKey.Replace('_', '.')
+            incKeyboardEvent.Replace('_', '.')
         };
 
         public static readonly string incTimerEvent = "OS16BIT_TimerEvent";
@@ -67,6 +67,12 @@ namespace PhiBasicTranslator.TranslateUtilities
             incEnableVideo.Replace('_', '.'),
             incDrawRectangle.Replace('_', '.'),
             incDrawPixel.Replace('_', '.'),
+        };
+
+        public static readonly List<string> excludeMethodCall = new List<string>()
+        {
+            incGetKey,
+            incIsKeyDown
         };
 
         public static readonly string replaceLoopCondition = ";{LOOP CONDITION}";
@@ -444,7 +450,6 @@ namespace PhiBasicTranslator.TranslateUtilities
         };
         #endregion
 
-
         #region ASK
         public static List<string> InstructASK_BITS16 = new List<string>()
         {
@@ -532,7 +537,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             "OS16BIT_PrepSectorTwo:",
             "   mov ah, 0x02    ; BIOS read sector",
-            "   mov al, 4       ; Number of sectors", // may need to change number later
+            "   mov al, 6       ; Number of sectors", // may need to change number later
             "   mov ch, 0       ; Cylinder number",
             "   mov dh, 0       ; Head number",
             "   mov cl, 2       ; Sector number",
@@ -751,6 +756,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_ScanKeyTable = new List<string>()
         {
+            "key_down_table: times 255 db 0",
             "scan_code_table:",
             "   db 0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0",
             "   db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0, 0",
@@ -781,6 +787,18 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov bl, al",
             "   ; Convert scan code to ASCII (simplified)",
             "   mov al, [scan_code_table + bx]",
+            "   cmp al, 0",
+            "   je .key_up",
+            "   mov bx, key_down_table",
+            "   add bx, ax",
+            "   mov byte [bx], 1",
+            "   jmp .done",
+            ".key_up:",
+            "   mov bx, key_down_table",
+            "   add bx, ax",
+            "   mov byte [bx], 0",
+            "   jmp .done",
+            ".done:",
             "   call " + incKeyboardEvent,
             "   mov al, 0x20            ; Send End of Interrupt",
             "   out 0x20, al",
@@ -791,11 +809,15 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_GetKey = new List<string>()
         {
-            incGetKey + ":",
             "   mov [" + KeyCodeVar + "], al",
             "   mov al, " + "[" + KeyCodeVar + "]",
-            "   mov byte [" + replaceVarName + "], al",
-            "   ret"
+            "   mov byte [" + replaceVarName + "], al"
+        };
+
+        public static List<string> BIT16x86_IsKeyDown = new List<string>()
+        {
+            "   mov al, byte [key_down_table + " + Defs.replaceValueStart + "]",
+            "   mov byte [" + replaceVarName + "], al"
         };
 
         public static List<string> BIT16x86_KeyboardEvent = new List<string>()

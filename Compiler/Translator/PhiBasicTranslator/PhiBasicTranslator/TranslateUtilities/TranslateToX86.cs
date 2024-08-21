@@ -54,6 +54,10 @@ namespace PhiBasicTranslator.TranslateUtilities
                         BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
 
                         ASM = pair.CodeBase;
+
+                        BuildPair mpar = BuildAllMethods(ASM, SubCode, cls, allVars);
+
+                        ASM = mpar.CodeBase;
                     }
                     else if (cls.Inherit == Defs.OS16BitVideo)
                     {
@@ -76,6 +80,10 @@ namespace PhiBasicTranslator.TranslateUtilities
                         BuildPair pair = BuildAllInstructs(ASM, SubCode, cls, allVars);
 
                         ASM = pair.CodeBase;
+
+                        BuildPair mpar = BuildAllMethods(ASM, SubCode, cls, allVars);
+
+                        ASM = mpar.CodeBase;
                     }
                     else if(cls.Inherit == Defs.OS16BitSectorTwo)
                     {
@@ -148,7 +156,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 build.CodeBase = pair.CodeBase;
 
-                Code = build.CodeBase;
+                Code = build.CodeBase; //reqired line because Code is used in buildallmethodintructs
 
                 build.CodeBase = ASMx86_16BIT.MergeSubCode(build.CodeBase, pair.CoreCode, Defs.replaceIncludes);
             }
@@ -436,13 +444,14 @@ namespace PhiBasicTranslator.TranslateUtilities
                             );
                     }
 
-                    pair.CoreCode.AddRange(setcode);
+                    pair.SubCode.AddRange(setcode);
                 }
                 #endregion
 
 
                 if (instrct.Variables.Count > 0)
                 {
+
                     if(callname == ASMx86_16BIT.incDrawRectangle)
                     {
                         for(int i = 0; i < instrct.Variables.Count; i++)
@@ -496,16 +505,42 @@ namespace PhiBasicTranslator.TranslateUtilities
                             pair.SubCode.AddRange(setcode);
                         }
                     }
+                    else if (callname == ASMx86_16BIT.incIsKeyDown)
+                    {
+                        string nme = instrct.Variables.First().Name;    
+
+                        List<string> setcode = new List<string>();
+
+                        if (callSetTo != string.Empty && callname != string.Empty)
+                        {
+                            setcode.AddRange(ASMx86_16BIT.BIT16x86_IsKeyDown);
+                            setcode = ASMx86_16BIT.ReplaceValue(
+                                setcode,
+                                Defs.replaceValueStart,
+                                nme);
+
+                            setcode = ASMx86_16BIT.ReplaceValue(
+                                setcode,
+                                ASMx86_16BIT.replaceVarName,
+                                ASMx86_16BIT.UpdateName(callSetTo)
+                                );
+                        }
+
+                        pair.SubCode.AddRange(setcode);
+                    }
                 }
 
-                pair.SubCode.Add(
-                   "    " 
-                   + ASMx86_16BIT.callLabel 
-                   + " " 
-                   + callname.Trim()
-                   );
-
                 pair.CodeBase = Code;
+
+                if (!ASMx86_16BIT.excludeMethodCall.Contains(callname))
+                {
+                    pair.SubCode.Add(
+                        "    "
+                        + ASMx86_16BIT.callLabel
+                        + " "
+                        + callname.Trim()
+                        );
+                }
 
                 return pair;
             }
@@ -1036,20 +1071,23 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.AskInput_x86BITS16, Defs.replaceIncludes);
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_WaitForKeyPress, Defs.replaceIncludes);
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardInterupt, Defs.replaceIncludes);
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardSetup, Defs.replaceIncludes);
-
-                bool overwriteEvent = cls.Methods.Where(
-                   x => x.Name == ASMx86_16BIT.incKeyboardEvent
-                   ).FirstOrDefault() != null ? true : false;
-                
-                if (!overwriteEvent)
+                if (cls.Inherit == Defs.OS16BitSectorTwo)
                 {
-                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardEvent, Defs.replaceIncludes);
-                }
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardInterupt, Defs.replaceIncludes);
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardSetup, Defs.replaceIncludes);
 
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_ScanKeyTable, Defs.replaceVarStart);
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.KeyCodeValue, Defs.replaceVarStart);
+                    bool overwriteEvent = cls.Methods.Where(
+                       x => x.Name == ASMx86_16BIT.incKeyboardEvent
+                       ).FirstOrDefault() != null ? true : false;
+
+                    if (!overwriteEvent)
+                    {
+                        Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardEvent, Defs.replaceIncludes);
+                    }
+
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_ScanKeyTable, Defs.replaceVarStart);
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.KeyCodeValue, Defs.replaceVarStart);
+                }
             }
 
             if (cls.Includes.Contains(PhiInclude.Timer))
