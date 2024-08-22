@@ -573,6 +573,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             string left = "";
             string right = "";
 
+            //need to add constants to predefined
+
             PhiVariable? varbleL = predefined.Where(x => x.Name == math.Math.ValueLeft).FirstOrDefault();
 
             PhiVariable? varbleR = predefined.Where(x => x.Name == math.Math.ValueRight).FirstOrDefault();
@@ -598,6 +600,11 @@ namespace PhiBasicTranslator.TranslateUtilities
             if(right == string.Empty)
             {
                 right = "1"; // for i++; and i--;
+            }
+
+            if(!ParseMisc.IsNumber(right))
+            {
+                right = ASMx86_16BIT.UpdateName(right);
             }
 
             ConditionalPairs.ConditionType typ = ParseUtilities.MatchesCondition(math.Math.MathOp);
@@ -998,7 +1005,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
                 }
-                else if (v.varType == Inside.VariableTypeInt)
+                else
                 {
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
@@ -1073,7 +1080,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_WaitForKeyPress, Defs.replaceIncludes);
                 if (cls.Inherit == Defs.OS16BitSectorTwo)
                 {
-                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardInterupt, Defs.replaceIncludes);
+                    Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.OS_KeyboardHandler, Defs.replaceIncludes);
                     Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_KeyboardSetup, Defs.replaceIncludes);
 
                     bool overwriteEvent = cls.Methods.Where(
@@ -1136,6 +1143,10 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     build += ASMx86_16BIT.varIntTyp;
                     build += vbl.ValueRaw;
+                }
+                else
+                {
+                    build = ASMx86_16BIT.VarTypeConvert(vbl);
                 }
 
                 vals.Add(build);

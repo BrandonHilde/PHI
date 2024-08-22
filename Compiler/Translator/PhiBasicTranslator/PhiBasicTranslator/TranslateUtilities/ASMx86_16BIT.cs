@@ -219,6 +219,38 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     vr = name + varIntTyp + varble.ValueRaw;
                 }
+                else if (varble.varType == Inside.VariableTypeBln)
+                {
+                    vr = name + varStrTyp;
+
+                    if (varble.ValueRaw.ToLower() == "true")
+                    {
+                        vr += "1";
+                    }
+                    else if (varble.ValueRaw.ToLower() == "false")
+                    {
+                        vr += "0";
+                    }
+                    else
+                    {
+                        //remember to resolve later
+                        vr += ASMx86_16BIT.UpdateName(varble.ValueRaw);
+                    }
+
+                }
+                else if (varble.varType == Inside.VariableTypeByt)
+                {
+                    vr = name + varStrTyp;
+
+                    if(ParseMisc.IsNumber(varble.ValueRaw))
+                    {
+                        vr += varble.ValueRaw; //add limits later
+                    }
+                    else
+                    {
+                        vr += ASMx86_16BIT.UpdateName(varble.ValueRaw);
+                    }
+                }
             }
 
             return vr;
@@ -777,7 +809,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   ret"
         };
 
-        public static List<string> BIT16x86_KeyboardInterupt = new List<string>()
+        public static List<string> OLD_KeyboardInterupt = new List<string>()
         {
             "keyboard_handler:",
             "   push ax",
@@ -807,17 +839,66 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   iret"
         };
 
+        public static List<string> OS_KeyboardHandler = new List<string>()
+        {
+            "",
+            "keyboard_handler:",
+            "   push ax",
+            "   push bx",
+            "   in al, 0x60             ; Read scan code",
+            "   test al, 0x80",
+            "   jz .key_down",
+            "   ;key up event",
+            "   and al, 0x7F            ; Clear the key release bit",
+            "   xor bh, bh",
+            "   mov bl, al",
+            "   mov al, [scan_code_table + bx]  ; Convert scan code to ASCII",
+            "",
+            "   mov [" + KeyCodeVar + "], al",
+            "",
+            "   mov bx, key_down_table",
+            "   add bx, [" + KeyCodeVar + "]",
+            "",
+            "   mov byte [bx], 0",
+            "",
+            "   jmp .done",
+            "   ",
+            "   cmp al, 0               ; Check if it's a valid key",
+            "   je .done",
+            "",
+            ".key_down:",
+            "   xor bh, bh",
+            "   mov bl, al",
+            "   ; Convert scan code to ASCII (simplified)",
+            "   mov al, [scan_code_table + bx]",
+            "",
+            "   mov [" + KeyCodeVar + "], al",
+            "",
+            "   mov bx, key_down_table",
+            "   add bx, [" + KeyCodeVar + "]",
+            "",
+            "   mov byte [bx], 1",
+            ".done:",
+            "   call " + incKeyboardEvent,
+            "   mov al, 0x20            ; Send End of Interrupt",
+            "   out 0x20, al",
+            "   pop bx",
+            "   pop ax",
+            "   iret"
+        };
+
         public static List<string> BIT16x86_GetKey = new List<string>()
         {
-            "   mov [" + KeyCodeVar + "], al",
             "   mov al, " + "[" + KeyCodeVar + "]",
             "   mov byte [" + replaceVarName + "], al"
         };
 
         public static List<string> BIT16x86_IsKeyDown = new List<string>()
         {
-            "   mov al, byte [key_down_table + " + Defs.replaceValueStart + "]",
-            "   mov byte [" + replaceVarName + "], al"
+            "   mov bx, " + "[" + KeyCodeVar + "]",
+            "   add bx, key_down_table",
+            "   mov byte al, [bx]",
+            "   mov [" + replaceVarName + "], al"
         };
 
         public static List<string> BIT16x86_KeyboardEvent = new List<string>()
