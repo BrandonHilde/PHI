@@ -412,6 +412,17 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   ret"
         };
 
+        public static List<string> InstructIfCheck_BITS8 = new List<string>()
+        {
+            replaceIfName + ":",
+            "   mov al, " + replaceIfLeftCompare,
+            "   cmp al, " +  replaceIfRightCompare,
+            "   " + replaceIfJump + " " + replaceIfName + suffixContent,
+            "",
+            replaceElseContent,
+            "",
+            "   ret"
+        };
         public static List<string> InstructIfContent_BITS16 = new List<string>()
         {
             replaceIfName + suffixContent+ ":",
@@ -478,6 +489,12 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> InstructLogInt_BITS16 = new List<string>()
         {
             "   mov ax, word [" + Defs.replaceValueStart + "]",
+            "   call print_int"
+        };
+        public static List<string> InstructLogByte_BITS16 = new List<string>()
+        {
+            "   mov ax, word [" + Defs.replaceValueStart + "]",
+            "   xor ah, ah",
             "   call print_int"
         };
         #endregion
@@ -788,7 +805,14 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_ScanKeyTable = new List<string>()
         {
-            "key_down_table: times 255 db 0",
+            "key_down_table:",
+            "   db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "   db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "   db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "   db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "   db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "   db 0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0",
+            "",
             "scan_code_table:",
             "   db 0, 0, '1', '2', '3', '4', '5', '6', '7', '8', '9', '0', '-', '=', 0, 0",
             "   db 'q', 'w', 'e', 'r', 't', 'y', 'u', 'i', 'o', 'p', '[', ']', 0, 0",
@@ -850,16 +874,16 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   jz .key_down",
             "   ;key up event",
             "   and al, 0x7F            ; Clear the key release bit",
-            "   xor bh, bh",
+            "   xor bx, bx",
             "   mov bl, al",
             "   mov al, [scan_code_table + bx]  ; Convert scan code to ASCII",
             "",
             "   mov [" + KeyCodeVar + "], al",
             "",
-            "   mov bx, key_down_table",
-            "   add bx, [" + KeyCodeVar + "]",
-            "",
-            "   mov byte [bx], 0",
+            "   xor bx, bx",
+            "   mov bl, byte [" + KeyCodeVar + "]",
+            "   ;add bx, key_down_table" ,
+            "   mov byte [key_down_table + bx], 0x00",
             "",
             "   jmp .done",
             "   ",
@@ -867,17 +891,17 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   je .done",
             "",
             ".key_down:",
-            "   xor bh, bh",
+            "   xor bx, bx",
             "   mov bl, al",
             "   ; Convert scan code to ASCII (simplified)",
             "   mov al, [scan_code_table + bx]",
             "",
             "   mov [" + KeyCodeVar + "], al",
             "",
-            "   mov bx, key_down_table",
-            "   add bx, [" + KeyCodeVar + "]",
-            "",
-            "   mov byte [bx], 1",
+            "   xor bx, bx",
+            "   mov bl, byte [" + KeyCodeVar + "]",
+            "   ;add bx, key_down_table" ,
+            "   mov byte [key_down_table + bx], 0x01",
             ".done:",
             "   call " + incKeyboardEvent,
             "   mov al, 0x20            ; Send End of Interrupt",
@@ -895,10 +919,12 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_IsKeyDown = new List<string>()
         {
-            "   mov bx, " + "[" + KeyCodeVar + "]",
+            "   xor bx, bx",
+            "   mov bl, byte " + Defs.replaceValueStart,
             "   add bx, key_down_table",
-            "   mov byte al, [bx]",
-            "   mov [" + replaceVarName + "], al"
+            "   mov ax, [bx]",
+            "   xor ah, ah",
+            "   mov byte [" + replaceVarName + "], al"
         };
 
         public static List<string> BIT16x86_KeyboardEvent = new List<string>()

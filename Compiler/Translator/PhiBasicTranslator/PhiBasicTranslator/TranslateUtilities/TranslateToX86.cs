@@ -273,7 +273,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 string name = "IF_" + (IfCount++);
 
-                BuildPair pair = BuildInstructIf(Code, SubCode, name, instrct, cls);
+                BuildPair pair = BuildInstructIf(Code, SubCode, name, instrct, cls, predefined);
 
                 if (instrct.BuildPairs.Count > 0)
                 {
@@ -595,16 +595,19 @@ namespace PhiBasicTranslator.TranslateUtilities
             else
             {
                 right = math.Math.ValueRight;
-            }
 
-            if(right == string.Empty)
-            {
-                right = "1"; // for i++; and i--;
-            }
-
-            if(!ParseMisc.IsNumber(right))
-            {
-                right = ASMx86_16BIT.UpdateName(right);
+                if (right == string.Empty)
+                {
+                    right = "1"; // for i++; and i--;
+                }
+                else if (!ParseMisc.IsNumber(right))
+                {
+                    right = ASMx86_16BIT.UpdateName(right);
+                }
+                else
+                {
+                    right = math.Math.ValueRight;
+                }
             }
 
             ConditionalPairs.ConditionType typ = ParseUtilities.MatchesCondition(math.Math.MathOp);
@@ -746,7 +749,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             return varbles;
         }
 
-        public static BuildPair BuildInstructIf(List<string> Code, List<string> SubCode, string Name, PhiInstruct instruct, PhiClass cls)
+        public static BuildPair BuildInstructIf(List<string> Code, List<string> SubCode, string Name, PhiInstruct instruct, PhiClass cls, List<PhiVariable> predefined)
         {
             List<string> buildcode = new List<string>();
             List<string> buildsub = new List<string>();
@@ -762,6 +765,31 @@ namespace PhiBasicTranslator.TranslateUtilities
             string jmpCon = ASMx86_16BIT.jumpIfGreaterThan;
 
             PhiConditional? condit = instruct.Conditionals.FirstOrDefault();
+
+            if (condit == null)
+            {
+                string vnme = ParseMisc.ExtractStandAloneVarName(
+                    instruct.Value, 
+                    instruct.ContentLabels, 
+                    Defs.ConditionalClosureCharacters);
+
+                string leftv = vnme.Trim();
+
+                condit = new PhiConditional
+                {
+                    PhiConditionalPairs = new List<ConditionalPairs>
+                    {
+                        new ConditionalPairs
+                        {
+                            LeftValue = leftv,
+                            RightValue = Defs.True, // maybe change to 1 later for true
+                            opperation = ConditionalPairs.ConditionOpperation.Comparision,
+                            type = ConditionalPairs.ConditionType.JumpIfEqual
+                        }
+                    }
+                    
+                };
+            }
 
             if (condit != null)
             {
@@ -794,7 +822,26 @@ namespace PhiBasicTranslator.TranslateUtilities
                         }
                     }
                     #region BUILD VALUES
-                    buildcode.AddRange(ASMx86_16BIT.InstructIfCheck_BITS16);
+
+                    Inside vtypeComp = Inside.None;
+
+                    if(vl != null)
+                    {
+                        if(vl.varType == Inside.VariableTypeBln)
+                        {
+                            vtypeComp = vl.varType;
+                        }
+                    }
+
+                    if (vtypeComp == Inside.VariableTypeBln || vtypeComp == Inside.VariableTypeByt)
+                    {
+                        buildcode.AddRange(ASMx86_16BIT.InstructIfCheck_BITS8);
+                    }
+                    else
+                    {
+
+                        buildcode.AddRange(ASMx86_16BIT.InstructIfCheck_BITS16);
+                    }
 
                     buildcode = ASMx86_16BIT.ReplaceValue(
                       buildcode,
@@ -1005,10 +1052,20 @@ namespace PhiBasicTranslator.TranslateUtilities
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
                 }
-                else
+                else if(v.varType == Inside.VariableTypeInt)
                 {
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
+                }
+                else if (v.varType == Inside.VariableTypeBln)
+                {
+                    // adds function call code
+                    subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogByte_BITS16, Defs.replaceCodeStart);
+                }
+                else if (v.varType == Inside.VariableTypeByt)
+                {
+                    // adds function call code
+                    subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogByte_BITS16, Defs.replaceCodeStart);
                 }
 
                 if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));

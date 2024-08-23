@@ -20,6 +20,8 @@ namespace PhiBasicTranslator.Structure
 
         public static readonly string replaceUnsetName = ";{UNSET}";
 
+        public static readonly string True = "1";
+
         public static readonly string classStartPHI = "phi.";
         public static readonly string classStartx86ASM = "asm.";
         public static readonly string classStartArmASM = "arm.";

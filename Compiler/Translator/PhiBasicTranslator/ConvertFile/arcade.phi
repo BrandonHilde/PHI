@@ -14,12 +14,17 @@
 
 phi.Drawing:OS16BITSectorTwo
 {
-
+	
+	bln downW: false;
+	bln downS: false;
+	bln downO: false;
+	bln downL: false;
+	
 	int ScreenW: 320;
 	int ScreenH: 200;
 	
 	int lefty: 50;
-	int Bot: 90;
+	int Bot: 60;
 	int botR: 0;
 	int botL: 0;
 	int direction: 0;
@@ -54,7 +59,7 @@ phi.Drawing:OS16BITSectorTwo
 
 		call OS16BITVideo.DrawRectangle:
 			0	0
-			320	200	
+			320	200
 			Colors.Black
 		;
 		
@@ -63,12 +68,10 @@ phi.Drawing:OS16BITSectorTwo
 			ballspeed is maxspeed;
 		;;
 
-
-		
 		#leftcontrol
 		
 		if lefty > 0
-			if key is 'w'
+			if downW
 				lefty--paddleSpeed;
 			;;
 		;;
@@ -76,10 +79,10 @@ phi.Drawing:OS16BITSectorTwo
 			lefty is 0;
 		;;
 
-			botL is lefty;
-			botL++Bot;
+	botL is lefty;
+	botL++Bot;
 
-		if key is 's'
+		if downS
 
 			if botL < ScreenH
 			
@@ -88,22 +91,20 @@ phi.Drawing:OS16BITSectorTwo
 		;;
 		
 		#right		
-		if righty > 0
-			if key is 'o'
+		if righty > paddleSpeed
+			if downO
 				righty--paddleSpeed;
 			;;
 		;;
 		else
-			righty is 0;
+			righty is paddleSpeed;
 		;;
 
-			botR is righty;
-			botR++Bot;
+	botR is righty;
+	botR++Bot;
 
-		if key is 'l'
-
+		if downL		
 			if botR < ScreenH
-			
 				righty++paddleSpeed;
 			;;
 		;;
@@ -201,6 +202,11 @@ phi.Drawing:OS16BITSectorTwo
 	[OS16BIT.KeyboardEvent]
 
 		call key is OS16BIT.GetKey;
+		
+		call downW is OS16BIT.IsKeyDown:'w';
+		call downS is OS16BIT.IsKeyDown:'s';
+		call downO is OS16BIT.IsKeyDown:'o';
+		call downL is OS16BIT.IsKeyDown:'l';
 
 	[end]
 	

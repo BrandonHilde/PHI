@@ -99,7 +99,7 @@ namespace PhiBasicTranslator.ParseEngine
                         }
                     }
 
-                    if (letter == Defs.VariableSet && !container)
+                    if (letter == Defs.VariableSet)// && !container)
                     {
                         previous.ContentInside[i] = Inside.Colon;
                     }

@@ -95,6 +95,47 @@ namespace PhiBasicTranslator.ParseEngine
             return false;
         }
 
+        public static string ExtractStandAloneVarName(string content, List<Inside> labels, string endMatch)
+        {
+            string nme = string.Empty;
+
+            bool start = false;
+
+            Inside last = Inside.None;
+
+            int nx = -1;
+
+            for (int i = 0; i < content.Length; i++)
+            {
+                Inside inside = labels[i];
+
+                bool match = last == inside;
+
+                if(!match)
+                {
+                    if(last == Inside.Instruct)
+                    {
+                        start = true;
+                        nx = GetNextIndexOfAny(content, endMatch, i);   
+                    }
+                }
+
+                if (i < nx)
+                {
+                    if (start) nme += content[i];
+                }
+                else
+                {
+                   if(start) break;
+                }
+
+
+                last = inside;
+            }
+
+            return nme;
+        }
+
         public static int GetPrevIndexOfAny(string Content, string Match, int Start)
         {
             for (int i = Start; i >= 0; i--)
