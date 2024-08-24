@@ -26,6 +26,18 @@ namespace PhiBasicTranslator.Structure
 
         }
 
+        public List<PhiInstruct> GetSubInstructs()
+        {
+            List<PhiInstruct> insts = Instructs;
+
+            foreach(PhiInstruct inst in Instructs)
+            {
+                insts.AddRange(inst.GetSubInstructs());
+            }
+
+            return insts;
+        }
+
         public PhiInstruct Copy()
         {
             List<PhiVariable> vars = new List<PhiVariable>();

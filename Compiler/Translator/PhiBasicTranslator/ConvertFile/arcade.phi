@@ -24,7 +24,8 @@ phi.Drawing:OS16BITSectorTwo
 	int ScreenH: 200;
 	
 	int lefty: 50;
-	int Bot: 60;
+	int Bot: 90;
+	int BotRight: 90;
 	int botR: 0;
 	int botL: 0;
 	int direction: 0;
@@ -37,6 +38,8 @@ phi.Drawing:OS16BITSectorTwo
 	
 	int ballx: 160;
 	int bally: 100;
+	
+	int ballyh: 110;
 	
 	int ballyDir: 0;
 	
@@ -101,7 +104,7 @@ phi.Drawing:OS16BITSectorTwo
 		;;
 
 	botR is righty;
-	botR++Bot;
+	botR++BotRight;
 
 		if downL		
 			if botR < ScreenH
@@ -111,17 +114,31 @@ phi.Drawing:OS16BITSectorTwo
 		
 		#ball stuff
 		
+		if ballyDir is 0
+			bally--ballspeedy;
+		;;
+		else
+			bally++ballspeedy;
+		;;
+		
+			ballyh is bally;
+			ballyh ++ 10;
+		
 		if directr is 0
 			ballx -- ballspeed;
 			
 			if ballx < 20
-				if	bally > lefty
+				if	ballyh > lefty
 					leftColx is lefty;
 					leftColx++Bot;
+					leftColx++10;
 					
 					if	bally < leftColx
 						directr is 1;
 						ballspeed++; #collision
+						if Bot > 20
+							Bot--5;
+						;;
 					;;
 				;;
 			;;
@@ -129,24 +146,22 @@ phi.Drawing:OS16BITSectorTwo
 		else	
 			ballx ++ ballspeed;
 			
+
+			
 			if ballx > 290
-				if	bally > righty
+				if	ballyh > righty
 					rightColx is righty;
-					rightColx++Bot;
+					rightColx++BotRight;
 					
 					if	bally < rightColx
 						directr is 0;
 						ballspeed++; #collision
+								if BotRight > 20
+							BotRight--5;
+						;;
 					;;
 				;;
 			;;
-		;;
-		
-		if ballyDir is 0
-			bally--ballspeedy;
-		;;
-		else
-			bally++ballspeedy;
 		;;
 		
 		if bally < 0
@@ -166,6 +181,10 @@ phi.Drawing:OS16BITSectorTwo
 			directr is 1;
 			rightPoints++; #points scored
 			ballspeed is 1;
+			Bot is 90;
+			BotRight is 90;
+			righty is 55;
+			lefty is 55;
 		;;
 		
 		if ballx > 310
@@ -173,6 +192,11 @@ phi.Drawing:OS16BITSectorTwo
 			directr is 0;
 			leftPoints++; #points scored
 			ballspeed is 1;
+			
+			Bot is 90;
+			BotRight is 90;
+			righty is 55;
+			lefty is 55;
 		;;
 
 		#draw rectangles
@@ -191,7 +215,7 @@ phi.Drawing:OS16BITSectorTwo
 		
 		call OS16BITVideo.DrawRectangle:
 			300	righty
-			10	Bot
+			10	BotRight
 			Colors.LightGreen
 		;
 

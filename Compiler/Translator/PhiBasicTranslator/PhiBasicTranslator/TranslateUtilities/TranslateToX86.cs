@@ -117,6 +117,11 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
                 else if(cls.Type == PhiType.ASM)
                 {
+                    ASM = new List<string>()
+                    {
+                        Defs.replaceIncludes
+                    };
+
                     List<string> values = new List<string>()
                     {
                         cls.Name + ":",
@@ -130,6 +135,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                         values[v] = ParseVariables.ReplaceASMVar(values[v], allVars);
 
                     ASM = ASMx86_16BIT.MergeValues(ASM, values, Defs.replaceIncludes);
+                    ASM = ASMx86_16BIT.ReplaceValue(ASM, Defs.replaceIncludes, string.Empty);
                 }
 
                 cls.translatedASM = ASM;
@@ -140,6 +146,34 @@ namespace PhiBasicTranslator.TranslateUtilities
             VarCount = 0;
             LoopCount = 0; 
             IfCount = 0;
+
+            List<PhiClass> asmcls = codebase.ClassList.Where(x=> x.Type == PhiType.ASM).ToList();
+
+            if (asmcls.Count > 0)
+            {
+                for (int c = 0; c < codebase.ClassList.Count; c++)
+                {
+                    if (codebase.ClassList[c].Type != PhiType.ASM)
+                    {
+                        List<PhiInstruct> subsinst = codebase.ClassList[c].GetAllInstructs();
+
+                        foreach( PhiClass asm in asmcls)
+                        {
+                            PhiInstruct? isCalled = subsinst.Where(
+                                x=>x.Value.Contains(asm.Name)).FirstOrDefault();
+
+                            if(isCalled != null)
+                            {
+                                codebase.ClassList[c].translatedASM = ASMx86_16BIT.MergeValues(
+                                    codebase.ClassList[c].translatedASM, 
+                                    asm.translatedASM, 
+                                    Defs.replaceIncludes
+                                );
+                            }
+                        }
+                    }
+                }
+            }
 
             return codebase;
         }
