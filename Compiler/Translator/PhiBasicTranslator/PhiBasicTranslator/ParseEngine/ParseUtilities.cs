@@ -651,6 +651,34 @@ namespace PhiBasicTranslator.ParseEngine
         }
         */
 
+        public static List<int> ProfileEnclosingDepth(string Content, string EncloseType, string EncloseTypeEnd)
+        {
+            int[] depth = new int[Content.Length];
+
+            ContentProfile prf = ProfilePrepare(Content);
+
+            int dp = 0;
+
+            for (int i = 0; i < Content.Length; i++)
+            {
+                if (prf.ContentInside[i] == Inside.None)
+                {
+                    if (Content[i].ToString() == EncloseType)
+                    {
+                        dp++;
+                    }
+                    else if (Content[i].ToString() == EncloseTypeEnd)
+                    {
+                        dp--;
+                    }
+                }
+
+                depth[i] = dp;
+            }
+
+            return depth.ToList();
+        }
+
         public static PhiMath.Opperation MatchesOpperation(string condition)
         {
             PhiMath.Opperation typ = PhiMath.Opperation.None;
