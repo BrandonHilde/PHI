@@ -651,7 +651,7 @@ namespace PhiBasicTranslator.ParseEngine
         }
         */
 
-        public static List<int> ProfileEnclosingDepth(string Content, string EncloseType, string EncloseTypeEnd)
+        public static List<int> GetEnclosingDepth(string Content, string EncloseType, string EncloseTypeEnd)
         {
             int[] depth = new int[Content.Length];
 
@@ -689,6 +689,9 @@ namespace PhiBasicTranslator.ParseEngine
             {
                 if (val == Defs.MathInc) typ = PhiMath.Opperation.PlusEquals;
                 if (val == Defs.MathDec) typ = PhiMath.Opperation.MinusEquals;
+                if (val == Defs.MathDivEq) typ = PhiMath.Opperation.DivideEquals;
+                if (val == Defs.MathModEq) typ = PhiMath.Opperation.ModEquals;
+                if (val == Defs.MathMultEq) typ = PhiMath.Opperation.MultiplyEquals;
             }
 
             return typ;

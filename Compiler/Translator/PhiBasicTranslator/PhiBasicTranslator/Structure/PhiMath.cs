@@ -14,7 +14,9 @@ namespace PhiBasicTranslator.Structure
             MultiplyEquals,
             Multiply,
             DivideEquals,
-            Divide
+            Divide,
+            ModEquals,
+            Mod
         }
         public string RawValue { get; set; } = string.Empty;
 

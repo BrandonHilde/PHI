@@ -671,10 +671,51 @@ namespace PhiBasicTranslator.TranslateUtilities
                            Defs.replaceValueStart,
                            right);
                     }
-
-                    if(op == PhiMath.Opperation.MinusEquals)
+                    else if(op == PhiMath.Opperation.MinusEquals)
                     {
                         list.AddRange(ASMx86_16BIT.BIT32x86_SubVariable);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                           list,
+                           Defs.replaceValueStart,
+                           right);
+                    }
+                    else if (op == PhiMath.Opperation.DivideEquals)
+                    {
+                        list.AddRange(ASMx86_16BIT.BIT32x86_DivVariable);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                           list,
+                           Defs.replaceValueStart,
+                           right);
+                    }
+                    else if (op == PhiMath.Opperation.MultiplyEquals)
+                    {
+                        list.AddRange(ASMx86_16BIT.BIT32x86_MulVariable);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                           list,
+                           Defs.replaceValueStart,
+                           right);
+                    }
+                    else if (op == PhiMath.Opperation.ModEquals)
+                    {
+                        list.AddRange(ASMx86_16BIT.BIT32x86_ModVariable);
 
                         list = ASMx86_16BIT.ReplaceValue(
                             list,

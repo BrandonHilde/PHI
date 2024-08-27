@@ -771,6 +771,37 @@ namespace PhiBasicTranslator.TranslateUtilities
             ""
         };
 
+        public static List<string> BIT32x86_DivVariable = new List<string>()
+        {
+            "",
+            "   mov eax, [" + replaceVarName + "]",
+            "   mov ebx," + Defs.replaceValueStart,
+            "   div ebx",
+            "   mov [" + replaceVarName + "], eax",
+            ""
+        };
+
+        public static List<string> BIT32x86_MulVariable = new List<string>()
+        {
+            "",
+            "   mov eax, [" + replaceVarName + "]",
+            "   mov ecx," + Defs.replaceValueStart,
+            "   mul ecx",
+            "   mov [" + replaceVarName + "], eax",
+            ""
+        };
+
+        public static List<string> BIT32x86_ModVariable = new List<string>()
+        {
+            "",
+            "   mov eax, [" + replaceVarName + "]",
+            "   mov ebx," + Defs.replaceValueStart,
+            "   div ebx",
+            "   mov [" + replaceVarName + "], edx",
+            ""
+        };
+
+
         public static List<string> BIT32x86_SetVariable = new List<string>()
         {
             "",
