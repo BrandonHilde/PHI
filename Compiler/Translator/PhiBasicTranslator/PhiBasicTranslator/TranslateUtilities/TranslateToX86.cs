@@ -607,6 +607,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             string left = "";
             string right = "";
 
+            bool hasOpperation = false;
+
             //need to add constants to predefined
 
             PhiVariable? varbleL = predefined.Where(x => x.Name == math.Math.ValueLeft).FirstOrDefault();
@@ -615,7 +617,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if (varbleL != null)
             {
-                left = ASMx86_16BIT.UpdateName(varbleL.Name);
+                left = "[" + ASMx86_16BIT.UpdateName(varbleL.Name) + "]";
             }
             else
             {
@@ -632,15 +634,94 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 if (right == string.Empty)
                 {
-                    right = "1"; // for i++; and i--;
+                    if (math.Math.MathOp == Defs.MathInc
+                    || math.Math.MathOp == Defs.MathDec)
+                    {
+                        right = "1"; // for i++; and i--;
+                    }
+                }
+                if (ParseMisc.HasMathOpperation(right))
+                {
+                    hasOpperation = true;
+
+                    List<int> depth = ParseUtilities.GetEnclosingDepth(
+                        right,
+                        Defs.paraOpen,
+                        Defs.paraClose
+                    );
+
+                    List<PhiMath> maths = new List<PhiMath>();
+
+                    int cmp = -1;
+
+                    string seg = "";
+
+                    int ordr = 0;
+
+                    for (int i = 0; i < right.Length; i++)
+                    {
+                        if (cmp != depth[i])
+                        {
+                            seg = seg.Replace(Defs.paraOpen, string.Empty);
+                            seg = seg.Replace(Defs.paraClose, string.Empty);
+
+                            if (seg != string.Empty)
+                            {
+                                MathPair mathPair = PhiMath.Parse(seg, cmp);
+
+                                if (mathPair.ValueLeft == string.Empty)
+                                {
+                                    mathPair.ValueLeft = Defs.replaceLinkedValue;
+                                }
+
+                                if (mathPair.ValueRight == string.Empty)
+                                {
+                                    mathPair.ValueRight = Defs.replaceLinkedValue;
+                                }
+
+                                PhiMath mth = new PhiMath
+                                {
+                                    Math = mathPair,
+                                    RawValue = seg,
+                                    Order = ordr++
+                                };
+
+                                maths.Add(mth);
+                                seg = string.Empty;
+                            }
+
+                            cmp = depth[i];
+                        }
+
+                        //if (right[i].ToString() != Defs.paraClose
+                         //  && right[i].ToString() != Defs.paraOpen)
+                        {
+                            seg += right[i];
+                        }
+                    }
+
+                    maths = maths.OrderBy(
+                        x=>           //  pmdas  // order of opperations take up one digit each (maybe more later)     
+                        (x.Math.Depth * 1000000) // * 1000000 to prevent order overriding depth
+                        - x.Order // + instead of - because it will be reversed
+                        // order needs to eventually be weighted by order of opperations
+                        ).Reverse().ToList();
+
+                    List<string> lines = new List<string>();
+
+                    foreach (PhiMath mth in maths)
+                    {
+                        Console.WriteLine(mth.RawValue);
+                        lines.AddRange(BuildMathInstruct(mth, predefined));
+                    }
+
+                    Console.WriteLine("-------------------");
+                    list.AddRange(lines);
                 }
                 else if (!ParseMisc.IsNumber(right))
                 {
-                    right = ASMx86_16BIT.UpdateName(right);
-                }
-                else
-                {
-                    right = math.Math.ValueRight;
+                    if(!right.Contains(Defs.curlyOpen))
+                        right = ASMx86_16BIT.UpdateName(right);
                 }
             }
 
@@ -651,13 +732,165 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 PhiMath.Opperation op = ParseUtilities.MatchesOpperation(math.Math.MathOp);
 
-                if(op == PhiMath.Opperation.None)
+                if(op != PhiMath.Opperation.None)
                 {
+                    if(op == PhiMath.Opperation.Plus)
+                    {
+                        if (left == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
 
-                }
-                else
-                {
-                    if(op == PhiMath.Opperation.PlusEquals)
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerLeftMath32 // pop into eax
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                              list,
+                              Defs.replaceValueStart,
+                              left // mov left into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerLeftMath32 // mov left into ebx
+                            );
+                        }
+
+                        if (right == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerRightMath32 // pop into ebx
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               right // mov right into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerRightMath32 // mov right into ebx
+                            );
+                        }
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_AddMath);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerRightMath32 // push into eax
+                        );
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerLeftMath32 // push into eax
+                        );
+                    }
+                    else if(op == PhiMath.Opperation.Minus)
+                    {
+                        if (left == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerLeftMath32 // pop into eax
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                              list,
+                              Defs.replaceValueStart,
+                              left// mov left into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerLeftMath32 // mov left into ebx
+                            );
+                        }
+
+                        if (right == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerRightMath32 // pop into ebx
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               right // mov right into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerRightMath32 // mov right into ebx
+                            );
+                        }
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_SubMath);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerRightMath32 // push into eax
+                        );
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerLeftMath32 // push into eax
+                        );
+
+                    }
+                    else if (op == PhiMath.Opperation.Multiply)
+                    {
+
+                    }
+                    else if (op == PhiMath.Opperation.Divide)
+                    {
+
+                    }
+                    else if (op == PhiMath.Opperation.Mod)
+                    {
+
+                    }
+
+                    #region Double Sign
+
+                    if (op == PhiMath.Opperation.PlusEquals)
                     {
                         list.AddRange(ASMx86_16BIT.BIT32x86_AddVariable);
 
@@ -727,23 +960,51 @@ namespace PhiBasicTranslator.TranslateUtilities
                            Defs.replaceValueStart,
                            right);
                     }
+
+                    #endregion
                 }
             }
             else
             {
                 if (typ == ConditionalPairs.ConditionType.JumpIfEqual)
                 {
-                    list.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+                    if (hasOpperation)
+                    {
+                        list.AddRange(ASMx86_16BIT.BIT32x86_POP);
 
-                    list = ASMx86_16BIT.ReplaceValue(
-                        list,
-                        ASMx86_16BIT.replaceVarName,
-                        left);
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list, 
+                            Defs.replaceValueStart, 
+                            ASMx86_16BIT.registerLeftMath32
+                        );
 
-                    list = ASMx86_16BIT.ReplaceValue(
-                       list,
-                       Defs.replaceValueStart,
-                       right);
+                        list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                          list,
+                          Defs.replaceValueStart,
+                          ASMx86_16BIT.registerLeftMath32);
+                    }
+                    else
+                    {
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                            list,
+                            ASMx86_16BIT.replaceVarName,
+                            left);
+
+                        list = ASMx86_16BIT.ReplaceValue(
+                           list,
+                           Defs.replaceValueStart,
+                           right);
+                    }
                 }
             }
 

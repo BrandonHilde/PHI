@@ -16,6 +16,17 @@ namespace PhiBasicTranslator.ParseEngine
 
             return double.TryParse(str, out d);
         }
+
+        public static bool HasMathOpperation(string content)
+        {
+            if(ContainsAny(content, Defs.MathOpsList) 
+               || ContainsAny(content, Defs.MathSmallOpsList))
+            {
+                return true;
+            }
+
+            return false;
+        }
         public static bool StartsWithAppendedValue(string content, string value, List<string> appendedValues)
         {
             bool result = false;

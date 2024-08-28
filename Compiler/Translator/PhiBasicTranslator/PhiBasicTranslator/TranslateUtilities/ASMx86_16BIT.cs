@@ -24,6 +24,9 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varStrTab = "9";
         public static readonly string varStrEnd = "0";
 
+        public static readonly string registerLeftMath32 = "eax";
+        public static readonly string registerRightMath32 = "ebx";
+
         public static readonly string incJumpToSectorTwo = "OS16BIT_JumpToSectorTwo";
         public static readonly string incPrepSectorTwo = "OS16BIT_PrepToSectorTwo";
 
@@ -752,52 +755,109 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         #endregion
 
+
+        #region Stack
+        
+        public static List<string> BIT32x86_PUSH = new List<string>()
+        {
+            "",
+            "   push " + Defs.replaceValueStart,
+            ""
+        };
+
+        public static List<string> BIT32x86_POP = new List<string>()
+        {
+            "",
+            "   pop " + Defs.replaceValueStart,
+            ""
+        };
+
+        public static List<string> ASMx86_MOV = new List<string>()
+        {
+            "",
+            "   mov " + replaceVarName + ", " + Defs.replaceValueStart,
+            ""
+        };
+
+
+        #endregion
+
         #region MATH
+
+        public static List<string> BIT32x86_AddMath = new List<string>()
+        {
+            "",
+            "   add eax," + Defs.replaceValueStart,
+            ""
+        };
+
+
+        public static List<string> BIT32x86_SubMath = new List<string>()
+        {
+            "",
+            "   sub eax," + Defs.replaceValueStart,
+            ""
+        };
+
+        public static List<string> BIT32x86_MulMath = new List<string>()
+        {
+            "",
+            "   mul ecx," + Defs.replaceValueStart,
+            ""
+        };
+
+        public static List<string> BIT32x86_DivMath = new List<string>()
+        {
+            "",
+            "   div ebx," + Defs.replaceValueStart,
+            ""
+        };
+
         public static List<string> BIT32x86_AddVariable = new List<string>()
         {
             "",
-            "   mov eax, [" + replaceVarName + "]",
+            "   mov eax, " + replaceVarName,
             "   add eax," + Defs.replaceValueStart,
-            "   mov [" + replaceVarName + "], eax",
+            "   mov " + replaceVarName + ", eax",
             ""
         };
 
         public static List<string> BIT32x86_SubVariable = new List<string>()
         {
             "",
-            "   mov eax, [" + replaceVarName + "]",
+            "   mov eax, " + replaceVarName,
             "   sub eax," + Defs.replaceValueStart,
-            "   mov [" + replaceVarName + "], eax",
+            "   mov " + replaceVarName + ", eax",
             ""
         };
 
         public static List<string> BIT32x86_DivVariable = new List<string>()
         {
             "",
-            "   mov eax, [" + replaceVarName + "]",
+            "   mov eax, " + replaceVarName,
             "   mov ebx," + Defs.replaceValueStart,
             "   div ebx",
-            "   mov [" + replaceVarName + "], eax",
+            "   mov " + replaceVarName + ", eax",
             ""
         };
 
         public static List<string> BIT32x86_MulVariable = new List<string>()
         {
             "",
-            "   mov eax, [" + replaceVarName + "]",
+            "   mov eax, " + replaceVarName,
             "   mov ecx," + Defs.replaceValueStart,
             "   mul ecx",
-            "   mov [" + replaceVarName + "], eax",
+            "   mov " + replaceVarName + ", eax",
             ""
         };
 
         public static List<string> BIT32x86_ModVariable = new List<string>()
         {
             "",
-            "   mov eax, [" + replaceVarName + "]",
+            "   mov eax, " + replaceVarName,
             "   mov ebx," + Defs.replaceValueStart,
             "   div ebx",
-            "   mov [" + replaceVarName + "], edx",
+            "   mov " + replaceVarName + ", edx",
             ""
         };
 
@@ -806,7 +866,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             "",
             "   mov eax, " + Defs.replaceValueStart,
-            "   mov [" + replaceVarName + "], eax",
+            "   mov " + replaceVarName + ", eax",
             ""
         };
 
@@ -814,7 +874,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             "",
             "   mov ax, " + Defs.replaceValueStart,
-            "   mov [" + replaceVarName + "], ax",
+            "   mov " + replaceVarName + ", ax",
             ""
         };
 
@@ -822,7 +882,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             "",
             "   mov al, " + Defs.replaceValueStart,
-            "   mov [" + replaceVarName + "], al",
+            "   mov " + replaceVarName + ", al",
             ""
         };
         #endregion

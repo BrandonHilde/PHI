@@ -19,7 +19,7 @@ namespace PhiBasicTranslator.Structure
             Mod
         }
         public string RawValue { get; set; } = string.Empty;
-
+        public long Order { get; set; } = 0;
         public MathPair Math { get; set; }
 
         public PhiMath Copy()
@@ -27,11 +27,12 @@ namespace PhiBasicTranslator.Structure
             return new PhiMath
             {
                 Math = Math.Copy(),
-                RawValue = RawValue
+                RawValue = RawValue,
+                Order = Order
             };
         }
 
-        public static MathPair Parse(string value)
+        public static MathPair Parse(string value, long depth = -1)
         {
             MathPair mth = new MathPair();
 
@@ -60,7 +61,7 @@ namespace PhiBasicTranslator.Structure
                      x => val2 = val2.Replace(x.ToString(), "")
                      );
 
-                    mth = new MathPair(val1, val2, math);   
+                    mth = new MathPair(val1, val2, math, depth);   
 
                     break;
                 }
@@ -75,6 +76,7 @@ namespace PhiBasicTranslator.Structure
         public string ValueLeft { get; set; } = string.Empty;
         public string ValueRight { get; set; } = string.Empty;
         public string MathOp { get; set; } = string.Empty;
+        public long Depth { get; set; } = -1;
 
         public MathPair()
         {
@@ -83,13 +85,21 @@ namespace PhiBasicTranslator.Structure
 
         public MathPair Copy()
         {
-            return new MathPair(ValueLeft, ValueRight, MathOp);
+            return new MathPair(ValueLeft, ValueRight, MathOp, Depth);
         }
         public MathPair(string valueLeft, string valueRight, string mathOp)
         {
             ValueRight = valueRight;
             ValueLeft = valueLeft;
             MathOp = mathOp;
+        }
+
+        public MathPair(string valueLeft, string valueRight, string mathOp, long depth)
+        {
+            ValueRight = valueRight;
+            ValueLeft = valueLeft;
+            MathOp = mathOp;
+            Depth = depth;
         }
     }
 }

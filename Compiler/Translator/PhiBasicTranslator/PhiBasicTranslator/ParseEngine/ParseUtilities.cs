@@ -684,6 +684,7 @@ namespace PhiBasicTranslator.ParseEngine
             PhiMath.Opperation typ = PhiMath.Opperation.None;
 
             string? val = Defs.MathOpsList.Where(x => x == condition).FirstOrDefault();
+            string? valSmall = Defs.MathSmallOpsList.Where(x => x == condition).FirstOrDefault();
 
             if (val != null)
             {
@@ -692,6 +693,15 @@ namespace PhiBasicTranslator.ParseEngine
                 if (val == Defs.MathDivEq) typ = PhiMath.Opperation.DivideEquals;
                 if (val == Defs.MathModEq) typ = PhiMath.Opperation.ModEquals;
                 if (val == Defs.MathMultEq) typ = PhiMath.Opperation.MultiplyEquals;
+            }
+
+            if(valSmall != null)
+            {
+                if (valSmall == Defs.MathPlus) typ = PhiMath.Opperation.Plus;
+                if (valSmall == Defs.MathMinus) typ = PhiMath.Opperation.Minus;
+                if (valSmall == Defs.MathMult) typ = PhiMath.Opperation.Multiply;
+                if (valSmall == Defs.MathDiv) typ = PhiMath.Opperation.Divide;
+                if (valSmall == Defs.MathMod) typ = PhiMath.Opperation.Mod;
             }
 
             return typ;
