@@ -513,7 +513,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             {
                                 if(!ParseMisc.IsNumber(mname))
                                 {
-                                    PhiVariable? vbr = cls.Variables.Where(x => x.Name == mname).FirstOrDefault();
+                                    PhiVariable? vbr = predefined.Where(x => x.Name == mname).FirstOrDefault();
 
                                     mname = ASMx86_16BIT.UpdateName(mname);
 
@@ -524,6 +524,8 @@ namespace PhiBasicTranslator.TranslateUtilities
                                 }
                             }
 
+                            string vlistName = "[" + ASMx86_16BIT.VarList_DrawRectangle[i] + "]";
+
                             setcode = ASMx86_16BIT.ReplaceValue(
                                 setcode,
                                 Defs.replaceValueStart,
@@ -533,7 +535,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             setcode = ASMx86_16BIT.ReplaceValue(
                                 setcode,
                                 ASMx86_16BIT.replaceVarName,
-                                ASMx86_16BIT.VarList_DrawRectangle[i]
+                                vlistName
                              );
 
                             pair.SubCode.AddRange(setcode);

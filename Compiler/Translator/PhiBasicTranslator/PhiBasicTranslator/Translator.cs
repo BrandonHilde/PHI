@@ -103,7 +103,12 @@ namespace PhiBasicTranslator
                             string cut = content.Substring(ic, nx - ic + 1);
                             Console.WriteLine(cut);
 
-                            i += cut.Length;
+                            i = nx + 1; //set to instead of add
+
+                            if (i < content.Length)
+                            {
+                                string next = content.Substring(i);
+                            }
 
                             List<Inside> contentL = new List<Inside>();
 
@@ -585,7 +590,7 @@ namespace PhiBasicTranslator
 
                         cr = instr.Value.Substring(bgn + 1, end - bgn - 1).Trim();
 
-                        i = end;
+                        i = end - 1;
 
                         MathPair mpar = PhiMath.Parse(cr);
 
@@ -668,7 +673,7 @@ namespace PhiBasicTranslator
                             cRaw = cr;
                         }
 
-                        i = end;
+                        i = end - 1;
                     }
 
                     if (inside == Inside.VariableValue)
