@@ -24,8 +24,10 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varStrTab = "9";
         public static readonly string varStrEnd = "0";
 
-        public static readonly string registerLeftMath32 = "eax";
-        public static readonly string registerRightMath32 = "ebx";
+        public static readonly string registerEaxMath32 = "eax";
+        public static readonly string registerEbxMath32 = "ebx";
+        public static readonly string registerEcxMath32 = "ecx";
+        public static readonly string registerEdxMath32 = "edx";
 
         public static readonly string incJumpToSectorTwo = "OS16BIT_JumpToSectorTwo";
         public static readonly string incPrepSectorTwo = "OS16BIT_PrepToSectorTwo";
@@ -802,14 +804,14 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> BIT32x86_MulMath = new List<string>()
         {
             "",
-            "   mul ecx," + Defs.replaceValueStart,
+            "   mul ecx",
             ""
         };
 
         public static List<string> BIT32x86_DivMath = new List<string>()
         {
             "",
-            "   div ebx," + Defs.replaceValueStart,
+            "   div ebx",
             ""
         };
 
@@ -834,6 +836,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> BIT32x86_DivVariable = new List<string>()
         {
             "",
+            "   xor edx, edx",
             "   mov eax, " + replaceVarName,
             "   mov ebx," + Defs.replaceValueStart,
             "   div ebx",
@@ -854,6 +857,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> BIT32x86_ModVariable = new List<string>()
         {
             "",
+            "   xor edx, edx",
             "   mov eax, " + replaceVarName,
             "   mov ebx," + Defs.replaceValueStart,
             "   div ebx",

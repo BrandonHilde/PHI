@@ -1,10 +1,12 @@
+;ASMx86 CODE
+
 ORG 0x7E00
 
 ; interupt timer constants
 PIT_COMMAND    equ 0x43
 PIT_CHANNEL_0  equ 0x40
 PIT_FREQUENCY  equ 1193180  ; Base frequency
-DESIRED_FREQ   equ 60      ; Desired interrupt frequency 
+DESIRED_FREQ   equ 60      ; Desired interrupt frequency
 DIVISOR        equ PIT_FREQUENCY / DESIRED_FREQ
 ; drawing constants
 DRAW_START equ 0xA0000
@@ -26,7 +28,7 @@ VALUE_Colors.LightGreen equ 0xA  ;Light Green
 VALUE_Colors.LightCyan   equ 0xB  ;Light Cyan
 VALUE_Colors.LightRed   equ 0xC  ;Light Red
 VALUE_Colors.LightMagenta   equ 0xD  ;Light Magenta
-VALUE_Colors.Yellow equ 0xE  ;Yellow 
+VALUE_Colors.Yellow equ 0xE  ;Yellow
 VALUE_Colors.White equ 0xF  ;White
 
 ;{CONSTANTS}
@@ -46,14 +48,14 @@ get_input:
     int 0x16
     cmp al, 0x0D
     je .done
-    stosb   
-    inc cx  
+    stosb
+    inc cx
     mov ah, 0x0E
     int 0x10
     jmp .loop
 
 .done:
-    mov byte [di], 0 
+    mov byte [di], 0
     ret
 OS16BIT_WaitForKeyPress:
    mov ah, 0x00
@@ -80,7 +82,7 @@ keyboard_handler:
    mov byte [key_down_table + bx], 0x00
 
    jmp .done
-   
+
    cmp al, 0               ; Check if it's a valid key
    je .done
 
@@ -224,7 +226,7 @@ IF_3_CONTENT:
 ;{IF CONTENT}
    ret
 IF_4:
-   mov al, [VALUE_downS]
+   mov al, [VALUE_downO]
    cmp al, 1
    je IF_4_CONTENT
 
@@ -232,18 +234,6 @@ IF_4:
 
    ret
 IF_4_CONTENT:
-   call IF_3
-;{IF CONTENT}
-   ret
-IF_5:
-   mov al, [VALUE_downO]
-   cmp al, 1
-   je IF_5_CONTENT
-
-;{ELSE CONTENT}
-
-   ret
-IF_5_CONTENT:
 
    mov eax, [VALUE_righty]
    sub eax,[VALUE_paddleSpeed]
@@ -251,29 +241,29 @@ IF_5_CONTENT:
 
 ;{IF CONTENT}
    ret
-IF_6:
+IF_5:
    mov eax, [VALUE_righty]
    cmp eax, [VALUE_paddleSpeed]
-   jg IF_6_CONTENT
+   jg IF_5_CONTENT
 
    mov eax, [VALUE_paddleSpeed]
    mov [VALUE_righty], eax
 ;{ELSE CONTENT}
 
    ret
-IF_6_CONTENT:
-   call IF_5
+IF_5_CONTENT:
+   call IF_4
 ;{IF CONTENT}
    ret
-IF_7:
+IF_6:
    mov eax, [VALUE_botR]
    cmp eax, [VALUE_ScreenH]
-   jl IF_7_CONTENT
+   jl IF_6_CONTENT
 
 ;{ELSE CONTENT}
 
    ret
-IF_7_CONTENT:
+IF_6_CONTENT:
 
    mov eax, [VALUE_righty]
    add eax,[VALUE_paddleSpeed]
@@ -281,27 +271,61 @@ IF_7_CONTENT:
 
 ;{IF CONTENT}
    ret
+IF_7:
+   mov eax, [VALUE_ballyDir]
+   cmp eax, 0
+   je IF_7_CONTENT
+
+   mov eax, [VALUE_bally]
+   add eax,[VALUE_ballspeedy]
+   mov [VALUE_bally], eax
+;{ELSE CONTENT}
+
+   ret
+IF_7_CONTENT:
+
+   mov eax, [VALUE_bally]
+   sub eax,[VALUE_ballspeedy]
+   mov [VALUE_bally], eax
+
+;{IF CONTENT}
+   ret
 IF_8:
-   mov al, [VALUE_downL]
-   cmp al, 1
+   mov eax, [VALUE_directr]
+   cmp eax, 0
    je IF_8_CONTENT
 
 ;{ELSE CONTENT}
 
    ret
 IF_8_CONTENT:
-   call IF_7
-;{IF CONTENT}
+   ;{IF CONTENT}
    ret
 IF_9:
-   mov eax, [VALUE_bally]
-   cmp eax, [VALUE_leftColx]
-   jl IF_9_CONTENT
+   mov eax, [VALUE_Bot]
+   cmp eax, 20
+   jg IF_9_CONTENT
 
 ;{ELSE CONTENT}
 
    ret
 IF_9_CONTENT:
+
+   mov eax, [VALUE_Bot]
+   sub eax,5
+   mov [VALUE_Bot], eax
+
+;{IF CONTENT}
+   ret
+IF_10:
+   mov eax, [VALUE_bally]
+   cmp eax, [VALUE_leftColx]
+   jl IF_10_CONTENT
+
+;{ELSE CONTENT}
+
+   ret
+IF_10_CONTENT:
 
    mov eax, 1
    mov [VALUE_directr], eax
@@ -311,17 +335,18 @@ IF_9_CONTENT:
    add eax,1
    mov [VALUE_ballspeed], eax
 
+   call IF_9
 ;{IF CONTENT}
    ret
-IF_10:
-   mov eax, [VALUE_bally]
+IF_11:
+   mov eax, [VALUE_ballyh]
    cmp eax, [VALUE_lefty]
-   jg IF_10_CONTENT
+   jg IF_11_CONTENT
 
 ;{ELSE CONTENT}
 
    ret
-IF_10_CONTENT:
+IF_11_CONTENT:
 
    mov eax, [VALUE_lefty]
    mov [VALUE_leftColx], eax
@@ -331,30 +356,39 @@ IF_10_CONTENT:
    add eax,[VALUE_Bot]
    mov [VALUE_leftColx], eax
 
-   call IF_9
-;{IF CONTENT}
-   ret
-IF_11:
-   mov eax, [VALUE_ballx]
-   cmp eax, 20
-   jl IF_11_CONTENT
 
-;{ELSE CONTENT}
+   mov eax, [VALUE_leftColx]
+   add eax,10
+   mov [VALUE_leftColx], eax
 
-   ret
-IF_11_CONTENT:
    call IF_10
 ;{IF CONTENT}
    ret
 IF_12:
-   mov eax, [VALUE_bally]
-   cmp eax, [VALUE_rightColx]
-   jl IF_12_CONTENT
+   mov eax, [VALUE_BotRight]
+   cmp eax, 20
+   jg IF_12_CONTENT
 
 ;{ELSE CONTENT}
 
    ret
 IF_12_CONTENT:
+
+   mov eax, [VALUE_BotRight]
+   sub eax,5
+   mov [VALUE_BotRight], eax
+
+;{IF CONTENT}
+   ret
+IF_13:
+   mov eax, [VALUE_bally]
+   cmp eax, [VALUE_rightColx]
+   jl IF_13_CONTENT
+
+;{ELSE CONTENT}
+
+   ret
+IF_13_CONTENT:
 
    mov eax, 0
    mov [VALUE_directr], eax
@@ -364,79 +398,56 @@ IF_12_CONTENT:
    add eax,1
    mov [VALUE_ballspeed], eax
 
-;{IF CONTENT}
-   ret
-IF_13:
-   mov eax, [VALUE_bally]
-   cmp eax, [VALUE_righty]
-   jg IF_13_CONTENT
-
-;{ELSE CONTENT}
-
-   ret
-IF_13_CONTENT:
-
-   mov eax, [VALUE_righty]
-   mov [VALUE_rightColx], eax
-
-
-   mov eax, [VALUE_rightColx]
-   add eax,[VALUE_Bot]
-   mov [VALUE_rightColx], eax
-
    call IF_12
 ;{IF CONTENT}
    ret
 IF_14:
-   mov eax, [VALUE_ballx]
-   cmp eax, 290
+   mov eax, [VALUE_ballyh]
+   cmp eax, [VALUE_righty]
    jg IF_14_CONTENT
 
 ;{ELSE CONTENT}
 
    ret
 IF_14_CONTENT:
+
+   mov eax, [VALUE_righty]
+   mov [VALUE_rightColx], eax
+
+
+   mov eax, [VALUE_rightColx]
+   add eax,[VALUE_BotRight]
+   mov [VALUE_rightColx], eax
+
    call IF_13
 ;{IF CONTENT}
    ret
 IF_15:
-   mov eax, [VALUE_directr]
-   cmp eax, 0
-   je IF_15_CONTENT
-
    mov eax, [VALUE_ballx]
-   add eax,[VALUE_ballspeed]
-   mov [VALUE_ballx], eax
-   call IF_14
+   cmp eax, 290
+   jg IF_15_CONTENT
+
 ;{ELSE CONTENT}
 
    ret
 IF_15_CONTENT:
-
-   mov eax, [VALUE_ballx]
-   sub eax,[VALUE_ballspeed]
-   mov [VALUE_ballx], eax
-
-   call IF_11
+   call IF_14
 ;{IF CONTENT}
    ret
 IF_16:
-   mov eax, [VALUE_ballyDir]
-   cmp eax, 0
-   je IF_16_CONTENT
+   mov eax, [VALUE_ballx]
+   cmp eax, 20
+   jl IF_16_CONTENT
 
-   mov eax, [VALUE_bally]
-   add eax,[VALUE_ballspeedy]
-   mov [VALUE_bally], eax
+   mov eax, [VALUE_ballx]
+   add eax,[VALUE_ballspeed]
+   mov [VALUE_ballx], eax
+   call IF_15
 ;{ELSE CONTENT}
 
    ret
 IF_16_CONTENT:
-
-   mov eax, [VALUE_bally]
-   sub eax,[VALUE_ballspeedy]
-   mov [VALUE_bally], eax
-
+   call IF_11
 ;{IF CONTENT}
    ret
 IF_17:
@@ -495,6 +506,22 @@ IF_19_CONTENT:
    mov eax, 1
    mov [VALUE_ballspeed], eax
 
+
+   mov eax, 90
+   mov [VALUE_Bot], eax
+
+
+   mov eax, 90
+   mov [VALUE_BotRight], eax
+
+
+   mov eax, 55
+   mov [VALUE_righty], eax
+
+
+   mov eax, 55
+   mov [VALUE_lefty], eax
+
 ;{IF CONTENT}
    ret
 IF_20:
@@ -522,6 +549,22 @@ IF_20_CONTENT:
 
    mov eax, 1
    mov [VALUE_ballspeed], eax
+
+
+   mov eax, 90
+   mov [VALUE_Bot], eax
+
+
+   mov eax, 90
+   mov [VALUE_BotRight], eax
+
+
+   mov eax, 55
+   mov [VALUE_righty], eax
+
+
+   mov eax, 55
+   mov [VALUE_lefty], eax
 
 ;{IF CONTENT}
    ret
@@ -558,19 +601,29 @@ OS16BIT_TimerEvent:
    add eax,[VALUE_Bot]
    mov [VALUE_botL], eax
 
-   call IF_4
-   call IF_6
+   call IF_3
+   call IF_5
 
    mov eax, [VALUE_righty]
    mov [VALUE_botR], eax
 
 
    mov eax, [VALUE_botR]
-   add eax,[VALUE_Bot]
+   add eax,[VALUE_BotRight]
    mov [VALUE_botR], eax
 
+   call IF_6
+   call IF_7
+
+   mov eax, [VALUE_bally]
+   mov [VALUE_ballyh], eax
+
+
+   mov eax, [VALUE_ballyh]
+   add eax,10
+   mov [VALUE_ballyh], eax
+
    call IF_8
-   call IF_15
    call IF_16
    call IF_17
    call IF_18
@@ -631,7 +684,7 @@ OS16BIT_TimerEvent:
    mov [DrawRectW], eax
 
 
-   mov eax, [VALUE_Bot]
+   mov eax, [VALUE_BotRight]
    mov [DrawRectH], eax
 
 
@@ -701,7 +754,8 @@ VALUE_downL db 0
 VALUE_ScreenW dd 320
 VALUE_ScreenH dd 200
 VALUE_lefty dd 50
-VALUE_Bot dd 60
+VALUE_Bot dd 90
+VALUE_BotRight dd 90
 VALUE_botR dd 0
 VALUE_botL dd 0
 VALUE_direction dd 0
@@ -711,6 +765,7 @@ VALUE_maxspeed dd 8
 VALUE_paddleSpeed dd 2
 VALUE_ballx dd 160
 VALUE_bally dd 100
+VALUE_ballyh dd 110
 VALUE_ballyDir dd 0
 VALUE_leftColx dd 50
 VALUE_rightColx dd 50
@@ -720,4 +775,3 @@ VALUE_key dd 0
 VALUE_leftPoints dd 0
 VALUE_rightPoints dd 0
 ;{VARIABLE}
-

@@ -1,3 +1,4 @@
+
 ;ASMx86 CODE
 
 ORG 0x7c00
@@ -13,118 +14,48 @@ start:
 
    mov si, VALUE_0
    call print_log
-   mov di, VALUE_name
-   call get_input
-   mov si, VALUE_newline
-   call print_log
+
+   mov eax, [VALUE_y]
+   mov ecx, 3
+   mul ecx
+   push eax
+
+
+   mov eax, 5
+   pop ebx
+   add eax,ebx
+   push eax
+
+   pop eax
+   mov ebx, 3
+   sub eax,ebx
+
+   push eax
+   mov eax, [VALUE_t]
+   mov ebx, 1
+   add eax,ebx
+   push eax
+
+   pop ebx
+   pop eax
+   div ebx
+   push eax
+
+   pop eax
+   mov [VALUE_val], eax
+
+   xor edx, edx
+   mov eax, [VALUE_val]
+   mov ebx, 3
+   div ebx
+   mov dword [VALUE_val], edx
+
    mov si, VALUE_1
    call print_log
-   mov si, VALUE_name
-   call print_log
    mov si, VALUE_newline
    call print_log
-   mov si, VALUE_2
-   call print_log
-
-   mov eax, 3
-
-
-   mov ebx, [VALUE_x]
-
-
-   add eax,ebx
-
-
-   push eax
-
-
-   mov eax, [VALUE_y]
-
-
-   mov ebx, 4
-
-
-   sub eax,ebx
-
-
-   push eax
-
-
-   mov eax, 6
-
-
-   pop ebx
-
-
-   add eax,ebx
-
-
-   push eax
-
-
-   pop eax
-
-
-   pop ebx
-
-
-   add eax,ebx
-
-
-   push eax
-
-
-   pop eax
-
-
-   mov ebx, 2
-
-
-   sub eax,ebx
-
-
-   push eax
-
-
-   pop eax
-
-
-   mov [VALUE_m], eax
-
-   mov ax, word [VALUE_m]
+   mov ax, word [VALUE_val]
    call print_int
-
-   mov eax, [VALUE_y]
-   mov ecx,3
-   mul ecx
-   mov [VALUE_y], eax
-
-   mov si, VALUE_newline
-   call print_log
-   mov ax, word [VALUE_y]
-   call print_int
-
-   mov eax, [VALUE_y]
-   mov ebx,2
-   div ebx
-   mov [VALUE_y], eax
-
-   mov si, VALUE_newline
-   call print_log
-   mov ax, word [VALUE_y]
-   call print_int
-
-   mov eax, [VALUE_y]
-   mov ebx,4
-   div ebx
-   mov [VALUE_y], edx
-
-   mov si, VALUE_newline
-   call print_log
-   mov ax, word [VALUE_y]
-   call print_int
-    call  WaitForKeyPress
-    call  EnableVideoMode
 ;{CODE}
 
    jmp $
@@ -171,49 +102,15 @@ print_log:
 .done:
    ret
 
-get_input:
-   xor cx, cx
-.loop:
-    mov ah, 0
-    int 0x16
-    cmp al, 0x0D
-    je .done
-    stosb
-    inc cx
-    mov ah, 0x0E
-    int 0x10
-    jmp .loop
-
-.done:
-    mov byte [di], 0
-    ret
-OS16BIT_WaitForKeyPress:
-   mov ah, 0x00
-   int 0x16
-   ret
-WaitForKeyPress:
-
-        mov ah, 0x00
-        int 0x16
-
-
-EnableVideoMode:
-
-        mov ax, 0x13
-        int 0x10
-
-
 ;{INCLUDE}
 
-VALUE_hello db 'Hello, World!',13,10,'',0
 VALUE_newline db '',13,10,'',0
-VALUE_name: times 40 db 0
-VALUE_x dd 10
-VALUE_y dd 45
-VALUE_m dd 0
-VALUE_0 db 'What is your name: ',0
-VALUE_1 db 'hello: ',0
-VALUE_2 db 'Press any key to continue...',0
+VALUE_i dd 12
+VALUE_y dd 7
+VALUE_t dd 3
+VALUE_val dd 0
+VALUE_0 db 'test',0
+VALUE_1 db 'hello',0
 ;{VARIABLE}
 times 510-($-$$) db 0
 dw 0xaa55

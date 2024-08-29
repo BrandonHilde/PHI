@@ -105,10 +105,10 @@ namespace PhiBasicTranslator
 
                             i = nx + 1; //set to instead of add
 
-                            if (i < content.Length)
-                            {
-                                string next = content.Substring(i);
-                            }
+                            //if (i < content.Length)
+                            //{
+                            //    string next = content.Substring(i);
+                            //}
 
                             List<Inside> contentL = new List<Inside>();
 

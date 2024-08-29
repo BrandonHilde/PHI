@@ -1,53 +1,21 @@
 ﻿phi.Hello:OS16BIT
 {
-	str hello: 'Hello, World!\r\n';
-    str newline: '\r\n';
-	str name:[40];
-	int x: 10;
-	int y: 45;
-	int m: 0;
+   	str newline: '\r\n';
+	int i: 12;
+	int y: 7;
+	int t: 3;
 	
-	log 'What is your name: ';
-	ask name;
+	int val: 0;
+	
+	log 'test';
+
+	val is ((5 + (y * 3) - 3) / (t + 1));
+	
+	val %% 3;
+	
+	log 'hello';
 	log newline;
-	log 'hello: ' name;
-	log newline;
-	log 'Press any key to continue...';
-
-	#m is (6 + ((x * 7) / (y * 2)) - 5);
-
-	m is (6 + (3 + x) + (y - 4) - 2);
-
-	log m;
-
-	y**3;
-
-	log newline;
-	log y;
-
-	y//2;
-
-	log newline;
-	log y;
-
-	y%%4;
-
-	log newline;
-	log y;
-
-
-	call WaitForKeyPress;
-	call EnableVideoMode;
-}
-
-asm.WaitForKeyPress
-{
-    	mov ah, 0x00
-    	int 0x16
-}
-
-asm.EnableVideoMode
-{
-    	mov ax, 0x13
-    	int 0x10
+	log val;
+	
+	
 }

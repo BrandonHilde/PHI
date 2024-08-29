@@ -738,6 +738,11 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     if(op == PhiMath.Opperation.Plus)
                     {
+                        /*
+                        * 
+                        *   START OF PLUS
+                        * 
+                        */
                         if (left == Defs.replaceLinkedValue)
                         {
                             list.AddRange(ASMx86_16BIT.BIT32x86_POP);
@@ -745,7 +750,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                 list,
                                 Defs.replaceValueStart,
-                                ASMx86_16BIT.registerLeftMath32 // pop into eax
+                                ASMx86_16BIT.registerEaxMath32 // pop into eax
                             );
                         }
                         else
@@ -761,7 +766,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                list,
                                ASMx86_16BIT.replaceVarName,
-                               ASMx86_16BIT.registerLeftMath32 // mov left into ebx
+                               ASMx86_16BIT.registerEaxMath32 // mov left into ebx
                             );
                         }
 
@@ -772,7 +777,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                 list,
                                 Defs.replaceValueStart,
-                                ASMx86_16BIT.registerRightMath32 // pop into ebx
+                                ASMx86_16BIT.registerEbxMath32 // pop into ebx
                             );
                         }
                         else
@@ -788,7 +793,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                list,
                                ASMx86_16BIT.replaceVarName,
-                               ASMx86_16BIT.registerRightMath32 // mov right into ebx
+                               ASMx86_16BIT.registerEbxMath32 // mov right into ebx
                             );
                         }
 
@@ -796,18 +801,28 @@ namespace PhiBasicTranslator.TranslateUtilities
                         list = ASMx86_16BIT.ReplaceValue(
                                list,
                                Defs.replaceValueStart,
-                               ASMx86_16BIT.registerRightMath32 // push into eax
+                               ASMx86_16BIT.registerEbxMath32 // push into eax
                         );
 
                         list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
                         list = ASMx86_16BIT.ReplaceValue(
                                list,
                                Defs.replaceValueStart,
-                               ASMx86_16BIT.registerLeftMath32 // push into eax
+                               ASMx86_16BIT.registerEaxMath32 // push into eax
                         );
+                        /*
+                        * 
+                        *   END OF PLUS
+                        * 
+                        */
                     }
                     else if(op == PhiMath.Opperation.Minus)
                     {
+                        /*
+                         * 
+                         *   START OF MINUS
+                         * 
+                         */
                         if (left == Defs.replaceLinkedValue)
                         {
                             list.AddRange(ASMx86_16BIT.BIT32x86_POP);
@@ -815,7 +830,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                 list,
                                 Defs.replaceValueStart,
-                                ASMx86_16BIT.registerLeftMath32 // pop into eax
+                                ASMx86_16BIT.registerEaxMath32 // pop into eax
                             );
                         }
                         else
@@ -831,7 +846,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                list,
                                ASMx86_16BIT.replaceVarName,
-                               ASMx86_16BIT.registerLeftMath32 // mov left into ebx
+                               ASMx86_16BIT.registerEaxMath32 // mov left into ebx
                             );
                         }
 
@@ -842,7 +857,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                 list,
                                 Defs.replaceValueStart,
-                                ASMx86_16BIT.registerRightMath32 // pop into ebx
+                                ASMx86_16BIT.registerEbxMath32 // pop into ebx
                             );
                         }
                         else
@@ -858,7 +873,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                             list = ASMx86_16BIT.ReplaceValue(
                                list,
                                ASMx86_16BIT.replaceVarName,
-                               ASMx86_16BIT.registerRightMath32 // mov right into ebx
+                               ASMx86_16BIT.registerEbxMath32 // mov right into ebx
                             );
                         }
 
@@ -866,28 +881,251 @@ namespace PhiBasicTranslator.TranslateUtilities
                         list = ASMx86_16BIT.ReplaceValue(
                                list,
                                Defs.replaceValueStart,
-                               ASMx86_16BIT.registerRightMath32 // push into eax
+                               ASMx86_16BIT.registerEbxMath32 // push into eax
                         );
 
                         list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
                         list = ASMx86_16BIT.ReplaceValue(
                                list,
                                Defs.replaceValueStart,
-                               ASMx86_16BIT.registerLeftMath32 // push into eax
+                               ASMx86_16BIT.registerEaxMath32 // push into eax
                         );
 
+                        /*
+                        * 
+                        *   END OF MINUS
+                        * 
+                        */
                     }
                     else if (op == PhiMath.Opperation.Multiply)
                     {
+                        /*
+                        * 
+                        *   START OF MULTIPLY
+                        * 
+                        */
+                        if (left == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
 
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEaxMath32 // pop into eax
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                              list,
+                              Defs.replaceValueStart,
+                              left// mov left into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerEaxMath32 // mov left into ebx
+                            );
+                        }
+
+                        if (right == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEcxMath32 // pop into ebx
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               right // mov right into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerEcxMath32 // mov right into ebx
+                            );
+                        }
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_MulMath);
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerEaxMath32 // push into eax
+                        );
+
+
+                        /*
+                        * 
+                        *   END OF MULTIPLY
+                        * 
+                        */
                     }
                     else if (op == PhiMath.Opperation.Divide)
                     {
 
+                        /*
+                        * 
+                        *   START OF DIVIDE
+                        * 
+                        */
+                        if (left == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEbxMath32 // pop into eax
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                              list,
+                              Defs.replaceValueStart,
+                              left// mov left into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerEaxMath32 // mov left into ebx
+                            );
+                        }
+
+                        if (right == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEaxMath32 // pop into ebx
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               right // mov right into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerEbxMath32 // mov right into ebx
+                            );
+                        }
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_DivMath);
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerEaxMath32 // push into eax
+                        );
+
+                         /*
+                          * 
+                          *   END OF DIVIDE
+                          * 
+                          */
                     }
                     else if (op == PhiMath.Opperation.Mod)
                     {
+                       /*
+                        * 
+                        *   START OF MOD
+                        * 
+                        */
+                        if (left == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
 
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEbxMath32 // pop into eax
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                              list,
+                              Defs.replaceValueStart,
+                              left// mov left into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerEaxMath32 // mov left into ebx
+                            );
+                        }
+
+                        if (right == Defs.replaceLinkedValue)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEaxMath32 // pop into ebx
+                            );
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               right // mov right into ebx
+                            );
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               ASMx86_16BIT.replaceVarName,
+                               ASMx86_16BIT.registerEbxMath32 // mov right into ebx
+                            );
+                        }
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_DivMath);
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                        list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               ASMx86_16BIT.registerEdxMath32 // push into eax
+                        );
+
+                       /*
+                        * 
+                        *   END OF MOD
+                        * 
+                        */
                     }
 
                     #region Double Sign
@@ -977,7 +1215,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                         list = ASMx86_16BIT.ReplaceValue(
                             list, 
                             Defs.replaceValueStart, 
-                            ASMx86_16BIT.registerLeftMath32
+                            ASMx86_16BIT.registerEaxMath32
                         );
 
                         list.AddRange(ASMx86_16BIT.ASMx86_MOV);
@@ -990,7 +1228,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                         list = ASMx86_16BIT.ReplaceValue(
                           list,
                           Defs.replaceValueStart,
-                          ASMx86_16BIT.registerLeftMath32);
+                          ASMx86_16BIT.registerEaxMath32);
                     }
                     else
                     {
