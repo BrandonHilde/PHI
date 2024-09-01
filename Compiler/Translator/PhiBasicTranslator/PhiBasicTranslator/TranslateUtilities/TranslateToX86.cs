@@ -1768,19 +1768,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 string build = ASMx86_16BIT.UpdateName(vbl.Name);
 
-                if(vbl.varType == Inside.VariableTypeStr)
-                {
-                    build = ASMx86_16BIT.VarTypeConvert(vbl);
-                }
-                else if(vbl.varType == Inside.VariableTypeInt)
-                {
-                    build += ASMx86_16BIT.varIntTyp;
-                    build += vbl.ValueRaw;
-                }
-                else
-                {
-                    build = ASMx86_16BIT.VarTypeConvert(vbl);
-                }
+                build = ASMx86_16BIT.VarTypeConvert(vbl);
 
                 vals.Add(build);
             }

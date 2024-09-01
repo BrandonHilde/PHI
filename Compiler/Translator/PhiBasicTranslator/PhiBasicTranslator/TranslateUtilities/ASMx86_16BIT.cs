@@ -143,6 +143,28 @@ namespace PhiBasicTranslator.TranslateUtilities
             return new List<string>();
         }
 
+        public static string FormatVarToString(PhiVariable varble)
+        {
+            string vl = string.Empty;
+
+            foreach (string v in varble.Values)
+            {
+                vl += v + ",";
+            }
+
+            if (varble.varType == Inside.VariableTypeStr)
+            {
+                vl += "0";
+            }
+
+            if(vl.EndsWith(","))
+            {
+                vl = vl.Substring(0, vl.Length - 1);
+            }
+
+            return vl;
+        }
+
         public static string FormatStringConvert(string value)
         {
             string vl = string.Empty;
@@ -217,12 +239,14 @@ namespace PhiBasicTranslator.TranslateUtilities
                     }
                     else
                     {
-                        vr = name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                        //vr = name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+
+                        vr = name + varStrTyp + FormatVarToString(varble);
                     }
                 }
                 else if (varble.varType == Inside.VariableTypeInt)
                 {
-                    vr = name + varIntTyp + varble.ValueRaw;
+                    vr = name + varIntTyp + FormatVarToString(varble);
                 }
                 else if (varble.varType == Inside.VariableTypeBln)
                 {

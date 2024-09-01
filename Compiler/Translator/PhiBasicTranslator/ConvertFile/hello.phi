@@ -1,6 +1,23 @@
 ﻿phi.Hello:OS16BIT
 {
    	str newline: '\r\n';
+
+	str testarr: 
+	'hi' 
+	'hello' 
+	'maybe'	
+	'hmm';
+
+	int testI: 
+	1 
+	5 
+	3 
+	8	
+	9	
+	9	
+	3	
+	2;
+
 	int i: 12;
 	int y: 7;
 	int t: 3;
@@ -13,9 +30,12 @@
 	
 	val %% 3;
 	
-	log 'hello';
-	log newline;
-	log val;
+
+	if val is > 0
+		log 'hello';
+		log newline;
+		log val;
+	;;
 	
 	
 }

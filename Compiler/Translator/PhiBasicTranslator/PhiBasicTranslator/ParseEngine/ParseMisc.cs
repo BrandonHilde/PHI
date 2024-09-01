@@ -1,4 +1,5 @@
 ﻿using PhiBasicTranslator.Structure;
+using PhiBasicTranslator.TranslateUtilities;
 using System;
 using System.Collections.Generic;
 using System.Linq;
@@ -9,7 +10,6 @@ namespace PhiBasicTranslator.ParseEngine
 {
     public class ParseMisc
     {
-
         public static bool IsNumber(string str)
         {
             double d = 0;
@@ -106,6 +106,81 @@ namespace PhiBasicTranslator.ParseEngine
             return false;
         }
 
+        public static List<string> ExtractSubValues(string value)
+        {
+            List<string> result = new List<string>();
+
+            ContentProfile profile = ParseUtilities.ProfilePrepare(value);
+
+            string val = "";
+
+            bool prevIsSlash = false;
+
+            for (int i = 0; i < value.Length; i++)
+            {
+                string letter = value[i].ToString();
+
+                if (profile.ContentInside[i] != Inside.String)
+                {
+                    if (profile.ContentInside[i] != Inside.Comment
+                    && profile.ContentInside[i] != Inside.MultiComment)
+                    {
+                        if(Defs.TabSpaceClosureCharacters.Contains(letter))
+                        {
+                            if (val != string.Empty) result.Add(val);
+                            val = string.Empty;
+                        }
+                        else
+                        {
+                            val += letter;
+                        }
+                    }
+                }
+                else
+                {
+                    if (prevIsSlash)
+                    {
+                        if (letter == "r")
+                        {
+                            if (val != string.Empty && val != "'") result.Add(val + "'");
+                            result.Add(ASMx86_16BIT.varStrReturn);
+
+                            val = string.Empty;
+                        }
+                        else if (letter == "n")
+                        {
+                            if (val != string.Empty && val != "'") result.Add(val + "'");
+                            result.Add(ASMx86_16BIT.varStrNewLine);
+
+                            val = string.Empty;
+                        }
+                        else if (letter == "t")
+                        {
+                            if (val != string.Empty && val != "'") result.Add(val + "'");
+                            result.Add(ASMx86_16BIT.varStrTab);
+
+                            val = string.Empty;
+                        }
+                    }
+                    
+                    
+                    if (letter == "\\")
+                    {
+                        prevIsSlash = true;
+                    }
+                    else
+                    {
+                        if(!prevIsSlash) val += letter;
+
+                        prevIsSlash = false;
+                    }
+                }
+            }
+
+            if(val != string.Empty && val != "'") result.Add(val);
+
+            return result;
+        }
         public static string ExtractStandAloneVarName(string content, List<Inside> labels, string endMatch)
         {
             string nme = string.Empty;

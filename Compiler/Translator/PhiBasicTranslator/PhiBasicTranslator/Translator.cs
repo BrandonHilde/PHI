@@ -281,6 +281,13 @@ namespace PhiBasicTranslator
                     {
                         varble.ValueRaw = vval;
 
+                        List<string> vals = ParseMisc.ExtractSubValues(varble.ValueRaw);
+
+                        if(vals.Count > 0)
+                        {
+                            varble.Values = vals;
+                        }
+
                         vval = string.Empty;
 
                         if (insideMethod)
@@ -428,6 +435,13 @@ namespace PhiBasicTranslator
                         }
                         else if (inside == Inside.VariableEnd)
                         {
+                            List<string> vals = ParseMisc.ExtractSubValues(varble.ValueRaw);
+
+                            if (vals.Count > 0)
+                            {
+                                varble.Values = vals;
+                            }
+
                             instr.Variables.Add(varble);
                             //Preexisting?
                             varble = new PhiVariable();
@@ -447,6 +461,14 @@ namespace PhiBasicTranslator
                                 {
                                     varble.ValueRaw += instr.Value[j];
                                 }
+                            }
+
+
+                            List<string> vals = ParseMisc.ExtractSubValues(varble.ValueRaw);
+
+                            if (vals.Count > 0)
+                            {
+                                varble.Values = vals;
                             }
 
                             instr.Variables.Add(varble);

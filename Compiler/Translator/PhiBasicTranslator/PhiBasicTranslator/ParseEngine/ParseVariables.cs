@@ -262,6 +262,8 @@ namespace PhiBasicTranslator.ParseEngine
             {
                 PhiVariable? vbl = predefinedVars.Where(x => x.Name == v).FirstOrDefault();
 
+                List<string> sbvals = ParseMisc.ExtractSubValues(v);
+
                 if(vbl != null)
                 {
                     varbles.Add(vbl);
@@ -273,7 +275,8 @@ namespace PhiBasicTranslator.ParseEngine
                         Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
                         varType = Inside.VariableTypeStr,
-                        preExisting = false
+                        preExisting = false,
+                        Values = sbvals
                     });
                 }
                 else if(v.Contains('.')) // defs.decimaldeclare?
@@ -283,7 +286,8 @@ namespace PhiBasicTranslator.ParseEngine
                         Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
                         varType = Inside.VariableTypeDec,
-                        preExisting = false
+                        preExisting = false,
+                        Values = sbvals
                     });
                 }
                 else
@@ -293,7 +297,8 @@ namespace PhiBasicTranslator.ParseEngine
                         Name = (TranslateToX86.VarCount++).ToString(),
                         ValueRaw = v,
                         varType = Inside.VariableTypeInt,
-                        preExisting = false
+                        preExisting = false,
+                        Values = sbvals
                     });
                 }
             }

@@ -732,7 +732,7 @@ namespace PhiBasicTranslator.ParseEngine
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfLess;
                     }
-                    else if (match == Defs.opperLesserEqu)
+                    else if (match == Defs.opperLesserEqu || match == Defs.opperLesserEquAlt)
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfLessEqual;
                     }
@@ -740,7 +740,7 @@ namespace PhiBasicTranslator.ParseEngine
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfGreater;
                     }
-                    else if (match == Defs.opperGreaterEqu)
+                    else if (match == Defs.opperGreaterEqu || match == Defs.opperGreaterEquAlt)
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfGreaterEqual;
                     }
@@ -776,7 +776,7 @@ namespace PhiBasicTranslator.ParseEngine
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfGreaterEqual;
                     }
-                    else if (match == Defs.opperLesserEqu)
+                    else if (match == Defs.opperLesserEqu || match == Defs.opperLesserEquAlt)
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfGreater;
                     }
@@ -784,7 +784,7 @@ namespace PhiBasicTranslator.ParseEngine
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfLessEqual;
                     }
-                    else if (match == Defs.opperGreaterEqu)
+                    else if (match == Defs.opperGreaterEqu || match == Defs.opperGreaterEquAlt)
                     {
                         typ = ConditionalPairs.ConditionType.JumpIfLess;
                     }

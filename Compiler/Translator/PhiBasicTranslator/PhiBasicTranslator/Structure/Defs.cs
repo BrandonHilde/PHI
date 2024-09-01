@@ -131,12 +131,14 @@ namespace PhiBasicTranslator.Structure
         public static readonly string opperIs = "is";      // ==
         public static readonly string opperIsAlt = "==";   // ==
         public static readonly string opperHas = "has";    // contians()
-        public static readonly string opperNot = "not";    // !=
+        public static readonly string opperNot = "is not";    // !=
         public static readonly string opperNotAlt = "!=";  // !=
         public static readonly string opperGreater = ">";    // >
         public static readonly string opperLesser = "<";     // <
         public static readonly string opperGreaterEqu = ">=";    // >=
         public static readonly string opperLesserEqu = "<=";     // <=
+        public static readonly string opperGreaterEquAlt = ">>";    // >=
+        public static readonly string opperLesserEquAlt = "<<";     // <=
         public static readonly string opperAnd = "and";    // &&
         public static readonly string opperOr = "or";      // ||
         public static readonly string opperPlus = "+";
@@ -163,13 +165,17 @@ namespace PhiBasicTranslator.Structure
 
         public static readonly List<string> OpperCompareList = new List<string>()
         {
-            opperIs,
+            opperGreaterEqu,
+            opperGreaterEquAlt,
+            opperLesserEqu,
+            opperLesserEquAlt,
+
+            // must come after EquAlt because they contain "is"
+            opperIs, 
             opperIsAlt,
             opperHas,
             opperGreater,
             opperLesser,
-            opperGreaterEqu,
-            opperLesserEqu,
             opperNot,
             opperNotAlt
         };
