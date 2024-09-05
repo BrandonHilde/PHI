@@ -606,8 +606,18 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             List<string> list = new List<string>();
 
-            string left = "";
-            string right = "";
+            string left = math.Math.ValueLeft.Trim();
+            string right = math.Math.ValueRight.Trim();
+
+            if(left.Contains(Defs.squareOpen) && left.Contains(Defs.squareClose))
+            {
+                left = ConvertArrayToASM(left, predefined);
+            }
+
+            if (right.Contains(Defs.squareOpen) && right.Contains(Defs.squareClose))
+            {
+                right = ConvertArrayToASM(right, predefined);
+            }
 
             bool hasOpperation = false;
 
@@ -621,10 +631,6 @@ namespace PhiBasicTranslator.TranslateUtilities
             {
                 left = "[" + ASMx86_16BIT.UpdateName(varbleL.Name) + "]";
             }
-            else
-            {
-                left = math.Math.ValueLeft;
-            }
 
             if (varbleR != null)
             {
@@ -632,8 +638,6 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
             else
             {
-                right = math.Math.ValueRight;
-
                 if (right == string.Empty)
                 {
                     if (math.Math.MathOp == Defs.MathInc
@@ -1623,6 +1627,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             foreach (PhiVariable v in vrs)
             {
+                string vname = ASMx86_16BIT.UpdateName(v.Name);
+
                 if (v.varType == Inside.VariableTypeStr)
                 {
                     // adds function call code
@@ -1630,23 +1636,37 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
                 else if(v.varType == Inside.VariableTypeInt)
                 {
+                    vname = "[" + vname + "]";
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
                 }
                 else if (v.varType == Inside.VariableTypeBln)
                 {
+                    vname = "[" + vname + "]";
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogByte_BITS16, Defs.replaceCodeStart);
                 }
                 else if (v.varType == Inside.VariableTypeByt)
                 {
+                    vname = "[" + vname + "]";
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogByte_BITS16, Defs.replaceCodeStart);
                 }
 
                 if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
 
-                subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, ASMx86_16BIT.UpdateName(v.Name));
+                List<string> parts = ParseMisc.ExtractArrayParts(v.ValueRaw);
+
+                if (parts.Count > 1)
+                {
+                    string arr = ConvertArrayToASM(v.ValueRaw, predefined);
+
+                    subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, arr);
+                }
+                else
+                {
+                    subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, vname);
+                }
             }
 
             Code = ASMx86_16BIT.MergeValues(Code, values, Defs.replaceVarStart);
@@ -1854,6 +1874,25 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
 
             return cond;
+        }
+
+        public static string ConvertArrayToASM(string value, List<PhiVariable> predefined)
+        {
+            List<string> parts = ParseMisc.ExtractArrayParts(value);
+
+            string orgn = parts.First();
+            string add = parts.Last();
+
+            PhiVariable? varOrg = predefined.Where(x => x.Name == orgn).FirstOrDefault();
+
+            PhiVariable? varAdd = predefined.Where(x => x.Name == add).FirstOrDefault();
+
+            if (varOrg != null) orgn = ASMx86_16BIT.UpdateName(orgn);
+            if (varAdd != null) add = ASMx86_16BIT.UpdateName(add);
+
+            string result = "[" + orgn + " + " + add + "]";
+
+            return result;
         }
 
         public static string ConvertConditional(ConditionalPairs.ConditionType tp)

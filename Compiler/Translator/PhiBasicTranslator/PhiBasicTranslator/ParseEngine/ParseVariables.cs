@@ -5,6 +5,7 @@ using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
 using PhiBasicTranslator.TranslateUtilities;
+using Newtonsoft.Json.Linq;
 
 namespace PhiBasicTranslator.ParseEngine
 {
@@ -260,13 +261,42 @@ namespace PhiBasicTranslator.ParseEngine
 
             foreach (string v in vals)
             {
-                PhiVariable? vbl = predefinedVars.Where(x => x.Name == v).FirstOrDefault();
+                string vname = v.Trim();
+                string index = string.Empty;
+
+                bool array = false;
+
+                if(vname.Contains(Defs.squareOpen) && vname.Contains(Defs.squareClose))
+                {
+                    List<string> vls = ParseMisc.ExtractArrayParts(vname);
+
+                    vname = vls.First();
+                    index = vls.Last();
+
+                    array = true;
+                }
+
+                PhiVariable? vbl = predefinedVars.Where(x => x.Name == vname).FirstOrDefault();
 
                 List<string> sbvals = ParseMisc.ExtractSubValues(v);
 
                 if(vbl != null)
                 {
-                    varbles.Add(vbl);
+                    if (!array)
+                    {
+                        varbles.Add(vbl);
+                    }
+                    else
+                    {
+                        varbles.Add(new PhiVariable
+                        {
+                            Name = vbl.Name,
+                            ValueRaw = v,
+                            varType = vbl.varType,
+                            preExisting = true,
+                            Values = sbvals
+                        });
+                    }
                 }
                 else if(v.StartsWith(Defs.ValueStringDelcare))
                 {

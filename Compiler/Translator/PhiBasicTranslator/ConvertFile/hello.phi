@@ -23,13 +23,25 @@
 	int t: 3;
 	
 	int val: 0;
-	
-	log 'test';
 
-	val is ((5 + (y * 3) - 3) / (t + 1));
+	log testI[5];
 	
-	val %% 3;
-	
+	log newline;
+
+	val is testI[t];
+
+	log val;
+	log newline;
+
+	testI[3] is y;
+
+	log y;
+	log newline;
+
+	val is testI[3];
+
+	log val;
+	log newline;	
 
 	if val is > 0
 		log 'hello';

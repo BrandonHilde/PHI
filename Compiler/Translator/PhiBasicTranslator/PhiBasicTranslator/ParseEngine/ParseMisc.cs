@@ -181,6 +181,30 @@ namespace PhiBasicTranslator.ParseEngine
 
             return result;
         }
+
+        public static List<string> ExtractArrayParts(string content)
+        {
+            var result = new List<string>();
+
+            string[] val = content.Split(Defs.squareOpen);
+
+            if (val.Length > 0)
+            {
+                result.Add(val.First());
+
+                string last = val.Last(); // maybe more than one later?
+
+                int ind = last.IndexOf(Defs.squareClose);
+
+                if (ind != -1)
+                {
+                    last = last.Substring(0, ind);
+                    result.Add(last);
+                }
+            }
+
+            return result;
+        }
         public static string ExtractStandAloneVarName(string content, List<Inside> labels, string endMatch)
         {
             string nme = string.Empty;

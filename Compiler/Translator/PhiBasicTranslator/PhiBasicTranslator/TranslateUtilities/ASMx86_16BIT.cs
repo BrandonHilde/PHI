@@ -517,12 +517,12 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> InstructLogInt_BITS16 = new List<string>()
         {
-            "   mov ax, word [" + Defs.replaceValueStart + "]",
+            "   mov ax, word " + Defs.replaceValueStart,
             "   call print_int"
         };
         public static List<string> InstructLogByte_BITS16 = new List<string>()
         {
-            "   mov ax, word [" + Defs.replaceValueStart + "]",
+            "   mov ax, word " + Defs.replaceValueStart,
             "   xor ah, ah",
             "   call print_int"
         };
