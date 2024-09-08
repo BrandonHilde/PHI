@@ -7,6 +7,7 @@ using System;
 using static System.Runtime.InteropServices.JavaScript.JSType;
 using System.Reflection.Metadata;
 using System.Net.Mime;
+using PhiBasicTranslator.TranslateUtilities;
 
 namespace PhiBasicTranslator
 {
@@ -757,6 +758,11 @@ namespace PhiBasicTranslator
                             }
                             else
                             {
+                                if (right.Contains(Defs.squareClose) && right.Contains(Defs.squareOpen))
+                                {
+                                    ExtractSubMaths(right, null);
+                                }
+
                                 instr.Instructs.Add(new PhiInstruct
                                 {
                                     Name = Defs.instMath,
@@ -858,6 +864,27 @@ namespace PhiBasicTranslator
             }
 
             return len;
+        }
+
+        public List<PhiMath> ExtractSubMaths(string content, List<Inside> labels)
+        {
+            List<PhiMath> subMaths = new List<PhiMath>();
+
+            List<int> squareorder = ParseUtilities.GetEnclosingDepth(content, Defs.squareOpen, Defs.squareClose);
+
+            string inner = "";
+
+            for(int i = 0; i < content.Length; i++)
+            {
+                if (squareorder[i] != 0 && content[i].ToString() != Defs.squareOpen)
+                {
+                    inner += content[i].ToString();
+                }
+            }
+
+            List<int> order = ParseUtilities.GetEnclosingDepth(inner, Defs.paraOpen, Defs.paraClose);
+
+            return subMaths;
         }
 
         public string ExtractContent(string content, string begin)
