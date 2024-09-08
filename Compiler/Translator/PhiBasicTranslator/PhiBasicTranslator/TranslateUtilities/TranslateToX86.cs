@@ -1879,20 +1879,53 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static string ConvertArrayToASM(string value, List<PhiVariable> predefined)
         {
             List<string> parts = ParseMisc.ExtractArrayParts(value);
+            
+            string result = string.Empty;
 
             string orgn = parts.First();
             string add = parts.Last();
+
+            int mult = 1;
 
             PhiVariable? varOrg = predefined.Where(x => x.Name == orgn).FirstOrDefault();
 
             PhiVariable? varAdd = predefined.Where(x => x.Name == add).FirstOrDefault();
 
-            if (varOrg != null) orgn = ASMx86_16BIT.UpdateName(orgn);
-            if (varAdd != null) add = ASMx86_16BIT.UpdateName(add);
+            if (varOrg != null)
+            {
+                orgn = ASMx86_16BIT.UpdateName(orgn);
 
-            string result = "[" + orgn + " + " + add + "]";
+                mult = NumberOfBytesInType(varOrg.varType);
+            }
+
+            if (varAdd != null)
+            {
+                add = ASMx86_16BIT.UpdateName(add);
+
+                result = "[" + orgn + " + " + add + "]";
+            }
+            else
+            {
+                int ad = 0;
+
+                if (int.TryParse(add, out ad))
+                {
+                    result = "[" + orgn + " + " + (ad * mult) + "]";
+                }
+                else
+                {
+                    result = "[" + orgn + " + " + add + "]";
+                }
+            }
 
             return result;
+        }
+
+        public static int NumberOfBytesInType(Inside vartype)
+        {
+            if (vartype == Inside.VariableTypeInt) return 4;
+
+            return 1;
         }
 
         public static string ConvertConditional(ConditionalPairs.ConditionType tp)

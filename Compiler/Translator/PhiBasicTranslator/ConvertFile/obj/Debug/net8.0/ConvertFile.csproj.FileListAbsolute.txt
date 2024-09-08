@@ -17,3 +17,4 @@ D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\ConvertFil
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\ConvertFile\obj\Debug\net8.0\ConvertFile.pdb
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\ConvertFile\obj\Debug\net8.0\ConvertFile.genruntimeconfig.cache
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\ConvertFile\obj\Debug\net8.0\ref\ConvertFile.dll
+D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\ConvertFile\bin\Debug\net8.0\Newtonsoft.Json.dll

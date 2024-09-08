@@ -4,9 +4,10 @@ D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTr
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\PhiBasicTranslator.csproj.CoreCompileInputs.cache
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\PhiBasicTranslator.sourcelink.json
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\bin\Debug\net8.0\PhiBasicTranslator.deps.json
-D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\bin\Debug\net8.0\PhiBasicTranslator.dll
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\bin\Debug\net8.0\PhiBasicTranslator.pdb
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\PhiBasicTranslator.dll
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\refint\PhiBasicTranslator.dll
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\PhiBasicTranslator.pdb
 D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\ref\PhiBasicTranslator.dll
+D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\obj\Debug\net8.0\PhiBasicTranslator.csproj.AssemblyReference.cache
+D:\Labs\js apps\KurntStone\PHI\Compiler\Translator\PhiBasicTranslator\PhiBasicTranslator\bin\Debug\net8.0\PhiBasicTranslator.dll

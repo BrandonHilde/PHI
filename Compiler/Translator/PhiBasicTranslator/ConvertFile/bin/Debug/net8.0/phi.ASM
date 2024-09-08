@@ -1,5 +1,6 @@
-[BITS 16]
-[ORG 0x7c00]
+ORG 0x7c00
+
+;{CONSTANTS}
 
 start:
    xor ax, ax
@@ -8,10 +9,39 @@ start:
    mov ss, ax
    mov sp, 0x7c00
 
-
-   mov si, VALUE_0
+   mov ax, word [VALUE_testI + 5]
+   call print_int
+   mov si, VALUE_newline
    call print_log
 
+   pop eax
+
+
+   mov [VALUE_val], eax
+
+   mov ax, word [VALUE_val]
+   call print_int
+   mov si, VALUE_newline
+   call print_log
+
+   mov eax, [VALUE_y]
+   mov [VALUE_testI + 3], eax
+
+   mov ax, word [VALUE_y]
+   call print_int
+   mov si, VALUE_newline
+   call print_log
+
+   pop eax
+
+
+   mov [VALUE_val], eax
+
+   mov ax, word [VALUE_val]
+   call print_int
+   mov si, VALUE_newline
+   call print_log
+   call IF_0
 ;{CODE}
 
    jmp $
@@ -58,9 +88,37 @@ print_log:
 .done:
    ret
 
+IF_0:
+   mov eax, val is > 0
+   cmp eax, 1
+   je IF_0_CONTENT
+
+;{ELSE CONTENT}
+
+   ret
+IF_0_CONTENT:
+   mov si, VALUE_1
+   call print_log
+;{CODE}
+   mov si, VALUE_newline
+   call print_log
+;{CODE}
+   mov ax, word [VALUE_val]
+   call print_int
+;{CODE}
+;{IF CONTENT}
+   ret
 ;{INCLUDE}
 
-VALUE_0 db 'Hello, World!',0
+VALUE_newline db 13,10,0
+VALUE_testarr db 'hi','hello','maybe','hmm',0
+VALUE_testI dd 1,5,3,8,9,9,3,2
+VALUE_i dd 12
+VALUE_y dd 7
+VALUE_t dd 3
+VALUE_val dd 0
+VALUE_0 dd 5
+VALUE_1 db 'hello',0
 ;{VARIABLE}
 times 510-($-$$) db 0
 dw 0xaa55

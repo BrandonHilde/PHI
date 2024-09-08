@@ -15,47 +15,15 @@ start:
    mov si, VALUE_0
    call print_log
 
-   mov eax, [VALUE_y]
-   mov ecx, 3
-   mul ecx
-   push eax
+   ;mov al, [scan_code_table + bx]
 
+   ;mov bl, byte [KeyCodeValue]
+   ;add bx, key_down_table
+   ;mov byte [key_down_table + bx], 0x01
 
-   mov eax, 5
-   pop ebx
-   add eax,ebx
-   push eax
+   mov dword [VALUE_array + ebx], eax
+   mov eax, [VALUE_array + ebx]
 
-   pop eax
-   mov ebx, 3
-   sub eax,ebx
-
-   push eax
-   mov eax, [VALUE_t]
-   mov ebx, 1
-   add eax,ebx
-   push eax
-
-   pop ebx
-   pop eax
-   div ebx
-   push eax
-
-   pop eax
-   mov [VALUE_val], eax
-
-   xor edx, edx
-   mov eax, [VALUE_val]
-   mov ebx, 3
-   div ebx
-   mov dword [VALUE_val], edx
-
-   mov si, VALUE_1
-   call print_log
-   mov si, VALUE_newline
-   call print_log
-   mov ax, word [VALUE_val]
-   call print_int
 ;{CODE}
 
    jmp $
@@ -104,6 +72,7 @@ print_log:
 
 ;{INCLUDE}
 
+VALUE_array: times 20 dd 0 
 VALUE_newline db '',13,10,'',0
 VALUE_i dd 12
 VALUE_y dd 7
