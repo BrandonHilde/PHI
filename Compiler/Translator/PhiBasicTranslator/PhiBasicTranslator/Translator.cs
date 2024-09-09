@@ -760,7 +760,7 @@ namespace PhiBasicTranslator
                             {
                                 if (right.Contains(Defs.squareClose) && right.Contains(Defs.squareOpen))
                                 {
-                                    ExtractSubMaths(right, null);
+                                    ExtractArraySubMaths(right, null);
                                 }
 
                                 instr.Instructs.Add(new PhiInstruct
@@ -866,23 +866,64 @@ namespace PhiBasicTranslator
             return len;
         }
 
-        public List<PhiMath> ExtractSubMaths(string content, List<Inside> labels)
+        public List<PhiMath> ExtractArraySubMaths(string content, List<Inside> labels)
         {
             List<PhiMath> subMaths = new List<PhiMath>();
 
             List<int> squareorder = ParseUtilities.GetEnclosingDepth(content, Defs.squareOpen, Defs.squareClose);
 
-            string inner = "";
+            List<string> innerValues = new List<string>();
 
-            for(int i = 0; i < content.Length; i++)
+            List<string> names = new List<string>();
+
+            string inner = string.Empty;
+            string name = string.Empty;
+
+            for (int i = 0; i < content.Length; i++)
             {
-                if (squareorder[i] != 0 && content[i].ToString() != Defs.squareOpen)
+                if (squareorder[i] == 0 && content[i].ToString() != Defs.squareClose)
                 {
-                    inner += content[i].ToString();
+                    name += content[i];
+                }
+
+                if (squareorder[i] != 0)
+                {
+                    if (name != string.Empty)
+                    {
+                        names.Add(name);
+                        name = string.Empty;
+                    }
+     
+                    if(content[i].ToString() != Defs.squareOpen)
+                        inner += content[i];
+                }
+
+                if (content[i].ToString() == Defs.squareClose) 
+                { 
+                    innerValues.Add(inner);
+                    inner = string.Empty;
                 }
             }
 
-            List<int> order = ParseUtilities.GetEnclosingDepth(inner, Defs.paraOpen, Defs.paraClose);
+            for(int i = 0; i < innerValues.Count; i++)
+            {
+                string nme = string.Empty;
+
+                if(i < names.Count)
+                    nme = names[i].Trim();
+
+                subMaths.Add(new PhiMath
+                {
+                    Math = new MathPair
+                    {
+                        MathOp = Defs.oppSetIndex,
+                        ValueLeft = nme,
+                        ValueRight = innerValues[i]
+                    },
+                    RawValue = nme + " " + innerValues[i],
+                });
+            }
+
 
             return subMaths;
         }

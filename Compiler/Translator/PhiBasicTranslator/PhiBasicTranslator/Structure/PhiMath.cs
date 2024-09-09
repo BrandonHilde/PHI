@@ -16,7 +16,8 @@ namespace PhiBasicTranslator.Structure
             DivideEquals,
             Divide,
             ModEquals,
-            Mod
+            Mod,
+            ArrayIndex
         }
         public string RawValue { get; set; } = string.Empty;
         public long Order { get; set; } = 0;

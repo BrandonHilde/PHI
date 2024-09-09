@@ -27,7 +27,80 @@ namespace PhiBasicTranslator.ParseEngine
 
             return false;
         }
-        public static bool StartsWithAppendedValue(string content, string value, List<string> appendedValues)
+
+        public static List<PhiMath> ParseMath(string content)
+        {
+            if (HasMathOpperation(content))
+            {
+                List<int> depth = ParseUtilities.GetEnclosingDepth(
+                    content,
+                    Defs.paraOpen,
+                    Defs.paraClose
+                );
+
+                List<PhiMath> maths = new List<PhiMath>();
+
+                int cmp = -1;
+
+                string seg = "";
+
+                int ordr = 0;
+
+                for (int i = 0; i < content.Length; i++)
+                {
+                    if (cmp != depth[i])
+                    {
+                        seg = seg.Replace(Defs.paraOpen, string.Empty);
+                        seg = seg.Replace(Defs.paraClose, string.Empty);
+
+                        if (seg != string.Empty)
+                        {
+                            MathPair mathPair = PhiMath.Parse(seg, cmp);
+
+                            if (mathPair.ValueLeft == string.Empty)
+                            {
+                                mathPair.ValueLeft = Defs.replaceLinkedValue;
+                            }
+
+                            if (mathPair.ValueRight == string.Empty)
+                            {
+                                mathPair.ValueRight = Defs.replaceLinkedValue;
+                            }
+
+                            PhiMath mth = new PhiMath
+                            {
+                                Math = mathPair,
+                                RawValue = seg,
+                                Order = ordr++
+                            };
+
+                            maths.Add(mth);
+                            seg = string.Empty;
+                        }
+
+                        cmp = depth[i];
+                    }
+
+                    //if (right[i].ToString() != Defs.paraClose
+                    //  && right[i].ToString() != Defs.paraOpen)
+                    {
+                        seg += content[i];
+                    }
+                }
+
+                maths = maths.OrderBy(
+                    x =>           //  pmdas  // order of opperations take up one digit each (maybe more later)     
+                    (x.Math.Depth * 1000000) // * 1000000 to prevent order overriding depth
+                    - x.Order // + instead of - because it will be reversed
+                              // order needs to eventually be weighted by order of opperations
+                    ).Reverse().ToList();
+
+                return maths;
+            }
+
+            return new List<PhiMath>();
+        }
+            public static bool StartsWithAppendedValue(string content, string value, List<string> appendedValues)
         {
             bool result = false;
 

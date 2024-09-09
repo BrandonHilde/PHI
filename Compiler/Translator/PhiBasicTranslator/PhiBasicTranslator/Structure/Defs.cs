@@ -58,6 +58,8 @@ namespace PhiBasicTranslator.Structure
         public static readonly string Numeric = "1234567890.-";
         public static readonly string RawNumberCut = ":;,=*+-!&|$/%^()[]{}";
 
+        public static readonly string oppSetIndex = "[";
+
         public static readonly string MathInc = "++";
         public static readonly string MathDec = "--";
         public static readonly string MathMultEq = "**";

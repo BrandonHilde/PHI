@@ -2,6 +2,7 @@
 using System.Collections.Generic;
 using System.Linq;
 using System.Net.Http.Headers;
+using System.Reflection.Metadata;
 using System.Text;
 using System.Threading.Tasks;
 using System.Xml.Linq;
@@ -648,81 +649,23 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
                 if (ParseMisc.HasMathOpperation(right))
                 {
-                    hasOpperation = true;
-
-                    List<int> depth = ParseUtilities.GetEnclosingDepth(
-                        right,
-                        Defs.paraOpen,
-                        Defs.paraClose
-                    );
-
-                    List<PhiMath> maths = new List<PhiMath>();
-
-                    int cmp = -1;
-
-                    string seg = "";
-
-                    int ordr = 0;
-
-                    for (int i = 0; i < right.Length; i++)
-                    {
-                        if (cmp != depth[i])
-                        {
-                            seg = seg.Replace(Defs.paraOpen, string.Empty);
-                            seg = seg.Replace(Defs.paraClose, string.Empty);
-
-                            if (seg != string.Empty)
-                            {
-                                MathPair mathPair = PhiMath.Parse(seg, cmp);
-
-                                if (mathPair.ValueLeft == string.Empty)
-                                {
-                                    mathPair.ValueLeft = Defs.replaceLinkedValue;
-                                }
-
-                                if (mathPair.ValueRight == string.Empty)
-                                {
-                                    mathPair.ValueRight = Defs.replaceLinkedValue;
-                                }
-
-                                PhiMath mth = new PhiMath
-                                {
-                                    Math = mathPair,
-                                    RawValue = seg,
-                                    Order = ordr++
-                                };
-
-                                maths.Add(mth);
-                                seg = string.Empty;
-                            }
-
-                            cmp = depth[i];
-                        }
-
-                        //if (right[i].ToString() != Defs.paraClose
-                         //  && right[i].ToString() != Defs.paraOpen)
-                        {
-                            seg += right[i];
-                        }
-                    }
-
-                    maths = maths.OrderBy(
-                        x=>           //  pmdas  // order of opperations take up one digit each (maybe more later)     
-                        (x.Math.Depth * 1000000) // * 1000000 to prevent order overriding depth
-                        - x.Order // + instead of - because it will be reversed
-                        // order needs to eventually be weighted by order of opperations
-                        ).Reverse().ToList();
-
                     List<string> lines = new List<string>();
 
-                    foreach (PhiMath mth in maths)
-                    {
-                        Console.WriteLine(mth.RawValue);
-                        lines.AddRange(BuildMathInstruct(mth, predefined));
-                    }
+                    List<PhiMath> maths = ParseMisc.ParseMath(right);
 
-                    Console.WriteLine("-------------------");
-                    list.AddRange(lines);
+                    if (maths.Count > 0)
+                    {
+                        hasOpperation = true;
+
+                        foreach (PhiMath mth in maths)
+                        {
+                            Console.WriteLine(mth.RawValue);
+                            lines.AddRange(BuildMathInstruct(mth, predefined));
+                        }
+
+                        Console.WriteLine("-------------------");
+                        list.AddRange(lines);
+                    }
                 }
                 else if (!ParseMisc.IsNumber(right))
                 {
@@ -1206,6 +1149,11 @@ namespace PhiBasicTranslator.TranslateUtilities
                     }
 
                     #endregion
+
+                    if(op == PhiMath.Opperation.ArrayIndex)
+                    {
+                        //needs to push value to stack and then pull into array 
+                    }
                 }
             }
             else

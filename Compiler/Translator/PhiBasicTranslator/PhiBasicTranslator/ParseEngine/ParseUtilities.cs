@@ -694,13 +694,20 @@ namespace PhiBasicTranslator.ParseEngine
                 if (val == Defs.MathModEq) typ = PhiMath.Opperation.ModEquals;
                 if (val == Defs.MathMultEq) typ = PhiMath.Opperation.MultiplyEquals;
             }
-            else if(valSmall != null)
+            else if (valSmall != null)
             {
                 if (valSmall == Defs.MathPlus) typ = PhiMath.Opperation.Plus;
                 if (valSmall == Defs.MathMinus) typ = PhiMath.Opperation.Minus;
                 if (valSmall == Defs.MathMult) typ = PhiMath.Opperation.Multiply;
                 if (valSmall == Defs.MathDiv) typ = PhiMath.Opperation.Divide;
                 if (valSmall == Defs.MathMod) typ = PhiMath.Opperation.Mod;
+            }
+            else
+            {
+                if (condition == Defs.oppSetIndex)
+                {
+                    typ = PhiMath.Opperation.ArrayIndex;
+                }
             }
 
             return typ;
