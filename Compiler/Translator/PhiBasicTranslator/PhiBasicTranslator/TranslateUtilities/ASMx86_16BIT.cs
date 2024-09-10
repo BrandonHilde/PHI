@@ -898,6 +898,13 @@ namespace PhiBasicTranslator.TranslateUtilities
             ""
         };
 
+        public static List<string> BIT32x86_SetVariableFromStack = new List<string>()
+        {
+            "",
+            "   mov " + replaceVarName + ", eax",
+            ""
+        };
+
         public static List<string> BIT16x86_SetVariable = new List<string>()
         {
             "",
@@ -913,6 +920,15 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov " + replaceVarName + ", al",
             ""
         };
+        #endregion
+
+        #region Arrays
+
+        public static List<string> BIT32x86_RetrieveArrayValue = new List<string>()
+        {
+            "   mov eax, [" + Defs.replaceValueStart + " + ebx]"
+        };
+
         #endregion
 
         #region Keyboard

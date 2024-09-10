@@ -607,6 +607,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             List<string> list = new List<string>();
 
+            PhiMath.Opperation op = ParseUtilities.MatchesOpperation(math.Math.MathOp);
+
             string left = math.Math.ValueLeft.Trim();
             string right = math.Math.ValueRight.Trim();
 
@@ -630,14 +632,28 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if (varbleL != null)
             {
-                left = "[" + ASMx86_16BIT.UpdateName(varbleL.Name) + "]";
+                left = ASMx86_16BIT.UpdateName(varbleL.Name);
             }
 
             if (varbleR != null)
             {
-                right = "[" + ASMx86_16BIT.UpdateName(varbleR.Name) + "]";
+                right = ASMx86_16BIT.UpdateName(varbleR.Name);
             }
-            else
+
+            if (op != PhiMath.Opperation.ArrayIndex)
+            {
+                if (varbleL != null)
+                {
+                    left = "[" + left + "]";
+                }
+
+                if (varbleR != null)
+                {
+                    right = "[" + right + "]";
+                }
+            }
+            
+            if(varbleR == null)
             {
                 if (right == string.Empty)
                 {
@@ -669,7 +685,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 }
                 else if (!ParseMisc.IsNumber(right))
                 {
-                    if(!right.Contains(Defs.curlyOpen))
+                    if (!right.Contains(Defs.curlyOpen))
                         right = ASMx86_16BIT.UpdateName(right);
                 }
             }
@@ -679,8 +695,6 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             if (typ == ConditionalPairs.ConditionType.None)
             {
-                PhiMath.Opperation op = ParseUtilities.MatchesOpperation(math.Math.MathOp);
-
                 if(op != PhiMath.Opperation.None)
                 {
                     if(op == PhiMath.Opperation.Plus)
@@ -1152,6 +1166,48 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                     if(op == PhiMath.Opperation.ArrayIndex)
                     {
+
+
+                        if (varbleL != null)
+                        {
+                            if (varbleL.varType == Inside.VariableTypeInt)
+                            {
+                                list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+                                list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
+
+                                int num = NumberOfBytesInType(varbleL.varType);
+
+                                list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+                                list = ASMx86_16BIT.ReplaceValue(list, ASMx86_16BIT.replaceVarName, ASMx86_16BIT.registerEcxMath32);
+
+                                list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, num.ToString());
+
+                                list.AddRange(ASMx86_16BIT.BIT32x86_MulMath);
+
+                                list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                                list = ASMx86_16BIT.ReplaceValue(list, ASMx86_16BIT.replaceVarName, ASMx86_16BIT.registerEbxMath32);
+
+                                list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
+                            }
+                            else
+                            {
+                                list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+                                list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEbxMath32);
+                            }
+                        }
+                        else
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
+                            list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEbxMath32);
+                        }
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_RetrieveArrayValue);
+                        list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, left);
+
+                        list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                        list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
+
                         //needs to push value to stack and then pull into array 
                     }
                 }
@@ -1184,18 +1240,40 @@ namespace PhiBasicTranslator.TranslateUtilities
                     }
                     else
                     {
+                        // if right is empty dont try to set it because its already in eax
+                        if (math.Math.ValueRight == string.Empty)
+                        {
+                            list.AddRange(ASMx86_16BIT.BIT32x86_POP);
 
-                        list.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                Defs.replaceValueStart,
+                                ASMx86_16BIT.registerEaxMath32
+                            );
 
-                        list = ASMx86_16BIT.ReplaceValue(
-                            list,
-                            ASMx86_16BIT.replaceVarName,
-                            left);
+                            list.AddRange(ASMx86_16BIT.BIT32x86_SetVariableFromStack);
 
-                        list = ASMx86_16BIT.ReplaceValue(
-                           list,
-                           Defs.replaceValueStart,
-                           right);
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                ASMx86_16BIT.replaceVarName,
+                                left);
+
+                        }
+                        else
+                        {
+
+                            list.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                                list,
+                                ASMx86_16BIT.replaceVarName,
+                                left);
+
+                            list = ASMx86_16BIT.ReplaceValue(
+                               list,
+                               Defs.replaceValueStart,
+                               right);
+                        }
                     }
                 }
             }

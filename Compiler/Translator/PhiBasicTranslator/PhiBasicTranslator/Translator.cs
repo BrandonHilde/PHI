@@ -760,27 +760,55 @@ namespace PhiBasicTranslator
                             {
                                 if (right.Contains(Defs.squareClose) && right.Contains(Defs.squareOpen))
                                 {
-                                    ExtractArraySubMaths(right, null);
-                                }
+                                    List<PhiMath> maths = ExtractArraySubMaths(right);
 
-                                instr.Instructs.Add(new PhiInstruct
-                                {
-                                    Name = Defs.instMath,
-                                    Maths = new List<PhiMath>
+                                    instr.Instructs.Add(new PhiInstruct
                                     {
-                                        new PhiMath
+                                        Name = Defs.instMath,
+                                        Maths = maths,
+                                        Value = cRaw
+                                    });
+
+                                    instr.Instructs.Add(new PhiInstruct
+                                    {
+                                        Name = Defs.instMath,
+                                        Maths = new List<PhiMath>
                                         {
-                                            Math = new MathPair
+                                            new PhiMath
                                             {
-                                                MathOp = cond,
-                                                ValueRight = right,
-                                                ValueLeft = left,
-                                            },
-                                            RawValue = cRaw
-                                        }
-                                    },
-                                    Value = cRaw
-                                });
+                                                Math = new MathPair
+                                                {
+                                                    MathOp = cond,
+                                                    ValueRight = string.Empty,
+                                                    ValueLeft = left,
+                                                },
+                                                RawValue = cRaw
+                                            }
+                                        },
+                                        Value = cRaw
+                                    });
+                                }
+                                else
+                                {
+                                    instr.Instructs.Add(new PhiInstruct
+                                    {
+                                        Name = Defs.instMath,
+                                        Maths = new List<PhiMath>
+                                        {
+                                            new PhiMath
+                                            {
+                                                Math = new MathPair
+                                                {
+                                                    MathOp = cond,
+                                                    ValueRight = right,
+                                                    ValueLeft = left,
+                                                },
+                                                RawValue = cRaw
+                                            }
+                                        },
+                                        Value = cRaw
+                                    });
+                                }
                             }
                         }
 
@@ -866,7 +894,7 @@ namespace PhiBasicTranslator
             return len;
         }
 
-        public List<PhiMath> ExtractArraySubMaths(string content, List<Inside> labels)
+        public List<PhiMath> ExtractArraySubMaths(string content)
         {
             List<PhiMath> subMaths = new List<PhiMath>();
 
