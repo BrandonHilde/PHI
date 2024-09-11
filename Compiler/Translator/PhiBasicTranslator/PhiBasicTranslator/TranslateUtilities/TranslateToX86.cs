@@ -584,13 +584,37 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                             if (vrbl != null && vrst != null)
                             {
+                                List<string> setcode = new List<string>();
 
-                               // string valuename = ASMx86_16BIT.UpdateName(callname);
+                                setcode.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
 
-                                // 1. convert method internals to asm
-                                // 2. set the callSetTo to the method.End
-                                // 3. Add call code to the subcode
+                                setcode = ASMx86_16BIT.ReplaceValue(
+                                    setcode,
+                                    Defs.replaceValueStart, 
+                                    "[" + ASMx86_16BIT.UpdateName(vrbl.Name) + "]"
+                                    );
 
+                                setcode = ASMx86_16BIT.ReplaceValue(
+                                   setcode,
+                                   ASMx86_16BIT.replaceVarName,
+                                   "[" + ASMx86_16BIT.UpdateName(vrst.Name) + "]"
+                                );
+
+                                if (!ASMx86_16BIT.excludeMethodCall.Contains(callname))
+                                {
+                                    pair.SubCode.Add(
+                                        "    "
+                                        + ASMx86_16BIT.callLabel
+                                        + " "
+                                        + callname.Trim()
+                                        );
+                                }
+
+                                pair.SubCode.AddRange(setcode);
+
+                                pair.CodeBase = Code;
+
+                                return pair;
                             }
                         }
                     }
