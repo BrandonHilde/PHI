@@ -56,6 +56,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                         ASM = pair.CodeBase;
 
+                        //TODO: ADD RETURN VALUES INTO Method
+
                         BuildPair mpar = BuildAllMethods(ASM, SubCode, cls, allVars);
 
                         ASM = mpar.CodeBase;
@@ -479,14 +481,16 @@ namespace PhiBasicTranslator.TranslateUtilities
                             );
                     }
 
+                    pair.CodeBase = Code;
                     pair.SubCode.AddRange(setcode);
+
+                    return pair;
                 }
                 #endregion
 
 
                 if (instrct.Variables.Count > 0)
                 {
-
                     if(callname == ASMx86_16BIT.incDrawRectangle)
                     {
                         for(int i = 0; i < instrct.Variables.Count; i++)
@@ -564,6 +568,31 @@ namespace PhiBasicTranslator.TranslateUtilities
                         }
 
                         pair.SubCode.AddRange(setcode);
+                    }
+                }
+                else
+                {
+                    PhiMethod? method = cls.Methods.Where(x=>x.Name == callname).FirstOrDefault();
+
+                    //check if method is a coded method instead of built-in
+                    if(method != null)
+                    {
+                        if (method.End != string.Empty && callSetTo != string.Empty)
+                        {
+                            PhiVariable? vrbl = predefined.Where(x => x.Name == method.End).FirstOrDefault();
+                            PhiVariable? vrst = predefined.Where(x => x.Name == callSetTo).FirstOrDefault();
+
+                            if (vrbl != null && vrst != null)
+                            {
+
+                               // string valuename = ASMx86_16BIT.UpdateName(callname);
+
+                                // 1. convert method internals to asm
+                                // 2. set the callSetTo to the method.End
+                                // 3. Add call code to the subcode
+
+                            }
+                        }
                     }
                 }
 

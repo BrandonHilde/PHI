@@ -14,7 +14,7 @@ namespace PhiBasicTranslator.Structure
         public string Content = string.Empty;
 
         [JsonIgnore]
-        public string Remainer = string.Empty;
+        public string Remainder = string.Empty;
 
         public PhiMethod() { }
 
@@ -36,7 +36,7 @@ namespace PhiBasicTranslator.Structure
                 Name = Name,
                 End = End,
                 Content = Content,
-                Remainer = Remainer,
+                Remainder = Remainder,
                 Variables = vars,
                 Instructs = insts
             };

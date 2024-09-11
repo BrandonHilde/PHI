@@ -37,7 +37,7 @@ namespace PhiBasicTranslator
 
             code.ClassList = TranslateCode(content);
 
-            return TranslateUtilities.TranslateToX86.ToX86(code);
+            return TranslateToX86.ToX86(code);
         }
 
         public List<PhiClass> TranslateCode(string content)
@@ -142,11 +142,33 @@ namespace PhiBasicTranslator
                     if (inside == Inside.MethodOpen)
                     {
                         insideMethod = true;
+
+                        /*
+                         * eventually change over to getnextphimethod
+                         * 
+                        string cut = content.Substring(i);
+
+                        PhiMethod mthd = GetNextPhiMethod(cut);
+                        */
                     }
 
                     if (last == Inside.MethodEnd && insideMethod)
                     {
                         insideMethod = false;
+
+                        int en = content.IndexOf(Defs.squareClose, i);
+
+                        if (en > 0)
+                        {
+                            string str = string.Empty;
+
+                            for (int j = i + 1; j < en; j++)
+                            {
+                                str += content[j];
+                            }
+
+                            method.End = str.Trim();
+                        }
 
                         current.Methods.Add(method.Copy());
 
@@ -1182,7 +1204,7 @@ namespace PhiBasicTranslator
                     methods.Add(mthd);
 
                     // cut last part off
-                    raw = mthd.Remainer;
+                    raw = mthd.Remainder;
                 }
                 else
                 {
@@ -1213,16 +1235,15 @@ namespace PhiBasicTranslator
                 if (content[i].ToString() == Defs.squareOpen)
                 {
                     if (name == string.Empty)
-                    { // if name is empty then startName
-                        if (i > 0)
+                    { 
+                        // if name is empty then startName
+
+                        // check for array pattern and ignore if array "str testArray[3];" vs "[Method]"
+                        if (!Defs.Alphabet.Contains(content[i].ToString()))
                         {
-                            // check for array pattern and ignore if array "str testArray[3];" vs "[Method]"
-                            if (!Defs.Alphabet.Contains(content[i - 1].ToString()))
-                            {
-                                startName = true;
-                                start = i;
-                            }
-                        }
+                            startName = true;
+                            start = i;
+                        }    
                     }
                     else
                     {
@@ -1277,7 +1298,7 @@ namespace PhiBasicTranslator
                         phiMethod.Name = name;
                         phiMethod.End = end;
                         phiMethod.Content = content.Substring(start, i - start + 1);
-                        phiMethod.Remainer = content.Substring(i + 1);
+                        phiMethod.Remainder = content.Substring(i + 1);
                         break;
                     }
                     else if (content[i].ToString() == Defs.VariableSet)
