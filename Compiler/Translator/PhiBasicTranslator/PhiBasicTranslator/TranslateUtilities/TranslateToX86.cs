@@ -489,7 +489,9 @@ namespace PhiBasicTranslator.TranslateUtilities
                 #endregion
 
 
-                if (instrct.Variables.Count > 0)
+                PhiMethod? method = cls.Methods.Where(x => x.Name == callname).FirstOrDefault();
+
+                if (instrct.Variables.Count > 0 && method == null)
                 {
                     if(callname == ASMx86_16BIT.incDrawRectangle)
                     {
@@ -569,13 +571,55 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                         pair.SubCode.AddRange(setcode);
                     }
+                    else
+                    {
+
+                    }
                 }
-                else
-                {
-                    PhiMethod? method = cls.Methods.Where(x=>x.Name == callname).FirstOrDefault();
+               
+                if(method != null)
+                { 
+                    if(instrct.Variables.Count > 0)
+                    {
+                        for(int i = 0; i < instrct.Variables.Count; i++)
+                        {
+                            if (i < method.Variables.Count)
+                            {
+                                List<string> sbcode = new List<string>();
+
+                                sbcode.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
+
+                                string nme = instrct.Variables[i].Name;
+
+                                PhiVariable? vbr = predefined.Where(x => x.Name == nme).FirstOrDefault();
+
+                                if(vbr != null)
+                                {
+                                    nme = "[" + ASMx86_16BIT.UpdateName(nme) + "]";
+                                }
+
+                                sbcode = ASMx86_16BIT.ReplaceValue(
+                                    sbcode,
+                                    Defs.replaceValueStart,
+                                    nme
+                                );
+
+                                sbcode = ASMx86_16BIT.ReplaceValue(
+                                    sbcode,
+                                    ASMx86_16BIT.replaceVarName,
+                                    "[" + ASMx86_16BIT.UpdateName(method.Variables[i].Name) + "]"
+                                );
+
+                                pair.SubCode.AddRange(sbcode);
+                            }
+                        }
+                    }
+
+                    // pair.SubCode.AddRange(setcode);
 
                     //check if method is a coded method instead of built-in
-                    if(method != null)
+
+                    if (method != null)
                     {
                         if (method.End != string.Empty && callSetTo != string.Empty)
                         {
@@ -1314,7 +1358,6 @@ namespace PhiBasicTranslator.TranslateUtilities
                         }
                         else
                         {
-
                             list.AddRange(ASMx86_16BIT.BIT32x86_SetVariable);
 
                             list = ASMx86_16BIT.ReplaceValue(
