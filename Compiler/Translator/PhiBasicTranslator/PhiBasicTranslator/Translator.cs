@@ -468,7 +468,7 @@ namespace PhiBasicTranslator
                         {
                             varble.Name += letter;
                         }
-                        else if (inside == Inside.Colon)
+                        else if (inside == Inside.Colon && instr.Name != Defs.instWhile)
                         {
                             startParams = true;
                         }
@@ -920,17 +920,31 @@ namespace PhiBasicTranslator
 
                     finalInIF.Instructs.Add(finalIter);
 
+                    string val = "call " + ASMx86_16BIT.replaceLoopContentName + Defs.VariableSetClosure;
+
+                    //ContentProfile cnt = ParseUtilities.ProfileContent(val);
+
+                    List<Inside> cinside = new List<Inside>();
+
+                    foreach(char ci in val)
+                    {
+                        cinside.Add(Inside.None);
+                    }
+
                     finalInIF.Instructs.Add(new PhiInstruct
                     {
                         Name = Defs.instCall,
                         InType = Inside.Instruct,
-                        Value = "call " + Defs.replaceValueStart + Defs.VariableSetClosure
+                        Value = val,
+                        ContentLabels = cinside
                     });
 
                     finalInstruct.Instructs.Add(finalInIF);
+                    finalInstruct.Variables = instruct.Variables;
 
                     finalInstruct.InType = Inside.InstructContainer;
                     finalInstruct.Name = Defs.instWhile;
+                    finalInstruct.Value = instruct.Value;
 
                     return finalInstruct;
                 }

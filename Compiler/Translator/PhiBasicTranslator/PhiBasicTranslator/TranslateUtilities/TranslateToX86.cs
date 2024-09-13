@@ -282,15 +282,24 @@ namespace PhiBasicTranslator.TranslateUtilities
             }
             else if (instrct.Name == Defs.instWhile)
             {
-                string name = "WHILE_" + (LoopCount++);
+                string name = Defs.WhileNameStart + (LoopCount++);
 
                 BuildPair pair = BuildInstructWhile(name, instrct, cls);
+
+                pair.CoreCode = new List<string>
+                {
+                    name + Defs.VariableSet,
+                    ASMx86_16BIT.replaceLoopContent
+                };
 
                 if (instrct.BuildPairs.Count > 0)
                 {
                     foreach (BuildPair bp in instrct.BuildPairs)
                     {
-                        pair.CoreCode = ASMx86_16BIT.MergeSubCode(pair.CoreCode, bp.SubCode, ASMx86_16BIT.replaceLoopContent);
+                        pair.CoreCode = ASMx86_16BIT.MergeSubCode(
+                            pair.CoreCode, 
+                            bp.SubCode, 
+                            ASMx86_16BIT.replaceLoopContent);
                     }
                 }
 
@@ -423,6 +432,12 @@ namespace PhiBasicTranslator.TranslateUtilities
                     {
                         callname += instrct.Value[i];
                     }
+                }
+
+                if(callname.Contains(ASMx86_16BIT.replaceLoopContentName))
+                {
+                    string loopname = Defs.WhileNameStart + LoopCount;
+                    callname = callname.Replace(ASMx86_16BIT.replaceLoopContentName, loopname);
                 }
 
                 callname = callname.Replace('.', '_').Trim(); // trim prevents false split
@@ -1605,129 +1620,104 @@ namespace PhiBasicTranslator.TranslateUtilities
                    ASMx86_16BIT.replaceLoopName,
                    name);
 
-            List<string> values = instruct.Variables.Select(x => x.Name).ToList();
+                //if (condit != null)
+                //{
+                //    jmpCon = ConvertConditional(condit);
+                //}
 
-            for (int i = 0; i < values.Count; i++)
-            {
-                values[i] = ASMx86_16BIT.UpdateName(values[i]);
-            }
+                //if (mths != null)
+                //{
+                //    incVal = ConvertIncrement(mths);
+                //}
 
-            //remember to check for different while loop formats and math example: (6 + (4/i))
-            if (values.Count >= 2)
-            {
-                string nameCont = name;
+                //loopStart.AddRange(ASMx86_16BIT.InstructWhileContent_BITS16);
 
-                string vStart = values.FirstOrDefault() ?? string.Empty;
-                string vLimit = values.LastOrDefault() ?? string.Empty;
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //   loopStart,
+                //   ASMx86_16BIT.replaceLoopContentName,
+                //   nameCont
+                //);
 
-                string jmpCon = ASMx86_16BIT.jumpIfGreaterThan;
-                string incVal = ASMx86_16BIT.loopSubIncrementByOne;
+                //loopStart.AddRange(ASMx86_16BIT.ReplaceValue(
+                //    ASMx86_16BIT.InstructWhileStart_BITS16,
+                //    Defs.replaceValueStart,
+                //    vStart
+                //));
 
-                PhiConditional? condit = instruct.Conditionals.FirstOrDefault();
-                PhiMath? mths = instruct.Maths.FirstOrDefault();
+                //PhiVariable? startValue = instruct.Variables.Where(x => ASMx86_16BIT.UpdateName(x.Name) == vStart).FirstOrDefault();
 
-                if (condit != null)
-                {
-                    jmpCon = ConvertConditional(condit);
-                }
+                //if (startValue != null)
+                //{
+                //    loopStart = ASMx86_16BIT.ReplaceValue(
+                //       loopStart,
+                //       ASMx86_16BIT.replaceLoopStart,
+                //       startValue.ValueRaw
+                //   );
+                //}
 
-                if (mths != null)
-                {
-                    incVal = ConvertIncrement(mths);
-                }
+                //loopStart.AddRange(ASMx86_16BIT.InstructWhileCheck_BITS16);
 
-                #region Loop Construction
+                //#region LOOP CHECK
 
-                loopStart.AddRange(ASMx86_16BIT.InstructWhileContent_BITS16);
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //    loopStart,
+                //    ASMx86_16BIT.replaceLoopName,
+                //    name
+                //);
 
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                   loopStart,
-                   ASMx86_16BIT.replaceLoopContentName,
-                   nameCont
-                );
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //    loopStart,
+                //    Defs.replaceValueStart,
+                //    vStart
+                //);
 
-                loopStart.AddRange(ASMx86_16BIT.ReplaceValue(
-                    ASMx86_16BIT.InstructWhileStart_BITS16,
-                    Defs.replaceValueStart,
-                    vStart
-                ));
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //    loopStart,
+                //    ASMx86_16BIT.replaceLoopLimit,
+                //    vLimit
+                //);
 
-                PhiVariable? startValue = instruct.Variables.Where(x => ASMx86_16BIT.UpdateName(x.Name) == vStart).FirstOrDefault();
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //    loopStart,
+                //    ASMx86_16BIT.replaceLoopCondition,
+                //    jmpCon
+                //);
 
-                if (startValue != null)
-                {
-                    loopStart = ASMx86_16BIT.ReplaceValue(
-                       loopStart,
-                       ASMx86_16BIT.replaceLoopStart,
-                       startValue.ValueRaw
-                   );
-                }
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //    loopStart,
+                //    ASMx86_16BIT.replaceLoopIncrement,
+                //    incVal
+                //);
 
-                loopStart.AddRange(ASMx86_16BIT.InstructWhileCheck_BITS16);
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //    loopStart,
+                //    ASMx86_16BIT.replaceLoopContentName,
+                //    nameCont
+                //);
 
-                #region LOOP CHECK
+                //#endregion
 
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                    loopStart,
-                    ASMx86_16BIT.replaceLoopName,
-                    name
-                );
-
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                    loopStart,
-                    Defs.replaceValueStart,
-                    vStart
-                );
-
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                    loopStart,
-                    ASMx86_16BIT.replaceLoopLimit,
-                    vLimit
-                );
-
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                    loopStart,
-                    ASMx86_16BIT.replaceLoopCondition,
-                    jmpCon
-                );
-
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                    loopStart,
-                    ASMx86_16BIT.replaceLoopIncrement,
-                    incVal
-                );
-
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                    loopStart,
-                    ASMx86_16BIT.replaceLoopContentName,
-                    nameCont
-                );
-
-                #endregion
-
-                loopStart.AddRange(ASMx86_16BIT.InstructWhileDone_BITS16);
+                //loopStart.AddRange(ASMx86_16BIT.InstructWhileDone_BITS16);
 
 
 
-                #region LOOP END
+                //#region LOOP END
 
-                // loop content gets added after sub-instructs are built
+                //// loop content gets added after sub-instructs are built
 
-                loopStart = ASMx86_16BIT.ReplaceValue(
-                   loopStart,
-                   Defs.replaceValueStart,
-                   vStart
-                );
+                //loopStart = ASMx86_16BIT.ReplaceValue(
+                //   loopStart,
+                //   Defs.replaceValueStart,
+                //   vStart
+                //);
 
-                #endregion
+                //#endregion
                 //Code = ASMx86_16BIT.MergeValues(
                 //    Code,
                 //    ASMx86_16BIT.InstructWhileStart_BITS16,
                 //    Defs.replaceIncludes
                 //);
-
-                #endregion
-            }
+   
 
             return new BuildPair
             {
