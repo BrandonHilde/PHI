@@ -8,6 +8,8 @@ using static System.Runtime.InteropServices.JavaScript.JSType;
 using System.Reflection.Metadata;
 using System.Net.Mime;
 using PhiBasicTranslator.TranslateUtilities;
+using Newtonsoft.Json.Linq;
+using static PhiBasicTranslator.Structure.ConditionalPairs;
 
 namespace PhiBasicTranslator
 {
@@ -370,7 +372,19 @@ namespace PhiBasicTranslator
             return classes;
         }
 
+        public List<PhiClass> PostProcess(List<PhiClass> classes)
+        {
+            List<PhiClass> cls = new List<PhiClass>();
 
+            for (int i = 0; i < classes.Count; i++)
+            {
+                PhiClass cs = classes[i];
+
+
+            }
+
+            return cls;
+        }
         public PhiInstruct ExtractInstruct(Inside inside, string content, string prev, Inside[] profile, int i, PhiClass current)
         {
             PhiInstruct instruct = new PhiInstruct();
@@ -421,6 +435,8 @@ namespace PhiBasicTranslator
         {
             if (instr.Name != string.Empty)
             {
+                bool isLoop = instr.Name == Defs.instWhile; // true if while
+
                 Inside last = instr.ContentLabels.First();
 
                 PhiVariable varble = new PhiVariable();
@@ -739,99 +755,7 @@ namespace PhiBasicTranslator
 
                         if (select != null)
                         {
-                            string left = string.Empty;
-                            string right = string.Empty;
-
-                            string[] two = cRaw.Split(cond);
-
-                            if (two.Length == 2)
-                            {
-                                left = two[0].Trim();
-                                right = two[1].Trim();
-                            }
-
-                            ConditionalPairs.ConditionType ctyp = ConditionalPairs.ConditionType.None;
-
-                            if (instr.Name == Defs.instWhile)
-                            {
-                                ctyp = ParseUtilities.MatchesInvertedCondition(cond);
-                            }
-                            else
-                            {
-                                ctyp = ParseUtilities.MatchesCondition(cond);
-                            }
-
-                            if (conditionOpperation == ConditionalPairs.ConditionOpperation.Comparision)
-                            {
-                                instr.Conditionals.Add(new PhiConditional
-                                {
-                                    PhiConditionalPairs = new List<ConditionalPairs>
-                                    {
-                                        new ConditionalPairs
-                                        {
-                                            type = ctyp,
-                                            LeftValue = left,
-                                            RightValue = right,
-                                            opperation = conditionOpperation
-                                        }
-                                    },
-                                    RawValue = cRaw
-                                });
-                            }
-                            else
-                            {
-                                if (right.Contains(Defs.squareClose) && right.Contains(Defs.squareOpen))
-                                {
-                                    List<PhiMath> maths = ExtractArraySubMaths(right);
-
-                                    instr.Instructs.Add(new PhiInstruct
-                                    {
-                                        Name = Defs.instMath,
-                                        Maths = maths,
-                                        Value = cRaw
-                                    });
-
-                                    instr.Instructs.Add(new PhiInstruct
-                                    {
-                                        Name = Defs.instMath,
-                                        Maths = new List<PhiMath>
-                                        {
-                                            new PhiMath
-                                            {
-                                                Math = new MathPair
-                                                {
-                                                    MathOp = cond,
-                                                    ValueRight = string.Empty,
-                                                    ValueLeft = left,
-                                                },
-                                                RawValue = cRaw
-                                            }
-                                        },
-                                        Value = cRaw
-                                    });
-                                }
-                                else
-                                {
-                                    instr.Instructs.Add(new PhiInstruct
-                                    {
-                                        Name = Defs.instMath,
-                                        Maths = new List<PhiMath>
-                                        {
-                                            new PhiMath
-                                            {
-                                                Math = new MathPair
-                                                {
-                                                    MathOp = cond,
-                                                    ValueRight = right,
-                                                    ValueLeft = left,
-                                                },
-                                                RawValue = cRaw
-                                            }
-                                        },
-                                        Value = cRaw
-                                    });
-                                }
-                            }
+                            instr = AssessConditionals(instr, conditionOpperation, cRaw, cond);
                         }
 
                         cond = string.Empty;
@@ -840,7 +764,179 @@ namespace PhiBasicTranslator
                 }
             }
 
+            if (instr.Name == Defs.instWhile)
+            {
+                instr = ReorganizeLoop(instr);
+            }
+
             return instr;
+        }
+
+        public PhiInstruct AssessConditionals(PhiInstruct instruct, ConditionOpperation opper, string contentRaw, string condition)
+        {
+            string left = string.Empty;
+            string right = string.Empty;
+
+            string[] two = contentRaw.Split(condition);
+
+            if (two.Length == 2)
+            {
+                left = two[0].Trim();
+                right = two[1].Trim();
+            }
+
+            ConditionalPairs.ConditionType ctyp = ConditionalPairs.ConditionType.None;
+
+            if (instruct.Name == Defs.instWhile)
+            {
+                ctyp = ParseUtilities.MatchesInvertedCondition(condition);
+            }
+            else
+            {
+                ctyp = ParseUtilities.MatchesCondition(condition);
+            }
+
+            if (opper == ConditionalPairs.ConditionOpperation.Comparision)
+            {
+                instruct.Conditionals.Add(new PhiConditional
+                {
+                    PhiConditionalPairs = new List<ConditionalPairs>
+                                    {
+                                        new ConditionalPairs
+                                        {
+                                            type = ctyp,
+                                            LeftValue = left,
+                                            RightValue = right,
+                                            opperation = opper
+                                        }
+                                    },
+                    RawValue = contentRaw
+                });
+            }
+            else
+            {
+                if (right.Contains(Defs.squareClose) && right.Contains(Defs.squareOpen))
+                {
+                    List<PhiMath> maths = ExtractArraySubMaths(right);
+
+                    instruct.Instructs.Add(new PhiInstruct
+                    {
+                        Name = Defs.instMath,
+                        Maths = maths,
+                        Value = contentRaw
+                    });
+
+                    instruct.Instructs.Add(new PhiInstruct
+                    {
+                        Name = Defs.instMath,
+                        Maths = new List<PhiMath>
+                        {
+                            new PhiMath
+                            {
+                                Math = new MathPair
+                                {
+                                    MathOp = condition,
+                                    ValueRight = string.Empty,
+                                    ValueLeft = left,
+                                },
+                                RawValue = contentRaw
+                            }
+                        },
+                        Value = contentRaw
+                    });
+                }
+                else
+                {
+                    //instr.name for while
+                    instruct.Instructs.Add(new PhiInstruct
+                    {
+                        Name = Defs.instMath,
+                        Maths = new List<PhiMath>
+                        {
+                            new PhiMath
+                            {
+                                Math = new MathPair
+                                {
+                                    MathOp = condition,
+                                    ValueRight = right,
+                                    ValueLeft = left,
+                                },
+                                RawValue = contentRaw
+                            }
+                        },
+                        Value = contentRaw
+                    });
+                }
+            }
+
+            return instruct;
+        }
+
+        public PhiInstruct ReorganizeLoop(PhiInstruct instruct)
+        {
+            if (instruct != null)
+            {
+                if (instruct.Name == Defs.instWhile)
+                {
+                    PhiInstruct finalInstruct = new PhiInstruct();
+                    PhiInstruct finalInIF = new PhiInstruct(); 
+                    PhiInstruct finalIter = new PhiInstruct();
+                    PhiInstruct finalCall = new PhiInstruct();
+
+                    for (int i = 0; i < instruct.Instructs.Count; i++)
+                    {
+                        PhiInstruct? mathComp = instruct.Instructs[i];
+
+                        if (mathComp != null)
+                        {
+                            if(i == 0)
+                            {
+                                finalInIF = AssessConditionals(
+                                    instruct.Instructs[i], 
+                                    ConditionOpperation.Comparision, 
+                                    instruct.Instructs[i].Value, 
+                                    instruct.Instructs[i].Maths.First().Math.MathOp);
+
+                                finalInIF = new PhiInstruct
+                                {
+                                    Name = Defs.instIf,
+                                    Conditionals = finalInIF.Conditionals,
+                                    Content = finalInIF.Content,
+                                    ContentLabels = finalInIF.ContentLabels,
+                                    Value = finalInIF.Value,
+                                    InType = Inside.InstructContainer
+                                };
+                            }
+                            else if (i == 1)
+                            {
+                                finalIter = instruct.Instructs[i];
+                            }
+                            else
+                            {
+                                finalInIF.Instructs.Add(instruct.Instructs[i]);
+                            }
+                        }
+                    }
+
+                    finalInIF.Instructs.Add(finalIter);
+
+                    finalInIF.Instructs.Add(new PhiInstruct
+                    {
+                        Name = Defs.instCall,
+                        InType = Inside.Instruct,
+                        Value = "call " + Defs.replaceValueStart + Defs.VariableSetClosure
+                    });
+
+                    finalInstruct.Instructs.Add(finalInIF);
+
+                    finalInstruct.InType = Inside.InstructContainer;
+                    finalInstruct.Name = Defs.instWhile;
+
+                    return finalInstruct;
+                }
+            }
+
+            return instruct;
         }
         public int MeasureInstruct(string content, Inside[] contentLabels, int begin)
         {
