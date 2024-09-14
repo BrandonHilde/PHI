@@ -2016,7 +2016,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                 result = "[" + orgn + " + " + add + "]";
             }
-            else
+            
+            if(mult != 1)
             {
                 int ad = 0;
 

@@ -641,7 +641,8 @@ namespace PhiBasicTranslator
                         {
                             string ltr = instr.Value[j].ToString();
 
-                            if (Defs.ConditionalClosureCharacters.Contains(ltr))
+                            if (Defs.ConditionalClosureCharacters.Contains(ltr)
+                                || instr.ContentLabels[j] == Inside.Instruct)
                             {
                                 bgn = j;
                                 break;
@@ -653,13 +654,27 @@ namespace PhiBasicTranslator
 
                         i = end - 1;
 
-                        MathPair mpar = PhiMath.Parse(cr);
+                        List<PhiMath> maths = ExtractArraySubMaths(cr);
 
-                        instr.Instructs.Add(new PhiInstruct
+                        if (maths.Count > 0)
                         {
-                            Name = Defs.instMath,
-                            Value = cr,
-                            Maths = new List<PhiMath>
+                            instr.Instructs.Add(new PhiInstruct
+                            {
+                                Name = Defs.instMath,
+                                Maths = maths,
+                                Value = cr
+                            });
+                        }
+                        else
+                        {
+
+                            MathPair mpar = PhiMath.Parse(cr);
+
+                            instr.Instructs.Add(new PhiInstruct
+                            {
+                                Name = Defs.instMath,
+                                Value = cr,
+                                Maths = new List<PhiMath>
                             {
                                 new PhiMath
                                 {
@@ -667,7 +682,8 @@ namespace PhiBasicTranslator
                                     RawValue = cr
                                 }
                             }
-                        });
+                            });
+                        }
 
                     }
 
@@ -801,15 +817,15 @@ namespace PhiBasicTranslator
                 instruct.Conditionals.Add(new PhiConditional
                 {
                     PhiConditionalPairs = new List<ConditionalPairs>
-                                    {
-                                        new ConditionalPairs
-                                        {
-                                            type = ctyp,
-                                            LeftValue = left,
-                                            RightValue = right,
-                                            opperation = opper
-                                        }
-                                    },
+                    {
+                        new ConditionalPairs
+                        {
+                            type = ctyp,
+                            LeftValue = left,
+                            RightValue = right,
+                            opperation = opper
+                        }
+                    },
                     RawValue = contentRaw
                 });
             }
