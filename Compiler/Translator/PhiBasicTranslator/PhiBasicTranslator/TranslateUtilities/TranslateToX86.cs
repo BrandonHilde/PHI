@@ -1284,6 +1284,18 @@ namespace PhiBasicTranslator.TranslateUtilities
                         {
                             if (varbleL.varType == Inside.VariableTypeInt)
                             {
+                                if(!hasOpperation)
+                                {
+                                    list.AddRange(ASMx86_16BIT.ASMx86_MOV);
+
+                                    list = ASMx86_16BIT.ReplaceValue(list, ASMx86_16BIT.replaceVarName, "[" + right + "]");
+
+                                    list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
+
+                                    list.AddRange(ASMx86_16BIT.BIT32x86_PUSH);
+                                    list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
+                                }
+
                                 list.AddRange(ASMx86_16BIT.BIT32x86_POP);
                                 list = ASMx86_16BIT.ReplaceValue(list, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
 
