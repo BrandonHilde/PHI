@@ -9,7 +9,7 @@
 phi.Hello:Bootloader
 {
 	str hello: 'Hello, World!\r\n';
-    str newline: '\r\n';
+    	str newline: '\r\n';
 	str name:[40];
 	
 	log 'What is your name: ';
