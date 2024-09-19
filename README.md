@@ -6,10 +6,10 @@
 
 ```phi
 
-phi.Hello:OS16BIT
+phi.Hello:Bootloader
 {
 	str hello: 'Hello, World!\r\n';
-    	str newline: '\r\n';
+    str newline: '\r\n';
 	str name:[40];
 	
 	log 'What is your name: ';
@@ -19,21 +19,17 @@ phi.Hello:OS16BIT
 	log newline;
 	log 'Press any key to continue...';
 	
-	call WaitForKeyPress;
-	call EnableVideoMode;
+	call Bootloader.WaitForKeyPress;
+	call Bootloader.JumpToSectorTwo;
 }
 
-asm.WaitForKeyPress
+phi.SectorTwo:OS
 {
-    	mov ah, 0x00
-    	int 0x16
+	str Greetings: 'Welcome to PHI language!';
+	
+	log '\r\n' Greetings;
 }
 
-asm.EnableVideoMode
-{
-    	mov ax, 0x13
-    	int 0x10
-}
 ```
 <h4>To Build:</h4>
 
