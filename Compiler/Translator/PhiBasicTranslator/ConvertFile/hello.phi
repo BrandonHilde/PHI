@@ -1,53 +1,26 @@
-﻿phi.Hello:OS16BIT
+﻿phi.Hello:Bootloader
 {
-   	str newline: '\r\n';
+	str hello: 'Hello, World!\r\n';
+    str newline: '\r\n';
+	str name:[40];
+	int test: 12;
 
-	str testarr: 
-	'hi' 
-	'hello' 
-	'maybe'	
-	'hmm';
-
-	int testI: 
-	1 
-	5 
-	3 
-	8	
-	9	
-	9	
-	3	
-	2;
-
-	int i: 12;
-	int y: 7;
-	int t: 3;
+	log test;
 	
-	int val: 0;
-
-	log testI[5];
-	
+	log 'What is your name: ';
+	ask name;
 	log newline;
-
-	val is testI[t];
-
-	log val;
+	log 'hello: ' name;
 	log newline;
-
-	testI[3] is y;
-
-	log y;
-	log newline;
-
-	val is testI[3];
-
-	log val;
-	log newline;	
-
-	if val is > 0
-		log 'hello';
-		log newline;
-		log val;
-	;;
+	log 'Press any key to continue...';
 	
+	call Bootloader.WaitForKeyPress;
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.SectorTwo:OS
+{
+	str Greetings: 'Welcome to PHI language!';
 	
+	log Greetings;
 }

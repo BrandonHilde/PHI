@@ -18,7 +18,9 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string varWrdTyp = " dw ";
         public static readonly string varIntTyp = " dd ";
         public static readonly string varBytTyp = " db ";
+
         public static readonly string varTimes = " times ";
+
         public static readonly string varStrNewLine = "10";
         public static readonly string varStrReturn = "13";
         public static readonly string varStrTab = "9";
@@ -29,8 +31,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string registerEcxMath32 = "ecx";
         public static readonly string registerEdxMath32 = "edx";
 
-        public static readonly string incJumpToSectorTwo = "OS16BIT_JumpToSectorTwo";
-        public static readonly string incPrepSectorTwo = "OS16BIT_PrepToSectorTwo";
+        public static readonly string incJumpToSectorTwo = "Bootloader_JumpToSectorTwo";
+        public static readonly string incPrepSectorTwo = "Bootloader_PrepToSectorTwo";
 
         public static readonly List<string> incSectorsList = new List<string>()
         {
@@ -38,12 +40,12 @@ namespace PhiBasicTranslator.TranslateUtilities
             incPrepSectorTwo.Replace('_', '.'),
         };
 
-        public static readonly string incWaitForKey = "OS16BIT_WaitForKeyPress";
-        public static readonly string incKeyboardInterupt = "OS16BIT_SetupKeyboardInterupt";
-        public static readonly string incKeyboardEvent = "OS16BIT_KeyboardEvent";
+        public static readonly string incWaitForKey = "Bootloader_WaitForKeyPress";
+        public static readonly string incKeyboardInterupt = "OS_SetupKeyboardInterupt";
+        public static readonly string incKeyboardEvent = "OS_KeyboardEvent";
 
-        public static readonly string incGetKey = "OS16BIT_GetKey";
-        public static readonly string incIsKeyDown = "OS16BIT_IsKeyDown";
+        public static readonly string incGetKey = "OS_GetKey";
+        public static readonly string incIsKeyDown = "OS_IsKeyDown";
 
         public static readonly List<string> incKeyboardList = new List<string>()
         {
@@ -52,9 +54,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             incKeyboardEvent.Replace('_', '.')
         };
 
-        public static readonly string incTimerEvent = "OS16BIT_TimerEvent";
-        public static readonly string incSetupTimerInterupt = "OS16BIT_SetupInteruptTimer";
-        public static readonly string incTimerInterupt = "OS16BIT_timer_interrupt";
+        public static readonly string incTimerEvent = "OS_TimerEvent";
+        public static readonly string incSetupTimerInterupt = "OS_SetupInteruptTimer";
+        public static readonly string incTimerInterupt = "OS_timer_interrupt";
 
         public static readonly List<string> incTimerList = new List<string>()
         {
@@ -63,9 +65,9 @@ namespace PhiBasicTranslator.TranslateUtilities
             incTimerInterupt.Replace('_', '.'),
         };
 
-        public static readonly string incEnableVideo = "OS16BITVideo_EnableVideoMode";
-        public static readonly string incDrawRectangle = "OS16BITVideo_DrawRectangle";
-        public static readonly string incDrawPixel = "OS16BITVideo_DrawPixel";
+        public static readonly string incEnableVideo = "Bootloader_EnableVideoMode";
+        public static readonly string incDrawRectangle = "OS_DrawRectangle";
+        public static readonly string incDrawPixel = "OS_DrawPixel";
 
         public static readonly List<string> incDrawingList = new List<string>()
         {
@@ -515,6 +517,14 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   call print_log"
         };
 
+        public static List<string> InstructLogInt_BITS32 = new List<string>()
+        {
+            "   call prep_convert",
+            "   mov eax, " + replaceVarName,
+            "   call convert_int_to_str"
+        };
+
+        /*
         public static List<string> InstructLogInt_BITS16 = new List<string>()
         {
             "   mov ax, word " + Defs.replaceValueStart,
@@ -525,7 +535,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov ax, word " + Defs.replaceValueStart,
             "   xor ah, ah",
             "   call print_int"
-        };
+        };*/
         #endregion
 
         #region ASK
@@ -613,7 +623,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         /// </summary>
         public static List<string> BIT16x86_SectorPrep = new List<string>()
         {
-            "OS16BIT_PrepSectorTwo:",
+            "Bootloader_PrepSectorTwo:",
             "   mov ah, 0x02    ; BIOS read sector",
             "   mov al, 6       ; Number of sectors", // may need to change number later
             "   mov ch, 0       ; Cylinder number",
@@ -626,8 +636,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_JumpSectorTwo = new List<string>()
         {
-            "OS16BIT_JumpToSectorTwo:",
-            "   call OS16BIT_PrepSectorTwo",
+            "Bootloader_JumpToSectorTwo:",
+            "   call Bootloader_PrepSectorTwo",
             "   jmp 0x7E00 ; jump to sector two", // jump to sector two"
              "   ret"
         };
@@ -649,7 +659,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_ProgramableInteruptTimer = new List<string>()
         {
-            "OS16BIT_SetupInteruptTimer:",
+            "OS_SetupInteruptTimer:",
             "   cli    ; Set up the PIT",
             "   mov al, 00110100b    ; Channel 0, lobyte/hibyte, rate generator",
             "   out PIT_COMMAND, al",
@@ -659,7 +669,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   mov al, ah",
             "   out PIT_CHANNEL_0, al    ; High byte",
             "   ; Set up the timer ISR",
-            "   mov word [0x0020], OS16BIT_timer_interrupt",
+            "   mov word [0x0020], OS_timer_interrupt",
             "   mov word [0x0022], 0x0000    ; Enable interrupts",
             "   sti",
             "   ret"
@@ -667,8 +677,8 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_Interupt = new List<string>()
         {
-            "OS16BIT_timer_interrupt:",
-            "   call OS16BIT_TimerEvent",
+            "OS_timer_interrupt:",
+            "   call OS_TimerEvent",
             "   mov al, 0x20",
             "   out 0x20, al",
             "   iret"
@@ -686,7 +696,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         #region Graphics
         public static List<string> BIT16x86_VideoMode = new List<string>()
         {
-            "OS16BITVideo_EnableVideoMode:",
+            "Bootloader_EnableVideoMode:",
             "   mov ax, 0x13",
             "   int 0x10",
             "   ret"
@@ -1071,7 +1081,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> BIT16x86_WaitForKeyPress = new List<string>()
         {
-            "OS16BIT_WaitForKeyPress:", 
+            "Bootloader_WaitForKeyPress:", 
             "   mov ah, 0x00",
             "   int 0x16",
             "   ret"
@@ -1099,6 +1109,52 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         #endregion
 
+        #region Text
+
+        public static List<string> ConvertIntToString = new List<string>()
+        {
+            "prep_convert:",
+            "   mov cl, 0",
+            "   mov [VALUE_int_to_str_index], cl",
+            "   ret",
+            "convert_int_to_str:",
+            "   cmp eax, 10",
+            "   jge .div_num",
+            "",
+            "   jmp .store_value",
+            ".div_num:",
+            "   xor edx, edx",
+            "   mov ebx, 10",
+            "   div ebx",
+            "   push edx",
+            "   call convert_int_to_str",
+            "   pop edx",
+            "   mov al, dl",
+            "",
+            ".store_value:",
+            "   add al, '0' ",
+            "",
+            "   push ebx ",
+            "   mov ebx, VALUE_int_to_str_buffer",
+            "   mov cl, [VALUE_int_to_str_index]",
+            "   add ebx, ecx",
+            "   mov byte [ebx], al",
+            "   inc cl",
+            "   mov [VALUE_int_to_str_index], cl",
+            "   pop ebx",
+            "    ",
+            ".done:",
+            "   ret"
+        };
+
+        public static List<string> PrintConvert_Variables = new List<string>()
+        {
+            Defs.VarStoreIntToStringBuffer + " db 0,0,0,0,0,0,0,0,0,0,0",
+            Defs.VarStoreIntToStringIndex + " db 0"
+        };
+
+        #endregion
+
         public static List<string> PrintLog_x86BITS16 = new List<string>()
         {
              "print_log:",
@@ -1114,6 +1170,7 @@ namespace PhiBasicTranslator.TranslateUtilities
             "",
         };
 
+        /*
         public static List<string> PrintInt_x86BITS16 = new List<string>()
         {
             "print_int:",
@@ -1147,6 +1204,6 @@ namespace PhiBasicTranslator.TranslateUtilities
             "    pop bp",
             "    ret",
             ""
-        };
+        };*/
     }
 }

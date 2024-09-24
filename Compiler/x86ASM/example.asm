@@ -15,6 +15,7 @@ start:
    call print_log
 
    mov eax, [VALUE_value]
+   call prep_convert
    call convert_int_to_str
 
    mov si, VALUE_str_buffer
@@ -42,7 +43,7 @@ convert_int_to_str:
    mov al, dl
 
 .store_value:
-   add al, '0'
+   add al, '0' 
 
    push ebx 
    mov ebx, VALUE_str_buffer
@@ -53,7 +54,6 @@ convert_int_to_str:
    mov [VALUE_str_index], cl
    pop ebx
     
-
 .done:
    ret
 
@@ -101,8 +101,8 @@ print_log:
 
 ;{INCLUDE}
 
-VALUE_str_buffer db 0,0,0,0,0,0,0,0,0,0,0
-VALUE_str_index db 0
+VALUE_int_to_str_buffer db 0,0,0,0,0,0,0,0,0,0,0
+VALUE_int_to_str_index db 0
 VALUE_newline db 13,10,0
 VALUE_hello db 'hello, world',0
 VALUE_value dd 21
