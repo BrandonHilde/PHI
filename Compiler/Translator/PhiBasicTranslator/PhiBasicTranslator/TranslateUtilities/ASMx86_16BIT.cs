@@ -1144,6 +1144,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             "   pop ebx",
             "    ",
             ".done:",
+            "   mov ebx, VALUE_int_to_str_buffer",
+            "   mov cl, [VALUE_int_to_str_index]",
+            "   add ebx, ecx",
+            "   mov byte [ebx], 0",
             "   ret"
         };
 
