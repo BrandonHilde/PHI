@@ -226,7 +226,6 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static BuildPair BuildSubInstructs(List<string> Code, List<string> SubCode, PhiInstruct instrct, PhiClass cls, List<PhiVariable> predefined, bool sub = true)
         {
-
             for (int i = 0; i < instrct.Instructs.Count; i++)
             {
                 PhiInstruct inst = instrct.Instructs[i];
@@ -1638,13 +1637,33 @@ namespace PhiBasicTranslator.TranslateUtilities
                     // adds function call code
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
                 }
-                else if(v.varType == Inside.VariableTypeInt)
+                else if(v.varType == Inside.VariableTypeInt 
+                    || v.varType == Inside.VariableTypeBln 
+                    || v.varType == Inside.VariableTypeByt)
                 {
+
+                    int num = NumberOfBytesInType(v.varType);
+
                     vname = "[" + vname + "]";
                     // adds function call code
-                   // subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
-                   
+                    // subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogInt_BITS16, Defs.replaceCodeStart);
+
+                    string reg = ASMx86_16BIT.registerEaxMath32;
+
+                    if (num == 1)
+                    {
+                        subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.ASMx86_XOR, Defs.replaceCodeStart);
+                        subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, ASMx86_16BIT.registerEaxMath32);
+                        subCde = ASMx86_16BIT.ReplaceValue(subCde, ASMx86_16BIT.replaceVarName, ASMx86_16BIT.registerEaxMath32);
+
+                        reg = ASMx86_16BIT.registerAl8;
+                    }
+                    else
+                    {
+
+                    }
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogInt_BITS32, Defs.replaceCodeStart);
+                    subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, reg);
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogString_BITS16, Defs.replaceCodeStart);
 
                     subCde = ASMx86_16BIT.ReplaceValue(subCde, ASMx86_16BIT.replaceVarName, vname);

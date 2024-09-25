@@ -31,6 +31,8 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string registerEcxMath32 = "ecx";
         public static readonly string registerEdxMath32 = "edx";
 
+        public static readonly string registerAl8 = "al";
+
         public static readonly string incJumpToSectorTwo = "Bootloader_JumpToSectorTwo";
         public static readonly string incPrepSectorTwo = "Bootloader_PrepToSectorTwo";
 
@@ -520,7 +522,7 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static List<string> InstructLogInt_BITS32 = new List<string>()
         {
             "   call prep_convert",
-            "   mov eax, " + replaceVarName,
+            "   mov " + Defs.replaceValueStart + ", " + replaceVarName,
             "   call convert_int_to_str"
         };
 
@@ -812,6 +814,13 @@ namespace PhiBasicTranslator.TranslateUtilities
         {
             "",
             "   mov " + replaceVarName + ", " + Defs.replaceValueStart,
+            ""
+        };
+
+        public static List<string> ASMx86_XOR = new List<string>()
+        {
+            "",
+            "   xor " + replaceVarName + ", " + Defs.replaceValueStart,
             ""
         };
 
