@@ -204,3 +204,70 @@ SCREEN_WIDTH equ 320
 SCREEN_HEIGHT equ 200
 
 BUFFER_SIZE equ DRAW_START + (SCREEN_WIDTH * SCREEN_HEIGHT)
+
+
+
+ORG 0x7C00
+
+start:
+   xor ax, ax
+   mov ds, ax
+   mov es, ax
+   mov ss, ax
+   mov sp, 0x7C00
+
+   mov al, 0x13 ; 320x200 color
+   int 0x10
+
+   ; + 320 * 200
+
+   call draw_square  
+
+
+
+   jmp $
+
+draw_square:
+   mov edi, DRAW_START 
+   mov eax, 50 ; ycord
+   xor edx, edx
+
+.setup:
+   
+   mov ebx, 320 ; screen width
+   mul ebx ; multiply to get location in array
+   add eax, 100 ; xcord
+   add edi, eax ; add to get final location in array
+
+   mov [begin_draw], eax
+   jmp .put_pixel
+
+.move_down:
+   add edi, 320
+   sub edi, [sq_width]
+   xor ecx, ecx
+
+.put_pixel:
+   mov byte [edi], COLOR_RED
+   inc edi 
+   inc ecx
+   cmp ecx, [sq_width]
+   jl .put_pixel
+
+   inc edx
+   cmp edx, [sq_height]
+   jl .move_down
+
+.done:
+   ret
+
+   
+
+begin_draw dd 0
+sq_width dd 40
+sq_height dd 70
+DRAW_START equ 0xA0000
+COLOR_RED equ 0x04
+
+times 510-($-$$) db 0
+dw 0xAA55
