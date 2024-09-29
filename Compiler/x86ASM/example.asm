@@ -33,10 +33,57 @@ start:
    int 0x10
 
    call Timer_Setup
+   call SetupKeyboardInterupt
 
    jmp $
 
+SetupKeyboardInterupt:
 
+   cli                    
+   mov word [0x0024], keyboard_handler ; 0x0024
+   mov [0x0026], cs                    ; 0x0026
+   sti                 
+   ret
+
+keyboard_handler:
+   in al, 0x60 
+   test al, 0x80
+   jz .key_down
+
+   ; key up 
+   call Key_Up
+
+   jmp .done
+
+
+.key_down:
+   call Key_Down
+.done:
+   mov al, 0x20
+   out 0x20, al
+   iret
+
+Key_Up:
+   call write_char
+   call move_box_down
+   ret
+
+Key_Down:
+   call write_char
+   call move_box_down
+   ret
+
+move_box_down:
+   push eax
+   mov eax, [sq_y]
+   sub eax, 3
+   mov [sq_y], eax
+   pop eax
+   ret
+write_char:
+   mov ah, 0x0E
+   int 0x10
+   ret
 fill_pixel:
     mov byte [edi], Colors.LightRed
     inc edi
