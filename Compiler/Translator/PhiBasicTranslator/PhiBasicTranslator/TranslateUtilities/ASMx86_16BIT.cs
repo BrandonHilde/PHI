@@ -979,10 +979,8 @@ namespace PhiBasicTranslator.TranslateUtilities
             incKeyboardInterupt + ":",
             "   ; Set up the interrupt handler",
             "   cli                     ; Disable interrupts",
-            "   mov ax, 0",
-            "   mov es, ax",
-            "   mov word [es:9*4], keyboard_handler",
-            "   mov [es:9*4+2], cs",
+            "   mov word [0x0024], keyboard_handler",
+            "   mov [0x0026], cs",
             "   sti                     ; Enable interrupts",
             "   ret"
         };
