@@ -1,4 +1,4 @@
-ORG 0x7C00
+org 0x7E00
 
 Colors.Black equ 0x0  ;Black
 Colors.Blue equ 0x1  ;Blue
@@ -19,16 +19,15 @@ Colors.White equ 0xF  ;White
 PIT_COMMAND equ 0x43
 PIT_CHANNEL_0 equ 0x40
 PIT_FREQUENCY equ 1193180
-DESIRED_FREQ equ 60
+DESIRED_FREQ equ 100
 DIVISOR equ PIT_FREQUENCY/DESIRED_FREQ
 
-start:
-   xor ax, ax
-   mov ds, ax
-   mov es, ax
-   mov ss, ax
-   mov sp, 0x7C00
+DRAW_START equ 0xA0000
+SCREEN_WIDTH equ 320
+SCREEN_HEIGHT equ 200
+BUFFER_SIZE equ DRAW_START + (SCREEN_WIDTH * SCREEN_HEIGHT)
 
+sctortwostart:
    mov al, 0x13 ; color 320x200
    int 0x10
 
@@ -74,29 +73,34 @@ Key_Up:
    ret
 
 Key_Down:
-   ;call write_char
+   call write_char
 
    cmp byte [keyval], 's'
    je .s_press
 
 .w_press:
+   cmp byte [keyval], 'w'
+   jne .done
    call move_box_up
    jmp .done
 .s_press:
    call move_box_down
-   jmp .done
 .done:
    ret
 
 move_box_down:
-   mov eax, [left_y_paddle]
+   push eax
+   mov eax, [sq_y]
    add eax, 3
-   mov [left_y_paddle], eax
+   mov [sq_y], eax
+   pop eax
    ret
 move_box_up:
-   mov eax, [left_y_paddle]
+   push eax
+   mov eax, [sq_y]
    sub eax, 3
-   mov [left_y_paddle], eax
+   mov [sq_y], eax
+   pop eax
    ret
 write_char:
    mov ah, 0x0E
@@ -108,28 +112,55 @@ fill_pixel:
     inc edi
     ret
 
+DrawRectangle:
+   mov edi, DRAW_START; Start of VGA memory
+   mov eax, [sq_y]
+   mov ecx, SCREEN_WIDTH
+   mul ecx
+   add eax, [sq_x]
+   add edi, eax
+   mov edx, 0
+.draw_row:
+   mov ecx, 0
+.draw_pixel:
+   cmp edi, BUFFER_SIZE
+   jl .continue_draw
+   mov edi, DRAW_START
+.continue_draw:
+   mov al, [colorDraw]
+   mov byte [edi], al
+   inc edi
+   inc ecx
+   cmp ecx, [sq_width]
+   jl .draw_pixel
+   add edi, SCREEN_WIDTH
+   sub edi, [sq_width]
+   inc edx
+   cmp edx, [sq_height]
+   jl .draw_row
+   ret
+
 draw_box:
    mov edi, DRAW_START
    mov eax, [sq_y]
-   mov ebx, 320
+   mov ebx, SCREEN_WIDTH
    mul ebx
    add eax, edi
    mov edi, eax
    add edi, [sq_x]
+
    xor ecx, ecx
+
    jmp .put_pixel
 
 .move_down:
-   add edi, 320
+   add edi, SCREEN_WIDTH
    sub edi, [sq_width]
    xor ecx, ecx
 
 .put_pixel:
    mov al, [colorDraw]
-   cmp edi, DRAW_START
-   jl .continue
    mov byte [edi], al
-.continue:
    inc edi 
    inc ecx 
    cmp ecx, [sq_width]
@@ -143,35 +174,42 @@ draw_box:
 
 Timer_Event:
 
+   push eax
    mov al, Colors.Black
    mov [colorDraw], al
 
-   mov eax, 0
+   xor eax, eax   
    mov [sq_x], eax
-   mov eax, 0
+
+   xor eax, eax   
    mov [sq_y], eax
 
-   mov eax, SCREEN_WIDTH
-   mov [sq_width], eax
-   mov eax, SCREEN_HEIGHT
+   mov eax, [screen_height]   
    mov [sq_height], eax
-   
+
+   mov eax, [screen_width]   
+   mov [sq_width], eax
+
    call draw_box
+
+   mov eax, 80  
+   mov [sq_height], eax
+
+   mov eax,  10
+   mov [sq_width], eax
+
+   mov eax, 20  
+   mov [sq_x], eax
+
+   mov eax, 55  
+   mov [sq_y], eax
 
    mov al, Colors.Green
    mov [colorDraw], al
-
-   mov eax, 20
-   mov [sq_x], eax
-   mov eax, [left_y_paddle]
-   mov [sq_y], eax
-
-   mov eax, 10
-   mov [sq_width], eax
-   mov eax, 80
-   mov [sq_height], eax
    
    call draw_box
+
+   pop eax
 
    ret
 
@@ -207,22 +245,15 @@ scan_code_table:
 begin_draw dd 0
 keyval db 0
 colorDraw db 0
+
+DrawRectX dd 0
+DrawRectY dd 0
+DrawRectW dd 10
+DrawRectH dd 10
 sq_x dd 10
 sq_y dd 50
 sq_width dd 40
 sq_height dd 70
 
-;; user drawing
-
-left_y_paddle dd 60
-
-;;;;;;;;;;;;;;;;;;;;;;;
-
-
-
-DRAW_START equ 0xA0000
-SCREEN_HEIGHT equ 200
-SCREEN_WIDTH equ 320
-
-times 510-($-$$) db 0
-dw 0xAA55
+screen_height dd 200
+screen_width dd 320
