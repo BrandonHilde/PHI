@@ -45,23 +45,28 @@ SetupKeyboardInterupt:
    sti                 
    ret
 
+key_prep:
+   xor bx, bx
+   mov bl, al 
+   mov al, [scan_code_table + bx]
+   mov [keyval], al
+   ret
+
 keyboard_handler:
    in al, 0x60 
    test al, 0x80
    jz .key_down
 
    ; key up 
+   and al, 0x7F
+   call key_prep
    call Key_Up
 
    jmp .done
 
 
 .key_down:
-   and al, 0x7F
-   xor bx, bx
-   mov bl, al 
-   mov al, [scan_code_table + bx]
-   mov [keyval], al
+   call key_prep
    call Key_Down
 .done:
    mov al, 0x20
@@ -69,21 +74,28 @@ keyboard_handler:
    iret
 
 Key_Up:
-   ;;call write_char
-   ;;call move_box_down
+
+   mov byte [w_down], 0
+   mov byte [s_down], 0
+
    ret
 
 Key_Down:
-   ;call write_char
+   ;;call write_char
 
    cmp byte [keyval], 's'
    je .s_press
 
+   cmp byte [keyval], 'w'
+   je .w_press
+
+   jmp .done
+   
 .w_press:
-   call move_box_up
+   mov byte [w_down], 'w'
    jmp .done
 .s_press:
-   call move_box_down
+   mov byte [s_down], 's'
    jmp .done
 .done:
    ret
@@ -98,19 +110,15 @@ move_box_up:
    sub eax, 3
    mov [left_y_paddle], eax
    ret
-write_char:
-   mov ah, 0x0E
-   mov bl, Colors.LightBlue
-   int 0x10
-   ret
-fill_pixel:
-    mov byte [edi], Colors.LightRed
-    inc edi
-    ret
+
 
 draw_box:
    mov edi, DRAW_START
    mov eax, [sq_y]
+   cmp eax, 0
+   jge .proceed
+   mov eax, 0
+.proceed:
    mov ebx, 320
    mul ebx
    add eax, edi
@@ -143,6 +151,16 @@ draw_box:
 
 Timer_Event:
 
+   cmp byte [s_down], 's'
+   jne .check
+   call move_box_down
+.check:
+   cmp byte [w_down], 'w'
+   jne .skip
+   call move_box_up
+
+.skip:
+
    mov al, Colors.Black
    mov [colorDraw], al
 
@@ -170,6 +188,12 @@ Timer_Event:
    mov [sq_width], eax
    mov eax, 80
    mov [sq_height], eax
+   
+   call draw_box
+
+   mov eax, 290
+   mov [sq_x], eax
+   mov eax, [left_y_paddle]
    
    call draw_box
 
@@ -205,6 +229,10 @@ scan_code_table:
    db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`', 0, '\'
    db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
 begin_draw dd 0
+
+w_down db 0
+s_down db 0
+
 keyval db 0
 colorDraw db 0
 sq_x dd 10
