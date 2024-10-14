@@ -19,22 +19,16 @@ Colors.White equ 0xF  ;White
 PIT_COMMAND equ 0x43
 PIT_CHANNEL_0 equ 0x40
 PIT_FREQUENCY equ 1193180
-DESIRED_FREQ equ 100
+DESIRED_FREQ equ 60
 DIVISOR equ PIT_FREQUENCY/DESIRED_FREQ
 
-DRAW_START equ 0xA0000
-SCREEN_WIDTH equ 320
-SCREEN_HEIGHT equ 200
-BUFFER_SIZE equ DRAW_START + (SCREEN_WIDTH * SCREEN_HEIGHT)
-
-sctortwostart:
-   mov al, 0x13 ; color 320x200
-   int 0x10
+start:
 
    call Timer_Setup
    call SetupKeyboardInterupt
 
    jmp $
+
 
 SetupKeyboardInterupt:
 
@@ -44,23 +38,28 @@ SetupKeyboardInterupt:
    sti                 
    ret
 
+key_prep:
+   xor bx, bx
+   mov bl, al 
+   mov al, [scan_code_table + bx]
+   mov [keyval], al
+   ret
+
 keyboard_handler:
    in al, 0x60 
    test al, 0x80
    jz .key_down
 
    ; key up 
+   and al, 0x7F
+   call key_prep
    call Key_Up
 
    jmp .done
 
 
 .key_down:
-   and al, 0x7F
-   xor bx, bx
-   mov bl, al 
-   mov al, [scan_code_table + bx]
-   mov [keyval], al
+   call key_prep
    call Key_Down
 .done:
    mov al, 0x20
@@ -69,98 +68,122 @@ keyboard_handler:
 
 Key_Up:
    ;;call write_char
-   ;;call move_box_down
-   ret
-
-Key_Down:
-   call write_char
 
    cmp byte [keyval], 's'
    je .s_press
 
-.w_press:
    cmp byte [keyval], 'w'
-   jne .done
-   call move_box_up
+   je .w_press
+
+   
+   cmp byte [keyval], 'i'
+   je .i_press
+
+   
+   cmp byte [keyval], 'k'
+   je .k_press
+
+   jmp .done
+   
+.w_press:
+   mov byte [w_down], 0
    jmp .done
 .s_press:
-   call move_box_down
+   mov byte [s_down], 0
+   jmp .done
+.i_press:
+   mov byte [i_down], 0
+   jmp .done
+.k_press:
+   mov byte [k_down], 0
+   jmp .done
+   
+.done:
+   ret
+
+Key_Down:
+   ;;call write_char
+
+   cmp byte [keyval], 's'
+   je .s_press
+
+   cmp byte [keyval], 'w'
+   je .w_press
+
+   
+   cmp byte [keyval], 'i'
+   je .i_press
+
+   
+   cmp byte [keyval], 'k'
+   je .k_press
+
+   jmp .done
+   
+.w_press:
+   mov byte [w_down], 'w'
+   jmp .done
+.s_press:
+   mov byte [s_down], 's'
+   jmp .done
+.i_press:
+   mov byte [i_down], 'i'
+   jmp .done
+.k_press:
+   mov byte [k_down], 'k'
+   jmp .done
+   
 .done:
    ret
 
 move_box_down:
-   push eax
-   mov eax, [sq_y]
+   mov eax, [left_y_paddle]
    add eax, 3
-   mov [sq_y], eax
-   pop eax
+   mov [left_y_paddle], eax
    ret
 move_box_up:
-   push eax
-   mov eax, [sq_y]
+   mov eax, [left_y_paddle]
    sub eax, 3
-   mov [sq_y], eax
-   pop eax
+   mov [left_y_paddle], eax
    ret
-write_char:
-   mov ah, 0x0E
-   mov bl, Colors.LightBlue
-   int 0x10
-   ret
-fill_pixel:
-    mov byte [edi], Colors.LightRed
-    inc edi
-    ret
 
-DrawRectangle:
-   mov edi, DRAW_START; Start of VGA memory
-   mov eax, [sq_y]
-   mov ecx, SCREEN_WIDTH
-   mul ecx
-   add eax, [sq_x]
-   add edi, eax
-   mov edx, 0
-.draw_row:
-   mov ecx, 0
-.draw_pixel:
-   cmp edi, BUFFER_SIZE
-   jl .continue_draw
-   mov edi, DRAW_START
-.continue_draw:
-   mov al, [colorDraw]
-   mov byte [edi], al
-   inc edi
-   inc ecx
-   cmp ecx, [sq_width]
-   jl .draw_pixel
-   add edi, SCREEN_WIDTH
-   sub edi, [sq_width]
-   inc edx
-   cmp edx, [sq_height]
-   jl .draw_row
+move_right_box_down:
+   mov eax, [right_y_paddle]
+   add eax, 3
+   mov [right_y_paddle], eax
+   ret
+move_right_box_up:
+   mov eax, [right_y_paddle]
+   sub eax, 3
+   mov [right_y_paddle], eax
    ret
 
 draw_box:
    mov edi, DRAW_START
    mov eax, [sq_y]
-   mov ebx, SCREEN_WIDTH
+   cmp eax, 0
+   jge .proceed
+   mov eax, 0
+.proceed:
+   mov ebx, 320
    mul ebx
    add eax, edi
    mov edi, eax
    add edi, [sq_x]
-
    xor ecx, ecx
-
    jmp .put_pixel
 
 .move_down:
-   add edi, SCREEN_WIDTH
+   add edi, 320
    sub edi, [sq_width]
    xor ecx, ecx
 
 .put_pixel:
    mov al, [colorDraw]
+   cmp edi, DRAW_START
+   jl .continue
    mov byte [edi], al
+.continue:
    inc edi 
    inc ecx 
    cmp ecx, [sq_width]
@@ -174,42 +197,60 @@ draw_box:
 
 Timer_Event:
 
-   push eax
+   cmp byte [s_down], 's'
+   jne .check
+   call move_box_down
+.check:
+   cmp byte [w_down], 'w'
+   jne .skip_next
+   call move_box_up
+.skip_next:
+   cmp byte [i_down], 'i'
+   jne .check_right
+   call move_right_box_down
+.check_right:
+   cmp byte [k_down], 'k'
+   jne .skip
+   call move_right_box_up
+
+.skip:
+
    mov al, Colors.Black
    mov [colorDraw], al
 
-   xor eax, eax   
+   mov eax, 0
    mov [sq_x], eax
-
-   xor eax, eax   
+   mov eax, 0
    mov [sq_y], eax
 
-   mov eax, [screen_height]   
-   mov [sq_height], eax
-
-   mov eax, [screen_width]   
+   mov eax, SCREEN_WIDTH
    mov [sq_width], eax
-
-   call draw_box
-
-   mov eax, 80  
+   mov eax, SCREEN_HEIGHT
    mov [sq_height], eax
-
-   mov eax,  10
-   mov [sq_width], eax
-
-   mov eax, 20  
-   mov [sq_x], eax
-
-   mov eax, 55  
-   mov [sq_y], eax
-
-   mov al, Colors.Green
-   mov [colorDraw], al
    
    call draw_box
 
-   pop eax
+   mov al, Colors.Green
+   mov [colorDraw], al
+
+   mov eax, 20
+   mov [sq_x], eax
+   mov eax, [left_y_paddle]
+   mov [sq_y], eax
+
+   mov eax, 10
+   mov [sq_width], eax
+   mov eax, 80
+   mov [sq_height], eax
+   
+   call draw_box
+
+   mov eax, 290
+   mov [sq_x], eax
+   mov eax, [right_y_paddle]
+   mov [sq_y], eax
+   
+   call draw_box
 
    ret
 
@@ -243,17 +284,29 @@ scan_code_table:
    db 'a', 's', 'd', 'f', 'g', 'h', 'j', 'k', 'l', ';', "'", '`', 0, '\'
    db 'z', 'x', 'c', 'v', 'b', 'n', 'm', ',', '.', '/', 0, '*', 0, ' '
 begin_draw dd 0
+
+w_down db 0
+s_down db 0
+
+i_down db 0
+k_down db 0
+
 keyval db 0
 colorDraw db 0
-
-DrawRectX dd 0
-DrawRectY dd 0
-DrawRectW dd 10
-DrawRectH dd 10
 sq_x dd 10
 sq_y dd 50
 sq_width dd 40
 sq_height dd 70
 
-screen_height dd 200
-screen_width dd 320
+;; user drawing
+
+left_y_paddle dd 60
+right_y_paddle dd 60
+
+;;;;;;;;;;;;;;;;;;;;;;;
+
+
+
+DRAW_START equ 0xA0000
+SCREEN_HEIGHT equ 200
+SCREEN_WIDTH equ 320
