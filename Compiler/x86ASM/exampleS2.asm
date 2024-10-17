@@ -197,6 +197,8 @@ draw_box:
 
 Timer_Event:
 
+   call ball_move_x
+
    cmp byte [s_down], 's'
    jne .check
    call move_box_down
@@ -215,21 +217,12 @@ Timer_Event:
 
 .skip:
 
-   mov al, Colors.Black
-   mov [colorDraw], al
+   call clear_screen
 
-   mov eax, 0
-   mov [sq_x], eax
-   mov eax, 0
-   mov [sq_y], eax
-
-   mov eax, SCREEN_WIDTH
-   mov [sq_width], eax
-   mov eax, SCREEN_HEIGHT
-   mov [sq_height], eax
-   
-   call draw_box
-
+   call draw_paddles
+   call draw_ball
+   ret
+draw_paddles:
    mov al, Colors.Green
    mov [colorDraw], al
 
@@ -251,9 +244,70 @@ Timer_Event:
    mov [sq_y], eax
    
    call draw_box
+   ret
+clear_screen:
+   mov al, Colors.Black
+   mov [colorDraw], al
 
+   mov eax, 0
+   mov [sq_x], eax
+   mov eax, 0
+   mov [sq_y], eax
+
+   mov eax, SCREEN_WIDTH
+   mov [sq_width], eax
+   mov eax, SCREEN_HEIGHT
+   mov [sq_height], eax
+   
+   call draw_box
+   ret
+draw_ball:
+   mov al, Colors.Green
+   mov [colorDraw], al
+
+   mov eax, [ball_x]
+   mov [sq_x], eax
+   mov eax, [ball_y]
+   mov [sq_y], eax
+
+   mov eax, 10
+   mov [sq_width], eax
+   mov eax, 10
+   mov [sq_height], eax
+   
+   call draw_box
    ret
 
+ball_move_x:
+
+   cmp dword [ball_x], 310
+   jge .switch_dir_zero
+   cmp dword [ball_x], 0
+   jle .switch_dir_one
+   jmp .update_pos
+
+.switch_dir_zero:
+   mov eax, 1
+   mov [ball_direct], eax
+   jmp .update_pos
+
+.switch_dir_one:
+   mov eax, 0
+   mov [ball_direct], eax
+
+.update_pos:
+   mov eax, [ball_x]
+   mov ebx, 2
+   cmp byte [ball_direct], 0
+   je .add
+   sub eax, ebx
+   mov [ball_x], eax
+   jmp .done
+.add:
+   add eax, ebx
+   mov [ball_x], eax
+.done:
+   ret
 
 timer_interrupt:
    call Timer_Event
@@ -302,6 +356,11 @@ sq_height dd 70
 
 left_y_paddle dd 60
 right_y_paddle dd 60
+
+ball_x dd 160
+ball_y dd 90
+ball_direct db 0
+ball_updown db 0
 
 ;;;;;;;;;;;;;;;;;;;;;;;
 
