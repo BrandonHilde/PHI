@@ -15,6 +15,10 @@ namespace PhiBasicTranslator.Structure
         public static readonly string VarStoreIntToStringBuffer = "VALUE_int_to_str_buffer";
         public static readonly string VarStoreIntToStringIndex = "VALUE_int_to_str_index";
 
+        public static readonly string VarStoreHexToStringBuffer = "VALUE_hex_to_str_buffer";
+        public static readonly string VarStoreHexToStringIndex = "VALUE_hex_to_str_index";
+        public static readonly string VarConvertHexCharacters = "VALUE_hexdecimal_chars";
+
         public static readonly string replaceValueStart = ";{VALUES}";
         public static readonly string replaceCodeStart = ";{CODE}";
         public static readonly string replaceVarStart = ";{VARIABLE}";
