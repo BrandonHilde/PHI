@@ -1125,6 +1125,47 @@ namespace PhiBasicTranslator.TranslateUtilities
             Defs.VarConvertHexCharacters + " db '0123456789ABCDEF'"
         };
 
+        public static List<string> PrintConvertToBase_Variables = new List<string>()
+        {
+            "Convert_str_to_base_buffer times 41 db 0",
+            "VALUE_buffer_depth dw 40",
+            "VALUE_buffer_len dw 40",
+            "Convert_base_val dw 16",
+            "Convert_str_to_base_values db '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'"
+        };
+
+        public static List<string> ConvertIntToBaseX = new List<string>()
+        {
+            "convert_to_base:",
+            "   cmp word [Convert_base_val], 2",
+            "   jl .done",
+            ".check_max:",
+            "   cmp word [Convert_base_val], 64",
+            "   jg .done",".check:",
+            "   cmp ax, word [Convert_base_val]",
+            "   jl .mov_bx",".div_num:",
+            "   xor dx, dx",
+            "   div word [Convert_base_val]",
+            "   call .mov_dl",
+            "   jmp .check",
+            "   jmp .mov_bx",
+            ".mov_dl:",
+            "   xor bx, bx",
+            "   mov bx, dx",
+            "   jmp .to_buffer",
+            ".mov_bx:",
+            "   xor bx, bx",
+            "   mov bx, ax",
+            ".to_buffer:",
+            "   mov cl, [Convert_str_to_base_values + bx]",
+            "   mov bx, word [VALUE_buffer_depth]",
+            "   mov byte [Convert_str_to_base_buffer + bx], cl",
+            "   sub bx, 1",
+            "   mov word [VALUE_buffer_depth], bx",
+            ".done:",
+            "    ret"
+        };
+
         public static List<string> ConvertIntToHex = new List<string>()
         {
             "prep_convert_hex:",
