@@ -15,6 +15,7 @@ namespace PhiBasicTranslator.Structure
         public string Name = string.Empty;
         public string ValueRaw = string.Empty;
         public bool preExisting = true;
+        public bool pointer = false;
         public List<string> Values { get; set; } = new List<string>();
 
         public List<PhiVariable> SubVariables { get; set; } = new List<PhiVariable>();

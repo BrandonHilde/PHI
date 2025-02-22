@@ -1682,7 +1682,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                     //subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructLogByte_BITS16, Defs.replaceCodeStart);
                 }
 
-                if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
+                if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(vrs, v));
 
                 List<string> parts = ParseMisc.ExtractArrayParts(v.ValueRaw);
 
@@ -1737,7 +1737,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                     subCde = ASMx86_16BIT.MergeValues(subCde, ASMx86_16BIT.InstructASK_BITS16, Defs.replaceCodeStart);
                 }
 
-                if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(v));
+                if (!v.preExisting) values.Add(ASMx86_16BIT.VarTypeConvert(vrs, v));
 
                 subCde = ASMx86_16BIT.ReplaceValue(subCde, Defs.replaceValueStart, ASMx86_16BIT.UpdateName(v.Name));
             }
@@ -1833,7 +1833,7 @@ namespace PhiBasicTranslator.TranslateUtilities
                 string build = ASMx86_16BIT.UpdateName(vbl.Name);
 
                 //update to include safe vs unsafe code
-                build = ASMx86_16BIT.VarTypeConvert(vbl);
+                build = ASMx86_16BIT.VarTypeConvert(phiVariables, vbl);
 
                 vals.Add(build);
             }

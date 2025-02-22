@@ -17,13 +17,20 @@ namespace PhiBasicTranslator
     {
         public string FileContent = string.Empty;
         public Translator() { }
-        public Translator(string file) 
+        public Translator(string file)
         {
-            string content = File.ReadAllText(file);
+            if (File.Exists(file))
+            {
+                string content = File.ReadAllText(file);
 
-            FileContent = content;
+                FileContent = content;
 
-            TranslateCode(content);  
+                TranslateCode(content);
+            }
+            else
+            {
+                Console.WriteLine("File Doesn't Exist");
+            }
         }
 
         public void Highlight(string content)
@@ -33,11 +40,15 @@ namespace PhiBasicTranslator
 
         public PhiCodebase TranslateFile(string file)
         {
-            string content = File.ReadAllText(file);
-
             PhiCodebase code = new PhiCodebase();
 
-            code.ClassList = TranslateCode(content);
+            if (File.Exists(file))
+            {
+                string content = File.ReadAllText(file);
+
+
+                code.ClassList = TranslateCode(content);
+            }
 
             return TranslateToX86.ToX86(code);
         }

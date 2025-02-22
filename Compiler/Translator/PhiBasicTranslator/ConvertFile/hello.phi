@@ -2,25 +2,9 @@
 {
 	str hello: 'Hello, World!\r\n';
     str newline: '\r\n';
-	str name:[40];
-	int test: 12;
 
-	log test;
-	
-	log 'What is your name: ';
-	ask name;
-	log newline;
-	log 'hello: ' name;
-	log newline;
-	log 'Press any key to continue...';
-	
-	call Bootloader.WaitForKeyPress;
-	call Bootloader.JumpToSectorTwo;
-}
+	int orgn: 256;
+	str cnvt: orgn;
 
-phi.SectorTwo:OS
-{
-	str Greetings: 'Welcome to PHI language!';
-	
-	log Greetings;
+	log cnvt;
 }

@@ -9,11 +9,14 @@ using PhiBasicTranslator.Structure;
 using System.Runtime.ConstrainedExecution;
 using PhiBasicTranslator.ParseEngine;
 using System.Diagnostics.Metrics;
+using System.Data;
 
 namespace PhiBasicTranslator.TranslateUtilities
 {
     internal class ASMx86_16BIT
     {
+        public static int globalPointerStart = 0xC000;
+
         public static readonly string varStrTyp = " db ";
         public static readonly string varWrdTyp = " dw ";
         public static readonly string varIntTyp = " dd ";
@@ -223,7 +226,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return vl;
         }
-        public static string VarTypeConvert(PhiVariable varble, bool update = true)
+        public static string VarTypeConvert(List<PhiVariable> allvariables, PhiVariable varble, bool update = true)
         {
             string vr = string.Empty;
 
@@ -243,9 +246,20 @@ namespace PhiBasicTranslator.TranslateUtilities
                     }
                     else
                     {
-                        //vr = name + varStrTyp + FormatStringConvert(varble.ValueRaw);
+                        PhiVariable? vbr = allvariables.Where(
+                            x => x.Name == varble.ValueRaw
+                            ).FirstOrDefault();
 
-                        vr = name + varStrTyp + FormatVarToString(varble);
+                        if (vbr != null)
+                        {
+                            // assigns it as an allocated value
+                            varble.pointer = true;
+                            vr = name + varIntTyp + globalPointerStart;
+                        }
+                        else
+                        {
+                            vr = name + varStrTyp + FormatVarToString(varble);
+                        }
                     }
                 }
                 else if (varble.varType == Inside.VariableTypeInt)

@@ -55,15 +55,15 @@ if (file == ".") file = "../../../hello.phi";
  * 
  */
 
-string test = "int y: (6 + ((x * 7) / (y * 2)) - 5)";
-List<int> stuff = ParseUtilities.GetEnclosingDepth(test, Defs.paraOpen, Defs.paraClose);
+//string test = "int y: (6 + ((x * 7) / (y * 2)) - 5)";
+//List<int> stuff = ParseUtilities.GetEnclosingDepth(test, Defs.paraOpen, Defs.paraClose);
 
-for (int i = 0; i < stuff.Count; i++)
-{
-    Console.Write(stuff[i]);
-}
-Console.WriteLine();
-Console.WriteLine(test);
+//for (int i = 0; i < stuff.Count; i++)
+//{
+//    Console.Write(stuff[i]);
+//}
+//Console.WriteLine();
+//Console.WriteLine(test);
 
 Translator translator = new Translator(file);
 
