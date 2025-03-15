@@ -1148,34 +1148,44 @@ namespace PhiBasicTranslator.TranslateUtilities
             "Convert_str_to_base_values db '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz-_'"
         };
 
+        public static List<string> PrepConvertToBaseX = new List<string>()
+        {
+            "   mov eax, " + replaceVarName,
+            "   mov dword [Convert_base_val], eax",
+            "   xor eax, eax",
+            "   mov eax, " + Defs.replaceValueStart
+        };
+
         public static List<string> ConvertIntToBaseX = new List<string>()
         {
             "convert_to_base:",
-            "   cmp word [Convert_base_val], 2",
+            "   cmp dword [Convert_base_val], 2",
             "   jl .done",
             ".check_max:",
-            "   cmp word [Convert_base_val], 64",
-            "   jg .done",".check:",
-            "   cmp ax, word [Convert_base_val]",
-            "   jl .mov_bx",".div_num:",
-            "   xor dx, dx",
-            "   div word [Convert_base_val]",
+            "   cmp dword [Convert_base_val], 64",
+            "   jg .done",
+            ".check:",
+            "   cmp eax, dword [Convert_base_val]",
+            "   jl .mov_bx",
+            ".div_num:",
+            "   xor edx, edx",
+            "   div dword [Convert_base_val]",
             "   call .mov_dl",
             "   jmp .check",
             "   jmp .mov_bx",
             ".mov_dl:",
-            "   xor bx, bx",
-            "   mov bx, dx",
+            "   xor ebx, ebx",
+            "   mov ebx, edx",
             "   jmp .to_buffer",
             ".mov_bx:",
-            "   xor bx, bx",
-            "   mov bx, ax",
+            "   xor ebx, ebx",
+            "   mov ebx, eax",
             ".to_buffer:",
-            "   mov cl, [Convert_str_to_base_values + bx]",
-            "   mov bx, word [VALUE_buffer_depth]",
-            "   mov byte [Convert_str_to_base_buffer + bx], cl",
-            "   sub bx, 1",
-            "   mov word [VALUE_buffer_depth], bx",
+            "   mov cl, [Convert_str_to_base_values + ebx]",
+            "   mov ebx, dword [VALUE_buffer_depth]",
+            "   mov byte [Convert_str_to_base_buffer + ebx], cl",
+            "   sub ebx, 1",
+            "   mov dword [VALUE_buffer_depth], ebx",
             ".done:",
             "    ret"
         };

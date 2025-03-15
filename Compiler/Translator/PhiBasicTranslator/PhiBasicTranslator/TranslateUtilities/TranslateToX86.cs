@@ -1765,10 +1765,10 @@ namespace PhiBasicTranslator.TranslateUtilities
                 //Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintInt_x86BITS16, Defs.replaceIncludes);
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.ConvertIntToString, Defs.replaceIncludes);
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintLog_x86BITS16, Defs.replaceIncludes);
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.ConvertIntToHex, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.ConvertIntToBaseX, Defs.replaceIncludes);
 
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintConvert_Variables, Defs.replaceVarStart);
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintConvertHex_Variables, Defs.replaceVarStart);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.PrintConvertToBase_Variables, Defs.replaceVarStart);
             }
 
             if (cls.Includes.Contains(PhiInclude.Keyboard))
