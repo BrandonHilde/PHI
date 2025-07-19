@@ -74,9 +74,12 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly string incDrawRectangle = "OS_DrawRectangle";
         public static readonly string incDrawPixel = "OS_DrawPixel";
 
+        public static readonly List<string> incBootloader = new List<string>()
+        {
+            incEnableVideo.Replace('_', '.')
+        };
         public static readonly List<string> incDrawingList = new List<string>()
         {
-            incEnableVideo.Replace('_', '.'),
             incDrawRectangle.Replace('_', '.'),
             incDrawPixel.Replace('_', '.'),
         };
@@ -1141,7 +1144,7 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> PrintConvertToBase_Variables = new List<string>()
         {
-            "Convert_str_to_base_buffer times 41 db 0",
+            "Convert_str_to_base_buffer: times 41 db 0",
             "VALUE_buffer_depth dw 40",
             "VALUE_buffer_len dw 40",
             "Convert_base_val dw 16",

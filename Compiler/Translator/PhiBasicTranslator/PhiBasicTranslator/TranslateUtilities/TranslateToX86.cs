@@ -1809,11 +1809,16 @@ namespace PhiBasicTranslator.TranslateUtilities
                 {
                     Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_TimerEvent, Defs.replaceIncludes);
                 }
-            }           
+            }
+
+            if (cls.Includes.Contains(PhiInclude.Bootloader))
+            {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_VideoMode, Defs.replaceIncludes);
+            }
             
             if (cls.Includes.Contains(PhiInclude.Graphics))
             {            
-                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_VideoMode, Defs.replaceIncludes);
+               
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawRectangle, Defs.replaceIncludes);
 
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_DrawConstants, Defs.replaceConstStart);

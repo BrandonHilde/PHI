@@ -13,7 +13,7 @@ using PhiBasicTranslator.TranslateUtilities;
 namespace PhiBasicTranslator.Structure
 {
     public enum PhiType { ASM, ARM, PHI }
-    public enum PhiInclude { Graphics, Text, Timer, Keyboard, Mouse, Sectors };
+    public enum PhiInclude { Graphics, Bootloader, Text, Timer, Keyboard, Mouse, Sectors };
     public class PhiClass
     {
         public PhiType Type { get; set; } = PhiType.PHI;
@@ -39,6 +39,11 @@ namespace PhiBasicTranslator.Structure
                 if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incDrawingList))
                 {
                     Includes.Add(PhiInclude.Graphics);
+                }
+
+                if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incBootloader))
+                {
+                    Includes.Add(PhiInclude.Bootloader);
                 }
 
                 if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incTimerList))
