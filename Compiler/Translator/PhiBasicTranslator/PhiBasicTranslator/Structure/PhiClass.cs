@@ -60,6 +60,11 @@ namespace PhiBasicTranslator.Structure
                 {
                     Includes.Add(PhiInclude.Keyboard);
                 }
+
+                if (ParseMisc.ContainsAny(instruct.Value, ASMx86_16BIT.incMouseList))
+                {
+                    Includes.Add(PhiInclude.Mouse);
+                }
             }
         }
 

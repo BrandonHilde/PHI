@@ -472,6 +472,40 @@ namespace PhiBasicTranslator.TranslateUtilities
 
                     return pair;
                 }
+                else if (callname == ASMx86_16BIT.incGetMouseX)
+                {
+                    List<string> setcode = new List<string>();
+
+                    if (callSetTo != string.Empty && callname != string.Empty)
+                    {
+                        setcode.AddRange(ASMx86_16BIT.GetMouseX);
+
+                        setcode = ASMx86_16BIT.ReplaceValue(
+                            setcode,
+                            ASMx86_16BIT.replaceVarName,
+                            ASMx86_16BIT.UpdateName(callSetTo)
+                            );
+                    }
+
+                    pair.SubCode.AddRange(setcode);
+                }
+                else if (callname == ASMx86_16BIT.incGetMouseY)
+                {
+                    List<string> setcode = new List<string>();
+
+                    if (callSetTo != string.Empty && callname != string.Empty)
+                    {
+                        setcode.AddRange(ASMx86_16BIT.GetMouseY);
+
+                        setcode = ASMx86_16BIT.ReplaceValue(
+                            setcode,
+                            ASMx86_16BIT.replaceVarName,
+                            ASMx86_16BIT.UpdateName(callSetTo)
+                            );
+                    }
+
+                    pair.SubCode.AddRange(setcode);
+                }
                 #endregion
 
 
@@ -1754,6 +1788,17 @@ namespace PhiBasicTranslator.TranslateUtilities
 
         public static List<string> AutoInclude_BITS16(List<string> Code, PhiClass cls)
         {
+            if(cls.Includes.Contains(PhiInclude.Mouse))
+            {
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_MouseSetup, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_GetMouseData, Defs.replaceIncludes);
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_GetMouseInput, Defs.replaceIncludes);
+
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_MouseVariables, Defs.replaceVarStart);
+
+                Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_MouseConstants, Defs.replaceConstStart);
+            }
+
             if (cls.Includes.Contains(PhiInclude.Sectors))
             {
                 Code = ASMx86_16BIT.MergeValues(Code, ASMx86_16BIT.BIT16x86_SectorPrep, Defs.replaceIncludes);

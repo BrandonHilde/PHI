@@ -59,6 +59,22 @@ namespace PhiBasicTranslator.TranslateUtilities
             incKeyboardEvent.Replace('_', '.')
         };
 
+        public static readonly string incMouseSetup = "OS_SetupMouse";
+
+        public static readonly string incGetMouseDown = "OS_GetMouseDown";
+        public static readonly string incGetMouseUP = "OS_GetMouseUp";
+        public static readonly string incGetMouseX = "OS_GetMouseX";
+        public static readonly string incGetMouseY = "OS_GetMouseY";
+
+        public static readonly List<string> incMouseList = new List<string>()
+        {
+            incMouseSetup.Replace('_', '.'),
+            incGetMouseDown.Replace('_', '.'),
+            incGetMouseUP.Replace('_', '.'),
+            incGetMouseX.Replace('_', '.'),
+            incGetMouseY.Replace('_', '.')
+        };
+
         public static readonly string incTimerEvent = "OS_TimerEvent";
         public static readonly string incSetupTimerInterupt = "OS_SetupInteruptTimer";
         public static readonly string incTimerInterupt = "OS_timer_interrupt";
@@ -87,7 +103,9 @@ namespace PhiBasicTranslator.TranslateUtilities
         public static readonly List<string> excludeMethodCall = new List<string>()
         {
             incGetKey,
-            incIsKeyDown
+            incIsKeyDown,
+            incGetMouseX,
+            incGetMouseY
         };
 
         public static readonly string replaceLoopCondition = ";{LOOP CONDITION}";
@@ -380,7 +398,6 @@ namespace PhiBasicTranslator.TranslateUtilities
 
             return next;
         }
-
 
         public static List<string> MergeSubCode(List<string> Code, List<string> SubCode, string Key)
         {
@@ -748,6 +765,10 @@ namespace PhiBasicTranslator.TranslateUtilities
             VarList_DrawRectangle[3] + varIntTyp + "10",
             VarList_DrawRectangle[4] + varBytTyp + "0xA"
         };
+
+        /// <summary>
+        /// SCREEN_WIDTH and SCREEN_HEIGHT may need to be moved out of here
+        /// </summary>
 
         public static List<string> BIT16x86_DrawConstants = new List<string>()
         {
@@ -1129,6 +1150,192 @@ namespace PhiBasicTranslator.TranslateUtilities
             ".done:",
             "    mov byte [di], 0 ",
             "    ret"
+        };
+
+        #endregion
+
+        #region Mouse
+
+        public static List<string> BIT16x86_MouseConstants = new List<string>()
+        {
+            "MOUSE_CURSOR_WIDTH equ 10"
+        };
+
+        public static List<string> BIT16x86_MouseVariables = new List<string>()
+        {
+            "mouse_packet_byte     db 0",
+            "mouse_byte_states     db 0",
+            "mouse_byte_xmove     db 0",
+            "mouse_byte_ymove     db 0",
+            "mouse_cursor_x        dw 0",
+            "mouse_cursor_y        dw 0"
+        };
+
+        public static List<string> BIT16x86_GetMouseData = new List<string>()
+        {
+            "OS_GetMouseData:",
+            "    ; Check if data is available",
+            "    in al, 0x64",
+            "    test al, 0x01       ; Output buffer full?",
+            "    jz .no_data",
+            "    ",
+            "    test al, 0x20       ; Mouse data?",
+            "    jz .no_data",
+            "    ",
+            "    ; Read the byte",
+            "    in al, 0x60",
+            "    ",
+            "    ; Process based on packet byte number",
+            "    mov bl, [mouse_packet_byte]",
+            "    cmp bl, 0",
+            "    je .byte1",
+            "    cmp bl, 1",
+            "    je .byte2",
+            "    cmp bl, 2",
+            "    je .byte3",
+            "    jmp .reset_packet",
+            "    ",".byte1:",
+            "    ; First byte - button states and overflow flags",
+            "    ; Validate packet (bit 3 should be set)",
+            "    test al, 0x08",
+            "    jz .reset_packet",
+            "    mov [mouse_byte_states], al",
+            "    inc byte [mouse_packet_byte]",
+            "    jmp .no_data","    ",
+            ".byte2:",
+            "    ; Second byte - X movement",
+            "    mov [mouse_byte_xmove], al",
+            "    inc byte [mouse_packet_byte]",
+            "    jmp .no_data",
+            "    ",
+            ".byte3:",
+            "    ; Third byte - Y movement",
+            "    mov [mouse_byte_ymove], al",
+            "    call process_mouse_packet",
+            "    mov byte [mouse_packet_byte], 0",
+            "    jmp .no_data",
+            "    ",
+            ".reset_packet:",
+            "    mov byte [mouse_packet_byte], 0",
+            "    ",
+            ".no_data:",
+            "    ret"
+        };
+
+        public static List<string> BIT16x86_MouseSetup = new List<string>()
+        {
+            "OS_SetupMouse:",
+            "    ; Step 1: Enable auxiliary device",
+            "    mov al, 0xA8        ; Enable auxiliary device",
+            "    out 0x64, al",
+            "    ",
+            "    ; Step 2: Get controller configuration",
+            "    mov al, 0x20        ; Get controller config",
+            "    out 0x64, al",
+            "    in al, 0x60",
+            "    ",
+            "    ; Enable mouse clock (clear bit 5)",
+            "    and al, 0xDF        ; Clear mouse clock disable",
+            "    push ax",
+            "    ",
+            "    ; Step 3: Set controller configuration",
+            "    mov al, 0x60        ; Set controller config",
+            "    out 0x64, al",
+            "    pop ax",
+            "    out 0x60, al",
+            "    ",
+            "    ; Step 4: Send reset to mouse",
+            "    mov al, 0xD4        ; Send to auxiliary device",
+            "    out 0x64, al",
+            "    mov al, 0xFF        ; Reset mouse",
+            "    out 0x60, al",
+            "    ",
+            "    ; Step 5: Enable mouse streaming",
+            "    mov al, 0xD4        ; Send to auxiliary device",
+            "    out 0x64, al",
+            "    mov al, 0xF4        ; Enable data reporting",
+            "    out 0x60, al",
+            "    ",
+            "    ; Initialize packet state",
+            "    mov byte [mouse_packet_byte], 0",
+            "    ",
+            "    ret"
+        };
+
+        public static List<string> BIT16x86_GetMouseInput = new List<string>()
+        {
+            "process_mouse_packet:",
+            "    ; Check for overflow - discard packet if overflow bits are set",
+            "    mov al, [mouse_byte_states]",
+            "    test al, 0xC0       ; Check bits 6 and 7 (overflow bits)",
+            "    jnz .done",
+            "    ",
+            "    ; Process X movement with proper sign handling",
+            "    mov al, [mouse_byte_xmove]   ; Get X delta",
+            "    cbw                     ; Sign extend AL to AX",
+            "    mov bl, [mouse_byte_states]   ; Get flags",
+            "    test bl, 0x10           ; Test X sign bit",
+            "    jz .positive_x",
+            "    ",
+            "    ; Negative X movement (left) - AL is already the delta",
+            "    neg ax                  ; Make it positive for subtraction",
+            "    sub [mouse_cursor_x], ax      ; Move left",
+            "    jmp .check_x_bounds",
+            "    ",
+            ".positive_x:",
+            "    ; Positive X movement (right)",
+            "    add [mouse_cursor_x], ax      ; Move right",
+            "    ",
+            ".check_x_bounds:",
+            "    ; Keep X in bounds (0 to 310)",
+            "    cmp word [mouse_cursor_x], 0",
+            "    jge .x_not_negative",
+            "    mov word [mouse_cursor_x], 0",
+            ".x_not_negative:",
+            "    cmp word [mouse_cursor_x], SCREEN_WIDTH - MOUSE_CURSOR_WIDTH",
+            "    jle .process_y",
+            "    mov word [mouse_cursor_x], SCREEN_WIDTH - MOUSE_CURSOR_WIDTH",
+            "    ",".process_y:",
+            "    ; Process Y movement with proper sign handling",
+            "    mov al, [mouse_byte_ymove]   ; Get Y delta",
+            "    cbw                     ; Sign extend AL to AX",
+            "    mov bl, [mouse_byte_states]   ; Get flags",
+            "    test bl, 0x20           ; Test Y sign bit",
+            "    jz .positive_y_ps2      ; PS/2 positive Y = move up on screen",
+            "    ",
+            "    ; PS/2 negative Y (down toward user) = move down on screen",
+            "    neg ax                  ; Make positive for addition",
+            "    add [mouse_cursor_y], ax      ; Move down on screen",
+            "    jmp .check_y_bounds",
+            "    ",
+            ".positive_y_ps2:",
+            "    ; PS/2 positive Y (away from user) = move up on screen",
+            "    sub [mouse_cursor_y], ax      ; Move up on screen",
+            "    ",
+            ".check_y_bounds:",
+            "    ; Keep Y in bounds (0 to 190)",
+            "    cmp word [mouse_cursor_y], 0",
+            "    jge .y_not_negative",
+            "    mov word [mouse_cursor_y], 0",
+            ".y_not_negative:",
+            "    cmp word [mouse_cursor_y], SCREEN_HEIGHT - MOUSE_CURSOR_WIDTH",
+            "    jle .done",
+            "    mov word [mouse_cursor_y], SCREEN_HEIGHT - MOUSE_CURSOR_WIDTH",
+            "    ",
+            ".done:",
+            "    ret"
+        };
+
+        public static List<string> GetMouseX = new List<string>() 
+        {
+            "   mov ax, " + "[mouse_cursor_x]",
+            "   mov word [" + replaceVarName + "], ax"
+        };
+
+        public static List<string> GetMouseY = new List<string>()
+        {
+            "   mov ax, " + "[mouse_cursor_y]",
+            "   mov word [" + replaceVarName + "], ax"
         };
 
         #endregion
