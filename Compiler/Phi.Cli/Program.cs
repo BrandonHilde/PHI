@@ -58,8 +58,9 @@ static int Execute(string[] args)
                 outDir ??= Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file));
 
                 BuildResult build = Builder.Build(file, outDir);
-                foreach (string w in build.Warnings) Console.Error.WriteLine("warning: " + w);
-                foreach (string e in build.Errors) Console.Error.WriteLine("error: " + e);
+                // compiler diagnostics already say "file:line:col: error:"; other problems get the prefix
+                foreach (string w in build.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
+                foreach (string e in build.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
                 if (!build.Success) return 1;
 
                 if (build.IsProgram)

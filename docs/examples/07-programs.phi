@@ -1,0 +1,18 @@
+# Tutorial 7: running programs. phi build compiles the .phi files in
+# 07-programs.rootfs/ into GREET.BIN and TICKER.BIN on the disk.
+use proc.process;
+
+phi.Launcher:Kernel
+{
+	int greet: 0;
+	call greet is Process.Spawn: 'GREET.BIN' 'world';
+	int code: 0;
+	call code is Process.Wait: greet;
+	log 'greet exited with ' code '\n';
+
+	int ticker: 0;
+	call ticker is Process.Spawn: 'TICKER.BIN';
+	call Process.WaitAll;
+	log 'all programs finished\n';
+	exit 0;
+}

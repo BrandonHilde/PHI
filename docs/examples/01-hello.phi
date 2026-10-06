@@ -1,0 +1,10 @@
+# Tutorial 1: a boot sector. The BIOS loads these 512 bytes and runs them.
+phi.Hello:Bootloader
+{
+	str name: [20];
+
+	log 'Hello from the boot sector!\r\n';
+	log 'What is your name? ';
+	ask name;
+	log '\r\nNice to meet you, ' name '.\r\n';
+}

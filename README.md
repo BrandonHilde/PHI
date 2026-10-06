@@ -10,6 +10,8 @@ shell with commands and a game, all running as user programs. Only the lowest la
 interrupt stubs, task switching and the console) is assembly; the memory manager, file
 system, process loader, drivers like the disk and clock, and the whole userland are PHI.
 
+![The PHI OS shell](docs/images/phi-os-shell.png)
+
 ```
 phi> ls
   CAT.BIN  17461
@@ -54,6 +56,15 @@ phi.Count:Program
 }
 ```
 
+<h3>Learn PHI</h3>
+
+- **[Getting started](docs/getting-started.md):** install the tools and boot PHI OS in ten minutes
+- **[The tutorial](docs/README.md#learn-phi):** eight parts, from a boot sector to adding a
+  command to PHI OS, each with a tested example
+- **[Language reference](docs/language.md)**, **[memory map](docs/memory-map.md)** and
+  **[architecture](docs/architecture.md)**
+- **[Contributing](CONTRIBUTING.md)**
+
 <h4>To Build:</h4>
 
     1. Install the .NET 8 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
@@ -70,11 +81,10 @@ phi.Count:Program
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output
 
-The generated assembly is saved next to the image (`boot.asm` and `kernel.asm`), with each
+The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each
 PHI source line shown above the code it produced.
 
-- [docs/language.md](./docs/language.md): the language reference and the built-in functions
-- [docs/memory-map.md](./docs/memory-map.md): how programs boot and where everything is in memory
+- [docs/](./docs/README.md): all the documentation
 - [samples/](./samples): example programs
 - [tests/README.md](./tests/README.md): how the tests work
 - [Plan.md](./Plan.md): the roadmap

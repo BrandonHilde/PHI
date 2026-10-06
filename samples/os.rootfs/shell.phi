@@ -51,6 +51,7 @@ phi.Shell:Program
 			log 'Commands (each one is a program on the disk):\n';
 			log '  ls [folder]     the files in a folder\n';
 			log '  cat FILE        print a file\n';
+			log '  wc FILE         count the lines, words and bytes in a file\n';
 			log '  echo TEXT       print some text\n';
 			log '  ps              the programs running now\n';
 			log '  kill N          stop program N\n';

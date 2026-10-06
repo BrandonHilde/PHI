@@ -1,0 +1,36 @@
+# wc FILE: count the lines, words and bytes in a file
+use user.text;
+
+phi.Wc:Program
+{
+	u8 contents[16384];
+	ptr<u8> name: 0;
+	call name is OS.Arguments;
+
+	int size: 0;
+	call size is OS.ReadFile: name addr contents 16384;
+	if size < 0
+		log 'wc: no such file: ' name '\n';
+		exit 1;
+	;;
+
+	int lines: 0;
+	int words: 0;
+	bln inWord: false;
+	while int i: 0; i < size; i++;
+		u8 c: contents:i;
+		if c is '\n'
+			lines++;
+		;;
+		bln space: c is ' ' or c is '\n' or c is '\r' or c is '\t';
+		if space
+			inWord is false;
+		;;
+		elif inWord is false
+			inWord is true;
+			words++;
+		;;
+	;;
+
+	log lines ' lines, ' words ' words, ' size ' bytes\n';
+}

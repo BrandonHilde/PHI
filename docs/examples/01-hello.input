@@ -1,0 +1,3 @@
+expect What is your name?
+type Ada
+sendkey ret

@@ -1,0 +1,33 @@
+# Tutorial 4: reacting to hardware. The timer runs an event 60 times a second;
+# the keyboard runs one on every key press and release.
+phi.Events:Kernel
+{
+	int ticks: 0;
+	int keys: 0;
+
+	call OS.SetupInteruptTimer;
+	call OS.SetupKeyboardInterupt;
+	log 'Press keys; I will count them. Press q to stop.\n';
+
+	[OS.TimerEvent]
+		ticks++;
+		if ticks % 60 is 0
+			debug 'a second went by\n';
+		;;
+	[end]
+
+	[OS.KeyboardEvent]
+		int key: 0;
+		bln down: false;
+		call key is OS.GetKey;
+		call down is OS.IsKeyDown: key;
+		if down
+			keys++;
+			log 'key ' keys ': ' key '\n';
+			if key is 'q'
+				log 'done\n';
+				exit 0;
+			;;
+		;;
+	[end]
+}

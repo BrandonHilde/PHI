@@ -8,6 +8,9 @@ expect hello from the shell
 type cat docs/phi.txt
 sendkey ret
 expect instead of an app
+type wc readme.txt
+sendkey ret
+expect bytes
 type mem
 sendkey ret
 expect MB free

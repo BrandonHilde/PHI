@@ -1,0 +1,7 @@
+phi.Ticker:Program
+{
+	while int i: 1; i <= 3; i++;
+		log 'tick ' i '\n';
+		call OS.Sleep: 100;
+	;;
+}

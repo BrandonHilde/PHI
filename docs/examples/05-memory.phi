@@ -1,0 +1,40 @@
+# Tutorial 5: structs, pointers and the heap.
+struct.Task
+{
+	u32 id;
+	u8 priority;
+	ptr<Task> next;
+}
+
+phi.Tasks:Kernel
+{
+	# build a linked list with new
+	ptr<Task> first: 0;
+	while u32 i: 1; i <= 3; i++;
+		ptr<Task> t: new Task;          # zeroed memory from the heap
+		t:0.id is i;
+		t:0.priority is 10 * i;
+		t:0.next is first;
+		first is t;
+	;;
+
+	# walk it
+	ptr<Task> walk: first;
+	while walk is not 0
+		log 'task ' walk:0.id ' has priority ' walk:0.priority '\n';
+		walk is walk:0.next;
+	;;
+
+	# give the memory back
+	while first is not 0
+		ptr<Task> rest: first:0.next;
+		free first;
+		first is rest;
+	;;
+	log 'blocks still in use: ' Heap.used_blocks '\n';
+
+	# a null pointer is caught: uncomment the next two lines to see the panic screen
+	# ptr<Task> nothing: 0;
+	# log nothing:0.id;
+	exit 0;
+}

@@ -1,0 +1,4 @@
+expect Press keys
+sendkey a
+sendkey b
+sendkey q

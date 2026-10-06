@@ -1,0 +1,23 @@
+# Tutorial 3: a 32-bit kernel that draws with a driver written in PHI.
+use drivers.vga_text;
+use boot.info;
+
+phi.MyKernel:Kernel
+{
+	call Vga.Clear;
+	call Vga.SetColor: Colors.White Colors.Blue;
+	call Vga.Print: ' My first kernel \n';
+	call Vga.SetColor: Colors.LightGray Colors.Black;
+
+	# what the loader found out about the machine
+	ptr<BootInfo> boot: Boot.info;
+	call Vga.Print: 'Memory map entries: ';
+	call Vga.PrintNumber: boot:0.region_count;
+	call Vga.Print: '\n';
+
+	# straight to video memory, without the driver
+	ptr<u16> screen: 0xB8000;
+	screen:(24 * 80 + 79) is 0x4E21;    # a yellow-on-red ! in the bottom right corner
+
+	debug 'kernel is running\n';
+}

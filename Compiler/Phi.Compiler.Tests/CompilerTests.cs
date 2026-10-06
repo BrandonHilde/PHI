@@ -202,6 +202,17 @@ namespace Phi.Compiler.Tests
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
         }
 
+        public static IEnumerable<object[]> TutorialExamples() =>
+            Directory.GetFiles(Path.Combine(RepoRoot(), "docs", "examples"), "*.phi").Select(f => new object[] { Path.GetFileName(f) });
+
+        [Theory]
+        [MemberData(nameof(TutorialExamples))]
+        public void TutorialExamplesCompile(string example)
+        {
+            CompileResult result = PhiCompiler.Compile(Path.Combine(RepoRoot(), "docs", "examples", example));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
         [Fact]
         public void SyntaxShowcaseParses()
         {

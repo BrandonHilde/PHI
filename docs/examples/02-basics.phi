@@ -1,0 +1,49 @@
+# Tutorial 2: the language. A 32-bit kernel, so nothing has to fit in 512 bytes.
+phi.Basics:Kernel
+{
+	# variables and math
+	int width: 80;
+	int height: 25;
+	int cells: width * height;
+	log 'The screen has ' cells ' cells.\n';
+
+	# conditions
+	int temperature: 31;
+	if temperature > 30
+		log 'Hot!\n';
+	;;
+	elif temperature < 10
+		log 'Cold!\n';
+	;;
+	else
+		log 'Just right.\n';
+	;;
+
+	# loops and arrays
+	int primes: 2 3 5 7 11;
+	int sum: 0;
+	while int i: 0; i < primes.len; i++;
+		sum++ primes:i;
+	;;
+	log 'The first ' primes.len ' primes add up to ' sum '.\n';
+
+	# strings
+	str greeting: 'hello';
+	str copy: greeting;
+	copy:0 is 'j';
+	log greeting ' becomes ' copy ' (' copy.len ' letters)\n';
+
+	# methods
+	int area: 0;
+	call area is Area: 6 7;
+	log 'A 6 by 7 rectangle has an area of ' area '.\n';
+	call Greet: 'PHI';
+	call Greet;
+
+	[Area: int w: 0; int h: 0;]
+	[end: w * h]
+
+	[Greet: str who: 'world';]
+		log 'Hello, ' who '!\n';
+	[end]
+}

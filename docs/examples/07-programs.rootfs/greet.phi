@@ -1,0 +1,10 @@
+# A user program: it runs in its own memory and asks the kernel for everything.
+phi.Greet:Program
+{
+	int me: 0;
+	call me is OS.CurrentTask;
+	ptr<u8> who: 0;
+	call who is OS.Arguments;
+	log 'Hello, ' who ', from program ' me '\n';
+	exit me;
+}

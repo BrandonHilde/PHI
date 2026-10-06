@@ -1,0 +1,24 @@
+# Tutorial 6: files. phi build puts 06-files.rootfs/ on the kernel's disk.
+use fs.fat16;
+
+phi.Files:Kernel
+{
+	ptr<u8> buffer: new u8[1024];
+	int size: 0;
+
+	log 'Files on the disk:\n';
+	int count: 0;
+	call count is Fat.List: '';
+
+	call size is Fat.ReadFile: 'notes.txt' buffer 1023;
+	buffer:size is 0;
+	log 'notes.txt says: ' buffer;
+
+	str message: 'Written by my kernel.';
+	bln ok: false;
+	call ok is Fat.WriteFile: 'hello.txt' message message.len;
+	call size is Fat.ReadFile: 'hello.txt' buffer 1023;
+	buffer:size is 0;
+	log 'hello.txt says: ' buffer '\n';
+	exit 0;
+}
