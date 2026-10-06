@@ -1,4 +1,4 @@
 *.phi linguist-language=Phi
 # files that go onto disk images byte for byte
-*.rootfs/** -text
-rootfs/** -text
+**/*.rootfs/** -text
+**/rootfs/** -text
