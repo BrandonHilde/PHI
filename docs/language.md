@@ -6,7 +6,10 @@ This describes the language as the compiler in `Compiler/Phi.Compiler` implement
 
 ## Program structure
 
-A program is a list of classes. Each class has a base that says where its code runs:
+A program is a list of classes. Each class has a base that says where its code runs.
+There are two kinds of programs:
+
+**16-bit programs** run in real mode with the BIOS available:
 
 ```phi
 phi.Hello:Bootloader        # the boot sector: exactly one, and it must fit in 512 bytes
@@ -15,20 +18,38 @@ phi.Hello:Bootloader        # the boot sector: exactly one, and it must fit in 5
     call Bootloader.JumpToSectorTwo;
 }
 
-phi.Kernel:OS               # loaded from disk after the boot sector (up to 32 KB)
+phi.Shell:OS                # loaded from disk after the boot sector (up to 32 KB)
 {
     log 'Hello from the OS';
 }
 ```
 
 - The `Bootloader` class becomes the 512-byte boot sector at `0x7C00`.
-- All `OS` classes are combined into the **kernel**, loaded at `0x7E00` by
-  `call Bootloader.JumpToSectorTwo;`. The build works out how many sectors to load.
+- All `OS` classes are combined and loaded at `0x7E00` by `call Bootloader.JumpToSectorTwo;`.
+  The build works out how many sectors to load.
+
+**32-bit kernels** run in protected mode, with no BIOS:
+
+```phi
+phi.Hello:Kernel            # up to 512 KB, loaded at 0x10000
+{
+    log 'Hello from 32-bit PHI\n';
+}
+```
+
+- PHI supplies the boot sector and a loader that collects the memory map, switches the CPU
+  to 32-bit protected mode and jumps to the kernel. See [memory-map.md](memory-map.md).
+- A kernel can't contain `Bootloader` or `OS` classes.
+
+In both kinds:
+
 - Statements directly inside a class run in order, top to bottom, when the class starts.
-  When they finish, the CPU halts but still handles interrupts (so timer and keyboard
-  events keep running).
-- The boot sector and the kernel are built separately, so they can't use each other's
-  variables or methods.
+  When they finish, the CPU halts (a 16-bit program still handles interrupts, so timer
+  and keyboard events keep running).
+- `phi.Name:Library` classes are shared code, like drivers. They join the `OS` classes of a
+  16-bit program or the kernel of a 32-bit one, whichever uses them.
+- In a 16-bit program the boot sector and the `OS` classes are built separately, so they
+  can't use each other's variables or methods.
 
 Other top-level items: `struct.Name { ... }` (see [Structs](#structs)), `asm.Name { ... }`
 (see [Assembly blocks](#assembly-blocks)) and `use path.to.file;` (see [Files](#files)).
@@ -163,7 +184,7 @@ Simple statements end with `;`. Blocks (`if`, `else`, `while`, `unsafe`) end wit
 ```phi
 log 'Score: ' score '\r\n';     # screen and serial port (COM1)
 debug 'x = ' x '\n';            # serial port only: handy while developing
-ask name;                       # read a line from the keyboard into a str
+ask name;                       # read a line from the keyboard into a str (16-bit only, for now)
 exit 0;                         # stop QEMU (used by tests); halts on real hardware
 ```
 
@@ -373,9 +394,10 @@ Call them with `call Double;` (or `call asm.Double;`). `call x is Double;` store
 block leaves in `eax`. Blocks are only included in a unit that calls them. `arm.` blocks
 are parsed but can't be called yet.
 
-The code runs in 16-bit real mode with `ds = es = ss = 0`. You may change any
-general-purpose register and `fs`, but you must keep `sp`, `bp` and the other segment
-registers.
+In a 16-bit program the code runs in real mode with `ds = es = ss = 0`; you may change
+any general-purpose register and `fs`, but you must keep `sp`, `bp` and the other segment
+registers. In a 32-bit kernel it runs in protected mode with flat segments; you may change
+any general-purpose register, but keep `esp`, `ebp` and the segment registers.
 
 ## Files
 
@@ -392,31 +414,37 @@ and the classes of used files run before the classes that use them.
 
 | File | What it provides |
 |---|---|
-| `drivers.vga_text` | class `Vga`: `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
+| `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
+| `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
 
 ## Built-in functions
 
 Call them like methods. Those marked → return a value (`call x is OS.GetKey;`).
 
+"Where" is which code can use the function. **None of these work in a 32-bit kernel yet**:
+they use the BIOS or the real-mode interrupt table, and their protected-mode versions
+come with the drivers of Phase 4. A 32-bit kernel can still use ports (`in`/`out`),
+pointers and `asm.` blocks directly.
+
 | Function | Where | What it does |
 |---|---|---|
 | `Bootloader.JumpToSectorTwo` | boot sector only | load the OS classes from disk and start them |
-| `Bootloader.WaitForKeyPress` → | both | wait for a key (through the BIOS) and return its character |
-| `Bootloader.EnableVideoMode` | both | switch to 320×200 graphics with 256 colors |
-| `OS.SetupInteruptTimer` | both | run `[OS.TimerEvent]` 60 times a second |
-| `OS.SetupKeyboardInterupt` | both | track keys and run `[OS.KeyboardEvent]` (the BIOS keyboard, `ask` and `WaitForKeyPress` stop working) |
-| `OS.GetKey` → | both | the character of the last key pressed or released |
-| `OS.IsKeyDown: key` → | both | 1 if the key (e.g. `'w'`) is held down |
-| `OS.SetupMouse` | both | turn on the PS/2 mouse |
-| `OS.UpdateMouse` | both | read waiting mouse movement (the functions below do this too) |
-| `OS.GetMouseX` → / `OS.GetMouseY` → | both | cursor position (0–310, 0–190) |
-| `OS.GetMouseDown` → / `OS.GetMouseUp` → | both | left button state |
-| `OS.DrawRectangle: x y width height color` | both | fill a rectangle (clipped to the screen) |
-| `OS.DrawPixel: x y color` | both | set one pixel |
-| `OS.SetInterruptHandler: vector handler` | both | run an `[isr]` method for an interrupt vector |
-| `OS.EndOfInterrupt: irq` | both | acknowledge a hardware interrupt (IRQ 0–15) |
-| `OS.UnmaskIrq: irq` / `OS.MaskIrq: irq` | both | let a hardware interrupt through, or block it |
-| `OS.EnableInterrupts` / `OS.DisableInterrupts` | both | `sti` / `cli` |
+| `Bootloader.WaitForKeyPress` → | 16-bit | wait for a key (through the BIOS) and return its character |
+| `Bootloader.EnableVideoMode` | 16-bit | switch to 320×200 graphics with 256 colors |
+| `OS.SetupInteruptTimer` | 16-bit | run `[OS.TimerEvent]` 60 times a second |
+| `OS.SetupKeyboardInterupt` | 16-bit | track keys and run `[OS.KeyboardEvent]` (the BIOS keyboard, `ask` and `WaitForKeyPress` stop working) |
+| `OS.GetKey` → | 16-bit | the character of the last key pressed or released |
+| `OS.IsKeyDown: key` → | 16-bit | 1 if the key (e.g. `'w'`) is held down |
+| `OS.SetupMouse` | 16-bit | turn on the PS/2 mouse |
+| `OS.UpdateMouse` | 16-bit | read waiting mouse movement (the functions below do this too) |
+| `OS.GetMouseX` → / `OS.GetMouseY` → | 16-bit | cursor position (0–310, 0–190) |
+| `OS.GetMouseDown` → / `OS.GetMouseUp` → | 16-bit | left button state |
+| `OS.DrawRectangle: x y width height color` | 16-bit | fill a rectangle (clipped to the screen) |
+| `OS.DrawPixel: x y color` | 16-bit | set one pixel |
+| `OS.SetInterruptHandler: vector handler` | 16-bit | run an `[isr]` method for an interrupt vector |
+| `OS.EndOfInterrupt: irq` | 16-bit | acknowledge a hardware interrupt (IRQ 0–15) |
+| `OS.UnmaskIrq: irq` / `OS.MaskIrq: irq` | 16-bit | let a hardware interrupt through, or block it |
+| `OS.EnableInterrupts` / `OS.DisableInterrupts` | 16-bit | `sti` / `cli` |
 
 `OS.SetupInterruptTimer` and `OS.SetupKeyboardInterrupt` (spelled correctly) also work.
 `WaitForKeyPress` and `EnableVideoMode` can be called with `OS.` too.
@@ -437,10 +465,11 @@ Call them like methods. Those marked → return a value (`call x is OS.GetKey;`)
 2. **Parser** (`Syntax/Parser.cs`): tokens to a syntax tree, for the program and every file it uses
 3. **Binder** (`Semantics/Binder.cs`): resolves names, works out types, storage and struct
    layouts, and reports errors
-4. **Code generator** (`CodeGen/X86_16Generator.cs`): one NASM file per unit (`boot.asm`,
-   `kernel.asm`), plus only the library routines the program uses, from
-   [lib/x86_16](../lib/x86_16)
-5. **NASM** assembles both; the kernel goes right after the boot sector in a 1.44 MB disk image
+4. **Code generator** (`CodeGen/X86Generator.cs`): one NASM file per unit (`boot.asm` and
+   `os.asm` for a 16-bit program, `kernel.asm` for a 32-bit one), plus only the library
+   routines the program uses, from [lib/x86_16](../lib/x86_16) or [lib/x86_32](../lib/x86_32)
+5. **NASM** assembles them into a 1.44 MB disk image; a 32-bit kernel also gets the boot
+   stages from [lib/boot](../lib/boot). The layouts are in [memory-map.md](memory-map.md).
 
 The `.asm` files are kept in the build folder, with each source line shown above the code
 it produced.

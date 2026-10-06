@@ -50,7 +50,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.I8 or TypeKind.U8 or TypeKind.Bool => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
             TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer => 4,
-            TypeKind.Str => 2,  // arrays of strings hold 16-bit pointers
+            TypeKind.Str => 4,  // arrays of strings hold pointers
             TypeKind.Struct => Struct!.Size,
             _ => 0,
         };
@@ -78,10 +78,13 @@ namespace Phi.Compiler.Semantics
 
     public enum UnitKind
     {
-        /// <summary>The 512-byte boot sector at 0x7C00.</summary>
+        /// <summary>The 512-byte boot sector at 0x7C00 (16-bit).</summary>
         Boot,
 
-        /// <summary>Everything loaded after the boot sector, at 0x7E00.</summary>
+        /// <summary>The OS classes, loaded right after the boot sector at 0x7E00 (16-bit).</summary>
+        Os,
+
+        /// <summary>The Kernel classes: a 32-bit protected-mode kernel at 0x10000.</summary>
         Kernel,
     }
 

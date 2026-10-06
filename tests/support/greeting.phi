@@ -1,7 +1,7 @@
 # used by use.phi through: use support.greeting;
 use support.counter;
 
-phi.Greeting:OS
+phi.Greeting:Library
 {
 	str greeting_text: 'hello from another file';
 

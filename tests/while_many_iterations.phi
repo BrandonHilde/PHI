@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Loop:OS
+phi.Loop:Library
 {
 	# 20000 iterations: the old translator recursed once per
 	# iteration and overflowed the stack.

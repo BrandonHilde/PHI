@@ -10,14 +10,20 @@ namespace Phi.Compiler
         public IReadOnlyList<Diagnostic> Diagnostics { get; init; } = Array.Empty<Diagnostic>();
         public bool Success => !Diagnostics.Any(d => d.Severity == Severity.Error);
 
-        /// <summary>The boot sector first, then the kernel if the program has OS classes.</summary>
+        /// <summary>
+        /// The program's code: the boot sector and OS classes of a 16-bit program, or the
+        /// kernel of a 32-bit one.
+        /// </summary>
         public List<AsmUnit> Units { get; } = new();
+
+        /// <summary>For a 32-bit kernel: the standard boot sector (stage1) and loader (stage2).</summary>
+        public List<AsmUnit> BootStages { get; } = new();
 
         public ProgramNode? Syntax { get; init; }
         public BoundProgram? Bound { get; init; }
     }
 
-    /// <summary>source -> Lexer -> Parser -> Binder -> X86_16Generator -> NASM source</summary>
+    /// <summary>source -> Lexer -> Parser -> Binder -> X86Generator -> NASM source</summary>
     public static class PhiCompiler
     {
         /// <summary>Where `use` looks for files that aren't next to the program.</summary>
@@ -34,11 +40,17 @@ namespace Phi.Compiler
             if (bound == null || diagnostics.HasErrors || !generate)
                 return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
 
-            var units = new List<AsmUnit> { X86_16Generator.Generate(bound, bound.Boot, diagnostics) };
-            if (bound.Kernel != null) units.Add(X86_16Generator.Generate(bound, bound.Kernel, diagnostics));
+            var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics)).ToList();
 
             var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
-            if (result.Success) result.Units.AddRange(units);
+            if (!result.Success) return result;
+
+            result.Units.AddRange(units);
+            if (bound.Kernel != null)
+            {
+                result.BootStages.Add(new AsmUnit { Kind = UnitKind.Boot, Name = "stage1", Text = Library.ReadFile("lib/boot/stage1.asm") });
+                result.BootStages.Add(new AsmUnit { Kind = UnitKind.Boot, Name = "stage2", Text = Library.ReadFile("lib/boot/stage2.asm") });
+            }
             return result;
         }
 
@@ -63,8 +75,10 @@ namespace Phi.Compiler
                     if (used == null)
                     {
                         string relative = use.Path.Replace('.', '/') + ".phi";
-                        diagnostics.Error(file, use.Span, $"can't find {relative} next to {Path.GetFileName(file.Path)}, " +
-                                                          $"next to {Path.GetFileName(main.Path)}, or in the standard library ({StandardLibrary})");
+                        string places = file == main
+                            ? $"next to {Path.GetFileName(file.Path)}"
+                            : $"next to {Path.GetFileName(file.Path)}, next to {Path.GetFileName(main.Path)},";
+                        diagnostics.Error(file, use.Span, $"can't find {relative} {places} or in the standard library ({StandardLibrary})");
                         continue;
                     }
                     if (seen.Add(Key(used))) Load(used);

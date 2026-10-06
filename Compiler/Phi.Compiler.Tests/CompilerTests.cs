@@ -84,7 +84,7 @@ namespace Phi.Compiler.Tests
                 """));
 
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
-            var vars = result.Bound!.Boot.Variables.ToDictionary(v => v.Name);
+            var vars = result.Bound!.Boot!.Variables.ToDictionary(v => v.Name);
             Assert.Equal(4, vars["name"].Capacity);
             Assert.Equal(41, vars["buffer"].Capacity);
             Assert.Equal(12, vars["fromNumber"].Capacity);
@@ -99,7 +99,7 @@ namespace Phi.Compiler.Tests
         public void ClassConstantsAreStaticButMethodLocalsAreSetEachCall()
         {
             CompileResult result = Compile(Boot("int a: 5;\ncall M;\n[M]\n int b: 6;\n[end]"));
-            var vars = result.Bound!.Boot.Variables.ToDictionary(v => v.Name);
+            var vars = result.Bound!.Boot!.Variables.ToDictionary(v => v.Name);
             Assert.False(vars["a"].NeedsInitCode);
             Assert.True(vars["b"].NeedsInitCode);
         }
@@ -109,7 +109,7 @@ namespace Phi.Compiler.Tests
         {
             CompileResult result = Compile("phi.B:Bootloader\n{\n call Bootloader.JumpToSectorTwo;\n}\nphi.K:OS\n{\n log 'k';\n}\n");
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
-            Assert.Equal(new[] { UnitKind.Boot, UnitKind.Kernel }, result.Units.Select(u => u.Kind));
+            Assert.Equal(new[] { UnitKind.Boot, UnitKind.Os }, result.Units.Select(u => u.Kind));
             Assert.Contains("org 0x7E00", result.Units[1].Text);
         }
 
@@ -192,7 +192,7 @@ namespace Phi.Compiler.Tests
         }
 
         public static IEnumerable<object[]> RunnableSamples() =>
-            new[] { "hello.phi", "arcade.phi" }.Select(f => new object[] { f });
+            new[] { "hello.phi", "arcade.phi", "kernel.phi" }.Select(f => new object[] { f });
 
         [Theory]
         [MemberData(nameof(RunnableSamples))]

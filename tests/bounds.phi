@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Bounds:OS
+phi.Bounds:Library
 {
 	int numbers: 1 2 3;
 	int guard: 0;

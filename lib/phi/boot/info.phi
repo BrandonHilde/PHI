@@ -1,0 +1,41 @@
+# What the loader found out before switching to 32-bit mode (32-bit kernels only).
+#
+#   use boot.info;
+#   log Boot.info:0.region_count;
+#   ptr<MemoryRegion> regions: Boot.info:0.regions;
+#   if regions:0.type is Boot.MEMORY_USABLE ...
+#
+# The loader fills this in at 0x9000; see docs/memory-map.md.
+
+# One entry of the BIOS memory map (E820). Addresses and lengths are 64-bit,
+# split into low and high halves.
+struct.MemoryRegion
+{
+	u32 base;
+	u32 base_high;
+	u32 length;
+	u32 length_high;
+	u32 type;           # 1 = usable RAM; anything else is reserved
+	u32 attributes;
+}
+
+struct.BootInfo
+{
+	u32 magic;          # 'PHI!' (0x21494850)
+	u32 boot_drive;     # the BIOS drive number we booted from
+	u32 region_count;
+	ptr<MemoryRegion> regions;
+	u32 cursor_row;     # where the BIOS left the cursor
+	u32 cursor_column;
+	u32 kernel_start;   # where the kernel was loaded
+	u32 kernel_size;    # in bytes, rounded up to whole sectors
+}
+
+phi.Boot:Kernel
+{
+	const u32 BOOT_INFO_ADDRESS: 0x9000;
+	const u32 BOOT_INFO_MAGIC: 0x21494850;
+	const u32 MEMORY_USABLE: 1;
+
+	ptr<BootInfo> info: BOOT_INFO_ADDRESS;
+}

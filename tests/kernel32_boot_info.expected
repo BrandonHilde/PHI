@@ -1,0 +1,6 @@
+magic ok: 1
+drive: 128
+kernel at: 65536
+regions found: 1
+low memory first: 1
+at least 120 MB: 1

@@ -249,6 +249,28 @@ memory layout (load addresses, stack location) is documented in `docs/memory-map
 **Done when:** QEMU shows "Hello from 32-bit PHI" written straight to VGA memory at
 `0xB8000`, and the serial test passes.
 
+**Status: done (2026-10-06).** See [docs/memory-map.md](docs/memory-map.md).
+- [x] `phi.Name:Kernel` classes compile to a 32-bit protected-mode kernel at `0x10000`
+  (up to 512 KB); `bits 32` code generation shares one generator with 16-bit mode
+- [x] Standard stage 1 (boot sector) and stage 2 (loader) in `lib/boot/`: the kernel is loaded in
+  32 KB reads, the E820 memory map and cursor go to BootInfo at `0x9000`, then fast A20, a flat GDT,
+  protected mode, `esp = 0x9F000`, `ebx` = BootInfo
+- [x] The build calculates the sector counts for every stage
+- [x] 32-bit library `lib/x86_32/`: `log` writes to VGA memory (continuing below the BIOS text,
+  scrolling, hardware cursor) and COM1; strings, numbers and bounds errors work as in 16-bit
+- [x] `use boot.info;` gives typed access to BootInfo and the memory map
+- [x] `phi.Name:Library` classes join whichever kind of program uses them; the VGA driver is one
+- [x] Tests made only of `:Library` classes run twice, as a 16-bit program and as a 32-bit kernel:
+  15 tests check both code generators against the same expected output
+- [x] `samples/kernel.phi`: a 32-bit kernel that prints the memory map with the VGA driver
+- Differs from the plan:
+  - Users don't write a stage 1 for 32-bit kernels; a program is either a 16-bit program with its
+    own boot sector or a 32-bit kernel with PHI's loader. Custom loaders can come later.
+  - The kernel is loaded below 1 MB (`0x10000`) instead of at 1 MB, so the real-mode loader can
+    place it directly; 512 KB is plenty until paging (Phase 5) can move things around.
+  - The BIOS built-ins (keyboard, mouse, timer, drawing) aren't available in 32-bit kernels yet;
+    their protected-mode versions are Phase 4.
+
 ---
 
 ## Phase 4: Interrupts and core drivers

@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Bits:OS
+phi.Bits:Library
 {
 	int a: 1100b;
 	int flags: 0;

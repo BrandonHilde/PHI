@@ -40,6 +40,7 @@ phi.SectorTwo:OS
 
        phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
        phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)
+       phi run samples/kernel.phi        a 32-bit protected-mode kernel
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output
@@ -48,6 +49,7 @@ The generated assembly is saved next to the image (`boot.asm` and `kernel.asm`),
 PHI source line shown above the code it produced.
 
 - [docs/language.md](./docs/language.md): the language reference and the built-in functions
+- [docs/memory-map.md](./docs/memory-map.md): how programs boot and where everything is in memory
 - [samples/](./samples): example programs
 - [tests/README.md](./tests/README.md): how the tests work
 - [Plan.md](./Plan.md): the roadmap

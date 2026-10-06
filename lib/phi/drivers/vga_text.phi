@@ -1,4 +1,5 @@
 # VGA text-mode driver, written in PHI: 80x25 characters at 0xB8000.
+# Works in 16-bit programs and 32-bit kernels.
 #
 #   use drivers.vga_text;
 #   call Vga.Clear;
@@ -9,7 +10,7 @@
 # Each cell is a u16: the character in the low byte, the color in the high byte
 # (background in the top four bits, foreground in the bottom four).
 
-phi.Vga:OS
+phi.Vga:Library
 {
 	const u32 VGA_MEMORY: 0xB8000;
 	const int VGA_WIDTH: 80;

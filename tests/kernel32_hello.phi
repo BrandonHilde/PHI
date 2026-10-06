@@ -1,0 +1,30 @@
+phi.Hello:Kernel
+{
+	ptr<u8> screen: 0xB8000;
+	str text: [21];
+
+	log 'Hello from 32-bit PHI\n';
+
+	u32 cr0: 0;
+	call cr0 is ReadCr0;
+	debug 'protected mode: ' cr0 & 1 '\n';
+
+	# the console carries on below the BIOS's messages; find our line on the screen
+	int row: -1;
+	while int r: 0; r < 25; r++;
+		if screen:(r * 160) is 'H' and screen:(r * 160 + 22) is '3'
+			row is r;
+		;;
+	;;
+	while int k: 0; k < 21; k++;
+		text:k is screen:(row * 160 + k * 2);
+	;;
+	debug 'on screen: ' text '\n';
+	exit 0;
+}
+
+asm.ReadCr0
+{
+	mov eax, cr0
+	ret
+}

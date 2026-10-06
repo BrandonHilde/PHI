@@ -54,7 +54,7 @@ namespace Phi.Compiler.Tests
         public void NestedPointerTypesParse()
         {
             CompileResult result = CompileOk(Boot("ptr<ptr<u8>> table: 0;"));
-            PhiType t = result.Bound!.Boot.Variables.Single().Type;
+            PhiType t = result.Bound!.Boot!.Variables.Single().Type;
             Assert.True(t.IsPointer);
             Assert.Equal(PhiType.PointerTo(PhiType.U8), t.Pointee);
         }
@@ -63,7 +63,7 @@ namespace Phi.Compiler.Tests
         public void StructsArePackedInOrder()
         {
             CompileResult result = CompileOk("struct.Point\n{\n i16 x;\n i16 y;\n}\nstruct.Task\n{\n u32 id;\n Point pos;\n u8 name[8];\n ptr<Task> next;\n}\n" + Boot("Task t;"));
-            StructSymbol task = result.Bound!.Boot.Variables.Single().Type.Struct!;
+            StructSymbol task = result.Bound!.Boot!.Variables.Single().Type.Struct!;
             Assert.Equal(new[] { ("id", 0), ("pos", 4), ("name", 8), ("next", 16) }, task.Fields.Select(f => (f.Name, f.Offset)));
             Assert.Equal(20, task.Size);
         }
@@ -92,7 +92,7 @@ namespace Phi.Compiler.Tests
         public void ConstantsWorkInSizesAndOtherConstants()
         {
             CompileResult result = CompileOk(Boot("const int N: 4;\nconst int M: N * 2;\nint buffer[M];"));
-            Assert.Equal(8, result.Bound!.Boot.Variables.Single().Count);
+            Assert.Equal(8, result.Bound!.Boot!.Variables.Single().Count);
         }
 
         [Fact]

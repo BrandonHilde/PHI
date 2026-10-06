@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Sizes:OS
+phi.Sizes:Library
 {
 	u8 small: 255;
 	i8 tiny: -128;

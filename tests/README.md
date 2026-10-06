@@ -32,6 +32,10 @@ Two optional files change what a test does:
 - **`NAME.errors`** means the program must *fail* to compile. Each line is text that must
   appear in one of the errors, such as `4:6: error: unknown name 'missing'`.
 
+A test made only of `phi.Name:Library` classes runs twice, as a 16-bit program and as a
+32-bit kernel (`numbers (16-bit)`, `numbers (32-bit)`), against the same `.expected` file.
+Most language tests are written this way, so both code generators stay in step.
+
 `tests/support/` holds files that tests load with `use`; they aren't tests themselves.
 
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error

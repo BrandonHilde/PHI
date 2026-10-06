@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Loop:OS
+phi.Loop:Library
 {
 
 	while int i: 0; i < 5; i++;

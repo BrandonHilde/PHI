@@ -1,0 +1,42 @@
+# A 32-bit protected-mode kernel. PHI supplies the boot sector and the loader
+# that switches the CPU to 32-bit mode; this code starts at 0x10000.
+#
+#   phi run samples/kernel.phi
+
+use drivers.vga_text;
+use boot.info;
+
+phi.Hello:Kernel
+{
+	ptr<BootInfo> boot: Boot.info;
+	ptr<MemoryRegion> regions: boot:0.regions;
+	u32 usableKb: 0;
+
+	call Vga.Clear;
+	call Vga.SetColor: Colors.White Colors.Blue;
+	call Vga.Print: ' PHI kernel - 32-bit protected mode                                             \n';
+	call Vga.SetColor: Colors.LightGray Colors.Black;
+
+	call Vga.Print: '\nMemory map from the BIOS:\n';
+	while int i: 0; i < boot:0.region_count; i++;
+		ptr<MemoryRegion> r: regions + i * 24;
+		call Vga.Print: '  ';
+		call Vga.PrintNumber: r:0.base / 1024;
+		call Vga.Print: ' KB, ';
+		call Vga.PrintNumber: r:0.length / 1024;
+		if r:0.type is Boot.MEMORY_USABLE
+			call Vga.Print: ' KB usable\n';
+			if r:0.base_high is 0
+				usableKb++ r:0.length / 1024;
+			;;
+		;;
+		else
+			call Vga.Print: ' KB reserved\n';
+		;;
+	;;
+
+	call Vga.Print: '\nUsable memory: ';
+	call Vga.PrintNumber: usableKb / 1024;
+	call Vga.Print: ' MB\n';
+	debug 'kernel running, ' usableKb / 1024 ' MB usable\n';
+}

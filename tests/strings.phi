@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Strings:OS
+phi.Strings:Library
 {
 	str greeting: 'hello, world';
 	str copy: greeting;

@@ -1,11 +1,6 @@
 use drivers.vga_text;
 
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Screen:OS
+phi.Screen:Library
 {
 	ptr<u16> screen: 0xB8000;
 	str row: [12];

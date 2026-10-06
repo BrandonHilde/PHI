@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.IfElse:OS
+phi.IfElse:Library
 {
 	int a: 5;
 	int b: 3;

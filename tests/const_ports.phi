@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Ports:OS
+phi.Ports:Library
 {
 	const u16 COM1: 0x3F8;
 	const u16 COM1_STATUS: COM1 + 5;

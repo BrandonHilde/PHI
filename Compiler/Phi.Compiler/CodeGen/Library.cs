@@ -7,6 +7,7 @@ namespace Phi.Compiler.CodeGen
     ///   ; provides: label label ...
     ///   ; requires: label label ...
     ///   ; hooks: label ...          (events the code calls; a no-op is used if the program has none)
+    ///   ; init: label ...           (called once when the program starts)
     /// </summary>
     public sealed class LibraryFile
     {
@@ -15,6 +16,7 @@ namespace Phi.Compiler.CodeGen
         public List<string> Provides { get; } = new();
         public List<string> Requires { get; } = new();
         public List<string> Hooks { get; } = new();
+        public List<string> Init { get; } = new();
     }
 
     public static class Library
@@ -55,6 +57,7 @@ namespace Phi.Compiler.CodeGen
                 List<string>? list = content.StartsWith("provides:") ? file.Provides
                     : content.StartsWith("requires:") ? file.Requires
                     : content.StartsWith("hooks:") ? file.Hooks
+                    : content.StartsWith("init:") ? file.Init
                     : null;
 
                 if (list != null)
@@ -62,6 +65,20 @@ namespace Phi.Compiler.CodeGen
             }
 
             return file;
+        }
+
+        /// <summary>True when the target's library defines the label.</summary>
+        public static bool Provides(string target, string symbol) =>
+            Load(target).Any(f => f.Provides.Contains(symbol));
+
+        /// <summary>A file of the library that isn't a routine collection, like lib/boot/stage1.asm.</summary>
+        public static string ReadFile(string path)
+        {
+            Assembly assembly = typeof(Library).Assembly;
+            string? name = assembly.GetManifestResourceNames().FirstOrDefault(n => n.Replace('\\', '/') == path)
+                ?? throw new InvalidOperationException($"the compiler has no {path}");
+            using var reader = new StreamReader(assembly.GetManifestResourceStream(name)!);
+            return reader.ReadToEnd();
         }
 
         /// <summary>

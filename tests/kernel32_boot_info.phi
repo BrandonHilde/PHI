@@ -1,0 +1,25 @@
+use boot.info;
+
+phi.Memory:Kernel
+{
+	ptr<BootInfo> boot: Boot.info;
+	ptr<MemoryRegion> regions: boot:0.regions;
+	u32 usableKb: 0;
+
+	debug 'magic ok: ' (boot:0.magic is Boot.BOOT_INFO_MAGIC) '\n';
+	debug 'drive: ' boot:0.boot_drive '\n';
+	debug 'kernel at: ' boot:0.kernel_start '\n';
+
+	while int i: 0; i < boot:0.region_count; i++;
+		ptr<MemoryRegion> r: regions + i * 24;
+		if r:0.type is Boot.MEMORY_USABLE and r:0.base_high is 0
+			usableKb++ r:0.length / 1024;
+		;;
+	;;
+
+	# exact regions vary between QEMU versions; QEMU gives the machine 128 MB by default
+	debug 'regions found: ' (boot:0.region_count > 2) '\n';
+	debug 'low memory first: ' (regions:0.base is 0 and regions:0.type is Boot.MEMORY_USABLE) '\n';
+	debug 'at least 120 MB: ' (usableKb / 1024 >= 120) '\n';
+	exit 0;
+}

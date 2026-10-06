@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Methods:OS
+phi.Methods:Library
 {
 	int total: 0;
 

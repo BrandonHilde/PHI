@@ -14,20 +14,29 @@ namespace Phi.Cli
     }
 
     /// <summary>
-    /// phi source -> boot.asm + kernel.asm -> nasm -> a bootable raw disk image:
-    /// sector 0 is the boot sector, the kernel follows from sector 1 (loaded at 0x7E00).
+    /// phi source -> .asm files -> nasm -> a bootable raw disk image. Two layouts:
+    ///
+    ///   16-bit program:  sector 0 boot sector | sector 1.. OS classes (loaded at 0x7E00)
+    ///   32-bit kernel:   sector 0 stage 1 | sectors 1-8 stage 2 | sector 9.. kernel (loaded at 0x10000)
+    ///
+    /// See docs/memory-map.md.
     /// </summary>
     public static class Builder
     {
         const int SectorSize = 512;
 
-        // The kernel is loaded at 0x7E00 and must end before 0x10000, the edge of segment 0.
-        const int MaxKernelSectors = (0x10000 - X86_16Generator.KernelAddress) / SectorSize;
+        // 16-bit OS classes are loaded at 0x7E00 and must end before 0x10000, the edge of segment 0.
+        const int MaxOsSectors = (0x10000 - X86Generator.OsAddress) / SectorSize;
+
+        // A 32-bit kernel is loaded at 0x10000 and must end by 0x90000, where the stack area begins.
+        const int MaxKernelSectors = (0x90000 - X86Generator.KernelAddress) / SectorSize;
+        const int Stage2Sectors = 8;
 
         // 1.44 MB: bootable as a hard disk, and the size QEMU and other tools expect of small images.
         const int ImageSize = 1_474_560;
 
-        public static BuildResult Build(string phiFile, string outDir)
+        /// <param name="appendSource">Extra PHI text added after the file's own (used by the test runner).</param>
+        public static BuildResult Build(string phiFile, string outDir, string appendSource = "")
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
             var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img") };
@@ -41,42 +50,82 @@ namespace Phi.Cli
             Directory.CreateDirectory(outDir);
 
             var source = SourceFile.Load(phiFile);
-            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text));
+            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource));
 
             foreach (Diagnostic d in compiled.Diagnostics)
                 (d.Severity == Severity.Error ? result.Errors : result.Warnings).Add(d.ToString());
 
             if (!compiled.Success) return result;
 
+            byte[]? image = compiled.Units.Any(u => u.Kind == UnitKind.Kernel)
+                ? Layout32(compiled, outDir, result)
+                : Layout16(compiled, outDir, result);
+
+            if (image != null) File.WriteAllBytes(result.ImagePath, image);
+            return result;
+        }
+
+        static byte[]? Layout16(CompileResult compiled, string outDir, BuildResult result)
+        {
             AsmUnit boot = compiled.Units.Single(u => u.Kind == UnitKind.Boot);
-            AsmUnit? kernel = compiled.Units.SingleOrDefault(u => u.Kind == UnitKind.Kernel);
+            AsmUnit? os = compiled.Units.SingleOrDefault(u => u.Kind == UnitKind.Os);
 
-            byte[] kernelBin = Array.Empty<byte>();
-            if (kernel != null)
+            byte[] osBin = Array.Empty<byte>();
+            if (os != null)
             {
-                byte[]? bin = Assemble(kernel, outDir, Array.Empty<string>(), result);
-                if (bin == null) return result;
-                kernelBin = bin;
+                byte[]? bin = Assemble(os, outDir, Array.Empty<string>(), result);
+                if (bin == null) return null;
+                osBin = bin;
             }
 
-            int kernelSectors = (kernelBin.Length + SectorSize - 1) / SectorSize;
-            if (kernelSectors > MaxKernelSectors)
+            int osSectors = Sectors(osBin);
+            if (osSectors > MaxOsSectors)
             {
-                result.Errors.Add($"the OS classes are {kernelBin.Length} bytes, but at most {MaxKernelSectors * SectorSize} " +
-                                  "can be loaded in 16-bit mode for now (see Plan.md, Phase 3)");
-                return result;
+                result.Errors.Add($"the OS classes are {osBin.Length} bytes, but at most {MaxOsSectors * SectorSize} " +
+                                  "can be loaded by a 16-bit program; a 32-bit kernel (phi.Name:Kernel) can be up to 512 KB");
+                return null;
             }
 
-            byte[]? bootBin = Assemble(boot, outDir, new[] { $"-dPHI_KERNEL_SECTORS={kernelSectors}" }, result);
-            if (bootBin == null) return result;
+            byte[]? bootBin = Assemble(boot, outDir, new[] { $"-dPHI_KERNEL_SECTORS={osSectors}" }, result);
+            if (bootBin == null) return null;
 
             var image = new byte[ImageSize];
             bootBin.CopyTo(image, 0);
-            kernelBin.CopyTo(image, SectorSize);
-            File.WriteAllBytes(result.ImagePath, image);
-
-            return result;
+            osBin.CopyTo(image, SectorSize);
+            return image;
         }
+
+        static byte[]? Layout32(CompileResult compiled, string outDir, BuildResult result)
+        {
+            AsmUnit kernel = compiled.Units.Single(u => u.Kind == UnitKind.Kernel);
+            AsmUnit stage1 = compiled.BootStages.Single(u => u.Name == "stage1");
+            AsmUnit stage2 = compiled.BootStages.Single(u => u.Name == "stage2");
+
+            byte[]? kernelBin = Assemble(kernel, outDir, Array.Empty<string>(), result);
+            if (kernelBin == null) return null;
+
+            int kernelSectors = Math.Max(Sectors(kernelBin), 1);
+            if (kernelSectors > MaxKernelSectors)
+            {
+                result.Errors.Add($"the kernel is {kernelBin.Length} bytes, but the loader can load at most {MaxKernelSectors * SectorSize}");
+                return null;
+            }
+
+            byte[]? stage2Bin = Assemble(stage2, outDir, new[] { $"-dPHI_KERNEL_SECTORS={kernelSectors}" }, result);
+            byte[]? stage1Bin = Assemble(stage1, outDir, new[] { $"-dPHI_STAGE2_SECTORS={Stage2Sectors}" }, result);
+            if (stage1Bin == null || stage2Bin == null) return null;
+
+            if (stage2Bin.Length != Stage2Sectors * SectorSize)
+                throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
+
+            var image = new byte[ImageSize];
+            stage1Bin.CopyTo(image, 0);
+            stage2Bin.CopyTo(image, SectorSize);
+            kernelBin.CopyTo(image, (1 + Stage2Sectors) * SectorSize);
+            return image;
+        }
+
+        static int Sectors(byte[] bin) => (bin.Length + SectorSize - 1) / SectorSize;
 
         static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)
         {

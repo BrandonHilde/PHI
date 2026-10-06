@@ -15,11 +15,18 @@ namespace Phi.Compiler.Semantics
         public Dictionary<string, Symbol> ClassNames { get; } = new();
     }
 
+    /// <summary>
+    /// A 16-bit program has a Boot unit and maybe an Os unit; a 32-bit program has only a
+    /// Kernel unit (the compiler supplies its boot sector and loader).
+    /// </summary>
     public sealed class BoundProgram
     {
         public SourceFile File { get; init; } = null!;
-        public BoundUnit Boot { get; init; } = null!;
+        public BoundUnit? Boot { get; init; }
+        public BoundUnit? Os { get; init; }
         public BoundUnit? Kernel { get; init; }
+
+        public IEnumerable<BoundUnit> Units => new[] { Boot, Os, Kernel }.Where(u => u != null)!;
     }
 
     /// <summary>
@@ -30,6 +37,13 @@ namespace Phi.Compiler.Semantics
     {
         public const string BootBase = "Bootloader";
         public const string KernelBase = "OS";
+        public const string Kernel32Base = "Kernel";
+
+        /// <summary>Shared code (like drivers): joins the OS classes or the 32-bit kernel, whichever the program has.</summary>
+        public const string LibraryBase = "Library";
+
+        /// <summary>The library each unit's code is built against.</summary>
+        public static string TargetOf(UnitKind unit) => unit == UnitKind.Kernel ? "x86_32" : "x86_16";
 
         /// <summary>A str filled from a number needs room for "-2147483648".</summary>
         const int IntTextCapacity = 12;
@@ -78,39 +92,60 @@ namespace Phi.Compiler.Semantics
         {
             DeclareStructs(program.Structs);
 
-            var bootClasses = program.Classes.Where(c => c.Base == BootBase).ToList();
-            if (bootClasses.Count == 0)
-            {
-                diagnostics.Error(mainFile, new Span(0, 0), $"a program needs a class that inherits {BootBase}, e.g. phi.Hello:{BootBase} {{ log 'hi'; }}");
-                return null;
-            }
-            foreach (ClassDecl extra in bootClasses.Skip(1))
-            {
-                file = extra.File;
-                Error(extra.BaseSpan, $"only one class can inherit {BootBase}; it becomes the 512-byte boot sector");
-            }
+            // a program with Kernel classes is a 32-bit kernel; otherwise it is a 16-bit program
+            bool protectedMode = program.Classes.Any(c => c.Base == Kernel32Base);
+            BoundUnit? boot = null, os = null, kernel = null;
 
-            var boot = new BoundUnit { Kind = UnitKind.Boot };
-            units[UnitKind.Boot] = boot;
-            BoundUnit? kernel = null;
+            if (protectedMode)
+            {
+                kernel = new BoundUnit { Kind = UnitKind.Kernel };
+                units[UnitKind.Kernel] = kernel;
+            }
+            else
+            {
+                var bootClasses = program.Classes.Where(c => c.Base == BootBase).ToList();
+                if (bootClasses.Count == 0)
+                {
+                    diagnostics.Error(mainFile, new Span(0, 0), $"a program needs a class that inherits {BootBase} (a 16-bit program), " +
+                                                               $"or classes that inherit {Kernel32Base} (a 32-bit kernel), e.g. phi.Hello:{Kernel32Base} {{ log 'hi'; }}");
+                    return null;
+                }
+                foreach (ClassDecl extra in bootClasses.Skip(1))
+                {
+                    file = extra.File;
+                    Error(extra.BaseSpan, $"only one class can inherit {BootBase}; it becomes the 512-byte boot sector");
+                }
+
+                boot = new BoundUnit { Kind = UnitKind.Boot };
+                units[UnitKind.Boot] = boot;
+            }
 
             foreach (ClassDecl cls in program.Classes)
             {
                 file = cls.File;
                 UnitKind unit;
+                if (protectedMode && cls.Base is BootBase or KernelBase)
+                {
+                    Error(cls.BaseSpan, $"class {cls.Name} is 16-bit code ({cls.Base}), but this program is a 32-bit kernel; " +
+                                        $"use :{Kernel32Base} for every class (PHI supplies the boot sector and loader)");
+                    continue;
+                }
                 if (cls.Base == BootBase) unit = UnitKind.Boot;
-                else if (cls.Base == KernelBase) unit = UnitKind.Kernel;
+                else if (cls.Base == KernelBase) unit = UnitKind.Os;
+                else if (cls.Base == Kernel32Base) unit = UnitKind.Kernel;
+                else if (cls.Base == LibraryBase) unit = protectedMode ? UnitKind.Kernel : UnitKind.Os;
                 else
                 {
                     string why = cls.Base == "" ? "has no base class" : $"inherits '{cls.Base}', which PHI doesn't know";
-                    Error(cls.BaseSpan, $"class {cls.Name} {why}; use :{BootBase} for the boot sector or :{KernelBase} for code loaded after it");
+                    Error(cls.BaseSpan, $"class {cls.Name} {why}; use :{BootBase} for the boot sector, :{KernelBase} for 16-bit code " +
+                                        $"loaded after it, :{Kernel32Base} for a 32-bit kernel, or :{LibraryBase} for code shared by both");
                     continue;
                 }
 
-                if (unit == UnitKind.Kernel && kernel == null)
+                if (unit == UnitKind.Os && os == null)
                 {
-                    kernel = new BoundUnit { Kind = UnitKind.Kernel };
-                    units[UnitKind.Kernel] = kernel;
+                    os = new BoundUnit { Kind = UnitKind.Os };
+                    units[UnitKind.Os] = os;
                 }
 
                 units[unit].Classes.Add(cls);
@@ -159,13 +194,13 @@ namespace Phi.Compiler.Semantics
                 foreach (var (name, symbol) in scope.Names)
                     units[scope.Unit].ClassNames.TryAdd(name, symbol);
 
-            if (boot.UsedBuiltins.Any(b => b.Name == "Bootloader.JumpToSectorTwo") && kernel == null)
+            if (boot != null && boot.UsedBuiltins.Any(b => b.Name == "Bootloader.JumpToSectorTwo") && os == null)
             {
                 file = boot.Classes[0].File;
                 Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
             }
 
-            return new BoundProgram { File = mainFile, Boot = boot, Kernel = kernel };
+            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel };
         }
 
         // ---------------------------------------------------------------- structs
@@ -640,8 +675,9 @@ namespace Phi.Compiler.Semantics
 
         string DescribeMissing(string name, Scope scope)
         {
-            UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Kernel : UnitKind.Boot;
+            UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Os : UnitKind.Boot;
             string head = name.Split('.')[0];
+            if (scope.Unit == UnitKind.Kernel) return $"unknown name '{name}'";
             bool inOtherUnit = classScopes.Values.Any(s => s.Unit == other && s.Names.ContainsKey(head));
             if (inOtherUnit)
             {
@@ -684,6 +720,8 @@ namespace Phi.Compiler.Semantics
                     return log;
 
                 case AskStmt ask:
+                    if (scope.Unit == UnitKind.Kernel)
+                        Error(ask.Span, "ask reads the keyboard through the BIOS, which a 32-bit kernel can't use (a keyboard driver comes in Phase 4)");
                     BindExpr(ask.Target, scope);
                     if (!ask.Target.Type.IsError && (!ask.Target.Type.IsString || ask.Target.Symbol is not VariableSymbol))
                         Error(ask.Target.Span, "ask needs a str variable to store the answer in, like: str name:[40]; ask name;");
@@ -904,6 +942,13 @@ namespace Phi.Compiler.Semantics
                         return;
                     }
 
+                    if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
+                    {
+                        Error(call.CalleeSpan, $"{builtin.Name} isn't available in a {UnitName(scope.Unit)} yet " +
+                                               "(it relies on the BIOS, which 32-bit code can't use; see Plan.md)");
+                        return;
+                    }
+
                     unit.UsedBuiltins.Add(builtin);
 
                     int count = builtin.Parameters.Length;
@@ -968,7 +1013,7 @@ namespace Phi.Compiler.Semantics
             if (rawBlocks.TryGetValue(rawName, out RawBlockDecl? raw)) return raw;
 
             // a method in the other unit, for a better error message
-            UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Kernel : UnitKind.Boot;
+            UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Os : UnitKind.Boot;
             if (methodsByFullName.TryGetValue((other, name), out m)) return m;
             var otherMatches = methodsByFullName.Where(p => p.Key.Item1 == other && p.Key.Item2.EndsWith("." + name)).ToList();
             if (otherMatches.Count == 1) return otherMatches[0].Value;
@@ -991,7 +1036,12 @@ namespace Phi.Compiler.Semantics
                 Error(target.Span, $"{call.Callee} returns a str, which can't be stored in {target.Type} '{Describe(target)}'");
         }
 
-        static string UnitName(UnitKind unit) => unit == UnitKind.Boot ? "boot sector (Bootloader class)" : "OS classes";
+        static string UnitName(UnitKind unit) => unit switch
+        {
+            UnitKind.Boot => "boot sector (Bootloader class)",
+            UnitKind.Os => "OS classes",
+            _ => "32-bit kernel",
+        };
         static string Plural(int n, string word) => n == 1 ? $"1 {word}" : $"{n} {word}s";
 
         // ================================================================ expressions

@@ -1,3 +1,5 @@
+using System.Text.RegularExpressions;
+
 namespace Phi.Cli
 {
     /// <summary>
@@ -5,6 +7,9 @@ namespace Phi.Cli
     /// The test boots headless in QEMU; on a mismatch the real output is saved to NAME.actual.
     /// NAME.input scripts keyboard and mouse input (see InputScript); NAME.errors instead lists
     /// compile errors the program must produce.
+    ///
+    /// A test whose classes are all :Library runs twice, as a 16-bit program and as a 32-bit
+    /// kernel, so both code generators are checked against the same expected output.
     /// </summary>
     public static class TestRunner
     {
@@ -23,11 +28,13 @@ namespace Phi.Cli
                 return 1;
             }
 
+            var runs = tests.SelectMany(t => Modes(t).Select(m => (File: t, Mode: m))).ToList();
+
             int passed = 0;
-            foreach (string test in tests)
+            foreach (var (test, mode) in runs)
             {
-                string name = Path.GetFileNameWithoutExtension(test);
-                string? failure = RunOne(test, timeout);
+                string name = Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : $" ({mode.Name})");
+                string? failure = RunOne(test, timeout, mode);
 
                 if (failure == null)
                 {
@@ -44,26 +51,47 @@ namespace Phi.Cli
             }
 
             Console.WriteLine();
-            Write(passed == tests.Count ? ConsoleColor.Green : ConsoleColor.Red, $"{passed}/{tests.Count} passed");
+            Write(passed == runs.Count ? ConsoleColor.Green : ConsoleColor.Red, $"{passed}/{runs.Count} passed");
             Console.WriteLine();
 
-            return passed == tests.Count ? 0 : 1;
+            return passed == runs.Count ? 0 : 1;
+        }
+
+        /// <summary>How to turn a library-only test into a whole program.</summary>
+        sealed record Mode(string Name, string Wrapper);
+
+        static readonly Mode[] BothModes =
+        {
+            new("16-bit", "\nphi.PhiTestBoot:Bootloader\n{\n\tcall Bootloader.JumpToSectorTwo;\n}\n"),
+            new("32-bit", "\nphi.PhiTestKernel:Kernel\n{\n}\n"),
+        };
+
+        static readonly Regex LibraryClass = new(@"^\s*phi\.\w+\s*:\s*Library\b", RegexOptions.Multiline);
+        static readonly Regex ProgramClass = new(@"^\s*phi\.\w+\s*:\s*(Bootloader|OS|Kernel)\b", RegexOptions.Multiline);
+
+        /// <summary>null for an ordinary test; both modes for a test made only of :Library classes.</summary>
+        static IEnumerable<Mode?> Modes(string phiFile)
+        {
+            string text = File.ReadAllText(phiFile);
+            bool libraryOnly = LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text);
+            return libraryOnly ? BothModes : new Mode?[] { null };
         }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
-        static string? RunOne(string phiFile, TimeSpan timeout)
+        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode)
         {
             string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
             string name = Path.GetFileNameWithoutExtension(phiFile);
+            string variant = mode == null ? name : $"{name}.{mode.Name}";
             string expectedFile = Path.Combine(dir, name + ".expected");
-            string actualFile = Path.Combine(dir, name + ".actual");
+            string actualFile = Path.Combine(dir, variant + ".actual");
 
             if (File.Exists(actualFile)) File.Delete(actualFile);
 
             string errorsFile = Path.Combine(dir, name + ".errors");
             string inputFile = Path.Combine(dir, name + ".input");
 
-            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", name));
+            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), mode?.Wrapper ?? "");
 
             // NAME.errors: the program must fail to compile, with each listed message
             if (File.Exists(errorsFile))
@@ -93,7 +121,7 @@ namespace Phi.Cli
             if (expected == null)
             {
                 File.WriteAllText(actualFile, actual);
-                return $"missing {name}.expected; the output was saved to {name}.actual " +
+                return $"missing {name}.expected; the output was saved to {Path.GetFileName(actualFile)} " +
                        "(rename it to .expected if it is correct)";
             }
 
@@ -102,7 +130,7 @@ namespace Phi.Cli
             File.WriteAllText(actualFile, actual);
 
             string reason = run.InputError ?? (run.TimedOut ? $"timed out after {timeout.TotalSeconds:0}s" : "output did not match");
-            return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {name}.actual)\n{actual}";
+            return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 
         /// <summary>Line endings and trailing whitespace don't matter.</summary>
