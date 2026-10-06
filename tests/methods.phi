@@ -1,0 +1,56 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Methods:OS
+{
+	int total: 0;
+
+	call SayHello: 'PHI';
+	call SayHello;
+
+	call total is Add: 2 3;
+	log total '\n';
+
+	call total is Add: total 10;
+	log total '\n';
+
+	int seconds: 0;
+	call seconds is ConvertToSeconds: 2;
+	log seconds '\n';
+	call seconds is ConvertToSeconds;
+	log seconds '\n';
+
+	call Counter;
+	call Counter;
+	call Counter;
+
+	str word: [10];
+	call word is Pick: 1;
+	log word '\n';
+
+	[SayHello: str message: 'world';]
+		log 'hello ' message '\n';
+	[end]
+
+	[Add: int x: 0; int y: 0;]
+	[end: x + y]
+
+	[ConvertToSeconds: int minutes: 12;]
+		int seconds: minutes * 60;
+	[end: seconds]
+
+	[Counter]
+		int count: 0;
+		total++;
+		log 'counter ' total '\n';
+	[end]
+
+	[Pick: int which: 0;]
+		str choice: 'none';
+		if which is 1
+			choice is 'one';
+		;;
+	[end: choice]
+}

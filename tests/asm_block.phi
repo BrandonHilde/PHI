@@ -1,0 +1,25 @@
+phi.Asm:Bootloader
+{
+	int value: 20;
+	int result: 0;
+
+	call Double;
+	log result ' ';
+	call answer is Answer;
+	log answer;
+	int answer: 0;
+}
+
+asm.Double
+{
+	mov eax, [{value}]
+	add eax, eax
+	mov [{result}], eax
+	ret
+}
+
+asm.Answer
+{
+	mov eax, 42
+	ret
+}

@@ -1,0 +1,17 @@
+phi.Boot:Bootloader
+{
+	str secret: 'boot only';
+	log missing;
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Kernel:OS
+{
+	log secret;
+	call NoSuchMethod;
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Second:Mystery
+{
+}

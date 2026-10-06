@@ -1,0 +1,8 @@
+phi.Ask:Bootloader
+{
+	str name: [20];
+
+	log 'What is your name: ';
+	ask name;
+	log '\r\nhello ' name;
+}

@@ -1,0 +1,38 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.EnableVideoMode;
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Draw:OS
+{
+	int pixel: 0;
+	int where: 0;
+
+	call OS.DrawRectangle: 10 20 5 4 Colors.LightGreen;
+	call OS.DrawPixel: 319 199 Colors.Red;
+	call OS.DrawRectangle: 315 195 50 50 Colors.Blue;  # clipped to the screen
+
+	where is 20 * 320 + 10;
+	call ReadPixel;
+	debug 'inside ' pixel;
+	where is 24 * 320 + 10;
+	call ReadPixel;
+	debug ' below ' pixel;
+	where is 199 * 320 + 319;
+	call ReadPixel;
+	debug ' corner ' pixel;
+	exit 0;
+}
+
+asm.ReadPixel
+{
+	push es
+	mov ax, 0xA000
+	mov es, ax
+	mov bx, [{where}]
+	movzx eax, byte [es:bx]
+	mov [{pixel}], eax
+	pop es
+	ret
+}

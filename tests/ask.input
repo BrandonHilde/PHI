@@ -1,0 +1,3 @@
+expect What is your name:
+type Phi Lang
+sendkey ret

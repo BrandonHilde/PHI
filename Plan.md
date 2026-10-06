@@ -95,10 +95,9 @@ Goal: one command to build and run, and a way to test automatically.
 - [x] `phi build | run | test` CLI in `Compiler/Phi.Cli` (assembles each class separately and joins them into a raw disk image)
 - [x] Boots as an IDE hard disk (`-drive ...,if=ide`) with `isa-debug-exit` and `-no-reboot`
 - [x] `log` also writes to COM1, so every program's output is testable
-- [x] Test runner: `tests/*.phi` + `.expected`; `tests/pending/` holds the specs the old translator fails
+- [x] Test runner: `tests/*.phi` + `.expected`
 - [x] `phi run --debug`: QEMU waits for gdb on `:1234` and logs interrupts and resets
-- [ ] Moved to Phase 1: the `debug` (serial only) statement and an `exit` built-in for `isa-debug-exit`.
-  Adding new statements to the old parser isn't worth it, since Phase 1 replaces it.
+- [x] The `debug` (serial only) and `exit` statements were added in Phase 1, with the new parser
 - Fixed along the way: `while` loops were missing a `ret` and fell through into the data after them.
 
 ---
@@ -134,6 +133,35 @@ source.phi → Lexer → tokens → Parser → AST → Checker → Code generato
 
 **Done when:** `hello.phi`, `code.phi` and `arcade.phi` compile with the new pipeline and
 pass their QEMU tests, and the old `Translator.cs` is deleted.
+
+**Status: done (2026-10-06).** The language as implemented is documented in
+[docs/language.md](docs/language.md).
+- [x] Lexer, parser (with error recovery), binder and x86-16 code generator in `Compiler/Phi.Compiler`;
+  errors have file, line and column
+- [x] Accepts the current syntax: classes, all variable forms and arrays, `log`/`ask`/`call`,
+  `if`/`elif`/`else`, both `while` forms, `is`/`++`/`--`/`**`/`//`/`%%`, methods with defaults and
+  `[end: value]`, events, `asm.` blocks with `{var}`
+- [x] `if` and `while` compile to jumps (the old ones recursed once per loop iteration), math runs
+  at run time, strings compare and copy, numbers convert to text, `x.len`
+- [x] New statements from Phase 0: `debug` (serial only) and `exit` (QEMU `isa-debug-exit`)
+- [x] Library moved to `lib/x86_16/*.asm`, embedded in the compiler; each file says what it provides
+  and requires, and only what a program uses is included
+- [x] The build assembles the kernel first and passes its size to the boot sector, which loads it with
+  an LBA disk read (replaces the hard-coded 6 sectors)
+- [x] 55 xUnit tests (lexer, parser, binder, errors, samples) and 23 QEMU tests, including scripted
+  keyboard and mouse input (`NAME.input`) and expected compile errors (`NAME.errors`)
+- [x] Old translator and `ConvertFile` deleted; samples moved to `samples/`, `arcade.phi` ported to
+  the `Bootloader`/`OS` names
+- Differs from the plan:
+  - There is one generator class, not a backend interface. The interface will be easier to get right
+    once the 32-bit backend (Phase 3) exists to compare against.
+  - Behavior tests in QEMU instead of golden `.asm` files. Golden files break on every harmless change
+    to the output; checking what the program does catches the bugs that matter.
+  - `code.phi` is a syntax showcase with no `Bootloader` class, so the test only checks that it parses.
+  - Pong (`arcade.phi`) was checked by hand (screenshots with scripted keys); it has no automated test.
+- Bugs fixed in the ported library: the mouse misread movements over 127 pixels (9-bit values),
+  drawing wrote past the 64 KB segment limit (it only worked because QEMU doesn't enforce it), and
+  interrupt handlers didn't save registers.
 
 ---
 

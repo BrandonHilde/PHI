@@ -3,6 +3,8 @@ namespace Phi.Cli
     /// <summary>
     /// Each test is tests/NAME.phi with the serial output it must produce in tests/NAME.expected.
     /// The test boots headless in QEMU; on a mismatch the real output is saved to NAME.actual.
+    /// NAME.input scripts keyboard and mouse input (see InputScript); NAME.errors instead lists
+    /// compile errors the program must produce.
     /// </summary>
     public static class TestRunner
     {
@@ -58,13 +60,33 @@ namespace Phi.Cli
 
             if (File.Exists(actualFile)) File.Delete(actualFile);
 
+            string errorsFile = Path.Combine(dir, name + ".errors");
+            string inputFile = Path.Combine(dir, name + ".input");
+
             BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", name));
+
+            // NAME.errors: the program must fail to compile, with each listed message
+            if (File.Exists(errorsFile))
+            {
+                if (build.Success) return "expected compile errors, but the build succeeded";
+
+                var missing = File.ReadAllLines(errorsFile)
+                    .Select(l => l.Trim())
+                    .Where(l => l.Length > 0 && !l.StartsWith('#'))
+                    .Where(l => !build.Errors.Any(e => e.Contains(l)))
+                    .ToList();
+
+                if (missing.Count == 0) return null;
+                return "missing errors:\n  " + string.Join("\n  ", missing) + "\ngot:\n  " + string.Join("\n  ", build.Errors);
+            }
+
             if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
 
             string? expected = File.Exists(expectedFile) ? Normalize(File.ReadAllText(expectedFile)) : null;
+            string[]? input = File.Exists(inputFile) ? File.ReadAllLines(inputFile) : null;
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
-                expected == null ? null : output => Normalize(output).Contains(expected));
+                expected == null ? null : output => Normalize(output).Contains(expected), input);
 
             string actual = Normalize(run.Serial);
 
@@ -75,11 +97,11 @@ namespace Phi.Cli
                        "(rename it to .expected if it is correct)";
             }
 
-            if (actual == expected) return null;
+            if (actual == expected && run.InputError == null) return null;
 
             File.WriteAllText(actualFile, actual);
 
-            string reason = run.TimedOut ? $"timed out after {timeout.TotalSeconds:0}s" : "output did not match";
+            string reason = run.InputError ?? (run.TimedOut ? $"timed out after {timeout.TotalSeconds:0}s" : "output did not match");
             return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {name}.actual)\n{actual}";
         }
 

@@ -1,0 +1,7 @@
+phi.Exit:Bootloader
+{
+	log 'screen and serial ';
+	debug 'serial only ' 42;
+	exit 0;
+	log 'never printed';
+}

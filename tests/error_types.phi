@@ -1,0 +1,13 @@
+phi.Types:Bootloader
+{
+	int count: 'hello';
+	str name: 'x';
+	int list: 1 2 3;
+	count++name;
+	list is 4;
+	if name
+		log 'x';
+	;;
+	call OS.DrawPixel: 1 2;
+	dec pi: 3.14;
+}

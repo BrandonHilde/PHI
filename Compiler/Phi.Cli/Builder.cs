@@ -1,5 +1,7 @@
-using PhiBasicTranslator;
-using PhiBasicTranslator.Structure;
+using System.Text.RegularExpressions;
+using Phi.Compiler;
+using Phi.Compiler.CodeGen;
+using Phi.Compiler.Semantics;
 
 namespace Phi.Cli
 {
@@ -12,16 +14,17 @@ namespace Phi.Cli
     }
 
     /// <summary>
-    /// phi source -> one .asm per class -> nasm -> bootable raw disk image.
+    /// phi source -> boot.asm + kernel.asm -> nasm -> a bootable raw disk image:
+    /// sector 0 is the boot sector, the kernel follows from sector 1 (loaded at 0x7E00).
     /// </summary>
     public static class Builder
     {
         const int SectorSize = 512;
 
-        // The boot sector currently loads a fixed 6 sectors after itself (BIT16x86_SectorPrep).
-        const int SectorsLoadedByBootloader = 6;
+        // The kernel is loaded at 0x7E00 and must end before 0x10000, the edge of segment 0.
+        const int MaxKernelSectors = (0x10000 - X86_16Generator.KernelAddress) / SectorSize;
 
-        // 1.44 MB: large enough for any program today, and bootable as a floppy or a hard disk.
+        // 1.44 MB: bootable as a hard disk, and the size QEMU and other tools expect of small images.
         const int ImageSize = 1_474_560;
 
         public static BuildResult Build(string phiFile, string outDir)
@@ -37,82 +40,72 @@ namespace Phi.Cli
 
             Directory.CreateDirectory(outDir);
 
-            PhiCodebase codebase;
-            TextWriter console = Console.Out;
-            var translatorLog = new StringWriter();
-            try
-            {
-                // the translator prints its own debugging output; keep it out of the CLI's
-                Console.SetOut(translatorLog);
-                codebase = new Translator().TranslateFile(phiFile);
-            }
-            catch (Exception e)
-            {
-                result.Errors.Add($"Translator crashed: {e.GetType().Name}: {e.Message}");
-                return result;
-            }
-            finally
-            {
-                Console.SetOut(console);
-                File.WriteAllText(Path.Combine(outDir, "translator.log"), translatorLog.ToString());
-            }
+            var source = SourceFile.Load(phiFile);
+            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text));
 
-            var classes = codebase.ClassList.Where(c => c.translatedASM.Count > 0).ToList();
+            foreach (Diagnostic d in compiled.Diagnostics)
+                (d.Severity == Severity.Error ? result.Errors : result.Warnings).Add(d.ToString());
 
-            if (classes.Count == 0)
+            if (!compiled.Success) return result;
+
+            AsmUnit boot = compiled.Units.Single(u => u.Kind == UnitKind.Boot);
+            AsmUnit? kernel = compiled.Units.SingleOrDefault(u => u.Kind == UnitKind.Kernel);
+
+            byte[] kernelBin = Array.Empty<byte>();
+            if (kernel != null)
             {
-                result.Errors.Add($"No code was generated. Supported base classes are " +
-                                  $"'{Defs.OSBootloader}' and '{Defs.OSSectorTwo}', e.g. phi.Hello:{Defs.OSBootloader} {{ ... }}");
-                return result;
+                byte[]? bin = Assemble(kernel, outDir, Array.Empty<string>(), result);
+                if (bin == null) return result;
+                kernelBin = bin;
             }
 
-            if (classes[0].Inherit != Defs.OSBootloader)
-                result.Errors.Add($"The first class must inherit {Defs.OSBootloader} (found '{classes[0].Name}:{classes[0].Inherit}').");
-
-            var image = new List<byte>();
-
-            for (int i = 0; i < classes.Count; i++)
+            int kernelSectors = (kernelBin.Length + SectorSize - 1) / SectorSize;
+            if (kernelSectors > MaxKernelSectors)
             {
-                PhiClass cls = classes[i];
-                string stem = Path.Combine(outDir, $"{i}_{cls.Name}");
-                string asmPath = stem + ".asm";
-                string binPath = stem + ".bin";
-
-                File.WriteAllLines(asmPath, cls.translatedASM);
-
-                var (code, output) = Toolchain.Run(Toolchain.Nasm, new[] { "-f", "bin", asmPath, "-o", binPath });
-                if (code != 0)
-                {
-                    result.Errors.Add($"nasm failed on {Path.GetFileName(asmPath)} (class {cls.Name}):\n{output}");
-                    continue;
-                }
-
-                byte[] bin = File.ReadAllBytes(binPath);
-
-                if (i == 0 && (bin.Length != SectorSize || bin[510] != 0x55 || bin[511] != 0xAA))
-                    result.Errors.Add($"Boot sector must be exactly {SectorSize} bytes ending in 0x55AA; got {bin.Length} bytes.");
-
-                image.AddRange(bin);
-                while (image.Count % SectorSize != 0) image.Add(0);
-            }
-
-            if (!result.Success) return result;
-
-            int extraSectors = image.Count / SectorSize - 1;
-            if (extraSectors > SectorsLoadedByBootloader)
-                result.Warnings.Add($"Code after the boot sector is {extraSectors} sectors, but the bootloader only loads " +
-                                    $"{SectorsLoadedByBootloader}. Anything past that will be missing at runtime.");
-
-            if (image.Count > ImageSize)
-            {
-                result.Errors.Add($"Program is {image.Count} bytes, larger than the {ImageSize}-byte disk image.");
+                result.Errors.Add($"the OS classes are {kernelBin.Length} bytes, but at most {MaxKernelSectors * SectorSize} " +
+                                  "can be loaded in 16-bit mode for now (see Plan.md, Phase 3)");
                 return result;
             }
 
-            while (image.Count < ImageSize) image.Add(0);
-            File.WriteAllBytes(result.ImagePath, image.ToArray());
+            byte[]? bootBin = Assemble(boot, outDir, new[] { $"-dPHI_KERNEL_SECTORS={kernelSectors}" }, result);
+            if (bootBin == null) return result;
+
+            var image = new byte[ImageSize];
+            bootBin.CopyTo(image, 0);
+            kernelBin.CopyTo(image, SectorSize);
+            File.WriteAllBytes(result.ImagePath, image);
 
             return result;
+        }
+
+        static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)
+        {
+            string asmPath = Path.Combine(outDir, unit.Name + ".asm");
+            string binPath = Path.Combine(outDir, unit.Name + ".bin");
+            File.WriteAllText(asmPath, unit.Text);
+
+            var args = new List<string> { "-f", "bin", "-o", binPath };
+            args.AddRange(defines);
+            args.Add(asmPath);
+
+            var (code, output) = Toolchain.Run(Toolchain.Nasm, args);
+            if (code != 0)
+            {
+                Match tooBig = Regex.Match(output, @"TIMES value (-\d+) is negative");
+                if (unit.Kind == UnitKind.Boot && tooBig.Success)
+                {
+                    int over = -int.Parse(tooBig.Groups[1].Value);
+                    result.Errors.Add($"the boot sector is {over} bytes too big (it has to fit in 512 bytes). " +
+                                      "Move code into a phi.Name:OS class and start it with call Bootloader.JumpToSectorTwo;");
+                }
+                else
+                {
+                    result.Errors.Add($"nasm failed on {asmPath} (this is a bug in phi, or in an asm. block):\n{output}");
+                }
+                return null;
+            }
+
+            return File.ReadAllBytes(binPath);
         }
     }
 }

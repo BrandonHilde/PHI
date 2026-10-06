@@ -1,0 +1,15 @@
+phi.Big:Bootloader
+{
+	log 'line 0 of a long message that will not fit';
+	log 'line 1 of a long message that will not fit';
+	log 'line 2 of a long message that will not fit';
+	log 'line 3 of a long message that will not fit';
+	log 'line 4 of a long message that will not fit';
+	log 'line 5 of a long message that will not fit';
+	log 'line 6 of a long message that will not fit';
+	log 'line 7 of a long message that will not fit';
+	log 'line 8 of a long message that will not fit';
+	log 'line 9 of a long message that will not fit';
+	log 'line 10 of a long message that will not fit';
+	log 'line 11 of a long message that will not fit';
+}

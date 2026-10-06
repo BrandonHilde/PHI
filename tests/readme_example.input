@@ -1,0 +1,5 @@
+expect What is your name:
+type Ada
+sendkey ret
+expect Press any key
+sendkey spc

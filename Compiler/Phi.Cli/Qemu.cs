@@ -1,4 +1,6 @@
 using System.Diagnostics;
+using System.Net;
+using System.Net.Sockets;
 using System.Text;
 
 namespace Phi.Cli
@@ -10,6 +12,9 @@ namespace Phi.Cli
 
         /// <summary>The value PHI wrote to the isa-debug-exit port, or null if QEMU didn't exit that way.</summary>
         public int? DebugExitValue { get; init; }
+
+        /// <summary>Set when the input script couldn't run to the end.</summary>
+        public string? InputError { get; init; }
     }
 
     public static class Qemu
@@ -50,11 +55,16 @@ namespace Phi.Cli
         /// <summary>
         /// Runs QEMU with no display, collecting serial output until the guest exits through
         /// isa-debug-exit, <paramref name="isDone"/> returns true, or the timeout passes.
+        /// <paramref name="input"/> is a script of QEMU monitor commands (see InputScript).
         /// </summary>
-        public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null)
+        public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
+                                                 IReadOnlyList<string>? input = null)
         {
+            int? monitorPort = input != null ? FreePort() : null;
+
             var args = MachineArgs(image);
-            args.AddRange(new[] { "-display", "none", "-serial", "stdio", "-monitor", "none" });
+            args.AddRange(new[] { "-display", "none", "-serial", "stdio", "-monitor",
+                                  monitorPort != null ? $"tcp:127.0.0.1:{monitorPort},server,nowait" : "none" });
 
             var psi = new ProcessStartInfo(Toolchain.Qemu)
             {
@@ -79,6 +89,14 @@ namespace Phi.Cli
             });
             _ = p.StandardError.ReadToEndAsync();
 
+            using var cancel = new CancellationTokenSource();
+            Task<string?>? script = null;
+            if (input != null)
+            {
+                string Serial() { lock (gate) return serial.ToString(); }
+                script = Task.Run(() => InputScript.Run(monitorPort!.Value, input, Serial, cancel.Token));
+            }
+
             var clock = Stopwatch.StartNew();
             bool timedOut = false;
             TimeSpan? doneAt = null;
@@ -88,7 +106,8 @@ namespace Phi.Cli
                 string text;
                 lock (gate) text = serial.ToString();
 
-                if (doneAt == null && isDone != null && isDone(text)) doneAt = clock.Elapsed;
+                bool inputFinished = script == null || script.IsCompleted;
+                if (doneAt == null && inputFinished && isDone != null && isDone(text)) doneAt = clock.Elapsed;
 
                 // after the expected output shows up, wait a moment to catch anything extra
                 if (doneAt != null && clock.Elapsed - doneAt > TimeSpan.FromMilliseconds(300)) break;
@@ -110,10 +129,26 @@ namespace Phi.Cli
                 p.WaitForExit();
             }
 
+            cancel.Cancel();
             reader.Wait(TimeSpan.FromSeconds(2));
+            string? inputError = null;
+            if (script != null)
+            {
+                try { inputError = script.Wait(TimeSpan.FromSeconds(2)) ? script.Result : "the input script did not finish"; }
+                catch (AggregateException) { inputError = "the input script was stopped"; }
+            }
 
             lock (gate)
-                return new HeadlessResult { Serial = serial.ToString(), TimedOut = timedOut, DebugExitValue = exitValue };
+                return new HeadlessResult { Serial = serial.ToString(), TimedOut = timedOut, DebugExitValue = exitValue, InputError = inputError };
+        }
+
+        static int FreePort()
+        {
+            var listener = new TcpListener(IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((IPEndPoint)listener.LocalEndpoint).Port;
+            listener.Stop();
+            return port;
         }
     }
 }

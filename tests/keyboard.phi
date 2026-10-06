@@ -1,0 +1,27 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Keys:OS
+{
+	int presses: 0;
+
+	call OS.SetupKeyboardInterupt;
+	debug 'ready\n';
+
+	[OS.KeyboardEvent]
+		int key: 0;
+		bln down: false;
+		call key is OS.GetKey;
+		call down is OS.IsKeyDown: key;
+		if down
+			presses++;
+			debug 'down ' key '\n';
+		;;
+		if key is 'q'
+			debug 'q held: ' down '\n';
+			exit 0;
+		;;
+	[end]
+}

@@ -1,0 +1,15 @@
+# a comment before any class
+#
+	a block comment
+	log 'not code';
+#
+phi.Comments:Bootloader
+{
+	log 'one'; # a trailing comment
+	#nospace comment
+	str hash: '# is not a comment in a string';
+	log ' ' hash;
+	str multi: 'line one
+line two';
+	log ' ' multi;
+}

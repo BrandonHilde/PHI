@@ -38,13 +38,19 @@ phi.SectorTwo:OS
     2. dotnet build PHI.sln
     3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net8.0/phi.exe):
 
-       phi build tests/hello.phi         compile to tests/build/hello/hello.img (a bootable disk image)
-       phi run tests/hello.phi           build and boot it in QEMU; log output also prints in the terminal
+       phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
+       phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
+       phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output
 
-The generated assembly for each class is saved next to the image (for example `tests/build/hello/0_Hello.asm`).
-See [tests/README.md](./tests/README.md) for how the tests work, and [Plan.md](./Plan.md) for the roadmap.
+The generated assembly is saved next to the image (`boot.asm` and `kernel.asm`), with each
+PHI source line shown above the code it produced.
+
+- [docs/language.md](./docs/language.md): the language reference and the built-in functions
+- [samples/](./samples): example programs
+- [tests/README.md](./tests/README.md): how the tests work
+- [Plan.md](./Plan.md): the roadmap
 
 <h4>Goals:</h4>
     

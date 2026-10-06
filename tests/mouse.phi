@@ -1,0 +1,27 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Mouse:OS
+{
+	int x: 0;
+	int y: 0;
+	int lastX: -1;
+	bln clicked: false;
+
+	call OS.SetupMouse;
+	debug 'ready\n';
+
+	while clicked is false
+		call x is OS.GetMouseX;
+		call y is OS.GetMouseY;
+		if x is not lastX
+			debug 'x ' x ' y ' y '\n';
+			lastX is x;
+		;;
+		call clicked is OS.GetMouseDown;
+	;;
+	debug 'clicked at ' x ' ' y '\n';
+	exit 0;
+}

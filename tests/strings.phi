@@ -1,0 +1,49 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Strings:OS
+{
+	str greeting: 'hello, world';
+	str copy: greeting;
+	str number: 256;
+	int n: -42;
+	str fromInt: n;
+	str tiny: [3];
+
+	log copy ' ' greeting.len ' ' number ' ' fromInt '\n';
+
+	if copy is greeting
+		log 'equal ';
+	;;
+	if copy is 'hello, world'
+		log 'literal ';
+	;;
+	copy is 'changed';
+	if copy is not greeting
+		log 'different';
+	;;
+	log '\n' copy ' ' copy.len '\n';
+
+	# assignments are cut to fit
+	tiny is 'abcdef';
+	log tiny ' ' tiny.len '\n';
+
+	# characters
+	if greeting:0 is 'h'
+		log 'first is h ';
+	;;
+	greeting:0 is 'j';
+	log greeting '\n';
+
+	str days: 'Mon' 'Tue' 'Wed';
+	while int i: 0; i < days.len; i++;
+		log days:i ' ';
+	;;
+	days:1 is 'Thursday';
+	log days:1 '\n';
+
+	log 'it' 's ' 'hasn't escaped\n';
+	log 'quote: \' backslash: \\';
+}

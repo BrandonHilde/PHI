@@ -1,0 +1,4 @@
+expect ready
+sendkey a
+sendkey w
+sendkey q

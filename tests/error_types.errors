@@ -1,0 +1,6 @@
+3:13: error: 'count' needs a number, but this is a str
+6:9: error: the right side needs a number, but this is a str
+7:2: error: can't assign a whole array
+8:5: error: a condition must be a number or a comparison, not a str
+11:2: error: OS.DrawPixel takes 3 arguments (x y color) but was given 2
+12:2: error: dec (decimal numbers) isn't supported yet

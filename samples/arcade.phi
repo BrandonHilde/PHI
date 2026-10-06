@@ -1,0 +1,237 @@
+phi.Pong:Bootloader
+{
+	str hello: 'Hello, World!\r\n';
+    str newline: '\r\n';
+	
+	log hello newline;
+	log 'Press any key to continue...';
+	
+	call Bootloader.WaitForKeyPress;
+	
+	call Bootloader.EnableVideoMode;
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Drawing:OS
+{
+	
+	bln downW: false;
+	bln downS: false;
+	bln downO: false;
+	bln downL: false;
+	
+	int ScreenW: 320;
+	int ScreenH: 200;
+	
+	int lefty: 50;
+	int Bot: 90;
+	int BotRight: 90;
+	int botR: 0;
+	int botL: 0;
+	int direction: 0;
+	
+	int ballspeed: 1;
+	int ballspeedy: 1;
+	
+	int maxspeed: 8;
+	int paddleSpeed: 2;
+	
+	int ballx: 160;
+	int bally: 100;
+	
+	int ballyh: 110;
+	
+	int ballyDir: 0;
+	
+	int leftColx: 50;
+	int rightColx: 50;
+	
+	int directr: 1;
+	
+	int righty: 50;
+
+	int key: 0;
+	
+	int leftPoints: 0;
+	int rightPoints: 0;
+
+	call OS.SetupInteruptTimer;
+	call OS.SetupKeyboardInterupt;
+
+	[OS.TimerEvent]
+
+		call OS.DrawRectangle:
+			0	0
+			320	200
+			Colors.Black
+		;
+		
+		
+		if ballspeed > maxspeed
+			ballspeed is maxspeed;
+		;;
+
+		#leftcontrol
+		
+		if lefty > 0
+			if downW
+				lefty--paddleSpeed;
+			;;
+		;;
+		else
+			lefty is 0;
+		;;
+
+	botL is lefty;
+	botL++Bot;
+
+		if downS
+
+			if botL < ScreenH
+			
+				lefty++paddleSpeed;
+			;;
+		;;
+		
+		#right		
+		if righty > paddleSpeed
+			if downO
+				righty--paddleSpeed;
+			;;
+		;;
+		else
+			righty is paddleSpeed;
+		;;
+
+	botR is righty;
+	botR++BotRight;
+
+		if downL		
+			if botR < ScreenH
+				righty++paddleSpeed;
+			;;
+		;;
+		
+		#ball stuff
+		
+		if ballyDir is 0
+			bally--ballspeedy;
+		;;
+		else
+			bally++ballspeedy;
+		;;
+		
+			ballyh is bally;
+			ballyh ++ 10;
+		
+		if directr is 0
+			ballx -- ballspeed;
+			
+			if ballx < 20
+				if	ballyh > lefty
+					leftColx is lefty;
+					leftColx++Bot;
+					leftColx++10;
+					
+					if	bally < leftColx
+						directr is 1;
+						ballspeed++; #collision
+						if Bot > 20
+							Bot--5;
+						;;
+					;;
+				;;
+			;;
+		;;
+		else	
+			ballx ++ ballspeed;
+			
+
+			
+			if ballx > 290
+				if	ballyh > righty
+					rightColx is righty;
+					rightColx++BotRight;
+					
+					if	bally < rightColx
+						directr is 0;
+						ballspeed++; #collision
+								if BotRight > 20
+							BotRight--5;
+						;;
+					;;
+				;;
+			;;
+		;;
+		
+		if bally < 0
+			#bounce
+			ballyDir is 1;
+		;;
+		
+		if bally > 190
+			#bounce
+			ballyDir is 0;
+		;;
+		
+		#score
+		
+		if ballx < 0
+			ballx is 160;
+			directr is 1;
+			rightPoints++; #points scored
+			ballspeed is 1;
+			Bot is 90;
+			BotRight is 90;
+			righty is 55;
+			lefty is 55;
+		;;
+		
+		if ballx > 310
+			ballx is 160;
+			directr is 0;
+			leftPoints++; #points scored
+			ballspeed is 1;
+			
+			Bot is 90;
+			BotRight is 90;
+			righty is 55;
+			lefty is 55;
+		;;
+
+		#draw rectangles
+		
+		call OS.DrawRectangle:
+			ballx	bally
+			10	10	
+			Colors.White
+		;
+		
+		call OS.DrawRectangle:
+			10	lefty
+			10	Bot	
+			Colors.LightGreen
+		;
+		
+		call OS.DrawRectangle:
+			300	righty
+			10	BotRight
+			Colors.LightGreen
+		;
+
+	[end]
+	
+	
+	
+	[OS.KeyboardEvent]
+
+		call key is OS.GetKey;
+		
+		call downW is OS.IsKeyDown:'w';
+		call downS is OS.IsKeyDown:'s';
+		call downO is OS.IsKeyDown:'o';
+		call downL is OS.IsKeyDown:'l';
+
+	[end]
+	
+}

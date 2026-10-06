@@ -1,0 +1,5 @@
+4:6: error: unknown name 'missing'
+10:6: error: 'secret' is declared in the Bootloader class
+11:7: error: unknown method 'NoSuchMethod'
+12:7: error: Bootloader.JumpToSectorTwo can only be used in the boot sector
+15:12: error: class Second inherits 'Mystery', which PHI doesn't know

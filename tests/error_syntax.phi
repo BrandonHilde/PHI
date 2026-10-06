@@ -1,0 +1,8 @@
+phi.Syntax:Bootloader
+{
+	log 'missing semicolon'
+	log 'next line still parses';
+	int : 5;
+	if 1 > 0
+		log 'no closing';
+}

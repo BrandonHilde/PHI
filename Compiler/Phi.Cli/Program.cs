@@ -2,6 +2,7 @@ using Phi.Cli;
 
 const string Usage = """
     usage:
+      phi check <file.phi>                 report errors without building
       phi build <file.phi> [-o <dir>]      compile to a bootable disk image
       phi run   <file.phi> [--debug]       build, then boot it in QEMU (serial output prints here)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>]
@@ -64,6 +65,17 @@ static int Execute(string[] args)
                 Console.WriteLine($"built {Path.GetRelativePath(Environment.CurrentDirectory, build.ImagePath)}");
 
                 return command == "run" ? Qemu.RunInteractive(build.ImagePath, debug) : 0;
+            }
+
+            case "check":
+            {
+                if (rest.Count != 1) throw new ArgumentException("check needs exactly one .phi file");
+                if (!File.Exists(rest[0])) throw new ArgumentException($"file not found: {rest[0]}");
+
+                var compiled = Phi.Compiler.PhiCompiler.Compile(Phi.Compiler.SourceFile.Load(rest[0]), generate: false);
+                foreach (var d in compiled.Diagnostics) Console.Error.WriteLine(d);
+                if (compiled.Success) Console.WriteLine($"{rest[0]}: no errors");
+                return compiled.Success ? 0 : 1;
             }
 
             case "test":

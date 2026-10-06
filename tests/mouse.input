@@ -1,0 +1,6 @@
+expect ready
+mouse_move 40 30
+expect x 40
+mouse_move 500 0
+expect x 310
+mouse_button 1

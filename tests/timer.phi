@@ -1,0 +1,23 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Ticks:OS
+{
+	int ticks: 0;
+
+	call OS.SetupInteruptTimer;
+	log 'waiting';
+
+	[OS.TimerEvent]
+		ticks++;
+		if ticks % 30 is 0
+			log ' tick';
+		;;
+		if ticks is 90
+			log ' done';
+			exit 0;
+		;;
+	[end]
+}

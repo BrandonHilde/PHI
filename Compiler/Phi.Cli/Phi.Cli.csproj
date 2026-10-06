@@ -10,7 +10,7 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <ProjectReference Include="..\Translator\PhiBasicTranslator\PhiBasicTranslator\PhiBasicTranslator.csproj" />
+    <ProjectReference Include="..\Phi.Compiler\Phi.Compiler.csproj" />
   </ItemGroup>
 
 </Project>
