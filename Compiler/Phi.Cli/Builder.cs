@@ -9,6 +9,10 @@ namespace Phi.Cli
     {
         public bool Success => Errors.Count == 0;
         public string ImagePath { get; init; } = string.Empty;
+
+        /// <summary>For a user program (Program classes): the flat binary, instead of a disk image.</summary>
+        public string ProgramPath => Path.ChangeExtension(ImagePath, ".bin");
+        public bool IsProgram { get; set; }
         public List<string> Errors { get; } = new();
         public List<string> Warnings { get; } = new();
     }
@@ -58,12 +62,36 @@ namespace Phi.Cli
 
             if (!compiled.Success) return result;
 
+            if (compiled.Units.Any(u => u.Kind == UnitKind.Program))
+            {
+                // a user program isn't bootable: it's a file for a kernel's disk
+                byte[]? program = Assemble(compiled.Units.Single(), outDir, Array.Empty<string>(), result);
+                if (program != null) File.WriteAllBytes(result.ProgramPath, program);
+                result.IsProgram = true;
+                return result;
+            }
+
             byte[]? image = compiled.Units.Any(u => u.Kind == UnitKind.Kernel)
                 ? Layout32(compiled, outDir, result, FindRootfs(phiFile))
                 : Layout16(compiled, outDir, result);
 
             if (image != null) File.WriteAllBytes(result.ImagePath, image);
             return result;
+        }
+
+        /// <summary>A user program from a kernel's rootfs, compiled for its disk; null (with errors) if it fails.</summary>
+        static byte[]? CompileProgram(string phiFile, string outDir, List<string> errors)
+        {
+            string dir = Path.Combine(outDir, "programs", Path.GetFileNameWithoutExtension(phiFile));
+            BuildResult built = Build(phiFile, dir);
+            errors.AddRange(built.Errors);
+            if (!built.Success) return null;
+            if (!built.IsProgram)
+            {
+                errors.Add($"{phiFile}: a .phi file in a rootfs folder becomes a program on the disk, so its classes must inherit Program");
+                return null;
+            }
+            return File.ReadAllBytes(built.ProgramPath);
         }
 
         static byte[]? Layout16(CompileResult compiled, string outDir, BuildResult result)
@@ -130,7 +158,7 @@ namespace Phi.Cli
                 throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
 
             var fsErrors = new List<string>();
-            byte[] partition = FatImage.Build(rootfs, fsErrors);
+            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, outDir, fsErrors));
             if (fsErrors.Count > 0)
             {
                 result.Errors.AddRange(fsErrors);

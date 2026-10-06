@@ -8,6 +8,7 @@ namespace Phi.Compiler.CodeGen
     ///   ; requires: label label ...
     ///   ; hooks: label ...          (events the code calls; a no-op is used if the program has none)
     ///   ; init: label ...           (called once when the program starts)
+    ///   ; inherit: target file ...  (use these files of another target's library too)
     /// </summary>
     public sealed class LibraryFile
     {
@@ -17,6 +18,7 @@ namespace Phi.Compiler.CodeGen
         public List<string> Requires { get; } = new();
         public List<string> Hooks { get; } = new();
         public List<string> Init { get; } = new();
+        public List<string> Inherit { get; } = new();
     }
 
     public static class Library
@@ -40,6 +42,15 @@ namespace Phi.Compiler.CodeGen
                     files.Add(Parse(resource.Replace('\\', '/')[prefix.Length..], reader.ReadToEnd()));
                 }
 
+                // files borrowed from another target's library (inherit: target file file ...)
+                foreach (LibraryFile f in files.ToList().Where(f => f.Inherit.Count > 1))
+                {
+                    IReadOnlyList<LibraryFile> parent = Load(f.Inherit[0]);
+                    foreach (string name in f.Inherit.Skip(1))
+                        files.Add(parent.FirstOrDefault(p => p.Name == name)
+                                  ?? throw new InvalidOperationException($"lib/{target}/{f.Name} inherits {name}, which lib/{f.Inherit[0]} doesn't have"));
+                }
+
                 cache[target] = files;
                 return files;
             }
@@ -58,6 +69,7 @@ namespace Phi.Compiler.CodeGen
                     : content.StartsWith("requires:") ? file.Requires
                     : content.StartsWith("hooks:") ? file.Hooks
                     : content.StartsWith("init:") ? file.Init
+                    : content.StartsWith("inherit:") ? file.Inherit
                     : null;
 
                 if (list != null)

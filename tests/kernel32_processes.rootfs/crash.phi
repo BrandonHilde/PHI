@@ -1,0 +1,7 @@
+phi.Crash:Program
+{
+	log 'crash: writing to kernel memory\n';
+	ptr<u32> kernel: 0x100000;
+	kernel:0 is 1;
+	log 'not reached\n';
+}

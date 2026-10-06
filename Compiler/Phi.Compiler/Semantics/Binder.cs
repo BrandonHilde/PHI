@@ -25,8 +25,9 @@ namespace Phi.Compiler.Semantics
         public BoundUnit? Boot { get; init; }
         public BoundUnit? Os { get; init; }
         public BoundUnit? Kernel { get; init; }
+        public BoundUnit? Program { get; init; }
 
-        public IEnumerable<BoundUnit> Units => new[] { Boot, Os, Kernel }.Where(u => u != null)!;
+        public IEnumerable<BoundUnit> Units => new[] { Boot, Os, Kernel, Program }.Where(u => u != null)!;
     }
 
     /// <summary>
@@ -39,11 +40,17 @@ namespace Phi.Compiler.Semantics
         public const string KernelBase = "OS";
         public const string Kernel32Base = "Kernel";
 
-        /// <summary>Shared code (like drivers): joins the OS classes or the 32-bit kernel, whichever the program has.</summary>
+        /// <summary>Shared code (like drivers): joins the OS classes, the 32-bit kernel or the user program, whichever the program has.</summary>
         public const string LibraryBase = "Library";
+        public const string ProgramBase = "Program";
 
         /// <summary>The library each unit's code is built against.</summary>
-        public static string TargetOf(UnitKind unit) => unit == UnitKind.Kernel ? "x86_32" : "x86_16";
+        public static string TargetOf(UnitKind unit) => unit switch
+        {
+            UnitKind.Kernel => "x86_32",
+            UnitKind.Program => "x86_32_user",
+            _ => "x86_16",
+        };
 
         /// <summary>A str filled from a number needs room for "-2147483648".</summary>
         const int IntTextCapacity = 12;
@@ -92,11 +99,18 @@ namespace Phi.Compiler.Semantics
         {
             DeclareStructs(program.Structs);
 
-            // a program with Kernel classes is a 32-bit kernel; otherwise it is a 16-bit program
-            bool protectedMode = program.Classes.Any(c => c.Base == Kernel32Base);
-            BoundUnit? boot = null, os = null, kernel = null;
+            // Kernel classes make a 32-bit kernel, Program classes a user program; otherwise
+            // it is a 16-bit program
+            bool userProgram = program.Classes.Any(c => c.Base == ProgramBase);
+            bool protectedMode = !userProgram && program.Classes.Any(c => c.Base == Kernel32Base);
+            BoundUnit? boot = null, os = null, kernel = null, user = null;
 
-            if (protectedMode)
+            if (userProgram)
+            {
+                user = new BoundUnit { Kind = UnitKind.Program };
+                units[UnitKind.Program] = user;
+            }
+            else if (protectedMode)
             {
                 kernel = new BoundUnit { Kind = UnitKind.Kernel };
                 units[UnitKind.Kernel] = kernel;
@@ -124,6 +138,12 @@ namespace Phi.Compiler.Semantics
             {
                 file = cls.File;
                 UnitKind unit;
+                if (userProgram && cls.Base is not (ProgramBase or LibraryBase))
+                {
+                    Error(cls.BaseSpan, $"class {cls.Name} ({cls.Base}) can't be part of a user program; a program's classes inherit " +
+                                        $"{ProgramBase} (or {LibraryBase})");
+                    continue;
+                }
                 if (protectedMode && cls.Base is BootBase or KernelBase)
                 {
                     Error(cls.BaseSpan, $"class {cls.Name} is 16-bit code ({cls.Base}), but this program is a 32-bit kernel; " +
@@ -133,7 +153,8 @@ namespace Phi.Compiler.Semantics
                 if (cls.Base == BootBase) unit = UnitKind.Boot;
                 else if (cls.Base == KernelBase) unit = UnitKind.Os;
                 else if (cls.Base == Kernel32Base) unit = UnitKind.Kernel;
-                else if (cls.Base == LibraryBase) unit = protectedMode ? UnitKind.Kernel : UnitKind.Os;
+                else if (cls.Base == ProgramBase) unit = UnitKind.Program;
+                else if (cls.Base == LibraryBase) unit = userProgram ? UnitKind.Program : protectedMode ? UnitKind.Kernel : UnitKind.Os;
                 else
                 {
                     string why = cls.Base == "" ? "has no base class" : $"inherits '{cls.Base}', which PHI doesn't know";
@@ -200,7 +221,7 @@ namespace Phi.Compiler.Semantics
                 Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
             }
 
-            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel };
+            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user };
         }
 
         // ---------------------------------------------------------------- structs
@@ -458,6 +479,7 @@ namespace Phi.Compiler.Semantics
 
             if (method.IsInterruptHandler)
             {
+                if (classScope.Unit == UnitKind.Program) Error(method.Span, "user programs can't handle interrupts");
                 if (dotted) Error(method.Span, "an event can't also be an isr");
                 if (method.Parameters.Count > 0) Error(method.Parameters[0].Span, "interrupt handlers can't take parameters");
                 if (method.Result != null) Error(method.Result.Span, "interrupt handlers can't return a value");
@@ -734,6 +756,8 @@ namespace Phi.Compiler.Semantics
                     return exit;
 
                 case OutStmt o:
+                    if (scope.Unit == UnitKind.Program)
+                        Error(o.Span, "user programs can't use ports; only the kernel can talk to hardware");
                     BindExpr(o.Port, scope);
                     BindExpr(o.Value, scope);
                     o.Port = Convert(o.Port, PhiType.U16, "the port");
@@ -949,9 +973,12 @@ namespace Phi.Compiler.Semantics
 
                     if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
                     {
-                        string why = scope.Unit == UnitKind.Kernel
-                            ? "it needs the BIOS or graphics mode, which a 32-bit kernel doesn't have yet"
-                            : "it needs the 32-bit kernel's drivers; make the program a phi.Name:Kernel";
+                        string why = scope.Unit switch
+                        {
+                            UnitKind.Kernel => "it needs the BIOS or graphics mode, which a 32-bit kernel doesn't have yet",
+                            UnitKind.Program => "user programs reach the hardware only through the kernel's system calls",
+                            _ => "it needs the 32-bit kernel's drivers; make the program a phi.Name:Kernel",
+                        };
                         Error(call.CalleeSpan, $"{builtin.Name} isn't available in the {UnitName(scope.Unit)} ({why})");
                         return;
                     }
@@ -966,7 +993,10 @@ namespace Phi.Compiler.Semantics
                     }
 
                     for (int i = 0; i < Math.Min(count, call.Arguments.Count); i++)
-                        call.Arguments[i] = Convert(call.Arguments[i], PhiType.Int, $"'{builtin.Parameters[i]}'");
+                    {
+                        PhiType expected = builtin.TextParameters.Contains(i) ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
+                        call.Arguments[i] = Convert(call.Arguments[i], expected, $"'{builtin.Parameters[i]}'");
+                    }
 
                     if (call.ResultTarget != null)
                     {
@@ -1047,6 +1077,7 @@ namespace Phi.Compiler.Semantics
         {
             UnitKind.Boot => "boot sector (Bootloader class)",
             UnitKind.Os => "OS classes",
+            UnitKind.Program => "user program",
             _ => "32-bit kernel",
         };
         static string Plural(int n, string word) => n == 1 ? $"1 {word}" : $"{n} {word}s";
@@ -1140,6 +1171,8 @@ namespace Phi.Compiler.Semantics
                     break;
 
                 case InExpr input:
+                    if (scope.Unit == UnitKind.Program)
+                        Error(input.Span, "user programs can't use ports; only the kernel can talk to hardware");
                     BindExpr(input.Port, scope);
                     input.Port = Convert(input.Port, PhiType.U16, "the port");
                     input.Type = input.Size switch { 1 => PhiType.U8, 2 => PhiType.U16, _ => PhiType.U32 };

@@ -5,8 +5,8 @@
 ; register, on a red screen and on COM1. Then the CPU stops.
 ;
 ; eax = the state saved by the interrupt stub:
-;   +0 edi, esi, ebp, esp, ebx, edx, ecx, eax (pushad), +32 vector,
-;   +36 error code, +40 eip, +44 cs, +48 eflags
+;   +0 gs, fs, es, ds, +16 edi, esi, ebp, esp, ebx, edx, ecx, eax (pushad),
+;   +48 vector, +52 error code, +56 eip, +60 cs, +64 eflags
 phi_panic:
     cli
     mov ebp, eax
@@ -16,28 +16,28 @@ phi_panic:
     mov esi, .title
     call phi_print
 
-    mov eax, [ebp + 32]
+    mov eax, [ebp + 48]
     mov esi, [.names + eax * 4]
     call phi_print
     mov esi, .exception
     call phi_print
-    mov eax, [ebp + 32]
+    mov eax, [ebp + 48]
     call phi_print_int
     mov esi, .close
     call phi_print
 
     mov esi, .error_code
     call phi_print
-    mov eax, [ebp + 36]
+    mov eax, [ebp + 52]
     call phi_print_hex
     mov esi, .at
     call phi_print
-    mov eax, [ebp + 40]
+    mov eax, [ebp + 56]
     call phi_print_hex
     mov esi, .newline
     call phi_print
 
-    cmp dword [ebp + 32], 14                ; page fault: the address is in cr2
+    cmp dword [ebp + 48], 14                ; page fault: the address is in cr2
     jne .registers
     mov esi, .address
     call phi_print
@@ -55,7 +55,7 @@ phi_panic:
     call phi_print
     mov eax, 7
     sub eax, ebx
-    mov eax, [ebp + eax * 4]                ; pushad stored them in reverse order
+    mov eax, [ebp + 16 + eax * 4]           ; pushad stored them in reverse order
     call phi_print_hex
     mov esi, .gap
     test ebx, 1
@@ -69,7 +69,7 @@ phi_panic:
 
     mov esi, .eflags
     call phi_print
-    mov eax, [ebp + 48]
+    mov eax, [ebp + 64]
     call phi_print_hex
     mov esi, .newline
     call phi_print

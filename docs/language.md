@@ -41,7 +41,21 @@ phi.Hello:Kernel            # up to 512 KB, loaded at 0x10000
   to 32-bit protected mode and jumps to the kernel. See [memory-map.md](memory-map.md).
 - A kernel can't contain `Bootloader` or `OS` classes.
 
-In both kinds:
+**User programs** run inside a 32-bit kernel, in user mode (ring 3):
+
+```phi
+phi.Hello:Program
+{
+    log 'Hello from a program\n';
+    exit 0;
+}
+```
+
+- A `.phi` file in a kernel's `rootfs` folder is compiled into `NAME.BIN` on its disk, and
+  the kernel starts it with `Process.Spawn` (see [Programs](#programs-and-processes)).
+- `phi build hello.phi` on its own makes `hello.bin`, which isn't bootable.
+
+In every kind:
 
 - Statements directly inside a class run in order, top to bottom, when the class starts.
   When they finish, the CPU halts (a 16-bit program still handles interrupts, so timer
@@ -393,6 +407,52 @@ each folder holds as many new files as it has free entries (the root holds 511).
 are written to the disk image, so a kernel sees them the next time it boots the same image
 (`phi build` makes a fresh image each time).
 
+## Programs and processes
+
+A 32-bit kernel runs user programs with `proc.process`:
+
+```phi
+use proc.process;
+
+phi.Kernel:Kernel
+{
+    int a: 0;
+    int b: 0;
+    call a is Process.Spawn: 'ALPHA.BIN';     # -1 if it can't start
+    call b is Process.Spawn: 'BETA.BIN';
+    int code: 0;
+    call code is Process.Wait: a;             # its exit code; -1 if it crashed
+    call Process.WaitAll;
+}
+```
+
+Each program has its own memory: its code and data at `0x40000000`, a 64 KB stack ending
+at `0x40400000`, and nothing else it can reach. The timer shares the CPU between running
+programs. A program that touches memory that isn't its own is stopped with a message
+(`PHI: program 3 stopped by exception 14 ...`) and the kernel carries on.
+
+**The kernel runs one thing at a time.** Its own code keeps the CPU until it waits
+(`Process.Wait`, `Process.WaitAll`, `OS.Yield`) or its main code ends; only then do
+programs run. This keeps kernel methods from running twice at once (their variables have
+fixed places in memory).
+
+**Inside a program**, the hardware is out of reach: no ports, interrupt handlers, `new`
+or drivers. Instead:
+
+| In a program | What it does |
+|---|---|
+| `log`, `debug`, `ask` | through the kernel's console and keyboard; a `log` statement reaches the screen whole |
+| `exit code;` | end the program; the end of the main code is `exit 0` |
+| `OS.Sleep: ms`, `OS.GetTicks` →, `OS.Yield` | timing |
+| `OS.ReadKey` →, `OS.KeyAvailable` →, `Bootloader.WaitForKeyPress` → | the keyboard |
+| `OS.CurrentTask` → | this program's process number |
+| `OS.Spawn: path` → | start another program; its process number, or -1 |
+| `OS.Wait: process` → | wait for a program this one started; its exit code |
+
+The system calls behind these (`int 0x80`, number in `eax`, argument in `ebx`, result in
+`eax`) are listed in [lib/x86_32/tasks.asm](../lib/x86_32/tasks.asm). A kernel can add
+its own from number 16 up with `OS.SetSyscallHandler` (`proc.process` uses 16 for spawn).
+
 ## Methods
 
 ```phi
@@ -496,6 +556,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 
 ## Built-in functions
@@ -528,6 +589,10 @@ are drivers in [lib/x86_32](../lib/x86_32).
 | `OS.EndOfInterrupt: irq` | both | acknowledge a hardware interrupt (IRQ 0–15), from an `[isr]` |
 | `OS.UnmaskIrq: irq` / `OS.MaskIrq: irq` | both | let a hardware interrupt through, or block it |
 | `OS.EnableInterrupts` / `OS.DisableInterrupts` | both | `sti` / `cli` |
+| `OS.Yield` | 32-bit, programs | let other tasks run |
+| `OS.CurrentTask` → | 32-bit, programs | this task's number (0 is the kernel) |
+| `OS.Spawn: path` → / `OS.Wait: process` → | programs | start a program from the disk / wait for it |
+| `OS.StartMultitasking`, `OS.CreateUserTask`, `OS.TaskState` →, `OS.TaskExitCode` →, `OS.TaskParent` →, `OS.FreeTask`, `OS.SetSyscallHandler`, `OS.SyscallFrame` → | 32-bit | the task machinery `proc.process` is built on |
 
 `OS.SetupInterruptTimer` and `OS.SetupKeyboardInterrupt` (spelled correctly) also work.
 `WaitForKeyPress` and `EnableVideoMode` can be called with `OS.` too. In a 32-bit kernel,

@@ -62,6 +62,18 @@ static int Execute(string[] args)
                 foreach (string e in build.Errors) Console.Error.WriteLine("error: " + e);
                 if (!build.Success) return 1;
 
+                if (build.IsProgram)
+                {
+                    Console.WriteLine($"built the program {Path.GetRelativePath(Environment.CurrentDirectory, build.ProgramPath)} " +
+                                      "(programs run inside a kernel: put the .phi file in a kernel's rootfs folder)");
+                    if (command == "run")
+                    {
+                        Console.Error.WriteLine("error: a user program can't boot by itself; run a kernel whose rootfs has it");
+                        return 1;
+                    }
+                    return 0;
+                }
+
                 Console.WriteLine($"built {Path.GetRelativePath(Environment.CurrentDirectory, build.ImagePath)}");
 
                 return command == "run" ? Qemu.RunInteractive(build.ImagePath, debug) : 0;

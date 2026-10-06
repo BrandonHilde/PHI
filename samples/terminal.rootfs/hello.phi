@@ -1,0 +1,11 @@
+# A user program: it runs in ring 3 in its own memory, and reaches the screen
+# and keyboard through the kernel's system calls.
+phi.Hello:Program
+{
+	str name: [30];
+	int me: 0;
+	call me is OS.CurrentTask;
+	log 'Hello from program ' me '! What is your name? ';
+	ask name;
+	log '\nNice to meet you, ' name '.\n';
+}

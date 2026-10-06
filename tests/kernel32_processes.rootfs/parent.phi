@@ -1,0 +1,11 @@
+phi.Parent:Program
+{
+	int pid: 0;
+	call pid is OS.Spawn: 'CHILD.BIN';
+	int code: 0;
+	call code is OS.Wait: pid;
+	log 'parent: child ' pid ' exited with ' code '\n';
+	int missing: 0;
+	call missing is OS.Spawn: 'NOPE.BIN';
+	log 'parent: missing program gives ' missing '\n';
+}

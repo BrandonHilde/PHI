@@ -428,6 +428,31 @@ Goal: several programs run at once and are isolated from each other.
 **Done when:** two user programs print interleaved output, and a program that writes to
 a bad address is killed while the kernel keeps running.
 
+**Status: done (2026-10-06).** Demo: `phi run samples/terminal.phi`, then `run hello.bin`.
+- [x] `phi.Name:Program` classes compile to flat ring-3 binaries at `0x40000000`, against a user
+  library (`lib/x86_32_user/`) where output, input, timing and exit are system calls; it shares the
+  pure routines with the kernel library (`inherit:`)
+- [x] `.phi` files in a kernel's rootfs are compiled into `NAME.BIN` on its disk
+- [x] Tasks (`lib/x86_32/tasks.asm`): GDT with user segments, TSS, per-task kernel stacks and page
+  directories, round-robin scheduler on the timer, sleeping, waiting for keys and for children
+- [x] System calls on `int 0x80`: exit, write, debug, read key, sleep, ticks, getpid, yield, key
+  available, wait; numbers from 16 go to a PHI handler (`spawn` is one)
+- [x] `proc.process` in PHI: load a program from FAT16 into its own address space, start it, wait,
+  free its memory afterwards; spawning from programs, with the path checked against the caller's memory
+- [x] A program that faults is stopped with a message and exit code -1; the kernel keeps going
+- [x] Output from a `log` statement reaches the screen whole, so programs' lines don't mix
+- [x] Tests: two programs at once (timed to prove they overlapped), exit codes, a crashing program,
+  a program that spawns and waits for another, all memory returned
+- Differs from the plan:
+  - No kernel threads: method variables have fixed addresses, so two threads running the same
+    method would overwrite each other's. The kernel instead runs one thing at a time and is not
+    preempted; programs (each with private memory) are. Kernel threads need variables on a stack,
+    which is a compiler change for later.
+  - No ELF: flat binaries are all the compiler produces, and they load as is.
+  - No locks or wait queues as language features: with a non-preemptible kernel, disabling
+    interrupts (the default inside system calls) is the critical section. Waiting for keys, time
+    and children is built into the scheduler.
+
 ---
 
 ## Phase 8: Shell and userland

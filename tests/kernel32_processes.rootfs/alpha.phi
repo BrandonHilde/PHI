@@ -1,0 +1,8 @@
+phi.Alpha:Program
+{
+	while int i: 0; i < 5; i++;
+		log 'alpha ' i '\n';
+		call OS.Sleep: 40;
+	;;
+	exit 1;
+}

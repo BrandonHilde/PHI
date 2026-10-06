@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_irq_register OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
+; provides: phi_interrupts_init phi_idt phi_irq_register phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
 ; requires: phi_panic
 ; init: phi_interrupts_init
 ;
@@ -8,6 +8,16 @@
 ;   - a 256-entry IDT: exceptions go to the panic screen, IRQs to the handler
 ;     registered for them (then end-of-interrupt is sent automatically)
 ;   - interrupts are enabled, with every IRQ masked until a driver unmasks it
+;
+; Multitasking (tasks.asm) plugs in through three hooks, which are 0 until then:
+; phi_scheduler picks the task to resume, phi_syscall_hook handles int 0x80,
+; and phi_user_fault deals with an exception in a user program.
+;
+; The saved state on the stack, from esp up:
+;   +0 gs, fs, es, ds   +16 edi, esi, ebp, esp, ebx, edx, ecx, eax (pushad)
+;   +48 vector   +52 error code   +56 eip, cs, eflags (+ user esp, ss from ring 3)
+FRAME_VECTOR equ 48
+FRAME_CS     equ 60
 IRQ_BASE   equ 32
 PIC1_CMD   equ 0x20
 PIC1_DATA  equ 0x21
@@ -109,13 +119,26 @@ phi_isr_table:
 phi_isr_default:
     iretd
 
-; stack here: pushad registers, vector, error code, eip, cs, eflags
 phi_interrupt_common:
     pushad
+    push ds
+    push es
+    push fs
+    push gs
+    mov ax, 0x10            ; kernel data
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
     cld
-    mov eax, [esp + 32]     ; vector
+    mov eax, [esp + FRAME_VECTOR]
     cmp eax, IRQ_BASE
     jb .exception
+    cmp eax, 0x80
+    je .syscall
+    cmp eax, IRQ_BASE + 16
+    jae .schedule           ; vector 48: a task gives up the CPU (OS_Yield)
+
     sub eax, IRQ_BASE       ; eax = irq
     mov ebx, [phi_irq_handlers + eax * 4]
     test ebx, ebx
@@ -131,10 +154,47 @@ phi_interrupt_common:
     out PIC2_CMD, al        ; IRQ 8-15 also need the second controller told
 .master:
     out PIC1_CMD, al
+    ; the timer takes the CPU away from user programs (the kernel gives it up itself)
+    test ebx, ebx
+    jnz .return
+    test byte [esp + FRAME_CS], 3
+    jz .return
+.schedule:
+    mov ebx, [phi_scheduler]
+    test ebx, ebx
+    jz .return
+    mov eax, esp
+    call ebx                ; eax = the saved state of the task to resume
+    mov esp, eax
+.return:
+    pop gs
+    pop fs
+    pop es
+    pop ds
     popad
     add esp, 8              ; vector and error code
     iretd
+
+.syscall:
+    mov ebx, [phi_syscall_hook]
+    test ebx, ebx
+    jz .return
+    mov eax, esp
+    call ebx                ; eax = 1 when the task can't continue right now
+    test eax, eax
+    jnz .schedule
+    jmp .return
+
 .exception:
+    test byte [esp + FRAME_CS], 3
+    jz .panic
+    mov ebx, [phi_user_fault]
+    test ebx, ebx
+    jz .panic
+    mov eax, esp
+    call ebx                ; the program is stopped; run something else
+    jmp .schedule
+.panic:
     mov eax, esp            ; the saved state, for the panic screen
     jmp phi_panic
 
@@ -235,3 +295,6 @@ phi_idt_descriptor:
     dd phi_idt
 phi_irq_handlers:
     times 16 dd 0
+phi_scheduler:    dd 0
+phi_syscall_hook: dd 0
+phi_user_fault:   dd 0

@@ -1,0 +1,261 @@
+# Processes for 32-bit kernels: run programs from the disk in user mode.
+#
+#   use proc.process;
+#   int pid: 0;
+#   call pid is Process.Spawn: 'HELLO.BIN';   # -1 if it can't start
+#   int code: 0;
+#   call code is Process.Wait: pid;            # its exit code; -1 if it crashed
+#
+# A program (classes that inherit Program; `phi build` compiles any .phi file in
+# a kernel's rootfs into NAME.BIN) runs in ring 3 with its own address space:
+# its code and data at 0x40000000, a 64 KB stack ending at 0x40400000, and the
+# kernel's memory mapped but out of reach. It talks to the kernel through
+# system calls (lib/x86_32/tasks.asm); spawning other programs is handled here.
+#
+# The timer shares the CPU between programs. The kernel's own code runs until it
+# waits (Wait, WaitAll, OS.Yield) or its main code ends.
+
+use memory.heap;
+use fs.fat16;
+
+# the registers saved when a program made a system call
+struct.SyscallFrame
+{
+	u32 gs;
+	u32 fs;
+	u32 es;
+	u32 ds;
+	u32 edi;
+	u32 esi;
+	u32 ebp;
+	u32 esp;
+	u32 ebx;
+	u32 edx;
+	u32 ecx;
+	u32 eax;
+	u32 vector;
+	u32 error;
+	u32 eip;
+	u32 cs;
+	u32 eflags;
+	u32 user_esp;
+	u32 user_ss;
+}
+
+phi.Process:Kernel
+{
+	const u32 USER_BASE: 0x40000000;
+	const u32 USER_TOP: 0x40400000;
+	const u32 PAGE_SIZE: 4096;
+	const u32 STACK_PAGES: 16;              # 64 KB
+	const u32 PAGE_USER: 7;                 # present, writable, user mode may use it
+	const u32 KERNEL_STACK_SIZE: 8192;
+	const int MAX_PROCESSES: 16;
+
+	const u32 TASK_FREE: 0;
+	const u32 TASK_EXITED: 5;
+	const u32 TASK_COLLECTED: 6;
+	const u32 SYS_SPAWN: 16;
+
+	u32 process_directory[16];              # 0: no process with this number
+	u32 process_kernel_stack[16];
+	u32 process_image_end[16];
+	u32 started: 0;
+	str spawn_path: [63];
+
+	call OS.StartMultitasking;
+	call OS.SetSyscallHandler: addr HandleSyscall;
+
+	# load a program from the disk and start it; its process number, or -1
+	[Spawn: ptr<u8> path: 0;]
+		int pid: -1;
+		int size: 0;
+		call size is Fat.FileSize: path;
+		u32 pages: (size + PAGE_SIZE - 1) / PAGE_SIZE;
+
+		if size > 0 and pages + STACK_PAGES <= 1024
+			ptr<u8> image: new u8[size];
+			int got: 0;
+			call got is Fat.ReadFile: path image size;
+
+			ptr<u32> directory: 0;
+			ptr<u32> table: 0;
+			u32 kernelStack: 0;
+			call directory is Frames.Alloc;
+			call table is Frames.Alloc;
+			call kernelStack is Frames.AllocContiguous: 2;
+
+			if got is size and directory is not 0 and table is not 0 and kernelStack is not 0
+				# the kernel's mappings (out of reach in user mode), then the program's 4 MB
+				while u32 i: 0; i < 1024; i++;
+					directory:i is Paging.page_directory:i;
+					table:i is 0;
+				;;
+				directory:(USER_BASE >> 22) is table | PAGE_USER;
+
+				# its code and data
+				while u32 p: 0; p < pages; p++;
+					ptr<u8> frame: 0;
+					call frame is NewPage;
+					u32 offset: p * PAGE_SIZE;
+					u32 chunk: PAGE_SIZE;
+					if chunk > size - offset
+						chunk is size - offset;
+					;;
+					while u32 b: 0; b < chunk; b++;
+						frame:b is image:(offset + b);
+					;;
+					table:p is frame | PAGE_USER;
+				;;
+
+				# its stack, at the top of the 4 MB
+				while u32 s: 0; s < STACK_PAGES; s++;
+					u32 stackFrame: 0;
+					call stackFrame is NewPage;
+					table:(1024 - STACK_PAGES + s) is stackFrame | PAGE_USER;
+				;;
+
+				u32 imageEnd: USER_BASE + pages * PAGE_SIZE;
+				u32 stackBottom: USER_TOP - STACK_PAGES * PAGE_SIZE;
+				call pid is OS.CreateUserTask: directory USER_BASE USER_TOP kernelStack + KERNEL_STACK_SIZE imageEnd stackBottom;
+				if pid > 0
+					process_directory:pid is directory;
+					process_kernel_stack:pid is kernelStack;
+					process_image_end:pid is imageEnd;
+					started++;
+				;;
+			;;
+			free image;
+		;;
+	[end: pid]
+
+	# wait for a program the kernel started; its exit code (-1 if it crashed)
+	[Wait: int pid: 0;]
+		int code: -1;
+		if pid > 0 and pid < MAX_PROCESSES
+			if process_directory:pid is not 0
+				u32 state: 1;
+				call state is OS.TaskState: pid;
+				while state is not TASK_EXITED and state is not TASK_COLLECTED
+					call OS.Yield;
+					call CollectFinished;
+					call state is OS.TaskState: pid;
+				;;
+				call code is OS.TaskExitCode: pid;
+				call Release: pid;
+			;;
+		;;
+	[end: code]
+
+	# wait until every program has finished
+	[WaitAll]
+		bln running: true;
+		while running
+			call CollectFinished;
+			running is false;
+			while int pid: 1; pid < MAX_PROCESSES; pid++;
+				if process_directory:pid is not 0
+					u32 state: 0;
+					u32 parent: 0;
+					call state is OS.TaskState: pid;
+					call parent is OS.TaskParent: pid;
+					if state is TASK_EXITED and parent is 0
+						call Release: pid;
+					;;
+					else
+						running is true;
+					;;
+				;;
+			;;
+			if running
+				call OS.Yield;
+			;;
+		;;
+	[end]
+
+	# free programs whose parent program has read their exit code, and finished
+	# programs whose parent is gone
+	[CollectFinished]
+		while int pid: 1; pid < MAX_PROCESSES; pid++;
+			if process_directory:pid is not 0
+				u32 state: 0;
+				u32 parent: 0;
+				u32 parentState: 0;
+				call state is OS.TaskState: pid;
+				call parent is OS.TaskParent: pid;
+				call parentState is OS.TaskState: parent;
+				bln orphan: parent is not 0 and (parentState is TASK_FREE or parentState >= TASK_EXITED);
+				if state is TASK_COLLECTED or (state is TASK_EXITED and orphan)
+					call Release: pid;
+				;;
+			;;
+		;;
+	[end]
+
+	# give a finished program's memory back
+	[Release: int pid: 0;]
+		ptr<u32> directory: process_directory:pid;
+		ptr<u32> table: directory:(USER_BASE >> 22) & 0xFFFFF000;
+		while u32 i: 0; i < 1024; i++;
+			if (table:i & 1) is not 0
+				call Frames.Free: table:i & 0xFFFFF000;
+			;;
+		;;
+		call Frames.Free: table;
+		call Frames.Free: directory;
+		call Frames.Free: process_kernel_stack:pid;
+		call Frames.Free: process_kernel_stack:pid + PAGE_SIZE;
+		process_directory:pid is 0;
+		call OS.FreeTask: pid;
+	[end]
+
+	# a zeroed frame
+	[NewPage]
+		ptr<u32> page: 0;
+		call page is Frames.Alloc;
+		if page is not 0
+			while u32 w: 0; w < 1024; w++;
+				page:w is 0;
+			;;
+		;;
+	[end: page]
+
+	# system calls numbered 16 and up, from programs
+	[HandleSyscall]
+		ptr<SyscallFrame> frame: 0;
+		call frame is OS.SyscallFrame;
+
+		if frame:0.eax is SYS_SPAWN
+			# copy the path out of the program's memory, checking every byte is inside it
+			u32 caller: 0;
+			call caller is OS.CurrentTask;
+			u32 from: frame:0.ebx;
+			u32 length: 0;
+			bln ok: true;
+			bln ended: false;
+			while ok and ended is false and length < 63
+				u32 at: from + length;
+				bln inImage: at >= USER_BASE and at < process_image_end:caller;
+				bln inStack: at >= USER_TOP - STACK_PAGES * PAGE_SIZE and at < USER_TOP;
+				if inImage or inStack
+					ptr<u8> byte: at;
+					spawn_path:length is byte:0;
+					ended is byte:0 is 0;
+					length++;
+				;;
+				else
+					ok is false;
+				;;
+			;;
+
+			int pid: -1;
+			if ok and ended
+				call pid is Spawn: spawn_path;
+			;;
+			frame:0.eax is pid;
+		;;
+		else
+			frame:0.eax is -1;                # a system call nobody handles
+		;;
+	[end]
+}

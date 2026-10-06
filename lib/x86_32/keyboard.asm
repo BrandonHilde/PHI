@@ -1,4 +1,4 @@
-; provides: OS_SetupKeyboardInterupt OS_GetKey OS_IsKeyDown OS_ReadKey OS_KeyAvailable Bootloader_WaitForKeyPress phi_read_char
+; provides: OS_SetupKeyboardInterupt OS_GetKey OS_IsKeyDown OS_ReadKey OS_KeyAvailable Bootloader_WaitForKeyPress phi_read_char phi_take_key
 ; requires: phi_irq_register
 ; hooks: OS_KeyboardEvent
 ;
@@ -103,6 +103,20 @@ phi_read_char:
     and ebx, KEYBOARD_BUFFER - 1
     mov [phi_keyboard_tail], ebx
     sti
+    ret
+
+; for code that runs with interrupts off (the scheduler): eax = the next
+; buffered character, or 0 if there is none
+phi_take_key:
+    xor eax, eax
+    mov ebx, [phi_keyboard_tail]
+    cmp ebx, [phi_keyboard_head]
+    je .none
+    movzx eax, byte [phi_keyboard_buffer + ebx]
+    inc ebx
+    and ebx, KEYBOARD_BUFFER - 1
+    mov [phi_keyboard_tail], ebx
+.none:
     ret
 
 phi_keyboard_ready: db 0

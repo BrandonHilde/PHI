@@ -4,11 +4,13 @@
 #
 # The clock is drawn by the timer event (an interrupt, 60 times a second) using
 # the RTC driver; typing goes through the keyboard driver; ls and cat read the
-# FAT16 disk that phi build makes from terminal.rootfs/. 'crash' divides by
-# zero to show the panic screen.
+# FAT16 disk that phi build makes from terminal.rootfs/, and run starts one of
+# the programs on it (phi build compiles the .phi files there into .BIN
+# programs). 'crash' divides by zero to show the panic screen.
 
 use drivers.rtc;
 use fs.fat16;
+use proc.process;
 
 phi.Terminal:Kernel
 {
@@ -33,6 +35,7 @@ phi.Terminal:Kernel
 			log 'help    this list\n';
 			log 'ls      the files on the disk (ls docs for a folder)\n';
 			log 'cat F   print the file F\n';
+			log 'run P   run the program P (try run hello.bin, run count.bin)\n';
 			log 'time    the date and time (UTC)\n';
 			log 'uptime  seconds since the kernel started\n';
 			log 'crash   divide by zero\n';
@@ -57,6 +60,20 @@ phi.Terminal:Kernel
 			ptr<u8> name: line;
 			name++ 4;
 			call ShowFile: name;
+		;;
+		elif line:0 is 'r' and line:1 is 'u' and line:2 is 'n' and line:3 is ' '
+			ptr<u8> program: line;
+			program++ 4;
+			int pid: 0;
+			call pid is Process.Spawn: program;
+			if pid < 0
+				log 'no such program: ' program '\n';
+			;;
+			else
+				int code: 0;
+				call code is Process.Wait: pid;
+				log '[program ' pid ' exited with ' code ']\n';
+			;;
 		;;
 		elif line is 'crash'
 			int zero: 0;

@@ -10,6 +10,9 @@ namespace Phi.Compiler.Semantics
         public string[] Aliases { get; init; } = Array.Empty<string>();
         public string Label { get; init; } = "";
         public string[] Parameters { get; init; } = Array.Empty<string>();
+
+        /// <summary>Indexes of parameters that take text (a str or ptr&lt;u8&gt;) rather than a number.</summary>
+        public int[] TextParameters { get; init; } = Array.Empty<int>();
         public bool Returns { get; init; }
 
         /// <summary>Null when the function works in both the boot sector and the kernel.</summary>
@@ -74,6 +77,25 @@ namespace Phi.Compiler.Semantics
             new() { Name = "OS.SetIrqHandler", Label = "OS_SetIrqHandler", Parameters = new[] { "irq", "handler" },
                     Description = "32-bit: run an ordinary method (addr Name) for a hardware interrupt; end-of-interrupt is automatic" },
             new() { Name = "OS.EnableInterrupts", Label = "OS_EnableInterrupts", Description = "sti" },
+
+            // ---- tasks (lib/x86_32/tasks.asm in kernels, system calls in programs)
+            new() { Name = "OS.Yield", Label = "OS_Yield", Description = "give the CPU to another task" },
+            new() { Name = "OS.CurrentTask", Label = "OS_CurrentTask", Returns = true, Description = "this task's number (0 is the kernel)" },
+            new() { Name = "OS.StartMultitasking", Label = "OS_StartMultitasking", Description = "kernel: set up tasks, user mode and system calls" },
+            new() { Name = "OS.CreateUserTask", Label = "OS_CreateUserTask", Returns = true,
+                    Parameters = new[] { "pageDirectory", "entry", "userStack", "kernelStack", "imageEnd", "stackBottom" },
+                    Description = "kernel: start a ring-3 task (proc.process does this for you)" },
+            new() { Name = "OS.TaskState", Label = "OS_TaskState", Parameters = new[] { "task" }, Returns = true, Description = "kernel: a task's state" },
+            new() { Name = "OS.TaskExitCode", Label = "OS_TaskExitCode", Parameters = new[] { "task" }, Returns = true, Description = "kernel: a finished task's exit code" },
+            new() { Name = "OS.TaskParent", Label = "OS_TaskParent", Parameters = new[] { "task" }, Returns = true, Description = "kernel: the task that started it" },
+            new() { Name = "OS.FreeTask", Label = "OS_FreeTask", Parameters = new[] { "task" }, Description = "kernel: let a finished task's slot be reused" },
+            new() { Name = "OS.SetSyscallHandler", Label = "OS_SetSyscallHandler", Parameters = new[] { "handler" },
+                    Description = "kernel: run a method for system calls numbered 16 and up" },
+            new() { Name = "OS.SyscallFrame", Label = "OS_SyscallFrame", Returns = true, Description = "kernel: the saved registers of the system call being handled" },
+            new() { Name = "OS.Spawn", Label = "OS_Spawn", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+                    Description = "program: start a program from the disk; its process number, or -1" },
+            new() { Name = "OS.Wait", Label = "OS_Wait", Parameters = new[] { "process" }, Returns = true,
+                    Description = "program: wait for a child to finish; its exit code" },
             new() { Name = "OS.DisableInterrupts", Label = "OS_DisableInterrupts", Description = "cli" },
             new() { Name = "OS.UnmaskIrq", Label = "OS_UnmaskIrq", Parameters = new[] { "irq" },
                     Description = "Let a hardware interrupt (IRQ 0-15) through the interrupt controller" },

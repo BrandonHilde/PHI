@@ -38,12 +38,14 @@ namespace Phi.Cli
             public readonly ushort[] Fat = new ushort[ClusterCount + 2];
             public int NextCluster = 2;
             public readonly List<string> Errors = new();
+            public Func<string, byte[]?>? CompileProgram;
         }
 
         /// <param name="rootfs">The folder to copy in, or null for an empty file system.</param>
-        public static byte[] Build(string? rootfs, List<string> errors)
+        /// <param name="compileProgram">Turns a .phi file into a user program, stored as NAME.BIN.</param>
+        public static byte[] Build(string? rootfs, List<string> errors, Func<string, byte[]?>? compileProgram = null)
         {
-            var state = new State();
+            var state = new State { CompileProgram = compileProgram };
             state.Fat[0] = 0xFFF8; // media descriptor: fixed disk
             state.Fat[1] = EndOfChain;
 
@@ -121,8 +123,12 @@ namespace Phi.Cli
                 .Where(path => !Path.GetFileName(path).StartsWith('.'))   // .gitkeep and friends
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 
-            foreach (string path in items)
+            foreach (string item in items)
             {
+                // a program's source is compiled; the disk gets NAME.BIN
+                bool program = state.CompileProgram != null && item.EndsWith(".phi", StringComparison.OrdinalIgnoreCase) && File.Exists(item);
+                string path = program ? Path.ChangeExtension(item, ".bin") : item;
+
                 string? name = ShortName(path, state.Errors);
                 if (name == null) continue;
                 if (!names.Add(name))
@@ -152,7 +158,8 @@ namespace Phi.Cli
                 }
                 else
                 {
-                    byte[] data = File.ReadAllBytes(path);
+                    byte[]? data = program ? state.CompileProgram!(item) : File.ReadAllBytes(path);
+                    if (data == null) continue;
                     int first = 0;
                     if (data.Length > 0)
                     {

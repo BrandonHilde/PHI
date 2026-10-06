@@ -41,7 +41,7 @@ phi.SectorTwo:OS
        phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
        phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)
        phi run samples/kernel.phi        a 32-bit protected-mode kernel
-       phi run samples/terminal.phi      a 32-bit kernel you can type commands into (ls, cat, time ...)
+       phi run samples/terminal.phi      a 32-bit kernel you can type commands into (ls, cat, run hello.bin ...)
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output

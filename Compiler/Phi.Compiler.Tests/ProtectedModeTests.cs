@@ -42,7 +42,7 @@ namespace Phi.Compiler.Tests
         public void PointersAreFlatIn32BitCode()
         {
             string asm = Compile("phi.K:Kernel\n{\n ptr<u16> vga: 0xB8000;\n int i: 3;\n vga:i is 1;\n}\n").Units[0].Text;
-            Assert.DoesNotContain("fs", asm);
+            Assert.DoesNotContain("mov fs, cx", asm);   // the 16-bit way of reaching far memory
             Assert.Contains("[ebx]", asm);
         }
 

@@ -1,0 +1,7 @@
+phi.Child:Program
+{
+	int me: 0;
+	call me is OS.CurrentTask;
+	log 'child: running as process ' me '\n';
+	exit 42;
+}

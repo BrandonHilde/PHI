@@ -108,6 +108,22 @@ phi.Main:Kernel
 Each `MemoryRegion` is 24 bytes: `base`, `base_high`, `length`, `length_high`, `type`
 (1 = usable RAM) and `attributes`.
 
+### Programs
+
+With `proc.process`, the kernel sets up a GDT of its own (kernel code `0x08`, kernel data
+`0x10`, user code `0x1B`, user data `0x23`, the TSS `0x28`). Each program gets:
+
+| Address | Contents |
+|---|---|
+| `0x00000000`–`0x3FFFFFFF` | the kernel's memory, mapped but not reachable from user mode |
+| `0x40000000` … | the program's code and data (`NAME.BIN`, loaded as is) |
+| `0x403F0000`–`0x403FFFFF` | its 64 KB stack (`esp` starts at `0x40400000`) |
+
+Everything in between, and above, is unmapped. The program's page directory copies the
+kernel's and adds one page table for these 4 MB; each program also has an 8 KB kernel
+stack, which the TSS points the CPU at when an interrupt arrives in user mode. Up to 15
+programs can exist at once.
+
 ### The disk
 
 The partition is FAT16 with 512-byte sectors, 2 KB clusters, two FATs of 32 sectors and

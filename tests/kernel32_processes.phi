@@ -1,0 +1,39 @@
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+
+	# two programs at once
+	u32 start: 0;
+	call start is OS.GetTicks;
+	int a: 0;
+	int b: 0;
+	call a is Process.Spawn: 'ALPHA.BIN';
+	call b is Process.Spawn: 'BETA.BIN';
+	int codeA: 0;
+	int codeB: 0;
+	call codeA is Process.Wait: a;
+	call codeB is Process.Wait: b;
+	u32 finish: 0;
+	call finish is OS.GetTicks;
+	debug 'exit codes: ' codeA ' ' codeB '\n';
+	# each sleeps 5 x 40 ms; one after the other would take 400 ms
+	debug 'ran at the same time: ' (finish - start < 350) '\n';
+
+	# a program that writes to kernel memory is stopped; the kernel carries on
+	int c: 0;
+	call c is Process.Spawn: 'CRASH.BIN';
+	int codeC: 0;
+	call codeC is Process.Wait: c;
+	debug 'crash exit code: ' codeC '\n';
+
+	# a program that starts another
+	int p: 0;
+	call p is Process.Spawn: 'PARENT.BIN';
+	call Process.WaitAll;
+
+	debug 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	debug 'kernel still running\n';
+	exit 0;
+}

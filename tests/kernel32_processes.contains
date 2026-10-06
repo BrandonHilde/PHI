@@ -1,0 +1,16 @@
+alpha 0
+beta 0
+alpha 4
+beta 4
+exit codes: 1 2
+ran at the same time: 1
+crash: writing to kernel memory
+stopped by exception 14
+address 0x00100000
+crash exit code: -1
+child: running as process
+parent: child
+exited with 42
+parent: missing program gives -1
+memory back: 1
+kernel still running

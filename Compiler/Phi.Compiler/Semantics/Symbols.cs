@@ -86,6 +86,9 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>The Kernel classes: a 32-bit protected-mode kernel at 0x10000.</summary>
         Kernel,
+
+        /// <summary>The Program classes: a 32-bit user program (ring 3) at 0x40000000, run by a kernel.</summary>
+        Program,
     }
 
     public abstract class Symbol

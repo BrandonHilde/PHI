@@ -1,0 +1,8 @@
+phi.Beta:Program
+{
+	while int i: 0; i < 5; i++;
+		log 'beta ' i '\n';
+		call OS.Sleep: 40;
+	;;
+	exit 2;
+}
