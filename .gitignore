@@ -1,0 +1,10 @@
+# .NET / Visual Studio
+bin/
+obj/
+.vs/
+*.user
+
+# PHI build output (phi build / phi test)
+build/
+*.img
+*.actual

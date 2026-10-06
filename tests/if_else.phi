@@ -1,0 +1,39 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.IfElse:OS
+{
+	int a: 5;
+	int b: 3;
+
+	if a > b
+		log 'a>b ';
+	;;
+	else
+		log 'WRONG1 ';
+	;;
+
+	if a < b
+		log 'WRONG2 ';
+	;;
+	else
+		log 'else ';
+	;;
+
+	a is 2;
+	if a < b
+		log 'assign ';
+	;;
+
+	a++5;
+	if a is 7
+		log 'add ';
+	;;
+
+	a--4;
+	if a is 3
+		log 'sub';
+	;;
+}

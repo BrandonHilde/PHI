@@ -33,15 +33,18 @@ phi.SectorTwo:OS
 ```
 <h4>To Build:</h4>
 
-    1. Install NASM (Netwide Assembler) (can also use FASM Flat Assembler)
-    2. Install QEMU (qemu-system-x86_64)
-    3. Run the ConvertFile program
-    4. Specify the file (hello.phi)
-    5. After it runs it will produce a phi.ASM file
-    6. cd into the folder
-    7. & [insert path]\buildSingleASM.bat phi
+    1. Install the .NET 8 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
+       (or set PHI_NASM / PHI_QEMU to their full paths)
+    2. dotnet build PHI.sln
+    3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net8.0/phi.exe):
 
-[More Build Info](./Compiler/x86ASM/buildSingleASM.bat)
+       phi build tests/hello.phi         compile to tests/build/hello/hello.img (a bootable disk image)
+       phi run tests/hello.phi           build and boot it in QEMU; log output also prints in the terminal
+       phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
+       phi test                          boot every test in tests/ headless and check its output
+
+The generated assembly for each class is saved next to the image (for example `tests/build/hello/0_Hello.asm`).
+See [tests/README.md](./tests/README.md) for how the tests work, and [Plan.md](./Plan.md) for the roadmap.
 
 <h4>Goals:</h4>
     

@@ -1,0 +1,20 @@
+
+phi.Hello:Bootloader
+{
+	str hello: 'Hello, World!\r\n';
+    	str newline: '\r\n';
+	str name:[40];
+	
+	log newline;
+	log newline;
+	
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.SectorTwo:OS
+{
+	str Greetings: 'Welcome to PHI language!';
+	
+	log '\r\n' Greetings;
+}
+

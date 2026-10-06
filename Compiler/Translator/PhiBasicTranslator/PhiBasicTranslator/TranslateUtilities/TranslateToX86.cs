@@ -260,7 +260,8 @@ namespace PhiBasicTranslator.TranslateUtilities
                 pair.CoreCode = new List<string>
                 {
                     name + Defs.VariableSet,
-                    ASMx86_16BIT.replaceLoopContent
+                    ASMx86_16BIT.replaceLoopContent,
+                    "   ret" // without this the loop falls through into whatever follows it
                 };
 
                 if (instrct.BuildPairs.Count > 0)

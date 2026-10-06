@@ -1,0 +1,25 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Math:OS
+{
+	int w: 3;
+	int i: 4;
+	int x: (6 + (i * 7 / (w * 2)) - 5);
+
+	if x is 5
+		log 'nested ';
+	;;
+
+	int y: 10 - 4;
+	if y is 6
+		log 'sub ';
+	;;
+
+	int z: 17 % 5;
+	if z is 2
+		log 'mod';
+	;;
+}

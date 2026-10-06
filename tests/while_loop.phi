@@ -1,0 +1,14 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Loop:OS
+{
+
+	while int i: 0; i < 5; i++;
+		log '*';
+	;;
+
+	log ' done';
+}

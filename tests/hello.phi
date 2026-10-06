@@ -1,0 +1,7 @@
+phi.Hello:Bootloader
+{
+	str hello: 'Hello, World!\r\n';
+
+	log hello;
+	log 'PHI boots';
+}
