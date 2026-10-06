@@ -720,8 +720,6 @@ namespace Phi.Compiler.Semantics
                     return log;
 
                 case AskStmt ask:
-                    if (scope.Unit == UnitKind.Kernel)
-                        Error(ask.Span, "ask reads the keyboard through the BIOS, which a 32-bit kernel can't use (a keyboard driver comes in Phase 4)");
                     BindExpr(ask.Target, scope);
                     if (!ask.Target.Type.IsError && (!ask.Target.Type.IsString || ask.Target.Symbol is not VariableSymbol))
                         Error(ask.Target.Span, "ask needs a str variable to store the answer in, like: str name:[40]; ask name;");
@@ -944,8 +942,10 @@ namespace Phi.Compiler.Semantics
 
                     if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
                     {
-                        Error(call.CalleeSpan, $"{builtin.Name} isn't available in a {UnitName(scope.Unit)} yet " +
-                                               "(it relies on the BIOS, which 32-bit code can't use; see Plan.md)");
+                        string why = scope.Unit == UnitKind.Kernel
+                            ? "it needs the BIOS or graphics mode, which a 32-bit kernel doesn't have yet"
+                            : "it needs the 32-bit kernel's drivers; make the program a phi.Name:Kernel";
+                        Error(call.CalleeSpan, $"{builtin.Name} isn't available in the {UnitName(scope.Unit)} ({why})");
                         return;
                     }
 

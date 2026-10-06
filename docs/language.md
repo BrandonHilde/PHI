@@ -184,7 +184,7 @@ Simple statements end with `;`. Blocks (`if`, `else`, `while`, `unsafe`) end wit
 ```phi
 log 'Score: ' score '\r\n';     # screen and serial port (COM1)
 debug 'x = ' x '\n';            # serial port only: handy while developing
-ask name;                       # read a line from the keyboard into a str (16-bit only, for now)
+ask name;                       # read a line from the keyboard into a str
 exit 0;                         # stop QEMU (used by tests); halts on real hardware
 ```
 
@@ -356,7 +356,7 @@ A method named after an event runs when that event happens:
 ```
 
 Events interrupt the main program, so they should be short. Every register is saved and
-restored around them.
+restored around them. They work the same in 16-bit programs and 32-bit kernels.
 
 ### Interrupt handlers
 
@@ -374,8 +374,9 @@ call OS.UnmaskIrq: 1;
 ```
 
 An `[isr Name]` method saves and restores every register and returns with `iret`. It
-can't take parameters or return a value, and can't be called with `call`. In the BIOS's
-setup, IRQ 0–7 are vectors `0x08`–`0x0F` and IRQ 8–15 are `0x70`–`0x77`.
+can't take parameters or return a value, and can't be called with `call`. In a 16-bit
+program (the BIOS's setup), IRQ 0–7 are vectors `0x08`–`0x0F` and IRQ 8–15 are
+`0x70`–`0x77`; in a 32-bit kernel IRQ n is vector `32 + n` (see below).
 
 ## Assembly blocks
 
@@ -416,38 +417,58 @@ and the classes of used files run before the classes that use them.
 |---|---|
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
+| `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 
 ## Built-in functions
 
-Call them like methods. Those marked → return a value (`call x is OS.GetKey;`).
-
-"Where" is which code can use the function. **None of these work in a 32-bit kernel yet**:
-they use the BIOS or the real-mode interrupt table, and their protected-mode versions
-come with the drivers of Phase 4. A 32-bit kernel can still use ports (`in`/`out`),
-pointers and `asm.` blocks directly.
+Call them like methods. Those marked → return a value (`call x is OS.GetKey;`). "Where"
+says which kind of program has them; the 16-bit versions use the BIOS, the 32-bit ones
+are drivers in [lib/x86_32](../lib/x86_32).
 
 | Function | Where | What it does |
 |---|---|---|
-| `Bootloader.JumpToSectorTwo` | boot sector only | load the OS classes from disk and start them |
-| `Bootloader.WaitForKeyPress` → | 16-bit | wait for a key (through the BIOS) and return its character |
+| `Bootloader.JumpToSectorTwo` | 16-bit boot sector | load the OS classes from disk and start them |
+| `Bootloader.WaitForKeyPress` → | both | wait for a key and return its character |
 | `Bootloader.EnableVideoMode` | 16-bit | switch to 320×200 graphics with 256 colors |
-| `OS.SetupInteruptTimer` | 16-bit | run `[OS.TimerEvent]` 60 times a second |
-| `OS.SetupKeyboardInterupt` | 16-bit | track keys and run `[OS.KeyboardEvent]` (the BIOS keyboard, `ask` and `WaitForKeyPress` stop working) |
-| `OS.GetKey` → | 16-bit | the character of the last key pressed or released |
-| `OS.IsKeyDown: key` → | 16-bit | 1 if the key (e.g. `'w'`) is held down |
-| `OS.SetupMouse` | 16-bit | turn on the PS/2 mouse |
-| `OS.UpdateMouse` | 16-bit | read waiting mouse movement (the functions below do this too) |
-| `OS.GetMouseX` → / `OS.GetMouseY` → | 16-bit | cursor position (0–310, 0–190) |
-| `OS.GetMouseDown` → / `OS.GetMouseUp` → | 16-bit | left button state |
+| `OS.SetupInteruptTimer` | both | run `[OS.TimerEvent]` 60 times a second |
+| `OS.GetTicks` → | 32-bit | milliseconds since the timer started |
+| `OS.Sleep: ms` | 32-bit | wait (other interrupts keep running) |
+| `OS.SetupKeyboardInterupt` | both | track keys and run `[OS.KeyboardEvent]` on every press and release (in 16-bit programs the BIOS keyboard, `ask` and `WaitForKeyPress` stop working) |
+| `OS.GetKey` → | both | the character of the last key pressed or released |
+| `OS.IsKeyDown: key` → | both | 1 if the key (e.g. `'w'`) is held down |
+| `OS.ReadKey` → | 32-bit | wait for a key press and return its character (Shift gives capitals and symbols) |
+| `OS.KeyAvailable` → | 32-bit | 1 if `ReadKey` has a character waiting |
+| `OS.SetupMouse` | both | turn on the PS/2 mouse |
+| `OS.UpdateMouse` | both | read waiting mouse movement (the functions below do this too) |
+| `OS.GetMouseX` → / `OS.GetMouseY` → | both | cursor position (0–310, 0–190) |
+| `OS.GetMouseDown` → / `OS.GetMouseUp` → | both | left button state |
 | `OS.DrawRectangle: x y width height color` | 16-bit | fill a rectangle (clipped to the screen) |
 | `OS.DrawPixel: x y color` | 16-bit | set one pixel |
-| `OS.SetInterruptHandler: vector handler` | 16-bit | run an `[isr]` method for an interrupt vector |
-| `OS.EndOfInterrupt: irq` | 16-bit | acknowledge a hardware interrupt (IRQ 0–15) |
-| `OS.UnmaskIrq: irq` / `OS.MaskIrq: irq` | 16-bit | let a hardware interrupt through, or block it |
-| `OS.EnableInterrupts` / `OS.DisableInterrupts` | 16-bit | `sti` / `cli` |
+| `OS.SetInterruptHandler: vector handler` | both | run an `[isr]` method for an interrupt vector |
+| `OS.SetIrqHandler: irq handler` | 32-bit | run an ordinary method for a hardware interrupt; end-of-interrupt is sent for you |
+| `OS.EndOfInterrupt: irq` | both | acknowledge a hardware interrupt (IRQ 0–15), from an `[isr]` |
+| `OS.UnmaskIrq: irq` / `OS.MaskIrq: irq` | both | let a hardware interrupt through, or block it |
+| `OS.EnableInterrupts` / `OS.DisableInterrupts` | both | `sti` / `cli` |
 
 `OS.SetupInterruptTimer` and `OS.SetupKeyboardInterrupt` (spelled correctly) also work.
-`WaitForKeyPress` and `EnableVideoMode` can be called with `OS.` too.
+`WaitForKeyPress` and `EnableVideoMode` can be called with `OS.` too. In a 32-bit kernel,
+`GetTicks`, `Sleep`, `ReadKey` and `ask` start the timer or keyboard driver themselves.
+
+### Interrupts in a 32-bit kernel
+
+Every kernel starts with an interrupt table and interrupts enabled. The interrupt
+controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the keyboard 33).
+
+- A **CPU exception** (dividing by zero, a bad memory access, an invalid instruction)
+  shows the **panic screen**: the exception's name and number, its error code, the
+  instruction address (`eip`) and every register, on a red screen and on COM1. Then the
+  CPU stops.
+- For a **hardware interrupt**, `call OS.SetIrqHandler: 1 addr KeyPressed;` runs an
+  ordinary method each time IRQ 1 fires and sends end-of-interrupt afterwards. The IRQ
+  is unmasked for you.
+- For full control, `call OS.SetInterruptHandler: vector addr Handler;` points a vector
+  straight at an `[isr]` method (which must call `OS.EndOfInterrupt` for hardware IRQs).
+  This is also how software interrupts (`int 0x80` in an `asm.` block) are handled.
 
 ## Not supported yet
 

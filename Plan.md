@@ -297,6 +297,31 @@ Goal: the kernel reacts to hardware and handles CPU errors instead of rebooting.
 **Done when:** you can type text and see it on screen, a clock ticks in the corner, and
 a test that divides by zero shows a panic screen instead of rebooting.
 
+**Status: done (2026-10-06).** Demo: `phi run samples/terminal.phi`.
+- [x] IDT with 256 gates, built at startup in every 32-bit kernel (`lib/x86_32/interrupts.asm`)
+- [x] Panic screen for exceptions 0-31: name, number, error code, `eip`, `cr2` for page faults,
+  all registers; red screen and COM1
+- [x] PIC remapped to vectors 32-47, all IRQs masked until a driver unmasks one; the shared IRQ
+  handler sends end-of-interrupt
+- [x] `OS.SetIrqHandler` (an ordinary method per IRQ), `OS.SetInterruptHandler` (an `[isr]` gate,
+  also for software interrupts), mask/unmask, enable/disable
+- [x] Drivers for 32-bit kernels behind the same built-ins as 16-bit programs, so programs don't
+  change: PIT timer at 1000 Hz (`[OS.TimerEvent]` still 60 Hz; new `OS.GetTicks`, `OS.Sleep`),
+  PS/2 keyboard with Shift and a key buffer (`OS.ReadKey`, `OS.KeyAvailable`), PS/2 mouse
+- [x] `ask` and `Bootloader.WaitForKeyPress` work in kernels through the keyboard driver; the console
+  handles backspace
+- [x] CMOS clock driver written in PHI: `lib/phi/drivers/rtc.phi` (works in both kinds of program)
+- [x] The keyboard, timer, mouse, `ask` and clock tests run in both modes; new tests for both panic
+  paths (divide error, general protection fault with its error code), `[isr]` software interrupts,
+  IRQ handlers, and `Sleep`/`GetTicks`
+- Differs from the plan:
+  - The timer, keyboard and mouse drivers are assembly, not PHI: they keep the built-in names
+    16-bit programs already use, and `ask` needs them from library code. The clock driver shows
+    a driver can be written in PHI.
+  - Serial output still polls rather than using interrupts: nothing needs buffered serial yet.
+  - Graphics (`DrawRectangle`) isn't available in kernels: setting the video mode needs the BIOS.
+    It comes with the framebuffer work in [Later](#later).
+
 ---
 
 ## Phase 5: Memory management

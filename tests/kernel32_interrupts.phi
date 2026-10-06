@@ -1,0 +1,35 @@
+phi.Interrupts:Kernel
+{
+	int calls: 0;
+	int keys: 0;
+	u8 lastScan: 0;
+
+	# a software interrupt into an [isr] method
+	call OS.SetInterruptHandler: 0x80 addr Syscall;
+	call RaiseSyscall;
+	call RaiseSyscall;
+	debug 'syscalls: ' calls '\n';
+
+	# an ordinary method for a hardware interrupt: the keyboard (IRQ 1)
+	call OS.SetIrqHandler: 1 addr KeyPressed;
+	debug 'ready\n';
+	while keys < 2
+	;;
+	debug 'last scan code ' lastScan '\n';
+	exit 0;
+
+	[isr Syscall]
+		calls++;
+	[end]
+
+	[KeyPressed]
+		lastScan is in 0x60;
+		keys++;
+	[end]
+}
+
+asm.RaiseSyscall
+{
+	int 0x80
+	ret
+}

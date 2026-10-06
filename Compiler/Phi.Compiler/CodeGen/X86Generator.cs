@@ -64,6 +64,9 @@ namespace Phi.Compiler.CodeGen
 
         string Build()
         {
+            // every 32-bit kernel gets an interrupt table, so exceptions show the panic screen
+            if (bits32) Need("phi_interrupts_init");
+
             // the program's own code first: it decides which library routines are needed
             foreach (ClassDecl cls in unit.Classes)
             {

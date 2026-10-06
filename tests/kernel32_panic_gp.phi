@@ -1,0 +1,12 @@
+phi.Crash:Kernel
+{
+	log 'loading a segment that does not exist\n';
+	call LoadBadSegment;
+}
+
+asm.LoadBadSegment
+{
+	mov ax, 0x98            ; GDT entry 19: the loader's GDT only has 3
+	mov ds, ax
+	ret
+}

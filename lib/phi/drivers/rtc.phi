@@ -1,0 +1,68 @@
+# The real-time clock (CMOS RTC), written in PHI. Works in 16-bit programs and
+# 32-bit kernels.
+#
+#   use drivers.rtc;
+#   call Rtc.Read;
+#   log Rtc.hour ':' Rtc.minute ':' Rtc.second;
+#
+# QEMU's clock is the host's time, in UTC.
+
+phi.Rtc:Library
+{
+	const u16 CMOS_INDEX: 0x70;
+	const u16 CMOS_DATA: 0x71;
+
+	int second: 0;
+	int minute: 0;
+	int hour: 0;
+	int day: 0;
+	int month: 0;
+	int year: 0;
+
+	[ReadRegister: u8 register: 0;]
+		out CMOS_INDEX register;
+	[end: in CMOS_DATA]
+
+	# fill in the fields above with the current date and time
+	[Read]
+		# wait for any update in progress to finish, so the values belong together
+		u8 status: 0x80;
+		while status & 0x80
+			call status is ReadRegister: 0x0A;
+		;;
+
+		call second is ReadRegister: 0x00;
+		call minute is ReadRegister: 0x02;
+		call hour is ReadRegister: 0x04;
+		call day is ReadRegister: 0x07;
+		call month is ReadRegister: 0x08;
+		call year is ReadRegister: 0x09;
+
+		u8 format: 0;
+		call format is ReadRegister: 0x0B;
+		bln pm: hour & 0x80;
+		hour is hour & 0x7F;
+
+		# usually the values are binary-coded decimal: 0x59 means 59
+		if (format & 4) is 0
+			second is (second & 0x0F) + (second >> 4) * 10;
+			minute is (minute & 0x0F) + (minute >> 4) * 10;
+			hour is (hour & 0x0F) + (hour >> 4) * 10;
+			day is (day & 0x0F) + (day >> 4) * 10;
+			month is (month & 0x0F) + (month >> 4) * 10;
+			year is (year & 0x0F) + (year >> 4) * 10;
+		;;
+
+		# a 12-hour clock: 12 AM is 0, 1 PM is 13
+		if (format & 2) is 0
+			if hour is 12
+				hour is 0;
+			;;
+			if pm
+				hour++ 12;
+			;;
+		;;
+
+		year++ 2000;
+	[end]
+}

@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Ticks:OS
+phi.Ticks:Library
 {
 	int ticks: 0;
 

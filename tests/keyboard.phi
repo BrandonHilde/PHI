@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Keys:OS
+phi.Keys:Library
 {
 	int presses: 0;
 

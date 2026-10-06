@@ -1,0 +1,10 @@
+use drivers.rtc;
+
+phi.Clock:Library
+{
+	call Rtc.Read;
+	debug 'year ok: ' (Rtc.year >= 2024 and Rtc.year < 2100) '\n';
+	debug 'date ok: ' (Rtc.month >= 1 and Rtc.month <= 12 and Rtc.day >= 1 and Rtc.day <= 31) '\n';
+	debug 'time ok: ' (Rtc.hour < 24 and Rtc.minute < 60 and Rtc.second < 60) '\n';
+	exit 0;
+}

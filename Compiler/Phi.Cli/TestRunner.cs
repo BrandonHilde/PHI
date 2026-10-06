@@ -113,6 +113,23 @@ namespace Phi.Cli
             string? expected = File.Exists(expectedFile) ? Normalize(File.ReadAllText(expectedFile)) : null;
             string[]? input = File.Exists(inputFile) ? File.ReadAllLines(inputFile) : null;
 
+            // NAME.contains: each line must appear somewhere in the output (for output that
+            // changes from build to build, like addresses on a panic screen)
+            string containsFile = Path.Combine(dir, name + ".contains");
+            if (File.Exists(containsFile))
+            {
+                var lines = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();
+                HeadlessResult partial = Qemu.RunHeadless(build.ImagePath, timeout,
+                    output => lines.All(l => Normalize(output).Contains(l)), input);
+                string text = Normalize(partial.Serial);
+                var missing = lines.Where(l => !text.Contains(l)).ToList();
+                if (missing.Count == 0 && partial.InputError == null) return null;
+
+                File.WriteAllText(actualFile, text);
+                string why = partial.InputError ?? "missing from the output: " + string.Join(" | ", missing);
+                return $"{why}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{text}";
+            }
+
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
                 expected == null ? null : output => Normalize(output).Contains(expected), input);
 

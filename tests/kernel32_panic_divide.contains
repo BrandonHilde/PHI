@@ -1,0 +1,5 @@
+about to divide by zero
+PHI KERNEL PANIC
+Divide error (exception 0)
+error code: 0x00000000
+eax: 0x0000000A

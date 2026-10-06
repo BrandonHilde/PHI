@@ -1,9 +1,4 @@
-phi.Boot:Bootloader
-{
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.Mouse:OS
+phi.Mouse:Library
 {
 	int x: 0;
 	int y: 0;

@@ -63,15 +63,32 @@ namespace Phi.Compiler.Tests
             AssertError("phi.K:Kernel\n{\n}\nphi.B:Bootloader\n{\n}\n", "is 16-bit code");
 
         [Fact]
-        public void AskNeedsTheBios() =>
-            AssertError("phi.K:Kernel\n{\n str s: [5];\n ask s;\n}\n", "can't use");
+        public void AskUsesTheKeyboardDriver()
+        {
+            string asm = Compile("phi.K:Kernel\n{\n str s: [5];\n ask s;\n}\n").Units[0].Text;
+            Assert.Contains("phi_keyboard_irq:", asm);
+        }
+
+        [Fact]
+        public void EveryKernelHasAnInterruptTableAndPanicScreen()
+        {
+            string asm = Compile("phi.K:Kernel\n{\n}\n").Units[0].Text;
+            Assert.Contains("call phi_interrupts_init", asm);
+            Assert.Contains("lidt", asm);
+            Assert.Contains("phi_panic:", asm);
+        }
 
         [Theory]
         [InlineData("OS.DrawPixel: 1 2 3")]
-        [InlineData("Bootloader.WaitForKeyPress")]
-        [InlineData("OS.SetupKeyboardInterupt")]
-        public void BiosBuiltinsArentAvailableIn32Bit(string call) =>
-            AssertError($"phi.K:Kernel\n{{\n call {call};\n}}\n", "isn't available in a 32-bit kernel");
+        [InlineData("Bootloader.EnableVideoMode")]
+        public void GraphicsArentAvailableIn32BitYet(string call) =>
+            AssertError($"phi.K:Kernel\n{{\n call {call};\n}}\n", "isn't available in the 32-bit kernel");
+
+        [Theory]
+        [InlineData("OS.GetTicks")]
+        [InlineData("OS.SetIrqHandler: 1 0")]
+        public void SomeBuiltinsAreOnlyIn32Bit(string call) =>
+            AssertError($"phi.B:Bootloader\n{{\n call {call};\n}}\n", "make the program a phi.Name:Kernel");
 
         [Fact]
         public void BootInfoIsInTheStandardLibrary()

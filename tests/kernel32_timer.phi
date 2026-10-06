@@ -1,0 +1,24 @@
+phi.Clock:Kernel
+{
+	u32 before: 0;
+	u32 after: 0;
+	int events: 0;
+
+	call before is OS.GetTicks;
+	call OS.Sleep: 250;
+	call after is OS.GetTicks;
+	debug 'slept 250 ms: ' (after - before >= 250 and after - before < 400) '\n';
+
+	# the timer event still runs 60 times a second
+	events is 0;
+	call before is OS.GetTicks;
+	while events < 60
+	;;
+	call after is OS.GetTicks;
+	debug '60 events in about a second: ' (after - before >= 900 and after - before < 1200) '\n';
+	exit 0;
+
+	[OS.TimerEvent]
+		events++;
+	[end]
+}

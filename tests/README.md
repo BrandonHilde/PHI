@@ -29,6 +29,9 @@ Two optional files change what a test does:
   | `type TEXT` | press the keys for TEXT |
   | anything else | a QEMU monitor command, e.g. `sendkey ret`, `mouse_move 10 -5`, `mouse_button 1` |
 
+- **`NAME.contains`** replaces `.expected` when the output changes from build to build
+  (like addresses on a panic screen): each line must appear somewhere in the output.
+
 - **`NAME.errors`** means the program must *fail* to compile. Each line is text that must
   appear in one of the errors, such as `4:6: error: unknown name 'missing'`.
 

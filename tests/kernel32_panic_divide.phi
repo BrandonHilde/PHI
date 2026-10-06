@@ -1,0 +1,7 @@
+phi.Crash:Kernel
+{
+	int zero: 0;
+	log 'about to divide by zero\n';
+	int x: 10 / zero;
+	log 'not reached\n';
+}

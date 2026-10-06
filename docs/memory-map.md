@@ -51,7 +51,9 @@ protected mode with nothing else running.
    - every segment register flat (base 0, limit 4 GB)
    - `esp` = `0x9F000`
    - `ebx` = `0x9000` (the BootInfo address)
-   - **interrupts disabled**, with no interrupt table yet (Phase 4 adds one)
+   - interrupts disabled; before running your code, the kernel's startup sets up an
+     interrupt table, remaps the interrupt controllers (IRQ n becomes vector 32 + n,
+     every IRQ masked until a driver unmasks it), and enables interrupts
 
 | Address | Contents |
 |---|---|
@@ -60,7 +62,7 @@ protected mode with nothing else running.
 | `0x07E00`–`0x08DFF` | stage 2 and its GDT (the GDT is still in use) |
 | `0x09000`–`0x0903F` | BootInfo |
 | `0x09040`–`0x0963F` | memory map: up to 64 `MemoryRegion`s of 24 bytes |
-| `0x10000`–`0x8FFFF` | the kernel: code, then variables |
+| `0x10000`–`0x8FFFF` | the kernel: code, then variables (including the 2 KB interrupt table) |
 | `0x90000`–`0x9EFFF` | the kernel stack (grows down from `0x9F000`) |
 | `0x9FC00`–`0x9FFFF` | BIOS extended data area (reserved) |
 | `0xA0000`–`0xFFFFF` | video memory and BIOS ROM (`0xB8000` is the text screen) |

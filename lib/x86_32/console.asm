@@ -1,14 +1,13 @@
-; provides: phi_print phi_console_putc
+; provides: phi_print phi_console_putc phi_console_clear phi_console_color
 ; requires: phi_serial_putc
 ; init: phi_console_init
 ;
 ; Text output for 32-bit kernels, without the BIOS: writes to the VGA text
-; screen at 0xB8000 (80x25, light gray on black) and to COM1. \n starts a new
-; line, \r goes back to the start of the line; the screen scrolls at the bottom.
+; screen at 0xB8000 (80x25) and to COM1. \n starts a new line, \r goes back to
+; the start of the line, \b steps back and erases; the screen scrolls at the bottom.
 CONSOLE_VGA    equ 0xB8000
 CONSOLE_COLS   equ 80
 CONSOLE_ROWS   equ 25
-CONSOLE_COLOR  equ 0x07
 CONSOLE_INFO   equ 0x9000       ; BootInfo: the loader saved the BIOS's cursor there
 
 ; carry on below the BIOS's messages
@@ -17,6 +16,20 @@ phi_console_init:
     mov [phi_console_row], eax
     mov eax, [CONSOLE_INFO + 20]
     mov [phi_console_col], eax
+    ret
+
+; fill the screen with spaces in the current color and go to the top left
+phi_console_clear:
+    pushad
+    mov edi, CONSOLE_VGA
+    mov ah, [phi_console_color]
+    mov al, ' '
+    mov ecx, CONSOLE_COLS * CONSOLE_ROWS
+    rep stosw
+    mov dword [phi_console_row], 0
+    mov dword [phi_console_col], 0
+    call phi_console_move_cursor
+    popad
     ret
 
 ; print the zero-terminated string at esi
@@ -37,11 +50,11 @@ phi_console_putc:
     je .newline
     cmp al, 13
     je .return
+    cmp al, 8
+    je .backspace
 
-    mov ebx, [phi_console_row]
-    imul ebx, ebx, CONSOLE_COLS
-    add ebx, [phi_console_col]
-    mov ah, CONSOLE_COLOR
+    call phi_console_cell
+    mov ah, [phi_console_color]
     mov [CONSOLE_VGA + ebx * 2], ax
     inc dword [phi_console_col]
     cmp dword [phi_console_col], CONSOLE_COLS
@@ -58,16 +71,37 @@ phi_console_putc:
     mov edi, CONSOLE_VGA
     mov ecx, CONSOLE_COLS * (CONSOLE_ROWS - 1)
     rep movsw
-    mov ax, (CONSOLE_COLOR << 8) | ' '
+    mov ah, [phi_console_color]
+    mov al, ' '
     mov ecx, CONSOLE_COLS
     rep stosw
     mov dword [phi_console_row], CONSOLE_ROWS - 1
+    jmp .cursor
+
+.backspace:
+    cmp dword [phi_console_col], 0
+    je .cursor
+    dec dword [phi_console_col]
+    call phi_console_cell
+    mov ah, [phi_console_color]
+    mov al, ' '
+    mov [CONSOLE_VGA + ebx * 2], ax
 
 .cursor:
-    ; move the hardware cursor (CRT controller registers 0x0E and 0x0F)
+    call phi_console_move_cursor
+    popad
+    ret
+
+; ebx = index of the cursor's cell
+phi_console_cell:
     mov ebx, [phi_console_row]
     imul ebx, ebx, CONSOLE_COLS
     add ebx, [phi_console_col]
+    ret
+
+; move the hardware cursor (CRT controller registers 0x0E and 0x0F)
+phi_console_move_cursor:
+    call phi_console_cell
     mov dx, 0x3D4
     mov al, 0x0F
     out dx, al
@@ -80,8 +114,8 @@ phi_console_putc:
     inc dx
     mov al, bh
     out dx, al
-    popad
     ret
 
-phi_console_row: dd 0
-phi_console_col: dd 0
+phi_console_row:   dd 0
+phi_console_col:   dd 0
+phi_console_color: db 0x07       ; light gray on black
