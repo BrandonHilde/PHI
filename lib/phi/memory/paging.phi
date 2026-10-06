@@ -1,0 +1,60 @@
+# Paging for 32-bit kernels: every address maps to the same physical address
+# (identity mapping), but only memory that exists is mapped.
+#
+#   use memory.paging;
+#
+# - the first 4 MB is mapped in 4 KB pages, except page 0, so following a null
+#   pointer is a page fault instead of quietly reading memory at address 0
+# - the rest of RAM is mapped in 4 MB pages
+# - anything past the end of RAM (or a null pointer) stops the kernel with the
+#   panic screen, which shows the address in cr2
+
+use memory.frames;
+
+phi.Paging:Kernel
+{
+	const u32 PAGE_PRESENT: 1;
+	const u32 PAGE_WRITABLE: 2;
+	const u32 PAGE_LARGE: 0x80;          # a 4 MB page (needs CR4.PSE)
+	const u32 PAGE_SIZE: 4096;
+	const u32 LARGE_PAGE_SIZE: 0x400000;
+
+	ptr<u32> page_directory: 0;
+	ptr<u32> low_table: 0;               # the first 4 MB
+	u32 mapped_bytes: 0;
+
+	call Init;
+
+	[Init]
+		call page_directory is Frames.Alloc;
+		call low_table is Frames.Alloc;
+
+		while u32 i: 0; i < 1024; i++;
+			page_directory:i is 0;
+			low_table:i is (i * PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE;
+		;;
+		low_table:0 is 0;                # page 0 stays unmapped: null pointers fault
+
+		page_directory:0 is low_table | PAGE_PRESENT | PAGE_WRITABLE;
+		u32 large: (Frames.memory_top + LARGE_PAGE_SIZE - 1) / LARGE_PAGE_SIZE;
+		while u32 j: 1; j < large; j++;
+			page_directory:j is (j * LARGE_PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE | PAGE_LARGE;
+		;;
+		mapped_bytes is large * LARGE_PAGE_SIZE;
+
+		call EnablePaging;
+	[end]
+}
+
+asm.EnablePaging
+{
+	mov eax, [{page_directory}]
+	mov cr3, eax
+	mov eax, cr4
+	or eax, 0x10                ; PSE: allow 4 MB pages
+	mov cr4, eax
+	mov eax, cr0
+	or eax, 0x80000000          ; PG: paging on
+	mov cr0, eax
+	ret
+}

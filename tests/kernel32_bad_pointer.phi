@@ -1,0 +1,9 @@
+use memory.paging;
+
+phi.Test:Kernel
+{
+	# QEMU's machine has 128 MB; 512 MB is past the end of RAM
+	ptr<u8> nowhere: 0x20000000;
+	log 'writing past the end of memory\n';
+	nowhere:0 is 1;
+}

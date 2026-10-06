@@ -1,0 +1,73 @@
+# A growable list of u32 values on the heap (32-bit kernels).
+#
+#   use memory.list;
+#   ptr<ListData> numbers: 0;
+#   call numbers is List.New;
+#   call List.Add: numbers 42;
+#   u32 first: 0;
+#   call first is List.Get: numbers 0;
+#   log numbers:0.count;
+#   call List.Delete: numbers;
+#
+# Get and Set stop the kernel with a message if the index is outside the list.
+# The values can be anything that fits in 32 bits, including pointers.
+
+use memory.heap;
+
+struct.ListData
+{
+	ptr<u32> items;
+	u32 count;
+	u32 capacity;
+}
+
+phi.List:Kernel
+{
+	const u32 FIRST_CAPACITY: 8;
+
+	[New]
+		ptr<ListData> list: new ListData;
+		list:0.capacity is FIRST_CAPACITY;
+		list:0.items is new u32[FIRST_CAPACITY];
+	[end: list]
+
+	[Add: ptr<ListData> list: 0; u32 value: 0;]
+		# full: move everything to a buffer twice the size
+		if list:0.count is list:0.capacity
+			ptr<u32> bigger: new u32[list:0.capacity * 2];
+			ptr<u32> old: list:0.items;
+			while u32 i: 0; i < list:0.count; i++;
+				bigger:i is old:i;
+			;;
+			free old;
+			list:0.items is bigger;
+			list:0.capacity is list:0.capacity * 2;
+		;;
+		ptr<u32> items: list:0.items;
+		items:(list:0.count) is value;
+		list:0.count++;
+	[end]
+
+	[Get: ptr<ListData> list: 0; u32 index: 0;]
+		call Check: list index;
+		ptr<u32> items: list:0.items;
+	[end: items:index]
+
+	[Set: ptr<ListData> list: 0; u32 index: 0; u32 value: 0;]
+		call Check: list index;
+		ptr<u32> items: list:0.items;
+		items:index is value;
+	[end]
+
+	[Delete: ptr<ListData> list: 0;]
+		free list:0.items;
+		free list;
+	[end]
+
+	[Check: ptr<ListData> list: 0; u32 index: 0;]
+		if index >= list:0.count
+			log '\nPHI: list index ' index ' is outside a list of ' list:0.count '\n';
+			call HeapHalt;
+		;;
+	[end]
+}

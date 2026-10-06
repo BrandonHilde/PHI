@@ -1,0 +1,14 @@
+use memory.paging;
+
+struct.Task
+{
+	u32 id;
+	u32 state;
+}
+
+phi.Test:Kernel
+{
+	ptr<Task> task: 0;
+	log 'reading through a null pointer\n';
+	log task:0.state;
+}

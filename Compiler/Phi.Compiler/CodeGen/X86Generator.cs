@@ -359,6 +359,10 @@ namespace Phi.Compiler.CodeGen
                     Emit(o.Size switch { 1 => "out dx, al", 2 => "out dx, ax", _ => "out dx, eax" });
                     break;
 
+                case FreeStmt f:
+                    EmitHeapCall(f.Releaser!, f.Pointer);
+                    break;
+
                 case UnsafeStmt u:
                     unsafeDepth++;
                     foreach (Stmt s in u.Body) EmitStatement(s);
@@ -529,6 +533,13 @@ namespace Phi.Compiler.CodeGen
                     if (call.ResultTarget != null) EmitStoreResult(call.ResultTarget, PhiType.Int);
                     break;
             }
+        }
+
+        /// <summary>Calls a one-parameter heap method (Heap.Alloc or Heap.Free) with a value.</summary>
+        void EmitHeapCall(MethodSymbol method, Expr argument)
+        {
+            EmitAssign(NameOf(method.Parameters[0]), argument);
+            Emit($"call {method.Label}");
         }
 
         /// <summary>Stores a call result (in eax) into a variable.</summary>
@@ -821,6 +832,10 @@ namespace Phi.Compiler.CodeGen
 
                 case AddrExpr addr:
                     EmitAddress(addr);
+                    break;
+
+                case NewExpr n:
+                    EmitHeapCall(n.Allocator!, n.Bytes); // the address comes back in eax
                     break;
 
                 case InExpr input:

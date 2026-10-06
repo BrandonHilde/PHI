@@ -16,7 +16,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> ReservedWords = new(TypeKeywords)
         {
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
-            "out", "outw", "outd", "in", "inw", "ind", "addr",
+            "out", "outw", "outd", "in", "inw", "ind", "addr", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr",
             "phi", "asm", "arm", "struct", "use", "const",
         };
@@ -422,6 +422,13 @@ namespace Phi.Compiler.Syntax
                         ExpectSemicolon();
                         int size = start.Text == "out" ? 1 : start.Text == "outw" ? 2 : 4;
                         return new OutStmt { Size = size, Port = port, Value = value, Span = start.Span.To(Previous.Span) };
+                    }
+                    case "free":
+                    {
+                        Advance();
+                        Expr pointer = ParseExpression();
+                        ExpectSemicolon();
+                        return new FreeStmt { Pointer = pointer, Span = start.Span.To(Previous.Span) };
                     }
                     case "unsafe":
                     {
@@ -830,6 +837,21 @@ namespace Phi.Compiler.Syntax
                     _ => UnaryOp.Not,
                 };
                 return new UnaryExpr { Op = op, Operand = operand, Span = t.Span.To(operand.Span) };
+            }
+
+            if (AtWord("new"))
+            {
+                Advance();
+                TypeRef type = ParseType();
+                Expr? count = null;
+                Span end = type.Span;
+                if (At(TokenKind.OpenBracket) && !Current.StartsLine)
+                {
+                    Advance();
+                    count = ParseExpression();
+                    end = Expect(TokenKind.CloseBracket, "']'").Span;
+                }
+                return new NewExpr { ElementType = type, Count = count, Span = t.Span.To(end) };
             }
 
             if (AtWord("addr"))

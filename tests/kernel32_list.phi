@@ -1,0 +1,29 @@
+use memory.list;
+
+phi.Test:Kernel
+{
+	ptr<ListData> numbers: 0;
+	call numbers is List.New;
+
+	while u32 i: 0; i < 1000; i++;
+		call List.Add: numbers i * 3;
+	;;
+	debug 'count: ' numbers:0.count ' capacity: ' numbers:0.capacity '\n';
+
+	u32 last: 0;
+	call last is List.Get: numbers 999;
+	call List.Set: numbers 0 7;
+	u32 first: 0;
+	call first is List.Get: numbers 0;
+	debug 'last: ' last ' first: ' first '\n';
+
+	call List.Delete: numbers;
+	debug 'heap empty again: ' (Heap.used_blocks is 0) '\n';
+
+	ptr<ListData> small: 0;
+	call small is List.New;
+	call List.Add: small 1;
+	u32 oops: 0;
+	call oops is List.Get: small 5;
+	debug 'not reached\n';
+}

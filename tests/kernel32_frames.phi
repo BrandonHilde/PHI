@@ -1,0 +1,40 @@
+use memory.frames;
+
+phi.Test:Kernel
+{
+	u32 frames[1000];
+	u32 before: Frames.free_frames;
+
+	debug 'usable at least 120 MB: ' (Frames.total_frames * 4 / 1024 >= 120) '\n';
+
+	u32 first: 0;
+	call first is Frames.Alloc;
+	debug 'first frame above 1 MB: ' (first >= 0x100000) '\n';
+	debug 'aligned: ' ((first & 4095) is 0) '\n';
+	call Frames.Free: first;
+
+	# a thousand frames, all different, then all given back
+	bln distinct: true;
+	while int i: 0; i < 1000; i++;
+		call frames:i is Frames.Alloc;
+		if i > 0 and frames:i is frames:(i - 1)
+			distinct is false;
+		;;
+	;;
+	debug 'distinct: ' distinct '\n';
+	debug 'counted: ' (Frames.free_frames is before - 1000) '\n';
+	while int j: 0; j < 1000; j++;
+		call Frames.Free: frames:j;
+	;;
+	debug 'all returned: ' (Frames.free_frames is before) '\n';
+
+	# a contiguous run
+	u32 run: 0;
+	call run is Frames.AllocContiguous: 16;
+	debug 'run of 16: ' (run is not 0 and (run & 4095) is 0) '\n';
+	while int k: 0; k < 16; k++;
+		call Frames.Free: run + k * 4096;
+	;;
+	debug 'run returned: ' (Frames.free_frames is before) '\n';
+	exit 0;
+}

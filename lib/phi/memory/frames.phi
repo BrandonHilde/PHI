@@ -1,0 +1,152 @@
+# Physical memory, in 4 KB frames (32-bit kernels).
+#
+#   use memory.frames;
+#   u32 frame: 0;
+#   call frame is Frames.Alloc;          # 0 when memory runs out
+#   call Frames.Free: frame;
+#
+# At startup this reads the BIOS memory map (boot.info) and keeps a bitmap with
+# one bit per frame: 1 = in use. Everything below 1 MB stays reserved (the
+# kernel, its stack, the BIOS and video memory live there). The bitmap itself
+# sits at 1 MB.
+
+use boot.info;
+
+phi.Frames:Kernel
+{
+	const u32 FRAME_SIZE: 4096;
+	const u32 BITMAP_ADDRESS: 0x100000;
+
+	ptr<u8> frame_bitmap: BITMAP_ADDRESS;
+	u32 frame_count: 0;     # frames tracked: up to the end of usable RAM
+	u32 total_frames: 0;    # frames that were free at startup
+	u32 free_frames: 0;
+	u32 memory_top: 0;      # the end of usable RAM, in bytes
+	u32 next_search: 0;     # the frame where the next search starts
+
+	call Init;
+
+	[Init]
+		ptr<BootInfo> boot: Boot.info;
+		ptr<MemoryRegion> regions: boot:0.regions;
+
+		# how far does usable memory go?
+		while int i: 0; i < boot:0.region_count; i++;
+			ptr<MemoryRegion> r: regions + i * 24;
+			if r:0.type is Boot.MEMORY_USABLE and r:0.base_high is 0
+				u32 limit: r:0.base + r:0.length;
+				if limit < r:0.base or r:0.length_high is not 0
+					limit is 0xFFFFF000;     # the region reaches past 4 GB
+				;;
+				if limit > memory_top
+					memory_top is limit;
+				;;
+			;;
+		;;
+
+		frame_count is memory_top / FRAME_SIZE;
+		u32 bitmap_bytes: (frame_count + 7) / 8;
+		u32 reserved_until: BITMAP_ADDRESS + bitmap_bytes;
+
+		# everything starts in use; then the usable regions are given back
+		while u32 b: 0; b < bitmap_bytes; b++;
+			frame_bitmap:b is 0xFF;
+		;;
+
+		while int j: 0; j < boot:0.region_count; j++;
+			ptr<MemoryRegion> region: regions + j * 24;
+			if region:0.type is Boot.MEMORY_USABLE and region:0.base_high is 0
+				u32 first: (region:0.base + FRAME_SIZE - 1) / FRAME_SIZE;
+				u32 last: (region:0.base + region:0.length) / FRAME_SIZE;
+				if last > frame_count
+					last is frame_count;
+				;;
+				while u32 f: first; f < last; f++;
+					if f * FRAME_SIZE >= reserved_until
+						call MarkFree: f;
+						total_frames++;
+					;;
+				;;
+			;;
+		;;
+		free_frames is total_frames;
+	[end]
+
+	# the address of a free frame, now marked in use; 0 if there are none
+	[Alloc]
+		u32 found: 0;
+		u32 byteCount: (frame_count + 7) / 8;
+		u32 start: next_search / 8;
+
+		# skip whole bytes of used frames; look at most once around the bitmap
+		while u32 n: 0; n < byteCount and found is 0; n++;
+			u32 index: (start + n) % byteCount;
+			if frame_bitmap:index is not 0xFF
+				while u32 bit: 0; bit < 8 and found is 0; bit++;
+					u32 frame: index * 8 + bit;
+					if frame < frame_count and (frame_bitmap:index & (1 << bit)) is 0
+						frame_bitmap:index is frame_bitmap:index | (1 << bit);
+						free_frames--;
+						next_search is frame + 1;
+						found is frame * FRAME_SIZE;
+					;;
+				;;
+			;;
+		;;
+	[end: found]
+
+	# count frames in a row (for buffers that must be contiguous); 0 if there's no such run
+	[AllocContiguous: u32 count: 1;]
+		u32 runStart: 0;
+		u32 runLength: 0;
+		u32 result: 0;
+		while u32 f: 0; f < frame_count and result is 0; f++;
+			bln used: false;
+			call used is IsUsed: f;
+			if used
+				runLength is 0;
+			;;
+			else
+				if runLength is 0
+					runStart is f;
+				;;
+				runLength++;
+				if runLength is count
+					result is runStart * FRAME_SIZE;
+				;;
+			;;
+		;;
+		if result is not 0
+			while u32 k: 0; k < count; k++;
+				call MarkUsed: runStart + k;
+			;;
+			free_frames-- count;
+		;;
+	[end: result]
+
+	# give a frame back (an address from Alloc or AllocContiguous)
+	[Free: u32 address: 0;]
+		u32 frame: address / FRAME_SIZE;
+		bln used: false;
+		call used is IsUsed: frame;
+		if frame < frame_count and address >= BITMAP_ADDRESS and used
+			call MarkFree: frame;
+			free_frames++;
+		;;
+	[end]
+
+	[IsUsed: u32 frame: 0;]
+		bln used: true;
+		if frame < frame_count
+			used is (frame_bitmap:(frame >> 3) & (1 << (frame & 7))) is not 0;
+		;;
+	[end: used]
+
+	[MarkUsed: u32 frame: 0;]
+		frame_bitmap:(frame >> 3) is frame_bitmap:(frame >> 3) | (1 << (frame & 7));
+	[end]
+
+	[MarkFree: u32 frame: 0;]
+		frame_bitmap:(frame >> 3) is frame_bitmap:(frame >> 3) & ~(1 << (frame & 7));
+	[end]
+}

@@ -1,0 +1,7 @@
+blocks in use: 5000
+sum: 12497500
+blocks after free: 0 bytes: 0
+merged back: 1
+zeroed: 1
+too big gives 0: 1
+no frames leaked: 1

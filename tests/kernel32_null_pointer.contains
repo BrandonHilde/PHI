@@ -1,0 +1,4 @@
+reading through a null pointer
+PHI KERNEL PANIC
+Page fault (exception 14)
+address: 0x00000004

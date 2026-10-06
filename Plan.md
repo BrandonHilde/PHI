@@ -342,6 +342,25 @@ Goal: the kernel knows what memory it has and can allocate it safely.
 **Done when:** a test allocates and frees thousands of objects without leaking frames,
 and a deliberate bad pointer shows a page-fault message.
 
+**Status: done (2026-10-06).** All of it is written in PHI, in `lib/phi/memory/`.
+- [x] `memory.frames`: bitmap frame allocator from the E820 map (`Alloc`, `AllocContiguous`, `Free`),
+  with everything below 1 MB reserved
+- [x] `memory.paging`: identity paging (4 KB pages for the first 4 MB, 4 MB pages for the rest),
+  page 0 unmapped as a null guard, nothing mapped past RAM; only switching it on is an `asm.` block
+- [x] `memory.heap`: first-fit heap with splitting, merging of free neighbors, zeroed allocations,
+  and detection of bad or double frees
+- [x] `new T`, `new T[n]` and `free p;` in the language; a kernel that uses them gets the memory
+  library automatically
+- [x] `memory.list`: a growable list on the heap, with checked indexes
+- [x] Null pointers and addresses past RAM are page faults on the panic screen, with the address
+- [x] Tests: frames (1000 allocations, contiguous runs, nothing leaked), heap (5000 objects, merging,
+  zeroing, out-of-memory), paging (on, high memory works), null and bad pointers, lists
+- Differs from the plan:
+  - Null-pointer safety comes from the unmapped page 0 rather than a check before every pointer
+    use: it costs nothing and catches the same mistakes (plus any small offset from null).
+  - Dynamic strings aren't done; `memory.list` covers growable data for now. Strings that grow
+    want proper value semantics, which is a bigger language change.
+
 ---
 
 ## Phase 6: Storage and file system

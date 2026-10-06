@@ -1,0 +1,26 @@
+use memory.paging;
+
+phi.Test:Kernel
+{
+	u32 cr0: 0;
+	call cr0 is ReadCr0;
+	debug 'paging on: ' ((cr0 >> 31) is 1) '\n';
+	debug 'all of RAM mapped: ' (Paging.mapped_bytes >= Frames.memory_top) '\n';
+
+	# memory at 100 MB works like any other
+	ptr<u32> high: 100 * 1024 * 1024;
+	high:0 is 0x12345678;
+	debug 'high memory: ' (high:0 is 0x12345678) '\n';
+
+	# the text screen is still where it was
+	ptr<u16> vga: 0xB8000;
+	vga:0 is 0x0741;
+	debug 'vga: ' vga:0 '\n';
+	exit 0;
+}
+
+asm.ReadCr0
+{
+	mov eax, cr0
+	ret
+}

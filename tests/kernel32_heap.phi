@@ -1,0 +1,58 @@
+struct.Node
+{
+	u32 value;
+	ptr<Node> next;
+}
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+
+	# five thousand nodes in a linked list
+	ptr<Node> head: 0;
+	while u32 i: 0; i < 5000; i++;
+		ptr<Node> n: new Node;
+		n:0.value is i;
+		n:0.next is head;
+		head is n;
+	;;
+	debug 'blocks in use: ' Heap.used_blocks '\n';
+
+	u32 sum: 0;
+	ptr<Node> walk: head;
+	while walk is not 0
+		sum++ walk:0.value;
+		walk is walk:0.next;
+	;;
+	debug 'sum: ' sum '\n';
+
+	# free every node; the heap merges the blocks back into one
+	while head is not 0
+		ptr<Node> rest: head:0.next;
+		free head;
+		head is rest;
+	;;
+	debug 'blocks after free: ' Heap.used_blocks ' bytes: ' Heap.used_bytes '\n';
+	u32 largest: 0;
+	call largest is Heap.LargestFree;
+	debug 'merged back: ' (largest is Heap.heap_size - Heap.HEADER) '\n';
+
+	# memory from new is zeroed, even where the nodes were
+	ptr<u32> words: new u32[1000];
+	bln zero: true;
+	while u32 k: 0; k < 1000; k++;
+		if words:k is not 0
+			zero is false;
+		;;
+	;;
+	debug 'zeroed: ' zero '\n';
+	free words;
+
+	# more than the heap has
+	ptr<u8> huge: new u8[Heap.heap_size * 2];
+	debug 'too big gives 0: ' (huge is 0) '\n';
+
+	# the heap took its frames once, at startup
+	debug 'no frames leaked: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

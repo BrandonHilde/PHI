@@ -318,6 +318,43 @@ Fields are laid out in order with no padding, which is what hardware tables (lik
 or a disk's partition table) need. Structs can't be assigned or passed as a whole; work
 with their fields, or pass a `ptr<Task>`.
 
+## Memory (32-bit kernels)
+
+```phi
+ptr<Task> task: new Task;           # one Task, all zeros
+ptr<u8> buffer: new u8[512];        # 512 bytes, all zeros
+task:0.id is 7;
+free task;
+free buffer;
+```
+
+`new` gives memory from the kernel heap and `free` gives it back. A kernel that uses them
+gets the memory library automatically: at startup it reads the BIOS memory map, turns on
+paging and sets up an 8 MB heap. `new` returns 0 when the heap has no room. Freeing a
+pointer `new` didn't give out (or freeing twice) stops the kernel with a message.
+
+Paging maps every address to the same physical address, but only memory that exists:
+**a null pointer, or an address past the end of RAM, stops the kernel with a page fault**
+on the panic screen, showing the address that was used.
+
+The pieces can also be used directly:
+
+| File | Class | What it does |
+|---|---|---|
+| `memory.frames` | `Frames` | physical memory in 4 KB frames: `Alloc` →, `AllocContiguous: count` →, `Free: address`; `free_frames`, `total_frames`, `memory_top` |
+| `memory.paging` | `Paging` | identity paging with page 0 unmapped; `page_directory`, `mapped_bytes` |
+| `memory.heap` | `Heap` | `Alloc: size` →, `Free: address`, `LargestFree` →; `used_bytes`, `used_blocks`, `heap_size` |
+| `memory.list` | `List` | a growable list of u32 values: `New` →, `Add: list value`, `Get: list index` →, `Set: list index value`, `Delete: list`; the list's `count` and `capacity` |
+
+```phi
+use memory.list;
+
+ptr<ListData> numbers: 0;
+call numbers is List.New;
+call List.Add: numbers 42;
+log numbers:0.count;
+```
+
 ## Methods
 
 ```phi
@@ -417,6 +454,7 @@ and the classes of used files run before the classes that use them.
 |---|---|
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
+| `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 
 ## Built-in functions
@@ -474,9 +512,10 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 
 - `dec` / `fin` (decimal numbers), `has`, `^^` (power)
 - recursion (see "Where variables live")
-- division by zero isn't caught
-- placing code or data at chosen addresses (`@org`, `@section`): planned with the
-  32-bit kernel in Phase 3
+- division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
+- growable strings (use a `str` buffer, or `memory.list` for growable data)
+- placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
+  (see [memory-map.md](memory-map.md))
 
 ## How it is built
 

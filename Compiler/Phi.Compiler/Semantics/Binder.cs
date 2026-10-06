@@ -740,6 +740,13 @@ namespace Phi.Compiler.Semantics
                     o.Value = Convert(o.Value, PhiType.U32, "the value");
                     return o;
 
+                case FreeStmt f:
+                    BindExpr(f.Pointer, scope);
+                    if (!f.Pointer.Type.IsError && !f.Pointer.Type.IsNumeric)
+                        Error(f.Pointer.Span, $"free needs a pointer from new, not a {f.Pointer.Type}");
+                    f.Releaser = HeapMethod("Heap.Free", f.Span, scope, "free");
+                    return f;
+
                 case UnsafeStmt u:
                     unsafeDepth++;
                     BindStatements(u.Body, scope, classLevel: false);
@@ -1128,6 +1135,10 @@ namespace Phi.Compiler.Semantics
                     BindAddr(addr, scope);
                     break;
 
+                case NewExpr n:
+                    BindNew(n, scope);
+                    break;
+
                 case InExpr input:
                     BindExpr(input.Port, scope);
                     input.Port = Convert(input.Port, PhiType.U16, "the port");
@@ -1211,6 +1222,42 @@ namespace Phi.Compiler.Semantics
             IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } => v.Capacity, // an element of a str array
             _ => null,
         };
+
+        /// <summary>new T / new T[count]: ask the heap (lib/phi/memory/heap.phi) for zeroed memory.</summary>
+        void BindNew(NewExpr n, Scope scope)
+        {
+            n.Type = PhiType.Error;
+            PhiType element = ResolveType(n.ElementType, scope, allowStr: false);
+
+            Expr? count = null;
+            if (n.Count != null)
+            {
+                BindExpr(n.Count, scope);
+                count = Convert(n.Count, PhiType.U32, "the number of elements");
+                n.Count = count;
+            }
+
+            n.Allocator = HeapMethod("Heap.Alloc", n.Span, scope, "new");
+            if (element.IsError || n.Allocator == null) return;
+
+            var size = new NumberExpr { Value = element.ElementSize, Span = n.Span, Type = PhiType.U32 };
+            n.Bytes = count == null
+                ? size
+                : new BinaryExpr { Op = BinaryOp.Multiply, Left = count, Right = size, Span = n.Span, Type = PhiType.U32 };
+            n.Type = PhiType.PointerTo(element);
+        }
+
+        MethodSymbol? HeapMethod(string name, Span span, Scope scope, string what)
+        {
+            if (scope.Unit != UnitKind.Kernel)
+            {
+                Error(span, $"{what} needs a heap, which only 32-bit kernels (phi.Name:Kernel) have");
+                return null;
+            }
+            if (methodsByFullName.TryGetValue((UnitKind.Kernel, name), out MethodSymbol? m)) return m;
+            Error(span, $"{what} needs {name}; add use memory.heap;");
+            return null;
+        }
 
         void BindAddr(AddrExpr addr, Scope scope)
         {

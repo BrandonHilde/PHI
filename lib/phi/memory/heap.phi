@@ -1,0 +1,155 @@
+# The kernel heap: memory for `new` and `free` (32-bit kernels).
+#
+#   ptr<Task> t: new Task;        # zeroed; 0 if the heap is full
+#   ptr<u8> buffer: new u8[512];
+#   free t;
+#
+# A kernel that uses new or free gets this file automatically. It takes a
+# contiguous range of frames at startup (8 MB, or half of free memory if that's
+# less). Blocks are kept in address order, each with a header; Alloc takes the
+# first free block that fits and splits it, Free merges neighbors back together.
+
+use memory.frames;
+use memory.paging;
+
+struct.HeapBlock
+{
+	u32 magic;                  # HEAP_MAGIC while this is a block of the heap
+	u32 size;                   # bytes after the header
+	u32 used;                   # 1 while handed out
+	ptr<HeapBlock> next;        # the block after this one in memory
+	ptr<HeapBlock> previous;
+	u32 reserved;               # keeps the header 24 bytes, so blocks stay 8-byte aligned
+}
+
+phi.Heap:Kernel
+{
+	const u32 HEAP_MAGIC: 0x48454150;        # 'HEAP'
+	const u32 HEADER: 24;
+	const u32 HEAP_FRAMES: 2048;             # 8 MB
+
+	ptr<HeapBlock> heap_first: 0;
+	u32 heap_start: 0;
+	u32 heap_size: 0;
+	u32 used_bytes: 0;          # handed out right now (not counting headers)
+	u32 used_blocks: 0;
+
+	call Init;
+
+	[Init]
+		u32 frames: HEAP_FRAMES;
+		if Frames.free_frames / 2 < frames
+			frames is Frames.free_frames / 2;
+		;;
+		call heap_start is Frames.AllocContiguous: frames;
+		if heap_start is not 0
+			heap_size is frames * Frames.FRAME_SIZE;
+			heap_first is heap_start;
+			heap_first:0.magic is HEAP_MAGIC;
+			heap_first:0.size is heap_size - HEADER;
+		;;
+	[end]
+
+	# size bytes of zeroed memory, or 0 if no free block is big enough
+	[Alloc: u32 size: 0;]
+		u32 result: 0;
+		u32 wanted: (size + 7) & ~7;
+		if wanted is 0
+			wanted is 8;
+		;;
+
+		ptr<HeapBlock> b: heap_first;
+		while b is not 0 and result is 0
+			if b:0.used is 0 and b:0.size >= wanted
+				# split off the rest when it's big enough to be a block of its own
+				if b:0.size >= wanted + HEADER + 8
+					ptr<HeapBlock> rest: b + HEADER + wanted;
+					rest:0.magic is HEAP_MAGIC;
+					rest:0.size is b:0.size - wanted - HEADER;
+					rest:0.used is 0;
+					rest:0.next is b:0.next;
+					rest:0.previous is b;
+					if b:0.next is not 0
+						ptr<HeapBlock> after: b:0.next;
+						after:0.previous is rest;
+					;;
+					b:0.next is rest;
+					b:0.size is wanted;
+				;;
+
+				b:0.used is 1;
+				used_bytes++ b:0.size;
+				used_blocks++;
+				result is b + HEADER;
+
+				ptr<u32> words: result;
+				while u32 k: 0; k < b:0.size / 4; k++;
+					words:k is 0;
+				;;
+			;;
+			b is b:0.next;
+		;;
+	[end: result]
+
+	# give back memory from Alloc; freeing 0 does nothing
+	[Free: u32 address: 0;]
+		if address is not 0
+			ptr<HeapBlock> b: address - HEADER;
+			bln valid: address >= heap_start + HEADER and address < heap_start + heap_size;
+			if valid
+				valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
+			;;
+
+			if valid is false
+				log '\nPHI: free of memory that new did not hand out (or freed twice): ' address '\n';
+				call HeapHalt;
+			;;
+
+			b:0.used is 0;
+			used_bytes-- b:0.size;
+			used_blocks--;
+
+			# merge with the next block, then the previous one, if they are free
+			ptr<HeapBlock> next: b:0.next;
+			if next is not 0 and next:0.used is 0
+				b:0.size++ HEADER + next:0.size;
+				b:0.next is next:0.next;
+				next:0.magic is 0;
+				if b:0.next is not 0
+					ptr<HeapBlock> after: b:0.next;
+					after:0.previous is b;
+				;;
+			;;
+			ptr<HeapBlock> previous: b:0.previous;
+			if previous is not 0 and previous:0.used is 0
+				previous:0.size++ HEADER + b:0.size;
+				previous:0.next is b:0.next;
+				b:0.magic is 0;
+				if previous:0.next is not 0
+					ptr<HeapBlock> later: previous:0.next;
+					later:0.previous is previous;
+				;;
+			;;
+		;;
+	[end]
+
+	# the largest block Alloc could hand out right now
+	[LargestFree]
+		u32 largest: 0;
+		ptr<HeapBlock> b: heap_first;
+		while b is not 0
+			if b:0.used is 0 and b:0.size > largest
+				largest is b:0.size;
+			;;
+			b is b:0.next;
+		;;
+	[end: largest]
+}
+
+asm.HeapHalt
+{
+	cli
+.halt:
+	hlt
+	jmp .halt
+}

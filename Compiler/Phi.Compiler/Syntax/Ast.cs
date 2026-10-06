@@ -144,6 +144,13 @@ namespace Phi.Compiler.Syntax
         public Expr Value { get; set; } = null!;
     }
 
+    /// <summary>free pointer;   (gives memory from new back to the heap)</summary>
+    public sealed class FreeStmt : Stmt
+    {
+        public Expr Pointer { get; set; } = null!;
+        public MethodSymbol? Releaser { get; set; }
+    }
+
     /// <summary>unsafe ... ;;   (no bounds checks inside)</summary>
     public sealed class UnsafeStmt : Stmt
     {
@@ -255,6 +262,17 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>When the operand names a method or asm block.</summary>
         public string? CodeLabel { get; set; }
+    }
+
+    /// <summary>new Type   or   new Type[count]   (32-bit kernels: memory from the heap, zeroed)</summary>
+    public sealed class NewExpr : Expr
+    {
+        public TypeRef ElementType { get; init; } = null!;
+        public Expr? Count { get; set; }
+
+        /// <summary>Set by the binder: the number of bytes to ask for, and the method that allocates.</summary>
+        public Expr Bytes { get; set; } = null!;
+        public MethodSymbol? Allocator { get; set; }
     }
 
     /// <summary>in port, inw port, ind port</summary>

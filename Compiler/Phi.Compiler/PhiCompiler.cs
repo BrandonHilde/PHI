@@ -62,10 +62,9 @@ namespace Phi.Compiler
         /// </summary>
         static ProgramNode ParseWithUses(SourceFile main, DiagnosticBag diagnostics)
         {
-            var merged = new ProgramNode { File = main };
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Key(main) };
 
-            void Load(SourceFile file)
+            void Load(SourceFile file, ProgramNode into)
             {
                 ProgramNode node = Parser.Parse(file, diagnostics);
 
@@ -81,17 +80,32 @@ namespace Phi.Compiler
                         diagnostics.Error(file, use.Span, $"can't find {relative} {places} or in the standard library ({StandardLibrary})");
                         continue;
                     }
-                    if (seen.Add(Key(used))) Load(used);
+                    if (seen.Add(Key(used))) Load(used, into);
                 }
 
-                merged.Classes.AddRange(node.Classes);
-                merged.RawBlocks.AddRange(node.RawBlocks);
-                merged.Structs.AddRange(node.Structs);
-                merged.Uses.AddRange(node.Uses);
+                into.Classes.AddRange(node.Classes);
+                into.RawBlocks.AddRange(node.RawBlocks);
+                into.Structs.AddRange(node.Structs);
+                into.Uses.AddRange(node.Uses);
             }
 
-            Load(main);
-            return merged;
+            var program = new ProgramNode { File = main };
+            Load(main, program);
+
+            // a 32-bit kernel that uses new or free gets the heap without having to ask; its
+            // classes go first, so it is ready before the program's own code runs
+            bool kernel = program.Classes.Any(c => c.Base == Binder.Kernel32Base);
+            bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt);
+            SourceFile? heap = kernel && usesHeap ? Resolve("memory.heap", main, main) : null;
+            if (heap == null || !seen.Add(Key(heap))) return program;
+
+            var withHeap = new ProgramNode { File = main };
+            Load(heap, withHeap);
+            withHeap.Classes.AddRange(program.Classes);
+            withHeap.RawBlocks.AddRange(program.RawBlocks);
+            withHeap.Structs.AddRange(program.Structs);
+            withHeap.Uses.AddRange(program.Uses);
+            return withHeap;
         }
 
         static string Key(SourceFile f) => f.Path.StartsWith(StandardLibrary) ? f.Path : Path.GetFullPath(f.Path);

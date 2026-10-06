@@ -68,6 +68,17 @@ protected mode with nothing else running.
 | `0xA0000`–`0xFFFFF` | video memory and BIOS ROM (`0xB8000` is the text screen) |
 | `0x100000` … | free RAM (127 MB on QEMU's default 128 MB machine) |
 
+With the memory library (`memory.frames`, which `new` brings in automatically):
+
+| Address | Contents |
+|---|---|
+| `0x100000` … | the frame bitmap: one bit per 4 KB of RAM (4 KB for 128 MB) |
+| above that | free frames, handed out by `Frames.Alloc`: the page directory, the first page table, and the heap (8 MB, contiguous) come first |
+
+Paging (`memory.paging`) maps each address to the same physical address. The first 4 MB
+uses 4 KB pages, except page 0 (`0x0000`–`0x0FFF`), which is left unmapped so null
+pointers fault. The rest of RAM uses 4 MB pages. Nothing past the end of RAM is mapped.
+
 ### BootInfo
 
 `use boot.info;` (in [lib/phi/boot/info.phi](../lib/phi/boot/info.phi)) gives typed access:
