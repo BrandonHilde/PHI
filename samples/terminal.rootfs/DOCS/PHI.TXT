@@ -1,0 +1,2 @@
+PHI compiles to an operating system instead of an app.
+This kernel, its drivers, its memory manager and this file system are written in PHI.

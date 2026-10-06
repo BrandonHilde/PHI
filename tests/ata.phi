@@ -1,0 +1,28 @@
+use drivers.ata;
+
+phi.Disk:Library
+{
+	u8 sector[512];
+	u8 other[512];
+	bln ok: false;
+
+	# sector 0 is the boot sector: it ends in 0x55 0xAA
+	call ok is Ata.Read: 0 1 addr sector;
+	debug 'read: ' ok ' signature: ' sector:510 ' ' sector:511 '\n';
+
+	# write a pattern to an unused sector near the end of the image, and read it back
+	while int i: 0; i < 512; i++;
+		sector:i is i * 7;
+	;;
+	call ok is Ata.Write: 2800 1 addr sector;
+	debug 'write: ' ok '\n';
+	call ok is Ata.Read: 2800 1 addr other;
+	bln same: true;
+	while int j: 0; j < 512; j++;
+		if other:j is not sector:j
+			same is false;
+		;;
+	;;
+	debug 'read back: ' ok ' same: ' same '\n';
+	exit 0;
+}

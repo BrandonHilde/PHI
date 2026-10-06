@@ -189,7 +189,8 @@ exit 0;                         # stop QEMU (used by tests); halts on real hardw
 ```
 
 `log` and `debug` print strings as text and numbers in decimal (`u32` and pointers as
-unsigned). On the screen, a new line needs `\r\n`.
+unsigned). A `ptr<u8>` prints as the zero-terminated text it points to, like a `str`; to
+print the address instead, put it in a `u32` first. On the screen, a new line needs `\r\n`.
 
 ### Assignment
 
@@ -355,6 +356,43 @@ call List.Add: numbers 42;
 log numbers:0.count;
 ```
 
+## Files on disk (32-bit kernels)
+
+`phi build` gives a 32-bit kernel's disk image a 16 MB FAT16 partition, filled with the
+contents of the folder `NAME.rootfs/` next to `NAME.phi` (or a folder called `rootfs/`).
+Names must be 8.3, like `README.TXT` or `DOCS/NOTES.TXT`.
+
+```phi
+use fs.fat16;
+
+ptr<u8> buffer: new u8[4096];
+int size: 0;
+bln ok: false;
+
+call size is Fat.ReadFile: 'readme.txt' buffer 4096;   # bytes read, or -1 if it isn't there
+buffer:size is 0;
+log buffer;                                            # a ptr<u8> prints as text
+
+call ok is Fat.WriteFile: 'docs/new.txt' 'hello' 5;     # creates or replaces
+call ok is Fat.Delete: 'docs/new.txt';
+call size is Fat.List: '';                              # prints the root folder
+```
+
+| Method | What it does |
+|---|---|
+| `ReadFile: path buffer max` → | copy up to `max` bytes of the file into `buffer`; the count, or -1 |
+| `FileSize: path` → | the size in bytes, or -1 |
+| `Exists: path` → | 1 if the file or folder is there |
+| `WriteFile: path data length` → | create or replace a file; 0 if a folder is missing, the folder is full, or the disk is full |
+| `Delete: path` → | remove a file |
+| `List: path` → | print a folder (`''` is the root); returns how many entries it has |
+| `FreeClusters` → | free 2 KB clusters left |
+
+Case doesn't matter in paths. Long file names aren't read, and folders don't grow, so
+each folder holds as many new files as it has free entries (the root holds 511). Changes
+are written to the disk image, so a kernel sees them the next time it boots the same image
+(`phi build` makes a fresh image each time).
+
 ## Methods
 
 ```phi
@@ -455,6 +493,9 @@ and the classes of used files run before the classes that use them.
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
 | `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
+| `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
+| `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
+| `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 
 ## Built-in functions

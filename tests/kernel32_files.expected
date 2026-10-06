@@ -1,0 +1,18 @@
+mounted: 1
+  DOCS/
+  README.TXT  76
+Hello from the disk!
+This file was put on the FAT16 partition by phi build.
+  LONG.TXT  5000
+  NOTES.TXT  18
+notes in a folder
+long.txt: 5000 bytes, sum 390700
+first 10 bytes: 10
+missing: -1
+missing folder: -1
+new file: 1 23 written by a PHI kernel
+replaced: 1 5000 same: 1
+deleted: 1 still there: 0
+space back: 1
+  DOCS/
+  README.TXT  11

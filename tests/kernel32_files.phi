@@ -1,0 +1,74 @@
+use fs.fat16;
+
+phi.Files:Kernel
+{
+	ptr<u8> buffer: new u8[8192];
+	int size: 0;
+	bln ok: false;
+
+	debug 'mounted: ' Fat.mounted '\n';
+	u32 freeBefore: 0;
+	call freeBefore is Fat.FreeClusters;
+
+	# the root folder, then a file from it
+	int count: 0;
+	call count is Fat.List: '';
+	call size is Fat.ReadFile: 'readme.txt' buffer 8192;
+	buffer:size is 0;
+	log buffer;
+
+	# a file in a folder, and one that spans several clusters
+	call count is Fat.List: 'docs';
+	call size is Fat.ReadFile: 'DOCS/NOTES.TXT' buffer 8192;
+	buffer:size is 0;
+	log buffer;
+	call size is Fat.ReadFile: 'docs/long.txt' buffer 8192;
+	u32 sum: 0;
+	while int i: 0; i < size; i++;
+		sum++ buffer:i;
+	;;
+	debug 'long.txt: ' size ' bytes, sum ' sum '\n';
+
+	# reading part of a file
+	call size is Fat.ReadFile: 'docs/long.txt' buffer 10;
+	debug 'first 10 bytes: ' size '\n';
+
+	# missing files
+	call size is Fat.ReadFile: 'nothere.txt' buffer 8192;
+	debug 'missing: ' size '\n';
+	call size is Fat.FileSize: 'nope/readme.txt';
+	debug 'missing folder: ' size '\n';
+
+	# write a new file, read it back
+	str message: 'written by a PHI kernel';
+	call ok is Fat.WriteFile: 'docs/new.txt' message message.len;
+	call size is Fat.ReadFile: 'docs/new.txt' buffer 8192;
+	buffer:size is 0;
+	debug 'new file: ' ok ' ' size ' ' buffer '\n';
+
+	# replace a file with a bigger one (three clusters)
+	while int j: 0; j < 5000; j++;
+		buffer:j is 'a' + j % 26;
+	;;
+	call ok is Fat.WriteFile: 'README.TXT' buffer 5000;
+	call size is Fat.ReadFile: 'README.TXT' buffer 8192;
+	bln same: true;
+	while int k: 0; k < 5000; k++;
+		if buffer:k is not 'a' + k % 26
+			same is false;
+		;;
+	;;
+	debug 'replaced: ' ok ' ' size ' same: ' same '\n';
+
+	# delete, and the space comes back
+	call ok is Fat.Delete: 'docs/new.txt';
+	bln gone: true;
+	call gone is Fat.Exists: 'docs/new.txt';
+	debug 'deleted: ' ok ' still there: ' gone '\n';
+	call ok is Fat.WriteFile: 'README.TXT' 'small again' 11;
+	u32 freeAfter: 0;
+	call freeAfter is Fat.FreeClusters;
+	debug 'space back: ' (freeAfter is freeBefore) '\n';
+	call count is Fat.List: '';
+	exit 0;
+}

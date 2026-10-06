@@ -465,7 +465,9 @@ namespace Phi.Compiler.CodeGen
 
             foreach (Expr value in log.Values)
             {
-                if (value.Type.IsString)
+                // a ptr<u8> prints as the zero-terminated text it points to, like a str
+                bool text = value.Type.IsString || (value.Type.IsPointer && value.Type.Pointee == PhiType.U8);
+                if (text)
                 {
                     string print = "phi_print" + suffix;
                     Need(print);

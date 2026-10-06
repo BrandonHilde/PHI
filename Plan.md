@@ -385,6 +385,25 @@ Goal: read and write files on the QEMU disk.
 **Done when:** the kernel lists the root directory and prints `readme.txt` from the disk
 image at boot.
 
+**Status: done (2026-10-06).** Demo: `phi run samples/terminal.phi` (`ls`, `cat docs/phi.txt`).
+- [x] `drivers.ata`: IDE PIO driver in PHI, 28-bit LBA, read and write (with cache flush), works
+  in both kinds of program
+- [x] `drivers.disk`: block layer that finds the FAT partition in the partition table; sector numbers
+  are relative to it and checked against its size
+- [x] `fs.fat16` in PHI: mount, read files (any size, partial reads), list folders, create and replace
+  files, delete, free-space count; paths with folders and 8.3 names; the FAT is kept in memory and
+  both copies are written back
+- [x] `phi build` adds a 16 MB FAT16 partition at sector 2048 to every 32-bit image, filled from
+  `NAME.rootfs/` or `rootfs/`; names that aren't 8.3 are build errors
+- [x] `log` prints a `ptr<u8>` as text
+- [x] Tests: raw sectors in both modes, the file system end to end (read, nested folders, three-cluster
+  files, write, replace, delete, space reclaimed), and C# tests that read the built partition back
+- Differs from the plan:
+  - No VFS layer or mount points yet: with one file system, a `Fat` class with paths is simpler.
+    A VFS is worth adding when there is a second file system (or devices as files).
+  - No long file names, and folders don't grow when they fill up.
+  - FAT16 was the recommended option, so there's no PHIFS.
+
 ---
 
 ## Phase 7: Processes and multitasking

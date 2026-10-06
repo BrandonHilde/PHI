@@ -18,6 +18,7 @@ namespace Phi.Cli
     ///
     ///   16-bit program:  sector 0 boot sector | sector 1.. OS classes (loaded at 0x7E00)
     ///   32-bit kernel:   sector 0 stage 1 | sectors 1-8 stage 2 | sector 9.. kernel (loaded at 0x10000)
+    ///                    | sector 2048..: a 16 MB FAT16 partition with NAME.rootfs/ (or rootfs/)
     ///
     /// See docs/memory-map.md.
     /// </summary>
@@ -58,7 +59,7 @@ namespace Phi.Cli
             if (!compiled.Success) return result;
 
             byte[]? image = compiled.Units.Any(u => u.Kind == UnitKind.Kernel)
-                ? Layout32(compiled, outDir, result)
+                ? Layout32(compiled, outDir, result, FindRootfs(phiFile))
                 : Layout16(compiled, outDir, result);
 
             if (image != null) File.WriteAllBytes(result.ImagePath, image);
@@ -95,7 +96,17 @@ namespace Phi.Cli
             return image;
         }
 
-        static byte[]? Layout32(CompileResult compiled, string outDir, BuildResult result)
+        /// <summary>The folder copied into a kernel's file system: NAME.rootfs/ or rootfs/ next to the program.</summary>
+        public static string? FindRootfs(string phiFile)
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
+            string own = Path.Combine(dir, Path.GetFileNameWithoutExtension(phiFile) + ".rootfs");
+            if (Directory.Exists(own)) return own;
+            string shared = Path.Combine(dir, "rootfs");
+            return Directory.Exists(shared) ? shared : null;
+        }
+
+        static byte[]? Layout32(CompileResult compiled, string outDir, BuildResult result, string? rootfs)
         {
             AsmUnit kernel = compiled.Units.Single(u => u.Kind == UnitKind.Kernel);
             AsmUnit stage1 = compiled.BootStages.Single(u => u.Name == "stage1");
@@ -118,10 +129,20 @@ namespace Phi.Cli
             if (stage2Bin.Length != Stage2Sectors * SectorSize)
                 throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
 
-            var image = new byte[ImageSize];
+            var fsErrors = new List<string>();
+            byte[] partition = FatImage.Build(rootfs, fsErrors);
+            if (fsErrors.Count > 0)
+            {
+                result.Errors.AddRange(fsErrors);
+                return null;
+            }
+
+            var image = new byte[(FatImage.PartitionStart + FatImage.PartitionSectors) * SectorSize];
             stage1Bin.CopyTo(image, 0);
             stage2Bin.CopyTo(image, SectorSize);
             kernelBin.CopyTo(image, (1 + Stage2Sectors) * SectorSize);
+            FatImage.WritePartitionEntry(image);
+            partition.CopyTo(image, FatImage.PartitionStart * SectorSize);
             return image;
         }
 

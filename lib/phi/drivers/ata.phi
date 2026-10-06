@@ -1,0 +1,121 @@
+# IDE (ATA) disk driver, written in PHI: the primary channel's master drive,
+# which is the disk QEMU boots from. Polled (PIO), 28-bit sector numbers (LBA),
+# so up to 128 GB. Works in 16-bit programs and 32-bit kernels.
+#
+#   use drivers.ata;
+#   u8 sector[512];
+#   bln ok: false;
+#   call ok is Ata.Read: 0 1 addr sector;     # sector 0, one sector
+#   call ok is Ata.Write: 100 1 addr sector;
+
+phi.Ata:Library
+{
+	const u16 ATA_DATA: 0x1F0;
+	const u16 ATA_ERROR: 0x1F1;
+	const u16 ATA_SECTOR_COUNT: 0x1F2;
+	const u16 ATA_LBA_LOW: 0x1F3;
+	const u16 ATA_LBA_MID: 0x1F4;
+	const u16 ATA_LBA_HIGH: 0x1F5;
+	const u16 ATA_DRIVE: 0x1F6;
+	const u16 ATA_STATUS: 0x1F7;      # reading
+	const u16 ATA_COMMAND: 0x1F7;     # writing
+	const u16 ATA_CONTROL: 0x3F6;
+
+	const u8 STATUS_ERROR: 0x01;
+	const u8 STATUS_DATA_READY: 0x08;
+	const u8 STATUS_FAULT: 0x20;
+	const u8 STATUS_BUSY: 0x80;
+
+	const u8 COMMAND_READ: 0x20;
+	const u8 COMMAND_WRITE: 0x30;
+	const u8 COMMAND_FLUSH: 0xE7;
+
+	u32 sectors_read: 0;
+	u32 sectors_written: 0;
+
+	# no interrupts from the drive: this driver polls
+	out ATA_CONTROL 0x02;
+
+	# read count sectors (1-255) starting at lba into buffer (512 bytes each)
+	[Read: u32 lba: 0; u32 count: 1; ptr<u16> buffer: 0;]
+		bln ok: false;
+		call Select: lba count;
+		out ATA_COMMAND COMMAND_READ;
+
+		ok is true;
+		while u32 s: 0; s < count and ok; s++;
+			call ok is WaitForData;
+			if ok
+				while u32 w: 0; w < 256; w++;
+					buffer:w is inw ATA_DATA;
+				;;
+				buffer++ 512;
+				sectors_read++;
+			;;
+		;;
+	[end: ok]
+
+	# write count sectors (1-255) starting at lba from buffer
+	[Write: u32 lba: 0; u32 count: 1; ptr<u16> buffer: 0;]
+		bln ok: false;
+		call Select: lba count;
+		out ATA_COMMAND COMMAND_WRITE;
+
+		ok is true;
+		while u32 s: 0; s < count and ok; s++;
+			call ok is WaitForData;
+			if ok
+				while u32 w: 0; w < 256; w++;
+					outw ATA_DATA buffer:w;
+				;;
+				buffer++ 512;
+				sectors_written++;
+			;;
+		;;
+
+		# make sure it's really on the disk
+		out ATA_COMMAND COMMAND_FLUSH;
+		bln flushed: false;
+		call flushed is WaitWhileBusy;
+		ok is ok and flushed;
+	[end: ok]
+
+	[Select: u32 lba: 0; u32 count: 1;]
+		bln ready: false;
+		call ready is WaitWhileBusy;
+		out ATA_DRIVE 0xE0 | ((lba >> 24) & 0x0F);    # master drive, LBA addressing
+		out ATA_SECTOR_COUNT count;
+		out ATA_LBA_LOW lba;
+		out ATA_LBA_MID lba >> 8;
+		out ATA_LBA_HIGH lba >> 16;
+	[end]
+
+	[WaitWhileBusy]
+		u8 status: STATUS_BUSY;
+		u32 tries: 0;
+		while (status & STATUS_BUSY) is not 0 and tries < 1000000
+			status is in ATA_STATUS;
+			tries++;
+		;;
+	[end: (status & (STATUS_BUSY | STATUS_ERROR | STATUS_FAULT)) is 0]
+
+	# after a command: wait until the drive has a sector for us (or wants one)
+	[WaitForData]
+		u8 status: 0;
+		# reading the status a few times gives the drive the 400 ns it needs to update it
+		status is in ATA_STATUS;
+		status is in ATA_STATUS;
+		status is in ATA_STATUS;
+		status is in ATA_STATUS;
+
+		u32 tries: 0;
+		bln waiting: true;
+		while waiting and tries < 1000000
+			status is in ATA_STATUS;
+			if (status & STATUS_BUSY) is 0 and (status & (STATUS_DATA_READY | STATUS_ERROR | STATUS_FAULT)) is not 0
+				waiting is false;
+			;;
+			tries++;
+		;;
+	[end: waiting is false and (status & (STATUS_ERROR | STATUS_FAULT)) is 0]
+}

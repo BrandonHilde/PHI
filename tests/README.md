@@ -39,6 +39,9 @@ A test made only of `phi.Name:Library` classes runs twice, as a 16-bit program a
 32-bit kernel (`numbers (16-bit)`, `numbers (32-bit)`), against the same `.expected` file.
 Most language tests are written this way, so both code generators stay in step.
 
+A folder `NAME.rootfs/` becomes the FAT16 disk of a 32-bit test (see
+`kernel32_files.rootfs/`).
+
 `tests/support/` holds files that tests load with `use`; they aren't tests themselves.
 
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error

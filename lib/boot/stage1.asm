@@ -51,5 +51,6 @@ packet:
 boot_drive: db 0
 message: db 'PHI: could not read the loader from disk', 13, 10, 0
 
-times 510 - ($ - $$) db 0
+times 446 - ($ - $$) db 0   ; the code must end here: the partition table follows
+times 64 db 0               ; four partition entries (the build fills in the first)
 dw 0xAA55

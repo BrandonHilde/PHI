@@ -1,0 +1,551 @@
+# FAT16 file system, written in PHI (32-bit kernels).
+#
+#   use fs.fat16;
+#   ptr<u8> buffer: new u8[4096];
+#   int size: 0;
+#   call size is Fat.ReadFile: 'README.TXT' buffer 4096;     # -1 if it isn't there
+#   call ok is Fat.WriteFile: 'DOCS/NOTES.TXT' text length;  # creates or replaces
+#   call ok is Fat.Delete: 'OLD.TXT';
+#   call count is Fat.List: '';                              # prints a directory
+#
+# Paths use / between folders and 8.3 names (README.TXT, DOCS/NOTES.TXT); case
+# doesn't matter. Long file names aren't read. New files can go in any existing
+# folder that has a free entry (folders don't grow yet). `phi build` fills the
+# disk from the program's NAME.rootfs/ (or rootfs/) folder.
+#
+# The whole FAT is kept in memory and written back after every change.
+
+use drivers.disk;
+use memory.heap;
+
+# the start of the partition's first sector: the BIOS Parameter Block
+struct.FatBootSector
+{
+	u8 jump[3];
+	u8 oem[8];
+	u16 bytes_per_sector;
+	u8 sectors_per_cluster;
+	u16 reserved_sectors;
+	u8 fat_count;
+	u16 root_entries;
+	u16 total_sectors16;
+	u8 media;
+	u16 sectors_per_fat;
+	u16 sectors_per_track;
+	u16 heads;
+	u32 hidden_sectors;
+	u32 total_sectors32;
+}
+
+# one 32-byte directory entry
+struct.DirEntry
+{
+	u8 name[11];            # 8 + 3, padded with spaces
+	u8 attributes;
+	u8 reserved;
+	u8 create_tenths;
+	u16 create_time;
+	u16 create_date;
+	u16 access_date;
+	u16 cluster_high;       # always 0 on FAT16
+	u16 write_time;
+	u16 write_date;
+	u16 cluster;            # first cluster of the data (0 for an empty file)
+	u32 size;
+}
+
+phi.Fat:Kernel
+{
+	const u8 ATTR_VOLUME: 0x08;
+	const u8 ATTR_DIRECTORY: 0x10;
+	const u8 ATTR_ARCHIVE: 0x20;
+	const u8 ATTR_LONG_NAME: 0x0F;
+	const u8 ENTRY_DELETED: 0xE5;
+	const u16 CHAIN_END: 0xFFF8;        # this and above: the last cluster of a file
+	const u16 CHAIN_LAST: 0xFFFF;
+
+	bln mounted: false;
+	u32 sectors_per_cluster: 0;
+	u32 cluster_bytes: 0;
+	u32 fat_start: 0;
+	u32 fat_sectors: 0;
+	u32 fat_count: 0;
+	u32 root_start: 0;
+	u32 root_sectors: 0;
+	u32 data_start: 0;
+	u32 cluster_count: 0;
+
+	ptr<u16> fat_table: 0;
+	ptr<u8> sector_buffer: 0;
+	ptr<u8> cluster_buffer: 0;
+
+	# what the last Resolve found
+	u8 wanted_name[11];
+	DirEntry found;
+	u32 found_sector: 0;
+	u32 found_index: 0;
+	bln parent_found: false;            # every folder in the path exists
+	u32 parent_directory: 0;            # the folder the last name is (or would be) in; 0 = root
+
+	str display_name: [12];
+
+	call Mount;
+
+	[Mount]
+		if Disk.partition_found
+			sector_buffer is new u8[512];
+			bln ok: false;
+			call ok is Disk.Read: 0 1 sector_buffer;
+			ptr<FatBootSector> boot: sector_buffer;
+			if ok and boot:0.bytes_per_sector is 512 and sector_buffer:510 is 0x55
+				sectors_per_cluster is boot:0.sectors_per_cluster;
+				cluster_bytes is sectors_per_cluster * 512;
+				fat_start is boot:0.reserved_sectors;
+				fat_sectors is boot:0.sectors_per_fat;
+				fat_count is boot:0.fat_count;
+				root_start is fat_start + fat_count * fat_sectors;
+				root_sectors is (boot:0.root_entries * 32 + 511) / 512;
+				data_start is root_start + root_sectors;
+
+				u32 total: boot:0.total_sectors16;
+				if total is 0
+					total is boot:0.total_sectors32;
+				;;
+				cluster_count is (total - data_start) / sectors_per_cluster;
+
+				fat_table is new u16[fat_sectors * 256];
+				cluster_buffer is new u8[cluster_bytes];
+				mounted is true;
+				while u32 s: 0; s < fat_sectors and mounted; s++;
+					call mounted is Disk.Read: fat_start + s 1 fat_table + s * 512;
+				;;
+			;;
+		;;
+	[end]
+
+	# ------------------------------------------------------------ reading
+
+	# bytes copied into buffer (at most max), or -1 if the file isn't there
+	[ReadFile: ptr<u8> path: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		int copied: -1;
+		bln exists: false;
+		call exists is Resolve: path;
+		if exists and (found.attributes & ATTR_DIRECTORY) is 0
+			copied is 0;
+			u32 cluster: found.cluster;
+			while cluster >= 2 and cluster < CHAIN_END and copied < found.size and copied < max
+				bln ok: false;
+				call ok is ReadCluster: cluster;
+				u32 chunk: cluster_bytes;
+				if chunk > found.size - copied
+					chunk is found.size - copied;
+				;;
+				if chunk > max - copied
+					chunk is max - copied;
+				;;
+				while u32 k: 0; k < chunk; k++;
+					buffer:(copied + k) is cluster_buffer:k;
+				;;
+				copied++ chunk;
+				cluster is fat_table:cluster;
+			;;
+		;;
+	[end: copied]
+
+	# the file's size in bytes, or -1 if it isn't there
+	[FileSize: ptr<u8> path: 0;]
+		int size: -1;
+		bln exists: false;
+		call exists is Resolve: path;
+		if exists
+			size is found.size;
+		;;
+	[end: size]
+
+	[Exists: ptr<u8> path: 0;]
+		bln exists: false;
+		call exists is Resolve: path;
+	[end: exists]
+
+	# print a folder ('' is the root); returns how many entries it has
+	[List: ptr<u8> path: 0;]
+		int count: 0;
+		u32 directory: 0;
+		bln ok: true;
+		if path:0 is not 0
+			call ok is Resolve: path;
+			ok is ok and (found.attributes & ATTR_DIRECTORY) is not 0;
+			directory is found.cluster;
+		;;
+
+		bln more: ok;
+		while u32 n: 0; more; n++;
+			u32 sector: 0;
+			call sector is DirectorySector: directory n;
+			if sector is 0
+				more is false;
+			;;
+			else
+				call ok is Disk.Read: sector 1 sector_buffer;
+				while u32 i: 0; i < 16 and more; i++;
+					ptr<DirEntry> e: sector_buffer + i * 32;
+					if e:0.name:0 is 0
+						more is false;            # nothing after this entry is in use
+					;;
+					elif e:0.name:0 is not ENTRY_DELETED and e:0.name:0 is not '.' and (e:0.attributes & ATTR_VOLUME) is 0
+						call DisplayName: e;
+						if (e:0.attributes & ATTR_DIRECTORY) is not 0
+							log '  ' display_name '/\n';
+						;;
+						else
+							log '  ' display_name '  ' e:0.size '\n';
+						;;
+						count++;
+					;;
+				;;
+			;;
+		;;
+	[end: count]
+
+	# ------------------------------------------------------------ writing
+
+	# create or replace a file; false if a folder in the path is missing,
+	# the folder has no free entry, or the disk is full
+	[WriteFile: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
+		bln ok: false;
+		bln exists: false;
+		call exists is Resolve: path;
+		u32 slotSector: 0;
+		u32 slotIndex: 0;
+
+		if exists and (found.attributes & ATTR_DIRECTORY) is 0
+			call FreeChain: found.cluster;
+			slotSector is found_sector;
+			slotIndex is found_index;
+			ok is true;
+		;;
+		elif exists is false and parent_found
+			call ok is FindFreeSlot: parent_directory;
+			slotSector is found_sector;
+			slotIndex is found_index;
+		;;
+
+		# the data, a cluster at a time
+		u32 first: 0;
+		u32 previous: 0;
+		u32 written: 0;
+		while ok and written < length
+			u32 cluster: 0;
+			call cluster is FindFreeCluster;
+			if cluster is 0
+				ok is false;                  # the disk is full
+			;;
+			else
+				fat_table:cluster is CHAIN_LAST;
+				if previous is 0
+					first is cluster;
+				;;
+				else
+					fat_table:previous is cluster;
+				;;
+				previous is cluster;
+
+				u32 chunk: cluster_bytes;
+				if chunk > length - written
+					chunk is length - written;
+				;;
+				while u32 k: 0; k < cluster_bytes; k++;
+					cluster_buffer:k is 0;
+				;;
+				while u32 m: 0; m < chunk; m++;
+					cluster_buffer:m is data:(written + m);
+				;;
+				u32 target: 0;
+				call target is ClusterSector: cluster;
+				call ok is Disk.Write: target sectors_per_cluster cluster_buffer;
+				written++ chunk;
+			;;
+		;;
+
+		# the directory entry
+		if ok
+			call ok is Disk.Read: slotSector 1 sector_buffer;
+			ptr<DirEntry> e: sector_buffer + slotIndex * 32;
+			if exists is false
+				while u32 b: 0; b < 32; b++;
+					sector_buffer:(slotIndex * 32 + b) is 0;
+				;;
+				while u32 c: 0; c < 11; c++;
+					e:0.name:c is wanted_name:c;
+				;;
+				e:0.attributes is ATTR_ARCHIVE;
+			;;
+			e:0.cluster is first;
+			e:0.size is length;
+			call ok is Disk.Write: slotSector 1 sector_buffer;
+		;;
+
+		bln saved: false;
+		call saved is SaveFat;
+		ok is ok and saved;
+	[end: ok]
+
+	[Delete: ptr<u8> path: 0;]
+		bln ok: false;
+		call ok is Resolve: path;
+		ok is ok and (found.attributes & ATTR_DIRECTORY) is 0;
+		if ok
+			call FreeChain: found.cluster;
+			call ok is Disk.Read: found_sector 1 sector_buffer;
+			sector_buffer:(found_index * 32) is ENTRY_DELETED;
+			call ok is Disk.Write: found_sector 1 sector_buffer;
+			bln saved: false;
+			call saved is SaveFat;
+			ok is ok and saved;
+		;;
+	[end: ok]
+
+	[FreeClusters]
+		u32 count: 0;
+		while u32 c: 2; c < cluster_count + 2; c++;
+			if fat_table:c is 0
+				count++;
+			;;
+		;;
+	[end: count]
+
+	# ------------------------------------------------------------ inside the file system
+
+	# find a path; true if it exists (found, found_sector, found_index describe it)
+	[Resolve: ptr<u8> path: 0;]
+		bln ok: mounted;
+		u32 directory: 0;
+		parent_found is false;
+
+		while path:0 is '/'
+			path++;
+		;;
+		if path:0 is 0
+			ok is false;                      # the root itself has no entry
+		;;
+
+		while ok and path:0 is not 0
+			u32 used: 0;
+			call used is SetName: path;
+			path++ used;
+			while path:0 is '/'
+				path++;
+			;;
+			bln last: path:0 is 0;
+
+			parent_directory is directory;
+			parent_found is used > 0;
+			call ok is FindInDirectory: directory;
+			ok is ok and used > 0;
+
+			if ok and last is false
+				# a folder in the middle of the path
+				if (found.attributes & ATTR_DIRECTORY) is 0
+					ok is false;
+				;;
+				directory is found.cluster;
+			;;
+			if ok is false and last is false
+				parent_found is false;
+			;;
+		;;
+	[end: ok]
+
+	# the next path part (up to / or the end) as a padded 8.3 name in wanted_name;
+	# returns how many characters it used, or 0 if it isn't a valid 8.3 name
+	[SetName: ptr<u8> part: 0;]
+		while u32 i: 0; i < 11; i++;
+			wanted_name:i is ' ';
+		;;
+		u32 length: 0;
+		u32 nameLength: 0;
+		u32 extensionLength: 0;
+		bln inExtension: false;
+		bln valid: true;
+		while part:length is not 0 and part:length is not '/'
+			u8 c: part:length;
+			if c >= 'a' and c <= 'z'
+				c is c - 32;                     # names are stored in capitals
+			;;
+			if c is '.'
+				if inExtension or nameLength is 0
+					valid is false;
+				;;
+				inExtension is true;
+			;;
+			elif inExtension
+				if extensionLength < 3
+					wanted_name:(8 + extensionLength) is c;
+					extensionLength++;
+				;;
+				else
+					valid is false;
+				;;
+			;;
+			else
+				if nameLength < 8
+					wanted_name:nameLength is c;
+					nameLength++;
+				;;
+				else
+					valid is false;
+				;;
+			;;
+			length++;
+		;;
+		if valid is false or nameLength is 0
+			length is 0;
+		;;
+	[end: length]
+
+	# look for wanted_name in a folder (0 = root)
+	[FindInDirectory: u32 directory: 0;]
+		bln found_it: false;
+		bln more: true;
+		while u32 n: 0; more and found_it is false; n++;
+			u32 sector: 0;
+			call sector is DirectorySector: directory n;
+			if sector is 0
+				more is false;
+			;;
+			else
+				bln ok: false;
+				call ok is Disk.Read: sector 1 sector_buffer;
+				while u32 i: 0; i < 16 and more and found_it is false; i++;
+					u32 at: i * 32;
+					if sector_buffer:at is 0
+						more is false;
+					;;
+					elif sector_buffer:at is not ENTRY_DELETED and sector_buffer:(at + 11) is not ATTR_LONG_NAME
+						bln same: true;
+						while u32 k: 0; k < 11; k++;
+							if sector_buffer:(at + k) is not wanted_name:k
+								same is false;
+							;;
+						;;
+						if same
+							found_it is true;
+							found_sector is sector;
+							found_index is i;
+							ptr<u8> copy: addr found;
+							while u32 b: 0; b < 32; b++;
+								copy:b is sector_buffer:(at + b);
+							;;
+						;;
+					;;
+				;;
+			;;
+		;;
+	[end: found_it]
+
+	# an unused entry in a folder: sets found_sector and found_index
+	[FindFreeSlot: u32 directory: 0;]
+		bln found_it: false;
+		bln more: true;
+		while u32 n: 0; more and found_it is false; n++;
+			u32 sector: 0;
+			call sector is DirectorySector: directory n;
+			if sector is 0
+				more is false;
+			;;
+			else
+				bln ok: false;
+				call ok is Disk.Read: sector 1 sector_buffer;
+				while u32 i: 0; i < 16 and found_it is false; i++;
+					u8 first: sector_buffer:(i * 32);
+					if first is 0 or first is ENTRY_DELETED
+						found_it is true;
+						found_sector is sector;
+						found_index is i;
+					;;
+				;;
+			;;
+		;;
+	[end: found_it]
+
+	# the partition sector holding sector n of a folder, or 0 past its end
+	[DirectorySector: u32 directory: 0; u32 n: 0;]
+		u32 sector: 0;
+		if directory is 0
+			if n < root_sectors
+				sector is root_start + n;
+			;;
+		;;
+		else
+			u32 cluster: directory;
+			u32 hops: n / sectors_per_cluster;
+			while hops > 0 and cluster >= 2 and cluster < CHAIN_END
+				cluster is fat_table:cluster;
+				hops--;
+			;;
+			if cluster >= 2 and cluster < CHAIN_END
+				call sector is ClusterSector: cluster;
+				sector++ n % sectors_per_cluster;
+			;;
+		;;
+	[end: sector]
+
+	[ClusterSector: u32 cluster: 0;]
+	[end: data_start + (cluster - 2) * sectors_per_cluster]
+
+	[ReadCluster: u32 cluster: 0;]
+		u32 sector: 0;
+		call sector is ClusterSector: cluster;
+		bln ok: false;
+		call ok is Disk.Read: sector sectors_per_cluster cluster_buffer;
+	[end: ok]
+
+	[FindFreeCluster]
+		u32 result: 0;
+		while u32 c: 2; c < cluster_count + 2 and result is 0; c++;
+			if fat_table:c is 0
+				result is c;
+			;;
+		;;
+	[end: result]
+
+	[FreeChain: u32 cluster: 0;]
+		while cluster >= 2 and cluster < CHAIN_END
+			u32 next: fat_table:cluster;
+			fat_table:cluster is 0;
+			cluster is next;
+		;;
+	[end]
+
+	# write the in-memory FAT to every copy on disk
+	[SaveFat]
+		bln ok: true;
+		while u32 copy: 0; copy < fat_count; copy++;
+			while u32 s: 0; s < fat_sectors and ok; s++;
+				call ok is Disk.Write: fat_start + copy * fat_sectors + s 1 fat_table + s * 512;
+			;;
+		;;
+	[end: ok]
+
+	# NAME.EXT from a directory entry, into display_name
+	[DisplayName: ptr<DirEntry> e: 0;]
+		u32 length: 0;
+		while u32 i: 0; i < 8; i++;
+			if e:0.name:i is not ' '
+				display_name:length is e:0.name:i;
+				length++;
+			;;
+		;;
+		if e:0.name:8 is not ' '
+			display_name:length is '.';
+			length++;
+			while u32 j: 8; j < 11; j++;
+				if e:0.name:j is not ' '
+					display_name:length is e:0.name:j;
+					length++;
+				;;
+			;;
+		;;
+		display_name:length is 0;
+	[end]
+}

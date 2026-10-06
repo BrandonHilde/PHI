@@ -36,6 +36,7 @@ protected mode with nothing else running.
 | sector 0 | stage 1: loads stage 2 |
 | sectors 1–8 | stage 2: the loader (4 KB) |
 | sector 9 … | the kernel (up to 512 KB) |
+| sector 2048 … | a 16 MB FAT16 partition (entry 1 of the partition table in sector 0), filled from `NAME.rootfs/` |
 
 **What happens at boot:**
 
@@ -106,6 +107,12 @@ phi.Main:Kernel
 
 Each `MemoryRegion` is 24 bytes: `base`, `base_high`, `length`, `length_high`, `type`
 (1 = usable RAM) and `attributes`.
+
+### The disk
+
+The partition is FAT16 with 512-byte sectors, 2 KB clusters, two FATs of 32 sectors and
+a root folder of 512 entries. `drivers.disk` finds it through the partition table, and
+`fs.fat16` reads and writes it with the IDE driver in `drivers.ata`.
 
 ### Output in a 32-bit kernel
 

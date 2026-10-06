@@ -1,0 +1,64 @@
+# The disk's FAT partition, as numbered sectors (the block-device layer).
+#
+#   use drivers.disk;
+#   if Disk.partition_found
+#       call ok is Disk.Read: 0 1 buffer;    # sector 0 of the partition
+#
+# At startup this reads the partition table in the disk's first sector and picks
+# the first FAT partition. Sector numbers are relative to the partition, and
+# reads and writes outside it fail, so a file system can't touch anything else.
+
+use drivers.ata;
+
+struct.PartitionEntry
+{
+	u8 status;
+	u8 chs_first[3];
+	u8 type;
+	u8 chs_last[3];
+	u32 first_sector;
+	u32 sector_count;
+}
+
+phi.Disk:Library
+{
+	u8 disk_mbr[512];
+	bln partition_found: false;
+	u32 partition_start: 0;
+	u32 partition_sectors: 0;
+	u8 partition_type: 0;
+
+	call FindPartition;
+
+	[FindPartition]
+		bln ok: false;
+		call ok is Ata.Read: 0 1 addr disk_mbr;
+		if ok and disk_mbr:510 is 0x55 and disk_mbr:511 is 0xAA
+			ptr<PartitionEntry> entries: addr disk_mbr:446;
+			while int i: 0; i < 4 and partition_found is false; i++;
+				u8 type: entries:i.type;
+				# 0x04, 0x06: FAT16;  0x0E: FAT16 using LBA
+				if type is 0x04 or type is 0x06 or type is 0x0E
+					partition_found is true;
+					partition_type is type;
+					partition_start is entries:i.first_sector;
+					partition_sectors is entries:i.sector_count;
+				;;
+			;;
+		;;
+	[end]
+
+	[Read: u32 sector: 0; u32 count: 1; ptr<u16> buffer: 0;]
+		bln ok: false;
+		if partition_found and sector + count <= partition_sectors
+			call ok is Ata.Read: partition_start + sector count buffer;
+		;;
+	[end: ok]
+
+	[Write: u32 sector: 0; u32 count: 1; ptr<u16> buffer: 0;]
+		bln ok: false;
+		if partition_found and sector + count <= partition_sectors
+			call ok is Ata.Write: partition_start + sector count buffer;
+		;;
+	[end: ok]
+}

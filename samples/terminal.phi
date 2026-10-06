@@ -3,10 +3,12 @@
 #   phi run samples/terminal.phi
 #
 # The clock is drawn by the timer event (an interrupt, 60 times a second) using
-# the RTC driver; typing goes through the keyboard driver. 'crash' divides by
+# the RTC driver; typing goes through the keyboard driver; ls and cat read the
+# FAT16 disk that phi build makes from terminal.rootfs/. 'crash' divides by
 # zero to show the panic screen.
 
 use drivers.rtc;
+use fs.fat16;
 
 phi.Terminal:Kernel
 {
@@ -14,7 +16,11 @@ phi.Terminal:Kernel
 	ptr<u16> screen: 0xB8000;
 	int lastSecond: -1;
 	str line: [60];
+	ptr<u8> file: new u8[16384];
+	int size: 0;
 
+	log '\n';
+	call ShowFile: 'README.TXT';
 	log '\nPHI terminal. Type help for the commands.\n';
 	call OS.SetupInteruptTimer;
 
@@ -25,6 +31,8 @@ phi.Terminal:Kernel
 
 		if line is 'help'
 			log 'help    this list\n';
+			log 'ls      the files on the disk (ls docs for a folder)\n';
+			log 'cat F   print the file F\n';
 			log 'time    the date and time (UTC)\n';
 			log 'uptime  seconds since the kernel started\n';
 			log 'crash   divide by zero\n';
@@ -37,6 +45,19 @@ phi.Terminal:Kernel
 			call ms is OS.GetTicks;
 			log ms / 1000 ' seconds\n';
 		;;
+		elif line is 'ls'
+			call size is Fat.List: '';
+		;;
+		elif line:0 is 'l' and line:1 is 's' and line:2 is ' '
+			ptr<u8> folder: line;
+			folder++ 3;
+			call size is Fat.List: folder;
+		;;
+		elif line:0 is 'c' and line:1 is 'a' and line:2 is 't' and line:3 is ' '
+			ptr<u8> name: line;
+			name++ 4;
+			call ShowFile: name;
+		;;
 		elif line is 'crash'
 			int zero: 0;
 			int boom: 1 / zero;
@@ -45,6 +66,17 @@ phi.Terminal:Kernel
 			log 'unknown command: ' line '\n';
 		;;
 	;;
+
+	[ShowFile: ptr<u8> path: 0;]
+		call size is Fat.ReadFile: path file 16383;
+		if size < 0
+			log 'no such file: ' path '\n';
+		;;
+		else
+			file:size is 0;
+			log file;
+		;;
+	[end]
 
 	# runs 60 times a second; redraws the clock when the second changes
 	[OS.TimerEvent]
