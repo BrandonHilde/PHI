@@ -296,6 +296,8 @@ log t:0.id;                     # a field of what t points to
 ```
 
 - Pointers can reach any address below 1 MB (in 16-bit mode, through the `fs` segment).
+- `addr x` is a pointer to what `x` holds: `addr buffer` of a `u8` array is a `ptr<u8>`,
+  `addr task` of a `Task` is a `ptr<Task>`.
 - `addr Method` is the address of a method, for interrupt handlers.
 - Every read and write goes to memory (values are never kept in registers between
   statements), so pointers to device memory work without anything like C's `volatile`.
@@ -447,7 +449,33 @@ or drivers. Instead:
 | `OS.ReadKey` →, `OS.KeyAvailable` →, `Bootloader.WaitForKeyPress` → | the keyboard |
 | `OS.CurrentTask` → | this program's process number |
 | `OS.Spawn: path` → | start another program; its process number, or -1 |
+| `OS.Run: path arguments` → | the same, with a command line for it |
+| `OS.Arguments` → | this program's command line, as a `ptr<u8>` |
 | `OS.Wait: process` → | wait for a program this one started; its exit code |
+| `OS.ReadFile: path buffer max` →, `OS.WriteFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods |
+| `OS.TaskState: process` →, `OS.TaskName: process buffer` →, `OS.Kill: process` → | other programs (`ps`, `kill`) |
+| `OS.FreeMemory` →, `OS.TotalMemory` → | memory, in KB |
+| `OS.ClearScreen`, `OS.PutCell: column row cell` | the text screen; a cell is a character in the low byte and a color in the high byte |
+| `OS.IsKeyDown: key` → | whether a key is held down (for games) |
+| `OS.Reboot` | restart the machine |
+
+Every pointer a program passes is checked against its own memory; a bad one makes the
+call return -1 instead of reaching the kernel.
+
+### The shell
+
+[samples/os.phi](../samples/os.phi) is a kernel that boots into a shell:
+
+```
+phi run samples/os.phi
+```
+
+The shell and every command are user programs in
+[samples/os.rootfs](../samples/os.rootfs). It reads a line, runs `NAME.BIN` with the rest
+of the line as that program's command line, and waits for it (or not, with a trailing
+`&`). Its own commands are `help` and `exit`; the others are programs: `ls`, `cat`,
+`echo`, `ps`, `kill`, `mem`, `uptime`, `clear`, `reboot`, `pong`, `hello` and `count`.
+Adding a command is adding a `.phi` file to the folder.
 
 The system calls behind these (`int 0x80`, number in `eax`, argument in `ebx`, result in
 `eax`) are listed in [lib/x86_32/tasks.asm](../lib/x86_32/tasks.asm). A kernel can add
@@ -557,6 +585,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
+| `user.text` | class `Text` (any program): `Length`, `Equal`, `StartsWith`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Append: buffer text size`, `TrimEnd`, `ToNumber` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 
 ## Built-in functions
@@ -591,7 +620,10 @@ are drivers in [lib/x86_32](../lib/x86_32).
 | `OS.EnableInterrupts` / `OS.DisableInterrupts` | both | `sti` / `cli` |
 | `OS.Yield` | 32-bit, programs | let other tasks run |
 | `OS.CurrentTask` → | 32-bit, programs | this task's number (0 is the kernel) |
-| `OS.Spawn: path` → / `OS.Wait: process` → | programs | start a program from the disk / wait for it |
+| `OS.Spawn: path` → / `OS.Run: path arguments` → / `OS.Wait: process` → | programs | start a program from the disk / wait for it |
+| `OS.ClearScreen`, `OS.PutCell: column row cell`, `OS.Reboot` | 32-bit, programs | the text screen; restarting |
+| `OS.KillTask: task` → | 32-bit | stop a task (programs use `OS.Kill`) |
+| the file, process and memory calls | programs | see [Programs](#programs-and-processes) |
 | `OS.StartMultitasking`, `OS.CreateUserTask`, `OS.TaskState` →, `OS.TaskExitCode` →, `OS.TaskParent` →, `OS.FreeTask`, `OS.SetSyscallHandler`, `OS.SyscallFrame` → | 32-bit | the task machinery `proc.process` is built on |
 
 `OS.SetupInterruptTimer` and `OS.SetupKeyboardInterrupt` (spelled correctly) also work.

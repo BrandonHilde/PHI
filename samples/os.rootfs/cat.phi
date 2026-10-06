@@ -1,0 +1,16 @@
+# cat FILE: print a file
+phi.Cat:Program
+{
+	u8 contents[16384];
+	ptr<u8> name: 0;
+	call name is OS.Arguments;
+	int size: 0;
+	call size is OS.ReadFile: name addr contents 16383;
+	if size < 0
+		log 'cat: no such file: ' name '\n';
+		exit 1;
+	;;
+	contents:size is 0;
+	ptr<u8> text: addr contents;
+	log text;
+}

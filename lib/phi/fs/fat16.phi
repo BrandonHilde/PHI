@@ -167,7 +167,8 @@ phi.Fat:Kernel
 		call exists is Resolve: path;
 	[end: exists]
 
-	# print a folder ('' is the root); returns how many entries it has
+	# print a folder ('' is the root); returns how many entries it has, or -1 if
+	# there's no such folder
 	[List: ptr<u8> path: 0;]
 		int count: 0;
 		u32 directory: 0;
@@ -176,6 +177,9 @@ phi.Fat:Kernel
 			call ok is Resolve: path;
 			ok is ok and (found.attributes & ATTR_DIRECTORY) is not 0;
 			directory is found.cluster;
+		;;
+		if ok is false
+			count is -1;
 		;;
 
 		bln more: ok;

@@ -1,0 +1,7 @@
+phi.Uptime:Program
+{
+	u32 ms: 0;
+	call ms is OS.GetTicks;
+	u32 seconds: ms / 1000;
+	log 'up ' seconds / 60 ' min ' seconds % 60 ' s\n';
+}

@@ -1323,7 +1323,17 @@ namespace Phi.Compiler.Semantics
                 IndexExpr or MemberExpr => true,
                 _ => false,
             };
-            if (!place) Error(addr.Operand.Span, "addr needs a variable, field, element or method");
+            if (!place)
+            {
+                Error(addr.Operand.Span, "addr needs a variable, field, element or method");
+                return;
+            }
+
+            // a pointer to what it points at: addr of a u8 array is a ptr<u8>, of a str too
+            PhiType t = addr.Operand.Type;
+            addr.Type = t.IsString ? PhiType.PointerTo(PhiType.U8)
+                      : t.IsArray ? PhiType.PointerTo(t.Element)
+                      : PhiType.PointerTo(t);
         }
 
         void BindBinary(BinaryExpr b, Scope scope)

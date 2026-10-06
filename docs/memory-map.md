@@ -117,7 +117,7 @@ With `proc.process`, the kernel sets up a GDT of its own (kernel code `0x08`, ke
 |---|---|
 | `0x00000000`–`0x3FFFFFFF` | the kernel's memory, mapped but not reachable from user mode |
 | `0x40000000` … | the program's code and data (`NAME.BIN`, loaded as is) |
-| `0x403F0000`–`0x403FFFFF` | its 64 KB stack (`esp` starts at `0x40400000`) |
+| `0x403F0000`–`0x403FFFFF` | its 64 KB stack (`esp` starts at `0x40400000`); the first 256 bytes hold its command line (`OS.Arguments`) |
 
 Everything in between, and above, is unmapped. The program's page directory copies the
 kernel's and adds one page table for these 4 MB; each program also has an 8 KB kernel

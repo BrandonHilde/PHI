@@ -3,6 +3,7 @@
 #   use proc.process;
 #   int pid: 0;
 #   call pid is Process.Spawn: 'HELLO.BIN';   # -1 if it can't start
+#   call pid is Process.Spawn: 'ECHO.BIN' 'hello there';   # with a command line
 #   int code: 0;
 #   call code is Process.Wait: pid;            # its exit code; -1 if it crashed
 #
@@ -10,7 +11,8 @@
 # a kernel's rootfs into NAME.BIN) runs in ring 3 with its own address space:
 # its code and data at 0x40000000, a 64 KB stack ending at 0x40400000, and the
 # kernel's memory mapped but out of reach. It talks to the kernel through
-# system calls (lib/x86_32/tasks.asm); spawning other programs is handled here.
+# system calls (lib/x86_32/tasks.asm); the ones numbered 16 and up (programs,
+# files, process information, the screen) are handled here.
 #
 # The timer shares the CPU between programs. The kernel's own code runs until it
 # waits (Wait, WaitAll, OS.Yield) or its main code ends.
@@ -55,19 +57,39 @@ phi.Process:Kernel
 	const u32 TASK_FREE: 0;
 	const u32 TASK_EXITED: 5;
 	const u32 TASK_COLLECTED: 6;
+	const u32 ARGUMENTS_SIZE: 256;          # a program's command line, at the bottom of its stack area
+	const u32 NAME_SIZE: 16;
+
 	const u32 SYS_SPAWN: 16;
+	const u32 SYS_READ_FILE: 17;
+	const u32 SYS_WRITE_FILE: 18;
+	const u32 SYS_DELETE_FILE: 19;
+	const u32 SYS_LIST_FILES: 20;
+	const u32 SYS_FILE_SIZE: 21;
+	const u32 SYS_TASK_STATE: 22;
+	const u32 SYS_TASK_NAME: 23;
+	const u32 SYS_KILL: 24;
+	const u32 SYS_FREE_MEMORY: 25;
+	const u32 SYS_TOTAL_MEMORY: 26;
+	const u32 SYS_REBOOT: 27;
+	const u32 SYS_CLEAR: 28;
+	const u32 SYS_PUT_CELL: 29;
+	const u32 SYS_KEY_DOWN: 30;
 
 	u32 process_directory[16];              # 0: no process with this number
 	u32 process_kernel_stack[16];
 	u32 process_image_end[16];
+	u8 process_names[256];                  # 16 bytes for each process
 	u32 started: 0;
-	str spawn_path: [63];
+	u8 call_path[64];                       # copies of a system call's text arguments
+	u8 call_arguments[256];
 
 	call OS.StartMultitasking;
 	call OS.SetSyscallHandler: addr HandleSyscall;
 
-	# load a program from the disk and start it; its process number, or -1
-	[Spawn: ptr<u8> path: 0;]
+	# load a program from the disk and start it, with a command line it can read
+	# with OS.Arguments; its process number, or -1
+	[Spawn: ptr<u8> path: 0; ptr<u8> arguments: 0;]
 		int pid: -1;
 		int size: 0;
 		call size is Fat.FileSize: path;
@@ -108,11 +130,18 @@ phi.Process:Kernel
 					table:p is frame | PAGE_USER;
 				;;
 
-				# its stack, at the top of the 4 MB
+				# its stack, at the top of the 4 MB; the command line goes at the bottom of it
 				while u32 s: 0; s < STACK_PAGES; s++;
-					u32 stackFrame: 0;
+					ptr<u8> stackFrame: 0;
 					call stackFrame is NewPage;
 					table:(1024 - STACK_PAGES + s) is stackFrame | PAGE_USER;
+					if s is 0 and arguments is not 0
+						u32 a: 0;
+						while a < ARGUMENTS_SIZE - 1 and arguments:a is not 0
+							stackFrame:a is arguments:a;
+							a++;
+						;;
+					;;
 				;;
 
 				u32 imageEnd: USER_BASE + pages * PAGE_SIZE;
@@ -123,6 +152,27 @@ phi.Process:Kernel
 					process_kernel_stack:pid is kernelStack;
 					process_image_end:pid is imageEnd;
 					started++;
+					# its name: the file name, without any folders
+					u32 nameStart: 0;
+					u32 n: 0;
+					while path:n is not 0
+						if path:n is '/'
+							nameStart is n + 1;
+						;;
+						n++;
+					;;
+					while u32 k: 0; k < NAME_SIZE; k++;
+						process_names:(pid * NAME_SIZE + k) is 0;
+					;;
+					u32 copied: 0;
+					while copied < NAME_SIZE - 1 and path:(nameStart + copied) is not 0
+						u8 c: path:(nameStart + copied);
+						if c >= 'a' and c <= 'z'
+							c is c - 32;                  # file names are capitals on FAT16
+						;;
+						process_names:(pid * NAME_SIZE + copied) is c;
+						copied++;
+					;;
 				;;
 			;;
 			free image;
@@ -220,42 +270,136 @@ phi.Process:Kernel
 		;;
 	[end: page]
 
-	# system calls numbered 16 and up, from programs
+	# is [address, address + length) memory the calling program owns?
+	[UserRange: u32 address: 0; u32 length: 0;]
+		u32 caller: 0;
+		call caller is OS.CurrentTask;
+		u32 last: address + length;
+		bln inImage: address >= USER_BASE and last >= address and last <= process_image_end:caller;
+		bln inStack: address >= USER_TOP - STACK_PAGES * PAGE_SIZE and last >= address and last <= USER_TOP;
+	[end: inImage or inStack]
+
+	# copy a zero-terminated string out of the calling program's memory, checking
+	# every byte is inside it; false if it isn't (or doesn't end within max bytes)
+	[CopyFromUser: u32 from: 0; ptr<u8> to: 0; u32 max: 0;]
+		bln ok: true;
+		bln ended: false;
+		u32 length: 0;
+		while ok and ended is false and length < max
+			bln inside: false;
+			call inside is UserRange: from + length 1;
+			if inside
+				ptr<u8> byte: from + length;
+				to:length is byte:0;
+				ended is byte:0 is 0;
+				length++;
+			;;
+			else
+				ok is false;
+			;;
+		;;
+	[end: ok and ended]
+
+	# system calls numbered 16 and up, from programs: the number is in the saved
+	# eax, arguments in ebx, ecx and edx, and the result goes back in eax
 	[HandleSyscall]
 		ptr<SyscallFrame> frame: 0;
 		call frame is OS.SyscallFrame;
+		u32 number: frame:0.eax;
+		u32 first: frame:0.ebx;
+		u32 second: frame:0.ecx;
+		u32 third: frame:0.edx;
+		int result: -1;
+		bln ok: false;
 
-		if frame:0.eax is SYS_SPAWN
-			# copy the path out of the program's memory, checking every byte is inside it
-			u32 caller: 0;
-			call caller is OS.CurrentTask;
-			u32 from: frame:0.ebx;
-			u32 length: 0;
-			bln ok: true;
-			bln ended: false;
-			while ok and ended is false and length < 63
-				u32 at: from + length;
-				bln inImage: at >= USER_BASE and at < process_image_end:caller;
-				bln inStack: at >= USER_TOP - STACK_PAGES * PAGE_SIZE and at < USER_TOP;
-				if inImage or inStack
-					ptr<u8> byte: at;
-					spawn_path:length is byte:0;
-					ended is byte:0 is 0;
-					length++;
-				;;
-				else
-					ok is false;
-				;;
-			;;
+		# most calls start with a path
+		bln pathOk: false;
+		if number >= SYS_SPAWN and number <= SYS_FILE_SIZE
+			call pathOk is CopyFromUser: first addr call_path 64;
+		;;
 
-			int pid: -1;
-			if ok and ended
-				call pid is Spawn: spawn_path;
+		if number is SYS_SPAWN
+			bln argumentsOk: true;
+			call_arguments:0 is 0;
+			if second is not 0
+				call argumentsOk is CopyFromUser: second addr call_arguments 256;
 			;;
-			frame:0.eax is pid;
+			if pathOk and argumentsOk
+				call result is Spawn: addr call_path addr call_arguments;
+			;;
 		;;
-		else
-			frame:0.eax is -1;                # a system call nobody handles
+		elif number is SYS_READ_FILE
+			call ok is UserRange: second third;
+			if pathOk and ok
+				call result is Fat.ReadFile: addr call_path second third;
+			;;
 		;;
+		elif number is SYS_WRITE_FILE
+			call ok is UserRange: second third;
+			if pathOk and ok
+				call ok is Fat.WriteFile: addr call_path second third;
+				result is ok;
+			;;
+		;;
+		elif number is SYS_DELETE_FILE
+			if pathOk
+				call ok is Fat.Delete: addr call_path;
+				result is ok;
+			;;
+		;;
+		elif number is SYS_LIST_FILES
+			if pathOk
+				call result is Fat.List: addr call_path;
+			;;
+		;;
+		elif number is SYS_FILE_SIZE
+			if pathOk
+				call result is Fat.FileSize: addr call_path;
+			;;
+		;;
+		elif number is SYS_TASK_STATE
+			result is 0;
+			if first < MAX_PROCESSES
+				call result is OS.TaskState: first;
+			;;
+		;;
+		elif number is SYS_TASK_NAME
+			result is 0;
+			call ok is UserRange: second NAME_SIZE;
+			if ok and first < MAX_PROCESSES
+				ptr<u8> to: second;
+				while u32 k: 0; k < NAME_SIZE; k++;
+					to:k is process_names:(first * NAME_SIZE + k);
+				;;
+				to:(NAME_SIZE - 1) is 0;
+				result is to:0 is not 0;
+			;;
+		;;
+		elif number is SYS_KILL
+			call result is OS.KillTask: first;
+		;;
+		elif number is SYS_FREE_MEMORY
+			result is Frames.free_frames * 4;
+		;;
+		elif number is SYS_TOTAL_MEMORY
+			result is Frames.total_frames * 4;
+		;;
+		elif number is SYS_REBOOT
+			call OS.Reboot;
+		;;
+		elif number is SYS_CLEAR
+			call OS.ClearScreen;
+			result is 0;
+		;;
+		elif number is SYS_PUT_CELL
+			call OS.PutCell: first second third;
+			result is 0;
+		;;
+		elif number is SYS_KEY_DOWN
+			call OS.SetupKeyboardInterupt;
+			call result is OS.IsKeyDown: first;
+		;;
+
+		frame:0.eax is result;
 	[end]
 }

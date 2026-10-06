@@ -1,0 +1,35 @@
+use user.text;
+
+phi.TextTest:Library
+{
+	str line: '   ls   docs  ';
+	u8 word[16];
+	ptr<u8> rest: 0;
+	int n: 0;
+
+	call n is Text.CopyWord: line addr word 15;
+	call rest is Text.AfterWord: line;
+	call Text.TrimEnd: rest;
+	debug '[' addr word '] ' n ' [' rest ']\n';
+
+	bln same: false;
+	call same is Text.Equal: addr word 'ls';
+	debug 'equal: ' same;
+	call same is Text.Equal: addr word 'lsx';
+	debug ' ' same;
+	call same is Text.StartsWith: 'hello world' 'hello';
+	debug ' starts: ' same '\n';
+
+	call n is Text.ToNumber: '  -42 apples';
+	debug 'number: ' n;
+	call n is Text.ToNumber: 'none';
+	debug ' ' n '\n';
+
+	u8 joined[12];
+	joined:0 is 0;
+	call Text.Append: addr joined 'SHELL' 12;
+	call Text.Append: addr joined '.BIN and more' 12;
+	call n is Text.Length: addr joined;
+	debug 'joined: ' addr joined ' ' n '\n';
+	exit 0;
+}

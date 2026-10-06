@@ -1,0 +1,8 @@
+phi.Count:Program
+{
+	while int i: 1; i <= 5; i++;
+		log 'count ' i '\n';
+		call OS.Sleep: 300;
+	;;
+	exit 5;
+}

@@ -1,0 +1,9 @@
+# mem: how much memory is in use
+phi.Mem:Program
+{
+	u32 total: 0;
+	u32 available: 0;
+	call total is OS.TotalMemory;
+	call available is OS.FreeMemory;
+	log 'memory: ' (total - available) / 1024 ' MB used, ' available / 1024 ' MB free of ' total / 1024 ' MB\n';
+}

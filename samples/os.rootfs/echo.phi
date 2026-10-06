@@ -1,0 +1,7 @@
+# echo TEXT: print the command line
+phi.Echo:Program
+{
+	ptr<u8> text: 0;
+	call text is OS.Arguments;
+	log text '\n';
+}

@@ -1,0 +1,5 @@
+phi.Reboot:Program
+{
+	log 'restarting...\n';
+	call OS.Reboot;
+}

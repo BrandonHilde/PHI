@@ -1,0 +1,131 @@
+# Pong, as a user program: the arcade.phi game rebuilt for PHI OS. It draws in
+# text mode through the OS.PutCell system call (user programs can't touch video
+# memory themselves), 20 frames a second.
+#
+#   w / s   left paddle        o / l   right paddle        q   back to the shell
+
+phi.Pong:Program
+{
+	const int WIDTH: 80;
+	const int HEIGHT: 25;
+	const int TOP: 1;                   # row 0 is the score line
+	const int PADDLE: 5;
+	const int LEFT_X: 2;
+	const int RIGHT_X: 77;
+	const u32 BLANK: 0x0720;            # a space, light gray on black
+	const u32 PADDLE_CELL: 0x0ADB;      # a full block, light green
+	const u32 BALL_CELL: 0x0FFE;        # a small square, white
+	const u32 TEXT_COLOR: 0x1F00;       # white on blue
+
+	int leftY: 10;
+	int rightY: 10;
+	int ballX: 40;
+	int ballY: 12;
+	int dx: 1;
+	int dy: 1;
+	int leftScore: 0;
+	int rightScore: 0;
+	bln playing: true;
+
+	call OS.ClearScreen;
+	while int c: 0; c < WIDTH; c++;
+		call OS.PutCell: c 0 TEXT_COLOR | ' ';
+	;;
+	call Text: 1 ' PHI PONG     w/s left     o/l right     q quits';
+
+	while playing
+		# keys: q quits; the paddles move while their keys are held
+		bln waiting: false;
+		call waiting is OS.KeyAvailable;
+		while waiting
+			u8 key: 0;
+			call key is OS.ReadKey;
+			if key is 'q'
+				playing is false;
+			;;
+			call waiting is OS.KeyAvailable;
+		;;
+		bln down: false;
+		call down is OS.IsKeyDown: 'w';
+		if down and leftY > TOP
+			leftY--;
+		;;
+		call down is OS.IsKeyDown: 's';
+		if down and leftY + PADDLE < HEIGHT
+			leftY++;
+		;;
+		call down is OS.IsKeyDown: 'o';
+		if down and rightY > TOP
+			rightY--;
+		;;
+		call down is OS.IsKeyDown: 'l';
+		if down and rightY + PADDLE < HEIGHT
+			rightY++;
+		;;
+
+		# the ball
+		call OS.PutCell: ballX ballY BLANK;
+		ballX++ dx;
+		ballY++ dy;
+		if ballY <= TOP or ballY >= HEIGHT - 1
+			dy is -dy;
+		;;
+		if ballX is LEFT_X + 1 and ballY >= leftY and ballY < leftY + PADDLE
+			dx is 1;
+		;;
+		if ballX is RIGHT_X - 1 and ballY >= rightY and ballY < rightY + PADDLE
+			dx is -1;
+		;;
+		if ballX <= 0
+			rightScore++;
+			call Serve;
+		;;
+		if ballX >= WIDTH - 1
+			leftScore++;
+			call Serve;
+		;;
+
+		call DrawPaddle: LEFT_X leftY;
+		call DrawPaddle: RIGHT_X rightY;
+		call OS.PutCell: ballX ballY BALL_CELL;
+		call Number: 66 leftScore;
+		call OS.PutCell: 69 0 TEXT_COLOR | '-';
+		call Number: 71 rightScore;
+
+		call OS.Sleep: 50;
+	;;
+
+	call OS.ClearScreen;
+	log 'Pong: ' leftScore ' - ' rightScore '\n';
+
+	[Serve]
+		call OS.PutCell: ballX ballY BLANK;
+		ballX is 40;
+		ballY is 12;
+		dx is -dx;
+	[end]
+
+	[DrawPaddle: int x: 0; int y: 0;]
+		while int row: TOP; row < HEIGHT; row++;
+			u32 cell: BLANK;
+			if row >= y and row < y + PADDLE
+				cell is PADDLE_CELL;
+			;;
+			call OS.PutCell: x row cell;
+		;;
+	[end]
+
+	# two digits on the score line
+	[Number: int x: 0; int n: 0;]
+		call OS.PutCell: x 0 TEXT_COLOR | ('0' + n / 10 % 10);
+		call OS.PutCell: x + 1 0 TEXT_COLOR | ('0' + n % 10);
+	[end]
+
+	[Text: int x: 0; ptr<u8> text: 0;]
+		int i: 0;
+		while text:i is not 0
+			call OS.PutCell: x + i 0 TEXT_COLOR | text:i;
+			i++;
+		;;
+	[end]
+}

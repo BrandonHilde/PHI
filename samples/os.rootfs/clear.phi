@@ -1,0 +1,4 @@
+phi.Clear:Program
+{
+	call OS.ClearScreen;
+}

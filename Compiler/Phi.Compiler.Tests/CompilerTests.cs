@@ -192,7 +192,7 @@ namespace Phi.Compiler.Tests
         }
 
         public static IEnumerable<object[]> RunnableSamples() =>
-            new[] { "hello.phi", "arcade.phi", "kernel.phi", "terminal.phi" }.Select(f => new object[] { f });
+            new[] { "hello.phi", "arcade.phi", "kernel.phi", "terminal.phi", "os.phi" }.Select(f => new object[] { f });
 
         [Theory]
         [MemberData(nameof(RunnableSamples))]

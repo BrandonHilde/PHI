@@ -467,6 +467,37 @@ Goal: a usable little OS.
 **Done when:** you boot into the shell, run `ls`, start Pong, quit it, and are back at
 the prompt.
 
+**Status: done (2026-10-06).** Demo: `phi run samples/os.phi`.
+- [x] The shell (`samples/os.rootfs/shell.phi`) is a user program: prompt, backspace, runs `NAME.BIN`
+  with the rest of the line as its command line, `&` for background programs, `help`, `exit`;
+  `samples/os.phi` boots into it and restarts it if it exits
+- [x] Commands as separate programs: `ls`, `cat`, `echo`, `clear`, `mem`, `ps`, `kill`, `uptime`,
+  `reboot` (plus `hello` and `count`)
+- [x] System calls 16-30 in `proc.process`: spawn with a command line, file read/write/delete/list/size,
+  process state/name/kill, memory, clear screen, put a screen cell, key state, reboot; every pointer
+  is checked against the calling program's memory
+- [x] `user.text`: string helpers for command lines (words, numbers, joining, comparing)
+- [x] Pong rebuilt as a user program (`pong.phi`), in text mode
+- [x] `addr` gives a typed pointer (`addr buffer` of a `u8` array is a `ptr<u8>`)
+- [x] Test: the whole session above, automated (`tests/kernel32_shell.phi`), plus `user.text` in both modes
+- Differs from the plan:
+  - Pong is text mode (80x25 cells). Graphics mode needs the BIOS, and drawing would need video
+    memory mapped into the program; both belong with the framebuffer work in [Later](#later).
+  - The "user standard library" has text and the system calls, but no heap for programs: `new` in
+    a program would need the kernel to grow its memory, and is the next thing to add.
+
+## Where things stand
+
+All eight phases are done. A PHI program can be a 16-bit boot sector, a 32-bit kernel, or a
+user program; `samples/os.phi` brings the pieces together. The parts most worth doing next,
+roughly in order:
+
+1. **Variables on the stack** for methods: recursion, kernel threads, and safer concurrency.
+2. **A heap for user programs**, so `new` works there too.
+3. **Growable strings** with value semantics.
+4. **The framebuffer** (Bochs VBE in QEMU) for graphics in 32-bit kernels.
+5. Then the [Later](#later) list: 64-bit, ARM, networking, self-hosting.
+
 ---
 
 ## Proposed project layout

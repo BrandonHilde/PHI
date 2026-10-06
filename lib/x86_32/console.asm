@@ -1,4 +1,4 @@
-; provides: phi_print phi_console_putc phi_console_clear phi_console_color
+; provides: phi_print phi_console_putc phi_console_clear phi_console_color OS_ClearScreen OS_PutCell
 ; requires: phi_serial_putc
 ; init: phi_console_init
 ;
@@ -30,6 +30,28 @@ phi_console_clear:
     mov dword [phi_console_col], 0
     call phi_console_move_cursor
     popad
+    ret
+
+; for PHI code: clear the screen, and put the cursor at the top left
+OS_ClearScreen:
+    jmp phi_console_clear
+
+; for PHI code. args: column, row, cell (character in the low byte, color in the high byte)
+OS_PutCell:
+    push ebp
+    mov ebp, esp
+    mov eax, [ebp + 12]
+    cmp eax, CONSOLE_ROWS
+    jae .outside
+    mov ebx, [ebp + 8]
+    cmp ebx, CONSOLE_COLS
+    jae .outside
+    imul eax, eax, CONSOLE_COLS
+    add eax, ebx
+    mov ecx, [ebp + 16]
+    mov [CONSOLE_VGA + eax * 2], cx
+.outside:
+    pop ebp
     ret
 
 ; print the zero-terminated string at esi

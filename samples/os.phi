@@ -1,0 +1,42 @@
+# PHI OS: a 32-bit kernel that boots into the shell.
+#
+#   phi run samples/os.phi
+#
+# phi build compiles every .phi file in samples/os.rootfs/ into a program on the
+# disk: the shell, its commands and Pong. The kernel starts SHELL.BIN, and starts
+# a new one whenever it exits.
+
+use proc.process;
+
+phi.PhiOS:Kernel
+{
+	call OS.ClearScreen;
+	log 'PHI OS\n\n';
+	call ShowFile: 'README.TXT';
+
+	bln running: true;
+	while running
+		int shell: 0;
+		call shell is Process.Spawn: 'SHELL.BIN';
+		if shell < 0
+			log 'PHI OS: SHELL.BIN is missing from the disk\n';
+			running is false;
+		;;
+		else
+			int code: 0;
+			call code is Process.Wait: shell;
+			log '\n[the shell exited; starting a new one]\n\n';
+		;;
+	;;
+
+	[ShowFile: ptr<u8> path: 0;]
+		ptr<u8> text: new u8[4096];
+		int size: 0;
+		call size is Fat.ReadFile: path text 4095;
+		if size > 0
+			text:size is 0;
+			log text '\n';
+		;;
+		free text;
+	[end]
+}

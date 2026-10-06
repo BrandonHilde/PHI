@@ -1,4 +1,4 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_Yield OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
+; provides: OS_StartMultitasking OS_CreateUserTask OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
 ; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
@@ -450,6 +450,42 @@ OS_FreeTask:
     mov dword [phi_task_state + eax * 4], TASK_FREE
 .kernel:
     ret
+
+; arg: task -> eax = 1 if it was stopped (with exit code -1). The kernel, the task
+; doing the killing, and tasks that have already finished can't be killed.
+OS_KillTask:
+    mov eax, [esp + 4]
+    cmp eax, MAX_TASKS
+    jae .no
+    test eax, eax
+    jz .no
+    cmp eax, [phi_current_task]
+    je .no
+    mov ecx, [phi_task_state + eax * 4]
+    cmp ecx, TASK_READY
+    jb .no
+    cmp ecx, TASK_EXITED
+    jae .no
+    mov dword [phi_task_exit + eax * 4], -1
+    mov dword [phi_task_state + eax * 4], TASK_EXITED
+    mov eax, 1
+    ret
+.no:
+    xor eax, eax
+    ret
+
+; restart the machine, through the keyboard controller
+OS_Reboot:
+    cli
+.wait:
+    in al, 0x64
+    test al, 2
+    jnz .wait
+    mov al, 0xFE
+    out 0x64, al
+.halt:
+    hlt
+    jmp .halt
 
 ; arg: an ordinary method, run for system calls numbered 16 and up; it finds the
 ; number in the saved eax (OS_SyscallFrame) and must put the result there

@@ -1,0 +1,98 @@
+# The PHI shell: a user program that reads a command, then runs NAME.BIN from
+# the disk with the rest of the line as its command line.
+#
+#   ls docs            runs LS.BIN with the command line 'docs'
+#   count &            runs COUNT.BIN without waiting for it
+#   exit               leaves the shell
+
+use user.text;
+
+phi.Shell:Program
+{
+	str line: [79];
+	u8 command[16];
+	u8 path[24];
+	bln running: true;
+
+	log 'PHI shell. Type help for the commands.\n';
+
+	while running
+		log 'phi> ';
+		ask line;
+		log '\n';
+
+		# a trailing & means: don't wait for it
+		call Text.TrimEnd: line;
+		int length: 0;
+		call length is Text.Length: line;
+		bln background: length > 0 and line:(length - 1) is '&';
+		if background
+			line:(length - 1) is 0;
+			call Text.TrimEnd: line;
+		;;
+
+		int wordLength: 0;
+		call wordLength is Text.CopyWord: line addr command 15;
+		ptr<u8> arguments: 0;
+		call arguments is Text.AfterWord: line;
+
+		bln isExit: false;
+		bln isHelp: false;
+		call isExit is Text.Equal: addr command 'exit';
+		call isHelp is Text.Equal: addr command 'help';
+
+		if wordLength is 0
+			# an empty line
+		;;
+		elif isExit
+			running is false;
+		;;
+		elif isHelp
+			log 'Commands (each one is a program on the disk):\n';
+			log '  ls [folder]     the files in a folder\n';
+			log '  cat FILE        print a file\n';
+			log '  echo TEXT       print some text\n';
+			log '  ps              the programs running now\n';
+			log '  kill N          stop program N\n';
+			log '  mem             memory in use\n';
+			log '  uptime          time since the kernel started\n';
+			log '  clear           clear the screen\n';
+			log '  pong            play Pong (w/s and o/l, q to quit)\n';
+			log '  hello, count    small example programs\n';
+			log '  reboot          restart the machine\n';
+			log 'Add & to run a program without waiting for it. exit leaves the shell.\n';
+		;;
+		else
+			path:0 is 0;
+			call Text.Append: addr path addr command 24;
+			call Text.Append: addr path '.BIN' 24;
+
+			int pid: 0;
+			call pid is OS.Run: addr path arguments;
+			if pid < 0
+				log 'unknown command: ' addr command '\n';
+			;;
+			elif background
+				log '[started program ' pid ']\n';
+			;;
+			else
+				int code: 0;
+				call code is OS.Wait: pid;
+				if code is not 0
+					log '[exit code ' code ']\n';
+				;;
+			;;
+		;;
+
+		# keys the program didn't read shouldn't end up in the next command
+		bln waiting: false;
+		call waiting is OS.KeyAvailable;
+		while waiting
+			u8 unused: 0;
+			call unused is OS.ReadKey;
+			call waiting is OS.KeyAvailable;
+		;;
+	;;
+
+	log 'Bye.\n';
+}

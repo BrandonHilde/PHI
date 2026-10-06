@@ -1,0 +1,14 @@
+# The whole userland from samples/os.rootfs (see kernel32_shell.rootfs): boot into
+# the shell, run commands, play Pong, quit back to the prompt.
+use proc.process;
+
+phi.Test:Kernel
+{
+	int shell: 0;
+	call shell is Process.Spawn: 'SHELL.BIN';
+	int code: 0;
+	call code is Process.Wait: shell;
+	debug 'shell exited with ' code '\n';
+	call Process.WaitAll;
+	exit 0;
+}

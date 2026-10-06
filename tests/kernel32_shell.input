@@ -1,0 +1,31 @@
+expect phi>
+type ls
+sendkey ret
+expect UPTIME.BIN
+type echo hello from the shell
+sendkey ret
+expect hello from the shell
+type cat docs/phi.txt
+sendkey ret
+expect instead of an app
+type mem
+sendkey ret
+expect MB free
+type ps
+sendkey ret
+expect PS.BIN
+type nothing
+sendkey ret
+expect unknown command
+type pong
+sendkey ret
+wait 1500
+sendkey w 400
+wait 500
+sendkey q
+expect Pong:
+type echo back in the shell
+sendkey ret
+expect back in the shell
+type exit
+sendkey ret

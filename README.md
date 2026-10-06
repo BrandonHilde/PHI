@@ -2,35 +2,58 @@
 <h1>PHI Language</h1>
 <h3>Soon operating systems will be as easy to code as desktop apps</h3>
 
-<h3>Example Program:</h3>
+<h3>PHI OS</h3>
 
-```phi
-
-phi.Hello:Bootloader
-{
-	str hello: 'Hello, World!\r\n';
-    	str newline: '\r\n';
-	str name:[40];
-	
-	log 'What is your name: ';
-	ask name;
-	log newline;
-	log 'hello: ' name;
-	log newline;
-	log 'Press any key to continue...';
-	
-	call Bootloader.WaitForKeyPress;
-	call Bootloader.JumpToSectorTwo;
-}
-
-phi.SectorTwo:OS
-{
-	str Greetings: 'Welcome to PHI language!';
-	
-	log '\r\n' Greetings;
-}
+`phi run samples/os.phi` boots a small operating system written in PHI: a 32-bit kernel
+with interrupt handling, drivers, paging, a heap, a FAT16 file system and processes, and a
+shell with commands and a game, all running as user programs. Only the lowest layer (the
+interrupt stubs, task switching and the console) is assembly; the memory manager, file
+system, process loader, drivers like the disk and clock, and the whole userland are PHI.
 
 ```
+phi> ls
+  CAT.BIN  17461
+  ...
+phi> echo hello
+hello
+phi> count &
+[started program 2]
+phi> ps
+  PID  STATE         NAME
+  1    ready         SHELL.BIN
+  2    sleeping      COUNT.BIN
+  3    running       PS.BIN
+phi> pong
+```
+
+<h3>Example Programs:</h3>
+
+A 32-bit kernel (`phi run hello.phi`):
+
+```phi
+phi.Hello:Kernel
+{
+	str name: [40];
+
+	log 'What is your name: ';
+	ask name;
+	log '\nhello ' name '\n';
+}
+```
+
+A user program, which a kernel runs from its disk (put `count.phi` in the kernel's
+`rootfs` folder and `phi build` compiles it into `COUNT.BIN`):
+
+```phi
+phi.Count:Program
+{
+	while int i: 1; i <= 5; i++;
+		log 'count ' i '\n';
+		call OS.Sleep: 300;
+	;;
+}
+```
+
 <h4>To Build:</h4>
 
     1. Install the .NET 8 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
@@ -41,7 +64,8 @@ phi.SectorTwo:OS
        phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
        phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)
        phi run samples/kernel.phi        a 32-bit protected-mode kernel
-       phi run samples/terminal.phi      a 32-bit kernel you can type commands into (ls, cat, run hello.bin ...)
+       phi run samples/os.phi            PHI OS: boots into a shell (help lists the commands)
+       phi run samples/terminal.phi      a simpler kernel with built-in commands (ls, cat, run hello.bin ...)
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output

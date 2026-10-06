@@ -124,12 +124,20 @@ namespace Phi.Cli
             return image;
         }
 
-        /// <summary>The folder copied into a kernel's file system: NAME.rootfs/ or rootfs/ next to the program.</summary>
+        /// <summary>
+        /// The folder copied into a kernel's file system: NAME.rootfs/ or rootfs/ next to the
+        /// program. NAME.rootfs can also be a text file holding the path of a folder to use.
+        /// </summary>
         public static string? FindRootfs(string phiFile)
         {
             string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
             string own = Path.Combine(dir, Path.GetFileNameWithoutExtension(phiFile) + ".rootfs");
             if (Directory.Exists(own)) return own;
+            if (File.Exists(own))
+            {
+                string target = Path.GetFullPath(Path.Combine(dir, File.ReadAllText(own).Trim()));
+                if (Directory.Exists(target)) return target;
+            }
             string shared = Path.Combine(dir, "rootfs");
             return Directory.Exists(shared) ? shared : null;
         }

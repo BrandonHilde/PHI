@@ -1,0 +1,19 @@
+# kill N: stop program N
+use user.text;
+
+phi.Kill:Program
+{
+	ptr<u8> arguments: 0;
+	call arguments is OS.Arguments;
+	int pid: 0;
+	call pid is Text.ToNumber: arguments;
+	bln stopped: false;
+	call stopped is OS.Kill: pid;
+	if stopped
+		log 'stopped program ' pid '\n';
+	;;
+	else
+		log 'kill: no program ' pid ' to stop\n';
+		exit 1;
+	;;
+}

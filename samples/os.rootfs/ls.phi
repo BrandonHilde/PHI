@@ -1,0 +1,12 @@
+# ls [folder]: the files in a folder (the root if none is given)
+phi.Ls:Program
+{
+	ptr<u8> folder: 0;
+	call folder is OS.Arguments;
+	int count: 0;
+	call count is OS.ListFiles: folder;
+	if count < 0
+		log 'ls: no such folder: ' folder '\n';
+		exit 1;
+	;;
+}

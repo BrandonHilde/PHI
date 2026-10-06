@@ -1,0 +1,118 @@
+# Text helpers for zero-terminated strings (a str, or a ptr<u8>). Works in any
+# kind of program; the shell and its commands use it for their command lines.
+#
+#   use user.text;
+#   ptr<u8> rest: 0;
+#   call rest is Text.SkipSpaces: line;
+#   call Text.CopyWord: rest word 15;          # the first word, into a buffer
+#   call rest is Text.AfterWord: rest;         # what comes after it
+#   int n: 0;
+#   call n is Text.ToNumber: rest;
+
+phi.Text:Library
+{
+	[Length: ptr<u8> text: 0;]
+		int length: 0;
+		while text:length is not 0
+			length++;
+		;;
+	[end: length]
+
+	[Equal: ptr<u8> a: 0; ptr<u8> b: 0;]
+		int i: 0;
+		while a:i is b:i and a:i is not 0
+			i++;
+		;;
+	[end: a:i is b:i]
+
+	[StartsWith: ptr<u8> text: 0; ptr<u8> start: 0;]
+		int i: 0;
+		while start:i is not 0 and text:i is start:i
+			i++;
+		;;
+	[end: start:i is 0]
+
+	[IsSpace: u8 c: 0;]
+	[end: c is ' ' or c is '\t']
+
+	# the text after any spaces at the start
+	[SkipSpaces: ptr<u8> text: 0;]
+		bln space: true;
+		call space is IsSpace: text:0;
+		while space
+			text++;
+			call space is IsSpace: text:0;
+		;;
+	[end: text]
+
+	# the text after the first word and the spaces that follow it
+	[AfterWord: ptr<u8> text: 0;]
+		ptr<u8> at: 0;
+		call at is SkipSpaces: text;
+		bln space: false;
+		while at:0 is not 0 and space is false
+			at++;
+			call space is IsSpace: at:0;
+		;;
+		call at is SkipSpaces: at;
+	[end: at]
+
+	# copy the first word (at most max characters) into a buffer, which must have room
+	# for max + 1 bytes; returns its length
+	[CopyWord: ptr<u8> text: 0; ptr<u8> to: 0; int max: 0;]
+		ptr<u8> at: 0;
+		call at is SkipSpaces: text;
+		int length: 0;
+		bln space: false;
+		call space is IsSpace: at:0;
+		while at:length is not 0 and space is false and length < max
+			to:length is at:length;
+			length++;
+			call space is IsSpace: at:length;
+		;;
+		to:length is 0;
+	[end: length]
+
+	# append text to the end of a string in a buffer of size bytes
+	[Append: ptr<u8> to: 0; ptr<u8> text: 0; int size: 0;]
+		int length: 0;
+		call length is Length: to;
+		int i: 0;
+		while text:i is not 0 and length < size - 1
+			to:length is text:i;
+			length++;
+			i++;
+		;;
+		to:length is 0;
+	[end]
+
+	# drop spaces at the end
+	[TrimEnd: ptr<u8> text: 0;]
+		int length: 0;
+		call length is Length: text;
+		bln space: true;
+		while length > 0 and space
+			call space is IsSpace: text:(length - 1);
+			if space
+				length--;
+				text:length is 0;
+			;;
+		;;
+	[end]
+
+	# a decimal number at the start of the text (after spaces); 0 if there's none
+	[ToNumber: ptr<u8> text: 0;]
+		ptr<u8> at: 0;
+		call at is SkipSpaces: text;
+		int sign: 1;
+		if at:0 is '-'
+			sign is -1;
+			at++;
+		;;
+		int value: 0;
+		while at:0 >= '0' and at:0 <= '9'
+			value is value * 10 + (at:0 - '0');
+			at++;
+		;;
+	[end: value * sign]
+}

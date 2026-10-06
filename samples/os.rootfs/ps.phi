@@ -1,0 +1,32 @@
+use user.text;
+
+# ps: the programs that exist right now
+phi.Ps:Program
+{
+	str states: 'free' 'ready' 'sleeping' 'reading keys' 'waiting' 'finished' 'finished';
+	u8 name[16];
+	int me: 0;
+	call me is OS.CurrentTask;
+	log '  PID  STATE         NAME\n';
+	while int pid: 1; pid < 16; pid++;
+		u32 state: 0;
+		call state is OS.TaskState: pid;
+		if state is not 0
+			bln named: false;
+			call named is OS.TaskName: pid addr name;
+			str stateName: [14];
+			stateName is states:state;
+			if pid is me
+				stateName is 'running';
+			;;
+			log '  ' pid '    ' stateName;
+			int pad: 0;
+			call pad is Text.Length: stateName;
+			while pad < 14
+				log ' ';
+				pad++;
+			;;
+			log addr name '\n';
+		;;
+	;;
+}

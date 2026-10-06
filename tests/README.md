@@ -41,7 +41,8 @@ Most language tests are written this way, so both code generators stay in step.
 
 A folder `NAME.rootfs/` becomes the FAT16 disk of a 32-bit test (see
 `kernel32_files.rootfs/`); `.phi` files in it are compiled into `.BIN` user programs (see
-`kernel32_processes.rootfs/`).
+`kernel32_processes.rootfs/`). `NAME.rootfs` can also be a file holding the path of a folder to
+use, which is how `kernel32_shell` runs the real userland in `samples/os.rootfs/`.
 
 `tests/support/` holds files that tests load with `use`; they aren't tests themselves.
 
