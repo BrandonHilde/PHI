@@ -32,6 +32,8 @@ Two optional files change what a test does:
 - **`NAME.errors`** means the program must *fail* to compile. Each line is text that must
   appear in one of the errors, such as `4:6: error: unknown name 'missing'`.
 
+`tests/support/` holds files that tests load with `use`; they aren't tests themselves.
+
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error
 messages without QEMU, and that the programs in `samples/` compile. Run them with
 `dotnet test PHI.sln`.

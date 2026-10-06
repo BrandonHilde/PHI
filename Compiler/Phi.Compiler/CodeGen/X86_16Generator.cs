@@ -13,8 +13,10 @@ namespace Phi.Compiler.CodeGen
 
     /// <summary>
     /// Generates 16-bit real-mode NASM source. Values are computed in eax (32-bit registers
-    /// work fine in real mode); every variable lives at a fixed label. Library routines may
-    /// change any general-purpose register, so nothing is kept in registers between statements.
+    /// work fine in real mode); every variable lives at a fixed label in segment 0. Library
+    /// routines may change any general-purpose register, so nothing is kept in registers
+    /// between statements, which also means every memory access really happens (as device
+    /// memory needs).
     /// </summary>
     public sealed class X86_16Generator
     {
@@ -31,13 +33,15 @@ namespace Phi.Compiler.CodeGen
         readonly HashSet<string> librarySymbols = new();
         readonly Dictionary<string, string> stringLabels = new();
         int labelCount;
-        int lastCommentLine = -1;
+        SourceFile file;
+        (SourceFile?, int) lastComment;
 
         X86_16Generator(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
         {
             this.program = program;
             this.unit = unit;
             this.diagnostics = diagnostics;
+            file = program.File;
         }
 
         public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
@@ -92,6 +96,7 @@ namespace Phi.Compiler.CodeGen
             // main program: class bodies in order
             foreach (ClassDecl cls in unit.Classes)
             {
+                file = cls.File;
                 Comment($"---- class {cls.Name}");
                 foreach (Stmt s in cls.Body) EmitStatement(s);
             }
@@ -117,11 +122,11 @@ namespace Phi.Compiler.CodeGen
 
             output.Append(code);
 
-            foreach (LibraryFile file in library)
+            foreach (LibraryFile lib in library)
             {
                 output.AppendLine();
-                output.AppendLine($"; ---- library: {file.Name}");
-                output.Append(file.Text);
+                output.AppendLine($"; ---- library: {lib.Name}");
+                output.Append(lib.Text);
             }
 
             output.AppendLine();
@@ -148,14 +153,16 @@ namespace Phi.Compiler.CodeGen
 
         void Comment(string text) => code.Append("    ; ").AppendLine(text);
 
+        int LineOf(Node node) => file.GetLocation(node.Span.Start).Line;
+
         /// <summary>Puts the source line above the code it produced, which helps when reading the .asm.</summary>
         void SourceComment(Node node)
         {
-            var (line, _) = program.File.GetLocation(node.Span.Start);
-            if (line == lastCommentLine) return;
-            lastCommentLine = line;
+            int line = LineOf(node);
+            if (lastComment == (file, line)) return;
+            lastComment = (file, line);
 
-            string[] lines = program.File.Text.Split('\n');
+            string[] lines = file.Text.Split('\n');
             string text = line - 1 < lines.Length ? lines[line - 1].Trim() : "";
             code.AppendLine($"    ; {line}: {text}");
         }
@@ -176,10 +183,23 @@ namespace Phi.Compiler.CodeGen
 
         void EmitMethod(MethodSymbol m)
         {
+            file = m.Decl.Owner.File;
             Line("");
-            if (m.IsHook) Comment($"event {m.Name}");
-            else Comment($"method {m.Name}");
+            Comment(m.IsHook ? $"event {m.Name}" : m.IsInterruptHandler ? $"interrupt handler {m.Name}" : $"method {m.Name}");
             Label(m.Label);
+
+            if (m.IsInterruptHandler)
+            {
+                // the interrupted code must find every register as it left it
+                Emit("pushad");
+                Emit("push ds");
+                Emit("push es");
+                Emit("push fs");
+                Emit("xor ax, ax");
+                Emit("mov ds, ax");
+                Emit("mov es, ax");
+                Emit("cld");
+            }
 
             foreach (Stmt s in m.Decl.Body) EmitStatement(s);
 
@@ -189,13 +209,22 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(m.Decl.Result); // the result goes back in eax
             }
 
-            Emit("ret");
+            if (m.IsInterruptHandler)
+            {
+                Emit("pop fs");
+                Emit("pop es");
+                Emit("pop ds");
+                Emit("popad");
+                Emit("iret");
+            }
+            else
+            {
+                Emit("ret");
+            }
         }
 
         void EmitRawBlock(RawBlockDecl raw)
         {
-            var variables = unit.Variables.Where(v => !v.IsLocal).GroupBy(v => v.Name).ToDictionary(g => g.Key, g => g.First());
-
             Line("");
             Comment($"asm.{raw.Name}");
             Label(raw.Name);
@@ -205,19 +234,16 @@ namespace Phi.Compiler.CodeGen
             while (i < raw.Text.Length)
             {
                 int open = raw.Text.IndexOf('{', i);
-                if (open < 0) { text.Append(raw.Text, i, raw.Text.Length - i); break; }
-
-                int close = raw.Text.IndexOf('}', open);
+                int close = open < 0 ? -1 : raw.Text.IndexOf('}', open);
                 if (close < 0) { text.Append(raw.Text, i, raw.Text.Length - i); break; }
 
                 text.Append(raw.Text, i, open - i);
                 string name = raw.Text[(open + 1)..close].Trim();
 
-                if (variables.TryGetValue(name, out VariableSymbol? v))
-                    text.Append(v.Label);
-                else
-                    diagnostics.Error(program.File, new Span(raw.TextSpan.Start + open, close - open + 1),
-                        $"asm.{raw.Name} uses {{{name}}}, but there is no class variable named '{name}'");
+                string? replacement = ResolveAsmName(name);
+                if (replacement != null) text.Append(replacement);
+                else diagnostics.Error(raw.File, new Span(raw.TextSpan.Start + open, close - open + 1),
+                        $"asm.{raw.Name} uses {{{name}}}, but there is no class variable or constant named '{name}'");
 
                 i = close + 1;
             }
@@ -226,16 +252,43 @@ namespace Phi.Compiler.CodeGen
                 Line(line.TrimEnd());
         }
 
+        /// <summary>{name} in an asm block: a variable's address, a field's address, or a constant's value.</summary>
+        string? ResolveAsmName(string name)
+        {
+            string[] parts = name.Split('.');
+            if (!unit.ClassNames.TryGetValue(parts[0], out Symbol? symbol))
+                return Builtins.Constants.TryGetValue(name, out long builtin) ? builtin.ToString() : null;
+
+            if (symbol is ConstantSymbol k) return parts.Length == 1 ? k.Value.ToString() : null;
+            if (symbol is not VariableSymbol v) return null;
+
+            int offset = 0;
+            PhiType type = v.Type;
+            foreach (string member in parts.Skip(1))
+            {
+                FieldSymbol? f = type.IsStruct ? type.Struct!.Find(member) : null;
+                if (f == null) return null;
+                offset += f.Offset;
+                type = f.Type;
+            }
+            return offset == 0 ? v.Label : $"{v.Label} + {offset}";
+        }
+
         // ================================================================ statements
+
+        int unsafeDepth;
 
         void EmitStatement(Stmt stmt)
         {
-            if (stmt is not VarDecl { Symbol.NeedsInitCode: false }) SourceComment(stmt);
+            if (stmt is not (VarDecl { Symbol.NeedsInitCode: false } or ConstDecl or UnsafeStmt)) SourceComment(stmt);
 
             switch (stmt)
             {
                 case VarDecl decl:
                     if (decl.Symbol is { NeedsInitCode: true } declared) EmitInitialize(declared, decl.Values);
+                    break;
+
+                case ConstDecl:
                     break;
 
                 case LogStmt log:
@@ -258,6 +311,29 @@ namespace Phi.Compiler.CodeGen
                     Emit("mov dx, 0xF4            ; QEMU isa-debug-exit");
                     Emit("out dx, al");
                     Emit("jmp phi_halt            ; not running in QEMU");
+                    break;
+
+                case OutStmt o:
+                    if (ConstantFolder.Evaluate(o.Port) is long port)
+                    {
+                        EmitExpr(o.Value);
+                        Emit($"mov dx, 0x{port & 0xFFFF:X}");
+                    }
+                    else
+                    {
+                        EmitExpr(o.Value);
+                        Emit("push eax");
+                        EmitExpr(o.Port);
+                        Emit("mov dx, ax");
+                        Emit("pop eax");
+                    }
+                    Emit(o.Size switch { 1 => "out dx, al", 2 => "out dx, ax", _ => "out dx, eax" });
+                    break;
+
+                case UnsafeStmt u:
+                    unsafeDepth++;
+                    foreach (Stmt s in u.Body) EmitStatement(s);
+                    unsafeDepth--;
                     break;
 
                 case CallStmt call:
@@ -308,11 +384,32 @@ namespace Phi.Compiler.CodeGen
             }
         }
 
+        static NameExpr NameOf(VariableSymbol v) => new() { Name = v.Name, Symbol = v, Type = v.Type };
+
         void EmitInitialize(VariableSymbol v, List<Expr> values)
         {
+            // no value: zero, every time the declaration runs
+            if (values.Count == 0)
+            {
+                if (v.Type.IsNumeric)
+                {
+                    Emit("xor eax, eax");
+                    EmitStoreEax(NameOf(v));
+                }
+                else
+                {
+                    int size = StorageSize(v);
+                    Emit($"mov di, {v.Label}");
+                    Emit($"mov cx, {size}");
+                    Emit("xor al, al");
+                    Emit("rep stosb");
+                }
+                return;
+            }
+
             if (!v.Type.IsArray)
             {
-                if (values.Count > 0) EmitAssign(new NameExpr { Name = v.Name, Symbol = v, Type = v.Type }, values[0]);
+                EmitAssign(NameOf(v), values[0]);
                 return;
             }
 
@@ -320,7 +417,7 @@ namespace Phi.Compiler.CodeGen
             {
                 var element = new IndexExpr
                 {
-                    Target = new NameExpr { Name = v.Name, Symbol = v, Type = v.Type },
+                    Target = NameOf(v),
                     Index = new NumberExpr { Value = i, Type = PhiType.Int },
                     Type = v.Type.Element,
                 };
@@ -331,33 +428,34 @@ namespace Phi.Compiler.CodeGen
         void EmitLog(LogStmt log)
         {
             bool serialOnly = log.Target == LogTarget.SerialOnly;
-            string printString = serialOnly ? "phi_print_serial" : "phi_print";
-            string printInt = serialOnly ? "phi_print_int_serial" : "phi_print_int";
+            string suffix = serialOnly ? "_serial" : "";
 
             foreach (Expr value in log.Values)
             {
                 if (value.Type.IsString)
                 {
-                    Need(printString);
-                    if (AddressOf(value) is string label) Emit($"mov si, {label}");
+                    string print = "phi_print" + suffix;
+                    Need(print);
+                    if (StaticAddress(value) is string label) Emit($"mov si, {label}");
                     else
                     {
                         EmitExpr(value);
                         Emit("mov si, ax");
                     }
-                    Emit($"call {printString}");
+                    Emit($"call {print}");
                 }
                 else
                 {
-                    Need(printInt);
+                    string print = (value.Type.IsUnsigned32 ? "phi_print_uint" : "phi_print_int") + suffix;
+                    Need(print);
                     EmitExpr(value);
-                    Emit($"call {printInt}");
+                    Emit($"call {print}");
                 }
             }
         }
 
         /// <summary>The label of a string whose address is known without running code.</summary>
-        string? AddressOf(Expr e) => e switch
+        string? StaticAddress(Expr e) => e switch
         {
             StringExpr s => StringLabel(s.Value),
             NameExpr { Symbol: VariableSymbol { Type.IsString: true } v } => v.Label,
@@ -375,7 +473,8 @@ namespace Phi.Compiler.CodeGen
                     {
                         VariableSymbol p = method.Parameters[i];
                         Expr? value = i < call.Arguments.Count ? call.Arguments[i] : p.Decl.Values.FirstOrDefault();
-                        if (value != null) EmitAssign(new NameExpr { Name = p.Name, Symbol = p, Type = p.Type }, value);
+                        if (value != null) EmitAssign(NameOf(p), value);
+                        else if (i >= call.Arguments.Count) EmitInitialize(p, p.Decl.Values);
                     }
                     Emit($"call {method.Label}");
                     if (call.ResultTarget != null) EmitStoreResult(call.ResultTarget, method.ReturnType);
@@ -410,43 +509,194 @@ namespace Phi.Compiler.CodeGen
             else EmitStoreEax(target);
         }
 
+        // ================================================================ memory places
+
+        /// <summary>
+        /// Where a value lives. Either a fixed address (Label + Offset), or Label + ebx + Offset
+        /// when part of the address is computed, or, for memory reached through a pointer, a
+        /// linear address in ebx (+ Offset) that may be anywhere in the first megabyte.
+        /// </summary>
+        sealed class Place
+        {
+            public string? Label;
+            public int Offset;
+            public bool Computed;   // ebx holds part of the address
+            public bool Linear;     // ebx holds a linear address, not an offset from Label
+        }
+
+        Place EmitPlace(Expr e)
+        {
+            switch (e)
+            {
+                case NameExpr { Symbol: VariableSymbol v }:
+                    return new Place { Label = v.Label };
+
+                case NameExpr { Symbol: FieldPathSymbol f }:
+                    return new Place { Label = f.Root.Label, Offset = f.Offset };
+
+                case MemberExpr m:
+                {
+                    Place p = EmitPlace(m.Target);
+                    p.Offset += m.Field!.Offset;
+                    return p;
+                }
+
+                case IndexExpr ix:
+                    return EmitIndexPlace(ix);
+            }
+
+            throw new InvalidOperationException($"{e.GetType().Name} has no address");
+        }
+
+        Place EmitIndexPlace(IndexExpr ix)
+        {
+            PhiType target = ix.Target.Type;
+            int size = target.IsString ? 1 : target.IsPointer ? target.Pointee!.ElementSize : target.ElementSize;
+            long? constant = ConstantFolder.Evaluate(ix.Index);
+
+            // through a pointer, or the characters of a str that isn't a plain variable
+            bool viaValue = target.IsPointer || (target.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol });
+            if (viaValue)
+            {
+                EmitExpr(ix.Target);
+                if (target.IsString) Emit("movzx eax, ax"); // str addresses are offsets in segment 0
+                if (constant != null)
+                {
+                    Emit("mov ebx, eax");
+                    return new Place { Computed = true, Linear = true, Offset = (int)constant.Value * size };
+                }
+                Emit("push eax");
+                EmitIndexValue(ix, size);
+                Emit("pop ebx");
+                Emit("add ebx, eax");
+                return new Place { Computed = true, Linear = true };
+            }
+
+            Place p = EmitPlace(ix.Target);
+
+            if (constant != null)
+            {
+                p.Offset += (int)constant.Value * size;
+                return p;
+            }
+
+            if (p.Computed)
+            {
+                Emit("push ebx");
+                EmitIndexValue(ix, size);
+                Emit("pop ebx");
+                Emit("add ebx, eax");
+            }
+            else
+            {
+                EmitIndexValue(ix, size);
+                Emit("mov ebx, eax");
+                p.Computed = true;
+            }
+            return p;
+        }
+
+        /// <summary>eax = index * size, after checking the index when needed.</summary>
+        void EmitIndexValue(IndexExpr ix, int size)
+        {
+            EmitExpr(ix.Index);
+
+            if (ix.CheckLimit is int limit && unsafeDepth == 0)
+            {
+                Need("phi_index_error");
+                string ok = NewLabel("inbounds");
+                Emit($"cmp eax, {limit}");
+                Emit($"jb {ok}                ; unsigned, so negative indexes fail too");
+                Emit($"mov eax, {LineOf(ix)}");
+                Emit("jmp phi_index_error");
+                Label(ok);
+            }
+
+            switch (size)
+            {
+                case 1: break;
+                case 2: Emit("shl eax, 1"); break;
+                case 4: Emit("shl eax, 2"); break;
+                default: Emit($"imul eax, eax, {size}"); break;
+            }
+        }
+
+        /// <summary>The memory operand for a place; sets up fs for linear addresses (changes ecx).</summary>
+        string Operand(Place p)
+        {
+            string offset = p.Offset == 0 ? "" : p.Offset > 0 ? $" + {p.Offset}" : $" - {-p.Offset}";
+
+            if (!p.Computed) return $"[{p.Label}{offset}]";
+            if (!p.Linear) return $"[{p.Label} + ebx{offset}]";
+
+            if (p.Offset != 0) Emit($"add ebx, {p.Offset}");
+            Emit("mov ecx, ebx");
+            Emit("shr ecx, 4");
+            Emit("mov fs, cx               ; reach any address below 1 MB");
+            Emit("and ebx, 0xF");
+            return "[fs:ebx]";
+        }
+
+        /// <summary>How a value of this type sits in memory: str array elements are 16-bit pointers.</summary>
+        static PhiType StorageType(PhiType t) => t.IsString ? PhiType.U16 : t;
+
+        string LoadInstruction(PhiType type, string register, string operand)
+        {
+            PhiType t = StorageType(type);
+            return t.ElementSize switch
+            {
+                1 => $"{(t.IsSigned ? "movsx" : "movzx")} {register}, byte {operand}",
+                2 => $"{(t.IsSigned ? "movsx" : "movzx")} {register}, word {operand}",
+                _ => $"mov {register}, dword {operand}",
+            };
+        }
+
+        static string StoreInstruction(PhiType type, string operand) => StorageType(type).ElementSize switch
+        {
+            1 => $"mov byte {operand}, al",
+            2 => $"mov word {operand}, ax",
+            _ => $"mov dword {operand}, eax",
+        };
+
+        void EmitLoad(Expr e)
+        {
+            Place p = EmitPlace(e);
+            Emit(LoadInstruction(e.Type, "eax", Operand(p)));
+        }
+
+        int StorageSize(VariableSymbol v) =>
+            v.Type.IsString ? v.Capacity : v.Type.ElementSize * v.Count;
+
         // ================================================================ assignment
 
         void EmitAssign(Expr target, Expr value)
         {
-            if (target.Type.IsString)
-            {
-                EmitExpr(value);
-                EmitStringStore(target, sourceIsString: value.Type.IsString);
-                return;
-            }
-
             EmitExpr(value);
-            EmitStoreEax(target);
+            if (target.Type.IsString) EmitStringStore(target, sourceIsString: value.Type.IsString);
+            else EmitStoreEax(target);
         }
 
-        /// <summary>Stores eax into a number variable or element.</summary>
+        /// <summary>Stores eax into a number variable, field or element.</summary>
         void EmitStoreEax(Expr target)
         {
-            switch (target)
-            {
-                case NameExpr { Symbol: VariableSymbol v }:
-                    Emit(v.Type.Kind == TypeKind.Int ? $"mov [{v.Label}], eax" : $"mov [{v.Label}], al");
-                    break;
+            bool needsCode = !IsStaticPlace(target); // computing the address uses eax
 
-                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } index:
-                    Emit("push eax");
-                    EmitExpr(index.Index);
-                    Emit("mov ebx, eax");
-                    Emit("pop eax");
-                    if (v.Type.IsArray && v.Type.Kind == TypeKind.Int) Emit($"mov [{v.Label} + ebx*4], eax");
-                    else Emit($"mov [{v.Label} + ebx], al"); // byte arrays, and a character of a str
-                    break;
-
-                default:
-                    throw new InvalidOperationException("unassignable target");
-            }
+            if (needsCode) Emit("push eax");
+            Place p = EmitPlace(target);
+            string operand = Operand(p);
+            if (needsCode) Emit("pop eax");
+            Emit(StoreInstruction(target.Type, operand));
         }
+
+        /// <summary>True when the place's address is fixed, so computing it emits no code.</summary>
+        static bool IsStaticPlace(Expr e) => e switch
+        {
+            NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
+            MemberExpr m => IsStaticPlace(m.Target),
+            IndexExpr ix => !ix.Target.Type.IsPointer && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
+                            && !(ix.Target.Type.IsString && ix.Target is not NameExpr),
+            _ => false,
+        };
 
         /// <summary>
         /// eax holds a string address (sourceIsString) or a number to write out as text;
@@ -454,28 +704,23 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitStringStore(Expr target, bool sourceIsString)
         {
-            VariableSymbol v;
-            switch (target)
+            int capacity;
+            if (target is NameExpr { Symbol: VariableSymbol v })
             {
-                case NameExpr { Symbol: VariableSymbol nv }:
-                    v = nv;
-                    Emit($"mov di, {v.Label}");
-                    break;
-
-                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol av } } index:
-                    v = av;
-                    Emit("push eax");
-                    EmitExpr(index.Index);
-                    Emit("mov ebx, eax");
-                    Emit("pop eax");
-                    Emit($"mov di, [{v.Label} + ebx*2]");
-                    break;
-
-                default:
-                    throw new InvalidOperationException("unassignable target");
+                capacity = v.Capacity;
+                Emit($"mov di, {v.Label}");
+            }
+            else
+            {
+                // an element of a str array: its address is the element's value
+                capacity = ((VariableSymbol)((NameExpr)((IndexExpr)target).Target).Symbol!).Capacity;
+                Emit("push eax");
+                EmitExpr(target);
+                Emit("mov di, ax");
+                Emit("pop eax");
             }
 
-            Emit($"mov cx, {v.Capacity}");
+            Emit($"mov cx, {capacity}");
             if (sourceIsString)
             {
                 Need("phi_strcpy");
@@ -514,29 +759,62 @@ namespace Phi.Compiler.CodeGen
                     Emit($"mov eax, {StringLabel(s.Value)}");
                     break;
 
-                case NameExpr name:
-                    EmitName(name);
+                case NameExpr { Symbol: VariableSymbol { Type.IsString: true } v }:
+                    Emit($"mov eax, {v.Label}");
                     break;
 
-                case IndexExpr index:
-                {
-                    var v = (VariableSymbol)((NameExpr)index.Target).Symbol!;
-                    EmitExpr(index.Index);
-                    if (!v.Type.IsArray) Emit($"movzx eax, byte [{v.Label} + eax]"); // a character of a str
-                    else if (v.Type.Kind == TypeKind.Int) Emit($"mov eax, [{v.Label} + eax*4]");
-                    else if (v.Type.Kind == TypeKind.Str) Emit($"movzx eax, word [{v.Label} + eax*2]");
-                    else Emit($"movzx eax, byte [{v.Label} + eax]");
+                case NameExpr { Symbol: VariableSymbol or FieldPathSymbol }:
+                    EmitLoad(e);
                     break;
-                }
+
+                case NameExpr { Symbol: ConstantSymbol k }:
+                    LoadConstant("eax", k.Value);
+                    break;
+
+                case NameExpr { Symbol: LengthSymbol { Count: int count } }:
+                    LoadConstant("eax", count);
+                    break;
+
+                case NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } }:
+                    Need("phi_strlen");
+                    Emit($"mov si, {str.Label}");
+                    Emit("call phi_strlen");
+                    break;
+
+                case IndexExpr or MemberExpr:
+                    EmitLoad(e);
+                    break;
+
+                case AddrExpr addr:
+                    EmitAddress(addr);
+                    break;
+
+                case InExpr input:
+                    if (ConstantFolder.Evaluate(input.Port) is long port) Emit($"mov dx, 0x{port & 0xFFFF:X}");
+                    else
+                    {
+                        EmitExpr(input.Port);
+                        Emit("mov dx, ax");
+                    }
+                    switch (input.Size)
+                    {
+                        case 1: Emit("in al, dx"); Emit("movzx eax, al"); break;
+                        case 2: Emit("in ax, dx"); Emit("movzx eax, ax"); break;
+                        default: Emit("in eax, dx"); break;
+                    }
+                    break;
 
                 case UnaryExpr unary:
                     EmitExpr(unary.Operand);
-                    if (unary.Op == UnaryOp.Negate) Emit("neg eax");
-                    else
+                    switch (unary.Op)
                     {
-                        Emit("test eax, eax");
-                        Emit("sete al");
-                        Emit("movzx eax, al");
+                        case UnaryOp.Negate: Emit("neg eax"); break;
+                        case UnaryOp.BitNot: Emit("not eax"); break;
+                        default:
+                            Emit("test eax, eax");
+                            Emit("sete al");
+                            Emit("movzx eax, al");
+                            break;
                     }
                     break;
 
@@ -554,22 +832,7 @@ namespace Phi.Compiler.CodeGen
                 }
 
                 case BinaryExpr binary:
-                    EmitOperands(binary);
-                    switch (binary.Op)
-                    {
-                        case BinaryOp.Add: Emit("add eax, ecx"); break;
-                        case BinaryOp.Subtract: Emit("sub eax, ecx"); break;
-                        case BinaryOp.Multiply: Emit("imul eax, ecx"); break;
-                        case BinaryOp.Divide:
-                            Emit("cdq");
-                            Emit("idiv ecx");
-                            break;
-                        case BinaryOp.Modulo:
-                            Emit("cdq");
-                            Emit("idiv ecx");
-                            Emit("mov eax, edx");
-                            break;
-                    }
+                    EmitArithmetic(binary);
                     break;
 
                 default:
@@ -577,32 +840,56 @@ namespace Phi.Compiler.CodeGen
             }
         }
 
-        void EmitName(NameExpr name)
+        void EmitAddress(AddrExpr addr)
         {
-            switch (name.Symbol)
+            if (addr.CodeLabel != null)
             {
-                case VariableSymbol v when v.Type.IsString:
-                    Emit($"mov eax, {v.Label}");
+                Emit($"mov eax, {addr.CodeLabel}");
+                return;
+            }
+
+            if (addr.Operand is NameExpr { Symbol: VariableSymbol v })
+            {
+                Emit($"mov eax, {v.Label}");
+                return;
+            }
+
+            Place p = EmitPlace(addr.Operand);
+            string offset = p.Offset == 0 ? "" : $" + {p.Offset}";
+            if (!p.Computed) Emit($"mov eax, {p.Label}{offset}");
+            else if (!p.Linear) Emit($"lea eax, [{p.Label} + ebx{offset}]");
+            else Emit($"lea eax, [ebx{offset}]");
+        }
+
+        void EmitArithmetic(BinaryExpr binary)
+        {
+            bool unsigned = binary.Type.IsUnsigned32;
+            EmitOperands(binary);
+
+            switch (binary.Op)
+            {
+                case BinaryOp.Add: Emit("add eax, ecx"); break;
+                case BinaryOp.Subtract: Emit("sub eax, ecx"); break;
+                case BinaryOp.Multiply: Emit("imul eax, ecx"); break;
+                case BinaryOp.BitAnd: Emit("and eax, ecx"); break;
+                case BinaryOp.BitOr: Emit("or eax, ecx"); break;
+                case BinaryOp.BitXor: Emit("xor eax, ecx"); break;
+                case BinaryOp.ShiftLeft: Emit("shl eax, cl"); break;
+                case BinaryOp.ShiftRight: Emit(unsigned ? "shr eax, cl" : "sar eax, cl"); break;
+                case BinaryOp.Divide:
+                case BinaryOp.Modulo:
+                    if (unsigned)
+                    {
+                        Emit("xor edx, edx");
+                        Emit("div ecx");
+                    }
+                    else
+                    {
+                        Emit("cdq");
+                        Emit("idiv ecx");
+                    }
+                    if (binary.Op == BinaryOp.Modulo) Emit("mov eax, edx");
                     break;
-                case VariableSymbol v when v.Type.Kind == TypeKind.Int:
-                    Emit($"mov eax, [{v.Label}]");
-                    break;
-                case VariableSymbol v:
-                    Emit($"movzx eax, byte [{v.Label}]");
-                    break;
-                case ConstantSymbol k:
-                    LoadConstant("eax", k.Value);
-                    break;
-                case LengthSymbol { Of: var of } when of.Type.IsArray:
-                    LoadConstant("eax", of.Count);
-                    break;
-                case LengthSymbol { Of: var of }:
-                    Need("phi_strlen");
-                    Emit($"mov si, {of.Label}");
-                    Emit("call phi_strlen");
-                    break;
-                default:
-                    throw new InvalidOperationException($"unresolved name {name.Name}");
             }
         }
 
@@ -631,18 +918,17 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Loads values that need no other registers straight into a register.</summary>
         bool TryLoadSimple(Expr e, string register, bool dryRun)
         {
-            string? instruction = e switch
-            {
-                NumberExpr n => n.Value == 0 ? $"xor {register}, {register}" : $"mov {register}, {(int)n.Value}",
-                BoolExpr b => $"mov {register}, {(b.Value ? 1 : 0)}",
-                StringExpr s => $"mov {register}, {StringLabel(s.Value)}",
-                NameExpr { Symbol: ConstantSymbol k } => $"mov {register}, {(int)k.Value}",
-                NameExpr { Symbol: LengthSymbol { Of.Type.IsArray: true } len } => $"mov {register}, {len.Of.Count}",
-                NameExpr { Symbol: VariableSymbol v } when v.Type.IsString => $"mov {register}, {v.Label}",
-                NameExpr { Symbol: VariableSymbol { Type.IsArray: false } v } when v.Type.Kind == TypeKind.Int => $"mov {register}, [{v.Label}]",
-                NameExpr { Symbol: VariableSymbol { Type.IsArray: false } v } => $"movzx {register}, byte [{v.Label}]",
-                _ => null,
-            };
+            string? instruction = ConstantFolder.Evaluate(e) is long k
+                ? (k == 0 ? $"xor {register}, {register}" : $"mov {register}, {(int)k}")
+                : e switch
+                {
+                    StringExpr s => $"mov {register}, {StringLabel(s.Value)}",
+                    NameExpr { Symbol: VariableSymbol { Type.IsString: true } v } => $"mov {register}, {v.Label}",
+                    NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } => LoadInstruction(v.Type, register, $"[{v.Label}]"),
+                    NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } =>
+                        LoadInstruction(f.Type, register, f.Offset == 0 ? $"[{f.Root.Label}]" : $"[{f.Root.Label} + {f.Offset}]"),
+                    _ => null,
+                };
 
             if (instruction == null) return false;
             if (!dryRun) Emit(instruction);
@@ -711,6 +997,7 @@ namespace Phi.Compiler.CodeGen
 
                 case BinaryExpr { IsComparison: true } cmp:
                 {
+                    bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
                     EmitOperands(cmp);
                     Emit("cmp eax, ecx");
                     BinaryOp op = jumpIf ? cmp.Op : Invert(cmp.Op);
@@ -718,10 +1005,10 @@ namespace Phi.Compiler.CodeGen
                     {
                         BinaryOp.Equal => "je",
                         BinaryOp.NotEqual => "jne",
-                        BinaryOp.Less => "jl",
-                        BinaryOp.LessEqual => "jle",
-                        BinaryOp.Greater => "jg",
-                        _ => "jge",
+                        BinaryOp.Less => unsigned ? "jb" : "jl",
+                        BinaryOp.LessEqual => unsigned ? "jbe" : "jle",
+                        BinaryOp.Greater => unsigned ? "ja" : "jg",
+                        _ => unsigned ? "jae" : "jge",
                     };
                     Emit($"{jump} {target}");
                     return;
@@ -770,7 +1057,7 @@ namespace Phi.Compiler.CodeGen
                 return sb.ToString();
             }
 
-            if (t.IsArray && t.Kind == TypeKind.Str)
+            if (t.Kind == TypeKind.Str)
             {
                 var pointers = new List<string>();
                 for (int i = 0; i < v.Count; i++)
@@ -784,15 +1071,23 @@ namespace Phi.Compiler.CodeGen
                 return sb.ToString();
             }
 
-            string directive = t.Kind == TypeKind.Int ? "dd" : "db";
+            if (t.Kind == TypeKind.Struct)
+            {
+                sb.AppendLine($"{v.Label}: times {StorageSize(v)} db 0   ; {t}");
+                return sb.ToString();
+            }
+
+            string directive = t.ElementSize switch { 1 => "db", 2 => "dw", _ => "dd" };
             if (values == null || values.Count == 0)
             {
                 sb.AppendLine(v.Count == 1 ? $"{v.Label}: {directive} 0" : $"{v.Label}: times {v.Count} {directive} 0");
                 return sb.ToString();
             }
 
-            var numbers = values.Select(x => x is long n ? n : 0).Select(n => t.Kind == TypeKind.Int ? ((int)n).ToString() : (n & 0xFF).ToString());
+            long mask = t.ElementSize switch { 1 => 0xFF, 2 => 0xFFFF, _ => 0xFFFFFFFF };
+            var numbers = values.Select(x => x is long n ? n & mask : 0).Select(n => n.ToString());
             sb.AppendLine($"{v.Label}: {directive} {string.Join(", ", numbers)}");
+            if (values.Count < v.Count) sb.AppendLine($"    times {v.Count - values.Count} {directive} 0");
             return sb.ToString();
         }
 
@@ -804,7 +1099,7 @@ namespace Phi.Compiler.CodeGen
             _ => "",
         };
 
-        void AppendString(StringBuilder sb, string label, string text, int capacity)
+        static void AppendString(StringBuilder sb, string label, string text, int capacity)
         {
             if (text.Length + 1 > capacity) text = text[..Math.Max(capacity - 1, 0)];
             sb.AppendLine($"{label}: db {NasmBytes(text)}");

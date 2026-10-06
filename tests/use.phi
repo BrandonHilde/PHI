@@ -1,0 +1,14 @@
+use support.greeting;
+use support.counter;   # already used by greeting.phi: loaded once
+
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Main:OS
+{
+	call Greeting.Say;
+	call Say: 'PHI';
+	exit 0;
+}

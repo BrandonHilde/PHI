@@ -1,0 +1,2 @@
+1:1: error: can't find support/missing_file.phi next to error_use_chain.phi
+5:21: error: comparisons can't be chained

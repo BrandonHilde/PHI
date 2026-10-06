@@ -58,6 +58,17 @@ namespace Phi.Compiler.Semantics
                     Description = "Fill a rectangle in graphics mode (clipped to the screen)" },
             new() { Name = "OS.DrawPixel", Label = "OS_DrawPixel", Parameters = new[] { "x", "y", "color" },
                     Description = "Set one pixel in graphics mode" },
+
+            new() { Name = "OS.SetInterruptHandler", Label = "OS_SetInterruptHandler", Parameters = new[] { "vector", "handler" },
+                    Description = "Run an [isr Name] method for an interrupt vector (handler is addr Name)" },
+            new() { Name = "OS.EndOfInterrupt", Label = "OS_EndOfInterrupt", Parameters = new[] { "irq" },
+                    Description = "Tell the interrupt controller a hardware interrupt (IRQ 0-15) was handled" },
+            new() { Name = "OS.EnableInterrupts", Label = "OS_EnableInterrupts", Description = "sti" },
+            new() { Name = "OS.DisableInterrupts", Label = "OS_DisableInterrupts", Description = "cli" },
+            new() { Name = "OS.UnmaskIrq", Label = "OS_UnmaskIrq", Parameters = new[] { "irq" },
+                    Description = "Let a hardware interrupt (IRQ 0-15) through the interrupt controller" },
+            new() { Name = "OS.MaskIrq", Label = "OS_MaskIrq", Parameters = new[] { "irq" },
+                    Description = "Block a hardware interrupt (IRQ 0-15) at the interrupt controller" },
         };
 
         /// <summary>Methods a program can define to react to events, e.g. [OS.TimerEvent] ... [end]</summary>

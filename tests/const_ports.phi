@@ -1,0 +1,39 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Ports:OS
+{
+	const u16 COM1: 0x3F8;
+	const u16 COM1_STATUS: COM1 + 5;
+	const int SIZE: 4;
+	const int TOTAL: SIZE * 2;
+
+	int buffer[TOTAL];
+	debug buffer.len ' ';
+
+	# write straight to the serial port, after checking it's ready
+	while (in COM1_STATUS & 0x20) is 0
+	;;
+	out COM1 'O';
+	out COM1 'K';
+	debug '\n';
+
+	# read the interrupt controller's mask, through a constant in an asm block
+	u8 mask: in 0x21;
+	u8 fromAsm: 0;
+	call ReadMask;
+	if mask is fromAsm
+		debug 'asm sees ' TOTAL '\n';
+	;;
+	exit 0;
+}
+
+asm.ReadMask
+{
+	in al, 0x21
+	mov [{fromAsm}], al
+	mov eax, {TOTAL}
+	ret
+}

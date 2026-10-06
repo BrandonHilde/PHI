@@ -22,7 +22,8 @@ namespace Phi.Compiler.Syntax
         PlusPlus, MinusMinus, StarStar, SlashSlash, PercentPercent, CaretCaret,
         Equals, EqualsEquals, BangEquals, Bang,
         Less, Greater, LessEquals, GreaterEquals,
-        LessLess, GreaterGreater, // PHI spells <= and >= this way as well
+        LessLess, GreaterGreater,   // shifts
+        Ampersand, Pipe, Caret, Tilde,
     }
 
     public sealed class Token

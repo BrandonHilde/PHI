@@ -1,0 +1,100 @@
+# VGA text-mode driver, written in PHI: 80x25 characters at 0xB8000.
+#
+#   use drivers.vga_text;
+#   call Vga.Clear;
+#   call Vga.SetColor: Colors.Yellow Colors.Blue;
+#   call Vga.Print: 'Hello\n';
+#   call Vga.PrintNumber: 42;
+#
+# Each cell is a u16: the character in the low byte, the color in the high byte
+# (background in the top four bits, foreground in the bottom four).
+
+phi.Vga:OS
+{
+	const u32 VGA_MEMORY: 0xB8000;
+	const int VGA_WIDTH: 80;
+	const int VGA_HEIGHT: 25;
+	const u16 VGA_CRTC_INDEX: 0x3D4;
+	const u16 VGA_CRTC_DATA: 0x3D5;
+
+	ptr<u16> vga_cells: VGA_MEMORY;
+	int vga_row: 0;
+	int vga_column: 0;
+	u8 vga_color: 0x07;     # light gray on black
+
+	# blank the screen and put the cursor in the top-left corner
+	[Clear]
+		while int i: 0; i < VGA_WIDTH * VGA_HEIGHT; i++;
+			vga_cells:i is (vga_color << 8) | ' ';
+		;;
+		vga_row is 0;
+		vga_column is 0;
+		call MoveCursor;
+	[end]
+
+	[SetColor: u8 foreground: 7; u8 background: 0;]
+		vga_color is (background << 4) | (foreground & 0x0F);
+	[end]
+
+	[SetCursor: int row: 0; int column: 0;]
+		vga_row is row;
+		vga_column is column;
+		call MoveCursor;
+	[end]
+
+	# one character; \n starts a new line, \r goes back to the start of the line
+	[PutChar: u8 c: 0;]
+		if c is '\n'
+			vga_column is 0;
+			vga_row++;
+		;;
+		elif c is '\r'
+			vga_column is 0;
+		;;
+		else
+			vga_cells:(vga_row * VGA_WIDTH + vga_column) is (vga_color << 8) | c;
+			vga_column++;
+			if vga_column >= VGA_WIDTH
+				vga_column is 0;
+				vga_row++;
+			;;
+		;;
+		if vga_row >= VGA_HEIGHT
+			call Scroll;
+		;;
+		call MoveCursor;
+	[end]
+
+	# a zero-terminated string (a str can be passed directly)
+	[Print: ptr<u8> text: 0;]
+		while text:0 is not 0
+			call PutChar: text:0;
+			text++;
+		;;
+	[end]
+
+	[PrintNumber: int n: 0;]
+		str digits: n;
+		call Print: digits;
+	[end]
+
+	# move every line up by one and blank the bottom line
+	[Scroll]
+		while int i: 0; i < VGA_WIDTH * (VGA_HEIGHT - 1); i++;
+			vga_cells:i is vga_cells:(i + VGA_WIDTH);
+		;;
+		while int j: VGA_WIDTH * (VGA_HEIGHT - 1); j < VGA_WIDTH * VGA_HEIGHT; j++;
+			vga_cells:j is (vga_color << 8) | ' ';
+		;;
+		vga_row is VGA_HEIGHT - 1;
+	[end]
+
+	# the blinking hardware cursor, through the CRT controller's ports
+	[MoveCursor]
+		u16 position: vga_row * VGA_WIDTH + vga_column;
+		out VGA_CRTC_INDEX 0x0F;
+		out VGA_CRTC_DATA position & 0xFF;
+		out VGA_CRTC_INDEX 0x0E;
+		out VGA_CRTC_DATA position >> 8;
+	[end]
+}

@@ -14,15 +14,23 @@ namespace Phi.Compiler.Syntax
         public SourceFile File { get; init; } = null!;
         public List<ClassDecl> Classes { get; } = new();
         public List<RawBlockDecl> RawBlocks { get; } = new();
+        public List<StructDecl> Structs { get; } = new();
+        public List<UseDecl> Uses { get; } = new();
+    }
+
+    /// <summary>use drivers.vga_text;   (loads drivers/vga_text.phi)</summary>
+    public sealed class UseDecl : Node
+    {
+        public string Path { get; init; } = "";
     }
 
     /// <summary>phi.Name:Base { members }</summary>
     public sealed class ClassDecl : Node
     {
+        public SourceFile File { get; init; } = null!;
         public string Name { get; init; } = "";
         public string Base { get; init; } = "";
         public Span BaseSpan { get; init; }
-        public List<VarDecl> Variables { get; } = new();
         public List<MethodDecl> Methods { get; } = new();
 
         /// <summary>Statements at class level run in order when the class starts.</summary>
@@ -32,16 +40,34 @@ namespace Phi.Compiler.Syntax
     /// <summary>asm.Name { raw } or arm.Name { raw }</summary>
     public sealed class RawBlockDecl : Node
     {
+        public SourceFile File { get; init; } = null!;
         public string Language { get; init; } = "asm";
         public string Name { get; init; } = "";
         public string Text { get; init; } = "";
         public Span TextSpan { get; init; }
     }
 
-    /// <summary>[Name: params] body [end: result]</summary>
+    /// <summary>struct.Name { type field; type field[N]; }</summary>
+    public sealed class StructDecl : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public List<FieldDecl> Fields { get; } = new();
+        public StructSymbol? Symbol { get; set; }
+    }
+
+    public sealed class FieldDecl : Node
+    {
+        public TypeRef Type { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public Expr? Count { get; init; }
+    }
+
+    /// <summary>[Name: params] body [end: result]   or   [isr Name] body [end]</summary>
     public sealed class MethodDecl : Node
     {
         public string Name { get; init; } = "";
+        public bool IsInterruptHandler { get; init; }
         public List<VarDecl> Parameters { get; } = new();
         public List<Stmt> Body { get; } = new();
         public Expr? Result { get; set; }
@@ -50,22 +76,39 @@ namespace Phi.Compiler.Syntax
         public MethodSymbol? Symbol { get; set; }
     }
 
-    public enum TypeKeyword { Str, Int, Byt, Bln, Dec, Fin, Var }
+    /// <summary>A type as written: int, u16, str, Task, ptr&lt;u8&gt;</summary>
+    public sealed class TypeRef : Node
+    {
+        public string Name { get; init; } = "";
+        public TypeRef? Pointee { get; init; }
+
+        public override string ToString() => Pointee == null ? Name : $"{Name}<{Pointee}>";
+    }
 
     /// <summary>
     /// type name: value;          a scalar
     /// type name: v1 v2 v3;       an array
     /// type name: [N];            (or type name[N];) an empty buffer of N elements
+    /// type name;                 zero
     /// </summary>
     public sealed class VarDecl : Stmt
     {
-        public TypeKeyword Type { get; init; }
+        public TypeRef Type { get; init; } = null!;
         public string Name { get; init; } = "";
         public Span NameSpan { get; init; }
         public List<Expr> Values { get; } = new();
-        public int? BufferSize { get; init; }
+        public Expr? BufferSize { get; init; }
 
         public VariableSymbol? Symbol { get; set; }
+    }
+
+    /// <summary>const type name: value;</summary>
+    public sealed class ConstDecl : Stmt
+    {
+        public TypeRef Type { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public Span NameSpan { get; init; }
+        public Expr Value { get; init; } = null!;
     }
 
     // ---------------------------------------------------------------- statements
@@ -91,6 +134,20 @@ namespace Phi.Compiler.Syntax
     public sealed class ExitStmt : Stmt
     {
         public Expr? Code { get; init; }
+    }
+
+    /// <summary>out port value;  outw port value;  outd port value;</summary>
+    public sealed class OutStmt : Stmt
+    {
+        public int Size { get; init; } = 1;
+        public Expr Port { get; set; } = null!;
+        public Expr Value { get; set; } = null!;
+    }
+
+    /// <summary>unsafe ... ;;   (no bounds checks inside)</summary>
+    public sealed class UnsafeStmt : Stmt
+    {
+        public List<Stmt> Body { get; } = new();
     }
 
     /// <summary>call [target is] Name[: args];</summary>
@@ -163,7 +220,7 @@ namespace Phi.Compiler.Syntax
         public bool Value { get; init; }
     }
 
-    /// <summary>A name, possibly dotted: x, Colors.Black, days.len</summary>
+    /// <summary>A name, possibly dotted: x, Colors.Black, days.len, task.id</summary>
     public sealed class NameExpr : Expr
     {
         public string Name { get; init; } = "";
@@ -171,24 +228,54 @@ namespace Phi.Compiler.Syntax
         public Symbol? Symbol { get; set; }
     }
 
-    /// <summary>array:index</summary>
+    /// <summary>array:index  (also pointer:index and str:index)</summary>
     public sealed class IndexExpr : Expr
     {
         public Expr Target { get; init; } = null!;
-        public Expr Index { get; init; } = null!;
+        public Expr Index { get; set; } = null!;
+
+        /// <summary>Set by the binder when the index must be checked against this many elements.</summary>
+        public int? CheckLimit { get; set; }
     }
 
-    public enum UnaryOp { Negate, Not }
+    /// <summary>tasks:i.id   (a field of an indexed struct)</summary>
+    public sealed class MemberExpr : Expr
+    {
+        public Expr Target { get; init; } = null!;
+        public string Member { get; init; } = "";
+        public Span MemberSpan { get; init; }
+
+        public FieldSymbol? Field { get; set; }
+    }
+
+    /// <summary>addr x  (the address of a variable, element or method)</summary>
+    public sealed class AddrExpr : Expr
+    {
+        public Expr Operand { get; init; } = null!;
+
+        /// <summary>When the operand names a method or asm block.</summary>
+        public string? CodeLabel { get; set; }
+    }
+
+    /// <summary>in port, inw port, ind port</summary>
+    public sealed class InExpr : Expr
+    {
+        public int Size { get; init; } = 1;
+        public Expr Port { get; set; } = null!;
+    }
+
+    public enum UnaryOp { Negate, Not, BitNot }
 
     public sealed class UnaryExpr : Expr
     {
         public UnaryOp Op { get; init; }
-        public Expr Operand { get; init; } = null!;
+        public Expr Operand { get; set; } = null!;
     }
 
     public enum BinaryOp
     {
         Add, Subtract, Multiply, Divide, Modulo,
+        BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight,
         Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
         And, Or,
     }

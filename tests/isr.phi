@@ -1,0 +1,27 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Interrupts:OS
+{
+	const int KEYBOARD_IRQ: 1;
+	u8 lastScan: 0;
+	int count: 0;
+
+	call OS.SetInterruptHandler: 0x09 addr Keyboard;
+	call OS.UnmaskIrq: KEYBOARD_IRQ;
+	debug 'ready\n';
+
+	while count < 4
+	;;
+	debug 'last scan code ' lastScan '\n';
+	exit 0;
+
+	[isr Keyboard]
+		lastScan is in 0x60;
+		count++;
+		debug 'irq ' count ' ';
+		call OS.EndOfInterrupt: KEYBOARD_IRQ;
+	[end]
+}

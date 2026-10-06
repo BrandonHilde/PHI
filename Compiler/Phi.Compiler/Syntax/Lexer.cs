@@ -164,7 +164,10 @@ namespace Phi.Compiler.Syntax
                 case '*': kind = Match('*') ? TokenKind.StarStar : TokenKind.Star; break;
                 case '/': kind = Match('/') ? TokenKind.SlashSlash : TokenKind.Slash; break;
                 case '%': kind = Match('%') ? TokenKind.PercentPercent : TokenKind.Percent; break;
-                case '^' when Match('^'): kind = TokenKind.CaretCaret; break;
+                case '^': kind = Match('^') ? TokenKind.CaretCaret : TokenKind.Caret; break;
+                case '&': kind = TokenKind.Ampersand; break;
+                case '|': kind = TokenKind.Pipe; break;
+                case '~': kind = TokenKind.Tilde; break;
                 case '=': kind = Match('=') ? TokenKind.EqualsEquals : TokenKind.Equals; break;
                 case '!': kind = Match('=') ? TokenKind.BangEquals : TokenKind.Bang; break;
                 case '<':

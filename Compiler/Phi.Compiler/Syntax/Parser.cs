@@ -5,23 +5,20 @@ namespace Phi.Compiler.Syntax
     /// </summary>
     public sealed class Parser
     {
-        static readonly Dictionary<string, TypeKeyword> TypeKeywords = new()
-        {
-            ["str"] = TypeKeyword.Str,
-            ["int"] = TypeKeyword.Int,
-            ["byt"] = TypeKeyword.Byt,
-            ["bln"] = TypeKeyword.Bln,
-            ["dec"] = TypeKeyword.Dec,
-            ["fin"] = TypeKeyword.Fin,
-            ["var"] = TypeKeyword.Var,
-        };
-
-        /// <summary>Words that can't be used as variable or method names.</summary>
-        public static readonly HashSet<string> ReservedWords = new()
+        /// <summary>Type names that are keywords. Struct names are ordinary identifiers.</summary>
+        public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "dec", "fin", "var",
-            "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while",
-            "is", "not", "and", "or", "has", "true", "false", "end", "phi", "asm", "arm",
+            "u8", "u16", "u32", "i8", "i16", "i32", "ptr",
+        };
+
+        /// <summary>Words that can't be used as variable, method or type names.</summary>
+        public static readonly HashSet<string> ReservedWords = new(TypeKeywords)
+        {
+            "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
+            "out", "outw", "outd", "in", "inw", "ind", "addr",
+            "is", "not", "and", "or", "has", "true", "false", "end", "isr",
+            "phi", "asm", "arm", "struct", "use", "const",
         };
 
         sealed class ParseError : Exception { }
@@ -97,7 +94,16 @@ namespace Phi.Compiler.Syntax
             return new ParseError();
         }
 
-        bool IsTypeKeyword(Token t) => t.Kind == TokenKind.Identifier && TypeKeywords.ContainsKey(t.Text);
+        static bool IsName(Token t) => t.Kind == TokenKind.Identifier && !ReservedWords.Contains(t.Text);
+
+        /// <summary>A declaration starts with a type keyword, or with a struct name followed by a name.</summary>
+        bool AtDeclaration =>
+            (Current.Kind == TokenKind.Identifier && TypeKeywords.Contains(Current.Text))
+            || (IsName(Current) && IsName(PeekToken(1)) && !PeekToken(1).StartsLine);
+
+        bool AtTopLevelHeader =>
+            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct")) && PeekToken(1).Kind == TokenKind.Dot
+            || Current.StartsLine && AtWord("use");
 
         /// <summary>Skip ahead to a likely statement boundary after an error.</summary>
         void Synchronize()
@@ -127,9 +133,9 @@ namespace Phi.Compiler.Syntax
                 }
                 catch (ParseError)
                 {
-                    // skip to the next class header
-                    while (!AtEnd && !(Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm")) && PeekToken(1).Kind == TokenKind.Dot))
-                        Advance();
+                    // skip to the next top-level header
+                    Advance();
+                    while (!AtEnd && !AtTopLevelHeader) Advance();
                 }
                 if (pos == before) Advance();
             }
@@ -141,16 +147,29 @@ namespace Phi.Compiler.Syntax
         {
             Token start = Current;
 
-            if ((AtWord("phi") || AtWord("asm") || AtWord("arm")) && PeekToken(1).Kind == TokenKind.Dot)
+            if (AtWord("use"))
+            {
+                Advance();
+                string path = ParseQualifiedName(out Span span);
+                ExpectSemicolon();
+                program.Uses.Add(new UseDecl { Path = path, Span = start.Span.To(span) });
+                return;
+            }
+
+            if ((AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct")) && PeekToken(1).Kind == TokenKind.Dot)
             {
                 string kind = Advance().Text;
                 Advance(); // .
-                Token name = ExpectIdentifier("a class name");
+                Token name = ExpectIdentifier("a name");
 
-                if (kind == "phi")
+                switch (kind)
                 {
-                    program.Classes.Add(ParseClass(start, name));
-                    return;
+                    case "phi":
+                        program.Classes.Add(ParseClass(start, name));
+                        return;
+                    case "struct":
+                        program.Structs.Add(ParseStruct(start, name));
+                        return;
                 }
 
                 Expect(TokenKind.OpenBrace, "'{'");
@@ -159,6 +178,7 @@ namespace Phi.Compiler.Syntax
 
                 program.RawBlocks.Add(new RawBlockDecl
                 {
+                    File = file,
                     Language = kind,
                     Name = name.Text,
                     Text = raw.Text,
@@ -184,7 +204,7 @@ namespace Phi.Compiler.Syntax
 
             Expect(TokenKind.OpenBrace, "'{'");
 
-            var cls = new ClassDecl { Name = name.Text, Base = baseName, BaseSpan = baseSpan, Span = start.Span.To(name.Span) };
+            var cls = new ClassDecl { File = file, Name = name.Text, Base = baseName, BaseSpan = baseSpan, Span = start.Span.To(name.Span) };
 
             while (!At(TokenKind.CloseBrace) && !AtEnd)
             {
@@ -199,9 +219,7 @@ namespace Phi.Compiler.Syntax
                     }
                     else
                     {
-                        Stmt s = ParseStatement();
-                        if (s is VarDecl v) cls.Variables.Add(v);
-                        cls.Body.Add(s);
+                        cls.Body.Add(ParseStatement());
                     }
                 }
                 catch (ParseError)
@@ -215,6 +233,59 @@ namespace Phi.Compiler.Syntax
             return cls;
         }
 
+        StructDecl ParseStruct(Token start, Token name)
+        {
+            Expect(TokenKind.OpenBrace, "'{'");
+            var decl = new StructDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
+
+            while (!At(TokenKind.CloseBrace) && !AtEnd)
+            {
+                int before = pos;
+                try
+                {
+                    TypeRef type = ParseType();
+                    Token field = ExpectIdentifier("a field name");
+                    Expr? count = null;
+                    if (Accept(TokenKind.OpenBracket))
+                    {
+                        count = ParseExpression();
+                        Expect(TokenKind.CloseBracket, "']'");
+                    }
+                    ExpectSemicolon();
+                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Span = type.Span.To(field.Span) });
+                }
+                catch (ParseError)
+                {
+                    Synchronize();
+                }
+                if (pos == before) Advance();
+            }
+
+            Expect(TokenKind.CloseBrace, $"'}}' to close struct {name.Text}");
+            return decl;
+        }
+
+        /// <summary>int, u16, Task, ptr&lt;u8&gt;, ptr&lt;ptr&lt;u8&gt;&gt;</summary>
+        TypeRef ParseType()
+        {
+            Token name = ExpectIdentifier("a type");
+            if (name.Text != "ptr") return new TypeRef { Name = name.Text, Span = name.Span };
+
+            Expect(TokenKind.Less, "'<' after ptr, as in ptr<u8>");
+            TypeRef pointee = ParseType();
+
+            // ptr<ptr<u8>> ends in '>>', which the lexer reads as one token
+            if (At(TokenKind.GreaterGreater))
+            {
+                Token both = Current;
+                tokens[pos] = new Token(TokenKind.Greater, new Span(both.Span.Start + 1, 1), ">", null, false);
+                return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(both.Span) };
+            }
+
+            Token close = Expect(TokenKind.Greater, "'>' to close ptr<...>");
+            return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(close.Span) };
+        }
+
         // ------------------------------------------------------------ methods
 
         bool AtMethodEnd => At(TokenKind.OpenBracket) && PeekToken(1).IsWord("end");
@@ -225,15 +296,17 @@ namespace Phi.Compiler.Syntax
 
             if (AtWord("end")) throw Error(Current.Span, "[end] without a matching method header");
 
-            Span nameSpan;
-            string name = ParseQualifiedName(out nameSpan);
-            var method = new MethodDecl { Name = name, Span = open.Span.To(nameSpan) };
+            bool isr = AtWord("isr") && PeekToken(1).Kind == TokenKind.Identifier;
+            if (isr) Advance();
+
+            string name = ParseQualifiedName(out Span nameSpan);
+            var method = new MethodDecl { Name = name, IsInterruptHandler = isr, Span = open.Span.To(nameSpan) };
 
             if (Accept(TokenKind.Colon))
             {
                 while (!At(TokenKind.CloseBracket) && !AtEnd)
                 {
-                    if (!IsTypeKeyword(Current))
+                    if (!AtDeclaration)
                         throw Error(Current.Span, $"expected a parameter like 'int count: 0;' but found {Current}");
                     method.Parameters.Add(ParseVarDecl(allowBracketEnd: true));
                 }
@@ -315,8 +388,8 @@ namespace Phi.Compiler.Syntax
         {
             Token start = Current;
 
-            if (IsTypeKeyword(Current))
-                return ParseVarDecl(allowBracketEnd: false);
+            if (AtWord("const")) return ParseConst();
+            if (AtDeclaration) return ParseVarDecl(allowBracketEnd: false);
 
             if (Current.Kind == TokenKind.Identifier)
             {
@@ -328,8 +401,7 @@ namespace Phi.Compiler.Syntax
                     case "ask":
                     {
                         Advance();
-                        Span s;
-                        string name = ParseQualifiedName(out s);
+                        string name = ParseQualifiedName(out Span s);
                         ExpectSemicolon();
                         return new AskStmt { Target = new NameExpr { Name = name, Span = s }, Span = start.Span.To(s) };
                     }
@@ -339,6 +411,25 @@ namespace Phi.Compiler.Syntax
                         Expr? code = At(TokenKind.Semicolon) ? null : ParseExpression();
                         ExpectSemicolon();
                         return new ExitStmt { Code = code, Span = start.Span.To(Previous.Span) };
+                    }
+                    case "out":
+                    case "outw":
+                    case "outd":
+                    {
+                        Advance();
+                        Expr port = ParseExpression();
+                        Expr value = ParseExpression();
+                        ExpectSemicolon();
+                        int size = start.Text == "out" ? 1 : start.Text == "outw" ? 2 : 4;
+                        return new OutStmt { Size = size, Port = port, Value = value, Span = start.Span.To(Previous.Span) };
+                    }
+                    case "unsafe":
+                    {
+                        Advance();
+                        Accept(TokenKind.Semicolon);
+                        var stmt = new UnsafeStmt { Span = start.Span };
+                        stmt.Body.AddRange(ParseBlock("unsafe block"));
+                        return stmt;
                     }
                     case "call": return ParseCall();
                     case "if": return ParseIf();
@@ -354,18 +445,33 @@ namespace Phi.Compiler.Syntax
             throw Error(Current.Span, $"expected a statement but found {Current}");
         }
 
+        ConstDecl ParseConst()
+        {
+            Token keyword = Advance();
+            TypeRef type = ParseType();
+            Token name = ExpectIdentifier("a constant name");
+            if (!Accept(TokenKind.Colon) && !Accept(TokenKind.Equals))
+                throw Error(Current.Span, $"expected ':' after constant name '{name.Text}' but found {Current}");
+            Expr value = ParseExpression();
+            ExpectSemicolon();
+            return new ConstDecl { Type = type, Name = name.Text, NameSpan = name.Span, Value = value, Span = keyword.Span.To(Previous.Span) };
+        }
+
         VarDecl ParseVarDecl(bool allowBracketEnd)
         {
-            Token typeToken = Advance();
+            TypeRef type = ParseType();
             Token name = ExpectIdentifier("a variable name");
-            TypeKeyword type = TypeKeywords[typeToken.Text];
 
-            int? buffer = null;
+            Expr? buffer = null;
             var values = new List<Expr>();
 
             if (At(TokenKind.OpenBracket))
             {
                 buffer = ParseBufferSize();
+            }
+            else if (At(TokenKind.Semicolon) || (allowBracketEnd && At(TokenKind.CloseBracket)))
+            {
+                // no value: starts as zero
             }
             else
             {
@@ -395,7 +501,7 @@ namespace Phi.Compiler.Syntax
                 Name = name.Text,
                 NameSpan = name.Span,
                 BufferSize = buffer,
-                Span = typeToken.Span.To(Previous.Span),
+                Span = type.Span.To(Previous.Span),
             };
             decl.Values.AddRange(values);
 
@@ -403,15 +509,12 @@ namespace Phi.Compiler.Syntax
             return decl;
         }
 
-        int ParseBufferSize()
+        Expr ParseBufferSize()
         {
             Expect(TokenKind.OpenBracket, "'['");
-            Token size = Expect(TokenKind.Number, "a buffer size");
+            Expr size = ParseExpression();
             Expect(TokenKind.CloseBracket, "']'");
-
-            long n = (long)size.Value!;
-            if (n < 1 || n > 0x4000) throw Error(size.Span, "buffer size must be between 1 and 16384");
-            return (int)n;
+            return size;
         }
 
         Stmt ParseLog()
@@ -450,8 +553,7 @@ namespace Phi.Compiler.Syntax
                 if (!AcceptWord("is")) throw Error(Current.Span, "expected 'is'");
             }
 
-            Span calleeSpan;
-            string callee = ParseQualifiedName(out calleeSpan);
+            string callee = ParseQualifiedName(out Span calleeSpan);
             var arguments = new List<Expr>();
 
             if (Accept(TokenKind.Colon))
@@ -479,7 +581,7 @@ namespace Phi.Compiler.Syntax
         /// <summary>Looks ahead for `name is` (or `name:index is`) before the callee.</summary>
         bool FindIsBeforeCallee()
         {
-            for (int i = 1; i < 6; i++)
+            for (int i = 1; i < 8; i++)
             {
                 Token t = PeekToken(i);
                 if (t.IsWord("is")) return true;
@@ -514,7 +616,7 @@ namespace Phi.Compiler.Syntax
         {
             Token keyword = Advance();
 
-            if (IsTypeKeyword(Current) && PeekToken(1).Kind == TokenKind.Identifier)
+            if (AtDeclaration)
             {
                 // while int i: 0; i < 10; i++;
                 VarDecl init = ParseVarDecl(allowBracketEnd: false);
@@ -540,7 +642,7 @@ namespace Phi.Compiler.Syntax
             Expr target = ParsePostfix();
 
             AssignOp op;
-            Expr? value = null;
+            Expr? value;
             Token opToken = Current;
 
             if (AcceptWord("is") || Accept(TokenKind.Equals)) op = AssignOp.Set;
@@ -565,6 +667,8 @@ namespace Phi.Compiler.Syntax
         }
 
         // ------------------------------------------------------------ expressions
+        //
+        // lowest to highest: or, and, comparison, |, ^, &, << >>, + -, * / %, unary, postfix
 
         public Expr ParseExpression() => ParseOr();
 
@@ -572,14 +676,16 @@ namespace Phi.Compiler.Syntax
         bool AtOperator(TokenKind kind) => At(kind) && !Current.StartsLine;
         bool AtOperatorWord(string word) => AtWord(word) && !Current.StartsLine;
 
+        static Expr Binary(BinaryOp op, Expr left, Expr right) =>
+            new BinaryExpr { Op = op, Left = left, Right = right, Span = left.Span.To(right.Span) };
+
         Expr ParseOr()
         {
             Expr left = ParseAnd();
             while (AtOperatorWord("or"))
             {
                 Advance();
-                Expr right = ParseAnd();
-                left = new BinaryExpr { Op = BinaryOp.Or, Left = left, Right = right, Span = left.Span.To(right.Span) };
+                left = Binary(BinaryOp.Or, left, ParseAnd());
             }
             return left;
         }
@@ -590,15 +696,14 @@ namespace Phi.Compiler.Syntax
             while (AtOperatorWord("and"))
             {
                 Advance();
-                Expr right = ParseComparison();
-                left = new BinaryExpr { Op = BinaryOp.And, Left = left, Right = right, Span = left.Span.To(right.Span) };
+                left = Binary(BinaryOp.And, left, ParseComparison());
             }
             return left;
         }
 
         Expr ParseComparison()
         {
-            Expr left = ParseAdditive();
+            Expr left = ParseBitOr();
 
             BinaryOp? op = null;
             if (AtOperatorWord("is"))
@@ -618,17 +723,65 @@ namespace Phi.Compiler.Syntax
                     TokenKind.BangEquals => BinaryOp.NotEqual,
                     TokenKind.Less => BinaryOp.Less,
                     TokenKind.Greater => BinaryOp.Greater,
-                    TokenKind.LessEquals or TokenKind.LessLess => BinaryOp.LessEqual,
-                    TokenKind.GreaterEquals or TokenKind.GreaterGreater => BinaryOp.GreaterEqual,
+                    TokenKind.LessEquals => BinaryOp.LessEqual,
+                    TokenKind.GreaterEquals => BinaryOp.GreaterEqual,
                     _ => null,
                 };
                 if (op != null) Advance();
             }
 
             if (op == null) return left;
+            Expr result = Binary(op.Value, left, ParseBitOr());
 
-            Expr right = ParseAdditive();
-            return new BinaryExpr { Op = op.Value, Left = left, Right = right, Span = left.Span.To(right.Span) };
+            bool another = !Current.StartsLine && (AtWord("is") || Current.Kind is TokenKind.EqualsEquals or TokenKind.BangEquals
+                or TokenKind.Less or TokenKind.Greater or TokenKind.LessEquals or TokenKind.GreaterEquals);
+            if (another)
+                throw Error(Current.Span, "comparisons can't be chained; use parentheses, like (a < b) is false, or 'and'");
+            return result;
+        }
+
+        Expr ParseBitOr()
+        {
+            Expr left = ParseBitXor();
+            while (AtOperator(TokenKind.Pipe))
+            {
+                Advance();
+                left = Binary(BinaryOp.BitOr, left, ParseBitXor());
+            }
+            return left;
+        }
+
+        Expr ParseBitXor()
+        {
+            Expr left = ParseBitAnd();
+            while (AtOperator(TokenKind.Caret))
+            {
+                Advance();
+                left = Binary(BinaryOp.BitXor, left, ParseBitAnd());
+            }
+            return left;
+        }
+
+        Expr ParseBitAnd()
+        {
+            Expr left = ParseShift();
+            while (AtOperator(TokenKind.Ampersand))
+            {
+                Advance();
+                left = Binary(BinaryOp.BitAnd, left, ParseShift());
+            }
+            return left;
+        }
+
+        Expr ParseShift()
+        {
+            Expr left = ParseAdditive();
+            while (AtOperator(TokenKind.LessLess) || AtOperator(TokenKind.GreaterGreater))
+            {
+                BinaryOp op = Advance().Kind == TokenKind.LessLess ? BinaryOp.ShiftLeft : BinaryOp.ShiftRight;
+                left = Binary(op, left, ParseAdditive());
+            }
+            return left;
         }
 
         Expr ParseAdditive()
@@ -637,8 +790,7 @@ namespace Phi.Compiler.Syntax
             while (AtOperator(TokenKind.Plus) || AtOperator(TokenKind.Minus))
             {
                 BinaryOp op = Advance().Kind == TokenKind.Plus ? BinaryOp.Add : BinaryOp.Subtract;
-                Expr right = ParseMultiplicative();
-                left = new BinaryExpr { Op = op, Left = left, Right = right, Span = left.Span.To(right.Span) };
+                left = Binary(op, left, ParseMultiplicative());
             }
             return left;
         }
@@ -654,46 +806,87 @@ namespace Phi.Compiler.Syntax
                     TokenKind.Slash => BinaryOp.Divide,
                     _ => BinaryOp.Modulo,
                 };
-                Expr right = ParseUnary();
-                left = new BinaryExpr { Op = op, Left = left, Right = right, Span = left.Span.To(right.Span) };
+                left = Binary(op, left, ParseUnary());
             }
             return left;
         }
 
         Expr ParseUnary()
         {
-            if (At(TokenKind.Minus) || At(TokenKind.Bang) || AtWord("not"))
+            Token t = Current;
+
+            if (At(TokenKind.Minus) || At(TokenKind.Bang) || At(TokenKind.Tilde) || AtWord("not"))
             {
-                Token op = Advance();
+                Advance();
                 Expr operand = ParseUnary();
 
-                if (op.Kind == TokenKind.Minus && operand is NumberExpr n)
-                    return new NumberExpr { Value = -n.Value, Span = op.Span.To(n.Span) };
+                if (t.Kind == TokenKind.Minus && operand is NumberExpr n)
+                    return new NumberExpr { Value = -n.Value, Span = t.Span.To(n.Span) };
 
-                return new UnaryExpr
+                UnaryOp op = t.Kind switch
                 {
-                    Op = op.Kind == TokenKind.Minus ? UnaryOp.Negate : UnaryOp.Not,
-                    Operand = operand,
-                    Span = op.Span.To(operand.Span),
+                    TokenKind.Minus => UnaryOp.Negate,
+                    TokenKind.Tilde => UnaryOp.BitNot,
+                    _ => UnaryOp.Not,
                 };
+                return new UnaryExpr { Op = op, Operand = operand, Span = t.Span.To(operand.Span) };
+            }
+
+            if (AtWord("addr"))
+            {
+                Advance();
+                Expr operand = ParsePostfix();
+                return new AddrExpr { Operand = operand, Span = t.Span.To(operand.Span) };
+            }
+
+            if (AtWord("in") || AtWord("inw") || AtWord("ind"))
+            {
+                Advance();
+                Expr port = ParseUnary();
+                int size = t.Text == "in" ? 1 : t.Text == "inw" ? 2 : 4;
+                return new InExpr { Size = size, Port = port, Span = t.Span.To(port.Span) };
             }
 
             return ParsePostfix();
         }
 
-        /// <summary>name, name:index, name:i:j</summary>
+        /// <summary>name, name:index, name:i:j, tasks:i.field</summary>
         Expr ParsePostfix()
         {
             Expr expr = ParsePrimary();
 
-            while (At(TokenKind.Colon) && !Current.StartsLine && expr is NameExpr or IndexExpr)
+            while (!Current.StartsLine)
             {
-                Advance();
-                Expr index = ParsePrimary();
-                expr = new IndexExpr { Target = expr, Index = index, Span = expr.Span.To(index.Span) };
+                if (At(TokenKind.Colon) && expr is NameExpr or IndexExpr or MemberExpr)
+                {
+                    Advance();
+                    Expr index = ParseIndex();
+                    expr = new IndexExpr { Target = expr, Index = index, Span = expr.Span.To(index.Span) };
+                }
+                else if (At(TokenKind.Dot) && expr is IndexExpr or MemberExpr && PeekToken(1).Kind == TokenKind.Identifier)
+                {
+                    Advance();
+                    Token member = Advance();
+                    expr = new MemberExpr { Target = expr, Member = member.Text, MemberSpan = member.Span, Span = expr.Span.To(member.Span) };
+                }
+                else break;
             }
 
             return expr;
+        }
+
+        /// <summary>
+        /// The index after ':' is a number, a single name or a parenthesized expression, so that
+        /// tasks:i.id means (tasks:i).id. Write arr:(t.count) for anything longer.
+        /// </summary>
+        Expr ParseIndex()
+        {
+            if (IsName(Current))
+            {
+                Token name = Advance();
+                return new NameExpr { Name = name.Text, Span = name.Span };
+            }
+            return ParsePrimary();
         }
 
         Expr ParsePrimary()
@@ -731,8 +924,7 @@ namespace Phi.Compiler.Syntax
                     if (ReservedWords.Contains(t.Text))
                         throw Error(t.Span, $"expected a value but found the keyword '{t.Text}'");
 
-                    Span span;
-                    string name = ParseQualifiedName(out span);
+                    string name = ParseQualifiedName(out Span span);
                     return new NameExpr { Name = name, Span = span };
             }
 

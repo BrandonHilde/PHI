@@ -1,0 +1,48 @@
+use drivers.vga_text;
+
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Screen:OS
+{
+	ptr<u16> screen: 0xB8000;
+	str row: [12];
+
+	call Vga.Clear;
+	call Vga.Print: 'Hello';
+	call Vga.SetColor: Colors.Yellow Colors.Blue;
+	call Vga.Print: ' PHI\n';
+	call Vga.PrintNumber: -42;
+
+	debug 'cell 0: ' screen:0 '\n';      # 'H' (72) in light gray (0x07): 0x0748
+	debug 'cell 6: ' screen:6 '\n';      # 'P' (80) in yellow on blue (0x1E): 0x1E50
+	debug 'cell 80: ' screen:80 '\n';    # '-' at the start of the second line
+	call ReadRow: 1;
+	debug 'row 1: ' row '\n';
+
+	# the hardware cursor follows the text: row 1, column 3
+	out 0x3D4 0x0F;
+	u16 cursor: in 0x3D5;
+	out 0x3D4 0x0E;
+	cursor is cursor | (in 0x3D5 << 8);
+	debug 'cursor: ' cursor '\n';
+
+	# 30 more lines scroll the first ones off the top
+	while int i: 0; i < 30; i++;
+		call Vga.Print: '\nline ';
+		call Vga.PrintNumber: i;
+	;;
+	call ReadRow: 0;
+	debug 'top row: ' row '\n';
+	call ReadRow: 24;
+	debug 'bottom row: ' row '\n';
+	exit 0;
+
+	[ReadRow: int n: 0;]
+		while int k: 0; k < 11; k++;
+			row:k is screen:(n * 80 + k) & 0xFF;
+		;;
+	[end]
+}

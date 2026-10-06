@@ -1,0 +1,6 @@
+use support.missing_file;
+
+phi.A:Bootloader
+{
+	int z: 1 << 2 <= 3 < 4;
+}

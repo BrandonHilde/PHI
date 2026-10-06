@@ -193,6 +193,32 @@ adding it later.
 **Done when:** a VGA text-mode driver (`print`, `clear`, scrolling) is written entirely
 in PHI and passes a test.
 
+**Status: done (2026-10-06).** See [docs/language.md](docs/language.md) for the details.
+- [x] Sized integers `u8 u16 u32 i8 i16 i32` (`int` = `i32`, `byt` = `u8`); math is unsigned when
+  either side is `u32` or a pointer; literals above `int` range are `u32`
+- [x] `const`, usable in array sizes, other constants and `asm.` blocks
+- [x] Pointers: `ptr<T>`, indexing (`vga:i`), `addr x`, `addr Method`; reach anything below 1 MB
+  through `fs`; a `str` passes as a `ptr<u8>`
+- [x] Structs: `struct.Name { ... }`, packed, nested, with field arrays and self-pointers;
+  `t.field`, `tasks:i.field`, `p:0.field`
+- [x] Bitwise `& | ^ ~` and shifts `<< >>` (`<<`/`>>` no longer mean `<=`/`>=`); bitwise binds
+  tighter than comparisons; chained comparisons are an error
+- [x] Ports: `out`/`outw`/`outd` statements, `in`/`inw`/`ind` expressions
+- [x] Interrupt handlers: `[isr Name]` plus `OS.SetInterruptHandler`, `OS.EndOfInterrupt`,
+  `OS.UnmaskIrq`/`MaskIrq`, `OS.EnableInterrupts`/`DisableInterrupts`
+- [x] Bounds checks on array and `str` indexes (run time, or build time for constant indexes);
+  `unsafe ... ;;` turns them off
+- [x] `use path.to.file;` with a standard library in `lib/phi/` (embedded in the compiler)
+- [x] `lib/phi/drivers/vga_text.phi`: a VGA text driver in PHI with no `asm.` (print, numbers,
+  colors, scrolling, hardware cursor), checked by reading video memory back in `tests/vga_text.phi`
+- Differs from the plan:
+  - `volatile` isn't needed: generated code never keeps values in registers between statements.
+    It will come back when the code generator starts optimizing.
+  - `@section` / `@org` placement moved to Phase 3, where the 32-bit kernel and its memory
+    layout are designed.
+  - Pointer arithmetic is in bytes (`p++ 2` moves two bytes), not elements as in C. It's simpler
+    to reason about for hardware work; revisit if it proves error-prone.
+
 ---
 
 ## Phase 3: Boot into 32-bit protected mode

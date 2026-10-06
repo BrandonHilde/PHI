@@ -1,0 +1,28 @@
+struct.Loop
+{
+	Loop inner;
+}
+
+struct.Pair
+{
+	u8 a;
+	u8 a;
+}
+
+phi.Systems:Bootloader
+{
+	int values: 1 2 3;
+	int n: 2;
+	const int LIMIT: n;
+	Mystery m;
+	ptr<str> s;
+	Pair p;
+	Pair q;
+	p is q;
+	log values:3;
+	call Handler;
+	log p.missing;
+
+	[isr Handler]
+	[end]
+}

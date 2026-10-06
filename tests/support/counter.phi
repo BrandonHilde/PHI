@@ -1,0 +1,8 @@
+phi.Counter:OS
+{
+	int count: 0;
+
+	[Bump]
+		count++;
+	[end]
+}

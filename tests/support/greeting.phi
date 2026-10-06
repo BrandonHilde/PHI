@@ -1,0 +1,12 @@
+# used by use.phi through: use support.greeting;
+use support.counter;
+
+phi.Greeting:OS
+{
+	str greeting_text: 'hello from another file';
+
+	[Say: str name: 'world';]
+		call Counter.Bump;
+		debug greeting_text ', ' name ' (' Counter.count ')\n';
+	[end]
+}

@@ -10,6 +10,9 @@ namespace Phi.Compiler.Semantics
         public List<VariableSymbol> Variables { get; } = new();
         public List<RawBlockDecl> RawBlocks { get; } = new();
         public HashSet<BuiltinFunction> UsedBuiltins { get; } = new();
+
+        /// <summary>Class-level names, for {name} in asm blocks: variables and constants.</summary>
+        public Dictionary<string, Symbol> ClassNames { get; } = new();
     }
 
     public sealed class BoundProgram
@@ -34,15 +37,18 @@ namespace Phi.Compiler.Semantics
         /// <summary>Capacity of a str copied from another str whose size isn't known yet.</summary>
         const int DefaultStrCapacity = 64;
 
-        readonly SourceFile file;
+        readonly SourceFile mainFile;
         readonly DiagnosticBag diagnostics;
+
+        /// <summary>The file the code being checked came from, for error locations.</summary>
+        SourceFile file;
 
         sealed class Scope
         {
             public ClassDecl Class { get; init; } = null!;
             public UnitKind Unit { get; init; }
             public MethodSymbol? Method { get; init; }
-            public Dictionary<string, VariableSymbol> Variables { get; } = new();
+            public Dictionary<string, Symbol> Names { get; } = new();
         }
 
         readonly Dictionary<ClassDecl, Scope> classScopes = new();
@@ -50,10 +56,13 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<UnitKind, BoundUnit> units = new();
         readonly Dictionary<(UnitKind, string), MethodSymbol> methodsByFullName = new();
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
+        readonly Dictionary<string, StructSymbol> structs = new();
         readonly HashSet<VarDecl> loopCounters = new();
+        int unsafeDepth;
 
         Binder(SourceFile file, DiagnosticBag diagnostics)
         {
+            mainFile = file;
             this.file = file;
             this.diagnostics = diagnostics;
         }
@@ -67,14 +76,19 @@ namespace Phi.Compiler.Semantics
 
         BoundProgram? BindProgram(ProgramNode program)
         {
+            DeclareStructs(program.Structs);
+
             var bootClasses = program.Classes.Where(c => c.Base == BootBase).ToList();
             if (bootClasses.Count == 0)
             {
-                diagnostics.Error(file, new Span(0, 0), $"a program needs a class that inherits {BootBase}, e.g. phi.Hello:{BootBase} {{ log 'hi'; }}");
+                diagnostics.Error(mainFile, new Span(0, 0), $"a program needs a class that inherits {BootBase}, e.g. phi.Hello:{BootBase} {{ log 'hi'; }}");
                 return null;
             }
             foreach (ClassDecl extra in bootClasses.Skip(1))
+            {
+                file = extra.File;
                 Error(extra.BaseSpan, $"only one class can inherit {BootBase}; it becomes the 512-byte boot sector");
+            }
 
             var boot = new BoundUnit { Kind = UnitKind.Boot };
             units[UnitKind.Boot] = boot;
@@ -82,6 +96,7 @@ namespace Phi.Compiler.Semantics
 
             foreach (ClassDecl cls in program.Classes)
             {
+                file = cls.File;
                 UnitKind unit;
                 if (cls.Base == BootBase) unit = UnitKind.Boot;
                 else if (cls.Base == KernelBase) unit = UnitKind.Kernel;
@@ -104,13 +119,15 @@ namespace Phi.Compiler.Semantics
 
             foreach (RawBlockDecl raw in program.RawBlocks)
             {
+                file = raw.File;
                 if (!rawBlocks.TryAdd(raw.Name, raw))
                     Error(raw.Span, $"an assembly block named {raw.Name} already exists");
             }
 
             foreach (var (cls, scope) in classScopes)
             {
-                DeclareVariables(scope, CollectDeclarations(cls.Body), isParameter: false);
+                file = cls.File;
+                DeclareNames(scope, CollectDeclarations(cls.Body), isParameter: false);
                 foreach (MethodDecl m in cls.Methods) DeclareMethod(scope, m);
             }
 
@@ -118,6 +135,7 @@ namespace Phi.Compiler.Semantics
 
             foreach (var (cls, scope) in classScopes)
             {
+                file = cls.File;
                 BindStatements(cls.Body, scope, classLevel: true);
 
                 foreach (MethodDecl m in cls.Methods)
@@ -129,33 +147,171 @@ namespace Phi.Compiler.Semantics
                     if (m.Result != null)
                     {
                         BindExpr(m.Result, ms);
-                        m.Symbol.ReturnType = m.Result.Type.IsString ? PhiType.Str : PhiType.Int;
-                        if (!m.Result.Type.IsError && !m.Result.Type.IsNumeric && !m.Result.Type.IsString)
+                        if (m.Result.Type.IsString) m.Symbol.ReturnType = PhiType.Str;
+                        else if (m.Result.Type.IsNumeric) m.Symbol.ReturnType = m.Result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
+                        else if (!m.Result.Type.IsError)
                             Error(m.Result.Span, $"a method can return a number or a str, not a {m.Result.Type}");
                     }
                 }
             }
 
-            if (boot.UsedBuiltins.Any(b => b.Name == "Bootloader.JumpToSectorTwo") && kernel == null)
-                Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
+            foreach (var (cls, scope) in classScopes)
+                foreach (var (name, symbol) in scope.Names)
+                    units[scope.Unit].ClassNames.TryAdd(name, symbol);
 
-            return new BoundProgram { File = file, Boot = boot, Kernel = kernel };
+            if (boot.UsedBuiltins.Any(b => b.Name == "Bootloader.JumpToSectorTwo") && kernel == null)
+            {
+                file = boot.Classes[0].File;
+                Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
+            }
+
+            return new BoundProgram { File = mainFile, Boot = boot, Kernel = kernel };
         }
 
-        /// <summary>Every declaration in a body, including those nested in if and while blocks.</summary>
-        IEnumerable<VarDecl> CollectDeclarations(IEnumerable<Stmt> body)
+        // ---------------------------------------------------------------- structs
+
+        void DeclareStructs(List<StructDecl> decls)
+        {
+            foreach (StructDecl d in decls)
+            {
+                file = d.File;
+                if (Parser.ReservedWords.Contains(d.Name))
+                {
+                    Error(d.Span, $"'{d.Name}' is a keyword and can't be a struct name");
+                    continue;
+                }
+                var symbol = new StructSymbol { Name = d.Name, Decl = d };
+                if (!structs.TryAdd(d.Name, symbol))
+                {
+                    Error(d.Span, $"a struct named {d.Name} already exists");
+                    continue;
+                }
+                d.Symbol = symbol;
+            }
+
+            foreach (StructSymbol s in structs.Values) Layout(s, new HashSet<StructSymbol>());
+        }
+
+        /// <summary>Works out field offsets; fields follow each other with no padding.</summary>
+        void Layout(StructSymbol s, HashSet<StructSymbol> inProgress)
+        {
+            if (s.LayoutDone) return;
+            file = s.Decl.File;
+
+            if (!inProgress.Add(s))
+            {
+                Error(s.Decl.Span, $"struct {s.Name} contains itself; use a ptr<{s.Name}> field instead");
+                s.LayoutDone = true;
+                return;
+            }
+
+            int offset = 0;
+            foreach (FieldDecl f in s.Decl.Fields)
+            {
+                file = s.Decl.File;
+                if (s.Find(f.Name) != null)
+                {
+                    Error(f.Span, $"struct {s.Name} already has a field named {f.Name}");
+                    continue;
+                }
+
+                PhiType type = ResolveType(f.Type, scope: null, allowStr: false);
+                if (type.IsStruct) Layout(type.Struct!, inProgress);
+
+                if (f.Count != null)
+                {
+                    int? count = ConstantCount(f.Count, null);
+                    if (count == null) continue;
+                    type = type.ArrayOf(count.Value);
+                }
+
+                int size = type.ElementSize * Math.Max(type.Length, 1);
+                s.Fields.Add(new FieldSymbol { Name = f.Name, Type = type, Offset = offset });
+                offset += size;
+            }
+
+            s.Size = offset;
+            s.LayoutDone = true;
+            inProgress.Remove(s);
+        }
+
+        /// <summary>Turns a written type into a PhiType. str is only allowed for variables.</summary>
+        PhiType ResolveType(TypeRef t, Scope? scope, bool allowStr)
+        {
+            switch (t.Name)
+            {
+                case "int":
+                case "i32": return PhiType.I32;
+                case "byt":
+                case "u8": return PhiType.U8;
+                case "bln": return PhiType.Bool;
+                case "u16": return PhiType.U16;
+                case "u32": return PhiType.U32;
+                case "i8": return PhiType.I8;
+                case "i16": return PhiType.I16;
+                case "str":
+                    if (allowStr) return PhiType.Str;
+                    Error(t.Span, "str can't be used here; use a u8 array (u8 name[16]) or ptr<u8>");
+                    return PhiType.Error;
+                case "dec":
+                case "fin":
+                    Error(t.Span, $"{t.Name} (decimal numbers) isn't supported yet");
+                    return PhiType.Error;
+                case "var":
+                    Error(t.Span, "var needs a value to work out its type");
+                    return PhiType.Error;
+                case "ptr":
+                {
+                    PhiType pointee = ResolveType(t.Pointee!, scope, allowStr: false);
+                    return pointee.IsError ? PhiType.Error : PhiType.PointerTo(pointee);
+                }
+            }
+
+            if (structs.TryGetValue(t.Name, out StructSymbol? s)) return PhiType.Of(s);
+
+            Error(t.Span, $"unknown type '{t.Name}'");
+            return PhiType.Error;
+        }
+
+        /// <summary>An element count that must be known when the program is built.</summary>
+        int? ConstantCount(Expr e, Scope? scope)
+        {
+            if (scope != null) BindExpr(e, scope);
+            else if (e is NumberExpr) e.Type = PhiType.Int;
+
+            long? value = ConstantFolder.Evaluate(e);
+            if (value == null)
+            {
+                Error(e.Span, "a size must be a number or a const known when the program is built");
+                return null;
+            }
+            if (value < 1 || value > 0x4000)
+            {
+                Error(e.Span, "a size must be between 1 and 16384");
+                return null;
+            }
+            return (int)value;
+        }
+
+        // ---------------------------------------------------------------- variables and methods
+
+        /// <summary>Every declaration in a body, including those nested in blocks.</summary>
+        IEnumerable<Stmt> CollectDeclarations(IEnumerable<Stmt> body)
         {
             foreach (Stmt s in body)
             {
                 switch (s)
                 {
-                    case VarDecl v:
-                        yield return v;
+                    case VarDecl or ConstDecl:
+                        yield return s;
                         break;
                     case IfStmt i:
-                        foreach (VarDecl v in CollectDeclarations(i.Then)) yield return v;
+                        foreach (Stmt v in CollectDeclarations(i.Then)) yield return v;
                         if (i.Else != null)
-                            foreach (VarDecl v in CollectDeclarations(i.Else)) yield return v;
+                            foreach (Stmt v in CollectDeclarations(i.Else)) yield return v;
+                        break;
+                    case UnsafeStmt u:
+                        foreach (Stmt v in CollectDeclarations(u.Body)) yield return v;
                         break;
                     case WhileStmt w:
                         if (w.Init != null)
@@ -163,29 +319,36 @@ namespace Phi.Compiler.Semantics
                             loopCounters.Add(w.Init);
                             yield return w.Init;
                         }
-                        foreach (VarDecl v in CollectDeclarations(w.Body)) yield return v;
+                        foreach (Stmt v in CollectDeclarations(w.Body)) yield return v;
                         break;
                 }
             }
         }
 
-        void DeclareVariables(Scope scope, IEnumerable<VarDecl> decls, bool isParameter)
+        void DeclareNames(Scope scope, IEnumerable<Stmt> decls, bool isParameter)
         {
-            foreach (VarDecl decl in decls)
+            foreach (Stmt stmt in decls)
             {
+                if (stmt is ConstDecl c)
+                {
+                    DeclareConstant(scope, c);
+                    continue;
+                }
+
+                var decl = (VarDecl)stmt;
                 if (Parser.ReservedWords.Contains(decl.Name))
                 {
                     Error(decl.NameSpan, $"'{decl.Name}' is a keyword and can't be a variable name");
                     continue;
                 }
 
-                if (scope.Variables.TryGetValue(decl.Name, out VariableSymbol? existing))
+                if (scope.Names.TryGetValue(decl.Name, out Symbol? existing))
                 {
                     // two loops can each declare the same counter: while int i: 0; ...
-                    if (loopCounters.Contains(decl) && existing.Decl.Type == decl.Type && existing.Decl.BufferSize == null)
+                    if (existing is VariableSymbol ev && loopCounters.Contains(decl) && ev.Decl.Type.ToString() == decl.Type.ToString() && ev.Decl.BufferSize == null)
                     {
-                        decl.Symbol = existing;
-                        existing.NeedsInitCode = true;
+                        decl.Symbol = ev;
+                        ev.NeedsInitCode = true;
                         continue;
                     }
                     Error(decl.NameSpan, $"'{decl.Name}' is already declared in {ScopeName(scope)}");
@@ -194,12 +357,46 @@ namespace Phi.Compiler.Semantics
 
                 var symbol = new VariableSymbol { Name = decl.Name, Decl = decl, Unit = scope.Unit, IsParameter = isParameter };
                 decl.Symbol = symbol;
-                scope.Variables[decl.Name] = symbol;
+                scope.Names[decl.Name] = symbol;
                 units[scope.Unit].Variables.Add(symbol);
                 DetermineStorage(symbol, scope);
 
                 if (isParameter) scope.Method!.Parameters.Add(symbol);
             }
+        }
+
+        void DeclareConstant(Scope scope, ConstDecl c)
+        {
+            if (Parser.ReservedWords.Contains(c.Name))
+            {
+                Error(c.NameSpan, $"'{c.Name}' is a keyword and can't be a constant name");
+                return;
+            }
+            if (scope.Names.ContainsKey(c.Name))
+            {
+                Error(c.NameSpan, $"'{c.Name}' is already declared in {ScopeName(scope)}");
+                return;
+            }
+
+            PhiType type = ResolveType(c.Type, scope, allowStr: false);
+            BindExpr(c.Value, scope);
+            if (type.IsError || c.Value.Type.IsError) return;
+
+            if (!type.IsNumeric)
+            {
+                Error(c.Type.Span, "constants must be numbers");
+                return;
+            }
+
+            Expr value = Convert(c.Value, type, $"constant '{c.Name}'");
+            long? known = ConstantFolder.Evaluate(value);
+            if (known == null)
+            {
+                Error(c.Value.Span, $"the value of constant '{c.Name}' must be known when the program is built");
+                return;
+            }
+
+            scope.Names[c.Name] = new ConstantSymbol { Name = c.Name, Value = known.Value, Type = type };
         }
 
         static string ScopeName(Scope scope) =>
@@ -224,11 +421,26 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            if (method.IsInterruptHandler)
+            {
+                if (dotted) Error(method.Span, "an event can't also be an isr");
+                if (method.Parameters.Count > 0) Error(method.Parameters[0].Span, "interrupt handlers can't take parameters");
+                if (method.Result != null) Error(method.Result.Span, "interrupt handlers can't return a value");
+            }
+
             UnitKind unit = classScope.Unit;
             string fullName = dotted ? name : $"{classScope.Class.Name}.{name}";
             string label = hook?.Label ?? $"M_{classScope.Class.Name}_{name}";
 
-            var symbol = new MethodSymbol { Name = fullName, Label = label, Decl = method, Unit = unit, IsHook = hook != null };
+            var symbol = new MethodSymbol
+            {
+                Name = fullName,
+                Label = label,
+                Decl = method,
+                Unit = unit,
+                IsHook = hook != null,
+                IsInterruptHandler = method.IsInterruptHandler,
+            };
 
             if (!methodsByFullName.TryAdd((unit, fullName), symbol))
             {
@@ -241,53 +453,73 @@ namespace Phi.Compiler.Semantics
 
             var scope = new Scope { Class = classScope.Class, Unit = unit, Method = symbol };
             methodScopes[method] = scope;
-            DeclareVariables(scope, method.Parameters, isParameter: true);
-            DeclareVariables(scope, CollectDeclarations(method.Body), isParameter: false);
+            DeclareNames(scope, method.Parameters, isParameter: true);
+            DeclareNames(scope, CollectDeclarations(method.Body), isParameter: false);
         }
 
         /// <summary>Decides type, element count and str capacity from the declaration.</summary>
         void DetermineStorage(VariableSymbol v, Scope scope)
         {
             VarDecl d = v.Decl;
-            TypeKind kind = d.Type switch
-            {
-                TypeKeyword.Int => TypeKind.Int,
-                TypeKeyword.Byt => TypeKind.Byte,
-                TypeKeyword.Bln => TypeKind.Bool,
-                TypeKeyword.Str => TypeKind.Str,
-                TypeKeyword.Var => d.Values.Count > 0 && d.Values.All(e => e is StringExpr) ? TypeKind.Str : TypeKind.Int,
-                _ => TypeKind.Error,
-            };
+            PhiType type;
 
-            if (kind == TypeKind.Error)
+            if (d.Type.Name == "var")
             {
-                Error(d.Span, $"{d.Type.ToString().ToLower()} (decimal numbers) isn't supported yet");
+                if (d.Values.Count == 0)
+                {
+                    Error(d.Type.Span, "var needs a value to work out its type");
+                    return;
+                }
+                type = d.Values.All(e => e is StringExpr) ? PhiType.Str : PhiType.Int;
+            }
+            else
+            {
+                type = ResolveType(d.Type, scope, allowStr: true);
+            }
+
+            if (type.IsError)
+            {
                 v.Type = PhiType.Error;
                 return;
             }
 
-            if (d.BufferSize is int size)
+            if (d.BufferSize != null)
             {
-                if (kind == TypeKind.Str)
+                int? size = ConstantCount(d.BufferSize, scope);
+                if (size == null) return;
+
+                if (type.IsString)
                 {
                     v.Type = PhiType.Str;
-                    v.Capacity = size + 1;
+                    v.Capacity = size.Value + 1;
                 }
                 else
                 {
-                    v.Type = new PhiType(kind, IsArray: true);
-                    v.Count = size;
+                    v.Type = type.ArrayOf(size.Value);
                 }
                 return;
             }
 
-            if (kind == TypeKind.Str)
+            if (type.IsStruct && d.Values.Count > 0)
             {
+                Error(d.Values[0].Span, $"a {type} starts as all zeros; set its fields one at a time, like {d.Name}.field is 5;");
+                v.Type = PhiType.Error;
+                return;
+            }
+
+            if (type.IsString)
+            {
+                if (d.Values.Count == 0)
+                {
+                    Error(d.NameSpan, $"str '{d.Name}' needs a value or a size, like str {d.Name}: [40];");
+                    v.Type = PhiType.Error;
+                    return;
+                }
+
                 if (d.Values.Count > 1)
                 {
                     // every element gets the same room, so any element can be replaced by index
-                    v.Type = PhiType.Str.AsArray;
-                    v.Count = d.Values.Count;
+                    v.Type = PhiType.Str.ArrayOf(d.Values.Count);
                     v.Capacity = d.Values.Max(e => e is StringExpr s ? s.Value.Length + 1 : IntTextCapacity);
                     return;
                 }
@@ -304,15 +536,7 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            if (d.Values.Count > 1)
-            {
-                v.Type = new PhiType(kind, IsArray: true);
-                v.Count = d.Values.Count;
-            }
-            else
-            {
-                v.Type = new PhiType(kind);
-            }
+            v.Type = d.Values.Count > 1 ? type.ArrayOf(d.Values.Count) : type;
         }
 
         /// <summary>
@@ -323,15 +547,16 @@ namespace Phi.Compiler.Semantics
         {
             foreach (BoundUnit unit in units.Values)
             {
-                var classLevel = unit.Variables.Where(v => !IsMethodVariable(v)).ToList();
+                var classLevel = classScopes.Values.Where(s => s.Unit == unit.Kind)
+                    .SelectMany(s => s.Names.Values.OfType<VariableSymbol>()).ToList();
                 var shared = classLevel.GroupBy(v => v.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
 
                 foreach (var (cls, scope) in classScopes.Where(p => p.Value.Unit == unit.Kind))
-                    foreach (VariableSymbol v in scope.Variables.Values)
+                    foreach (VariableSymbol v in scope.Names.Values.OfType<VariableSymbol>())
                         v.Label = shared.Contains(v.Name) ? $"VALUE_{cls.Name}_{v.Name}" : $"VALUE_{v.Name}";
 
                 foreach (var (method, scope) in methodScopes.Where(p => p.Value.Unit == unit.Kind))
-                    foreach (VariableSymbol v in scope.Variables.Values)
+                    foreach (VariableSymbol v in scope.Names.Values.OfType<VariableSymbol>())
                     {
                         v.Label = $"VALUE_{method.Symbol!.Label}_{v.Name}";
                         v.IsLocal = true;
@@ -339,55 +564,94 @@ namespace Phi.Compiler.Semantics
             }
         }
 
-        bool IsMethodVariable(VariableSymbol v) => methodScopes.Values.Any(s => s.Variables.ContainsValue(v));
-
         // ================================================================ lookup
 
-        Symbol? Lookup(string name, Scope scope)
+        Symbol? LookupSimple(string name, Scope scope)
         {
             if (scope.Method != null && methodScopes.TryGetValue(scope.Method.Decl, out Scope? ms)
-                && ms.Variables.TryGetValue(name, out VariableSymbol? local))
+                && ms.Names.TryGetValue(name, out Symbol? local))
                 return local;
 
-            if (classScopes[scope.Class].Variables.TryGetValue(name, out VariableSymbol? field))
-                return field;
+            if (classScopes[scope.Class].Names.TryGetValue(name, out Symbol? member))
+                return member;
 
-            // a variable from another class in the same unit, if only one class has it
+            // a name from another class in the same unit, if only one class has it
             var others = classScopes.Values
-                .Where(s => s.Unit == scope.Unit && s.Class != scope.Class && s.Variables.ContainsKey(name))
-                .Select(s => s.Variables[name]).ToList();
+                .Where(s => s.Unit == scope.Unit && s.Class != scope.Class && s.Names.ContainsKey(name))
+                .Select(s => s.Names[name]).ToList();
             if (others.Count == 1) return others[0];
 
             if (Builtins.Constants.TryGetValue(name, out long value))
                 return new ConstantSymbol { Name = name, Value = value };
 
-            int dot = name.LastIndexOf('.');
+            // ClassName.name
+            int dot = name.IndexOf('.');
             if (dot > 0)
             {
-                string head = name[..dot];
-                string member = name[(dot + 1)..];
-
-                if (member == "len" && Lookup(head, scope) is VariableSymbol target)
-                    return new LengthSymbol { Name = name, Of = target };
-
-                // ClassName.variable
-                ClassDecl? cls = classScopes.Keys.FirstOrDefault(c => c.Name == head && classScopes[c].Unit == scope.Unit);
-                if (cls != null && classScopes[cls].Variables.TryGetValue(member, out VariableSymbol? qualified))
+                ClassDecl? cls = classScopes.Keys.FirstOrDefault(c => c.Name == name[..dot] && classScopes[c].Unit == scope.Unit);
+                if (cls != null && classScopes[cls].Names.TryGetValue(name[(dot + 1)..], out Symbol? qualified))
                     return qualified;
             }
 
             return null;
         }
 
+        /// <summary>Names, plus x.len and struct fields reached by name (task.id, a.b.c).</summary>
+        Symbol? Lookup(string name, Scope scope)
+        {
+            Symbol? direct = LookupSimple(name, scope);
+            if (direct != null) return direct;
+
+            string[] parts = name.Split('.');
+            for (int split = parts.Length - 1; split >= 1; split--)
+            {
+                if (LookupSimple(string.Join('.', parts[..split]), scope) is not VariableSymbol root) continue;
+                return ResolveMembers(root, parts[split..]);
+            }
+
+            return null;
+        }
+
+        Symbol? ResolveMembers(VariableSymbol root, string[] members)
+        {
+            PhiType type = root.Type;
+            int offset = 0;
+
+            for (int i = 0; i < members.Length; i++)
+            {
+                string m = members[i];
+                bool last = i == members.Length - 1;
+
+                if (m == "len" && last)
+                {
+                    if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
+                    if (type.IsString && offset == 0) return new LengthSymbol { Name = m, Str = root };
+                    return null;
+                }
+
+                FieldSymbol? field = type.IsStruct ? type.Struct!.Find(m) : null;
+                if (field == null) return null;
+                offset += field.Offset;
+                type = field.Type;
+            }
+
+            return new FieldPathSymbol { Name = root.Name, Root = root, Offset = offset, Type = type };
+        }
+
         string DescribeMissing(string name, Scope scope)
         {
             UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Kernel : UnitKind.Boot;
-            bool inOtherUnit = classScopes.Values.Any(s => s.Unit == other && s.Variables.ContainsKey(name));
+            string head = name.Split('.')[0];
+            bool inOtherUnit = classScopes.Values.Any(s => s.Unit == other && s.Names.ContainsKey(head));
             if (inOtherUnit)
             {
                 string where = other == UnitKind.Boot ? $"the {BootBase} class" : $"an {KernelBase} class";
-                return $"'{name}' is declared in {where}; the boot sector and the OS classes are built separately and can't share variables";
+                return $"'{head}' is declared in {where}; the boot sector and the OS classes are built separately and can't share variables";
             }
+
+            if (name.Contains('.') && LookupSimple(head, scope) is VariableSymbol v)
+                return v.Type.IsStruct ? $"{v.Type} has no field '{name[(head.Length + 1)..]}'" : $"'{head}' is a {v.Type}, which has no '{name[(head.Length + 1)..]}'";
+
             return $"unknown name '{name}'";
         }
 
@@ -407,12 +671,15 @@ namespace Phi.Compiler.Semantics
                     BindVarDecl(decl, scope, classLevel);
                     return decl;
 
+                case ConstDecl:
+                    return stmt; // handled when names were declared
+
                 case LogStmt log:
                     foreach (Expr value in log.Values)
                     {
                         BindExpr(value, scope);
                         if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsString)
-                            Error(value.Span, $"can't print a {value.Type}; print one element at a time, like name:i");
+                            Error(value.Span, $"can't print a {value.Type}; print one element or field at a time");
                     }
                     return log;
 
@@ -429,6 +696,19 @@ namespace Phi.Compiler.Semantics
                         RequireNumeric(exit.Code, "exit code");
                     }
                     return exit;
+
+                case OutStmt o:
+                    BindExpr(o.Port, scope);
+                    BindExpr(o.Value, scope);
+                    o.Port = Convert(o.Port, PhiType.U16, "the port");
+                    o.Value = Convert(o.Value, PhiType.U32, "the value");
+                    return o;
+
+                case UnsafeStmt u:
+                    unsafeDepth++;
+                    BindStatements(u.Body, scope, classLevel: false);
+                    unsafeDepth--;
+                    return u;
 
                 case CallStmt call:
                     BindCall(call, scope);
@@ -473,17 +753,24 @@ namespace Phi.Compiler.Semantics
             if (allConstant)
                 v.StaticValues = constants.Select(c => c!).ToList();
 
-            // a method or loop variable is set every time its declaration runs;
-            // a class variable with constant values is simply stored that way
-            if (decl.Values.Count > 0 && (!allConstant || !classLevel || v.IsParameter))
+            // a method or loop variable is set every time its declaration runs (to zero if it
+            // has no value); a class variable with constant values is simply stored that way
+            if (!classLevel || v.IsParameter || !allConstant)
                 v.NeedsInitCode = true;
         }
 
         /// <summary>A long, a string, or null if the value isn't known at compile time.</summary>
         static object? ConstantValue(Expr e) => e switch
         {
-            StringExpr s => s.Value,
+            StringExpr s when e.Type.IsString => s.Value,
             _ => ConstantFolder.Evaluate(e),
+        };
+
+        static bool IsAssignable(Expr target) => target switch
+        {
+            NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
+            IndexExpr or MemberExpr => true,
+            _ => false,
         };
 
         Stmt BindAssign(AssignStmt assign, Scope scope)
@@ -494,22 +781,21 @@ namespace Phi.Compiler.Semantics
             Expr target = assign.Target;
             if (target.Type.IsError || assign.Value.Type.IsError) return assign;
 
-            bool assignable = target switch
+            if (!IsAssignable(target))
             {
-                NameExpr { Symbol: VariableSymbol } => true,
-                IndexExpr => true,
-                _ => false,
-            };
-
-            if (!assignable)
-            {
-                Error(target.Span, "only variables and array elements can be assigned");
+                Error(target.Span, "only variables, fields and array elements can be assigned");
                 return assign;
             }
 
             if (target.Type.IsArray)
             {
                 Error(target.Span, $"can't assign a whole array; set one element at a time, like {Describe(target)}:0 is 5;");
+                return assign;
+            }
+
+            if (target.Type.IsStruct)
+            {
+                Error(target.Span, $"can't assign a whole {target.Type}; set its fields one at a time");
                 return assign;
             }
 
@@ -538,7 +824,9 @@ namespace Phi.Compiler.Semantics
                     AssignOp.Divide => BinaryOp.Divide,
                     _ => BinaryOp.Modulo,
                 };
-                value = new BinaryExpr { Op = op, Left = target, Right = value, Span = assign.Span, Type = PhiType.Int };
+                var combined = new BinaryExpr { Op = op, Left = target, Right = value, Span = assign.Span };
+                combined.Type = ArithmeticType(target.Type, value.Type);
+                value = combined;
             }
             else
             {
@@ -562,6 +850,7 @@ namespace Phi.Compiler.Semantics
         {
             NameExpr n => n.Name,
             IndexExpr i => Describe(i.Target),
+            MemberExpr m => Describe(m.Target) + "." + m.Member,
             _ => "value",
         };
 
@@ -584,11 +873,17 @@ namespace Phi.Compiler.Semantics
                         return;
                     }
 
+                    if (method.IsInterruptHandler)
+                    {
+                        Error(call.CalleeSpan, $"{method.Name} is an interrupt handler; install it with call OS.SetInterruptHandler: vector addr {method.Decl.Name};");
+                        return;
+                    }
+
                     int count = method.Decl.Parameters.Count;
                     if (call.Arguments.Count > count)
                         Error(call.Arguments[count].Span, $"{method.Name} takes {Plural(count, "argument")} but was given {call.Arguments.Count}");
 
-                    for (int i = 0; i < Math.Min(count, call.Arguments.Count); i++)
+                    for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, call.Arguments.Count)); i++)
                         call.Arguments[i] = Convert(call.Arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
 
                     if (call.ResultTarget != null)
@@ -638,7 +933,7 @@ namespace Phi.Compiler.Semantics
                     }
                     if (call.Arguments.Count > 0)
                         Error(call.Arguments[0].Span, "assembly blocks don't take arguments; set variables and use {name} inside the block");
-                    if (!unit.RawBlocks.Contains(raw)) unit.RawBlocks.Add(raw);
+                    UseRawBlock(unit, raw);
                     if (call.ResultTarget != null) CheckResultTarget(call, PhiType.Int); // eax
                     break;
                 }
@@ -647,6 +942,11 @@ namespace Phi.Compiler.Semantics
                     Error(call.CalleeSpan, $"unknown method '{call.Callee}'");
                     break;
             }
+        }
+
+        static void UseRawBlock(BoundUnit unit, RawBlockDecl raw)
+        {
+            if (!unit.RawBlocks.Contains(raw)) unit.RawBlocks.Add(raw);
         }
 
         object? ResolveCallee(string name, Scope scope)
@@ -681,7 +981,7 @@ namespace Phi.Compiler.Semantics
             Expr target = call.ResultTarget!;
             if (target.Type.IsError) return;
 
-            if (target is not (NameExpr { Symbol: VariableSymbol } or IndexExpr) || target.Type.IsArray)
+            if (!IsAssignable(target) || target.Type.IsArray || target.Type.IsStruct)
             {
                 Error(target.Span, "the result of a call must go into a variable");
                 return;
@@ -709,12 +1009,17 @@ namespace Phi.Compiler.Semantics
                 Error(e.Span, $"{what} must be a number, not a {e.Type}");
         }
 
+        /// <summary>Math on two values happens in 32 bits, unsigned if either side is u32 or a pointer.</summary>
+        static PhiType ArithmeticType(PhiType a, PhiType b) =>
+            a.IsUnsigned32 || b.IsUnsigned32 ? PhiType.U32 : PhiType.I32;
+
         void BindExpr(Expr expr, Scope scope)
         {
             switch (expr)
             {
-                case NumberExpr:
-                    expr.Type = PhiType.Int;
+                case NumberExpr n:
+                    // literals too big for int (like 0x80000000) are u32, so math on them is unsigned
+                    expr.Type = n.Value > int.MaxValue ? PhiType.U32 : PhiType.Int;
                     break;
 
                 case BoolExpr:
@@ -734,50 +1039,65 @@ namespace Phi.Compiler.Semantics
                 {
                     Symbol? symbol = Lookup(name.Name, scope);
                     name.Symbol = symbol;
-                    switch (symbol)
+                    name.Type = symbol switch
                     {
-                        case VariableSymbol v: name.Type = v.Type; break;
-                        case ConstantSymbol: name.Type = PhiType.Int; break;
-                        case LengthSymbol: name.Type = PhiType.Int; break;
-                        default:
-                            Error(name.Span, DescribeMissing(name.Name, scope));
-                            name.Type = PhiType.Error;
-                            break;
-                    }
+                        VariableSymbol v => v.Type,
+                        ConstantSymbol k => k.Type,
+                        LengthSymbol => PhiType.Int,
+                        FieldPathSymbol f => f.Type,
+                        _ => PhiType.Error,
+                    };
+                    if (symbol == null) Error(name.Span, DescribeMissing(name.Name, scope));
                     break;
                 }
 
                 case IndexExpr index:
+                    BindIndex(index, scope);
+                    break;
+
+                case MemberExpr member:
                 {
-                    BindExpr(index.Target, scope);
-                    BindExpr(index.Index, scope);
-                    PhiType t = index.Target.Type;
+                    BindExpr(member.Target, scope);
+                    PhiType t = member.Target.Type;
+                    if (t.IsError) { member.Type = PhiType.Error; break; }
 
-                    if (t.IsError) { index.Type = PhiType.Error; break; }
-
-                    if (index.Target is not NameExpr { Symbol: VariableSymbol })
+                    FieldSymbol? field = t.IsStruct ? t.Struct!.Find(member.Member) : null;
+                    if (field == null)
                     {
-                        Error(index.Span, "only variables can be indexed");
-                        index.Type = PhiType.Error;
+                        Error(member.MemberSpan, t.IsStruct ? $"{t} has no field '{member.Member}'" : $"a {t} has no fields");
+                        member.Type = PhiType.Error;
                         break;
                     }
 
-                    RequireNumeric(index.Index, "an index");
-
-                    if (t.IsArray) index.Type = t.Element;
-                    else if (t.IsString) index.Type = PhiType.Byte; // one character
-                    else
-                    {
-                        Error(index.Span, $"'{Describe(index.Target)}' is a {t}, which can't be indexed");
-                        index.Type = PhiType.Error;
-                    }
+                    member.Field = field;
+                    member.Type = field.Type;
                     break;
                 }
 
+                case AddrExpr addr:
+                    BindAddr(addr, scope);
+                    break;
+
+                case InExpr input:
+                    BindExpr(input.Port, scope);
+                    input.Port = Convert(input.Port, PhiType.U16, "the port");
+                    input.Type = input.Size switch { 1 => PhiType.U8, 2 => PhiType.U16, _ => PhiType.U32 };
+                    break;
+
                 case UnaryExpr unary:
                     BindExpr(unary.Operand, scope);
-                    RequireNumeric(unary.Operand, unary.Op == UnaryOp.Negate ? "'-'" : "'not'");
-                    unary.Type = unary.Op == UnaryOp.Negate ? PhiType.Int : PhiType.Bool;
+                    unary.Operand = Convert(unary.Operand, PhiType.Int, unary.Op switch
+                    {
+                        UnaryOp.Negate => "'-'",
+                        UnaryOp.BitNot => "'~'",
+                        _ => "'not'",
+                    });
+                    unary.Type = unary.Op switch
+                    {
+                        UnaryOp.Not => PhiType.Bool,
+                        UnaryOp.BitNot => unary.Operand.Type.IsUnsigned32 ? PhiType.U32 : PhiType.I32,
+                        _ => PhiType.Int,
+                    };
                     break;
 
                 case BinaryExpr binary:
@@ -787,6 +1107,93 @@ namespace Phi.Compiler.Semantics
                 default:
                     throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}");
             }
+        }
+
+        void BindIndex(IndexExpr index, Scope scope)
+        {
+            BindExpr(index.Target, scope);
+            BindExpr(index.Index, scope);
+            PhiType t = index.Target.Type;
+
+            if (t.IsError || index.Index.Type.IsError) { index.Type = PhiType.Error; return; }
+
+            index.Index = Convert(index.Index, PhiType.Int, "an index");
+
+            long? constant = ConstantFolder.Evaluate(index.Index);
+            int? limit = null;
+
+            if (t.IsArray)
+            {
+                index.Type = t.Element;
+                limit = t.Length;
+            }
+            else if (t.IsString)
+            {
+                index.Type = PhiType.U8; // one character
+                limit = CapacityOf(index.Target);
+            }
+            else if (t.IsPointer)
+            {
+                index.Type = t.Pointee!; // no limit: a pointer can point anywhere
+            }
+            else
+            {
+                Error(index.Span, $"'{Describe(index.Target)}' is a {t}, which can't be indexed");
+                index.Type = PhiType.Error;
+                return;
+            }
+
+            if (limit != null && constant != null)
+            {
+                // a constant index is checked now instead of when the program runs
+                if (constant < 0 || constant >= limit)
+                    Error(index.Index.Span, $"index {constant} is outside '{Describe(index.Target)}', which has {limit} {(t.IsString ? "bytes" : "elements")}");
+                return;
+            }
+
+            if (unsafeDepth == 0) index.CheckLimit = limit;
+        }
+
+        /// <summary>Bytes a str expression has room for, when known.</summary>
+        static int? CapacityOf(Expr str) => str switch
+        {
+            NameExpr { Symbol: VariableSymbol v } => v.Capacity,
+            IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } => v.Capacity, // an element of a str array
+            _ => null,
+        };
+
+        void BindAddr(AddrExpr addr, Scope scope)
+        {
+            addr.Type = PhiType.U32;
+
+            // addr Method: the address of code, for interrupt handlers
+            if (addr.Operand is NameExpr name && Lookup(name.Name, scope) == null)
+            {
+                object? callee = ResolveCallee(name.Name, scope);
+                switch (callee)
+                {
+                    case MethodSymbol m when m.Unit == scope.Unit:
+                        addr.CodeLabel = m.Label;
+                        name.Type = PhiType.Void;
+                        return;
+                    case RawBlockDecl { Language: "asm" } raw:
+                        UseRawBlock(units[scope.Unit], raw);
+                        addr.CodeLabel = raw.Name;
+                        name.Type = PhiType.Void;
+                        return;
+                }
+            }
+
+            BindExpr(addr.Operand, scope);
+            if (addr.Operand.Type.IsError) return;
+
+            bool place = addr.Operand switch
+            {
+                NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
+                IndexExpr or MemberExpr => true,
+                _ => false,
+            };
+            if (!place) Error(addr.Operand.Span, "addr needs a variable, field, element or method");
         }
 
         void BindBinary(BinaryExpr b, Scope scope)
@@ -812,12 +1219,13 @@ namespace Phi.Compiler.Semantics
 
             b.Left = Convert(b.Left, PhiType.Int, "the left side");
             b.Right = Convert(b.Right, PhiType.Int, "the right side");
-            b.Type = b.IsComparison || b.IsLogical ? PhiType.Bool : PhiType.Int;
+            b.Type = b.IsComparison || b.IsLogical ? PhiType.Bool : ArithmeticType(b.Left.Type, b.Right.Type);
         }
 
         /// <summary>
         /// Checks that a value fits where it's going. A one-character string like 'w' becomes
-        /// its character code wherever a number is expected.
+        /// its character code wherever a number is expected. Numbers of any size convert to
+        /// each other (larger values are cut to fit when stored).
         /// </summary>
         Expr Convert(Expr e, PhiType target, string what)
         {
@@ -826,6 +1234,7 @@ namespace Phi.Compiler.Semantics
             if (target.IsNumeric)
             {
                 if (e.Type.IsNumeric) return e;
+                if (target.IsPointer && e.Type.IsString) return e; // a str's value is its address
                 if (e is StringExpr { Value.Length: 1 } ch)
                     return new NumberExpr { Value = ch.Value[0], Span = ch.Span, Type = PhiType.Int };
 
@@ -845,7 +1254,7 @@ namespace Phi.Compiler.Semantics
         }
     }
 
-    /// <summary>Evaluates expressions whose value is known at compile time.</summary>
+    /// <summary>Evaluates expressions whose value is known at compile time, with 32-bit wraparound.</summary>
     public static class ConstantFolder
     {
         public static long? Evaluate(Expr e)
@@ -856,31 +1265,45 @@ namespace Phi.Compiler.Semantics
                 case BoolExpr b: return b.Value ? 1 : 0;
                 case StringExpr { Value.Length: 1 } c when e.Type.IsNumeric: return c.Value[0];
                 case NameExpr { Symbol: ConstantSymbol k }: return k.Value;
-                case NameExpr { Symbol: LengthSymbol { Of.Type.IsArray: true } len }: return len.Of.Count;
+                case NameExpr { Symbol: LengthSymbol { Count: int count } }: return count;
                 case UnaryExpr u:
                 {
                     long? v = Evaluate(u.Operand);
                     if (v == null) return null;
-                    return u.Op == UnaryOp.Negate ? Wrap(-v.Value) : (v.Value == 0 ? 1 : 0);
+                    return u.Op switch
+                    {
+                        UnaryOp.Negate => Wrap(-v.Value),
+                        UnaryOp.BitNot => Wrap(~v.Value),
+                        _ => v.Value == 0 ? 1 : 0,
+                    };
                 }
                 case BinaryExpr b when !b.Left.Type.IsString:
                 {
                     long? l = Evaluate(b.Left), r = Evaluate(b.Right);
                     if (l == null || r == null) return null;
+
+                    bool unsigned = b.Left.Type.IsUnsigned32 || b.Right.Type.IsUnsigned32;
                     int x = (int)l.Value, y = (int)r.Value;
+                    uint ux = (uint)x, uy = (uint)y;
+
                     return b.Op switch
                     {
                         BinaryOp.Add => Wrap((long)x + y),
                         BinaryOp.Subtract => Wrap((long)x - y),
                         BinaryOp.Multiply => Wrap((long)x * y),
-                        BinaryOp.Divide => y == 0 ? null : Wrap(x / y),
-                        BinaryOp.Modulo => y == 0 ? null : Wrap(x % y),
+                        BinaryOp.Divide => y == 0 ? null : unsigned ? Wrap(ux / uy) : Wrap(x / y),
+                        BinaryOp.Modulo => y == 0 ? null : unsigned ? Wrap(ux % uy) : Wrap(x % y),
+                        BinaryOp.BitAnd => x & y,
+                        BinaryOp.BitOr => x | y,
+                        BinaryOp.BitXor => x ^ y,
+                        BinaryOp.ShiftLeft => Wrap((long)x << (y & 31)),
+                        BinaryOp.ShiftRight => unsigned ? Wrap(ux >> (y & 31)) : x >> (y & 31),
                         BinaryOp.Equal => x == y ? 1 : 0,
                         BinaryOp.NotEqual => x != y ? 1 : 0,
-                        BinaryOp.Less => x < y ? 1 : 0,
-                        BinaryOp.LessEqual => x <= y ? 1 : 0,
-                        BinaryOp.Greater => x > y ? 1 : 0,
-                        BinaryOp.GreaterEqual => x >= y ? 1 : 0,
+                        BinaryOp.Less => (unsigned ? ux < uy : x < y) ? 1 : 0,
+                        BinaryOp.LessEqual => (unsigned ? ux <= uy : x <= y) ? 1 : 0,
+                        BinaryOp.Greater => (unsigned ? ux > uy : x > y) ? 1 : 0,
+                        BinaryOp.GreaterEqual => (unsigned ? ux >= uy : x >= y) ? 1 : 0,
                         BinaryOp.And => x != 0 && y != 0 ? 1 : 0,
                         BinaryOp.Or => x != 0 || y != 0 ? 1 : 0,
                         _ => null,

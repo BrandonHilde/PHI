@@ -88,9 +88,9 @@ namespace Phi.Compiler.Tests
             Assert.Equal(4, vars["name"].Capacity);
             Assert.Equal(41, vars["buffer"].Capacity);
             Assert.Equal(12, vars["fromNumber"].Capacity);
-            Assert.Equal(PhiType.Int.AsArray, vars["list"].Type);
+            Assert.Equal(PhiType.Int.ArrayOf(3), vars["list"].Type);
             Assert.Equal(3, vars["list"].Count);
-            Assert.Equal(PhiType.Str.AsArray, vars["days"].Type);
+            Assert.Equal(PhiType.Str.ArrayOf(2), vars["days"].Type);
             Assert.Equal(8, vars["days"].Capacity);
             Assert.Equal(PhiType.Str, vars["inferred"].Type);
         }

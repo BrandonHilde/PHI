@@ -1,0 +1,21 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Bounds:OS
+{
+	int numbers: 1 2 3;
+	int guard: 0;
+	int i: 3;
+
+	unsafe
+		# no check: this writes just past the array, into guard
+		numbers:i is 42;
+	;;
+	debug 'guard ' guard '\n';
+
+	i is 5;
+	numbers:i is 1;
+	debug 'not reached\n';
+}

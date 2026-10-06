@@ -1,0 +1,9 @@
+1:1: error: struct Loop contains itself
+9:2: error: struct Pair already has a field named a
+16:19: error: the value of constant 'LIMIT' must be known when the program is built
+17:2: error: unknown type 'Mystery'
+18:6: error: str can't be used here
+21:2: error: can't assign a whole Pair
+22:13: error: index 3 is outside 'values', which has 3 elements
+23:7: error: Systems.Handler is an interrupt handler
+24:6: error: Pair has no field 'missing'

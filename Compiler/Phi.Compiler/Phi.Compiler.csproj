@@ -9,7 +9,7 @@
 
   <ItemGroup>
     <!-- the standard library ships inside the compiler; resource names are lib/<target>/<file> -->
-    <EmbeddedResource Include="..\..\lib\**\*.asm" LogicalName="lib/%(RecursiveDir)%(Filename)%(Extension)" />
+    <EmbeddedResource Include="..\..\lib\**\*.asm;..\..\lib\**\*.phi" LogicalName="lib/%(RecursiveDir)%(Filename)%(Extension)" />
   </ItemGroup>
 
   <ItemGroup>

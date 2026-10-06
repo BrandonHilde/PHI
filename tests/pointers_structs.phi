@@ -1,0 +1,69 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+struct.Point
+{
+	i16 x;
+	i16 y;
+}
+
+struct.Task
+{
+	u32 id;
+	Point position;
+	u8 name[8];
+	ptr<Task> next;
+}
+
+phi.Memory:OS
+{
+	Task tasks[3];
+	Task single;
+	u8 bytes: 10 20 30 40;
+
+	# fields by name, nested structs and field arrays
+	single.id is 7;
+	single.position.x is -5;
+	single.name:0 is 'A';
+	single.name:1 is 'B';
+	debug single.id ' ' single.position.x ' ' single.name:0 single.name:1 ' ' single.name.len '\n';
+
+	# fields of array elements
+	while int i: 0; i < tasks.len; i++;
+		tasks:i.id is 100 + i;
+		tasks:i.position.y is i * 10;
+	;;
+	debug tasks:2.id ' ' tasks:1.position.y '\n';
+
+	# pointers to variables, with byte arithmetic
+	ptr<u8> p: addr bytes;
+	debug p:0 ' ' p:3 ' ';
+	p++ 2;
+	debug p:0 ' ';
+	p:1 is 99;
+	debug bytes:3 '\n';
+
+	# pointers to structs, linked together
+	tasks:0.next is addr tasks:1;
+	tasks:1.next is addr tasks:2;
+	ptr<Task> t: addr tasks:0;
+	int hops: 0;
+	while t is not 0
+		hops++;
+		t is t:0.next;
+	;;
+	debug 'hops ' hops '\n';
+
+	# memory above 64 KB: the VGA text buffer
+	ptr<u16> vga: 0xB8000;
+	vga:2 is 0x1F41;
+	debug vga:2 '\n';
+
+	# a str can be read through a ptr<u8>
+	str word: 'hey';
+	ptr<u8> w: word;
+	debug w:1 '\n';
+	exit 0;
+}

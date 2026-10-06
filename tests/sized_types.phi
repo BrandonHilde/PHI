@@ -1,0 +1,36 @@
+phi.Boot:Bootloader
+{
+	call Bootloader.JumpToSectorTwo;
+}
+
+phi.Sizes:OS
+{
+	u8 small: 255;
+	i8 tiny: -128;
+	u16 word: 65535;
+	i16 short: -32768;
+	u32 big: 0xFFFFFFFF;
+	int signed: -1;
+
+	small++;
+	tiny--;
+	word++;
+	short--;
+	debug small ' ' tiny ' ' word ' ' short '\n';
+
+	debug big ' ' (big / 2) ' ' (big >> 28) '\n';
+
+	# u32 compares unsigned: 0xFFFFFFFF is bigger than 1
+	if big > 1
+		debug 'unsigned ok ';
+	;;
+	if signed < 1
+		debug 'signed ok';
+	;;
+	debug '\n';
+
+	u16 values: 1000 2000 3000;
+	values:1 is values:1 + values:2;
+	debug values:0 ' ' values:1 ' ' values:2 '\n';
+	exit 0;
+}
