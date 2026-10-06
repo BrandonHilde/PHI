@@ -50,8 +50,8 @@ else
 ```
 
 The condition runs to the end of its line, and the block ends with `;;`. Compare with
-`is` (or `==`), `is not` (or `!=`), `<`, `>`, `<=` and `>=`, and combine with `and`,
-`or` and `not`.
+`is` (or `==`), `is not` (or `!=`), `<` (or `below`), `>` (or `above`), `<=` (or `atmost`)
+and `>=` (or `atleast`), and combine with `and`, `or` and `not`.
 
 ## Loops and arrays
 

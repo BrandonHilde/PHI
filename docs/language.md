@@ -166,7 +166,7 @@ From lowest to highest precedence:
 |---|---|
 | `or` | either is true |
 | `and` | both are true |
-| `is`, `==`, `is not`, `!=`, `<`, `>`, `<=`, `>=` | compare (one per expression: write `(a < b) is false`) |
+| `is`, `==`, `is not`, `!=`, `<`, `>`, `<=`, `>=`, `below`, `above`, `atmost`, `atleast` | compare (one per expression: write `(a < b) is false`) |
 | `\|` | bitwise or |
 | `^` | bitwise exclusive or |
 | `&` | bitwise and |
@@ -182,6 +182,8 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
 
 - Math is done in 32 bits and wraps around on overflow. It is **unsigned** if either side
   is a `u32` or a pointer (this affects `/`, `%`, `>>` and comparisons), and signed otherwise.
+- `below`, `above`, `atmost` and `atleast` are word forms of `<`, `>`, `<=` and `>=`, the
+  way `is` is a word form of `==`: `if lives above 0 and score atleast best`.
 - Two strings compare as text, but only with `is` / `==` / `is not` / `!=`.
 - In a condition, any number counts as true unless it is 0.
 - A binary operator must be on the same line as its left side. This is how

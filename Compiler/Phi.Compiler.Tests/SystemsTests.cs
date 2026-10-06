@@ -146,6 +146,9 @@ namespace Phi.Compiler.Tests
         [InlineData("[isr H: int x: 0;]\n[end]", "can't take parameters")]
         [InlineData("call H;\n[isr H]\n[end]", "is an interrupt handler")]
         [InlineData("bln b: 1 < 2 < 3;", "can't be chained")]
+        [InlineData("bln b: 1 below 2 above 3;", "can't be chained")]
+        [InlineData("bln b: 1 atleast 2 < 3;", "can't be chained")]
+        [InlineData("int above: 1;", "above")]
         public void SystemsErrors(string body, string message)
         {
             CompileResult result = Compile(Boot(body));

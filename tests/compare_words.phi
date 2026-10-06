@@ -1,0 +1,42 @@
+phi.CompareWords:Library
+{
+	int a: 5;
+	int b: 3;
+
+	# below, above, atmost and atleast are <, >, <= and >=
+	if a above b
+		log 'above ';
+	;;
+	if b below a
+		log 'below ';
+	;;
+	if a atleast 5 and a atmost 5
+		log 'equal ';
+	;;
+	if a atmost b
+		log 'WRONG1 ';
+	;;
+	elif a atleast b
+		log 'elif ';
+	;;
+
+	# negative numbers compare signed
+	int n: -1;
+	if n below 0
+		log 'signed ';
+	;;
+
+	# as values they are 1 or 0
+	debug (a above b) (a below b) ' ';
+
+	# mixed with the symbols in one condition
+	if a > b and b atleast 3 or a < 0
+		log 'mixed ';
+	;;
+
+	int count: 0;
+	while count below 3
+		count++;
+	;;
+	debug count;
+}

@@ -18,6 +18,7 @@ namespace Phi.Compiler.Syntax
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr",
+            "below", "above", "atmost", "atleast",
             "phi", "asm", "arm", "struct", "use", "const",
         };
 
@@ -708,6 +709,17 @@ namespace Phi.Compiler.Syntax
             return left;
         }
 
+        /// <summary>Word spellings of &lt; &gt; &lt;= &gt;=.</summary>
+        static readonly Dictionary<string, BinaryOp> ComparisonWords = new()
+        {
+            ["below"] = BinaryOp.Less,
+            ["above"] = BinaryOp.Greater,
+            ["atmost"] = BinaryOp.LessEqual,
+            ["atleast"] = BinaryOp.GreaterEqual,
+        };
+
+        bool AtComparisonWord => !Current.StartsLine && Current.Kind == TokenKind.Identifier && ComparisonWords.ContainsKey(Current.Text);
+
         Expr ParseComparison()
         {
             Expr left = ParseBitOr();
@@ -717,6 +729,10 @@ namespace Phi.Compiler.Syntax
             {
                 Advance();
                 op = AcceptWord("not") ? BinaryOp.NotEqual : BinaryOp.Equal;
+            }
+            else if (AtComparisonWord)
+            {
+                op = ComparisonWords[Advance().Text];
             }
             else if (AtOperatorWord("has"))
             {
@@ -740,7 +756,7 @@ namespace Phi.Compiler.Syntax
             if (op == null) return left;
             Expr result = Binary(op.Value, left, ParseBitOr());
 
-            bool another = !Current.StartsLine && (AtWord("is") || Current.Kind is TokenKind.EqualsEquals or TokenKind.BangEquals
+            bool another = !Current.StartsLine && (AtWord("is") || AtComparisonWord || Current.Kind is TokenKind.EqualsEquals or TokenKind.BangEquals
                 or TokenKind.Less or TokenKind.Greater or TokenKind.LessEquals or TokenKind.GreaterEquals);
             if (another)
                 throw Error(Current.Span, "comparisons can't be chained; use parentheses, like (a < b) is false, or 'and'");
