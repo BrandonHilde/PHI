@@ -1,0 +1,14 @@
+rfc 7748 5.2, first vector:
+c3da55379de9c6908e94ea4df28d084f32eccf03491c71f754b4075577a28552
+rfc 7748 5.2, second vector:
+95cbde9476e8907d7aade45cb4b873f88b595a68799fa152e6f8f7647aac7957
+rfc 7748 6.1, Diffie-Hellman:
+8520f0098930a754748b7ddcb43ef75a0dbf3a0d26381af4eba4a98eaa9b4e6a
+de9edb7d7b7dc1b4d35b61c2ece435373f8343c85b78674dadfc7e146f882b4f
+4a5d9d5ba4ce2de1728e3bf480350f25e07e21c947d19e3376f09b3c1e161742
+both sides agree: 1
+random:
+rdrand: 1
+two fills the same: 0
+random keys agree: 1
+done

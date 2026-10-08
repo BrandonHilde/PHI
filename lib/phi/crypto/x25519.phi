@@ -1,0 +1,210 @@
+# X25519 (RFC 7748): Diffie-Hellman on Curve25519, how two sides agree on a secret
+# over an open network. TLS 1.3 uses it for its key exchange. Any kind of program.
+#
+#   use crypto.x25519;
+#   u8 secret[32];                         # 32 random bytes (crypto.random)
+#   u8 public[32];
+#   call X25519.Base: addr public addr secret;              # send this to the other side
+#   u8 shared[32];
+#   call X25519.ScalarMult: addr shared addr secret their_public;
+#
+# Both sides end up with the same shared value, which nobody watching can work out.
+#
+# Numbers modulo p = 2^255 - 19 are kept as 32 limbs of 8 bits (in ints, so they may
+# go negative between steps). PHI's math is 32-bit, and 8-bit limbs keep every
+# product and sum within that. The steps follow TweetNaCl (public domain), with its
+# 16-bit limbs made 8-bit.
+
+use crypto.bytes;
+
+phi.X25519:Library
+{
+	const u32 LIMBS: 32;
+
+	int x25_a[32];
+	int x25_b[32];
+	int x25_c[32];
+	int x25_d[32];
+	int x25_e[32];
+	int x25_f[32];
+	int x25_x[32];
+	int x25_m[32];
+	int x25_t[32];
+	int x25_121665: 0x41 0xDB 0x01 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0;
+	u8 x25_scalar[32];
+	u8 x25_base[32];
+
+	# the public value for a secret: secret times the curve's base point (9)
+	[Base: ptr<u8> output: 0; ptr<u8> secret: 0;]
+		call Bytes.Zero: addr x25_base 32;
+		x25_base:0 is 9;
+		call ScalarMult: output secret addr x25_base;
+	[end]
+
+	# output = scalar times point (each 32 bytes)
+	[ScalarMult: ptr<u8> output: 0; ptr<u8> scalar: 0; ptr<u8> point: 0;]
+		# clamp the scalar: a multiple of 8, with bit 254 set
+		call Bytes.Copy: addr x25_scalar scalar 32;
+		x25_scalar:0 is x25_scalar:0 & 248;
+		x25_scalar:31 is (x25_scalar:31 & 127) | 64;
+
+		call Unpack: addr x25_x point;
+		while u32 i: 0; i < LIMBS; i++;
+			x25_b:i is x25_x:i;
+			x25_a:i is 0;
+			x25_c:i is 0;
+			x25_d:i is 0;
+		;;
+		x25_a:0 is 1;
+		x25_d:0 is 1;
+
+		# the Montgomery ladder, one bit of the scalar at a time from the top
+		int bit: 254;
+		while bit >= 0
+			int r: (x25_scalar:(bit >> 3) >> (bit & 7)) & 1;
+			call Swap: addr x25_a addr x25_b r;
+			call Swap: addr x25_c addr x25_d r;
+			call Add: addr x25_e addr x25_a addr x25_c;
+			call Sub: addr x25_a addr x25_a addr x25_c;
+			call Add: addr x25_c addr x25_b addr x25_d;
+			call Sub: addr x25_b addr x25_b addr x25_d;
+			call Mul: addr x25_d addr x25_e addr x25_e;
+			call Mul: addr x25_f addr x25_a addr x25_a;
+			call Mul: addr x25_a addr x25_c addr x25_a;
+			call Mul: addr x25_c addr x25_b addr x25_e;
+			call Add: addr x25_e addr x25_a addr x25_c;
+			call Sub: addr x25_a addr x25_a addr x25_c;
+			call Mul: addr x25_b addr x25_a addr x25_a;
+			call Sub: addr x25_c addr x25_d addr x25_f;
+			call Mul: addr x25_a addr x25_c addr x25_121665;
+			call Add: addr x25_a addr x25_a addr x25_d;
+			call Mul: addr x25_c addr x25_c addr x25_a;
+			call Mul: addr x25_a addr x25_d addr x25_f;
+			call Mul: addr x25_d addr x25_b addr x25_x;
+			call Mul: addr x25_b addr x25_e addr x25_e;
+			call Swap: addr x25_a addr x25_b r;
+			call Swap: addr x25_c addr x25_d r;
+			bit--;
+		;;
+
+		# the answer is a / c
+		call Invert: addr x25_c addr x25_c;
+		call Mul: addr x25_a addr x25_a addr x25_c;
+		call Pack: output addr x25_a;
+
+		call Bytes.Zero: addr x25_scalar 32;
+	[end]
+
+	# ---- arithmetic modulo 2^255 - 19
+
+	[Add: ptr<int> o: 0; ptr<int> a: 0; ptr<int> b: 0;]
+		while u32 i: 0; i < LIMBS; i++;
+			o:i is a:i + b:i;
+		;;
+	[end]
+
+	[Sub: ptr<int> o: 0; ptr<int> a: 0; ptr<int> b: 0;]
+		while u32 i: 0; i < LIMBS; i++;
+			o:i is a:i - b:i;
+		;;
+	[end]
+
+	# o = a * b; o may be a or b
+	[Mul: ptr<int> o: 0; ptr<int> a: 0; ptr<int> b: 0;]
+		int product[63];
+		while u32 i: 0; i < LIMBS; i++;
+			int ai: a:i;
+			ptr<int> row: addr product + i * 4;
+			while u32 j: 0; j < LIMBS; j++;
+				row:j is row:j + ai * b:j;
+			;;
+		;;
+		# 2^256 is 38 modulo p, so the top half folds into the bottom times 38
+		unsafe
+			while u32 i: 0; i < 31; i++;
+				product:i is product:i + 38 * product:(i + 32);
+			;;
+		;;
+		while u32 i: 0; i < LIMBS; i++;
+			o:i is product:i;
+		;;
+		call Carry: o;
+		call Carry: o;
+	[end]
+
+	# bring every limb back to 0-255, carrying into the next (and from the top, times
+	# 38, into the bottom)
+	[Carry: ptr<int> o: 0;]
+		while u32 i: 0; i < LIMBS; i++;
+			o:i is o:i + 256;
+			int c: o:i >> 8;
+			if i < LIMBS - 1
+				o:(i + 1) is o:(i + 1) + c - 1;
+			;;
+			else
+				o:0 is o:0 + 38 * (c - 1);
+			;;
+			o:i is o:i - (c << 8);
+		;;
+	[end]
+
+	# swap p and q if bit is 1, the same way whatever it is (so its timing tells nothing)
+	[Swap: ptr<int> p: 0; ptr<int> q: 0; int bit: 0;]
+		int mask: ~(bit - 1);
+		while u32 i: 0; i < LIMBS; i++;
+			int t: mask & (p:i ^ q:i);
+			p:i is p:i ^ t;
+			q:i is q:i ^ t;
+		;;
+	[end]
+
+	# o = 1 / i, as i to the power p - 2
+	[Invert: ptr<int> o: 0; ptr<int> i: 0;]
+		while u32 k: 0; k < LIMBS; k++;
+			x25_t:k is i:k;
+		;;
+		int power: 253;
+		while power >= 0
+			call Mul: addr x25_t addr x25_t addr x25_t;
+			if power is not 2 and power is not 4
+				call Mul: addr x25_t addr x25_t i;
+			;;
+			power--;
+		;;
+		while u32 k: 0; k < LIMBS; k++;
+			o:k is x25_t:k;
+		;;
+	[end]
+
+	[Unpack: ptr<int> o: 0; ptr<u8> bytes: 0;]
+		while u32 i: 0; i < LIMBS; i++;
+			o:i is bytes:i;
+		;;
+		o:31 is o:31 & 0x7F;
+	[end]
+
+	# the 32 bytes of n, fully reduced (0 <= n < p)
+	[Pack: ptr<u8> output: 0; ptr<int> n: 0;]
+		while u32 i: 0; i < LIMBS; i++;
+			x25_t:i is n:i;
+		;;
+		call Carry: addr x25_t;
+		call Carry: addr x25_t;
+		call Carry: addr x25_t;
+		# subtract p twice, keeping the result each time it doesn't go below zero
+		while u32 pass: 0; pass < 2; pass++;
+			x25_m:0 is x25_t:0 - 0xED;
+			while u32 i: 1; i < 31; i++;
+				x25_m:i is x25_t:i - 0xFF - ((x25_m:(i - 1) >> 8) & 1);
+				x25_m:(i - 1) is x25_m:(i - 1) & 0xFF;
+			;;
+			x25_m:31 is x25_t:31 - 0x7F - ((x25_m:30 >> 8) & 1);
+			int borrow: (x25_m:31 >> 8) & 1;
+			x25_m:30 is x25_m:30 & 0xFF;
+			call Swap: addr x25_t addr x25_m 1 - borrow;
+		;;
+		while u32 i: 0; i < LIMBS; i++;
+			output:i is x25_t:i & 0xFF;
+		;;
+	[end]
+}

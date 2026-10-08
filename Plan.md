@@ -496,7 +496,7 @@ roughly in order:
 2. **A heap for user programs**, so `new` works there too.
 3. **Growable strings** with value semantics.
 4. **The framebuffer** (Bochs VBE in QEMU) for graphics in 32-bit kernels.
-5. Then the [Later](#later) list: 64-bit, ARM, TLS, self-hosting.
+5. Then the [Later](#later) list: TLS certificates, 64-bit, ARM, self-hosting.
 
 ---
 
@@ -536,8 +536,11 @@ These come after the basics work:
 - **64-bit long mode**, then an **ARM** backend (QEMU `virt` machine). The README's
   planned x86→ARM translator becomes a second compiler backend.
 - **Networking:** done: PCI, an RTL8139 driver, ARP, IPv4, ICMP, UDP, DHCP, DNS, a TCP
-  client and HTTP/1.0 (`lib/phi/net/`, `samples/web.phi`). Still to do: TLS for https,
-  listening for connections (a server), the e1000 card, and interrupts instead of polling
+  client, HTTP/1.0, and a TLS 1.3 client for https (`lib/phi/net/`, `samples/web.phi`) with
+  its cryptography (`lib/phi/crypto/`: SHA-256, HMAC, HKDF, AES-128-GCM, ChaCha20-Poly1305,
+  X25519, random numbers). Still to do: **checking the server's certificate** (X.509,
+  RSA and ECDSA signatures, a set of trusted roots), listening for connections (a server),
+  the e1000 card, and interrupts instead of polling
 - **More hardware:** AHCI, PS/2 → USB, ACPI shutdown (PCI enumeration is done: `drivers.pci`)
 - **C compatibility:** call C functions and link C object files (a README goal)
 - **Self-hosting:** rewrite the PHI compiler in PHI

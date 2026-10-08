@@ -434,8 +434,10 @@ else
 ;;
 ```
 
-`samples/web.phi` asks for URLs and prints what comes back. Only `http://` works:
-`https://` needs TLS, which PHI doesn't have yet.
+`samples/web.phi` asks for URLs and prints what comes back. `https://` URLs go over TLS
+1.3 (`net.tls`), with AES-128-GCM or ChaCha20-Poly1305, whichever the server picks. **The
+server's certificate isn't checked yet** (`Tls.verified` is false): the connection is
+encrypted, but someone who can intercept it could pretend to be the server.
 
 The layers, each usable on its own:
 
@@ -447,7 +449,8 @@ The layers, each usable on its own:
 | `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
 | `net.dns` | `Dns` | `Resolve: name` → an address, or 0 |
 | `net.tcp` | `Tcp` | `Connect: address port` → a connection or -1, `Write: c data length` →, `Read: c buffer max` → (0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000) |
-| `net.http` | `Http` | `Get: url buffer max` → the response's size or -1; `status`, `body` (where the body starts), `error` |
+| `net.tls` | `Tls` | one TLS 1.3 connection: `Connect: address port host` → (false: `error` says why), `Write: data length` →, `Read: buffer max` → (0 once the server has closed), `Close`; `suite`, `alert`, `verified` |
+| `net.http` | `Http` | `Get: url buffer max` → the response's size or -1, for `http://` and `https://`; `status`, `body` (where the body starts), `error` |
 
 Addresses are `u32`s with the first number in the top byte (`10.0.2.15` is
 `0x0A00020F`). On QEMU's network the kernel is `10.0.2.15`, the gateway `10.0.2.2` (which
@@ -458,6 +461,47 @@ for an address by DHCP first; if no server answers it keeps these addresses and
 Nothing waits on an interrupt: the methods that wait (`Ping`, `Dns.Resolve`, `Tcp.Read`,
 ...) poll the card, and sleep a millisecond when it has nothing. Up to four TCP connections
 can be open at once, each with an 8 KB receive buffer.
+
+## Cryptography
+
+`lib/phi/crypto/` has what TLS 1.3 (`https://`, in `net.tls`) is built from, written in
+PHI and checked against the published test vectors. Unlike the network, these
+work in any kind of program.
+
+```phi
+use crypto.chachapoly;
+use crypto.x25519;
+use crypto.random;
+
+u8 digest[32];
+call Sha256.Hash: 'abc' 3 addr digest;
+call Bytes.PrintHex: addr digest 32;         # ba7816bf...
+
+u8 secret[32];
+u8 public[32];
+call Random.Fill: addr secret 32;
+call X25519.Base: addr public addr secret;   # the public half of a key pair
+```
+
+| File | Class | What it does |
+|---|---|---|
+| `crypto.bytes` | `Bytes` | `PrintHex: data length`, `FromHex: text buffer max` → (bytes, or -1), `Equal: a b length` → (takes the same time whatever the bytes are), `Copy: to from length`, `Zero: buffer length` |
+| `crypto.sha256` | `Sha256` | `Hash: data length digest`; in pieces: `Init`, `Update`, `Final` on a `Sha256State`, and `Copy: from to` |
+| `crypto.hmac` | `Hmac`, `Hkdf` | `Hmac.Mac: key key_length data length output` (or `Start`, `Update`, `Finish`); `Hkdf.Extract: salt salt_length ikm ikm_length prk`, `Hkdf.Expand: prk info info_length output length` |
+| `crypto.chacha20` | `ChaCha20` | `Xor: key nonce counter data length` (encrypts or decrypts in place), `Block` |
+| `crypto.poly1305` | `Poly1305` | `Start: key`, `Update: data length`, `Finish: tag` |
+| `crypto.chachapoly` | `ChaChaPoly` | ChaCha20-Poly1305: `Seal: key nonce header header_length data length tag` (encrypts in place), `Open: ...` → false if anything was changed |
+| `crypto.aes` | `Aes` | AES-128: `SetKey: key`, `Encrypt: block output` |
+| `crypto.aesgcm` | `AesGcm` | AES-128-GCM: `Seal` and `Open`, like `ChaChaPoly` (with a 16-byte key) |
+| `crypto.x25519` | `X25519` | `Base: public secret`, `ScalarMult: output secret their_public` (the shared secret) |
+| `crypto.random` | `Random` | `Fill: buffer length`; `random_hardware` says whether the CPU's RDRAND was used |
+
+PHI's math is 32-bit, so the big-number math keeps numbers as many 8-bit pieces, which
+keeps every product within 32 bits. An X25519 takes about 35 ms in QEMU. AES looks
+bytes up in tables, which a program sharing the CPU could time through the cache. `Random` mixes
+RDRAND (QEMU, as `phi` starts it, answers with the host's random numbers) and timing into
+a ChaCha20 generator. Without RDRAND it has only timing, which isn't good enough for real
+secrets.
 
 ## Programs and processes
 
@@ -637,7 +681,8 @@ and the classes of used files run before the classes that use them.
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `StartsWith`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Append: buffer text size`, `TrimEnd`, `ToNumber` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
-| `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
+| `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
+| `crypto.bytes`, `crypto.sha256`, `crypto.hmac`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
 
 ## Built-in functions
 
@@ -705,8 +750,9 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
-- networking in user programs (only 32-bit kernels have the network), `https://` (no TLS),
-  accepting incoming connections (TCP is client-only), and network cards other than the RTL8139
+- networking in user programs (only 32-bit kernels have the network), checking TLS
+  certificates (`https://` is encrypted, but the server isn't verified), accepting incoming
+  connections (TCP is client-only), and network cards other than the RTL8139
 
 ## How it is built
 

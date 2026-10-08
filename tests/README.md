@@ -44,10 +44,12 @@ A folder `NAME.rootfs/` becomes the FAT16 disk of a 32-bit test (see
 `kernel32_processes.rootfs/`). `NAME.rootfs` can also be a file holding the path of a folder to
 use, which is how `kernel32_shell` runs the real userland in `samples/os.rootfs/`.
 
-A folder `NAME.web/` is served over HTTP while a test runs, by a small server in `phi test`
-(responses have no date, so the output is the same every time). The program gets its address
-as `TestWeb.url`, `'http://10.0.2.2:PORT'`: QEMU's user network reaches the host's
-`127.0.0.1` through the gateway, 10.0.2.2. See `net_http.web/`.
+A folder `NAME.web/` is served over HTTP and HTTPS while a test runs, by a small server in
+`phi test` (responses have no date, so the output is the same every time). The program gets
+the addresses as `TestWeb.url` (`'http://10.0.2.2:PORT'`) and `TestWeb.secure_url`
+(`'https://10.0.2.2:PORT'`, TLS 1.3 with a self-signed certificate): QEMU's user network
+reaches the host's `127.0.0.1` through the gateway, 10.0.2.2. See `net_http.web/`.
+`phi serve folder [--https]` runs the same server by hand.
 
 `tests/support/` holds files that tests load with `use`; they aren't tests themselves.
 

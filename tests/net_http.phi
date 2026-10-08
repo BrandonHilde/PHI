@@ -38,11 +38,25 @@ phi.NetHttp:Kernel
 	call size is Http.Get: addr url page PAGE_SIZE;
 	log 'GET /missing.html: status ' Http.status '\n';
 
-	call size is Http.Get: 'https://example.com/' page PAGE_SIZE;
-	log 'https: ' size ' ' Http.error '\n';
-
 	call size is Http.Get: 'http://10.0.2.2:1/' page PAGE_SIZE;
 	log 'a closed port: ' size ' ' Http.error '\n';
+
+	# the same over https: TLS 1.3, with the host's own TLS as the server (Windows' picks
+	# AES-128-GCM; ChaCha20-Poly1305 is checked by crypto_chacha)
+	log '\nhttps:\n';
+	call SecureAddress: '/';
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log 'GET /: ' size ' bytes, status ' Http.status ', certificate checked: ' Tls.verified ' ' Http.error '\n';
+	log page '\n';
+
+	call SecureAddress: '/big.txt';
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log 'GET /big.txt: ' size ' bytes, status ' Http.status ', body ' (size - Http.body) ' bytes\n';
+	call CheckLines: Http.body size;
+
+	call SecureAddress: '/missing.html';
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log 'GET /missing.html: status ' Http.status '\n';
 
 	log 'done\n';
 	exit 0;
@@ -50,6 +64,12 @@ phi.NetHttp:Kernel
 	[Address: ptr<u8> path: 0;]
 		url:0 is 0;
 		call Text.Append: addr url TestWeb.url url.len;
+		call Text.Append: addr url path url.len;
+	[end]
+
+	[SecureAddress: ptr<u8> path: 0;]
+		url:0 is 0;
+		call Text.Append: addr url TestWeb.secure_url url.len;
 		call Text.Append: addr url path url.len;
 	[end]
 

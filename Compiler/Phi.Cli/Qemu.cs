@@ -25,8 +25,11 @@ namespace Phi.Cli
         // The network: an RTL8139 card (drivers.rtl8139) on QEMU's user-mode network, which
         // gives the guest 10.0.2.15, a gateway at 10.0.2.2 (that is also the host's 127.0.0.1)
         // and a DNS server at 10.0.2.3. romfile= leaves out the card's boot ROM (iPXE).
+        // The CPU is QEMU's usual one plus RDRAND, which crypto.random uses for random numbers
+        // (QEMU answers it with the host's random numbers).
         static List<string> MachineArgs(string image) => new()
         {
+            "-cpu", "qemu32,+rdrand",
             "-drive", $"file={image},format=raw,if=ide,index=0",
             "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
             "-netdev", "user,id=net0",

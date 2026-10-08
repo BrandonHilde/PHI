@@ -1,0 +1,222 @@
+# AES-128-GCM (NIST SP 800-38D): encryption that also proves the message wasn't
+# changed, the cipher every TLS 1.3 server has (TLS_AES_128_GCM_SHA256). Any kind of
+# program. It works like crypto.chachapoly:
+#
+#   use crypto.aesgcm;
+#   u8 tag[16];
+#   call AesGcm.Seal: key nonce header 5 data length addr tag;      # encrypts data in place
+#   bln ok: false;
+#   call ok is AesGcm.Open: key nonce header 5 data length addr tag; # false: changed, left encrypted
+#
+# The key is 16 bytes and the nonce 12; a key and nonce must never seal two messages.
+#
+# The data is encrypted with AES in counter mode (blocks 2, 3, ... of the nonce), and
+# the tag is GHASH (a polynomial over GF(2^128), keyed by H, the encryption of a zero
+# block) of the header and the encrypted data, xored with the encryption of block 1.
+# GHASH multiplies 4 bits at a time with a table of 16 multiples of H, as in
+# Shoup's method, with each 128-bit number as four u32s (the first byte at the top).
+
+use crypto.aes;
+use crypto.bytes;
+
+phi.AesGcm:Library
+{
+	const u32 TAG_SIZE: 16;
+
+	u32 gcm_table[64];                    # entry i (words 4i to 4i + 3) is i times H
+	u32 gcm_z[4];                         # the GHASH so far
+	u32 gcm_reduce: 0x0000 0x1c20 0x3840 0x2460 0x7080 0x6ca0 0x48c0 0x54e0
+		0xe100 0xfd20 0xd940 0xc560 0x9180 0x8da0 0xa9c0 0xb5e0;
+	u8 gcm_counter[16];
+	u8 gcm_stream[16];
+	u8 gcm_block[16];
+	u8 gcm_lengths[16];
+	u8 gcm_tag[16];
+
+	# encrypt length bytes in place and write the 16-byte tag
+	[Seal: ptr<u8> key: 0; ptr<u8> nonce: 0; ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		call Start: key nonce;
+		call Crypt: data length;
+		call Tag: header header_length data length tag;
+	[end]
+
+	# check the tag, then decrypt in place; false (and the data left as it was) if the
+	# tag doesn't match
+	[Open: ptr<u8> key: 0; ptr<u8> nonce: 0; ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		call Start: key nonce;
+		call Tag: header header_length data length addr gcm_tag;
+		bln ok: false;
+		call ok is Bytes.Equal: addr gcm_tag tag TAG_SIZE;
+		if ok
+			call Crypt: data length;
+		;;
+	[end: ok]
+
+	# set the key, make the table of multiples of H, and point the counter at block 1
+	[Start: ptr<u8> key: 0; ptr<u8> nonce: 0;]
+		call Aes.SetKey: key;
+		call Bytes.Zero: addr gcm_block 16;
+		call Aes.Encrypt: addr gcm_block addr gcm_block;       # H
+		call MakeTable;
+		call Bytes.Copy: addr gcm_counter nonce 12;
+		gcm_counter:12 is 0;
+		gcm_counter:13 is 0;
+		gcm_counter:14 is 0;
+		gcm_counter:15 is 1;
+	[end]
+
+	# xor with the AES of counter blocks 2, 3, ...
+	[Crypt: ptr<u8> data: 0; u32 length: 0;]
+		u32 done: 0;
+		u32 counter: 2;
+		while done < length
+			gcm_counter:12 is counter >> 24;
+			gcm_counter:13 is counter >> 16;
+			gcm_counter:14 is counter >> 8;
+			gcm_counter:15 is counter;
+			call Aes.Encrypt: addr gcm_counter addr gcm_stream;
+			u32 n: length - done;
+			if n > 16
+				n is 16;
+			;;
+			ptr<u8> at: data + done;
+			while u32 i: 0; i < n; i++;
+				at:i is at:i ^ gcm_stream:i;
+			;;
+			done++ n;
+			counter++;
+		;;
+	[end]
+
+	# GHASH of the header and data (each padded to 16 bytes) and their lengths in bits,
+	# xored with the encryption of counter block 1
+	[Tag: ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		gcm_z:0 is 0;
+		gcm_z:1 is 0;
+		gcm_z:2 is 0;
+		gcm_z:3 is 0;
+		call Absorb: header header_length;
+		call Absorb: data length;
+		call Aes.PutBig: addr gcm_lengths (header_length >> 29);
+		call Aes.PutBig: addr gcm_lengths + 4 (header_length << 3);
+		call Aes.PutBig: addr gcm_lengths + 8 (length >> 29);
+		call Aes.PutBig: addr gcm_lengths + 12 (length << 3);
+		call Absorb: addr gcm_lengths 16;
+
+		gcm_counter:12 is 0;
+		gcm_counter:13 is 0;
+		gcm_counter:14 is 0;
+		gcm_counter:15 is 1;
+		call Aes.Encrypt: addr gcm_counter addr gcm_stream;
+		while u32 i: 0; i < 4; i++;
+			call Aes.PutBig: tag + i * 4 gcm_z:i;
+		;;
+		while u32 i: 0; i < 16; i++;
+			tag:i is tag:i ^ gcm_stream:i;
+		;;
+	[end]
+
+	# z = (z xor block) * H for each 16-byte block (the last one padded with zeros)
+	[Absorb: ptr<u8> data: 0; u32 length: 0;]
+		u32 done: 0;
+		while done < length
+			u32 n: length - done;
+			if n > 16
+				n is 16;
+			;;
+			call Bytes.Zero: addr gcm_block 16;
+			call Bytes.Copy: addr gcm_block data + done n;
+			while u32 i: 0; i < 4; i++;
+				u32 at: i * 4;
+				gcm_z:i is gcm_z:i ^ ((gcm_block:at << 24) | (gcm_block:(at + 1) << 16) | (gcm_block:(at + 2) << 8) | gcm_block:(at + 3));
+			;;
+			call MultiplyH;
+			done++ n;
+		;;
+	[end]
+
+	# z = z * H, a nibble at a time from the last byte to the first
+	[MultiplyH]
+		unsafe
+			u32 x[4];
+			x:0 is gcm_z:0;
+			x:1 is gcm_z:1;
+			x:2 is gcm_z:2;
+			x:3 is gcm_z:3;
+			u32 z0: 0;
+			u32 z1: 0;
+			u32 z2: 0;
+			u32 z3: 0;
+			bln first: true;
+			int i: 15;
+			while i >= 0
+				u32 byte: (x:(i >> 2) >> ((3 - (i & 3)) * 8)) & 255;
+				u32 nibble: byte & 15;
+				u32 step: 0;
+				while step < 2
+					if first is false
+						# z = z shifted right 4 bits, reduced
+						u32 rest: z3 & 15;
+						z3 is (z2 << 28) | (z3 >> 4);
+						z2 is (z1 << 28) | (z2 >> 4);
+						z1 is (z0 << 28) | (z1 >> 4);
+						z0 is (z0 >> 4) ^ (gcm_reduce:rest << 16);
+					;;
+					first is false;
+					u32 at: nibble * 4;
+					z0 is z0 ^ gcm_table:at;
+					z1 is z1 ^ gcm_table:(at + 1);
+					z2 is z2 ^ gcm_table:(at + 2);
+					z3 is z3 ^ gcm_table:(at + 3);
+					nibble is byte >> 4;
+					step++;
+				;;
+				i--;
+			;;
+			gcm_z:0 is z0;
+			gcm_z:1 is z1;
+			gcm_z:2 is z2;
+			gcm_z:3 is z3;
+		;;
+	[end]
+
+	# gcm_table from H (in gcm_block): entry 8 is H, entries 4, 2, 1 are H halved again
+	# and again (GCM's bit order runs backwards), and the rest are sums of those
+	[MakeTable]
+		unsafe
+			u32 v0: (gcm_block:0 << 24) | (gcm_block:1 << 16) | (gcm_block:2 << 8) | gcm_block:3;
+			u32 v1: (gcm_block:4 << 24) | (gcm_block:5 << 16) | (gcm_block:6 << 8) | gcm_block:7;
+			u32 v2: (gcm_block:8 << 24) | (gcm_block:9 << 16) | (gcm_block:10 << 8) | gcm_block:11;
+			u32 v3: (gcm_block:12 << 24) | (gcm_block:13 << 16) | (gcm_block:14 << 8) | gcm_block:15;
+			while u32 k: 0; k < 4; k++;
+				gcm_table:k is 0;
+			;;
+			gcm_table:32 is v0;
+			gcm_table:33 is v1;
+			gcm_table:34 is v2;
+			gcm_table:35 is v3;
+			u32 i: 4;
+			while i > 0
+				u32 carry: (v3 & 1) * 0xE1000000;
+				v3 is (v2 << 31) | (v3 >> 1);
+				v2 is (v1 << 31) | (v2 >> 1);
+				v1 is (v0 << 31) | (v1 >> 1);
+				v0 is (v0 >> 1) ^ carry;
+				gcm_table:(i * 4) is v0;
+				gcm_table:(i * 4 + 1) is v1;
+				gcm_table:(i * 4 + 2) is v2;
+				gcm_table:(i * 4 + 3) is v3;
+				i is i >> 1;
+			;;
+			u32 power: 2;
+			while power <= 8
+				while u32 j: 1; j < power; j++;
+					while u32 w: 0; w < 4; w++;
+						gcm_table:((power + j) * 4 + w) is gcm_table:(power * 4 + w) ^ gcm_table:(j * 4 + w);
+					;;
+				;;
+				power is power * 2;
+			;;
+		;;
+	[end]
+}

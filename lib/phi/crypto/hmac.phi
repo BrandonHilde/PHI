@@ -1,0 +1,102 @@
+# HMAC-SHA256 (RFC 2104) and HKDF (RFC 5869), which TLS 1.3 derives its keys with.
+# Any kind of program.
+#
+#   use crypto.hmac;
+#   u8 mac[32];
+#   call Hmac.Mac: 'key' 3 'message' 7 addr mac;
+#
+#   u8 prk[32];
+#   u8 okm[42];
+#   call Hkdf.Extract: salt 13 ikm 22 addr prk;
+#   call Hkdf.Expand: addr prk info 10 addr okm 42;
+#
+# There is one HMAC in progress at a time: Start, any number of Updates, then Finish.
+
+use crypto.sha256;
+
+phi.Hmac:Library
+{
+	Sha256State hmac_inner;
+	Sha256State hmac_outer;
+	u8 hmac_key[64];
+	u8 hmac_pad[64];
+
+	# the MAC of length bytes of data, with a key of any length; 32 bytes to output
+	[Mac: ptr<u8> key: 0; u32 key_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> output: 0;]
+		call Start: key key_length;
+		call Update: data length;
+		call Finish: output;
+	[end]
+
+	[Start: ptr<u8> key: 0; u32 key_length: 0;]
+		# a key longer than a block is hashed first; a shorter one is padded with zeros
+		call Bytes.Zero: addr hmac_key 64;
+		if key_length > 64
+			call Sha256.Hash: key key_length addr hmac_key;
+		;;
+		else
+			call Bytes.Copy: addr hmac_key key key_length;
+		;;
+
+		while u32 i: 0; i < 64; i++;
+			hmac_pad:i is hmac_key:i ^ 0x36;
+		;;
+		call Sha256.Init: addr hmac_inner;
+		call Sha256.Update: addr hmac_inner addr hmac_pad 64;
+
+		while u32 i: 0; i < 64; i++;
+			hmac_pad:i is hmac_key:i ^ 0x5C;
+		;;
+		call Sha256.Init: addr hmac_outer;
+		call Sha256.Update: addr hmac_outer addr hmac_pad 64;
+		call Bytes.Zero: addr hmac_key 64;
+	[end]
+
+	[Update: ptr<u8> data: 0; u32 length: 0;]
+		call Sha256.Update: addr hmac_inner data length;
+	[end]
+
+	# the MAC (32 bytes) to output; output may be the key or the data
+	[Finish: ptr<u8> output: 0;]
+		call Sha256.Final: addr hmac_inner addr hmac_pad;
+		call Sha256.Update: addr hmac_outer addr hmac_pad 32;
+		call Sha256.Final: addr hmac_outer output;
+	[end]
+}
+
+phi.Hkdf:Library
+{
+	u8 hkdf_block[32];
+	u8 hkdf_counter[1];
+
+	# a 32-byte pseudorandom key from input keying material (ikm) and a salt
+	[Extract: ptr<u8> salt: 0; u32 salt_length: 0; ptr<u8> ikm: 0; u32 ikm_length: 0; ptr<u8> prk: 0;]
+		call Hmac.Mac: salt salt_length ikm ikm_length prk;
+	[end]
+
+	# length bytes (up to 8160) of output keying material from a pseudorandom key (32
+	# bytes) and some context (info); output must not overlap prk
+	[Expand: ptr<u8> prk: 0; ptr<u8> info: 0; u32 info_length: 0; ptr<u8> output: 0; u32 length: 0;]
+		u32 done: 0;
+		u32 counter: 1;
+		while done < length and counter < 256
+			call Hmac.Start: prk 32;
+			if counter > 1
+				call Hmac.Update: addr hkdf_block 32;
+			;;
+			call Hmac.Update: info info_length;
+			hkdf_counter:0 is counter;
+			call Hmac.Update: addr hkdf_counter 1;
+			call Hmac.Finish: addr hkdf_block;
+
+			u32 n: length - done;
+			if n > 32
+				n is 32;
+			;;
+			call Bytes.Copy: output + done addr hkdf_block n;
+			done++ n;
+			counter++;
+		;;
+		call Bytes.Zero: addr hkdf_block 32;
+	[end]
+}

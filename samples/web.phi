@@ -1,11 +1,12 @@
-# Web pages from a 32-bit kernel. The network card driver, DHCP, DNS, TCP and HTTP
-# are all written in PHI (lib/phi/drivers/rtl8139.phi and lib/phi/net/).
+# Web pages from a 32-bit kernel. The network card driver, DHCP, DNS, TCP, HTTP and
+# TLS 1.3 are all written in PHI (lib/phi/drivers/rtl8139.phi, lib/phi/net/ and
+# lib/phi/crypto/).
 #
 #   phi run samples/web.phi
 #
 # Type a URL and the kernel prints the raw response: the status line, the headers
-# and the page's HTML. An empty line fetches http://example.com/. Only http://
-# works (https:// needs TLS).
+# and the page's HTML. An empty line fetches http://example.com/. https:// works
+# too, but the server's certificate isn't checked yet.
 
 use net.http;
 

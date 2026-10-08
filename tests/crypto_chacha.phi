@@ -1,0 +1,84 @@
+# ChaCha20, Poly1305 and ChaCha20-Poly1305 against RFC 8439's test vectors, and
+# against Python's cryptography package for messages of awkward lengths.
+use crypto.chachapoly;
+
+phi.CryptoChaCha:Kernel
+{
+	u8 key[32];
+	u8 nonce[12];
+	u8 header[16];
+	u8 output[64];
+	u8 tag[16];
+	u8 data[400];
+	int n: 0;
+	int header_length: 0;
+	bln ok: false;
+	str sunscreen: 'Ladies and Gentlemen of the class of \'99: If I could offer you only one tip for the future, sunscreen would be it.';
+
+	log 'chacha20 block, rfc 8439 2.3.2:\n';
+	call n is Bytes.FromHex: '000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f' addr key 32;
+	call n is Bytes.FromHex: '000000090000004a00000000' addr nonce 12;
+	call ChaCha20.Block: addr key addr nonce 1 addr output;
+	call Bytes.PrintHex: addr output 64;
+
+	log 'chacha20 encryption, rfc 8439 2.4.2:\n';
+	call n is Bytes.FromHex: '000000000000004a00000000' addr nonce 12;
+	call Bytes.Copy: addr data sunscreen 114;
+	call ChaCha20.Xor: addr key addr nonce 1 addr data 114;
+	call Bytes.PrintHex: addr data 114;
+
+	log 'poly1305, rfc 8439 2.5.2:\n';
+	call n is Bytes.FromHex: '85d6be7858556d337f4452fe42d506a80103808afb0db2fd4abff6af4149f51b' addr key 32;
+	call Poly1305.Start: addr key;
+	call Poly1305.Update: 'Cryptographic Forum Research Group' 34;
+	call Poly1305.Finish: addr tag;
+	call Bytes.PrintHex: addr tag 16;
+
+	log 'chacha20-poly1305, rfc 8439 2.8.2:\n';
+	call n is Bytes.FromHex: '808182838485868788898a8b8c8d8e8f909192939495969798999a9b9c9d9e9f' addr key 32;
+	call n is Bytes.FromHex: '070000004041424344454647' addr nonce 12;
+	call header_length is Bytes.FromHex: '50515253c0c1c2c3c4c5c6c7' addr header 16;
+	call Bytes.Copy: addr data sunscreen 114;
+	call ChaChaPoly.Seal: addr key addr nonce addr header header_length addr data 114 addr tag;
+	call Bytes.PrintHex: addr data 114;
+	call Bytes.PrintHex: addr tag 16;
+
+	call ok is ChaChaPoly.Open: addr key addr nonce addr header header_length addr data 114 addr tag;
+	log 'opens: ' ok ', back to the text: ';
+	call ok is Bytes.Equal: addr data sunscreen 114;
+	log ok '\n';
+
+	# change one byte and it must not open (and must stay as it was)
+	call ChaChaPoly.Seal: addr key addr nonce addr header header_length addr data 114 addr tag;
+	data:50 is data:50 ^ 1;
+	call ok is ChaChaPoly.Open: addr key addr nonce addr header header_length addr data 114 addr tag;
+	log 'a changed byte opens: ' ok '\n';
+	data:50 is data:50 ^ 1;
+	header:0 is header:0 ^ 1;
+	call ok is ChaChaPoly.Open: addr key addr nonce addr header header_length addr data 114 addr tag;
+	log 'a changed header opens: ' ok '\n';
+	header:0 is header:0 ^ 1;
+	tag:15 is tag:15 ^ 0x80;
+	call ok is ChaChaPoly.Open: addr key addr nonce addr header header_length addr data 114 addr tag;
+	log 'a changed tag opens: ' ok '\n';
+
+	# lengths around the 16- and 64-byte edges; the tag covers the encrypted bytes too
+	log 'tags for other lengths:\n';
+	int lengths: 0 1 15 16 17 63 64 65 400;
+	while u32 k: 0; k < lengths.len; k++;
+		u32 length: lengths:k;
+		while u32 i: 0; i < length; i++;
+			data:i is (i * 7 + 3) & 0xFF;
+		;;
+		call ChaChaPoly.Seal: addr key addr nonce addr header 13 addr data length addr tag;
+		log length ': ';
+		call Bytes.PrintHex: addr tag 16;
+		call ok is ChaChaPoly.Open: addr key addr nonce addr header 13 addr data length addr tag;
+		if ok is false
+			log 'did not open\n';
+		;;
+	;;
+
+	log 'done\n';
+	exit 0;
+}

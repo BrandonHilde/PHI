@@ -1,0 +1,141 @@
+# Random bytes for keys and nonces. Any 32-bit program (kernels and user programs).
+#
+#   use crypto.random;
+#   u8 secret[32];
+#   call Random.Fill: addr secret 32;
+#
+# The bytes come from ChaCha20, keyed from a SHA-256 of whatever unpredictable input
+# the machine has: the CPU's RDRAND instruction when it has one (QEMU, as phi starts
+# it, answers with the host's random numbers), and the timestamp counter's jitter.
+# RDRAND is mixed in again on every Fill. After each Fill the key is replaced by
+# bytes from the stream itself, so what was handed out earlier can't be worked out
+# from the state later.
+#
+# Without RDRAND (random_hardware is false) the only input is timing, which an
+# emulator makes fairly predictable: fine for testing, weak for real secrets.
+
+use crypto.sha256;
+use crypto.chacha20;
+
+phi.Random:Library
+{
+	bln random_ready: false;
+	bln random_hardware: false;           # the CPU has RDRAND
+	u8 random_key[32];
+	u8 random_nonce[12];
+	u32 random_counter: 0;
+	u8 random_block[64];
+	u8 random_pool[256];
+	Sha256State random_hash;
+
+	# set by the asm blocks below
+	u32 random_word: 0;
+	u32 random_ok: 0;
+
+	[Fill: ptr<u8> buffer: 0; u32 length: 0;]
+		if random_ready is false
+			call Seed;
+		;;
+		call MixHardware;
+
+		u32 done: 0;
+		while done < length
+			call NextBlock;
+			# the first half of each block is the next key; the second half is output
+			u32 n: length - done;
+			if n > 32
+				n is 32;
+			;;
+			call Bytes.Copy: buffer + done addr random_block + 32 n;
+			done++ n;
+		;;
+		call Bytes.Zero: addr random_block 64;
+	[end]
+
+	[NextBlock]
+		call ChaCha20.Block: addr random_key addr random_nonce random_counter addr random_block;
+		random_counter++;
+		call Bytes.Copy: addr random_key addr random_block 32;
+	[end]
+
+	[Seed]
+		call RandomDetect;
+		random_hardware is random_ok is 1;
+
+		call Sha256.Init: addr random_hash;
+		# 64 words of RDRAND (if there is one) and timestamps, which jitter
+		while u32 i: 0; i < 64; i++;
+			u32 at: i * 4;
+			random_word is 0;
+			if random_hardware
+				call RandomHardwareWord;
+			;;
+			call PutWord: addr random_pool + at random_word;
+			call RandomTimestamp;
+			random_pool:at is random_pool:at ^ random_word;
+			random_pool:(at + 1) is random_pool:(at + 1) ^ (random_word >> 8);
+		;;
+		call Sha256.Update: addr random_hash addr random_pool 256;
+		call Sha256.Final: addr random_hash addr random_key;
+		call Bytes.Zero: addr random_pool 256;
+		random_counter is 0;
+		random_ready is true;
+	[end]
+
+	# xor fresh RDRAND output into the key
+	[MixHardware]
+		if random_hardware
+			while u32 i: 0; i < 8; i++;
+				call RandomHardwareWord;
+				ptr<u8> k: addr random_key + i * 4;
+				k:0 is k:0 ^ random_word;
+				k:1 is k:1 ^ (random_word >> 8);
+				k:2 is k:2 ^ (random_word >> 16);
+				k:3 is k:3 ^ (random_word >> 24);
+			;;
+		;;
+	[end]
+
+	[PutWord: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value;
+		p:1 is value >> 8;
+		p:2 is value >> 16;
+		p:3 is value >> 24;
+	[end]
+}
+
+# random_ok = 1 if the CPU has RDRAND (CPUID leaf 1, ecx bit 30)
+asm.RandomDetect
+{
+	mov dword [{random_ok}], 0
+	mov eax, 1
+	cpuid
+	bt ecx, 30
+	jnc .done
+	mov dword [{random_ok}], 1
+.done:
+	ret
+}
+
+# random_word = a value from RDRAND, which may need asking again
+asm.RandomHardwareWord
+{
+	mov ecx, 32
+.again:
+	rdrand eax
+	jc .got
+	dec ecx
+	jnz .again
+	xor eax, eax
+.got:
+	mov [{random_word}], eax
+	ret
+}
+
+# random_word = the low half of the timestamp counter
+asm.RandomTimestamp
+{
+	rdtsc
+	mov [{random_word}], eax
+	ret
+}

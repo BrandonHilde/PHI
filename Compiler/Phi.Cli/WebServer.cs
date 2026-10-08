@@ -1,5 +1,9 @@
 using System.Net;
+using System.Net.Security;
 using System.Net.Sockets;
+using System.Security.Authentication;
+using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using System.Text;
 
 namespace Phi.Cli
@@ -8,18 +12,24 @@ namespace Phi.Cli
     /// A small HTTP/1.0 server for network tests: it serves the files in a folder on
     /// 127.0.0.1, which a guest on QEMU's user network reaches as 10.0.2.2. Responses
     /// have no date or server name, so a test's output is the same every time.
+    ///
+    /// A secure server speaks HTTPS (TLS 1.3 only) with a self-signed certificate made when
+    /// phi starts, for 10.0.2.2 and localhost.
     /// </summary>
     public sealed class WebServer : IDisposable
     {
-        readonly TcpListener listener = new(IPAddress.Loopback, 0);
+        readonly TcpListener listener;
         readonly string root;
+        readonly bool secure;
         readonly Task loop;
 
         public int Port { get; }
 
-        public WebServer(string root)
+        public WebServer(string root, bool secure = false, int port = 0)
         {
+            listener = new TcpListener(IPAddress.Loopback, port);
             this.root = Path.GetFullPath(root);
+            this.secure = secure;
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             loop = Task.Run(AcceptLoop);
@@ -42,8 +52,20 @@ namespace Phi.Cli
             {
                 try
                 {
-                    NetworkStream stream = client.GetStream();
-                    stream.ReadTimeout = 10000;
+                    NetworkStream network = client.GetStream();
+                    network.ReadTimeout = 10000;
+                    Stream stream = network;
+                    SslStream? tls = null;
+                    if (secure)
+                    {
+                        tls = new SslStream(network);
+                        tls.AuthenticateAsServer(new SslServerAuthenticationOptions
+                        {
+                            ServerCertificate = Certificate.Value,
+                            EnabledSslProtocols = SslProtocols.Tls13,
+                        });
+                        stream = tls;
+                    }
                     string request = ReadRequest(stream);
                     string[] words = request.Split(' ', 3);
 
@@ -66,6 +88,7 @@ namespace Phi.Cli
                     stream.Write(Encoding.ASCII.GetBytes(header));
                     stream.Write(body);
                     stream.Flush();
+                    tls?.ShutdownAsync().Wait();       // TLS's close_notify
                     client.Client.Shutdown(SocketShutdown.Send);
                     // let the guest read everything before the socket goes away
                     byte[] rest = new byte[256];
@@ -73,11 +96,13 @@ namespace Phi.Cli
                 }
                 catch (IOException) { }
                 catch (SocketException) { }
+                catch (AuthenticationException) { }
+                catch (AggregateException) { }
             }
         }
 
         // the request line; the headers after it are read and ignored
-        static string ReadRequest(NetworkStream stream)
+        static string ReadRequest(Stream stream)
         {
             var text = new StringBuilder();
             int b;
@@ -101,6 +126,19 @@ namespace Phi.Cli
             bool inside = full.StartsWith(root + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
             return inside && File.Exists(full) ? full : null;
         }
+
+        static readonly Lazy<X509Certificate2> Certificate = new(() =>
+        {
+            using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);
+            var request = new CertificateRequest("CN=phi test server", key, HashAlgorithmName.SHA256);
+            var names = new SubjectAlternativeNameBuilder();
+            names.AddIpAddress(IPAddress.Parse("10.0.2.2"));
+            names.AddDnsName("localhost");
+            request.CertificateExtensions.Add(names.Build());
+            using X509Certificate2 made = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(1));
+            // Windows' TLS needs the key in a form it can load, which a PFX round trip gives it
+            return new X509Certificate2(made.Export(X509ContentType.Pfx));
+        });
 
         public void Dispose()
         {

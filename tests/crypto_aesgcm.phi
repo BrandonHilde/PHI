@@ -1,0 +1,78 @@
+# AES-128 and AES-128-GCM against FIPS 197's example and the GCM specification's test
+# cases, and against Python's cryptography package for messages of awkward lengths.
+use crypto.aesgcm;
+
+phi.CryptoAesGcm:Kernel
+{
+	u8 key[16];
+	u8 nonce[12];
+	u8 header[32];
+	u8 block[16];
+	u8 tag[16];
+	u8 data[400];
+	int n: 0;
+	int length: 0;
+	int header_length: 0;
+	bln ok: false;
+
+	log 'aes-128, fips 197 c.1:\n';
+	call n is Bytes.FromHex: '000102030405060708090a0b0c0d0e0f' addr key 16;
+	call n is Bytes.FromHex: '00112233445566778899aabbccddeeff' addr block 16;
+	call Aes.SetKey: addr key;
+	call Aes.Encrypt: addr block addr block;
+	call Bytes.PrintHex: addr block 16;
+
+	log 'gcm test case 2 (zero key, nonce and block):\n';
+	call Bytes.Zero: addr key 16;
+	call Bytes.Zero: addr nonce 12;
+	call Bytes.Zero: addr data 16;
+	call AesGcm.Seal: addr key addr nonce addr header 0 addr data 16 addr tag;
+	call Bytes.PrintHex: addr data 16;
+	call Bytes.PrintHex: addr tag 16;
+
+	log 'gcm test case 4 (with a header):\n';
+	call n is Bytes.FromHex: 'feffe9928665731c6d6a8f9467308308' addr key 16;
+	call n is Bytes.FromHex: 'cafebabefacedbaddecaf888' addr nonce 12;
+	call length is Bytes.FromHex: 'd9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39' addr data 400;
+	call header_length is Bytes.FromHex: 'feedfacedeadbeeffeedfacedeadbeefabaddad2' addr header 32;
+	call AesGcm.Seal: addr key addr nonce addr header header_length addr data length addr tag;
+	call Bytes.PrintHex: addr data length;
+	call Bytes.PrintHex: addr tag 16;
+
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	log 'opens: ' ok ', back to the text: ';
+	call n is Bytes.FromHex: 'd9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39' addr block 0;
+	log (data:0 is 0xd9 and data:59 is 0x39) '\n';
+
+	call AesGcm.Seal: addr key addr nonce addr header header_length addr data length addr tag;
+	data:20 is data:20 ^ 1;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	log 'a changed byte opens: ' ok '\n';
+	data:20 is data:20 ^ 1;
+	header:3 is header:3 ^ 1;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	log 'a changed header opens: ' ok '\n';
+	header:3 is header:3 ^ 1;
+	tag:0 is tag:0 ^ 1;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	log 'a changed tag opens: ' ok '\n';
+
+	log 'tags for other lengths:\n';
+	int lengths: 0 1 15 16 17 63 64 65 400;
+	while u32 k: 0; k < lengths.len; k++;
+		u32 size: lengths:k;
+		while u32 i: 0; i < size; i++;
+			data:i is (i * 7 + 3) & 0xFF;
+		;;
+		call AesGcm.Seal: addr key addr nonce addr header 13 addr data size addr tag;
+		log size ': ';
+		call Bytes.PrintHex: addr tag 16;
+		call ok is AesGcm.Open: addr key addr nonce addr header 13 addr data size addr tag;
+		if ok is false
+			log 'did not open\n';
+		;;
+	;;
+
+	log 'done\n';
+	exit 0;
+}

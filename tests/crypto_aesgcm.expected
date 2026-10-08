@@ -1,0 +1,24 @@
+aes-128, fips 197 c.1:
+69c4e0d86a7b0430d8cdb78070b4c55a
+gcm test case 2 (zero key, nonce and block):
+0388dace60b6a392f328c2b971b2fe78
+ab6e47d42cec13bdf53a67b21257bddf
+gcm test case 4 (with a header):
+42831ec2217774244b7221b784d0d49ce3aa212f2c02a4e035c17e2329aca12e
+21d514b25466931c7d8f6a5aac84aa051ba30b396a0aac973d58e091
+5bc94fbc3221a5db94fae95ae7121a47
+opens: 1, back to the text: 1
+a changed byte opens: 0
+a changed header opens: 0
+a changed tag opens: 0
+tags for other lengths:
+0: a5f1a34b39852a610b6e6854b1d36865
+1: 0e702d33262dcf2d262ee1e749801d46
+15: 81e0cee6ad971ad7632502937b04f905
+16: e8cf24a84f4edc5f1b63122f4d5706e8
+17: 0a0c1d79290ad4f4c36e45477fad4fd0
+63: 650fa16fec7f8b4309c1a99aaffd64ca
+64: 3b8701ddea5794e8ca3be372e329d19b
+65: 38b50f0c154f6fdd458f2d83d2a465f3
+400: c84c71caa826d9b923e6bb8ad395ef7a
+done

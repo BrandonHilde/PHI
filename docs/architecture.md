@@ -14,7 +14,7 @@ library or the build. For the language itself, see [language.md](language.md).
 | `lib/x86_16/` | assembly library for 16-bit programs (uses the BIOS) |
 | `lib/x86_32/` | assembly library for 32-bit kernels: console, interrupts, panic screen, timer, keyboard, mouse, tasks |
 | `lib/x86_32_user/` | assembly library for user programs: system calls |
-| `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, text |
+| `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, cryptography, text |
 | `tests/` | programs that boot in QEMU, with the output they must produce |
 | `samples/` | example programs, including PHI OS |
 | `docs/` | this documentation, and the tutorial's tested examples |
@@ -88,6 +88,9 @@ unit, in 16-bit or 32-bit code. It is deliberately simple:
   `ebx`, or a computed address in `ebx` (through a pointer). In 16-bit code, a pointer above
   64 KB goes through the `fs` segment; in 32-bit code memory is flat.
 - Each PHI source line is written as a comment above its instructions.
+- In 32-bit code the variables start on a 4 KB page of their own. When code and variables it
+  writes share a page, QEMU discards its translation of that code on every write, and hot
+  loops ran up to ~200 times slower.
 
 Built-in functions use a C-like convention: arguments pushed right to left as 32-bit values,
 the caller removes them, the result comes back in `eax`. PHI methods instead take their
@@ -142,7 +145,8 @@ the bottom:
 | FAT16 | `lib/phi/fs/fat16.phi` | PHI |
 | loading and running programs, system calls 16-30 | `lib/phi/proc/process.phi` | PHI |
 | PCI, the RTL8139 network card | `lib/phi/drivers/pci.phi`, `rtl8139.phi` | PHI |
-| ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, HTTP | `lib/phi/net/` | PHI |
+| ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, TLS 1.3, HTTP | `lib/phi/net/` | PHI |
+| SHA-256, HMAC, HKDF, AES-128-GCM, ChaCha20-Poly1305, X25519, random numbers | `lib/phi/crypto/` | PHI |
 | shell and commands | `samples/os.rootfs/` | PHI, as user programs |
 
 Interrupts all go through one stub in `interrupts.asm`, which saves the registers and

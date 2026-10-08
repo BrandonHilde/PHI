@@ -8,6 +8,9 @@ const string Usage = """
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/)
+      phi serve <dir> [--https] [--port <n>]
+                                           serve a folder over HTTP (or HTTPS) on this computer;
+                                           a kernel in QEMU reaches it at 10.0.2.2
     """;
 
 try
@@ -97,6 +100,21 @@ static int Execute(string[] args)
                 string? timeout = Option("--timeout");
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
                 return TestRunner.Run(target, filter, TimeSpan.FromSeconds(timeout != null ? double.Parse(timeout) : 10));
+            }
+
+            case "serve":
+            {
+                bool https = Flag("--https");
+                string? port = Option("--port");
+                if (rest.Count != 1) throw new ArgumentException("serve needs exactly one folder");
+                if (!Directory.Exists(rest[0])) throw new ArgumentException($"folder not found: {rest[0]}");
+
+                using var server = new WebServer(rest[0], https, port != null ? int.Parse(port) : 0);
+                string scheme = https ? "https" : "http";
+                Console.WriteLine($"serving {rest[0]} at {scheme}://localhost:{server.Port}/ " +
+                                  $"(from QEMU: {scheme}://10.0.2.2:{server.Port}/); press Enter to stop");
+                Console.ReadLine();
+                return 0;
             }
 
             default:

@@ -1,0 +1,102 @@
+# The ChaCha20 cipher (RFC 8439): a 32-byte key and a 12-byte nonce make a stream of
+# random-looking bytes, which is xored with the data to encrypt or decrypt it. Any
+# kind of program.
+#
+#   use crypto.chacha20;
+#   call ChaCha20.Xor: key nonce 1 data length;     # in place; 1 is the first block's counter
+#
+# A key and nonce must never be used for two different messages.
+
+use crypto.bytes;
+
+phi.ChaCha20:Library
+{
+	u32 chacha_state[16];
+	u32 chacha_x[16];
+	u8 chacha_block[64];
+
+	# block number counter of the stream (64 bytes) to output
+	[Block: ptr<u8> key: 0; ptr<u8> nonce: 0; u32 counter: 0; ptr<u8> output: 0;]
+		unsafe
+			# "expand 32-byte k", the key, the counter, the nonce; all little-endian
+			chacha_state:0 is 0x61707865;
+			chacha_state:1 is 0x3320646e;
+			chacha_state:2 is 0x79622d32;
+			chacha_state:3 is 0x6b206574;
+			u32 part: 0;
+			while u32 i: 0; i < 8; i++;
+				call part is GetLittle: key + i * 4;
+				chacha_state:(4 + i) is part;
+			;;
+			chacha_state:12 is counter;
+			while u32 i: 0; i < 3; i++;
+				call part is GetLittle: nonce + i * 4;
+				chacha_state:(13 + i) is part;
+			;;
+
+			while u32 i: 0; i < 16; i++;
+				chacha_x:i is chacha_state:i;
+			;;
+			while u32 round: 0; round < 10; round++;
+				call Quarter: 0 4 8 12;
+				call Quarter: 1 5 9 13;
+				call Quarter: 2 6 10 14;
+				call Quarter: 3 7 11 15;
+				call Quarter: 0 5 10 15;
+				call Quarter: 1 6 11 12;
+				call Quarter: 2 7 8 13;
+				call Quarter: 3 4 9 14;
+			;;
+
+			while u32 i: 0; i < 16; i++;
+				u32 word: chacha_x:i + chacha_state:i;
+				u32 at: i * 4;
+				output:at is word;
+				output:(at + 1) is word >> 8;
+				output:(at + 2) is word >> 16;
+				output:(at + 3) is word >> 24;
+			;;
+		;;
+	[end]
+
+	# encrypt or decrypt length bytes in place, starting with block number counter
+	[Xor: ptr<u8> key: 0; ptr<u8> nonce: 0; u32 counter: 0; ptr<u8> data: 0; u32 length: 0;]
+		u32 done: 0;
+		while done < length
+			call Block: key nonce counter addr chacha_block;
+			counter++;
+			u32 n: length - done;
+			if n > 64
+				n is 64;
+			;;
+			ptr<u8> at: data + done;
+			while u32 i: 0; i < n; i++;
+				at:i is at:i ^ chacha_block:i;
+			;;
+			done++ n;
+		;;
+		call Bytes.Zero: addr chacha_block 64;
+	[end]
+
+	[Quarter: u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
+		unsafe
+			u32 t: 0;
+			chacha_x:a is chacha_x:a + chacha_x:b;
+			t is chacha_x:d ^ chacha_x:a;
+			chacha_x:d is (t << 16) | (t >> 16);
+			chacha_x:c is chacha_x:c + chacha_x:d;
+			t is chacha_x:b ^ chacha_x:c;
+			chacha_x:b is (t << 12) | (t >> 20);
+			chacha_x:a is chacha_x:a + chacha_x:b;
+			t is chacha_x:d ^ chacha_x:a;
+			chacha_x:d is (t << 8) | (t >> 24);
+			chacha_x:c is chacha_x:c + chacha_x:d;
+			t is chacha_x:b ^ chacha_x:c;
+			chacha_x:b is (t << 7) | (t >> 25);
+		;;
+	[end]
+
+	[GetLittle: ptr<u8> p: 0;]
+		u32 value: p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24);
+	[end: value]
+}

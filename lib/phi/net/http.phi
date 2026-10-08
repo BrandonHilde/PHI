@@ -17,22 +17,26 @@
 #   ;;
 #
 # Requests are HTTP/1.0, so the server sends the page as it is (never in chunks) and
-# closes the connection at its end. Only http:// works: https:// needs TLS.
+# closes the connection at its end. https:// URLs go over TLS 1.3 (net.tls), which
+# encrypts the connection but doesn't check the server's certificate yet.
 
 use net.dns;
 use net.tcp;
+use net.tls;
 use user.text;
 
 phi.Http:Kernel
 {
 	const u32 DEFAULT_PORT: 80;
+	const u32 SECURE_PORT: 443;
 	const u32 HOST_SIZE: 256;
 	const u32 PATH_SIZE: 1024;
 	const u32 REQUEST_SIZE: 1536;
 
 	int status: 0;                        # from the status line, like 200 or 404
 	u32 body: 0;                          # where the body starts in the buffer
-	str error: [60];                      # why Get returned -1
+	str error: [100];                     # why Get returned -1
+	bln secure: false;                    # the last URL was https://
 
 	u8 host[HOST_SIZE];
 	u8 path[PATH_SIZE];
@@ -60,9 +64,18 @@ phi.Http:Kernel
 		;;
 
 		int connection: -1;
-		if ok
+		bln connected: false;
+		if ok and secure
+			call connected is Tls.Connect: address port addr host;
+			if connected is false
+				error is Tls.error;
+				ok is false;
+			;;
+		;;
+		elif ok
 			call connection is Tcp.Connect: address port;
-			if connection < 0
+			connected is connection >= 0;
+			if connected is false
 				error is 'could not connect';
 				ok is false;
 			;;
@@ -72,7 +85,12 @@ phi.Http:Kernel
 			u32 length: 0;
 			call length is BuildRequest;
 			int sent: 0;
-			call sent is Tcp.Write: connection addr request length;
+			if secure
+				call sent is Tls.Write: addr request length;
+			;;
+			else
+				call sent is Tcp.Write: connection addr request length;
+			;;
 			if sent < 0
 				error is 'the server stopped answering';
 				ok is false;
@@ -84,7 +102,12 @@ phi.Http:Kernel
 			bln reading: max > 1;
 			while reading
 				int got: 0;
-				call got is Tcp.Read: connection buffer + received max - 1 - received;
+				if secure
+					call got is Tls.Read: buffer + received max - 1 - received;
+				;;
+				else
+					call got is Tcp.Read: connection buffer + received max - 1 - received;
+				;;
 				if got > 0
 					received++ got;
 					reading is received < max - 1;
@@ -92,6 +115,9 @@ phi.Http:Kernel
 				else
 					if got < 0 and received is 0
 						error is 'no answer from the server';
+						if secure
+							error is Tls.error;
+						;;
 						ok is false;
 					;;
 					reading is false;
@@ -106,7 +132,10 @@ phi.Http:Kernel
 			;;
 		;;
 
-		if connection >= 0
+		if connected and secure
+			call Tls.Close;
+		;;
+		elif connected
 			call Tcp.Close: connection;
 		;;
 	[end: result]
@@ -116,13 +145,11 @@ phi.Http:Kernel
 		bln ok: true;
 		ptr<u8> at: 0;
 		call at is Text.SkipSpaces: url;
-		bln secure: false;
 		bln plain: false;
 		call secure is Text.StartsWith: at 'https://';
 		call plain is Text.StartsWith: at 'http://';
 		if secure
-			error is 'https needs TLS, which PHI does not have yet';
-			ok is false;
+			at++ 8;
 		;;
 		elif plain
 			at++ 7;
@@ -141,6 +168,9 @@ phi.Http:Kernel
 		;;
 
 		port is DEFAULT_PORT;
+		if secure
+			port is SECURE_PORT;
+		;;
 		if at:0 is ':' and ok
 			at++;
 			int number: 0;
@@ -175,7 +205,7 @@ phi.Http:Kernel
 		call Text.Append: r addr path REQUEST_SIZE;
 		call Text.Append: r ' HTTP/1.0\r\nHost: ' REQUEST_SIZE;
 		call Text.Append: r addr host REQUEST_SIZE;
-		if port is not DEFAULT_PORT
+		if (port is not DEFAULT_PORT and secure is false) or (port is not SECURE_PORT and secure)
 			str number: port;
 			call Text.Append: r ':' REQUEST_SIZE;
 			call Text.Append: r number REQUEST_SIZE;

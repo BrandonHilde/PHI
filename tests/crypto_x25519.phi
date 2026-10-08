@@ -1,0 +1,61 @@
+# X25519 against RFC 7748's test vectors (section 5.2, and the Diffie-Hellman
+# example in 6.1), and random bytes from crypto.random.
+use crypto.x25519;
+use crypto.random;
+
+phi.CryptoX25519:Kernel
+{
+	u8 scalar[32];
+	u8 point[32];
+	u8 output[32];
+	u8 alice[32];
+	u8 bob[32];
+	u8 alice_public[32];
+	u8 bob_public[32];
+	u8 shared_a[32];
+	u8 shared_b[32];
+	int n: 0;
+	bln ok: false;
+
+	log 'rfc 7748 5.2, first vector:\n';
+	call n is Bytes.FromHex: 'a546e36bf0527c9d3b16154b82465edd62144c0ac1fc5a18506a2244ba449ac4' addr scalar 32;
+	call n is Bytes.FromHex: 'e6db6867583030db3594c1a424b15f7c726624ec26b3353b10a903a6d0ab1c4c' addr point 32;
+	call X25519.ScalarMult: addr output addr scalar addr point;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'rfc 7748 5.2, second vector:\n';
+	call n is Bytes.FromHex: '4b66e9d4d1b4673c5ad22691957d6af5c11b6421e0ea01d42ca4169e7918ba0d' addr scalar 32;
+	call n is Bytes.FromHex: 'e5210f12786811d3f4b7959d0538ae2c31dbe7106fc03c3efc4cd549c715a493' addr point 32;
+	call X25519.ScalarMult: addr output addr scalar addr point;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'rfc 7748 6.1, Diffie-Hellman:\n';
+	call n is Bytes.FromHex: '77076d0a7318a57d3c16c17251b26645df4c2f87ebc0992ab177fba51db92c2a' addr alice 32;
+	call n is Bytes.FromHex: '5dab087e624a8a4b79e17f8b83800ee66f3bb1292618b6fd1c2f8b27ff88e0eb' addr bob 32;
+	call X25519.Base: addr alice_public addr alice;
+	call Bytes.PrintHex: addr alice_public 32;
+	call X25519.Base: addr bob_public addr bob;
+	call Bytes.PrintHex: addr bob_public 32;
+	call X25519.ScalarMult: addr shared_a addr alice addr bob_public;
+	call Bytes.PrintHex: addr shared_a 32;
+	call X25519.ScalarMult: addr shared_b addr bob addr alice_public;
+	call ok is Bytes.Equal: addr shared_a addr shared_b 32;
+	log 'both sides agree: ' ok '\n';
+
+	# random secrets: different every time, so only what must hold is printed
+	log 'random:\n';
+	call Random.Fill: addr alice 32;
+	call Random.Fill: addr bob 32;
+	log 'rdrand: ' Random.random_hardware '\n';
+	call ok is Bytes.Equal: addr alice addr bob 32;
+	log 'two fills the same: ' ok '\n';
+	call X25519.Base: addr alice_public addr alice;
+	call X25519.Base: addr bob_public addr bob;
+	call X25519.ScalarMult: addr shared_a addr alice addr bob_public;
+	call X25519.ScalarMult: addr shared_b addr bob addr alice_public;
+	call ok is Bytes.Equal: addr shared_a addr shared_b 32;
+	log 'random keys agree: ' ok '\n';
+
+	log 'done\n';
+	exit 0;
+}

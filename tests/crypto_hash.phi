@@ -1,0 +1,93 @@
+# SHA-256, HMAC-SHA256 and HKDF against their published test vectors (FIPS 180-2,
+# RFC 4231, RFC 5869) and against Python's hashlib for the rest.
+use crypto.hmac;
+
+phi.CryptoHash:Kernel
+{
+	u8 output[64];
+	u8 key[200];
+	u8 data[1000];
+	u8 salt[32];
+	u8 info[32];
+	int n: 0;
+	Sha256State s;
+	Sha256State copy;
+
+	log 'sha256 empty:\n';
+	call Sha256.Hash: addr data 0 addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'sha256 abc:\n';
+	call Sha256.Hash: 'abc' 3 addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'sha256 448 bits:\n';
+	call Sha256.Hash: 'abcdbcdecdefdefgefghfghighijhijkijkljklmklmnlmnomnopnopq' 56 addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	# 1000 bytes, added 7 at a time: the block buffer and the length in the padding
+	log 'sha256 1000 bytes in pieces:\n';
+	call Pattern: 1000;
+	call Sha256.Init: addr s;
+	u32 done: 0;
+	while done < 1000
+		u32 piece: 7;
+		if 1000 - done < 7
+			piece is 1000 - done;
+		;;
+		call Sha256.Update: addr s addr data + done piece;
+		done++ piece;
+	;;
+	call Sha256.Final: addr s addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'sha256 the same, at once:\n';
+	call Sha256.Hash: addr data 1000 addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	# a copy of a state carries on separately
+	log 'sha256 abc and abd from one state:\n';
+	call Sha256.Init: addr s;
+	call Sha256.Update: addr s 'ab' 2;
+	call Sha256.Copy: addr s addr copy;
+	call Sha256.Update: addr copy 'c' 1;
+	call Sha256.Final: addr copy addr output;
+	call Bytes.PrintHex: addr output 32;
+	call Sha256.Update: addr s 'd' 1;
+	call Sha256.Final: addr s addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'hmac rfc 4231 case 1:\n';
+	call n is Bytes.FromHex: '0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b' addr key 200;
+	call Hmac.Mac: addr key n 'Hi There' 8 addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'hmac rfc 4231 case 6 (a key longer than a block):\n';
+	while u32 i: 0; i < 131; i++;
+		key:i is 0xAA;
+	;;
+	call Hmac.Mac: addr key 131 'Test Using Larger Than Block-Size Key - Hash Key First' 54 addr output;
+	call Bytes.PrintHex: addr output 32;
+
+	log 'hkdf rfc 5869 case 1:\n';
+	call n is Bytes.FromHex: '0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b' addr key 200;
+	int salt_length: 0;
+	int info_length: 0;
+	call salt_length is Bytes.FromHex: '000102030405060708090a0b0c' addr salt 32;
+	call info_length is Bytes.FromHex: 'f0f1f2f3f4f5f6f7f8f9' addr info 32;
+	u8 prk[32];
+	call Hkdf.Extract: addr salt salt_length addr key n addr prk;
+	call Bytes.PrintHex: addr prk 32;
+	call Hkdf.Expand: addr prk addr info info_length addr output 42;
+	call Bytes.PrintHex: addr output 42;
+
+	log 'done\n';
+	exit 0;
+
+	# data:i is a pattern that isn't all the same byte
+	[Pattern: u32 length: 0;]
+		while u32 i: 0; i < length; i++;
+			data:i is (i * 7 + 3) & 0xFF;
+		;;
+	[end]
+}

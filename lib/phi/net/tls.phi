@@ -1,0 +1,838 @@
+# TLS 1.3 (RFC 8446), the client side: an encrypted connection over TCP, which is
+# what https:// is. 32-bit kernels. Http.Get uses it for https:// URLs.
+#
+#   use net.tls;
+#   bln ok: false;
+#   call ok is Tls.Connect: address 443 'example.com';    # false: Tls.error says why
+#   int sent: 0;
+#   call sent is Tls.Write: request length;
+#   int got: 0;
+#   call got is Tls.Read: buffer max;    # bytes; 0 once the server has closed; -1 on an error
+#   call Tls.Close;
+#
+# One connection at a time. Keys are agreed with X25519, and records are encrypted
+# with AES-128-GCM or ChaCha20-Poly1305 (whichever the server picks), with SHA-256
+# for the key schedule.
+#
+# THE SERVER'S CERTIFICATE IS NOT CHECKED YET (Tls.verified is false): the connection
+# is encrypted, but anyone who can intercept it could pretend to be the server.
+#
+# The handshake: we send a ClientHello with our X25519 key; the ServerHello has the
+# server's; both sides turn the shared secret into handshake keys. The server sends
+# the rest encrypted (EncryptedExtensions, its Certificate and CertificateVerify, and
+# Finished, a MAC of everything so far). We check Finished, send our own, and both
+# switch to application keys. Every key comes from HKDF over a hash of the messages
+# so far (the transcript).
+
+use net.tcp;
+use crypto.hmac;
+use crypto.aesgcm;
+use crypto.chachapoly;
+use crypto.x25519;
+use crypto.random;
+use user.text;
+
+phi.Tls:Kernel
+{
+	const u32 RECORD_MAX: 16640;          # the most a record's body can be: 16 KB, padding and tag
+	const u32 PLAIN_MAX: 16384;           # the most data a record can carry
+	const u32 HANDSHAKE_MAX: 32768;       # the largest handshake message we take
+	const u32 HEADER: 5;
+
+	const u32 TYPE_CHANGE_CIPHER_SPEC: 20;
+	const u32 TYPE_ALERT: 21;
+	const u32 TYPE_HANDSHAKE: 22;
+	const u32 TYPE_APPLICATION: 23;
+
+	const u32 CLIENT_HELLO: 1;
+	const u32 SERVER_HELLO: 2;
+	const u32 NEW_SESSION_TICKET: 4;
+	const u32 ENCRYPTED_EXTENSIONS: 8;
+	const u32 CERTIFICATE: 11;
+	const u32 CERTIFICATE_REQUEST: 13;
+	const u32 CERTIFICATE_VERIFY: 15;
+	const u32 FINISHED: 20;
+	const u32 KEY_UPDATE: 24;
+
+	const u32 AES_128_GCM: 0x1301;
+	const u32 CHACHA20_POLY1305: 0x1303;
+	const u32 X25519_GROUP: 0x001D;
+
+	const u32 WAITING_FOR_HELLO: 0;
+	const u32 HANDSHAKING: 1;
+	const u32 CONNECTED: 2;
+
+	str error: [100];                     # why Connect, Read or Write failed
+	u32 alert: 0;                         # the alert the server sent, if it sent one
+	u32 suite: 0;                         # the cipher suite the server chose
+	bln verified: false;                  # the certificate was checked (not yet: always false)
+	u32 offer: 3;                         # suites to offer: 1 AES-128-GCM, 2 ChaCha20-Poly1305, 3 both
+
+	int tls_connection: -1;
+	u32 tls_stage: 0;
+	bln tls_encrypting: false;            # our records are encrypted (from our Finished on)
+	bln tls_closed: false;                # the server sent close_notify, or TCP ended
+
+	ptr<u8> tls_record: 0;                # the record being read: header, then body
+	ptr<u8> tls_send: 0;                  # the record being sent
+	ptr<u8> tls_messages: 0;              # handshake messages waiting to be read whole
+	u32 tls_messages_length: 0;
+	u32 tls_record_type: 0;
+	u32 tls_record_length: 0;
+	u32 tls_inner_type: 0;
+	u32 tls_inner_length: 0;
+	u32 tls_app_at: 0;                    # unread application data in tls_record
+	u32 tls_app_left: 0;
+
+	Sha256State tls_transcript;
+	Sha256State tls_snapshot;
+	u8 tls_hash[32];
+	u8 tls_empty_hash[32];
+	u8 tls_zeros[32];
+	u8 tls_scratch[32];
+	u8 tls_handshake_secret[32];
+	u8 tls_master_secret[32];
+	u8 tls_client_secret[32];
+	u8 tls_server_secret[32];
+	u8 tls_finished_key[32];
+	u8 tls_verify[32];
+
+	u32 tls_key_length: 0;
+	u8 tls_write_key[32];
+	u8 tls_write_iv[12];
+	u32 tls_write_sequence: 0;
+	u8 tls_read_key[32];
+	u8 tls_read_iv[12];
+	u32 tls_read_sequence: 0;
+	u8 tls_nonce[12];
+
+	u8 tls_private[32];
+	u8 tls_public[32];
+	u8 tls_server_public[32];
+	u8 tls_shared[32];
+	u8 tls_hello[600];
+	u8 tls_info[300];
+	u8 tls_small[40];                     # short messages we send: Finished, KeyUpdate, alerts
+	u8 tls_hello_retry: 0xcf 0x21 0xad 0x74 0xe5 0x9a 0x61 0x11 0xbe 0x1d 0x8c 0x02 0x1e 0x65 0xb8 0x91
+		0xc2 0xa2 0x11 0x16 0x7a 0xbb 0x8c 0x5e 0x07 0x9e 0x09 0xe2 0xc8 0xa8 0x33 0x9c;
+
+	# connect and do the handshake; host is the server's name (for the certificate and
+	# servers with several sites), or '' for an address
+	[Connect: u32 address: 0; u32 port: 0; ptr<u8> host: 0;]
+		bln ok: true;
+		error is '';
+		alert is 0;
+		suite is 0;
+		verified is false;
+		if tls_record is 0
+			tls_record is new u8[HEADER + RECORD_MAX];
+			tls_send is new u8[HEADER + RECORD_MAX];
+			tls_messages is new u8[HANDSHAKE_MAX];
+			if tls_record is 0 or tls_send is 0 or tls_messages is 0
+				error is 'not enough memory for TLS';
+				ok is false;
+			;;
+		;;
+		if tls_connection >= 0
+			call Close;
+		;;
+
+		tls_stage is WAITING_FOR_HELLO;
+		tls_encrypting is false;
+		tls_closed is false;
+		tls_messages_length is 0;
+		tls_app_left is 0;
+		call Bytes.Zero: addr tls_zeros 32;
+		call Sha256.Hash: addr tls_zeros 0 addr tls_empty_hash;
+
+		if ok
+			call tls_connection is Tcp.Connect: address port;
+			if tls_connection < 0
+				error is 'could not connect';
+				ok is false;
+			;;
+		;;
+		if ok
+			call ok is SendClientHello: host;
+		;;
+		while ok and tls_stage is not CONNECTED
+			call ok is ReadHandshakeRecord;
+		;;
+
+		if ok is false and tls_connection >= 0
+			call Tcp.Close: tls_connection;
+			tls_connection is -1;
+		;;
+	[end: ok]
+
+	# send data; length, or -1 if the connection failed
+	[Write: ptr<u8> data: 0; u32 length: 0;]
+		int result: -1;
+		if tls_connection >= 0 and tls_stage is CONNECTED
+			u32 done: 0;
+			bln ok: true;
+			while ok and done < length
+				u32 n: length - done;
+				if n > PLAIN_MAX
+					n is PLAIN_MAX;
+				;;
+				call ok is SendRecord: TYPE_APPLICATION data + done n;
+				done++ n;
+			;;
+			if ok
+				result is length;
+			;;
+		;;
+	[end: result]
+
+	# read what the server sent: the number of bytes, 0 once it has closed the
+	# connection, or -1 on an error (error says what) or a timeout
+	[Read: ptr<u8> buffer: 0; u32 max: 0;]
+		int result: -1;
+		bln ok: tls_connection >= 0 and tls_stage is CONNECTED;
+		while ok and result < 0
+			if tls_app_left > 0
+				u32 n: tls_app_left;
+				if n > max
+					n is max;
+				;;
+				call Bytes.Copy: buffer tls_record + tls_app_at n;
+				tls_app_at++ n;
+				tls_app_left-- n;
+				result is n;
+			;;
+			elif tls_closed
+				result is 0;
+			;;
+			else
+				call ok is ReadRecord;
+				if ok
+					call ok is OpenRecord;
+				;;
+				if ok
+					if tls_inner_type is TYPE_APPLICATION
+						tls_app_at is HEADER;
+						tls_app_left is tls_inner_length;
+					;;
+					elif tls_inner_type is TYPE_HANDSHAKE
+						call ok is AddMessages: tls_record + HEADER tls_inner_length;
+					;;
+					elif tls_inner_type is TYPE_ALERT
+						call ok is ReadAlert: tls_record + HEADER tls_inner_length;
+					;;
+					else
+						error is 'the server sent a record of an unknown type';
+						ok is false;
+					;;
+				;;
+			;;
+		;;
+	[end: result]
+
+	# say goodbye (close_notify) and close the TCP connection
+	[Close]
+		if tls_connection >= 0
+			if tls_stage is CONNECTED and tls_closed is false
+				tls_small:0 is 1;                 # a warning...
+				tls_small:1 is 0;                 # ...that we are closing
+				bln sent: false;
+				call sent is SendRecord: TYPE_ALERT addr tls_small 2;
+			;;
+			call Tcp.Close: tls_connection;
+			tls_connection is -1;
+		;;
+		tls_stage is WAITING_FOR_HELLO;
+		call Bytes.Zero: addr tls_write_key 32;
+		call Bytes.Zero: addr tls_read_key 32;
+	[end]
+
+	# ---- the handshake
+
+	[SendClientHello: ptr<u8> host: 0;]
+		call Random.Fill: addr tls_private 32;
+		call X25519.Base: addr tls_public addr tls_private;
+
+		ptr<u8> h: addr tls_hello;
+		u32 at: 4;                            # after the message header, filled in at the end
+		h:at is 3;                            # "TLS 1.2", as TLS 1.3 asks
+		h:(at + 1) is 3;
+		at++ 2;
+		call Random.Fill: h + at 32;
+		at++ 32;
+		h:at is 32;                           # a session id, which middleboxes expect
+		call Random.Fill: h + at + 1 32;
+		at++ 33;
+
+		u32 suites: 0;
+		if (offer & 1) is not 0
+			call Net.Put16: h + at + 2 + suites AES_128_GCM;
+			suites++ 2;
+		;;
+		if (offer & 2) is not 0
+			call Net.Put16: h + at + 2 + suites CHACHA20_POLY1305;
+			suites++ 2;
+		;;
+		call Net.Put16: h + at suites;
+		at++ 2 + suites;
+		h:at is 1;                            # compression: none
+		h:(at + 1) is 0;
+		at++ 2;
+
+		u32 extensions: at;
+		at++ 2;
+		# server_name, for a name (not an address)
+		int host_length: 0;
+		call host_length is Text.Length: host;
+		u32 is_address: 0;
+		call is_address is Net.ParseIp: host;
+		if host_length > 0 and host_length < 256 and is_address is 0
+			call Net.Put16: h + at 0;
+			call Net.Put16: h + at + 2 host_length + 5;
+			call Net.Put16: h + at + 4 host_length + 3;
+			h:(at + 6) is 0;                  # a host name
+			call Net.Put16: h + at + 7 host_length;
+			call Bytes.Copy: h + at + 9 host host_length;
+			at++ 9 + host_length;
+		;;
+		# supported_groups: x25519
+		call Net.Put16: h + at 10;
+		call Net.Put16: h + at + 2 4;
+		call Net.Put16: h + at + 4 2;
+		call Net.Put16: h + at + 6 X25519_GROUP;
+		at++ 8;
+		# signature_algorithms: ECDSA P-256/P-384, RSA-PSS, RSA PKCS#1, Ed25519
+		u32 algorithms: 0x0403 0x0503 0x0804 0x0805 0x0806 0x0401 0x0501 0x0601 0x0807;
+		call Net.Put16: h + at 13;
+		call Net.Put16: h + at + 2 2 + algorithms.len * 2;
+		call Net.Put16: h + at + 4 algorithms.len * 2;
+		at++ 6;
+		while u32 i: 0; i < algorithms.len; i++;
+			call Net.Put16: h + at algorithms:i;
+			at++ 2;
+		;;
+		# supported_versions: TLS 1.3
+		call Net.Put16: h + at 43;
+		call Net.Put16: h + at + 2 3;
+		h:(at + 4) is 2;
+		call Net.Put16: h + at + 5 0x0304;
+		at++ 7;
+		# key_share: our X25519 public key
+		call Net.Put16: h + at 51;
+		call Net.Put16: h + at + 2 38;
+		call Net.Put16: h + at + 4 36;
+		call Net.Put16: h + at + 6 X25519_GROUP;
+		call Net.Put16: h + at + 8 32;
+		call Bytes.Copy: h + at + 10 addr tls_public 32;
+		at++ 42;
+		call Net.Put16: h + extensions at - extensions - 2;
+
+		h:0 is CLIENT_HELLO;
+		call Put24: h + 1 at - 4;
+		call Sha256.Init: addr tls_transcript;
+		call Sha256.Update: addr tls_transcript h at;
+		bln sent: false;
+		call sent is SendRecord: TYPE_HANDSHAKE h at;
+		if sent is false
+			error is 'could not send the ClientHello';
+		;;
+	[end: sent]
+
+	# read a record during the handshake and handle the messages it completes
+	[ReadHandshakeRecord]
+		bln ok: false;
+		call ok is ReadRecord;
+		if ok
+			if tls_record_type is TYPE_CHANGE_CIPHER_SPEC
+				ok is true;                   # sent for middleboxes; means nothing in TLS 1.3
+			;;
+			elif tls_record_type is TYPE_ALERT
+				call ok is ReadAlert: tls_record + HEADER tls_record_length;
+				if ok
+					error is 'the server closed the connection during the handshake';
+					ok is false;
+				;;
+			;;
+			elif tls_stage is WAITING_FOR_HELLO
+				if tls_record_type is TYPE_HANDSHAKE
+					call ok is AddMessages: tls_record + HEADER tls_record_length;
+				;;
+				else
+					error is 'the server sent something other than a ServerHello';
+					ok is false;
+				;;
+			;;
+			else
+				call ok is OpenRecord;
+				if ok
+					if tls_inner_type is TYPE_HANDSHAKE
+						call ok is AddMessages: tls_record + HEADER tls_inner_length;
+					;;
+					elif tls_inner_type is TYPE_ALERT
+						call ok is ReadAlert: tls_record + HEADER tls_inner_length;
+						if ok
+							error is 'the server closed the connection during the handshake';
+							ok is false;
+						;;
+					;;
+					else
+						error is 'the server sent data before the handshake finished';
+						ok is false;
+					;;
+				;;
+			;;
+		;;
+	[end: ok]
+
+	# add handshake bytes and handle each message that is now whole
+	[AddMessages: ptr<u8> data: 0; u32 length: 0;]
+		bln ok: tls_messages_length + length <= HANDSHAKE_MAX;
+		if ok
+			call Bytes.Copy: tls_messages + tls_messages_length data length;
+			tls_messages_length++ length;
+		;;
+		else
+			error is 'a handshake message is too big';
+		;;
+
+		bln more: ok;
+		while more
+			u32 size: 0;
+			if tls_messages_length >= 4
+				call size is Get24: tls_messages + 1;
+				size++ 4;
+			;;
+			if tls_messages_length < 4 or size > tls_messages_length
+				more is false;
+				if size > HANDSHAKE_MAX
+					error is 'a handshake message is too big';
+					ok is false;
+				;;
+			;;
+			else
+				call ok is HandleMessage: tls_messages size;
+				# move what's left to the front
+				u32 left: tls_messages_length - size;
+				while u32 i: 0; i < left; i++;
+					tls_messages:i is tls_messages:(size + i);
+				;;
+				tls_messages_length is left;
+				more is ok;
+			;;
+		;;
+	[end: ok]
+
+	[HandleMessage: ptr<u8> message: 0; u32 size: 0;]
+		bln ok: true;
+		u32 type: message:0;
+		ptr<u8> body: message + 4;
+		u32 length: size - 4;
+
+		if tls_stage is WAITING_FOR_HELLO
+			if type is SERVER_HELLO
+				call Sha256.Update: addr tls_transcript message size;
+				call ok is ReadServerHello: body length;
+				if ok and tls_messages_length is not size
+					error is 'the ServerHello came with more in its record';
+					ok is false;
+				;;
+			;;
+			else
+				error is 'the server sent something other than a ServerHello';
+				ok is false;
+			;;
+		;;
+		elif tls_stage is HANDSHAKING
+			if type is FINISHED
+				call ok is ReadFinished: message size;
+			;;
+			elif type is CERTIFICATE_REQUEST
+				error is 'the server wants a client certificate, which PHI cannot send';
+				ok is false;
+			;;
+			elif type is ENCRYPTED_EXTENSIONS or type is CERTIFICATE or type is CERTIFICATE_VERIFY
+				# the certificate and its signature aren't checked yet (see the top of the file)
+				call Sha256.Update: addr tls_transcript message size;
+			;;
+			else
+				error is 'the server sent an unexpected handshake message';
+				ok is false;
+			;;
+		;;
+		else
+			if type is KEY_UPDATE and length is 1
+				call ok is ReadKeyUpdate: body:0;
+			;;
+			# anything else after the handshake (session tickets) is for resuming
+			# connections, which PHI doesn't do
+		;;
+	[end: ok]
+
+	[ReadServerHello: ptr<u8> body: 0; u32 length: 0;]
+		bln ok: length >= 40;
+		bln retry: false;
+		if ok
+			call retry is Bytes.Equal: body + 2 addr tls_hello_retry 32;
+		;;
+		if retry
+			error is 'the server wants a key exchange PHI does not offer (HelloRetryRequest)';
+			ok is false;
+		;;
+
+		u32 at: 34;
+		bln tls13: false;
+		bln have_key: false;
+		if ok
+			at++ 1 + body:at;                 # the session id we sent, echoed
+			call suite is Net.Get16: body + at;
+			at++ 3;                           # the suite, and compression
+			u32 total: 0;
+			call total is Net.Get16: body + at;
+			at++ 2;
+			u32 stop: at + total;
+			ok is stop <= length;
+			while ok and at + 4 <= stop
+				u32 type: 0;
+				u32 size: 0;
+				call type is Net.Get16: body + at;
+				call size is Net.Get16: body + at + 2;
+				at++ 4;
+				if at + size > stop
+					ok is false;
+				;;
+				elif type is 43 and size is 2
+					u32 version: 0;
+					call version is Net.Get16: body + at;
+					tls13 is version is 0x0304;
+				;;
+				elif type is 51 and size is 36
+					u32 group: 0;
+					u32 key_size: 0;
+					call group is Net.Get16: body + at;
+					call key_size is Net.Get16: body + at + 2;
+					if group is X25519_GROUP and key_size is 32
+						call Bytes.Copy: addr tls_server_public body + at + 4 32;
+						have_key is true;
+					;;
+				;;
+				at++ size;
+			;;
+			if ok is false
+				error is 'the ServerHello is malformed';
+			;;
+		;;
+
+		if ok and tls13 is false
+			error is 'the server does not speak TLS 1.3';
+			ok is false;
+		;;
+		if ok
+			if suite is AES_128_GCM and (offer & 1) is not 0
+				tls_key_length is 16;
+			;;
+			elif suite is CHACHA20_POLY1305 and (offer & 2) is not 0
+				tls_key_length is 32;
+			;;
+			else
+				error is 'the server chose a cipher PHI did not offer';
+				ok is false;
+			;;
+		;;
+		if ok and have_key is false
+			error is 'the server sent no X25519 key';
+			ok is false;
+		;;
+
+		if ok
+			call X25519.ScalarMult: addr tls_shared addr tls_private addr tls_server_public;
+			call Bytes.Zero: addr tls_private 32;
+			bln zero: false;
+			call zero is Bytes.Equal: addr tls_shared addr tls_zeros 32;
+			if zero
+				error is 'the server sent a bad X25519 key';
+				ok is false;
+			;;
+		;;
+
+		if ok
+			# early secret (no pre-shared key) -> handshake secret, from the shared secret
+			call Hkdf.Extract: addr tls_zeros 32 addr tls_zeros 32 addr tls_scratch;
+			call ExpandLabel: addr tls_scratch 'derived' addr tls_empty_hash 32 addr tls_master_secret 32;
+			call Hkdf.Extract: addr tls_master_secret 32 addr tls_shared 32 addr tls_handshake_secret;
+			call Bytes.Zero: addr tls_shared 32;
+
+			call TranscriptHash;
+			call ExpandLabel: addr tls_handshake_secret 'c hs traffic' addr tls_hash 32 addr tls_client_secret 32;
+			call ExpandLabel: addr tls_handshake_secret 's hs traffic' addr tls_hash 32 addr tls_server_secret 32;
+			call SetReadKeys: addr tls_server_secret;
+
+			# handshake secret -> master secret, for the application keys later
+			call ExpandLabel: addr tls_handshake_secret 'derived' addr tls_empty_hash 32 addr tls_scratch 32;
+			call Hkdf.Extract: addr tls_scratch 32 addr tls_zeros 32 addr tls_master_secret;
+			tls_stage is HANDSHAKING;
+		;;
+	[end: ok]
+
+	# check the server's Finished, send ours, and switch to the application keys
+	[ReadFinished: ptr<u8> message: 0; u32 size: 0;]
+		call ExpandLabel: addr tls_server_secret 'finished' addr tls_zeros 0 addr tls_finished_key 32;
+		call TranscriptHash;
+		call Hmac.Mac: addr tls_finished_key 32 addr tls_hash 32 addr tls_verify;
+		bln ok: size is 36;
+		if ok
+			call ok is Bytes.Equal: addr tls_verify message + 4 32;
+		;;
+		if ok is false
+			error is 'the server's Finished does not match: the handshake was tampered with';
+		;;
+
+		if ok
+			call Sha256.Update: addr tls_transcript message size;
+			call TranscriptHash;
+			# our Finished, a MAC of the same transcript
+			call ExpandLabel: addr tls_client_secret 'finished' addr tls_zeros 0 addr tls_finished_key 32;
+			tls_small:0 is FINISHED;
+			call Put24: addr tls_small + 1 32;
+			call Hmac.Mac: addr tls_finished_key 32 addr tls_hash 32 addr tls_small + 4;
+
+			# the application secrets come from the transcript up to the server's Finished
+			call ExpandLabel: addr tls_master_secret 'c ap traffic' addr tls_hash 32 addr tls_scratch 32;
+			call ExpandLabel: addr tls_master_secret 's ap traffic' addr tls_hash 32 addr tls_server_secret 32;
+
+			# a ChangeCipherSpec first, for middleboxes, then Finished with the handshake key
+			tls_small:36 is 1;
+			call ok is SendRecord: TYPE_CHANGE_CIPHER_SPEC addr tls_small + 36 1;
+			call SetWriteKeys: addr tls_client_secret;
+			tls_encrypting is true;
+			if ok
+				call ok is SendRecord: TYPE_HANDSHAKE addr tls_small 36;
+			;;
+			if ok is false
+				error is 'could not send our Finished';
+			;;
+
+			call Bytes.Copy: addr tls_client_secret addr tls_scratch 32;
+			call SetWriteKeys: addr tls_client_secret;
+			call SetReadKeys: addr tls_server_secret;
+			call Bytes.Zero: addr tls_handshake_secret 32;
+			call Bytes.Zero: addr tls_master_secret 32;
+			tls_stage is CONNECTED;
+		;;
+	[end: ok]
+
+	# the server moved to new keys; if it asks, so do we
+	[ReadKeyUpdate: u32 requested: 0;]
+		bln ok: true;
+		call ExpandLabel: addr tls_server_secret 'traffic upd' addr tls_zeros 0 addr tls_scratch 32;
+		call Bytes.Copy: addr tls_server_secret addr tls_scratch 32;
+		call SetReadKeys: addr tls_server_secret;
+		if requested is 1
+			tls_small:0 is KEY_UPDATE;
+			call Put24: addr tls_small + 1 1;
+			tls_small:4 is 0;
+			call ok is SendRecord: TYPE_HANDSHAKE addr tls_small 5;
+			call ExpandLabel: addr tls_client_secret 'traffic upd' addr tls_zeros 0 addr tls_scratch 32;
+			call Bytes.Copy: addr tls_client_secret addr tls_scratch 32;
+			call SetWriteKeys: addr tls_client_secret;
+		;;
+	[end: ok]
+
+	# an alert from the server: close_notify ends the connection; anything else is an error
+	[ReadAlert: ptr<u8> body: 0; u32 length: 0;]
+		bln ok: length >= 2;
+		if ok
+			alert is body:1;
+			if alert is 0
+				tls_closed is true;
+			;;
+			else
+				ok is false;
+				if alert is 40
+					error is 'the server refused the handshake: no TLS 1.3, or no cipher in common (alert 40)';
+				;;
+				elif alert is 70
+					error is 'the server does not speak TLS 1.3 (alert 70)';
+				;;
+				elif alert is 112
+					error is 'the server does not know that host name (alert 112)';
+				;;
+				else
+					error is 'the server sent an alert (see Tls.alert)';
+				;;
+			;;
+		;;
+		else
+			error is 'the server sent a malformed alert';
+		;;
+	[end: ok]
+
+	# ---- records
+
+	# read one record into tls_record; false if the connection ended or timed out
+	[ReadRecord]
+		bln ok: false;
+		call ok is ReadExact: tls_record HEADER;
+		if ok
+			tls_record_type is tls_record:0;
+			call tls_record_length is Net.Get16: tls_record + 3;
+			if tls_record_length > RECORD_MAX
+				error is 'the server sent a record that is too long';
+				ok is false;
+			;;
+		;;
+		if ok
+			call ok is ReadExact: tls_record + HEADER tls_record_length;
+		;;
+	[end: ok]
+
+	[ReadExact: ptr<u8> to: 0; u32 count: 0;]
+		u32 got: 0;
+		bln ok: true;
+		while ok and got < count
+			int n: 0;
+			call n is Tcp.Read: tls_connection to + got count - got;
+			if n > 0
+				got++ n;
+			;;
+			else
+				ok is false;
+				if n is 0
+					tls_closed is true;
+					error is 'the server closed the connection';
+				;;
+				else
+					error is 'the server stopped answering';
+				;;
+			;;
+		;;
+	[end: ok]
+
+	# decrypt tls_record in place: the content is at tls_record + HEADER, tls_inner_length
+	# bytes long, of type tls_inner_type
+	[OpenRecord]
+		bln ok: tls_record_type is TYPE_APPLICATION and tls_record_length > 16;
+		if ok
+			u32 sealed: tls_record_length - 16;
+			call MakeNonce: addr tls_read_iv tls_read_sequence;
+			call ok is Open: tls_record HEADER tls_record + HEADER sealed tls_record + HEADER + sealed;
+			tls_read_sequence++;
+			if ok
+				# the real type is the last byte that isn't padding (zeros)
+				u32 n: sealed;
+				while n > 0 and tls_record:(HEADER + n - 1) is 0
+					n--;
+				;;
+				ok is n > 0;
+				if ok
+					tls_inner_type is tls_record:(HEADER + n - 1);
+					tls_inner_length is n - 1;
+				;;
+			;;
+		;;
+		if ok is false
+			error is 'a record from the server failed its integrity check';
+		;;
+	[end: ok]
+
+	# send a record: before our Finished as it is, after it encrypted
+	[SendRecord: u32 type: 0; ptr<u8> data: 0; u32 length: 0;]
+		ptr<u8> r: tls_send;
+		u32 total: 0;
+		if tls_encrypting
+			call Bytes.Copy: r + HEADER data length;
+			r:(HEADER + length) is type;
+			u32 body: length + 1;
+			r:0 is TYPE_APPLICATION;
+			r:1 is 3;
+			r:2 is 3;
+			call Net.Put16: r + 3 body + 16;
+			call MakeNonce: addr tls_write_iv tls_write_sequence;
+			call Seal: r HEADER r + HEADER body r + HEADER + body;
+			tls_write_sequence++;
+			total is HEADER + body + 16;
+		;;
+		else
+			r:0 is type;
+			r:1 is 3;
+			r:2 is 3;
+			if type is TYPE_HANDSHAKE
+				r:2 is 1;                     # the ClientHello's record says TLS 1.0, as usual
+			;;
+			call Net.Put16: r + 3 length;
+			call Bytes.Copy: r + HEADER data length;
+			total is HEADER + length;
+		;;
+		int sent: 0;
+		call sent is Tcp.Write: tls_connection r total;
+	[end: sent is total]
+
+	# the nonce for a record: the key's IV xored with the record's sequence number
+	[MakeNonce: ptr<u8> iv: 0; u32 sequence: 0;]
+		call Bytes.Copy: addr tls_nonce iv 12;
+		tls_nonce:8 is tls_nonce:8 ^ (sequence >> 24);
+		tls_nonce:9 is tls_nonce:9 ^ (sequence >> 16);
+		tls_nonce:10 is tls_nonce:10 ^ (sequence >> 8);
+		tls_nonce:11 is tls_nonce:11 ^ sequence;
+	[end]
+
+	[Seal: ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		if suite is AES_128_GCM
+			call AesGcm.Seal: addr tls_write_key addr tls_nonce header header_length data length tag;
+		;;
+		else
+			call ChaChaPoly.Seal: addr tls_write_key addr tls_nonce header header_length data length tag;
+		;;
+	[end]
+
+	[Open: ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		bln ok: false;
+		if suite is AES_128_GCM
+			call ok is AesGcm.Open: addr tls_read_key addr tls_nonce header header_length data length tag;
+		;;
+		else
+			call ok is ChaChaPoly.Open: addr tls_read_key addr tls_nonce header header_length data length tag;
+		;;
+	[end: ok]
+
+	# ---- keys
+
+	[SetReadKeys: ptr<u8> secret: 0;]
+		call ExpandLabel: secret 'key' addr tls_zeros 0 addr tls_read_key tls_key_length;
+		call ExpandLabel: secret 'iv' addr tls_zeros 0 addr tls_read_iv 12;
+		tls_read_sequence is 0;
+	[end]
+
+	[SetWriteKeys: ptr<u8> secret: 0;]
+		call ExpandLabel: secret 'key' addr tls_zeros 0 addr tls_write_key tls_key_length;
+		call ExpandLabel: secret 'iv' addr tls_zeros 0 addr tls_write_iv 12;
+		tls_write_sequence is 0;
+	[end]
+
+	# HKDF-Expand-Label: HKDF-Expand with the length, 'tls13 ' + label and a context
+	[ExpandLabel: ptr<u8> secret: 0; ptr<u8> label: 0; ptr<u8> context: 0; u32 context_length: 0; ptr<u8> output: 0; u32 length: 0;]
+		int label_length: 0;
+		call label_length is Text.Length: label;
+		ptr<u8> info: addr tls_info;
+		call Net.Put16: info length;
+		info:2 is 6 + label_length;
+		call Bytes.Copy: info + 3 'tls13 ' 6;
+		call Bytes.Copy: info + 9 label label_length;
+		info:(9 + label_length) is context_length;
+		call Bytes.Copy: info + 10 + label_length context context_length;
+		call Hkdf.Expand: secret info 10 + label_length + context_length output length;
+	[end]
+
+	# tls_hash = the hash of the handshake so far (the transcript carries on)
+	[TranscriptHash]
+		call Sha256.Copy: addr tls_transcript addr tls_snapshot;
+		call Sha256.Final: addr tls_snapshot addr tls_hash;
+	[end]
+
+	[Put24: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 16;
+		p:1 is value >> 8;
+		p:2 is value;
+	[end]
+
+	[Get24: ptr<u8> p: 0;]
+	[end: (p:0 << 16) | (p:1 << 8) | p:2]
+}

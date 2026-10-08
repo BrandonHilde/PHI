@@ -82,7 +82,8 @@ phi run samples/web.phi
 
 At the `url:` prompt, type an address such as `http://example.com/` and press Enter. The
 kernel prints the raw response: the headers, then the page's HTML. The kernel reaches the
-internet through QEMU, so your computer needs a connection. Only `http://` works for now.
+internet through QEMU, so your computer needs a connection. `https://` works too, over TLS
+1.3, though PHI doesn't check the server's certificate yet.
 
 ## The phi command
 
@@ -93,6 +94,7 @@ internet through QEMU, so your computer needs a connection. Only `http://` works
 | `phi run file.phi --debug` | start paused, waiting for a debugger (see below) |
 | `phi check file.phi` | report errors without building |
 | `phi test` | boot every test in `tests/` without a window and check what each one prints |
+| `phi serve folder` | serve a folder over HTTP (`--https` for HTTPS) on your computer; a kernel in QEMU reaches it at `10.0.2.2` |
 
 The build folder keeps the generated assembly (`boot.asm`, `os.asm` or `kernel.asm`), with
 each line of your PHI program shown above the instructions it became. Reading it is a good

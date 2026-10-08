@@ -1,0 +1,67 @@
+# ChaCha20-Poly1305 (RFC 8439): encryption that also proves the message wasn't
+# changed, the cipher TLS uses as TLS_CHACHA20_POLY1305_SHA256. Any kind of program.
+#
+#   use crypto.chachapoly;
+#   u8 tag[16];
+#   call ChaChaPoly.Seal: key nonce header 5 data length addr tag;      # encrypts data in place
+#   bln ok: false;
+#   call ok is ChaChaPoly.Open: key nonce header 5 data length addr tag; # false: changed, left encrypted
+#
+# The key is 32 bytes and the nonce 12; a key and nonce must never seal two messages.
+# The header (additional data) isn't encrypted, but the tag covers it too.
+
+use crypto.chacha20;
+use crypto.poly1305;
+
+phi.ChaChaPoly:Library
+{
+	const u32 TAG_SIZE: 16;
+
+	u8 chachapoly_block[64];
+	u8 chachapoly_zeros[16];
+	u8 chachapoly_lengths[16];
+	u8 chachapoly_tag[16];
+
+	# encrypt length bytes in place and write the 16-byte tag
+	[Seal: ptr<u8> key: 0; ptr<u8> nonce: 0; ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		call ChaCha20.Xor: key nonce 1 data length;
+		call Tag: key nonce header header_length data length tag;
+	[end]
+
+	# check the tag, then decrypt in place; false (and the data left as it was) if the
+	# tag doesn't match
+	[Open: ptr<u8> key: 0; ptr<u8> nonce: 0; ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		call Tag: key nonce header header_length data length addr chachapoly_tag;
+		bln ok: false;
+		call ok is Bytes.Equal: addr chachapoly_tag tag TAG_SIZE;
+		if ok
+			call ChaCha20.Xor: key nonce 1 data length;
+		;;
+	[end: ok]
+
+	# Poly1305 over the header and the encrypted data, each padded to 16 bytes, then
+	# both lengths; its key is the start of ChaCha20 block 0
+	[Tag: ptr<u8> key: 0; ptr<u8> nonce: 0; ptr<u8> header: 0; u32 header_length: 0; ptr<u8> data: 0; u32 length: 0; ptr<u8> tag: 0;]
+		call ChaCha20.Block: key nonce 0 addr chachapoly_block;
+		call Poly1305.Start: addr chachapoly_block;
+		call Bytes.Zero: addr chachapoly_block 64;
+
+		call Poly1305.Update: header header_length;
+		call Poly1305.Update: addr chachapoly_zeros (16 - (header_length & 15)) & 15;
+		call Poly1305.Update: data length;
+		call Poly1305.Update: addr chachapoly_zeros (16 - (length & 15)) & 15;
+
+		call Bytes.Zero: addr chachapoly_lengths 16;
+		call PutLittle: addr chachapoly_lengths header_length;
+		call PutLittle: addr chachapoly_lengths + 8 length;
+		call Poly1305.Update: addr chachapoly_lengths 16;
+		call Poly1305.Finish: tag;
+	[end]
+
+	[PutLittle: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value;
+		p:1 is value >> 8;
+		p:2 is value >> 16;
+		p:3 is value >> 24;
+	[end]
+}
