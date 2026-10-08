@@ -63,7 +63,7 @@ protected mode with nothing else running.
 | `0x07E00`–`0x08DFF` | stage 2 and its GDT (the GDT is still in use) |
 | `0x09000`–`0x0903F` | BootInfo |
 | `0x09040`–`0x0963F` | memory map: up to 64 `MemoryRegion`s of 24 bytes |
-| `0x10000`–`0x8FFFF` | the kernel: code, then variables (including the 2 KB interrupt table) |
+| `0x10000`–`0x8FFFF` | the kernel: code, then variables from the next 4 KB boundary (including the 2 KB interrupt table) |
 | `0x90000`–`0x9EFFF` | the kernel stack (grows down from `0x9F000`) |
 | `0x9FC00`–`0x9FFFF` | BIOS extended data area (reserved) |
 | `0xA0000`–`0xFFFFF` | video memory and BIOS ROM (`0xB8000` is the text screen) |
@@ -116,7 +116,7 @@ With `proc.process`, the kernel sets up a GDT of its own (kernel code `0x08`, ke
 | Address | Contents |
 |---|---|
 | `0x00000000`–`0x3FFFFFFF` | the kernel's memory, mapped but not reachable from user mode |
-| `0x40000000` … | the program's code and data (`NAME.BIN`, loaded as is) |
+| `0x40000000` … | the program's code, then its variables from the next 4 KB boundary (`NAME.BIN`, loaded as is) |
 | `0x403F0000`–`0x403FFFFF` | its 64 KB stack (`esp` starts at `0x40400000`); the first 256 bytes hold its command line (`OS.Arguments`) |
 
 Everything in between, and above, is unmapped. The program's page directory copies the

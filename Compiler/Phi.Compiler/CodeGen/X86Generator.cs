@@ -183,6 +183,10 @@ namespace Phi.Compiler.CodeGen
             }
 
             output.AppendLine();
+            // variables start on a page of their own: when code and the variables it writes share
+            // a 4 KB page, QEMU throws away its translation of that code on every write, which made
+            // hot loops run up to ~200 times slower
+            if (bits32) output.AppendLine("align 4096, db 0");
             output.AppendLine("; ---- data");
             EmitData(output);
 
