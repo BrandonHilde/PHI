@@ -179,6 +179,6 @@ A QEMU test is `NAME.phi` plus one of:
 - `NAME.errors`: the program must fail to compile with these messages
 
 and optionally `NAME.input` (keys and mouse movements, see [tests/README.md](../tests/README.md)),
-`NAME.rootfs/` (the disk) and `NAME.web/` (files served over HTTP while the test runs). A test made only of `Library` classes runs twice, as a 16-bit
-program and as a 32-bit kernel, against the same expected output, which keeps the two code
-generators in step.
+`NAME.rootfs/` (the disk) and `NAME.web/` (files served over HTTP while the test runs). A test
+made only of `Library` classes runs twice, as a 16-bit program and as a 32-bit kernel, against
+the same expected output, which keeps the two code generators in step.

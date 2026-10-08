@@ -74,6 +74,16 @@ QEMU window to stop.
 Everything you see was compiled from PHI just now: the kernel in `samples/os.phi`, and the
 shell, commands and game from the `.phi` files in `samples/os.rootfs/`.
 
+## Fetch a web page
+
+```
+phi run samples/web.phi
+```
+
+At the `url:` prompt, type an address such as `http://example.com/` and press Enter. The
+kernel prints the raw response: the headers, then the page's HTML. The kernel reaches the
+internet through QEMU, so your computer needs a connection. Only `http://` works for now.
+
 ## The phi command
 
 | Command | What it does |

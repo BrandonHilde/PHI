@@ -451,7 +451,9 @@ The layers, each usable on its own:
 
 Addresses are `u32`s with the first number in the top byte (`10.0.2.15` is
 `0x0A00020F`). On QEMU's network the kernel is `10.0.2.15`, the gateway `10.0.2.2` (which
-is also the host computer's `127.0.0.1`), and the DNS server `10.0.2.3`.
+is also the host computer's `127.0.0.1`), and the DNS server `10.0.2.3`. `Net.Start` asks
+for an address by DHCP first; if no server answers it keeps these addresses and
+`Net.dhcp_ok` is 0.
 
 Nothing waits on an interrupt: the methods that wait (`Ping`, `Dns.Resolve`, `Tcp.Read`,
 ...) poll the card, and sleep a millisecond when it has nothing. Up to four TCP connections
@@ -703,6 +705,8 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
+- networking in user programs (only 32-bit kernels have the network), `https://` (no TLS),
+  accepting incoming connections (TCP is client-only), and network cards other than the RTL8139
 
 ## How it is built
 
