@@ -411,6 +411,52 @@ each folder holds as many new files as it has free entries (the root holds 511).
 are written to the disk image, so a kernel sees them the next time it boots the same image
 (`phi build` makes a fresh image each time).
 
+## The network (32-bit kernels)
+
+`phi run` and `phi test` give every machine an RTL8139 network card on QEMU's user
+network, which reaches the internet through the host. `net.http` fetches web pages:
+
+```phi
+use net.http;
+
+ptr<u8> page: new u8[65536];
+bln ok: false;
+call ok is Net.Start;                    # finds the card and gets an address by DHCP
+
+int size: 0;
+call size is Http.Get: 'http://example.com/' page 65536;
+if size >= 0
+    log page;                            # the raw response: status line, headers, HTML
+    log Http.status;                     # 200
+;;
+else
+    log Http.error;                      # why it failed
+;;
+```
+
+`samples/web.phi` asks for URLs and prints what comes back. Only `http://` works:
+`https://` needs TLS, which PHI doesn't have yet.
+
+The layers, each usable on its own:
+
+| File | Class | What it does |
+|---|---|---|
+| `drivers.pci` | `Pci` | `Find: vendor device` → (or `Pci.NOT_FOUND`), `Read`/`Write: device offset`, `Bar: device n` →, `Irq` →, `EnableBusMaster` |
+| `drivers.rtl8139` | `Rtl8139` | the card: `Start` →, `Send: frame length` →, `Receive: buffer max` → (0 when nothing is waiting); `mac` |
+| `net.net` | `Net` | `Start` →, `Configure: ip netmask gateway dns`; `ip`, `netmask`, `gateway`, `dns`, `dhcp_ok`; `Ping: address timeout` → (ms, or -1); `SendUdp: to from_port to_port data length` →, `Listen: port`, `WaitUdp: timeout` → (the datagram is in `udp_data`); `ParseIp: text` →, `PrintIp: address` |
+| `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
+| `net.dns` | `Dns` | `Resolve: name` → an address, or 0 |
+| `net.tcp` | `Tcp` | `Connect: address port` → a connection or -1, `Write: c data length` →, `Read: c buffer max` → (0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000) |
+| `net.http` | `Http` | `Get: url buffer max` → the response's size or -1; `status`, `body` (where the body starts), `error` |
+
+Addresses are `u32`s with the first number in the top byte (`10.0.2.15` is
+`0x0A00020F`). On QEMU's network the kernel is `10.0.2.15`, the gateway `10.0.2.2` (which
+is also the host computer's `127.0.0.1`), and the DNS server `10.0.2.3`.
+
+Nothing waits on an interrupt: the methods that wait (`Ping`, `Dns.Resolve`, `Tcp.Read`,
+...) poll the card, and sleep a millisecond when it has nothing. Up to four TCP connections
+can be open at once, each with an 8 KB receive buffer.
+
 ## Programs and processes
 
 A 32-bit kernel runs user programs with `proc.process`:
@@ -589,6 +635,7 @@ and the classes of used files run before the classes that use them.
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `StartsWith`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Append: buffer text size`, `TrimEnd`, `ToNumber` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
+| `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 
 ## Built-in functions
 

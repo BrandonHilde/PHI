@@ -1,0 +1,180 @@
+# Driver for the Realtek RTL8139 network card, which QEMU emulates (`phi run` and
+# `phi test` give every machine one). Polled: Receive returns a waiting frame, or 0
+# if there isn't one. 32-bit kernels.
+#
+#   use drivers.rtl8139;
+#   bln ok: false;
+#   call ok is Rtl8139.Start;                    # false if there's no card
+#   call ok is Rtl8139.Send: frame length;       # a whole Ethernet frame
+#   u32 length: 0;
+#   call length is Rtl8139.Receive: buffer 1536;
+#
+# The card copies frames it receives into a ring buffer in memory and sends frames
+# from four transmit buffers, used in turn. Both are in the kernel's own variables,
+# whose addresses are physical addresses (below 1 MB), as the card needs.
+
+use drivers.pci;
+
+phi.Rtl8139:Kernel
+{
+	const u32 VENDOR: 0x10EC;
+	const u32 PRODUCT: 0x8139;
+
+	# registers, as offsets from the card's I/O ports
+	const u32 REG_MAC: 0x00;
+	const u32 REG_TX_STATUS: 0x10;        # one per transmit buffer, 4 bytes apart
+	const u32 REG_TX_ADDRESS: 0x20;
+	const u32 REG_RX_BUFFER: 0x30;
+	const u32 REG_COMMAND: 0x37;
+	const u32 REG_RX_READ: 0x38;          # where we have read up to, minus 16
+	const u32 REG_INTERRUPT_MASK: 0x3C;
+	const u32 REG_INTERRUPT_STATUS: 0x3E;
+	const u32 REG_TX_CONFIG: 0x40;
+	const u32 REG_RX_CONFIG: 0x44;
+	const u32 REG_CONFIG_1: 0x52;
+
+	const u8 COMMAND_RESET: 0x10;
+	const u8 COMMAND_RX_ENABLE: 0x08;
+	const u8 COMMAND_TX_ENABLE: 0x04;
+	const u8 COMMAND_RX_EMPTY: 0x01;
+
+	# accept frames to our address, broadcasts and multicasts; WRAP lets a frame run
+	# past the end of the ring instead of wrapping, so each frame is in one piece
+	const u32 RX_CONFIG: 0x0E | 0x80;
+	const u32 RX_OK: 0x01;
+
+	const u32 TX_OWN: 0x2000;             # the card has finished with the buffer
+	const u32 TX_BUFFERS: 4;
+
+	const u32 RX_SIZE: 8192;
+	const u32 RX_AREA: RX_SIZE + 16 + 1536;
+	const u32 TX_SIZE: 1536;
+	const u32 MIN_FRAME: 60;              # shorter frames are padded with zeros
+	const u32 MAX_FRAME: 1514;
+
+	u8 mac[6];
+	bln started: false;
+	u32 io: 0;
+	u32 irq: 0;
+	u32 frames_sent: 0;
+	u32 frames_received: 0;
+
+	u8 rx_area[RX_AREA + 16];
+	u8 tx_area[TX_SIZE * TX_BUFFERS + 16];
+	ptr<u8> rx: 0;
+	ptr<u8> tx: 0;
+	u32 rx_offset: 0;
+	u32 tx_next: 0;
+
+	# find the card and turn it on; false if there isn't one
+	[Start]
+		if started is false
+			u32 card: 0;
+			call card is Pci.Find: VENDOR PRODUCT;
+			if card is not Pci.NOT_FOUND
+				call Pci.EnableBusMaster: card;
+				call io is Pci.Bar: card 0;
+				call irq is Pci.Irq: card;
+
+				# the card wants its buffers on 16-byte boundaries
+				rx is (addr rx_area + 15) & 0xFFFFFFF0;
+				tx is (addr tx_area + 15) & 0xFFFFFFF0;
+
+				out (io + REG_CONFIG_1) 0;                # wake it up
+				out (io + REG_COMMAND) COMMAND_RESET;
+				u32 tries: 0;
+				while ((in (io + REG_COMMAND)) & COMMAND_RESET) is not 0 and tries < 1000000
+					tries++;
+				;;
+
+				while int i: 0; i < 6; i++;
+					mac:i is in (io + REG_MAC + i);
+				;;
+
+				outd (io + REG_RX_BUFFER) rx;
+				while u32 b: 0; b < TX_BUFFERS; b++;
+					outd (io + REG_TX_ADDRESS + b * 4) tx + b * TX_SIZE;
+				;;
+				rx_offset is 0;
+				tx_next is 0;
+
+				outw (io + REG_INTERRUPT_MASK) 0;          # polled: no interrupts
+				out (io + REG_COMMAND) COMMAND_RX_ENABLE | COMMAND_TX_ENABLE;
+				outd (io + REG_RX_CONFIG) RX_CONFIG;
+				outd (io + REG_TX_CONFIG) 0x03000700;      # standard gap, largest DMA burst
+				outw (io + REG_RX_READ) 0xFFF0;            # nothing read yet
+				started is true;
+			;;
+		;;
+	[end: started]
+
+	# send an Ethernet frame (destination, source, type, data; no checksum)
+	[Send: ptr<u8> frame: 0; u32 length: 0;]
+		bln ok: started and length <= MAX_FRAME;
+		if ok
+			u32 status_port: io + REG_TX_STATUS + tx_next * 4;
+
+			# wait for the card to be done with this buffer's last frame
+			u32 tries: 0;
+			while ((ind status_port) & TX_OWN) is 0 and tries < 1000000
+				tries++;
+			;;
+
+			ptr<u8> buffer: tx + tx_next * TX_SIZE;
+			while u32 i: 0; i < length; i++;
+				buffer:i is frame:i;
+			;;
+			while length < MIN_FRAME
+				buffer:length is 0;
+				length++;
+			;;
+
+			outd status_port length;                     # clears TX_OWN: the card sends it
+			tx_next is (tx_next + 1) % TX_BUFFERS;
+			frames_sent++;
+		;;
+	[end: ok]
+
+	# copy the next received frame into a buffer; its length, or 0 if none is waiting
+	[Receive: ptr<u8> to: 0; u32 max: 0;]
+		u32 length: 0;
+		if started and ((in (io + REG_COMMAND)) & COMMAND_RX_EMPTY) is 0
+			ptr<u8> packet: rx + rx_offset;
+			u32 status: packet:0 | (packet:1 << 8);
+			u32 size: packet:2 | (packet:3 << 8);        # includes a 4-byte checksum
+
+			if (status & RX_OK) is 0 or size < 4 or size > MAX_FRAME + 4
+				call ResetReceiver;
+			;;
+			else
+				length is size - 4;
+				if length > max
+					length is max;
+				;;
+				packet++ 4;
+				while u32 i: 0; i < length; i++;
+					to:i is packet:i;
+				;;
+				frames_received++;
+
+				# the next frame starts on a 4-byte boundary after this one
+				rx_offset is ((rx_offset + size + 4 + 3) & 0xFFFFFFFC) % RX_SIZE;
+				outw (io + REG_RX_READ) rx_offset - 16;
+			;;
+
+			# acknowledge whatever the card has flagged (receive done, overflow, ...)
+			u16 flags: inw (io + REG_INTERRUPT_STATUS);
+			outw (io + REG_INTERRUPT_STATUS) flags;
+		;;
+	[end: length]
+
+	# start the ring over if it holds something that isn't a frame
+	[ResetReceiver]
+		out (io + REG_COMMAND) COMMAND_TX_ENABLE;
+		rx_offset is 0;
+		outd (io + REG_RX_BUFFER) rx;
+		out (io + REG_COMMAND) COMMAND_RX_ENABLE | COMMAND_TX_ENABLE;
+		outd (io + REG_RX_CONFIG) RX_CONFIG;
+		outw (io + REG_RX_READ) 0xFFF0;
+	[end]
+}

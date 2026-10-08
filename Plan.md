@@ -496,7 +496,7 @@ roughly in order:
 2. **A heap for user programs**, so `new` works there too.
 3. **Growable strings** with value semantics.
 4. **The framebuffer** (Bochs VBE in QEMU) for graphics in 32-bit kernels.
-5. Then the [Later](#later) list: 64-bit, ARM, networking, self-hosting.
+5. Then the [Later](#later) list: 64-bit, ARM, TLS, self-hosting.
 
 ---
 
@@ -535,9 +535,10 @@ These come after the basics work:
   then fonts, windows, and a GUI toolkit as PHI built-ins
 - **64-bit long mode**, then an **ARM** backend (QEMU `virt` machine). The README's
   planned x86→ARM translator becomes a second compiler backend.
-- **Networking:** RTL8139 or e1000 driver (both emulated by QEMU), then ARP, IP, UDP,
-  and a small TCP
-- **More hardware:** PCI enumeration, AHCI, PS/2 → USB, ACPI shutdown
+- **Networking:** done: PCI, an RTL8139 driver, ARP, IPv4, ICMP, UDP, DHCP, DNS, a TCP
+  client and HTTP/1.0 (`lib/phi/net/`, `samples/web.phi`). Still to do: TLS for https,
+  listening for connections (a server), the e1000 card, and interrupts instead of polling
+- **More hardware:** AHCI, PS/2 → USB, ACPI shutdown (PCI enumeration is done: `drivers.pci`)
 - **C compatibility:** call C functions and link C object files (a README goal)
 - **Self-hosting:** rewrite the PHI compiler in PHI
 - **Real hardware and UEFI boot**

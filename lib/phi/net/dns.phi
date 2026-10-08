@@ -1,0 +1,149 @@
+# DNS: the address of a name like 'example.com', asked of Net.dns. 32-bit kernels.
+#
+#   use net.dns;
+#   u32 address: 0;
+#   call address is Dns.Resolve: 'example.com';   # 0 if it can't be found
+#
+# Text that already is an address ('10.0.2.2') comes back as one without asking.
+
+use net.net;
+
+phi.Dns:Kernel
+{
+	const u32 SERVER_PORT: 53;
+	const u32 HEADER: 12;
+	const u32 TYPE_A: 1;                  # an IPv4 address
+	const u32 CLASS_INTERNET: 1;
+	const int TRIES: 3;
+	const int WAIT: 2000;                 # ms per try
+
+	u8 query[300];
+	u32 query_id: 0x1234;
+
+	[Resolve: ptr<u8> name: 0;]
+		u32 address: 0;
+		call address is Net.ParseIp: name;
+
+		u32 length: 0;
+		if address is 0 and name:0 is not 0
+			call length is BuildQuery: name;
+		;;
+
+		if length > 0
+			u32 ticks: 0;
+			call ticks is OS.GetTicks;
+			u32 port: 50000 + (ticks % 10000);
+			int tries: 0;
+			while address is 0 and tries < TRIES
+				call Net.Listen: port;
+				bln sent: false;
+				call sent is Net.SendUdp: Net.dns port SERVER_PORT addr query length;
+				int got: 0;
+				call got is Net.WaitUdp: WAIT;
+				if got > 0
+					call address is ReadAnswer: got;
+				;;
+				tries++;
+			;;
+			call Net.Listen: 0;
+		;;
+	[end: address]
+
+	# a question for name's address, in query; its length (0 if the name is too long)
+	[BuildQuery: ptr<u8> name: 0;]
+		query_id++;
+		ptr<u8> q: addr query;
+		call Net.Put16: q query_id;
+		call Net.Put16: q + 2 0x0100;          # please ask other servers if need be
+		call Net.Put16: q + 4 1;               # one question
+		call Net.Put16: q + 6 0;
+		call Net.Put16: q + 8 0;
+		call Net.Put16: q + 10 0;
+
+		# 'www.example.com' is written 3 www 7 example 3 com 0
+		u32 at: HEADER;
+		u32 label: at;                        # where the current part's length goes
+		at++;
+		bln ok: true;
+		u32 i: 0;
+		while name:i is not 0 and ok
+			if name:i is '.'
+				q:label is at - label - 1;
+				label is at;
+			;;
+			else
+				q:at is name:i;
+			;;
+			at++;
+			i++;
+			ok is at < query.len - 6 and at - label <= 64;
+		;;
+		u32 length: 0;
+		if ok
+			q:label is at - label - 1;
+			q:at is 0;
+			at++;
+			call Net.Put16: q + at TYPE_A;
+			call Net.Put16: q + at + 2 CLASS_INTERNET;
+			length is at + 4;
+		;;
+	[end: length]
+
+	# the first address in the answer in Net.udp_data, or 0
+	[ReadAnswer: u32 length: 0;]
+		ptr<u8> r: addr Net.udp_data;
+		u32 address: 0;
+		u32 id: 0;
+		u32 flags: 0;
+		u32 questions: 0;
+		u32 answers: 0;
+		call id is Net.Get16: r;
+		call flags is Net.Get16: r + 2;
+		call questions is Net.Get16: r + 4;
+		call answers is Net.Get16: r + 6;
+
+		# an answer (the top bit), to our question, without an error (the low 4 bits)
+		if id is query_id and (flags & 0x8000) is not 0 and (flags & 0x000F) is 0 and length >= HEADER
+			u32 at: HEADER;
+			while u32 q: 0; q < questions and at < length; q++;
+				call at is SkipName: r at length;
+				at++ 4;                       # type and class
+			;;
+			while u32 a: 0; a < answers and at + 10 <= length and address is 0; a++;
+				call at is SkipName: r at length;
+				u32 type: 0;
+				u32 class: 0;
+				u32 size: 0;
+				call type is Net.Get16: r + at;
+				call class is Net.Get16: r + at + 2;
+				call size is Net.Get16: r + at + 8;
+				at++ 10;
+				# other answers (like a CNAME, another name for the same host) are skipped
+				if type is TYPE_A and class is CLASS_INTERNET and size is 4 and at + 4 <= length
+					call address is Net.Get32: r + at;
+				;;
+				at++ size;
+			;;
+		;;
+	[end: address]
+
+	# where the name at 'at' ends: names are parts, each with its length first, ending
+	# with 0 or with a 2-byte pointer to the rest of the name elsewhere in the message
+	[SkipName: ptr<u8> r: 0; u32 at: 0; u32 length: 0;]
+		bln more: true;
+		while more and at < length
+			u32 b: r:at;
+			if b is 0
+				at++;
+				more is false;
+			;;
+			elif (b & 0xC0) is 0xC0
+				at++ 2;
+				more is false;
+			;;
+			else
+				at++ b + 1;
+			;;
+		;;
+	[end: at]
+}

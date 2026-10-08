@@ -192,7 +192,20 @@ namespace Phi.Compiler.Tests
         }
 
         public static IEnumerable<object[]> RunnableSamples() =>
-            new[] { "hello.phi", "arcade.phi", "kernel.phi", "terminal.phi", "os.phi" }.Select(f => new object[] { f });
+            new[] { "hello.phi", "arcade.phi", "kernel.phi", "terminal.phi", "os.phi", "web.phi" }.Select(f => new object[] { f });
+
+        // net.net and net.tcp use each other: checking one from disk (as an editor does, by its
+        // full path) must not load it a second time as the embedded copy
+        [Theory]
+        [InlineData("net/tcp.phi")]
+        [InlineData("net/net.phi")]
+        [InlineData("net/http.phi")]
+        public void LibraryFilesThatUseEachOtherCompileFromDisk(string file)
+        {
+            string path = Path.GetFullPath(Path.Combine(RepoRoot(), "lib", "phi", file));
+            CompileResult result = PhiCompiler.Compile(path);
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
 
         [Theory]
         [MemberData(nameof(RunnableSamples))]

@@ -1,0 +1,94 @@
+# PCI: finding devices and reading their configuration, through the configuration
+# ports 0xCF8 and 0xCFC. Works in 16-bit programs and 32-bit kernels.
+#
+#   use drivers.pci;
+#   u32 card: 0;
+#   call card is Pci.Find: 0x10EC 0x8139;        # vendor and device; Pci.NOT_FOUND if absent
+#   u32 io: 0;
+#   call io is Pci.Bar: card 0;                  # an I/O port or memory address
+#
+# A device is named by where it sits: bus << 16 | slot << 11 | function << 8.
+
+phi.Pci:Library
+{
+	const u16 CONFIG_ADDRESS: 0xCF8;
+	const u16 CONFIG_DATA: 0xCFC;
+	const u32 ENABLE: 0x80000000;
+	const u32 NOT_FOUND: 0xFFFFFFFF;
+
+	const u32 REG_ID: 0x00;               # vendor (low 16 bits), device (high)
+	const u32 REG_COMMAND: 0x04;
+	const u32 REG_HEADER: 0x0C;           # header type in bits 16-23
+	const u32 REG_BAR0: 0x10;
+	const u32 REG_INTERRUPT: 0x3C;        # interrupt line in the low byte
+
+	const u32 COMMAND_IO: 0x01;
+	const u32 COMMAND_MEMORY: 0x02;
+	const u32 COMMAND_BUS_MASTER: 0x04;
+
+	# the 32-bit register at offset (a multiple of 4) in a device's configuration
+	[Read: u32 device: 0; u32 offset: 0;]
+		outd CONFIG_ADDRESS ENABLE | device | (offset & 0xFC);
+		u32 value: ind CONFIG_DATA;
+	[end: value]
+
+	[Write: u32 device: 0; u32 offset: 0; u32 value: 0;]
+		outd CONFIG_ADDRESS ENABLE | device | (offset & 0xFC);
+		outd CONFIG_DATA value;
+	[end]
+
+	# the first device with this vendor and device id, or NOT_FOUND
+	[Find: u32 vendor: 0; u32 product: 0;]
+		u32 found: NOT_FOUND;
+		u32 wanted: (product << 16) | vendor;
+		while u32 bus: 0; bus < 256 and found is NOT_FOUND; bus++;
+			while u32 slot: 0; slot < 32 and found is NOT_FOUND; slot++;
+				u32 device: (bus << 16) | (slot << 11);
+				u32 id: 0;
+				call id is Read: device REG_ID;
+				if (id & 0xFFFF) is not 0xFFFF
+					# only a multi-function device has functions 1-7
+					u32 functions: 1;
+					u32 header: 0;
+					call header is Read: device REG_HEADER;
+					if (header & 0x800000) is not 0
+						functions is 8;
+					;;
+					while u32 f: 0; f < functions and found is NOT_FOUND; f++;
+						call id is Read: device | (f << 8) REG_ID;
+						if id is wanted
+							found is device | (f << 8);
+						;;
+					;;
+				;;
+			;;
+		;;
+	[end: found]
+
+	# base address register 0-5: an I/O port (when bit 0 is set) or a memory address
+	[Bar: u32 device: 0; u32 index: 0;]
+		u32 bar: 0;
+		call bar is Read: device REG_BAR0 + index * 4;
+		if (bar & 1) is not 0
+			bar is bar & 0xFFFFFFFC;
+		;;
+		else
+			bar is bar & 0xFFFFFFF0;
+		;;
+	[end: bar]
+
+	# the IRQ the firmware connected the device to
+	[Irq: u32 device: 0;]
+		u32 value: 0;
+		call value is Read: device REG_INTERRUPT;
+	[end: value & 0xFF]
+
+	# let the device answer I/O ports and memory, and read and write memory itself (DMA)
+	[EnableBusMaster: u32 device: 0;]
+		u32 command: 0;
+		call command is Read: device REG_COMMAND;
+		# the status register shares the dword: writing zeros there leaves it alone
+		command is (command & 0xFFFF) | COMMAND_IO | COMMAND_MEMORY | COMMAND_BUS_MASTER;
+		call Write: device REG_COMMAND command;
+	[end]
+}

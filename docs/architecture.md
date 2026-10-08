@@ -14,7 +14,7 @@ library or the build. For the language itself, see [language.md](language.md).
 | `lib/x86_16/` | assembly library for 16-bit programs (uses the BIOS) |
 | `lib/x86_32/` | assembly library for 32-bit kernels: console, interrupts, panic screen, timer, keyboard, mouse, tasks |
 | `lib/x86_32_user/` | assembly library for user programs: system calls |
-| `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, text |
+| `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, text |
 | `tests/` | programs that boot in QEMU, with the output they must produce |
 | `samples/` | example programs, including PHI OS |
 | `docs/` | this documentation, and the tutorial's tested examples |
@@ -141,6 +141,8 @@ the bottom:
 | frames, paging, heap, lists | `lib/phi/memory/` | PHI |
 | FAT16 | `lib/phi/fs/fat16.phi` | PHI |
 | loading and running programs, system calls 16-30 | `lib/phi/proc/process.phi` | PHI |
+| PCI, the RTL8139 network card | `lib/phi/drivers/pci.phi`, `rtl8139.phi` | PHI |
+| ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, HTTP | `lib/phi/net/` | PHI |
 | shell and commands | `samples/os.rootfs/` | PHI, as user programs |
 
 Interrupts all go through one stub in `interrupts.asm`, which saves the registers and
@@ -176,7 +178,7 @@ A QEMU test is `NAME.phi` plus one of:
 - `NAME.contains`: lines that must appear (for output that changes, like panic addresses)
 - `NAME.errors`: the program must fail to compile with these messages
 
-and optionally `NAME.input` (keys and mouse movements, see [tests/README.md](../tests/README.md))
-and `NAME.rootfs/` (the disk). A test made only of `Library` classes runs twice, as a 16-bit
+and optionally `NAME.input` (keys and mouse movements, see [tests/README.md](../tests/README.md)),
+`NAME.rootfs/` (the disk) and `NAME.web/` (files served over HTTP while the test runs). A test made only of `Library` classes runs twice, as a 16-bit
 program and as a 32-bit kernel, against the same expected output, which keeps the two code
 generators in step.

@@ -1,0 +1,464 @@
+# TCP connections (the client side), for 32-bit kernels.
+#
+#   use net.tcp;
+#   int c: 0;
+#   call c is Tcp.Connect: address 80;          # a connection number, or -1
+#   int sent: 0;
+#   call sent is Tcp.Write: c 'hello' 5;        # bytes sent, or -1
+#   u8 buffer[1000];
+#   int got: 0;
+#   call got is Tcp.Read: c addr buffer 1000;   # bytes; 0 once the other side has
+#                                               # closed and everything is read; -1 on
+#                                               # a timeout or a reset
+#   call Tcp.Close: c;
+#
+# Up to MAX_CONNECTIONS at once. What arrives is kept in order in each connection's
+# 8 KB buffer until Read takes it; the window we advertise is the room left in it,
+# so the other side never sends more than fits. Write sends a segment at a time and
+# waits for it to be acknowledged, sending it again if it isn't. Segments that
+# arrive out of order are dropped (the other side sends them again).
+#
+# Tcp.Receive is called by Net.Poll for every TCP segment, so it, and what it calls
+# (SendSegment, SendReset), must never wait.
+
+use net.net;
+
+struct.TcpConnection
+{
+	u32 state;
+	u32 remote_ip;
+	u32 remote_port;
+	u32 local_port;
+	u32 send_next;              # the sequence number of the next byte we send
+	u32 send_unacked;           # the oldest byte not yet acknowledged
+	u32 receive_next;           # the next byte we expect
+	u32 remote_window;
+	u32 mss;                    # the largest segment the other side takes
+	u32 rx_start;               # where unread data starts in rx_buffer
+	u32 rx_count;               # how much unread data there is
+	u32 window_sent;            # the window our last segment advertised
+	bln remote_closed;          # a FIN came: no more data will arrive
+	bln reset;                  # the other side refused or dropped the connection
+	u8 rx_buffer[8192];
+}
+
+phi.Tcp:Kernel
+{
+	const int MAX_CONNECTIONS: 4;
+	const u32 BUFFER_SIZE: 8192;          # a power of 2
+	const u32 HEADER: 20;
+	const u32 DEFAULT_MSS: 536;
+	const u32 OUR_MSS: 1460;
+	const int RETRIES: 5;
+	const int RETRY_WAIT: 1000;           # ms before sending again
+	const u32 FIRST_PORT: 49152;
+
+	const u32 FIN: 0x01;
+	const u32 SYN: 0x02;
+	const u32 RST: 0x04;
+	const u32 PSH: 0x08;
+	const u32 ACK: 0x10;
+
+	const u32 CLOSED: 0;
+	const u32 SYN_SENT: 1;
+	const u32 OPEN: 2;                    # connected (the other side may have finished sending)
+
+	TcpConnection connections[MAX_CONNECTIONS];
+	int timeout: 10000;                   # how long Read waits for data, in ms
+	u32 next_port: 0;
+	u8 segment[1536];
+	u32 segments_received: 0;
+	u32 segments_dropped: 0;
+
+	# the segment Receive is looking at
+	u32 in_seq: 0;
+	u32 in_ack: 0;
+	u32 in_flags: 0;
+	u32 in_window: 0;
+	u32 in_header: 0;
+	ptr<u8> in_segment: 0;
+	ptr<u8> in_data: 0;
+	u32 in_size: 0;
+
+	# connect to a port; a connection number, or -1 if nobody answered (or refused)
+	[Connect: u32 to: 0; u32 port: 0;]
+		int handle: -1;
+		while int i: 0; i < MAX_CONNECTIONS and handle < 0; i++;
+			if connections:i.state is CLOSED
+				handle is i;
+			;;
+		;;
+
+		bln known: false;
+		if handle >= 0
+			call known is Net.Resolve: to;
+		;;
+
+		if known
+			ptr<TcpConnection> c: addr connections:handle;
+			u32 ticks: 0;
+			call ticks is OS.GetTicks;
+			c:0.remote_ip is to;
+			c:0.remote_port is port;
+			c:0.local_port is FIRST_PORT + ((ticks + next_port) & 0x3FFF);
+			next_port++ 7;
+			u32 first: (ticks << 12) ^ (c:0.local_port * 2654435761);
+			c:0.send_unacked is first;
+			c:0.send_next is first + 1;        # a SYN counts as one byte
+			c:0.receive_next is 0;
+			c:0.remote_window is 0;
+			c:0.mss is DEFAULT_MSS;
+			c:0.rx_start is 0;
+			c:0.rx_count is 0;
+			c:0.remote_closed is false;
+			c:0.reset is false;
+			c:0.state is SYN_SENT;
+
+			int tries: 0;
+			while c:0.state is SYN_SENT and c:0.reset is false and tries < RETRIES
+				call SendSegment: c first SYN 0 0;
+				call WaitFor: c SYN_SENT;
+				tries++;
+			;;
+			if c:0.state is not OPEN
+				c:0.state is CLOSED;
+				handle is -1;
+			;;
+		;;
+		else
+			handle is -1;
+		;;
+	[end: handle]
+
+	# poll until the connection leaves this state, or for RETRY_WAIT
+	[WaitFor: ptr<TcpConnection> c: 0; u32 state: 0;]
+		int start: 0;
+		call start is OS.GetTicks;
+		int now: start;
+		while c:0.state is state and c:0.reset is false and now - start < RETRY_WAIT
+			call Net.Wait;
+			call now is OS.GetTicks;
+		;;
+	[end]
+
+	# send data; the number of bytes sent, or -1 if the other side stopped answering
+	[Write: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
+		int result: -1;
+		if handle >= 0 and handle < MAX_CONNECTIONS
+			ptr<TcpConnection> c: addr connections:handle;
+			u32 done: 0;
+			bln failed: c:0.state is not OPEN;
+			while done < length and failed is false
+				u32 chunk: length - done;
+				if chunk > c:0.mss
+					chunk is c:0.mss;
+				;;
+				if c:0.remote_window > 0 and chunk > c:0.remote_window
+					chunk is c:0.remote_window;
+				;;
+				u32 sequence: c:0.send_next;
+				c:0.send_next++ chunk;
+
+				int tries: 0;
+				bln acked: false;
+				while acked is false and failed is false
+					call SendSegment: c sequence ACK | PSH data + done chunk;
+					int start: 0;
+					call start is OS.GetTicks;
+					int now: start;
+					while c:0.send_unacked is not c:0.send_next and c:0.reset is false and now - start < RETRY_WAIT
+						call Net.Wait;
+						call now is OS.GetTicks;
+					;;
+					acked is c:0.send_unacked is c:0.send_next;
+					tries++;
+					failed is c:0.reset or (acked is false and tries >= RETRIES);
+				;;
+				done++ chunk;
+			;;
+			if failed is false
+				result is done;
+			;;
+		;;
+	[end: result]
+
+	# read what has arrived (waiting up to timeout ms for something); the number of
+	# bytes, 0 if the other side has closed and everything is read, -1 on a timeout
+	# or a reset
+	[Read: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
+		int result: -1;
+		if handle >= 0 and handle < MAX_CONNECTIONS
+			ptr<TcpConnection> c: addr connections:handle;
+			int start: 0;
+			call start is OS.GetTicks;
+			int now: start;
+			while c:0.rx_count is 0 and c:0.remote_closed is false and c:0.reset is false and now - start < timeout
+				call Net.Wait;
+				call now is OS.GetTicks;
+			;;
+
+			if c:0.rx_count > 0
+				u32 n: c:0.rx_count;
+				if n > max
+					n is max;
+				;;
+				ptr<u8> ring: addr c:0.rx_buffer;
+				u32 at: c:0.rx_start;
+				while u32 i: 0; i < n; i++;
+					to:i is ring:at;
+					at is (at + 1) & (BUFFER_SIZE - 1);
+				;;
+				c:0.rx_start is at;
+				c:0.rx_count-- n;
+				result is n;
+
+				# we told the other side we had (almost) no room: say there is room again
+				if c:0.window_sent < OUR_MSS and c:0.state is OPEN and c:0.remote_closed is false
+					call SendSegment: c c:0.send_next ACK 0 0;
+				;;
+			;;
+			elif c:0.remote_closed and c:0.reset is false
+				result is 0;
+			;;
+		;;
+	[end: result]
+
+	# finish the connection (sending FIN and waiting a little for it to be
+	# acknowledged) and free its number
+	[Close: int handle: 0;]
+		if handle >= 0 and handle < MAX_CONNECTIONS
+			ptr<TcpConnection> c: addr connections:handle;
+			if c:0.state is OPEN and c:0.reset is false
+				u32 sequence: c:0.send_next;
+				c:0.send_next++;               # a FIN counts as one byte
+				int tries: 0;
+				while c:0.send_unacked is not c:0.send_next and c:0.reset is false and tries < 3
+					call SendSegment: c sequence FIN | ACK 0 0;
+					int start: 0;
+					call start is OS.GetTicks;
+					int now: start;
+					while c:0.send_unacked is not c:0.send_next and c:0.reset is false and now - start < RETRY_WAIT
+						call Net.Wait;
+						call now is OS.GetTicks;
+					;;
+					tries++;
+				;;
+			;;
+			c:0.state is CLOSED;
+		;;
+	[end]
+
+	# ---- arriving segments (called by Net.Poll; must not wait)
+
+	[Receive: u32 from: 0; ptr<u8> s: 0; u32 length: 0;]
+		segments_received++;
+		bln ok: length >= HEADER;
+		if ok
+			u32 sum: 0;
+			call sum is Net.PseudoSum: from Net.ip Net.PROTOCOL_TCP length;
+			call sum is Net.Checksum: s length sum;
+			in_header is (s:12 >> 4) * 4;
+			ok is sum is 0 and in_header >= HEADER and in_header <= length;
+		;;
+
+		if ok
+			u32 from_port: 0;
+			u32 to_port: 0;
+			call from_port is Net.Get16: s;
+			call to_port is Net.Get16: s + 2;
+			call in_seq is Net.Get32: s + 4;
+			call in_ack is Net.Get32: s + 8;
+			in_flags is s:13;
+			call in_window is Net.Get16: s + 14;
+			in_segment is s;
+			in_data is s + in_header;
+			in_size is length - in_header;
+
+			int found: -1;
+			while int i: 0; i < MAX_CONNECTIONS and found < 0; i++;
+				if connections:i.state is not CLOSED and connections:i.local_port is to_port
+					if connections:i.remote_port is from_port and connections:i.remote_ip is from
+						found is i;
+					;;
+				;;
+			;;
+
+			if found >= 0
+				call Arrive: addr connections:found;
+			;;
+			elif (in_flags & RST) is 0
+				call SendReset: from from_port to_port;
+			;;
+		;;
+		else
+			segments_dropped++;
+		;;
+	[end]
+
+	[Arrive: ptr<TcpConnection> c: 0;]
+		if (in_flags & RST) is not 0
+			# in SYN_SENT a reset only counts if it answers our SYN
+			if c:0.state is not SYN_SENT or ((in_flags & ACK) is not 0 and in_ack is c:0.send_next)
+				c:0.reset is true;
+			;;
+		;;
+		elif c:0.state is SYN_SENT
+			if (in_flags & (SYN | ACK)) is (SYN | ACK) and in_ack is c:0.send_next
+				c:0.receive_next is in_seq + 1;
+				c:0.send_unacked is in_ack;
+				c:0.remote_window is in_window;
+				call ReadOptions: c;
+				c:0.state is OPEN;
+				call SendSegment: c c:0.send_next ACK 0 0;
+			;;
+		;;
+		elif c:0.state is OPEN
+			if (in_flags & ACK) is not 0
+				u32 advance: in_ack - c:0.send_unacked;
+				u32 outstanding: c:0.send_next - c:0.send_unacked;
+				if advance > 0 and advance <= outstanding
+					c:0.send_unacked is in_ack;
+				;;
+				c:0.remote_window is in_window;
+			;;
+
+			# data, a FIN, or a SYN sent again because our ACK of it was lost
+			if in_size > 0 or (in_flags & (FIN | SYN)) is not 0
+				# skip whatever part of this we already have; a segment from further
+				# ahead (skip wraps around to a huge number) is dropped
+				u32 skip: c:0.receive_next - in_seq;
+				if skip <= in_size
+					u32 n: in_size - skip;
+					u32 room: BUFFER_SIZE - c:0.rx_count;
+					if n > room
+						n is room;
+					;;
+					ptr<u8> ring: addr c:0.rx_buffer;
+					u32 at: (c:0.rx_start + c:0.rx_count) & (BUFFER_SIZE - 1);
+					ptr<u8> data: in_data + skip;
+					while u32 i: 0; i < n; i++;
+						ring:at is data:i;
+						at is (at + 1) & (BUFFER_SIZE - 1);
+					;;
+					c:0.rx_count++ n;
+					c:0.receive_next++ n;
+
+					if (in_flags & FIN) is not 0 and skip + n is in_size and c:0.remote_closed is false
+						c:0.receive_next++;
+						c:0.remote_closed is true;
+					;;
+				;;
+				# acknowledge it (or, if it was out of order, say again what we expect)
+				call SendSegment: c c:0.send_next ACK 0 0;
+			;;
+		;;
+	[end]
+
+	# the largest segment size the other side asked for, from the SYN's options
+	[ReadOptions: ptr<TcpConnection> c: 0;]
+		u32 at: HEADER;
+		bln more: true;
+		while more and at < in_header
+			u32 kind: in_segment:at;
+			if kind is 0
+				more is false;
+			;;
+			elif kind is 1
+				at++;
+			;;
+			else
+				u32 size: in_segment:(at + 1);
+				if kind is 2 and size is 4
+					u32 mss: 0;
+					call mss is Net.Get16: in_segment + at + 2;
+					if mss > 0
+						c:0.mss is mss;
+					;;
+				;;
+				if size < 2
+					more is false;
+				;;
+				at++ size;
+			;;
+		;;
+		if c:0.mss > OUR_MSS
+			c:0.mss is OUR_MSS;
+		;;
+	[end]
+
+	# ---- sending (never waits)
+
+	[SendSegment: ptr<TcpConnection> c: 0; u32 sequence: 0; u32 flags: 0; ptr<u8> data: 0; u32 length: 0;]
+		ptr<u8> s: addr segment;
+		u32 header: HEADER;
+		if (flags & SYN) is not 0
+			header is HEADER + 4;              # room for our largest segment size
+		;;
+		u32 window: BUFFER_SIZE - c:0.rx_count;
+		c:0.window_sent is window;
+
+		call Net.Put16: s c:0.local_port;
+		call Net.Put16: s + 2 c:0.remote_port;
+		call Net.Put32: s + 4 sequence;
+		if (flags & ACK) is not 0
+			call Net.Put32: s + 8 c:0.receive_next;
+		;;
+		else
+			call Net.Put32: s + 8 0;
+		;;
+		s:12 is (header / 4) << 4;
+		s:13 is flags;
+		call Net.Put16: s + 14 window;
+		call Net.Put16: s + 16 0;
+		call Net.Put16: s + 18 0;
+		if (flags & SYN) is not 0
+			s:20 is 2;
+			s:21 is 4;
+			call Net.Put16: s + 22 OUR_MSS;
+		;;
+		while u32 i: 0; i < length; i++;
+			s:(header + i) is data:i;
+		;;
+
+		u32 sum: 0;
+		call sum is Net.PseudoSum: Net.ip c:0.remote_ip Net.PROTOCOL_TCP header + length;
+		call sum is Net.Checksum: s header + length sum;
+		call Net.Put16: s + 16 sum;
+		bln sent: false;
+		call sent is Net.SendIp: c:0.remote_ip Net.PROTOCOL_TCP s header + length;
+	[end]
+
+	# answer a segment that belongs to no connection, so the other side gives up on it
+	[SendReset: u32 to: 0; u32 to_port: 0; u32 from_port: 0;]
+		ptr<u8> s: addr segment;
+		call Net.Put16: s from_port;
+		call Net.Put16: s + 2 to_port;
+		if (in_flags & ACK) is not 0
+			call Net.Put32: s + 4 in_ack;
+			call Net.Put32: s + 8 0;
+			s:13 is RST;
+		;;
+		else
+			u32 ack: in_seq + in_size;
+			if (in_flags & SYN) is not 0
+				ack++;
+			;;
+			if (in_flags & FIN) is not 0
+				ack++;
+			;;
+			call Net.Put32: s + 4 0;
+			call Net.Put32: s + 8 ack;
+			s:13 is RST | ACK;
+		;;
+		s:12 is (HEADER / 4) << 4;
+		call Net.Put16: s + 14 0;
+		call Net.Put16: s + 16 0;
+		call Net.Put16: s + 18 0;
+		u32 sum: 0;
+		call sum is Net.PseudoSum: Net.ip to Net.PROTOCOL_TCP HEADER;
+		call sum is Net.Checksum: s HEADER sum;
+		call Net.Put16: s + 16 sum;
+		bln sent: false;
+		call sent is Net.SendIp: to Net.PROTOCOL_TCP s HEADER;
+	[end]
+}

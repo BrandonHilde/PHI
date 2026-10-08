@@ -108,7 +108,23 @@ namespace Phi.Compiler
             return withHeap;
         }
 
-        static string Key(SourceFile f) => f.Path.StartsWith(StandardLibrary) ? f.Path : Path.GetFullPath(f.Path);
+        static string Key(SourceFile f)
+        {
+            if (f.Path.StartsWith(StandardLibrary)) return f.Path;
+            string full = Path.GetFullPath(f.Path);
+
+            // a standard library file opened from the repository's lib/phi/ is the same file as
+            // its embedded copy, so library files that use each other aren't loaded twice
+            string slashed = full.Replace('\\', '/');
+            int at = slashed.LastIndexOf("/" + StandardLibrary, StringComparison.OrdinalIgnoreCase);
+            if (at >= 0)
+            {
+                string name = StandardLibrary + slashed[(at + 1 + StandardLibrary.Length)..];
+                using Stream? embedded = typeof(PhiCompiler).Assembly.GetManifestResourceStream(name) ?? FindResource(name);
+                if (embedded != null) return name;
+            }
+            return full;
+        }
 
         /// <summary>
         /// use a.b; is the file a/b.phi: next to the file that uses it, else next to the main

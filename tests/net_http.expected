@@ -1,0 +1,28 @@
+started: 1, by dhcp: 1
+address: 10.0.2.15
+ping the gateway: 1
+
+GET /: 198 bytes, status 200
+HTTP/1.0 200 OK
+Content-Type: text/html
+Content-Length: 114
+Connection: close
+
+<!doctype html>
+<html>
+<head><title>PHI</title></head>
+<body><p>Hello from the host, over TCP.</p></body>
+</html>
+
+body: <!doctype html>
+<html>
+<head><title>PHI</title></head>
+<body><p>Hello from the host, over TCP.</p></body>
+</html>
+
+GET /big.txt: 55087 bytes, status 200, body 55000 bytes
+lines: 1000, out of order: 0, byte sum: 4850500
+GET /missing.html: status 404
+https: -1 https needs TLS, which PHI does not have yet
+a closed port: -1 could not connect
+done

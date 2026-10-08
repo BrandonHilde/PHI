@@ -10,6 +10,26 @@ shell with commands and a game, all running as user programs. Only the lowest la
 interrupt stubs, task switching and the console) is assembly; the memory manager, file
 system, process loader, drivers like the disk and clock, and the whole userland are PHI.
 
+<h3>The network</h3>
+
+`phi run samples/web.phi` boots a kernel that fetches web pages. The network card driver
+(RTL8139), ARP, IP, UDP, DHCP, DNS, TCP and HTTP are all written in PHI:
+
+```phi
+use net.http;
+
+phi.Fetch:Kernel
+{
+	ptr<u8> page: new u8[65536];
+	bln ok: false;
+	call ok is Net.Start;
+
+	int size: 0;
+	call size is Http.Get: 'http://example.com/' page 65536;
+	log page;     # HTTP/1.1 200 OK ... <!doctype html><html> ...
+}
+```
+
 ![The PHI OS shell](docs/images/phi-os-shell.png)
 
 ```
@@ -77,6 +97,7 @@ phi.Count:Program
        phi run samples/kernel.phi        a 32-bit protected-mode kernel
        phi run samples/os.phi            PHI OS: boots into a shell (help lists the commands)
        phi run samples/terminal.phi      a simpler kernel with built-in commands (ls, cat, run hello.bin ...)
+       phi run samples/web.phi           fetch web pages: type a URL, see the raw HTML
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output
@@ -106,5 +127,5 @@ kernels and user programs, and PHI OS ties them together. Next, roughly in order
 2. A heap for user programs, so `new` works there too
 3. Growable strings
 4. Framebuffer graphics in 32-bit kernels
-5. Later: 64-bit, an ARM backend, networking, C compatibility, and rewriting the compiler
-   in PHI (see [Plan.md](./Plan.md#later))
+5. Later: 64-bit, an ARM backend, TLS (for https), C compatibility, and rewriting the
+   compiler in PHI (see [Plan.md](./Plan.md#later))

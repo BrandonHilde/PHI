@@ -1,0 +1,206 @@
+# Web requests (HTTP) for 32-bit kernels.
+#
+#   use net.http;
+#   ptr<u8> page: new u8[65536];
+#   bln ok: false;
+#   call ok is Net.Start;
+#   int size: 0;
+#   call size is Http.Get: 'http://example.com/' page 65536;
+#   if size >= 0
+#       log page;                         # the raw response: status line, headers, then the page
+#       log Http.status;                  # 200
+#       ptr<u8> body: page + Http.body;
+#       log body;                         # just the page
+#   ;;
+#   else
+#       log Http.error;
+#   ;;
+#
+# Requests are HTTP/1.0, so the server sends the page as it is (never in chunks) and
+# closes the connection at its end. Only http:// works: https:// needs TLS.
+
+use net.dns;
+use net.tcp;
+use user.text;
+
+phi.Http:Kernel
+{
+	const u32 DEFAULT_PORT: 80;
+	const u32 HOST_SIZE: 256;
+	const u32 PATH_SIZE: 1024;
+	const u32 REQUEST_SIZE: 1536;
+
+	int status: 0;                        # from the status line, like 200 or 404
+	u32 body: 0;                          # where the body starts in the buffer
+	str error: [60];                      # why Get returned -1
+
+	u8 host[HOST_SIZE];
+	u8 path[PATH_SIZE];
+	u8 request[REQUEST_SIZE];
+	u32 port: 0;
+
+	# fetch a URL into buffer (zero-terminated, so up to max - 1 bytes); the size of
+	# the response, or -1 (and error says why)
+	[Get: ptr<u8> url: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		int result: -1;
+		status is 0;
+		body is 0;
+		error is '';
+
+		bln ok: false;
+		call ok is ParseUrl: url;
+
+		u32 address: 0;
+		if ok
+			call address is Dns.Resolve: addr host;
+			if address is 0
+				error is 'could not find the address of the host';
+				ok is false;
+			;;
+		;;
+
+		int connection: -1;
+		if ok
+			call connection is Tcp.Connect: address port;
+			if connection < 0
+				error is 'could not connect';
+				ok is false;
+			;;
+		;;
+
+		if ok
+			u32 length: 0;
+			call length is BuildRequest;
+			int sent: 0;
+			call sent is Tcp.Write: connection addr request length;
+			if sent < 0
+				error is 'the server stopped answering';
+				ok is false;
+			;;
+		;;
+
+		if ok
+			u32 received: 0;
+			bln reading: max > 1;
+			while reading
+				int got: 0;
+				call got is Tcp.Read: connection buffer + received max - 1 - received;
+				if got > 0
+					received++ got;
+					reading is received < max - 1;
+				;;
+				else
+					if got < 0 and received is 0
+						error is 'no answer from the server';
+						ok is false;
+					;;
+					reading is false;
+				;;
+			;;
+			if max > 0
+				buffer:received is 0;
+			;;
+			if ok
+				result is received;
+				call ReadStatus: buffer received;
+			;;
+		;;
+
+		if connection >= 0
+			call Tcp.Close: connection;
+		;;
+	[end: result]
+
+	# split 'http://host:port/path' into host, port and path; false if it can't be used
+	[ParseUrl: ptr<u8> url: 0;]
+		bln ok: true;
+		ptr<u8> at: 0;
+		call at is Text.SkipSpaces: url;
+		bln secure: false;
+		bln plain: false;
+		call secure is Text.StartsWith: at 'https://';
+		call plain is Text.StartsWith: at 'http://';
+		if secure
+			error is 'https needs TLS, which PHI does not have yet';
+			ok is false;
+		;;
+		elif plain
+			at++ 7;
+		;;
+
+		u32 n: 0;
+		while ok and at:0 is not 0 and at:0 is not ':' and at:0 is not '/' and at:0 is not ' ' and n < HOST_SIZE - 1
+			host:n is at:0;
+			n++;
+			at++;
+		;;
+		host:n is 0;
+		if n is 0 and ok
+			error is 'the URL has no host';
+			ok is false;
+		;;
+
+		port is DEFAULT_PORT;
+		if at:0 is ':' and ok
+			at++;
+			int number: 0;
+			call number is Text.ToNumber: at;
+			port is number;
+			while at:0 >= '0' and at:0 <= '9'
+				at++;
+			;;
+			if port is 0 or port > 65535
+				error is 'the URL has a bad port';
+				ok is false;
+			;;
+		;;
+
+		n is 0;
+		if at:0 is not '/'
+			path:0 is '/';
+			n is 1;
+		;;
+		while at:0 is not 0 and at:0 is not ' ' and n < PATH_SIZE - 1
+			path:n is at:0;
+			n++;
+			at++;
+		;;
+		path:n is 0;
+	[end: ok]
+
+	[BuildRequest]
+		ptr<u8> r: addr request;
+		r:0 is 0;
+		call Text.Append: r 'GET ' REQUEST_SIZE;
+		call Text.Append: r addr path REQUEST_SIZE;
+		call Text.Append: r ' HTTP/1.0\r\nHost: ' REQUEST_SIZE;
+		call Text.Append: r addr host REQUEST_SIZE;
+		if port is not DEFAULT_PORT
+			str number: port;
+			call Text.Append: r ':' REQUEST_SIZE;
+			call Text.Append: r number REQUEST_SIZE;
+		;;
+		call Text.Append: r '\r\nUser-Agent: PHI\r\nAccept: */*\r\nConnection: close\r\n\r\n' REQUEST_SIZE;
+		int length: 0;
+		call length is Text.Length: r;
+	[end: length]
+
+	# the status code from 'HTTP/1.1 200 OK', and where the headers end
+	[ReadStatus: ptr<u8> response: 0; u32 length: 0;]
+		bln http: false;
+		call http is Text.StartsWith: response 'HTTP/';
+		if http
+			ptr<u8> code: 0;
+			call code is Text.AfterWord: response;
+			call status is Text.ToNumber: code;
+		;;
+		body is length;
+		bln looking: true;
+		while u32 i: 0; i + 3 < length and looking; i++;
+			if response:i is '\r' and response:(i + 1) is '\n' and response:(i + 2) is '\r' and response:(i + 3) is '\n'
+				body is i + 4;
+				looking is false;
+			;;
+		;;
+	[end]
+}

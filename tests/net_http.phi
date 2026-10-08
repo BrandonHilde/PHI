@@ -1,0 +1,77 @@
+# The network stack against a web server on the host: phi test serves net_http.web/
+# at TestWeb.url, which QEMU's network reaches through the gateway (10.0.2.2).
+use net.http;
+
+phi.NetHttp:Kernel
+{
+	const u32 PAGE_SIZE: 65536;
+	ptr<u8> page: new u8[PAGE_SIZE];
+	u8 url[100];
+	int size: 0;
+
+	bln ok: false;
+	call ok is Net.Start;
+	log 'started: ' ok ', by dhcp: ' Net.dhcp_ok '\n';
+	log 'address: ';
+	call Net.PrintIp: Net.ip;
+	log '\n';
+
+	int ms: 0;
+	call ms is Net.Ping: Net.gateway;
+	log 'ping the gateway: ' (ms >= 0) '\n';
+
+	# a small page: the whole raw response
+	call Address: '/';
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log '\nGET /: ' size ' bytes, status ' Http.status '\n';
+	log page '\n';
+	ptr<u8> body: page + Http.body;
+	log 'body: ' body '\n';
+
+	# 55000 bytes: many segments, more than the 8 KB receive buffer holds at once
+	call Address: '/big.txt';
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log 'GET /big.txt: ' size ' bytes, status ' Http.status ', body ' (size - Http.body) ' bytes\n';
+	call CheckLines: Http.body size;
+
+	call Address: '/missing.html';
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log 'GET /missing.html: status ' Http.status '\n';
+
+	call size is Http.Get: 'https://example.com/' page PAGE_SIZE;
+	log 'https: ' size ' ' Http.error '\n';
+
+	call size is Http.Get: 'http://10.0.2.2:1/' page PAGE_SIZE;
+	log 'a closed port: ' size ' ' Http.error '\n';
+
+	log 'done\n';
+	exit 0;
+
+	[Address: ptr<u8> path: 0;]
+		url:0 is 0;
+		call Text.Append: addr url TestWeb.url url.len;
+		call Text.Append: addr url path url.len;
+	[end]
+
+	# every line is 'line NNNN: ...', numbered in order, so a lost, repeated or
+	# misplaced piece shows up; the byte sum catches the rest
+	[CheckLines: u32 start: 0; u32 stop: 0;]
+		u32 sum: 0;
+		int expected: 0;
+		int wrong: 0;
+		bln line_start: true;
+		while u32 i: start; i < stop; i++;
+			if line_start
+				int number: 0;
+				call number is Text.ToNumber: page + i + 5;
+				if number is not expected
+					wrong++;
+				;;
+				expected++;
+			;;
+			sum++ page:i;
+			line_start is page:i is '\n';
+		;;
+		log 'lines: ' expected ', out of order: ' wrong ', byte sum: ' sum '\n';
+	[end]
+}

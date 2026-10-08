@@ -22,10 +22,15 @@ namespace Phi.Cli
         // Writing value v to port 0xF4 makes QEMU exit with code (v << 1) | 1.
         public const int DebugExitPort = 0xF4;
 
+        // The network: an RTL8139 card (drivers.rtl8139) on QEMU's user-mode network, which
+        // gives the guest 10.0.2.15, a gateway at 10.0.2.2 (that is also the host's 127.0.0.1)
+        // and a DNS server at 10.0.2.3. romfile= leaves out the card's boot ROM (iPXE).
         static List<string> MachineArgs(string image) => new()
         {
             "-drive", $"file={image},format=raw,if=ide,index=0",
             "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
+            "-netdev", "user,id=net0",
+            "-device", "rtl8139,netdev=net0,romfile=",
             "-no-reboot", // a triple fault stops QEMU instead of looping forever
         };
 

@@ -1,0 +1,52 @@
+# Web pages from a 32-bit kernel. The network card driver, DHCP, DNS, TCP and HTTP
+# are all written in PHI (lib/phi/drivers/rtl8139.phi and lib/phi/net/).
+#
+#   phi run samples/web.phi
+#
+# Type a URL and the kernel prints the raw response: the status line, the headers
+# and the page's HTML. An empty line fetches http://example.com/. Only http://
+# works (https:// needs TLS).
+
+use net.http;
+
+phi.Web:Kernel
+{
+	const u32 PAGE_SIZE: 262144;
+	ptr<u8> page: new u8[PAGE_SIZE];
+	str url: [200];
+
+	log 'PHI web\n';
+	bln ok: false;
+	call ok is Net.Start;
+	if ok is false
+		log 'there is no network card (PHI has a driver for the RTL8139)\n';
+	;;
+	else
+		log 'address ';
+		call Net.PrintIp: Net.ip;
+		log ', gateway ';
+		call Net.PrintIp: Net.gateway;
+		log ', DNS server ';
+		call Net.PrintIp: Net.dns;
+		log '\n';
+	;;
+
+	while ok
+		log '\nurl: ';
+		ask url;
+		log '\n';
+		if url.len is 0
+			url is 'http://example.com/';
+		;;
+
+		int size: 0;
+		call size is Http.Get: url page PAGE_SIZE;
+		if size < 0
+			log 'error: ' Http.error '\n';
+		;;
+		else
+			log page '\n';
+			log '[' size ' bytes, status ' Http.status ']\n';
+		;;
+	;;
+}

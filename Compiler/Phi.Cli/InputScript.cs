@@ -25,6 +25,12 @@ namespace Phi.Cli
             [' '] = "spc", ['.'] = "dot", [','] = "comma", ['-'] = "minus", ['='] = "equal",
             ['/'] = "slash", [';'] = "semicolon", ['\''] = "apostrophe", ['['] = "bracket_left",
             [']'] = "bracket_right", ['\\'] = "backslash", ['`'] = "grave_accent",
+            // symbols typed with Shift (on a US keyboard)
+            [':'] = "shift-semicolon", ['?'] = "shift-slash", ['_'] = "shift-minus", ['+'] = "shift-equal",
+            ['!'] = "shift-1", ['@'] = "shift-2", ['#'] = "shift-3", ['$'] = "shift-4", ['%'] = "shift-5",
+            ['^'] = "shift-6", ['&'] = "shift-7", ['*'] = "shift-8", ['('] = "shift-9", [')'] = "shift-0",
+            ['"'] = "shift-apostrophe", ['<'] = "shift-comma", ['>'] = "shift-dot", ['~'] = "shift-grave_accent",
+            ['{'] = "shift-bracket_left", ['}'] = "shift-bracket_right", ['|'] = "shift-backslash",
         };
 
         /// <returns>null when every line ran, otherwise what went wrong</returns>

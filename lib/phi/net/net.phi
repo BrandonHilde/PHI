@@ -1,0 +1,559 @@
+# Networking for 32-bit kernels: Ethernet, ARP, IPv4, ICMP (ping) and UDP, on the
+# RTL8139 card. TCP is in net.tcp, DNS in net.dns, DHCP in net.dhcp and web
+# requests in net.http; using any of them brings in the rest.
+#
+#   use net.net;
+#   bln ok: false;
+#   call ok is Net.Start;               # finds the card and gets an address by DHCP
+#   call Net.PrintIp: Net.ip;           # 10.0.2.15 on QEMU's network
+#   int ms: 0;
+#   call ms is Net.Ping: Net.gateway;   # round trip in ms, or -1
+#
+# Addresses are u32s, with the first number in the top byte: 10.0.2.15 is 0x0A00020F.
+#
+# Nothing here uses interrupts: Poll handles every frame the card has received, and
+# whatever waits (Resolve, WaitUdp, Ping, and TCP's Connect, Read, Write and Close)
+# calls Wait, which polls and then sleeps for a millisecond. Methods have one copy
+# of their variables, so the code that handles arriving frames (HandleArp, HandleIp
+# and what they call, like Tcp.Receive) must never call anything that waits.
+
+use drivers.rtl8139;
+use net.dhcp;
+use net.tcp;
+
+phi.Net:Kernel
+{
+	const u32 ETHERNET_HEADER: 14;
+	const u32 IP_HEADER: 20;
+	const u32 UDP_HEADER: 8;
+	const u32 FRAME_SIZE: 1536;
+	const u32 MTU: 1500;                  # the most an IP packet can hold, headers included
+
+	const u32 TYPE_IP: 0x0800;
+	const u32 TYPE_ARP: 0x0806;
+	const u32 PROTOCOL_ICMP: 1;
+	const u32 PROTOCOL_TCP: 6;
+	const u32 PROTOCOL_UDP: 17;
+	const u32 BROADCAST: 0xFFFFFFFF;
+
+	const u32 ARP_REQUEST: 1;
+	const u32 ARP_REPLY: 2;
+	const u32 ARP_ENTRIES: 8;
+	const int ARP_TRIES: 3;
+	const int ARP_WAIT: 500;              # ms per try
+
+	# QEMU's user network, used until DHCP says otherwise
+	const u32 QEMU_IP: 0x0A00020F;        # 10.0.2.15
+	const u32 QEMU_GATEWAY: 0x0A000202;   # 10.0.2.2, which is also the host computer
+	const u32 QEMU_DNS: 0x0A000203;       # 10.0.2.3
+
+	u32 ip: 0;
+	u32 netmask: 0xFFFFFF00;
+	u32 gateway: QEMU_GATEWAY;
+	u32 dns: QEMU_DNS;
+	bln started: false;
+	bln dhcp_ok: false;                   # false: Start fell back to QEMU's addresses
+	u32 packets_received: 0;
+	u32 packets_sent: 0;
+
+	u8 in_frame[FRAME_SIZE];
+	u8 out_frame[FRAME_SIZE];
+	u32 ip_id: 1;
+
+	# addresses we know the Ethernet address of
+	u32 arp_ip[ARP_ENTRIES];
+	u8 arp_mac[ARP_ENTRIES * 6];
+	u32 arp_next: 0;
+	u8 no_mac[6];
+
+	# UDP: one port at a time can wait for a datagram (Listen, then WaitUdp)
+	u32 udp_port: 0;
+	bln udp_ready: false;
+	u8 udp_data[MTU];
+	u32 udp_length: 0;
+	u32 udp_from: 0;
+	u32 udp_from_port: 0;
+	u8 udp_out[MTU];
+
+	# ICMP
+	u8 icmp_out[MTU];
+	u32 ping_id: 0x5048;
+	u32 ping_sequence: 0;
+	bln ping_replied: false;
+
+	# turn the card on and get an address; false if there is no card
+	[Start]
+		if started is false
+			call started is Rtl8139.Start;
+			if started
+				ip is 0;
+				call dhcp_ok is Dhcp.Configure;
+				if dhcp_ok is false
+					ip is QEMU_IP;
+					netmask is 0xFFFFFF00;
+					gateway is QEMU_GATEWAY;
+					dns is QEMU_DNS;
+				;;
+			;;
+		;;
+	[end: started]
+
+	# set the addresses yourself instead of using DHCP
+	[Configure: u32 address: 0; u32 mask: 0; u32 router: 0; u32 name_server: 0;]
+		ip is address;
+		netmask is mask;
+		gateway is router;
+		dns is name_server;
+	[end]
+
+	# ---- waiting
+
+	# handle every frame the card has received; returns how many there were
+	[Poll]
+		u32 count: 0;
+		u32 length: 1;
+		while length > 0
+			call length is Rtl8139.Receive: addr in_frame FRAME_SIZE;
+			if length >= ETHERNET_HEADER
+				count++;
+				packets_received++;
+				u32 type: 0;
+				call type is Get16: addr in_frame + 12;
+				if type is TYPE_ARP
+					call HandleArp: length;
+				;;
+				elif type is TYPE_IP
+					call HandleIp: length;
+				;;
+			;;
+		;;
+	[end: count]
+
+	# poll, and if nothing came, sleep until the next timer tick (1 ms)
+	[Wait]
+		u32 got: 0;
+		call got is Poll;
+		if got is 0
+			call OS.Sleep: 1;
+		;;
+	[end]
+
+	# ---- ARP: finding the Ethernet address that goes with an IP address
+
+	# where a packet for this address goes first: the address itself, or the gateway
+	[NextHop: u32 to: 0;]
+		u32 hop: to;
+		if to is not BROADCAST and (to & netmask) is not (ip & netmask)
+			hop is gateway;
+		;;
+	[end: hop]
+
+	# the ARP table entry for an address, or -1
+	[FindArp: u32 address: 0;]
+		int found: -1;
+		while u32 i: 0; i < ARP_ENTRIES and found < 0; i++;
+			if arp_ip:i is address and address is not 0
+				found is i;
+			;;
+		;;
+	[end: found]
+
+	[Remember: u32 address: 0; ptr<u8> mac: 0;]
+		int entry: 0;
+		call entry is FindArp: address;
+		if entry < 0
+			entry is arp_next;
+			arp_next is (arp_next + 1) % ARP_ENTRIES;
+		;;
+		arp_ip:entry is address;
+		while u32 i: 0; i < 6; i++;
+			arp_mac:(entry * 6 + i) is mac:i;
+		;;
+	[end]
+
+	# make sure we know where to send packets for this address (asking with ARP and
+	# waiting if we don't yet); false if nobody answered
+	[Resolve: u32 to: 0;]
+		u32 hop: 0;
+		call hop is NextHop: to;
+		int entry: 0;
+		call entry is FindArp: hop;
+		if to is BROADCAST
+			entry is 0;
+		;;
+		int tries: 0;
+		while entry < 0 and tries < ARP_TRIES
+			call SendArp: ARP_REQUEST hop addr no_mac;
+			int start: 0;
+			call start is OS.GetTicks;
+			int now: start;
+			while entry < 0 and now - start < ARP_WAIT
+				call Wait;
+				call entry is FindArp: hop;
+				call now is OS.GetTicks;
+			;;
+			tries++;
+		;;
+	[end: entry >= 0]
+
+	[SendArp: u32 operation: 0; u32 target: 0; ptr<u8> target_mac: 0;]
+		ptr<u8> f: addr out_frame;
+		while u32 i: 0; i < 6; i++;
+			if operation is ARP_REQUEST
+				f:i is 0xFF;
+			;;
+			else
+				f:i is target_mac:i;
+			;;
+			f:(6 + i) is Rtl8139.mac:i;
+		;;
+		call Put16: f + 12 TYPE_ARP;
+
+		ptr<u8> a: f + ETHERNET_HEADER;
+		call Put16: a 1;                      # Ethernet
+		call Put16: a + 2 TYPE_IP;
+		a:4 is 6;
+		a:5 is 4;
+		call Put16: a + 6 operation;
+		while u32 i: 0; i < 6; i++;
+			a:(8 + i) is Rtl8139.mac:i;
+			a:(18 + i) is target_mac:i;
+		;;
+		call Put32: a + 14 ip;
+		call Put32: a + 24 target;
+
+		bln sent: false;
+		call sent is Rtl8139.Send: f ETHERNET_HEADER + 28;
+		packets_sent++;
+	[end]
+
+	[HandleArp: u32 length: 0;]
+		ptr<u8> a: addr in_frame + ETHERNET_HEADER;
+		if length >= ETHERNET_HEADER + 28
+			u32 hardware: 0;
+			u32 protocol: 0;
+			call hardware is Get16: a;
+			call protocol is Get16: a + 2;
+			if hardware is 1 and protocol is TYPE_IP
+				u32 operation: 0;
+				u32 sender: 0;
+				u32 target: 0;
+				call operation is Get16: a + 6;
+				call sender is Get32: a + 14;
+				call target is Get32: a + 24;
+				if sender is not 0
+					call Remember: sender a + 8;
+				;;
+				if operation is ARP_REQUEST and target is ip and ip is not 0
+					call SendArp: ARP_REPLY sender a + 8;
+				;;
+			;;
+		;;
+	[end]
+
+	# ---- IPv4
+
+	# send an IP packet; false if the next hop's Ethernet address isn't known yet (an
+	# ARP request goes out, so trying again soon works) or the packet is too big.
+	# This never waits, so the code that handles arriving frames may use it.
+	[SendIp: u32 to: 0; u32 protocol: 0; ptr<u8> data: 0; u32 length: 0;]
+		bln sent: false;
+		u32 hop: 0;
+		call hop is NextHop: to;
+		int entry: 0;
+		call entry is FindArp: hop;
+
+		if length + IP_HEADER > MTU
+			sent is false;
+		;;
+		elif entry < 0 and to is not BROADCAST
+			call SendArp: ARP_REQUEST hop addr no_mac;
+		;;
+		else
+			ptr<u8> f: addr out_frame;
+			while u32 i: 0; i < 6; i++;
+				if to is BROADCAST
+					f:i is 0xFF;
+				;;
+				else
+					f:i is arp_mac:(entry * 6 + i);
+				;;
+				f:(6 + i) is Rtl8139.mac:i;
+			;;
+			call Put16: f + 12 TYPE_IP;
+
+			ptr<u8> h: f + ETHERNET_HEADER;
+			h:0 is 0x45;                      # version 4, a 20-byte header
+			h:1 is 0;
+			call Put16: h + 2 IP_HEADER + length;
+			call Put16: h + 4 ip_id;
+			ip_id++;
+			call Put16: h + 6 0x4000;         # don't fragment
+			h:8 is 64;                        # time to live
+			h:9 is protocol;
+			call Put16: h + 10 0;
+			call Put32: h + 12 ip;
+			call Put32: h + 16 to;
+			u32 sum: 0;
+			call sum is Checksum: h IP_HEADER 0;
+			call Put16: h + 10 sum;
+
+			ptr<u8> body: h + IP_HEADER;
+			while u32 i: 0; i < length; i++;
+				body:i is data:i;
+			;;
+			call sent is Rtl8139.Send: f ETHERNET_HEADER + IP_HEADER + length;
+			packets_sent++;
+		;;
+	[end: sent]
+
+	[HandleIp: u32 length: 0;]
+		ptr<u8> h: addr in_frame + ETHERNET_HEADER;
+		u32 header: (h:0 & 0x0F) * 4;
+		u32 total: 0;
+		u32 fragment: 0;
+		u32 from: 0;
+		u32 to: 0;
+		call total is Get16: h + 2;
+		call fragment is Get16: h + 6;
+		call from is Get32: h + 12;
+		call to is Get32: h + 16;
+
+		bln ok: (h:0 >> 4) is 4 and header >= IP_HEADER and total >= header;
+		ok is ok and total <= length - ETHERNET_HEADER;
+		ok is ok and (fragment & 0x3FFF) is 0;   # pieces of a fragmented packet aren't put back together
+		# for us, a broadcast, or anything while we don't have an address yet (DHCP)
+		ok is ok and (to is ip or to is BROADCAST or to is (ip | ~netmask) or ip is 0);
+
+		if ok
+			ptr<u8> payload: h + header;
+			u32 size: total - header;
+			if h:9 is PROTOCOL_ICMP
+				call HandleIcmp: from payload size;
+			;;
+			elif h:9 is PROTOCOL_UDP
+				call HandleUdp: from payload size;
+			;;
+			elif h:9 is PROTOCOL_TCP
+				call Tcp.Receive: from payload size;
+			;;
+		;;
+	[end]
+
+	# ---- ICMP: answering pings, and sending them
+
+	[HandleIcmp: u32 from: 0; ptr<u8> p: 0; u32 size: 0;]
+		if size >= 8
+			if p:0 is 8 and size <= MTU - IP_HEADER
+				# an echo request: send the same data back as a reply
+				while u32 i: 0; i < size; i++;
+					icmp_out:i is p:i;
+				;;
+				icmp_out:0 is 0;
+				call Put16: addr icmp_out + 2 0;
+				u32 sum: 0;
+				call sum is Checksum: addr icmp_out size 0;
+				call Put16: addr icmp_out + 2 sum;
+				bln sent: false;
+				call sent is SendIp: from PROTOCOL_ICMP addr icmp_out size;
+			;;
+			elif p:0 is 0
+				u32 id: 0;
+				u32 sequence: 0;
+				call id is Get16: p + 4;
+				call sequence is Get16: p + 6;
+				if id is ping_id and sequence is ping_sequence
+					ping_replied is true;
+				;;
+			;;
+		;;
+	[end]
+
+	# send a ping; the round trip in milliseconds, or -1 if no reply came in time
+	[Ping: u32 to: 0; int timeout: 1000;]
+		int result: -1;
+		bln known: false;
+		call known is Resolve: to;
+		if known
+			ping_sequence++;
+			ping_replied is false;
+			ptr<u8> p: addr icmp_out;
+			p:0 is 8;                         # echo request
+			p:1 is 0;
+			call Put16: p + 2 0;
+			call Put16: p + 4 ping_id;
+			call Put16: p + 6 ping_sequence;
+			str message: 'PHI ping 0123456789abcdefghijklm';
+			while u32 i: 0; i < 32; i++;
+				p:(8 + i) is message:i;
+			;;
+			u32 sum: 0;
+			call sum is Checksum: p 40 0;
+			call Put16: p + 2 sum;
+
+			int start: 0;
+			call start is OS.GetTicks;
+			bln sent: false;
+			call sent is SendIp: to PROTOCOL_ICMP p 40;
+			int now: start;
+			while ping_replied is false and now - start < timeout
+				call Wait;
+				call now is OS.GetTicks;
+			;;
+			if ping_replied
+				result is now - start;
+			;;
+		;;
+	[end: result]
+
+	# ---- UDP
+
+	# send a datagram (waiting to learn where to send it, if need be)
+	[SendUdp: u32 to: 0; u32 from_port: 0; u32 to_port: 0; ptr<u8> data: 0; u32 length: 0;]
+		bln sent: false;
+		bln known: false;
+		call known is Resolve: to;
+		if known and length <= MTU - IP_HEADER - UDP_HEADER
+			ptr<u8> u: addr udp_out;
+			call Put16: u from_port;
+			call Put16: u + 2 to_port;
+			call Put16: u + 4 UDP_HEADER + length;
+			call Put16: u + 6 0;
+			while u32 i: 0; i < length; i++;
+				u:(UDP_HEADER + i) is data:i;
+			;;
+			u32 sum: 0;
+			call sum is PseudoSum: ip to PROTOCOL_UDP UDP_HEADER + length;
+			call sum is Checksum: u UDP_HEADER + length sum;
+			if sum is 0
+				sum is 0xFFFF;                # 0 would mean "no checksum"
+			;;
+			call Put16: u + 6 sum;
+			call sent is SendIp: to PROTOCOL_UDP u UDP_HEADER + length;
+		;;
+	[end: sent]
+
+	# wait for datagrams sent to this port (0 stops); the next one goes to udp_data
+	[Listen: u32 port: 0;]
+		udp_port is port;
+		udp_ready is false;
+	[end]
+
+	# wait for a datagram on the Listen port; its length (in udp_data), or -1
+	[WaitUdp: int timeout: 1000;]
+		int start: 0;
+		call start is OS.GetTicks;
+		int now: start;
+		while udp_ready is false and now - start < timeout
+			call Wait;
+			call now is OS.GetTicks;
+		;;
+		int result: -1;
+		if udp_ready
+			result is udp_length;
+			udp_ready is false;
+		;;
+	[end: result]
+
+	[HandleUdp: u32 from: 0; ptr<u8> p: 0; u32 size: 0;]
+		if size >= UDP_HEADER and udp_port is not 0 and udp_ready is false
+			u32 to_port: 0;
+			call to_port is Get16: p + 2;
+			if to_port is udp_port
+				u32 length: 0;
+				call length is Get16: p + 4;
+				if length > size or length < UDP_HEADER
+					length is size;
+				;;
+				length-- UDP_HEADER;
+				while u32 i: 0; i < length; i++;
+					udp_data:i is p:(UDP_HEADER + i);
+				;;
+				udp_length is length;
+				udp_from is from;
+				call udp_from_port is Get16: p;
+				udp_ready is true;
+			;;
+		;;
+	[end]
+
+	# ---- helpers
+
+	# the Internet checksum of length bytes, starting from sum (for a pseudo-header);
+	# a packet whose checksum field is right gives 0
+	[Checksum: ptr<u8> data: 0; u32 length: 0; u32 sum: 0;]
+		u32 i: 0;
+		while i + 1 < length
+			sum++ (data:i << 8) | data:(i + 1);
+			i++ 2;
+		;;
+		if i < length
+			sum++ data:i << 8;
+		;;
+		while (sum >> 16) is not 0
+			sum is (sum & 0xFFFF) + (sum >> 16);
+		;;
+	[end: ~sum & 0xFFFF]
+
+	# the part of a TCP or UDP checksum that comes from the IP header
+	[PseudoSum: u32 from: 0; u32 to: 0; u32 protocol: 0; u32 length: 0;]
+	[end: (from >> 16) + (from & 0xFFFF) + (to >> 16) + (to & 0xFFFF) + protocol + length]
+
+	# numbers in packets are big-endian: the most significant byte first
+	[Get16: ptr<u8> p: 0;]
+	[end: (p:0 << 8) | p:1]
+
+	[Get32: ptr<u8> p: 0;]
+		u32 value: (p:0 << 24) | (p:1 << 16) | (p:2 << 8) | p:3;
+	[end: value]
+
+	[Put16: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 8;
+		p:1 is value;
+	[end]
+
+	[Put32: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 24;
+		p:1 is value >> 16;
+		p:2 is value >> 8;
+		p:3 is value;
+	[end]
+
+	# 'a.b.c.d' as an address; 0 if the text isn't one
+	[ParseIp: ptr<u8> text: 0;]
+		u32 address: 0;
+		u32 part: 0;
+		u32 digits: 0;
+		u32 parts: 0;
+		bln ok: true;
+		u32 i: 0;
+		while ok and text:i is not 0
+			u8 c: text:i;
+			if c >= '0' and c <= '9'
+				part is part * 10 + (c - '0');
+				digits++;
+				ok is part <= 255 and digits <= 3;
+			;;
+			elif c is '.' and digits > 0 and parts < 3
+				address is (address << 8) | part;
+				parts++;
+				part is 0;
+				digits is 0;
+			;;
+			else
+				ok is false;
+			;;
+			i++;
+		;;
+		if ok and parts is 3 and digits > 0
+			address is (address << 8) | part;
+		;;
+		else
+			address is 0;
+		;;
+	[end: address]
+
+	[PrintIp: u32 address: 0;]
+		log (address >> 24) '.' ((address >> 16) & 0xFF) '.' ((address >> 8) & 0xFF) '.' (address & 0xFF);
+	[end]
+}

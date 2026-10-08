@@ -1,0 +1,199 @@
+# DHCP: asking the network for an address, a gateway and a DNS server. Net.Start
+# does this; call Dhcp.Configure again to renew. 32-bit kernels.
+#
+#   use net.net;
+#   bln ok: false;
+#   call ok is Dhcp.Configure;      # sets Net.ip, Net.netmask, Net.gateway, Net.dns
+#
+# Discover (broadcast) -> an offer from a server -> Request that address -> its Ack.
+
+use net.net;
+
+phi.Dhcp:Kernel
+{
+	const u32 CLIENT_PORT: 68;
+	const u32 SERVER_PORT: 67;
+	const u32 MAGIC: 0x63825363;
+	const u32 OPTIONS: 240;               # where options start in a message
+
+	const u32 DISCOVER: 1;
+	const u32 OFFER: 2;
+	const u32 REQUEST: 3;
+	const u32 ACK: 5;
+
+	const u32 OPTION_NETMASK: 1;
+	const u32 OPTION_ROUTER: 3;
+	const u32 OPTION_DNS: 6;
+	const u32 OPTION_REQUESTED_IP: 50;
+	const u32 OPTION_TYPE: 53;
+	const u32 OPTION_SERVER: 54;
+	const u32 OPTION_PARAMETERS: 55;
+	const u32 OPTION_END: 255;
+
+	const int TRIES: 3;
+	const int WAIT: 2000;                 # ms per try
+
+	u8 message[548];
+	u32 xid: 0;
+	u32 server: 0;
+	u32 offered: 0;
+
+	# what the last message we read said
+	u32 reply_type: 0;
+	u32 reply_netmask: 0;
+	u32 reply_router: 0;
+	u32 reply_dns: 0;
+	u32 reply_server: 0;
+
+	# true once the network has given us an address
+	[Configure]
+		bln done: false;
+		u32 ticks: 0;
+		call ticks is OS.GetTicks;
+		xid is 0x50484900 | (ticks & 0xFF);
+		call Net.Listen: CLIENT_PORT;
+
+		offered is 0;
+		int tries: 0;
+		while offered is 0 and tries < TRIES
+			call Send: DISCOVER;
+			call Expect: OFFER;
+			tries++;
+		;;
+
+		if offered is not 0
+			server is reply_server;
+			tries is 0;
+			while done is false and tries < TRIES
+				call Send: REQUEST;
+				call done is Expect: ACK;
+				tries++;
+			;;
+		;;
+
+		if done
+			Net.ip is offered;
+			if reply_netmask is not 0
+				Net.netmask is reply_netmask;
+			;;
+			if reply_router is not 0
+				Net.gateway is reply_router;
+			;;
+			if reply_dns is not 0
+				Net.dns is reply_dns;
+			;;
+		;;
+		call Net.Listen: 0;
+	[end: done]
+
+	[Send: u32 type: 0;]
+		ptr<u8> m: addr message;
+		while u32 i: 0; i < message.len; i++;
+			m:i is 0;
+		;;
+		m:0 is 1;                             # a request
+		m:1 is 1;                             # Ethernet
+		m:2 is 6;
+		call Net.Put32: m + 4 xid;
+		call Net.Put16: m + 10 0x8000;        # answer by broadcast: we have no address yet
+		while u32 i: 0; i < 6; i++;
+			m:(28 + i) is Rtl8139.mac:i;
+		;;
+		call Net.Put32: m + 236 MAGIC;
+
+		u32 at: OPTIONS;
+		m:at is OPTION_TYPE;
+		m:(at + 1) is 1;
+		m:(at + 2) is type;
+		at++ 3;
+		if type is REQUEST
+			m:at is OPTION_REQUESTED_IP;
+			m:(at + 1) is 4;
+			call Net.Put32: m + at + 2 offered;
+			at++ 6;
+			m:at is OPTION_SERVER;
+			m:(at + 1) is 4;
+			call Net.Put32: m + at + 2 server;
+			at++ 6;
+		;;
+		m:at is OPTION_PARAMETERS;
+		m:(at + 1) is 3;
+		m:(at + 2) is OPTION_NETMASK;
+		m:(at + 3) is OPTION_ROUTER;
+		m:(at + 4) is OPTION_DNS;
+		at++ 5;
+		m:at is OPTION_END;
+
+		bln sent: false;
+		call sent is Net.SendUdp: Net.BROADCAST CLIENT_PORT SERVER_PORT m message.len;
+	[end]
+
+	# wait for a reply of this type to our request; true if one came
+	[Expect: u32 type: 0;]
+		bln found: false;
+		int start: 0;
+		call start is OS.GetTicks;
+		int now: start;
+		while found is false and now - start < WAIT
+			int length: 0;
+			call length is Net.WaitUdp: WAIT - (now - start);
+			if length > OPTIONS
+				call found is Read: length;
+				found is found and reply_type is type;
+			;;
+			call now is OS.GetTicks;
+		;;
+	[end: found]
+
+	# read the reply in Net.udp_data; false if it isn't an answer to us
+	[Read: u32 length: 0;]
+		ptr<u8> m: addr Net.udp_data;
+		u32 id: 0;
+		u32 magic: 0;
+		call id is Net.Get32: m + 4;
+		call magic is Net.Get32: m + 236;
+		bln ours: m:0 is 2 and id is xid and magic is MAGIC;
+
+		if ours
+			reply_type is 0;
+			reply_netmask is 0;
+			reply_router is 0;
+			reply_dns is 0;
+			reply_server is 0;
+			u32 at: OPTIONS;
+			bln more: true;
+			while more and at + 1 < length
+				u32 code: m:at;
+				if code is OPTION_END
+					more is false;
+				;;
+				elif code is 0
+					at++;                     # padding
+				;;
+				else
+					u32 size: m:(at + 1);
+					ptr<u8> value: m + at + 2;
+					if code is OPTION_TYPE
+						reply_type is value:0;
+					;;
+					elif code is OPTION_NETMASK and size >= 4
+						call reply_netmask is Net.Get32: value;
+					;;
+					elif code is OPTION_ROUTER and size >= 4
+						call reply_router is Net.Get32: value;
+					;;
+					elif code is OPTION_DNS and size >= 4
+						call reply_dns is Net.Get32: value;
+					;;
+					elif code is OPTION_SERVER and size >= 4
+						call reply_server is Net.Get32: value;
+					;;
+					at++ 2 + size;
+				;;
+			;;
+			if reply_type is OFFER
+				call offered is Net.Get32: m + 16;
+			;;
+		;;
+	[end: ours]
+}

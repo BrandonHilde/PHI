@@ -6,7 +6,8 @@ namespace Phi.Cli
     /// Each test is tests/NAME.phi with the serial output it must produce in tests/NAME.expected.
     /// The test boots headless in QEMU; on a mismatch the real output is saved to NAME.actual.
     /// NAME.input scripts keyboard and mouse input (see InputScript); NAME.errors instead lists
-    /// compile errors the program must produce.
+    /// compile errors the program must produce. A folder NAME.web/ is served over HTTP while the
+    /// test runs (see WebServer), and the program gets its address as TestWeb.url.
     ///
     /// A test whose classes are all :Library runs twice, as a 16-bit program and as a 32-bit
     /// kernel, so both code generators are checked against the same expected output.
@@ -91,7 +92,13 @@ namespace Phi.Cli
             string errorsFile = Path.Combine(dir, name + ".errors");
             string inputFile = Path.Combine(dir, name + ".input");
 
-            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), mode?.Wrapper ?? "");
+            // NAME.web/: files the program can fetch, at TestWeb.url ('http://10.0.2.2:PORT')
+            string webDir = Path.Combine(dir, name + ".web");
+            using WebServer? web = Directory.Exists(webDir) ? new WebServer(webDir) : null;
+            string wrapper = mode?.Wrapper ?? "";
+            if (web != null) wrapper += $"\nphi.TestWeb:Library\n{{\n\tstr url: 'http://10.0.2.2:{web.Port}';\n}}\n";
+
+            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), wrapper);
 
             // NAME.errors: the program must fail to compile, with each listed message
             if (File.Exists(errorsFile))
