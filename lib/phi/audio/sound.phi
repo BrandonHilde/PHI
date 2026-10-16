@@ -1,0 +1,287 @@
+# Music in a 32-bit kernel: songs (audio.synth) and WAV files (audio.wav), from the disk
+# or written in the program, played on the AC'97 sound card (drivers.ac97).
+#
+#   use audio.sound;
+#   bln ok: false;
+#   call ok is Sound.PlayFile: 'MUSIC/ODE.SNG';      # a song, or a .WAV file; waits until it ends
+#   call ok is Sound.PlaySong: 't150 o4 l8 cegc>c';  # a song in the program
+#   if ok is false
+#       log Sound.error '\n';                        # no sound card, no such file, a mistake in the song...
+#   ;;
+#
+#   # or start it and carry on, calling Pump at least every half second or so:
+#   call ok is Sound.StartFile: 'MUSIC/HARP.WAV';
+#   while Sound.playing
+#       call Sound.Pump;
+#       # ... anything else ...
+#   ;;
+#   call ms is Sound.Position;                       # how far it has got (of Sound.milliseconds)
+#   call Sound.Stop;                                 # stop early
+#
+# A file whose name ends in .WAV is a WAV file; anything else is a song.
+
+use drivers.ac97;
+use fs.fat16;
+use audio.wav;
+use audio.synth;
+
+phi.Sound:Kernel
+{
+	const u32 CARD_RATE: 44100;              # the card always plays at this rate
+	const u32 CHUNK_FRAMES: 1024;            # of a song, made at a time
+	const u32 HEADER_SIZE: 4096;
+	const u32 READ_SIZE: 8192;               # the most of a WAV file read at a time
+	const u32 PENDING_FRAMES: 8192;          # room for sound on its way to the card
+	const u32 MAX_SONG: 65536;
+
+	bln playing: false;
+	u32 milliseconds: 0;                     # how long what's playing lasts
+	str error: [60];
+	u32 error_line: 0;                       # the line of a mistake in a song
+
+	u32 source: 0;                           # 0: nothing, 1: a song, 2: a WAV file
+	bln source_done: true;
+	u8 wav_path[64];
+	u32 wav_at: 0;                           # the next byte of the file to read
+	u32 wav_end: 0;
+	u32 wav_read: 0;                         # bytes read at a time
+	bln resampling: false;                   # the file's rate isn't the card's
+	u32 rate: 44100;                         # what the card plays at
+
+	ptr<u8> raw: 0;                          # what was read from the file
+	ptr<u8> converted: 0;                    # that as 16-bit stereo, before resampling
+	ptr<u8> pending: 0;                      # sound for the card
+	u32 pending_at: 0;
+	u32 pending_end: 0;
+	ptr<u8> song_text: 0;
+	u32 start_bytes: 0;                      # Ac97.bytes_written when it started
+
+	# play a song or WAV file from the disk, waiting until it ends; false if it can't
+	[PlayFile: ptr<u8> path: 0;]
+		bln ok: false;
+		call ok is StartFile: path;
+		call Finish;
+	[end: ok]
+
+	# play a song written as text, waiting until it ends
+	[PlaySong: ptr<u8> song: 0;]
+		bln ok: false;
+		call ok is StartSong: song;
+		call Finish;
+	[end: ok]
+
+	# start playing a song; keep calling Pump while playing is true
+	[StartSong: ptr<u8> song: 0;]
+		bln ok: false;
+		call Stop;
+		call ok is Prepare;
+		if ok
+			call ok is Synth.Load: song rate;
+			if ok is false
+				error is Synth.error;
+				error_line is Synth.error_line;
+			;;
+		;;
+		if ok
+			milliseconds is Synth.milliseconds;
+			source is 1;
+			call Begin;
+		;;
+	[end: ok]
+
+	# start playing a song or WAV file from the disk
+	[StartFile: ptr<u8> path: 0;]
+		bln ok: false;
+		call Stop;
+		call ok is Prepare;
+		int size: 0;
+		if ok
+			call size is Fat.FileSize: path;
+			if size < 0
+				error is 'no such file';
+				ok is false;
+			;;
+		;;
+
+		bln isWav: false;
+		if ok
+			call isWav is EndsWithWav: path;
+		;;
+
+		if ok and isWav
+			int got: 0;
+			call got is Fat.ReadAt: path 0 raw HEADER_SIZE;
+			call ok is Wav.Parse: raw got size;
+			if ok is false
+				error is Wav.error;
+			;;
+			else
+				# read as many frames at a time as fit in pending once resampled
+				resampling is Wav.rate is not rate;
+				call Wav.StartResample: rate;
+				u32 frames: PENDING_FRAMES * Wav.rate / rate - 2;
+				if frames > READ_SIZE / Wav.frame_bytes
+					frames is READ_SIZE / Wav.frame_bytes;
+				;;
+				wav_read is frames * Wav.frame_bytes;
+
+				# keep the path (a ptr<u8> put in a str would become its address, as text)
+				u32 k: 0;
+				while path:k is not 0 and k < 63
+					wav_path:k is path:k;
+					k++;
+				;;
+				wav_path:k is 0;
+				wav_at is Wav.data_start;
+				wav_end is Wav.data_start + Wav.data_size;
+				milliseconds is Wav.milliseconds;
+				source is 2;
+				call Begin;
+			;;
+		;;
+		elif ok
+			if size >= MAX_SONG
+				error is 'the song is too long (64 KB at most)';
+				ok is false;
+			;;
+			else
+				int length: 0;
+				call length is Fat.ReadFile: path song_text MAX_SONG - 1;
+				song_text:length is 0;
+				call ok is StartSong: song_text;
+			;;
+		;;
+	[end: ok]
+
+	# give the sound card as much as it has room for; sets playing to false once
+	# everything has played
+	[Pump]
+		bln room: true;
+		while playing and room
+			if pending_at < pending_end
+				u32 taken: 0;
+				call taken is Ac97.Write: pending + pending_at pending_end - pending_at;
+				pending_at++ taken;
+				room is pending_at is pending_end;
+			;;
+			elif source_done
+				call Ac97.Flush;
+				u32 left: 0;
+				call left is Ac97.Queued;
+				playing is left > 0;
+				room is false;
+			;;
+			else
+				call Produce;
+			;;
+		;;
+	[end]
+
+	# how far it has got, in milliseconds: what the card has played so far
+	[Position]
+		u32 queued: 0;
+		call queued is Ac97.Queued;
+		u32 frames: (Ac97.bytes_written - start_bytes - queued) / 4;
+		if playing is false
+			frames is 0;
+		;;
+	[end: (frames / rate) * 1000 + (frames % rate) * 1000 / rate]
+
+	# stop at once
+	[Stop]
+		if playing
+			call Ac97.Stop;
+		;;
+		playing is false;
+		source is 0;
+		source_done is true;
+		pending_at is 0;
+		pending_end is 0;
+	[end]
+
+	# the next piece of sound, into pending
+	[Produce]
+		pending_at is 0;
+		pending_end is 0;
+		if source is 1
+			u32 frames: 0;
+			call frames is Synth.Render: pending CHUNK_FRAMES;
+			pending_end is frames * 4;
+			source_done is frames is 0;
+		;;
+		elif source is 2
+			u32 length: wav_end - wav_at;
+			if length > wav_read
+				length is wav_read;
+			;;
+			int got: 0;
+			if length > 0
+				call got is Fat.ReadAt: addr wav_path wav_at raw length;
+			;;
+			if got > 0
+				wav_at++ got;
+				if resampling
+					u32 bytes: 0;
+					call bytes is Wav.Convert: raw got converted;
+					call pending_end is Wav.Resample: converted bytes / 4 pending;
+				;;
+				else
+					call pending_end is Wav.Convert: raw got pending;
+				;;
+			;;
+			source_done is got <= 0 or wav_at >= wav_end;
+		;;
+		else
+			source_done is true;
+		;;
+	[end]
+
+	[Begin]
+		start_bytes is Ac97.bytes_written;
+		source_done is false;
+		pending_at is 0;
+		pending_end is 0;
+		playing is true;
+		call Pump;
+	[end]
+
+	# Pump until it has all played
+	[Finish]
+		while playing
+			call Pump;
+			call OS.Sleep: 5;
+		;;
+	[end]
+
+	# find the card and get the buffers; false if there's no card
+	[Prepare]
+		bln ok: false;
+		error is '';
+		error_line is 0;
+		call ok is Ac97.Start;
+		if ok is false
+			error is 'there is no sound card (PHI has a driver for the AC'97)';
+		;;
+		else
+			call rate is Ac97.SetRate: CARD_RATE;
+			if raw is 0
+				raw is new u8[READ_SIZE];
+				converted is new u8[READ_SIZE * 4];
+				pending is new u8[PENDING_FRAMES * 4];
+				song_text is new u8[MAX_SONG];
+			;;
+		;;
+	[end: ok]
+
+	[EndsWithWav: ptr<u8> path: 0;]
+		u32 length: 0;
+		while path:length is not 0
+			length++;
+		;;
+		bln wav: false;
+		if length >= 4
+			ptr<u8> tail: path + length - 4;
+			wav is tail:0 is '.' and (tail:1 | 32) is 'w' and (tail:2 | 32) is 'a' and (tail:3 | 32) is 'v';
+		;;
+	[end: wav]
+}

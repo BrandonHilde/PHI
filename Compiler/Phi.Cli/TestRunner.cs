@@ -8,7 +8,8 @@ namespace Phi.Cli
     /// NAME.input scripts keyboard and mouse input (see InputScript); NAME.errors instead lists
     /// compile errors the program must produce. A folder NAME.web/ is served over HTTP and HTTPS
     /// while the test runs (see WebServer); the program gets the addresses as TestWeb.url and
-    /// TestWeb.secure_url.
+    /// TestWeb.secure_url. With NAME.sound, what the sound card plays is recorded and checked
+    /// (see SoundCheck); such a test should end with exit, so QEMU finishes the recording.
     ///
     /// A test whose classes are all :Library runs twice, as a 16-bit program and as a 32-bit
     /// kernel, so both code generators are checked against the same expected output.
@@ -125,6 +126,11 @@ namespace Phi.Cli
             string? expected = File.Exists(expectedFile) ? Normalize(File.ReadAllText(expectedFile)) : null;
             string[]? input = File.Exists(inputFile) ? File.ReadAllLines(inputFile) : null;
 
+            // NAME.sound: record what the sound card plays, and check it afterwards
+            string soundFile = Path.Combine(dir, name + ".sound");
+            string? recording = File.Exists(soundFile) ? Path.Combine(Path.GetDirectoryName(build.ImagePath)!, name + ".wav") : null;
+            if (recording != null && File.Exists(recording)) File.Delete(recording);
+
             // NAME.contains: each line must appear somewhere in the output (for output that
             // changes from build to build, like addresses on a panic screen)
             string containsFile = Path.Combine(dir, name + ".contains");
@@ -143,7 +149,7 @@ namespace Phi.Cli
             }
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
-                expected == null ? null : output => Normalize(output).Contains(expected), input);
+                expected == null ? null : output => Normalize(output).Contains(expected), input, recording);
 
             string actual = Normalize(run.Serial);
 
@@ -154,7 +160,12 @@ namespace Phi.Cli
                        "(rename it to .expected if it is correct)";
             }
 
-            if (actual == expected && run.InputError == null) return null;
+            if (actual == expected && run.InputError == null)
+            {
+                if (recording == null) return null;
+                string? soundFailure = SoundCheck.Check(recording, File.ReadAllLines(soundFile));
+                return soundFailure == null ? null : $"the sound was wrong ({Path.GetFileName(recording)} is the recording):\n{soundFailure}";
+            }
 
             File.WriteAllText(actualFile, actual);
 

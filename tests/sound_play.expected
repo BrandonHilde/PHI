@@ -1,0 +1,14 @@
+volume 80
+[VOLUME.BIN exited with 0]
+usage: volume N   (0 to 100)
+[VOLUME.BIN exited with 1]
+usage: play FILE   (a song, or a .WAV file; Escape stops it)
+[PLAY.BIN exited with 1]
+play: no such file: MISSING.SNG
+[PLAY.BIN exited with 1]
+play: line 1: q must be 1 to 8
+[PLAY.BIN exited with 1]
+playing test.sng (0:01, 1 voice)
+[PLAY.BIN exited with 0]
+playing TEST.WAV (0:00, 11025 Hz, 16-bit mono)
+[PLAY.BIN exited with 0]

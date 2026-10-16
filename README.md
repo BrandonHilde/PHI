@@ -31,6 +31,24 @@ phi.Fetch:Kernel
 }
 ```
 
+<h3>Music</h3>
+
+`phi run samples/music.phi` boots a jukebox kernel, and `play music/ode.sng` plays a song
+in PHI OS. The sound card driver (AC'97), a synthesizer that plays songs written as text
+(up to 4 voices, six sounds including noise drums) and the WAV file reader are all written
+in PHI:
+
+```phi
+use audio.sound;
+
+phi.Tune:Kernel
+{
+	bln ok: false;
+	call ok is Sound.PlaySong: 't140 @1 o4 l8 c e g >c4 <g4 c2';
+	call ok is Sound.PlayFile: 'MUSIC/HARP.WAV';
+}
+```
+
 ![The PHI OS shell](docs/images/phi-os-shell.png)
 
 ```
@@ -99,6 +117,7 @@ phi.Count:Program
        phi run samples/os.phi            PHI OS: boots into a shell (help lists the commands)
        phi run samples/terminal.phi      a simpler kernel with built-in commands (ls, cat, run hello.bin ...)
        phi run samples/web.phi           fetch web pages: type a URL, see the raw HTML
+       phi run samples/music.phi         a jukebox: songs and a WAV file, on the sound card
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output

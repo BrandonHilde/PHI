@@ -13,7 +13,8 @@ in PHI and runs in QEMU.
 ## Ground rules
 
 - **QEMU is the only target for now.** We only support the hardware QEMU emulates by
-  default (i440FX machine, PS/2 keyboard and mouse, VGA, PIT timer, IDE disk, COM1 serial).
+  default (i440FX machine, PS/2 keyboard and mouse, VGA, PIT timer, IDE disk, COM1 serial),
+  plus an RTL8139 network card and an AC'97 sound card.
   Real hardware, UEFI and USB come later.
 - **x86 first.** ARM and 64-bit are later work (see [Later](#later)).
 - **Every phase ends with a demo that boots in QEMU** and an automated test that checks it.
@@ -541,6 +542,12 @@ These come after the basics work:
   X25519, random numbers). Still to do: **checking the server's certificate** (X.509,
   RSA and ECDSA signatures, a set of trusted roots), listening for connections (a server),
   the e1000 card, and interrupts instead of polling
+- **Sound:** done: an AC'97 driver (`drivers.ac97`), a synthesizer for songs written as text
+  in the style of MML (`audio.synth`: 4 voices, square, pulse, triangle, sawtooth, sine and
+  noise), WAV files with resampling (`audio.wav`), `audio.sound` to play them from a kernel,
+  system calls and `play`/`volume` commands in PHI OS, `samples/music.phi`, and tests that
+  check QEMU's recording of the card. Still to do: interrupts instead of polling (so music
+  keeps going without `Sound.Pump`), recording, Intel HD Audio, and compressed formats
 - **More hardware:** AHCI, PS/2 → USB, ACPI shutdown (PCI enumeration is done: `drivers.pci`)
 - **C compatibility:** call C functions and link C object files (a README goal)
 - **Self-hosting:** rewrite the PHI compiler in PHI

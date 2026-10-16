@@ -1,0 +1,3 @@
+# G4 and G5 from a song, then a 550 Hz square wave from a WAV file
+sound at least 1.1
+tones 392 784 550

@@ -4,6 +4,7 @@
 #   ptr<u8> buffer: new u8[4096];
 #   int size: 0;
 #   call size is Fat.ReadFile: 'README.TXT' buffer 4096;     # -1 if it isn't there
+#   call size is Fat.ReadAt: 'SONG.WAV' 8192 buffer 4096;    # from 8192 bytes in
 #   call ok is Fat.WriteFile: 'DOCS/NOTES.TXT' text length;  # creates or replaces
 #   call ok is Fat.Delete: 'OLD.TXT';
 #   call count is Fat.List: '';                              # prints a directory
@@ -127,26 +128,46 @@ phi.Fat:Kernel
 
 	# bytes copied into buffer (at most max), or -1 if the file isn't there
 	[ReadFile: ptr<u8> path: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		int copied: 0;
+		call copied is ReadAt: path 0 buffer max;
+	[end: copied]
+
+	# the same, starting offset bytes into the file (0 bytes at or past its end)
+	[ReadAt: ptr<u8> path: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
 		int copied: -1;
 		bln exists: false;
 		call exists is Resolve: path;
 		if exists and (found.attributes & ATTR_DIRECTORY) is 0
 			copied is 0;
+			u32 wanted: 0;
+			if offset < found.size
+				wanted is found.size - offset;
+			;;
+			if wanted > max
+				wanted is max;
+			;;
+
+			# follow the chain to the cluster the offset is in
 			u32 cluster: found.cluster;
-			while cluster >= 2 and cluster < CHAIN_END and copied < found.size and copied < max
+			u32 skip: offset / cluster_bytes;
+			while skip > 0 and cluster >= 2 and cluster < CHAIN_END
+				cluster is fat_table:cluster;
+				skip--;
+			;;
+			u32 within: offset % cluster_bytes;
+
+			while cluster >= 2 and cluster < CHAIN_END and copied < wanted
 				bln ok: false;
 				call ok is ReadCluster: cluster;
-				u32 chunk: cluster_bytes;
-				if chunk > found.size - copied
-					chunk is found.size - copied;
-				;;
-				if chunk > max - copied
-					chunk is max - copied;
+				u32 chunk: cluster_bytes - within;
+				if chunk > wanted - copied
+					chunk is wanted - copied;
 				;;
 				while u32 k: 0; k < chunk; k++;
-					buffer:(copied + k) is cluster_buffer:k;
+					buffer:(copied + k) is cluster_buffer:(within + k);
 				;;
 				copied++ chunk;
+				within is 0;
 				cluster is fat_table:cluster;
 			;;
 		;;

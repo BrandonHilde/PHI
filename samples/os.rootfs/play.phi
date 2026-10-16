@@ -1,0 +1,196 @@
+# play FILE: play a song or a WAV file on the sound card. A song is text, one voice
+# a line (see MUSIC/ and lib/phi/audio/synth.phi); a name ending in .WAV is a WAV
+# file. Escape stops it, and with & the shell carries on while it plays.
+use audio.synth;
+use audio.wav;
+use user.text;
+
+phi.Play:Program
+{
+	const u32 RATE: 44100;                   # the card stays at this rate; WAV files are resampled
+	const u32 CHUNK_FRAMES: 1024;
+	const u32 HEADER_SIZE: 4096;
+	const u32 READ_SIZE: 4096;
+	const u32 PENDING_FRAMES: 4096;
+	const u32 MAX_SONG: 16384;
+
+	u8 name[64];
+	u8 raw[READ_SIZE];
+	u8 converted[16384];                     # READ_SIZE * 4: 8-bit mono becomes 16-bit stereo
+	u8 pending[16384];                       # PENDING_FRAMES * 4
+	u8 song[MAX_SONG];
+	bln stopped: false;
+	u32 rate: RATE;
+
+	ptr<u8> arguments: 0;
+	call arguments is OS.Arguments;
+	int length: 0;
+	call length is Text.CopyWord: arguments addr name 64;
+	if length is 0
+		log 'usage: play FILE   (a song, or a .WAV file; Escape stops it)\n';
+		exit 1;
+	;;
+
+	int size: 0;
+	call size is OS.FileSize: addr name;
+	if size < 0
+		log 'play: no such file: ' addr name '\n';
+		exit 1;
+	;;
+	int got: 0;
+	call got is OS.SoundRate: RATE;
+	if got < 0
+		log 'play: there is no sound card\n';
+		exit 1;
+	;;
+	rate is got;
+
+	bln wav: false;
+	if length >= 4
+		wav is name:(length - 4) is '.' and (name:(length - 3) | 32) is 'w' and (name:(length - 2) | 32) is 'a' and (name:(length - 1) | 32) is 'v';
+	;;
+	bln ok: false;
+	if wav
+		call ok is PlayWav: size;
+	;;
+	else
+		call ok is PlaySong: size;
+	;;
+	if ok is false
+		exit 1;
+	;;
+
+	# wait for the last of it to play
+	int left: 1;
+	while left > 0 and stopped is false
+		call left is OS.SoundQueued;
+		call CheckEscape;
+		call OS.Sleep: 20;
+	;;
+	if stopped
+		log 'play: stopped\n';
+	;;
+
+	[PlaySong: int size: 0;]
+		bln ok: false;
+		if size >= MAX_SONG
+			log 'play: the song is too long (16 KB at most)\n';
+		;;
+		else
+			int got: 0;
+			call got is OS.ReadFile: addr name addr song MAX_SONG - 1;
+			song:got is 0;
+			call ok is Synth.Load: addr song rate;
+			if ok is false
+				log 'play: line ' Synth.error_line ': ' Synth.error '\n';
+			;;
+		;;
+		if ok
+			log 'playing ' addr name ' (';
+			call Duration: Synth.milliseconds;
+			log ', ' Synth.voices ' voice';
+			if Synth.voices > 1
+				log 's';
+			;;
+			log ')\n';
+			u32 frames: 1;
+			while frames > 0 and stopped is false
+				call frames is Synth.Render: addr pending CHUNK_FRAMES;
+				call Send: addr pending frames * 4;
+			;;
+		;;
+	[end: ok]
+
+	[PlayWav: int size: 0;]
+		bln ok: false;
+		int got: 0;
+		call got is OS.ReadFileAt: addr name 0 addr raw HEADER_SIZE;
+		call ok is Wav.Parse: addr raw got size;
+		if ok is false
+			log 'play: ' Wav.error '\n';
+		;;
+		else
+			log 'playing ' addr name ' (';
+			call Duration: Wav.milliseconds;
+			log ', ' Wav.rate ' Hz, ' Wav.bits '-bit ';
+			if Wav.channels is 2
+				log 'stereo)\n';
+			;;
+			else
+				log 'mono)\n';
+			;;
+
+			# read as many frames at a time as fit in pending once resampled
+			bln resampling: Wav.rate is not rate;
+			call Wav.StartResample: rate;
+			u32 frames: PENDING_FRAMES * Wav.rate / rate - 2;
+			if frames > READ_SIZE / Wav.frame_bytes
+				frames is READ_SIZE / Wav.frame_bytes;
+			;;
+			u32 chunk: frames * Wav.frame_bytes;
+
+			u32 at: Wav.data_start;
+			u32 end_at: Wav.data_start + Wav.data_size;
+			while at < end_at and stopped is false
+				u32 want: end_at - at;
+				if want > chunk
+					want is chunk;
+				;;
+				call got is OS.ReadFileAt: addr name at addr raw want;
+				if got <= 0
+					at is end_at;
+				;;
+				else
+					at++ got;
+					u32 bytes: 0;
+					if resampling
+						call bytes is Wav.Convert: addr raw got addr converted;
+						call bytes is Wav.Resample: addr converted bytes / 4 addr pending;
+					;;
+					else
+						call bytes is Wav.Convert: addr raw got addr pending;
+					;;
+					call Send: addr pending bytes;
+				;;
+			;;
+		;;
+	[end: ok]
+
+	# give the card all of it, waiting while it's full
+	[Send: ptr<u8> data: 0; u32 length: 0;]
+		u32 done: 0;
+		while done < length and stopped is false
+			int taken: 0;
+			call taken is OS.SoundWrite: data + done length - done;
+			if taken > 0
+				done++ taken;
+			;;
+			else
+				call CheckEscape;
+				call OS.Sleep: 10;
+			;;
+		;;
+	[end]
+
+	# Escape stops it (looking at the key, not taking it, so a shell running at the
+	# same time still gets everything typed)
+	[CheckEscape]
+		int down: 0;
+		call down is OS.IsKeyDown: 27;
+		if down and stopped is false
+			stopped is true;
+			call OS.SoundStop;
+		;;
+	[end]
+
+	# minutes:seconds
+	[Duration: u32 ms: 0;]
+		u32 seconds: (ms + 500) / 1000;
+		u32 part: seconds % 60;
+		log (seconds / 60) ':';
+		if part < 10
+			log '0';
+		;;
+		log part;
+	[end]
+}

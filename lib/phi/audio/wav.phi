@@ -1,0 +1,213 @@
+# WAV files: reading the header, and turning the samples into what the sound card
+# plays (16-bit stereo). Works in any kind of program.
+#
+#   use audio.wav;
+#   bln ok: false;
+#   call ok is Wav.Parse: header length size;    # the file's first bytes (4 KB is plenty), and its size
+#   log Wav.rate ' Hz, ' Wav.channels ' channels, ' Wav.bits ' bits\n';
+#   # the samples are the data_size bytes from data_start on; convert whole frames:
+#   u32 out: 0;
+#   call out is Wav.Convert: samples length output;   # bytes written to output
+#   # and to play it at another rate (audio.sound keeps the card at 44100):
+#   call Wav.StartResample: 44100;
+#   call out is Wav.Resample: output out / 4 resampled;   # room: ResampleRoom: frames
+#
+# Plain PCM only: 8-bit (unsigned) or 16-bit (signed), mono or stereo, at any rate.
+# Convert writes up to 4 times as many bytes as it reads (8-bit mono becomes 16-bit
+# stereo), so give it room. Resample interpolates between neighboring frames.
+
+phi.Wav:Library
+{
+	const u32 FORMAT_PCM: 1;
+	const u32 FORMAT_EXTENSIBLE: 0xFFFE;     # PCM too, when its sub-format says so
+
+	u32 channels: 0;
+	u32 rate: 0;
+	u32 bits: 0;
+	u32 frame_bytes: 0;                      # bytes for one sample of every channel
+	u32 data_start: 0;                       # where the samples start in the file
+	u32 data_size: 0;
+	u32 milliseconds: 0;                     # how long it plays
+	str error: [60];
+
+	u32 resample_step: 65536;
+	u32 resample_phase: 0;
+	int previous_left: 0;
+	int previous_right: 0;
+
+	# read a WAV file's header; false (with the reason in error) if it isn't one PHI plays.
+	# With the file's size, data_size is never more than the file has (a file written as a
+	# stream may say 0xFFFFFFFF).
+	[Parse: ptr<u8> header: 0; u32 length: 0; u32 file_size: 0;]
+		bln ok: false;
+		bln found_format: false;
+		error is '';
+		data_start is 0;
+		data_size is 0;
+
+		bln riff: length >= 12 and header:0 is 'R' and header:1 is 'I' and header:2 is 'F' and header:3 is 'F';
+		bln wave: riff and header:8 is 'W' and header:9 is 'A' and header:10 is 'V' and header:11 is 'E';
+		if wave is false
+			error is 'not a WAV file';
+		;;
+		else
+			# chunks: a 4-letter name, a 32-bit size, then the contents (padded to even)
+			u32 at: 12;
+			bln more: true;
+			while more and at + 8 <= length
+				ptr<u8> chunk: header + at;
+				u32 size: 0;
+				call size is Read32: chunk + 4;
+				if chunk:0 is 'f' and chunk:1 is 'm' and chunk:2 is 't' and chunk:3 is ' ' and at + 8 + 16 <= length
+					u32 format: 0;
+					call format is Read16: chunk + 8;
+					call channels is Read16: chunk + 10;
+					call rate is Read32: chunk + 12;
+					call bits is Read16: chunk + 22;
+					if format is FORMAT_EXTENSIBLE and size >= 40 and at + 8 + 26 <= length
+						call format is Read16: chunk + 32;
+					;;
+					if format is not FORMAT_PCM
+						error is 'not PCM (it is compressed)';
+						more is false;
+					;;
+					elif channels < 1 or channels > 2
+						error is 'only mono and stereo are played';
+						more is false;
+					;;
+					elif bits is not 8 and bits is not 16
+						error is 'only 8-bit and 16-bit samples are played';
+						more is false;
+					;;
+					elif rate < 1000 or rate > 192000
+						error is 'the sample rate is out of range';
+						more is false;
+					;;
+					else
+						frame_bytes is channels * bits / 8;
+						found_format is true;
+					;;
+				;;
+				elif chunk:0 is 'd' and chunk:1 is 'a' and chunk:2 is 't' and chunk:3 is 'a'
+					if found_format
+						data_start is at + 8;
+						if file_size > 0 and size > file_size - data_start
+							size is file_size - data_start;
+						;;
+						data_size is size - size % frame_bytes;
+						ok is true;
+					;;
+					else
+						error is 'the data comes before the format';
+					;;
+					more is false;
+				;;
+				if size >= length
+					more is false;                   # it runs past what was read
+				;;
+				at++ 8 + size + (size & 1);
+			;;
+			if ok is false and error.len is 0
+				error is 'no data in the first part of the file';
+			;;
+		;;
+
+		milliseconds is 0;
+		if ok
+			# frames * 1000 / rate, without overflowing for long files
+			u32 frames: data_size / frame_bytes;
+			milliseconds is (frames / rate) * 1000 + (frames % rate) * 1000 / rate;
+		;;
+	[end: ok]
+
+	# turn length bytes of whole frames into 16-bit stereo; the bytes written to output
+	[Convert: ptr<u8> from: 0; u32 length: 0; ptr<u8> output: 0;]
+		u32 frames: 0;
+		if frame_bytes > 0
+			frames is length / frame_bytes;
+		;;
+		ptr<i16> to: output;
+		unsafe
+			if bits is 16 and channels is 2
+				ptr<u32> from_words: from;
+				ptr<u32> to_words: output;
+				while u32 f: 0; f < frames; f++;
+					to_words:f is from_words:f;
+				;;
+			;;
+			elif bits is 16
+				ptr<i16> samples: from;
+				while u32 f: 0; f < frames; f++;
+					to:(f * 2) is samples:f;
+					to:(f * 2 + 1) is samples:f;
+				;;
+			;;
+			elif channels is 2
+				# 8-bit samples are unsigned, with silence at 128
+				while u32 f: 0; f < frames * 2; f++;
+					to:f is (from:f - 128) << 8;
+				;;
+			;;
+			else
+				while u32 f: 0; f < frames; f++;
+					int value: (from:f - 128) << 8;
+					to:(f * 2) is value;
+					to:(f * 2 + 1) is value;
+				;;
+			;;
+		;;
+	[end: frames * 4]
+
+	# get ready to change converted sound from the file's rate to another one
+	[StartResample: u32 to_rate: 44100;]
+		# the step through the file's frames for each frame out, as 16.16 fixed point
+		resample_step is ((rate / to_rate) << 16) + ((rate % to_rate) << 16) / to_rate;
+		resample_phase is 0;
+		previous_left is 0;
+		previous_right is 0;
+	[end]
+
+	# change frames of converted (16-bit stereo) sound to the rate StartResample was
+	# given, carrying on smoothly from the last call; the bytes written to output, which
+	# needs room for ResampleRoom: frames
+	[Resample: ptr<u8> from: 0; u32 frames: 0; ptr<u8> output: 0;]
+		ptr<i16> input: from;
+		ptr<i16> to: output;
+		u32 made: 0;
+		unsafe
+			# between frame i - 1 and frame i, where frame -1 is the last one of the call before
+			while (resample_phase >> 16) < frames
+				u32 i: resample_phase >> 16;
+				int part: (resample_phase & 0xFFFF) >> 1;     # 15 bits, so the products fit
+				int left: previous_left;
+				int right: previous_right;
+				if i > 0
+					left is input:((i - 1) * 2);
+					right is input:((i - 1) * 2 + 1);
+				;;
+				int next_left: input:(i * 2);
+				int next_right: input:(i * 2 + 1);
+				to:(made * 2) is left + (((next_left - left) * part) >> 15);
+				to:(made * 2 + 1) is right + (((next_right - right) * part) >> 15);
+				made++;
+				resample_phase++ resample_step;
+			;;
+			if frames > 0
+				resample_phase-- frames << 16;
+				previous_left is input:((frames - 1) * 2);
+				previous_right is input:((frames - 1) * 2 + 1);
+			;;
+		;;
+	[end: made * 4]
+
+	# the most frames Resample can make from this many
+	[ResampleRoom: u32 frames: 0;]
+	[end: (frames << 16) / resample_step + 2]
+
+	[Read16: ptr<u8> p: 0;]
+	[end: p:0 | (p:1 << 8)]
+
+	[Read32: ptr<u8> p: 0;]
+		u32 value: p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24);
+	[end: value]
+}

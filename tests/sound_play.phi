@@ -1,0 +1,73 @@
+# The play and volume commands of PHI OS (samples/os.rootfs, see sound_play.rootfs),
+# which reach the sound card through system calls: a song and a WAV file that this
+# kernel writes to the disk first. phi test checks the recording (sound_play.sound).
+use proc.process;
+
+phi.SoundPlay:Kernel
+{
+	const u32 WAV_RATE: 11025;
+	const u32 WAV_FRAMES: 5512;              # half a second
+	ptr<u8> wav: new u8[44 + WAV_FRAMES * 2];
+	bln ok: false;
+
+	call Run: 'VOLUME.BIN' '80';
+	call Run: 'VOLUME.BIN' '';
+	call Run: 'PLAY.BIN' '';
+	call Run: 'PLAY.BIN' 'MISSING.SNG';
+
+	call ok is Fat.WriteFile: 'BAD.SNG' 't120 c d q9 e' 13;
+	call Run: 'PLAY.BIN' 'BAD.SNG';
+
+	# G4 then G5, a quarter note each at 150 beats a minute: 0.8 s
+	call ok is Fat.WriteFile: 'TEST.SNG' 't150 @4 o4 l4 g >g' 18;
+	call Run: 'PLAY.BIN' 'test.sng';
+
+	# a WAV file of a 550 Hz square wave: 16-bit mono at 11025 frames a second
+	u32 data_size: WAV_FRAMES * 2;
+	call Text: 0 'RIFF';
+	call Put32: 4 36 + data_size;
+	call Text: 8 'WAVEfmt ';
+	call Put32: 16 16;
+	call Put16: 20 1;                        # PCM
+	call Put16: 22 1;                        # mono
+	call Put32: 24 WAV_RATE;
+	call Put32: 28 WAV_RATE * 2;
+	call Put16: 32 2;
+	call Put16: 34 16;
+	call Text: 36 'data';
+	call Put32: 40 data_size;
+	while u32 f: 0; f < WAV_FRAMES; f++;
+		int value: 12000;
+		if (f * 550 * 2 / WAV_RATE) % 2 is 1
+			value is -12000;
+		;;
+		call Put16: 44 + f * 2 value;
+	;;
+	call ok is Fat.WriteFile: 'TEST.WAV' wav 44 + data_size;
+	call Run: 'PLAY.BIN' 'TEST.WAV';
+	exit 0;
+
+	[Run: ptr<u8> path: 0; ptr<u8> arguments: 0;]
+		int pid: 0;
+		call pid is Process.Spawn: path arguments;
+		int code: 0;
+		call code is Process.Wait: pid;
+		log '[' path ' exited with ' code ']\n';
+	[end]
+
+	[Text: u32 at: 0; ptr<u8> text: 0;]
+		while u32 i: 0; text:i is not 0; i++;
+			wav:(at + i) is text:i;
+		;;
+	[end]
+
+	[Put16: u32 at: 0; u32 value: 0;]
+		wav:at is value & 0xFF;
+		wav:(at + 1) is (value >> 8) & 0xFF;
+	[end]
+
+	[Put32: u32 at: 0; u32 value: 0;]
+		call Put16: at value & 0xFFFF;
+		call Put16: at + 2 value >> 16;
+	[end]
+}

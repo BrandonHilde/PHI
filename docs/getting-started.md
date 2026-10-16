@@ -85,6 +85,20 @@ kernel prints the raw response: the headers, then the page's HTML. The kernel re
 internet through QEMU, so your computer needs a connection. `https://` works too, over TLS
 1.3, though PHI doesn't check the server's certificate yet.
 
+## Play music
+
+```
+phi run samples/music.phi
+```
+
+Type a number to play a song or a WAV file; any key stops it. In PHI OS, `play music/ode.sng`
+does the same from the shell (`play music/chip.sng &` keeps the shell free while it plays,
+Escape stops it), and `volume 50` turns it down. The sound comes out of your speakers
+through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your system
+(DirectSound on Windows), and the environment variable `PHI_AUDIO` chooses another (such as
+`sdl`, or `none` for silence). Songs are text files, one voice a line: see
+`samples/os.rootfs/MUSIC/` and [the language reference](language.md#sound-32-bit-kernels).
+
 ## The phi command
 
 | Command | What it does |

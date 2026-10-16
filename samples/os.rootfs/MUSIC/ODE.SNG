@@ -1,0 +1,13 @@
+# Ode to Joy, from Beethoven's ninth symphony (1824)
+# 1: the tune, on a pulse wave; 2: the bass, on a triangle wave
+
+1: t112 @1 v12 q7 o4 l4
+2: @2 v13 q7
+1: e e f g | g f e d | c c d e | e. d8 d2 |
+2: o3 c2 g2 | o2 g2 o3 d2 | o3 c2 g2 | o2 g2 o3 d2 |
+1: e e f g | g f e d | c c d e | d. c8 c2 |
+2: o3 c2 g2 | o2 g2 o3 d2 | o3 c2 g2 | o2 g2 o3 c2 |
+1: d d e c | d e8 f8 e c | d e8 f8 e d | c d <g2> |
+2: o2 g2 o3 d2 | o2 g2 o3 c2 | o2 g2 o3 c2 | o3 c2 o2 g2 |
+1: e e f g | g f e d | c c d e | d. c8 c2
+2: o3 c2 g2 | o2 g2 o3 d2 | o3 c2 g2 | o2 g2 o3 c2

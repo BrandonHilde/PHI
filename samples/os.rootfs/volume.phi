@@ -1,0 +1,25 @@
+# volume N: set the sound card's volume, from 0 (silent) to 100
+use user.text;
+
+phi.Volume:Program
+{
+	ptr<u8> arguments: 0;
+	call arguments is OS.Arguments;
+	call arguments is Text.SkipSpaces: arguments;
+	if arguments:0 < '0' or arguments:0 > '9'
+		log 'usage: volume N   (0 to 100)\n';
+		exit 1;
+	;;
+	int percent: 0;
+	call percent is Text.ToNumber: arguments;
+	if percent > 100
+		percent is 100;
+	;;
+	int result: 0;
+	call result is OS.SoundVolume: percent;
+	if result < 0
+		log 'volume: there is no sound card\n';
+		exit 1;
+	;;
+	log 'volume ' percent '\n';
+}

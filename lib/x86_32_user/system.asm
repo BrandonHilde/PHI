@@ -1,4 +1,4 @@
-; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown
+; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume
 ;
 ; requires: phi_flush
 ;
@@ -26,6 +26,12 @@ SYS_REBOOT    equ 27
 SYS_CLEAR     equ 28
 SYS_PUT_CELL  equ 29
 SYS_KEY_DOWN  equ 30
+SYS_READ_FILE_AT equ 31
+SYS_SOUND_WRITE equ 32
+SYS_SOUND_RATE equ 33
+SYS_SOUND_QUEUED equ 34
+SYS_SOUND_STOP equ 35
+SYS_SOUND_VOLUME equ 36
 
 ; where the kernel puts a program's command line (the bottom of its stack area)
 ARGUMENTS     equ 0x403F0000
@@ -100,7 +106,7 @@ OS_Arguments:
     mov eax, ARGUMENTS
     ret
 
-; a system call taking 0-3 arguments from the stack (into ebx, ecx, edx);
+; a system call taking 0-4 arguments from the stack (into ebx, ecx, edx, esi);
 ; it only reads the arguments there are, so it never reads past the top of the stack
 %macro PHI_SYSCALL 3
 %1:
@@ -112,6 +118,9 @@ OS_Arguments:
 %endif
 %if %3 >= 3
     mov edx, [esp + 12]
+%endif
+%if %3 >= 4
+    mov esi, [esp + 16]
 %endif
     mov eax, %2
     int 0x80
@@ -132,3 +141,9 @@ PHI_SYSCALL OS_Reboot, SYS_REBOOT, 0
 PHI_SYSCALL OS_ClearScreen, SYS_CLEAR, 0
 PHI_SYSCALL OS_PutCell, SYS_PUT_CELL, 3          ; column row cell
 PHI_SYSCALL OS_IsKeyDown, SYS_KEY_DOWN, 1        ; key -> 1 if held down
+PHI_SYSCALL OS_ReadFileAt, SYS_READ_FILE_AT, 4   ; path offset buffer max -> bytes read, or -1
+PHI_SYSCALL OS_SoundWrite, SYS_SOUND_WRITE, 2    ; data length -> bytes taken, or -1 (no sound card)
+PHI_SYSCALL OS_SoundRate, SYS_SOUND_RATE, 1      ; frames a second -> the rate the card got, or -1
+PHI_SYSCALL OS_SoundQueued, SYS_SOUND_QUEUED, 0  ; -> bytes still to play, or -1
+PHI_SYSCALL OS_SoundStop, SYS_SOUND_STOP, 0      ; -> 0, or -1
+PHI_SYSCALL OS_SoundVolume, SYS_SOUND_VOLUME, 1  ; percent -> 0, or -1

@@ -1,0 +1,76 @@
+# The synthesizer's song language: how long songs are, voices, loops and mistakes,
+# and a checksum of the sound it makes (no sound card needed).
+use audio.synth;
+
+phi.SynthTest:Kernel
+{
+	u8 sound[4096];
+
+	call Song: 't120 c d e f';                       # four quarter notes: 2 s
+	call Song: 't60 l8 c c.';                        # an eighth and a dotted eighth
+	call Song: 'C D E F';                            # capitals, the default tempo (120)
+	call Song: '[c d]3 | r2';                        # a loop, a bar line and a rest
+	call Song: 'o4 c+ d- e# f g- a+ b+ c-';          # sharps and flats
+	call Song: 't240 c\nc c';                        # the first voice's tempo is everyone's
+	call Song: '1: t240 c d\n2: c1\n1: e f';         # a voice split over two lines
+	call Song: '# a comment\n\n  t120 c # after notes too\n';
+	call Song: '@0 c @1 c @2 c @3 c @4 c @5 c v15 q8 c v0 c';
+
+	# mistakes, and the line they're on
+	call Song: 'c d z';
+	call Song: 'c\nd\no9 c';
+	call Song: '[c [d] ]';
+	call Song: 'c ]';
+	call Song: '[c d';
+	call Song: 'c\nc\nc\nc\nc';
+	call Song: '';
+	call Song: '# only a comment';
+	call Song: 'l0 c';
+	call Song: 'c65';
+	call Song: 'c0';
+	call Song: 'v16 c';
+	call Song: '@6 c';
+	call Song: 't10 c';
+	call Song: '[c]256';
+
+	# the sound itself: frames made, and a checksum of the samples
+	bln ok: false;
+	call ok is Synth.Load: 't120 l16 o4 @3 c @2 e @4 g\n@5 o6 l8 c' 8000;
+	u32 total: 0;
+	u32 sum: 0;
+	u32 frames: 1;
+	while frames > 0
+		call frames is Synth.Render: addr sound 300;
+		ptr<u16> samples: addr sound;
+		while u32 i: 0; i < frames * 2; i++;
+			sum is sum * 31 + samples:i;
+		;;
+		total++ frames;
+	;;
+	log 'rendered ' total ' frames, checksum ' sum ', finished ' Synth.finished '\n';
+
+	# Render again after the end: nothing
+	call frames is Synth.Render: addr sound 300;
+	log 'after the end: ' frames '\n';
+
+	# Rewind plays it again, the same
+	call Synth.Rewind;
+	u32 again: 0;
+	frames is 1;
+	while frames > 0
+		call frames is Synth.Render: addr sound 300;
+		again++ frames;
+	;;
+	log 'again: ' again ' frames\n';
+
+	[Song: ptr<u8> text: 0;]
+		bln ok: false;
+		call ok is Synth.Load: text 44100;
+		if ok
+			log Synth.voices ' voice(s), ' Synth.milliseconds ' ms\n';
+		;;
+		else
+			log 'line ' Synth.error_line ': ' Synth.error '\n';
+		;;
+	[end]
+}

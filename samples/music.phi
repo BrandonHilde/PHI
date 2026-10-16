@@ -1,0 +1,103 @@
+# PHI music: a jukebox kernel. The sound card driver, the synthesizer that plays the
+# songs and the WAV reader are all written in PHI (lib/phi/drivers/ac97.phi and
+# lib/phi/audio/).
+#
+#   phi run samples/music.phi
+#
+# Its disk is the music folder of PHI OS (samples/os.rootfs/MUSIC, through
+# music.rootfs). Type a number to play something; any key stops it. While it plays,
+# the kernel keeps the sound card fed (Sound.Pump) and draws how far it has got.
+
+use audio.sound;
+
+phi.Music:Kernel
+{
+	str files: 'ODE.SNG' 'MINUET.SNG' 'ELISE.SNG' 'CHIP.SNG' 'HARP.WAV';
+	str titles: 'Ode to Joy, by Beethoven' 'Minuet in G, by Petzold' 'Fur Elise, by Beethoven'
+		'Chip: every sound the synthesizer makes' 'Harp: a WAV file';
+	str choice: [10];
+
+	call OS.ClearScreen;
+	log 'PHI music\n';
+	bln running: true;
+	while running
+		log '\n';
+		while int i: 0; i < files.len; i++;
+			log '  ' (i + 1) '  ' titles:i '\n';
+		;;
+		log '\nplay: ';
+		ask choice;
+		log '\n';
+		int n: 0;
+		if choice.len is 1 and choice:0 >= '1' and choice:0 <= '9'
+			n is choice:0 - '0';
+		;;
+		if n >= 1 and n <= files.len
+			call Play: files:(n - 1);
+		;;
+		elif choice.len > 0
+			log 'type a number from 1 to ' files.len '\n';
+		;;
+	;;
+
+	[Play: str file: [12];]
+		bln ok: false;
+		call ok is Sound.StartFile: file;
+		if ok is false
+			log 'can't play ' file ': ' Sound.error '\n';
+		;;
+		else
+			log file ', ';
+			call Time: Sound.milliseconds;
+			log ' (any key stops it)\n';
+
+			int shown: -1;
+			while Sound.playing
+				call Sound.Pump;
+
+				# a bar of 40 cells, redrawn when it grows
+				u32 now: 0;
+				call now is Sound.Position;
+				int cells: 40;
+				if Sound.milliseconds > 0 and now < Sound.milliseconds
+					cells is now * 40 / Sound.milliseconds;
+				;;
+				if cells is not shown
+					shown is cells;
+					log '\r[';
+					while int c: 0; c < 40; c++;
+						if c < cells
+							log '#';
+						;;
+						else
+							log '.';
+						;;
+					;;
+					log '] ';
+					call Time: now;
+				;;
+
+				int key: 0;
+				call key is OS.KeyAvailable;
+				if key
+					call key is OS.ReadKey;
+					call Sound.Stop;
+					log '  stopped';
+				;;
+				call OS.Sleep: 10;
+			;;
+			log '\n';
+		;;
+	[end]
+
+	# minutes:seconds
+	[Time: u32 ms: 0;]
+		u32 seconds: ms / 1000;
+		u32 part: seconds % 60;
+		log (seconds / 60) ':';
+		if part < 10
+			log '0';
+		;;
+		log part;
+	[end]
+}

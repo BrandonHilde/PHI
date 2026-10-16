@@ -1,0 +1,27 @@
+1 voice(s), 2000 ms
+1 voice(s), 1250 ms
+1 voice(s), 2000 ms
+1 voice(s), 4000 ms
+1 voice(s), 4000 ms
+2 voice(s), 500 ms
+2 voice(s), 1000 ms
+1 voice(s), 500 ms
+1 voice(s), 4000 ms
+line 1: not a note or a command
+line 3: the octave must be 0 to 8
+line 1: loops can't be nested
+line 1: a ] without a [
+line 1: a [ without a ]
+line 5: a song has at most 4 voices
+line 1: there are no notes
+line 1: there are no notes
+line 1: a length must be 1 to 64
+line 1: a length must be 1 to 64
+line 1: a length must be 1 to 64
+line 1: the volume must be 0 to 15
+line 1: the sound must be @0 to @5
+line 1: the tempo must be 20 to 600
+line 1: a loop plays 1 to 255 times
+rendered 3300 frames, checksum 2746653312, finished 1
+after the end: 0
+again: 3300 frames

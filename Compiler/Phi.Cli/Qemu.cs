@@ -27,20 +27,43 @@ namespace Phi.Cli
         // and a DNS server at 10.0.2.3. romfile= leaves out the card's boot ROM (iPXE).
         // The CPU is QEMU's usual one plus RDRAND, which crypto.random uses for random numbers
         // (QEMU answers it with the host's random numbers).
-        static List<string> MachineArgs(string image) => new()
+        // The sound card is an AC'97 (drivers.ac97); audio is the -audiodev that says where its
+        // sound goes (always with id=snd0).
+        static List<string> MachineArgs(string image, string audio) => new()
         {
             "-cpu", "qemu32,+rdrand",
             "-drive", $"file={image},format=raw,if=ide,index=0",
             "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
             "-netdev", "user,id=net0",
             "-device", "rtl8139,netdev=net0,romfile=",
+            "-audiodev", audio,
+            "-device", "AC97,audiodev=snd0",
             "-no-reboot", // a triple fault stops QEMU instead of looping forever
         };
+
+        // Where the sound goes when QEMU has a window: PHI_AUDIO if it's set (a QEMU audio
+        // driver, such as none, sdl or wav), otherwise the first of these that this QEMU has.
+        static readonly string[] SpeakerDrivers = { "dsound", "coreaudio", "pipewire", "pa", "alsa", "sdl" };
+
+        static string SpeakerAudio()
+        {
+            string? chosen = Environment.GetEnvironmentVariable("PHI_AUDIO");
+            if (string.IsNullOrWhiteSpace(chosen))
+            {
+                var (_, output) = Toolchain.Run(Toolchain.Qemu, new[] { "-audiodev", "help" });
+                var available = output.Split('\n').Select(l => l.Trim()).ToHashSet();
+                chosen = SpeakerDrivers.FirstOrDefault(available.Contains) ?? "none";
+            }
+            return chosen.Contains("id=") ? chosen : $"{chosen},id=snd0";
+        }
+
+        /// <summary>QEMU's -audiodev for recording the sound card to a WAV file.</summary>
+        static string RecordAudio(string wavPath) => $"wav,id=snd0,path={wavPath.Replace(",", ",,")}";
 
         /// <summary>Runs QEMU with a window; serial output goes to this terminal.</summary>
         public static int RunInteractive(string image, bool debug)
         {
-            var args = MachineArgs(image);
+            var args = MachineArgs(image, SpeakerAudio());
             args.AddRange(new[] { "-serial", "stdio" });
 
             if (debug)
@@ -64,13 +87,15 @@ namespace Phi.Cli
         /// Runs QEMU with no display, collecting serial output until the guest exits through
         /// isa-debug-exit, <paramref name="isDone"/> returns true, or the timeout passes.
         /// <paramref name="input"/> is a script of QEMU monitor commands (see InputScript).
+        /// With <paramref name="recordTo"/>, what the sound card plays is saved there as a WAV file,
+        /// and QEMU gets a few seconds to exit by itself (which finishes the file) once the output is done.
         /// </summary>
         public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
-                                                 IReadOnlyList<string>? input = null)
+                                                 IReadOnlyList<string>? input = null, string? recordTo = null)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
-            var args = MachineArgs(image);
+            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0");
             args.AddRange(new[] { "-display", "none", "-serial", "stdio", "-monitor",
                                   monitorPort != null ? $"tcp:127.0.0.1:{monitorPort},server,nowait" : "none" });
 
@@ -118,7 +143,8 @@ namespace Phi.Cli
                 if (doneAt == null && inputFinished && isDone != null && isDone(text)) doneAt = clock.Elapsed;
 
                 // after the expected output shows up, wait a moment to catch anything extra
-                if (doneAt != null && clock.Elapsed - doneAt > TimeSpan.FromMilliseconds(300)) break;
+                TimeSpan grace = TimeSpan.FromMilliseconds(recordTo != null ? 3000 : 300);
+                if (doneAt != null && clock.Elapsed - doneAt > grace) break;
 
                 if (clock.Elapsed > timeout) { timedOut = true; break; }
 

@@ -1,0 +1,23 @@
+# Chip: a tune in the style of an old game console, using every sound
+# 1: the tune (pulse), 2: chords played as fast notes (square),
+# 3: the bass (triangle), 4: the drums (noise)
+
+1: t140 @1 v10 q7
+2: @0 v5 q6 l16
+3: @2 v11 q6 l8
+4: @5 v6 q2 l8
+
+1: o5 e4 a4 g8 e8 d8 c8 | o5 c4 d8 c8 o4 a2 | o5 e4 g4 a8 g8 e8 c8 | o5 d2. r4 |
+2: [o4 a o5 c e c]4 | [o4 f a o5 c o4 a]4 | [o4 e g o5 c o4 g]4 | [o4 d g b g]4 |
+3: [o2 a o3 a]4 | [o2 f o3 f]4 | [o2 c o3 c]4 | [o2 g o3 g]4 |
+4: [o1 c o8 c o4 c o8 c]8 |
+
+1: o5 e8 e8 a8 e8 g8 e8 d8 c8 | o5 c4 f4 e8 d8 c8 o4 a8 | o5 g4 e4 c8 d8 e8 g8 | o5 b4 a4 g2 |
+2: [o4 a o5 c e c]4 | [o4 f a o5 c o4 a]4 | [o4 e g o5 c o4 g]4 | [o4 d g b g]4 |
+3: [o2 a o3 a]4 | [o2 f o3 f]4 | [o2 c o3 c]4 | [o2 g o3 g]4 |
+4: [o1 c o8 c o4 c o8 c]8 |
+
+1: o5 a1
+2: o4 a1
+3: o2 a1
+4: o1 c4 r2.

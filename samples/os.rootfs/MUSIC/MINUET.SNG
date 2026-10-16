@@ -1,0 +1,14 @@
+# Minuet in G major, from the notebook for Anna Magdalena Bach (1725),
+# by Christian Petzold
+# 1: the right hand, on a sine wave; 2: the left hand, on a triangle wave
+
+1: t132 @4 v13 q7
+2: @2 v12 q8
+1: o5 d4 o4 g8 a8 b8 o5 c8 | o5 d4 o4 g4 g4 | o5 e4 c8 d8 e8 f+8 | o5 g4 o4 g4 g4 |
+2: o3 g2. | o3 b2. | o4 c2. | o3 b2. |
+1: o5 c4 d8 c8 o4 b8 a8 | o4 b4 o5 c8 o4 b8 a8 g8 | o4 f+4 g8 a8 b8 g8 | o4 a2. |
+2: o3 a2. | o3 g2. | o4 d4 o3 b4 g4 | o3 d2. |
+1: o5 d4 o4 g8 a8 b8 o5 c8 | o5 d4 o4 g4 g4 | o5 e4 c8 d8 e8 f+8 | o5 g4 o4 g4 g4 |
+2: o3 g2. | o3 b2. | o4 c2. | o3 b2. |
+1: o5 c4 d8 c8 o4 b8 a8 | o4 b4 o5 c8 o4 b8 a8 g8 | o4 a4 b8 a8 g8 f+8 | o4 g2.
+2: o3 a2. | o3 g2. | o3 d2. | o2 g2.

@@ -1,0 +1,4 @@
+# TONE8.WAV (440 Hz), TONE16.WAV (660 Hz) and EXT.WAV (330 Hz), 0.6 s each, STREAM.WAV
+# (990 Hz, 0.4 s), then SONG.SNG (A5 for half a second)
+sound at least 2.2
+tones 440 660 330 990 880

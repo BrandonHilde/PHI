@@ -1,0 +1,43 @@
+# The AC'97 driver and the synthesizer: five notes go to the sound card, and phi test
+# checks the recording of what it played (sound_tones.sound).
+use drivers.ac97;
+use audio.synth;
+
+phi.SoundTones:Kernel
+{
+	ptr<u8> sound: new u8[4096];
+
+	bln ok: false;
+	call ok is Ac97.Start;
+	log 'card: ' ok ', any rate: ' Ac97.any_rate '\n';
+	u32 rate: 0;
+	call rate is Ac97.SetRate: 22050;
+	log 'rate: ' rate '\n';
+
+	# A4, A5, E5, then a sharp and a flat that cross into the next octave: B#4 is C5,
+	# Cb4 is B3. Each a quarter of a second.
+	call ok is Synth.Load: 't120 l8 q8 @4 o4 a >a e <b+ c-' rate;
+	log 'song: ' ok ', ' Synth.voices ' voice, ' Synth.milliseconds ' ms\n';
+
+	u32 start: 0;
+	call start is OS.GetTicks;
+	u32 frames: 1;
+	u32 total: 0;
+	while frames > 0
+		call frames is Synth.Render: sound 1024;
+		call Ac97.Play: sound frames * 4;
+		total++ frames;
+	;;
+	call Ac97.Drain;
+	u32 elapsed: 0;
+	call elapsed is OS.GetTicks;
+	elapsed-- start;
+	# the notes, then the last one fading out
+	log 'frames for 1.25 s and a little: ' (total >= 27562 and total <= 29000) '\n';
+	# QEMU takes some of the sound ahead of time, so the card finishes a little early
+	log 'took a while to play: ' (elapsed >= 300 and elapsed <= 2500) '\n';
+	u32 left: 0;
+	call left is Ac97.Queued;
+	log 'queued: ' left '\n';
+	exit 0;
+}

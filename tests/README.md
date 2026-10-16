@@ -51,6 +51,17 @@ the addresses as `TestWeb.url` (`'http://10.0.2.2:PORT'`) and `TestWeb.secure_ur
 reaches the host's `127.0.0.1` through the gateway, 10.0.2.2. See `net_http.web/`.
 `phi serve folder [--https]` runs the same server by hand.
 
+A file `NAME.sound` checks what the sound card played. Every machine has an AC'97 card;
+with `NAME.sound`, QEMU records its output to `build/NAME/NAME.wav` (otherwise the sound
+goes nowhere), and once the output matches, the recording is checked line by line:
+
+| Line | Meaning |
+|---|---|
+| `sound at least SECONDS` | at least this much of it wasn't silent (`sound at most` too) |
+| `tones HZ HZ ...` | the steady pitches heard, in order, each within 3% (a pitch heard again straight after itself counts once) |
+
+The program should end with `exit`, so QEMU finishes the recording; see `sound_tones.phi`.
+
 `tests/support/` holds files that tests load with `use`; they aren't tests themselves.
 
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error

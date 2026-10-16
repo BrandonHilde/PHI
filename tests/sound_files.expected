@@ -1,0 +1,19 @@
+TONE8.WAV: 11025 Hz, 1 channel(s), 8 bits, data at 44, 6615 bytes, 600 ms
+TONE16.WAV: 22050 Hz, 2 channel(s), 16 bits, data at 44, 52920 bytes, 600 ms
+EXT.WAV: 8000 Hz, 1 channel(s), 16 bits, data at 90, 9600 bytes, 600 ms
+ADPCM.WAV: not PCM (it is compressed)
+NOTES.TXT: not a WAV file
+HUGE.WAV: no data in the first part of the file
+STREAM.WAV: 8000 Hz, 1 channel(s), 16 bits, data at 44, 6400 bytes, 400 ms
+8-bit mono as 16-bit stereo: 16 bytes, 0 0 4608 4608
+read at 2046: 8 bytes
+read near the end: 4 bytes
+read past the end: 0 bytes
+play TONE8.WAV: 1
+play TONE16.WAV: 1
+play EXT.WAV: 1
+play STREAM.WAV: 1
+play ADPCM.WAV: 0 (not PCM (it is compressed))
+play MISSING.WAV: 0 (no such file)
+play BAD.SNG: 0 (not a note or a command on line 3)
+play SONG.SNG: 1

@@ -1,0 +1,75 @@
+# WAV files and songs from the disk, played with audio.sound: four WAV files in
+# different formats, then a song. phi test checks the recording (sound_files.sound).
+use audio.sound;
+
+phi.SoundFiles:Kernel
+{
+	ptr<u8> header: new u8[4096];
+
+	call Describe: 'TONE8.WAV';
+	call Describe: 'TONE16.WAV';
+	call Describe: 'EXT.WAV';
+	call Describe: 'ADPCM.WAV';
+	call Describe: 'NOTES.TXT';
+	call Describe: 'HUGE.WAV';
+	call Describe: 'STREAM.WAV';
+
+	# a WAV file's samples, converted for the card
+	int got: 0;
+	call got is Fat.ReadFile: 'TONE8.WAV' header 4096;
+	bln ok: false;
+	call ok is Wav.Parse: header got;
+	ptr<u8> converted: new u8[64];
+	u32 bytes: 0;
+	call bytes is Wav.Convert: header + Wav.data_start 4 converted;
+	ptr<i16> samples: converted;
+	log '8-bit mono as 16-bit stereo: ' bytes ' bytes, ' samples:0 ' ' samples:1 ' ' samples:2 ' ' samples:3 '\n';
+
+	# reading from the middle of a file, across clusters
+	call got is Fat.ReadAt: 'TONE16.WAV' 2046 header 8;
+	log 'read at 2046: ' got ' bytes\n';
+	call got is Fat.ReadAt: 'TONE16.WAV' 52960 header 100;
+	log 'read near the end: ' got ' bytes\n';
+	call got is Fat.ReadAt: 'TONE16.WAV' 60000 header 100;
+	log 'read past the end: ' got ' bytes\n';
+
+	call Play: 'TONE8.WAV';
+	call Play: 'TONE16.WAV';
+	call Play: 'EXT.WAV';
+	call Play: 'STREAM.WAV';
+	call Play: 'ADPCM.WAV';
+	call Play: 'MISSING.WAV';
+	call Play: 'BAD.SNG';
+	call Play: 'SONG.SNG';
+	exit 0;
+
+	[Describe: ptr<u8> path: 0;]
+		int size: 0;
+		call size is Fat.ReadFile: path header 4096;
+		bln ok: false;
+		int file_size: 0;
+		call file_size is Fat.FileSize: path;
+		call ok is Wav.Parse: header size file_size;
+		log path ': ';
+		if ok
+			log Wav.rate ' Hz, ' Wav.channels ' channel(s), ' Wav.bits ' bits, data at ' Wav.data_start ', ' Wav.data_size ' bytes, ' Wav.milliseconds ' ms\n';
+		;;
+		else
+			log Wav.error '\n';
+		;;
+	[end]
+
+	[Play: ptr<u8> path: 0;]
+		bln ok: false;
+		call ok is Sound.PlayFile: path;
+		log 'play ' path ': ' ok;
+		if ok is false
+			log ' (' Sound.error;
+			if Sound.error_line > 0
+				log ' on line ' Sound.error_line;
+			;;
+			log ')';
+		;;
+		log '\n';
+	[end]
+}

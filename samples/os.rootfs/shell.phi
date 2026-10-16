@@ -59,6 +59,8 @@ phi.Shell:Program
 			log '  uptime          time since the kernel started\n';
 			log '  clear           clear the screen\n';
 			log '  pong            play Pong (w/s and o/l, q to quit)\n';
+			log '  play FILE       play a song or a WAV file (try play music/ode.sng)\n';
+			log '  volume N        the sound volume, 0 to 100\n';
 			log '  hello, count    small example programs\n';
 			log '  reboot          restart the machine\n';
 			log 'Add & to run a program without waiting for it. exit leaves the shell.\n';

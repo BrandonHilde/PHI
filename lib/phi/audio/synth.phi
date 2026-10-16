@@ -1,0 +1,660 @@
+# A synthesizer that plays music written as text, in the style of MML (the music
+# macro language of old computers and game consoles). Works in any kind of program:
+# it fills a buffer with 16-bit stereo sound, which the caller hands to the sound card.
+#
+#   use audio.synth;
+#   bln ok: false;
+#   call ok is Synth.Load: 't140 o4 l8 cdefgab>c' 44100;   # false: error and error_line say why
+#   u8 sound[4096];
+#   u32 frames: 0;
+#   call frames is Synth.Render: addr sound 1024;   # frames written; 0 once the song is over
+#
+# Each line is a voice, and the voices play at the same time (up to 4). A line that
+# starts with a voice number and a colon (`1:` to `9:`) carries on that voice, so a
+# long part can be split over many lines. `#` starts a comment.
+#
+#   c d e f g a b   a note, then # or + for sharp, - for flat, a length, and dots
+#   r (or p)        a rest, with a length and dots
+#   o4  > <         the octave (0-8; o4 starts at middle C), one up, one down
+#   l8              the length of notes that don't give one (1 whole, 4 quarter, 8, 16, ...)
+#   t120            the tempo, in quarter notes a minute
+#   v12             the volume, 0-15
+#   @0 to @5        the sound: square, pulse, triangle, sawtooth, sine, noise
+#   q7              how much of each note sounds, in eighths (8 runs notes together)
+#   [ ... ]3        play what's inside 3 times (loops don't nest)
+#   |  spaces       ignored; use them to show bars
+#
+# The first voice's tempo, if it starts with one, is every voice's starting tempo.
+
+phi.Synth:Library
+{
+	const u32 MAX_VOICES: 4;
+	const u32 MIX_FRAMES: 512;
+	const u32 FULL: 65536;                   # the envelope's top level
+	const u32 TWO_29: 0x20000000;
+
+	const u32 STAGE_IDLE: 0;
+	const u32 STAGE_ATTACK: 1;
+	const u32 STAGE_DECAY: 2;
+	const u32 STAGE_RELEASE: 3;
+
+	# the notes of octave 8 (C8 to B8), in eighths of a hertz
+	u32 top_octave: 33488 35479 37589 39824 42192 44701 47359 50175 53159 56320 59669 63217;
+	# a quarter of a sine wave, 0 to 32767
+	int quarter_sine: 0 804 1608 2410 3212 4011 4808 5602 6393 7179 7962 8739 9512 10278 11039
+		11793 12539 13279 14010 14732 15446 16151 16846 17530 18204 18868 19519 20159 20787
+		21403 22005 22594 23170 23731 24279 24811 25329 25832 26319 26790 27245 27683 28105
+		28510 28898 29268 29621 29956 30273 30571 30852 31113 31356 31580 31785 31971 32137
+		32285 32412 32521 32609 32678 32728 32757 32767;
+	# the semitone of each letter, a to g
+	int letter_semitone: 9 11 0 2 4 5 7;
+
+	u32 rate: 44100;
+	u32 voices: 0;                           # how many the song has
+	u32 milliseconds: 0;                     # how long it plays
+	bln finished: true;
+	str error: [60];
+	u32 error_line: 0;
+
+	u32 song: 0;                             # the text
+	u32 steps[12];                           # the phase step of each note in octave 8
+	u32 attack_step: 0;
+	u32 release_step: 0;
+	int decay_shift: 12;
+	int sustain: 45875;                      # 70% of FULL
+	bln failed: false;
+	u32 start_tempo: 120;
+
+	# each voice
+	u32 voice_key[4];                        # its number (1-9), or 100 and up for a line of its own
+	u32 voice_start[4];
+	u32 voice_at[4];                         # the next command
+	bln voice_done[4];
+	u32 voice_octave[4];
+	u32 voice_length[4];
+	u32 voice_tempo[4];
+	u32 voice_volume[4];
+	u32 voice_wave[4];
+	u32 voice_gate[4];
+	u32 voice_loop[4];                       # where the loop starts, or 0
+	u32 voice_repeats[4];                    # times still to go back
+	bln voice_counting[4];                   # its ] has been seen once
+	u32 voice_remaining[4];                  # frames left of the note or rest
+	u32 voice_held[4];                       # frames until the note is let go
+	u32 voice_phase[4];
+	u32 voice_step[4];
+	int voice_level[4];
+	u32 voice_stage[4];
+	u32 voice_noise[4];
+
+	int mix[512];
+
+	# get a song ready to play at this many frames a second; false if it has a mistake
+	[Load: ptr<u8> text: 0; u32 hz: 44100;]
+		song is text;
+		rate is hz;
+		failed is false;
+		error is '';
+		error_line is 0;
+
+		# the phase step for frequency f is f * 2^32 / rate; f is in eighths of a hertz
+		u32 whole: TWO_29 / rate;
+		u32 part: TWO_29 % rate;
+		unsafe
+			while u32 n: 0; n < 12; n++;
+				steps:n is top_octave:n * whole + top_octave:n * part / rate;
+			;;
+		;;
+		attack_step is FULL / (rate * 2 / 1000 + 1);         # 2 ms
+		release_step is FULL / (rate * 30 / 1000 + 1);       # 30 ms
+		decay_shift is 10;
+		if rate >= 16000
+			decay_shift is 11;
+		;;
+		if rate >= 32000
+			decay_shift is 12;
+		;;
+
+		call FindVoices;
+
+		# play it through without sound, to find mistakes and how long it is
+		u32 longest: 0;
+		if failed is false
+			call Rewind;
+			while u32 v: 0; v < voices and failed is false; v++;
+				u32 total: 0;
+				bln more: true;
+				while more and failed is false
+					call Next: v;
+					more is voice_done:v is false;
+					total++ voice_remaining:v;
+					voice_remaining:v is 0;
+				;;
+				if total > longest
+					longest is total;
+				;;
+			;;
+		;;
+		milliseconds is (longest / rate) * 1000 + (longest % rate) * 1000 / rate;
+		call Rewind;
+		finished is failed;
+	[end: failed is false]
+
+	# start the song again from the beginning
+	[Rewind]
+		unsafe
+			while u32 v: 0; v < voices; v++;
+				voice_at:v is voice_start:v;
+				voice_done:v is false;
+				voice_octave:v is 4;
+				voice_length:v is 4;
+				voice_tempo:v is start_tempo;
+				voice_volume:v is 12;
+				voice_wave:v is 0;
+				voice_gate:v is 7;
+				voice_loop:v is 0;
+				voice_repeats:v is 0;
+				voice_counting:v is false;
+				voice_remaining:v is 0;
+				voice_held:v is 0;
+				voice_phase:v is 0;
+				voice_step:v is 0;
+				voice_level:v is 0;
+				voice_stage:v is STAGE_IDLE;
+				voice_noise:v is 0x4000 + v;
+			;;
+		;;
+		finished is voices is 0 or failed;
+	[end]
+
+	# fill output with up to frames frames of the song; how many it wrote (0 once it's over)
+	[Render: ptr<u8> output: 0; u32 frames: 0;]
+		u32 written: 0;
+		ptr<i16> to: output;
+		while written < frames and finished is false
+			u32 chunk: frames - written;
+			if chunk > MIX_FRAMES
+				chunk is MIX_FRAMES;
+			;;
+			unsafe
+				while u32 i: 0; i < chunk; i++;
+					mix:i is 0;
+				;;
+			;;
+
+			bln sounding: false;
+			while u32 v: 0; v < voices; v++;
+				u32 done: 0;
+				while done < chunk
+					if voice_remaining:v is 0 and voice_done:v is false
+						call Next: v;
+					;;
+					u32 run: chunk - done;
+					if voice_remaining:v is 0
+						# the voice is over: let its last note fade out
+						if voice_stage:v is not STAGE_IDLE
+							voice_stage:v is STAGE_RELEASE;
+						;;
+					;;
+					else
+						if run > voice_remaining:v
+							run is voice_remaining:v;
+						;;
+						if voice_held:v > 0 and run > voice_held:v
+							run is voice_held:v;
+						;;
+					;;
+					call Voice: v done run;
+					if voice_remaining:v > 0
+						voice_remaining:v is voice_remaining:v - run;
+					;;
+					if voice_held:v > 0
+						voice_held:v is voice_held:v - run;
+						if voice_held:v is 0 and voice_stage:v is not STAGE_IDLE
+							voice_stage:v is STAGE_RELEASE;
+						;;
+					;;
+					done++ run;
+				;;
+				if voice_done:v is false or voice_stage:v is not STAGE_IDLE
+					sounding is true;
+				;;
+			;;
+
+			unsafe
+				while u32 i: 0; i < chunk; i++;
+					int value: mix:i;
+					if value > 32767
+						value is 32767;
+					;;
+					if value < -32767
+						value is -32767;
+					;;
+					to:((written + i) * 2) is value;
+					to:((written + i) * 2 + 1) is value;
+				;;
+			;;
+			written++ chunk;
+			finished is sounding is false;
+		;;
+	[end: written]
+
+	# add count frames of voice v to mix, from frame start
+	[Voice: u32 v: 0; u32 start: 0; u32 count: 0;]
+		u32 phase: voice_phase:v;
+		u32 step: voice_step:v;
+		int level: voice_level:v;
+		u32 stage: voice_stage:v;
+		u32 wave: voice_wave:v;
+		int volume: voice_volume:v;
+		u32 noise: voice_noise:v;
+		int sample: 32767;
+		if (noise & 1) is 0
+			sample is -32767;
+		;;
+
+		unsafe
+			while u32 i: 0; i < count and stage is not STAGE_IDLE; i++;
+				if stage is STAGE_ATTACK
+					level++ attack_step;
+					if level >= FULL
+						level is FULL;
+						stage is STAGE_DECAY;
+					;;
+				;;
+				elif stage is STAGE_DECAY
+					level-- (level - sustain) >> decay_shift;
+				;;
+				else
+					level-- release_step;
+					if level <= 0
+						level is 0;
+						stage is STAGE_IDLE;
+					;;
+				;;
+
+				if wave is 0
+					sample is 32767;
+					if phase >= 0x80000000
+						sample is -32767;
+					;;
+				;;
+				elif wave is 1
+					sample is 32767;
+					if phase >= 0x40000000
+						sample is -32767;
+					;;
+				;;
+				elif wave is 2
+					int rise: phase >> 15;           # 0 to 131071
+					if rise < 65536
+						sample is rise - 32768;
+					;;
+					else
+						sample is 98303 - rise;
+					;;
+				;;
+				elif wave is 3
+					int saw: phase >> 16;
+					sample is saw - 32768;
+				;;
+				elif wave is 4
+					u32 index: phase >> 24;          # 256 steps a cycle
+					u32 part: index & 63;
+					u32 quadrant: index >> 6;
+					if quadrant is 0
+						sample is quarter_sine:part;
+					;;
+					elif quadrant is 1
+						sample is quarter_sine:(64 - part);
+					;;
+					elif quadrant is 2
+						sample is -quarter_sine:part;
+					;;
+					else
+						sample is -quarter_sine:(64 - part);
+					;;
+				;;
+				else
+					# a new random level 16 times a cycle, from a 15-bit shift register
+					u32 after: phase + step;
+					if ((after ^ phase) & 0xF0000000) is not 0
+						u32 bit: (noise ^ (noise >> 1)) & 1;
+						noise is (noise >> 1) | (bit << 14);
+						sample is 32767;
+						if (noise & 1) is 0
+							sample is -32767;
+						;;
+					;;
+				;;
+				phase++ step;
+
+				mix:(start + i) is mix:(start + i) + ((((sample * level) >> 16) * volume) >> 5);
+			;;
+		;;
+
+		voice_phase:v is phase;
+		voice_level:v is level;
+		voice_stage:v is stage;
+		voice_noise:v is noise;
+	[end]
+
+	# read voice v's commands up to its next note or rest, which sets its remaining
+	# frames; at the end of its text, voice_done is set instead
+	[Next: u32 v: 0;]
+		bln found: false;
+		while found is false and voice_done:v is false and failed is false
+			ptr<u8> p: voice_at:v;
+			u8 c: p:0;
+			if c >= 'A' and c <= 'Z'
+				c is c + 32;
+			;;
+
+			if c is 0 or c is '\n' or c is '\r' or c is '#'
+				call NextLine: v;
+			;;
+			elif c is ' ' or c is '\t' or c is '|'
+				voice_at:v is voice_at:v + 1;
+			;;
+			elif (c >= 'a' and c <= 'g') or c is 'r' or c is 'p'
+				call Note: v c;
+				found is true;
+			;;
+			elif c is 'o'
+				call SetOctave: v 0 8;
+			;;
+			elif c is '>'
+				voice_at:v is voice_at:v + 1;
+				if voice_octave:v < 8
+					voice_octave:v is voice_octave:v + 1;
+				;;
+			;;
+			elif c is '<'
+				voice_at:v is voice_at:v + 1;
+				if voice_octave:v > 0
+					voice_octave:v is voice_octave:v - 1;
+				;;
+			;;
+			elif c is 'l'
+				call voice_length:v is Number: v true 4 1 64 'a length must be 1 to 64';
+			;;
+			elif c is 't'
+				call voice_tempo:v is Number: v true 120 20 600 'the tempo must be 20 to 600';
+			;;
+			elif c is 'v'
+				call voice_volume:v is Number: v true 12 0 15 'the volume must be 0 to 15';
+			;;
+			elif c is '@'
+				call voice_wave:v is Number: v true 0 0 5 'the sound must be @0 to @5';
+			;;
+			elif c is 'q'
+				call voice_gate:v is Number: v true 7 1 8 'q must be 1 to 8';
+			;;
+			elif c is '['
+				if voice_loop:v is not 0
+					call Fail: p 'loops can't be nested';
+				;;
+				voice_at:v is voice_at:v + 1;
+				voice_loop:v is voice_at:v;
+				voice_counting:v is false;
+			;;
+			elif c is ']'
+				if voice_loop:v is 0
+					call Fail: p 'a ] without a [';
+				;;
+				u32 times: 0;
+				call times is Number: v true 2 1 255 'a loop plays 1 to 255 times';
+				if failed is false
+					if voice_counting:v is false
+						voice_repeats:v is times - 1;
+						voice_counting:v is true;
+					;;
+					if voice_repeats:v > 0
+						voice_repeats:v is voice_repeats:v - 1;
+						voice_at:v is voice_loop:v;
+					;;
+					else
+						voice_loop:v is 0;
+						voice_counting:v is false;
+					;;
+				;;
+			;;
+			else
+				call Fail: p 'not a note or a command';
+			;;
+		;;
+		if failed
+			voice_done:v is true;
+		;;
+	[end]
+
+	# a note or rest at voice_at
+	[Note: u32 v: 0; u8 letter: 0;]
+		ptr<u8> p: voice_at:v;
+		p++;
+		int semitone: 0;
+		bln rest: letter is 'r' or letter is 'p';
+		if rest is false
+			semitone is letter_semitone:(letter - 'a');
+			if p:0 is '#' or p:0 is '+'
+				semitone++;
+				p++;
+			;;
+			elif p:0 is '-'
+				semitone--;
+				p++;
+			;;
+		;;
+		voice_at:v is p;
+
+		u32 length: 0;
+		call length is Number: v false voice_length:v 1 64 'a length must be 1 to 64';
+		if length is 0
+			length is 1;                         # a mistake (c0), already noted
+		;;
+		u32 frames: (rate * 240) / (voice_tempo:v * length);
+		u32 extra: frames;
+		p is voice_at:v;
+		while p:0 is '.'
+			extra is extra / 2;
+			frames++ extra;
+			p++;
+		;;
+		voice_at:v is p;
+		if frames is 0
+			frames is 1;
+		;;
+		voice_remaining:v is frames;
+
+		if rest
+			voice_held:v is 0;
+			if voice_stage:v is not STAGE_IDLE
+				voice_stage:v is STAGE_RELEASE;
+			;;
+		;;
+		else
+			int octave: voice_octave:v;
+			if semitone < 0
+				semitone++ 12;
+				octave--;
+			;;
+			if semitone > 11
+				semitone-- 12;
+				octave++;
+			;;
+			if octave < 0
+				octave is 0;
+			;;
+			if octave > 8
+				octave is 8;
+			;;
+			voice_step:v is steps:semitone >> (8 - octave);
+			voice_held:v is frames * voice_gate:v / 8;
+			if voice_held:v is 0
+				voice_held:v is 1;
+			;;
+			voice_stage:v is STAGE_ATTACK;           # from wherever the last note left off
+		;;
+	[end]
+
+	[SetOctave: u32 v: 0; u32 low: 0; u32 high: 8;]
+		call voice_octave:v is Number: v true voice_octave:v low high 'the octave must be 0 to 8';
+	[end]
+
+	# the number at voice_at, after the command letter if skip (or fallback if there
+	# isn't one), moving past it; outside low..high it's a mistake
+	[Number: u32 v: 0; bln skip: true; u32 fallback: 0; u32 low: 0; u32 high: 0; str message: [60];]
+		ptr<u8> start: voice_at:v;
+		ptr<u8> p: start;
+		if skip
+			p++;
+		;;
+		u32 value: fallback;
+		if p:0 >= '0' and p:0 <= '9'
+			value is 0;
+			u32 digits: 0;
+			while p:0 >= '0' and p:0 <= '9' and digits < 6
+				value is value * 10 + (p:0 - '0');
+				p++;
+				digits++;
+			;;
+			if value < low or value > high
+				call Fail: start message;
+			;;
+		;;
+		voice_at:v is p;
+	[end: value]
+
+	# carry on with the voice's next line, or end it
+	[NextLine: u32 v: 0;]
+		ptr<u8> p: voice_at:v;
+		while p:0 is not 0 and p:0 is not '\n'
+			p++;
+		;;
+		bln found: false;
+		u32 key: voice_key:v;
+		if key < 100
+			# the next line that starts with the same number
+			while p:0 is not 0 and found is false
+				p++;
+				u32 lineKey: 0;
+				call lineKey is LineKey: p;
+				if lineKey is key
+					found is true;
+					voice_at:v is p + 2;
+				;;
+				else
+					while p:0 is not 0 and p:0 is not '\n'
+						p++;
+					;;
+				;;
+			;;
+		;;
+		if found is false
+			voice_done:v is true;
+			if voice_loop:v is not 0
+				call Fail: p 'a [ without a ]';
+			;;
+		;;
+	[end]
+
+	# split the song into voices
+	[FindVoices]
+		voices is 0;
+		start_tempo is 120;
+		ptr<u8> p: song;
+		u32 line: 0;
+		while p:0 is not 0 and failed is false
+			# skip to the first thing on the line
+			ptr<u8> first: p;
+			while first:0 is ' ' or first:0 is '\t' or first:0 is '\r'
+				first++;
+			;;
+			u32 key: 0;
+			call key is LineKey: p;
+			bln blank: first:0 is 0 or first:0 is '\n' or first:0 is '#';
+			if blank is false
+				u32 start: first;
+				if key is 0
+					key is 100 + line;
+				;;
+				else
+					start is p + 2;
+				;;
+				bln known: false;
+				unsafe
+					while u32 v: 0; v < voices; v++;
+						if voice_key:v is key
+							known is true;
+						;;
+					;;
+				;;
+				if known is false
+					if voices is MAX_VOICES
+						call Fail: p 'a song has at most 4 voices';
+					;;
+					else
+						unsafe
+							voice_key:voices is key;
+							voice_start:voices is start;
+						;;
+						voices++;
+					;;
+				;;
+			;;
+			while p:0 is not 0 and p:0 is not '\n'
+				p++;
+			;;
+			if p:0 is '\n'
+				p++;
+			;;
+			line++;
+		;;
+		if voices is 0 and failed is false
+			call Fail: song 'there are no notes';
+		;;
+
+		# a tempo at the very start of the first voice is everyone's
+		if voices > 0
+			ptr<u8> q: voice_start:0;
+			while q:0 is ' ' or q:0 is '\t'
+				q++;
+			;;
+			if q:0 is 't' or q:0 is 'T'
+				q++;
+				u32 tempo: 0;
+				while q:0 >= '0' and q:0 <= '9' and tempo < 1000
+					tempo is tempo * 10 + (q:0 - '0');
+					q++;
+				;;
+				if tempo >= 20 and tempo <= 600
+					start_tempo is tempo;
+				;;
+			;;
+		;;
+	[end]
+
+	# 1-9 if the line starts with a voice number and a colon, otherwise 0
+	[LineKey: ptr<u8> p: 0;]
+		u32 key: 0;
+		if p:0 >= '1' and p:0 <= '9' and p:1 is ':'
+			key is p:0 - '0';
+		;;
+	[end: key]
+
+	# note the first mistake, and the line it's on
+	[Fail: ptr<u8> at: 0; str message: [60];]
+		if failed is false
+			failed is true;
+			error is message;
+			error_line is 1;
+			ptr<u8> p: song;
+			while p < at and p:0 is not 0
+				if p:0 is '\n'
+					error_line++;
+				;;
+				p++;
+			;;
+		;;
+	[end]
+}

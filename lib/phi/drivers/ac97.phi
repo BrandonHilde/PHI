@@ -1,0 +1,308 @@
+# Driver for the Intel AC'97 sound card (82801AA), which QEMU emulates (`phi run` and
+# `phi test` give every machine one). 32-bit kernels.
+#
+#   use drivers.ac97;
+#   bln ok: false;
+#   call ok is Ac97.Start;                       # false if there's no card
+#   u32 rate: 0;
+#   call rate is Ac97.SetRate: 22050;            # frames a second; the rate it got
+#   u32 taken: 0;
+#   call taken is Ac97.Write: samples length;    # bytes it took (0 when the ring is full)
+#   call Ac97.Play: samples length;              # the same, waiting for room
+#   call Ac97.Drain;                             # wait until everything has played
+#
+# Sound is 16-bit signed samples, left then right: 4 bytes a frame. The card reads it
+# from memory by itself (DMA), from a ring of 32 buffers that it plays in turn. Write
+# copies into the buffers the card has finished with and never waits, so a kernel that
+# is busy with other things keeps calling it; Play waits for room. If the ring runs dry
+# the card plays silence until more arrives, and starts again by itself.
+
+use drivers.pci;
+use memory.heap;
+
+phi.Ac97:Kernel
+{
+	const u32 VENDOR: 0x8086;
+	const u32 PRODUCT: 0x2415;
+
+	# the mixer's registers, as offsets from its I/O ports (BAR 0)
+	const u32 MIXER_RESET: 0x00;
+	const u32 MIXER_MASTER: 0x02;            # attenuation in 1.5 dB steps; bit 15 mutes
+	const u32 MIXER_PCM_OUT: 0x18;
+	const u32 MIXER_EXTENDED_ID: 0x28;       # bit 0: the codec can play at any rate
+	const u32 MIXER_EXTENDED_CONTROL: 0x2A;  # bit 0: turn that on
+	const u32 MIXER_FRONT_RATE: 0x2C;
+
+	# the bus master's registers (BAR 1): the PCM out channel, then global ones
+	const u32 OUT_LIST: 0x10;                # address of the buffer descriptor list
+	const u32 OUT_CURRENT: 0x14;             # the descriptor being played
+	const u32 OUT_LAST_VALID: 0x15;          # the last descriptor it may play
+	const u32 OUT_STATUS: 0x16;
+	const u32 OUT_REMAINING: 0x18;           # samples left in the current buffer
+	const u32 OUT_CONTROL: 0x1B;
+	const u32 GLOBAL_CONTROL: 0x2C;
+	const u32 GLOBAL_STATUS: 0x30;
+
+	const u8 CONTROL_RUN: 0x01;
+	const u8 CONTROL_RESET: 0x02;
+	const u16 STATUS_HALTED: 0x01;           # it played the last valid buffer and stopped
+	const u16 STATUS_CLEAR: 0x1C;            # the flags that are cleared by writing 1s
+	const u32 GLOBAL_COLD_RESET: 0x02;       # 1: out of reset
+	const u32 GLOBAL_CODEC_READY: 0x100;
+
+	const u32 BUFFERS: 32;
+	const u32 BUFFER_SIZE: 4096;             # 1024 frames: 23 ms at 44100
+	const u32 MIN_RATE: 8000;
+	const u32 MAX_RATE: 48000;
+
+	bln started: false;
+	bln running: false;                      # the card has been told to play
+	bln any_rate: false;                     # the codec can play at rates other than 48000
+	u32 mixer: 0;
+	u32 bus: 0;
+	u32 rate: 48000;
+	u32 volume: 100;
+
+	ptr<u32> descriptors: 0;                 # 32 of: address, then length | flags
+	ptr<u8> buffers: 0;
+	u32 lengths[32];                         # bytes in each committed buffer
+	u32 next: 0;                             # the buffer being filled
+	u32 fill: 0;                             # bytes in it so far
+	u32 bytes_written: 0;                    # everything Write has taken since Start
+
+	# find the card and turn it on; false if there isn't one
+	[Start]
+		if started is false
+			u32 card: 0;
+			call card is Pci.Find: VENDOR PRODUCT;
+			if card is not Pci.NOT_FOUND
+				descriptors is new u32[BUFFERS * 2];
+				buffers is new u8[BUFFERS * BUFFER_SIZE];
+			;;
+			if card is not Pci.NOT_FOUND and descriptors is not 0 and buffers is not 0
+				call Pci.EnableBusMaster: card;
+				call mixer is Pci.Bar: card 0;
+				call bus is Pci.Bar: card 1;
+
+				# out of reset, no interrupts; then wait for the codec to answer
+				outd (bus + GLOBAL_CONTROL) GLOBAL_COLD_RESET;
+				u32 tries: 0;
+				while ((ind (bus + GLOBAL_STATUS)) & GLOBAL_CODEC_READY) is 0 and tries < 100000
+					tries++;
+				;;
+
+				outw (mixer + MIXER_RESET) 0;
+				outw (mixer + MIXER_PCM_OUT) 0x0808;            # 0 dB, not muted
+				call SetVolume: volume;
+
+				u16 extended: inw (mixer + MIXER_EXTENDED_ID);
+				if (extended & 1) is not 0
+					u16 control: inw (mixer + MIXER_EXTENDED_CONTROL);
+					outw (mixer + MIXER_EXTENDED_CONTROL) control | 1;
+					any_rate is true;
+				;;
+
+				while u32 b: 0; b < BUFFERS; b++;
+					descriptors:(b * 2) is buffers + b * BUFFER_SIZE;
+					descriptors:(b * 2 + 1) is 0;
+				;;
+				started is true;
+				call Reset;
+				rate is 0;
+				call SetRate: 48000;
+			;;
+		;;
+	[end: started]
+
+	# frames a second (8000 to 48000); the rate the card plays at afterwards, which is
+	# always 48000 on a codec that can't change it. What is waiting to play changes speed
+	# too, so call Drain first. Changing it often isn't a good idea: QEMU starts its
+	# sound output over each time (audio.sound keeps the card at 44100 and resamples).
+	[SetRate: u32 hz: 48000;]
+		if hz < MIN_RATE
+			hz is MIN_RATE;
+		;;
+		if hz > MAX_RATE
+			hz is MAX_RATE;
+		;;
+		if any_rate is false
+			hz is 48000;
+		;;
+		if started and hz is not rate
+			outw (mixer + MIXER_FRONT_RATE) hz;
+			if any_rate
+				hz is inw (mixer + MIXER_FRONT_RATE);
+			;;
+		;;
+		rate is hz;
+	[end: rate]
+
+	# 0 (silent) to 100 (loudest)
+	[SetVolume: u32 percent: 100;]
+		if percent > 100
+			percent is 100;
+		;;
+		volume is percent;
+		if started
+			# 31 steps of attenuation, the same on the left and the right
+			u32 steps: (100 - percent) * 31 / 100;
+			u32 value: (steps << 8) | steps;
+			if percent is 0
+				value is 0x8000;
+			;;
+			outw (mixer + MIXER_MASTER) value;
+		;;
+	[end]
+
+	# copy sound into free buffers; how many bytes it took, which is less than length
+	# when the ring is full (or 0 if the card isn't started)
+	[Write: ptr<u8> data: 0; u32 length: 0;]
+		u32 taken: 0;
+		bln room: started;
+		while taken < length and room
+			call room is IsFree: next;
+			if room
+				u32 chunk: BUFFER_SIZE - fill;
+				if chunk > length - taken
+					chunk is length - taken;
+				;;
+				ptr<u8> from: data + taken;
+				ptr<u8> to: buffers + next * BUFFER_SIZE + fill;
+				u32 k: 0;
+				unsafe
+					# whole words when both sides allow it, then the bytes left over
+					if ((from | to) & 3) is 0
+						ptr<u32> from_words: from;
+						ptr<u32> to_words: to;
+						u32 words: chunk >> 2;
+						while k < words
+							to_words:k is from_words:k;
+							k++;
+						;;
+						k is words << 2;
+					;;
+					while k < chunk
+						to:k is from:k;
+						k++;
+					;;
+				;;
+				fill++ chunk;
+				taken++ chunk;
+				if fill is BUFFER_SIZE
+					call Commit;
+				;;
+			;;
+		;;
+		bytes_written++ taken;
+	[end: taken]
+
+	# Write everything, waiting for room as the card plays
+	[Play: ptr<u8> data: 0; u32 length: 0;]
+		u32 done: 0;
+		bln playing: started;
+		while done < length and playing
+			u32 taken: 0;
+			call taken is Write: data + done length - done;
+			done++ taken;
+			if taken is 0
+				call OS.Sleep: 2;
+			;;
+		;;
+	[end]
+
+	# play the partly filled buffer too, instead of waiting for it to fill up
+	[Flush]
+		if started and fill > 0
+			ptr<u8> buffer: buffers + next * BUFFER_SIZE;
+			while (fill & 3) is not 0
+				buffer:fill is 0;
+				fill++;
+			;;
+			call Commit;
+		;;
+	[end]
+
+	# wait until everything written so far has played
+	[Drain]
+		call Flush;
+		u32 tries: 0;
+		u32 left: 1;
+		while left > 0 and tries < 60000
+			call left is Queued;
+			if left > 0
+				call OS.Sleep: 1;
+				tries++;
+			;;
+		;;
+	[end]
+
+	# stop at once, dropping whatever hasn't played
+	[Stop]
+		if started
+			call Reset;
+		;;
+	[end]
+
+	# bytes written that haven't played yet (counting a partly filled buffer)
+	[Queued]
+		u32 left: fill;
+		if running
+			u16 status: inw (bus + OUT_STATUS);
+			if (status & STATUS_HALTED) is 0
+				u32 current: in (bus + OUT_CURRENT);
+				u32 last: in (bus + OUT_LAST_VALID);
+				u32 remaining: inw (bus + OUT_REMAINING);
+				left++ remaining * 2;
+				u32 b: (current + 1) % BUFFERS;
+				u32 count: (last - current) % BUFFERS;
+				while u32 i: 0; i < count; i++;
+					left++ lengths:b;
+					b is (b + 1) % BUFFERS;
+				;;
+			;;
+		;;
+	[end: left]
+
+	# is the card done with this buffer (or never given it)?
+	[IsFree: u32 index: 0;]
+		bln free_it: true;
+		if running
+			u16 status: inw (bus + OUT_STATUS);
+			if (status & STATUS_HALTED) is 0
+				u32 current: in (bus + OUT_CURRENT);
+				u32 last: in (bus + OUT_LAST_VALID);
+				# the card owns current..last; keep one buffer spare between the ends
+				u32 ahead: (index - current) % BUFFERS;
+				free_it is ahead > (last - current) % BUFFERS and ahead < BUFFERS - 1;
+			;;
+		;;
+	[end: free_it]
+
+	# hand the filled buffer to the card, starting it if it isn't playing
+	[Commit]
+		descriptors:(next * 2 + 1) is fill / 2;          # its length, in 16-bit samples
+		lengths:next is fill;
+		outw (bus + OUT_STATUS) STATUS_CLEAR;
+		out (bus + OUT_LAST_VALID) next;                # a halted card carries on from here
+		if running is false
+			out (bus + OUT_CONTROL) CONTROL_RUN;
+			running is true;
+		;;
+		next is (next + 1) % BUFFERS;
+		fill is 0;
+	[end]
+
+	# stop the channel and start the ring from the first buffer
+	[Reset]
+		out (bus + OUT_CONTROL) 0;
+		out (bus + OUT_CONTROL) CONTROL_RESET;
+		u32 tries: 0;
+		while ((in (bus + OUT_CONTROL)) & CONTROL_RESET) is not 0 and tries < 100000
+			tries++;
+		;;
+		outd (bus + OUT_LIST) descriptors;
+		running is false;
+		next is 0;
+		fill is 0;
+	[end]
+}

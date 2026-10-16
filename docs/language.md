@@ -399,6 +399,7 @@ call size is Fat.List: '';                              # prints the root folder
 | Method | What it does |
 |---|---|
 | `ReadFile: path buffer max` → | copy up to `max` bytes of the file into `buffer`; the count, or -1 |
+| `ReadAt: path offset buffer max` → | the same, starting `offset` bytes into the file (0 at its end) |
 | `FileSize: path` → | the size in bytes, or -1 |
 | `Exists: path` → | 1 if the file or folder is there |
 | `WriteFile: path data length` → | create or replace a file; 0 if a folder is missing, the folder is full, or the disk is full |
@@ -461,6 +462,74 @@ for an address by DHCP first; if no server answers it keeps these addresses and
 Nothing waits on an interrupt: the methods that wait (`Ping`, `Dns.Resolve`, `Tcp.Read`,
 ...) poll the card, and sleep a millisecond when it has nothing. Up to four TCP connections
 can be open at once, each with an 8 KB receive buffer.
+
+## Sound (32-bit kernels)
+
+`phi run` and `phi test` give every machine an AC'97 sound card, which `drivers.ac97` drives.
+`audio.sound` plays music on it: songs written as text, and WAV files.
+
+```phi
+use audio.sound;
+
+bln ok: false;
+call ok is Sound.PlaySong: 't140 @1 o4 l8 c e g >c4 <g4 c2';   # waits until it ends
+call ok is Sound.PlayFile: 'MUSIC/ODE.SNG';     # a song from the disk
+call ok is Sound.PlayFile: 'MUSIC/HARP.WAV';    # a WAV file (a name ending in .WAV)
+if ok is false
+    log Sound.error '\n';                       # no sound card, no such file, a mistake on line Sound.error_line ...
+;;
+
+# or start it, and keep the card fed while doing other things
+call ok is Sound.StartFile: 'MUSIC/CHIP.SNG';
+while Sound.playing
+    call Sound.Pump;                            # at least every half second or so
+    # ... anything else; Sound.Position is how far it has got, of Sound.milliseconds ...
+;;
+```
+
+**Songs** are text in the style of MML, the music language of old computers and game
+consoles. Each line is a voice, and the voices play together (up to 4). A line starting
+with a voice number and a colon (`1:` to `9:`) carries on that voice, so a long part can be
+split over many lines; `#` starts a comment.
+
+| Command | Meaning |
+|---|---|
+| `c d e f g a b` | a note; then `#` or `+` for sharp, `-` for flat, a length, and dots (`c#8.`) |
+| `r` or `p` | a rest, with a length and dots |
+| `o4`, `>`, `<` | the octave (0 to 8; `o4` starts at middle C), one up, one down |
+| `l8` | the length of notes that don't give one: 1 whole, 2 half, 4 quarter, 8, 16 ... |
+| `t120` | the tempo, in quarter notes a minute (the first voice's starting tempo is everyone's) |
+| `v12` | the volume, 0 to 15 |
+| `@0` to `@5` | the sound: square, pulse, triangle, sawtooth, sine, noise (drums) |
+| `q7` | how much of each note sounds, in eighths (`q8` runs notes together) |
+| `[ ... ]3` | play what's inside 3 times (loops don't nest) |
+| `\|` and spaces | ignored: use them to show bars |
+
+```
+# Ode to Joy, the first line, with a bass
+1: t112 @1 o4 l4 e e f g | g f e d | c c d e | e. d8 d2
+2: @2 o3 c2 g2 | o2 g2 o3 d2 | o3 c2 g2 | o2 g2 o3 d2
+```
+
+**WAV files** can be 8-bit or 16-bit, mono or stereo, at any rate (the card plays at 44100
+frames a second, and other rates are resampled). Compressed WAV files aren't played.
+
+The layers, each usable on its own:
+
+| File | Class | What it does |
+|---|---|---|
+| `drivers.ac97` | `Ac97` | the card: `Start` →, `SetRate: hz` →, `SetVolume: percent`, `Write: data length` → (bytes taken; never waits), `Play: data length` (waits for room), `Flush`, `Drain` (waits until it has played), `Queued` →, `Stop`; `rate`, `bytes_written` |
+| `audio.synth` | `Synth` | `Load: song rate` → (false: `error` on `error_line`), `Render: buffer frames` → (frames made; 0 at the end), `Rewind`; `voices`, `milliseconds`, `finished` |
+| `audio.wav` | `Wav` | `Parse: header length file_size` → (false: `error`), `Convert: data length output` → (to 16-bit stereo), `StartResample: rate`, `Resample: data frames output` →, `ResampleRoom: frames` →; `rate`, `channels`, `bits`, `frame_bytes`, `data_start`, `data_size`, `milliseconds` |
+| `audio.sound` | `Sound` | `PlayFile: path` →, `PlaySong: text` →, `StartFile` →, `StartSong` →, `Pump`, `Position` →, `Stop`; `playing`, `milliseconds`, `error`, `error_line` |
+
+Sound is 16-bit samples, left then right. The card reads it from memory by itself (DMA),
+from a ring of 32 buffers of 4 KB (0.75 s at 44100); `Ac97.Write` copies into the ones it
+has finished with. When nothing new arrives in time the card plays silence, and it starts
+again by itself when more comes. `audio.synth` and `audio.wav` only fill buffers, so they
+work in user programs too; [samples/os.rootfs/play.phi](../samples/os.rootfs/play.phi)
+plays through the system calls below. QEMU takes some sound ahead of time, so `Drain`
+returns a little before the last of it is heard.
 
 ## Cryptography
 
@@ -546,7 +615,8 @@ or drivers. Instead:
 | `OS.Run: path arguments` → | the same, with a command line for it |
 | `OS.Arguments` → | this program's command line, as a `ptr<u8>` |
 | `OS.Wait: process` → | wait for a program this one started; its exit code |
-| `OS.ReadFile: path buffer max` →, `OS.WriteFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods |
+| `OS.ReadFile: path buffer max` →, `OS.ReadFileAt: path offset buffer max` →, `OS.WriteFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods |
+| `OS.SoundWrite: data length` →, `OS.SoundRate: hz` →, `OS.SoundQueued` →, `OS.SoundStop` →, `OS.SoundVolume: percent` → | the sound card, like `Ac97`'s methods (`SoundWrite` never waits: it returns the bytes it took, 0 while the card is full); each returns -1 if there's no card |
 | `OS.TaskState: process` →, `OS.TaskName: process buffer` →, `OS.Kill: process` → | other programs (`ps`, `kill`) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | memory, in KB |
 | `OS.ClearScreen`, `OS.PutCell: column row cell` | the text screen; a cell is a character in the low byte and a color in the high byte |
@@ -568,7 +638,7 @@ The shell and every command are user programs in
 [samples/os.rootfs](../samples/os.rootfs). It reads a line, runs `NAME.BIN` with the rest
 of the line as that program's command line, and waits for it (or not, with a trailing
 `&`). Its own commands are `help` and `exit`; the others are programs: `ls`, `cat`,
-`echo`, `ps`, `kill`, `mem`, `uptime`, `clear`, `reboot`, `pong`, `hello` and `count`.
+`echo`, `ps`, `kill`, `mem`, `uptime`, `clear`, `reboot`, `pong`, `play`, `volume`, `hello` and `count`.
 Adding a command is adding a `.phi` file to the folder.
 
 The system calls behind these (`int 0x80`, number in `eax`, argument in `ebx`, result in
@@ -682,6 +752,8 @@ and the classes of used files run before the classes that use them.
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `StartsWith`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Append: buffer text size`, `TrimEnd`, `ToNumber` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 | `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
+| `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
+| `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |
 | `crypto.bytes`, `crypto.sha256`, `crypto.hmac`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
 
 ## Built-in functions
@@ -753,6 +825,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - networking in user programs (only 32-bit kernels have the network), checking TLS
   certificates (`https://` is encrypted, but the server isn't verified), accepting incoming
   connections (TCP is client-only), and network cards other than the RTL8139
+- recording sound, sound cards other than the AC'97, and compressed audio (MP3, Ogg, ADPCM WAV files)
 
 ## How it is built
 

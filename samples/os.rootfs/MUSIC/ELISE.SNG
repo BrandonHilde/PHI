@@ -1,0 +1,9 @@
+# Fur Elise, by Beethoven (1810): the opening
+# 1: the right hand; 2: the left hand. Both on sine waves, in sixteenth notes.
+
+1: t80 @4 v13 q7 l16
+2: @4 v10 q7 l16
+1: o5 e d+ | e d+ e o4 b o5 d c | o4 a8 r c e a | b8 r e g+ b | o5 c8 r o4 e o5 e d+ |
+2: r8 | r4. | o2 a o3 e a r8. | o2 e o3 e g+ r8. | o2 a o3 e a r8. |
+1: e d+ e o4 b o5 d c | o4 a8 r c e a | b8 r e o5 c o4 b | a4.
+2: r4. | o2 a o3 e a r8. | o2 e o3 e g+ r8. | o2 a o3 e a r8.
