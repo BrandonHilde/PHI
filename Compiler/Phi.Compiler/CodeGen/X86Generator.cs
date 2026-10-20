@@ -916,6 +916,17 @@ namespace Phi.Compiler.CodeGen
 
             // through a pointer, or the characters of a str that isn't a plain variable
             bool viaValue = target.IsPointer || (target.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol });
+
+            // p:i with a pointer and an index in variables: one scaled lea, nothing on the stack
+            if (target.IsPointer && constant == null && size is 1 or 2 or 4 or 8
+                && TryLoadSimple(ix.Target, "ebx", dryRun: true) && TryLoadSimple(ix.Index, "eax", dryRun: true))
+            {
+                TryLoadSimple(ix.Target, "ebx", dryRun: false);
+                TryLoadSimple(ix.Index, "eax", dryRun: false);
+                Emit(size == 1 ? "add ebx, eax" : $"lea ebx, [ebx + eax*{size}]");
+                return new Place { Computed = true, Linear = true };
+            }
+
             if (viaValue)
             {
                 EmitExpr(ix.Target);
@@ -1036,6 +1047,30 @@ namespace Phi.Compiler.CodeGen
 
         void EmitAssign(Expr target, Expr value)
         {
+            if (!target.Type.IsString)
+            {
+                // x++, x-- and x++ 5 on a variable: change it where it is
+                if (value is BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract } step
+                    && ReferenceEquals(step.Left, target) && target is NameExpr && IsStaticPlace(target)
+                    && ConstantFolder.Evaluate(step.Right) is long amount)
+                {
+                    string size = StorageType(target.Type).ElementSize switch { 1 => "byte", 2 => "word", _ => "dword" };
+                    string op = step.Op == BinaryOp.Add ? "add" : "sub";
+                    Emit($"{op} {size} {Operand(EmitPlace(target))}, {(int)amount}");
+                    return;
+                }
+
+                // a simple value into a computed place: the address first, then the value,
+                // which needs no registers the address is in
+                if (!IsStaticPlace(target) && TryLoadSimple(value, "eax", dryRun: true))
+                {
+                    string operand = Operand(EmitPlace(target));
+                    TryLoadSimple(value, "eax", dryRun: false);
+                    Emit(StoreInstruction(target.Type, operand));
+                    return;
+                }
+            }
+
             EmitExpr(value);
             if (target.Type.IsString) EmitStringStore(target, sourceIsString: value.Type.IsString);
             else EmitStoreEax(target);
