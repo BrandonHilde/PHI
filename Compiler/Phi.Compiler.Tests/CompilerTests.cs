@@ -71,6 +71,42 @@ namespace Phi.Compiler.Tests
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
         }
 
+        [Theory]
+        [InlineData("int a: 3 -1 -2;", 3)]       // a spaced '-1' is its own value
+        [InlineData("int a: 3 - 1 -2;", 2)]      // 3 - 1, then -2
+        [InlineData("int a: 3-1 3 -1;", 3)]      // unspaced subtracts
+        [InlineData("int a: (3 -1) 4;", 2)]      // inside ( ) it always subtracts
+        public void NegativeValuesInLists(string declaration, int count)
+        {
+            CompileResult result = Compile(Boot(declaration));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            var decl = result.Syntax!.Classes[0].Body.OfType<VarDecl>().Single();
+            Assert.Equal(count, decl.Values.Count);
+        }
+
+        [Fact]
+        public void SpacedMinusStillSubtractsOutsideLists()
+        {
+            CompileResult result = Compile(Boot("int a: 5;\na is a -1;"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            var assign = result.Syntax!.Classes[0].Body.OfType<AssignStmt>().Single();
+            Assert.IsType<BinaryExpr>(assign.Value);
+        }
+
+        [Theory]
+        [InlineData("int s: sizeof str;", "the size of a str depends on its declaration")]
+        [InlineData("int s: sizeof Missing;", "unknown name 'Missing'")]
+        [InlineData("str days: 'Mon' 'Tue';\nint s: sizeof days;", "the size of a str depends on its declaration")]
+        [InlineData("int sizeof: 1;", "'sizeof' is a keyword")]
+        public void SizeofErrors(string body, string message) => AssertError(Boot(body), message);
+
+        [Fact]
+        public void ArraysBecomePointersOnlyWhereAPointerIsExpected()
+        {
+            AssertError(Boot("u8 buf[4];\nint n: 0;\ncall n is Count: buf;\n[Count: int p: 0;]\n[end: p]"),
+                "needs a number, but this is a u8 array");
+        }
+
         [Fact]
         public void StorageIsWorkedOutFromTheDeclaration()
         {

@@ -44,6 +44,7 @@ namespace Phi.Compiler.Syntax
                 IndexExpr i => new[] { i.Target, i.Index },
                 MemberExpr m => new[] { m.Target },
                 AddrExpr a => new[] { a.Operand },
+                SizeofExpr s => s.Operand != null ? new[] { s.Operand } : Array.Empty<Expr>(),
                 InExpr i => new[] { i.Port },
                 NewExpr n => n.Count != null ? new[] { n.Count } : Array.Empty<Expr>(),
                 UnaryExpr u => new[] { u.Operand },

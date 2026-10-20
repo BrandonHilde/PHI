@@ -884,6 +884,10 @@ namespace Phi.Compiler.CodeGen
                     EmitAddress(addr);
                     break;
 
+                case SizeofExpr size:
+                    LoadConstant("eax", size.Value);
+                    break;
+
                 case NewExpr n:
                     EmitHeapCall(n.Allocator!, n.Bytes); // the address comes back in eax
                     break;

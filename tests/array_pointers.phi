@@ -1,0 +1,47 @@
+struct.Window
+{
+	u8 title[8];
+	int width;
+}
+
+phi.ArrayPointers:Library
+{
+	Window windows[2];
+	u8 buffer: 'a' 'b' 'c' 0;
+	int got: 0;
+
+	# an array goes where a pointer is expected, without addr
+	call got is First: buffer;
+	debug got '\n';
+
+	# so does an array field of a struct
+	windows:1.title:0 is 'W';
+	windows:1.title:1 is 'i';
+	call got is First: windows:1.title;
+	debug got '\n';
+	call Fill: windows:0.title 3 'x';
+	debug windows:0.title:0 windows:0.title:2 windows:0.title:3 '\n';
+
+	# an array of structs is a pointer to its first element
+	windows:0.width is 640;
+	call got is Width: windows;
+	debug got '\n';
+
+	# and an array can be stored in a pointer
+	ptr<u8> p: buffer;
+	debug p:2 '\n';
+	p is windows:1.title;
+	debug p:1 '\n';
+
+	[First: ptr<u8> text: 0;]
+	[end: text:0]
+
+	[Fill: ptr<u8> to: 0; int count: 0; u8 value: 0;]
+		while int i: 0; i < count; i++;
+			to:i is value;
+		;;
+	[end]
+
+	[Width: ptr<Window> w: 0;]
+	[end: w:0.width]
+}

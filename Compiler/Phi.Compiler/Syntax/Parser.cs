@@ -16,7 +16,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> ReservedWords = new(TypeKeywords)
         {
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
-            "out", "outw", "outd", "in", "inw", "ind", "addr", "new", "free",
+            "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr",
             "below", "above", "atmost", "atleast",
             "phi", "asm", "arm", "struct", "use", "const",
@@ -28,6 +28,12 @@ namespace Phi.Compiler.Syntax
         readonly DiagnosticBag diagnostics;
         readonly List<Token> tokens;
         int pos;
+
+        /// <summary>
+        /// True while parsing one value of a space-separated list (a declaration's values, call
+        /// arguments, log, out), where a spaced '-1' starts the next value.
+        /// </summary>
+        bool inList;
 
         public Parser(SourceFile file, DiagnosticBag diagnostics)
         {
@@ -418,8 +424,8 @@ namespace Phi.Compiler.Syntax
                     case "outd":
                     {
                         Advance();
-                        Expr port = ParseExpression();
-                        Expr value = ParseExpression();
+                        Expr port = ParseListElement();
+                        Expr value = ParseListElement();
                         ExpectSemicolon();
                         int size = start.Text == "out" ? 1 : start.Text == "outw" ? 2 : 4;
                         return new OutStmt { Size = size, Port = port, Value = value, Span = start.Span.To(Previous.Span) };
@@ -496,7 +502,7 @@ namespace Phi.Compiler.Syntax
                     {
                         if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon))
                             throw Error(new Span(Previous.Span.End, 0), $"expected ';' to end the declaration of '{name.Text}'");
-                        values.Add(ParseExpression());
+                        values.Add(ParseListElement());
                     }
 
                     if (values.Count == 0) throw Error(Current.Span, $"variable '{name.Text}' needs a value");
@@ -534,7 +540,7 @@ namespace Phi.Compiler.Syntax
             {
                 if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon) || (Current.StartsLine && values.Count > 0))
                     break;
-                values.Add(ParseExpression());
+                values.Add(ParseListElement());
             }
 
             if (values.Count == 0) throw Error(keyword.Span, $"'{keyword.Text}' needs something to print");
@@ -570,7 +576,7 @@ namespace Phi.Compiler.Syntax
                 {
                     if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon))
                         throw Error(new Span(Previous.Span.End, 0), "expected ';' to end the call");
-                    arguments.Add(ParseExpression());
+                    arguments.Add(ParseListElement());
                 }
             }
             ExpectSemicolon();
@@ -678,7 +684,32 @@ namespace Phi.Compiler.Syntax
         //
         // lowest to highest: or, and, comparison, |, ^, &, << >>, + -, * / %, unary, postfix
 
-        public Expr ParseExpression() => ParseOr();
+        public Expr ParseExpression()
+        {
+            // inside ( ) and [ ] a '-' always subtracts
+            bool outer = inList;
+            inList = false;
+            try { return ParseOr(); }
+            finally { inList = outer; }
+        }
+
+        /// <summary>One value of a space-separated list: in `3 1 -2`, the '-2' is its own value.</summary>
+        Expr ParseListElement()
+        {
+            bool outer = inList;
+            inList = true;
+            try { return ParseOr(); }
+            finally { inList = outer; }
+        }
+
+        /// <summary>
+        /// A '-' with a space before it and none after (as in `6 -1`) starts a negative value
+        /// in a list instead of subtracting. `6 - 1` and `6-1` still subtract.
+        /// </summary>
+        bool AtNegativeListValue =>
+            inList && At(TokenKind.Minus)
+            && Current.Span.Start > Previous.Span.End
+            && PeekToken(1).Span.Start == Current.Span.End;
 
         /// <summary>A binary operator only continues an expression on the same line.</summary>
         bool AtOperator(TokenKind kind) => At(kind) && !Current.StartsLine;
@@ -810,7 +841,7 @@ namespace Phi.Compiler.Syntax
         Expr ParseAdditive()
         {
             Expr left = ParseMultiplicative();
-            while (AtOperator(TokenKind.Plus) || AtOperator(TokenKind.Minus))
+            while (AtOperator(TokenKind.Plus) || (AtOperator(TokenKind.Minus) && !AtNegativeListValue))
             {
                 BinaryOp op = Advance().Kind == TokenKind.Plus ? BinaryOp.Add : BinaryOp.Subtract;
                 left = Binary(op, left, ParseMultiplicative());
@@ -875,6 +906,20 @@ namespace Phi.Compiler.Syntax
                 Advance();
                 Expr operand = ParsePostfix();
                 return new AddrExpr { Operand = operand, Span = t.Span.To(operand.Span) };
+            }
+
+            if (AtWord("sizeof"))
+            {
+                Advance();
+                // a type keyword or ptr<T> is a type; a name may be a struct or a variable,
+                // which the binder decides
+                if (Current.Kind == TokenKind.Identifier && TypeKeywords.Contains(Current.Text))
+                {
+                    TypeRef type = ParseType();
+                    return new SizeofExpr { TypeName = type, Span = t.Span.To(type.Span) };
+                }
+                Expr operand = ParsePostfix();
+                return new SizeofExpr { Operand = operand, Span = t.Span.To(operand.Span) };
             }
 
             if (AtWord("in") || AtWord("inw") || AtWord("ind"))

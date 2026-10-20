@@ -1170,6 +1170,10 @@ namespace Phi.Compiler.Semantics
                     BindNew(n, scope);
                     break;
 
+                case SizeofExpr size:
+                    BindSizeof(size, scope);
+                    break;
+
                 case InExpr input:
                     if (scope.Unit == UnitKind.Program)
                         Error(input.Span, "user programs can't use ports; only the kernel can talk to hardware");
@@ -1336,6 +1340,42 @@ namespace Phi.Compiler.Semantics
                       : PhiType.PointerTo(t);
         }
 
+        void BindSizeof(SizeofExpr size, Scope scope)
+        {
+            size.Type = PhiType.Int;
+            PhiType t;
+            VariableSymbol? variable = null;
+
+            if (size.TypeName != null)
+            {
+                t = ResolveType(size.TypeName, scope, allowStr: true);
+            }
+            else if (size.Operand is NameExpr name && Lookup(name.Name, scope) == null
+                     && structs.TryGetValue(name.Name, out StructSymbol? s))
+            {
+                t = PhiType.Of(s);
+            }
+            else
+            {
+                BindExpr(size.Operand!, scope);
+                t = size.Operand!.Type;
+                if (size.Operand is NameExpr { Symbol: VariableSymbol v }) variable = v;
+            }
+
+            if (t.IsError) return;
+
+            if (t.Kind == TypeKind.Str)
+            {
+                // a str's room is decided where it's declared
+                if (variable != null && !t.IsArray) size.Value = variable.Capacity;
+                else Error(size.Span, "the size of a str depends on its declaration; use sizeof on a str variable");
+                return;
+            }
+
+            if (t.Kind is TypeKind.Void) { Error(size.Span, "this has no size"); return; }
+            size.Value = (long)t.ElementSize * (t.IsArray ? t.Length : 1);
+        }
+
         void BindBinary(BinaryExpr b, Scope scope)
         {
             BindExpr(b.Left, scope);
@@ -1375,6 +1415,10 @@ namespace Phi.Compiler.Semantics
             {
                 if (e.Type.IsNumeric) return e;
                 if (target.IsPointer && e.Type.IsString) return e; // a str's value is its address
+
+                // an array (or array field) passed where a pointer goes is its address
+                if (target.IsPointer && e.Type.IsArray && e.Type.Kind != TypeKind.Str && e is NameExpr or IndexExpr or MemberExpr)
+                    return new AddrExpr { Operand = e, Span = e.Span, Type = PhiType.PointerTo(e.Type.Element) };
                 if (e is StringExpr { Value.Length: 1 } ch)
                     return new NumberExpr { Value = ch.Value[0], Span = ch.Span, Type = PhiType.Int };
 
@@ -1406,6 +1450,7 @@ namespace Phi.Compiler.Semantics
                 case StringExpr { Value.Length: 1 } c when e.Type.IsNumeric: return c.Value[0];
                 case NameExpr { Symbol: ConstantSymbol k }: return k.Value;
                 case NameExpr { Symbol: LengthSymbol { Count: int count } }: return count;
+                case SizeofExpr s: return s.Value;
                 case UnaryExpr u:
                 {
                     long? v = Evaluate(u.Operand);

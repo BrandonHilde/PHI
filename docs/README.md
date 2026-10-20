@@ -33,6 +33,7 @@ docs/examples` boots each one and checks its output.
 ## Reference
 
 - **[Language reference](language.md):** every statement, type, operator and built-in function
+- **[PHI for C programmers](phi-for-c-programmers.md):** the differences from C that catch people out
 - **[Memory map and boot process](memory-map.md):** where everything lives in memory, and what
   happens between power-on and your code
 - **[Architecture](architecture.md):** how the compiler, the standard library and the build fit

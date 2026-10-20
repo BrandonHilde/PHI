@@ -1,0 +1,20 @@
+phi.Escapes:Library
+{
+	# every escape as a one-character literal: a number, a list element and a string
+	u8 one: '\\';
+	u8 quote: '\'';
+	debug one ' ' quote '\n';
+	u8 all: '\n' '\r' '\t' '\0' '\\' '\'' 'z';
+	while int i: 0; i < all.len; i++;
+		debug all:i ' ';
+	;;
+	debug '\n';
+	str path: 'C:\\DOS\\';
+	debug path ' ' path.len ' ' path:2 '\n';
+	if one is '\\'
+		debug 'backslash\n';
+	;;
+	str says: 'it\'s';
+	debug says ' ' says.len '\n';
+	debug 'a\tb' '\n';
+}

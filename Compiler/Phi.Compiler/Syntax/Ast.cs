@@ -264,6 +264,17 @@ namespace Phi.Compiler.Syntax
         public string? CodeLabel { get; set; }
     }
 
+    /// <summary>sizeof Type   or   sizeof variable   (bytes, known when the program is built)</summary>
+    public sealed class SizeofExpr : Expr
+    {
+        /// <summary>Set for a type keyword or ptr&lt;T&gt;; otherwise the binder reads Operand.</summary>
+        public TypeRef? TypeName { get; init; }
+        public Expr? Operand { get; init; }
+
+        /// <summary>Set by the binder.</summary>
+        public long Value { get; set; }
+    }
+
     /// <summary>new Type   or   new Type[count]   (32-bit kernels: memory from the heap, zeroed)</summary>
     public sealed class NewExpr : Expr
     {

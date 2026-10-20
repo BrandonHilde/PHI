@@ -136,7 +136,20 @@ bytes (so `u8` wraps around at 256).
 - `str s: otherStr;` holds as much as `otherStr`
 - each element of a `str` array holds as much as the longest initial value
 
-Longer text is cut to fit: after `str tiny: [3]; tiny is 'abcdef';`, `tiny` is `abc`.
+Longer text is cut to fit, without an error: after `str tiny: [3]; tiny is 'abcdef';`,
+`tiny` is `abc`. A `str` takes one more byte than it holds, for the zero that ends the text.
+
+**How a `str` array is stored.** A `str` array is an array of 4-byte pointers, one per
+element, and each points to that element's own buffer. So `days:1` is the address of the
+second string, and code that walks the array's memory by a fixed stride (for rows of a
+sprite, say) must use a `u8` array instead (`u8 rows[8 * 16];`, indexed as
+`rows:(row * 16 + column)`).
+
+**A list of values** is separated by spaces, which applies to declarations, call arguments,
+`log` and `out`. A `-` with a space before it and none after starts a new, negative value:
+`int steps: 1 -1 2 -2;` has four values, and `call Move: x -1;` passes two arguments.
+With spaces on both sides or neither (`x - 1`, `x-1`) it subtracts. Inside parentheses it
+always subtracts.
 
 **Where variables live.** Every variable has a fixed place in memory (there is no stack
 of local variables yet). Variables declared directly in a class are set once, when the
@@ -158,6 +171,22 @@ const int BUFFER_SIZE: 512;
 A constant's value must be known when the program is built. Constants take no memory and
 can be used as array sizes and inside `asm.` blocks (`{COM1}`).
 
+### sizeof
+
+`sizeof` gives the bytes a type or a variable takes, worked out when the program is built,
+so it can be used in constants and array sizes:
+
+```phi
+const int ENTRY_SIZE: sizeof DirEntry;   # a struct
+u8 copy[sizeof DirEntry];
+int a: sizeof u16;                       # 2; also ptr<T> (4), bln (1), ...
+int b: sizeof entries;                   # a whole array: elements * element size
+int c: sizeof entries:0.name;            # a field
+int d: sizeof name;                      # a str variable: its capacity plus the ending zero
+```
+
+A `str` type (or `str` array) has no fixed size, so `sizeof str` is an error.
+
 ## Expressions
 
 From lowest to highest precedence:
@@ -173,7 +202,7 @@ From lowest to highest precedence:
 | `<<` `>>` | shift left / right |
 | `+` `-` | add, subtract |
 | `*` `/` `%` | multiply, divide, remainder (rounding toward zero) |
-| `-x`, `~x`, `not x`, `!x`, `addr x`, `in port` | negate, bitwise not, logical not, address, port input |
+| `-x`, `~x`, `not x`, `!x`, `addr x`, `sizeof x`, `in port` | negate, bitwise not, logical not, address, size in bytes, port input |
 | `list:i`, `list:i.field` | element `i` of an array, character `i` of a `str`, a field of an element |
 | `( )` | grouping |
 
@@ -261,8 +290,8 @@ outd port value;                # 32 bits
 u8 status: in 0x3FD;            # read a byte (inw and ind read 16 and 32 bits)
 ```
 
-The port and the value are separate expressions, so a negative value needs parentheses:
-`out port (-1);`.
+The port and the value are separate values, so `out port -1;` writes -1 to `port` (see
+"A list of values" under [Variables](#variables)).
 
 ### Bounds checks
 
@@ -292,6 +321,8 @@ p++ 2;                          # adding to a pointer moves it by that many *byt
 
 str word: 'hey';
 ptr<u8> w: word;                # a str can be used where a ptr<u8> is expected
+ptr<u8> b: buffer;              # so can an array: this is addr buffer
+call Clear: tasks:0.name;       # including an array field ([Clear: ptr<u8> to: 0;])
 
 ptr<Task> t: addr tasks:0;
 log t:0.id;                     # a field of what t points to
@@ -300,6 +331,8 @@ log t:0.id;                     # a field of what t points to
 - Pointers can reach any address below 1 MB (in 16-bit mode, through the `fs` segment).
 - `addr x` is a pointer to what `x` holds: `addr buffer` of a `u8` array is a `ptr<u8>`,
   `addr task` of a `Task` is a `ptr<Task>`.
+- An array, or an array field like `tasks:0.name`, used where a pointer is expected (a
+  parameter, a pointer variable) is its address, the same as `addr`.
 - `addr Method` is the address of a method, for interrupt handlers.
 - Every read and write goes to memory (values are never kept in registers between
   statements), so pointers to device memory work without anything like C's `volatile`.
@@ -660,7 +693,8 @@ call Greet: 'PHI';
 call total is Add: 2 3;         # store the result
 ```
 
-- Arguments are separated by spaces and may span lines. A missing argument uses the
+- Arguments are separated by spaces and may span lines. `call Move: x -1;` passes two
+  arguments; `x - 1` or `(x -1)` is one (see "A list of values" under [Variables](#variables)). A missing argument uses the
   parameter's default (or zero if it has none).
 - A method can return a number or a `str`.
 - Methods can be called before they appear, and from any class in the same unit
