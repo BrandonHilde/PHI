@@ -5,8 +5,8 @@
 #   free t;
 #
 # A kernel that uses new or free gets this file automatically. It takes a
-# contiguous range of frames at startup (8 MB, or half of free memory if that's
-# less). Blocks are kept in address order, each with a header; Alloc takes the
+# contiguous range of frames at startup: a quarter of free memory, at least 8 MB
+# (31 MB on QEMU's default 128 MB machine), but never more than half. Blocks are kept in address order, each with a header; Alloc takes the
 # first free block that fits and splits it, Free merges neighbors back together.
 
 use memory.frames;
@@ -26,7 +26,7 @@ phi.Heap:Kernel
 {
 	const u32 HEAP_MAGIC: 0x48454150;        # 'HEAP'
 	const u32 HEADER: 24;
-	const u32 HEAP_FRAMES: 2048;             # 8 MB
+	const u32 HEAP_MIN_FRAMES: 2048;         # 8 MB
 
 	ptr<HeapBlock> heap_first: 0;
 	u32 heap_start: 0;
@@ -37,8 +37,11 @@ phi.Heap:Kernel
 	call Init;
 
 	[Init]
-		u32 frames: HEAP_FRAMES;
-		if Frames.free_frames / 2 < frames
+		u32 frames: Frames.free_frames / 4;
+		if frames < HEAP_MIN_FRAMES
+			frames is HEAP_MIN_FRAMES;
+		;;
+		if frames > Frames.free_frames / 2
 			frames is Frames.free_frames / 2;
 		;;
 		call heap_start is Frames.AllocContiguous: frames;

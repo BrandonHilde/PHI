@@ -88,7 +88,7 @@ A kernel that uses `new` gets the memory library automatically. When it starts, 
 1. reads the memory map the loader collected and keeps a bitmap of free 4 KB pages
    ([memory.frames](../../lib/phi/memory/frames.phi));
 2. turns on **paging** ([memory.paging](../../lib/phi/memory/paging.phi));
-3. sets up an 8 MB heap ([memory.heap](../../lib/phi/memory/heap.phi)).
+3. sets up a heap of a quarter of free memory, at least 8 MB ([memory.heap](../../lib/phi/memory/heap.phi)).
 
 All three are written in PHI; reading them is a good way to see how an operating system
 manages memory.

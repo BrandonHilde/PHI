@@ -396,7 +396,8 @@ free buffer;
 
 `new` gives memory from the kernel heap and `free` gives it back. A kernel that uses them
 gets the memory library automatically: at startup it reads the BIOS memory map, turns on
-paging and sets up an 8 MB heap. `new` returns 0 when the heap has no room. Freeing a
+paging and sets up a heap of a quarter of free memory (at least 8 MB; about 31 MB on
+QEMU's default 128 MB machine). `new` returns 0 when the heap has no room. Freeing a
 pointer `new` didn't give out (or freeing twice) stops the kernel with a message.
 
 Paging maps every address to the same physical address, but only memory that exists:
