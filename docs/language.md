@@ -108,6 +108,7 @@ A quote followed directly by a letter or digit doesn't end a string, which is wh
 | `ptr<T>` | 4 bytes | an address (see [Pointers](#pointers)) |
 | `method<T ...: R>` | 4 bytes | a method that can be called (see [Methods as values](#methods-as-values)) |
 | a struct | its fields | see [Structs](#structs) |
+| `new` struct | 4 bytes | an object PHI allocates and frees (see [Objects](#objects)) |
 | `var` | | `str` if every value is a string, otherwise `int` |
 
 ```phi
@@ -388,8 +389,9 @@ tasks:i.position.y is 10;
 ```
 
 Fields are laid out in order with no padding, which is what hardware tables (like the GDT
-or a disk's partition table) need. Structs can't be assigned or passed as a whole; work
-with their fields, or pass a `ptr<Task>`.
+or a disk's partition table) need. In 32-bit code, `a is b` copies one struct into another
+and `if a is b` compares them, as for [objects](#objects). A struct parameter borrows the
+caller's struct rather than copying it. In 16-bit code, work with the fields one at a time.
 
 ### Methods on structs
 
@@ -424,7 +426,139 @@ method<ptr<Counter> int: int> f: addr Counter.Add;   # as a method value, self c
 - From outside the struct, a method is always called on a value (`c.Add`), never as
   `Counter.Add` on its own.
 
+## Objects
+
+An object is a struct that PHI allocates and frees. Declare it with `new`; there is no
+`free` to call. Each object has exactly one owner, so two variables never share one.
+
+```phi
+struct.Point
+{
+    i16 x;
+    i16 y;
+}
+
+struct.Node
+{
+    u32 value;
+    Point where;               # stored inside the Node, as in any struct
+    new Node next;             # a separate object that this Node owns; starts empty
+}
+
+new Point a: 1 2;              # zeroed memory from the heap, then the fields in order
+new Point b;                   # all zeros
+new Node list: empty;          # no object yet
+a.x is 5;                      # fields by name, as in a struct
+
+b is a;                        # copies a's values into b's memory; a and b stay separate
+if a is b                      # compares values, not addresses
+    log 'same\n';
+;;
+```
+
+- **`new` is only for structs**, and only where memory is allocated: a variable, or a field
+  that holds a separate object. Numbers, inline struct fields (`Point where;`) and arrays of
+  structs are stored where they're declared, as before.
+- **The values after `:` fill the fields in order**; any left over are zero. A single object
+  value is copied instead (`new Point c: a;`), a call's new object is taken over
+  (`new Point c: (Make: 1 2);`), and `empty` starts with no object.
+- **A `new` field starts empty.** Using an empty object's fields stops the kernel with a page
+  fault on the panic screen.
+
+### When objects are freed
+
+| Owner | Freed |
+|---|---|
+| A method's `new` variable | when the method ends, at `[end]` or a `return` |
+| A `new` field | when the object holding it is freed |
+| A class's `new` variable | never; it lives as long as the program |
+| A `new` variable declared in a loop | its memory is emptied and reused each time round |
+
+### Copying, handing over and comparing
+
+```phi
+a.next is b;                   # a copy of b, including everything b owns (a deep copy)
+a.next is empty;               # frees a.next
+node.next takes head;          # node.next gets head's object without copying; head is now empty
+head takes node;
+if head.next is not empty      # does it hold an object?
+    ...
+;;
+```
+
+- **`is` copies values, never addresses.** Copying an object copies the objects it owns, so
+  copying a list copies every node. Copying into an empty field makes a new object for it.
+- **`takes` hands an object over** from one owner to another (a `new` variable or field)
+  and leaves the giver empty. Building a list with `takes` costs nothing per node; building
+  it with `is` would copy the list each time. A field can't take the object it's inside
+  (`a.next takes a` is an error), because that object would own itself.
+- **`if a is b` compares values.** Two objects are equal when their fields are, following
+  `new` fields to compare the objects they hold (both empty is equal, one empty isn't).
+  Fields that are `ptr<T>` compare as addresses.
+- Long chains (a list's `next`) are freed, copied and compared with a loop, not recursion,
+  so a long list can't use up the stack.
+
+### Methods and objects
+
+```phi
+[Move: Point p; i16 dx: 0;]    # a struct parameter borrows: no copy, no new
+    p.x++ dx;                  # changes the caller's object
+[end]
+
+[Make: i16 x: 0; i16 y: 0;]
+    new Point made: x y;
+[end: made]                    # handed to the caller, so it isn't freed here
+
+call Move: a 3;
+call b is Make: 1 2;           # b takes the new object (and frees what it had)
+```
+
+- A struct parameter is the caller's object (or struct, or `ptr<T>`) for the length of the
+  call. It's written without `new`, and it can't have a default.
+- A method that returns an object always gives the caller one of its own: one of the
+  method's `new` variables is handed over, anything else is copied. Its result goes into
+  something that can take it over: `call x is ...;`, `x is (...);`, or a `new` declaration.
+- Struct methods work on objects as on structs: `call a.Add: b;`, `(shape.Area)`.
+
+### Objects and pointers
+
+`addr a` is a plain `ptr<Point>` to an object's memory, which is how code walks a list
+without copying it. It's only good while the object's owner is alive. An object can be
+given where a pointer goes (`walk is walk:0.next;`), but a pointer can't be put in an
+object: to copy what it points at, use `p:0`.
+
+```phi
+ptr<Node> walk: addr list;
+while walk is not 0
+    log walk:0.value '\n';
+    walk is walk:0.next;
+;;
+```
+
+### Objects at an address
+
+`new T name at address;` is a `T` over memory that's already there, such as device memory
+or a table the BIOS left. Nothing is allocated or freed, and `at` has no `:` because no
+value is assigned. It works in 16-bit programs and kernels (not user programs), and the
+struct can't have `new` fields.
+
+```phi
+new Cell corner at 0xB8000;    # the first character of the VGA text screen
+corner.letter is 'P';
+```
+
+`at` is only a keyword in this position, so it can still be a variable name.
+
+### Limits
+
+Objects that PHI allocates need the heap, so they're in 32-bit kernels only (a kernel gets
+the heap automatically). Arrays of objects, and structs with `new` fields as array
+elements, aren't supported yet. Methods that return objects can't be used as method values.
+
 ## Memory (32-bit kernels)
+
+[Objects](#objects) are the usual way to get memory. For code that manages memory itself,
+`new` also works as a value, giving a plain pointer that's freed with `free`:
 
 ```phi
 ptr<Task> task: new Task;           # one Task, all zeros
@@ -437,8 +571,10 @@ free buffer;
 `new` gives memory from the kernel heap and `free` gives it back. A kernel that uses them
 gets the memory library automatically: at startup it reads the BIOS memory map, turns on
 paging and sets up a heap of a quarter of free memory (at least 8 MB; about 31 MB on
-QEMU's default 128 MB machine). `new` returns 0 when the heap has no room. Freeing a
-pointer `new` didn't give out (or freeing twice) stops the kernel with a message.
+QEMU's default 128 MB machine). `new` returns 0 when the heap has no room (for an object,
+the kernel stops with `PHI: out of memory for a new object on line N`). Freeing a pointer
+`new` didn't give out (or freeing twice) stops the kernel with a message. Freeing a
+`ptr<T>` to a struct with `new` fields frees the objects it owns too.
 
 Paging maps every address to the same physical address, but only memory that exists:
 **a null pointer, or an address past the end of RAM, stops the kernel with a page fault**
@@ -1033,6 +1169,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - `dec` / `fin` (decimal numbers), `has`, `^^` (power)
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
+- arrays of objects, and objects in user programs (they have no heap yet)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
 - networking in user programs (only 32-bit kernels have the network), checking TLS

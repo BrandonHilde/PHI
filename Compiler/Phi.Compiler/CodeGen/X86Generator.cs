@@ -104,6 +104,7 @@ namespace Phi.Compiler.CodeGen
 
             foreach (MethodSymbol m in unit.Methods) EmitMethod(m);
             foreach (RawBlockDecl raw in unit.RawBlocks) EmitRawBlock(raw);
+            EmitObjectRoutines();
 
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
 
@@ -277,7 +278,8 @@ namespace Phi.Compiler.CodeGen
             if (m.Decl.Result != null)
             {
                 SourceComment(m.Decl.Result);
-                EmitExpr(m.Decl.Result); // the result goes back in eax
+                if (m.ReturnType.IsObject) EmitObjectResult(m.Decl.Result);
+                else EmitExpr(m.Decl.Result); // the result goes back in eax
             }
 
             if (returnUsed) Label(returnLabel); // return jumps here with the result in eax
@@ -291,6 +293,19 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov ecx, {m.ResultCapacity}");
                 Emit("call phi_strcpy");
                 Emit($"mov eax, [ebp + {frame.ResultSlot}]");
+            }
+
+            // the method's new objects go away with it (one it returns was handed over already)
+            var owned = m.Locals.Where(v => v.Ownership == Ownership.Owned).ToList();
+            if (owned.Count > 0)
+            {
+                Emit("push eax                ; the result");
+                foreach (VariableSymbol v in owned)
+                {
+                    Emit($"mov eax, dword [{v.Label}]   ; {v.Name}");
+                    Emit($"call {ObjectRoutine("free", v.Type.Struct!)}");
+                }
+                Emit("pop eax");
             }
 
             StringBuilder body = code;
@@ -538,8 +553,20 @@ namespace Phi.Compiler.CodeGen
 
             switch (stmt)
             {
+                case VarDecl { IsNew: true, Symbol: { Type.IsObject: true } newObject } newDecl:
+                    EmitNewDecl(newDecl, newObject);
+                    break;
+
                 case VarDecl decl:
                     if (decl.Symbol is { NeedsInitCode: true } declared) EmitInitialize(declared, decl.Values);
+                    break;
+
+                case ObjectAssignStmt assign:
+                    EmitObjectAssign(assign);
+                    break;
+
+                case TakesStmt takes:
+                    EmitTakes(takes);
                     break;
 
                 case ConstDecl:
@@ -596,6 +623,12 @@ namespace Phi.Compiler.CodeGen
                         Emit("pop eax");
                     }
                     Emit(o.Size switch { 1 => "out dx, al", 2 => "out dx, ax", _ => "out dx, eax" });
+                    break;
+
+                case FreeStmt { Owner: StructSymbol owner } f:
+                    // a struct that owns objects: they go with it
+                    EmitExpr(f.Pointer);
+                    Emit($"call {ObjectRoutine("free", owner)}");
                     break;
 
                 case FreeStmt f:
@@ -661,7 +694,8 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case ReturnStmt ret:
-                    if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
+                    if (ret.Value != null && currentMethod is { ReturnType.IsObject: true }) EmitObjectResult(ret.Value);
+                    else if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
                     returnUsed = true;
                     Emit($"jmp {returnLabel}");
                     break;
@@ -766,6 +800,13 @@ namespace Phi.Compiler.CodeGen
                 PointerCall pointer => pointer.Signature.Result,
                 _ => PhiType.Int,
             };
+            if (result.IsObject)
+            {
+                // the call made a new object: the target takes it over
+                Emit("push eax");
+                EmitTakeOver(call.ResultTarget, result.Struct!);
+                return;
+            }
             EmitStoreResult(call.ResultTarget, result);
         }
 
@@ -898,6 +939,20 @@ namespace Phi.Compiler.CodeGen
                     // through the struct the method was called on
                     Emit($"mov ebx, dword [{s.Self.Label}]");
                     return new Place { Computed = true, Linear = true, Offset = s.Offset };
+
+                case NameExpr { Symbol: PathSymbol path }:
+                {
+                    // through objects: read the address each one is at, then go on from there
+                    Emit($"mov ebx, dword {Operand(new Place { Label = path.Root.Label, Offset = path.BaseOffset })}");
+                    for (int i = 0; i < path.Hops.Count - 1; i++)
+                        Emit($"mov ebx, dword {Operand(new Place { Computed = true, Linear = true, Offset = path.Hops[i] })}");
+                    return new Place { Computed = true, Linear = true, Offset = path.Hops[^1] };
+                }
+
+                case MemberExpr m when m.Target.Type.IsObject:
+                    EmitExpr(m.Target); // where the object is
+                    Emit("mov ebx, eax");
+                    return new Place { Computed = true, Linear = true, Offset = m.Field!.Offset };
 
                 case MemberExpr m:
                 {
@@ -1097,7 +1152,7 @@ namespace Phi.Compiler.CodeGen
         static bool IsStaticPlace(Expr e) => e switch
         {
             NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
-            MemberExpr m => IsStaticPlace(m.Target),
+            MemberExpr m => !m.Target.Type.IsObject && IsStaticPlace(m.Target),
             IndexExpr ix => !ix.Target.Type.IsPointer && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
                             && !(ix.Target.Type.IsString && ix.Target is not NameExpr),
             _ => false,
@@ -1180,8 +1235,12 @@ namespace Phi.Compiler.CodeGen
                     LoadAddress("eax", v.Label);
                     break;
 
-                case NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol }:
+                case NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol }:
                     EmitLoad(e);
+                    break;
+
+                case EmptyExpr:
+                    Emit("xor eax, eax");
                     break;
 
                 case NameExpr { Symbol: ConstantSymbol k }:
@@ -1285,13 +1344,21 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
-            if (addr.Operand is NameExpr { Symbol: VariableSymbol v })
+            // an object is at the address it holds
+            if (addr.OfObject) EmitExpr(addr.Operand);
+            else EmitPlaceAddress(addr.Operand);
+        }
+
+        /// <summary>eax = the address of a variable, field or element.</summary>
+        void EmitPlaceAddress(Expr e)
+        {
+            if (e is NameExpr { Symbol: VariableSymbol v })
             {
                 LoadAddress("eax", v.Label);
                 return;
             }
 
-            Place p = EmitPlace(addr.Operand);
+            Place p = EmitPlace(e);
             string offset = p.Offset == 0 ? "" : $" + {p.Offset}";
             if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
             else if (!p.Linear) Emit($"lea eax, [{p.Label} + ebx{offset}]");
@@ -1418,6 +1485,26 @@ namespace Phi.Compiler.CodeGen
                     }
                     return;
 
+                case BinaryExpr { ObjectCompare: StructSymbol compared } cmp:
+                {
+                    bool equalWanted = (cmp.Op == BinaryOp.Equal) == jumpIf;
+                    if (cmp.Left is EmptyExpr || cmp.Right is EmptyExpr)
+                    {
+                        EmitExpr(cmp.Left is EmptyExpr ? cmp.Right : cmp.Left);
+                        Emit("test eax, eax          ; 0 = empty");
+                        Emit($"{(equalWanted ? "jz" : "jnz")} {target}");
+                        return;
+                    }
+                    EmitObjectAddress(cmp.Right);
+                    Emit("push eax");
+                    EmitObjectAddress(cmp.Left);
+                    Emit("pop edx");
+                    Emit($"call {ObjectRoutine("equal", compared)}   ; eax = 1 when the values match");
+                    Emit("test eax, eax");
+                    Emit($"{(equalWanted ? "jnz" : "jz")} {target}");
+                    return;
+                }
+
                 case BinaryExpr { IsComparison: true, Left.Type.IsString: true, Right.Type.IsString: true } cmp:
                 {
                     Need("phi_strcmp");
@@ -1468,6 +1555,481 @@ namespace Phi.Compiler.CodeGen
             _ => BinaryOp.Less,
         };
 
+        // ================================================================ objects
+        //
+        // An object variable or field holds the address of the struct's memory (0 = empty).
+        // Each object has one owner, so `is` copies values, `takes` hands memory over, and an
+        // owner frees what it owns. The work is done by routines generated for each struct:
+        //
+        //   phi_free_S    eax = object or 0         frees it and everything it owns
+        //   phi_clone_S   eax = object or 0         eax = a new copy (or 0)
+        //   phi_assign_S  eax = into, edx = from    copies the values, keeping into's memory
+        //   phi_set_S     eax = slot, edx = from    copies into the slot's object (a new copy if empty)
+        //   phi_renew_S   eax = slot                a zeroed object in the slot (old one emptied)
+        //   phi_equal_S   eax = a, edx = b          eax = 1 when the values match
+        //
+        // Like library routines, they may change any register but ebp. A chain through a field
+        // of the struct's own type (a list's next) is followed with a loop, not recursion, so a
+        // long list can't use up the stack.
+
+        readonly HashSet<(string Kind, StructSymbol Struct)> objectRoutines = new();
+        bool usesObjects;
+
+        string ObjectRoutine(string kind, StructSymbol s)
+        {
+            usesObjects = true;
+            objectRoutines.Add((kind, s));
+            return $"phi_{kind}_{s.Name}";
+        }
+
+        /// <summary>Remembers the source line, for the message if the heap runs out.</summary>
+        void ObjectLine(Node node)
+        {
+            usesObjects = true;
+            Emit($"mov dword [phi_object_line], {LineOf(node)}");
+        }
+
+        /// <summary>eax = where an object's values are: what an object holds, or a struct's own place.</summary>
+        void EmitObjectAddress(Expr e)
+        {
+            if (e.Type.IsObject) EmitExpr(e);
+            else EmitPlaceAddress(e);
+        }
+
+        void EmitNewDecl(VarDecl decl, VariableSymbol v)
+        {
+            if (decl.AtAddress != null)
+            {
+                // a view of memory that's already there
+                EmitExpr(decl.AtAddress);
+                EmitStoreEax(NameOf(v));
+                return;
+            }
+
+            if (decl.Source != null)
+            {
+                EmitObjectAssign(decl.Source);
+                return;
+            }
+
+            // a zeroed object (the first time; after that the old one is emptied and reused),
+            // then its fields from the values, in order
+            ObjectLine(decl);
+            LoadAddress("eax", v.Label);
+            Emit($"call {ObjectRoutine("renew", v.Type.Struct!)}");
+            foreach (Stmt field in decl.FieldValues) EmitStatement(field);
+        }
+
+        void EmitObjectAssign(ObjectAssignStmt o)
+        {
+            StructSymbol s = o.Struct;
+            switch (o.Kind)
+            {
+                case ObjectAssignKind.Clear:
+                    EmitPlaceAddress(o.Target);
+                    Emit("mov edx, eax");
+                    Emit("mov eax, [edx]");
+                    Emit("mov dword [edx], 0       ; empty");
+                    Emit($"call {ObjectRoutine("free", s)}");
+                    break;
+
+                case ObjectAssignKind.Copy:
+                    ObjectLine(o);
+                    EmitObjectAddress(o.Value);
+                    Emit("push eax");
+                    if (o.TargetOwned)
+                    {
+                        EmitPlaceAddress(o.Target);
+                        Emit("pop edx");
+                        Emit($"call {ObjectRoutine("set", s)}");
+                    }
+                    else
+                    {
+                        EmitObjectAddress(o.Target);
+                        Emit("pop edx");
+                        Emit($"call {ObjectRoutine("assign", s)}");
+                    }
+                    break;
+
+                case ObjectAssignKind.Move:
+                    ObjectLine(o);
+                    EmitExpr(o.Value); // the call's new object
+                    Emit("push eax");
+                    EmitTakeOver(o.Target, s);
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// A new object (on the stack) goes to the target: an owner takes it and frees what it
+        /// had; anything else gets a copy of its values, and the new object is freed.
+        /// </summary>
+        void EmitTakeOver(Expr target, StructSymbol s)
+        {
+            if (Binder.IsOwnedPlace(target))
+            {
+                EmitPlaceAddress(target);
+                Emit("pop ecx");
+                Emit("mov edx, [eax]          ; what it had");
+                Emit("mov [eax], ecx");
+                Emit("mov eax, edx");
+                Emit($"call {ObjectRoutine("free", s)}");
+                return;
+            }
+
+            EmitObjectAddress(target);
+            Emit("mov edx, [esp]");
+            Emit($"call {ObjectRoutine("assign", s)}");
+            Emit("pop eax");
+            Emit($"call {ObjectRoutine("free", s)}");
+        }
+
+        void EmitTakes(TakesStmt t)
+        {
+            EmitPlaceAddress(t.Source);
+            Emit("push eax");
+            EmitPlaceAddress(t.Target);
+            Emit("pop edx");
+            Emit("mov ecx, [edx]          ; the object handed over");
+            Emit("mov dword [edx], 0       ; leaves the source empty");
+            Emit("mov ebx, [eax]          ; what the target had");
+            Emit("mov [eax], ecx");
+            string kept = NewLabel("taken");
+            Emit("cmp ebx, ecx");
+            Emit($"je {kept}");
+            Emit("mov eax, ebx");
+            Emit($"call {ObjectRoutine("free", t.Struct!)}");
+            Label(kept);
+        }
+
+        /// <summary>
+        /// The object a method returns, in eax: one of its own new variables is handed over
+        /// (and so not freed when the method ends), a call's new object passes straight
+        /// through, and anything else is copied, so the caller always gets one of its own.
+        /// </summary>
+        void EmitObjectResult(Expr e)
+        {
+            if (e is NameExpr { Symbol: VariableSymbol { Ownership: Ownership.Owned, IsLocal: true, IsParameter: false } v })
+            {
+                EmitExpr(e);
+                Emit($"mov dword {Operand(new Place { Label = v.Label })}, 0   ; handed to the caller");
+                return;
+            }
+            if (Binder.IsObjectCall(e))
+            {
+                EmitExpr(e);
+                return;
+            }
+            ObjectLine(e);
+            EmitObjectAddress(e);
+            Emit($"call {ObjectRoutine("clone", currentMethod!.ReturnType.Struct!)}");
+        }
+
+        // ---------------------------------------------------------------- the routines
+
+        void EmitObjectRoutines()
+        {
+            var done = new HashSet<(string, StructSymbol)>();
+            while (objectRoutines.FirstOrDefault(r => !done.Contains(r)) is { Struct: not null } next)
+            {
+                done.Add(next);
+                Line("");
+                Comment($"{next.Kind} for {next.Struct.Name} objects");
+                Label($"phi_{next.Kind}_{next.Struct.Name}");
+                switch (next.Kind)
+                {
+                    case "free": EmitFreeRoutine(next.Struct); break;
+                    case "clone": EmitCloneRoutine(next.Struct); break;
+                    case "assign": EmitAssignRoutine(next.Struct); break;
+                    case "set": EmitSetRoutine(next.Struct); break;
+                    case "renew": EmitRenewRoutine(next.Struct); break;
+                    case "equal": EmitEqualRoutine(next.Struct); break;
+                }
+            }
+        }
+
+        string HeapMethodLabel(string name) => unit.Methods.First(m => m.Name == name).Label;
+
+        /// <summary>eax = size bytes of zeroed memory from the heap; stops the kernel if there's none.</summary>
+        void EmitObjectAlloc(StructSymbol s)
+        {
+            Need("phi_out_of_memory");
+            Emit($"push dword {s.Size}");
+            Emit($"call {HeapMethodLabel("Heap.Alloc")}");
+            Emit("add esp, 4");
+            Emit("test eax, eax");
+            Emit("jz phi_out_of_memory");
+        }
+
+        /// <summary>The owned slot followed with a loop: one of the struct's own type (a list's next).</summary>
+        static OwnedSlot? Chain(StructSymbol s) =>
+            s.OwnedSlots.Where(o => o.Of == s).Select(o => (OwnedSlot?)o).LastOrDefault();
+
+        static IEnumerable<OwnedSlot> NotChain(StructSymbol s) =>
+            s.OwnedSlots.Where(o => o != Chain(s));
+
+        void EmitFreeRoutine(StructSymbol s)
+        {
+            OwnedSlot? chain = Chain(s);
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Label(".next");
+            Emit("test eax, eax");
+            Emit("jz .done");
+            Emit("push eax                ; [ebp - 4] the object");
+            foreach (OwnedSlot slot in NotChain(s))
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit($"mov eax, [eax + {slot.Offset}]");
+                Emit($"call {ObjectRoutine("free", slot.Of)}");
+            }
+            if (chain is OwnedSlot c)
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit($"push dword [eax + {c.Offset}]   ; [ebp - 8] the next one, freed by going round again");
+            }
+            Emit("push dword [ebp - 4]");
+            Emit($"call {HeapMethodLabel("Heap.Free")}");
+            Emit("add esp, 4");
+            if (chain != null)
+            {
+                Emit("pop eax");
+                Emit("mov esp, ebp");
+                Emit("jmp .next");
+            }
+            Label(".done");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
+        void EmitCloneRoutine(StructSymbol s)
+        {
+            OwnedSlot? chain = Chain(s);
+            Emit("test eax, eax");
+            Emit("jnz .some");
+            Emit("ret                     ; a copy of nothing is nothing");
+            Label(".some");
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the source");
+            EmitObjectAlloc(s);
+            Emit("push eax                ; [ebp - 8] the copy, returned");
+            Emit("push eax                ; [ebp - 12] the copy being filled");
+            Label(".fill");
+            Emit("mov esi, [ebp - 4]");
+            Emit("mov edi, [ebp - 12]");
+            Emit($"mov ecx, {s.Size}");
+            Emit("rep movsb");
+            foreach (OwnedSlot slot in NotChain(s))
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit($"mov eax, [eax + {slot.Offset}]");
+                Emit($"call {ObjectRoutine("clone", slot.Of)}");
+                Emit("mov edx, [ebp - 12]");
+                Emit($"mov [edx + {slot.Offset}], eax");
+            }
+            if (chain is OwnedSlot c)
+            {
+                Emit("mov edx, [ebp - 12]");
+                Emit($"mov dword [edx + {c.Offset}], 0");
+                Emit("mov eax, [ebp - 4]");
+                Emit($"mov eax, [eax + {c.Offset}]");
+                Emit("test eax, eax");
+                Emit("jz .done");
+                Emit("mov [ebp - 4], eax      ; the next source");
+                EmitObjectAlloc(s);
+                Emit("mov edx, [ebp - 12]");
+                Emit($"mov [edx + {c.Offset}], eax");
+                Emit("mov [ebp - 12], eax");
+                Emit("jmp .fill");
+            }
+            Label(".done");
+            Emit("mov eax, [ebp - 8]");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
+        void EmitAssignRoutine(StructSymbol s)
+        {
+            if (!s.OwnsObjects)
+            {
+                Emit("mov edi, eax");
+                Emit("mov esi, edx");
+                Emit($"mov ecx, {s.Size}");
+                Emit("rep movsb");
+                Emit("ret");
+                return;
+            }
+
+            // copies of what the source owns are made before anything changes, because the
+            // source may be inside the target (head is head.next); the target's old objects are
+            // freed last
+            int n = s.OwnedSlots.Count;
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] into");
+            Emit("push edx                ; [ebp - 8] from");
+            foreach (OwnedSlot slot in s.OwnedSlots)
+            {
+                Emit("mov eax, [ebp - 8]");
+                Emit($"mov eax, [eax + {slot.Offset}]");
+                Emit($"call {ObjectRoutine("clone", slot.Of)}");
+                Emit("push eax");
+            }
+            foreach (OwnedSlot slot in s.OwnedSlots)
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit($"push dword [eax + {slot.Offset}]");
+            }
+            Emit("mov esi, [ebp - 8]");
+            Emit("mov edi, [ebp - 4]");
+            Emit($"mov ecx, {s.Size}");
+            Emit("rep movsb");
+            for (int i = 0; i < n; i++)
+            {
+                Emit("mov edx, [ebp - 4]");
+                Emit($"mov eax, [ebp - {12 + 4 * i}]");
+                Emit($"mov [edx + {s.OwnedSlots[i].Offset}], eax");
+            }
+            for (int i = 0; i < n; i++)
+            {
+                Emit($"mov eax, [ebp - {12 + 4 * n + 4 * i}]");
+                Emit($"call {ObjectRoutine("free", s.OwnedSlots[i].Of)}");
+            }
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
+        void EmitSetRoutine(StructSymbol s)
+        {
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the slot");
+            Emit("push edx                ; [ebp - 8] the source");
+            Emit("test edx, edx");
+            Emit("jnz .copy");
+            Emit("mov edx, [ebp - 4]      ; a copy of nothing: the slot is emptied");
+            Emit("mov eax, [edx]");
+            Emit("mov dword [edx], 0");
+            Emit($"call {ObjectRoutine("free", s)}");
+            Emit("jmp .done");
+            Label(".copy");
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov eax, [edx]");
+            Emit("test eax, eax");
+            Emit("jnz .have");
+            // an empty slot gets a fresh copy, made before the slot changes: the source may
+            // contain it (a.next is a)
+            Emit("mov eax, [ebp - 8]");
+            Emit($"call {ObjectRoutine("clone", s)}");
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov [edx], eax");
+            Emit("jmp .done");
+            Label(".have");
+            Emit("mov edx, [ebp - 8]");
+            Emit($"call {ObjectRoutine("assign", s)}");
+            Label(".done");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
+        void EmitRenewRoutine(StructSymbol s)
+        {
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the slot");
+            Emit("mov eax, [eax]");
+            Emit("test eax, eax");
+            Emit("jnz .reuse");
+            EmitObjectAlloc(s);
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov [edx], eax");
+            Emit("jmp .done");
+            Label(".reuse");
+            Emit("push eax                ; [ebp - 8] the object, emptied to be used again");
+            foreach (OwnedSlot slot in s.OwnedSlots)
+            {
+                Emit("mov eax, [ebp - 8]");
+                Emit($"mov eax, [eax + {slot.Offset}]");
+                Emit($"call {ObjectRoutine("free", slot.Of)}");
+            }
+            Emit("mov edi, [ebp - 8]");
+            Emit($"mov ecx, {s.Size}");
+            Emit("xor al, al");
+            Emit("rep stosb");
+            Label(".done");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
+        void EmitEqualRoutine(StructSymbol s)
+        {
+            OwnedSlot? chain = Chain(s);
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] a");
+            Emit("push edx                ; [ebp - 8] b");
+            Label(".next");
+            Emit("mov eax, [ebp - 4]");
+            Emit("mov edx, [ebp - 8]");
+            Emit("cmp eax, edx");
+            Emit("je .same                ; the same object (or both empty)");
+            Emit("test eax, eax");
+            Emit("jz .different");
+            Emit("test edx, edx");
+            Emit("jz .different");
+
+            // the bytes between the owned slots, which hold addresses rather than values
+            int start = 0;
+            foreach (int end in s.OwnedSlots.Select(o => o.Offset).Append(s.Size))
+            {
+                if (end > start)
+                {
+                    Emit($"lea esi, [eax + {start}]");
+                    Emit($"lea edi, [edx + {start}]");
+                    Emit($"mov ecx, {end - start}");
+                    Emit("repe cmpsb");
+                    Emit("jne .different");
+                }
+                start = end + 4;
+            }
+
+            foreach (OwnedSlot slot in NotChain(s))
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit($"mov eax, [eax + {slot.Offset}]");
+                Emit("mov edx, [ebp - 8]");
+                Emit($"mov edx, [edx + {slot.Offset}]");
+                Emit($"call {ObjectRoutine("equal", slot.Of)}");
+                Emit("test eax, eax");
+                Emit("jz .different");
+            }
+            if (chain is OwnedSlot c)
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit($"mov eax, [eax + {c.Offset}]");
+                Emit("mov [ebp - 4], eax");
+                Emit("mov edx, [ebp - 8]");
+                Emit($"mov edx, [edx + {c.Offset}]");
+                Emit("mov [ebp - 8], edx");
+                Emit("jmp .next");
+            }
+            Label(".same");
+            Emit("mov eax, 1");
+            Emit("jmp .done");
+            Label(".different");
+            Emit("xor eax, eax");
+            Label(".done");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
         // ================================================================ data
 
         void EmitData(StringBuilder output)
@@ -1480,6 +2042,8 @@ namespace Phi.Compiler.CodeGen
 
             foreach (var (label, size) in staticTemps)
                 output.AppendLine($"{label}: times {size} db 0");
+
+            if (usesObjects) output.AppendLine("phi_object_line: dd 0");
 
             foreach (var (value, label) in stringLabels)
                 output.AppendLine($"{label}: db {NasmBytes(value)}");

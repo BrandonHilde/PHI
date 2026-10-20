@@ -14,7 +14,10 @@ namespace Phi.Compiler.Syntax
 
             IEnumerable<Node> children = stmt switch
             {
-                VarDecl v => v.Values.Concat(v.BufferSize != null ? new[] { v.BufferSize } : Array.Empty<Expr>()).SelectMany(Nodes),
+                VarDecl v => v.Values.Concat(v.BufferSize != null ? new[] { v.BufferSize } : Array.Empty<Expr>())
+                    .Concat(v.AtAddress != null ? new[] { v.AtAddress } : Array.Empty<Expr>()).SelectMany(Nodes),
+                TakesStmt t => Nodes(t.Target).Concat(Nodes(t.Source)),
+                ObjectAssignStmt o => Nodes(o.Target).Concat(Nodes(o.Value)),
                 ConstDecl c => Nodes(c.Value),
                 LogStmt l => l.Values.SelectMany(Nodes),
                 AskStmt a => Nodes(a.Target),

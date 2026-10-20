@@ -1,0 +1,94 @@
+# Objects that own objects: a linked list built with takes, copied, compared and freed.
+struct.Node
+{
+	u32 value;
+	new Node next;
+}
+
+phi.ObjectsLists:Kernel
+{
+	call Build;
+	call Copies;
+	call Compare;
+	call Empty;
+	call Long;
+	debug 'blocks in use: ' Heap.used_blocks '\n';
+	exit 0;
+
+	# takes hands an object over without copying it
+	[Build]
+		new Node head: 0;
+		while u32 i: 1; i <= 3; i++;
+			new Node node: i * 10;
+			node.next takes head;
+			head takes node;
+		;;
+		debug 'node is empty after takes: ' (node is empty) '\n';
+		call Print: head;
+		debug 'blocks for the list: ' Heap.used_blocks '\n';
+	[end]
+
+	# walking a list borrows it with a pointer, so nothing is copied
+	[Print: Node list;]
+		ptr<Node> walk: addr list;
+		while walk is not 0
+			debug walk:0.value ' ';
+			walk is walk:0.next;
+		;;
+		debug '\n';
+	[end]
+
+	# is copies the whole list: the copy has nodes of its own
+	[Copies]
+		new Node a: 1;
+		a.next is a;
+		a.next.next is a;
+		call Print: a;
+		new Node b: a;
+		b.next.value is 99;
+		call Print: a;
+		call Print: b;
+
+		# copying part of a list into itself
+		a is a.next;
+		call Print: a;
+		a.next is empty;
+		call Print: a;
+		debug 'blocks for two lists: ' Heap.used_blocks '\n';
+	[end]
+
+	[Compare]
+		new Node a: 5;
+		a.next is a;
+		new Node b: a;
+		debug 'equal lists: ' (a is b) '\n';
+		b.next.value is 6;
+		debug 'one value different: ' (a is b) '\n';
+		b.next.value is 5;
+		b.next.next is b;
+		debug 'one longer: ' (a is b) ' ' (a.next is not empty) ' ' (a.next.next is empty) '\n';
+		debug 'compared with itself: ' (a is a) '\n';
+	[end]
+
+	[Empty]
+		new Node a: 1;
+		a.next is a;
+		debug 'before: ' (a.next is empty) '\n';
+		a.next is empty;
+		debug 'after: ' (a.next is empty) '\n';
+	[end]
+
+	# a long list is freed (and copied and compared) with loops, not recursion: 10,000
+	# nodes would need far more than the kernel's 60 KB stack if each one took a call
+	[Long]
+		new Node head;
+		while u32 i: 0; i < 10000; i++;
+			new Node node: i;
+			node.next takes head;
+			head takes node;
+		;;
+		new Node copy: head;
+		debug 'long copies equal: ' (copy is head) '\n';
+		debug 'blocks for two long lists: ' Heap.used_blocks '\n';
+	[end]
+}

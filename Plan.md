@@ -510,13 +510,143 @@ these were added:
 - [x] FAT16: folder entries as data (`Fat.Entries`), `MakeFolder`, `DeleteFolder`, `Rename`
   (and moving), and dates and times on what's written
 - [x] Docs: [PHI for C programmers](docs/phi-for-c-programmers.md)
+- [x] [Objects](#managed-objects): `new T name`, `at`, `takes`, `empty`, copying and comparing
+  with `is`, freed by PHI; the heap is safe to use from interrupt handlers
 
 The parts most worth doing next, roughly in order:
 
-1. **A heap for user programs**, so `new` works there too.
+1. **A heap for user programs**, so `new` (and objects) work there too.
 2. **Growable strings** with value semantics.
 3. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`.
 4. Then the [Later](#later) list: TLS certificates, 64-bit, ARM, self-hosting.
+
+---
+
+## Managed objects
+
+**Status: done (2026-10-20).** Steps 1–5 below; tests `objects_*`, docs in [language.md](docs/language.md#objects)
+and tutorial 05. Additions made while building it: `new T name: empty;` starts with no
+object; whole-struct `is` (copy and compare) also works for plain structs in 32-bit code; a
+struct parameter borrows the caller's object, struct or `ptr<T>`; `free` on a `ptr<T>` to a
+struct with `new` fields frees what it owns. Not done yet: step 6, and a runtime check that
+`takes` through a borrowed parameter can't make an object own itself (only the
+compile-time check exists).
+
+**Goal:** a program creates structs with `new` and never frees them. Each object has exactly
+one owner, and PHI frees it when the owner goes away. `ptr<T>`, the `new T` expression and
+`free` stay as they are, for code that wants to manage memory itself.
+
+### The rules
+
+```phi
+struct.Point
+{
+    i16 x;
+    i16 y;
+}
+
+struct.Node
+{
+    u32 value;
+    Point where;           # inline: part of the Node's own memory, no new
+    new Node next;         # a separate object this Node owns; starts empty
+}
+
+new Point a: 1 2;          # allocated, fields filled in order; a owns it
+new Point b;               # allocated and zeroed
+a is b;                    # copies b's values into a's memory: a and b never share
+new Point cell at 0xB8000; # no allocation, never freed: a view of memory you control
+```
+
+1. **`new` is needed only where memory is allocated:** a struct variable, or a field that
+   holds a separate object. Number types (`u32`, `i16`, ...), inline struct fields
+   (`Point where;`) and arrays of structs (`Task tasks[8];`) stay as they are, since their
+   memory is part of something else.
+2. **The owner gets zeroed memory.** `new Point b;` is always a real, zeroed object. A `new`
+   field starts empty until it's assigned.
+3. **`is` copies values, never addresses.** Two variables never point at the same memory,
+   so there's nothing to count and cycles can't happen. Copying an object with `new` fields
+   copies those objects too (a deep copy). An empty field copies as empty.
+4. **`takes` hands memory over without copying:** `node.next takes head;` frees whatever
+   `node.next` held, gives it `head`'s memory, and leaves `head` empty. There's still only
+   one owner, and building a list costs one pointer move per item instead of a copy of the
+   whole list.
+5. **`empty`** tests a `new` variable or field: `while walk.next is not empty`. Using an empty
+   object's fields stops the kernel on the panic screen (it's a null pointer underneath).
+6. **`at`** declares a variable over memory that already exists (device memory, a table the
+   BIOS left). It's never allocated or freed, and `is` copies values into that memory.
+   `at` is a keyword only in this position, because lib code already uses it as a name.
+7. **Methods borrow.** Passing a `new` variable to a method passes its address; the method
+   uses it for the call but doesn't own it. A method that returns one hands it over to the
+   caller (no copy).
+8. **`addr` of a managed object** gives a plain `ptr<T>`, valid only while the owner is alive.
+   This is how code walks a list without copying it: `ptr<Node> walk: addr head;`.
+9. **`is` in a condition compares values**, to match `is` as a copy: `if a is b` is true when
+   the two objects hold the same values.
+   - The same address is equal straight away (possible through `at` or `addr`).
+   - Otherwise the blocks are compared byte for byte. Structs have no padding, so a struct
+     without `new` fields is a single memory compare.
+   - A `new` field holds an address, so instead of its bytes PHI compares the objects it
+     points to, by these same rules: both empty is equal, one empty isn't. Chains are
+     followed with a loop, like freeing.
+   - A `ptr<T>` field compares as an address.
+
+### When PHI frees
+
+| Owner | Freed |
+|---|---|
+| A method's `new` local | when the method ends: at `[end]`, at every `return`, and at `exit` |
+| A `new` field | just before the struct holding it is freed |
+| A class-level `new` variable | never; it lives as long as the program |
+| A `new` local declared in a loop | its memory is reused each time round (zeroed and filled again); it's allocated again only if `takes` moved it out |
+| The target of `takes` | its old object is freed before it takes the new one |
+
+`free` on a managed object is a compile error. Running out of heap stops the kernel with an
+"out of memory" message and the source line.
+
+### How it's built
+
+- **Parser:** `new T name`, then `: values`, `at expr`, or nothing, as a declaration in
+  methods, class bodies and structs; `takes` as a statement; `empty` as a value. The `new T`
+  expression stays for `ptr<T>`.
+- **Binder:** a managed type for these variables (an address underneath, `x.field` access
+  like a struct), checks for the initial values, and errors for `free`, for `is` between a
+  managed object and a `ptr<T>`, and for `at` in user programs.
+- **Generated code for each struct with `new` fields:** a copy routine (deep copy), a compare
+  routine and a free routine. Freeing follows `next`-style chains with a loop, not recursion, so freeing a long
+  list can't overflow the kernel stack.
+- **Method exits:** every way out of a method frees its managed locals. Method frames already
+  exist, so this is a list of slots per method.
+- **Heap:** `Heap.Alloc` and `Heap.Free` turn interrupts off while they run, so an interrupt
+  handler that frees an object can't catch the heap halfway through a change.
+
+### Order
+
+1. **`at` declarations.** No runtime support; works in 16-bit programs too.
+2. **Managed locals:** `new T name`, initial values, `is` as a copy, freeing at method exits,
+   reuse in loops.
+3. **Methods:** borrowing parameters and handing back return values.
+4. **`new` fields:** `empty`, deep copy, the free routine, and `takes`.
+5. **Docs and samples:** [language.md](docs/language.md),
+   [PHI for C programmers](docs/phi-for-c-programmers.md), tutorial 05 rewritten with
+   managed objects, and `ptr<T>` moved to a "managing memory yourself" section.
+6. **Later:** managed arrays (`new u8 buffer[512];`), and managed objects in user programs
+   once they have a heap.
+
+### Tests
+
+Every test ends by checking `Heap.used_blocks` is 0, so a leak fails it.
+
+- a local freed at `[end]`, at an early `return`, and inside a loop that runs 10,000 times
+- `is` copies (changing one object leaves the other alone), including a deep copy of a list
+- `if a is b` on objects: equal values at different addresses, one field different, one
+  `new` field empty, two equal lists, and a list compared with a copy of itself
+- a list built with `takes`, walked with `addr`, and freed when its head goes away
+- a 10,000-node list freed without overflowing the stack (100,000 is too slow to build with
+  the first-fit heap, which walks every block on each allocation)
+- a method returning a new object, and one borrowing a parameter
+- `at` over VGA memory, in a 16-bit program and a kernel
+- compile errors: `free` on a managed object, too many initial values, `takes` from a `ptr<T>`
 
 ---
 
@@ -541,7 +671,7 @@ PHI/
 │  └─ user/               # userland standard library
 ├─ kernel/                # the reference PHI OS that uses lib/
 ├─ rootfs/                # files copied into the disk image
-├─ samples/               # hello.phi, code.phi, arcade.phi
+├─ samples/               # code.phi, arcade.phi, os.phi, ...
 └─ tests/                 # QEMU integration tests (.phi + .expected)
 ```
 

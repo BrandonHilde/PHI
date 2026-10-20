@@ -79,6 +79,7 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
         readonly Dictionary<string, StructSymbol> structs = new();
         readonly HashSet<VarDecl> loopCounters = new();
+        readonly HashSet<StructSymbol> slotsDone = new();
         int unsafeDepth;
 
         Binder(SourceFile file, DiagnosticBag diagnostics)
@@ -216,7 +217,7 @@ namespace Phi.Compiler.Semantics
                         BindVarDecl(p, ms, classLevel: false);
                         // a default is worked out by the caller, which can't see this method's variables
                         Expr? local = p.Values.SelectMany(SyntaxWalker.Nodes).OfType<NameExpr>()
-                            .FirstOrDefault(n => n.Symbol is VariableSymbol { IsLocal: true } or FieldPathSymbol { Root.IsLocal: true } or SelfFieldSymbol);
+                            .FirstOrDefault(n => n.Symbol is VariableSymbol { IsLocal: true } or FieldPathSymbol { Root.IsLocal: true } or SelfFieldSymbol or PathSymbol { Root.IsLocal: true });
                         if (local != null)
                             Error(local.Span, $"a parameter's default can't use the method's own variables or parameters ('{((NameExpr)local).Name}')");
                     }
@@ -263,14 +264,21 @@ namespace Phi.Compiler.Semantics
             file = m.Decl.Owner.File;
             unsafeDepth = 0;
 
+            allowObjectTemp = true;
             BindExpr(result, methodScopes[m.Decl]);
             if (result.Type.IsString) m.ReturnType = PhiType.Str;
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
+            else if (result.Type.IsObject || result.Type.IsStruct)
+            {
+                // the caller gets an object of its own: a new local is handed over, anything else copied
+                m.ReturnType = PhiType.ObjectOf(result.Type.Struct!);
+                HeapMethod("Heap.Alloc", result.Span, methodScopes[m.Decl], $"returning a {result.Type}");
+            }
             else if (!result.Type.IsError)
-                Error(result.Span, $"a method can return a number or a str, not a {result.Type}");
+                Error(result.Span, $"a method can return a number, a str or an object, not a {result.Type}");
 
-            if (m.ReturnTypeAssumed && m.ReturnType.IsString)
-                Error(result.Span, $"{m.Decl.Name} returns a str and uses its own result in [end: ...]; store that result in a variable first");
+            if (m.ReturnTypeAssumed && (m.ReturnType.IsString || m.ReturnType.IsObject))
+                Error(result.Span, $"{m.Decl.Name} returns a {m.ReturnType} and uses its own result in [end: ...]; store that result in a variable first");
 
             file = outerFile;
             unsafeDepth = outerUnsafe;
@@ -289,9 +297,10 @@ namespace Phi.Compiler.Semantics
                 VariableSymbol v => v.Type,
                 FieldPathSymbol f => f.Type,
                 SelfFieldSymbol s => s.Type,
+                PathSymbol p => p.Type,
                 _ => null,
             };
-            return t is { IsStruct: true } && FindStructMethod(t.Struct!, name[(dot + 1)..], scope) != null;
+            return t?.Fields != null && FindStructMethod(t.Fields, name[(dot + 1)..], scope) != null;
         }
 
         /// <summary>The method `name` of a struct, if it has one in this unit.</summary>
@@ -379,6 +388,40 @@ namespace Phi.Compiler.Semantics
             }
 
             foreach (StructSymbol s in structs.Values) Layout(s, new HashSet<StructSymbol>());
+            foreach (StructSymbol s in structs.Values) FindOwnedSlots(s);
+        }
+
+        /// <summary>
+        /// The objects a struct owns: its new fields, and those of the structs stored inside it.
+        /// A struct that owns objects can't be an array element, because PHI frees and copies
+        /// what it owns one slot at a time.
+        /// </summary>
+        void FindOwnedSlots(StructSymbol s)
+        {
+            if (!slotsDone.Add(s)) return;
+            file = s.Decl.File;
+            foreach (FieldSymbol f in s.Fields)
+            {
+                if (f.Type.IsObject)
+                {
+                    s.OwnedSlots.Add(new OwnedSlot(f.Offset, f.Type.Struct!));
+                    continue;
+                }
+                if (f.Type.Kind != TypeKind.Struct) continue;
+
+                StructSymbol inner = f.Type.Struct!;
+                FindOwnedSlots(inner);
+                file = s.Decl.File;
+                if (!inner.OwnsObjects) continue;
+                if (f.Type.IsArray)
+                {
+                    FieldDecl decl = s.Decl.Fields.First(d => d.Name == f.Name);
+                    Error(decl.Span, $"{inner.Name} owns objects (it has new fields), so it can't be an array element yet");
+                    continue;
+                }
+                foreach (OwnedSlot inside in inner.OwnedSlots)
+                    s.OwnedSlots.Add(inside with { Offset = f.Offset + inside.Offset });
+            }
         }
 
         /// <summary>Works out field offsets; fields follow each other with no padding.</summary>
@@ -389,7 +432,7 @@ namespace Phi.Compiler.Semantics
 
             if (!inProgress.Add(s))
             {
-                Error(s.Decl.Span, $"struct {s.Name} contains itself; use a ptr<{s.Name}> field instead");
+                Error(s.Decl.Span, $"struct {s.Name} contains itself; use a new {s.Name} field (an object it owns) or a ptr<{s.Name}> field instead");
                 s.LayoutDone = true;
                 return;
             }
@@ -405,6 +448,24 @@ namespace Phi.Compiler.Semantics
                 }
 
                 PhiType type = ResolveType(f.Type, scope: null, allowStr: false);
+                if (f.IsNew)
+                {
+                    // a separate object: the field holds its address
+                    if (type.IsError) continue;
+                    if (!type.IsStruct)
+                    {
+                        Error(f.Type.Span, $"new is for structs; a {type} field is stored in the struct itself, so leave out new");
+                        continue;
+                    }
+                    if (f.Count != null)
+                    {
+                        Error(f.Count.Span, "a field of objects can't be an array yet");
+                        continue;
+                    }
+                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = PhiType.ObjectOf(type.Struct!), Offset = offset });
+                    offset += 4;
+                    continue;
+                }
                 if (type.IsStruct) Layout(type.Struct!, inProgress);
 
                 if (f.Count != null)
@@ -456,7 +517,9 @@ namespace Phi.Compiler.Semantics
                 }
                 case "method":
                 {
-                    var parameters = t.Parameters.Select(p => ResolveType(p, scope, allowStr: true)).ToList();
+                    // a struct parameter is the caller's object
+                    var parameters = t.Parameters.Select(p => ResolveType(p, scope, allowStr: true))
+                        .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
                     if (result.IsString)
@@ -693,6 +756,28 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            if (d.IsNew)
+            {
+                DetermineObject(v, type, scope);
+                return;
+            }
+
+            if (type.IsStruct && v.IsParameter)
+            {
+                // a struct parameter borrows the caller's struct for the call: no copy
+                if (d.Values.Count > 0) Error(d.Values[0].Span, $"a {type} parameter can't have a default; leave out the ':' and value");
+                v.Type = PhiType.ObjectOf(type.Struct!);
+                v.Ownership = Ownership.Borrowed;
+                return;
+            }
+
+            if (type.IsStruct && type.Struct!.OwnsObjects)
+            {
+                Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name};");
+                v.Type = PhiType.Error;
+                return;
+            }
+
             if (d.BufferSize != null)
             {
                 int? size = ConstantCount(d.BufferSize, scope);
@@ -747,6 +832,42 @@ namespace Phi.Compiler.Semantics
             }
 
             v.Type = d.Values.Count > 1 ? type.ArrayOf(d.Values.Count) : type;
+        }
+
+        /// <summary>new T name ...: an object, which PHI allocates and frees, or one that's already at an address.</summary>
+        void DetermineObject(VariableSymbol v, PhiType type, Scope scope)
+        {
+            VarDecl d = v.Decl;
+            v.Type = PhiType.Error;
+
+            if (!type.IsStruct)
+            {
+                Error(d.Type.Span, $"new is for structs; a {type} is stored where it's declared, so leave out new: {type} {d.Name};");
+                return;
+            }
+            if (d.BufferSize != null)
+            {
+                Error(d.BufferSize.Span, "arrays of objects aren't supported yet");
+                return;
+            }
+
+            if (d.AtAddress != null)
+            {
+                if (scope.Unit == UnitKind.Program)
+                {
+                    Error(d.AtAddress.Span, "a user program can't place an object at an address; only the kernel reaches memory directly");
+                    return;
+                }
+                if (type.Struct!.OwnsObjects)
+                {
+                    Error(d.AtAddress.Span, $"{type} owns objects (it has new fields), which PHI can't manage in memory it didn't allocate");
+                    return;
+                }
+                v.Ownership = Ownership.At;
+            }
+            else v.Ownership = Ownership.Owned;
+
+            v.Type = PhiType.ObjectOf(type.Struct!);
         }
 
         /// <summary>
@@ -832,27 +953,19 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>inner.x or items.len, where inner and items are fields of self.</summary>
-        Symbol? ResolveSelfMembers(SelfFieldSymbol start, string[] members)
-        {
-            PhiType type = start.Type;
-            int offset = start.Offset;
-            for (int i = 0; i < members.Length; i++)
-            {
-                if (members[i] == "len" && i == members.Length - 1)
-                    return type.IsArray ? new LengthSymbol { Name = "len", Count = type.Length } : null;
-                FieldSymbol? field = type.IsStruct ? type.Struct!.Find(members[i]) : null;
-                if (field == null) return null;
-                offset += field.Offset;
-                type = field.Type;
-            }
-            return new SelfFieldSymbol { Name = start.Name, Self = start.Self, Offset = offset, Type = type };
-        }
+        Symbol? ResolveSelfMembers(SelfFieldSymbol start, string[] members) =>
+            // self holds the struct's address: one hop to the field, then on from there
+            ResolvePath(start.Self, start.Name, start.Type, 0, new List<int> { start.Offset }, members);
 
-        Symbol? ResolveMembers(VariableSymbol root, string[] members)
-        {
-            PhiType type = root.Type;
-            int offset = 0;
+        Symbol? ResolveMembers(VariableSymbol root, string[] members) =>
+            ResolvePath(root, root.Name, root.Type, 0, null, members);
 
+        /// <summary>
+        /// Follows fields by name from a variable. Inside a struct a field is at a fixed offset;
+        /// reaching into an object means reading the address it's at first (a hop).
+        /// </summary>
+        Symbol? ResolvePath(VariableSymbol root, string name, PhiType type, int offset, List<int>? hops, string[] members)
+        {
             for (int i = 0; i < members.Length; i++)
             {
                 string m = members[i];
@@ -861,17 +974,25 @@ namespace Phi.Compiler.Semantics
                 if (m == "len" && last)
                 {
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
-                    if (type.IsString && offset == 0) return new LengthSymbol { Name = m, Str = root };
+                    if (type.IsString && offset == 0 && hops == null) return new LengthSymbol { Name = m, Str = root };
                     return null;
                 }
 
-                FieldSymbol? field = type.IsStruct ? type.Struct!.Find(m) : null;
+                if (type.IsObject)
+                {
+                    hops ??= new List<int>();
+                    hops.Add(0);
+                }
+
+                FieldSymbol? field = type.Fields?.Find(m);
                 if (field == null) return null;
-                offset += field.Offset;
+                if (hops != null) hops[^1] += field.Offset;
+                else offset += field.Offset;
                 type = field.Type;
             }
 
-            return new FieldPathSymbol { Name = root.Name, Root = root, Offset = offset, Type = type };
+            if (hops != null) return new PathSymbol { Name = name, Root = root, BaseOffset = offset, Hops = hops, Type = type };
+            return new FieldPathSymbol { Name = name, Root = root, Offset = offset, Type = type };
         }
 
         string DescribeMissing(string name, Scope scope)
@@ -887,7 +1008,7 @@ namespace Phi.Compiler.Semantics
             }
 
             if (name.Contains('.') && LookupSimple(head, scope) is VariableSymbol v)
-                return v.Type.IsStruct ? $"{v.Type} has no field '{name[(head.Length + 1)..]}'" : $"'{head}' is a {v.Type}, which has no '{name[(head.Length + 1)..]}'";
+                return v.Type.Fields != null ? $"{v.Type} has no field '{name[(head.Length + 1)..]}'" : $"'{head}' is a {v.Type}, which has no '{name[(head.Length + 1)..]}'";
 
             return $"unknown name '{name}'";
         }
@@ -945,10 +1066,18 @@ namespace Phi.Compiler.Semantics
 
                 case FreeStmt f:
                     BindExpr(f.Pointer, scope);
-                    if (!f.Pointer.Type.IsError && !f.Pointer.Type.IsNumeric)
+                    if (f.Pointer.Type.IsObject)
+                        Error(f.Pointer.Span, $"PHI frees {Describe(f.Pointer)} itself when it goes away; to empty a new field now, write {Describe(f.Pointer)} is empty;");
+                    else if (!f.Pointer.Type.IsError && !f.Pointer.Type.IsNumeric)
                         Error(f.Pointer.Span, $"free needs a pointer from new, not a {f.Pointer.Type}");
+                    else if (f.Pointer.Type is { IsPointer: true, Pointee: { IsStruct: true } pointee } && pointee.Struct!.OwnsObjects)
+                        f.Owner = pointee.Struct; // its objects go with it
                     f.Releaser = HeapMethod("Heap.Free", f.Span, scope, "free");
                     return f;
+
+                case TakesStmt takes:
+                    BindTakes(takes, scope);
+                    return takes;
 
                 case UnsafeStmt u:
                     unsafeDepth++;
@@ -997,6 +1126,12 @@ namespace Phi.Compiler.Semantics
             if (v == null) return;          // already reported (e.g. a duplicate name)
             if (v.Type.IsError) return;     // already reported (e.g. dec isn't supported)
 
+            if (decl.IsNew)
+            {
+                BindNewDecl(decl, v, scope);
+                return;
+            }
+
             for (int i = 0; i < decl.Values.Count; i++)
             {
                 Expr value = decl.Values[i];
@@ -1016,6 +1151,132 @@ namespace Phi.Compiler.Semantics
                 v.NeedsInitCode = true;
         }
 
+        /// <summary>
+        /// new T x;  new T x: 1 2;  new T x: other;  new T x at 0xB8000;
+        /// The declaration runs every time it's reached: it allocates the object the first time,
+        /// and after that empties and reuses it (so a loop doesn't allocate on every round).
+        /// </summary>
+        void BindNewDecl(VarDecl decl, VariableSymbol v, Scope scope)
+        {
+            v.NeedsInitCode = true;
+            StructSymbol type = v.Type.Struct!;
+
+            if (decl.AtAddress != null)
+            {
+                BindExpr(decl.AtAddress, scope);
+                if (decl.AtAddress.Type.IsError) return;
+                if (!decl.AtAddress.Type.IsNumeric)
+                    Error(decl.AtAddress.Span, $"at needs an address (a number or a pointer), not a {decl.AtAddress.Type}");
+                else
+                    decl.AtAddress = Convert(decl.AtAddress, PhiType.U32, "the address");
+                return;
+            }
+
+            if (HeapMethod("Heap.Alloc", decl.Span, scope, "new") == null) return;
+            var target = new NameExpr { Name = decl.Name, Span = decl.NameSpan, Symbol = v, Type = v.Type };
+
+            // new Point b: a;  new Point p: (Make: 1 2);  new Node first: empty;  the whole object from one value
+            if (decl.Values.Count == 1)
+            {
+                Expr only = decl.Values[0];
+                allowObjectTemp = true;
+                BindExpr(only, scope);
+                allowObjectTemp = false;
+                if (only.Type.IsError) return;
+                if (only.Type.IsObject || only.Type.IsStruct || only is EmptyExpr)
+                {
+                    decl.Source = BindObjectAssign(target, only, decl.Span, scope);
+                    return;
+                }
+            }
+            else foreach (Expr value in decl.Values) BindExpr(value, scope);
+
+            // new Point p: 1 2;  the fields in order; any left over start at zero
+            List<FieldSymbol> fields = type.Fields;
+            if (decl.Values.Count > fields.Count)
+            {
+                Error(decl.Values[fields.Count].Span, $"{type.Name} has {Plural(fields.Count, "field")}, but {decl.Values.Count} values were given");
+                return;
+            }
+            for (int i = 0; i < decl.Values.Count; i++)
+            {
+                FieldSymbol field = fields[i];
+                Expr value = decl.Values[i];
+                if (value.Type.IsError) continue;
+                if (!field.Type.IsNumeric && !field.Type.IsMethod)
+                {
+                    Error(value.Span, $"{type.Name}.{field.Name} is a {field.Type}, which can't be given in a list of values; set it after, like {decl.Name}.{field.Name} is ...;");
+                    continue;
+                }
+                var fieldTarget = new NameExpr
+                {
+                    Name = $"{decl.Name}.{field.Name}",
+                    Span = value.Span,
+                    Symbol = new PathSymbol { Name = decl.Name, Root = v, Hops = new List<int> { field.Offset }, Type = field.Type },
+                    Type = field.Type,
+                };
+                Expr converted = Convert(value, field.Type, $"{type.Name}.{field.Name}");
+                decl.FieldValues.Add(new AssignStmt { Target = fieldTarget, Op = AssignOp.Set, Value = converted, Span = value.Span });
+            }
+        }
+
+        /// <summary>
+        /// x is value, where x is an object or a struct: the values are copied (never the
+        /// address), a call's new object is handed over, and empty frees an owned object.
+        /// </summary>
+        ObjectAssignStmt? BindObjectAssign(Expr target, Expr value, Span span, Scope scope)
+        {
+            StructSymbol type = target.Type.Struct!;
+            bool owned = IsOwnedPlace(target);
+            ObjectAssignKind kind;
+
+            if (value is EmptyExpr)
+            {
+                if (!owned)
+                {
+                    Error(value.Span, $"only a new variable or new field can be emptied, and '{Describe(target)}' isn't one");
+                    return null;
+                }
+                kind = ObjectAssignKind.Clear;
+            }
+            else if (value.Type.IsPointer && value.Type.Pointee?.Struct == type)
+            {
+                Error(value.Span, $"this is a pointer; to copy what it points at, write {Describe(value)}:0");
+                return null;
+            }
+            else if (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != type)
+            {
+                Error(value.Span, $"'{Describe(target)}' is a {type.Name}, so it can only be given another {type.Name}, not a {value.Type}");
+                return null;
+            }
+            else kind = IsObjectCall(value) ? ObjectAssignKind.Move : ObjectAssignKind.Copy;
+
+            if (kind == ObjectAssignKind.Copy && !(value is NameExpr or IndexExpr or MemberExpr))
+            {
+                Error(value.Span, $"can't copy a {type.Name} from this; use a variable, field or element");
+                return null;
+            }
+            if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+            {
+                Error(span, "copying a whole struct needs 32-bit code (a Kernel or a Program); set its fields one at a time");
+                return null;
+            }
+
+            // whatever may allocate or free needs the heap
+            if (owned || kind != ObjectAssignKind.Copy || type.OwnsObjects)
+            {
+                if (HeapMethod("Heap.Alloc", span, scope, $"copying a {type.Name}") == null) return null;
+            }
+
+            return new ObjectAssignStmt { Target = target, Value = value, Kind = kind, Struct = type, TargetOwned = owned, Span = span };
+        }
+
+        /// <summary>A call whose result is a new object, which the caller takes over.</summary>
+        internal static bool IsObjectCall(Expr e) => e.Type.IsObject && e is CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null };
+
+        /// <summary>Set just before binding a value that may be a call returning an object (the only places those can go).</summary>
+        bool allowObjectTemp;
+
         /// <summary>A long, a string, or null if the value isn't known at compile time.</summary>
         static object? ConstantValue(Expr e) => e switch
         {
@@ -1025,7 +1286,7 @@ namespace Phi.Compiler.Semantics
 
         static bool IsAssignable(Expr target) => target switch
         {
-            NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol } => true,
+            NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol } => true,
             IndexExpr or MemberExpr => true,
             _ => false,
         };
@@ -1033,10 +1294,23 @@ namespace Phi.Compiler.Semantics
         Stmt BindAssign(AssignStmt assign, Scope scope)
         {
             BindExpr(assign.Target, scope);
+            allowObjectTemp = assign.Target.Type.IsObject || assign.Target.Type.IsStruct;
             BindExpr(assign.Value, scope);
+            allowObjectTemp = false;
 
             Expr target = assign.Target;
             if (target.Type.IsError || assign.Value.Type.IsError) return assign;
+
+            // objects (and whole structs) are copied, never shared
+            if ((target.Type.IsObject || target.Type.IsStruct) && IsAssignable(target))
+            {
+                if (assign.Op != AssignOp.Set)
+                {
+                    Error(assign.Span, $"{OpText(assign.Op)} only works on numbers, and '{Describe(target)}' is a {target.Type}");
+                    return assign;
+                }
+                return BindObjectAssign(target, assign.Value, assign.Span, scope) ?? (Stmt)assign;
+            }
 
             if (!IsAssignable(target))
             {
@@ -1093,6 +1367,58 @@ namespace Phi.Compiler.Semantics
             return new AssignStmt { Target = target, Op = AssignOp.Set, Value = value, Span = assign.Span };
         }
 
+        /// <summary>
+        /// True for a place that holds an object PHI owns: a new variable, or a new field
+        /// (every object field is one). Those can be allocated, handed over and freed.
+        /// </summary>
+        internal static bool IsOwnedPlace(Expr e) => e.Type.IsObject && e switch
+        {
+            NameExpr { Symbol: VariableSymbol v } => v.Ownership == Ownership.Owned,
+            NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } => true,
+            MemberExpr { Call: null } => true,
+            _ => false,
+        };
+
+        /// <summary>dest takes source;  both must be places that own their object.</summary>
+        void BindTakes(TakesStmt takes, Scope scope)
+        {
+            BindExpr(takes.Target, scope);
+            BindExpr(takes.Source, scope);
+            if (takes.Target.Type.IsError || takes.Source.Type.IsError) return;
+
+            foreach (Expr side in new[] { takes.Target, takes.Source })
+            {
+                if (IsOwnedPlace(side)) continue;
+                string why = side switch
+                {
+                    NameExpr { Symbol: VariableSymbol { Ownership: Ownership.Borrowed } } => "a parameter, which borrows its object",
+                    NameExpr { Symbol: VariableSymbol { Ownership: Ownership.At } } => "a view of memory at an address",
+                    _ when side.Type.IsStruct => $"a {side.Type} stored in place, not a new object",
+                    _ when side.Type.IsObject => $"not a variable or field that owns its object",
+                    _ => $"a {side.Type}, not an object",
+                };
+                Error(side.Span, $"takes works between new variables and new fields; '{Describe(side)}' is {why}");
+                return;
+            }
+
+            if (takes.Target.Type.Struct != takes.Source.Type.Struct)
+            {
+                Error(takes.Source.Span, $"'{Describe(takes.Target)}' holds a {takes.Target.Type}, but '{Describe(takes.Source)}' is a {takes.Source.Type}");
+                return;
+            }
+
+            // a.next takes a would make a own itself
+            string target = Describe(takes.Target), source = Describe(takes.Source);
+            if (target.StartsWith(source + "."))
+            {
+                Error(takes.Span, $"'{target}' is inside '{source}', so it can't take it (it would own itself)");
+                return;
+            }
+
+            takes.Struct = takes.Target.Type.Struct;
+            HeapMethod("Heap.Free", takes.Span, scope, "takes");
+        }
+
         static string OpText(AssignOp op) => op switch
         {
             AssignOp.Add => "++",
@@ -1115,7 +1441,12 @@ namespace Phi.Compiler.Semantics
 
         void BindReturn(ReturnStmt ret, Scope scope)
         {
-            if (ret.Value != null) BindExpr(ret.Value, scope);
+            if (ret.Value != null)
+            {
+                allowObjectTemp = true;
+                BindExpr(ret.Value, scope);
+                allowObjectTemp = false;
+            }
 
             MethodSymbol? method = scope.Method;
             if (method == null)
@@ -1141,6 +1472,13 @@ namespace Phi.Compiler.Semantics
             PhiType result = ReturnTypeOf(method);
             if (ret.Value.Type.IsError || result.IsError) return;
             method.ReturnValues.Add(ret.Value);
+
+            if (result.IsObject || ret.Value.Type.IsObject || ret.Value.Type.IsStruct)
+            {
+                if (ret.Value.Type.Struct != result.Struct || !(ret.Value.Type.IsObject || ret.Value.Type.IsStruct))
+                    Error(ret.Value.Span, $"{name} returns a {result} (from its [end: value]), but this is a {ret.Value.Type}");
+                return;
+            }
 
             // a one-character string like '/' is a number here, as anywhere a number goes
             if (!result.IsString && ret.Value is StringExpr { Value.Length: 1 })
@@ -1189,7 +1527,7 @@ namespace Phi.Compiler.Semantics
         void BindCallExpr(CallExpr call, Scope scope)
         {
             if (call.CalleeTarget == null && Lookup(call.Callee, scope) is VariableSymbol { Type.IsMethod: false } or FieldPathSymbol { Type.IsMethod: false, Type.IsStruct: false }
-                or SelfFieldSymbol { Type.IsMethod: false, Type.IsStruct: false })
+                or SelfFieldSymbol { Type.IsMethod: false, Type.IsStruct: false } or PathSymbol { Type.IsMethod: false, Type.IsStruct: false })
             {
                 Error(call.CalleeSpan, $"'{call.Callee}' isn't a method; for an element, leave out the space after ':' ({call.Callee}:i)");
                 call.Type = PhiType.Error;
@@ -1242,7 +1580,7 @@ namespace Phi.Compiler.Semantics
             if (calleeTarget is MemberExpr member)
             {
                 BindExpr(member.Target, scope);
-                if (member.Target.Type.IsStruct && FindStructMethod(member.Target.Type.Struct!, member.Member, scope) is MethodSymbol found)
+                if (member.Target.Type.Fields != null && FindStructMethod(member.Target.Type.Fields, member.Member, scope) is MethodSymbol found)
                 {
                     structMethod = found;
                     arguments.Insert(0, SelfArgument(member.Target, scope));
@@ -1250,11 +1588,11 @@ namespace Phi.Compiler.Semantics
                 }
             }
             else if (calleeTarget == null && calleeName.LastIndexOf('.') is int dot and > 0
-                     && Lookup(calleeName[..dot], scope) is VariableSymbol or FieldPathSymbol or SelfFieldSymbol)
+                     && Lookup(calleeName[..dot], scope) is VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol)
             {
                 var receiver = new NameExpr { Name = calleeName[..dot], Span = calleeSpan };
                 BindExpr(receiver, scope);
-                if (receiver.Type.IsStruct && FindStructMethod(receiver.Type.Struct!, calleeName[(dot + 1)..], scope) is MethodSymbol found)
+                if (receiver.Type.Fields != null && FindStructMethod(receiver.Type.Fields, calleeName[(dot + 1)..], scope) is MethodSymbol found)
                 {
                     structMethod = found;
                     arguments.Insert(0, SelfArgument(receiver, scope));
@@ -1263,7 +1601,7 @@ namespace Phi.Compiler.Semantics
 
             // a method variable: call handler: x;  call handlers:i: x;
             Expr? pointer = structMethod != null ? null : calleeTarget;
-            if (pointer == null && structMethod == null && Lookup(calleeName, scope) is VariableSymbol or FieldPathSymbol or SelfFieldSymbol)
+            if (pointer == null && structMethod == null && Lookup(calleeName, scope) is VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol)
                 pointer = new NameExpr { Name = calleeName, Span = calleeSpan };
             if (pointer != null)
             {
@@ -1430,6 +1768,14 @@ namespace Phi.Compiler.Semantics
             Expr target = call.ResultTarget!;
             if (target.Type.IsError) return;
 
+            // a new object from the call is handed over to the target
+            if (result.IsObject || target.Type.IsObject)
+            {
+                if (!IsAssignable(target) || !(target.Type.IsObject || target.Type.IsStruct) || target.Type.Struct != result.Struct)
+                    Error(target.Span, $"{call.Callee} returns a {result}, which can't be stored in {target.Type} '{Describe(target)}'");
+                return;
+            }
+
             if (!IsAssignable(target) || target.Type.IsArray || target.Type.IsStruct)
             {
                 Error(target.Span, "the result of a call must go into a variable");
@@ -1470,6 +1816,17 @@ namespace Phi.Compiler.Semantics
 
         void BindExpr(Expr expr, Scope scope)
         {
+            bool allowObject = allowObjectTemp;
+            allowObjectTemp = false;
+            BindExprKind(expr, scope);
+
+            // a call's new object has to go somewhere that takes it over, or nothing would free it
+            if (!allowObject && IsObjectCall(expr))
+                Error(expr.Span, $"this call returns a new {expr.Type}; store it first, like call x is ...; or new {expr.Type} x: (...);");
+        }
+
+        void BindExprKind(Expr expr, Scope scope)
+        {
             switch (expr)
             {
                 case NumberExpr n:
@@ -1479,6 +1836,11 @@ namespace Phi.Compiler.Semantics
 
                 case BoolExpr:
                     expr.Type = PhiType.Bool;
+                    break;
+
+                case EmptyExpr:
+                    // only meaningful next to an object: x is empty, x.next is not empty
+                    expr.Type = PhiType.U32;
                     break;
 
                 case StringExpr:
@@ -1511,6 +1873,7 @@ namespace Phi.Compiler.Semantics
                         LengthSymbol => PhiType.Int,
                         FieldPathSymbol f => f.Type,
                         SelfFieldSymbol s => s.Type,
+                        PathSymbol p => p.Type,
                         _ => PhiType.Error,
                     };
                     if (symbol == null) Error(name.Span, DescribeMissing(name.Name, scope));
@@ -1527,10 +1890,10 @@ namespace Phi.Compiler.Semantics
                     PhiType t = member.Target.Type;
                     if (t.IsError) { member.Type = PhiType.Error; break; }
 
-                    FieldSymbol? field = t.IsStruct ? t.Struct!.Find(member.Member) : null;
+                    FieldSymbol? field = t.Fields?.Find(member.Member);
 
                     // (shapes:i.Area): the struct's method, with no arguments
-                    if (field == null && member.InParens && t.IsStruct && FindStructMethod(t.Struct!, member.Member, scope) != null)
+                    if (field == null && member.InParens && t.Fields != null && FindStructMethod(t.Fields, member.Member, scope) != null)
                     {
                         member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = member };
                         BindCallExpr(member.Call, scope);
@@ -1540,7 +1903,7 @@ namespace Phi.Compiler.Semantics
 
                     if (field == null)
                     {
-                        Error(member.MemberSpan, t.IsStruct ? $"{t} has no field '{member.Member}'" : $"a {t} has no fields");
+                        Error(member.MemberSpan, t.Fields != null ? $"{t} has no field '{member.Member}'" : $"a {t} has no fields");
                         member.Type = PhiType.Error;
                         break;
                     }
@@ -1717,6 +2080,8 @@ namespace Phi.Compiler.Semantics
                 switch (callee)
                 {
                     case MethodSymbol m when m.Unit == scope.Unit:
+                        if (ReturnTypeOf(m).IsObject)
+                            Error(addr.Span, $"{m.Name} returns an object, so it can't be used as a method value yet");
                         addr.CodeLabel = m.Label;
                         addr.Method = m;
                         name.Type = PhiType.Void;
@@ -1736,7 +2101,7 @@ namespace Phi.Compiler.Semantics
 
             bool place = addr.Operand switch
             {
-                NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol } => true,
+                NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol } => true,
                 IndexExpr or MemberExpr => true,
                 _ => false,
             };
@@ -1746,8 +2111,15 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            // a pointer to what it points at: addr of a u8 array is a ptr<u8>, of a str too
+            // an object's address is the one it holds: addr pt is a ptr<Point> to pt's memory
             PhiType t = addr.Operand.Type;
+            if (t.IsObject)
+            {
+                addr.OfObject = true;
+                addr.Type = PhiType.PointerTo(PhiType.Of(t.Struct!));
+                return;
+            }
+
             addr.Type = t.IsString ? PhiType.PointerTo(PhiType.U8)
                       : t.IsArray ? PhiType.PointerTo(t.Element)
                       : PhiType.PointerTo(t);
@@ -1786,6 +2158,7 @@ namespace Phi.Compiler.Semantics
             }
 
             if (t.Kind is TypeKind.Void) { Error(size.Span, "this has no size"); return; }
+            if (t.IsObject) { size.Value = t.Struct!.Size; return; } // the object, not its address
             size.Value = (long)t.ElementSize * (t.IsArray ? t.Length : 1);
         }
 
@@ -1797,6 +2170,14 @@ namespace Phi.Compiler.Semantics
             if (b.Left.Type.IsError || b.Right.Type.IsError)
             {
                 b.Type = PhiType.Error;
+                return;
+            }
+
+            // two objects (or structs) are compared by their values; empty is no object at all
+            if (b.Left.Type.IsObject || b.Left.Type.IsStruct || b.Right.Type.IsObject || b.Right.Type.IsStruct
+                || b.Left is EmptyExpr || b.Right is EmptyExpr)
+            {
+                BindObjectCompare(b, scope);
                 return;
             }
 
@@ -1815,6 +2196,41 @@ namespace Phi.Compiler.Semantics
             b.Type = b.IsComparison || b.IsLogical ? PhiType.Bool : ArithmeticType(b.Left.Type, b.Right.Type);
         }
 
+        /// <summary>a is b on objects: equal when their values are (following new fields); x is empty: no object.</summary>
+        void BindObjectCompare(BinaryExpr b, Scope scope)
+        {
+            b.Type = PhiType.Bool;
+            if (b.Op is not (BinaryOp.Equal or BinaryOp.NotEqual))
+            {
+                Error(b.Span, "objects can only be compared with is / == and is not / !=");
+                return;
+            }
+
+            Expr? empty = b.Left is EmptyExpr ? b.Left : b.Right is EmptyExpr ? b.Right : null;
+            if (empty != null)
+            {
+                Expr other = empty == b.Left ? b.Right : b.Left;
+                if (other is EmptyExpr || !other.Type.IsObject)
+                    Error(other.Span, $"only an object can be empty, and this is a {other.Type}");
+                else
+                    b.ObjectCompare = other.Type.Struct;
+                return;
+            }
+
+            static bool IsObjectValue(Expr e) => (e.Type.IsObject || e.Type.IsStruct) && e is NameExpr or IndexExpr or MemberExpr;
+            if (!IsObjectValue(b.Left) || !IsObjectValue(b.Right) || b.Left.Type.Struct != b.Right.Type.Struct)
+            {
+                Error(b.Span, $"a {b.Left.Type} can't be compared with a {b.Right.Type}");
+                return;
+            }
+            if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+            {
+                Error(b.Span, "comparing whole structs needs 32-bit code (a Kernel or a Program); compare their fields");
+                return;
+            }
+            b.ObjectCompare = b.Left.Type.Struct;
+        }
+
         /// <summary>
         /// Checks that a value fits where it's going. A one-character string like 'w' becomes
         /// its character code wherever a number is expected. Numbers of any size convert to
@@ -1823,6 +2239,31 @@ namespace Phi.Compiler.Semantics
         Expr Convert(Expr e, PhiType target, string what)
         {
             if (e.Type.IsError || target.IsError) return e;
+
+            // a struct parameter borrows: an object, a struct in place, or a pointer to one
+            if (target.IsObject)
+            {
+                if (e.Type.IsObject && e.Type.Struct == target.Struct) return e;
+                if (e.Type.IsStruct && e.Type.Struct == target.Struct && e is NameExpr or IndexExpr or MemberExpr)
+                    return new AddrExpr { Operand = e, Span = e.Span, Type = PhiType.PointerTo(e.Type) };
+                if (e.Type.IsPointer && (e.Type.Pointee!.Struct == target.Struct || e.Type.Pointee == PhiType.U8)) return e;
+                if (e is EmptyExpr || ConstantFolder.Evaluate(e) == 0) return e; // no object
+                Error(e.Span, $"{what} needs a {target}, but this is a {e.Type}");
+                return e;
+            }
+
+            // an object where a pointer goes is its address: walk is head.next;
+            if (target.IsPointer && e.Type.IsObject)
+            {
+                if (target.Pointee!.Struct != e.Type.Struct && target.Pointee != PhiType.U8)
+                    diagnostics.Warning(file, e.Span, $"{what} is a {target}, but this is a {e.Type}; write `addr ... as {target}` if that's meant");
+                return e;
+            }
+            if (e.Type.IsObject)
+            {
+                Error(e.Span, $"{what} needs a {target}, but this is a {e.Type}; for its address, write addr {Describe(e)}");
+                return e;
+            }
 
             if (target.IsMethod)
             {

@@ -18,7 +18,7 @@ namespace Phi.Compiler.Syntax
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
             "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
-            "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as",
+            "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast",
             "phi", "asm", "arm", "struct", "use", "const",
         };
@@ -108,6 +108,9 @@ namespace Phi.Compiler.Syntax
         bool AtDeclaration =>
             (Current.Kind == TokenKind.Identifier && TypeKeywords.Contains(Current.Text))
             || (IsName(Current) && IsName(PeekToken(1)) && !PeekToken(1).StartsLine);
+
+        /// <summary>new T name ... as a statement declares an object (a new expression is never a statement).</summary>
+        bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
 
         bool AtTopLevelHeader =>
             Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct")) && PeekToken(1).Kind == TokenKind.Dot
@@ -275,6 +278,7 @@ namespace Phi.Compiler.Syntax
                         continue;
                     }
 
+                    bool isNew = AcceptWord("new");
                     TypeRef type = ParseType();
                     Token field = ExpectIdentifier("a field name");
                     Expr? count = null;
@@ -284,7 +288,7 @@ namespace Phi.Compiler.Syntax
                         Expect(TokenKind.CloseBracket, "']'");
                     }
                     ExpectSemicolon();
-                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Span = type.Span.To(field.Span) });
+                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, IsNew = isNew, Span = type.Span.To(field.Span) });
                 }
                 catch (ParseError)
                 {
@@ -363,6 +367,8 @@ namespace Phi.Compiler.Syntax
             {
                 while (!At(TokenKind.CloseBracket) && !AtEnd)
                 {
+                    if (AtNewDeclaration)
+                        throw Error(Current.Span, "a parameter borrows the caller's object, so it's written without new: Point p;");
                     if (!AtDeclaration)
                         throw Error(Current.Span, $"expected a parameter like 'int count: 0;' but found {Current}");
                     method.Parameters.Add(ParseVarDecl(allowBracketEnd: true));
@@ -446,6 +452,7 @@ namespace Phi.Compiler.Syntax
             Token start = Current;
 
             if (AtWord("const")) return ParseConst();
+            if (AtNewDeclaration) return ParseVarDecl(allowBracketEnd: false);
             if (AtDeclaration) return ParseVarDecl(allowBracketEnd: false);
 
             if (Current.Kind == TokenKind.Identifier)
@@ -539,13 +546,22 @@ namespace Phi.Compiler.Syntax
 
         VarDecl ParseVarDecl(bool allowBracketEnd)
         {
+            Token start = Current;
+            bool isNew = AcceptWord("new");
             TypeRef type = ParseType();
             Token name = ExpectIdentifier("a variable name");
 
             Expr? buffer = null;
+            Expr? at = null;
             var values = new List<Expr>();
 
-            if (At(TokenKind.OpenBracket))
+            // new T name at address;  ('at' is only a keyword here, so it can still be a name)
+            if (isNew && AtWord("at") && !Current.StartsLine)
+            {
+                Advance();
+                at = ParseExpression();
+            }
+            else if (At(TokenKind.OpenBracket))
             {
                 buffer = ParseBufferSize();
             }
@@ -581,7 +597,9 @@ namespace Phi.Compiler.Syntax
                 Name = name.Text,
                 NameSpan = name.Span,
                 BufferSize = buffer,
-                Span = type.Span.To(Previous.Span),
+                IsNew = isNew,
+                AtAddress = at,
+                Span = start.Span.To(Previous.Span),
             };
             decl.Values.AddRange(values);
 
@@ -823,6 +841,14 @@ namespace Phi.Compiler.Syntax
         Stmt ParseAssignment(bool requireSemicolon)
         {
             Expr target = ParsePostfix();
+
+            if (AtWord("takes") && !Current.StartsLine)
+            {
+                Advance();
+                Expr source = ParsePostfix();
+                if (requireSemicolon) ExpectSemicolon();
+                return new TakesStmt { Target = target, Source = source, Span = target.Span.To(Previous.Span) };
+            }
 
             AssignOp op;
             Expr? value;
@@ -1195,6 +1221,11 @@ namespace Phi.Compiler.Syntax
                     {
                         Advance();
                         return new BoolExpr { Value = t.Text == "true", Span = t.Span };
+                    }
+                    if (t.Text == "empty")
+                    {
+                        Advance();
+                        return new EmptyExpr { Span = t.Span };
                     }
                     if (ReservedWords.Contains(t.Text))
                         throw Error(t.Span, $"expected a value but found the keyword '{t.Text}'");

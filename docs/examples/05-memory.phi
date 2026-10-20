@@ -1,40 +1,41 @@
-# Tutorial 5: structs, pointers and the heap.
+# Tutorial 5: structs, objects, pointers and the heap.
 struct.Task
 {
 	u32 id;
 	u8 priority;
-	ptr<Task> next;
+	new Task next;              # the task after this one, which this one owns
 }
 
 phi.Tasks:Kernel
 {
-	# build a linked list with new
-	ptr<Task> first: 0;
-	while u32 i: 1; i <= 3; i++;
-		ptr<Task> t: new Task;          # zeroed memory from the heap
-		t:0.id is i;
-		t:0.priority is 10 * i;
-		t:0.next is first;
-		first is t;
-	;;
-
-	# walk it
-	ptr<Task> walk: first;
-	while walk is not 0
-		log 'task ' walk:0.id ' has priority ' walk:0.priority '\n';
-		walk is walk:0.next;
-	;;
-
-	# give the memory back
-	while first is not 0
-		ptr<Task> rest: first:0.next;
-		free first;
-		first is rest;
-	;;
+	call Run;
 	log 'blocks still in use: ' Heap.used_blocks '\n';
 
 	# a null pointer is caught: uncomment the next two lines to see the panic screen
 	# ptr<Task> nothing: 0;
 	# log nothing:0.id;
 	exit 0;
+
+	[Run]
+		# build a linked list: each new task takes the list so far as its next
+		new Task first: empty;
+		while u32 i: 1; i <= 3; i++;
+			new Task t: i 10 * i;   # zeroed memory from the heap, then id and priority
+			t.next takes first;
+			first takes t;
+		;;
+
+		# walk it with a pointer, which borrows the tasks without copying them
+		ptr<Task> walk: addr first;
+		while walk is not 0
+			log 'task ' walk:0.id ' has priority ' walk:0.priority '\n';
+			walk is walk:0.next;
+		;;
+
+		# a copy is a whole new list
+		new Task copy: first;
+		copy.priority is 99;
+		log 'first still has priority ' first.priority ', the copy ' copy.priority '\n';
+		log 'blocks while running: ' Heap.used_blocks '\n';
+	[end]                       # first, copy and all their tasks are freed here
 }

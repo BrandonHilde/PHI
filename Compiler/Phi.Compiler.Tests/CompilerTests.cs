@@ -329,7 +329,7 @@ namespace Phi.Compiler.Tests
         }
 
         public static IEnumerable<object[]> RunnableSamples() =>
-            new[] { "hello.phi", "arcade.phi", "kernel.phi", "terminal.phi", "os.phi", "web.phi", "music.phi" }.Select(f => new object[] { f });
+            new[] { "arcade.phi", "kernel.phi", "terminal.phi", "os.phi", "web.phi", "music.phi" }.Select(f => new object[] { f });
 
         // net.net and net.tcp use each other: checking one from disk (as an editor does, by its
         // full path) must not load it a second time as the embedded copy

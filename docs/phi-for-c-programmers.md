@@ -21,6 +21,10 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `&x` | `addr x` | |
 | `int (*f)(int, int)` | `method<int int: int> f` | Set with `f is addr Add;`, call with `(f: 1 2)`. |
 | C++ `c.add(3)` | `call c.Add: 3;` | Methods written inside a struct; `self` is the pointer to it. |
+| C++ `auto p = std::make_unique<Point>(1, 2)` | `new Point p: 1 2;` | An object: PHI frees it when its owner goes away. There's no `delete`. |
+| C++ `*a = *b` (deep, for owned members) | `a is b;` | Copies values, including the objects `a` owns. Addresses are never shared. |
+| C++ `a = std::move(b)` | `a takes b;` | Hands the object over and leaves `b` empty. |
+| `p == NULL` for an object | `p is empty` | |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
 | `(T)x` | `x as T` | A cast. Binds tighter than math: `(a + b) as u8`. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
@@ -86,8 +90,14 @@ meant.
 inside an `unsafe` block skips the checks, and a pointer is never checked.
 
 **Some common names are keywords.** These can't be variable names: `end`, `is`, `in`,
-`out`, `addr`, `as`, `sizeof`, `method`, `new`, `free`, `has`, `break`, `continue`, `return`,
+`out`, `addr`, `as`, `sizeof`, `method`, `new`, `free`, `takes`, `empty`, `has`, `break`, `continue`, `return`,
 `below`, `above`, `atmost` and `atleast`. The compiler says so (`'end' is a keyword and can't be a variable name`).
 
 **A fixed-size array holds at most 16384 elements.** Larger buffers in a kernel come from
 `new`. User programs don't have a heap yet.
+
+**`is` between objects copies; it never makes two names for one object.** After `b is a;`,
+changing `b.x` leaves `a.x` alone, and copying a list copies every node. To move an object
+without copying, use `takes`. To refer to an object without owning it, pass it to a
+method (a struct parameter borrows it) or take a `ptr<T>` with `addr`, which is only good
+while the owner is alive.

@@ -67,6 +67,9 @@ namespace Phi.Compiler.Syntax
         public TypeRef Type { get; init; } = null!;
         public string Name { get; init; } = "";
         public Expr? Count { get; init; }
+
+        /// <summary>new Node next;  a separate object the struct owns (starts empty).</summary>
+        public bool IsNew { get; init; }
     }
 
     /// <summary>[Name: params] body [end: result]   or   [isr Name] body [end]</summary>
@@ -102,6 +105,8 @@ namespace Phi.Compiler.Syntax
     /// type name: v1 v2 v3;       an array
     /// type name: [N];            (or type name[N];) an empty buffer of N elements
     /// type name;                 zero
+    /// new T name: v1 v2;         an object PHI allocates (fields filled in order) and frees
+    /// new T name at address;     a T over memory that already exists
     /// </summary>
     public sealed class VarDecl : Stmt
     {
@@ -110,6 +115,18 @@ namespace Phi.Compiler.Syntax
         public Span NameSpan { get; init; }
         public List<Expr> Values { get; } = new();
         public Expr? BufferSize { get; init; }
+
+        /// <summary>Declared with new: an object.</summary>
+        public bool IsNew { get; init; }
+
+        /// <summary>new T name at address: where the object already is.</summary>
+        public Expr? AtAddress { get; set; }
+
+        /// <summary>Set by the binder for new T name: v1 v2;  one assignment per field.</summary>
+        public List<Stmt> FieldValues { get; } = new();
+
+        /// <summary>Set by the binder for new T name: other;  the object is filled from one value.</summary>
+        public ObjectAssignStmt? Source { get; set; }
 
         public VariableSymbol? Symbol { get; set; }
     }
@@ -161,6 +178,9 @@ namespace Phi.Compiler.Syntax
     {
         public Expr Pointer { get; set; } = null!;
         public MethodSymbol? Releaser { get; set; }
+
+        /// <summary>A ptr to a struct that owns objects: they're freed with it.</summary>
+        public StructSymbol? Owner { get; set; }
     }
 
     /// <summary>unsafe ... ;;   (no bounds checks inside)</summary>
@@ -216,6 +236,40 @@ namespace Phi.Compiler.Syntax
         public List<Stmt> Body { get; } = new();
     }
 
+    /// <summary>dest takes source;  dest gets source's object without copying, and source is left empty.</summary>
+    public sealed class TakesStmt : Stmt
+    {
+        public Expr Target { get; init; } = null!;
+        public Expr Source { get; init; } = null!;
+
+        /// <summary>Set by the binder.</summary>
+        public StructSymbol? Struct { get; set; }
+    }
+
+    public enum ObjectAssignKind
+    {
+        /// <summary>a is b: b's values are copied into a's memory.</summary>
+        Copy,
+
+        /// <summary>a is (Make: 1): the call's new object is handed to a.</summary>
+        Move,
+
+        /// <summary>a.next is empty: the object is freed.</summary>
+        Clear,
+    }
+
+    /// <summary>Made by the binder from `x is value` when x is an object or a struct.</summary>
+    public sealed class ObjectAssignStmt : Stmt
+    {
+        public Expr Target { get; init; } = null!;
+        public Expr Value { get; init; } = null!;
+        public ObjectAssignKind Kind { get; init; }
+        public StructSymbol Struct { get; init; } = null!;
+
+        /// <summary>The target holds an object PHI owns (a new variable or field), so it can be allocated or freed.</summary>
+        public bool TargetOwned { get; init; }
+    }
+
     public enum AssignOp { Set, Add, Subtract, Multiply, Divide, Modulo, Power }
 
     /// <summary>x is 5;  x = 5;  x++ 2;  x-- y;  x** 3;  x// 2;  x%% 2;  x++;  x--;</summary>
@@ -253,6 +307,9 @@ namespace Phi.Compiler.Syntax
     {
         public bool Value { get; init; }
     }
+
+    /// <summary>empty: no object, for `x.next is empty` and `x.next is not empty`.</summary>
+    public sealed class EmptyExpr : Expr { }
 
     /// <summary>A name, possibly dotted: x, Colors.Black, days.len, task.id</summary>
     public sealed class NameExpr : Expr
@@ -317,6 +374,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>The method, when the operand names one.</summary>
         public MethodSymbol? Method { get; set; }
+
+        /// <summary>The operand is an object, whose address is the value it holds.</summary>
+        public bool OfObject { get; set; }
     }
 
     /// <summary>value as Type: the same bits, seen as another type (cut to fit a smaller number)</summary>
@@ -376,6 +436,9 @@ namespace Phi.Compiler.Syntax
         public BinaryOp Op { get; init; }
         public Expr Left { get; set; } = null!;
         public Expr Right { get; set; } = null!;
+
+        /// <summary>Set by the binder when two objects (or an object and empty) are compared.</summary>
+        public StructSymbol? ObjectCompare { get; set; }
 
         public bool IsComparison => Op is >= BinaryOp.Equal and <= BinaryOp.GreaterEqual;
         public bool IsLogical => Op is BinaryOp.And or BinaryOp.Or;

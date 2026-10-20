@@ -1,0 +1,25 @@
+# new T name at address: a struct over memory that's already there (runs as 16-bit and 32-bit).
+struct.Cell
+{
+	u8 letter;
+	u8 color;
+}
+
+phi.ObjectsAt:Library
+{
+	new Cell corner at 0xB8000;
+	corner.letter is 'P';
+	corner.color is 0x0E;
+
+	ptr<u8> screen: 0xB8000;
+	debug 'screen holds ' screen:0 ' ' screen:1 '\n';
+
+	new Cell next at 0xB8002;
+	next.letter is corner.letter + 1;
+	call Show: next;
+	debug 'size of a cell: ' (sizeof corner) '\n';
+
+	[Show: Cell c;]
+		debug 'cell ' c.letter ' ' c.color '\n';
+	[end]
+}

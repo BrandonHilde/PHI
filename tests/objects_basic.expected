@@ -1,0 +1,11 @@
+b starts at 0 0
+a 1 2, b 9 2
+same values: 0
+same values now: 1 0
+moved to 4 -2
+made 7 8
+b is now 5 6
+through a pointer 7
+blocks while running: 3
+loop total 50005000
+blocks in use: 0

@@ -8,6 +8,8 @@
 # contiguous range of frames at startup: a quarter of free memory, at least 8 MB
 # (31 MB on QEMU's default 128 MB machine), but never more than half. Blocks are kept in address order, each with a header; Alloc takes the
 # first free block that fits and splits it, Free merges neighbors back together.
+# Both turn interrupts off while they run, so an interrupt handler can use the heap
+# too (a method's objects are freed when it ends, even in a handler).
 
 use memory.frames;
 use memory.paging;
@@ -33,6 +35,7 @@ phi.Heap:Kernel
 	u32 heap_size: 0;
 	u32 used_bytes: 0;          # handed out right now (not counting headers)
 	u32 used_blocks: 0;
+	u32 heap_flags: 0;          # the interrupt flag from before Alloc or Free started
 
 	call Init;
 
@@ -55,6 +58,7 @@ phi.Heap:Kernel
 
 	# size bytes of zeroed memory, or 0 if no free block is big enough
 	[Alloc: u32 size: 0;]
+		call asm.HeapLock;
 		u32 result: 0;
 		u32 wanted: (size + 7) & ~7;
 		if wanted is 0
@@ -92,10 +96,12 @@ phi.Heap:Kernel
 			;;
 			b is b:0.next;
 		;;
+		call asm.HeapUnlock;
 	[end: result]
 
 	# give back memory from Alloc; freeing 0 does nothing
 	[Free: u32 address: 0;]
+		call asm.HeapLock;
 		if address is not 0
 			ptr<HeapBlock> b: address - HEADER;
 			bln valid: address >= heap_start + HEADER and address < heap_start + heap_size;
@@ -134,6 +140,7 @@ phi.Heap:Kernel
 				;;
 			;;
 		;;
+		call asm.HeapUnlock;
 	[end]
 
 	# the largest block Alloc could hand out right now
@@ -155,4 +162,22 @@ asm.HeapHalt
 .halt:
 	hlt
 	jmp .halt
+}
+
+# interrupts off, remembering whether they were on
+asm.HeapLock
+{
+	pushfd
+	pop eax
+	mov [{heap_flags}], eax
+	cli
+	ret
+}
+
+# interrupts back the way they were
+asm.HeapUnlock
+{
+	push dword [{heap_flags}]
+	popfd
+	ret
 }

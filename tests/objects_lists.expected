@@ -1,0 +1,18 @@
+node is empty after takes: 1
+30 20 10 0
+blocks for the list: 4
+1 1 1 1
+1 1 1 1
+1 99 1 1
+1 1 1
+1
+blocks for two lists: 5
+equal lists: 1
+one value different: 0
+one longer: 0 1 1
+compared with itself: 1
+before: 0
+after: 1
+long copies equal: 1
+blocks for two long lists: 20002
+blocks in use: 0

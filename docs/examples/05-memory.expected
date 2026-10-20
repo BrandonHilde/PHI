@@ -1,4 +1,6 @@
 task 3 has priority 30
 task 2 has priority 20
 task 1 has priority 10
+first still has priority 30, the copy 99
+blocks while running: 6
 blocks still in use: 0

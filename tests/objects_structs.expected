@@ -1,0 +1,10 @@
+added 11 22
+origin 21 42
+area 924
+copy area 1848, original 924
+same shape: 0
+same again: 1
+sum 16
+copies equal: 1
+after a change: 0 sum 15
+blocks in use: 1

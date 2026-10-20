@@ -1,0 +1,100 @@
+# Objects with struct methods, objects inside inline fields, trees, and class-level objects.
+struct.Point
+{
+	i16 x;
+	i16 y;
+
+	[Add: Point other;]
+		x++ other.x;
+		y++ other.y;
+	[end]
+}
+
+struct.Shape
+{
+	u8 kind;
+	Point corner;              # stored inside the Shape
+	new Point size;            # a separate object the Shape owns
+	new Shape inner;
+
+	[Area]
+		int area: 0;
+		if size is not empty
+			area is size.x * size.y;
+		;;
+		if inner is not empty
+			area++ (inner.Area);
+		;;
+	[end: area]
+}
+
+struct.Tree
+{
+	int value;
+	new Tree left;
+	new Tree right;
+}
+
+phi.ObjectsStructs:Kernel
+{
+	new Point origin: 10 20;   # lives as long as the program
+
+	call Methods;
+	call Shapes;
+	call Trees;
+	debug 'blocks in use: ' Heap.used_blocks '\n';
+	exit 0;
+
+	[Methods]
+		new Point p: 1 2;
+		call p.Add: origin;
+		debug 'added ' p.x ' ' p.y '\n';
+		call origin.Add: p;
+		debug 'origin ' origin.x ' ' origin.y '\n';
+	[end]
+
+	[Shapes]
+		new Shape s;
+		s.corner.x is 3;
+		s.size is origin;
+		new Shape part;
+		part.size is s.size;
+		part.size.x is 1;
+		s.inner takes part;
+		debug 'area ' (s.Area) '\n';
+
+		new Shape t: s;
+		t.inner.inner is t;
+		debug 'copy area ' (t.Area) ', original ' (s.Area) '\n';
+		debug 'same shape: ' (s is t) '\n';
+		t.inner.inner is empty;
+		debug 'same again: ' (s is t) '\n';
+	[end]
+
+	# left goes by recursion, right by the loop
+	[Trees]
+		new Tree root: 1;
+		root.left is root;
+		root.right is root;
+		root.left.right is root;
+		root.right.right is root;
+		debug 'sum ' (Sum: root) '\n';
+		new Tree copy: root;
+		debug 'copies equal: ' (copy is root) '\n';
+		copy.right.right.value is 0;
+		debug 'after a change: ' (copy is root) ' sum ' (Sum: copy) '\n';
+	[end]
+
+	[Sum: Tree t;]
+		int total: 0;
+		if t is not empty
+			total is t.value;
+			if t.left is not empty
+				total++ (Sum: t.left);
+			;;
+			if t.right is not empty
+				total++ (Sum: t.right);
+			;;
+		;;
+	[end: total]
+}

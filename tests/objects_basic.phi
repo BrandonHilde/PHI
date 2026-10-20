@@ -1,0 +1,62 @@
+# Objects: new allocates, is copies values, PHI frees what it allocated.
+struct.Point
+{
+	i16 x;
+	i16 y;
+}
+
+phi.ObjectsBasic:Kernel
+{
+	call Run;
+	call Loop;
+	debug 'blocks in use: ' Heap.used_blocks '\n';
+	exit 0;
+
+	[Run]
+		new Point a: 1 2;
+		new Point b;
+		debug 'b starts at ' b.x ' ' b.y '\n';
+
+		# a copy: changing b leaves a alone
+		b is a;
+		b.x is 9;
+		debug 'a ' a.x ' ' a.y ', b ' b.x ' ' b.y '\n';
+		debug 'same values: ' (a is b) '\n';
+		b.x is 1;
+		debug 'same values now: ' (a is b) ' ' (a is not b) '\n';
+
+		# a method borrows a, and changes it in place
+		call Move: a 3 -4;
+		debug 'moved to ' a.x ' ' a.y '\n';
+
+		# a method hands back a new object
+		new Point c: (Make: 7 8);
+		debug 'made ' c.x ' ' c.y '\n';
+		call b is Make: 5 6;
+		debug 'b is now ' b.x ' ' b.y '\n';
+
+		# addr gives a plain pointer to the object's memory
+		ptr<Point> p: addr c;
+		debug 'through a pointer ' p:0.x '\n';
+		debug 'blocks while running: ' Heap.used_blocks '\n';
+	[end]
+
+	[Move: Point p; i16 dx: 0; i16 dy: 0;]
+		p.x++ dx;
+		p.y++ dy;
+	[end]
+
+	[Make: i16 x: 0; i16 y: 0;]
+		new Point made: x y;
+	[end: made]
+
+	# the same object is reused each time round, so this doesn't allocate 10,000 times
+	[Loop]
+		int total: 0;
+		while int i: 0; i < 10000; i++;
+			new Point t: i 1;
+			total++ t.x + t.y;
+		;;
+		debug 'loop total ' total '\n';
+	[end]
+}

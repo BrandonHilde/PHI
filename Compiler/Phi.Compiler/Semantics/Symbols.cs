@@ -2,7 +2,7 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object }
 
     /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
     public sealed class MethodSignature
@@ -35,6 +35,8 @@ namespace Phi.Compiler.Semantics
     /// <summary>
     /// int is i32 and byt is u8; bln is 8-bit 0/1; str is a zero-terminated byte buffer with a
     /// fixed capacity; ptr&lt;T&gt; is a 32-bit linear address; structs are packed (no padding).
+    /// An Object is a struct reached through the address it lives at (a `new` variable or
+    /// field, an `at` variable, a struct parameter): it's used like the struct itself.
     /// <see cref="Length"/> is the element count for arrays and 0 for everything else.
     /// </summary>
     public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
@@ -56,12 +58,19 @@ namespace Phi.Compiler.Semantics
         public static PhiType PointerTo(PhiType pointee) => new(TypeKind.Pointer, Pointee: pointee);
         public static PhiType Of(StructSymbol s) => new(TypeKind.Struct, Struct: s);
         public static PhiType MethodOf(MethodSignature s) => new(TypeKind.Method, Signature: s);
+        public static PhiType ObjectOf(StructSymbol s) => new(TypeKind.Object, Struct: s);
 
         public bool IsArray => Length > 0;
         public bool IsError => Kind == TypeKind.Error;
         public bool IsString => !IsArray && Kind == TypeKind.Str;
         public bool IsPointer => !IsArray && Kind == TypeKind.Pointer;
         public bool IsStruct => !IsArray && Kind == TypeKind.Struct;
+
+        /// <summary>A struct reached through its address: x.field works on it like on a struct.</summary>
+        public bool IsObject => !IsArray && Kind == TypeKind.Object;
+
+        /// <summary>The struct whose fields x.field reaches: for a struct or an object.</summary>
+        public StructSymbol? Fields => IsStruct || IsObject ? Struct : null;
 
         /// <summary>The address of a method that can be called: method&lt;int: int&gt;.</summary>
         public bool IsMethod => !IsArray && Kind == TypeKind.Method;
@@ -82,7 +91,7 @@ namespace Phi.Compiler.Semantics
         {
             TypeKind.I8 or TypeKind.U8 or TypeKind.Bool => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
-            TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method => 4,
+            TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method or TypeKind.Object => 4,
             TypeKind.Str => 4,  // arrays of strings hold pointers
             TypeKind.Struct => Struct!.Size,
             _ => 0,
@@ -101,7 +110,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.Bool => "bln",
                 TypeKind.Str => "str",
                 TypeKind.Pointer => $"ptr<{Pointee}>",
-                TypeKind.Struct => Struct!.Name,
+                TypeKind.Struct or TypeKind.Object => Struct!.Name,
                 TypeKind.Method => Signature!.ToString(),
                 TypeKind.Void => "nothing",
                 _ => "?",
@@ -130,6 +139,22 @@ namespace Phi.Compiler.Semantics
         public string Name { get; init; } = "";
     }
 
+    /// <summary>What a variable holding an object does with it.</summary>
+    public enum Ownership
+    {
+        /// <summary>Not an object.</summary>
+        None,
+
+        /// <summary>new T x: PHI allocates it, and frees it when x goes away.</summary>
+        Owned,
+
+        /// <summary>new T x at address: memory that already exists; never allocated or freed.</summary>
+        At,
+
+        /// <summary>A struct parameter: the caller's object, for the length of the call.</summary>
+        Borrowed,
+    }
+
     public sealed class VariableSymbol : Symbol
     {
         public PhiType Type { get; set; } = PhiType.Error;
@@ -140,6 +165,7 @@ namespace Phi.Compiler.Semantics
         public VarDecl Decl { get; init; } = null!;
         public UnitKind Unit { get; init; }
         public bool IsParameter { get; init; }
+        public Ownership Ownership { get; set; }
 
         /// <summary>Declared inside a method (as a parameter or in its body).</summary>
         public bool IsLocal { get; set; }
@@ -192,12 +218,36 @@ namespace Phi.Compiler.Semantics
         public PhiType Type { get; init; } = PhiType.Error;
     }
 
+    /// <summary>
+    /// A field reached through one or more objects: start at Root's storage plus BaseOffset,
+    /// then for each hop read the address stored there and add the hop. pt.x is Root pt, hops
+    /// [x]; a.next.value is Root a, hops [next, value].
+    /// </summary>
+    public sealed class PathSymbol : Symbol
+    {
+        public VariableSymbol Root { get; init; } = null!;
+        public int BaseOffset { get; init; }
+        public List<int> Hops { get; init; } = new();
+        public PhiType Type { get; init; } = PhiType.Error;
+    }
+
+    /// <summary>A `new` field inside a struct (directly or in an inline struct field): where, and of what.</summary>
+    public readonly record struct OwnedSlot(int Offset, StructSymbol Of);
+
     public sealed class StructSymbol : Symbol
     {
         public StructDecl Decl { get; init; } = null!;
         public List<FieldSymbol> Fields { get; } = new();
         public int Size { get; set; }
         public bool LayoutDone { get; set; }
+
+        /// <summary>
+        /// Every object this struct owns, in address order: its `new` fields, including those of
+        /// struct fields stored inside it. Freeing, copying or comparing one of these structs also
+        /// frees, copies or compares these.
+        /// </summary>
+        public List<OwnedSlot> OwnedSlots { get; } = new();
+        public bool OwnsObjects => OwnedSlots.Count > 0;
 
         public FieldSymbol? Find(string name) => Fields.FirstOrDefault(f => f.Name == name);
     }
