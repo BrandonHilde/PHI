@@ -151,10 +151,12 @@ sprite, say) must use a `u8` array instead (`u8 rows[8 * 16];`, indexed as
 With spaces on both sides or neither (`x - 1`, `x-1`) it subtracts. Inside parentheses it
 always subtracts.
 
-**Where variables live.** Every variable has a fixed place in memory (there is no stack
-of local variables yet). Variables declared directly in a class are set once, when the
-program is built. Variables declared in a method, or as a loop counter, are set again
-each time the declaration runs (to zero if they have no value).
+**Where variables live.** Variables declared directly in a class have a fixed place in
+memory and are set once, when the program is built. A method's parameters and variables
+(including its loop counters) live on the stack, in a new set for every call: they start
+at zero, and are set again each time their declaration runs. So a method can call itself,
+and an interrupt handler can safely call a method the main code is also running. A pointer
+to a method's variable (`addr total`) is only good until the method returns.
 
 **Scope.** A name is looked up in the current method, then the current class, then in
 other classes of the same unit (if only one class has it). `Class.name` picks a specific
@@ -642,8 +644,9 @@ programs. A program that touches memory that isn't its own is stopped with a mes
 
 **The kernel runs one thing at a time.** Its own code keeps the CPU until it waits
 (`Process.Wait`, `Process.WaitAll`, `OS.Yield`) or its main code ends; only then do
-programs run. This keeps kernel methods from running twice at once (their variables have
-fixed places in memory).
+programs run. Methods keep their variables on the stack, but class variables (like a
+driver's state) are shared, and this keeps two pieces of kernel code from changing them at
+once.
 
 **Inside a program**, the hardware is out of reach: no ports, interrupt handlers, `new`
 or drivers. Instead:
@@ -731,9 +734,22 @@ if (IsReady: port)
   after `[end: ...]`.
 - Methods can be called before they appear, and from any class in the same unit
   (`call Other.Method;` to be explicit).
-- Parameters and method variables have fixed places in memory, so a method can't call
-  itself (recursion) yet, directly or through other methods. The compiler reports it
-  (`Count calls itself (Count -> Count)`).
+- A method can call itself, directly or through other methods: every call has its own
+  parameters and variables (see "Where variables live").
+
+  ```phi
+  [Factorial: int n: 0;]
+      if n < 2
+          return 1;
+      ;;
+  [end: n * (Factorial: n - 1)]
+  ```
+
+- A method's variables take stack space while it runs, at most 4096 bytes per method; put
+  large buffers in the class.
+- A method called through its address (`addr Handler`, for an IRQ or a system call) gets no
+  arguments, so it can't have parameters. A parameter's default can't use the method's
+  other parameters.
 
 ### Events
 
@@ -885,7 +901,6 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 ## Not supported yet
 
 - `dec` / `fin` (decimal numbers), `has`, `^^` (power)
-- recursion (see "Where variables live"); the compiler reports a method that calls itself
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed

@@ -172,6 +172,18 @@ namespace Phi.Compiler.Semantics
         public MethodDecl Decl { get; init; } = null!;
         public UnitKind Unit { get; init; }
         public List<VariableSymbol> Parameters { get; } = new();
+
+        /// <summary>The method's own variables (not its parameters), which live in its stack frame.</summary>
+        public List<VariableSymbol> Locals { get; } = new();
+
+        /// <summary>The values of its return statements, for working out <see cref="ResultCapacity"/>.</summary>
+        public List<Expr> ReturnValues { get; } = new();
+
+        /// <summary>
+        /// For a method that returns a str: the bytes its result can take, including the zero.
+        /// The caller gives it a buffer this big to copy the result into.
+        /// </summary>
+        public int ResultCapacity { get; set; }
         public PhiType ReturnType { get; set; } = PhiType.Void;
 
         /// <summary>
@@ -180,6 +192,9 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         public bool ResultBound { get; set; }
         public bool ResultBinding { get; set; }
+
+        /// <summary>The [end: value] uses the method's own result, so its type was assumed to be a number.</summary>
+        public bool ReturnTypeAssumed { get; set; }
         public bool IsHook { get; init; }
         public bool IsInterruptHandler { get; init; }
     }

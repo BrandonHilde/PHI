@@ -13,10 +13,11 @@ namespace Phi.Compiler.CodeGen
 
     /// <summary>
     /// Generates NASM source: 16-bit real mode for the Boot and Os units, 32-bit protected
-    /// mode for the Kernel unit. Values are computed in eax; every variable lives at a fixed
-    /// label. Library routines may change any general-purpose register, so nothing is kept in
-    /// registers between statements, which also means every memory access really happens (as
-    /// device memory needs).
+    /// mode for the Kernel unit. Values are computed in eax. Class variables live at fixed
+    /// labels; a method's parameters and variables live in its stack frame (ebp), so methods
+    /// can call themselves and be used from interrupt handlers. Library routines may change any
+    /// general-purpose register except ebp, so nothing is kept in registers between statements,
+    /// which also means every memory access really happens (as device memory needs).
     /// </summary>
     public sealed class X86Generator
     {
@@ -35,7 +36,7 @@ namespace Phi.Compiler.CodeGen
         readonly bool bits32;
         readonly string libraryTarget;
 
-        readonly StringBuilder code = new();
+        StringBuilder code = new();
         readonly HashSet<string> librarySymbols = new();
         readonly Dictionary<string, string> stringLabels = new();
         int labelCount;
@@ -261,8 +262,15 @@ namespace Phi.Compiler.CodeGen
                 Emit("cld");
             }
 
+            Frame frame = LayOutFrame(m);
+            currentMethod = m;
+            frameSize = frame.LocalsSize;
             returnLabel = NewLabel("return");
             returnUsed = false;
+
+            // the body first: the temporary space it needs decides the frame's size
+            StringBuilder outer = code;
+            code = new StringBuilder();
 
             foreach (Stmt s in m.Decl.Body) EmitStatement(s);
 
@@ -273,6 +281,32 @@ namespace Phi.Compiler.CodeGen
             }
 
             if (returnUsed) Label(returnLabel); // return jumps here with the result in eax
+
+            if (m.ReturnType.IsString)
+            {
+                // copy the result into the caller's buffer before this frame goes away
+                Need("phi_strcpy");
+                Emit("mov esi, eax");
+                Emit($"mov edi, [ebp + {frame.ResultSlot}]");
+                Emit($"mov ecx, {m.ResultCapacity}");
+                Emit("call phi_strcpy");
+                Emit($"mov eax, [ebp + {frame.ResultSlot}]");
+            }
+
+            StringBuilder body = code;
+            code = outer;
+            bool hasFrame = frameSize > 0 || m.Parameters.Count > 0 || m.ReturnType.IsString;
+            if (hasFrame) EmitPrologue(frame);
+            code.Append(body);
+            if (hasFrame)
+            {
+                Emit("mov esp, ebp");
+                Emit("pop ebp");
+            }
+
+            if (frameSize > MaxFrame)
+                diagnostics.Error(file, m.Decl.Span, $"{m.Decl.Name} needs {frameSize} bytes of stack for its variables (at most {MaxFrame}); declare large buffers in the class instead");
+            currentMethod = null;
 
             if (m.IsInterruptHandler)
             {
@@ -289,6 +323,146 @@ namespace Phi.Compiler.CodeGen
             {
                 Emit("ret");
             }
+        }
+
+        /// <summary>
+        /// The most stack one method may use for its variables. A program's kernel stack is
+        /// 8 KB, and calls nest.
+        /// </summary>
+        const int MaxFrame = 4096;
+
+        /// <summary>The method being generated (null for class code), and its frame's size so far.</summary>
+        MethodSymbol? currentMethod;
+        int frameSize;
+
+        /// <summary>Space for class code's temporary values, which has no frame.</summary>
+        readonly List<(string Label, int Size)> staticTemps = new();
+
+        sealed class Frame
+        {
+            public int LocalsSize;
+            public int ResultSlot;
+            public readonly List<(VariableSymbol Param, int Slot)> StrParams = new();
+            public readonly List<(VariableSymbol Array, List<string> Elements)> StrArrays = new();
+        }
+
+        /// <summary>
+        /// Gives every parameter and variable of the method its place, relative to ebp:
+        ///
+        ///   ebp + ...   the arguments, the last one nearest (each 4 bytes, pushed by the caller)
+        ///   ebp + 8/6   where to copy a str result, for methods that return one
+        ///   ebp + 4/2   the return address (4 bytes in 32-bit code, 2 in 16-bit)
+        ///   ebp         the caller's ebp
+        ///   ebp - ...   the variables, then temporary space for the calls' results
+        ///
+        /// A str parameter's argument is the address of the text, which the method copies into
+        /// a buffer of its own when it starts.
+        /// </summary>
+        Frame LayOutFrame(MethodSymbol m)
+        {
+            var frame = new Frame();
+            int slot = bits32 ? 8 : 6;
+            if (m.ReturnType.IsString)
+            {
+                frame.ResultSlot = slot;
+                slot += 4;
+            }
+
+            int size = 0;
+            string Reserve(int bytes)
+            {
+                size += (bytes + 3) & ~3;
+                return $"ebp - {size}";
+            }
+
+            for (int i = m.Parameters.Count - 1; i >= 0; i--, slot += 4)
+            {
+                VariableSymbol p = m.Parameters[i];
+                if (p.Type.IsString)
+                {
+                    p.Label = Reserve(p.Capacity);
+                    frame.StrParams.Add((p, slot));
+                }
+                else p.Label = $"ebp + {slot}";
+            }
+
+            foreach (VariableSymbol v in m.Locals)
+            {
+                if (v.Type.Kind == TypeKind.Str && v.Type.IsArray)
+                {
+                    // a table of pointers, one per element, each to a buffer of its own
+                    v.Label = Reserve(4 * v.Count);
+                    var elements = new List<string>();
+                    for (int i = 0; i < v.Count; i++) elements.Add(Reserve(v.Capacity));
+                    frame.StrArrays.Add((v, elements));
+                }
+                else v.Label = Reserve(StorageSize(v));
+            }
+
+            frame.LocalsSize = size;
+            return frame;
+        }
+
+        void EmitPrologue(Frame frame)
+        {
+            Emit("push ebp");
+            // in 16-bit code only sp is the stack pointer; the top of esp may hold anything
+            Emit(bits32 ? "mov ebp, esp" : "movzx ebp, sp");
+            if (frameSize > 0) Emit($"sub esp, {frameSize}");
+
+            // variables start at zero each call, as they always have
+            int locals = frame.LocalsSize;
+            if (locals is > 0 and <= 16)
+            {
+                for (int k = 4; k <= locals; k += 4) Emit($"mov dword [ebp - {k}], 0");
+            }
+            else if (locals > 16)
+            {
+                Emit($"lea edi, [ebp - {locals}]");
+                Emit($"mov ecx, {locals / 4}");
+                Emit("xor eax, eax");
+                Emit("rep stosd");
+            }
+
+            foreach (var (array, elements) in frame.StrArrays)
+                for (int i = 0; i < elements.Count; i++)
+                {
+                    Emit($"lea eax, [{elements[i]}]");
+                    Emit($"mov [{array.Label} + {4 * i}], eax");
+                }
+
+            foreach (var (p, slot) in frame.StrParams)
+            {
+                Need("phi_strcpy");
+                Emit($"mov esi, [ebp + {slot}]   ; {p.Name}");
+                Emit($"lea edi, [{p.Label}]");
+                Emit($"mov ecx, {p.Capacity}");
+                Emit("call phi_strcpy");
+            }
+        }
+
+        /// <summary>Room for a temporary value: in the frame inside a method, or a fixed place in class code.</summary>
+        string AllocTemp(int bytes)
+        {
+            bytes = (bytes + 3) & ~3;
+            if (currentMethod != null)
+            {
+                frameSize += bytes;
+                return $"ebp - {frameSize}";
+            }
+
+            string label = $"phi_temp_{staticTemps.Count}";
+            staticTemps.Add((label, bytes));
+            return label;
+        }
+
+        static bool InFrame(string home) => home.StartsWith("ebp");
+
+        /// <summary>Loads the address of a variable (a label, or a place in the frame) into a register.</summary>
+        void LoadAddress(string register, string home, int offset = 0)
+        {
+            string plus = offset == 0 ? "" : offset > 0 ? $" + {offset}" : $" - {-offset}";
+            Emit(InFrame(home) ? $"lea {register}, [{home}{plus}]" : $"mov {register}, {home}{plus}");
         }
 
         void EmitRawBlock(RawBlockDecl raw)
@@ -385,7 +559,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     var v = (VariableSymbol)ask.Target.Symbol!;
                     Need("phi_read_line");
-                    Emit($"mov edi, {v.Label}");
+                    LoadAddress("edi", v.Label);
                     Emit($"mov ecx, {v.Capacity - 1}");
                     Emit("call phi_read_line");
                     break;
@@ -516,7 +690,7 @@ namespace Phi.Compiler.CodeGen
                 else
                 {
                     int size = StorageSize(v);
-                    Emit($"mov edi, {v.Label}");
+                    LoadAddress("edi", v.Label);
                     Emit($"mov ecx, {size}");
                     Emit("xor al, al");
                     Emit("rep stosb");
@@ -555,7 +729,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     string print = "phi_print" + suffix;
                     Need(print);
-                    if (StaticAddress(value) is string label) Emit($"mov esi, {label}");
+                    if (StaticAddress(value) is string label) LoadAddress("esi", label);
                     else
                     {
                         EmitExpr(value);
@@ -597,36 +771,41 @@ namespace Phi.Compiler.CodeGen
             {
                 case MethodSymbol method:
                 {
-                    // parameters are variables of the method: set each one, using its default when no argument is given
-                    int given = Math.Min(arguments.Count, method.Parameters.Count);
-                    bool staged = arguments.Take(given).Any(ContainsCall);
-                    if (staged)
+                    // push each argument in order (a missing one is the parameter's default, or zero);
+                    // a str parameter gets the address of the text
+                    int count = method.Parameters.Count;
+                    for (int i = 0; i < count; i++)
                     {
-                        // an argument that calls a method could change parameters already set (it
-                        // may even call this method), so work out every argument first
-                        for (int i = 0; i < given; i++)
-                        {
-                            EmitExpr(arguments[i]);
-                            Emit("push eax");
-                        }
-                        for (int i = given - 1; i >= 0; i--)
-                        {
-                            Emit("pop eax");
-                            VariableSymbol p = method.Parameters[i];
-                            if (p.Type.IsString) EmitStringStore(NameOf(p), sourceIsString: arguments[i].Type.IsString);
-                            else EmitStoreEax(NameOf(p));
-                        }
-                    }
-
-                    for (int i = 0; i < method.Parameters.Count; i++)
-                    {
-                        if (staged && i < given) continue;
                         VariableSymbol p = method.Parameters[i];
                         Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
-                        if (value != null) EmitAssign(NameOf(p), value);
-                        else if (i >= arguments.Count) EmitInitialize(p, p.Decl.Values);
+
+                        if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
+                        else EmitExpr(value);
+
+                        if (p.Type.IsString && value != null && !value.Type.IsString)
+                        {
+                            // a number for a str parameter is written out as text first
+                            string text = AllocTemp(12);
+                            Need("phi_int_to_str");
+                            LoadAddress("edi", text);
+                            Emit("mov ecx, 12");
+                            Emit("call phi_int_to_str");
+                            LoadAddress("eax", text);
+                        }
+                        Emit("push eax");
                     }
+
+                    int pushed = count;
+                    if (method.ReturnType.IsString)
+                    {
+                        // somewhere for the method to put its result
+                        LoadAddress("eax", AllocTemp(method.ResultCapacity));
+                        Emit("push eax");
+                        pushed++;
+                    }
+
                     Emit($"call {method.Label}");
+                    if (pushed > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushed * 4}");
                     break;
                 }
 
@@ -649,15 +828,9 @@ namespace Phi.Compiler.CodeGen
             }
         }
 
-        static bool ContainsCall(Expr e) =>
-            SyntaxWalker.Nodes(e).Any(n => n is CallExpr or NameExpr { Call: not null });
-
         /// <summary>Calls a one-parameter heap method (Heap.Alloc or Heap.Free) with a value.</summary>
-        void EmitHeapCall(MethodSymbol method, Expr argument)
-        {
-            EmitAssign(NameOf(method.Parameters[0]), argument);
-            Emit($"call {method.Label}");
-        }
+        void EmitHeapCall(MethodSymbol method, Expr argument) =>
+            EmitCallTo(method, new List<Expr> { argument });
 
         /// <summary>Stores a call result (in eax) into a variable.</summary>
         void EmitStoreResult(Expr target, PhiType resultType)
@@ -870,7 +1043,7 @@ namespace Phi.Compiler.CodeGen
             if (target is NameExpr { Symbol: VariableSymbol v })
             {
                 capacity = v.Capacity;
-                Emit($"mov edi, {v.Label}");
+                LoadAddress("edi", v.Label);
             }
             else
             {
@@ -930,7 +1103,7 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case NameExpr { Symbol: VariableSymbol { Type.IsString: true } v }:
-                    Emit($"mov eax, {v.Label}");
+                    LoadAddress("eax", v.Label);
                     break;
 
                 case NameExpr { Symbol: VariableSymbol or FieldPathSymbol }:
@@ -947,7 +1120,7 @@ namespace Phi.Compiler.CodeGen
 
                 case NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } }:
                     Need("phi_strlen");
-                    Emit($"mov esi, {str.Label}");
+                    LoadAddress("esi", str.Label);
                     Emit("call phi_strlen");
                     break;
 
@@ -1028,13 +1201,13 @@ namespace Phi.Compiler.CodeGen
 
             if (addr.Operand is NameExpr { Symbol: VariableSymbol v })
             {
-                Emit($"mov eax, {v.Label}");
+                LoadAddress("eax", v.Label);
                 return;
             }
 
             Place p = EmitPlace(addr.Operand);
             string offset = p.Offset == 0 ? "" : $" + {p.Offset}";
-            if (!p.Computed) Emit($"mov eax, {p.Label}{offset}");
+            if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
             else if (!p.Linear) Emit($"lea eax, [{p.Label} + ebx{offset}]");
             else Emit($"lea eax, [ebx{offset}]");
         }
@@ -1101,7 +1274,8 @@ namespace Phi.Compiler.CodeGen
                 : e switch
                 {
                     StringExpr s => $"mov {register}, {StringLabel(s.Value)}",
-                    NameExpr { Symbol: VariableSymbol { Type.IsString: true } v } => $"mov {register}, {v.Label}",
+                    NameExpr { Symbol: VariableSymbol { Type.IsString: true } v } =>
+                        InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : $"mov {register}, {v.Label}",
                     NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } => LoadInstruction(v.Type, register, $"[{v.Label}]"),
                     NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } =>
                         LoadInstruction(f.Type, register, f.Offset == 0 ? $"[{f.Root.Label}]" : $"[{f.Root.Label} + {f.Offset}]"),
@@ -1214,9 +1388,12 @@ namespace Phi.Compiler.CodeGen
         {
             foreach (VariableSymbol v in unit.Variables.Distinct())
             {
-                if (v.Type.IsError) continue;
+                if (v.Type.IsError || v.IsLocal) continue; // a method's variables are in its frame
                 output.Append(DataFor(v));
             }
+
+            foreach (var (label, size) in staticTemps)
+                output.AppendLine($"{label}: times {size} db 0");
 
             foreach (var (value, label) in stringLabels)
                 output.AppendLine($"{label}: db {NasmBytes(value)}");

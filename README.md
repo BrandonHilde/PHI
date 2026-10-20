@@ -144,9 +144,8 @@ PHI source line shown above the code it produced.
 All eight phases of the [roadmap](./Plan.md) are done: PHI compiles boot sectors, 32-bit
 kernels and user programs, and PHI OS ties them together. Next, roughly in order:
 
-1. Variables on the stack for methods (recursion, kernel threads)
-2. A heap for user programs, so `new` works there too
-3. Growable strings
-4. Framebuffer graphics in 32-bit kernels
-5. Later: checking TLS certificates, 64-bit, an ARM backend, C compatibility, and
+1. A heap for user programs, so `new` works there too
+2. Growable strings
+3. Framebuffer graphics in 32-bit kernels
+4. Later: checking TLS certificates, 64-bit, an ARM backend, C compatibility, and
    rewriting the compiler in PHI (see [Plan.md](./Plan.md#later))

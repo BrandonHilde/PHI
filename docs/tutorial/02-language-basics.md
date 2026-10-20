@@ -113,8 +113,9 @@ The statements outside methods are the class's main code, and they run in order.
 only run when called, and they can be written after the code that calls them, so keeping
 them at the bottom of the class reads well.
 
-> **One thing to know:** a method's variables live at fixed places in memory, not on a stack.
-> That keeps things simple and fast, but it means a method can't call itself (no recursion).
+> **One thing to know:** a class's variables live at fixed places in memory, but a method's
+> parameters and variables are on the stack, a fresh set for every call. So a method can
+> call itself, and its variables start at zero each time it runs.
 
 ## Printing while you develop
 

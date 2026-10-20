@@ -43,14 +43,13 @@ if (EndsWith: name '.BMP')
 ;;
 ```
 
-**Variables don't live on a stack.** Every variable, including method parameters and
-locals, has a fixed address. This has three consequences:
-- A method can't call itself, even through another method. The compiler reports it.
-- An interrupt handler that calls a method the main code also calls can overwrite that
-  method's variables mid-call. Give interrupt handlers their own methods and variables.
-- A method's local variables share one scope across the whole method. Declaring
-  `int got` in both branches of an `if` is an error ("already declared"). Declare it once,
-  above the `if`.
+**Class variables are globals; method variables are locals.** A method's parameters and
+variables are on the stack, as in C, and start at zero on every call. Variables declared in
+a class have fixed addresses and are shared by everything, including interrupt handlers.
+Two differences from C:
+- A method's variables share one scope across the whole method. Declaring `int got` in both
+  branches of an `if` is an error ("already declared"). Declare it once, above the `if`.
+- A method's variables can take at most 4096 bytes of stack. Put large buffers in the class.
 
 **Operator precedence differs from C.** The bitwise operators bind tighter than
 comparisons, so `flags & 4 is 4` means `(flags & 4) is 4`, which is the opposite of C.

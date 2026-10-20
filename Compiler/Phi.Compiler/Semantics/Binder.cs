@@ -198,13 +198,21 @@ namespace Phi.Compiler.Semantics
                 {
                     if (m.Symbol == null) continue;
                     Scope ms = methodScopes[m];
-                    foreach (VarDecl p in m.Parameters) BindVarDecl(p, ms, classLevel: false);
+                    foreach (VarDecl p in m.Parameters)
+                    {
+                        BindVarDecl(p, ms, classLevel: false);
+                        // a default is worked out by the caller, which can't see this method's variables
+                        Expr? local = p.Values.SelectMany(SyntaxWalker.Nodes).OfType<NameExpr>()
+                            .FirstOrDefault(n => n.Symbol is VariableSymbol { IsLocal: true } or FieldPathSymbol { Root.IsLocal: true });
+                        if (local != null)
+                            Error(local.Span, $"a parameter's default can't use the method's own variables or parameters ('{((NameExpr)local).Name}')");
+                    }
                     BindStatements(m.Body, ms, classLevel: false);
                     ReturnTypeOf(m.Symbol);
                 }
             }
 
-            CheckRecursion();
+            WorkOutResultCapacities();
 
             foreach (var (cls, scope) in classScopes)
                 foreach (var (name, symbol) in scope.Names)
@@ -230,8 +238,10 @@ namespace Phi.Compiler.Semantics
 
             if (m.ResultBinding)
             {
-                // (A: ...) inside A's own [end: ...]; reported as recursion later
-                return PhiType.Error;
+                // A's [end: ...] calls A, as in [end: n * (Factorial: n - 1)]: assume a number,
+                // and check the assumption once the value's type is known
+                m.ReturnTypeAssumed = true;
+                return PhiType.Int;
             }
 
             m.ResultBinding = true;
@@ -246,6 +256,9 @@ namespace Phi.Compiler.Semantics
             else if (!result.Type.IsError)
                 Error(result.Span, $"a method can return a number or a str, not a {result.Type}");
 
+            if (m.ReturnTypeAssumed && m.ReturnType.IsString)
+                Error(result.Span, $"{m.Decl.Name} returns a str and uses its own result in [end: ...]; store that result in a variable first");
+
             file = outerFile;
             unsafeDepth = outerUnsafe;
             m.ResultBinding = false;
@@ -253,61 +266,48 @@ namespace Phi.Compiler.Semantics
             return m.ReturnType;
         }
 
-        // ---------------------------------------------------------------- recursion
-
-        /// <summary>Calls from each method, for finding methods that call themselves.</summary>
-        readonly Dictionary<MethodSymbol, List<(MethodSymbol Callee, SourceFile File, Span Span)>> callsFrom = new();
-
-        void NoteCall(Scope scope, MethodSymbol callee, Span span)
-        {
-            if (scope.Method == null) return;
-            if (!callsFrom.TryGetValue(scope.Method, out var list)) callsFrom[scope.Method] = list = new();
-            list.Add((callee, file, span));
-        }
+        // ---------------------------------------------------------------- str results
 
         /// <summary>
-        /// A method's variables (and parameters) have fixed places in memory, so a method that
-        /// calls itself, directly or through others, would overwrite the values of the call
-        /// that is still running.
+        /// The room a str-returning method needs for its result: enough for the largest of the
+        /// values it can return. The caller passes a buffer this big (see the code generator).
         /// </summary>
-        void CheckRecursion()
+        void WorkOutResultCapacities()
         {
-            var reported = new HashSet<MethodSymbol>();
-            foreach (var (caller, list) in callsFrom)
-            {
-                if (reported.Contains(caller)) continue;
-                foreach (var (callee, site, span) in list)
-                {
-                    List<MethodSymbol>? path = PathBetween(callee, caller, new HashSet<MethodSymbol>());
-                    if (path == null) continue;
-
-                    string chain = string.Join(" -> ", new[] { caller }.Concat(path).Select(m => m.Decl.Name));
-                    file = site;
-                    Error(span, $"{caller.Decl.Name} calls itself ({chain}); methods can't be recursive yet, because their variables have fixed places in memory");
-                    foreach (MethodSymbol m in path) reported.Add(m);
-                    reported.Add(caller);
-                    break;
-                }
-            }
+            foreach (BoundUnit unit in units.Values)
+                foreach (MethodSymbol m in unit.Methods)
+                    if (m.ReturnType.IsString) ResultCapacityOf(m, new HashSet<MethodSymbol>());
         }
 
-        /// <summary>The methods from <paramref name="from"/> to <paramref name="to"/> along calls, or null.</summary>
-        List<MethodSymbol>? PathBetween(MethodSymbol from, MethodSymbol to, HashSet<MethodSymbol> seen)
-        {
-            if (from == to) return new List<MethodSymbol> { to };
-            if (!seen.Add(from) || !callsFrom.TryGetValue(from, out var list)) return null;
+        /// <summary>A method that returns its own result (directly or through others) gets a default.</summary>
+        const int DefaultResultCapacity = 256;
 
-            foreach (var (callee, _, _) in list)
-            {
-                List<MethodSymbol>? rest = PathBetween(callee, to, seen);
-                if (rest != null)
-                {
-                    rest.Insert(0, from);
-                    return rest;
-                }
-            }
-            return null;
+        int ResultCapacityOf(MethodSymbol m, HashSet<MethodSymbol> busy)
+        {
+            if (m.ResultCapacity > 0) return m.ResultCapacity;
+            if (!busy.Add(m)) return DefaultResultCapacity;
+
+            var values = new List<Expr>(m.ReturnValues);
+            if (m.Decl.Result != null) values.Add(m.Decl.Result);
+            int capacity = values.Select(v => StrCapacity(v, busy)).DefaultIfEmpty(1).Max();
+
+            busy.Remove(m);
+            m.ResultCapacity = capacity;
+            return capacity;
         }
+
+        /// <summary>The bytes (with the zero) a str-valued expression can need.</summary>
+        int StrCapacity(Expr e, HashSet<MethodSymbol> busy) => e switch
+        {
+            StringExpr s => s.Value.Length + 1,
+            NameExpr { Symbol: VariableSymbol v } => v.Capacity,
+            NameExpr { Call: CallExpr { Resolved: MethodSymbol m } } => ResultCapacityOf(m, busy),
+            IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } => v.Capacity,
+            CallExpr { Resolved: MethodSymbol m } => ResultCapacityOf(m, busy),
+            _ when e.Type.IsNumeric => 12, // a number written out as text
+            _ => DefaultResultCapacity,
+        };
+
 
         // ---------------------------------------------------------------- structs
 
@@ -570,6 +570,9 @@ namespace Phi.Compiler.Semantics
                 if (method.Result != null) Error(method.Result.Span, "interrupt handlers can't return a value");
             }
 
+            if (hook != null && method.Parameters.Count > 0)
+                Error(method.Parameters[0].Span, "events can't take parameters; the library calls them without any");
+
             UnitKind unit = classScope.Unit;
             string fullName = dotted ? name : $"{classScope.Class.Name}.{name}";
             string label = hook?.Label ?? $"M_{classScope.Class.Name}_{name}";
@@ -700,8 +703,10 @@ namespace Phi.Compiler.Semantics
                 foreach (var (method, scope) in methodScopes.Where(p => p.Value.Unit == unit.Kind))
                     foreach (VariableSymbol v in scope.Names.Values.OfType<VariableSymbol>())
                     {
+                        // the code generator gives it a place in the method's stack frame
                         v.Label = $"VALUE_{method.Symbol!.Label}_{v.Name}";
                         v.IsLocal = true;
+                        if (!v.IsParameter) method.Symbol.Locals.Add(v);
                     }
             }
         }
@@ -1046,6 +1051,7 @@ namespace Phi.Compiler.Semantics
 
             PhiType result = ReturnTypeOf(method);
             if (ret.Value.Type.IsError || result.IsError) return;
+            method.ReturnValues.Add(ret.Value);
 
             if (result.IsString != ret.Value.Type.IsString)
                 Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
@@ -1147,7 +1153,6 @@ namespace Phi.Compiler.Semantics
                     for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
                         arguments[i] = Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
 
-                    NoteCall(scope, method, calleeSpan);
                     return method;
                 }
 
@@ -1502,6 +1507,9 @@ namespace Phi.Compiler.Semantics
                 switch (callee)
                 {
                     case MethodSymbol m when m.Unit == scope.Unit:
+                        // whoever calls it through its address (an IRQ, a system call) gives it no arguments
+                        if (m.Decl.Parameters.Count > 0)
+                            Error(addr.Span, $"{m.Decl.Name} takes parameters, so it can't be called through its address");
                         addr.CodeLabel = m.Label;
                         name.Type = PhiType.Void;
                         return;

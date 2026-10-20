@@ -448,7 +448,7 @@ a bad address is killed while the kernel keeps running.
   - No kernel threads: method variables have fixed addresses, so two threads running the same
     method would overwrite each other's. The kernel instead runs one thing at a time and is not
     preempted; programs (each with private memory) are. Kernel threads need variables on a stack,
-    which is a compiler change for later.
+    which is a compiler change for later. (Methods have since got stack frames.)
   - No ELF: flat binaries are all the compiler produces, and they load as is.
   - No locks or wait queues as language features: with a non-preemptible kernel, disabling
     interrupts (the default inside system calls) is the critical section. Waiting for keys, time
@@ -490,14 +490,24 @@ the prompt.
 ## Where things stand
 
 All eight phases are done. A PHI program can be a 16-bit boot sector, a 32-bit kernel, or a
-user program; `samples/os.phi` brings the pieces together. The parts most worth doing next,
-roughly in order:
+user program; `samples/os.phi` brings the pieces together.
 
-1. **Variables on the stack** for methods: recursion, kernel threads, and safer concurrency.
-2. **A heap for user programs**, so `new` works there too.
-3. **Growable strings** with value semantics.
-4. **The framebuffer** (Bochs VBE in QEMU) for graphics in 32-bit kernels.
-5. Then the [Later](#later) list: TLS certificates, 64-bit, ARM, self-hosting.
+Since then, building a graphical OS in PHI showed where the language got in the way, and
+these were added:
+
+- [x] Negative values in lists (`int a: 1 -1;` is two values), arrays where pointers are
+  expected, and `sizeof`
+- [x] Calls as values (`if (IsReady: port)`), `break`, `continue` and `return`
+- [x] Variables on the stack for methods: recursion, and methods that are safe to call from
+  interrupt handlers
+- [x] Docs: [PHI for C programmers](docs/phi-for-c-programmers.md)
+
+The parts most worth doing next, roughly in order:
+
+1. **A heap for user programs**, so `new` works there too.
+2. **Growable strings** with value semantics.
+3. **The framebuffer** (Bochs VBE in QEMU) for graphics in 32-bit kernels.
+4. Then the [Later](#later) list: TLS certificates, 64-bit, ARM, self-hosting.
 
 ---
 

@@ -57,11 +57,13 @@ everything the generator needs:
   `0x7C00`), `OS` → Os (16-bit, `0x7E00`), `Kernel` → Kernel (32-bit, `0x10000`), `Program` →
   Program (32-bit user mode, `0x40000000`). `Library` classes join whichever unit the program
   has. A program is 16-bit (Boot + Os), a kernel, or a user program; they don't mix.
-- **Names and storage.** Every variable, including method parameters and locals, gets a fixed
-  label: `VALUE_name` for class variables (so `asm.` blocks can use `{name}`), and the method's
-  label added in front of the name for parameters and locals. There is no stack frame for PHI
-  methods; this is why there's no recursion, and why the kernel is never preempted (see
-  [Concurrency](#concurrency)).
+- **Names and storage.** Class variables get a fixed label, `VALUE_name` (so `asm.` blocks can
+  use `{name}`). A method's parameters and variables live in its stack frame: the caller
+  pushes the arguments (a `str` argument as the address of its text, which the method copies
+  into a buffer of its own), and the method reserves and zeroes room for its variables below
+  `ebp`. A method that returns a `str` copies it into a buffer the caller passes, so two
+  results can be used side by side. The layout is described in `LayOutFrame` in
+  [X86Generator.cs](../Compiler/Phi.Compiler/CodeGen/X86Generator.cs).
 - **Types** ([Symbols.cs](../Compiler/Phi.Compiler/Semantics/Symbols.cs)): sized integers,
   `bln`, `str` (fixed capacity), `ptr<T>`, packed structs, and arrays of all of them. Math is
   32-bit, unsigned when either side is `u32` or a pointer.
@@ -157,17 +159,19 @@ and vector 48 to the scheduler. Multitasking plugs into that stub through three 
 
 ### Concurrency
 
-Because method variables have fixed addresses, two pieces of code running the same method at
-once would overwrite each other's variables. PHI avoids this by design:
+A method's variables are on the stack, so two pieces of code can run the same method at once.
+Class variables, though, are shared, and PHI keeps code from changing them at the same time
+by design:
 
 - **The kernel is never preempted.** Its code runs until it waits (`OS.Yield`, `Process.Wait`)
   or its main code ends. System calls run with interrupts off.
 - **User programs are preempted** by the timer, but each has its own memory, so its variables
   are its own.
 
-Interrupt handlers and events do interrupt kernel code, so they should only touch their own
-variables. Giving methods stack frames (and so recursion and kernel threads) is the first item
-in the plan's "what's next".
+Interrupt handlers and events do interrupt kernel code. They can call any method, but should
+be careful with class variables the interrupted code may be using. With stack frames in
+place, kernel threads are now possible; they would need a stack each and locking for shared
+class variables.
 
 ## Tests
 

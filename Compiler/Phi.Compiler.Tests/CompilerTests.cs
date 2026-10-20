@@ -114,10 +114,33 @@ namespace Phi.Compiler.Tests
         public void EarlyExitAndCallErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Theory]
-        [InlineData("[Count: int n: 0;]\n call Count: n - 1;\n[end]", "Count calls itself (Count -> Count)")]
-        [InlineData("[Count: int n: 0;]\n[end: (Count: n - 1)]", "Count calls itself (Count -> Count)")]
-        [InlineData("[Ping]\n call Pong;\n[end]\n[Pong]\n call Ping;\n[end]", "Ping calls itself (Ping -> Pong -> Ping)")]
-        public void RecursionIsReported(string body, string message) => AssertError(Boot(body), message);
+        [InlineData("[Count: int n: 0;]\n if n > 0\n  call Count: n - 1;\n ;;\n[end]")]
+        [InlineData("[Factorial: int n: 0;]\n if n < 2\n  return 1;\n ;;\n[end: n * (Factorial: n - 1)]")]
+        [InlineData("[Ping: int n: 0;]\n if n > 0\n  call Pong: n - 1;\n ;;\n[end]\n[Pong: int n: 0;]\n call Ping: n;\n[end]")]
+        public void MethodsCanCallThemselves(string body)
+        {
+            CompileResult result = Compile(Boot(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData("[Echo: str t: [8];]\n[end: t]\n[Name: int n: 0;]\n[end: (Echo: (Name: n))]", "Name returns a str and uses its own result in [end: ...]")]
+        [InlineData("call OS.SetInterruptHandler: 9 addr Handler;\n[Handler: int x: 0;]\n[end]", "Handler takes parameters, so it can't be called through its address")]
+        [InlineData("[Pad: int width: 0; int fill: width;]\n[end]", "a parameter's default can't use the method's own variables or parameters ('width')")]
+        [InlineData("[Big]\n u8 buffer[5000];\n[end]", "Big needs 5000 bytes of stack for its variables (at most 4096); declare large buffers in the class instead")]
+        public void FrameErrors(string body, string message) => AssertError(Boot(body), message);
+
+        [Fact]
+        public void ParametersAndLocalsLiveInTheFrame()
+        {
+            CompileResult result = Compile(Boot("int r: 0;\ncall r is Add: 2 3;\n[Add: int a: 0; int b: 0;]\n int sum: a + b;\n[end: sum]"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            string asm = result.Units.Single().Text;
+            Assert.Contains("push ebp", asm);
+            Assert.Contains("[ebp + 6]", asm);   // b, the last argument (16-bit: 2-byte return address)
+            Assert.Contains("[ebp - 4]", asm);   // sum
+            Assert.DoesNotContain("VALUE_M_Test_Add_a:", asm);
+        }
 
         [Fact]
         public void ParenthesizedVariablesStayVariables()

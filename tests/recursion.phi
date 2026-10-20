@@ -1,0 +1,111 @@
+phi.Recursion:Library
+{
+	# each call has its own parameters and variables, so methods can call themselves
+	debug (Factorial: 10) ' ' (Fibonacci: 15) '\n';
+	debug (IsEven: 10) (IsOdd: 7) (IsEven: 3) '\n';
+
+	# a recursive flood fill: 0 is open, 1 is a wall
+	u8 grid:
+		1 1 1 1 1 1
+		1 0 0 1 0 1
+		1 0 1 1 0 1
+		1 0 0 0 0 1
+		1 1 1 1 1 1
+		1 0 0 1 0 1;
+	debug (Fill: 1 1) ' filled\n';
+	while int row: 0; row < 6; row++;
+		while int column: 0; column < 6; column++;
+			debug grid:(row * 6 + column);
+		;;
+		debug '\n';
+	;;
+
+	# str parameters and results are per call too
+	debug (Reverse: 'recursion') '\n';
+	debug (Name: 1) ' ' (Name: 2) ' ' ((Name: 1) is (Name: 2)) ' ' ((Name: 2) is (Name: 2)) '\n';
+
+	# local arrays belong to their call
+	debug (Depth: 3) '\n';
+
+	# variables start at zero in every call
+	debug (Counter) (Counter) (Counter) '\n';
+
+	[Factorial: int n: 0;]
+		if n < 2
+			return 1;
+		;;
+	[end: n * (Factorial: n - 1)]
+
+	[Fibonacci: int n: 0;]
+		if n < 2
+			return n;
+		;;
+	[end: (Fibonacci: n - 1) + (Fibonacci: n - 2)]
+
+	[IsEven: int n: 0;]
+		if n is 0
+			return true;
+		;;
+	[end: (IsOdd: n - 1)]
+
+	[IsOdd: int n: 0;]
+		if n is 0
+			return false;
+		;;
+	[end: (IsEven: n - 1)]
+
+	[Fill: int row: 0; int column: 0;]
+		if row < 0 or row atleast 6 or column < 0 or column atleast 6
+			return 0;
+		;;
+		int at: row * 6 + column;
+		if grid:at is not 0
+			return 0;
+		;;
+		grid:at is 2;
+	[end: 1 + (Fill: row - 1 column) + (Fill: row + 1 column) + (Fill: row column - 1) + (Fill: row column + 1)]
+
+	[Reverse: str text: [20];]
+		if text.len < 2
+			return text;
+		;;
+		str rest: [20];
+		str first: [2];
+		first is ' ';
+		first:0 is text:0;
+		while int i: 1; i < text.len; i++;
+			rest:(i - 1) is text:i;
+		;;
+		rest:(text.len - 1) is 0;
+		str result: [20];
+		result is (Reverse: rest);
+		str joined: [24];
+		joined is result;
+		int at: joined.len;
+		joined:at is first:0;
+		joined:(at + 1) is 0;
+	[end: joined]
+
+	[Name: int n: 0;]
+		if n is 1
+			return 'one';
+		;;
+	[end: 'two']
+
+	[Depth: int n: 0;]
+		int mine: 0 0 0;
+		mine:0 is n;
+		mine:1 is n * 10;
+		mine:2 is n * 100;
+		int deeper: 0;
+		if n > 0
+			deeper is (Depth: n - 1);
+		;;
+		# this call's array is untouched by the calls below it
+	[end: deeper + mine:0 + mine:1 + mine:2]
+
+	[Counter]
+		int count;
+		count++;
+	[end: count]
+}
