@@ -19,6 +19,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `return v;` | `return v;` | The method's normal result is the `[end: v]` at its end. |
 | `break;`, `continue;` | `break;`, `continue;` | Only in `while` loops. |
 | `&x` | `addr x` | |
+| `int (*f)(int, int)` | `method<int int: int> f` | Set with `f is addr Add;`, call with `(f: 1 2)`. |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
 

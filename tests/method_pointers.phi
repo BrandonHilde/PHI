@@ -1,0 +1,91 @@
+struct.Shape
+{
+	int size;
+	method<ptr<Shape>: int> area;       # each shape knows how to work out its area
+}
+
+phi.MethodPointers:Library
+{
+	# a table of methods, called through an index
+	method<int int: int> operations: addr Add addr Subtract addr Multiply;
+	while int i: 0; i < operations.len; i++;
+		debug (operations:i: 6 3) ' ';
+	;;
+	debug '\n';
+
+	# one variable, changed from method to method
+	method<int int: int> op: addr Add;
+	int got: 0;
+	call got is op: 20 22;
+	debug got ' ';
+	op is addr Multiply;
+	call got is op: 20 22;
+	debug got '\n';
+
+	# methods passed to methods
+	debug (Apply: addr Twice 5) ' ' (Apply: addr Square 5) ' ' (ApplyTwice: addr Square 3) '\n';
+
+	# a method in a struct field, called through the struct
+	Shape shapes[2];
+	shapes:0.size is 4;
+	shapes:0.area is addr SquareArea;
+	shapes:1.size is 4;
+	shapes:1.area is addr TriangleArea;
+	while int s: 0; s < shapes.len; s++;
+		debug (shapes:s.area: addr shapes:s) ' ';
+	;;
+	debug '\n';
+
+	# no result, and a str argument
+	method<str> say: addr Say;
+	call say: 'hello';
+	call say: 42;
+
+	# empty until set
+	method<int: int> nothing;
+	if nothing is 0
+		debug 'empty\n';
+	;;
+
+	# recursion through a variable
+	method<int: int> count_down: addr CountDown;
+	debug (count_down: 5) '\n';
+
+	[Add: int a: 0; int b: 0;]
+	[end: a + b]
+
+	[Subtract: int a: 0; int b: 0;]
+	[end: a - b]
+
+	[Multiply: int a: 0; int b: 0;]
+	[end: a * b]
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+
+	[Square: int n: 0;]
+	[end: n * n]
+
+	[Apply: method<int: int> f: 0; int x: 0;]
+	[end: (f: x)]
+
+	[ApplyTwice: method<int: int> f: 0; int x: 0;]
+	[end: (f: (f: x))]
+
+	[SquareArea: ptr<Shape> shape: 0;]
+	[end: shape:0.size * shape:0.size]
+
+	[TriangleArea: ptr<Shape> shape: 0;]
+	[end: shape:0.size * shape:0.size / 2]
+
+	[Say: str text: [16];]
+		debug 'say ' text '\n';
+	[end]
+
+	[CountDown: int n: 0;]
+		if n is 0
+			return 0;
+		;;
+		method<int: int> again: addr CountDown;
+	[end: n + (again: n - 1)]
+}

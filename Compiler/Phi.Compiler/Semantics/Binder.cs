@@ -266,6 +266,14 @@ namespace Phi.Compiler.Semantics
             return m.ReturnType;
         }
 
+        /// <summary>What a method takes and returns, as a method&lt;...&gt; type would say it.</summary>
+        MethodSignature SignatureOf(MethodSymbol m)
+        {
+            PhiType result = ReturnTypeOf(m);
+            return new MethodSignature(m.Parameters.Select(p => p.Type.IsString ? PhiType.Str : p.Type).ToList(),
+                                       result.IsNumeric ? PhiType.Int : result);
+        }
+
         // ---------------------------------------------------------------- str results
 
         /// <summary>
@@ -405,6 +413,23 @@ namespace Phi.Compiler.Semantics
                 {
                     PhiType pointee = ResolveType(t.Pointee!, scope, allowStr: false);
                     return pointee.IsError ? PhiType.Error : PhiType.PointerTo(pointee);
+                }
+                case "method":
+                {
+                    var parameters = t.Parameters.Select(p => ResolveType(p, scope, allowStr: true)).ToList();
+                    PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
+                    if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
+                    if (result.IsString)
+                    {
+                        Error(t.Result!.Span, "a method called through a variable can't return a str yet; return a number");
+                        return PhiType.Error;
+                    }
+                    if (!result.IsNumeric && result.Kind != TypeKind.Void)
+                    {
+                        Error(t.Result!.Span, $"a method returns a number or a str, not a {result}");
+                        return PhiType.Error;
+                    }
+                    return PhiType.MethodOf(new MethodSignature(parameters, result.IsNumeric ? PhiType.Int : result));
                 }
             }
 
@@ -1065,12 +1090,19 @@ namespace Phi.Compiler.Semantics
         void BindCall(CallStmt call, Scope scope)
         {
             if (call.ResultTarget != null) BindExpr(call.ResultTarget, scope);
-            object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope);
+            object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope, call.CalleeTarget);
             call.Resolved = callee;
 
             if (call.ResultTarget == null) return;
             switch (callee)
             {
+                case PointerCall pc:
+                    if (pc.Signature.Result.Kind == TypeKind.Void)
+                        Error(call.CalleeSpan, $"{call.Callee} is a {pc.Target.Type}, which doesn't return a value");
+                    else
+                        CheckResultTarget(call, pc.Signature.Result);
+                    break;
+
                 case MethodSymbol method:
                     if (method.Decl.Result == null)
                         Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it would need [end: value])");
@@ -1092,19 +1124,26 @@ namespace Phi.Compiler.Semantics
         /// <summary>(Name: args) used as a value.</summary>
         void BindCallExpr(CallExpr call, Scope scope)
         {
-            if (Lookup(call.Callee, scope) is VariableSymbol or FieldPathSymbol)
+            if (call.CalleeTarget == null && Lookup(call.Callee, scope) is VariableSymbol { Type.IsMethod: false } or FieldPathSymbol { Type.IsMethod: false })
             {
                 Error(call.CalleeSpan, $"'{call.Callee}' isn't a method; for an element, leave out the space after ':' ({call.Callee}:i)");
                 call.Type = PhiType.Error;
                 return;
             }
 
-            object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope);
+            object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope, call.CalleeTarget);
             call.Resolved = callee;
             call.Type = PhiType.Error;
 
             switch (callee)
             {
+                case PointerCall pc:
+                    if (pc.Signature.Result.Kind == TypeKind.Void)
+                        Error(call.CalleeSpan, $"{call.Callee} is a {pc.Target.Type}, which doesn't return a value, so it can't be used as one");
+                    else
+                        call.Type = pc.Signature.Result;
+                    break;
+
                 case MethodSymbol method:
                     if (method.Decl.Result == null)
                         Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it ends with [end]), so it can't be used as one");
@@ -1127,10 +1166,41 @@ namespace Phi.Compiler.Semantics
         /// Resolves a call's method and checks its arguments; returns the MethodSymbol,
         /// BuiltinFunction or RawBlockDecl, or null after reporting an error.
         /// </summary>
-        object? BindCallee(string calleeName, Span calleeSpan, List<Expr> arguments, Span span, Scope scope)
+        object? BindCallee(string calleeName, Span calleeSpan, List<Expr> arguments, Span span, Scope scope,
+                           Expr? calleeTarget = null)
         {
             BoundUnit unit = units[scope.Unit];
             foreach (Expr arg in arguments) BindExpr(arg, scope);
+
+            // a method variable: call handler: x;  call handlers:i: x;
+            Expr? pointer = calleeTarget;
+            if (pointer == null && Lookup(calleeName, scope) is VariableSymbol or FieldPathSymbol)
+                pointer = new NameExpr { Name = calleeName, Span = calleeSpan };
+            if (pointer != null)
+            {
+                // call F:x; (no space) reads as an element of F
+                if (calleeTarget is IndexExpr { Target: NameExpr root } && Lookup(root.Name, scope) == null
+                    && ResolveCallee(root.Name, scope) != null)
+                {
+                    Error(calleeSpan, $"put a space after the ':' that starts the arguments: {root.Name}: ...");
+                    return null;
+                }
+
+                BindExpr(pointer, scope);
+                if (pointer.Type.IsError) return null;
+                if (!pointer.Type.IsMethod)
+                {
+                    Error(calleeSpan, $"'{calleeName}' is a {pointer.Type}, not a method");
+                    return null;
+                }
+
+                MethodSignature signature = pointer.Type.Signature!;
+                if (arguments.Count != signature.Parameters.Count)
+                    Error(span, $"{calleeName} is a {pointer.Type}, which takes {Plural(signature.Parameters.Count, "argument")}, but was given {arguments.Count}");
+                for (int i = 0; i < Math.Min(arguments.Count, signature.Parameters.Count); i++)
+                    arguments[i] = Convert(arguments[i], signature.Parameters[i], $"argument {i + 1} of {calleeName}");
+                return new PointerCall { Target = pointer, Signature = signature };
+            }
 
             object? callee = ResolveCallee(calleeName, scope);
             switch (callee)
@@ -1192,6 +1262,10 @@ namespace Phi.Compiler.Semantics
                     {
                         PhiType expected = builtin.TextParameters.Contains(i) ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
                         arguments[i] = Convert(arguments[i], expected, $"'{builtin.Parameters[i]}'");
+
+                        // whoever calls a handler (an IRQ, a system call) gives it no arguments
+                        if (arguments[i] is AddrExpr { Method: MethodSymbol handler } && handler.Decl.Parameters.Count > 0)
+                            Error(arguments[i].Span, $"{handler.Decl.Name} takes parameters, so {builtin.Name} can't call it");
                     }
                     return builtin;
                 }
@@ -1510,11 +1584,11 @@ namespace Phi.Compiler.Semantics
                 switch (callee)
                 {
                     case MethodSymbol m when m.Unit == scope.Unit:
-                        // whoever calls it through its address (an IRQ, a system call) gives it no arguments
-                        if (m.Decl.Parameters.Count > 0)
-                            Error(addr.Span, $"{m.Decl.Name} takes parameters, so it can't be called through its address");
                         addr.CodeLabel = m.Label;
+                        addr.Method = m;
                         name.Type = PhiType.Void;
+                        // an interrupt handler ends with iret, so it can't be called like a method
+                        if (!m.IsInterruptHandler) addr.Type = PhiType.MethodOf(SignatureOf(m));
                         return;
                     case RawBlockDecl { Language: "asm" } raw:
                         UseRawBlock(units[scope.Unit], raw);
@@ -1616,6 +1690,22 @@ namespace Phi.Compiler.Semantics
         Expr Convert(Expr e, PhiType target, string what)
         {
             if (e.Type.IsError || target.IsError) return e;
+
+            if (target.IsMethod)
+            {
+                if (e.Type.IsMethod)
+                {
+                    if (!e.Type.Signature!.Equals(target.Signature))
+                        Error(e.Span, $"{what} needs a {target}, but this is a {e.Type}");
+                    return e;
+                }
+                if (ConstantFolder.Evaluate(e) == 0) return e; // no method yet
+                Error(e.Span, $"{what} needs a {target}, like addr Name");
+                return e;
+            }
+
+            // the address of a method is a number, for the built-ins that take handlers
+            if (target.IsNumeric && e.Type.IsMethod) return e;
 
             if (target.IsNumeric)
             {

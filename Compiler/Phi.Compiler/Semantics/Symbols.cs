@@ -2,14 +2,43 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method }
+
+    /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
+    public sealed class MethodSignature
+    {
+        public IReadOnlyList<PhiType> Parameters { get; }
+        public PhiType Result { get; }
+
+        public MethodSignature(IReadOnlyList<PhiType> parameters, PhiType result)
+        {
+            Parameters = parameters;
+            Result = result;
+        }
+
+        public override bool Equals(object? other) =>
+            other is MethodSignature s && s.Result == Result && s.Parameters.SequenceEqual(Parameters);
+
+        public override int GetHashCode() => Parameters.Aggregate(Result.GetHashCode(), (h, p) => h * 31 + p.GetHashCode());
+
+        public override string ToString() =>
+            $"method<{string.Join(" ", Parameters)}{(Result.Kind == TypeKind.Void ? "" : ": " + Result)}>";
+    }
+
+    /// <summary>A call through a method variable: its value is the address to call.</summary>
+    public sealed class PointerCall
+    {
+        public Expr Target { get; init; } = null!;
+        public MethodSignature Signature { get; init; } = null!;
+    }
 
     /// <summary>
     /// int is i32 and byt is u8; bln is 8-bit 0/1; str is a zero-terminated byte buffer with a
     /// fixed capacity; ptr&lt;T&gt; is a 32-bit linear address; structs are packed (no padding).
     /// <see cref="Length"/> is the element count for arrays and 0 for everything else.
     /// </summary>
-    public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null)
+    public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
+                                 MethodSignature? Signature = null)
     {
         public static readonly PhiType Error = new(TypeKind.Error);
         public static readonly PhiType Void = new(TypeKind.Void);
@@ -26,6 +55,7 @@ namespace Phi.Compiler.Semantics
         public static PhiType Byte => U8;
         public static PhiType PointerTo(PhiType pointee) => new(TypeKind.Pointer, Pointee: pointee);
         public static PhiType Of(StructSymbol s) => new(TypeKind.Struct, Struct: s);
+        public static PhiType MethodOf(MethodSignature s) => new(TypeKind.Method, Signature: s);
 
         public bool IsArray => Length > 0;
         public bool IsError => Kind == TypeKind.Error;
@@ -33,13 +63,16 @@ namespace Phi.Compiler.Semantics
         public bool IsPointer => !IsArray && Kind == TypeKind.Pointer;
         public bool IsStruct => !IsArray && Kind == TypeKind.Struct;
 
+        /// <summary>The address of a method that can be called: method&lt;int: int&gt;.</summary>
+        public bool IsMethod => !IsArray && Kind == TypeKind.Method;
+
         /// <summary>A single value that fits in a register: integers, bln and pointers.</summary>
         public bool IsNumeric => !IsArray && Kind is >= TypeKind.I8 and <= TypeKind.Bool or TypeKind.Pointer;
 
         public bool IsSigned => Kind is TypeKind.I8 or TypeKind.I16 or TypeKind.I32;
 
         /// <summary>32-bit unsigned values: math and comparisons on them must be unsigned.</summary>
-        public bool IsUnsigned32 => !IsArray && Kind is TypeKind.U32 or TypeKind.Pointer;
+        public bool IsUnsigned32 => !IsArray && Kind is TypeKind.U32 or TypeKind.Pointer or TypeKind.Method;
 
         public PhiType Element => this with { Length = 0 };
         public PhiType ArrayOf(int length) => this with { Length = length };
@@ -49,7 +82,7 @@ namespace Phi.Compiler.Semantics
         {
             TypeKind.I8 or TypeKind.U8 or TypeKind.Bool => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
-            TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer => 4,
+            TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method => 4,
             TypeKind.Str => 4,  // arrays of strings hold pointers
             TypeKind.Struct => Struct!.Size,
             _ => 0,
@@ -69,6 +102,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.Str => "str",
                 TypeKind.Pointer => $"ptr<{Pointee}>",
                 TypeKind.Struct => Struct!.Name,
+                TypeKind.Method => Signature!.ToString(),
                 TypeKind.Void => "nothing",
                 _ => "?",
             };

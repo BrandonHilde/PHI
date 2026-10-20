@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "dec", "fin", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "ptr",
+            "u8", "u16", "u32", "i8", "i16", "i32", "ptr", "method",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>
@@ -277,6 +277,7 @@ namespace Phi.Compiler.Syntax
         TypeRef ParseType()
         {
             Token name = ExpectIdentifier("a type");
+            if (name.Text == "method") return ParseMethodType(name);
             if (name.Text != "ptr") return new TypeRef { Name = name.Text, Span = name.Span };
 
             Expect(TokenKind.Less, "'<' after ptr, as in ptr<u8>");
@@ -292,6 +293,30 @@ namespace Phi.Compiler.Syntax
 
             Token close = Expect(TokenKind.Greater, "'>' to close ptr<...>");
             return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(close.Span) };
+        }
+
+        /// <summary>method&lt;int ptr&lt;u8&gt;: int&gt;: the parameters' types, then ': ' and the result's.</summary>
+        TypeRef ParseMethodType(Token name)
+        {
+            Expect(TokenKind.Less, "'<' after method, as in method<int: int>");
+            var parameters = new List<TypeRef>();
+            while (!At(TokenKind.Greater) && !At(TokenKind.Colon) && !At(TokenKind.GreaterGreater))
+            {
+                if (AtEnd || At(TokenKind.Semicolon)) throw Error(Current.Span, "expected '>' to close method<...>");
+                parameters.Add(ParseType());
+            }
+
+            TypeRef? result = Accept(TokenKind.Colon) ? ParseType() : null;
+
+            Token close = Current;
+            if (At(TokenKind.GreaterGreater))
+                tokens[pos] = new Token(TokenKind.Greater, new Span(close.Span.Start + 1, 1), ">", null, false);
+            else
+                close = Expect(TokenKind.Greater, "'>' to close method<...>");
+
+            var type = new TypeRef { Name = "method", Result = result, Span = name.Span.To(close.Span) };
+            type.Parameters.AddRange(parameters);
+            return type;
         }
 
         // ------------------------------------------------------------ methods
@@ -584,7 +609,17 @@ namespace Phi.Compiler.Syntax
                 if (!AcceptWord("is")) throw Error(Current.Span, "expected 'is'");
             }
 
-            string callee = ParseQualifiedName(out Span calleeSpan);
+            // call handlers:i: key;  calls a method variable reached through an index
+            Expr? calleeTarget = null;
+            string callee;
+            Span calleeSpan;
+            if (CalleeHasIndex())
+            {
+                calleeTarget = ParsePostfix(stopAtArguments: true);
+                callee = file.Text[calleeTarget.Span.Start..calleeTarget.Span.End];
+                calleeSpan = calleeTarget.Span;
+            }
+            else callee = ParseQualifiedName(out calleeSpan);
             var arguments = new List<Expr>();
 
             if (Accept(TokenKind.Colon))
@@ -603,6 +638,7 @@ namespace Phi.Compiler.Syntax
                 ResultTarget = target,
                 Callee = callee,
                 CalleeSpan = calleeSpan,
+                CalleeTarget = calleeTarget,
                 Span = keyword.Span.To(Previous.Span),
             };
             call.Arguments.AddRange(arguments);
@@ -615,17 +651,76 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         bool AtCallInParens()
         {
-            if (!IsName(Current)) return false;
-            int i = 1;
-            while (PeekToken(i).Kind == TokenKind.Dot && PeekToken(i + 1).Kind == TokenKind.Identifier) i += 2;
+            int i = ScanPostfix(0);
+            if (i < 0) return false;
             Token colon = PeekToken(i);
             return colon.Kind == TokenKind.Colon && PeekToken(i + 1).Span.Start > colon.Span.End;
+        }
+
+        /// <summary>The callee ahead is more than a name: it has an index, like handlers:i.</summary>
+        bool CalleeHasIndex()
+        {
+            if (!IsName(Current)) return false;
+            int name = 1;
+            while (PeekToken(name).Kind == TokenKind.Dot && PeekToken(name + 1).Kind == TokenKind.Identifier) name += 2;
+            return ScanPostfix(0) > name;
+        }
+
+        /// <summary>
+        /// Looks over name(.name)*, then any indexes (':' with no space after it, then a name,
+        /// number or parenthesized expression) and fields; returns the offset of the token after
+        /// them, or -1 if no name is ahead.
+        /// </summary>
+        int ScanPostfix(int i)
+        {
+            if (!IsName(PeekToken(i))) return -1;
+            i++;
+            while (true)
+            {
+                Token t = PeekToken(i);
+                if (t.Kind == TokenKind.Dot && PeekToken(i + 1).Kind == TokenKind.Identifier && !PeekToken(i + 1).StartsLine)
+                {
+                    i += 2;
+                    continue;
+                }
+
+                Token next = PeekToken(i + 1);
+                if (t.Kind != TokenKind.Colon || next.Span.Start != t.Span.End || next.StartsLine) return i;
+
+                if (next.Kind is TokenKind.Identifier or TokenKind.Number)
+                {
+                    i += 2;
+                    continue;
+                }
+                if (next.Kind != TokenKind.OpenParen) return i;
+
+                int depth = 0;
+                int j = i + 1;
+                do
+                {
+                    TokenKind k = PeekToken(j).Kind;
+                    if (k == TokenKind.OpenParen) depth++;
+                    else if (k == TokenKind.CloseParen) depth--;
+                    else if (k == TokenKind.EndOfFile) return -1;
+                    j++;
+                } while (depth > 0);
+                i = j;
+            }
         }
 
         /// <summary>(Name: args) after the '(' has been read.</summary>
         Expr ParseCallExpr(Token open)
         {
-            string callee = ParseQualifiedName(out Span calleeSpan);
+            Expr? calleeTarget = null;
+            string callee;
+            Span calleeSpan;
+            if (CalleeHasIndex())
+            {
+                calleeTarget = ParsePostfix(stopAtArguments: true);
+                callee = file.Text[calleeTarget.Span.Start..calleeTarget.Span.End];
+                calleeSpan = calleeTarget.Span;
+            }
+            else callee = ParseQualifiedName(out calleeSpan);
             Expect(TokenKind.Colon, "':'");
 
             var arguments = new List<Expr>();
@@ -637,7 +732,7 @@ namespace Phi.Compiler.Syntax
             }
             Token close = Advance();
 
-            var call = new CallExpr { Callee = callee, CalleeSpan = calleeSpan, Span = open.Span.To(close.Span) };
+            var call = new CallExpr { Callee = callee, CalleeSpan = calleeSpan, CalleeTarget = calleeTarget, Span = open.Span.To(close.Span) };
             call.Arguments.AddRange(arguments);
             return call;
         }
@@ -984,12 +1079,17 @@ namespace Phi.Compiler.Syntax
         }
 
         /// <summary>name, name:index, name:i:j, tasks:i.field</summary>
-        Expr ParsePostfix()
+        /// <param name="stopAtArguments">
+        /// For a callee: a ':' followed by a space starts the arguments, not an index.
+        /// </param>
+        Expr ParsePostfix(bool stopAtArguments = false)
         {
             Expr expr = ParsePrimary();
 
             while (!Current.StartsLine)
             {
+                if (stopAtArguments && At(TokenKind.Colon) && PeekToken(1).Span.Start > Current.Span.End) break;
+
                 if (At(TokenKind.Colon) && expr is NameExpr or IndexExpr or MemberExpr)
                 {
                     Advance();

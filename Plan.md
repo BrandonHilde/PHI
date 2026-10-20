@@ -504,6 +504,7 @@ these were added:
   mouse pointer), `gfx.draw`, `gfx.font`, and `drivers.input` (keyboard and mouse on their
   interrupts, with extended keys and modifiers); `samples/sketch.phi`
 - [x] `pixel` and `screenshot` in test input scripts, so graphics can be tested
+- [x] Methods as values: `method<int int: int>` variables, fields and arrays, called like methods
 - [x] Docs: [PHI for C programmers](docs/phi-for-c-programmers.md)
 
 The parts most worth doing next, roughly in order:

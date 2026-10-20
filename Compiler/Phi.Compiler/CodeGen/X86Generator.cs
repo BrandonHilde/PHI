@@ -760,7 +760,12 @@ namespace Phi.Compiler.CodeGen
             EmitCallTo(call.Resolved, call.Arguments);
             if (call.ResultTarget == null) return;
 
-            PhiType result = call.Resolved is MethodSymbol method ? method.ReturnType : PhiType.Int;
+            PhiType result = call.Resolved switch
+            {
+                MethodSymbol method => method.ReturnType,
+                PointerCall pointer => pointer.Signature.Result,
+                _ => PhiType.Int,
+            };
             EmitStoreResult(call.ResultTarget, result);
         }
 
@@ -825,6 +830,31 @@ namespace Phi.Compiler.CodeGen
                 case RawBlockDecl raw:
                     Emit($"call {raw.Name}");
                     break;
+
+                case PointerCall pointer:
+                {
+                    // the same as calling the method by name, through the address the variable holds
+                    IReadOnlyList<PhiType> types = pointer.Signature.Parameters;
+                    for (int i = 0; i < types.Count; i++)
+                    {
+                        Expr value = arguments[i];
+                        EmitExpr(value);
+                        if (types[i].IsString && !value.Type.IsString)
+                        {
+                            string text = AllocTemp(12);
+                            Need("phi_int_to_str");
+                            LoadAddress("edi", text);
+                            Emit("mov ecx, 12");
+                            Emit("call phi_int_to_str");
+                            LoadAddress("eax", text);
+                        }
+                        Emit("push eax");
+                    }
+                    EmitExpr(pointer.Target);
+                    Emit(bits32 ? "call eax" : "call ax");
+                    if (types.Count > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {types.Count * 4}");
+                    break;
+                }
             }
         }
 

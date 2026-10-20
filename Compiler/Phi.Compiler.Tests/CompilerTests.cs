@@ -124,10 +124,27 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         [InlineData("[Echo: str t: [8];]\n[end: t]\n[Name: int n: 0;]\n[end: (Echo: (Name: n))]", "Name returns a str and uses its own result in [end: ...]")]
-        [InlineData("call OS.SetInterruptHandler: 9 addr Handler;\n[Handler: int x: 0;]\n[end]", "Handler takes parameters, so it can't be called through its address")]
+        [InlineData("call OS.SetInterruptHandler: 9 addr Handler;\n[Handler: int x: 0;]\n[end]", "Handler takes parameters, so OS.SetInterruptHandler can't call it")]
         [InlineData("[Pad: int width: 0; int fill: width;]\n[end]", "a parameter's default can't use the method's own variables or parameters ('width')")]
         [InlineData("[Big]\n u8 buffer[5000];\n[end]", "Big needs 5000 bytes of stack for its variables (at most 4096); declare large buffers in the class instead")]
         public void FrameErrors(string body, string message) => AssertError(Boot(body), message);
+
+        [Theory]
+        [InlineData("method<int: int> f: addr Add;\n[Add: int a: 0; int b: 0;]\n[end: a + b]", "'f' needs a method<int: int>, but this is a method<int int: int>")]
+        [InlineData("method<int> f: 5;", "'f' needs a method<int>, like addr Name")]
+        [InlineData("method<int: int> f;\nint x: (f: 1 2);", "f is a method<int: int>, which takes 1 argument, but was given 2")]
+        [InlineData("method<int> f;\nint x: (f: 1);", "f is a method<int>, which doesn't return a value, so it can't be used as one")]
+        [InlineData("int n: 3;\ncall n: 1;", "'n' is a int, not a method")]
+        [InlineData("method<: str> f;", "a method called through a variable can't return a str yet")]
+        [InlineData("call Show:x;\nint x: 1;\n[Show: int v: 0;]\n[end]", "put a space after the ':' that starts the arguments: Show: ...")]
+        public void MethodPointerErrors(string body, string message) => AssertError(Boot(body), message);
+
+        [Fact]
+        public void HandlersCantTakeParameters()
+        {
+            string kernel = "phi.K:Kernel\n{\ncall OS.SetIrqHandler: 1 addr Key;\n[Key: int code: 0;]\n[end]\n}\n";
+            AssertError(kernel, "Key takes parameters, so OS.SetIrqHandler can't call it");
+        }
 
         [Fact]
         public void ParametersAndLocalsLiveInTheFrame()

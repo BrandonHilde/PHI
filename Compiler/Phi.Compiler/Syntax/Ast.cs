@@ -82,7 +82,13 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
         public TypeRef? Pointee { get; init; }
 
-        public override string ToString() => Pointee == null ? Name : $"{Name}<{Pointee}>";
+        /// <summary>method&lt;int int: int&gt;: what it takes, and what it returns (null for nothing).</summary>
+        public List<TypeRef> Parameters { get; } = new();
+        public TypeRef? Result { get; init; }
+
+        public override string ToString() =>
+            Name == "method" ? $"method<{string.Join(" ", Parameters)}{(Result != null ? ": " + Result : "")}>"
+            : Pointee == null ? Name : $"{Name}<{Pointee}>";
     }
 
     /// <summary>
@@ -163,6 +169,9 @@ namespace Phi.Compiler.Syntax
         public Expr? ResultTarget { get; init; }
         public string Callee { get; init; } = "";
         public Span CalleeSpan { get; init; }
+
+        /// <summary>A method variable reached through an index or field: call handlers:i: key;</summary>
+        public Expr? CalleeTarget { get; set; }
         public List<Expr> Arguments { get; } = new();
 
         public object? Resolved { get; set; } // MethodSymbol, BuiltinFunction or RawBlockDecl
@@ -258,6 +267,9 @@ namespace Phi.Compiler.Syntax
     {
         public string Callee { get; init; } = "";
         public Span CalleeSpan { get; init; }
+
+        /// <summary>A method variable reached through an index or field: (handlers:i: key)</summary>
+        public Expr? CalleeTarget { get; set; }
         public List<Expr> Arguments { get; } = new();
 
         public object? Resolved { get; set; } // MethodSymbol, BuiltinFunction or RawBlockDecl
@@ -290,6 +302,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>When the operand names a method or asm block.</summary>
         public string? CodeLabel { get; set; }
+
+        /// <summary>The method, when the operand names one.</summary>
+        public MethodSymbol? Method { get; set; }
     }
 
     /// <summary>sizeof Type   or   sizeof variable   (bytes, known when the program is built)</summary>

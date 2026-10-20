@@ -22,7 +22,9 @@ namespace Phi.Compiler.Syntax
                 OutStmt o => Nodes(o.Port).Concat(Nodes(o.Value)),
                 FreeStmt f => Nodes(f.Pointer),
                 UnsafeStmt u => u.Body.SelectMany(Nodes),
-                CallStmt c => c.Arguments.SelectMany(Nodes).Concat(c.ResultTarget != null ? Nodes(c.ResultTarget) : Enumerable.Empty<Node>()),
+                CallStmt c => c.Arguments.SelectMany(Nodes)
+                    .Concat(c.ResultTarget != null ? Nodes(c.ResultTarget) : Enumerable.Empty<Node>())
+                    .Concat(c.CalleeTarget != null ? Nodes(c.CalleeTarget) : Enumerable.Empty<Node>()),
                 IfStmt i => Nodes(i.Condition).Concat(i.Then.SelectMany(Nodes)).Concat((i.Else ?? new()).SelectMany(Nodes)),
                 WhileStmt w => (w.Init != null ? Nodes(w.Init) : Enumerable.Empty<Node>())
                     .Concat(Nodes(w.Condition))
@@ -50,7 +52,7 @@ namespace Phi.Compiler.Syntax
                 NewExpr n => n.Count != null ? new[] { n.Count } : Array.Empty<Expr>(),
                 UnaryExpr u => new[] { u.Operand },
                 BinaryExpr b => new[] { b.Left, b.Right },
-                CallExpr c => c.Arguments.ToArray(),
+                CallExpr c => c.Arguments.Concat(c.CalleeTarget != null ? new[] { c.CalleeTarget } : Array.Empty<Expr>()).ToArray(),
                 _ => Array.Empty<Expr>(),
             };
 

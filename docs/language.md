@@ -106,6 +106,7 @@ A quote followed directly by a letter or digit doesn't end a string, which is wh
 | `bln` | 1 byte | `true` or `false` |
 | `str` | its capacity | text (see below) |
 | `ptr<T>` | 4 bytes | an address (see [Pointers](#pointers)) |
+| `method<T ...: R>` | 4 bytes | a method that can be called (see [Methods as values](#methods-as-values)) |
 | a struct | its fields | see [Structs](#structs) |
 | `var` | | `str` if every value is a string, otherwise `int` |
 
@@ -798,6 +799,38 @@ if (IsReady: port)
 - A method called through its address (`addr Handler`, for an IRQ or a system call) gets no
   arguments, so it can't have parameters. A parameter's default can't use the method's
   other parameters.
+
+### Methods as values
+
+A `method<...>` variable holds a method, which is called through it like any method. The
+types before the `:` are what it takes, and the type after is what it returns (leave out
+`: R` for a method that returns nothing):
+
+```phi
+method<int int: int> op: addr Add;          # addr Name gives the method
+int sum: (op: 2 3);                         # called like a method
+op is addr Multiply;                        # and it can change
+
+method<int int: int> table: addr Add addr Subtract addr Multiply;
+call result is table:i: 6 3;                # through an index or a field
+
+struct.Shape
+{
+    int size;
+    method<ptr<Shape>: int> area;           # a method in a struct
+}
+debug (shapes:i.area: addr shapes:i);
+
+[Apply: method<int: int> f: 0; int x: 0;]   # methods passed to methods
+[end: (f: x)]
+```
+
+- The method must match the type exactly: the same parameter types in the same order, and
+  the same kind of result. Every argument has to be given (defaults don't apply).
+- A method variable starts as 0, meaning no method; calling it then stops the program
+  (the panic screen in a 32-bit kernel). `if op is 0` checks.
+- Methods called this way can't return a `str` yet.
+- After the callee, `:` with a space starts the arguments; `table:i` with no space is an index.
 
 ### Events
 
