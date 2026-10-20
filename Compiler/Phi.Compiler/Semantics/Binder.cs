@@ -200,16 +200,11 @@ namespace Phi.Compiler.Semantics
                     Scope ms = methodScopes[m];
                     foreach (VarDecl p in m.Parameters) BindVarDecl(p, ms, classLevel: false);
                     BindStatements(m.Body, ms, classLevel: false);
-                    if (m.Result != null)
-                    {
-                        BindExpr(m.Result, ms);
-                        if (m.Result.Type.IsString) m.Symbol.ReturnType = PhiType.Str;
-                        else if (m.Result.Type.IsNumeric) m.Symbol.ReturnType = m.Result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
-                        else if (!m.Result.Type.IsError)
-                            Error(m.Result.Span, $"a method can return a number or a str, not a {m.Result.Type}");
-                    }
+                    ReturnTypeOf(m.Symbol);
                 }
             }
+
+            CheckRecursion();
 
             foreach (var (cls, scope) in classScopes)
                 foreach (var (name, symbol) in scope.Names)
@@ -222,6 +217,96 @@ namespace Phi.Compiler.Semantics
             }
 
             return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user };
+        }
+
+        /// <summary>
+        /// What a method returns, from its [end: value]. A call may come before the method it
+        /// calls, so the value is bound the first time anyone asks.
+        /// </summary>
+        PhiType ReturnTypeOf(MethodSymbol m)
+        {
+            Expr? result = m.Decl.Result;
+            if (result == null || m.ResultBound) return m.ReturnType;
+
+            if (m.ResultBinding)
+            {
+                // (A: ...) inside A's own [end: ...]; reported as recursion later
+                return PhiType.Error;
+            }
+
+            m.ResultBinding = true;
+            SourceFile outerFile = file;
+            int outerUnsafe = unsafeDepth;
+            file = m.Decl.Owner.File;
+            unsafeDepth = 0;
+
+            BindExpr(result, methodScopes[m.Decl]);
+            if (result.Type.IsString) m.ReturnType = PhiType.Str;
+            else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
+            else if (!result.Type.IsError)
+                Error(result.Span, $"a method can return a number or a str, not a {result.Type}");
+
+            file = outerFile;
+            unsafeDepth = outerUnsafe;
+            m.ResultBinding = false;
+            m.ResultBound = true;
+            return m.ReturnType;
+        }
+
+        // ---------------------------------------------------------------- recursion
+
+        /// <summary>Calls from each method, for finding methods that call themselves.</summary>
+        readonly Dictionary<MethodSymbol, List<(MethodSymbol Callee, SourceFile File, Span Span)>> callsFrom = new();
+
+        void NoteCall(Scope scope, MethodSymbol callee, Span span)
+        {
+            if (scope.Method == null) return;
+            if (!callsFrom.TryGetValue(scope.Method, out var list)) callsFrom[scope.Method] = list = new();
+            list.Add((callee, file, span));
+        }
+
+        /// <summary>
+        /// A method's variables (and parameters) have fixed places in memory, so a method that
+        /// calls itself, directly or through others, would overwrite the values of the call
+        /// that is still running.
+        /// </summary>
+        void CheckRecursion()
+        {
+            var reported = new HashSet<MethodSymbol>();
+            foreach (var (caller, list) in callsFrom)
+            {
+                if (reported.Contains(caller)) continue;
+                foreach (var (callee, site, span) in list)
+                {
+                    List<MethodSymbol>? path = PathBetween(callee, caller, new HashSet<MethodSymbol>());
+                    if (path == null) continue;
+
+                    string chain = string.Join(" -> ", new[] { caller }.Concat(path).Select(m => m.Decl.Name));
+                    file = site;
+                    Error(span, $"{caller.Decl.Name} calls itself ({chain}); methods can't be recursive yet, because their variables have fixed places in memory");
+                    foreach (MethodSymbol m in path) reported.Add(m);
+                    reported.Add(caller);
+                    break;
+                }
+            }
+        }
+
+        /// <summary>The methods from <paramref name="from"/> to <paramref name="to"/> along calls, or null.</summary>
+        List<MethodSymbol>? PathBetween(MethodSymbol from, MethodSymbol to, HashSet<MethodSymbol> seen)
+        {
+            if (from == to) return new List<MethodSymbol> { to };
+            if (!seen.Add(from) || !callsFrom.TryGetValue(from, out var list)) return null;
+
+            foreach (var (callee, _, _) in list)
+            {
+                List<MethodSymbol>? rest = PathBetween(callee, to, seen);
+                if (rest != null)
+                {
+                    rest.Insert(0, from);
+                    return rest;
+                }
+            }
+            return null;
         }
 
         // ---------------------------------------------------------------- structs
@@ -791,8 +876,19 @@ namespace Phi.Compiler.Semantics
                     if (loop.Init != null) BindVarDecl(loop.Init, scope, classLevel: false);
                     BindCondition(loop.Condition, scope);
                     if (loop.Step != null) loop.Step = BindStatement(loop.Step, scope, classLevel: false);
+                    loopDepth++;
                     BindStatements(loop.Body, scope, classLevel: false);
+                    loopDepth--;
                     return loop;
+
+                case BreakStmt or ContinueStmt:
+                    if (loopDepth == 0)
+                        Error(stmt.Span, $"{(stmt is BreakStmt ? "break" : "continue")} can only be used inside a while loop");
+                    return stmt;
+
+                case ReturnStmt ret:
+                    BindReturn(ret, scope);
+                    return ret;
 
                 case AssignStmt assign:
                     return BindAssign(assign, scope);
@@ -921,54 +1017,146 @@ namespace Phi.Compiler.Semantics
             _ => "value",
         };
 
+        int loopDepth;
+
+        void BindReturn(ReturnStmt ret, Scope scope)
+        {
+            if (ret.Value != null) BindExpr(ret.Value, scope);
+
+            MethodSymbol? method = scope.Method;
+            if (method == null)
+            {
+                Error(ret.Span, "return can only be used inside a method");
+                return;
+            }
+
+            string name = method.Decl.Name;
+            if (method.Decl.Result == null)
+            {
+                if (ret.Value != null)
+                    Error(ret.Value.Span, $"{name} doesn't return a value (it ends with [end]), so return can't take one");
+                return;
+            }
+
+            if (ret.Value == null)
+            {
+                Error(ret.Span, $"{name} returns a value (it ends with [end: value]), so return needs one: return value;");
+                return;
+            }
+
+            PhiType result = ReturnTypeOf(method);
+            if (ret.Value.Type.IsError || result.IsError) return;
+
+            if (result.IsString != ret.Value.Type.IsString)
+                Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
+            else if (!result.IsString)
+                ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
+        }
+
         void BindCall(CallStmt call, Scope scope)
         {
-            BoundUnit unit = units[scope.Unit];
-            foreach (Expr arg in call.Arguments) BindExpr(arg, scope);
             if (call.ResultTarget != null) BindExpr(call.ResultTarget, scope);
-
-            object? callee = ResolveCallee(call.Callee, scope);
+            object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope);
             call.Resolved = callee;
 
+            if (call.ResultTarget == null) return;
+            switch (callee)
+            {
+                case MethodSymbol method:
+                    if (method.Decl.Result == null)
+                        Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it would need [end: value])");
+                    else
+                        CheckResultTarget(call, ReturnTypeOf(method));
+                    break;
+
+                case BuiltinFunction builtin:
+                    if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value");
+                    else CheckResultTarget(call, PhiType.Int);
+                    break;
+
+                case RawBlockDecl:
+                    CheckResultTarget(call, PhiType.Int); // eax
+                    break;
+            }
+        }
+
+        /// <summary>(Name: args) used as a value.</summary>
+        void BindCallExpr(CallExpr call, Scope scope)
+        {
+            if (Lookup(call.Callee, scope) is VariableSymbol or FieldPathSymbol)
+            {
+                Error(call.CalleeSpan, $"'{call.Callee}' isn't a method; for an element, leave out the space after ':' ({call.Callee}:i)");
+                call.Type = PhiType.Error;
+                return;
+            }
+
+            object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope);
+            call.Resolved = callee;
+            call.Type = PhiType.Error;
+
+            switch (callee)
+            {
+                case MethodSymbol method:
+                    if (method.Decl.Result == null)
+                        Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it ends with [end]), so it can't be used as one");
+                    else
+                        call.Type = ReturnTypeOf(method);
+                    break;
+
+                case BuiltinFunction builtin:
+                    if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value, so it can't be used as one");
+                    else call.Type = PhiType.Int;
+                    break;
+
+                case RawBlockDecl:
+                    call.Type = PhiType.Int; // eax
+                    break;
+            }
+        }
+
+        /// <summary>
+        /// Resolves a call's method and checks its arguments; returns the MethodSymbol,
+        /// BuiltinFunction or RawBlockDecl, or null after reporting an error.
+        /// </summary>
+        object? BindCallee(string calleeName, Span calleeSpan, List<Expr> arguments, Span span, Scope scope)
+        {
+            BoundUnit unit = units[scope.Unit];
+            foreach (Expr arg in arguments) BindExpr(arg, scope);
+
+            object? callee = ResolveCallee(calleeName, scope);
             switch (callee)
             {
                 case MethodSymbol method:
                 {
                     if (method.Unit != scope.Unit)
                     {
-                        Error(call.CalleeSpan, $"{method.Name} is in the {UnitName(method.Unit)} and can't be called from the {UnitName(scope.Unit)}");
-                        return;
+                        Error(calleeSpan, $"{method.Name} is in the {UnitName(method.Unit)} and can't be called from the {UnitName(scope.Unit)}");
+                        return null;
                     }
 
                     if (method.IsInterruptHandler)
                     {
-                        Error(call.CalleeSpan, $"{method.Name} is an interrupt handler; install it with call OS.SetInterruptHandler: vector addr {method.Decl.Name};");
-                        return;
+                        Error(calleeSpan, $"{method.Name} is an interrupt handler; install it with call OS.SetInterruptHandler: vector addr {method.Decl.Name};");
+                        return null;
                     }
 
                     int count = method.Decl.Parameters.Count;
-                    if (call.Arguments.Count > count)
-                        Error(call.Arguments[count].Span, $"{method.Name} takes {Plural(count, "argument")} but was given {call.Arguments.Count}");
+                    if (arguments.Count > count)
+                        Error(arguments[count].Span, $"{method.Name} takes {Plural(count, "argument")} but was given {arguments.Count}");
 
-                    for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, call.Arguments.Count)); i++)
-                        call.Arguments[i] = Convert(call.Arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
+                    for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
+                        arguments[i] = Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
 
-                    if (call.ResultTarget != null)
-                    {
-                        if (method.Decl.Result == null)
-                            Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it would need [end: value])");
-                        else
-                            CheckResultTarget(call, method.ReturnType);
-                    }
-                    break;
+                    NoteCall(scope, method, calleeSpan);
+                    return method;
                 }
 
                 case BuiltinFunction builtin:
                 {
                     if (builtin.OnlyIn is UnitKind only && only != scope.Unit)
                     {
-                        Error(call.CalleeSpan, $"{builtin.Name} can only be used in the {UnitName(only)}");
-                        return;
+                        Error(calleeSpan, $"{builtin.Name} can only be used in the {UnitName(only)}");
+                        return null;
                     }
 
                     if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
@@ -979,50 +1167,43 @@ namespace Phi.Compiler.Semantics
                             UnitKind.Program => "user programs reach the hardware only through the kernel's system calls",
                             _ => "it needs the 32-bit kernel's drivers; make the program a phi.Name:Kernel",
                         };
-                        Error(call.CalleeSpan, $"{builtin.Name} isn't available in the {UnitName(scope.Unit)} ({why})");
-                        return;
+                        Error(calleeSpan, $"{builtin.Name} isn't available in the {UnitName(scope.Unit)} ({why})");
+                        return null;
                     }
 
                     unit.UsedBuiltins.Add(builtin);
 
                     int count = builtin.Parameters.Length;
-                    if (call.Arguments.Count != count)
+                    if (arguments.Count != count)
                     {
                         string expected = count == 0 ? "no arguments" : $"{Plural(count, "argument")} ({string.Join(" ", builtin.Parameters)})";
-                        Error(call.Span, $"{builtin.Name} takes {expected} but was given {call.Arguments.Count}");
+                        Error(span, $"{builtin.Name} takes {expected} but was given {arguments.Count}");
                     }
 
-                    for (int i = 0; i < Math.Min(count, call.Arguments.Count); i++)
+                    for (int i = 0; i < Math.Min(count, arguments.Count); i++)
                     {
                         PhiType expected = builtin.TextParameters.Contains(i) ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
-                        call.Arguments[i] = Convert(call.Arguments[i], expected, $"'{builtin.Parameters[i]}'");
+                        arguments[i] = Convert(arguments[i], expected, $"'{builtin.Parameters[i]}'");
                     }
-
-                    if (call.ResultTarget != null)
-                    {
-                        if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value");
-                        else CheckResultTarget(call, PhiType.Int);
-                    }
-                    break;
+                    return builtin;
                 }
 
                 case RawBlockDecl raw:
                 {
                     if (raw.Language != "asm")
                     {
-                        Error(call.CalleeSpan, $"{raw.Language}.{raw.Name} can't run on x86; only asm. blocks can be called");
-                        return;
+                        Error(calleeSpan, $"{raw.Language}.{raw.Name} can't run on x86; only asm. blocks can be called");
+                        return null;
                     }
-                    if (call.Arguments.Count > 0)
-                        Error(call.Arguments[0].Span, "assembly blocks don't take arguments; set variables and use {name} inside the block");
+                    if (arguments.Count > 0)
+                        Error(arguments[0].Span, "assembly blocks don't take arguments; set variables and use {name} inside the block");
                     UseRawBlock(unit, raw);
-                    if (call.ResultTarget != null) CheckResultTarget(call, PhiType.Int); // eax
-                    break;
+                    return raw;
                 }
 
                 default:
-                    Error(call.CalleeSpan, $"unknown method '{call.Callee}'");
-                    break;
+                    Error(calleeSpan, $"unknown method '{calleeName}'");
+                    return null;
             }
         }
 
@@ -1126,6 +1307,16 @@ namespace Phi.Compiler.Semantics
                 case NameExpr name:
                 {
                     Symbol? symbol = Lookup(name.Name, scope);
+
+                    // (OS.GetTicks): a call with no arguments, when no variable has the name
+                    if (symbol == null && name.InParens && ResolveCallee(name.Name, scope) != null)
+                    {
+                        name.Call = new CallExpr { Callee = name.Name, CalleeSpan = name.Span, Span = name.Span };
+                        BindCallExpr(name.Call, scope);
+                        name.Type = name.Call.Type;
+                        break;
+                    }
+
                     name.Symbol = symbol;
                     name.Type = symbol switch
                     {
@@ -1172,6 +1363,10 @@ namespace Phi.Compiler.Semantics
 
                 case SizeofExpr size:
                     BindSizeof(size, scope);
+                    break;
+
+                case CallExpr call:
+                    BindCallExpr(call, scope);
                     break;
 
                 case InExpr input:

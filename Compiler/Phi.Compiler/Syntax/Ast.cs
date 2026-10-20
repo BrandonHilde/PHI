@@ -168,6 +168,18 @@ namespace Phi.Compiler.Syntax
         public object? Resolved { get; set; } // MethodSymbol, BuiltinFunction or RawBlockDecl
     }
 
+    /// <summary>break;  (leave the innermost while loop)</summary>
+    public sealed class BreakStmt : Stmt { }
+
+    /// <summary>continue;  (go on with the next round of the innermost while loop)</summary>
+    public sealed class ContinueStmt : Stmt { }
+
+    /// <summary>return;  or  return value;  (leave the method early)</summary>
+    public sealed class ReturnStmt : Stmt
+    {
+        public Expr? Value { get; set; }
+    }
+
     public sealed class IfStmt : Stmt
     {
         public Expr Condition { get; init; } = null!;
@@ -233,6 +245,22 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
 
         public Symbol? Symbol { get; set; }
+
+        /// <summary>Written in parentheses, so it may be a call with no arguments: (OS.GetTicks).</summary>
+        public bool InParens { get; set; }
+
+        /// <summary>Set by the binder when the name in parentheses is a method rather than a variable.</summary>
+        public CallExpr? Call { get; set; }
+    }
+
+    /// <summary>(Name: args)  a call used as a value</summary>
+    public sealed class CallExpr : Expr
+    {
+        public string Callee { get; init; } = "";
+        public Span CalleeSpan { get; init; }
+        public List<Expr> Arguments { get; } = new();
+
+        public object? Resolved { get; set; } // MethodSymbol, BuiltinFunction or RawBlockDecl
     }
 
     /// <summary>array:index  (also pointer:index and str:index)</summary>

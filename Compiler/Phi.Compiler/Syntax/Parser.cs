@@ -16,6 +16,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> ReservedWords = new(TypeKeywords)
         {
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
+            "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr",
             "below", "above", "atmost", "atleast",
@@ -445,6 +446,22 @@ namespace Phi.Compiler.Syntax
                         stmt.Body.AddRange(ParseBlock("unsafe block"));
                         return stmt;
                     }
+                    case "break":
+                    case "continue":
+                    {
+                        Advance();
+                        ExpectSemicolon();
+                        return start.Text == "break"
+                            ? new BreakStmt { Span = start.Span.To(Previous.Span) }
+                            : new ContinueStmt { Span = start.Span.To(Previous.Span) };
+                    }
+                    case "return":
+                    {
+                        Advance();
+                        Expr? value = At(TokenKind.Semicolon) ? null : ParseExpression();
+                        ExpectSemicolon();
+                        return new ReturnStmt { Value = value, Span = start.Span.To(Previous.Span) };
+                    }
                     case "call": return ParseCall();
                     case "if": return ParseIf();
                     case "while": return ParseWhile();
@@ -588,6 +605,39 @@ namespace Phi.Compiler.Syntax
                 CalleeSpan = calleeSpan,
                 Span = keyword.Span.To(Previous.Span),
             };
+            call.Arguments.AddRange(arguments);
+            return call;
+        }
+
+        /// <summary>
+        /// After '(': a name, then ':' followed by a space, as in (Str.Len: text). An index has
+        /// no space after the ':' (list:i), so (list:i) stays an element.
+        /// </summary>
+        bool AtCallInParens()
+        {
+            if (!IsName(Current)) return false;
+            int i = 1;
+            while (PeekToken(i).Kind == TokenKind.Dot && PeekToken(i + 1).Kind == TokenKind.Identifier) i += 2;
+            Token colon = PeekToken(i);
+            return colon.Kind == TokenKind.Colon && PeekToken(i + 1).Span.Start > colon.Span.End;
+        }
+
+        /// <summary>(Name: args) after the '(' has been read.</summary>
+        Expr ParseCallExpr(Token open)
+        {
+            string callee = ParseQualifiedName(out Span calleeSpan);
+            Expect(TokenKind.Colon, "':'");
+
+            var arguments = new List<Expr>();
+            while (!At(TokenKind.CloseParen))
+            {
+                if (AtEnd || At(TokenKind.Semicolon) || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon))
+                    throw Error(new Span(Previous.Span.End, 0), $"expected ')' to end the call to {callee}");
+                arguments.Add(ParseListElement());
+            }
+            Token close = Advance();
+
+            var call = new CallExpr { Callee = callee, CalleeSpan = calleeSpan, Span = open.Span.To(close.Span) };
             call.Arguments.AddRange(arguments);
             return call;
         }
@@ -993,8 +1043,12 @@ namespace Phi.Compiler.Syntax
                 case TokenKind.OpenParen:
                 {
                     Advance();
+                    if (AtCallInParens()) return ParseCallExpr(t);
+
                     Expr inner = ParseExpression();
                     Expect(TokenKind.CloseParen, "')'");
+                    // (Name) may be a call with no arguments, which the binder decides
+                    if (inner is NameExpr named) named.InParens = true;
                     return inner;
                 }
 

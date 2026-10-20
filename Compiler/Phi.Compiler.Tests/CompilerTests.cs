@@ -100,6 +100,33 @@ namespace Phi.Compiler.Tests
         [InlineData("int sizeof: 1;", "'sizeof' is a keyword")]
         public void SizeofErrors(string body, string message) => AssertError(Boot(body), message);
 
+        [Theory]
+        [InlineData("break;", "break can only be used inside a while loop")]
+        [InlineData("continue;", "continue can only be used inside a while loop")]
+        [InlineData("return;", "return can only be used inside a method")]
+        [InlineData("call Show;\n[Show]\n return 1;\n[end]", "Show doesn't return a value (it ends with [end]), so return can't take one")]
+        [InlineData("[Get]\n return;\n[end: 1]", "Get returns a value (it ends with [end: value]), so return needs one")]
+        [InlineData("[Get]\n return 'x';\n[end: 1]", "Get returns a number (from its [end: value]), but this is a str")]
+        [InlineData("int x: (Show);\n[Show]\n[end]", "Show doesn't return a value (it ends with [end]), so it can't be used as one")]
+        [InlineData("int list: 1 2;\nint x: (list: 1);", "'list' isn't a method; for an element, leave out the space after ':' (list:i)")]
+        [InlineData("int x: (Missing: 1);", "unknown method 'Missing'")]
+        [InlineData("int x: (Twice: 1 2);\n[Twice: int n: 0;]\n[end: n * 2]", "Twice takes 1 argument but was given 2")]
+        public void EarlyExitAndCallErrors(string body, string message) => AssertError(Boot(body), message);
+
+        [Theory]
+        [InlineData("[Count: int n: 0;]\n call Count: n - 1;\n[end]", "Count calls itself (Count -> Count)")]
+        [InlineData("[Count: int n: 0;]\n[end: (Count: n - 1)]", "Count calls itself (Count -> Count)")]
+        [InlineData("[Ping]\n call Pong;\n[end]\n[Pong]\n call Ping;\n[end]", "Ping calls itself (Ping -> Pong -> Ping)")]
+        public void RecursionIsReported(string body, string message) => AssertError(Boot(body), message);
+
+        [Fact]
+        public void ParenthesizedVariablesStayVariables()
+        {
+            // (x) is a variable when one has the name; (list:i) with no space is an element
+            CompileResult result = Compile(Boot("const int SIZE: 4;\nint list: 1 2 3 4;\nint a: (SIZE);\nint b: (list:1) + list:(SIZE - 1);"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
         [Fact]
         public void ArraysBecomePointersOnlyWhereAPointerIsExpected()
         {

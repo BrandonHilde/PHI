@@ -1,0 +1,89 @@
+phi.EarlyExits:Library
+{
+	int values: 4 8 15 16 23 42;
+
+	# break leaves the loop
+	int at: -1;
+	while int i: 0; i < values.len; i++;
+		if values:i is 16
+			at is i;
+			break;
+		;;
+	;;
+	debug 'found at ' at '\n';
+
+	# continue still runs the step (i++), then tests again
+	while int j: 0; j < values.len; j++;
+		if values:j % 2 is 0
+			continue;
+		;;
+		debug values:j ' ';
+	;;
+	debug '\n';
+
+	# in nested loops they act on the innermost one
+	while int row: 0; row < 3; row++;
+		while int column: 0; column < 10; column++;
+			if column is row + 1
+				break;
+			;;
+			debug row column ' ';
+		;;
+	;;
+	debug '\n';
+
+	# a while without a step
+	int n: 0;
+	while true
+		n++;
+		if n < 3
+			continue;
+		;;
+		if n is 5
+			break;
+		;;
+		debug n ' ';
+	;;
+	debug '\n';
+
+	# return leaves a method early, with or without a value
+	debug (IndexOf: 23) ' ' (IndexOf: 99) '\n';
+	call Show: 0;
+	call Show: 7;
+	debug (Sign: -5) (Sign: 0) (Sign: 9) '\n';
+	debug (Grade: 95) (Grade: 75) (Grade: 10) '\n';
+
+	[IndexOf: int wanted: 0;]
+		while int k: 0; k < values.len; k++;
+			if values:k is wanted
+				return k;
+			;;
+		;;
+	[end: -1]
+
+	[Show: int value: 0;]
+		if value is 0
+			debug 'nothing to show\n';
+			return;
+		;;
+		debug 'showing ' value '\n';
+	[end]
+
+	[Sign: int x: 0;]
+		if x < 0
+			return -1;
+		;;
+		if x is 0
+			return 0;
+		;;
+	[end: 1]
+
+	[Grade: int score: 0;]
+		if score atleast 90
+			return 'A';
+		;;
+		if score atleast 70
+			return 'B';
+		;;
+	[end: 'C']
+}

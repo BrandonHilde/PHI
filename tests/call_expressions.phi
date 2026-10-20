@@ -1,0 +1,71 @@
+phi.CallExpressions:Library
+{
+	int numbers: 10 20 30 40;
+
+	# a call in parentheses is a value: in conditions, math, log and indexes
+	if (IsEven: 4)
+		debug 'even\n';
+	;;
+	if not (IsEven: 7)
+		debug 'odd\n';
+	;;
+	int width: (Twice: 3) * 8 + (Twice: 1);
+	debug width ' ' (Twice: 21) ' ' numbers:(Twice: 1) '\n';
+
+	# a method with no arguments
+	debug (Seven) ' ' (Seven) + 1 '\n';
+
+	# calls inside the arguments of calls, even to the same method
+	debug (Add: (Add: 1 2) (Add: 3 4)) '\n';
+	debug (Sub: 10 (Sub: 4 1)) '\n';
+	debug (Add: 1 (Twice: (Add: 2 3))) '\n';
+	int got: 0;
+	call got is Sub: (Twice: 10) (Sub: 9 4);
+	debug got '\n';
+
+	# negative arguments, as in any list of values
+	debug (Add: 5 -2) '\n';
+
+	# strings come back as strings, and can be passed on
+	debug (Name: 1) ' ' (Name: 2) '\n';
+	if (Name: 2) is 'two'
+		debug 'compared\n';
+	;;
+	debug (Length: (Name: 3)) '\n';
+
+	# in a loop condition
+	int count: 0;
+	while (Twice: count) < 10
+		count++;
+	;;
+	debug count '\n';
+
+	[IsEven: int n: 0;]
+	[end: n % 2 is 0]
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+
+	[Seven]
+	[end: 7]
+
+	[Add: int a: 0; int b: 0;]
+	[end: a + b]
+
+	[Sub: int a: 0; int b: 0;]
+	[end: a - b]
+
+	[Name: int n: 0;]
+		str name: [8];
+		name is 'many';
+		if n is 1
+			name is 'one';
+		;;
+		elif n is 2
+			name is 'two';
+		;;
+	[end: name]
+
+	[Length: str text: [20];]
+	[end: text.len]
+}

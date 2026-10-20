@@ -173,6 +173,13 @@ namespace Phi.Compiler.Semantics
         public UnitKind Unit { get; init; }
         public List<VariableSymbol> Parameters { get; } = new();
         public PhiType ReturnType { get; set; } = PhiType.Void;
+
+        /// <summary>
+        /// The [end: value] has been bound, so ReturnType is known. A call can be bound before
+        /// the method it calls, so this happens on first use (see Binder.ReturnTypeOf).
+        /// </summary>
+        public bool ResultBound { get; set; }
+        public bool ResultBinding { get; set; }
         public bool IsHook { get; init; }
         public bool IsInterruptHandler { get; init; }
     }

@@ -29,6 +29,7 @@ namespace Phi.Compiler.Syntax
                     .Concat(w.Step != null ? Nodes(w.Step) : Enumerable.Empty<Node>())
                     .Concat(w.Body.SelectMany(Nodes)),
                 AssignStmt a => Nodes(a.Target).Concat(Nodes(a.Value)),
+                ReturnStmt r => r.Value != null ? Nodes(r.Value) : Enumerable.Empty<Node>(),
                 _ => Enumerable.Empty<Node>(),
             };
 
@@ -49,6 +50,7 @@ namespace Phi.Compiler.Syntax
                 NewExpr n => n.Count != null ? new[] { n.Count } : Array.Empty<Expr>(),
                 UnaryExpr u => new[] { u.Operand },
                 BinaryExpr b => new[] { b.Left, b.Right },
+                CallExpr c => c.Arguments.ToArray(),
                 _ => Array.Empty<Expr>(),
             };
 

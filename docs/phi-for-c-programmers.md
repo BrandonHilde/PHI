@@ -13,9 +13,11 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `if (x == 5)` | `if x is 5` | In a condition, `is` compares. `==` works too. |
 | `{ ... }` | `... ;;` | `if`, `while`, `else` and `unsafe` blocks end with `;;`. |
 | `int a[] = {1, -2};` | `int a: 1 -2;` | Values are separated by spaces, not commas. |
-| `f(a, b)` | `call f: a b;` | A call is a statement. |
-| `x = f(a);` | `call x is f: a;` | The result goes into a variable. |
-| `return v;` | `[end: v]` | A method has one exit, at its end. |
+| `f(a, b);` | `call f: a b;` | A call on its own is a statement. |
+| `x = f(a) * 2;` | `x is (f: a) * 2;` | A call used as a value goes in parentheses, with a space after `:`. |
+| `g()` as a value | `(g)` | A call with no arguments. |
+| `return v;` | `return v;` | The method's normal result is the `[end: v]` at its end. |
+| `break;`, `continue;` | `break;`, `continue;` | Only in `while` loops. |
 | `&x` | `addr x` | |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
@@ -32,31 +34,18 @@ call Move: x -1;          # two arguments: x and -1
 call Move: x - 1;         # one argument: x minus 1
 ```
 
-**Calls can't be used inside expressions.** Not in an `if`, not in `log`, not as an
-argument. Store the result first:
+**A call used as a value needs parentheses and a space after the `:`.** `(Length: text)`
+is a call, but `(list:i)` is an element of `list`:
 
 ```phi
-bln picture: false;
-call picture is Str.EndsWith: name '.BMP';
-if picture
+if (EndsWith: name '.BMP')
     ...
-;;
-```
-
-**There is no `break`, `continue` or early `return`.** Use a flag in the loop condition:
-
-```phi
-bln found: false;
-while int i: 0; i < count and not found; i++;
-    if items:i is wanted
-        found is true;
-    ;;
 ;;
 ```
 
 **Variables don't live on a stack.** Every variable, including method parameters and
 locals, has a fixed address. This has three consequences:
-- A method can't call itself, even through another method.
+- A method can't call itself, even through another method. The compiler reports it.
 - An interrupt handler that calls a method the main code also calls can overwrite that
   method's variables mid-call. Give interrupt handlers their own methods and variables.
 - A method's local variables share one scope across the whole method. Declaring
@@ -94,7 +83,8 @@ the wrong type.
 inside an `unsafe` block skips the checks, and a pointer is never checked.
 
 **Some common names are keywords.** These can't be variable names: `end`, `is`, `in`,
-`out`, `addr`, `sizeof`, `new`, `free`, `has`, `below`, `above`, `atmost` and `atleast`.
+`out`, `addr`, `sizeof`, `new`, `free`, `has`, `break`, `continue`, `return`, `below`, `above`,
+`atmost` and `atleast`.
 The compiler says so (`'end' is a keyword and can't be a variable name`).
 
 **A fixed-size array holds at most 16384 elements.** Larger buffers in a kernel come from

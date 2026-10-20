@@ -279,7 +279,18 @@ while lives > 0
 while int i: 0; i < days.len; i++;
     log days:i ' ';
 ;;
+
+while int i: 0; i < count; i++;
+    if items:i is 0
+        continue;           # skip to the next round (the step, i++, still runs)
+    ;;
+    if items:i is wanted
+        break;              # leave the loop
+    ;;
+;;
 ```
+
+`break` and `continue` act on the innermost loop.
 
 ### Ports
 
@@ -691,16 +702,38 @@ its own from number 16 up with `OS.SetSyscallHandler` (`proc.process` uses 16 fo
 call Greet;                     # who is 'world'
 call Greet: 'PHI';
 call total is Add: 2 3;         # store the result
+
+int width: (Add: 2 3) * 8;      # a call in parentheses is a value
+if (IsReady: port)
+    log (Greeting) '\n';       # (Name) calls a method that takes no arguments
+;;
+
+[Find: int wanted: 0;]
+    while int i: 0; i < items.len; i++;
+        if items:i is wanted
+            return i;           # leave the method early, with its result
+        ;;
+    ;;
+[end: -1]
 ```
 
 - Arguments are separated by spaces and may span lines. `call Move: x -1;` passes two
-  arguments; `x - 1` or `(x -1)` is one (see "A list of values" under [Variables](#variables)). A missing argument uses the
-  parameter's default (or zero if it has none).
+  arguments; `x - 1` or `(x -1)` is one (see "A list of values" under
+  [Variables](#variables)). A missing argument uses the parameter's default (or zero if it
+  has none).
 - A method can return a number or a `str`.
+- **Calls as values.** `(Name: arguments)` can go anywhere a value can: in conditions,
+  math, `log`, indexes and other calls' arguments. The space after the `:` is what makes it
+  a call; `(list:i)`, with no space, is an element. `(Name)` with no arguments is a call
+  when no variable has that name. The method must return a value.
+- **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
+  ends one that has `[end]`. The value must be the same kind (number or `str`) as the one
+  after `[end: ...]`.
 - Methods can be called before they appear, and from any class in the same unit
   (`call Other.Method;` to be explicit).
 - Parameters and method variables have fixed places in memory, so a method can't call
-  itself (recursion) yet.
+  itself (recursion) yet, directly or through other methods. The compiler reports it
+  (`Count calls itself (Count -> Count)`).
 
 ### Events
 
@@ -792,7 +825,8 @@ and the classes of used files run before the classes that use them.
 
 ## Built-in functions
 
-Call them like methods. Those marked → return a value (`call x is OS.GetKey;`). "Where"
+Call them like methods. Those marked → return a value (`call x is OS.GetKey;`, or
+`(OS.GetKey)` as a value). "Where"
 says which kind of program has them; the 16-bit versions use the BIOS, the 32-bit ones
 are drivers in [lib/x86_32](../lib/x86_32).
 
@@ -851,7 +885,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 ## Not supported yet
 
 - `dec` / `fin` (decimal numbers), `has`, `^^` (power)
-- recursion (see "Where variables live")
+- recursion (see "Where variables live"); the compiler reports a method that calls itself
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed

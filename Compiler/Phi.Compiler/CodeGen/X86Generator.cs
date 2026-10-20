@@ -261,6 +261,9 @@ namespace Phi.Compiler.CodeGen
                 Emit("cld");
             }
 
+            returnLabel = NewLabel("return");
+            returnUsed = false;
+
             foreach (Stmt s in m.Decl.Body) EmitStatement(s);
 
             if (m.Decl.Result != null)
@@ -268,6 +271,8 @@ namespace Phi.Compiler.CodeGen
                 SourceComment(m.Decl.Result);
                 EmitExpr(m.Decl.Result); // the result goes back in eax
             }
+
+            if (returnUsed) Label(returnLabel); // return jumps here with the result in eax
 
             if (m.IsInterruptHandler)
             {
@@ -340,6 +345,18 @@ namespace Phi.Compiler.CodeGen
         // ================================================================ statements
 
         int unsafeDepth;
+
+        /// <summary>Where return jumps to in the method being generated.</summary>
+        string returnLabel = "";
+        bool returnUsed;
+
+        /// <summary>The loops around the current statement, innermost last, for break and continue.</summary>
+        sealed class LoopLabels
+        {
+            public string Next = "", End = "";
+            public bool NextUsed;
+        }
+        readonly List<LoopLabels> loops = new();
 
         void EmitStatement(Stmt stmt)
         {
@@ -446,15 +463,34 @@ namespace Phi.Compiler.CodeGen
 
                     string top = NewLabel("while");
                     string end = NewLabel("endwhile");
+                    var labels = new LoopLabels { Next = NewLabel("next"), End = end };
 
                     Label(top);
                     EmitBranch(loop.Condition, jumpIf: false, end);
+                    loops.Add(labels);
                     foreach (Stmt s in loop.Body) EmitStatement(s);
+                    loops.RemoveAt(loops.Count - 1);
+                    if (labels.NextUsed) Label(labels.Next); // continue runs the step, then tests again
                     if (loop.Step != null) EmitStatement(loop.Step);
                     Emit($"jmp {top}");
                     Label(end);
                     break;
                 }
+
+                case BreakStmt:
+                    Emit($"jmp {loops[^1].End}");
+                    break;
+
+                case ContinueStmt:
+                    loops[^1].NextUsed = true;
+                    Emit($"jmp {loops[^1].Next}");
+                    break;
+
+                case ReturnStmt ret:
+                    if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
+                    returnUsed = true;
+                    Emit($"jmp {returnLabel}");
+                    break;
 
                 case AssignStmt assign:
                     EmitAssign(assign.Target, assign.Value);
@@ -547,43 +583,74 @@ namespace Phi.Compiler.CodeGen
 
         void EmitCall(CallStmt call)
         {
-            switch (call.Resolved)
+            EmitCallTo(call.Resolved, call.Arguments);
+            if (call.ResultTarget == null) return;
+
+            PhiType result = call.Resolved is MethodSymbol method ? method.ReturnType : PhiType.Int;
+            EmitStoreResult(call.ResultTarget, result);
+        }
+
+        /// <summary>Calls a method, built-in or asm block; a result comes back in eax.</summary>
+        void EmitCallTo(object? callee, List<Expr> arguments)
+        {
+            switch (callee)
             {
                 case MethodSymbol method:
                 {
                     // parameters are variables of the method: set each one, using its default when no argument is given
+                    int given = Math.Min(arguments.Count, method.Parameters.Count);
+                    bool staged = arguments.Take(given).Any(ContainsCall);
+                    if (staged)
+                    {
+                        // an argument that calls a method could change parameters already set (it
+                        // may even call this method), so work out every argument first
+                        for (int i = 0; i < given; i++)
+                        {
+                            EmitExpr(arguments[i]);
+                            Emit("push eax");
+                        }
+                        for (int i = given - 1; i >= 0; i--)
+                        {
+                            Emit("pop eax");
+                            VariableSymbol p = method.Parameters[i];
+                            if (p.Type.IsString) EmitStringStore(NameOf(p), sourceIsString: arguments[i].Type.IsString);
+                            else EmitStoreEax(NameOf(p));
+                        }
+                    }
+
                     for (int i = 0; i < method.Parameters.Count; i++)
                     {
+                        if (staged && i < given) continue;
                         VariableSymbol p = method.Parameters[i];
-                        Expr? value = i < call.Arguments.Count ? call.Arguments[i] : p.Decl.Values.FirstOrDefault();
+                        Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
                         if (value != null) EmitAssign(NameOf(p), value);
-                        else if (i >= call.Arguments.Count) EmitInitialize(p, p.Decl.Values);
+                        else if (i >= arguments.Count) EmitInitialize(p, p.Decl.Values);
                     }
                     Emit($"call {method.Label}");
-                    if (call.ResultTarget != null) EmitStoreResult(call.ResultTarget, method.ReturnType);
                     break;
                 }
 
                 case BuiltinFunction builtin:
                 {
-                    for (int i = call.Arguments.Count - 1; i >= 0; i--)
+                    for (int i = arguments.Count - 1; i >= 0; i--)
                     {
-                        EmitExpr(call.Arguments[i]);
+                        EmitExpr(arguments[i]);
                         Emit("push eax");
                     }
                     Need(builtin.Label);
                     Emit($"call {builtin.Label}");
-                    if (call.Arguments.Count > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {call.Arguments.Count * 4}");
-                    if (call.ResultTarget != null) EmitStoreResult(call.ResultTarget, PhiType.Int);
+                    if (arguments.Count > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {arguments.Count * 4}");
                     break;
                 }
 
                 case RawBlockDecl raw:
                     Emit($"call {raw.Name}");
-                    if (call.ResultTarget != null) EmitStoreResult(call.ResultTarget, PhiType.Int);
                     break;
             }
         }
+
+        static bool ContainsCall(Expr e) =>
+            SyntaxWalker.Nodes(e).Any(n => n is CallExpr or NameExpr { Call: not null });
 
         /// <summary>Calls a one-parameter heap method (Heap.Alloc or Heap.Free) with a value.</summary>
         void EmitHeapCall(MethodSymbol method, Expr argument)
@@ -842,6 +909,14 @@ namespace Phi.Compiler.CodeGen
 
             switch (e)
             {
+                case CallExpr call:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    break;
+
+                case NameExpr { Call: CallExpr call }:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    break;
+
                 case NumberExpr n:
                     LoadConstant("eax", n.Value);
                     break;
