@@ -184,6 +184,14 @@ namespace Phi.Compiler.Semantics
         public PhiType Type { get; init; } = PhiType.Error;
     }
 
+    /// <summary>A field of the struct a struct method was called on, by name: self:0.field.</summary>
+    public sealed class SelfFieldSymbol : Symbol
+    {
+        public VariableSymbol Self { get; init; } = null!;
+        public int Offset { get; init; }
+        public PhiType Type { get; init; } = PhiType.Error;
+    }
+
     public sealed class StructSymbol : Symbol
     {
         public StructDecl Decl { get; init; } = null!;

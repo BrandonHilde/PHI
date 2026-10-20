@@ -391,6 +391,39 @@ Fields are laid out in order with no padding, which is what hardware tables (lik
 or a disk's partition table) need. Structs can't be assigned or passed as a whole; work
 with their fields, or pass a `ptr<Task>`.
 
+### Methods on structs
+
+A struct can have methods, written after its fields. They're called on a struct value, and
+work on that one: inside, its fields are reached by name, and `self` is a pointer to it.
+
+```phi
+struct.Counter
+{
+    int count;
+    int step;
+
+    [Add: int times: 1;]
+        count++ step * times;           # this counter's fields
+    [end: count]
+
+    [AddTwice]
+        call Add;                       # another method, on the same counter
+        call Add;
+    [end: count]
+}
+
+Counter c;
+call c.Add: 3;                          # on a variable
+int n: (c.AddTwice);                    # as a value, like any call
+call counters:i.Add;                    # on an element, a field, or through a pointer (p:0.Add)
+method<ptr<Counter> int: int> f: addr Counter.Add;   # as a method value, self comes first
+```
+
+- A struct's methods are part of the program's main code: a kernel, a user program, or
+  the OS classes of a 16-bit program (the boot sector, if that's all there is).
+- From outside the struct, a method is always called on a value (`c.Add`), never as
+  `Counter.Add` on its own.
+
 ## Memory (32-bit kernels)
 
 ```phi

@@ -20,6 +20,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `break;`, `continue;` | `break;`, `continue;` | Only in `while` loops. |
 | `&x` | `addr x` | |
 | `int (*f)(int, int)` | `method<int int: int> f` | Set with `f is addr Add;`, call with `(f: 1 2)`. |
+| C++ `c.add(3)` | `call c.Add: 3;` | Methods written inside a struct; `self` is the pointer to it. |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
 | `(T)x` | `x as T` | A cast. Binds tighter than math: `(a + b) as u8`. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |

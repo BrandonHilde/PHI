@@ -1,0 +1,103 @@
+struct.Counter
+{
+	int count;
+	int step;
+
+	# fields are reached by name; the counter it's called on is self
+	[Add: int times: 1;]
+		count++ step * times;
+	[end: count]
+
+	[Reset]
+		count is 0;
+		step is 1;
+	[end]
+
+	# another method of the same struct works on the same counter
+	[AddTwice]
+		call Add;
+		call Add;
+	[end: count]
+}
+
+struct.Rect
+{
+	int x;
+	int y;
+	int w;
+	int h;
+
+	[Area]
+	[end: w * h]
+
+	[Contains: int px: 0; int py: 0;]
+	[end: px >= x and py >= y and px < x + w and py < y + h]
+
+	[Grow: int by: 1;]
+		x-- by;
+		y-- by;
+		w++ by * 2;
+		h++ by * 2;
+	[end]
+}
+
+struct.Window
+{
+	u8 title[16];
+	Rect frame;                                  # a struct inside: frame.w by name
+	method<ptr<Window> int: int> on_key;         # what to do with a key
+
+	[Width]
+	[end: frame.w]
+
+	[Key: int key: 0;]
+		if on_key is 0
+			return -1;
+		;;
+	[end: (on_key: self key)]
+
+	[SetTitle: ptr<u8> text: 0;]
+		int i: 0;
+		while text:i is not 0 and i < title.len - 1
+			title:i is text:i;
+			i++;
+		;;
+		title:i is 0;
+	[end]
+}
+
+phi.StructMethods:Library
+{
+	# on a variable
+	Counter c;
+	call c.Reset;
+	c.step is 5;
+	debug (c.Add: 2) ' ' (c.Add) ' ' (c.AddTwice) '\n';
+
+	# on array elements, and through a pointer
+	Rect boxes[2];
+	boxes:1.w is 10;
+	boxes:1.h is 4;
+	debug (boxes:1.Area) ' ' (boxes:1.Contains: 3 2) (boxes:1.Contains: 10 2) '\n';
+	call boxes:1.Grow: 2;
+	debug boxes:1.x ' ' boxes:1.w ' ' (boxes:1.Area) '\n';
+	ptr<Rect> p: addr boxes:0;
+	p:0.w is 3;
+	p:0.h is 3;
+	debug (p:0.Area) '\n';
+
+	# a struct inside a struct, a method field, and an array field
+	Window w;
+	call w.SetTitle: 'Notepad';
+	w.frame.w is 320;
+	debug addr w.title ' ' (w.Width) ' ' (w.Key: 65) '\n';
+	w.on_key is addr Echo;
+	debug (w.Key: 65) '\n';
+
+	# a struct's method is a method like any other: its address takes self first
+	method<ptr<Rect>: int> area: addr Rect.Area;
+	debug (area: addr boxes:1) '\n';
+
+	[Echo: ptr<Window> win: 0; int key: 0;]
+	[end: key + win:0.frame.w]
+}

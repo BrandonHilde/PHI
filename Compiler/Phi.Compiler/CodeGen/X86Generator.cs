@@ -894,6 +894,11 @@ namespace Phi.Compiler.CodeGen
                 case NameExpr { Symbol: FieldPathSymbol f }:
                     return new Place { Label = f.Root.Label, Offset = f.Offset };
 
+                case NameExpr { Symbol: SelfFieldSymbol s }:
+                    // through the struct the method was called on
+                    Emit($"mov ebx, dword [{s.Self.Label}]");
+                    return new Place { Computed = true, Linear = true, Offset = s.Offset };
+
                 case MemberExpr m:
                 {
                     Place p = EmitPlace(m.Target);
@@ -1155,6 +1160,10 @@ namespace Phi.Compiler.CodeGen
                     EmitCallTo(call.Resolved, call.Arguments);
                     break;
 
+                case MemberExpr { Call: CallExpr call }:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    break;
+
                 case NumberExpr n:
                     LoadConstant("eax", n.Value);
                     break;
@@ -1171,7 +1180,7 @@ namespace Phi.Compiler.CodeGen
                     LoadAddress("eax", v.Label);
                     break;
 
-                case NameExpr { Symbol: VariableSymbol or FieldPathSymbol }:
+                case NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol }:
                     EmitLoad(e);
                     break;
 

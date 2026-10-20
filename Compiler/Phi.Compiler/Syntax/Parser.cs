@@ -176,7 +176,7 @@ namespace Phi.Compiler.Syntax
                         program.Classes.Add(ParseClass(start, name));
                         return;
                     case "struct":
-                        program.Structs.Add(ParseStruct(start, name));
+                        program.Structs.Add(ParseStruct(start, name, program));
                         return;
                 }
 
@@ -241,16 +241,40 @@ namespace Phi.Compiler.Syntax
             return cls;
         }
 
-        StructDecl ParseStruct(Token start, Token name)
+        StructDecl ParseStruct(Token start, Token name, ProgramNode program)
         {
             Expect(TokenKind.OpenBrace, "'{'");
             var decl = new StructDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
+            ClassDecl? methods = null;
 
             while (!At(TokenKind.CloseBrace) && !AtEnd)
             {
                 int before = pos;
                 try
                 {
+                    if (At(TokenKind.OpenBracket))
+                    {
+                        // a method: it gets the struct it's called on as self
+                        if (methods == null)
+                        {
+                            methods = new ClassDecl { File = file, Name = name.Text, Base = "struct", BaseSpan = name.Span, ForStruct = decl, Span = start.Span.To(name.Span) };
+                            program.Classes.Add(methods);
+                        }
+                        MethodDecl m = ParseMethod();
+                        m.Owner = methods;
+                        var self = new VarDecl
+                        {
+                            Type = new TypeRef { Name = "ptr", Pointee = new TypeRef { Name = name.Text, Span = name.Span }, Span = name.Span },
+                            Name = "self",
+                            NameSpan = name.Span,
+                            Span = name.Span,
+                        };
+                        self.Values.Add(new NumberExpr { Value = 0, Span = name.Span });
+                        m.Parameters.Insert(0, self);
+                        methods.Methods.Add(m);
+                        continue;
+                    }
+
                     TypeRef type = ParseType();
                     Token field = ExpectIdentifier("a field name");
                     Expr? count = null;
@@ -1162,6 +1186,7 @@ namespace Phi.Compiler.Syntax
                     Expect(TokenKind.CloseParen, "')'");
                     // (Name) may be a call with no arguments, which the binder decides
                     if (inner is NameExpr named) named.InParens = true;
+                    if (inner is MemberExpr member) member.InParens = true;
                     return inner;
                 }
 

@@ -157,6 +157,23 @@ namespace Phi.Compiler.Tests
         [InlineData("int n: 5 as str;", "str can't be used here")]
         public void CastErrors(string body, string message) => AssertError(Boot(body), message);
 
+        const string CounterStruct = "struct.Counter\n{\n int count;\n [Add: int n: 1;]\n  count++ n;\n [end: count]\n}\n";
+
+        [Theory]
+        [InlineData("int x: (Counter.Add: 1);", "Add is a method of struct Counter; call it on one, like value.Add")]
+        [InlineData("Counter c;\ncall c.Add: 1 2;", "Counter.Add takes 1 argument but was given 2")]
+        [InlineData("Counter c;\ncall c.Missing;", "unknown method 'c.Missing'")]
+        public void StructMethodErrors(string body, string message) => AssertError(CounterStruct + Boot(body), message);
+
+        [Fact]
+        public void StructMethodsInABootSectorStayInIt()
+        {
+            // a boot sector alone doesn't grow an OS unit for the struct's methods
+            CompileResult result = Compile(CounterStruct + Boot("Counter c;\nint n: (c.Add: 2);"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.Equal(UnitKind.Boot, Assert.Single(result.Units).Kind);
+        }
+
         [Fact]
         public void HandlersCantTakeParameters()
         {

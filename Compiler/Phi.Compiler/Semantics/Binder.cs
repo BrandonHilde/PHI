@@ -134,10 +134,16 @@ namespace Phi.Compiler.Semantics
                 units[UnitKind.Boot] = boot;
             }
 
+            // a struct's methods belong to the program's main code: the OS classes of a 16-bit
+            // program that has them (Library classes go there too), otherwise its only unit
+            bool hasOs = program.Classes.Any(c => c.Base is KernelBase or LibraryBase);
+            UnitKind structUnit = userProgram ? UnitKind.Program : protectedMode ? UnitKind.Kernel : hasOs ? UnitKind.Os : UnitKind.Boot;
+
             foreach (ClassDecl cls in program.Classes)
             {
                 file = cls.File;
                 UnitKind unit;
+                if (cls.ForStruct != null) continue; // placed below, once every unit exists
                 if (userProgram && cls.Base is not (ProgramBase or LibraryBase))
                 {
                     Error(cls.BaseSpan, $"class {cls.Name} ({cls.Base}) can't be part of a user program; a program's classes inherit " +
@@ -173,6 +179,13 @@ namespace Phi.Compiler.Semantics
                 classScopes[cls] = new Scope { Class = cls, Unit = unit };
             }
 
+            foreach (ClassDecl cls in program.Classes.Where(c => c.ForStruct != null))
+            {
+                if (!units.ContainsKey(structUnit)) continue; // no code at all to use them from
+                units[structUnit].Classes.Add(cls);
+                classScopes[cls] = new Scope { Class = cls, Unit = structUnit };
+            }
+
             foreach (RawBlockDecl raw in program.RawBlocks)
             {
                 file = raw.File;
@@ -203,7 +216,7 @@ namespace Phi.Compiler.Semantics
                         BindVarDecl(p, ms, classLevel: false);
                         // a default is worked out by the caller, which can't see this method's variables
                         Expr? local = p.Values.SelectMany(SyntaxWalker.Nodes).OfType<NameExpr>()
-                            .FirstOrDefault(n => n.Symbol is VariableSymbol { IsLocal: true } or FieldPathSymbol { Root.IsLocal: true });
+                            .FirstOrDefault(n => n.Symbol is VariableSymbol { IsLocal: true } or FieldPathSymbol { Root.IsLocal: true } or SelfFieldSymbol);
                         if (local != null)
                             Error(local.Span, $"a parameter's default can't use the method's own variables or parameters ('{((NameExpr)local).Name}')");
                     }
@@ -264,6 +277,33 @@ namespace Phi.Compiler.Semantics
             m.ResultBinding = false;
             m.ResultBound = true;
             return m.ReturnType;
+        }
+
+        /// <summary>value.Method, where value is a struct with that method.</summary>
+        bool IsStructMethodName(string name, Scope scope)
+        {
+            int dot = name.LastIndexOf('.');
+            if (dot <= 0) return false;
+            PhiType? t = Lookup(name[..dot], scope) switch
+            {
+                VariableSymbol v => v.Type,
+                FieldPathSymbol f => f.Type,
+                SelfFieldSymbol s => s.Type,
+                _ => null,
+            };
+            return t is { IsStruct: true } && FindStructMethod(t.Struct!, name[(dot + 1)..], scope) != null;
+        }
+
+        /// <summary>The method `name` of a struct, if it has one in this unit.</summary>
+        MethodSymbol? FindStructMethod(StructSymbol s, string name, Scope scope) =>
+            methodsByFullName.TryGetValue((scope.Unit, $"{s.Name}.{name}"), out MethodSymbol? m) && m.Decl.Owner.ForStruct?.Symbol == s ? m : null;
+
+        /// <summary>addr receiver, for a struct method's self.</summary>
+        Expr SelfArgument(Expr receiver, Scope scope)
+        {
+            var self = new AddrExpr { Operand = receiver, Span = receiver.Span };
+            BindAddr(self, scope);
+            return self;
         }
 
         /// <summary>What a method takes and returns, as a method&lt;...&gt; type would say it.</summary>
@@ -744,6 +784,11 @@ namespace Phi.Compiler.Semantics
                 && ms.Names.TryGetValue(name, out Symbol? local))
                 return local;
 
+            // in a struct's method, its fields by name
+            if (scope.Class.ForStruct?.Symbol is StructSymbol owner && scope.Method is { Parameters.Count: > 0 } method
+                && owner.Find(name) is FieldSymbol field)
+                return new SelfFieldSymbol { Name = name, Self = method.Parameters[0], Offset = field.Offset, Type = field.Type };
+
             if (classScopes[scope.Class].Names.TryGetValue(name, out Symbol? member))
                 return member;
 
@@ -777,11 +822,30 @@ namespace Phi.Compiler.Semantics
             string[] parts = name.Split('.');
             for (int split = parts.Length - 1; split >= 1; split--)
             {
-                if (LookupSimple(string.Join('.', parts[..split]), scope) is not VariableSymbol root) continue;
+                Symbol? head = LookupSimple(string.Join('.', parts[..split]), scope);
+                if (head is SelfFieldSymbol sf) return ResolveSelfMembers(sf, parts[split..]);
+                if (head is not VariableSymbol root) continue;
                 return ResolveMembers(root, parts[split..]);
             }
 
             return null;
+        }
+
+        /// <summary>inner.x or items.len, where inner and items are fields of self.</summary>
+        Symbol? ResolveSelfMembers(SelfFieldSymbol start, string[] members)
+        {
+            PhiType type = start.Type;
+            int offset = start.Offset;
+            for (int i = 0; i < members.Length; i++)
+            {
+                if (members[i] == "len" && i == members.Length - 1)
+                    return type.IsArray ? new LengthSymbol { Name = "len", Count = type.Length } : null;
+                FieldSymbol? field = type.IsStruct ? type.Struct!.Find(members[i]) : null;
+                if (field == null) return null;
+                offset += field.Offset;
+                type = field.Type;
+            }
+            return new SelfFieldSymbol { Name = start.Name, Self = start.Self, Offset = offset, Type = type };
         }
 
         Symbol? ResolveMembers(VariableSymbol root, string[] members)
@@ -961,7 +1025,7 @@ namespace Phi.Compiler.Semantics
 
         static bool IsAssignable(Expr target) => target switch
         {
-            NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
+            NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol } => true,
             IndexExpr or MemberExpr => true,
             _ => false,
         };
@@ -1124,7 +1188,8 @@ namespace Phi.Compiler.Semantics
         /// <summary>(Name: args) used as a value.</summary>
         void BindCallExpr(CallExpr call, Scope scope)
         {
-            if (call.CalleeTarget == null && Lookup(call.Callee, scope) is VariableSymbol { Type.IsMethod: false } or FieldPathSymbol { Type.IsMethod: false })
+            if (call.CalleeTarget == null && Lookup(call.Callee, scope) is VariableSymbol { Type.IsMethod: false } or FieldPathSymbol { Type.IsMethod: false, Type.IsStruct: false }
+                or SelfFieldSymbol { Type.IsMethod: false, Type.IsStruct: false })
             {
                 Error(call.CalleeSpan, $"'{call.Callee}' isn't a method; for an element, leave out the space after ':' ({call.Callee}:i)");
                 call.Type = PhiType.Error;
@@ -1172,9 +1237,33 @@ namespace Phi.Compiler.Semantics
             BoundUnit unit = units[scope.Unit];
             foreach (Expr arg in arguments) BindExpr(arg, scope);
 
+            // a struct's method, called on a struct: call c.Add: 3;  call shapes:i.Draw;
+            MethodSymbol? structMethod = null;
+            if (calleeTarget is MemberExpr member)
+            {
+                BindExpr(member.Target, scope);
+                if (member.Target.Type.IsStruct && FindStructMethod(member.Target.Type.Struct!, member.Member, scope) is MethodSymbol found)
+                {
+                    structMethod = found;
+                    arguments.Insert(0, SelfArgument(member.Target, scope));
+                    calleeTarget = null;
+                }
+            }
+            else if (calleeTarget == null && calleeName.LastIndexOf('.') is int dot and > 0
+                     && Lookup(calleeName[..dot], scope) is VariableSymbol or FieldPathSymbol or SelfFieldSymbol)
+            {
+                var receiver = new NameExpr { Name = calleeName[..dot], Span = calleeSpan };
+                BindExpr(receiver, scope);
+                if (receiver.Type.IsStruct && FindStructMethod(receiver.Type.Struct!, calleeName[(dot + 1)..], scope) is MethodSymbol found)
+                {
+                    structMethod = found;
+                    arguments.Insert(0, SelfArgument(receiver, scope));
+                }
+            }
+
             // a method variable: call handler: x;  call handlers:i: x;
-            Expr? pointer = calleeTarget;
-            if (pointer == null && Lookup(calleeName, scope) is VariableSymbol or FieldPathSymbol)
+            Expr? pointer = structMethod != null ? null : calleeTarget;
+            if (pointer == null && structMethod == null && Lookup(calleeName, scope) is VariableSymbol or FieldPathSymbol or SelfFieldSymbol)
                 pointer = new NameExpr { Name = calleeName, Span = calleeSpan };
             if (pointer != null)
             {
@@ -1202,7 +1291,21 @@ namespace Phi.Compiler.Semantics
                 return new PointerCall { Target = pointer, Signature = signature };
             }
 
-            object? callee = ResolveCallee(calleeName, scope);
+            object? callee = structMethod ?? ResolveCallee(calleeName, scope);
+            if (structMethod == null && callee is MethodSymbol { Decl.Owner.ForStruct: StructDecl forStruct } sibling)
+            {
+                // another method of the same struct, from inside one: on the same self
+                if (scope.Class.ForStruct == forStruct && scope.Method is { Parameters.Count: > 0 } here)
+                {
+                    var self = new NameExpr { Name = "self", Span = calleeSpan, Symbol = here.Parameters[0], Type = here.Parameters[0].Type };
+                    arguments.Insert(0, self);
+                }
+                else
+                {
+                    Error(calleeSpan, $"{sibling.Decl.Name} is a method of struct {forStruct.Name}; call it on one, like value.{sibling.Decl.Name}");
+                    return null;
+                }
+            }
             switch (callee)
             {
                 case MethodSymbol method:
@@ -1220,8 +1323,9 @@ namespace Phi.Compiler.Semantics
                     }
 
                     int count = method.Decl.Parameters.Count;
+                    int hidden = method.Decl.Owner.ForStruct != null ? 1 : 0;     // self
                     if (arguments.Count > count)
-                        Error(arguments[count].Span, $"{method.Name} takes {Plural(count, "argument")} but was given {arguments.Count}");
+                        Error(arguments[count].Span, $"{method.Name} takes {Plural(count - hidden, "argument")} but was given {arguments.Count - hidden}");
 
                     for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
                         arguments[i] = Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
@@ -1390,8 +1494,8 @@ namespace Phi.Compiler.Semantics
                 {
                     Symbol? symbol = Lookup(name.Name, scope);
 
-                    // (OS.GetTicks): a call with no arguments, when no variable has the name
-                    if (symbol == null && name.InParens && ResolveCallee(name.Name, scope) != null)
+                    // (OS.GetTicks) or (c.Area): a call with no arguments, when no variable has the name
+                    if (symbol == null && name.InParens && (ResolveCallee(name.Name, scope) != null || IsStructMethodName(name.Name, scope)))
                     {
                         name.Call = new CallExpr { Callee = name.Name, CalleeSpan = name.Span, Span = name.Span };
                         BindCallExpr(name.Call, scope);
@@ -1406,6 +1510,7 @@ namespace Phi.Compiler.Semantics
                         ConstantSymbol k => k.Type,
                         LengthSymbol => PhiType.Int,
                         FieldPathSymbol f => f.Type,
+                        SelfFieldSymbol s => s.Type,
                         _ => PhiType.Error,
                     };
                     if (symbol == null) Error(name.Span, DescribeMissing(name.Name, scope));
@@ -1423,6 +1528,16 @@ namespace Phi.Compiler.Semantics
                     if (t.IsError) { member.Type = PhiType.Error; break; }
 
                     FieldSymbol? field = t.IsStruct ? t.Struct!.Find(member.Member) : null;
+
+                    // (shapes:i.Area): the struct's method, with no arguments
+                    if (field == null && member.InParens && t.IsStruct && FindStructMethod(t.Struct!, member.Member, scope) != null)
+                    {
+                        member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = member };
+                        BindCallExpr(member.Call, scope);
+                        member.Type = member.Call.Type;
+                        break;
+                    }
+
                     if (field == null)
                     {
                         Error(member.MemberSpan, t.IsStruct ? $"{t} has no field '{member.Member}'" : $"a {t} has no fields");
@@ -1621,7 +1736,7 @@ namespace Phi.Compiler.Semantics
 
             bool place = addr.Operand switch
             {
-                NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
+                NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol } => true,
                 IndexExpr or MemberExpr => true,
                 _ => false,
             };

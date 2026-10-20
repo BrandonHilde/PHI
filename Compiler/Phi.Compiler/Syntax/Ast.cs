@@ -35,6 +35,12 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Statements at class level run in order when the class starts.</summary>
         public List<Stmt> Body { get; } = new();
+
+        /// <summary>
+        /// Set for the class that holds a struct's methods: it has the struct's name, and each
+        /// method takes the struct it's called on as a hidden first parameter, self.
+        /// </summary>
+        public StructDecl? ForStruct { get; init; }
     }
 
     /// <summary>asm.Name { raw } or arm.Name { raw }</summary>
@@ -293,6 +299,12 @@ namespace Phi.Compiler.Syntax
         public Span MemberSpan { get; init; }
 
         public FieldSymbol? Field { get; set; }
+
+        /// <summary>Written in parentheses, so it may be a struct method with no arguments: (boxes:i.Area).</summary>
+        public bool InParens { get; set; }
+
+        /// <summary>Set by the binder when the member is the struct's method rather than a field.</summary>
+        public CallExpr? Call { get; set; }
     }
 
     /// <summary>addr x  (the address of a variable, element or method)</summary>
