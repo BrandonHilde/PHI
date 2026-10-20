@@ -18,7 +18,7 @@ namespace Phi.Compiler.Syntax
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
             "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
-            "is", "not", "and", "or", "has", "true", "false", "end", "isr",
+            "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as",
             "below", "above", "atmost", "atleast",
             "phi", "asm", "arm", "struct", "use", "const",
         };
@@ -1010,14 +1010,27 @@ namespace Phi.Compiler.Syntax
             return left;
         }
 
+        /// <summary>A unary expression, then any number of `as Type`: w:0.data as ptr&lt;Note&gt;</summary>
         Expr ParseUnary()
+        {
+            Expr expr = ParseUnaryOperand();
+            while (AtOperatorWord("as"))
+            {
+                Advance();
+                TypeRef type = ParseType();
+                expr = new CastExpr { Operand = expr, TargetType = type, Span = expr.Span.To(type.Span) };
+            }
+            return expr;
+        }
+
+        Expr ParseUnaryOperand()
         {
             Token t = Current;
 
             if (At(TokenKind.Minus) || At(TokenKind.Bang) || At(TokenKind.Tilde) || AtWord("not"))
             {
                 Advance();
-                Expr operand = ParseUnary();
+                Expr operand = ParseUnaryOperand();
 
                 if (t.Kind == TokenKind.Minus && operand is NumberExpr n)
                     return new NumberExpr { Value = -n.Value, Span = t.Span.To(n.Span) };
@@ -1070,7 +1083,7 @@ namespace Phi.Compiler.Syntax
             if (AtWord("in") || AtWord("inw") || AtWord("ind"))
             {
                 Advance();
-                Expr port = ParseUnary();
+                Expr port = ParseUnaryOperand();
                 int size = t.Text == "in" ? 1 : t.Text == "inw" ? 2 : 4;
                 return new InExpr { Size = size, Port = port, Span = t.Span.To(port.Span) };
             }

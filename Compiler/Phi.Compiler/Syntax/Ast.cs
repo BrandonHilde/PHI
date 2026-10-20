@@ -307,6 +307,13 @@ namespace Phi.Compiler.Syntax
         public MethodSymbol? Method { get; set; }
     }
 
+    /// <summary>value as Type: the same bits, seen as another type (cut to fit a smaller number)</summary>
+    public sealed class CastExpr : Expr
+    {
+        public Expr Operand { get; set; } = null!;
+        public TypeRef TargetType { get; init; } = null!;
+    }
+
     /// <summary>sizeof Type   or   sizeof variable   (bytes, known when the program is built)</summary>
     public sealed class SizeofExpr : Expr
     {

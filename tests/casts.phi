@@ -1,0 +1,30 @@
+struct.Point
+{
+	i16 x;
+	i16 y;
+}
+
+phi.Casts:Library
+{
+	# a smaller number keeps the low bytes, the same as storing it would
+	u32 raw: 0x12345;
+	debug (raw as u8) ' ' (raw as u16) ' ' (-1 as u16) ' ' (200 as i8) ' ' (-1 as u32) '\n';
+
+	# a number used as a pointer, and one kind of pointer as another
+	Point p;
+	p.x is 7;
+	p.y is -3;
+	u32 address: addr p;
+	ptr<Point> back: address as ptr<Point>;
+	ptr<i16> halves: back as ptr<i16>;
+	debug back:0.x ' ' halves:1 '\n';
+
+	# a method's address as a number, and back
+	method<int: int> twice: addr Twice;
+	u32 code: twice as u32;
+	method<int: int> again: code as method<int: int>;
+	debug (code is not 0) ' ' (again: 21) '\n';
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+}

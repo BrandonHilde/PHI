@@ -205,6 +205,7 @@ From lowest to highest precedence:
 | `<<` `>>` | shift left / right |
 | `+` `-` | add, subtract |
 | `*` `/` `%` | multiply, divide, remainder (rounding toward zero) |
+| `x as T` | `x` used as type `T` (see [Pointers](#pointers)) |
 | `-x`, `~x`, `not x`, `!x`, `addr x`, `sizeof x`, `in port` | negate, bitwise not, logical not, address, size in bytes, port input |
 | `list:i`, `list:i.field` | element `i` of an array, character `i` of a `str`, a field of an element |
 | `( )` | grouping |
@@ -347,7 +348,13 @@ log t:0.id;                     # a field of what t points to
   `addr task` of a `Task` is a `ptr<Task>`.
 - An array, or an array field like `tasks:0.name`, used where a pointer is expected (a
   parameter, a pointer variable) is its address, the same as `addr`.
-- `addr Method` is the address of a method, for interrupt handlers.
+- `addr Method` is the address of a method, for interrupt handlers (and see
+  [Methods as values](#methods-as-values)).
+- **`as`** uses a value as another type: `w:0.data as ptr<Note>`, `count as u8` (a smaller
+  number keeps its low bytes). Numbers, pointers and methods can become each other this way.
+  One kind of pointer silently becoming another (`ptr<A>` given where `ptr<B>` goes) is a
+  warning, since it's usually a mistake; `as` says it's meant. `ptr<u8>` goes to and from any
+  pointer without one.
 - Every read and write goes to memory (values are never kept in registers between
   statements), so pointers to device memory work without anything like C's `volatile`.
 

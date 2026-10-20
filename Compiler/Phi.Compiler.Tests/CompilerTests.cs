@@ -140,6 +140,24 @@ namespace Phi.Compiler.Tests
         public void MethodPointerErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Fact]
+        public void PointersOfDifferentKindsWarnUnlessCast()
+        {
+            string structs = "struct.A\n{\n int x;\n}\nstruct.B\n{\n int y;\n}\n";
+            CompileResult warned = Compile(structs + Boot("A a;\nptr<A> pa: addr a;\nptr<B> pb: pa;"));
+            Assert.True(warned.Success);
+            Assert.Contains(warned.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains("write `as ptr<B>` if that's meant"));
+
+            // with as, or through ptr<u8> (bytes), there's nothing to warn about
+            CompileResult quiet = Compile(structs + Boot("A a;\nptr<A> pa: addr a;\nptr<B> pb: pa as ptr<B>;\nptr<u8> bytes: pa;\nptr<B> pc: bytes;"));
+            Assert.Empty(quiet.Diagnostics);
+        }
+
+        [Theory]
+        [InlineData("str s: 'x';\nint n: s as int;", "a str can't be used as a int; only numbers, pointers and methods can")]
+        [InlineData("int n: 5 as str;", "str can't be used here")]
+        public void CastErrors(string body, string message) => AssertError(Boot(body), message);
+
+        [Fact]
         public void HandlersCantTakeParameters()
         {
             string kernel = "phi.K:Kernel\n{\ncall OS.SetIrqHandler: 1 addr Key;\n[Key: int code: 0;]\n[end]\n}\n";

@@ -1451,6 +1451,24 @@ namespace Phi.Compiler.Semantics
                     BindCallExpr(call, scope);
                     break;
 
+                case CastExpr cast:
+                {
+                    BindExpr(cast.Operand, scope);
+                    PhiType to = ResolveType(cast.TargetType, scope, allowStr: false);
+                    cast.Type = PhiType.Error;
+                    if (cast.Operand.Type.IsError || to.IsError) break;
+
+                    // numbers, pointers and method addresses become each other; nothing else does
+                    bool from = cast.Operand.Type.IsNumeric || cast.Operand.Type.IsMethod;
+                    if (!from || !(to.IsNumeric || to.IsMethod))
+                    {
+                        Error(cast.Span, $"a {cast.Operand.Type} can't be used as a {to}; only numbers, pointers and methods can");
+                        break;
+                    }
+                    cast.Type = to;
+                    break;
+                }
+
                 case InExpr input:
                     if (scope.Unit == UnitKind.Program)
                         Error(input.Span, "user programs can't use ports; only the kernel can talk to hardware");
@@ -1706,6 +1724,12 @@ namespace Phi.Compiler.Semantics
 
             // the address of a method is a number, for the built-ins that take handlers
             if (target.IsNumeric && e.Type.IsMethod) return e;
+
+            // one kind of pointer silently becoming another is usually a mistake; ptr<u8> (bytes)
+            // goes either way, and `as` says it's meant
+            if (target.IsPointer && e.Type.IsPointer && target.Pointee != e.Type.Pointee
+                && target.Pointee != PhiType.U8 && e.Type.Pointee != PhiType.U8)
+                diagnostics.Warning(file, e.Span, $"{what} is a {target}, but this is a {e.Type}; write `as {target}` if that's meant");
 
             if (target.IsNumeric)
             {

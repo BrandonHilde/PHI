@@ -1166,6 +1166,18 @@ namespace Phi.Compiler.CodeGen
                     LoadConstant("eax", size.Value);
                     break;
 
+                case CastExpr cast:
+                    EmitExpr(cast.Operand);
+                    // a smaller number keeps the low bytes, like storing it would
+                    switch (cast.Type.Kind)
+                    {
+                        case TypeKind.U8 or TypeKind.Bool: Emit("movzx eax, al"); break;
+                        case TypeKind.I8: Emit("movsx eax, al"); break;
+                        case TypeKind.U16: Emit("movzx eax, ax"); break;
+                        case TypeKind.I16: Emit("movsx eax, ax"); break;
+                    }
+                    break;
+
                 case NewExpr n:
                     EmitHeapCall(n.Allocator!, n.Bytes); // the address comes back in eax
                     break;

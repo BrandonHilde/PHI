@@ -505,6 +505,7 @@ these were added:
   interrupts, with extended keys and modifiers); `samples/sketch.phi`
 - [x] `pixel` and `screenshot` in test input scripts, so graphics can be tested
 - [x] Methods as values: `method<int int: int>` variables, fields and arrays, called like methods
+- [x] Casts (`x as ptr<T>`), and a warning when one kind of pointer silently becomes another
 - [x] FAT16: folder entries as data (`Fat.Entries`), `MakeFolder`, `DeleteFolder`, `Rename`
   (and moving), and dates and times on what's written
 - [x] Docs: [PHI for C programmers](docs/phi-for-c-programmers.md)

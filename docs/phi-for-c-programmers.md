@@ -21,6 +21,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `&x` | `addr x` | |
 | `int (*f)(int, int)` | `method<int int: int> f` | Set with `f is addr Add;`, call with `(f: 1 2)`. |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
+| `(T)x` | `x as T` | A cast. Binds tighter than math: `(a + b) as u8`. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
 
 ## Traps
@@ -75,17 +76,17 @@ array and index it as `rows:(row * width + column)`.
 
 **Arrays work where pointers are expected.** `call Fill: buffer;` and
 `ptr<u8> p: windows:0.title;` both pass the array's address, as `addr` would. Any number
-also converts to any pointer type without a cast, so the compiler won't catch a pointer of
-the wrong type.
+also converts to any pointer type without a cast. One kind of pointer becoming another
+(`ptr<A>` where `ptr<B>` goes) gives a warning; write `p as ptr<B>`, PHI's cast, when it's
+meant.
 
 **Array indexes are checked.** An index outside the array stops the program with
 `PHI: index out of range on line N`, and a constant index is checked at build time. Code
 inside an `unsafe` block skips the checks, and a pointer is never checked.
 
 **Some common names are keywords.** These can't be variable names: `end`, `is`, `in`,
-`out`, `addr`, `sizeof`, `new`, `free`, `has`, `break`, `continue`, `return`, `below`, `above`,
-`atmost` and `atleast`.
-The compiler says so (`'end' is a keyword and can't be a variable name`).
+`out`, `addr`, `as`, `sizeof`, `method`, `new`, `free`, `has`, `break`, `continue`, `return`,
+`below`, `above`, `atmost` and `atleast`. The compiler says so (`'end' is a keyword and can't be a variable name`).
 
 **A fixed-size array holds at most 16384 elements.** Larger buffers in a kernel come from
 `new`. User programs don't have a heap yet.
