@@ -1053,7 +1053,10 @@ namespace Phi.Compiler.Semantics
             if (ret.Value.Type.IsError || result.IsError) return;
             method.ReturnValues.Add(ret.Value);
 
-            if (result.IsString != ret.Value.Type.IsString)
+            // a one-character string like '/' is a number here, as anywhere a number goes
+            if (!result.IsString && ret.Value is StringExpr { Value.Length: 1 })
+                ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
+            else if (result.IsString != ret.Value.Type.IsString)
                 Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
             else if (!result.IsString)
                 ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
@@ -1168,7 +1171,7 @@ namespace Phi.Compiler.Semantics
                     {
                         string why = scope.Unit switch
                         {
-                            UnitKind.Kernel => "it needs the BIOS or graphics mode, which a 32-bit kernel doesn't have yet",
+                            UnitKind.Kernel => "it needs the BIOS; for graphics in a 32-bit kernel, use drivers.vbe and gfx.draw",
                             UnitKind.Program => "user programs reach the hardware only through the kernel's system calls",
                             _ => "it needs the 32-bit kernel's drivers; make the program a phi.Name:Kernel",
                         };

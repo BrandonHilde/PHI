@@ -147,6 +147,8 @@ the bottom:
 | FAT16 | `lib/phi/fs/fat16.phi` | PHI |
 | loading and running programs, system calls 16-30 | `lib/phi/proc/process.phi` | PHI |
 | PCI, the RTL8139 network card, the AC'97 sound card | `lib/phi/drivers/pci.phi`, `rtl8139.phi`, `ac97.phi` | PHI |
+| graphics mode, the keyboard and mouse on their interrupts | `lib/phi/drivers/vbe.phi`, `input.phi` | PHI |
+| drawing, the VGA font | `lib/phi/gfx/` | PHI |
 | ARP, IPv4, ICMP, UDP, DHCP, DNS, TCP, TLS 1.3, HTTP | `lib/phi/net/` | PHI |
 | SHA-256, HMAC, HKDF, AES-128-GCM, ChaCha20-Poly1305, X25519, random numbers | `lib/phi/crypto/` | PHI |
 | a synthesizer for songs written as text, WAV files, playing them | `lib/phi/audio/` | PHI |

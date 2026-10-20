@@ -500,13 +500,17 @@ these were added:
 - [x] Calls as values (`if (IsReady: port)`), `break`, `continue` and `return`
 - [x] Variables on the stack for methods: recursion, and methods that are safe to call from
   interrupt handlers
+- [x] Graphics in 32-bit kernels: `drivers.vbe` (Bochs VBE, any resolution, a back buffer, a
+  mouse pointer), `gfx.draw`, `gfx.font`, and `drivers.input` (keyboard and mouse on their
+  interrupts, with extended keys and modifiers); `samples/sketch.phi`
+- [x] `pixel` and `screenshot` in test input scripts, so graphics can be tested
 - [x] Docs: [PHI for C programmers](docs/phi-for-c-programmers.md)
 
 The parts most worth doing next, roughly in order:
 
 1. **A heap for user programs**, so `new` works there too.
 2. **Growable strings** with value semantics.
-3. **The framebuffer** (Bochs VBE in QEMU) for graphics in 32-bit kernels.
+3. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`.
 4. Then the [Later](#later) list: TLS certificates, 64-bit, ARM, self-hosting.
 
 ---
@@ -542,8 +546,9 @@ PHI/
 
 These come after the basics work:
 
-- **Graphics:** a linear framebuffer through QEMU's Bochs VBE adapter (`-vga std`),
-  then fonts, windows, and a GUI toolkit as PHI built-ins
+- **Graphics:** done: a linear framebuffer through QEMU's Bochs VBE adapter (`drivers.vbe`),
+  drawing and the VGA font (`gfx.draw`, `gfx.font`), and the keyboard and mouse on their
+  interrupts (`drivers.input`). Still to do: windows and a GUI toolkit, other fonts
 - **64-bit long mode**, then an **ARM** backend (QEMU `virt` machine). The README's
   planned x86→ARM translator becomes a second compiler backend.
 - **Networking:** done: PCI, an RTL8139 driver, ARP, IPv4, ICMP, UDP, DHCP, DNS, a TCP

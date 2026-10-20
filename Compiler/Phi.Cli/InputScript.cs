@@ -11,6 +11,8 @@ namespace Phi.Cli
     ///   expect TEXT       wait until the serial output contains TEXT (up to 10 s)
     ///   wait MS           pause
     ///   type TEXT         press the keys for TEXT, one at a time
+    ///   pixel X Y RRGGBB  check the color on the screen at (X, Y), in hex
+    ///   screenshot NAME   save the screen as NAME.png in the test's build folder
     ///   anything else     sent to the QEMU monitor as-is, e.g. sendkey ret, mouse_move 10 -5,
     ///                     mouse_button 1
     ///
@@ -34,8 +36,11 @@ namespace Phi.Cli
         };
 
         /// <returns>null when every line ran, otherwise what went wrong</returns>
-        public static string? Run(int port, IReadOnlyList<string> lines, Func<string> serial, CancellationToken cancel)
+        public static string? Run(int port, IReadOnlyList<string> lines, Func<string> serial, CancellationToken cancel,
+                                  string? folder = null)
         {
+            folder ??= Path.GetTempPath();
+            Screenshot? screen = null; // consecutive pixel checks share one screendump
             using TcpClient client = Connect(port, cancel);
             NetworkStream stream = client.GetStream();
 
@@ -61,6 +66,7 @@ namespace Phi.Cli
 
                 string word = line.Split(' ', 2)[0];
                 string rest = line.Length > word.Length ? line[(word.Length + 1)..] : "";
+                if (word != "pixel") screen = null;
 
                 switch (word)
                 {
@@ -84,12 +90,60 @@ namespace Phi.Cli
                         foreach (char c in rest) Send("sendkey " + KeyName(c));
                         break;
 
+                    case "pixel":
+                    {
+                        string[] parts = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (parts.Length != 3 || !int.TryParse(parts[0], out int x) || !int.TryParse(parts[1], out int y)
+                            || !int.TryParse(parts[2], System.Globalization.NumberStyles.HexNumber, null, out int wanted))
+                            return $"input script: expected 'pixel X Y RRGGBB' but found \"{line}\"";
+
+                        screen ??= Capture(Send, Path.Combine(folder, "pixel-check.ppm"), cancel);
+                        if (screen == null) return "input script: QEMU didn't save the screen";
+                        if (x < 0 || y < 0 || x >= screen.Width || y >= screen.Height)
+                            return $"input script: ({x}, {y}) is off the {screen.Width}x{screen.Height} screen";
+
+                        int got = screen.Pixel(x, y);
+                        if (got != wanted) return $"input script: the pixel at ({x}, {y}) is {got:X6}, not {wanted:X6}";
+                        break;
+                    }
+
+                    case "screenshot":
+                    {
+                        Screenshot? shot = Capture(Send, Path.Combine(folder, rest + ".ppm"), cancel);
+                        if (shot == null) return "input script: QEMU didn't save the screen";
+                        shot.SavePng(Path.Combine(folder, rest + ".png"));
+                        break;
+                    }
+
                     default:
                         Send(line);
                         break;
                 }
             }
 
+            return null;
+        }
+
+        /// <summary>Has QEMU save the screen as a PPM file, and reads it once it's complete.</summary>
+        static Screenshot? Capture(Action<string> send, string ppm, CancellationToken cancel)
+        {
+            if (File.Exists(ppm)) File.Delete(ppm);
+            send("screendump " + Path.GetFullPath(ppm).Replace('\\', '/'));
+
+            var clock = Stopwatch.StartNew();
+            while (clock.Elapsed < TimeSpan.FromSeconds(5) && !cancel.IsCancellationRequested)
+            {
+                try
+                {
+                    if (File.Exists(ppm) && Screenshot.ReadPpm(File.ReadAllBytes(ppm)) is Screenshot shot)
+                    {
+                        File.Delete(ppm);
+                        return shot;
+                    }
+                }
+                catch (IOException) { } // still being written
+                Thread.Sleep(50);
+            }
             return null;
         }
 

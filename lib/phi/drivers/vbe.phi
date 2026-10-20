@@ -1,0 +1,226 @@
+# Graphics mode on the Bochs/QEMU display adapter (PCI 1234:1111, QEMU's standard VGA),
+# with 32-bit color. 32-bit kernels.
+#
+#   use drivers.vbe;
+#   bln ok: (Screen.Start: 800 600);          # false without the adapter or the memory
+#   call Draw.Clear: Draw.BLACK;               # draw on the back buffer (gfx.draw) ...
+#   call Draw.Text: 10 10 'Hello' Draw.WHITE;
+#   call Screen.PresentAll;                    # ... then show it
+#   call Screen.Present: 10 10 40 16;          # or just the part that changed
+#   call Screen.MoveCursor: x y;               # a mouse pointer, drawn over the picture
+#
+# Nothing is drawn straight on the screen. Drawing goes to `back`, a buffer in memory,
+# and Present copies the parts that changed to the card, so the screen never shows a
+# half-drawn picture. The mouse pointer is drawn on the card's memory only, so moving
+# it never disturbs the picture underneath.
+#
+# The card's registers are two I/O ports, set with outw; the picture lives in a linear
+# framebuffer the card shows from its PCI memory (BAR 0), which Start maps into the
+# page tables. Start also copies the text font out of the card first (gfx.font), and
+# points Draw at the back buffer. It needs the heap for the back buffer
+# (width x height x 4 bytes).
+
+use drivers.pci;
+use memory.heap;
+use gfx.font;
+use gfx.draw;
+
+phi.Screen:Kernel
+{
+	const u32 VENDOR: 0x1234;
+	const u32 PRODUCT: 0x1111;
+	const u16 VBE_INDEX: 0x1CE;
+	const u16 VBE_DATA: 0x1CF;
+	const u16 VBE_ID: 0;
+	const u16 VBE_XRES: 1;
+	const u16 VBE_YRES: 2;
+	const u16 VBE_BPP: 3;
+	const u16 VBE_ENABLE: 4;
+	const u16 VBE_ON: 0x01;
+	const u16 VBE_LINEAR: 0x40;
+	const u16 VBE_ID_LINEAR: 0xB0C2;          # the first version with a linear framebuffer
+
+	int width: 0;
+	int height: 0;
+	u32 framebuffer: 0;                       # its physical address
+	ptr<u32> front: 0;                        # what the card shows
+	ptr<u32> back: 0;                         # what you draw on
+	bln on: false;
+
+	# the mouse pointer, as last drawn on the screen
+	int cursor_x: 0;
+	int cursor_y: 0;
+	bln cursor_shown: false;
+	const int CURSOR_W: 12;
+	const int CURSOR_H: 19;
+	str cursor_rows:
+		'k...........'
+		'kk..........'
+		'kwk.........'
+		'kwwk........'
+		'kwwwk.......'
+		'kwwwwk......'
+		'kwwwwwk.....'
+		'kwwwwwwk....'
+		'kwwwwwwwk...'
+		'kwwwwwwwwk..'
+		'kwwwwwwwwwk.'
+		'kwwwwwwkkkkk'
+		'kwwwkwwk....'
+		'kwwkkwwk....'
+		'kwk..kwwk...'
+		'kk...kwwk...'
+		'k.....kwwk..'
+		'......kwwk..'
+		'.......kk...';
+
+	# for the copying loop below
+	u32 screen_copy_from: 0;
+	u32 screen_copy_to: 0;
+	u32 screen_copy_count: 0;
+
+	# switch to graphics, w x h pixels in 32-bit color; true if it worked
+	[Start: int w: 640; int h: 480;]
+		if on
+			return w is width and h is height;
+		;;
+
+		u32 card: (Pci.Find: VENDOR PRODUCT);
+		if card is Pci.NOT_FOUND
+			return false;
+		;;
+		framebuffer is (Pci.Bar: card 0) & 0xFFFFFFF0;
+		outw VBE_INDEX VBE_ID;
+		if framebuffer is 0 or inw VBE_DATA below VBE_ID_LINEAR
+			return false;
+		;;
+
+		back is new u32[w * h];
+		if back is 0
+			return false;
+		;;
+
+		# the font is only reachable while the card is still showing text
+		call Font.Load;
+
+		call SetRegister: VBE_ENABLE 0;
+		call SetRegister: VBE_XRES w;
+		call SetRegister: VBE_YRES h;
+		call SetRegister: VBE_BPP 32;
+		call SetRegister: VBE_ENABLE VBE_ON | VBE_LINEAR;
+
+		# the card may not support the size it was asked for
+		outw VBE_INDEX VBE_XRES;
+		u16 got_w: inw VBE_DATA;
+		outw VBE_INDEX VBE_YRES;
+		u16 got_h: inw VBE_DATA;
+		if got_w is not w or got_h is not h
+			call SetRegister: VBE_ENABLE 0;
+			free back;
+			back is 0;
+			return false;
+		;;
+
+		call Paging.MapDevice: framebuffer w * h * 4;
+		front is framebuffer;
+		width is w;
+		height is h;
+		on is true;
+		call Draw.Target: back w h;
+	[end: true]
+
+	[SetRegister: u16 index: 0; u16 value: 0;]
+		outw VBE_INDEX index;
+		outw VBE_DATA value;
+	[end]
+
+	# copy a rectangle of the back buffer to the screen
+	[Present: int x: 0; int y: 0; int w: 0; int h: 0;]
+		if not on
+			return;
+		;;
+		int x0: x;
+		int y0: y;
+		int x1: x + w;
+		int y1: y + h;
+		if x0 < 0
+			x0 is 0;
+		;;
+		if y0 < 0
+			y0 is 0;
+		;;
+		if x1 > width
+			x1 is width;
+		;;
+		if y1 > height
+			y1 is height;
+		;;
+		if x1 <= x0 or y1 <= y0
+			return;
+		;;
+
+		screen_copy_count is x1 - x0;
+		u32 offset: (y0 * width + x0) * 4;
+		screen_copy_from is back + offset;
+		screen_copy_to is front + offset;
+		while int row: y0; row < y1; row++;
+			call ScreenCopyRow;
+			screen_copy_from++ width * 4;
+			screen_copy_to++ width * 4;
+		;;
+
+		# the copy may have covered the pointer
+		if cursor_shown and x0 < cursor_x + CURSOR_W and cursor_x < x1 and y0 < cursor_y + CURSOR_H and cursor_y < y1
+			call DrawCursor;
+		;;
+	[end]
+
+	[PresentAll]
+		call Present: 0 0 width height;
+	[end]
+
+	# show the mouse pointer with its tip at (x, y)
+	[MoveCursor: int x: 0; int y: 0;]
+		call HideCursor;
+		cursor_x is x;
+		cursor_y is y;
+		cursor_shown is true;
+		call DrawCursor;
+	[end]
+
+	[HideCursor]
+		if cursor_shown
+			cursor_shown is false;
+			call Present: cursor_x cursor_y CURSOR_W CURSOR_H;
+		;;
+	[end]
+
+	[DrawCursor]
+		while int r: 0; r < CURSOR_H; r++;
+			int py: cursor_y + r;
+			if py >= 0 and py < height
+				ptr<u8> line: cursor_rows:r;
+				while int c: 0; c < CURSOR_W; c++;
+					int px: cursor_x + c;
+					u8 ch: line:c;
+					if px >= 0 and px < width and ch is not '.'
+						u32 color: 0xFFFFFF;
+						if ch is 'k'
+							color is 0;
+						;;
+						front:(py * width + px) is color;
+					;;
+				;;
+			;;
+		;;
+	[end]
+}
+
+asm.ScreenCopyRow
+{
+	mov esi, [{screen_copy_from}]
+	mov edi, [{screen_copy_to}]
+	mov ecx, [{screen_copy_count}]
+	rep movsd
+	ret
+}

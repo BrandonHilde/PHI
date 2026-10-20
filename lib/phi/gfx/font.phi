@@ -1,0 +1,43 @@
+# The 8x16 font, borrowed from the VGA card. 32-bit kernels.
+#
+#   use gfx.font;
+#   call Font.Load;              # while the screen is still in text mode
+#   u8 row: Font.glyphs:(ch * 16 + r);   # row r of character ch, leftmost pixel in bit 7
+#
+# In text mode the card keeps the shapes of its 256 characters (code page 437) in
+# memory plane 2, 32 bytes per character. Load points the card's memory window at
+# that plane and copies them out; Screen.Start (drivers.vbe) does this for you
+# before it switches to graphics.
+
+phi.Font:Kernel
+{
+	const int W: 8;
+	const int H: 16;
+	u8 glyphs[4096];
+	bln loaded: false;
+
+	[Load]
+		if not loaded
+			out 0x3C4 2;            # sequencer: write to plane 2 only
+			out 0x3C5 4;
+			out 0x3C4 4;            # sequencer: sequential addressing
+			out 0x3C5 7;
+			out 0x3CE 4;            # graphics controller: read from plane 2
+			out 0x3CF 2;
+			out 0x3CE 5;            # no odd/even addressing
+			out 0x3CF 0;
+			out 0x3CE 6;            # memory at 0xA0000, 64 KB
+			out 0x3CF 4;
+
+			ptr<u8> plane: 0xA0000;
+			unsafe
+				while int c: 0; c < 256; c++;
+					while int r: 0; r < 16; r++;
+						glyphs:(c * 16 + r) is plane:(c * 32 + r);
+					;;
+				;;
+			;;
+			loaded is true;
+		;;
+	[end]
+}

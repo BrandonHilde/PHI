@@ -91,7 +91,8 @@ namespace Phi.Cli
         /// and QEMU gets a few seconds to exit by itself (which finishes the file) once the output is done.
         /// </summary>
         public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
-                                                 IReadOnlyList<string>? input = null, string? recordTo = null)
+                                                 IReadOnlyList<string>? input = null, string? recordTo = null,
+                                                 string? screenshots = null)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
@@ -127,7 +128,7 @@ namespace Phi.Cli
             if (input != null)
             {
                 string Serial() { lock (gate) return serial.ToString(); }
-                script = Task.Run(() => InputScript.Run(monitorPort!.Value, input, Serial, cancel.Token));
+                script = Task.Run(() => InputScript.Run(monitorPort!.Value, input, Serial, cancel.Token, screenshots));
             }
 
             var clock = Stopwatch.StartNew();

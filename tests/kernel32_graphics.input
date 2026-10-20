@@ -1,0 +1,32 @@
+# every shape, checked on the real screen (after Present)
+expect drawn
+# a filled rectangle, both corners, and just outside it
+pixel 10 10 E0483E
+pixel 109 59 E0483E
+pixel 110 60 102030
+# an outline is one pixel wide
+pixel 200 10 FFFFFF
+pixel 249 59 FFFFFF
+pixel 201 11 102030
+# a line, both ends
+pixel 0 100 3DBE5A
+pixel 50 150 3DBE5A
+pixel 99 199 3DBE5A
+# a filled circle (radius 30) and an outline
+pixel 400 300 F5C542
+pixel 430 300 F5C542
+pixel 431 300 102030
+pixel 530 300 3CC8E0
+pixel 500 300 102030
+# a gradient from black to blue
+pixel 600 0 000000
+pixel 600 99 0000FF
+# the view: (-20, -20) is cut to the view's corner, and nothing spills out
+pixel 300 100 2F6FE4
+pixel 349 149 2F6FE4
+pixel 350 150 102030
+pixel 299 99 102030
+# the mouse pointer: black tip, white inside
+pixel 600 400 000000
+pixel 601 402 FFFFFF
+screenshot kernel32_graphics

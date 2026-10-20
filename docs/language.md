@@ -509,6 +509,54 @@ Nothing waits on an interrupt: the methods that wait (`Ping`, `Dns.Resolve`, `Tc
 ...) poll the card, and sleep a millisecond when it has nothing. Up to four TCP connections
 can be open at once, each with an 8 KB receive buffer.
 
+## Graphics and input (32-bit kernels)
+
+`drivers.vbe` switches QEMU's standard display adapter to graphics with 32-bit color,
+`gfx.draw` draws, and `drivers.input` reads the keyboard and mouse from their interrupts.
+
+```phi
+use drivers.vbe;
+use drivers.input;
+
+if (Screen.Start: 800 600)                     # false without the adapter (or the memory)
+    call Draw.Clear: Draw.BLACK;
+    call Draw.FillRect: 10 10 200 100 (Draw.Rgb: 40 90 200);
+    call Draw.Line: 0 0 799 599 Draw.WHITE;
+    call Draw.FillCircle: 400 300 50 Draw.YELLOW;
+    call Draw.Text: 20 20 'Hello' Draw.WHITE;  # the VGA font, 8 x 16 pixels a character
+    call Screen.PresentAll;                    # show it
+
+    call Input.Start;
+    call Input.SetArea: 800 600;               # where the mouse can go
+    while true
+        int key: (Input.NextKey);              # 0 if nothing was pressed
+        call Screen.MoveCursor: Input.mouse_x Input.mouse_y;
+    ;;
+;;
+```
+
+- **Drawing happens off screen.** `Draw` draws on `Screen.back`, a buffer in memory, and
+  `Screen.Present: x y w h` (or `PresentAll`) copies it to the screen, so the screen never
+  shows a half-drawn picture. The mouse pointer (`MoveCursor`, `HideCursor`) is drawn on the
+  screen only, over the picture.
+- **Views.** `Draw.SetView: x y w h` moves the origin to (x, y) and cuts all drawing to that
+  rectangle; `ResetView` undoes it. `Draw.Target: pixels w h` draws on a block of pixels of
+  your own instead, like an image being built.
+- **Shapes:** `Clear`, `FillRect`, `Rect`, `Pixel`, `GetPixel`, `HLine`, `VLine`, `Line`,
+  `Circle`, `FillCircle`, `Gradient` (top color to bottom color), `Blit` (copy an image),
+  `Char`, `Text` and `Number` (both return their width), `TextWidth`, `Centered`. Colors are
+  `0xRRGGBB`; `Draw.Rgb: r g b` makes one, and `Draw.RED` ... name a few.
+- **Keys** from `Input.NextKey` are characters (`'a'`, `'A'`, 13 for Enter, 27 for Esc) or
+  `Input.KEY_UP`, `KEY_F1` ... for keys that don't type one, with `MOD_SHIFT`, `MOD_CTRL` and
+  `MOD_ALT` added for the modifiers held (`key & Input.KEY_MASK` is the key alone).
+  `(Input.IsDown: 'a')` says whether a key is held now. `Input` replaces the built-in keyboard
+  driver, so don't also use `ask` or `OS.GetKey`.
+- **The mouse** is `Input.mouse_x`, `Input.mouse_y` and `Input.buttons` (bit 0 left, bit 1
+  right, bit 2 middle), kept inside the area given to `SetArea`.
+- `Paging.MapDevice: address bytes` makes other device memory reachable the same way.
+
+[samples/sketch.phi](../samples/sketch.phi) is a small drawing program using all three.
+
 ## Sound (32-bit kernels)
 
 `phi run` and `phi test` give every machine an AC'97 sound card, which `drivers.ac97` drives.

@@ -1,0 +1,334 @@
+# Drawing in 32-bit color: rectangles, lines, circles, gradients, images and text.
+# 32-bit kernels.
+#
+#   use drivers.vbe;                         # Screen.Start points Draw at its back buffer
+#   call Draw.FillRect: 10 10 100 50 Draw.BLUE;
+#   call Draw.Line: 0 0 639 479 (Draw.Rgb: 255 128 0);
+#   call Draw.FillCircle: 320 240 40 Draw.YELLOW;
+#   int w: (Draw.Text: 20 20 'Hello' Draw.WHITE);    # text returns how wide it was
+#   call Screen.PresentAll;                  # show what was drawn
+#
+# Pixels are u32 colors, 0xRRGGBB. Draw works on any block of pixels (Target), so it
+# can also draw into an image of your own. Everything is drawn relative to an origin
+# and cut to a clipping rectangle, both set with SetView: point the view at a window's
+# inside and code can draw at (0, 0) without spilling out of it.
+#
+# Text uses the VGA font (gfx.font), which must be loaded while the screen is still in
+# text mode; Screen.Start does that. Drawing uses class variables, so draw from one
+# place at a time (not from interrupt handlers).
+
+use gfx.font;
+
+phi.Draw:Kernel
+{
+	const u32 BLACK: 0x000000;
+	const u32 WHITE: 0xFFFFFF;
+	const u32 GRAY: 0x808080;
+	const u32 LIGHT_GRAY: 0xC0C0C0;
+	const u32 DARK_GRAY: 0x404040;
+	const u32 RED: 0xE0483E;
+	const u32 GREEN: 0x3DBE5A;
+	const u32 BLUE: 0x2F6FE4;
+	const u32 YELLOW: 0xF5C542;
+	const u32 CYAN: 0x3CC8E0;
+	const u32 MAGENTA: 0xC84FD8;
+	const u32 ORANGE: 0xF08A24;
+
+	# what is drawn on: width x height pixels, one row after another
+	ptr<u32> pixels: 0;
+	int width: 0;
+	int height: 0;
+
+	# the origin, and the clipping rectangle (x0, y0 inclusive; x1, y1 exclusive)
+	int origin_x: 0;
+	int origin_y: 0;
+	int clip_x0: 0;
+	int clip_y0: 0;
+	int clip_x1: 0;
+	int clip_y1: 0;
+
+	# for the assembly loops below
+	u32 draw_fill_to: 0;
+	u32 draw_fill_count: 0;
+	u32 draw_fill_color: 0;
+	u32 draw_copy_from: 0;
+	u32 draw_copy_to: 0;
+	u32 draw_copy_count: 0;
+
+	# draw on `w` x `h` pixels at `to`; the view becomes all of it
+	[Target: ptr<u32> to: 0; int w: 0; int h: 0;]
+		pixels is to;
+		width is w;
+		height is h;
+		call ResetView;
+	[end]
+
+	# draw relative to (x, y), and only inside the w x h rectangle there
+	[SetView: int x: 0; int y: 0; int w: 0; int h: 0;]
+		origin_x is x;
+		origin_y is y;
+		clip_x0 is (Max: x 0);
+		clip_y0 is (Max: y 0);
+		clip_x1 is (Min: x + w width);
+		clip_y1 is (Min: y + h height);
+	[end]
+
+	[ResetView]
+		call SetView: 0 0 width height;
+	[end]
+
+	[Rgb: int r: 0; int g: 0; int b: 0;]
+	[end: ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)]
+
+	[Min: int a: 0; int b: 0;]
+		if a < b
+			return a;
+		;;
+	[end: b]
+
+	[Max: int a: 0; int b: 0;]
+		if a > b
+			return a;
+		;;
+	[end: b]
+
+	# ------------------------------------------------------------ shapes
+
+	# the whole view in one color
+	[Clear: u32 color: 0;]
+		call FillRect: clip_x0 - origin_x clip_y0 - origin_y clip_x1 - clip_x0 clip_y1 - clip_y0 color;
+	[end]
+
+	[FillRect: int x: 0; int y: 0; int w: 0; int h: 0; u32 color: 0;]
+		int x0: (Max: x + origin_x clip_x0);
+		int y0: (Max: y + origin_y clip_y0);
+		int x1: (Min: x + origin_x + w clip_x1);
+		int y1: (Min: y + origin_y + h clip_y1);
+		if x1 <= x0 or y1 <= y0
+			return;
+		;;
+		draw_fill_color is color;
+		draw_fill_count is x1 - x0;
+		draw_fill_to is pixels + (y0 * width + x0) * 4;
+		while int row: y0; row < y1; row++;
+			call DrawFillRow;
+			draw_fill_to++ width * 4;
+		;;
+	[end]
+
+	[Pixel: int x: 0; int y: 0; u32 color: 0;]
+		int px: x + origin_x;
+		int py: y + origin_y;
+		if px >= clip_x0 and px < clip_x1 and py >= clip_y0 and py < clip_y1
+			pixels:(py * width + px) is color;
+		;;
+	[end]
+
+	# the color at (x, y), or 0 outside the view
+	[GetPixel: int x: 0; int y: 0;]
+		int px: x + origin_x;
+		int py: y + origin_y;
+		if px >= clip_x0 and px < clip_x1 and py >= clip_y0 and py < clip_y1
+			return pixels:(py * width + px);
+		;;
+	[end: 0]
+
+	[HLine: int x: 0; int y: 0; int w: 0; u32 color: 0;]
+		call FillRect: x y w 1 color;
+	[end]
+
+	[VLine: int x: 0; int y: 0; int h: 0; u32 color: 0;]
+		call FillRect: x y 1 h color;
+	[end]
+
+	# an outline, one pixel wide
+	[Rect: int x: 0; int y: 0; int w: 0; int h: 0; u32 color: 0;]
+		call FillRect: x y w 1 color;
+		call FillRect: x y + h - 1 w 1 color;
+		call FillRect: x y 1 h color;
+		call FillRect: x + w - 1 y 1 h color;
+	[end]
+
+	# from (x0, y0) to (x1, y1), both ends included (Bresenham's line)
+	[Line: int x0: 0; int y0: 0; int x1: 0; int y1: 0; u32 color: 0;]
+		int dx: x1 - x0;
+		int sx: 1;
+		if dx < 0
+			dx is -dx;
+			sx is -1;
+		;;
+		int dy: y1 - y0;
+		int sy: 1;
+		if dy < 0
+			dy is -dy;
+			sy is -1;
+		;;
+		int err: dx - dy;
+		while true
+			call Pixel: x0 y0 color;
+			if x0 is x1 and y0 is y1
+				break;
+			;;
+			int e2: err * 2;
+			if e2 > -dy
+				err-- dy;
+				x0++ sx;
+			;;
+			if e2 < dx
+				err++ dx;
+				y0++ sy;
+			;;
+		;;
+	[end]
+
+	# a circle's outline around (cx, cy)
+	[Circle: int cx: 0; int cy: 0; int r: 0; u32 color: 0;]
+		int x: r;
+		int y: 0;
+		int err: 1 - r;
+		while x >= y
+			call Pixel: cx + x cy + y color;
+			call Pixel: cx - x cy + y color;
+			call Pixel: cx + x cy - y color;
+			call Pixel: cx - x cy - y color;
+			call Pixel: cx + y cy + x color;
+			call Pixel: cx - y cy + x color;
+			call Pixel: cx + y cy - x color;
+			call Pixel: cx - y cy - x color;
+			y++;
+			if err < 0
+				err++ 2 * y + 1;
+			;;
+			else
+				x--;
+				err++ 2 * (y - x) + 1;
+			;;
+		;;
+	[end]
+
+	# a filled circle around (cx, cy)
+	[FillCircle: int cx: 0; int cy: 0; int r: 0; u32 color: 0;]
+		int dx: r;
+		while int dy: 0; dy <= r; dy++;
+			while dx * dx + dy * dy > r * r
+				dx--;
+			;;
+			call FillRect: cx - dx cy + dy 2 * dx + 1 1 color;
+			if dy > 0
+				call FillRect: cx - dx cy - dy 2 * dx + 1 1 color;
+			;;
+		;;
+	[end]
+
+	# a blend from one color at the top to another at the bottom
+	[Gradient: int x: 0; int y: 0; int w: 0; int h: 0; u32 top: 0; u32 bottom: 0;]
+		int r0: (top >> 16) & 255;
+		int g0: (top >> 8) & 255;
+		int b0: top & 255;
+		int r1: (bottom >> 16) & 255;
+		int g1: (bottom >> 8) & 255;
+		int b1: bottom & 255;
+		int span: (Max: h - 1 1);
+		while int i: 0; i < h; i++;
+			u32 color: (Rgb: r0 + (r1 - r0) * i / span g0 + (g1 - g0) * i / span b0 + (b1 - b0) * i / span);
+			call FillRect: x y + i w 1 color;
+		;;
+	[end]
+
+	# copy a w x h image to (x, y); its rows are `stride` pixels apart
+	[Blit: int x: 0; int y: 0; int w: 0; int h: 0; ptr<u32> image: 0; int stride: 0;]
+		int x0: x + origin_x;
+		int y0: y + origin_y;
+		int skip_x: (Max: clip_x0 - x0 0);
+		int skip_y: (Max: clip_y0 - y0 0);
+		int x1: (Min: x0 + w clip_x1);
+		int y1: (Min: y0 + h clip_y1);
+		x0++ skip_x;
+		y0++ skip_y;
+		if x1 <= x0 or y1 <= y0
+			return;
+		;;
+		draw_copy_count is x1 - x0;
+		draw_copy_to is pixels + (y0 * width + x0) * 4;
+		draw_copy_from is image + (skip_y * stride + skip_x) * 4;
+		while int row: y0; row < y1; row++;
+			call DrawCopyRow;
+			draw_copy_to++ width * 4;
+			draw_copy_from++ stride * 4;
+		;;
+	[end]
+
+	# ------------------------------------------------------------ text
+
+	# one character of the VGA font, 8 x 16 pixels, with its top left at (x, y)
+	[Char: int x: 0; int y: 0; u8 ch: 0; u32 color: 0;]
+		int sx: x + origin_x;
+		int sy: y + origin_y;
+		if sx + 8 <= clip_x0 or sx >= clip_x1 or sy + 16 <= clip_y0 or sy >= clip_y1
+			return;
+		;;
+		int glyph: ch * 16;
+		ptr<u32> p: pixels + (sy * width + sx) * 4;
+		unsafe
+			while int r: 0; r < 16; r++;
+				int py: sy + r;
+				u8 bits: Font.glyphs:(glyph + r);
+				if bits is not 0 and py >= clip_y0 and py < clip_y1
+					while int b: 0; b < 8; b++;
+						int px: sx + b;
+						if (bits & (0x80 >> b)) is not 0 and px >= clip_x0 and px < clip_x1
+							p:b is color;
+						;;
+					;;
+				;;
+				p++ width * 4;
+			;;
+		;;
+	[end]
+
+	# zero-terminated text; returns how wide it was
+	[Text: int x: 0; int y: 0; ptr<u8> text: 0; u32 color: 0;]
+		int i: 0;
+		while text:i is not 0
+			call Char: x + i * 8 y text:i color;
+			i++;
+		;;
+	[end: i * 8]
+
+	# how wide text would be
+	[TextWidth: ptr<u8> text: 0;]
+		int i: 0;
+		while text:i is not 0
+			i++;
+		;;
+	[end: i * 8]
+
+	# text centered in a w-wide space starting at x
+	[Centered: int x: 0; int y: 0; int w: 0; ptr<u8> text: 0; u32 color: 0;]
+		call Text: x + (w - (TextWidth: text)) / 2 y text color;
+	[end]
+
+	# a number, in decimal; returns how wide it was
+	[Number: int x: 0; int y: 0; int value: 0; u32 color: 0;]
+		str digits: [12];
+		digits is value;
+	[end: (Text: x y digits color)]
+}
+
+asm.DrawFillRow
+{
+	mov edi, [{draw_fill_to}]
+	mov ecx, [{draw_fill_count}]
+	mov eax, [{draw_fill_color}]
+	rep stosd
+	ret
+}
+
+asm.DrawCopyRow
+{
+	mov esi, [{draw_copy_from}]
+	mov edi, [{draw_copy_to}]
+	mov ecx, [{draw_copy_count}]
+	rep movsd
+	ret
+}

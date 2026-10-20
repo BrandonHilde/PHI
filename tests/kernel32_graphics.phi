@@ -1,0 +1,27 @@
+use drivers.vbe;
+
+phi.GraphicsTest:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	debug 'started ' ok ' ' Screen.width 'x' Screen.height '\n';
+
+	call Draw.Clear: 0x102030;
+	call Draw.FillRect: 10 10 100 50 Draw.RED;
+	call Draw.Rect: 200 10 50 50 Draw.WHITE;
+	call Draw.Line: 0 100 99 199 Draw.GREEN;
+	call Draw.FillCircle: 400 300 30 Draw.YELLOW;
+	call Draw.Circle: 500 300 30 Draw.CYAN;
+	call Draw.Gradient: 600 0 40 100 0x000000 0x0000FF;
+	int wide: (Draw.Text: 20 400 'PHI' Draw.WHITE);
+
+	# a view: drawing is moved to (300, 100) and cut to 50 x 50
+	call Draw.SetView: 300 100 50 50;
+	call Draw.FillRect: -20 -20 200 200 Draw.BLUE;
+	call Draw.ResetView;
+
+	call Screen.PresentAll;
+	call Screen.MoveCursor: 600 400;
+
+	debug 'text ' wide ' wide, red ' (Draw.GetPixel: 10 10) '\n';
+	debug 'drawn\n';
+}

@@ -138,7 +138,8 @@ namespace Phi.Cli
             {
                 var lines = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();
                 HeadlessResult partial = Qemu.RunHeadless(build.ImagePath, timeout,
-                    output => lines.All(l => Normalize(output).Contains(l)), input);
+                    output => lines.All(l => Normalize(output).Contains(l)), input,
+                    screenshots: Path.GetDirectoryName(build.ImagePath));
                 string text = Normalize(partial.Serial);
                 var missing = lines.Where(l => !text.Contains(l)).ToList();
                 if (missing.Count == 0 && partial.InputError == null) return null;
@@ -149,7 +150,8 @@ namespace Phi.Cli
             }
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
-                expected == null ? null : output => Normalize(output).Contains(expected), input, recording);
+                expected == null ? null : output => Normalize(output).Contains(expected), input, recording,
+                Path.GetDirectoryName(build.ImagePath));
 
             string actual = Normalize(run.Serial);
 

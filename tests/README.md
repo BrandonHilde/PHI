@@ -27,6 +27,8 @@ Two optional files change what a test does:
   | `expect TEXT` | wait until the output contains TEXT (up to 10 s) |
   | `wait MS` | pause |
   | `type TEXT` | press the keys for TEXT |
+  | `pixel X Y RRGGBB` | check the color on the screen at (X, Y), in hex |
+  | `screenshot NAME` | save the screen as `build/TEST/NAME.png` |
   | anything else | a QEMU monitor command, e.g. `sendkey ret`, `mouse_move 10 -5`, `mouse_button 1` |
 
 - **`NAME.contains`** replaces `.expected` when the output changes from build to build

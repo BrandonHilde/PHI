@@ -8,6 +8,7 @@
 # - the rest of RAM is mapped in 4 MB pages
 # - anything past the end of RAM (or a null pointer) stops the kernel with the
 #   panic screen, which shows the address in cr2
+# - MapDevice adds a device's memory, like a framebuffer, at its own address
 
 use memory.frames;
 
@@ -15,6 +16,7 @@ phi.Paging:Kernel
 {
 	const u32 PAGE_PRESENT: 1;
 	const u32 PAGE_WRITABLE: 2;
+	const u32 PAGE_NO_CACHE: 0x10;       # for device memory: every read and write reaches it
 	const u32 PAGE_LARGE: 0x80;          # a 4 MB page (needs CR4.PSE)
 	const u32 PAGE_SIZE: 4096;
 	const u32 LARGE_PAGE_SIZE: 0x400000;
@@ -44,6 +46,20 @@ phi.Paging:Kernel
 
 		call EnablePaging;
 	[end]
+
+	# Make `bytes` of device memory at physical `address` reachable at that address, in
+	# 4 MB pages. Programs started afterwards see it too (each copies these mappings).
+	[MapDevice: u32 address: 0; u32 bytes: 0;]
+		if bytes is not 0
+			u32 last: (address + bytes - 1) / LARGE_PAGE_SIZE;
+			while u32 k: address / LARGE_PAGE_SIZE; k <= last; k++;
+				if page_directory:k is 0      # RAM that's already mapped stays as it is
+					page_directory:k is (k * LARGE_PAGE_SIZE) | PAGE_PRESENT | PAGE_WRITABLE | PAGE_LARGE | PAGE_NO_CACHE;
+				;;
+			;;
+			call FlushTlb;
+		;;
+	[end]
 }
 
 asm.EnablePaging
@@ -56,5 +72,12 @@ asm.EnablePaging
 	mov eax, cr0
 	or eax, 0x80000000          ; PG: paging on
 	mov cr0, eax
+	ret
+}
+
+asm.FlushTlb
+{
+	mov eax, cr3                ; reloading cr3 forgets every cached translation
+	mov cr3, eax
 	ret
 }

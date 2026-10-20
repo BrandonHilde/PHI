@@ -146,6 +146,6 @@ kernels and user programs, and PHI OS ties them together. Next, roughly in order
 
 1. A heap for user programs, so `new` works there too
 2. Growable strings
-3. Framebuffer graphics in 32-bit kernels
+3. A GUI toolkit (windows and widgets) on top of the graphics library
 4. Later: checking TLS certificates, 64-bit, an ARM backend, C compatibility, and
    rewriting the compiler in PHI (see [Plan.md](./Plan.md#later))

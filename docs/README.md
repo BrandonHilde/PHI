@@ -48,6 +48,7 @@ docs/examples` boots each one and checks its output.
 | [samples/terminal.phi](../samples/terminal.phi) | a single kernel with a command line, a clock and a file viewer |
 | [samples/kernel.phi](../samples/kernel.phi) | a small 32-bit kernel that prints the memory map |
 | [samples/arcade.phi](../samples/arcade.phi) | Pong as a 16-bit program in graphics mode |
+| [samples/sketch.phi](../samples/sketch.phi) | a drawing program: 640x480 graphics, the mouse and keyboard, in a 32-bit kernel |
 | [lib/phi](../lib/phi) | the standard library, in PHI: drivers, memory, the file system, processes |
 
 ## Contributing

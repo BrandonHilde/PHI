@@ -1,0 +1,130 @@
+# Sketch: draw with the mouse, in 640 x 480 graphics.
+#
+#   phi run samples/sketch.phi
+#
+# Click in QEMU's window to give it the mouse (Ctrl+Alt+G gives it back). Hold the left
+# button to draw; keys 1 to 8 pick a color, + and - change the brush, C clears.
+#
+# It uses three parts of the standard library: drivers.vbe for the screen, gfx.draw for
+# drawing on it, and drivers.input for the keyboard and mouse.
+
+use drivers.vbe;
+use drivers.input;
+
+phi.Sketch:Kernel
+{
+	const int BAR: 32;                         # the toolbar along the top
+	u32 colors: 0xFFFFFF 0xE0483E 0xF08A24 0xF5C542 0x3DBE5A 0x3CC8E0 0x2F6FE4 0xC84FD8;
+	int current: 0;
+	int brush: 4;
+	int last_x: -1;
+	int last_y: -1;
+
+	if not (Screen.Start: 640 480)
+		log 'Sketch needs the standard VGA adapter of QEMU or Bochs.\n';
+	;;
+	else
+		call Input.Start;
+		call Input.SetArea: Screen.width Screen.height;
+		call Draw.Clear: Draw.BLACK;
+		call DrawToolbar;
+		call Screen.PresentAll;
+		call Run;
+	;;
+
+	[Run]
+		while true
+			call HandleKeys;
+
+			int x: Input.mouse_x;
+			int y: Input.mouse_y;
+			if (Input.buttons & 1) is not 0 and y atleast BAR + brush
+				if last_x < 0
+					call Stroke: x y x y;
+				;;
+				else
+					call Stroke: last_x last_y x y;
+				;;
+				last_x is x;
+				last_y is y;
+			;;
+			else
+				last_x is -1;
+			;;
+
+			call Screen.MoveCursor: x y;
+			call OS.Sleep: 10;
+		;;
+	[end]
+
+	[HandleKeys]
+		while true
+			int key: (Input.NextKey) & Input.KEY_MASK;
+			if key is 0
+				return;
+			;;
+			if key >= '1' and key <= '8'
+				current is key - '1';
+			;;
+			elif (key is '+' or key is '=') and brush < 20
+				brush++;
+			;;
+			elif key is '-' and brush > 1
+				brush--;
+			;;
+			elif key is 'c' or key is 'C'
+				call Draw.FillRect: 0 BAR Screen.width Screen.height - BAR Draw.BLACK;
+				call Screen.PresentAll;
+			;;
+			call DrawToolbar;
+			call Screen.Present: 0 0 Screen.width BAR;
+		;;
+	[end]
+
+	# a line of brush dabs from (x0, y0) to (x1, y1), then show the part that changed
+	[Stroke: int x0: 0; int y0: 0; int x1: 0; int y1: 0;]
+		int dx: x1 - x0;
+		int dy: y1 - y0;
+		int steps: (Abs: dx);
+		if (Abs: dy) > steps
+			steps is (Abs: dy);
+		;;
+		steps is steps / 2 + 1;
+
+		# keep the paint off the toolbar
+		call Draw.SetView: 0 BAR Screen.width Screen.height - BAR;
+		while int i: 0; i <= steps; i++;
+			call Draw.FillCircle: x0 + dx * i / steps y0 + dy * i / steps - BAR brush colors:current;
+		;;
+		call Draw.ResetView;
+
+		int left: x0;
+		if x1 < left
+			left is x1;
+		;;
+		int top: y0;
+		if y1 < top
+			top is y1;
+		;;
+		call Screen.Present: left - brush top - brush (Abs: dx) + 2 * brush + 1 (Abs: dy) + 2 * brush + 1;
+	[end]
+
+	[Abs: int n: 0;]
+		if n < 0
+			return -n;
+		;;
+	[end: n]
+
+	[DrawToolbar]
+		call Draw.Gradient: 0 0 Screen.width BAR 0x2B3550 0x1A2035;
+		while int i: 0; i < colors.len; i++;
+			int x: 8 + i * 28;
+			call Draw.FillRect: x 6 20 20 colors:i;
+			if i is current
+				call Draw.Rect: x - 3 3 26 26 Draw.WHITE;
+			;;
+		;;
+		call Draw.FillCircle: 260 16 brush colors:current;
+		call Draw.Text: 290 8 '1-8 color  +/- brush  C clear' 0xC8D0E0;
+	[end]
+}

@@ -1,0 +1,22 @@
+use drivers.input;
+
+phi.InputTest:Kernel
+{
+	call Input.Start;
+	debug 'ready\n';
+
+	# each key: its code, then its modifiers (1 shift, 2 ctrl, 4 alt)
+	int count: 0;
+	while count < 9
+		int key: (Input.NextKey);
+		if key is not 0
+			debug (key & Input.KEY_MASK) ' ' (key >> 16) '\n';
+			count++;
+		;;
+	;;
+
+	# the mouse: wait for a click
+	while Input.buttons is 0
+	;;
+	debug 'click at ' Input.mouse_x ' ' Input.mouse_y ', buttons ' Input.buttons '\n';
+}

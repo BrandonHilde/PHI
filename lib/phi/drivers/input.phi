@@ -1,0 +1,312 @@
+# Keyboard and mouse drivers, on their own interrupt handlers. 32-bit kernels.
+#
+#   use drivers.input;
+#   call Input.Start;                  # takes over IRQ 1 (keyboard) and IRQ 12 (mouse)
+#   call Input.SetArea: 800 600;       # keep the mouse inside the screen (640 x 480 at first)
+#   int key: (Input.NextKey);          # 0 when nothing was pressed
+#   if (key & Input.KEY_MASK) is Input.KEY_LEFT ...
+#   if (key & Input.MOD_CTRL) is not 0 ...
+#   if (Input.IsDown: 'a') ...         # held right now, for games
+#   Input.mouse_x  Input.mouse_y  Input.buttons (bit 0 left, bit 1 right, bit 2 middle)
+#
+# Keys are characters for the keys that type one ('a', 'A', '1', '!', 13 for Enter,
+# 8 for Backspace, 27 for Esc), and KEY_UP, KEY_F1 ... for the others, including the
+# 0xE0 "extended" keys (arrows, Home, Delete). Each press also carries MOD_SHIFT,
+# MOD_CTRL and MOD_ALT bits for the modifiers held at the time.
+#
+# This replaces the built-in keyboard driver: a kernel that uses Input shouldn't also
+# use ask, OS.GetKey or OS.ReadKey.
+
+phi.Input:Kernel
+{
+	const int KEY_BACKSPACE: 8;
+	const int KEY_TAB: 9;
+	const int KEY_ENTER: 13;
+	const int KEY_ESCAPE: 27;
+	const int KEY_UP: 256;
+	const int KEY_DOWN: 257;
+	const int KEY_LEFT: 258;
+	const int KEY_RIGHT: 259;
+	const int KEY_HOME: 260;
+	const int KEY_END: 261;
+	const int KEY_DELETE: 262;
+	const int KEY_PAGEUP: 263;
+	const int KEY_PAGEDOWN: 264;
+	const int KEY_INSERT: 265;
+	const int KEY_F1: 266;                    # F1 to F12 are 266 to 277
+	const int MOD_SHIFT: 0x10000;
+	const int MOD_CTRL: 0x20000;
+	const int MOD_ALT: 0x40000;
+	const int KEY_MASK: 0xFFFF;
+	const int QUEUE: 64;
+
+	# scan code set 1, 0x00 to 0x39
+	u8 normal:
+		0 27 '1' '2' '3' '4' '5' '6' '7' '8' '9' '0' '-' '=' 8 9
+		'q' 'w' 'e' 'r' 't' 'y' 'u' 'i' 'o' 'p' '[' ']' 13 0 'a' 's'
+		'd' 'f' 'g' 'h' 'j' 'k' 'l' ';' '\'' '`' 0 '\\' 'z' 'x' 'c' 'v'
+		'b' 'n' 'm' ',' '.' '/' 0 '*' 0 ' ';
+	u8 shifted:
+		0 27 '!' '@' '#' '$' '%' '^' '&' '*' '(' ')' '_' '+' 8 9
+		'Q' 'W' 'E' 'R' 'T' 'Y' 'U' 'I' 'O' 'P' '{' '}' 13 0 'A' 'S'
+		'D' 'F' 'G' 'H' 'J' 'K' 'L' ':' '"' '~' 0 '|' 'Z' 'X' 'C' 'V'
+		'B' 'N' 'M' '<' '>' '?' 0 '*' 0 ' ';
+
+	int queue[64];
+	int head: 0;                              # written by the interrupt handler
+	int tail: 0;                              # read by NextKey
+	u8 down[512];
+	bln shift: false;
+	bln ctrl: false;
+	bln alt: false;
+	bln caps: false;
+	bln extended: false;
+
+	int area_w: 640;
+	int area_h: 480;
+	int mouse_x: 320;
+	int mouse_y: 240;
+	int buttons: 0;
+	u32 mouse_packets: 0;                     # how many mouse reports have arrived
+	u8 packet[3];
+	int packet_at: 0;
+
+	[Start]
+		call StartMouse;
+		call OS.SetIrqHandler: 1 addr KeyboardIrq;
+		call OS.SetIrqHandler: 12 addr MouseIrq;
+		call OS.UnmaskIrq: 2;                 # the second interrupt controller hangs off IRQ 2
+	[end]
+
+	# keep the mouse inside w x h, and put it in the middle
+	[SetArea: int w: 640; int h: 480;]
+		area_w is w;
+		area_h is h;
+		mouse_x is w / 2;
+		mouse_y is h / 2;
+	[end]
+
+	# the next key pressed (with MOD_ bits), or 0 if there is none
+	[NextKey]
+		if tail is head
+			return 0;
+		;;
+		int key: queue:tail;
+		tail is (tail + 1) % QUEUE;
+	[end: key]
+
+	# is the key held down right now (a character, or KEY_UP ...)
+	[IsDown: int key: 0;]
+		if key < 0 or key atleast down.len
+			return false;
+		;;
+	[end: down:key]
+
+	# ------------------------------------------------------------ keyboard
+
+	[KeyboardIrq]
+		u8 status: in 0x64;
+		u8 scan: in 0x60;
+		if (status & 0x20) is not 0
+			call MouseByte: scan;             # a mouse byte that arrived here
+			return;
+		;;
+		if scan is 0xE0
+			extended is true;
+			return;
+		;;
+
+		bln pressed: (scan & 0x80) is 0;
+		u8 code: scan & 0x7F;
+		bln was_extended: extended;
+		extended is false;
+
+		int key: (KeyFor: code was_extended pressed);
+		if key is 0
+			return;
+		;;
+		down:key is pressed;
+		if not pressed
+			return;
+		;;
+
+		int typed: key;
+		if key < 256
+			bln upper: shift;
+			if key >= 'a' and key <= 'z' and caps
+				upper is not upper;
+			;;
+			if upper
+				typed is shifted:code;
+			;;
+		;;
+		if shift
+			typed is typed | MOD_SHIFT;
+		;;
+		if ctrl
+			typed is typed | MOD_CTRL;
+		;;
+		if alt
+			typed is typed | MOD_ALT;
+		;;
+
+		int next: (head + 1) % QUEUE;
+		if next is not tail                   # a full queue drops the key
+			queue:head is typed;
+			head is next;
+		;;
+	[end]
+
+	# the key for a scan code; modifiers update their state and give 0
+	[KeyFor: u8 code: 0; bln was_extended: false; bln pressed: false;]
+		if code is 0x2A or code is 0x36
+			shift is pressed;
+			return 0;
+		;;
+		if code is 0x1D
+			ctrl is pressed;
+			return 0;
+		;;
+		if code is 0x38
+			alt is pressed;
+			return 0;
+		;;
+		if code is 0x3A
+			if pressed
+				caps is not caps;
+			;;
+			return 0;
+		;;
+		if code is 0x48
+			return KEY_UP;
+		;;
+		if code is 0x50
+			return KEY_DOWN;
+		;;
+		if code is 0x4B
+			return KEY_LEFT;
+		;;
+		if code is 0x4D
+			return KEY_RIGHT;
+		;;
+		if code is 0x47
+			return KEY_HOME;
+		;;
+		if code is 0x4F
+			return KEY_END;
+		;;
+		if code is 0x53
+			return KEY_DELETE;
+		;;
+		if code is 0x49
+			return KEY_PAGEUP;
+		;;
+		if code is 0x51
+			return KEY_PAGEDOWN;
+		;;
+		if code is 0x52
+			return KEY_INSERT;
+		;;
+		if code >= 0x3B and code <= 0x44
+			return KEY_F1 + code - 0x3B;
+		;;
+		if code is 0x57 or code is 0x58
+			return KEY_F1 + 10 + code - 0x57;
+		;;
+		if was_extended and code is 0x1C
+			return KEY_ENTER;                 # the keypad's Enter
+		;;
+		if was_extended and code is 0x35
+			return '/';
+		;;
+		if code < normal.len
+			return normal:code;
+		;;
+	[end: 0]
+
+	# ------------------------------------------------------------ mouse
+
+	[MouseIrq]
+		if (in 0x64 & 1) is not 0
+			call MouseByte: in 0x60;
+		;;
+	[end]
+
+	[MouseByte: u8 b: 0;]
+		if packet_at is 0 and (b & 0x08) is 0
+			return;                           # the first byte always has bit 3 set: wait for it
+		;;
+		packet:packet_at is b;
+		packet_at++;
+		if packet_at < 3
+			return;
+		;;
+		packet_at is 0;
+
+		u8 flags: packet:0;
+		if (flags & 0xC0) is 0                # no overflow
+			int dx: packet:1;
+			int dy: packet:2;
+			if (flags & 0x10) is not 0
+				dx is dx - 256;
+			;;
+			if (flags & 0x20) is not 0
+				dy is dy - 256;
+			;;
+			mouse_x is (Clamp: mouse_x + dx 0 area_w - 1);
+			mouse_y is (Clamp: mouse_y - dy 0 area_h - 1);   # the mouse counts up, the screen down
+		;;
+		buttons is flags & 7;
+		mouse_packets++;
+	[end]
+
+	[Clamp: int value: 0; int low: 0; int high: 0;]
+		if value < low
+			return low;
+		;;
+		if value > high
+			return high;
+		;;
+	[end: value]
+
+	# turn on the PS/2 mouse port and its interrupt, and start the mouse reporting
+	[StartMouse]
+		call WaitWrite;
+		out 0x64 0xA8;                        # enable the second (mouse) port
+		call WaitWrite;
+		out 0x64 0x20;                        # read the controller configuration
+		call WaitRead;
+		u8 config: in 0x60;
+		config is (config | 0x03) & 0xDF;     # both interrupts on, mouse clock on
+		call WaitWrite;
+		out 0x64 0x60;                        # write it back
+		call WaitWrite;
+		out 0x60 config;
+		call MouseCommand: 0xF6;              # defaults
+		call MouseCommand: 0xF4;              # start reporting
+		packet_at is 0;
+	[end]
+
+	[MouseCommand: u8 command: 0;]
+		call WaitWrite;
+		out 0x64 0xD4;                        # the next byte is for the mouse
+		call WaitWrite;
+		out 0x60 command;
+		call WaitRead;
+		u8 ack: in 0x60;                      # 0xFA
+	[end]
+
+	[WaitWrite]
+		int tries: 100000;
+		while tries > 0 and (in 0x64 & 2) is not 0
+			tries--;
+		;;
+	[end]
+
+	[WaitRead]
+		int tries: 100000;
+		while tries > 0 and (in 0x64 & 1) is 0
+			tries--;
+		;;
+	[end]
+}

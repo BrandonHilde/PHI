@@ -1,0 +1,13 @@
+expect ready
+sendkey a
+sendkey shift-a
+sendkey up
+sendkey delete
+sendkey ctrl-c
+sendkey f1
+sendkey kp_enter
+sendkey esc
+sendkey alt-x
+mouse_move 10 5
+wait 200
+mouse_button 1
