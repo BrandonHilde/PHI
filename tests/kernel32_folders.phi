@@ -1,0 +1,55 @@
+use fs.fat16;
+
+phi.Folders:Kernel
+{
+	FileInfo entries[16];
+	u32 free_before: (Fat.FreeClusters);
+
+	# a folder's entries, as data
+	call Show: '';
+	call Show: 'DOCS';
+	debug 'missing: ' (Fat.Entries: 'NOPE' addr entries:0 entries.len) '\n';
+
+	# make folders: once, not twice, and not inside a missing one
+	debug 'make: ' (Fat.MakeFolder: 'DOCS/OLD') (Fat.MakeFolder: 'DOCS/OLD') (Fat.MakeFolder: 'NOPE/NEW') '\n';
+	debug 'write: ' (Fat.WriteFile: 'DOCS/OLD/A.TXT' 'abc' 3) '\n';
+	call Show: 'DOCS/OLD';
+
+	# rename in place, then move to another folder
+	debug 'rename: ' (Fat.Rename: 'DOCS/OLD/A.TXT' 'DOCS/OLD/B.TXT') (Fat.Exists: 'DOCS/OLD/A.TXT') (Fat.FileSize: 'DOCS/OLD/B.TXT') '\n';
+	debug 'move: ' (Fat.Rename: 'DOCS/OLD/B.TXT' 'C.TXT') (Fat.Exists: 'DOCS/OLD/B.TXT') (Fat.FileSize: 'C.TXT') '\n';
+	debug 'onto a file: ' (Fat.Rename: 'C.TXT' 'README.TXT') '\n';
+
+	# delete folders: only empty ones
+	debug 'delete: ' (Fat.DeleteFolder: 'DOCS') (Fat.DeleteFolder: 'DOCS/OLD') (Fat.Exists: 'DOCS/OLD') '\n';
+
+	# move a folder with a file in it
+	debug 'folder move: ' (Fat.MakeFolder: 'TMP') (Fat.MakeFolder: 'TMP/SUB') (Fat.WriteFile: 'TMP/SUB/X.TXT' 'xyz' 3);
+	debug (Fat.Rename: 'TMP/SUB' 'DOCS/SUB') (Fat.FileSize: 'DOCS/SUB/X.TXT') (Fat.Exists: 'TMP/SUB') '\n';
+
+	# when it was written comes from the clock
+	int count: (Fat.Entries: '' addr entries:0 entries.len);
+	debug 'dated: ' (entries:(count - 1).year atleast 2024) '\n';
+
+	# everything made is gone again: the same free space
+	call Fat.Delete: 'DOCS/SUB/X.TXT';
+	call Fat.DeleteFolder: 'DOCS/SUB';
+	call Fat.DeleteFolder: 'TMP';
+	call Fat.Delete: 'C.TXT';
+	debug 'free space back: ' (Fat.FreeClusters) is free_before '\n';
+
+	[Show: ptr<u8> path: 0;]
+		int count: (Fat.Entries: path addr entries:0 entries.len);
+		debug '[' path '] ' count ':';
+		while int i: 0; i < count; i++;
+			debug ' ' addr entries:i.name;
+			if entries:i.folder
+				debug '/';
+			;;
+			else
+				debug ' ' entries:i.size;
+			;;
+		;;
+		debug '\n';
+	[end]
+}

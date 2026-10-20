@@ -452,7 +452,15 @@ call size is Fat.List: '';                              # prints the root folder
 | `WriteFile: path data length` → | create or replace a file; 0 if a folder is missing, the folder is full, or the disk is full |
 | `Delete: path` → | remove a file |
 | `List: path` → | print a folder (`''` is the root); returns how many entries it has |
+| `Entries: path into max` → | copy up to `max` of a folder's entries into a `FileInfo` array (`addr entries:0`); how many, or -1 |
+| `MakeFolder: path` → | make a folder; 0 if it's already there or its parent isn't |
+| `DeleteFolder: path` → | remove a folder, which must be empty |
+| `Rename: from to` → | rename a file or folder, or move it to another folder; 0 if `to` exists |
 | `FreeClusters` → | free 2 KB clusters left |
+
+A `FileInfo` has the entry's `name` (`NAME.EXT`, ending with a zero, so `log addr info.name`
+prints it), `size`, `folder` (true for a folder), and when it was last written: `year`,
+`month`, `day`, `hour`, `minute`. Files and folders get that from the clock (`drivers.rtc`).
 
 Case doesn't matter in paths. Long file names aren't read, and folders don't grow, so
 each folder holds as many new files as it has free entries (the root holds 511). Changes

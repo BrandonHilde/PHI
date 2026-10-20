@@ -9,14 +9,23 @@
 #   call ok is Fat.Delete: 'OLD.TXT';
 #   call count is Fat.List: '';                              # prints a directory
 #
+#   FileInfo entries[64];
+#   int count: (Fat.Entries: 'DOCS' addr entries:0 entries.len);   # a folder's entries
+#   log entries:0.name ' ' entries:0.size ' ' entries:0.folder;
+#   call ok is Fat.MakeFolder: 'DOCS/OLD';
+#   call ok is Fat.Rename: 'DOCS/NOTES.TXT' 'DOCS/OLD/NOTES1.TXT';   # can move, too
+#   call ok is Fat.DeleteFolder: 'DOCS/OLD';                 # only when it's empty
+#
 # Paths use / between folders and 8.3 names (README.TXT, DOCS/NOTES.TXT); case
 # doesn't matter. Long file names aren't read. New files can go in any existing
-# folder that has a free entry (folders don't grow yet). `phi build` fills the
-# disk from the program's NAME.rootfs/ (or rootfs/) folder.
+# folder that has a free entry (folders don't grow yet). Files and folders get the
+# date and time from the clock when they're written. `phi build` fills the disk from
+# the program's NAME.rootfs/ (or rootfs/) folder.
 #
 # The whole FAT is kept in memory and written back after every change.
 
 use drivers.disk;
+use drivers.rtc;
 use memory.heap;
 
 # the start of the partition's first sector: the BIOS Parameter Block
@@ -53,6 +62,19 @@ struct.DirEntry
 	u16 write_date;
 	u16 cluster;            # first cluster of the data (0 for an empty file)
 	u32 size;
+}
+
+# one entry of a folder, from Fat.Entries
+struct.FileInfo
+{
+	u8 name[13];            # NAME.EXT, ending with a zero
+	u32 size;               # in bytes (0 for a folder)
+	bln folder;
+	u16 year;               # when it was last written (0 if the disk doesn't say)
+	u8 month;
+	u8 day;
+	u8 hour;
+	u8 minute;
 }
 
 phi.Fat:Kernel
@@ -304,9 +326,11 @@ phi.Fat:Kernel
 					e:0.name:c is wanted_name:c;
 				;;
 				e:0.attributes is ATTR_ARCHIVE;
+				call Stamp: e true;
 			;;
 			e:0.cluster is first;
 			e:0.size is length;
+			call Stamp: e false;
 			call ok is Disk.Write: slotSector 1 sector_buffer;
 		;;
 
@@ -330,6 +354,175 @@ phi.Fat:Kernel
 		;;
 	[end: ok]
 
+	# ------------------------------------------------------------ folders
+
+	# the entries of a folder ('' is the root) copied into `into`, at most max of them;
+	# returns how many, or -1 if there's no such folder
+	[Entries: ptr<u8> path: 0; ptr<FileInfo> into: 0; int max: 0;]
+		u32 directory: (FolderCluster: path);
+		if directory is NO_FOLDER
+			return -1;
+		;;
+
+		int count: 0;
+		while u32 n: 0; count < max; n++;
+			u32 sector: (DirectorySector: directory n);
+			if sector is 0 or not (Disk.Read: sector 1 sector_buffer)
+				break;
+			;;
+			while u32 i: 0; i < 16 and count < max; i++;
+				ptr<DirEntry> e: sector_buffer + i * 32;
+				u8 first: e:0.name:0;
+				if first is 0
+					return count;                 # nothing after this entry is in use
+				;;
+				if first is not ENTRY_DELETED and first is not '.' and (e:0.attributes & ATTR_VOLUME) is 0
+					call DisplayName: e;
+					ptr<FileInfo> info: into + count * sizeof FileInfo;
+					while int c: 0; c <= display_name.len; c++;
+						info:0.name:c is display_name:c;
+					;;
+					info:0.folder is (e:0.attributes & ATTR_DIRECTORY) is not 0;
+					info:0.size is e:0.size;
+					u16 date: e:0.write_date;
+					u16 time: e:0.write_time;
+					info:0.year is 0;
+					if date is not 0
+						info:0.year is 1980 + (date >> 9);
+					;;
+					info:0.month is (date >> 5) & 15;
+					info:0.day is date & 31;
+					info:0.hour is time >> 11;
+					info:0.minute is (time >> 5) & 63;
+					count++;
+				;;
+			;;
+		;;
+	[end: count]
+
+	# make a folder; false if it's there already, its parent isn't, or there's no room
+	[MakeFolder: ptr<u8> path: 0;]
+		if (Resolve: path) or not parent_found
+			return false;
+		;;
+		u32 parent: parent_directory;
+		if not (FindFreeSlot: parent)
+			return false;
+		;;
+		u32 slot_sector: found_sector;
+		u32 slot_index: found_index;
+
+		u32 cluster: (FindFreeCluster);
+		if cluster is 0
+			return false;                     # the disk is full
+		;;
+		fat_table:cluster is CHAIN_LAST;
+
+		# the new folder's first cluster: '.' (itself) and '..' (its parent), then nothing
+		while u32 k: 0; k < cluster_bytes; k++;
+			cluster_buffer:k is 0;
+		;;
+		ptr<DirEntry> dot: cluster_buffer;
+		call FillEntry: dot '.          ' ATTR_DIRECTORY cluster;
+		ptr<DirEntry> dotdot: cluster_buffer + 32;
+		call FillEntry: dotdot '..         ' ATTR_DIRECTORY parent;
+		if not (Disk.Write: (ClusterSector: cluster) sectors_per_cluster cluster_buffer)
+			return false;
+		;;
+
+		# its entry in the parent
+		if not (Disk.Read: slot_sector 1 sector_buffer)
+			return false;
+		;;
+		ptr<DirEntry> e: sector_buffer + slot_index * 32;
+		call FillEntry: e addr wanted_name ATTR_DIRECTORY cluster;
+	[end: (Disk.Write: slot_sector 1 sector_buffer) and (SaveFat)]
+
+	# delete a folder, which must be empty
+	[DeleteFolder: ptr<u8> path: 0;]
+		if not (Resolve: path) or (found.attributes & ATTR_DIRECTORY) is 0
+			return false;
+		;;
+		u32 entry_sector: found_sector;
+		u32 entry_index: found_index;
+		u32 cluster: found.cluster;
+
+		FileInfo any[1];
+		if (Entries: path addr any:0 1) is not 0
+			return false;                     # not empty
+		;;
+
+		call FreeChain: cluster;
+		if not (Disk.Read: entry_sector 1 sector_buffer)
+			return false;
+		;;
+		sector_buffer:(entry_index * 32) is ENTRY_DELETED;
+	[end: (Disk.Write: entry_sector 1 sector_buffer) and (SaveFat)]
+
+	# rename a file or folder, or move it to another folder; false if `from` isn't there,
+	# `to` is, or the folder for `to` doesn't exist or has no room
+	[Rename: ptr<u8> from: 0; ptr<u8> to: 0;]
+		if not (Resolve: from)
+			return false;
+		;;
+		DirEntry moving;
+		ptr<u8> source: addr found;
+		ptr<u8> copy: addr moving;
+		while int b: 0; b < sizeof DirEntry; b++;
+			copy:b is source:b;
+		;;
+		u32 old_sector: found_sector;
+		u32 old_index: found_index;
+		u32 old_parent: parent_directory;
+
+		if (Resolve: to) or not parent_found
+			return false;
+		;;
+		u32 new_parent: parent_directory;
+		u8 new_name[11];
+		while int c: 0; c < 11; c++;
+			new_name:c is wanted_name:c;
+		;;
+
+		if new_parent is old_parent
+			# the same folder: just the name changes
+			if not (Disk.Read: old_sector 1 sector_buffer)
+				return false;
+			;;
+			ptr<DirEntry> e: sector_buffer + old_index * 32;
+			while int d: 0; d < 11; d++;
+				e:0.name:d is new_name:d;
+			;;
+			return (Disk.Write: old_sector 1 sector_buffer);
+		;;
+
+		# another folder: a new entry there, then the old one goes
+		if not (FindFreeSlot: new_parent) or not (Disk.Read: found_sector 1 sector_buffer)
+			return false;
+		;;
+		ptr<u8> slot: sector_buffer + found_index * 32;
+		while int m: 0; m < sizeof DirEntry; m++;
+			slot:m is copy:m;
+		;;
+		while int n: 0; n < 11; n++;
+			slot:n is new_name:n;
+		;;
+		if not (Disk.Write: found_sector 1 sector_buffer) or not (Disk.Read: old_sector 1 sector_buffer)
+			return false;
+		;;
+		sector_buffer:(old_index * 32) is ENTRY_DELETED;
+		if not (Disk.Write: old_sector 1 sector_buffer)
+			return false;
+		;;
+
+		# a folder that moved has a new parent for its '..'
+		if (moving.attributes & ATTR_DIRECTORY) is not 0 and (ReadCluster: moving.cluster)
+			ptr<DirEntry> dotdot: cluster_buffer + 32;
+			dotdot:0.cluster is new_parent;
+			return (Disk.Write: (ClusterSector: moving.cluster) sectors_per_cluster cluster_buffer);
+		;;
+	[end: true]
+
 	[FreeClusters]
 		u32 count: 0;
 		while u32 c: 2; c < cluster_count + 2; c++;
@@ -340,6 +533,49 @@ phi.Fat:Kernel
 	[end: count]
 
 	# ------------------------------------------------------------ inside the file system
+
+	const u32 NO_FOLDER: 0xFFFFFFFF;
+
+	# the first cluster of a folder ('' is the root, 0), or NO_FOLDER
+	[FolderCluster: ptr<u8> path: 0;]
+		while path:0 is '/'
+			path++;
+		;;
+		if path:0 is 0
+			return 0;
+		;;
+		if not (Resolve: path) or (found.attributes & ATTR_DIRECTORY) is 0
+			return NO_FOLDER;
+		;;
+	[end: found.cluster]
+
+	# a fresh directory entry: an 11-character name, attributes and first cluster
+	[FillEntry: ptr<DirEntry> e: 0; ptr<u8> name: 0; u8 attributes: 0; u32 cluster: 0;]
+		ptr<u8> bytes: e;
+		while int b: 0; b < sizeof DirEntry; b++;
+			bytes:b is 0;
+		;;
+		while int c: 0; c < 11; c++;
+			e:0.name:c is name:c;
+		;;
+		e:0.attributes is attributes;
+		e:0.cluster is cluster;
+		call Stamp: e true;
+	[end]
+
+	# the date and time from the clock, as FAT keeps them; `created` sets the creation time too
+	[Stamp: ptr<DirEntry> e: 0; bln created: false;]
+		call Rtc.Read;
+		u16 date: ((Rtc.year - 1980) << 9) | (Rtc.month << 5) | Rtc.day;
+		u16 time: (Rtc.hour << 11) | (Rtc.minute << 5) | (Rtc.second / 2);
+		e:0.write_date is date;
+		e:0.write_time is time;
+		e:0.access_date is date;
+		if created
+			e:0.create_date is date;
+			e:0.create_time is time;
+		;;
+	[end]
 
 	# find a path; true if it exists (found, found_sector, found_index describe it)
 	[Resolve: ptr<u8> path: 0;]

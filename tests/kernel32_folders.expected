@@ -1,0 +1,13 @@
+[] 2: DOCS/ README.TXT 76
+[DOCS] 2: LONG.TXT 5000 NOTES.TXT 18
+missing: -1
+make: 100
+write: 1
+[DOCS/OLD] 1: A.TXT 3
+rename: 103
+move: 103
+onto a file: 0
+delete: 010
+folder move: 111130
+dated: 1
+free space back: 1
