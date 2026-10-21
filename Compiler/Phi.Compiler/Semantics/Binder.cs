@@ -79,6 +79,16 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
         readonly Dictionary<string, StructSymbol> structs = new();
         readonly HashSet<VarDecl> loopCounters = new();
+
+        /// <summary>
+        /// Method variables whose name is declared more than once, in separate blocks (two
+        /// branches of an if, a loop and a later block). Each is seen only in its own block.
+        /// </summary>
+        readonly HashSet<VariableSymbol> blockScoped = new();
+
+        /// <summary>The block-scoped variables in sight while binding blockMethod: one table per open block.</summary>
+        readonly List<Dictionary<string, VariableSymbol>> blockNames = new();
+        MethodSymbol? blockMethod;
         readonly HashSet<StructSymbol> slotsDone = new();
         int unsafeDepth;
 
@@ -221,8 +231,12 @@ namespace Phi.Compiler.Semantics
                         if (local != null)
                             Error(local.Span, $"a parameter's default can't use the method's own variables or parameters ('{((NameExpr)local).Name}')");
                     }
+                    blockMethod = m.Symbol;
+                    blockNames.Add(new());
                     BindStatements(m.Body, ms, classLevel: false);
                     ReturnTypeOf(m.Symbol);
+                    blockNames.Clear();
+                    blockMethod = null;
                 }
             }
 
@@ -594,6 +608,107 @@ namespace Phi.Compiler.Semantics
             }
         }
 
+        /// <summary>A block of a method (its body, a branch of an if, a loop), for which declarations can see each other.</summary>
+        sealed class Block
+        {
+            public Block? Parent { get; init; }
+            public bool Within(Block other) => this == other || (Parent?.Within(other) ?? false);
+        }
+
+        /// <summary>Like CollectDeclarations, with the block each declaration is in. A loop's counter is in the loop.</summary>
+        IEnumerable<(Stmt Decl, Block Block)> CollectBlockDeclarations(IEnumerable<Stmt> body, Block block)
+        {
+            foreach (Stmt s in body)
+            {
+                switch (s)
+                {
+                    case VarDecl or ConstDecl:
+                        yield return (s, block);
+                        break;
+                    case IfStmt i:
+                        foreach (var d in CollectBlockDeclarations(i.Then, new Block { Parent = block })) yield return d;
+                        if (i.Else != null)
+                            foreach (var d in CollectBlockDeclarations(i.Else, new Block { Parent = block })) yield return d;
+                        break;
+                    case UnsafeStmt u:
+                        foreach (var d in CollectBlockDeclarations(u.Body, block)) yield return d;
+                        break;
+                    case WhileStmt w:
+                        var loop = new Block { Parent = block };
+                        if (w.Init != null)
+                        {
+                            loopCounters.Add(w.Init);
+                            yield return (w.Init, loop);
+                        }
+                        foreach (var d in CollectBlockDeclarations(w.Body, loop)) yield return d;
+                        break;
+                }
+            }
+        }
+
+        /// <summary>
+        /// A method's own variables. A name can be declared again where the earlier declaration
+        /// is out of sight (its block has ended); each declaration is then a variable of its own.
+        /// </summary>
+        void DeclareLocals(Scope scope, List<Stmt> body)
+        {
+            var declaredIn = new Dictionary<string, List<(VariableSymbol Symbol, Block Block)>>();
+
+            foreach (var (stmt, block) in CollectBlockDeclarations(body, new Block()).ToList())
+            {
+                if (stmt is not VarDecl decl || !declaredIn.TryGetValue(decl.Name, out var earlier))
+                {
+                    DeclareNames(scope, new[] { stmt }, isParameter: false);
+                    if (stmt is VarDecl { Symbol: VariableSymbol first } d && !first.IsParameter)
+                        declaredIn[d.Name] = new() { (first, block) };
+                    continue;
+                }
+
+                // two loops can each declare the same counter: while int i: 0; ...
+                if (loopCounters.Contains(decl) && earlier.FirstOrDefault(e => loopCounters.Contains(e.Symbol.Decl)
+                        && e.Symbol.Decl.Type.ToString() == decl.Type.ToString() && e.Symbol.Decl.BufferSize == null).Symbol is VariableSymbol counter)
+                {
+                    decl.Symbol = counter;
+                    counter.NeedsInitCode = true;
+                    continue;
+                }
+
+                if (earlier.Any(e => block.Within(e.Block)))
+                {
+                    Error(decl.NameSpan, $"'{decl.Name}' is already declared in {ScopeName(scope)}; a name can be declared again only in a separate block (another branch or loop)");
+                    continue;
+                }
+
+                // the earlier declarations' blocks have ended: this one is a variable of its own
+                if (blockScoped.Add(earlier[0].Symbol))
+                {
+                    scope.Names.Remove(decl.Name);
+                    scope.Names[$"{decl.Name}#0"] = earlier[0].Symbol;
+                }
+                var symbol = new VariableSymbol { Name = decl.Name, Decl = decl, Unit = scope.Unit };
+                decl.Symbol = symbol;
+                scope.Names[$"{decl.Name}#{earlier.Count}"] = symbol;
+                blockScoped.Add(symbol);
+                earlier.Add((symbol, block));
+                units[scope.Unit].Variables.Add(symbol);
+                DetermineStorage(symbol, scope);
+            }
+        }
+
+        /// <summary>A block-scoped variable comes into sight where it's declared, until its block ends.</summary>
+        void ShowInBlock(VarDecl decl)
+        {
+            if (decl.Symbol is VariableSymbol v && blockScoped.Contains(v) && blockNames.Count > 0)
+                blockNames[^1][decl.Name] = v;
+        }
+
+        void BindBlock(List<Stmt> body, Scope scope)
+        {
+            blockNames.Add(new());
+            BindStatements(body, scope, classLevel: false);
+            blockNames.RemoveAt(blockNames.Count - 1);
+        }
+
         void DeclareNames(Scope scope, IEnumerable<Stmt> decls, bool isParameter)
         {
             foreach (Stmt stmt in decls)
@@ -727,7 +842,7 @@ namespace Phi.Compiler.Semantics
             var scope = new Scope { Class = classScope.Class, Unit = unit, Method = symbol };
             methodScopes[method] = scope;
             DeclareNames(scope, method.Parameters, isParameter: true);
-            DeclareNames(scope, CollectDeclarations(method.Body), isParameter: false);
+            DeclareLocals(scope, method.Body);
         }
 
         /// <summary>Decides type, element count and str capacity from the declaration.</summary>
@@ -825,6 +940,8 @@ namespace Phi.Compiler.Semantics
                     StringExpr s => s.Value.Length + 1,
                     NameExpr n when Lookup(n.Name, scope) is VariableSymbol { Type.IsString: true } source =>
                         source.Capacity > 0 ? source.Capacity : DefaultStrCapacity,
+                    NameExpr n when Lookup(n.Name, scope) is VariableSymbol { Type: { IsPointer: true, Pointee: var p } } && p == PhiType.U8 =>
+                        DefaultStrCapacity, // the text a ptr<u8> points at
                     IndexExpr => DefaultStrCapacity, // could be an element of a str array
                     _ => IntTextCapacity,            // a number, written out as text
                 };
@@ -887,10 +1004,11 @@ namespace Phi.Compiler.Semantics
                         v.Label = shared.Contains(v.Name) ? $"VALUE_{cls.Name}_{v.Name}" : $"VALUE_{v.Name}";
 
                 foreach (var (method, scope) in methodScopes.Where(p => p.Value.Unit == unit.Kind))
-                    foreach (VariableSymbol v in scope.Names.Values.OfType<VariableSymbol>())
+                    foreach (var (key, symbol) in scope.Names)
                     {
+                        if (symbol is not VariableSymbol v) continue;
                         // the code generator gives it a place in the method's stack frame
-                        v.Label = $"VALUE_{method.Symbol!.Label}_{v.Name}";
+                        v.Label = $"VALUE_{method.Symbol!.Label}_{key.Replace('#', '_')}";
                         v.IsLocal = true;
                         if (!v.IsParameter) method.Symbol.Locals.Add(v);
                     }
@@ -901,6 +1019,11 @@ namespace Phi.Compiler.Semantics
 
         Symbol? LookupSimple(string name, Scope scope)
         {
+            if (scope.Method != null && scope.Method == blockMethod)
+                for (int i = blockNames.Count - 1; i >= 0; i--)
+                    if (blockNames[i].TryGetValue(name, out VariableSymbol? inBlock))
+                        return inBlock;
+
             if (scope.Method != null && methodScopes.TryGetValue(scope.Method.Decl, out Scope? ms)
                 && ms.Names.TryGetValue(name, out Symbol? local))
                 return local;
@@ -971,7 +1094,8 @@ namespace Phi.Compiler.Semantics
                 string m = members[i];
                 bool last = i == members.Length - 1;
 
-                if (m == "len" && last)
+                // a struct's own field named len comes first
+                if (m == "len" && last && type.Fields?.Find(m) == null)
                 {
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
                     if (type.IsString && offset == 0 && hops == null) return new LengthSymbol { Name = m, Str = root };
@@ -995,10 +1119,21 @@ namespace Phi.Compiler.Semantics
             return new FieldPathSymbol { Name = name, Root = root, Offset = offset, Type = type };
         }
 
+        /// <summary>A name used as a value that is really a method: how to call it there.</summary>
+        string? MethodHint(string name, string arguments, Scope scope)
+        {
+            if (ResolveCallee(name, scope) is not MethodSymbol and not BuiltinFunction && !IsStructMethodName(name, scope)) return null;
+            return $"'{name}' is a method; to use its result as a value, put the call in parentheses: ({name}{arguments})";
+        }
+
+        string SourceText(Expr e) => file.Text[e.Span.Start..e.Span.End];
+
         string DescribeMissing(string name, Scope scope)
         {
             UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Os : UnitKind.Boot;
             string head = name.Split('.')[0];
+            if (scope.Method != null && methodScopes[scope.Method.Decl].Names.ContainsKey(head + "#0"))
+                return $"'{head}' is declared only inside blocks (if, else, while) that have ended here; declare it before them to use it here";
             if (scope.Unit == UnitKind.Kernel) return $"unknown name '{name}'";
             bool inOtherUnit = classScopes.Values.Any(s => s.Unit == other && s.Names.ContainsKey(head));
             if (inOtherUnit)
@@ -1027,6 +1162,7 @@ namespace Phi.Compiler.Semantics
             {
                 case VarDecl decl:
                     BindVarDecl(decl, scope, classLevel);
+                    ShowInBlock(decl);
                     return decl;
 
                 case ConstDecl:
@@ -1036,7 +1172,9 @@ namespace Phi.Compiler.Semantics
                     foreach (Expr value in log.Values)
                     {
                         BindExpr(value, scope);
-                        if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsString)
+                        if (value.Type.IsArray && value.Type.Element == PhiType.U8 && value is NameExpr or MemberExpr)
+                            Error(value.Span, $"can't print a u8 array; to print the text in it (up to a zero byte), write addr {Describe(value)}");
+                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsString)
                             Error(value.Span, $"can't print a {value.Type}; print one element or field at a time");
                     }
                     return log;
@@ -1091,17 +1229,23 @@ namespace Phi.Compiler.Semantics
 
                 case IfStmt ifs:
                     BindCondition(ifs.Condition, scope);
-                    BindStatements(ifs.Then, scope, classLevel: false);
-                    if (ifs.Else != null) BindStatements(ifs.Else, scope, classLevel: false);
+                    BindBlock(ifs.Then, scope);
+                    if (ifs.Else != null) BindBlock(ifs.Else, scope);
                     return ifs;
 
                 case WhileStmt loop:
-                    if (loop.Init != null) BindVarDecl(loop.Init, scope, classLevel: false);
+                    blockNames.Add(new()); // the counter is in sight only in the loop
+                    if (loop.Init != null)
+                    {
+                        BindVarDecl(loop.Init, scope, classLevel: false);
+                        ShowInBlock(loop.Init);
+                    }
                     BindCondition(loop.Condition, scope);
                     if (loop.Step != null) loop.Step = BindStatement(loop.Step, scope, classLevel: false);
                     loopDepth++;
-                    BindStatements(loop.Body, scope, classLevel: false);
+                    BindBlock(loop.Body, scope);
                     loopDepth--;
+                    blockNames.RemoveAt(blockNames.Count - 1);
                     return loop;
 
                 case BreakStmt or ContinueStmt:
@@ -1139,7 +1283,8 @@ namespace Phi.Compiler.Semantics
                 decl.Values[i] = Convert(value, v.Type.Element, $"'{decl.Name}'");
             }
 
-            var constants = decl.Values.Select(ConstantValue).ToList();
+            // text for a ptr<u8> is the address of the string, which only the generated code knows
+            var constants = decl.Values.Select(e => e.Type.IsString && !v.Type.Element.IsString ? null : ConstantValue(e)).ToList();
             bool allConstant = constants.All(c => c != null);
 
             if (allConstant)
@@ -1574,6 +1719,7 @@ namespace Phi.Compiler.Semantics
         {
             BoundUnit unit = units[scope.Unit];
             foreach (Expr arg in arguments) BindExpr(arg, scope);
+            WarnSplitNegatives(arguments);
 
             // a struct's method, called on a struct: call c.Add: 3;  call shapes:i.Draw;
             MethodSymbol? structMethod = null;
@@ -1731,6 +1877,22 @@ namespace Phi.Compiler.Semantics
             }
         }
 
+        /// <summary>
+        /// call Show: x -1;  passes x and -1, which is easy to misread as x minus 1. After a
+        /// number (as in 5 -1) it's plainly a list, and (-1) says it's meant.
+        /// </summary>
+        void WarnSplitNegatives(List<Expr> arguments)
+        {
+            for (int i = 1; i < arguments.Count; i++)
+            {
+                if (arguments[i] is not NumberExpr { Value: < 0 } negative || arguments[i - 1] is NumberExpr) continue;
+                if (file.Text[negative.Span.Start] != '-' || negative.Span.Start == 0 || !char.IsWhiteSpace(file.Text[negative.Span.Start - 1])) continue;
+                string before = SourceText(arguments[i - 1]), number = SourceText(negative);
+                diagnostics.Warning(file, negative.Span, $"'{before} {number}' is two arguments, {before} and {number}; " +
+                                                         $"to subtract, write {before} - {number[1..]}, or write ({number}) if two are meant");
+            }
+        }
+
         static void UseRawBlock(BoundUnit unit, RawBlockDecl raw)
         {
             if (!unit.RawBlocks.Contains(raw)) unit.RawBlocks.Add(raw);
@@ -1876,7 +2038,7 @@ namespace Phi.Compiler.Semantics
                         PathSymbol p => p.Type,
                         _ => PhiType.Error,
                     };
-                    if (symbol == null) Error(name.Span, DescribeMissing(name.Name, scope));
+                    if (symbol == null) Error(name.Span, MethodHint(name.Name, "", scope) ?? DescribeMissing(name.Name, scope));
                     break;
                 }
 
@@ -1982,6 +2144,15 @@ namespace Phi.Compiler.Semantics
 
         void BindIndex(IndexExpr index, Scope scope)
         {
+            // if Ok: 3  reads as an element of Ok; it was meant as a call
+            if (index.Target is NameExpr { InParens: false } callee && Lookup(callee.Name, scope) == null
+                && MethodHint(callee.Name, ": " + SourceText(index.Index), scope) is string hint)
+            {
+                Error(callee.Span, hint);
+                index.Type = PhiType.Error;
+                return;
+            }
+
             BindExpr(index.Target, scope);
             BindExpr(index.Index, scope);
             PhiType t = index.Target.Type;
@@ -2121,6 +2292,7 @@ namespace Phi.Compiler.Semantics
             }
 
             addr.Type = t.IsString ? PhiType.PointerTo(PhiType.U8)
+                      : t.IsArray && t.Kind == TypeKind.Str ? PhiType.PointerTo(PhiType.PointerTo(PhiType.U8)) // its table of pointers
                       : t.IsArray ? PhiType.PointerTo(t.Element)
                       : PhiType.PointerTo(t);
         }
@@ -2291,6 +2463,15 @@ namespace Phi.Compiler.Semantics
             {
                 if (e.Type.IsNumeric) return e;
                 if (target.IsPointer && e.Type.IsString) return e; // a str's value is its address
+
+                // a str array is a table of pointers, one per element: where a pointer goes, the table's address
+                if (target.IsPointer && e.Type.IsArray && e.Type.Kind == TypeKind.Str && e is NameExpr)
+                {
+                    PhiType table = PhiType.PointerTo(PhiType.PointerTo(PhiType.U8));
+                    if (target != table && target.Pointee != PhiType.U8)
+                        diagnostics.Warning(file, e.Span, $"{what} is a {target}, but a str array is a {table}; write `addr {Describe(e)} as {target}` if that's meant");
+                    return new AddrExpr { Operand = e, Span = e.Span, Type = table };
+                }
 
                 // an array (or array field) passed where a pointer goes is its address
                 if (target.IsPointer && e.Type.IsArray && e.Type.Kind != TypeKind.Str && e is NameExpr or IndexExpr or MemberExpr)

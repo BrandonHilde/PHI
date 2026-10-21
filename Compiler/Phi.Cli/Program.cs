@@ -4,10 +4,14 @@ const string Usage = """
     usage:
       phi check <file.phi>                 report errors without building
       phi build <file.phi> [-o <dir>]      compile to a bootable disk image
-      phi run   <file.phi> [--debug]       build, then boot it in QEMU (serial output prints here)
-      phi test  [dir|file.phi] [-f <name>] [--timeout <sec>]
+      phi run   <file.phi> [--debug] [--keep-disk]
+                                           build, then boot it in QEMU (serial output prints here);
+                                           --keep-disk keeps the files a kernel saved for next time
+      phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--keep-output]
                                            boot each test headless and compare its serial
-                                           output with NAME.expected (default dir: tests/)
+                                           output with NAME.expected (default dir: tests/);
+                                           --input scripts the input instead of NAME.input,
+                                           --keep-output saves NAME.actual even when it passes
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
@@ -55,6 +59,7 @@ static int Execute(string[] args)
             {
                 string? outDir = Option("-o");
                 bool debug = Flag("--debug");
+                bool keepDisk = Flag("--keep-disk");
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
 
                 string file = Path.GetFullPath(rest[0]);
@@ -80,7 +85,17 @@ static int Execute(string[] args)
 
                 Console.WriteLine($"built {Path.GetRelativePath(Environment.CurrentDirectory, build.ImagePath)}");
 
-                return command == "run" ? Qemu.RunInteractive(build.ImagePath, debug) : 0;
+                if (command != "run") return 0;
+
+                string image = build.ImagePath;
+                if (keepDisk)
+                {
+                    image = Builder.KeepDisk(build.ImagePath, out bool fresh);
+                    Console.WriteLine(fresh
+                        ? $"made a disk that keeps its files between runs: {Path.GetRelativePath(Environment.CurrentDirectory, image)}"
+                        : $"booting the kept disk {Path.GetRelativePath(Environment.CurrentDirectory, image)} with the new kernel (delete it to start again)");
+                }
+                return Qemu.RunInteractive(image, debug);
             }
 
             case "check":
@@ -98,8 +113,12 @@ static int Execute(string[] args)
             {
                 string? filter = Option("-f");
                 string? timeout = Option("--timeout");
+                string? input = Option("--input");
+                bool keepOutput = Flag("--keep-output");
+                if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
-                return TestRunner.Run(target, filter, TimeSpan.FromSeconds(timeout != null ? double.Parse(timeout) : 10));
+                return TestRunner.Run(target, filter, TimeSpan.FromSeconds(timeout != null ? double.Parse(timeout) : 10),
+                                      input != null ? Path.GetFullPath(input) : null, keepOutput);
             }
 
             case "serve":

@@ -1,0 +1,18 @@
+phi.BlockScopeErrors:Kernel
+{
+	call Mixed: 1;
+
+	[Mixed: int which: 0;]
+	if which is 1
+		int t: 1;
+	;;
+	else
+		int t: 2;
+	;;
+	debug t;
+	int count: 0;
+	if which is 2
+		int count: 5;
+	;;
+	[end]
+}

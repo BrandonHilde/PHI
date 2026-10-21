@@ -1,0 +1,2 @@
+12:8: error: 't' is declared only inside blocks (if, else, while) that have ended here
+15:7: error: 'count' is already declared in method BlockScopeErrors.Mixed; a name can be declared again only in a separate block

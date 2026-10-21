@@ -502,7 +502,7 @@ phi.Tls:Kernel
 				elif type is 43 and size is 2
 					u32 version: 0;
 					call version is Net.Get16: body + at;
-					tls13 is version is 0x0304;
+					tls13 is (version is 0x0304);
 				;;
 				elif type is 51 and size is 36
 					u32 group: 0;

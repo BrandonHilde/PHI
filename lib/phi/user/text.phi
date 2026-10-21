@@ -8,6 +8,11 @@
 #   call rest is Text.AfterWord: rest;         # what comes after it
 #   int n: 0;
 #   call n is Text.ToNumber: rest;
+#
+#   u8 line[40];
+#   call Text.Copy: line 'Size: ' 40;
+#   call Text.AppendSize: line 12800 40;      # Size: 13 KB
+#   call Text.AppendPadded: line 7 3 40;      # ...007
 
 phi.Text:Library
 {
@@ -31,6 +36,35 @@ phi.Text:Library
 			i++;
 		;;
 	[end: start:i is 0]
+
+	[EndsWith: ptr<u8> text: 0; ptr<u8> ending: 0;]
+		int length: (Length: text);
+		int size: (Length: ending);
+		if size > length
+			return false;
+		;;
+	[end: (Equal: text + length - size ending)]
+
+	# a letter A to Z as a to z; anything else as it is
+	[Lower: u8 c: 0;]
+		if c >= 'A' and c <= 'Z'
+			return c + 32;
+		;;
+	[end: c]
+
+	[Upper: u8 c: 0;]
+		if c >= 'a' and c <= 'z'
+			return c - 32;
+		;;
+	[end: c]
+
+	# Equal, with A to Z the same as a to z
+	[EqualIgnoreCase: ptr<u8> a: 0; ptr<u8> b: 0;]
+		int i: 0;
+		while a:i is not 0 and (Lower: a:i) is (Lower: b:i)
+			i++;
+		;;
+	[end: (Lower: a:i) is (Lower: b:i)]
 
 	[IsSpace: u8 c: 0;]
 	[end: c is ' ' or c is '\t']
@@ -73,7 +107,7 @@ phi.Text:Library
 		to:length is 0;
 	[end: length]
 
-	# append text to the end of a string in a buffer of size bytes
+	# append text to the end of a string in a buffer of size bytes; returns the new length
 	[Append: ptr<u8> to: 0; ptr<u8> text: 0; int size: 0;]
 		int length: 0;
 		call length is Length: to;
@@ -84,7 +118,69 @@ phi.Text:Library
 			i++;
 		;;
 		to:length is 0;
-	[end]
+	[end: length]
+
+	# replace what's in a buffer of size bytes with text (cut to fit); returns its length
+	[Copy: ptr<u8> to: 0; ptr<u8> text: 0; int size: 0;]
+		to:0 is 0;
+	[end: (Append: to text size)]
+
+	# append a number in decimal, with at least width digits (zeros in front, after any
+	# minus sign); returns the new length
+	[AppendPadded: ptr<u8> to: 0; int n: 0; int width: 0; int size: 0;]
+		u8 digits[12];
+		int count: 0;
+		u32 left: n;
+		if n < 0
+			left is 0 - n;    # as a u32, so even -2147483648 has its digits
+		;;
+		while (left > 0 or count < width or count is 0) and count < 11
+			digits:count is '0' + left % 10;
+			left is left / 10;
+			count++;
+		;;
+		int length: (Length: to);
+		if n < 0 and length < size - 1
+			to:length is '-';
+			length++;
+		;;
+		while count > 0 and length < size - 1
+			count--;
+			to:length is digits:count;
+			length++;
+		;;
+		to:length is 0;
+	[end: length]
+
+	[AppendNumber: ptr<u8> to: 0; int n: 0; int size: 0;]
+	[end: (AppendPadded: to n 0 size)]
+
+	# append a size in bytes the way people read it: 512 bytes, 13 KB, 4 MB, 2 GB (rounded
+	# to the nearest unit); returns the new length
+	[AppendSize: ptr<u8> to: 0; u32 bytes: 0; int size: 0;]
+		if bytes < 1024
+			call AppendNumber: to bytes size;
+			if bytes is 1
+				return (Append: to ' byte' size);
+			;;
+			return (Append: to ' bytes' size);
+		;;
+		u32 unit: 1024;
+		ptr<u8> name: ' KB';
+		if bytes >= 1024 * 1024 * 1024
+			unit is 1024 * 1024 * 1024;
+			name is ' GB';
+		;;
+		elif bytes >= 1024 * 1024
+			unit is 1024 * 1024;
+			name is ' MB';
+		;;
+		u32 whole: bytes / unit;
+		if bytes % unit >= unit / 2
+			whole++;
+		;;
+		call AppendNumber: to whole size;
+	[end: (Append: to name size)]
 
 	# drop spaces at the end
 	[TrimEnd: ptr<u8> text: 0;]

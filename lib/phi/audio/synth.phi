@@ -126,7 +126,7 @@ phi.Synth:Library
 				bln more: true;
 				while more and failed is false
 					call Next: v;
-					more is voice_done:v is false;
+					more is (voice_done:v is false);
 					total++ voice_remaining:v;
 					voice_remaining:v is 0;
 				;;
@@ -235,7 +235,7 @@ phi.Synth:Library
 				;;
 			;;
 			written++ chunk;
-			finished is sounding is false;
+			finished is (sounding is false);
 		;;
 	[end: written]
 

@@ -1,0 +1,4 @@
+expect ready
+click 100 50
+dclick 10 20
+drag 200 100 250 300

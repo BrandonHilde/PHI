@@ -13,8 +13,16 @@ namespace Phi.Cli
     ///   type TEXT         press the keys for TEXT, one at a time
     ///   pixel X Y RRGGBB  check the color on the screen at (X, Y), in hex
     ///   screenshot NAME   save the screen as NAME.png in the test's build folder
+    ///   mouse_to X Y      move the mouse pointer to (X, Y) on the screen
+    ///   click X Y         move there and click the left button
+    ///   dclick X Y        move there and double-click
+    ///   drag X1 Y1 X2 Y2  press the left button at (X1, Y1), move to (X2, Y2) and let go
     ///   anything else     sent to the QEMU monitor as-is, e.g. sendkey ret, mouse_move 10 -5,
     ///                     mouse_button 1
+    ///
+    /// QEMU only moves the mouse by amounts, so the first of mouse_to, click, dclick and drag
+    /// first pushes the pointer into the top left corner, where a driver stops it at (0, 0)
+    /// (lib/phi/drivers/input.phi does); after that the script keeps track of where it is.
     ///
     /// Lines starting with # are comments.
     /// </summary>
@@ -56,6 +64,24 @@ namespace Phi.Cli
                 byte[] bytes = Encoding.ASCII.GetBytes(command + "\n");
                 stream.Write(bytes, 0, bytes.Length);
                 Delay(150, cancel); // sendkey holds a key for 100 ms
+            }
+
+            // where the pointer is, once a mouse_to (or click, ...) has put it in the corner
+            int? mouseX = null, mouseY = null;
+            void MoveTo(int x, int y)
+            {
+                if (mouseX == null)
+                {
+                    // in steps: QEMU holds on to a move bigger than it can send at once, and would
+                    // take what's left of it off the moves that come next
+                    for (int i = 0; i < 10; i++) Send("mouse_move -250 -250");
+                    Delay(200, cancel);
+                    mouseX = mouseY = 0;
+                }
+                Send($"mouse_move {x - mouseX} {y - mouseY}");
+                mouseX = x;
+                mouseY = y;
+                Delay(60, cancel);
             }
 
             foreach (string raw in lines)
@@ -115,7 +141,48 @@ namespace Phi.Cli
                         break;
                     }
 
+                    case "mouse_to" or "click" or "dclick" or "drag":
+                    {
+                        int count = word == "drag" ? 4 : 2;
+                        var numbers = rest.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                            .Select(p => int.TryParse(p, out int n) && n >= 0 ? n : -1).ToList();
+                        if (numbers.Count != count || numbers.Contains(-1))
+                            return $"input script: expected '{word} {(count == 4 ? "X1 Y1 X2 Y2" : "X Y")}' but found \"{line}\"";
+
+                        MoveTo(numbers[0], numbers[1]);
+                        switch (word)
+                        {
+                            case "click":
+                                Send("mouse_button 1");
+                                Send("mouse_button 0");
+                                Delay(100, cancel);
+                                break;
+                            case "dclick":
+                                Send("mouse_button 1");
+                                Send("mouse_button 0");
+                                Send("mouse_button 1");
+                                Send("mouse_button 0");
+                                Delay(100, cancel);
+                                break;
+                            case "drag":
+                                Send("mouse_button 1");
+                                MoveTo(numbers[2], numbers[3]);
+                                Send("mouse_button 0");
+                                Delay(100, cancel);
+                                break;
+                        }
+                        break;
+                    }
+
                     default:
+                        // a relative move written in the script keeps the position known
+                        string[] move = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                        if (mouseX != null && move.Length >= 3 && move[0] == "mouse_move"
+                            && int.TryParse(move[1], out int dx) && int.TryParse(move[2], out int dy))
+                        {
+                            mouseX = Math.Max(0, mouseX.Value + dx);
+                            mouseY = Math.Max(0, mouseY!.Value + dy);
+                        }
                         Send(line);
                         break;
                 }

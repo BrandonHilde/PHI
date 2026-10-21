@@ -157,6 +157,73 @@ namespace Phi.Compiler.Tests
         [InlineData("int n: 5 as str;", "str can't be used here")]
         public void CastErrors(string body, string message) => AssertError(Boot(body), message);
 
+        [Theory]
+        [InlineData("call M;\n[M]\nbln has: 1;\nif has\n log 'y';\n;;\n[end]", "'has' is a keyword and can't be a variable name")]
+        [InlineData("if Ok: 3\n log 'y';\n;;\n[Ok: int n: 0;]\n[end: n > 1]", "'Ok' is a method; to use its result as a value, put the call in parentheses: (Ok: 3)")]
+        [InlineData("int n: Seven;\n[Seven]\n[end: 7]", "put the call in parentheses: (Seven)")]
+        [InlineData("u8 text[8];\nlog text;", "can't print a u8 array; to print the text in it (up to a zero byte), write addr text")]
+        public void MistakesGetMessagesThatNameThem(string body, string message) => AssertError(Boot(body), message);
+
+        [Fact]
+        public void AKeywordAsANameIsReportedOnce()
+        {
+            // its later uses read as the name, instead of each causing errors of their own
+            CompileResult result = Compile(Boot("call M;\n[M]\nbln has: 1;\nif has\n log 'y';\n;;\nelse\n log 'n';\n;;\n[end]"));
+            Assert.Single(result.Diagnostics);
+        }
+
+        [Theory]
+        [InlineData("int x: 5;\ncall Show: x -1;\n[Show: int a: 0; int b: 0;]\n[end]", "'x -1' is two arguments, x and -1")]
+        [InlineData("int h: 64;\nbln b: 0;\nb is h is 64;", "this stores whether h is 64 in 'b'")]
+        public void EasilyMisreadCodeWarns(string body, string message)
+        {
+            CompileResult result = Compile(Boot(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
+        }
+
+        [Theory]
+        [InlineData("int x: 5;\ncall Show: 5 -1;\ncall Show: x - 1 (-1);\n[Show: int a: 0; int b: 0;]\n[end]")]
+        [InlineData("int h: 64;\nbln b: 0;\nb is (h is 64);\nb = h is 64;")]
+        public void ClearlyWrittenCodeDoesNotWarn(string body)
+        {
+            CompileResult result = Compile(Boot(body));
+            Assert.Empty(result.Diagnostics);
+        }
+
+        [Fact]
+        public void ANameCanBeDeclaredAgainInASeparateBlock()
+        {
+            CompileResult result = Compile(Boot("""
+                call M: 1;
+                [M: int c: 0;]
+                if c < 2
+                    while int i: 0; i < 3; i++;
+                    ;;
+                ;;
+                else
+                    str i: 'x';
+                    log i;
+                ;;
+                int i: 7;
+                [end]
+                """));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData("if c < 2\n int t: 1;\n;;\nelse\n int t: 2;\n;;\nlog t;", "'t' is declared only inside blocks (if, else, while) that have ended here")]
+        [InlineData("int t: 0;\nif c < 2\n int t: 1;\n;;", "'t' is already declared in method Test.M; a name can be declared again only in a separate block")]
+        public void BlockScopeErrors(string body, string message) => AssertError(Boot("call M: 1;\n[M: int c: 0;]\n" + body + "\n[end]"), message);
+
+        [Fact]
+        public void AStrArrayIsPassedAsItsTableOfPointers()
+        {
+            CompileResult result = Compile(Boot("str rows: 'ab' 'c';\ncall Lines: rows;\n[Lines: ptr<ptr<u8>> lines: 0;]\nlog lines:0;\n[end]"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.Empty(result.Diagnostics);
+        }
+
         const string CounterStruct = "struct.Counter\n{\n int count;\n [Add: int n: 1;]\n  count++ n;\n [end: count]\n}\n";
 
         [Theory]

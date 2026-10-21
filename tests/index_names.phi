@@ -1,0 +1,36 @@
+struct.Field
+{
+	u8 text[8];
+	int len;
+}
+
+phi.IndexNames:Library
+{
+	const int SECOND: 1;
+	int table: 10 20 30;
+
+	# a class's constant as an index, without parentheses
+	debug table:IndexNames.SECOND ' ' table:Limits.LAST '\n';
+
+	# a struct's own field named len, from outside the struct
+	Field f;
+	f.len is 3;
+	if f.len is 3
+		debug 'len ' f.len ' ' f.text.len '\n';
+	;;
+
+	# a comparison as an argument
+	int a: 1;
+	call Show: a is 1;
+	call Show: a is 2;
+	debug '\n';
+
+	[Show: bln yes: 0;]
+	debug yes;
+	[end]
+}
+
+phi.Limits:Library
+{
+	const int LAST: 2;
+}

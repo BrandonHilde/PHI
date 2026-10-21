@@ -213,5 +213,29 @@ namespace Phi.Cli
 
             return File.ReadAllBytes(binPath);
         }
+
+        /// <summary>
+        /// A copy of a kernel's disk image that keeps what the kernel saved: the first time it is the
+        /// new image; after that only the boot sectors and kernel (everything before the FAT16
+        /// partition) are replaced, so the partition's files are still there.
+        /// </summary>
+        /// <returns>the kept image, next to the new one as NAME.kept.img</returns>
+        public static string KeepDisk(string image, out bool fresh)
+        {
+            string kept = Path.ChangeExtension(image, ".kept.img");
+            byte[] built = File.ReadAllBytes(image);
+            int partition = FatImage.PartitionStart * SectorSize;
+
+            fresh = !File.Exists(kept) || new FileInfo(kept).Length != built.Length || built.Length <= partition;
+            if (fresh)
+            {
+                File.Copy(image, kept, overwrite: true);
+                return kept;
+            }
+
+            using var stream = new FileStream(kept, FileMode.Open, FileAccess.Write);
+            stream.Write(built, 0, partition);
+            return kept;
+        }
     }
 }

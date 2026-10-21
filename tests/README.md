@@ -12,9 +12,11 @@ what the tests read.
 phi test                 # everything in tests/
 phi test -f loop         # only tests whose name contains "loop"
 phi test samples/x.phi   # a single file
+phi test -f menu --input scenarios/open-files.input   # a different input script
+phi test -f menu --keep-output                         # save NAME.actual even when it passes
 ```
 
-On a mismatch the real output is saved as `NAME.actual`. To add a test, write
+On a mismatch (or always, with `--keep-output`) the real output is saved as `NAME.actual`. To add a test, write
 `NAME.phi`, run `phi test -f NAME`, check `NAME.actual`, and rename it to `NAME.expected`.
 
 Two optional files change what a test does:
@@ -29,7 +31,17 @@ Two optional files change what a test does:
   | `type TEXT` | press the keys for TEXT |
   | `pixel X Y RRGGBB` | check the color on the screen at (X, Y), in hex |
   | `screenshot NAME` | save the screen as `build/TEST/NAME.png` |
+  | `mouse_to X Y` | move the mouse pointer to (X, Y) on the screen |
+  | `click X Y` | move there and click the left button |
+  | `dclick X Y` | move there and double-click |
+  | `drag X1 Y1 X2 Y2` | press the left button at (X1, Y1), move to (X2, Y2) and let go |
   | anything else | a QEMU monitor command, e.g. `sendkey ret`, `mouse_move 10 -5`, `mouse_button 1` |
+
+  QEMU only moves the mouse by amounts, so the first `mouse_to`, `click`, `dclick` or `drag`
+  pushes the pointer into the top left corner, where a driver stops it at (0, 0) (the
+  `drivers.input` driver does); from then on the script keeps track of where it is,
+  including through `mouse_move` lines. `--input FILE` runs a different script in place of
+  `NAME.input`, so one kernel can be tested with several scenarios.
 
 - **`NAME.contains`** replaces `.expected` when the output changes from build to build
   (like addresses on a panic screen): each line must appear somewhere in the output.

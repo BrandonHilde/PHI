@@ -32,7 +32,7 @@ phi.TestClass:OtherClass
     byt bit: 010011b;
     var test: 'sfdfsdf';
     dec pi: 3.14;
-    fin phi: 1.618;
+    fin ratio: 1.618;
     bln active: true;
 
     int numberArray: 1 3 5 9 2;

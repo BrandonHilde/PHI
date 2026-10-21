@@ -90,7 +90,7 @@ phi.NetHttp:Kernel
 				expected++;
 			;;
 			sum++ page:i;
-			line_start is page:i is '\n';
+			line_start is (page:i is '\n');
 		;;
 		log 'lines: ' expected ', out of order: ' wrong ', byte sum: ' sum '\n';
 	[end]

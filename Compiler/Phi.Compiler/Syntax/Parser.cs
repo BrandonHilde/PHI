@@ -36,6 +36,12 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         bool inList;
 
+        /// <summary>
+        /// Keywords this file declared as variable or field names. Each was reported where it was
+        /// declared, so later uses read as names instead of causing more errors.
+        /// </summary>
+        readonly HashSet<string> keywordNames = new();
+
         public Parser(SourceFile file, DiagnosticBag diagnostics)
         {
             this.file = file;
@@ -103,6 +109,14 @@ namespace Phi.Compiler.Syntax
         }
 
         static bool IsName(Token t) => t.Kind == TokenKind.Identifier && !ReservedWords.Contains(t.Text);
+
+        /// <summary>A declared name that is a keyword: reported here, so the binder never sees it.</summary>
+        void CheckNotKeyword(Token name, string what)
+        {
+            if (!ReservedWords.Contains(name.Text)) return;
+            Error(name.Span, $"'{name.Text}' is a keyword and can't be a {what} name");
+            keywordNames.Add(name.Text);
+        }
 
         /// <summary>A declaration starts with a type keyword, or with a struct name followed by a name.</summary>
         bool AtDeclaration =>
@@ -281,6 +295,7 @@ namespace Phi.Compiler.Syntax
                     bool isNew = AcceptWord("new");
                     TypeRef type = ParseType();
                     Token field = ExpectIdentifier("a field name");
+                    CheckNotKeyword(field, "field");
                     Expr? count = null;
                     if (Accept(TokenKind.OpenBracket))
                     {
@@ -550,6 +565,7 @@ namespace Phi.Compiler.Syntax
             bool isNew = AcceptWord("new");
             TypeRef type = ParseType();
             Token name = ExpectIdentifier("a variable name");
+            CheckNotKeyword(name, "variable");
 
             Expr? buffer = null;
             Expr? at = null;
@@ -779,7 +795,10 @@ namespace Phi.Compiler.Syntax
             return call;
         }
 
-        /// <summary>Looks ahead for `name is` (or `name:index is`) before the callee.</summary>
+        /// <summary>
+        /// Looks ahead for `name is` (or `name:index is`) before the callee. A ':' followed by a
+        /// space starts the arguments, so the 'is' in `call Show: a is 1;` is a comparison.
+        /// </summary>
         bool FindIsBeforeCallee()
         {
             for (int i = 1; i < 8; i++)
@@ -787,6 +806,7 @@ namespace Phi.Compiler.Syntax
                 Token t = PeekToken(i);
                 if (t.IsWord("is")) return true;
                 if (t.Kind is TokenKind.Semicolon or TokenKind.EndOfFile || t.StartsLine) return false;
+                if (t.Kind == TokenKind.Colon && PeekToken(i + 1).Span.Start > t.Span.End) return false;
             }
             return false;
         }
@@ -870,9 +890,25 @@ namespace Phi.Compiler.Syntax
             else
                 value = ParseExpression();
 
+            if (opToken.IsWord("is") && value is BinaryExpr { Op: BinaryOp.Equal or BinaryOp.NotEqual } compare
+                && file.Text[compare.Left.Span.End..compare.Right.Span.Start].Contains("is") && !InParens(compare.Span))
+            {
+                string text = file.Text[compare.Span.Start..compare.Span.End];
+                diagnostics.Warning(file, opToken.Span, $"this stores whether {text} in '{file.Text[target.Span.Start..target.Span.End]}'; " +
+                                                        $"write ({text}) to make that clear");
+            }
+
             if (requireSemicolon) ExpectSemicolon();
 
             return new AssignStmt { Target = target, Op = op, Value = value, Span = target.Span.To(Previous.Span) };
+        }
+
+        /// <summary>True when the text just before span (ignoring spaces) is '('.</summary>
+        bool InParens(Span span)
+        {
+            int i = span.Start - 1;
+            while (i >= 0 && file.Text[i] is ' ' or '\t') i--;
+            return i >= 0 && file.Text[i] == '(';
         }
 
         // ------------------------------------------------------------ expressions
@@ -1172,18 +1208,33 @@ namespace Phi.Compiler.Syntax
         }
 
         /// <summary>
-        /// The index after ':' is a number, a single name or a parenthesized expression, so that
-        /// tasks:i.id means (tasks:i).id. Write arr:(t.count) for anything longer.
+        /// The index after ':' is a number, a single name, a class's constant or variable
+        /// (list:Wm.NOTEPAD) or a parenthesized expression, so that tasks:i.id means
+        /// (tasks:i).id. Write arr:(t.count) for anything longer.
         /// </summary>
         Expr ParseIndex()
         {
             if (IsName(Current))
             {
                 Token name = Advance();
+                if (At(TokenKind.Dot) && PeekToken(1).Kind == TokenKind.Identifier && !PeekToken(1).StartsLine
+                    && IsClassMember(name.Text, PeekToken(1).Text))
+                {
+                    Advance();
+                    Token member = Advance();
+                    return new NameExpr { Name = $"{name.Text}.{member.Text}", Span = name.Span.To(member.Span) };
+                }
                 return new NameExpr { Name = name.Text, Span = name.Span };
             }
             return ParsePrimary();
         }
+
+        /// <summary>
+        /// Class names are PascalCase and variables lowerCamelCase, so Wm.NOTEPAD and Wm.count
+        /// name a class's member, while i.id and CURRENT.id are a field of the element.
+        /// </summary>
+        static bool IsClassMember(string first, string member) =>
+            char.IsUpper(first[0]) && (first.Any(char.IsLower) || member.All(c => !char.IsLower(c)));
 
         Expr ParsePrimary()
         {
@@ -1226,6 +1277,11 @@ namespace Phi.Compiler.Syntax
                     {
                         Advance();
                         return new EmptyExpr { Span = t.Span };
+                    }
+                    if (keywordNames.Contains(t.Text))
+                    {
+                        Advance();
+                        return new NameExpr { Name = t.Text, Span = t.Span };
                     }
                     if (ReservedWords.Contains(t.Text))
                         throw Error(t.Span, $"expected a value but found the keyword '{t.Text}'");

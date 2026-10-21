@@ -170,7 +170,7 @@ phi.Tcp:Kernel
 						call Net.Wait;
 						call now is OS.GetTicks;
 					;;
-					acked is c:0.send_unacked is c:0.send_next;
+					acked is (c:0.send_unacked is c:0.send_next);
 					tries++;
 					failed is c:0.reset or (acked is false and tries >= RETRIES);
 				;;

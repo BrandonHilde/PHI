@@ -17,6 +17,8 @@
 # This replaces the built-in keyboard driver: a kernel that uses Input shouldn't also
 # use ask, OS.GetKey or OS.ReadKey.
 
+use user.math;
+
 phi.Input:Kernel
 {
 	const int KEY_BACKSPACE: 8;
@@ -253,21 +255,12 @@ phi.Input:Kernel
 			if (flags & 0x20) is not 0
 				dy is dy - 256;
 			;;
-			mouse_x is (Clamp: mouse_x + dx 0 area_w - 1);
-			mouse_y is (Clamp: mouse_y - dy 0 area_h - 1);   # the mouse counts up, the screen down
+			mouse_x is (Math.Clamp: mouse_x + dx 0 area_w - 1);
+			mouse_y is (Math.Clamp: mouse_y - dy 0 area_h - 1);   # the mouse counts up, the screen down
 		;;
 		buttons is flags & 7;
 		mouse_packets++;
 	[end]
-
-	[Clamp: int value: 0; int low: 0; int high: 0;]
-		if value < low
-			return low;
-		;;
-		if value > high
-			return high;
-		;;
-	[end: value]
 
 	# turn on the PS/2 mouse port and its interrupt, and start the mouse reporting
 	[StartMouse]

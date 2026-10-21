@@ -18,6 +18,7 @@
 # place at a time (not from interrupt handlers).
 
 use gfx.font;
+use user.math;
 
 phi.Draw:Kernel
 {
@@ -67,10 +68,10 @@ phi.Draw:Kernel
 	[SetView: int x: 0; int y: 0; int w: 0; int h: 0;]
 		origin_x is x;
 		origin_y is y;
-		clip_x0 is (Max: x 0);
-		clip_y0 is (Max: y 0);
-		clip_x1 is (Min: x + w width);
-		clip_y1 is (Min: y + h height);
+		clip_x0 is (Math.Max: x 0);
+		clip_y0 is (Math.Max: y 0);
+		clip_x1 is (Math.Min: x + w width);
+		clip_y1 is (Math.Min: y + h height);
 	[end]
 
 	[ResetView]
@@ -80,17 +81,12 @@ phi.Draw:Kernel
 	[Rgb: int r: 0; int g: 0; int b: 0;]
 	[end: ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)]
 
+	# kept for programs that call them; the same as Math.Min and Math.Max
 	[Min: int a: 0; int b: 0;]
-		if a < b
-			return a;
-		;;
-	[end: b]
+	[end: (Math.Min: a b)]
 
 	[Max: int a: 0; int b: 0;]
-		if a > b
-			return a;
-		;;
-	[end: b]
+	[end: (Math.Max: a b)]
 
 	# ------------------------------------------------------------ shapes
 
@@ -100,10 +96,10 @@ phi.Draw:Kernel
 	[end]
 
 	[FillRect: int x: 0; int y: 0; int w: 0; int h: 0; u32 color: 0;]
-		int x0: (Max: x + origin_x clip_x0);
-		int y0: (Max: y + origin_y clip_y0);
-		int x1: (Min: x + origin_x + w clip_x1);
-		int y1: (Min: y + origin_y + h clip_y1);
+		int x0: (Math.Max: x + origin_x clip_x0);
+		int y0: (Math.Max: y + origin_y clip_y0);
+		int x1: (Math.Min: x + origin_x + w clip_x1);
+		int y1: (Math.Min: y + origin_y + h clip_y1);
 		if x1 <= x0 or y1 <= y0
 			return;
 		;;
@@ -228,7 +224,7 @@ phi.Draw:Kernel
 		int r1: (bottom >> 16) & 255;
 		int g1: (bottom >> 8) & 255;
 		int b1: bottom & 255;
-		int span: (Max: h - 1 1);
+		int span: (Math.Max: h - 1 1);
 		while int i: 0; i < h; i++;
 			u32 color: (Rgb: r0 + (r1 - r0) * i / span g0 + (g1 - g0) * i / span b0 + (b1 - b0) * i / span);
 			call FillRect: x y + i w 1 color;
@@ -239,10 +235,10 @@ phi.Draw:Kernel
 	[Blit: int x: 0; int y: 0; int w: 0; int h: 0; ptr<u32> image: 0; int stride: 0;]
 		int x0: x + origin_x;
 		int y0: y + origin_y;
-		int skip_x: (Max: clip_x0 - x0 0);
-		int skip_y: (Max: clip_y0 - y0 0);
-		int x1: (Min: x0 + w clip_x1);
-		int y1: (Min: y0 + h clip_y1);
+		int skip_x: (Math.Max: clip_x0 - x0 0);
+		int skip_y: (Math.Max: clip_y0 - y0 0);
+		int x1: (Math.Min: x0 + w clip_x1);
+		int y1: (Math.Min: y0 + h clip_y1);
 		x0++ skip_x;
 		y0++ skip_y;
 		if x1 <= x0 or y1 <= y0

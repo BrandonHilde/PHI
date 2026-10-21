@@ -298,7 +298,7 @@ phi.Process:Kernel
 			if inside
 				ptr<u8> byte: from + length;
 				to:length is byte:0;
-				ended is byte:0 is 0;
+				ended is (byte:0 is 0);
 				length++;
 			;;
 			else
@@ -386,7 +386,7 @@ phi.Process:Kernel
 					to:k is process_names:(first * NAME_SIZE + k);
 				;;
 				to:(NAME_SIZE - 1) is 0;
-				result is to:0 is not 0;
+				result is (to:0 is not 0);
 			;;
 		;;
 		elif number is SYS_KILL

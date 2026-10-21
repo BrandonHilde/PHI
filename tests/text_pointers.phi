@@ -1,0 +1,29 @@
+phi.TextPointers:Library
+{
+	# a ptr<u8> stored in a str copies the text it points at
+	ptr<u8> greeting: 'hello';
+	str copy: [20];
+	copy is greeting;
+	str from: greeting;
+	debug copy ' ' from ' ' copy.len '\n';
+
+	# and is passed to a str parameter as text
+	call Show: greeting;
+
+	# a str array passed where a ptr<ptr<u8>> goes: its table of pointers
+	str rows: 'ab' 'cde' 'f';
+	call Lines: rows rows.len;
+
+	[Show: str text: [20];]
+	debug text '\n';
+	[end]
+
+	[Lines: ptr<ptr<u8>> lines: 0; int count: 0;]
+	while int i: 0; i < count; i++;
+		str line: [10];
+		line is lines:i;
+		debug line '/';
+	;;
+	debug '\n';
+	[end]
+}

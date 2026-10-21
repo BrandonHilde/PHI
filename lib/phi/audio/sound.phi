@@ -117,7 +117,7 @@ phi.Sound:Kernel
 			;;
 			else
 				# read as many frames at a time as fit in pending once resampled
-				resampling is Wav.rate is not rate;
+				resampling is (Wav.rate is not rate);
 				call Wav.StartResample: rate;
 				u32 frames: PENDING_FRAMES * Wav.rate / rate - 2;
 				if frames > READ_SIZE / Wav.frame_bytes
@@ -162,7 +162,7 @@ phi.Sound:Kernel
 				u32 taken: 0;
 				call taken is Ac97.Write: pending + pending_at pending_end - pending_at;
 				pending_at++ taken;
-				room is pending_at is pending_end;
+				room is (pending_at is pending_end);
 			;;
 			elif source_done
 				call Ac97.Flush;
@@ -207,7 +207,7 @@ phi.Sound:Kernel
 			u32 frames: 0;
 			call frames is Synth.Render: pending CHUNK_FRAMES;
 			pending_end is frames * 4;
-			source_done is frames is 0;
+			source_done is (frames is 0);
 		;;
 		elif source is 2
 			u32 length: wav_end - wav_at;

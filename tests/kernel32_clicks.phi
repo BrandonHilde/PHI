@@ -1,0 +1,18 @@
+use drivers.input;
+
+phi.ClickTest:Kernel
+{
+	call Input.Start;
+	debug 'ready\n';
+
+	# report each press and release of the left button, with where the pointer was
+	int reported: 0;
+	int down: 0;
+	while reported < 8
+		if (Input.buttons & 1) is not down
+			down is Input.buttons & 1;
+			debug down ' ' Input.mouse_x ' ' Input.mouse_y '\n';
+			reported++;
+		;;
+	;;
+}

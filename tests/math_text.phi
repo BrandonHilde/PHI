@@ -1,0 +1,39 @@
+use user.math;
+use user.text;
+
+phi.MathText:Library
+{
+	debug (Math.Abs: -7) ' ' (Math.Abs: 7) ' ' (Math.Min: 3 -2) ' ' (Math.Max: 3 -2) '\n';
+	debug (Math.Clamp: 15 0 10) ' ' (Math.Clamp: -5 0 10) ' ' (Math.Clamp: 4 0 10) ' ' (Math.Sign: -9) (Math.Sign: 0) (Math.Sign: 9) '\n';
+	debug (Math.Sqrt: 0) ' ' (Math.Sqrt: 15) ' ' (Math.Sqrt: 16) ' ' (Math.Sqrt: 1000000) ' ' (Math.Sqrt: 2147483647) '\n';
+
+	u8 line[40];
+	int length: (Text.Copy: line 'n=' 40);
+	call Text.AppendNumber: line -42 40;
+	call Text.Append: line ' t=' 40;
+	call Text.AppendPadded: line 7 3 40;
+	call Text.Append: line ' ' 40;
+	call length is Text.AppendNumber: line -2147483648 40;
+	debug addr line ' (' length ')\n';
+
+	call Text.Copy: line '' 40;
+	call Text.AppendSize: line 1 40;
+	call Text.Append: line ', ' 40;
+	call Text.AppendSize: line 512 40;
+	call Text.Append: line ', ' 40;
+	call Text.AppendSize: line 12800 40;
+	call Text.Append: line ', ' 40;
+	call Text.AppendSize: line 460854 40;
+	call Text.Append: line ', ' 40;
+	call Text.AppendSize: line 5000000 40;
+	debug addr line '\n';
+
+	# cut to fit: room for 5 characters and the zero
+	u8 small[6];
+	call length is Text.Copy: small 'abc' 6;
+	call length is Text.AppendNumber: small 12345 6;
+	debug addr small ' (' length ')\n';
+
+	debug (Text.EqualIgnoreCase: 'ReadMe.TXT' 'readme.txt') (Text.EqualIgnoreCase: 'abc' 'abd') (Text.EqualIgnoreCase: 'ab' 'abc') ' ';
+	debug (Text.EndsWith: 'photo.bmp' '.bmp') (Text.EndsWith: 'photo.bmp' '.txt') (Text.EndsWith: 'a' 'abc') '\n';
+}

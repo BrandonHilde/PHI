@@ -1,0 +1,25 @@
+use memory.mem;
+use user.text;
+
+phi.MemTest:Kernel
+{
+	u8 bytes[11];
+	call Text.Copy: bytes 'abcdefghij' 11;
+
+	# overlapping moves, both ways
+	call Mem.Move: addr bytes:2 addr bytes 5;
+	debug addr bytes '\n';
+	call Mem.Move: addr bytes addr bytes:2 5;
+	debug addr bytes '\n';
+
+	u8 copy[11];
+	call Mem.Copy: copy bytes 10;
+	debug addr copy ' ' (Mem.Equal: copy bytes 10) '\n';
+
+	call Mem.Fill: copy '-' 7;
+	debug addr copy ' ' (Mem.Equal: copy bytes 10) '\n';
+
+	u32 words[5];
+	call Mem.Fill32: words 0x01020304 4;
+	debug words:0 ' ' words:3 ' ' words:4 '\n';
+}

@@ -60,7 +60,7 @@ phi.Random:Library
 
 	[Seed]
 		call RandomDetect;
-		random_hardware is random_ok is 1;
+		random_hardware is (random_ok is 1);
 
 		call Sha256.Init: addr random_hash;
 		# 64 words of RDRAND (if there is one) and timestamps, which jitter

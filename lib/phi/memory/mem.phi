@@ -1,0 +1,118 @@
+# Copying and filling memory with the CPU's string instructions (rep movs, rep stos).
+# 32-bit kernels.
+#
+#   use memory.mem;
+#   call Mem.Copy: to from 4096;              # the areas must not overlap
+#   call Mem.Move: text + 1 text length;      # they may overlap (here, shift right by one)
+#   call Mem.Fill: buffer 0 512;              # 512 zero bytes
+#   call Mem.Fill32: pixels 0xFFFFFF 640;     # 640 white pixels
+#
+# The routines use class variables, so call them from one place at a time (not from
+# interrupt handlers while other code may be using them).
+
+phi.Mem:Kernel
+{
+	u32 mem_to: 0;
+	u32 mem_from: 0;
+	u32 mem_count: 0;
+	u32 mem_value: 0;
+
+	# count bytes from from to to; the two areas must not overlap
+	[Copy: ptr<u8> to: 0; ptr<u8> from: 0; u32 count: 0;]
+		mem_to is to;
+		mem_from is from;
+		mem_count is count;
+		call MemCopyForward;
+	[end]
+
+	# count bytes from from to to, where the two areas may overlap
+	[Move: ptr<u8> to: 0; ptr<u8> from: 0; u32 count: 0;]
+		mem_count is count;
+		if to <= from or to >= from + count
+			mem_to is to;
+			mem_from is from;
+			call MemCopyForward;
+			return;
+		;;
+		# to is inside the source: copy from the end, so no byte is overwritten before it's read
+		mem_to is to + count - 1;
+		mem_from is from + count - 1;
+		call MemCopyBackward;
+	[end]
+
+	# count bytes set to value
+	[Fill: ptr<u8> to: 0; u8 value: 0; u32 count: 0;]
+		mem_to is to;
+		mem_value is value;
+		mem_count is count;
+		call MemFillBytes;
+	[end]
+
+	# count 32-bit values (like pixels) set to value
+	[Fill32: ptr<u32> to: 0; u32 value: 0; u32 count: 0;]
+		mem_to is to;
+		mem_value is value;
+		mem_count is count;
+		call MemFillWords;
+	[end]
+
+	# true when the first count bytes at a and b are the same
+	[Equal: ptr<u8> a: 0; ptr<u8> b: 0; u32 count: 0;]
+		u32 i: 0;
+		while i < count
+			if a:i is not b:i
+				return false;
+			;;
+			i++;
+		;;
+	[end: true]
+}
+
+asm.MemCopyForward
+{
+	mov edi, [{mem_to}]
+	mov esi, [{mem_from}]
+	mov ecx, [{mem_count}]
+	mov edx, ecx
+	shr ecx, 2
+	rep movsd
+	mov ecx, edx
+	and ecx, 3
+	rep movsb
+	ret
+}
+
+asm.MemCopyBackward
+{
+	mov edi, [{mem_to}]
+	mov esi, [{mem_from}]
+	mov ecx, [{mem_count}]
+	std
+	rep movsb
+	cld
+	ret
+}
+
+asm.MemFillBytes
+{
+	mov edi, [{mem_to}]
+	mov ecx, [{mem_count}]
+	movzx eax, byte [{mem_value}]
+	imul eax, eax, 0x01010101
+	mov edx, ecx
+	shr ecx, 2
+	rep stosd
+	mov ecx, edx
+	and ecx, 3
+	rep stosb
+	ret
+}
+
+asm.MemFillWords
+{
+	mov edi, [{mem_to}]
+	mov ecx, [{mem_count}]
+	mov eax, [{mem_value}]
+	rep stosd
+	ret
+}

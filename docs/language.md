@@ -125,6 +125,7 @@ str buffer: [40];           # room for 40 characters (also: str buffer[40];)
 u8 sectors[SECTOR_SIZE];    # sizes can be constants
 
 str text: count;            # a number written out as text
+str copy: line;             # line is a ptr<u8>: the text it points to
 ```
 
 `=` works in place of `:` in declarations. Storing a value in a smaller type keeps the low
@@ -136,6 +137,7 @@ bytes (so `u8` wraps around at 256).
 - `str s: [40];` holds 40
 - `str s: someNumber;` holds 11 (enough for any `int`)
 - `str s: otherStr;` holds as much as `otherStr`
+- `str s: somePointer;` (a `ptr<u8>`) holds 64
 - each element of a `str` array holds as much as the longest initial value
 
 Longer text is cut to fit, without an error: after `str tiny: [3]; tiny is 'abcdef';`,
@@ -145,13 +147,27 @@ Longer text is cut to fit, without an error: after `str tiny: [3]; tiny is 'abcd
 element, and each points to that element's own buffer. So `days:1` is the address of the
 second string, and code that walks the array's memory by a fixed stride (for rows of a
 sprite, say) must use a `u8` array instead (`u8 rows[8 * 16];`, indexed as
-`rows:(row * 16 + column)`).
+`rows:(row * 16 + column)`). Where a `ptr<ptr<u8>>` is expected, a `str` array is the address
+of its table of pointers, so a method can take any `str` array:
+
+```phi
+str invader: '..X..' '.XXX.' 'X.X.X';
+call Sprite: invader invader.len;
+
+[Sprite: ptr<ptr<u8>> rows: 0; int count: 0;]
+    while int i: 0; i < count; i++;
+        debug rows:i '\n';         # each element is a ptr<u8>, which prints as text
+    ;;
+[end]
+```
 
 **A list of values** is separated by spaces, which applies to declarations, call arguments,
 `log` and `out`. A `-` with a space before it and none after starts a new, negative value:
 `int steps: 1 -1 2 -2;` has four values, and `call Move: x -1;` passes two arguments.
 With spaces on both sides or neither (`x - 1`, `x-1`) it subtracts. Inside parentheses it
-always subtracts.
+always subtracts. Since `x -1` is easy to misread, a negative number right after a name or
+expression in a call is a warning; write `x - 1` to subtract, or `(-1)` if two values are
+meant. After a number (`5 -1`) it's plainly a list, and there's no warning.
 
 **Where variables live.** Variables declared directly in a class have a fixed place in
 memory and are set once, when the program is built. A method's parameters and variables
@@ -162,7 +178,28 @@ to a method's variable (`addr total`) is only good until the method returns.
 
 **Scope.** A name is looked up in the current method, then the current class, then in
 other classes of the same unit (if only one class has it). `Class.name` picks a specific
-class. `x.len` is the number of elements of an array, or the current length of a `str`.
+class. `x.len` is the number of elements of an array, or the current length of a `str`
+(unless `x` is a struct with a field of its own named `len`, which comes first).
+
+A method's variable can be used anywhere in the method after its declaration, including
+after the block it was declared in. A name can be declared again in a *separate* block
+(the other branch of an `if`, another loop, or after a loop that declared it), and each
+declaration is then a variable of its own, seen only in its block:
+
+```phi
+if to < from
+    while int i: 0; i < count; i++;    # this i is the loop's
+        ...
+    ;;
+;;
+else
+    int i: count - 1;                   # and this one is the else block's
+    ...
+;;
+```
+
+Declaring a name again where the first one is still in sight (in the same block, or in a
+block inside it) is an error. Two loops that declare the same counter share it, as before.
 
 ### Constants
 
@@ -222,8 +259,11 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
 - In a condition, any number counts as true unless it is 0.
 - A binary operator must be on the same line as its left side. This is how
   `if ready` followed by a statement on the next line knows where the condition ends.
-- The index after `:` is a number, a single name, or something in parentheses:
-  `cells:(row * 80 + column)`.
+- The index after `:` is a number, a single name, a class's constant or variable
+  (`handlers:Wm.NOTEPAD`), or something in parentheses: `cells:(row * 80 + column)`.
+  A dotted name after `:` counts as a class's member when it starts with a capital letter
+  and has a lowercase letter in it (class names are PascalCase), or when what follows the
+  dot is in capitals; otherwise `tasks:i.id` is a field of the element, `(tasks:i).id`.
 
 ## Statements
 
@@ -256,7 +296,11 @@ x%% 2;         # remainder of dividing by 2
 list:2 is 7;   # one element
 task.id is 3;  # one field
 name is 'new text';
+name is line;  # line is a ptr<u8>: copies the text it points to (cut to fit)
 ```
+
+`b is h is 64;` stores whether `h is 64` in `b`, which reads ambiguously, so it's a warning;
+write `b is (h is 64);`.
 
 ### Conditions
 
@@ -955,14 +999,15 @@ if (IsReady: port)
 ```
 
 - Arguments are separated by spaces and may span lines. `call Move: x -1;` passes two
-  arguments; `x - 1` or `(x -1)` is one (see "A list of values" under
-  [Variables](#variables)). A missing argument uses the parameter's default (or zero if it
-  has none).
+  arguments (and warns); `x - 1` or `(x -1)` is one (see "A list of values" under
+  [Variables](#variables)). A comparison is one argument too: `call Show: count is 0;`. A
+  missing argument uses the parameter's default (or zero if it has none).
 - A method can return a number or a `str`.
 - **Calls as values.** `(Name: arguments)` can go anywhere a value can: in conditions,
   math, `log`, indexes and other calls' arguments. The space after the `:` is what makes it
   a call; `(list:i)`, with no space, is an element. `(Name)` with no arguments is a call
-  when no variable has that name. The method must return a value.
+  when no variable has that name. The method must return a value. Without the parentheses
+  (`if Ready: 3`) the error says to add them.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number or `str`) as the one
   after `[end: ...]`.
@@ -1098,7 +1143,9 @@ and the classes of used files run before the classes that use them.
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
-| `user.text` | class `Text` (any program): `Length`, `Equal`, `StartsWith`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Append: buffer text size`, `TrimEnd`, `ToNumber` |
+| `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
+| `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
+| `memory.mem` | class `Mem` (32-bit kernels): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
 | `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |

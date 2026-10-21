@@ -758,8 +758,7 @@ namespace Phi.Compiler.CodeGen
             foreach (Expr value in log.Values)
             {
                 // a ptr<u8> prints as the zero-terminated text it points to, like a str
-                bool text = value.Type.IsString || (value.Type.IsPointer && value.Type.Pointee == PhiType.U8);
-                if (text)
+                if (IsText(value.Type))
                 {
                     string print = "phi_print" + suffix;
                     Need(print);
@@ -780,6 +779,9 @@ namespace Phi.Compiler.CodeGen
                 }
             }
         }
+
+        /// <summary>A str, or a ptr&lt;u8&gt;: the address of zero-terminated text, copied or printed as text.</summary>
+        static bool IsText(PhiType t) => t.IsString || (t.IsPointer && t.Pointee == PhiType.U8);
 
         /// <summary>The label of a string whose address is known without running code.</summary>
         string? StaticAddress(Expr e) => e switch
@@ -828,7 +830,7 @@ namespace Phi.Compiler.CodeGen
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
                         else EmitExpr(value);
 
-                        if (p.Type.IsString && value != null && !value.Type.IsString)
+                        if (p.Type.IsString && value != null && !IsText(value.Type))
                         {
                             // a number for a str parameter is written out as text first
                             string text = AllocTemp(12);
@@ -880,7 +882,7 @@ namespace Phi.Compiler.CodeGen
                     {
                         Expr value = arguments[i];
                         EmitExpr(value);
-                        if (types[i].IsString && !value.Type.IsString)
+                        if (types[i].IsString && !IsText(value.Type))
                         {
                             string text = AllocTemp(12);
                             Need("phi_int_to_str");
@@ -1132,7 +1134,7 @@ namespace Phi.Compiler.CodeGen
             }
 
             EmitExpr(value);
-            if (target.Type.IsString) EmitStringStore(target, sourceIsString: value.Type.IsString);
+            if (target.Type.IsString) EmitStringStore(target, sourceIsString: IsText(value.Type));
             else EmitStoreEax(target);
         }
 

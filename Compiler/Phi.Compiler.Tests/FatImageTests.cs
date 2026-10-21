@@ -109,5 +109,32 @@ namespace Phi.Compiler.Tests
             Assert.Equal((uint)FatImage.PartitionStart, U32(image, 446 + 8));
             Assert.Equal((uint)FatImage.PartitionSectors, U32(image, 446 + 12));
         }
+
+        [Fact]
+        public void AKeptDiskGetsTheNewKernelAndKeepsItsFiles()
+        {
+            int partition = FatImage.PartitionStart * FatImage.SectorSize;
+            string image = Path.Combine(root, "os.img");
+            var bytes = new byte[partition + 1024];
+            bytes[0] = 1;
+            File.WriteAllBytes(image, bytes);
+
+            string kept = Builder.KeepDisk(image, out bool fresh);
+            Assert.True(fresh);
+            Assert.Equal(bytes, File.ReadAllBytes(kept));
+
+            // the kernel saves a file; then a new build changes the kernel
+            byte[] saved = File.ReadAllBytes(kept);
+            saved[partition + 5] = 42;
+            File.WriteAllBytes(kept, saved);
+            bytes[0] = 2;
+            File.WriteAllBytes(image, bytes);
+
+            Builder.KeepDisk(image, out fresh);
+            byte[] after = File.ReadAllBytes(kept);
+            Assert.False(fresh);
+            Assert.Equal(2, after[0]);
+            Assert.Equal(42, after[partition + 5]);
+        }
     }
 }

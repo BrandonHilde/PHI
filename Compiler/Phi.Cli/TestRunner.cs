@@ -4,7 +4,8 @@ namespace Phi.Cli
 {
     /// <summary>
     /// Each test is tests/NAME.phi with the serial output it must produce in tests/NAME.expected.
-    /// The test boots headless in QEMU; on a mismatch the real output is saved to NAME.actual.
+    /// The test boots headless in QEMU; on a mismatch (or always, with keepOutput) the real output
+    /// is saved to NAME.actual.
     /// NAME.input scripts keyboard and mouse input (see InputScript); NAME.errors instead lists
     /// compile errors the program must produce. A folder NAME.web/ is served over HTTP and HTTPS
     /// while the test runs (see WebServer); the program gets the addresses as TestWeb.url and
@@ -16,7 +17,8 @@ namespace Phi.Cli
     /// </summary>
     public static class TestRunner
     {
-        public static int Run(string target, string? filter, TimeSpan timeout)
+        /// <param name="input">An input script to use instead of each test's NAME.input.</param>
+        public static int Run(string target, string? filter, TimeSpan timeout, string? input = null, bool keepOutput = false)
         {
             List<string> tests = Directory.Exists(target)
                 ? Directory.GetFiles(target, "*.phi").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
@@ -37,7 +39,7 @@ namespace Phi.Cli
             foreach (var (test, mode) in runs)
             {
                 string name = Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : $" ({mode.Name})");
-                string? failure = RunOne(test, timeout, mode);
+                string? failure = RunOne(test, timeout, mode, input, keepOutput);
 
                 if (failure == null)
                 {
@@ -81,7 +83,7 @@ namespace Phi.Cli
         }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
-        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode)
+        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput)
         {
             string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
             string name = Path.GetFileNameWithoutExtension(phiFile);
@@ -92,7 +94,7 @@ namespace Phi.Cli
             if (File.Exists(actualFile)) File.Delete(actualFile);
 
             string errorsFile = Path.Combine(dir, name + ".errors");
-            string inputFile = Path.Combine(dir, name + ".input");
+            string inputFile = inputOverride ?? Path.Combine(dir, name + ".input");
 
             // NAME.web/: files the program can fetch, at TestWeb.url ('http://10.0.2.2:PORT') and
             // TestWeb.secure_url ('https://10.0.2.2:PORT')
@@ -142,6 +144,7 @@ namespace Phi.Cli
                     screenshots: Path.GetDirectoryName(build.ImagePath));
                 string text = Normalize(partial.Serial);
                 var missing = lines.Where(l => !text.Contains(l)).ToList();
+                if (keepOutput) File.WriteAllText(actualFile, text);
                 if (missing.Count == 0 && partial.InputError == null) return null;
 
                 File.WriteAllText(actualFile, text);
@@ -154,6 +157,7 @@ namespace Phi.Cli
                 Path.GetDirectoryName(build.ImagePath));
 
             string actual = Normalize(run.Serial);
+            if (keepOutput) File.WriteAllText(actualFile, actual);
 
             if (expected == null)
             {

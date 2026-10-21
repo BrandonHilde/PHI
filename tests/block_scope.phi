@@ -1,0 +1,59 @@
+phi.BlockScope:Library
+{
+	str word: 'abcde';
+	call Move: 0 3;
+	call Move: 3 0;
+	call Kinds: 1;
+	call Kinds: 2;
+	call AfterLoop;
+	call Shared;
+
+	# the same name in two branches: each branch has a variable of its own
+	[Move: int from: 0; int to: 0;]
+	if to < from
+		while int i: 0; i < 3; i++;
+			debug word:i;
+		;;
+	;;
+	else
+		int i: 4;
+		while i > 1
+			debug word:i;
+			i--;
+		;;
+	;;
+	debug '\n';
+	[end]
+
+	# and with a different type in each
+	[Kinds: int which: 0;]
+	if which is 1
+		int label: 42;
+		debug label ' ';
+	;;
+	else
+		str label: 'forty-two';
+		debug label ' ';
+	;;
+	debug '\n';
+	[end]
+
+	# a loop's counter, then the same name again once the loop has ended
+	[AfterLoop]
+	int total: 0;
+	while int n: 0; n < 4; n++;
+		total++ n;
+	;;
+	int n: 100;
+	debug total ' ' n '\n';
+	[end]
+
+	# two loops share one counter, which is still there after them
+	[Shared]
+	while int k: 0; k < 2; k++;
+	;;
+	while int k: 0; k < 5; k++;
+	;;
+	debug k '\n';
+	[end]
+}
