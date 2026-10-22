@@ -48,8 +48,8 @@ phi.PointerResults:Library
 	[end: name]
 
 	[Cells]
-		ptr<u16> at: addr cells;
-	[end: at]
+		ptr<u16> pos: addr cells;
+	[end: pos]
 
 	[After: ptr<u8> text: 0; int n: 0;]
 	[end: text + n]

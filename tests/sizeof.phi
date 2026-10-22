@@ -9,7 +9,7 @@ struct.Entry
 	u8 name[11];
 	u8 kind;
 	u32 size;
-	Point at;
+	Point pos;
 	ptr<Entry> next;
 }
 

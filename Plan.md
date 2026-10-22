@@ -521,6 +521,9 @@ these were added:
   method variable or field that takes no arguments; a warning when a name binds to a
   variable of another file's class; one-line guards (`if x return y;`); `\xNN` escapes;
   `Draw.BlendRect` in assembly (about 4x faster); [Common patterns](docs/patterns.md)
+- [x] Reserved words stay reserved everywhere: `at` is now a keyword in every position (the
+  library's `at` variables became `pos`), keyword-as-name errors suggest other names, and
+  [language.md](docs/language.md#reserved-words) lists every reserved word
 
 The parts most worth doing next, roughly in order:
 

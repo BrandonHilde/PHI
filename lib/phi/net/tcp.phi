@@ -203,12 +203,12 @@ phi.Tcp:Kernel
 					n is max;
 				;;
 				ptr<u8> ring: addr c:0.rx_buffer;
-				u32 at: c:0.rx_start;
+				u32 pos: c:0.rx_start;
 				while u32 i: 0; i < n; i++;
-					to:i is ring:at;
-					at is (at + 1) & (BUFFER_SIZE - 1);
+					to:i is ring:pos;
+					pos is (pos + 1) & (BUFFER_SIZE - 1);
 				;;
-				c:0.rx_start is at;
+				c:0.rx_start is pos;
 				c:0.rx_count-- n;
 				result is n;
 
@@ -334,11 +334,11 @@ phi.Tcp:Kernel
 						n is room;
 					;;
 					ptr<u8> ring: addr c:0.rx_buffer;
-					u32 at: (c:0.rx_start + c:0.rx_count) & (BUFFER_SIZE - 1);
+					u32 pos: (c:0.rx_start + c:0.rx_count) & (BUFFER_SIZE - 1);
 					ptr<u8> data: in_data + skip;
 					while u32 i: 0; i < n; i++;
-						ring:at is data:i;
-						at is (at + 1) & (BUFFER_SIZE - 1);
+						ring:pos is data:i;
+						pos is (pos + 1) & (BUFFER_SIZE - 1);
 					;;
 					c:0.rx_count++ n;
 					c:0.receive_next++ n;
@@ -356,21 +356,21 @@ phi.Tcp:Kernel
 
 	# the largest segment size the other side asked for, from the SYN's options
 	[ReadOptions: ptr<TcpConnection> c: 0;]
-		u32 at: HEADER;
+		u32 pos: HEADER;
 		bln more: true;
-		while more and at < in_header
-			u32 kind: in_segment:at;
+		while more and pos < in_header
+			u32 kind: in_segment:pos;
 			if kind is 0
 				more is false;
 			;;
 			elif kind is 1
-				at++;
+				pos++;
 			;;
 			else
-				u32 size: in_segment:(at + 1);
+				u32 size: in_segment:(pos + 1);
 				if kind is 2 and size is 4
 					u32 mss: 0;
-					call mss is Net.Get16: in_segment + at + 2;
+					call mss is Net.Get16: in_segment + pos + 2;
 					if mss > 0
 						c:0.mss is mss;
 					;;
@@ -378,7 +378,7 @@ phi.Tcp:Kernel
 				if size < 2
 					more is false;
 				;;
-				at++ size;
+				pos++ size;
 			;;
 		;;
 		if c:0.mss > OUR_MSS

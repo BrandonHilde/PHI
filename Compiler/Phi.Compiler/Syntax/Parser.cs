@@ -19,9 +19,33 @@ namespace Phi.Compiler.Syntax
             "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
-            "below", "above", "atmost", "atleast",
+            "below", "above", "atmost", "atleast", "at",
             "phi", "asm", "arm", "struct", "use", "const",
         };
+
+        /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
+        static readonly Dictionary<string, string> KeywordAlternatives = new()
+        {
+            ["at"] = "'pos' or 'offset'",
+            ["end"] = "'stop' or 'last'",
+            ["above"] = "'upper' or 'over'",
+            ["below"] = "'lower' or 'under'",
+            ["atmost"] = "'most' or 'max'",
+            ["atleast"] = "'least' or 'min'",
+            ["in"] = "'input'",
+            ["out"] = "'output'",
+            ["free"] = "'spare' or 'unused'",
+            ["empty"] = "'blank' or 'none'",
+            ["log"] = "'entry' or 'history'",
+            ["sizeof"] = "'size'",
+            ["return"] = "'result'",
+        };
+
+        /// <summary>The error for a keyword used as a name, with other names to try when there are common ones.</summary>
+        public static string KeywordNameMessage(string word, string what) =>
+            KeywordAlternatives.TryGetValue(word, out string? alternatives)
+                ? $"'{word}' is a keyword and can't be a {what} name; try {alternatives}"
+                : $"'{word}' is a keyword and can't be a {what} name";
 
         sealed class ParseError : Exception { }
 
@@ -114,7 +138,7 @@ namespace Phi.Compiler.Syntax
         void CheckNotKeyword(Token name, string what)
         {
             if (!ReservedWords.Contains(name.Text)) return;
-            Error(name.Span, $"'{name.Text}' is a keyword and can't be a {what} name");
+            Error(name.Span, KeywordNameMessage(name.Text, what));
             keywordNames.Add(name.Text);
         }
 
@@ -571,7 +595,7 @@ namespace Phi.Compiler.Syntax
             Expr? at = null;
             var values = new List<Expr>();
 
-            // new T name at address;  ('at' is only a keyword here, so it can still be a name)
+            // new T name at address;
             if (isNew && AtWord("at") && !Current.StartsLine)
             {
                 Advance();

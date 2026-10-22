@@ -65,15 +65,15 @@ phi.Random:Library
 		call Sha256.Init: addr random_hash;
 		# 64 words of RDRAND (if there is one) and timestamps, which jitter
 		while u32 i: 0; i < 64; i++;
-			u32 at: i * 4;
+			u32 pos: i * 4;
 			random_word is 0;
 			if random_hardware
 				call RandomHardwareWord;
 			;;
-			call PutWord: addr random_pool + at random_word;
+			call PutWord: addr random_pool + pos random_word;
 			call RandomTimestamp;
-			random_pool:at is random_pool:at ^ random_word;
-			random_pool:(at + 1) is random_pool:(at + 1) ^ (random_word >> 8);
+			random_pool:pos is random_pool:pos ^ random_word;
+			random_pool:(pos + 1) is random_pool:(pos + 1) ^ (random_word >> 8);
 		;;
 		call Sha256.Update: addr random_hash addr random_pool 256;
 		call Sha256.Final: addr random_hash addr random_key;

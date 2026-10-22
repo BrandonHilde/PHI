@@ -17,7 +17,7 @@ namespace Phi.Compiler.Tests
 
         static string Kernel(string body) => Structs + "phi.K:Kernel\n{\n" + body + "\n}\n";
 
-        const string Structs = "struct.Point\n{\n i16 x;\n i16 y;\n}\nstruct.Node\n{\n u32 value;\n Point at;\n new Node next;\n}\n";
+        const string Structs = "struct.Point\n{\n i16 x;\n i16 y;\n}\nstruct.Node\n{\n u32 value;\n Point place;\n new Node next;\n}\n";
 
         [Fact]
         public void NewDeclaresAnObject()
@@ -40,10 +40,10 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
-        public void AtCanStillBeAName()
+        public void AtIsAKeyword()
         {
-            CompileResult result = Compile("phi.B:Bootloader\n{\n int at: 3;\n at++;\n debug at;\n}\n");
-            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            AssertError("phi.B:Bootloader\n{\n int at: 3;\n}\n", "'at' is a keyword and can't be a variable name; try 'pos' or 'offset'");
+            AssertError("phi.B:Bootloader\n{\n call M: 1;\n [M: int at: 0;]\n [end]\n}\n", "'at' is a keyword");
         }
 
         [Fact]
@@ -102,7 +102,7 @@ namespace Phi.Compiler.Tests
         [Fact]
         public void FieldsThroughObjectsArePaths()
         {
-            CompileResult result = Compile(Kernel("new Node a;\na.next.at.y is 4;"));
+            CompileResult result = Compile(Kernel("new Node a;\na.next.place.y is 4;"));
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
             var assign = result.Syntax!.Classes.Single(c => c.Name == "K").Body.OfType<AssignStmt>().Single();
             var path = Assert.IsType<PathSymbol>(((NameExpr)assign.Target).Symbol);

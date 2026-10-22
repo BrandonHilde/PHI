@@ -91,9 +91,11 @@ meant.
 `PHI: index out of range on line N`, and a constant index is checked at build time. Code
 inside an `unsafe` block skips the checks, and a pointer is never checked.
 
-**Some common names are keywords.** These can't be variable names: `end`, `is`, `in`,
+**Some common names are keywords.** These can't be variable names: `end`, `at`, `is`, `in`,
 `out`, `addr`, `as`, `sizeof`, `method`, `new`, `free`, `takes`, `empty`, `has`, `break`, `continue`, `return`,
-`below`, `above`, `atmost` and `atleast`. The compiler says so (`'end' is a keyword and can't be a variable name`).
+`below`, `above`, `atmost` and `atleast`. The compiler says so and suggests other names
+(`'end' is a keyword and can't be a variable name; try 'stop' or 'last'`). The full list is
+in [Reserved words](language.md#reserved-words).
 
 **A fixed-size array holds at most 16384 elements.** Larger buffers in a kernel come from
 `new`. User programs don't have a heap yet.

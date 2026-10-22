@@ -97,7 +97,7 @@ namespace Phi.Compiler.Tests
         [InlineData("int s: sizeof str;", "the size of a str depends on its declaration")]
         [InlineData("int s: sizeof Missing;", "unknown name 'Missing'")]
         [InlineData("str days: 'Mon' 'Tue';\nint s: sizeof days;", "the size of a str depends on its declaration")]
-        [InlineData("int sizeof: 1;", "'sizeof' is a keyword")]
+        [InlineData("int sizeof: 1;", "'sizeof' is a keyword and can't be a variable name; try 'size'")]
         public void SizeofErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Theory]

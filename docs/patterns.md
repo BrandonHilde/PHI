@@ -118,11 +118,11 @@ text it was given, or a string literal:
 
 ```phi
 [AfterSlash: ptr<u8> text: 0;]
-    int at: (Text.Length: text);
-    while at > 0 and text:(at - 1) is not '/'
-        at--;
+    int pos: (Text.Length: text);
+    while pos > 0 and text:(pos - 1) is not '/'
+        pos--;
     ;;
-[end: text + at]                        # (AfterSlash: 'docs/notes.txt') is notes.txt
+[end: text + pos]                       # (AfterSlash: 'docs/notes.txt') is notes.txt
 ```
 
 Don't return a pointer to the method's own `str` or `u8` array: those are gone once it

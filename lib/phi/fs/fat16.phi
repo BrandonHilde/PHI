@@ -678,14 +678,14 @@ phi.Fat:Kernel
 				bln ok: false;
 				call ok is Disk.Read: sector 1 sector_buffer;
 				while u32 i: 0; i < 16 and more and found_it is false; i++;
-					u32 at: i * 32;
-					if sector_buffer:at is 0
+					u32 pos: i * 32;
+					if sector_buffer:pos is 0
 						more is false;
 					;;
-					elif sector_buffer:at is not ENTRY_DELETED and sector_buffer:(at + 11) is not ATTR_LONG_NAME
+					elif sector_buffer:pos is not ENTRY_DELETED and sector_buffer:(pos + 11) is not ATTR_LONG_NAME
 						bln same: true;
 						while u32 k: 0; k < 11; k++;
-							if sector_buffer:(at + k) is not wanted_name:k
+							if sector_buffer:(pos + k) is not wanted_name:k
 								same is false;
 							;;
 						;;
@@ -695,7 +695,7 @@ phi.Fat:Kernel
 							found_index is i;
 							ptr<u8> copy: addr found;
 							while u32 b: 0; b < 32; b++;
-								copy:b is sector_buffer:(at + b);
+								copy:b is sector_buffer:(pos + b);
 							;;
 						;;
 					;;

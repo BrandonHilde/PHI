@@ -143,23 +143,23 @@ phi.Http:Kernel
 	# split 'http://host:port/path' into host, port and path; false if it can't be used
 	[ParseUrl: ptr<u8> url: 0;]
 		bln ok: true;
-		ptr<u8> at: 0;
-		call at is Text.SkipSpaces: url;
+		ptr<u8> pos: 0;
+		call pos is Text.SkipSpaces: url;
 		bln plain: false;
-		call secure is Text.StartsWith: at 'https://';
-		call plain is Text.StartsWith: at 'http://';
+		call secure is Text.StartsWith: pos 'https://';
+		call plain is Text.StartsWith: pos 'http://';
 		if secure
-			at++ 8;
+			pos++ 8;
 		;;
 		elif plain
-			at++ 7;
+			pos++ 7;
 		;;
 
 		u32 n: 0;
-		while ok and at:0 is not 0 and at:0 is not ':' and at:0 is not '/' and at:0 is not ' ' and n < HOST_SIZE - 1
-			host:n is at:0;
+		while ok and pos:0 is not 0 and pos:0 is not ':' and pos:0 is not '/' and pos:0 is not ' ' and n < HOST_SIZE - 1
+			host:n is pos:0;
 			n++;
-			at++;
+			pos++;
 		;;
 		host:n is 0;
 		if n is 0 and ok
@@ -171,13 +171,13 @@ phi.Http:Kernel
 		if secure
 			port is SECURE_PORT;
 		;;
-		if at:0 is ':' and ok
-			at++;
+		if pos:0 is ':' and ok
+			pos++;
 			int number: 0;
-			call number is Text.ToNumber: at;
+			call number is Text.ToNumber: pos;
 			port is number;
-			while at:0 >= '0' and at:0 <= '9'
-				at++;
+			while pos:0 >= '0' and pos:0 <= '9'
+				pos++;
 			;;
 			if port is 0 or port > 65535
 				error is 'the URL has a bad port';
@@ -186,14 +186,14 @@ phi.Http:Kernel
 		;;
 
 		n is 0;
-		if at:0 is not '/'
+		if pos:0 is not '/'
 			path:0 is '/';
 			n is 1;
 		;;
-		while at:0 is not 0 and at:0 is not ' ' and n < PATH_SIZE - 1
-			path:n is at:0;
+		while pos:0 is not 0 and pos:0 is not ' ' and n < PATH_SIZE - 1
+			path:n is pos:0;
 			n++;
-			at++;
+			pos++;
 		;;
 		path:n is 0;
 	[end: ok]

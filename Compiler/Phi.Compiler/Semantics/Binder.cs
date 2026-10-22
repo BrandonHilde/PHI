@@ -405,7 +405,7 @@ namespace Phi.Compiler.Semantics
                 file = d.File;
                 if (Parser.ReservedWords.Contains(d.Name))
                 {
-                    Error(d.Span, $"'{d.Name}' is a keyword and can't be a struct name");
+                    Error(d.Span, Parser.KeywordNameMessage(d.Name, "struct"));
                     continue;
                 }
                 var symbol = new StructSymbol { Name = d.Name, Decl = d };
@@ -738,7 +738,7 @@ namespace Phi.Compiler.Semantics
                 var decl = (VarDecl)stmt;
                 if (Parser.ReservedWords.Contains(decl.Name))
                 {
-                    Error(decl.NameSpan, $"'{decl.Name}' is a keyword and can't be a variable name");
+                    Error(decl.NameSpan, Parser.KeywordNameMessage(decl.Name, "variable"));
                     continue;
                 }
 
@@ -769,7 +769,7 @@ namespace Phi.Compiler.Semantics
         {
             if (Parser.ReservedWords.Contains(c.Name))
             {
-                Error(c.NameSpan, $"'{c.Name}' is a keyword and can't be a constant name");
+                Error(c.NameSpan, Parser.KeywordNameMessage(c.Name, "constant"));
                 return;
             }
             if (scope.Names.ContainsKey(c.Name))
@@ -817,7 +817,7 @@ namespace Phi.Compiler.Semantics
 
             if (!dotted && Parser.ReservedWords.Contains(name))
             {
-                Error(method.Span, $"'{name}' is a keyword and can't be a method name");
+                Error(method.Span, Parser.KeywordNameMessage(name, "method"));
                 return;
             }
 

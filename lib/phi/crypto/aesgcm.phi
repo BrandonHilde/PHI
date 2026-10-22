@@ -79,9 +79,9 @@ phi.AesGcm:Library
 			if n > 16
 				n is 16;
 			;;
-			ptr<u8> at: data + done;
+			ptr<u8> pos: data + done;
 			while u32 i: 0; i < n; i++;
-				at:i is at:i ^ gcm_stream:i;
+				pos:i is pos:i ^ gcm_stream:i;
 			;;
 			done++ n;
 			counter++;
@@ -127,8 +127,8 @@ phi.AesGcm:Library
 			call Bytes.Zero: addr gcm_block 16;
 			call Bytes.Copy: addr gcm_block data + done n;
 			while u32 i: 0; i < 4; i++;
-				u32 at: i * 4;
-				gcm_z:i is gcm_z:i ^ ((gcm_block:at << 24) | (gcm_block:(at + 1) << 16) | (gcm_block:(at + 2) << 8) | gcm_block:(at + 3));
+				u32 pos: i * 4;
+				gcm_z:i is gcm_z:i ^ ((gcm_block:pos << 24) | (gcm_block:(pos + 1) << 16) | (gcm_block:(pos + 2) << 8) | gcm_block:(pos + 3));
 			;;
 			call MultiplyH;
 			done++ n;
@@ -163,11 +163,11 @@ phi.AesGcm:Library
 						z0 is (z0 >> 4) ^ (gcm_reduce:rest << 16);
 					;;
 					first is false;
-					u32 at: nibble * 4;
-					z0 is z0 ^ gcm_table:at;
-					z1 is z1 ^ gcm_table:(at + 1);
-					z2 is z2 ^ gcm_table:(at + 2);
-					z3 is z3 ^ gcm_table:(at + 3);
+					u32 pos: nibble * 4;
+					z0 is z0 ^ gcm_table:pos;
+					z1 is z1 ^ gcm_table:(pos + 1);
+					z2 is z2 ^ gcm_table:(pos + 2);
+					z3 is z3 ^ gcm_table:(pos + 3);
 					nibble is byte >> 4;
 					step++;
 				;;

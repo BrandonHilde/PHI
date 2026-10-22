@@ -50,11 +50,11 @@ phi.ChaCha20:Library
 
 			while u32 i: 0; i < 16; i++;
 				u32 word: chacha_x:i + chacha_state:i;
-				u32 at: i * 4;
-				output:at is word;
-				output:(at + 1) is word >> 8;
-				output:(at + 2) is word >> 16;
-				output:(at + 3) is word >> 24;
+				u32 pos: i * 4;
+				output:pos is word;
+				output:(pos + 1) is word >> 8;
+				output:(pos + 2) is word >> 16;
+				output:(pos + 3) is word >> 24;
 			;;
 		;;
 	[end]
@@ -69,9 +69,9 @@ phi.ChaCha20:Library
 			if n > 64
 				n is 64;
 			;;
-			ptr<u8> at: data + done;
+			ptr<u8> pos: data + done;
 			while u32 i: 0; i < n; i++;
-				at:i is at:i ^ chacha_block:i;
+				pos:i is pos:i ^ chacha_block:i;
 			;;
 			done++ n;
 		;;

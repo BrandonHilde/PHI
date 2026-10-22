@@ -81,28 +81,28 @@ phi.Text:Library
 
 	# the text after the first word and the spaces that follow it
 	[AfterWord: ptr<u8> text: 0;]
-		ptr<u8> at: 0;
-		call at is SkipSpaces: text;
+		ptr<u8> pos: 0;
+		call pos is SkipSpaces: text;
 		bln space: false;
-		while at:0 is not 0 and space is false
-			at++;
-			call space is IsSpace: at:0;
+		while pos:0 is not 0 and space is false
+			pos++;
+			call space is IsSpace: pos:0;
 		;;
-		call at is SkipSpaces: at;
-	[end: at]
+		call pos is SkipSpaces: pos;
+	[end: pos]
 
 	# copy the first word (at most max characters) into a buffer, which must have room
 	# for max + 1 bytes; returns its length
 	[CopyWord: ptr<u8> text: 0; ptr<u8> to: 0; int max: 0;]
-		ptr<u8> at: 0;
-		call at is SkipSpaces: text;
+		ptr<u8> pos: 0;
+		call pos is SkipSpaces: text;
 		int length: 0;
 		bln space: false;
-		call space is IsSpace: at:0;
-		while at:length is not 0 and space is false and length < max
-			to:length is at:length;
+		call space is IsSpace: pos:0;
+		while pos:length is not 0 and space is false and length < max
+			to:length is pos:length;
 			length++;
-			call space is IsSpace: at:length;
+			call space is IsSpace: pos:length;
 		;;
 		to:length is 0;
 	[end: length]
@@ -198,17 +198,17 @@ phi.Text:Library
 
 	# a decimal number at the start of the text (after spaces); 0 if there's none
 	[ToNumber: ptr<u8> text: 0;]
-		ptr<u8> at: 0;
-		call at is SkipSpaces: text;
+		ptr<u8> pos: 0;
+		call pos is SkipSpaces: text;
 		int sign: 1;
-		if at:0 is '-'
+		if pos:0 is '-'
 			sign is -1;
-			at++;
+			pos++;
 		;;
 		int value: 0;
-		while at:0 >= '0' and at:0 <= '9'
-			value is value * 10 + (at:0 - '0');
-			at++;
+		while pos:0 >= '0' and pos:0 <= '9'
+			value is value * 10 + (pos:0 - '0');
+			pos++;
 		;;
 	[end: value * sign]
 }

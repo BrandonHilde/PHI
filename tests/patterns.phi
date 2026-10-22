@@ -93,11 +93,11 @@ phi.Patterns:Library
 	[end]
 
 	[AfterSlash: ptr<u8> text: 0;]
-		int at: (Text.Length: text);
-		while at > 0 and text:(at - 1) is not '/'
-			at--;
+		int pos: (Text.Length: text);
+		while pos > 0 and text:(pos - 1) is not '/'
+			pos--;
 		;;
-	[end: text + at]
+	[end: text + pos]
 
 	[StateName: int s: 0;]
 		if s is PLAYING return 'playing';

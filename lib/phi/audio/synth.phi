@@ -643,13 +643,13 @@ phi.Synth:Library
 	[end: key]
 
 	# note the first mistake, and the line it's on
-	[Fail: ptr<u8> at: 0; str message: [60];]
+	[Fail: ptr<u8> pos: 0; str message: [60];]
 		if failed is false
 			failed is true;
 			error is message;
 			error_line is 1;
 			ptr<u8> p: song;
-			while p < at and p:0 is not 0
+			while p < pos and p:0 is not 0
 				if p:0 is '\n'
 					error_line++;
 				;;

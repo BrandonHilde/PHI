@@ -253,85 +253,85 @@ phi.Tls:Kernel
 		call X25519.Base: addr tls_public addr tls_private;
 
 		ptr<u8> h: addr tls_hello;
-		u32 at: 4;                            # after the message header, filled in at the end
-		h:at is 3;                            # "TLS 1.2", as TLS 1.3 asks
-		h:(at + 1) is 3;
-		at++ 2;
-		call Random.Fill: h + at 32;
-		at++ 32;
-		h:at is 32;                           # a session id, which middleboxes expect
-		call Random.Fill: h + at + 1 32;
-		at++ 33;
+		u32 pos: 4;                           # after the message header, filled in at the end
+		h:pos is 3;                           # "TLS 1.2", as TLS 1.3 asks
+		h:(pos + 1) is 3;
+		pos++ 2;
+		call Random.Fill: h + pos 32;
+		pos++ 32;
+		h:pos is 32;                          # a session id, which middleboxes expect
+		call Random.Fill: h + pos + 1 32;
+		pos++ 33;
 
 		u32 suites: 0;
 		if (offer & 1) is not 0
-			call Net.Put16: h + at + 2 + suites AES_128_GCM;
+			call Net.Put16: h + pos + 2 + suites AES_128_GCM;
 			suites++ 2;
 		;;
 		if (offer & 2) is not 0
-			call Net.Put16: h + at + 2 + suites CHACHA20_POLY1305;
+			call Net.Put16: h + pos + 2 + suites CHACHA20_POLY1305;
 			suites++ 2;
 		;;
-		call Net.Put16: h + at suites;
-		at++ 2 + suites;
-		h:at is 1;                            # compression: none
-		h:(at + 1) is 0;
-		at++ 2;
+		call Net.Put16: h + pos suites;
+		pos++ 2 + suites;
+		h:pos is 1;                           # compression: none
+		h:(pos + 1) is 0;
+		pos++ 2;
 
-		u32 extensions: at;
-		at++ 2;
+		u32 extensions: pos;
+		pos++ 2;
 		# server_name, for a name (not an address)
 		int host_length: 0;
 		call host_length is Text.Length: host;
 		u32 is_address: 0;
 		call is_address is Net.ParseIp: host;
 		if host_length > 0 and host_length < 256 and is_address is 0
-			call Net.Put16: h + at 0;
-			call Net.Put16: h + at + 2 host_length + 5;
-			call Net.Put16: h + at + 4 host_length + 3;
-			h:(at + 6) is 0;                  # a host name
-			call Net.Put16: h + at + 7 host_length;
-			call Bytes.Copy: h + at + 9 host host_length;
-			at++ 9 + host_length;
+			call Net.Put16: h + pos 0;
+			call Net.Put16: h + pos + 2 host_length + 5;
+			call Net.Put16: h + pos + 4 host_length + 3;
+			h:(pos + 6) is 0;                 # a host name
+			call Net.Put16: h + pos + 7 host_length;
+			call Bytes.Copy: h + pos + 9 host host_length;
+			pos++ 9 + host_length;
 		;;
 		# supported_groups: x25519
-		call Net.Put16: h + at 10;
-		call Net.Put16: h + at + 2 4;
-		call Net.Put16: h + at + 4 2;
-		call Net.Put16: h + at + 6 X25519_GROUP;
-		at++ 8;
+		call Net.Put16: h + pos 10;
+		call Net.Put16: h + pos + 2 4;
+		call Net.Put16: h + pos + 4 2;
+		call Net.Put16: h + pos + 6 X25519_GROUP;
+		pos++ 8;
 		# signature_algorithms: ECDSA P-256/P-384, RSA-PSS, RSA PKCS#1, Ed25519
 		u32 algorithms: 0x0403 0x0503 0x0804 0x0805 0x0806 0x0401 0x0501 0x0601 0x0807;
-		call Net.Put16: h + at 13;
-		call Net.Put16: h + at + 2 2 + algorithms.len * 2;
-		call Net.Put16: h + at + 4 algorithms.len * 2;
-		at++ 6;
+		call Net.Put16: h + pos 13;
+		call Net.Put16: h + pos + 2 2 + algorithms.len * 2;
+		call Net.Put16: h + pos + 4 algorithms.len * 2;
+		pos++ 6;
 		while u32 i: 0; i < algorithms.len; i++;
-			call Net.Put16: h + at algorithms:i;
-			at++ 2;
+			call Net.Put16: h + pos algorithms:i;
+			pos++ 2;
 		;;
 		# supported_versions: TLS 1.3
-		call Net.Put16: h + at 43;
-		call Net.Put16: h + at + 2 3;
-		h:(at + 4) is 2;
-		call Net.Put16: h + at + 5 0x0304;
-		at++ 7;
+		call Net.Put16: h + pos 43;
+		call Net.Put16: h + pos + 2 3;
+		h:(pos + 4) is 2;
+		call Net.Put16: h + pos + 5 0x0304;
+		pos++ 7;
 		# key_share: our X25519 public key
-		call Net.Put16: h + at 51;
-		call Net.Put16: h + at + 2 38;
-		call Net.Put16: h + at + 4 36;
-		call Net.Put16: h + at + 6 X25519_GROUP;
-		call Net.Put16: h + at + 8 32;
-		call Bytes.Copy: h + at + 10 addr tls_public 32;
-		at++ 42;
-		call Net.Put16: h + extensions at - extensions - 2;
+		call Net.Put16: h + pos 51;
+		call Net.Put16: h + pos + 2 38;
+		call Net.Put16: h + pos + 4 36;
+		call Net.Put16: h + pos + 6 X25519_GROUP;
+		call Net.Put16: h + pos + 8 32;
+		call Bytes.Copy: h + pos + 10 addr tls_public 32;
+		pos++ 42;
+		call Net.Put16: h + extensions pos - extensions - 2;
 
 		h:0 is CLIENT_HELLO;
-		call Put24: h + 1 at - 4;
+		call Put24: h + 1 pos - 4;
 		call Sha256.Init: addr tls_transcript;
-		call Sha256.Update: addr tls_transcript h at;
+		call Sha256.Update: addr tls_transcript h pos;
 		bln sent: false;
-		call sent is SendRecord: TYPE_HANDSHAKE h at;
+		call sent is SendRecord: TYPE_HANDSHAKE h pos;
 		if sent is false
 			error is 'could not send the ClientHello';
 		;;
@@ -478,43 +478,43 @@ phi.Tls:Kernel
 			ok is false;
 		;;
 
-		u32 at: 34;
+		u32 pos: 34;
 		bln tls13: false;
 		bln have_key: false;
 		if ok
-			at++ 1 + body:at;                 # the session id we sent, echoed
-			call suite is Net.Get16: body + at;
-			at++ 3;                           # the suite, and compression
+			pos++ 1 + body:pos;               # the session id we sent, echoed
+			call suite is Net.Get16: body + pos;
+			pos++ 3;                          # the suite, and compression
 			u32 total: 0;
-			call total is Net.Get16: body + at;
-			at++ 2;
-			u32 stop: at + total;
+			call total is Net.Get16: body + pos;
+			pos++ 2;
+			u32 stop: pos + total;
 			ok is stop <= length;
-			while ok and at + 4 <= stop
+			while ok and pos + 4 <= stop
 				u32 type: 0;
 				u32 size: 0;
-				call type is Net.Get16: body + at;
-				call size is Net.Get16: body + at + 2;
-				at++ 4;
-				if at + size > stop
+				call type is Net.Get16: body + pos;
+				call size is Net.Get16: body + pos + 2;
+				pos++ 4;
+				if pos + size > stop
 					ok is false;
 				;;
 				elif type is 43 and size is 2
 					u32 version: 0;
-					call version is Net.Get16: body + at;
+					call version is Net.Get16: body + pos;
 					tls13 is (version is 0x0304);
 				;;
 				elif type is 51 and size is 36
 					u32 group: 0;
 					u32 key_size: 0;
-					call group is Net.Get16: body + at;
-					call key_size is Net.Get16: body + at + 2;
+					call group is Net.Get16: body + pos;
+					call key_size is Net.Get16: body + pos + 2;
 					if group is X25519_GROUP and key_size is 32
-						call Bytes.Copy: addr tls_server_public body + at + 4 32;
+						call Bytes.Copy: addr tls_server_public body + pos + 4 32;
 						have_key is true;
 					;;
 				;;
-				at++ size;
+				pos++ size;
 			;;
 			if ok is false
 				error is 'the ServerHello is malformed';

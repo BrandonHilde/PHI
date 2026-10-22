@@ -129,19 +129,19 @@ phi.Play:Program
 			;;
 			u32 chunk: frames * Wav.frame_bytes;
 
-			u32 at: Wav.data_start;
+			u32 pos: Wav.data_start;
 			u32 end_at: Wav.data_start + Wav.data_size;
-			while at < end_at and stopped is false
-				u32 want: end_at - at;
+			while pos < end_at and stopped is false
+				u32 want: end_at - pos;
 				if want > chunk
 					want is chunk;
 				;;
-				call got is OS.ReadFileAt: addr name at addr raw want;
+				call got is OS.ReadFileAt: addr name pos addr raw want;
 				if got <= 0
-					at is end_at;
+					pos is end_at;
 				;;
 				else
-					at++ got;
+					pos++ got;
 					u32 bytes: 0;
 					if resampling
 						call bytes is Wav.Convert: addr raw got addr converted;

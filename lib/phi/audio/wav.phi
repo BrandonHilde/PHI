@@ -52,19 +52,19 @@ phi.Wav:Library
 		;;
 		else
 			# chunks: a 4-letter name, a 32-bit size, then the contents (padded to even)
-			u32 at: 12;
+			u32 pos: 12;
 			bln more: true;
-			while more and at + 8 <= length
-				ptr<u8> chunk: header + at;
+			while more and pos + 8 <= length
+				ptr<u8> chunk: header + pos;
 				u32 size: 0;
 				call size is Read32: chunk + 4;
-				if chunk:0 is 'f' and chunk:1 is 'm' and chunk:2 is 't' and chunk:3 is ' ' and at + 8 + 16 <= length
+				if chunk:0 is 'f' and chunk:1 is 'm' and chunk:2 is 't' and chunk:3 is ' ' and pos + 8 + 16 <= length
 					u32 format: 0;
 					call format is Read16: chunk + 8;
 					call channels is Read16: chunk + 10;
 					call rate is Read32: chunk + 12;
 					call bits is Read16: chunk + 22;
-					if format is FORMAT_EXTENSIBLE and size >= 40 and at + 8 + 26 <= length
+					if format is FORMAT_EXTENSIBLE and size >= 40 and pos + 8 + 26 <= length
 						call format is Read16: chunk + 32;
 					;;
 					if format is not FORMAT_PCM
@@ -90,7 +90,7 @@ phi.Wav:Library
 				;;
 				elif chunk:0 is 'd' and chunk:1 is 'a' and chunk:2 is 't' and chunk:3 is 'a'
 					if found_format
-						data_start is at + 8;
+						data_start is pos + 8;
 						if file_size > 0 and size > file_size - data_start
 							size is file_size - data_start;
 						;;
@@ -105,7 +105,7 @@ phi.Wav:Library
 				if size >= length
 					more is false;                   # it runs past what was read
 				;;
-				at++ 8 + size + (size & 1);
+				pos++ 8 + size + (size & 1);
 			;;
 			if ok is false and error.len is 0
 				error is 'no data in the first part of the file';

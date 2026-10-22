@@ -80,6 +80,23 @@ log 'hi';  # after code too
 #
 ```
 
+## Reserved words
+
+These words are part of the language everywhere, so none of them can be the name of a
+variable, field, parameter, constant, method or struct:
+
+| Kind | Words |
+|---|---|
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
+| Structure | `phi` `struct` `asm` `arm` `use` `const` `isr` `end` |
+| Control | `if` `elif` `else` `while` `unsafe` `break` `continue` `return` `call` `exit` |
+| Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
+| Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
+| Input and output | `log` `debug` `ask` |
+
+Using one as a name is an error that suggests other names for the common ones:
+`'at' is a keyword and can't be a variable name; try 'pos' or 'offset'`.
+
 ## Values
 
 | Kind | Examples |
@@ -629,8 +646,6 @@ struct can't have `new` fields.
 new Cell corner at 0xB8000;    # the first character of the VGA text screen
 corner.letter is 'P';
 ```
-
-`at` is only a keyword in this position, so it can still be a variable name.
 
 ### Limits
 

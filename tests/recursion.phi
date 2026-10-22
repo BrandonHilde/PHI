@@ -58,11 +58,11 @@ phi.Recursion:Library
 		if row < 0 or row atleast 6 or column < 0 or column atleast 6
 			return 0;
 		;;
-		int at: row * 6 + column;
-		if grid:at is not 0
+		int pos: row * 6 + column;
+		if grid:pos is not 0
 			return 0;
 		;;
-		grid:at is 2;
+		grid:pos is 2;
 	[end: 1 + (Fill: row - 1 column) + (Fill: row + 1 column) + (Fill: row column - 1) + (Fill: row column + 1)]
 
 	[Reverse: str text: [20];]
@@ -81,9 +81,9 @@ phi.Recursion:Library
 		result is (Reverse: rest);
 		str joined: [24];
 		joined is result;
-		int at: joined.len;
-		joined:at is first:0;
-		joined:(at + 1) is 0;
+		int pos: joined.len;
+		joined:pos is first:0;
+		joined:(pos + 1) is 0;
 	[end: joined]
 
 	[Name: int n: 0;]

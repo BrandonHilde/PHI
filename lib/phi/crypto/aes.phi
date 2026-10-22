@@ -46,8 +46,8 @@ phi.Aes:Library
 		;;
 		unsafe
 			while u32 i: 0; i < 4; i++;
-				u32 at: i * 4;
-				aes_round_keys:i is (key:at << 24) | (key:(at + 1) << 16) | (key:(at + 2) << 8) | key:(at + 3);
+				u32 pos: i * 4;
+				aes_round_keys:i is (key:pos << 24) | (key:(pos + 1) << 16) | (key:(pos + 2) << 8) | key:(pos + 3);
 			;;
 			while u32 i: 4; i < 44; i++;
 				u32 t: aes_round_keys:(i - 1);

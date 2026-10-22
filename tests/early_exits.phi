@@ -3,14 +3,14 @@ phi.EarlyExits:Library
 	int values: 4 8 15 16 23 42;
 
 	# break leaves the loop
-	int at: -1;
+	int pos: -1;
 	while int i: 0; i < values.len; i++;
 		if values:i is 16
-			at is i;
+			pos is i;
 			break;
 		;;
 	;;
-	debug 'found at ' at '\n';
+	debug 'found at ' pos '\n';
 
 	# continue still runs the step (i++), then tests again
 	while int j: 0; j < values.len; j++;

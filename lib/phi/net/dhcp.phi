@@ -101,28 +101,28 @@ phi.Dhcp:Kernel
 		;;
 		call Net.Put32: m + 236 MAGIC;
 
-		u32 at: OPTIONS;
-		m:at is OPTION_TYPE;
-		m:(at + 1) is 1;
-		m:(at + 2) is type;
-		at++ 3;
+		u32 pos: OPTIONS;
+		m:pos is OPTION_TYPE;
+		m:(pos + 1) is 1;
+		m:(pos + 2) is type;
+		pos++ 3;
 		if type is REQUEST
-			m:at is OPTION_REQUESTED_IP;
-			m:(at + 1) is 4;
-			call Net.Put32: m + at + 2 offered;
-			at++ 6;
-			m:at is OPTION_SERVER;
-			m:(at + 1) is 4;
-			call Net.Put32: m + at + 2 server;
-			at++ 6;
+			m:pos is OPTION_REQUESTED_IP;
+			m:(pos + 1) is 4;
+			call Net.Put32: m + pos + 2 offered;
+			pos++ 6;
+			m:pos is OPTION_SERVER;
+			m:(pos + 1) is 4;
+			call Net.Put32: m + pos + 2 server;
+			pos++ 6;
 		;;
-		m:at is OPTION_PARAMETERS;
-		m:(at + 1) is 3;
-		m:(at + 2) is OPTION_NETMASK;
-		m:(at + 3) is OPTION_ROUTER;
-		m:(at + 4) is OPTION_DNS;
-		at++ 5;
-		m:at is OPTION_END;
+		m:pos is OPTION_PARAMETERS;
+		m:(pos + 1) is 3;
+		m:(pos + 2) is OPTION_NETMASK;
+		m:(pos + 3) is OPTION_ROUTER;
+		m:(pos + 4) is OPTION_DNS;
+		pos++ 5;
+		m:pos is OPTION_END;
 
 		bln sent: false;
 		call sent is Net.SendUdp: Net.BROADCAST CLIENT_PORT SERVER_PORT m message.len;
@@ -160,19 +160,19 @@ phi.Dhcp:Kernel
 			reply_router is 0;
 			reply_dns is 0;
 			reply_server is 0;
-			u32 at: OPTIONS;
+			u32 pos: OPTIONS;
 			bln more: true;
-			while more and at + 1 < length
-				u32 code: m:at;
+			while more and pos + 1 < length
+				u32 code: m:pos;
 				if code is OPTION_END
 					more is false;
 				;;
 				elif code is 0
-					at++;                     # padding
+					pos++;                    # padding
 				;;
 				else
-					u32 size: m:(at + 1);
-					ptr<u8> value: m + at + 2;
+					u32 size: m:(pos + 1);
+					ptr<u8> value: m + pos + 2;
 					if code is OPTION_TYPE
 						reply_type is value:0;
 					;;
@@ -188,7 +188,7 @@ phi.Dhcp:Kernel
 					elif code is OPTION_SERVER and size >= 4
 						call reply_server is Net.Get32: value;
 					;;
-					at++ 2 + size;
+					pos++ 2 + size;
 				;;
 			;;
 			if reply_type is OFFER

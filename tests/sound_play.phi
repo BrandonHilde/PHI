@@ -55,19 +55,19 @@ phi.SoundPlay:Kernel
 		log '[' path ' exited with ' code ']\n';
 	[end]
 
-	[Text: u32 at: 0; ptr<u8> text: 0;]
+	[Text: u32 pos: 0; ptr<u8> text: 0;]
 		while u32 i: 0; text:i is not 0; i++;
-			wav:(at + i) is text:i;
+			wav:(pos + i) is text:i;
 		;;
 	[end]
 
-	[Put16: u32 at: 0; u32 value: 0;]
-		wav:at is value & 0xFF;
-		wav:(at + 1) is (value >> 8) & 0xFF;
+	[Put16: u32 pos: 0; u32 value: 0;]
+		wav:pos is value & 0xFF;
+		wav:(pos + 1) is (value >> 8) & 0xFF;
 	[end]
 
-	[Put32: u32 at: 0; u32 value: 0;]
-		call Put16: at value & 0xFFFF;
-		call Put16: at + 2 value >> 16;
+	[Put32: u32 pos: 0; u32 value: 0;]
+		call Put16: pos value & 0xFFFF;
+		call Put16: pos + 2 value >> 16;
 	[end]
 }

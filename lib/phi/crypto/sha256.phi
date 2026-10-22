@@ -99,20 +99,20 @@ phi.Sha256:Library
 		ptr<u8> block: addr s:0.block;
 
 		# a 1 bit, zeros, then the length in bits in the last 8 bytes of a block
-		u32 at: s:0.used;
-		block:at is 0x80;
-		at++;
-		if at > 56
-			while at < BLOCK_SIZE
-				block:at is 0;
-				at++;
+		u32 pos: s:0.used;
+		block:pos is 0x80;
+		pos++;
+		if pos > 56
+			while pos < BLOCK_SIZE
+				block:pos is 0;
+				pos++;
 			;;
 			call Compress: addr s:0.h block;
-			at is 0;
+			pos is 0;
 		;;
-		while at < 56
-			block:at is 0;
-			at++;
+		while pos < 56
+			block:pos is 0;
+			pos++;
 		;;
 		call PutBig: block + 56 bits_high;
 		call PutBig: block + 60 bits_low;
@@ -140,8 +140,8 @@ phi.Sha256:Library
 	[Compress: ptr<u32> h: 0; ptr<u8> m: 0;]
 		unsafe
 			while u32 i: 0; i < 16; i++;
-				u32 at: i * 4;
-				sha_w:i is (m:at << 24) | (m:(at + 1) << 16) | (m:(at + 2) << 8) | m:(at + 3);
+				u32 pos: i * 4;
+				sha_w:i is (m:pos << 24) | (m:(pos + 1) << 16) | (m:(pos + 2) << 8) | m:(pos + 3);
 			;;
 			while u32 i: 16; i < 64; i++;
 				u32 w15: sha_w:(i - 15);
