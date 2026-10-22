@@ -20,6 +20,8 @@ phi.DrawingTest:Kernel
 	call Draw.FillRect: 200 10 40 40 Draw.WHITE;
 	call Draw.BlendRect: 200 10 20 40 Draw.BLACK 64;
 	call Draw.BlendRect: 220 10 20 40 Draw.RED 255;
+	call Draw.FillRect: 250 10 20 20 Draw.BLUE;
+	call Draw.BlendRect: 250 10 20 20 Draw.GREEN 128;
 	debug 'mix ' (Draw.Mix: 0xFF0000 0x0000FF 0) ' ' (Draw.Mix: 0xFF0000 0x0000FF 255) ' ' (Draw.Mix: 0xFFFFFF 0 128) '\n';
 
 	# ellipses

@@ -10,7 +10,7 @@ namespace Phi.Compiler.Syntax
     /// line opens a block comment that runs to the next '#'.
     ///
     /// Strings: 'text'. A quote followed directly by a letter or digit does not end the
-    /// string, so 'hasn't' works without escaping. Escapes: \r \n \t \0 \\ \'
+    /// string, so 'hasn't' works without escaping. Escapes: \r \n \t \0 \\ \' \xNN
     ///
     /// Numbers: 42, 0x2A, 101010b (binary), 3.14
     /// </summary>
@@ -271,6 +271,16 @@ namespace Phi.Compiler.Syntax
                         case '0': sb.Append('\0'); break;
                         case '\\': sb.Append('\\'); break;
                         case '\'': sb.Append('\''); break;
+                        case 'x':
+                            // any byte by its two hex digits: '\xED' (φ in code page 437)
+                            if (pos + 1 < text.Length && Uri.IsHexDigit(text[pos]) && Uri.IsHexDigit(text[pos + 1]))
+                            {
+                                sb.Append((char)System.Convert.ToInt32(text.Substring(pos, 2), 16));
+                                pos += 2;
+                            }
+                            else
+                                diagnostics.Error(file, new Span(pos - 2, 2), "\\x needs two hex digits after it, like '\\x41'");
+                            break;
                         default:
                             diagnostics.Error(file, new Span(pos - 2, 2), $"unknown escape '\\{e}'");
                             break;

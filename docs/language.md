@@ -87,7 +87,7 @@ log 'hi';  # after code too
 | Numbers | `42`, `-7`, `0x2A`, `101010b` (binary), `1_000` |
 | Booleans | `true`, `false` (stored as 1 and 0) |
 | Strings | `'hello'`; `'hasn't'` works without escaping |
-| Escapes | `\r` `\n` `\t` `\0` `\\` `\'` |
+| Escapes | `\r` `\n` `\t` `\0` `\\` `\'`, and `\xNN` for any byte by its two hex digits (`'\xED'` is φ in the VGA font) |
 | Characters | a one-character string like `'w'` is its character code wherever a number is expected; where text goes (a `str`, a `ptr<u8>` parameter, `log`) it's still text |
 | Constants | `Colors.Black` … `Colors.White` (the 16 VGA colors), and your own `const` |
 
@@ -178,8 +178,13 @@ to a method's variable (`addr total`) is only good until the method returns.
 
 **Scope.** A name is looked up in the current method, then the current class, then in
 other classes of the same unit (if only one class has it). `Class.name` picks a specific
-class. `x.len` is the number of elements of an array, or the current length of a `str`
-(unless `x` is a struct with a field of its own named `len`, which comes first).
+class. When a name found that way is a variable of a class in another file, it's a warning
+(`'dirty' is a variable of Wm, in wm.phi; write Wm.dirty to say so`), since in a large
+program a typo or a missing declaration would otherwise bind to it silently. Classes in the
+same file share names freely.
+
+`x.len` is the number of elements of an array, or the current length of a `str` (unless
+`x` is a struct with a field of its own named `len`, which comes first).
 
 A method's variable can be used anywhere in the method after its declaration, including
 after the block it was declared in. A name can be declared again in a *separate* block
@@ -341,6 +346,16 @@ else
 ```
 
 The condition ends at the end of its line (a `;` after it is also allowed).
+
+A guard fits on one line: when `return`, `break`, `continue`, `call` or `exit` follows the
+condition on the same line, that one statement is the whole `if`, with no `;;`. It can't
+have an `elif` or `else`.
+
+```phi
+if key is 27 return true;
+if done break;
+if count is 0 call Show: 'empty';
+```
 
 ### Loops
 
@@ -1053,13 +1068,17 @@ if (IsReady: port)
   missing argument uses the parameter's default (or zero if it has none).
 - A method can return a number, a pointer, a `str` or an object. A result keeps its type
   at the call: a method whose `[end: ...]` is a `ptr<u8>` gives text to `log` and to a
-  `str`, and a `ptr<T>` result can be indexed. A `ptr<u8>` method can also `return 'text';`
-  (a string literal lives as long as the program; a method's own `str` doesn't).
+  `str`, and a `ptr<T>` result can be indexed. Moving a pointer keeps its type there too:
+  `[end: path + start]` with `path` a `ptr<u8>` is still text. A `ptr<u8>` method can also
+  `return 'text';` (a string literal lives as long as the program; a method's own `str`
+  doesn't).
 - **Calls as values.** `(Name: arguments)` can go anywhere a value can: in conditions,
   math, `log`, indexes and other calls' arguments. The space after the `:` is what makes it
   a call; `(list:i)`, with no space, is an element. `(Name)` with no arguments is a call
-  when no variable has that name. The method must return a value. Without the parentheses
-  (`if Ready: 3`) the error says to add them.
+  when no variable has that name, and so is `(f)` or `(apps:i.closing)` when that is a
+  method variable or field that takes no arguments (see [Methods as values](#methods-as-values)).
+  The method must return a value. Without the parentheses (`if Ready: 3`) the error says to
+  add them.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number or `str`) as the one
   after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
@@ -1112,6 +1131,9 @@ debug (shapes:i.area: addr shapes:i);
   the same kind of result. Every argument has to be given (defaults don't apply).
 - A method variable starts as 0, meaning no method; calling it then stops the program
   (the panic screen in a 32-bit kernel). `if op is 0` checks.
+- One that takes no arguments is called in parentheses, as `(Name)` is: with
+  `method<: int> next;`, `(next)` is its result. Without them, `next` is the method itself,
+  so `if next is 0` still checks whether one is set.
 - Methods called this way can't return a `str` yet.
 - After the callee, `:` with a space starts the arguments; `table:i` with no space is an index.
 

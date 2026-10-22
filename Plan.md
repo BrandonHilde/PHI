@@ -517,6 +517,10 @@ these were added:
   prints as text); `str` building (`s is 'Ln ' n ', Col ' c;`, `s++ ...`); a mouse event queue
   and the scroll wheel in `drivers.input`; a clip stack, alpha blending, ellipses and fitted
   or scaled text in `gfx.draw`
+- [x] The rest of that assessment: `[end: p + n]` keeps the pointer's type; `(f)` calls a
+  method variable or field that takes no arguments; a warning when a name binds to a
+  variable of another file's class; one-line guards (`if x return y;`); `\xNN` escapes;
+  `Draw.BlendRect` in assembly (about 4x faster); [Common patterns](docs/patterns.md)
 
 The parts most worth doing next, roughly in order:
 

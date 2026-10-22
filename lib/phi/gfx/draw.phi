@@ -63,6 +63,9 @@ phi.Draw:Kernel
 	u32 draw_copy_from: 0;
 	u32 draw_copy_to: 0;
 	u32 draw_copy_count: 0;
+	u32 draw_blend_rb: 0;
+	u32 draw_blend_g: 0;
+	u32 draw_blend_keep: 0;
 
 	# draw on `w` x `h` pixels at `to`; the view becomes all of it
 	[Target: ptr<u32> to: 0; int w: 0; int h: 0;]
@@ -324,18 +327,18 @@ phi.Draw:Kernel
 		u32 a: (Math.Clamp: alpha 0 255);
 		a is a + (a >> 7);
 		u32 keep: 256 - a;
-		u32 rb: (color & 0xFF00FF) * a;
-		u32 g: (color & 0xFF00) * a;
-		unsafe
-			while int py: y0; py < y1; py++;
-				ptr<u32> row: pixels + py * width * 4;
-				while int px: x0; px < x1; px++;
-					u32 under: row:px;
-					u32 mixed_rb: ((rb + (under & 0xFF00FF) * keep) >> 8) & 0xFF00FF;
-					u32 mixed_g: ((g + (under & 0xFF00) * keep) >> 8) & 0xFF00;
-					row:px is mixed_rb | mixed_g;
-				;;
-			;;
+		if x1 <= x0 or y1 <= y0
+			return;
+		;;
+		# the color's share of each pixel is the same everywhere, so it's worked out once
+		draw_blend_rb is (color & 0xFF00FF) * a;
+		draw_blend_g is (color & 0xFF00) * a;
+		draw_blend_keep is keep;
+		draw_fill_count is x1 - x0;
+		draw_fill_to is pixels + (y0 * width + x0) * 4;
+		while int row: y0; row < y1; row++;
+			call DrawBlendRow;
+			draw_fill_to++ width * 4;
 		;;
 	[end]
 
@@ -489,5 +492,33 @@ asm.DrawCopyRow
 	mov edi, [{draw_copy_to}]
 	mov ecx, [{draw_copy_count}]
 	rep movsd
+	ret
+}
+
+# each pixel becomes (color * a + pixel * keep) / 256, with red and blue worked out
+# together (they're far enough apart not to carry into each other), then green
+asm.DrawBlendRow
+{
+	mov edi, [{draw_fill_to}]
+	mov ecx, [{draw_fill_count}]
+	mov esi, [{draw_blend_keep}]
+.pixel:
+	mov ebx, [edi]
+	mov eax, ebx
+	and eax, 0xFF00FF
+	imul eax, esi
+	add eax, [{draw_blend_rb}]
+	shr eax, 8
+	and eax, 0xFF00FF
+	and ebx, 0xFF00
+	imul ebx, esi
+	add ebx, [{draw_blend_g}]
+	shr ebx, 8
+	and ebx, 0xFF00
+	or eax, ebx
+	mov [edi], eax
+	add edi, 4
+	dec ecx
+	jnz .pixel
 	ret
 }

@@ -53,6 +53,18 @@ phi.EarlyExits:Library
 	debug (Sign: -5) (Sign: 0) (Sign: 9) '\n';
 	debug (Grade: 95) (Grade: 75) (Grade: 10) '\n';
 
+	# a guard fits on one line, without ;;
+	while int m: 0; m < values.len; m++;
+		if values:m % 2 is 0 continue;
+		if values:m > 20 break;
+		debug values:m ' ';
+	;;
+	debug '\n';
+	debug (Clamp: -4) ' ' (Clamp: 5) ' ' (Clamp: 30) '\n';
+	call Shout: 0;
+	call Shout: 3;
+	if values.len is 6 call Shout: 1;
+
 	[IndexOf: int wanted: 0;]
 		while int k: 0; k < values.len; k++;
 			if values:k is wanted
@@ -86,4 +98,14 @@ phi.EarlyExits:Library
 			return 'B';
 		;;
 	[end: 'C']
+
+	[Clamp: int x: 0;]
+		if x < 0 return 0;
+		if x > 10 return 10;
+	[end: x]
+
+	[Shout: int times: 0;]
+		if times is 0 return;
+		debug 'hey x' times '\n';
+	[end]
 }

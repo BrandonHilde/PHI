@@ -28,6 +28,14 @@ phi.PointerResults:Library
 	ptr<u16> row: (Cells);
 	debug row:2 '\n';
 
+	# so does pointer arithmetic in [end: ...]
+	str path: 'docs/notes.txt';
+	debug (After: path 5) '\n';
+	copy is (After: path 5);
+	debug copy ' - Files\n';
+	ptr<u16> last: (Tail: 1);
+	debug last:0 '\n';
+
 	[Name]
 		ptr<u8> name: names:current;
 	[end: name]
@@ -42,4 +50,10 @@ phi.PointerResults:Library
 	[Cells]
 		ptr<u16> at: addr cells;
 	[end: at]
+
+	[After: ptr<u8> text: 0; int n: 0;]
+	[end: text + n]
+
+	[Tail: int n: 0;]
+	[end: addr cells + n * 2 - 2 + 2]
 }

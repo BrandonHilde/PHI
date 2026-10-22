@@ -811,6 +811,9 @@ namespace Phi.Compiler.Syntax
             return false;
         }
 
+        /// <summary>The statements that can follow an if's condition on the same line.</summary>
+        static readonly string[] OneLineIfWords = { "return", "break", "continue", "call", "exit" };
+
         Stmt ParseIf()
         {
             Token keyword = Advance();
@@ -818,6 +821,16 @@ namespace Phi.Compiler.Syntax
             Accept(TokenKind.Semicolon);
 
             var stmt = new IfStmt { Condition = condition, Span = keyword.Span.To(condition.Span) };
+
+            // a guard on one line, with no ;; :  if key is 27 return true;
+            if (!Current.StartsLine && OneLineIfWords.Any(AtWord))
+            {
+                stmt.Then.Add(ParseStatement());
+                if (AtWord("elif") || AtWord("else"))
+                    throw Error(Current.Span, $"an if on one line can't have an {Current.Text}; write the if as a block, ending in ;;");
+                return stmt;
+            }
+
             stmt.Then.AddRange(ParseBlock("if"));
 
             if (AtWord("elif"))

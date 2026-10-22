@@ -18,6 +18,8 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `g()` as a value | `(g)` | A call with no arguments. |
 | `return v;` | `return v;` | The method's normal result is the `[end: v]` at its end. |
 | `break;`, `continue;` | `break;`, `continue;` | Only in `while` loops. |
+| `if (!ok) return 0;` | `if not ok return 0;` | One line, no `;;`, for `return`, `break`, `continue`, `call` and `exit`. |
+| `"\xED"` | `'\xED'` | Strings use single quotes; `\x` takes exactly two hex digits. |
 | `&x` | `addr x` | |
 | `int (*f)(int, int)` | `method<int int: int> f` | Set with `f is addr Add;`, call with `(f: 1 2)`. |
 | C++ `c.add(3)` | `call c.Add: 3;` | Methods written inside a struct; `self` is the pointer to it. |

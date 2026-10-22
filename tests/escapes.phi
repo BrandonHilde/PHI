@@ -17,4 +17,9 @@ phi.Escapes:Library
 	str says: 'it\'s';
 	debug says ' ' says.len '\n';
 	debug 'a\tb' '\n';
+
+	# any byte by its hex digits
+	u8 letter: '\xED';
+	str hex: '\x50\x48\x49!';
+	debug letter ' ' hex ' ' hex.len '\n';
 }

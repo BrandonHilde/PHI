@@ -44,6 +44,7 @@ namespace Phi.Compiler.Tests
         [InlineData(@"'a\r\n\t\\\''", "a\r\n\t\\'")]
         [InlineData("''", "")]
         [InlineData("'one\r\ntwo'", "one\ntwo")]
+        [InlineData(@"'\xED \x41\x7f'", "í A\u007F")]
         public void Strings(string text, string value)
         {
             Token t = Lex(text)[0];
@@ -100,6 +101,16 @@ namespace Phi.Compiler.Tests
         {
             Lex("'oops", out var diagnostics);
             Assert.Contains(diagnostics.Items, d => d.Message.Contains("never closed"));
+        }
+
+        [Theory]
+        [InlineData(@"'\x4'")]
+        [InlineData(@"'\xG1'")]
+        [InlineData(@"'\x'")]
+        public void HexEscapeNeedsTwoDigits(string text)
+        {
+            Lex(text, out var diagnostics);
+            Assert.Contains(diagnostics.Items, d => d.Message.Contains("\\x needs two hex digits"));
         }
 
         [Fact]

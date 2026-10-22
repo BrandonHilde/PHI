@@ -1,0 +1,107 @@
+# The examples in docs/patterns.md, run as they're written there.
+use user.text;
+
+struct.App
+{
+	u8 title[16];
+	method<int: int> key;               # handles a key; 1 if it used it
+	method<: int> closing;              # 1 if the app may close now (none: always)
+}
+
+phi.Patterns:Library
+{
+	# ---- a table of handlers
+	const int NOTES: 0;
+	const int CLOCK: 1;
+	App apps[2];
+
+	call Text.Copy: apps:NOTES.title 'Notes' 16;
+	apps:NOTES.key is addr NotesKey;
+	apps:NOTES.closing is addr NotesClosing;
+	call Text.Copy: apps:CLOCK.title 'Clock' 16;
+	apps:CLOCK.key is addr ClockKey;
+
+	while int i: 0; i < apps.len; i++;
+		debug addr apps:i.title ': ';
+		if (apps:i.key: 'q') is 1
+			debug 'used q, ';
+		;;
+		if apps:i.closing is 0
+			debug 'closes\n';
+		;;
+		elif (apps:i.closing) is 1
+			debug 'closes\n';
+		;;
+		else
+			debug 'stays open\n';
+		;;
+	;;
+
+	# ---- callbacks
+	call Ask: 'name?' addr Greet;
+
+	method<ptr<u8>> on_answer: addr Greet;
+	call Answer: 'Grace';
+	call Answer: 'nobody';
+
+	# ---- building text
+	str status: [40];
+	int line: 4;
+	int column: 11;
+	status is 'Ln ' line + 1 ', Col ' column + 1;
+	status++ ' (saved)';
+	debug status '\n';
+
+	u8 label[24];
+	call Text.Copy: label 'Size: ' label.len;
+	call Text.AppendSize: label 12800 label.len;
+	debug addr label '\n';
+
+	str path: 'docs/notes.txt';
+	debug (AfterSlash: path) '\n';
+
+	# ---- a set of states
+	const int READY: 0;
+	const int PLAYING: 1;
+	const int OVER: 2;
+	int state: PLAYING;
+	debug (StateName: state) ' ' (StateName: OVER) ' ' (StateName: READY) '\n';
+
+	[NotesKey: int key: 0;]
+		if key is 'q' return 1;
+	[end: 0]
+
+	[NotesClosing]
+	[end: 0]
+
+	[ClockKey: int key: 0;]
+	[end: 0]
+
+	[Ask: ptr<u8> question: 0; method<ptr<u8>> done: 0;]
+		debug question ' ';
+		call done: 'Ada';
+	[end]
+
+	[Greet: ptr<u8> name: 0;]
+		debug 'hello ' name '\n';
+	[end]
+
+	[Answer: ptr<u8> name: 0;]
+		if on_answer is 0 return;
+		call on_answer: name;
+		on_answer is 0;                 # answered once
+	[end]
+
+	[AfterSlash: ptr<u8> text: 0;]
+		int at: (Text.Length: text);
+		while at > 0 and text:(at - 1) is not '/'
+			at--;
+		;;
+	[end: text + at]
+
+	[StateName: int s: 0;]
+		if s is PLAYING return 'playing';
+		if s is OVER return 'game over';
+		ptr<u8> name: 'ready';
+	[end: name]
+}

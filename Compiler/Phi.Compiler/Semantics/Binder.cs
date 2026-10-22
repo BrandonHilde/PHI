@@ -282,6 +282,7 @@ namespace Phi.Compiler.Semantics
             BindExpr(result, methodScopes[m.Decl]);
             if (result.Type.IsString) m.ReturnType = PhiType.Str;
             else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
+            else if (MovedPointer(result) is PhiType moved) m.ReturnType = moved; // [end: text + n] is still a ptr<u8>
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
             else if (result.Type.IsObject || result.Type.IsStruct)
             {
@@ -300,6 +301,20 @@ namespace Phi.Compiler.Semantics
             m.ResultBinding = false;
             m.ResultBound = true;
             return m.ReturnType;
+        }
+
+        /// <summary>
+        /// The pointer type of p + n, n + p or p - n (through more of them, as in p + i - 1):
+        /// the address moves and it still points at the same kind of thing.
+        /// </summary>
+        static PhiType? MovedPointer(Expr e)
+        {
+            if (e.Type.IsPointer) return e.Type;
+            if (e is not BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract } b) return null;
+            PhiType? left = MovedPointer(b.Left), right = MovedPointer(b.Right);
+            if (left != null && right == null) return left;
+            if (right != null && left == null && b.Op == BinaryOp.Add) return right;
+            return null; // p - q is a distance, not a pointer
         }
 
         /// <summary>value.Method, where value is a struct with that method.</summary>
@@ -1020,6 +1035,53 @@ namespace Phi.Compiler.Semantics
 
         Symbol? LookupSimple(string name, Scope scope)
         {
+            Symbol? here = LookupHere(name, scope);
+            if (here != null) return here;
+
+            if (OtherClassWith(name, scope) is ClassDecl other)
+                return classScopes[other].Names[name];
+
+            if (Builtins.Constants.TryGetValue(name, out long value))
+                return new ConstantSymbol { Name = name, Value = value };
+
+            // ClassName.name
+            int dot = name.IndexOf('.');
+            if (dot > 0)
+            {
+                ClassDecl? cls = classScopes.Keys.FirstOrDefault(c => c.Name == name[..dot] && classScopes[c].Unit == scope.Unit);
+                if (cls != null && classScopes[cls].Names.TryGetValue(name[(dot + 1)..], out Symbol? qualified))
+                    return qualified;
+            }
+
+            return null;
+        }
+
+        /// <summary>A name from another class in the same unit, if only one class has it.</summary>
+        ClassDecl? OtherClassWith(string name, Scope scope)
+        {
+            var others = classScopes.Where(c => c.Value.Unit == scope.Unit && c.Key != scope.Class && c.Value.Names.ContainsKey(name)).ToList();
+            return others.Count == 1 ? others[0].Key : null;
+        }
+
+        /// <summary>
+        /// A name written without its class that is found in another file's class: convenient,
+        /// but a typo or a missing declaration binds to it without a word, so it's a warning.
+        /// Once per name in each class.
+        /// </summary>
+        void WarnOtherClass(string name, Span span, Scope scope)
+        {
+            string head = name.Split('.')[0];
+            if (LookupHere(head, scope) != null || OtherClassWith(head, scope) is not ClassDecl other) return;
+            if (other.File == file || classScopes[other].Names[head] is not VariableSymbol) return;
+            if (!otherClassWarned.Add((scope.Class, head))) return;
+            diagnostics.Warning(file, span, $"'{head}' is a variable of {other.Name}, in {Path.GetFileName(other.File.Path)}; write {other.Name}.{head} to say so");
+        }
+
+        readonly HashSet<(ClassDecl, string)> otherClassWarned = new();
+
+        /// <summary>A name in the block, the method, self's fields or the class: everything but other classes.</summary>
+        Symbol? LookupHere(string name, Scope scope)
+        {
             if (scope.Method != null && scope.Method == blockMethod)
                 for (int i = blockNames.Count - 1; i >= 0; i--)
                     if (blockNames[i].TryGetValue(name, out VariableSymbol? inBlock))
@@ -1036,24 +1098,6 @@ namespace Phi.Compiler.Semantics
 
             if (classScopes[scope.Class].Names.TryGetValue(name, out Symbol? member))
                 return member;
-
-            // a name from another class in the same unit, if only one class has it
-            var others = classScopes.Values
-                .Where(s => s.Unit == scope.Unit && s.Class != scope.Class && s.Names.ContainsKey(name))
-                .Select(s => s.Names[name]).ToList();
-            if (others.Count == 1) return others[0];
-
-            if (Builtins.Constants.TryGetValue(name, out long value))
-                return new ConstantSymbol { Name = name, Value = value };
-
-            // ClassName.name
-            int dot = name.IndexOf('.');
-            if (dot > 0)
-            {
-                ClassDecl? cls = classScopes.Keys.FirstOrDefault(c => c.Name == name[..dot] && classScopes[c].Unit == scope.Unit);
-                if (cls != null && classScopes[cls].Names.TryGetValue(name[(dot + 1)..], out Symbol? qualified))
-                    return qualified;
-            }
 
             return null;
         }
@@ -2022,6 +2066,13 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>Math on two values happens in 32 bits, unsigned if either side is u32 or a pointer.</summary>
+        /// <summary>
+        /// A method&lt;: R&gt; in parentheses is a call, as (Name) is for a method: it takes no
+        /// arguments and gives a value. Without parentheses it's still the method (f is 0 checks it).
+        /// </summary>
+        static bool CalledInParens(PhiType t) =>
+            t.IsMethod && t.Signature!.Parameters.Count == 0 && t.Signature.Result.Kind != TypeKind.Void;
+
         static PhiType ArithmeticType(PhiType a, PhiType b) =>
             a.IsUnsigned32 || b.IsUnsigned32 ? PhiType.U32 : PhiType.I32;
 
@@ -2076,8 +2127,7 @@ namespace Phi.Compiler.Semantics
                         break;
                     }
 
-                    name.Symbol = symbol;
-                    name.Type = symbol switch
+                    PhiType type = symbol switch
                     {
                         VariableSymbol v => v.Type,
                         ConstantSymbol k => k.Type,
@@ -2087,6 +2137,19 @@ namespace Phi.Compiler.Semantics
                         PathSymbol p => p.Type,
                         _ => PhiType.Error,
                     };
+
+                    // (next): a method variable that takes nothing is called, like (Name)
+                    if (name.InParens && CalledInParens(type))
+                    {
+                        name.Call = new CallExpr { Callee = name.Name, CalleeSpan = name.Span, Span = name.Span };
+                        BindCallExpr(name.Call, scope);
+                        name.Type = name.Call.Type;
+                        break;
+                    }
+
+                    name.Symbol = symbol;
+                    name.Type = type;
+                    if (symbol != null) WarnOtherClass(name.Name, name.Span, scope);
                     if (symbol == null) Error(name.Span, MethodHint(name.Name, "", scope) ?? DescribeMissing(name.Name, scope));
                     break;
                 }
@@ -2116,6 +2179,16 @@ namespace Phi.Compiler.Semantics
                     {
                         Error(member.MemberSpan, t.Fields != null ? $"{t} has no field '{member.Member}'" : $"a {t} has no fields");
                         member.Type = PhiType.Error;
+                        break;
+                    }
+
+                    // (apps:id.closing): a method field that takes nothing is called too
+                    if (member.InParens && CalledInParens(field.Type))
+                    {
+                        var place = new MemberExpr { Target = member.Target, Member = member.Member, MemberSpan = member.MemberSpan, Span = member.Span };
+                        member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = place };
+                        BindCallExpr(member.Call, scope);
+                        member.Type = member.Call.Type;
                         break;
                     }
 

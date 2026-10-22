@@ -110,6 +110,7 @@ namespace Phi.Compiler.Tests
         [InlineData("int list: 1 2;\nint x: (list: 1);", "'list' isn't a method; for an element, leave out the space after ':' (list:i)")]
         [InlineData("int x: (Missing: 1);", "unknown method 'Missing'")]
         [InlineData("int x: (Twice: 1 2);\n[Twice: int n: 0;]\n[end: n * 2]", "Twice takes 1 argument but was given 2")]
+        [InlineData("call M: 1;\n[M: int c: 0;]\nif c is 1 return;\nelse\n log 'x';\n;;\n[end]", "an if on one line can't have an else; write the if as a block, ending in ;;")]
         public void EarlyExitAndCallErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Theory]
@@ -188,6 +189,35 @@ namespace Phi.Compiler.Tests
         public void ClearlyWrittenCodeDoesNotWarn(string body)
         {
             CompileResult result = Compile(Boot(body));
+            Assert.Empty(result.Diagnostics);
+        }
+
+        [Fact]
+        public void ANameFromAnotherFilesClassWarnsUntilItsClassIsWritten()
+        {
+            string dir = Path.Combine(Path.GetTempPath(), "phi-names-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(dir);
+            try
+            {
+                File.WriteAllText(Path.Combine(dir, "state.phi"), "phi.State:Library\n{\n int dirty: 0;\n}\n");
+                string main = Path.Combine(dir, "main.phi");
+
+                File.WriteAllText(main, "use state;\nphi.Main:Kernel\n{\n dirty is 1;\n log dirty;\n}\n");
+                CompileResult loose = PhiCompiler.Compile(main);
+                Assert.True(loose.Success, string.Join("\n", loose.Diagnostics));
+                Diagnostic warning = Assert.Single(loose.Diagnostics);
+                Assert.Contains("'dirty' is a variable of State, in state.phi; write State.dirty to say so", warning.Message);
+
+                File.WriteAllText(main, "use state;\nphi.Main:Kernel\n{\n State.dirty is 1;\n log State.dirty;\n}\n");
+                Assert.Empty(PhiCompiler.Compile(main).Diagnostics);
+            }
+            finally { Directory.Delete(dir, recursive: true); }
+        }
+
+        [Fact]
+        public void ANameFromAnotherClassInTheSameFileDoesNotWarn()
+        {
+            CompileResult result = Compile("phi.State:Library\n{\n int dirty: 0;\n}\nphi.Main:Kernel\n{\n dirty is 1;\n}\n");
             Assert.Empty(result.Diagnostics);
         }
 

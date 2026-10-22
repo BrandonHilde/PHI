@@ -15,6 +15,10 @@ pixel 0 0 2F6FE4
 pixel 200 10 BFBFBF
 pixel 219 49 BFBFBF
 pixel 220 10 E0483E
+# half of green over blue mixes every channel
+pixel 250 10 36969E
+pixel 269 29 36969E
+pixel 270 29 000000
 # a filled ellipse: its middle and both ends, and just past them
 pixel 400 100 F5C542
 pixel 340 100 F5C542

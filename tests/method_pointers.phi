@@ -4,6 +4,11 @@ struct.Shape
 	method<ptr<Shape>: int> area;       # each shape knows how to work out its area
 }
 
+struct.App
+{
+	method<: int> closing;
+}
+
 phi.MethodPointers:Library
 {
 	# a table of methods, called through an index
@@ -51,6 +56,19 @@ phi.MethodPointers:Library
 	method<int: int> count_down: addr CountDown;
 	debug (count_down: 5) '\n';
 
+	# one that takes nothing is called in parentheses, as (Name) is
+	method<: int> next: addr Seven;
+	debug (next) ' ' (next) + 1 ' ';
+	App apps[2];
+	apps:1.closing is addr Seven;
+	if (apps:1.closing) is 7
+		debug 'closing ';
+	;;
+	if apps:0.closing is 0
+		debug 'no handler';
+	;;
+	debug '\n';
+
 	[Add: int a: 0; int b: 0;]
 	[end: a + b]
 
@@ -81,6 +99,9 @@ phi.MethodPointers:Library
 	[Say: str text: [16];]
 		debug 'say ' text '\n';
 	[end]
+
+	[Seven]
+	[end: 7]
 
 	[CountDown: int n: 0;]
 		if n is 0
