@@ -5,13 +5,16 @@
 #   call Draw.FillRect: 10 10 100 50 Draw.BLUE;
 #   call Draw.Line: 0 0 639 479 (Draw.Rgb: 255 128 0);
 #   call Draw.FillCircle: 320 240 40 Draw.YELLOW;
+#   call Draw.BlendRect: 0 0 200 100 Draw.BLACK 64;  # darken by a quarter (a shadow)
 #   int w: (Draw.Text: 20 20 'Hello' Draw.WHITE);    # text returns how wide it was
 #   call Screen.PresentAll;                  # show what was drawn
 #
 # Pixels are u32 colors, 0xRRGGBB. Draw works on any block of pixels (Target), so it
 # can also draw into an image of your own. Everything is drawn relative to an origin
 # and cut to a clipping rectangle, both set with SetView: point the view at a window's
-# inside and code can draw at (0, 0) without spilling out of it.
+# inside and code can draw at (0, 0) without spilling out of it. PushClip narrows the
+# clipping rectangle further (to a scrolling list inside the window, say) and PopClip
+# puts it back.
 #
 # Text uses the VGA font (gfx.font), which must be loaded while the screen is still in
 # text mode; Screen.Start does that. Drawing uses class variables, so draw from one
@@ -48,6 +51,11 @@ phi.Draw:Kernel
 	int clip_x1: 0;
 	int clip_y1: 0;
 
+	# the clipping rectangles PushClip saved, four numbers a level
+	const int CLIP_DEPTH: 16;
+	int saved_clips[64];
+	int clip_depth: 0;
+
 	# for the assembly loops below
 	u32 draw_fill_to: 0;
 	u32 draw_fill_count: 0;
@@ -78,8 +86,50 @@ phi.Draw:Kernel
 		call SetView: 0 0 width height;
 	[end]
 
+	# cut drawing to the w x h rectangle at (x, y) (relative to the origin) as well as the
+	# current clip; PopClip puts the clip back as it was. Up to CLIP_DEPTH levels are saved:
+	# deeper ones still narrow the clip, but PopClip can't widen it again.
+	[PushClip: int x: 0; int y: 0; int w: 0; int h: 0;]
+		if clip_depth < CLIP_DEPTH
+			saved_clips:(clip_depth * 4) is clip_x0;
+			saved_clips:(clip_depth * 4 + 1) is clip_y0;
+			saved_clips:(clip_depth * 4 + 2) is clip_x1;
+			saved_clips:(clip_depth * 4 + 3) is clip_y1;
+		;;
+		clip_depth++;
+		int x0: (Math.Max: origin_x + x clip_x0);
+		int y0: (Math.Max: origin_y + y clip_y0);
+		int x1: (Math.Min: origin_x + x + w clip_x1);
+		int y1: (Math.Min: origin_y + y + h clip_y1);
+		clip_x0 is x0;
+		clip_y0 is y0;
+		clip_x1 is (Math.Max: x1 x0);
+		clip_y1 is (Math.Max: y1 y0);
+	[end]
+
+	[PopClip]
+		if clip_depth is 0
+			return;
+		;;
+		clip_depth--;
+		if clip_depth < CLIP_DEPTH
+			clip_x0 is saved_clips:(clip_depth * 4);
+			clip_y0 is saved_clips:(clip_depth * 4 + 1);
+			clip_x1 is saved_clips:(clip_depth * 4 + 2);
+			clip_y1 is saved_clips:(clip_depth * 4 + 3);
+		;;
+	[end]
+
 	[Rgb: int r: 0; int g: 0; int b: 0;]
 	[end: ((r & 255) << 16) | ((g & 255) << 8) | (b & 255)]
+
+	# `color` laid over `under`, alpha (0 to 255) of the way: 0 is all `under`, 255 all `color`
+	[Mix: u32 color: 0; u32 under: 0; int alpha: 0;]
+		u32 a: (Math.Clamp: alpha 0 255);
+		a is a + (a >> 7);                    # 0 to 256, so >> 8 divides exactly
+		u32 rb: ((color & 0xFF00FF) * a + (under & 0xFF00FF) * (256 - a)) >> 8;
+		u32 g: ((color & 0xFF00) * a + (under & 0xFF00) * (256 - a)) >> 8;
+	[end: (rb & 0xFF00FF) | (g & 0xFF00)]
 
 	# kept for programs that call them; the same as Math.Min and Math.Max
 	[Min: int a: 0; int b: 0;]
@@ -216,6 +266,79 @@ phi.Draw:Kernel
 		;;
 	[end]
 
+	# an ellipse filled in, rx across and ry up and down from (cx, cy)
+	[FillEllipse: int cx: 0; int cy: 0; int rx: 0; int ry: 0; u32 color: 0;]
+		if rx < 1 or ry < 1
+			call FillRect: cx - rx cy - ry rx * 2 + 1 ry * 2 + 1 color;
+			return;
+		;;
+		while int dy: 0; dy <= ry; dy++;
+			int dx: (EllipseHalf: rx ry dy);
+			call FillRect: cx - dx cy + dy 2 * dx + 1 1 color;
+			if dy > 0
+				call FillRect: cx - dx cy - dy 2 * dx + 1 1 color;
+			;;
+		;;
+	[end]
+
+	# an ellipse's outline, rx across and ry up and down from (cx, cy)
+	[Ellipse: int cx: 0; int cy: 0; int rx: 0; int ry: 0; u32 color: 0;]
+		if rx < 1 or ry < 1
+			call FillRect: cx - rx cy - ry rx * 2 + 1 ry * 2 + 1 color;
+			return;
+		;;
+		while int dy: 0; dy <= ry; dy++;
+			# each row draws from its own edge in to where the next row out ends, so the
+			# flat top and bottom have no gaps
+			int dx: (EllipseHalf: rx ry dy);
+			int from: dx;
+			if dy < ry
+				from is (Math.Min: (EllipseHalf: rx ry dy + 1) + 1 dx);
+			;;
+			else
+				from is 0;
+			;;
+			int w: dx - from + 1;
+			call FillRect: cx + from cy + dy w 1 color;
+			call FillRect: cx - dx cy + dy w 1 color;
+			if dy > 0
+				call FillRect: cx + from cy - dy w 1 color;
+				call FillRect: cx - dx cy - dy w 1 color;
+			;;
+		;;
+	[end]
+
+	# how far an ellipse reaches to each side dy rows from its middle, rounded; in 1/16ths
+	# of a pixel while working, so ry can be up to 2896
+	[EllipseHalf: int rx: 0; int ry: 0; int dy: 0;]
+		int root: (Math.Sqrt: (ry * ry - dy * dy) * 256);
+	[end: (rx * root + ry * 8) / (ry * 16)]
+
+	# what is already drawn in a rectangle, with `color` laid over it (alpha 0 to 255):
+	# a shadow is BlendRect: x y w h Draw.BLACK 64
+	[BlendRect: int x: 0; int y: 0; int w: 0; int h: 0; u32 color: 0; int alpha: 0;]
+		int x0: (Math.Max: x + origin_x clip_x0);
+		int y0: (Math.Max: y + origin_y clip_y0);
+		int x1: (Math.Min: x + origin_x + w clip_x1);
+		int y1: (Math.Min: y + origin_y + h clip_y1);
+		u32 a: (Math.Clamp: alpha 0 255);
+		a is a + (a >> 7);
+		u32 keep: 256 - a;
+		u32 rb: (color & 0xFF00FF) * a;
+		u32 g: (color & 0xFF00) * a;
+		unsafe
+			while int py: y0; py < y1; py++;
+				ptr<u32> row: pixels + py * width * 4;
+				while int px: x0; px < x1; px++;
+					u32 under: row:px;
+					u32 mixed_rb: ((rb + (under & 0xFF00FF) * keep) >> 8) & 0xFF00FF;
+					u32 mixed_g: ((g + (under & 0xFF00) * keep) >> 8) & 0xFF00;
+					row:px is mixed_rb | mixed_g;
+				;;
+			;;
+		;;
+	[end]
+
 	# a blend from one color at the top to another at the bottom
 	[Gradient: int x: 0; int y: 0; int w: 0; int h: 0; u32 top: 0; u32 bottom: 0;]
 		int r0: (top >> 16) & 255;
@@ -298,6 +421,46 @@ phi.Draw:Kernel
 			i++;
 		;;
 	[end: i * 8]
+
+	# text cut to fit in w pixels, ending in '...' when it doesn't; returns how wide it was
+	[TextFitted: int x: 0; int y: 0; int w: 0; ptr<u8> text: 0; u32 color: 0;]
+		int room: w / 8;
+		int length: 0;
+		while text:length is not 0
+			length++;
+		;;
+		if length <= room
+			return (Text: x y text color);
+		;;
+		int kept: (Math.Max: room - 3 0);
+		while int i: 0; i < kept; i++;
+			call Char: x + i * 8 y text:i color;
+		;;
+		while int d: kept; d < room; d++;
+			call Char: x + d * 8 y '.' color;
+		;;
+	[end: room * 8]
+
+	# text with each pixel of the font drawn as a scale x scale square; returns how wide it was
+	[TextScaled: int x: 0; int y: 0; ptr<u8> text: 0; int scale: 1; u32 color: 0;]
+		int i: 0;
+		while text:i is not 0
+			call CharScaled: x + i * 8 * scale y text:i scale color;
+			i++;
+		;;
+	[end: i * 8 * scale]
+
+	[CharScaled: int x: 0; int y: 0; u8 ch: 0; int scale: 1; u32 color: 0;]
+		int glyph: ch * 16;
+		while int r: 0; r < 16; r++;
+			u8 bits: Font.glyphs:(glyph + r);
+			while int b: 0; b < 8; b++;
+				if (bits & (0x80 >> b)) is not 0
+					call FillRect: x + b * scale y + r * scale scale scale color;
+				;;
+			;;
+		;;
+	[end]
 
 	# text centered in a w-wide space starting at x
 	[Centered: int x: 0; int y: 0; int w: 0; ptr<u8> text: 0; u32 color: 0;]

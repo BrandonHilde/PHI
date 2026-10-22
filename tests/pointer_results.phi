@@ -1,0 +1,45 @@
+use user.text;
+
+phi.PointerResults:Library
+{
+	str names: 'guest' 'admin';
+	u16 cells: 100 200 300;
+	int current: 1;
+
+	# a method that returns a ptr<u8> gives text, not its address
+	debug 'logged in ' (Name) '\n';
+	debug (Pick: 0) ' ' (Pick: 1) ' ' (Pick: 5) '\n';
+
+	# stored in a str, the text is copied
+	str copy: [16];
+	call copy is Name;
+	debug copy '\n';
+	copy is (Pick: 0);
+	debug copy '\n';
+
+	# passed straight on to a ptr<u8> parameter
+	debug (Text.Length: (Name)) '\n';
+
+	# and kept as a pointer where one goes
+	ptr<u8> p: (Name);
+	debug p:0 '\n';
+
+	# a typed pointer keeps its type
+	ptr<u16> row: (Cells);
+	debug row:2 '\n';
+
+	[Name]
+		ptr<u8> name: names:current;
+	[end: name]
+
+	[Pick: int n: 0;]
+		if n < 0 or n >= names.len
+			return 'none';
+		;;
+		ptr<u8> name: names:n;
+	[end: name]
+
+	[Cells]
+		ptr<u16> at: addr cells;
+	[end: at]
+}

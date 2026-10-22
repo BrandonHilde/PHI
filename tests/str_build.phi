@@ -1,0 +1,55 @@
+phi.StrBuild:Library
+{
+	str line: [40];
+	int cursor_line: 4;
+	int column: 11;
+
+	# several values make the text, as in log: numbers are written in decimal
+	line is 'Ln ' cursor_line + 1 ', Col ' column + 1;
+	debug line '\n';
+
+	# ++ adds to the end
+	line++ '!' -3;
+	debug line '\n';
+
+	# cut to fit, like any str
+	str tiny: [5];
+	tiny is 'abc' 'def' 123;
+	debug tiny '\n';
+	tiny is 'x';
+	tiny++ 'yz' 'abcdef';
+	debug tiny '\n';
+	tiny++ 'more';
+	debug tiny '\n';
+
+	# u32 values, pointers to text, and the str itself as the first value
+	u32 big: 4000000000;
+	line is 'big ' big;
+	debug line '\n';
+	ptr<u8> p: 'pointer';
+	line is p ' text';
+	line is line ' again';
+	debug line '\n';
+
+	# a number still takes one value, where n -1 subtracts
+	int count: 10;
+	count is count -1;
+	line is 'count ' count;
+	debug line '\n';
+
+	# an element of a str array, and calls
+	str names: 'aaaa' 'bbbb';
+	names:1 is 'x' 7;
+	debug names:0 ' ' names:1 '\n';
+	line is (Label: 3) ' & ' (Twice: 21);
+	debug line '\n';
+
+	[Label: int n: 0;]
+		str label: [20];
+		label is '#' n;
+		label++ ' (' n * n ')';
+	[end: label]
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+}

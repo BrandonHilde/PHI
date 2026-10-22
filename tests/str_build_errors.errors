@@ -1,0 +1,5 @@
+'count' (int) takes one value; only a str can be built from several
+'line' is a str: write what to add to its end
+'line' is being rewritten here, so it can only be the first value
+'line' can't be added to itself
+can't write a u8 array into a str

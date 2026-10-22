@@ -84,11 +84,20 @@ namespace Phi.Cli
                 Delay(60, cancel);
             }
 
-            foreach (string raw in lines)
+            // the line being run, so a script cut short can say where it was
+            int lineNumber = 0;
+            string? running = null;
+            string Stopped() => running == null
+                ? "the input script hadn't started"
+                : $"the input script was at line {lineNumber}: {running}";
+
+            for (int i = 0; i < lines.Count; i++)
             {
-                string line = raw.Trim();
+                string line = lines[i].Trim();
                 if (line.Length == 0 || line.StartsWith('#')) continue;
-                if (cancel.IsCancellationRequested) return "stopped before the input script finished";
+                if (cancel.IsCancellationRequested) return Stopped();
+                lineNumber = i + 1;
+                running = line;
 
                 string word = line.Split(' ', 2)[0];
                 string rest = line.Length > word.Length ? line[(word.Length + 1)..] : "";
@@ -102,7 +111,7 @@ namespace Phi.Cli
                         while (!serial().Contains(rest))
                         {
                             if (clock.Elapsed > ExpectTimeout) return $"input script: never saw \"{rest}\"";
-                            if (cancel.IsCancellationRequested) return $"stopped while waiting for \"{rest}\"";
+                            if (cancel.IsCancellationRequested) return Stopped();
                             Thread.Sleep(20);
                         }
                         break;

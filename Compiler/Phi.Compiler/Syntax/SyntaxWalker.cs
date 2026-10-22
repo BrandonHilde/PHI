@@ -33,7 +33,8 @@ namespace Phi.Compiler.Syntax
                     .Concat(Nodes(w.Condition))
                     .Concat(w.Step != null ? Nodes(w.Step) : Enumerable.Empty<Node>())
                     .Concat(w.Body.SelectMany(Nodes)),
-                AssignStmt a => Nodes(a.Target).Concat(Nodes(a.Value)),
+                AssignStmt a => Nodes(a.Target).Concat(Nodes(a.Value)).Concat((a.Values ?? new()).SelectMany(Nodes)),
+                StringBuildStmt b => Nodes(b.Target).Concat(b.Parts.SelectMany(Nodes)),
                 ReturnStmt r => r.Value != null ? Nodes(r.Value) : Enumerable.Empty<Node>(),
                 _ => Enumerable.Empty<Node>(),
             };

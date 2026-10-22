@@ -1,0 +1,8 @@
+expect ready
+click 100 50
+dclick 10 20
+# the monitor turns the wheel one notch per move: up (dz > 0) is -1, down is +1
+mouse_move 0 0 1
+mouse_move 0 0 -1
+wait 200
+type q

@@ -1,0 +1,19 @@
+use drivers.input;
+
+phi.MouseEventTest:Kernel
+{
+	call Input.Start;
+	debug 'wheel ' Input.has_wheel '\n';
+	debug 'ready\n';
+
+	# don't look at the mouse until q is pressed: every click and turn must still be queued
+	int key: 0;
+	while (key & Input.KEY_MASK) is not 'q'
+		key is (Input.NextKey);
+	;;
+
+	while (Input.NextMouse)
+		debug Input.event_buttons ' ' Input.event_x ' ' Input.event_y ' ' Input.event_wheel '\n';
+	;;
+	debug 'total ' Input.wheel '\n';
+}

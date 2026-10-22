@@ -278,6 +278,32 @@ namespace Phi.Compiler.Syntax
         public Expr Target { get; init; } = null!;
         public AssignOp Op { get; init; }
         public Expr Value { get; init; } = null!;
+
+        /// <summary>
+        /// The right side read as a list, as log reads it, when that isn't just Value: in
+        /// `line is 'Ln ' n;` two values, and in `s is '!' -3;` also two. Only a str takes more
+        /// than one; a number keeps Value (where `n -1` subtracts).
+        /// </summary>
+        public List<Expr>? Values { get; init; }
+
+        /// <summary>Value is the whole right side (nothing came after it).</summary>
+        public bool ValueIsWhole { get; init; } = true;
+
+        /// <summary>x++; or x--; with no value written.</summary>
+        public bool Bare { get; init; }
+    }
+
+    /// <summary>
+    /// Made by the binder from `s is a b c;` or `s++ a b;` when s is a str: each value is
+    /// written into s as text (numbers in decimal), one after another, cut to fit.
+    /// </summary>
+    public sealed class StringBuildStmt : Stmt
+    {
+        public Expr Target { get; init; } = null!;
+        public List<Expr> Parts { get; } = new();
+
+        /// <summary>Add to the end of what s holds (s++ ...), instead of starting it again.</summary>
+        public bool Append { get; init; }
     }
 
     // ---------------------------------------------------------------- expressions

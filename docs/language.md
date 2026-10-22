@@ -88,7 +88,7 @@ log 'hi';  # after code too
 | Booleans | `true`, `false` (stored as 1 and 0) |
 | Strings | `'hello'`; `'hasn't'` works without escaping |
 | Escapes | `\r` `\n` `\t` `\0` `\\` `\'` |
-| Characters | a one-character string like `'w'` is its character code wherever a number is expected |
+| Characters | a one-character string like `'w'` is its character code wherever a number is expected; where text goes (a `str`, a `ptr<u8>` parameter, `log`) it's still text |
 | Constants | `Colors.Black` … `Colors.White` (the 16 VGA colors), and your own `const` |
 
 A quote followed directly by a letter or digit doesn't end a string, which is why
@@ -265,6 +265,15 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
   and has a lowercase letter in it (class names are PascalCase), or when what follows the
   dot is in capitals; otherwise `tasks:i.id` is a field of the element, `(tasks:i).id`.
 
+  | Written | Means |
+  |---|---|
+  | `tasks:i.id` | field `id` of element `i` |
+  | `windows:(order:i).minimized` | element `order:i` of `windows`, then its field |
+  | `Users.list:(Users.current).zone` | another class's array, by another class's variable, then a field |
+  | `windows:Apps.PAINT.open` | element `Apps.PAINT` (a constant: in capitals), then its field |
+  | `(Users.Name):0` | the first element of what a call returned (a `ptr<u8>`'s first character) |
+  | `(Twice: 3)` / `(list:3)` | a call (a space after `:`) / an element (none) |
+
 ## Statements
 
 Simple statements end with `;`. Blocks (`if`, `else`, `while`, `unsafe`) end with `;;`.
@@ -301,6 +310,21 @@ name is line;  # line is a ptr<u8>: copies the text it points to (cut to fit)
 
 `b is h is 64;` stores whether `h is 64` in `b`, which reads ambiguously, so it's a warning;
 write `b is (h is 64);`.
+
+**Building a `str`.** A `str` takes several values, read the way `log` reads them: each is
+written in as text (numbers in decimal), one after another, and `++` adds to the end.
+
+```phi
+str status: [40];
+status is 'Ln ' line + 1 ', Col ' column + 1;   # Ln 5, Col 12
+status++ ' (' (Text.Length: name) ' chars)';
+status is status ' more';                        # the str itself can be the first value
+```
+
+As in any list, `'Total' -3` is two values. The text is cut to fit, like any `str`. The
+`str` can't appear after the first value (it's being rewritten by then), and `s++ s;` is an
+error: copy it to another `str` first. Only a `str` takes several values: `n is n -1;`
+still subtracts.
 
 ### Conditions
 
@@ -771,18 +795,43 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
   screen only, over the picture.
 - **Views.** `Draw.SetView: x y w h` moves the origin to (x, y) and cuts all drawing to that
   rectangle; `ResetView` undoes it. `Draw.Target: pixels w h` draws on a block of pixels of
-  your own instead, like an image being built.
+  your own instead, like an image being built (it resets the view).
+- **Clipping inside a view.** `Draw.PushClip: x y w h` cuts drawing to that rectangle as well
+  (relative to the origin, and never wider than the clip already in force); `PopClip` puts the
+  clip back. They nest, 16 deep.
 - **Shapes:** `Clear`, `FillRect`, `Rect`, `Pixel`, `GetPixel`, `HLine`, `VLine`, `Line`,
-  `Circle`, `FillCircle`, `Gradient` (top color to bottom color), `Blit` (copy an image),
-  `Char`, `Text` and `Number` (both return their width), `TextWidth`, `Centered`. Colors are
-  `0xRRGGBB`; `Draw.Rgb: r g b` makes one, and `Draw.RED` ... name a few.
+  `Circle`, `FillCircle`, `Ellipse` and `FillEllipse` (`cx cy rx ry`), `Gradient` (top color
+  to bottom color), `Blit` (copy an image). Colors are `0xRRGGBB`; `Draw.Rgb: r g b` makes
+  one, and `Draw.RED` ... name a few.
+- **See-through color.** `Draw.BlendRect: x y w h color alpha` lays a color over what is
+  already drawn (alpha 0 to 255; `Draw.BLACK 64` darkens by a quarter, for shadows), and
+  `(Draw.Mix: color under alpha)` works out one blended color.
+- **Text:** `Char`, `Text` and `Number` (both return their width), `TextWidth`, `Centered`,
+  `TextFitted: x y w text color` (cut to `w` pixels, ending in `...`), and
+  `TextScaled: x y text scale color` (each pixel of the font drawn `scale` x `scale`).
 - **Keys** from `Input.NextKey` are characters (`'a'`, `'A'`, 13 for Enter, 27 for Esc) or
   `Input.KEY_UP`, `KEY_F1` ... for keys that don't type one, with `MOD_SHIFT`, `MOD_CTRL` and
   `MOD_ALT` added for the modifiers held (`key & Input.KEY_MASK` is the key alone).
   `(Input.IsDown: 'a')` says whether a key is held now. `Input` replaces the built-in keyboard
   driver, so don't also use `ask` or `OS.GetKey`.
 - **The mouse** is `Input.mouse_x`, `Input.mouse_y` and `Input.buttons` (bit 0 left, bit 1
-  right, bit 2 middle), kept inside the area given to `SetArea`.
+  right, bit 2 middle), kept inside the area given to `SetArea`. Those say what is true now,
+  so a loop that looks between redraws can miss a whole click; `Input.NextMouse` can't. It
+  takes the oldest button change or wheel turn (64 are kept) into `Input.event_buttons`,
+  `event_x`, `event_y` (where the mouse was) and `event_wheel`:
+
+  ```phi
+  while (Input.NextMouse)
+      if (Input.event_buttons & 1) is not 0
+          call Clicked: Input.event_x Input.event_y;
+      ;;
+      call Scroll: Input.event_wheel;    # down is positive
+  ;;
+  ```
+
+  The wheel needs a mouse that speaks the IntelliMouse protocol, as QEMU's does
+  (`Input.has_wheel`); `Input.wheel` adds up every turn. `FlushMouse` forgets events not
+  taken yet.
 - `Paging.MapDevice: address bytes` makes other device memory reachable the same way.
 
 [samples/sketch.phi](../samples/sketch.phi) is a small drawing program using all three.
@@ -1002,7 +1051,10 @@ if (IsReady: port)
   arguments (and warns); `x - 1` or `(x -1)` is one (see "A list of values" under
   [Variables](#variables)). A comparison is one argument too: `call Show: count is 0;`. A
   missing argument uses the parameter's default (or zero if it has none).
-- A method can return a number or a `str`.
+- A method can return a number, a pointer, a `str` or an object. A result keeps its type
+  at the call: a method whose `[end: ...]` is a `ptr<u8>` gives text to `log` and to a
+  `str`, and a `ptr<T>` result can be indexed. A `ptr<u8>` method can also `return 'text';`
+  (a string literal lives as long as the program; a method's own `str` doesn't).
 - **Calls as values.** `(Name: arguments)` can go anywhere a value can: in conditions,
   math, `log`, indexes and other calls' arguments. The space after the `:` is what makes it
   a call; `(list:i)`, with no space, is an element. `(Name)` with no arguments is a call
@@ -1010,7 +1062,8 @@ if (IsReady: port)
   (`if Ready: 3`) the error says to add them.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number or `str`) as the one
-  after `[end: ...]`.
+  after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
+  even when every way out is a `return` (`[end: 0]` will do).
 - Methods can be called before they appear, and from any class in the same unit
   (`call Other.Method;` to be explicit).
 - A method can call itself, directly or through other methods: every call has its own

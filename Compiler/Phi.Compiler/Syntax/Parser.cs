@@ -885,6 +885,7 @@ namespace Phi.Compiler.Syntax
 
             // x++; and x--; step by one
             bool bare = At(TokenKind.Semicolon) || (Current.StartsLine && op is AssignOp.Add or AssignOp.Subtract);
+            int valueStart = pos;
             if (bare && op is AssignOp.Add or AssignOp.Subtract)
                 value = new NumberExpr { Value = 1, Span = opToken.Span };
             else
@@ -898,9 +899,52 @@ namespace Phi.Compiler.Syntax
                                                         $"write ({text}) to make that clear");
             }
 
+            // the right side as a list builds a str: line is 'Ln ' n ', Col ' col;
+            bool whole = AtEndOfValues;
+            List<Expr>? values = null;
+            if (requireSemicolon && !bare && op is AssignOp.Set or AssignOp.Add)
+            {
+                if (HasListMinus(valueStart, pos))
+                {
+                    // the first value reads differently as a list ('!' -3 is two values): read it again
+                    pos = valueStart;
+                    values = new List<Expr>();
+                }
+                else if (!whole) values = new List<Expr> { value };
+
+                if (values != null)
+                    while (!AtEndOfValues) values.Add(ParseListElement());
+            }
+
             if (requireSemicolon) ExpectSemicolon();
 
-            return new AssignStmt { Target = target, Op = op, Value = value, Span = target.Span.To(Previous.Span) };
+            return new AssignStmt
+            {
+                Target = target, Op = op, Value = value, Values = values, ValueIsWhole = whole, Bare = bare,
+                Span = target.Span.To(Previous.Span),
+            };
+        }
+
+        bool AtEndOfValues => At(TokenKind.Semicolon) || AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon)
+                              || Current.StartsLine;
+
+        /// <summary>
+        /// Whether tokens from..to have a '-' outside parentheses that a list would read as the
+        /// start of a negative value (a space before it, none after: `6 -1`).
+        /// </summary>
+        bool HasListMinus(int from, int to)
+        {
+            int depth = 0;
+            for (int i = from; i < to; i++)
+            {
+                Token t = tokens[i];
+                if (t.Kind is TokenKind.OpenParen or TokenKind.OpenBracket) depth++;
+                else if (t.Kind is TokenKind.CloseParen or TokenKind.CloseBracket) depth--;
+                else if (t.Kind == TokenKind.Minus && depth == 0 && i > from && i + 1 < tokens.Count
+                         && t.Span.Start > tokens[i - 1].Span.End && tokens[i + 1].Span.Start == t.Span.End)
+                    return true;
+            }
+            return false;
         }
 
         /// <summary>True when the text just before span (ignoring spaces) is '('.</summary>

@@ -15,6 +15,34 @@ namespace Phi.Cli
 
         /// <summary>Set when the input script couldn't run to the end.</summary>
         public string? InputError { get; init; }
+
+        /// <summary>
+        /// QEMU ended without the program writing to isa-debug-exit: a triple fault (which
+        /// -no-reboot turns into an exit), a reboot, or QEMU failing to start.
+        /// </summary>
+        public bool StoppedByItself { get; init; }
+
+        /// <summary>What QEMU printed to stderr.</summary>
+        public string QemuErrors { get; init; } = string.Empty;
+
+        /// <summary>
+        /// Why a run that didn't produce the right output stopped, so a timeout or a triple fault
+        /// isn't taken for something else; <paramref name="otherwise"/> when it stopped normally.
+        /// </summary>
+        public string Explain(TimeSpan timeout, string otherwise)
+        {
+            string? input = InputError != null ? $" ({InputError})" : null;
+            if (TimedOut)
+                return $"timed out after {timeout.TotalSeconds:0}s; use --timeout <sec> to allow longer{input}";
+            if (StoppedByItself)
+            {
+                string why = "QEMU stopped by itself before the program called exit: most likely a triple fault " +
+                             "(phi run --debug logs interrupts and resets to find it)";
+                if (QemuErrors.Trim().Length > 0) why += $"\nQEMU said: {QemuErrors.Trim()}";
+                return why + input;
+            }
+            return InputError ?? otherwise;
+        }
     }
 
     public static class Qemu
@@ -121,7 +149,7 @@ namespace Phi.Cli
                 while ((n = p.StandardOutput.Read(buf, 0, buf.Length)) > 0)
                     lock (gate) serial.Append(buf, 0, n);
             });
-            _ = p.StandardError.ReadToEndAsync();
+            Task<string> errors = p.StandardError.ReadToEndAsync();
 
             using var cancel = new CancellationTokenSource();
             Task<string?>? script = null;
@@ -153,8 +181,10 @@ namespace Phi.Cli
             }
 
             int? exitValue = null;
+            bool byItself = false;
             if (p.HasExited)
             {
+                byItself = p.ExitCode % 2 == 0;
                 // isa-debug-exit always produces an odd exit code
                 if (p.ExitCode % 2 == 1) exitValue = p.ExitCode >> 1;
             }
@@ -173,8 +203,14 @@ namespace Phi.Cli
                 catch (AggregateException) { inputError = "the input script was stopped"; }
             }
 
+            string qemuErrors = errors.Wait(TimeSpan.FromSeconds(2)) ? errors.Result : "";
+
             lock (gate)
-                return new HeadlessResult { Serial = serial.ToString(), TimedOut = timedOut, DebugExitValue = exitValue, InputError = inputError };
+                return new HeadlessResult
+                {
+                    Serial = serial.ToString(), TimedOut = timedOut, DebugExitValue = exitValue, InputError = inputError,
+                    StoppedByItself = byItself, QemuErrors = byItself ? qemuErrors : "",
+                };
         }
 
         static int FreePort()

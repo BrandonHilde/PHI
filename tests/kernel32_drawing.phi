@@ -1,0 +1,35 @@
+use drivers.vbe;
+
+phi.DrawingTest:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	call Draw.Clear: Draw.BLACK;
+
+	# clips nest: the inner one is cut to the outer one, and each PopClip widens it again
+	call Draw.PushClip: 100 100 50 50;
+	call Draw.PushClip: 120 120 100 100;
+	call Draw.FillRect: 0 0 640 480 Draw.RED;
+	call Draw.PopClip;
+	call Draw.FillRect: 90 90 20 20 Draw.GREEN;
+	call Draw.PopClip;
+	call Draw.FillRect: 0 0 5 5 Draw.BLUE;
+	call Draw.PopClip;                        # one too many does nothing
+	debug 'depth ' Draw.clip_depth '\n';
+
+	# a quarter of black over white, and all of a color
+	call Draw.FillRect: 200 10 40 40 Draw.WHITE;
+	call Draw.BlendRect: 200 10 20 40 Draw.BLACK 64;
+	call Draw.BlendRect: 220 10 20 40 Draw.RED 255;
+	debug 'mix ' (Draw.Mix: 0xFF0000 0x0000FF 0) ' ' (Draw.Mix: 0xFF0000 0x0000FF 255) ' ' (Draw.Mix: 0xFFFFFF 0 128) '\n';
+
+	# ellipses
+	call Draw.FillEllipse: 400 100 60 30 Draw.YELLOW;
+	call Draw.Ellipse: 400 300 60 30 Draw.CYAN;
+
+	# text that doesn't fit is cut with '...'; text that does is drawn whole
+	debug 'fitted ' (Draw.TextFitted: 20 400 40 'Hello world' Draw.WHITE) ' ' (Draw.TextFitted: 20 420 40 'Hi' Draw.WHITE) '\n';
+	debug 'scaled ' (Draw.TextScaled: 100 200 'PHI' 3 Draw.WHITE) '\n';
+
+	call Screen.PresentAll;
+	debug 'drawn\n';
+}

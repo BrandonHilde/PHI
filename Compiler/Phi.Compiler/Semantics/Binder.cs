@@ -281,6 +281,7 @@ namespace Phi.Compiler.Semantics
             allowObjectTemp = true;
             BindExpr(result, methodScopes[m.Decl]);
             if (result.Type.IsString) m.ReturnType = PhiType.Str;
+            else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
             else if (result.Type.IsObject || result.Type.IsStruct)
             {
@@ -1439,6 +1440,10 @@ namespace Phi.Compiler.Semantics
         Stmt BindAssign(AssignStmt assign, Scope scope)
         {
             BindExpr(assign.Target, scope);
+            bool toStr = assign.Target.Type.IsString && !assign.Target.Type.IsArray;
+            if ((assign.Values is { Count: > 1 } && (toStr || !assign.ValueIsWhole)) || (toStr && assign.Op == AssignOp.Add))
+                return BindStringBuild(assign, scope);
+
             allowObjectTemp = assign.Target.Type.IsObject || assign.Target.Type.IsStruct;
             BindExpr(assign.Value, scope);
             allowObjectTemp = false;
@@ -1510,6 +1515,47 @@ namespace Phi.Compiler.Semantics
             }
 
             return new AssignStmt { Target = target, Op = AssignOp.Set, Value = value, Span = assign.Span };
+        }
+
+        /// <summary>s is a b c; or s++ a b; with s a str: each value written in as text, one after another.</summary>
+        Stmt BindStringBuild(AssignStmt assign, Scope scope)
+        {
+            Expr target = assign.Target;
+            bool append = assign.Op == AssignOp.Add;
+            List<Expr> parts = assign.Values ?? new List<Expr> { assign.Value };
+            foreach (Expr part in parts) BindExpr(part, scope);
+
+            if (target.Type.IsError) return assign;
+            if (!target.Type.IsString || target.Type.IsArray || !IsAssignable(target))
+            {
+                Error(parts.Count > 1 ? parts[1].Span : assign.Span,
+                      $"'{Describe(target)}' ({target.Type}) takes one value; only a str can be built from several");
+                return assign;
+            }
+            if (assign.Bare)
+            {
+                Error(assign.Span, $"'{Describe(target)}' is a str: write what to add to its end, like {Describe(target)}++ ' more';");
+                return assign;
+            }
+
+            var build = new StringBuildStmt { Target = target, Append = append, Span = assign.Span };
+            for (int i = 0; i < parts.Count; i++)
+            {
+                Expr part = parts[i];
+                if (part.Type.IsError) continue;
+                if (part.Type.IsArray && part.Type.Element == PhiType.U8 && part is NameExpr or MemberExpr)
+                    Error(part.Span, $"can't write a u8 array into a str; for the text in it (up to a zero byte), write addr {Describe(part)}");
+                else if (!part.Type.IsNumeric && !part.Type.IsString)
+                    Error(part.Span, $"can't write a {part.Type} into a str; write one element or field at a time");
+
+                // the str is being rewritten, so reading it after that would read the new text
+                else if ((append || i > 0) && part is NameExpr or IndexExpr && Describe(part) == Describe(target))
+                    Error(part.Span, i == 0
+                        ? $"'{Describe(target)}' can't be added to itself; copy it to another str first"
+                        : $"'{Describe(target)}' is being rewritten here, so it can only be the first value; write {Describe(target)}++ ... to add to its end");
+                build.Parts.Add(part);
+            }
+            return build;
         }
 
         /// <summary>
@@ -1628,10 +1674,13 @@ namespace Phi.Compiler.Semantics
             // a one-character string like '/' is a number here, as anywhere a number goes
             if (!result.IsString && ret.Value is StringExpr { Value.Length: 1 })
                 ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
+            // a string literal lives as long as the program, so its address can be handed back
+            else if (result.IsPointer && result.Pointee == PhiType.U8 && ret.Value is StringExpr)
+                ret.Value = Convert(ret.Value, result, "the returned value");
             else if (result.IsString != ret.Value.Type.IsString)
-                Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
+                Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : result.IsPointer ? result.ToString() : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
             else if (!result.IsString)
-                ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
+                ret.Value = Convert(ret.Value, result.IsPointer ? result : PhiType.Int, "the returned value");
         }
 
         void BindCall(CallStmt call, Scope scope)

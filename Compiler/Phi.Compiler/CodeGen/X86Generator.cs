@@ -704,6 +704,17 @@ namespace Phi.Compiler.CodeGen
                     EmitAssign(assign.Target, assign.Value);
                     break;
 
+                case StringBuildStmt build:
+                    for (int i = 0; i < build.Parts.Count; i++)
+                    {
+                        Expr part = build.Parts[i];
+                        bool text = IsText(part.Type);
+                        if (text && StaticAddress(part) is string label) LoadAddress("eax", label);
+                        else EmitExpr(part);
+                        EmitStringStore(build.Target, text, append: build.Append || i > 0, unsigned: part.Type.IsUnsigned32);
+                    }
+                    break;
+
                 default:
                     throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}");
             }
@@ -908,7 +919,7 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Stores a call result (in eax) into a variable.</summary>
         void EmitStoreResult(Expr target, PhiType resultType)
         {
-            if (target.Type.IsString) EmitStringStore(target, sourceIsString: resultType.IsString);
+            if (target.Type.IsString) EmitStringStore(target, sourceIsString: IsText(resultType));
             else EmitStoreEax(target);
         }
 
@@ -1164,7 +1175,7 @@ namespace Phi.Compiler.CodeGen
         /// eax holds a string address (sourceIsString) or a number to write out as text;
         /// put it in a str variable or str array element, cut to fit.
         /// </summary>
-        void EmitStringStore(Expr target, bool sourceIsString)
+        void EmitStringStore(Expr target, bool sourceIsString, bool append = false, bool unsigned = false)
         {
             int capacity;
             if (target is NameExpr { Symbol: VariableSymbol v })
@@ -1183,6 +1194,12 @@ namespace Phi.Compiler.CodeGen
             }
 
             Emit($"mov ecx, {capacity}");
+            if (append)
+            {
+                // past the text already there, with that much less room
+                Need("phi_str_end");
+                Emit("call phi_str_end");
+            }
             if (sourceIsString)
             {
                 Need("phi_strcpy");
@@ -1191,8 +1208,9 @@ namespace Phi.Compiler.CodeGen
             }
             else
             {
-                Need("phi_int_to_str");
-                Emit("call phi_int_to_str");
+                string convert = unsigned ? "phi_uint_to_str" : "phi_int_to_str";
+                Need(convert);
+                Emit($"call {convert}");
             }
         }
 

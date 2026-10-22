@@ -8,6 +8,14 @@
 #   if (key & Input.MOD_CTRL) is not 0 ...
 #   if (Input.IsDown: 'a') ...         # held right now, for games
 #   Input.mouse_x  Input.mouse_y  Input.buttons (bit 0 left, bit 1 right, bit 2 middle)
+#   while (Input.NextMouse)            # each button change and wheel turn, oldest first
+#       Input.event_buttons  Input.event_x  Input.event_y  Input.event_wheel
+#   ;;
+#
+# Input.buttons is only what is held now, so a loop that looks at it between redraws can
+# miss a whole click; NextMouse can't. event_wheel is how far the wheel turned (down is
+# positive), and Input.wheel adds up every turn. The wheel works with mice that speak the
+# IntelliMouse protocol, as QEMU's does (Input.has_wheel says whether this one does).
 #
 # Keys are characters for the keys that type one ('a', 'A', '1', '!', 13 for Enter,
 # 8 for Backspace, 27 for Esc), and KEY_UP, KEY_F1 ... for the others, including the
@@ -69,9 +77,27 @@ phi.Input:Kernel
 	int mouse_x: 320;
 	int mouse_y: 240;
 	int buttons: 0;
+	int wheel: 0;                             # every turn of the wheel, added up
+	bln has_wheel: false;
 	u32 mouse_packets: 0;                     # how many mouse reports have arrived
-	u8 packet[3];
+	u8 packet[4];
 	int packet_at: 0;
+	int packet_size: 3;                       # 4 with a wheel
+
+	# mouse events: written by the interrupt handler, read by NextMouse
+	const int MOUSE_QUEUE: 64;
+	int mouse_queue_buttons[64];
+	int mouse_queue_x[64];
+	int mouse_queue_y[64];
+	int mouse_queue_wheel[64];
+	int mouse_head: 0;
+	int mouse_tail: 0;
+
+	# the event NextMouse took out
+	int event_buttons: 0;
+	int event_x: 0;
+	int event_y: 0;
+	int event_wheel: 0;
 
 	[Start]
 		call StartMouse;
@@ -103,6 +129,24 @@ phi.Input:Kernel
 			return false;
 		;;
 	[end: down:key]
+
+	# take the oldest mouse event (a button pressed or let go, or the wheel turned) into
+	# event_buttons, event_x, event_y and event_wheel; false when there is none
+	[NextMouse]
+		if mouse_tail is mouse_head
+			return false;
+		;;
+		event_buttons is mouse_queue_buttons:mouse_tail;
+		event_x is mouse_queue_x:mouse_tail;
+		event_y is mouse_queue_y:mouse_tail;
+		event_wheel is mouse_queue_wheel:mouse_tail;
+		mouse_tail is (mouse_tail + 1) % MOUSE_QUEUE;
+	[end: true]
+
+	# forget mouse events that haven't been taken yet
+	[FlushMouse]
+		mouse_tail is mouse_head;
+	[end]
 
 	# ------------------------------------------------------------ keyboard
 
@@ -240,7 +284,7 @@ phi.Input:Kernel
 		;;
 		packet:packet_at is b;
 		packet_at++;
-		if packet_at < 3
+		if packet_at < packet_size
 			return;
 		;;
 		packet_at is 0;
@@ -258,7 +302,26 @@ phi.Input:Kernel
 			mouse_x is (Math.Clamp: mouse_x + dx 0 area_w - 1);
 			mouse_y is (Math.Clamp: mouse_y - dy 0 area_h - 1);   # the mouse counts up, the screen down
 		;;
-		buttons is flags & 7;
+		int turned: 0;
+		if packet_size is 4
+			turned is packet:3;
+			if turned > 127
+				turned is turned - 256;
+			;;
+			wheel is wheel + turned;
+		;;
+		int now: flags & 7;
+		if now is not buttons or turned is not 0
+			int next: (mouse_head + 1) % MOUSE_QUEUE;
+			if next is not mouse_tail             # a full queue drops the event
+				mouse_queue_buttons:mouse_head is now;
+				mouse_queue_x:mouse_head is mouse_x;
+				mouse_queue_y:mouse_head is mouse_y;
+				mouse_queue_wheel:mouse_head is turned;
+				mouse_head is next;
+			;;
+		;;
+		buttons is now;
 		mouse_packets++;
 	[end]
 
@@ -276,8 +339,28 @@ phi.Input:Kernel
 		call WaitWrite;
 		out 0x60 config;
 		call MouseCommand: 0xF6;              # defaults
+
+		# an IntelliMouse turns on its wheel after the sample rates 200, 100 and 80,
+		# then says so with ID 3, and from then on sends 4-byte packets
+		call SetSampleRate: 200;
+		call SetSampleRate: 100;
+		call SetSampleRate: 80;
+		call MouseCommand: 0xF2;              # what kind of mouse are you
+		call WaitRead;
+		u8 id: in 0x60;
+		has_wheel is (id is 3);
+		if has_wheel
+			packet_size is 4;
+		;;
+		call SetSampleRate: 100;              # the usual rate
+
 		call MouseCommand: 0xF4;              # start reporting
 		packet_at is 0;
+	[end]
+
+	[SetSampleRate: u8 rate: 0;]
+		call MouseCommand: 0xF3;
+		call MouseCommand: rate;
 	[end]
 
 	[MouseCommand: u8 command: 0;]

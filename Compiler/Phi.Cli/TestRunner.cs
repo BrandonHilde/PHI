@@ -148,7 +148,7 @@ namespace Phi.Cli
                 if (missing.Count == 0 && partial.InputError == null) return null;
 
                 File.WriteAllText(actualFile, text);
-                string why = partial.InputError ?? "missing from the output: " + string.Join(" | ", missing);
+                string why = partial.Explain(timeout, "missing from the output: " + string.Join(" | ", missing));
                 return $"{why}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{text}";
             }
 
@@ -175,7 +175,7 @@ namespace Phi.Cli
 
             File.WriteAllText(actualFile, actual);
 
-            string reason = run.InputError ?? (run.TimedOut ? $"timed out after {timeout.TotalSeconds:0}s" : "output did not match");
+            string reason = run.Explain(timeout, "output did not match");
             return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 

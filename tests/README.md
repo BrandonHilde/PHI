@@ -19,6 +19,11 @@ phi test -f menu --keep-output                         # save NAME.actual even w
 On a mismatch (or always, with `--keep-output`) the real output is saved as `NAME.actual`. To add a test, write
 `NAME.phi`, run `phi test -f NAME`, check `NAME.actual`, and rename it to `NAME.expected`.
 
+Each test gets 10 seconds (`--timeout <sec>` changes that). A failure says why the run
+stopped: `timed out after 10s` (with the input script's line, if one was running), or
+`QEMU stopped by itself` when the program never reached `exit` or its expected output,
+which is usually a triple fault (`phi run --debug` logs interrupts and resets).
+
 Two optional files change what a test does:
 
 - **`NAME.input`** types keys and moves the mouse, through the QEMU monitor. One command

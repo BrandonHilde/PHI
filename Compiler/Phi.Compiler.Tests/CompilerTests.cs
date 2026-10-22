@@ -343,7 +343,7 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("log nope;", "unknown name 'nope'")]
         [InlineData("int x: 'abc';", "needs a number")]
-        [InlineData("str s: 'a';\ns++ 1;", "only works on numbers")]
+        [InlineData("str s: 'a';\ns-- 1;", "only works on numbers")]
         [InlineData("call Missing;", "unknown method 'Missing'")]
         [InlineData("call OS.DrawPixel: 1;", "takes 3 arguments")]
         [InlineData("int x: 1;\nint x: 2;", "already declared")]

@@ -156,6 +156,36 @@ namespace Phi.Compiler.Tests
             Assert.Contains(result.Diagnostics, d => d.Message.Contains(message));
         }
 
+        [Fact]
+        public void APointerResultKeepsItsType()
+        {
+            // a ptr<u8> result is text where text goes, not a u32
+            CompileResult result = CompileOk(Boot("str names: 'a' 'b';\nint x: 0;\nx is (Name);\n" +
+                                                  "[Name]\n ptr<u8> n: names:0;\n[end: n]"));
+            var assign = result.Syntax!.Classes[0].Body.OfType<AssignStmt>().Single();
+            Assert.Equal(PhiType.PointerTo(PhiType.U8), assign.Value.Type);
+        }
+
+        [Fact]
+        public void SeveralValuesBuildAStr()
+        {
+            // read as a list, like log: 'n ', n and -1 are three values
+            CompileResult result = CompileOk(Boot("str s: [20];\nint n: 1;\ns is 'n ' n -1;\ns++ '!';"));
+            var builds = result.Syntax!.Classes[0].Body.OfType<StringBuildStmt>().ToList();
+            Assert.Equal(2, builds.Count);
+            Assert.Equal(3, builds[0].Parts.Count);
+            Assert.False(builds[0].Append);
+            Assert.True(builds[1].Append);
+        }
+
+        [Fact]
+        public void ANumberStillSubtracts()
+        {
+            CompileResult result = CompileOk(Boot("int n: 5;\nn is n -1;"));
+            var assign = result.Syntax!.Classes[0].Body.OfType<AssignStmt>().Single();
+            Assert.Equal(BinaryOp.Subtract, Assert.IsType<BinaryExpr>(assign.Value).Op);
+        }
+
         static IEnumerable<Stmt> Flatten(IEnumerable<Stmt> body)
         {
             foreach (Stmt s in body)

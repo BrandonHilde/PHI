@@ -512,13 +512,23 @@ these were added:
 - [x] Docs: [PHI for C programmers](docs/phi-for-c-programmers.md)
 - [x] [Objects](#managed-objects): `new T name`, `at`, `takes`, `empty`, copying and comparing
   with `is`, freed by PHI; the heap is safe to use from interrupt handlers
+- [x] From the assessment of PhiOS (a graphical OS written in PHI): `phi test` says when a run
+  timed out or QEMU stopped by itself; a method's pointer result keeps its type (a `ptr<u8>`
+  prints as text); `str` building (`s is 'Ln ' n ', Col ' c;`, `s++ ...`); a mouse event queue
+  and the scroll wheel in `drivers.input`; a clip stack, alpha blending, ellipses and fitted
+  or scaled text in `gfx.draw`
 
 The parts most worth doing next, roughly in order:
 
 1. **A heap for user programs**, so `new` (and objects) work there too.
 2. **Growable strings** with value semantics.
-3. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`.
-4. Then the [Later](#later) list: TLS certificates, 64-bit, ARM, self-hosting.
+3. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`, then system calls
+   for a surface of pixels and input events, so GUI apps can be separate user programs.
+4. **64-bit integers** (`i64`/`u64`), then `dec`/`fin`: PhiOS's calculator needed assembly
+   for `a * b / 1000`.
+5. **`switch`, enums and interfaces**, so dispatching to a list of apps isn't one if/elif
+   chain per event.
+6. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
 
 ---
 
