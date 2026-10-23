@@ -126,7 +126,9 @@ text it was given, or a string literal:
 ```
 
 Don't return a pointer to the method's own `str` or `u8` array: those are gone once it
-returns. To build new text, have the caller pass a buffer, or return a `str`.
+returns. To build new text, have the caller pass a buffer, or return a `str`. A `str`
+result lasts until the end of the statement that called the method, so the caller stores
+it in a `str` of its own; keeping it in a `ptr<u8>` is an error.
 
 ## A set of states
 

@@ -524,6 +524,10 @@ these were added:
 - [x] Reserved words stay reserved everywhere: `at` is now a keyword in every position (the
   library's `at` variables became `pos`), keyword-as-name errors suggest other names, and
   [language.md](docs/language.md#reserved-words) lists every reserved word
+- [x] From the second PhiOS assessment: fields and methods through a pointer (`p.x` for
+  `p:0.x`, `ptrs:i.x`, `call p.Add;`); an error when a pointer would keep a method's `str`
+  result (a temporary, so it dangled); a keyword used as a name is reported only where it's
+  declared; `Draw.TextN` for part of a buffer
 
 The parts most worth doing next, roughly in order:
 

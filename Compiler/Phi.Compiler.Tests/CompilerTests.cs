@@ -165,11 +165,32 @@ namespace Phi.Compiler.Tests
         [InlineData("u8 text[8];\nlog text;", "can't print a u8 array; to print the text in it (up to a zero byte), write addr text")]
         public void MistakesGetMessagesThatNameThem(string body, string message) => AssertError(Boot(body), message);
 
+        [Theory]
+        [InlineData("ptr<u8> kept: (Pick: 1);")]
+        [InlineData("ptr<u8> kept: '';\nkept is (Pick: 1);")]
+        [InlineData("ptr<u8> kept: '';\nkept is (Name);\n[Name]\n[end: 'x']")]
+        public void AStrResultCantBeKeptByAPointer(string body)
+        {
+            string methods = "\n[Pick: int n: 0;]\n if n > 1 return 'first';\n[end: 'second']";
+            AssertError(Boot(body + methods), "returns a str, which only lasts until the end of this statement");
+        }
+
         [Fact]
-        public void AKeywordAsANameIsReportedOnce()
+        public void AStrResultCanBePassedAsAPointer()
+        {
+            CompileResult result = Compile(Boot("call Show: (Pick);\nstr kept: [8];\nkept is (Pick);\n[Show: ptr<u8> text: 0;]\n log text;\n[end]\n[Pick]\n[end: 'second']"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData("call M;\n[M]\nbln has: 1;\nif has\n log 'y';\n;;\nelse\n log 'n';\n;;\n[end]")]
+        [InlineData("int out: 12;\nout++ 4;\nout is out * 2;\nout--;\nlog out;")]
+        [InlineData("u8 free[4];\nfree:0 is 1;\nfree:1 is free:0;")]
+        [InlineData("call M: 1;\n[M: int out: 0;]\nout++;\n[end]")]
+        public void AKeywordAsANameIsReportedOnce(string body)
         {
             // its later uses read as the name, instead of each causing errors of their own
-            CompileResult result = Compile(Boot("call M;\n[M]\nbln has: 1;\nif has\n log 'y';\n;;\nelse\n log 'n';\n;;\n[end]"));
+            CompileResult result = Compile(Boot(body));
             Assert.Single(result.Diagnostics);
         }
 

@@ -30,6 +30,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
 | `(T)x` | `x as T` | A cast. Binds tighter than math: `(a + b) as u8`. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
+| `p->f` | `p.f` | `.` reaches a field through a pointer to a struct too (one pointer per `.`). |
 
 ## Traps
 
@@ -72,10 +73,11 @@ either side is a `u32` or a pointer, which affects `/`, `%`, `>>` and comparison
 the declaration: `str s: 'abc';` holds 3 characters, and `str s: [40];` holds 40. Assigning
 `'abcdef'` to a 3-character `str` stores `abc`.
 
-**Putting a pointer in a `str` writes the number, not the text.** `s is p;`, where `p` is a
-`ptr<u8>`, stores the address as decimal digits, because numbers assigned to a `str` are
-written out as text. To build text from bytes, copy them into a `u8` array, or give the
-parameter the type `str` so a literal is copied in.
+**A method's `str` result lasts only for the statement that called it.** It's copied into
+a temporary in the caller, so `ptr<u8> name: (Name);` would point at memory reused by the
+next call, and the compiler refuses it. Store the result in a `str`
+(`s is (Name);` copies the text, as `s is p;` does for a `ptr<u8>`), or have the method
+end in a `ptr<u8>`, such as `ptr<u8> text: 'literal';` and `[end: text]`.
 
 **A `str` array is an array of pointers.** Each element points to its own buffer, so the
 strings aren't laid out one after another in memory. For a 2D grid of bytes, use a `u8`

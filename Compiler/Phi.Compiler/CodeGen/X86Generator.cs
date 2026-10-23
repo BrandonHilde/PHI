@@ -962,8 +962,8 @@ namespace Phi.Compiler.CodeGen
                     return new Place { Computed = true, Linear = true, Offset = path.Hops[^1] };
                 }
 
-                case MemberExpr m when m.Target.Type.IsObject:
-                    EmitExpr(m.Target); // where the object is
+                case MemberExpr m when m.Target.Type.IsObject || m.Target.Type.IsPointer:
+                    EmitExpr(m.Target); // where the object (or the struct a pointer points at) is
                     Emit("mov ebx, eax");
                     return new Place { Computed = true, Linear = true, Offset = m.Field!.Offset };
 
@@ -1165,7 +1165,7 @@ namespace Phi.Compiler.CodeGen
         static bool IsStaticPlace(Expr e) => e switch
         {
             NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
-            MemberExpr m => !m.Target.Type.IsObject && IsStaticPlace(m.Target),
+            MemberExpr m => !m.Target.Type.IsObject && !m.Target.Type.IsPointer && IsStaticPlace(m.Target),
             IndexExpr ix => !ix.Target.Type.IsPointer && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
                             && !(ix.Target.Type.IsString && ix.Target is not NameExpr),
             _ => false,

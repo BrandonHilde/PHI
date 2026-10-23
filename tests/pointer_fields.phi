@@ -1,0 +1,69 @@
+struct.Pt
+{
+	int x;
+	int y;
+
+	[Sum]
+	[end: x + y]
+}
+
+struct.Box
+{
+	int len;
+	Pt corner;
+	ptr<Box> next;
+	u8 title[8];
+
+	[Grow: int by: 1;]
+		len++ by;
+	[end: len]
+
+	# follows next to the last box
+	[Last]
+		ptr<Box> b: self;
+		while b.next is not 0
+			b is b.next;
+		;;
+	[end: b.len]
+}
+
+# p.x is p:0.x: a field through a pointer to a struct
+phi.PointerFields:Kernel
+{
+	Box a;
+	Box c;
+	ptr<Box> p: addr a;
+	p.len is 5;
+	p.corner.x is 7;
+	p.corner.y++ 2;
+	p.next is addr c;
+	p.next.len is 40;
+	p.title:0 is 'h';
+	p.title:1 is 'i';
+	log a.len ' ' a.corner.x ' ' a.corner.y ' ' c.len ' ' addr a.title '\n';
+
+	# methods through a pointer: self is the pointer
+	call p.Grow: 3;
+	log (p.Grow) ' ' (p.Last) ' ' p:0.len '\n';
+	call Show: p;
+
+	# an element that is a pointer: ptrs:i.x is ptrs:i:0.x
+	Pt d;
+	Pt e;
+	ptr<Pt> ptrs[2];
+	ptrs:0 is addr d;
+	ptrs:1 is addr e;
+	int i: 1;
+	ptrs:0.x is 3;
+	ptrs:i.y is 4;
+	ptrs:i.x++ 10;
+	ptr<ptr<Pt>> pp: addr ptrs;
+	pp:0.y is 6;
+	log d.x ' ' d.y ' ' e.x ' ' e.y ' ' (ptrs:i.Sum) '\n';
+	exit 0;
+
+	[Show: ptr<Box> b: 0;]
+		ptr<Pt> q: addr b.corner;
+		log 'show ' b.len ' ' q.x '\n';
+	[end]
+}

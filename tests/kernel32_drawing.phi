@@ -31,6 +31,8 @@ phi.DrawingTest:Kernel
 	# text that doesn't fit is cut with '...'; text that does is drawn whole
 	debug 'fitted ' (Draw.TextFitted: 20 400 40 'Hello world' Draw.WHITE) ' ' (Draw.TextFitted: 20 420 40 'Hi' Draw.WHITE) '\n';
 	debug 'scaled ' (Draw.TextScaled: 100 200 'PHI' 3 Draw.WHITE) '\n';
+	# part of a buffer: count characters, or up to a zero byte if that comes first
+	debug 'part ' (Draw.TextN: 20 440 'Hello world' 5 Draw.WHITE) ' ' (Draw.TextN: 20 460 'Hi' 5 Draw.WHITE) '\n';
 
 	call Screen.PresentAll;
 	debug 'drawn\n';

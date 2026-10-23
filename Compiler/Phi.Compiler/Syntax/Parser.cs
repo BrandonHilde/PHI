@@ -148,6 +148,23 @@ namespace Phi.Compiler.Syntax
             || (IsName(Current) && IsName(PeekToken(1)) && !PeekToken(1).StartsLine);
 
         /// <summary>new T name ... as a statement declares an object (a new expression is never a statement).</summary>
+        /// <summary>
+        /// A keyword this file declared as a name, used as one (out++ 4;, free:0 is 1;): read as an
+        /// assignment, since the declaration was already reported.
+        /// </summary>
+        bool AtKeywordNameAssignment
+        {
+            get
+            {
+                if (Current.Kind != TokenKind.Identifier || !keywordNames.Contains(Current.Text)) return false;
+                Token next = PeekToken(1);
+                if (next.StartsLine) return false;
+                return next.IsWord("is") || next.IsWord("takes") || next.Kind is TokenKind.Equals or TokenKind.PlusPlus
+                    or TokenKind.MinusMinus or TokenKind.StarStar or TokenKind.SlashSlash or TokenKind.PercentPercent
+                    or TokenKind.CaretCaret or TokenKind.Colon or TokenKind.Dot;
+            }
+        }
+
         bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
 
         bool AtTopLevelHeader =>
@@ -493,6 +510,7 @@ namespace Phi.Compiler.Syntax
             if (AtWord("const")) return ParseConst();
             if (AtNewDeclaration) return ParseVarDecl(allowBracketEnd: false);
             if (AtDeclaration) return ParseVarDecl(allowBracketEnd: false);
+            if (AtKeywordNameAssignment) return ParseAssignment(requireSemicolon: true);
 
             if (Current.Kind == TokenKind.Identifier)
             {

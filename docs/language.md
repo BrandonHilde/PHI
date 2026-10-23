@@ -95,7 +95,9 @@ variable, field, parameter, constant, method or struct:
 | Input and output | `log` `debug` `ask` |
 
 Using one as a name is an error that suggests other names for the common ones:
-`'at' is a keyword and can't be a variable name; try 'pos' or 'offset'`.
+`'at' is a keyword and can't be a variable name; try 'pos' or 'offset'`. It's reported
+once, where the name is declared; later uses (`out++ 4;`) read as the name rather than
+adding errors of their own.
 
 ## Values
 
@@ -441,10 +443,16 @@ ptr<u8> b: buffer;              # so can an array: this is addr buffer
 call Clear: tasks:0.name;       # including an array field ([Clear: ptr<u8> to: 0;])
 
 ptr<Task> t: addr tasks:0;
-log t:0.id;                     # a field of what t points to
+log t.id;                       # a field of what t points to (the same as t:0.id)
+t.next.id is 3;                 # through a pointer field too
 ```
 
 - Pointers can reach any address below 1 MB (in 16-bit mode, through the `fs` segment).
+- **Fields through a pointer.** When `p` is a `ptr<T>` to a struct, `p.field` is
+  `p:0.field` and `call p.Method;` calls `T`'s method with `p` as `self`. Each `.` goes
+  through one pointer: a `ptr<ptr<T>>` needs an index first (`pp:0.field`), and so does an
+  element of an array of pointers (`ptrs:i.field`). `p.len` is only ever a field of `T`,
+  never a length. Use `p:i.field` for the other elements when `p` points at several.
 - `addr x` is a pointer to what `x` holds: `addr buffer` of a `u8` array is a `ptr<u8>`,
   `addr task` of a `Task` is a `ptr<Task>`.
 - An array, or an array field like `tasks:0.name`, used where a pointer is expected (a
@@ -517,7 +525,7 @@ struct.Counter
 Counter c;
 call c.Add: 3;                          # on a variable
 int n: (c.AddTwice);                    # as a value, like any call
-call counters:i.Add;                    # on an element, a field, or through a pointer (p:0.Add)
+call counters:i.Add;                    # on an element, a field, or through a pointer (p.Add)
 method<ptr<Counter> int: int> f: addr Counter.Add;   # as a method value, self comes first
 ```
 
@@ -624,14 +632,14 @@ call b is Make: 1 2;           # b takes the new object (and frees what it had)
 
 `addr a` is a plain `ptr<Point>` to an object's memory, which is how code walks a list
 without copying it. It's only good while the object's owner is alive. An object can be
-given where a pointer goes (`walk is walk:0.next;`), but a pointer can't be put in an
+given where a pointer goes (`walk is walk.next;`), but a pointer can't be put in an
 object: to copy what it points at, use `p:0`.
 
 ```phi
 ptr<Node> walk: addr list;
 while walk is not 0
-    log walk:0.value '\n';
-    walk is walk:0.next;
+    log walk.value '\n';
+    walk is walk.next;
 ;;
 ```
 
@@ -661,7 +669,7 @@ elements, aren't supported yet. Methods that return objects can't be used as met
 ```phi
 ptr<Task> task: new Task;           # one Task, all zeros
 ptr<u8> buffer: new u8[512];        # 512 bytes, all zeros
-task:0.id is 7;
+task.id is 7;
 free task;
 free buffer;
 ```
@@ -693,7 +701,7 @@ use memory.list;
 ptr<ListData> numbers: 0;
 call numbers is List.New;
 call List.Add: numbers 42;
-log numbers:0.count;
+log numbers.count;
 ```
 
 ## Files on disk (32-bit kernels)
@@ -837,8 +845,9 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
   already drawn (alpha 0 to 255; `Draw.BLACK 64` darkens by a quarter, for shadows), and
   `(Draw.Mix: color under alpha)` works out one blended color.
 - **Text:** `Char`, `Text` and `Number` (both return their width), `TextWidth`, `Centered`,
-  `TextFitted: x y w text color` (cut to `w` pixels, ending in `...`), and
-  `TextScaled: x y text scale color` (each pixel of the font drawn `scale` x `scale`).
+  `TextFitted: x y w text color` (cut to `w` pixels, ending in `...`),
+  `TextScaled: x y text scale color` (each pixel of the font drawn `scale` x `scale`), and
+  `TextN: x y text count color` (the first `count` characters, for part of a buffer).
 - **Keys** from `Input.NextKey` are characters (`'a'`, `'A'`, 13 for Enter, 27 for Esc) or
   `Input.KEY_UP`, `KEY_F1` ... for keys that don't type one, with `MOD_SHIFT`, `MOD_CTRL` and
   `MOD_ALT` added for the modifiers held (`key & Input.KEY_MASK` is the key alone).
@@ -1087,6 +1096,10 @@ if (IsReady: port)
   `[end: path + start]` with `path` a `ptr<u8>` is still text. A `ptr<u8>` method can also
   `return 'text';` (a string literal lives as long as the program; a method's own `str`
   doesn't).
+- A `str` result is copied into a temporary that lasts until the end of the statement, so
+  it can be passed on (`call Draw.Text: x y (Name) color;`) or stored in a `str`, but not
+  kept by a pointer: `ptr<u8> t: (Name);` is an error. For text that outlives the call,
+  have the method end in a `ptr<u8>` (see [Common patterns](patterns.md#returning-text-from-a-method)).
 - **Calls as values.** `(Name: arguments)` can go anywhere a value can: in conditions,
   math, `log`, indexes and other calls' arguments. The space after the `:` is what makes it
   a call; `(list:i)`, with no space, is an element. `(Name)` with no arguments is a call
