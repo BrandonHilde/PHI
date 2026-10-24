@@ -710,8 +710,8 @@ corner.letter is 'P';
 
 ### Limits
 
-Objects that PHI allocates need the heap, so they're in 32-bit kernels only (a kernel gets
-the heap automatically). Arrays of objects, and structs with `new` fields as array
+Objects that PHI allocates need a heap, so they're in 32-bit kernels and user programs
+(each gets one automatically). Arrays of objects, and structs with `new` fields as array
 elements, aren't supported yet. Methods that return objects can't be used as method values.
 
 ## Memory (32-bit kernels)
@@ -1057,7 +1057,7 @@ phi.Kernel:Kernel
 ```
 
 Each program has its own memory: its code and data at `0x40000000`, a 64 KB stack ending
-at `0x40400000`, and nothing else it can reach. The timer shares the CPU between running
+at `0x40400000`, a heap above that, and nothing else it can reach. The timer shares the CPU between running
 programs. A program that touches memory that isn't its own is stopped with a message
 (`PHI: program 3 stopped by exception 14 ...`) and the kernel carries on.
 
@@ -1067,8 +1067,25 @@ programs run. Methods keep their variables on the stack, but class variables (li
 driver's state) are shared, and this keeps two pieces of kernel code from changing them at
 once.
 
-**Inside a program**, the hardware is out of reach: no ports, interrupt handlers, `new`
-or drivers. Instead:
+**Objects and `new` work in a program too.** Its heap
+([memory.program_heap](../lib/phi/memory/program_heap.phi), added automatically) starts
+empty and grows when nothing in it fits, asking the kernel for at least 64 KB at a time,
+up to 124 MB (and only while the kernel has memory to spare). `new` gives 0 when there's no
+more, and an object that can't get memory ends the program with
+`PHI: out of memory for a new object on line N`. Freeing a pointer `new` didn't give out
+ends it with -1. All of it goes back to the kernel when the program ends.
+
+```phi
+phi.Big:Program
+{
+    ptr<u8> pixels: new u8[800 * 600 * 4];   # more than a fixed array can hold
+    new Node first: 1;                       # objects, freed by PHI
+    ...
+}
+```
+
+**Inside a program**, the hardware is out of reach: no ports, interrupt handlers or
+drivers. Instead:
 
 | In a program | What it does |
 |---|---|
@@ -1085,6 +1102,7 @@ or drivers. Instead:
 | `OS.SoundWrite: data length` →, `OS.SoundRate: hz` →, `OS.SoundQueued` →, `OS.SoundStop` →, `OS.SoundVolume: percent` → | the sound card, like `Ac97`'s methods (`SoundWrite` never waits: it returns the bytes it took, 0 while the card is full); each returns -1 if there's no card |
 | `OS.TaskState: process` →, `OS.TaskName: process buffer` →, `OS.Kill: process` → | other programs (`ps`, `kill`) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | memory, in KB |
+| `OS.Grow: bytes` → | more memory at the end of the heap (whole pages, zeroed); where it starts, or 0. `new` does this for you |
 | `OS.ClearScreen`, `OS.PutCell: column row cell` | the text screen; a cell is a character in the low byte and a color in the high byte |
 | `OS.IsKeyDown: key` → | whether a key is held down (for games) |
 | `OS.Reboot` | restart the machine |
@@ -1372,7 +1390,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - `dec` / `fin` (decimal numbers), `has`, `^^` (power)
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
-- arrays of objects, and objects in user programs (they have no heap yet)
+- arrays of objects
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
 - networking in user programs (only 32-bit kernels have the network), checking TLS

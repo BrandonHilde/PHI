@@ -1,0 +1,21 @@
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+
+	int pid: 0;
+	call pid is Process.Spawn: 'OBJECTS.BIN';
+	int code: 0;
+	call code is Process.Wait: pid;
+	debug 'objects exit code: ' code '\n';
+
+	# a program that frees what new didn't give it is stopped
+	call pid is Process.Spawn: 'BADFREE.BIN';
+	call code is Process.Wait: pid;
+	debug 'bad free exit code: ' code '\n';
+
+	call Process.WaitAll;
+	debug 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

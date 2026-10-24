@@ -92,12 +92,14 @@ namespace Phi.Compiler
             var program = new ProgramNode { File = main };
             Load(main, program);
 
-            // a 32-bit kernel that uses new or free (or objects) gets the heap without having to ask; its
-            // classes go first, so it is ready before the program's own code runs
+            // a 32-bit kernel or a user program that uses new or free (or objects) gets a heap without
+            // having to ask; its classes go first, so it is ready before the program's own code runs
             bool kernel = program.Classes.Any(c => c.Base == Binder.Kernel32Base);
+            bool user = program.Classes.Any(c => c.Base == Binder.ProgramBase);
             bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null })
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
-            SourceFile? heap = kernel && usesHeap ? Resolve("memory.heap", main, main) : null;
+            string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;
+            SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main) : null;
             if (heap == null || !seen.Add(Key(heap))) return program;
 
             var withHeap = new ProgramNode { File = main };

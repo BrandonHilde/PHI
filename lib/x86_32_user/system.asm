@@ -1,4 +1,4 @@
-; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume
+; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow
 ;
 ; requires: phi_flush
 ;
@@ -32,6 +32,7 @@ SYS_SOUND_RATE equ 33
 SYS_SOUND_QUEUED equ 34
 SYS_SOUND_STOP equ 35
 SYS_SOUND_VOLUME equ 36
+SYS_GROW      equ 37
 
 ; where the kernel puts a program's command line (the bottom of its stack area)
 ARGUMENTS     equ 0x403F0000
@@ -147,3 +148,4 @@ PHI_SYSCALL OS_SoundRate, SYS_SOUND_RATE, 1      ; frames a second -> the rate t
 PHI_SYSCALL OS_SoundQueued, SYS_SOUND_QUEUED, 0  ; -> bytes still to play, or -1
 PHI_SYSCALL OS_SoundStop, SYS_SOUND_STOP, 0      ; -> 0, or -1
 PHI_SYSCALL OS_SoundVolume, SYS_SOUND_VOLUME, 1  ; percent -> 0, or -1
+PHI_SYSCALL OS_Grow, SYS_GROW, 1                 ; bytes -> where the new memory starts, or 0

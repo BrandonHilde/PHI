@@ -1,0 +1,6 @@
+phi.BadFree:Program
+{
+	ptr<u8> p: new u8[16];
+	free p + 8;
+	log 'not reached\n';
+}

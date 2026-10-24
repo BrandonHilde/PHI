@@ -100,7 +100,7 @@ inside an `unsafe` block skips the checks, and a pointer is never checked.
 in [Reserved words](language.md#reserved-words).
 
 **A fixed-size array holds at most 16384 elements.** Larger buffers in a kernel come from
-`new`. User programs don't have a heap yet.
+`new`, in a kernel or a user program.
 
 **`is` between objects copies; it never makes two names for one object.** After `b is a;`,
 changing `b.x` leaves `a.x` alone, and copying a list copies every node. To move an object

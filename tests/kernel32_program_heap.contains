@@ -1,0 +1,9 @@
+objects: 1 2
+big: 5 at 1
+heap text: hi
+file size: 2
+reused: 1 zeroed: 1
+objects exit code: 3
+PHI: free of memory that new did not hand out (or freed twice)
+bad free exit code: -1
+memory back: 1

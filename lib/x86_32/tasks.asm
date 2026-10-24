@@ -1,4 +1,4 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
 ; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
@@ -147,6 +147,7 @@ OS_CreateUserTask:
     mov [phi_task_image_end + ecx * 4], eax
     mov eax, [ebp + 28]
     mov [phi_task_stack_bottom + ecx * 4], eax
+    mov dword [phi_task_heap_end + ecx * 4], 0   ; no heap until it grows one
     mov eax, [phi_current_task]
     mov [phi_task_parent + ecx * 4], eax
     mov dword [phi_task_exit + ecx * 4], 0
@@ -365,6 +366,8 @@ phi_user_string:
     cmp esi, [phi_task_stack_bottom + ecx * 4]
     jb .bad
     cmp esi, USER_TOP
+    jb .readable
+    cmp esi, [phi_task_heap_end + ecx * 4]     ; its heap, right above the stack
     jae .bad
 .readable:
     cmp byte [esi], 0
@@ -443,6 +446,14 @@ OS_TaskParent:
     ret
 
 ; arg: task: its slot can be used again (its memory must already be freed)
+; args: task, end of its heap (its heap starts at USER_TOP)
+OS_SetTaskHeapEnd:
+    mov eax, [esp + 4]
+    and eax, MAX_TASKS - 1
+    mov ecx, [esp + 8]
+    mov [phi_task_heap_end + eax * 4], ecx
+    ret
+
 OS_FreeTask:
     mov eax, [esp + 4]
     and eax, MAX_TASKS - 1
@@ -509,6 +520,7 @@ phi_task_cr3:          times MAX_TASKS dd 0
 phi_task_kstack:       times MAX_TASKS dd 0
 phi_task_image_end:    times MAX_TASKS dd 0
 phi_task_stack_bottom: times MAX_TASKS dd 0
+phi_task_heap_end:     times MAX_TASKS dd 0
 phi_task_parent:       times MAX_TASKS dd 0
 phi_task_exit:         times MAX_TASKS dd 0
 phi_task_wake:         times MAX_TASKS dd 0

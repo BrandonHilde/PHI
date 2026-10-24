@@ -1,0 +1,37 @@
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+phi.Objects:Program
+{
+	# objects, freed by PHI when they're no longer reachable
+	new Node first: 1;
+	new Node second: 2;
+	first.next takes second;
+	log 'objects: ' first.value ' ' first.next.value '\n';
+
+	# more than the 4 MB a program's code, data and stack get, in pieces
+	ptr<u8> blocks[6];
+	while int i: 0; i < 6; i++;
+		blocks:i is new u8[1000000];
+		blocks:i:999999 is i;
+	;;
+	log 'big: ' blocks:5:999999 ' at ' (blocks:5 >= 0x40400000) '\n';
+
+	# text in the heap can go to system calls
+	ptr<u8> name: new u8[16];
+	name:0 is 'h';
+	name:1 is 'i';
+	log 'heap text: ' name '\n';
+	call OS.WriteFile: 'HEAP.TXT' name 2;
+	log 'file size: ' (OS.FileSize: 'HEAP.TXT') '\n';
+
+	# freed memory is used again
+	ptr<u8> before: blocks:2;
+	free blocks:2;
+	ptr<u8> again: new u8[1000];
+	log 'reused: ' (again is before) ' zeroed: ' (again:0 is 0) '\n';
+	exit 3;
+}

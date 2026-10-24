@@ -2486,13 +2486,13 @@ namespace Phi.Compiler.Semantics
 
         MethodSymbol? HeapMethod(string name, Span span, Scope scope, string what)
         {
-            if (scope.Unit != UnitKind.Kernel)
+            if (scope.Unit is not (UnitKind.Kernel or UnitKind.Program))
             {
-                Error(span, $"{what} needs a heap, which only 32-bit kernels (phi.Name:Kernel) have");
+                Error(span, $"{what} needs a heap, which only 32-bit kernels (phi.Name:Kernel) and user programs have");
                 return null;
             }
-            if (methodsByFullName.TryGetValue((UnitKind.Kernel, name), out MethodSymbol? m)) return m;
-            Error(span, $"{what} needs {name}; add use memory.heap;");
+            if (methodsByFullName.TryGetValue((scope.Unit, name), out MethodSymbol? m)) return m;
+            Error(span, $"{what} needs {name}; add use {(scope.Unit == UnitKind.Program ? "memory.program_heap" : "memory.heap")};");
             return null;
         }
 
