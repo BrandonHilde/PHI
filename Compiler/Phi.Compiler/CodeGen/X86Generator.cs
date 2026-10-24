@@ -801,6 +801,39 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
 
+                case WhileEachStmt each when each.Current != null:
+                {
+                    // the count from 0, while it's under how many the array has now
+                    string count = each.Index.Symbol!.Label;
+                    string top = NewLabel("each");
+                    string end = NewLabel("endeach");
+                    var labels = new LoopLabels { Next = NewLabel("nexteach"), End = end };
+                    Emit($"mov dword [{count}], 0");
+                    Label(top);
+                    EmitArrayCount(each.Array);
+                    Emit($"cmp [{count}], eax");
+                    Emit($"jae {end}");
+                    if (each.Fetch != null) EmitStatement(each.Fetch);
+                    else
+                    {
+                        // the element itself: an object's address, or where a struct is in the array
+                        if (each.Current.Type.IsObject) EmitExpr(each.Current);
+                        else EmitPlaceAddress(each.Current);
+                        Emit($"mov [{each.Element.Symbol!.Label}], eax");
+                    }
+                    loops.Add(labels);
+                    foreach (Stmt s in each.Body) EmitStatement(s);
+                    loops.RemoveAt(loops.Count - 1);
+                    if (labels.NextUsed) Label(labels.Next);
+                    Emit($"inc dword [{count}]");
+                    Emit($"jmp {top}");
+                    Label(end);
+                    break;
+                }
+
+                case WhileEachStmt:
+                    break;   // (an error was reported)
+
                 case BreakStmt:
                     Emit($"jmp {loops[^1].End}");
                     break;

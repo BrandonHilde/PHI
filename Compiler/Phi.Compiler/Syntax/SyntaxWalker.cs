@@ -36,6 +36,7 @@ namespace Phi.Compiler.Syntax
                 AssignStmt a => Nodes(a.Target).Concat(Nodes(a.Value)).Concat((a.Values ?? new()).SelectMany(Nodes)),
                 StringBuildStmt b => Nodes(b.Target).Concat(b.Parts.SelectMany(Nodes)),
                 AppendStmt a => Nodes(a.Target).Concat(a.Values.SelectMany(Nodes)),
+                WhileEachStmt e => Nodes(e.Element).Concat(Nodes(e.Index)).Concat(Nodes(e.Array)).Concat(e.Body.SelectMany(Nodes)),
                 WhenStmt w => Nodes(w.Subject)
                     .Concat(w.Branches.SelectMany(b => b.Values.SelectMany(Nodes).Concat(b.Body.SelectMany(Nodes))))
                     .Concat((w.Else ?? new()).SelectMany(Nodes)),

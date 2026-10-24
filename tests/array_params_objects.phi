@@ -19,6 +19,12 @@ phi.ArrayParamsObjects:Kernel
 
 	f64 values: 1.5 2.5 3.0;
 	log (Mean: values) '\n';
+
+	# each object in turn, changed where it is
+	while each node in nodes
+		node.value++ 1;
+	;;
+	log nodes:0.value ' ' nodes:1.value ' ' nodes:2.value '\n';
 	exit 0;
 
 	[Total: new Node list[];]

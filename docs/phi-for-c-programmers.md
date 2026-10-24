@@ -19,6 +19,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `return v;` | `return v;` | The method's normal result is the `[end: v]` at its end. |
 | `break;`, `continue;` | `break;`, `continue;` | Only in `while` loops. |
 | `if (!ok) return 0;` | `if not ok return 0;` | One line, no `;;`, for `return`, `break`, `continue`, `call` and `exit`. |
+| `for (int x : list)` (C++) | `while each x in list` | `x` is a copy, or for structs and objects the element itself. |
 | `switch (k) { case 'q': case 27: ...; break; default: ... }` | `when k` / `is 'q' 27` ... `;;` / `else` ... `;;` / `;;` | No fall-through and no `break`; works on text too. |
 | `enum Tool { PENCIL, BRUSH = 5 };` | `enum.Tool { PENCIL  BRUSH: 5 }` (one a line) | A type of its own: only `Tool.` values go into a `Tool`, and comparing it with another enum is an error. |
 | `"\xED"` | `'\xED'` | Strings use single quotes; `\x` takes exactly two hex digits. |

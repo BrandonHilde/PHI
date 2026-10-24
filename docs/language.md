@@ -89,7 +89,7 @@ variable, field, parameter, constant, method or struct:
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` |
 | Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `isr` `end` |
-| Control | `if` `elif` `else` `while` `when` `unsafe` `break` `continue` `return` `call` `exit` |
+| Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
 | Input and output | `log` `debug` `ask` |
@@ -592,6 +592,24 @@ while int i: 0; i < count; i++;
 ```
 
 `break` and `continue` act on the innermost loop.
+
+`while each x in list` goes through an array's elements in order, without a counter.
+`x` is a copy of each one, or for an array of structs or objects the element itself, so
+changing `x.field` changes the array. It works with any array (fixed, `atmost`, one that
+grows, or one a method was given), and checks how many there are each time round.
+
+```phi
+int total: 0;
+while each score in scores
+    total++ score;
+;;
+
+while each p in points
+    p.x is 0;                   # each point in the array
+;;
+```
+
+The same name can be used in another `while each` loop over the same kind of array.
 
 ### Ports
 

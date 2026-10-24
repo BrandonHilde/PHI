@@ -739,6 +739,11 @@ namespace Phi.Compiler.Semantics
                         }
                         foreach (Stmt v in CollectDeclarations(w.Body)) yield return v;
                         break;
+                    case WhileEachStmt e:
+                        yield return e.Index;
+                        yield return e.Element;
+                        foreach (Stmt v in CollectDeclarations(e.Body)) yield return v;
+                        break;
                 }
             }
         }
@@ -782,6 +787,12 @@ namespace Phi.Compiler.Semantics
                             yield return (w.Init, loop);
                         }
                         foreach (var d in CollectBlockDeclarations(w.Body, loop)) yield return d;
+                        break;
+                    case WhileEachStmt e:
+                        var eachLoop = new Block { Parent = block };
+                        yield return (e.Index, eachLoop);
+                        yield return (e.Element, eachLoop);
+                        foreach (var d in CollectBlockDeclarations(e.Body, eachLoop)) yield return d;
                         break;
                 }
             }
@@ -875,6 +886,16 @@ namespace Phi.Compiler.Semantics
                         decl.Symbol = ev;
                         ev.NeedsInitCode = true;
                         continue;
+                    }
+                    // ... and two while each loops the same element, over arrays of the same kind
+                    if (existing is VariableSymbol { Decl.EachOf: not null } element && decl.EachOf != null)
+                    {
+                        BindExpr(decl.EachOf, scope);
+                        if (decl.EachOf.Type.IsArray && EachElementType(decl.EachOf.Type.Element) == element.Type)
+                        {
+                            decl.Symbol = element;
+                            continue;
+                        }
                     }
                     Error(decl.NameSpan, $"'{decl.Name}' is already declared in {ScopeName(scope)}");
                     continue;
@@ -991,6 +1012,12 @@ namespace Phi.Compiler.Semantics
         {
             VarDecl d = v.Decl;
             PhiType type;
+
+            if (d.EachOf != null)
+            {
+                DetermineEachElement(v, scope);
+                return;
+            }
 
             if (d.Type.Name == "var")
             {
@@ -1142,6 +1169,44 @@ namespace Phi.Compiler.Semantics
 
             v.Type = d.Values.Count > 1 ? type.ArrayOf(d.Values.Count) : type;
         }
+
+        /// <summary>
+        /// The x of while each x in list: a copy of an element (a str one grows, where there's a
+        /// heap), or for an array of objects the element itself, borrowed.
+        /// </summary>
+        void DetermineEachElement(VariableSymbol v, Scope scope)
+        {
+            v.Type = PhiType.Error;
+            Expr array = v.Decl.EachOf!;
+            BindExpr(array, scope);
+            if (array.Type.IsError) return;
+            if (!array.Type.IsArray)
+            {
+                Error(array.Span, $"while each goes through an array, and this is {A(array.Type)}");
+                return;
+            }
+            PhiType element = array.Type.Element;
+            v.Type = EachElementType(element);
+            if (v.Type.IsObject)
+            {
+                // the element itself (an object, or a struct stored in the array), borrowed
+                v.Ownership = Ownership.Borrowed;
+                return;
+            }
+            if (element.IsString)
+            {
+                if (scope.Unit is UnitKind.Kernel or UnitKind.Program)
+                {
+                    v.Grows = true;
+                    v.Capacity = StrMax + 1;
+                }
+                else v.Capacity = array is NameExpr { Symbol: VariableSymbol { Capacity: > 0 } source } ? source.Capacity : DefaultStrCapacity;
+            }
+        }
+
+        /// <summary>The type of x in while each x in list: an element's, or for a struct, the struct itself.</summary>
+        static PhiType EachElementType(PhiType element) =>
+            element.IsObject || element.IsStruct ? PhiType.ObjectOf(element.Struct!) : element;
 
         /// <summary>new T name ...: an object, which PHI allocates and frees, or one that's already at an address.</summary>
         void DetermineObject(VariableSymbol v, PhiType type, Scope scope)
@@ -1525,6 +1590,38 @@ namespace Phi.Compiler.Semantics
                     loopDepth--;
                     blockNames.RemoveAt(blockNames.Count - 1);
                     return loop;
+
+                case WhileEachStmt each:
+                {
+                    blockNames.Add(new()); // the element is in sight only in the loop
+                    BindVarDecl(each.Index, scope, classLevel: false);
+                    ShowInBlock(each.Index);
+                    BindVarDecl(each.Element, scope, classLevel: false);
+                    ShowInBlock(each.Element);
+                    var element = each.Element.Symbol;
+                    var index = each.Index.Symbol;
+                    if (element != null && index != null && !element.Type.IsError)
+                    {
+                        var current = new IndexExpr
+                        {
+                            Target = each.Array,
+                            Index = new NameExpr { Name = index.Name, Span = each.Array.Span, Symbol = index, Type = index.Type },
+                            Span = each.Array.Span,
+                        };
+                        BindExpr(current, scope);
+                        each.Current = current;
+                        if (!element.Type.IsObject)   // (objects and structs are the element itself)
+                        {
+                            var target = new NameExpr { Name = element.Name, Span = each.Element.NameSpan, Symbol = element, Type = element.Type };
+                            each.Fetch = BindStatement(new AssignStmt { Target = target, Op = AssignOp.Set, Value = current, Span = each.Span }, scope, classLevel: false);
+                        }
+                    }
+                    loopDepth++;
+                    BindBlock(each.Body, scope);
+                    loopDepth--;
+                    blockNames.RemoveAt(blockNames.Count - 1);
+                    return each;
+                }
 
                 case BreakStmt or ContinueStmt:
                     if (loopDepth == 0)

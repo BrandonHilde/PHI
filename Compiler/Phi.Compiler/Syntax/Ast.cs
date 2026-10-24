@@ -144,6 +144,9 @@ namespace Phi.Compiler.Syntax
         /// <summary>type name[]: no size written (a parameter: an array of any length).</summary>
         public bool Unsized { get; init; }
 
+        /// <summary>The element of `while each name in list`: its type is list's elements'.</summary>
+        public Expr? EachOf { get; init; }
+
         /// <summary>Declared with new: an object.</summary>
         public bool IsNew { get; init; }
 
@@ -262,6 +265,24 @@ namespace Phi.Compiler.Syntax
         public Expr Condition { get; init; } = null!;
         public Stmt? Step { get; set; }
         public List<Stmt> Body { get; } = new();
+    }
+
+    /// <summary>
+    /// while each x in list / ... / ;;  runs the body for each element in order. x is a copy of
+    /// the element, or for objects and structs the element itself (borrowed).
+    /// </summary>
+    public sealed class WhileEachStmt : Stmt
+    {
+        public VarDecl Element { get; init; } = null!;
+        public VarDecl Index { get; init; } = null!;
+        public Expr Array { get; init; } = null!;
+        public List<Stmt> Body { get; } = new();
+
+        /// <summary>Set by the binder: the element at the index (list:i).</summary>
+        public Expr? Current { get; set; }
+
+        /// <summary>Set by the binder: copies Current into the element, for anything but objects.</summary>
+        public Stmt? Fetch { get; set; }
     }
 
     /// <summary>dest takes source;  dest gets source's object without copying, and source is left empty.</summary>

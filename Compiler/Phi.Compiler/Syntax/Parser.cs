@@ -15,7 +15,7 @@ namespace Phi.Compiler.Syntax
         /// <summary>Words that can't be used as variable, method or type names.</summary>
         public static readonly HashSet<string> ReservedWords = new(TypeKeywords)
         {
-            "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "when", "unsafe",
+            "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "each", "when", "unsafe",
             "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
@@ -972,6 +972,28 @@ namespace Phi.Compiler.Syntax
         Stmt ParseWhile()
         {
             Token keyword = Advance();
+
+            // while each x in list: each element in turn
+            if (AtWord("each"))
+            {
+                Advance();
+                Token name = ExpectIdentifier("a name for each element");
+                CheckNotKeyword(name, "variable");
+                if (!AcceptWord("in"))
+                    throw Error(Current.Span, $"expected 'in' and an array, like while each {name.Text} in list");
+                Expr array = ParseExpression();
+                Accept(TokenKind.Semicolon);
+                var each = new WhileEachStmt
+                {
+                    Element = new VarDecl { Type = new TypeRef { Name = "each", Span = name.Span }, Name = name.Text, NameSpan = name.Span, EachOf = array, Span = name.Span },
+                    // the count, with a name no program can write
+                    Index = new VarDecl { Type = new TypeRef { Name = "int", Span = name.Span }, Name = $"each#{name.Span.Start}", NameSpan = name.Span, Span = name.Span },
+                    Array = array,
+                    Span = keyword.Span.To(array.Span),
+                };
+                each.Body.AddRange(ParseBlock("while each loop"));
+                return each;
+            }
 
             if (AtDeclaration)
             {

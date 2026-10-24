@@ -1,0 +1,65 @@
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.WhileEach:Library
+{
+	# each element in turn
+	int scores: 3 1 4 1 5;
+	int total: 0;
+	while each score in scores
+		total++ score;
+	;;
+	log total '\n';
+
+	# a copy: changing it doesn't change the array
+	while each score in scores
+		score is 0;
+	;;
+	log scores:0 '\n';
+
+	# break and continue
+	while each score in scores
+		if score is 1 continue;
+		if score is 5 break;
+		log score ' ';
+	;;
+	log '\n';
+
+	# atmost arrays go as far as they have, structs and text too
+	int some[atmost 10];
+	some++ 7 8;
+	while each n in some
+		log n ' ';
+	;;
+	Point pts[2];
+	pts:1.y is 9;
+	while each p in pts
+		log p.y ' ';
+	;;
+	str days: 'Mon' 'Tue' 'Wed';
+	while each day in days
+		log day ' ';
+	;;
+	log '\n';
+
+	# a struct (or an object) is the element itself: changing it changes the array
+	while each p in pts
+		p.x is 5;
+	;;
+	log pts:0.x pts:1.x '\n';
+
+	# in a method, over an array it was given
+	log (Largest: scores) '\n';
+
+	[Largest: int numbers[];]
+		int most: 0;
+		while each n in numbers
+			if n > most
+				most is n;
+			;;
+		;;
+	[end: most]
+}
