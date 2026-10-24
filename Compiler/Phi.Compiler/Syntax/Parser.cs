@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "dec", "fin", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "ptr", "method",
+            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>
@@ -1295,6 +1295,8 @@ namespace Phi.Compiler.Syntax
 
                 if (t.Kind == TokenKind.Minus && operand is NumberExpr n)
                     return new NumberExpr { Value = -n.Value, Span = t.Span.To(n.Span) };
+                if (t.Kind == TokenKind.Minus && operand is DecimalExpr d)
+                    return new DecimalExpr { Value = -d.Value, Span = t.Span.To(d.Span) };
 
                 UnaryOp op = t.Kind switch
                 {

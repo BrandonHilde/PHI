@@ -2,7 +2,7 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64 }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64 }
 
     /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
     public sealed class MethodSignature
@@ -56,6 +56,9 @@ namespace Phi.Compiler.Semantics
         public static readonly PhiType Str = new(TypeKind.Str);
         public static readonly PhiType I64 = new(TypeKind.I64);
         public static readonly PhiType U64 = new(TypeKind.U64);
+        public static readonly PhiType F16 = new(TypeKind.F16);
+        public static readonly PhiType F32 = new(TypeKind.F32);
+        public static readonly PhiType F64 = new(TypeKind.F64);
 
         public static PhiType Int => I32;
         public static PhiType Byte => U8;
@@ -89,6 +92,12 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         public bool IsWide => !IsArray && Kind is TypeKind.I64 or TypeKind.U64;
 
+        /// <summary>
+        /// A floating point number (f16, f32, f64). Not IsNumeric: it's worked on in the FPU
+        /// (st0), and becomes a whole number only through `as`.
+        /// </summary>
+        public bool IsFloat => !IsArray && Kind is TypeKind.F16 or TypeKind.F32 or TypeKind.F64;
+
         /// <summary>One of an enum's values: a number that only its own names go into.</summary>
         public bool IsEnum => !IsArray && Kind == TypeKind.Enum;
 
@@ -109,7 +118,9 @@ namespace Phi.Compiler.Semantics
             TypeKind.Str => 4,  // arrays of strings hold pointers
             TypeKind.Struct => Struct!.Size,
             TypeKind.Enum => 4,
-            TypeKind.I64 or TypeKind.U64 => 8,
+            TypeKind.I64 or TypeKind.U64 or TypeKind.F64 => 8,
+            TypeKind.F32 => 4,
+            TypeKind.F16 => 2,
             _ => 0,
         };
 
@@ -136,6 +147,9 @@ namespace Phi.Compiler.Semantics
                 TypeKind.Enum => Enum!.Name,
                 TypeKind.I64 => "i64",
                 TypeKind.U64 => "u64",
+                TypeKind.F16 => "f16",
+                TypeKind.F32 => "f32",
+                TypeKind.F64 => "f64",
                 TypeKind.Method => Signature!.ToString(),
                 TypeKind.Void => "nothing",
                 _ => "?",

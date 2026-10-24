@@ -172,6 +172,8 @@ namespace Phi.Compiler.Tests
         [InlineData("call M;\n[M]\nbln has: 1;\nif has\n log 'y';\n;;\n[end]", "'has' is a keyword and can't be a variable name")]
         [InlineData("int when: 1;", "'when' is a keyword and can't be a variable name")]
         [InlineData("i64 n: 1;", "i64 needs 32-bit code (a Kernel or a Program)")]
+        [InlineData("f32 n: 1;", "f32 needs 32-bit code (a Kernel or a Program)")]
+        [InlineData("log 2.5;", "numbers with a point need 32-bit code")]
         [InlineData("int n: 99999999999999999999;", "number is not a valid 64-bit value")]
         [InlineData("int enum: 1;", "'enum' is a keyword and can't be a variable name")]
         [InlineData("int k: 1;\nwhen k\n log 'x';\n;;", "expected 'is' (a branch), 'else' or ';;'")]

@@ -4,6 +4,7 @@ heap text: hi
 file size: 2
 reused: 1 zeroed: 1
 wide: 15000000000 714285714
+float: 4.242641 4
 objects exit code: 3
 PHI: free of memory that new did not hand out (or freed twice)
 bad free exit code: -1

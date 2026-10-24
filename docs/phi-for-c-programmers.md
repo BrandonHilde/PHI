@@ -31,6 +31,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `p == NULL` for an object | `p is empty` | |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
 | `int64_t`, `uint64_t` | `i64`, `u64` | 32-bit kernels and programs. Narrowing to 32 bits needs `as`. |
+| `double`, `float`, `_Float16` | `f64`, `f32`, `f16` | 32-bit kernels and programs. To a whole number only with `as` (toward zero); `sqrt(x)` is `(Float.Sqrt: x)`. |
 | `(T)x` | `x as T` | A cast. Binds tighter than math: `(a + b) as u8`. |
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
 | `p->f` | `p.f` | `.` reaches a field through a pointer to a struct too (one pointer per `.`). |

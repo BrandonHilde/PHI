@@ -87,7 +87,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
 | Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `isr` `end` |
 | Control | `if` `elif` `else` `while` `when` `unsafe` `break` `continue` `return` `call` `exit` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
@@ -118,6 +118,7 @@ A quote followed directly by a letter or digit doesn't end a string, which is wh
 
 | Type | Size | Values |
 |---|---|---|
+| `f64` / `f32` / `f16` | 8 / 4 / 2 bytes | floating point numbers: about 15, 7 and 3 digits (32-bit kernels and programs; see below) |
 | `i64` / `u64` | 8 bytes | about ±9.2 × 10^18 / 0 to about 1.8 × 10^19 (32-bit kernels and programs; see below) |
 | `int` (also `i32`) | 4 bytes | -2147483648 to 2147483647 |
 | `u32` | 4 bytes | 0 to 4294967295 |
@@ -164,8 +165,37 @@ log bytes * 4 ' ' scaled;               # printed, compared and built into text 
 int low: bytes as int;                  # to 32 bits only with `as`, which keeps the low half
 ```
 
-Putting one where a 32-bit number goes (an `int`, an index, a parameter) is an error, since
-it may not fit: write `as int` to keep its low 32 bits. They work as variables, fields,
+**Floating point numbers.** `f64`, `f32` and `f16` hold fractions and very big or small
+numbers. A number with a point or an exponent (`2.5`, `6.02e23`, `1e-5`) is one, and math
+with one on either side is floating point, in the wider of the two kinds:
+
+```phi
+f64 pi: 3.14159265358979;
+f32 radius: 2.5;
+int n: 3;
+f64 area: pi * radius * radius;
+log area ' ' (n / 2.0) ' ' 6.02e23;        # 19.634954 1.5 6.02e23
+int whole: area as int;                     # 19: to a whole number only with `as` (toward zero)
+log (Float.Sqrt: 2) ' ' (Float.Round: 2.5); # 1.414214 2
+```
+
+- Whole numbers become floating point wherever one goes, but a floating point number
+  becomes a whole number only with `as`, which drops what's after the point.
+- `log` and building a `str` write up to 6 digits after the point, without zeros at the
+  end, and an exponent from 10^12 up and under 0.0001; `inf`, `-inf` and `nan` too.
+- `%`, `~`, `&`, `|`, `^` and the shifts work only on whole numbers.
+- `Float.Sqrt`, `Abs`, `Sin`, `Cos` (radians), `Round` (halves to even), `Floor`, `Ceil`
+  and `Trunc` each take one number and give an `f64`.
+- `f16` is for storing many numbers in little memory: it keeps about 3 digits, up to
+  65504. Math on any kind happens with more precision than any of them, and is rounded
+  when it's stored.
+- They work as variables, fields, array elements, parameters and results (but not in
+  method values yet), in 32-bit kernels and programs. Each program keeps its own floating
+  point registers when the CPU switches between them, but an interrupt handler shouldn't
+  use them.
+
+Putting a 64-bit number where a 32-bit number goes (an `int`, an index, a parameter) is an
+error, since it may not fit: write `as int` to keep its low 32 bits. They work as variables, fields,
 array elements, parameters and results (but not in method values yet), and need 32-bit
 code: a 16-bit program can't have them.
 
@@ -1577,8 +1607,10 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 
 ## Not supported yet
 
-- `dec` / `fin` (decimal numbers), `has`, `^^` (power)
-- `i64` and `u64` in method values (`method<i64: i64>`) and as a `when`'s value
+- `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
+  `has`, `^^` (power)
+- `i64`, `u64` and floating point numbers in method values (`method<i64: i64>`), and as a
+  `when`'s value
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - arrays of objects

@@ -37,5 +37,9 @@ phi.Objects:Program
 	# 64-bit numbers work in programs too
 	i64 big: 5000000000;
 	log 'wide: ' (big * 3) ' ' (big / 7) '\n';
+
+	# and floating point
+	f64 root: (Float.Sqrt: 2) * 3;
+	log 'float: ' root ' ' (root as int) '\n';
 	exit 3;
 }

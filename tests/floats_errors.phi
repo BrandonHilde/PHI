@@ -1,0 +1,12 @@
+phi.FloatsErrors:Kernel
+{
+	f64 x: 2.5;
+	int n: x;
+	int m: x % 2;
+	u8 bytes[4];
+	log bytes:x;
+	f32 y: ~x;
+	str s: 'a';
+	f64 z: s;
+	method<f64: f64> f: 0;
+}

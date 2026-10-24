@@ -148,6 +148,7 @@ OS_CreateUserTask:
     mov eax, [ebp + 28]
     mov [phi_task_stack_bottom + ecx * 4], eax
     mov dword [phi_task_heap_end + ecx * 4], 0   ; no heap until it grows one
+    mov byte [phi_task_fpu_fresh + ecx], 1       ; its FPU starts clean
     mov eax, [phi_current_task]
     mov [phi_task_parent + ecx * 4], eax
     mov dword [phi_task_exit + ecx * 4], 0
@@ -175,6 +176,20 @@ phi_schedule:
     jbe .next
     xor edx, edx                              ; the kernel is always ready
 .found:
+    ; each task has its own FPU registers (floating point numbers): the old task's are
+    ; saved (which also clears them), and the new one's put back, or left clean for a new task
+    cmp edx, ebx
+    je .same_fpu
+    imul esi, ebx, FPU_STATE
+    fnsave [phi_task_fpu + esi]
+    cmp byte [phi_task_fpu_fresh + edx], 0
+    je .restore_fpu
+    mov byte [phi_task_fpu_fresh + edx], 0
+    jmp .same_fpu
+.restore_fpu:
+    imul esi, edx, FPU_STATE
+    frstor [phi_task_fpu + esi]
+.same_fpu:
     mov [phi_current_task], edx
     mov eax, [phi_task_kstack + edx * 4]
     mov [phi_tss + 4], eax                    ; esp0: where ring 3 interrupts land
@@ -521,6 +536,9 @@ phi_task_kstack:       times MAX_TASKS dd 0
 phi_task_image_end:    times MAX_TASKS dd 0
 phi_task_stack_bottom: times MAX_TASKS dd 0
 phi_task_heap_end:     times MAX_TASKS dd 0
+phi_task_fpu_fresh:    times MAX_TASKS db 0
+FPU_STATE              equ 108                 ; what fnsave keeps
+phi_task_fpu:          times MAX_TASKS * FPU_STATE db 0
 phi_task_parent:       times MAX_TASKS dd 0
 phi_task_exit:         times MAX_TASKS dd 0
 phi_task_wake:         times MAX_TASKS dd 0

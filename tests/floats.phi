@@ -1,0 +1,76 @@
+struct.Point
+{
+	f32 x;
+	f32 y;
+}
+
+phi.Floats:Kernel
+{
+	f64 pi: 3.14159265358979;
+	f32 half: 0.5;
+	f16 small: 2.5;
+	f64 negative: -1.25;
+	log pi ' ' half ' ' small ' ' negative ' ' sizeof small ' ' sizeof half ' ' sizeof pi '\n';
+
+	# arithmetic, with whole numbers made floating point on the way in
+	int n: 3;
+	f64 area: pi * n * n;
+	log area ' ' (area / 2) ' ' (1.5 + n) ' ' (10 - 2.5) ' ' (-pi) ' ' (n / 2.0) '\n';
+
+	# comparisons and conditions
+	log (half < 1) ' ' (pi > 3.2) ' ' (half is 0.5) ' ' (small >= 2.5) ' ' (negative is not -1.25) '\n';
+	f64 zero: 0.0;
+	if not zero
+		log 'zero is false\n';
+	;;
+	if half
+		log 'a half is true\n';
+	;;
+
+	# to whole numbers only with as (toward zero), and the functions
+	int whole: area as int;
+	int down: negative as int;
+	i64 wide: 1.0e15 as i64;
+	log whole ' ' down ' ' wide '\n';
+	log (Float.Sqrt: 2) ' ' (Float.Abs: negative) ' ' (Float.Floor: negative) ' ' (Float.Ceil: negative) ' ' (Float.Round: 2.5) ' ' (Float.Trunc: -2.7) '\n';
+	log (Float.Sin: 0) ' ' (Float.Cos: 0) ' ' ((Float.Sin: pi / 2) > 0.999) '\n';
+
+	# big, small, and not numbers
+	f64 big: 6.02e23;
+	f64 tiny: 0.000015;
+	f64 inf: 1.0 / zero;
+	log big ' ' tiny ' ' inf ' ' (-inf) ' ' (zero / zero) '\n';
+
+	# fields, arrays, parameters, results and assignment operators
+	Point p;
+	p.x is 1.5;
+	p.y is p.x * 2;
+	f32 list: 0.25 0.5 0.75;
+	list:1++ 1;
+	f64 total: 0;
+	while int i: 0; i < list.len; i++;
+		total++ list:i;
+	;;
+	total** 2;
+	log p.x ' ' p.y ' ' list:1 ' ' total ' ' (Hypotenuse: 3 4) ' ' (Mean: 2.5 3.5 6) '\n';
+	call Hypotenuse: 1 1;                      # its result isn't kept
+	f64 kept: 0;
+	call kept is Hypotenuse: 6 8;
+
+	# f16 keeps about 3 digits
+	f16 third: 1.0 / 3;
+	f16 large: 1000.0;
+	log third ' ' large ' ' (large + 0.25) '\n';
+
+	# into text
+	str text: '';
+	text is 'pi is about ' pi ', kept ' kept;
+	log text '\n';
+	exit 0;
+
+	[Hypotenuse: f64 a: 0.0; f64 b: 0.0;]
+	[end: (Float.Sqrt: a * a + b * b)]
+
+	[Mean: f32 a: 0.0; f16 b: 0.0; int c: 0;]
+	[end: (a + b + c) / 3]
+}

@@ -19,6 +19,14 @@ namespace Phi.Compiler.Semantics
         public UnitKind? OnlyIn { get; init; }
 
         public string Description { get; init; } = "";
+
+        /// <summary>
+        /// For the floating point functions (Float.Sqrt ...): the FPU instruction that works it
+        /// out on st0, and the rounding it needs (Floor, Ceil, Trunc), if any. They take and
+        /// give an f64.
+        /// </summary>
+        public string? FloatInstruction { get; init; }
+        public int FloatRounding { get; init; } = -1;
     }
 
     public sealed class HookInfo
@@ -80,6 +88,16 @@ namespace Phi.Compiler.Semantics
 
             // ---- tasks (lib/x86_32/tasks.asm in kernels, system calls in programs)
             new() { Name = "OS.Yield", Label = "OS_Yield", Description = "give the CPU to another task" },
+
+            // ---- floating point (worked out on the FPU, in 32-bit kernels and programs)
+            new() { Name = "Float.Sqrt", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fsqrt", Description = "the square root" },
+            new() { Name = "Float.Abs", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fabs", Description = "without its sign" },
+            new() { Name = "Float.Sin", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fsin", Description = "the sine of x radians" },
+            new() { Name = "Float.Cos", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fcos", Description = "the cosine of x radians" },
+            new() { Name = "Float.Round", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 0, Description = "the nearest whole number (halves to even)" },
+            new() { Name = "Float.Floor", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 1, Description = "the whole number at or below" },
+            new() { Name = "Float.Ceil", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 2, Description = "the whole number at or above" },
+            new() { Name = "Float.Trunc", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "frndint", FloatRounding = 3, Description = "the whole number toward zero" },
             new() { Name = "OS.CurrentTask", Label = "OS_CurrentTask", Returns = true, Description = "this task's number (0 is the kernel)" },
             new() { Name = "OS.StartMultitasking", Label = "OS_StartMultitasking", Description = "kernel: set up tasks, user mode and system calls" },
             new() { Name = "OS.CreateUserTask", Label = "OS_CreateUserTask", Returns = true,

@@ -547,6 +547,8 @@ these were added:
   `else`, on numbers, enums and text
 - [x] Widgets (`gui.widgets`: buttons, check boxes, text fields, lists with scroll bars)
   and resizable windows
+- [x] Floating point numbers: `f64`, `f32` and `f16` on the x87 FPU (each task keeps its own
+  registers), literals like `2.5` and `6.02e23`, printing, and `Float.Sqrt` and friends
 - [x] 64-bit integers: `i64` and `u64` (variables, fields, arrays, parameters, results,
   printing and text), with multiply, divide and conversion to text in `int64.asm`
 
@@ -554,10 +556,10 @@ The parts most worth doing next, roughly in order:
 
 1. **More for windows:** a program opening more than one window, menus, and dialog boxes
    (open, save, a message).
-2. **`dec`/`fin`** (decimal numbers), so a calculator can show 2.5; and `i64` in method
-   values and `when`.
+2. **`i64` and floats in method values and `when`**, and `%` on floats (`fprem`).
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
-   and filled in one place.
+   and filled in one place. Waiting for code that needs them before choosing a design
+   (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
 4. Strings that grow everywhere they can be: method results (now cut at 255 characters
    when they come from a `str` without a size) and the elements of a `str` array.
 5. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.

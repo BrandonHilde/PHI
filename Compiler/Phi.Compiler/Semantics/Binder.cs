@@ -289,7 +289,7 @@ namespace Phi.Compiler.Semantics
             else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
             else if (MovedPointer(result) is PhiType moved) m.ReturnType = moved; // [end: text + n] is still a ptr<u8>
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
-            else if (result.Type.IsWide) m.ReturnType = result.Type;
+            else if (result.Type.IsWide || result.Type.IsFloat) m.ReturnType = result.Type;
             else if (result.Type.IsObject || result.Type.IsStruct)
             {
                 // the caller gets an object of its own: a new local is handed over, anything else copied
@@ -601,6 +601,15 @@ namespace Phi.Compiler.Semantics
                 case "bln": return PhiType.Bool;
                 case "u16": return PhiType.U16;
                 case "u32": return PhiType.U32;
+                case "f16":
+                case "f32":
+                case "f64":
+                    if (scope?.Unit is UnitKind.Boot or UnitKind.Os)
+                    {
+                        Error(t.Span, $"{t.Name} needs 32-bit code (a Kernel or a Program)");
+                        return PhiType.Error;
+                    }
+                    return t.Name == "f16" ? PhiType.F16 : t.Name == "f32" ? PhiType.F32 : PhiType.F64;
                 case "i64":
                 case "u64":
                     if (scope?.Unit is UnitKind.Boot or UnitKind.Os)
@@ -634,9 +643,9 @@ namespace Phi.Compiler.Semantics
                         .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
-                    if (parameters.Any(p => p.IsWide) || result.IsWide)
+                    if (parameters.Any(p => p.IsWide || p.IsFloat) || result.IsWide || result.IsFloat)
                     {
-                        Error(t.Span, "a method called through a variable can't take or return an i64 or u64 yet");
+                        Error(t.Span, "a method called through a variable can't take or return an i64, u64 or floating point number yet");
                         return PhiType.Error;
                     }
                     if (result.IsString)
@@ -1358,7 +1367,7 @@ namespace Phi.Compiler.Semantics
                         BindExpr(value, scope);
                         if (value.Type.IsArray && value.Type.Element == PhiType.U8 && value is NameExpr or MemberExpr)
                             Error(value.Span, $"can't print a u8 array; to print the text in it (up to a zero byte), write addr {Describe(value)}");
-                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsWide && !value.Type.IsString)
+                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsWide && !value.Type.IsFloat && !value.Type.IsString)
                             Error(value.Span, $"can't print a {value.Type}; print one element or field at a time");
                     }
                     return log;
@@ -1629,6 +1638,7 @@ namespace Phi.Compiler.Semantics
         static object? ConstantValue(Expr e) => e switch
         {
             StringExpr s when e.Type.IsString => s.Value,
+            DecimalExpr d => d.Value,
             _ => ConstantFolder.Evaluate(e),
         };
 
@@ -1694,13 +1704,13 @@ namespace Phi.Compiler.Semantics
 
             if (assign.Op != AssignOp.Set)
             {
-                if (!target.Type.IsNumeric && !target.Type.IsWide)
+                if (!target.Type.IsNumeric && !target.Type.IsWide && !target.Type.IsFloat)
                 {
                     Error(assign.Span, $"{OpText(assign.Op)} only works on numbers, and '{Describe(target)}' is a {target.Type}");
                     return assign;
                 }
 
-                value = Convert(value, target.Type.IsWide ? target.Type : PhiType.Int, "the right side");
+                value = Convert(value, target.Type.IsWide || target.Type.IsFloat ? target.Type : PhiType.Int, "the right side");
                 var op = assign.Op switch
                 {
                     AssignOp.Add => BinaryOp.Add,
@@ -1710,7 +1720,7 @@ namespace Phi.Compiler.Semantics
                     _ => BinaryOp.Modulo,
                 };
                 var combined = new BinaryExpr { Op = op, Left = target, Right = value, Span = assign.Span };
-                combined.Type = ArithmeticType(target.Type, value.Type);
+                combined.Type = target.Type.IsFloat ? FloatType(target.Type, value.Type) : ArithmeticType(target.Type, value.Type);
                 value = combined;
             }
             else
@@ -1863,7 +1873,7 @@ namespace Phi.Compiler.Semantics
                 if (part.Type.IsError) continue;
                 if (part.Type.IsArray && part.Type.Element == PhiType.U8 && part is NameExpr or MemberExpr)
                     Error(part.Span, $"can't write a u8 array into a str; for the text in it (up to a zero byte), write addr {Describe(part)}");
-                else if (!part.Type.IsNumeric && !part.Type.IsWide && !part.Type.IsString)
+                else if (!part.Type.IsNumeric && !part.Type.IsWide && !part.Type.IsFloat && !part.Type.IsString)
                     Error(part.Span, $"can't write a {part.Type} into a str; write one element or field at a time");
 
                 // the str is being rewritten, so reading it after that would read the new text
@@ -1942,7 +1952,8 @@ namespace Phi.Compiler.Semantics
         static string A(PhiType t)
         {
             string name = t.ToString();
-            return ("aeioAEIO".Contains(name[0]) ? "an " : "a ") + name;
+            bool vowelSound = "aeioAEIO".Contains(name[0]) || t.IsFloat;   // an f64 ("eff")
+            return (vowelSound ? "an " : "a ") + name;
         }
 
         static string Describe(Expr e) => e switch
@@ -2033,7 +2044,7 @@ namespace Phi.Compiler.Semantics
 
                 case BuiltinFunction builtin:
                     if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value");
-                    else CheckResultTarget(call, PhiType.Int);
+                    else CheckResultTarget(call, builtin.FloatInstruction != null ? PhiType.F64 : PhiType.Int);
                     break;
 
                 case RawBlockDecl:
@@ -2075,7 +2086,7 @@ namespace Phi.Compiler.Semantics
 
                 case BuiltinFunction builtin:
                     if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value, so it can't be used as one");
-                    else call.Type = PhiType.Int;
+                    else call.Type = builtin.FloatInstruction != null ? PhiType.F64 : PhiType.Int;
                     break;
 
                 case RawBlockDecl:
@@ -2200,6 +2211,22 @@ namespace Phi.Compiler.Semantics
                     {
                         Error(calleeSpan, $"{builtin.Name} can only be used in the {UnitName(only)}");
                         return null;
+                    }
+
+                    if (builtin.FloatInstruction != null)
+                    {
+                        if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+                        {
+                            Error(calleeSpan, $"{builtin.Name} needs 32-bit code (a Kernel or a Program)");
+                            return null;
+                        }
+                        if (arguments.Count != 1)
+                        {
+                            Error(span, $"{builtin.Name} takes 1 argument (x) but was given {arguments.Count}");
+                            return null;
+                        }
+                        arguments[0] = Convert(arguments[0], PhiType.F64, "'x'");
+                        return builtin;
                     }
 
                     if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
@@ -2355,7 +2382,7 @@ namespace Phi.Compiler.Semantics
         void BindCondition(Expr condition, Scope scope)
         {
             BindExpr(condition, scope);
-            if (!condition.Type.IsError && !condition.Type.IsNumeric && !condition.Type.IsWide)
+            if (!condition.Type.IsError && !condition.Type.IsNumeric && !condition.Type.IsWide && !condition.Type.IsFloat)
                 Error(condition.Span, $"a condition must be a number or a comparison, not a {condition.Type}");
         }
 
@@ -2372,6 +2399,13 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         static bool CalledInParens(PhiType t) =>
             t.IsMethod && t.Signature!.Parameters.Count == 0 && t.Signature.Result.Kind != TypeKind.Void;
+
+        /// <summary>Math with a floating point number: the wider kind of the two (a whole number takes the other's).</summary>
+        static PhiType FloatType(PhiType a, PhiType b)
+        {
+            int Width(PhiType t) => t.Kind switch { TypeKind.F64 => 3, TypeKind.F32 => 2, TypeKind.F16 => 1, _ => 0 };
+            return Width(a) >= Width(b) ? a : b;
+        }
 
         static PhiType ArithmeticType(PhiType a, PhiType b) =>
             a.IsWide || b.IsWide ? (a.Kind == TypeKind.U64 || b.Kind == TypeKind.U64 ? PhiType.U64 : PhiType.I64)
@@ -2421,8 +2455,12 @@ namespace Phi.Compiler.Semantics
                     break;
 
                 case DecimalExpr:
-                    Error(expr.Span, "decimal numbers aren't supported yet");
-                    expr.Type = PhiType.Error;
+                    if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+                    {
+                        Error(expr.Span, "numbers with a point need 32-bit code (a Kernel or a Program)");
+                        expr.Type = PhiType.Error;
+                    }
+                    else expr.Type = PhiType.F64;
                     break;
 
                 case NameExpr name:
@@ -2544,8 +2582,8 @@ namespace Phi.Compiler.Semantics
 
                     // numbers, pointers and method addresses become each other; nothing else does
                     // (an i64 or u64 to 32 bits keeps the low half)
-                    bool from = cast.Operand.Type.IsNumeric || cast.Operand.Type.IsMethod || cast.Operand.Type.IsWide;
-                    if (!from || !(to.IsNumeric || to.IsMethod || to.IsWide))
+                    bool from = cast.Operand.Type.IsNumeric || cast.Operand.Type.IsMethod || cast.Operand.Type.IsWide || cast.Operand.Type.IsFloat;
+                    if (!from || !(to.IsNumeric || to.IsMethod || to.IsWide || to.IsFloat) || (to.IsMethod && cast.Operand.Type.IsFloat))
                     {
                         Error(cast.Span, $"a {cast.Operand.Type} can't be used as a {to}; only numbers, pointers and methods can");
                         break;
@@ -2563,6 +2601,11 @@ namespace Phi.Compiler.Semantics
                     break;
 
                 case UnaryExpr unary when IsWideOperand(unary.Operand, scope):
+                    unary.Type = unary.Op == UnaryOp.Not ? PhiType.Bool : unary.Operand.Type;
+                    break;
+
+                case UnaryExpr unary when unary.Operand.Type.IsFloat:
+                    if (unary.Op == UnaryOp.BitNot) Error(unary.Span, "~ works on whole numbers, and this is " + A(unary.Operand.Type));
                     unary.Type = unary.Op == UnaryOp.Not ? PhiType.Bool : unary.Operand.Type;
                     break;
 
@@ -2829,6 +2872,22 @@ namespace Phi.Compiler.Semantics
                               $"{A(b.Left.Type.IsEnum ? b.Right.Type : b.Left.Type)}; write `as {kind}` if that's meant");
             }
 
+            // floating point: the other side becomes one too, and the wider of two kinds wins
+            if ((b.Left.Type.IsFloat || b.Right.Type.IsFloat) && !b.IsLogical)
+            {
+                if (b.Op is BinaryOp.Modulo or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor or BinaryOp.ShiftLeft or BinaryOp.ShiftRight)
+                {
+                    Error(b.Span, $"this works on whole numbers; for a floating point number, write ({Describe(b.Left.Type.IsFloat ? b.Left : b.Right)} as int)");
+                    b.Type = PhiType.Error;
+                    return;
+                }
+                PhiType real = FloatType(b.Left.Type, b.Right.Type);
+                b.Left = Convert(b.Left, real, "the left side");
+                b.Right = Convert(b.Right, real, "the right side");
+                b.Type = b.IsComparison ? PhiType.Bool : real;
+                return;
+            }
+
             // 64-bit: the other side is made 64 bits too (a shift's count stays a number)
             if ((b.Left.Type.IsWide || b.Right.Type.IsWide) && !b.IsLogical)
             {
@@ -2937,6 +2996,21 @@ namespace Phi.Compiler.Semantics
             if (target.IsPointer && e.Type.IsPointer && target.Pointee != e.Type.Pointee
                 && target.Pointee != PhiType.U8 && e.Type.Pointee != PhiType.U8)
                 diagnostics.Warning(file, e.Span, $"{what} is a {target}, but this is a {e.Type}; write `as {target}` if that's meant");
+
+            // floating point: from any number; to a whole number only with `as`
+            if (target.IsFloat)
+            {
+                if (e.Type.IsFloat || e.Type.IsNumeric && !e.Type.IsPointer || e.Type.IsWide) return e;
+                if (e is StringExpr { Value.Length: 1 } floatChar)
+                    return new NumberExpr { Value = floatChar.Value[0], Span = floatChar.Span, Type = PhiType.Int };
+                Error(e.Span, $"{what} needs a number, but this is {A(e.Type)}");
+                return e;
+            }
+            if (e.Type.IsFloat && (target.IsNumeric || target.IsWide || target.IsMethod))
+            {
+                Error(e.Span, $"{what} is {A(target)}, and this is {A(e.Type)}; write `as {target}` to keep its whole part");
+                return e;
+            }
 
             // 64 bits: from any number (made wider); to 32 bits only with `as`, so nothing is cut quietly
             if (target.IsWide)

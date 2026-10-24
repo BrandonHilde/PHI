@@ -185,6 +185,13 @@ namespace Phi.Compiler.Syntax
             return Make(kind, start);
         }
 
+        /// <summary>The character after the digits that start `ahead` characters on.</summary>
+        char PeekPastDigits(int ahead)
+        {
+            while (char.IsDigit(Peek(ahead))) ahead++;
+            return Peek(ahead);
+        }
+
         bool Match(char expected)
         {
             if (Peek() != expected) return false;
@@ -217,11 +224,23 @@ namespace Phi.Compiler.Syntax
                 return Make(TokenKind.Number, start, 0L);
             }
 
-            if (Peek() == '.' && char.IsDigit(Peek(1)))
+            // 3.14, 6.02e23, 1e-5: a number with a point or an exponent is floating point
+            bool point = Peek() == '.' && char.IsDigit(Peek(1));
+            if (point)
             {
                 pos++;
+                while (char.IsDigit(Peek()) || Peek() == '_') pos++;
+            }
+            int sign = Peek(1) is '+' or '-' ? 1 : 0;
+            bool exponent = Peek() is 'e' or 'E' && char.IsDigit(Peek(1 + sign)) && !char.IsLetter(PeekPastDigits(1 + sign));
+            if (exponent)
+            {
+                pos += 1 + sign;
                 while (char.IsDigit(Peek())) pos++;
-                double d = double.Parse(text[start..pos], CultureInfo.InvariantCulture);
+            }
+            if (point || exponent)
+            {
+                double d = double.Parse(text[start..pos].Replace("_", ""), CultureInfo.InvariantCulture);
                 return Make(TokenKind.Decimal, start, d);
             }
 

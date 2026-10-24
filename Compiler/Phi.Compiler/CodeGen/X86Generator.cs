@@ -71,6 +71,9 @@ namespace Phi.Compiler.CodeGen
             // every 32-bit kernel gets an interrupt table, so exceptions show the panic screen
             if (unit.Kind == UnitKind.Kernel) Need("phi_interrupts_init");
 
+            // the FPU (floating point numbers) starts clean
+            if (bits32) Emit("fninit");
+
             // the program's own code first: it decides which library routines are needed
             foreach (ClassDecl cls in unit.Classes)
             {
@@ -281,6 +284,7 @@ namespace Phi.Compiler.CodeGen
                 SourceComment(m.Decl.Result);
                 if (m.ReturnType.IsObject) EmitObjectResult(m.Decl.Result);
                 else if (m.ReturnType.IsWide) EmitWide(m.Decl.Result);   // in edx:eax
+                else if (m.ReturnType.IsFloat) EmitFloat(m.Decl.Result); // in st0
                 else EmitExpr(m.Decl.Result); // the result goes back in eax
             }
 
@@ -411,7 +415,7 @@ namespace Phi.Compiler.CodeGen
                 return $"ebp - {size}";
             }
 
-            for (int i = m.Parameters.Count - 1; i >= 0; slot += m.Parameters[i].Type.IsWide ? 8 : 4, i--)
+            for (int i = m.Parameters.Count - 1; i >= 0; slot += m.Parameters[i].Type.ElementSize == 8 ? 8 : 4, i--)
             {
                 VariableSymbol p = m.Parameters[i];
                 if (p.Type.IsString)
@@ -739,6 +743,7 @@ namespace Phi.Compiler.CodeGen
                 case ReturnStmt ret:
                     if (ret.Value != null && currentMethod is { ReturnType.IsObject: true }) EmitObjectResult(ret.Value);
                     else if (ret.Value != null && currentMethod is { ReturnType.IsWide: true }) EmitWide(ret.Value);   // in edx:eax
+                    else if (ret.Value != null && currentMethod is { ReturnType.IsFloat: true }) EmitFloat(ret.Value); // in st0
                     else if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
                     returnUsed = true;
                     Emit($"jmp {returnLabel}");
@@ -769,8 +774,8 @@ namespace Phi.Compiler.CodeGen
                     for (int i = 0; i < build.Parts.Count; i++)
                     {
                         Expr part = build.Parts[i];
-                        bool text = IsText(part.Type) || part.Type.IsWide;
-                        if (part.Type.IsWide) EmitWideText(part);
+                        bool text = IsText(part.Type) || part.Type.IsWide || part.Type.IsFloat;
+                        if (part.Type.IsWide || part.Type.IsFloat) EmitNumberText(part);
                         else if (text && StaticAddress(part) is string label) LoadAddress("eax", label);
                         else EmitExpr(part);
                         EmitStringStore(build.Target, text, append: build.Append || i > 0, unsigned: part.Type.IsUnsigned32);
@@ -843,11 +848,11 @@ namespace Phi.Compiler.CodeGen
                     }
                     Emit($"call {print}");
                 }
-                else if (value.Type.IsWide)
+                else if (value.Type.IsWide || value.Type.IsFloat)
                 {
                     string print = "phi_print" + suffix;
                     Need(print);
-                    EmitWideText(value);
+                    EmitNumberText(value);
                     Emit("mov esi, eax");
                     Emit($"call {print}");
                 }
@@ -875,14 +880,19 @@ namespace Phi.Compiler.CodeGen
         void EmitCall(CallStmt call)
         {
             EmitCallTo(call.Resolved, call.Arguments);
-            if (call.ResultTarget == null) return;
-
             PhiType result = call.Resolved switch
             {
                 MethodSymbol method => method.ReturnType,
                 PointerCall pointer => pointer.Signature.Result,
+                BuiltinFunction { FloatInstruction: not null } => PhiType.F64,
                 _ => PhiType.Int,
             };
+            if (call.ResultTarget == null)
+            {
+                if (result.IsFloat && call.Resolved is MethodSymbol or BuiltinFunction) Emit("fstp st0               ; the result isn't kept");
+                return;
+            }
+
             if (result.IsObject)
             {
                 // the call made a new object: the target takes it over
@@ -909,6 +919,29 @@ namespace Phi.Compiler.CodeGen
                         VariableSymbol p = method.Parameters[i];
                         Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
 
+                        if (p.Type.IsFloat)
+                        {
+                            if (value == null) Emit("fldz");
+                            else EmitFloat(value);
+                            if (p.Type.Kind == TypeKind.F64)
+                            {
+                                Emit("sub esp, 8");
+                                Emit("fstp qword [esp]");
+                                pushedBytes += 8;
+                                continue;
+                            }
+                            Emit("sub esp, 4");
+                            Emit("fstp dword [esp]");
+                            if (p.Type.Kind == TypeKind.F16)
+                            {
+                                Need("phi_f32_to_f16");
+                                Emit("mov eax, [esp]");
+                                Emit("call phi_f32_to_f16");
+                                Emit("mov [esp], eax");
+                            }
+                            pushedBytes += 4;
+                            continue;
+                        }
                         if (p.Type.IsWide)
                         {
                             if (value == null) Emit("xor eax, eax");
@@ -920,10 +953,10 @@ namespace Phi.Compiler.CodeGen
                             continue;
                         }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
-                        else if (p.Type.IsString && value.Type.IsWide) EmitWideText(value);
+                        else if (p.Type.IsString && (value.Type.IsWide || value.Type.IsFloat)) EmitNumberText(value);
                         else EmitExpr(value);
 
-                        if (p.Type.IsString && value != null && !IsText(value.Type) && !value.Type.IsWide)
+                        if (p.Type.IsString && value != null && !IsText(value.Type) && !value.Type.IsWide && !value.Type.IsFloat)
                         {
                             // a number for a str parameter is written out as text first
                             string text = AllocTemp(12);
@@ -949,6 +982,10 @@ namespace Phi.Compiler.CodeGen
                     if (pushedBytes > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushedBytes}");
                     break;
                 }
+
+                case BuiltinFunction { FloatInstruction: not null } function:
+                    EmitFloatFunction(function, arguments[0]);
+                    break;
 
                 case BuiltinFunction builtin:
                 {
@@ -1001,6 +1038,13 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Stores a call result (in eax) into a variable.</summary>
         void EmitStoreResult(Expr target, PhiType resultType)
         {
+            if (target.Type.IsFloat)
+            {
+                if (resultType.IsWide) PushAndLoad("qword", "edx", "eax");
+                else if (!resultType.IsFloat) PushAndLoad("dword", "eax");
+                EmitFloatStore(target);
+                return;
+            }
             if (target.Type.IsWide)
             {
                 if (!resultType.IsWide) Emit(resultType.IsSigned ? "cdq" : "xor edx, edx");
@@ -1359,15 +1403,21 @@ namespace Phi.Compiler.CodeGen
 
         void EmitAssign(Expr target, Expr value)
         {
+            if (target.Type.IsFloat)
+            {
+                EmitFloat(value);
+                EmitFloatStore(target);
+                return;
+            }
             if (target.Type.IsWide)
             {
                 EmitWide(value);
                 EmitWideStore(target);
                 return;
             }
-            if (target.Type.IsString && value.Type.IsWide)
+            if (target.Type.IsString && (value.Type.IsWide || value.Type.IsFloat))
             {
-                EmitWideText(value);
+                EmitNumberText(value);
                 EmitStringStore(target, sourceIsString: true);
                 return;
             }
@@ -1482,6 +1532,8 @@ namespace Phi.Compiler.CodeGen
                 EmitWide(e);    // the low half is in eax too
                 return;
             }
+            if (e.Type.IsFloat)
+                throw new InvalidOperationException($"a floating point value where a whole number goes: {e.GetType().Name}");
 
             if (e is BinaryExpr or UnaryExpr && ConstantFolder.Evaluate(e) is long folded)
             {
@@ -1571,7 +1623,8 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case CastExpr cast:
-                    EmitExpr(cast.Operand);
+                    if (cast.Operand.Type.IsFloat) EmitFloatToWhole(cast.Operand);
+                    else EmitExpr(cast.Operand);
                     // a smaller number keeps the low bytes, like storing it would
                     switch (cast.Type.Kind)
                     {
@@ -1599,6 +1652,12 @@ namespace Phi.Compiler.CodeGen
                         case 2: Emit("in ax, dx"); Emit("movzx eax, ax"); break;
                         default: Emit("in eax, dx"); break;
                     }
+                    break;
+
+                case UnaryExpr { Op: UnaryOp.Not, Operand.Type.IsFloat: true } notFloat:
+                    EmitFloatIsZero(notFloat.Operand);
+                    Emit("sete al");
+                    Emit("movzx eax, al");
                     break;
 
                 case UnaryExpr unary:
@@ -1827,6 +1886,12 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                case BinaryExpr { IsComparison: true } cmp when cmp.Left.Type.IsFloat || cmp.Right.Type.IsFloat:
+                    EmitFloatCompare(cmp);
+                    Emit("test eax, eax");
+                    Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
+                    return;
+
                 case BinaryExpr { IsComparison: true } cmp when cmp.Left.Type.IsWide || cmp.Right.Type.IsWide:
                     EmitWideCompare(cmp);
                     Emit("test eax, eax");
@@ -1853,10 +1918,253 @@ namespace Phi.Compiler.CodeGen
                 }
             }
 
+            if (condition.Type.IsFloat)
+            {
+                EmitFloatIsZero(condition);
+                Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
+                return;
+            }
             EmitExpr(condition);
             if (condition.Type.IsWide) Emit("or eax, edx");
             else Emit("test eax, eax");
             Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
+        }
+
+        // ================================================================ floating point
+        //
+        // An f16, f32 or f64 is worked on in the FPU: EmitFloat leaves one value in st0 and
+        // nothing else on the FPU's stack. The right side of an operation is worked out first
+        // and kept on the CPU's stack, so a call in the middle (which may use the FPU itself)
+        // never finds more than one value there.
+
+        readonly Dictionary<double, string> floatLabels = new();
+
+        string FloatLabel(double value)
+        {
+            if (!floatLabels.TryGetValue(value, out string? label))
+            {
+                label = $"phi_float_{floatLabels.Count}";
+                floatLabels[value] = label;
+            }
+            return label;
+        }
+
+        /// <summary>st0 = e: a floating point value, or a whole number made one.</summary>
+        void EmitFloat(Expr e)
+        {
+            if (!e.Type.IsFloat)
+            {
+                if (ConstantFolder.Evaluate(e) is long k)
+                {
+                    if (!e.Type.IsWide && !e.Type.IsSigned) k = (uint)k;
+                    if (k == 0) Emit("fldz");
+                    else if (k == 1) Emit("fld1");
+                    else Emit($"fld qword [{FloatLabel(k)}]");
+                }
+                else if (e.Type.IsWide)
+                {
+                    EmitWide(e);
+                    PushAndLoad("qword", "edx", "eax");
+                }
+                else if (e.Type.IsUnsigned32)
+                {
+                    EmitExpr(e);
+                    Emit("push dword 0");
+                    Emit("push eax");
+                    Emit("fild qword [esp]");
+                    Emit("add esp, 8");
+                }
+                else
+                {
+                    EmitExpr(e);
+                    PushAndLoad("dword", "eax");
+                }
+                return;
+            }
+
+            switch (e)
+            {
+                case DecimalExpr d:
+                    if (d.Value == 0 && !double.IsNegative(d.Value)) Emit("fldz");
+                    else if (d.Value == 1) Emit("fld1");
+                    else Emit($"fld qword [{FloatLabel(d.Value)}]");
+                    return;
+
+                case CallExpr call:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    return;
+                case NameExpr { Call: CallExpr call }:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    return;
+                case MemberExpr { Call: CallExpr call }:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    return;
+
+                case CastExpr cast:
+                    EmitFloat(cast.Operand);
+                    return;
+
+                case UnaryExpr unary:
+                    EmitFloat(unary.Operand);
+                    Emit("fchs");
+                    return;
+
+                case BinaryExpr binary:
+                    EmitFloatPair(binary.Left, binary.Right);
+                    Emit(binary.Op switch
+                    {
+                        BinaryOp.Add => "faddp st1, st0",
+                        BinaryOp.Subtract => "fsubp st1, st0",
+                        BinaryOp.Multiply => "fmulp st1, st0",
+                        _ => "fdivp st1, st0",
+                    });
+                    return;
+            }
+
+            // a variable, field or element
+            Place place = EmitPlace(e);
+            switch (e.Type.Kind)
+            {
+                case TypeKind.F64: Emit($"fld qword {Operand(place)}"); break;
+                case TypeKind.F32: Emit($"fld dword {Operand(place)}"); break;
+                default:
+                    Need("phi_f16_to_f32");
+                    Emit($"movzx eax, word {Operand(place)}");
+                    Emit("call phi_f16_to_f32");
+                    PushAndLoad("dword", "eax", isFloat: true);
+                    break;
+            }
+        }
+
+        /// <summary>Pushes registers (the last is the low half) and loads them into st0 as a whole number (or as an f32).</summary>
+        void PushAndLoad(string size, string first, string? second = null, bool isFloat = false)
+        {
+            Emit($"push {first}");
+            if (second != null) Emit($"push {second}");
+            Emit($"{(isFloat ? "fld" : "fild")} {size} [esp]");
+            Emit($"add esp, {(second != null ? 8 : 4)}");
+        }
+
+        /// <summary>st0 = right, st1 = left.</summary>
+        void EmitFloatPair(Expr left, Expr right)
+        {
+            EmitFloat(right);
+            Emit("sub esp, 8");
+            Emit("fstp qword [esp]");
+            EmitFloat(left);
+            Emit("fld qword [esp]");
+            Emit("add esp, 8");
+        }
+
+        /// <summary>Takes st0 off the FPU's stack into a floating point place.</summary>
+        void EmitFloatStore(Expr target)
+        {
+            Place place = EmitPlace(target);
+            switch (target.Type.Kind)
+            {
+                case TypeKind.F64: Emit($"fstp qword {Operand(place)}"); break;
+                case TypeKind.F32: Emit($"fstp dword {Operand(place)}"); break;
+                default:
+                    Need("phi_f32_to_f16");
+                    Emit("sub esp, 4");
+                    Emit("fstp dword [esp]");
+                    Emit("pop eax");
+                    Emit("call phi_f32_to_f16");
+                    Emit($"mov word {Operand(place)}, ax");
+                    break;
+            }
+        }
+
+        /// <summary>edx:eax = a floating point value's whole part (rounded toward zero, as `as` does).</summary>
+        void EmitFloatToWhole(Expr e)
+        {
+            EmitFloat(e);
+            Emit("sub esp, 12");
+            Emit("fnstcw [esp]");
+            Emit("mov ax, [esp]");
+            Emit("or ax, 0x0C00            ; round toward zero");
+            Emit("mov [esp + 2], ax");
+            Emit("fldcw [esp + 2]");
+            Emit("fistp qword [esp + 4]");
+            Emit("fldcw [esp]");
+            Emit("mov eax, [esp + 4]");
+            Emit("mov edx, [esp + 8]");
+            Emit("add esp, 12");
+        }
+
+        /// <summary>Flags as for `cmp`: ZF set when the floating point value is zero.</summary>
+        void EmitFloatIsZero(Expr e)
+        {
+            EmitFloat(e);
+            Emit("ftst");
+            Emit("fnstsw ax");
+            Emit("fstp st0");
+            Emit("sahf");
+        }
+
+        /// <summary>eax = 1 when a comparison of floating point values holds (never, with not-a-number, except !=).</summary>
+        void EmitFloatCompare(BinaryExpr cmp)
+        {
+            EmitFloatPair(cmp.Left, cmp.Right);
+            Emit("fxch                    ; st0 = the left, st1 = the right");
+            Emit("fcompp");
+            Emit("fnstsw ax");
+            Emit("sahf");
+            string unordered = NewLabel("nan");
+            string done = NewLabel("fcompared");
+            Emit($"jp {unordered}");
+            Emit(cmp.Op switch
+            {
+                BinaryOp.Equal => "sete al",
+                BinaryOp.NotEqual => "setne al",
+                BinaryOp.Less => "setb al",
+                BinaryOp.LessEqual => "setbe al",
+                BinaryOp.Greater => "seta al",
+                _ => "setae al",
+            });
+            Emit("movzx eax, al");
+            Emit($"jmp {done}");
+            Label(unordered);
+            Emit($"mov eax, {(cmp.Op == BinaryOp.NotEqual ? 1 : 0)}");
+            Label(done);
+        }
+
+        /// <summary>st0 = Float.Sqrt and the others, worked out on st0.</summary>
+        void EmitFloatFunction(BuiltinFunction f, Expr argument)
+        {
+            EmitFloat(argument);
+            if (f.FloatRounding < 0)
+            {
+                Emit(f.FloatInstruction!);
+                return;
+            }
+            Emit("sub esp, 4");
+            Emit("fnstcw [esp]");
+            Emit("mov ax, [esp]");
+            Emit("and ax, 0xF3FF");
+            Emit($"or ax, {f.FloatRounding << 10}         ; how frndint rounds");
+            Emit("mov [esp + 2], ax");
+            Emit("fldcw [esp + 2]");
+            Emit("frndint");
+            Emit("fldcw [esp]");
+            Emit("add esp, 4");
+        }
+
+        /// <summary>eax = the address of a 64-bit or floating point value written out (in a temporary).</summary>
+        void EmitNumberText(Expr e)
+        {
+            if (e.Type.IsWide)
+            {
+                EmitWideText(e);
+                return;
+            }
+            string text = AllocTemp(48);
+            EmitFloat(e);
+            Need("phi_float_to_str");
+            LoadAddress("edi", text);
+            Emit("mov ecx, 48");
+            Emit("call phi_float_to_str");
+            LoadAddress("eax", text);
         }
 
         // ================================================================ 64-bit numbers
@@ -1894,7 +2202,8 @@ namespace Phi.Compiler.CodeGen
                     return;
 
                 case CastExpr cast:
-                    EmitWide(cast.Operand);
+                    if (cast.Operand.Type.IsFloat) EmitFloatToWhole(cast.Operand);
+                    else EmitWide(cast.Operand);
                     return;
 
                 case UnaryExpr unary:
@@ -2707,6 +3016,9 @@ namespace Phi.Compiler.CodeGen
 
             foreach (var (value, label) in stringLabels)
                 output.AppendLine($"{label}: db {NasmBytes(value)}");
+
+            foreach (var (value, label) in floatLabels)
+                output.AppendLine($"{label}: dq 0x{BitConverter.DoubleToInt64Bits(value):X}   ; {value}");
         }
 
         string DataFor(VariableSymbol v)
@@ -2714,6 +3026,26 @@ namespace Phi.Compiler.CodeGen
             var sb = new StringBuilder();
             List<object>? values = v.StaticValues;
             PhiType t = v.Type;
+
+            if (t.Kind is TypeKind.F16 or TypeKind.F32 or TypeKind.F64)
+            {
+                // floating point: each constant's bits
+                var bits = (values ?? new List<object>()).Select(x => x is double d ? d : (double)(long)x).Select(d => t.Kind switch
+                {
+                    TypeKind.F64 => $"0x{BitConverter.DoubleToInt64Bits(d):X}",
+                    TypeKind.F32 => $"0x{BitConverter.SingleToInt32Bits((float)d):X}",
+                    _ => $"0x{BitConverter.HalfToInt16Bits((Half)d):X}",
+                }).ToList();
+                string kind = t.Kind switch { TypeKind.F64 => "dq", TypeKind.F32 => "dd", _ => "dw" };
+                if (bits.Count == 0) sb.AppendLine($"{v.Label}: times {v.Count} {kind} 0   ; {t}");
+                else
+                {
+                    sb.AppendLine($"{v.Label}: {kind} {string.Join(", ", bits)}   ; {t}");
+                    if (bits.Count < v.Count) sb.AppendLine($"    times {v.Count - bits.Count} {kind} 0");
+                }
+                if (t.Filled) sb.AppendLine("    dd 0   ; how many are in it");
+                return sb.ToString();
+            }
 
             if (v.Grows)
             {
