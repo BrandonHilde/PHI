@@ -1630,7 +1630,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
   `has`, `^^` (power)
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
-- growable strings (use a `str` buffer, or `memory.list` for growable data)
+- strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - arrays of objects
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))

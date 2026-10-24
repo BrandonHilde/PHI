@@ -730,7 +730,8 @@ These come after the basics work:
 
 - **Graphics:** done: a linear framebuffer through QEMU's Bochs VBE adapter (`drivers.vbe`),
   drawing and the VGA font (`gfx.draw`, `gfx.font`), and the keyboard and mouse on their
-  interrupts (`drivers.input`). Still to do: windows and a GUI toolkit, other fonts
+  interrupts (`drivers.input`), and windows for programs with a desktop and widgets
+  (`gui.*`). Still to do: other fonts (and text bigger than 8x16 that isn't blocky)
 - **64-bit long mode**, then an **ARM** backend (QEMU `virt` machine). The README's
   planned x86→ARM translator becomes a second compiler backend.
 - **Networking:** done: PCI, an RTL8139 driver, ARP, IPv4, ICMP, UDP, DHCP, DNS, a TCP
