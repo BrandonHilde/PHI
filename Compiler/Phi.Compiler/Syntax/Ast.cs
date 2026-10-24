@@ -356,6 +356,16 @@ namespace Phi.Compiler.Syntax
     }
 
     /// <summary>
+    /// Made by the binder from `b is a;` when both are arrays: every element is copied (objects
+    /// and strs too), and an atmost target takes the source's count.
+    /// </summary>
+    public sealed class ArrayAssignStmt : Stmt
+    {
+        public Expr Target { get; init; } = null!;
+        public Expr Source { get; init; } = null!;
+    }
+
+    /// <summary>
     /// Made by the binder from `list.len is n;` when list is [atmost N]: keeps the first n
     /// elements. It only shrinks, so elements dropped earlier can't come back.
     /// </summary>
@@ -533,6 +543,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Set by the binder when two objects (or an object and empty) are compared.</summary>
         public StructSymbol? ObjectCompare { get; set; }
+
+        /// <summary>Set by the binder when two whole arrays are compared, element by element.</summary>
+        public bool ArrayCompare { get; set; }
 
         public bool IsComparison => Op is >= BinaryOp.Equal and <= BinaryOp.GreaterEqual;
         public bool IsLogical => Op is BinaryOp.And or BinaryOp.Or;

@@ -1,0 +1,40 @@
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.ArrayCopy:Library
+{
+	# numbers: every element, and compared element by element
+	int a: 1 2 3;
+	int b[3];
+	b is a;
+	b:1 is 20;
+	log b:0 b:1 b:2 ' ' (a is b) ' ' (a is not b) '\n';
+	b:1 is 2;
+	log (a is b) '\n';
+
+	# an atmost array takes the source's count, and can hold one that's smaller
+	int some[atmost 5];
+	some is a;
+	log some.len ' ' some:2 ' ' (some is a) '\n';
+	some++ 4;
+	log (some is a) '\n';
+	int fewer[atmost 5];
+	fewer is some;
+	log fewer.len ' ' fewer:3 '\n';
+
+	# structs, and text
+	Point pts[2];
+	pts:1.y is 7;
+	Point more[2];
+	more is pts;
+	log more:1.y ' ' (more is pts) '\n';
+	str days: 'Mon' 'Tue';
+	str other: 'aaa' 'bbb';
+	other is days;
+	log other:0 other:1 ' ' (other is days) '\n';
+	other:1 is 'Sat';
+	log (other is days) '\n';
+}

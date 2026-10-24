@@ -1,0 +1,14 @@
+phi.ArrayCopyErrors:Kernel
+{
+	int three: 1 2 3;
+	int four[4];
+	u8 bytes[3];
+	int some[atmost 2];
+	int fixed[2];
+	four is three;
+	bytes is three;
+	some is three;
+	fixed is some;
+	bln b: three < four;
+	four is 5;
+}

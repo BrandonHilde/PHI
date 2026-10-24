@@ -306,6 +306,22 @@ so they work as array sizes and in constants. Both give way to a struct's own fi
 that name. Passing a `str`'s `.len` where a size goes (`call Text.Append: s 'x' s.len;`)
 is a warning: it's how much text is there now, often 0, so nothing would be written.
 
+**Whole arrays.** `b is a;` copies every element of `a` into `b`, and `(a is b)` is true
+when they have the same number of elements and each is equal. Both must hold the same kind
+of element. A fixed array takes one of the same length; an `atmost` array takes any that
+can't hold more than it can, and its `.len` becomes the source's. Objects are copied and
+compared by value, and `str` elements by their text.
+
+```phi
+int a: 1 2 3;
+int b[3];
+b is a;                       # 1 2 3
+b:1 is 20;
+log (a is b);                 # 0
+int some[atmost 10];
+some is a;                    # some.len is 3
+```
+
 **Arrays filled as they go.** `T name[atmost N]` has room for `N` elements and starts
 empty. `++` adds to its end, `.len` is how many are in it, and an index is checked against
 `.len`, not the room, so an element that was never added can't be read by mistake:

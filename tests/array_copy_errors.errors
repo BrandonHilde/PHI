@@ -1,0 +1,6 @@
+8:2: error: 'four' has 4 elements and 'three' 3
+9:2: error: 'bytes' holds a u8 and 'three' an int; they have to hold the same kind
+10:2: error: 'three' can hold 3, more than 'some' has room for (2)
+11:2: error: 'fixed' always has 2 elements, and 'some' has as many as were added; make it [atmost 2]
+12:9: error: arrays can only be compared with is / == and is not / !=
+13:10: error: 'four' is an array, so it takes another whole array, and this is an int; for one element, write four:0 is ...

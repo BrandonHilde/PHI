@@ -1,0 +1,40 @@
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+phi.ArrayCopyObjects:Kernel
+{
+	new Node a[3];
+	a:0.value is 1;
+	a:1.value is 2;
+	a:1.next is a:0;
+	a:2 is empty;
+	new Node b[3];
+	b is a;                          # deep copies (and b:2 empty, like a:2)
+	a:1.next.value is 99;
+	log b:0.value ' ' b:1.value ' ' b:1.next.value ' ' (b:2 is empty) ' ' (a is b) '\n';
+	b:1.next.value is 99;
+	log (a is b) '\n';
+
+	# into an atmost array, which lets go of what it had past the count
+	new Node held[atmost 5];
+	held++; held++; held++; held++;
+	held is a;
+	log held.len ' ' held:1.next.value ' ' (held is a) '\n';
+
+	u32 before: Heap.used_bytes;
+	call Copies;
+	log 'heap back: ' (Heap.used_bytes is before) '\n';
+	exit 0;
+
+	[Copies]
+		new Node x[4];
+		new Node y[4];
+		while int i: 0; i < 10; i++;
+			y is x;
+			x:0.next is y:1;
+		;;
+	[end]
+}

@@ -834,6 +834,10 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
 
+                case ArrayAssignStmt copy:
+                    EmitArrayAssign(copy);
+                    break;
+
                 case StringBuildStmt build:
                     for (int i = 0; i < build.Parts.Count; i++)
                     {
@@ -2061,6 +2065,15 @@ namespace Phi.Compiler.CodeGen
                     }
                     return;
 
+                case BinaryExpr { ArrayCompare: true } arrays:
+                {
+                    EmitArrayCompare(arrays);
+                    Emit("test eax, eax");
+                    bool equalWanted = (arrays.Op == BinaryOp.Equal) == jumpIf;
+                    Emit($"{(equalWanted ? "jnz" : "jz")} {target}");
+                    return;
+                }
+
                 case BinaryExpr { ObjectCompare: StructSymbol compared } cmp:
                 {
                     bool equalWanted = (cmp.Op == BinaryOp.Equal) == jumpIf;
@@ -2666,6 +2679,186 @@ namespace Phi.Compiler.CodeGen
             LoadAddress("eax", v.Label);
             Emit($"call {ObjectRoutine("renew", v.Type.Struct!)}");
             foreach (Stmt field in decl.FieldValues) EmitStatement(field);
+        }
+
+        // ================================================================ whole arrays
+
+        /// <summary>eax = how many elements an array has: its length, or an atmost one's count.</summary>
+        void EmitArrayCount(Expr array)
+        {
+            if (array.Type.Filled) EmitFilledCount(array);
+            else Emit($"mov eax, {array.Type.Length}");
+        }
+
+        /// <summary>b is a: every element copied (objects and strs too); an atmost b takes a's count.</summary>
+        void EmitArrayAssign(ArrayAssignStmt copy)
+        {
+            PhiType t = copy.Target.Type;
+            PhiType element = t.Element;
+            int size = element.ElementSize;
+
+            if (element.IsObject)
+            {
+                // an atmost target first lets go of the objects past the source's count
+                EmitArrayCount(copy.Source);
+                if (t.Filled)
+                {
+                    Emit("push eax");
+                    EmitFreeElements(copy.Target, -1);
+                    EmitPlaceAddress(copy.Target);
+                    Emit("pop ecx");
+                    Emit($"mov [eax + {t.CountOffset}], ecx");
+                    Emit("mov eax, ecx");
+                }
+                EmitEachElement(() =>
+                {
+                    EmitPlaceAddress(copy.Source);
+                    Emit("mov ecx, [esp]");
+                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit("push edx                ; the source's object (or 0)");
+                    EmitPlaceAddress(copy.Target);
+                    Emit("mov ecx, [esp + 4]");
+                    Emit("lea eax, [eax + ecx * 4]");
+                    Emit("pop edx");
+                    Emit($"call {ObjectRoutine("set", element.Struct!)}");
+                });
+                return;
+            }
+
+            if (element.Kind == TypeKind.Str)
+            {
+                var array = (VariableSymbol)((NameExpr)copy.Target).Symbol!;
+                Emit($"mov eax, {t.Length}");
+                EmitEachElement(() =>
+                {
+                    EmitPlaceAddress(copy.Source);
+                    Emit("mov ecx, [esp]");
+                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit("push edx                ; its text");
+                    EmitPlaceAddress(copy.Target);
+                    Emit("mov ecx, [esp + 4]");
+                    Emit("lea eax, [eax + ecx * 4]");
+                    if (array.GrowingElements)
+                    {
+                        Emit("push eax                ; the element's slot");
+                        EmitGrowStoreAt(4 * array.Count, sourceIsString: true, append: false, unsigned: false);
+                    }
+                    else
+                    {
+                        Need("phi_strcpy");
+                        Emit("mov edi, [eax]");
+                        Emit("pop esi");
+                        Emit($"mov ecx, {array.Capacity}");
+                        Emit("call phi_strcpy");
+                    }
+                });
+                return;
+            }
+
+            // anything else is its bytes
+            EmitArrayCount(copy.Source);
+            Emit("push eax                ; how many");
+            EmitPlaceAddress(copy.Source);
+            Emit("push eax");
+            EmitPlaceAddress(copy.Target);
+            Emit("mov edi, eax");
+            Emit("pop esi");
+            Emit("pop ecx");
+            if (t.Filled) Emit($"mov [edi + {t.CountOffset}], ecx");
+            if (size != 1) Emit($"imul ecx, ecx, {size}");
+            Emit("cld");
+            Emit("rep movsb");
+        }
+
+        /// <summary>
+        /// Runs `body` for each element, 0 to eax - 1: the element's number is in dword [esp] when
+        /// it starts, and it leaves the stack as it found it.
+        /// </summary>
+        void EmitEachElement(Action body)
+        {
+            string next = NewLabel("each");
+            string done = NewLabel("eachdone");
+            Emit("push eax                ; how many");
+            Emit("push dword 0            ; which one");
+            Label(next);
+            Emit("mov eax, [esp]");
+            Emit("cmp eax, [esp + 4]");
+            Emit($"jae {done}");
+            body();
+            Emit("inc dword [esp]");
+            Emit($"jmp {next}");
+            Label(done);
+            Emit("add esp, 8");
+        }
+
+        /// <summary>eax = 1 when two whole arrays have the same number of elements, all equal.</summary>
+        void EmitArrayCompare(BinaryExpr cmp)
+        {
+            PhiType element = cmp.Left.Type.Element;
+            string differ = NewLabel("differ");
+            string done = NewLabel("compared");
+
+            EmitArrayCount(cmp.Left);
+            Emit("push eax");
+            EmitArrayCount(cmp.Right);
+            Emit("pop ecx");
+            Emit("cmp eax, ecx");
+            Emit($"jne {differ}             ; different lengths");
+
+            if (element.IsObject || element.Kind == TypeKind.Str)
+            {
+                string unequal = NewLabel("unequal");
+                EmitEachElement(() =>
+                {
+                    EmitPlaceAddress(cmp.Right);
+                    Emit("mov ecx, [esp]");
+                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit("push edx");
+                    EmitPlaceAddress(cmp.Left);
+                    Emit("mov ecx, [esp + 4]");
+                    Emit("mov eax, [eax + ecx * 4]");
+                    Emit("pop edx");
+                    if (element.IsObject)
+                    {
+                        Emit($"call {ObjectRoutine("equal", element.Struct!)}");
+                        Emit("test eax, eax");
+                        Emit($"jz {unequal}");
+                    }
+                    else
+                    {
+                        Need("phi_strcmp");
+                        Emit("mov esi, eax");
+                        Emit("mov edi, edx");
+                        Emit("call phi_strcmp          ; eax = 0 when equal");
+                        Emit("test eax, eax");
+                        Emit($"jnz {unequal}");
+                    }
+                });
+                Emit("mov eax, 1");
+                Emit($"jmp {done}");
+                Label(unequal);
+                Emit("add esp, 8              ; the loop's count and number");
+                Emit($"jmp {differ}");
+            }
+            else
+            {
+                if (element.ElementSize != 1) Emit($"imul eax, eax, {element.ElementSize}");
+                Emit("push eax                ; bytes");
+                EmitPlaceAddress(cmp.Right);
+                Emit("push eax");
+                EmitPlaceAddress(cmp.Left);
+                Emit("mov esi, eax");
+                Emit("pop edi");
+                Emit("pop ecx");
+                Emit("cld");
+                Emit("xor eax, eax            ; equal so far (ZF set), even for none");
+                Emit("repe cmpsb");
+                Emit("sete al");
+                Emit($"jmp {done}");
+            }
+            Label(differ);
+            Emit("xor eax, eax");
+            Label(done);
         }
 
         /// <summary>

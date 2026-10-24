@@ -40,6 +40,7 @@ namespace Phi.Compiler.Syntax
                     .Concat(w.Branches.SelectMany(b => b.Values.SelectMany(Nodes).Concat(b.Body.SelectMany(Nodes))))
                     .Concat((w.Else ?? new()).SelectMany(Nodes)),
                 SetLengthStmt l => Nodes(l.Array).Concat(Nodes(l.Value)),
+                ArrayAssignStmt a => Nodes(a.Target).Concat(Nodes(a.Source)),
                 ReturnStmt r => r.Value != null ? Nodes(r.Value) : Enumerable.Empty<Node>(),
                 _ => Enumerable.Empty<Node>(),
             };

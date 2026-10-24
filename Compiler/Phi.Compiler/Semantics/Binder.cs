@@ -1684,6 +1684,7 @@ namespace Phi.Compiler.Semantics
         Stmt BindAssign(AssignStmt assign, Scope scope)
         {
             BindExpr(assign.Target, scope);
+            if (assign.Target.Type.IsArray && assign.Op == AssignOp.Set && !assign.Bare) return BindArrayAssign(assign, scope);
             if (assign.Target.Type.Filled) return BindAppend(assign, scope);
             if (FilledArrayOf(assign.Target) is Expr counted) return BindSetLength(assign, counted, scope);
             bool toStr = assign.Target.Type.IsString && !assign.Target.Type.IsArray;
@@ -1821,6 +1822,71 @@ namespace Phi.Compiler.Semantics
         }
 
         int LineOf(Node n) => file.GetLocation(n.Span.Start).Line;
+
+        /// <summary>
+        /// b is a; with both arrays: the same kind of element, and room for it: a fixed array takes
+        /// one of the same length, an atmost one any that can't hold more than it can.
+        /// </summary>
+        Stmt BindArrayAssign(AssignStmt assign, Scope scope)
+        {
+            Expr target = assign.Target;
+            if (assign.Values is { Count: > 1 })
+            {
+                Error(assign.Values[1].Span, $"'{Describe(target)}' takes a whole array, or one element at a time ({Describe(target)}:0 is ...)");
+                return assign;
+            }
+            Expr source = assign.Value;
+            BindExpr(source, scope);
+            if (target.Type.IsError || source.Type.IsError) return assign;
+            if (!IsAssignable(target))
+            {
+                Error(target.Span, "only variables, fields and array elements can be assigned");
+                return assign;
+            }
+            if (CheckArrayPair(target, source, assign.Span, "copied into") is false) return assign;
+            if (target.Type.IsObjectArray)
+                HeapMethod("Heap.Alloc", assign.Span, scope, "copying objects");
+            return new ArrayAssignStmt { Target = target, Source = source, Span = assign.Span };
+        }
+
+        /// <summary>
+        /// Two arrays that can be copied (into: the left can hold the right) or compared: the same
+        /// kind of element, and lengths that fit. False after reporting why not.
+        /// </summary>
+        bool CheckArrayPair(Expr left, Expr right, Span span, string how)
+        {
+            PhiType a = left.Type, b = right.Type;
+            if (!b.IsArray || !a.IsArray)
+            {
+                Expr other = a.IsArray ? right : left;
+                Expr array = a.IsArray ? left : right;
+                Error(other.Span, how == "copied into"
+                    ? $"'{Describe(array)}' is an array, so it takes another whole array, and this is {A(other.Type)}; for one element, write {Describe(array)}:0 is ..."
+                    : $"an array is compared with another whole array, and this is {A(other.Type)}");
+                return false;
+            }
+            if (a.Element != b.Element)
+            {
+                Error(span, $"'{Describe(left)}' holds {A(a.Element)} and '{Describe(right)}' {A(b.Element)}; they have to hold the same kind");
+                return false;
+            }
+            if (how == "copied into")
+            {
+                if (!a.Filled && (b.Filled || a.Length != b.Length))
+                {
+                    Error(span, b.Filled
+                        ? $"'{Describe(left)}' always has {a.Length} elements, and '{Describe(right)}' has as many as were added; make it [atmost {a.Length}] to take that"
+                        : $"'{Describe(left)}' has {a.Length} elements and '{Describe(right)}' {b.Length}; a whole array is copied into one of the same length (or an atmost one with room)");
+                    return false;
+                }
+                if (a.Filled && b.Length > a.Length)
+                {
+                    Error(span, $"'{Describe(right)}' can hold {b.Length}, more than '{Describe(left)}' has room for ({a.Length})");
+                    return false;
+                }
+            }
+            return true;
+        }
 
         /// <summary>The [atmost N] array whose count this .len reads, or null.</summary>
         internal static Expr? FilledArrayOf(Expr e) => e switch
@@ -2895,6 +2961,17 @@ namespace Phi.Compiler.Semantics
             if (b.Left.Type.IsError || b.Right.Type.IsError)
             {
                 b.Type = PhiType.Error;
+                return;
+            }
+
+            // two whole arrays: their lengths and every element
+            if (b.IsComparison && (b.Left.Type.IsArray || b.Right.Type.IsArray))
+            {
+                b.Type = PhiType.Bool;
+                if (b.Op is not (BinaryOp.Equal or BinaryOp.NotEqual))
+                    Error(b.Span, "arrays can only be compared with is / == and is not / !=");
+                else if (CheckArrayPair(b.Left, b.Right, b.Span, "compared with"))
+                    b.ArrayCompare = true;
                 return;
             }
 

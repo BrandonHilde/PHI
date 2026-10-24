@@ -549,6 +549,7 @@ these were added:
   and resizable windows
 - [x] `str` results from methods grow (they were cut at 255 characters), and `chr`: a byte
   written as its character (`text++ key as chr;`); a `str`'s characters are `chr`
+- [x] Whole arrays copied (`b is a;`) and compared (`a is b`), objects and text included
 - [x] Arrays of objects: `new T list[N]` and `new T list[atmost N]`, and struct fields like
   them; elements are copied, handed over, emptied and compared like any object
 - [x] The elements of a `str` array grow too (each starts in a buffer of its own and moves
