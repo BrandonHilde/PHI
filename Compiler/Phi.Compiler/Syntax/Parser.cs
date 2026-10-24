@@ -338,13 +338,11 @@ namespace Phi.Compiler.Syntax
                     Token field = ExpectIdentifier("a field name");
                     CheckNotKeyword(field, "field");
                     Expr? count = null;
-                    if (Accept(TokenKind.OpenBracket))
-                    {
-                        count = ParseExpression();
-                        Expect(TokenKind.CloseBracket, "']'");
-                    }
+                    bool filled = false;
+                    if (At(TokenKind.OpenBracket))
+                        (count, filled) = ParseBufferSize();
                     ExpectSemicolon();
-                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, IsNew = isNew, Span = type.Span.To(field.Span) });
+                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, IsNew = isNew, Span = type.Span.To(field.Span) });
                 }
                 catch (ParseError)
                 {
@@ -610,6 +608,7 @@ namespace Phi.Compiler.Syntax
             CheckNotKeyword(name, "variable");
 
             Expr? buffer = null;
+            bool filled = false;
             Expr? at = null;
             var values = new List<Expr>();
 
@@ -621,7 +620,7 @@ namespace Phi.Compiler.Syntax
             }
             else if (At(TokenKind.OpenBracket))
             {
-                buffer = ParseBufferSize();
+                (buffer, filled) = ParseBufferSize();
             }
             else if (At(TokenKind.Semicolon) || (allowBracketEnd && At(TokenKind.CloseBracket)))
             {
@@ -634,7 +633,7 @@ namespace Phi.Compiler.Syntax
 
                 if (At(TokenKind.OpenBracket))
                 {
-                    buffer = ParseBufferSize();
+                    (buffer, filled) = ParseBufferSize();
                 }
                 else
                 {
@@ -655,6 +654,7 @@ namespace Phi.Compiler.Syntax
                 Name = name.Text,
                 NameSpan = name.Span,
                 BufferSize = buffer,
+                Filled = filled,
                 IsNew = isNew,
                 AtAddress = at,
                 Span = start.Span.To(Previous.Span),
@@ -665,12 +665,14 @@ namespace Phi.Compiler.Syntax
             return decl;
         }
 
-        Expr ParseBufferSize()
+        /// <summary>[N], or [atmost N] for an array that's filled as it goes.</summary>
+        (Expr Size, bool Filled) ParseBufferSize()
         {
             Expect(TokenKind.OpenBracket, "'['");
+            bool filled = AcceptWord("atmost");
             Expr size = ParseExpression();
             Expect(TokenKind.CloseBracket, "']'");
-            return size;
+            return (size, filled);
         }
 
         Stmt ParseLog()

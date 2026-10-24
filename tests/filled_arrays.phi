@@ -1,0 +1,66 @@
+struct.Account
+{
+	u8 name[12];
+	int score;
+}
+
+struct.Team
+{
+	int members[atmost 4];
+	int wins;
+}
+
+phi.FilledArrays:Library
+{
+	# starts empty, with room for 5
+	int scores[atmost 5];
+	log scores.len ' ' scores.max ' ' sizeof scores '\n';
+
+	scores++ 42;
+	scores++ 7 -3;
+	log scores.len ':';
+	while int i: 0; i < scores.len; i++;
+		log ' ' scores:i;
+	;;
+	log '\n';
+
+	scores:1 is 8;
+	scores.len--;
+	log scores.len ' ' scores:0 ' ' scores:1 '\n';
+
+	# shrinking drops elements; adding again starts from there
+	scores.len is 0;
+	scores++ 1;
+	log scores.len ' ' scores:0 '\n';
+
+	# structs: add one of zeros, then fill in its fields
+	Account list[atmost 3];
+	list++;
+	list:0.score is 10;
+	list++;
+	list:(list.len - 1).score is 20;
+	log list.len ' ' list:0.score ' ' list:1.score ' ' list:1.name.len '\n';
+
+	# a field of a struct
+	Team team;
+	team.members++ 5 6;
+	team.wins is 2;
+	log team.members.len ' ' team.members.max ' ' team.members:1 ' ' team.wins '\n';
+
+	Team teams[2];
+	teams:1.members++ 9;
+	log teams:0.members.len ' ' teams:1.members.len ' ' teams:1.members:0 '\n';
+
+	call Locals;
+
+	# reading past what's in it stops, even with room left
+	int n: 3;
+	log scores:n;
+	log 'not reached';
+
+	[Locals]
+		u8 bytes[atmost 8];
+		bytes++ 'h' 'i';
+		log bytes.len ' ' bytes:0 '\n';
+	[end]
+}

@@ -527,10 +527,10 @@ namespace Phi.Compiler.Semantics
                 {
                     int? count = ConstantCount(f.Count, null);
                     if (count == null) continue;
-                    type = type.ArrayOf(count.Value);
+                    type = type.ArrayOf(count.Value) with { Filled = f.Filled };
                 }
 
-                int size = type.ElementSize * Math.Max(type.Length, 1);
+                int size = type.ByteSize;
                 s.Fields.Add(new FieldSymbol { Name = f.Name, Type = type, Offset = offset });
                 offset += size;
             }
@@ -941,12 +941,18 @@ namespace Phi.Compiler.Semantics
 
                 if (type.IsString)
                 {
+                    if (d.Filled) Error(d.BufferSize.Span, $"a str always knows how long its text is; leave out atmost: str {d.Name}: [{size.Value}];");
                     v.Type = PhiType.Str;
                     v.Capacity = size.Value + 1;
                 }
+                else if (d.Filled && v.IsParameter)
+                {
+                    Error(d.BufferSize.Span, "a parameter can't be an array filled as it goes; pass a pointer to its elements and its .len");
+                    v.Type = PhiType.Error;
+                }
                 else
                 {
-                    v.Type = type.ArrayOf(size.Value);
+                    v.Type = type.ArrayOf(size.Value) with { Filled = d.Filled };
                 }
                 return;
             }
@@ -1168,6 +1174,14 @@ namespace Phi.Compiler.Semantics
                 StructSymbol? fields = FieldsOf(type);
                 if (m == "len" && last && fields?.Find(m) == null)
                 {
+                    if (type.Filled)
+                    {
+                        // counted as it's filled: read the count where the array is
+                        Symbol place = hops != null
+                            ? new PathSymbol { Name = name, Root = root, BaseOffset = offset, Hops = new List<int>(hops), Type = type }
+                            : new FieldPathSymbol { Name = name, Root = root, Offset = offset, Type = type };
+                        return new LengthSymbol { Name = m, Filled = new NameExpr { Name = name, Symbol = place, Type = type } };
+                    }
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
                     if (type.IsString && offset == 0 && hops == null) return new LengthSymbol { Name = m, Str = root };
                     return null;
@@ -1520,6 +1534,8 @@ namespace Phi.Compiler.Semantics
         Stmt BindAssign(AssignStmt assign, Scope scope)
         {
             BindExpr(assign.Target, scope);
+            if (assign.Target.Type.Filled) return BindAppend(assign, scope);
+            if (FilledArrayOf(assign.Target) is Expr counted) return BindSetLength(assign, counted, scope);
             bool toStr = assign.Target.Type.IsString && !assign.Target.Type.IsArray;
             if ((assign.Values is { Count: > 1 } && (toStr || !assign.ValueIsWhole)) || (toStr && assign.Op == AssignOp.Add))
                 return BindStringBuild(assign, scope);
@@ -1596,6 +1612,61 @@ namespace Phi.Compiler.Semantics
             }
 
             return new AssignStmt { Target = target, Op = AssignOp.Set, Value = value, Span = assign.Span };
+        }
+
+        /// <summary>The [atmost N] array whose count this .len reads, or null.</summary>
+        internal static Expr? FilledArrayOf(Expr e) => e switch
+        {
+            NameExpr { Symbol: LengthSymbol { Filled: Expr array } } => array,
+            MemberExpr { FilledLength: true } m => m.Target,
+            _ => null,
+        };
+
+        /// <summary>list++ a b; adds each value at the end; list++; adds one element of zeros.</summary>
+        Stmt BindAppend(AssignStmt assign, Scope scope)
+        {
+            Expr target = assign.Target;
+            string name = Describe(target);
+            if (assign.Op != AssignOp.Add)
+            {
+                Error(assign.Span, $"'{name}' is filled as it goes: add to its end with {name}++ value; set one that's in it with {name}:i is value;");
+                return assign;
+            }
+
+            var append = new AppendStmt { Target = target, Span = assign.Span };
+            if (assign.Bare) return append;
+
+            PhiType element = target.Type.Element;
+            if (!element.IsNumeric && !element.IsMethod)
+            {
+                Error(assign.Value.Span, $"a {element} is added with {name}++; on its own (an element of zeros), then set its fields through {name}:({name}.len - 1)");
+                return assign;
+            }
+
+            foreach (Expr value in assign.Values ?? new List<Expr> { assign.Value })
+            {
+                BindExpr(value, scope);
+                if (value.Type.IsError) continue;
+                append.Values.Add(Convert(value, element, $"an element of '{name}'"));
+            }
+            return append;
+        }
+
+        /// <summary>list.len is n; keeps the first n elements (it can only shrink).</summary>
+        Stmt BindSetLength(AssignStmt assign, Expr array, Scope scope)
+        {
+            BindExpr(assign.Value, scope);
+            if (assign.Value.Type.IsError) return assign;
+            if (assign.Op is not (AssignOp.Set or AssignOp.Subtract))
+            {
+                Error(assign.Span, $"'{Describe(assign.Target)}' can only be made smaller, with is or --; add elements with {Describe(array)}++ value;");
+                return assign;
+            }
+
+            Expr value = Convert(assign.Value, PhiType.Int, "the new length");
+            if (assign.Op == AssignOp.Subtract)
+                value = new BinaryExpr { Op = BinaryOp.Subtract, Left = assign.Target, Right = value, Span = assign.Span, Type = PhiType.Int };
+            return new SetLengthStmt { Array = array, Value = value, Span = assign.Span };
         }
 
         /// <summary>s is a b c; or s++ a b; with s a str: each value written in as text, one after another.</summary>
@@ -2232,7 +2303,8 @@ namespace Phi.Compiler.Semantics
                     // list:0.name.len: an array field's length (and max) is known when built
                     if (field == null && t.IsArray && member.Member is "len" or "max")
                     {
-                        member.Count = t.Length;
+                        if (t.Filled && member.Member == "len") member.FilledLength = true;
+                        else member.Count = t.Length;
                         member.Type = PhiType.Int;
                         break;
                     }
@@ -2373,7 +2445,7 @@ namespace Phi.Compiler.Semantics
             {
                 // a constant index is checked now instead of when the program runs
                 if (constant < 0 || constant >= limit)
-                    Error(index.Index.Span, $"index {constant} is outside '{Describe(index.Target)}', which has {limit} {(t.IsString ? "bytes" : "elements")}");
+                    Error(index.Index.Span, $"index {constant} is outside '{Describe(index.Target)}', which has {(t.Filled ? "room for " : "")}{limit} {(t.IsString ? "bytes" : "elements")}");
                 return;
             }
 
@@ -2515,7 +2587,7 @@ namespace Phi.Compiler.Semantics
 
             if (t.Kind is TypeKind.Void) { Error(size.Span, "this has no size"); return; }
             if (t.IsObject) { size.Value = t.Struct!.Size; return; } // the object, not its address
-            size.Value = (long)t.ElementSize * (t.IsArray ? t.Length : 1);
+            size.Value = t.ByteSize;
         }
 
         void BindBinary(BinaryExpr b, Scope scope)

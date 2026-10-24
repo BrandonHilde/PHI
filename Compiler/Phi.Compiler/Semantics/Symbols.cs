@@ -38,9 +38,11 @@ namespace Phi.Compiler.Semantics
     /// An Object is a struct reached through the address it lives at (a `new` variable or
     /// field, an `at` variable, a struct parameter): it's used like the struct itself.
     /// <see cref="Length"/> is the element count for arrays and 0 for everything else.
+    /// A <see cref="Filled"/> array (name[atmost N]) has room for Length elements and keeps how
+    /// many are in it in a u32 right after them, so its elements are where any array's are.
     /// </summary>
     public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
-                                 MethodSignature? Signature = null)
+                                 MethodSignature? Signature = null, bool Filled = false)
     {
         public static readonly PhiType Error = new(TypeKind.Error);
         public static readonly PhiType Void = new(TypeKind.Void);
@@ -83,7 +85,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>32-bit unsigned values: math and comparisons on them must be unsigned.</summary>
         public bool IsUnsigned32 => !IsArray && Kind is TypeKind.U32 or TypeKind.Pointer or TypeKind.Method;
 
-        public PhiType Element => this with { Length = 0 };
+        public PhiType Element => this with { Length = 0, Filled = false };
         public PhiType ArrayOf(int length) => this with { Length = length };
 
         /// <summary>Bytes taken by one element in memory.</summary>
@@ -96,6 +98,12 @@ namespace Phi.Compiler.Semantics
             TypeKind.Struct => Struct!.Size,
             _ => 0,
         };
+
+        /// <summary>Bytes taken by the whole value: every element, and a filled array's count.</summary>
+        public int ByteSize => ElementSize * Math.Max(Length, 1) + (Filled ? 4 : 0);
+
+        /// <summary>Where a filled array keeps its count, from the start of the array.</summary>
+        public int CountOffset => ElementSize * Length;
 
         public override string ToString()
         {
@@ -115,7 +123,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.Void => "nothing",
                 _ => "?",
             };
-            return IsArray ? $"{name} array" : name;
+            return Filled ? $"{name} array (at most {Length})" : IsArray ? $"{name} array" : name;
         }
     }
 
@@ -200,6 +208,9 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>The str whose length is measured at run time.</summary>
         public VariableSymbol? Str { get; init; }
+
+        /// <summary>The [atmost N] array whose count is read at run time.</summary>
+        public Expr? Filled { get; init; }
     }
 
     /// <summary>task.id: a field reached from a variable by name, at a fixed offset.</summary>

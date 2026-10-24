@@ -1,0 +1,22 @@
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.FilledArraysErrors:Kernel
+{
+	int scores[atmost 4];
+	Point points[atmost 4];
+	Point p;
+	str name: [atmost 8];
+
+	scores is 5;
+	scores.len++;
+	points++ p;
+	log scores:4;
+	call Take: scores;
+
+	[Take: int list[atmost 4];]
+	[end]
+}

@@ -68,6 +68,9 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
         public Expr? Count { get; init; }
 
+        /// <summary>name[atmost N]: filled as it goes, with a count of its own.</summary>
+        public bool Filled { get; init; }
+
         /// <summary>new Node next;  a separate object the struct owns (starts empty).</summary>
         public bool IsNew { get; init; }
     }
@@ -115,6 +118,9 @@ namespace Phi.Compiler.Syntax
         public Span NameSpan { get; init; }
         public List<Expr> Values { get; } = new();
         public Expr? BufferSize { get; init; }
+
+        /// <summary>type name[atmost N]: an array filled as it goes, which starts empty.</summary>
+        public bool Filled { get; init; }
 
         /// <summary>Declared with new: an object.</summary>
         public bool IsNew { get; init; }
@@ -306,6 +312,26 @@ namespace Phi.Compiler.Syntax
         public bool Append { get; init; }
     }
 
+    /// <summary>
+    /// Made by the binder from `list++ a b;` when list is [atmost N]: each value is added at the
+    /// end. With no values (`list++;`) one element of zeros is added, to fill in by its fields.
+    /// </summary>
+    public sealed class AppendStmt : Stmt
+    {
+        public Expr Target { get; init; } = null!;
+        public List<Expr> Values { get; } = new();
+    }
+
+    /// <summary>
+    /// Made by the binder from `list.len is n;` when list is [atmost N]: keeps the first n
+    /// elements. It only shrinks, so elements dropped earlier can't come back.
+    /// </summary>
+    public sealed class SetLengthStmt : Stmt
+    {
+        public Expr Array { get; init; } = null!;
+        public Expr Value { get; init; } = null!;
+    }
+
     // ---------------------------------------------------------------- expressions
 
     public abstract class Expr : Node
@@ -391,6 +417,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Set by the binder for .len or .max of an array field: the element count.</summary>
         public int? Count { get; set; }
+
+        /// <summary>Set by the binder for .len of an [atmost N] field: read its count when run.</summary>
+        public bool FilledLength { get; set; }
     }
 
     /// <summary>addr x  (the address of a variable, element or method)</summary>

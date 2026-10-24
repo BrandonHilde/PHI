@@ -1,0 +1,6 @@
+a str always knows how long its text is; leave out atmost
+a parameter can't be an array filled as it goes
+'scores' is filled as it goes: add to its end with scores++ value
+'scores.len' can only be made smaller
+a Point is added with points++; on its own
+index 4 is outside 'scores', which has room for 4 elements

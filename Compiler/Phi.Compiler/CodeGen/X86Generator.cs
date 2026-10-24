@@ -704,6 +704,23 @@ namespace Phi.Compiler.CodeGen
                     EmitAssign(assign.Target, assign.Value);
                     break;
 
+                case AppendStmt append:
+                    if (append.Values.Count == 0) EmitAppend(append, null);
+                    foreach (Expr value in append.Values) EmitAppend(append, value);
+                    break;
+
+                case SetLengthStmt shrink:
+                {
+                    EmitExpr(shrink.Value);
+                    Emit("push eax");
+                    EmitFilledCount(shrink.Array);
+                    Emit("mov edx, eax");
+                    Emit("pop eax");
+                    EmitIndexCheck(shrink, "jbe", "edx");
+                    Emit($"mov dword {Operand(new Place { Computed = true, Linear = true, Offset = shrink.Array.Type.CountOffset })}, eax");
+                    break;
+                }
+
                 case StringBuildStmt build:
                     for (int i = 0; i < build.Parts.Count; i++)
                     {
@@ -1016,6 +1033,20 @@ namespace Phi.Compiler.CodeGen
                 return new Place { Computed = true, Linear = true };
             }
 
+            // an [atmost N] array: only the elements that are in it, however many fit
+            if (target.Filled && unsafeDepth == 0)
+            {
+                EmitExpr(ix.Index);
+                Emit("push eax");
+                EmitFilledCount(ix.Target);
+                Emit("mov edx, eax");
+                Emit("pop eax");
+                EmitIndexCheck(ix, "jb", "edx");
+                EmitScale(size);
+                Emit("add ebx, eax");
+                return new Place { Computed = true, Linear = true };
+            }
+
             Place p = EmitPlace(ix.Target);
 
             if (constant != null)
@@ -1046,22 +1077,86 @@ namespace Phi.Compiler.CodeGen
             EmitExpr(ix.Index);
 
             if (ix.CheckLimit is int limit && unsafeDepth == 0)
-            {
-                Need("phi_index_error");
-                string ok = NewLabel("inbounds");
-                Emit($"cmp eax, {limit}");
-                Emit($"jb {ok}                ; unsigned, so negative indexes fail too");
-                Emit($"mov eax, {LineOf(ix)}");
-                Emit("jmp phi_index_error");
-                Label(ok);
-            }
+                EmitIndexCheck(ix, "jb", limit.ToString());
 
+            EmitScale(size);
+        }
+
+        /// <summary>Stops on an index error unless eax passes the unsigned jump against limit.</summary>
+        void EmitIndexCheck(Node at, string jump, string limit)
+        {
+            Need("phi_index_error");
+            string ok = NewLabel("inbounds");
+            Emit($"cmp eax, {limit}");
+            Emit($"{jump} {ok}                ; unsigned, so negative indexes fail too");
+            Emit($"mov eax, {LineOf(at)}");
+            Emit("jmp phi_index_error");
+            Label(ok);
+        }
+
+        /// <summary>eax = eax * size, for an element's offset.</summary>
+        void EmitScale(int size)
+        {
             switch (size)
             {
                 case 1: break;
                 case 2: Emit("shl eax, 1"); break;
                 case 4: Emit("shl eax, 2"); break;
                 default: Emit($"imul eax, eax, {size}"); break;
+            }
+        }
+
+        /// <summary>ebx = where an [atmost N] array is (linear), eax = how many elements are in it.</summary>
+        void EmitFilledCount(Expr array)
+        {
+            EmitPlaceAddress(array);
+            Emit("mov ebx, eax");
+            if (!bits32) Emit("push ebx");  // reaching memory in 16-bit code changes ebx
+            Emit($"mov eax, dword {Operand(new Place { Computed = true, Linear = true, Offset = array.Type.CountOffset })}");
+            if (!bits32) Emit("pop ebx");
+        }
+
+        /// <summary>One element at the end of an [atmost N] array: value (or zeros, for null).</summary>
+        void EmitAppend(AppendStmt append, Expr? value)
+        {
+            PhiType t = append.Target.Type;
+            PhiType element = t.Element;
+            int size = element.ElementSize;
+
+            if (value != null)
+            {
+                EmitExpr(value);
+                Emit("push eax");
+            }
+            EmitFilledCount(append.Target);
+            EmitIndexCheck(append, "jb", t.Length.ToString());   // full: no room for another
+
+            Emit("mov edx, eax");
+            Emit("inc eax");
+            if (!bits32) Emit("push ebx");
+            Emit($"mov dword {Operand(new Place { Computed = true, Linear = true, Offset = t.CountOffset })}, eax");
+            if (!bits32) Emit("pop ebx");
+            Emit("mov eax, edx");
+            EmitScale(size);
+            Emit("add ebx, eax");
+
+            if (value != null)
+            {
+                Emit("pop eax");
+                Emit(StoreInstruction(element, Operand(new Place { Computed = true, Linear = true })));
+            }
+            else if (element.IsNumeric || element.IsMethod)
+            {
+                Emit("xor eax, eax");
+                Emit(StoreInstruction(element, Operand(new Place { Computed = true, Linear = true })));
+            }
+            else
+            {
+                // a struct: every byte of it, since one dropped earlier may have been here
+                Emit("mov edi, ebx");
+                Emit($"mov ecx, {size}");
+                Emit("xor al, al");
+                Emit("rep stosb");
             }
         }
 
@@ -1114,7 +1209,7 @@ namespace Phi.Compiler.CodeGen
         }
 
         int StorageSize(VariableSymbol v) =>
-            v.Type.IsString ? v.Capacity : v.Type.ElementSize * v.Count;
+            v.Type.IsString ? v.Capacity : v.Type.ByteSize;
 
         // ================================================================ assignment
 
@@ -1166,7 +1261,7 @@ namespace Phi.Compiler.CodeGen
         {
             NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
             MemberExpr m => !m.Target.Type.IsObject && !m.Target.Type.IsPointer && IsStaticPlace(m.Target),
-            IndexExpr ix => !ix.Target.Type.IsPointer && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
+            IndexExpr ix => !ix.Target.Type.IsPointer && !ix.Target.Type.Filled && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
                             && !(ix.Target.Type.IsString && ix.Target is not NameExpr),
             _ => false,
         };
@@ -1273,6 +1368,14 @@ namespace Phi.Compiler.CodeGen
 
                 case MemberExpr { Count: int count }:
                     LoadConstant("eax", count);
+                    break;
+
+                case NameExpr { Symbol: LengthSymbol { Filled: Expr array } }:
+                    EmitFilledCount(array);
+                    break;
+
+                case MemberExpr { FilledLength: true } m:
+                    EmitFilledCount(m.Target);
                     break;
 
                 case NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } }:
@@ -2110,6 +2213,7 @@ namespace Phi.Compiler.CodeGen
             if (values == null || values.Count == 0)
             {
                 sb.AppendLine(v.Count == 1 ? $"{v.Label}: {directive} 0" : $"{v.Label}: times {v.Count} {directive} 0");
+                if (t.Filled) sb.AppendLine("    dd 0   ; how many are in it");
                 return sb.ToString();
             }
 

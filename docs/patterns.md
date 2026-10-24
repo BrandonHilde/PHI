@@ -54,6 +54,28 @@ while int i: 0; i < apps.len; i++;
   says. For a method of a struct, pass the struct: `method<ptr<Shape>: int> area;` called
   as `(shapes:i.area: addr shapes:i)`.
 
+## A table that fills up
+
+For records that come and go (accounts, open windows, entries read from a file), use an
+`atmost` array instead of an array plus a count kept by hand. `.len` is always right, and
+reading a slot nothing was put in is an index error instead of stale data:
+
+```phi
+struct.Account
+{
+    u8 name[12];
+    int score;
+}
+
+Account list[atmost 8];
+
+[Add: ptr<u8> name: 0;]
+    if list.len is list.max return false;
+    list++;                                     # an Account of zeros at the end
+    call Text.Copy: list:(list.len - 1).name name sizeof list:0.name;
+[end: true]
+```
+
 ## Callbacks
 
 Pass `addr Method` to a method that takes a `method<...>`, and it can call you back:

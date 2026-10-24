@@ -222,6 +222,39 @@ so they work as array sizes and in constants. Both give way to a struct's own fi
 that name. Passing a `str`'s `.len` where a size goes (`call Text.Append: s 'x' s.len;`)
 is a warning: it's how much text is there now, often 0, so nothing would be written.
 
+**Arrays filled as they go.** `T name[atmost N]` has room for `N` elements and starts
+empty. `++` adds to its end, `.len` is how many are in it, and an index is checked against
+`.len`, not the room, so an element that was never added can't be read by mistake:
+
+```phi
+int scores[atmost 10];
+scores++ 42;
+scores++ 7 9;                 # several at once
+log scores.len ' ' scores.max;     # 3 10
+log scores:2;                 # 9
+log scores:5;                 # index out of range: only 3 are in it
+
+while int i: 0; i < scores.len; i++;
+    log scores:i;
+;;
+
+scores.len--;                 # drop the last one
+scores.len is 0;              # empty it
+```
+
+- Adding to a full one stops the program with an index error, like a bad index.
+- `.len` can only be made smaller (`is` or `--`), so an element that was dropped can't come
+  back with its old value.
+- An array of structs adds an element of zeros with `name++;` on its own, then sets its
+  fields: `list++;` then `list:(list.len - 1).score is 10;`.
+- It works as a struct field too (`int members[atmost 4];` in a struct), and as a
+  method's variable.
+- The count is a `u32` kept after the elements, so `sizeof` is 4 more than a plain array's,
+  and passing one where a pointer goes passes its elements as usual. A method that takes
+  the pointer gets no count, so pass `.len` with it.
+- `unsafe` skips the check, as for any array. A `str` already knows how long its text is,
+  so it can't be `atmost`.
+
 A method's variable can be used anywhere in the method after its declaration, including
 after the block it was declared in. A name can be declared again in a *separate* block
 (the other branch of an `if`, another loop, or after a loop that declared it), and each
@@ -433,7 +466,9 @@ The port and the value are separate values, so `out port -1;` writes -1 to `port
 
 Indexing an array or a `str` is checked when the program runs. An index outside the
 array stops the program with `PHI: index out of range on line N`. A constant index is
-checked when the program is built instead. Code inside `unsafe` isn't checked:
+checked when the program is built instead (and also when it runs, for an
+[`atmost` array](#variables), against how many are in it). Code inside `unsafe` isn't
+checked:
 
 ```phi
 unsafe
