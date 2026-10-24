@@ -1,0 +1,103 @@
+enum.Tool
+{
+	PENCIL
+	BRUSH
+	LINE
+	ERASER: 10
+	FILL
+}
+
+enum.Weather
+{
+	SUN
+	RAIN
+}
+
+struct.Stroke
+{
+	Tool tool;
+	int width;
+}
+
+phi.EnumWhen:Library
+{
+	Tool tool: Tool.BRUSH;
+	log tool ' ' Tool.ERASER ' ' Tool.FILL ' ' sizeof Tool '\n';
+
+	# when picks the first branch with an equal value, or else
+	call Describe: Tool.PENCIL;
+	call Describe: Tool.LINE;
+	call Describe: Tool.FILL;
+	call Describe: Tool.ERASER;
+
+	# in structs and arrays, compared and converted
+	Stroke s;
+	s.tool is Tool.LINE;
+	Tool kit: Tool.PENCIL Tool.ERASER Tool.FILL;
+	log (s.tool is Tool.LINE) ' ' (kit:1 is Tool.ERASER) ' ' (kit:2 as int) '\n';
+	int n: 11;
+	Tool back: n as Tool;
+	log (back is Tool.FILL) '\n';
+
+	# numbers and characters, worked out once
+	int calls: 0;
+	when (Next: 'q')
+		is 'a' 'b'
+			log 'a or b\n';
+		;;
+		is 'q'
+			log 'quit\n';
+		;;
+	;;
+	log 'next called ' calls '\n';
+
+	when 5 + 2
+		is 1
+			log 'one\n';
+		;;
+		else
+			log 'not one\n';
+		;;
+	;;
+
+	# text
+	call Command: 'ls';
+	call Command: 'help';
+	call Command: 'rm';
+
+	[Describe: Tool t: Tool.PENCIL;]
+		when t
+			is Tool.PENCIL
+				log 'pencil\n';
+			;;
+			is Tool.BRUSH Tool.LINE
+				log 'brush or line\n';
+			;;
+			is Tool.ERASER
+				int strength: 3;
+				log 'eraser ' strength '\n';
+			;;
+			else
+				log 'something else\n';
+			;;
+		;;
+	[end]
+
+	[Next: int key: 0;]
+		calls++;
+	[end: key]
+
+	[Command: str c: [8];]
+		when c
+			is 'ls' 'dir'
+				log 'list\n';
+			;;
+			is 'help'
+				log 'help\n';
+			;;
+			else
+				log 'unknown ' c '\n';
+			;;
+		;;
+	[end]
+}

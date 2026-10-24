@@ -81,6 +81,7 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<(UnitKind, string), MethodSymbol> methodsByFullName = new();
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
         readonly Dictionary<string, StructSymbol> structs = new();
+        readonly Dictionary<string, EnumSymbol> enums = new();
         readonly HashSet<VarDecl> loopCounters = new();
 
         /// <summary>
@@ -111,6 +112,7 @@ namespace Phi.Compiler.Semantics
 
         BoundProgram? BindProgram(ProgramNode program)
         {
+            DeclareEnums(program.Enums);
             DeclareStructs(program.Structs);
 
             // Kernel classes make a 32-bit kernel, Program classes a user program; otherwise
@@ -427,6 +429,48 @@ namespace Phi.Compiler.Semantics
 
         // ---------------------------------------------------------------- structs
 
+        /// <summary>enum.Name { ... }: each name gets its number, one more than the last unless it says.</summary>
+        void DeclareEnums(List<EnumDecl> decls)
+        {
+            foreach (EnumDecl d in decls)
+            {
+                file = d.File;
+                if (Parser.ReservedWords.Contains(d.Name))
+                {
+                    Error(d.Span, Parser.KeywordNameMessage(d.Name, "enum"));
+                    continue;
+                }
+                var symbol = new EnumSymbol { Name = d.Name, Decl = d };
+                if (!enums.TryAdd(d.Name, symbol))
+                {
+                    Error(d.Span, $"an enum named {d.Name} already exists");
+                    continue;
+                }
+
+                long next = 0;
+                foreach (EnumMember m in d.Members)
+                {
+                    if (m.Value != null)
+                    {
+                        if (m.Value is NumberExpr) m.Value.Type = PhiType.Int;
+                        long? value = ConstantFolder.Evaluate(m.Value);
+                        if (value == null)
+                        {
+                            Error(m.Value.Span, "an enum's value must be a number");
+                            continue;
+                        }
+                        next = value.Value;
+                    }
+                    if (symbol.Members.Any(x => x.Name == m.Name))
+                        Error(m.Span, $"{d.Name} already has a value named {m.Name}");
+                    else
+                        symbol.Members.Add((m.Name, next));
+                    next++;
+                }
+                if (d.Members.Count == 0) Error(d.Span, $"enum {d.Name} needs at least one value");
+            }
+        }
+
         void DeclareStructs(List<StructDecl> decls)
         {
             foreach (StructDecl d in decls)
@@ -438,9 +482,9 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
                 var symbol = new StructSymbol { Name = d.Name, Decl = d };
-                if (!structs.TryAdd(d.Name, symbol))
+                if (enums.ContainsKey(d.Name) || !structs.TryAdd(d.Name, symbol))
                 {
-                    Error(d.Span, $"a struct named {d.Name} already exists");
+                    Error(d.Span, $"a struct or enum named {d.Name} already exists");
                     continue;
                 }
                 d.Symbol = symbol;
@@ -596,6 +640,7 @@ namespace Phi.Compiler.Semantics
             }
 
             if (structs.TryGetValue(t.Name, out StructSymbol? s)) return PhiType.Of(s);
+            if (enums.TryGetValue(t.Name, out EnumSymbol? e)) return PhiType.EnumOf(e);
 
             Error(t.Span, $"unknown type '{t.Name}'");
             return PhiType.Error;
@@ -638,6 +683,12 @@ namespace Phi.Compiler.Semantics
                         if (i.Else != null)
                             foreach (Stmt v in CollectDeclarations(i.Else)) yield return v;
                         break;
+                    case WhenStmt w:
+                        foreach (WhenBranch branch in w.Branches)
+                            foreach (Stmt v in CollectDeclarations(branch.Body)) yield return v;
+                        if (w.Else != null)
+                            foreach (Stmt v in CollectDeclarations(w.Else)) yield return v;
+                        break;
                     case UnsafeStmt u:
                         foreach (Stmt v in CollectDeclarations(u.Body)) yield return v;
                         break;
@@ -674,6 +725,12 @@ namespace Phi.Compiler.Semantics
                         foreach (var d in CollectBlockDeclarations(i.Then, new Block { Parent = block })) yield return d;
                         if (i.Else != null)
                             foreach (var d in CollectBlockDeclarations(i.Else, new Block { Parent = block })) yield return d;
+                        break;
+                    case WhenStmt w:
+                        foreach (WhenBranch branch in w.Branches)
+                            foreach (var d in CollectBlockDeclarations(branch.Body, new Block { Parent = block })) yield return d;
+                        if (w.Else != null)
+                            foreach (var d in CollectBlockDeclarations(w.Else, new Block { Parent = block })) yield return d;
                         break;
                     case UnsafeStmt u:
                         foreach (var d in CollectBlockDeclarations(u.Body, block)) yield return d;
@@ -1088,6 +1145,15 @@ namespace Phi.Compiler.Semantics
 
             // ClassName.name
             int dot = name.IndexOf('.');
+
+            // EnumName.VALUE
+            if (dot > 0 && enums.TryGetValue(name[..dot], out EnumSymbol? owner))
+            {
+                foreach (var (member, number) in owner.Members)
+                    if (member == name[(dot + 1)..])
+                        return new ConstantSymbol { Name = name, Value = number, Type = PhiType.EnumOf(owner) };
+            }
+
             if (dot > 0)
             {
                 ClassDecl? cls = classScopes.Keys.FirstOrDefault(c => c.Name == name[..dot] && classScopes[c].Unit == scope.Unit);
@@ -1336,6 +1402,10 @@ namespace Phi.Compiler.Semantics
                     BindBlock(ifs.Then, scope);
                     if (ifs.Else != null) BindBlock(ifs.Else, scope);
                     return ifs;
+
+                case WhenStmt w:
+                    BindWhen(w, scope);
+                    return w;
 
                 case WhileStmt loop:
                     blockNames.Add(new()); // the counter is in sight only in the loop
@@ -1637,6 +1707,64 @@ namespace Phi.Compiler.Semantics
 
             return new AssignStmt { Target = target, Op = AssignOp.Set, Value = value, Span = assign.Span };
         }
+
+        /// <summary>
+        /// when x / is a b / else: x is a number, an enum or text, and each value has to be the same
+        /// kind. A value written twice is an error, and so is an enum's value left out with no else
+        /// (a warning: the when does nothing for it).
+        /// </summary>
+        void BindWhen(WhenStmt w, Scope scope)
+        {
+            BindExpr(w.Subject, scope);
+            PhiType t = w.Subject.Type;
+            bool text = t.IsString || (t.IsPointer && t.Pointee == PhiType.U8);
+            if (!t.IsError && !text && !t.IsNumeric)
+                Error(w.Subject.Span, $"when needs a number, an enum or text, and this is a {t}");
+
+            var seen = new Dictionary<long, Expr>();
+            var seenText = new Dictionary<string, Expr>();
+            foreach (WhenBranch branch in w.Branches)
+            {
+                for (int i = 0; i < branch.Values.Count; i++)
+                {
+                    Expr value = branch.Values[i];
+                    BindExpr(value, scope);
+                    if (t.IsError || value.Type.IsError) continue;
+
+                    if (text)
+                    {
+                        if (!value.Type.IsString && !(value.Type.IsPointer && value.Type.Pointee == PhiType.U8))
+                            Error(value.Span, $"this when is on text, so each value is text too, and this is a {value.Type}");
+                        else if (value is StringExpr s && !seenText.TryAdd(s.Value, value))
+                            Error(value.Span, $"'{s.Value}' is already a value of this when (line {LineOf(seenText[s.Value])})");
+                        continue;
+                    }
+
+                    if (t.IsEnum != value.Type.IsEnum || (t.IsEnum && value.Type != t))
+                    {
+                        Error(value.Span, t.IsEnum
+                            ? $"this when is on a {t}, so each value is one of {t}'s (like {t}.{t.Enum!.Members[0].Name}), and this is a {value.Type}"
+                            : $"this when is on a {t}, and this is a {value.Type}; write `as {t}` if that's meant");
+                        continue;
+                    }
+                    value = Convert(value, t.IsEnum ? t : PhiType.Int, "each value of this when");
+                    branch.Values[i] = value;
+                    if (ConstantFolder.Evaluate(value) is long k && !seen.TryAdd(k, value))
+                        Error(value.Span, $"{(value is NameExpr n ? n.Name : k.ToString())} is already a value of this when (line {LineOf(seen[k])})");
+                }
+                BindBlock(branch.Body, scope);
+            }
+            if (w.Else != null) BindBlock(w.Else, scope);
+
+            if (t.IsEnum && w.Else == null)
+            {
+                var missing = t.Enum!.Members.Where(m => !seen.ContainsKey(m.Value)).Select(m => $"{t}.{m.Name}").ToList();
+                if (missing.Count > 0)
+                    diagnostics.Warning(file, w.Span, $"this when does nothing for {string.Join(", ", missing)}; add {(missing.Count == 1 ? "it" : "them")}, or an else");
+            }
+        }
+
+        int LineOf(Node n) => file.GetLocation(n.Span.Start).Line;
 
         /// <summary>The [atmost N] array whose count this .len reads, or null.</summary>
         internal static Expr? FilledArrayOf(Expr e) => e switch
@@ -2597,6 +2725,11 @@ namespace Phi.Compiler.Semantics
             {
                 t = PhiType.Of(s);
             }
+            else if (size.Operand is NameExpr enumName && Lookup(enumName.Name, scope) == null
+                     && enums.TryGetValue(enumName.Name, out EnumSymbol? e))
+            {
+                t = PhiType.EnumOf(e);
+            }
             else
             {
                 BindExpr(size.Operand!, scope);
@@ -2649,6 +2782,14 @@ namespace Phi.Compiler.Semantics
                     Error(b.Span, "strings can only be compared with is / == and is not / !=");
                 b.Type = PhiType.Bool;
                 return;
+            }
+
+            // an enum's values are only compared with values of the same enum
+            if (b.IsComparison && (b.Left.Type.IsEnum || b.Right.Type.IsEnum) && b.Left.Type != b.Right.Type)
+            {
+                PhiType kind = b.Left.Type.IsEnum ? b.Left.Type : b.Right.Type;
+                Error(b.Span, $"a {kind} is compared with {kind}'s own values (like {kind}.{kind.Enum!.Members[0].Name}), and this is a " +
+                              $"{(b.Left.Type.IsEnum ? b.Right.Type : b.Left.Type)}; write `as {kind}` if that's meant");
             }
 
             b.Left = Convert(b.Left, PhiType.Int, "the left side");
@@ -2746,6 +2887,13 @@ namespace Phi.Compiler.Semantics
             if (target.IsPointer && e.Type.IsPointer && target.Pointee != e.Type.Pointee
                 && target.Pointee != PhiType.U8 && e.Type.Pointee != PhiType.U8)
                 diagnostics.Warning(file, e.Span, $"{what} is a {target}, but this is a {e.Type}; write `as {target}` if that's meant");
+
+            if (target.IsEnum && e.Type != target)
+            {
+                Error(e.Span, $"{what} is a {target}, which takes {target}'s values (like {target}.{target.Enum!.Members[0].Name}), " +
+                              $"but this is a {e.Type}; write `as {target}` if that's meant");
+                return e;
+            }
 
             if (target.IsNumeric)
             {

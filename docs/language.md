@@ -88,8 +88,8 @@ variable, field, parameter, constant, method or struct:
 | Kind | Words |
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
-| Structure | `phi` `struct` `asm` `arm` `use` `const` `isr` `end` |
-| Control | `if` `elif` `else` `while` `unsafe` `break` `continue` `return` `call` `exit` |
+| Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `isr` `end` |
+| Control | `if` `elif` `else` `while` `when` `unsafe` `break` `continue` `return` `call` `exit` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
 | Input and output | `log` `debug` `ask` |
@@ -443,6 +443,30 @@ if done break;
 if count is 0 call Show: 'empty';
 ```
 
+### when
+
+`when` picks one branch by a value: the first `is` line with an equal value runs, or
+`else` if none does. The value is worked out once, and any number of values can share a
+branch. Each branch, the `else`, and the `when` itself end with `;;`:
+
+```phi
+when (Input.NextKey)
+    is 'q' 27
+        exit 0;
+    ;;
+    is Input.KEY_LEFT
+        x--;
+    ;;
+    else
+        log 'not a key this game uses\n';
+    ;;
+;;
+```
+
+The value can be a number, an [enum](#enums) or text (`when command` / `is 'ls' 'dir'`).
+A value written in two branches is an error. A `when` on an enum with no `else` gets a
+warning for each of the enum's values it leaves out.
+
 ### Loops
 
 ```phi
@@ -602,6 +626,34 @@ method<ptr<Counter> int: int> f: addr Counter.Add;   # as a method value, self c
   the OS classes of a 16-bit program (the boot sector, if that's all there is).
 - From outside the struct, a method is always called on a value (`c.Add`), never as
   `Counter.Add` on its own.
+
+## Enums
+
+An enum gives names to numbers, as a type of its own. Each name is one more than the one
+before it, starting at 0, unless it says otherwise:
+
+```phi
+enum.Tool
+{
+    PENCIL          # 0
+    BRUSH           # 1
+    ERASER: 10
+    FILL            # 11
+}
+
+Tool tool: Tool.PENCIL;
+struct.Stroke
+{
+    Tool tool;      # in structs, arrays and parameters, like any type
+    int width;
+}
+```
+
+Only an enum's own values go into it, and it's only compared with them, so a value from
+one set of names can't be mixed up with another (`Wm.MOUSE_DOWN` with `Paint.LINE`): those
+are errors. An enum is 4 bytes and goes anywhere a number does (`names:tool`,
+`log tool` prints its number), and `as` converts both ways: `n as Tool`, `tool as int`.
+`when` is the usual way to act on one.
 
 ## Objects
 

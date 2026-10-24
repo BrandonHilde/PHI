@@ -15,12 +15,12 @@ namespace Phi.Compiler.Syntax
         /// <summary>Words that can't be used as variable, method or type names.</summary>
         public static readonly HashSet<string> ReservedWords = new(TypeKeywords)
         {
-            "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "unsafe",
+            "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "when", "unsafe",
             "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
-            "phi", "asm", "arm", "struct", "use", "const",
+            "phi", "asm", "arm", "struct", "enum", "use", "const",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -168,7 +168,7 @@ namespace Phi.Compiler.Syntax
         bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
 
         bool AtTopLevelHeader =>
-            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct")) && PeekToken(1).Kind == TokenKind.Dot
+            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum")) && PeekToken(1).Kind == TokenKind.Dot
             || Current.StartsLine && AtWord("use");
 
         /// <summary>Skip ahead to a likely statement boundary after an error.</summary>
@@ -222,7 +222,7 @@ namespace Phi.Compiler.Syntax
                 return;
             }
 
-            if ((AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct")) && PeekToken(1).Kind == TokenKind.Dot)
+            if ((AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum")) && PeekToken(1).Kind == TokenKind.Dot)
             {
                 string kind = Advance().Text;
                 Advance(); // .
@@ -235,6 +235,9 @@ namespace Phi.Compiler.Syntax
                         return;
                     case "struct":
                         program.Structs.Add(ParseStruct(start, name, program));
+                        return;
+                    case "enum":
+                        program.Enums.Add(ParseEnum(start, name));
                         return;
                 }
 
@@ -255,6 +258,25 @@ namespace Phi.Compiler.Syntax
             }
 
             throw Error(Current.Span, $"expected a class (phi.Name:Base {{ ... }}) but found {Current}");
+        }
+
+        /// <summary>enum.Name { A  B: 5  C }: one name a line, each one more than the last unless it says.</summary>
+        EnumDecl ParseEnum(Token start, Token name)
+        {
+            var decl = new EnumDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
+            Expect(TokenKind.OpenBrace, "'{'");
+            while (!At(TokenKind.CloseBrace) && !AtEnd)
+            {
+                Token member = ExpectIdentifier("a name for one of the enum's values");
+                CheckNotKeyword(member, "enum value");
+                Expr? value = Accept(TokenKind.Colon) ? ParseExpression() : null;
+                Accept(TokenKind.Semicolon);
+                decl.Members.Add(new EnumMember { Name = member.Text, Value = value, Span = member.Span });
+                if (!At(TokenKind.CloseBrace) && !Current.StartsLine)
+                    throw Error(Current.Span, $"one value a line in enum {name.Text}, like\n    {member.Text}\n    {Current.Text}");
+            }
+            Expect(TokenKind.CloseBrace, $"'}}' to close enum {name.Text}");
+            return decl;
         }
 
         ClassDecl ParseClass(Token start, Token name)
@@ -542,6 +564,8 @@ namespace Phi.Compiler.Syntax
                         int size = start.Text == "out" ? 1 : start.Text == "outw" ? 2 : 4;
                         return new OutStmt { Size = size, Port = port, Value = value, Span = start.Span.To(Previous.Span) };
                     }
+                    case "when":
+                        return ParseWhen();
                     case "free":
                     {
                         Advance();
@@ -892,6 +916,51 @@ namespace Phi.Compiler.Syntax
                 stmt.Else = ParseBlock("else");
             }
 
+            return stmt;
+        }
+
+        /// <summary>when x  /  is a b ... ;;  /  else ... ;;  /  ;;</summary>
+        Stmt ParseWhen()
+        {
+            Token keyword = Advance();
+            Expr subject = ParseExpression();
+            Accept(TokenKind.Semicolon);
+            var stmt = new WhenStmt { Subject = subject, Span = keyword.Span.To(subject.Span) };
+
+            while (true)
+            {
+                if (AtWord("is"))
+                {
+                    Token isWord = Advance();
+                    var branch = new WhenBranch { Span = isWord.Span };
+                    while (!Current.StartsLine && !AtEnd && !At(TokenKind.Semicolon) && !At(TokenKind.DoubleSemicolon))
+                        branch.Values.Add(ParseListElement());
+                    Accept(TokenKind.Semicolon);
+                    if (branch.Values.Count == 0)
+                        throw Error(isWord.Span, "'is' needs the values that pick this branch, like is 'q' 27");
+                    if (stmt.Else != null)
+                        throw Error(isWord.Span, "else comes last in a when, after every is");
+                    branch.Body.AddRange(ParseBlock("is"));
+                    stmt.Branches.Add(branch);
+                }
+                else if (AtWord("else"))
+                {
+                    Token elseWord = Advance();
+                    Accept(TokenKind.Semicolon);
+                    if (stmt.Else != null) throw Error(elseWord.Span, "a when has one else");
+                    stmt.Else = ParseBlock("else");
+                }
+                else if (Accept(TokenKind.DoubleSemicolon))
+                {
+                    break;
+                }
+                else
+                {
+                    throw Error(Current.Span, "expected 'is' (a branch), 'else' or ';;' (the end of the when)");
+                }
+            }
+
+            if (stmt.Branches.Count == 0) throw Error(keyword.Span, "a when needs at least one 'is' branch");
             return stmt;
         }
 

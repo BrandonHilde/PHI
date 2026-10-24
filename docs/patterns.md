@@ -1,8 +1,8 @@
 # Common patterns
 
-PHI has no classes in the object-oriented sense, no `switch` and no enums. This page shows
-how the things those usually do are written in PHI: tables of handlers, callbacks,
-building text, returning text from a method, and sets of states. The full rules are in
+PHI has no classes in the object-oriented sense. This page shows how the things they
+usually do are written in PHI: tables of handlers, callbacks, building text, returning
+text from a method, and sets of states. The full rules are in
 the [language reference](language.md).
 
 Every example here is part of [tests/patterns.phi](../tests/patterns.phi), which `phi test`
@@ -159,24 +159,39 @@ it in a `str` of its own; keeping it in a `ptr<u8>` is an error.
 
 ## A set of states
 
-Use constants in capitals, one per state, and a method to name them:
+Use an enum, one name per state, and `when` to act on it:
 
 ```phi
-const int READY: 0;
-const int PLAYING: 1;
-const int OVER: 2;
-int state: READY;
+enum.Game
+{
+    READY
+    PLAYING
+    OVER
+}
 
-[StateName: int s: 0;]
-    if s is PLAYING return 'playing';
-    if s is OVER return 'game over';
+Game state: Game.READY;
+
+[StateName: Game s: Game.READY;]
     ptr<u8> name: 'ready';
+    when s
+        is Game.PLAYING
+            name is 'playing';
+        ;;
+        is Game.OVER
+            name is 'game over';
+        ;;
+        is Game.READY
+        ;;
+    ;;
 [end: name]
 ```
 
-A constant in capitals also works as an index: `apps:NOTES.key` is the field of element
-`NOTES`. Nothing stops a state of one set being given where another set goes, so keep
-each set's names distinct (`STATE_READY`, `MODE_EDIT`) when there are several.
+Only `Game.` values go into a `Game`, so a state of one set can't be given where another
+set goes. A `when` on it that leaves a state out (with no `else`) gets a warning, so a
+state added later shows every place that has to handle it.
+
+For a table indexed by name, like `apps:NOTES.key`, a constant in capitals is simpler:
+`const int NOTES: 0;`. An enum works as an index too.
 
 ## One-line guards
 

@@ -86,6 +86,7 @@ namespace Phi.Compiler
                 into.Classes.AddRange(node.Classes);
                 into.RawBlocks.AddRange(node.RawBlocks);
                 into.Structs.AddRange(node.Structs);
+                into.Enums.AddRange(node.Enums);
                 into.Uses.AddRange(node.Uses);
             }
 
@@ -109,6 +110,7 @@ namespace Phi.Compiler
             withHeap.Classes.AddRange(program.Classes);
             withHeap.RawBlocks.AddRange(program.RawBlocks);
             withHeap.Structs.AddRange(program.Structs);
+            withHeap.Enums.AddRange(program.Enums);
             withHeap.Uses.AddRange(program.Uses);
             return withHeap;
         }

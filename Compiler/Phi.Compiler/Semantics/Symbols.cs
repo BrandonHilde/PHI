@@ -2,7 +2,7 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum }
 
     /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
     public sealed class MethodSignature
@@ -42,7 +42,7 @@ namespace Phi.Compiler.Semantics
     /// many are in it in a u32 right after them, so its elements are where any array's are.
     /// </summary>
     public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
-                                 MethodSignature? Signature = null, bool Filled = false)
+                                 MethodSignature? Signature = null, bool Filled = false, EnumSymbol? Enum = null)
     {
         public static readonly PhiType Error = new(TypeKind.Error);
         public static readonly PhiType Void = new(TypeKind.Void);
@@ -61,6 +61,7 @@ namespace Phi.Compiler.Semantics
         public static PhiType Of(StructSymbol s) => new(TypeKind.Struct, Struct: s);
         public static PhiType MethodOf(MethodSignature s) => new(TypeKind.Method, Signature: s);
         public static PhiType ObjectOf(StructSymbol s) => new(TypeKind.Object, Struct: s);
+        public static PhiType EnumOf(EnumSymbol e) => new(TypeKind.Enum, Enum: e);
 
         public bool IsArray => Length > 0;
         public bool IsError => Kind == TypeKind.Error;
@@ -77,10 +78,13 @@ namespace Phi.Compiler.Semantics
         /// <summary>The address of a method that can be called: method&lt;int: int&gt;.</summary>
         public bool IsMethod => !IsArray && Kind == TypeKind.Method;
 
-        /// <summary>A single value that fits in a register: integers, bln and pointers.</summary>
-        public bool IsNumeric => !IsArray && Kind is >= TypeKind.I8 and <= TypeKind.Bool or TypeKind.Pointer;
+        /// <summary>A single value that fits in a register: integers, bln, pointers and enums.</summary>
+        public bool IsNumeric => !IsArray && Kind is >= TypeKind.I8 and <= TypeKind.Bool or TypeKind.Pointer or TypeKind.Enum;
 
-        public bool IsSigned => Kind is TypeKind.I8 or TypeKind.I16 or TypeKind.I32;
+        /// <summary>One of an enum's values: a number that only its own names go into.</summary>
+        public bool IsEnum => !IsArray && Kind == TypeKind.Enum;
+
+        public bool IsSigned => Kind is TypeKind.I8 or TypeKind.I16 or TypeKind.I32 or TypeKind.Enum;
 
         /// <summary>32-bit unsigned values: math and comparisons on them must be unsigned.</summary>
         public bool IsUnsigned32 => !IsArray && Kind is TypeKind.U32 or TypeKind.Pointer or TypeKind.Method;
@@ -96,6 +100,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method or TypeKind.Object => 4,
             TypeKind.Str => 4,  // arrays of strings hold pointers
             TypeKind.Struct => Struct!.Size,
+            TypeKind.Enum => 4,
             _ => 0,
         };
 
@@ -119,6 +124,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.Str => "str",
                 TypeKind.Pointer => $"ptr<{Pointee}>",
                 TypeKind.Struct or TypeKind.Object => Struct!.Name,
+                TypeKind.Enum => Enum!.Name,
                 TypeKind.Method => Signature!.ToString(),
                 TypeKind.Void => "nothing",
                 _ => "?",
@@ -253,6 +259,13 @@ namespace Phi.Compiler.Semantics
 
     /// <summary>A `new` field inside a struct (directly or in an inline struct field): where, and of what.</summary>
     public readonly record struct OwnedSlot(int Offset, StructSymbol Of);
+
+    /// <summary>enum.Name: its values by name, in the order they were written.</summary>
+    public sealed class EnumSymbol : Symbol
+    {
+        public EnumDecl Decl { get; init; } = null!;
+        public List<(string Name, long Value)> Members { get; } = new();
+    }
 
     public sealed class StructSymbol : Symbol
     {

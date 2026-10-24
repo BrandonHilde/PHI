@@ -15,6 +15,7 @@ namespace Phi.Compiler.Syntax
         public List<ClassDecl> Classes { get; } = new();
         public List<RawBlockDecl> RawBlocks { get; } = new();
         public List<StructDecl> Structs { get; } = new();
+        public List<EnumDecl> Enums { get; } = new();
         public List<UseDecl> Uses { get; } = new();
     }
 
@@ -60,6 +61,21 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
         public List<FieldDecl> Fields { get; } = new();
         public StructSymbol? Symbol { get; set; }
+    }
+
+    /// <summary>enum.Name { A  B  C: 10 }: names for numbers, as a type of their own.</summary>
+    public sealed class EnumDecl : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public List<EnumMember> Members { get; } = new();
+    }
+
+    /// <summary>One name of an enum, with the value written for it (or null: one more than the last).</summary>
+    public sealed class EnumMember : Node
+    {
+        public string Name { get; init; } = "";
+        public Expr? Value { get; init; }
     }
 
     public sealed class FieldDecl : Node
@@ -310,6 +326,23 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Add to the end of what s holds (s++ ...), instead of starting it again.</summary>
         public bool Append { get; init; }
+    }
+
+    /// <summary>
+    /// when x  /  is a b  ...  ;;  /  else  ...  ;;  / ;;
+    /// The first branch with a value equal to x runs (x is worked out once); else when none does.
+    /// </summary>
+    public sealed class WhenStmt : Stmt
+    {
+        public Expr Subject { get; init; } = null!;
+        public List<WhenBranch> Branches { get; } = new();
+        public List<Stmt>? Else { get; set; }
+    }
+
+    public sealed class WhenBranch : Node
+    {
+        public List<Expr> Values { get; } = new();
+        public List<Stmt> Body { get; } = new();
     }
 
     /// <summary>

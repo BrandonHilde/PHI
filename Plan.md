@@ -543,6 +543,8 @@ these were added:
   events in a queue), `gui.surfaces` (the kernel's side, through system calls 64 to 67 and
   `Process.more_calls`), `gui.desktop` (windows with title bars and close boxes, focus,
   dragging), and `samples/desktop.phi`
+- [x] Enums (`enum.Tool { PENCIL  BRUSH }`, a type of their own) and `when x` / `is a b` /
+  `else`, on numbers, enums and text
 
 The parts most worth doing next, roughly in order:
 
@@ -551,8 +553,8 @@ The parts most worth doing next, roughly in order:
    one window.
 2. **64-bit integers** (`i64`/`u64`), then `dec`/`fin`: PhiOS's calculator needed assembly
    for `a * b / 1000`.
-3. **`switch`, enums and interfaces**, so dispatching to a list of apps isn't one if/elif
-   chain per event.
+3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
+   and filled in one place.
 4. Strings that grow everywhere they can be: method results (now cut at 255 characters
    when they come from a `str` without a size) and the elements of a `str` array.
 5. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.

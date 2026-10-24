@@ -1,0 +1,7 @@
+15:13: error: 'tool' is a Tool, which takes Tool's values (like Tool.PENCIL), but this is a Weather
+16:14: error: 'other' is a Tool
+17:12: error: a Tool is compared with Tool's own values
+18:14: error: a Tool is compared with Tool's own values
+24:6: error: this when is on a Tool, so each value is one of Tool's
+27:6: error: Tool.PENCIL is already a value of this when (line 21)
+34:6: error: this when is on text, so each value is text too

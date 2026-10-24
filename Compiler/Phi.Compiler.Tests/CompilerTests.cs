@@ -170,6 +170,9 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         [InlineData("call M;\n[M]\nbln has: 1;\nif has\n log 'y';\n;;\n[end]", "'has' is a keyword and can't be a variable name")]
+        [InlineData("int when: 1;", "'when' is a keyword and can't be a variable name")]
+        [InlineData("int enum: 1;", "'enum' is a keyword and can't be a variable name")]
+        [InlineData("int k: 1;\nwhen k\n log 'x';\n;;", "expected 'is' (a branch), 'else' or ';;'")]
         [InlineData("if Ok: 3\n log 'y';\n;;\n[Ok: int n: 0;]\n[end: n > 1]", "'Ok' is a method; to use its result as a value, put the call in parentheses: (Ok: 3)")]
         [InlineData("int n: Seven;\n[Seven]\n[end: 7]", "put the call in parentheses: (Seven)")]
         [InlineData("u8 text[8];\nlog text;", "can't print a u8 array; to print the text in it (up to a zero byte), write addr text")]

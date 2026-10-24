@@ -678,6 +678,10 @@ namespace Phi.Compiler.CodeGen
                     EmitCall(call);
                     break;
 
+                case WhenStmt branches:
+                    EmitWhen(branches);
+                    break;
+
                 case IfStmt ifs:
                 {
                     string elseLabel = NewLabel("else");
@@ -1128,6 +1132,64 @@ namespace Phi.Compiler.CodeGen
                 EmitIndexCheck(ix, "jb", limit.ToString());
 
             EmitScale(size);
+        }
+
+        /// <summary>
+        /// when x: x is worked out once and kept in a temporary; each value is compared with it in
+        /// order, and the first that's equal picks its branch.
+        /// </summary>
+        void EmitWhen(WhenStmt when)
+        {
+            PhiType t = when.Subject.Type;
+            bool text = !t.IsNumeric || t.IsPointer && t.Pointee == PhiType.U8;
+            string subject = AllocTemp(4);
+            string end = NewLabel("endwhen");
+            string otherwise = when.Else != null ? NewLabel("whenelse") : end;
+            var bodies = when.Branches.Select(_ => NewLabel("whenis")).ToList();
+
+            EmitExpr(when.Subject);
+            Emit($"mov dword [{subject}], eax");
+            for (int i = 0; i < when.Branches.Count; i++)
+            {
+                foreach (Expr value in when.Branches[i].Values)
+                {
+                    if (text)
+                    {
+                        Need("phi_strcmp");
+                        EmitExpr(value);
+                        Emit("mov edi, eax");
+                        Emit($"mov esi, [{subject}]");
+                        Emit("call phi_strcmp          ; eax = 0 when equal");
+                        Emit("test eax, eax");
+                        Emit($"jz {bodies[i]}");
+                    }
+                    else if (ConstantFolder.Evaluate(value) is long k)
+                    {
+                        Emit($"cmp dword [{subject}], {(int)k}");
+                        Emit($"je {bodies[i]}");
+                    }
+                    else
+                    {
+                        EmitExpr(value);
+                        Emit($"cmp eax, [{subject}]");
+                        Emit($"je {bodies[i]}");
+                    }
+                }
+            }
+            Emit($"jmp {otherwise}");
+
+            for (int i = 0; i < when.Branches.Count; i++)
+            {
+                Label(bodies[i]);
+                foreach (Stmt s in when.Branches[i].Body) EmitStatement(s);
+                Emit($"jmp {end}");
+            }
+            if (when.Else != null)
+            {
+                Label(otherwise);
+                foreach (Stmt s in when.Else) EmitStatement(s);
+            }
+            Label(end);
         }
 
         /// <summary>Stops on an index error unless eax passes the unsigned jump against limit.</summary>

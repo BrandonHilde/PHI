@@ -1,0 +1,39 @@
+enum.Tool
+{
+	PENCIL
+	BRUSH
+}
+
+enum.Weather
+{
+	SUN
+	RAIN
+}
+
+phi.EnumWhenErrors:Kernel
+{
+	Tool tool: Weather.SUN;
+	Tool other: 1;
+	bln same: tool is Weather.RAIN;
+	bln number: tool is 0;
+
+	when tool
+		is Tool.PENCIL
+			log 'p';
+		;;
+		is Weather.SUN
+			log 's';
+		;;
+		is Tool.PENCIL
+			log 'again';
+		;;
+	;;
+
+	str name: 'x';
+	when name
+		is 3
+			log '3';
+		;;
+	;;
+
+}

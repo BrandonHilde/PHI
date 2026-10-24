@@ -1,6 +1,13 @@
 # The examples in docs/patterns.md, run as they're written there.
 use user.text;
 
+enum.Game
+{
+	READY
+	PLAYING
+	OVER
+}
+
 struct.App
 {
 	u8 title[16];
@@ -61,11 +68,8 @@ phi.Patterns:Library
 	debug (AfterSlash: path) '\n';
 
 	# ---- a set of states
-	const int READY: 0;
-	const int PLAYING: 1;
-	const int OVER: 2;
-	int state: PLAYING;
-	debug (StateName: state) ' ' (StateName: OVER) ' ' (StateName: READY) '\n';
+	Game state: Game.PLAYING;
+	debug (StateName: state) ' ' (StateName: Game.OVER) ' ' (StateName: Game.READY) '\n';
 
 	[NotesKey: int key: 0;]
 		if key is 'q' return 1;
@@ -99,9 +103,17 @@ phi.Patterns:Library
 		;;
 	[end: text + pos]
 
-	[StateName: int s: 0;]
-		if s is PLAYING return 'playing';
-		if s is OVER return 'game over';
+	[StateName: Game s: Game.READY;]
 		ptr<u8> name: 'ready';
+		when s
+			is Game.PLAYING
+				name is 'playing';
+			;;
+			is Game.OVER
+				name is 'game over';
+			;;
+			is Game.READY
+			;;
+		;;
 	[end: name]
 }
