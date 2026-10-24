@@ -565,7 +565,8 @@ The parts most worth doing next, roughly in order:
 2. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
-3. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
+3. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM. (C compatibility and
+   self-hosting are on hold until everything else is done.)
 
 ---
 
@@ -747,8 +748,10 @@ These come after the basics work:
   check QEMU's recording of the card. Still to do: interrupts instead of polling (so music
   keeps going without `Sound.Pump`), recording, Intel HD Audio, and compressed formats
 - **More hardware:** AHCI, PS/2 → USB, ACPI shutdown (PCI enumeration is done: `drivers.pci`)
-- **C compatibility:** call C functions and link C object files (a README goal)
-- **Self-hosting:** rewrite the PHI compiler in PHI
+- **C compatibility:** call C functions and link C object files (a README goal). **On hold**
+  until every other feature in this plan is implemented.
+- **Self-hosting:** rewrite the PHI compiler in PHI. **On hold** until every other feature in
+  this plan is implemented.
 - **Real hardware and UEFI boot**
 
 ---

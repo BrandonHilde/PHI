@@ -54,6 +54,18 @@ together. Some common changes:
 - **Error messages** say what's wrong and, when possible, how to fix it:
   `str can't be used here; use a u8 array (u8 name[16]) or ptr<u8>`.
 
+## What to work on
+
+[Plan.md](Plan.md) lists what's next. Two big goals are **on hold until every other feature
+in it is implemented**:
+
+- **C compatibility:** calling C functions and linking C object files
+- **Self-hosting:** rewriting the PHI compiler in PHI
+
+Both build on the language and library as a whole, so they're best started once the rest is
+finished and settled. Please don't start on them yet; pick something from the rest of
+the plan instead.
+
 ## Good first contributions
 
 - New shell commands (`rm`, `write`, `sleep`, `top`)
