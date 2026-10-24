@@ -549,6 +549,7 @@ these were added:
   and resizable windows
 - [x] `str` results from methods grow (they were cut at 255 characters), and `chr`: a byte
   written as its character (`text++ key as chr;`); a `str`'s characters are `chr`
+- [x] Arrays that grow with no most: `int scores[];`, objects too
 - [x] Array parameters of any length: `[Sum: int numbers[];]`, with `.len` and `.max`
 - [x] Whole arrays copied (`b is a;`) and compared (`a is b`), objects and text included
 - [x] Arrays of objects: `new T list[N]` and `new T list[atmost N]`, and struct fields like

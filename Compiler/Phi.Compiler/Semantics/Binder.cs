@@ -1029,19 +1029,31 @@ namespace Phi.Compiler.Semantics
 
             if (type.IsStruct && type.Struct!.OwnsObjects)
             {
-                Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.BufferSize != null ? "[...]" : "")};");
+                Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.Unsized ? "[]" : d.BufferSize != null ? "[...]" : "")};");
                 v.Type = PhiType.Error;
                 return;
             }
 
-            if (d.Unsized)
+            if (d.Unsized && !v.IsParameter)
             {
-                if (!v.IsParameter)
+                // an array that grows as it's added to, with no most
+                if (scope.Unit is not (UnitKind.Kernel or UnitKind.Program))
+                    Error(d.NameSpan, "an array without a size grows on the heap, which needs 32-bit code (a Kernel or a Program); give it a size");
+                else if (type.IsString)
+                    Error(d.NameSpan, $"a str array without a size isn't supported yet; give it values (str {d.Name}: 'a' 'b';)");
+                else if (type.IsStruct && type.Struct!.OwnsObjects)
+                    Error(d.Type.Span, $"{type} owns objects, so an array of them is objects: new {type} {d.Name}[];");
+                else
                 {
-                    Error(d.NameSpan, $"an array without a size is a parameter for now; give it one: {type} {d.Name}[10];");
-                    v.Type = PhiType.Error;
+                    v.Type = type.OpenOf();
+                    v.GrowingArray = true;
                     return;
                 }
+                v.Type = PhiType.Error;
+                return;
+            }
+            if (d.Unsized)
+            {
                 if (type.IsString)
                 {
                     Error(d.NameSpan, $"a str array can't be a parameter yet; pass the text of one element (str {d.Name}: '';)");
@@ -1144,10 +1156,14 @@ namespace Phi.Compiler.Semantics
             }
             if (d.Unsized)
             {
-                // new T name[]: a parameter that borrows the caller's array of objects
+                // new T name[]: an array of objects that grows, or a parameter that borrows the
+                // caller's array of them
                 if (!v.IsParameter)
                 {
-                    Error(d.NameSpan, $"an array without a size is a parameter for now; give it one: new {type} {d.Name}[10];");
+                    if (scope.Unit is not (UnitKind.Kernel or UnitKind.Program)) return;
+                    v.Ownership = Ownership.Owned;
+                    v.GrowingArray = true;
+                    v.Type = PhiType.ObjectOf(type.Struct!).OpenOf();
                     return;
                 }
                 v.Ownership = Ownership.Borrowed;
@@ -1558,6 +1574,13 @@ namespace Phi.Compiler.Semantics
             if (!classLevel || v.IsParameter || !allConstant)
                 v.NeedsInitCode = true;
 
+            if (v.GrowingArray)
+            {
+                if (decl.Values.Count > 0)
+                    Error(decl.Values[0].Span, $"an array without a size starts empty; add to it with {decl.Name}++ ...;");
+                HeapMethod("Heap.Alloc", decl.NameSpan, scope, $"array '{decl.Name}' (it grows)");
+                HeapMethod("Heap.Free", decl.NameSpan, scope, $"array '{decl.Name}' (it grows)");
+            }
             if (v.GrowingElements)
             {
                 HeapMethod("Heap.Alloc", decl.NameSpan, scope, $"str array '{decl.Name}' (its elements grow)");
@@ -1591,7 +1614,7 @@ namespace Phi.Compiler.Semantics
             if (v.Type.IsObjectArray)
             {
                 if (decl.Values.Count > 0)
-                    Error(decl.Values[0].Span, $"an array of objects starts with each one zeroed (or, with atmost, none); set them after, like {decl.Name}:0.field is ...;");
+                    Error(decl.Values[0].Span, $"an array of objects starts with each one zeroed (or, with atmost or no size, none); set them after, like {decl.Name}:0.field is ...;");
                 HeapMethod("Heap.Alloc", decl.Span, scope, "new");
                 HeapMethod("Heap.Free", decl.Span, scope, "new");
                 return;
@@ -1733,7 +1756,7 @@ namespace Phi.Compiler.Semantics
         {
             BindExpr(assign.Target, scope);
             if (assign.Target.Type.IsArray && assign.Op == AssignOp.Set && !assign.Bare) return BindArrayAssign(assign, scope);
-            if (assign.Target.Type.Filled) return BindAppend(assign, scope);
+            if (assign.Target.Type.Filled || IsGrowingArray(assign.Target)) return BindAppend(assign, scope);
             if (FilledArrayOf(assign.Target) is Expr counted) return BindSetLength(assign, counted, scope);
             bool toStr = assign.Target.Type.IsString && !assign.Target.Type.IsArray;
             if ((assign.Values is { Count: > 1 } && (toStr || !assign.ValueIsWhole)) || (toStr && assign.Op == AssignOp.Add))
@@ -1941,10 +1964,15 @@ namespace Phi.Compiler.Semantics
             return true;
         }
 
+        /// <summary>A variable that's an array without a size: it grows.</summary>
+        internal static bool IsGrowingArray(Expr e) => e is NameExpr { Symbol: VariableSymbol { GrowingArray: true } };
+
         /// <summary>The [atmost N] array whose count this .len reads, or null.</summary>
         internal static Expr? FilledArrayOf(Expr e) => e switch
         {
             NameExpr { Symbol: LengthSymbol { Filled: Expr array } } => array,
+            NameExpr { Symbol: LengthSymbol { Open: VariableSymbol { GrowingArray: true } v, Max: false } } length =>
+                new NameExpr { Name = v.Name, Span = length.Span, Symbol = v, Type = v.Type },
             MemberExpr { FilledLength: true } m => m.Target,
             _ => null,
         };
@@ -1961,10 +1989,10 @@ namespace Phi.Compiler.Semantics
             }
 
             var append = new AppendStmt { Target = target, Span = assign.Span };
-            if (target.Type.IsObjectArray)
+            if (target.Type.IsObjectArray || IsGrowingArray(target))
             {
-                HeapMethod("Heap.Alloc", assign.Span, scope, "adding an object");
-                HeapMethod("Heap.Free", assign.Span, scope, "adding an object");
+                HeapMethod("Heap.Alloc", assign.Span, scope, $"adding to '{name}'");
+                HeapMethod("Heap.Free", assign.Span, scope, $"adding to '{name}'");
             }
             if (assign.Bare) return append;
 

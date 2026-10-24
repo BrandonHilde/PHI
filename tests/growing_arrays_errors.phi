@@ -1,0 +1,13 @@
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+phi.GrowingArraysErrors:Kernel
+{
+	str names[];
+	Node plain[];
+	int scores[];
+	scores++ 'a' 'bc';
+}

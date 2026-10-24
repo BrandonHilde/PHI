@@ -109,6 +109,7 @@ namespace Phi.Compiler.CodeGen
             foreach (RawBlockDecl raw in unit.RawBlocks) EmitRawBlock(raw);
             EmitObjectRoutines();
             EmitStrRoomRoutine();
+            EmitArrayGrowRoutine();
 
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
 
@@ -330,7 +331,7 @@ namespace Phi.Compiler.CodeGen
             var growing = m.Parameters.Concat(m.Locals).Where(v => v.Grows).ToList();
             var growingArrays = m.Locals.Where(v => v.GrowingElements).ToList();
             bool wideResult = m.ReturnType.IsWide;
-            if (growing.Count > 0 || resultSlots.Count > 0 || growingArrays.Count > 0)
+            if (growing.Count > 0 || resultSlots.Count > 0 || growingArrays.Count > 0 || m.Locals.Any(v => v.GrowingArray))
             {
                 if (wideResult) Emit("push edx");
                 Emit("push eax                ; the result");
@@ -346,6 +347,8 @@ namespace Phi.Compiler.CodeGen
                     Emit($"call {HeapMethodLabel("Heap.Free")}");
                     Emit("add esp, 4");
                 }
+                foreach (VariableSymbol array in m.Locals.Where(v => v.GrowingArray))
+                    EmitGrowingArrayFree(array);
                 foreach (VariableSymbol array in growingArrays)
                     for (int i = 0; i < array.Count; i++)
                     {
@@ -647,6 +650,10 @@ namespace Phi.Compiler.CodeGen
                     EmitNewDecl(newDecl, newObject);
                     break;
 
+                case VarDecl { Symbol: { GrowingArray: true } growing }:
+                    EmitGrowingArrayEmpty(growing);
+                    break;
+
                 case VarDecl { IsNew: true, Symbol: { Type.IsObjectArray: true } newArray } arrayDecl:
                     EmitNewArray(arrayDecl, newArray);
                     break;
@@ -820,6 +827,15 @@ namespace Phi.Compiler.CodeGen
                     if (append.Values.Count == 0) EmitAppend(append, null);
                     foreach (Expr value in append.Values) EmitAppend(append, value);
                     break;
+
+                case SetLengthStmt { Array: NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing } } shrink:
+                {
+                    EmitExpr(shrink.Value);
+                    EmitIndexCheck(shrink, "jbe", $"dword [{growing.Label} + 4]");
+                    Emit($"mov [{growing.Label} + 4], eax");
+                    if (growing.Type.IsObjectArray) EmitFreeElements(shrink.Array, -1);   // the dropped ones
+                    break;
+                }
 
                 case SetLengthStmt shrink:
                 {
@@ -1535,17 +1551,35 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(value);
                 Emit("push eax");
             }
-            EmitFilledCount(append.Target);
-            EmitIndexCheck(append, "jb", t.Length.ToString());   // full: no room for another
+            if (append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
+            {
+                // room for one more (moving its elements when there isn't), then at its end
+                ObjectLine(append);
+                LoadAddress("eax", growing.Label);
+                Emit("mov edx, [eax + 4]");
+                Emit("inc edx");
+                Emit($"mov ecx, {size}");
+                EmitArrayGrowCall();
+                Emit($"mov eax, [{growing.Label} + 4]");
+                Emit($"inc dword [{growing.Label} + 4]");
+                EmitScale(size);
+                Emit($"mov ebx, [{growing.Label}]");
+                Emit("add ebx, eax");
+            }
+            else
+            {
+                EmitFilledCount(append.Target);
+                EmitIndexCheck(append, "jb", t.Length.ToString());   // full: no room for another
 
-            Emit("mov edx, eax");
-            Emit("inc eax");
-            if (!bits32) Emit("push ebx");
-            Emit($"mov dword {Operand(new Place { Computed = true, Linear = true, Offset = t.CountOffset })}, eax");
-            if (!bits32) Emit("pop ebx");
-            Emit("mov eax, edx");
-            EmitScale(size);
-            Emit("add ebx, eax");
+                Emit("mov edx, eax");
+                Emit("inc eax");
+                if (!bits32) Emit("push ebx");
+                Emit($"mov dword {Operand(new Place { Computed = true, Linear = true, Offset = t.CountOffset })}, eax");
+                if (!bits32) Emit("pop ebx");
+                Emit("mov eax, edx");
+                EmitScale(size);
+                Emit("add ebx, eax");
+            }
 
             if (element.IsObject)
             {
@@ -1721,7 +1755,7 @@ namespace Phi.Compiler.CodeGen
         {
             NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
             MemberExpr m => !m.Target.Type.IsObject && !m.Target.Type.IsPointer && IsStaticPlace(m.Target),
-            IndexExpr ix => !ix.Target.Type.IsPointer && !ix.Target.Type.Filled && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
+            IndexExpr ix => !ix.Target.Type.IsPointer && !ix.Target.Type.Filled && !ix.Target.Type.Open && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
                             && !(ix.Target.Type.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol { Grows: false } }),
             _ => false,
         };
@@ -2840,6 +2874,21 @@ namespace Phi.Compiler.CodeGen
         void EmitCopyFits(ArrayAssignStmt copy)
         {
             PhiType t = copy.Target.Type;
+            if (copy.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
+            {
+                // it grows to fit, and has that many (letting go of objects past them)
+                ObjectLine(copy);
+                Emit("push eax");
+                Emit("mov edx, eax");
+                LoadAddress("eax", growing.Label);
+                Emit($"mov ecx, {t.Element.ElementSize}");
+                EmitArrayGrowCall();
+                Emit("mov eax, [esp]");
+                if (t.IsObjectArray) EmitFreeElements(copy.Target, -1);
+                Emit("pop eax");
+                Emit($"mov [{growing.Label} + 4], eax");
+                return;
+            }
             if (!t.Open && !copy.Source.Type.Open) return;
             Need("phi_index_error");
             string ok = NewLabel("fits");
@@ -2850,6 +2899,92 @@ namespace Phi.Compiler.CodeGen
             Emit($"mov eax, {LineOf(copy)}");
             Emit("jmp phi_index_error");
             Label(ok);
+        }
+
+        bool usesArrayGrow;
+
+        /// <summary>
+        /// eax = an array that grows (where its elements are, how many, its room), edx = how many
+        /// it needs room for, ecx = the bytes of one; after, it has room for them.
+        /// </summary>
+        void EmitArrayGrowCall()
+        {
+            usesArrayGrow = true;
+            Need("phi_out_of_memory");
+            Emit("call phi_array_grow");
+        }
+
+        /// <summary>An array that grows, empty again: its objects and its room let go.</summary>
+        void EmitGrowingArrayEmpty(VariableSymbol v)
+        {
+            EmitGrowingArrayFree(v);
+            Emit($"mov dword [{v.Label}], 0");
+            Emit($"mov dword [{v.Label} + 4], 0");
+            Emit($"mov dword [{v.Label} + 8], 0");
+        }
+
+        void EmitGrowingArrayFree(VariableSymbol v)
+        {
+            if (v.Type.IsObjectArray) EmitFreeElements(NameOf(v), 0);
+            Emit($"push dword [{v.Label}]   ; {v.Name}'s elements");
+            Emit($"call {HeapMethodLabel("Heap.Free")}");
+            Emit("add esp, 4");
+        }
+
+        /// <summary>phi_array_grow, for arrays without a size (see EmitArrayGrowCall).</summary>
+        void EmitArrayGrowRoutine()
+        {
+            if (!usesArrayGrow) return;
+            Line("");
+            Comment("room in an array that grows: eax = the array, edx = how many, ecx = bytes each");
+            Label("phi_array_grow");
+            Emit("cmp edx, [eax + 8]");
+            Emit("jbe .fits");
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the array");
+            Emit("push ecx                ; [ebp - 8] bytes each");
+            // the new room: twice the old, at least what's needed, and at least 4
+            Emit("mov ebx, [eax + 8]");
+            Emit("add ebx, ebx");
+            Emit("cmp ebx, edx");
+            Emit("jae .twice");
+            Emit("mov ebx, edx");
+            Label(".twice");
+            Emit("cmp ebx, 4");
+            Emit("jae .room");
+            Emit("mov ebx, 4");
+            Label(".room");
+            Emit("push ebx                ; [ebp - 12] the new room");
+            Emit("mov eax, ebx");
+            Emit("mul dword [ebp - 8]");
+            Emit("push eax");
+            Emit($"call {HeapMethodLabel("Heap.Alloc")}");
+            Emit("add esp, 4");
+            Emit("test eax, eax");
+            Emit("jz phi_out_of_memory");
+            Emit("push eax                ; [ebp - 16] where the elements go now");
+            // the elements so far move over (their objects, if any, go with them)
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov esi, [edx]");
+            Emit("mov edi, eax");
+            Emit("mov ecx, [edx + 4]");
+            Emit("imul ecx, [ebp - 8]");
+            Emit("cld");
+            Emit("rep movsb");
+            Emit("mov edx, [ebp - 4]");
+            Emit("push dword [edx]");
+            Emit($"call {HeapMethodLabel("Heap.Free")}");
+            Emit("add esp, 4");
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov eax, [ebp - 16]");
+            Emit("mov [edx], eax");
+            Emit("mov eax, [ebp - 12]");
+            Emit("mov [edx + 8], eax");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Label(".fits");
+            Emit("ret");
         }
 
         /// <summary>
@@ -2983,7 +3118,14 @@ namespace Phi.Compiler.CodeGen
             if (from >= 0) Emit($"push dword {from}");
             else Emit("push eax");
             Label(next);
-            Emit($"cmp dword [esp], {array.Type.Length}");
+            if (array.Type.Open)
+            {
+                // past how many it has, up to its room, the slots are empty already
+                string label = ((VariableSymbol)((NameExpr)array).Symbol!).Label;
+                Emit($"mov eax, [{label} + 8]");
+                Emit("cmp [esp], eax");
+            }
+            else Emit($"cmp dword [esp], {array.Type.Length}");
             Emit($"jae {done}");
             EmitPlaceAddress(array);
             Emit("mov edx, [esp]");
@@ -3623,6 +3765,12 @@ namespace Phi.Compiler.CodeGen
             var sb = new StringBuilder();
             List<object>? values = v.StaticValues;
             PhiType t = v.Type;
+
+            if (v.GrowingArray)
+            {
+                sb.AppendLine($"{v.Label}: dd 0, 0, 0   ; an array that grows: its elements (on the heap), how many, its room");
+                return sb.ToString();
+            }
 
             if (t.Kind is TypeKind.F16 or TypeKind.F32 or TypeKind.F64)
             {

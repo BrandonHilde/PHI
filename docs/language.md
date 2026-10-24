@@ -322,6 +322,23 @@ int some[atmost 10];
 some is a;                    # some.len is 3
 ```
 
+**Arrays that grow.** An array without a size, `int scores[];`, starts empty and grows as
+`++` adds to it, with no most (in a 32-bit kernel or a user program: its elements are on
+the heap). `.len` is how many it has, and `.max` the room it has right now. Everything
+else works as for any array: indexes (checked against `.len`), `.len is` and `.len--` to
+shrink it, copying (`scores is other;`, which grows it to fit), comparing, and passing it
+to a method that takes `int numbers[]`. A method's own are let go when it ends.
+
+```phi
+int scores[];
+scores++ 42;
+scores++ 7 9;
+new Node nodes[];             # objects too
+nodes++;
+```
+
+`str` arrays and struct fields without a size aren't supported yet.
+
 **Arrays filled as they go.** `T name[atmost N]` has room for `N` elements and starts
 empty. `++` adds to its end, `.len` is how many are in it, and an index is checked against
 `.len`, not the room, so an element that was never added can't be read by mistake:

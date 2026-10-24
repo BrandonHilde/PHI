@@ -1,0 +1,86 @@
+# Arrays without a size: they grow as they're added to.
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.GrowingArrays:Kernel
+{
+	int scores[];
+	log scores.len ' ' scores.max '\n';
+	while int i: 0; i < 100; i++;
+		scores++ i * i;
+	;;
+	log scores.len ' ' (scores.max >= 100) ' ' scores:0 ' ' scores:99 ' ' (Sum: scores) '\n';
+
+	# shrinking keeps the first ones; adding again goes on from there
+	scores.len is 3;
+	scores++ 7;
+	log scores.len ' ' scores:2 ' ' scores:3 '\n';
+
+	# copied into and out of, and compared
+	int fixed: 1 2 3;
+	int copy[];
+	copy is fixed;
+	log copy.len ' ' (copy is fixed) '\n';
+	int back[3];
+	copy:0 is 5;
+	back is copy;
+	log back:0 back:1 back:2 '\n';
+
+	# structs, floats and objects
+	Point points[];
+	points++;
+	points:0.y is 4;
+	f64 values[];
+	values++ 1.5 2.5;
+	new Node nodes[];
+	new Node first: 10;
+	nodes++ first;
+	nodes++;
+	nodes:1.value is 20;
+	nodes:1.next is nodes:0;
+	log points:0.y ' ' values:1 ' ' nodes.len ' ' nodes:1.next.value '\n';
+	nodes.len--;
+	log nodes.len '\n';
+
+	# a method's own are let go when it ends
+	u32 before: Heap.used_bytes;
+	call Build;
+	log 'heap back: ' (Heap.used_bytes is before) '\n';
+
+	# past how many it has is an index error
+	int n: 4;
+	log scores:n;
+	exit 0;
+
+	[Sum: int numbers[];]
+		int total: 0;
+		while int i: 0; i < numbers.len; i++;
+			total++ numbers:i;
+		;;
+	[end: total]
+
+	[Build]
+		new Node list[];
+		int many[];
+		while int k: 0; k < 50; k++;
+			list++;
+			list:k.next is list:0;
+			many++ k;
+		;;
+		int copy[];
+		copy is many;
+		while int r: 0; r < 3; r++;
+			int again[];
+			again++ r;
+		;;
+	[end]
+}

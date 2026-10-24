@@ -99,7 +99,8 @@ namespace Phi.Compiler
             bool user = program.Classes.Any(c => c.Base == Binder.ProgramBase);
             // (a str without a size grows on the heap too)
             bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null }
-                                                                 || n is VarDecl { BufferSize: null } d && (d.Type.Name == "str" || d.Type.Name == "var" && d.Values.Any(v => v is StringExpr)))
+                                                                 || n is VarDecl { BufferSize: null } d && (d.Type.Name == "str" || d.Type.Name == "var" && d.Values.Any(v => v is StringExpr))
+                                                                 || n is VarDecl { Unsized: true })   // an array that grows
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
             string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;
             SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main) : null;

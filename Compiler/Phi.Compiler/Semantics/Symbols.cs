@@ -250,6 +250,13 @@ namespace Phi.Compiler.Semantics
         public bool GrowingElements { get; set; }
 
         /// <summary>
+        /// An array without a size (int scores[];), in a 32-bit kernel or a user program: like an
+        /// array parameter, its storage is where its elements are (on the heap), how many there are,
+        /// and the room there is; ++ makes more room as it's needed.
+        /// </summary>
+        public bool GrowingArray { get; set; }
+
+        /// <summary>
         /// Values known at compile time, placed directly in the data. Each is a long, or a
         /// string for str elements. Null when the declaration has to run code instead.
         /// </summary>
