@@ -1,0 +1,54 @@
+# Draw with the mouse; keys 1 to 6 pick a color, C clears.
+use gui.app;
+
+phi.SketchApp:Program
+{
+	const int W: 320;
+	const int H: 240;
+	u32 colors: 0x202020 0xE0483E 0x3DBE5A 0x2F6FE4 0xF5C542 0xC84FD8;
+	u32 color: 0x202020;
+	bln down: false;
+	int last_x: 0;
+	int last_y: 0;
+
+	if (App.Open: W H) is false
+		exit 1;
+	;;
+	call Clear;
+
+	while true
+		call App.WaitEvent;
+		int kind: App.event.kind;
+		if kind is Events.CLOSE
+			exit 0;
+		;;
+		if kind is Events.KEY
+			int key: App.event.value & 0xFFFF;
+			if key >= '1' and key <= '6'
+				color is colors:(key - '1');
+			;;
+			if key is 'c' or key is 'C'
+				call Clear;
+			;;
+		;;
+		if kind is Events.MOUSE
+			bln pressed: (App.event.value & 1) is not 0;
+			if pressed and down
+				call Draw.Line: last_x last_y App.event.x App.event.y color;
+			;;
+			elif pressed
+				call Draw.FillRect: App.event.x - 1 App.event.y - 1 3 3 color;
+			;;
+			down is pressed;
+			last_x is App.event.x;
+			last_y is App.event.y;
+			call App.Present;
+		;;
+	;;
+
+	[Clear]
+		call Draw.Clear: Draw.WHITE;
+		call Draw.Text: 6 H - 20 '1-6 color, C clears' Draw.GRAY;
+		call App.Present;
+	[end]
+}

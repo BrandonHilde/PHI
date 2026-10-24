@@ -539,11 +539,16 @@ these were added:
   and objects work there too
 - [x] Strings that grow: a `str` without a size grows on the heap up to 65,535 characters
   (in 32-bit kernels and programs); `str s: [N];` is still a fixed buffer of at most N
+- [x] GUI apps as user programs: `gui.app` (a window for a program, drawn with `gfx.draw`,
+  events in a queue), `gui.surfaces` (the kernel's side, through system calls 64 to 67 and
+  `Process.more_calls`), `gui.desktop` (windows with title bars and close boxes, focus,
+  dragging), and `samples/desktop.phi`
 
 The parts most worth doing next, roughly in order:
 
-1. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`, then system calls
-   for a surface of pixels and input events, so GUI apps can be separate user programs.
+1. **Widgets** for those windows: buttons, text fields, lists and scroll bars (PhiOS's
+   `os/ui.phi` has a start), windows that can be resized, and a program opening more than
+   one window.
 2. **64-bit integers** (`i64`/`u64`), then `dec`/`fin`: PhiOS's calculator needed assembly
    for `a * b / 1000`.
 3. **`switch`, enums and interfaces**, so dispatching to a list of apps isn't one if/elif

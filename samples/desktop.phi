@@ -1,0 +1,32 @@
+# Desktop: three GUI apps, each a user program in a window of its own.
+#
+#   phi run samples/desktop.phi
+#
+# Click in QEMU's window to give it the mouse (Ctrl+Alt+G gives it back). Click a window
+# to bring it to the front, drag it by its title bar, and close it with the box at the
+# right of its title bar. Keys go to the front window. When the last window closes, the
+# machine stops.
+#
+# The apps are in samples/desktop.rootfs: phi build compiles each into a program on the
+# disk. Each one draws with gfx.draw on pixels of its own (gui.app) and the kernel puts
+# them on the screen (gui.desktop). One that crashes loses only its own window.
+
+use gui.desktop;
+
+phi.DesktopSample:Kernel
+{
+	if (Screen.Start: 800 600) is false
+		log 'no graphics adapter\n';
+		exit 1;
+	;;
+	call Desktop.Start;
+	call Desktop.Run: 'SKETCH.BIN' 'Sketch' 40 40;
+	call Desktop.Run: 'NOTES.BIN' 'Notes' 420 60;
+	call Desktop.Run: 'CLOCK.BIN' 'Clock' 480 380;
+
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+	;;
+	exit 0;
+}

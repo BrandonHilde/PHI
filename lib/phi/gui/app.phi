@@ -1,0 +1,68 @@
+# A window for a user program: draw with gfx.draw, show it, and take events. The
+# kernel puts it on the screen (gui.surfaces).
+#
+#   use gui.app;
+#   phi.Hello:Program
+#   {
+#       if (App.Open: 200 100) is false
+#           exit 1;
+#       ;;
+#       call Draw.Clear: Draw.WHITE;
+#       call Draw.Text: 10 10 'Hello' Draw.BLACK;
+#       call App.Present;
+#       while true
+#           call App.WaitEvent;
+#           if App.event.kind is Events.CLOSE
+#               exit 0;
+#           ;;
+#           if App.event.kind is Events.KEY ...      # App.event.value is the key
+#           if App.event.kind is Events.MOUSE ...    # .x .y .value (buttons) .clicks .wheel
+#       ;;
+#   }
+#
+# Open makes the program's pixels (on its heap), points Draw at them and copies the
+# kernel's font, so Draw's text works. Nothing shows until Present. A crash ends only
+# this program: the kernel and the other windows carry on.
+
+use gfx.draw;
+use gui.events;
+
+phi.App:Program
+{
+	ptr<u32> pixels: 0;
+	int width: 0;
+	int height: 0;
+	GuiEvent event;             # the event NextEvent or WaitEvent took
+
+	# a window of w x h pixels, drawn on with Draw; false if the kernel can't make one
+	[Open: int w: 0; int h: 0;]
+		if (OS.SurfaceOpen: w h) is 0 return false;
+		if pixels is not 0
+			free pixels;
+		;;
+		pixels is new u32[w * h];
+		if pixels is 0 return false;
+		width is w;
+		height is h;
+		if (OS.CopyFont: addr Font.glyphs) is 1
+			Font.loaded is true;
+		;;
+		call Draw.Target: pixels w h;
+	[end: true]
+
+	# show what's been drawn
+	[Present]
+		call OS.SurfacePresent: pixels;
+	[end]
+
+	# the next event into App.event; false when there's none yet
+	[NextEvent]
+	[end: (OS.NextEvent: addr event) is 1]
+
+	# wait for the next event, sleeping a little between looks
+	[WaitEvent]
+		while (NextEvent) is false
+			call OS.Sleep: 10;
+		;;
+	[end]
+}

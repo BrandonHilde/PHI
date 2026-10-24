@@ -1,0 +1,6 @@
+desktop: started 1
+painter: open
+painter: click 10 20
+painter: key 114
+painter: asked to close
+desktop: no windows left

@@ -1,0 +1,9 @@
+painter: text 16 wide, font 1
+opened 64x48
+white 1 text 1
+red 1
+blue 1 beside it 1
+closed with 7, surface gone 1
+crashgui: opened 1
+crashed with -1, surface gone 1
+kernel still running

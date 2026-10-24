@@ -1,0 +1,42 @@
+# GUI apps as user programs: a program draws in a window of its own and takes events;
+# the kernel looks at its surface and posts to it, as a window manager would.
+use gui.surfaces;
+use drivers.vbe;
+
+phi.Test:Kernel
+{
+	call Screen.LoadFont;           # (still in text mode) so programs' text works
+
+	int pid: (Process.Spawn: 'PAINTER.BIN');
+	call WaitPicture: pid;
+	debug 'opened ' Surfaces.width:pid 'x' Surfaces.height:pid '\n';
+	debug 'white ' (Surfaces.pixels:pid:(47 * 64 + 63) is Draw.WHITE) ' text ' (Surfaces.pixels:pid:(5 * 64) is Draw.BLACK) '\n';
+
+	call Surfaces.PostKey: pid 'r';
+	call WaitPicture: pid;
+	debug 'red ' (Surfaces.pixels:pid:0 is Draw.RED) '\n';
+
+	call Surfaces.PostMouse: pid 10 20 1 1 0;
+	call WaitPicture: pid;
+	debug 'blue ' (Surfaces.pixels:pid:(20 * 64 + 10) is Draw.BLUE) ' beside it ' (Surfaces.pixels:pid:(20 * 64 + 9) is Draw.RED) '\n';
+
+	call Surfaces.PostClose: pid;
+	int code: (Process.Wait: pid);
+	debug 'closed with ' code ', surface gone ' (Surfaces.pixels:pid is 0) '\n';
+
+	# a program that crashes loses its window; the kernel carries on
+	int crash: (Process.Spawn: 'CRASHGUI.BIN');
+	int crashed: (Process.Wait: crash);
+	debug 'crashed with ' crashed ', surface gone ' (Surfaces.pixels:crash is 0) '\n';
+	debug 'kernel still running\n';
+	exit 0;
+
+	# until the program shows a new picture
+	[WaitPicture: int pid: 0;]
+		int tries: 0;
+		while (Surfaces.TakeChanged: pid) is false and tries < 100000
+			call OS.Yield;
+			tries++;
+		;;
+	[end]
+}

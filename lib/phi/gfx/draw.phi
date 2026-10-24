@@ -1,5 +1,5 @@
 # Drawing in 32-bit color: rectangles, lines, circles, gradients, images and text.
-# 32-bit kernels.
+# 32-bit kernels and user programs.
 #
 #   use drivers.vbe;                         # Screen.Start points Draw at its back buffer
 #   call Draw.FillRect: 10 10 100 50 Draw.BLUE;
@@ -39,7 +39,7 @@ struct.DrawTarget
 	int clip_depth;
 }
 
-phi.Draw:Kernel
+phi.Draw:Library
 {
 	const u32 BLACK: 0x000000;
 	const u32 WHITE: 0xFFFFFF;

@@ -1,0 +1,10 @@
+use gui.app;
+
+phi.CrashGui:Program
+{
+	bln opened: (App.Open: 32 32);
+	log 'crashgui: opened ' opened '\n';
+	ptr<u32> kernel: 0x100000;
+	kernel:0 is 1;
+	log 'not reached\n';
+}

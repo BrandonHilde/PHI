@@ -17,7 +17,7 @@
 #
 # The card's registers are two I/O ports, set with outw; the picture lives in a linear
 # framebuffer the card shows from its PCI memory (BAR 0), which Start maps into the
-# page tables. Start also copies the text font out of the card first (gfx.font), and
+# page tables. Start also copies the text font out of the card first (LoadFont), and
 # points Draw at the back buffer. It needs the heap for the back buffer
 # (width x height x 4 bytes).
 
@@ -154,7 +154,7 @@ phi.Screen:Kernel
 		;;
 
 		# the font is only reachable while the card is still showing text
-		call Font.Load;
+		call LoadFont;
 
 		call SetRegister: VBE_ENABLE 0;
 		call SetRegister: VBE_XRES w;
@@ -233,6 +233,33 @@ phi.Screen:Kernel
 	[end]
 
 	# show the mouse pointer with its tip at (x, y)
+	# copy the VGA card's font (gfx.font) out of its memory plane 2, 32 bytes per
+	# character; only while the card is still in text mode (Start does this first)
+	[LoadFont]
+		if not Font.loaded
+			out 0x3C4 2;            # sequencer: write to plane 2 only
+			out 0x3C5 4;
+			out 0x3C4 4;            # sequencer: sequential addressing
+			out 0x3C5 7;
+			out 0x3CE 4;            # graphics controller: read from plane 2
+			out 0x3CF 2;
+			out 0x3CE 5;            # no odd/even addressing
+			out 0x3CF 0;
+			out 0x3CE 6;            # memory at 0xA0000, 64 KB
+			out 0x3CF 4;
+
+			ptr<u8> plane: 0xA0000;
+			unsafe
+				while int c: 0; c < 256; c++;
+					while int r: 0; r < 16; r++;
+						Font.glyphs:(c * 16 + r) is plane:(c * 32 + r);
+					;;
+				;;
+			;;
+			Font.loaded is true;
+		;;
+	[end]
+
 	[MoveCursor: int x: 0; int y: 0;]
 		call HideCursor;
 		cursor_x is x;

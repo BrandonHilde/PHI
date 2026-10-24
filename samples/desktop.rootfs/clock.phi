@@ -1,0 +1,52 @@
+# The time, ticking: a second hand drawn around a dial.
+use gui.app;
+use user.math;
+
+phi.ClockApp:Program
+{
+	const int SIZE: 120;
+	# the second hand's end for each 5 seconds, from 12 o'clock, on a circle of 50
+	int ends_x: 0 25 43 50 43 25 0 -25 -43 -50 -43 -25;
+	int ends_y: -50 -43 -25 0 25 43 50 43 25 0 -25 -43;
+
+	if (App.Open: SIZE SIZE) is false
+		exit 1;
+	;;
+
+	int seconds: 0;
+	int last: (OS.GetTicks);
+	call Show: seconds;
+	while true
+		while (App.NextEvent)
+			if App.event.kind is Events.CLOSE
+				exit 0;
+			;;
+		;;
+		int now: (OS.GetTicks);
+		if now - last >= 1000
+			last++ 1000;
+			seconds is (seconds + 1) % 60;
+			call Show: seconds;
+		;;
+		call OS.Sleep: 20;
+	;;
+
+	[Show: int s: 0;]
+		int c: SIZE / 2;
+		call Draw.Clear: Draw.WHITE;
+		call Draw.FillCircle: c c 54 0xEEF2F7;
+		call Draw.Circle: c c 54 Draw.GRAY;
+		# the hand moves a step each second, between the marks for every 5
+		int mark: s / 5;
+		int next: (mark + 1) % 12;
+		int part: s % 5;
+		int x: ends_x:mark + (ends_x:next - ends_x:mark) * part / 5;
+		int y: ends_y:mark + (ends_y:next - ends_y:mark) * part / 5;
+		call Draw.Line: c c c + x c + y Draw.RED;
+		call Draw.FillCircle: c c 3 Draw.BLACK;
+		str label: '';
+		label is s ' s';
+		call Draw.Centered: 0 SIZE - 18 SIZE label Draw.BLACK;
+		call App.Present;
+	[end]
+}

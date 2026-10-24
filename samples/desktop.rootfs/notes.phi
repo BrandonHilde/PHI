@@ -1,0 +1,56 @@
+# Type a note: letters, Enter for a new line, Backspace to take one back.
+use gui.app;
+
+phi.NotesApp:Program
+{
+	const int W: 300;
+	const int H: 200;
+	str text: '';               # grows as it's typed
+	str typed: [1];             # one letter
+
+	if (App.Open: W H) is false
+		exit 1;
+	;;
+	call Show;
+
+	while true
+		call App.WaitEvent;
+		if App.event.kind is Events.CLOSE
+			exit 0;
+		;;
+		if App.event.kind is Events.KEY
+			int key: App.event.value & 0xFFFF;
+			if key is 8 and text.len > 0
+				text:(text.len - 1) is 0;
+			;;
+			elif key is 13
+				text++ '\n';
+			;;
+			elif key >= ' ' and key < 127
+				typed:0 is key;     # (text++ key would write the number)
+				text++ typed;
+			;;
+			call Show;
+		;;
+	;;
+
+	# the text, a line at a time, with a bar where the next letter goes
+	[Show]
+		call Draw.Clear: 0xFFFDE7;
+		int x: 6;
+		int y: 6;
+		while int i: 0; i < text.len; i++;
+			u8 c: text:i;
+			if c is '\n' or x > W - 14
+				x is 6;
+				y++ 18;
+			;;
+			if c is not '\n'
+				call Draw.Char: x y c Draw.BLACK;
+				x++ 8;
+			;;
+		;;
+		call Draw.FillRect: x y 2 16 Draw.BLUE;
+		call App.Present;
+	[end]
+}

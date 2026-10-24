@@ -1,0 +1,19 @@
+# What a window is told: keys, the mouse, and being asked to close. The kernel's
+# side (gui.surfaces) and a program's side (gui.app) both use this.
+
+struct.GuiEvent
+{
+	int kind;                   # Events.KEY, Events.MOUSE (a button, the wheel, or a move) or Events.CLOSE
+	int x;                      # MOUSE: where, from the window's top left
+	int y;
+	int value;                  # KEY: the key, with Input's MOD_ bits; MOUSE: the buttons held (bit 0 left)
+	int clicks;                 # MOUSE: 1 when the left button went down, 2 for a double click
+	int wheel;                  # MOUSE: how far the wheel turned (down is positive)
+}
+
+phi.Events:Library
+{
+	const int KEY: 1;
+	const int MOUSE: 2;
+	const int CLOSE: 3;         # the window should close: the program ends itself
+}

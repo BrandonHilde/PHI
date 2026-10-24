@@ -31,6 +31,25 @@ phi.Fetch:Kernel
 }
 ```
 
+<h3>A desktop</h3>
+
+`phi run samples/desktop.phi` boots a desktop with three apps in windows: a sketch pad, a
+notepad and a clock. Each app is a user program of its own, drawing on its own pixels with
+the same graphics library the kernel uses, so a crash in one closes only its window:
+
+```phi
+use gui.app;
+
+phi.Hello:Program
+{
+    if (App.Open: 200 100)
+        call Draw.Text: 10 10 'Hello' Draw.BLACK;
+        call App.Present;
+        call App.WaitEvent;         # a key, the mouse, or being asked to close
+    ;;
+}
+```
+
 <h3>Music</h3>
 
 `phi run samples/music.phi` boots a jukebox kernel, and `play music/ode.sng` plays a song
@@ -118,6 +137,7 @@ phi.Count:Program
        phi run samples/terminal.phi      a simpler kernel with built-in commands (ls, cat, run hello.bin ...)
        phi run samples/web.phi           fetch web pages: type a URL, see the raw HTML
        phi run samples/music.phi         a jukebox: songs and a WAV file, on the sound card
+       phi run samples/desktop.phi       a desktop: apps as programs, each in a window
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output

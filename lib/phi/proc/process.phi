@@ -13,7 +13,9 @@
 # that grows up from there (OS.Grow, which memory.heap uses for new), and the
 # kernel's memory mapped but out of reach. It talks to the kernel through
 # system calls (lib/x86_32/tasks.asm); the ones numbered 16 and up (programs,
-# files, process information, the screen, sound) are handled here.
+# files, process information, the screen, sound) are handled here. Libraries add
+# their own from 64 up (gui.surfaces does) by setting more_calls, and on_release
+# hears when a program's memory is about to go back.
 #
 # The timer shares the CPU between programs. The kernel's own code runs until it
 # waits (Wait, WaitAll, OS.Yield) or its main code ends.
@@ -84,6 +86,7 @@ phi.Process:Kernel
 	const u32 SYS_SOUND_STOP: 35;
 	const u32 SYS_SOUND_VOLUME: 36;
 	const u32 SYS_GROW: 37;
+	const u32 SYS_MORE: 64;                 # from here on, more_calls handles them
 
 	const u32 HEAP_LIMIT: 0x48000000;       # a program's heap is at most 124 MB (from USER_TOP)
 	const u32 GROW_SPARE: 256;              # frames left for the kernel when a program grows
@@ -96,6 +99,11 @@ phi.Process:Kernel
 	u32 started: 0;
 	u8 call_path[64];                       # copies of a system call's text arguments
 	u8 call_arguments[256];
+
+	# system calls 64 and up: their number and four arguments, and the result to give back
+	method<u32 u32 u32 u32 u32: int> more_calls: 0;
+	# told a process's number before its memory goes back
+	method<int> on_release: 0;
 
 	call OS.StartMultitasking;
 	call OS.SetSyscallHandler: addr HandleSyscall;
@@ -258,6 +266,9 @@ phi.Process:Kernel
 
 	# give a finished program's memory back
 	[Release: int pid: 0;]
+		if on_release is not 0
+			call on_release: pid;
+		;;
 		ptr<u32> directory: process_directory:pid;
 		# its 4 MB of code, data and stack, then each 4 MB its heap grew into
 		while u32 d: USER_BASE >> 22; d <= (process_heap_end:pid - 1) >> 22; d++;
@@ -469,6 +480,11 @@ phi.Process:Kernel
 		;;
 		elif number is SYS_GROW
 			call result is Grow: first;
+		;;
+		elif number >= SYS_MORE
+			if more_calls is not 0
+				call result is more_calls: number first second third fourth;
+			;;
 		;;
 		elif sound is false
 			# no sound card: every sound call returns -1

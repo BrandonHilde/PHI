@@ -870,7 +870,7 @@ Nothing waits on an interrupt: the methods that wait (`Ping`, `Dns.Resolve`, `Tc
 ...) poll the card, and sleep a millisecond when it has nothing. Up to four TCP connections
 can be open at once, each with an 8 KB receive buffer.
 
-## Graphics and input (32-bit kernels)
+## Graphics and input (32-bit kernels and programs)
 
 `drivers.vbe` switches QEMU's standard display adapter to graphics with 32-bit color,
 `gfx.draw` draws, and `drivers.input` reads the keyboard and mouse from their interrupts.
@@ -953,6 +953,62 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
 - `Paging.MapDevice: address bytes` makes other device memory reachable the same way.
 
 [samples/sketch.phi](../samples/sketch.phi) is a small drawing program using all three.
+
+### Windows for programs
+
+A GUI app can be a [user program](#programs-and-processes) of its own, so a bug in it ends
+only that program. It opens a window with `gui.app`, draws on it with the same `Draw`
+(and the kernel's font), and takes events:
+
+```phi
+use gui.app;
+
+phi.Hello:Program
+{
+    if (App.Open: 200 100) is false     # w x h pixels for it to draw on
+        exit 1;
+    ;;
+    call Draw.Clear: Draw.WHITE;
+    call Draw.Text: 10 10 'Hello' Draw.BLACK;
+    call App.Present;                   # show what's been drawn
+    while true
+        call App.WaitEvent;             # into App.event (a GuiEvent, gui.events)
+        if App.event.kind is Events.CLOSE
+            exit 0;
+        ;;
+        # Events.KEY: App.event.value is the key, with Input's MOD_ bits
+        # Events.MOUSE: .x .y (from its top left), .value (buttons), .clicks (1, or 2 for a
+        # double click), .wheel
+    ;;
+}
+```
+
+The kernel decides where each window goes and who gets the input. `gui.desktop` does it
+all: a window with a title bar and close box for each program, the front window taking
+the keys, clicks bringing a window to the front, dragging by the title bar, and the close
+box asking the program to close (it gets `Events.CLOSE`). A program that ends, or crashes,
+loses its window.
+
+```phi
+use gui.desktop;
+
+if (Screen.Start: 800 600)
+    call Desktop.Start;
+    call Desktop.Run: 'HELLO.BIN' 'Hello' 40 40;   # start a program in a window
+    while Desktop.windows.len > 0
+        call Desktop.Step;              # input, events, drawing (only when something changed)
+        call OS.Yield;                  # and the programs run
+    ;;
+;;
+```
+
+A kernel with a window manager of its own uses `gui.surfaces` underneath:
+`(Surfaces.TakeChanged: pid)` says a program showed a new picture, `Surfaces.DrawAt: pid x
+y` draws it (through `Draw`, so cut to the view), and `PostKey: pid key`, `PostMouse: pid x
+y buttons clicks wheel` and `PostClose: pid` queue events for it (32 each). The system calls
+underneath are `OS.SurfaceOpen: w h`, `OS.SurfacePresent: pixels`, `OS.NextEvent: event` and
+`OS.CopyFont: glyphs` (64 to 67); `proc.process` hands calls from 64 up to
+`Process.more_calls`, so other libraries can add their own.
 
 ## Sound (32-bit kernels)
 
@@ -1343,6 +1399,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
+| `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |

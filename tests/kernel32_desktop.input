@@ -1,0 +1,24 @@
+# the window's frame is at (40, 40): a 20-pixel title bar, then its inside from (42, 60)
+expect painter: open
+wait 300
+pixel 42 60 FFFFFF
+pixel 30 30 2B4A6F
+# a click inside reaches the program at (10, 20) from its top left
+click 52 80
+expect painter: click 10 20
+wait 300
+pixel 50 78 2F6FE4
+# keys go to the front window
+type r
+expect painter: key 114
+wait 300
+pixel 45 63 E0483E
+# drag it by its title bar, 100 pixels right and down
+drag 60 50 160 150
+wait 500
+pixel 145 163 E0483E
+pixel 45 63 2B4A6F
+# its close box, at the right of the title bar (the frame is 68 wide)
+click 197 150
+expect painter: asked to close
+expect desktop: no windows left

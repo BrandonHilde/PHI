@@ -1,0 +1,155 @@
+# Windows for user programs, on the kernel's side. 32-bit kernels with proc.process.
+#
+#   use gui.surfaces;
+#   int pid: (Process.Spawn: 'PAINT.BIN');
+#   ...
+#   if (Surfaces.TakeChanged: pid)              # it showed a new picture
+#       call Surfaces.DrawAt: pid 100 80;       # draw it (with Draw, so cut to the view)
+#   ;;
+#   call Surfaces.PostKey: pid key;             # tell it about a key ...
+#   call Surfaces.PostMouse: pid x y buttons clicks wheel;   # ... the mouse (x, y inside it)
+#   call Surfaces.PostClose: pid;               # ... or that it should close
+#
+# A program (with gui.app) opens one surface: a block of w x h pixels the kernel keeps
+# for it. It draws on its own pixels and Presents them, which copies them here, and
+# takes the events posted to it, oldest first (32 are kept; Post gives false when its
+# queue is full). The kernel decides where a surface goes on the screen and which
+# program gets the keys: that's the window manager's work, and this leaves it to the
+# kernel. A program that crashes loses its surface; the kernel carries on.
+#
+# The system calls (64 to 67) are OS.SurfaceOpen, OS.SurfacePresent, OS.NextEvent and
+# OS.CopyFont; Surfaces answers them through Process.more_calls.
+
+use proc.process;
+use memory.mem;
+use gfx.draw;
+use gui.events;
+
+phi.Surfaces:Kernel
+{
+	const u32 SYS_SURFACE_OPEN: 64;
+	const u32 SYS_SURFACE_PRESENT: 65;
+	const u32 SYS_NEXT_EVENT: 66;
+	const u32 SYS_COPY_FONT: 67;
+	const int MAX_PROCESSES: 16;
+	const int QUEUE: 32;
+	const int MOST_SIDE: 4096;
+	const int MOST_PIXELS: 1920 * 1200;
+
+	ptr<u32> pixels[16];        # each process's surface (0: none)
+	int width[16];
+	int height[16];
+	int presents[16];           # how many pictures it has shown
+	bln changed[16];            # a new one since TakeChanged last looked
+	GuiEvent queue[512];        # QUEUE events for each process
+	int head[16];
+	int tail[16];
+
+	Process.more_calls is addr Calls;
+	Process.on_release is addr Release;
+
+	# a system call from a program
+	[Calls: u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
+		int pid: (OS.CurrentTask);
+		if pid <= 0 or pid >= MAX_PROCESSES return -1;
+		if number is SYS_SURFACE_OPEN return (Open: pid a b);
+		if number is SYS_SURFACE_PRESENT return (Present: pid a);
+		if number is SYS_NEXT_EVENT return (Next: pid a);
+		if number is SYS_COPY_FONT return (CopyFont: a);
+	[end: -1]
+
+	# a surface of w x h pixels for the process (any it had goes); 1, or 0 if it can't
+	[Open: int pid: 0; int w: 0; int h: 0;]
+		if w <= 0 or h <= 0 or w > MOST_SIDE or h > MOST_SIDE return 0;
+		if w * h > MOST_PIXELS return 0;
+		call Release: pid;
+		ptr<u32> p: new u32[w * h];
+		if p is 0 return 0;
+		pixels:pid is p;
+		width:pid is w;
+		height:pid is h;
+	[end: 1]
+
+	# the program's picture, at from in its memory, copied into its surface
+	[Present: int pid: 0; u32 from: 0;]
+		if pixels:pid is 0 return 0;
+		u32 bytes: width:pid * height:pid * 4;
+		if (Process.UserRange: from bytes) is false return 0;
+		call Mem.Copy: pixels:pid from bytes;
+		presents:pid++;
+		changed:pid is true;
+	[end: 1]
+
+	# the oldest event posted to the program, into the GuiEvent at to; 1, or 0 if none
+	[Next: int pid: 0; u32 to: 0;]
+		if (Process.UserRange: to sizeof GuiEvent) is false return 0;
+		if head:pid is tail:pid return 0;
+		ptr<GuiEvent> event: to;
+		event:0 is queue:(pid * QUEUE + tail:pid);
+		tail:pid is (tail:pid + 1) % QUEUE;
+	[end: 1]
+
+	# the font (gfx.font), so the program's text looks like the kernel's
+	[CopyFont: u32 to: 0;]
+		if Font.loaded is false return 0;
+		if (Process.UserRange: to sizeof Font.glyphs) is false return 0;
+		call Mem.Copy: to Font.glyphs sizeof Font.glyphs;
+	[end: 1]
+
+	# ------------------------------------------------------------ for the window manager
+
+	# put an event in the process's queue; false if it has no surface or its queue is full
+	[Post: int pid: 0; int kind: 0; int x: 0; int y: 0; int value: 0; int clicks: 0; int wheel: 0;]
+		if pid <= 0 or pid >= MAX_PROCESSES return false;
+		if pixels:pid is 0 return false;
+		int next: (head:pid + 1) % QUEUE;
+		if next is tail:pid return false;
+		int slot: pid * QUEUE + head:pid;
+		queue:slot.kind is kind;
+		queue:slot.x is x;
+		queue:slot.y is y;
+		queue:slot.value is value;
+		queue:slot.clicks is clicks;
+		queue:slot.wheel is wheel;
+		head:pid is next;
+	[end: true]
+
+	[PostKey: int pid: 0; int key: 0;]
+	[end: (Post: pid Events.KEY 0 0 key 0 0)]
+
+	# x and y from the surface's top left
+	[PostMouse: int pid: 0; int x: 0; int y: 0; int buttons: 0; int clicks: 0; int wheel: 0;]
+	[end: (Post: pid Events.MOUSE x y buttons clicks wheel)]
+
+	[PostClose: int pid: 0;]
+	[end: (Post: pid Events.CLOSE 0 0 0 0 0)]
+
+	# did the process show a new picture since the last time this was asked?
+	[TakeChanged: int pid: 0;]
+		if pid <= 0 or pid >= MAX_PROCESSES return false;
+		bln was: changed:pid;
+		changed:pid is false;
+	[end: was]
+
+	# draw the process's surface with its top left at (x, y)
+	[DrawAt: int pid: 0; int x: 0; int y: 0;]
+		if pid > 0 and pid < MAX_PROCESSES and pixels:pid is not 0
+			call Draw.Blit: x y width:pid height:pid pixels:pid width:pid;
+		;;
+	[end]
+
+	# the process ended (or opens another surface): its surface and events go
+	[Release: int pid: 0;]
+		if pid <= 0 or pid >= MAX_PROCESSES return;
+		if pixels:pid is not 0
+			free pixels:pid;
+		;;
+		pixels:pid is 0;
+		width:pid is 0;
+		height:pid is 0;
+		presents:pid is 0;
+		changed:pid is false;
+		head:pid is 0;
+		tail:pid is 0;
+	[end]
+}
