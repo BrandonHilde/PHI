@@ -927,7 +927,7 @@ namespace Phi.Compiler.CodeGen
             };
             if (call.ResultTarget == null)
             {
-                if (result.IsFloat && call.Resolved is MethodSymbol or BuiltinFunction) Emit("fstp st0               ; the result isn't kept");
+                if (result.IsFloat) Emit("fstp st0               ; the result isn't kept");
                 return;
             }
 
@@ -957,37 +957,9 @@ namespace Phi.Compiler.CodeGen
                         VariableSymbol p = method.Parameters[i];
                         Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
 
-                        if (p.Type.IsFloat)
+                        if (p.Type.IsFloat || p.Type.IsWide)
                         {
-                            if (value == null) Emit("fldz");
-                            else EmitFloat(value);
-                            if (p.Type.Kind == TypeKind.F64)
-                            {
-                                Emit("sub esp, 8");
-                                Emit("fstp qword [esp]");
-                                pushedBytes += 8;
-                                continue;
-                            }
-                            Emit("sub esp, 4");
-                            Emit("fstp dword [esp]");
-                            if (p.Type.Kind == TypeKind.F16)
-                            {
-                                Need("phi_f32_to_f16");
-                                Emit("mov eax, [esp]");
-                                Emit("call phi_f32_to_f16");
-                                Emit("mov [esp], eax");
-                            }
-                            pushedBytes += 4;
-                            continue;
-                        }
-                        if (p.Type.IsWide)
-                        {
-                            if (value == null) Emit("xor eax, eax");
-                            if (value == null) Emit("xor edx, edx");
-                            else EmitWide(value);
-                            Emit("push edx");
-                            Emit("push eax");
-                            pushedBytes += 8;
+                            pushedBytes += PushWideOrFloat(p.Type, value);
                             continue;
                         }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
@@ -1053,9 +1025,15 @@ namespace Phi.Compiler.CodeGen
                 {
                     // the same as calling the method by name, through the address the variable holds
                     IReadOnlyList<PhiType> types = pointer.Signature.Parameters;
+                    int pushed = 0;
                     for (int i = 0; i < types.Count; i++)
                     {
                         Expr value = arguments[i];
+                        if (types[i].IsFloat || types[i].IsWide)
+                        {
+                            pushed += PushWideOrFloat(types[i], value);
+                            continue;
+                        }
                         EmitExpr(value);
                         if (types[i].IsString && !IsText(value.Type))
                         {
@@ -1067,13 +1045,53 @@ namespace Phi.Compiler.CodeGen
                             LoadAddress("eax", text);
                         }
                         Emit("push eax");
+                        pushed += 4;
                     }
                     EmitExpr(pointer.Target);
                     Emit(bits32 ? "call eax" : "call ax");
-                    if (types.Count > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {types.Count * 4}");
+                    if (pushed > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushed}");
                     break;
                 }
             }
+        }
+
+        /// <summary>
+        /// Pushes an argument for a 64-bit or floating point parameter (0 when there's no value):
+        /// an i64 or f64 takes 8 bytes, the others 4 (an f16 in the low half). Gives the bytes pushed.
+        /// </summary>
+        int PushWideOrFloat(PhiType type, Expr? value)
+        {
+            if (type.IsWide)
+            {
+                if (value == null)
+                {
+                    Emit("xor eax, eax");
+                    Emit("xor edx, edx");
+                }
+                else EmitWide(value);
+                Emit("push edx");
+                Emit("push eax");
+                return 8;
+            }
+
+            if (value == null) Emit("fldz");
+            else EmitFloat(value);
+            if (type.Kind == TypeKind.F64)
+            {
+                Emit("sub esp, 8");
+                Emit("fstp qword [esp]");
+                return 8;
+            }
+            Emit("sub esp, 4");
+            Emit("fstp dword [esp]");
+            if (type.Kind == TypeKind.F16)
+            {
+                Need("phi_f32_to_f16");
+                Emit("mov eax, [esp]");
+                Emit("call phi_f32_to_f16");
+                Emit("mov [esp], eax");
+            }
+            return 4;
         }
 
         /// <summary>Calls a one-parameter heap method (Heap.Alloc or Heap.Free) with a value.</summary>
@@ -1264,19 +1282,55 @@ namespace Phi.Compiler.CodeGen
         void EmitWhen(WhenStmt when)
         {
             PhiType t = when.Subject.Type;
-            bool text = !t.IsNumeric || t.IsPointer && t.Pointee == PhiType.U8;
-            string subject = AllocTemp(4);
+            bool text = !t.IsNumeric && !t.IsWide && !t.IsFloat || t.IsPointer && t.Pointee == PhiType.U8;
+            string subject = AllocTemp(t.IsWide || t.IsFloat ? 8 : 4);
             string end = NewLabel("endwhen");
             string otherwise = when.Else != null ? NewLabel("whenelse") : end;
             var bodies = when.Branches.Select(_ => NewLabel("whenis")).ToList();
 
-            EmitExpr(when.Subject);
-            Emit($"mov dword [{subject}], eax");
+            if (t.IsFloat)
+            {
+                EmitFloat(when.Subject);
+                Emit($"fstp qword [{subject}]");
+            }
+            else if (t.IsWide)
+            {
+                EmitWide(when.Subject);
+                Emit($"mov dword [{subject}], eax");
+                Emit($"mov dword [{subject} + 4], edx");
+            }
+            else
+            {
+                EmitExpr(when.Subject);
+                Emit($"mov dword [{subject}], eax");
+            }
             for (int i = 0; i < when.Branches.Count; i++)
             {
                 foreach (Expr value in when.Branches[i].Values)
                 {
-                    if (text)
+                    if (t.IsFloat)
+                    {
+                        string differs = NewLabel("whennot");
+                        EmitFloat(value);
+                        Emit($"fld qword [{subject}]");
+                        Emit("fcompp");
+                        Emit("fnstsw ax");
+                        Emit("sahf");
+                        Emit($"jp {differs}              ; not a number is equal to nothing");
+                        Emit($"je {bodies[i]}");
+                        Label(differs);
+                    }
+                    else if (t.IsWide)
+                    {
+                        string differs = NewLabel("whennot");
+                        EmitWide(value);
+                        Emit($"cmp eax, [{subject}]");
+                        Emit($"jne {differs}");
+                        Emit($"cmp edx, [{subject} + 4]");
+                        Emit($"je {bodies[i]}");
+                        Label(differs);
+                    }
+                    else if (text)
                     {
                         Need("phi_strcmp");
                         EmitExpr(value);
@@ -2053,6 +2107,21 @@ namespace Phi.Compiler.CodeGen
                     EmitFloat(unary.Operand);
                     Emit("fchs");
                     return;
+
+                case BinaryExpr { Op: BinaryOp.Modulo } modulo:
+                {
+                    // what's left over, with the left's sign (like C's fmod): fprem goes until it's done
+                    EmitFloatPair(modulo.Left, modulo.Right);
+                    Emit("fxch                    ; st0 = the left, st1 = the right");
+                    string again = NewLabel("fprem");
+                    Label(again);
+                    Emit("fprem");
+                    Emit("fnstsw ax");
+                    Emit("sahf");
+                    Emit($"jp {again}              ; c2: not finished");
+                    Emit("fstp st1");
+                    return;
+                }
 
                 case BinaryExpr binary:
                     EmitFloatPair(binary.Left, binary.Right);

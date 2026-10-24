@@ -1,0 +1,75 @@
+# 64-bit and floating point numbers through method values, in when, and % on floats.
+struct.Shape
+{
+	f64 size;
+	method<ptr<Shape>: f64> area;
+}
+
+phi.NumberValues:Kernel
+{
+	# method values that take and return them
+	method<f64 f64: f64> op: addr Hypotenuse;
+	method<i64: i64> grow: addr Times1000;
+	method<f32 i64: f32> mix: addr Mix;
+	log (op: 3 4) ' ' (grow: 5000000) ' ' (mix: 1.5 10000000000) '\n';
+	call op: 1 1;                               # its result isn't kept
+	f64 kept: 0;
+	call kept is op: 6 8;
+	log kept '\n';
+
+	Shape square;
+	square.size is 1.5;
+	square.area is addr SquareArea;
+	log (square.area: addr square) '\n';
+
+	# when on them
+	call Describe: 5000000000;
+	call Describe: 7;
+	call Pick: 0.5;
+	call Pick: 2.25;
+	call Pick: 3.0;
+
+	# % on floating point: what's left, with the left's sign
+	log (7.5 % 2) ' ' (-7.5 % 2) ' ' (10 % 2.5) ' ' (1.0e10 % 3) '\n';
+	f64 angle: 7.0;
+	angle%% 3.14159265358979 * 2;
+	log angle '\n';
+	exit 0;
+
+	[Hypotenuse: f64 a: 0.0; f64 b: 0.0;]
+	[end: (Float.Sqrt: a * a + b * b)]
+
+	[Times1000: i64 n: 0;]
+	[end: n * 1000]
+
+	[Mix: f32 a: 0.0; i64 b: 0;]
+	[end: a * b]
+
+	[SquareArea: ptr<Shape> s: 0;]
+	[end: s.size * s.size]
+
+	[Describe: i64 n: 0;]
+		when n
+			is 5000000000
+				log 'five billion\n';
+			;;
+			is 7
+				log 'seven\n';
+			;;
+		;;
+	[end]
+
+	[Pick: f64 x: 0.0;]
+		when x
+			is 0.5
+				log 'a half\n';
+			;;
+			is 2.25 2.5
+				log 'two and a bit\n';
+			;;
+			else
+				log 'something else: ' x '\n';
+			;;
+		;;
+	[end]
+}

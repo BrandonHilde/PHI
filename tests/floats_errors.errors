@@ -1,4 +1,3 @@
-11:2: error: a method called through a variable can't take or return an i64, u64 or floating point number yet
 4:9: error: 'n' is an int, and this is an f64; write `as int` to keep its whole part
 5:9: error: this works on whole numbers
 7:12: error: an index is an int, and this is an f64

@@ -644,17 +644,12 @@ namespace Phi.Compiler.Semantics
                         .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
-                    if (parameters.Any(p => p.IsWide || p.IsFloat) || result.IsWide || result.IsFloat)
-                    {
-                        Error(t.Span, "a method called through a variable can't take or return an i64, u64 or floating point number yet");
-                        return PhiType.Error;
-                    }
                     if (result.IsString)
                     {
                         Error(t.Result!.Span, "a method called through a variable can't return a str yet; return a number");
                         return PhiType.Error;
                     }
-                    if (!result.IsNumeric && result.Kind != TypeKind.Void)
+                    if (!result.IsNumeric && !result.IsWide && !result.IsFloat && result.Kind != TypeKind.Void)
                     {
                         Error(t.Result!.Span, $"a method returns a number or a str, not a {result}");
                         return PhiType.Error;
@@ -1743,8 +1738,8 @@ namespace Phi.Compiler.Semantics
             BindExpr(w.Subject, scope);
             PhiType t = w.Subject.Type;
             bool text = t.IsString || (t.IsPointer && t.Pointee == PhiType.U8);
-            if (!t.IsError && !text && !t.IsNumeric)
-                Error(w.Subject.Span, $"when needs a number, an enum or text, and this is a {t}");
+            if (!t.IsError && !text && !t.IsNumeric && !t.IsWide && !t.IsFloat)
+                Error(w.Subject.Span, $"when needs a number, an enum or text, and this is {A(t)}");
 
             var seen = new Dictionary<long, Expr>();
             var seenText = new Dictionary<string, Expr>();
@@ -1772,7 +1767,7 @@ namespace Phi.Compiler.Semantics
                             : $"this when is on {A(t)}, and this is {A(value.Type)}; write `as {t}` if that's meant");
                         continue;
                     }
-                    value = Convert(value, t.IsEnum ? t : PhiType.Int, "each value of this when");
+                    value = Convert(value, t.IsEnum || t.IsWide || t.IsFloat ? t : PhiType.Int, "each value of this when");
                     branch.Values[i] = value;
                     if (ConstantFolder.Evaluate(value) is long k && !seen.TryAdd(k, value))
                         Error(value.Span, $"{(value is NameExpr n ? n.Name : k.ToString())} is already a value of this when (line {LineOf(seen[k])})");
@@ -2876,7 +2871,7 @@ namespace Phi.Compiler.Semantics
             // floating point: the other side becomes one too, and the wider of two kinds wins
             if ((b.Left.Type.IsFloat || b.Right.Type.IsFloat) && !b.IsLogical)
             {
-                if (b.Op is BinaryOp.Modulo or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor or BinaryOp.ShiftLeft or BinaryOp.ShiftRight)
+                if (b.Op is BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor or BinaryOp.ShiftLeft or BinaryOp.ShiftRight)
                 {
                     Error(b.Span, $"this works on whole numbers; for a floating point number, write ({Describe(b.Left.Type.IsFloat ? b.Left : b.Right)} as int)");
                     b.Type = PhiType.Error;

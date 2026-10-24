@@ -198,20 +198,21 @@ log (Float.Sqrt: 2) ' ' (Float.Round: 2.5); # 1.414214 2
   becomes a whole number only with `as`, which drops what's after the point.
 - `log` and building a `str` write up to 6 digits after the point, without zeros at the
   end, and an exponent from 10^12 up and under 0.0001; `inf`, `-inf` and `nan` too.
-- `%`, `~`, `&`, `|`, `^` and the shifts work only on whole numbers.
+- `%` gives what's left over with the left's sign (`-7.5 % 2` is -1.5, like C's `fmod`);
+  `~`, `&`, `|`, `^` and the shifts work only on whole numbers.
 - `Float.Sqrt`, `Abs`, `Sin`, `Cos` (radians), `Round` (halves to even), `Floor`, `Ceil`
   and `Trunc` each take one number and give an `f64`.
 - `f16` is for storing many numbers in little memory: it keeps about 3 digits, up to
   65504. Math on any kind happens with more precision than any of them, and is rounded
   when it's stored.
-- They work as variables, fields, array elements, parameters and results (but not in
-  method values yet), in 32-bit kernels and programs. Each program keeps its own floating
+- They work as variables, fields, array elements, parameters, results, method values
+  and a `when`'s value, in 32-bit kernels and programs. Each program keeps its own floating
   point registers when the CPU switches between them, but an interrupt handler shouldn't
   use them.
 
 Putting a 64-bit number where a 32-bit number goes (an `int`, an index, a parameter) is an
 error, since it may not fit: write `as int` to keep its low 32 bits. They work as variables, fields,
-array elements, parameters and results (but not in method values yet), and need 32-bit
+array elements, parameters, results, method values and a `when`'s value, and need 32-bit
 code: a 16-bit program can't have them.
 
 **Size of a `str`.** A `str` grows as text is written to it, up to its max (`.max`):
@@ -527,7 +528,8 @@ when (Input.NextKey)
 ;;
 ```
 
-The value can be a number, an [enum](#enums) or text (`when command` / `is 'ls' 'dir'`).
+The value can be a number (an `i64` or a floating point one too), an [enum](#enums) or
+text (`when command` / `is 'ls' 'dir'`).
 A value written in two branches is an error. A `when` on an enum with no `else` gets a
 warning for each of the enum's values it leaves out.
 
@@ -1624,8 +1626,6 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
   `has`, `^^` (power)
-- `i64`, `u64` and floating point numbers in method values (`method<i64: i64>`), and as a
-  `when`'s value
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - arrays of objects
