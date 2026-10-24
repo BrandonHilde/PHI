@@ -1055,9 +1055,11 @@ namespace Phi.Compiler.Semantics
 
                 if (d.Values.Count > 1)
                 {
-                    // every element gets the same room, so any element can be replaced by index
+                    // every element gets the same room to start with, so any element can be replaced
+                    // by index; with a heap, each grows from there
                     v.Type = PhiType.Str.ArrayOf(d.Values.Count);
                     v.Capacity = d.Values.Max(e => e is StringExpr s ? s.Value.Length + 1 : IntTextCapacity);
+                    v.GrowingElements = scope.Unit is UnitKind.Kernel or UnitKind.Program && !v.IsParameter;
                     return;
                 }
 
@@ -1488,6 +1490,12 @@ namespace Phi.Compiler.Semantics
             // has no value); a class variable with constant values is simply stored that way
             if (!classLevel || v.IsParameter || !allConstant)
                 v.NeedsInitCode = true;
+
+            if (v.GrowingElements)
+            {
+                HeapMethod("Heap.Alloc", decl.NameSpan, scope, $"str array '{decl.Name}' (its elements grow)");
+                HeapMethod("Heap.Free", decl.NameSpan, scope, $"str array '{decl.Name}' (its elements grow)");
+            }
 
             // a str that grows keeps its text on the heap; a class variable's constant starts in the
             // program's data (so it's there before any class starts), and moves when it outgrows it
@@ -2689,6 +2697,7 @@ namespace Phi.Compiler.Semantics
         {
             NameExpr { Symbol: VariableSymbol { Grows: true } } => null,   // checked against its room when it runs
             NameExpr { Symbol: VariableSymbol v } => v.Capacity,
+            IndexExpr { Target: NameExpr { Symbol: VariableSymbol { GrowingElements: true } } } => null,   // checked against its room
             IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } => v.Capacity, // an element of a str array
             _ => null,
         };

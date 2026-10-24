@@ -1,0 +1,41 @@
+use user.text;
+use user.math;
+
+phi.StrArrayGrow:Kernel
+{
+	# elements grow past their first values
+	str days: 'Mon' 'Tue' 'Wed';
+	days:1 is 'Tuesday, the second day of the week';
+	days:2++ 'nesday';
+	log days:0 '|' days:1 '|' days:2 '\n';
+	log days:1:9 days:1:(30) ' ' (Text.Length: days:1) '\n';
+
+	# still a table of text, where a ptr<ptr<u8>> goes
+	log (Longest: days days.len) '\n';
+
+	# a method's own: built in a loop, and its heap text given back at the end
+	u32 before: Heap.used_bytes;
+	call Build;
+	log 'heap back: ' (Heap.used_bytes is before) '\n';
+
+	# past an element's room is an index error
+	int n: 100;
+	log days:0:n;
+	exit 0;
+
+	[Longest: ptr<ptr<u8>> list: 0; int count: 0;]
+		int most: 0;
+		while int i: 0; i < count; i++;
+			most is (Math.Max: most (Text.Length: list:i));
+		;;
+	[end: most]
+
+	[Build]
+		str names: 'a' 'b';
+		while int k: 0; k < 40; k++;
+			names:0++ 'xyz';
+			names:1 is 'item ' k;
+		;;
+		log (Text.Length: names:0) ' ' names:1 '\n';
+	[end]
+}

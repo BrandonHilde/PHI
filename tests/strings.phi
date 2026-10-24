@@ -36,7 +36,7 @@ phi.Strings:Library
 	while int i: 0; i < days.len; i++;
 		log days:i ' ';
 	;;
-	days:1 is 'Thursday';
+	days:1 is 'Sat';
 	log days:1 '\n';
 
 	log 'it' 's ' 'hasn't escaped\n';

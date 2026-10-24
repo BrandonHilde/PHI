@@ -549,6 +549,8 @@ these were added:
   and resizable windows
 - [x] `str` results from methods grow (they were cut at 255 characters), and `chr`: a byte
   written as its character (`text++ key as chr;`); a `str`'s characters are `chr`
+- [x] The elements of a `str` array grow too (each starts in a buffer of its own and moves
+  to the heap when it needs more)
 - [x] `i64`, `u64` and floating point numbers in method values and `when`, and `%` on
   floating point numbers
 - [x] Floating point numbers: `f64`, `f32` and `f16` on the x87 FPU (each task keeps its own
@@ -563,9 +565,7 @@ The parts most worth doing next, roughly in order:
 2. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
-3. The elements of a `str` array growing too (each holds as much as its longest first
-   value now).
-4. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
+3. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
 
 ---
 

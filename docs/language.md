@@ -237,15 +237,18 @@ code: a 16-bit program can't have them.
 - In a 16-bit program there's no heap, so a `str` without a size is fixed: it holds the
   length of its first value (`'abc'`: 3), 11 for a number, as much as another `str`, or 64
   for a `ptr<u8>`.
-- Each element of a `str` array holds as much as the longest initial value.
+- Each element of a `str` array grows the same way, in a 32-bit kernel or a user program
+  (`str days: 'Mon' 'Tue'; days:1 is 'Tuesday';`). In a 16-bit program each holds as much
+  as the longest initial value.
 
 Text longer than the max is cut to fit, without an error: after
 `str tiny: [3]; tiny is 'abcdef';`, `tiny` is `abc`. A `str` with a size takes one more byte
 than it holds, for the zero that ends the text.
 
 **How a `str` array is stored.** A `str` array is an array of 4-byte pointers, one per
-element, and each points to that element's own buffer. So `days:1` is the address of the
-second string, and code that walks the array's memory by a fixed stride (for rows of a
+element, and each points to that element's text (in 32-bit code each element's room
+follows the table, and an element that grows moves its text, updating its pointer). So
+`days:1` is the address of the second string, and code that walks the array's memory by a fixed stride (for rows of a
 sprite, say) must use a `u8` array instead (`u8 rows[8 * 16];`, indexed as
 `rows:(row * 16 + column)`). Where a `ptr<ptr<u8>>` is expected, a `str` array is the address
 of its table of pointers, so a method can take any `str` array:

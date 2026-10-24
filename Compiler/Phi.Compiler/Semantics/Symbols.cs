@@ -232,6 +232,14 @@ namespace Phi.Compiler.Semantics
         public bool Grows { get; set; }
 
         /// <summary>
+        /// A str array whose elements grow, in a 32-bit kernel or a user program. Its storage is the
+        /// table of each element's text (so it's still a ptr&lt;ptr&lt;u8&gt;&gt;), then each element's
+        /// room. An element starts in a buffer of <see cref="Capacity"/> bytes of its own (the top bit
+        /// of its room says so) and moves to the heap when it needs more.
+        /// </summary>
+        public bool GrowingElements { get; set; }
+
+        /// <summary>
         /// Values known at compile time, placed directly in the data. Each is a long, or a
         /// string for str elements. Null when the declaration has to run code instead.
         /// </summary>
