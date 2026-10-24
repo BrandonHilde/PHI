@@ -1,0 +1,23 @@
+struct.Point
+{
+	int x;
+}
+
+phi.ArrayParamsErrors:Kernel
+{
+	int numbers: 1 2;
+	u8 bytes[2];
+	call Sum: bytes;
+	call Sum: 5;
+
+	[Sum: int list[];]
+	[end]
+
+	[Names: str names[];]
+	[end]
+}
+
+struct.Holder
+{
+	int values[];
+}

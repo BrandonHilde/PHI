@@ -464,7 +464,7 @@ namespace Phi.Compiler.CodeGen
                 return $"ebp - {size}";
             }
 
-            for (int i = m.Parameters.Count - 1; i >= 0; slot += m.Parameters[i].Type.ElementSize == 8 ? 8 : 4, i--)
+            for (int i = m.Parameters.Count - 1; i >= 0; slot += ParameterBytes(m.Parameters[i].Type), i--)
             {
                 VariableSymbol p = m.Parameters[i];
                 if (p.Type.IsString)
@@ -992,6 +992,11 @@ namespace Phi.Compiler.CodeGen
                             pushedBytes += PushWideOrFloat(p.Type, value);
                             continue;
                         }
+                        if (p.Type.Open)
+                        {
+                            pushedBytes += PushArrayView(value);
+                            continue;
+                        }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
                         else if (p.Type.IsString && (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar)) EmitNumberText(value);
                         else EmitExpr(value);
@@ -1083,6 +1088,39 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
             }
+        }
+
+        /// <summary>The bytes a parameter takes on the stack.</summary>
+        static int ParameterBytes(PhiType t) => t.Open ? 12 : t.ElementSize == 8 ? 8 : 4;
+
+        /// <summary>
+        /// Pushes an array for an array parameter: the most it holds, how many it has, and where its
+        /// elements are (so they're at [slot], [slot + 4] and [slot + 8] in the method).
+        /// </summary>
+        int PushArrayView(Expr? array)
+        {
+            if (array == null)
+            {
+                Emit("push dword 0");
+                Emit("push dword 0");
+                Emit("push dword 0            ; no array: none");
+                return 12;
+            }
+            PhiType t = array.Type;
+            if (t.Open)
+            {
+                string label = ((VariableSymbol)((NameExpr)array).Symbol!).Label;
+                Emit($"push dword [{label} + 8]");
+                Emit($"push dword [{label} + 4]");
+                Emit($"push dword [{label}]");
+                return 12;
+            }
+            Emit($"push dword {t.Length}     ; the most it holds");
+            EmitArrayCount(array);
+            Emit("push eax                ; how many it has");
+            EmitPlaceAddress(array);
+            Emit("push eax                ; its elements");
+            return 12;
         }
 
         /// <summary>
@@ -1211,6 +1249,17 @@ namespace Phi.Compiler.CodeGen
             PhiType target = ix.Target.Type;
             int size = target.IsString ? 1 : target.IsPointer ? target.Pointee!.ElementSize : target.ElementSize;
             long? constant = ConstantFolder.Evaluate(ix.Index);
+
+            // an element of an array parameter: checked against how many it has, when it runs
+            if (ix.Target is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
+            {
+                EmitExpr(ix.Index);
+                if (unsafeDepth == 0) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + 4]");
+                EmitScale(size);
+                Emit($"mov ebx, [{open.Label}]");
+                Emit("add ebx, eax");
+                return new Place { Computed = true, Linear = true };
+            }
 
             // the characters of an element of a str array that grows: checked against its room
             if (ix.Target is IndexExpr { Target: NameExpr { Symbol: VariableSymbol { GrowingElements: true } array } } element)
@@ -1813,6 +1862,10 @@ namespace Phi.Compiler.CodeGen
                     EmitFilledCount(array);
                     break;
 
+                case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol open } length }:
+                    Emit($"mov eax, [{open.Label} + {(length.Max ? 8 : 4)}]");
+                    break;
+
                 case MemberExpr { FilledLength: true } m:
                     EmitFilledCount(m.Target);
                     break;
@@ -1927,6 +1980,11 @@ namespace Phi.Compiler.CodeGen
         /// <summary>eax = the address of a variable, field or element.</summary>
         void EmitPlaceAddress(Expr e)
         {
+            if (e is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
+            {
+                Emit($"mov eax, [{open.Label}]   ; where {open.Name}'s elements are");
+                return;
+            }
             if (e is NameExpr { Symbol: VariableSymbol { Grows: true } text })
             {
                 LoadText("eax", text);  // addr s: where its text is now
@@ -2686,7 +2744,9 @@ namespace Phi.Compiler.CodeGen
         /// <summary>eax = how many elements an array has: its length, or an atmost one's count.</summary>
         void EmitArrayCount(Expr array)
         {
-            if (array.Type.Filled) EmitFilledCount(array);
+            if (array is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
+                Emit($"mov eax, [{open.Label} + 4]");
+            else if (array.Type.Filled) EmitFilledCount(array);
             else Emit($"mov eax, {array.Type.Length}");
         }
 
@@ -2701,6 +2761,7 @@ namespace Phi.Compiler.CodeGen
             {
                 // an atmost target first lets go of the objects past the source's count
                 EmitArrayCount(copy.Source);
+                EmitCopyFits(copy);
                 if (t.Filled)
                 {
                     Emit("push eax");
@@ -2728,7 +2789,8 @@ namespace Phi.Compiler.CodeGen
             if (element.Kind == TypeKind.Str)
             {
                 var array = (VariableSymbol)((NameExpr)copy.Target).Symbol!;
-                Emit($"mov eax, {t.Length}");
+                EmitArrayCount(copy.Source);
+                EmitCopyFits(copy);
                 EmitEachElement(() =>
                 {
                     EmitPlaceAddress(copy.Source);
@@ -2757,6 +2819,7 @@ namespace Phi.Compiler.CodeGen
 
             // anything else is its bytes
             EmitArrayCount(copy.Source);
+            EmitCopyFits(copy);
             Emit("push eax                ; how many");
             EmitPlaceAddress(copy.Source);
             Emit("push eax");
@@ -2768,6 +2831,25 @@ namespace Phi.Compiler.CodeGen
             if (size != 1) Emit($"imul ecx, ecx, {size}");
             Emit("cld");
             Emit("rep movsb");
+        }
+
+        /// <summary>
+        /// eax = how many the source has: when either array is a parameter (its length known only
+        /// when it runs), an index error unless they fit as the binder checks for the others.
+        /// </summary>
+        void EmitCopyFits(ArrayAssignStmt copy)
+        {
+            PhiType t = copy.Target.Type;
+            if (!t.Open && !copy.Source.Type.Open) return;
+            Need("phi_index_error");
+            string ok = NewLabel("fits");
+            if (t.Open)
+                Emit($"cmp eax, [{((VariableSymbol)((NameExpr)copy.Target).Symbol!).Label} + 4]");
+            else Emit($"cmp eax, {t.Length}");
+            Emit($"{(t.Filled ? "jbe" : "je")} {ok}");
+            Emit($"mov eax, {LineOf(copy)}");
+            Emit("jmp phi_index_error");
+            Label(ok);
         }
 
         /// <summary>

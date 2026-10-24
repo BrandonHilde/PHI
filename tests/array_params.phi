@@ -1,0 +1,73 @@
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.ArrayParams:Library
+{
+	# a method that takes an array of any length
+	int three: 1 2 3;
+	int five: 10 20 30 40 50;
+	log (Sum: three) ' ' (Sum: five) '\n';
+
+	# an atmost array passes how many it has, and the most it holds
+	int some[atmost 8];
+	some++ 4 5;
+	log (Sum: some) ' ' (Sizes: some) ' ' (Sizes: three) '\n';
+
+	# elements can change; the length can't
+	call Double: five;
+	log five:0 ' ' five:4 '\n';
+
+	# passed on to another method, and copied with a check when it runs
+	log (Twice: three) '\n';
+	int copy[3];
+	call CopyInto: copy three;
+	log copy:2 ' ' (Same: copy three) '\n';
+
+	# structs
+	Point pts[2];
+	pts:1.y is 9;
+	log (SumY: pts) '\n';
+
+	# past its length is an index error
+	call Element: three 3;
+
+	[Sum: int numbers[];]
+		int total: 0;
+		while int i: 0; i < numbers.len; i++;
+			total++ numbers:i;
+		;;
+	[end: total]
+
+	[Sizes: int numbers[];]
+	[end: numbers.len * 100 + numbers.max]
+
+	[Double: int numbers[];]
+		while int i: 0; i < numbers.len; i++;
+			numbers:i** 2;
+		;;
+	[end]
+
+	[Twice: int numbers[];]
+	[end: (Sum: numbers) * 2]
+
+	[CopyInto: int to[]; int from[];]
+		to is from;
+	[end]
+
+	[Same: int a[]; int b[];]
+	[end: a is b]
+
+	[SumY: Point pts[];]
+		int total: 0;
+		while int i: 0; i < pts.len; i++;
+			total++ pts:i.y;
+		;;
+	[end: total]
+
+	[Element: int numbers[]; int i: 0;]
+		log numbers:i;
+	[end]
+}

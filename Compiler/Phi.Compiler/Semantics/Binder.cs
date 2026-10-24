@@ -559,6 +559,11 @@ namespace Phi.Compiler.Semantics
                 }
 
                 PhiType type = ResolveType(f.Type, scope: null, allowStr: false);
+                if (f.Unsized)
+                {
+                    Error(f.Span, $"a field needs a size: {f.Name}[10] (or [atmost 10])");
+                    continue;
+                }
                 if (f.IsNew)
                 {
                     // a separate object: the field holds its address
@@ -654,6 +659,11 @@ namespace Phi.Compiler.Semantics
                         .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
+                    if (parameters.Any(p => p.IsArray))
+                    {
+                        Error(t.Span, "a method called through a variable can't take an array yet");
+                        return PhiType.Error;
+                    }
                     if (result.IsString)
                     {
                         Error(t.Result!.Span, "a method called through a variable can't return a str yet; return a number");
@@ -1008,7 +1018,7 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            if (type.IsStruct && v.IsParameter)
+            if (type.IsStruct && v.IsParameter && !d.Unsized)
             {
                 // a struct parameter borrows the caller's struct for the call: no copy
                 if (d.Values.Count > 0) Error(d.Values[0].Span, $"a {type} parameter can't have a default; leave out the ':' and value");
@@ -1021,6 +1031,30 @@ namespace Phi.Compiler.Semantics
             {
                 Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.BufferSize != null ? "[...]" : "")};");
                 v.Type = PhiType.Error;
+                return;
+            }
+
+            if (d.Unsized)
+            {
+                if (!v.IsParameter)
+                {
+                    Error(d.NameSpan, $"an array without a size is a parameter for now; give it one: {type} {d.Name}[10];");
+                    v.Type = PhiType.Error;
+                    return;
+                }
+                if (type.IsString)
+                {
+                    Error(d.NameSpan, $"a str array can't be a parameter yet; pass the text of one element (str {d.Name}: '';)");
+                    v.Type = PhiType.Error;
+                    return;
+                }
+                if (type.IsStruct && type.Struct!.OwnsObjects)
+                {
+                    Error(d.Type.Span, $"{type} owns objects, so an array of them is objects: new {type} {d.Name}[]");
+                    v.Type = PhiType.Error;
+                    return;
+                }
+                v.Type = type.OpenOf();
                 return;
             }
 
@@ -1108,12 +1142,24 @@ namespace Phi.Compiler.Semantics
                 Error(d.Type.Span, $"new is for structs; a {type} is stored where it's declared, so leave out new: {type} {d.Name};");
                 return;
             }
+            if (d.Unsized)
+            {
+                // new T name[]: a parameter that borrows the caller's array of objects
+                if (!v.IsParameter)
+                {
+                    Error(d.NameSpan, $"an array without a size is a parameter for now; give it one: new {type} {d.Name}[10];");
+                    return;
+                }
+                v.Ownership = Ownership.Borrowed;
+                v.Type = PhiType.ObjectOf(type.Struct!).OpenOf();
+                return;
+            }
             if (d.BufferSize != null)
             {
                 // new T name[N]: N objects; new T name[atmost N]: none until they're added
                 if (v.IsParameter)
                 {
-                    Error(d.BufferSize.Span, "a parameter can't be an array of objects yet; pass one element (it's borrowed)");
+                    Error(d.BufferSize.Span, $"an array parameter takes an array of any length; leave out the size: new {type} {d.Name}[]");
                     return;
                 }
                 int? count = ConstantCount(d.BufferSize, scope);
@@ -1289,6 +1335,8 @@ namespace Phi.Compiler.Semantics
 
                 // a struct's own field named len or max comes first
                 StructSymbol? fields = FieldsOf(type);
+                if (m is "len" or "max" && last && fields?.Find(m) == null && type.Open && offset == 0 && hops == null)
+                    return new LengthSymbol { Name = m, Open = root, Max = m == "max" };
                 if (m == "len" && last && fields?.Find(m) == null)
                 {
                     if (type.Filled)
@@ -1870,7 +1918,12 @@ namespace Phi.Compiler.Semantics
                 Error(span, $"'{Describe(left)}' holds {A(a.Element)} and '{Describe(right)}' {A(b.Element)}; they have to hold the same kind");
                 return false;
             }
-            if (how == "copied into")
+            if (a.Open && a.Element.Kind == TypeKind.Str)
+            {
+                Error(span, $"the elements of an array parameter of strs can't be replaced yet");
+                return false;
+            }
+            if (how == "copied into" && !a.Open && !b.Open)
             {
                 if (!a.Filled && (b.Filled || a.Length != b.Length))
                 {
@@ -2597,7 +2650,7 @@ namespace Phi.Compiler.Semantics
                     {
                         VariableSymbol v => v.Type,
                         ConstantSymbol k => k.Type,
-                        LengthSymbol => PhiType.Int,
+                        LengthSymbol => PhiType.Int,   // (an array parameter's too)
                         FieldPathSymbol f => f.Type,
                         SelfFieldSymbol s => s.Type,
                         PathSymbol p => p.Type,
@@ -2776,7 +2829,7 @@ namespace Phi.Compiler.Semantics
             if (t.IsArray)
             {
                 index.Type = t.Element;
-                limit = t.Length;
+                limit = t.Open ? null : t.Length;   // an array parameter's is checked when it runs
             }
             else if (t.IsString)
             {
@@ -3125,6 +3178,14 @@ namespace Phi.Compiler.Semantics
             if (target.IsPointer && e.Type.IsPointer && target.Pointee != e.Type.Pointee
                 && target.Pointee != PhiType.U8 && e.Type.Pointee != PhiType.U8)
                 diagnostics.Warning(file, e.Span, $"{what} is a {target}, but this is a {e.Type}; write `as {target}` if that's meant");
+
+            // an array parameter: any array holding the same kind of element
+            if (target.Open)
+            {
+                if (e.Type.IsArray && e.Type.Element == target.Element) return e;
+                Error(e.Span, $"{what} is an array of {target.Element}s, and this is {A(e.Type)}");
+                return e;
+            }
 
             // floating point: from any number; to a whole number only with `as`
             if (target.IsFloat)

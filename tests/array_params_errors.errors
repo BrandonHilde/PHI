@@ -1,0 +1,4 @@
+22:2: error: a field needs a size: values[10] (or [atmost 10])
+16:14: error: a str array can't be a parameter yet; pass the text of one element (str names: '';)
+10:12: error: parameter 'list' is an array of ints, and this is a u8 array
+11:12: error: parameter 'list' is an array of ints, and this is an int

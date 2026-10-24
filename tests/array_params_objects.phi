@@ -1,0 +1,44 @@
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+phi.ArrayParamsObjects:Kernel
+{
+	new Node nodes[3];
+	nodes:0.value is 5;
+	nodes:2.value is 7;
+	log (Total: nodes) '\n';
+	call Fill: nodes;
+	log nodes:1.value ' ' nodes:1.next.value '\n';
+
+	new Node few[atmost 4];
+	few++ nodes:2;
+	log (Total: few) '\n';
+
+	f64 values: 1.5 2.5 3.0;
+	log (Mean: values) '\n';
+	exit 0;
+
+	[Total: new Node list[];]
+		int total: 0;
+		while int i: 0; i < list.len; i++;
+			total++ list:i.value;
+		;;
+	[end: total]
+
+	# elements are the caller's: given new values, and objects of their own
+	[Fill: new Node list[];]
+		new Node made: 40;
+		list:1 is made;
+		list:1.next is list:0;
+	[end]
+
+	[Mean: f64 xs[];]
+		f64 total: 0;
+		while int i: 0; i < xs.len; i++;
+			total++ xs:i;
+		;;
+	[end: total / xs.len]
+}

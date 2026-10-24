@@ -87,6 +87,9 @@ namespace Phi.Compiler.Syntax
         /// <summary>name[atmost N]: filled as it goes, with a count of its own.</summary>
         public bool Filled { get; init; }
 
+        /// <summary>name[]: no size written (an error for a field).</summary>
+        public bool Unsized { get; init; }
+
         /// <summary>new Node next;  a separate object the struct owns (starts empty).</summary>
         public bool IsNew { get; init; }
     }
@@ -137,6 +140,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>type name[atmost N]: an array filled as it goes, which starts empty.</summary>
         public bool Filled { get; init; }
+
+        /// <summary>type name[]: no size written (a parameter: an array of any length).</summary>
+        public bool Unsized { get; init; }
 
         /// <summary>Declared with new: an object.</summary>
         public bool IsNew { get; init; }

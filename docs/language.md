@@ -1485,6 +1485,34 @@ if (IsReady: port)
   arguments, so it can't have parameters. A parameter's default can't use the method's
   other parameters.
 
+### Arrays as parameters
+
+A parameter written with empty brackets takes an array of any length, and knows it:
+`.len` is how many elements it has (an `atmost` array's count), and `.max` the most the
+caller's array holds. Its elements are the caller's, so changing one changes theirs; its
+length can't change.
+
+```phi
+[Sum: int numbers[];]
+    int total: 0;
+    while int i: 0; i < numbers.len; i++;
+        total++ numbers:i;
+    ;;
+[end: total]
+
+int a: 1 2 3;
+int scores[atmost 10];
+log (Sum: a) ' ' (Sum: scores);        # any array of ints, fixed or atmost
+```
+
+- An index is checked against `.len` when it runs. Copying into one (`to is from;`)
+  checks the lengths then too.
+- An array of objects is `new T list[]` (the only parameter written with `new`, since
+  `T list[]` is an array of structs stored in place). Its elements are the caller's
+  objects: `list:i is p` copies into one, and `list:i.x` reaches its fields.
+- It can be passed on to another method that takes one, or where a pointer to its elements
+  goes. `str` arrays can't be parameters yet, and method values can't take arrays.
+
 ### Methods as values
 
 A `method<...>` variable holds a method, which is called through it like any method. The

@@ -42,7 +42,8 @@ namespace Phi.Compiler.Semantics
     /// many are in it in a u32 right after them, so its elements are where any array's are.
     /// </summary>
     public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
-                                 MethodSignature? Signature = null, bool Filled = false, EnumSymbol? Enum = null)
+                                 MethodSignature? Signature = null, bool Filled = false, EnumSymbol? Enum = null,
+                                 bool Open = false)
     {
         public static readonly PhiType Error = new(TypeKind.Error);
         public static readonly PhiType Void = new(TypeKind.Void);
@@ -71,7 +72,13 @@ namespace Phi.Compiler.Semantics
         public static PhiType ObjectOf(StructSymbol s) => new(TypeKind.Object, Struct: s);
         public static PhiType EnumOf(EnumSymbol e) => new(TypeKind.Enum, Enum: e);
 
-        public bool IsArray => Length > 0;
+        public bool IsArray => Length > 0 || Open;
+
+        /// <summary>
+        /// An array parameter of any length (int numbers[]): where its elements are, how many there
+        /// are, and the most the caller's array holds (three u32s), known when it runs.
+        /// </summary>
+        public PhiType OpenOf() => this with { Length = 0, Filled = false, Open = true };
         public bool IsError => Kind == TypeKind.Error;
         public bool IsString => !IsArray && Kind == TypeKind.Str;
         public bool IsPointer => !IsArray && Kind == TypeKind.Pointer;
@@ -115,7 +122,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>32-bit unsigned values: math and comparisons on them must be unsigned.</summary>
         public bool IsUnsigned32 => !IsArray && Kind is TypeKind.U32 or TypeKind.Pointer or TypeKind.Method;
 
-        public PhiType Element => this with { Length = 0, Filled = false };
+        public PhiType Element => this with { Length = 0, Filled = false, Open = false };
         public PhiType ArrayOf(int length) => this with { Length = length };
 
         /// <summary>Bytes taken by one element in memory.</summary>
@@ -134,7 +141,7 @@ namespace Phi.Compiler.Semantics
         };
 
         /// <summary>Bytes taken by the whole value: every element, and a filled array's count.</summary>
-        public int ByteSize => ElementSize * Math.Max(Length, 1) + (Filled ? 4 : 0);
+        public int ByteSize => Open ? 12 : ElementSize * Math.Max(Length, 1) + (Filled ? 4 : 0);
 
         /// <summary>Where a filled array keeps its count, from the start of the array.</summary>
         public int CountOffset => ElementSize * Length;
@@ -261,6 +268,10 @@ namespace Phi.Compiler.Semantics
     /// <summary>x.len: the element count of an array, or the current length of a str; x.max: the most it can hold.</summary>
     public sealed class LengthSymbol : Symbol
     {
+        /// <summary>An array parameter whose .len (or .max, with Max) is read when it runs.</summary>
+        public VariableSymbol? Open { get; init; }
+        public bool Max { get; init; }
+
         /// <summary>Known element count, for arrays.</summary>
         public int? Count { get; init; }
 

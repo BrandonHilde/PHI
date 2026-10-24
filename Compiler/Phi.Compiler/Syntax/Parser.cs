@@ -361,10 +361,11 @@ namespace Phi.Compiler.Syntax
                     CheckNotKeyword(field, "field");
                     Expr? count = null;
                     bool filled = false;
+                    bool unsized = false;
                     if (At(TokenKind.OpenBracket))
-                        (count, filled) = ParseBufferSize();
+                        (count, filled, unsized) = ParseBufferSize();
                     ExpectSemicolon();
-                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, IsNew = isNew, Span = type.Span.To(field.Span) });
+                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew, Span = type.Span.To(field.Span) });
                 }
                 catch (ParseError)
                 {
@@ -443,9 +444,10 @@ namespace Phi.Compiler.Syntax
             {
                 while (!At(TokenKind.CloseBracket) && !AtEnd)
                 {
-                    if (AtNewDeclaration)
+                    // (new Node list[] is an array of objects, which only new says)
+                    if (AtNewDeclaration && !(PeekToken(3).Kind == TokenKind.OpenBracket && PeekToken(4).Kind == TokenKind.CloseBracket))
                         throw Error(Current.Span, "a parameter borrows the caller's object, so it's written without new: Point p;");
-                    if (!AtDeclaration)
+                    if (!AtDeclaration && !AtNewDeclaration)
                         throw Error(Current.Span, $"expected a parameter like 'int count: 0;' but found {Current}");
                     method.Parameters.Add(ParseVarDecl(allowBracketEnd: true));
                 }
@@ -633,6 +635,7 @@ namespace Phi.Compiler.Syntax
 
             Expr? buffer = null;
             bool filled = false;
+            bool unsized = false;
             Expr? at = null;
             var values = new List<Expr>();
 
@@ -644,7 +647,7 @@ namespace Phi.Compiler.Syntax
             }
             else if (At(TokenKind.OpenBracket))
             {
-                (buffer, filled) = ParseBufferSize();
+                (buffer, filled, unsized) = ParseBufferSize();
             }
             else if (At(TokenKind.Semicolon) || (allowBracketEnd && At(TokenKind.CloseBracket)))
             {
@@ -657,7 +660,7 @@ namespace Phi.Compiler.Syntax
 
                 if (At(TokenKind.OpenBracket))
                 {
-                    (buffer, filled) = ParseBufferSize();
+                    (buffer, filled, unsized) = ParseBufferSize();
                 }
                 else
                 {
@@ -679,6 +682,7 @@ namespace Phi.Compiler.Syntax
                 NameSpan = name.Span,
                 BufferSize = buffer,
                 Filled = filled,
+                Unsized = unsized,
                 IsNew = isNew,
                 AtAddress = at,
                 Span = start.Span.To(Previous.Span),
@@ -689,14 +693,15 @@ namespace Phi.Compiler.Syntax
             return decl;
         }
 
-        /// <summary>[N], or [atmost N] for an array that's filled as it goes.</summary>
-        (Expr Size, bool Filled) ParseBufferSize()
+        /// <summary>[N], [atmost N] for an array that's filled as it goes, or [] with no size.</summary>
+        (Expr? Size, bool Filled, bool Unsized) ParseBufferSize()
         {
             Expect(TokenKind.OpenBracket, "'['");
+            if (Accept(TokenKind.CloseBracket)) return (null, false, true);
             bool filled = AcceptWord("atmost");
             Expr size = ParseExpression();
             Expect(TokenKind.CloseBracket, "']'");
-            return (size, filled);
+            return (size, filled, false);
         }
 
         Stmt ParseLog()
