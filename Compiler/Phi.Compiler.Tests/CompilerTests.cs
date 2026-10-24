@@ -113,6 +113,16 @@ namespace Phi.Compiler.Tests
         [InlineData("call M: 1;\n[M: int c: 0;]\nif c is 1 return;\nelse\n log 'x';\n;;\n[end]", "an if on one line can't have an else; write the if as a block, ending in ;;")]
         public void EarlyExitAndCallErrors(string body, string message) => AssertError(Boot(body), message);
 
+        [Fact]
+        public void AnAssignmentInAOneLineIfIsReportedAtTheIf()
+        {
+            // it used to read as a block that never closed, reported at the end of the method
+            CompileResult result = Compile(Boot("call M: 1;\n[M: int k: 0;]\nint tool: 0;\nif k is 1 tool is 2;\nif k is 2\n log 'y';\n;;\n[end]"));
+            Diagnostic error = Assert.Single(result.Diagnostics);
+            Assert.Contains("an if on one line can only return, break, continue, call or exit", error.Message);
+            Assert.Equal(6, error.File!.GetLocation(error.Span.Start).Line);
+        }
+
         [Theory]
         [InlineData("[Count: int n: 0;]\n if n > 0\n  call Count: n - 1;\n ;;\n[end]")]
         [InlineData("[Factorial: int n: 0;]\n if n < 2\n  return 1;\n ;;\n[end: n * (Factorial: n - 1)]")]
@@ -197,6 +207,7 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("int x: 5;\ncall Show: x -1;\n[Show: int a: 0; int b: 0;]\n[end]", "'x -1' is two arguments, x and -1")]
         [InlineData("int h: 64;\nbln b: 0;\nb is h is 64;", "this stores whether h is 64 in 'b'")]
+        [InlineData("str info: [24];\ncall Fill: info info.len;\n[Fill: ptr<u8> to: 0; int size: 0;]\n[end]", "'info.len' is how much text is in info now")]
         public void EasilyMisreadCodeWarns(string body, string message)
         {
             CompileResult result = Compile(Boot(body));

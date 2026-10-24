@@ -1164,12 +1164,19 @@ namespace Phi.Compiler.Semantics
                 string m = members[i];
                 bool last = i == members.Length - 1;
 
-                // a struct's own field named len comes first
+                // a struct's own field named len or max comes first
                 StructSymbol? fields = FieldsOf(type);
                 if (m == "len" && last && fields?.Find(m) == null)
                 {
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
                     if (type.IsString && offset == 0 && hops == null) return new LengthSymbol { Name = m, Str = root };
+                    return null;
+                }
+                if (m == "max" && last && fields?.Find(m) == null)
+                {
+                    // the most it can hold: elements for an array, characters for a str
+                    if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
+                    if (type.IsString && offset == 0 && hops == null && root.Capacity > 0) return new LengthSymbol { Name = m, Count = root.Capacity - 1 };
                     return null;
                 }
 
@@ -1935,7 +1942,10 @@ namespace Phi.Compiler.Semantics
                         Error(arguments[count].Span, $"{method.Name} takes {Plural(count - hidden, "argument")} but was given {arguments.Count - hidden}");
 
                     for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
+                    {
+                        WarnStrLengthAsSize(arguments[i], method.Parameters[i].Name);
                         arguments[i] = Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
+                    }
 
                     return method;
                 }
@@ -2004,6 +2014,18 @@ namespace Phi.Compiler.Semantics
         /// call Show: x -1;  passes x and -1, which is easy to misread as x minus 1. After a
         /// number (as in 5 -1) it's plainly a list, and (-1) says it's meant.
         /// </summary>
+        /// <summary>
+        /// Text.Append: info 'x' info.len; compiles but passes how much text is in info now
+        /// (often 0), not how much room it has, so nothing gets written.
+        /// </summary>
+        void WarnStrLengthAsSize(Expr argument, string parameter)
+        {
+            if (argument is not NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } } length) return;
+            if (parameter is not ("size" or "max" or "room" or "capacity" or "limit" or "bytes")) return;
+            diagnostics.Warning(file, length.Span, $"'{length.Name}' is how much text is in {str.Name} now, not how much it can hold; " +
+                $"for the size of its buffer write sizeof {str.Name} (or {str.Name}.max for the most characters it fits)");
+        }
+
         void WarnSplitNegatives(List<Expr> arguments)
         {
             for (int i = 1; i < arguments.Count; i++)
@@ -2204,6 +2226,14 @@ namespace Phi.Compiler.Semantics
                         member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = member };
                         BindCallExpr(member.Call, scope);
                         member.Type = member.Call.Type;
+                        break;
+                    }
+
+                    // list:0.name.len: an array field's length (and max) is known when built
+                    if (field == null && t.IsArray && member.Member is "len" or "max")
+                    {
+                        member.Count = t.Length;
+                        member.Type = PhiType.Int;
                         break;
                     }
 
@@ -2661,6 +2691,7 @@ namespace Phi.Compiler.Semantics
                 case StringExpr { Value.Length: 1 } c when e.Type.IsNumeric: return c.Value[0];
                 case NameExpr { Symbol: ConstantSymbol k }: return k.Value;
                 case NameExpr { Symbol: LengthSymbol { Count: int count } }: return count;
+                case MemberExpr { Count: int count }: return count;
                 case SizeofExpr s: return s.Value;
                 case UnaryExpr u:
                 {

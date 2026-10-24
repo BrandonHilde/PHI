@@ -192,7 +192,7 @@ namespace Phi.Compiler.Semantics
         public PhiType Type { get; init; } = PhiType.Int;
     }
 
-    /// <summary>x.len: the element count of an array, or the current length of a str.</summary>
+    /// <summary>x.len: the element count of an array, or the current length of a str; x.max: the most it can hold.</summary>
     public sealed class LengthSymbol : Symbol
     {
         /// <summary>Known element count, for arrays.</summary>

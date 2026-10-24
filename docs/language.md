@@ -202,8 +202,25 @@ class. When a name found that way is a variable of a class in another file, it's
 program a typo or a missing declaration would otherwise bind to it silently. Classes in the
 same file share names freely.
 
-`x.len` is the number of elements of an array, or the current length of a `str` (unless
-`x` is a struct with a field of its own named `len`, which comes first).
+`x.len` is how many are in `x` now, the number to count up to when going through it: the
+elements of an array, or the characters of a `str`. `x.max` is the most `x` can hold: the
+elements of an array (the same as `.len`), or the characters that fit in a `str`. `sizeof x`
+is the bytes it takes, which for a `str` includes the ending zero.
+
+```phi
+int scores[5];
+str name: [20];
+name is 'Ada';
+log scores.len ' ' scores.max;     # 5 5
+log name.len ' ' name.max;         # 3 20
+log sizeof scores ' ' sizeof name; # 20 21
+log list:0.name.len;               # an array field, through an element
+```
+
+An array's `.len` and `.max`, and a `str`'s `.max`, are known when the program is built,
+so they work as array sizes and in constants. Both give way to a struct's own field of
+that name. Passing a `str`'s `.len` where a size goes (`call Text.Append: s 'x' s.len;`)
+is a warning: it's how much text is there now, often 0, so nothing would be written.
 
 A method's variable can be used anywhere in the method after its declaration, including
 after the block it was declared in. A name can be declared again in a *separate* block
@@ -368,7 +385,8 @@ The condition ends at the end of its line (a `;` after it is also allowed).
 
 A guard fits on one line: when `return`, `break`, `continue`, `call` or `exit` follows the
 condition on the same line, that one statement is the whole `if`, with no `;;`. It can't
-have an `elif` or `else`.
+have an `elif` or `else`, and anything else after the condition (`if k is 'p' tool is 1;`)
+is an error at that line.
 
 ```phi
 if key is 27 return true;

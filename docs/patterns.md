@@ -96,15 +96,20 @@ status++ ' (saved)';                    # Ln 5, Col 12 (saved)
 ```
 
 For text in a `u8` array, or reached through a `ptr<u8>`, `user.text` has the same
-operations. Each takes the room there is, so nothing is written past the end:
+operations. Each takes the size of the buffer in bytes, so nothing is written past the
+end. That's `sizeof` of the buffer, for a `u8` array and a `str` alike:
 
 ```phi
 use user.text;
 
 u8 label[24];
-call Text.Copy: label 'Size: ' label.len;
-call Text.AppendSize: label 12800 label.len;      # Size: 13 KB
+call Text.Copy: label 'Size: ' sizeof label;
+call Text.AppendSize: label 12800 sizeof label;   # Size: 13 KB
 debug addr label '\n';                  # addr: print the text, not the array
+
+str info: [24];
+info is '';
+call Text.AppendSize: info 12800 sizeof info;     # not info.len: that's 0 here
 ```
 
 Text longer than a `str` is cut to fit, without an error. Make it big enough for the

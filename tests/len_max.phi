@@ -1,0 +1,32 @@
+struct.Account
+{
+	u8 name[12];
+	int score;
+}
+
+phi.LenMax:Library
+{
+	const int ROOM: 20;
+
+	# .len is how many are in it, .max is the most it can hold
+	int numbers: 1 2 3;
+	int squares[5];
+	log numbers.len ' ' numbers.max ' ' squares.len ' ' squares.max '\n';
+
+	str name: [ROOM];
+	name is 'Ada';
+	log name.len ' ' name.max ' ' sizeof name '\n';
+	name is 'This is far too long to fit';
+	log name.len ' ' name.max '\n';
+
+	str word: 'hi';
+	log word.len ' ' word.max '\n';
+
+	# an array field, through an element
+	Account list[4];
+	log list:0.name.len ' ' list:2.name.max ' ' list.len '\n';
+
+	# known when built, so they work as sizes and constants
+	u8 copy[name.max];
+	log copy.len '\n';
+}

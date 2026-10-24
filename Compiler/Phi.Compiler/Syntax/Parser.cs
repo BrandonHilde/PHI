@@ -873,6 +873,11 @@ namespace Phi.Compiler.Syntax
                 return stmt;
             }
 
+            // if k is 'p' tool is 1; would otherwise read as a block that never closes
+            if (!Current.StartsLine && !AtEnd && !At(TokenKind.DoubleSemicolon))
+                throw Error(Current.Span, "an if on one line can only return, break, continue, call or exit; " +
+                    "for anything else, put it on the next line and close the if with ;;");
+
             stmt.Then.AddRange(ParseBlock("if"));
 
             if (AtWord("elif"))

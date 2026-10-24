@@ -1271,6 +1271,10 @@ namespace Phi.Compiler.CodeGen
                     LoadConstant("eax", count);
                     break;
 
+                case MemberExpr { Count: int count }:
+                    LoadConstant("eax", count);
+                    break;
+
                 case NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } }:
                     Need("phi_strlen");
                     LoadAddress("esi", str.Label);

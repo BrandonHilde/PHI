@@ -388,6 +388,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Set by the binder when the member is the struct's method rather than a field.</summary>
         public CallExpr? Call { get; set; }
+
+        /// <summary>Set by the binder for .len or .max of an array field: the element count.</summary>
+        public int? Count { get; set; }
     }
 
     /// <summary>addr x  (the address of a variable, element or method)</summary>
