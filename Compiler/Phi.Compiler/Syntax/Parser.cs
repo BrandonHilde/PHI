@@ -8,7 +8,7 @@ namespace Phi.Compiler.Syntax
         /// <summary>Type names that are keywords. Struct names are ordinary identifiers.</summary>
         public static readonly HashSet<string> TypeKeywords = new()
         {
-            "str", "int", "byt", "bln", "dec", "fin", "var",
+            "str", "int", "byt", "bln", "chr", "dec", "fin", "var",
             "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method",
         };
 

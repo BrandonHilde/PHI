@@ -599,6 +599,7 @@ namespace Phi.Compiler.Semantics
                 case "byt":
                 case "u8": return PhiType.U8;
                 case "bln": return PhiType.Bool;
+                case "chr": return PhiType.Chr;
                 case "u16": return PhiType.U16;
                 case "u32": return PhiType.U32;
                 case "f16":
@@ -2663,7 +2664,7 @@ namespace Phi.Compiler.Semantics
             }
             else if (t.IsString)
             {
-                index.Type = PhiType.U8; // one character
+                index.Type = PhiType.Chr; // one character
                 limit = CapacityOf(index.Target);
             }
             else if (t.IsPointer)

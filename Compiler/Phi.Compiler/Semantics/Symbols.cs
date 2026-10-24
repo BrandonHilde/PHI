@@ -2,7 +2,7 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64 }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64, Chr }
 
     /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
     public sealed class MethodSignature
@@ -57,6 +57,9 @@ namespace Phi.Compiler.Semantics
         public static readonly PhiType I64 = new(TypeKind.I64);
         public static readonly PhiType U64 = new(TypeKind.U64);
         public static readonly PhiType F16 = new(TypeKind.F16);
+
+        /// <summary>A character: a byte that log and str building write as its character, not its number.</summary>
+        public static readonly PhiType Chr = new(TypeKind.Chr);
         public static readonly PhiType F32 = new(TypeKind.F32);
         public static readonly PhiType F64 = new(TypeKind.F64);
 
@@ -84,7 +87,10 @@ namespace Phi.Compiler.Semantics
         public bool IsMethod => !IsArray && Kind == TypeKind.Method;
 
         /// <summary>A single value that fits in a register: integers, bln, pointers and enums.</summary>
-        public bool IsNumeric => !IsArray && Kind is >= TypeKind.I8 and <= TypeKind.Bool or TypeKind.Pointer or TypeKind.Enum;
+        public bool IsNumeric => !IsArray && Kind is >= TypeKind.I8 and <= TypeKind.Bool or TypeKind.Pointer or TypeKind.Enum or TypeKind.Chr;
+
+        /// <summary>A chr: written as a character in text.</summary>
+        public bool IsChar => !IsArray && Kind == TypeKind.Chr;
 
         /// <summary>
         /// A 64-bit integer (i64, u64). Not IsNumeric: it takes two registers (edx:eax), so only
@@ -112,7 +118,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>Bytes taken by one element in memory.</summary>
         public int ElementSize => Kind switch
         {
-            TypeKind.I8 or TypeKind.U8 or TypeKind.Bool => 1,
+            TypeKind.I8 or TypeKind.U8 or TypeKind.Bool or TypeKind.Chr => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
             TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method or TypeKind.Object => 4,
             TypeKind.Str => 4,  // arrays of strings hold pointers
@@ -148,6 +154,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.I64 => "i64",
                 TypeKind.U64 => "u64",
                 TypeKind.F16 => "f16",
+                TypeKind.Chr => "chr",
                 TypeKind.F32 => "f32",
                 TypeKind.F64 => "f64",
                 TypeKind.Method => Signature!.ToString(),

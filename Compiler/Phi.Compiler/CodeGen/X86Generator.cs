@@ -269,6 +269,7 @@ namespace Phi.Compiler.CodeGen
 
             Frame frame = LayOutFrame(m);
             currentMethod = m;
+            resultSlots.Clear();
             frameSize = frame.LocalsSize;
             returnLabel = NewLabel("return");
             returnUsed = false;
@@ -290,7 +291,31 @@ namespace Phi.Compiler.CodeGen
 
             if (returnUsed) Label(returnLabel); // return jumps here with the result in eax
 
-            if (m.ReturnType.IsString)
+            if (m.ReturnType.IsString && GrowResults)
+            {
+                // copy the result into the caller's slot (it grows to fit) before this frame goes away
+                Need("phi_strlen");
+                Need("phi_strcpy");
+                Emit("push eax                ; the result");
+                Emit("mov esi, eax");
+                Emit("call phi_strlen");
+                Emit("lea ecx, [eax + 1]");
+                Emit($"mov edi, [ebp + {frame.ResultSlot}]");
+                EmitStrRoomCall();
+                Emit("push edx");
+                Emit("mov esi, [esp + 4]");
+                Emit("call phi_strcpy");
+                EmitFreeOld();
+                Emit("add esp, 4");
+                string text = NewLabel("result");
+                Emit($"mov eax, [ebp + {frame.ResultSlot}]");
+                Emit("mov eax, [eax]");
+                Emit("test eax, eax");
+                Emit($"jnz {text}");
+                Emit($"mov eax, {StringLabel("")}");
+                Label(text);
+            }
+            else if (m.ReturnType.IsString)
             {
                 // copy the result into the caller's buffer before this frame goes away
                 Need("phi_strcpy");
@@ -304,13 +329,19 @@ namespace Phi.Compiler.CodeGen
             // its strs that grow give their text back
             var growing = m.Parameters.Concat(m.Locals).Where(v => v.Grows).ToList();
             bool wideResult = m.ReturnType.IsWide;
-            if (growing.Count > 0)
+            if (growing.Count > 0 || resultSlots.Count > 0)
             {
                 if (wideResult) Emit("push edx");
                 Emit("push eax                ; the result");
                 foreach (VariableSymbol v in growing)
                 {
                     Emit($"push dword [{v.Label}]   ; {v.Name}'s text");
+                    Emit($"call {HeapMethodLabel("Heap.Free")}");
+                    Emit("add esp, 4");
+                }
+                foreach (string slot in resultSlots)
+                {
+                    Emit($"push dword [{slot}]   ; a str result it was given");
                     Emit($"call {HeapMethodLabel("Heap.Free")}");
                     Emit("add esp, 4");
                 }
@@ -462,6 +493,13 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov ecx, {locals / 4}");
                 Emit("xor eax, eax");
                 Emit("rep stosd");
+            }
+
+            // the slots for str results start empty
+            foreach (string slot in resultSlots)
+            {
+                Emit($"mov dword [{slot}], 0");
+                Emit($"mov dword [{slot} + 4], 0");
             }
 
             foreach (var (array, elements) in frame.StrArrays)
@@ -774,8 +812,8 @@ namespace Phi.Compiler.CodeGen
                     for (int i = 0; i < build.Parts.Count; i++)
                     {
                         Expr part = build.Parts[i];
-                        bool text = IsText(part.Type) || part.Type.IsWide || part.Type.IsFloat;
-                        if (part.Type.IsWide || part.Type.IsFloat) EmitNumberText(part);
+                        bool text = IsText(part.Type) || part.Type.IsWide || part.Type.IsFloat || part.Type.IsChar;
+                        if (part.Type.IsWide || part.Type.IsFloat || part.Type.IsChar) EmitNumberText(part);
                         else if (text && StaticAddress(part) is string label) LoadAddress("eax", label);
                         else EmitExpr(part);
                         EmitStringStore(build.Target, text, append: build.Append || i > 0, unsigned: part.Type.IsUnsigned32);
@@ -848,7 +886,7 @@ namespace Phi.Compiler.CodeGen
                     }
                     Emit($"call {print}");
                 }
-                else if (value.Type.IsWide || value.Type.IsFloat)
+                else if (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar)
                 {
                     string print = "phi_print" + suffix;
                     Need(print);
@@ -953,10 +991,10 @@ namespace Phi.Compiler.CodeGen
                             continue;
                         }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
-                        else if (p.Type.IsString && (value.Type.IsWide || value.Type.IsFloat)) EmitNumberText(value);
+                        else if (p.Type.IsString && (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar)) EmitNumberText(value);
                         else EmitExpr(value);
 
-                        if (p.Type.IsString && value != null && !IsText(value.Type) && !value.Type.IsWide && !value.Type.IsFloat)
+                        if (p.Type.IsString && value != null && !IsText(value.Type) && !value.Type.IsWide && !value.Type.IsFloat && !value.Type.IsChar)
                         {
                             // a number for a str parameter is written out as text first
                             string text = AllocTemp(12);
@@ -972,8 +1010,15 @@ namespace Phi.Compiler.CodeGen
 
                     if (method.ReturnType.IsString)
                     {
-                        // somewhere for the method to put its result
-                        LoadAddress("eax", AllocTemp(method.ResultCapacity));
+                        // somewhere for the method to put its result: a slot that grows to fit
+                        // (the text and its room, freed when this method ends), or a buffer
+                        if (GrowResults)
+                        {
+                            string slot = AllocTemp(8);
+                            if (currentMethod != null) resultSlots.Add(slot);
+                            LoadAddress("eax", slot);
+                        }
+                        else LoadAddress("eax", AllocTemp(method.ResultCapacity));
                         Emit("push eax");
                         pushedBytes += 4;
                     }
@@ -1415,7 +1460,7 @@ namespace Phi.Compiler.CodeGen
                 EmitWideStore(target);
                 return;
             }
-            if (target.Type.IsString && (value.Type.IsWide || value.Type.IsFloat))
+            if (target.Type.IsString && (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar))
             {
                 EmitNumberText(value);
                 EmitStringStore(target, sourceIsString: true);
@@ -1628,7 +1673,7 @@ namespace Phi.Compiler.CodeGen
                     // a smaller number keeps the low bytes, like storing it would
                     switch (cast.Type.Kind)
                     {
-                        case TypeKind.U8 or TypeKind.Bool: Emit("movzx eax, al"); break;
+                        case TypeKind.U8 or TypeKind.Bool or TypeKind.Chr: Emit("movzx eax, al"); break;
                         case TypeKind.I8: Emit("movsx eax, al"); break;
                         case TypeKind.U16: Emit("movzx eax, ax"); break;
                         case TypeKind.I16: Emit("movsx eax, ax"); break;
@@ -2150,9 +2195,18 @@ namespace Phi.Compiler.CodeGen
             Emit("add esp, 4");
         }
 
-        /// <summary>eax = the address of a 64-bit or floating point value written out (in a temporary).</summary>
+        /// <summary>eax = the address of a 64-bit or floating point value written out, or of a chr's character (in a temporary).</summary>
         void EmitNumberText(Expr e)
         {
+            if (e.Type.IsChar)
+            {
+                string one = AllocTemp(4);
+                EmitExpr(e);
+                Emit($"mov byte [{one}], al");
+                Emit($"mov byte [{one} + 1], 0");
+                LoadAddress("eax", one);
+                return;
+            }
             if (e.Type.IsWide)
             {
                 EmitWideText(e);
@@ -2563,6 +2617,16 @@ namespace Phi.Compiler.CodeGen
         }
 
         string HeapMethodLabel(string name) => unit.Methods.First(m => m.Name == name).Label;
+
+        /// <summary>
+        /// A method's str result grows to fit (up to a str's max) when there's a heap: the caller
+        /// passes a slot like a growing str's, which it frees when it ends. Without a heap (16-bit
+        /// code), it's a buffer as big as the method can return.
+        /// </summary>
+        bool GrowResults => bits32 && unit.Methods.Any(m => m.Name == "Heap.Alloc");
+
+        /// <summary>The current method's slots for the str results of the calls it makes.</summary>
+        readonly List<string> resultSlots = new();
 
         /// <summary>The room <c>ask</c> makes in a str that grows: a line of up to 255 characters.</summary>
         const int AskRoom = 256;

@@ -30,6 +30,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | C++ `a = std::move(b)` | `a takes b;` | Hands the object over and leaves `b` empty. |
 | `p == NULL` for an object | `p is empty` | |
 | `sizeof(T)` | `sizeof T` | Works with types, structs and variables. |
+| `char c = 'h';` | `chr c: 'h';` | `chr` prints as a character; `u8` prints as a number. `text++ key as chr;` adds a character to text. |
 | `int64_t`, `uint64_t` | `i64`, `u64` | 32-bit kernels and programs. Narrowing to 32 bits needs `as`. |
 | `double`, `float`, `_Float16` | `f64`, `f32`, `f16` | 32-bit kernels and programs. To a whole number only with `as` (toward zero); `sqrt(x)` is `(Float.Sqrt: x)`. |
 | `(T)x` | `x as T` | A cast. Binds tighter than math: `(a + b) as u8`. |

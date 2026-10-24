@@ -115,6 +115,7 @@ A `str` takes several values, written in one after another, the way `log` writes
 str status: [40];
 status is 'Ln ' line + 1 ', Col ' column + 1;
 status++ ' (saved)';                    # Ln 5, Col 12 (saved)
+status++ key as chr;                    # a typed key, as its character
 ```
 
 For text in a `u8` array, or reached through a `ptr<u8>`, `user.text` has the same
@@ -153,9 +154,10 @@ text it was given, or a string literal:
 ```
 
 Don't return a pointer to the method's own `str` or `u8` array: those are gone once it
-returns. To build new text, have the caller pass a buffer, or return a `str`. A `str`
-result lasts until the end of the statement that called the method, so the caller stores
-it in a `str` of its own; keeping it in a `ptr<u8>` is an error.
+returns. To build new text, return a `str`: in a 32-bit kernel or program it can be as long as a
+`str` can grow. A `str` result lasts until the end of the statement that called the
+method, so the caller stores it in a `str` of its own; keeping it in a `ptr<u8>` is an
+error.
 
 ## A set of states
 

@@ -6,7 +6,6 @@ phi.NotesApp:Program
 	const int W: 300;
 	const int H: 200;
 	str text: '';               # grows as it's typed
-	str typed: [1];             # one letter
 
 	if (App.Open: W H) is false
 		exit 1;
@@ -27,8 +26,7 @@ phi.NotesApp:Program
 				text++ '\n';
 			;;
 			elif key >= ' ' and key < 127
-				typed:0 is key;     # (text++ key would write the number)
-				text++ typed;
+				text++ key as chr;  # the letter, not its number
 			;;
 			call Show;
 		;;

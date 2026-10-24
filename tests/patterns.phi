@@ -57,6 +57,8 @@ phi.Patterns:Library
 	int column: 11;
 	status is 'Ln ' line + 1 ', Col ' column + 1;
 	status++ ' (saved)';
+	int key: 33;
+	status++ key as chr;
 	debug status '\n';
 
 	u8 label[24];

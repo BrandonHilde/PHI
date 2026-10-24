@@ -27,6 +27,13 @@ phi.StrGrow:Kernel
 	call Many;
 	log 'heap back: ' (Heap.used_bytes is before) '\n';
 
+	# a method's str result grows too, past the 255 characters it used to be cut at
+	str long: (Repeat: 'abcdefghij' 40);
+	log long.len ' ' (Repeat: 'xy' 3) ' ' (Twice: (Repeat: 'ab' 200)) '\n';
+	before is Heap.used_bytes;
+	call Results;
+	log 'results back: ' (Heap.used_bytes is before) '\n';
+
 	# a fixed str is still cut to fit
 	str short: [5];
 	short is 'truncated';
@@ -40,6 +47,24 @@ phi.StrGrow:Kernel
 		str loud: text;
 		loud++ '!';
 	[end: loud]
+
+	[Repeat: str text: ''; int times: 0;]
+		str all: '';
+		while int i: 0; i < times; i++;
+			all++ text;
+		;;
+	[end: all]
+
+	# the length of text written twice, through another method's result
+	[Twice: str text: '';]
+		str both: (Repeat: text 2);
+	[end: both.len]
+
+	[Results]
+		while int k: 0; k < 50; k++;
+			str piece: (Repeat: 'zz' 300);
+		;;
+	[end]
 
 	[Many]
 		while int k: 0; k < 100; k++;

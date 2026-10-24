@@ -1,10 +1,12 @@
 hi 2 65535
 a much longer piece of text than two characters 47
-80 484444
+80 0,,
 Ln 12, Col 5
 ln 12, Col 5 0 1
 quiet words that go on and on!
 heap back: 1
+400 xyxyxy 800
+results back: 1
 trunc 5
 
-PHI: index out of range on line 37
+PHI: index out of range on line 44

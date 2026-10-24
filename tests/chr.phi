@@ -1,0 +1,37 @@
+phi.Chars:Library
+{
+	# a chr is a byte that's written as its character
+	chr c: 'h';
+	int key: 105;
+	log c ' ' (key as chr) ' ' (c as int) ' ' sizeof c '\n';
+
+	# a typed key added to text
+	str word: [20];
+	word is 'abc';
+	word++ key as chr;
+	word++ c;
+	log word '\n';
+
+	# a str's characters are chr; math on one gives a number
+	str name: [8];
+	name is 'Ada';
+	log name:0 ' ' (name:0 + 1) ' ' ((name:0 + 1) as chr) ' ' (name:1 is 'd') '\n';
+	name:0 is (name:0 + 32) as chr;
+	log name '\n';
+
+	# chr arrays, and when on characters
+	chr vowels: 'a' 'e' 'i' 'o' 'u';
+	int count: 0;
+	while int i: 0; i < name.len; i++;
+		when name:i
+			is 'a' 'e' 'i' 'o' 'u'
+				count++;
+			;;
+		;;
+	;;
+	log vowels:1 ' ' count '\n';
+
+	# bytes still print as numbers
+	u8 raw: 104;
+	log raw '\n';
+}

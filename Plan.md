@@ -547,6 +547,8 @@ these were added:
   `else`, on numbers, enums and text
 - [x] Widgets (`gui.widgets`: buttons, check boxes, text fields, lists with scroll bars)
   and resizable windows
+- [x] `str` results from methods grow (they were cut at 255 characters), and `chr`: a byte
+  written as its character (`text++ key as chr;`); a `str`'s characters are `chr`
 - [x] Floating point numbers: `f64`, `f32` and `f16` on the x87 FPU (each task keeps its own
   registers), literals like `2.5` and `6.02e23`, printing, and `Float.Sqrt` and friends
 - [x] 64-bit integers: `i64` and `u64` (variables, fields, arrays, parameters, results,
@@ -560,8 +562,8 @@ The parts most worth doing next, roughly in order:
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
-4. Strings that grow everywhere they can be: method results (now cut at 255 characters
-   when they come from a `str` without a size) and the elements of a `str` array.
+4. The elements of a `str` array growing too (each holds as much as its longest first
+   value now).
 5. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
 
 ---

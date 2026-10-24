@@ -87,7 +87,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` |
 | Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `isr` `end` |
 | Control | `if` `elif` `else` `while` `when` `unsafe` `break` `continue` `return` `call` `exit` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
@@ -125,6 +125,7 @@ A quote followed directly by a letter or digit doesn't end a string, which is wh
 | `i16` / `u16` | 2 bytes | -32768 to 32767 / 0 to 65535 |
 | `i8` / `byt` (also `u8`) | 1 byte | -128 to 127 / 0 to 255 |
 | `bln` | 1 byte | `true` or `false` |
+| `chr` | 1 byte | a character: a number from 0 to 255 that `log` and text write as its character |
 | `str` | its capacity | text (see below) |
 | `ptr<T>` | 4 bytes | an address (see [Pointers](#pointers)) |
 | `method<T ...: R>` | 4 bytes | a method that can be called (see [Methods as values](#methods-as-values)) |
@@ -151,6 +152,20 @@ str copy: line;             # line is a ptr<u8>: the text it points to
 
 `=` works in place of `:` in declarations. Storing a value in a smaller type keeps the low
 bytes (so `u8` wraps around at 256).
+
+**Characters.** A `chr` is a byte that's a character: `log` and building a `str` write it
+as its character, where a `u8` (a plain byte) is written as its number. A `str`'s
+characters (`name:0`) are `chr`. Math on one gives a number, and `as chr` makes a number a
+character again:
+
+```phi
+int key: 104;
+str word: '';
+word++ key as chr;              # 'h', not 104
+log word:0 ' ' (word:0 + 1) ' ' (word:0 as int);   # h 105 104
+chr c: 'a';
+c is (c + 1) as chr;            # 'b'
+```
 
 **64-bit numbers.** `i64` and `u64` hold what doesn't fit in 32 bits: sizes of big files,
 money in cents, a product before it's divided. Math with one on either side happens in 64
@@ -1452,7 +1467,7 @@ debug (shapes:i.area: addr shapes:i);
 - One that takes no arguments is called in parentheses, as `(Name)` is: with
   `method<: int> next;`, `(next)` is its result. Without them, `next` is the method itself,
   so `if next is 0` still checks whether one is set.
-- Methods called this way can't return a `str` yet.
+- Methods called this way can't return a `str` yet (a method called by name can).
 - After the callee, `:` with a space starts the arguments; `table:i` with no space is an index.
 
 ### Events
