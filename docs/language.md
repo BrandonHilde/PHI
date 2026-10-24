@@ -87,7 +87,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `byt` `bln` `str` `var` `dec` `fin` `ptr` `method` |
 | Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `isr` `end` |
 | Control | `if` `elif` `else` `while` `when` `unsafe` `break` `continue` `return` `call` `exit` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
@@ -118,6 +118,7 @@ A quote followed directly by a letter or digit doesn't end a string, which is wh
 
 | Type | Size | Values |
 |---|---|---|
+| `i64` / `u64` | 8 bytes | about ±9.2 × 10^18 / 0 to about 1.8 × 10^19 (32-bit kernels and programs; see below) |
 | `int` (also `i32`) | 4 bytes | -2147483648 to 2147483647 |
 | `u32` | 4 bytes | 0 to 4294967295 |
 | `i16` / `u16` | 2 bytes | -32768 to 32767 / 0 to 65535 |
@@ -149,6 +150,24 @@ str copy: line;             # line is a ptr<u8>: the text it points to
 
 `=` works in place of `:` in declarations. Storing a value in a smaller type keeps the low
 bytes (so `u8` wraps around at 256).
+
+**64-bit numbers.** `i64` and `u64` hold what doesn't fit in 32 bits: sizes of big files,
+money in cents, a product before it's divided. Math with one on either side happens in 64
+bits (unsigned if either side is a `u64`), and literals past 32 bits are `i64`:
+
+```phi
+i64 bytes: 5000000000;
+int a: 2000000;
+int b: 3000000;
+i64 scaled: (a as i64) * b / 1000;      # 6000000000: no overflow in the middle
+log bytes * 4 ' ' scaled;               # printed, compared and built into text like any number
+int low: bytes as int;                  # to 32 bits only with `as`, which keeps the low half
+```
+
+Putting one where a 32-bit number goes (an `int`, an index, a parameter) is an error, since
+it may not fit: write `as int` to keep its low 32 bits. They work as variables, fields,
+array elements, parameters and results (but not in method values yet), and need 32-bit
+code: a 16-bit program can't have them.
 
 **Size of a `str`.** A `str` grows as text is written to it, up to its max (`.max`):
 
@@ -1523,6 +1542,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 ## Not supported yet
 
 - `dec` / `fin` (decimal numbers), `has`, `^^` (power)
+- `i64` and `u64` in method values (`method<i64: i64>`) and as a `when`'s value
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - growable strings (use a `str` buffer, or `memory.list` for growable data)
 - arrays of objects

@@ -228,20 +228,22 @@ namespace Phi.Compiler.Syntax
             return MakeInteger(start, text[start..pos].Replace("_", ""), 10);
         }
 
+        /// <summary>A whole number of up to 64 bits: a long, or a ulong past what a long holds.</summary>
         Token MakeInteger(int start, string digits, int radix)
         {
-            long value = 0;
+            ulong value = 0;
             bool overflow = digits.Length == 0;
             foreach (char d in digits)
             {
-                value = value * radix + Convert.ToInt32(d.ToString(), 16);
-                if (value > uint.MaxValue) overflow = true;
+                ulong digit = (ulong)Convert.ToInt32(d.ToString(), 16);
+                if (value > (ulong.MaxValue - digit) / (ulong)radix) overflow = true;
+                else value = value * (ulong)radix + digit;
             }
 
             if (overflow)
-                diagnostics.Error(file, Span.FromBounds(start, pos), "number is not a valid 32-bit value");
+                diagnostics.Error(file, Span.FromBounds(start, pos), "number is not a valid 64-bit value");
 
-            return Make(TokenKind.Number, start, value);
+            return value > long.MaxValue ? Make(TokenKind.Number, start, value) : Make(TokenKind.Number, start, (long)value);
         }
 
         Token ReadString()

@@ -1,0 +1,4 @@
+4:13: error: 'small' is an int, and this is an i64, which may not fit; write `as int`
+6:22: error: a shift's count is a number of bits
+8:12: error: an index is an int, and this is an i64
+9:13: error: parameter 'n' is an int, and this is an i64

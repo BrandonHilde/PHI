@@ -33,5 +33,9 @@ phi.Objects:Program
 	free blocks:2;
 	ptr<u8> again: new u8[1000];
 	log 'reused: ' (again is before) ' zeroed: ' (again:0 is 0) '\n';
+
+	# 64-bit numbers work in programs too
+	i64 big: 5000000000;
+	log 'wide: ' (big * 3) ' ' (big / 7) '\n';
 	exit 3;
 }

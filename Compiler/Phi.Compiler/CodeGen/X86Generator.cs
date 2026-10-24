@@ -280,6 +280,7 @@ namespace Phi.Compiler.CodeGen
             {
                 SourceComment(m.Decl.Result);
                 if (m.ReturnType.IsObject) EmitObjectResult(m.Decl.Result);
+                else if (m.ReturnType.IsWide) EmitWide(m.Decl.Result);   // in edx:eax
                 else EmitExpr(m.Decl.Result); // the result goes back in eax
             }
 
@@ -298,8 +299,10 @@ namespace Phi.Compiler.CodeGen
 
             // its strs that grow give their text back
             var growing = m.Parameters.Concat(m.Locals).Where(v => v.Grows).ToList();
+            bool wideResult = m.ReturnType.IsWide;
             if (growing.Count > 0)
             {
+                if (wideResult) Emit("push edx");
                 Emit("push eax                ; the result");
                 foreach (VariableSymbol v in growing)
                 {
@@ -308,12 +311,14 @@ namespace Phi.Compiler.CodeGen
                     Emit("add esp, 4");
                 }
                 Emit("pop eax");
+                if (wideResult) Emit("pop edx");
             }
 
             // the method's new objects go away with it (one it returns was handed over already)
             var owned = m.Locals.Where(v => v.Ownership == Ownership.Owned).ToList();
             if (owned.Count > 0)
             {
+                if (wideResult) Emit("push edx");
                 Emit("push eax                ; the result");
                 foreach (VariableSymbol v in owned)
                 {
@@ -321,6 +326,7 @@ namespace Phi.Compiler.CodeGen
                     Emit($"call {ObjectRoutine("free", v.Type.Struct!)}");
                 }
                 Emit("pop eax");
+                if (wideResult) Emit("pop edx");
             }
 
             StringBuilder body = code;
@@ -405,7 +411,7 @@ namespace Phi.Compiler.CodeGen
                 return $"ebp - {size}";
             }
 
-            for (int i = m.Parameters.Count - 1; i >= 0; i--, slot += 4)
+            for (int i = m.Parameters.Count - 1; i >= 0; slot += m.Parameters[i].Type.IsWide ? 8 : 4, i--)
             {
                 VariableSymbol p = m.Parameters[i];
                 if (p.Type.IsString)
@@ -732,6 +738,7 @@ namespace Phi.Compiler.CodeGen
 
                 case ReturnStmt ret:
                     if (ret.Value != null && currentMethod is { ReturnType.IsObject: true }) EmitObjectResult(ret.Value);
+                    else if (ret.Value != null && currentMethod is { ReturnType.IsWide: true }) EmitWide(ret.Value);   // in edx:eax
                     else if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
                     returnUsed = true;
                     Emit($"jmp {returnLabel}");
@@ -762,8 +769,9 @@ namespace Phi.Compiler.CodeGen
                     for (int i = 0; i < build.Parts.Count; i++)
                     {
                         Expr part = build.Parts[i];
-                        bool text = IsText(part.Type);
-                        if (text && StaticAddress(part) is string label) LoadAddress("eax", label);
+                        bool text = IsText(part.Type) || part.Type.IsWide;
+                        if (part.Type.IsWide) EmitWideText(part);
+                        else if (text && StaticAddress(part) is string label) LoadAddress("eax", label);
                         else EmitExpr(part);
                         EmitStringStore(build.Target, text, append: build.Append || i > 0, unsigned: part.Type.IsUnsigned32);
                     }
@@ -835,6 +843,14 @@ namespace Phi.Compiler.CodeGen
                     }
                     Emit($"call {print}");
                 }
+                else if (value.Type.IsWide)
+                {
+                    string print = "phi_print" + suffix;
+                    Need(print);
+                    EmitWideText(value);
+                    Emit("mov esi, eax");
+                    Emit($"call {print}");
+                }
                 else
                 {
                     string print = (value.Type.IsUnsigned32 ? "phi_print_uint" : "phi_print_int") + suffix;
@@ -885,17 +901,29 @@ namespace Phi.Compiler.CodeGen
                 case MethodSymbol method:
                 {
                     // push each argument in order (a missing one is the parameter's default, or zero);
-                    // a str parameter gets the address of the text
+                    // a str parameter gets the address of the text, and a 64-bit one takes two slots
                     int count = method.Parameters.Count;
+                    int pushedBytes = 0;
                     for (int i = 0; i < count; i++)
                     {
                         VariableSymbol p = method.Parameters[i];
                         Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
 
+                        if (p.Type.IsWide)
+                        {
+                            if (value == null) Emit("xor eax, eax");
+                            if (value == null) Emit("xor edx, edx");
+                            else EmitWide(value);
+                            Emit("push edx");
+                            Emit("push eax");
+                            pushedBytes += 8;
+                            continue;
+                        }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
+                        else if (p.Type.IsString && value.Type.IsWide) EmitWideText(value);
                         else EmitExpr(value);
 
-                        if (p.Type.IsString && value != null && !IsText(value.Type))
+                        if (p.Type.IsString && value != null && !IsText(value.Type) && !value.Type.IsWide)
                         {
                             // a number for a str parameter is written out as text first
                             string text = AllocTemp(12);
@@ -906,19 +934,19 @@ namespace Phi.Compiler.CodeGen
                             LoadAddress("eax", text);
                         }
                         Emit("push eax");
+                        pushedBytes += 4;
                     }
 
-                    int pushed = count;
                     if (method.ReturnType.IsString)
                     {
                         // somewhere for the method to put its result
                         LoadAddress("eax", AllocTemp(method.ResultCapacity));
                         Emit("push eax");
-                        pushed++;
+                        pushedBytes += 4;
                     }
 
                     Emit($"call {method.Label}");
-                    if (pushed > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushed * 4}");
+                    if (pushedBytes > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushedBytes}");
                     break;
                 }
 
@@ -973,6 +1001,12 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Stores a call result (in eax) into a variable.</summary>
         void EmitStoreResult(Expr target, PhiType resultType)
         {
+            if (target.Type.IsWide)
+            {
+                if (!resultType.IsWide) Emit(resultType.IsSigned ? "cdq" : "xor edx, edx");
+                EmitWideStore(target);
+                return;
+            }
             if (target.Type.IsString) EmitStringStore(target, sourceIsString: IsText(resultType));
             else EmitStoreEax(target);
         }
@@ -1325,6 +1359,19 @@ namespace Phi.Compiler.CodeGen
 
         void EmitAssign(Expr target, Expr value)
         {
+            if (target.Type.IsWide)
+            {
+                EmitWide(value);
+                EmitWideStore(target);
+                return;
+            }
+            if (target.Type.IsString && value.Type.IsWide)
+            {
+                EmitWideText(value);
+                EmitStringStore(target, sourceIsString: true);
+                return;
+            }
+
             if (!target.Type.IsString)
             {
                 // x++, x-- and x++ 5 on a variable: change it where it is
@@ -1430,6 +1477,12 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Leaves the value of <paramref name="e"/> in eax (strings: their address).</summary>
         void EmitExpr(Expr e)
         {
+            if (e.Type.IsWide)
+            {
+                EmitWide(e);    // the low half is in eax too
+                return;
+            }
+
             if (e is BinaryExpr or UnaryExpr && ConstantFolder.Evaluate(e) is long folded)
             {
                 LoadConstant("eax", folded);
@@ -1550,6 +1603,7 @@ namespace Phi.Compiler.CodeGen
 
                 case UnaryExpr unary:
                     EmitExpr(unary.Operand);
+                    if (unary.Operand.Type.IsWide) Emit("or eax, edx            ; not: all 64 bits are zero");
                     switch (unary.Op)
                     {
                         case UnaryOp.Negate: Emit("neg eax"); break;
@@ -1773,6 +1827,12 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                case BinaryExpr { IsComparison: true } cmp when cmp.Left.Type.IsWide || cmp.Right.Type.IsWide:
+                    EmitWideCompare(cmp);
+                    Emit("test eax, eax");
+                    Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
+                    return;
+
                 case BinaryExpr { IsComparison: true } cmp:
                 {
                     bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
@@ -1794,8 +1854,200 @@ namespace Phi.Compiler.CodeGen
             }
 
             EmitExpr(condition);
-            Emit("test eax, eax");
+            if (condition.Type.IsWide) Emit("or eax, edx");
+            else Emit("test eax, eax");
             Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
+        }
+
+        // ================================================================ 64-bit numbers
+        //
+        // An i64 or u64 is in edx:eax (edx the high half). The other side of an operation is
+        // in ebx:ecx, and the library's int64.asm does multiplying, dividing and text.
+
+        /// <summary>edx:eax = e, made 64 bits if it's a smaller number.</summary>
+        void EmitWide(Expr e)
+        {
+            if (ConstantFolder.Evaluate(e) is long k)
+            {
+                if (!e.Type.IsWide && !e.Type.IsSigned) k = (uint)k;   // a u32 stays positive
+                Emit($"mov eax, {(int)k}");
+                Emit($"mov edx, {(int)(k >> 32)}");
+                return;
+            }
+            if (!e.Type.IsWide)
+            {
+                EmitExpr(e);
+                Emit(e.Type.IsSigned ? "cdq" : "xor edx, edx");
+                return;
+            }
+
+            switch (e)
+            {
+                case CallExpr call:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    return;
+                case NameExpr { Call: CallExpr call }:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    return;
+                case MemberExpr { Call: CallExpr call }:
+                    EmitCallTo(call.Resolved, call.Arguments);
+                    return;
+
+                case CastExpr cast:
+                    EmitWide(cast.Operand);
+                    return;
+
+                case UnaryExpr unary:
+                    EmitWide(unary.Operand);
+                    if (unary.Op == UnaryOp.Negate)
+                    {
+                        Emit("neg eax");
+                        Emit("adc edx, 0");
+                        Emit("neg edx");
+                    }
+                    else
+                    {
+                        Emit("not eax");
+                        Emit("not edx");
+                    }
+                    return;
+
+                case BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift:
+                {
+                    EmitExpr(shift.Right);
+                    Emit("push eax");
+                    EmitWide(shift.Left);
+                    Emit("pop ecx");
+                    string small = NewLabel("shift");
+                    Emit("test cl, 32");
+                    Emit($"jz {small}");
+                    if (shift.Op == BinaryOp.ShiftLeft)
+                    {
+                        Emit("mov edx, eax");
+                        Emit("xor eax, eax");
+                        Label(small);
+                        Emit("shld edx, eax, cl");
+                        Emit("shl eax, cl");
+                    }
+                    else if (shift.Type.Kind == TypeKind.U64)
+                    {
+                        Emit("mov eax, edx");
+                        Emit("xor edx, edx");
+                        Label(small);
+                        Emit("shrd eax, edx, cl");
+                        Emit("shr edx, cl");
+                    }
+                    else
+                    {
+                        Emit("mov eax, edx");
+                        Emit("sar edx, 31");
+                        Label(small);
+                        Emit("shrd eax, edx, cl");
+                        Emit("sar edx, cl");
+                    }
+                    return;
+                }
+
+                case BinaryExpr binary:
+                {
+                    EmitWideOperands(binary);
+                    bool unsigned = binary.Type.Kind == TypeKind.U64;
+                    switch (binary.Op)
+                    {
+                        case BinaryOp.Add: Emit("add eax, ecx"); Emit("adc edx, ebx"); break;
+                        case BinaryOp.Subtract: Emit("sub eax, ecx"); Emit("sbb edx, ebx"); break;
+                        case BinaryOp.BitAnd: Emit("and eax, ecx"); Emit("and edx, ebx"); break;
+                        case BinaryOp.BitOr: Emit("or eax, ecx"); Emit("or edx, ebx"); break;
+                        case BinaryOp.BitXor: Emit("xor eax, ecx"); Emit("xor edx, ebx"); break;
+                        case BinaryOp.Multiply: CallWide("phi_mul64"); break;
+                        case BinaryOp.Divide: CallWide(unsigned ? "phi_udiv64" : "phi_div64"); break;
+                        case BinaryOp.Modulo: CallWide(unsigned ? "phi_umod64" : "phi_mod64"); break;
+                        default: throw new InvalidOperationException($"no 64-bit {binary.Op}");
+                    }
+                    return;
+                }
+            }
+
+            // a variable, field or element: its two halves
+            Place place = EmitPlace(e);
+            Emit($"mov eax, dword {Operand(place)}");
+            Emit($"mov edx, dword {Operand(new Place { Label = place.Label, Offset = place.Offset + 4, Computed = place.Computed, Linear = place.Linear })}");
+        }
+
+        void CallWide(string routine)
+        {
+            Need(routine);
+            Emit($"call {routine}");
+        }
+
+        /// <summary>edx:eax = the left side, ebx:ecx = the right.</summary>
+        void EmitWideOperands(BinaryExpr b)
+        {
+            EmitWide(b.Right);
+            Emit("push edx");
+            Emit("push eax");
+            EmitWide(b.Left);
+            Emit("pop ecx");
+            Emit("pop ebx");
+        }
+
+        /// <summary>Stores edx:eax in a 64-bit place.</summary>
+        void EmitWideStore(Expr target)
+        {
+            Emit("push edx");
+            Emit("push eax");
+            Place place = EmitPlace(target);
+            Emit("pop eax");
+            Emit("pop edx");
+            Emit($"mov dword {Operand(place)}, eax");
+            Emit($"mov dword {Operand(new Place { Label = place.Label, Offset = place.Offset + 4, Computed = place.Computed, Linear = place.Linear })}, edx");
+        }
+
+        /// <summary>eax = 1 when a comparison of two 64-bit values holds, 0 when it doesn't.</summary>
+        void EmitWideCompare(BinaryExpr cmp)
+        {
+            bool unsigned = cmp.Left.Type.Kind == TypeKind.U64 || cmp.Right.Type.Kind == TypeKind.U64;
+            EmitWideOperands(cmp);
+            // what the comparison gives when the left is less, equal and greater
+            var (less, equal, greater) = cmp.Op switch
+            {
+                BinaryOp.Equal => (0, 1, 0),
+                BinaryOp.NotEqual => (1, 0, 1),
+                BinaryOp.Less => (1, 0, 0),
+                BinaryOp.LessEqual => (1, 1, 0),
+                BinaryOp.Greater => (0, 0, 1),
+                _ => (0, 1, 1),
+            };
+            string lessLabel = NewLabel("wless");
+            string greaterLabel = NewLabel("wgreater");
+            string done = NewLabel("wcompared");
+            Emit("cmp edx, ebx              ; the high halves decide, unless they're equal");
+            Emit($"{(unsigned ? "jb" : "jl")} {lessLabel}");
+            Emit($"{(unsigned ? "ja" : "jg")} {greaterLabel}");
+            Emit("cmp eax, ecx");
+            Emit($"jb {lessLabel}");
+            Emit($"ja {greaterLabel}");
+            Emit($"mov eax, {equal}");
+            Emit($"jmp {done}");
+            Label(lessLabel);
+            Emit($"mov eax, {less}");
+            Emit($"jmp {done}");
+            Label(greaterLabel);
+            Emit($"mov eax, {greater}");
+            Label(done);
+        }
+
+        /// <summary>eax = the address of a 64-bit value written out in decimal (in a temporary).</summary>
+        void EmitWideText(Expr e)
+        {
+            string text = AllocTemp(24);
+            EmitWide(e);
+            string convert = e.Type.Kind == TypeKind.U64 ? "phi_uint64_to_str" : "phi_int64_to_str";
+            Need(convert);
+            LoadAddress("edi", text);
+            Emit("mov ecx, 24");
+            Emit($"call {convert}");
+            LoadAddress("eax", text);
         }
 
         static BinaryOp Invert(BinaryOp op) => op switch
@@ -2503,7 +2755,7 @@ namespace Phi.Compiler.CodeGen
                 return sb.ToString();
             }
 
-            string directive = t.ElementSize switch { 1 => "db", 2 => "dw", _ => "dd" };
+            string directive = t.ElementSize switch { 1 => "db", 2 => "dw", 8 => "dq", _ => "dd" };
             if (values == null || values.Count == 0)
             {
                 sb.AppendLine(v.Count == 1 ? $"{v.Label}: {directive} 0" : $"{v.Label}: times {v.Count} {directive} 0");
@@ -2511,7 +2763,7 @@ namespace Phi.Compiler.CodeGen
                 return sb.ToString();
             }
 
-            long mask = t.ElementSize switch { 1 => 0xFF, 2 => 0xFFFF, _ => 0xFFFFFFFF };
+            long mask = t.ElementSize switch { 1 => 0xFF, 2 => 0xFFFF, 8 => -1, _ => 0xFFFFFFFF };
             var numbers = values.Select(x => x is long n ? n & mask : 0).Select(n => n.ToString());
             sb.AppendLine($"{v.Label}: {directive} {string.Join(", ", numbers)}");
             if (values.Count < v.Count) sb.AppendLine($"    times {v.Count - values.Count} {directive} 0");

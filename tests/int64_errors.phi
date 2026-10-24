@@ -1,0 +1,13 @@
+phi.Int64Errors:Kernel
+{
+	i64 big: 5000000000;
+	int small: big;
+	int count: 1;
+	i64 shifted: big << big;
+	u8 bytes[4];
+	log bytes:big;
+	call Take: big;
+
+	[Take: int n: 0;]
+	[end]
+}

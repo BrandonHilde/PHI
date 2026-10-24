@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "dec", "fin", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "ptr", "method",
+            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "ptr", "method",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>
@@ -1419,6 +1419,8 @@ namespace Phi.Compiler.Syntax
             {
                 case TokenKind.Number:
                     Advance();
+                    if (t.Value is ulong huge)
+                        return new NumberExpr { Value = unchecked((long)huge), Unsigned64 = true, Span = t.Span };
                     return new NumberExpr { Value = (long)t.Value!, Span = t.Span };
 
                 case TokenKind.Decimal:

@@ -545,14 +545,16 @@ these were added:
   dragging), and `samples/desktop.phi`
 - [x] Enums (`enum.Tool { PENCIL  BRUSH }`, a type of their own) and `when x` / `is a b` /
   `else`, on numbers, enums and text
+- [x] 64-bit integers: `i64` and `u64` (variables, fields, arrays, parameters, results,
+  printing and text), with multiply, divide and conversion to text in `int64.asm`
 
 The parts most worth doing next, roughly in order:
 
 1. **Widgets** for those windows: buttons, text fields, lists and scroll bars (PhiOS's
    `os/ui.phi` has a start), windows that can be resized, and a program opening more than
    one window.
-2. **64-bit integers** (`i64`/`u64`), then `dec`/`fin`: PhiOS's calculator needed assembly
-   for `a * b / 1000`.
+2. **`dec`/`fin`** (decimal numbers), so a calculator can show 2.5; and `i64` in method
+   values and `when`.
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place.
 4. Strings that grow everywhere they can be: method results (now cut at 255 characters

@@ -289,6 +289,7 @@ namespace Phi.Compiler.Semantics
             else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
             else if (MovedPointer(result) is PhiType moved) m.ReturnType = moved; // [end: text + n] is still a ptr<u8>
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
+            else if (result.Type.IsWide) m.ReturnType = result.Type;
             else if (result.Type.IsObject || result.Type.IsStruct)
             {
                 // the caller gets an object of its own: a new local is handed over, anything else copied
@@ -600,6 +601,14 @@ namespace Phi.Compiler.Semantics
                 case "bln": return PhiType.Bool;
                 case "u16": return PhiType.U16;
                 case "u32": return PhiType.U32;
+                case "i64":
+                case "u64":
+                    if (scope?.Unit is UnitKind.Boot or UnitKind.Os)
+                    {
+                        Error(t.Span, $"{t.Name} needs 32-bit code (a Kernel or a Program)");
+                        return PhiType.Error;
+                    }
+                    return t.Name == "i64" ? PhiType.I64 : PhiType.U64;
                 case "i8": return PhiType.I8;
                 case "i16": return PhiType.I16;
                 case "str":
@@ -625,6 +634,11 @@ namespace Phi.Compiler.Semantics
                         .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
+                    if (parameters.Any(p => p.IsWide) || result.IsWide)
+                    {
+                        Error(t.Span, "a method called through a variable can't take or return an i64 or u64 yet");
+                        return PhiType.Error;
+                    }
                     if (result.IsString)
                     {
                         Error(t.Result!.Span, "a method called through a variable can't return a str yet; return a number");
@@ -1344,7 +1358,7 @@ namespace Phi.Compiler.Semantics
                         BindExpr(value, scope);
                         if (value.Type.IsArray && value.Type.Element == PhiType.U8 && value is NameExpr or MemberExpr)
                             Error(value.Span, $"can't print a u8 array; to print the text in it (up to a zero byte), write addr {Describe(value)}");
-                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsString)
+                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsWide && !value.Type.IsString)
                             Error(value.Span, $"can't print a {value.Type}; print one element or field at a time");
                     }
                     return log;
@@ -1680,13 +1694,13 @@ namespace Phi.Compiler.Semantics
 
             if (assign.Op != AssignOp.Set)
             {
-                if (!target.Type.IsNumeric)
+                if (!target.Type.IsNumeric && !target.Type.IsWide)
                 {
                     Error(assign.Span, $"{OpText(assign.Op)} only works on numbers, and '{Describe(target)}' is a {target.Type}");
                     return assign;
                 }
 
-                value = Convert(value, PhiType.Int, "the right side");
+                value = Convert(value, target.Type.IsWide ? target.Type : PhiType.Int, "the right side");
                 var op = assign.Op switch
                 {
                     AssignOp.Add => BinaryOp.Add,
@@ -1743,8 +1757,8 @@ namespace Phi.Compiler.Semantics
                     if (t.IsEnum != value.Type.IsEnum || (t.IsEnum && value.Type != t))
                     {
                         Error(value.Span, t.IsEnum
-                            ? $"this when is on a {t}, so each value is one of {t}'s (like {t}.{t.Enum!.Members[0].Name}), and this is a {value.Type}"
-                            : $"this when is on a {t}, and this is a {value.Type}; write `as {t}` if that's meant");
+                            ? $"this when is on {A(t)}, so each value is one of {t}'s (like {t}.{t.Enum!.Members[0].Name}), and this is {A(value.Type)}"
+                            : $"this when is on {A(t)}, and this is {A(value.Type)}; write `as {t}` if that's meant");
                         continue;
                     }
                     value = Convert(value, t.IsEnum ? t : PhiType.Int, "each value of this when");
@@ -1849,7 +1863,7 @@ namespace Phi.Compiler.Semantics
                 if (part.Type.IsError) continue;
                 if (part.Type.IsArray && part.Type.Element == PhiType.U8 && part is NameExpr or MemberExpr)
                     Error(part.Span, $"can't write a u8 array into a str; for the text in it (up to a zero byte), write addr {Describe(part)}");
-                else if (!part.Type.IsNumeric && !part.Type.IsString)
+                else if (!part.Type.IsNumeric && !part.Type.IsWide && !part.Type.IsString)
                     Error(part.Span, $"can't write a {part.Type} into a str; write one element or field at a time");
 
                 // the str is being rewritten, so reading it after that would read the new text
@@ -1923,6 +1937,13 @@ namespace Phi.Compiler.Semantics
             AssignOp.Modulo => "%%",
             _ => "^^",
         };
+
+        /// <summary>"an int", "a u8", "an Account": a type with the article that reads right before it.</summary>
+        static string A(PhiType t)
+        {
+            string name = t.ToString();
+            return ("aeioAEIO".Contains(name[0]) ? "an " : "a ") + name;
+        }
 
         static string Describe(Expr e) => e switch
         {
@@ -2334,7 +2355,7 @@ namespace Phi.Compiler.Semantics
         void BindCondition(Expr condition, Scope scope)
         {
             BindExpr(condition, scope);
-            if (!condition.Type.IsError && !condition.Type.IsNumeric)
+            if (!condition.Type.IsError && !condition.Type.IsNumeric && !condition.Type.IsWide)
                 Error(condition.Span, $"a condition must be a number or a comparison, not a {condition.Type}");
         }
 
@@ -2353,7 +2374,15 @@ namespace Phi.Compiler.Semantics
             t.IsMethod && t.Signature!.Parameters.Count == 0 && t.Signature.Result.Kind != TypeKind.Void;
 
         static PhiType ArithmeticType(PhiType a, PhiType b) =>
-            a.IsUnsigned32 || b.IsUnsigned32 ? PhiType.U32 : PhiType.I32;
+            a.IsWide || b.IsWide ? (a.Kind == TypeKind.U64 || b.Kind == TypeKind.U64 ? PhiType.U64 : PhiType.I64)
+            : a.IsUnsigned32 || b.IsUnsigned32 ? PhiType.U32 : PhiType.I32;
+
+        /// <summary>Binds e and says whether it's a 64-bit value (for operators that work on those).</summary>
+        bool IsWideOperand(Expr e, Scope scope)
+        {
+            BindExpr(e, scope);
+            return e.Type.IsWide;
+        }
 
         void BindExpr(Expr expr, Scope scope)
         {
@@ -2371,8 +2400,11 @@ namespace Phi.Compiler.Semantics
             switch (expr)
             {
                 case NumberExpr n:
-                    // literals too big for int (like 0x80000000) are u32, so math on them is unsigned
-                    expr.Type = n.Value > int.MaxValue ? PhiType.U32 : PhiType.Int;
+                    // literals too big for int (like 0x80000000) are u32, so math on them is unsigned;
+                    // past 32 bits they're i64
+                    expr.Type = n.Unsigned64 ? PhiType.U64
+                              : n.Value > uint.MaxValue || n.Value < int.MinValue ? PhiType.I64
+                              : n.Value > int.MaxValue ? PhiType.U32 : PhiType.Int;
                     break;
 
                 case BoolExpr:
@@ -2511,8 +2543,9 @@ namespace Phi.Compiler.Semantics
                     if (cast.Operand.Type.IsError || to.IsError) break;
 
                     // numbers, pointers and method addresses become each other; nothing else does
-                    bool from = cast.Operand.Type.IsNumeric || cast.Operand.Type.IsMethod;
-                    if (!from || !(to.IsNumeric || to.IsMethod))
+                    // (an i64 or u64 to 32 bits keeps the low half)
+                    bool from = cast.Operand.Type.IsNumeric || cast.Operand.Type.IsMethod || cast.Operand.Type.IsWide;
+                    if (!from || !(to.IsNumeric || to.IsMethod || to.IsWide))
                     {
                         Error(cast.Span, $"a {cast.Operand.Type} can't be used as a {to}; only numbers, pointers and methods can");
                         break;
@@ -2527,6 +2560,10 @@ namespace Phi.Compiler.Semantics
                     BindExpr(input.Port, scope);
                     input.Port = Convert(input.Port, PhiType.U16, "the port");
                     input.Type = input.Size switch { 1 => PhiType.U8, 2 => PhiType.U16, _ => PhiType.U32 };
+                    break;
+
+                case UnaryExpr unary when IsWideOperand(unary.Operand, scope):
+                    unary.Type = unary.Op == UnaryOp.Not ? PhiType.Bool : unary.Operand.Type;
                     break;
 
                 case UnaryExpr unary:
@@ -2788,8 +2825,21 @@ namespace Phi.Compiler.Semantics
             if (b.IsComparison && (b.Left.Type.IsEnum || b.Right.Type.IsEnum) && b.Left.Type != b.Right.Type)
             {
                 PhiType kind = b.Left.Type.IsEnum ? b.Left.Type : b.Right.Type;
-                Error(b.Span, $"a {kind} is compared with {kind}'s own values (like {kind}.{kind.Enum!.Members[0].Name}), and this is a " +
-                              $"{(b.Left.Type.IsEnum ? b.Right.Type : b.Left.Type)}; write `as {kind}` if that's meant");
+                Error(b.Span, $"{A(kind)} is compared with {kind}'s own values (like {kind}.{kind.Enum!.Members[0].Name}), and this is " +
+                              $"{A(b.Left.Type.IsEnum ? b.Right.Type : b.Left.Type)}; write `as {kind}` if that's meant");
+            }
+
+            // 64-bit: the other side is made 64 bits too (a shift's count stays a number)
+            if ((b.Left.Type.IsWide || b.Right.Type.IsWide) && !b.IsLogical)
+            {
+                bool shift = b.Op is BinaryOp.ShiftLeft or BinaryOp.ShiftRight;
+                PhiType wide = ArithmeticType(b.Left.Type, b.Right.Type);
+                if (shift && b.Right.Type.IsWide)
+                    Error(b.Right.Span, $"a shift's count is a number of bits; write ({Describe(b.Right)} as int)");
+                b.Left = Convert(b.Left, shift ? b.Left.Type : wide, "the left side");
+                if (!shift) b.Right = Convert(b.Right, wide, "the right side");
+                b.Type = b.IsComparison ? PhiType.Bool : shift ? b.Left.Type : wide;
+                return;
             }
 
             b.Left = Convert(b.Left, PhiType.Int, "the left side");
@@ -2888,10 +2938,25 @@ namespace Phi.Compiler.Semantics
                 && target.Pointee != PhiType.U8 && e.Type.Pointee != PhiType.U8)
                 diagnostics.Warning(file, e.Span, $"{what} is a {target}, but this is a {e.Type}; write `as {target}` if that's meant");
 
+            // 64 bits: from any number (made wider); to 32 bits only with `as`, so nothing is cut quietly
+            if (target.IsWide)
+            {
+                if (e.Type.IsWide || e.Type.IsNumeric) return e;
+                if (e is StringExpr { Value.Length: 1 } wideChar)
+                    return new NumberExpr { Value = wideChar.Value[0], Span = wideChar.Span, Type = PhiType.Int };
+                Error(e.Span, $"{what} needs a number, but this is a {e.Type}");
+                return e;
+            }
+            if (e.Type.IsWide && (target.IsNumeric || target.IsMethod))
+            {
+                Error(e.Span, $"{what} is {A(target)}, and this is {A(e.Type)}, which may not fit; write `as {target}` to keep its low 32 bits");
+                return e;
+            }
+
             if (target.IsEnum && e.Type != target)
             {
-                Error(e.Span, $"{what} is a {target}, which takes {target}'s values (like {target}.{target.Enum!.Members[0].Name}), " +
-                              $"but this is a {e.Type}; write `as {target}` if that's meant");
+                Error(e.Span, $"{what} is {A(target)}, which takes {target}'s values (like {target}.{target.Enum!.Members[0].Name}), " +
+                              $"but this is {A(e.Type)}; write `as {target}` if that's meant");
                 return e;
             }
 
@@ -2949,6 +3014,8 @@ namespace Phi.Compiler.Semantics
                 {
                     long? v = Evaluate(u.Operand);
                     if (v == null) return null;
+                    if (u.Type.IsWide)
+                        return u.Op switch { UnaryOp.Negate => -v.Value, UnaryOp.BitNot => ~v.Value, _ => v.Value == 0 ? 1 : 0 };
                     return u.Op switch
                     {
                         UnaryOp.Negate => Wrap(-v.Value),
@@ -2960,6 +3027,7 @@ namespace Phi.Compiler.Semantics
                 {
                     long? l = Evaluate(b.Left), r = Evaluate(b.Right);
                     if (l == null || r == null) return null;
+                    if (b.Left.Type.IsWide || b.Right.Type.IsWide) return EvaluateWide(b, l.Value, r.Value);
 
                     bool unsigned = b.Left.Type.IsUnsigned32 || b.Right.Type.IsUnsigned32;
                     int x = (int)l.Value, y = (int)r.Value;
@@ -2994,5 +3062,32 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>32-bit two's complement, like the CPU.</summary>
         static long Wrap(long v) => (int)v;
+
+        /// <summary>The same in 64 bits: signed (i64) unless either side is a u64.</summary>
+        static long? EvaluateWide(BinaryExpr b, long x, long y)
+        {
+            bool unsigned = b.Left.Type.Kind == TypeKind.U64 || b.Right.Type.Kind == TypeKind.U64;
+            ulong ux = (ulong)x, uy = (ulong)y;
+            return b.Op switch
+            {
+                BinaryOp.Add => unchecked(x + y),
+                BinaryOp.Subtract => unchecked(x - y),
+                BinaryOp.Multiply => unchecked(x * y),
+                BinaryOp.Divide => y == 0 ? null : unsigned ? (long)(ux / uy) : x == long.MinValue && y == -1 ? x : x / y,
+                BinaryOp.Modulo => y == 0 ? null : unsigned ? (long)(ux % uy) : x == long.MinValue && y == -1 ? 0 : x % y,
+                BinaryOp.BitAnd => x & y,
+                BinaryOp.BitOr => x | y,
+                BinaryOp.BitXor => x ^ y,
+                BinaryOp.ShiftLeft => x << (int)(y & 63),
+                BinaryOp.ShiftRight => unsigned ? (long)(ux >> (int)(y & 63)) : x >> (int)(y & 63),
+                BinaryOp.Equal => x == y ? 1 : 0,
+                BinaryOp.NotEqual => x != y ? 1 : 0,
+                BinaryOp.Less => (unsigned ? ux < uy : x < y) ? 1 : 0,
+                BinaryOp.LessEqual => (unsigned ? ux <= uy : x <= y) ? 1 : 0,
+                BinaryOp.Greater => (unsigned ? ux > uy : x > y) ? 1 : 0,
+                BinaryOp.GreaterEqual => (unsigned ? ux >= uy : x >= y) ? 1 : 0,
+                _ => null,
+            };
+        }
     }
 }

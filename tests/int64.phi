@@ -1,0 +1,75 @@
+struct.Account
+{
+	i64 balance;
+	int id;
+}
+
+phi.Int64:Kernel
+{
+	# past 32 bits
+	i64 big: 5000000000;
+	i64 small: -7;
+	u64 huge: 0xFFFFFFFFFFFFFFFF;
+	log big ' ' small ' ' huge ' ' sizeof big '\n';
+
+	# arithmetic, with 32-bit numbers made 64 bits on the way in
+	int n: 3;
+	i64 sum: big + n;
+	i64 product: big * 4;
+	i64 negative: small * big;
+	log sum ' ' product ' ' negative ' ' (big - 6000000000) '\n';
+	log (product / 3) ' ' (product % 7) ' ' (negative / 1000) ' ' (negative % 1000) '\n';
+	log (huge / 10) ' ' (huge % 10) '\n';
+
+	# the PhiOS calculator's a * b / 1000, with no overflow in the middle
+	int a: 2000000;
+	int b: 3000000;
+	i64 scaled: (a as i64) * b / 1000;
+	log scaled '\n';
+
+	# comparisons, shifts and bits
+	log (big > 4999999999) ' ' (big < small) ' ' (small < 0) ' ' (huge > big) ' ' (big is 5000000000) '\n';
+	i64 one: 1;
+	log (one << 40) ' ' ((one << 40) >> 38) ' ' (small >> 1) ' ' (huge >> 60) ' ' (big & 0xFFFF) ' ' (big | 1) ' ' (~small) '\n';
+
+	# to 32 bits with as, keeping the low half
+	int low: big as int;
+	log low ' ' (product as u32) '\n';
+
+	# assignment operators, fields, elements and methods
+	sum++ 1000000000;
+	sum--;
+	sum** 2;
+	log sum '\n';
+	Account acc;
+	acc.balance is 1 << 0;
+	acc.balance is (Double: 3000000000);
+	acc.balance++ big;
+	log acc.balance '\n';
+	i64 list: 1 2 3;
+	list:1 is big;
+	log list:0 ' ' list:1 ' ' list:2 '\n';
+	log (Factorial: 20) '\n';
+	if big
+		log 'big is not zero\n';
+	;;
+	if not (one - 1)
+		log 'one - 1 is zero\n';
+	;;
+
+	# into text
+	str text: '';
+	text is 'balance: ' acc.balance;
+	log text '\n';
+	exit 0;
+
+	[Double: i64 x: 0;]
+	[end: x * 2]
+
+	[Factorial: int k: 1;]
+		i64 result: 1;
+		while int i: 2; i <= k; i++;
+			result** i;
+		;;
+	[end: result]
+}

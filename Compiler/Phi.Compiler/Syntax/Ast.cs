@@ -376,6 +376,9 @@ namespace Phi.Compiler.Syntax
     public sealed class NumberExpr : Expr
     {
         public long Value { get; init; }
+
+        /// <summary>Past what a long holds (like 0xFFFFFFFFFFFFFFFF): a u64, kept in Value's bits.</summary>
+        public bool Unsigned64 { get; init; }
     }
 
     public sealed class DecimalExpr : Expr
