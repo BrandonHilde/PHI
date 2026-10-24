@@ -17,6 +17,7 @@
 #           ;;
 #           if App.event.kind is Events.KEY ...      # App.event.value is the key
 #           if App.event.kind is Events.MOUSE ...    # .x .y .value (buttons) .clicks .wheel
+#           if App.event.kind is Events.RESIZE       # .x by .y: call App.Resize, then draw again
 #       ;;
 #   }
 #
@@ -49,6 +50,11 @@ phi.App:Program
 		;;
 		call Draw.Target: pixels w h;
 	[end: true]
+
+	# a new size (after Events.RESIZE: App.event.x by App.event.y); what was drawn is
+	# gone, so draw again; false if the kernel can't make one that size
+	[Resize: int w: 0; int h: 0;]
+	[end: (Open: w h)]
 
 	# show what's been drawn
 	[Present]

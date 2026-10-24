@@ -1,15 +1,16 @@
-# Desktop: three GUI apps, each a user program in a window of its own.
+# Desktop: four GUI apps, each a user program in a window of its own.
 #
 #   phi run samples/desktop.phi
 #
 # Click in QEMU's window to give it the mouse (Ctrl+Alt+G gives it back). Click a window
-# to bring it to the front, drag it by its title bar, and close it with the box at the
-# right of its title bar. Keys go to the front window. When the last window closes, the
-# machine stops.
+# to bring it to the front, drag it by its title bar, resize it by its bottom right
+# corner, and close it with the box at the right of its title bar. Keys go to the front
+# window. When the last window closes, the machine stops.
 #
 # The apps are in samples/desktop.rootfs: phi build compiles each into a program on the
-# disk. Each one draws with gfx.draw on pixels of its own (gui.app) and the kernel puts
-# them on the screen (gui.desktop). One that crashes loses only its own window.
+# disk. Each one draws with gfx.draw on pixels of its own (gui.app), Form with the
+# widgets in gui.widgets, and the kernel puts them on the screen (gui.desktop). One
+# that crashes loses only its own window.
 
 use gui.desktop;
 
@@ -20,9 +21,10 @@ phi.DesktopSample:Kernel
 		exit 1;
 	;;
 	call Desktop.Start;
-	call Desktop.Run: 'SKETCH.BIN' 'Sketch' 40 40;
-	call Desktop.Run: 'NOTES.BIN' 'Notes' 420 60;
-	call Desktop.Run: 'CLOCK.BIN' 'Clock' 480 380;
+	call Desktop.Run: 'SKETCH.BIN' 'Sketch' 20 20;
+	call Desktop.Run: 'NOTES.BIN' 'Notes' 370 20;
+	call Desktop.Run: 'CLOCK.BIN' 'Clock' 370 262;
+	call Desktop.Run: 'FORM.BIN' 'Form' 20 292;
 
 	while Desktop.windows.len > 0
 		call Desktop.Step;

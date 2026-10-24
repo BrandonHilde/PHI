@@ -545,14 +545,15 @@ these were added:
   dragging), and `samples/desktop.phi`
 - [x] Enums (`enum.Tool { PENCIL  BRUSH }`, a type of their own) and `when x` / `is a b` /
   `else`, on numbers, enums and text
+- [x] Widgets (`gui.widgets`: buttons, check boxes, text fields, lists with scroll bars)
+  and resizable windows
 - [x] 64-bit integers: `i64` and `u64` (variables, fields, arrays, parameters, results,
   printing and text), with multiply, divide and conversion to text in `int64.asm`
 
 The parts most worth doing next, roughly in order:
 
-1. **Widgets** for those windows: buttons, text fields, lists and scroll bars (PhiOS's
-   `os/ui.phi` has a start), windows that can be resized, and a program opening more than
-   one window.
+1. **More for windows:** a program opening more than one window, menus, and dialog boxes
+   (open, save, a message).
 2. **`dec`/`fin`** (decimal numbers), so a calculator can show 2.5; and `i64` in method
    values and `when`.
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked

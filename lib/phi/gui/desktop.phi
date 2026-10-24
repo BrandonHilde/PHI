@@ -14,19 +14,24 @@
 # windows by their title bars, sends keys to the front window and mouse events to the
 # window they happen in (from its inside's top left: a button pressed or let go, the
 # wheel turned, or the mouse moved over it), and asks a program to close when
-# its close box is clicked. A program that ends, or crashes, loses its window. The
-# screen is drawn again only when something changed.
+# its close box is clicked. The grip at a window's bottom right corner resizes it: the
+# program is told its new size (Events.RESIZE) when the button is let go. A program
+# that ends, or crashes, loses its window. The screen is drawn again only when
+# something changed.
 
 use gui.surfaces;
 use drivers.vbe;
 use drivers.input;
 use user.text;
+use user.math;
 
 struct.DesktopWindow
 {
 	int pid;
 	int x;                      # the frame's top left
 	int y;
+	int w;                      # its inside's size (0 until the program opens its surface)
+	int h;
 	u8 title[32];
 }
 
@@ -35,6 +40,10 @@ phi.Desktop:Kernel
 	const int TITLE_H: 20;
 	const int BORDER: 2;
 	const int CLOSE_SIZE: 16;
+	const int GRIP: 12;         # the corner that resizes a window
+	const int SMALLEST_W: 80;
+	const int SMALLEST_H: 40;
+	const u32 FACE: 0xF2F4F8;   # a window's inside, where its program hasn't drawn
 	const int EMPTY_W: 160;     # a window's size until its program opens its surface
 	const int EMPTY_H: 40;
 	const u32 BACKGROUND: 0x2B4A6F;
@@ -47,6 +56,7 @@ phi.Desktop:Kernel
 	int dragging: -1;           # the process whose window is being dragged
 	int drag_dx: 0;
 	int drag_dy: 0;
+	int resizing: -1;           # the process whose window is being resized
 	int pointer_x: -1;
 	int pointer_y: -1;
 
@@ -91,16 +101,14 @@ phi.Desktop:Kernel
 	# ------------------------------------------------------------ the windows
 
 	[Width: int i: 0;]
-		int pid: windows:i.pid;
-		int w: Surfaces.width:pid;
+		int w: windows:i.w;
 		if w is 0
 			w is EMPTY_W;
 		;;
 	[end: w + 2 * BORDER]
 
 	[Height: int i: 0;]
-		int pid: windows:i.pid;
-		int h: Surfaces.height:pid;
+		int h: windows:i.h;
 		if h is 0
 			h is EMPTY_H;
 		;;
@@ -156,6 +164,11 @@ phi.Desktop:Kernel
 			;;
 			elif (Surfaces.TakeChanged: pid)
 				dirty is true;
+				# the window takes the size of what the program drew, unless it's being resized
+				if resizing is not pid
+					windows:i.w is Surfaces.width:pid;
+					windows:i.h is Surfaces.height:pid;
+				;;
 			;;
 			i--;
 		;;
@@ -177,6 +190,20 @@ phi.Desktop:Kernel
 	[Mouse]
 		while (Input.NextMouse)
 			call MouseEvent: Input.event_x Input.event_y Input.event_buttons Input.event_clicks Input.event_wheel;
+		;;
+
+		# a window being resized follows the mouse with its corner
+		if resizing >= 0
+			int r: (Find: resizing);
+			if r >= 0
+				int w: (Math.Max: Input.mouse_x - windows:r.x - 2 * BORDER SMALLEST_W);
+				int h: (Math.Max: Input.mouse_y - windows:r.y - TITLE_H - BORDER SMALLEST_H);
+				if w is not windows:r.w or h is not windows:r.h
+					windows:r.w is w;
+					windows:r.h is h;
+					dirty is true;
+				;;
+			;;
 		;;
 
 		# a window being dragged follows the mouse
@@ -212,6 +239,14 @@ phi.Desktop:Kernel
 	[MouseEvent: int x: 0; int y: 0; int buttons: 0; int clicks: 0; int wheel: 0;]
 		if (buttons & 1) is 0
 			dragging is -1;
+			if resizing >= 0
+				# let go: the program draws itself that size
+				int r: (Find: resizing);
+				if r >= 0
+					call Surfaces.PostResize: resizing windows:r.w windows:r.h;
+				;;
+				resizing is -1;
+			;;
 		;;
 		int i: (At: x y);
 		if i < 0 return;
@@ -233,6 +268,11 @@ phi.Desktop:Kernel
 			dragging is pid;
 			drag_dx is x - wx;
 			drag_dy is y - wy;
+			return;
+		;;
+		# the grip at the bottom right corner
+		if clicks > 0 and x >= wx + (Width: i) - GRIP and y >= wy + (Height: i) - GRIP
+			resizing is pid;
 			return;
 		;;
 		call Surfaces.PostMouse: pid x - wx - BORDER y - wy - TITLE_H buttons clicks wheel;
@@ -273,6 +313,17 @@ phi.Desktop:Kernel
 		call Draw.FillRect: box y + 2 CLOSE_SIZE CLOSE_SIZE FRAME;
 		call Draw.Line: box + 4 y + 6 box + 11 y + 13 Draw.BLACK;
 		call Draw.Line: box + 11 y + 6 box + 4 y + 13 Draw.BLACK;
+		# its inside, cut to the window's size (it may be being resized)
+		call Draw.FillRect: x + BORDER y + TITLE_H w - 2 * BORDER h - TITLE_H - BORDER FACE;
+		call Draw.PushClip: x + BORDER y + TITLE_H w - 2 * BORDER h - TITLE_H - BORDER;
 		call Surfaces.DrawAt: windows:i.pid x + BORDER y + TITLE_H;
+		call Draw.PopClip;
+
+		# the grip: three short lines in the corner
+		int gx: x + w - 3;
+		int gy: y + h - 3;
+		while int k: 1; k <= 3; k++;
+			call Draw.Line: gx - 3 * k gy gx gy - 3 * k Draw.GRAY;
+		;;
 	[end]
 }

@@ -1,0 +1,105 @@
+# The widgets: a text field, a check box, a button and a list. Resize the window and
+# the list grows with it.
+use gui.app;
+use gui.widgets;
+
+phi.FormApp:Program
+{
+	str fruits: 'Apple' 'Banana' 'Cherry' 'Damson' 'Elderberry' 'Fig' 'Grape' 'Huckleberry' 'Kiwi' 'Lemon' 'Mango' 'Nectarine' 'Orange' 'Pear' 'Quince';
+	TextField name;
+	CheckBox shout;
+	Button add;
+	ListBox list;
+	str status: 'Type a name, pick a fruit';
+	int width: 260;
+	int height: 280;
+
+	if (App.Open: width height) is false
+		exit 1;
+	;;
+	call name.Place: 60 10 190;
+	name.focused is true;
+	call shout.Place: 60 42 'Shout';
+	call add.Place: 170 38 80 24 'Add';
+	call list.Place: 10 72 240 180;
+	call list.SetItems: fruits fruits.len;
+	call Layout;
+	call Paint;
+	log 'form: open\n';
+
+	while true
+		call App.WaitEvent;
+		int kind: App.event.kind;
+		when kind
+			is Events.CLOSE
+				exit 0;
+			;;
+			is Events.RESIZE
+				width is App.event.x;
+				height is App.event.y;
+				if (App.Resize: width height)
+					call Layout;
+					log 'form: resized to ' width 'x' height '\n';
+				;;
+			;;
+			is Events.KEY
+				int key: App.event.value;
+				if name.focused
+					if (name.Key: key) is 2
+						call Pressed;
+					;;
+				;;
+				elif (list.Key: key) is 2
+					call Pressed;
+				;;
+			;;
+			is Events.MOUSE
+				call name.Mouse: App.event;
+				if (shout.Mouse: App.event)
+					log 'form: shout ' shout.on '\n';
+				;;
+				if (add.Mouse: App.event)
+					call Pressed;
+				;;
+				int picked: (list.Mouse: App.event);
+				if picked > 0 and list.selected >= 0 and App.event.clicks > 0
+					log 'form: picked ' fruits:(list.selected) '\n';
+					name.focused is false;
+				;;
+				if picked is 2
+					call Pressed;
+				;;
+			;;
+		;;
+		call Paint;
+	;;
+
+	# the list fills what's left of the window
+	[Layout]
+		list.w is width - 20;
+		list.h is height - list.y - 28;
+	[end]
+
+	[Pressed]
+		status is 'Added ';
+		if list.selected >= 0
+			status++ fruits:(list.selected);
+		;;
+		status++ ' for ' addr name.text;
+		if shout.on
+			status++ '!';
+		;;
+		log 'form: ' status '\n';
+	[end]
+
+	[Paint]
+		call Draw.Clear: Widgets.FACE;
+		call Widgets.Label: 10 14 'Name';
+		call name.Paint;
+		call shout.Paint;
+		call add.Paint;
+		call list.Paint;
+		call Draw.TextFitted: 10 height - 20 width - 20 status Widgets.TEXT_DIM;
+		call App.Present;
+	[end]
+}

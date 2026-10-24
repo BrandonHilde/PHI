@@ -1073,6 +1073,42 @@ if (Screen.Start: 800 600)
 ;;
 ```
 
+Dragging a window's bottom right corner resizes it. When the button is let go the
+program gets `Events.RESIZE`, with the new size in `App.event.x` and `.y`: it calls
+`App.Resize: w h` and draws again.
+
+`gui.widgets` has the usual parts of a form, each a struct that keeps its own place and
+state. Its `Mouse` and `Key` say what happened, and the program draws everything again
+after each event:
+
+```phi
+use gui.widgets;
+
+TextField name;         # a line to type in: caret, arrows, Home/End, Backspace/Delete
+CheckBox shout;
+Button add;
+ListBox list;           # rows from a str array, a scroll bar, the wheel and arrow keys
+call name.Place: 60 10 190;
+call shout.Place: 60 42 'Shout';
+call add.Place: 170 38 80 24 'Add';
+call list.Place: 10 72 240 180;
+call list.SetItems: fruits fruits.len;
+
+# after App.WaitEvent:
+if (add.Mouse: App.event) ...           # true: clicked (pressed and let go on it)
+if (shout.Mouse: App.event) ...         # true: ticked or cleared (shout.on)
+int picked: (list.Mouse: App.event);    # 1: a row picked (list.selected), 2: double-clicked
+int typed: (name.Key: App.event.value); # 1: changed, 2: Enter, 3: Esc
+call name.Mouse: App.event;             # a click gives it the keys (name.focused)
+
+call Draw.Clear: Widgets.FACE;
+call name.Paint;                        # ... and each of the others, then App.Present
+```
+
+Key codes in `App.event.value` are `drivers.input`'s, also named in `Events`
+(`Events.KEY_ENTER`, `KEY_LEFT`, `MOD_CTRL` ...), since a program can't use
+`drivers.input`.
+
 A kernel with a window manager of its own uses `gui.surfaces` underneath:
 `(Surfaces.TakeChanged: pid)` says a program showed a new picture, `Surfaces.DrawAt: pid x
 y` draws it (through `Draw`, so cut to the view), and `PostKey: pid key`, `PostMouse: pid x
@@ -1470,7 +1506,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
-| `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
+| `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |

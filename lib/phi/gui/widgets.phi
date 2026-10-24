@@ -1,0 +1,404 @@
+# Widgets for windows: buttons, check boxes, text fields and lists, drawn with
+# gfx.draw. 32-bit kernels and user programs (with gui.app).
+#
+#   use gui.widgets;
+#   Button ok;
+#   TextField name;
+#   call ok.Place: 10 60 80 24 'OK';
+#   call name.Place: 10 20 200;
+#   ...
+#   call App.WaitEvent;
+#   if App.event.kind is Events.MOUSE
+#       if (ok.Mouse: App.event) ...           # true: it was clicked
+#       call name.Mouse: App.event;            # a click on it puts the caret there
+#   ;;
+#   if App.event.kind is Events.KEY
+#       int done: (name.Key: App.event.value); # 2 when Enter was pressed
+#   ;;
+#   call Draw.Clear: Widgets.FACE;
+#   call ok.Paint;
+#   call name.Paint;
+#   call App.Present;
+#
+# Each widget keeps its own place and state; Mouse and Key say what happened, and the
+# program draws everything again after an event (Paint) and Presents it. Widgets draw
+# relative to Draw's view, so they work inside a part of a window too.
+
+use gfx.draw;
+use gui.events;
+use user.text;
+use user.math;
+
+# a button: Mouse gives true when it's clicked (pressed, and let go on it)
+struct.Button
+{
+	int x;
+	int y;
+	int w;
+	int h;
+	u8 label[32];
+	bln down;                   # pressed, and not let go yet
+
+	[Place: int bx: 0; int by: 0; int bw: 0; int bh: 0; ptr<u8> text: 0;]
+		x is bx;
+		y is by;
+		w is bw;
+		h is bh;
+		call Text.Copy: label text sizeof label;
+	[end]
+
+	[Paint]
+		u32 face: Widgets.BUTTON;
+		if down
+			face is Widgets.BUTTON_DOWN;
+		;;
+		call Draw.FillRect: x y w h face;
+		call Draw.Rect: x y w h Widgets.EDGE;
+		call Draw.Centered: x y + (h - 16) / 2 w addr label Widgets.TEXT;
+	[end]
+
+	[Mouse: GuiEvent e;]
+		bln on: (Widgets.Inside: e.x e.y x y w h);
+		bln clicked: false;
+		if e.clicks > 0
+			down is on;
+		;;
+		elif down and (e.value & 1) is 0
+			clicked is on;
+			down is false;
+		;;
+	[end: clicked]
+}
+
+# a box to tick: Mouse gives true when a click changed it
+struct.CheckBox
+{
+	int x;
+	int y;
+	u8 label[32];
+	bln on;
+
+	[Place: int cx: 0; int cy: 0; ptr<u8> text: 0;]
+		x is cx;
+		y is cy;
+		call Text.Copy: label text sizeof label;
+	[end]
+
+	[Paint]
+		call Draw.FillRect: x y + 1 14 14 Widgets.FIELD;
+		call Draw.Rect: x y + 1 14 14 Widgets.EDGE;
+		if on
+			call Draw.Line: x + 3 y + 8 x + 6 y + 11 Widgets.ACCENT;
+			call Draw.Line: x + 6 y + 11 x + 11 y + 4 Widgets.ACCENT;
+			call Draw.Line: x + 3 y + 7 x + 6 y + 10 Widgets.ACCENT;
+			call Draw.Line: x + 6 y + 10 x + 11 y + 3 Widgets.ACCENT;
+		;;
+		call Draw.Text: x + 20 y addr label Widgets.TEXT;
+	[end]
+
+	[Mouse: GuiEvent e;]
+		int wide: 20 + 8 * (Text.Length: addr label);
+		if e.clicks > 0 and (Widgets.Inside: e.x e.y x y wide 16)
+			on is (on is false);
+			return true;
+		;;
+	[end: false]
+}
+
+# a line of text to type into, with a caret that moves (arrows, Home, End) and keys that
+# take characters back (Backspace, Delete)
+struct.TextField
+{
+	int x;
+	int y;
+	int w;
+	u8 text[128];
+	int len;
+	int cursor;                 # where the next character goes, 0 to len
+	int most;                   # how many characters it takes (at most 127)
+	bln focused;                # it gets the keys
+	bln secret;                 # shown as dots: a password
+
+	[Place: int fx: 0; int fy: 0; int fw: 0;]
+		x is fx;
+		y is fy;
+		w is fw;
+		most is 127;
+	[end]
+
+	[Set: ptr<u8> value: 0;]
+		len is (Text.Copy: text value sizeof text);
+		cursor is len;
+	[end]
+
+	# a key: 0 if it wasn't for the field, 1 if it changed the text or moved the caret,
+	# 2 for Enter, 3 for Esc
+	[Key: int key: 0;]
+		int k: key & Events.KEY_MASK;
+		when k
+			is Events.KEY_ENTER
+				return 2;
+			;;
+			is Events.KEY_ESCAPE
+				return 3;
+			;;
+			is Events.KEY_LEFT
+				cursor is (Math.Max: cursor - 1 0);
+				return 1;
+			;;
+			is Events.KEY_RIGHT
+				cursor is (Math.Min: cursor + 1 len);
+				return 1;
+			;;
+			is Events.KEY_HOME
+				cursor is 0;
+				return 1;
+			;;
+			is Events.KEY_END
+				cursor is len;
+				return 1;
+			;;
+			is Events.KEY_BACKSPACE
+				if cursor > 0
+					cursor--;
+					call Remove: cursor;
+				;;
+				return 1;
+			;;
+			is Events.KEY_DELETE
+				if cursor < len
+					call Remove: cursor;
+				;;
+				return 1;
+			;;
+		;;
+		if (key & (Events.MOD_CTRL | Events.MOD_ALT)) is not 0 return 0;
+		if k >= 32 and k < 127 and len < most and len < 127
+			int i: len;
+			while i > cursor
+				text:i is text:(i - 1);
+				i--;
+			;;
+			text:cursor is k;
+			len++;
+			cursor++;
+			text:len is 0;
+			return 1;
+		;;
+	[end: 0]
+
+	# the character at pos taken out
+	[Remove: int pos: 0;]
+		while int i: pos; i < len; i++;
+			text:i is text:(i + 1);
+		;;
+		len--;
+	[end]
+
+	# a click on it gives it the keys and puts the caret there; a click elsewhere takes
+	# them away; true when that changed anything
+	[Mouse: GuiEvent e;]
+		if e.clicks is 0 return false;
+		bln on: (Widgets.Inside: e.x e.y x y w 24);
+		bln was: focused;
+		focused is on;
+		if on
+			cursor is (Math.Clamp: (e.x - x - 6 + 4) / 8 + (First) 0 len);
+			return true;
+		;;
+	[end: was]
+
+	# the first character shown: the caret always stays in sight
+	[First]
+		int room: (w - 14) / 8;
+		int first: 0;
+		if cursor > room
+			first is cursor - room;
+		;;
+	[end: first]
+
+	[Paint]
+		u32 edge: Widgets.EDGE;
+		if focused
+			edge is Widgets.ACCENT;
+		;;
+		call Draw.FillRect: x y w 24 Widgets.FIELD;
+		call Draw.Rect: x y w 24 edge;
+		call Draw.PushClip: x + 4 y w - 8 24;
+		int first: (First);
+		int cx: x + 6;
+		if secret
+			while int i: first; i < len; i++;
+				if i is cursor
+					call Caret: cx;
+				;;
+				call Draw.FillCircle: cx + 3 y + 12 3 Widgets.TEXT;
+				cx++ 8;
+			;;
+		;;
+		else
+			call Draw.TextN: cx y + 4 addr text:first len - first Widgets.TEXT;
+		;;
+		call Caret: x + 6 + (cursor - first) * 8;
+		call Draw.PopClip;
+	[end]
+
+	[Caret: int cx: 0;]
+		if focused
+			call Draw.FillRect: cx y + 4 2 16 Widgets.ACCENT;
+		;;
+	[end]
+}
+
+# a list to pick from, with a scroll bar when it doesn't all fit: the wheel and the
+# arrow keys move through it
+struct.ListBox
+{
+	int x;
+	int y;
+	int w;
+	int h;
+	ptr<ptr<u8>> items;         # the text of each row (a str array, say)
+	int count;
+	int selected;               # -1: none
+	int first;                  # the row at the top
+
+	[Place: int lx: 0; int ly: 0; int lw: 0; int lh: 0;]
+		x is lx;
+		y is ly;
+		w is lw;
+		h is lh;
+		selected is -1;
+	[end]
+
+	[SetItems: ptr<ptr<u8>> list: 0; int n: 0;]
+		items is list;
+		count is n;
+		selected is (Math.Min: selected n - 1);
+		first is (Math.Clamp: first 0 (Math.Max: n - (Rows) 0));
+	[end]
+
+	[Rows]
+	[end: (Math.Max: h / Widgets.ROW 1)]
+
+	# a mouse event: 0 if nothing changed, 1 if it picked a row or scrolled, 2 when a row
+	# was double-clicked
+	[Mouse: GuiEvent e;]
+		if (Widgets.Inside: e.x e.y x y w h) is false return 0;
+		int rows: (Rows);
+		if e.wheel is not 0
+			first is (Math.Clamp: first + e.wheel * 3 0 (Math.Max: count - rows 0));
+			return 1;
+		;;
+		if e.clicks is 0 return 0;
+		if count > rows and e.x >= x + w - Widgets.BAR
+			# the scroll bar: a page up or down
+			if e.y < y + h / 2
+				first is (Math.Max: first - rows 0);
+			;;
+			else
+				first is (Math.Min: first + rows count - rows);
+			;;
+			return 1;
+		;;
+		int row: first + (e.y - y) / Widgets.ROW;
+		if row >= count return 0;
+		selected is row;
+		if e.clicks is 2 return 2;
+	[end: 1]
+
+	# Up, Down, Page Up, Page Down, Home and End move the selection; 2 for Enter
+	[Key: int key: 0;]
+		int k: key & Events.KEY_MASK;
+		if count is 0 return 0;
+		int rows: (Rows);
+		int to: selected;
+		when k
+			is Events.KEY_UP
+				to--;
+			;;
+			is Events.KEY_DOWN
+				to++;
+			;;
+			is Events.KEY_PAGEUP
+				to-- rows;
+			;;
+			is Events.KEY_PAGEDOWN
+				to++ rows;
+			;;
+			is Events.KEY_HOME
+				to is 0;
+			;;
+			is Events.KEY_END
+				to is count - 1;
+			;;
+			is Events.KEY_ENTER
+				return 2;
+			;;
+			else
+				return 0;
+			;;
+		;;
+		selected is (Math.Clamp: to 0 count - 1);
+		if selected < first
+			first is selected;
+		;;
+		if selected >= first + rows
+			first is selected - rows + 1;
+		;;
+	[end: 1]
+
+	[Paint]
+		call Draw.FillRect: x y w h Widgets.FIELD;
+		call Draw.PushClip: x y w h;
+		int rows: (Rows);
+		int text_w: w - 8;
+		if count > rows
+			text_w is w - Widgets.BAR - 8;
+		;;
+		while int r: 0; r <= rows and first + r < count; r++;
+			int i: first + r;
+			int ry: y + r * Widgets.ROW;
+			if i is selected
+				call Draw.FillRect: x ry w Widgets.ROW Widgets.SELECT;
+			;;
+			call Draw.TextFitted: x + 4 ry + 1 text_w items:i Widgets.TEXT;
+		;;
+		if count > rows
+			# the thumb's size and place show how much is in sight, and where
+			int bx: x + w - Widgets.BAR;
+			call Draw.FillRect: bx y Widgets.BAR h Widgets.BUTTON;
+			int thumb: (Math.Max: h * rows / count 12);
+			int ty: y + (h - thumb) * first / (Math.Max: count - rows 1);
+			call Draw.FillRect: bx + 1 ty Widgets.BAR - 2 thumb Widgets.EDGE;
+		;;
+		call Draw.PopClip;
+		call Draw.Rect: x y w h Widgets.EDGE;
+	[end]
+}
+
+phi.Widgets:Library
+{
+	# the colors
+	const u32 TEXT: 0x1D2330;
+	const u32 TEXT_DIM: 0x6B7385;
+	const u32 FACE: 0xF2F4F8;   # a window's inside
+	const u32 FIELD: 0xFFFFFF;
+	const u32 EDGE: 0xB4BAC6;
+	const u32 BUTTON: 0xE3E7EE;
+	const u32 BUTTON_DOWN: 0xBFC8D8;
+	const u32 ACCENT: 0x2F6FE4;
+	const u32 SELECT: 0xCFE0FF;
+
+	const int ROW: 18;          # a list's rows
+	const int BAR: 10;          # a scroll bar's width
+
+	# is (px, py) inside the w x h rectangle at (x, y)
+	[Inside: int px: 0; int py: 0; int x: 0; int y: 0; int w: 0; int h: 0;]
+	[end: px >= x and py >= y and px < x + w and py < y + h]
+
+	# text in the dimmer color, for labels next to fields
+	[Label: int x: 0; int y: 0; ptr<u8> text: 0;]
+		call Draw.Text: x y text TEXT_DIM;
+	[end]
+}

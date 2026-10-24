@@ -1,0 +1,17 @@
+# Widgets in a program's window: a text field, a check box, a list and a button,
+# then the window resized and closed.
+use gui.desktop;
+
+phi.Test:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	call Desktop.Start;
+	int pid: (Desktop.Run: 'FORM.BIN' 'Form' 40 40);
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+	;;
+	debug 'desktop: no windows left\n';
+	call OS.Sleep: 1000;            # (the input script is still letting go of the button)
+	exit 0;
+}

@@ -1,0 +1,25 @@
+# the window is at (40, 40): its inside starts at (42, 60)
+expect form: open
+wait 300
+# the name field has the keys
+type Ada
+wait 200
+# the check box at (60, 42) inside
+click 108 108
+expect form: shout 1
+# Cherry, the third row of the list at (10, 72) inside
+click 82 177
+expect form: picked Cherry
+# the Add button at (170, 38) inside
+click 250 110
+expect form: Added Cherry for Ada!
+wait 300
+screenshot form
+# the grip at the bottom right corner of the frame (264 x 302 at first)
+drag 300 338 400 438
+expect form: resized to 356x376
+wait 500
+screenshot resized
+# the close box, at the right of the title bar of the frame (now 360 wide)
+click 388 50
+expect desktop: no windows left

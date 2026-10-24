@@ -8,6 +8,7 @@
 #   ;;
 #   call Surfaces.PostKey: pid key;             # tell it about a key ...
 #   call Surfaces.PostMouse: pid x y buttons clicks wheel;   # ... the mouse (x, y inside it)
+#   call Surfaces.PostResize: pid w h;          # ... that its window is a new size
 #   call Surfaces.PostClose: pid;               # ... or that it should close
 #
 # A program (with gui.app) opens one surface: a block of w x h pixels the kernel keeps
@@ -62,7 +63,10 @@ phi.Surfaces:Kernel
 	[Open: int pid: 0; int w: 0; int h: 0;]
 		if w <= 0 or h <= 0 or w > MOST_SIDE or h > MOST_SIDE return 0;
 		if w * h > MOST_PIXELS return 0;
-		call Release: pid;
+		if pixels:pid is not 0
+			free pixels:pid;            # a new size: the events waiting for it stay
+			pixels:pid is 0;
+		;;
 		ptr<u32> p: new u32[w * h];
 		if p is 0 return 0;
 		pixels:pid is p;
@@ -123,6 +127,10 @@ phi.Surfaces:Kernel
 
 	[PostClose: int pid: 0;]
 	[end: (Post: pid Events.CLOSE 0 0 0 0 0)]
+
+	# the window was made w x h: the program opens a surface that size and draws again
+	[PostResize: int pid: 0; int w: 0; int h: 0;]
+	[end: (Post: pid Events.RESIZE w h 0 0 0)]
 
 	# did the process show a new picture since the last time this was asked?
 	[TakeChanged: int pid: 0;]

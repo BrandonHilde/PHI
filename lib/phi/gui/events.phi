@@ -1,12 +1,12 @@
-# What a window is told: keys, the mouse, and being asked to close. The kernel's
-# side (gui.surfaces) and a program's side (gui.app) both use this.
+# What a window is told: keys, the mouse, a new size, and being asked to close. The
+# kernel's side (gui.surfaces) and a program's side (gui.app) both use this.
 
 struct.GuiEvent
 {
-	int kind;                   # Events.KEY, Events.MOUSE (a button, the wheel, or a move) or Events.CLOSE
-	int x;                      # MOUSE: where, from the window's top left
-	int y;
-	int value;                  # KEY: the key, with Input's MOD_ bits; MOUSE: the buttons held (bit 0 left)
+	int kind;                   # Events.KEY, MOUSE (a button, the wheel, or a move), RESIZE or CLOSE
+	int x;                      # MOUSE: where, from the window's top left; RESIZE: the new width
+	int y;                      # RESIZE: the new height
+	int value;                  # KEY: the key, with the MOD_ bits; MOUSE: the buttons held (bit 0 left)
 	int clicks;                 # MOUSE: 1 when the left button went down, 2 for a double click
 	int wheel;                  # MOUSE: how far the wheel turned (down is positive)
 }
@@ -16,4 +16,25 @@ phi.Events:Library
 	const int KEY: 1;
 	const int MOUSE: 2;
 	const int CLOSE: 3;         # the window should close: the program ends itself
+	const int RESIZE: 4;        # the window was made x by y: App.Resize, then draw it again
+
+	# keys, as drivers.input numbers them: a character for keys that type one, these for
+	# the others, and the MOD_ bits for the modifiers held
+	const int KEY_BACKSPACE: 8;
+	const int KEY_TAB: 9;
+	const int KEY_ENTER: 13;
+	const int KEY_ESCAPE: 27;
+	const int KEY_UP: 256;
+	const int KEY_DOWN: 257;
+	const int KEY_LEFT: 258;
+	const int KEY_RIGHT: 259;
+	const int KEY_HOME: 260;
+	const int KEY_END: 261;
+	const int KEY_DELETE: 262;
+	const int KEY_PAGEUP: 263;
+	const int KEY_PAGEDOWN: 264;
+	const int MOD_SHIFT: 0x10000;
+	const int MOD_CTRL: 0x20000;
+	const int MOD_ALT: 0x40000;
+	const int KEY_MASK: 0xFFFF;
 }
