@@ -370,6 +370,11 @@ namespace Phi.Compiler.CodeGen
                 Emit("push eax                ; the result");
                 foreach (VariableSymbol v in owned)
                 {
+                    if (v.Type.IsObjectArray)
+                    {
+                        EmitFreeElements(NameOf(v), 0);
+                        continue;
+                    }
                     Emit($"mov eax, dword [{v.Label}]   ; {v.Name}");
                     Emit($"call {ObjectRoutine("free", v.Type.Struct!)}");
                 }
@@ -642,6 +647,10 @@ namespace Phi.Compiler.CodeGen
                     EmitNewDecl(newDecl, newObject);
                     break;
 
+                case VarDecl { IsNew: true, Symbol: { Type.IsObjectArray: true } newArray } arrayDecl:
+                    EmitNewArray(arrayDecl, newArray);
+                    break;
+
                 case VarDecl decl:
                     if (decl.Symbol is { NeedsInitCode: true } declared) EmitInitialize(declared, decl.Values);
                     break;
@@ -821,6 +830,7 @@ namespace Phi.Compiler.CodeGen
                     Emit("pop eax");
                     EmitIndexCheck(shrink, "jbe", "edx");
                     Emit($"mov dword {Operand(new Place { Computed = true, Linear = true, Offset = shrink.Array.Type.CountOffset })}, eax");
+                    if (shrink.Array.Type.IsObjectArray) EmitFreeElements(shrink.Array, -1);   // the dropped ones
                     break;
                 }
 
@@ -1445,7 +1455,29 @@ namespace Phi.Compiler.CodeGen
             PhiType element = t.Element;
             int size = element.ElementSize;
 
-            if (value != null)
+            if (element.IsObject)
+            {
+                ObjectLine(append);
+                if (value != null)
+                {
+                    EmitObjectAddress(value);
+                    Emit("push eax                ; what to copy");
+                }
+            }
+            else if (element.IsWide)
+            {
+                if (value == null) Emit("xor eax, eax");
+                if (value == null) Emit("xor edx, edx");
+                else EmitWide(value);
+                Emit("push edx");
+                Emit("push eax");
+            }
+            else if (element.IsFloat)
+            {
+                if (value == null) Emit("fldz");
+                else EmitFloat(value);   // stays in st0 until it's stored
+            }
+            else if (value != null)
             {
                 EmitExpr(value);
                 Emit("push eax");
@@ -1462,7 +1494,41 @@ namespace Phi.Compiler.CodeGen
             EmitScale(size);
             Emit("add ebx, eax");
 
-            if (value != null)
+            if (element.IsObject)
+            {
+                // the slot is empty (dropped ones are emptied): a zeroed object, or a copy
+                Emit("mov eax, ebx");
+                if (value == null) Emit($"call {ObjectRoutine("renew", element.Struct!)}");
+                else
+                {
+                    Emit("pop edx");
+                    Emit($"call {ObjectRoutine("set", element.Struct!)}");
+                }
+            }
+            else if (element.IsWide)
+            {
+                Emit("pop eax");
+                Emit("pop edx");
+                Emit("mov [ebx], eax");
+                Emit("mov [ebx + 4], edx");
+            }
+            else if (element.IsFloat)
+            {
+                switch (element.Kind)
+                {
+                    case TypeKind.F64: Emit("fstp qword [ebx]"); break;
+                    case TypeKind.F32: Emit("fstp dword [ebx]"); break;
+                    default:
+                        Need("phi_f32_to_f16");
+                        Emit("sub esp, 4");
+                        Emit("fstp dword [esp]");
+                        Emit("pop eax");
+                        Emit("call phi_f32_to_f16");
+                        Emit("mov [ebx], ax");
+                        break;
+                }
+            }
+            else if (value != null)
             {
                 Emit("pop eax");
                 Emit(StoreInstruction(element, Operand(new Place { Computed = true, Linear = true })));
@@ -2600,6 +2666,60 @@ namespace Phi.Compiler.CodeGen
             LoadAddress("eax", v.Label);
             Emit($"call {ObjectRoutine("renew", v.Type.Struct!)}");
             foreach (Stmt field in decl.FieldValues) EmitStatement(field);
+        }
+
+        /// <summary>
+        /// new T list[N]: N zeroed objects (each one emptied and used again when the declaration
+        /// runs again). new T list[atmost N]: none, freeing any from before.
+        /// </summary>
+        void EmitNewArray(VarDecl decl, VariableSymbol v)
+        {
+            ObjectLine(decl);
+            StructSymbol s = v.Type.Struct!;
+            if (v.Type.Filled)
+            {
+                EmitFreeElements(NameOf(v), 0);
+                LoadAddress("eax", v.Label);
+                Emit($"mov dword [eax + {v.Type.CountOffset}], 0   ; none in it");
+                return;
+            }
+            string next = NewLabel("element");
+            Emit("push dword 0            ; which element");
+            Label(next);
+            LoadAddress("eax", v.Label);
+            Emit("mov edx, [esp]");
+            Emit("lea eax, [eax + edx * 4]");
+            Emit($"call {ObjectRoutine("renew", s)}");
+            Emit("inc dword [esp]");
+            Emit($"cmp dword [esp], {v.Type.Length}");
+            Emit($"jb {next}");
+            Emit("add esp, 4");
+        }
+
+        /// <summary>
+        /// Frees the objects of an array of objects from element `from` on (each slot becomes empty);
+        /// for an atmost array, from a number in eax instead when from is -1.
+        /// </summary>
+        void EmitFreeElements(Expr array, int from)
+        {
+            StructSymbol s = array.Type.Struct!;
+            string next = NewLabel("free");
+            string done = NewLabel("freed");
+            if (from >= 0) Emit($"push dword {from}");
+            else Emit("push eax");
+            Label(next);
+            Emit($"cmp dword [esp], {array.Type.Length}");
+            Emit($"jae {done}");
+            EmitPlaceAddress(array);
+            Emit("mov edx, [esp]");
+            Emit("lea edx, [eax + edx * 4]");
+            Emit("mov eax, [edx]");
+            Emit("mov dword [edx], 0       ; empty");
+            Emit($"call {ObjectRoutine("free", s)}");
+            Emit("inc dword [esp]");
+            Emit($"jmp {next}");
+            Label(done);
+            Emit("add esp, 4");
         }
 
         void EmitObjectAssign(ObjectAssignStmt o)

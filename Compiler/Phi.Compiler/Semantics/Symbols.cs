@@ -80,6 +80,9 @@ namespace Phi.Compiler.Semantics
         /// <summary>A struct reached through its address: x.field works on it like on a struct.</summary>
         public bool IsObject => !IsArray && Kind == TypeKind.Object;
 
+        /// <summary>An array of objects (new T name[N]): each element holds the address of one PHI owns.</summary>
+        public bool IsObjectArray => IsArray && Kind == TypeKind.Object;
+
         /// <summary>The struct whose fields x.field reaches: for a struct or an object.</summary>
         public StructSymbol? Fields => IsStruct || IsObject ? Struct : null;
 

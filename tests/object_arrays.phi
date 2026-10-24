@@ -1,0 +1,87 @@
+# Arrays of objects: new T list[N], new T list[atmost N], and struct fields like them.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+struct.Shape
+{
+	u8 name[8];
+	new Point corner;
+	new Point points[3];            # each starts empty, as a new field does
+	new Point path[atmost 4];
+}
+
+phi.ObjectArrays:Kernel
+{
+	# N zeroed objects, ready to use
+	new Point list[3];
+	list:0.x is 1;
+	list:1.y is 2;
+	list:2.x is 3;
+	log list.len ' ' list:0.x ' ' list:1.y ' ' list:2.x ' ' (list:2 is not empty) '\n';
+
+	# copying in and out, handing over, emptying, comparing
+	new Point p: 7 8;
+	list:1 is p;
+	p.x is 100;                      # a copy: list:1 keeps 7
+	new Point q: list:1;
+	log list:1.x ' ' list:1.y ' ' q.x ' ' (list:1 is q) ' ' (list:0 is q) '\n';
+	new Point given: 5 5;
+	list:0 takes given;
+	log list:0.x ' ' (given is empty) '\n';
+	list:2 is empty;
+	log (list:2 is empty) '\n';
+	list:2 is q;                     # an empty element gets a copy
+	log list:2.x '\n';
+
+	# borrowed by a method, like any object
+	log (Sum: list:1) '\n';
+
+	# atmost: none until they're added
+	new Point added[atmost 4];
+	added++;
+	added++ p q;
+	added:0.x is 9;
+	log added.len ' ' added:0.x ' ' added:1.x ' ' added:2.y '\n';
+	added.len--;
+	log added.len '\n';
+
+	# fields of a struct, owned by it
+	new Shape s;
+	s.points:1 is q;
+	s.path++ p;
+	s.path++;
+	s.path:1.y is 42;
+	log (s.points:0 is empty) ' ' s.points:1.x ' ' s.path.len ' ' s.path:0.x ' ' s.path:1.y '\n';
+
+	# copied and compared whole, with what they own
+	new Shape t: s;
+	t.points:1.x is 1;
+	log t.points:1.x ' ' s.points:1.x ' ' t.path:1.y ' ' (t is s) '\n';
+
+	# a method's own arrays are freed when it ends
+	u32 before: Heap.used_bytes;
+	call Busy;
+	log 'heap back: ' (Heap.used_bytes is before) '\n';
+
+	# past what an atmost array has in it is an index error
+	int n: 3;
+	log added:n.x;
+	exit 0;
+
+	[Sum: Point pt;]
+	[end: pt.x + pt.y]
+
+	[Busy]
+		new Point many[10];
+		new Shape shapes[atmost 5];
+		while int i: 0; i < 5; i++;
+			shapes++;
+			shapes:i.points:0 is many:i;
+			shapes:i.path++ many:i;
+		;;
+		shapes.len is 2;
+	[end]
+}

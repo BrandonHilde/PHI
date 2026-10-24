@@ -330,7 +330,8 @@ scores.len is 0;              # empty it
 - `.len` can only be made smaller (`is` or `--`), so an element that was dropped can't come
   back with its old value.
 - An array of structs adds an element of zeros with `name++;` on its own, then sets its
-  fields: `list++;` then `list:(list.len - 1).score is 10;`.
+  fields: `list++;` then `list:(list.len - 1).score is 10;`. An array of objects adds a new
+  one with `list++;`, or a copy with `list++ p;` (see [Arrays of objects](#arrays-of-objects)).
 - It works as a struct field too (`int members[atmost 4];` in a struct), and as a
   method's variable.
 - The count is a `u32` kept after the elements, so `sizeof` is 4 more than a plain array's,
@@ -845,11 +846,39 @@ new Cell corner at 0xB8000;    # the first character of the VGA text screen
 corner.letter is 'P';
 ```
 
+### Arrays of objects
+
+`new T name[N]` is N objects, each zeroed and ready to use; `new T name[atmost N]` starts
+with none, and `++` adds them. Each element is an object the array owns, so it works like a
+`new` variable or field:
+
+```phi
+new Point list[3];
+list:0.x is 1;                  # its fields
+list:1 is p;                    # a copy of p's values
+list:2 takes q;                 # q's object, handed over (q is empty after)
+list:2 is empty;                # freed
+if list:1 is p ...              # compared by value
+log (Sum: list:1);              # borrowed by a method that takes a Point
+
+new Point added[atmost 8];
+added++;                        # a new zeroed Point at the end
+added++ p q;                    # copies of p and q
+added.len--;                    # the last one is freed
+```
+
+A struct can have one too: `new Point corner[4];` in a struct is four objects it owns,
+each starting empty like a single `new` field (give one a value with `is` or `takes`, or
+use `atmost` and `++`). Copying the struct copies them, comparing compares them, and
+freeing it frees them. A struct that owns objects can only be in an array of objects
+(`new Shape shapes[4]`), not stored in place (`Shape shapes[4]`).
+
+A method's own arrays of objects are freed when it ends, along with everything in them.
+
 ### Limits
 
 Objects that PHI allocates need a heap, so they're in 32-bit kernels and user programs
-(each gets one automatically). Arrays of objects, and structs with `new` fields as array
-elements, aren't supported yet. Methods that return objects can't be used as method values.
+(each gets one automatically). Methods that return objects can't be used as method values.
 
 ## Memory (32-bit kernels)
 
@@ -1631,7 +1660,6 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
   `has`, `^^` (power)
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
-- arrays of objects
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
 - networking in user programs (only 32-bit kernels have the network), checking TLS

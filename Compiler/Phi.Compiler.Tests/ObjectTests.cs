@@ -121,7 +121,7 @@ namespace Phi.Compiler.Tests
 
         [Fact]
         public void AStructInAnArrayCantOwnObjects() =>
-            AssertError(Structs + "struct.List\n{\n Node nodes[4];\n}\nphi.K:Kernel\n{\n}\n", "can't be an array element");
+            AssertError(Structs + "struct.List\n{\n Node nodes[4];\n}\nphi.K:Kernel\n{\n}\n", "an array of them has to be objects too: new Node nodes[...]");
 
         [Fact]
         public void EmptyOnlyComparesWithObjects() =>

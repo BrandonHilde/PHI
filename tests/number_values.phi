@@ -34,6 +34,15 @@ phi.NumberValues:Kernel
 	f64 angle: 7.0;
 	angle%% 3.14159265358979 * 2;
 	log angle '\n';
+
+	# added to atmost arrays
+	f64 values[atmost 3];
+	values++ 1.5 2;
+	f16 halves[atmost 2];
+	halves++ 0.25;
+	i64 bigs[atmost 2];
+	bigs++ 5000000000 -1;
+	log values.len ' ' values:0 ' ' values:1 ' ' halves:0 ' ' bigs:0 ' ' bigs:1 '\n';
 	exit 0;
 
 	[Hypotenuse: f64 a: 0.0; f64 b: 0.0;]

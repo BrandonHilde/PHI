@@ -511,6 +511,13 @@ namespace Phi.Compiler.Semantics
                     s.OwnedSlots.Add(new OwnedSlot(f.Offset, f.Type.Struct!));
                     continue;
                 }
+                if (f.Type.IsObjectArray)
+                {
+                    // each element is an object the struct owns
+                    for (int i = 0; i < f.Type.Length; i++)
+                        s.OwnedSlots.Add(new OwnedSlot(f.Offset + 4 * i, f.Type.Struct!));
+                    continue;
+                }
                 if (f.Type.Kind != TypeKind.Struct) continue;
 
                 StructSymbol inner = f.Type.Struct!;
@@ -520,7 +527,7 @@ namespace Phi.Compiler.Semantics
                 if (f.Type.IsArray)
                 {
                     FieldDecl decl = s.Decl.Fields.First(d => d.Name == f.Name);
-                    Error(decl.Span, $"{inner.Name} owns objects (it has new fields), so it can't be an array element yet");
+                    Error(decl.Span, $"{inner.Name} owns objects (it has new fields), so an array of them has to be objects too: new {inner.Name} {f.Name}[...];");
                     continue;
                 }
                 foreach (OwnedSlot inside in inner.OwnedSlots)
@@ -561,13 +568,16 @@ namespace Phi.Compiler.Semantics
                         Error(f.Type.Span, $"new is for structs; a {type} field is stored in the struct itself, so leave out new");
                         continue;
                     }
+                    PhiType objects = PhiType.ObjectOf(type.Struct!);
                     if (f.Count != null)
                     {
-                        Error(f.Count.Span, "a field of objects can't be an array yet");
-                        continue;
+                        // an array of objects the struct owns, each starting empty
+                        int? n = ConstantCount(f.Count, null);
+                        if (n == null) continue;
+                        objects = objects.ArrayOf(n.Value) with { Filled = f.Filled };
                     }
-                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = PhiType.ObjectOf(type.Struct!), Offset = offset });
-                    offset += 4;
+                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = objects, Offset = offset });
+                    offset += objects.ByteSize;
                     continue;
                 }
                 if (type.IsStruct) Layout(type.Struct!, inProgress);
@@ -1009,7 +1019,7 @@ namespace Phi.Compiler.Semantics
 
             if (type.IsStruct && type.Struct!.OwnsObjects)
             {
-                Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name};");
+                Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.BufferSize != null ? "[...]" : "")};");
                 v.Type = PhiType.Error;
                 return;
             }
@@ -1100,7 +1110,16 @@ namespace Phi.Compiler.Semantics
             }
             if (d.BufferSize != null)
             {
-                Error(d.BufferSize.Span, "arrays of objects aren't supported yet");
+                // new T name[N]: N objects; new T name[atmost N]: none until they're added
+                if (v.IsParameter)
+                {
+                    Error(d.BufferSize.Span, "a parameter can't be an array of objects yet; pass one element (it's borrowed)");
+                    return;
+                }
+                int? count = ConstantCount(d.BufferSize, scope);
+                if (count == null) return;
+                v.Ownership = Ownership.Owned;
+                v.Type = PhiType.ObjectOf(type.Struct!).ArrayOf(count.Value) with { Filled = d.Filled };
                 return;
             }
 
@@ -1521,6 +1540,15 @@ namespace Phi.Compiler.Semantics
             v.NeedsInitCode = true;
             StructSymbol type = v.Type.Struct!;
 
+            if (v.Type.IsObjectArray)
+            {
+                if (decl.Values.Count > 0)
+                    Error(decl.Values[0].Span, $"an array of objects starts with each one zeroed (or, with atmost, none); set them after, like {decl.Name}:0.field is ...;");
+                HeapMethod("Heap.Alloc", decl.Span, scope, "new");
+                HeapMethod("Heap.Free", decl.Span, scope, "new");
+                return;
+            }
+
             if (decl.AtAddress != null)
             {
                 BindExpr(decl.AtAddress, scope);
@@ -1814,10 +1842,28 @@ namespace Phi.Compiler.Semantics
             }
 
             var append = new AppendStmt { Target = target, Span = assign.Span };
+            if (target.Type.IsObjectArray)
+            {
+                HeapMethod("Heap.Alloc", assign.Span, scope, "adding an object");
+                HeapMethod("Heap.Free", assign.Span, scope, "adding an object");
+            }
             if (assign.Bare) return append;
 
             PhiType element = target.Type.Element;
-            if (!element.IsNumeric && !element.IsMethod)
+            if (element.IsObject)
+            {
+                // list++ a b; adds copies of a and b
+                foreach (Expr value in assign.Values ?? new List<Expr> { assign.Value })
+                {
+                    BindExpr(value, scope);
+                    if (value.Type.IsError) continue;
+                    if (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr))
+                        Error(value.Span, $"'{name}' holds {element.Struct!.Name} objects, so it takes a copy of another {element.Struct.Name} (a variable, field or element), not {A(value.Type)}");
+                    else append.Values.Add(value);
+                }
+                return append;
+            }
+            if (!element.IsNumeric && !element.IsMethod && !element.IsWide && !element.IsFloat)
             {
                 Error(assign.Value.Span, $"a {element} is added with {name}++; on its own (an element of zeros), then set its fields through {name}:({name}.len - 1)");
                 return assign;
@@ -1899,6 +1945,7 @@ namespace Phi.Compiler.Semantics
             NameExpr { Symbol: VariableSymbol v } => v.Ownership == Ownership.Owned,
             NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } => true,
             MemberExpr { Call: null } => true,
+            IndexExpr { Target.Type.IsObjectArray: true } => true,
             _ => false,
         };
 

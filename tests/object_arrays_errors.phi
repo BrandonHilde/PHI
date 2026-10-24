@@ -1,0 +1,18 @@
+struct.Point
+{
+	int x;
+	new Point next;
+}
+
+struct.Pair
+{
+	Point both[2];
+}
+
+phi.ObjectArraysErrors:Kernel
+{
+	Point plain[2];
+	new Point more[atmost 2];
+	int n: 5;
+	more++ n;
+}
