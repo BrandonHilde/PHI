@@ -34,4 +34,10 @@ pixel 400 270 3CC8E0
 pixel 400 330 3CC8E0
 pixel 400 300 000000
 pixel 450 300 000000
+# the crosshairs pointer: white through the middle, black at the edges
+pixel 300 300 FFFFFF
+pixel 295 300 FFFFFF
+pixel 300 294 FFFFFF
+pixel 299 294 000000
+pixel 301 299 000000
 screenshot kernel32_drawing

@@ -10,10 +10,13 @@
 #   Input.mouse_x  Input.mouse_y  Input.buttons (bit 0 left, bit 1 right, bit 2 middle)
 #   while (Input.NextMouse)            # each button change and wheel turn, oldest first
 #       Input.event_buttons  Input.event_x  Input.event_y  Input.event_wheel
+#       if Input.event_clicks is 2 ...  # the left button went down a second time: a double click
 #   ;;
 #
 # Input.buttons is only what is held now, so a loop that looks at it between redraws can
-# miss a whole click; NextMouse can't. event_wheel is how far the wheel turned (down is
+# miss a whole click; NextMouse can't. event_clicks is 1 when the left button went down,
+# 2 when that made a double click (a second press within DOUBLE_CLICK_MS, a few pixels
+# from the first), and 0 for other events. event_wheel is how far the wheel turned (down is
 # positive), and Input.wheel adds up every turn. The wheel works with mice that speak the
 # IntelliMouse protocol, as QEMU's does (Input.has_wheel says whether this one does).
 #
@@ -86,6 +89,9 @@ phi.Input:Kernel
 
 	# mouse events: written by the interrupt handler, read by NextMouse
 	const int MOUSE_QUEUE: 64;
+	const int DOUBLE_CLICK_MS: 450;
+	const int DOUBLE_CLICK_NEAR: 6;           # pixels the second press may be from the first
+	int mouse_queue_time[64];
 	int mouse_queue_buttons[64];
 	int mouse_queue_x[64];
 	int mouse_queue_y[64];
@@ -98,6 +104,14 @@ phi.Input:Kernel
 	int event_x: 0;
 	int event_y: 0;
 	int event_wheel: 0;
+	int event_clicks: 0;
+
+	# for telling a double click
+	int last_event_buttons: 0;
+	int last_press_time: 0;
+	int last_press_x: 0;
+	int last_press_y: 0;
+	bln pressed_once: false;
 
 	[Start]
 		call StartMouse;
@@ -140,6 +154,22 @@ phi.Input:Kernel
 		event_x is mouse_queue_x:mouse_tail;
 		event_y is mouse_queue_y:mouse_tail;
 		event_wheel is mouse_queue_wheel:mouse_tail;
+
+		# the left button going down: a click, or the second of a double click
+		event_clicks is 0;
+		if (event_buttons & 1) is not 0 and (last_event_buttons & 1) is 0
+			int time: mouse_queue_time:mouse_tail;
+			bln near: (Math.Abs: event_x - last_press_x) < DOUBLE_CLICK_NEAR and (Math.Abs: event_y - last_press_y) < DOUBLE_CLICK_NEAR;
+			event_clicks is 1;
+			if pressed_once and time - last_press_time < DOUBLE_CLICK_MS and near
+				event_clicks is 2;
+			;;
+			pressed_once is (event_clicks is 1);   # a third press starts again
+			last_press_time is time;
+			last_press_x is event_x;
+			last_press_y is event_y;
+		;;
+		last_event_buttons is event_buttons;
 		mouse_tail is (mouse_tail + 1) % MOUSE_QUEUE;
 	[end: true]
 
@@ -314,6 +344,7 @@ phi.Input:Kernel
 		if now is not buttons or turned is not 0
 			int next: (mouse_head + 1) % MOUSE_QUEUE;
 			if next is not mouse_tail             # a full queue drops the event
+				mouse_queue_time:mouse_head is (OS.GetTicks);
 				mouse_queue_buttons:mouse_head is now;
 				mouse_queue_x:mouse_head is mouse_x;
 				mouse_queue_y:mouse_head is mouse_y;

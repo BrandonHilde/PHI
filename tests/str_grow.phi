@@ -1,0 +1,56 @@
+phi.StrGrow:Kernel
+{
+	# no size: it grows as it's written, up to the most a str can be
+	str word: 'hi';
+	log word ' ' word.len ' ' word.max '\n';
+	word is 'a much longer piece of text than two characters';
+	log word ' ' word.len '\n';
+
+	str line: '';
+	while int i: 0; i < 30; i++;
+		line++ i ',';
+	;;
+	log line.len ' ' line:0 line:1 line:(line.len - 1) '\n';
+	line is 'Ln ' 12 ', Col ' 5;
+	log line '\n';
+
+	# copies, compares and characters
+	str copy: line;
+	copy:0 is 'l';
+	log copy ' ' (copy is line) ' ' (line is 'Ln 12, Col 5') '\n';
+
+	# a method's own, and parameters without a size
+	log (Shout: 'quiet words that go on and on') '\n';
+
+	# each call's text goes back when it ends
+	u32 before: Heap.used_bytes;
+	call Many;
+	log 'heap back: ' (Heap.used_bytes is before) '\n';
+
+	# a fixed str is still cut to fit
+	str short: [5];
+	short is 'truncated';
+	log short ' ' short.max '\n';
+
+	# past its room is an index error
+	int n: 1000;
+	log word:n;
+
+	[Shout: str text: '';]
+		str loud: text;
+		loud++ '!';
+	[end: loud]
+
+	[Many]
+		while int k: 0; k < 100; k++;
+			str s: 'grows ';
+			s++ k k k k k k k k k k;
+		;;
+		call Once;
+	[end]
+
+	[Once]
+		str a: 'x';
+		a++ 'yyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyyy';
+	[end]
+}

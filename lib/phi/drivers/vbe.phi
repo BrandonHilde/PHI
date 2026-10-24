@@ -8,6 +8,7 @@
 #   call Screen.PresentAll;                    # ... then show it
 #   call Screen.Present: 10 10 40 16;          # or just the part that changed
 #   call Screen.MoveCursor: x y;               # a mouse pointer, drawn over the picture
+#   call Screen.SetPointer: Screen.POINTER_TEXT;   # its shape: an arrow, a text bar, a cross
 #
 # Nothing is drawn straight on the screen. Drawing goes to `back`, a buffer in memory,
 # and Present copies the parts that changed to the card, so the screen never shows a
@@ -47,12 +48,64 @@ phi.Screen:Kernel
 	ptr<u32> back: 0;                         # what you draw on
 	bln on: false;
 
-	# the mouse pointer, as last drawn on the screen
+	# the mouse pointer: where the mouse is, and where its picture was last drawn
 	int cursor_x: 0;
 	int cursor_y: 0;
+	int drawn_x: 0;
+	int drawn_y: 0;
 	bln cursor_shown: false;
 	const int CURSOR_W: 12;
 	const int CURSOR_H: 19;
+
+	# its shapes: 'k' is black, 'w' white, '.' shows the picture; the hot spot is the pixel
+	# at the mouse's position
+	const int POINTER_ARROW: 0;
+	const int POINTER_TEXT: 1;               # an I-beam, for text that can be typed in
+	const int POINTER_CROSS: 2;              # crosshairs, for drawing
+	int pointer: 0;
+	ptr<ptr<u8>> pointer_rows: 0;            # the rows of the shape now (0: the arrow)
+	int hot_x: 0;
+	int hot_y: 0;
+	str text_rows:
+		'kkkkkkk.....'
+		'kwwkwwk.....'
+		'kkkwkkk.....'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'..kwk.......'
+		'kkkwkkk.....'
+		'kwwkwwk.....'
+		'kkkkkkk.....'
+		'............'
+		'............';
+	str cross_rows:
+		'....kwk.....'
+		'....kwk.....'
+		'....kwk.....'
+		'....kwk.....'
+		'....kwk.....'
+		'kkkkkwkkkkk.'
+		'wwwwwwwwwww.'
+		'kkkkkwkkkkk.'
+		'....kwk.....'
+		'....kwk.....'
+		'....kwk.....'
+		'....kwk.....'
+		'....kwk.....'
+		'............'
+		'............'
+		'............'
+		'............'
+		'............'
+		'............';
 	str cursor_rows:
 		'k...........'
 		'kk..........'
@@ -170,7 +223,7 @@ phi.Screen:Kernel
 		;;
 
 		# the copy may have covered the pointer
-		if cursor_shown and x0 < cursor_x + CURSOR_W and cursor_x < x1 and y0 < cursor_y + CURSOR_H and cursor_y < y1
+		if cursor_shown and x0 < drawn_x + CURSOR_W and drawn_x < x1 and y0 < drawn_y + CURSOR_H and drawn_y < y1
 			call DrawCursor;
 		;;
 	[end]
@@ -191,17 +244,60 @@ phi.Screen:Kernel
 	[HideCursor]
 		if cursor_shown
 			cursor_shown is false;
-			call Present: cursor_x cursor_y CURSOR_W CURSOR_H;
+			call Present: drawn_x drawn_y CURSOR_W CURSOR_H;
+		;;
+	[end]
+
+	# the pointer's shape: POINTER_ARROW, POINTER_TEXT or POINTER_CROSS
+	[SetPointer: int shape: 0;]
+		if shape is pointer return;
+		pointer is shape;
+		pointer_rows is 0;
+		hot_x is 0;
+		hot_y is 0;
+		if shape is POINTER_TEXT
+			pointer_rows is text_rows;
+			hot_x is 3;
+			hot_y is 8;
+		;;
+		elif shape is POINTER_CROSS
+			pointer_rows is cross_rows;
+			hot_x is 5;
+			hot_y is 6;
+		;;
+		call Redraw;
+	[end]
+
+	# a shape of your own: CURSOR_H rows of CURSOR_W characters ('k' black, 'w' white,
+	# '.' clear), like a str array, with the pixel at the mouse's position at (x, y)
+	[SetPointerRows: ptr<ptr<u8>> rows: 0; int x: 0; int y: 0;]
+		pointer is -1;
+		pointer_rows is rows;
+		hot_x is x;
+		hot_y is y;
+		call Redraw;
+	[end]
+
+	# the pointer again where it is, in its shape now
+	[Redraw]
+		if cursor_shown
+			call MoveCursor: cursor_x cursor_y;
 		;;
 	[end]
 
 	[DrawCursor]
+		drawn_x is cursor_x - hot_x;
+		drawn_y is cursor_y - hot_y;
+		ptr<ptr<u8>> rows: pointer_rows;
+		if rows is 0
+			rows is cursor_rows;
+		;;
 		while int r: 0; r < CURSOR_H; r++;
-			int py: cursor_y + r;
+			int py: drawn_y + r;
 			if py >= 0 and py < height
-				ptr<u8> line: cursor_rows:r;
+				ptr<u8> line: rows:r;
 				while int c: 0; c < CURSOR_W; c++;
-					int px: cursor_x + c;
+					int px: drawn_x + c;
 					u8 ch: line:c;
 					if px >= 0 and px < width and ch is not '.'
 						u32 color: 0xFFFFFF;

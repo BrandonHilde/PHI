@@ -13,6 +13,7 @@ phi test                 # everything in tests/
 phi test -f loop         # only tests whose name contains "loop"
 phi test samples/x.phi   # a single file
 phi test -f menu --input scenarios/open-files.input   # a different input script
+phi test os.phi --input a.input --contains a.contains  # ... and what its output must contain
 phi test -f menu --keep-output                         # save NAME.actual even when it passes
 ```
 
@@ -50,6 +51,9 @@ Two optional files change what a test does:
 
 - **`NAME.contains`** replaces `.expected` when the output changes from build to build
   (like addresses on a panic screen): each line must appear somewhere in the output.
+  `--contains FILE` checks a different file of lines instead (of `NAME.expected` too), so
+  `--input` and `--contains` together run one scenario of many against the same kernel:
+  `phi test phios.phi --input tests/paint.input --contains tests/paint.contains`.
 
 - **`NAME.errors`** means the program must *fail* to compile. Each line is text that must
   appear in one of the errors, such as `4:6: error: unknown name 'missing'`.

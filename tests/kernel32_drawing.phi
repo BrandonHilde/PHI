@@ -34,6 +34,22 @@ phi.DrawingTest:Kernel
 	# part of a buffer: count characters, or up to a zero byte if that comes first
 	debug 'part ' (Draw.TextN: 20 440 'Hello world' 5 Draw.WHITE) ' ' (Draw.TextN: 20 460 'Hi' 5 Draw.WHITE) '\n';
 
+	# draw on an image of our own, then back on the screen with the view it had
+	u32 image[64];
+	call Draw.SetView: 10 10 100 100;
+	ptr<u32> screen: Draw.pixels;
+	call Draw.PushTarget: image 8 8;
+	call Draw.FillRect: 2 2 2 2 Draw.RED;
+	debug 'image ' image:18 ' ' image:0 ' ' Draw.width '\n';
+	call Draw.PopTarget;
+	debug 'back ' (Draw.pixels is screen) ' ' Draw.origin_x ' ' Draw.width ' ' Draw.target_depth '\n';
+	call Draw.PopTarget;                      # one too many does nothing
+	call Draw.ResetView;
+
 	call Screen.PresentAll;
+
+	# the pointer as crosshairs, centered on the mouse's position
+	call Screen.MoveCursor: 300 300;
+	call Screen.SetPointer: Screen.POINTER_CROSS;
 	debug 'drawn\n';
 }

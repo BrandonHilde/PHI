@@ -96,7 +96,9 @@ namespace Phi.Compiler
             // having to ask; its classes go first, so it is ready before the program's own code runs
             bool kernel = program.Classes.Any(c => c.Base == Binder.Kernel32Base);
             bool user = program.Classes.Any(c => c.Base == Binder.ProgramBase);
-            bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null })
+            // (a str without a size grows on the heap too)
+            bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null }
+                                                                 || n is VarDecl { BufferSize: null } d && (d.Type.Name == "str" || d.Type.Name == "var" && d.Values.Any(v => v is StringExpr)))
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
             string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;
             SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main) : null;

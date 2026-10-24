@@ -58,6 +58,9 @@ namespace Phi.Compiler.Semantics
         /// <summary>Capacity of a str copied from another str whose size isn't known yet.</summary>
         const int DefaultStrCapacity = 64;
 
+        /// <summary>The most characters a str without a size can grow to (32-bit kernels and programs).</summary>
+        public const int StrMax = 65535;
+
         readonly SourceFile mainFile;
         readonly DiagnosticBag diagnostics;
 
@@ -412,6 +415,7 @@ namespace Phi.Compiler.Semantics
         int StrCapacity(Expr e, HashSet<MethodSymbol> busy) => e switch
         {
             StringExpr s => s.Value.Length + 1,
+            NameExpr { Symbol: VariableSymbol { Grows: true } } => DefaultResultCapacity,
             NameExpr { Symbol: VariableSymbol v } => v.Capacity,
             NameExpr { Call: CallExpr { Resolved: MethodSymbol m } } => ResultCapacityOf(m, busy),
             IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } => v.Capacity,
@@ -982,6 +986,13 @@ namespace Phi.Compiler.Semantics
                 }
 
                 v.Type = PhiType.Str;
+                if (scope.Unit is UnitKind.Kernel or UnitKind.Program)
+                {
+                    // no size: it grows as it's written, up to the most a str can be
+                    v.Grows = true;
+                    v.Capacity = StrMax + 1;
+                    return;
+                }
                 v.Capacity = d.Values[0] switch
                 {
                     StringExpr s => s.Value.Length + 1,
@@ -1190,7 +1201,7 @@ namespace Phi.Compiler.Semantics
                 {
                     // the most it can hold: elements for an array, characters for a str
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
-                    if (type.IsString && offset == 0 && hops == null && root.Capacity > 0) return new LengthSymbol { Name = m, Count = root.Capacity - 1 };
+                    if (type.IsString && offset == 0 && hops == null && root.Capacity > 0) return new LengthSymbol { Name = m, Count = root.Capacity - 1, Str = root };
                     return null;
                 }
 
@@ -1388,6 +1399,19 @@ namespace Phi.Compiler.Semantics
             // has no value); a class variable with constant values is simply stored that way
             if (!classLevel || v.IsParameter || !allConstant)
                 v.NeedsInitCode = true;
+
+            // a str that grows keeps its text on the heap; a class variable's constant starts in the
+            // program's data (so it's there before any class starts), and moves when it outgrows it
+            if (v.Grows)
+            {
+                if (!classLevel || !allConstant)
+                {
+                    v.StaticValues = null;
+                    v.NeedsInitCode = true;
+                }
+                HeapMethod("Heap.Alloc", decl.NameSpan, scope, $"str '{decl.Name}' (no size, so it grows)");
+                HeapMethod("Heap.Free", decl.NameSpan, scope, $"str '{decl.Name}' (no size, so it grows)");
+            }
         }
 
         /// <summary>
@@ -2091,10 +2115,14 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         void WarnStrLengthAsSize(Expr argument, string parameter)
         {
-            if (argument is not NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } } length) return;
+            if (argument is not NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } length } name) return;
             if (parameter is not ("size" or "max" or "room" or "capacity" or "limit" or "bytes")) return;
-            diagnostics.Warning(file, length.Span, $"'{length.Name}' is how much text is in {str.Name} now, not how much it can hold; " +
-                $"for the size of its buffer write sizeof {str.Name} (or {str.Name}.max for the most characters it fits)");
+            if (str.Grows)
+                Error(name.Span, $"'{str.Name}' has no size, so it grows as it's written and a method can't know how much it may write there; " +
+                                 $"give it one (str {str.Name}: [40];), or build it with {str.Name} is ... and {str.Name}++ ...");
+            else if (length.Name == "len")
+                diagnostics.Warning(file, name.Span, $"'{name.Name}' is how much text is in {str.Name} now, not how much it can hold; " +
+                    $"for the size of its buffer write sizeof {str.Name} (or {str.Name}.max for the most characters it fits)");
         }
 
         void WarnSplitNegatives(List<Expr> arguments)
@@ -2455,6 +2483,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>Bytes a str expression has room for, when known.</summary>
         static int? CapacityOf(Expr str) => str switch
         {
+            NameExpr { Symbol: VariableSymbol { Grows: true } } => null,   // checked against its room when it runs
             NameExpr { Symbol: VariableSymbol v } => v.Capacity,
             IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } => v.Capacity, // an element of a str array
             _ => null,
@@ -2580,7 +2609,10 @@ namespace Phi.Compiler.Semantics
             if (t.Kind == TypeKind.Str)
             {
                 // a str's room is decided where it's declared
-                if (variable != null && !t.IsArray) size.Value = variable.Capacity;
+                if (variable is { Grows: true })
+                    Error(size.Span, $"'{variable.Name}' has no size, so it grows as it's written and its room isn't known when the program is built; " +
+                                     $"give it one (str {variable.Name}: [40];) to pass it as a buffer, or build it with {variable.Name} is ... and {variable.Name}++ ...");
+                else if (variable != null && !t.IsArray) size.Value = variable.Capacity;
                 else Error(size.Span, "the size of a str depends on its declaration; use sizeof on a str variable");
                 return;
             }

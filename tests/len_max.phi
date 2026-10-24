@@ -19,8 +19,9 @@ phi.LenMax:Library
 	name is 'This is far too long to fit';
 	log name.len ' ' name.max '\n';
 
+	# (its .max depends on the mode: a str without a size grows in 32-bit code)
 	str word: 'hi';
-	log word.len ' ' word.max '\n';
+	log word.len ' ' word.len '\n';
 
 	# an array field, through an element
 	Account list[4];

@@ -150,17 +150,33 @@ str copy: line;             # line is a ptr<u8>: the text it points to
 `=` works in place of `:` in declarations. Storing a value in a smaller type keeps the low
 bytes (so `u8` wraps around at 256).
 
-**Size of a `str`.** A `str` has a fixed amount of room, decided when it's declared:
+**Size of a `str`.** A `str` grows as text is written to it, up to its max (`.max`):
 
-- `str s: 'abc';` holds 3 characters (the length of its first value)
-- `str s: [40];` holds 40
-- `str s: someNumber;` holds 11 (enough for any `int`)
-- `str s: otherStr;` holds as much as `otherStr`
-- `str s: somePointer;` (a `ptr<u8>`) holds 64
-- each element of a `str` array holds as much as the longest initial value
+- `str s: [40];` holds up to 40 characters. Its room is fixed when it's declared, so it
+  works as a buffer for methods that write into it (`sizeof s` is 41, with the ending zero).
+- `str s: 'abc';`, `str s: '';`, `str s: someNumber;` and `str s: otherStr;` (no size) grow
+  up to 65,535 characters in a 32-bit kernel or a user program. The text is on the heap,
+  which PHI adds and frees for you: a method's own `str` gives its text back when the
+  method ends. Starting with `''` and adding to it is the usual way to build text:
 
-Longer text is cut to fit, without an error: after `str tiny: [3]; tiny is 'abcdef';`,
-`tiny` is `abc`. A `str` takes one more byte than it holds, for the zero that ends the text.
+  ```phi
+  str report: '';
+  while int i: 0; i < count; i++;
+      report++ names:i ', ';
+  ;;
+  ```
+
+  Because its room changes, a `str` without a size can't be handed to a method as a buffer
+  to write into: `sizeof s` is an error, and so is passing `s.max` where a size goes. Give it
+  a size for that. `ask` reads a line of up to 255 characters into one.
+- In a 16-bit program there's no heap, so a `str` without a size is fixed: it holds the
+  length of its first value (`'abc'`: 3), 11 for a number, as much as another `str`, or 64
+  for a `ptr<u8>`.
+- Each element of a `str` array holds as much as the longest initial value.
+
+Text longer than the max is cut to fit, without an error: after
+`str tiny: [3]; tiny is 'abcdef';`, `tiny` is `abc`. A `str` with a size takes one more byte
+than it holds, for the zero that ends the text.
 
 **How a `str` array is stored.** A `str` array is an array of 4-byte pointers, one per
 element, and each points to that element's own buffer. So `days:1` is the address of the
@@ -883,10 +899,15 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
 - **Drawing happens off screen.** `Draw` draws on `Screen.back`, a buffer in memory, and
   `Screen.Present: x y w h` (or `PresentAll`) copies it to the screen, so the screen never
   shows a half-drawn picture. The mouse pointer (`MoveCursor`, `HideCursor`) is drawn on the
-  screen only, over the picture.
+  screen only, over the picture. `Screen.SetPointer: Screen.POINTER_TEXT` changes its shape
+  (`POINTER_ARROW`, `POINTER_TEXT` for an I-beam, `POINTER_CROSS` for crosshairs), and
+  `SetPointerRows: rows x y` uses one of your own: 19 rows of 12 characters (`'k'` black,
+  `'w'` white, `'.'` clear) with the pixel at the mouse's position at (x, y).
 - **Views.** `Draw.SetView: x y w h` moves the origin to (x, y) and cuts all drawing to that
   rectangle; `ResetView` undoes it. `Draw.Target: pixels w h` draws on a block of pixels of
-  your own instead, like an image being built (it resets the view).
+  your own instead, like an image being built (it resets the view). `Draw.PushTarget: pixels
+  w h` does the same until `PopTarget`, which goes back to what was being drawn on with the
+  view and clip it had, so drawing on a canvas can't leave the screen's view wrong (8 deep).
 - **Clipping inside a view.** `Draw.PushClip: x y w h` cuts drawing to that rectangle as well
   (relative to the origin, and never wider than the clip already in force); `PopClip` puts the
   clip back. They nest, 16 deep.
@@ -910,11 +931,16 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
   right, bit 2 middle), kept inside the area given to `SetArea`. Those say what is true now,
   so a loop that looks between redraws can miss a whole click; `Input.NextMouse` can't. It
   takes the oldest button change or wheel turn (64 are kept) into `Input.event_buttons`,
-  `event_x`, `event_y` (where the mouse was) and `event_wheel`:
+  `event_x`, `event_y` (where the mouse was) and `event_wheel`. `event_clicks` is 1 when the
+  left button went down and 2 when that made a double click (a second press within
+  `Input.DOUBLE_CLICK_MS`, 450 ms, a few pixels from the first):
 
   ```phi
   while (Input.NextMouse)
-      if (Input.event_buttons & 1) is not 0
+      if Input.event_clicks is 2
+          call Open: Input.event_x Input.event_y;
+      ;;
+      elif Input.event_clicks is 1
           call Clicked: Input.event_x Input.event_y;
       ;;
       call Scroll: Input.event_wheel;    # down is positive
@@ -1320,7 +1346,7 @@ and the classes of used files run before the classes that use them.
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
-| `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock |
+| `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `SetZone: minutes` and `ReadLocal` give the time in a time zone, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
 | `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
 | `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |

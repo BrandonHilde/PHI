@@ -185,6 +185,15 @@ namespace Phi.Compiler.Semantics
         public int Capacity { get; set; }
 
         /// <summary>
+        /// A str declared without a size, in a 32-bit kernel or a user program: its text is on the
+        /// heap and grows as it's written, up to <see cref="Capacity"/> - 1 characters. Its own
+        /// storage is two u32s: the text's address (0 until something is written) and its room.
+        /// A class variable's constant text starts in the program's data instead; the top bit of
+        /// its room says so, so it's never freed.
+        /// </summary>
+        public bool Grows { get; set; }
+
+        /// <summary>
         /// Values known at compile time, placed directly in the data. Each is a long, or a
         /// string for str elements. Null when the declaration has to run code instead.
         /// </summary>

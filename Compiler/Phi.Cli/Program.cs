@@ -7,10 +7,11 @@ const string Usage = """
       phi run   <file.phi> [--debug] [--keep-disk]
                                            build, then boot it in QEMU (serial output prints here);
                                            --keep-disk keeps the files a kernel saved for next time
-      phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--keep-output]
+      phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
                                            --input scripts the input instead of NAME.input,
+                                           --contains checks for the lines of a file instead of NAME.expected,
                                            --keep-output saves NAME.actual even when it passes
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
@@ -114,11 +115,14 @@ static int Execute(string[] args)
                 string? filter = Option("-f");
                 string? timeout = Option("--timeout");
                 string? input = Option("--input");
+                string? contains = Option("--contains");
                 bool keepOutput = Flag("--keep-output");
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
+                if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
                 return TestRunner.Run(target, filter, TimeSpan.FromSeconds(timeout != null ? double.Parse(timeout) : 10),
-                                      input != null ? Path.GetFullPath(input) : null, keepOutput);
+                                      input != null ? Path.GetFullPath(input) : null, keepOutput,
+                                      contains != null ? Path.GetFullPath(contains) : null);
             }
 
             case "serve":

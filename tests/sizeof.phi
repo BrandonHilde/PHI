@@ -19,7 +19,7 @@ phi.Sizeof:Library
 	u8 scratch[sizeof Entry];
 	Entry entries[4];
 	str label: [20];
-	str greeting: 'hi';
+	str greeting: [2];           # a size: a str without one grows, so sizeof isn't known
 	u16 ports: 1 2 3;
 
 	debug sizeof u8 ' ' sizeof u16 ' ' sizeof int ' ' sizeof bln ' ' sizeof ptr<Entry> '\n';

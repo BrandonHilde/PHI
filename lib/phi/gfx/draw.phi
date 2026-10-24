@@ -14,7 +14,8 @@
 # and cut to a clipping rectangle, both set with SetView: point the view at a window's
 # inside and code can draw at (0, 0) without spilling out of it. PushClip narrows the
 # clipping rectangle further (to a scrolling list inside the window, say) and PopClip
-# puts it back.
+# puts it back. PushTarget draws on other pixels for a while (an image, a canvas) and
+# PopTarget goes back to what was being drawn on, with its view and clip.
 #
 # Text uses the VGA font (gfx.font), which must be loaded while the screen is still in
 # text mode; Screen.Start does that. Drawing uses class variables, so draw from one
@@ -22,6 +23,21 @@
 
 use gfx.font;
 use user.math;
+
+# what PushTarget saves: the pixels drawn on, and their view and clip
+struct.DrawTarget
+{
+	ptr<u32> pixels;
+	int width;
+	int height;
+	int origin_x;
+	int origin_y;
+	int clip_x0;
+	int clip_y0;
+	int clip_x1;
+	int clip_y1;
+	int clip_depth;
+}
 
 phi.Draw:Kernel
 {
@@ -56,6 +72,10 @@ phi.Draw:Kernel
 	int saved_clips[64];
 	int clip_depth: 0;
 
+	# what PushTarget saved, and how deep it went (past what fits, PopTarget can't go back)
+	DrawTarget saved_targets[atmost 8];
+	int target_depth: 0;
+
 	# for the assembly loops below
 	u32 draw_fill_to: 0;
 	u32 draw_fill_count: 0;
@@ -73,6 +93,45 @@ phi.Draw:Kernel
 		width is w;
 		height is h;
 		call ResetView;
+	[end]
+
+	# draw on `w` x `h` pixels at `to` until PopTarget, which goes back to what was being
+	# drawn on, with its view and clip; the view becomes all of the new pixels
+	[PushTarget: ptr<u32> to: 0; int w: 0; int h: 0;]
+		if saved_targets.len < saved_targets.max
+			saved_targets++;
+			int i: saved_targets.len - 1;
+			saved_targets:i.pixels is pixels;
+			saved_targets:i.width is width;
+			saved_targets:i.height is height;
+			saved_targets:i.origin_x is origin_x;
+			saved_targets:i.origin_y is origin_y;
+			saved_targets:i.clip_x0 is clip_x0;
+			saved_targets:i.clip_y0 is clip_y0;
+			saved_targets:i.clip_x1 is clip_x1;
+			saved_targets:i.clip_y1 is clip_y1;
+			saved_targets:i.clip_depth is clip_depth;
+		;;
+		target_depth++;
+		call Target: to w h;
+	[end]
+
+	[PopTarget]
+		if target_depth is 0 return;
+		target_depth--;
+		if target_depth >= saved_targets.len return;
+		int i: saved_targets.len - 1;
+		pixels is saved_targets:i.pixels;
+		width is saved_targets:i.width;
+		height is saved_targets:i.height;
+		origin_x is saved_targets:i.origin_x;
+		origin_y is saved_targets:i.origin_y;
+		clip_x0 is saved_targets:i.clip_x0;
+		clip_y0 is saved_targets:i.clip_y0;
+		clip_x1 is saved_targets:i.clip_x1;
+		clip_y1 is saved_targets:i.clip_y1;
+		clip_depth is saved_targets:i.clip_depth;
+		saved_targets.len--;
 	[end]
 
 	# draw relative to (x, y), and only inside the w x h rectangle there

@@ -65,8 +65,19 @@ namespace Phi.Compiler.Tests
         [InlineData("[isr H]\n[end]", "can't handle interrupts")]
         [InlineData("call OS.SetupKeyboardInterupt;", "only through the kernel's system calls")]
         [InlineData("call OS.StartMultitasking;", "only through the kernel's system calls")]
-        [InlineData("ptr<u8> p: new u8[4];", "only 32-bit kernels")]
         public void ProgramsCantTouchHardware(string body, string message) => AssertError(Program(body), message);
+
+        [Theory]
+        [InlineData("ptr<u8> p: new u8[4];\nfree p;")]
+        [InlineData("str name: 'grows';\nname++ ' longer';\nlog name;")]
+        public void ProgramsGetTheirOwnHeap(string body)
+        {
+            CompileResult result = Compile(Program(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            var unit = Assert.Single(result.Units);
+            Assert.Contains("OS_Grow", unit.Text);          // memory.program_heap, not the kernel's
+            Assert.DoesNotContain("Frames", unit.Text);
+        }
 
         [Fact]
         public void ProgramsCantMixWithKernelClasses() =>

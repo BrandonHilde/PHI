@@ -13,7 +13,7 @@ phi.MouseEventTest:Kernel
 	;;
 
 	while (Input.NextMouse)
-		debug Input.event_buttons ' ' Input.event_x ' ' Input.event_y ' ' Input.event_wheel '\n';
+		debug Input.event_buttons ' ' Input.event_x ' ' Input.event_y ' ' Input.event_wheel ' ' Input.event_clicks '\n';
 	;;
 	debug 'total ' Input.wheel '\n';
 }

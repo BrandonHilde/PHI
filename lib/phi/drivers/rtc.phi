@@ -4,8 +4,12 @@
 #   use drivers.rtc;
 #   call Rtc.Read;
 #   log Rtc.hour ':' Rtc.minute ':' Rtc.second;
+#   call Rtc.SetZone: 120;           # minutes from UTC: 120 is UTC+2
+#   call Rtc.ReadLocal;              # Read, then moved into that time zone
 #
-# QEMU's clock is the host's time, in UTC.
+# QEMU's clock is the host's time, in UTC. ReadLocal adds the zone's minutes, carrying
+# into the day, month and year (leap years included); AddMinutes does the same for any
+# date and time in the fields.
 
 phi.Rtc:Library
 {
@@ -18,6 +22,7 @@ phi.Rtc:Library
 	int day: 0;
 	int month: 0;
 	int year: 0;
+	int zone: 0;                    # minutes from UTC that ReadLocal adds (-720 to 840)
 
 	[ReadRegister: u8 register: 0;]
 		out CMOS_INDEX register;
@@ -65,4 +70,65 @@ phi.Rtc:Library
 
 		year++ 2000;
 	[end]
+
+	[SetZone: int minutes: 0;]
+		zone is minutes;
+	[end]
+
+	# like Read, but in the time zone set with SetZone
+	[ReadLocal]
+		call Read;
+		call AddMinutes: zone;
+	[end]
+
+	# move the fields by minutes (later, or earlier when negative), carrying into the hour,
+	# day, month and year
+	[AddMinutes: int minutes: 0;]
+		int total: hour * 60 + minute + minutes;
+		int days: 0;
+		while total < 0
+			total++ 1440;
+			days--;
+		;;
+		while total >= 1440
+			total-- 1440;
+			days++;
+		;;
+		hour is total / 60;
+		minute is total % 60;
+
+		while days > 0
+			day++;
+			if day > (DaysIn: month year)
+				day is 1;
+				month++;
+				if month > 12
+					month is 1;
+					year++;
+				;;
+			;;
+			days--;
+		;;
+		while days < 0
+			day--;
+			if day < 1
+				month--;
+				if month < 1
+					month is 12;
+					year--;
+				;;
+				day is (DaysIn: month year);
+			;;
+			days++;
+		;;
+	[end]
+
+	# the days in month m (1 to 12) of year y
+	[DaysIn: int m: 1; int y: 2000;]
+		if m is 2
+			if y % 4 is 0 and (y % 100 is not 0 or y % 400 is 0) return 29;
+			return 28;
+		;;
+		if m is 4 or m is 6 or m is 9 or m is 11 return 30;
+	[end: 31]
 }

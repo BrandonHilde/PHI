@@ -18,7 +18,8 @@ namespace Phi.Cli
     public static class TestRunner
     {
         /// <param name="input">An input script to use instead of each test's NAME.input.</param>
-        public static int Run(string target, string? filter, TimeSpan timeout, string? input = null, bool keepOutput = false)
+        /// <param name="contains">Lines the output must contain, to check instead of each test's NAME.expected or NAME.contains.</param>
+        public static int Run(string target, string? filter, TimeSpan timeout, string? input = null, bool keepOutput = false, string? contains = null)
         {
             List<string> tests = Directory.Exists(target)
                 ? Directory.GetFiles(target, "*.phi").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
@@ -39,7 +40,7 @@ namespace Phi.Cli
             foreach (var (test, mode) in runs)
             {
                 string name = Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : $" ({mode.Name})");
-                string? failure = RunOne(test, timeout, mode, input, keepOutput);
+                string? failure = RunOne(test, timeout, mode, input, keepOutput, contains);
 
                 if (failure == null)
                 {
@@ -83,7 +84,7 @@ namespace Phi.Cli
         }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
-        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput)
+        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput, string? containsOverride)
         {
             string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
             string name = Path.GetFileNameWithoutExtension(phiFile);
@@ -135,7 +136,7 @@ namespace Phi.Cli
 
             // NAME.contains: each line must appear somewhere in the output (for output that
             // changes from build to build, like addresses on a panic screen)
-            string containsFile = Path.Combine(dir, name + ".contains");
+            string containsFile = containsOverride ?? Path.Combine(dir, name + ".contains");
             if (File.Exists(containsFile))
             {
                 var lines = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();

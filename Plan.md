@@ -484,8 +484,8 @@ the prompt.
 - Differs from the plan:
   - Pong is text mode (80x25 cells). Graphics mode needs the BIOS, and drawing would need video
     memory mapped into the program; both belong with the framebuffer work in [Later](#later).
-  - The "user standard library" has text and the system calls, but no heap for programs: `new` in
-    a program would need the kernel to grow its memory, and is the next thing to add.
+  - The "user standard library" had text and the system calls, but no heap for programs at
+    first; `memory.program_heap` (with the `OS.Grow` system call) added one later.
 
 ## Where things stand
 
@@ -528,18 +528,29 @@ these were added:
   `p:0.x`, `ptrs:i.x`, `call p.Add;`); an error when a pointer would keep a method's `str`
   result (a temporary, so it dangled); a keyword used as a name is reported only where it's
   declared; `Draw.TextN` for part of a buffer
+- [x] From the third PhiOS assessment: `.max` (the most a value can hold; `.len` is how many
+  are in it, `sizeof` its bytes), `.len` of an array field through an element, a warning
+  when a `str`'s `.len` is passed as a size, and a one-line `if` that assigns reported at
+  that line; `phi test --contains FILE`; `Draw.PushTarget`/`PopTarget`, double clicks
+  (`Input.event_clicks`), pointer shapes (`Screen.SetPointer`), time zones in `drivers.rtc`
+- [x] Arrays filled as they go: `T name[atmost N]`, with `name++ value;`, a `.len` that counts
+  what was added, and indexes checked against it
+- [x] A heap for user programs (`memory.program_heap`, growing through `OS.Grow`), so `new`
+  and objects work there too
+- [x] Strings that grow: a `str` without a size grows on the heap up to 65,535 characters
+  (in 32-bit kernels and programs); `str s: [N];` is still a fixed buffer of at most N
 
 The parts most worth doing next, roughly in order:
 
-1. **A heap for user programs**, so `new` (and objects) work there too.
-2. **Growable strings** with value semantics.
-3. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`, then system calls
+1. **A GUI toolkit**: windows, widgets and events on top of `gfx.draw`, then system calls
    for a surface of pixels and input events, so GUI apps can be separate user programs.
-4. **64-bit integers** (`i64`/`u64`), then `dec`/`fin`: PhiOS's calculator needed assembly
+2. **64-bit integers** (`i64`/`u64`), then `dec`/`fin`: PhiOS's calculator needed assembly
    for `a * b / 1000`.
-5. **`switch`, enums and interfaces**, so dispatching to a list of apps isn't one if/elif
+3. **`switch`, enums and interfaces**, so dispatching to a list of apps isn't one if/elif
    chain per event.
-6. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
+4. Strings that grow everywhere they can be: method results (now cut at 255 characters
+   when they come from a `str` without a size) and the elements of a `str` array.
+5. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM, self-hosting.
 
 ---
 
@@ -651,8 +662,8 @@ new Point cell at 0xB8000; # no allocation, never freed: a view of memory you co
 5. **Docs and samples:** [language.md](docs/language.md),
    [PHI for C programmers](docs/phi-for-c-programmers.md), tutorial 05 rewritten with
    managed objects, and `ptr<T>` moved to a "managing memory yourself" section.
-6. **Later:** managed arrays (`new u8 buffer[512];`), and managed objects in user programs
-   once they have a heap.
+6. **Later:** managed arrays (`new u8 buffer[512];`). (Objects in user programs came with
+   their heap.)
 
 ### Tests
 
