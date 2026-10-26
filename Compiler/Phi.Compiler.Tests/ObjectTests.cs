@@ -53,6 +53,14 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void KeywordsCantNameStructVariables()
+        {
+            AssertError(Kernel("Point ask;"), "'ask' is a keyword and can't be a variable name; try 'question' or 'prompt'");
+            AssertError(Kernel("Point free: 1 2;"), "'free' is a keyword and can't be a variable name");
+            AssertError(Kernel("Point out[4];"), "'out' is a keyword and can't be a variable name");
+        }
+
+        [Fact]
         public void AtWorksIn16BitCode()
         {
             CompileResult result = Compile(Structs + "phi.B:Bootloader\n{\n new Point p at 0xB8000;\n p.x is 1;\n}\n");

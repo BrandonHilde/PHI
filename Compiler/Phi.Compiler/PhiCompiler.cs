@@ -29,11 +29,12 @@ namespace Phi.Compiler
         /// <summary>Where `use` looks for files that aren't next to the program.</summary>
         const string StandardLibrary = "lib/phi/";
 
-        public static CompileResult Compile(SourceFile file, bool generate = true)
+        /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
+        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null)
         {
             var diagnostics = new DiagnosticBag();
 
-            ProgramNode syntax = ParseWithUses(file, diagnostics);
+            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics);
             if (diagnostics.HasErrors) return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax };
 
             BoundProgram? bound = Binder.Bind(syntax, diagnostics);
@@ -60,7 +61,7 @@ namespace Phi.Compiler
         /// Parses the program and every file it uses (and those files' uses). Used files come
         /// first, so their classes run before the program's own.
         /// </summary>
-        static ProgramNode ParseWithUses(SourceFile main, DiagnosticBag diagnostics)
+        static ProgramNode ParseWithUses(SourceFile main, string? kernelFile, DiagnosticBag diagnostics)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Key(main) };
 
@@ -70,13 +71,14 @@ namespace Phi.Compiler
 
                 foreach (UseDecl use in node.Uses)
                 {
-                    SourceFile? used = Resolve(use.Path, file, main);
+                    SourceFile? used = Resolve(use.Path, file, main, kernelFile);
                     if (used == null)
                     {
                         string relative = use.Path.Replace('.', '/') + ".phi";
-                        string places = file == main
-                            ? $"next to {Path.GetFileName(file.Path)}"
-                            : $"next to {Path.GetFileName(file.Path)}, next to {Path.GetFileName(main.Path)},";
+                        var near = new List<string> { Path.GetFileName(file.Path) };
+                        if (file != main) near.Add(Path.GetFileName(main.Path));
+                        if (kernelFile != null) near.Add($"the kernel {Path.GetFileName(kernelFile)}");
+                        string places = string.Join(", ", near.Select(n => "next to " + n)) + (near.Count > 1 ? "," : "");
                         diagnostics.Error(file, use.Span, $"can't find {relative} {places} or in the standard library ({StandardLibrary})");
                         continue;
                     }
@@ -103,7 +105,7 @@ namespace Phi.Compiler
                                                                  || n is VarDecl { Unsized: true })   // an array that grows
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
             string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;
-            SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main) : null;
+            SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main, null) : null;
             if (heap == null || !seen.Add(Key(heap))) return program;
 
             var withHeap = new ProgramNode { File = main };
@@ -136,16 +138,19 @@ namespace Phi.Compiler
 
         /// <summary>
         /// use a.b; is the file a/b.phi: next to the file that uses it, else next to the main
-        /// program, else in the standard library.
+        /// program, else (for a program in a kernel's rootfs) next to the kernel, else in the
+        /// standard library.
         /// </summary>
-        static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main)
+        static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main, string? kernel)
         {
             string relative = dotted.Replace('.', '/') + ".phi";
 
-            foreach (SourceFile near in new[] { from, main })
+            var places = new List<string> { from.Path, main.Path };
+            if (kernel != null) places.Add(kernel);
+            foreach (string near in places)
             {
-                if (near.Path.StartsWith(StandardLibrary)) continue;
-                string local = Path.Combine(Path.GetDirectoryName(near.Path) ?? "", relative);
+                if (near.StartsWith(StandardLibrary)) continue;
+                string local = Path.Combine(Path.GetDirectoryName(near) ?? "", relative);
                 if (File.Exists(local)) return SourceFile.Load(local);
             }
 

@@ -39,6 +39,10 @@ namespace Phi.Compiler.Syntax
             ["log"] = "'entry' or 'history'",
             ["sizeof"] = "'size'",
             ["return"] = "'result'",
+            ["ask"] = "'question' or 'prompt'",
+            ["has"] = "'holds' or 'found'",
+            ["when"] = "'time' or 'moment'",
+            ["each"] = "'item' or 'every'",
         };
 
         /// <summary>The error for a keyword used as a name, with other names to try when there are common ones.</summary>
@@ -145,7 +149,23 @@ namespace Phi.Compiler.Syntax
         /// <summary>A declaration starts with a type keyword, or with a struct name followed by a name.</summary>
         bool AtDeclaration =>
             (Current.Kind == TokenKind.Identifier && TypeKeywords.Contains(Current.Text))
-            || (IsName(Current) && IsName(PeekToken(1)) && !PeekToken(1).StartsLine);
+            || (IsName(Current) && IsName(PeekToken(1)) && !PeekToken(1).StartsLine)
+            || (IsName(Current) && AtKeywordAsDeclaredName);
+
+        /// <summary>
+        /// Button free; or Prompt ask: ...: a struct name and a keyword where the variable name goes,
+        /// read as a declaration so the keyword is reported as a name.
+        /// </summary>
+        bool AtKeywordAsDeclaredName
+        {
+            get
+            {
+                Token name = PeekToken(1);
+                if (name.Kind != TokenKind.Identifier || name.StartsLine || !ReservedWords.Contains(name.Text)) return false;
+                if (name.Text is "is" or "takes") return false;
+                return PeekToken(2).Kind is TokenKind.Colon or TokenKind.Semicolon or TokenKind.OpenBracket or TokenKind.Equals;
+            }
+        }
 
         /// <summary>new T name ... as a statement declares an object (a new expression is never a statement).</summary>
         /// <summary>

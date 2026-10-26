@@ -1,0 +1,13 @@
+# Shared by the programs in kernel32_shared_code.rootfs: they find it next to the kernel.
+phi.Greeting:Library
+{
+	int counts: 1 2 3;
+
+	[Say: str who: '';]
+		log 'hello ' who '\n';
+	[end]
+
+	[Count: int i: 0;]
+		log 'count ' counts:i '\n';
+	[end]
+}

@@ -1,0 +1,7 @@
+use shared.greeting;
+
+phi.Greeter:Program
+{
+	call Greeting.Say: 'from a program';
+	exit 3;
+}

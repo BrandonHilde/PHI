@@ -110,31 +110,85 @@ namespace Phi.Compiler.Tests
             Assert.Equal((uint)FatImage.PartitionSectors, U32(image, 446 + 12));
         }
 
+        /// <summary>A disk image: a first byte standing for the kernel, then the partition made from folder.</summary>
+        static byte[] Image(byte kernel, string folder)
+        {
+            var errors = new List<string>();
+            byte[] partition = FatImage.Build(folder, errors);
+            Assert.Empty(errors);
+            var image = new byte[FatImage.PartitionStart * FatImage.SectorSize + partition.Length];
+            image[0] = kernel;
+            partition.CopyTo(image, FatImage.PartitionStart * FatImage.SectorSize);
+            return image;
+        }
+
+        /// <summary>The contents of a file in a partition, by its 8.3 names (DOCS/README.TXT), or null.</summary>
+        static string? Read(byte[] p, string path)
+        {
+            var entries = Entries(p, RootOffset, FatImage.RootEntries);
+            string[] parts = path.Split('/');
+            for (int i = 0; ; i++)
+            {
+                string[] nameExt = parts[i].Split('.');
+                string name11 = nameExt[0].PadRight(8) + (nameExt.Length > 1 ? nameExt[1] : "").PadRight(3);
+                int found = entries.FindIndex(e => e.Name == name11);
+                if (found < 0) return null;
+                var e = entries[found];
+                if (i == parts.Length - 1) return Encoding.ASCII.GetString(ReadChain(p, e.Cluster, e.Size));
+                entries = Entries(ReadChain(p, e.Cluster, ClusterBytes), 0, ClusterBytes / 32);
+            }
+        }
+
         [Fact]
-        public void AKeptDiskGetsTheNewKernelAndKeepsItsFiles()
+        public void AKeptDiskGetsTheNewKernelAndProgramsAndKeepsItsFiles()
         {
             int partition = FatImage.PartitionStart * FatImage.SectorSize;
+
+            // what the kernel left on the kept disk
+            string before = Path.Combine(root, "before");
+            Directory.CreateDirectory(Path.Combine(before, "apps"));
+            File.WriteAllText(Path.Combine(before, "notes.txt"), "saved by the kernel");
+            File.WriteAllText(Path.Combine(before, "apps", "paint.bin"), "paint 1");
+            File.WriteAllText(Path.Combine(before, "apps", "mine.bin"), "made in the OS");
+
+            // the new build
+            string after = Path.Combine(root, "after");
+            Directory.CreateDirectory(Path.Combine(after, "apps"));
+            Directory.CreateDirectory(Path.Combine(after, "games"));
+            File.WriteAllText(Path.Combine(after, "notes.txt"), "the original");
+            File.WriteAllText(Path.Combine(after, "extra.txt"), "new data file");
+            File.WriteAllText(Path.Combine(after, "apps", "paint.bin"), "paint 2");
+            File.WriteAllText(Path.Combine(after, "apps", "calc.bin"), "calc 1");
+            File.WriteAllText(Path.Combine(after, "games", "tetris.bin"), "tetris 1");
+
             string image = Path.Combine(root, "os.img");
-            var bytes = new byte[partition + 1024];
-            bytes[0] = 1;
-            File.WriteAllBytes(image, bytes);
-
-            string kept = Builder.KeepDisk(image, out bool fresh);
+            File.WriteAllBytes(image, Image(1, before));
+            var refreshed = new List<string>();
+            var errors = new List<string>();
+            string kept = Builder.KeepDisk(image, out bool fresh, refreshed, errors);
             Assert.True(fresh);
-            Assert.Equal(bytes, File.ReadAllBytes(kept));
 
-            // the kernel saves a file; then a new build changes the kernel
-            byte[] saved = File.ReadAllBytes(kept);
-            saved[partition + 5] = 42;
-            File.WriteAllBytes(kept, saved);
-            bytes[0] = 2;
-            File.WriteAllBytes(image, bytes);
-
-            Builder.KeepDisk(image, out fresh);
-            byte[] after = File.ReadAllBytes(kept);
+            File.WriteAllBytes(image, Image(2, after));
+            Builder.KeepDisk(image, out fresh, refreshed, errors);
             Assert.False(fresh);
-            Assert.Equal(2, after[0]);
-            Assert.Equal(42, after[partition + 5]);
+            Assert.Empty(errors);
+
+            byte[] disk = File.ReadAllBytes(kept);
+            byte[] p = disk[partition..];
+            Assert.Equal(2, disk[0]);
+            Assert.Equal("saved by the kernel", Read(p, "NOTES.TXT"));
+            Assert.Null(Read(p, "EXTRA.TXT"));
+            Assert.Equal("paint 2", Read(p, "APPS/PAINT.BIN"));
+            Assert.Equal("calc 1", Read(p, "APPS/CALC.BIN"));
+            Assert.Equal("made in the OS", Read(p, "APPS/MINE.BIN"));
+            Assert.Equal("tetris 1", Read(p, "GAMES/TETRIS.BIN"));
+            Assert.Equal(new[] { "APPS/CALC.BIN", "APPS/PAINT.BIN", "GAMES/TETRIS.BIN" }, refreshed);
+
+            // nothing changed: nothing to update
+            refreshed.Clear();
+            Builder.KeepDisk(image, out fresh, refreshed, errors);
+            Assert.Empty(refreshed);
+            Assert.Equal("paint 2", Read(File.ReadAllBytes(kept)[partition..], "APPS/PAINT.BIN"));
         }
     }
 }

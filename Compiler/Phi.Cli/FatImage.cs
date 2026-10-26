@@ -45,17 +45,28 @@ namespace Phi.Cli
         /// <param name="compileProgram">Turns a .phi file into a user program, stored as NAME.BIN.</param>
         public static byte[] Build(string? rootfs, List<string> errors, Func<string, byte[]?>? compileProgram = null)
         {
-            var state = new State { CompileProgram = compileProgram };
-            state.Fat[0] = 0xFFF8; // media descriptor: fixed disk
-            state.Fat[1] = EndOfChain;
-
-            WriteBootSector(state.Partition);
+            State state = NewState();
+            state.CompileProgram = compileProgram;
 
             var root = new List<byte[]> { VolumeLabel() };
             if (rootfs != null) root.AddRange(DirectoryEntries(state, rootfs, parentCluster: 0));
+            return Finish(state, root, rootfs ?? "the root folder", errors);
+        }
 
+        static State NewState()
+        {
+            var state = new State();
+            state.Fat[0] = 0xFFF8; // media descriptor: fixed disk
+            state.Fat[1] = EndOfChain;
+            WriteBootSector(state.Partition);
+            return state;
+        }
+
+        /// <summary>Writes the root directory and both FATs.</summary>
+        static byte[] Finish(State state, List<byte[]> root, string rootName, List<string> errors)
+        {
             if (root.Count > RootEntries)
-                state.Errors.Add($"{rootfs} has {root.Count - 1} entries, but the root directory holds at most {RootEntries - 1}");
+                state.Errors.Add($"{rootName} has {root.Count - 1} entries, but the root directory holds at most {RootEntries - 1}");
             else
                 for (int i = 0; i < root.Count; i++)
                     root[i].CopyTo(state.Partition, RootStart * SectorSize + i * EntrySize);
@@ -66,6 +77,139 @@ namespace Phi.Cli
 
             errors.AddRange(state.Errors);
             return state.Partition;
+        }
+
+        // ================================================================ keeping a disk
+
+        /// <summary>A file or folder read back from a partition: its 32-byte entry, and its data or children.</summary>
+        sealed class Item
+        {
+            public byte[] Entry = Array.Empty<byte>();
+            public byte[] Data = Array.Empty<byte>();
+            public List<Item>? Children;
+            public string Name => Encoding.ASCII.GetString(Entry, 0, 11);
+            public bool IsProgram => Children == null && Name.EndsWith("BIN");
+        }
+
+        /// <summary>
+        /// The kept partition with every program (NAME.BIN) taken from the new one: changed programs
+        /// are replaced and new ones added, and everything else the kernel saved stays as it was.
+        /// </summary>
+        /// <param name="refreshed">gets the path of each program that was replaced or added</param>
+        public static byte[] RefreshPrograms(byte[] kept, byte[] built, List<string> refreshed, List<string> errors)
+        {
+            List<Item> root = ReadDirectory(kept, RootDirectory(kept));
+            Merge(root, ReadDirectory(built, RootDirectory(built)), "", refreshed);
+
+            State state = NewState();
+            List<byte[]> entries = WriteItems(state, root, parentCluster: 0);
+            return Finish(state, entries, "the kept disk", errors);
+        }
+
+        static void Merge(List<Item> kept, List<Item> built, string folder, List<string> refreshed)
+        {
+            foreach (Item item in built)
+            {
+                Item? old = kept.Find(k => k.Name == item.Name && (k.Children == null) == (item.Children == null));
+                string path = folder + ShortToPath(item.Name);
+                if (item.Children != null)
+                {
+                    // a new folder comes across only if it has programs in it
+                    var children = old?.Children ?? new List<Item>();
+                    int before = refreshed.Count;
+                    Merge(children, item.Children, path + "/", refreshed);
+                    if (old == null && refreshed.Count > before) kept.Add(new Item { Entry = item.Entry, Children = children });
+                }
+                else if (item.IsProgram && (old == null || !old.Data.AsSpan().SequenceEqual(item.Data)))
+                {
+                    if (old != null) kept[kept.IndexOf(old)] = item;
+                    else kept.Add(item);
+                    refreshed.Add(path);
+                }
+            }
+        }
+
+        static string ShortToPath(string name11)
+        {
+            string stem = name11[..8].TrimEnd(), ext = name11[8..].TrimEnd();
+            return ext.Length == 0 ? stem : stem + "." + ext;
+        }
+
+        static byte[] RootDirectory(byte[] p) => p.AsSpan(RootStart * SectorSize, RootEntries * EntrySize).ToArray();
+
+        /// <summary>The items in a directory's entries (dir), whose data is in the partition p.</summary>
+        static List<Item> ReadDirectory(byte[] p, byte[] dir)
+        {
+            var items = new List<Item>();
+            for (int at = 0; at + EntrySize <= dir.Length; at += EntrySize)
+            {
+                if (dir[at] == 0x00) break;                     // the end of the directory
+                byte attributes = dir[at + 11];
+                if (dir[at] == 0xE5 || dir[at] == (byte)'.' || attributes == 0x0F) continue;  // deleted, . and .., long names
+
+                var item = new Item { Entry = dir.AsSpan(at, EntrySize).ToArray() };
+                int first = BitConverter.ToUInt16(dir, at + 26);
+                if ((attributes & AttrDirectory) != 0)
+                {
+                    item.Children = ReadDirectory(p, ReadChain(p, first, int.MaxValue));
+                }
+                else if ((attributes & AttrVolumeLabel) == 0)
+                {
+                    item.Data = ReadChain(p, first, (int)BitConverter.ToUInt32(dir, at + 28));
+                }
+                items.Add(item);
+            }
+            return items;
+        }
+
+        /// <summary>The data of a cluster chain, up to size bytes. p is the whole partition.</summary>
+        static byte[] ReadChain(byte[] p, int cluster, int size)
+        {
+            var data = new List<byte>();
+            var seen = new HashSet<int>();
+            while (cluster >= 2 && cluster < ClusterCount + 2 && data.Count < size && seen.Add(cluster))
+            {
+                int sector = DataStart + (cluster - 2) * SectorsPerCluster;
+                data.AddRange(p.AsSpan(sector * SectorSize, Math.Min(ClusterBytes, size - data.Count)).ToArray());
+                cluster = BitConverter.ToUInt16(p, FatStart * SectorSize + cluster * 2);
+            }
+            return data.ToArray();
+        }
+
+        /// <summary>Entries for items read back from a partition, writing their data and subfolders.</summary>
+        static List<byte[]> WriteItems(State state, List<Item> items, int parentCluster)
+        {
+            var entries = new List<byte[]>();
+            foreach (Item item in items)
+            {
+                byte[] entry = (byte[])item.Entry.Clone();
+                int first = 0;
+                if (item.Children != null)
+                {
+                    int clusters = Math.Max(1, ((item.Children.Count + 2) * EntrySize + ClusterBytes - 1) / ClusterBytes);
+                    first = AllocateChain(state, clusters, ShortToPath(item.Name));
+                    if (first == 0) continue;
+
+                    byte[] dot = (byte[])entry.Clone(), dotdot = (byte[])entry.Clone();
+                    Encoding.ASCII.GetBytes(".          ").CopyTo(dot, 0);
+                    Encoding.ASCII.GetBytes("..         ").CopyTo(dotdot, 0);
+                    BitConverter.GetBytes((ushort)first).CopyTo(dot, 26);
+                    BitConverter.GetBytes((ushort)parentCluster).CopyTo(dotdot, 26);
+
+                    var children = new List<byte[]> { dot, dotdot };
+                    children.AddRange(WriteItems(state, item.Children, first));
+                    WriteChain(state, first, children.SelectMany(c => c).ToArray());
+                }
+                else if (item.Data.Length > 0)
+                {
+                    first = AllocateChain(state, (item.Data.Length + ClusterBytes - 1) / ClusterBytes, ShortToPath(item.Name));
+                    if (first == 0) continue;
+                    WriteChain(state, first, item.Data);
+                }
+                BitConverter.GetBytes((ushort)first).CopyTo(entry, 26);
+                entries.Add(entry);
+            }
+            return entries;
         }
 
         /// <summary>Partition table entry 1 in the boot sector (offset 446): type 0x04, FAT16 under 32 MB.</summary>

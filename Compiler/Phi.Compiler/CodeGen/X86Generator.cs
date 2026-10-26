@@ -1523,9 +1523,16 @@ namespace Phi.Compiler.CodeGen
             string ok = NewLabel("inbounds");
             Emit($"cmp eax, {limit}");
             Emit($"{jump} {ok}                ; unsigned, so negative indexes fail too");
-            Emit($"mov eax, {LineOf(at)}");
-            Emit("jmp phi_index_error");
+            EmitIndexError(at);
             Label(ok);
+        }
+
+        /// <summary>Stops with an index error naming the line and file of a node.</summary>
+        void EmitIndexError(Node at)
+        {
+            Emit($"mov eax, {LineOf(at)}");
+            Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}");
+            Emit("jmp phi_index_error");
         }
 
         /// <summary>eax = eax * size, for an element's offset.</summary>
@@ -2929,8 +2936,7 @@ namespace Phi.Compiler.CodeGen
                 Emit($"cmp eax, [{((VariableSymbol)((NameExpr)copy.Target).Symbol!).Label} + 4]");
             else Emit($"cmp eax, {t.Length}");
             Emit($"{(t.Filled ? "jbe" : "je")} {ok}");
-            Emit($"mov eax, {LineOf(copy)}");
-            Emit("jmp phi_index_error");
+            EmitIndexError(copy);
             Label(ok);
         }
 

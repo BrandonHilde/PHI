@@ -7,6 +7,7 @@ const string Usage = """
       phi run   <file.phi> [--debug] [--keep-disk]
                                            build, then boot it in QEMU (serial output prints here);
                                            --keep-disk keeps the files a kernel saved for next time
+                                           (programs from the rootfs are updated on it)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
@@ -91,10 +92,15 @@ static int Execute(string[] args)
                 string image = build.ImagePath;
                 if (keepDisk)
                 {
-                    image = Builder.KeepDisk(build.ImagePath, out bool fresh);
+                    var refreshed = new List<string>();
+                    var diskErrors = new List<string>();
+                    image = Builder.KeepDisk(build.ImagePath, out bool fresh, refreshed, diskErrors);
+                    foreach (string e in diskErrors) Console.Error.WriteLine("error: " + e);
+                    if (diskErrors.Count > 0) return 1;
                     Console.WriteLine(fresh
                         ? $"made a disk that keeps its files between runs: {Path.GetRelativePath(Environment.CurrentDirectory, image)}"
                         : $"booting the kept disk {Path.GetRelativePath(Environment.CurrentDirectory, image)} with the new kernel (delete it to start again)");
+                    if (refreshed.Count > 0) Console.WriteLine("updated programs on it: " + string.Join(" ", refreshed));
                 }
                 return Qemu.RunInteractive(image, debug);
             }

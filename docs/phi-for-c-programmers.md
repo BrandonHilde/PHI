@@ -96,7 +96,7 @@ also converts to any pointer type without a cast. One kind of pointer becoming a
 meant.
 
 **Array indexes are checked.** An index outside the array stops the program with
-`PHI: index out of range on line N`, and a constant index is checked at build time. Code
+`PHI: index out of range on line N in FILE.phi`, and a constant index is checked at build time. Code
 inside an `unsafe` block skips the checks, and a pointer is never checked.
 
 **Some common names are keywords.** These can't be variable names: `end`, `at`, `is`, `in`,

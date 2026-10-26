@@ -626,7 +626,7 @@ The port and the value are separate values, so `out port -1;` writes -1 to `port
 ### Bounds checks
 
 Indexing an array or a `str` is checked when the program runs. An index outside the
-array stops the program with `PHI: index out of range on line N`. A constant index is
+array stops the program with `PHI: index out of range on line N in FILE.phi`. A constant index is
 checked when the program is built instead (and also when it runs, for an
 [`atmost` array](#variables), against how many are in it). Code inside `unsafe` isn't
 checked:
@@ -1650,7 +1650,9 @@ use support.helpers;         # loads support/helpers.phi
 ```
 
 `use a.b;` looks for `a/b.phi` next to the file that has the `use`, then next to the main
-program, then in the standard library ([lib/phi](../lib/phi)). Each file is loaded once,
+program, then (for a program in a kernel's rootfs) next to the kernel, then in the standard
+library ([lib/phi](../lib/phi)). So the programs of a rootfs can share code kept in a folder
+next to the kernel, like `lib/widgets.phi` used as `use lib.widgets;`. Each file is loaded once,
 and the classes of used files run before the classes that use them.
 
 ### Standard library

@@ -1,0 +1,5 @@
+hello from a program
+greeter exit code: 3
+count 2
+PHI: index out of range on line 11 in greeting.phi
+oops exit code: -1

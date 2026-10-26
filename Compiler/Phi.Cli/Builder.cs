@@ -41,7 +41,8 @@ namespace Phi.Cli
         const int ImageSize = 1_474_560;
 
         /// <param name="appendSource">Extra PHI text added after the file's own (used by the test runner).</param>
-        public static BuildResult Build(string phiFile, string outDir, string appendSource = "")
+        /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
+        public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
             var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img") };
@@ -55,7 +56,7 @@ namespace Phi.Cli
             Directory.CreateDirectory(outDir);
 
             var source = SourceFile.Load(phiFile);
-            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource));
+            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource), kernel: kernel);
 
             foreach (Diagnostic d in compiled.Diagnostics)
                 (d.Severity == Severity.Error ? result.Errors : result.Warnings).Add(d.ToString());
@@ -72,7 +73,7 @@ namespace Phi.Cli
             }
 
             byte[]? image = compiled.Units.Any(u => u.Kind == UnitKind.Kernel)
-                ? Layout32(compiled, outDir, result, FindRootfs(phiFile))
+                ? Layout32(compiled, phiFile, outDir, result, FindRootfs(phiFile))
                 : Layout16(compiled, outDir, result);
 
             if (image != null) File.WriteAllBytes(result.ImagePath, image);
@@ -80,10 +81,10 @@ namespace Phi.Cli
         }
 
         /// <summary>A user program from a kernel's rootfs, compiled for its disk; null (with errors) if it fails.</summary>
-        static byte[]? CompileProgram(string phiFile, string outDir, List<string> errors)
+        static byte[]? CompileProgram(string phiFile, string kernel, string outDir, List<string> errors)
         {
             string dir = Path.Combine(outDir, "programs", Path.GetFileNameWithoutExtension(phiFile));
-            BuildResult built = Build(phiFile, dir);
+            BuildResult built = Build(phiFile, dir, kernel: kernel);
             errors.AddRange(built.Errors);
             if (!built.Success) return null;
             if (!built.IsProgram)
@@ -142,7 +143,7 @@ namespace Phi.Cli
             return Directory.Exists(shared) ? shared : null;
         }
 
-        static byte[]? Layout32(CompileResult compiled, string outDir, BuildResult result, string? rootfs)
+        static byte[]? Layout32(CompileResult compiled, string kernelFile, string outDir, BuildResult result, string? rootfs)
         {
             AsmUnit kernel = compiled.Units.Single(u => u.Kind == UnitKind.Kernel);
             AsmUnit stage1 = compiled.BootStages.Single(u => u.Name == "stage1");
@@ -166,7 +167,7 @@ namespace Phi.Cli
                 throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
 
             var fsErrors = new List<string>();
-            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, outDir, fsErrors));
+            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors));
             if (fsErrors.Count > 0)
             {
                 result.Errors.AddRange(fsErrors);
@@ -216,11 +217,13 @@ namespace Phi.Cli
 
         /// <summary>
         /// A copy of a kernel's disk image that keeps what the kernel saved: the first time it is the
-        /// new image; after that only the boot sectors and kernel (everything before the FAT16
-        /// partition) are replaced, so the partition's files are still there.
+        /// new image; after that the boot sectors and kernel (everything before the FAT16 partition)
+        /// are replaced, and so are the programs (NAME.BIN) that changed or are new. Every other
+        /// file in the partition is still there.
         /// </summary>
+        /// <param name="refreshed">gets the path of each program that was replaced or added</param>
         /// <returns>the kept image, next to the new one as NAME.kept.img</returns>
-        public static string KeepDisk(string image, out bool fresh)
+        public static string KeepDisk(string image, out bool fresh, List<string> refreshed, List<string> errors)
         {
             string kept = Path.ChangeExtension(image, ".kept.img");
             byte[] built = File.ReadAllBytes(image);
@@ -233,8 +236,13 @@ namespace Phi.Cli
                 return kept;
             }
 
-            using var stream = new FileStream(kept, FileMode.Open, FileAccess.Write);
-            stream.Write(built, 0, partition);
+            byte[] old = File.ReadAllBytes(kept);
+            byte[] merged = FatImage.RefreshPrograms(old[partition..], built[partition..], refreshed, errors);
+            if (errors.Count > 0) return kept;
+
+            built.AsSpan(0, partition).CopyTo(old);
+            merged.CopyTo(old, partition);
+            File.WriteAllBytes(kept, old);
             return kept;
         }
     }

@@ -1,0 +1,17 @@
+# Programs in the rootfs use a file kept next to the kernel (shared/greeting.phi).
+use proc.process;
+
+phi.Test:Kernel
+{
+	int pid: 0;
+	int code: 0;
+	call pid is Process.Spawn: 'GREETER.BIN';
+	call code is Process.Wait: pid;
+	debug 'greeter exit code: ' code '\n';
+
+	# an index error in the shared file names that file
+	call pid is Process.Spawn: 'OOPS.BIN';
+	call code is Process.Wait: pid;
+	debug 'oops exit code: ' code '\n';
+	exit 0;
+}

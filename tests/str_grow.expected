@@ -9,4 +9,4 @@ heap back: 1
 results back: 1
 trunc 5
 
-PHI: index out of range on line 44
+PHI: index out of range on line 44 in str_grow.phi
