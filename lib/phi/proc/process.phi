@@ -86,6 +86,10 @@ phi.Process:Kernel
 	const u32 SYS_SOUND_STOP: 35;
 	const u32 SYS_SOUND_VOLUME: 36;
 	const u32 SYS_GROW: 37;
+	const u32 SYS_LIST_FOLDER: 38;
+	const u32 SYS_MAKE_FOLDER: 39;
+	const u32 SYS_RENAME: 40;
+	const u32 SYS_DELETE_FOLDER: 41;
 	const u32 SYS_MORE: 64;                 # from here on, more_calls handles them
 
 	const u32 HEAP_LIMIT: 0x48000000;       # a program's heap is at most 124 MB (from USER_TOP)
@@ -99,11 +103,15 @@ phi.Process:Kernel
 	u32 started: 0;
 	u8 call_path[64];                       # copies of a system call's text arguments
 	u8 call_arguments[256];
+	u8 call_path_to[64];                    # where Rename moves call_path to
 
 	# system calls 64 and up: their number and four arguments, and the result to give back
 	method<u32 u32 u32 u32 u32: int> more_calls: 0;
 	# told a process's number before its memory goes back
 	method<int> on_release: 0;
+	# answers OS.IsKeyDown for programs (1 if the key is held) when the kernel has its own
+	# keyboard driver, as gui.desktop does with drivers.input; 0 uses the built-in one
+	method<u32: int> key_down: 0;
 
 	call OS.StartMultitasking;
 	call OS.SetSyscallHandler: addr HandleSyscall;
@@ -381,7 +389,8 @@ phi.Process:Kernel
 
 		# most calls start with a path
 		bln pathOk: false;
-		if (number >= SYS_SPAWN and number <= SYS_FILE_SIZE) or number is SYS_READ_FILE_AT
+		bln named: (number >= SYS_SPAWN and number <= SYS_FILE_SIZE) or number is SYS_READ_FILE_AT;
+		if named or (number >= SYS_LIST_FOLDER and number <= SYS_DELETE_FOLDER)
 			call pathOk is CopyFromUser: first addr call_path 64;
 		;;
 
@@ -469,8 +478,13 @@ phi.Process:Kernel
 			result is 0;
 		;;
 		elif number is SYS_KEY_DOWN
-			call OS.SetupKeyboardInterupt;
-			call result is OS.IsKeyDown: first;
+			if key_down is not 0
+				call result is key_down: first;
+			;;
+			else
+				call OS.SetupKeyboardInterupt;
+				call result is OS.IsKeyDown: first;
+			;;
 		;;
 		elif number is SYS_READ_FILE_AT
 			call ok is UserRange: third fourth;
@@ -480,6 +494,31 @@ phi.Process:Kernel
 		;;
 		elif number is SYS_GROW
 			call result is Grow: first;
+		;;
+		elif number is SYS_LIST_FOLDER
+			call ok is UserRange: second third * sizeof FileInfo;
+			if pathOk and ok and third < 0x10000
+				call result is Fat.Entries: addr call_path second third;
+			;;
+		;;
+		elif number is SYS_MAKE_FOLDER
+			if pathOk
+				call ok is Fat.MakeFolder: addr call_path;
+				result is ok;
+			;;
+		;;
+		elif number is SYS_RENAME
+			call ok is CopyFromUser: second addr call_path_to 64;
+			if pathOk and ok
+				call ok is Fat.Rename: addr call_path addr call_path_to;
+				result is ok;
+			;;
+		;;
+		elif number is SYS_DELETE_FOLDER
+			if pathOk
+				call ok is Fat.DeleteFolder: addr call_path;
+				result is ok;
+			;;
 		;;
 		elif number >= SYS_MORE
 			if more_calls is not 0

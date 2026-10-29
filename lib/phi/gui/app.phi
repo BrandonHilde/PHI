@@ -24,6 +24,10 @@
 # Open makes the program's pixels (on its heap), points Draw at them and copies the
 # kernel's font, so Draw's text works. Nothing shows until Present. A crash ends only
 # this program: the kernel and the other windows carry on.
+#
+#   call App.SetTitle: 'Notes - TODO.TXT';             # what the window is called
+#   int pid: (App.OpenWindow: 'VIEWER.BIN' 'TODO.TXT'); # another program, in its own window
+#   if (App.Focused) ...                                # is this window in front?
 
 use gfx.draw;
 use gui.events;
@@ -64,6 +68,20 @@ phi.App:Program
 	# the next event into App.event; false when there's none yet
 	[NextEvent]
 	[end: (OS.NextEvent: addr event) is 1]
+
+	# name the window (the window manager cuts it to fit its title bar)
+	[SetTitle: ptr<u8> title: 0;]
+		call OS.SetWindowTitle: title;
+	[end]
+
+	# start the program at path from the disk, with a command line, in a window of its
+	# own; its process number, or -1 if it couldn't start
+	[OpenWindow: ptr<u8> path: 0; ptr<u8> arguments: 0;]
+	[end: (OS.OpenWindow: path arguments)]
+
+	# is this program's window in front (getting the keys)?
+	[Focused]
+	[end: (OS.WindowFocused) is 1]
 
 	# wait for the next event, sleeping a little between looks
 	[WaitEvent]

@@ -190,5 +190,20 @@ namespace Phi.Compiler.Tests
             Assert.Empty(refreshed);
             Assert.Equal("paint 2", Read(File.ReadAllBytes(kept)[partition..], "APPS/PAINT.BIN"));
         }
+
+        [Fact]
+        public void AMistakeInCodeSeveralProgramsUseIsReportedOnce()
+        {
+            File.WriteAllText(Path.Combine(root, "broken.phi"), "phi.Broken:Library\n{\n\tint x: nothing;\n}\n");
+            File.WriteAllText(Path.Combine(root, "os.phi"), "phi.Os:Kernel\n{\n\tlog 'hi';\n}\n");
+            string rootfs = Path.Combine(root, "os.rootfs");
+            Directory.CreateDirectory(rootfs);
+            foreach (string name in new[] { "one", "two", "three" })
+                File.WriteAllText(Path.Combine(rootfs, name + ".phi"), $"use broken;\n\nphi.P{name}:Program\n{{\n\tlog Broken.x;\n}}\n");
+
+            BuildResult result = Builder.Build(Path.Combine(root, "os.phi"), Path.Combine(root, "build"));
+            Assert.False(result.Success);
+            Assert.Single(result.Errors, e => e.Contains("nothing"));
+        }
     }
 }

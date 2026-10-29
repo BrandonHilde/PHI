@@ -929,6 +929,14 @@ namespace Phi.Compiler.CodeGen
 
             if (!v.Type.IsArray)
             {
+                // str s: f; with f a float or 64-bit number writes it out as text
+                if (v.Type.IsString && (values[0].Type.IsFloat || values[0].Type.IsWide))
+                {
+                    var build = new StringBuildStmt { Target = NameOf(v) };
+                    build.Parts.Add(values[0]);
+                    EmitStatement(build);
+                    return;
+                }
                 EmitAssign(NameOf(v), values[0]);
                 return;
             }

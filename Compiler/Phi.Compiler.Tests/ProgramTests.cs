@@ -52,6 +52,17 @@ namespace Phi.Compiler.Tests
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
         }
 
+        [Theory]
+        [InlineData("u8 buffer[64];\nint n: 0;\ncall n is OS.ReadFile: 'SCORE.TXT' buffer sizeof buffer;")]
+        [InlineData("u8 buffer[64];\nint n: 0;\ncall n is OS.ReadFileAt: 'SCORE.TXT' 8 buffer 64;")]
+        [InlineData("u8 name[16];\nint n: 0;\ncall n is OS.TaskName: 1 name;")]
+        [InlineData("ptr<u8> p: 0;\nint n: 0;\ncall n is OS.ReadFile: 'SCORE.TXT' p 64;")]
+        public void ArraysPassTheirAddressAsBuffers(string body)
+        {
+            CompileResult result = Compile(Program(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
         [Fact]
         public void LibraryClassesJoinPrograms()
         {

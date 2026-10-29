@@ -1,0 +1,5 @@
+expect holder: open
+type x
+expect holder: key 120
+sendkey a 2000
+expect desktop: no windows left

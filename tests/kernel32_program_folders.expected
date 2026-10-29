@@ -1,0 +1,14 @@
+docs: 2
+A.TXT 11 0
+B.TXT 7 0
+missing: -1
+only one: 1
+make: 1 again: 0
+move: 1
+moved size: 11 gone: -1
+delete full: 0
+delete file: 1
+delete empty: 1
+docs now: 1 B.TXT
+not mine: -1
+folders exit code: 4

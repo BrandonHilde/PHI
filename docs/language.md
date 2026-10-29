@@ -146,7 +146,7 @@ int squares[5];             # an array of 5 zeros
 str buffer: [40];           # room for 40 characters (also: str buffer[40];)
 u8 sectors[SECTOR_SIZE];    # sizes can be constants
 
-str text: count;            # a number written out as text
+str text: count;            # a number written out as text (an f64 or u64, too)
 str copy: line;             # line is a ptr<u8>: the text it points to
 ```
 
@@ -1111,7 +1111,8 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
   view and clip it had, so drawing on a canvas can't leave the screen's view wrong (8 deep).
 - **Clipping inside a view.** `Draw.PushClip: x y w h` cuts drawing to that rectangle as well
   (relative to the origin, and never wider than the clip already in force); `PopClip` puts the
-  clip back. They nest, 16 deep.
+  clip back. They nest, 16 deep. A `SetView` inside a `PushClip` stays inside its rectangle,
+  and `ResetView` there goes back to it rather than to the whole screen.
 - **Shapes:** `Clear`, `FillRect`, `Rect`, `Pixel`, `GetPixel`, `HLine`, `VLine`, `Line`,
   `Circle`, `FillCircle`, `Ellipse` and `FillEllipse` (`cx cy rx ry`), `Gradient` (top color
   to bottom color), `Blit` (copy an image). Colors are `0xRRGGBB`; `Draw.Rgb: r g b` makes
@@ -1124,7 +1125,7 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
   `TextScaled: x y text scale color` (each pixel of the font drawn `scale` x `scale`), and
   `TextN: x y text count color` (the first `count` characters, for part of a buffer).
 - **Keys** from `Input.NextKey` are characters (`'a'`, `'A'`, 13 for Enter, 27 for Esc) or
-  `Input.KEY_UP`, `KEY_F1` ... for keys that don't type one, with `MOD_SHIFT`, `MOD_CTRL` and
+  `Input.KEY_UP`, `KEY_F1` to `KEY_F12` ... for keys that don't type one, with `MOD_SHIFT`, `MOD_CTRL` and
   `MOD_ALT` added for the modifiers held (`key & Input.KEY_MASK` is the key alone).
   `(Input.IsDown: 'a')` says whether a key is held now. `Input` replaces the built-in keyboard
   driver, so don't also use `ask` or `OS.GetKey`.
@@ -1206,6 +1207,26 @@ if (Screen.Start: 800 600)
 Dragging a window's bottom right corner resizes it. When the button is let go the
 program gets `Events.RESIZE`, with the new size in `App.event.x` and `.y`: it calls
 `App.Resize: w h` and draws again.
+
+**What a program with a window can ask for.** On top of everything a
+[program](#programs-and-processes) can do, `gui.app` gives it:
+
+| Call | What it does |
+|---|---|
+| `App.Open: w h` →, `App.Resize: w h` → | its pixels, drawn on with `Draw`; false if the kernel can't make them |
+| `App.Present` | show what's been drawn |
+| `App.NextEvent` →, `App.WaitEvent` | the next event, into `App.event` |
+| `App.SetTitle: title` | name its window |
+| `App.OpenWindow: path arguments` → | start another program, with a command line, in a window of its own; its process number, or -1 |
+| `App.Focused` → | true while its window is in front, getting the keys |
+| `OS.IsKeyDown: key` → | whether a key is held, for games; only the program in front sees held keys |
+
+A program can't move, size or close its own window, or see other windows: those are the
+window manager's. `gui.desktop` is one window manager; a kernel can write its own on
+`gui.surfaces`, which keeps each program's pixels and events and takes these requests
+(`Surfaces.TakeTitle`, `TakeNewWindow`, and `Surfaces.front`, which the window manager
+keeps set to the program in front). A window manager with its own keyboard driver sets
+`Process.key_down` to a method that answers `OS.IsKeyDown` (`gui.desktop` does).
 
 `gui.widgets` has the usual parts of a form, each a struct that keeps its own place and
 state. Its `Mouse` and `Key` say what happened, and the program draws everything again
@@ -1417,17 +1438,34 @@ drivers. Instead:
 | `OS.Run: path arguments` → | the same, with a command line for it |
 | `OS.Arguments` → | this program's command line, as a `ptr<u8>` |
 | `OS.Wait: process` → | wait for a program this one started; its exit code |
-| `OS.ReadFile: path buffer max` →, `OS.ReadFileAt: path offset buffer max` →, `OS.WriteFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods |
+| `OS.ReadFile: path buffer max` →, `OS.ReadFileAt: path offset buffer max` →, `OS.WriteFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods; a buffer can be an array (`u8 text[512]`) or a pointer |
+| `OS.ListFolder: path into max` →, `OS.MakeFolder: path` →, `OS.Rename: from to` →, `OS.DeleteFolder: path` → | folders, like `Fat.Entries`, `MakeFolder`, `Rename` (which can move, too) and `DeleteFolder` (only an empty one); `ListFolder` fills an array of `FileInfo` (from `use fs.fileinfo;`, the same struct `Fat` uses) and gives how many, or -1 |
 | `OS.SoundWrite: data length` →, `OS.SoundRate: hz` →, `OS.SoundQueued` →, `OS.SoundStop` →, `OS.SoundVolume: percent` → | the sound card, like `Ac97`'s methods (`SoundWrite` never waits: it returns the bytes it took, 0 while the card is full); each returns -1 if there's no card |
 | `OS.TaskState: process` →, `OS.TaskName: process buffer` →, `OS.Kill: process` → | other programs (`ps`, `kill`) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | memory, in KB |
 | `OS.Grow: bytes` → | more memory at the end of the heap (whole pages, zeroed); where it starts, or 0. `new` does this for you |
 | `OS.ClearScreen`, `OS.PutCell: column row cell` | the text screen; a cell is a character in the low byte and a color in the high byte |
-| `OS.IsKeyDown: key` → | whether a key is held down (for games) |
+| `OS.IsKeyDown: key` → | whether a key is held down (for games); under `gui.desktop`, only for the program whose window is in front |
 | `OS.Reboot` | restart the machine |
 
 Every pointer a program passes is checked against its own memory; a bad one makes the
 call return -1 instead of reaching the kernel.
+
+```phi
+use fs.fileinfo;
+
+phi.Ls:Program
+{
+    FileInfo entries[64];
+    int count: (OS.ListFolder: 'DOCS' entries entries.len);    # -1 if there's no such folder
+    while int i: 0; i < count; i++;
+        log addr entries:i.name ' ' entries:i.size '\n';
+    ;;
+}
+```
+
+A program with a window has a few more calls, from `gui.app`: see
+[Windows for programs](#windows-for-programs).
 
 ### The shell
 
@@ -1665,6 +1703,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |

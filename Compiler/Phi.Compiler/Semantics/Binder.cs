@@ -1656,11 +1656,15 @@ namespace Phi.Compiler.Semantics
                 Expr value = decl.Values[i];
                 BindExpr(value, scope);
                 CheckNotKeepingResult(value, v.Type.Element, $"'{decl.Name}'");
+                // str s: f; writes a float or 64-bit number out as text, like s is f;
+                if (v.Type.IsString && !v.Type.IsArray && (value.Type.IsFloat || value.Type.IsWide)) continue;
                 decl.Values[i] = Convert(value, v.Type.Element, $"'{decl.Name}'");
             }
 
             // text for a ptr<u8> is the address of the string, which only the generated code knows
-            var constants = decl.Values.Select(e => e.Type.IsString && !v.Type.Element.IsString ? null : ConstantValue(e)).ToList();
+            // and a float or 64-bit number in a str is written out as text by code, too
+            var constants = decl.Values.Select(e => e.Type.IsString && !v.Type.Element.IsString
+                                                    || v.Type.Element.IsString && (e.Type.IsFloat || e.Type.IsWide) ? null : ConstantValue(e)).ToList();
             bool allConstant = constants.All(c => c != null);
 
             if (allConstant)
@@ -1923,6 +1927,13 @@ namespace Phi.Compiler.Semantics
                 var combined = new BinaryExpr { Op = op, Left = target, Right = value, Span = assign.Span };
                 combined.Type = target.Type.IsFloat ? FloatType(target.Type, value.Type) : ArithmeticType(target.Type, value.Type);
                 value = combined;
+            }
+            // a float or 64-bit number is written out as text the way s is '' v; does
+            else if (target.Type.IsString && (value.Type.IsFloat || value.Type.IsWide))
+            {
+                var build = new StringBuildStmt { Target = target, Span = assign.Span };
+                build.Parts.Add(value);
+                return build;
             }
             else
             {
@@ -2547,7 +2558,7 @@ namespace Phi.Compiler.Semantics
 
                     for (int i = 0; i < Math.Min(count, arguments.Count); i++)
                     {
-                        PhiType expected = builtin.TextParameters.Contains(i) ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
+                        PhiType expected = builtin.TextParameters.Contains(i) || builtin.BufferParameters.Contains(i) ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
                         arguments[i] = Convert(arguments[i], expected, $"'{builtin.Parameters[i]}'");
 
                         // whoever calls a handler (an IRQ, a system call) gives it no arguments

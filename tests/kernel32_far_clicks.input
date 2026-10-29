@@ -1,0 +1,13 @@
+# the window's inside starts at (902, 710), near the bottom right; each click comes
+# straight after a move most of the way across the screen
+expect painter: open
+wait 300
+mouse_to 5 5
+click 912 730
+expect painter: click 10 20
+mouse_to 1000 5
+click 930 720
+expect painter: click 28 10
+mouse_to 5 760
+click 920 740
+expect painter: click 18 30

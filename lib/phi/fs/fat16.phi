@@ -27,6 +27,7 @@
 use drivers.disk;
 use drivers.rtc;
 use memory.heap;
+use fs.fileinfo;                # FileInfo, which programs use too (OS.ListFolder)
 
 # the start of the partition's first sector: the BIOS Parameter Block
 struct.FatBootSector
@@ -62,19 +63,6 @@ struct.DirEntry
 	u16 write_date;
 	u16 cluster;            # first cluster of the data (0 for an empty file)
 	u32 size;
-}
-
-# one entry of a folder, from Fat.Entries
-struct.FileInfo
-{
-	u8 name[13];            # NAME.EXT, ending with a zero
-	u32 size;               # in bytes (0 for a folder)
-	bln folder;
-	u16 year;               # when it was last written (0 if the disk doesn't say)
-	u8 month;
-	u8 day;
-	u8 hour;
-	u8 minute;
 }
 
 phi.Fat:Kernel

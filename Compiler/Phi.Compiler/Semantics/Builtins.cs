@@ -13,6 +13,9 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>Indexes of parameters that take text (a str or ptr&lt;u8&gt;) rather than a number.</summary>
         public int[] TextParameters { get; init; } = Array.Empty<int>();
+
+        /// <summary>Indexes of parameters that take the address of a buffer: an array passes its address, as it does to a method.</summary>
+        public int[] BufferParameters { get; init; } = Array.Empty<int>();
         public bool Returns { get; init; }
 
         /// <summary>Null when the function works in both the boot sector and the kernel.</summary>
@@ -111,12 +114,18 @@ namespace Phi.Compiler.Semantics
                     Description = "kernel: where a task's heap (from 0x40400000) ends, so text it passes from there is accepted" },
             new() { Name = "OS.SurfaceOpen", Label = "OS_SurfaceOpen", Parameters = new[] { "width", "height" }, Returns = true,
                     Description = "program: a window of width x height pixels (gui.surfaces in the kernel); 1, or 0 (gui.app does this)" },
-            new() { Name = "OS.SurfacePresent", Label = "OS_SurfacePresent", Parameters = new[] { "pixels" }, Returns = true,
+            new() { Name = "OS.SurfacePresent", Label = "OS_SurfacePresent", Parameters = new[] { "pixels" }, BufferParameters = new[] { 0 }, Returns = true,
                     Description = "program: show width x height pixels from its memory in its window; 1, or 0" },
-            new() { Name = "OS.NextEvent", Label = "OS_NextEvent", Parameters = new[] { "event" }, Returns = true,
+            new() { Name = "OS.NextEvent", Label = "OS_NextEvent", Parameters = new[] { "event" }, BufferParameters = new[] { 0 }, Returns = true,
                     Description = "program: the oldest event for its window, into a GuiEvent (gui.events); 1, or 0 if there's none" },
-            new() { Name = "OS.CopyFont", Label = "OS_CopyFont", Parameters = new[] { "glyphs" }, Returns = true,
+            new() { Name = "OS.CopyFont", Label = "OS_CopyFont", Parameters = new[] { "glyphs" }, BufferParameters = new[] { 0 }, Returns = true,
                     Description = "program: copy the kernel's 8x16 font (4096 bytes) into glyphs; 1, or 0 if it has none" },
+            new() { Name = "OS.SetWindowTitle", Label = "OS_SetWindowTitle", Parameters = new[] { "title" }, TextParameters = new[] { 0 }, Returns = true,
+                    Description = "program: name its window (gui.app's App.SetTitle); 1" },
+            new() { Name = "OS.OpenWindow", Label = "OS_OpenWindow", Parameters = new[] { "path", "arguments" }, TextParameters = new[] { 0, 1 }, Returns = true,
+                    Description = "program: start a program with a command line, in a window of its own (gui.app's App.OpenWindow); its process number, or -1" },
+            new() { Name = "OS.WindowFocused", Label = "OS_WindowFocused", Returns = true,
+                    Description = "program: 1 if its window is in front (gui.app's App.Focused)" },
             new() { Name = "OS.Grow", Label = "OS_Grow", Parameters = new[] { "bytes" }, Returns = true,
                     Description = "program: more memory for its heap, right after what it has; where it starts, or 0 (memory.heap does this for new)" },
             new() { Name = "OS.SetSyscallHandler", Label = "OS_SetSyscallHandler", Parameters = new[] { "handler" },
@@ -130,7 +139,7 @@ namespace Phi.Compiler.Semantics
                     Description = "program: start a program with a command line; its process number, or -1" },
             new() { Name = "OS.Arguments", Label = "OS_Arguments", Returns = true,
                     Description = "program: its command line, as a ptr<u8>" },
-            new() { Name = "OS.ReadFile", Label = "OS_ReadFile", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.ReadFile", Label = "OS_ReadFile", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: read a file into buffer; bytes read, or -1" },
             new() { Name = "OS.WriteFile", Label = "OS_WriteFile", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: create or replace a file; 1 if written" },
@@ -140,9 +149,17 @@ namespace Phi.Compiler.Semantics
                     Description = "program: print a folder; how many entries it has" },
             new() { Name = "OS.FileSize", Label = "OS_FileSize", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: a file's size, or -1" },
-            new() { Name = "OS.ReadFileAt", Label = "OS_ReadFileAt", Parameters = new[] { "path", "offset", "buffer", "max" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.ListFolder", Label = "OS_ListFolder", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+                    Description = "program: a folder's entries, as FileInfo (use fs.fileinfo), into up to max of them; how many, or -1" },
+            new() { Name = "OS.MakeFolder", Label = "OS_MakeFolder", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+                    Description = "program: make a folder; 1 if made" },
+            new() { Name = "OS.Rename", Label = "OS_Rename", Parameters = new[] { "from", "to" }, TextParameters = new[] { 0, 1 }, Returns = true,
+                    Description = "program: rename a file or folder, or move it to another folder; 1 if done" },
+            new() { Name = "OS.DeleteFolder", Label = "OS_DeleteFolder", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+                    Description = "program: delete an empty folder; 1 if deleted" },
+            new() { Name = "OS.ReadFileAt", Label = "OS_ReadFileAt", Parameters = new[] { "path", "offset", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 2 }, Returns = true,
                     Description = "program: read part of a file, from offset on, into buffer; bytes read, or -1" },
-            new() { Name = "OS.SoundWrite", Label = "OS_SoundWrite", Parameters = new[] { "data", "length" }, Returns = true,
+            new() { Name = "OS.SoundWrite", Label = "OS_SoundWrite", Parameters = new[] { "data", "length" }, BufferParameters = new[] { 0 }, Returns = true,
                     Description = "program: give the sound card 16-bit stereo sound; the bytes it took (0 while it's full), or -1 if there's no card" },
             new() { Name = "OS.SoundRate", Label = "OS_SoundRate", Parameters = new[] { "hz" }, Returns = true,
                     Description = "program: set the frames a second the sound card plays; the rate it got, or -1 if there's no card" },
@@ -152,7 +169,7 @@ namespace Phi.Compiler.Semantics
                     Description = "program: stop the sound at once, dropping what hasn't played" },
             new() { Name = "OS.SoundVolume", Label = "OS_SoundVolume", Parameters = new[] { "percent" }, Returns = true,
                     Description = "program: set the sound card's volume, 0 to 100" },
-            new() { Name = "OS.TaskName", Label = "OS_TaskName", Parameters = new[] { "process", "buffer" }, Returns = true,
+            new() { Name = "OS.TaskName", Label = "OS_TaskName", Parameters = new[] { "process", "buffer" }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: copy a process's name (up to 15 characters) into buffer" },
             new() { Name = "OS.Kill", Label = "OS_Kill", Parameters = new[] { "process" }, Returns = true,
                     Description = "program: stop another program; 1 if it was stopped" },

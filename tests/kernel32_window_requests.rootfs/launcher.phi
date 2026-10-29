@@ -1,0 +1,31 @@
+use gui.app;
+
+phi.Launcher:Program
+{
+	if (App.Open: 80 40) is false
+		exit 1;
+	;;
+	call App.Present;
+	call App.SetTitle: 'Launcher';
+
+	int tries: 0;
+	while (App.Focused) is false and tries < 200
+		call OS.Sleep: 10;
+		tries++;
+	;;
+	log 'launcher: focused ' (App.Focused) '\n';
+
+	# the viewer's window goes in front of this one
+	int pid: (App.OpenWindow: 'VIEWER.BIN' 'NOTES.TXT');
+	log 'launcher: started ' (pid > 0) '\n';
+	tries is 0;
+	while (App.Focused) and tries < 200
+		call OS.Sleep: 10;
+		tries++;
+	;;
+	log 'launcher: focused ' (App.Focused) '\n';
+	log 'launcher: missing ' (App.OpenWindow: 'NOPE.BIN' 0) '\n';
+
+	call OS.Sleep: 1000;
+	exit 0;
+}

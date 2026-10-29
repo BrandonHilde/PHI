@@ -1,0 +1,26 @@
+use fs.fileinfo;
+
+phi.Folders:Program
+{
+	FileInfo entries[8];
+	int count: (OS.ListFolder: 'DOCS' entries entries.len);
+	log 'docs: ' count '\n';
+	while int i: 0; i < count; i++;
+		log addr entries:i.name ' ' entries:i.size ' ' entries:i.folder '\n';
+	;;
+	log 'missing: ' (OS.ListFolder: 'NOPE' entries entries.len) '\n';
+	log 'only one: ' (OS.ListFolder: 'DOCS' entries 1) '\n';
+
+	log 'make: ' (OS.MakeFolder: 'DOCS/OLD') ' again: ' (OS.MakeFolder: 'DOCS/OLD') '\n';
+	log 'move: ' (OS.Rename: 'DOCS/A.TXT' 'DOCS/OLD/A1.TXT') '\n';
+	log 'moved size: ' (OS.FileSize: 'DOCS/OLD/A1.TXT') ' gone: ' (OS.FileSize: 'DOCS/A.TXT') '\n';
+	log 'delete full: ' (OS.DeleteFolder: 'DOCS/OLD') '\n';
+	log 'delete file: ' (OS.DeleteFile: 'DOCS/OLD/A1.TXT') '\n';
+	log 'delete empty: ' (OS.DeleteFolder: 'DOCS/OLD') '\n';
+	count is (OS.ListFolder: 'DOCS' entries entries.len);
+	log 'docs now: ' count ' ' addr entries:0.name '\n';
+
+	# a buffer the program doesn't own is refused
+	log 'not mine: ' (OS.ListFolder: 'DOCS' 0x100000 8) '\n';
+	exit 4;
+}

@@ -563,6 +563,14 @@ these were added:
   registers), literals like `2.5` and `6.02e23`, printing, and `Float.Sqrt` and friends
 - [x] 64-bit integers: `i64` and `u64` (variables, fields, arrays, parameters, results,
   printing and text), with multiply, divide and conversion to text in `int64.asm`
+- [x] From the fourth PhiOS assessment: a program asking `OS.IsKeyDown` no longer takes the
+  keyboard from `drivers.input` (and under `gui.desktop` only the front window sees held
+  keys, through `Process.key_down`); folders for programs (`OS.ListFolder`, `MakeFolder`,
+  `Rename`, `DeleteFolder`, with `FileInfo` in `fs.fileinfo` for both sides); window
+  requests (`App.SetTitle`, `App.OpenWindow`, `App.Focused`); a lone `f64` or `u64` assigned
+  to a `str`; arrays passed to the built-ins' buffers; `SetView` stays inside a `PushClip`;
+  F-key constants in `Events`; input scripts send long mouse moves in steps, and wait for a
+  script still running once the output is right; an error in shared code reported once
 
 The parts most worth doing next, roughly in order:
 

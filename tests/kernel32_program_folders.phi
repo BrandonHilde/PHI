@@ -1,0 +1,9 @@
+# A program works with folders: lists one, makes one, moves a file into it and deletes it.
+use proc.process;
+
+phi.Test:Kernel
+{
+	int code: (Process.Wait: (Process.Spawn: 'FOLDERS.BIN'));
+	debug 'folders exit code: ' code '\n';
+	exit 0;
+}

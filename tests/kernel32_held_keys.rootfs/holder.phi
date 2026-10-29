@@ -1,0 +1,31 @@
+use gui.app;
+
+phi.Holder:Program
+{
+	if (App.Open: 64 48) is false
+		exit 1;
+	;;
+	call App.Present;
+
+	# this used to put the built-in keyboard driver on IRQ 1, in place of the desktop's
+	int early: (OS.IsKeyDown: 'a');
+	log 'holder: open, a held ' early '\n';
+
+	# typed keys still reach the window
+	while true
+		call App.WaitEvent;
+		if App.event.kind is Events.KEY
+			log 'holder: key ' (App.event.value & 0xFFFF) '\n';
+			break;
+		;;
+	;;
+
+	# and a key held down is seen
+	int tries: 0;
+	while (OS.IsKeyDown: 'a') is 0 and tries < 500
+		call OS.Sleep: 10;
+		tries++;
+	;;
+	log 'holder: a held ' (OS.IsKeyDown: 'a') '\n';
+	exit 0;
+}

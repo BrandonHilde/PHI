@@ -1,0 +1,14 @@
+# Input scripts: a click right after a long move of the mouse lands where it's aimed.
+use gui.desktop;
+
+phi.Test:Kernel
+{
+	bln ok: (Screen.Start: 1024 768);
+	call Desktop.Start;
+	int pid: (Desktop.Run: 'PAINTER.BIN' 'Painter' 900 690);
+	debug 'desktop: started ' (pid > 0) '\n';
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+	;;
+}

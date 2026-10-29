@@ -46,6 +46,15 @@ phi.DrawingTest:Kernel
 	call Draw.PopTarget;                      # one too many does nothing
 	call Draw.ResetView;
 
+	# a view set inside a PushClip stays inside it, and ResetView goes back to that clip
+	call Draw.PushClip: 50 50 100 100;
+	call Draw.SetView: 0 0 80 300;
+	debug 'view in clip ' Draw.clip_x0 ' ' Draw.clip_y0 ' ' Draw.clip_x1 ' ' Draw.clip_y1 '\n';
+	call Draw.ResetView;
+	debug 'reset in clip ' Draw.clip_x0 ' ' Draw.clip_y0 ' ' Draw.clip_x1 ' ' Draw.clip_y1 '\n';
+	call Draw.PopClip;
+	debug 'popped ' Draw.clip_x0 ' ' Draw.clip_y0 ' ' Draw.clip_x1 ' ' Draw.clip_y1 '\n';
+
 	call Screen.PresentAll;
 
 	# the pointer as crosshairs, centered on the mouse's position

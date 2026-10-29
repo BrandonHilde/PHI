@@ -1,0 +1,10 @@
+desktop: started 1
+launcher: focused 1
+launcher: started 1
+viewer: arguments NOTES.TXT
+viewer: focused 1
+launcher: focused 0
+launcher: missing -1
+desktop: titles Launcher, VIEWER.BIN
+desktop: second at 64 64
+desktop: no windows left

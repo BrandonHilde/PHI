@@ -85,7 +85,8 @@ namespace Phi.Cli
         {
             string dir = Path.Combine(outDir, "programs", Path.GetFileNameWithoutExtension(phiFile));
             BuildResult built = Build(phiFile, dir, kernel: kernel);
-            errors.AddRange(built.Errors);
+            // a mistake in code that several programs use is reported once, not once for each
+            errors.AddRange(built.Errors.Where(e => !errors.Contains(e)));
             if (!built.Success) return null;
             if (!built.IsProgram)
             {

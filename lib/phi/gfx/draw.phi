@@ -14,8 +14,9 @@
 # and cut to a clipping rectangle, both set with SetView: point the view at a window's
 # inside and code can draw at (0, 0) without spilling out of it. PushClip narrows the
 # clipping rectangle further (to a scrolling list inside the window, say) and PopClip
-# puts it back. PushTarget draws on other pixels for a while (an image, a canvas) and
-# PopTarget goes back to what was being drawn on, with its view and clip.
+# puts it back; a view set inside a PushClip stays inside its rectangle, and ResetView
+# there goes back to it. PushTarget draws on other pixels for a while (an image, a
+# canvas) and PopTarget goes back to what was being drawn on, with its view and clip.
 #
 # Text uses the VGA font (gfx.font), which must be loaded while the screen is still in
 # text mode; Screen.Start does that. Drawing uses class variables, so draw from one
@@ -37,6 +38,10 @@ struct.DrawTarget
 	int clip_x1;
 	int clip_y1;
 	int clip_depth;
+	int bound_x0;
+	int bound_y0;
+	int bound_x1;
+	int bound_y1;
 }
 
 phi.Draw:Library
@@ -67,9 +72,15 @@ phi.Draw:Library
 	int clip_x1: 0;
 	int clip_y1: 0;
 
-	# the clipping rectangles PushClip saved, four numbers a level
+	# what SetView stays inside: the rectangle the last PushClip made, or all of the pixels
+	int bound_x0: 0;
+	int bound_y0: 0;
+	int bound_x1: 0;
+	int bound_y1: 0;
+
+	# the clipping rectangles and bounds PushClip saved, eight numbers a level
 	const int CLIP_DEPTH: 16;
-	int saved_clips[64];
+	int saved_clips[128];
 	int clip_depth: 0;
 
 	# what PushTarget saved, and how deep it went (past what fits, PopTarget can't go back)
@@ -92,6 +103,10 @@ phi.Draw:Library
 		pixels is to;
 		width is w;
 		height is h;
+		bound_x0 is 0;
+		bound_y0 is 0;
+		bound_x1 is w;
+		bound_y1 is h;
 		call ResetView;
 	[end]
 
@@ -111,6 +126,10 @@ phi.Draw:Library
 			saved_targets:i.clip_x1 is clip_x1;
 			saved_targets:i.clip_y1 is clip_y1;
 			saved_targets:i.clip_depth is clip_depth;
+			saved_targets:i.bound_x0 is bound_x0;
+			saved_targets:i.bound_y0 is bound_y0;
+			saved_targets:i.bound_x1 is bound_x1;
+			saved_targets:i.bound_y1 is bound_y1;
 		;;
 		target_depth++;
 		call Target: to w h;
@@ -131,17 +150,22 @@ phi.Draw:Library
 		clip_x1 is saved_targets:i.clip_x1;
 		clip_y1 is saved_targets:i.clip_y1;
 		clip_depth is saved_targets:i.clip_depth;
+		bound_x0 is saved_targets:i.bound_x0;
+		bound_y0 is saved_targets:i.bound_y0;
+		bound_x1 is saved_targets:i.bound_x1;
+		bound_y1 is saved_targets:i.bound_y1;
 		saved_targets.len--;
 	[end]
 
-	# draw relative to (x, y), and only inside the w x h rectangle there
+	# draw relative to (x, y), and only inside the w x h rectangle there (and inside the
+	# rectangle of a PushClip that hasn't been popped)
 	[SetView: int x: 0; int y: 0; int w: 0; int h: 0;]
 		origin_x is x;
 		origin_y is y;
-		clip_x0 is (Math.Max: x 0);
-		clip_y0 is (Math.Max: y 0);
-		clip_x1 is (Math.Min: x + w width);
-		clip_y1 is (Math.Min: y + h height);
+		clip_x0 is (Math.Max: x bound_x0);
+		clip_y0 is (Math.Max: y bound_y0);
+		clip_x1 is (Math.Max: (Math.Min: x + w bound_x1) clip_x0);
+		clip_y1 is (Math.Max: (Math.Min: y + h bound_y1) clip_y0);
 	[end]
 
 	[ResetView]
@@ -153,10 +177,15 @@ phi.Draw:Library
 	# deeper ones still narrow the clip, but PopClip can't widen it again.
 	[PushClip: int x: 0; int y: 0; int w: 0; int h: 0;]
 		if clip_depth < CLIP_DEPTH
-			saved_clips:(clip_depth * 4) is clip_x0;
-			saved_clips:(clip_depth * 4 + 1) is clip_y0;
-			saved_clips:(clip_depth * 4 + 2) is clip_x1;
-			saved_clips:(clip_depth * 4 + 3) is clip_y1;
+			int slot: clip_depth * 8;
+			saved_clips:slot is clip_x0;
+			saved_clips:(slot + 1) is clip_y0;
+			saved_clips:(slot + 2) is clip_x1;
+			saved_clips:(slot + 3) is clip_y1;
+			saved_clips:(slot + 4) is bound_x0;
+			saved_clips:(slot + 5) is bound_y0;
+			saved_clips:(slot + 6) is bound_x1;
+			saved_clips:(slot + 7) is bound_y1;
 		;;
 		clip_depth++;
 		int x0: (Math.Max: origin_x + x clip_x0);
@@ -167,6 +196,10 @@ phi.Draw:Library
 		clip_y0 is y0;
 		clip_x1 is (Math.Max: x1 x0);
 		clip_y1 is (Math.Max: y1 y0);
+		bound_x0 is clip_x0;
+		bound_y0 is clip_y0;
+		bound_x1 is clip_x1;
+		bound_y1 is clip_y1;
 	[end]
 
 	[PopClip]
@@ -175,10 +208,15 @@ phi.Draw:Library
 		;;
 		clip_depth--;
 		if clip_depth < CLIP_DEPTH
-			clip_x0 is saved_clips:(clip_depth * 4);
-			clip_y0 is saved_clips:(clip_depth * 4 + 1);
-			clip_x1 is saved_clips:(clip_depth * 4 + 2);
-			clip_y1 is saved_clips:(clip_depth * 4 + 3);
+			int slot: clip_depth * 8;
+			clip_x0 is saved_clips:slot;
+			clip_y0 is saved_clips:(slot + 1);
+			clip_x1 is saved_clips:(slot + 2);
+			clip_y1 is saved_clips:(slot + 3);
+			bound_x0 is saved_clips:(slot + 4);
+			bound_y0 is saved_clips:(slot + 5);
+			bound_x1 is saved_clips:(slot + 6);
+			bound_y1 is saved_clips:(slot + 7);
 		;;
 	[end]
 

@@ -5,4 +5,7 @@ scaled 72
 part 40 16
 image 14698558 0 8
 back 1 10 640 0
+view in clip 50 50 80 150
+reset in clip 50 50 150 150
+popped 0 0 640 480
 drawn

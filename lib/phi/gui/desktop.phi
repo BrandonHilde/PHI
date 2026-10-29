@@ -16,8 +16,9 @@
 # wheel turned, or the mouse moved over it), and asks a program to close when
 # its close box is clicked. The grip at a window's bottom right corner resizes it: the
 # program is told its new size (Events.RESIZE) when the button is let go. A program
-# that ends, or crashes, loses its window. The screen is drawn again only when
-# something changed.
+# that ends, or crashes, loses its window. A program can rename its window
+# (App.SetTitle) and start another program in a window (App.OpenWindow). The screen is
+# drawn again only when something changed.
 
 use gui.surfaces;
 use drivers.vbe;
@@ -63,8 +64,16 @@ phi.Desktop:Kernel
 	[Start]
 		call Input.Start;
 		call Input.SetArea: Screen.width Screen.height;
+		Process.key_down is addr HeldKey;
 		dirty is true;
 	[end]
+
+	# OS.IsKeyDown for a program: what Input says, but only for the program in front
+	[HeldKey: u32 key: 0;]
+		if windows.len is 0 return 0;
+		if windows:(windows.len - 1).pid is not (OS.CurrentTask) return 0;
+		if (Input.IsDown: key) return 1;
+	[end: 0]
 
 	# start a program from the disk in a window with its top left at (x, y); its process
 	# number, or -1 if it couldn't start
@@ -90,6 +99,7 @@ phi.Desktop:Kernel
 	# one round: programs that ended, then keys and the mouse, then the screen if it changed
 	[Step]
 		call Watch;
+		call Requests;
 		call Keys;
 		call Mouse;
 		if dirty
@@ -171,6 +181,34 @@ phi.Desktop:Kernel
 				;;
 			;;
 			i--;
+		;;
+	[end]
+
+	# what programs asked for: windows for the programs they started (App.OpenWindow),
+	# each a little below and right of the front one, and titles (App.SetTitle); and
+	# Surfaces is told which program is in front (App.Focused)
+	[Requests]
+		int pid: (Surfaces.TakeNewWindow);
+		while pid > 0
+			int x: 60;
+			int y: 60;
+			if windows.len > 0
+				x is windows:(windows.len - 1).x + 24;
+				y is windows:(windows.len - 1).y + 24;
+			;;
+			if (Add: pid '' x y) is false
+				call OS.KillTask: pid;             # too many windows
+			;;
+			pid is (Surfaces.TakeNewWindow);
+		;;
+		while int i: 0; i < windows.len; i++;
+			if (Surfaces.TakeTitle: windows:i.pid addr windows:i.title sizeof windows:i.title)
+				dirty is true;
+			;;
+		;;
+		Surfaces.front is 0;
+		if windows.len > 0
+			Surfaces.front is windows:(windows.len - 1).pid;
 		;;
 	[end]
 

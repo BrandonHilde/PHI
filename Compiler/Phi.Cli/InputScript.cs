@@ -30,6 +30,9 @@ namespace Phi.Cli
     {
         static readonly TimeSpan ExpectTimeout = TimeSpan.FromSeconds(10);
 
+        /// <summary>The most a single mouse_move goes along each axis; QEMU sends this much at once.</summary>
+        const int MouseStep = 200;
+
         static readonly Dictionary<char, string> KeyNames = new()
         {
             [' '] = "spc", ['.'] = "dot", [','] = "comma", ['-'] = "minus", ['='] = "equal",
@@ -78,7 +81,16 @@ namespace Phi.Cli
                     Delay(200, cancel);
                     mouseX = mouseY = 0;
                 }
-                Send($"mouse_move {x - mouseX} {y - mouseY}");
+                // a big move in steps, for the same reason: otherwise a click right after it can be
+                // pressed while the pointer is still on its way
+                int dx = x - mouseX.Value, dy = y - mouseY!.Value;
+                do
+                {
+                    int stepX = Math.Clamp(dx, -MouseStep, MouseStep), stepY = Math.Clamp(dy, -MouseStep, MouseStep);
+                    Send($"mouse_move {stepX} {stepY}");
+                    dx -= stepX;
+                    dy -= stepY;
+                } while (dx != 0 || dy != 0);
                 mouseX = x;
                 mouseY = y;
                 Delay(60, cancel);

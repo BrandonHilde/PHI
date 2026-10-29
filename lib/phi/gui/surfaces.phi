@@ -18,8 +18,14 @@
 # program gets the keys: that's the window manager's work, and this leaves it to the
 # kernel. A program that crashes loses its surface; the kernel carries on.
 #
-# The system calls (64 to 67) are OS.SurfaceOpen, OS.SurfacePresent, OS.NextEvent and
-# OS.CopyFont; Surfaces answers them through Process.more_calls.
+# A program can also name its window (App.SetTitle), start another program in a window
+# of its own (App.OpenWindow) and ask whether its window is in front (App.Focused). Those
+# are requests the window manager picks up: TakeTitle, TakeNewWindow, and front, which it
+# keeps set to the process whose window is in front.
+#
+# The system calls (64 to 70) are OS.SurfaceOpen, OS.SurfacePresent, OS.NextEvent,
+# OS.CopyFont, OS.SetWindowTitle, OS.OpenWindow and OS.WindowFocused; Surfaces answers
+# them through Process.more_calls.
 
 use proc.process;
 use memory.mem;
@@ -32,6 +38,10 @@ phi.Surfaces:Kernel
 	const u32 SYS_SURFACE_PRESENT: 65;
 	const u32 SYS_NEXT_EVENT: 66;
 	const u32 SYS_COPY_FONT: 67;
+	const u32 SYS_SET_TITLE: 68;
+	const u32 SYS_OPEN_WINDOW: 69;
+	const u32 SYS_FOCUSED: 70;
+	const int TITLE_SIZE: 32;
 	const int MAX_PROCESSES: 16;
 	const int QUEUE: 32;
 	const int MOST_SIDE: 4096;
@@ -45,6 +55,10 @@ phi.Surfaces:Kernel
 	GuiEvent queue[512];        # QUEUE events for each process
 	int head[16];
 	int tail[16];
+	u8 titles[512];             # TITLE_SIZE for each process: what it asked to be called
+	bln title_changed[16];      # a title TakeTitle hasn't taken yet
+	bln new_window[16];         # started by App.OpenWindow, waiting for TakeNewWindow
+	int front: 0;               # the process whose window is in front (the window manager sets it)
 
 	Process.more_calls is addr Calls;
 	Process.on_release is addr Release;
@@ -57,6 +71,12 @@ phi.Surfaces:Kernel
 		if number is SYS_SURFACE_PRESENT return (Present: pid a);
 		if number is SYS_NEXT_EVENT return (Next: pid a);
 		if number is SYS_COPY_FONT return (CopyFont: a);
+		if number is SYS_SET_TITLE return (SetTitle: pid a);
+		if number is SYS_OPEN_WINDOW return (OpenWindow: a b);
+		if number is SYS_FOCUSED
+			if pid is front return 1;
+			return 0;
+		;;
 	[end: -1]
 
 	# a surface of w x h pixels for the process (any it had goes); 1, or 0 if it can't
@@ -100,7 +120,72 @@ phi.Surfaces:Kernel
 		call Mem.Copy: to Font.glyphs sizeof Font.glyphs;
 	[end: 1]
 
+	# the title at from in the program's memory, cut to fit, for TakeTitle
+	[SetTitle: int pid: 0; u32 from: 0;]
+		u8 text[32];
+		int i: 0;
+		while i < TITLE_SIZE - 1 and (Process.UserRange: from + i 1)
+			ptr<u8> byte: from + i;
+			if byte:0 is 0 break;
+			text:i is byte:0;
+			i++;
+		;;
+		text:i is 0;
+		call StoreTitle: pid addr text;
+	[end: 1]
+
+	# a title from the kernel's memory
+	[StoreTitle: int pid: 0; ptr<u8> text: 0;]
+		int i: 0;
+		while i < TITLE_SIZE - 1 and text:i is not 0
+			titles:(pid * TITLE_SIZE + i) is text:i;
+			i++;
+		;;
+		titles:(pid * TITLE_SIZE + i) is 0;
+		title_changed:pid is true;
+	[end]
+
+	# start the program at path (text in the caller's memory, like its command line) and
+	# ask for a window for it, named after its file; its process number, or -1
+	[OpenWindow: u32 path_from: 0; u32 arguments_from: 0;]
+		u8 path[64];
+		u8 arguments[256];
+		if (Process.CopyFromUser: path_from addr path sizeof path) is false return -1;
+		if arguments_from is not 0
+			if (Process.CopyFromUser: arguments_from addr arguments sizeof arguments) is false return -1;
+		;;
+		int pid: (Process.Spawn: addr path addr arguments);
+		if pid > 0 and pid < MAX_PROCESSES
+			new_window:pid is true;
+			call StoreTitle: pid addr path;
+		;;
+	[end: pid]
+
 	# ------------------------------------------------------------ for the window manager
+
+	# a process App.OpenWindow started, which wants a window; 0 when there's none
+	[TakeNewWindow]
+		while int pid: 1; pid < MAX_PROCESSES; pid++;
+			if new_window:pid
+				new_window:pid is false;
+				return pid;
+			;;
+		;;
+	[end: 0]
+
+	# the title the process asked for, into `into` (size bytes, ending with a zero), if
+	# it asked for one since the last time; false if it didn't
+	[TakeTitle: int pid: 0; ptr<u8> into: 0; int size: 0;]
+		if pid <= 0 or pid >= MAX_PROCESSES or size <= 0 return false;
+		if title_changed:pid is false return false;
+		title_changed:pid is false;
+		int i: 0;
+		while i < size - 1 and i < TITLE_SIZE - 1 and titles:(pid * TITLE_SIZE + i) is not 0
+			into:i is titles:(pid * TITLE_SIZE + i);
+			i++;
+		;;
+		into:i is 0;
+	[end: true]
 
 	# put an event in the process's queue; false if it has no surface or its queue is full
 	[Post: int pid: 0; int kind: 0; int x: 0; int y: 0; int value: 0; int clicks: 0; int wheel: 0;]
@@ -159,5 +244,7 @@ phi.Surfaces:Kernel
 		changed:pid is false;
 		head:pid is 0;
 		tail:pid is 0;
+		title_changed:pid is false;
+		new_window:pid is false;
 	[end]
 }

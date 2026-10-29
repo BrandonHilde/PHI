@@ -136,6 +136,15 @@ That's a complete 32-bit operating system kernel. PHI adds the boot sector and t
 that switches the CPU into 32-bit mode, and your code runs right after. The
 [tutorial](README.md#learn-phi) builds from here.
 
+PHI is written with words (`x is 5`, `if a above b`, `n atmost 10`), and every one of
+them is reserved, so a few names you might reach for aren't free: `at`, `in`, `out`,
+`end`, `has`, `empty`, `below`, `above`, `each`, `when` and `ask` among them. The error
+suggests another name (`try 'pos' or 'offset'`), and the
+[full list](language.md#reserved-words) is in the reference.
+
+A kernel that saves files (accounts, settings, documents) gets a fresh disk from every
+`phi run`. Run it with `phi run os.phi --keep-disk` to keep what it saved between runs.
+
 ## When something goes wrong
 
 **Errors in your program** show the file, line and column:

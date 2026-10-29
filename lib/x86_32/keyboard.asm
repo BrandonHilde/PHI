@@ -1,5 +1,5 @@
 ; provides: OS_SetupKeyboardInterupt OS_GetKey OS_IsKeyDown OS_ReadKey OS_KeyAvailable Bootloader_WaitForKeyPress phi_read_char phi_take_key
-; requires: phi_irq_register
+; requires: phi_irq_register phi_irq_handlers
 ; hooks: OS_KeyboardEvent
 ;
 ; PS/2 keyboard on IRQ 1 (32-bit kernels). Every press and release updates
@@ -9,8 +9,12 @@
 KEYBOARD_IRQ    equ 1
 KEYBOARD_BUFFER equ 64
 
+; It leaves IRQ 1 alone if another driver (drivers.input) already has it, so
+; asking OS_IsKeyDown can't take the keyboard away from that driver.
 OS_SetupKeyboardInterupt:
     cmp byte [phi_keyboard_ready], 0
+    jne .done
+    cmp dword [phi_irq_handlers + KEYBOARD_IRQ * 4], 0
     jne .done
     mov byte [phi_keyboard_ready], 1
     mov eax, KEYBOARD_IRQ

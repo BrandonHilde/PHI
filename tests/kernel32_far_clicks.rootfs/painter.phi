@@ -1,0 +1,29 @@
+use gui.app;
+
+phi.Painter:Program
+{
+	if (App.Open: 64 48) is false
+		exit 1;
+	;;
+	call Draw.Clear: Draw.WHITE;
+	call App.Present;
+	log 'painter: open\n';
+
+	while true
+		call App.WaitEvent;
+		if App.event.kind is Events.CLOSE
+			log 'painter: asked to close\n';
+			exit 7;
+		;;
+		if App.event.kind is Events.KEY
+			log 'painter: key ' (App.event.value & 0xFFFF) '\n';
+			call Draw.Clear: Draw.RED;
+			call App.Present;
+		;;
+		if App.event.kind is Events.MOUSE and App.event.clicks > 0
+			log 'painter: click ' App.event.x ' ' App.event.y '\n';
+			call Draw.FillRect: App.event.x - 2 App.event.y - 2 4 4 Draw.BLUE;
+			call App.Present;
+		;;
+	;;
+}

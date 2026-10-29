@@ -1,0 +1,19 @@
+# One entry of a folder: what Fat.Entries gives a kernel and OS.ListFolder gives a
+# program. Both sides use this file, so they always agree on the layout.
+#
+#   use fs.fileinfo;
+#   FileInfo entries[64];
+#   int count: (OS.ListFolder: 'DOCS' entries entries.len);   # in a program; -1 if it isn't there
+#   log entries:0.name ' ' entries:0.size ' ' entries:0.folder;
+
+struct.FileInfo
+{
+	u8 name[13];            # NAME.EXT, ending with a zero
+	u32 size;               # in bytes (0 for a folder)
+	bln folder;
+	u16 year;               # when it was last written (0 if the disk doesn't say)
+	u8 month;
+	u8 day;
+	u8 hour;
+	u8 minute;
+}

@@ -1,0 +1,20 @@
+use gui.app;
+
+phi.Viewer:Program
+{
+	if (App.Open: 60 30) is false
+		exit 1;
+	;;
+	call App.Present;
+	ptr<u8> arguments: (OS.Arguments);
+	log 'viewer: arguments ' arguments '\n';
+
+	int tries: 0;
+	while (App.Focused) is false and tries < 200
+		call OS.Sleep: 10;
+		tries++;
+	;;
+	log 'viewer: focused ' (App.Focused) '\n';
+	call OS.Sleep: 500;
+	exit 0;
+}

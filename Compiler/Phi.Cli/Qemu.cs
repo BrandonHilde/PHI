@@ -169,13 +169,16 @@ namespace Phi.Cli
                 lock (gate) text = serial.ToString();
 
                 bool inputFinished = script == null || script.IsCompleted;
-                if (doneAt == null && inputFinished && isDone != null && isDone(text)) doneAt = clock.Elapsed;
+                bool matched = isDone != null && isDone(text);
+                if (doneAt == null && inputFinished && matched) doneAt = clock.Elapsed;
 
                 // after the expected output shows up, wait a moment to catch anything extra
                 TimeSpan grace = TimeSpan.FromMilliseconds(recordTo != null ? 3000 : 300);
                 if (doneAt != null && clock.Elapsed - doneAt > grace) break;
 
-                if (clock.Elapsed > timeout) { timedOut = true; break; }
+                // the right output with the input script still going isn't a hang: let the script
+                // finish (each of its lines ends by itself)
+                if (clock.Elapsed > timeout && !(matched && !inputFinished)) { timedOut = true; break; }
 
                 Thread.Sleep(25);
             }

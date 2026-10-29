@@ -1,0 +1,23 @@
+# What a program can ask of the desktop: a title for its window, another program in a
+# window of its own, and whether its window is in front.
+use gui.desktop;
+
+phi.Test:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	call Desktop.Start;
+	int pid: (Desktop.Run: 'LAUNCHER.BIN' 'Untitled' 40 40);
+	debug 'desktop: started ' (pid > 0) '\n';
+	bln shown: false;
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+		if shown is false and Desktop.windows.len is 2
+			debug 'desktop: titles ' addr Desktop.windows:0.title ', ' addr Desktop.windows:1.title '\n';
+			debug 'desktop: second at ' Desktop.windows:1.x ' ' Desktop.windows:1.y '\n';
+			shown is true;
+		;;
+	;;
+	debug 'desktop: no windows left\n';
+	exit 0;
+}
