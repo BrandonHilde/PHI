@@ -519,6 +519,16 @@ As in any list, `'Total' -3` is two values. The text is cut to fit, like any `st
 error: copy it to another `str` first. Only a `str` takes several values: `n is n -1;`
 still subtracts.
 
+The values can carry on over several lines, as a declaration's can, when each line after
+the first is indented deeper than the statement's first line. The same goes for `log` and
+`debug`. A line that isn't indented deeper starts a new statement, so a missing `;` is
+still an error.
+
+```phi
+note is 'Welcome, ' name '!\n\n'
+	'This is your home folder.\n';
+```
+
 Building is an assignment, not a declaration: `str docs: home '/DOCS';` is an *array* of two
 strings, since several values in a declaration make an array. That gets a warning when
 any of the values isn't a literal; write `str docs: ''; docs is home '/DOCS';` for the
@@ -1190,8 +1200,8 @@ phi.Hello:Program
             exit 0;
         ;;
         # Events.KEY: App.event.value is the key, with Input's MOD_ bits
-        # Events.MOUSE: .x .y (from its top left), .value (buttons), .clicks (1, or 2 for a
-        # double click), .wheel
+        # Events.MOUSE: .x .y (from its top left), .value (buttons held), .clicks (1, or 2 for a
+        # double click), .pressed (the buttons that just went down: bit 1 is the right one), .wheel
     ;;
 }
 ```
@@ -1247,7 +1257,7 @@ after each event:
 ```phi
 use gui.widgets;
 
-TextField name;         # a line to type in: caret, arrows, Home/End, Backspace/Delete
+TextField name;         # a line to type in: caret, arrows, Home/End, Backspace/Delete, selection
 CheckBox shout;
 Button add;
 ListBox list;           # rows from a str array, a scroll bar, the wheel and arrow keys
@@ -1266,6 +1276,22 @@ call name.Mouse: App.event;             # a click gives it the keys (name.focuse
 
 call Draw.Clear: Widgets.FACE;
 call name.Paint;                        # ... and each of the others, then App.Present
+```
+
+A `TextField` selects text with Shift and the arrows, Home or End, with Ctrl+A, with a drag
+or with a double click, and typing replaces what's selected. `SelectAll`, `SelectionStart`,
+`SelectionEnd` and `CopySelection: buffer size` → work with it from the program. A
+`FocusChain` moves the keys between text fields with Tab and Shift+Tab, and selects the text
+of the field it moves to:
+
+```phi
+FocusChain tabs;
+call tabs.Add: addr name;
+call tabs.Add: addr city;
+call tabs.Focus: 0;                     # name has the keys
+int typed: (tabs.Key: App.event.value); # Tab moves on; other keys go to the field with the keys
+call tabs.Mouse: App.event;             # a click picks a field
+call tabs.Paint;                        # paints every field
 ```
 
 Key codes in `App.event.value` are `drivers.input`'s, also named in `Events`
@@ -1464,6 +1490,12 @@ drivers. Instead:
 
 Every pointer a program passes is checked against its own memory; a bad one makes the
 call return -1 instead of reaching the kernel.
+
+The file calls and `OS.TaskName` and `OS.Kill` work in a kernel too: there they are the
+kernel's own versions (`OS.ReadFile` is `Fat.ReadFile`, `OS.ListFolder` is `Fat.Entries`,
+`OS.TaskName` is `Process.TaskName`, `OS.Kill` is `OS.KillTask`), so code shared by a kernel
+and its programs reads and writes files the same way. `memory.mem` (`Mem.Copy`, `Mem.Fill`
+...) works on both sides as well.
 
 ```phi
 use fs.fileinfo;
@@ -1724,8 +1756,8 @@ and the classes of used files run before the classes that use them.
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
-| `memory.mem` | class `Mem` (32-bit kernels): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
-| `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `SetZone: minutes` and `ReadLocal` give the time in a time zone, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
+| `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
+| `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
 | `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
 | `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |

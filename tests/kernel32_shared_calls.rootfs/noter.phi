@@ -1,0 +1,17 @@
+use shared.notes;
+
+phi.Noter:Program
+{
+	call Notes.Show: 'NOTE.TXT';
+	call Notes.Save: 'NOTE.TXT' 'from a program';
+
+	# Mem.Move and Mem.Fill32 in a program
+	u8 text[8];
+	call Mem.Copy: addr text 'abcdef' 7;
+	call Mem.Move: addr text addr text + 2 4;
+	debug addr text '\n';
+	u32 pixels[4];
+	call Mem.Fill32: addr pixels 0xFFFFFF 3;
+	debug pixels:0 ' ' pixels:2 ' ' pixels:3 '\n';
+	exit 5;
+}

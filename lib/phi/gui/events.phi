@@ -9,6 +9,7 @@ struct.GuiEvent
 	int value;                  # KEY: the key, with the MOD_ bits; MOUSE: the buttons held (bit 0 left)
 	int clicks;                 # MOUSE: 1 when the left button went down, 2 for a double click
 	int wheel;                  # MOUSE: how far the wheel turned (down is positive)
+	int pressed;                # MOUSE: the buttons that went down with this event (bit 0 left, bit 1 right, bit 2 middle)
 }
 
 phi.Events:Library

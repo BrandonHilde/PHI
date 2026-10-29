@@ -1,0 +1,26 @@
+# The same calls on both sides: shared/notes.phi uses OS.ReadFile, OS.WriteFile and Mem,
+# and runs in the kernel and in a program. OS.TaskName works in a kernel too.
+use proc.process;
+use shared.notes;
+
+phi.Test:Kernel
+{
+	call Notes.Save: 'NOTE.TXT' 'from the kernel';
+	call Notes.Show: 'NOTE.TXT';
+	debug 'size ' (OS.FileSize: 'NOTE.TXT') '\n';
+
+	int pid: (Process.Spawn: 'NOTER.BIN');
+	u8 name[16];
+	bln named: (OS.TaskName: pid name);
+	debug 'task ' named ': ' addr name '\n';
+	int code: (Process.Wait: pid);
+	debug 'exit code ' code '\n';
+	call Notes.Show: 'NOTE.TXT';
+
+	# Mem.Move with overlapping areas, in a kernel
+	u8 text[8];
+	call Mem.Copy: addr text 'abcdef' 7;
+	call Mem.Move: addr text + 1 addr text 5;
+	debug addr text '\n';
+	exit 0;
+}

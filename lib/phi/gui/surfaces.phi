@@ -62,6 +62,7 @@ phi.Surfaces:Kernel
 	bln new_window[16];         # started by App.OpenWindow, waiting for TakeNewWindow
 	bln fixed_size[16];         # said it can't handle Events.RESIZE (App.SetResizable: false)
 	int front: 0;               # the process whose window is in front (the window manager sets it)
+	int buttons_held[16];       # the mouse buttons in the last MOUSE event each process was sent
 
 	Process.more_calls is addr Calls;
 	Process.on_release is addr Release;
@@ -212,6 +213,12 @@ phi.Surfaces:Kernel
 		queue:slot.value is value;
 		queue:slot.clicks is clicks;
 		queue:slot.wheel is wheel;
+		queue:slot.pressed is 0;
+		if kind is Events.MOUSE
+			# a button that wasn't held in the last event went down: a right click is a press too
+			queue:slot.pressed is value & ~buttons_held:pid;
+			buttons_held:pid is value;
+		;;
 		head:pid is next;
 	[end: true]
 
@@ -259,5 +266,6 @@ phi.Surfaces:Kernel
 		title_changed:pid is false;
 		new_window:pid is false;
 		fixed_size:pid is false;
+		buttons_held:pid is 0;
 	[end]
 }

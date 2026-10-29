@@ -583,12 +583,15 @@ these were added:
 The parts most worth doing next, roughly in order:
 
 1. **More for windows:** a program opening more than one window, menus, and dialog boxes
-   (open, save, a message); selection in `TextField` (Ctrl+A, select all when it takes the
-   keys) and a multi-line `TextArea`. PhiOS draws its dialogs inside the app's own window
-   and fakes "typing replaces the suggested name" for want of these.
+   (open, save, a message), and a multi-line `TextArea`. PhiOS draws its dialogs inside the
+   app's own window (`shared/dialog.phi`) and wrote Notepad's editor itself for want of
+   these. Done after the sixth PhiOS assessment: selection in `TextField`, Tab between
+   fields (`FocusChain`) and `GuiEvent.pressed` for right-button presses.
 2. **Text a method fills in:** a `str` parameter the caller's `str` is passed to (by
-   reference), and `str` fields in structs (`str name[12];`), so text in structs and
-   out-parameters stop needing `u8` arrays, `addr` and `sizeof`. Needs a design first.
+   reference), `str` fields in structs (`str name[12];`), and `str` arrays filled at run
+   time and passed as parameters, so text in structs and out-parameters stop needing `u8`
+   arrays, `addr` and `sizeof`. The sixth PhiOS assessment found this the costliest gap.
+   Needs a design first.
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).

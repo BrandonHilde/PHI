@@ -9,12 +9,16 @@
 #
 # QEMU's clock is the host's time, in UTC. ReadLocal adds the zone's minutes, carrying
 # into the day, month and year (leap years included); AddMinutes does the same for any
-# date and time in the fields.
+# date and time in the fields. The zone starts as the host's: `phi run` and `phi test`
+# pass it to QEMU (the fw_cfg file opt/phi/zone), and HostZone reads it.
 
 phi.Rtc:Library
 {
 	const u16 CMOS_INDEX: 0x70;
 	const u16 CMOS_DATA: 0x71;
+	const u16 FW_CFG_SELECT: 0x510;   # QEMU's firmware configuration: pick an item,
+	const u16 FW_CFG_DATA: 0x511;     # then read it a byte at a time
+	const u16 FW_CFG_FILES: 0x19;     # the list of named items
 
 	int second: 0;
 	int minute: 0;
@@ -23,6 +27,70 @@ phi.Rtc:Library
 	int month: 0;
 	int year: 0;
 	int zone: 0;                    # minutes from UTC that ReadLocal adds (-720 to 840)
+
+	u8 fw_name[56];
+
+	call zone is HostZone;
+
+	# the host's minutes from UTC, from QEMU; 0 when it doesn't say
+	[HostZone]
+		outw FW_CFG_SELECT 0;
+		if in FW_CFG_DATA is not 'Q'
+			return 0;                   # no fw_cfg: not QEMU
+		;;
+
+		outw FW_CFG_SELECT FW_CFG_FILES;
+		u32 count: (ReadBig: 4);
+		while u32 i: 0; i < count; i++;
+			u32 size: (ReadBig: 4);
+			u32 item: (ReadBig: 2);
+			call ReadBig: 2;
+			while u32 k: 0; k < 56; k++;
+				fw_name:k is in FW_CFG_DATA;
+			;;
+			if (NameIs: 'opt/phi/zone')
+				return (ReadZone: item size);
+			;;
+		;;
+	[end: 0]
+
+	# whether fw_name (the name of the item just read) is name
+	[NameIs: ptr<u8> name: 0;]
+		u32 k: 0;
+		while name:k is not 0
+			if fw_name:k is not name:k
+				return false;
+			;;
+			k++;
+		;;
+	[end: (fw_name:k is 0)]
+
+	# the next bytes of a fw_cfg item, as a big-endian number
+	[ReadBig: u32 bytes: 0;]
+		u32 value: 0;
+		while u32 k: 0; k < bytes; k++;
+			value is (value << 8) | in FW_CFG_DATA;
+		;;
+	[end: value]
+
+	# a fw_cfg item that holds a number as text, like -420
+	[ReadZone: u32 item: 0; u32 size: 0;]
+		outw FW_CFG_SELECT item;
+		int minutes: 0;
+		bln negative: false;
+		while u32 k: 0; k < size; k++;
+			u8 c: in FW_CFG_DATA;
+			if c is '-'
+				negative is true;
+			;;
+			elif c >= '0' and c <= '9'
+				minutes is minutes * 10 + c - '0';
+			;;
+		;;
+		if negative
+			minutes is 0 - minutes;
+		;;
+	[end: minutes]
 
 	[ReadRegister: u8 register: 0;]
 		out CMOS_INDEX register;

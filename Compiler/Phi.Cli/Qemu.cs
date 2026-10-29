@@ -57,17 +57,34 @@ namespace Phi.Cli
         // (QEMU answers it with the host's random numbers).
         // The sound card is an AC'97 (drivers.ac97); audio is the -audiodev that says where its
         // sound goes (always with id=snd0).
-        static List<string> MachineArgs(string image, string audio) => new()
+        // The host's time zone goes to the guest as the fw_cfg file opt/phi/zone (minutes from
+        // UTC, as text), which drivers.rtc reads, since QEMU's clock is in UTC.
+        static List<string> MachineArgs(string image, string audio)
         {
-            "-cpu", "qemu32,+rdrand",
-            "-drive", $"file={image},format=raw,if=ide,index=0",
-            "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
-            "-netdev", "user,id=net0",
-            "-device", "rtl8139,netdev=net0,romfile=",
-            "-audiodev", audio,
-            "-device", "AC97,audiodev=snd0",
-            "-no-reboot", // a triple fault stops QEMU instead of looping forever
-        };
+            var args = new List<string>
+            {
+                "-cpu", "qemu32,+rdrand",
+                "-drive", $"file={image},format=raw,if=ide,index=0",
+                "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
+                "-netdev", "user,id=net0",
+                "-device", "rtl8139,netdev=net0,romfile=",
+                "-audiodev", audio,
+                "-device", "AC97,audiodev=snd0",
+                "-no-reboot", // a triple fault stops QEMU instead of looping forever
+                "-fw_cfg", $"name=opt/phi/zone,string={(int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes}",
+            };
+            if (MemoryMb is int mb) args.AddRange(new[] { "-m", $"{mb}M" });
+            return args;
+        }
+
+        /// <summary>The machine's memory in MB (phi run/test --memory), or null for QEMU's 128 MB.</summary>
+        public static int? MemoryMb { get; set; }
+
+        /// <summary>
+        /// The most --memory allows: a kernel maps all of RAM at its own address, and programs
+        /// start at 1 GB (0x40000000).
+        /// </summary>
+        public const int MaxMemoryMb = 1024;
 
         // Where the sound goes when QEMU has a window: PHI_AUDIO if it's set (a QEMU audio
         // driver, such as none, sdl or wav), otherwise the first of these that this QEMU has.

@@ -4,11 +4,13 @@ const string Usage = """
     usage:
       phi check <file.phi>                 report errors without building
       phi build <file.phi> [-o <dir>]      compile to a bootable disk image
-      phi run   <file.phi> [--debug] [--keep-disk]
+      phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>]
                                            build, then boot it in QEMU (serial output prints here);
                                            --keep-disk keeps the files a kernel saved for next time
-                                           (programs from the rootfs are updated on it)
+                                           (programs from the rootfs are updated on it),
+                                           --memory gives the machine more (or less) than 128 MB, up to 1024
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
+                [--memory <MB>]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
                                            --input scripts the input instead of NAME.input,
@@ -52,6 +54,15 @@ static int Execute(string[] args)
 
     bool Flag(string name) => rest.Remove(name);
 
+    void MemoryOption()
+    {
+        string? memory = Option("--memory");
+        if (memory == null) return;
+        if (!int.TryParse(memory, out int mb) || mb < 32 || mb > Qemu.MaxMemoryMb)
+            throw new ArgumentException($"--memory takes the machine's memory in MB, from 32 to {Qemu.MaxMemoryMb}");
+        Qemu.MemoryMb = mb;
+    }
+
     try
     {
         switch (command)
@@ -62,6 +73,7 @@ static int Execute(string[] args)
                 string? outDir = Option("-o");
                 bool debug = Flag("--debug");
                 bool keepDisk = Flag("--keep-disk");
+                MemoryOption();
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
 
                 string file = Path.GetFullPath(rest[0]);
@@ -102,6 +114,16 @@ static int Execute(string[] args)
                         : $"booting the kept disk {Path.GetRelativePath(Environment.CurrentDirectory, image)} with the new kernel (delete it to start again)");
                     if (refreshed.Count > 0) Console.WriteLine("updated programs on it: " + string.Join(" ", refreshed));
                 }
+                else
+                {
+                    // a fresh disk every run: say so when the kernel saved something on it
+                    byte[] before = HashFile(image);
+                    int code = Qemu.RunInteractive(image, debug);
+                    if (!HashFile(image).SequenceEqual(before))
+                        Console.WriteLine("note: the kernel changed its disk, and the next phi run starts from a fresh one; " +
+                                          "use phi run --keep-disk to keep what it saved");
+                    return code;
+                }
                 return Qemu.RunInteractive(image, debug);
             }
 
@@ -123,6 +145,7 @@ static int Execute(string[] args)
                 string? input = Option("--input");
                 string? contains = Option("--contains");
                 bool keepOutput = Flag("--keep-output");
+                MemoryOption();
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
@@ -167,4 +190,10 @@ static string FindTestsDir()
         if (Directory.Exists(candidate)) return candidate;
     }
     return "tests";
+}
+
+static byte[] HashFile(string path)
+{
+    using var stream = File.OpenRead(path);
+    return System.Security.Cryptography.SHA256.HashData(stream);
 }

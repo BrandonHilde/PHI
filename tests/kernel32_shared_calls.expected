@@ -1,0 +1,9 @@
+read 21: note: from the kernel
+size 21
+task 1: NOTER.BIN
+read 21: note: from the kernel
+cdefef
+16777215 16777215 0
+exit code 5
+read 20: note: from a program
+aabcde

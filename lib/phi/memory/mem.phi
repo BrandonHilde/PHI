@@ -1,5 +1,5 @@
 # Copying and filling memory with the CPU's string instructions (rep movs, rep stos).
-# 32-bit kernels.
+# 32-bit kernels and programs.
 #
 #   use memory.mem;
 #   call Mem.Copy: to from 4096;              # the areas must not overlap
@@ -10,7 +10,7 @@
 # The routines use class variables, so call them from one place at a time (not from
 # interrupt handlers while other code may be using them).
 
-phi.Mem:Kernel
+phi.Mem:Library
 {
 	u32 mem_to: 0;
 	u32 mem_from: 0;

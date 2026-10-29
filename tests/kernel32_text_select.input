@@ -1,0 +1,26 @@
+# the window is at (40, 40): its inside starts at (42, 60); the name field is at
+# (10, 10) inside and the city field at (10, 40); character n starts at x 58 + 8n
+expect fields: open
+wait 300
+type Ada
+sendkey tab
+type Rome
+# back to the name: its text is selected, so typing replaces it
+sendkey shift-tab
+type Bo
+sendkey shift-left
+sendkey right
+sendkey ctrl-a
+# a double click on the city selects it all
+dclick 100 112
+expect fields: 1 Rome [Rome]
+type Oslo
+# a drag from character 1 to character 3
+drag 64 112 80 112
+expect fields: 1 Oslo [sl]
+# the right button (2 for QEMU's monitor)
+mouse_button 2
+mouse_button 0
+expect fields: right button
+sendkey esc
+expect desktop: no windows left

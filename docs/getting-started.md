@@ -107,6 +107,7 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi run file.phi` | build, then boot it in QEMU; serial output (`log` and `debug`) also prints in your terminal |
 | `phi run file.phi --debug` | start paused, waiting for a debugger (see below) |
 | `phi run file.phi --keep-disk` | boot a disk that keeps what the kernel saved (`build/NAME/NAME.kept.img`): each run puts the new kernel and any changed or new programs (`NAME.BIN`) on it but leaves its other files alone; delete it to start again |
+| `phi run file.phi --memory 512` | give the machine more memory than QEMU's 128 MB (up to 1024); the kernel's heap is about a quarter of it. `phi test` takes it too |
 | `phi check file.phi` | report errors without building |
 | `phi test` | boot every test in `tests/` without a window and check what each one prints |
 | `phi serve folder` | serve a folder over HTTP (`--https` for HTTPS) on your computer; a kernel in QEMU reaches it at `10.0.2.2` |
@@ -143,7 +144,11 @@ suggests another name (`try 'pos' or 'offset'`), and the
 [full list](language.md#reserved-words) is in the reference.
 
 A kernel that saves files (accounts, settings, documents) gets a fresh disk from every
-`phi run`. Run it with `phi run os.phi --keep-disk` to keep what it saved between runs.
+`phi run`, and `phi run` says so when the kernel changed its disk. Run it with
+`phi run os.phi --keep-disk` to keep what it saved between runs.
+
+The clock (`drivers.rtc`) is in UTC, as QEMU keeps it, but `phi run` and `phi test` tell the
+kernel your computer's time zone, so `Rtc.ReadLocal` gives your local time.
 
 ## When something goes wrong
 

@@ -731,8 +731,8 @@ namespace Phi.Compiler.Syntax
 
             while (!At(TokenKind.Semicolon))
             {
-                if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon) || (Current.StartsLine && values.Count > 0))
-                    break;
+                if (values.Count > 0 && AtEndOfValues(IndentOf(keyword.Span.Start))) break;
+                if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon)) break;
                 values.Add(ParseListElement());
             }
 
@@ -1078,7 +1078,8 @@ namespace Phi.Compiler.Syntax
             }
 
             // the right side as a list builds a str: line is 'Ln ' n ', Col ' col;
-            bool whole = AtEndOfValues;
+            int indent = IndentOf(target.Span.Start);
+            bool whole = AtEndOfValues(indent);
             List<Expr>? values = null;
             if (requireSemicolon && !bare && op is AssignOp.Set or AssignOp.Add)
             {
@@ -1091,7 +1092,7 @@ namespace Phi.Compiler.Syntax
                 else if (!whole) values = new List<Expr> { value };
 
                 if (values != null)
-                    while (!AtEndOfValues) values.Add(ParseListElement());
+                    while (!AtEndOfValues(indent)) values.Add(ParseListElement());
             }
 
             if (requireSemicolon) ExpectSemicolon();
@@ -1103,8 +1104,22 @@ namespace Phi.Compiler.Syntax
             };
         }
 
-        bool AtEndOfValues => At(TokenKind.Semicolon) || AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon)
-                              || Current.StartsLine;
+        /// <summary>
+        /// The end of a list of values: ';', or a new line that isn't indented deeper than the
+        /// statement's first line (indent), since a deeper line carries on the list.
+        /// </summary>
+        bool AtEndOfValues(int indent) => At(TokenKind.Semicolon) || AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon)
+                                          || Current.StartsLine && IndentOf(Current.Span.Start) <= indent;
+
+        /// <summary>The width of the spaces and tabs that start the line holding offset (a tab counts as 4).</summary>
+        int IndentOf(int offset)
+        {
+            int i = offset;
+            while (i > 0 && file.Text[i - 1] != '\n') i--;
+            int width = 0;
+            for (; i < offset && file.Text[i] is ' ' or '\t'; i++) width += file.Text[i] == '\t' ? 4 : 1;
+            return width;
+        }
 
         /// <summary>
         /// Whether tokens from..to have a '-' outside parentheses that a list would read as the

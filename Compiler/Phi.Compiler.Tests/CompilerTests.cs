@@ -446,6 +446,7 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         [InlineData("log 'a'\nlog 'b'", "expected ';'")]
+        [InlineData("str s: [9];\ns is 'a'\ns is 'b';", "expected ';'")]      // only a deeper line carries on the values
         [InlineData("if 1\n log 'a';", "expected ';;'")]
         [InlineData("[M]\n log 'a';", "missing its [end]")]
         [InlineData("else\n;;", "must directly follow")]

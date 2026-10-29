@@ -24,6 +24,14 @@ namespace Phi.Compiler.Semantics
         /// <summary>What a call gives back, for one that Returns.</summary>
         public PhiType ResultType => FloatInstruction != null ? PhiType.F64 : ReturnsText ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
 
+        /// <summary>
+        /// For a program's call: what a 32-bit kernel calls to do the same (Fat.ReadFile), and
+        /// the library it's in (fs.fat16). A kernel's call goes there, so code shared by
+        /// kernels and programs can use the same name.
+        /// </summary>
+        public string? InKernel { get; init; }
+        public string? InKernelUse { get; init; }
+
         /// <summary>Null when the function works in both the boot sector and the kernel.</summary>
         public UnitKind? OnlyIn { get; init; }
 
@@ -149,25 +157,25 @@ namespace Phi.Compiler.Semantics
                     Description = "program: start a program with a command line; its process number, or -1" },
             new() { Name = "OS.Arguments", Label = "OS_Arguments", Returns = true, ReturnsText = true,
                     Description = "program: its command line, as a ptr<u8>" },
-            new() { Name = "OS.ReadFile", Label = "OS_ReadFile", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.ReadFile", Label = "OS_ReadFile", InKernel = "Fat.ReadFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: read a file into buffer; bytes read, or -1" },
-            new() { Name = "OS.WriteFile", Label = "OS_WriteFile", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0, 1 }, Returns = true,
+            new() { Name = "OS.WriteFile", Label = "OS_WriteFile", InKernel = "Fat.WriteFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: create or replace a file; 1 if written" },
-            new() { Name = "OS.DeleteFile", Label = "OS_DeleteFile", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.DeleteFile", Label = "OS_DeleteFile", InKernel = "Fat.Delete", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: delete a file; 1 if deleted" },
-            new() { Name = "OS.ListFiles", Label = "OS_ListFiles", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.ListFiles", Label = "OS_ListFiles", InKernel = "Fat.List", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: print a folder; how many entries it has" },
-            new() { Name = "OS.FileSize", Label = "OS_FileSize", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.FileSize", Label = "OS_FileSize", InKernel = "Fat.FileSize", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: a file's size, or -1" },
-            new() { Name = "OS.ListFolder", Label = "OS_ListFolder", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.ListFolder", Label = "OS_ListFolder", InKernel = "Fat.Entries", InKernelUse = "fs.fat16", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: a folder's entries, as FileInfo (use fs.fileinfo), into up to max of them; how many, or -1" },
-            new() { Name = "OS.MakeFolder", Label = "OS_MakeFolder", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.MakeFolder", Label = "OS_MakeFolder", InKernel = "Fat.MakeFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: make a folder; 1 if made" },
-            new() { Name = "OS.Rename", Label = "OS_Rename", Parameters = new[] { "from", "to" }, TextParameters = new[] { 0, 1 }, Returns = true,
+            new() { Name = "OS.Rename", Label = "OS_Rename", InKernel = "Fat.Rename", InKernelUse = "fs.fat16", Parameters = new[] { "from", "to" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: rename a file or folder, or move it to another folder; 1 if done" },
-            new() { Name = "OS.DeleteFolder", Label = "OS_DeleteFolder", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.DeleteFolder", Label = "OS_DeleteFolder", InKernel = "Fat.DeleteFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: delete an empty folder; 1 if deleted" },
-            new() { Name = "OS.ReadFileAt", Label = "OS_ReadFileAt", Parameters = new[] { "path", "offset", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 2 }, Returns = true,
+            new() { Name = "OS.ReadFileAt", Label = "OS_ReadFileAt", InKernel = "Fat.ReadAt", InKernelUse = "fs.fat16", Parameters = new[] { "path", "offset", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 2 }, Returns = true,
                     Description = "program: read part of a file, from offset on, into buffer; bytes read, or -1" },
             new() { Name = "OS.SoundWrite", Label = "OS_SoundWrite", Parameters = new[] { "data", "length" }, BufferParameters = new[] { 0 }, Returns = true,
                     Description = "program: give the sound card 16-bit stereo sound; the bytes it took (0 while it's full), or -1 if there's no card" },
@@ -179,9 +187,9 @@ namespace Phi.Compiler.Semantics
                     Description = "program: stop the sound at once, dropping what hasn't played" },
             new() { Name = "OS.SoundVolume", Label = "OS_SoundVolume", Parameters = new[] { "percent" }, Returns = true,
                     Description = "program: set the sound card's volume, 0 to 100" },
-            new() { Name = "OS.TaskName", Label = "OS_TaskName", Parameters = new[] { "process", "buffer" }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.TaskName", Label = "OS_TaskName", InKernel = "Process.TaskName", InKernelUse = "proc.process", Parameters = new[] { "process", "buffer" }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: copy a process's name (up to 15 characters) into buffer" },
-            new() { Name = "OS.Kill", Label = "OS_Kill", Parameters = new[] { "process" }, Returns = true,
+            new() { Name = "OS.Kill", Label = "OS_Kill", InKernel = "OS.KillTask", Parameters = new[] { "process" }, Returns = true,
                     Description = "program: stop another program; 1 if it was stopped" },
             new() { Name = "OS.KillTask", Label = "OS_KillTask", Parameters = new[] { "task" }, Returns = true,
                     Description = "kernel: stop a task with exit code -1" },

@@ -1,0 +1,26 @@
+# Used by a kernel and a program alike: OS.ReadFile and OS.WriteFile are Fat.ReadFile and
+# Fat.WriteFile in a kernel, and Mem works on both sides.
+use memory.mem;
+
+phi.Notes:Library
+{
+	u8 note_buffer[64];
+
+	# save text as path, with "note: " in front
+	[Save: ptr<u8> path: 0; ptr<u8> text: 0;]
+		call Mem.Fill: addr note_buffer 0 64;
+		call Mem.Copy: addr note_buffer 'note: ' 6;
+		u32 length: 0;
+		while text:length is not 0 and length < 50
+			length++;
+		;;
+		call Mem.Copy: addr note_buffer + 6 text length;
+		call OS.WriteFile: path addr note_buffer length + 6;
+	[end]
+
+	[Show: ptr<u8> path: 0;]
+		call Mem.Fill: addr note_buffer 0 64;
+		int size: (OS.ReadFile: path addr note_buffer 63);
+		debug 'read ' size ': ' addr note_buffer '\n';
+	[end]
+}

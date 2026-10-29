@@ -44,6 +44,15 @@ phi.StrBuild:Library
 	line is (Label: 3) ' & ' (Twice: 21);
 	debug line '\n';
 
+	# a line indented deeper carries on the values, here and in debug
+	line is 'Welcome, ' names:0 '! '
+		'Ln ' cursor_line
+		', Col ' column;
+	line++ ' and'
+		' more';
+	debug line
+		'\n';
+
 	[Label: int n: 0;]
 		str label: [20];
 		label is '#' n;

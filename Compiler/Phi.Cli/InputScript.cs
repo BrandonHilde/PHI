@@ -9,6 +9,8 @@ namespace Phi.Cli
     /// One command per line in NAME.input:
     ///
     ///   expect TEXT       wait until the serial output contains TEXT (up to 10 s)
+    ///   expect next TEXT  the same, but only in the output after what the last expect saw, so
+    ///                     a scenario that logs in twice waits for the second login
     ///   wait MS           pause
     ///   type TEXT         press the keys for TEXT, one at a time
     ///   pixel X Y RRGGBB  check the color on the screen at (X, Y), in hex
@@ -50,6 +52,17 @@ namespace Phi.Cli
             ['"'] = "shift-apostrophe", ['<'] = "shift-comma", ['>'] = "shift-dot", ['~'] = "shift-grave_accent",
             ['{'] = "shift-bracket_left", ['}'] = "shift-bracket_right", ['|'] = "shift-backslash",
         };
+
+        /// <summary>
+        /// Where an expect finds text in the output: the first time it shows up after seen (where
+        /// the last expect's text ended), or for a plain expect anywhere; -1 if it isn't there yet.
+        /// </summary>
+        public static int FindExpected(string output, string text, bool next, int seen)
+        {
+            int found = output.IndexOf(text, Math.Min(seen, output.Length), StringComparison.Ordinal);
+            if (found < 0 && !next) found = output.IndexOf(text, StringComparison.Ordinal);
+            return found;
+        }
 
         /// <returns>null when every line ran, otherwise what went wrong</returns>
         public static string? Run(int port, IReadOnlyList<string> lines, Func<string> serial, CancellationToken cancel,
@@ -108,6 +121,9 @@ namespace Phi.Cli
                 ? "the input script hadn't started"
                 : $"the input script was at line {lineNumber}: {running}";
 
+            // where the text the last expect saw ends, for expect next
+            int seen = 0;
+
             for (int i = 0; i < lines.Count; i++)
             {
                 string line = lines[i].Trim();
@@ -124,13 +140,18 @@ namespace Phi.Cli
                 {
                     case "expect":
                     {
+                        bool next = rest.StartsWith("next ");
+                        string text = next ? rest[5..] : rest;
                         var clock = Stopwatch.StartNew();
-                        while (!serial().Contains(rest))
+                        int found;
+                        while ((found = FindExpected(serial(), text, next, seen)) < 0)
                         {
-                            if (clock.Elapsed > ExpectTimeout) return $"input script: never saw \"{rest}\"";
+                            if (clock.Elapsed > ExpectTimeout)
+                                return $"input script: never saw \"{text}\"" + (next ? " after what the last expect saw" : "");
                             if (cancel.IsCancellationRequested) return Stopped();
                             Thread.Sleep(20);
                         }
+                        seen = Math.Max(seen, found + text.Length);
                         break;
                     }
 

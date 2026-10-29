@@ -33,6 +33,7 @@ Two optional files change what a test does:
   | Line | Meaning |
   |---|---|
   | `expect TEXT` | wait until the output contains TEXT (up to 10 s) |
+  | `expect next TEXT` | the same, but only in the output after what the last `expect` saw, so a scenario that logs in twice waits for the second login |
   | `wait MS` | pause |
   | `type TEXT` | press the keys for TEXT |
   | `pixel X Y RRGGBB` | check the color on the screen at (X, Y), in hex |
@@ -42,7 +43,7 @@ Two optional files change what a test does:
   | `click X Y` | move there and click the left button |
   | `dclick X Y` | move there and double-click |
   | `drag X1 Y1 X2 Y2` | press the left button at (X1, Y1), move to (X2, Y2) and let go |
-  | anything else | a QEMU monitor command, e.g. `sendkey ret`, `mouse_move 10 -5`, `mouse_button 1` |
+  | anything else | a QEMU monitor command, e.g. `sendkey ret`, `sendkey shift-tab`, `mouse_move 10 -5`, `mouse_button 1` (`2` is the right button, `4` the middle) |
 
   QEMU only moves the mouse by amounts, so the first `mouse_to`, `click`, `dclick` or `drag`
   pushes the pointer into the top left corner, where a driver stops it at (0, 0) (the

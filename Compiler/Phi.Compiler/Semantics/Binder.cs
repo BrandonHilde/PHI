@@ -2591,6 +2591,11 @@ namespace Phi.Compiler.Semantics
 
                     if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
                     {
+                        if (builtin.InKernel != null && scope.Unit == UnitKind.Kernel)
+                        {
+                            Error(calleeSpan, $"{builtin.Name} is a program's call; in a kernel it's {builtin.InKernel}, which needs use {builtin.InKernelUse};");
+                            return null;
+                        }
                         string why = scope.Unit switch
                         {
                             UnitKind.Kernel => "it needs the BIOS; for graphics in a 32-bit kernel, use drivers.vbe and gfx.draw",
@@ -2691,7 +2696,16 @@ namespace Phi.Compiler.Semantics
                 if (matches.Count == 1) return matches[0].Value;
             }
 
-            if (Builtins.Find(name) is BuiltinFunction builtin) return builtin;
+            if (Builtins.Find(name) is BuiltinFunction builtin)
+            {
+                // a program's call in a kernel goes to the kernel's own version (OS.ReadFile -> Fat.ReadFile)
+                if (builtin.InKernel != null && scope.Unit == UnitKind.Kernel)
+                {
+                    if (methodsByFullName.TryGetValue((scope.Unit, builtin.InKernel), out m)) return m;
+                    if (Builtins.Find(builtin.InKernel) is BuiltinFunction instead) return instead;
+                }
+                return builtin;
+            }
 
             string rawName = name.StartsWith("asm.") ? name[4..] : name;
             if (rawBlocks.TryGetValue(rawName, out RawBlockDecl? raw)) return raw;

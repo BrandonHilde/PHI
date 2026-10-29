@@ -1,0 +1,64 @@
+# Two text fields in a focus chain; each change is logged with the selection in [ ].
+use gui.app;
+use gui.widgets;
+
+phi.FieldsApp:Program
+{
+	TextField name;
+	TextField city;
+	FocusChain tabs;
+	bln held: false;
+
+	if (App.Open: 220 80) is false
+		exit 1;
+	;;
+	call name.Place: 10 10 190;
+	call city.Place: 10 40 190;
+	call tabs.Add: addr name;
+	call tabs.Add: addr city;
+	call tabs.Focus: 0;
+	call Paint;
+	log 'fields: open\n';
+
+	while true
+		call App.WaitEvent;
+		int kind: App.event.kind;
+		if kind is Events.CLOSE
+			exit 0;
+		;;
+		if kind is Events.KEY
+			if (App.event.value & Events.KEY_MASK) is Events.KEY_ESCAPE
+				exit 0;
+			;;
+			call tabs.Key: App.event.value;
+			call Show;
+		;;
+		if kind is Events.MOUSE
+			if (App.event.pressed & 2) is not 0
+				log 'fields: right button at ' App.event.x ' ' App.event.y '\n';
+			;;
+			call tabs.Mouse: App.event;
+			# shown when the left button is let go, after a click or a drag
+			if held and (App.event.value & 1) is 0
+				call Show;
+			;;
+			held is ((App.event.value & 1) is not 0);
+		;;
+		call Paint;
+	;;
+
+	# the field with the keys, its text, and what's selected in it
+	[Show]
+		int which: (tabs.Current);
+		ptr<TextField> f: tabs.fields:which;
+		u8 selected[128];
+		call f:0.CopySelection: addr selected 128;
+		log 'fields: ' which ' ' addr f:0.text ' [' addr selected ']\n';
+	[end]
+
+	[Paint]
+		call Draw.Clear: Widgets.FACE;
+		call tabs.Paint;
+		call App.Present;
+	[end]
+}

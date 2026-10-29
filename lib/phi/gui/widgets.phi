@@ -106,7 +106,8 @@ struct.CheckBox
 }
 
 # a line of text to type into, with a caret that moves (arrows, Home, End) and keys that
-# take characters back (Backspace, Delete)
+# take characters back (Backspace, Delete). Shift with those keys, Ctrl+A, a drag or a
+# double click selects text, and typing replaces what's selected.
 struct.TextField
 {
 	int x;
@@ -115,9 +116,11 @@ struct.TextField
 	u8 text[128];
 	int len;
 	int cursor;                 # where the next character goes, 0 to len
+	int anchor;                 # the other end of the selection: the same as cursor when none is
 	int most;                   # how many characters it takes (at most 127)
 	bln focused;                # it gets the keys
 	bln secret;                 # shown as dots: a password
+	bln dragging;               # the left button went down on it and is still held
 
 	[Place: int fx: 0; int fy: 0; int fw: 0;]
 		x is fx;
@@ -129,12 +132,41 @@ struct.TextField
 	[Set: ptr<u8> value: 0;]
 		len is (Text.Copy: text value sizeof text);
 		cursor is len;
+		anchor is len;
 	[end]
 
-	# a key: 0 if it wasn't for the field, 1 if it changed the text or moved the caret,
-	# 2 for Enter, 3 for Esc
+	# select all the text, so typing replaces it
+	[SelectAll]
+		anchor is 0;
+		cursor is len;
+	[end]
+
+	# where the selection starts and ends (the same when nothing is selected)
+	[SelectionStart]
+	[end: (Math.Min: anchor cursor)]
+
+	[SelectionEnd]
+	[end: (Math.Max: anchor cursor)]
+
+	# the selected text into buffer (size bytes, with the zero), for a clipboard; its length
+	[CopySelection: ptr<u8> buffer: 0; int size: 0;]
+		int from: (SelectionStart);
+		int n: (Math.Min: (SelectionEnd) - from size - 1);
+		while int i: 0; i < n; i++;
+			buffer:i is text:(from + i);
+		;;
+		buffer:n is 0;
+	[end: n]
+
+	# a key: 0 if it wasn't for the field, 1 if it changed the text, the caret or the
+	# selection, 2 for Enter, 3 for Esc
 	[Key: int key: 0;]
 		int k: key & Events.KEY_MASK;
+		bln shift: (key & Events.MOD_SHIFT) is not 0;
+		if (key & Events.MOD_CTRL) is not 0 and (k is 'a' or k is 'A')
+			call SelectAll;
+			return 1;
+		;;
 		when k
 			is Events.KEY_ENTER
 				return 2;
@@ -143,37 +175,51 @@ struct.TextField
 				return 3;
 			;;
 			is Events.KEY_LEFT
-				cursor is (Math.Max: cursor - 1 0);
+				if anchor is not cursor and shift is false
+					call MoveTo: (SelectionStart) false;
+				;;
+				else
+					call MoveTo: cursor - 1 shift;
+				;;
 				return 1;
 			;;
 			is Events.KEY_RIGHT
-				cursor is (Math.Min: cursor + 1 len);
+				if anchor is not cursor and shift is false
+					call MoveTo: (SelectionEnd) false;
+				;;
+				else
+					call MoveTo: cursor + 1 shift;
+				;;
 				return 1;
 			;;
 			is Events.KEY_HOME
-				cursor is 0;
+				call MoveTo: 0 shift;
 				return 1;
 			;;
 			is Events.KEY_END
-				cursor is len;
+				call MoveTo: len shift;
 				return 1;
 			;;
 			is Events.KEY_BACKSPACE
-				if cursor > 0
+				if (DeleteSelection) is false and cursor > 0
 					cursor--;
 					call Remove: cursor;
 				;;
+				anchor is cursor;
 				return 1;
 			;;
 			is Events.KEY_DELETE
-				if cursor < len
+				if (DeleteSelection) is false and cursor < len
 					call Remove: cursor;
 				;;
+				anchor is cursor;
 				return 1;
 			;;
 		;;
 		if (key & (Events.MOD_CTRL | Events.MOD_ALT)) is not 0 return 0;
-		if k >= 32 and k < 127 and len < most and len < 127
+		if k >= 32 and k < 127
+			call DeleteSelection;
+			if len >= most or len >= 127 return 1;
 			int i: len;
 			while i > cursor
 				text:i is text:(i - 1);
@@ -182,10 +228,19 @@ struct.TextField
 			text:cursor is k;
 			len++;
 			cursor++;
+			anchor is cursor;
 			text:len is 0;
 			return 1;
 		;;
 	[end: 0]
+
+	# the caret to pos (kept inside the text); extend keeps the selection's other end
+	[MoveTo: int pos: 0; bln extend: false;]
+		cursor is (Math.Clamp: pos 0 len);
+		if extend is false
+			anchor is cursor;
+		;;
+	[end]
 
 	# the character at pos taken out
 	[Remove: int pos: 0;]
@@ -195,18 +250,49 @@ struct.TextField
 		len--;
 	[end]
 
-	# a click on it gives it the keys and puts the caret there; a click elsewhere takes
-	# them away; true when that changed anything
+	# the selected text taken out; false when nothing was selected
+	[DeleteSelection]
+		int from: (SelectionStart);
+		int gone: (SelectionEnd) - from;
+		if gone is 0 return false;
+		while int i: from; i + gone <= len; i++;
+			text:i is text:(i + gone);
+		;;
+		len-- gone;
+		cursor is from;
+		anchor is from;
+	[end: true]
+
+	# a click on it gives it the keys and puts the caret there (a double click selects
+	# everything, and moving with the button held selects up to the mouse); a click
+	# elsewhere takes the keys away; true when that changed anything
 	[Mouse: GuiEvent e;]
-		if e.clicks is 0 return false;
+		if e.clicks is 0
+			if dragging and (e.value & 1) is not 0
+				int to: (Spot: e.x);
+				if to is cursor return false;
+				cursor is to;
+				return true;
+			;;
+			dragging is false;
+			return false;
+		;;
 		bln on: (Widgets.Inside: e.x e.y x y w 24);
 		bln was: focused;
 		focused is on;
+		dragging is on;
 		if on
-			cursor is (Math.Clamp: (e.x - x - 6 + 4) / 8 + (First) 0 len);
+			call MoveTo: (Spot: e.x) false;
+			if e.clicks is 2
+				call SelectAll;
+			;;
 			return true;
 		;;
 	[end: was]
+
+	# the place in the text nearest to the mouse at px
+	[Spot: int px: 0;]
+	[end: (Math.Clamp: (px - x - 6 + 4) / 8 + (First) 0 len)]
 
 	# the first character shown: the caret always stays in sight
 	[First]
@@ -226,12 +312,14 @@ struct.TextField
 		call Draw.Rect: x y w 24 edge;
 		call Draw.PushClip: x + 4 y w - 8 24;
 		int first: (First);
+		int from: (Math.Max: (SelectionStart) first);
+		int to: (SelectionEnd);
+		if to > from
+			call Draw.FillRect: x + 6 + (from - first) * 8 y + 4 (to - from) * 8 16 Widgets.SELECT;
+		;;
 		int cx: x + 6;
 		if secret
 			while int i: first; i < len; i++;
-				if i is cursor
-					call Caret: cx;
-				;;
 				call Draw.FillCircle: cx + 3 y + 12 3 Widgets.TEXT;
 				cx++ 8;
 			;;
@@ -246,6 +334,87 @@ struct.TextField
 	[Caret: int cx: 0;]
 		if focused
 			call Draw.FillRect: cx y + 4 2 16 Widgets.ACCENT;
+		;;
+	[end]
+}
+
+# Tab and Shift+Tab move the keys from one text field to the next, in the order they
+# were added; the field that gets them has its text selected, so typing replaces it.
+#
+#   FocusChain tabs;
+#   call tabs.Add: addr name;
+#   call tabs.Add: addr password;
+#   int done: (tabs.Key: App.event.value);    # Tab moves on; other keys go to the field
+#   call tabs.Mouse: App.event;               # a click picks the field
+struct.FocusChain
+{
+	ptr<TextField> fields[16];
+	int count;
+
+	[Add: ptr<TextField> field: 0;]
+		if count < 16
+			fields:count is field;
+			count++;
+		;;
+	[end]
+
+	# the field that has the keys, or -1
+	[Current]
+		while int i: 0; i < count; i++;
+			ptr<TextField> f: fields:i;
+			if f:0.focused return i;
+		;;
+	[end: -1]
+
+	# give field n the keys, with its text selected
+	[Focus: int n: 0;]
+		while int i: 0; i < count; i++;
+			ptr<TextField> f: fields:i;
+			f:0.focused is (i is n);
+			f:0.dragging is false;
+			if i is n
+				f:0.anchor is 0;
+				f:0.cursor is f:0.len;
+			;;
+		;;
+	[end]
+
+	# a key: Tab and Shift+Tab move to the next or the one before (1); other keys go to
+	# the field with the keys, and this gives what its Key gives (0 if none has them)
+	[Key: int key: 0;]
+		if count is 0 return 0;
+		int now: (Current);
+		if (key & Events.KEY_MASK) is Events.KEY_TAB
+			int to: now + 1;
+			if (key & Events.MOD_SHIFT) is not 0
+				to is now - 1;
+				if now < 0
+					to is count - 1;
+				;;
+			;;
+			call Focus: (to + count) % count;
+			return 1;
+		;;
+		if now < 0 return 0;
+		ptr<TextField> f: fields:now;
+	[end: (f:0.Key: key)]
+
+	# a mouse event, to every field (a click gives the keys to the one it's on); true
+	# when that changed any of them
+	[Mouse: GuiEvent e;]
+		bln changed: false;
+		while int i: 0; i < count; i++;
+			ptr<TextField> f: fields:i;
+			if (f:0.Mouse: e)
+				changed is true;
+			;;
+		;;
+	[end: changed]
+
+	[Paint]
+		while int i: 0; i < count; i++;
+			ptr<TextField> f: fields:i;
+			call f:0.Paint;
 		;;
 	[end]
 }

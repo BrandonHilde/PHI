@@ -85,6 +85,24 @@ namespace Phi.Compiler.Tests
             AssertError($"phi.K:Kernel\n{{\n call {call};\n}}\n", "isn't available in the 32-bit kernel");
 
         [Theory]
+        [InlineData("OS.ReadFile: 'A.TXT' 0 10", "in a kernel it's Fat.ReadFile, which needs use fs.fat16;")]
+        [InlineData("OS.TaskName: 1 0", "in a kernel it's Process.TaskName, which needs use proc.process;")]
+        public void AProgramsCallInAKernelSaysWhatTheKernelUses(string call, string message) =>
+            AssertError($"phi.K:Kernel\n{{\n call {call};\n}}\n", message);
+
+        [Fact]
+        public void AProgramsCallInAKernelGoesToTheKernelsVersion()
+        {
+            CompileResult result = Compile("use proc.process;\nphi.K:Kernel\n{\n u8 name[16];\n" +
+                                           "int size: (OS.ReadFile: 'A.TXT' name 16);\ncall OS.TaskName: 1 name;\ncall OS.Kill: 1;\n}\n");
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            string asm = result.Units[0].Text;
+            Assert.Contains("Fat_ReadFile", asm);
+            Assert.Contains("Process_TaskName", asm);
+            Assert.DoesNotContain("call OS_ReadFile", asm);
+        }
+
+        [Theory]
         [InlineData("OS.GetTicks")]
         [InlineData("OS.SetIrqHandler: 1 0")]
         public void SomeBuiltinsAreOnlyIn32Bit(string call) =>

@@ -272,6 +272,19 @@ phi.Process:Kernel
 		;;
 	[end]
 
+	# copy a process's name (up to 15 characters, then a zero) into buffer, which
+	# holds 16; true if it has one. OS.TaskName in a kernel comes here.
+	[TaskName: u32 process: 0; ptr<u8> buffer: 0;]
+		buffer:0 is 0;
+		if process >= MAX_PROCESSES
+			return false;
+		;;
+		while u32 k: 0; k < NAME_SIZE; k++;
+			buffer:k is process_names:(process * NAME_SIZE + k);
+		;;
+		buffer:(NAME_SIZE - 1) is 0;
+	[end: (buffer:0 is not 0)]
+
 	# give a finished program's memory back
 	[Release: int pid: 0;]
 		if on_release is not 0
@@ -448,13 +461,8 @@ phi.Process:Kernel
 		elif number is SYS_TASK_NAME
 			result is 0;
 			call ok is UserRange: second NAME_SIZE;
-			if ok and first < MAX_PROCESSES
-				ptr<u8> to: second;
-				while u32 k: 0; k < NAME_SIZE; k++;
-					to:k is process_names:(first * NAME_SIZE + k);
-				;;
-				to:(NAME_SIZE - 1) is 0;
-				result is (to:0 is not 0);
+			if ok
+				call result is TaskName: first second;
 			;;
 		;;
 		elif number is SYS_KILL
