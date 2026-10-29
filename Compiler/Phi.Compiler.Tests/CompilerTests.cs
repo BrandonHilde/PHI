@@ -219,11 +219,28 @@ namespace Phi.Compiler.Tests
         [InlineData("int x: 5;\ncall Show: x -1;\n[Show: int a: 0; int b: 0;]\n[end]", "'x -1' is two arguments, x and -1")]
         [InlineData("int h: 64;\nbln b: 0;\nb is h is 64;", "this stores whether h is 64 in 'b'")]
         [InlineData("str info: [24];\ncall Fill: info info.len;\n[Fill: ptr<u8> to: 0; int size: 0;]\n[end]", "'info.len' is how much text is in info now")]
+        [InlineData("str home: 'HOME';\nstr docs: home '/DOCS';", "'docs' is a str array of 2 (several values make an array)")]
         public void EasilyMisreadCodeWarns(string body, string message)
         {
             CompileResult result = Compile(Boot(body));
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
             Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
+        }
+
+        [Fact]
+        public void AnAsmBlockInsideAClassSaysWhereItGoes() =>
+            AssertError(Boot("asm.Beep\n{\n\tret\n}"), "asm. blocks go at the top level of the file, outside any class");
+
+        [Fact]
+        public void AStrArrayIsntTextWhereAPtrU8Goes()
+        {
+            AssertError(Boot("str days: 'Mon' 'Tue';\ncall Show: days;\n[Show: ptr<u8> text: 0;]\n[end]"),
+                        "parameter 'text' is text (a ptr<u8>), but 'days' is a str array");
+
+            // one element is text; an array of literals doesn't warn
+            CompileResult element = Compile(Boot("str days: 'Mon' 'Tue';\ncall Show: days:0;\n[Show: ptr<u8> text: 0;]\n[end]"));
+            Assert.True(element.Success, string.Join("\n", element.Diagnostics));
+            Assert.DoesNotContain(element.Diagnostics, d => d.Severity == Severity.Warning);
         }
 
         [Theory]

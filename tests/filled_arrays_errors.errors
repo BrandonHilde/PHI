@@ -2,5 +2,5 @@ a str always knows how long its text is; leave out atmost
 a parameter can't be an array filled as it goes
 'scores' is an array, so it takes another whole array, and this is an int; for one element, write scores:0 is ...
 'scores.len' can only be made smaller
-a Point is added with points++; on its own
+'points' holds Points, so it takes a copy of another Point
 index 4 is outside 'scores', which has room for 4 elements

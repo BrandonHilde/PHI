@@ -1,0 +1,4 @@
+# the machine restarts (the script's reboot, then the kernel's own OS.Reboot) on the same disk
+expect boot 1
+reboot
+expect boot 3

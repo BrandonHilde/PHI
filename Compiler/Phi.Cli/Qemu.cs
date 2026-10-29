@@ -125,6 +125,9 @@ namespace Phi.Cli
             int? monitorPort = input != null ? FreePort() : null;
 
             var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0");
+            // a script that restarts the machine (reboot) needs a reset to restart it rather than
+            // stop QEMU; a triple fault then restarts it too, and the timeout catches that
+            if (input != null && input.Any(InputScript.IsReboot)) args.Remove("-no-reboot");
             args.AddRange(new[] { "-display", "none", "-serial", "stdio", "-monitor",
                                   monitorPort != null ? $"tcp:127.0.0.1:{monitorPort},server,nowait" : "none" });
 

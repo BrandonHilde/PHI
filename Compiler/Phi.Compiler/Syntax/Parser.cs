@@ -1509,6 +1509,10 @@ namespace Phi.Compiler.Syntax
                         Advance();
                         return new NameExpr { Name = t.Text, Span = t.Span };
                     }
+                    // asm.Name { ... } (and struct., enum., phi.) written inside a class
+                    if (t.Text is "asm" or "arm" or "struct" or "enum" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
+                        throw Error(t.Span, $"{t.Text}. blocks go at the top level of the file, outside any class" +
+                                            (t.Text is "asm" or "arm" ? $"; write {t.Text}.Name {{ ... }} there and call Name; from the class" : ""));
                     if (ReservedWords.Contains(t.Text))
                         throw Error(t.Span, $"expected a value but found the keyword '{t.Text}'");
 

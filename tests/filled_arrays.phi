@@ -41,6 +41,15 @@ phi.FilledArrays:Library
 	list:(list.len - 1).score is 20;
 	log list.len ' ' list:0.score ' ' list:1.score ' ' list:1.name.len '\n';
 
+	# or add copies of other structs, all of their bytes
+	Account best;
+	best.score is 99;
+	best.name:0 is 'B';
+	list.len is 1;
+	list++ best list:0;
+	list:0.score is 1;
+	log list.len ' ' list:0.score ' ' list:1.score ' ' list:2.score ' ' list:1.name:0 '\n';
+
 	# a field of a struct
 	Team team;
 	team.members++ 5 6;

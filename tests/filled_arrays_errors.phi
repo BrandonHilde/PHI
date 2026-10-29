@@ -13,7 +13,7 @@ phi.FilledArraysErrors:Kernel
 
 	scores is 5;
 	scores.len++;
-	points++ p;
+	points++ 5;
 	log scores:4;
 	call Take: scores;
 

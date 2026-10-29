@@ -28,6 +28,7 @@
 #   call App.SetTitle: 'Notes - TODO.TXT';             # what the window is called
 #   int pid: (App.OpenWindow: 'VIEWER.BIN' 'TODO.TXT'); # another program, in its own window
 #   if (App.Focused) ...                                # is this window in front?
+#   call App.SetResizable: false;                       # it can't redraw at another size
 
 use gfx.draw;
 use gui.events;
@@ -78,6 +79,12 @@ phi.App:Program
 	# own; its process number, or -1 if it couldn't start
 	[OpenWindow: ptr<u8> path: 0; ptr<u8> arguments: 0;]
 	[end: (OS.OpenWindow: path arguments)]
+
+	# whether the window can be resized (it can, unless this says otherwise): a program
+	# that doesn't handle Events.RESIZE says false, and the window manager keeps its size
+	[SetResizable: bln yes: true;]
+		call OS.SetResizable: yes;
+	[end]
 
 	# is this program's window in front (getting the keys)?
 	[Focused]

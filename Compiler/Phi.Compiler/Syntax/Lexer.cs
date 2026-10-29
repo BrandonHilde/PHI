@@ -316,6 +316,12 @@ namespace Phi.Compiler.Syntax
                 sb.Append(c);
             }
 
+            // a line break written into the string just before its end is more often a '\n' that
+            // an edit split across two lines than a multi-line string
+            if (pos >= 2 && text[pos - 1] == '\'' && text[pos - 2] == '\n')
+                diagnostics.Warning(file, new Span(start, 1),
+                    "this string ends with a line break written into it; for a new line write '\\n' (if the break is meant, end the string on the same line as its text)");
+
             return Make(TokenKind.String, start, sb.ToString());
         }
     }

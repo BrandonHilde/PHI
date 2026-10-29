@@ -30,6 +30,18 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AStringEndingInALineBreakWarns()
+        {
+            // most likely a '\n' that an edit split across two lines
+            Lex("log 'done\n';", out var split);
+            Assert.Contains(split.Items, d => d.Severity == Severity.Warning && d.Message.Contains("ends with a line break"));
+
+            // text on both lines is a multi-line string, meant as one
+            Token t = Lex("'one\ntwo'")[0];
+            Assert.Equal("one\ntwo", t.Value);
+        }
+
+        [Fact]
         public void BinarySuffixNeedsAWordBoundary()
         {
             // "10bytes" is a number followed by a name, not binary

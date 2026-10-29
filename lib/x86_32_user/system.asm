@@ -1,4 +1,4 @@
-; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused
+; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable
 ;
 ; requires: phi_flush
 ;
@@ -44,6 +44,7 @@ SYS_COPY_FONT equ 67
 SYS_SET_TITLE equ 68
 SYS_OPEN_WINDOW equ 69
 SYS_FOCUSED   equ 70
+SYS_RESIZABLE equ 71
 
 ; where the kernel puts a program's command line (the bottom of its stack area)
 ARGUMENTS     equ 0x403F0000
@@ -171,3 +172,4 @@ PHI_SYSCALL OS_CopyFont, SYS_COPY_FONT, 1        ; glyphs (4096 bytes) -> 1, or 
 PHI_SYSCALL OS_SetWindowTitle, SYS_SET_TITLE, 1  ; title -> 1
 PHI_SYSCALL OS_OpenWindow, SYS_OPEN_WINDOW, 2    ; path arguments -> process number, or -1
 PHI_SYSCALL OS_WindowFocused, SYS_FOCUSED, 0     ; -> 1 if its window is in front
+PHI_SYSCALL OS_SetResizable, SYS_RESIZABLE, 1    ; 1 or 0 -> 1

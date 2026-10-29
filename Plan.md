@@ -571,15 +571,28 @@ these were added:
   to a `str`; arrays passed to the built-ins' buffers; `SetView` stays inside a `PushClip`;
   F-key constants in `Events`; input scripts send long mouse moves in steps, and wait for a
   script still running once the output is right; an error in shared code reported once
+- [x] From the fifth PhiOS assessment: a `str` array passed where text goes is an error, and a
+  `str` declaration of several values that aren't all literals warns (it's an array, not
+  text being built); `p + n` stays text where text is printed or built; `OS.Arguments` is a
+  `ptr<u8>`; `[end: 'literal']` in a method whose returns are text pointers is a `ptr<u8>`
+  method; `list++ value;` copies into an array of plain structs; hints for an `asm.` block
+  inside a class and for a string that ends with a line break written into it; `OS.Idle`
+  (a kernel's main loop rests until something happens); `App.SetResizable`; `reboot` in
+  input scripts (restart on the same disk)
 
 The parts most worth doing next, roughly in order:
 
 1. **More for windows:** a program opening more than one window, menus, and dialog boxes
-   (open, save, a message).
-2. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
+   (open, save, a message); selection in `TextField` (Ctrl+A, select all when it takes the
+   keys) and a multi-line `TextArea`. PhiOS draws its dialogs inside the app's own window
+   and fakes "typing replaces the suggested name" for want of these.
+2. **Text a method fills in:** a `str` parameter the caller's `str` is passed to (by
+   reference), and `str` fields in structs (`str name[12];`), so text in structs and
+   out-parameters stop needing `u8` arrays, `addr` and `sizeof`. Needs a design first.
+3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
-3. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM. (C compatibility and
+4. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM. (C compatibility and
    self-hosting are on hold until everything else is done.)
 
 ---

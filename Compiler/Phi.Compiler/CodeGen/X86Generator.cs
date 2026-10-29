@@ -1594,6 +1594,11 @@ namespace Phi.Compiler.CodeGen
                 if (value == null) Emit("fldz");
                 else EmitFloat(value);   // stays in st0 until it's stored
             }
+            else if (element.IsStruct && value != null)
+            {
+                EmitPlaceAddress(value);
+                Emit("push eax                ; the struct to copy");
+            }
             else if (value != null)
             {
                 EmitExpr(value);
@@ -1662,6 +1667,14 @@ namespace Phi.Compiler.CodeGen
                         Emit("mov [ebx], ax");
                         break;
                 }
+            }
+            else if (element.IsStruct && value != null)
+            {
+                Emit("pop esi");
+                Emit("mov edi, ebx");
+                Emit($"mov ecx, {size}");
+                Emit("cld");
+                Emit("rep movsb");
             }
             else if (value != null)
             {

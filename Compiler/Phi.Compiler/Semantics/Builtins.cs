@@ -18,6 +18,12 @@ namespace Phi.Compiler.Semantics
         public int[] BufferParameters { get; init; } = Array.Empty<int>();
         public bool Returns { get; init; }
 
+        /// <summary>The result is text (a ptr&lt;u8&gt;), so it prints as text, rather than a number.</summary>
+        public bool ReturnsText { get; init; }
+
+        /// <summary>What a call gives back, for one that Returns.</summary>
+        public PhiType ResultType => FloatInstruction != null ? PhiType.F64 : ReturnsText ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
+
         /// <summary>Null when the function works in both the boot sector and the kernel.</summary>
         public UnitKind? OnlyIn { get; init; }
 
@@ -91,6 +97,8 @@ namespace Phi.Compiler.Semantics
 
             // ---- tasks (lib/x86_32/tasks.asm in kernels, system calls in programs)
             new() { Name = "OS.Yield", Label = "OS_Yield", Description = "give the CPU to another task" },
+            new() { Name = "OS.Idle", Label = "OS_Idle",
+                    Description = "kernel: give the CPU to the programs, and if none of them can run, wait for the next interrupt instead of coming straight back" },
 
             // ---- floating point (worked out on the FPU, in 32-bit kernels and programs)
             new() { Name = "Float.Sqrt", Label = "", Parameters = new[] { "x" }, Returns = true, FloatInstruction = "fsqrt", Description = "the square root" },
@@ -126,6 +134,8 @@ namespace Phi.Compiler.Semantics
                     Description = "program: start a program with a command line, in a window of its own (gui.app's App.OpenWindow); its process number, or -1" },
             new() { Name = "OS.WindowFocused", Label = "OS_WindowFocused", Returns = true,
                     Description = "program: 1 if its window is in front (gui.app's App.Focused)" },
+            new() { Name = "OS.SetResizable", Label = "OS_SetResizable", Parameters = new[] { "resizable" }, Returns = true,
+                    Description = "program: 0 if its window can't be resized, 1 if it can (gui.app's App.SetResizable); 1" },
             new() { Name = "OS.Grow", Label = "OS_Grow", Parameters = new[] { "bytes" }, Returns = true,
                     Description = "program: more memory for its heap, right after what it has; where it starts, or 0 (memory.heap does this for new)" },
             new() { Name = "OS.SetSyscallHandler", Label = "OS_SetSyscallHandler", Parameters = new[] { "handler" },
@@ -137,7 +147,7 @@ namespace Phi.Compiler.Semantics
                     Description = "program: wait for a child to finish; its exit code" },
             new() { Name = "OS.Run", Label = "OS_Run", Parameters = new[] { "path", "arguments" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: start a program with a command line; its process number, or -1" },
-            new() { Name = "OS.Arguments", Label = "OS_Arguments", Returns = true,
+            new() { Name = "OS.Arguments", Label = "OS_Arguments", Returns = true, ReturnsText = true,
                     Description = "program: its command line, as a ptr<u8>" },
             new() { Name = "OS.ReadFile", Label = "OS_ReadFile", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: read a file into buffer; bytes read, or -1" },

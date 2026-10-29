@@ -7,7 +7,7 @@
 #   int pid: (Desktop.Run: 'PAINT.BIN' 'Paint' 40 40);   # a program, in a window at (40, 40)
 #   while Desktop.windows.len > 0
 #       call Desktop.Step;                               # input, events and drawing
-#       call OS.Yield;                                   # and the programs run
+#       call OS.Idle;                                    # the programs run (or it rests)
 #   ;;
 #
 # Step moves the mouse pointer, brings a window to the front when it's clicked, drags
@@ -17,7 +17,8 @@
 # its close box is clicked. The grip at a window's bottom right corner resizes it: the
 # program is told its new size (Events.RESIZE) when the button is let go. A program
 # that ends, or crashes, loses its window. A program can rename its window
-# (App.SetTitle) and start another program in a window (App.OpenWindow). The screen is
+# (App.SetTitle), start another program in a window (App.OpenWindow), and turn off
+# the grip if it can't redraw at another size (App.SetResizable: false). The screen is
 # drawn again only when something changed.
 
 use gui.surfaces;
@@ -309,7 +310,7 @@ phi.Desktop:Kernel
 			return;
 		;;
 		# the grip at the bottom right corner
-		if clicks > 0 and x >= wx + (Width: i) - GRIP and y >= wy + (Height: i) - GRIP
+		if clicks > 0 and x >= wx + (Width: i) - GRIP and y >= wy + (Height: i) - GRIP and (Surfaces.Resizable: pid)
 			resizing is pid;
 			return;
 		;;
@@ -357,11 +358,13 @@ phi.Desktop:Kernel
 		call Surfaces.DrawAt: windows:i.pid x + BORDER y + TITLE_H;
 		call Draw.PopClip;
 
-		# the grip: three short lines in the corner
-		int gx: x + w - 3;
-		int gy: y + h - 3;
-		while int k: 1; k <= 3; k++;
-			call Draw.Line: gx - 3 * k gy gx gy - 3 * k Draw.GRAY;
+		# the grip: three short lines in the corner, unless the program can't be resized
+		if (Surfaces.Resizable: windows:i.pid)
+			int gx: x + w - 3;
+			int gy: y + h - 3;
+			while int k: 1; k <= 3; k++;
+				call Draw.Line: gx - 3 * k gy gx gy - 3 * k Draw.GRAY;
+			;;
 		;;
 	[end]
 }

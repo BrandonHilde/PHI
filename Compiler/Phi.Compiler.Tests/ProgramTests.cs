@@ -52,6 +52,16 @@ namespace Phi.Compiler.Tests
             Assert.True(result.Success, string.Join("\n", result.Diagnostics));
         }
 
+        [Fact]
+        public void TheCommandLineIsText()
+        {
+            CompileResult result = Compile(Program("log (OS.Arguments);"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            string asm = result.Units[0].Text;
+            Assert.Contains("call phi_print\n", asm.Replace("\r", ""));    // printed as text,
+            Assert.DoesNotContain("phi_print_uint", asm);                  // not as a number
+        }
+
         [Theory]
         [InlineData("u8 buffer[64];\nint n: 0;\ncall n is OS.ReadFile: 'SCORE.TXT' buffer sizeof buffer;")]
         [InlineData("u8 buffer[64];\nint n: 0;\ncall n is OS.ReadFileAt: 'SCORE.TXT' 8 buffer 64;")]

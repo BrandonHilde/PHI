@@ -1,5 +1,5 @@
 # What a program can ask of the desktop: a title for its window, another program in a
-# window of its own, and whether its window is in front.
+# window of its own, whether its window is in front, and that it can't be resized.
 use gui.desktop;
 
 phi.Test:Kernel
@@ -11,10 +11,11 @@ phi.Test:Kernel
 	bln shown: false;
 	while Desktop.windows.len > 0
 		call Desktop.Step;
-		call OS.Yield;
-		if shown is false and Desktop.windows.len is 2
+		call OS.Idle;
+		if shown is false and Desktop.windows.len is 2 and Desktop.windows:1.w > 0
 			debug 'desktop: titles ' addr Desktop.windows:0.title ', ' addr Desktop.windows:1.title '\n';
 			debug 'desktop: second at ' Desktop.windows:1.x ' ' Desktop.windows:1.y '\n';
+			debug 'desktop: resizable ' (Surfaces.Resizable: Desktop.windows:0.pid) ' ' (Surfaces.Resizable: Desktop.windows:1.pid) '\n';
 			shown is true;
 		;;
 	;;

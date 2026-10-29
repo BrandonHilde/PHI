@@ -28,7 +28,7 @@ phi.DesktopSample:Kernel
 
 	while Desktop.windows.len > 0
 		call Desktop.Step;
-		call OS.Yield;
+		call OS.Idle;                   # the programs run, or it rests until something happens
 	;;
 	exit 0;
 }

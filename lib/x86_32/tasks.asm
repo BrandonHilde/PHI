@@ -1,4 +1,4 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
 ; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
@@ -434,6 +434,24 @@ phi_task_fault:
 
 OS_Yield:
     int YIELD_VECTOR
+    ret
+
+; give the CPU to the programs; if none of them can run when it comes back (all
+; waiting, sleeping or gone), halt until the next interrupt (the timer, a key, the
+; mouse) instead of coming straight back, so a kernel waiting on them doesn't spin
+OS_Idle:
+    int YIELD_VECTOR
+    mov ecx, 1
+.task:
+    cmp dword [phi_task_state + ecx * 4], TASK_READY
+    je .done
+    inc ecx
+    cmp ecx, MAX_TASKS
+    jb .task
+    call OS_SetupInteruptTimer  ; so there's always a next interrupt (it starts only once)
+    sti
+    hlt                     ; sti; hlt can't miss an interrupt in between
+.done:
     ret
 
 OS_CurrentTask:

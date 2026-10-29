@@ -2,6 +2,7 @@ use gui.app;
 
 phi.Viewer:Program
 {
+	call App.SetResizable: false;          # its window keeps its size
 	if (App.Open: 60 30) is false
 		exit 1;
 	;;

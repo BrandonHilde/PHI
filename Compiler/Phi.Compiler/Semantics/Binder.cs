@@ -285,7 +285,14 @@ namespace Phi.Compiler.Semantics
 
             allowObjectTemp = true;
             BindExpr(result, methodScopes[m.Decl]);
-            if (result.Type.IsString) m.ReturnType = PhiType.Str;
+            // [end: 'none'] in a method whose returns hand back text pointers is a ptr<u8> method too
+            // (the literal lives as long as the program, so its address can be handed back)
+            if (result is StringExpr { Value.Length: not 1 } && ReturnsTextPointer(m))
+            {
+                m.ReturnType = PhiType.PointerTo(PhiType.U8);
+                m.Decl.Result = Convert(result, m.ReturnType, "the returned value");
+            }
+            else if (result.Type.IsString) m.ReturnType = PhiType.Str;
             else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
             else if (MovedPointer(result) is PhiType moved) m.ReturnType = moved; // [end: text + n] is still a ptr<u8>
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
@@ -307,6 +314,28 @@ namespace Phi.Compiler.Semantics
             m.ResultBinding = false;
             m.ResultBound = true;
             return m.ReturnType;
+        }
+
+        /// <summary>
+        /// Does one of the method's return statements hand back a ptr&lt;u8&gt; (an addr, or a ptr&lt;u8&gt;
+        /// variable)? Asked before the body is bound, so it looks at what each return names.
+        /// </summary>
+        bool ReturnsTextPointer(MethodSymbol m) =>
+            m.Decl.Body.SelectMany(SyntaxWalker.Nodes).OfType<ReturnStmt>().Any(r => r.Value switch
+            {
+                AddrExpr a => !(a.Operand is NameExpr target && Lookup(target.Name, methodScopes[m.Decl]) is not VariableSymbol), // not addr Method
+                NameExpr n => Lookup(n.Name, methodScopes[m.Decl]) is VariableSymbol { Type: { IsPointer: true, IsArray: false } t } && t.Pointee == PhiType.U8,
+                _ => false,
+            });
+
+        /// <summary>
+        /// In a list of things to print or write into a str, text + n is still text (the rest of
+        /// it from n on), as it is in [end: text + n]; elsewhere p + n is a number.
+        /// </summary>
+        static void KeepTextPointer(Expr e)
+        {
+            if (e is BinaryExpr && !e.Type.IsPointer && MovedPointer(e) is PhiType moved && moved.Pointee == PhiType.U8)
+                e.Type = moved;
         }
 
         /// <summary>
@@ -1511,6 +1540,7 @@ namespace Phi.Compiler.Semantics
                     foreach (Expr value in log.Values)
                     {
                         BindExpr(value, scope);
+                        KeepTextPointer(value);
                         if (value.Type.IsArray && value.Type.Element == PhiType.U8 && value is NameExpr or MemberExpr)
                             Error(value.Span, $"can't print a u8 array; to print the text in it (up to a zero byte), write addr {Describe(value)}");
                         else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsWide && !value.Type.IsFloat && !value.Type.IsString)
@@ -1660,6 +1690,13 @@ namespace Phi.Compiler.Semantics
                 if (v.Type.IsString && !v.Type.IsArray && (value.Type.IsFloat || value.Type.IsWide)) continue;
                 decl.Values[i] = Convert(value, v.Type.Element, $"'{decl.Name}'");
             }
+
+            // str path: home '/DOCS'; reads like text being built, but several values make an array
+            if (v.Type.Kind == TypeKind.Str && v.Type.IsArray && decl.BufferSize == null && decl.Values.Count > 1
+                && decl.Values.Any(e => e is not StringExpr))
+                diagnostics.Warning(file, decl.NameSpan,
+                    $"'{decl.Name}' is a str array of {decl.Values.Count} (several values make an array); to join them into one str, " +
+                    $"write str {decl.Name}: ''; then {decl.Name} is ...; if an array is meant, start it with literals and set its elements ({decl.Name}:0 is ...)");
 
             // text for a ptr<u8> is the address of the string, which only the generated code knows
             // and a float or 64-bit number in a str is written out as text by code, too
@@ -2118,6 +2155,19 @@ namespace Phi.Compiler.Semantics
                 }
                 return append;
             }
+            if (element.IsStruct)
+            {
+                // list++ a b; adds copies of a and b, byte for byte
+                foreach (Expr value in assign.Values ?? new List<Expr> { assign.Value })
+                {
+                    BindExpr(value, scope);
+                    if (value.Type.IsError) continue;
+                    if (!value.Type.IsStruct || value.Type.IsArray || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr))
+                        Error(value.Span, $"'{name}' holds {element.Struct!.Name}s, so it takes a copy of another {element.Struct.Name} (a variable, field or element), not {A(value.Type)}");
+                    else append.Values.Add(value);
+                }
+                return append;
+            }
             if (!element.IsNumeric && !element.IsMethod && !element.IsWide && !element.IsFloat)
             {
                 Error(assign.Value.Span, $"a {element} is added with {name}++; on its own (an element of zeros), then set its fields through {name}:({name}.len - 1)");
@@ -2156,7 +2206,11 @@ namespace Phi.Compiler.Semantics
             Expr target = assign.Target;
             bool append = assign.Op == AssignOp.Add;
             List<Expr> parts = assign.Values ?? new List<Expr> { assign.Value };
-            foreach (Expr part in parts) BindExpr(part, scope);
+            foreach (Expr part in parts)
+            {
+                BindExpr(part, scope);
+                KeepTextPointer(part);
+            }
 
             if (target.Type.IsError) return assign;
             if (!target.Type.IsString || target.Type.IsArray || !IsAssignable(target))
@@ -2350,7 +2404,7 @@ namespace Phi.Compiler.Semantics
 
                 case BuiltinFunction builtin:
                     if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value");
-                    else CheckResultTarget(call, builtin.FloatInstruction != null ? PhiType.F64 : PhiType.Int);
+                    else CheckResultTarget(call, builtin.ResultType);
                     break;
 
                 case RawBlockDecl:
@@ -2392,7 +2446,7 @@ namespace Phi.Compiler.Semantics
 
                 case BuiltinFunction builtin:
                     if (!builtin.Returns) Error(call.CalleeSpan, $"{builtin.Name} doesn't return a value, so it can't be used as one");
-                    else call.Type = builtin.FloatInstruction != null ? PhiType.F64 : PhiType.Int;
+                    else call.Type = builtin.ResultType;
                     break;
 
                 case RawBlockDecl:
@@ -3369,7 +3423,14 @@ namespace Phi.Compiler.Semantics
                 if (target.IsPointer && e.Type.IsArray && e.Type.Kind == TypeKind.Str && e is NameExpr)
                 {
                     PhiType table = PhiType.PointerTo(PhiType.PointerTo(PhiType.U8));
-                    if (target != table && target.Pointee != PhiType.U8)
+                    // where text goes, the table's bytes would be taken for text
+                    if (target.Pointee == PhiType.U8)
+                    {
+                        Error(e.Span, $"{what} is text (a ptr<u8>), but '{Describe(e)}' is a str array (several values make an array); " +
+                                      $"pass one element ({Describe(e)}:0), or to join values into one str, build it: s is a b;");
+                        return e;
+                    }
+                    if (target != table)
                         diagnostics.Warning(file, e.Span, $"{what} is a {target}, but a str array is a {table}; write `addr {Describe(e)} as {target}` if that's meant");
                     return new AddrExpr { Operand = e, Span = e.Span, Type = table };
                 }

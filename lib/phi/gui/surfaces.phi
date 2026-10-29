@@ -19,13 +19,14 @@
 # kernel. A program that crashes loses its surface; the kernel carries on.
 #
 # A program can also name its window (App.SetTitle), start another program in a window
-# of its own (App.OpenWindow) and ask whether its window is in front (App.Focused). Those
-# are requests the window manager picks up: TakeTitle, TakeNewWindow, and front, which it
-# keeps set to the process whose window is in front.
+# of its own (App.OpenWindow), ask whether its window is in front (App.Focused) and say
+# it can't be resized (App.SetResizable). Those are requests the window manager picks
+# up: TakeTitle, TakeNewWindow, Resizable, and front, which it keeps set to the process
+# whose window is in front.
 #
-# The system calls (64 to 70) are OS.SurfaceOpen, OS.SurfacePresent, OS.NextEvent,
-# OS.CopyFont, OS.SetWindowTitle, OS.OpenWindow and OS.WindowFocused; Surfaces answers
-# them through Process.more_calls.
+# The system calls (64 to 71) are OS.SurfaceOpen, OS.SurfacePresent, OS.NextEvent,
+# OS.CopyFont, OS.SetWindowTitle, OS.OpenWindow, OS.WindowFocused and OS.SetResizable;
+# Surfaces answers them through Process.more_calls.
 
 use proc.process;
 use memory.mem;
@@ -41,6 +42,7 @@ phi.Surfaces:Kernel
 	const u32 SYS_SET_TITLE: 68;
 	const u32 SYS_OPEN_WINDOW: 69;
 	const u32 SYS_FOCUSED: 70;
+	const u32 SYS_RESIZABLE: 71;
 	const int TITLE_SIZE: 32;
 	const int MAX_PROCESSES: 16;
 	const int QUEUE: 32;
@@ -58,6 +60,7 @@ phi.Surfaces:Kernel
 	u8 titles[512];             # TITLE_SIZE for each process: what it asked to be called
 	bln title_changed[16];      # a title TakeTitle hasn't taken yet
 	bln new_window[16];         # started by App.OpenWindow, waiting for TakeNewWindow
+	bln fixed_size[16];         # said it can't handle Events.RESIZE (App.SetResizable: false)
 	int front: 0;               # the process whose window is in front (the window manager sets it)
 
 	Process.more_calls is addr Calls;
@@ -73,6 +76,10 @@ phi.Surfaces:Kernel
 		if number is SYS_COPY_FONT return (CopyFont: a);
 		if number is SYS_SET_TITLE return (SetTitle: pid a);
 		if number is SYS_OPEN_WINDOW return (OpenWindow: a b);
+		if number is SYS_RESIZABLE
+			fixed_size:pid is (a is 0);
+			return 1;
+		;;
 		if number is SYS_FOCUSED
 			if pid is front return 1;
 			return 0;
@@ -163,6 +170,11 @@ phi.Surfaces:Kernel
 
 	# ------------------------------------------------------------ for the window manager
 
+	# can the process's window be resized? (it takes Events.RESIZE, unless it said it can't)
+	[Resizable: int pid: 0;]
+		if pid <= 0 or pid >= MAX_PROCESSES return true;
+	[end: fixed_size:pid is false]
+
 	# a process App.OpenWindow started, which wants a window; 0 when there's none
 	[TakeNewWindow]
 		while int pid: 1; pid < MAX_PROCESSES; pid++;
@@ -246,5 +258,6 @@ phi.Surfaces:Kernel
 		tail:pid is 0;
 		title_changed:pid is false;
 		new_window:pid is false;
+		fixed_size:pid is false;
 	[end]
 }

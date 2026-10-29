@@ -141,7 +141,7 @@ str name: 'PHI';
 int total;                  # no value: zero
 
 int numbers: 1 3 5 9 2;     # several values make an array
-str days: 'Mon' 'Tue';      # an array of strings
+str days: 'Mon' 'Tue';      # an array of strings (a warning if any value isn't a literal)
 int squares[5];             # an array of 5 zeros
 str buffer: [40];           # room for 40 characters (also: str buffer[40];)
 u8 sectors[SECTOR_SIZE];    # sizes can be constants
@@ -363,7 +363,8 @@ scores.len is 0;              # empty it
 - `.len` can only be made smaller (`is` or `--`), so an element that was dropped can't come
   back with its old value.
 - An array of structs adds an element of zeros with `name++;` on its own, then sets its
-  fields: `list++;` then `list:(list.len - 1).score is 10;`. An array of objects adds a new
+  fields: `list++;` then `list:(list.len - 1).score is 10;`, or adds copies of other
+  structs with `list++ best;` (a variable, field or element). An array of objects adds a new
   one with `list++;`, or a copy with `list++ p;` (see [Arrays of objects](#arrays-of-objects)).
 - It works as a struct field too (`int members[atmost 4];` in a struct), and as a
   method's variable.
@@ -517,6 +518,16 @@ As in any list, `'Total' -3` is two values. The text is cut to fit, like any `st
 `str` can't appear after the first value (it's being rewritten by then), and `s++ s;` is an
 error: copy it to another `str` first. Only a `str` takes several values: `n is n -1;`
 still subtracts.
+
+Building is an assignment, not a declaration: `str docs: home '/DOCS';` is an *array* of two
+strings, since several values in a declaration make an array. That gets a warning when
+any of the values isn't a literal; write `str docs: ''; docs is home '/DOCS';` for the
+text. A `str` array is never text: passing one where a `ptr<u8>` goes is an error (pass
+an element, `docs:0`).
+
+`p + n` with `p` a `ptr<u8>` is the text from `n` characters in, wherever text is being
+printed or built (`log p + 1;`, `s++ p + 1;`), as it is in `[end: p + n]`; elsewhere it's
+a number.
 
 ### Conditions
 
@@ -1199,7 +1210,7 @@ if (Screen.Start: 800 600)
     call Desktop.Run: 'HELLO.BIN' 'Hello' 40 40;   # start a program in a window
     while Desktop.windows.len > 0
         call Desktop.Step;              # input, events, drawing (only when something changed)
-        call OS.Yield;                  # and the programs run
+        call OS.Idle;                   # the programs run, or it rests until something happens
     ;;
 ;;
 ```
@@ -1219,13 +1230,14 @@ program gets `Events.RESIZE`, with the new size in `App.event.x` and `.y`: it ca
 | `App.SetTitle: title` | name its window |
 | `App.OpenWindow: path arguments` → | start another program, with a command line, in a window of its own; its process number, or -1 |
 | `App.Focused` → | true while its window is in front, getting the keys |
+| `App.SetResizable: false` | its window keeps its size (for a program that doesn't handle `Events.RESIZE`) |
 | `OS.IsKeyDown: key` → | whether a key is held, for games; only the program in front sees held keys |
 
 A program can't move, size or close its own window, or see other windows: those are the
 window manager's. `gui.desktop` is one window manager; a kernel can write its own on
 `gui.surfaces`, which keeps each program's pixels and events and takes these requests
-(`Surfaces.TakeTitle`, `TakeNewWindow`, and `Surfaces.front`, which the window manager
-keeps set to the program in front). A window manager with its own keyboard driver sets
+(`Surfaces.TakeTitle`, `TakeNewWindow`, `Resizable`, and `Surfaces.front`, which the window
+manager keeps set to the program in front). A window manager with its own keyboard driver sets
 `Process.key_down` to a method that answers `OS.IsKeyDown` (`gui.desktop` does).
 
 `gui.widgets` has the usual parts of a form, each a struct that keeps its own place and
@@ -1402,8 +1414,10 @@ programs. A program that touches memory that isn't its own is stopped with a mes
 (`PHI: program 3 stopped by exception 14 ...`) and the kernel carries on.
 
 **The kernel runs one thing at a time.** Its own code keeps the CPU until it waits
-(`Process.Wait`, `Process.WaitAll`, `OS.Yield`) or its main code ends; only then do
-programs run. Methods keep their variables on the stack, but class variables (like a
+(`Process.Wait`, `Process.WaitAll`, `OS.Yield`, `OS.Idle`) or its main code ends; only then do
+programs run. A main loop that waits on programs and input should call `OS.Idle`: like
+`OS.Yield` it lets the programs run, but when none of them can, it waits for the next
+interrupt (the timer, a key, the mouse) instead of coming straight back, so the CPU rests. Methods keep their variables on the stack, but class variables (like a
 driver's state) are shared, and this keeps two pieces of kernel code from changing them at
 once.
 
@@ -1538,7 +1552,9 @@ if (IsReady: port)
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number or `str`) as the one
   after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
-  even when every way out is a `return` (`[end: 0]` will do).
+  even when every way out is a `return` (`[end: 0]` will do). A string literal there
+  (`[end: 'none']`) makes a `str` method, unless a `return` hands back an `addr` or a
+  `ptr<u8>`: then the method is a `ptr<u8>` one, and the literal's address is its result.
 - Methods can be called before they appear, and from any class in the same unit
   (`call Other.Method;` to be explicit).
 - A method can call itself, directly or through other methods: every call has its own
@@ -1747,6 +1763,7 @@ are drivers in [lib/x86_32](../lib/x86_32).
 | `OS.UnmaskIrq: irq` / `OS.MaskIrq: irq` | both | let a hardware interrupt through, or block it |
 | `OS.EnableInterrupts` / `OS.DisableInterrupts` | both | `sti` / `cli` |
 | `OS.Yield` | 32-bit, programs | let other tasks run |
+| `OS.Idle` | 32-bit | let the programs run, then, if none of them can, wait for the next interrupt instead of coming straight back (a kernel's main loop, so it doesn't spin) |
 | `OS.CurrentTask` → | 32-bit, programs | this task's number (0 is the kernel) |
 | `OS.Spawn: path` → / `OS.Run: path arguments` → / `OS.Wait: process` → | programs | start a program from the disk / wait for it |
 | `OS.ClearScreen`, `OS.PutCell: column row cell`, `OS.Reboot` | 32-bit, programs | the text screen; restarting |

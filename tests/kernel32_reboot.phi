@@ -1,0 +1,23 @@
+# What a kernel saves is still there after a restart: it counts its boots in a file.
+use fs.fat16;
+
+phi.Test:Kernel
+{
+	u8 count[4];
+	if (Fat.ReadFile: 'BOOTS.DAT' addr count 1) < 1
+		count:0 is 0;
+	;;
+	count:0++;
+	bln ok: (Fat.WriteFile: 'BOOTS.DAT' addr count 1);
+	debug 'boot ' count:0 '\n';
+
+	if count:0 is 2
+		call OS.Reboot;                # the second time, it restarts itself
+	;;
+	if count:0 is 3
+		exit 0;
+	;;
+	while true
+		call OS.Sleep: 100;
+	;;
+}

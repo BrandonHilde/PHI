@@ -7,4 +7,5 @@ launcher: focused 0
 launcher: missing -1
 desktop: titles Launcher, VIEWER.BIN
 desktop: second at 64 64
+desktop: resizable 1 0
 desktop: no windows left

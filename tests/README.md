@@ -38,6 +38,7 @@ Two optional files change what a test does:
   | `pixel X Y RRGGBB` | check the color on the screen at (X, Y), in hex |
   | `screenshot NAME` | save the screen as `build/TEST/NAME.png` |
   | `mouse_to X Y` | move the mouse pointer to (X, Y) on the screen |
+  | `reboot` | restart the machine on the same disk, so what the kernel saved is still there (its output carries on); with one in the script, a kernel's own `OS.Reboot` restarts it too |
   | `click X Y` | move there and click the left button |
   | `dclick X Y` | move there and double-click |
   | `drag X1 Y1 X2 Y2` | press the left button at (X1, Y1), move to (X2, Y2) and let go |

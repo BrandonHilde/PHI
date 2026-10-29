@@ -17,6 +17,8 @@ namespace Phi.Cli
     ///   click X Y         move there and click the left button
     ///   dclick X Y        move there and double-click
     ///   drag X1 Y1 X2 Y2  press the left button at (X1, Y1), move to (X2, Y2) and let go
+    ///   reboot            restart the machine on the same disk, so what the kernel saved is
+    ///                     still there (the serial output carries on from before)
     ///   anything else     sent to the QEMU monitor as-is, e.g. sendkey ret, mouse_move 10 -5,
     ///                     mouse_button 1
     ///
@@ -29,6 +31,9 @@ namespace Phi.Cli
     public static class InputScript
     {
         static readonly TimeSpan ExpectTimeout = TimeSpan.FromSeconds(10);
+
+        /// <summary>A line that restarts the machine, which QEMU has to be started ready for.</summary>
+        public static bool IsReboot(string line) => line.Trim() == "reboot";
 
         /// <summary>The most a single mouse_move goes along each axis; QEMU sends this much at once.</summary>
         const int MouseStep = 200;
@@ -131,6 +136,11 @@ namespace Phi.Cli
 
                     case "wait":
                         Delay(int.Parse(rest), cancel);
+                        break;
+
+                    case "reboot":
+                        Send("system_reset");
+                        mouseX = mouseY = null;   // the mouse driver starts again in the middle
                         break;
 
                     case "type":
