@@ -15,9 +15,10 @@ namespace Phi.Compiler.CodeGen
     /// Generates NASM source: 16-bit real mode for the Boot and Os units, 32-bit protected
     /// mode for the Kernel unit. Values are computed in eax. Class variables live at fixed
     /// labels; a method's parameters and variables live in its stack frame (ebp), so methods
-    /// can call themselves and be used from interrupt handlers. Library routines may change any
-    /// general-purpose register except ebp, so nothing is kept in registers between statements,
-    /// which also means every memory access really happens (as device memory needs).
+    /// can call themselves and be used from interrupt handlers. In 32-bit code a method's busiest
+    /// variables live in esi and edi instead (see "variables in registers"); library routines may
+    /// change any general-purpose register except ebp, so they're stored around those. Everything
+    /// else is read and written in memory each time (as device memory needs).
     /// </summary>
     public sealed class X86Generator
     {
@@ -272,8 +273,16 @@ namespace Phi.Compiler.CodeGen
                 Emit("cld");
             }
 
-            Frame frame = LayOutFrame(m);
+            // the variables used most go in registers
             currentMethod = m;
+            inRegisters.Clear();
+            List<VariableSymbol> chosen = bits32
+                ? VariablePlanner.Choose(m, VariableRegisters.Length, FitsRegister, RunsInRegisters)
+                : new List<VariableSymbol>();
+            Frame frame = LayOutFrame(m);
+            for (int i = 0; i < chosen.Count; i++) inRegisters.Add((chosen[i], VariableRegisters[i], chosen[i].Label));
+            bool keepsRegisters = inRegisters.Count > 0;
+
             resultSlots.Clear();
             frameSize = frame.LocalsSize;
             returnLabel = NewLabel("return");
@@ -282,19 +291,32 @@ namespace Phi.Compiler.CodeGen
             // the body first: the temporary space it needs decides the frame's size
             StringBuilder outer = code;
             code = new StringBuilder();
+            SetRegistersLive(keepsRegisters);
 
             foreach (Stmt s in m.Decl.Body) EmitStatement(s);
 
-            if (m.Decl.Result != null)
+            if (m.Decl.Result is Expr result)
             {
-                SourceComment(m.Decl.Result);
-                if (m.ReturnType.IsObject) EmitObjectResult(m.Decl.Result);
-                else if (m.ReturnType.IsWide) EmitWide(m.Decl.Result);   // in edx:eax
-                else if (m.ReturnType.IsFloat) EmitFloat(m.Decl.Result); // in st0
-                else EmitExpr(m.Decl.Result); // the result goes back in eax
+                SourceComment(result);
+                void EmitResult()
+                {
+                    if (m.ReturnType.IsObject) EmitObjectResult(result);
+                    else if (m.ReturnType.IsWide) EmitWide(result);   // in edx:eax
+                    else if (m.ReturnType.IsFloat) EmitFloat(result); // in st0
+                    else EmitExpr(result); // the result goes back in eax
+                }
+                if (OneRegister(m.ReturnType) && SafeValue(result)) EmitResult();
+                else Fenced(EmitResult);
             }
 
             if (returnUsed) Label(returnLabel); // return jumps here with the result in eax
+
+            // what's left only tidies up, and may use any register: the variables are done with
+            if (keepsRegisters)
+            {
+                SetRegistersLive(false);
+                Line(FenceStart);
+            }
 
             if (m.ReturnType.IsString && GrowResults)
             {
@@ -390,15 +412,36 @@ namespace Phi.Compiler.CodeGen
             }
 
             StringBuilder body = code;
-            code = outer;
             bool hasFrame = frameSize > 0 || m.Parameters.Count > 0 || m.ReturnType.IsString;
-            if (hasFrame) EmitPrologue(frame);
-            code.Append(body);
+            code = new StringBuilder();
+            if (hasFrame) EmitFrameStart(frame);
+            string start = code.ToString();
+            code = outer;
+            string bodyText = keepsRegisters ? CheckRegisterCode(m, body.ToString()) : body.ToString();
+
+            // callers keep variables in esi and edi, so a method that changes them (itself, or
+            // through anything but a method) saves them first, just below its frame, and gives them
+            // back at the end (an interrupt handler has saved every register already)
+            var saved = bits32 && !m.IsInterruptHandler
+                ? VariableRegisters.Where(r => MayChange(start + bodyText, r)).ToList()
+                : new List<string>();
+            if (hasFrame) EmitFrameSetup();
+            foreach (string register in saved) Emit($"push {register}                ; the caller's");
+            code.Append(start);
+            foreach (var (v, register, home) in inRegisters)
+                Emit(v.IsParameter ? $"mov {register}, [{home}]   ; {v.Name}" : $"xor {register}, {register}   ; {v.Name}");
+            code.Append(bodyText);
             if (hasFrame)
             {
+                for (int i = 0; i < saved.Count; i++) Emit($"mov {saved[i]}, [ebp - {frameSize + 4 * (i + 1)}]");
                 Emit("mov esp, ebp");
                 Emit("pop ebp");
             }
+            else
+            {
+                for (int i = saved.Count - 1; i >= 0; i--) Emit($"pop {saved[i]}");
+            }
+            inRegisters.Clear();
 
             if (frameSize > MaxFrame)
                 diagnostics.Error(file, m.Decl.Span, $"{m.Decl.Name} needs {frameSize} bytes of stack for its variables (at most {MaxFrame}); declare large buffers in the class instead");
@@ -433,6 +476,197 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>Space for class code's temporary values, which has no frame.</summary>
         readonly List<(string Label, int Size)> staticTemps = new();
+
+        // ================================================================ variables in registers
+
+        /// <summary>
+        /// The registers a method's variables may live in (32-bit code only). A method that uses
+        /// them saves them first and puts them back before it returns, so they're kept across calls
+        /// to other methods. Everything else (library routines, asm blocks, str copies) may change
+        /// them, so a statement that needs one of those runs with the variables in memory: they're
+        /// stored to their places in the frame before it, and loaded again after it.
+        /// </summary>
+        static readonly string[] VariableRegisters = { "esi", "edi" };
+
+        /// <summary>The method's variables in registers, with their places in the frame.</summary>
+        readonly List<(VariableSymbol Variable, string Register, string Home)> inRegisters = new();
+
+        /// <summary>True while the variables are in their registers (false inside a fence).</summary>
+        bool registersLive;
+
+        // Generated code marks: a register variable is written ‹esi› (so a stray esi is easy to
+        // find), a fence's code sits between the two fence marks, and while the variables are in
+        // registers their labels are «name», which nothing may use as memory. All are taken out
+        // (or checked for) when the method is done.
+        const string FenceStart = "    ; «memory»";
+        const string FenceEnd = "    ; «registers»";
+
+        /// <summary>A variable's register while it's in one, or null.</summary>
+        string? RegisterOf(VariableSymbol v)
+        {
+            if (!registersLive) return null;
+            foreach (var (variable, register, _) in inRegisters)
+                if (variable == v) return $"‹{register}›";
+            return null;
+        }
+
+        /// <summary>A 32-bit variable as an instruction's operand: its register, or its memory.</summary>
+        string VariableOperand(VariableSymbol v) => RegisterOf(v) ?? $"dword [{v.Label}]";
+
+        /// <summary>The variables in registers or in memory, by what their labels say.</summary>
+        void SetRegistersLive(bool live)
+        {
+            registersLive = live;
+            foreach (var (v, _, home) in inRegisters) v.Label = live ? $"«{v.Name}»" : home;
+        }
+
+        void StoreRegisters()
+        {
+            foreach (var (v, register, home) in inRegisters) Emit($"mov [{home}], {register}   ; {v.Name}");
+        }
+
+        void LoadRegisters()
+        {
+            foreach (var (v, register, home) in inRegisters) Emit($"mov {register}, [{home}]   ; {v.Name}");
+        }
+
+        /// <summary>Runs code that may change any register with the variables in memory.</summary>
+        void Fenced(Action emit)
+        {
+            if (!registersLive)
+            {
+                emit();
+                return;
+            }
+            Line(FenceStart);
+            StoreRegisters();
+            SetRegistersLive(false);
+            emit();
+            LoadRegisters();
+            SetRegistersLive(true);
+            Line(FenceEnd);
+        }
+
+        /// <summary>A variable that can live in a register: a 32-bit number, enum or pointer.</summary>
+        bool FitsRegister(VariableSymbol v) =>
+            v.Type.IsNumeric && StorageType(v.Type).ElementSize == 4 && v.Ownership == Ownership.None && v.Decl.AtAddress == null;
+
+        /// <summary>A value that's worked on in eax alone: a number, bln, chr, enum or pointer.</summary>
+        static bool OneRegister(PhiType t) => t.IsNumeric;
+
+        /// <summary>
+        /// True when a statement can run with the variables in registers: its code only uses eax,
+        /// ebx, ecx and edx, and calls nothing but methods (which keep esi and edi). An if, while
+        /// or when whose test is like that runs its body with them too, statement by statement.
+        /// Anything else is fenced.
+        /// </summary>
+        bool RunsInRegisters(Stmt s) => s switch
+        {
+            UnsafeStmt => true,
+            IfStmt i => SafeValue(i.Condition),
+            WhileStmt w => (w.Init == null || SafeStatement(w.Init)) && SafeValue(w.Condition) && (w.Step == null || SafeStatement(w.Step)),
+            WhenStmt w => OneRegister(w.Subject.Type) && !(w.Subject.Type.IsPointer && w.Subject.Type.Pointee == PhiType.U8)
+                          && SafeValue(w.Subject) && w.Branches.All(b => b.Values.All(SafeValue)),
+            _ => SafeStatement(s),
+        };
+
+        bool SafeStatement(Stmt s) => s switch
+        {
+            ConstDecl or BreakStmt or ContinueStmt => true,
+            VarDecl { Symbol.NeedsInitCode: false } => true,
+            VarDecl { IsNew: false, Symbol: VariableSymbol v } d => OneRegister(v.Type) && d.Values.Count <= 1 && d.Values.All(SafeValue),
+            AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value),
+            CallStmt c => SafeCall(c.Resolved, c.Arguments)
+                          && (c.ResultTarget == null || OneRegister(c.ResultTarget.Type) && SafeValue(c.ResultTarget)),
+            ReturnStmt r => r.Value == null || OneRegister(r.Value.Type) && currentMethod is { ReturnType.IsNumeric: true } && SafeValue(r.Value),
+            OutStmt o => SafeValue(o.Port) && SafeValue(o.Value),
+            _ => false,
+        };
+
+        bool SafeValue(Expr e) => e switch
+        {
+            NumberExpr or BoolExpr or SizeofExpr => true,
+            _ when OneRegister(e.Type) && ConstantFolder.Evaluate(e) != null => true,
+            NameExpr { Call: CallExpr c } => SafeCall(c.Resolved, c.Arguments),
+            MemberExpr { Call: CallExpr c } => SafeCall(c.Resolved, c.Arguments),
+            CallExpr c => SafeCall(c.Resolved, c.Arguments),
+            NameExpr { Symbol: ConstantSymbol } => true,
+            NameExpr { Symbol: LengthSymbol { Count: int } } => true,
+            MemberExpr { Count: int } => true,
+            NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol } => OneRegister(e.Type),
+            MemberExpr m => OneRegister(m.Type) && !m.FilledLength && !m.TextLength && SafeRoot(m.Target),
+            IndexExpr ix => OneRegister(ix.Type) && !ix.Target.Type.IsString && SafeRoot(ix.Target) && SafeValue(ix.Index),
+            AddrExpr a => a.CodeLabel != null || !a.OfObject && !a.Operand.Type.IsHeapText && SafeRoot(a.Operand),
+            CastExpr c => OneRegister(c.Type) && OneRegister(c.Operand.Type) && SafeValue(c.Operand),
+            InExpr i => SafeValue(i.Port),
+            UnaryExpr u => OneRegister(u.Operand.Type) && SafeValue(u.Operand),
+            BinaryExpr b => b.ObjectCompare == null && !b.ArrayCompare && OneRegister(b.Left.Type) && OneRegister(b.Right.Type)
+                            && SafeValue(b.Left) && SafeValue(b.Right),
+            _ => false,
+        };
+
+        /// <summary>What a field or element is reached through: a plain variable, field or element, or an address.</summary>
+        bool SafeRoot(Expr e) => e switch
+        {
+            _ when e.Type.IsString => false,
+            _ when e.Type.IsPointer => SafeValue(e),
+            // an object is at the address its variable, field or element holds
+            _ when e.Type.IsObject => e is NameExpr { Call: null, Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol }
+                                      || e is MemberExpr { Call: null } field && SafeRoot(field.Target)
+                                      || e is IndexExpr element && SafeRoot(element.Target) && SafeValue(element.Index),
+            NameExpr { Symbol: VariableSymbol v } => !v.GrowingArray && !v.GrowingElements && !v.Type.TextTable,
+            NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } => true,
+            MemberExpr m => m.Call == null && m.Count == null && !m.FilledLength && !m.TextLength && SafeRoot(m.Target),
+            IndexExpr ix => SafeRoot(ix.Target) && SafeValue(ix.Index),
+            _ => false,
+        };
+
+        /// <summary>A call to a method whose parameters and result are each one register.</summary>
+        bool SafeCall(object? callee, List<Expr> arguments) =>
+            callee is MethodSymbol method
+            && (method.ReturnType.Kind == TypeKind.Void || OneRegister(method.ReturnType))
+            && method.Parameters.All(p => OneRegister(p.Type) && !p.TextRef)
+            && arguments.All(SafeValue)
+            && method.Parameters.Skip(arguments.Count).All(p => p.Decl.Values.All(SafeValue));
+
+        /// <summary>
+        /// Checks a method's code: outside fences, nothing may use esi or edi except as the
+        /// variables they hold, and no variable in a register may be read from memory.
+        /// </summary>
+        string CheckRegisterCode(MethodSymbol m, string body)
+        {
+            var kept = new StringBuilder();
+            bool fenced = false;
+            foreach (string line in body.Split('\n'))
+            {
+                string text = line.TrimEnd('\r');
+                if (text == FenceStart) { fenced = true; continue; }
+                if (text == FenceEnd) { fenced = false; continue; }
+                if (!fenced && !text.Contains("it stops here") && System.Text.RegularExpressions.Regex.IsMatch(WithoutComment(text), StrayRegister))
+                    throw new InvalidOperationException($"{m.Name}: generated code changes a variable's register: {text.Trim()}");
+                if (text.Contains('«'))
+                    throw new InvalidOperationException($"{m.Name}: generated code reads a variable in a register from memory: {text.Trim()}");
+                kept.Append(text.Replace("‹", "").Replace("›", "")).Append('\n');
+            }
+            return kept.ToString();
+        }
+
+        static string WithoutComment(string line) => line.IndexOf(';') is int at and >= 0 ? line[..at] : line;
+
+        /// <summary>
+        /// True when a method's code may change the register: it names it, uses an instruction
+        /// that changes it by itself, or calls something other than a method (a library routine,
+        /// an asm block, an address), which may change any register.
+        /// </summary>
+        static bool MayChange(string code, string register)
+        {
+            string itself = register == "esi" ? "movs|lods|cmps" : "movs|stos|cmps|scas";
+            var pattern = new System.Text.RegularExpressions.Regex($@"\b{register}\b|\b({itself})[bwd]\b|\bcall (?!M_)");
+            return code.Split('\n').Any(line => pattern.IsMatch(WithoutComment(line)));
+        }
+
+        /// <summary>esi or edi named outside a ‹›, an instruction that uses them itself, or a library routine.</summary>
+        const string StrayRegister = @"(?<!‹)\b(esi|edi)\b|\b(rep|repe|repne|movs[bwd]|stos[bwd]|lods[bwd]|cmps[bwd]|scas[bwd]|pushad|popad)\b|\bcall phi_";
 
         sealed class Frame
         {
@@ -500,13 +734,16 @@ namespace Phi.Compiler.CodeGen
             return frame;
         }
 
-        void EmitPrologue(Frame frame)
+        void EmitFrameSetup()
         {
             Emit("push ebp");
             // in 16-bit code only sp is the stack pointer; the top of esp may hold anything
             Emit(bits32 ? "mov ebp, esp" : "movzx ebp, sp");
             if (frameSize > 0) Emit($"sub esp, {frameSize}");
+        }
 
+        void EmitFrameStart(Frame frame)
+        {
             // variables start at zero each call, as they always have
             int locals = frame.LocalsSize;
             if (locals is > 0 and <= 16)
@@ -641,10 +878,17 @@ namespace Phi.Compiler.CodeGen
         {
             public string Next = "", End = "";
             public bool NextUsed;
+            public bool RegistersLive;  // a break or continue from a fence inside loads them again
         }
         readonly List<LoopLabels> loops = new();
 
         void EmitStatement(Stmt stmt)
+        {
+            if (registersLive && !RunsInRegisters(stmt)) Fenced(() => EmitStatementCode(stmt));
+            else EmitStatementCode(stmt);
+        }
+
+        void EmitStatementCode(Stmt stmt)
         {
             if (stmt is not (VarDecl { Symbol.NeedsInitCode: false } or ConstDecl or UnsafeStmt)) SourceComment(stmt);
 
@@ -791,7 +1035,7 @@ namespace Phi.Compiler.CodeGen
 
                     string top = NewLabel("while");
                     string end = NewLabel("endwhile");
-                    var labels = new LoopLabels { Next = NewLabel("next"), End = end };
+                    var labels = new LoopLabels { Next = NewLabel("next"), End = end, RegistersLive = registersLive };
 
                     Label(top);
                     EmitBranch(loop.Condition, jumpIf: false, end);
@@ -811,7 +1055,7 @@ namespace Phi.Compiler.CodeGen
                     string count = each.Index.Symbol!.Label;
                     string top = NewLabel("each");
                     string end = NewLabel("endeach");
-                    var labels = new LoopLabels { Next = NewLabel("nexteach"), End = end };
+                    var labels = new LoopLabels { Next = NewLabel("nexteach"), End = end, RegistersLive = registersLive };
                     Emit($"mov dword [{count}], 0");
                     Label(top);
                     EmitArrayCount(each.Array);
@@ -839,10 +1083,12 @@ namespace Phi.Compiler.CodeGen
                     break;   // (an error was reported)
 
                 case BreakStmt:
+                    if (loops[^1].RegistersLive && !registersLive) LoadRegisters();  // out of a fence
                     Emit($"jmp {loops[^1].End}");
                     break;
 
                 case ContinueStmt:
+                    if (loops[^1].RegistersLive && !registersLive) LoadRegisters();
                     loops[^1].NextUsed = true;
                     Emit($"jmp {loops[^1].Next}");
                     break;
@@ -1062,6 +1308,13 @@ namespace Phi.Compiler.CodeGen
                         if (p.TextRef)
                         {
                             PushTextRef(value!, writeBacks);
+                            pushedBytes += 4;
+                            continue;
+                        }
+                        if (bits32 && !p.Type.IsString && value != null && DirectOperand(value, constantOnly: false) is string asIs)
+                        {
+                            // a constant or a 32-bit variable is pushed as it is
+                            Emit(asIs.Contains('[') || asIs.Contains('‹') ? $"push {asIs}" : $"push dword {asIs}");
                             pushedBytes += 4;
                             continue;
                         }
@@ -1359,6 +1612,10 @@ namespace Phi.Compiler.CodeGen
         /// Where a value lives. Either a fixed address (Label + Offset), or Label + ebx + Offset
         /// when part of the address is computed, or, for memory reached through a pointer, a
         /// linear address in ebx (+ Offset) that may be anywhere in the first megabyte.
+        ///
+        /// With variables in registers (32-bit code) a computed place can be reached through them
+        /// as they are: Base instead of ebx for the address, and Index times Scale added to it
+        /// instead of ebx, so no code is needed to work the address out.
         /// </summary>
         sealed class Place
         {
@@ -1366,6 +1623,19 @@ namespace Phi.Compiler.CodeGen
             public int Offset;
             public bool Computed;   // ebx holds part of the address
             public bool Linear;     // ebx holds a linear address, not an offset from Label
+            public string? Register; // a variable kept in a register: the value is there, not in memory
+            public string Base = "ebx";
+            public string? Index;
+            public int Scale = 1;
+
+            public Place Plus(int bytes) => new()
+            {
+                Label = Label, Offset = Offset + bytes, Computed = Computed, Linear = Linear,
+                Register = Register, Base = Base, Index = Index, Scale = Scale,
+            };
+
+            /// <summary>What's added for the computed part: ebx, or a register variable times its scale.</summary>
+            public string Added => Index == null ? "ebx" : Scale == 1 ? Index : $"{Index}*{Scale}";
         }
 
         Place EmitPlace(Expr e)
@@ -1373,28 +1643,41 @@ namespace Phi.Compiler.CodeGen
             switch (e)
             {
                 case NameExpr { Symbol: VariableSymbol v }:
-                    return new Place { Label = v.Label };
+                    return RegisterOf(v) is string register ? new Place { Register = register } : new Place { Label = v.Label };
 
                 case NameExpr { Symbol: FieldPathSymbol f }:
                     return new Place { Label = f.Root.Label, Offset = f.Offset };
 
                 case NameExpr { Symbol: SelfFieldSymbol s }:
                     // through the struct the method was called on
-                    Emit($"mov ebx, dword [{s.Self.Label}]");
+                    Emit($"mov ebx, {VariableOperand(s.Self)}");
                     return new Place { Computed = true, Linear = true, Offset = s.Offset };
 
                 case NameExpr { Symbol: PathSymbol path }:
                 {
-                    // through objects: read the address each one is at, then go on from there
-                    Emit($"mov ebx, dword {Operand(new Place { Label = path.Root.Label, Offset = path.BaseOffset })}");
+                    // through objects: read the address each one is at, then go on from there (a
+                    // pointer in a register is the first address already)
+                    if (RegisterOf(path.Root) is string rootRegister && path.BaseOffset == 0)
+                    {
+                        if (path.Hops.Count == 1) return new Place { Computed = true, Linear = true, Base = rootRegister, Offset = path.Hops[0] };
+                        Emit($"mov ebx, {rootRegister}");
+                    }
+                    else Emit($"mov ebx, dword {Operand(new Place { Label = path.Root.Label, Offset = path.BaseOffset })}");
                     for (int i = 0; i < path.Hops.Count - 1; i++)
                         Emit($"mov ebx, dword {Operand(new Place { Computed = true, Linear = true, Offset = path.Hops[i] })}");
                     return new Place { Computed = true, Linear = true, Offset = path.Hops[^1] };
                 }
 
                 case MemberExpr m when m.Target.Type.IsObject || m.Target.Type.IsPointer:
-                    EmitExpr(m.Target); // where the object (or the struct a pointer points at) is
-                    Emit("mov ebx, eax");
+                    // where the object (or the struct a pointer points at) is
+                    if (HeldIn(m.Target) is string held)
+                        return new Place { Computed = true, Linear = true, Base = held, Offset = m.Field!.Offset };
+                    if (bits32 && TryLoadSimple(m.Target, "ebx", dryRun: true)) TryLoadSimple(m.Target, "ebx", dryRun: false);
+                    else
+                    {
+                        EmitExpr(m.Target);
+                        Emit("mov ebx, eax");
+                    }
                     return new Place { Computed = true, Linear = true, Offset = m.Field!.Offset };
 
                 case MemberExpr m:
@@ -1500,6 +1783,40 @@ namespace Phi.Compiler.CodeGen
             // through a pointer, or the characters of a str that isn't a plain variable
             bool viaValue = target.IsPointer || (target.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol });
 
+            // p:i with the index in a register variable (or a constant), and the pointer in one or in
+            // memory: [p + i*size] as it is, with the pointer loaded into ebx at most
+            if (PointerElementKeepsEax(ix))
+            {
+                string address = HeldIn(ix.Target) ?? "ebx";
+                if (address == "ebx") TryLoadSimple(ix.Target, "ebx", dryRun: false);
+                return constant != null
+                    ? new Place { Computed = true, Linear = true, Base = address, Offset = (int)constant.Value * size }
+                    : new Place { Computed = true, Linear = true, Base = address, Index = HeldIn(ix.Index), Scale = size };
+            }
+
+            // the same with a pointer that has to be worked out (map:0.keys:place)
+            if (bits32 && target.IsPointer && IndexAsIs(ix))
+            {
+                // a pointer kept in a field or an element is loaded straight into ebx
+                if (PlaceKeepsEax(ix.Target)) Emit($"mov ebx, dword {Operand(PlaceKeepingEax(ix.Target))}");
+                else
+                {
+                    EmitExpr(ix.Target);
+                    Emit("mov ebx, eax");
+                }
+                return constant != null
+                    ? new Place { Computed = true, Linear = true, Offset = (int)constant.Value * size }
+                    : new Place { Computed = true, Linear = true, Index = HeldIn(ix.Index), Scale = size };
+            }
+
+            // the pointer in a register variable, and an index worked out: one lea
+            if (target.IsPointer && constant == null && size is 1 or 2 or 4 or 8 && HeldIn(ix.Target) is string pointer)
+            {
+                EmitExpr(ix.Index);
+                Emit($"lea ebx, [{pointer} + eax*{size}]");
+                return new Place { Computed = true, Linear = true };
+            }
+
             // p:i with a pointer and an index in variables: one scaled lea, nothing on the stack
             if (target.IsPointer && constant == null && size is 1 or 2 or 4 or 8
                 && TryLoadSimple(ix.Target, "ebx", dryRun: true) && TryLoadSimple(ix.Index, "eax", dryRun: true))
@@ -1545,6 +1862,16 @@ namespace Phi.Compiler.CodeGen
             if (constant != null)
             {
                 p.Offset += (int)constant.Value * size;
+                return p;
+            }
+
+            // the index in a register variable: [array + i*size], once it's checked
+            if (!p.Computed && size is 1 or 2 or 4 or 8 && HeldIn(ix.Index) is string index)
+            {
+                if (ix.CheckLimit is int checkedLimit && unsafeDepth == 0) EmitIndexCheck(ix, "jb", checkedLimit.ToString(), index);
+                p.Computed = true;
+                p.Index = index;
+                p.Scale = size;
                 return p;
             }
 
@@ -1669,12 +1996,12 @@ namespace Phi.Compiler.CodeGen
             Label(end);
         }
 
-        /// <summary>Stops on an index error unless eax passes the unsigned jump against limit.</summary>
-        void EmitIndexCheck(Node at, string jump, string limit)
+        /// <summary>Stops on an index error unless the index (in eax) passes the unsigned jump against limit.</summary>
+        void EmitIndexCheck(Node at, string jump, string limit, string index = "eax")
         {
             Need("phi_index_error");
             string ok = NewLabel("inbounds");
-            Emit($"cmp eax, {limit}");
+            Emit($"cmp {index}, {limit}");
             Emit($"{jump} {ok}                ; unsigned, so negative indexes fail too");
             EmitIndexError(at);
             Label(ok);
@@ -1683,8 +2010,8 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Stops with an index error naming the line and file of a node.</summary>
         void EmitIndexError(Node at)
         {
-            Emit($"mov eax, {LineOf(at)}");
-            Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}");
+            Emit($"mov eax, {LineOf(at)}   ; it stops here, so eax is free");
+            Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
             Emit("jmp phi_index_error");
         }
 
@@ -1890,12 +2217,13 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         string Operand(Place p)
         {
+            if (p.Register != null) return p.Register;
             string offset = p.Offset == 0 ? "" : p.Offset > 0 ? $" + {p.Offset}" : $" - {-p.Offset}";
 
             if (!p.Computed) return $"[{p.Label}{offset}]";
-            if (!p.Linear) return $"[{p.Label} + ebx{offset}]";
+            if (!p.Linear) return $"[{p.Label} + {p.Added}{offset}]";
 
-            if (bits32) return $"[ebx{offset}]"; // memory is flat
+            if (bits32) return p.Index == null ? $"[{p.Base}{offset}]" : $"[{p.Base} + {p.Added}{offset}]"; // memory is flat
 
             if (p.Offset != 0) Emit($"add ebx, {p.Offset}");
             Emit("mov ecx, ebx");
@@ -1960,14 +2288,28 @@ namespace Phi.Compiler.CodeGen
 
             if (!target.Type.IsString)
             {
-                // x++, x-- and x++ 5 on a variable: change it where it is
-                if (value is BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract } step
-                    && ReferenceEquals(step.Left, target) && target is NameExpr && IsStaticPlace(target)
-                    && ConstantFolder.Evaluate(step.Right) is long amount)
+                // x++, x-- 5, x is x + y, a:i is a:i ^ t: change it where it is (the place is worked out
+                // after the amount, so the amount mustn't call anything that could change it)
+                if (value is BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor } step
+                    && (ReferenceEquals(step.Left, target) || SameValue(step.Left, target)) && PlaceKeepsEax(target) && !HasCall(step.Right))
                 {
-                    string size = StorageType(target.Type).ElementSize switch { 1 => "byte", 2 => "word", _ => "dword" };
-                    string op = step.Op == BinaryOp.Add ? "add" : "sub";
-                    Emit($"{op} {size} {Operand(EmitPlace(target))}, {(int)amount}");
+                    int bytes = StorageType(target.Type).ElementSize;
+                    string size = bytes switch { 1 => "byte", 2 => "word", _ => "dword" };
+                    string op = step.Op switch
+                    {
+                        BinaryOp.Add => "add", BinaryOp.Subtract => "sub", BinaryOp.BitAnd => "and", BinaryOp.BitOr => "or", _ => "xor",
+                    };
+                    string? amount = ConstantFolder.Evaluate(step.Right) is long k ? ((int)k).ToString() : bytes == 4 ? HeldIn(step.Right) : null;
+                    if (amount == null) EmitExpr(step.Right);
+                    string operand = Operand(PlaceKeepingEax(target));
+                    Emit($"{op} {size} {operand}, {amount ?? (bytes switch { 1 => "al", 2 => "ax", _ => "eax" })}");
+                    return;
+                }
+
+                // into a register variable: straight there, when the value needs no other registers
+                if (HeldIn(target) is string register && TryLoadSimple(value, register, dryRun: true))
+                {
+                    TryLoadSimple(value, register, dryRun: false);
                     return;
                 }
 
@@ -1990,14 +2332,71 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Stores eax into a number variable, field or element.</summary>
         void EmitStoreEax(Expr target)
         {
-            bool needsCode = !IsStaticPlace(target); // computing the address uses eax
+            bool needsCode = !PlaceKeepsEax(target); // computing the address uses eax
 
             if (needsCode) Emit("push eax");
-            Place p = EmitPlace(target);
+            Place p = needsCode ? EmitPlace(target) : PlaceKeepingEax(target);
             string operand = Operand(p);
             if (needsCode) Emit("pop eax");
             Emit(StoreInstruction(target.Type, operand));
         }
+
+        /// <summary>The register a variable is in, for an expression that's only that variable.</summary>
+        string? HeldIn(Expr e) => e is NameExpr { Symbol: VariableSymbol v } ? RegisterOf(v) : null;
+
+        /// <summary>
+        /// True when working out where the place is leaves eax alone: it's fixed, or it's reached
+        /// through register variables, constants and at most one pointer loaded into ebx.
+        /// </summary>
+        bool PlaceKeepsEax(Expr e) => e switch
+        {
+            _ when IsStaticPlace(e) => true,
+            NameExpr { Symbol: SelfFieldSymbol or PathSymbol } => true,
+            MemberExpr m when m.Target.Type.IsObject || m.Target.Type.IsPointer =>
+                HeldIn(m.Target) != null || bits32 && TryLoadSimple(m.Target, "ebx", dryRun: true),
+            IndexExpr ix when ix.Target.Type.IsPointer => PointerElementKeepsEax(ix),
+            IndexExpr ix => HeldIn(ix.Index) != null && ElementSize(ix) is 1 or 2 or 4 or 8 && !ix.Target.Type.Filled && !ix.Target.Type.Open
+                            && !ix.Target.Type.IsString && !ix.Target.Type.TextTable
+                            && ix.Target is NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false, GrowingElements: false, GrowingArray: false } or FieldPathSymbol },
+            _ => false,
+        };
+
+        /// <summary>p:i reached as [p + i*size], with i a register variable or a constant (see EmitIndexPlace).</summary>
+        bool PointerElementKeepsEax(IndexExpr ix) =>
+            bits32 && ix.Target.Type.IsPointer && IndexAsIs(ix)
+            && (HeldIn(ix.Target) != null || TryLoadSimple(ix.Target, "ebx", dryRun: true));
+
+        /// <summary>An index that's part of the address as it is: a constant, or a register variable times 1, 2, 4 or 8.</summary>
+        bool IndexAsIs(IndexExpr ix) =>
+            ConstantFolder.Evaluate(ix.Index) != null || HeldIn(ix.Index) != null && ElementSize(ix) is 1 or 2 or 4 or 8;
+
+        static int ElementSize(IndexExpr ix) =>
+            ix.Target.Type.IsString ? 1 : ix.Target.Type.IsPointer ? ix.Target.Type.Pointee!.ElementSize : ix.Target.Type.ElementSize;
+
+        /// <summary>EmitPlace for a place that leaves eax alone, checking that it does.</summary>
+        Place PlaceKeepingEax(Expr target)
+        {
+            int start = code.Length;
+            Place p = EmitPlace(target);
+            string emitted = code.ToString(start, code.Length - start);
+            foreach (string line in emitted.Split('\n'))
+                if (!line.Contains("it stops here") && System.Text.RegularExpressions.Regex.IsMatch(WithoutComment(line), @"\b(eax|ax|al|ah)\b"))
+                    throw new InvalidOperationException($"working out a place changed eax: {line.Trim()}");
+            return p;
+        }
+
+        /// <summary>True when two expressions are the same variable, field or element (so x is x + 1 can add in place).</summary>
+        static bool SameValue(Expr a, Expr b) => (a, b) switch
+        {
+            (NameExpr { Call: null, Symbol: VariableSymbol x }, NameExpr { Call: null, Symbol: VariableSymbol y }) => x == y,
+            (IndexExpr x, IndexExpr y) => x.Type == y.Type && SameValue(x.Target, y.Target) && SameValue(x.Index, y.Index),
+            (MemberExpr { Call: null } x, MemberExpr { Call: null } y) => x.Field != null && x.Field == y.Field && SameValue(x.Target, y.Target),
+            (NumberExpr x, NumberExpr y) => x.Value == y.Value,
+            _ => false,
+        };
+
+        /// <summary>True when working out the expression may call something (which could change memory).</summary>
+        static bool HasCall(Expr e) => SyntaxWalker.Nodes(e).Any(n => n is CallExpr or NewExpr or NameExpr { Call: not null } or MemberExpr { Call: not null });
 
         /// <summary>True when the place's address is fixed, so computing it emits no code.</summary>
         static bool IsStaticPlace(Expr e) => e switch
@@ -2383,8 +2782,8 @@ namespace Phi.Compiler.CodeGen
             Place p = EmitPlace(e);
             string offset = p.Offset == 0 ? "" : $" + {p.Offset}";
             if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
-            else if (!p.Linear) Emit($"lea eax, [{p.Label} + ebx{offset}]");
-            else Emit($"lea eax, [ebx{offset}]");
+            else if (bits32 || !p.Linear) Emit($"lea eax, {Operand(p)}");
+            else Emit($"lea eax, [ebx{offset}]");   // (Operand would reach it through fs)
         }
 
         void EmitArithmetic(BinaryExpr binary)
@@ -2475,7 +2874,7 @@ namespace Phi.Compiler.CodeGen
             return e switch
             {
                 NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } when StorageType(v.Type).ElementSize == 4 && !v.Type.IsFloat
-                    => $"dword [{v.Label}]",
+                    => VariableOperand(v),
                 NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } when StorageType(f.Type).ElementSize == 4 && !f.Type.IsFloat
                     => f.Offset == 0 ? $"dword [{f.Root.Label}]" : $"dword [{f.Root.Label} + {f.Offset}]",
                 _ => null,
@@ -2498,6 +2897,14 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
+            if (TryLoadSimple(b.Left, "eax", dryRun: true))
+            {
+                EmitExpr(b.Right);
+                Emit("mov ecx, eax");
+                TryLoadSimple(b.Left, "eax", dryRun: false);
+                return;
+            }
+
             EmitExpr(b.Right);
             Emit("push eax");
             EmitExpr(b.Left);
@@ -2514,7 +2921,12 @@ namespace Phi.Compiler.CodeGen
                     StringExpr s => $"mov {register}, {StringLabel(s.Value)}",
                     NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false, TextRef: false } v } =>
                         InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : $"mov {register}, {v.Label}",
-                    NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } => LoadInstruction(v.Type, register, $"[{v.Label}]"),
+                    NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } =>
+                        RegisterOf(v) is string held ? $"mov {register}, {held}" : LoadInstruction(v.Type, register, $"[{v.Label}]"),
+                    NameExpr { Call: null, Symbol: VariableSymbol { Type.IsObject: true } v } => $"mov {register}, dword [{v.Label}]",
+                    AddrExpr { CodeLabel: string code } => $"mov {register}, {code}",
+                    AddrExpr { OfObject: false, Operand: NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false, Type.Open: false, Type.IsHeapText: false } v } } =>
+                        InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : $"mov {register}, {v.Label}",
                     NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } =>
                         LoadInstruction(f.Type, register, f.Offset == 0 ? $"[{f.Root.Label}]" : $"[{f.Root.Label} + {f.Offset}]"),
                     _ => null,
@@ -2629,7 +3041,13 @@ namespace Phi.Compiler.CodeGen
                 case BinaryExpr { IsComparison: true } cmp:
                 {
                     bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
-                    if (DirectOperand(cmp.Right, constantOnly: false) is string right)
+                    string? leftAsIs = HeldIn(cmp.Left) ?? (ConstantFolder.Evaluate(cmp.Left) == null ? DirectOperand(cmp.Left, constantOnly: false) : null);
+                    string? rightAsIs = DirectOperand(cmp.Right, constantOnly: false);
+                    if (leftAsIs != null && rightAsIs != null && !(leftAsIs.Contains('[') && rightAsIs.Contains('[')))
+                    {
+                        Emit($"cmp {leftAsIs}, {rightAsIs}");
+                    }
+                    else if (DirectOperand(cmp.Right, constantOnly: false) is string right)
                     {
                         EmitExpr(cmp.Left);
                         Emit($"cmp eax, {right}");
@@ -3040,7 +3458,7 @@ namespace Phi.Compiler.CodeGen
             // a variable, field or element: its two halves
             Place place = EmitPlace(e);
             Emit($"mov eax, dword {Operand(place)}");
-            Emit($"mov edx, dword {Operand(new Place { Label = place.Label, Offset = place.Offset + 4, Computed = place.Computed, Linear = place.Linear })}");
+            Emit($"mov edx, dword {Operand(place.Plus(4))}");
         }
 
         void CallWide(string routine)
@@ -3069,7 +3487,7 @@ namespace Phi.Compiler.CodeGen
             Emit("pop eax");
             Emit("pop edx");
             Emit($"mov dword {Operand(place)}, eax");
-            Emit($"mov dword {Operand(new Place { Label = place.Label, Offset = place.Offset + 4, Computed = place.Computed, Linear = place.Linear })}, edx");
+            Emit($"mov dword {Operand(place.Plus(4))}, edx");
         }
 
         /// <summary>eax = 1 when a comparison of two 64-bit values holds, 0 when it doesn't.</summary>

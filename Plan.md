@@ -1247,8 +1247,31 @@ S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
   comparison is used as the instruction's operand (`cmp eax, 32`, `add eax, dword [x]`)
   instead of going through `ecx` or the stack. Every benchmark got faster, by 5% to 21%:
   X25519 14%, AES-GCM 19%, the synthesizer 21%, a heap allocation 10%.
+- [x] (3, second part) A method's two busiest variables live in `esi` and `edi` across
+  statements (32-bit code). [VariablePlanner.cs](Compiler/Phi.Compiler/CodeGen/VariablePlanner.cs)
+  picks them, with nothing in it about the CPU: a use counts 8 times more for each loop
+  around it, and a variable only gets a register when that beats saving it and the fences
+  it crosses. Only 32-bit numbers, enums and pointers go in registers, and not when they're
+  `volatile`, placed `at` an address, have their address taken, or are a `while each`'s;
+  class variables always stay in memory. A statement that uses a library routine, an
+  `asm.` block, text, floats, 64-bit numbers or objects is *fenced* (the variables are
+  stored to the frame before it and loaded after), and the generator checks its own output
+  for a stray `esi` or `edi` outside a fence, or a register variable read from memory.
+  Within a statement, places use the registers as they are (`[ebx + esi*4]`,
+  `add dword [ebx + esi*4], eax` for `row:j is row:j + ...`), stores skip push and pop
+  when the address leaves `eax` alone, compares and pushed arguments use variables and
+  constants as they are. Against the counts after the first part: X25519 58% faster
+  (39.3M, 2.8 times faster than before S6), ChaCha20 21%, PBKDF2 16%, AES-GCM 13%, map set
+  30%, heap alloc 21%, sorting 22%, `line` 11%. Nothing got slower.
+  - Differs from the plan: the benchmarks count instructions, and a variable in memory is
+    already one instruction as an operand, so registers alone made things 0-8% *slower*
+    (saving them costs instructions). The gain came from what registers let the generator
+    leave out, so the register work and the work within a statement went in together.
+  - Every method that may change `esi` or `edi` saves them (not only ones that use them
+    for variables): `Draw.FillRect` calls `asm.DrawFillRow`, which changes `edi`, under
+    `FillCircle`'s loop. They're saved just below the frame, so arguments stay where they were.
+- [ ] (3, next) a `while`'s test at the bottom, and maybe `ebx` as a third register
 - [ ] (2) the backend interface
-- [ ] (3) registers for a method's variables across statements
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range
 

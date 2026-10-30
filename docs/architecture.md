@@ -83,9 +83,17 @@ everything the generator needs:
 unit, in 16-bit or 32-bit code. It is deliberately simple:
 
 - An expression's value ends up in `eax`; the right side of a binary operation in `ecx`.
-- Nothing is kept in registers between statements, so library routines may change any
-  general-purpose register, and every read and write really happens (which device memory
-  needs).
+- In 32-bit code, a method keeps up to two of its most used variables in `esi` and `edi`
+  (32-bit numbers and pointers that aren't `volatile` and whose address isn't taken; class
+  variables always stay in memory, since interrupt handlers share them). They're chosen
+  by [VariablePlanner.cs](../Compiler/Phi.Compiler/CodeGen/VariablePlanner.cs): a use inside
+  a loop counts 8 times one outside it. A method that changes `esi` or `edi` saves them
+  first, so they're kept across calls to methods. Library routines and `asm.` blocks may
+  change any register, so a statement that needs one (or copies text, or works with
+  floats, 64-bit numbers or objects) is *fenced*: the variables go to their places in the
+  frame before it and come back after it. The generator checks its own output for a stray
+  `esi` or `edi` outside a fence.
+- Everything else is read and written in memory every time, which device memory needs.
 - Memory is reached through a **place**: a fixed label, a label plus a computed offset in
   `ebx`, or a computed address in `ebx` (through a pointer). In 16-bit code, a pointer above
   64 KB goes through the `fs` segment; in 32-bit code memory is flat.

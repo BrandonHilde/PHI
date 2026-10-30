@@ -746,8 +746,9 @@ t.next.id is 3;                 # through a pointer field too
   One kind of pointer silently becoming another (`ptr<A>` given where `ptr<B>` goes) is a
   warning, since it's usually a mistake; `as` says it's meant. `ptr<u8>` goes to and from any
   pointer without one.
-- Every read and write goes to memory (values are never kept in registers between
-  statements), so pointers to device memory work without anything like C's `volatile`.
+- Memory reached through a pointer is read and written every time, and so are class
+  variables. A method's own number and pointer variables may be kept in registers; mark a
+  variable [`volatile`](#volatile) when something else changes it.
 
 ## Structs
 
