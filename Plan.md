@@ -1375,7 +1375,15 @@ test where a zone program crashes on purpose shows its players back in a restart
     byte helpers are copied into the program's `Net`, since a program can't use a
     kernel class.
   - Not yet: `Dns.Resolve` for programs (it waits, so it needs the same split).
-- [ ] (2) messages between programs
+- [x] (2) Mailboxes: the kernel has `use proc.mail`, programs `use user.mail`, both with
+  `Mail` (`Open: name size capacity`, `Find`, `Send`, `Receive`, `Wait`, `Waiting`,
+  `Close`, and `sender`). System calls 96 to 101. Anyone can send to a box; only its owner
+  receives, and each record says who sent it. Boxes close with their program; a box's
+  number changes each time its place is used, so an old number reaches nothing. Test
+  `kernel32_program_mail` (zone A hands a player to zone B, which tells the kernel).
+  - Differs from the plan: named boxes of fixed-size records rather than one queue per
+    pair of programs, so a zone can find another by name without the kernel wiring them
+    up.
 - [ ] (3) restarting a zone program
 - [ ] (4) catching errors in the language (a design question for the user first)
 - [ ] (5) `phi fuzz`

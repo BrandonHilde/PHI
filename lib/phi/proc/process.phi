@@ -14,7 +14,8 @@
 # kernel's memory mapped but out of reach. It talks to the kernel through
 # system calls (lib/x86_32/tasks.asm); the ones numbered 16 and up (programs,
 # files, process information, the screen, sound) are handled here. Libraries add
-# their own from 64 up (gui.surfaces 64 to 71, net.calls 80 to 94) by setting
+# their own from 64 up (gui.surfaces 64 to 71, net.calls 80 to 94, proc.mail 96 to
+# 101) by setting
 # more_calls, and on_release hears when a program's memory is about to go back; each
 # passes on what isn't its own to the one that was set before it.
 #

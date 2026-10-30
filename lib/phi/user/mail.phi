@@ -1,0 +1,56 @@
+# Mailboxes for user programs: records sent to the kernel or to other programs, through
+# the kernel (which needs use proc.mail). The same calls as the kernel's Mail:
+#
+#   use user.mail;
+#   int box: (Mail.Open: 'zone2' sizeof Handover 64);    # this program's own box, or -1
+#   Handover h;
+#   bln got: (Mail.Wait: box addr h 1000);     # waits (sleeping) up to 1000 ms
+#   int from: Mail.sender;                     # who sent it: a process, or 0 for the kernel
+#   call Mail.Send: (Mail.Find: 'kernel') addr h;
+#
+# Only this program can receive from its boxes, and they close when it ends (even if it
+# crashes); what it sent to others stays there.
+
+phi.Mail:Program
+{
+	int sender: 0;              # who sent the record Receive took last
+
+	# a box of this program's: records of size bytes (up to 1 KB), up to capacity of them
+	# waiting (up to 256); its number, or -1 if the name is taken
+	[Open: ptr<u8> name: 0; u32 size: 0; u32 capacity: 64;]
+	[end: (OS.MailOpen: name size capacity)]
+
+	# the number of the box with this name (anyone's), or -1
+	[Find: ptr<u8> name: 0;]
+	[end: (OS.MailFind: name)]
+
+	# a record (the box's size of it) to a box; false if it's full or there's no such box
+	[Send: int box: 0; ptr<u8> record: 0;]
+	[end: (OS.MailSend: box record) is 1]
+
+	# the oldest record in one of this program's boxes, into into; false if none is
+	# waiting (never waits)
+	[Receive: int box: 0; ptr<u8> into: 0;]
+		int got: (OS.MailReceive: box into);
+		if got <= 0 return false;
+		sender is got - 1;
+	[end: true]
+
+	# like Receive, but waits up to timeout ms for one
+	[Wait: int box: 0; ptr<u8> into: 0; int timeout: 1000;]
+		int start: (OS.GetTicks);
+		while true
+			if (Receive: box into) return true;
+			if (OS.GetTicks) - start >= timeout return false;
+			call OS.Sleep: 1;
+		;;
+	[end: false]
+
+	# how many records are waiting in a box; -1 if there's no such box
+	[Waiting: int box: 0;]
+	[end: (OS.MailWaiting: box)]
+
+	[Close: int box: 0;]
+		call OS.MailClose: box;
+	[end]
+}

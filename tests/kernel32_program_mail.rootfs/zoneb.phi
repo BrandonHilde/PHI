@@ -1,0 +1,28 @@
+# kernel32_program_mail's zone B: takes the player zone A hands over, moves them, and
+# tells the kernel. It can't take from the kernel's box.
+use user.mail;
+
+struct.Handover
+{
+	u32 player;
+	int x;
+	int y;
+	u32 box;
+}
+
+phi.ZoneB:Program
+{
+	int box: (Mail.Open: 'zoneb' sizeof Handover 8);
+	Handover h;
+	bln got: (Mail.Wait: box addr h 20000);
+	log 'zone b: got ' got ' from a program: ' (Mail.sender > 0) ', player ' h.player ' at ' h.x ', ' h.y '\n';
+
+	int kernel: (Mail.Find: 'kernel');
+	Handover other;
+	log 'zone b: can take from the kernel box: ' (Mail.Receive: kernel addr other) '\n';
+
+	h.x++ 5;
+	h.box is box;
+	log 'zone b: told the kernel: ' (Mail.Send: kernel addr h) '\n';
+	exit 0;
+}

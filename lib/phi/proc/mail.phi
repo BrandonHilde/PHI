@@ -1,0 +1,233 @@
+# Mailboxes: records sent between the kernel and its programs, or from one program to
+# another (32-bit kernels with proc.process). A zone can hand a player to another this way.
+#
+#   use proc.mail;
+#   int box: (Mail.Open: 'kernel' sizeof Handover 64);   # records of that size, 64 waiting at most
+#   Handover h;
+#   while (Mail.Receive: box addr h)           # never waits; Mail.sender says who sent it
+#       ...
+#   ;;
+#   int zone: (Mail.Find: 'zone2');            # someone else's box, or -1
+#   call Mail.Send: zone addr h;               # false if it's full (or gone)
+#
+# A box has a name (up to 15 characters), a record size (up to 1 KB) and room for so many
+# records (up to 256). Anyone can send to a box they Find; only its owner (the process
+# that opened it, or the kernel) can receive from it or close it, and each record comes
+# with who sent it (Mail.sender: a process number, 0 for the kernel), so it can be
+# answered. A box closes when its owner ends, even by crashing. A box's number changes
+# each time its place is used again, so an old number never reaches a new box.
+#
+# Programs use the same calls through user.mail (system calls 96 to 101).
+
+use proc.process;
+use data.queue;
+use memory.mem;
+
+struct.Mailbox
+{
+	u8 name[16];
+	u32 size;                   # bytes in each record
+	int owner;                  # its process (0: the kernel's)
+	u32 generation;             # how many times this place has been used
+	ptr<QueueData> records;     # each one: who sent it (a u32), then size bytes; 0 if closed
+}
+
+phi.Mail:Kernel
+{
+	const int MAX_BOXES: 32;
+	const u32 NAME_SIZE: 16;
+	const u32 MOST_SIZE: 1024;
+	const u32 MOST_RECORDS: 256;
+	const int MAX_PROCESSES: 16;
+
+	const u32 SYS_MAIL_OPEN: 96;
+	const u32 SYS_MAIL_FIND: 97;
+	const u32 SYS_MAIL_SEND: 98;
+	const u32 SYS_MAIL_RECEIVE: 99;
+	const u32 SYS_MAIL_WAITING: 100;
+	const u32 SYS_MAIL_CLOSE: 101;
+
+	Mailbox boxes[MAX_BOXES];
+	int sender: 0;              # who sent the record Receive took last
+	u8 letter[1028];            # a record on its way in or out, after who sent it
+	u8 call_name[16];           # a program's box name, copied in
+
+	method<u32 u32 u32 u32 u32: int> other_calls: Process.more_calls;
+	method<int> other_release: Process.on_release;
+	Process.more_calls is addr Calls;
+	Process.on_release is addr Release;
+
+	# ---- for the kernel
+
+	# a box of the kernel's; its number, or -1 if the name is taken (or too long, or
+	# there's no room)
+	[Open: ptr<u8> name: 0; u32 size: 0; u32 capacity: 64;]
+	[end: (OpenFor: 0 name size capacity)]
+
+	# the number of the box with this name, or -1
+	[Find: ptr<u8> name: 0;]
+		while int b: 0; b < MAX_BOXES; b++;
+			if boxes:b.records is not 0 and (SameName: addr boxes:b.name name) return (Number: b);
+		;;
+	[end: -1]
+
+	# a record (the box's size of it) to a box; false if it's full or there's no such box
+	[Send: int box: 0; ptr<u8> record: 0;]
+	[end: (SendFrom: 0 box record)]
+
+	# the oldest record in one of the kernel's boxes, into into; false if none is
+	# waiting (never waits). sender says who sent it.
+	[Receive: int box: 0; ptr<u8> into: 0;]
+		int got: (ReceiveFor: 0 box into);
+		if got is 0 return false;
+		sender is got - 1;
+	[end: true]
+
+	# like Receive, but waits up to timeout ms for one, letting the programs run
+	[Wait: int box: 0; ptr<u8> into: 0; int timeout: 1000;]
+		int start: (OS.GetTicks);
+		while true
+			if (Receive: box into) return true;
+			if (OS.GetTicks) - start >= timeout return false;
+			call OS.Yield;
+		;;
+	[end: false]
+
+	# how many records are waiting in a box; -1 if there's no such box
+	[Waiting: int box: 0;]
+		int b: (Place: box);
+		if b < 0 return -1;
+	[end: boxes:b.records:0.count]
+
+	[Close: int box: 0;]
+		call CloseFor: 0 box;
+	[end]
+
+	# ---- the same for a process
+
+	[OpenFor: int owner: 0; ptr<u8> name: 0; u32 size: 0; u32 capacity: 0;]
+		if size is 0 or size > MOST_SIZE or capacity is 0 or capacity > MOST_RECORDS return -1;
+		if (NameLength: name) is 0 or (NameLength: name) >= NAME_SIZE return -1;
+		if (Find: name) >= 0 return -1;
+		int spare: -1;
+		while int b: 0; b < MAX_BOXES and spare < 0; b++;
+			if boxes:b.records is 0
+				spare is b;
+			;;
+		;;
+		if spare < 0 return -1;
+		ptr<QueueData> records: (Queue.New: 4 + size capacity);
+		if records is 0 return -1;
+		call Mem.Copy: addr boxes:spare.name name (NameLength: name) + 1;
+		boxes:spare.size is size;
+		boxes:spare.owner is owner;
+		boxes:spare.generation++;
+		boxes:spare.records is records;
+	[end: (Number: spare)]
+
+	[SendFrom: int from: 0; int box: 0; ptr<u8> record: 0;]
+		int b: (Place: box);
+		if b < 0 return false;
+		call PutWord: addr letter from;
+		call Mem.Copy: addr letter + 4 record boxes:b.size;
+	[end: (Queue.Push: boxes:b.records addr letter)]
+
+	# the sender plus one, or 0 if nothing is waiting (or it isn't the owner's box)
+	[ReceiveFor: int owner: 0; int box: 0; ptr<u8> into: 0;]
+		int b: (Place: box);
+		if b < 0 or boxes:b.owner is not owner return 0;
+		if (Queue.Pop: boxes:b.records addr letter) is false return 0;
+		call Mem.Copy: into addr letter + 4 boxes:b.size;
+		ptr<u32> from: addr letter;
+	[end: from:0 + 1]
+
+	[CloseFor: int owner: 0; int box: 0;]
+		int b: (Place: box);
+		if b < 0 or boxes:b.owner is not owner return false;
+		call Queue.Delete: boxes:b.records;
+		boxes:b.records is 0;
+	[end: true]
+
+	# ---- system calls from programs (96 to 101)
+
+	[Calls: u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
+		if number < SYS_MAIL_OPEN or number > SYS_MAIL_CLOSE
+			int passed: -1;
+			if other_calls is not 0
+				call passed is other_calls: number a b c d;
+			;;
+			return passed;
+		;;
+		int pid: (OS.CurrentTask);
+		if pid <= 0 or pid >= MAX_PROCESSES return -1;
+		if number is SYS_MAIL_OPEN or number is SYS_MAIL_FIND
+			if (Process.CopyFromUser: a addr call_name NAME_SIZE) is false return -1;
+			if number is SYS_MAIL_FIND return (Find: addr call_name);
+			return (OpenFor: pid addr call_name b c);
+		;;
+		int place: (Place: a);
+		if place < 0 return -1;
+		u32 size: boxes:place.size;
+		if number is SYS_MAIL_SEND
+			if (Process.UserRange: b size) is false return 0;
+			if (SendFrom: pid a b) return 1;
+			return 0;
+		;;
+		if number is SYS_MAIL_RECEIVE
+			if (Process.UserRange: b size) is false return 0;
+			return (ReceiveFor: pid a b);
+		;;
+		if number is SYS_MAIL_WAITING return (Waiting: a);
+		if number is SYS_MAIL_CLOSE
+			if (CloseFor: pid a) return 1;
+			return 0;
+		;;
+	[end: -1]
+
+	# a program ended: its boxes close (what it sent to others stays there)
+	[Release: int pid: 0;]
+		while int b: 0; b < MAX_BOXES; b++;
+			if boxes:b.records is not 0 and boxes:b.owner is pid
+				call Queue.Delete: boxes:b.records;
+				boxes:b.records is 0;
+			;;
+		;;
+		if other_release is not 0
+			call other_release: pid;
+		;;
+	[end]
+
+	# ---- helpers
+
+	# a box's number: its place, and how many times the place has been used
+	[Number: int b: 0;]
+	[end: (b | ((boxes:b.generation & 0x7FFFFF) << 8)) as int]
+
+	# the place of an open box from its number, or -1 (an old number gives -1)
+	[Place: int box: 0;]
+		if box < 0 return -1;
+		int b: box & 0xFF;
+		if b >= MAX_BOXES or boxes:b.records is 0 return -1;
+		if (Number: b) is not box return -1;
+	[end: b]
+
+	[SameName: ptr<u8> a: 0; ptr<u8> b: 0;]
+		while u32 i: 0; i < NAME_SIZE; i++;
+			if a:i is not b:i return false;
+			if a:i is 0 return true;
+		;;
+	[end: true]
+
+	# how long a name is, looking no further than NAME_SIZE (so a long one gives NAME_SIZE)
+	[NameLength: ptr<u8> name: 0;]
+		u32 n: 0;
+		while n < NAME_SIZE and name:n is not 0
+			n++;
+		;;
+	[end: n]
+
+	[PutWord: ptr<u8> p: 0; u32 value: 0;]
+		ptr<u32> word: p;
+		word:0 is value;
+	[end]
+}

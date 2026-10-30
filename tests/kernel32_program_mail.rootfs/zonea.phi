@@ -1,0 +1,31 @@
+# kernel32_program_mail's zone A: hands player 42 to zone B. It prints nothing after
+# sending, so its lines and zone B's always come out in the same order.
+use user.mail;
+
+struct.Handover
+{
+	u32 player;
+	int x;
+	int y;
+	u32 box;
+}
+
+phi.ZoneA:Program
+{
+	# zone B may not have opened its box yet
+	int zone: -1;
+	while int tries: 0; tries < 2000 and zone < 0; tries++;
+		zone is (Mail.Find: 'zoneb');
+		if zone < 0
+			call OS.Sleep: 1;
+		;;
+	;;
+	log 'zone a: found zone b: ' (zone >= 0) '\n';
+
+	Handover h;
+	h.player is 42;
+	h.x is 10;
+	h.y is 20;
+	call Mail.Send: zone addr h;
+	exit 0;
+}

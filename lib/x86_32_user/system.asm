@@ -1,4 +1,4 @@
-; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_NetAddress OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening
+; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_NetAddress OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
 ;
 ; requires: phi_flush
 ;
@@ -60,6 +60,12 @@ SYS_TCP_ACCEPT equ 91
 SYS_TCP_WAITING equ 92
 SYS_TCP_ADDRESS equ 93
 SYS_TCP_STOP_LISTENING equ 94
+SYS_MAIL_OPEN equ 96   ; 96 and up: proc.mail in the kernel
+SYS_MAIL_FIND equ 97
+SYS_MAIL_SEND equ 98
+SYS_MAIL_RECEIVE equ 99
+SYS_MAIL_WAITING equ 100
+SYS_MAIL_CLOSE equ 101
 
 ; where the kernel puts a program's command line (the bottom of its stack area)
 ARGUMENTS     equ 0x403F0000
@@ -202,4 +208,10 @@ PHI_SYSCALL OS_TcpListen, SYS_TCP_LISTEN, 2   ; port backlog -> listener, or -1
 PHI_SYSCALL OS_TcpAccept, SYS_TCP_ACCEPT, 1   ; listener -> connection, or -1 if none is waiting
 PHI_SYSCALL OS_TcpWaiting, SYS_TCP_WAITING, 1   ; connection -> bytes to read, or -1 once closed
 PHI_SYSCALL OS_TcpAddress, SYS_TCP_ADDRESS, 1   ; connection -> the other end's address
+PHI_SYSCALL OS_MailOpen, SYS_MAIL_OPEN, 3   ; name size capacity -> box, or -1
+PHI_SYSCALL OS_MailFind, SYS_MAIL_FIND, 1   ; name -> box, or -1
+PHI_SYSCALL OS_MailSend, SYS_MAIL_SEND, 2   ; box record -> 1 if it went in
+PHI_SYSCALL OS_MailReceive, SYS_MAIL_RECEIVE, 2   ; box into -> the sender + 1, or 0 if none is waiting
+PHI_SYSCALL OS_MailWaiting, SYS_MAIL_WAITING, 1   ; box -> records waiting, or -1
+PHI_SYSCALL OS_MailClose, SYS_MAIL_CLOSE, 1   ; box -> 1, or 0 if it isn't ours
 PHI_SYSCALL OS_TcpStopListening, SYS_TCP_STOP_LISTENING, 1   ; listener -> 1, or 0 if it isn't ours

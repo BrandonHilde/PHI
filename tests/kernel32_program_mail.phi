@@ -1,0 +1,33 @@
+# Mailboxes (proc.mail, and user.mail in programs): zone A hands a player to zone B,
+# which moves them and tells the kernel. Then: a box closes with its program, and its
+# old number reaches nothing, even once the name is used again.
+use proc.process;
+use proc.mail;
+
+struct.Handover
+{
+	u32 player;
+	int x;
+	int y;
+	u32 box;                    # the sender's own box, to answer to
+}
+
+phi.MailTest:Kernel
+{
+	Handover h;
+	int box: (Mail.Open: 'kernel' sizeof Handover 8);
+	log 'kernel box: ' (box >= 0) ', the name again: ' (Mail.Open: 'kernel' 16 8) '\n';
+
+	int b: (Process.Spawn: 'ZONEB.BIN');
+	int a: (Process.Spawn: 'ZONEA.BIN');
+	int codeA: (Process.Wait: a);
+	int codeB: (Process.Wait: b);
+	log 'zones ended: ' codeA ', ' codeB '\n';
+
+	bln got: (Mail.Receive: box addr h);
+	log 'from zone b: ' got ', sent by zone b: ' (Mail.sender is b) ', player ' h.player ' now at ' h.x ', ' h.y '\n';
+	log 'zone b box gone: ' ((Mail.Find: 'zoneb') is -1) ', its number reaches: ' (Mail.Send: h.box addr h) '\n';
+	int again: (Mail.Open: 'zoneb' sizeof Handover 8);
+	log 'opened again: ' (again >= 0) ', a new number: ' (again is not h.box) ', the old one reaches: ' (Mail.Send: h.box addr h) '\n';
+	exit 0;
+}

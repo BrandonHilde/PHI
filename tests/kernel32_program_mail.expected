@@ -1,0 +1,9 @@
+kernel box: 1, the name again: -1
+zone a: found zone b: 1
+zone b: got 1 from a program: 1, player 42 at 10, 20
+zone b: can take from the kernel box: 0
+zone b: told the kernel: 1
+zones ended: 0, 0
+from zone b: 1, sent by zone b: 1, player 42 now at 15, 20
+zone b box gone: 1, its number reaches: 0
+opened again: 1, a new number: 1, the old one reaches: 0

@@ -1749,7 +1749,41 @@ phi.Ls:Program
 ```
 
 A program with a window has a few more calls, from `gui.app`: see
-[Windows for programs](#windows-for-programs).
+[Windows for programs](#windows-for-programs). One that uses the network has `net.sockets`:
+see [The network in programs](#the-network-in-programs).
+
+### Mailboxes
+
+Programs send each other records (a zone handing a player to another, say) through
+mailboxes the kernel keeps. The kernel has `use proc.mail`, and programs `use user.mail`;
+both have `Mail` with the same calls:
+
+```phi
+struct.Handover
+{
+    u32 player;
+    int x;
+    int y;
+}
+
+int box: (Mail.Open: 'zone2' sizeof Handover 64);   # records of this size, 64 waiting at most
+Handover h;
+while (Mail.Receive: box addr h)          # never waits; Mail.Wait: box addr h ms does
+    log 'player ' h.player ' from ' Mail.sender '\n';   # a process, or 0 for the kernel
+;;
+call Mail.Send: (Mail.Find: 'zone1') addr h;        # false if it's full, or there's no such box
+```
+
+- A box has a name of up to 15 characters, a record size of up to 1 KB, and room for up
+  to 256 records. `Mail.Open` gives -1 if the name is taken.
+- Anyone can `Find` a box and `Send` to it. Only its owner (the program that opened it,
+  or the kernel) can `Receive` from it, `Close` it or `Wait` on it, and `Mail.sender` says
+  who sent each record, so it can be answered.
+- A box closes when its program ends, even by crashing; what the program sent to other
+  boxes stays there. Up to 32 boxes are open at once.
+- A box's number changes each time its place is used again, so an old number reaches
+  nothing (`Send` gives false), even once a new box has the same name.
+- `Mail.Wait` sleeps in a program, and lets the programs run in the kernel.
 
 ### The shell
 
