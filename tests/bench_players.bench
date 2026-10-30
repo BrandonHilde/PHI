@@ -2,6 +2,6 @@
 # phi test --bench --save-bench replaces them with the latest counts.
 pick up 20000 items                     13140152
 count one kind in 1000 bags             361670
-sort 1000 scores                        322177
+sort 1000 scores                        322161
 save 1000 player records with a CRC-32  965072
 load 1000 player records with a CRC-32  963076

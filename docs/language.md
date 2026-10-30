@@ -707,6 +707,12 @@ unsafe
 
 Pointers are never checked.
 
+A loop that keeps its counter in range needs no check on each element, so in 32-bit code
+it gets none: `while u32 i: 0; i < 4; i++;` indexing an array of 4 or more with `i`, or
+`while int i: 0; i < list.len; i++;` indexing the array parameter `list`, as long as
+nothing in the loop changes `i` (a signed counter must also start at zero or more and
+count up). Any other index is still checked.
+
 ## Pointers
 
 A `ptr<T>` holds a 32-bit address of memory containing `T` values. Index it like an array:

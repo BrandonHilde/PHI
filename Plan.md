@@ -1289,6 +1289,15 @@ S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
   Test `inlining`.
   - Done before (2), the backend interface: (4) is what S6's "Done when" needs, and (2) has
     nothing to serve until S10, so it can be shaped by a real optimizer.
+- [x] (4, second part) Bounds checks left out where a `while` proves the index in range: its
+  test is `i < n` (or `i <= n - 1`) with n a constant no more than the array's length, or
+  `i < list.len` for an array parameter the loop only indexes; nothing in the body sets
+  `i`; and a signed `i` starts at zero or more and only counts up. An array parameter's
+  element is then `[elements + i*4]` with no other code. A-star 8% faster, the rest
+  under 1.3%: most hot loops index through pointers, which have no checks. Tests
+  `bounds_loops`, `bounds_loops_changed`, `bounds_loops_signed` (the last two show checks
+  that must stay).
+- [ ] (4, last part) constant folding beyond what `ConstantFolder` does now
 - [ ] (2) the backend interface
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range

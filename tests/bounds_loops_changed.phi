@@ -1,0 +1,15 @@
+# A loop whose body changes its counter proves nothing about it: each element is checked.
+phi.BoundsLoopsChanged:Library
+{
+	int numbers: 1 2 3 4;
+
+	call Skip;
+	debug 'not reached\n';
+
+	[Skip:]
+		while u32 i: 0; i < 4; i++;
+			i++ 2;
+			debug numbers:i ' ';
+		;;
+	[end]
+}

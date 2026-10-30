@@ -1,0 +1,15 @@
+# A signed counter that starts below zero can be under the length and still outside the
+# array: each element is checked.
+phi.BoundsLoopsSigned:Library
+{
+	int numbers: 1 2 3 4;
+
+	call FromBelow;
+	debug 'not reached\n';
+
+	[FromBelow:]
+		while int i: -1; i < 4; i++;
+			debug numbers:i ' ';
+		;;
+	[end]
+}

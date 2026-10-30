@@ -1,0 +1,42 @@
+# A loop's counter that stays below an array's length needs no check on each element
+# (in 32-bit code the checks are left out); one that goes past it is still caught.
+phi.BoundsLoops:Library
+{
+	int numbers: 1 2 3 4;
+	int more: 5 6 7 8 9 10;
+
+	debug (Sum) ' ' (SumOf: numbers) ' ' (SumOf: more) ' ' (SumTo: 3) '\n';
+	call Past;
+	debug 'not reached\n';
+
+	# below a constant that's the array's length
+	[Sum:]
+		int total: 0;
+		while u32 i: 0; i < 4; i++;
+			total++ numbers:i;
+		;;
+	[end: total]
+
+	# below an array parameter's .len
+	[SumOf: int list[];]
+		int total: 0;
+		while int i: 0; i < list.len; i++;
+			total++ list:i;
+		;;
+	[end: total]
+
+	# below a number smaller than the length
+	[SumTo: u32 n: 0;]
+		int total: 0;
+		while u32 i: 0; i < 2; i++;
+			total++ numbers:i;
+		;;
+	[end: total + n]
+
+	# below a number past the length: each element is still checked
+	[Past:]
+		while u32 i: 0; i < 6; i++;
+			debug numbers:i ' ';
+		;;
+	[end]
+}

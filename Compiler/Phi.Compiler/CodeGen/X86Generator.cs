@@ -277,6 +277,9 @@ namespace Phi.Compiler.CodeGen
             currentMethod = m;
             resultType = m.ReturnType;
             inRegisters.Clear();
+            addressTaken.Clear();
+            foreach (Node n in m.Decl.Body.SelectMany(SyntaxWalker.Nodes))
+                if (n is AddrExpr { Operand: NameExpr { Symbol: VariableSymbol taken } }) addressTaken.Add(taken);
             List<VariableSymbol> chosen = bits32
                 ? VariablePlanner.Choose(m, VariableRegisters.Length, FitsRegister, RunsInRegisters)
                 : new List<VariableSymbol>();
@@ -1049,7 +1052,10 @@ namespace Phi.Compiler.CodeGen
                     else Emit($"jmp {test}");
                     Label(top);
                     loops.Add(labels);
+                    var bound = InRangeIn(loop);
+                    if (bound is var (counter, below)) inRange.Add((counter, below));
                     foreach (Stmt s in loop.Body) EmitStatement(s);
+                    if (bound != null) inRange.RemoveAt(inRange.Count - 1);
                     loops.RemoveAt(loops.Count - 1);
                     if (labels.NextUsed) Label(labels.Next); // continue runs the step, then tests again
                     if (loop.Step != null) EmitStatement(loop.Step);
@@ -1438,6 +1444,95 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
             }
+        }
+
+        // ================================================================ indexes known to be in range
+
+        /// <summary>
+        /// The counters of the whiles around the code being generated, each with what it's known
+        /// to stay below in its loop's body: a number of elements, or an array parameter's .len.
+        /// </summary>
+        readonly List<(VariableSymbol Counter, object Below)> inRange = new();
+
+        /// <summary>The method's variables whose address is taken (anything could change them).</summary>
+        readonly HashSet<VariableSymbol> addressTaken = new();
+
+        /// <summary>
+        /// What a while's counter stays below in its body, when the loop proves it: the test is
+        /// i &lt; n (or i &lt;= n - 1), n is a constant or an array parameter's .len, nothing in the
+        /// body changes i, and i can't be below zero (it's unsigned, or a signed i starts at zero
+        /// or more and the step only adds to it).
+        /// </summary>
+        (VariableSymbol, object)? InRangeIn(WhileStmt loop)
+        {
+            if (loop.Condition is not BinaryExpr { Op: BinaryOp.Less or BinaryOp.LessEqual } cmp) return null;
+            if (cmp.Left is not NameExpr { Call: null, Symbol: VariableSymbol { IsLocal: true } i }) return null;
+            if (!i.Type.IsNumeric || i.Type.IsPointer || StorageType(i.Type).ElementSize != 4 || i.Decl.Volatile || addressTaken.Contains(i)) return null;
+
+            object? below = null;
+            long? known = ConstantFolder.Evaluate(cmp.Right)
+                ?? cmp.Right switch
+                {
+                    NameExpr { Symbol: LengthSymbol { Count: int count } } => count,
+                    MemberExpr { Count: int count } => count,
+                    _ => null,
+                };
+            if (known is long n) below = cmp.Op == BinaryOp.Less ? n : n + 1;
+            else if (cmp.Op == BinaryOp.Less && cmp.Right is NameExpr { Symbol: LengthSymbol { Open: VariableSymbol open, Max: false } }) below = open;
+            if (below == null) return null;
+
+            // nothing in the body sets it
+            bool sets = loop.Body.SelectMany(SyntaxWalker.Nodes).Any(n => n switch
+            {
+                AssignStmt a => Names(a.Target, i),
+                CallStmt { ResultTarget: Expr target } => Names(target, i),
+                AskStmt a => Names(a.Target, i),
+                StringBuildStmt b => Names(b.Target, i),
+                VarDecl d => d.Symbol == i,
+                _ => false,
+            });
+            if (sets) return null;
+
+            // an array parameter the body only indexes (adding to it, or passing it on, could
+            // change how many it has)
+            if (below is VariableSymbol array)
+            {
+                var nodes = loop.Body.SelectMany(SyntaxWalker.Nodes).ToList();
+                int named = nodes.Count(n => n is NameExpr { Symbol: VariableSymbol v } && v == array);
+                int indexed = nodes.Count(n => n is IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } && v == array);
+                if (named != indexed) return null;
+            }
+
+            bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
+            if (!unsigned)
+            {
+                // a signed counter: from zero or more, only going up
+                bool startsAtZeroOrMore = loop.Init?.Symbol == i
+                    && (loop.Init.Values.Count == 0 || ConstantFolder.Evaluate(loop.Init.Values[0]) is >= 0);
+                bool goesUp = loop.Step is AssignStmt { Value: BinaryExpr { Op: BinaryOp.Add } step } stepAssign
+                    && Names(stepAssign.Target, i) && Names(step.Left, i) && ConstantFolder.Evaluate(step.Right) is >= 0;
+                if (!startsAtZeroOrMore || !goesUp) return null;
+            }
+            return (i, below);
+        }
+
+        static bool Names(Expr e, VariableSymbol v) => e is NameExpr { Call: null, Symbol: VariableSymbol named } && named == v;
+
+        /// <summary>True when the element's index is a counter its loop keeps below the array's length.</summary>
+        bool ProvedInRange(IndexExpr ix)
+        {
+            if (ix.Index is not NameExpr { Call: null, Symbol: VariableSymbol i }) return false;
+            for (int k = inRange.Count - 1; k >= 0; k--)
+            {
+                if (inRange[k].Counter != i) continue;
+                return inRange[k].Below switch
+                {
+                    long n => ix.CheckLimit is int limit && n <= limit,
+                    VariableSymbol open => ix.Target is NameExpr { Symbol: VariableSymbol same } && same == open,
+                    _ => false,
+                };
+            }
+            return false;
         }
 
         // ================================================================ inlining
@@ -1862,8 +1957,15 @@ namespace Phi.Compiler.CodeGen
             // an element of an array parameter: checked against how many it has, when it runs
             if (ix.Target is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
             {
+                bool proved = ProvedInRange(ix);
+                if ((proved || unsafeDepth > 0) && size is 1 or 2 or 4 or 8 && HeldIn(ix.Index) is string heldIndex)
+                {
+                    // known to be in range, with the index in a register: [elements + i*size]
+                    Emit($"mov ebx, [{open.Label}]");
+                    return new Place { Computed = true, Linear = true, Index = heldIndex, Scale = size };
+                }
                 EmitExpr(ix.Index);
-                if (unsafeDepth == 0) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + 4]");
+                if (unsafeDepth == 0 && !proved) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + 4]");
                 EmitScale(size);
                 Emit($"mov ebx, [{open.Label}]");
                 Emit("add ebx, eax");
@@ -2027,7 +2129,7 @@ namespace Phi.Compiler.CodeGen
             // the index in a register variable: [array + i*size], once it's checked
             if (!p.Computed && size is 1 or 2 or 4 or 8 && HeldIn(ix.Index) is string index)
             {
-                if (ix.CheckLimit is int checkedLimit && unsafeDepth == 0) EmitIndexCheck(ix, "jb", checkedLimit.ToString(), index);
+                if (ix.CheckLimit is int checkedLimit && unsafeDepth == 0 && !ProvedInRange(ix)) EmitIndexCheck(ix, "jb", checkedLimit.ToString(), index);
                 p.Computed = true;
                 p.Index = index;
                 p.Scale = size;
@@ -2055,7 +2157,7 @@ namespace Phi.Compiler.CodeGen
         {
             EmitExpr(ix.Index);
 
-            if (ix.CheckLimit is int limit && unsafeDepth == 0)
+            if (ix.CheckLimit is int limit && unsafeDepth == 0 && !ProvedInRange(ix))
                 EmitIndexCheck(ix, "jb", limit.ToString());
 
             EmitScale(size);

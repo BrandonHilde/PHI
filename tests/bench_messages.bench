@@ -4,4 +4,4 @@ pack 10000 move messages                 610030
 unpack 10000 move messages               690030
 snapshot of 1000 entities, 1 in 8 moved  48481
 find the session for 10000 packets       975687
-hmac 200 packets of 64 bytes             12556830
+hmac 200 packets of 64 bytes             12454430
