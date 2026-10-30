@@ -81,6 +81,7 @@ namespace Phi.Compiler.Syntax
     public sealed class FieldDecl : Node
     {
         public TypeRef Type { get; init; } = null!;
+        public bool Volatile { get; init; }
         public string Name { get; init; } = "";
         public Expr? Count { get; init; }
 
@@ -136,6 +137,9 @@ namespace Phi.Compiler.Syntax
     public sealed class VarDecl : Stmt
     {
         public TypeRef Type { get; init; } = null!;
+
+        /// <summary>volatile T name: memory that changes by itself (a device's), read and written every time.</summary>
+        public bool Volatile { get; set; }
         public string Name { get; init; } = "";
         public Span NameSpan { get; init; }
         public List<Expr> Values { get; } = new();

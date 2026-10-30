@@ -1238,7 +1238,19 @@ Goal: PHI code fast enough that hot routines don't need assembly.
 **Done when:** `Draw.BlendRect` goes back from assembly to PHI at the same speed, and the
 S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
 
-**Status: not started.**
+**Status: in progress.**
+- [x] (1) `volatile` before a variable, a field or a pointer (a reserved word now); the
+  network drivers mark the memory their cards write. It changes no code yet, since every
+  read still goes to memory; it's there before the register allocator needs it. Tests
+  `volatile`, `volatile_errors`.
+- [x] (3, first part) A constant or a 32-bit variable on either side of arithmetic or a
+  comparison is used as the instruction's operand (`cmp eax, 32`, `add eax, dword [x]`)
+  instead of going through `ecx` or the stack. Every benchmark got faster, by 5% to 21%:
+  X25519 14%, AES-GCM 19%, the synthesizer 21%, a heap allocation 10%.
+- [ ] (2) the backend interface
+- [ ] (3) registers for a method's variables across statements
+- [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
+  proved in range
 
 #### Phase S7: Interfaces
 

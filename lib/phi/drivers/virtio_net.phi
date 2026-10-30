@@ -210,7 +210,7 @@ phi.VirtioNet:Kernel
 	[TakeFrames]
 		bln gave: false;
 		while (Index: rx_used) is not rx_seen
-			ptr<u32> element: rx_used + 4 + (rx_seen % rx_size) * 8;
+			volatile ptr<u32> element: rx_used + 4 + (rx_seen % rx_size) * 8;
 			u32 id: element:0;
 			u32 length: 0;
 			if element:1 > HEADER
@@ -259,7 +259,7 @@ phi.VirtioNet:Kernel
 	# a used list's count of buffers handed back (16 bits, so it wraps round), read in one
 	# go: read a byte at a time, it could be half before and half after the card changes it
 	[Index: ptr<u8> used: 0;]
-		ptr<u16> words: used;
+		volatile ptr<u16> words: used;                # the card writes it
 	[end: words:1]
 }
 

@@ -20,7 +20,7 @@ namespace Phi.Compiler.Syntax
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
-            "phi", "asm", "arm", "struct", "enum", "use", "const",
+            "phi", "asm", "arm", "struct", "enum", "use", "const", "volatile",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -375,6 +375,7 @@ namespace Phi.Compiler.Syntax
                         continue;
                     }
 
+                    bool isVolatile = AcceptWord("volatile");
                     bool isNew = AcceptWord("new");
                     TypeRef type = ParseType();
                     Token field = ExpectIdentifier("a field name");
@@ -394,7 +395,7 @@ namespace Phi.Compiler.Syntax
                         if (textSize == null) throw Error(Previous.Span, $"a str field needs a size: str {field.Text}: [24];");
                     }
                     ExpectSemicolon();
-                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew,
+                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew, Volatile = isVolatile,
                                                     TextSize = textSize, Span = type.Span.To(field.Span) });
                 }
                 catch (ParseError)
@@ -560,6 +561,15 @@ namespace Phi.Compiler.Syntax
             Token start = Current;
 
             if (AtWord("const")) return ParseConst();
+            if (AtWord("volatile"))
+            {
+                // memory that changes by itself: every read and write goes to it
+                Advance();
+                if (!AtDeclaration) throw Error(Current.Span, "volatile goes before a declaration: volatile ptr<u32> status: 0xFEBF0000;");
+                VarDecl declared = ParseVarDecl(allowBracketEnd: false);
+                declared.Volatile = true;
+                return declared;
+            }
             if (AtNewDeclaration) return ParseVarDecl(allowBracketEnd: false);
             if (AtDeclaration) return ParseVarDecl(allowBracketEnd: false);
             if (AtKeywordNameAssignment) return ParseAssignment(requireSemicolon: true);

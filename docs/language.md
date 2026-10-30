@@ -88,7 +88,7 @@ variable, field, parameter, constant, method or struct:
 | Kind | Words |
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` |
-| Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `isr` `end` |
+| Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `volatile` `isr` `end` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
@@ -429,6 +429,28 @@ const int BUFFER_SIZE: 512;
 
 A constant's value must be known when the program is built. Constants take no memory and
 can be used as array sizes and inside `asm.` blocks (`{COM1}`).
+
+### volatile
+
+`volatile` before a variable, a field or a pointer marks memory that changes by itself: a
+device's registers, a buffer a network card writes, a counter an interrupt handler
+changes. Every read and every write of it goes to the memory, however the code generator
+gets better at keeping values in the CPU's registers:
+
+```phi
+volatile ptr<u16> status: 0xFEBF0010;      # a device's register
+while (status:0 & 1) is 0                  # read again each time round
+;;
+
+struct.Device
+{
+    volatile u32 ready;
+}
+```
+
+Today every read goes to memory anyway, so `volatile` changes nothing yet; mark such
+memory now, so code keeps working as the optimizer grows (see Phase S6 in
+[Plan.md](../Plan.md)).
 
 ### sizeof
 

@@ -1,0 +1,36 @@
+# volatile: variables, fields and pointers over memory that changes by itself (a
+# device's). Every read and write goes to the memory, now and once the code generator
+# keeps values in registers. Here, the counter an interrupt handler would change and
+# a pointer to a "register" behave like any other variable.
+struct.Device
+{
+	volatile u32 status;
+	u32 count;
+}
+
+phi.VolatileTest:Library
+{
+	volatile u32 ticks: 0;
+	Device device;
+	u32 memory: 0x00000005;
+
+	ticks++;
+	ticks++ 2;
+	debug 'ticks: ' ticks '\n';
+
+	device.status is 7;
+	device.count is device.status * 2;
+	debug 'status: ' device.status ' count: ' device.count '\n';
+
+	call Poll;
+
+	[Poll]
+		volatile ptr<u32> register: addr memory;
+		u32 seen: 0;
+		while register:0 is not 0 and seen < 10
+			register:0 is register:0 - 1;
+			seen++;
+		;;
+		debug 'counted down ' seen ' times\n';
+	[end]
+}

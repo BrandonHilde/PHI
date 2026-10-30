@@ -1,0 +1,6 @@
+# volatile goes before a declaration, and it's a reserved word
+phi.Test:Kernel
+{
+	volatile call Thing;
+	int volatile: 3;
+}
