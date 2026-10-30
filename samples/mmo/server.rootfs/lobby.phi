@@ -1,6 +1,7 @@
-# The mmo sample's lobby: players log in over TCP with a name and a password, and can
-# talk. The server (server.phi) opens it at start-up and calls Lobby.Serve in its
-# loop. It takes a line at a time:
+# The mmo sample's lobby, a user program: players log in over TCP with a name and a
+# password, and can talk. The server (server.phi, a kernel) keeps it running with
+# proc.supervisor, beside the world (world.phi): if the lobby crashes it's started
+# again, with its accounts, and the world carries on. It takes a line at a time:
 #
 #   login NAME PASSWORD   ->  welcome NAME        (a name nobody has yet makes an account)
 #                         ->  wrong password
@@ -13,10 +14,10 @@
 # when hundreds of players log in at once. `phi load samples/mmo/server.phi` logs in
 # hundreds of connections and keeps them talking.
 
-use net.tcp;
+use net.sockets;
 use data.map;
 use memory.pool;
-use fs.savelog;
+use user.savelog;
 use crypto.pbkdf2;
 use crypto.random;
 use user.text;
@@ -37,7 +38,7 @@ struct.Session
 	u8 line[128];
 }
 
-phi.Lobby:Kernel
+phi.Lobby:Program
 {
 	const u32 PORT: 4001;
 	const u32 ROUNDS: 100;
@@ -52,6 +53,12 @@ phi.Lobby:Kernel
 	u8 reply[160];
 	u8 hash[32];
 	u32 logins: 0;
+
+	call Open;
+	while true
+		call Serve;
+		call OS.Sleep: 1;
+	;;
 
 	# the accounts from the log, and the port open
 	[Open]

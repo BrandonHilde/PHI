@@ -17,7 +17,7 @@
 # it was, or (if the disk itself was half way through) a record cut short. Read stops
 # at the first record that's cut short or whose CRC doesn't match, and sets torn. A log
 # only grows: to keep it small, read it, Clear it, and add back the latest of each
-# thing (samples/mmo/server.phi does).
+# thing (samples/mmo/server.rootfs/world.phi does, with user.savelog).
 
 use fs.fat16;
 use data.crc32;

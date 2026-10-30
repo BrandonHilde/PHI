@@ -1398,6 +1398,12 @@ test where a zone program crashes on purpose shows its players back in a restart
     `use fs.fat16`, so the program's copy is a file of its own with the same calls.
   - `SaveLog.Read` (both) took a failed read (-1) for a long one, since an `int` and a
     `u32` compare unsigned; it stops there now.
+- [x] (1-3 together) `samples/mmo/` runs its world and its lobby as user programs
+  (`server.rootfs/world.phi`, `server.rootfs/lobby.phi`) that `server.phi`, now a small
+  kernel, keeps running with the supervisor. `phi test samples/mmo/server.phi` stops the
+  world on purpose (K in the server's window) and sees it come back with all three
+  players where they were, then reboots and sees the same. `phi load` with 500
+  connections for a minute still passes, with the lobby in a program.
 - [ ] (4) catching errors in the language: **not now** (the user, 2026-10-30). Errors are
   contained at the program level (parts 1-3); revisit if kernel code turns out to need a
   block that catches them.

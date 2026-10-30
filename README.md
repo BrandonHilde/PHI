@@ -139,7 +139,9 @@ phi.Count:Program
        phi run samples/music.phi         a jukebox: songs and a WAV file, on the sound card
        phi run samples/desktop.phi       a desktop: apps as programs, each in a window
        phi run samples/mmo/server.phi    a game server and three clients on one network, each in a
-                                         window: move with the arrow keys, see everyone move
+                                         window: move with the arrow keys, see everyone move; the
+                                         world and the lobby are programs the kernel restarts if they
+                                         crash (press K in the server's window to see it)
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output

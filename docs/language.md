@@ -1185,7 +1185,7 @@ call SaveLog.Clear: 'PLAYERS.LOG';
 ```
 
 A log only grows, so a kernel that keeps one for a long time reads it, clears it, and adds
-back the latest record of each thing (`samples/mmo/server.phi` does this when it starts).
+back the latest record of each thing (the mmo sample's world, `samples/mmo/server.rootfs/world.phi`, does this when it starts).
 
 ## The network (32-bit kernels)
 

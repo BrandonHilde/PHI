@@ -195,7 +195,7 @@ phi load samples/mmo/server.phi --connections 100 --profile    # and where the s
 
 Each connection logs in (`login NAME PASSWORD`, answered `welcome NAME`), says a numbered
 line once a second (`say ...`, answered `said ...`) and finally `quit` (answered `bye`),
-the protocol of the mmo sample's lobby (`samples/mmo/lobby.phi`). It passes when every
+the protocol of the mmo sample's lobby (`samples/mmo/server.rootfs/lobby.phi`, a user program). It passes when every
 connection logged in and quit, and every answer came back, in order. Each machine's output
 is saved in `build/NAME.load/`. The clients are PHI kernels rather than connections from
 this computer because QEMU's user network on Windows keeps at most 64 connections from

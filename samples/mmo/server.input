@@ -1,8 +1,14 @@
 # The three clients join, and each moves five steps right. Once all three moves are
-# saved, restart the server on the same disk: the clients join again, and the server
-# puts each where it was.
+# saved, stop the world program on purpose (K): the supervisor starts it again, the
+# clients join again, and it puts each where they were. Then restart the whole server
+# on the same disk, and the same happens.
 expect saved player 2 at 70 100
 expect saved player 3 at 70 140
 expect saved player 4 at 70 20
+type k
+expect next started again: the world 1 time(s), the lobby 0
+expect restored player 2 at 70 100
+expect restored player 3 at 70 140
+expect restored player 4 at 70 20
 reboot
-expect world started: 3 saved players
+expect next world started: 3 saved players

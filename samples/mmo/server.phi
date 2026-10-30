@@ -1,208 +1,39 @@
-# The mmo sample's server: players join over UDP, move a step at a time, and are
-# told where everyone is 20 times a second. Where each player is goes into a save log
-# as they move, so after a restart everyone comes back where they left off.
+# The mmo sample's server: a kernel that starts the network and keeps two user programs
+# running, from server.rootfs/: the world (world.phi), where players join over UDP and
+# move, and the lobby (lobby.phi), where they log in and talk over TCP. Each saves what
+# it has as it goes, so if one crashes the supervisor starts it again with its players
+# or accounts, and the other carries on.
 #
 #   phi run samples/mmo/server.phi      # the server and three clients (server.machines), each in a window
 #   phi test samples/mmo/server.phi     # the same, with the moves and a restart scripted
+#   phi load samples/mmo/server.phi     # hundreds of logins in the lobby at once
 #
 # It's machine 1 on the network that phi run and phi test make (see server.machines);
-# Machine.address is its address. Players log in and talk over TCP in the lobby
-# (lobby.phi); `phi load samples/mmo/server.phi` puts hundreds of them there at once.
+# Machine.address is its address.
 
-use net.udp;
-use data.map;
-use memory.pool;
-use fs.savelog;
-use protocol;
-use lobby;
-
-struct.Player
-{
-	u32 id;
-	u32 address;                # where its client is
-	u32 port;
-	i32 x;
-	i32 y;
-	bln moved;                  # since it was last saved
-}
-
-# one record of the save log
-struct.SavedPlayer
-{
-	u32 id;
-	i32 x;
-	i32 y;
-}
+use net.calls;
+use proc.supervisor;
 
 phi.MmoServer:Kernel
 {
-	const int TICK: 50;                   # ms: 20 ticks a second
-	const u32 NOBODY: 0xFFFFFFFF;
-
-	ptr<PoolData> players: (Pool.New: sizeof Player Game.MAX_PLAYERS);
-	ptr<MapData> by_id: (Map.New);        # player id -> ptr<Player>
-	ptr<MapData> saved: (Map.New);        # player id -> where they were: x << 16 | y
-	u8 message[Game.STATE_SIZE];
-	UdpDatagram d;
-	SavedPlayer record;
-
 	bln ok: (Net.Start: Machine.address);
-	int s: (Udp.Open: Game.PORT 256);
-
-	# where everyone was; then the log is written again with just that, to keep it small
-	call SaveLog.Read: 'PLAYERS.LOG' sizeof SavedPlayer addr Restore;
-	log 'world started: ' saved:0.count ' saved players\n';
-	call Compact;
-	call Lobby.Open;
-
-	int next_tick: (OS.GetTicks);
-	while true
-		while (Udp.Receive: s addr d)
-			call Handle;
-		;;
-		if (OS.GetTicks) - next_tick >= 0
-			call Save;
-			call SendState;
-			next_tick++ TICK;
-		;;
-		call Lobby.Serve;
-		call OS.Sleep: 1;
+	if ok is false
+		log 'no network card\n';
 	;;
+	int world: (Supervisor.Keep: 'WORLD.BIN');
+	int lobby: (Supervisor.Keep: 'LOBBY.BIN');
 
-	# ---- messages
-
-	[Handle]
-		if d.length < 5 return;
-		u32 id: (Net.Get32: addr d.data + 1);
-		when d.data:0
-			is Game.JOIN
-				call Join: id;
-			;;
-			is Game.MOVE
-				if d.length >= 6
-					call Move: id d.data:5;
-				;;
+	while true
+		# K stops the world on purpose, to see it come back with everyone where they were
+		if (OS.KeyAvailable)
+			if (OS.ReadKey) is 'k'
+				log 'stopping the world on purpose\n';
+				call OS.KillTask: (Supervisor.ProcessOf: world);
 			;;
 		;;
-	[end]
-
-	# a player joins (or joins again, after a restart of theirs or ours)
-	[Join: u32 id: 0;]
-		ptr<Player> p: (Map.Get: by_id id 0);
-		if p is 0
-			if by_id:0.count >= Game.MAX_PLAYERS return;
-			p is (Pool.Alloc: players);
-			p.id is id;
-			u32 where: (Map.Get: saved id NOBODY);
-			if where is not NOBODY
-				p.x is where >> 16;
-				p.y is where & 0xFFFF;
-				log 'restored player ' id ' at ' p.x ' ' p.y '\n';
-			;;
-			else
-				p.x is Game.START_X;
-				p.y is 20 + id % 4 * 40;
-				log 'player ' id ' joined at ' p.x ' ' p.y '\n';
-			;;
-			call Map.Set: by_id id p;
+		if (Supervisor.Check) > 0
+			log 'started again: the world ' Supervisor.restarts:world ' time(s), the lobby ' Supervisor.restarts:lobby '\n';
 		;;
-		p.address is d.from;
-		p.port is d.from_port;
-
-		message:0 is Game.WELCOME;
-		call Net.Put16: addr message + 1 p.x;
-		call Net.Put16: addr message + 3 p.y;
-		call Udp.SendTo: s p.address p.port addr message 5;
-	[end]
-
-	# a step, if it comes from where the player joined from and stays in the world
-	[Move: u32 id: 0; u8 direction: 0;]
-		ptr<Player> p: (Map.Get: by_id id 0);
-		if p is 0 or p.address is not d.from or p.port is not d.from_port return;
-		int x: p.x;
-		int y: p.y;
-		when direction
-			is Game.LEFT
-				x-- Game.STEP;
-			;;
-			is Game.RIGHT
-				x++ Game.STEP;
-			;;
-			is Game.UP
-				y-- Game.STEP;
-			;;
-			is Game.DOWN
-				y++ Game.STEP;
-			;;
-		;;
-		if x >= 0 and y >= 0 and x <= Game.WIDTH - Game.SIZE and y <= Game.HEIGHT - Game.SIZE
-			p.x is x;
-			p.y is y;
-			p.moved is true;
-		;;
-	[end]
-
-	# ---- every tick
-
-	# every player that moved, into the save log
-	[Save]
-		int pos: (Map.Next: by_id);
-		while pos >= 0
-			ptr<Player> p: (Map.ValueAt: by_id pos);
-			if p.moved
-				record.id is p.id;
-				record.x is p.x;
-				record.y is p.y;
-				if (SaveLog.Add: 'PLAYERS.LOG' addr record sizeof SavedPlayer)
-					p.moved is false;
-					log 'saved player ' p.id ' at ' p.x ' ' p.y '\n';
-				;;
-			;;
-			pos is (Map.Next: by_id pos);
-		;;
-	[end]
-
-	# where everyone is, to everyone
-	[SendState]
-		message:0 is Game.STATE;
-		message:1 is by_id:0.count;
-		u32 size: 2;
-		int pos: (Map.Next: by_id);
-		while pos >= 0
-			ptr<Player> p: (Map.ValueAt: by_id pos);
-			call Net.Put32: addr message + size p.id;
-			call Net.Put16: addr message + size + 4 p.x;
-			call Net.Put16: addr message + size + 6 p.y;
-			size++ 8;
-			pos is (Map.Next: by_id pos);
-		;;
-		pos is (Map.Next: by_id);
-		while pos >= 0
-			ptr<Player> p: (Map.ValueAt: by_id pos);
-			call Udp.SendTo: s p.address p.port addr message size;
-			pos is (Map.Next: by_id pos);
-		;;
-	[end]
-
-	# ---- the save log
-
-	# a record from the log: the last one for each player is where they are
-	[Restore: ptr<u8> bytes: 0;]
-		ptr<SavedPlayer> r: bytes as ptr<SavedPlayer>;
-		call Map.Set: saved r.id (r.x << 16) | r.y;
-	[end]
-
-	# the log again, with one record for each player
-	[Compact]
-		call SaveLog.Clear: 'PLAYERS.LOG';
-		int pos: (Map.Next: saved);
-		while pos >= 0
-			u32 where: (Map.ValueAt: saved pos);
-			record.id is (Map.KeyAt: saved pos);
-			record.x is where >> 16;
-			record.y is where & 0xFFFF;
-			call SaveLog.Add: 'PLAYERS.LOG' addr record sizeof SavedPlayer;
-			pos is (Map.Next: saved pos);
-		;;
-	[end]
+		call OS.Idle;                     # the programs run (or the machine rests)
+	;;
 }
