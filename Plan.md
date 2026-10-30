@@ -1238,7 +1238,11 @@ Goal: PHI code fast enough that hot routines don't need assembly.
 **Done when:** `Draw.BlendRect` goes back from assembly to PHI at the same speed, and the
 S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
 
-**Status: in progress.**
+**Status: paused (2026-10-30)** to work on what the language and OS can do; optimizing
+comes back later. Where it stopped, against before S6: X25519 3.2 times faster, PBKDF2 1.55,
+AES-GCM 1.5, SHA-256 1.4, ChaCha20 1.4, `line` 1.6, `fill circle` 1.3. Left: a third
+register and temporary values in registers (what `BlendRect` in PHI needs), more constant
+folding, and (2) the backend interface, which S10 needs first.
 - [x] (1) `volatile` before a variable, a field or a pointer (a reserved word now); the
   network drivers mark the memory their cards write. It changes no code yet, since every
   read still goes to memory; it's there before the register allocator needs it. Tests
