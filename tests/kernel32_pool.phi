@@ -1,0 +1,51 @@
+# memory.pool: zeroed objects, reuse, growing a chunk at a time, Delete giving it all
+# back, and a double free stopping the program.
+use memory.pool;
+
+struct.Monster
+{
+	u32 id;
+	i32 health;
+	f32 x;
+	f32 y;
+	u8 name[13];                # makes the size 29: slots round it up to 32
+}
+
+phi.Test:Kernel
+{
+	ptr<PoolData> monsters: (Pool.New: sizeof Monster 4);
+	log 'slot: ' monsters:0.slot ' chunk: ' monsters:0.per_chunk '\n';
+
+	# ten objects: three chunks of four
+	ptr<Monster> made[10];
+	while int i: 0; i < 10; i++;
+		made:i is (Pool.Alloc: monsters);
+		made:i.id is i;
+		made:i.health is 100 - i;
+	;;
+	log 'used: ' monsters:0.used ' capacity: ' monsters:0.capacity '\n';
+	log 'next to each other: ' (made:1 - made:0 is monsters:0.slot) '\n';
+	log 'eighth: ' made:7.id ' ' made:7.health '\n';
+
+	# a freed object's slot is the next one handed out, zeroed again
+	ptr<Monster> gone: made:3;
+	call Pool.Free: monsters made:3;
+	ptr<Monster> again: (Pool.Alloc: monsters);
+	log 'reused: ' (again is gone) ' zeroed: ' (again:0.id is 0 and again:0.health is 0) '\n';
+
+	while int i: 0; i < 10; i++;
+		call Pool.Free: monsters made:i;
+	;;
+	log 'used after freeing: ' monsters:0.used '\n';
+
+	# Delete gives every chunk back to the heap
+	call Pool.Delete: monsters;
+	log 'heap blocks: ' Heap.used_blocks '\n';
+
+	# freeing the same object twice stops the program
+	ptr<PoolData> small: (Pool.New: 8);
+	u32 first: (Pool.Alloc: small);
+	call Pool.Free: small first;
+	call Pool.Free: small first;
+	log 'not reached\n';
+}

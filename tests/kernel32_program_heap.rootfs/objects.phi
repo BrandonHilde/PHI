@@ -28,11 +28,12 @@ phi.Objects:Program
 	call OS.WriteFile: 'HEAP.TXT' name 2;
 	log 'file size: ' (OS.FileSize: 'HEAP.TXT') '\n';
 
-	# freed memory is used again
+	# freed memory is used again (the same size: nothing else free is that big), zeroed
+	# where it held 2
 	ptr<u8> before: blocks:2;
 	free blocks:2;
-	ptr<u8> again: new u8[1000];
-	log 'reused: ' (again is before) ' zeroed: ' (again:0 is 0) '\n';
+	ptr<u8> again: new u8[1000000];
+	log 'reused: ' (again is before) ' zeroed: ' (again:999999 is 0) '\n';
 
 	# 64-bit numbers work in programs too
 	i64 big: 5000000000;

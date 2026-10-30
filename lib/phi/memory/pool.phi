@@ -1,0 +1,117 @@
+# Pools: memory for many objects of one size, handed out and taken back in a few
+# steps, without searching (32-bit kernels and programs).
+#
+#   use memory.pool;
+#   ptr<PoolData> monsters: (Pool.New: sizeof Monster 256);    # 256 to a chunk
+#   ptr<Monster> m: (Pool.Alloc: monsters);                     # zeroed; 0 if out of memory
+#   m.health is 100;
+#   call Pool.Free: monsters m;
+#   log monsters:0.used;                                        # how many are handed out
+#   call Pool.Delete: monsters;                                 # all of its memory at once
+#
+# A pool takes memory from the heap a chunk at a time (per_chunk objects) and keeps
+# it until Delete. Free puts an object's slot on the pool's list of free slots and
+# Alloc takes the first one off it, so neither depends on how many there are. Each
+# slot starts with a word saying which pool it belongs to while it's handed out, so
+# freeing an object twice, or into another pool, stops the program with a message.
+
+use memory.mem;
+
+struct.PoolData
+{
+	u32 size;                   # bytes in an object
+	u32 slot;                   # bytes in a slot: the tag, then the object (8-byte aligned)
+	u32 per_chunk;
+	u32 used;                   # objects handed out now
+	u32 capacity;               # slots in all of its chunks
+	u32 free_slots;             # the first free slot; each one's object holds the next
+	u32 chunks;                 # the newest chunk; each starts with the one before
+}
+
+phi.Pool:Library
+{
+	const u32 POOL_FREE: 0x45455246;        # 'FREE': the tag of a free slot
+	const u32 SLOT_HEADER: 8;               # the tag, and 4 bytes to keep objects 8-byte aligned
+	const u32 CHUNK_HEADER: 8;
+
+	# a pool of objects of size bytes, taking memory per_chunk objects at a time;
+	# 0 if the heap is full
+	[New: u32 size: 0; u32 per_chunk: 64;]
+		ptr<PoolData> pool: new PoolData;
+		if pool is 0 return 0;
+		pool:0.size is size;
+		pool:0.slot is SLOT_HEADER + ((size + 7) & ~7);
+		pool:0.per_chunk is per_chunk;
+		if per_chunk is 0
+			pool:0.per_chunk is 1;
+		;;
+	[end: pool]
+
+	# a zeroed object, or 0 if the heap has no room for another chunk
+	[Alloc: ptr<PoolData> pool: 0;]
+		if pool:0.free_slots is 0
+			if (Grow: pool) is false return 0;
+		;;
+		ptr<u32> slot: pool:0.free_slots;
+		u32 object: slot + SLOT_HEADER;
+		ptr<u32> link: object;
+		pool:0.free_slots is link:0;
+		slot:0 is pool;
+		pool:0.used++;
+		call Mem.Fill: object 0 pool:0.size;
+	[end: object]
+
+	# give an object back; freeing 0 does nothing
+	[Free: ptr<PoolData> pool: 0; u32 object: 0;]
+		if object is 0 return;
+		ptr<u32> slot: object - SLOT_HEADER;
+		if slot:0 is not pool
+			if slot:0 is POOL_FREE
+				log '\nPHI: an object freed twice into a pool: ' object '\n';
+			;;
+			else
+				log '\nPHI: an object freed into a pool it did not come from: ' object '\n';
+			;;
+			exit -1;
+		;;
+		slot:0 is POOL_FREE;
+		ptr<u32> link: object;
+		link:0 is pool:0.free_slots;
+		pool:0.free_slots is slot;
+		pool:0.used--;
+	[end]
+
+	# every chunk back to the heap, and the pool itself; its objects are gone with it
+	[Delete: ptr<PoolData> pool: 0;]
+		if pool is 0 return;
+		u32 chunk: pool:0.chunks;
+		while chunk is not 0
+			ptr<u32> header: chunk;
+			u32 before: header:0;
+			free header;
+			chunk is before;
+		;;
+		free pool;
+	[end]
+
+	# another chunk, its slots added to the free list in order; false if the heap is full
+	[Grow: ptr<PoolData> pool: 0;]
+		ptr<u8> chunk: new u8[CHUNK_HEADER + pool:0.slot * pool:0.per_chunk];
+		if chunk is 0 return false;
+		ptr<u32> header: chunk;
+		header:0 is pool:0.chunks;
+		pool:0.chunks is chunk;
+
+		# from the last slot to the first, so Alloc hands them out in address order
+		u32 i: pool:0.per_chunk;
+		while i > 0
+			i--;
+			ptr<u32> slot: chunk + CHUNK_HEADER + i * pool:0.slot;
+			ptr<u32> link: slot + SLOT_HEADER;
+			slot:0 is POOL_FREE;
+			link:0 is pool:0.free_slots;
+			pool:0.free_slots is slot;
+		;;
+		pool:0.capacity++ pool:0.per_chunk;
+	[end: true]
+}

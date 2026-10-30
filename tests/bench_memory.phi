@@ -1,5 +1,7 @@
-# Benchmarks for the kernel heap: phi test --bench compares the counts with
-# bench_memory.bench.
+# Benchmarks for the kernel heap, pools and maps: phi test --bench compares the counts
+# with bench_memory.bench.
+use memory.pool;
+use data.map;
 use test.bench;
 
 struct.Node
@@ -36,6 +38,52 @@ phi.BenchMemory:Kernel
 		free buffer;
 	;;
 	call Bench.Stop: 'heap alloc and free 256 bytes x2000';
+
+	# 100,000 objects from the heap, then from a pool, kept until all are made
+	ptr<u32> objects: new u32[100000];
+	call Bench.Start;
+	while u32 i: 0; i < 100000; i++;
+		objects:i is new Node;
+	;;
+	call Bench.Stop: 'heap alloc 100000 nodes';
+	call Bench.Start;
+	while u32 i: 0; i < 100000; i++;
+		free objects:i;
+	;;
+	call Bench.Stop: 'heap free 100000 nodes';
+
+	ptr<PoolData> nodes: (Pool.New: sizeof Node 1024);
+	call Bench.Start;
+	while u32 i: 0; i < 100000; i++;
+		objects:i is (Pool.Alloc: nodes);
+	;;
+	call Bench.Stop: 'pool alloc 100000 nodes';
+	call Bench.Start;
+	while u32 i: 0; i < 100000; i++;
+		call Pool.Free: nodes objects:i;
+	;;
+	call Bench.Stop: 'pool free 100000 nodes';
+	log 'pool in use: ' nodes:0.used '\n';
+	call Pool.Delete: nodes;
+	free objects;
+
+	# a map of 100,000 IDs, then each one found
+	ptr<MapData> ids: (Map.New);
+	call Bench.Start;
+	while u32 i: 0; i < 100000; i++;
+		call Map.Set: ids 1000000 + i * 13 i;
+	;;
+	call Bench.Stop: 'map set 100000 keys';
+	bln all: true;
+	call Bench.Start;
+	while u32 i: 0; i < 100000; i++;
+		if (Map.Get: ids 1000000 + i * 13 0xFFFFFFFF) is not i
+			all is false;
+		;;
+	;;
+	call Bench.Stop: 'map get 100000 keys';
+	log 'map found all: ' all ' places: ' ids:0.capacity '\n';
+	call Map.Delete: ids;
 
 	debug 'blocks in use: ' Heap.used_blocks '\n';
 	exit 0;

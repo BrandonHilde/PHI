@@ -1,0 +1,197 @@
+# Maps from u32 keys to u32 values, such as an ID to an index or a pointer, on the
+# heap (32-bit kernels and programs).
+#
+#   use data.map;
+#   ptr<MapData> players: (Map.New);
+#   call Map.Set: players 1042 slot;            # adds the key, or changes its value
+#   bln here: (Map.Has: players 1042);
+#   u32 slot: (Map.Get: players 1042 NONE);     # NONE if the key isn't there (0 if left out)
+#   call Map.Remove: players 1042;              # false if it wasn't there
+#   log players:0.count;                        # how many keys
+#   call Map.Delete: players;
+#
+#   # every key and value, in no particular order
+#   int pos: (Map.Next: players);
+#   while pos >= 0
+#       log (Map.KeyAt: players pos) ' ' (Map.ValueAt: players pos) '\n';
+#       pos is (Map.Next: players pos);
+#   ;;
+#
+# Any u32 can be a key, 0 included. The keys are kept in a table whose size is a power
+# of 2: a key's place comes from multiplying it by a large odd number (Fibonacci
+# hashing), and a taken place sends it to the next one along. The table doubles when
+# it's three-quarters full, so Set, Get, Has and Remove take about the same time
+# however many keys there are. Changing the map while walking it with Next can skip
+# keys or show them twice.
+
+use memory.mem;
+
+struct.MapData
+{
+	ptr<u32> keys;
+	ptr<u32> values;
+	ptr<u8> states;             # EMPTY, USED or REMOVED for each place
+	u32 count;                  # keys in the map
+	u32 capacity;               # places: a power of 2
+	u32 removed;                # places left REMOVED (they slow a search until the table is remade)
+	u32 shift;                  # 32 minus the bits in capacity: a key's place is its hash >> shift
+}
+
+phi.Map:Library
+{
+	const u32 FIRST_CAPACITY: 16;
+	const u32 FIRST_SHIFT: 28;
+	const u32 HASH: 0x9E3779B1;           # 2^32 divided by the golden ratio, made odd
+	const u8 EMPTY: 0;
+	const u8 USED: 1;
+	const u8 REMOVED: 2;
+
+	# an empty map; 0 if the heap is full
+	[New]
+		ptr<MapData> map: new MapData;
+		if map is 0 return 0;
+		if (Allocate: map FIRST_CAPACITY FIRST_SHIFT) is false
+			free map;
+			return 0;
+		;;
+	[end: map]
+
+	# key's value set to value, adding key if it isn't there; false if the heap is full
+	[Set: ptr<MapData> map: 0; u32 key: 0; u32 value: 0;]
+		int pos: (Find: map key);
+		if pos >= 0
+			map:0.values:pos is value;
+			return true;
+		;;
+		# keep a quarter of the places free (counting removed ones), so searches stay short
+		if (map:0.count + map:0.removed + 1) * 4 > map:0.capacity * 3
+			if (Rebuild: map) is false return false;
+		;;
+		u32 place: (Place: map key);
+		while map:0.states:place is USED
+			place is (place + 1) & (map:0.capacity - 1);
+		;;
+		if map:0.states:place is REMOVED
+			map:0.removed--;
+		;;
+		map:0.states:place is USED;
+		map:0.keys:place is key;
+		map:0.values:place is value;
+		map:0.count++;
+	[end: true]
+
+	# key's value, or otherwise if key isn't in the map
+	[Get: ptr<MapData> map: 0; u32 key: 0; u32 otherwise: 0;]
+		int pos: (Find: map key);
+		if pos < 0 return otherwise;
+	[end: map:0.values:pos]
+
+	[Has: ptr<MapData> map: 0; u32 key: 0;]
+	[end: (Find: map key) >= 0]
+
+	# take key out of the map; false if it wasn't there
+	[Remove: ptr<MapData> map: 0; u32 key: 0;]
+		int pos: (Find: map key);
+		if pos < 0 return false;
+		map:0.states:pos is REMOVED;
+		map:0.count--;
+		map:0.removed++;
+	[end: true]
+
+	# the place of the first key after the place after (leave it out to start), or -1 after the last
+	[Next: ptr<MapData> map: 0; int after: -1;]
+		u32 place: after + 1;
+		while place < map:0.capacity
+			if map:0.states:place is USED return place;
+			place++;
+		;;
+	[end: -1]
+
+	# the key and the value at a place from Next
+	[KeyAt: ptr<MapData> map: 0; int pos: 0;]
+	[end: map:0.keys:pos]
+
+	[ValueAt: ptr<MapData> map: 0; int pos: 0;]
+	[end: map:0.values:pos]
+
+	# every key out, keeping the table's size
+	[Clear: ptr<MapData> map: 0;]
+		call Mem.Fill: map:0.states EMPTY map:0.capacity;
+		map:0.count is 0;
+		map:0.removed is 0;
+	[end]
+
+	[Delete: ptr<MapData> map: 0;]
+		if map is 0 return;
+		free map:0.keys;
+		free map:0.values;
+		free map:0.states;
+		free map;
+	[end]
+
+	# ---- inside the table
+
+	# where key's search starts
+	[Place: ptr<MapData> map: 0; u32 key: 0;]
+	[end: (key * HASH) >> map:0.shift]
+
+	# the place holding key, or -1
+	[Find: ptr<MapData> map: 0; u32 key: 0;]
+		u32 place: (Place: map key);
+		while map:0.states:place is not EMPTY
+			if map:0.states:place is USED and map:0.keys:place is key return place;
+			place is (place + 1) & (map:0.capacity - 1);
+		;;
+	[end: -1]
+
+	# new, empty tables of capacity places; false if the heap is full
+	[Allocate: ptr<MapData> map: 0; u32 capacity: 0; u32 shift: 0;]
+		ptr<u32> keys: new u32[capacity];
+		ptr<u32> values: new u32[capacity];
+		ptr<u8> states: new u8[capacity];
+		if keys is 0 or values is 0 or states is 0
+			free keys;
+			free values;
+			free states;
+			return false;
+		;;
+		map:0.keys is keys;
+		map:0.values is values;
+		map:0.states is states;
+		map:0.capacity is capacity;
+		map:0.shift is shift;
+		map:0.count is 0;
+		map:0.removed is 0;
+	[end: true]
+
+	# the keys moved into a new table: twice as big if they fill half of it, else the
+	# same size (which clears out the removed places); false if the heap is full
+	[Rebuild: ptr<MapData> map: 0;]
+		u32 capacity: map:0.capacity;
+		u32 shift: map:0.shift;
+		if map:0.count * 2 >= capacity
+			capacity is capacity * 2;
+			shift--;
+		;;
+		ptr<u32> old_keys: map:0.keys;
+		ptr<u32> old_values: map:0.values;
+		ptr<u8> old_states: map:0.states;
+		u32 old_capacity: map:0.capacity;
+		if (Allocate: map capacity shift) is false return false;   # the map is unchanged
+		while u32 i: 0; i < old_capacity; i++;
+			if old_states:i is USED
+				u32 place: (Place: map old_keys:i);
+				while map:0.states:place is USED
+					place is (place + 1) & (map:0.capacity - 1);
+				;;
+				map:0.states:place is USED;
+				map:0.keys:place is old_keys:i;
+				map:0.values:place is old_values:i;
+				map:0.count++;
+			;;
+		;;
+		free old_keys;
+		free old_values;
+		free old_states;
+	[end: true]
+}

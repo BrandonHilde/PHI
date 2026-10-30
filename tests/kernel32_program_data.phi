@@ -1,0 +1,12 @@
+# memory.pool, data.map and data.queue in a user program (on memory.program_heap).
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+	int pid: (Process.Spawn: 'DATA.BIN');
+	int code: (Process.Wait: pid);
+	log 'exit code: ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

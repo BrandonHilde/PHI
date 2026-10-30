@@ -1,0 +1,10 @@
+count: 2
+get: 8 99 missing: 12345
+has: 1 0
+remove: 1 again: 0 has: 0
+count: 1001 places: 2048 found all: 1
+walked: 1001 values add up to 499508
+count: 1001 places: 2048 removed places: 1
+last value: 19999
+cleared: 0 0
+heap blocks: 0

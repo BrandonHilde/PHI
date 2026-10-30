@@ -975,7 +975,33 @@ Goal: the containers and allocators a server uses on every tick, in the library.
 fills a map with 100,000 IDs and finds each one, with benchmarks from S1 recording all
 of it, and `Heap.used_blocks` back to 0.
 
-**Status: not started.**
+**Status: done (2026-10-29).** See [Memory](docs/language.md#memory-32-bit-kernels).
+- [x] `memory.pool`: `New: size per_chunk`, `Alloc`, `Free`, `Delete`; memory from the heap
+  a chunk at a time, a list of free slots, and a tag on each slot that catches a double free
+  or a free into the wrong pool. 144 instructions to allocate, 65 to free.
+- [x] A faster heap, in kernels and programs alike: free blocks are on 28 lists by size
+  (found with `bsr`), so `Alloc` no longer walks every block, and memory is zeroed with
+  `rep stosd`. Allocating with 2,000 blocks in use went from about 19,000 instructions
+  to about 700, and it stays there at 100,000.
+- [x] `data.map`: u32 keys to u32 values, open addressing with Fibonacci hashing, doubling
+  at three-quarters full, and rebuilt at the same size when removed keys pile up; `Next`,
+  `KeyAt` and `ValueAt` walk it. About 116 instructions to find a key.
+- [x] `data.queue`: a ring of fixed-size records: `Push`, `Pop`, `Front`, `Drop`
+- [x] `crypto.pbkdf2`: PBKDF2-HMAC-SHA256, checked against RFC 7914 and Python's `hashlib`;
+  the password's HMAC start is worked out once and copied for each round
+- [x] Tests `kernel32_pool`, `kernel32_map`, `kernel32_queue`, `crypto_pbkdf2`, and
+  `kernel32_program_data` (all three containers in a user program); `bench_memory` makes
+  and frees 100,000 objects from the heap and from a pool and fills a map with 100,000
+  IDs, and `bench_crypto` times PBKDF2
+- Differs from the plan:
+  - The size lists replace the walk over every block rather than sitting in front of it;
+    blocks are still kept in address order, so `Free` merges neighbors as before. Freeing
+    costs more than it did (about 290 instructions instead of 167), since it keeps the
+    lists.
+  - `Pool.Alloc` and `Queue.Front` return a `u32`, as `Heap.Alloc` does, so storing the
+    result in any `ptr<T>` doesn't warn about one kind of pointer becoming another.
+  - A queue isn't safe between an interrupt handler and the rest of a program. S3 needs
+    that for the network card, and will add it there.
 
 #### Phase S3: UDP for servers
 

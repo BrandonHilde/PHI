@@ -4,6 +4,7 @@ use crypto.hmac;
 use crypto.aesgcm;
 use crypto.chachapoly;
 use crypto.x25519;
+use crypto.pbkdf2;
 use test.bench;
 
 phi.BenchCrypto:Kernel
@@ -44,6 +45,12 @@ phi.BenchCrypto:Kernel
 	call Bench.Stop: 'chacha20 4 KB';
 	log 'chacha20: ';
 	call Bytes.PrintHex: addr data 16;
+
+	call Bench.Start;
+	call Pbkdf2.Derive: 'secret' 6 addr nonce 12 1000 addr digest 32;
+	call Bench.Stop: 'pbkdf2 1000 rounds';
+	log 'pbkdf2: ';
+	call Bytes.PrintHex: addr digest 32;
 
 	call Bench.Start;
 	call X25519.ScalarMult: addr output addr scalar addr point;

@@ -1053,16 +1053,32 @@ The pieces can also be used directly:
 |---|---|---|
 | `memory.frames` | `Frames` | physical memory in 4 KB frames: `Alloc` →, `AllocContiguous: count` →, `Free: address`; `free_frames`, `total_frames`, `memory_top` |
 | `memory.paging` | `Paging` | identity paging with page 0 unmapped; `page_directory`, `mapped_bytes` |
-| `memory.heap` | `Heap` | `Alloc: size` →, `Free: address`, `LargestFree` →; `used_bytes`, `used_blocks`, `heap_size` |
+| `memory.heap` | `Heap` | `Alloc: size` →, `Free: address`, `LargestFree` →; `used_bytes`, `used_blocks`, `heap_size`. Free blocks are kept on lists by size, so `Alloc` takes about as long with 100,000 blocks in use as with ten |
 | `memory.list` | `List` | a growable list of u32 values: `New` →, `Add: list value`, `Get: list index` →, `Set: list index value`, `Delete: list`; the list's `count` and `capacity` |
+| `memory.pool` | `Pool` | many objects of one size, handed out and taken back without searching: `New: size per_chunk` →, `Alloc: pool` → (zeroed), `Free: pool object`, `Delete: pool` (all of them at once); the pool's `used` and `capacity`. Freeing twice, or into the wrong pool, stops the program |
+| `data.map` | `Map` | u32 keys to u32 values (an ID to an index or a pointer): `New` →, `Set: map key value`, `Get: map key otherwise` →, `Has: map key` →, `Remove: map key` →, `Next: map after` → (walks every key: `KeyAt`, `ValueAt`), `Clear`, `Delete`; the map's `count` |
+| `data.queue` | `Queue` | records of one size, oldest out first: `New: size capacity` →, `Push: queue record` → (false when full), `Pop: queue into` → (false when empty), `Front: queue` → (the oldest, where it is), `Drop: queue`, `Clear`, `Delete`; the queue's `count` |
+
+`memory.pool`, `data.map` and `data.queue` work in user programs too, on the program's
+heap. A server keeps its players like this:
 
 ```phi
-use memory.list;
+use memory.pool;
+use data.map;
 
-ptr<ListData> numbers: 0;
-call numbers is List.New;
-call List.Add: numbers 42;
-log numbers.count;
+ptr<PoolData> players: (Pool.New: sizeof Player 256);
+ptr<MapData> by_id: (Map.New);
+
+ptr<Player> p: (Pool.Alloc: players);
+p.id is 1042;
+call Map.Set: by_id p.id p;
+
+ptr<Player> found: (Map.Get: by_id 1042);       # 0 if there's no player 1042
+int pos: (Map.Next: by_id);                     # every player
+while pos >= 0
+    call Tick: (Map.ValueAt: by_id pos);
+    pos is (Map.Next: by_id pos);
+;;
 ```
 
 ## Files on disk (32-bit kernels)
@@ -1470,6 +1486,7 @@ call X25519.Base: addr public addr secret;   # the public half of a key pair
 | `crypto.bytes` | `Bytes` | `PrintHex: data length`, `FromHex: text buffer max` → (bytes, or -1), `Equal: a b length` → (takes the same time whatever the bytes are), `Copy: to from length`, `Zero: buffer length` |
 | `crypto.sha256` | `Sha256` | `Hash: data length digest`; in pieces: `Init`, `Update`, `Final` on a `Sha256State`, and `Copy: from to` |
 | `crypto.hmac` | `Hmac`, `Hkdf` | `Hmac.Mac: key key_length data length output` (or `Start`, `Update`, `Finish`); `Hkdf.Extract: salt salt_length ikm ikm_length prk`, `Hkdf.Expand: prk info info_length output length` |
+| `crypto.pbkdf2` | `Pbkdf2` | for storing passwords: `Derive: password password_length salt salt_length iterations output length`, PBKDF2-HMAC-SHA256. Keep the salt (random, from `Random.Fill`), the count and the result; to check a password, derive it again and compare with `Bytes.Equal`. 1,000 rounds are about 39 million instructions |
 | `crypto.chacha20` | `ChaCha20` | `Xor: key nonce counter data length` (encrypts or decrypts in place), `Block` |
 | `crypto.poly1305` | `Poly1305` | `Start: key`, `Update: data length`, `Finish: tag` |
 | `crypto.chachapoly` | `ChaChaPoly` | ChaCha20-Poly1305: `Seal: key nonce header header_length data length tag` (encrypts in place), `Open: ...` → false if anything was changed |
@@ -1846,6 +1863,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
 | `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
+| `memory.pool`, `data.map`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
@@ -1859,7 +1877,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
 | `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |
-| `crypto.bytes`, `crypto.sha256`, `crypto.hmac`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
+| `crypto.bytes`, `crypto.sha256`, `crypto.hmac`, `crypto.pbkdf2`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
 | `test.bench` | class `Bench` (32-bit kernels and programs): `Start`, `Stop: name` → (writes `bench NAME COUNT` to COM1 and returns the count), `Count` → (the timestamp counter, a `u64`); for benchmarks, see [tests/README.md](../tests/README.md#benchmarks) |
 
 ## Built-in functions

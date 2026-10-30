@@ -1,0 +1,46 @@
+# A pool, a map and a queue in a user program, on the program heap.
+use memory.pool;
+use data.map;
+use data.queue;
+
+struct.Player
+{
+	u32 id;
+	i32 score;
+}
+
+phi.Data:Program
+{
+	ptr<PoolData> players: (Pool.New: sizeof Player 16);
+	ptr<MapData> by_id: (Map.New);
+	ptr<QueueData> joined: (Queue.New: 4 8);
+
+	# 500 players, found by their ID; the first few also wait in a queue
+	while u32 i: 0; i < 500; i++;
+		ptr<Player> p: (Pool.Alloc: players);
+		p:0.id is 5000 + i * 3;
+		p:0.score is i;
+		call Map.Set: by_id p:0.id p;
+		u32 id: p:0.id;
+		call Queue.Push: joined addr id;
+	;;
+	ptr<Player> found: (Map.Get: by_id 5000 + 499 * 3);
+	log 'players: ' players:0.used ' found: ' found:0.score '\n';
+	log 'queued: ' joined:0.count ' of ' joined:0.capacity '\n';           # the rest didn't fit
+
+	u32 first: 0;
+	call Queue.Pop: joined addr first;
+	log 'first to join: ' first '\n';
+
+	# everyone leaves
+	int pos: (Map.Next: by_id);
+	while pos >= 0
+		call Pool.Free: players (Map.ValueAt: by_id pos);
+		pos is (Map.Next: by_id pos);
+	;;
+	call Map.Delete: by_id;
+	call Queue.Delete: joined;
+	call Pool.Delete: players;
+	log 'heap blocks: ' Heap.used_blocks '\n';
+	exit 0;
+}

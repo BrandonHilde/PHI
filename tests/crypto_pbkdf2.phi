@@ -1,0 +1,38 @@
+# PBKDF2-HMAC-SHA256 against RFC 7914's test vector (section 11) and Python's
+# hashlib.pbkdf2_hmac for the rest: more than one block, a password longer than a
+# SHA-256 block, and a count as high as a real password would use.
+use crypto.pbkdf2;
+
+phi.CryptoPbkdf2:Kernel
+{
+	u8 output[64];
+	u8 salt[16];
+	u8 long_password[100];
+
+	log 'rfc 7914, 1 round, 64 bytes:\n';
+	call Pbkdf2.Derive: 'passwd' 6 'salt' 4 1 addr output 64;
+	call Bytes.PrintHex: addr output 64;
+
+	log '2 rounds:\n';
+	call Pbkdf2.Derive: 'password' 8 'salt' 4 2 addr output 32;
+	call Bytes.PrintHex: addr output 32;
+
+	log '1000 rounds, 40 bytes (two blocks):\n';
+	call Pbkdf2.Derive: 'password' 8 'salt' 4 1000 addr output 40;
+	call Bytes.PrintHex: addr output 40;
+
+	log 'a 100-byte password:\n';
+	while int i: 0; i < 100; i++;
+		long_password:i is 'p';
+	;;
+	call Pbkdf2.Derive: addr long_password 100 'NaCl' 4 3 addr output 32;
+	call Bytes.PrintHex: addr output 32;
+
+	log '10000 rounds, a binary salt:\n';
+	while int i: 0; i < 16; i++;
+		salt:i is i;
+	;;
+	call Pbkdf2.Derive: 'secret' 6 addr salt 16 10000 addr output 32;
+	call Bytes.PrintHex: addr output 32;
+	exit 0;
+}

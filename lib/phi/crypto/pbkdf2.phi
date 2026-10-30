@@ -1,0 +1,74 @@
+# PBKDF2-HMAC-SHA256 (RFC 8018): a key from a password, made slow on purpose, for
+# storing passwords. Any kind of program.
+#
+#   use crypto.pbkdf2;
+#   u8 salt[16];
+#   call Random.Fill: addr salt 16;                     # a new salt for each password
+#   u8 hash[32];
+#   call Pbkdf2.Derive: 'secret' 6 addr salt 16 10000 addr hash 32;
+#   # keep the salt, the count (10000) and the hash; to check a password later,
+#   # derive it again with the same salt and count, and compare with Bytes.Equal
+#
+# Each iteration is two runs of SHA-256's compression, so the count sets how long a
+# guess takes: an attacker with the stored hash has to spend as long on each password
+# they try. Uses Hmac, so it can't run while an HMAC is in progress.
+
+use crypto.hmac;
+
+phi.Pbkdf2:Library
+{
+	Sha256State pbkdf2_inner;             # the HMAC with the password as its key, before any data
+	Sha256State pbkdf2_outer;
+	u8 pbkdf2_u[32];
+	u8 pbkdf2_t[32];
+	u8 pbkdf2_block[4];
+
+	# length bytes of key from the password and salt, with iterations rounds, to output
+	[Derive: ptr<u8> password: 0; u32 password_length: 0; ptr<u8> salt: 0; u32 salt_length: 0; u32 iterations: 1; ptr<u8> output: 0; u32 length: 0;]
+		# the password is the HMAC key every time: work out its start once and copy it
+		call Hmac.Start: password password_length;
+		call Sha256.Copy: addr Hmac.hmac_inner addr pbkdf2_inner;
+		call Sha256.Copy: addr Hmac.hmac_outer addr pbkdf2_outer;
+
+		u32 block: 1;
+		u32 done: 0;
+		while done < length
+			# U1 = HMAC(salt, then the block number), and T = U1 ^ U2 ^ ... ^ Uc,
+			# where each U is the HMAC of the one before
+			call Restart;
+			call Hmac.Update: salt salt_length;
+			call Sha256.PutBig: addr pbkdf2_block block;
+			call Hmac.Update: addr pbkdf2_block 4;
+			call Hmac.Finish: addr pbkdf2_u;
+			call Bytes.Copy: addr pbkdf2_t addr pbkdf2_u 32;
+			while u32 i: 1; i < iterations; i++;
+				call Restart;
+				call Hmac.Update: addr pbkdf2_u 32;
+				call Hmac.Finish: addr pbkdf2_u;
+				while u32 k: 0; k < 32; k++;
+					pbkdf2_t:k is pbkdf2_t:k ^ pbkdf2_u:k;
+				;;
+			;;
+
+			u32 take: length - done;
+			if take > 32
+				take is 32;
+			;;
+			call Bytes.Copy: output + done addr pbkdf2_t take;
+			done++ take;
+			block++;
+		;;
+
+		# nothing about the password is left behind
+		call Bytes.Zero: addr pbkdf2_u 32;
+		call Bytes.Zero: addr pbkdf2_t 32;
+		call Bytes.Zero: addr pbkdf2_inner sizeof pbkdf2_inner;
+		call Bytes.Zero: addr pbkdf2_outer sizeof pbkdf2_outer;
+	[end]
+
+	# the HMAC back to just after the password key
+	[Restart]
+		call Sha256.Copy: addr pbkdf2_inner addr Hmac.hmac_inner;
+		call Sha256.Copy: addr pbkdf2_outer addr Hmac.hmac_outer;
+	[end]
+}

@@ -1,0 +1,83 @@
+# Queues: records of one size, taken out in the order they were put in, such as
+# packets or events waiting for the next tick (32-bit kernels and programs).
+#
+#   use data.queue;
+#   ptr<QueueData> inbox: (Queue.New: sizeof Packet 64);  # room for 64
+#   bln ok: (Queue.Push: inbox addr packet);             # a copy goes in; false when full
+#   while (Queue.Pop: inbox addr packet)                 # the oldest is copied out
+#       call Handle: packet;
+#   ;;
+#   log inbox:0.count;
+#   call Queue.Delete: inbox;
+#
+# The records sit in one block from the heap, used as a ring: the oldest is at head,
+# and the next one goes count places after it, wrapping round at the end. Nothing is
+# moved when a record is taken out. Front gives the oldest record where it is, and
+# Drop takes it out without copying it. A queue isn't safe to use from an interrupt
+# handler and the rest of the program at the same time.
+
+use memory.mem;
+
+struct.QueueData
+{
+	ptr<u8> records;
+	u32 size;                   # bytes in a record
+	u32 capacity;               # records it holds
+	u32 head;                   # where the oldest record is
+	u32 count;                  # records in it
+}
+
+phi.Queue:Library
+{
+	# an empty queue of up to capacity records of size bytes; 0 if the heap is full
+	[New: u32 size: 0; u32 capacity: 0;]
+		ptr<QueueData> queue: new QueueData;
+		if queue is 0 return 0;
+		queue:0.records is new u8[size * capacity];
+		if queue:0.records is 0
+			free queue;
+			return 0;
+		;;
+		queue:0.size is size;
+		queue:0.capacity is capacity;
+	[end: queue]
+
+	# a copy of size bytes at record, added after the newest; false when it's full
+	[Push: ptr<QueueData> queue: 0; ptr<u8> record: 0;]
+		if queue:0.count is queue:0.capacity return false;
+		u32 place: (queue:0.head + queue:0.count) % queue:0.capacity;
+		call Mem.Copy: queue:0.records + place * queue:0.size record queue:0.size;
+		queue:0.count++;
+	[end: true]
+
+	# the oldest record copied to into, and taken out; false when it's empty
+	[Pop: ptr<QueueData> queue: 0; ptr<u8> into: 0;]
+		if queue:0.count is 0 return false;
+		call Mem.Copy: into queue:0.records + queue:0.head * queue:0.size queue:0.size;
+		call Drop: queue;
+	[end: true]
+
+	# the oldest record, where it is in the queue; 0 when it's empty
+	[Front: ptr<QueueData> queue: 0;]
+		if queue:0.count is 0 return 0;
+		u32 front: queue:0.records + queue:0.head * queue:0.size;
+	[end: front]
+
+	# take the oldest record out, without copying it anywhere
+	[Drop: ptr<QueueData> queue: 0;]
+		if queue:0.count is 0 return;
+		queue:0.head is (queue:0.head + 1) % queue:0.capacity;
+		queue:0.count--;
+	[end]
+
+	[Clear: ptr<QueueData> queue: 0;]
+		queue:0.head is 0;
+		queue:0.count is 0;
+	[end]
+
+	[Delete: ptr<QueueData> queue: 0;]
+		if queue is 0 return;
+		free queue:0.records;
+		free queue;
+	[end]
+}

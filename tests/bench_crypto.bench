@@ -3,4 +3,5 @@
 sha256 4 KB            984895
 aes-128-gcm seal 4 KB  1994502
 chacha20 4 KB          1233731
+pbkdf2 1000 rounds     39129208
 x25519 one key         109436638

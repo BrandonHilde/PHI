@@ -6,8 +6,12 @@
 #
 # A kernel that uses new or free gets this file automatically. It takes a
 # contiguous range of frames at startup: a quarter of free memory, at least 8 MB
-# (31 MB on QEMU's default 128 MB machine), but never more than half. Blocks are kept in address order, each with a header; Alloc takes the
-# first free block that fits and splits it, Free merges neighbors back together.
+# (31 MB on QEMU's default 128 MB machine), but never more than half. Blocks are
+# kept in address order, each with a header, so Free can merge a block with free
+# neighbors. Free blocks are also on one of BINS lists by size (8-15 bytes, 16-31,
+# 32-63, and so on, doubling), so Alloc only looks at free blocks that could fit:
+# the first one big enough on its size's own list, otherwise the first on the next
+# list that has one. It splits off what it doesn't need.
 # Both turn interrupts off while they run, so an interrupt handler can use the heap
 # too (a method's objects are freed when it ends, even in a handler).
 
@@ -21,7 +25,14 @@ struct.HeapBlock
 	u32 used;                   # 1 while handed out
 	ptr<HeapBlock> next;        # the block after this one in memory
 	ptr<HeapBlock> previous;
-	u32 reserved;               # keeps the header 24 bytes, so blocks stay 8-byte aligned
+	u32 bin;                    # while free: which size list it's on (and the header stays 24 bytes)
+}
+
+# the first bytes of a free block: its neighbors on its size's list
+struct.HeapFreeLinks
+{
+	ptr<HeapBlock> next;
+	ptr<HeapBlock> previous;
 }
 
 phi.Heap:Kernel
@@ -29,6 +40,7 @@ phi.Heap:Kernel
 	const u32 HEAP_MAGIC: 0x48454150;        # 'HEAP'
 	const u32 HEADER: 24;
 	const u32 HEAP_MIN_FRAMES: 2048;         # 8 MB
+	const u32 BINS: 28;                      # the last takes every block of 1 GB and more
 
 	ptr<HeapBlock> heap_first: 0;
 	u32 heap_start: 0;
@@ -36,6 +48,11 @@ phi.Heap:Kernel
 	u32 used_bytes: 0;          # handed out right now (not counting headers)
 	u32 used_blocks: 0;
 	u32 heap_flags: 0;          # the interrupt flag from before Alloc or Free started
+	ptr<HeapBlock> heap_bins[BINS];
+	u32 heap_zero_at: 0;        # for HeapZero
+	u32 heap_zero_words: 0;
+	u32 heap_bin_size: 0;       # for HeapBinOf
+	u32 heap_bin: 0;
 
 	call Init;
 
@@ -53,6 +70,7 @@ phi.Heap:Kernel
 			heap_first is heap_start;
 			heap_first:0.magic is HEAP_MAGIC;
 			heap_first:0.size is heap_size - HEADER;
+			call AddFree: heap_first;
 		;;
 	[end]
 
@@ -65,36 +83,33 @@ phi.Heap:Kernel
 			wanted is 8;
 		;;
 
-		ptr<HeapBlock> b: heap_first;
-		while b is not 0 and result is 0
-			if b:0.used is 0 and b:0.size >= wanted
-				# split off the rest when it's big enough to be a block of its own
-				if b:0.size >= wanted + HEADER + 8
-					ptr<HeapBlock> rest: b + HEADER + wanted;
-					rest:0.magic is HEAP_MAGIC;
-					rest:0.size is b:0.size - wanted - HEADER;
-					rest:0.used is 0;
-					rest:0.next is b:0.next;
-					rest:0.previous is b;
-					if b:0.next is not 0
-						ptr<HeapBlock> after: b:0.next;
-						after:0.previous is rest;
-					;;
-					b:0.next is rest;
-					b:0.size is wanted;
+		ptr<HeapBlock> b: (FindFree: wanted);
+		if b is not 0
+			call RemoveFree: b;
+			# split off the rest when it's big enough to be a block of its own
+			if b:0.size >= wanted + HEADER + 8
+				ptr<HeapBlock> rest: b + HEADER + wanted;
+				rest:0.magic is HEAP_MAGIC;
+				rest:0.size is b:0.size - wanted - HEADER;
+				rest:0.used is 0;
+				rest:0.next is b:0.next;
+				rest:0.previous is b;
+				if b:0.next is not 0
+					ptr<HeapBlock> after: b:0.next;
+					after:0.previous is rest;
 				;;
-
-				b:0.used is 1;
-				used_bytes++ b:0.size;
-				used_blocks++;
-				result is b + HEADER;
-
-				ptr<u32> words: result;
-				while u32 k: 0; k < b:0.size / 4; k++;
-					words:k is 0;
-				;;
+				b:0.next is rest;
+				b:0.size is wanted;
+				call AddFree: rest;
 			;;
-			b is b:0.next;
+
+			b:0.used is 1;
+			used_bytes++ b:0.size;
+			used_blocks++;
+			result is b + HEADER;
+			heap_zero_at is result;
+			heap_zero_words is b:0.size / 4;
+			call asm.HeapZero;
 		;;
 		call asm.HeapUnlock;
 	[end: result]
@@ -121,6 +136,7 @@ phi.Heap:Kernel
 			# merge with the next block, then the previous one, if they are free
 			ptr<HeapBlock> next: b:0.next;
 			if next is not 0 and next:0.used is 0
+				call RemoveFree: next;
 				b:0.size++ HEADER + next:0.size;
 				b:0.next is next:0.next;
 				next:0.magic is 0;
@@ -129,8 +145,10 @@ phi.Heap:Kernel
 					after:0.previous is b;
 				;;
 			;;
+			ptr<HeapBlock> merged: b;
 			ptr<HeapBlock> previous: b:0.previous;
 			if previous is not 0 and previous:0.used is 0
+				call RemoveFree: previous;
 				previous:0.size++ HEADER + b:0.size;
 				previous:0.next is b:0.next;
 				b:0.magic is 0;
@@ -138,7 +156,9 @@ phi.Heap:Kernel
 					ptr<HeapBlock> later: previous:0.next;
 					later:0.previous is previous;
 				;;
+				merged is previous;
 			;;
+			call AddFree: merged;
 		;;
 		call asm.HeapUnlock;
 	[end]
@@ -154,6 +174,67 @@ phi.Heap:Kernel
 			b is b:0.next;
 		;;
 	[end: largest]
+
+	# ---- the lists of free blocks by size
+
+	# which list a free block of size bytes (8 or more) goes on: 0 for 8-15, 1 for 16-31, ...
+	[BinOf: u32 size: 0;]
+		heap_bin_size is size;
+		call asm.HeapBinOf;
+		if heap_bin >= BINS
+			heap_bin is BINS - 1;
+		;;
+	[end: heap_bin]
+
+	# a free block of at least wanted bytes: the first that fits on wanted's own list
+	# (where some are smaller), else the first on a list of bigger ones; 0 if none
+	[FindFree: u32 wanted: 0;]
+		u32 bin: (BinOf: wanted);
+		ptr<HeapBlock> found: 0;
+		ptr<HeapBlock> b: heap_bins:bin;
+		while b is not 0 and found is 0
+			if b:0.size >= wanted
+				found is b;
+			;;
+			ptr<HeapFreeLinks> links: b + HEADER;
+			b is links:0.next;
+		;;
+		bin++;
+		while found is 0 and bin < BINS
+			found is heap_bins:bin;
+			bin++;
+		;;
+	[end: found]
+
+	# put a free block at the front of its size's list
+	[AddFree: ptr<HeapBlock> b: 0;]
+		u32 bin: (BinOf: b:0.size);
+		b:0.bin is bin;
+		ptr<HeapFreeLinks> links: b + HEADER;
+		links:0.next is heap_bins:bin;
+		links:0.previous is 0;
+		if heap_bins:bin is not 0
+			ptr<HeapFreeLinks> first: heap_bins:bin + HEADER;
+			first:0.previous is b;
+		;;
+		heap_bins:bin is b;
+	[end]
+
+	# take a free block off its size's list (before it's used, merged or resized)
+	[RemoveFree: ptr<HeapBlock> b: 0;]
+		ptr<HeapFreeLinks> links: b + HEADER;
+		if links:0.previous is not 0
+			ptr<HeapFreeLinks> before: links:0.previous + HEADER;
+			before:0.next is links:0.next;
+		;;
+		else
+			heap_bins:(b:0.bin) is links:0.next;
+		;;
+		if links:0.next is not 0
+			ptr<HeapFreeLinks> after: links:0.next + HEADER;
+			after:0.previous is links:0.previous;
+		;;
+	[end]
 }
 
 asm.HeapHalt
@@ -179,5 +260,25 @@ asm.HeapUnlock
 {
 	push dword [{heap_flags}]
 	popfd
+	ret
+}
+
+# heap_zero_words 32-bit words at heap_zero_at set to 0
+asm.HeapZero
+{
+	mov edi, [{heap_zero_at}]
+	mov ecx, [{heap_zero_words}]
+	xor eax, eax
+	rep stosd
+	ret
+}
+
+# heap_bin = the number of the highest bit set in heap_bin_size / 8
+asm.HeapBinOf
+{
+	mov eax, [{heap_bin_size}]
+	shr eax, 3
+	bsr eax, eax
+	mov [{heap_bin}], eax
 	ret
 }

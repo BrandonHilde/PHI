@@ -1,0 +1,52 @@
+# data.map: setting, changing, finding and removing keys (0 too), growing past its
+# first table, removed keys being cleared out, walking every key, and Delete.
+use data.map;
+
+phi.Test:Kernel
+{
+	ptr<MapData> map: (Map.New);
+	call Map.Set: map 1042 7;
+	call Map.Set: map 0 99;                  # 0 is a key like any other
+	call Map.Set: map 1042 8;                # changes the value
+	log 'count: ' map:0.count '\n';
+	log 'get: ' (Map.Get: map 1042) ' ' (Map.Get: map 0) ' missing: ' (Map.Get: map 5 12345) '\n';
+	log 'has: ' (Map.Has: map 0) ' ' (Map.Has: map 5) '\n';
+	log 'remove: ' (Map.Remove: map 0) ' again: ' (Map.Remove: map 0) ' has: ' (Map.Has: map 0) '\n';
+
+	# a thousand keys: the table doubles from 16 places to 2048
+	while u32 i: 0; i < 1000; i++;
+		call Map.Set: map i * 7919 i;
+	;;
+	bln all: true;
+	while u32 i: 0; i < 1000; i++;
+		if (Map.Get: map i * 7919 0xFFFFFFFF) is not i
+			all is false;
+		;;
+	;;
+	log 'count: ' map:0.count ' places: ' map:0.capacity ' found all: ' all '\n';
+
+	# walking it sees every key once
+	u32 seen: 0;
+	u32 total: 0;
+	int pos: (Map.Next: map);
+	while pos >= 0
+		seen++;
+		total++ (Map.ValueAt: map pos);
+		pos is (Map.Next: map pos);
+	;;
+	log 'walked: ' seen ' values add up to ' total '\n';
+
+	# removing and adding again and again doesn't fill the table with removed places
+	while u32 round: 0; round < 20000; round++;
+		call Map.Remove: map round % 1000 * 7919;
+		call Map.Set: map round % 1000 * 7919 round;
+	;;
+	log 'count: ' map:0.count ' places: ' map:0.capacity ' removed places: ' (map:0.removed < map:0.capacity / 4) '\n';
+	log 'last value: ' (Map.Get: map 999 * 7919) '\n';
+
+	call Map.Clear: map;
+	log 'cleared: ' map:0.count ' ' (Map.Has: map 1042) '\n';
+	call Map.Delete: map;
+	log 'heap blocks: ' Heap.used_blocks '\n';
+	exit 0;
+}

@@ -1,0 +1,9 @@
+slot: 40 chunk: 4
+used: 10 capacity: 12
+next to each other: 1
+eighth: 7 93
+reused: 1 zeroed: 1
+used after freeing: 0
+heap blocks: 0
+
+PHI: an object freed twice into a pool: 1060960

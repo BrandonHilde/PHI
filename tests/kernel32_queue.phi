@@ -1,0 +1,47 @@
+# data.queue: records come out in the order they went in, a full queue says so,
+# the ring wraps round, and Front and Drop take a record out without copying it.
+use data.queue;
+
+struct.Event
+{
+	u32 kind;
+	i32 x;
+	i32 y;
+}
+
+phi.Test:Kernel
+{
+	ptr<QueueData> events: (Queue.New: sizeof Event 4);
+	Event e;
+
+	while int i: 1; i <= 5; i++;
+		e.kind is i;
+		e.x is i * 10;
+		e.y is -i;
+		log 'push ' i ': ' (Queue.Push: events addr e) '\n';      # the fifth doesn't fit
+	;;
+
+	# take two out, put two more in: they go round to the start of the block
+	while int i: 0; i < 2; i++;
+		call Queue.Pop: events addr e;
+		log 'pop: ' e.kind ' ' e.x ' ' e.y '\n';
+	;;
+	while int i: 6; i <= 7; i++;
+		e.kind is i;
+		call Queue.Push: events addr e;
+	;;
+
+	# the oldest where it is, then dropped without copying
+	ptr<Event> oldest: (Queue.Front: events);
+	log 'front: ' oldest:0.kind ' count: ' events:0.count '\n';
+	call Queue.Drop: events;
+
+	while (Queue.Pop: events addr e)
+		log 'pop: ' e.kind '\n';
+	;;
+	log 'empty: ' events:0.count ' pop: ' (Queue.Pop: events addr e) ' front: ' (Queue.Front: events) '\n';
+
+	call Queue.Delete: events;
+	log 'heap blocks: ' Heap.used_blocks '\n';
+	exit 0;
+}
