@@ -78,7 +78,7 @@ namespace Phi.Compiler.CodeGen
             foreach (ClassDecl cls in unit.Classes)
             {
                 file = cls.File;
-                Comment($"---- class {cls.Name}");
+                Comment($"---- class {cls.Name} ({FileName(file)})");
                 foreach (Stmt s in cls.Body) EmitStatement(s);
             }
 
@@ -219,6 +219,8 @@ namespace Phi.Compiler.CodeGen
 
         int LineOf(Node node) => file.GetLocation(node.Span.Start).Line;
 
+        static string FileName(SourceFile f) => f.Path.Replace('\\', '/');
+
         /// <summary>Puts the source line above the code it produced, which helps when reading the .asm.</summary>
         void SourceComment(Node node)
         {
@@ -249,7 +251,9 @@ namespace Phi.Compiler.CodeGen
         {
             file = m.Decl.Owner.File;
             Line("");
-            Comment(m.IsHook ? $"event {m.Name}" : m.IsInterruptHandler ? $"interrupt handler {m.Name}" : $"method {m.Name}");
+            // the class and file are what phi profile reports a method by
+            string kind = m.IsHook ? "event" : m.IsInterruptHandler ? "interrupt handler" : "method";
+            Comment($"{kind} {m.Name} ({FileName(file)})");
             Label(m.Label);
 
             if (m.IsInterruptHandler)

@@ -1,0 +1,53 @@
+# Benchmarks for gfx.draw, drawing on a 320x200 image in memory (no screen needed):
+# phi test --bench compares the counts with bench_draw.bench. A checksum of the pixels
+# after each one shows a change that draws something different.
+use gfx.draw;
+use test.bench;
+
+phi.BenchDraw:Kernel
+{
+	const int W: 320;
+	const int H: 200;
+	ptr<u32> canvas: new u32[W * H];
+	call Draw.PushTarget: canvas W H;
+
+	call Bench.Start;
+	while int i: 0; i < 10; i++;
+		call Draw.FillRect: 0 0 W H (Draw.Rgb: i * 20 100 200);
+	;;
+	call Bench.Stop: 'fill rect 320x200 x10';
+	call Sum: 'fill rect';
+
+	call Bench.Start;
+	while int i: 0; i < 10; i++;
+		call Draw.BlendRect: 10 10 300 180 Draw.BLACK 64;
+	;;
+	call Bench.Stop: 'blend rect 300x180 x10';
+	call Sum: 'blend rect';
+
+	call Bench.Start;
+	while int i: 0; i < 100; i++;
+		call Draw.Line: 0 i * 2 W - 1 H - 1 - i * 2 Draw.WHITE;
+	;;
+	call Bench.Stop: 'line 320 across x100';
+	call Sum: 'line';
+
+	call Bench.Start;
+	while int r: 90; r > 0; r--;
+		call Draw.FillCircle: W / 2 H / 2 r (Draw.Rgb: r * 2 0 255 - r);
+	;;
+	call Bench.Stop: 'fill circle radius 1 to 90';
+	call Sum: 'fill circle';
+
+	call Draw.PopTarget;
+	exit 0;
+
+	# a checksum of every pixel, so a change that draws differently shows in the output
+	[Sum: ptr<u8> what: 0;]
+		u32 sum: 0;
+		while int i: 0; i < W * H; i++;
+			sum is sum * 31 + canvas:i;
+		;;
+		log what ': ' sum '\n';
+	[end]
+}

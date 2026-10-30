@@ -1,0 +1,50 @@
+# Timing code, for benchmarks. Any 32-bit program (kernels and user programs).
+#
+#   use test.bench;
+#   call Bench.Start;
+#   ...                                 # the code being timed
+#   call Bench.Stop: 'sha256 4 KB';     # writes "bench sha256 4 KB 182734" to COM1
+#
+#   u64 t: (Bench.Count);               # the counter now, to time something yourself
+#
+# The numbers come from the CPU's timestamp counter (rdtsc). phi test --bench runs a test
+# under QEMU's -icount, where the counter goes up with the instructions the CPU runs, so
+# the same code gives the same number on any computer. Anywhere else it counts real
+# time, which changes from run to run.
+#
+# A test whose name starts with bench_ is a benchmark: phi test --bench compares the
+# numbers it writes with the ones saved in NAME.bench (see tests/README.md). Plain
+# phi test leaves the bench lines out when it compares the output with NAME.expected.
+
+phi.Bench:Library
+{
+	u64 bench_start: 0;
+	u64 bench_now: 0;
+
+	# the timestamp counter now
+	[Count]
+		call BenchReadCounter;
+	[end: bench_now]
+
+	# start timing
+	[Start]
+		call BenchReadCounter;
+		bench_start is bench_now;
+	[end]
+
+	# stop timing; writes the count since Start as "bench NAME COUNT", and returns it
+	[Stop: ptr<u8> name: 0;]
+		call BenchReadCounter;
+		u64 took: bench_now - bench_start;
+		debug 'bench ' name ' ' took '\n';
+	[end: took]
+}
+
+# bench_now = the timestamp counter
+asm.BenchReadCounter
+{
+	rdtsc
+	mov [{bench_now}], eax
+	mov [{bench_now} + 4], edx
+	ret
+}

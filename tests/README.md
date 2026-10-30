@@ -89,6 +89,61 @@ The program should end with `exit`, so QEMU finishes the recording; see `sound_t
 
 `tests/support/` holds files that tests load with `use`; they aren't tests themselves.
 
+## Benchmarks
+
+A test named `bench_NAME.phi` is a benchmark. It times pieces of code with `test.bench`
+and writes a `bench WHAT COUNT` line to COM1 for each:
+
+```phi
+use test.bench;
+
+call Bench.Start;
+call Sha256.Hash: addr data 4096 addr digest;
+call Bench.Stop: 'sha256 4 KB';      # bench sha256 4 KB 984895
+```
+
+A plain `phi test` runs it like any other test, leaving the `bench` lines out when it
+compares the output with `NAME.expected`. So a benchmark should also print what it worked
+out (a hash, a checksum of pixels), which shows a change that makes it faster by breaking it.
+
+`phi test --bench` runs only the benchmarks, under QEMU's `-icount`. There the timestamp
+counter goes up with the instructions the CPU runs, so a count is the same on every run and
+every computer. Each count is compared with the one saved in `NAME.bench`:
+
+```
+phi test --bench                      # every benchmark, against its saved counts
+phi test --bench -f crypto            # only bench_crypto
+phi test --bench --save-bench         # keep the latest counts as the new baseline
+phi test --bench --tolerance 5        # allow 5% (the default is 2%)
+```
+
+A count more than the tolerance above its baseline fails the test (`SLOWER`), and so does
+one that's no longer written. A count well below says `faster`, and `--save-bench` keeps
+it. The first run of a new benchmark saves its counts. Commit the `.bench` files: they're
+the baseline everyone compares with.
+
+A count is instructions, not time. It doesn't see what makes real hardware slower or faster
+(caches, memory speed), and time spent waiting is skipped, but it's exact, which is what
+noticing a change needs.
+
+## Profiling
+
+`phi profile file.phi` boots a kernel (or a 16-bit program) in QEMU and reads the CPU's
+registers through QEMU's monitor about a thousand times a second. When it ends, it lists
+the PHI lines, methods and library routines where the samples landed:
+
+```
+phi profile samples/web.phi                         # with a window, until you close it
+phi profile samples/web.phi --input fetch.input     # headless, until the script ends
+phi profile tests/bench_crypto.phi --seconds 20     # headless, for 20 s (or until it exits)
+```
+
+The report is also saved as `build/NAME/profile.txt`. Samples taken while the CPU waited
+in `hlt` are counted separately, and a kernel waiting for a key shows time in the interrupt
+handler and the keyboard routine. Time in user programs is shown as a total, without a
+breakdown yet. The program runs more slowly while it's sampled (by about a third), but
+each line's share of the time comes out about the same.
+
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error
 messages without QEMU, and that the programs in `samples/` compile. Run them with
 `dotnet test PHI.sln`.

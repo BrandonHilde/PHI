@@ -13,6 +13,9 @@ namespace Phi.Cli
         /// <summary>For a user program (Program classes): the flat binary, instead of a disk image.</summary>
         public string ProgramPath => Path.ChangeExtension(ImagePath, ".bin");
         public bool IsProgram { get; set; }
+
+        /// <summary>NASM's listing of each unit is saved next to its .asm (as NAME.lst).</summary>
+        public bool Listing { get; init; }
         public List<string> Errors { get; } = new();
         public List<string> Warnings { get; } = new();
     }
@@ -42,10 +45,12 @@ namespace Phi.Cli
 
         /// <param name="appendSource">Extra PHI text added after the file's own (used by the test runner).</param>
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
-        public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null)
+        /// <param name="listing">Also save NASM's listing of each unit (NAME.lst), which phi profile maps addresses with.</param>
+        public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
+                                        bool listing = false)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
-            var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img") };
+            var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img"), Listing = listing };
 
             if (!File.Exists(phiFile))
             {
@@ -193,6 +198,7 @@ namespace Phi.Cli
             File.WriteAllText(asmPath, unit.Text);
 
             var args = new List<string> { "-f", "bin", "-o", binPath };
+            if (result.Listing) args.AddRange(new[] { "-l", Path.ChangeExtension(asmPath, ".lst") });
             args.AddRange(defines);
             args.Add(asmPath);
 

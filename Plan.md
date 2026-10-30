@@ -925,7 +925,37 @@ Goal: know how fast PHI code is, and notice when it gets slower.
 **Done when:** `phi profile samples/web.phi` lists the source lines that take the most
 time, and making a benchmarked routine slower on purpose fails `phi test --bench`.
 
-**Status: not started.**
+**Status: done (2026-10-29).** See [tests/README.md](tests/README.md#benchmarks).
+- [x] `test.bench` (`lib/phi/test/bench.phi`): `Bench.Start`, `Bench.Stop: name` and
+  `Bench.Count` on the timestamp counter, for kernels and programs
+- [x] `phi test --bench`: runs the `bench_*` tests under `-icount shift=0,sleep=off` and
+  compares each count with `NAME.bench`, failing one more than `--tolerance` (2%) over;
+  `--save-bench` keeps new counts, and the first run saves them. Plain `phi test` leaves
+  `bench` lines out of the comparison. The counts are exactly the same from run to run.
+- [x] `phi profile`: samples the registers through a second QEMU monitor (about 1,500 a
+  second), maps each address to its PHI line, method or library routine through NASM's
+  listing (`-l`), and reports the busiest lines and methods, idle time (`hlt`) and time in
+  user programs; with a window, or headless with `--input` or `--seconds`. Works for
+  kernels and 16-bit programs. The generated `.asm` now names each method's class and file
+  (`; method Fat.Mount (lib/phi/fs/fat16.phi)`), which the profiler reads.
+- [x] Benchmarks: `bench_memory` (heap), `bench_crypto` (SHA-256, AES-GCM, ChaCha20,
+  X25519, checked against Python's results), `bench_draw` (fill, blend, lines, circles on
+  an image in memory) and `bench_synth` (one second of four voices)
+- [x] xUnit tests for bench lines and baselines, register parsing, and address maps (a
+  written listing and a real kernel's)
+- Differs from the plan:
+  - No `OS.GetMicros`: `Bench.Count` (the timestamp counter) times short pieces of code, and
+    under `-icount` it's exact. Real microseconds need the counter's speed measured against
+    the timer, which is worth doing when something needs wall-clock time.
+  - No TCP download benchmark yet: how many times the kernel polls depends on the host
+    network's timing, so the count changes from run to run. It belongs with S5, which
+    rewrites TCP.
+  - The profiler samples from outside (QEMU's monitor) rather than from the timer
+    interrupt, so the program needs no changes and 16-bit programs work too.
+- First numbers worth knowing for S2 and S6: one X25519 key is about 109 million
+  instructions (optimized C needs a few hundred thousand cycles), and 92% of it is one
+  method (`X25519.Mul`), three-quarters of that on one line. Allocating 2,000 heap blocks in a
+  row costs 38 million instructions, because each `Alloc` walks every block before it.
 
 #### Phase S2: Building blocks for servers
 

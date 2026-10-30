@@ -273,7 +273,8 @@ namespace Phi.Cli
             return c.ToString();
         }
 
-        static TcpClient Connect(int port, CancellationToken cancel)
+        /// <summary>Connects to a QEMU monitor, waiting up to 5 seconds for QEMU to start listening.</summary>
+        internal static TcpClient Connect(int port, CancellationToken cancel)
         {
             var clock = Stopwatch.StartNew();
             while (true)

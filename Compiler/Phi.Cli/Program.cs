@@ -16,10 +16,24 @@ const string Usage = """
                                            --input scripts the input instead of NAME.input,
                                            --contains checks for the lines of a file instead of NAME.expected,
                                            --keep-output saves NAME.actual even when it passes
+      phi test  --bench [-f <name>] [--save-bench] [--tolerance <percent>]
+                                           run the benchmarks (tests/bench_NAME.phi) counting instructions,
+                                           and fail one whose counts are more than the tolerance
+                                           (default 2%) over the ones saved in NAME.bench;
+                                           --save-bench saves the new counts instead
+      phi profile <file.phi> [--input <file>] [--seconds <n>] [--top <n>] [--memory <MB>]
+                                           boot it in QEMU, sampling where the CPU is, and list the PHI
+                                           lines and methods that took the most time; with a window
+                                           until you close it, or headless with --input (until the
+                                           script ends) or --seconds
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
     """;
+
+// how much over its baseline (in percent) a benchmark's count may be: -icount makes the counts
+// almost the same every run, so a small change is a real one
+const double DefaultTolerance = 2;
 
 try
 {
@@ -145,13 +159,39 @@ static int Execute(string[] args)
                 string? input = Option("--input");
                 string? contains = Option("--contains");
                 bool keepOutput = Flag("--keep-output");
+                bool saveBench = Flag("--save-bench");
+                bool bench = Flag("--bench") || saveBench;
+                string? tolerance = Option("--tolerance");
                 MemoryOption();
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
+                double percent = DefaultTolerance;
+                if (tolerance != null && (!double.TryParse(tolerance, out percent) || percent < 0))
+                    throw new ArgumentException("--tolerance takes a percentage, such as 5");
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
                 return TestRunner.Run(target, filter, TimeSpan.FromSeconds(timeout != null ? double.Parse(timeout) : 10),
                                       input != null ? Path.GetFullPath(input) : null, keepOutput,
-                                      contains != null ? Path.GetFullPath(contains) : null);
+                                      contains != null ? Path.GetFullPath(contains) : null,
+                                      bench ? new BenchOptions(saveBench, percent) : null);
+            }
+
+            case "profile":
+            {
+                string? input = Option("--input");
+                string? seconds = Option("--seconds");
+                string? top = Option("--top");
+                MemoryOption();
+                if (rest.Count != 1) throw new ArgumentException("profile needs exactly one .phi file");
+                if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
+                double? time = null;
+                if (seconds != null)
+                {
+                    if (!double.TryParse(seconds, out double s) || s <= 0) throw new ArgumentException("--seconds takes a number of seconds");
+                    time = s;
+                }
+                int lines = 15;
+                if (top != null && (!int.TryParse(top, out lines) || lines < 1)) throw new ArgumentException("--top takes a number of lines");
+                return Profiler.Run(rest[0], input != null ? Path.GetFullPath(input) : null, time, lines);
             }
 
             case "serve":

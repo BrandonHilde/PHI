@@ -1,0 +1,3 @@
+# Counts from phi test --bench (instructions run, under QEMU's -icount).
+# phi test --bench --save-bench replaces them with the latest counts.
+synth 4 voices 1 s  15173120

@@ -141,6 +141,8 @@ phi.Count:Program
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output
+       phi test --bench                  run the benchmarks and compare their counts with the saved ones
+       phi profile samples/web.phi       boot it, then list the PHI lines that took the most time
        phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
 
 The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each

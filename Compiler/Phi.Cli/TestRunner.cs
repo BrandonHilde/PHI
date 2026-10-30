@@ -14,12 +14,18 @@ namespace Phi.Cli
     ///
     /// A test whose classes are all :Library runs twice, as a 16-bit program and as a 32-bit
     /// kernel, so both code generators are checked against the same expected output.
+    ///
+    /// A test named bench_NAME is a benchmark: its "bench WHAT COUNT" lines are left out when the
+    /// output is compared, and with --bench only benchmarks run, each also checked against the
+    /// counts in NAME.bench (see BenchCheck).
     /// </summary>
     public static class TestRunner
     {
         /// <param name="input">An input script to use instead of each test's NAME.input.</param>
         /// <param name="contains">Lines the output must contain, to check instead of each test's NAME.expected or NAME.contains.</param>
-        public static int Run(string target, string? filter, TimeSpan timeout, string? input = null, bool keepOutput = false, string? contains = null)
+        /// <param name="bench">Run only the benchmarks, and check their counts.</param>
+        public static int Run(string target, string? filter, TimeSpan timeout, string? input = null, bool keepOutput = false,
+                              string? contains = null, BenchOptions? bench = null)
         {
             List<string> tests = Directory.Exists(target)
                 ? Directory.GetFiles(target, "*.phi").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
@@ -28,9 +34,12 @@ namespace Phi.Cli
             if (filter != null)
                 tests = tests.Where(t => Path.GetFileNameWithoutExtension(t).Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
 
+            if (bench != null)
+                tests = tests.Where(t => Path.GetFileName(t).StartsWith(BenchCheck.Prefix, StringComparison.OrdinalIgnoreCase)).ToList();
+
             if (tests.Count == 0)
             {
-                Console.WriteLine($"No tests found in {target}");
+                Console.WriteLine(bench != null ? $"No benchmarks ({BenchCheck.Prefix}NAME.phi) found in {target}" : $"No tests found in {target}");
                 return 1;
             }
 
@@ -40,18 +49,21 @@ namespace Phi.Cli
             foreach (var (test, mode) in runs)
             {
                 string name = Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : $" ({mode.Name})");
-                string? failure = RunOne(test, timeout, mode, input, keepOutput, contains);
+                var report = new List<string>();
+                string? failure = RunOne(test, timeout, mode, input, keepOutput, contains, bench, report);
 
                 if (failure == null)
                 {
                     passed++;
                     Write(ConsoleColor.Green, "PASS ");
                     Console.WriteLine(name);
+                    foreach (string line in report) Console.WriteLine("     " + line);
                 }
                 else
                 {
                     Write(ConsoleColor.Red, "FAIL ");
                     Console.WriteLine(name);
+                    foreach (string line in report) Console.WriteLine("     " + line);
                     foreach (string line in failure.Split('\n')) Console.WriteLine("     " + line);
                 }
             }
@@ -84,7 +96,9 @@ namespace Phi.Cli
         }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
-        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput, string? containsOverride)
+        /// <param name="report">gets lines to show under the test's result (a benchmark's counts)</param>
+        static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput, string? containsOverride,
+                              BenchOptions? bench, List<string> report)
         {
             string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
             string name = Path.GetFileNameWithoutExtension(phiFile);
@@ -155,7 +169,7 @@ namespace Phi.Cli
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
                 expected == null ? null : output => Normalize(output).Contains(expected), input, recording,
-                Path.GetDirectoryName(build.ImagePath));
+                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null);
 
             string actual = Normalize(run.Serial);
             if (keepOutput) File.WriteAllText(actualFile, actual);
@@ -169,9 +183,12 @@ namespace Phi.Cli
 
             if (actual == expected && run.InputError == null)
             {
-                if (recording == null) return null;
-                string? soundFailure = SoundCheck.Check(recording, File.ReadAllLines(soundFile));
-                return soundFailure == null ? null : $"the sound was wrong ({Path.GetFileName(recording)} is the recording):\n{soundFailure}";
+                if (recording != null)
+                {
+                    string? soundFailure = SoundCheck.Check(recording, File.ReadAllLines(soundFile));
+                    if (soundFailure != null) return $"the sound was wrong ({Path.GetFileName(recording)} is the recording):\n{soundFailure}";
+                }
+                return bench == null ? null : BenchCheck.Check(Path.Combine(dir, variant + ".bench"), run.Serial, bench, report);
             }
 
             File.WriteAllText(actualFile, actual);
@@ -180,9 +197,9 @@ namespace Phi.Cli
             return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 
-        /// <summary>Line endings and trailing whitespace don't matter.</summary>
+        /// <summary>Line endings and trailing whitespace don't matter, and neither do a benchmark's counts.</summary>
         static string Normalize(string s) =>
-            string.Join("\n", s.Replace("\r", "").Split('\n').Select(l => l.TrimEnd())).Trim('\n');
+            string.Join("\n", s.Replace("\r", "").Split('\n').Where(l => !BenchCheck.IsBenchLine(l)).Select(l => l.TrimEnd())).Trim('\n');
 
         static void Write(ConsoleColor color, string text)
         {

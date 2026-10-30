@@ -1,0 +1,55 @@
+# Benchmarks for the cryptography TLS uses: phi test --bench compares the counts with
+# bench_crypto.bench. Each result is printed, so a change that breaks one shows too.
+use crypto.hmac;
+use crypto.aesgcm;
+use crypto.chachapoly;
+use crypto.x25519;
+use test.bench;
+
+phi.BenchCrypto:Kernel
+{
+	u8 data[4096];
+	u8 digest[32];
+	u8 key[32];
+	u8 nonce[12];
+	u8 tag[16];
+	u8 scalar[32];
+	u8 point[32];
+	u8 output[32];
+
+	while u32 i: 0; i < 4096; i++;
+		data:i is i * 7 + 3;
+	;;
+	while u32 i: 0; i < 32; i++;
+		key:i is i;
+		scalar:i is 255 - i;
+	;;
+	point:0 is 9;                               # X25519's base point
+
+	call Bench.Start;
+	call Sha256.Hash: addr data 4096 addr digest;
+	call Bench.Stop: 'sha256 4 KB';
+	log 'sha256: ';
+	call Bytes.PrintHex: addr digest 32;
+
+	call Bench.Start;
+	call AesGcm.Seal: addr key addr nonce addr nonce 0 addr data 4096 addr tag;
+	call Bench.Stop: 'aes-128-gcm seal 4 KB';
+	log 'aes-gcm tag: ';
+	call Bytes.PrintHex: addr tag 16;
+
+	# (Seal encrypted data in place, so this runs over the AES-GCM output)
+	call Bench.Start;
+	call ChaCha20.Xor: addr key addr nonce 1 addr data 4096;
+	call Bench.Stop: 'chacha20 4 KB';
+	log 'chacha20: ';
+	call Bytes.PrintHex: addr data 16;
+
+	call Bench.Start;
+	call X25519.ScalarMult: addr output addr scalar addr point;
+	call Bench.Stop: 'x25519 one key';
+	log 'x25519: ';
+	call Bytes.PrintHex: addr output 32;
+
+	exit 0;
+}

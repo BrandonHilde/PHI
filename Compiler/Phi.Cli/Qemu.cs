@@ -105,11 +105,21 @@ namespace Phi.Cli
         /// <summary>QEMU's -audiodev for recording the sound card to a WAV file.</summary>
         static string RecordAudio(string wavPath) => $"wav,id=snd0,path={wavPath.Replace(",", ",,")}";
 
+        // -icount: the virtual clock, and so the timestamp counter, goes up 1 ns for each
+        // instruction run (shift=0), and time spent halted is skipped (sleep=off), so a
+        // benchmark's counts are the same on every computer
+        static readonly string[] CountInstructions = { "-icount", "shift=0,sleep=off" };
+
+        /// <summary>A second monitor, which phi profile reads the CPU's registers from.</summary>
+        static string[] ProfileMonitor(int port) => new[] { "-monitor", $"tcp:127.0.0.1:{port},server,nowait" };
+
         /// <summary>Runs QEMU with a window; serial output goes to this terminal.</summary>
-        public static int RunInteractive(string image, bool debug)
+        /// <param name="profilePort">a port for phi profile's monitor connection</param>
+        public static int RunInteractive(string image, bool debug, int? profilePort = null)
         {
             var args = MachineArgs(image, SpeakerAudio());
             args.AddRange(new[] { "-serial", "stdio" });
+            if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
 
             if (debug)
             {
@@ -134,14 +144,19 @@ namespace Phi.Cli
         /// <paramref name="input"/> is a script of QEMU monitor commands (see InputScript).
         /// With <paramref name="recordTo"/>, what the sound card plays is saved there as a WAV file,
         /// and QEMU gets a few seconds to exit by itself (which finishes the file) once the output is done.
+        /// With <paramref name="countInstructions"/>, the timestamp counter counts instructions (for benchmarks);
+        /// with <paramref name="profilePort"/>, a second monitor listens there for phi profile.
         /// </summary>
         public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
                                                  IReadOnlyList<string>? input = null, string? recordTo = null,
-                                                 string? screenshots = null)
+                                                 string? screenshots = null, bool countInstructions = false,
+                                                 int? profilePort = null)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
             var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0");
+            if (countInstructions) args.AddRange(CountInstructions);
+            if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
             // a script that restarts the machine (reboot) needs a reset to restart it rather than
             // stop QEMU; a triple fault then restarts it too, and the timeout catches that
             if (input != null && input.Any(InputScript.IsReboot)) args.Remove("-no-reboot");
@@ -236,7 +251,7 @@ namespace Phi.Cli
                 };
         }
 
-        static int FreePort()
+        public static int FreePort()
         {
             var listener = new TcpListener(IPAddress.Loopback, 0);
             listener.Start();

@@ -1,0 +1,42 @@
+# Benchmarks for the kernel heap: phi test --bench compares the counts with
+# bench_memory.bench.
+use test.bench;
+
+struct.Node
+{
+	u32 value;
+	ptr<Node> next;
+}
+
+phi.BenchMemory:Kernel
+{
+	# allocating and freeing 2000 nodes, kept in a list so each Alloc walks the ones before it
+	ptr<Node> head: 0;
+	call Bench.Start;
+	while u32 i: 0; i < 2000; i++;
+		ptr<Node> n: new Node;
+		n:0.value is i;
+		n:0.next is head;
+		head is n;
+	;;
+	call Bench.Stop: 'heap alloc 2000';
+
+	call Bench.Start;
+	while head is not 0
+		ptr<Node> rest: head:0.next;
+		free head;
+		head is rest;
+	;;
+	call Bench.Stop: 'heap free 2000';
+
+	# one block made and freed again and again, the usual case for a short-lived object
+	call Bench.Start;
+	while u32 i: 0; i < 2000; i++;
+		ptr<u8> buffer: new u8[256];
+		free buffer;
+	;;
+	call Bench.Stop: 'heap alloc and free 256 bytes x2000';
+
+	debug 'blocks in use: ' Heap.used_blocks '\n';
+	exit 0;
+}
