@@ -1110,6 +1110,7 @@ call size is Fat.List: '';                              # prints the root folder
 | `FileSize: path` → | the size in bytes, or -1 |
 | `Exists: path` → | 1 if the file or folder is there |
 | `WriteFile: path data length` → | create or replace a file; 0 if a folder is missing, the folder is full, or the disk is full |
+| `Append: path data length` → | add to the end of a file (creating it if need be), writing the data, then the FAT, then the new size: a machine that stops part way leaves the file as it was |
 | `Delete: path` → | remove a file |
 | `List: path` → | print a folder (`''` is the root); returns how many entries it has |
 | `Entries: path into max` → | copy up to `max` of a folder's entries into a `FileInfo` array (`addr entries:0`); how many, or -1 |
@@ -1126,6 +1127,36 @@ Case doesn't matter in paths. Long file names aren't read, and folders don't gro
 each folder holds as many new files as it has free entries (the root holds 511). Changes
 are written to the disk image, so a kernel sees them the next time it boots the same image
 (`phi build` makes a fresh image each time).
+
+**Saving as things change.** `fs.savelog` keeps records of one size in a file, each with a
+CRC-32 (`data.crc32`), added with `Fat.Append`. A kernel adds a record whenever something
+changes, and reads them all back when it starts again. A record cut short, or damaged,
+ends the reading there:
+
+```phi
+use fs.savelog;
+
+struct.SavedPlayer
+{
+    u32 id;
+    i32 x;
+    i32 y;
+}
+
+SavedPlayer record;
+call SaveLog.Add: 'PLAYERS.LOG' addr record sizeof SavedPlayer;       # false if it couldn't be written
+int count: (SaveLog.Read: 'PLAYERS.LOG' sizeof SavedPlayer addr Restore);   # -1 if there's no log
+log SaveLog.torn;                       # true if it stopped at a damaged record
+call SaveLog.Clear: 'PLAYERS.LOG';
+
+[Restore: ptr<u8> bytes: 0;]            # each record, oldest first
+    ptr<SavedPlayer> r: bytes as ptr<SavedPlayer>;
+    # ...
+[end]
+```
+
+A log only grows, so a kernel that keeps one for a long time reads it, clears it, and adds
+back the latest record of each thing (`samples/mmo/server.phi` does this when it starts).
 
 ## The network (32-bit kernels)
 
@@ -1890,7 +1921,8 @@ and the classes of used files run before the classes that use them.
 | `memory.pool`, `data.map`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
-| `fs.fat16` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `fs.fat16`, `fs.savelog` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |

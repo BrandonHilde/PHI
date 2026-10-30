@@ -1,0 +1,8 @@
+# The three clients join, and each moves five steps right. Once all three moves are
+# saved, restart the server on the same disk: the clients join again, and the server
+# puts each where it was.
+expect saved player 2 at 70 100
+expect saved player 3 at 70 140
+expect saved player 4 at 70 20
+reboot
+expect world started: 3 saved players

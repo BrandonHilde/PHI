@@ -1,0 +1,73 @@
+# Fat.Append and fs.savelog across a restart. The first boot adds 300 records of 20
+# bytes (so some cross from one 2 KB cluster into the next), then 7 bytes of a record
+# that was cut short; the input script restarts the machine on the same disk, and the
+# second boot reads the log back: 300 whole records, then the torn one. Then a file
+# that fills its cluster exactly, so the next Append starts a new one.
+use fs.savelog;
+
+struct.Position
+{
+	u32 id;
+	i32 x;
+	i32 y;
+	u32 tick;
+}
+
+phi.Test:Kernel
+{
+	u32 sum: 0;
+	int seen: 0;
+	u8 block[2048];
+
+	if (Fat.Exists: 'SAVES.LOG') is false
+		u32 free_before: (Fat.FreeClusters);
+		Position p;
+		while u32 i: 0; i < 300; i++;
+			p.id is i % 7;
+			p.x is i * 3;
+			p.y is -i;
+			p.tick is i;
+			if (SaveLog.Add: 'SAVES.LOG' addr p sizeof Position) is false
+				log 'add failed at ' i '\n';
+			;;
+		;;
+		call Fat.Append: 'SAVES.LOG' 'cut off' 7;     # a record the machine stopped writing
+		log 'first boot: ' (Fat.FileSize: 'SAVES.LOG') ' bytes in ' free_before - (Fat.FreeClusters) ' clusters\n';
+		while true
+			call OS.Sleep: 100;                        # the input script restarts it
+		;;
+	;;
+
+	int count: (SaveLog.Read: 'SAVES.LOG' sizeof Position addr Restore);
+	log 'second boot: ' count ' records, torn: ' SaveLog.torn ', ticks add up to ' sum ', last ' seen '\n';
+
+	# Clear, then two more: the log starts again
+	call SaveLog.Clear: 'SAVES.LOG';
+	Position q;
+	q.tick is 1000;
+	call SaveLog.Add: 'SAVES.LOG' addr q sizeof Position;
+	q.tick is 1001;
+	call SaveLog.Add: 'SAVES.LOG' addr q sizeof Position;
+	sum is 0;
+	count is (SaveLog.Read: 'SAVES.LOG' sizeof Position addr Restore);
+	log 'after clearing: ' count ' records, ticks add up to ' sum ', torn: ' SaveLog.torn '\n';
+	log 'no log: ' (SaveLog.Read: 'NONE.LOG' sizeof Position addr Restore) '\n';
+
+	# exactly one cluster, then ten bytes more
+	while int k: 0; k < 2048; k++;
+		block:k is k % 251;
+	;;
+	call Fat.Append: 'EXACT.DAT' addr block 2048;      # creates it
+	call Fat.Append: 'EXACT.DAT' 'ten bytes!' 10;
+	u8 tail[16];
+	int got: (Fat.ReadAt: 'EXACT.DAT' 2046 addr tail 16);
+	tail:got is 0;
+	log 'exact: ' (Fat.FileSize: 'EXACT.DAT') ' bytes, ends ' tail:0 ' ' tail:1 ' then ' addr tail + 2 '\n';
+	exit 0;
+
+	[Restore: ptr<u8> record: 0;]
+		ptr<Position> p: record as ptr<Position>;
+		sum++ p.tick;
+		seen is p.tick;
+	[end]
+}

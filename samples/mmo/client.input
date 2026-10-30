@@ -1,0 +1,17 @@
+# Once everyone has joined, move five steps right; then check that every player's
+# square is drawn where the server put it (each client sees the same world).
+expect sees 3 players
+sendkey right
+wait 120
+sendkey right
+wait 120
+sendkey right
+wait 120
+sendkey right
+wait 120
+sendkey right
+expect everyone has moved
+wait 1000
+pixel 75 105 F08A24
+pixel 75 145 F5C542
+pixel 75 25 3DBE5A

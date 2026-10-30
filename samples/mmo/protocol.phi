@@ -1,0 +1,31 @@
+# The messages between the mmo sample's server and its clients, over UDP. The server
+# and the client both `use protocol;`, so they agree on them. Each message starts with
+# a byte saying what it is; numbers go high byte first (Net.Put16, Net.Put32).
+#
+#   JOIN     client -> server   u32 player                 (every half second until WELCOME)
+#   WELCOME  server -> client   u16 x, u16 y               (where the player is: saved, or new)
+#   MOVE     client -> server   u32 player, u8 direction   (one STEP: LEFT, RIGHT, UP or DOWN)
+#   STATE    server -> client   u8 count, then u32 player, u16 x, u16 y for each (every tick)
+
+phi.Game:Library
+{
+	const u32 PORT: 4000;
+
+	const u8 JOIN: 1;
+	const u8 WELCOME: 2;
+	const u8 MOVE: 3;
+	const u8 STATE: 4;
+
+	const u8 LEFT: 1;
+	const u8 RIGHT: 2;
+	const u8 UP: 3;
+	const u8 DOWN: 4;
+
+	const int WIDTH: 320;                 # the world, which is the size of a client's screen
+	const int HEIGHT: 200;
+	const int SIZE: 10;                   # a player is a square this big
+	const int STEP: 10;                   # how far one MOVE goes
+	const int START_X: 20;                # where new players start, down the left side
+	const int MAX_PLAYERS: 32;
+	const int STATE_SIZE: 2 + MAX_PLAYERS * 8;
+}

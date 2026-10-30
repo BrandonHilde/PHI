@@ -896,7 +896,7 @@ What stands out:
 These are reached through [Development phases](#development-phases) S1–S11; each
 milestone names its phases.
 
-1. **A demo server on one machine** (Phases S1–S4). UDP sockets with queues, an interrupt-driven network
+1. **A demo server on one machine** (Phases S1–S4; done 2026-10-29, `samples/mmo/`). UDP sockets with queues, an interrupt-driven network
    card, a pool allocator for entities, a hash map, and an append-only save file. A small
    client (a PHI kernel in a second QEMU, or a program on the host) moves a character
    around.
@@ -1084,7 +1084,7 @@ client.
   ARP table its Ethernet address, so a server can answer a client without asking first
 - [x] `NAME.machines` in `phi test`: the test and the kernels it lists boot at once on one
   network (`VirtualNetwork`, a hub that QEMU joins with `-netdev socket`), each with a MAC
-  address of its own and a `TestNet` class saying which machine it is; each must match its
+  address of its own and a `Machine` class saying which machine it is; each must match its
   own `.expected`
 - [x] `net_udp`: a server and four clients each sending 1,000 numbered datagrams; the server
   gets all 4,000, in order, nothing dropped, while resting 2 ms between looks
@@ -1117,7 +1117,32 @@ Goal: Scenario 1's first milestone.
 clients, each client sees the others move, and after a restart (the input scripts'
 `reboot`) the server has their positions back.
 
-**Status: not started.**
+**Status: done (2026-10-29): milestone 1.** `phi run samples/mmo/server.phi`.
+- [x] `Fat.Append`: adds to the end of a file, filling its last cluster and then new ones;
+  writes the data, then the FAT (only if it took a new cluster), then the size, so a stop
+  part way through leaves the file as it was, and frees clusters an earlier stop left past
+  the end
+- [x] `data.crc32` and `fs.savelog`: records of one size, each with a CRC-32; `Read` calls a
+  method for each, oldest first, and stops at one cut short or damaged (`torn`); `Clear`
+- [x] `samples/mmo/`: `protocol.phi` (the messages, which both sides `use`), `server.phi`
+  (players in a pool and a map, a 20-a-second tick, moves saved to a log as they happen,
+  and the log read back and compacted at start-up) and `client.phi` (joins, moves with the
+  arrow keys, draws everyone with `gfx.draw`, and joins again if the server goes quiet)
+- [x] Its test: the server and three clients; each client moves five steps, sees the
+  others move, and checks the squares on its screen; the server restarts on the same disk
+  and each client comes back where it was (8 s)
+- [x] `phi run` of a program with `NAME.machines` boots every machine on one network, each
+  in a window; `phi test` with no folder also runs the samples that have tests
+  (`mmo/server`); each machine of a network test can have its own `.input` and `.contains`;
+  the class each machine gets is now `Machine` (`number`, `count`, `address`, `first`)
+- [x] Test `kernel32_savelog`: 300 records, a torn one, a restart, reading back, `Clear`, and
+  a file that fills its cluster exactly
+- Differs from the plan:
+  - No bigger partition yet: a save log of players is a few KB, so 16 MB is plenty for
+    now. The image builder's layout is fixed constants and keeps the whole image in
+    memory; a 2 GB partition needs it to compute the layout and write the image in pieces.
+  - A client that sends JOIN again before the first WELCOME comes back gets two; it now
+    counts only the first (the test found it).
 
 #### Phase S5: TCP for servers
 

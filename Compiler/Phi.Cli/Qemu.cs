@@ -119,10 +119,13 @@ namespace Phi.Cli
 
         /// <summary>Runs QEMU with a window; serial output goes to this terminal.</summary>
         /// <param name="profilePort">a port for phi profile's monitor connection</param>
-        public static int RunInteractive(string image, bool debug, int? profilePort = null)
+        /// <param name="network">the network the card is plugged into, in place of QEMU's user network</param>
+        /// <param name="serialFile">where the serial output goes, in place of this terminal</param>
+        public static int RunInteractive(string image, bool debug, int? profilePort = null,
+                                         IReadOnlyList<string>? network = null, string? serialFile = null)
         {
-            var args = MachineArgs(image, SpeakerAudio());
-            args.AddRange(new[] { "-serial", "stdio" });
+            var args = MachineArgs(image, SpeakerAudio(), network);
+            args.AddRange(new[] { "-serial", serialFile != null ? $"file:{serialFile}" : "stdio" });
             if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
 
             if (debug)

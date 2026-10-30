@@ -8,7 +8,9 @@ const string Usage = """
                                            build, then boot it in QEMU (serial output prints here);
                                            --keep-disk keeps the files a kernel saved for next time
                                            (programs from the rootfs are updated on it),
-                                           --memory gives the machine more (or less) than 128 MB, up to 1024
+                                           --memory gives the machine more (or less) than 128 MB, up to 1024;
+                                           with NAME.machines next to it, it and the machines listed there
+                                           boot together on one network, each in a window
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
                 [--memory <MB>]
                                            boot each test headless and compare its serial
@@ -93,6 +95,10 @@ static int Execute(string[] args)
                 string file = Path.GetFullPath(rest[0]);
                 outDir ??= Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file));
 
+                // NAME.machines: the program and the machines it lists, on one network
+                if (NetworkMachines.ManifestFor(file) is string manifest)
+                    return RunMachines(file, manifest, command == "run");
+
                 BuildResult build = Builder.Build(file, outDir);
                 // compiler diagnostics already say "file:line:col: error:"; other problems get the prefix
                 foreach (string w in build.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
@@ -169,10 +175,13 @@ static int Execute(string[] args)
                 if (tolerance != null && (!double.TryParse(tolerance, out percent) || percent < 0))
                     throw new ArgumentException("--tolerance takes a percentage, such as 5");
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
+                // with no folder given, the samples that have tests run too
+                List<string>? samples = rest.Count > 0 ? null
+                    : TestRunner.SampleTests(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(target))!, "samples"));
                 return TestRunner.Run(target, filter, TimeSpan.FromSeconds(timeout != null ? double.Parse(timeout) : 10),
                                       input != null ? Path.GetFullPath(input) : null, keepOutput,
                                       contains != null ? Path.GetFullPath(contains) : null,
-                                      bench ? new BenchOptions(saveBench, percent) : null);
+                                      bench ? new BenchOptions(saveBench, percent) : null, samples);
             }
 
             case "profile":
@@ -219,6 +228,32 @@ static int Execute(string[] args)
         Console.Error.WriteLine(Usage);
         return 1;
     }
+}
+
+// builds a program with NAME.machines and the machines it lists; with run, boots them all on
+// one network, each in a window of its own (machine 1's serial output comes here, the others'
+// goes to serial.txt in their build folders)
+static int RunMachines(string file, string manifest, bool run)
+{
+    var errors = new List<string>();
+    var warnings = new List<string>();
+    List<NetworkMachines.Machine>? machines = NetworkMachines.Build(file, manifest, "", errors, warnings);
+    foreach (string w in warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
+    foreach (string e in errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
+    if (machines == null) return 1;
+    foreach (var m in machines)
+        Console.WriteLine($"built machine {m.Number}: {Path.GetRelativePath(Environment.CurrentDirectory, m.Image)}");
+    if (!run) return 0;
+
+    using var network = new VirtualNetwork();
+    var windows = machines.Select(m =>
+    {
+        string? serial = m.Number == 1 ? null : Path.Combine(Path.GetDirectoryName(m.Image)!, "serial.txt");
+        if (serial != null) Console.WriteLine($"machine {m.Number}'s output: {Path.GetRelativePath(Environment.CurrentDirectory, serial)}");
+        return Task.Run(() => Qemu.RunInteractive(m.Image, debug: false, network: network.MachineArgs(m.Number), serialFile: serial));
+    }).ToArray();
+    Task.WaitAll(windows);
+    return windows[0].Result;
 }
 
 // look for tests/ in the current directory or any parent, so `phi test` works anywhere in the repo

@@ -85,13 +85,19 @@ net_udp_client.phi 4
 ```
 
 The machines are connected by a hub in `phi test` instead of QEMU's user network, so there's
-no DHCP server and no internet. Each machine gets a class `TestNet` telling it who it is:
-`TestNet.machine` (1 for the test, then 2, 3, ... in the order listed), `TestNet.machines`
-(how many), `TestNet.address` (`10.0.3.N`, for `Net.Start: TestNet.address`) and
-`TestNet.first` (machine 1's address). Every machine's output must match its own file's
-`.expected` (copies of one file share it); a mismatch is saved as `NAME.actual` for the
-test and `FILE.N.actual` for machine N. A file
-listed in a `.machines` file isn't run as a test of its own. See `net_udp.phi`.
+no DHCP server and no internet. Each machine gets a class `Machine` telling it who it is:
+`Machine.number` (1 for the test, then 2, 3, ... in the order listed), `Machine.count`
+(how many), `Machine.address` (`10.0.3.N`, for `Net.Start: Machine.address`) and
+`Machine.first` (machine 1's address). Each machine is checked like a test of its own,
+against its own file's `.expected` or `.contains`, with its own `.input` script if it has
+one (copies of one file share them); a mismatch is saved as `NAME.actual` for the test and
+`FILE.N.actual` for machine N. A file listed in a `.machines` file isn't run as a test of
+its own. See `net_udp.phi`, and `samples/mmo/` for one with input scripts and a restart.
+`phi run` boots the same machines, each in a window (see the README).
+
+A sample is a test too when it has a `.expected`, `.contains` or `.machines` file: plain
+`phi test` runs those after `tests/`, named by their folder (`mmo/server`, so `-f mmo`
+picks it).
 
 A file `NAME.sound` checks what the sound card played. Every machine has an AC'97 card;
 with `NAME.sound`, QEMU records its output to `build/NAME/NAME.wav` (otherwise the sound

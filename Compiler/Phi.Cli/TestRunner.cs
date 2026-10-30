@@ -24,15 +24,22 @@ namespace Phi.Cli
         /// <param name="input">An input script to use instead of each test's NAME.input.</param>
         /// <param name="contains">Lines the output must contain, to check instead of each test's NAME.expected or NAME.contains.</param>
         /// <param name="bench">Run only the benchmarks, and check their counts.</param>
+        /// <param name="alsoRun">More tests to run after target's (the samples that are tests).</param>
         public static int Run(string target, string? filter, TimeSpan timeout, string? input = null, bool keepOutput = false,
-                              string? contains = null, BenchOptions? bench = null)
+                              string? contains = null, BenchOptions? bench = null, IEnumerable<string>? alsoRun = null)
         {
             List<string> tests = Directory.Exists(target)
                 ? Directory.GetFiles(target, "*.phi").OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList()
                 : new List<string> { target };
+            // a sample is known by its folder too: mmo/server
+            var samples = (alsoRun ?? Enumerable.Empty<string>()).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            string TestName(string t) => samples.Contains(t)
+                ? $"{Path.GetFileName(Path.GetDirectoryName(Path.GetFullPath(t)))}/{Path.GetFileNameWithoutExtension(t)}"
+                : Path.GetFileNameWithoutExtension(t);
+            tests.AddRange(samples);
 
             if (filter != null)
-                tests = tests.Where(t => Path.GetFileNameWithoutExtension(t).Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
+                tests = tests.Where(t => TestName(t).Contains(filter, StringComparison.OrdinalIgnoreCase)).ToList();
 
             if (bench != null)
                 tests = tests.Where(t => Path.GetFileName(t).StartsWith(BenchCheck.Prefix, StringComparison.OrdinalIgnoreCase)).ToList();
@@ -41,7 +48,7 @@ namespace Phi.Cli
             if (Directory.Exists(target))
             {
                 var listed = Directory.GetFiles(target, "*.machines")
-                    .SelectMany(m => ReadMachines(m).Select(x => Path.GetFullPath(x.File)))
+                    .SelectMany(m => NetworkMachines.Read(m).Select(x => x.File))
                     .ToHashSet(StringComparer.OrdinalIgnoreCase);
                 tests = tests.Where(t => !listed.Contains(Path.GetFullPath(t))).ToList();
             }
@@ -57,7 +64,7 @@ namespace Phi.Cli
             int passed = 0;
             foreach (var (test, mode) in runs)
             {
-                string name = Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : $" ({mode.Name})");
+                string name = TestName(test) + (mode == null ? "" : $" ({mode.Name})");
                 var report = new List<string>();
                 string? failure = RunOne(test, timeout, mode, input, keepOutput, contains, bench, report);
 
@@ -211,93 +218,98 @@ namespace Phi.Cli
         }
 
         /// <summary>
-        /// NAME.machines: the other kernels on one network with the test, one to a line: a .phi
-        /// file next to it, and how many copies of it run (1 if left out). # starts a comment.
-        /// </summary>
-        public static List<(string File, int Copies)> ReadMachines(string manifest)
-        {
-            string dir = Path.GetDirectoryName(Path.GetFullPath(manifest))!;
-            var machines = new List<(string, int)>();
-            foreach (string raw in File.ReadAllLines(manifest))
-            {
-                string line = raw.Trim();
-                if (line.Length == 0 || line.StartsWith('#')) continue;
-                string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
-                int copies = parts.Length > 1 && int.TryParse(parts[1], out int n) && n > 0 ? n : 1;
-                machines.Add((Path.Combine(dir, parts[0]), copies));
-            }
-            return machines;
-        }
-
-        /// <summary>
-        /// What each machine of a network test is told about itself: its number (1 for the test,
-        /// then 2, 3, ... for the machines NAME.machines lists, in order), how many there are,
-        /// its address (10.0.3.number) and machine 1's.
-        /// </summary>
-        static string TestNetClass(int machine, int machines) =>
-            $"\nphi.TestNet:Library\n{{\n\tu32 machine: {machine};\n\tu32 machines: {machines};\n" +
-            $"\tu32 address: 0x0A0003{machine:X2};\n\tu32 first: 0x0A000301;\n}}\n";
-
-        /// <summary>
-        /// A test with NAME.machines: it and the machines it lists boot at once, on one network
-        /// (VirtualNetwork), and each must produce its own file's .expected output (copies of
-        /// one file share it).
+        /// A test with NAME.machines (see NetworkMachines): it and the machines it lists boot at
+        /// once on one network (VirtualNetwork). Each machine is checked like a test of its own,
+        /// with its file's .expected or .contains (copies of one file share them), and its
+        /// .input script if it has one.
         /// </summary>
         static string? RunNetwork(string phiFile, string manifest, TimeSpan timeout, string wrapper, bool keepOutput)
         {
-            string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
-            var machines = new List<string> { phiFile };
-            foreach (var (file, copies) in ReadMachines(manifest))
-            {
-                if (!File.Exists(file)) return $"{Path.GetFileName(manifest)} lists {file}, which isn't there";
-                machines.AddRange(Enumerable.Repeat(file, copies));
-            }
-            if (machines.Count > 254) return "a network test can have at most 254 machines";
+            var errors = new List<string>();
+            List<NetworkMachines.Machine>? machines = NetworkMachines.Build(phiFile, manifest, wrapper, errors);
+            if (machines == null) return string.Join("\n", errors);
 
-            // build every machine first, each with its own disk
-            var built = new List<(string File, int Number, string Image, string? Expected, string Actual)>();
-            for (int i = 0; i < machines.Count; i++)
-            {
-                string file = machines[i];
-                int number = i + 1;
-                string own = Path.GetFileNameWithoutExtension(file);
-                string variant = number == 1 ? own : $"{own}.{number}";
-                BuildResult build = Builder.Build(file, Path.Combine(dir, "build", variant), wrapper + TestNetClass(number, machines.Count));
-                if (!build.Success)
-                    return $"machine {number} ({Path.GetFileName(file)}) didn't build:\n" + string.Join("\n", build.Errors);
-                string expectedFile = Path.Combine(Path.GetDirectoryName(file)!, own + ".expected");
-                built.Add((file, number, build.ImagePath,
-                           File.Exists(expectedFile) ? Normalize(File.ReadAllText(expectedFile)) : null,
-                           Path.Combine(Path.GetDirectoryName(file)!, variant + ".actual")));
-            }
-
+            var checks = machines.Select(m => new MachineCheck(m)).ToList();
             using var network = new VirtualNetwork();
-            var runs = built.Select(m => Task.Run(() => Qemu.RunHeadless(m.Image, timeout,
-                m.Expected == null ? null : output => Normalize(output).Contains(m.Expected),
-                network: network.MachineArgs(m.Number)))).ToArray();
+            var runs = checks.Select(c => Task.Run(() => Qemu.RunHeadless(c.Machine.Image, timeout, c.IsDone, c.Input,
+                screenshots: Path.GetDirectoryName(c.Machine.Image), network: network.MachineArgs(c.Machine.Number)))).ToArray();
             Task.WaitAll(runs);
 
             var failures = new List<string>();
-            for (int i = 0; i < built.Count; i++)
+            for (int i = 0; i < checks.Count; i++)
             {
-                var m = built[i];
-                HeadlessResult run = runs[i].Result;
-                string actual = Normalize(run.Serial);
-                if (File.Exists(m.Actual)) File.Delete(m.Actual);
-                bool passed = m.Expected != null && actual == m.Expected;
-                if (keepOutput || !passed) File.WriteAllText(m.Actual, actual);
-                if (passed) continue;
-
-                string which = $"machine {m.Number} ({Path.GetFileName(m.File)})";
-                if (m.Expected == null)
-                    failures.Add($"{which}: missing {Path.GetFileNameWithoutExtension(m.File)}.expected; " +
-                                 $"the output was saved to {Path.GetFileName(m.Actual)}");
-                else
-                    failures.Add($"{which}: {run.Explain(timeout, "output did not match")}\n--- expected\n{m.Expected}\n" +
-                                 $"--- actual (saved to {Path.GetFileName(m.Actual)})\n{actual}");
+                string? failure = checks[i].Check(runs[i].Result, timeout, keepOutput);
+                if (failure != null) failures.Add($"machine {checks[i].Machine.Number} ({Path.GetFileName(checks[i].Machine.File)}): {failure}");
             }
             if (failures.Count == 0) return null;
             return string.Join("\n", failures) + $"\n({network.Frames} frames went over the network)";
+        }
+
+        /// <summary>What one machine of a network test must do: its file's .expected or .contains, and its .input.</summary>
+        sealed class MachineCheck
+        {
+            public NetworkMachines.Machine Machine { get; }
+            public string[]? Input { get; }
+            readonly string? expected;
+            readonly List<string>? contains;
+            readonly string actualFile;
+
+            public MachineCheck(NetworkMachines.Machine machine)
+            {
+                Machine = machine;
+                string dir = Path.GetDirectoryName(machine.File)!;
+                string own = Path.Combine(dir, Path.GetFileNameWithoutExtension(machine.File));
+                if (File.Exists(own + ".expected")) expected = Normalize(File.ReadAllText(own + ".expected"));
+                if (File.Exists(own + ".contains"))
+                    contains = File.ReadAllLines(own + ".contains").Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();
+                if (File.Exists(own + ".input")) Input = File.ReadAllLines(own + ".input");
+                actualFile = Path.Combine(dir, NetworkMachines.Variant(machine.File, machine.Number) + ".actual");
+            }
+
+            public bool IsDone(string output) =>
+                contains != null ? contains.All(Normalize(output).Contains)
+                : expected != null && Normalize(output).Contains(expected);
+
+            /// <returns>null if it did what it should, otherwise why not</returns>
+            public string? Check(HeadlessResult run, TimeSpan timeout, bool keepOutput)
+            {
+                string actual = Normalize(run.Serial);
+                if (File.Exists(actualFile)) File.Delete(actualFile);
+
+                string? why = null;
+                if (expected == null && contains == null)
+                    why = $"missing {Path.GetFileNameWithoutExtension(Machine.File)}.expected (or .contains)";
+                else if (contains != null)
+                {
+                    var missing = contains.Where(l => !actual.Contains(l)).ToList();
+                    if (missing.Count > 0 || run.InputError != null)
+                        why = run.Explain(timeout, "missing from the output: " + string.Join(" | ", missing));
+                }
+                else if (actual != expected || run.InputError != null)
+                    why = run.Explain(timeout, "output did not match") + $"\n--- expected\n{expected}";
+
+                if (keepOutput || why != null) File.WriteAllText(actualFile, actual);
+                return why == null ? null : $"{why}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
+            }
+        }
+
+        /// <summary>
+        /// The samples that are tests too: a .phi file anywhere under samples/ with a .expected,
+        /// .contains or .machines next to it (not the machines another one lists).
+        /// </summary>
+        public static List<string> SampleTests(string samples)
+        {
+            if (!Directory.Exists(samples)) return new List<string>();
+            // only the folders inside samples/ count: the path above it can have any names
+            bool InBuild(string f) => Path.GetRelativePath(samples, f).Split(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar)
+                                        .Any(part => part == "build" || part.EndsWith(".rootfs"));
+            var files = Directory.GetFiles(samples, "*.phi", SearchOption.AllDirectories).Where(f => !InBuild(f)).ToList();
+            var listed = files.Select(NetworkMachines.ManifestFor).OfType<string>()
+                              .SelectMany(m => NetworkMachines.Read(m).Select(x => x.File))
+                              .ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return files.Where(f => !listed.Contains(Path.GetFullPath(f)))
+                        .Where(f => new[] { ".expected", ".contains", ".machines" }.Any(e => File.Exists(Path.ChangeExtension(f, e))))
+                        .OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
         }
 
         /// <summary>Line endings and trailing whitespace don't matter, and neither do a benchmark's counts.</summary>

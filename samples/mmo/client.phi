@@ -1,0 +1,148 @@
+# The mmo sample's client: joins the server (machine 1), moves its player with the
+# arrow keys, and draws everyone where the server says they are. If the server goes
+# quiet (it restarted), it joins again, and comes back where it was.
+#
+# phi run samples/mmo/server.phi starts three of these (see server.machines). Each
+# player is a square in its own color, and yours has a white border.
+
+use drivers.vbe;
+use drivers.input;
+use net.udp;
+use protocol;
+
+phi.MmoClient:Kernel
+{
+	const int QUIET: 1500;                # ms without a word from the server: it's gone
+	const int RETRY: 500;                 # ms between JOINs until it answers
+
+	u32 colors: 0xFFFFFF 0xE0483E 0xF08A24 0xF5C542 0x3DBE5A 0x3CC8E0 0x2F6FE4 0xC84FD8;
+	u32 ids[Game.MAX_PLAYERS];
+	int xs[Game.MAX_PLAYERS];
+	int ys[Game.MAX_PLAYERS];
+	int count: 0;
+
+	bln joined: false;
+	int joins: 0;
+	int my_x: -1;
+	int my_y: -1;
+	int last_heard: 0;
+	int last_join: 0;
+	bln saw_everyone: false;
+	bln saw_moves: false;
+	u8 message[8];
+	UdpDatagram d;
+
+	if not (Screen.Start: Game.WIDTH Game.HEIGHT)
+		log 'the client needs the standard VGA adapter of QEMU or Bochs\n';
+		exit 1;
+	;;
+	call Input.Start;
+	bln ok: (Net.Start: Machine.address);
+	int s: (Udp.Open);
+	last_join is (OS.GetTicks) - RETRY;
+
+	while true
+		int now: (OS.GetTicks);
+		if joined and now - last_heard > QUIET
+			joined is false;
+		;;
+		if joined is false and now - last_join >= RETRY
+			message:0 is Game.JOIN;
+			call Net.Put32: addr message + 1 Machine.number;
+			call Udp.SendTo: s Machine.first Game.PORT addr message 5;
+			last_join is now;
+		;;
+
+		while (Udp.Receive: s addr d)
+			last_heard is now;
+			if d.data:0 is Game.WELCOME and d.length >= 5
+				call Welcome;
+			;;
+			elif d.data:0 is Game.STATE and d.length >= 2
+				call State;
+			;;
+		;;
+
+		int key: (Input.NextKey) & Input.KEY_MASK;
+		u8 direction: 0;
+		when key
+			is Input.KEY_LEFT
+				direction is Game.LEFT;
+			;;
+			is Input.KEY_RIGHT
+				direction is Game.RIGHT;
+			;;
+			is Input.KEY_UP
+				direction is Game.UP;
+			;;
+			is Input.KEY_DOWN
+				direction is Game.DOWN;
+			;;
+		;;
+		if direction is not 0 and joined
+			message:0 is Game.MOVE;
+			call Net.Put32: addr message + 1 Machine.number;
+			message:5 is direction;
+			call Udp.SendTo: s Machine.first Game.PORT addr message 6;
+		;;
+
+		call Draw;
+		call OS.Sleep: 10;
+	;;
+
+	# where the server says we are: when we join, and again after it restarts
+	[Welcome]
+		if joined return;                     # an answer to a JOIN sent again before the first came
+		int x: (Net.Get16: addr d.data + 1);
+		int y: (Net.Get16: addr d.data + 3);
+		joined is true;
+		joins++;
+		if joins is 1
+			log 'joined\n';
+		;;
+		else
+			log 'joined again where I was: ' (x is my_x and y is my_y) '\n';
+		;;
+	[end]
+
+	# where everyone is
+	[State]
+		count is d.data:1;
+		if count > Game.MAX_PLAYERS
+			count is Game.MAX_PLAYERS;
+		;;
+		bln all_moved: count > 0;
+		while int i: 0; i < count; i++;
+			ptr<u8> p: addr d.data + 2 + i * 8;
+			ids:i is (Net.Get32: p);
+			xs:i is (Net.Get16: p + 4);
+			ys:i is (Net.Get16: p + 6);
+			if ids:i is Machine.number
+				my_x is xs:i;
+				my_y is ys:i;
+			;;
+			if xs:i is Game.START_X
+				all_moved is false;           # still where it started
+			;;
+		;;
+		if saw_everyone is false and count is Machine.count - 1
+			saw_everyone is true;
+			log 'sees ' count ' players\n';
+		;;
+		if saw_moves is false and saw_everyone and all_moved
+			saw_moves is true;
+			log 'everyone has moved\n';
+		;;
+	[end]
+
+	[Draw]
+		call Draw.Clear: 0x1E2430;
+		while int i: 0; i < count; i++;
+			call Draw.FillRect: xs:i ys:i Game.SIZE Game.SIZE colors:(ids:i % 8);
+			if ids:i is Machine.number
+				call Draw.Rect: xs:i ys:i Game.SIZE Game.SIZE Draw.WHITE;
+			;;
+		;;
+		call Screen.PresentAll;
+	[end]
+}

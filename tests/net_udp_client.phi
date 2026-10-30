@@ -10,14 +10,14 @@ phi.UdpClient:Kernel
 	const u32 DONE: 0xFFFFFFFF;
 
 	u8 message[64];
-	bln ok: (Net.Start: TestNet.address);
+	bln ok: (Net.Start: Machine.address);
 	int s: (Udp.Open);                    # any free port
 
 	UdpDatagram d;
 	bln ready: false;
 	while int tries: 0; tries < 100 and ready is false; tries++;
 		call Net.Put32: addr message HELLO;
-		call Udp.SendTo: s TestNet.first PORT addr message 4;
+		call Udp.SendTo: s Machine.first PORT addr message 4;
 		ready is (Udp.Wait: s addr d 100);
 	;;
 	log 'ready: ' ready '\n';
@@ -26,13 +26,13 @@ phi.UdpClient:Kernel
 	# UDP has no way to tell them to slow down
 	while u32 i: 0; i < 1000; i++;
 		call Net.Put32: addr message i;
-		call Udp.SendTo: s TestNet.first PORT addr message 64;
+		call Udp.SendTo: s Machine.first PORT addr message 64;
 		if i % 5 is 4
 			call OS.Sleep: 1;
 		;;
 	;;
 	call Net.Put32: addr message DONE;
-	call Udp.SendTo: s TestNet.first PORT addr message 4;
+	call Udp.SendTo: s Machine.first PORT addr message 4;
 	log 'sent 1000\n';
 	call OS.Sleep: 100;                   # let the last frames leave before QEMU stops
 	exit 0;

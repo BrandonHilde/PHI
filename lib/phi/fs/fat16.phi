@@ -6,6 +6,7 @@
 #   call size is Fat.ReadFile: 'README.TXT' buffer 4096;     # -1 if it isn't there
 #   call size is Fat.ReadAt: 'SONG.WAV' 8192 buffer 4096;    # from 8192 bytes in
 #   call ok is Fat.WriteFile: 'DOCS/NOTES.TXT' text length;  # creates or replaces
+#   call ok is Fat.Append: 'GAME.LOG' text length;           # adds to the end (or creates)
 #   call ok is Fat.Delete: 'OLD.TXT';
 #   call count is Fat.List: '';                              # prints a directory
 #
@@ -325,6 +326,117 @@ phi.Fat:Kernel
 		bln saved: false;
 		call saved is SaveFat;
 		ok is ok and saved;
+	[end: ok]
+
+	# add length bytes to the end of a file, creating it if it isn't there; false if a
+	# folder in the path is missing, the folder has no free entry, or the disk is full.
+	# The data goes to the disk first, then the FAT (only if the file needed another
+	# cluster), then the new size: if the machine stops part way, the file is as it was.
+	[Append: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
+		if (Resolve: path) is false return (WriteFile: path data length);
+		if (found.attributes & ATTR_DIRECTORY) is not 0 return false;
+		if length is 0 return true;
+		u32 size: found.size;
+		u32 first: found.cluster;
+		u32 slotSector: found_sector;
+		u32 slotIndex: found_index;
+
+		# the cluster the file ends in (0 if it has none), and how much of it is used
+		u32 last: 0;
+		u32 used: 0;
+		if size > 0 and first >= 2
+			last is first;
+			u32 skip: (size - 1) / cluster_bytes;
+			while skip > 0 and last >= 2 and last < CHAIN_END
+				last is fat_table:last;
+				skip--;
+			;;
+			used is size - (size - 1) / cluster_bytes * cluster_bytes;
+		;;
+		bln fat_changed: false;
+		if last >= 2 and fat_table:last < CHAIN_END
+			# clusters past the end, from a stop part way through an earlier Append
+			call FreeChain: fat_table:last;
+			fat_table:last is CHAIN_LAST;
+			fat_changed is true;
+		;;
+
+		# first the room left in the last cluster
+		bln ok: true;
+		u32 written: 0;
+		if last >= 2 and used < cluster_bytes
+			call ok is ReadCluster: last;
+			u32 room: cluster_bytes - used;
+			if room > length
+				room is length;
+			;;
+			while u32 m: 0; m < room; m++;
+				cluster_buffer:(used + m) is data:m;
+			;;
+			if ok
+				call ok is Disk.Write: (ClusterSector: last) sectors_per_cluster cluster_buffer;
+			;;
+			written is room;
+		;;
+
+		# then new clusters for the rest
+		u32 previous: last;
+		u32 first_new: 0;
+		while ok and written < length
+			u32 cluster: (FindFreeCluster);
+			if cluster is 0
+				ok is false;                  # the disk is full
+			;;
+			else
+				fat_table:cluster is CHAIN_LAST;
+				if previous is 0
+					first is cluster;
+				;;
+				else
+					fat_table:previous is cluster;
+				;;
+				if first_new is 0
+					first_new is cluster;
+				;;
+				previous is cluster;
+				fat_changed is true;
+
+				u32 chunk: cluster_bytes;
+				if chunk > length - written
+					chunk is length - written;
+				;;
+				while u32 k: 0; k < cluster_bytes; k++;
+					cluster_buffer:k is 0;
+				;;
+				while u32 m: 0; m < chunk; m++;
+					cluster_buffer:m is data:(written + m);
+				;;
+				call ok is Disk.Write: (ClusterSector: cluster) sectors_per_cluster cluster_buffer;
+				written++ chunk;
+			;;
+		;;
+
+		if ok is false
+			# give back the clusters this took; the file keeps its old size
+			if first_new is not 0
+				call FreeChain: first_new;
+				if last >= 2
+					fat_table:last is CHAIN_LAST;
+				;;
+			;;
+			return false;
+		;;
+		if fat_changed and (SaveFat) is false return false;
+
+		# last, the size: until this is written, the file is as it was
+		call ok is Disk.Read: slotSector 1 sector_buffer;
+		ptr<DirEntry> e: sector_buffer + slotIndex * 32;
+		e:0.cluster is first;
+		e:0.size is size + length;
+		call Stamp: e false;
+		if ok
+			call ok is Disk.Write: slotSector 1 sector_buffer;
+		;;
 	[end: ok]
 
 	[Delete: ptr<u8> path: 0;]

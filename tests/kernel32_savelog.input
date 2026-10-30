@@ -1,0 +1,4 @@
+# the first boot saves; restart on the same disk; the second reads it back
+expect first boot
+reboot
+expect second boot

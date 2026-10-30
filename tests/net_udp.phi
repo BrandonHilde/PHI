@@ -19,7 +19,7 @@ phi.UdpServer:Kernel
 	u32 out_of_order: 0;
 	u32 finished: 0;
 
-	bln ok: (Net.Start: TestNet.address);
+	bln ok: (Net.Start: Machine.address);
 	int s: (Udp.Open: PORT 1024);
 	log 'server: ' ok ', socket ' s '\n';
 
