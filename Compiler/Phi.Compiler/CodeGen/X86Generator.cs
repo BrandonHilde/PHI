@@ -1033,18 +1033,24 @@ namespace Phi.Compiler.CodeGen
                 {
                     if (loop.Init?.Symbol != null) EmitInitialize(loop.Init.Symbol, loop.Init.Values);
 
+                    // the test is at the bottom, so each time round ends in one jump back; the first
+                    // time, a test that calls nothing is written out again, and any other is jumped to
                     string top = NewLabel("while");
+                    string test = NewLabel("whiletest");
                     string end = NewLabel("endwhile");
                     var labels = new LoopLabels { Next = NewLabel("next"), End = end, RegistersLive = registersLive };
 
+                    bool repeatTest = !HasCall(loop.Condition);
+                    if (repeatTest) EmitBranch(loop.Condition, jumpIf: false, end);
+                    else Emit($"jmp {test}");
                     Label(top);
-                    EmitBranch(loop.Condition, jumpIf: false, end);
                     loops.Add(labels);
                     foreach (Stmt s in loop.Body) EmitStatement(s);
                     loops.RemoveAt(loops.Count - 1);
                     if (labels.NextUsed) Label(labels.Next); // continue runs the step, then tests again
                     if (loop.Step != null) EmitStatement(loop.Step);
-                    Emit($"jmp {top}");
+                    if (!repeatTest) Label(test);
+                    EmitBranch(loop.Condition, jumpIf: true, top);
                     Label(end);
                     break;
                 }
@@ -1056,11 +1062,12 @@ namespace Phi.Compiler.CodeGen
                     string top = NewLabel("each");
                     string end = NewLabel("endeach");
                     var labels = new LoopLabels { Next = NewLabel("nexteach"), End = end, RegistersLive = registersLive };
+                    // (tested before the first time round, then at the bottom, like a while)
                     Emit($"mov dword [{count}], 0");
-                    Label(top);
                     EmitArrayCount(each.Array);
                     Emit($"cmp [{count}], eax");
                     Emit($"jae {end}");
+                    Label(top);
                     if (each.Fetch != null) EmitStatement(each.Fetch);
                     else
                     {
@@ -1074,7 +1081,9 @@ namespace Phi.Compiler.CodeGen
                     loops.RemoveAt(loops.Count - 1);
                     if (labels.NextUsed) Label(labels.Next);
                     Emit($"inc dword [{count}]");
-                    Emit($"jmp {top}");
+                    EmitArrayCount(each.Array);
+                    Emit($"cmp [{count}], eax");
+                    Emit($"jb {top}");
                     Label(end);
                     break;
                 }

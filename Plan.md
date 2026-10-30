@@ -1270,7 +1270,15 @@ S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
   - Every method that may change `esi` or `edi` saves them (not only ones that use them
     for variables): `Draw.FillRect` calls `asm.DrawFillRow`, which changes `edi`, under
     `FillCircle`'s loop. They're saved just below the frame, so arguments stay where they were.
-- [ ] (3, next) a `while`'s test at the bottom, and maybe `ebx` as a third register
+- [x] (3, last part) A `while`'s test (and a `while each`'s) is at the bottom, so each time
+  round ends in one jump back; before the first time a test that calls nothing is written
+  out again, and any other is jumped to. 0-10% on every benchmark: X25519 9% (35.6M, 3.1
+  times faster than before S6), counting items in bags 10%, AES-GCM and PBKDF2 2%.
+  - `ebx` as a third register is left for now: it's the place register in most of the
+    generator, and with pointers reached through `esi` and `edi` the hot loops seldom
+    need it. Whether `BlendRect` in PHI needs a third one decides it.
+  - `net_udp` sometimes counts a packet for the wrong machine or out of order, on either
+    card. It did before S6 too (2 runs in 12), so it isn't the code generator.
 - [ ] (2) the backend interface
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range
