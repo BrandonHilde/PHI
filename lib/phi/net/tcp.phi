@@ -113,6 +113,7 @@ phi.Tcp:Kernel
 	u32 segments_dropped: 0;              # bad checksums, and no room for them
 	u32 retransmits: 0;                   # times unacknowledged data was sent again
 	u32 early_segments: 0;                # segments that came before the ones before them
+	u32 resets_sent: 0;                   # segments answered with a reset
 
 	# the segment Receive is looking at
 	u32 in_seq: 0;
@@ -132,7 +133,11 @@ phi.Tcp:Kernel
 		int ticks: (OS.GetTicks);
 		u32 local: FIRST_PORT + ((ticks + next_port) & 0x3FFF);
 		next_port++ 7;
-		int handle: (Open: to port local -1);
+		# a port none of our connections to that address and port has
+		while (Find: to port local) >= 0
+			local is FIRST_PORT + ((local - FIRST_PORT + 1) & 0x3FFF);
+		;;
+		int handle: (Open: to port local (-1));
 		if handle < 0 return -1;
 		ptr<TcpConnection> c: table:handle;
 		c.state is SYN_SENT;
@@ -636,6 +641,7 @@ phi.Tcp:Kernel
 
 	# answer a segment that belongs to no connection, so the other side gives up on it
 	[SendReset: u32 to: 0; u32 to_port: 0; u32 from_port: 0;]
+		resets_sent++;
 		ptr<u8> s: addr segment;
 		call Net.Put16: s from_port;
 		call Net.Put16: s + 2 to_port;

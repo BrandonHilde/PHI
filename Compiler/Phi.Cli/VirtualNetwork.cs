@@ -64,9 +64,12 @@ namespace Phi.Cli
             return 0;
         }
 
-        static string MachineClass(int number, int count) =>
+        static string MachineClass(int number, int count) => MachineClass(number, count, 0x0A000300u + (uint)number, 0x0A000301);
+
+        /// <summary>The class Machine with these values (phi load gives a server QEMU's user-network address).</summary>
+        public static string MachineClass(int number, int count, uint address, uint first) =>
             $"\nphi.Machine:Library\n{{\n\tu32 number: {number};\n\tu32 count: {count};\n" +
-            $"\tu32 address: 0x0A0003{number:X2};\n\tu32 first: 0x0A000301;\n}}\n";
+            $"\tu32 address: 0x{address:X8};\n\tu32 first: 0x{first:X8};\n}}\n";
 
         /// <summary>
         /// Builds every machine, each into build/FILE (machine 1) or build/FILE.N next to its

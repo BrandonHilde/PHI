@@ -1,0 +1,195 @@
+# The mmo sample's lobby: players log in over TCP with a name and a password, and can
+# talk. The server (server.phi) opens it at start-up and calls Lobby.Serve in its
+# loop. It takes a line at a time:
+#
+#   login NAME PASSWORD   ->  welcome NAME        (a name nobody has yet makes an account)
+#                         ->  wrong password
+#   say TEXT              ->  said TEXT           (once logged in)
+#   quit                  ->  bye, and the connection closes
+#
+# Each password is kept as a PBKDF2 hash with a random salt of its own (crypto.pbkdf2),
+# in a save log, so accounts last across restarts. ROUNDS is low (100) for now: in
+# PHI's code today a thousand rounds are about 39 million instructions, which adds up
+# when hundreds of players log in at once. `phi load samples/mmo/server.phi` logs in
+# hundreds of connections and keeps them talking.
+
+use net.tcp;
+use data.map;
+use memory.pool;
+use fs.savelog;
+use crypto.pbkdf2;
+use crypto.random;
+use user.text;
+
+struct.Account
+{
+	u8 name[16];
+	u8 salt[16];
+	u8 hash[32];
+}
+
+# one connection's state
+struct.Session
+{
+	bln logged_in;
+	ptr<Account> account;
+	u32 length;                 # bytes in line so far
+	u8 line[128];
+}
+
+phi.Lobby:Kernel
+{
+	const u32 PORT: 4001;
+	const u32 ROUNDS: 100;
+	const int MOST: 1024;                 # Tcp.MAX_CONNECTIONS: a session for each connection number
+
+	int listener: -1;
+	u32 sessions[MOST];                   # by connection number: its Session, or 0
+	ptr<PoolData> session_pool: 0;
+	ptr<PoolData> account_pool: 0;
+	ptr<MapData> accounts: 0;             # a name's hash -> its Account
+	u8 got[512];
+	u8 reply[160];
+	u8 hash[32];
+	u32 logins: 0;
+
+	# the accounts from the log, and the port open
+	[Open]
+		session_pool is (Pool.New: sizeof Session 64);
+		account_pool is (Pool.New: sizeof Account 64);
+		accounts is (Map.New);
+		call SaveLog.Read: 'ACCOUNTS.LOG' sizeof Account addr Restore;
+		listener is (Tcp.Listen: PORT 128);
+		log 'lobby open on port ' PORT ': ' accounts:0.count ' accounts\n';
+	[end]
+
+	# new connections, and what has arrived on each (never waits)
+	[Serve]
+		while true
+			int c: (Tcp.Accept: listener);
+			if c < 0 break;
+			sessions:c is (Pool.Alloc: session_pool);
+		;;
+		while int c: 0; c < MOST; c++;
+			if sessions:c is not 0
+				call Read: c;
+			;;
+		;;
+	[end]
+
+	# what has arrived on a connection, a line at a time
+	[Read: int c: 0;]
+		int ready: (Tcp.Waiting: c);
+		if ready < 0                          # closed, or broken
+			call Forget: c;
+			return;
+		;;
+		if ready is 0 return;
+		ptr<Session> s: sessions:c;
+		ptr<u8> line: s.line;
+		int n: (Tcp.Read: c addr got 512);
+		while int i: 0; i < n; i++;
+			if got:i is '\n'
+				line:(s.length) is 0;
+				s.length is 0;
+				call Line: c;
+				if sessions:c is 0 return;        # that line closed it
+			;;
+			elif got:i is not '\r' and s.length < 127
+				line:(s.length) is got:i;
+				s.length++;
+			;;
+		;;
+	[end]
+
+	[Line: int c: 0;]
+		ptr<Session> s: sessions:c;
+		ptr<u8> line: s.line;
+		if (Text.StartsWith: line 'login ')
+			u8 name[16];
+			u8 password[64];
+			ptr<u8> rest: line + 6;
+			call Text.CopyWord: rest addr name 15;
+			call Text.CopyWord: (Text.AfterWord: rest) addr password 63;
+			call Login: c addr name addr password;
+		;;
+		elif s.logged_in and (Text.StartsWith: line 'say ')
+			call Text.Copy: addr reply 'said ' 160;
+			call Text.Append: addr reply line + 4 160;
+			call Say: c addr reply;
+		;;
+		elif (Text.Equal: line 'quit')
+			call Say: c 'bye';
+			call Tcp.Close: c;
+			call Forget: c;
+		;;
+		else
+			call Say: c 'what?';
+		;;
+	[end]
+
+	# a name and password: the account's, or a new account if nobody has the name yet
+	[Login: int c: 0; ptr<u8> name: 0; ptr<u8> password: 0;]
+		ptr<Session> s: sessions:c;
+		if name:0 is 0
+			call Say: c 'what?';
+			return;
+		;;
+		ptr<Account> a: (Find: name);
+		if a is 0
+			a is (Pool.Alloc: account_pool);
+			call Text.Copy: a.name name 16;
+			call Random.Fill: a.salt 16;
+			call Pbkdf2.Derive: password (Text.Length: password) a.salt 16 ROUNDS a.hash 32;
+			call Map.Set: accounts (Hash: name) a;
+			call SaveLog.Add: 'ACCOUNTS.LOG' a as ptr<u8> sizeof Account;
+		;;
+		else
+			call Pbkdf2.Derive: password (Text.Length: password) a.salt 16 ROUNDS addr hash 32;
+			if (Bytes.Equal: addr hash a.hash 32) is false
+				call Say: c 'wrong password';
+				return;
+			;;
+		;;
+		s.logged_in is true;
+		s.account is a;
+		logins++;
+		call Text.Copy: addr reply 'welcome ' 160;
+		call Text.Append: addr reply name 160;
+		call Say: c addr reply;
+	[end]
+
+	# a line back to the connection
+	[Say: int c: 0; ptr<u8> text: 0;]
+		call Tcp.Send: c text (Text.Length: text);
+		call Tcp.Send: c '\n' 1;
+	[end]
+
+	[Forget: int c: 0;]
+		call Pool.Free: session_pool sessions:c;
+		sessions:c is 0;
+	[end]
+
+	# the account with a name, or 0
+	[Find: ptr<u8> name: 0;]
+		ptr<Account> a: (Map.Get: accounts (Hash: name) 0);
+		if a is not 0 and (Text.Equal: a.name name) is false
+			a is 0;                           # another name with the same hash
+		;;
+	[end: a]
+
+	# FNV-1a: a 32-bit hash of the name
+	[Hash: ptr<u8> text: 0;]
+		u32 h: 2166136261;
+		while int i: 0; text:i is not 0; i++;
+			h is (h ^ text:i) * 16777619;
+		;;
+	[end: h]
+
+	# an account from the log
+	[Restore: ptr<u8> bytes: 0;]
+		ptr<Account> a: (Pool.Alloc: account_pool);
+		call Mem.Copy: a as ptr<u8> bytes sizeof Account;
+		call Map.Set: accounts (Hash: a.name) a;
+	[end]
+}

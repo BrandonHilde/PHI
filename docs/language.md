@@ -1209,7 +1209,7 @@ is also the host computer's `127.0.0.1`), and the DNS server `10.0.2.3`. `Net.St
 for an address by DHCP first; if no server answers it keeps these addresses and
 `Net.dhcp_ok` is 0.
 
-The card's interrupt moves arriving frames from the card (its 32 KB ring, or the virtio
+The card's interrupt moves arriving frames from the card (its 8 KB ring, or the virtio
 card's 256 buffers) into a queue of up to 256 in the driver, and `Net.Poll` handles them
 from there, outside the interrupt. So a kernel
 can be busy for a while without losing frames; the methods that wait (`Ping`,

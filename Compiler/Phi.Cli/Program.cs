@@ -29,6 +29,12 @@ const string Usage = """
                                            lines and methods that took the most time; with a window
                                            until you close it, or headless with --input (until the
                                            script ends) or --seconds
+      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--nic <card>] [--profile]
+                                           boot a server with load-client kernels on one network, which
+                                           open n TCP connections to it (default 100, to port 4001), log
+                                           each in, and have each say a line a second for the run (default
+                                           30 s), checking every answer comes back in order (the mmo
+                                           sample's lobby); --profile samples where the server's time goes
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
@@ -215,6 +221,25 @@ static int Execute(string[] args)
                 int lines = 15;
                 if (top != null && (!int.TryParse(top, out lines) || lines < 1)) throw new ArgumentException("--top takes a number of lines");
                 return Profiler.Run(rest[0], input != null ? Path.GetFullPath(input) : null, time, lines);
+            }
+
+            case "load":
+            {
+                string? count = Option("--connections");
+                string? seconds = Option("--seconds");
+                string? port = Option("--port");
+                bool profile = Flag("--profile");
+                MemoryOption();
+                NicOption();
+                if (rest.Count != 1) throw new ArgumentException("load needs exactly one .phi file");
+                int n = 100, s = 30, p = 4001;
+                if (count != null && (!int.TryParse(count, out n) || n < 1 || n > 1000))
+                    throw new ArgumentException("--connections takes a number from 1 to 1000");
+                if (seconds != null && (!int.TryParse(seconds, out s) || s < 1))
+                    throw new ArgumentException("--seconds takes a number of seconds");
+                if (port != null && (!int.TryParse(port, out p) || p < 1 || p > 65535))
+                    throw new ArgumentException("--port takes the server's TCP port");
+                return LoadTester.Run(rest[0], n, s, p, profile);
             }
 
             case "serve":

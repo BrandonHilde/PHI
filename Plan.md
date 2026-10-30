@@ -1163,8 +1163,10 @@ Goal: thousands of TCP connections, at a useful speed.
 **Done when:** `phi load` holds 500 connections to `samples/mmo/` for a minute, every byte
 sent arrives in order, and the S1 benchmarks show the TCP download from S1 got faster.
 
-**Status: in progress.** Done in three parts: (a) the TCP server, (b) virtio-net, (c) `phi
-load` and logins.
+**Status: done (2026-10-29).** Done in three parts: (a) the TCP server, (b) virtio-net, (c)
+`phi load` and logins. `phi load samples/mmo/server.phi --connections 500 --seconds 60`:
+500 of 500 logged in, 29,958 lines answered over the minute, all in order, 500 quit,
+250,195 frames on the network; answers took 3 ms on average (685 ms at most).
 - [x] (a, 2026-10-29) `net.tcp` rewritten for servers, with the client calls unchanged
   (`net_http` still fetches over TLS):
   - `Listen: port backlog`, `Accept` (never waits), `Waiting`, `Send` (never waits: what
@@ -1192,9 +1194,25 @@ load` and logins.
     time could catch it half changed and read entries the card hadn't written yet; and
     with no interrupt, a card whose buffers were all full stopped taking frames, which
     held up every machine on the network. Both are fixed, and the tests caught both.
-- [ ] (c) `phi load`, logins with `crypto.pbkdf2` in `samples/mmo/`, and the 500-connection
-  minute
-- Differs from the plan so far:
+- [x] (c, 2026-10-29) `samples/mmo/lobby.phi`: logins over TCP (port 4001) with accounts
+  kept as PBKDF2 hashes with a random salt each, in a save log; `say` and `quit`. `phi
+  load` boots the server with load-client kernels (`lib/phi/test/load.phi`, 100
+  connections each) on one network: every connection logs in, says a line a second and
+  checks the answers come back in order, and quits; `--profile` samples the server
+  meanwhile. `Tcp.Connect` now picks a local port no other connection to that server
+  has (100 connections from one machine could repeat one).
+- Differs from the plan:
+  - The load comes from PHI kernels, not from the host through QEMU's forwarded ports:
+    QEMU's user network on Windows waits on its sockets with `select`, which takes at most
+    64, so it couldn't hold more than 64 connections from outside.
+  - The RTL8139 ring is back to 8 KB: the 32 KB ring from S3 stopped taking frames the first
+    time it wrapped round under load (the profiler and counters in `phi load` found it).
+    With the interrupt emptying it into the driver's queue, 8 KB is enough.
+  - PBKDF2 in the lobby uses 100 rounds, not the thousands a real server would: 500
+    logins at 1,000 rounds are about 20 billion instructions in today's code. Raise it
+    after S6.
+  - No TCP download benchmark: S1 left it here, but the counts of a download depend on
+    the host's timing. `phi load`'s numbers are the TCP measure instead.
   - No congestion control (slow start, backing off when frames are lost): on a local
     network the window is the limit that matters. The internet needs it.
   - Only one run of early data is kept at a time; a second gap waits for the first to

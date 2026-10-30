@@ -181,3 +181,22 @@ each line's share of the time comes out about the same.
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error
 messages without QEMU, and that the programs in `samples/` compile. Run them with
 `dotnet test PHI.sln`.
+
+## Load testing
+
+`phi load` boots a server together with load-client kernels (`lib/phi/test/load.phi`, up
+to 100 connections each) on one network, and checks what the server does under that many
+connections:
+
+```
+phi load samples/mmo/server.phi --connections 500 --seconds 60
+phi load samples/mmo/server.phi --connections 100 --profile    # and where the server's time went
+```
+
+Each connection logs in (`login NAME PASSWORD`, answered `welcome NAME`), says a numbered
+line once a second (`say ...`, answered `said ...`) and finally `quit` (answered `bye`),
+the protocol of the mmo sample's lobby (`samples/mmo/lobby.phi`). It passes when every
+connection logged in and quit, and every answer came back, in order. Each machine's output
+is saved in `build/NAME.load/`. The clients are PHI kernels rather than connections from
+this computer because QEMU's user network on Windows keeps at most 64 connections from
+outside (it waits on its sockets with `select`).

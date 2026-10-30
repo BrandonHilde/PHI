@@ -1,0 +1,178 @@
+# The other end of phi load: a kernel that opens many TCP connections to a server
+# (machine 1) and keeps them busy, as players in a lobby would. phi load builds it with a
+# class LoadSettings (connections, seconds, port) and boots several of them on one
+# network with the server (see Compiler/Phi.Cli/LoadTester.cs).
+#
+# Each connection logs in ("login NAME PASSWORD", answered "welcome NAME"), then says a
+# numbered line once a second ("say ...", answered "said ..."), checking that every
+# answer comes back, in order, and at the end says "quit" (answered "bye"). Its last line
+# is what phi load adds up:
+#
+#   load: connections 100 logged 100 answered 6000 wrong 0 quit 100 latency 1200 most 40
+#
+# (latency is the total, in ms, of the time each answer took; most is the longest.)
+
+use net.tcp;
+use user.text;
+
+phi.LoadClient:Kernel
+{
+	const int MOST: 256;                  # connections from one machine
+	const int LINE: 64;                   # the longest answer kept
+	const int ANSWER_WAIT: 15000;         # ms an answer may take before the run stops waiting
+
+	int handles[MOST];
+	int said[MOST];                       # lines this connection has said
+	int sent_at[MOST];                    # when its unanswered line was said (0: none waiting)
+	int next_at[MOST];                    # when it says its next line
+	int lengths[MOST];
+	u8 lines[MOST * LINE];                # each connection's answer so far
+	bln welcomed[MOST];
+	bln left[MOST];                       # it said quit, and bye came back
+	u8 got[512];
+	str text: [96];
+	str expected: [96];
+
+	int count: LoadSettings.connections;
+	u32 logged: 0;
+	u32 answered: 0;
+	u32 wrong: 0;
+	u32 quit: 0;
+	u32 latency: 0;
+	int most: 0;
+
+	if count > MOST
+		count is MOST;
+	;;
+	bln ok: (Net.Start: Machine.address);
+	call Run;
+
+	[Run]
+		# connect, trying again until the server is listening (it may still be starting)
+		int start: (OS.GetTicks);
+		while int c: 0; c < count; c++;
+			handles:c is -1;
+			while handles:c < 0 and (OS.GetTicks) - start < 60000
+				handles:c is (Tcp.Connect: Machine.first LoadSettings.port);
+				if handles:c < 0
+					call OS.Sleep: 100;
+				;;
+			;;
+		;;
+
+		# log every one in
+		while int c: 0; c < count; c++;
+			text is 'login m' Machine.number 'c' c ' pw' c;
+			call Say: c;
+		;;
+		start is (OS.GetTicks);
+		while logged < count and (OS.GetTicks) - start < 60000
+			call Answers;
+			call Net.Wait;
+		;;
+		log 'logged in: ' logged ' of ' count '\n';
+
+		# a line a second from each, spread over the second, for the run
+		start is (OS.GetTicks);
+		while int c: 0; c < count; c++;
+			next_at:c is start + c * 1000 / count;
+		;;
+		int stop: start + LoadSettings.seconds * 1000;
+		while (OS.GetTicks) - stop < 0
+			int now: (OS.GetTicks);
+			while int c: 0; c < count; c++;
+				if welcomed:c and sent_at:c is 0 and now - next_at:c >= 0
+					text is 'say m' Machine.number ' c' c ' n' said:c;
+					call Say: c;
+					sent_at:c is now;
+					if sent_at:c is 0
+						sent_at:c is 1;
+					;;
+					next_at:c++ 1000;
+				;;
+			;;
+			call Answers;
+			call Net.Wait;
+		;;
+
+		# the last answers, then everyone quits
+		start is (OS.GetTicks);
+		while (Waiting) and (OS.GetTicks) - start < ANSWER_WAIT
+			call Answers;
+			call Net.Wait;
+		;;
+		while int c: 0; c < count; c++;
+			text is 'quit';
+			call Say: c;
+		;;
+		start is (OS.GetTicks);
+		while quit < logged and (OS.GetTicks) - start < ANSWER_WAIT
+			call Answers;
+			call Net.Wait;
+		;;
+		log 'load: connections ' count ' logged ' logged ' answered ' answered ' wrong ' wrong ' quit ' quit ' latency ' latency ' most ' most '\n';
+		exit 0;
+	[end]
+
+	# true while any connection waits for an answer
+	[Waiting]
+		while int c: 0; c < count; c++;
+			if sent_at:c is not 0 return true;
+		;;
+	[end: false]
+
+	# text, and a line break, to connection c
+	[Say: int c: 0;]
+		if handles:c < 0 return;
+		call Tcp.Send: handles:c text text.len;
+		call Tcp.Send: handles:c '\n' 1;
+	[end]
+
+	# what has come in on every connection, a line at a time
+	[Answers]
+		while int c: 0; c < count; c++;
+			if handles:c >= 0 and (Tcp.Waiting: handles:c) > 0
+				int n: (Tcp.Read: handles:c addr got 512);
+				ptr<u8> line: addr lines + c * LINE;
+				while int i: 0; i < n; i++;
+					if got:i is '\n'
+						line:(lengths:c) is 0;
+						lengths:c is 0;
+						call Answer: c line;
+					;;
+					elif lengths:c < LINE - 1
+						line:(lengths:c) is got:i;
+						lengths:c++;
+					;;
+				;;
+			;;
+		;;
+	[end]
+
+	[Answer: int c: 0; ptr<u8> line: 0;]
+		if (Text.StartsWith: line 'welcome ') and welcomed:c is false
+			welcomed:c is true;
+			logged++;
+		;;
+		elif (Text.StartsWith: line 'said ')
+			expected is 'said m' Machine.number ' c' c ' n' said:c;
+			if (Text.Equal: line expected) and sent_at:c is not 0
+				answered++;
+				int took: (OS.GetTicks) - sent_at:c;
+				latency++ took;
+				if took > most
+					most is took;
+				;;
+			;;
+			else
+				wrong++;
+			;;
+			said:c++;
+			sent_at:c is 0;
+		;;
+		elif (Text.Equal: line 'bye') and left:c is false
+			left:c is true;
+			quit++;
+		;;
+	[end]
+}

@@ -145,6 +145,9 @@ phi.Count:Program
        phi test                          boot every test in tests/ headless and check its output
        phi test --bench                  run the benchmarks and compare their counts with the saved ones
        phi profile samples/web.phi       boot it, then list the PHI lines that took the most time
+       phi load samples/mmo/server.phi --connections 500 --seconds 60
+                                         boot the game server with load-client kernels that log 500
+                                         TCP connections in and keep them talking, checking every answer
        phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
 
 The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each

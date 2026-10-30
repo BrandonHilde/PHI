@@ -6,13 +6,15 @@
 #   phi test samples/mmo/server.phi     # the same, with the moves and a restart scripted
 #
 # It's machine 1 on the network that phi run and phi test make (see server.machines);
-# Machine.address is its address.
+# Machine.address is its address. Players log in and talk over TCP in the lobby
+# (lobby.phi); `phi load samples/mmo/server.phi` puts hundreds of them there at once.
 
 use net.udp;
 use data.map;
 use memory.pool;
 use fs.savelog;
 use protocol;
+use lobby;
 
 struct.Player
 {
@@ -51,6 +53,7 @@ phi.MmoServer:Kernel
 	call SaveLog.Read: 'PLAYERS.LOG' sizeof SavedPlayer addr Restore;
 	log 'world started: ' saved:0.count ' saved players\n';
 	call Compact;
+	call Lobby.Open;
 
 	int next_tick: (OS.GetTicks);
 	while true
@@ -62,6 +65,7 @@ phi.MmoServer:Kernel
 			call SendState;
 			next_tick++ TICK;
 		;;
+		call Lobby.Serve;
 		call OS.Sleep: 1;
 	;;
 

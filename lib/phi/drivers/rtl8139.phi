@@ -9,7 +9,7 @@
 #   u32 length: 0;
 #   call length is Rtl8139.Receive: buffer 1536;
 #
-# The card copies frames it receives into a 32 KB ring in memory and sends frames
+# The card copies frames it receives into an 8 KB ring in memory and sends frames
 # from four transmit buffers, used in turn. On the card's interrupt, the driver
 # moves the frames from the ring into a queue of up to FRAMES_WAITING, where they wait
 # for Receive; so frames keep arriving safely while the kernel is busy elsewhere, and
@@ -51,10 +51,11 @@ phi.Rtl8139:Kernel
 	const u8 COMMAND_TX_ENABLE: 0x04;
 	const u8 COMMAND_RX_EMPTY: 0x01;
 
-	# accept frames to our address, broadcasts and multicasts, into a 32 KB ring; WRAP
+	# accept frames to our address, broadcasts and multicasts, into an 8 KB ring; WRAP
 	# lets a frame run past the end of the ring instead of wrapping, so each frame is in
-	# one piece (the card ignores WRAP with a 64 KB ring, which is why it's 32)
-	const u32 RX_CONFIG: 0x0E | 0x80 | 0x1000;
+	# one piece. (A 32 KB ring stopped taking frames the first time it wrapped round, in
+	# QEMU, and the interrupt empties the ring into the queue long before 8 KB fill up.)
+	const u32 RX_CONFIG: 0x0E | 0x80;
 	const u32 RX_OK: 0x01;
 
 	# interrupts for: a frame received, the ring full, the card's own buffer full
@@ -63,7 +64,7 @@ phi.Rtl8139:Kernel
 	const u32 TX_OWN: 0x2000;             # the card has finished with the buffer
 	const u32 TX_BUFFERS: 4;
 
-	const u32 RX_SIZE: 32768;
+	const u32 RX_SIZE: 8192;
 	const u32 RX_AREA: RX_SIZE + 16 + 1536;
 	const u32 TX_SIZE: 1536;
 	const u32 MIN_FRAME: 60;              # shorter frames are padded with zeros

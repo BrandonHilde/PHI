@@ -202,7 +202,7 @@ namespace Phi.Cli
         }
 
         /// <summary>Reads the registers through the monitor at port until QEMU closes it or stop is set.</summary>
-        static List<Sample> Collect(int port, CancellationToken stop)
+        internal static List<Sample> Collect(int port, CancellationToken stop)
         {
             var samples = new List<Sample>();
             try
