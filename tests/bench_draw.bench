@@ -1,6 +1,6 @@
 # Counts from phi test --bench (instructions run, under QEMU's -icount).
 # phi test --bench --save-bench replaces them with the latest counts.
-fill rect 320x200 x10       681808
-blend rect 300x180 x10      9216228
-line 320 across x100        2644978
-fill circle radius 1 to 90  2379608
+fill rect 320x200 x10       671537
+blend rect 300x180 x10      9206907
+line 320 across x100        2208377
+fill circle radius 1 to 90  2105467

@@ -1,7 +1,7 @@
 # Counts from phi test --bench (instructions run, under QEMU's -icount).
 # phi test --bench --save-bench replaces them with the latest counts.
-pack 10000 move messages                 1230028
-unpack 10000 move messages               1190028
-snapshot of 1000 entities, 1 in 8 moved  61128
-find the session for 10000 packets       1765501
-hmac 200 packets of 64 bytes             16784228
+pack 10000 move messages                 1060027
+unpack 10000 move messages               1020027
+snapshot of 1000 entities, 1 in 8 moved  53497
+find the session for 10000 packets       1554705
+hmac 200 packets of 64 bytes             14195227

@@ -1,6 +1,6 @@
 # Counts from phi test --bench (instructions run, under QEMU's -icount).
 # phi test --bench --save-bench replaces them with the latest counts.
-move 2000 entities x10 ticks         3160614
-grid of 2000 entities in 1024 cells  181356
-entities near each of 2000           4128657
-distance with a square root x2000    122028
+move 2000 entities x10 ticks         3140593
+grid of 2000 entities in 1024 cells  176330
+entities near each of 2000           3886343
+distance with a square root x2000    120027

@@ -2390,6 +2390,7 @@ namespace Phi.Compiler.CodeGen
         void EmitArithmetic(BinaryExpr binary)
         {
             bool unsigned = binary.Type.IsUnsigned32;
+            if (TryDirectArithmetic(binary, unsigned)) return;
             EmitOperands(binary);
 
             switch (binary.Op)
@@ -2417,6 +2418,68 @@ namespace Phi.Compiler.CodeGen
                     if (binary.Op == BinaryOp.Modulo) Emit("mov eax, edx");
                     break;
             }
+        }
+
+        /// <summary>
+        /// The operation with one side used as the instruction's operand, as it is: a constant or a
+        /// 32-bit variable (add eax, 5 / cmp eax, dword [x]), instead of loading it into ecx first.
+        /// When the left side is the simple one, the right is worked out first. False when neither
+        /// side is simple, or for division (which needs its divisor in a register).
+        /// </summary>
+        bool TryDirectArithmetic(BinaryExpr binary, bool unsigned)
+        {
+            string? op = binary.Op switch
+            {
+                BinaryOp.Add => "add", BinaryOp.Subtract => "sub", BinaryOp.Multiply => "imul",
+                BinaryOp.BitAnd => "and", BinaryOp.BitOr => "or", BinaryOp.BitXor => "xor",
+                BinaryOp.ShiftLeft => "shl", BinaryOp.ShiftRight => unsigned ? "shr" : "sar",
+                _ => null,
+            };
+            if (op == null) return false;
+            bool shift = binary.Op is BinaryOp.ShiftLeft or BinaryOp.ShiftRight;
+
+            string? right = DirectOperand(binary.Right, constantOnly: shift);
+            if (right != null)
+            {
+                EmitExpr(binary.Left);
+                Emit($"{op} eax, {right}");
+                return true;
+            }
+
+            // the left is simple: the right first, then the left goes with it
+            string? left = DirectOperand(binary.Left, constantOnly: false);
+            if (left == null || shift) return false;
+            EmitExpr(binary.Right);
+            if (binary.Op is BinaryOp.Add or BinaryOp.Multiply or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor)
+            {
+                Emit($"{op} eax, {left}");         // the order doesn't matter
+            }
+            else
+            {
+                Emit("mov ecx, eax");
+                Emit($"mov eax, {left}");
+                Emit($"{op} eax, ecx");
+            }
+            return true;
+        }
+
+        /// <summary>
+        /// A constant, or a 32-bit number variable or field, written as an instruction's second
+        /// operand; null for anything else. Reading it there reads memory once, as loading it would.
+        /// </summary>
+        string? DirectOperand(Expr e, bool constantOnly)
+        {
+            if (ConstantFolder.Evaluate(e) is long k && k >= int.MinValue && k <= uint.MaxValue)
+                return ((int)k).ToString();
+            if (constantOnly) return null;
+            return e switch
+            {
+                NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } when StorageType(v.Type).ElementSize == 4 && !v.Type.IsFloat
+                    => $"dword [{v.Label}]",
+                NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } when StorageType(f.Type).ElementSize == 4 && !f.Type.IsFloat
+                    => f.Offset == 0 ? $"dword [{f.Root.Label}]" : $"dword [{f.Root.Label} + {f.Offset}]",
+                _ => null,
+            };
         }
 
         void LoadConstant(string register, long value)
@@ -2566,8 +2629,16 @@ namespace Phi.Compiler.CodeGen
                 case BinaryExpr { IsComparison: true } cmp:
                 {
                     bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
-                    EmitOperands(cmp);
-                    Emit("cmp eax, ecx");
+                    if (DirectOperand(cmp.Right, constantOnly: false) is string right)
+                    {
+                        EmitExpr(cmp.Left);
+                        Emit($"cmp eax, {right}");
+                    }
+                    else
+                    {
+                        EmitOperands(cmp);
+                        Emit("cmp eax, ecx");
+                    }
                     BinaryOp op = jumpIf ? cmp.Op : Invert(cmp.Op);
                     string jump = op switch
                     {

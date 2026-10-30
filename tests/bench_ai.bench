@@ -1,5 +1,5 @@
 # Counts from phi test --bench (instructions run, under QEMU's -icount).
 # phi test --bench --save-bench replaces them with the latest counts.
-a-star 10 paths on a 64x64 map   2888857
-timers: 10000 events in and out  10492598
-loot 100000 rolls                10097548
+a-star 10 paths on a 64x64 map   2664033
+timers: 10000 events in and out  9457842
+loot 100000 rolls                8601817
