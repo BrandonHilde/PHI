@@ -1404,6 +1404,12 @@ test where a zone program crashes on purpose shows its players back in a restart
   world on purpose (K in the server's window) and sees it come back with all three
   players where they were, then reboots and sees the same. `phi load` with 500
   connections for a minute still passes, with the lobby in a program.
+- [x] Fixed along the way: `net_udp` sometimes counted a datagram for the wrong machine
+  (since S3, on both cards). `Mem.Copy` passed its arguments to its asm block through class
+  variables, and both network drivers' interrupts call it: a frame arriving in the middle
+  of another copy changed where that copy went. `Mem`'s blocks now read the method's own
+  arguments from its frame, so nothing is shared and it's safe from interrupts (and, later,
+  other cores).
 - [ ] (4) catching errors in the language: **not now** (the user, 2026-10-30). Errors are
   contained at the program level (parts 1-3); revisit if kernel code turns out to need a
   block that catches them.

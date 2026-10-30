@@ -7,52 +7,30 @@
 #   call Mem.Fill: buffer 0 512;              # 512 zero bytes
 #   call Mem.Fill32: pixels 0xFFFFFF 640;     # 640 white pixels
 #
-# The routines use class variables, so call them from one place at a time (not from
-# interrupt handlers while other code may be using them).
+# Each method's asm block reads the method's own arguments from its stack frame (the last
+# one at [ebp + 8], the one before it at [ebp + 12], and so on: see LayOutFrame in the code
+# generator), so nothing is shared between calls, and an interrupt handler (a network
+# card's, say) can copy while the code it interrupted is in the middle of a copy too.
 
 phi.Mem:Library
 {
-	u32 mem_to: 0;
-	u32 mem_from: 0;
-	u32 mem_count: 0;
-	u32 mem_value: 0;
-
 	# count bytes from from to to; the two areas must not overlap
 	[Copy: ptr<u8> to: 0; ptr<u8> from: 0; u32 count: 0;]
-		mem_to is to;
-		mem_from is from;
-		mem_count is count;
 		call MemCopyForward;
 	[end]
 
 	# count bytes from from to to, where the two areas may overlap
 	[Move: ptr<u8> to: 0; ptr<u8> from: 0; u32 count: 0;]
-		mem_count is count;
-		if to <= from or to >= from + count
-			mem_to is to;
-			mem_from is from;
-			call MemCopyForward;
-			return;
-		;;
-		# to is inside the source: copy from the end, so no byte is overwritten before it's read
-		mem_to is to + count - 1;
-		mem_from is from + count - 1;
-		call MemCopyBackward;
+		call MemMove;
 	[end]
 
 	# count bytes set to value
 	[Fill: ptr<u8> to: 0; u8 value: 0; u32 count: 0;]
-		mem_to is to;
-		mem_value is value;
-		mem_count is count;
 		call MemFillBytes;
 	[end]
 
 	# count 32-bit values (like pixels) set to value
 	[Fill32: ptr<u32> to: 0; u32 value: 0; u32 count: 0;]
-		mem_to is to;
-		mem_value is value;
-		mem_count is count;
 		call MemFillWords;
 	[end]
 
@@ -68,11 +46,12 @@ phi.Mem:Library
 	[end: true]
 }
 
+# Copy's arguments: to at [ebp + 16], from at [ebp + 12], count at [ebp + 8]
 asm.MemCopyForward
 {
-	mov edi, [{mem_to}]
-	mov esi, [{mem_from}]
-	mov ecx, [{mem_count}]
+	mov edi, [ebp + 16]
+	mov esi, [ebp + 12]
+	mov ecx, [ebp + 8]
 	mov edx, ecx
 	shr ecx, 2
 	rep movsd
@@ -82,22 +61,40 @@ asm.MemCopyForward
 	ret
 }
 
-asm.MemCopyBackward
+# Move's arguments, as Copy's: forward unless to is inside the source, then from the end
+# so no byte is overwritten before it's read
+asm.MemMove
 {
-	mov edi, [{mem_to}]
-	mov esi, [{mem_from}]
-	mov ecx, [{mem_count}]
+	mov edi, [ebp + 16]
+	mov esi, [ebp + 12]
+	mov ecx, [ebp + 8]
+	cmp edi, esi
+	jbe .forward
+	lea eax, [esi + ecx]
+	cmp edi, eax
+	jae .forward
+	lea esi, [esi + ecx - 1]
+	lea edi, [edi + ecx - 1]
 	std
 	rep movsb
 	cld
 	ret
+.forward:
+	mov edx, ecx
+	shr ecx, 2
+	rep movsd
+	mov ecx, edx
+	and ecx, 3
+	rep movsb
+	ret
 }
 
+# Fill's arguments: to at [ebp + 16], value at [ebp + 12] (its low byte), count at [ebp + 8]
 asm.MemFillBytes
 {
-	mov edi, [{mem_to}]
-	mov ecx, [{mem_count}]
-	movzx eax, byte [{mem_value}]
+	mov edi, [ebp + 16]
+	mov ecx, [ebp + 8]
+	movzx eax, byte [ebp + 12]
 	imul eax, eax, 0x01010101
 	mov edx, ecx
 	shr ecx, 2
@@ -108,11 +105,12 @@ asm.MemFillBytes
 	ret
 }
 
+# Fill32's arguments: to at [ebp + 16], value at [ebp + 12], count at [ebp + 8]
 asm.MemFillWords
 {
-	mov edi, [{mem_to}]
-	mov ecx, [{mem_count}]
-	mov eax, [{mem_value}]
+	mov edi, [ebp + 16]
+	mov ecx, [ebp + 8]
+	mov eax, [ebp + 12]
 	rep stosd
 	ret
 }
