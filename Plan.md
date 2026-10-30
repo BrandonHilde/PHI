@@ -1279,6 +1279,16 @@ S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
     need it. Whether `BlendRect` in PHI needs a third one decides it.
   - `net_udp` sometimes counts a packet for the wrong machine or out of order, on either
     card. It did before S6 too (2 runs in 12), so it isn't the code generator.
+- [x] (4, first part) Small methods inlined (32-bit code): one with no loops and at most 40
+  syntax nodes, whose parameters, variables and result are each one register and whose
+  statements need no fence (`Math.Max`, `Draw.Pixel`, `Net.Get16`, `Draw.Rgb`) is written
+  out where it's called, two levels deep at most. Its parameters and variables get room
+  in the caller's frame for that call; one it never changes, given a variable in a
+  register, is that register. Errors in it name its own line. `line` 15% faster, `fill
+  circle` 10%, map get 19%, packing messages 27%, comparing names ignoring case 30%.
+  Test `inlining`.
+  - Done before (2), the backend interface: (4) is what S6's "Done when" needs, and (2) has
+    nothing to serve until S10, so it can be shaped by a real optimizer.
 - [ ] (2) the backend interface
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range

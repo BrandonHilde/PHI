@@ -94,6 +94,9 @@ unit, in 16-bit or 32-bit code. It is deliberately simple:
   frame before it and come back after it. The generator checks its own output for a stray
   `esi` or `edi` outside a fence.
 - Everything else is read and written in memory every time, which device memory needs.
+- A call to a small method (no loops, everything in it one register) is written out where
+  it's called instead, with its parameters and variables in the caller's frame
+  (`CanInline` and `EmitInline`).
 - Memory is reached through a **place**: a fixed label, a label plus a computed offset in
   `ebx`, or a computed address in `ebx` (through a pointer). In 16-bit code, a pointer above
   64 KB goes through the `fs` segment; in 32-bit code memory is flat.

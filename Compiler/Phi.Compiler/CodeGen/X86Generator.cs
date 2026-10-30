@@ -275,6 +275,7 @@ namespace Phi.Compiler.CodeGen
 
             // the variables used most go in registers
             currentMethod = m;
+            resultType = m.ReturnType;
             inRegisters.Clear();
             List<VariableSymbol> chosen = bits32
                 ? VariablePlanner.Choose(m, VariableRegisters.Length, FitsRegister, RunsInRegisters)
@@ -472,6 +473,9 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>The method being generated (null for class code), and its frame's size so far.</summary>
         MethodSymbol? currentMethod;
+
+        /// <summary>What return gives back: the method's result type, or an inlined method's.</summary>
+        PhiType resultType = PhiType.Void;
         int frameSize;
 
         /// <summary>Space for class code's temporary values, which has no frame.</summary>
@@ -578,7 +582,7 @@ namespace Phi.Compiler.CodeGen
             AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value),
             CallStmt c => SafeCall(c.Resolved, c.Arguments)
                           && (c.ResultTarget == null || OneRegister(c.ResultTarget.Type) && SafeValue(c.ResultTarget)),
-            ReturnStmt r => r.Value == null || OneRegister(r.Value.Type) && currentMethod is { ReturnType.IsNumeric: true } && SafeValue(r.Value),
+            ReturnStmt r => r.Value == null || OneRegister(r.Value.Type) && resultType.IsNumeric && SafeValue(r.Value),
             OutStmt o => SafeValue(o.Port) && SafeValue(o.Value),
             _ => false,
         };
@@ -1103,9 +1107,9 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case ReturnStmt ret:
-                    if (ret.Value != null && currentMethod is { ReturnType.IsObject: true }) EmitObjectResult(ret.Value);
-                    else if (ret.Value != null && currentMethod is { ReturnType.IsWide: true }) EmitWide(ret.Value);   // in edx:eax
-                    else if (ret.Value != null && currentMethod is { ReturnType.IsFloat: true }) EmitFloat(ret.Value); // in st0
+                    if (ret.Value != null && resultType.IsObject) EmitObjectResult(ret.Value);
+                    else if (ret.Value != null && resultType.IsWide) EmitWide(ret.Value);   // in edx:eax
+                    else if (ret.Value != null && resultType.IsFloat) EmitFloat(ret.Value); // in st0
                     else if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
                     returnUsed = true;
                     Emit($"jmp {returnLabel}");
@@ -1292,6 +1296,10 @@ namespace Phi.Compiler.CodeGen
         {
             switch (callee)
             {
+                case MethodSymbol small when CanInline(small):
+                    EmitInline(small, arguments);
+                    break;
+
                 case MethodSymbol method:
                 {
                     // push each argument in order (a missing one is the parameter's default, or zero);
@@ -1430,6 +1438,148 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
             }
+        }
+
+        // ================================================================ inlining
+
+        /// <summary>The methods being inlined, innermost last.</summary>
+        readonly List<MethodSymbol> inlining = new();
+
+        /// <summary>Whether each method is small and simple enough to inline (worked out once).</summary>
+        readonly Dictionary<MethodSymbol, bool> inlinable = new();
+
+        /// <summary>The most syntax nodes a method may have to be inlined.</summary>
+        const int InlineNodes = 40;
+
+        /// <summary>
+        /// True when a call to the method is written out in place instead (32-bit code): a small
+        /// method with no loops, whose parameters, variables and result are each one register,
+        /// and whose every statement runs with the caller's variables in registers (so none needs
+        /// a fence). Two levels at most, and never a method into itself.
+        /// </summary>
+        bool CanInline(MethodSymbol m)
+        {
+            if (!bits32 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
+            if (!inlinable.TryGetValue(m, out bool can))
+            {
+                inlinable[m] = false;   // (a method that reaches itself isn't inlined)
+                can = Inlinable(m);
+                inlinable[m] = can;
+            }
+            return can;
+        }
+
+        bool Inlinable(MethodSymbol m)
+        {
+            if (m.IsHook || m.IsInterruptHandler) return false;
+            if (!(m.ReturnType.Kind == TypeKind.Void || OneRegister(m.ReturnType))) return false;
+            if (!m.Parameters.All(p => OneRegister(p.Type) && !p.TextRef && p.Decl.AtAddress == null)) return false;
+            if (!m.Locals.All(v => OneRegister(v.Type) && v.Ownership == Ownership.None && v.Decl.AtAddress == null && !v.Decl.IsNew)) return false;
+
+            var nodes = m.Decl.Body.SelectMany(SyntaxWalker.Nodes)
+                .Concat(m.Decl.Result != null ? SyntaxWalker.Nodes(m.Decl.Result) : Enumerable.Empty<Node>()).ToList();
+            if (nodes.Count > InlineNodes) return false;
+            // its variables live in the caller's frame, so nothing may take their address
+            if (nodes.Any(n => n is AddrExpr { Operand: NameExpr { Symbol: VariableSymbol { IsLocal: true } } })) return false;
+
+            PhiType outer = resultType;
+            resultType = m.ReturnType;
+            bool safe = InlineSafe(m.Decl.Body) && (m.Decl.Result == null || OneRegister(m.Decl.Result.Type) && SafeValue(m.Decl.Result));
+            resultType = outer;
+            return safe;
+        }
+
+        bool InlineSafe(List<Stmt> body) => body.All(s => s switch
+        {
+            IfStmt i => SafeValue(i.Condition) && InlineSafe(i.Then) && (i.Else == null || InlineSafe(i.Else)),
+            UnsafeStmt u => InlineSafe(u.Body),
+            WhileStmt or WhileEachStmt or WhenStmt or BreakStmt or ContinueStmt => false,
+            _ => SafeStatement(s),
+        });
+
+        /// <summary>
+        /// A call written out in place, its result in eax. The method's parameters and variables
+        /// get room in this frame for the call (each call its own, so a call in an argument can't
+        /// change another's); a parameter the method never changes, given a variable that's in a
+        /// register, is that register.
+        /// </summary>
+        void EmitInline(MethodSymbol m, List<Expr> arguments)
+        {
+            var labels = m.Parameters.Concat(m.Locals).Select(v => (Variable: v, Label: v.Label)).ToList();
+            var changed = m.Decl.Body.SelectMany(SyntaxWalker.Nodes).SelectMany(n => n switch
+            {
+                AssignStmt a => new[] { a.Target },
+                CallStmt { ResultTarget: Expr target } => new[] { target },
+                _ => Array.Empty<Expr>(),
+            }).OfType<NameExpr>().Select(n => n.Symbol).OfType<VariableSymbol>().ToHashSet();
+
+            // the arguments first, all of them, before any parameter's place changes
+            var places = new List<(VariableSymbol Variable, string Label, string? Register)>();
+            Comment($"{m.Name}, written out here");
+            for (int i = 0; i < m.Parameters.Count; i++)
+            {
+                VariableSymbol p = m.Parameters[i];
+                Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
+
+                if (value is NameExpr { Symbol: VariableSymbol given } && !changed.Contains(p)
+                    && StorageType(given.Type).ElementSize == 4 && StorageType(p.Type).ElementSize == 4
+                    && inRegisters.FirstOrDefault(r => r.Variable == given) is { Variable: not null } held && registersLive)
+                {
+                    places.Add((p, held.Home, held.Register));
+                    continue;
+                }
+
+                string slot = AllocTemp(4);
+                if (value == null) Emit($"mov dword [{slot}], 0");
+                else if (DirectOperand(value, constantOnly: false) is string asIs && !asIs.Contains('['))
+                    Emit($"mov dword [{slot}], {asIs}");
+                else
+                {
+                    EmitExpr(value);
+                    Emit($"mov dword [{slot}], eax");
+                }
+                places.Add((p, slot, null));
+            }
+            foreach (VariableSymbol v in m.Locals)
+            {
+                string slot = AllocTemp(4);
+                if (!v.Decl.Values.Any() && !v.NeedsInitCode) Emit($"mov dword [{slot}], 0");   // starts at zero, as it would
+                places.Add((v, slot, null));
+            }
+
+            // the method's own code, in its own file, returning to the end of it
+            var outer = (file, returnLabel, returnUsed, resultType, lastComment);
+            int aliases = 0;
+            foreach (var (v, label, register) in places)
+            {
+                if (register == null)
+                {
+                    v.Label = label;
+                    continue;
+                }
+                inRegisters.Add((v, register, label));
+                v.Label = $"«{v.Name}»";
+                aliases++;
+            }
+            inlining.Add(m);
+            file = m.Decl.Owner.File;
+            returnLabel = NewLabel("inlined");
+            returnUsed = false;
+            resultType = m.ReturnType;
+
+            foreach (Stmt s in m.Decl.Body) EmitStatement(s);
+            if (m.Decl.Result != null)
+            {
+                SourceComment(m.Decl.Result);
+                EmitExpr(m.Decl.Result);
+            }
+            if (returnUsed) Label(returnLabel);
+
+            inlining.RemoveAt(inlining.Count - 1);
+            inRegisters.RemoveRange(inRegisters.Count - aliases, aliases);
+            foreach (var (v, label) in labels) v.Label = label;
+            (file, returnLabel, returnUsed, resultType, _) = outer;
+            lastComment = default;  // the caller's next line gets its comment again
         }
 
         /// <summary>

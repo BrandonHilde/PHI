@@ -1,0 +1,52 @@
+# Small methods are written out where they're called (in 32-bit code): the results must
+# be the same as calling them, which the 16-bit run (with real calls) shows too.
+phi.Inlining:Library
+{
+	int values: 5 9 2 7;
+
+	# an early return, and the result at the end
+	debug (Larger: 3 8) ' ' (Larger: 8 3) '\n';
+
+	# the same method in its own arguments, each with its own parameters
+	debug (Larger: (Larger: 1 6) (Larger: 4 2)) '\n';
+	debug (Add3: (Add3: 1 2 3) (Add3: 4 5 6) 10) '\n';
+
+	# a method that changes its parameter leaves the caller's variable alone
+	int kept: 4;
+	debug (Bumped: kept) ' ' kept '\n';
+
+	# a variable with no value starts at zero every call
+	debug (Counted: 3) ' ' (Counted: 3) '\n';
+
+	# inside a loop, with the counter in a register
+	int sum: 0;
+	while u32 i: 0; i < 4; i++;
+		sum is sum + (Larger: values:i 6);
+	;;
+	debug sum '\n';
+
+	# an element out of range still stops, at the line in the method
+	debug (Pick: 2) '\n';
+	debug (Pick: 9) '\n';
+
+	[Larger: int a: 0; int b: 0;]
+		if a > b
+			return a;
+		;;
+	[end: b]
+
+	[Add3: int a: 0; int b: 0; int c: 0;]
+	[end: a + b + c]
+
+	[Bumped: int n: 0;]
+		n++ 10;
+	[end: n]
+
+	[Counted: int n: 0;]
+		int total;
+		total++ n;
+	[end: total]
+
+	[Pick: u32 pos: 0;]
+	[end: values:pos]
+}

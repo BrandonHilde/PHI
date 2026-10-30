@@ -1,7 +1,7 @@
 # Counts from phi test --bench (instructions run, under QEMU's -icount).
 # phi test --bench --save-bench replaces them with the latest counts.
-sha256 4 KB            759830
-aes-128-gcm seal 4 KB  1388745
-chacha20 4 KB          921868
-pbkdf2 1000 rounds     27711805
+sha256 4 KB            759735
+aes-128-gcm seal 4 KB  1379631
+chacha20 4 KB          916236
+pbkdf2 1000 rounds     27505778
 x25519 one key         35632403
