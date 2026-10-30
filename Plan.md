@@ -1398,7 +1398,9 @@ test where a zone program crashes on purpose shows its players back in a restart
     `use fs.fat16`, so the program's copy is a file of its own with the same calls.
   - `SaveLog.Read` (both) took a failed read (-1) for a long one, since an `int` and a
     `u32` compare unsigned; it stops there now.
-- [ ] (4) catching errors in the language (a design question for the user first)
+- [ ] (4) catching errors in the language: **not now** (the user, 2026-10-30). Errors are
+  contained at the program level (parts 1-3); revisit if kernel code turns out to need a
+  block that catches them.
 - [ ] (5) `phi fuzz`
 
 #### Phase S9: Several cores
