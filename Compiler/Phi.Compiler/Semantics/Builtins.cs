@@ -203,6 +203,8 @@ namespace Phi.Compiler.Semantics
                     Description = "program: read a file into buffer; bytes read, or -1" },
             new() { Name = "OS.WriteFile", Label = "OS_WriteFile", InKernel = "Fat.WriteFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: create or replace a file; 1 if written" },
+            new() { Name = "OS.AppendFile", Label = "OS_AppendFile", InKernel = "Fat.Append", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+                    Description = "program: add to the end of a file (creating it); 1 if written" },
             new() { Name = "OS.DeleteFile", Label = "OS_DeleteFile", InKernel = "Fat.Delete", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: delete a file; 1 if deleted" },
             new() { Name = "OS.ListFiles", Label = "OS_ListFiles", InKernel = "Fat.List", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,

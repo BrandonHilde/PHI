@@ -53,7 +53,7 @@ phi.SaveLog:Kernel
 		u32 offset: 0;
 		while offset < length
 			int got: (Fat.ReadAt: path offset addr log_record size + 4);
-			if got < size + 4
+			if got < 0 or got < size + 4      # (an int and a u32 compare unsigned: -1 first)
 				torn is true;
 				break;
 			;;

@@ -1716,7 +1716,7 @@ drivers. Instead:
 | `OS.Run: path arguments` → | the same, with a command line for it |
 | `OS.Arguments` → | this program's command line, as a `ptr<u8>` |
 | `OS.Wait: process` → | wait for a program this one started; its exit code |
-| `OS.ReadFile: path buffer max` →, `OS.ReadFileAt: path offset buffer max` →, `OS.WriteFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods; a buffer can be an array (`u8 text[512]`) or a pointer |
+| `OS.ReadFile: path buffer max` →, `OS.ReadFileAt: path offset buffer max` →, `OS.WriteFile: path data length` →, `OS.AppendFile: path data length` →, `OS.DeleteFile: path` →, `OS.FileSize: path` →, `OS.ListFiles: path` → | files on the kernel's disk, like `Fat`'s methods (`AppendFile` is `Fat.Append`); a buffer can be an array (`u8 text[512]`) or a pointer |
 | `OS.ListFolder: path into max` →, `OS.MakeFolder: path` →, `OS.Rename: from to` →, `OS.DeleteFolder: path` → | folders, like `Fat.Entries`, `MakeFolder`, `Rename` (which can move, too) and `DeleteFolder` (only an empty one); `ListFolder` fills an array of `FileInfo` (from `use fs.fileinfo;`, the same struct `Fat` uses) and gives how many, or -1 |
 | `OS.SoundWrite: data length` →, `OS.SoundRate: hz` →, `OS.SoundQueued` →, `OS.SoundStop` →, `OS.SoundVolume: percent` → | the sound card, like `Ac97`'s methods (`SoundWrite` never waits: it returns the bytes it took, 0 while the card is full); each returns -1 if there's no card |
 | `OS.TaskState: process` →, `OS.TaskName: process buffer` →, `OS.Kill: process` → | other programs (`ps`, `kill`) |
@@ -1784,6 +1784,32 @@ call Mail.Send: (Mail.Find: 'zone1') addr h;        # false if it's full, or the
 - A box's number changes each time its place is used again, so an old number reaches
   nothing (`Send` gives false), even once a new box has the same name.
 - `Mail.Wait` sleeps in a program, and lets the programs run in the kernel.
+
+### Keeping programs running
+
+`proc.supervisor` starts a program and starts it again whenever it stops with an error
+(a crash, or an exit code other than 0). A program that saves what it has as it goes
+(`user.savelog` is the kernel's `SaveLog` for programs, with the same calls) reads it
+back when it starts, so a zone that crashes comes back with its players:
+
+```phi
+use proc.supervisor;
+
+int zone: (Supervisor.Keep: 'ZONE.BIN');   # started now; -1 if it can't be
+while (Supervisor.Running: zone)           # false once it ends with 0, or is given up on
+    call Supervisor.Check;                 # never waits: starts again any that stopped
+    call OS.Yield;                         # the programs run
+;;
+log Supervisor.restarts:zone;              # how many times it was started again
+```
+
+- Up to 8 programs are kept, each by a path of up to 15 characters.
+  `Supervisor.ProcessOf: zone` is its process number now, which changes each time it's
+  started again.
+- One that keeps stopping within a second of starting is given up on after
+  `Supervisor.give_up_after` (5) restarts in a row; `last_code` is how it last ended.
+- `Process.Ended: pid` is what it uses: true once a program has ended, with its exit
+  code in `Process.exit_code`, without waiting the way `Process.Wait` does.
 
 ### The shell
 

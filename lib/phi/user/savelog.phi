@@ -1,0 +1,65 @@
+# Save logs for user programs: the kernel's SaveLog (fs.savelog) with the same calls,
+# through the file system calls. Records of one size are added to the end of a file,
+# each with a CRC-32, and read back in order when the program starts again.
+#
+#   use user.savelog;
+#   call ok is SaveLog.Add: 'ZONE.LOG' addr p sizeof PlayerSave;            # false if the disk is full
+#   int count: (SaveLog.Read: 'ZONE.LOG' sizeof PlayerSave addr Restore);   # -1 if there's no log
+#   call SaveLog.Clear: 'ZONE.LOG';
+#
+# Add writes a record and its CRC in one OS.AppendFile, so a program (or the machine)
+# that stops part way leaves the log as it was, or a record cut short, which Read stops
+# at (and sets torn). A restarted program reads its log back, as a kernel does.
+
+use data.crc32;
+
+phi.SaveLog:Program
+{
+	const u32 MAX_RECORD: 1024;
+
+	u8 log_record[MAX_RECORD + 4];       # a record and its CRC, on its way to or from the disk
+	bln torn: false;                     # the last Read stopped at a damaged record
+
+	# add a record of size bytes to the end of the log at path; false if it couldn't be written
+	[Add: ptr<u8> path: 0; ptr<u8> record: 0; u32 size: 0;]
+		if size is 0 or size > MAX_RECORD return false;
+		while u32 i: 0; i < size; i++;
+			log_record:i is record:i;
+		;;
+		u32 crc: (Crc32.Of: record size);
+		log_record:size is crc;
+		log_record:(size + 1) is crc >> 8;
+		log_record:(size + 2) is crc >> 16;
+		log_record:(size + 3) is crc >> 24;
+	[end: (OS.AppendFile: path addr log_record size + 4) is 1]
+
+	# call every with each whole record in the log, oldest first; how many there were,
+	# or -1 if there's no log at path
+	[Read: ptr<u8> path: 0; u32 size: 0; method<ptr<u8>> every: 0;]
+		torn is false;
+		if size is 0 or size > MAX_RECORD return -1;
+		int length: (OS.FileSize: path);
+		if length < 0 return -1;
+		int count: 0;
+		u32 offset: 0;
+		while offset < length
+			int got: (OS.ReadFileAt: path offset addr log_record size + 4);
+			if got < 0 or got < size + 4      # (an int and a u32 compare unsigned: -1 first)
+				torn is true;
+				break;
+			;;
+			u32 crc: log_record:size | (log_record:(size + 1) << 8) | (log_record:(size + 2) << 16) | (log_record:(size + 3) << 24);
+			if crc is not (Crc32.Of: addr log_record size)
+				torn is true;
+				break;
+			;;
+			call every: addr log_record;
+			count++;
+			offset++ size + 4;
+		;;
+	[end: count]
+
+	# empty the log (it's created if it isn't there); false if it couldn't be written
+	[Clear: ptr<u8> path: 0;]
+	[end: (OS.WriteFile: path addr log_record 0) is 1]
+}

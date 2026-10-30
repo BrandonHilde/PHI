@@ -1,0 +1,18 @@
+kept: 1
+zone: restored 0 players
+handed the zone 3 players
+zone: saved them, and now crashes
+
+PHI: index out of range on line 30 in zone.phi
+zone: back in: player 1 at 10, 20
+zone: back in: player 2 at 20, 40
+zone: back in: player 3 at 30, 60
+zone: restored 3 players
+zone started again 1 time(s), last exit code 0
+
+PHI: index out of range on line 6 in crash.phi
+
+PHI: index out of range on line 6 in crash.phi
+
+PHI: index out of range on line 6 in crash.phi
+crash started again 2 time(s), then given up on

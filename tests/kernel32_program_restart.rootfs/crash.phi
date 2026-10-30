@@ -1,0 +1,7 @@
+# kernel32_program_restart's crash: stops with an error every time it starts.
+phi.Crash:Program
+{
+	int numbers: 1 2;
+	int pos: 5;
+	log numbers:pos '\n';
+}

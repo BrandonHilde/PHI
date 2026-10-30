@@ -1353,7 +1353,8 @@ Goal: a mistake stops only the work it was part of, not the whole machine.
    forwarded ports and reports anything that stopped it.
 
 **Done when:** an hour of `phi fuzz` against `samples/mmo/` doesn't stop the server, and a
-test where a zone program crashes on purpose shows its players back in a restarted zone.
+test where a zone program crashes on purpose shows its players back in a restarted zone
+(this half: `kernel32_program_restart`).
 
 **Status: in progress.**
 - [x] (1) Network system calls for programs (80 to 94). The kernel has `use net.calls`;
@@ -1384,7 +1385,19 @@ test where a zone program crashes on purpose shows its players back in a restart
   - Differs from the plan: named boxes of fixed-size records rather than one queue per
     pair of programs, so a zone can find another by name without the kernel wiring them
     up.
-- [ ] (3) restarting a zone program
+- [x] (3) Restarting: `proc.supervisor`'s `Keep: path` starts a program and `Check` starts
+  it again when it stops with an error, giving up after `give_up_after` restarts in a
+  row. `Process.Ended` says a program has ended without waiting. `user.savelog` is
+  `SaveLog` for programs (on a new `OS.AppendFile`, which is `Fat.Append` in a kernel), so
+  a restarted zone reads its players back. Test `kernel32_program_restart` (a zone handed
+  three players by mail saves them, crashes, and comes back with them; a program that
+  always crashes is given up on).
+  - Differs from the plan: the zone reads its own players back rather than the kernel
+    moving them in, since it's the zone's save log. `fs.savelog` stays a kernel file:
+    making it work in both would have meant every kernel that uses it also needing
+    `use fs.fat16`, so the program's copy is a file of its own with the same calls.
+  - `SaveLog.Read` (both) took a failed read (-1) for a long one, since an `int` and a
+    `u32` compare unsigned; it stops there now.
 - [ ] (4) catching errors in the language (a design question for the user first)
 - [ ] (5) `phi fuzz`
 

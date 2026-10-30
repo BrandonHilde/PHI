@@ -1,0 +1,57 @@
+# A zone program that crashes is started again with its players (proc.supervisor, with
+# proc.mail and user.savelog): the kernel hands the zone three players, the zone saves
+# them in its log and crashes, and the zone started again reads them back.
+use proc.process;
+use proc.mail;
+use proc.supervisor;
+
+struct.Player
+{
+	u32 id;
+	int x;
+	int y;
+}
+
+phi.RestartTest:Kernel
+{
+	int zone: (Supervisor.Keep: 'ZONE.BIN');
+	log 'kept: ' (zone >= 0) '\n';
+
+	# once its box is open, three players go to it
+	int box: -1;
+	int start: (OS.GetTicks);
+	while box < 0 and (OS.GetTicks) - start < 20000
+		call Supervisor.Check;
+		box is (Mail.Find: 'zone');
+		if box < 0
+			call OS.Yield;
+		;;
+	;;
+	Player p;
+	while u32 i: 1; i <= 3; i++;
+		p.id is i;
+		p.x is i * 10;
+		p.y is i * 20;
+		call Mail.Send: box addr p;
+	;;
+	log 'handed the zone 3 players\n';
+
+	# it saves them, crashes, is started again, and finishes
+	start is (OS.GetTicks);
+	while (Supervisor.Running: zone) and (OS.GetTicks) - start < 30000
+		call Supervisor.Check;
+		call OS.Yield;
+	;;
+	log 'zone started again ' Supervisor.restarts:zone ' time(s), last exit code ' Supervisor.last_code:zone '\n';
+
+	# one that crashes straight away is given up on
+	Supervisor.give_up_after is 2;
+	int crash: (Supervisor.Keep: 'CRASH.BIN');
+	start is (OS.GetTicks);
+	while (Supervisor.Running: crash) and (OS.GetTicks) - start < 30000
+		call Supervisor.Check;
+		call OS.Yield;
+	;;
+	log 'crash started again ' Supervisor.restarts:crash ' time(s), then given up on\n';
+	exit 0;
+}

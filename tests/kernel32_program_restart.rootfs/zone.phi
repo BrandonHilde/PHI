@@ -1,0 +1,40 @@
+# kernel32_program_restart's zone: the first time, it takes the players the kernel
+# hands it, saves each in its log, and crashes; started again, it reads them back.
+use user.mail;
+use user.savelog;
+
+struct.Player
+{
+	u32 id;
+	int x;
+	int y;
+}
+
+phi.Zone:Program
+{
+	int numbers: 1 2;
+	int restored: 0;
+	call SaveLog.Read: 'ZONE.LOG' sizeof Player addr Restore;
+	log 'zone: restored ' restored ' players\n';
+
+	if restored is 0
+		int box: (Mail.Open: 'zone' sizeof Player 8);
+		Player p;
+		while int i: 0; i < 3; i++;
+			if (Mail.Wait: box addr p 20000)
+				call SaveLog.Add: 'ZONE.LOG' addr p sizeof Player;
+			;;
+		;;
+		log 'zone: saved them, and now crashes\n';
+		int pos: 2;
+		log numbers:pos '\n';
+	;;
+	exit 0;
+
+	# each player in the log, oldest first
+	[Restore: ptr<u8> record: 0;]
+		ptr<Player> player: record;
+		log 'zone: back in: player ' player.id ' at ' player.x ', ' player.y '\n';
+		restored++;
+	[end]
+}

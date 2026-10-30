@@ -1,0 +1,105 @@
+# Keeping programs running: one that stops with an error (or crashes) is started again
+# (32-bit kernels with proc.process). A zone program reads its save log when it starts,
+# so it comes back with its players.
+#
+#   use proc.supervisor;
+#   int zone: (Supervisor.Keep: 'ZONE.BIN');    # started now; -1 if it can't be
+#   while true
+#       call Supervisor.Check;                  # starts again any that stopped with an error
+#       call OS.Yield;                          # the programs run
+#   ;;
+#   Supervisor.restarts:zone                    # how many times it was started again
+#   (Supervisor.Running: zone)                  # false once it ended with 0, or was given up on
+#
+# A program that ends with exit code 0 has finished, and isn't started again. One that
+# keeps stopping is given up on after give_up_after restarts in a row with no more than
+# a second between them (it would only crash again).
+
+use proc.process;
+
+phi.Supervisor:Kernel
+{
+	const int MAX_KEPT: 8;
+	const int PATH_SIZE: 16;
+	const int STEADY: 1000;                 # ms a program runs before its restarts count afresh
+
+	u8 paths[128];                          # PATH_SIZE for each
+	int pid[MAX_KEPT];                      # 0: not running (finished, given up on, or unused)
+	int restarts[MAX_KEPT];                 # times it was started again
+	int in_a_row[MAX_KEPT];                 # restarts with no more than STEADY ms between them
+	int started_at[MAX_KEPT];
+	int last_code[MAX_KEPT];                # the exit code it last ended with
+	bln used[MAX_KEPT];
+	int give_up_after: 5;
+
+	# start a program and keep it running; a number for it, or -1 if it can't start (or
+	# its path is longer than 15 characters, or MAX_KEPT are kept already)
+	[Keep: ptr<u8> path: 0;]
+		int k: -1;
+		while int i: 0; i < MAX_KEPT and k < 0; i++;
+			if used:i is false
+				k is i;
+			;;
+		;;
+		if k < 0 return -1;
+		ptr<u8> to: addr paths + k * PATH_SIZE;
+		u32 n: 0;
+		while path:n is not 0
+			if n >= PATH_SIZE - 1 return -1;
+			to:n is path:n;
+			n++;
+		;;
+		to:n is 0;
+		int started: (Process.Spawn: to);
+		if started < 0 return -1;
+		used:k is true;
+		pid:k is started;
+		restarts:k is 0;
+		in_a_row:k is 0;
+		started_at:k is (OS.GetTicks);
+	[end: k]
+
+	# look at every kept program: one that stopped with an error starts again. How many
+	# were started again; never waits.
+	[Check]
+		int count: 0;
+		while int k: 0; k < MAX_KEPT; k++;
+			if used:k and pid:k > 0 and (Process.Ended: pid:k)
+				last_code:k is Process.exit_code;
+				pid:k is 0;
+				if last_code:k is not 0
+					if (OS.GetTicks) - started_at:k > STEADY
+						in_a_row:k is 0;
+					;;
+					if in_a_row:k < give_up_after
+						int started: (Process.Spawn: addr paths + k * PATH_SIZE);
+						if started > 0
+							pid:k is started;
+							restarts:k++;
+							in_a_row:k++;
+							started_at:k is (OS.GetTicks);
+							count++;
+						;;
+					;;
+				;;
+			;;
+		;;
+	[end: count]
+
+	# whether a kept program is running (false once it finished, or was given up on)
+	[Running: int k: 0;]
+		if k < 0 or k >= MAX_KEPT return false;
+	[end: used:k and pid:k > 0]
+
+	# its process number now (it changes each time it's started again), or 0
+	[ProcessOf: int k: 0;]
+		if k < 0 or k >= MAX_KEPT return 0;
+	[end: pid:k]
+
+	# stop keeping it: it isn't started again (one that's running carries on)
+	[Forget: int k: 0;]
+		if k >= 0 and k < MAX_KEPT
+			used:k is false;
+		;;
+	[end]
+}

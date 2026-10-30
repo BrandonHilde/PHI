@@ -92,6 +92,7 @@ phi.Process:Kernel
 	const u32 SYS_MAKE_FOLDER: 39;
 	const u32 SYS_RENAME: 40;
 	const u32 SYS_DELETE_FOLDER: 41;
+	const u32 SYS_APPEND_FILE: 42;
 	const u32 SYS_MORE: 64;                 # from here on, more_calls handles them
 
 	const u32 HEAP_LIMIT: 0x48000000;       # a program's heap is at most 124 MB (from USER_TOP)
@@ -103,6 +104,7 @@ phi.Process:Kernel
 	u32 process_heap_end[16];               # its heap is USER_TOP up to this
 	u8 process_names[256];                  # 16 bytes for each process
 	u32 started: 0;
+	int exit_code: 0;                       # of the program Ended last saw end
 	u8 call_path[64];                       # copies of a system call's text arguments
 	u8 call_arguments[256];
 	u8 call_path_to[64];                    # where Rename moves call_path to
@@ -228,6 +230,17 @@ phi.Process:Kernel
 			;;
 		;;
 	[end: code]
+
+	# whether a program the kernel started has ended, without waiting: true once it has
+	# (its exit code is then in exit_code, -1 if it crashed, and its number is free)
+	[Ended: int pid: 0;]
+		if pid <= 0 or pid >= MAX_PROCESSES or process_directory:pid is 0 return true;
+		call CollectFinished;
+		u32 state: (OS.TaskState: pid);
+		if state is not TASK_EXITED and state is not TASK_COLLECTED return false;
+		exit_code is (OS.TaskExitCode: pid);
+		call Release: pid;
+	[end: true]
 
 	# wait until every program has finished
 	[WaitAll]
@@ -404,7 +417,7 @@ phi.Process:Kernel
 
 		# most calls start with a path
 		bln pathOk: false;
-		bln named: (number >= SYS_SPAWN and number <= SYS_FILE_SIZE) or number is SYS_READ_FILE_AT;
+		bln named: (number >= SYS_SPAWN and number <= SYS_FILE_SIZE) or number is SYS_READ_FILE_AT or number is SYS_APPEND_FILE;
 		if named or (number >= SYS_LIST_FOLDER and number <= SYS_DELETE_FOLDER)
 			call pathOk is CopyFromUser: first addr call_path 64;
 		;;
@@ -521,6 +534,13 @@ phi.Process:Kernel
 			call ok is CopyFromUser: second addr call_path_to 64;
 			if pathOk and ok
 				call ok is Fat.Rename: addr call_path addr call_path_to;
+				result is ok;
+			;;
+		;;
+		elif number is SYS_APPEND_FILE
+			call ok is UserRange: second third;
+			if pathOk and ok
+				call ok is Fat.Append: addr call_path second third;
 				result is ok;
 			;;
 		;;

@@ -1,4 +1,4 @@
-; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_NetAddress OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
+; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_AppendFile OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_NetAddress OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
 ;
 ; requires: phi_flush
 ;
@@ -37,6 +37,7 @@ SYS_LIST_FOLDER equ 38
 SYS_MAKE_FOLDER equ 39
 SYS_RENAME    equ 40
 SYS_DELETE_FOLDER equ 41
+SYS_APPEND_FILE equ 42
 SYS_SURFACE_OPEN equ 64   ; 64 and up: libraries in the kernel (gui.surfaces)
 SYS_SURFACE_PRESENT equ 65
 SYS_NEXT_EVENT equ 66
@@ -186,6 +187,7 @@ PHI_SYSCALL OS_ListFolder, SYS_LIST_FOLDER, 3    ; path into max -> FileInfo ent
 PHI_SYSCALL OS_MakeFolder, SYS_MAKE_FOLDER, 1    ; path -> 1 if made
 PHI_SYSCALL OS_Rename, SYS_RENAME, 2             ; from to -> 1 if renamed (or moved)
 PHI_SYSCALL OS_DeleteFolder, SYS_DELETE_FOLDER, 1 ; path -> 1 if deleted (only an empty folder)
+PHI_SYSCALL OS_AppendFile, SYS_APPEND_FILE, 3    ; path data length -> 1 if added to the end
 PHI_SYSCALL OS_SurfaceOpen, SYS_SURFACE_OPEN, 2  ; width height -> 1, or 0
 PHI_SYSCALL OS_SurfacePresent, SYS_SURFACE_PRESENT, 1   ; pixels -> 1, or 0
 PHI_SYSCALL OS_NextEvent, SYS_NEXT_EVENT, 1      ; event -> 1, or 0 if there's none
