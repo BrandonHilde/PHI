@@ -1196,7 +1196,7 @@ The layers, each usable on its own:
 | `net.udp` | `Udp` | sockets: `Open: port queue` → a socket or -1 (port 0 picks one), `Receive: s datagram` → (never waits), `Wait: s datagram timeout` →, `SendTo: s address port data length` →, `Close: s`; a `UdpDatagram` has `from`, `from_port`, `length` and `data`; each socket's `received` and `dropped` |
 | `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
 | `net.dns` | `Dns` | `Resolve: name` → an address, or 0 |
-| `net.tcp` | `Tcp` | `Connect: address port` → a connection or -1, `Write: c data length` →, `Read: c buffer max` → (0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000) |
+| `net.tcp` | `Tcp` | clients: `Connect: address port` → a connection or -1, `Write: c data length` → (waits until it's all taken), `Read: c buffer max` → (waits for something: 0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000). Servers, never waiting: `Listen: port backlog` → a listener or -1, `Accept: listener` → a connection or -1, `Waiting: c` → bytes to read (-1 once closed), `Send: c data length` → how much fitted, `Address: c` →; `open_count`, `retransmits` |
 | `net.tls` | `Tls` | one TLS 1.3 connection: `Connect: address port host` → (false: `error` says why), `Write: data length` →, `Read: buffer max` → (0 once the server has closed), `Close`; `suite`, `alert`, `verified` |
 | `net.http` | `Http` | `Get: url buffer max` → the response's size or -1, for `http://` and `https://`; `status`, `body` (where the body starts), `error` |
 
@@ -1209,8 +1209,35 @@ for an address by DHCP first; if no server answers it keeps these addresses and
 The card's interrupt moves arriving frames from its 32 KB ring into a queue of up to 256
 in the driver, and `Net.Poll` handles them from there, outside the interrupt. So a kernel
 can be busy for a while without losing frames; the methods that wait (`Ping`,
-`Dns.Resolve`, `Tcp.Read`, ...) poll, and sleep a millisecond when nothing has come. Up to
-four TCP connections can be open at once, each with an 8 KB receive buffer.
+`Dns.Resolve`, `Tcp.Read`, ...) poll, and sleep a millisecond when nothing has come.
+
+Up to 1,024 TCP connections can be open at once, each on the heap with an 8 KB buffer each
+way. What's sent stays in its buffer until it's acknowledged: as much goes out as the other
+side has room for, and what isn't acknowledged in time goes again (after 200 ms, then
+twice as long each time, 8 times before the connection counts as broken). Segments that
+come early are kept and joined up when the gap fills. A server looks after many
+connections at once without waiting:
+
+```phi
+use net.tcp;
+
+int listener: (Tcp.Listen: 5000);
+while true
+    int c: (Tcp.Accept: listener);       # a new connection, or -1
+    if c >= 0
+        call Remember: c;
+    ;;
+    # for each connection: what's arrived, and what to send
+    int ready: (Tcp.Waiting: c);         # bytes to read, or -1 once it's closed
+    if ready > 0
+        int got: (Tcp.Read: c addr buffer 2048);
+    ;;
+    int taken: (Tcp.Send: c reply length);   # 0 when its buffer is full: try again later
+    call Net.Wait;
+;;
+```
+
+There's no congestion control, which suits a local network more than the internet.
 
 A server answers on a UDP socket. Each socket keeps what arrives for its port in a queue
 of its own until `Receive` takes it, so a game's tick can read everything that came since

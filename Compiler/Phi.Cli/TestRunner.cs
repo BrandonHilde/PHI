@@ -230,7 +230,7 @@ namespace Phi.Cli
             if (machines == null) return string.Join("\n", errors);
 
             var checks = machines.Select(m => new MachineCheck(m)).ToList();
-            using var network = new VirtualNetwork();
+            using var network = new VirtualNetwork(NetworkMachines.LoseEvery(manifest));
             var runs = checks.Select(c => Task.Run(() => Qemu.RunHeadless(c.Machine.Image, timeout, c.IsDone, c.Input,
                 screenshots: Path.GetDirectoryName(c.Machine.Image), network: network.MachineArgs(c.Machine.Number)))).ToArray();
             Task.WaitAll(runs);
@@ -242,7 +242,7 @@ namespace Phi.Cli
                 if (failure != null) failures.Add($"machine {checks[i].Machine.Number} ({Path.GetFileName(checks[i].Machine.File)}): {failure}");
             }
             if (failures.Count == 0) return null;
-            return string.Join("\n", failures) + $"\n({network.Frames} frames went over the network)";
+            return string.Join("\n", failures) + $"\n({network.Frames} frames went over the network, {network.Lost} lost on purpose)";
         }
 
         /// <summary>What one machine of a network test must do: its file's .expected or .contains, and its .input.</summary>

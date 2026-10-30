@@ -1,0 +1,72 @@
+# One of net_tcp's three clients (see net_tcp.phi): connects (trying again until the
+# server listens), sends 64 KB while reading the server's 32 KB, checks every byte it
+# reads, and closes.
+use net.tcp;
+
+phi.TcpClient:Kernel
+{
+	const u32 SEND: 65536;
+	const u32 RECEIVE: 32768;
+
+	u8 chunk[1024];
+	u8 buffer[2048];
+	bln ok: (Net.Start: Machine.address);
+	int c: -1;
+	while int tries: 0; tries < 30 and c < 0; tries++;
+		c is (Tcp.Connect: Machine.first 5000);
+		if c < 0
+			call OS.Sleep: 200;
+		;;
+	;;
+	log 'connected: ' (c >= 0) '\n';
+	call Run;
+
+	[Run]
+		u32 me: Machine.number;
+		u32 sent: 0;
+		u32 received: 0;
+		bln in_order: true;
+		while sent < SEND or received < RECEIVE
+			# as much as the send buffer takes, so several segments are on their way at once
+			int taken: 1;
+			while sent < SEND and taken > 0
+				u32 n: SEND - sent;
+				if n > 1024
+					n is 1024;
+				;;
+				while u32 i: 0; i < n; i++;
+					chunk:i is ((sent + i) * 7 + me) & 0xFF;
+				;;
+				taken is (Tcp.Send: c addr chunk n);
+				if taken > 0
+					sent++ taken;
+				;;
+			;;
+			if taken < 0 break;
+			int ready: (Tcp.Waiting: c);
+			if ready > 0
+				int got: (Tcp.Read: c addr buffer 2048);
+				while int i: 0; i < got; i++;
+					if buffer:i is not ((received + i) * 13 + me) & 0xFF
+						in_order is false;
+					;;
+				;;
+				received++ got;
+			;;
+			elif ready < 0
+				break;
+			;;
+			call Net.Wait;
+		;;
+		log 'sent ' sent ', received ' received ', in order: ' in_order '\n';
+		call Tcp.Close: c;
+
+		# answer the server until our FIN and its FIN are both acknowledged
+		int start: (OS.GetTicks);
+		while Tcp.open_count > 0 and (OS.GetTicks) - start < 10000
+			call Net.Wait;
+		;;
+		log 'closed: ' (Tcp.open_count is 0) '\n';
+		exit 0;
+	[end]
+}

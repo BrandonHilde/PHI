@@ -1163,7 +1163,31 @@ Goal: thousands of TCP connections, at a useful speed.
 **Done when:** `phi load` holds 500 connections to `samples/mmo/` for a minute, every byte
 sent arrives in order, and the S1 benchmarks show the TCP download from S1 got faster.
 
-**Status: not started.**
+**Status: in progress.** Done in three parts: (a) the TCP server, (b) virtio-net, (c) `phi
+load` and logins.
+- [x] (a, 2026-10-29) `net.tcp` rewritten for servers, with the client calls unchanged
+  (`net_http` still fetches over TLS):
+  - `Listen: port backlog`, `Accept` (never waits), `Waiting`, `Send` (never waits: what
+    fits in the buffer), `Address`; connections on the heap (up to 1,024, each with 8 KB
+    each way), found through a `data.map` of their addresses and ports
+  - a send buffer: as much goes out as the other side's window allows, and what isn't
+    acknowledged goes again from the oldest byte (200 ms, doubling, 8 tries); a zero window
+    is asked again a byte at a time
+  - segments that come early are kept (one run of them) and joined when the gap fills
+  - `Close` sends what's left and a FIN without waiting; the connection lingers until
+    the FIN is answered (or 5 s), driven by `Tcp.Tick` from `Net.Poll`
+  - `lose 1 in N` in a `.machines` file makes the test network lose every Nth frame
+  - test `net_tcp`: a server and three clients sending 64 KB and 32 KB each way at once,
+    losing one frame in 40; every byte arrives in order, segments are sent again and
+    kept early, and every connection closes
+- [ ] (b) virtio-net, behind a small layer so `net.net` works with either card
+- [ ] (c) `phi load`, logins with `crypto.pbkdf2` in `samples/mmo/`, and the 500-connection
+  minute
+- Differs from the plan so far:
+  - No congestion control (slow start, backing off when frames are lost): on a local
+    network the window is the limit that matters. The internet needs it.
+  - Only one run of early data is kept at a time; a second gap waits for the first to
+    fill. That covers a single lost segment, the usual case.
 
 #### Phase S6: An optimizing code generator
 

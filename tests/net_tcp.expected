@@ -1,0 +1,6 @@
+listening: 1
+machine 2: received 65536, in order: 1, sent 32768
+machine 3: received 65536, in order: 1, sent 32768
+machine 4: received 65536, in order: 1, sent 32768
+sent again: 1, kept early segments: 1
+connections left: 0

@@ -134,6 +134,7 @@ phi.Net:Kernel
 				;;
 			;;
 		;;
+		call Tcp.Tick;                    # TCP's timers: sending again what wasn't acknowledged
 	[end: count]
 
 	# poll, and if nothing came, sleep until the next timer tick (1 ms)

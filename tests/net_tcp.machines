@@ -1,0 +1,3 @@
+# three clients, on a network that loses every 40th frame
+net_tcp_client.phi 3
+lose 1 in 40

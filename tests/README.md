@@ -93,7 +93,9 @@ against its own file's `.expected` or `.contains`, with its own `.input` script 
 one (copies of one file share them); a mismatch is saved as `NAME.actual` for the test and
 `FILE.N.actual` for machine N. A file listed in a `.machines` file isn't run as a test of
 its own. See `net_udp.phi`, and `samples/mmo/` for one with input scripts and a restart.
-`phi run` boots the same machines, each in a window (see the README).
+`phi run` boots the same machines, each in a window (see the README). A line `lose 1 in 40`
+in the `.machines` file makes the hub lose every 40th frame, so a test sees what happens
+when frames go missing (see `net_tcp.machines`).
 
 A sample is a test too when it has a `.expected`, `.contains` or `.machines` file: plain
 `phi test` runs those after `tests/`, named by their folder (`mmo/server`, so `-f mmo`

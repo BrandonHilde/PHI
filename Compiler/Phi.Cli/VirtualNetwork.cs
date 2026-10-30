@@ -10,7 +10,8 @@ namespace Phi.Cli
     /// (1 if left out); # starts a comment. Each machine gets a disk of its own and a class
     /// Machine saying which it is: Machine.number (1, 2, 3, ... in that order), Machine.count,
     /// Machine.address (10.0.3.number, for Net.Start) and Machine.first (machine 1's address).
-    /// phi run and phi test boot them all at once on a VirtualNetwork.
+    /// phi run and phi test boot them all at once on a VirtualNetwork. A line "lose 1 in N"
+    /// makes the network lose every Nth frame, to test what happens when frames go missing.
     /// </summary>
     public static class NetworkMachines
     {
@@ -30,12 +31,25 @@ namespace Phi.Cli
             foreach (string raw in File.ReadAllLines(manifest))
             {
                 string line = raw.Trim();
-                if (line.Length == 0 || line.StartsWith('#')) continue;
+                if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("lose ")) continue;
                 string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 int copies = parts.Length > 1 && int.TryParse(parts[1], out int n) && n > 0 ? n : 1;
                 machines.Add((Path.GetFullPath(Path.Combine(dir, parts[0])), copies));
             }
             return machines;
+        }
+
+        /// <summary>N from a line "lose 1 in N", or 0 if there's none.</summary>
+        public static int LoseEvery(string manifest)
+        {
+            foreach (string raw in File.ReadAllLines(manifest))
+            {
+                string[] parts = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 4 && parts[0] == "lose" && parts[1] == "1" && parts[2] == "in" &&
+                    int.TryParse(parts[3], out int n) && n > 1)
+                    return n;
+            }
+            return 0;
         }
 
         static string MachineClass(int number, int count) =>
@@ -109,8 +123,16 @@ namespace Phi.Cli
         public long Frames => Interlocked.Read(ref frames);
         long frames;
 
-        public VirtualNetwork()
+        /// <summary>Every this many frames, one is lost on purpose (0: none), for testing what happens then.</summary>
+        readonly int loseEvery;
+
+        /// <summary>Frames lost on purpose so far.</summary>
+        public long Lost => Interlocked.Read(ref lost);
+        long lost;
+
+        public VirtualNetwork(int loseEvery = 0)
         {
+            this.loseEvery = loseEvery;
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             _ = Task.Run(Accept);
@@ -152,7 +174,12 @@ namespace Phi.Cli
                     var frame = new byte[4 + length];
                     header.CopyTo(frame, 0);
                     if (!ReadAll(from, frame.AsMemory(4).Span)) break;
-                    Interlocked.Increment(ref frames);
+                    long number = Interlocked.Increment(ref frames);
+                    if (loseEvery > 0 && number % loseEvery == 0)
+                    {
+                        Interlocked.Increment(ref lost);
+                        continue;
+                    }
 
                     NetworkStream[] others;
                     lock (machines) others = machines.Where(m => m != from).ToArray();

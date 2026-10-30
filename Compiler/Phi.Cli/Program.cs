@@ -245,7 +245,7 @@ static int RunMachines(string file, string manifest, bool run)
         Console.WriteLine($"built machine {m.Number}: {Path.GetRelativePath(Environment.CurrentDirectory, m.Image)}");
     if (!run) return 0;
 
-    using var network = new VirtualNetwork();
+    using var network = new VirtualNetwork(NetworkMachines.LoseEvery(manifest));
     var windows = machines.Select(m =>
     {
         string? serial = m.Number == 1 ? null : Path.Combine(Path.GetDirectoryName(m.Image)!, "serial.txt");
