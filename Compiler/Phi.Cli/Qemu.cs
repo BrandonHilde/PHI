@@ -59,20 +59,24 @@ namespace Phi.Cli
         // sound goes (always with id=snd0).
         // The host's time zone goes to the guest as the fw_cfg file opt/phi/zone (minutes from
         // UTC, as text), which drivers.rtc reads, since QEMU's clock is in UTC.
-        static List<string> MachineArgs(string image, string audio)
+        // network: the card and what it's plugged into, in place of QEMU's user network
+        // (VirtualNetwork.MachineArgs, for several machines on one network)
+        static List<string> MachineArgs(string image, string audio, IReadOnlyList<string>? network = null)
         {
             var args = new List<string>
             {
                 "-cpu", "qemu32,+rdrand",
                 "-drive", $"file={image},format=raw,if=ide,index=0",
                 "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
-                "-netdev", "user,id=net0",
-                "-device", "rtl8139,netdev=net0,romfile=",
+            };
+            args.AddRange(network ?? new[] { "-netdev", "user,id=net0", "-device", "rtl8139,netdev=net0,romfile=" });
+            args.AddRange(new[]
+            {
                 "-audiodev", audio,
                 "-device", "AC97,audiodev=snd0",
                 "-no-reboot", // a triple fault stops QEMU instead of looping forever
                 "-fw_cfg", $"name=opt/phi/zone,string={(int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes}",
-            };
+            });
             if (MemoryMb is int mb) args.AddRange(new[] { "-m", $"{mb}M" });
             return args;
         }
@@ -145,16 +149,17 @@ namespace Phi.Cli
         /// With <paramref name="recordTo"/>, what the sound card plays is saved there as a WAV file,
         /// and QEMU gets a few seconds to exit by itself (which finishes the file) once the output is done.
         /// With <paramref name="countInstructions"/>, the timestamp counter counts instructions (for benchmarks);
-        /// with <paramref name="profilePort"/>, a second monitor listens there for phi profile.
+        /// with <paramref name="profilePort"/>, a second monitor listens there for phi profile;
+        /// with <paramref name="network"/>, the network card is plugged into that instead of QEMU's user network.
         /// </summary>
         public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
                                                  IReadOnlyList<string>? input = null, string? recordTo = null,
                                                  string? screenshots = null, bool countInstructions = false,
-                                                 int? profilePort = null)
+                                                 int? profilePort = null, IReadOnlyList<string>? network = null)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
-            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0");
+            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network);
             if (countInstructions) args.AddRange(CountInstructions);
             if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
             // a script that restarts the machine (reboot) needs a reset to restart it rather than

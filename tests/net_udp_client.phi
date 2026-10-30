@@ -1,0 +1,39 @@
+# One of net_udp's four clients (see net_udp.phi): says hello until the server
+# answers, sends 1,000 numbered datagrams of 64 bytes (resting a moment after every
+# five), then says it's done.
+use net.udp;
+
+phi.UdpClient:Kernel
+{
+	const u32 PORT: 4000;
+	const u32 HELLO: 0xFFFFFFFE;
+	const u32 DONE: 0xFFFFFFFF;
+
+	u8 message[64];
+	bln ok: (Net.Start: TestNet.address);
+	int s: (Udp.Open);                    # any free port
+
+	UdpDatagram d;
+	bln ready: false;
+	while int tries: 0; tries < 100 and ready is false; tries++;
+		call Net.Put32: addr message HELLO;
+		call Udp.SendTo: s TestNet.first PORT addr message 4;
+		ready is (Udp.Wait: s addr d 100);
+	;;
+	log 'ready: ' ready '\n';
+
+	# five at a time: four clients at full speed send more than one server can take, and
+	# UDP has no way to tell them to slow down
+	while u32 i: 0; i < 1000; i++;
+		call Net.Put32: addr message i;
+		call Udp.SendTo: s TestNet.first PORT addr message 64;
+		if i % 5 is 4
+			call OS.Sleep: 1;
+		;;
+	;;
+	call Net.Put32: addr message DONE;
+	call Udp.SendTo: s TestNet.first PORT addr message 4;
+	log 'sent 1000\n';
+	call OS.Sleep: 100;                   # let the last frames leave before QEMU stops
+	exit 0;
+}

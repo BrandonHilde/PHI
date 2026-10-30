@@ -76,6 +76,23 @@ the addresses as `TestWeb.url` (`'http://10.0.2.2:PORT'`) and `TestWeb.secure_ur
 reaches the host's `127.0.0.1` through the gateway, 10.0.2.2. See `net_http.web/`.
 `phi serve folder [--https]` runs the same server by hand.
 
+A file `NAME.machines` puts the test on a network with other kernels, which boot at the
+same time. Each line names a `.phi` file next to the test and how many copies of it run:
+
+```
+# net_udp.machines: four clients for the server in net_udp.phi
+net_udp_client.phi 4
+```
+
+The machines are connected by a hub in `phi test` instead of QEMU's user network, so there's
+no DHCP server and no internet. Each machine gets a class `TestNet` telling it who it is:
+`TestNet.machine` (1 for the test, then 2, 3, ... in the order listed), `TestNet.machines`
+(how many), `TestNet.address` (`10.0.3.N`, for `Net.Start: TestNet.address`) and
+`TestNet.first` (machine 1's address). Every machine's output must match its own file's
+`.expected` (copies of one file share it); a mismatch is saved as `NAME.actual` for the
+test and `FILE.N.actual` for machine N. A file
+listed in a `.machines` file isn't run as a test of its own. See `net_udp.phi`.
+
 A file `NAME.sound` checks what the sound card played. Every machine has an AC'97 card;
 with `NAME.sound`, QEMU records its output to `build/NAME/NAME.wav` (otherwise the sound
 goes nowhere), and once the output matches, the recording is checked line by line:

@@ -1,0 +1,56 @@
+# UDP sockets on a network of five machines: this kernel is the server (machine 1,
+# 10.0.3.1), and net_udp.machines starts four copies of net_udp_client.phi. Each
+# client says hello until the server answers, then sends 1,000 numbered datagrams and
+# says it's done. The server counts them for each client and checks that they came in
+# order, while resting between looks (so arriving frames wait in the card driver's
+# queue, which its interrupt fills).
+use net.udp;
+
+phi.UdpServer:Kernel
+{
+	const u32 PORT: 4000;
+	const u32 CLIENTS: 4;
+	const u32 COUNT: 1000;
+	const u32 HELLO: 0xFFFFFFFE;
+	const u32 DONE: 0xFFFFFFFF;
+
+	u32 got[8];                 # by machine number (the last part of its address)
+	u32 next[8];                # the number expected next from each
+	u32 out_of_order: 0;
+	u32 finished: 0;
+
+	bln ok: (Net.Start: TestNet.address);
+	int s: (Udp.Open: PORT 1024);
+	log 'server: ' ok ', socket ' s '\n';
+
+	UdpDatagram d;
+	int start: (OS.GetTicks);
+	while finished < CLIENTS and (OS.GetTicks) - start < 30000
+		while (Udp.Receive: s addr d)
+			u32 machine: d.from & 0xFF;
+			u32 number: (Net.Get32: d.data);
+			if number is HELLO
+				call Udp.SendTo: s d.from d.from_port 'ready' 5;
+			;;
+			elif number is DONE
+				finished++;
+			;;
+			else
+				if number is not next:machine
+					out_of_order++;
+				;;
+				next:machine is number + 1;
+				got:machine++;
+			;;
+		;;
+		call OS.Sleep: 2;                         # busy with something else
+	;;
+
+	while u32 m: 2; m < 2 + CLIENTS; m++;
+		log 'machine ' m ': ' got:m ' of ' COUNT '\n';
+	;;
+	log 'out of order: ' out_of_order '\n';
+	log 'dropped by the socket: ' Udp.sockets:s.dropped ', by the driver: ' Rtl8139.frames_dropped '\n';
+	log 'the card interrupted: ' (Rtl8139.interrupts > 0) '\n';
+	exit 0;
+}

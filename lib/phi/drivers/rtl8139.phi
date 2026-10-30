@@ -1,6 +1,6 @@
 # Driver for the Realtek RTL8139 network card, which QEMU emulates (`phi run` and
-# `phi test` give every machine one). Polled: Receive returns a waiting frame, or 0
-# if there isn't one. 32-bit kernels.
+# `phi test` give every machine one). Receive returns a waiting frame, or 0 if there
+# isn't one. 32-bit kernels.
 #
 #   use drivers.rtl8139;
 #   bln ok: false;
@@ -9,11 +9,24 @@
 #   u32 length: 0;
 #   call length is Rtl8139.Receive: buffer 1536;
 #
-# The card copies frames it receives into a ring buffer in memory and sends frames
-# from four transmit buffers, used in turn. Both are in the kernel's own variables,
-# whose addresses are physical addresses (below 1 MB), as the card needs.
+# The card copies frames it receives into a 32 KB ring in memory and sends frames
+# from four transmit buffers, used in turn. On the card's interrupt, the driver
+# moves the frames from the ring into a queue of up to FRAMES_WAITING, where they wait
+# for Receive; so frames keep arriving safely while the kernel is busy elsewhere, and
+# only a full queue loses them (counted in frames_dropped). Receive also empties the
+# ring itself, so it works with interrupts off too. The memory the card uses is
+# identity-mapped, so its addresses are the physical ones the card needs.
 
 use drivers.pci;
+use data.queue;
+use memory.mem;
+
+# a frame waiting for Receive
+struct.Rtl8139Frame
+{
+	u32 length;
+	u8 data[1536];
+}
 
 phi.Rtl8139:Kernel
 {
@@ -38,19 +51,24 @@ phi.Rtl8139:Kernel
 	const u8 COMMAND_TX_ENABLE: 0x04;
 	const u8 COMMAND_RX_EMPTY: 0x01;
 
-	# accept frames to our address, broadcasts and multicasts; WRAP lets a frame run
-	# past the end of the ring instead of wrapping, so each frame is in one piece
-	const u32 RX_CONFIG: 0x0E | 0x80;
+	# accept frames to our address, broadcasts and multicasts, into a 32 KB ring; WRAP
+	# lets a frame run past the end of the ring instead of wrapping, so each frame is in
+	# one piece (the card ignores WRAP with a 64 KB ring, which is why it's 32)
+	const u32 RX_CONFIG: 0x0E | 0x80 | 0x1000;
 	const u32 RX_OK: 0x01;
+
+	# interrupts for: a frame received, the ring full, the card's own buffer full
+	const u32 INTERRUPTS: 0x0001 | 0x0010 | 0x0040;
 
 	const u32 TX_OWN: 0x2000;             # the card has finished with the buffer
 	const u32 TX_BUFFERS: 4;
 
-	const u32 RX_SIZE: 8192;
+	const u32 RX_SIZE: 32768;
 	const u32 RX_AREA: RX_SIZE + 16 + 1536;
 	const u32 TX_SIZE: 1536;
 	const u32 MIN_FRAME: 60;              # shorter frames are padded with zeros
 	const u32 MAX_FRAME: 1514;
+	const u32 FRAMES_WAITING: 256;
 
 	u8 mac[6];
 	bln started: false;
@@ -58,13 +76,17 @@ phi.Rtl8139:Kernel
 	u32 irq: 0;
 	u32 frames_sent: 0;
 	u32 frames_received: 0;
+	u32 frames_dropped: 0;      # arrived with FRAMES_WAITING already waiting
+	u32 interrupts: 0;
 
-	u8 rx_area[RX_AREA + 16];
 	u8 tx_area[TX_SIZE * TX_BUFFERS + 16];
 	ptr<u8> rx: 0;
 	ptr<u8> tx: 0;
 	u32 rx_offset: 0;
 	u32 tx_next: 0;
+	ptr<QueueData> waiting: 0;
+	Rtl8139Frame incoming;      # a frame on its way from the ring to the queue
+	u32 rtl_flags: 0;           # the interrupt flag from before Lock
 
 	# find the card and turn it on; false if there isn't one
 	[Start]
@@ -77,7 +99,10 @@ phi.Rtl8139:Kernel
 				call irq is Pci.Irq: card;
 
 				# the card wants its buffers on 16-byte boundaries
-				rx is (addr rx_area + 15) & 0xFFFFFFF0;
+				ptr<u8> rx_area: new u8[RX_AREA + 16];
+				waiting is (Queue.New: sizeof Rtl8139Frame FRAMES_WAITING);
+				if rx_area is 0 or waiting is 0 return false;
+				rx is (rx_area + 15) & 0xFFFFFFF0;
 				tx is (addr tx_area + 15) & 0xFFFFFFF0;
 
 				out (io + REG_CONFIG_1) 0;                # wake it up
@@ -98,7 +123,8 @@ phi.Rtl8139:Kernel
 				rx_offset is 0;
 				tx_next is 0;
 
-				outw (io + REG_INTERRUPT_MASK) 0;          # polled: no interrupts
+				call OS.SetIrqHandler: irq addr Interrupt;
+				outw (io + REG_INTERRUPT_MASK) INTERRUPTS;
 				out (io + REG_COMMAND) COMMAND_RX_ENABLE | COMMAND_TX_ENABLE;
 				outd (io + REG_RX_CONFIG) RX_CONFIG;
 				outd (io + REG_TX_CONFIG) 0x03000700;      # standard gap, largest DMA burst
@@ -121,9 +147,7 @@ phi.Rtl8139:Kernel
 			;;
 
 			ptr<u8> buffer: tx + tx_next * TX_SIZE;
-			while u32 i: 0; i < length; i++;
-				buffer:i is frame:i;
-			;;
+			call Mem.Copy: buffer frame length;
 			while length < MIN_FRAME
 				buffer:length is 0;
 				length++;
@@ -135,38 +159,63 @@ phi.Rtl8139:Kernel
 		;;
 	[end: ok]
 
-	# copy the next received frame into a buffer; its length, or 0 if none is waiting
+	# copy the oldest received frame into a buffer; its length, or 0 if none is waiting
 	[Receive: ptr<u8> to: 0; u32 max: 0;]
 		u32 length: 0;
-		if started and ((in (io + REG_COMMAND)) & COMMAND_RX_EMPTY) is 0
+		if started
+			call asm.Rtl8139Lock;
+			call TakeFrames;                             # in case interrupts are off
+			ptr<Rtl8139Frame> frame: (Queue.Front: waiting);
+			if frame is not 0
+				length is frame:0.length;
+				if length > max
+					length is max;
+				;;
+				call Mem.Copy: to frame:0.data length;
+				call Queue.Drop: waiting;
+			;;
+			call asm.Rtl8139Unlock;
+		;;
+	[end: length]
+
+	# the card's interrupt: frames from the ring into the queue
+	[Interrupt]
+		interrupts++;
+		call TakeFrames;
+	[end]
+
+	# move every frame in the ring to the queue (dropping what doesn't fit), and
+	# acknowledge what the card has flagged; with interrupts off
+	[TakeFrames]
+		while ((in (io + REG_COMMAND)) & COMMAND_RX_EMPTY) is 0
 			ptr<u8> packet: rx + rx_offset;
 			u32 status: packet:0 | (packet:1 << 8);
 			u32 size: packet:2 | (packet:3 << 8);        # includes a 4-byte checksum
 
 			if (status & RX_OK) is 0 or size < 4 or size > MAX_FRAME + 4
 				call ResetReceiver;
+				break;
+			;;
+
+			if waiting:0.count < waiting:0.capacity
+				incoming.length is size - 4;
+				call Mem.Copy: incoming.data packet + 4 size - 4;
+				call Queue.Push: waiting addr incoming;
+				frames_received++;
 			;;
 			else
-				length is size - 4;
-				if length > max
-					length is max;
-				;;
-				packet++ 4;
-				while u32 i: 0; i < length; i++;
-					to:i is packet:i;
-				;;
-				frames_received++;
-
-				# the next frame starts on a 4-byte boundary after this one
-				rx_offset is ((rx_offset + size + 4 + 3) & 0xFFFFFFFC) % RX_SIZE;
-				outw (io + REG_RX_READ) rx_offset - 16;
+				frames_dropped++;
 			;;
 
-			# acknowledge whatever the card has flagged (receive done, overflow, ...)
-			u16 flags: inw (io + REG_INTERRUPT_STATUS);
-			outw (io + REG_INTERRUPT_STATUS) flags;
+			# the next frame starts on a 4-byte boundary after this one
+			rx_offset is ((rx_offset + size + 4 + 3) & 0xFFFFFFFC) % RX_SIZE;
+			outw (io + REG_RX_READ) rx_offset - 16;
 		;;
-	[end: length]
+
+		# acknowledge whatever the card has flagged (receive done, overflow, ...)
+		u16 flags: inw (io + REG_INTERRUPT_STATUS);
+		outw (io + REG_INTERRUPT_STATUS) flags;
+	[end]
 
 	# start the ring over if it holds something that isn't a frame
 	[ResetReceiver]
@@ -177,4 +226,22 @@ phi.Rtl8139:Kernel
 		outd (io + REG_RX_CONFIG) RX_CONFIG;
 		outw (io + REG_RX_READ) 0xFFF0;
 	[end]
+}
+
+# interrupts off, remembering whether they were on
+asm.Rtl8139Lock
+{
+	pushfd
+	pop eax
+	mov [{rtl_flags}], eax
+	cli
+	ret
+}
+
+# interrupts back the way they were
+asm.Rtl8139Unlock
+{
+	push dword [{rtl_flags}]
+	popfd
+	ret
 }

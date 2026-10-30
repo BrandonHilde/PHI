@@ -1,25 +1,28 @@
 # Networking for 32-bit kernels: Ethernet, ARP, IPv4, ICMP (ping) and UDP, on the
-# RTL8139 card. TCP is in net.tcp, DNS in net.dns, DHCP in net.dhcp and web
-# requests in net.http; using any of them brings in the rest.
+# RTL8139 card. UDP sockets are in net.udp, TCP in net.tcp, DNS in net.dns, DHCP in
+# net.dhcp and web requests in net.http; using any of them brings in the rest.
 #
 #   use net.net;
 #   bln ok: false;
 #   call ok is Net.Start;               # finds the card and gets an address by DHCP
+#   call ok is Net.Start: 0x0A000301;   # or uses this one (10.0.3.1), with no DHCP
 #   call Net.PrintIp: Net.ip;           # 10.0.2.15 on QEMU's network
 #   int ms: 0;
 #   call ms is Net.Ping: Net.gateway;   # round trip in ms, or -1
 #
 # Addresses are u32s, with the first number in the top byte: 10.0.2.15 is 0x0A00020F.
 #
-# Nothing here uses interrupts: Poll handles every frame the card has received, and
-# whatever waits (Resolve, WaitUdp, Ping, and TCP's Connect, Read, Write and Close)
-# calls Wait, which polls and then sleeps for a millisecond. Methods have one copy
-# of their variables, so the code that handles arriving frames (HandleArp, HandleIp
-# and what they call, like Tcp.Receive) must never call anything that waits.
+# The card's driver keeps the frames that arrive (on its interrupt) until Poll
+# handles them, here and not in the interrupt. Whatever waits (Resolve, WaitUdp,
+# Ping, and TCP's Connect, Read, Write and Close) calls Wait, which polls and then
+# sleeps for a millisecond. The frames share the buffers in this class, so the code
+# that handles them (HandleArp, HandleIp and what they call, like Tcp.Receive and
+# Udp.Deliver) must never call anything that waits.
 
 use drivers.rtl8139;
 use net.dhcp;
 use net.tcp;
+use net.udp;
 
 phi.Net:Kernel
 {
@@ -38,7 +41,7 @@ phi.Net:Kernel
 
 	const u32 ARP_REQUEST: 1;
 	const u32 ARP_REPLY: 2;
-	const u32 ARP_ENTRIES: 8;
+	const u32 ARP_ENTRIES: 32;
 	const int ARP_TRIES: 3;
 	const int ARP_WAIT: 500;              # ms per try
 
@@ -81,11 +84,15 @@ phi.Net:Kernel
 	u32 ping_sequence: 0;
 	bln ping_replied: false;
 
-	# turn the card on and get an address; false if there is no card
-	[Start]
+	# turn the card on and get an address, by DHCP unless one is given (with its
+	# network's mask and router); false if there is no card
+	[Start: u32 address: 0; u32 mask: 0xFFFFFF00; u32 router: 0;]
 		if started is false
 			call started is Rtl8139.Start;
-			if started
+			if started and address is not 0
+				call Configure: address mask router 0;
+			;;
+			elif started
 				ip is 0;
 				call dhcp_ok is Dhcp.Configure;
 				if dhcp_ok is false
@@ -326,6 +333,11 @@ phi.Net:Kernel
 		ok is ok and (to is ip or to is BROADCAST or to is (ip | ~netmask) or ip is 0);
 
 		if ok
+			# a sender on our own network: remember its Ethernet address, so answering
+			# doesn't need an ARP request first
+			if from is not 0 and ip is not 0 and (from & netmask) is (ip & netmask)
+				call Remember: from addr in_frame + 6;
+			;;
 			ptr<u8> payload: h + header;
 			u32 size: total - header;
 			if h:9 is PROTOCOL_ICMP
@@ -456,7 +468,9 @@ phi.Net:Kernel
 	[end: result]
 
 	[HandleUdp: u32 from: 0; ptr<u8> p: 0; u32 size: 0;]
-		if size >= UDP_HEADER and udp_port is not 0 and udp_ready is false
+		# too short, or a socket (net.udp) took it; else Listen's port may want it
+		if size < UDP_HEADER or (Udp.Deliver: from p size) return;
+		if udp_port is not 0 and udp_ready is false
 			u32 to_port: 0;
 			call to_port is Get16: p + 2;
 			if to_port is udp_port

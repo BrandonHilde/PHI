@@ -1021,7 +1021,36 @@ Goal: a kernel can serve many clients over UDP without losing datagrams it had r
 datagrams, and the server receives every one that the network delivered, counted per
 client.
 
-**Status: not started.**
+**Status: done (2026-10-29).** See [The network](docs/language.md#the-network-32-bit-kernels).
+- [x] `drivers.rtl8139` on its interrupt: the handler moves frames from the card's ring
+  into a queue of up to 256 in the driver (`frames_dropped` counts what doesn't fit), and
+  `Receive` takes them from there, with interrupts off while it does. `Receive` also empties
+  the ring itself, so a kernel with interrupts off still gets its frames. `Net.Poll` and
+  everything above it still run outside the interrupt, so the network code didn't change.
+- [x] A 32 KB receive ring (from 8 KB)
+- [x] `net.udp`: `Udp.Open: port queue` (0 picks a port), `Receive` (never waits), `Wait`,
+  `SendTo`, `Close`; each socket has its own `data.queue` of `UdpDatagram`s and counts what
+  it `dropped`. `Net.Listen`/`WaitUdp` still work for a port with no socket (DHCP uses them).
+- [x] `Net.Start: address mask router` uses that address without DHCP; the ARP table holds
+  32 addresses (from 8), and an IP packet from a machine on the same network teaches the
+  ARP table its Ethernet address, so a server can answer a client without asking first
+- [x] `NAME.machines` in `phi test`: the test and the kernels it lists boot at once on one
+  network (`VirtualNetwork`, a hub that QEMU joins with `-netdev socket`), each with a MAC
+  address of its own and a `TestNet` class saying which machine it is; each must match its
+  own `.expected`
+- [x] `net_udp`: a server and four clients each sending 1,000 numbered datagrams; the server
+  gets all 4,000, in order, nothing dropped, while resting 2 ms between looks
+- Differs from the plan:
+  - A 32 KB ring, not 64 KB: with a 64 KB ring the card ignores the setting that keeps
+    each frame in one piece, and 32 KB plus the driver's queue is plenty.
+  - The clients in `net_udp` rest 1 ms after every five datagrams. At full speed four of
+    them send far more than one server handles, and it dropped about 70% (counted, as it
+    should); UDP has no flow control, so pacing belongs to the game's protocol.
+  - The hub is in `phi test` (C#) rather than QEMU's multicast networking, which needs
+    multicast to work on the host; the hub works the same on every computer.
+  - Records are copied whole into and out of each queue (about 1.5 KB at each step, three
+    steps per datagram), however small the datagram. A way to fill a queue's slot in place
+    would save that, if S5's load tests show it matters.
 
 #### Phase S4: Saving, and the first server
 

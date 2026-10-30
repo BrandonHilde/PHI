@@ -1,0 +1,158 @@
+# UDP sockets, for servers and clients (32-bit kernels).
+#
+#   use net.udp;
+#   bln ok: (Net.Start);
+#   int s: (Udp.Open: 4000);                    # a socket on port 4000, or -1
+#   UdpDatagram d;
+#   while (Udp.Receive: s addr d)               # true for each one waiting; never waits
+#       call Udp.SendTo: s d.from d.from_port d.data d.length;     # an echo
+#   ;;
+#   bln got: (Udp.Wait: s addr d 1000);         # waits up to 1000 ms for one
+#   call Udp.Close: s;
+#
+# Each socket keeps the datagrams sent to its port in a queue of its own (64 of them,
+# unless Open says otherwise) until Receive takes them. One that arrives when the
+# queue is full is dropped and counted in the socket's dropped. Open: 0 picks a free
+# port, for a client. The network card's driver keeps arriving frames on its
+# interrupt, so a server can do other work between Receives without losing the ones
+# there was room for (see drivers.rtl8139).
+
+use net.net;
+use data.queue;
+use memory.mem;
+
+# a datagram, as Receive fills it in
+struct.UdpDatagram
+{
+	u32 from;                   # the sender's address
+	u32 from_port;
+	u32 length;                 # bytes in data
+	u8 data[1472];              # the most one datagram carries in a 1500-byte packet
+}
+
+struct.UdpSocket
+{
+	u32 port;                   # 0 while the socket isn't open
+	ptr<QueueData> datagrams;
+	u32 received;               # datagrams put in its queue
+	u32 dropped;                # arrived while its queue was full
+}
+
+phi.Udp:Kernel
+{
+	const int MAX_SOCKETS: 16;
+	const u32 MAX_DATA: 1472;
+	const u32 FIRST_PORT: 49152;          # where ports Open picks start
+	const u32 LAST_PORT: 65535;
+
+	UdpSocket sockets[MAX_SOCKETS];
+	UdpDatagram arrived;                  # a datagram on its way into a socket's queue
+	u32 next_port: FIRST_PORT;
+
+	# a socket for datagrams sent to port (0: any free port), keeping up to queue of
+	# them; -1 if the port is taken, every socket is open, or the heap is full
+	[Open: u32 port: 0; u32 queue: 64;]
+		if port is 0
+			port is (FreePort);
+		;;
+		if port is 0 or (Find: port) >= 0 return -1;
+		int s: -1;
+		while int i: 0; i < MAX_SOCKETS and s < 0; i++;
+			if sockets:i.port is 0
+				s is i;
+			;;
+		;;
+		if s < 0 return -1;
+		ptr<QueueData> datagrams: (Queue.New: sizeof UdpDatagram queue);
+		if datagrams is 0 return -1;
+		sockets:s.datagrams is datagrams;
+		sockets:s.received is 0;
+		sockets:s.dropped is 0;
+		sockets:s.port is port;
+	[end: s]
+
+	# close a socket: datagrams for its port are no longer kept
+	[Close: int s: -1;]
+		if (Valid: s) is false return;
+		call Queue.Delete: sockets:s.datagrams;
+		sockets:s.datagrams is 0;
+		sockets:s.port is 0;
+	[end]
+
+	# the oldest datagram for the socket, into into; false if none is waiting (it
+	# never waits)
+	[Receive: int s: -1; ptr<UdpDatagram> into: 0;]
+		if (Valid: s) is false return false;
+		call Net.Poll;
+	[end: (Queue.Pop: sockets:s.datagrams into)]
+
+	# like Receive, but waits up to timeout ms for a datagram to arrive
+	[Wait: int s: -1; ptr<UdpDatagram> into: 0; int timeout: 1000;]
+		if (Valid: s) is false return false;
+		int start: (OS.GetTicks);
+		while true
+			if (Receive: s into) return true;
+			if (OS.GetTicks) - start >= timeout return false;
+			call Net.Wait;
+		;;
+	[end: false]
+
+	# send length bytes of data to port at an address, from the socket's port; false
+	# if it couldn't be sent (nobody answered ARP, or it's longer than MAX_DATA)
+	[SendTo: int s: -1; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
+		if (Valid: s) is false or length > MAX_DATA return false;
+	[end: (Net.SendUdp: to sockets:s.port port data length)]
+
+	# ---- for Net
+
+	# called by Net.HandleUdp for each datagram (a UDP header and its data): put it in
+	# the queue of the socket for its port; false if no socket has that port
+	[Deliver: u32 from: 0; ptr<u8> p: 0; u32 size: 0;]
+		int s: (Find: (Net.Get16: p + 2));
+		if s < 0 return false;
+
+		u32 length: (Net.Get16: p + 4);
+		if length > size or length < Net.UDP_HEADER
+			length is size;
+		;;
+		length-- Net.UDP_HEADER;
+		if length > MAX_DATA
+			length is MAX_DATA;
+		;;
+		arrived.from is from;
+		arrived.from_port is (Net.Get16: p);
+		arrived.length is length;
+		call Mem.Copy: arrived.data p + Net.UDP_HEADER length;
+		if (Queue.Push: sockets:s.datagrams addr arrived)
+			sockets:s.received++;
+		;;
+		else
+			sockets:s.dropped++;
+		;;
+	[end: true]
+
+	# ---- inside
+
+	# the open socket on port, or -1
+	[Find: u32 port: 0;]
+		while int i: 0; i < MAX_SOCKETS; i++;
+			if sockets:i.port is port and port is not 0 return i;
+		;;
+	[end: -1]
+
+	[Valid: int s: -1;]
+		if s < 0 or s >= MAX_SOCKETS return false;
+	[end: sockets:s.port is not 0]
+
+	# a port from FIRST_PORT up that no socket has; 0 if there's none
+	[FreePort]
+		while u32 tries: 0; tries <= LAST_PORT - FIRST_PORT; tries++;
+			u32 port: next_port;
+			next_port++;
+			if next_port > LAST_PORT
+				next_port is FIRST_PORT;
+			;;
+			if (Find: port) < 0 and port is not Net.udp_port return port;
+		;;
+	[end: 0]
+}
