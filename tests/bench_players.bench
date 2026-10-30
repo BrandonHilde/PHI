@@ -1,0 +1,7 @@
+# Counts from phi test --bench (instructions run, under QEMU's -icount).
+# phi test --bench --save-bench replaces them with the latest counts.
+pick up 20000 items                     21846821
+count one kind in 1000 bags             522980
+sort 1000 scores                        491200
+save 1000 player records with a CRC-32  1589065
+load 1000 player records with a CRC-32  1589070

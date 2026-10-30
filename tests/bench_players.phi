@@ -1,0 +1,225 @@
+# Benchmarks for what a server keeps about each player: inventories (picking items up
+# onto stacks), counting what they hold, a leaderboard, and saving and loading player
+# records as bytes with a CRC-32. phi test --bench compares the counts with
+# bench_players.bench; the totals show a change that stores or sorts differently.
+use user.text;
+use test.bench;
+
+struct.Item
+{
+	u16 kind;                   # 0: an empty slot
+	u16 count;
+}
+
+struct.PlayerRecord
+{
+	u32 id;
+	i32 x;
+	i32 y;
+	u32 level;
+	u32 gold;
+	u8 name[16];
+}
+
+phi.BenchPlayers:Kernel
+{
+	const int PLAYERS: 1000;
+	const int SLOTS: 40;                  # in each player's bag
+	const int STACK: 99;                  # the most of one kind in a slot
+	const int KINDS: 50;
+	const int RECORD: 36;                 # bytes a saved record takes
+
+	ptr<Item> bags: new Item[PLAYERS * SLOTS];
+	int scores[PLAYERS];
+	ptr<PlayerRecord> records: new PlayerRecord[PLAYERS];
+	ptr<PlayerRecord> loaded: new PlayerRecord[PLAYERS];
+	ptr<u8> saved: new u8[PLAYERS * RECORD];
+	u32 crc_table[256];
+	u32 seed: 4242;
+
+	# 20,000 pickups: onto a stack of the same kind with room, then into empty slots
+	int lost: 0;
+	call Bench.Start;
+	while int i: 0; i < 20000; i++;
+		int player: (Random: PLAYERS);
+		int kind: 1 + (Random: KINDS);
+		int count: 1 + (Random: 5);
+		lost++ (PickUp: player kind count);
+	;;
+	call Bench.Stop: 'pick up 20000 items';
+	log 'items that did not fit: ' lost '\n';
+
+	# how many of one kind every player holds, all together
+	int held: 0;
+	call Bench.Start;
+	while int s: 0; s < PLAYERS * SLOTS; s++;
+		if bags:s.kind is 7
+			held++ bags:s.count;
+		;;
+	;;
+	call Bench.Stop: 'count one kind in 1000 bags';
+	log 'kind 7 held: ' held '\n';
+
+	# a leaderboard: 1,000 scores, highest first
+	while int i: 0; i < PLAYERS; i++;
+		scores:i is (Random: 100000);
+	;;
+	call Bench.Start;
+	call Sort;
+	call Bench.Stop: 'sort 1000 scores';
+	bln ordered: true;
+	while int i: 1; i < PLAYERS; i++;
+		if scores:(i - 1) < scores:i
+			ordered is false;
+		;;
+	;;
+	log 'top scores: ' scores:0 ' ' scores:1 ' ' scores:2 ', in order: ' ordered '\n';
+
+	# saving: every record into bytes (little-endian), with a CRC-32 over them
+	while int i: 0; i < PLAYERS; i++;
+		records:i.id is 100000 + i;
+		records:i.x is i * 37 - 18000;
+		records:i.y is i * 11;
+		records:i.level is 1 + i % 60;
+		records:i.gold is i * 1013;
+		ptr<u8> name: records:i.name;
+		call Text.Copy: name 'hero' 16;
+		call Text.AppendNumber: name i 16;
+	;;
+	call MakeCrcTable;
+	call Bench.Start;
+	call Save;
+	u32 crc: (Crc: saved PLAYERS * RECORD);
+	call Bench.Stop: 'save 1000 player records with a CRC-32';
+	log 'saved crc: ' crc '\n';
+
+	# loading them back, checking the CRC first
+	call Bench.Start;
+	bln intact: (Crc: saved PLAYERS * RECORD) is crc;
+	call Load;
+	call Bench.Stop: 'load 1000 player records with a CRC-32';
+	u32 gold: 0;
+	i32 x: 0;
+	while int i: 0; i < PLAYERS; i++;
+		gold is gold + loaded:i.gold;
+		x is x + loaded:i.x;
+	;;
+	ptr<u8> last_name: loaded:999.name;
+	log 'loaded: ' intact ', gold ' gold ', x ' x ', last ' last_name '\n';
+	exit 0;
+
+	# a number from 0 to limit - 1 (xorshift, so every run is the same)
+	[Random: u32 limit: 1;]
+		seed is seed ^ (seed << 13);
+		seed is seed ^ (seed >> 17);
+		seed is seed ^ (seed << 5);
+		int result: seed % limit;
+	[end: result]
+
+	# count items of a kind into a player's bag; how many didn't fit
+	[PickUp: int player: 0; int kind: 0; int count: 0;]
+		int first: player * SLOTS;
+		while int s: first; s < first + SLOTS and count > 0; s++;
+			if bags:s.kind is kind and bags:s.count < STACK
+				int put: STACK - bags:s.count;
+				if put > count
+					put is count;
+				;;
+				bags:s.count is bags:s.count + put;
+				count-- put;
+			;;
+		;;
+		while int s: first; s < first + SLOTS and count > 0; s++;
+			if bags:s.kind is 0
+				int put: count;
+				if put > STACK
+					put is STACK;
+				;;
+				bags:s.kind is kind;
+				bags:s.count is put;
+				count-- put;
+			;;
+		;;
+	[end: count]
+
+	# scores from highest to lowest: a Shell sort with Ciura's gaps
+	[Sort]
+		int gaps: 701 301 132 57 23 10 4 1;
+		while int g: 0; g < 8; g++;
+			int gap: gaps:g;
+			while int i: gap; i < PLAYERS; i++;
+				int value: scores:i;
+				int j: i;
+				while j >= gap and scores:(j - gap) < value
+					scores:j is scores:(j - gap);
+					j-- gap;
+				;;
+				scores:j is value;
+			;;
+		;;
+	[end]
+
+	[Save]
+		while int i: 0; i < PLAYERS; i++;
+			ptr<u8> p: saved + i * RECORD;
+			call Put32: p records:i.id;
+			call Put32: p + 4 records:i.x;
+			call Put32: p + 8 records:i.y;
+			call Put32: p + 12 records:i.level;
+			call Put32: p + 16 records:i.gold;
+			ptr<u8> name: records:i.name;
+			while int k: 0; k < 16; k++;
+				p:(20 + k) is name:k;
+			;;
+		;;
+	[end]
+
+	[Load]
+		while int i: 0; i < PLAYERS; i++;
+			ptr<u8> p: saved + i * RECORD;
+			loaded:i.id is (Get32: p);
+			loaded:i.x is (Get32: p + 4);
+			loaded:i.y is (Get32: p + 8);
+			loaded:i.level is (Get32: p + 12);
+			loaded:i.gold is (Get32: p + 16);
+			ptr<u8> name: loaded:i.name;
+			while int k: 0; k < 16; k++;
+				name:k is p:(20 + k);
+			;;
+		;;
+	[end]
+
+	# numbers stored low byte first
+	[Put32: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value;
+		p:1 is value >> 8;
+		p:2 is value >> 16;
+		p:3 is value >> 24;
+	[end]
+
+	[Get32: ptr<u8> p: 0;]
+	[end: p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24)]
+
+	# CRC-32 (the one zip and Ethernet use), a byte at a time from a table
+	[MakeCrcTable]
+		while u32 n: 0; n < 256; n++;
+			u32 c: n;
+			while int k: 0; k < 8; k++;
+				if (c & 1) is 1
+					c is 0xEDB88320 ^ (c >> 1);
+				;;
+				else
+					c is c >> 1;
+				;;
+			;;
+			crc_table:n is c;
+		;;
+	[end]
+
+	[Crc: ptr<u8> data: 0; u32 length: 0;]
+		u32 c: 0xFFFFFFFF;
+		while u32 i: 0; i < length; i++;
+			c is crc_table:((c ^ data:i) & 0xFF) ^ (c >> 8);
+		;;
+	[end: c ^ 0xFFFFFFFF]
+}

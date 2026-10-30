@@ -1,0 +1,7 @@
+# Counts from phi test --bench (instructions run, under QEMU's -icount).
+# phi test --bench --save-bench replaces them with the latest counts.
+hash and add 1000 names             667180
+find 1000 players by name           330009
+build 1000 chat lines               922228
+filter 1000 chat lines for 5 words  13434582
+compare 10000 names ignoring case   4834768

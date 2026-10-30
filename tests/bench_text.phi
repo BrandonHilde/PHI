@@ -1,0 +1,115 @@
+# Benchmarks for a server's text: finding players by name (through a hash and a map),
+# building chat lines, filtering chat for words whatever their case, and comparing
+# names. phi test --bench compares the counts with bench_text.bench; the counts and
+# totals printed show a change that finds or builds something different.
+use user.text;
+use data.map;
+use test.bench;
+
+phi.BenchText:Kernel
+{
+	const int PLAYERS: 1000;
+	const int LINES: 1000;
+	const int WORDS: 5;
+
+	str names[PLAYERS]: [16];
+	str shouted[PLAYERS]: [16];           # the same names in capitals
+	str chat[LINES]: [64];
+	str words[WORDS]: [12];
+	ptr<MapData> by_name: (Map.New);
+
+	while int i: 0; i < PLAYERS; i++;
+		names:i is 'Player' i;
+		shouted:i is 'PLAYER' i;
+	;;
+	words:0 is 'gate';
+	words:1 is 'NORTH';
+	words:2 is 'trade';
+	words:3 is 'Gold';
+	words:4 is 'dragon';
+
+	# each name's hash as the key of a map, then every name found again
+	call Bench.Start;
+	while int i: 0; i < PLAYERS; i++;
+		call Map.Set: by_name (Hash: names:i) i;
+	;;
+	call Bench.Stop: 'hash and add 1000 names';
+	int found: 0;
+	call Bench.Start;
+	while int i: 0; i < PLAYERS; i++;
+		if (Map.Get: by_name (Hash: names:i) 0xFFFFFFFF) is i
+			found++;
+		;;
+	;;
+	call Bench.Stop: 'find 1000 players by name';
+	log 'names found: ' found ' of ' PLAYERS '\n';
+
+	# chat lines, built from a name and a message
+	u32 characters: 0;
+	call Bench.Start;
+	while int i: 0; i < LINES; i++;
+		when i % 4
+			is 0
+				chat:i is '[' names:(i * 7 % PLAYERS) '] meet me at the North Gate in ' i ' minutes';
+			;;
+			is 1
+				chat:i is '[' names:(i * 7 % PLAYERS) '] selling a sword for ' i * 3 ' gold';
+			;;
+			is 2
+				chat:i is '[' names:(i * 7 % PLAYERS) '] anyone want to trade?';
+			;;
+			else
+				chat:i is '[' names:(i * 7 % PLAYERS) '] hello everyone';
+			;;
+		;;
+		characters++ chat:i.len;
+	;;
+	call Bench.Stop: 'build 1000 chat lines';
+	log 'chat characters: ' characters '\n';
+
+	# which lines have any of five words in them, in capitals or not
+	int hits: 0;
+	call Bench.Start;
+	while int i: 0; i < LINES; i++;
+		while int w: 0; w < WORDS; w++;
+			if (Contains: chat:i words:w)
+				hits++;
+			;;
+		;;
+	;;
+	call Bench.Stop: 'filter 1000 chat lines for 5 words';
+	log 'words found: ' hits '\n';
+
+	# names compared ignoring case, as when a player types someone's name
+	int same: 0;
+	call Bench.Start;
+	while int i: 0; i < 10000; i++;
+		if (Text.EqualIgnoreCase: names:(i % PLAYERS) shouted:(i * 3 % PLAYERS))
+			same++;
+		;;
+	;;
+	call Bench.Stop: 'compare 10000 names ignoring case';
+	log 'same names: ' same '\n';
+	exit 0;
+
+	# FNV-1a: a 32-bit hash of the text
+	[Hash: ptr<u8> text: 0;]
+		u32 h: 2166136261;
+		while int i: 0; text:i is not 0; i++;
+			h is (h ^ text:i) * 16777619;
+		;;
+	[end: h]
+
+	# true when word is somewhere in text, ignoring case
+	[Contains: ptr<u8> text: 0; ptr<u8> word: 0;]
+		int length: (Text.Length: word);
+		int last: (Text.Length: text) - length;
+		while int start: 0; start <= last; start++;
+			int k: 0;
+			while k < length and (Text.Lower: text:(start + k)) is (Text.Lower: word:k)
+				k++;
+			;;
+			if k is length return true;
+		;;
+	[end: false]
+}

@@ -1,0 +1,149 @@
+# Benchmarks for a game world's state: moving entities each tick, putting them in a
+# grid of cells, finding the ones near each entity (what a server sends each player),
+# and distances. phi test --bench compares the counts with bench_world.bench; the
+# checksums show a change that moves or finds things differently.
+use test.bench;
+
+struct.Entity
+{
+	f32 x;
+	f32 y;
+	f32 vx;                     # units a second
+	f32 vy;
+	u32 id;
+	i32 health;
+	int cell;                   # the grid cell it's in
+	int next;                   # the next entity in the same cell, or -1
+}
+
+phi.BenchWorld:Kernel
+{
+	const int N: 2000;
+	const int WORLD: 1024;                # the world is 1024 x 1024 units
+	const int CELL: 32;
+	const int CELLS: 32;                  # cells across and down
+	const int RADIUS: 32;                 # "near" is within one cell's width
+
+	ptr<Entity> world: new Entity[N];
+	int heads[CELLS * CELLS];             # the first entity in each cell, or -1
+	f32 tick: 0.05;                       # 20 ticks a second
+	u32 seed: 12345;
+
+	while int i: 0; i < N; i++;
+		world:i.x is (Random: WORLD);
+		world:i.y is (Random: WORLD);
+		world:i.vx is ((Random: 201) - 100) / 4.0;
+		world:i.vy is ((Random: 201) - 100) / 4.0;
+		world:i.id is i;
+		world:i.health is 100;
+	;;
+
+	call Bench.Start;
+	while int t: 0; t < 10; t++;
+		call Move;
+	;;
+	call Bench.Stop: 'move 2000 entities x10 ticks';
+	log 'positions: ' (Checksum) '\n';
+
+	call Bench.Start;
+	call BuildGrid;
+	call Bench.Stop: 'grid of 2000 entities in 1024 cells';
+
+	call Bench.Start;
+	int pairs: 0;
+	while int i: 0; i < N; i++;
+		pairs++ (Near: i);
+	;;
+	call Bench.Stop: 'entities near each of 2000';
+	log 'near pairs: ' pairs '\n';
+
+	call Bench.Start;
+	f64 total: 0;
+	while int i: 0; i < N; i++;
+		f64 dx: world:i.x - 512;
+		f64 dy: world:i.y - 512;
+		total is total + (Float.Sqrt: dx * dx + dy * dy);
+	;;
+	call Bench.Stop: 'distance with a square root x2000';
+	log 'distances: ' (total as int) '\n';
+	exit 0;
+
+	# a number from 0 to limit - 1 (xorshift, so every run is the same)
+	[Random: u32 limit: 1;]
+		seed is seed ^ (seed << 13);
+		seed is seed ^ (seed >> 17);
+		seed is seed ^ (seed << 5);
+		int result: seed % limit;               # an int, so (Random: 201) - 100 can go below 0
+	[end: result]
+
+	# one tick: every entity moves, bouncing off the edges
+	[Move]
+		while int i: 0; i < N; i++;
+			world:i.x is world:i.x + world:i.vx * tick;
+			world:i.y is world:i.y + world:i.vy * tick;
+			if world:i.x < 0
+				world:i.x is -world:i.x;
+				world:i.vx is -world:i.vx;
+			;;
+			elif world:i.x >= WORLD
+				world:i.x is 2 * WORLD - world:i.x - 0.001;
+				world:i.vx is -world:i.vx;
+			;;
+			if world:i.y < 0
+				world:i.y is -world:i.y;
+				world:i.vy is -world:i.vy;
+			;;
+			elif world:i.y >= WORLD
+				world:i.y is 2 * WORLD - world:i.y - 0.001;
+				world:i.vy is -world:i.vy;
+			;;
+		;;
+	[end]
+
+	# each cell's entities in a list through their next fields
+	[BuildGrid]
+		while int c: 0; c < CELLS * CELLS; c++;
+			heads:c is -1;
+		;;
+		while int i: 0; i < N; i++;
+			int c: (world:i.x as int) / CELL + (world:i.y as int) / CELL * CELLS;
+			world:i.cell is c;
+			world:i.next is heads:c;
+			heads:c is i;
+		;;
+	[end]
+
+	# how many other entities are within RADIUS of entity i: those in its cell and the
+	# eight around it are the only ones that can be
+	[Near: int i: 0;]
+		int count: 0;
+		int cx: world:i.cell % CELLS;
+		int cy: world:i.cell / CELLS;
+		f32 limit: RADIUS * RADIUS;
+		while int y: cy - 1; y <= cy + 1; y++;
+			while int x: cx - 1; x <= cx + 1; x++;
+				if x >= 0 and x < CELLS and y >= 0 and y < CELLS
+					int j: heads:(y * CELLS + x);
+					while j >= 0
+						if j is not i
+							f32 dx: world:j.x - world:i.x;
+							f32 dy: world:j.y - world:i.y;
+							if dx * dx + dy * dy <= limit
+								count++;
+							;;
+						;;
+						j is world:j.next;
+					;;
+				;;
+			;;
+		;;
+	[end: count]
+
+	# the entities' positions, as whole numbers, added up
+	[Checksum]
+		u32 sum: 0;
+		while int i: 0; i < N; i++;
+			sum is sum * 31 + (world:i.x as int) * 1024 + (world:i.y as int);
+		;;
+	[end: sum]
+}

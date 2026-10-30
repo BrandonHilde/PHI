@@ -843,6 +843,54 @@ accepting players, simulating the world and saving their progress.
 | Measuring | No profiler; nothing times a test | Tick time and memory per player, watched as the code changes | Compiler, Platform (`phi test`) |
 | Running it | QEMU only | A host or cloud machine | Platform (works now as QEMU with KVM on a Linux host, with ports forwarded) |
 
+**Benchmarks for the server's data**
+
+Each kind of data a game server handles has a benchmark (`phi test --bench`, see
+[tests/README.md](tests/README.md#benchmarks)), so every phase shows what it changed for
+the server. Each benchmark prints what it worked out, checked against a Python model of
+the same work, so a change that makes it faster by breaking it shows too. Counts are
+instructions (2026-10-29, after S3); QEMU ran about 2 billion a second on the computer
+they were measured on, so a tick at 20 a second has room for about 100 million.
+
+| Data | Benchmark | What it measures | Instructions each |
+|---|---|---|---|
+| World state | `bench_world` | moving an entity one tick (`f32`) | 158 |
+| | | putting an entity in a grid of cells | 91 |
+| | | finding the entities near one (its cell and the 8 around it) | 2,064 |
+| | | a distance with a square root | 61 |
+| Network messages | `bench_messages` | packing / unpacking a 10-byte move | 123 / 119 |
+| | | a snapshot of 1,000 entities, 125 of them moved | 61,000 in all |
+| | | finding a packet's session by address and port (`data.map`) | 176 |
+| | | signing a 64-byte packet with HMAC-SHA256 | 84,000 |
+| Text | `bench_text` | hashing a name and adding it to a map / finding it again | 667 / 330 |
+| | | building a chat line with `str` | 922 |
+| | | looking for 5 words in a chat line, ignoring case | 13,400 |
+| | | comparing two names ignoring case | 483 |
+| Player records | `bench_players` | picking up an item into a 40-slot bag | 1,092 |
+| | | sorting 1,000 scores for a leaderboard | 491,000 in all |
+| | | saving / loading a 36-byte record, with a CRC-32 | 1,590 |
+| NPC logic | `bench_ai` | an A* path across a 64x64 map | 289,000 |
+| | | a timed event into and out of a heap | 1,049 |
+| | | a loot roll on a table of chances | 101 |
+| Memory | `bench_memory` | heap / pool / map (see S2) | 690 / 144 / 116 |
+| Security | `bench_crypto` | PBKDF2 (1,000 rounds), X25519 (a TLS handshake's key) | 39 M / 109 M |
+
+What stands out:
+- **Signing every packet with HMAC-SHA256 costs too much:** 1,000 players sending 20
+  packets a second would take 1.7 billion instructions a second for that alone. A server
+  wants a cheaper per-packet check (Poly1305 with a session key, from `crypto.poly1305`),
+  and S6.
+- **Calling a small method is a large part of many costs.** The chat filter calls
+  `Text.Lower` for every character it compares, and that's most of its 13,400. Inlining
+  small methods (S6) is aimed at this.
+- **Finding nearby entities is the biggest cost of a tick:** about 4 million for 2,000
+  entities. That fits a tick now, but grows with how crowded the world is, so it's the
+  one to watch as worlds get bigger.
+- **Pathfinding should be rationed:** about 300 A* searches fit in a tick's budget, so NPCs
+  share paths or search less often, as on any server.
+- Disk writes aren't measured: the disk finishes in real time on the host, so the counts
+  change from run to run. S4, which builds saving, measures them its own way.
+
 **Milestones**
 
 These are reached through [Development phases](#development-phases) S1–S11; each

@@ -139,6 +139,11 @@ one that's no longer written. A count well below says `faster`, and `--save-benc
 it. The first run of a new benchmark saves its counts. Commit the `.bench` files: they're
 the baseline everyone compares with.
 
+The benchmarks cover the kinds of data a game server handles (world state, network
+messages, text, player records, NPC logic, memory and cryptography); the table under
+Scenario 1 in [Plan.md](../Plan.md#scenario-1-an-operating-system-that-is-an-mmorpg-server)
+says what each measures and what it costs.
+
 A count is instructions, not time. It doesn't see what makes real hardware slower or faster
 (caches, memory speed), and time spent waiting is skipped, but it's exact, which is what
 noticing a change needs.

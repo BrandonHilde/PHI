@@ -1,0 +1,195 @@
+# Benchmarks for what a server's non-player characters need: finding paths around
+# walls (A*), timed events (respawns, spells wearing off) taken out in time order, and
+# loot rolls on a table of chances. phi test --bench compares the counts with
+# bench_ai.bench; the path lengths and totals show a change that decides differently.
+use test.bench;
+
+phi.BenchAi:Kernel
+{
+	const int SIZE: 64;                   # the map is 64 x 64 cells
+	const int CELLS: SIZE * SIZE;
+	const int PATHS: 10;
+	const int EVENTS: 10000;
+	const int ROLLS: 100000;
+
+	u8 walls[CELLS];                      # 1 where a wall is
+	int cost[CELLS];                      # steps from the start, or -1 if not reached
+	u8 done[CELLS];                       # 1 once its shortest path is known
+
+	# a binary heap, smallest key first: A* uses it for cells, the timers for events
+	int heap_key[16384];
+	int heap_value[16384];
+	int heap_size: 0;
+	int popped_key: 0;                    # the key of what Pop returned
+
+	int weights: 500 250 120 80 30 15 4 1;   # chances in 1000 of each loot item
+	int dropped[8];
+	u32 seed: 99;
+
+	while int i: 0; i < CELLS; i++;
+		if (Random: 100) < 25
+			walls:i is 1;
+		;;
+	;;
+
+	# paths between random cells, each start and goal cleared of walls first
+	int lengths[PATHS];
+	int starts[PATHS];
+	int goals[PATHS];
+	while int p: 0; p < PATHS; p++;
+		starts:p is (Random: CELLS);
+		goals:p is (Random: CELLS);
+		walls:(starts:p) is 0;
+		walls:(goals:p) is 0;
+	;;
+	call Bench.Start;
+	while int p: 0; p < PATHS; p++;
+		lengths:p is (Path: starts:p goals:p);
+	;;
+	call Bench.Stop: 'a-star 10 paths on a 64x64 map';
+	log 'path lengths:';
+	while int p: 0; p < PATHS; p++;
+		log ' ' lengths:p;
+	;;
+	log '\n';
+
+	# 10,000 events at random times, taken out in the order they're due
+	heap_size is 0;
+	call Bench.Start;
+	while int e: 0; e < EVENTS; e++;
+		call Push: (Random: 1000000) e;
+	;;
+	bln in_order: true;
+	int previous: -1;
+	u32 ids: 0;
+	while heap_size > 0
+		int id: (Pop);
+		if popped_key < previous
+			in_order is false;
+		;;
+		previous is popped_key;
+		ids is ids * 31 + id;
+	;;
+	call Bench.Stop: 'timers: 10000 events in and out';
+	log 'events in order: ' in_order ', last due at ' previous ', ids ' ids '\n';
+
+	# loot: each roll picks an item by its chance
+	call Bench.Start;
+	while int r: 0; r < ROLLS; r++;
+		int roll: (Random: 1000);
+		int item: 0;
+		while roll >= weights:item
+			roll-- weights:item;
+			item++;
+		;;
+		dropped:item++;
+	;;
+	call Bench.Stop: 'loot 100000 rolls';
+	log 'loot:';
+	while int i: 0; i < 8; i++;
+		log ' ' dropped:i;
+	;;
+	log '\n';
+	exit 0;
+
+	# a number from 0 to limit - 1 (xorshift, so every run is the same)
+	[Random: u32 limit: 1;]
+		seed is seed ^ (seed << 13);
+		seed is seed ^ (seed >> 17);
+		seed is seed ^ (seed << 5);
+		int result: seed % limit;
+	[end: result]
+
+	# the fewest steps (up, down, left, right) from start to goal, or -1 if walls are in
+	# the way: A* with the city-block distance to the goal as its guess
+	[Path: int start: 0; int goal: 0;]
+		while int i: 0; i < CELLS; i++;
+			cost:i is -1;
+			done:i is 0;
+		;;
+		heap_size is 0;
+		cost:start is 0;
+		call Push: (Guess: start goal) start;
+		while heap_size > 0
+			int cell: (Pop);
+			if cell is goal return cost:goal;
+			if done:cell is 0
+				done:cell is 1;
+				int x: cell % SIZE;
+				int y: cell / SIZE;
+				if x > 0
+					call Try: cell cell - 1 goal;
+				;;
+				if x < SIZE - 1
+					call Try: cell cell + 1 goal;
+				;;
+				if y > 0
+					call Try: cell cell - SIZE goal;
+				;;
+				if y < SIZE - 1
+					call Try: cell cell + SIZE goal;
+				;;
+			;;
+		;;
+	[end: -1]
+
+	# a step from cell to next: keep it if it's the shortest way to next so far
+	[Try: int cell: 0; int next: 0; int goal: 0;]
+		if walls:next is 1 or done:next is 1 return;
+		int steps: cost:cell + 1;
+		if cost:next < 0 or steps < cost:next
+			cost:next is steps;
+			call Push: steps + (Guess: next goal) next;
+		;;
+	[end]
+
+	[Guess: int cell: 0; int goal: 0;]
+		int dx: cell % SIZE - goal % SIZE;
+		int dy: cell / SIZE - goal / SIZE;
+		if dx < 0
+			dx is -dx;
+		;;
+		if dy < 0
+			dy is -dy;
+		;;
+	[end: dx + dy]
+
+	# ---- the heap
+
+	[Push: int key: 0; int value: 0;]
+		int i: heap_size;
+		heap_size++;
+		# move bigger parents down until key's place is found
+		while i > 0 and heap_key:((i - 1) / 2) > key
+			int parent: (i - 1) / 2;
+			heap_key:i is heap_key:parent;
+			heap_value:i is heap_value:parent;
+			i is parent;
+		;;
+		heap_key:i is key;
+		heap_value:i is value;
+	[end]
+
+	# the value with the smallest key, taken out (its key in popped_key)
+	[Pop]
+		int value: heap_value:0;
+		popped_key is heap_key:0;
+		heap_size--;
+		int key: heap_key:heap_size;
+		int moving: heap_value:heap_size;
+		int i: 0;
+		while true
+			int child: i * 2 + 1;
+			if child >= heap_size break;
+			if child + 1 < heap_size and heap_key:(child + 1) < heap_key:child
+				child++;
+			;;
+			if heap_key:child >= key break;
+			heap_key:i is heap_key:child;
+			heap_value:i is heap_value:child;
+			i is child;
+		;;
+		heap_key:i is key;
+		heap_value:i is moving;
+	[end: value]
+}
