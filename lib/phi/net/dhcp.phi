@@ -97,7 +97,7 @@ phi.Dhcp:Kernel
 		call Net.Put32: m + 4 xid;
 		call Net.Put16: m + 10 0x8000;        # answer by broadcast: we have no address yet
 		while u32 i: 0; i < 6; i++;
-			m:(28 + i) is Rtl8139.mac:i;
+			m:(28 + i) is Nic.mac:i;
 		;;
 		call Net.Put32: m + 236 MAGIC;
 

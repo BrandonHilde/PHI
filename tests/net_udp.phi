@@ -50,7 +50,7 @@ phi.UdpServer:Kernel
 		log 'machine ' m ': ' got:m ' of ' COUNT '\n';
 	;;
 	log 'out of order: ' out_of_order '\n';
-	log 'dropped by the socket: ' Udp.sockets:s.dropped ', by the driver: ' Rtl8139.frames_dropped '\n';
-	log 'the card interrupted: ' (Rtl8139.interrupts > 0) '\n';
+	log 'dropped by the socket: ' Udp.sockets:s.dropped ', by the driver: ' (Nic.Dropped) '\n';
+	log 'the card interrupted: ' (Rtl8139.interrupts + VirtioNet.interrupts > 0) '\n';
 	exit 0;
 }

@@ -10,7 +10,8 @@ const string Usage = """
                                            (programs from the rootfs are updated on it),
                                            --memory gives the machine more (or less) than 128 MB, up to 1024;
                                            with NAME.machines next to it, it and the machines listed there
-                                           boot together on one network, each in a window
+                                           boot together on one network, each in a window;
+                                           --nic virtio gives the machine a virtio-net card (not an RTL8139)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
                 [--memory <MB>]
                                            boot each test headless and compare its serial
@@ -79,6 +80,16 @@ static int Execute(string[] args)
         Qemu.MemoryMb = mb;
     }
 
+    void NicOption()
+    {
+        string? nic = Option("--nic");
+        if (nic == null) return;
+        if (!Qemu.NetworkCards.Contains(nic))
+            throw new ArgumentException("--nic takes the network card: " + string.Join(" or ", Qemu.NetworkCards));
+        Qemu.NetworkCard = nic;
+        TestRunner.NicChosen = true;
+    }
+
     try
     {
         switch (command)
@@ -90,6 +101,7 @@ static int Execute(string[] args)
                 bool debug = Flag("--debug");
                 bool keepDisk = Flag("--keep-disk");
                 MemoryOption();
+                NicOption();
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
 
                 string file = Path.GetFullPath(rest[0]);
@@ -169,6 +181,7 @@ static int Execute(string[] args)
                 bool bench = Flag("--bench") || saveBench;
                 string? tolerance = Option("--tolerance");
                 MemoryOption();
+                NicOption();
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
                 double percent = DefaultTolerance;
@@ -190,6 +203,7 @@ static int Execute(string[] args)
                 string? seconds = Option("--seconds");
                 string? top = Option("--top");
                 MemoryOption();
+                NicOption();
                 if (rest.Count != 1) throw new ArgumentException("profile needs exactly one .phi file");
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 double? time = null;
@@ -245,7 +259,7 @@ static int RunMachines(string file, string manifest, bool run)
         Console.WriteLine($"built machine {m.Number}: {Path.GetRelativePath(Environment.CurrentDirectory, m.Image)}");
     if (!run) return 0;
 
-    using var network = new VirtualNetwork(NetworkMachines.LoseEvery(manifest));
+    using var network = new VirtualNetwork(NetworkMachines.LoseEvery(manifest), NetworkMachines.Card(manifest));
     var windows = machines.Select(m =>
     {
         string? serial = m.Number == 1 ? null : Path.Combine(Path.GetDirectoryName(m.Image)!, "serial.txt");

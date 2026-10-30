@@ -1160,8 +1160,10 @@ back the latest record of each thing (`samples/mmo/server.phi` does this when it
 
 ## The network (32-bit kernels)
 
-`phi run` and `phi test` give every machine an RTL8139 network card on QEMU's user
-network, which reaches the internet through the host. `net.http` fetches web pages:
+`phi run` and `phi test` give every machine an RTL8139 network card (or, with `--nic
+virtio`, a virtio-net card, which is what cloud machines have) on QEMU's user network,
+which reaches the internet through the host. The network works the same on either card.
+`net.http` fetches web pages:
 
 ```phi
 use net.http;
@@ -1191,7 +1193,8 @@ The layers, each usable on its own:
 | File | Class | What it does |
 |---|---|---|
 | `drivers.pci` | `Pci` | `Find: vendor device` → (or `Pci.NOT_FOUND`), `Read`/`Write: device offset`, `Bar: device n` →, `Irq` →, `EnableBusMaster` |
-| `drivers.rtl8139` | `Rtl8139` | the card: `Start` →, `Send: frame length` →, `Receive: buffer max` → (0 when nothing is waiting); `mac`, `frames_dropped` |
+| `drivers.nic` | `Nic` | whichever card the machine has: `Start` →, `Send: frame length` →, `Receive: buffer max` → (0 when nothing is waiting), `Dropped` →; `mac`, `kind` (`Nic.RTL8139` or `Nic.VIRTIO`) |
+| `drivers.rtl8139`, `drivers.virtio_net` | `Rtl8139`, `VirtioNet` | the two cards, with the same calls as `Nic`; `frames_dropped`, `interrupts` |
 | `net.net` | `Net` | `Start` → (by DHCP), `Start: address mask router` → (no DHCP), `Configure: ip netmask gateway dns`; `ip`, `netmask`, `gateway`, `dns`, `dhcp_ok`; `Ping: address timeout` → (ms, or -1); `SendUdp: to from_port to_port data length` →, `Listen: port`, `WaitUdp: timeout` → (the datagram is in `udp_data`); `ParseIp: text` →, `PrintIp: address` |
 | `net.udp` | `Udp` | sockets: `Open: port queue` → a socket or -1 (port 0 picks one), `Receive: s datagram` → (never waits), `Wait: s datagram timeout` →, `SendTo: s address port data length` →, `Close: s`; a `UdpDatagram` has `from`, `from_port`, `length` and `data`; each socket's `received` and `dropped` |
 | `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
@@ -1206,8 +1209,9 @@ is also the host computer's `127.0.0.1`), and the DNS server `10.0.2.3`. `Net.St
 for an address by DHCP first; if no server answers it keeps these addresses and
 `Net.dhcp_ok` is 0.
 
-The card's interrupt moves arriving frames from its 32 KB ring into a queue of up to 256
-in the driver, and `Net.Poll` handles them from there, outside the interrupt. So a kernel
+The card's interrupt moves arriving frames from the card (its 32 KB ring, or the virtio
+card's 256 buffers) into a queue of up to 256 in the driver, and `Net.Poll` handles them
+from there, outside the interrupt. So a kernel
 can be busy for a while without losing frames; the methods that wait (`Ping`,
 `Dns.Resolve`, `Tcp.Read`, ...) poll, and sleep a millisecond when nothing has come.
 
@@ -1957,7 +1961,7 @@ and the classes of used files run before the classes that use them.
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
-| `drivers.pci`, `drivers.rtl8139`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
+| `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
 | `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |
 | `crypto.bytes`, `crypto.sha256`, `crypto.hmac`, `crypto.pbkdf2`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |

@@ -1180,7 +1180,18 @@ load` and logins.
   - test `net_tcp`: a server and three clients sending 64 KB and 32 KB each way at once,
     losing one frame in 40; every byte arrives in order, segments are sent again and
     kept early, and every connection closes
-- [ ] (b) virtio-net, behind a small layer so `net.net` works with either card
+- [x] (b, 2026-10-29) `drivers.virtio_net`: the virtio-net card through its legacy PCI
+  interface (two shared rings, 256 receive buffers given to the card at Start, frames moved
+  to a queue on the card's interrupt as the RTL8139 driver does); `drivers.nic` uses
+  whichever card the machine has, and `net.net` and `net.dhcp` go through it. `--nic virtio`
+  for `phi run` and `phi test`, and a `card virtio` line in a `.machines` file. Every
+  network test runs on both cards (`net_tcp (virtio)`), and `net_http` passes over virtio
+  too. The test network is now a switch (it learns where each Ethernet address is), as
+  real networks are.
+  - Found on the way: reading the card's 16-bit count of returned buffers a byte at a
+    time could catch it half changed and read entries the card hadn't written yet; and
+    with no interrupt, a card whose buffers were all full stopped taking frames, which
+    held up every machine on the network. Both are fixed, and the tests caught both.
 - [ ] (c) `phi load`, logins with `crypto.pbkdf2` in `samples/mmo/`, and the 500-connection
   minute
 - Differs from the plan so far:

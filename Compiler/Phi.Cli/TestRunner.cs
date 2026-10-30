@@ -91,8 +91,8 @@ namespace Phi.Cli
             return passed == runs.Count ? 0 : 1;
         }
 
-        /// <summary>How to turn a library-only test into a whole program.</summary>
-        sealed record Mode(string Name, string Wrapper);
+        /// <summary>How to turn a library-only test into a whole program, or (for a network test) the card the machines get.</summary>
+        sealed record Mode(string Name, string Wrapper, string? Card = null);
 
         static readonly Mode[] BothModes =
         {
@@ -103,13 +103,25 @@ namespace Phi.Cli
         static readonly Regex LibraryClass = new(@"^\s*phi\.\w+\s*:\s*Library\b", RegexOptions.Multiline);
         static readonly Regex ProgramClass = new(@"^\s*phi\.\w+\s*:\s*(Bootloader|OS|Kernel)\b", RegexOptions.Multiline);
 
-        /// <summary>null for an ordinary test; both modes for a test made only of :Library classes.</summary>
+        /// <summary>
+        /// null for an ordinary test; both modes for a test made only of :Library classes; and
+        /// each network card for a network test whose NAME.machines doesn't choose one, so both
+        /// drivers are tested (--nic picks just one).
+        /// </summary>
         static IEnumerable<Mode?> Modes(string phiFile)
         {
+            if (NetworkMachines.ManifestFor(phiFile) is string manifest)
+            {
+                if (NetworkMachines.Card(manifest) != null || NicChosen) return new Mode?[] { null };
+                return Qemu.NetworkCards.Select(card => (Mode?)new Mode(card, "", card));
+            }
             string text = File.ReadAllText(phiFile);
             bool libraryOnly = LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text);
             return libraryOnly ? BothModes : new Mode?[] { null };
         }
+
+        /// <summary>phi test --nic: every test uses that card, and network tests run once.</summary>
+        public static bool NicChosen { get; set; }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
         /// <param name="report">gets lines to show under the test's result (a benchmark's counts)</param>
@@ -139,7 +151,7 @@ namespace Phi.Cli
 
             string machinesFile = Path.Combine(dir, name + ".machines");
             if (File.Exists(machinesFile))
-                return RunNetwork(phiFile, machinesFile, timeout, wrapper, keepOutput);
+                return RunNetwork(phiFile, machinesFile, timeout, wrapper, keepOutput, mode?.Card);
 
             BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), wrapper);
 
@@ -223,14 +235,14 @@ namespace Phi.Cli
         /// with its file's .expected or .contains (copies of one file share them), and its
         /// .input script if it has one.
         /// </summary>
-        static string? RunNetwork(string phiFile, string manifest, TimeSpan timeout, string wrapper, bool keepOutput)
+        static string? RunNetwork(string phiFile, string manifest, TimeSpan timeout, string wrapper, bool keepOutput, string? card)
         {
             var errors = new List<string>();
             List<NetworkMachines.Machine>? machines = NetworkMachines.Build(phiFile, manifest, wrapper, errors);
             if (machines == null) return string.Join("\n", errors);
 
             var checks = machines.Select(m => new MachineCheck(m)).ToList();
-            using var network = new VirtualNetwork(NetworkMachines.LoseEvery(manifest));
+            using var network = new VirtualNetwork(NetworkMachines.LoseEvery(manifest), card ?? NetworkMachines.Card(manifest));
             var runs = checks.Select(c => Task.Run(() => Qemu.RunHeadless(c.Machine.Image, timeout, c.IsDone, c.Input,
                 screenshots: Path.GetDirectoryName(c.Machine.Image), network: network.MachineArgs(c.Machine.Number)))).ToArray();
             Task.WaitAll(runs);

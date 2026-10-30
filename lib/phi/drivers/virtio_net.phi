@@ -1,0 +1,282 @@
+# Driver for the virtio-net network card that QEMU (and cloud machines) offer, through
+# its legacy PCI interface. 32-bit kernels. The same calls as drivers.rtl8139, and
+# drivers.nic uses whichever card the machine has.
+#
+#   use drivers.virtio_net;
+#   bln ok: (VirtioNet.Start);                   # false if there's no card
+#   call ok is VirtioNet.Send: frame length;     # a whole Ethernet frame
+#   u32 length: (VirtioNet.Receive: buffer 1536);  # 0 if no frame is waiting
+#
+# The card and the driver share two rings in memory: one of buffers for receiving and
+# one for sending. Start gives the card a buffer for every place in the receive ring
+# (256 on QEMU); the card fills them with frames and hands them back in the order they
+# came. On the card's interrupt the driver copies those frames into a queue of up to
+# FRAMES_WAITING, where they wait for Receive, and gives the buffers straight back: a
+# card with no buffers stops taking frames, which would hold up the whole network, so
+# a kernel busy elsewhere only loses frames once the queue is full (frames_dropped).
+# Receive also empties the ring itself, so it works with interrupts off too. Each
+# buffer starts with the card's 10-byte header, all zeros: no checksum or segmentation
+# work is asked of the card.
+
+use drivers.pci;
+use data.queue;
+use memory.mem;
+
+# one buffer in a ring's table
+struct.VirtqDesc
+{
+	u32 address;                # where it is (the low 32 bits; the high ones are 0)
+	u32 address_high;
+	u32 length;
+	u16 flags;
+	u16 next;
+}
+
+# a frame waiting for Receive
+struct.VirtioFrame
+{
+	u32 length;
+	u8 data[1536];
+}
+
+phi.VirtioNet:Kernel
+{
+	const u32 VENDOR: 0x1AF4;
+	const u32 PRODUCT: 0x1000;            # a network card, with the legacy interface
+
+	# registers, as offsets from the card's I/O ports
+	const u32 REG_FEATURES: 0x00;
+	const u32 REG_GUEST_FEATURES: 0x04;
+	const u32 REG_QUEUE_ADDRESS: 0x08;    # the ring's page number
+	const u32 REG_QUEUE_SIZE: 0x0C;
+	const u32 REG_QUEUE_SELECT: 0x0E;
+	const u32 REG_QUEUE_NOTIFY: 0x10;
+	const u32 REG_STATUS: 0x12;
+	const u32 REG_INTERRUPT: 0x13;        # reading it acknowledges the interrupt
+	const u32 REG_MAC: 0x14;
+
+	const u8 STATUS_ACKNOWLEDGE: 1;
+	const u8 STATUS_DRIVER: 2;
+	const u8 STATUS_DRIVER_OK: 4;
+	const u32 FEATURE_MAC: 0x20;          # the card tells us its address
+	const u16 DESC_WRITE: 2;              # the card writes into this buffer
+	const u16 NO_INTERRUPT: 1;            # don't interrupt when a buffer comes back
+
+	const u32 RECEIVE_QUEUE: 0;
+	const u32 SEND_QUEUE: 1;
+	const u32 HEADER: 10;
+	const u32 BUFFER: 1536;               # the header and the largest frame, rounded up
+	const u32 MAX_FRAME: 1514;
+	const u32 PAGE: 4096;
+	const u32 FRAMES_WAITING: 256;
+
+	u8 mac[6];
+	bln started: false;
+	u32 io: 0;
+	u32 irq: 0;
+	u32 frames_sent: 0;
+	u32 frames_received: 0;
+	u32 frames_dropped: 0;                # arrived with FRAMES_WAITING already waiting, or Send gave up
+	u32 interrupts: 0;
+
+	# each ring: its size, its table, the driver's list (avail) and the card's (used)
+	u32 rx_size: 0;
+	ptr<VirtqDesc> rx_desc: 0;
+	ptr<u16> rx_avail: 0;
+	ptr<u8> rx_used: 0;
+	ptr<u8> rx_buffers: 0;
+	u32 rx_seen: 0;                       # how many buffers the card has handed back that we've read
+	u32 tx_size: 0;
+	ptr<VirtqDesc> tx_desc: 0;
+	ptr<u16> tx_avail: 0;
+	ptr<u8> tx_used: 0;
+	ptr<u8> tx_buffers: 0;
+	u32 tx_next: 0;                       # how many frames we've given the card to send
+	ptr<QueueData> waiting: 0;
+	VirtioFrame incoming;                 # a frame on its way from a buffer to the queue
+	u32 virtio_flags: 0;                  # the interrupt flag from before Lock
+
+	# what SetUpQueue made
+	u32 queue_size: 0;
+	u32 queue_base: 0;
+
+	# find the card and turn it on; false if there isn't one
+	[Start]
+		if started return true;
+		u32 card: (Pci.Find: VENDOR PRODUCT);
+		if card is Pci.NOT_FOUND return false;
+		call Pci.EnableBusMaster: card;
+		io is (Pci.Bar: card 0);
+		irq is (Pci.Irq: card);
+		waiting is (Queue.New: sizeof VirtioFrame FRAMES_WAITING);
+		if waiting is 0 return false;
+
+		out (io + REG_STATUS) 0;                                # reset
+		out (io + REG_STATUS) STATUS_ACKNOWLEDGE;
+		out (io + REG_STATUS) STATUS_ACKNOWLEDGE | STATUS_DRIVER;
+		u32 features: ind (io + REG_FEATURES);
+		outd (io + REG_GUEST_FEATURES) features & FEATURE_MAC;  # nothing else
+		while int i: 0; i < 6; i++;
+			mac:i is in (io + REG_MAC + i);
+		;;
+
+		if (SetUpQueue: RECEIVE_QUEUE) is false return false;
+		rx_size is queue_size;
+		rx_desc is queue_base;
+		rx_avail is queue_base + 16 * queue_size;
+		rx_used is (Used: queue_base queue_size);
+		rx_buffers is new u8[rx_size * BUFFER];
+
+		if (SetUpQueue: SEND_QUEUE) is false return false;
+		tx_size is queue_size;
+		tx_desc is queue_base;
+		tx_avail is queue_base + 16 * queue_size;
+		tx_used is (Used: queue_base queue_size);
+		tx_buffers is new u8[tx_size * BUFFER];
+		if rx_buffers is 0 or tx_buffers is 0 return false;
+
+		# every receive buffer goes to the card at once
+		while u32 i: 0; i < rx_size; i++;
+			rx_desc:i.address is rx_buffers + i * BUFFER;
+			rx_desc:i.length is BUFFER;
+			rx_desc:i.flags is DESC_WRITE;
+			rx_avail:(2 + i) is i;
+		;;
+		rx_avail:1 is rx_size;
+		tx_avail:0 is NO_INTERRUPT;                             # only receiving interrupts
+
+		call OS.SetIrqHandler: irq addr Interrupt;
+		out (io + REG_STATUS) STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_DRIVER_OK;
+		outw (io + REG_QUEUE_NOTIFY) RECEIVE_QUEUE;
+		started is true;
+	[end: true]
+
+	# send an Ethernet frame (destination, source, type, data; no checksum)
+	[Send: ptr<u8> frame: 0; u32 length: 0;]
+		if started is false or length > MAX_FRAME return false;
+
+		# wait for a buffer the card has finished sending (it holds them back while the
+		# network can't take more); after a second, this frame is dropped instead
+		int start: (OS.GetTicks);
+		while ((tx_next - (Index: tx_used)) & 0xFFFF) >= tx_size
+			if (OS.GetTicks) - start > 1000
+				frames_dropped++;
+				return false;
+			;;
+		;;
+
+		u32 slot: tx_next % tx_size;
+		ptr<u8> buffer: tx_buffers + slot * BUFFER;
+		call Mem.Fill: buffer 0 HEADER;
+		call Mem.Copy: buffer + HEADER frame length;
+		tx_desc:slot.address is buffer;
+		tx_desc:slot.length is HEADER + length;
+		tx_desc:slot.flags is 0;
+		tx_avail:(2 + slot) is slot;
+		tx_next++;
+		tx_avail:1 is tx_next & 0xFFFF;                         # the card may take it now
+		outw (io + REG_QUEUE_NOTIFY) SEND_QUEUE;
+		frames_sent++;
+	[end: true]
+
+	# copy the oldest received frame into a buffer; its length, or 0 if none is waiting
+	[Receive: ptr<u8> to: 0; u32 max: 0;]
+		u32 length: 0;
+		if started
+			call asm.VirtioLock;
+			call TakeFrames;                                    # in case interrupts are off
+			ptr<VirtioFrame> frame: (Queue.Front: waiting);
+			if frame is not 0
+				length is frame:0.length;
+				if length > max
+					length is max;
+				;;
+				call Mem.Copy: to frame:0.data length;
+				call Queue.Drop: waiting;
+			;;
+			call asm.VirtioUnlock;
+		;;
+	[end: length]
+
+	# the card's interrupt: received frames into the queue
+	[Interrupt]
+		u8 cause: in (io + REG_INTERRUPT);                     # acknowledges it
+		interrupts++;
+		call TakeFrames;
+	[end]
+
+	# every buffer the card has handed back: its frame into the queue (or dropped, when
+	# the queue is full), and the buffer back to the card; with interrupts off
+	[TakeFrames]
+		bln gave: false;
+		while (Index: rx_used) is not rx_seen
+			ptr<u32> element: rx_used + 4 + (rx_seen % rx_size) * 8;
+			u32 id: element:0;
+			u32 length: 0;
+			if element:1 > HEADER
+				length is element:1 - HEADER;
+			;;
+			if waiting:0.count < waiting:0.capacity
+				incoming.length is length;
+				call Mem.Copy: incoming.data rx_buffers + id * BUFFER + HEADER length;
+				call Queue.Push: waiting addr incoming;
+				frames_received++;
+			;;
+			else
+				frames_dropped++;
+			;;
+			rx_seen is (rx_seen + 1) & 0xFFFF;
+
+			u32 next: rx_avail:1;
+			rx_avail:(2 + next % rx_size) is id;
+			rx_avail:1 is (next + 1) & 0xFFFF;
+			gave is true;
+		;;
+		if gave
+			outw (io + REG_QUEUE_NOTIFY) RECEIVE_QUEUE;
+		;;
+	[end]
+
+	# ---- the rings
+
+	# make a ring for a queue, page-aligned, and tell the card where it is: its size in
+	# queue_size and its start in queue_base; false if the card has no such queue
+	[SetUpQueue: u32 queue: 0;]
+		outw (io + REG_QUEUE_SELECT) queue;
+		queue_size is inw (io + REG_QUEUE_SIZE);
+		if queue_size is 0 return false;
+		u32 bytes: (Used: 0 queue_size) + 6 + 8 * queue_size;
+		u32 memory: new u8[bytes + PAGE];
+		if memory is 0 return false;
+		queue_base is (memory + PAGE - 1) & ~(PAGE - 1);
+		outd (io + REG_QUEUE_ADDRESS) queue_base / PAGE;
+	[end: true]
+
+	# where a ring's used list starts: after the table and the avail list, on a new page
+	[Used: u32 base: 0; u32 size: 0;]
+	[end: (base + 16 * size + 6 + 2 * size + PAGE - 1) & ~(PAGE - 1)]
+
+	# a used list's count of buffers handed back (16 bits, so it wraps round), read in one
+	# go: read a byte at a time, it could be half before and half after the card changes it
+	[Index: ptr<u8> used: 0;]
+		ptr<u16> words: used;
+	[end: words:1]
+}
+
+# interrupts off, remembering whether they were on
+asm.VirtioLock
+{
+	pushfd
+	pop eax
+	mov [{virtio_flags}], eax
+	cli
+	ret
+}
+
+# interrupts back the way they were
+asm.VirtioUnlock
+{
+	push dword [{virtio_flags}]
+	popfd
+	ret
+}

@@ -1,0 +1,53 @@
+# The network card, whichever one the machine has: a virtio-net card (drivers.virtio_net)
+# or an RTL8139 (drivers.rtl8139). net.net uses this, so the network works with either.
+# 32-bit kernels.
+#
+#   use drivers.nic;
+#   bln ok: (Nic.Start);                         # false if there's no card
+#   call ok is Nic.Send: frame length;
+#   u32 length: (Nic.Receive: buffer 1536);      # 0 if no frame is waiting
+#   log Nic.kind is Nic.VIRTIO;
+#
+# phi run and phi test give a machine an RTL8139 unless they're told otherwise
+# (--nic virtio, or a line "card virtio" in a .machines file).
+
+use drivers.rtl8139;
+use drivers.virtio_net;
+
+phi.Nic:Kernel
+{
+	const u32 NONE: 0;
+	const u32 RTL8139: 1;
+	const u32 VIRTIO: 2;
+
+	u32 kind: NONE;
+	u8 mac[6];
+
+	# find a card and turn it on; false if there's none
+	[Start]
+		if kind is not NONE return true;
+		if (VirtioNet.Start)
+			kind is VIRTIO;
+			call Mem.Copy: addr mac addr VirtioNet.mac 6;
+		;;
+		elif (Rtl8139.Start)
+			kind is RTL8139;
+			call Mem.Copy: addr mac addr Rtl8139.mac 6;
+		;;
+	[end: kind is not NONE]
+
+	[Send: ptr<u8> frame: 0; u32 length: 0;]
+		if kind is VIRTIO return (VirtioNet.Send: frame length);
+		if kind is RTL8139 return (Rtl8139.Send: frame length);
+	[end: false]
+
+	[Receive: ptr<u8> to: 0; u32 max: 0;]
+		if kind is VIRTIO return (VirtioNet.Receive: to max);
+		if kind is RTL8139 return (Rtl8139.Receive: to max);
+	[end: 0]
+
+	# frames that arrived with nowhere to keep them
+	[Dropped]
+		if kind is RTL8139 return Rtl8139.frames_dropped;
+	[end: VirtioNet.frames_dropped]
+}

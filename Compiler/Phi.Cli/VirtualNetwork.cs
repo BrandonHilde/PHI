@@ -11,7 +11,8 @@ namespace Phi.Cli
     /// Machine saying which it is: Machine.number (1, 2, 3, ... in that order), Machine.count,
     /// Machine.address (10.0.3.number, for Net.Start) and Machine.first (machine 1's address).
     /// phi run and phi test boot them all at once on a VirtualNetwork. A line "lose 1 in N"
-    /// makes the network lose every Nth frame, to test what happens when frames go missing.
+    /// makes the network lose every Nth frame, to test what happens when frames go missing,
+    /// and "card virtio" gives every machine a virtio-net card in place of an RTL8139.
     /// </summary>
     public static class NetworkMachines
     {
@@ -31,12 +32,23 @@ namespace Phi.Cli
             foreach (string raw in File.ReadAllLines(manifest))
             {
                 string line = raw.Trim();
-                if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("lose ")) continue;
+                if (line.Length == 0 || line.StartsWith('#') || line.StartsWith("lose ") || line.StartsWith("card ")) continue;
                 string[] parts = line.Split(' ', StringSplitOptions.RemoveEmptyEntries);
                 int copies = parts.Length > 1 && int.TryParse(parts[1], out int n) && n > 0 ? n : 1;
                 machines.Add((Path.GetFullPath(Path.Combine(dir, parts[0])), copies));
             }
             return machines;
+        }
+
+        /// <summary>The card from a line "card virtio" (or "card rtl8139"), or null if there's none.</summary>
+        public static string? Card(string manifest)
+        {
+            foreach (string raw in File.ReadAllLines(manifest))
+            {
+                string[] parts = raw.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                if (parts.Length == 2 && parts[0] == "card" && Qemu.NetworkCards.Contains(parts[1])) return parts[1];
+            }
+            return null;
         }
 
         /// <summary>N from a line "lose 1 in N", or 0 if there's none.</summary>
@@ -107,14 +119,16 @@ namespace Phi.Cli
 
     /// <summary>
     /// One network for several QEMU machines in a test (NAME.machines): each connects to it
-    /// with -netdev socket,connect=..., and every frame one of them sends goes to all the
-    /// others, like a hub. QEMU's socket network sends a frame as its length (4 bytes, big
-    /// endian) followed by the frame.
+    /// with -netdev socket,connect=..., and it passes frames between them like a switch:
+    /// a frame goes to the machine with its destination address, or to every other machine
+    /// when that's a broadcast or an address it hasn't seen yet. QEMU's socket network sends
+    /// a frame as its length (4 bytes, big endian) followed by the frame.
     /// </summary>
     public sealed class VirtualNetwork : IDisposable
     {
         readonly TcpListener listener = new(IPAddress.Loopback, 0);
         readonly List<NetworkStream> machines = new();
+        readonly Dictionary<ulong, NetworkStream> where = new();   // which machine has each Ethernet address
         readonly CancellationTokenSource stop = new();
 
         public int Port { get; }
@@ -130,9 +144,13 @@ namespace Phi.Cli
         public long Lost => Interlocked.Read(ref lost);
         long lost;
 
-        public VirtualNetwork(int loseEvery = 0)
+        /// <summary>The card every machine gets: rtl8139 or virtio.</summary>
+        readonly string card;
+
+        public VirtualNetwork(int loseEvery = 0, string? card = null)
         {
             this.loseEvery = loseEvery;
+            this.card = card ?? Qemu.NetworkCard;
             listener.Start();
             Port = ((IPEndPoint)listener.LocalEndpoint).Port;
             _ = Task.Run(Accept);
@@ -142,7 +160,7 @@ namespace Phi.Cli
         public string[] MachineArgs(int n) => new[]
         {
             "-netdev", $"socket,id=net0,connect=127.0.0.1:{Port}",
-            "-device", $"rtl8139,netdev=net0,romfile=,mac=52:54:00:12:34:{n:x2}",
+            "-device", $"{Qemu.CardDevice(card)},netdev=net0,romfile=,mac=52:54:00:12:34:{n:x2}",
         };
 
         async Task Accept()
@@ -181,8 +199,21 @@ namespace Phi.Cli
                         continue;
                     }
 
+                    // a switch: it learns which machine has each Ethernet address from what
+                    // they send, and sends a frame only to its destination once it knows it
+                    // (broadcasts, and addresses it hasn't seen yet, go to every machine)
+                    if (length < 12) continue;
+                    ulong source = MacAt(frame, 4 + 6);
+                    ulong destination = MacAt(frame, 4);
                     NetworkStream[] others;
-                    lock (machines) others = machines.Where(m => m != from).ToArray();
+                    lock (machines)
+                    {
+                        where[source] = from;
+                        bool broadcast = (frame[4] & 1) != 0;
+                        others = !broadcast && where.TryGetValue(destination, out NetworkStream? known)
+                            ? (known != from ? new[] { known } : Array.Empty<NetworkStream>())
+                            : machines.Where(m => m != from).ToArray();
+                    }
                     foreach (NetworkStream to in others)
                     {
                         // one writer at a time on each machine's connection
@@ -192,7 +223,19 @@ namespace Phi.Cli
                 }
             }
             catch (Exception e) when (e is IOException or ObjectDisposedException) { }
-            lock (machines) machines.Remove(from);
+            lock (machines)
+            {
+                machines.Remove(from);
+                foreach (ulong mac in where.Where(w => w.Value == from).Select(w => w.Key).ToList()) where.Remove(mac);
+            }
+        }
+
+        /// <summary>The 6-byte Ethernet address at an offset, as a number.</summary>
+        static ulong MacAt(byte[] frame, int offset)
+        {
+            ulong mac = 0;
+            for (int i = 0; i < 6; i++) mac = (mac << 8) | frame[offset + i];
+            return mac;
         }
 
         static bool ReadAll(NetworkStream stream, Span<byte> buffer)

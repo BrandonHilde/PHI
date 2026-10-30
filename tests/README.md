@@ -95,7 +95,11 @@ one (copies of one file share them); a mismatch is saved as `NAME.actual` for th
 its own. See `net_udp.phi`, and `samples/mmo/` for one with input scripts and a restart.
 `phi run` boots the same machines, each in a window (see the README). A line `lose 1 in 40`
 in the `.machines` file makes the hub lose every 40th frame, so a test sees what happens
-when frames go missing (see `net_tcp.machines`).
+when frames go missing (see `net_tcp.machines`). The machines are joined by a switch that
+learns where each Ethernet address is, so a frame goes only to its destination (or to
+everyone, for a broadcast). Every network test runs twice, once with each network card
+(`net_tcp (rtl8139)`, `net_tcp (virtio)`), unless its `.machines` file has a line
+`card virtio` (or `card rtl8139`) or `phi test` is given `--nic`.
 
 A sample is a test too when it has a `.expected`, `.contains` or `.machines` file: plain
 `phi test` runs those after `tests/`, named by their folder (`mmo/server`, so `-f mmo`

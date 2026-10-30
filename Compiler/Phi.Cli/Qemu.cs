@@ -50,7 +50,8 @@ namespace Phi.Cli
         // Writing value v to port 0xF4 makes QEMU exit with code (v << 1) | 1.
         public const int DebugExitPort = 0xF4;
 
-        // The network: an RTL8139 card (drivers.rtl8139) on QEMU's user-mode network, which
+        // The network: an RTL8139 card (drivers.rtl8139), or a virtio-net card with --nic virtio
+        // (drivers.virtio_net), on QEMU's user-mode network, which
         // gives the guest 10.0.2.15, a gateway at 10.0.2.2 (that is also the host's 127.0.0.1)
         // and a DNS server at 10.0.2.3. romfile= leaves out the card's boot ROM (iPXE).
         // The CPU is QEMU's usual one plus RDRAND, which crypto.random uses for random numbers
@@ -69,7 +70,7 @@ namespace Phi.Cli
                 "-drive", $"file={image},format=raw,if=ide,index=0",
                 "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
             };
-            args.AddRange(network ?? new[] { "-netdev", "user,id=net0", "-device", "rtl8139,netdev=net0,romfile=" });
+            args.AddRange(network ?? new[] { "-netdev", "user,id=net0", "-device", $"{CardDevice(NetworkCard)},netdev=net0,romfile=" });
             args.AddRange(new[]
             {
                 "-audiodev", audio,
@@ -80,6 +81,14 @@ namespace Phi.Cli
             if (MemoryMb is int mb) args.AddRange(new[] { "-m", $"{mb}M" });
             return args;
         }
+
+        /// <summary>The network card machines get (phi run/test --nic): rtl8139 or virtio.</summary>
+        public static string NetworkCard { get; set; } = "rtl8139";
+
+        public static readonly string[] NetworkCards = { "rtl8139", "virtio" };
+
+        /// <summary>QEMU's name for a network card.</summary>
+        public static string CardDevice(string card) => card == "virtio" ? "virtio-net-pci" : "rtl8139";
 
         /// <summary>The machine's memory in MB (phi run/test --memory), or null for QEMU's 128 MB.</summary>
         public static int? MemoryMb { get; set; }
