@@ -1,0 +1,49 @@
+# net_programs' echo: a UDP datagram and a TCP connection answered from a user program,
+# then a connection of its own to the client that sent them.
+use net.sockets;
+
+phi.Echo:Program
+{
+	u8 buffer[256];
+	log 'echo: address known: ' ((Net.Address) is not 0) '\n';
+
+	int s: (Udp.Open: 5000);
+	int listener: (Tcp.Listen: 5001);
+	log 'echo: socket ' (s >= 0) ', listener ' (listener >= 0) '\n';
+
+	# UDP: the client's ping comes back to it
+	UdpDatagram d;
+	bln got: (Udp.Wait: s addr d 20000);
+	u32 client: d.from;
+	if got
+		call Udp.SendTo: s d.from d.from_port d.data d.length;
+	;;
+	log 'echo: datagram of ' d.length ' bytes\n';
+
+	# TCP: a connection comes in, and what it sends goes back
+	int c: -1;
+	int start: (OS.GetTicks);
+	while c < 0 and (OS.GetTicks) - start < 20000
+		c is (Tcp.Accept: listener);
+		if c < 0
+			call OS.Sleep: 5;
+		;;
+	;;
+	log 'echo: accepted from the client: ' ((Tcp.Address: c) is client) '\n';
+	int n: (Tcp.Read: c addr buffer 256);
+	int sent: (Tcp.Write: c addr buffer n);
+	log 'echo: read ' n ', wrote ' sent '\n';
+	log 'echo: then the end: ' (Tcp.Read: c addr buffer 256) '\n';
+	call Tcp.Close: c;
+
+	# and a connection of its own
+	int own: (Tcp.Connect: client 6000);
+	log 'echo: connected: ' (own >= 0) '\n';
+	n is (Tcp.Read: own addr buffer 255);
+	if n > 0
+		buffer:n is 0;
+		log 'echo: the client says ' (addr buffer as ptr<u8>) '\n';
+	;;
+	call Tcp.Close: own;
+	exit 0;
+}

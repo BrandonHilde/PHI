@@ -87,6 +87,7 @@ phi.Tcp:Kernel
 	const int LINGER: 5000;               # ms a closed connection waits for its FIN's answer
 	const int TICK: 10;                   # ms between looks at the timers
 	const u32 FIRST_PORT: 49152;
+	const int CLOSED_AND_READ: -2;        # Take: the other side closed, and everything is read
 
 	const u32 FIN: 0x01;
 	const u32 SYN: 0x02;
@@ -129,6 +130,20 @@ phi.Tcp:Kernel
 
 	# connect to a port; a connection number, or -1 if nobody answered (or refused)
 	[Connect: u32 to: 0; u32 port: 0;]
+		int handle: (Begin: to port);
+		if handle < 0 return -1;
+		while (State: handle) is 0
+			call Net.Wait;
+		;;
+		if (State: handle) < 0
+			call Forget: handle;
+			return -1;
+		;;
+	[end: handle]
+
+	# start connecting to a port without waiting: a connection number to ask State about
+	# (Tick sends the SYN again each RETRY_WAIT ms), or -1 if the address can't be reached
+	[Begin: u32 to: 0; u32 port: 0;]
 		if (Net.Resolve: to) is false return -1;
 		int ticks: (OS.GetTicks);
 		u32 local: FIRST_PORT + ((ticks + next_port) & 0x3FFF);
@@ -143,21 +158,17 @@ phi.Tcp:Kernel
 		c.state is SYN_SENT;
 		c.send_unacked is (FirstSequence: local);
 		c.send_next is c.send_unacked + 1;     # a SYN counts as one byte
-
-		int tries: 0;
-		while c.state is SYN_SENT and c.reset is false and tries < RETRIES
-			call SendSegment: c c.send_unacked SYN 0 0;
-			int start: (OS.GetTicks);
-			while c.state is SYN_SENT and c.reset is false and (OS.GetTicks) - start < RETRY_WAIT
-				call Net.Wait;
-			;;
-			tries++;
-		;;
-		if c.state is not OPEN
-			call Forget: handle;
-			return -1;
-		;;
+		call SendSegment: c c.send_unacked SYN 0 0;
+		c.resend_at is (Later: RETRY_WAIT);
 	[end: handle]
+
+	# how a connection from Begin is doing: 1 once it's open, 0 while it's connecting,
+	# -1 if it was refused, nobody answered, or there's no such connection
+	[State: int handle: 0;]
+		ptr<TcpConnection> c: (Get: handle);
+		if c is 0 or c.reset return -1;
+		if c.state is OPEN return 1;
+	[end: 0]
 
 	# send data, waiting while the send buffer is full; the bytes sent, or -1 if the
 	# connection broke (or nothing could be sent for timeout ms)
@@ -184,16 +195,27 @@ phi.Tcp:Kernel
 	# bytes, 0 once the other side has closed and everything is read, -1 on a timeout or
 	# a reset
 	[Read: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
-		ptr<TcpConnection> c: (Get: handle);
-		if c is 0 return -1;
 		int start: (OS.GetTicks);
-		call Net.Poll;
-		while c.rx_count is 0 and c.remote_closed is false and c.reset is false and (OS.GetTicks) - start < timeout
+		while true
+			int got: (Take: handle to max);
+			if got > 0 return got;
+			if got is CLOSED_AND_READ return 0;
+			if got < 0 or (OS.GetTicks) - start >= timeout return -1;
 			call Net.Wait;
 		;;
+	[end: -1]
+
+	# what has arrived, up to max bytes, without waiting: the bytes, 0 if nothing has yet,
+	# CLOSED_AND_READ once the other side has closed and everything is read, -1 after a
+	# reset (or if there's no such connection)
+	[Take: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
+		ptr<TcpConnection> c: (Get: handle);
+		if c is 0 return -1;
+		call Net.Poll;
 		if c.rx_count is 0
-			if c.remote_closed and c.reset is false return 0;
-			return -1;
+			if c.reset return -1;
+			if c.remote_closed return CLOSED_AND_READ;
+			return 0;
 		;;
 
 		int n: c.rx_count;
@@ -252,6 +274,28 @@ phi.Tcp:Kernel
 		int handle: -1;
 		if (Queue.Pop: listeners:listener.ready addr handle) is false return -1;
 	[end: handle]
+
+	# stop taking connections on a listener's port; the ones waiting for Accept are closed
+	[StopListening: int listener: 0;]
+		if listener < 0 or listener >= MAX_LISTENERS or listeners:listener.port is 0 return;
+		int handle: -1;
+		while (Queue.Pop: listeners:listener.ready addr handle)
+			call Close: handle;
+		;;
+		# and ones still being set up, which would join it when they're done
+		while int h: 0; h < MAX_CONNECTIONS; h++;
+			if table:h is not 0
+				ptr<TcpConnection> c: table:h;
+				if c.state is SYN_RECEIVED and c.listener is listener
+					call SendReset: c.remote_ip c.remote_port c.local_port;
+					call Forget: h;
+				;;
+			;;
+		;;
+		call Queue.Delete: listeners:listener.ready;
+		listeners:listener.ready is 0;
+		listeners:listener.port is 0;
+	[end]
 
 	# how much can be read now; -1 once the connection is closed (and everything is
 	# read) or reset; never waits
@@ -374,6 +418,7 @@ phi.Tcp:Kernel
 				call ReadOptions: c;
 				c.state is OPEN;
 				c.resend_at is 0;
+				c.retries is 0;                     # (they counted SYNs; data counts afresh)
 				call SendSegment: c c.send_next ACK 0 0;
 			;;
 			return;
@@ -538,6 +583,17 @@ phi.Tcp:Kernel
 	[Resend: int handle: 0;]
 		ptr<TcpConnection> c: table:handle;
 		c.retries++;
+		# a SYN with no answer yet: again each RETRY_WAIT ms, RETRIES times in all
+		if c.state is SYN_SENT
+			c.resend_at is 0;
+			if c.retries >= RETRIES
+				c.reset is true;
+				return;
+			;;
+			call SendSegment: c c.send_unacked SYN 0 0;
+			c.resend_at is (Later: RETRY_WAIT);
+			return;
+		;;
 		if c.retries > RETRIES
 			c.reset is true;                            # the other side has gone
 			c.resend_at is 0;

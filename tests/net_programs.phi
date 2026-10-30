@@ -1,0 +1,26 @@
+# The network from user programs (net.sockets, through net.calls): this kernel is
+# machine 1 and starts the network; net_programs.machines adds the client machine.
+#
+# ECHO.BIN answers a UDP datagram and a TCP connection from the client, then connects to
+# the client itself. GRAB.BIN opens a port and a listener, tries to close sockets that
+# aren't its own, and crashes holding them: its port and listener come back.
+use proc.process;
+use net.calls;
+
+phi.NetPrograms:Kernel
+{
+	bln ok: (Net.Start: Machine.address);
+	int mine: (Udp.Open: 7000);                 # the kernel's own: programs can't close it
+	log 'network: ' ok ', kernel socket ' mine '\n';
+
+	int code: (Process.Wait: (Process.Spawn: 'ECHO.BIN'));
+	log 'echo ended: ' code '\n';
+
+	code is (Process.Wait: (Process.Spawn: 'GRAB.BIN'));
+	log 'grab ended: ' code '\n';
+	int again: (Udp.Open: 5000);
+	int listener: (Tcp.Listen: 5001);
+	log 'its port back: ' (again >= 0) ', its listener back: ' (listener >= 0) '\n';
+	log 'kernel socket still open: ' (Udp.Valid: mine) '\n';
+	exit 0;
+}

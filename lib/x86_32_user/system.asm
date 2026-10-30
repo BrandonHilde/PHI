@@ -1,4 +1,4 @@
-; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable
+; provides: phi_exit OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_NetAddress OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening
 ;
 ; requires: phi_flush
 ;
@@ -45,6 +45,21 @@ SYS_SET_TITLE equ 68
 SYS_OPEN_WINDOW equ 69
 SYS_FOCUSED   equ 70
 SYS_RESIZABLE equ 71
+SYS_NET_ADDRESS equ 80   ; 80 and up: net.calls in the kernel
+SYS_UDP_OPEN equ 81
+SYS_UDP_CLOSE equ 82
+SYS_UDP_RECEIVE equ 83
+SYS_UDP_SEND equ 84
+SYS_TCP_BEGIN equ 85
+SYS_TCP_STATE equ 86
+SYS_TCP_SEND equ 87
+SYS_TCP_TAKE equ 88
+SYS_TCP_CLOSE equ 89
+SYS_TCP_LISTEN equ 90
+SYS_TCP_ACCEPT equ 91
+SYS_TCP_WAITING equ 92
+SYS_TCP_ADDRESS equ 93
+SYS_TCP_STOP_LISTENING equ 94
 
 ; where the kernel puts a program's command line (the bottom of its stack area)
 ARGUMENTS     equ 0x403F0000
@@ -173,3 +188,18 @@ PHI_SYSCALL OS_SetWindowTitle, SYS_SET_TITLE, 1  ; title -> 1
 PHI_SYSCALL OS_OpenWindow, SYS_OPEN_WINDOW, 2    ; path arguments -> process number, or -1
 PHI_SYSCALL OS_WindowFocused, SYS_FOCUSED, 0     ; -> 1 if its window is in front
 PHI_SYSCALL OS_SetResizable, SYS_RESIZABLE, 1    ; 1 or 0 -> 1
+PHI_SYSCALL OS_NetAddress, SYS_NET_ADDRESS, 0   ; -> this machine's address, or 0 if the kernel has no network
+PHI_SYSCALL OS_UdpOpen, SYS_UDP_OPEN, 2   ; port queue -> socket, or -1
+PHI_SYSCALL OS_UdpClose, SYS_UDP_CLOSE, 1   ; socket -> 1, or 0 if it isn't ours
+PHI_SYSCALL OS_UdpReceive, SYS_UDP_RECEIVE, 2   ; socket datagram -> 1, or 0 if none is waiting
+PHI_SYSCALL OS_UdpSend, SYS_UDP_SEND, 4   ; socket|port<<16 to data length -> 1 if sent
+PHI_SYSCALL OS_TcpBegin, SYS_TCP_BEGIN, 2   ; to port -> connection (still connecting), or -1
+PHI_SYSCALL OS_TcpState, SYS_TCP_STATE, 1   ; connection -> 1 open, 0 connecting, -1 failed
+PHI_SYSCALL OS_TcpSend, SYS_TCP_SEND, 3   ; connection data length -> bytes taken, or -1
+PHI_SYSCALL OS_TcpTake, SYS_TCP_TAKE, 3   ; connection buffer max -> bytes, 0 none yet, -2 closed and read, -1 broken
+PHI_SYSCALL OS_TcpClose, SYS_TCP_CLOSE, 1   ; connection -> 1
+PHI_SYSCALL OS_TcpListen, SYS_TCP_LISTEN, 2   ; port backlog -> listener, or -1
+PHI_SYSCALL OS_TcpAccept, SYS_TCP_ACCEPT, 1   ; listener -> connection, or -1 if none is waiting
+PHI_SYSCALL OS_TcpWaiting, SYS_TCP_WAITING, 1   ; connection -> bytes to read, or -1 once closed
+PHI_SYSCALL OS_TcpAddress, SYS_TCP_ADDRESS, 1   ; connection -> the other end's address
+PHI_SYSCALL OS_TcpStopListening, SYS_TCP_STOP_LISTENING, 1   ; listener -> 1, or 0 if it isn't ours

@@ -1355,7 +1355,30 @@ Goal: a mistake stops only the work it was part of, not the whole machine.
 **Done when:** an hour of `phi fuzz` against `samples/mmo/` doesn't stop the server, and a
 test where a zone program crashes on purpose shows its players back in a restarted zone.
 
-**Status: not started.**
+**Status: in progress.**
+- [x] (1) Network system calls for programs (80 to 94). The kernel has `use net.calls`;
+  a program has `use net.sockets`, whose `Udp`, `Tcp` and `Net` have the kernel's methods,
+  so code moves by changing its `use` line. Every socket, connection and listener belongs
+  to its process: a program can't use another's (or the kernel's), and they're closed
+  when it ends or crashes. Pointers are checked as file calls' are. Test
+  `net_programs` (a program echoing UDP and TCP, connecting out, and one that crashes
+  holding a port).
+  - Differs from the plan: a system call never waits. They come in with interrupts off,
+    and sleeping in one would hold up the kernel and every program, so each call does one
+    step and the program's side does the waiting (sleeping between looks). That needed
+    `Tcp.Begin`/`State` (a connect that doesn't wait; `Tick` sends the SYN again) and
+    `Tcp.Take` (a read that doesn't); `Connect` and `Read` are those plus a wait now.
+    `Tcp.StopListening` is new too (nothing could close a listener before).
+  - `net.calls` and `gui.surfaces` both answer `Process.more_calls` and `on_release`, so
+    each now passes on what isn't its own to whatever was set before it.
+  - `UdpDatagram` moved to `net.datagram`, which both sides use. `Net`'s address and
+    byte helpers are copied into the program's `Net`, since a program can't use a
+    kernel class.
+  - Not yet: `Dns.Resolve` for programs (it waits, so it needs the same split).
+- [ ] (2) messages between programs
+- [ ] (3) restarting a zone program
+- [ ] (4) catching errors in the language (a design question for the user first)
+- [ ] (5) `phi fuzz`
 
 #### Phase S9: Several cores
 

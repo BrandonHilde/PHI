@@ -1,0 +1,10 @@
+# A UDP datagram as Udp.Receive fills it in: in kernels (net.udp) and in programs
+# (net.sockets), so code that receives them works in either.
+
+struct.UdpDatagram
+{
+	u32 from;                   # the sender's address
+	u32 from_port;
+	u32 length;                 # bytes in data
+	u8 data[1472];              # the most one datagram carries in a 1500-byte packet
+}

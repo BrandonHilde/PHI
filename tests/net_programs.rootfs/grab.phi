@@ -1,0 +1,24 @@
+# net_programs' grab: takes a port and a listener, can't close what isn't its own, and
+# crashes holding them (the kernel gets them back).
+use net.sockets;
+
+phi.Grab:Program
+{
+	int numbers: 1 2 3;
+	int s: (Udp.Open: 5000);
+	int listener: (Tcp.Listen: 5001);
+	log 'grab: socket ' (s >= 0) ', listener ' (listener >= 0) '\n';
+
+	# every other socket number, the kernel's among them, isn't this program's
+	int closed: 0;
+	while int i: 0; i < 16; i++;
+		if i is not s
+			closed++ (OS.UdpClose: i);
+		;;
+	;;
+	log 'grab: closed others: ' closed '\n';
+
+	int pos: 3;
+	log numbers:pos '\n';                       # out of range: the program stops here
+	log 'not reached\n';
+}

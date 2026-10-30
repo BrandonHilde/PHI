@@ -1,0 +1,49 @@
+# net_programs' client (machine 2): pings the echo program over UDP, sends it a line over
+# TCP and reads it back, then waits for the program to connect to it.
+use net.udp;
+use net.tcp;
+
+phi.NetProgramsClient:Kernel
+{
+	u8 buffer[256];
+	bln ok: (Net.Start: Machine.address);
+	int listener: (Tcp.Listen: 6000);
+	int s: (Udp.Open);
+
+	# the program may not be running yet: ping until it answers
+	UdpDatagram d;
+	bln answered: false;
+	while int tries: 0; tries < 200 and answered is false; tries++;
+		call Udp.SendTo: s Machine.first 5000 'ping!' 5;
+		answered is (Udp.Wait: s addr d 100);
+	;;
+	log 'udp answer: ' answered ', ' d.length ' bytes\n';
+
+	int c: (Tcp.Connect: Machine.first 5001);
+	log 'tcp connected: ' (c >= 0) '\n';
+	int sent: (Tcp.Write: c 'hello over tcp' 14);
+	int n: (Tcp.Read: c addr buffer 255);
+	buffer:n is 0;
+	log 'tcp: sent ' sent ', back: ' (addr buffer as ptr<u8>) '\n';
+	call Tcp.Close: c;
+
+	# now the program connects to us
+	int from: -1;
+	int start: (OS.GetTicks);
+	while from < 0 and (OS.GetTicks) - start < 20000
+		from is (Tcp.Accept: listener);
+		if from < 0
+			call Net.Wait;
+		;;
+	;;
+	log 'program connected: ' (from >= 0) '\n';
+	call Tcp.Write: from 'from the client' 15;
+	call Tcp.Close: from;
+
+	# keep answering for a moment, so the close gets to the program
+	start is (OS.GetTicks);
+	while (OS.GetTicks) - start < 1000
+		call Net.Wait;
+	;;
+	log 'client done\n';
+}

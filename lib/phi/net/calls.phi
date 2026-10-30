@@ -1,0 +1,197 @@
+# The network for user programs, on the kernel's side. 32-bit kernels with proc.process.
+#
+#   use net.calls;
+#   bln ok: (Net.Start);                    # the kernel starts the card; programs can't
+#   int pid: (Process.Spawn: 'ZONE.BIN');   # a program with use net.sockets
+#
+# A program uses Udp and Tcp from net.sockets, which make the system calls answered here
+# (80 to 94). Each one does a single step that never waits (polling the card first), and
+# the program's side does the waiting, so a program that waits for the network doesn't
+# hold up the kernel or the other programs.
+#
+# Every socket, connection and listener belongs to the process that opened it: a
+# program can only use its own, and when it ends (or crashes) they're all closed. The
+# kernel's own sockets and connections are out of programs' reach. Pointers a program
+# passes are checked to be inside its memory, as file calls' are.
+#
+# Calls before Net.Start give -1 (Net.Address gives 0).
+
+use proc.process;
+use net.udp;
+use net.tcp;
+
+phi.NetCalls:Kernel
+{
+	const u32 SYS_NET_ADDRESS: 80;
+	const u32 SYS_UDP_OPEN: 81;
+	const u32 SYS_UDP_CLOSE: 82;
+	const u32 SYS_UDP_RECEIVE: 83;
+	const u32 SYS_UDP_SEND: 84;
+	const u32 SYS_TCP_BEGIN: 85;
+	const u32 SYS_TCP_STATE: 86;
+	const u32 SYS_TCP_SEND: 87;
+	const u32 SYS_TCP_TAKE: 88;
+	const u32 SYS_TCP_CLOSE: 89;
+	const u32 SYS_TCP_LISTEN: 90;
+	const u32 SYS_TCP_ACCEPT: 91;
+	const u32 SYS_TCP_WAITING: 92;
+	const u32 SYS_TCP_ADDRESS: 93;
+	const u32 SYS_TCP_STOP_LISTENING: 94;
+
+	const int MAX_PROCESSES: 16;
+	const int SOCKETS: 16;                  # as many as Udp has
+	const int CONNECTIONS: 1024;            # ... as Tcp has
+	const int LISTENERS: 8;
+	const u32 MOST_QUEUED: 256;             # datagrams a program's socket may keep (1.5 KB each)
+	const u32 MOST_BACKLOG: 256;
+
+	# the process each one belongs to (0: the kernel's, or not open)
+	int socket_owner[SOCKETS];
+	int connection_owner[CONNECTIONS];
+	int listener_owner[LISTENERS];
+
+	# what had the system calls and the release before us (gui.surfaces, say): we pass
+	# theirs on
+	method<u32 u32 u32 u32 u32: int> other_calls: Process.more_calls;
+	method<int> other_release: Process.on_release;
+	Process.more_calls is addr Calls;
+	Process.on_release is addr Release;
+
+	[Calls: u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
+		if number < SYS_NET_ADDRESS or number > SYS_TCP_STOP_LISTENING
+			int passed: -1;
+			if other_calls is not 0
+				call passed is other_calls: number a b c d;
+			;;
+			return passed;
+		;;
+		int pid: (OS.CurrentTask);
+		if pid <= 0 or pid >= MAX_PROCESSES return -1;
+		if number is SYS_NET_ADDRESS
+			if Net.started is false return 0;
+			return Net.ip;
+		;;
+		if Net.started is false return -1;
+		call Net.Poll;
+
+		if number is SYS_UDP_OPEN return (UdpOpen: pid a b);
+		if number is SYS_UDP_CLOSE
+			if (OwnsSocket: pid a) is false return 0;
+			call Udp.Close: a;
+			socket_owner:a is 0;
+			return 1;
+		;;
+		if number is SYS_UDP_RECEIVE
+			if (OwnsSocket: pid a) is false return 0;
+			if (Process.UserRange: b sizeof UdpDatagram) is false return 0;
+			if (Udp.Receive: a b) return 1;
+			return 0;
+		;;
+		if number is SYS_UDP_SEND
+			# the socket and the port share a: the socket in the low 16 bits
+			u32 s: a & 0xFFFF;
+			if (OwnsSocket: pid s) is false return 0;
+			if (Process.UserRange: c d) is false return 0;
+			if (Udp.SendTo: s b a >> 16 c d) return 1;
+			return 0;
+		;;
+
+		if number is SYS_TCP_BEGIN
+			int begun: (Tcp.Begin: a b);
+			if begun >= 0
+				connection_owner:begun is pid;
+			;;
+			return begun;
+		;;
+		if number is SYS_TCP_LISTEN
+			if b > MOST_BACKLOG
+				b is MOST_BACKLOG;
+			;;
+			int listener: (Tcp.Listen: a b);
+			if listener >= 0
+				listener_owner:listener is pid;
+			;;
+			return listener;
+		;;
+		if number is SYS_TCP_ACCEPT
+			if (OwnsListener: pid a) is false return -1;
+			int accepted: (Tcp.Accept: a);
+			if accepted >= 0
+				connection_owner:accepted is pid;
+			;;
+			return accepted;
+		;;
+		if number is SYS_TCP_STOP_LISTENING
+			if (OwnsListener: pid a) is false return 0;
+			call Tcp.StopListening: a;
+			listener_owner:a is 0;
+			return 1;
+		;;
+
+		# the rest are about a connection the program has
+		if (OwnsConnection: pid a) is false return -1;
+		if number is SYS_TCP_STATE return (Tcp.State: a);
+		if number is SYS_TCP_WAITING return (Tcp.Waiting: a);
+		if number is SYS_TCP_ADDRESS return (Tcp.Address: a);
+		if number is SYS_TCP_SEND
+			if (Process.UserRange: b c) is false return -1;
+			return (Tcp.Send: a b c);
+		;;
+		if number is SYS_TCP_TAKE
+			if (Process.UserRange: b c) is false return -1;
+			return (Tcp.Take: a b c);
+		;;
+		if number is SYS_TCP_CLOSE
+			call Tcp.Close: a;
+			connection_owner:a is 0;
+			return 1;
+		;;
+	[end: -1]
+
+	[UdpOpen: int pid: 0; u32 port: 0; u32 queue: 0;]
+		if queue is 0 or queue > MOST_QUEUED
+			queue is MOST_QUEUED;
+		;;
+		int s: (Udp.Open: port queue);
+		if s >= 0
+			socket_owner:s is pid;
+		;;
+	[end: s]
+
+	[OwnsSocket: int pid: 0; u32 s: 0;]
+		if s >= SOCKETS return false;
+	[end: socket_owner:s is pid]
+
+	[OwnsConnection: int pid: 0; u32 handle: 0;]
+		if handle >= CONNECTIONS return false;
+	[end: connection_owner:handle is pid]
+
+	[OwnsListener: int pid: 0; u32 listener: 0;]
+		if listener >= LISTENERS return false;
+	[end: listener_owner:listener is pid]
+
+	# a program is ending (or has crashed): everything it had is closed
+	[Release: int pid: 0;]
+		while int s: 0; s < SOCKETS; s++;
+			if socket_owner:s is pid
+				call Udp.Close: s;
+				socket_owner:s is 0;
+			;;
+		;;
+		while int h: 0; h < CONNECTIONS; h++;
+			if connection_owner:h is pid
+				call Tcp.Close: h;
+				connection_owner:h is 0;
+			;;
+		;;
+		while int l: 0; l < LISTENERS; l++;
+			if listener_owner:l is pid
+				call Tcp.StopListening: l;
+				listener_owner:l is 0;
+			;;
+		;;
+		if other_release is not 0
+			call other_release: pid;
+		;;
+	[end]
+}

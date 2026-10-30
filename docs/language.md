@@ -1228,7 +1228,8 @@ The layers, each usable on its own:
 | `net.udp` | `Udp` | sockets: `Open: port queue` → a socket or -1 (port 0 picks one), `Receive: s datagram` → (never waits), `Wait: s datagram timeout` →, `SendTo: s address port data length` →, `Close: s`; a `UdpDatagram` has `from`, `from_port`, `length` and `data`; each socket's `received` and `dropped` |
 | `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
 | `net.dns` | `Dns` | `Resolve: name` → an address, or 0 |
-| `net.tcp` | `Tcp` | clients: `Connect: address port` → a connection or -1, `Write: c data length` → (waits until it's all taken), `Read: c buffer max` → (waits for something: 0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000). Servers, never waiting: `Listen: port backlog` → a listener or -1, `Accept: listener` → a connection or -1, `Waiting: c` → bytes to read (-1 once closed), `Send: c data length` → how much fitted, `Address: c` →; `open_count`, `retransmits` |
+| `net.tcp` | `Tcp` | clients: `Connect: address port` → a connection or -1, `Write: c data length` → (waits until it's all taken), `Read: c buffer max` → (waits for something: 0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000). Never waiting: `Begin: address port` → a connection still connecting, `State: c` → (1 open, 0 connecting, -1 failed), `Take: c buffer max` → (0 if nothing yet, `Tcp.CLOSED_AND_READ` once closed). Servers, never waiting: `Listen: port backlog` → a listener or -1, `Accept: listener` → a connection or -1, `StopListening: listener`, `Waiting: c` → bytes to read (-1 once closed), `Send: c data length` → how much fitted, `Address: c` →; `open_count`, `retransmits` |
+| `net.calls` | `NetCalls` | the network for user programs: `use` it in the kernel (see below) |
 | `net.tls` | `Tls` | one TLS 1.3 connection: `Connect: address port host` → (false: `error` says why), `Write: data length` →, `Read: buffer max` → (0 once the server has closed), `Close`; `suite`, `alert`, `verified` |
 | `net.http` | `Http` | `Get: url buffer max` → the response's size or -1, for `http://` and `https://`; `status`, `body` (where the body starts), `error` |
 
@@ -1292,6 +1293,41 @@ while true
 
 What arrives when a queue is full is dropped and counted (the socket's `dropped`, and
 `Rtl8139.frames_dropped`): UDP has no way to slow a sender down.
+
+### The network in programs
+
+A user program uses the network through its kernel: the kernel has `use net.calls` and
+starts the network, and the program has `use net.sockets`, which gives it `Udp`, `Tcp`
+and `Net` with the same methods as the kernel's. So code moves between a kernel and a
+program by changing its `use` line:
+
+```phi
+# in the kernel
+use proc.process;
+use net.calls;
+bln ok: (Net.Start);
+int code: (Process.Wait: (Process.Spawn: 'ZONE.BIN'));
+
+# zone.phi, a program
+use net.sockets;
+int s: (Udp.Open: 4000);
+UdpDatagram d;
+while (Udp.Receive: s addr d)
+    call Udp.SendTo: s d.from d.from_port 'ok' 2;
+;;
+```
+
+What differs:
+
+- A program doesn't start the network; `Net.Address` is its machine's address, or 0 if
+  the kernel hasn't started one.
+- A program waits by sleeping (`Tcp.Read`, `Tcp.Connect`, `Udp.Wait`), so the kernel and
+  the other programs carry on meanwhile. Each system call does one step that never
+  waits.
+- Every socket, connection and listener belongs to the program that opened it. It can't
+  use anyone else's (the kernel's included), and when it ends, even by crashing,
+  they're all closed.
+- A socket's queue holds at most 256 datagrams, and a listener's backlog at most 256.
 
 ## Graphics and input (32-bit kernels and programs)
 

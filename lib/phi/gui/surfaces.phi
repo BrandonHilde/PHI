@@ -64,11 +64,22 @@ phi.Surfaces:Kernel
 	int front: 0;               # the process whose window is in front (the window manager sets it)
 	int buttons_held[16];       # the mouse buttons in the last MOUSE event each process was sent
 
+	# what had the system calls and the release before us (net.calls, say): we pass
+	# theirs on
+	method<u32 u32 u32 u32 u32: int> other_calls: Process.more_calls;
+	method<int> other_release: Process.on_release;
 	Process.more_calls is addr Calls;
 	Process.on_release is addr Release;
 
 	# a system call from a program
 	[Calls: u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
+		if number < SYS_SURFACE_OPEN or number > SYS_RESIZABLE
+			int passed: -1;
+			if other_calls is not 0
+				call passed is other_calls: number a b c d;
+			;;
+			return passed;
+		;;
 		int pid: (OS.CurrentTask);
 		if pid <= 0 or pid >= MAX_PROCESSES return -1;
 		if number is SYS_SURFACE_OPEN return (Open: pid a b);
@@ -252,6 +263,9 @@ phi.Surfaces:Kernel
 
 	# the process ended (or opens another surface): its surface and events go
 	[Release: int pid: 0;]
+		if other_release is not 0
+			call other_release: pid;
+		;;
 		if pid <= 0 or pid >= MAX_PROCESSES return;
 		if pixels:pid is not 0
 			free pixels:pid;

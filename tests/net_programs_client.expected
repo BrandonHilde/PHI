@@ -1,0 +1,5 @@
+udp answer: 1, 5 bytes
+tcp connected: 1
+tcp: sent 14, back: hello over tcp
+program connected: 1
+client done

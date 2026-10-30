@@ -1,0 +1,211 @@
+# The network for user programs: UDP sockets and TCP connections, through the kernel
+# (which needs use net.calls, and starts the network itself).
+#
+#   use net.sockets;
+#   int s: (Udp.Open: 4000);                    # a socket on port 4000, or -1
+#   UdpDatagram d;
+#   while (Udp.Receive: s addr d)               # true for each one waiting; never waits
+#       call Udp.SendTo: s d.from d.from_port d.data d.length;
+#   ;;
+#   int c: (Tcp.Connect: (Net.ParseIp: '10.0.2.2') 80);   # waits for the other side
+#   int got: (Tcp.Read: c addr buffer 1000);    # waits up to Tcp.timeout ms
+#
+# These are the kernel's Udp, Tcp and Net (net.udp, net.tcp, net.net), with the same
+# methods, so code moves between a kernel and a program by changing its use line. What
+# differs: a program doesn't start the network (Net.Address says whether the kernel has),
+# and while it waits it sleeps, so the kernel and the other programs carry on.
+#
+# A program's sockets, connections and listeners are its own: they're closed when it
+# ends, even if it crashes.
+
+use net.datagram;
+
+phi.Net:Program
+{
+	# this machine's address, or 0 if the kernel hasn't started the network
+	[Address:]
+	[end: (OS.NetAddress)]
+
+	# (the same as the kernel's Net, for the numbers in packets and addresses)
+	# numbers in packets are big-endian: the most significant byte first
+	[Get16: ptr<u8> p: 0;]
+	[end: (p:0 << 8) | p:1]
+
+	[Get32: ptr<u8> p: 0;]
+		u32 value: (p:0 << 24) | (p:1 << 16) | (p:2 << 8) | p:3;
+	[end: value]
+
+	[Put16: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 8;
+		p:1 is value;
+	[end]
+
+	[Put32: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 24;
+		p:1 is value >> 16;
+		p:2 is value >> 8;
+		p:3 is value;
+	[end]
+
+	# 'a.b.c.d' as an address; 0 if the text isn't one
+	[ParseIp: ptr<u8> text: 0;]
+		u32 address: 0;
+		u32 part: 0;
+		u32 digits: 0;
+		u32 parts: 0;
+		bln ok: true;
+		u32 i: 0;
+		while ok and text:i is not 0
+			u8 c: text:i;
+			if c >= '0' and c <= '9'
+				part is part * 10 + (c - '0');
+				digits++;
+				ok is part <= 255 and digits <= 3;
+			;;
+			elif c is '.' and digits > 0 and parts < 3
+				address is (address << 8) | part;
+				parts++;
+				part is 0;
+				digits is 0;
+			;;
+			else
+				ok is false;
+			;;
+			i++;
+		;;
+		if ok and parts is 3 and digits > 0
+			address is (address << 8) | part;
+		;;
+		else
+			address is 0;
+		;;
+	[end: address]
+
+	[PrintIp: u32 address: 0;]
+		log (address >> 24) '.' ((address >> 16) & 0xFF) '.' ((address >> 8) & 0xFF) '.' (address & 0xFF);
+	[end]
+}
+
+phi.Udp:Program
+{
+	const u32 MAX_DATA: 1472;
+
+	# a socket for datagrams sent to port (0: any free port), keeping up to queue of
+	# them (at most 256); -1 if the port is taken or every socket is open
+	[Open: u32 port: 0; u32 queue: 64;]
+	[end: (OS.UdpOpen: port queue)]
+
+	[Close: int s: -1;]
+		call OS.UdpClose: s;
+	[end]
+
+	# the oldest datagram for the socket, into into; false if none is waiting (it
+	# never waits)
+	[Receive: int s: -1; ptr<UdpDatagram> into: 0;]
+	[end: (OS.UdpReceive: s into) is 1]
+
+	# like Receive, but waits up to timeout ms for a datagram to arrive
+	[Wait: int s: -1; ptr<UdpDatagram> into: 0; int timeout: 1000;]
+		int start: (OS.GetTicks);
+		while true
+			if (Receive: s into) return true;
+			if (OS.GetTicks) - start >= timeout return false;
+			call OS.Sleep: 1;
+		;;
+	[end: false]
+
+	# send length bytes of data to port at an address, from the socket's port; false
+	# if it couldn't be sent
+	[SendTo: int s: -1; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
+		if s < 0 or port > 0xFFFF or length > MAX_DATA return false;
+	[end: (OS.UdpSend: s | (port << 16) to data length) is 1]
+}
+
+phi.Tcp:Program
+{
+	const int CLOSED_AND_READ: -2;        # what the kernel's Take gives once all is read
+
+	int timeout: 10000;                   # how long Read and Write wait, in ms
+
+	# connect to a port; a connection number, or -1 if nobody answered (or refused)
+	[Connect: u32 to: 0; u32 port: 0;]
+		int handle: (OS.TcpBegin: to port);
+		if handle < 0 return -1;
+		while (OS.TcpState: handle) is 0
+			call OS.Sleep: 1;
+		;;
+		if (OS.TcpState: handle) < 0
+			call OS.TcpClose: handle;
+			return -1;
+		;;
+	[end: handle]
+
+	# send data, waiting while the send buffer is full; the bytes sent, or -1 if the
+	# connection broke (or nothing could be sent for timeout ms)
+	[Write: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
+		u32 done: 0;
+		int idle: (OS.GetTicks);
+		while done < length
+			int taken: (OS.TcpSend: handle data + done length - done);
+			if taken < 0 return -1;
+			if taken > 0
+				done++ taken;
+				idle is (OS.GetTicks);
+			;;
+			elif (OS.GetTicks) - idle > timeout
+				return -1;
+			;;
+			if done < length
+				call OS.Sleep: 1;
+			;;
+		;;
+	[end: done]
+
+	# what has arrived, up to max bytes (waiting up to timeout ms if nothing has): the
+	# bytes, 0 once the other side has closed and everything is read, -1 on a timeout or
+	# a reset
+	[Read: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
+		int start: (OS.GetTicks);
+		while true
+			int got: (OS.TcpTake: handle to max);
+			if got > 0 return got;
+			if got is CLOSED_AND_READ return 0;
+			if got < 0 or (OS.GetTicks) - start >= timeout return -1;
+			call OS.Sleep: 1;
+		;;
+	[end: -1]
+
+	# finish the connection: what's still in its send buffer goes, then a FIN
+	[Close: int handle: 0;]
+		call OS.TcpClose: handle;
+	[end]
+
+	# ---- for servers: nothing here waits
+
+	# take connections to port (up to backlog waiting, at most 256); a listener, or -1
+	[Listen: u32 port: 0; u32 backlog: 64;]
+	[end: (OS.TcpListen: port backlog)]
+
+	# a connection that has come in on a listener, or -1 if none is waiting
+	[Accept: int listener: 0;]
+	[end: (OS.TcpAccept: listener)]
+
+	# stop taking connections; the ones waiting for Accept are closed
+	[StopListening: int listener: 0;]
+		call OS.TcpStopListening: listener;
+	[end]
+
+	# how much can be read now; -1 once the connection is closed (and everything is
+	# read) or reset
+	[Waiting: int handle: 0;]
+	[end: (OS.TcpWaiting: handle)]
+
+	# put up to length bytes in the send buffer; how many it took (0 when it's full), or
+	# -1 if the connection is broken or closing
+	[Send: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
+	[end: (OS.TcpSend: handle data length)]
+
+	# the address of the other end of a connection (0 if there's no such connection)
+	[Address: int handle: 0;]
+	[end: (OS.TcpAddress: handle)]
+}

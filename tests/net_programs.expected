@@ -1,0 +1,17 @@
+network: 1, kernel socket 0
+echo: address known: 1
+echo: socket 1, listener 1
+echo: datagram of 5 bytes
+echo: accepted from the client: 1
+echo: read 14, wrote 14
+echo: then the end: 0
+echo: connected: 1
+echo: the client says from the client
+echo ended: 0
+grab: socket 1, listener 1
+grab: closed others: 0
+
+PHI: index out of range on line 22 in grab.phi
+grab ended: -1
+its port back: 1, its listener back: 1
+kernel socket still open: 1
