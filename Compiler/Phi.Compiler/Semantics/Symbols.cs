@@ -40,10 +40,12 @@ namespace Phi.Compiler.Semantics
     /// <see cref="Length"/> is the element count for arrays and 0 for everything else.
     /// A <see cref="Filled"/> array (name[atmost N]) has room for Length elements and keeps how
     /// many are in it in a u32 right after them, so its elements are where any array's are.
+    /// A str with <see cref="Room"/> is text kept in place (a struct's str name: [24] or
+    /// chr name[24]): Room bytes, the text and the zero that ends it.
     /// </summary>
     public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
                                  MethodSignature? Signature = null, bool Filled = false, EnumSymbol? Enum = null,
-                                 bool Open = false)
+                                 bool Open = false, int Room = 0)
     {
         public static readonly PhiType Error = new(TypeKind.Error);
         public static readonly PhiType Void = new(TypeKind.Void);
@@ -71,6 +73,20 @@ namespace Phi.Compiler.Semantics
         public static PhiType MethodOf(MethodSignature s) => new(TypeKind.Method, Signature: s);
         public static PhiType ObjectOf(StructSymbol s) => new(TypeKind.Object, Struct: s);
         public static PhiType EnumOf(EnumSymbol e) => new(TypeKind.Enum, Enum: e);
+
+        /// <summary>Text of up to <paramref name="characters"/> characters, kept in place.</summary>
+        public static PhiType TextOf(int characters) => new(TypeKind.Str, Room: characters + 1);
+
+        /// <summary>A str kept in place, like a struct's str field: its value is where its text is.</summary>
+        public bool IsInlineText => IsString && Room > 0;
+
+        /// <summary>
+        /// A struct's new str field: text that grows on the heap, which the struct owns. The field
+        /// is laid out like a str variable that grows: the text's address (0 while it's empty),
+        /// then its room.
+        /// </summary>
+        public static readonly PhiType HeapText = new(TypeKind.Str, Room: -1);
+        public bool IsHeapText => IsString && Room < 0;
 
         public bool IsArray => Length > 0 || Open;
 
@@ -131,7 +147,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.I8 or TypeKind.U8 or TypeKind.Bool or TypeKind.Chr => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
             TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method or TypeKind.Object => 4,
-            TypeKind.Str => 4,  // arrays of strings hold pointers
+            TypeKind.Str => Room > 0 ? Room : 4,  // arrays of strings hold pointers, or texts kept in place
             TypeKind.Struct => Struct!.Size,
             TypeKind.Enum => 4,
             TypeKind.I64 or TypeKind.U64 or TypeKind.F64 => 8,
@@ -141,10 +157,16 @@ namespace Phi.Compiler.Semantics
         };
 
         /// <summary>Bytes taken by the whole value: every element, and a filled array's count.</summary>
-        public int ByteSize => Open ? 12 : ElementSize * Math.Max(Length, 1) + (Filled ? 4 : 0);
+        public int ByteSize => Open ? 12 : IsInlineText ? Room : IsHeapText ? 8 : ElementSize * Math.Max(Length, 1) + (Filled ? (TextTable ? 4 * Length : 0) + 4 : 0);
 
-        /// <summary>Where a filled array keeps its count, from the start of the array.</summary>
-        public int CountOffset => ElementSize * Length;
+        /// <summary>
+        /// Where a filled array keeps its count, from the start of the array. A filled array of
+        /// texts that grow has each one's room after the table, then the count.
+        /// </summary>
+        public int CountOffset => TextTable ? 8 * Length : ElementSize * Length;
+
+        /// <summary>An array of strs that each keep their text elsewhere: a table of their addresses.</summary>
+        public bool TextTable => IsArray && Kind == TypeKind.Str && Room == 0;
 
         public override string ToString()
         {
@@ -242,6 +264,13 @@ namespace Phi.Compiler.Semantics
         public bool Grows { get; set; }
 
         /// <summary>
+        /// A str parameter with no default (str into;): the caller's own text. It holds the address
+        /// of two u32s, where the text is and its room, laid out like a str that grows keeps them.
+        /// A caller whose str has a size passes room with the Fixed bit, so writing is cut to fit.
+        /// </summary>
+        public bool TextRef { get; set; }
+
+        /// <summary>
         /// A str array whose elements grow, in a 32-bit kernel or a user program. Its storage is the
         /// table of each element's text (so it's still a ptr&lt;ptr&lt;u8&gt;&gt;), then each element's
         /// room. An element starts in a buffer of <see cref="Capacity"/> bytes of its own (the top bit
@@ -287,6 +316,12 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>The [atmost N] array whose count is read at run time.</summary>
         public Expr? Filled { get; init; }
+
+        /// <summary>The text kept in place (a str field) whose length is measured at run time.</summary>
+        public Expr? Text { get; init; }
+
+        /// <summary>A str parameter that's the caller's text (str into;), whose .max is read when it runs.</summary>
+        public VariableSymbol? TextRef { get; init; }
     }
 
     /// <summary>task.id: a field reached from a variable by name, at a fixed offset.</summary>
@@ -342,6 +377,12 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         public List<OwnedSlot> OwnedSlots { get; } = new();
         public bool OwnsObjects => OwnedSlots.Count > 0;
+
+        /// <summary>
+        /// What an owned slot holds when it's a new str field's text rather than an object:
+        /// freed, copied and compared as text.
+        /// </summary>
+        public static readonly StructSymbol Text = new() { Name = "_text" };
 
         public FieldSymbol? Find(string name) => Fields.FirstOrDefault(f => f.Name == name);
     }

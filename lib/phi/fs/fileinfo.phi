@@ -8,7 +8,7 @@
 
 struct.FileInfo
 {
-	u8 name[13];            # NAME.EXT, ending with a zero
+	str name: [12];         # NAME.EXT
 	u32 size;               # in bytes (0 for a folder)
 	bln folder;
 	u16 year;               # when it was last written (0 if the disk doesn't say)

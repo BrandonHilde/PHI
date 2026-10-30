@@ -470,7 +470,7 @@ namespace Phi.Compiler.CodeGen
             for (int i = m.Parameters.Count - 1; i >= 0; slot += ParameterBytes(m.Parameters[i].Type), i--)
             {
                 VariableSymbol p = m.Parameters[i];
-                if (p.Type.IsString)
+                if (p.Type.IsString && !p.TextRef)
                 {
                     p.Label = Reserve(p.Grows ? 8 : p.Capacity);
                     frame.StrParams.Add((p, slot));
@@ -480,11 +480,11 @@ namespace Phi.Compiler.CodeGen
 
             foreach (VariableSymbol v in m.Locals)
             {
-                if (v.Type.Kind == TypeKind.Str && v.Type.IsArray)
+                if (v.Type.TextTable)
                 {
                     // a table of pointers, one per element, each to a buffer of its own (and then
-                    // each one's room, when they grow)
-                    v.Label = Reserve((v.GrowingElements ? 8 : 4) * v.Count);
+                    // each one's room, when they grow, and a filled one's count)
+                    v.Label = Reserve((v.GrowingElements ? 8 : 4) * v.Count + (v.Type.Filled ? 4 : 0));
                     var elements = new List<string>();
                     for (int i = 0; i < v.Count; i++) elements.Add(Reserve(v.Capacity));
                     frame.StrArrays.Add((v, elements));
@@ -998,7 +998,7 @@ namespace Phi.Compiler.CodeGen
         string? StaticAddress(Expr e) => e switch
         {
             StringExpr s => StringLabel(s.Value),
-            NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false } v } => v.Label,
+            NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false, TextRef: false } v } => v.Label,
             _ => null,
         };
 
@@ -1039,6 +1039,7 @@ namespace Phi.Compiler.CodeGen
                     // a str parameter gets the address of the text, and a 64-bit one takes two slots
                     int count = method.Parameters.Count;
                     int pushedBytes = 0;
+                    var writeBacks = new List<string>();
                     for (int i = 0; i < count; i++)
                     {
                         VariableSymbol p = method.Parameters[i];
@@ -1052,6 +1053,12 @@ namespace Phi.Compiler.CodeGen
                         if (p.Type.Open)
                         {
                             pushedBytes += PushArrayView(value);
+                            continue;
+                        }
+                        if (p.TextRef)
+                        {
+                            PushTextRef(value!, writeBacks);
+                            pushedBytes += 4;
                             continue;
                         }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
@@ -1089,6 +1096,18 @@ namespace Phi.Compiler.CodeGen
 
                     Emit($"call {method.Label}");
                     if (pushedBytes > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushedBytes}");
+                    foreach (string slots in writeBacks)
+                    {
+                        // an element of a str array that grows: where its text went, and its room
+                        Emit("push eax");
+                        Emit($"mov esi, [{slots} + 8]");
+                        Emit($"mov eax, [{slots}]");
+                        Emit("mov [esi], eax");
+                        Emit($"mov esi, [{slots} + 12]");
+                        Emit($"mov eax, [{slots} + 4]");
+                        Emit("mov [esi], eax");
+                        Emit("pop eax");
+                    }
                     break;
                 }
 
@@ -1145,6 +1164,93 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
             }
+        }
+
+        /// <summary>
+        /// Pushes the address of a str for a str parameter with no default (str into;): two u32s,
+        /// where its text is and its room. A str that grows passes its own (so the method can make
+        /// it bigger); an element of a str array that grows passes a copy that's written back after
+        /// the call; text with a fixed size passes its room with the Fixed bit; and anything else
+        /// (a literal, a ptr&lt;u8&gt;, a number), which the method only reads, passes no room.
+        /// </summary>
+        void PushTextRef(Expr value, List<string> writeBacks)
+        {
+            switch (value)
+            {
+                case NameExpr { Symbol: VariableSymbol { Grows: true } v }:
+                    LoadAddress("eax", v.Label);
+                    Emit("push eax");
+                    return;
+
+                case NameExpr { Symbol: VariableSymbol { TextRef: true } v }:
+                    Emit($"push dword [{v.Label}]   ; the same str this method was given");
+                    return;
+
+                case Expr { Type.IsHeapText: true }:
+                    EmitPlaceAddress(value);    // its slot: the text and its room, so it can grow
+                    Emit("push eax");
+                    return;
+
+                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol array } } when array.GrowingElements || array.Type is { Open: true, TextTable: true }:
+                {
+                    string slots = AllocTemp(16);
+                    EmitPlaceAddress(value);
+                    Emit($"mov [{slots} + 8], eax   ; the element's text slot");
+                    Emit("mov esi, eax");
+                    Emit("mov ecx, [esi]");
+                    Emit($"mov [{slots}], ecx");
+                    if (array.GrowingElements) Emit($"lea esi, [esi + {4 * array.Count}]");
+                    else
+                    {
+                        Emit($"mov ecx, [{array.Label} + 8]");
+                        Emit("lea esi, [esi + ecx*4]");
+                    }
+                    Emit("mov ecx, [esi]");
+                    Emit($"mov [{slots} + 4], ecx");
+                    Emit($"mov [{slots} + 12], esi   ; and its room");
+                    LoadAddress("eax", slots);
+                    Emit("push eax");
+                    writeBacks.Add(slots);
+                    return;
+                }
+            }
+
+            int room = 0;
+            if (value.Type.IsInlineText) room = value.Type.Room;
+            else if (value is NameExpr { Symbol: VariableSymbol { Type.IsString: true, Type.IsArray: false } fixedStr }) room = fixedStr.Capacity;
+            else if (value is IndexExpr { Target: NameExpr { Symbol: VariableSymbol { Type.IsArray: true } table } } && value.Type.IsString) room = table.Capacity;
+
+            string slot = AllocTemp(8);
+            if (IsText(value.Type)) EmitExpr(value);
+            else
+            {
+                // a number, written out as text first
+                if (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar) EmitNumberText(value);
+                else
+                {
+                    EmitExpr(value);
+                    string text = AllocTemp(12);
+                    Need("phi_int_to_str");
+                    LoadAddress("edi", text);
+                    Emit("mov ecx, 12");
+                    Emit("call phi_int_to_str");
+                    LoadAddress("eax", text);
+                }
+            }
+            Emit($"mov [{slot}], eax");
+            if (room > 0) Emit($"mov dword [{slot} + 4], {room} | {Fixed}");
+            else
+            {
+                // text the method only reads: its room is what it has, so .max is its length
+                Need("phi_strlen");
+                Emit("mov esi, eax");
+                Emit("call phi_strlen");
+                Emit("inc eax");
+                Emit($"or eax, {Fixed}");
+                Emit($"mov [{slot} + 4], eax");
+            }
+            LoadAddress("eax", slot);
+            Emit("push eax");
         }
 
         /// <summary>The bytes a parameter takes on the stack.</summary>
@@ -1329,7 +1435,42 @@ namespace Phi.Compiler.CodeGen
                 if (unsafeDepth == 0)
                 {
                     Emit($"mov edx, [ebx + {4 * array.Count}]");
-                    Emit($"and edx, ~{InData}      ; its room");
+                    Emit($"and edx, {RoomMask}      ; its room");
+                    EmitIndexCheck(ix, "jb", "edx");
+                }
+                Emit("mov ebx, [ebx]");
+                Emit("add ebx, eax");
+                return new Place { Computed = true, Linear = true };
+            }
+
+            // the characters of a new str field: checked against its room
+            if (ix.Target.Type.IsHeapText)
+            {
+                EmitExpr(ix.Index);
+                Emit("push eax");
+                EmitPlaceAddress(ix.Target);
+                Emit("mov ebx, eax");
+                Emit("pop eax");
+                if (unsafeDepth == 0)
+                {
+                    Emit("mov edx, [ebx + 4]");
+                    Emit($"and edx, {RoomMask}      ; its room");
+                    EmitIndexCheck(ix, "jb", "edx");
+                }
+                Emit("mov ebx, [ebx]");
+                Emit("add ebx, eax");
+                return new Place { Computed = true, Linear = true };
+            }
+
+            // the characters of the caller's str: checked against its room
+            if (ix.Target is NameExpr { Symbol: VariableSymbol { TextRef: true } caller })
+            {
+                EmitExpr(ix.Index);
+                Emit($"mov ebx, [{caller.Label}]   ; where {caller.Name}'s text and room are");
+                if (unsafeDepth == 0)
+                {
+                    Emit("mov edx, [ebx + 4]");
+                    Emit($"and edx, {RoomMask}      ; its room");
                     EmitIndexCheck(ix, "jb", "edx");
                 }
                 Emit("mov ebx, [ebx]");
@@ -1344,7 +1485,7 @@ namespace Phi.Compiler.CodeGen
                 if (unsafeDepth == 0)
                 {
                     Emit($"mov edx, [{text.Label} + 4]");
-                    Emit($"and edx, ~{InData}      ; its room");
+                    Emit($"and edx, {RoomMask}      ; its room");
                     EmitIndexCheck(ix, "jb", "edx");
                 }
                 Emit($"mov ebx, dword [{text.Label}]");
@@ -1599,6 +1740,11 @@ namespace Phi.Compiler.CodeGen
                 EmitPlaceAddress(value);
                 Emit("push eax                ; the struct to copy");
             }
+            else if (element.IsString && value != null && (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar))
+            {
+                EmitNumberText(value);
+                Emit("push eax                ; the number, as text");
+            }
             else if (value != null)
             {
                 EmitExpr(value);
@@ -1675,6 +1821,44 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov ecx, {size}");
                 Emit("cld");
                 Emit("rep movsb");
+            }
+            else if (element.IsString)
+            {
+                bool text = value != null && (IsText(value.Type) || value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar);
+                if (element.IsInlineText)
+                {
+                    // the text goes where the element is, cut to fit
+                    if (value == null) Emit("mov byte [ebx], 0        ; empty");
+                    else
+                    {
+                        Emit("pop eax");
+                        Emit("mov edi, ebx");
+                        Emit($"mov ecx, {element.Room}");
+                        if (text)
+                        {
+                            Need("phi_strcpy");
+                            Emit("mov esi, eax");
+                            Emit("call phi_strcpy");
+                        }
+                        else
+                        {
+                            string convert = value!.Type.IsUnsigned32 ? "phi_uint_to_str" : "phi_int_to_str";
+                            Need(convert);
+                            Emit($"call {convert}");
+                        }
+                    }
+                }
+                else if (value == null)
+                {
+                    // the element's text (a dropped one's, if it was used before) starts empty
+                    Emit("mov eax, [ebx]");
+                    Emit("mov byte [eax], 0        ; empty");
+                }
+                else
+                {
+                    Emit("push ebx                ; the element's slot");
+                    EmitGrowStoreAt(4 * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
+                }
             }
             else if (value != null)
             {
@@ -1817,19 +2001,56 @@ namespace Phi.Compiler.CodeGen
             NameExpr { Symbol: VariableSymbol or FieldPathSymbol } => true,
             MemberExpr m => !m.Target.Type.IsObject && !m.Target.Type.IsPointer && IsStaticPlace(m.Target),
             IndexExpr ix => !ix.Target.Type.IsPointer && !ix.Target.Type.Filled && !ix.Target.Type.Open && ConstantFolder.Evaluate(ix.Index) != null && IsStaticPlace(ix.Target)
-                            && !(ix.Target.Type.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol { Grows: false } }),
+                            && !(ix.Target.Type.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false } }),
             _ => false,
         };
 
+        /// <summary>eax = how many characters the text kept at a str field is.</summary>
+        void EmitTextLength(Expr text)
+        {
+            EmitExpr(text);     // where its text is
+            Need("phi_strlen");
+            Emit("mov esi, eax");
+            Emit("call phi_strlen");
+        }
+
         /// <summary>
         /// eax holds a string address (sourceIsString) or a number to write out as text;
-        /// put it in a str variable or str array element, cut to fit.
+        /// put it in a str variable, a str field or a str array element, cut to fit.
         /// </summary>
         void EmitStringStore(Expr target, bool sourceIsString, bool append = false, bool unsigned = false)
         {
             if (target is NameExpr { Symbol: VariableSymbol { Grows: true } growing })
             {
                 EmitGrowStore(growing, sourceIsString, append, unsigned);
+                return;
+            }
+
+            if (target.Type.IsHeapText)
+            {
+                // a new str field: it grows like a str variable, through its slot
+                Emit("push eax                ; the value");
+                EmitPlaceAddress(target);
+                Emit("push eax                ; the field's text slot (its room is after it)");
+                EmitGrowStoreAt(4, sourceIsString, append, unsigned);
+                return;
+            }
+
+            if (target is NameExpr { Symbol: VariableSymbol { TextRef: true } caller })
+            {
+                // into the caller's str: it grows if it can, or is cut to fit
+                Emit("push eax                ; the value");
+                Emit($"push dword [{caller.Label}]   ; where {caller.Name}'s text and room are");
+                EmitGrowStoreAt(4, sourceIsString, append, unsigned);
+                return;
+            }
+
+            if (target is IndexExpr { Target: NameExpr { Symbol: VariableSymbol { Type: { Open: true, TextTable: true } } view } })
+            {
+                Emit("push eax                ; the value");
+                EmitPlaceAddress(target);
+                Emit("push eax                ; the element's slot");
+                EmitGrowStoreAt(0, sourceIsString, append, unsigned, view.Label);
                 return;
             }
 
@@ -1844,7 +2065,16 @@ namespace Phi.Compiler.CodeGen
             }
 
             int capacity;
-            if (target is NameExpr { Symbol: VariableSymbol v })
+            if (target.Type.IsInlineText)
+            {
+                // a str field: the text goes where the field is
+                capacity = target.Type.Room;
+                Emit("push eax");
+                EmitPlaceAddress(target);
+                Emit("mov edi, eax");
+                Emit("pop eax");
+            }
+            else if (target is NameExpr { Symbol: VariableSymbol v })
             {
                 capacity = v.Capacity;
                 LoadAddress("edi", v.Label);
@@ -1899,6 +2129,26 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
+            // text kept in place (a str field): its value is where it is
+            if (e.Type.IsInlineText && e is NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } or MemberExpr { Call: null } or IndexExpr)
+            {
+                EmitPlaceAddress(e);
+                return;
+            }
+
+            // a new str field: the text its slot points at ('' while it has none)
+            if (e.Type.IsHeapText && e is NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } or MemberExpr { Call: null })
+            {
+                string done = NewLabel("text");
+                EmitPlaceAddress(e);
+                Emit("mov eax, [eax]");
+                Emit("test eax, eax");
+                Emit($"jnz {done}");
+                Emit($"mov eax, {StringLabel("")}");
+                Label(done);
+                return;
+            }
+
             switch (e)
             {
                 case CallExpr call:
@@ -1927,6 +2177,10 @@ namespace Phi.Compiler.CodeGen
 
                 case NameExpr { Symbol: VariableSymbol { Grows: true } v }:
                     LoadText("eax", v);
+                    break;
+
+                case NameExpr { Symbol: VariableSymbol { TextRef: true } v }:
+                    LoadCallerText("eax", v);
                     break;
 
                 case NameExpr { Symbol: VariableSymbol { Type.IsString: true } v }:
@@ -1965,9 +2219,35 @@ namespace Phi.Compiler.CodeGen
                     EmitFilledCount(m.Target);
                     break;
 
+                case MemberExpr { TextLength: true } m:
+                    EmitTextLength(m.Target);
+                    break;
+
+                case NameExpr { Symbol: LengthSymbol { Text: Expr text } }:
+                    EmitTextLength(text);
+                    break;
+
+                case NameExpr { Symbol: LengthSymbol { TextRef: VariableSymbol caller } }:
+                {
+                    // the caller's room when its str has a size, or the most a str grows to
+                    string grows = NewLabel("grows");
+                    Emit($"mov eax, [{caller.Label}]");
+                    Emit("mov eax, [eax + 4]");
+                    Emit($"test eax, {Fixed}");
+                    Emit($"mov eax, {Binder.StrMax}");
+                    Emit($"jz {grows}");
+                    Emit($"mov eax, [{caller.Label}]");
+                    Emit("mov eax, [eax + 4]");
+                    Emit($"and eax, {RoomMask}");
+                    Emit("dec eax                 ; less the zero");
+                    Label(grows);
+                    break;
+                }
+
                 case NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } }:
                     Need("phi_strlen");
-                    if (str.Grows) LoadText("esi", str);
+                    if (str.TextRef) LoadCallerText("esi", str);
+                    else if (str.Grows) LoadText("esi", str);
                     else LoadAddress("esi", str.Label);
                     Emit("call phi_strlen");
                     break;
@@ -2067,8 +2347,8 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
-            // an object is at the address it holds
-            if (addr.OfObject) EmitExpr(addr.Operand);
+            // an object is at the address it holds, and a new str field's text where its slot says
+            if (addr.OfObject || addr.Operand.Type.IsHeapText) EmitExpr(addr.Operand);
             else EmitPlaceAddress(addr.Operand);
         }
 
@@ -2083,6 +2363,11 @@ namespace Phi.Compiler.CodeGen
             if (e is NameExpr { Symbol: VariableSymbol { Grows: true } text })
             {
                 LoadText("eax", text);  // addr s: where its text is now
+                return;
+            }
+            if (e is NameExpr { Symbol: VariableSymbol { TextRef: true } caller })
+            {
+                LoadCallerText("eax", caller);
                 return;
             }
             if (e is NameExpr { Symbol: VariableSymbol v })
@@ -2160,7 +2445,7 @@ namespace Phi.Compiler.CodeGen
                 : e switch
                 {
                     StringExpr s => $"mov {register}, {StringLabel(s.Value)}",
-                    NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false } v } =>
+                    NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false, TextRef: false } v } =>
                         InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : $"mov {register}, {v.Label}",
                     NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } => LoadInstruction(v.Type, register, $"[{v.Label}]"),
                     NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } =>
@@ -3315,6 +3600,11 @@ namespace Phi.Compiler.CodeGen
                 Line("");
                 Comment($"{next.Kind} for {next.Struct.Name} objects");
                 Label($"phi_{next.Kind}_{next.Struct.Name}");
+                if (next.Struct == StructSymbol.Text)
+                {
+                    EmitTextRoutine(next.Kind);
+                    continue;
+                }
                 switch (next.Kind)
                 {
                     case "free": EmitFreeRoutine(next.Struct); break;
@@ -3345,9 +3635,30 @@ namespace Phi.Compiler.CodeGen
         /// <summary>The bit of a growing str's room that says its text is in the program's data, not the heap.</summary>
         const string InData = "0x80000000";
 
+        /// <summary>
+        /// In the room passed for a str parameter that's the caller's text: the caller's str has a
+        /// size, so its text never moves and what's written is cut to fit.
+        /// </summary>
+        const string Fixed = "0x40000000";
+
+        /// <summary>A room without its flags.</summary>
+        const string RoomMask = "0x3FFFFFFF";
+
         bool usesStrRoom;
 
         /// <summary>A register = the text of a str that grows; "" while nothing has been written to it.</summary>
+        /// <summary>register = where the text of the caller's str (a str parameter with no default) is.</summary>
+        void LoadCallerText(string register, VariableSymbol v)
+        {
+            string done = NewLabel("text");
+            Emit($"mov {register}, dword [{v.Label}]");
+            Emit($"mov {register}, dword [{register}]");
+            Emit($"test {register}, {register}");
+            Emit($"jnz {done}");
+            Emit($"mov {register}, {StringLabel("")}");
+            Label(done);
+        }
+
         void LoadText(string register, VariableSymbol v)
         {
             string done = NewLabel("text");
@@ -3394,7 +3705,7 @@ namespace Phi.Compiler.CodeGen
         /// The value is on the stack, and above it the slot that holds the text's address; the
         /// room is roomOffset bytes after the slot. Writes the value in, making room first.
         /// </summary>
-        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned)
+        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? view = null)
         {
             if (sourceIsString)
             {
@@ -3421,7 +3732,13 @@ namespace Phi.Compiler.CodeGen
             }
             Emit("mov ecx, eax");
             Emit("mov edi, [esp]");
-            Emit($"lea ebx, [edi + {roomOffset}]");
+            if (view != null)
+            {
+                // an element of a str rows[] parameter: its room is the caller's .max slots on
+                Emit($"mov ebx, [{view} + 8]");
+                Emit("lea ebx, [edi + ebx*4]");
+            }
+            else Emit($"lea ebx, [edi + {roomOffset}]");
             EmitStrRoomCall(roomInEbx: true);
             Emit("push edx");
             Emit("mov eax, [esp + 8]      ; the value");
@@ -3460,8 +3777,10 @@ namespace Phi.Compiler.CodeGen
             Emit($"mov ecx, {max}               ; never more than its max");
             Label(".capped");
             Emit("xor edx, edx");
+            Emit($"test dword [ebx], {Fixed}");
+            Emit("jnz .fits               ; a caller's str with a size: it stays, and the text is cut to fit");
             Emit("mov eax, [ebx]");
-            Emit($"and eax, ~{InData}      ; its room (the top bit: its text isn't on the heap)");
+            Emit($"and eax, {RoomMask}      ; its room (the top bits: its text isn't on the heap, or never moves)");
             Emit("cmp ecx, eax");
             Emit("jbe .fits");
             // the new room: twice the old, and at least what's wanted (and 16), up to the max
@@ -3513,7 +3832,7 @@ namespace Phi.Compiler.CodeGen
             Emit("mov [ebx], ecx");
             Label(".fits");
             Emit("mov ecx, [ebx]");
-            Emit($"and ecx, ~{InData}");
+            Emit($"and ecx, {RoomMask}");
             Emit("mov edi, [edi]");
             Emit("ret");
         }
@@ -3527,6 +3846,104 @@ namespace Phi.Compiler.CodeGen
             Emit("add esp, 4");
             Emit("test eax, eax");
             Emit("jz phi_out_of_memory");
+        }
+
+        /// <summary>
+        /// The routines for a new str field's text, called the way an owned object's are:
+        /// free (eax = the text), clone (eax = the text; eax = a copy on the heap, or 0) and
+        /// equal (eax, edx = the texts; eax = 1 when they match). No text is the same as ''.
+        /// </summary>
+        void EmitTextRoutine(string kind)
+        {
+            switch (kind)
+            {
+                case "free":
+                    Emit("test eax, eax");
+                    Emit("jz .done");
+                    Emit("push eax");
+                    Emit($"call {HeapMethodLabel("Heap.Free")}");
+                    Emit("add esp, 4");
+                    Label(".done");
+                    Emit("ret");
+                    break;
+
+                case "clone":
+                    Need("phi_strlen");
+                    Need("phi_strcpy");
+                    Need("phi_out_of_memory");
+                    Emit("test eax, eax");
+                    Emit("jnz .some");
+                    Emit("ret                     ; no text: a copy has none either");
+                    Label(".some");
+                    Emit("push ebp");
+                    Emit("mov ebp, esp");
+                    Emit("push eax                ; [ebp - 4] the text");
+                    Emit("mov esi, eax");
+                    Emit("call phi_strlen");
+                    Emit("inc eax                 ; with its zero");
+                    Emit("push eax                ; [ebp - 8] the room it takes");
+                    Emit("push eax");
+                    Emit($"call {HeapMethodLabel("Heap.Alloc")}");
+                    Emit("add esp, 4");
+                    Emit("test eax, eax");
+                    Emit("jz phi_out_of_memory");
+                    Emit("push eax");
+                    Emit("mov edi, eax");
+                    Emit("mov esi, [ebp - 4]");
+                    Emit("mov ecx, [ebp - 8]");
+                    Emit("call phi_strcpy");
+                    Emit("pop eax");
+                    Emit("mov esp, ebp");
+                    Emit("pop ebp");
+                    Emit("ret");
+                    break;
+
+                case "equal":
+                {
+                    Need("phi_strcmp");
+                    string empty = StringLabel("");
+                    Emit("test eax, eax");
+                    Emit("jnz .a");
+                    Emit($"mov eax, {empty}");
+                    Label(".a");
+                    Emit("test edx, edx");
+                    Emit("jnz .b");
+                    Emit($"mov edx, {empty}");
+                    Label(".b");
+                    Emit("mov esi, eax");
+                    Emit("mov edi, edx");
+                    Emit("call phi_strcmp");
+                    Emit("xor eax, 1              ; 1 when they match");
+                    Emit("ret");
+                    break;
+                }
+
+                default:
+                    throw new InvalidOperationException($"no {kind} routine for text");
+            }
+        }
+
+        /// <summary>
+        /// After a struct's owned texts were copied: each copy's room is what its text takes (the
+        /// struct's bytes still hold the source's). target is where the struct is, like [ebp - 12].
+        /// </summary>
+        void EmitTextRooms(StructSymbol s, string target)
+        {
+            foreach (OwnedSlot slot in s.OwnedSlots.Where(o => o.Of == StructSymbol.Text))
+            {
+                string none = $".room{labelCount++}";
+                Need("phi_strlen");
+                Emit($"mov edx, {target}");
+                Emit($"mov esi, [edx + {slot.Offset}]");
+                Emit("xor eax, eax");
+                Emit("test esi, esi");
+                Emit($"jz {none}");
+                Emit("call phi_strlen");
+                Emit("inc eax");
+                Label(none);
+                Emit($"mov edx, {target}");
+                Emit($"mov [edx + {slot.Offset + 4}], eax   ; the copy's room");
+            }
         }
 
         /// <summary>The owned slot followed with a loop: one of the struct's own type (a list's next).</summary>
@@ -3597,6 +4014,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("mov edx, [ebp - 12]");
                 Emit($"mov [edx + {slot.Offset}], eax");
             }
+            EmitTextRooms(s, "[ebp - 12]");
             if (chain is OwnedSlot c)
             {
                 Emit("mov edx, [ebp - 12]");
@@ -3661,6 +4079,7 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov eax, [ebp - {12 + 4 * i}]");
                 Emit($"mov [edx + {s.OwnedSlots[i].Offset}], eax");
             }
+            EmitTextRooms(s, "[ebp - 4]");
             for (int i = 0; i < n; i++)
             {
                 Emit($"mov eax, [ebp - {12 + 4 * n + 4 * i}]");
@@ -3764,7 +4183,8 @@ namespace Phi.Compiler.CodeGen
                     Emit("repe cmpsb");
                     Emit("jne .different");
                 }
-                start = end + 4;
+                // past the slot: an object's address, or a text's address and its room
+                start = end + (s.OwnedSlots.Any(o => o.Offset == end && o.Of == StructSymbol.Text) ? 8 : 4);
             }
 
             foreach (OwnedSlot slot in NotChain(s))
@@ -3872,6 +4292,12 @@ namespace Phi.Compiler.CodeGen
                 return sb.ToString();
             }
 
+            if (t.Kind == TypeKind.Str && t.Room > 0)
+            {
+                sb.AppendLine($"{v.Label}: times {t.ByteSize} db 0   ; {t.Length} texts of up to {t.Room - 1}");
+                return sb.ToString();
+            }
+
             if (t.Kind == TypeKind.Str)
             {
                 var pointers = new List<string>();
@@ -3885,6 +4311,7 @@ namespace Phi.Compiler.CodeGen
                 sb.AppendLine($"{v.Label}: dd {string.Join(", ", pointers)}");
                 if (v.GrowingElements)
                     sb.AppendLine($"    dd {string.Join(", ", Enumerable.Repeat($"{v.Capacity} | {InData}", v.Count))}   ; each one's room: its own buffer");
+                if (t.Filled) sb.AppendLine("    dd 0   ; how many are in it");
                 return sb.ToString();
             }
 

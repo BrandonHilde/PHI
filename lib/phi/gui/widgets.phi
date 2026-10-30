@@ -36,7 +36,7 @@ struct.Button
 	int y;
 	int w;
 	int h;
-	u8 label[32];
+	str label: [31];
 	bln down;                   # pressed, and not let go yet
 
 	[Place: int bx: 0; int by: 0; int bw: 0; int bh: 0; ptr<u8> text: 0;]
@@ -44,7 +44,7 @@ struct.Button
 		y is by;
 		w is bw;
 		h is bh;
-		call Text.Copy: label text sizeof label;
+		label is text;
 	[end]
 
 	[Paint]
@@ -54,7 +54,7 @@ struct.Button
 		;;
 		call Draw.FillRect: x y w h face;
 		call Draw.Rect: x y w h Widgets.EDGE;
-		call Draw.Centered: x y + (h - 16) / 2 w addr label Widgets.TEXT;
+		call Draw.Centered: x y + (h - 16) / 2 w label Widgets.TEXT;
 	[end]
 
 	[Mouse: GuiEvent e;]
@@ -75,13 +75,13 @@ struct.CheckBox
 {
 	int x;
 	int y;
-	u8 label[32];
+	str label: [31];
 	bln on;
 
 	[Place: int cx: 0; int cy: 0; ptr<u8> text: 0;]
 		x is cx;
 		y is cy;
-		call Text.Copy: label text sizeof label;
+		label is text;
 	[end]
 
 	[Paint]
@@ -93,11 +93,11 @@ struct.CheckBox
 			call Draw.Line: x + 3 y + 7 x + 6 y + 10 Widgets.ACCENT;
 			call Draw.Line: x + 6 y + 10 x + 11 y + 3 Widgets.ACCENT;
 		;;
-		call Draw.Text: x + 20 y addr label Widgets.TEXT;
+		call Draw.Text: x + 20 y label Widgets.TEXT;
 	[end]
 
 	[Mouse: GuiEvent e;]
-		int wide: 20 + 8 * (Text.Length: addr label);
+		int wide: 20 + 8 * (Text.Length: label);
 		if e.clicks > 0 and (Widgets.Inside: e.x e.y x y wide 16)
 			on is (on is false);
 			return true;
@@ -113,7 +113,7 @@ struct.TextField
 	int x;
 	int y;
 	int w;
-	u8 text[128];
+	str text: [127];
 	int len;
 	int cursor;                 # where the next character goes, 0 to len
 	int anchor;                 # the other end of the selection: the same as cursor when none is
@@ -445,6 +445,11 @@ struct.ListBox
 		count is n;
 		selected is (Math.Min: selected n - 1);
 		first is (Math.Clamp: first 0 (Math.Max: n - (Rows) 0));
+	[end]
+
+	# the rows of a str array (one filled as it goes, say); call it again after adding to it
+	[SetList: str list[];]
+		call SetItems: list list.len;
 	[end]
 
 	[Rows]

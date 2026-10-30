@@ -1,0 +1,70 @@
+# new str in a struct: text that grows on the heap, owned by the struct. The field works like
+# any str that grows; the struct is managed like one with new fields (declared with new).
+struct.Account
+{
+	str id: [4];
+	new str bio;
+	int score;
+}
+
+struct.Club
+{
+	new Account leader;
+	new str motto;
+}
+
+phi.TextNewFields:Kernel
+{
+	u32 blocksBefore: Heap.used_blocks;
+	call Run;
+	debug 'all freed: ' (Heap.used_blocks is blocksBefore) '\n';
+	exit 0;
+
+	[Run]
+		new Account a;
+		log '[' a.bio '] ' a.bio.len ' ' a.bio.max '\n';
+		a.id is 'A1';
+		a.bio is 'Ada wrote';
+		a.bio++ ' the first program, for the Analytical Engine';
+		a.score is 7;
+		log a.bio '\n' a.bio.len ' ' a.bio:0 a.bio:4 '\n';
+
+		# passed as the caller's str, and as text
+		call Sign: a.bio;
+		log (Count: a.bio) ' ' (a.bio is 'Ada wrote the first program, for the Analytical Engine. -A') '\n';
+
+		# a copy has its own text
+		new Account b: a;
+		b.bio is 'Bob';
+		log a.bio.len ' ' b.bio ' ' (a is b) '\n';
+		b is a;
+		log (a is b) ' ' b.id ' ' b.score '\n';
+		b.bio++ '!';
+		log (a is b) '\n';
+
+		# in an object that's in an object, and in an array of objects
+		new Club c;
+		new Account leader;
+		c.leader takes leader;
+		c.leader.bio is 'leads';
+		c.motto is 'together';
+		log c.leader.bio ' ' c.motto '\n';
+		new Account team[atmost 3];
+		team++ a;
+		team++;
+		team:1.bio is 'second';
+		log team:0.bio.len ' ' team:1.bio '\n';
+		team.len--;
+	[end]
+
+	[Sign: str into;]
+		into++ '. -A';
+	[end]
+
+	[Count: ptr<u8> text: 0;]
+		int n: 0;
+		while text:n is not 0
+			n++;
+		;;
+	[end: n]
+}

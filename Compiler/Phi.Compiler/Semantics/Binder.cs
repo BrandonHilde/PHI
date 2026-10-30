@@ -240,12 +240,14 @@ namespace Phi.Compiler.Semantics
                     blockNames.Add(new());
                     BindStatements(m.Body, ms, classLevel: false);
                     ReturnTypeOf(m.Symbol);
+                    CheckLocalMemoryKept(m);
                     blockNames.Clear();
                     blockMethod = null;
                 }
             }
 
             WorkOutResultCapacities();
+            CheckTextArguments();
 
             foreach (var (cls, scope) in classScopes)
                 foreach (var (name, symbol) in scope.Names)
@@ -372,6 +374,158 @@ namespace Phi.Compiler.Semantics
                               $"store it in a str, or have {name} return a ptr<u8>");
         }
 
+        /// <summary>
+        /// A method's own variables (and the text of its own strs) are let go when it ends, so a
+        /// pointer into them that's handed back, or kept in a class variable, would point at
+        /// whatever is put there next. Follows pointers the method sets from them, too:
+        /// ptr&lt;u8&gt; name: names:n; [end: name]
+        /// </summary>
+        void CheckLocalMemoryKept(MethodDecl m)
+        {
+            if (m.Symbol == null) return;
+            var into = new Dictionary<VariableSymbol, string>();    // a local pointer, and what it points into
+
+            static bool Own(VariableSymbol v) => v.IsLocal && !v.IsParameter;
+
+            // the name of the method's own variable that e points into, if it does
+            string? Points(Expr? e) => e switch
+            {
+                NameExpr { Symbol: VariableSymbol v } when into.TryGetValue(v, out string? n) => n,
+                NameExpr { Symbol: VariableSymbol v } when Own(v) && v.Type.IsString && !v.Type.IsArray => v.Name,
+                IndexExpr { Target: NameExpr { Symbol: VariableSymbol v } } when Own(v) && v.Type.IsArray && v.Type.Element.IsString => v.Name,
+                AddrExpr { CodeLabel: null } a => Root(a.Operand),
+                BinaryExpr b => Points(b.Left) ?? Points(b.Right),
+                CastExpr c => Points(c.Operand),
+                _ => null,
+            };
+            static string? Root(Expr e) => e switch
+            {
+                NameExpr { Symbol: VariableSymbol v } when Own(v) => v.Name,
+                NameExpr { Symbol: FieldPathSymbol f } when Own(f.Root) => f.Root.Name,
+                IndexExpr ix => Root(ix.Target),
+                MemberExpr mx when !mx.Target.Type.IsPointer => Root(mx.Target),
+                _ => null,
+            };
+
+            var nodes = m.Body.SelectMany(SyntaxWalker.Nodes).ToList();
+            for (int pass = 0; pass < 2; pass++)
+                foreach (Node node in nodes)
+                {
+                    (VariableSymbol? local, Expr? value) = node switch
+                    {
+                        VarDecl { Symbol: { } v, Values.Count: 1 } d when Own(v) => (v, d.Values[0]),
+                        AssignStmt { Op: AssignOp.Set, Target: NameExpr { Symbol: VariableSymbol v } } a when Own(v) => (v, a.Value),
+                        _ => (null, null),
+                    };
+                    if (local is { Type.IsPointer: true } && Points(value) is string n) into[local] = n;
+                }
+
+            // only a pointer keeps the place: a str result or target gets a copy of the text
+            void Check(Expr? value, PhiType to, string how)
+            {
+                if (value == null || !to.IsPointer || Points(value) is not string n) return;
+                Error(value.Span, $"this points into '{n}', which belongs to {m.Name} and is let go when it ends, so it can't be {how}; " +
+                                  $"declare '{n}' in the class instead (outside the method), or return the text as a str");
+            }
+
+            file = m.Owner.File;
+            foreach (Node node in nodes)
+            {
+                if (node is ReturnStmt r) Check(r.Value, m.Symbol.ReturnType, "handed back");
+                if (node is AssignStmt { Target: NameExpr { Symbol: VariableSymbol { IsLocal: false } } } kept)
+                    Check(kept.Value, kept.Target.Type, "kept in a class variable");
+            }
+            Check(m.Result, m.Symbol.ReturnType, "handed back");
+        }
+
+        /// <summary>
+        /// A method that writes to a str parameter with no default (str into;) writes the caller's
+        /// own text, so the caller has to give it a str, not a literal, a ptr&lt;u8&gt; or a number.
+        /// A parameter counts as written when the method assigns or adds to it, sets a character
+        /// of it, asks into it, or hands it to another method that writes it.
+        /// </summary>
+        void CheckTextArguments()
+        {
+            var bodies = classScopes.Keys.SelectMany(c => c.Methods.Where(m => m.Symbol != null).Select(m => (c.File, m.Body))
+                                                           .Append((c.File, c.Body))).ToList();
+            var written = new HashSet<VariableSymbol>();
+
+            static VariableSymbol? TextRefOf(Expr? e) => e switch
+            {
+                NameExpr { Symbol: VariableSymbol { TextRef: true } v } => v,
+                IndexExpr { Target: NameExpr { Symbol: VariableSymbol { TextRef: true } v } } => v,
+                _ => null,
+            };
+            static (MethodSymbol? Method, List<Expr> Arguments) CallOf(Node n) => n switch
+            {
+                CallStmt { Resolved: MethodSymbol m } c => (m, c.Arguments),
+                CallExpr { Resolved: MethodSymbol m } c => (m, c.Arguments),
+                _ => (null, new List<Expr>()),
+            };
+
+            bool changed = true;
+            while (changed)
+            {
+                changed = false;
+                foreach (var (_, body) in bodies)
+                    foreach (Node n in body.SelectMany(SyntaxWalker.Nodes))
+                    {
+                        VariableSymbol? target = n switch
+                        {
+                            AssignStmt a => TextRefOf(a.Target),
+                            StringBuildStmt b => TextRefOf(b.Target),
+                            AppendStmt a => TextRefOf(a.Target),
+                            AskStmt a => TextRefOf(a.Target),
+                            _ => null,
+                        };
+                        if (target != null && written.Add(target)) changed = true;
+
+                        (MethodSymbol? callee, List<Expr> arguments) = CallOf(n);
+                        if (callee == null) continue;
+                        for (int i = 0; i < Math.Min(arguments.Count, callee.Parameters.Count); i++)
+                            if (written.Contains(callee.Parameters[i]) && TextRefOf(arguments[i]) is VariableSymbol passed && written.Add(passed))
+                                changed = true;
+                    }
+            }
+
+            foreach (var (source, body) in bodies)
+            {
+                file = source;
+                foreach (Node n in body.SelectMany(SyntaxWalker.Nodes))
+                {
+                    (MethodSymbol? callee, List<Expr> arguments) = CallOf(n);
+                    if (callee == null) continue;
+                    for (int i = 0; i < Math.Min(arguments.Count, callee.Parameters.Count); i++)
+                    {
+                        VariableSymbol p = callee.Parameters[i];
+                        if (!written.Contains(p) || IsWritableText(arguments[i])) continue;
+                        Error(arguments[i].Span, $"{callee.Decl.Name} writes '{p.Name}', so it needs a str to write into (a str variable or field), " +
+                                                 $"not {WhatText(arguments[i])}");
+                    }
+                }
+            }
+        }
+
+        /// <summary>What an argument is, for an error that says it can't be written into.</summary>
+        static string WhatText(Expr e) => e switch
+        {
+            StringExpr => "a string literal",
+            CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null } => "a method's result",
+            _ when e.Type.IsPointer => $"'{Describe(e)}', a {e.Type}",
+            _ when !e.Type.IsString => "a number",
+            _ => $"'{Describe(e)}'",
+        };
+
+        /// <summary>A str that can be written: a str variable, a str field, or an element of a str array.</summary>
+        static bool IsWritableText(Expr e) => e.Type.IsString && e switch
+        {
+            NameExpr { Symbol: VariableSymbol { Type.IsArray: false } } => true,
+            NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } => e.Type.IsInlineText || e.Type.IsHeapText,
+            MemberExpr { Call: null } => e.Type.IsInlineText || e.Type.IsHeapText,
+            IndexExpr { Target.Type.IsArray: true } => true,
+            _ => false,
+        };
+
         /// <summary>value.Method, where value is a struct with that method.</summary>
         bool IsStructMethodName(string name, Scope scope)
         {
@@ -447,6 +601,7 @@ namespace Phi.Compiler.Semantics
         int StrCapacity(Expr e, HashSet<MethodSymbol> busy) => e switch
         {
             StringExpr s => s.Value.Length + 1,
+            _ when e.Type.IsInlineText => e.Type.Room,
             NameExpr { Symbol: VariableSymbol { Grows: true } } => DefaultResultCapacity,
             NameExpr { Symbol: VariableSymbol v } => v.Capacity,
             NameExpr { Call: CallExpr { Resolved: MethodSymbol m } } => ResultCapacityOf(m, busy),
@@ -540,6 +695,11 @@ namespace Phi.Compiler.Semantics
                     s.OwnedSlots.Add(new OwnedSlot(f.Offset, f.Type.Struct!));
                     continue;
                 }
+                if (f.Type.IsHeapText)
+                {
+                    s.OwnedSlots.Add(new OwnedSlot(f.Offset, StructSymbol.Text));
+                    continue;
+                }
                 if (f.Type.IsObjectArray)
                 {
                     // each element is an object the struct owns
@@ -587,10 +747,68 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
 
-                PhiType type = ResolveType(f.Type, scope: null, allowStr: false);
+                PhiType type = ResolveType(f.Type, scope: null, allowStr: true);
+                if (type.IsChar && f.Count != null && f.TextSize == null && !f.IsNew)
+                {
+                    // chr name[24]; (or [atmost 24]) is text, the same as str name: [24];
+                    int? characters = ConstantCount(f.Count, null);
+                    if (characters == null) continue;
+                    PhiType chars = PhiType.TextOf(characters.Value);
+                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = chars, Offset = offset });
+                    offset += chars.ByteSize;
+                    continue;
+                }
+                if (f.TextSize != null && !type.IsString)
+                {
+                    Error(f.TextSize.Span, $"only text takes a size after ':'; for an array write {f.Name}[...]");
+                    continue;
+                }
+                if (type.IsString && !f.IsNew)
+                {
+                    if (f.Count != null && f.TextSize != null)
+                    {
+                        // str lines[8]: [40]; eight texts of up to 40, in the struct
+                        int? n = ConstantCount(f.Count, null);
+                        int? each = ConstantCount(f.TextSize, null);
+                        if (n == null || each == null) continue;
+                        PhiType lines = PhiType.TextOf(each.Value).ArrayOf(n.Value) with { Filled = f.Filled };
+                        s.Fields.Add(new FieldSymbol { Name = f.Name, Type = lines, Offset = offset });
+                        offset += lines.ByteSize;
+                        continue;
+                    }
+                    if (f.Count != null || f.Unsized)
+                    {
+                        Error(f.Span, $"a str array in a struct needs a size for each text: str {f.Name}[8]: [40];");
+                        continue;
+                    }
+                    if (f.TextSize == null)
+                    {
+                        Error(f.Span, $"a str field needs a size: str {f.Name}: [24]; holds up to 24 characters in the struct, " +
+                                      $"or new str {f.Name}; is text that grows (and makes the struct one PHI manages, declared with new)");
+                        continue;
+                    }
+                    int? characters = ConstantCount(f.TextSize, null);
+                    if (characters == null) continue;
+                    PhiType text = PhiType.TextOf(characters.Value);
+                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = text, Offset = offset });
+                    offset += text.ByteSize;
+                    continue;
+                }
                 if (f.Unsized)
                 {
                     Error(f.Span, $"a field needs a size: {f.Name}[10] (or [atmost 10])");
+                    continue;
+                }
+                if (f.IsNew && type.IsString)
+                {
+                    // new str name; text that grows, owned by the struct
+                    if (f.Count != null || f.Unsized || f.TextSize != null)
+                    {
+                        Error(f.Span, $"new str {f.Name}; is one text that grows; for an array of texts in a struct write str {f.Name}[8]: [40];");
+                        continue;
+                    }
+                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = PhiType.HeapText, Offset = offset });
+                    offset += PhiType.HeapText.ByteSize;
                     continue;
                 }
                 if (f.IsNew)
@@ -726,7 +944,12 @@ namespace Phi.Compiler.Semantics
                 Error(e.Span, "a size must be a number or a const known when the program is built");
                 return null;
             }
-            if (value < 1 || value > 0x4000)
+            if (value > 0x4000)
+            {
+                Error(e.Span, $"an array or str written in place holds at most 16384; put a bigger one on the heap, like ptr<u8> buffer: new u8[{value}];");
+                return null;
+            }
+            if (value < 1)
             {
                 Error(e.Span, "a size must be between 1 and 16384");
                 return null;
@@ -1096,7 +1319,7 @@ namespace Phi.Compiler.Semantics
                 if (scope.Unit is not (UnitKind.Kernel or UnitKind.Program))
                     Error(d.NameSpan, "an array without a size grows on the heap, which needs 32-bit code (a Kernel or a Program); give it a size");
                 else if (type.IsString)
-                    Error(d.NameSpan, $"a str array without a size isn't supported yet; give it values (str {d.Name}: 'a' 'b';)");
+                    Error(d.NameSpan, $"a str array without a most isn't supported yet; give it one: str {d.Name}[atmost 64];");
                 else if (type.IsStruct && type.Struct!.OwnsObjects)
                     Error(d.Type.Span, $"{type} owns objects, so an array of them is objects: new {type} {d.Name}[];");
                 else
@@ -1108,11 +1331,24 @@ namespace Phi.Compiler.Semantics
                 v.Type = PhiType.Error;
                 return;
             }
+            // str into; and chr into[]; as parameters: the caller's own text, to read or fill in
+            if (v.IsParameter && d.Values.Count == 0 && d.BufferSize == null && (type.IsString && !d.Unsized || type.IsChar && d.Unsized))
+            {
+                if (scope.Unit is not (UnitKind.Kernel or UnitKind.Program))
+                    Error(d.NameSpan, $"a str parameter that's the caller's own text needs 32-bit code (a Kernel or a Program); give it a default to get a copy (str {d.Name}: '';)");
+                v.Type = PhiType.Str;
+                v.TextRef = true;
+                v.Capacity = StrMax + 1;
+                HeapMethod("Heap.Alloc", d.NameSpan, scope, $"str parameter '{d.Name}' (the caller's str can grow)");
+                HeapMethod("Heap.Free", d.NameSpan, scope, $"str parameter '{d.Name}' (the caller's str can grow)");
+                return;
+            }
+
             if (d.Unsized)
             {
-                if (type.IsString)
+                if (type.IsString && scope.Unit is not (UnitKind.Kernel or UnitKind.Program))
                 {
-                    Error(d.NameSpan, $"a str array can't be a parameter yet; pass the text of one element (str {d.Name}: '';)");
+                    Error(d.NameSpan, $"a str array parameter needs 32-bit code (a Kernel or a Program)");
                     v.Type = PhiType.Error;
                     return;
                 }
@@ -1131,9 +1367,32 @@ namespace Phi.Compiler.Semantics
                 int? size = ConstantCount(d.BufferSize, scope);
                 if (size == null) return;
 
-                if (type.IsString)
+                if (type.IsString && !d.SizeAfterColon && !v.IsParameter)
                 {
-                    if (d.Filled) Error(d.BufferSize.Span, $"a str always knows how long its text is; leave out atmost: str {d.Name}: [{size.Value}];");
+                    if (d.TextSize != null)
+                    {
+                        // str lines[8]: [40]; eight texts of up to 40, each kept in place
+                        int? characters = ConstantCount(d.TextSize, scope);
+                        if (characters == null) return;
+                        v.Type = PhiType.TextOf(characters.Value).ArrayOf(size.Value) with { Filled = d.Filled };
+                        return;
+                    }
+                    // str names[8]; or str names[atmost 64]; texts that each grow, starting empty
+                    if (scope.Unit is not (UnitKind.Kernel or UnitKind.Program))
+                    {
+                        Error(d.NameSpan, $"texts that grow need 32-bit code (a Kernel or a Program); give each a size: str {d.Name}[{size.Value}]: [20];");
+                        v.Type = PhiType.Error;
+                        return;
+                    }
+                    v.Type = PhiType.Str.ArrayOf(size.Value) with { Filled = d.Filled };
+                    v.Capacity = 1;
+                    v.GrowingElements = true;
+                    return;
+                }
+
+                // str name: [24];, str name: [atmost 24]; and chr name[24]; are all text of up to 24
+                if (type.IsString || type.IsChar && !v.IsParameter)
+                {
                     v.Type = PhiType.Str;
                     v.Capacity = size.Value + 1;
                 }
@@ -1449,14 +1708,17 @@ namespace Phi.Compiler.Semantics
                     return new LengthSymbol { Name = m, Open = root, Max = m == "max" };
                 if (m == "len" && last && fields?.Find(m) == null)
                 {
-                    if (type.Filled)
+                    // where the array or text is, for what's read when it runs
+                    NameExpr Place()
                     {
-                        // counted as it's filled: read the count where the array is
                         Symbol place = hops != null
                             ? new PathSymbol { Name = name, Root = root, BaseOffset = offset, Hops = new List<int>(hops), Type = type }
                             : new FieldPathSymbol { Name = name, Root = root, Offset = offset, Type = type };
-                        return new LengthSymbol { Name = m, Filled = new NameExpr { Name = name, Symbol = place, Type = type } };
+                        return new NameExpr { Name = name, Symbol = place, Type = type };
                     }
+                    // counted as it's filled: read the count where the array is
+                    if (type.Filled) return new LengthSymbol { Name = m, Filled = Place() };
+                    if (type.IsInlineText || type.IsHeapText) return new LengthSymbol { Name = m, Text = Place() };
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
                     if (type.IsString && offset == 0 && hops == null) return new LengthSymbol { Name = m, Str = root };
                     return null;
@@ -1465,6 +1727,9 @@ namespace Phi.Compiler.Semantics
                 {
                     // the most it can hold: elements for an array, characters for a str
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
+                    if (type.IsInlineText) return new LengthSymbol { Name = m, Count = type.Room - 1 };
+                    if (type.IsHeapText) return new LengthSymbol { Name = m, Count = StrMax };
+                    if (type.IsString && offset == 0 && hops == null && root.TextRef) return new LengthSymbol { Name = m, TextRef = root, Max = true };
                     if (type.IsString && offset == 0 && hops == null && root.Capacity > 0) return new LengthSymbol { Name = m, Count = root.Capacity - 1, Str = root };
                     return null;
                 }
@@ -1552,6 +1817,8 @@ namespace Phi.Compiler.Semantics
                     BindExpr(ask.Target, scope);
                     if (!ask.Target.Type.IsError && (!ask.Target.Type.IsString || ask.Target.Symbol is not VariableSymbol))
                         Error(ask.Target.Span, "ask needs a str variable to store the answer in, like: str name:[40]; ask name;");
+                    else if (ask.Target.Symbol is VariableSymbol { TextRef: true } caller)
+                        Error(ask.Target.Span, $"ask into a str of this method's own, then copy it: str answer: [80]; ask answer; {caller.Name} is answer;");
                     return ask;
 
                 case ExitStmt exit:
@@ -2168,6 +2435,20 @@ namespace Phi.Compiler.Semantics
                 }
                 return append;
             }
+            if (element.IsString)
+            {
+                // names++ 'Ann' 'Bob'; adds each as text (numbers written out)
+                foreach (Expr value in assign.Values ?? new List<Expr> { assign.Value })
+                {
+                    BindExpr(value, scope);
+                    if (value.Type.IsError) continue;
+                    KeepTextPointer(value);
+                    if (!value.Type.IsNumeric && !value.Type.IsString && !(value.Type.IsPointer && value.Type.Pointee == PhiType.U8))
+                        Error(value.Span, $"'{name}' holds text, so it takes text or a number, not {A(value.Type)}");
+                    else append.Values.Add(value);
+                }
+                return append;
+            }
             if (!element.IsNumeric && !element.IsMethod && !element.IsWide && !element.IsFloat)
             {
                 Error(assign.Value.Span, $"a {element} is added with {name}++; on its own (an element of zeros), then set its fields through {name}:({name}.len - 1)");
@@ -2656,8 +2937,14 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         void WarnStrLengthAsSize(Expr argument, string parameter)
         {
-            if (argument is not NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } length } name) return;
             if (parameter is not ("size" or "max" or "room" or "capacity" or "limit" or "bytes")) return;
+            if (argument is NameExpr { Symbol: LengthSymbol { TextRef: VariableSymbol caller } } max)
+            {
+                Error(max.Span, $"'{caller.Name}' is the caller's str, which may grow as it's written, so a method can't know how much it may write there through a pointer; " +
+                                $"write into it with {caller.Name} is ... and {caller.Name}++ ...");
+                return;
+            }
+            if (argument is not NameExpr { Symbol: LengthSymbol { Str: VariableSymbol str } length } name) return;
             if (str.Grows)
                 Error(name.Span, $"'{str.Name}' has no size, so it grows as it's written and a method can't know how much it may write there; " +
                                  $"give it one (str {str.Name}: [40];), or build it with {str.Name} is ... and {str.Name}++ ...");
@@ -2900,6 +3187,29 @@ namespace Phi.Compiler.Semantics
                         break;
                     }
 
+                    // list:0.name.len: a text field's length is measured, and its max is known
+                    // names:i.len: the length of an element's text, measured
+                    if (field == null && t.IsString && !t.IsInlineText && member.Member == "len")
+                    {
+                        member.TextLength = true;
+                        member.Type = PhiType.Int;
+                        break;
+                    }
+                    if (field == null && t.IsHeapText && member.Member == "max")
+                    {
+                        member.Count = StrMax;
+                        member.Type = PhiType.Int;
+                        break;
+                    }
+
+                    if (field == null && t.IsInlineText && member.Member is "len" or "max")
+                    {
+                        if (member.Member == "len") member.TextLength = true;
+                        else member.Count = t.Room - 1;
+                        member.Type = PhiType.Int;
+                        break;
+                    }
+
                     // list:0.name.len: an array field's length (and max) is known when built
                     if (field == null && t.IsArray && member.Member is "len" or "max")
                     {
@@ -3065,6 +3375,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>Bytes a str expression has room for, when known.</summary>
         static int? CapacityOf(Expr str) => str switch
         {
+            _ when str.Type.IsInlineText => str.Type.Room,
             NameExpr { Symbol: VariableSymbol { Grows: true } } => null,   // checked against its room when it runs
             NameExpr { Symbol: VariableSymbol v } => v.Capacity,
             IndexExpr { Target: NameExpr { Symbol: VariableSymbol { GrowingElements: true } } } => null,   // checked against its room
@@ -3121,6 +3432,8 @@ namespace Phi.Compiler.Semantics
                     case MethodSymbol m when m.Unit == scope.Unit:
                         if (ReturnTypeOf(m).IsObject)
                             Error(addr.Span, $"{m.Name} returns an object, so it can't be used as a method value yet");
+                        if (m.Parameters.FirstOrDefault(p => p.TextRef) is VariableSymbol textRef)
+                            Error(addr.Span, $"{m.Name} takes the caller's str ('{textRef.Name}'), so it can't be used as a method value yet; give '{textRef.Name}' a default to take a copy");
                         addr.CodeLabel = m.Label;
                         addr.Method = m;
                         name.Type = PhiType.Void;
@@ -3194,13 +3507,33 @@ namespace Phi.Compiler.Semantics
 
             if (t.IsError) return;
 
+            if (t.Kind == TypeKind.Str && t.Room > 0)
+            {
+                size.Value = t.ByteSize;   // text kept in place, or an array of it
+                return;
+            }
+            if (t.IsHeapText)
+            {
+                Error(size.Span, "this is text that grows (a new str field), so its room isn't known when the program is built; use .max");
+                return;
+            }
+            if ((t.IsStruct || t.IsObject) && t.Struct!.Fields.FirstOrDefault(f => f.Type.IsHeapText) is FieldSymbol grows)
+            {
+                Error(size.Span, $"{t.Struct.Name}'s {grows.Name} is text that grows, so {t.Struct.Name}'s bytes hold where it is, not the text, " +
+                                 $"and can't be written or sent as they are; give it a size (str {grows.Name}: [200];) for that");
+                return;
+            }
+
             if (t.Kind == TypeKind.Str)
             {
                 // a str's room is decided where it's declared
-                if (variable is { Grows: true })
+                if (variable is { TextRef: true })
+                    Error(size.Span, $"'{variable.Name}' is the caller's str, so its room isn't known when the program is built; use {variable.Name}.max");
+                else if (variable is { Grows: true })
                     Error(size.Span, $"'{variable.Name}' has no size, so it grows as it's written and its room isn't known when the program is built; " +
                                      $"give it one (str {variable.Name}: [40];) to pass it as a buffer, or build it with {variable.Name} is ... and {variable.Name}++ ...");
                 else if (variable != null && !t.IsArray) size.Value = variable.Capacity;
+                else if (t.IsInlineText) size.Value = t.Room;
                 else Error(size.Span, "the size of a str depends on its declaration; use sizeof on a str variable");
                 return;
             }
@@ -3387,7 +3720,10 @@ namespace Phi.Compiler.Semantics
             if (target.Open)
             {
                 if (e.Type.IsArray && e.Type.Element == target.Element) return e;
-                Error(e.Span, $"{what} is an array of {target.Element}s, and this is {A(e.Type)}");
+                if (target.TextTable && e.Type.IsArray && e.Type.Element.IsInlineText)
+                    Error(e.Span, $"'{Describe(e)}' keeps each text in place, with a size, and {what} takes texts that grow; " +
+                                  $"declare it as str {Describe(e)}[{e.Type.Length}]; (or [atmost {e.Type.Length}]) to pass it");
+                else Error(e.Span, $"{what} is an array of {target.Element}s, and this is {A(e.Type)}");
                 return e;
             }
 

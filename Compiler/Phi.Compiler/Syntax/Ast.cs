@@ -92,6 +92,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>new Node next;  a separate object the struct owns (starts empty).</summary>
         public bool IsNew { get; init; }
+
+        /// <summary>str name: [24];  how many characters a str field holds.</summary>
+        public Expr? TextSize { get; init; }
     }
 
     /// <summary>[Name: params] body [end: result]   or   [isr Name] body [end]</summary>
@@ -143,6 +146,12 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>type name[]: no size written (a parameter: an array of any length).</summary>
         public bool Unsized { get; init; }
+
+        /// <summary>str name: [40]; the size came after ':', so it's the text's, not an array's.</summary>
+        public bool SizeAfterColon { get; init; }
+
+        /// <summary>str lines[8]: [40]; how many characters each element of a str array holds.</summary>
+        public Expr? TextSize { get; init; }
 
         /// <summary>The element of `while each name in list`: its type is list's elements'.</summary>
         public Expr? EachOf { get; init; }
@@ -493,6 +502,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Set by the binder for .len of an [atmost N] field: read its count when run.</summary>
         public bool FilledLength { get; set; }
+
+        /// <summary>Set by the binder for .len of a str field: its text is measured when run.</summary>
+        public bool TextLength { get; set; }
     }
 
     /// <summary>addr x  (the address of a variable, element or method)</summary>

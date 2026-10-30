@@ -1,4 +1,3 @@
-a str always knows how long its text is; leave out atmost
 a parameter can't be an array filled as it goes
 'scores' is an array, so it takes another whole array, and this is an int; for one element, write scores:0 is ...
 'scores.len' can only be made smaller

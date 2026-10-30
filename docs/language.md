@@ -219,6 +219,7 @@ code: a 16-bit program can't have them.
 
 - `str s: [40];` holds up to 40 characters. Its room is fixed when it's declared, so it
   works as a buffer for methods that write into it (`sizeof s` is 41, with the ending zero).
+  `str s: [atmost 40];` and `chr s[40];` are other ways to write it.
 - `str s: 'abc';`, `str s: '';`, `str s: someNumber;` and `str s: otherStr;` (no size) grow
   up to 65,535 characters in a 32-bit kernel or a user program. The text is on the heap,
   which PHI adds and frees for you: a method's own `str` gives its text back when the
@@ -306,6 +307,9 @@ so they work as array sizes and in constants. Both give way to a struct's own fi
 that name. Passing a `str`'s `.len` where a size goes (`call Text.Append: s 'x' s.len;`)
 is a warning: it's how much text is there now, often 0, so nothing would be written.
 
+An array or `str` kept in place (a variable, a field) holds at most 16,384 elements or
+characters. A bigger buffer goes on the heap: `ptr<u8> text: new u8[60004];` (32-bit code).
+
 **Whole arrays.** `b is a;` copies every element of `a` into `b`, and `(a is b)` is true
 when they have the same number of elements and each is equal. Both must hold the same kind
 of element. A fixed array takes one of the same length; an `atmost` array takes any that
@@ -337,7 +341,28 @@ new Node nodes[];             # objects too
 nodes++;
 ```
 
-`str` arrays and struct fields without a size aren't supported yet.
+A `str` array without a most (`str names[];`), and struct fields without a size, aren't
+supported yet: give a `str` array a most (`str names[atmost 64];`).
+
+**Arrays of text.** A `str` array follows the same rules as any array, and each element is a
+`str` (32-bit code):
+
+```phi
+str names[atmost 64];        # filled as it goes; each element grows
+names++ 'Ann' 'Bob';
+names++ count;               # a number is written out as text
+names:1++ ' Smith';          # an element is a str like any other
+log names.len ' ' names:1.len;
+
+str slots[3];                # three, each starting empty
+str lines[8]: [40];          # eight texts of up to 40 characters, kept in place
+```
+
+`str lines[8]: [40];` (and `[atmost 8]: [40]`) keeps each text in the array's own bytes, so it
+works in a struct too, and in 16-bit code. The others keep a table of where each element's
+text is, like a `str` array of values (see below), so they can go where a `ptr<ptr<u8>>`
+goes (`call list.SetItems: names names.len;`, or `call list.SetList: names;`) and to a `str
+rows[]` parameter.
 
 **Arrays filled as they go.** `T name[atmost N]` has room for `N` elements and starts
 empty. `++` adds to its end, `.len` is how many are in it, and an index is checked against
@@ -715,7 +740,8 @@ struct.Task
 {
     u32 id;
     Point position;        # structs can contain structs
-    u8 name[8];            # and fixed arrays
+    str name: [12];        # text of up to 12 characters
+    u8 flags[8];           # and fixed arrays
     ptr<Task> next;        # and pointers, including to themselves
 }
 ```
@@ -726,7 +752,7 @@ Task tasks[8];
 
 current.id is 1;
 current.position.x is -5;
-current.name:0 is 'A';
+current.name is 'Idle';
 tasks:i.id is i;
 tasks:i.position.y is 10;
 ```
@@ -735,6 +761,50 @@ Fields are laid out in order with no padding, which is what hardware tables (lik
 or a disk's partition table) need. In 32-bit code, `a is b` copies one struct into another
 and `if a is b` compares them, as for [objects](#objects). A struct parameter borrows the
 caller's struct rather than copying it. In 16-bit code, work with the fields one at a time.
+
+**Text in a struct.** `str name: [12];` holds text of up to 12 characters in the struct
+itself (13 bytes, with the zero that ends it). It works like any `str`: it's assigned, built,
+added to, compared, printed and passed where a `ptr<u8>` goes, with no `addr` or `sizeof`
+needed, and `.len` and `.max` work on it. Copying the struct copies its text, and it can be
+written to a file or shared by a kernel and its programs, since the text is part of the
+struct's own bytes. `str name: [atmost 12];`, `chr name[12];` and `chr name[atmost 12];` mean
+the same thing: an array of characters is text. A field needs its size, or `new`:
+
+**Text that grows, in a struct.** `new str bio;` is text that grows on the heap, like a `str`
+variable without a size, and the struct owns it. It works like any `str` (`is`, `++`, `.len`,
+`.max`, comparing, passing it to a `str into;` parameter) and starts as `''`. As with a `new`
+object field, the struct is then one PHI manages: it's declared with `new`
+(`new Account a;`, `new Account list[atmost 8];`), copying it copies the text, comparing it
+compares the text, and the text is freed with it (see [Objects](#objects)). Its bytes hold
+where the text is, not the text, so `sizeof` of the struct is an error: a struct that's
+written to a file or shared by a kernel and its programs uses `str bio: [200];` instead.
+
+```phi
+struct.Account
+{
+    str id: [8];          # in place: on its own, Account would stay a plain struct
+    new str bio;          # grows on the heap: Account is managed
+}
+
+new Account a;
+a.bio is 'Ada wrote';
+a.bio++ ' the first program';
+new Account b: a;         # b has its own copy of the text
+```
+
+```phi
+struct.Account
+{
+    str name: [24];
+    str home: [64];
+}
+
+a.name is 'Ada';
+a.home is 'HOME/' a.name;
+log a.name ' (' a.name.len ' of ' a.name.max ')';      # Ada (3 of 24)
+if a.home is 'HOME/Ada' ...
+call Draw.Text: 10 10 a.name color;
+```
 
 ### Methods on structs
 
@@ -1564,6 +1634,27 @@ if (IsReady: port)
   arguments (and warns); `x - 1` or `(x -1)` is one (see "A list of values" under
   [Variables](#variables)). A comparison is one argument too: `call Show: count is 0;`. A
   missing argument uses the parameter's default (or zero if it has none).
+- **Text parameters.** A `str` parameter with a default (`str text: '';`, `str text: [20];`)
+  is a copy of the caller's text. One with no default (`str into;`, or `chr into[];`) is the
+  caller's own text, as a struct parameter is the caller's struct (32-bit code). The
+  method reads it, or fills it in: what it writes goes into the caller's `str`, which grows
+  if it can or is cut to fit if it has a size. Any text can be passed to one the method only
+  reads, a literal, a `ptr<u8>` or a number. One the method writes needs a `str` variable,
+  field or element to write into, and passing anything else is an error.
+
+  ```phi
+  [TaskName: int pid: 0; str into;]
+      into is 'task ' pid;
+  [end]
+
+  str name: '';
+  call TaskName: 3 name;        # name is 'task 3'
+  call TaskName: 3 account.name;
+  ```
+
+  `into.len` is its text's length and `into.max` the most it holds: the caller's size, or
+  65,535 for a `str` that grows. Because it may grow, it can't be handed to a method as a
+  buffer with a size; write it with `is` and `++` instead.
 - A method can return a number, a pointer, a `str` or an object. A result keeps its type
   at the call: a method whose `[end: ...]` is a `ptr<u8>` gives text to `log` and to a
   `str`, and a `ptr<T>` result can be indexed. Moving a pointer keeps its type there too:
@@ -1574,6 +1665,10 @@ if (IsReady: port)
   it can be passed on (`call Draw.Text: x y (Name) color;`) or stored in a `str`, but not
   kept by a pointer: `ptr<u8> t: (Name);` is an error. For text that outlives the call,
   have the method end in a `ptr<u8>` (see [Common patterns](patterns.md#returning-text-from-a-method)).
+- A method's own variables, and the text of its own `str`s and `str` arrays, are let go
+  when it ends. So a pointer into them can't be handed back or kept in a class variable,
+  even through another pointer (`ptr<u8> name: names:n; [end: name]` is an error). Declare
+  the array in the class instead, or return the text as a `str`.
 - **Calls as values.** `(Name: arguments)` can go anywhere a value can: in conditions,
   math, `log`, indexes and other calls' arguments. The space after the `:` is what makes it
   a call; `(list:i)`, with no space, is an element. `(Name)` with no arguments is a call
@@ -1632,7 +1727,10 @@ log (Sum: a) ' ' (Sum: scores);        # any array of ints, fixed or atmost
   `T list[]` is an array of structs stored in place). Its elements are the caller's
   objects: `list:i is p` copies into one, and `list:i.x` reaches its fields.
 - It can be passed on to another method that takes one, or where a pointer to its elements
-  goes. `str` arrays can't be parameters yet, and method values can't take arrays.
+  goes. Method values can't take arrays.
+- `str rows[]` takes any `str` array whose elements grow: one of values, `str names[8];` or
+  `str names[atmost 64];` (32-bit code). Its elements are the caller's texts, so writing or
+  adding to one changes the caller's, and it grows as theirs would.
 
 ### Methods as values
 

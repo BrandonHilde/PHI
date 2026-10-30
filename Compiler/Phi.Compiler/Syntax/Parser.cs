@@ -384,8 +384,18 @@ namespace Phi.Compiler.Syntax
                     bool unsized = false;
                     if (At(TokenKind.OpenBracket))
                         (count, filled, unsized) = ParseBufferSize();
+
+                    // str name: [24]; (or [atmost 24]) is text of up to 24 characters
+                    Expr? textSize = null;
+                    if (At(TokenKind.Colon) && PeekToken(1).Kind == TokenKind.OpenBracket)
+                    {
+                        Advance();
+                        (textSize, _, _) = ParseBufferSize();
+                        if (textSize == null) throw Error(Previous.Span, $"a str field needs a size: str {field.Text}: [24];");
+                    }
                     ExpectSemicolon();
-                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew, Span = type.Span.To(field.Span) });
+                    decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew,
+                                                    TextSize = textSize, Span = type.Span.To(field.Span) });
                 }
                 catch (ParseError)
                 {
@@ -656,6 +666,8 @@ namespace Phi.Compiler.Syntax
             Expr? buffer = null;
             bool filled = false;
             bool unsized = false;
+            bool afterColon = false;
+            Expr? textSize = null;
             Expr? at = null;
             var values = new List<Expr>();
 
@@ -668,6 +680,13 @@ namespace Phi.Compiler.Syntax
             else if (At(TokenKind.OpenBracket))
             {
                 (buffer, filled, unsized) = ParseBufferSize();
+
+                // str lines[8]: [40]; each element holds up to 40 characters
+                if (At(TokenKind.Colon) && PeekToken(1).Kind == TokenKind.OpenBracket)
+                {
+                    Advance();
+                    (textSize, _, _) = ParseBufferSize();
+                }
             }
             else if (At(TokenKind.Semicolon) || (allowBracketEnd && At(TokenKind.CloseBracket)))
             {
@@ -681,6 +700,7 @@ namespace Phi.Compiler.Syntax
                 if (At(TokenKind.OpenBracket))
                 {
                     (buffer, filled, unsized) = ParseBufferSize();
+                    afterColon = true;
                 }
                 else
                 {
@@ -703,6 +723,8 @@ namespace Phi.Compiler.Syntax
                 BufferSize = buffer,
                 Filled = filled,
                 Unsized = unsized,
+                SizeAfterColon = afterColon,
+                TextSize = textSize,
                 IsNew = isNew,
                 AtAddress = at,
                 Span = start.Span.To(Previous.Span),

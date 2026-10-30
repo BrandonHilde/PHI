@@ -587,11 +587,14 @@ The parts most worth doing next, roughly in order:
    app's own window (`shared/dialog.phi`) and wrote Notepad's editor itself for want of
    these. Done after the sixth PhiOS assessment: selection in `TextField`, Tab between
    fields (`FocusChain`) and `GuiEvent.pressed` for right-button presses.
-2. **Text a method fills in:** a `str` parameter the caller's `str` is passed to (by
-   reference), `str` fields in structs (`str name[12];`), and `str` arrays filled at run
-   time and passed as parameters, so text in structs and out-parameters stop needing `u8`
-   arrays, `addr` and `sizeof`. The sixth PhiOS assessment found this the costliest gap.
-   Needs a design first.
+2. **Text everywhere: done (2026-10-29),** after the sixth and seventh PhiOS assessments. Text
+   works the same in variables, struct fields, parameters and array elements:
+   `str name: [24];` (also `[atmost 24]`, `chr name[24]`) in a struct; `new str bio;` for text
+   that grows in a struct (which makes it managed); `str into;` parameters that are the
+   caller's text; `str names[atmost 64];`, `str slots[3];`, `str lines[8]: [40];` and
+   `str rows[]` parameters; a check that a pointer into a method's own text isn't handed
+   back. Tests `text_fields`, `text_params`, `text_arrays`, `text_new_fields`. Not yet: a
+   `str` array without a most (`str names[];`), and method values with `str into;`.
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).

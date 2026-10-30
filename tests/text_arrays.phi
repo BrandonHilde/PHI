@@ -1,0 +1,72 @@
+# Arrays of text: str names[8]; (each grows), str names[atmost N]; (filled as it goes),
+# str lines[8]: [40]; (each kept in place, also in a struct), and str rows[] parameters.
+struct.Note
+{
+	int id;
+	str lines[atmost 3]: [6];
+	int after;
+}
+
+phi.TextArrays:Kernel
+{
+	# texts that grow, filled as they go
+	str names[atmost 4];
+	names++ 'Ann' 'Bob';
+	names++ 42;
+	log names.len ' of ' names.max ': ' names:0 ' ' names:1 ' ' names:2 '\n';
+	names:1++ ' Smith';
+	names.len--;
+	names++ 'Dee, who has a long name';
+	log names:1 ' / ' names:2 '\n';
+
+	# a fixed number, starting empty
+	str slots[3];
+	slots:2 is 'last';
+	log '[' slots:0 '][' slots:2 '] ' slots.len '\n';
+
+	# texts kept in place, in a variable and in a struct
+	str codes[atmost 2]: [3];
+	codes++ 'abcdef';
+	log codes:0 ' ' codes:0.len ' ' codes.len ' ' sizeof codes '\n';
+	Note n;
+	n.id is 1;
+	n.after is 99;
+	n.lines++ 'first' 'second line';
+	n.lines:0++ '!';
+	log n.lines.len ' ' n.lines:0 ' ' n.lines:1 ' ' n.after ' ' sizeof Note '\n';
+
+	# a parameter that takes any of the arrays of texts that grow
+	log (Longest: names) ' ' (Longest: slots) '\n';
+	call Shout: names;
+	log names:0 ' ' names:2 '\n';
+	call Name: names:0;
+	log names:0 '\n';
+
+	# while each, and a fixed list of literals passed the same way
+	str fixed: 'x' 'yy' 'zzz';
+	log (Longest: fixed) '\n';
+	while each name in names
+		log name ';';
+	;;
+	log '\n';
+	exit 0;
+
+	[Longest: str rows[];]
+		str best: '';
+		while int i: 0; i < rows.len; i++;
+			if rows:i.len > best.len
+				best is rows:i;
+			;;
+		;;
+	[end: best]
+
+	[Shout: str rows[];]
+		while int i: 0; i < rows.len; i++;
+			rows:i++ '!';
+		;;
+	[end]
+
+	[Name: str into;]
+		into is 'Ann the first, who now has a long name';
+	[end]
+}

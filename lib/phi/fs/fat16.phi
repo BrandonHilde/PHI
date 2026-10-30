@@ -367,9 +367,7 @@ phi.Fat:Kernel
 				if first is not ENTRY_DELETED and first is not '.' and (e:0.attributes & ATTR_VOLUME) is 0
 					call DisplayName: e;
 					ptr<FileInfo> info: into + count * sizeof FileInfo;
-					while int c: 0; c <= display_name.len; c++;
-						info:0.name:c is display_name:c;
-					;;
+					info:0.name is display_name;
 					info:0.folder is (e:0.attributes & ATTR_DIRECTORY) is not 0;
 					info:0.size is e:0.size;
 					u16 date: e:0.write_date;

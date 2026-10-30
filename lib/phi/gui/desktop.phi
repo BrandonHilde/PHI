@@ -34,7 +34,7 @@ struct.DesktopWindow
 	int y;
 	int w;                      # its inside's size (0 until the program opens its surface)
 	int h;
-	u8 title[32];
+	str title: [31];
 }
 
 phi.Desktop:Kernel
@@ -93,7 +93,7 @@ phi.Desktop:Kernel
 		windows:i.pid is pid;
 		windows:i.x is x;
 		windows:i.y is y;
-		call Text.Copy: windows:i.title title sizeof windows:i.title;
+		windows:i.title is title;
 		dirty is true;
 	[end: true]
 
@@ -203,7 +203,7 @@ phi.Desktop:Kernel
 			pid is (Surfaces.TakeNewWindow);
 		;;
 		while int i: 0; i < windows.len; i++;
-			if (Surfaces.TakeTitle: windows:i.pid addr windows:i.title sizeof windows:i.title)
+			if (Surfaces.TakeTitle: windows:i.pid windows:i.title sizeof windows:i.title)
 				dirty is true;
 			;;
 		;;
@@ -348,7 +348,7 @@ phi.Desktop:Kernel
 		call Draw.FillRect: x y w h FRAME;
 		call Draw.FillRect: x y w TITLE_H title;
 		int box: x + w - BORDER - CLOSE_SIZE - 2;
-		call Draw.TextFitted: x + 6 y + 2 box - x - 10 addr windows:i.title Draw.WHITE;
+		call Draw.TextFitted: x + 6 y + 2 box - x - 10 windows:i.title Draw.WHITE;
 		call Draw.FillRect: box y + 2 CLOSE_SIZE CLOSE_SIZE FRAME;
 		call Draw.Line: box + 4 y + 6 box + 11 y + 13 Draw.BLACK;
 		call Draw.Line: box + 11 y + 6 box + 4 y + 13 Draw.BLACK;

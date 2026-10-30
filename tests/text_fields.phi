@@ -1,0 +1,73 @@
+# Text in structs: str name: [N]; and chr name[N]; (with or without atmost) hold text of
+# up to N characters in the struct itself, and work like any str.
+struct.Account
+{
+	int id;
+	str name: [8];
+	chr home[atmost 12];
+	u8 after;                   # stays put: the texts have their room
+
+	[Greet]
+		log 'hello ' name ' (' name.len ')\n';
+	[end]
+}
+
+struct.Holder
+{
+	new Account account;
+}
+
+phi.TextFields:Kernel
+{
+	Account a;
+	a.id is 7;
+	a.after is 99;
+	a.name is 'Ada';
+	a.name++ ' Lovelace';                    # cut to fit: 8 characters
+	a.home is 'HOME/' a.id;
+	log a.name '|' a.home '|' a.after '\n';
+	log a.name.len ' ' a.name.max ' ' a.home.len ' ' a.home.max ' ' sizeof a.name ' ' sizeof Account '\n';
+
+	# compared, indexed, passed where a ptr<u8> goes
+	if a.home is 'HOME/7'
+		log 'same\n';
+	;;
+	log a.name:0 a.name:4 '\n';
+	log (Count: a.name) '\n';
+	call a.Greet;
+
+	# a copy of the struct copies its texts
+	Account b;
+	b is a;
+	b.name is 'Bob';
+	log a.name ' ' b.name '\n';
+
+	# in an array of structs, and through an object
+	Account people[atmost 4];
+	people++;
+	people:0.name is 'Cy';
+	people++ a;
+	while int i: 0; i < people.len; i++;
+		log i ': ' people:i.name ' ' people:i.name.len '\n';
+	;;
+	new Holder h;
+	new Account inner;
+	h.account takes inner;
+	h.account.name is 'Dee';
+	log h.account.name ' ' h.account.name.len '\n';
+
+	# a str with a size, and chr arrays, as variables
+	str title: [atmost 5];
+	chr code[6];
+	title is 'abcdefgh';
+	code is title 'xyz';
+	log title ' ' code ' ' code.max '\n';
+	exit 0;
+
+	[Count: ptr<u8> text: 0;]
+		int n: 0;
+		while text:n is not 0
+			n++;
+		;;
+	[end: n]
+}

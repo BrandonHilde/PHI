@@ -452,6 +452,88 @@ namespace Phi.Compiler.Tests
         [InlineData("else\n;;", "must directly follow")]
         public void SyntaxErrors(string body, string message) => AssertError(Boot(body), message);
 
+        static string Kernel(string body) => "phi.Test:Kernel\n{\n" + body + "\n}\n";
+
+        [Theory]
+        // a pointer into the method's own text, handed back through a variable (the PhiOS wallpaper bug)
+        [InlineData("call W: 1;\n[W: int n: 0;]\n str names: 'Ocean' 'Meadow';\n ptr<u8> name: names:n;\n[end: name]", "this points into 'names', which belongs to W")]
+        [InlineData("call W;\n[W]\n str s: 'hi';\n ptr<u8> p: s;\n return p;\n[end: p]", "this points into 's'")]
+        [InlineData("call W;\n[W]\n int x: 5;\n[end: addr x]", "this points into 'x'")]
+        [InlineData("ptr<u8> kept: 0;\ncall W;\n[W]\n str s: 'hi';\n kept is s;\n[end]", "can't be kept in a class variable")]
+        public void PointersIntoAMethodsOwnMemoryCantOutliveIt(string body, string message) => AssertError(Kernel(body), message);
+
+        [Theory]
+        [InlineData("str names: 'Ocean' 'Meadow';\ncall W: 1;\n[W: int n: 0;]\n ptr<u8> name: names:n;\n[end: name]")]   // the class's own array
+        [InlineData("call W: 1;\n[W: int n: 0;]\n str names: 'Ocean' 'Meadow';\n str name: names:n;\n[end: name]")]    // a copy, as a str
+        [InlineData("call W: 0;\n[W: ptr<u8> text: 0;]\n ptr<u8> p: text + 1;\n[end: p]")]                              // the caller's text
+        public void PointersThatOutliveTheMethodAreFine(string body)
+        {
+            CompileResult result = Compile(Kernel(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData("struct.A\n{\n str name;\n}\n", "a str field needs a size: str name: [24];")]
+        [InlineData("struct.A\n{\n int n: [4];\n}\n", "only text takes a size after ':'")]
+        [InlineData("struct.A\n{\n u8 big[60004];\n}\n", "put a bigger one on the heap, like ptr<u8> buffer: new u8[60004];")]
+        public void TextFieldErrors(string structs, string message) => AssertError(structs + Kernel(""), message);
+
+        [Theory]
+        [InlineData("call Name: 'x';\n[Name: str into;]\n into is 'a';\n[end]", "Name writes 'into', so it needs a str to write into (a str variable or field), not a string literal")]
+        [InlineData("call Pass: 5;\n[Pass: str t;]\n call Add: t;\n[end]\n[Add: str t;]\n t++ '!';\n[end]", "Pass writes 't', so it needs a str to write into (a str variable or field), not a number")]
+        [InlineData("ptr<u8> p: 'x';\ncall Name: p;\n[Name: str into;]\n into:0 is 'a';\n[end]", "not 'p', a ptr<u8>")]
+        [InlineData("method<str> f: addr Name;\n[Name: str into;]\n[end]", "takes the caller's str ('into'), so it can't be used as a method value yet")]
+        [InlineData("str s: '';\ncall Name: s;\n[Name: str into;]\n log sizeof into;\n[end]", "use into.max")]
+        [InlineData("str s: '';\ncall Name: s;\n[Name: str into;]\n ask into;\n[end]", "ask into a str of this method's own")]
+        public void TextParameterErrors(string body, string message) => AssertError(Kernel(body), message);
+
+        [Theory]
+        [InlineData("str names[4];", "texts that grow need 32-bit code")]
+        [InlineData("str rows: [4];\ncall F: rows;\n[F: str rows[];]\n[end]", "a str array parameter needs 32-bit code")]
+        public void TextArraysNeed32BitCodeToGrow(string body, string message) => AssertError(Boot(body), message);
+
+        [Theory]
+        [InlineData("struct.A\n{\n str lines[4];\n}\n", "a str array in a struct needs a size for each text: str lines[8]: [40];")]
+        [InlineData("phi.B:Kernel\n{\n str names[];\n}\n", "give it one: str names[atmost 64];")]
+        [InlineData("phi.B:Kernel\n{\n str codes[2]: [3];\n call F: codes;\n [F: str rows[];]\n [end]\n}\n", "")]
+        public void TextArrayErrors(string text, string message)
+        {
+            CompileResult result = Compile(text + (text.Contains("Kernel") ? "" : Kernel("")));
+            Assert.False(result.Success);
+            Assert.Contains(result.Diagnostics, d => d.Message.Contains(message));
+        }
+
+        const string GrowingBio = "struct.Account\n{\n new str bio;\n}\n";
+
+        [Theory]
+        [InlineData("Account a;", "Account owns objects (it has new fields), so PHI has to manage it: declare it with new")]
+        [InlineData("Account list[4];", "Account owns objects")]
+        [InlineData("new Account a;\nlog sizeof Account;", "Account's bio is text that grows, so Account's bytes hold where it is, not the text")]
+        [InlineData("new Account a;\nlog sizeof a.bio;", "use .max")]
+        public void AStructWithTextThatGrowsIsManaged(string body, string message) => AssertError(GrowingBio + Kernel(body), message);
+
+        [Fact]
+        public void AStrFieldWithoutASizeSaysBothWays() =>
+            AssertError("struct.A\n{\n str bio;\n}\n" + Kernel(""), "or new str bio; is text that grows");
+
+        [Fact]
+        public void AListBoxTakesAStrArrayFilledAsItGoes()
+        {
+            CompileResult result = Compile("use gui.widgets;\n" + Kernel("ListBox list;\nstr names[atmost 8];\nnames++ 'a' 'b';\ncall list.SetList: names;"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Fact]
+        public void ATextParameterNeeds32BitCode() =>
+            AssertError(Boot("str s: [4];\ncall Name: s;\n[Name: str into;]\n[end]"), "needs 32-bit code");
+
+        [Fact]
+        public void TextAMethodOnlyReadsCanBeAnything()
+        {
+            CompileResult result = Compile(Kernel("call Show: 'x';\ncall Show: 5;\nptr<u8> p: 'y';\ncall Show: p;\n[Show: str text;]\n log text;\n[end]"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
         [Fact]
         public void ParserRecoversAndReportsSeveralErrors()
         {

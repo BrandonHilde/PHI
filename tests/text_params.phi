@@ -1,0 +1,67 @@
+# A str parameter with no default (str into;) is the caller's own text: the method reads it
+# or fills it in. A str that grows grows; one with a size is cut to fit.
+struct.Account
+{
+	str name: [6];
+}
+
+phi.TextParams:Kernel
+{
+	str grows: '';
+	str sized: [5];
+	str list: 'one' 'two';
+	Account a;
+
+	call Name: 3 grows;
+	call Name: 3 sized;
+	call Name: 3 a.name;
+	call Name: 3 list:1;
+	log grows '|' sized '|' a.name '|' list:0 ' ' list:1 '\n';
+
+	# adding to it, and through another method
+	call Shout: grows;
+	call Shout: sized;
+	call Pass: list:0;
+	log grows '|' sized '|' list:0 '\n';
+
+	# growing well past what it had
+	call Repeat: grows 40;
+	log grows.len '\n';
+
+	# reading: any text can be passed, a literal or a number too
+	call Show: 'literal';
+	call Show: 42;
+	call Show: sized;
+	chr code[4];
+	call Fill: code;
+	log code '\n';
+	exit 0;
+
+	[Name: int id: 0; str into;]
+		into is 'task ' id;
+	[end]
+
+	[Shout: str text;]
+		text++ '!';
+	[end]
+
+	[Pass: str text;]
+		call Shout: text;
+		call Shout: text;
+	[end]
+
+	[Repeat: str text; int times: 0;]
+		while int i: 0; i < times; i++;
+			text++ 'ab';
+		;;
+	[end]
+
+	[Show: str text;]
+		log text ' (' text.len ' of ' text.max ') starts ' text:0 '\n';
+	[end]
+
+	[Fill: chr into[];]
+		into is 'abcdefg';
+		into:0 is 'X';
+	[end]
+}
