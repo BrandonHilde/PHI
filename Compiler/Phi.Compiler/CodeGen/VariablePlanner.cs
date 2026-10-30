@@ -44,8 +44,13 @@ namespace Phi.Compiler.CodeGen
             void Count(Node node, long weight)
             {
                 foreach (Node n in node is Stmt s ? SyntaxWalker.Nodes(s) : SyntaxWalker.Nodes((Expr)node))
+                {
                     if (n is NameExpr { Symbol: VariableSymbol v } && candidates.Contains(v))
                         uses[v] = uses.GetValueOrDefault(v) + weight;
+                    // a declaration with a value sets it, which is a use too
+                    if (n is VarDecl { Symbol: VariableSymbol declared } d && d.Values.Count > 0 && candidates.Contains(declared))
+                        uses[declared] = uses.GetValueOrDefault(declared) + weight;
+                }
             }
 
             void Walk(List<Stmt> body, int depth)

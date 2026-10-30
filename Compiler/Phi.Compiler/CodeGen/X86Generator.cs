@@ -1341,6 +1341,12 @@ namespace Phi.Compiler.CodeGen
                             pushedBytes += 4;
                             continue;
                         }
+                        if (!p.Type.IsString && value != null && PlaceOperand(value))
+                        {
+                            Emit($"push dword {Operand(PlaceKeepingEax(value))}");
+                            pushedBytes += 4;
+                            continue;
+                        }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
                         else if (p.Type.IsString && (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar)) EmitNumberText(value);
                         else EmitExpr(value);
@@ -2574,6 +2580,28 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                // a constant, or a register variable into a 32-bit place: stored as it is
+                if (PlaceKeepsEax(target) && HeldIn(target) == null && DirectOperand(value, constantOnly: false) is string stored && !stored.Contains('['))
+                {
+                    int bytes = StorageType(target.Type).ElementSize;
+                    bool constant = ConstantFolder.Evaluate(value) is long;
+                    if (constant || bytes == 4)
+                    {
+                        long k = constant ? ConstantFolder.Evaluate(value)!.Value : 0;
+                        string amount = !constant ? stored : bytes switch { 1 => (k & 0xFF).ToString(), 2 => (k & 0xFFFF).ToString(), _ => stored };
+                        string size = bytes switch { 1 => "byte", 2 => "word", _ => "dword" };
+                        Emit($"mov {size} {Operand(PlaceKeepingEax(target))}, {amount}");
+                        return;
+                    }
+                }
+
+                // an element or a field into a register variable: loaded straight there
+                if (HeldIn(target) is string into && value is IndexExpr or MemberExpr { Call: null } && OneRegister(value.Type) && PlaceKeepsEax(value))
+                {
+                    Emit(LoadInstruction(value.Type, into, Operand(PlaceKeepingEax(value))));
+                    return;
+                }
+
                 // a simple value into a computed place: the address first, then the value,
                 // which needs no registers the address is in
                 if (!IsStaticPlace(target) && TryLoadSimple(value, "eax", dryRun: true))
@@ -2615,12 +2643,18 @@ namespace Phi.Compiler.CodeGen
             NameExpr { Symbol: SelfFieldSymbol or PathSymbol } => true,
             MemberExpr m when m.Target.Type.IsObject || m.Target.Type.IsPointer =>
                 HeldIn(m.Target) != null || bits32 && TryLoadSimple(m.Target, "ebx", dryRun: true),
+            MemberExpr { Call: null } m when !m.Target.Type.IsObject && !m.Target.Type.IsPointer && m.Target is IndexExpr => PlaceKeepsEax(m.Target),
             IndexExpr ix when ix.Target.Type.IsPointer => PointerElementKeepsEax(ix),
             IndexExpr ix => HeldIn(ix.Index) != null && ElementSize(ix) is 1 or 2 or 4 or 8 && !ix.Target.Type.Filled && !ix.Target.Type.Open
                             && !ix.Target.Type.IsString && !ix.Target.Type.TextTable
                             && ix.Target is NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false, GrowingElements: false, GrowingArray: false } or FieldPathSymbol },
             _ => false,
         };
+
+        /// <summary>A 32-bit element or field that's an instruction's operand as it is, its address in ebx at most.</summary>
+        bool PlaceOperand(Expr e) =>
+            bits32 && e is IndexExpr or MemberExpr { Call: null, Count: null, FilledLength: false, TextLength: false }
+            && OneRegister(e.Type) && StorageType(e.Type).ElementSize == 4 && PlaceKeepsEax(e);
 
         /// <summary>p:i reached as [p + i*size], with i a register variable or a constant (see EmitIndexPlace).</summary>
         bool PointerElementKeepsEax(IndexExpr ix) =>
@@ -3166,10 +3200,47 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
+            // a left side worked out in eax alone: the right waits in ecx instead of on the stack
+            if (OnlyEax(b.Left))
+            {
+                EmitExpr(b.Right);
+                Emit("mov ecx, eax");
+                int start = code.Length;
+                EmitExpr(b.Left);
+                foreach (string line in code.ToString(start, code.Length - start).Split('\n'))
+                    if (!line.Contains("it stops here") && System.Text.RegularExpressions.Regex.IsMatch(WithoutComment(line), @"\b(ecx|cx|cl|ch|call)\b"))
+                        throw new InvalidOperationException($"working out a value in eax alone changed ecx: {line.Trim()}");
+                return;
+            }
+
             EmitExpr(b.Right);
             Emit("push eax");
             EmitExpr(b.Left);
             Emit("pop ecx");
+        }
+
+        /// <summary>
+        /// True when EmitExpr works the value out in eax (and ebx for a place) alone, leaving ecx
+        /// and edx: a constant, a variable, an element or field reached without eax, or arithmetic
+        /// whose right side is an operand as it is (see TryDirectArithmetic). 32-bit code only,
+        /// since 16-bit code reaches memory through fs with ecx.
+        /// </summary>
+        bool OnlyEax(Expr e)
+        {
+            if (!bits32 || !OneRegister(e.Type)) return false;
+            if (e is BinaryExpr or UnaryExpr && ConstantFolder.Evaluate(e) != null) return true;
+            return e switch
+            {
+                NumberExpr or BoolExpr => true,
+                NameExpr { Call: null, Symbol: VariableSymbol { Grows: false, TextRef: false } or FieldPathSymbol or ConstantSymbol } => true,
+                NameExpr { Call: null, Symbol: SelfFieldSymbol or PathSymbol } => true,
+                IndexExpr or MemberExpr { Call: null, Count: null, FilledLength: false, TextLength: false } => PlaceKeepsEax(e),
+                BinaryExpr { IsComparison: false, IsLogical: false, Op: not (BinaryOp.Divide or BinaryOp.Modulo) } b =>
+                    DirectOperand(b.Right, constantOnly: b.Op is BinaryOp.ShiftLeft or BinaryOp.ShiftRight) != null && OnlyEax(b.Left),
+                UnaryExpr { Op: UnaryOp.Negate or UnaryOp.BitNot } u => OnlyEax(u.Operand),
+                CastExpr c => OneRegister(c.Operand.Type) && OnlyEax(c.Operand),
+                _ => false,
+            };
         }
 
         /// <summary>Loads values that need no other registers straight into a register.</summary>
@@ -3304,6 +3375,8 @@ namespace Phi.Compiler.CodeGen
                     bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
                     string? leftAsIs = HeldIn(cmp.Left) ?? (ConstantFolder.Evaluate(cmp.Left) == null ? DirectOperand(cmp.Left, constantOnly: false) : null);
                     string? rightAsIs = DirectOperand(cmp.Right, constantOnly: false);
+                    if (leftAsIs == null && rightAsIs != null && !rightAsIs.Contains('[') && PlaceOperand(cmp.Left))
+                        leftAsIs = $"dword {Operand(PlaceKeepingEax(cmp.Left))}";
                     if (leftAsIs != null && rightAsIs != null && !(leftAsIs.Contains('[') && rightAsIs.Contains('[')))
                     {
                         Emit($"cmp {leftAsIs}, {rightAsIs}");

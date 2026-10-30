@@ -1,11 +1,11 @@
 # Counts from phi test --bench (instructions run, under QEMU's -icount).
 # phi test --bench --save-bench replaces them with the latest counts.
-heap alloc 2000                      942030
-heap free 2000                       452024
-heap alloc and free 256 bytes x2000  1390030
-heap alloc 100000 nodes              46800030
-heap free 100000 nodes               23500015
-pool alloc 100000 nodes              10950538
-pool free 100000 nodes               5100030
-map set 100000 keys                  30817710
-map get 100000 keys                  6704818
+heap alloc 2000                      898029
+heap free 2000                       402025
+heap alloc and free 256 bytes x2000  1298029
+heap alloc 100000 nodes              44600029
+heap free 100000 nodes               20900015
+pool alloc 100000 nodes              10147735
+pool free 100000 nodes               4500029
+map set 100000 keys                  26531635
+map get 100000 keys                  6286593

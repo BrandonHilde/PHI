@@ -1297,6 +1297,17 @@ S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
   under 1.3%: most hot loops index through pointers, which have no checks. Tests
   `bounds_loops`, `bounds_loops_changed`, `bounds_loops_signed` (the last two show checks
   that must stay).
+- [x] (3, more) Elements and fields used where they are: compared (`cmp dword [esi + 20], 0`),
+  pushed as arguments, stored into (`mov dword [ebx], esi`), loaded straight into a
+  register variable, and a field of an element (`pool:0.used++`) changed in place. A left
+  side worked out in `eax` alone keeps the right in `ecx` instead of on the stack. The
+  planner counts a declaration with a value as a use. Map set 14% faster, heap free 11%,
+  PBKDF2 8%, HMAC 7%, SHA-256 7%, pool alloc 7%; A-star 1% slower (other variables chose).
+- [ ] `BlendRect` back in PHI: tried, and not there. Its row in PHI is 21 instructions a
+  pixel, against 16 for `asm.DrawBlendRow` (24% slower overall), so the asm stays. A third
+  register for the pointer would make it 19; the rest needs temporary values kept in
+  registers too, and 32-bit x86 has seven. The 64-bit backend (S10, sixteen registers) is
+  where this is likely to be met.
 - [ ] (4, last part) constant folding beyond what `ConstantFolder` does now
 - [ ] (2) the backend interface
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
