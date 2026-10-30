@@ -789,6 +789,357 @@ These come after the basics work:
 
 ---
 
+## Future scenarios for development
+
+The long-term goal is a professional language that a AAA game studio could choose. The
+phases above built the basics. The scenarios here are large, real projects that show
+what is still missing on the way there. Each one lists what PHI already has for it, what
+it lacks, and milestones that end in a demo, like the phases do.
+
+Each gap is marked with the kind of work it needs:
+
+- **Library:** written in PHI, in `lib/phi/`
+- **Compiler:** code generation or the build, with no change to the language
+- **Language:** new syntax or rules, documented in [docs/language.md](docs/language.md)
+- **Platform:** booting, hardware, and where PHI runs
+
+A gap that shows up in more than one scenario is worth more than one that doesn't. Those
+are collected under [Gaps shared by the scenarios](#gaps-shared-by-the-scenarios).
+
+### Scenario 1: an operating system that is an MMORPG server
+
+**The idea.** A kernel with one job: running the server for a massively multiplayer game.
+It has no shell or desktop. It boots, starts the network, and runs the game's tick loop:
+accepting players, simulating the world and saving their progress.
+
+**What PHI has for it today**
+
+- A single-purpose kernel is what PHI already builds: `phi.Server:Kernel` with a 1000 Hz
+  timer for a fixed tick, and no processes needed.
+- Packed structs, `Net.Get16`/`Put32` and pointer math in bytes map straight onto a wire
+  protocol.
+- Bounds checks, the unmapped page 0 and single-owner objects mean a malformed packet
+  can't corrupt memory.
+- `f32`/`f64` for positions and physics, `i64`/`u64` for currency and IDs.
+- SHA-256, HMAC, ChaCha20-Poly1305, AES-GCM, X25519 and `crypto.random` (RDRAND under
+  QEMU) for login tokens and encrypted traffic.
+- QEMU tests with input scripts, which could drive simulated clients.
+
+**What's missing**
+
+| Area | Today | The server needs | Kind |
+|---|---|---|---|
+| TCP | Client only; at most 4 connections, each with an 8 KB buffer in the kernel's 512 KB; `Write` waits for each segment to be acknowledged; segments out of order are dropped | Listen and accept; thousands of connections with buffers on the heap; a sliding window; keeping segments that arrive out of order | Library |
+| UDP | One port listened on at a time, and one datagram held: anything that arrives before it's read is dropped | Sockets with a queue each; many clients on one port | Library |
+| Network card | RTL8139 only (100 Mbit), polled, an 8 KB receive ring | Interrupts; bigger rings; virtio-net (what cloud machines offer) and e1000 | Library, Platform |
+| Network in programs | Kernels only | Game logic in user programs, so a crash in one zone doesn't stop the others | Library (system calls) |
+| Surviving errors | A bad index, a null pointer or running out of memory stops the whole machine on the panic screen | A bad packet or a broken quest stops only the work it was part of (one request, one zone), and the server goes on | Language, or Library through programs |
+| Several CPUs | One core; the kernel isn't preemptive; no kernel threads | Zones, physics and the network on separate cores | Language (atomics, locks), Compiler, Platform (APIC, starting the other cores) |
+| Memory | 32-bit; the heap is a quarter of RAM (at most half); first-fit `Heap.Alloc` walks every block (100,000 objects was too slow to build in the objects tests); a fixed array holds at most 16384 elements | Many GB; pools for objects made and freed every tick | Library (pools, a faster heap), Platform (64-bit) |
+| Saving | FAT16 on a 16 MB partition, 8.3 names, folders that don't grow, no journal, a polled disk | Player data that survives a crash or a power cut | Library (an append-only log, a journal, or a database reached over the network) |
+| Security | TLS client only, certificates not checked, no password hashing | Server-side TLS for logins; PBKDF2 or Argon2 | Library |
+| Speed | Every value goes back to memory after each statement; no optimizer; no SIMD | Interest management and physics for thousands of entities each tick | Compiler |
+| Building blocks | No generics, no hash map, no interfaces; errors are `-1` or `false` | Maps from player and entity IDs; kinds of entity that share behavior; errors that can't be ignored | Library (a map), Language |
+| Measuring | No profiler; nothing times a test | Tick time and memory per player, watched as the code changes | Compiler, Platform (`phi test`) |
+| Running it | QEMU only | A host or cloud machine | Platform (works now as QEMU with KVM on a Linux host, with ports forwarded) |
+
+**Milestones**
+
+These are reached through [Development phases](#development-phases) S1–S11; each
+milestone names its phases.
+
+1. **A demo server on one machine** (Phases S1–S4). UDP sockets with queues, an interrupt-driven network
+   card, a pool allocator for entities, a hash map, and an append-only save file. A small
+   client (a PHI kernel in a second QEMU, or a program on the host) moves a character
+   around.
+   *Done when:* a test boots the server and several scripted clients, each client sees the
+   others move, and after a restart the server has their positions back.
+2. **Hundreds of players** (Phases S5–S7). A TCP server (listen, accept, a sliding window), register
+   allocation in the code generator, and interfaces: this scenario is the kind of code
+   item 3 of "Where things stand" was waiting for before choosing a design.
+   *Done when:* a load test with hundreds of simulated clients holds a fixed tick rate,
+   and `phi test` reports the tick time so a slowdown fails it.
+3. **Ready to run for real** (Phases S8–S11). Errors contained to one request or zone, several cores,
+   64-bit mode, virtio-net, and server-side TLS with certificates.
+   *Done when:* an hour of malformed packets from a fuzzer doesn't stop the server, and it
+   boots on a cloud machine without QEMU.
+
+### Gaps shared by the scenarios
+
+With one scenario this list is short. It grows as scenarios are added, and what's on it
+are the strongest candidates for the next phase of the roadmap.
+
+- **An optimizing code generator**, register allocation first, then SIMD. Speed is the
+  first thing a studio asks about.
+- **Several cores:** threads, atomics and locks in the language.
+- **Containing errors** without stopping the machine.
+- **Generic containers and interfaces.**
+- **64-bit mode** and more than 4 GB of memory.
+- **Measuring:** timing in `phi test`, and a profiler.
+- **C compatibility** stays on hold (see [Later](#later)), but every AAA scenario will meet
+  it: engines, middleware and platform SDKs are written in C and C++.
+
+### Development phases
+
+These phases reach the scenarios' milestones. Each is marked with what it serves:
+**shared** phases close a gap every scenario has, so they carry over to scenarios written
+later; the others are for one scenario. The same ground rules as the main phases apply:
+every phase ends with a demo that boots in QEMU and an automated test that checks it, and
+everything that works today (the samples, PHI OS, PhiOS and every test) keeps working.
+
+| # | Phase | Serves | Kind | Demo at the end |
+|---|---|---|---|---|
+| S1 | Measuring | Shared | Platform, Compiler | `phi profile` names the slowest lines; a benchmark that gets slower fails |
+| S2 | Building blocks for servers | Shared | Library | 100,000 objects from a pool and a map, fast |
+| S3 | UDP for servers | Scenario 1 | Library, Platform | Several kernels on one virtual network trade datagrams |
+| S4 | Saving, and the first server | Scenario 1 | Library | Milestone 1: clients see each other move; positions survive a restart |
+| S5 | TCP for servers | Scenario 1 | Library, Platform | Hundreds of connections from a load tester |
+| S6 | An optimizing code generator | Shared | Compiler, Language | `Draw.BlendRect` back in PHI, as fast as the assembly |
+| S7 | Interfaces | Shared | Language | Milestone 2: entity kinds checked as one interface; a fixed tick under load |
+| S8 | Containing errors | Shared | Language, Library | An hour of fuzzing doesn't stop the server |
+| S9 | Several cores | Shared | Language, Compiler, Platform | Zones on 4 cores, faster than on 1 |
+| S10 | 64-bit | Shared | Compiler, Platform | The test suite passes as 64-bit kernels |
+| S11 | Running for real | Scenario 1, shared | Library, Platform | Milestone 3: boots on a cloud machine with TLS logins |
+
+Measuring comes first, because every later phase (S6 most of all) needs numbers to show it
+helped. Interfaces (S7) come after the server code of S2–S5 exists, since that code is
+what the design is chosen from.
+
+#### Phase S1: Measuring
+
+Goal: know how fast PHI code is, and notice when it gets slower.
+
+1. **Benchmarks in `phi test`.** A test prints `bench NAME VALUE` lines on COM1, and
+   `phi test --bench` compares them with a saved baseline (`NAME.bench`), failing when one
+   is more than a set amount worse. Run benchmarks under QEMU's `-icount`, so the count
+   of instructions, not the host's speed, decides the time and results repeat.
+2. **A tick timer for programs:** `OS.GetMicros` (or the timestamp counter, `rdtsc`) for
+   timing short pieces of code.
+3. **A sampling profiler.** `phi profile file.phi` runs the program with the timer
+   interrupt recording `eip`, then maps the addresses back to PHI source lines (the
+   generated `.asm` already shows each line above its code; NASM's listing gives the
+   addresses).
+4. **First benchmarks:** heap allocation, `Draw.FillRect`/`BlendRect`, SHA-256, AES-GCM,
+   X25519, the synthesizer, and a TCP download from `phi serve`.
+
+**Done when:** `phi profile samples/web.phi` lists the source lines that take the most
+time, and making a benchmarked routine slower on purpose fails `phi test --bench`.
+
+**Status: not started.**
+
+#### Phase S2: Building blocks for servers
+
+Goal: the containers and allocators a server uses on every tick, in the library.
+
+1. **`memory.pool`:** fixed-size blocks for one struct type, with allocate and free in
+   constant time, and checks for double frees like the heap has.
+2. **A faster heap:** free lists by size class in front of the first-fit heap, so
+   `Heap.Alloc` no longer walks every block.
+3. **`data.map`:** a hash map from `u32` keys to `u32` values (an ID to an index or a
+   pointer), growing on the heap. Without generics a map stores numbers; a second key
+   type (text) comes when something needs it.
+4. **`data.queue`:** a ring buffer of fixed-size records, for packets and events.
+5. **Password hashing:** PBKDF2 on the existing HMAC-SHA-256 (`crypto.pbkdf2`).
+
+**Done when:** a test makes and frees 100,000 objects from a pool and the faster heap, and
+fills a map with 100,000 IDs and finds each one, with benchmarks from S1 recording all
+of it, and `Heap.used_blocks` back to 0.
+
+**Status: not started.**
+
+#### Phase S3: UDP for servers
+
+Goal: a kernel can serve many clients over UDP without losing datagrams it had room for.
+
+1. **Interrupts for the RTL8139:** frames are taken from the card on its IRQ
+   (`OS.SetIrqHandler`), not only when something calls `Net.Poll`.
+2. **A bigger receive ring:** the card supports 8, 16, 32 or 64 KB; use 64 KB.
+3. **UDP sockets:** `Udp.Open: port` gives a socket with its own queue (`data.queue`), any
+   number of ports at once, `Udp.Receive` that returns at once when nothing is waiting
+   (for a tick loop) and `Udp.SendTo`. `Net.Listen`/`WaitUdp` stay for old code.
+4. **Several machines in one test.** `phi test` boots a server and client kernels on one
+   virtual network (QEMU's `-netdev socket` or a hub), each with its own expected output,
+   and passes when all of them do.
+
+**Done when:** a test boots a server and four clients that each send 1,000 numbered
+datagrams, and the server receives every one that the network delivered, counted per
+client.
+
+**Status: not started.**
+
+#### Phase S4: Saving, and the first server
+
+Goal: Scenario 1's first milestone.
+
+1. **Appending to a file** (`Fat.Append`) without rewriting it, and a flush that writes the
+   FAT and the folder entry, so a file is whole up to its last flush.
+2. **A bigger FAT16 partition** chosen at build time (up to FAT16's 2 GB), for save files.
+3. **A save log:** records appended as players change, read back in order at boot; a
+   torn last record (power cut mid-write) is found by a checksum and ignored.
+4. **`samples/mmo/`:** a server kernel (a world, players in a `data.map`, a fixed tick,
+   UDP) and a client kernel that moves a character and draws the others with `gfx.draw`.
+5. **A protocol written once:** packet structs in one file the server and client both `use`.
+
+**Done when:** Scenario 1's milestone 1: a test boots the server and several scripted
+clients, each client sees the others move, and after a restart (the input scripts'
+`reboot`) the server has their positions back.
+
+**Status: not started.**
+
+#### Phase S5: TCP for servers
+
+Goal: thousands of TCP connections, at a useful speed.
+
+1. **Listen and accept:** `Tcp.Listen: port` and `Tcp.Accept`, with connections kept on
+   the heap (not in the kernel's 512 KB), and no fixed limit of 4.
+2. **A sliding window:** `Write` sends as much as the other side's window allows and keeps
+   it until it's acknowledged, with a retransmit timer per connection, in place of
+   waiting for each segment.
+3. **Segments out of order** are kept and joined when the gap fills, in place of dropped.
+4. **virtio-net:** a driver for QEMU's `virtio-net-pci`, which is much faster than the
+   RTL8139 and is what cloud machines offer.
+5. **A load tester on the host:** `phi load` (in `Phi.Cli`) opens hundreds of connections to
+   the kernel through QEMU's forwarded ports and plays scripted clients.
+6. **Logins:** the server checks names and passwords (`crypto.pbkdf2`) over TCP.
+
+**Done when:** `phi load` holds 500 connections to `samples/mmo/` for a minute, every byte
+sent arrives in order, and the S1 benchmarks show the TCP download from S1 got faster.
+
+**Status: not started.**
+
+#### Phase S6: An optimizing code generator
+
+Goal: PHI code fast enough that hot routines don't need assembly.
+
+1. **`volatile` first.** Phase 2 left it out because generated code never keeps values in
+   registers between statements; once it does, device memory needs it. Add it, and use
+   it in every driver, before anything else here.
+2. **A backend interface.** Phase 1 put this off until there was a second backend to
+   compare against; the optimizer and the 64-bit backend (S10) are that reason. Split
+   the generator so both share the work that doesn't depend on the CPU.
+3. **Registers for values within a statement,** then **register allocation across a
+   method** for its variables (class variables stay in memory, since interrupt handlers
+   share them).
+4. **Constants folded, small methods inlined** (`Net.Get16` and the like), and **bounds
+   checks removed** where the index is proved in range (a `while` over `.len`).
+5. Every behavior test passes unchanged; the S1 benchmarks measure each step.
+
+**Done when:** `Draw.BlendRect` goes back from assembly to PHI at the same speed, and the
+S1 benchmarks for crypto and drawing are at least twice as fast as before S6.
+
+**Status: not started.**
+
+#### Phase S7: Interfaces
+
+Goal: Scenario 1's second milestone, and the interface design Plan.md has been waiting for.
+
+1. **Choose the design** from the server's entity kinds (players, monsters, NPCs) and
+   PhiOS's tables of handlers: `interface.Name` with `struct.X has Name`, or checked tables
+   of method fields. Decide at the same time whether containers become generic
+   (`data.map` for any key and value) or stay one per type.
+2. **Build it:** a struct that leaves out a method of its interface is a compile error,
+   and code can hold and call any struct with that interface.
+3. **Use it** in `samples/mmo/` for entity kinds, and in `gui.widgets` if it fits there.
+
+**Done when:** Scenario 1's milestone 2: `phi load` with hundreds of clients holds a fixed
+tick rate, `phi test --bench` reports the tick time so a slowdown fails it, and the
+server's entity kinds are one interface.
+
+**Status: not started.**
+
+#### Phase S8: Containing errors
+
+Goal: a mistake stops only the work it was part of, not the whole machine.
+
+1. **Network system calls for programs,** so game logic can run in user programs: sockets
+   through system calls, with every pointer checked as the file calls are.
+2. **Messages between programs:** a queue a kernel and its programs (or two programs) send
+   records through, so a zone program can hand a player to another.
+3. **Restarting:** the kernel sees a zone program stop, starts it again from its last save,
+   and moves its players back in.
+4. **In the language, decide** whether an error (an index out of range, an empty object,
+   out of memory) can be caught in a kernel: a block that stops at the error, frees its
+   objects (methods already know what to free at each exit) and goes on after it. Build
+   it if the design holds up; programs (1–3) are the fallback that needs no new syntax.
+5. **A fuzzer on the host:** `phi fuzz` sends malformed packets to a kernel through QEMU's
+   forwarded ports and reports anything that stopped it.
+
+**Done when:** an hour of `phi fuzz` against `samples/mmo/` doesn't stop the server, and a
+test where a zone program crashes on purpose shows its players back in a restarted zone.
+
+**Status: not started.**
+
+#### Phase S9: Several cores
+
+Goal: one server uses every core of its machine.
+
+1. **The local APIC and I/O APIC** in place of the 8259 PIC, and **starting the other
+   cores** (a 16-bit start routine for each, then 32-bit, with a stack each).
+2. **Atomics and locks in the language:** atomic add and compare-and-swap on a variable or
+   field, and a spin lock; the heap, frames and scheduler made safe across cores (turning
+   interrupts off is no longer enough).
+3. **Data per core** (each core's current task, its own run queue), and a scheduler on
+   every core.
+4. **Kernel threads:** methods already have stack frames; decide what a class variable
+   means when two threads run the class's methods (shared, and a warning when one is
+   written without a lock?).
+5. QEMU runs tests with `-smp 4`.
+
+**Done when:** `samples/mmo/` runs its zones on 4 cores in QEMU, the S1 benchmark of its
+tick shows them doing more work than one core, and a test that hammers the heap from 4
+cores ends with `Heap.used_blocks` at 0.
+
+**Status: not started.**
+
+#### Phase S10: 64-bit
+
+Goal: 64-bit kernels and programs, with more than 4 GB of memory.
+
+1. **A loader that enters long mode,** with 4-level paging, and a memory map past 4 GB.
+2. **An x86-64 backend** behind the interface from S6: 64-bit pointers, `i64`/`u64` in a
+   register, SSE2 for floating point in place of the x87.
+3. **The library on 64 bits:** the assembly in `lib/x86_32/` and `lib/x86_32_user/` ported,
+   struct layouts with 8-byte pointers, system calls, and the start routine from S9.
+4. **Tests run in both modes,** as tests made of `:Library` classes already run in 16 and
+   32 bits.
+
+**Done when:** the test suite passes as 64-bit kernels and programs, and `samples/mmo/`
+runs with 8 GB of memory.
+
+**Status: not started.**
+
+#### Phase S11: Running for real
+
+Goal: Scenario 1's third milestone: the server boots on a cloud machine.
+
+1. **Checking certificates** (Later's TLS item): ASN.1 and X.509, RSA and ECDSA P-256
+   signatures, a set of trusted roots.
+2. **Server-side TLS:** signing with the server's own key, so logins go over TLS.
+3. **Disks a cloud machine has:** virtio-blk (and NVMe), behind the same block layer
+   (`drivers.disk`) that ATA uses.
+4. **Booting on a cloud machine:** UEFI (shared with the console OS scenario), or a BIOS
+   image where a cloud offers that; serial output where the cloud shows a console.
+5. **A deployment guide** in `docs/`: building the image, uploading it, opening ports.
+
+**Done when:** Scenario 1's milestone 3: `samples/mmo/` boots on a cloud machine without
+QEMU, players log in over TLS with a certificate the client checks, and it survives the
+fuzzing from S8.
+
+**Status: not started.**
+
+### Scenarios to write up next
+
+Candidates, each a large project that tests a different side of PHI:
+
+- **A game engine runtime:** rendering, loading assets, audio and input at 60 frames a
+  second or more. Tests speed, SIMD and access to a GPU.
+- **A game console OS:** boots on real hardware, runs games from storage, reads
+  controllers. Tests drivers, USB, UEFI and real hardware.
+- **Studio tools:** asset pipelines and build tools that run on Windows and Linux. Tests a
+  hosted target (PHI programs that run outside PHI OS).
+
+---
+
 ## References
 
 - OSDev Wiki: https://wiki.osdev.org (Bare Bones, GDT, IDT, 8259 PIC, PS/2, ATA PIO, Paging)
