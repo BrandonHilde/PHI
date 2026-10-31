@@ -1156,6 +1156,29 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitExpr(shrink.Value);
                     EmitIndexCheck(shrink, "jbe", $"dword [{growing.Label} + 4]");
+                    if (growing.Type.Element.IsHeapText)
+                    {
+                        // the dropped elements' texts go back, and their slots are empty again
+                        string next = NewLabel("droptext"), done = NewLabel("droppedtexts");
+                        Emit("push eax                ; the new count");
+                        Emit("push eax                ; the element being dropped");
+                        Label(next);
+                        Emit("mov eax, [esp]");
+                        Emit($"cmp eax, [{growing.Label} + 4]");
+                        Emit($"jae {done}");
+                        Emit($"mov ecx, [{growing.Label}]");
+                        Emit("lea ecx, [ecx + eax * 8]");
+                        Emit("push dword [ecx]        ; its text");
+                        Emit("mov dword [ecx], 0");
+                        Emit("mov dword [ecx + 4], 0");
+                        Emit($"call {HeapMethodLabel("Heap.Free")}");
+                        Emit("add esp, 4");
+                        Emit("inc dword [esp]");
+                        Emit($"jmp {next}");
+                        Label(done);
+                        Emit("add esp, 4");
+                        Emit("pop eax");
+                    }
                     Emit($"mov [{growing.Label} + 4], eax");
                     if (growing.Type.IsObjectArray) EmitFreeElements(shrink.Array, -1);   // the dropped ones
                     break;
@@ -2560,7 +2583,17 @@ namespace Phi.Compiler.CodeGen
             else if (element.IsString)
             {
                 bool text = value != null && (IsText(value.Type) || value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar);
-                if (element.IsInlineText)
+                if (element.IsHeapText)
+                {
+                    // a slot like a new str field's: the text's address, then its room (a new
+                    // slot is zeroed: empty, with no text yet)
+                    if (value != null)
+                    {
+                        Emit("push ebx                ; the element's slot");
+                        EmitGrowStoreAt(4, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
+                    }
+                }
+                else if (element.IsInlineText)
                 {
                     // the text goes where the element is, cut to fit
                     if (value == null) Emit("mov byte [ebx], 0        ; empty");
@@ -2972,7 +3005,7 @@ namespace Phi.Compiler.CodeGen
             }
 
             // a new str field: the text its slot points at ('' while it has none)
-            if (e.Type.IsHeapText && e is NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } or MemberExpr { Call: null })
+            if (e.Type.IsHeapText && e is NameExpr { Symbol: FieldPathSymbol or SelfFieldSymbol or PathSymbol } or MemberExpr { Call: null } or IndexExpr)
             {
                 string done = NewLabel("text");
                 EmitPlaceAddress(e);
@@ -4239,8 +4272,31 @@ namespace Phi.Compiler.CodeGen
         void EmitGrowingArrayFree(VariableSymbol v)
         {
             if (v.Type.IsObjectArray) EmitFreeElements(NameOf(v), 0);
+            if (v.Type.Element.IsHeapText) EmitFreeTexts(v, 0);
             Emit($"push dword [{v.Label}]   ; {v.Name}'s elements");
             Emit($"call {HeapMethodLabel("Heap.Free")}");
+            Emit("add esp, 4");
+        }
+
+        /// <summary>
+        /// The texts of a str array that grows, from element `from` to how many it has: each
+        /// slot's text goes back to the heap (an empty slot holds 0, which Free skips).
+        /// </summary>
+        void EmitFreeTexts(VariableSymbol v, int from)
+        {
+            string next = NewLabel("freetext"), done = NewLabel("freedtexts");
+            Emit($"push dword {from}");
+            Label(next);
+            Emit("mov eax, [esp]");
+            Emit($"cmp eax, [{v.Label} + 4]   ; how many {v.Name} has");
+            Emit($"jae {done}");
+            Emit($"mov ecx, [{v.Label}]");
+            Emit("push dword [ecx + eax * 8]   ; an element's text");
+            Emit($"call {HeapMethodLabel("Heap.Free")}");
+            Emit("add esp, 4");
+            Emit("inc dword [esp]");
+            Emit($"jmp {next}");
+            Label(done);
             Emit("add esp, 4");
         }
 

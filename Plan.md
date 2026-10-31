@@ -593,8 +593,13 @@ The parts most worth doing next, roughly in order:
    that grows in a struct (which makes it managed); `str into;` parameters that are the
    caller's text; `str names[atmost 64];`, `str slots[3];`, `str lines[8]: [40];` and
    `str rows[]` parameters; a check that a pointer into a method's own text isn't handed
-   back. Tests `text_fields`, `text_params`, `text_arrays`, `text_new_fields`. Not yet: a
-   `str` array without a most (`str names[];`), and method values with `str into;`.
+   back. Tests `text_fields`, `text_params`, `text_arrays`, `text_new_fields`. Since
+   2026-10-30: `str names[];`, a `str` array without a most (each element a slot like a
+   `new str` field's, so it grows like any array without a size; shrinking frees the
+   dropped texts); tests `text_growing_arrays`, `text_growing_arrays_errors`. Not yet:
+   passing one to a `str rows[]` parameter, or copying or comparing one whole (they use
+   the text-table layout, a table of pointers then their rooms), and method values with
+   `str into;`.
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).

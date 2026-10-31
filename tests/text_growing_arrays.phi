@@ -1,0 +1,51 @@
+# str arrays without a most (str names[];): each element's text grows on the heap, and
+# the array grows as it's added to, like any array without a size.
+phi.TextGrowingArrays:Kernel
+{
+	str names[];
+	names++ 'ann';
+	names++ 'bob' 'cy';                     # two more: a list adds each value
+	log names.len ': ' names:0 ' ' names:1 ' ' names:2 '\n';
+
+	# an element takes text longer than it had, and text built from a list
+	names:0 is 'annabelle, whose name is much longer now';
+	names:2 is 'cy number ' 3;
+	log names:0 '\n' names:2 '\n';
+
+	# past the room it started with
+	str label: '';
+	while int i: 0; i < 10; i++;
+		label is 'player ' i;
+		names++ label;
+	;;
+	log names.len ': ' names:3 ' ... ' names:12 '\n';
+
+	while each n in names
+		if n.len < 4
+			log n ' is short\n';
+		;;
+	;;
+
+	# made shorter: the dropped elements' texts go back, and adding uses their places again
+	u32 kept: Heap.used_blocks;
+	names.len is 3;
+	log names.len ', ten texts back: ' (Heap.used_blocks is kept - 10) '\n';
+	names++ 'dee';
+	log names.len ': ' names:3 '\n';
+
+	# a method's own array, and its texts, go back to the heap when it ends
+	u32 before: Heap.used_blocks;
+	call Local;
+	log 'every block back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Local:]
+		str words[];
+		str word: '';
+		while int i: 0; i < 20; i++;
+			word is 'word number ' i;
+			words++ word;
+		;;
+		log words.len ' words, the last: ' words:19 '\n';
+	[end]
+}

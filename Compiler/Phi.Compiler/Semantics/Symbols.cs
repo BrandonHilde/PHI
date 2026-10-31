@@ -150,7 +150,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.I8 or TypeKind.U8 or TypeKind.Bool or TypeKind.Chr => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
             TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method or TypeKind.Object => 4,
-            TypeKind.Str => Room > 0 ? Room : 4,  // arrays of strings hold pointers, or texts kept in place
+            TypeKind.Str => Room > 0 ? Room : Room < 0 ? 8 : 4,  // arrays of strings hold pointers, texts kept in place, or text slots that grow
             TypeKind.Struct => Struct!.Size,
             TypeKind.Enum => 4,
             TypeKind.Lock => 4,

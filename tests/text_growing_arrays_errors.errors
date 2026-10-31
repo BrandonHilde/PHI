@@ -1,0 +1,3 @@
+8:14: error: a str array without a most can't be passed as an array parameter yet
+9:2: error: a str array without a most can't be copied whole yet; copy its elements one at a time
+10:7: error: a str array without a most can't be compared whole yet; compare its elements one at a time

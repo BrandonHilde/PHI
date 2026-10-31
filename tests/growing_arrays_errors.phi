@@ -6,7 +6,6 @@ struct.Node
 
 phi.GrowingArraysErrors:Kernel
 {
-	str names[];
 	Node plain[];
 	int scores[];
 	scores++ 'a' 'bc';

@@ -341,8 +341,11 @@ new Node nodes[];             # objects too
 nodes++;
 ```
 
-A `str` array without a most (`str names[];`), and struct fields without a size, aren't
-supported yet: give a `str` array a most (`str names[atmost 64];`).
+A `str` array grows the same way, `str names[];`, and each of its elements is text that
+grows too (`names:0 is 'a much longer name';`, `names++ 'ann' 'bob';`). Shrinking it gives
+the dropped elements' texts back, and a method's own goes back with its texts when it ends.
+Not yet: passing one to a `str rows[]` parameter, or copying or comparing it whole (do it
+an element at a time); and struct fields without a size.
 
 **Arrays of text.** A `str` array follows the same rules as any array, and each element is a
 `str` (32-bit code):
