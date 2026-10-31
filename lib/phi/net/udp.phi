@@ -71,19 +71,19 @@ phi.Udp:Kernel
 		sockets:s.port is 0;
 	[end]
 
-	# the oldest datagram for the socket, into into; false if none is waiting (it
+	# the oldest datagram for the socket, into target; false if none is waiting (it
 	# never waits)
-	[Receive: int s: -1; ptr<UdpDatagram> into: 0;]
+	[Receive: int s: -1; ptr<UdpDatagram> target: 0;]
 		if (Valid: s) is false return false;
 		call Net.Poll;
-	[end: (Queue.Pop: sockets:s.datagrams into)]
+	[end: (Queue.Pop: sockets:s.datagrams target)]
 
 	# like Receive, but waits up to timeout ms for a datagram to arrive
-	[Wait: int s: -1; ptr<UdpDatagram> into: 0; int timeout: 1000;]
+	[Wait: int s: -1; ptr<UdpDatagram> target: 0; int timeout: 1000;]
 		if (Valid: s) is false return false;
 		int start: (OS.GetTicks);
 		while true
-			if (Receive: s into) return true;
+			if (Receive: s target) return true;
 			if (OS.GetTicks) - start >= timeout return false;
 			call Net.Wait;
 		;;

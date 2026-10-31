@@ -564,7 +564,8 @@ namespace Phi.Compiler.Semantics
         {
             PhiType result = ReturnTypeOf(m);
             return new MethodSignature(m.Parameters.Select(p => p.Type.IsString ? PhiType.Str : p.Type).ToList(),
-                                       result.IsNumeric ? PhiType.Int : result);
+                                       result.IsNumeric ? PhiType.Int : result,
+                                       m.Parameters.Select(p => p.TextRef).ToList());
         }
 
         // ---------------------------------------------------------------- str results
@@ -913,6 +914,17 @@ namespace Phi.Compiler.Semantics
                         .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
+                    for (int i = 0; i < parameters.Count; i++)
+                        if (t.ParameterInto[i] && !parameters[i].IsString)
+                        {
+                            Error(t.Parameters[i].Span, $"into is for a str parameter (the caller's own text), and this is {A(parameters[i])}");
+                            return PhiType.Error;
+                        }
+                    if (t.ParameterInto.Any(x => x) && scope?.Unit is UnitKind.Boot or UnitKind.Os)
+                    {
+                        Error(t.Span, "a str into parameter needs 32-bit code (a Kernel or a Program)");
+                        return PhiType.Error;
+                    }
                     if (parameters.Any(p => p.IsArray))
                     {
                         Error(t.Span, "a method called through a variable can't take an array yet");
@@ -928,7 +940,7 @@ namespace Phi.Compiler.Semantics
                         Error(t.Result!.Span, $"a method returns a number or a str, not a {result}");
                         return PhiType.Error;
                     }
-                    return PhiType.MethodOf(new MethodSignature(parameters, result.IsNumeric ? PhiType.Int : result));
+                    return PhiType.MethodOf(new MethodSignature(parameters, result.IsNumeric ? PhiType.Int : result, t.ParameterInto.ToList()));
                 }
             }
 
@@ -2872,7 +2884,17 @@ namespace Phi.Compiler.Semantics
                 if (arguments.Count != signature.Parameters.Count)
                     Error(span, $"{calleeName} is a {pointer.Type}, which takes {Plural(signature.Parameters.Count, "argument")}, but was given {arguments.Count}");
                 for (int i = 0; i < Math.Min(arguments.Count, signature.Parameters.Count); i++)
+                {
+                    // str into: the caller's own text, which whatever method it is may write
+                    if (signature.Into[i])
+                    {
+                        BindExpr(arguments[i], scope);
+                        if (!arguments[i].Type.IsError && (!arguments[i].Type.IsString || !IsAssignable(arguments[i])))
+                            Error(arguments[i].Span, $"argument {i + 1} of {calleeName} is a str into, which the method may write: give it a str variable, field or element");
+                        continue;
+                    }
                     arguments[i] = Convert(arguments[i], signature.Parameters[i], $"argument {i + 1} of {calleeName}");
+                }
                 return new PointerCall { Target = pointer, Signature = signature };
             }
 
@@ -3518,8 +3540,6 @@ namespace Phi.Compiler.Semantics
                     case MethodSymbol m when m.Unit == scope.Unit:
                         if (ReturnTypeOf(m).IsObject)
                             Error(addr.Span, $"{m.Name} returns an object, so it can't be used as a method value yet");
-                        if (m.Parameters.FirstOrDefault(p => p.TextRef) is VariableSymbol textRef)
-                            Error(addr.Span, $"{m.Name} takes the caller's str ('{textRef.Name}'), so it can't be used as a method value yet; give '{textRef.Name}' a default to take a copy");
                         addr.CodeLabel = m.Label;
                         addr.Method = m;
                         name.Type = PhiType.Void;

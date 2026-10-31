@@ -1412,18 +1412,7 @@ namespace Phi.Compiler.CodeGen
 
                     Emit($"call {method.Label}");
                     if (pushedBytes > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushedBytes}");
-                    foreach (string slots in writeBacks)
-                    {
-                        // an element of a str array that grows: where its text went, and its room
-                        Emit("push eax");
-                        Emit($"mov esi, [{slots} + 8]");
-                        Emit($"mov eax, [{slots}]");
-                        Emit("mov [esi], eax");
-                        Emit($"mov esi, [{slots} + 12]");
-                        Emit($"mov eax, [{slots} + 4]");
-                        Emit("mov [esi], eax");
-                        Emit("pop eax");
-                    }
+                    EmitTextWriteBacks(writeBacks);
                     break;
                 }
 
@@ -1453,9 +1442,17 @@ namespace Phi.Compiler.CodeGen
                     // the same as calling the method by name, through the address the variable holds
                     IReadOnlyList<PhiType> types = pointer.Signature.Parameters;
                     int pushed = 0;
+                    var textWriteBacks = new List<string>();
                     for (int i = 0; i < types.Count; i++)
                     {
                         Expr value = arguments[i];
+                        if (pointer.Signature.Into[i])
+                        {
+                            // str into: the caller's text and its room, as a call by name passes it
+                            PushTextRef(value, textWriteBacks);
+                            pushed += 4;
+                            continue;
+                        }
                         if (types[i].IsFloat || types[i].IsWide)
                         {
                             pushed += PushWideOrFloat(types[i], value);
@@ -1477,6 +1474,7 @@ namespace Phi.Compiler.CodeGen
                     EmitExpr(pointer.Target);
                     Emit(bits32 ? "call eax" : "call ax");
                     if (pushed > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushed}");
+                    EmitTextWriteBacks(textWriteBacks);
                     break;
                 }
             }
@@ -1826,6 +1824,25 @@ namespace Phi.Compiler.CodeGen
             foreach (var (v, label) in labels) v.Label = label;
             (file, returnLabel, returnUsed, resultType, _) = outer;
             lastComment = default;  // the caller's next line gets its comment again
+        }
+
+        /// <summary>
+        /// After a call: each element of a str array that grows that was passed as a caller's text
+        /// (PushTextRef) gets back where its text went, and its room. Keeps eax (the result).
+        /// </summary>
+        void EmitTextWriteBacks(List<string> writeBacks)
+        {
+            foreach (string slots in writeBacks)
+            {
+                Emit("push eax");
+                Emit($"mov esi, [{slots} + 8]");
+                Emit($"mov eax, [{slots}]");
+                Emit("mov [esi], eax");
+                Emit($"mov esi, [{slots} + 12]");
+                Emit($"mov eax, [{slots} + 4]");
+                Emit("mov [esi], eax");
+                Emit("pop eax");
+            }
         }
 
         /// <summary>

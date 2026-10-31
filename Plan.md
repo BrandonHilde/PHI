@@ -590,7 +590,7 @@ The parts most worth doing next, roughly in order:
 2. **Text everywhere: done (2026-10-29),** after the sixth and seventh PhiOS assessments. Text
    works the same in variables, struct fields, parameters and array elements:
    `str name: [24];` (also `[atmost 24]`, `chr name[24]`) in a struct; `new str bio;` for text
-   that grows in a struct (which makes it managed); `str into;` parameters that are the
+   that grows in a struct (which makes it managed); `str target;` parameters that are the
    caller's text; `str names[atmost 64];`, `str slots[3];`, `str lines[8]: [40];` and
    `str rows[]` parameters; a check that a pointer into a method's own text isn't handed
    back. Tests `text_fields`, `text_params`, `text_arrays`, `text_new_fields`. Since
@@ -601,9 +601,10 @@ The parts most worth doing next, roughly in order:
    frees the dropped texts. Comparing `str` array parameters whole works now too. Tests
    `text_growing_arrays`, `text_growing_arrays_errors`. Copying into one whole works too
    (`copy is names;`, from any `str` array), and copying a `str` array into an
-   `[atmost N]` one now sets its `.len` (it kept the old count before). Not yet: method
-   values with `str into;` (a method value's type would have to say which `str`
-   parameters are the caller's own text: a syntax question for the user).
+   `[atmost N]` one now sets its `.len` (it kept the old count before). Method values
+   with a caller's-text parameter: `method<str into: int>` (the user's choice; `into` is
+   reserved now, and the library's `into` variables became `target`); tests
+   `method_values_into`, `method_values_into_errors`.
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).

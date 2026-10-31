@@ -479,12 +479,12 @@ namespace Phi.Compiler.Tests
         public void TextFieldErrors(string structs, string message) => AssertError(structs + Kernel(""), message);
 
         [Theory]
-        [InlineData("call Name: 'x';\n[Name: str into;]\n into is 'a';\n[end]", "Name writes 'into', so it needs a str to write into (a str variable or field), not a string literal")]
+        [InlineData("call Name: 'x';\n[Name: str target;]\n target is 'a';\n[end]", "Name writes 'target', so it needs a str to write into (a str variable or field), not a string literal")]
         [InlineData("call Pass: 5;\n[Pass: str t;]\n call Add: t;\n[end]\n[Add: str t;]\n t++ '!';\n[end]", "Pass writes 't', so it needs a str to write into (a str variable or field), not a number")]
-        [InlineData("ptr<u8> p: 'x';\ncall Name: p;\n[Name: str into;]\n into:0 is 'a';\n[end]", "not 'p', a ptr<u8>")]
-        [InlineData("method<str> f: addr Name;\n[Name: str into;]\n[end]", "takes the caller's str ('into'), so it can't be used as a method value yet")]
-        [InlineData("str s: '';\ncall Name: s;\n[Name: str into;]\n log sizeof into;\n[end]", "use into.max")]
-        [InlineData("str s: '';\ncall Name: s;\n[Name: str into;]\n ask into;\n[end]", "ask into a str of this method's own")]
+        [InlineData("ptr<u8> p: 'x';\ncall Name: p;\n[Name: str target;]\n target:0 is 'a';\n[end]", "not 'p', a ptr<u8>")]
+        [InlineData("method<str> f: addr Name;\n[Name: str target;]\n[end]", "needs a method<str>, but this is a method<str into>")]
+        [InlineData("str s: '';\ncall Name: s;\n[Name: str target;]\n log sizeof target;\n[end]", "use target.max")]
+        [InlineData("str s: '';\ncall Name: s;\n[Name: str target;]\n ask target;\n[end]", "ask into a str of this method's own")]
         public void TextParameterErrors(string body, string message) => AssertError(Kernel(body), message);
 
         [Theory]
@@ -525,7 +525,7 @@ namespace Phi.Compiler.Tests
 
         [Fact]
         public void ATextParameterNeeds32BitCode() =>
-            AssertError(Boot("str s: [4];\ncall Name: s;\n[Name: str into;]\n[end]"), "needs 32-bit code");
+            AssertError(Boot("str s: [4];\ncall Name: s;\n[Name: str target;]\n[end]"), "needs 32-bit code");
 
         [Fact]
         public void TextAMethodOnlyReadsCanBeAnything()

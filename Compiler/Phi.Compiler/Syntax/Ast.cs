@@ -119,6 +119,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>method&lt;int int: int&gt;: what it takes, and what it returns (null for nothing).</summary>
         public List<TypeRef> Parameters { get; } = new();
+
+        /// <summary>For each parameter: written str into (the caller's own text).</summary>
+        public List<bool> ParameterInto { get; } = new();
         public TypeRef? Result { get; init; }
 
         public override string ToString() =>

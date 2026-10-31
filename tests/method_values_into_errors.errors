@@ -1,0 +1,3 @@
+7:9: error: into is for a str parameter (the caller's own text), and this is an int
+6:13: error: argument 1 of fill is a str into, which the method may write: give it a str variable, field or element
+8:22: error: 'copies' needs a method<str>, but this is a method<str into>

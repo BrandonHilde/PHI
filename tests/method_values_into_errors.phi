@@ -1,0 +1,13 @@
+# What method<str into> takes: a str the method may write, into only on a str, and only a
+# method of the same kind (a method that writes the caller's text isn't a method<str>)
+phi.Test:Kernel
+{
+	method<str into> fill: addr Fill;
+	call fill: 'a literal';
+	method<int into> wrong: 0;
+	method<str> copies: addr Fill;
+
+	[Fill: str target;]
+		target is 'x';
+	[end]
+}

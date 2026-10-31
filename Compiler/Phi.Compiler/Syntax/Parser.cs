@@ -20,7 +20,7 @@ namespace Phi.Compiler.Syntax
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
-            "phi", "asm", "arm", "struct", "enum", "use", "const", "volatile", "atomic", "locked",
+            "phi", "asm", "arm", "struct", "enum", "use", "const", "volatile", "atomic", "locked", "into",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -41,6 +41,7 @@ namespace Phi.Compiler.Syntax
             ["lock"] = "'guard' or 'mutex'",
             ["locked"] = "'held' or 'taken'",
             ["atomic"] = "'shared' or 'whole'",
+            ["into"] = "'target'",
             ["return"] = "'result'",
             ["ask"] = "'question' or 'prompt'",
             ["has"] = "'holds' or 'found'",
@@ -434,15 +435,20 @@ namespace Phi.Compiler.Syntax
             return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(close.Span) };
         }
 
-        /// <summary>method&lt;int ptr&lt;u8&gt;: int&gt;: the parameters' types, then ': ' and the result's.</summary>
+        /// <summary>
+        /// method&lt;int ptr&lt;u8&gt;: int&gt;: the parameters' types, then ': ' and the result's. A
+        /// parameter written str into is the caller's own text (as str target; with no default is).
+        /// </summary>
         TypeRef ParseMethodType(Token name)
         {
             Expect(TokenKind.Less, "'<' after method, as in method<int: int>");
             var parameters = new List<TypeRef>();
+            var into = new List<bool>();
             while (!At(TokenKind.Greater) && !At(TokenKind.Colon) && !At(TokenKind.GreaterGreater))
             {
                 if (AtEnd || At(TokenKind.Semicolon)) throw Error(Current.Span, "expected '>' to close method<...>");
                 parameters.Add(ParseType());
+                into.Add(AcceptWord("into"));
             }
 
             TypeRef? result = Accept(TokenKind.Colon) ? ParseType() : null;
@@ -455,6 +461,7 @@ namespace Phi.Compiler.Syntax
 
             var type = new TypeRef { Name = "method", Result = result, Span = name.Span.To(close.Span) };
             type.Parameters.AddRange(parameters);
+            type.ParameterInto.AddRange(into);
             return type;
         }
 

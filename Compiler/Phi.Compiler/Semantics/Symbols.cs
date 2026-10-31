@@ -10,19 +10,23 @@ namespace Phi.Compiler.Semantics
         public IReadOnlyList<PhiType> Parameters { get; }
         public PhiType Result { get; }
 
-        public MethodSignature(IReadOnlyList<PhiType> parameters, PhiType result)
+        /// <summary>For each parameter: a str into (method&lt;str into&gt;), the caller's own text.</summary>
+        public IReadOnlyList<bool> Into { get; }
+
+        public MethodSignature(IReadOnlyList<PhiType> parameters, PhiType result, IReadOnlyList<bool>? into = null)
         {
             Parameters = parameters;
             Result = result;
+            Into = into ?? parameters.Select(_ => false).ToList();
         }
 
         public override bool Equals(object? other) =>
-            other is MethodSignature s && s.Result == Result && s.Parameters.SequenceEqual(Parameters);
+            other is MethodSignature s && s.Result == Result && s.Parameters.SequenceEqual(Parameters) && s.Into.SequenceEqual(Into);
 
         public override int GetHashCode() => Parameters.Aggregate(Result.GetHashCode(), (h, p) => h * 31 + p.GetHashCode());
 
         public override string ToString() =>
-            $"method<{string.Join(" ", Parameters)}{(Result.Kind == TypeKind.Void ? "" : ": " + Result)}>";
+            $"method<{string.Join(" ", Parameters.Select((p, i) => Into[i] ? $"{p} into" : p.ToString()))}{(Result.Kind == TypeKind.Void ? "" : ": " + Result)}>";
     }
 
     /// <summary>A call through a method variable: its value is the address to call.</summary>

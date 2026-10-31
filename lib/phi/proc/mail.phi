@@ -75,19 +75,19 @@ phi.Mail:Kernel
 	[Send: int box: 0; ptr<u8> record: 0;]
 	[end: (SendFrom: 0 box record)]
 
-	# the oldest record in one of the kernel's boxes, into into; false if none is
+	# the oldest record in one of the kernel's boxes, into target; false if none is
 	# waiting (never waits). sender says who sent it.
-	[Receive: int box: 0; ptr<u8> into: 0;]
-		int got: (ReceiveFor: 0 box into);
+	[Receive: int box: 0; ptr<u8> target: 0;]
+		int got: (ReceiveFor: 0 box target);
 		if got is 0 return false;
 		sender is got - 1;
 	[end: true]
 
 	# like Receive, but waits up to timeout ms for one, letting the programs run
-	[Wait: int box: 0; ptr<u8> into: 0; int timeout: 1000;]
+	[Wait: int box: 0; ptr<u8> target: 0; int timeout: 1000;]
 		int start: (OS.GetTicks);
 		while true
-			if (Receive: box into) return true;
+			if (Receive: box target) return true;
 			if (OS.GetTicks) - start >= timeout return false;
 			call OS.Yield;
 		;;
@@ -133,11 +133,11 @@ phi.Mail:Kernel
 	[end: (Queue.Push: boxes:b.records addr letter)]
 
 	# the sender plus one, or 0 if nothing is waiting (or it isn't the owner's box)
-	[ReceiveFor: int owner: 0; int box: 0; ptr<u8> into: 0;]
+	[ReceiveFor: int owner: 0; int box: 0; ptr<u8> target: 0;]
 		int b: (Place: box);
 		if b < 0 or boxes:b.owner is not owner return 0;
 		if (Queue.Pop: boxes:b.records addr letter) is false return 0;
-		call Mem.Copy: into addr letter + 4 boxes:b.size;
+		call Mem.Copy: target addr letter + 4 boxes:b.size;
 		ptr<u32> from: addr letter;
 	[end: from:0 + 1]
 

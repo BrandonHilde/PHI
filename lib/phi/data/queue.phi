@@ -51,9 +51,9 @@ phi.Queue:Library
 	[end: true]
 
 	# the oldest record copied to into, and taken out; false when it's empty
-	[Pop: ptr<QueueData> queue: 0; ptr<u8> into: 0;]
+	[Pop: ptr<QueueData> queue: 0; ptr<u8> target: 0;]
 		if queue:0.count is 0 return false;
-		call Mem.Copy: into queue:0.records + queue:0.head * queue:0.size queue:0.size;
+		call Mem.Copy: target queue:0.records + queue:0.head * queue:0.size queue:0.size;
 		call Drop: queue;
 	[end: true]
 

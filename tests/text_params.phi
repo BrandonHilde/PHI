@@ -1,4 +1,4 @@
-# A str parameter with no default (str into;) is the caller's own text: the method reads it
+# A str parameter with no default (str target;) is the caller's own text: the method reads it
 # or fills it in. A str that grows grows; one with a size is cut to fit.
 struct.Account
 {
@@ -37,8 +37,8 @@ phi.TextParams:Kernel
 	log code '\n';
 	exit 0;
 
-	[Name: int id: 0; str into;]
-		into is 'task ' id;
+	[Name: int id: 0; str target;]
+		target is 'task ' id;
 	[end]
 
 	[Shout: str text;]
@@ -60,8 +60,8 @@ phi.TextParams:Kernel
 		log text ' (' text.len ' of ' text.max ') starts ' text:0 '\n';
 	[end]
 
-	[Fill: chr into[];]
-		into is 'abcdefg';
-		into:0 is 'X';
+	[Fill: chr target[];]
+		target is 'abcdefg';
+		target:0 is 'X';
 	[end]
 }

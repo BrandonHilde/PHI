@@ -87,9 +87,9 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` |
-| Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `volatile` `isr` `end` |
-| Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
+| Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `volatile` `isr` `end` `into` |
+| Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
 | Input and output | `log` `debug` `ask` |
@@ -805,7 +805,7 @@ the same thing: an array of characters is text. A field needs its size, or `new`
 
 **Text that grows, in a struct.** `new str bio;` is text that grows on the heap, like a `str`
 variable without a size, and the struct owns it. It works like any `str` (`is`, `++`, `.len`,
-`.max`, comparing, passing it to a `str into;` parameter) and starts as `''`. As with a `new`
+`.max`, comparing, passing it to a `str target;` parameter) and starts as `''`. As with a `new`
 object field, the struct is then one PHI manages: it's declared with `new`
 (`new Account a;`, `new Account list[atmost 8];`), copying it copies the text, comparing it
 compares the text, and the text is freed with it (see [Objects](#objects)). Its bytes hold
@@ -1940,7 +1940,7 @@ if (IsReady: port)
   [Variables](#variables)). A comparison is one argument too: `call Show: count is 0;`. A
   missing argument uses the parameter's default (or zero if it has none).
 - **Text parameters.** A `str` parameter with a default (`str text: '';`, `str text: [20];`)
-  is a copy of the caller's text. One with no default (`str into;`, or `chr into[];`) is the
+  is a copy of the caller's text. One with no default (`str target;`, or `chr target[];`) is the
   caller's own text, as a struct parameter is the caller's struct (32-bit code). The
   method reads it, or fills it in: what it writes goes into the caller's `str`, which grows
   if it can or is cut to fit if it has a size. Any text can be passed to one the method only
@@ -1948,8 +1948,8 @@ if (IsReady: port)
   field or element to write into, and passing anything else is an error.
 
   ```phi
-  [TaskName: int pid: 0; str into;]
-      into is 'task ' pid;
+  [TaskName: int pid: 0; str target;]
+      target is 'task ' pid;
   [end]
 
   str name: '';
@@ -1957,7 +1957,7 @@ if (IsReady: port)
   call TaskName: 3 account.name;
   ```
 
-  `into.len` is its text's length and `into.max` the most it holds: the caller's size, or
+  `target.len` is its text's length and `target.max` the most it holds: the caller's size, or
   65,535 for a `str` that grows. Because it may grow, it can't be handed to a method as a
   buffer with a size; write it with `is` and `++` instead.
 - A method can return a number, a pointer, a `str` or an object. A result keeps its type
@@ -2071,6 +2071,20 @@ debug (shapes:i.area: addr shapes:i);
   so `if next is 0` still checks whether one is set.
 - Methods called this way can't return a `str` yet (a method called by name can).
 - After the callee, `:` with a space starts the arguments; `table:i` with no space is an index.
+- A method whose `str` parameter has no default writes into the caller's own text
+  (`[Fill: str target;]`). Its type says so with `into` after `str`, and the argument has to
+  be a `str` it can write (a variable, field or element), as with a call by name. Such a
+  method isn't a `method<str>`, whose parameter is a copy:
+
+  ```phi
+  method<str into: int> fill: addr Fill;
+  str name: '';
+  call fill: name;                          # Fill writes into name
+
+  [Fill: str target;]
+      target is 'filled';
+  [end: 1]
+  ```
 
 ### Events
 

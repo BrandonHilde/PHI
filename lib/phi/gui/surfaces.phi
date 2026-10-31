@@ -199,16 +199,16 @@ phi.Surfaces:Kernel
 
 	# the title the process asked for, into `into` (size bytes, ending with a zero), if
 	# it asked for one since the last time; false if it didn't
-	[TakeTitle: int pid: 0; ptr<u8> into: 0; int size: 0;]
+	[TakeTitle: int pid: 0; ptr<u8> target: 0; int size: 0;]
 		if pid <= 0 or pid >= MAX_PROCESSES or size <= 0 return false;
 		if title_changed:pid is false return false;
 		title_changed:pid is false;
 		int i: 0;
 		while i < size - 1 and i < TITLE_SIZE - 1 and titles:(pid * TITLE_SIZE + i) is not 0
-			into:i is titles:(pid * TITLE_SIZE + i);
+			target:i is titles:(pid * TITLE_SIZE + i);
 			i++;
 		;;
-		into:i is 0;
+		target:i is 0;
 	[end: true]
 
 	# put an event in the process's queue; false if it has no surface or its queue is full

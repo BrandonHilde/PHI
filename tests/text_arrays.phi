@@ -66,7 +66,7 @@ phi.TextArrays:Kernel
 		;;
 	[end]
 
-	[Name: str into;]
-		into is 'Ann the first, who now has a long name';
+	[Name: str target;]
+		target is 'Ann the first, who now has a long name';
 	[end]
 }

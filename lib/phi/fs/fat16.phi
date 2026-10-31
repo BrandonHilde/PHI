@@ -458,7 +458,7 @@ phi.Fat:Kernel
 
 	# the entries of a folder ('' is the root) copied into `into`, at most max of them;
 	# returns how many, or -1 if there's no such folder
-	[Entries: ptr<u8> path: 0; ptr<FileInfo> into: 0; int max: 0;]
+	[Entries: ptr<u8> path: 0; ptr<FileInfo> target: 0; int max: 0;]
 		u32 directory: (FolderCluster: path);
 		if directory is NO_FOLDER
 			return -1;
@@ -478,7 +478,7 @@ phi.Fat:Kernel
 				;;
 				if first is not ENTRY_DELETED and first is not '.' and (e:0.attributes & ATTR_VOLUME) is 0
 					call DisplayName: e;
-					ptr<FileInfo> info: into + count * sizeof FileInfo;
+					ptr<FileInfo> info: target + count * sizeof FileInfo;
 					info:0.name is display_name;
 					info:0.folder is (e:0.attributes & ATTR_DIRECTORY) is not 0;
 					info:0.size is e:0.size;

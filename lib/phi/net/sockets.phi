@@ -99,16 +99,16 @@ phi.Udp:Program
 		call OS.UdpClose: s;
 	[end]
 
-	# the oldest datagram for the socket, into into; false if none is waiting (it
+	# the oldest datagram for the socket, into target; false if none is waiting (it
 	# never waits)
-	[Receive: int s: -1; ptr<UdpDatagram> into: 0;]
-	[end: (OS.UdpReceive: s into) is 1]
+	[Receive: int s: -1; ptr<UdpDatagram> target: 0;]
+	[end: (OS.UdpReceive: s target) is 1]
 
 	# like Receive, but waits up to timeout ms for a datagram to arrive
-	[Wait: int s: -1; ptr<UdpDatagram> into: 0; int timeout: 1000;]
+	[Wait: int s: -1; ptr<UdpDatagram> target: 0; int timeout: 1000;]
 		int start: (OS.GetTicks);
 		while true
-			if (Receive: s into) return true;
+			if (Receive: s target) return true;
 			if (OS.GetTicks) - start >= timeout return false;
 			call OS.Sleep: 1;
 		;;

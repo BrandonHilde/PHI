@@ -1,0 +1,40 @@
+# A method value whose method writes into the caller's own text: method<str into>, like
+# the parameter str target; with no default. Whatever it holds writes the caller's str.
+struct.Account
+{
+	str name: [8];
+	new str bio;
+}
+
+phi.MethodValuesInto:Kernel
+{
+	str grows: '';
+	str small: [6];
+	new Account account;
+	str names[];
+	names++ 'ann' 'bob';
+
+	method<str into: int> fill: addr Greet;
+	log 'wrote: ' (fill: grows) ', ' grows '\n';
+	call fill: small;
+	log 'cut to fit: ' small '\n';
+	call fill: account.name;
+	call fill: account.bio;
+	log 'fields: ' account.name ' / ' account.bio '\n';
+	call fill: names:1;
+	log 'an element: ' names:1 ' (and ' names:0 ')\n';
+
+	# another method of the same kind
+	fill is addr Shout;
+	call fill: grows;
+	log 'then: ' grows '\n';
+	exit 0;
+
+	[Greet: str target;]
+		target is 'hello, someone with a long name';
+	[end: target.len]
+
+	[Shout: str target;]
+		target++ '!!!';
+	[end: 3]
+}
