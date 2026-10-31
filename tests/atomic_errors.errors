@@ -1,0 +1,6 @@
+7:2: error: a lock starts free: declare it without a value, like lock started;
+10:9: error: atomic works on numbers, bln and pointers of up to 32 bits, and 'name' is a str
+11:9: error: atomic works on numbers, bln and pointers of up to 32 bits, and 'big' is a u64
+12:9: error: atomic works on numbers, bln and pointers of up to 32 bits, and 'guard' is a lock
+13:9: error: atomic works on a variable, a field or an array element
+14:9: error: locked needs a lock, and 'count' is a u32; declare one like lock guard;

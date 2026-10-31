@@ -2,7 +2,7 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64, Chr }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64, Chr, Lock }
 
     /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
     public sealed class MethodSignature
@@ -63,6 +63,9 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>A character: a byte that log and str building write as its character, not its number.</summary>
         public static readonly PhiType Chr = new(TypeKind.Chr);
+
+        /// <summary>A lock (lock guard;): a u32, 0 while it's free, that locked blocks take and give back.</summary>
+        public static readonly PhiType Lock = new(TypeKind.Lock);
         public static readonly PhiType F32 = new(TypeKind.F32);
         public static readonly PhiType F64 = new(TypeKind.F64);
 
@@ -150,6 +153,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.Str => Room > 0 ? Room : 4,  // arrays of strings hold pointers, or texts kept in place
             TypeKind.Struct => Struct!.Size,
             TypeKind.Enum => 4,
+            TypeKind.Lock => 4,
             TypeKind.I64 or TypeKind.U64 or TypeKind.F64 => 8,
             TypeKind.F32 => 4,
             TypeKind.F16 => 2,
@@ -187,6 +191,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.U64 => "u64",
                 TypeKind.F16 => "f16",
                 TypeKind.Chr => "chr",
+                TypeKind.Lock => "lock",
                 TypeKind.F32 => "f32",
                 TypeKind.F64 => "f64",
                 TypeKind.Method => Signature!.ToString(),

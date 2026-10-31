@@ -1,0 +1,9 @@
+adds: 8 1000 4
+swaps: 9, compare and swap: 1 then 0
+claimed slot 2 for 42
+still 42
+atomic adds from 4 cores: 1
+locked adds from 4 cores: 1
+returned from inside: 5
+broke out, and the lock was free again
+and this one too

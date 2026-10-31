@@ -25,6 +25,8 @@ namespace Phi.Compiler.Syntax
                 OutStmt o => Nodes(o.Port).Concat(Nodes(o.Value)),
                 FreeStmt f => Nodes(f.Pointer),
                 UnsafeStmt u => u.Body.SelectMany(Nodes),
+                LockedStmt l => Nodes(l.Lock).Concat(l.Body.SelectMany(Nodes)),
+                AtomicStmt a => Nodes(a.Target).Concat(Nodes(a.Value)).Concat(a.Expected != null ? Nodes(a.Expected) : Enumerable.Empty<Node>()),
                 CallStmt c => c.Arguments.SelectMany(Nodes)
                     .Concat(c.ResultTarget != null ? Nodes(c.ResultTarget) : Enumerable.Empty<Node>())
                     .Concat(c.CalleeTarget != null ? Nodes(c.CalleeTarget) : Enumerable.Empty<Node>()),
@@ -61,6 +63,7 @@ namespace Phi.Compiler.Syntax
                 CastExpr c => new[] { c.Operand },
                 SizeofExpr s => s.Operand != null ? new[] { s.Operand } : Array.Empty<Expr>(),
                 InExpr i => new[] { i.Port },
+                AtomicExpr a => new[] { a.Target, a.Value, a.Expected },
                 NewExpr n => n.Count != null ? new[] { n.Count } : Array.Empty<Expr>(),
                 UnaryExpr u => new[] { u.Operand },
                 BinaryExpr b => new[] { b.Left, b.Right },

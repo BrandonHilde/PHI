@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "chr", "dec", "fin", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method",
+            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method", "lock",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>
@@ -20,7 +20,7 @@ namespace Phi.Compiler.Syntax
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
-            "phi", "asm", "arm", "struct", "enum", "use", "const", "volatile",
+            "phi", "asm", "arm", "struct", "enum", "use", "const", "volatile", "atomic", "locked",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -38,6 +38,9 @@ namespace Phi.Compiler.Syntax
             ["empty"] = "'blank' or 'none'",
             ["log"] = "'entry' or 'history'",
             ["sizeof"] = "'size'",
+            ["lock"] = "'guard' or 'mutex'",
+            ["locked"] = "'held' or 'taken'",
+            ["atomic"] = "'shared' or 'whole'",
             ["return"] = "'result'",
             ["ask"] = "'question' or 'prompt'",
             ["has"] = "'holds' or 'found'",
@@ -623,6 +626,17 @@ namespace Phi.Compiler.Syntax
                         stmt.Body.AddRange(ParseBlock("unsafe block"));
                         return stmt;
                     }
+                    case "locked":
+                    {
+                        Advance();
+                        Expr guard = ParsePostfix();
+                        Accept(TokenKind.Semicolon);
+                        var stmt = new LockedStmt { Lock = guard, Span = start.Span.To(guard.Span) };
+                        stmt.Body.AddRange(ParseBlock("locked block"));
+                        return stmt;
+                    }
+                    case "atomic":
+                        return ParseAtomic();
                     case "break":
                     case "continue":
                     {
@@ -651,6 +665,35 @@ namespace Phi.Compiler.Syntax
             if (Current.Kind == TokenKind.Identifier) return ParseAssignment(requireSemicolon: true);
 
             throw Error(Current.Span, $"expected a statement but found {Current}");
+        }
+
+        // atomic x++ n;  atomic x-- n;  atomic x is v;  atomic x is v when old;
+        Stmt ParseAtomic()
+        {
+            Token start = Advance();
+            Expr target = ParsePostfix();
+            Token opToken = Current;
+            AtomicOp op;
+            Expr value;
+            Expr? expected = null;
+            if (Accept(TokenKind.PlusPlus) || Accept(TokenKind.MinusMinus))
+            {
+                op = opToken.Kind == TokenKind.PlusPlus ? AtomicOp.Add : AtomicOp.Subtract;
+                value = At(TokenKind.Semicolon) ? new NumberExpr { Value = 1, Span = opToken.Span } : ParseBitOr();
+            }
+            else if (AcceptWord("is"))
+            {
+                value = ParseBitOr();
+                op = AtomicOp.Swap;
+                if (AcceptWord("when"))
+                {
+                    op = AtomicOp.CompareSwap;
+                    expected = ParseBitOr();
+                }
+            }
+            else throw Error(Current.Span, $"atomic goes before x++, x--, x is v, or x is v when old, but found {Current}");
+            ExpectSemicolon();
+            return new AtomicStmt { Target = target, Op = op, Value = value, Expected = expected, Span = start.Span.To(Previous.Span) };
         }
 
         ConstDecl ParseConst()
@@ -1381,6 +1424,18 @@ namespace Phi.Compiler.Syntax
         Expr ParseUnaryOperand()
         {
             Token t = Current;
+
+            // atomic x is v when old, as a value: true if x was old (a compare and swap)
+            if (AtWord("atomic"))
+            {
+                Advance();
+                Expr target = ParsePostfix();
+                if (!AcceptWord("is")) throw Error(Current.Span, "as a value, atomic is a compare and swap: atomic x is v when old");
+                Expr value = ParseBitOr();
+                if (!AcceptWord("when")) throw Error(Current.Span, "as a value, atomic is a compare and swap: atomic x is v when old");
+                Expr expected = ParseBitOr();
+                return new AtomicExpr { Target = target, Value = value, Expected = expected, Span = t.Span.To(Previous.Span) };
+            }
 
             if (At(TokenKind.Minus) || At(TokenKind.Bang) || At(TokenKind.Tilde) || AtWord("not"))
             {

@@ -233,6 +233,32 @@ namespace Phi.Compiler.Syntax
         public List<Stmt> Body { get; } = new();
     }
 
+    /// <summary>locked guard ... ;;   (the body runs holding a lock, which goes back on every way out)</summary>
+    public sealed class LockedStmt : Stmt
+    {
+        public Expr Lock { get; set; } = null!;
+        public List<Stmt> Body { get; } = new();
+    }
+
+    public enum AtomicOp { Add, Subtract, Swap, CompareSwap }
+
+    /// <summary>atomic x++ n; atomic x-- n; atomic x is v; atomic x is v when old;   (one indivisible step on memory)</summary>
+    public sealed class AtomicStmt : Stmt
+    {
+        public Expr Target { get; set; } = null!;
+        public AtomicOp Op { get; init; }
+        public Expr Value { get; set; } = null!;
+        public Expr? Expected { get; set; }
+    }
+
+    /// <summary>atomic x is v when old, as a value: true if x was old (and is v now), in one step</summary>
+    public sealed class AtomicExpr : Expr
+    {
+        public Expr Target { get; set; } = null!;
+        public Expr Value { get; set; } = null!;
+        public Expr Expected { get; set; } = null!;
+    }
+
     /// <summary>call [target is] Name[: args];</summary>
     public sealed class CallStmt : Stmt
     {

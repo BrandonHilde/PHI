@@ -570,6 +570,7 @@ namespace Phi.Compiler.CodeGen
         bool RunsInRegisters(Stmt s) => s switch
         {
             UnsafeStmt => true,
+            LockedStmt l => SafeRoot(l.Lock),
             IfStmt i => SafeValue(i.Condition),
             WhileStmt w => (w.Init == null || SafeStatement(w.Init)) && SafeValue(w.Condition) && (w.Step == null || SafeStatement(w.Step)),
             WhenStmt w => OneRegister(w.Subject.Type) && !(w.Subject.Type.IsPointer && w.Subject.Type.Pointee == PhiType.U8)
@@ -587,6 +588,7 @@ namespace Phi.Compiler.CodeGen
                           && (c.ResultTarget == null || OneRegister(c.ResultTarget.Type) && SafeValue(c.ResultTarget)),
             ReturnStmt r => r.Value == null || OneRegister(r.Value.Type) && resultType.IsNumeric && SafeValue(r.Value),
             OutStmt o => SafeValue(o.Port) && SafeValue(o.Value),
+            AtomicStmt a => SafeValue(a.Target) && SafeValue(a.Value) && (a.Expected == null || SafeValue(a.Expected)),
             _ => false,
         };
 
@@ -606,6 +608,7 @@ namespace Phi.Compiler.CodeGen
             AddrExpr a => a.CodeLabel != null || !a.OfObject && !a.Operand.Type.IsHeapText && SafeRoot(a.Operand),
             CastExpr c => OneRegister(c.Type) && OneRegister(c.Operand.Type) && SafeValue(c.Operand),
             InExpr i => SafeValue(i.Port),
+            AtomicExpr a => SafeValue(a.Target) && SafeValue(a.Value) && SafeValue(a.Expected),
             UnaryExpr u => OneRegister(u.Operand.Type) && SafeValue(u.Operand),
             BinaryExpr b => b.ObjectCompare == null && !b.ArrayCompare && OneRegister(b.Left.Type) && OneRegister(b.Right.Type)
                             && SafeValue(b.Left) && SafeValue(b.Right),
@@ -1009,6 +1012,14 @@ namespace Phi.Compiler.CodeGen
                     unsafeDepth--;
                     break;
 
+                case LockedStmt locked:
+                    EmitLocked(locked);
+                    break;
+
+                case AtomicStmt atomic:
+                    EmitAtomic(atomic);
+                    break;
+
                 case CallStmt call:
                     EmitCall(call);
                     break;
@@ -1102,11 +1113,13 @@ namespace Phi.Compiler.CodeGen
                     break;   // (an error was reported)
 
                 case BreakStmt:
+                    UnlockLeaving(loops.Count);
                     if (loops[^1].RegistersLive && !registersLive) LoadRegisters();  // out of a fence
                     Emit($"jmp {loops[^1].End}");
                     break;
 
                 case ContinueStmt:
+                    UnlockLeaving(loops.Count);
                     if (loops[^1].RegistersLive && !registersLive) LoadRegisters();
                     loops[^1].NextUsed = true;
                     Emit($"jmp {loops[^1].Next}");
@@ -1117,6 +1130,7 @@ namespace Phi.Compiler.CodeGen
                     else if (ret.Value != null && resultType.IsWide) EmitWide(ret.Value);   // in edx:eax
                     else if (ret.Value != null && resultType.IsFloat) EmitFloat(ret.Value); // in st0
                     else if (ret.Value != null) EmitExpr(ret.Value); // the result goes back in eax
+                    UnlockLeaving(-1);
                     returnUsed = true;
                     Emit($"jmp {returnLabel}");
                     break;
@@ -1539,6 +1553,121 @@ namespace Phi.Compiler.CodeGen
                 };
             }
             return false;
+        }
+
+        // ================================================================ atomic steps and locks
+
+        /// <summary>
+        /// The locked blocks around the code being generated, innermost last: where each keeps
+        /// its lock's address and the flags from before it (so interrupts go back as they were),
+        /// how many loops were around it, and how deep in inlining it is.
+        /// </summary>
+        readonly List<(string Slot, int Loops, int Inlining)> lockedBlocks = new();
+
+        /// <summary>
+        /// locked guard ... ;; takes the lock with xchg (spinning while another core has it,
+        /// with interrupts back on), runs the body with this core's interrupts off, and gives it
+        /// back: at the end, and on a return, break or continue that leaves the block.
+        /// </summary>
+        void EmitLocked(LockedStmt locked)
+        {
+            string slot = AllocTemp(8);
+            string spin = NewLabel("lock"), wait = NewLabel("lockwait"), held = NewLabel("locked");
+            EmitPlaceAddress(locked.Lock);
+            Emit($"mov [{slot}], eax          ; the lock's address");
+            Emit("pushfd");
+            Emit($"pop dword [{slot} + 4]      ; interrupts as they were");
+            Label(spin);
+            Emit("cli");
+            Emit("mov ecx, 1");
+            Emit("xchg [eax], ecx           ; take it if it's free (0)");
+            Emit("test ecx, ecx");
+            Emit($"jz {held}");
+            Emit($"push dword [{slot} + 4]");
+            Emit("popfd                    ; another core has it: interrupts as they were while waiting");
+            Label(wait);
+            Emit("pause");
+            Emit("cmp dword [eax], 0");
+            Emit($"jne {wait}");
+            Emit($"jmp {spin}");
+            Label(held);
+
+            lockedBlocks.Add((slot, loops.Count, inlining.Count));
+            foreach (Stmt s in locked.Body) EmitStatement(s);
+            lockedBlocks.RemoveAt(lockedBlocks.Count - 1);
+            EmitUnlock(slot);
+        }
+
+        /// <summary>Gives a lock back (through ecx, so a result in eax or edx:eax stays).</summary>
+        void EmitUnlock(string slot)
+        {
+            Emit($"mov ecx, [{slot}]");
+            Emit("mov dword [ecx], 0        ; the lock back");
+            Emit($"push dword [{slot} + 4]");
+            Emit("popfd                    ; and interrupts as they were");
+        }
+
+        /// <summary>
+        /// Gives back the locks a jump leaves, innermost first: the blocks inside the innermost
+        /// loop for a break or continue (loops is how many loops there are), or every block of
+        /// this method (or of the method being inlined) for a return (-1).
+        /// </summary>
+        void UnlockLeaving(int loopCount)
+        {
+            for (int i = lockedBlocks.Count - 1; i >= 0; i--)
+            {
+                var (slot, around, level) = lockedBlocks[i];
+                if (level != inlining.Count) break;
+                if (loopCount >= 0 && around < loopCount) break;
+                EmitUnlock(slot);
+            }
+        }
+
+        static string SizedRegister(string register, int bytes) => bytes switch
+        {
+            1 => register[1] + "l",
+            2 => register[1..],
+            _ => register,
+        };
+
+        /// <summary>atomic x++ n; atomic x-- n; atomic x is v; atomic x is v when old;</summary>
+        void EmitAtomic(AtomicStmt atomic)
+        {
+            if (atomic.Op == AtomicOp.CompareSwap)
+            {
+                EmitCompareSwap(atomic.Target, atomic.Value, atomic.Expected!);
+                return;
+            }
+            int bytes = StorageType(atomic.Target.Type).ElementSize;
+            string size = bytes switch { 1 => "byte", 2 => "word", _ => "dword" };
+            EmitExpr(atomic.Value);
+            Emit("push eax");
+            Place p = EmitPlace(atomic.Target);
+            Emit("pop eax");
+            string value = SizedRegister("eax", bytes);
+            Emit(atomic.Op switch
+            {
+                AtomicOp.Add => $"lock add {size} {Operand(p)}, {value}",
+                AtomicOp.Subtract => $"lock sub {size} {Operand(p)}, {value}",
+                _ => $"xchg {size} {Operand(p)}, {value}            ; (an exchange with memory is always locked)",
+            });
+        }
+
+        /// <summary>eax = 1 if target was expected and is value now (lock cmpxchg), else 0.</summary>
+        void EmitCompareSwap(Expr target, Expr value, Expr expected)
+        {
+            int bytes = StorageType(target.Type).ElementSize;
+            string size = bytes switch { 1 => "byte", 2 => "word", _ => "dword" };
+            EmitExpr(value);
+            Emit("push eax");
+            EmitExpr(expected);
+            Emit("push eax");
+            Place p = EmitPlace(target);
+            Emit("pop eax                  ; what it should be now");
+            Emit("pop ecx                  ; and what it becomes");
+            Emit($"lock cmpxchg {size} {Operand(p)}, {SizedRegister("ecx", bytes)}");
+            Emit("sete al");
+            Emit("movzx eax, al");
         }
 
         // ================================================================ inlining
@@ -2977,6 +3106,10 @@ namespace Phi.Compiler.CodeGen
 
                 case NewExpr n:
                     EmitHeapCall(n.Allocator!, n.Bytes); // the address comes back in eax
+                    break;
+
+                case AtomicExpr swap:
+                    EmitCompareSwap(swap.Target, swap.Value, swap.Expected);
                     break;
 
                 case InExpr input:

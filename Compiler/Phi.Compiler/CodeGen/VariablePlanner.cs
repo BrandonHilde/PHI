@@ -30,6 +30,9 @@ namespace Phi.Compiler.CodeGen
                          .Concat(m.Decl.Result != null ? SyntaxWalker.Nodes(m.Decl.Result) : Enumerable.Empty<Node>()))
             {
                 if (n is AddrExpr { Operand: NameExpr { Symbol: VariableSymbol taken } }) candidates.Remove(taken);
+                // an atomic step is on memory (other cores see it there)
+                if (n is AtomicStmt { Target: NameExpr { Symbol: VariableSymbol shared } }) candidates.Remove(shared);
+                if (n is AtomicExpr { Target: NameExpr { Symbol: VariableSymbol swapped } }) candidates.Remove(swapped);
                 if (n is WhileEachStmt each)
                 {
                     if (each.Index.Symbol != null) candidates.Remove(each.Index.Symbol);
@@ -70,6 +73,10 @@ namespace Phi.Compiler.CodeGen
                     {
                         case UnsafeStmt u:
                             Walk(u.Body, depth);
+                            break;
+                        case LockedStmt l:
+                            Count(l.Lock, weight);
+                            Walk(l.Body, depth);
                             break;
                         case IfStmt i:
                             Count(i.Condition, weight);

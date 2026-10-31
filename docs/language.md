@@ -1213,11 +1213,49 @@ call Cores.Run: addr Part;     # Part: 0 here, Part: 1, 2 ... on the others; bac
 
 - The other cores wait, halted, between `Run`s; `Run` wakes them with an interrupt, and
   each runs the method with its own number on a stack of its own.
-- **Until there are locks, work on another core must only touch its own data**, like its
-  share of an array, by its core number. It mustn't use the heap, `log`, files, the
+- Work on other cores can share data through `atomic` and `locked` (below). **The library
+  doesn't use them yet**, so work on another core mustn't use the heap, `log`, files, the
   network or the `OS.` calls, which all assume one core.
 - Interrupts from devices and the timer still go to the first core only.
 - Up to 8 cores take part; any more stay halted.
+
+### atomic and locked
+
+`atomic` before a statement makes it one step that no other core can come between: the
+number in memory is read, changed and written back at once.
+
+```phi
+u32 hits: 0;
+atomic hits++;                       # lock add: from any number of cores, none is lost
+atomic hits-- 3;
+atomic owner is 7;                   # an exchange
+bln won: atomic owner is 9 when 7;   # compare and swap: true if it was 7 (and is 9 now)
+if atomic slot:2 is 42 when 0        # also as a statement, or anywhere a value goes
+    log 'claimed\n';
+;;
+```
+
+A `lock` is a variable (or a field) that a `locked` block takes and gives back. The block
+waits while another core has it, runs with it held, and gives it back however it's left:
+at its end, or by `return`, `break` or `continue`:
+
+```phi
+lock counter_lock;
+u32 counted: 0;
+
+locked counter_lock
+    counted is counted + 1;           # only one core at a time is in here
+    if counted > 100 return;          # the lock goes back here too
+;;
+```
+
+- `atomic` works on a variable, field or element that is a number, `bln` or pointer of up
+  to 32 bits. A method's variable used with it stays in memory (never in a register).
+- A `locked` block turns interrupts off on its own core while it holds the lock, so an
+  interrupt handler that wants the same lock can't wait forever for the code it
+  interrupted. Keep locked blocks short.
+- A lock starts free; it can't have a value (`lock guard;`), and isn't a number.
+- Both need 32-bit code: 16-bit code runs on one core.
 
 ## The network (32-bit kernels)
 

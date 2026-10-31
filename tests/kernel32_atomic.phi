@@ -1,0 +1,88 @@
+# atomic and locked: each form on one core, then four cores changing the same counters
+# at once (an atomic add, and plain math in a locked block), where nothing may be lost.
+# A return and a break out of a locked block give its lock back: the next one would
+# wait forever otherwise.
+use proc.cores;
+
+struct.Slot
+{
+	u32 owner;
+	lock guard;
+}
+
+phi.AtomicTest:Kernel
+{
+	const int TIMES: 50000;
+	const int LOCKED_TIMES: 20000;
+
+	u32 hits: 0;
+	u16 small: 0;
+	u8 tiny: 250;
+	u32 slot: 0;
+	u32 total: 0;
+	u32 counted: 0;
+	lock counter_lock;
+	Slot table[4];
+
+	# each form
+	atomic hits++;
+	atomic hits++ 10;
+	atomic hits-- 3;
+	atomic small++ 1000;
+	atomic tiny++ 10;                           # a byte wraps round, as tiny++ 10 would
+	log 'adds: ' hits ' ' small ' ' tiny '\n';
+
+	atomic slot is 7;
+	bln first: atomic slot is 9 when 7;         # it was 7: now it's 9
+	bln second: atomic slot is 5 when 7;        # it isn't 7 any more
+	log 'swaps: ' slot ', compare and swap: ' first ' then ' second '\n';
+	if atomic table:2.owner is 42 when 0
+		log 'claimed slot 2 for ' table:2.owner '\n';
+	;;
+	atomic table:2.owner is 43 when 0;
+	log 'still ' table:2.owner '\n';
+
+	# four cores at once
+	int n: (Cores.Start);
+	call Cores.Run: addr AddMany;
+	log 'atomic adds from ' n ' cores: ' (total is n * TIMES) '\n';
+	call Cores.Run: addr AddLocked;
+	log 'locked adds from ' n ' cores: ' (counted is n * LOCKED_TIMES) '\n';
+
+	# leaving a locked block early gives the lock back
+	log 'returned from inside: ' (Inside) '\n';
+	while int i: 0; i < 10; i++;
+		locked table:1.guard
+			if i is 3
+				break;
+			;;
+		;;
+	;;
+	locked table:1.guard
+		log 'broke out, and the lock was free again\n';
+	;;
+	locked counter_lock
+		log 'and this one too\n';
+	;;
+	exit 0;
+
+	[AddMany: int core: 0;]
+		while int i: 0; i < TIMES; i++;
+			atomic total++;
+		;;
+	[end]
+
+	[AddLocked: int core: 0;]
+		while int i: 0; i < LOCKED_TIMES; i++;
+			locked counter_lock
+				counted is counted + 1;
+			;;
+		;;
+	[end]
+
+	[Inside:]
+		locked counter_lock
+			return 5;
+		;;
+	[end: 0]
+}

@@ -1,0 +1,17 @@
+# What atomic and locked take, and what a lock is
+phi.Test:Kernel
+{
+	str name: 'x';
+	u32 count: 0;
+	lock guard;
+	lock started: 1;
+	u64 big: 0;
+
+	atomic name is 'y';
+	atomic big++;
+	atomic guard++;
+	atomic 5 is 6;
+	locked count
+		count++;
+	;;
+}

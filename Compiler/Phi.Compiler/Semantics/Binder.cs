@@ -864,6 +864,13 @@ namespace Phi.Compiler.Semantics
                 case "chr": return PhiType.Chr;
                 case "u16": return PhiType.U16;
                 case "u32": return PhiType.U32;
+                case "lock":
+                    if (scope?.Unit is UnitKind.Boot or UnitKind.Os)
+                    {
+                        Error(t.Span, "lock needs 32-bit code (a Kernel or a Program): 16-bit code has one core");
+                        return PhiType.Error;
+                    }
+                    return PhiType.Lock;
                 case "f16":
                 case "f32":
                 case "f64":
@@ -983,6 +990,9 @@ namespace Phi.Compiler.Semantics
                     case UnsafeStmt u:
                         foreach (Stmt v in CollectDeclarations(u.Body)) yield return v;
                         break;
+                    case LockedStmt l:
+                        foreach (Stmt v in CollectDeclarations(l.Body)) yield return v;
+                        break;
                     case WhileStmt w:
                         if (w.Init != null)
                         {
@@ -1030,6 +1040,9 @@ namespace Phi.Compiler.Semantics
                         break;
                     case UnsafeStmt u:
                         foreach (var d in CollectBlockDeclarations(u.Body, block)) yield return d;
+                        break;
+                    case LockedStmt l:
+                        foreach (var d in CollectBlockDeclarations(l.Body, block)) yield return d;
                         break;
                     case WhileStmt w:
                         var loop = new Block { Parent = block };
@@ -1859,6 +1872,28 @@ namespace Phi.Compiler.Semantics
                     unsafeDepth--;
                     return u;
 
+                case LockedStmt locked:
+                    BindExpr(locked.Lock, scope);
+                    if (!locked.Lock.Type.IsError)
+                    {
+                        if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+                            Error(locked.Span, "locked needs 32-bit code (a Kernel or a Program): 16-bit code has one core");
+                        else if (locked.Lock.Type.Kind != TypeKind.Lock || locked.Lock.Type.IsArray || !IsAssignable(locked.Lock))
+                            Error(locked.Lock.Span, $"locked needs a lock, and '{Describe(locked.Lock)}' is a {locked.Lock.Type}; declare one like lock guard;");
+                    }
+                    BindStatements(locked.Body, scope, classLevel: false);
+                    return locked;
+
+                case AtomicStmt atomic:
+                {
+                    Expr value = atomic.Value;
+                    Expr? expected = atomic.Expected;
+                    BindAtomic(atomic.Target, ref value, ref expected, atomic.Op is AtomicOp.Add or AtomicOp.Subtract, atomic.Span, scope);
+                    atomic.Value = value;
+                    atomic.Expected = expected;
+                    return atomic;
+                }
+
                 case CallStmt call:
                     BindCall(call, scope);
                     return call;
@@ -1936,11 +1971,45 @@ namespace Phi.Compiler.Semantics
             throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}");
         }
 
+        /// <summary>
+        /// The parts of an atomic step: a variable, field or element in memory, a number, bln
+        /// or pointer of up to 32 bits, and values that fit it (an amount, for ++ and --).
+        /// </summary>
+        void BindAtomic(Expr target, ref Expr value, ref Expr? expected, bool amount, Span span, Scope scope)
+        {
+            BindExpr(target, scope);
+            BindExpr(value, scope);
+            if (expected != null) BindExpr(expected, scope);
+            if (target.Type.IsError || value.Type.IsError || expected is { Type.IsError: true }) return;
+            if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+            {
+                Error(span, "atomic needs 32-bit code (a Kernel or a Program): 16-bit code has one core");
+                return;
+            }
+            if (!IsAssignable(target))
+            {
+                Error(target.Span, "atomic works on a variable, a field or an array element");
+                return;
+            }
+            if (!target.Type.IsNumeric || target.Type.ElementSize is not (1 or 2 or 4))
+            {
+                Error(target.Span, $"atomic works on numbers, bln and pointers of up to 32 bits, and '{Describe(target)}' is a {target.Type}");
+                return;
+            }
+            value = Convert(value, amount ? PhiType.Int : target.Type, "the value");
+            if (expected != null) expected = Convert(expected, target.Type, "the value it's compared with");
+        }
+
         void BindVarDecl(VarDecl decl, Scope scope, bool classLevel)
         {
             VariableSymbol? v = decl.Symbol;
             if (v == null) return;          // already reported (e.g. a duplicate name)
             if (v.Type.IsError) return;     // already reported (e.g. dec isn't supported)
+            if (v.Type.Kind == TypeKind.Lock && decl.Values.Count > 0)
+            {
+                Error(decl.Span, $"a lock starts free: declare it without a value, like lock {decl.Name};");
+                return;
+            }
 
             if (decl.IsNew)
             {
@@ -3252,6 +3321,17 @@ namespace Phi.Compiler.Semantics
                 case SizeofExpr size:
                     BindSizeof(size, scope);
                     break;
+
+                case AtomicExpr atomic:
+                {
+                    Expr value = atomic.Value;
+                    Expr? expected = atomic.Expected;
+                    BindAtomic(atomic.Target, ref value, ref expected, amount: false, atomic.Span, scope);
+                    atomic.Value = value;
+                    atomic.Expected = expected!;
+                    atomic.Type = PhiType.Bool;
+                    break;
+                }
 
                 case CallExpr call:
                     BindCallExpr(call, scope);

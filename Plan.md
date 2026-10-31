@@ -1450,7 +1450,18 @@ cores ends with `Heap.used_blocks` at 0.
   - Until locks (2), work on another core must only touch its own data: no heap, log,
     files or network there.
 - [ ] (1, rest) the I/O APIC in place of the PIC, a timer on each core
-- [ ] (2) atomics and locks in the language (a syntax question for the user first)
+- [x] (2, the language) `atomic` and `locked` (the user's choice, 2026-10-30: words in the
+  language). `atomic x++ n;`, `atomic x-- n;` (lock add/sub), `atomic x is v;` (xchg) and
+  `atomic x is v when old` (lock cmpxchg; as a statement or a bln value) on a number,
+  `bln` or pointer of up to 32 bits in memory. `lock guard;` declares a lock;
+  `locked guard ... ;;` takes it (xchg, spinning with `pause` while another core has it),
+  runs with this core's interrupts off, and gives it back at the end and on every
+  `return`, `break` and `continue` that leaves the block. Test `kernel32_atomic` (4 cores
+  adding to one counter with `atomic`, and with plain math in a `locked` block: none
+  lost, where a plain `total++` from 4 cores loses some), and `atomic_errors`.
+  - The interrupts-off part isn't in the plan: without it, an interrupt handler wanting
+    a lock its own core's code holds would wait forever.
+- [ ] (2, the library) the heap, frames and scheduler made safe across cores
 - [ ] (3) data per core, a scheduler on every core
 - [ ] (4) kernel threads, and what a class variable means in them
 
