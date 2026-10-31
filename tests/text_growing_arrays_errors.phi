@@ -1,9 +1,12 @@
-# What a str array without a most can't do yet: be copied into whole (an element at a
-# time works)
+# A str array parameter's elements can't be replaced whole yet (one that grows can be)
 phi.Test:Kernel
 {
 	str names[];
-	str other[];
 	names++ 'ann';
-	other is names;
+	call Replace: names;
+
+	[Replace: str rows[];]
+		str other[];
+		rows is other;
+	[end]
 }

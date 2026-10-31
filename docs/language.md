@@ -344,9 +344,9 @@ nodes++;
 A `str` array grows the same way, `str names[];`, and each of its elements is text that
 grows too (`names:0 is 'a much longer name';`, `names++ 'ann' 'bob';`). Shrinking it gives
 the dropped elements' texts back, and a method's own goes back with its texts when it ends.
-It can be passed to a method that takes `str rows[]` (which can make its texts longer), and
-compared whole with any `str` array. Not yet: copying another array into one whole (copy
-it an element at a time), and struct fields without a size.
+It can be passed to a method that takes `str rows[]` (which can make its texts longer),
+and copied and compared whole with any `str` array (`copy is names;` grows it to fit, and
+gives back the texts it no longer needs). Not yet: struct fields without a size.
 
 **Arrays of text.** A `str` array follows the same rules as any array, and each element is a
 `str` (32-bit code):

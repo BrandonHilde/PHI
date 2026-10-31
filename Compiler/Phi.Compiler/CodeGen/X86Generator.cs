@@ -4117,6 +4117,11 @@ namespace Phi.Compiler.CodeGen
             PhiType element = t.Element;
             int size = element.ElementSize;
 
+            // an array copied onto itself is already what it would become (and a str array's
+            // texts mustn't be let go while they're copied)
+            if (copy.Target is NameExpr { Symbol: VariableSymbol into } && copy.Source is NameExpr { Symbol: VariableSymbol from } && into == from)
+                return;
+
             if (element.IsObject)
             {
                 // an atmost target first lets go of the objects past the source's count
@@ -4151,6 +4156,15 @@ namespace Phi.Compiler.CodeGen
                 var array = (VariableSymbol)((NameExpr)copy.Target).Symbol!;
                 EmitArrayCount(copy.Source);
                 EmitCopyFits(copy);
+                if (t.Filled)
+                {
+                    // an atmost target has as many as the source now
+                    Emit("push eax");
+                    EmitPlaceAddress(copy.Target);
+                    Emit("pop ecx");
+                    Emit($"mov [eax + {t.CountOffset}], ecx");
+                    Emit("mov eax, ecx");
+                }
                 EmitEachElement(() =>
                 {
                     EmitPlaceAddress(copy.Source);
@@ -4160,7 +4174,12 @@ namespace Phi.Compiler.CodeGen
                     EmitPlaceAddress(copy.Target);
                     Emit("mov ecx, [esp + 4]");
                     Emit("lea eax, [eax + ecx * 4]");
-                    if (array.GrowingElements)
+                    if (array.GrowingArray)
+                    {
+                        Emit("push eax                ; the element's slot");
+                        EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, view: array.Label);
+                    }
+                    else if (array.GrowingElements)
                     {
                         Emit("push eax                ; the element's slot");
                         EmitGrowStoreAt(4 * array.Count, sourceIsString: true, append: false, unsigned: false);
@@ -4200,6 +4219,19 @@ namespace Phi.Compiler.CodeGen
         void EmitCopyFits(ArrayAssignStmt copy)
         {
             PhiType t = copy.Target.Type;
+            if (copy.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true, Type.TextTable: true } texts })
+            {
+                // a str array: the texts past the source's count go back, then it grows to fit
+                ObjectLine(copy);
+                Emit("push eax");
+                EmitFreeTexts(texts, "dword [esp]", empty: true);
+                Emit("mov edx, [esp]");
+                LoadAddress("eax", texts.Label);
+                EmitTextArrayGrowCall();
+                Emit("pop eax");
+                Emit($"mov [{texts.Label} + 4], eax");
+                return;
+            }
             if (copy.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
             {
                 // it grows to fit, and has that many (letting go of objects past them)

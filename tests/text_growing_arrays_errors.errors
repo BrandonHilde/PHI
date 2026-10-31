@@ -1,1 +1,1 @@
-8:2: error: a str array without a most can't be copied whole yet; copy its elements one at a time
+10:3: error: the elements of an array parameter of strs can't be replaced yet

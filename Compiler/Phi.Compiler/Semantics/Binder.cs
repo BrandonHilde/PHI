@@ -2428,11 +2428,9 @@ namespace Phi.Compiler.Semantics
                 Error(span, $"'{Describe(left)}' holds {A(a.Element)} and '{Describe(right)}' {A(b.Element)}; they have to hold the same kind");
                 return false;
             }
-            if (a.Open && a.Element.Kind == TypeKind.Str && how == "copied into")
+            if (a.Open && a.Element.Kind == TypeKind.Str && how == "copied into" && !IsGrowingArray(left))
             {
-                Error(span, IsGrowingArray(left) || IsGrowingArray(right)
-                    ? "a str array without a most can't be copied whole yet; copy its elements one at a time"
-                    : $"the elements of an array parameter of strs can't be replaced yet");
+                Error(span, $"the elements of an array parameter of strs can't be replaced yet");
                 return false;
             }
             if (how == "copied into" && !a.Open && !b.Open)

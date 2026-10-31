@@ -45,6 +45,22 @@ phi.TextGrowingArrays:Kernel
 	fixed++ 'x' 'y';
 	log 'compared: ' (same is fixed) ' ' (same is names) '\n';
 
+	# copied whole: into one that grows (from any str array), and from one into one with a most
+	str copy[];
+	copy is names;
+	log 'copied: ' copy.len ' ' copy:3 ', the same: ' (copy is names) '\n';
+	copy:0 is 'only the copy changes';
+	log names:0 ' / ' copy:0 '\n';
+	copy is fixed;
+	log 'from atmost: ' copy.len ' ' copy:1 '\n';
+	fixed is same;
+	log 'into atmost: ' fixed.len ' ' fixed:1 '\n';
+	copy.len is 0;
+	u32 roomOnly: Heap.used_blocks;
+	copy is names;
+	copy.len is 0;
+	log 'its texts back: ' (Heap.used_blocks is roomOnly) '\n';
+
 	# a method's own array, and its texts, go back to the heap when it ends
 	u32 before: Heap.used_blocks;
 	call Local;

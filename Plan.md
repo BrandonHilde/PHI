@@ -599,8 +599,11 @@ The parts most worth doing next, roughly in order:
    the empty text in the program's data), so it's passed to `str rows[]` parameters and
    compared like any `str` array; it grows through `phi_text_array_grow`, and shrinking
    frees the dropped texts. Comparing `str` array parameters whole works now too. Tests
-   `text_growing_arrays`, `text_growing_arrays_errors`. Not yet: copying into one whole,
-   and method values with `str into;`.
+   `text_growing_arrays`, `text_growing_arrays_errors`. Copying into one whole works too
+   (`copy is names;`, from any `str` array), and copying a `str` array into an
+   `[atmost N]` one now sets its `.len` (it kept the old count before). Not yet: method
+   values with `str into;` (a method value's type would have to say which `str`
+   parameters are the caller's own text: a syntax question for the user).
 3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
    and filled in one place. Waiting for code that needs them before choosing a design
    (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
