@@ -4,7 +4,7 @@ const string Usage = """
     usage:
       phi check <file.phi>                 report errors without building
       phi build <file.phi> [-o <dir>]      compile to a bootable disk image
-      phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>]
+      phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>]
                                            build, then boot it in QEMU (serial output prints here);
                                            --keep-disk keeps the files a kernel saved for next time
                                            (programs from the rootfs are updated on it),
@@ -13,7 +13,7 @@ const string Usage = """
                                            boot together on one network, each in a window;
                                            --nic virtio gives the machine a virtio-net card (not an RTL8139)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
-                [--memory <MB>]
+                [--memory <MB>] [--cores <n>]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
                                            --input scripts the input instead of NAME.input,
@@ -86,6 +86,15 @@ static int Execute(string[] args)
         Qemu.MemoryMb = mb;
     }
 
+    void CoresOption()
+    {
+        string? cores = Option("--cores");
+        if (cores == null) return;
+        if (!int.TryParse(cores, out int n) || n < 1 || n > 8)
+            throw new ArgumentException("--cores takes how many cores the machine has, from 1 to 8");
+        Qemu.Cores = n;
+    }
+
     void NicOption()
     {
         string? nic = Option("--nic");
@@ -107,6 +116,7 @@ static int Execute(string[] args)
                 bool debug = Flag("--debug");
                 bool keepDisk = Flag("--keep-disk");
                 MemoryOption();
+                CoresOption();
                 NicOption();
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
 
@@ -187,6 +197,7 @@ static int Execute(string[] args)
                 bool bench = Flag("--bench") || saveBench;
                 string? tolerance = Option("--tolerance");
                 MemoryOption();
+                CoresOption();
                 NicOption();
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
@@ -209,6 +220,7 @@ static int Execute(string[] args)
                 string? seconds = Option("--seconds");
                 string? top = Option("--top");
                 MemoryOption();
+                CoresOption();
                 NicOption();
                 if (rest.Count != 1) throw new ArgumentException("profile needs exactly one .phi file");
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
@@ -230,6 +242,7 @@ static int Execute(string[] args)
                 string? port = Option("--port");
                 bool profile = Flag("--profile");
                 MemoryOption();
+                CoresOption();
                 NicOption();
                 if (rest.Count != 1) throw new ArgumentException("load needs exactly one .phi file");
                 int n = 100, s = 30, p = 4001;

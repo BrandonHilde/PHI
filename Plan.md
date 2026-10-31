@@ -1435,7 +1435,24 @@ Goal: one server uses every core of its machine.
 tick shows them doing more work than one core, and a test that hammers the heap from 4
 cores ends with `Heap.used_blocks` at 0.
 
-**Status: not started.**
+**Status: in progress.**
+- [x] (1, first part) `proc.cores`: `Cores.Start` wakes every other core at once (the
+  local APIC's INIT and STARTUP to all but this one) with a start routine copied to
+  `0x1000`. Each comes into 32-bit mode with the first core's GDT, interrupt table and
+  paging, turns its own local APIC on, takes a number with `lock xadd`, and waits halted
+  on a stack of its own. `Cores.Run: method` runs it on every core with its number and
+  waits for them all; an interrupt (vector `0xF0`) wakes them. QEMU runs with 4 cores
+  now (5 of the plan), `--cores n` for others. Test `kernel32_cores` (each core sums its
+  share of an array; also tried by hand with 1, 2 and 8 cores).
+  - Differs from the plan: no ACPI tables yet. Waking every other core at once, and
+    counting them as they arrive, needs none; the I/O APIC (for sending devices'
+    interrupts to other cores) will.
+  - Until locks (2), work on another core must only touch its own data: no heap, log,
+    files or network there.
+- [ ] (1, rest) the I/O APIC in place of the PIC, a timer on each core
+- [ ] (2) atomics and locks in the language (a syntax question for the user first)
+- [ ] (3) data per core, a scheduler on every core
+- [ ] (4) kernel threads, and what a class variable means in them
 
 #### Phase S10: 64-bit
 

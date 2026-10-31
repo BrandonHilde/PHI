@@ -79,8 +79,13 @@ namespace Phi.Cli
                 "-fw_cfg", $"name=opt/phi/zone,string={(int)TimeZoneInfo.Local.GetUtcOffset(DateTime.Now).TotalMinutes}",
             });
             if (MemoryMb is int mb) args.AddRange(new[] { "-m", $"{mb}M" });
+            // the other cores wait in the BIOS until a kernel starts them (proc.cores)
+            if (Cores > 1) args.AddRange(new[] { "-smp", Cores.ToString() });
             return args;
         }
+
+        /// <summary>How many cores the machine has (phi run/test --cores); 4 unless set.</summary>
+        public static int Cores { get; set; } = 4;
 
         /// <summary>The network card machines get (phi run/test --nic): rtl8139 or virtio.</summary>
         public static string NetworkCard { get; set; } = "rtl8139";

@@ -1,0 +1,200 @@
+# The machine's other cores (32-bit kernels): starting them, and running work on them.
+#
+#   use proc.cores;
+#   int n: (Cores.Start);           # how many cores there are in all, this one included
+#   call Cores.Run: addr Part;      # Part: 0 here, Part: 1, 2 ... on the others; back when all are done
+#
+#   [Part: int core: 0;]            # a share of the work, by core number
+#       ...
+#   [end]
+#
+# Start wakes every other core (the local APIC's INIT and STARTUP messages, to all of
+# them at once) with a start routine copied to 0x1000. Each comes into 32-bit mode with
+# this core's GDT, interrupt table and paging, takes a number for itself as it arrives,
+# and waits (halted) on a stack of its own for Run. Run wakes them with an interrupt.
+#
+# Until there are locks, work on another core must only touch its own data: its part of
+# an array, say, by its core number. It mustn't use the heap, log, files, the network or
+# the OS.* calls, which assume one core. Up to MAX_CORES cores take part; any more stay
+# halted.
+
+use memory.heap;
+use memory.paging;
+
+phi.Cores:Kernel
+{
+	const int MAX_CORES: 8;
+	const u32 STACK_SIZE: 16384;
+	const u32 APIC: 0xFEE00000;             # every core's local APIC, at the same address
+	const u32 START: 0x1000;                # where the start routine goes (STARTUP vector 1)
+
+	int count: 1;                           # cores in all, once Start has run
+	u32 cores_arrived: 0;                   # other cores that have started (each adds one)
+	u32 cores_stacks: 0;                    # their stacks: core n's ends at cores_stacks + n * STACK_SIZE
+	u32 cores_work: 0;                      # what Run runs: a method<int>
+	volatile u32 cores_generation: 0;       # one more for each Run
+	volatile u32 cores_done[8];             # the generation each core has finished
+	bln started: false;
+
+	# start the other cores; how many cores there are in all (1 if there are no others)
+	[Start]
+		if started return count;
+		started is true;
+		ptr<u8> stacks: new u8[STACK_SIZE * MAX_CORES];
+		if stacks is 0 return count;
+		cores_stacks is stacks as u32;
+		call Paging.MapDevice: APIC 4096;
+		call CoresWake;                     # the start routine in place, and INIT to the others
+		call OS.Sleep: 10;
+		call CoresStartup;                  # STARTUP, twice, as Intel's guide says
+		call OS.Sleep: 1;
+		call CoresStartup;
+		call OS.Sleep: 100;                 # time for them to arrive
+		count is 1 + cores_arrived;
+		if count > MAX_CORES
+			count is MAX_CORES;
+		;;
+	[end: count]
+
+	# run work on every core: work: 0 on this one, and work: n on core n; back once every
+	# core has finished
+	[Run: method<int> work: 0;]
+		cores_work is work;
+		cores_generation++;
+		if count > 1
+			call CoresWakeAll;
+		;;
+		call work: 0;
+		while int n: 1; n < count; n++;
+			while cores_done:n is not cores_generation
+				# (it writes cores_done:n when it's finished)
+			;;
+		;;
+	[end]
+}
+
+# the start routine in place at START, with what the other cores need from this one (its
+# GDT, interrupt table, paging), the interrupt that wakes them, this core's local APIC on,
+# and INIT to every other core
+asm.CoresWake
+{
+	mov esi, cores_start
+	mov edi, {START}
+	mov ecx, cores_start_end - cores_start
+	rep movsb
+	sgdt [{START} + (cores_gdt - cores_start)]
+	sidt [{START} + (cores_idt - cores_start)]
+	mov eax, cr0
+	mov [{START} + (cores_cr0 - cores_start)], eax
+	mov eax, cr3
+	mov [{START} + (cores_cr3 - cores_start)], eax
+	mov eax, cr4
+	mov [{START} + (cores_cr4 - cores_start)], eax
+
+	mov ecx, 0xF0
+	mov eax, cores_wake_interrupt
+	call phi_set_gate
+
+	mov dword [{APIC} + 0xF0], 0x1FF            ; the local APIC on (spurious interrupts: vector 0xFF)
+	mov dword [{APIC} + 0x300], 0x000C4500      ; INIT, to every core but this one
+	ret
+
+; The start routine, copied to START, so its addresses are worked out from there.
+cores_start:
+bits 16
+	cli
+	cld
+	xor ax, ax
+	mov ds, ax
+	o32 lgdt [{START} + (cores_gdt - cores_start)]
+	mov eax, cr0
+	or eax, 1
+	mov cr0, eax
+	jmp dword 0x08:({START} + (cores_protected - cores_start))
+bits 32
+cores_protected:
+	mov ax, 0x10
+	mov ds, ax
+	mov es, ax
+	mov fs, ax
+	mov gs, ax
+	mov ss, ax
+	lidt [{START} + (cores_idt - cores_start)]
+	; paging as the first core has it: 4 MB pages allowed, its page directory, then on
+	mov eax, [{START} + (cores_cr0 - cores_start)]
+	test eax, 0x80000000
+	jz .numbered
+	mov eax, [{START} + (cores_cr4 - cores_start)]
+	mov cr4, eax
+	mov eax, [{START} + (cores_cr3 - cores_start)]
+	mov cr3, eax
+	mov eax, [{START} + (cores_cr0 - cores_start)]
+	mov cr0, eax
+.numbered:
+	; a number for this core (1 for the first to arrive), and its stack
+	mov eax, 1
+	lock xadd [{cores_arrived}], eax
+	inc eax
+	cmp eax, {MAX_CORES}
+	jae .surplus
+	mov ebx, eax
+	imul esp, eax, {STACK_SIZE}
+	add esp, [{cores_stacks}]
+	mov dword [{APIC} + 0xF0], 0x1FF            ; its local APIC on, or the wake interrupt can't reach it
+	fninit
+	mov eax, cores_main
+	jmp eax                                     ; (a jump to an address: this code was moved)
+.surplus:
+	cli
+	hlt
+	jmp .surplus
+cores_gdt: dw 0
+	dd 0
+cores_idt: dw 0
+	dd 0
+cores_cr0: dd 0
+cores_cr3: dd 0
+cores_cr4: dd 0
+cores_start_end:
+
+; Each other core, from here on: halted until there's work (a new generation), then
+; work: its number, and its generation marked done. ebx holds its number.
+cores_main:
+	cli
+	mov eax, [{cores_generation}]
+	cmp eax, [{cores_done} + ebx * 4]
+	jne .work
+	sti
+	hlt                                         ; (sti; hlt can't miss the interrupt in between)
+	jmp cores_main
+.work:
+	sti
+	push eax                                    ; the generation
+	push ebx                                    ; this core's number, kept
+	push ebx                                    ; and given to the work
+	call [{cores_work}]
+	add esp, 4
+	pop ebx
+	pop eax
+	mov [{cores_done} + ebx * 4], eax
+	jmp cores_main
+
+; the interrupt that wakes a core: nothing to do but say it's handled
+cores_wake_interrupt:
+	mov dword [{APIC} + 0xB0], 0
+	iretd
+}
+
+# STARTUP to every other core: start in 16-bit mode at 0x1000 (vector 1)
+asm.CoresStartup
+{
+	mov dword [{APIC} + 0x300], 0x000C4601
+	ret
+}
+
+# interrupt 0xF0 to every other core, which wakes them to look for work
+asm.CoresWakeAll
+{
+	mov dword [{APIC} + 0x300], 0x000C40F0
+	ret
+}

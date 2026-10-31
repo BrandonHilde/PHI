@@ -58,7 +58,7 @@ protected mode with nothing else running.
 
 | Address | Contents |
 |---|---|
-| `0x00500`–`0x07BFF` | free (stage 1 and 2 used it as their stack) |
+| `0x00500`–`0x07BFF` | free (stage 1 and 2 used it as their stack); `proc.cores` copies the other cores' start routine to `0x1000` |
 | `0x07C00`–`0x07DFF` | stage 1 (no longer needed) |
 | `0x07E00`–`0x08DFF` | stage 2 and its GDT (the GDT is still in use) |
 | `0x09000`–`0x0903F` | BootInfo |

@@ -1,0 +1,50 @@
+# The other cores (proc.cores): phi test gives the machine 4. They start, each sums its
+# share of an array (every n-th number, from its own core number), and the shares add up
+# to the whole; a second Run shows each one woken again for new work.
+use proc.cores;
+
+phi.CoresTest:Kernel
+{
+	const int SIZE: 4096;
+	u32 data[4096];
+	u32 sums[8];
+	u32 runs[8];
+
+	int n: (Cores.Start);
+	log 'cores: ' n '\n';
+
+	u32 expected: 0;
+	while int i: 0; i < SIZE; i++;
+		data:i is i * 3 + 1;
+		expected++ data:i;
+	;;
+
+	call Cores.Run: addr Part;
+	u32 total: 0;
+	bln every: true;
+	while int c: 0; c < n; c++;
+		total++ sums:c;
+		every is every and sums:c is not 0;
+	;;
+	log 'the shares add up: ' (total is expected) ', every core had one: ' every '\n';
+
+	call Cores.Run: addr Part;
+	bln twice: true;
+	while int c: 0; c < n; c++;
+		twice is twice and runs:c is 2;
+	;;
+	log 'every core ran twice: ' twice '\n';
+	exit 0;
+
+	# this core's share: every n-th number, from its own
+	[Part: int core: 0;]
+		u32 sum: 0;
+		int i: core;
+		while i < SIZE
+			sum++ data:i;
+			i++ Cores.count;
+		;;
+		sums:core is sum;
+		runs:core++;
+	[end]
+}

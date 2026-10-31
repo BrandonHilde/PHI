@@ -1187,6 +1187,38 @@ call SaveLog.Clear: 'PLAYERS.LOG';
 A log only grows, so a kernel that keeps one for a long time reads it, clears it, and adds
 back the latest record of each thing (the mmo sample's world, `samples/mmo/server.rootfs/world.phi`, does this when it starts).
 
+## Several cores (32-bit kernels)
+
+`phi run` and `phi test` give the machine 4 cores (`--cores n` for 1 to 8). A kernel starts
+on one of them; `proc.cores` starts the others and runs work on them:
+
+```phi
+use proc.cores;
+
+u32 data[4096];
+u32 sums[8];
+int n: (Cores.Start);          # how many cores there are in all, this one included
+call Cores.Run: addr Part;     # Part: 0 here, Part: 1, 2 ... on the others; back when all are done
+
+[Part: int core: 0;]           # this core's share: every n-th number, from its own
+    u32 sum: 0;
+    int i: core;
+    while i < 4096
+        sum++ data:i;
+        i++ Cores.count;
+    ;;
+    sums:core is sum;
+[end]
+```
+
+- The other cores wait, halted, between `Run`s; `Run` wakes them with an interrupt, and
+  each runs the method with its own number on a stack of its own.
+- **Until there are locks, work on another core must only touch its own data**, like its
+  share of an array, by its core number. It mustn't use the heap, `log`, files, the
+  network or the `OS.` calls, which all assume one core.
+- Interrupts from devices and the timer still go to the first core only.
+- Up to 8 cores take part; any more stay halted.
+
 ## The network (32-bit kernels)
 
 `phi run` and `phi test` give every machine an RTL8139 network card (or, with `--nic
