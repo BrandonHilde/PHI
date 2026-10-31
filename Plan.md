@@ -1461,7 +1461,15 @@ cores ends with `Heap.used_blocks` at 0.
   lost, where a plain `total++` from 4 cores loses some), and `atomic_errors`.
   - The interrupts-off part isn't in the plan: without it, an interrupt handler wanting
     a lock its own core's code holds would wait forever.
-- [ ] (2, the library) the heap, frames and scheduler made safe across cores
+- [x] (2, the heap and frames) `Heap.Alloc`, `Free` and `LargestFree` work in a
+  `locked heap_lock` block, which replaced turning interrupts off (that kept the flags in
+  one shared variable, which two cores would have overwritten); `Frames.Alloc`,
+  `AllocContiguous` and `Free` take `frames_lock` (they had no protection at all). Test
+  `kernel32_cores_heap`: four cores allocating, filling and freeing 3,000 blocks each at
+  once, every block holding only its own core's number, and `Heap.used_blocks` back
+  where it was (this is one of the "Done when"s). Without the lock the same test crashes
+  at once (double frees, then a page fault on every core).
+- [ ] (2, the rest of the library) `log` and the console, the scheduler, files, the network
 - [ ] (3) data per core, a scheduler on every core
 - [ ] (4) kernel threads, and what a class variable means in them
 

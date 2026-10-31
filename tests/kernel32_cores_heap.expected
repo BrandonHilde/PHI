@@ -1,0 +1,2 @@
+cores: 4, each block held only the number of its core: 1
+every block back: 1

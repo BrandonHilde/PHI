@@ -1,0 +1,68 @@
+# Four cores using the heap at once (proc.cores, with Heap's lock): each allocates blocks
+# of many sizes, fills each with its own core number, keeps up to 16 alive and frees them
+# in a mixed order, checking each block still holds only its number (two cores given the
+# same memory would show). At the end every block is back.
+use proc.cores;
+
+phi.CoresHeap:Kernel
+{
+	const int ROUNDS: 3000;
+	const int KEEP: 16;
+
+	u32 kept[128];              # KEEP blocks for each core
+	u32 sizes[128];
+	bln ok[8];
+
+	int n: (Cores.Start);
+	u32 before: Heap.used_blocks;             # (after Start, whose stacks stay)
+	call Cores.Run: addr Hammer;
+	bln all: true;
+	while int c: 0; c < n; c++;
+		all is all and ok:c;
+	;;
+	log 'cores: ' n ', each block held only the number of its core: ' all '\n';
+	log 'every block back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Hammer: int core: 0;]
+		ok:core is true;
+		u32 seed: core * 7919 + 1;
+		while int i: 0; i < ROUNDS; i++;
+			seed is seed * 1103515245 + 12345;
+			int slot: core * KEEP + (seed >> 8) % KEEP;
+			if kept:slot is not 0
+				call Check: core slot;
+				free kept:slot;
+			;;
+			u32 size: 1 + (seed >> 16) % 600;
+			ptr<u8> p: new u8[size];
+			if p is 0
+				ok:core is false;
+				return;
+			;;
+			while u32 b: 0; b < size; b++;
+				p:b is core;
+			;;
+			kept:slot is p;
+			sizes:slot is size;
+		;;
+		while int k: 0; k < KEEP; k++;
+			int slot: core * KEEP + k;
+			if kept:slot is not 0
+				call Check: core slot;
+				free kept:slot;
+				kept:slot is 0;
+			;;
+		;;
+	[end]
+
+	# the block still holds only this core's number
+	[Check: int core: 0; int slot: 0;]
+		ptr<u8> p: kept:slot;
+		while u32 b: 0; b < sizes:slot; b++;
+			if p:b is not core
+				ok:core is false;
+			;;
+		;;
+	[end]
+}

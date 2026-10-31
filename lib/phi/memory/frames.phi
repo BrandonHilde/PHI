@@ -23,6 +23,7 @@ phi.Frames:Kernel
 	u32 free_frames: 0;
 	u32 memory_top: 0;      # the end of usable RAM, in bytes
 	u32 next_search: 0;     # the frame where the next search starts
+	lock frames_lock;       # one core at a time in Alloc, AllocContiguous and Free
 
 	call Init;
 
@@ -76,19 +77,22 @@ phi.Frames:Kernel
 	[Alloc]
 		u32 found: 0;
 		u32 byteCount: (frame_count + 7) / 8;
-		u32 start: next_search / 8;
+		u32 start: 0;
+		locked frames_lock
+			start is next_search / 8;
 
-		# skip whole bytes of used frames; look at most once around the bitmap
-		while u32 n: 0; n < byteCount and found is 0; n++;
-			u32 index: (start + n) % byteCount;
-			if frame_bitmap:index is not 0xFF
-				while u32 bit: 0; bit < 8 and found is 0; bit++;
-					u32 frame: index * 8 + bit;
-					if frame < frame_count and (frame_bitmap:index & (1 << bit)) is 0
-						frame_bitmap:index is frame_bitmap:index | (1 << bit);
-						free_frames--;
-						next_search is frame + 1;
-						found is frame * FRAME_SIZE;
+			# skip whole bytes of used frames; look at most once around the bitmap
+			while u32 n: 0; n < byteCount and found is 0; n++;
+				u32 index: (start + n) % byteCount;
+				if frame_bitmap:index is not 0xFF
+					while u32 bit: 0; bit < 8 and found is 0; bit++;
+						u32 frame: index * 8 + bit;
+						if frame < frame_count and (frame_bitmap:index & (1 << bit)) is 0
+							frame_bitmap:index is frame_bitmap:index | (1 << bit);
+							free_frames--;
+							next_search is frame + 1;
+							found is frame * FRAME_SIZE;
+						;;
 					;;
 				;;
 			;;
@@ -100,38 +104,42 @@ phi.Frames:Kernel
 		u32 runStart: 0;
 		u32 runLength: 0;
 		u32 result: 0;
-		while u32 f: 0; f < frame_count and result is 0; f++;
-			bln used: false;
-			call used is IsUsed: f;
-			if used
-				runLength is 0;
-			;;
-			else
-				if runLength is 0
-					runStart is f;
+		locked frames_lock
+			while u32 f: 0; f < frame_count and result is 0; f++;
+				bln used: false;
+				call used is IsUsed: f;
+				if used
+					runLength is 0;
 				;;
-				runLength++;
-				if runLength is count
-					result is runStart * FRAME_SIZE;
+				else
+					if runLength is 0
+						runStart is f;
+					;;
+					runLength++;
+					if runLength is count
+						result is runStart * FRAME_SIZE;
+					;;
 				;;
 			;;
-		;;
-		if result is not 0
-			while u32 k: 0; k < count; k++;
-				call MarkUsed: runStart + k;
+			if result is not 0
+				while u32 k: 0; k < count; k++;
+					call MarkUsed: runStart + k;
+				;;
+				free_frames-- count;
 			;;
-			free_frames-- count;
 		;;
 	[end: result]
 
 	# give a frame back (an address from Alloc or AllocContiguous)
 	[Free: u32 address: 0;]
 		u32 frame: address / FRAME_SIZE;
-		bln used: false;
-		call used is IsUsed: frame;
-		if frame < frame_count and address >= BITMAP_ADDRESS and used
-			call MarkFree: frame;
-			free_frames++;
+		locked frames_lock
+			bln used: false;
+			call used is IsUsed: frame;
+			if frame < frame_count and address >= BITMAP_ADDRESS and used
+				call MarkFree: frame;
+				free_frames++;
+			;;
 		;;
 	[end]
 

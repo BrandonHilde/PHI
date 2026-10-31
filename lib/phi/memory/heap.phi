@@ -12,8 +12,9 @@
 # 32-63, and so on, doubling), so Alloc only looks at free blocks that could fit:
 # the first one big enough on its size's own list, otherwise the first on the next
 # list that has one. It splits off what it doesn't need.
-# Both turn interrupts off while they run, so an interrupt handler can use the heap
-# too (a method's objects are freed when it ends, even in a handler).
+# Both work holding heap_lock, so the cores (proc.cores) can share the heap, and with
+# their core's interrupts off, so an interrupt handler can use it too (a method's objects
+# are freed when it ends, even in a handler).
 
 use memory.frames;
 use memory.paging;
@@ -47,7 +48,7 @@ phi.Heap:Kernel
 	u32 heap_size: 0;
 	u32 used_bytes: 0;          # handed out right now (not counting headers)
 	u32 used_blocks: 0;
-	u32 heap_flags: 0;          # the interrupt flag from before Alloc or Free started
+	lock heap_lock;             # one core at a time in Alloc, Free and LargestFree
 	ptr<HeapBlock> heap_bins[BINS];
 	u32 heap_zero_at: 0;        # for HeapZero
 	u32 heap_zero_words: 0;
@@ -76,102 +77,103 @@ phi.Heap:Kernel
 
 	# size bytes of zeroed memory, or 0 if no free block is big enough
 	[Alloc: u32 size: 0;]
-		call asm.HeapLock;
 		u32 result: 0;
 		u32 wanted: (size + 7) & ~7;
 		if wanted is 0
 			wanted is 8;
 		;;
-
-		ptr<HeapBlock> b: (FindFree: wanted);
-		if b is not 0
-			call RemoveFree: b;
-			# split off the rest when it's big enough to be a block of its own
-			if b:0.size >= wanted + HEADER + 8
-				ptr<HeapBlock> rest: b + HEADER + wanted;
-				rest:0.magic is HEAP_MAGIC;
-				rest:0.size is b:0.size - wanted - HEADER;
-				rest:0.used is 0;
-				rest:0.next is b:0.next;
-				rest:0.previous is b;
-				if b:0.next is not 0
-					ptr<HeapBlock> after: b:0.next;
-					after:0.previous is rest;
+		locked heap_lock
+			ptr<HeapBlock> b: (FindFree: wanted);
+			if b is not 0
+				call RemoveFree: b;
+				# split off the rest when it's big enough to be a block of its own
+				if b:0.size >= wanted + HEADER + 8
+					ptr<HeapBlock> rest: b + HEADER + wanted;
+					rest:0.magic is HEAP_MAGIC;
+					rest:0.size is b:0.size - wanted - HEADER;
+					rest:0.used is 0;
+					rest:0.next is b:0.next;
+					rest:0.previous is b;
+					if b:0.next is not 0
+						ptr<HeapBlock> after: b:0.next;
+						after:0.previous is rest;
+					;;
+					b:0.next is rest;
+					b:0.size is wanted;
+					call AddFree: rest;
 				;;
-				b:0.next is rest;
-				b:0.size is wanted;
-				call AddFree: rest;
-			;;
 
-			b:0.used is 1;
-			used_bytes++ b:0.size;
-			used_blocks++;
-			result is b + HEADER;
-			heap_zero_at is result;
-			heap_zero_words is b:0.size / 4;
-			call asm.HeapZero;
+				b:0.used is 1;
+				used_bytes++ b:0.size;
+				used_blocks++;
+				result is b + HEADER;
+				heap_zero_at is result;
+				heap_zero_words is b:0.size / 4;
+				call asm.HeapZero;
+			;;
 		;;
-		call asm.HeapUnlock;
 	[end: result]
 
 	# give back memory from Alloc; freeing 0 does nothing
 	[Free: u32 address: 0;]
-		call asm.HeapLock;
-		if address is not 0
-			ptr<HeapBlock> b: address - HEADER;
-			bln valid: address >= heap_start + HEADER and address < heap_start + heap_size;
-			if valid
-				valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
-			;;
-
-			if valid is false
-				log '\nPHI: free of memory that new did not hand out (or freed twice): ' address '\n';
-				call HeapHalt;
-			;;
-
-			b:0.used is 0;
-			used_bytes-- b:0.size;
-			used_blocks--;
-
-			# merge with the next block, then the previous one, if they are free
-			ptr<HeapBlock> next: b:0.next;
-			if next is not 0 and next:0.used is 0
-				call RemoveFree: next;
-				b:0.size++ HEADER + next:0.size;
-				b:0.next is next:0.next;
-				next:0.magic is 0;
-				if b:0.next is not 0
-					ptr<HeapBlock> after: b:0.next;
-					after:0.previous is b;
+		locked heap_lock
+			if address is not 0
+				ptr<HeapBlock> b: address - HEADER;
+				bln valid: address >= heap_start + HEADER and address < heap_start + heap_size;
+				if valid
+					valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
 				;;
-			;;
-			ptr<HeapBlock> merged: b;
-			ptr<HeapBlock> previous: b:0.previous;
-			if previous is not 0 and previous:0.used is 0
-				call RemoveFree: previous;
-				previous:0.size++ HEADER + b:0.size;
-				previous:0.next is b:0.next;
-				b:0.magic is 0;
-				if previous:0.next is not 0
-					ptr<HeapBlock> later: previous:0.next;
-					later:0.previous is previous;
+
+				if valid is false
+					log '\nPHI: free of memory that new did not hand out (or freed twice): ' address '\n';
+					call HeapHalt;
 				;;
-				merged is previous;
+
+				b:0.used is 0;
+				used_bytes-- b:0.size;
+				used_blocks--;
+
+				# merge with the next block, then the previous one, if they are free
+				ptr<HeapBlock> next: b:0.next;
+				if next is not 0 and next:0.used is 0
+					call RemoveFree: next;
+					b:0.size++ HEADER + next:0.size;
+					b:0.next is next:0.next;
+					next:0.magic is 0;
+					if b:0.next is not 0
+						ptr<HeapBlock> after: b:0.next;
+						after:0.previous is b;
+					;;
+				;;
+				ptr<HeapBlock> merged: b;
+				ptr<HeapBlock> previous: b:0.previous;
+				if previous is not 0 and previous:0.used is 0
+					call RemoveFree: previous;
+					previous:0.size++ HEADER + b:0.size;
+					previous:0.next is b:0.next;
+					b:0.magic is 0;
+					if previous:0.next is not 0
+						ptr<HeapBlock> later: previous:0.next;
+						later:0.previous is previous;
+					;;
+					merged is previous;
+				;;
+				call AddFree: merged;
 			;;
-			call AddFree: merged;
 		;;
-		call asm.HeapUnlock;
 	[end]
 
 	# the largest block Alloc could hand out right now
 	[LargestFree]
 		u32 largest: 0;
-		ptr<HeapBlock> b: heap_first;
-		while b is not 0
-			if b:0.used is 0 and b:0.size > largest
-				largest is b:0.size;
+		locked heap_lock
+			ptr<HeapBlock> b: heap_first;
+			while b is not 0
+				if b:0.used is 0 and b:0.size > largest
+					largest is b:0.size;
+				;;
+				b is b:0.next;
 			;;
-			b is b:0.next;
 		;;
 	[end: largest]
 
@@ -243,24 +245,6 @@ asm.HeapHalt
 .halt:
 	hlt
 	jmp .halt
-}
-
-# interrupts off, remembering whether they were on
-asm.HeapLock
-{
-	pushfd
-	pop eax
-	mov [{heap_flags}], eax
-	cli
-	ret
-}
-
-# interrupts back the way they were
-asm.HeapUnlock
-{
-	push dword [{heap_flags}]
-	popfd
-	ret
 }
 
 # heap_zero_words 32-bit words at heap_zero_at set to 0

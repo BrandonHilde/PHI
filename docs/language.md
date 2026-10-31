@@ -1213,9 +1213,10 @@ call Cores.Run: addr Part;     # Part: 0 here, Part: 1, 2 ... on the others; bac
 
 - The other cores wait, halted, between `Run`s; `Run` wakes them with an interrupt, and
   each runs the method with its own number on a stack of its own.
-- Work on other cores can share data through `atomic` and `locked` (below). **The library
-  doesn't use them yet**, so work on another core mustn't use the heap, `log`, files, the
-  network or the `OS.` calls, which all assume one core.
+- Work on other cores can share data through `atomic` and `locked` (below). The heap
+  (`new` and `free`) and `Frames` take a lock of their own, so any core can use them.
+  **The rest of the library doesn't yet**: work on another core mustn't `log`, or use
+  files, the network or the `OS.` calls, which assume one core.
 - Interrupts from devices and the timer still go to the first core only.
 - Up to 8 cores take part; any more stay halted.
 
