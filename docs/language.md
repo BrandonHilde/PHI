@@ -141,7 +141,8 @@ str name: 'PHI';
 int total;                  # no value: zero
 
 int numbers: 1 3 5 9 2;     # several values make an array
-str days: 'Mon' 'Tue';      # an array of strings (a warning if any value isn't a literal)
+str days: 'Mon' 'Tue';      # an array of strings
+str greeting: ('Hi ' name); # one text, built from the values in parentheses
 int squares[5];             # an array of 5 zeros
 str buffer: [40];           # room for 40 characters (also: str buffer[40];)
 u8 sectors[SECTOR_SIZE];    # sizes can be constants
@@ -590,6 +591,23 @@ As in any list, `'Total' -3` is two values. The text is cut to fit, like any `st
 `str` can't appear after the first value (it's being rewritten by then), and `s++ s;` is an
 error: copy it to another `str` first. Only a `str` takes several values: `n is n -1;`
 still subtracts.
+
+**Text in parentheses.** Several values in parentheses, `('Hello ' name)`, are one text built
+from them the same way, and it goes anywhere a value goes: a declaration, one element of an
+array, an argument, a comparison.
+
+```phi
+str greeting: ('Hello ' name);                 # one text
+str greetings: ('hello ' name) 'index 1';      # an array of two
+names++ ('item ' i) 'other';                   # two elements
+call Show: ('Score: ' score) 10;               # one argument
+status is (status '!' status);                 # its own value can be in it
+```
+
+A `str` declared with several values is an array of them, so one that would read as text
+being built (`str docs: home '/DOCS';`) is an error that says which to write: the values
+in parentheses for one text, or each value that isn't a literal in its own parentheses for
+an array. A list of literals (`str days: 'Mon' 'Tue';`) is an array as before.
 
 The values can carry on over several lines, as a declaration's can, when each line after
 the first is indented deeper than the statement's first line. The same goes for `log` and

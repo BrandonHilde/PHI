@@ -3255,6 +3255,10 @@ namespace Phi.Compiler.CodeGen
                     EmitHas(has);
                     break;
 
+                case TextExpr text:
+                    EmitText(text);
+                    break;
+
                 case IsTypeExpr test:
                 {
                     // the struct's type table is just before the object (and 0 holds nothing)
@@ -3413,6 +3417,32 @@ namespace Phi.Compiler.CodeGen
             if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
             else if (bits32 || !p.Linear) Emit($"lea eax, {Operand(p)}");
             else Emit($"lea eax, [ebx{offset}]");   // (Operand would reach it through fs)
+        }
+
+        /// <summary>
+        /// eax = the text ('Hello ' name) builds: each part written into a str of its own, as
+        /// s is a b; writes them. In 32-bit code with a heap it's a slot that grows (reused each
+        /// time this runs, and freed when the method ends); otherwise a buffer of a str's default size.
+        /// </summary>
+        void EmitText(TextExpr text)
+        {
+            var holder = new VariableSymbol { Name = "(text)", Type = PhiType.Str, IsLocal = currentMethod != null };
+            if (GrowResults)
+            {
+                holder.Label = AllocTemp(8);
+                holder.Grows = true;
+                holder.Capacity = Binder.StrMax + 1;
+                if (currentMethod != null) resultSlots.Add(holder.Label);
+            }
+            else
+            {
+                holder.Capacity = 256;
+                holder.Label = AllocTemp(holder.Capacity);
+            }
+            var build = new StringBuildStmt { Target = NameOf(holder), Span = text.Span };
+            build.Parts.AddRange(text.Parts);
+            EmitStatementCode(build);
+            EmitTextValue(NameOf(holder));
         }
 
         /// <summary>eax = a text's address: '' in place of none (a str that grows has none until it's written).</summary>

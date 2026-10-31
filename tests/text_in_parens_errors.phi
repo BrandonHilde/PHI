@@ -1,0 +1,18 @@
+# A str with several values that aren't all literals is an error: in parentheses they're
+# one text, and an array says so with each value that isn't a literal in its own
+phi.TextInParensErrors:Kernel
+{
+	str name: 'Ann';
+	int score: 3;
+	str greeting: 'Hello ' name;
+	str ship: 'ship ' score;
+	str fine: ('Hello ' name) 'and' (name);
+	Point p;
+	str bad: ('at ' p);
+	exit 0;
+}
+
+struct.Point
+{
+	int x;
+}

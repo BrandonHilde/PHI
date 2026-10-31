@@ -1666,6 +1666,18 @@ namespace Phi.Compiler.Syntax
                     if (AtCallInParens()) return ParseCallExpr(t);
 
                     Expr inner = ParseExpression();
+
+                    // ('Hello ' name): several values in parentheses are one text built from them
+                    if (!At(TokenKind.CloseParen) && !AtEnd)
+                    {
+                        var parts = new List<Expr> { inner };
+                        while (!At(TokenKind.CloseParen) && !AtEnd)
+                            parts.Add(ParseListElement());
+                        Token close = Expect(TokenKind.CloseParen, "')'");
+                        var text = new TextExpr { Span = t.Span.To(close.Span) };
+                        text.Parts.AddRange(parts);
+                        return text;
+                    }
                     Expect(TokenKind.CloseParen, "')'");
                     // (Name) may be a call with no arguments, which the binder decides
                     if (inner is NameExpr named) named.InParens = true;

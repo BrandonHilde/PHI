@@ -66,6 +66,7 @@ namespace Phi.Compiler.Syntax
                 AtomicExpr a => new[] { a.Target, a.Value, a.Expected },
                 IsTypeExpr t => new[] { t.Value },
                 HasExpr h => new[] { h.Collection, h.Value },
+                TextExpr t => t.Parts.ToArray(),
                 NewExpr n => n.Count != null ? new[] { n.Count } : Array.Empty<Expr>(),
                 UnaryExpr u => new[] { u.Operand },
                 BinaryExpr b => new[] { b.Left, b.Right },

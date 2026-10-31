@@ -747,6 +747,15 @@ namespace Phi.Compiler.Semantics
                 }
         }
 
+        /// <summary>How a value was written, near enough for a message: a literal in quotes, a name as it is.</summary>
+        static string DescribeValue(Expr e) => e switch
+        {
+            StringExpr s => $"'{s.Value}'",
+            NumberExpr n => n.Value.ToString(),
+            NameExpr n => n.Name,
+            _ => "...",
+        };
+
         /// <summary>
         /// list has x: an array of numbers, texts, structs or objects, and a value of the same kind;
         /// text has 'abc' (or a chr): a str or ptr&lt;u8&gt;, and the text (or character) to look for.
@@ -1763,7 +1772,7 @@ namespace Phi.Compiler.Semantics
                     // every element gets the same room to start with, so any element can be replaced
                     // by index; with a heap, each grows from there
                     v.Type = PhiType.Str.ArrayOf(d.Values.Count);
-                    v.Capacity = d.Values.Max(e => e is StringExpr s ? s.Value.Length + 1 : IntTextCapacity);
+                    v.Capacity = d.Values.Max(e => e is StringExpr s ? s.Value.Length + 1 : e is TextExpr ? DefaultStrCapacity : IntTextCapacity);
                     v.GrowingElements = scope.Unit is UnitKind.Kernel or UnitKind.Program && !v.IsParameter;
                     return;
                 }
@@ -1784,6 +1793,7 @@ namespace Phi.Compiler.Semantics
                     NameExpr n when Lookup(n.Name, scope) is VariableSymbol { Type: { IsPointer: true, Pointee: var p } } && p == PhiType.U8 =>
                         DefaultStrCapacity, // the text a ptr<u8> points at
                     IndexExpr => DefaultStrCapacity, // could be an element of a str array
+                    TextExpr => DefaultStrCapacity,  // ('Hello ' name): text built from several values
                     _ => IntTextCapacity,            // a number, written out as text
                 };
                 return;
@@ -2366,12 +2376,13 @@ namespace Phi.Compiler.Semantics
                 decl.Values[i] = Convert(value, v.Type.Element, $"'{decl.Name}'");
             }
 
-            // str path: home '/DOCS'; reads like text being built, but several values make an array
+            // str path: home '/DOCS'; reads like text being built, but several values make an array:
+            // one text is written in parentheses, and an array of anything but literals says so too
             if (v.Type.Kind == TypeKind.Str && v.Type.IsArray && decl.BufferSize == null && decl.Values.Count > 1
-                && decl.Values.Any(e => e is not StringExpr))
-                diagnostics.Warning(file, decl.NameSpan,
-                    $"'{decl.Name}' is a str array of {decl.Values.Count} (several values make an array); to join them into one str, " +
-                    $"write str {decl.Name}: ''; then {decl.Name} is ...; if an array is meant, start it with literals and set its elements ({decl.Name}:0 is ...)");
+                && decl.Values.Any(e => e is not (StringExpr or TextExpr or NameExpr { InParens: true } or MemberExpr { InParens: true })))
+                Error(decl.NameSpan,
+                    $"several values make '{decl.Name}' a str array of {decl.Values.Count}; for one text built from them, put them in parentheses: " +
+                    $"str {decl.Name}: ({string.Join(" ", decl.Values.Select(DescribeValue))}); for an array, put each value that isn't a literal in its own: ({DescribeValue(decl.Values.First(e => e is not StringExpr))})");
 
             // text for a ptr<u8> is the address of the string, which only the generated code knows
             // and a float or 64-bit number in a str is written out as text by code, too
@@ -3813,6 +3824,21 @@ namespace Phi.Compiler.Semantics
 
                 case HasExpr has:
                     BindHas(has, scope);
+                    break;
+
+                case TextExpr text:
+                    // each value written in as text, as s is a b c; does
+                    text.Type = PhiType.Str;
+                    foreach (Expr part in text.Parts)
+                    {
+                        BindExpr(part, scope);
+                        KeepTextPointer(part);
+                        if (part.Type.IsError) continue;
+                        if (part.Type.IsArray && part.Type.Element == PhiType.U8 && part is NameExpr or MemberExpr)
+                            Error(part.Span, $"can't write a u8 array into a str; for the text in it (up to a zero byte), write addr {Describe(part)}");
+                        else if (!part.Type.IsNumeric && !part.Type.IsWide && !part.Type.IsFloat && !part.Type.IsString)
+                            Error(part.Span, $"can't write {A(part.Type)} into a str; write one element or field at a time");
+                    }
                     break;
 
                 case IsTypeExpr test:

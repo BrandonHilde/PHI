@@ -438,6 +438,15 @@ namespace Phi.Compiler.Syntax
         public StructSymbol? Struct { get; set; }
     }
 
+    /// <summary>
+    /// ('Hello ' name): one text, built from the values in the parentheses the way s is a b;
+    /// builds a str (numbers written out). It goes anywhere a value goes, as one value.
+    /// </summary>
+    public sealed class TextExpr : Expr
+    {
+        public List<Expr> Parts { get; } = new();
+    }
+
     /// <summary>What a has test compares: see <see cref="HasExpr"/>.</summary>
     public enum HasKind { Numbers, Texts, Objects, Structs, Text, Character }
 

@@ -560,7 +560,12 @@ these were added:
   object's values); `x^^ n` (power, 32-bit whole numbers); interface methods take arrays
   (`[Score: int points[];]`); a whole array copies into a `str rows[]` parameter; `has`
   (the user's choice, 2026-10-31): `list has x` and `text has 'abc'`. Tests:
-  `interface_array_params`, `has`, `has_errors`. Tests: `method_values_results`,
+  `interface_array_params`, `has`, `has_errors`.
+- [x] Text in parentheses (the user's idea, 2026-10-31): `('Hello ' name)` is one text built
+  from the values, anywhere a value goes (`str greetings: ('hello ' name) 'index 1';`,
+  `names++ ('item ' i);`, `call Show: ('Score: ' score);`). A `str` declared with several
+  values that aren't all literals is now an error that says to use them. Tests:
+  `text_in_parens`, `text_in_parens_errors`. Tests: `method_values_results`,
   `append_new_objects`, `power` Tests: `growing_array_fields`, `growing_array_fields_errors`
 - [x] Array parameters of any length: `[Sum: int numbers[];]`, with `.len` and `.max`
 - [x] Whole arrays copied (`b is a;`) and compared (`a is b`), objects and text included

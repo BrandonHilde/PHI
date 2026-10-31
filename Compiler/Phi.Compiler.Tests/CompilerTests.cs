@@ -219,7 +219,6 @@ namespace Phi.Compiler.Tests
         [InlineData("int x: 5;\ncall Show: x -1;\n[Show: int a: 0; int b: 0;]\n[end]", "'x -1' is two arguments, x and -1")]
         [InlineData("int h: 64;\nbln b: 0;\nb is h is 64;", "this stores whether h is 64 in 'b'")]
         [InlineData("str info: [24];\ncall Fill: info info.len;\n[Fill: ptr<u8> to: 0; int size: 0;]\n[end]", "'info.len' is how much text is in info now")]
-        [InlineData("str home: 'HOME';\nstr docs: home '/DOCS';", "'docs' is a str array of 2 (several values make an array)")]
         public void EasilyMisreadCodeWarns(string body, string message)
         {
             CompileResult result = Compile(Boot(body));
@@ -442,6 +441,7 @@ namespace Phi.Compiler.Tests
         [InlineData("str s: 'a';\nif s > 'b'\n;;", "strings can only be compared")]
         [InlineData("dec pi: 3.14;", "isn't supported yet")]
         [InlineData("str a: 'x';\na ^^ 2;", "only works on numbers")]
+        [InlineData("str home: 'HOME';\nstr docs: home '/DOCS';", "for one text built from them, put them in parentheses: str docs: (home '/DOCS')")]
         public void SemanticErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Theory]

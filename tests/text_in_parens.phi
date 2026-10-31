@@ -1,0 +1,42 @@
+# ('Hello ' name): several values in parentheses are one text, built the way s is a b;
+# builds a str, and it goes anywhere a value goes: a declaration, an array's values, ++,
+# a call's arguments, a comparison. Runs as 32-bit (a slot that grows) and 16-bit (a buffer).
+phi.TextInParens:Library
+{
+	str name: [20];
+	name is 'Ann';
+	int score: 42;
+
+	str greeting: ('Hello ' name);
+	debug greeting ' (' greeting.len ')\n';
+
+	str mixed: ('ship ' score ' of ' 3);
+	debug mixed '\n';
+
+	str greetings: ('hello ' name) 'index 1' 'etc';
+	debug greetings.len ': ' greetings:0 ' / ' greetings:1 ' / ' greetings:2 '\n';
+
+	call Show: ('Score: ' score) 10;
+	debug 'equal: ' (('a' 'b') is 'ab') '\n';
+
+	# built again each time it runs
+	str last: [20];
+	while int i: 0; i < 3; i++;
+		last is ('round ' i);
+	;;
+	debug last '\n';
+
+	str items[atmost 4]: [20];
+	while int i: 0; i < 2; i++;
+		items++ ('item ' i) 'other';
+	;;
+	debug items.len ': ' items:0 ', ' items:1 ', ' items:2 '\n';
+
+	# a text in its own value
+	name is (name '!' name);
+	debug name '\n';
+
+	[Show: str text: [40]; int n: 0;]
+		debug text ' and ' n '\n';
+	[end]
+}
