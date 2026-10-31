@@ -551,6 +551,9 @@ these were added:
   written as its character (`text++ key as chr;`); a `str`'s characters are `chr`
 - [x] `while each x in list`, over any array
 - [x] Arrays that grow with no most: `int scores[];`, objects too
+- [x] Struct fields that are arrays without a size (`int scores[];`, `new Shape shapes[];`):
+  the struct owns them (copied, compared and freed with it). Not yet: copying a whole array
+  into one, and `str` elements. Tests: `growing_array_fields`, `growing_array_fields_errors`
 - [x] Array parameters of any length: `[Sum: int numbers[];]`, with `.len` and `.max`
 - [x] Whole arrays copied (`b is a;`) and compared (`a is b`), objects and text included
 - [x] Arrays of objects: `new T list[N]` and `new T list[atmost N]`, and struct fields like

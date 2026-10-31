@@ -16,8 +16,3 @@ phi.ArrayParamsErrors:Kernel
 	[Names: str names[];]
 	[end]
 }
-
-struct.Holder
-{
-	int values[];
-}

@@ -1,7 +1,7 @@
 16:6: error: new is for structs; a u32 is stored where it's declared
 17:19: error: Point has 2 fields, but 3 values were given
 18:7: error: PHI frees p itself when it goes away
-19:2: error: Node owns objects (it has new fields), so PHI has to manage it
+19:2: error: Node owns objects (new fields, or arrays without a size), so PHI has to manage it
 21:2: error: 'a.next' is inside 'a', so it can't take it
 23:10: error: takes works between new variables and new fields; 'raw' is a ptr<Point>
 24:7: error: this is a pointer; to copy what it points at, write raw:0

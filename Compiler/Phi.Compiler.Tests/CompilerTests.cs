@@ -506,7 +506,7 @@ namespace Phi.Compiler.Tests
         const string GrowingBio = "struct.Account\n{\n new str bio;\n}\n";
 
         [Theory]
-        [InlineData("Account a;", "Account owns objects (it has new fields), so PHI has to manage it: declare it with new")]
+        [InlineData("Account a;", "Account owns objects (new fields, or arrays without a size), so PHI has to manage it: declare it with new")]
         [InlineData("Account list[4];", "Account owns objects")]
         [InlineData("new Account a;\nlog sizeof Account;", "Account's bio is text that grows, so Account's bytes hold where it is, not the text")]
         [InlineData("new Account a;\nlog sizeof a.bio;", "use .max")]

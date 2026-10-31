@@ -1,0 +1,108 @@
+# A struct's array field without a size grows like an array variable without one, and
+# the struct owns it: copying the struct copies it, comparing compares it, and it's
+# freed with the struct. Its elements can be numbers, structs or objects.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+interface.Shape
+{
+	[Area]
+}
+
+struct.Square has Shape
+{
+	int side;
+
+	[Area]
+	[end: side * side]
+}
+
+struct.Board
+{
+	str name: [12];
+	int scores[];
+	Point marks[];
+	new Shape shapes[];
+
+	[Total]
+		int sum: 0;
+		while each n in scores
+			sum++ n;
+		;;
+	[end: sum]
+
+	[Add: int score;]
+		scores++ score;
+	[end]
+}
+
+phi.GrowingArrayFields:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		new Board b;
+		b.name is 'first';
+		debug 'starts with ' b.scores.len ' scores\n';
+		while int i: 1; i <= 20; i++;
+			b.scores++ i * 10;
+		;;
+		debug b.scores.len ' scores (room for ' b.scores.max '), the last ' b.scores:19 '\n';
+		call b.Add: 5;
+		debug 'total ' (b.Total) '\n';
+
+		Point p;
+		p.x is 3;
+		p.y is 4;
+		b.marks++ p;
+		b.marks:0.x++ 1;
+		debug 'mark ' b.marks:0.x ' ' b.marks:0.y '\n';
+
+		new Square small: 2;
+		new Square big: 5;
+		b.shapes++ small big;
+		int area: 0;
+		while each shape in b.shapes
+			area++ (shape.Area);
+		;;
+		debug 'areas ' area '\n';
+
+		# a copy has its own arrays
+		new Board copy: b;
+		copy.scores:0 is 999;
+		call copy.Add: 1;
+		debug 'b ' b.scores:0 ' of ' b.scores.len ', copy ' copy.scores:0 ' of ' copy.scores.len '\n';
+		debug 'same: ' (b is copy) '\n';
+		copy.scores.len is b.scores.len;
+		copy.scores:0 is b.scores:0;
+		debug 'same again: ' (b is copy) '\n';
+
+		# shorter: the objects it drops are freed
+		b.shapes.len is 1;
+		debug 'shapes left ' b.shapes.len '\n';
+
+		# an array of boards, each with its own
+		new Board boards[atmost 4];
+		boards++ b copy;
+		boards:1.scores++ 7;
+		debug 'boards ' boards:0.scores.len ' ' boards:1.scores.len '\n';
+		debug 'passed: ' (Sum: b.scores) '\n';
+
+		# copied over another board
+		b is copy;
+		debug 'after copying over: ' b.scores.len ' ' b.shapes.len '\n';
+	[end]
+
+	[Sum: int numbers[];]
+		int sum: 0;
+		while each n in numbers
+			sum++ n;
+		;;
+	[end: sum]
+}

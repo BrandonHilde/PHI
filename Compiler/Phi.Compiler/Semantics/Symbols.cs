@@ -331,6 +331,9 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>A str parameter that's the caller's text (str into;), whose .max is read when it runs.</summary>
         public VariableSymbol? TextRef { get; init; }
+
+        /// <summary>A struct's array field without a size, whose count (or room, with Max) is read when it runs.</summary>
+        public Expr? View { get; init; }
     }
 
     /// <summary>task.id: a field reached from a variable by name, at a fixed offset.</summary>
@@ -362,8 +365,13 @@ namespace Phi.Compiler.Semantics
         public PhiType Type { get; init; } = PhiType.Error;
     }
 
-    /// <summary>A `new` field inside a struct (directly or in an inline struct field): where, and of what.</summary>
-    public readonly record struct OwnedSlot(int Offset, StructSymbol Of);
+    /// <summary>
+    /// A `new` field inside a struct (directly or in an inline struct field): where, and of what.
+    /// An array field without a size is one too, with its element type as Array: the struct owns
+    /// the room its elements are in (and the objects in it, for objects), and Of is the element's
+    /// struct for objects, otherwise <see cref="StructSymbol.Elements"/>.
+    /// </summary>
+    public readonly record struct OwnedSlot(int Offset, StructSymbol Of, PhiType? Array = null);
 
     /// <summary>enum.Name: its values by name, in the order they were written.</summary>
     public sealed class EnumSymbol : Symbol
@@ -392,6 +400,9 @@ namespace Phi.Compiler.Semantics
         /// freed, copied and compared as text.
         /// </summary>
         public static readonly StructSymbol Text = new() { Name = "_text" };
+
+        /// <summary>What an owned array slot of numbers or structs (not objects) holds.</summary>
+        public static readonly StructSymbol Elements = new() { Name = "_elements" };
 
         public FieldSymbol? Find(string name) => Fields.FirstOrDefault(f => f.Name == name);
 

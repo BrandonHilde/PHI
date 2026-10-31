@@ -888,6 +888,12 @@ namespace Phi.Compiler.Semantics
                     s.OwnedSlots.Add(new OwnedSlot(f.Offset, StructSymbol.Text));
                     continue;
                 }
+                if (f.Type.Open)
+                {
+                    // an array that grows: its room, and the objects in it
+                    s.OwnedSlots.Add(new OwnedSlot(f.Offset, f.Type.IsObjectArray ? f.Type.Struct! : StructSymbol.Elements, f.Type.Element));
+                    continue;
+                }
                 if (f.Type.IsObjectArray)
                 {
                     // each element is an object the struct owns
@@ -904,7 +910,7 @@ namespace Phi.Compiler.Semantics
                 if (f.Type.IsArray)
                 {
                     FieldDecl decl = s.Decl.Fields.First(d => d.Name == f.Name);
-                    Error(decl.Span, $"{inner.Name} owns objects (it has new fields), so an array of them has to be objects too: new {inner.Name} {f.Name}[...];");
+                    Error(decl.Span, $"{inner.Name} owns objects (new fields, or arrays without a size), so an array of them has to be objects too: new {inner.Name} {f.Name}[...];");
                     continue;
                 }
                 foreach (OwnedSlot inside in inner.OwnedSlots)
@@ -984,7 +990,35 @@ namespace Phi.Compiler.Semantics
                 }
                 if (f.Unsized)
                 {
-                    Error(f.Span, $"a field needs a size: {f.Name}[10] (or [atmost 10])");
+                    // int scores[]; an array that grows, which the struct owns: where its elements
+                    // are on the heap, how many there are, and the room (as an array variable without
+                    // a size keeps them)
+                    if (type.IsError) continue;
+                    PhiType element;
+                    if (f.IsNew)
+                    {
+                        if (!type.IsStruct)
+                        {
+                            Error(f.Type.Span, $"new is for structs; for numbers, leave out new: {type} {f.Name}[];");
+                            continue;
+                        }
+                        element = PhiType.ObjectOf(type.Struct!);
+                    }
+                    else if (type.IsStruct && (type.Struct!.IsInterface || type.Struct.OwnsObjects))
+                    {
+                        Error(f.Type.Span, $"{(type.Struct.IsInterface ? $"a {type} holds an object" : $"{type} owns objects")}, so the elements are new: new {type} {f.Name}[];");
+                        continue;
+                    }
+                    else if (type.Kind == TypeKind.Str || type.IsChar)
+                    {
+                        Error(f.Span, $"a str array without a size can't be a field yet; give it one: str {f.Name}[8]: [40];");
+                        continue;
+                    }
+                    else element = type;
+                    if (element.IsStruct && !inProgress.Contains(element.Struct!)) Layout(element.Struct!, inProgress);
+                    PhiType growing = element.OpenOf();
+                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = growing, Offset = offset });
+                    offset += growing.ByteSize;
                     continue;
                 }
                 if (f.IsNew && type.IsString)
@@ -1538,7 +1572,7 @@ namespace Phi.Compiler.Semantics
 
             if (type.IsStruct && type.Struct!.OwnsObjects)
             {
-                Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.Unsized ? "[]" : d.BufferSize != null ? "[...]" : "")};");
+                Error(d.Type.Span, $"{type} owns objects (new fields, or arrays without a size), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.Unsized ? "[]" : d.BufferSize != null ? "[...]" : "")};");
                 v.Type = PhiType.Error;
                 return;
             }
@@ -1793,7 +1827,7 @@ namespace Phi.Compiler.Semantics
                 if (type.Struct!.OwnsObjects || type.Struct.IsInterface)
                 {
                     Error(d.AtAddress.Span, type.Struct.IsInterface ? $"a {type} holds an object PHI allocated, not memory at an address"
-                                                                    : $"{type} owns objects (it has new fields), which PHI can't manage in memory it didn't allocate");
+                                                                    : $"{type} owns objects (new fields, or arrays without a size), which PHI can't manage in memory it didn't allocate");
                     return;
                 }
                 v.Ownership = Ownership.At;
@@ -1950,8 +1984,16 @@ namespace Phi.Compiler.Semantics
 
                 // a struct's own field named len or max comes first
                 StructSymbol? fields = FieldsOf(type);
-                if (m is "len" or "max" && last && fields?.Find(m) == null && type.Open && offset == 0 && hops == null)
+                if (m is "len" or "max" && last && fields?.Find(m) == null && type.Open && offset == 0 && hops == null && root.Type.Open)
                     return new LengthSymbol { Name = m, Open = root, Max = m == "max" };
+                if (m is "len" or "max" && last && fields?.Find(m) == null && type.Open)
+                {
+                    // a field without a size: its count (or room) is where the field is
+                    Symbol place = hops != null
+                        ? new PathSymbol { Name = name, Root = root, BaseOffset = offset, Hops = new List<int>(hops), Type = type }
+                        : new FieldPathSymbol { Name = name, Root = root, Offset = offset, Type = type };
+                    return new LengthSymbol { Name = m, View = new NameExpr { Name = name, Symbol = place, Type = type }, Max = m == "max" };
+                }
                 if (m == "len" && last && fields?.Find(m) == null)
                 {
                     // where the array or text is, for what's read when it runs
@@ -2687,6 +2729,11 @@ namespace Phi.Compiler.Semantics
                 return assign;
             }
             if (CheckArrayPair(target, source, assign.Span, "copied into") is false) return assign;
+            if (IsFieldView(target))
+            {
+                Error(target.Span, $"a whole array can't be copied into a field without a size yet; add the elements with {Describe(target)}++");
+                return assign;
+            }
             if (target.Type.IsObjectArray)
                 HeapMethod("Heap.Alloc", assign.Span, scope, "copying objects");
             return new ArrayAssignStmt { Target = target, Source = source, Span = assign.Span };
@@ -2737,12 +2784,16 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>A variable that's an array without a size: it grows.</summary>
-        internal static bool IsGrowingArray(Expr e) => e is NameExpr { Symbol: VariableSymbol { GrowingArray: true } };
+        internal static bool IsGrowingArray(Expr e) => e is NameExpr { Symbol: VariableSymbol { GrowingArray: true } } || IsFieldView(e);
+
+        /// <summary>A struct's array field without a size (scores[] in a struct): it grows, as its struct's.</summary>
+        internal static bool IsFieldView(Expr e) => e.Type.Open && e is NameExpr { Symbol: FieldPathSymbol or PathSymbol or SelfFieldSymbol } or MemberExpr { Call: null };
 
         /// <summary>The [atmost N] array whose count this .len reads, or null.</summary>
         internal static Expr? FilledArrayOf(Expr e) => e switch
         {
             NameExpr { Symbol: LengthSymbol { Filled: Expr array } } => array,
+            NameExpr { Symbol: LengthSymbol { View: Expr view, Max: false } } => view,
             NameExpr { Symbol: LengthSymbol { Open: VariableSymbol { GrowingArray: true } v, Max: false } } length =>
                 new NameExpr { Name = v.Name, Span = length.Span, Symbol = v, Type = v.Type },
             MemberExpr { FilledLength: true } m => m.Target,
@@ -3649,9 +3700,15 @@ namespace Phi.Compiler.Semantics
                     }
 
                     // list:0.name.len: an array field's length (and max) is known when built
+                    if (field == null && t.Open && member.Member == "max")
+                    {
+                        Error(member.MemberSpan, "the room in an array field without a size is read by name (like board.scores.max), not through an element or a call; .len works on either");
+                        member.Type = PhiType.Error;
+                        break;
+                    }
                     if (field == null && t.IsArray && member.Member is "len" or "max")
                     {
-                        if (t.Filled && member.Member == "len") member.FilledLength = true;
+                        if ((t.Filled || t.Open) && member.Member == "len") member.FilledLength = true;
                         else member.Count = t.Length;
                         member.Type = PhiType.Int;
                         break;

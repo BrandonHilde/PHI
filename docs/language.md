@@ -346,7 +346,27 @@ grows too (`names:0 is 'a much longer name';`, `names++ 'ann' 'bob';`). Shrinkin
 the dropped elements' texts back, and a method's own goes back with its texts when it ends.
 It can be passed to a method that takes `str rows[]` (which can make its texts longer),
 and copied and compared whole with any `str` array (`copy is names;` grows it to fit, and
-gives back the texts it no longer needs). Not yet: struct fields without a size.
+gives back the texts it no longer needs).
+
+**In a struct.** A field without a size, `int scores[];` (or `new Shape shapes[];` for
+objects), grows in the same way, and the struct owns it, so the struct is one PHI manages
+(declared with `new`). Copying the struct copies its arrays, comparing compares them, and
+they're freed with it. Its elements are numbers, structs, or objects. `++`, indexes, `.len`,
+`.len is`, `while each` and passing it to a method all work, and `board.scores.max` is its
+room. Not yet: copying a whole array into such a field (add to it with `++`), and `str`
+elements.
+
+```phi
+struct.Board
+{
+    int scores[];
+    new Shape shapes[];
+}
+
+new Board b;
+b.scores++ 10 20;
+new Board copy: b;            # its own scores and shapes
+```
 
 **Arrays of text.** A `str` array follows the same rules as any array, and each element is a
 `str` (32-bit code):

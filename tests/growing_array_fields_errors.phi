@@ -1,0 +1,28 @@
+# Mistakes with array fields without a size.
+interface.Shape
+{
+	[Area]
+}
+
+struct.Bad
+{
+	str names[];
+	new int counts[];
+	Shape shapes[];
+}
+
+struct.Good
+{
+	int scores[];
+}
+
+phi.GrowingArrayFieldsErrors:Kernel
+{
+	Good plain;
+	new Good g;
+	int fixed[4];
+	g.scores is fixed;
+	new Good list[atmost 2];
+	log list:0.scores.max;
+	exit 0;
+}

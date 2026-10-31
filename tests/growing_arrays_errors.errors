@@ -1,2 +1,2 @@
-9:2: error: Node owns objects (it has new fields), so PHI has to manage it: declare it with new, like new Node plain[];
+9:2: error: Node owns objects (new fields, or arrays without a size), so PHI has to manage it: declare it with new, like new Node plain[];
 11:15: error: an element of 'scores' needs a number, but this is a str

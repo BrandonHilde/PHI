@@ -1169,6 +1169,19 @@ namespace Phi.Compiler.CodeGen
                     break;
                 }
 
+                case SetLengthStmt shrink when Binder.IsFieldView(shrink.Array):
+                {
+                    EmitExpr(shrink.Value);
+                    Emit("push eax                ; the new count");
+                    EmitViewAddress(shrink.Array);
+                    Emit("mov edx, eax");
+                    Emit("pop eax");
+                    EmitIndexCheck(shrink, "jbe", "dword [edx + 4]");
+                    Emit("mov [edx + 4], eax");
+                    if (shrink.Array.Type.IsObjectArray) EmitFreeElements(shrink.Array, -1);   // the dropped ones
+                    break;
+                }
+
                 case SetLengthStmt shrink:
                 {
                     EmitExpr(shrink.Value);
@@ -1951,10 +1964,10 @@ namespace Phi.Compiler.CodeGen
             PhiType t = array.Type;
             if (t.Open)
             {
-                string label = ((VariableSymbol)((NameExpr)array).Symbol!).Label;
-                Emit($"push dword [{label} + 8]");
-                Emit($"push dword [{label} + 4]");
-                Emit($"push dword [{label}]");
+                EmitViewAddress(array);
+                Emit("push dword [eax + 8]");
+                Emit("push dword [eax + 4]");
+                Emit("push dword [eax]");
                 return 12;
             }
             Emit($"push dword {t.Length}     ; the most it holds");
@@ -2136,6 +2149,21 @@ namespace Phi.Compiler.CodeGen
                 if (unsafeDepth == 0 && !proved) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + 4]");
                 EmitScale(size);
                 Emit($"mov ebx, [{open.Label}]");
+                Emit("add ebx, eax");
+                return new Place { Computed = true, Linear = true };
+            }
+
+            // an element of a struct's array without a size: checked against how many it has
+            if (Binder.IsFieldView(ix.Target))
+            {
+                EmitExpr(ix.Index);
+                Emit("push eax");
+                EmitViewAddress(ix.Target);
+                Emit("mov edx, eax");
+                Emit("pop eax");
+                if (unsafeDepth == 0) EmitIndexCheck(ix, "jb", "dword [edx + 4]");
+                EmitScale(size);
+                Emit("mov ebx, [edx]");
                 Emit("add ebx, eax");
                 return new Place { Computed = true, Linear = true };
             }
@@ -2522,7 +2550,24 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(value);
                 Emit("push eax");
             }
-            if (append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
+            if (Binder.IsFieldView(append.Target))
+            {
+                // room for one more (moving its elements when there isn't), then at its end
+                ObjectLine(append);
+                EmitViewAddress(append.Target);
+                Emit("mov edx, [eax + 4]");
+                Emit("inc edx");
+                Emit($"mov ecx, {size}");
+                EmitArrayGrowCall();
+                EmitViewAddress(append.Target);
+                Emit("mov edx, eax");
+                Emit("mov eax, [edx + 4]");
+                Emit("inc dword [edx + 4]");
+                EmitScale(size);
+                Emit("mov ebx, [edx]");
+                Emit("add ebx, eax");
+            }
+            else if (append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
             {
                 // room for one more (moving its elements when there isn't), then at its end
                 ObjectLine(append);
@@ -3092,7 +3137,13 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case MemberExpr { FilledLength: true } m:
-                    EmitFilledCount(m.Target);
+                    if (m.Target.Type.Open) EmitArrayCount(m.Target);
+                    else EmitFilledCount(m.Target);
+                    break;
+
+                case NameExpr { Symbol: LengthSymbol { View: Expr view } length }:
+                    EmitViewAddress(view);
+                    Emit($"mov eax, [eax + {(length.Max ? 8 : 4)}]");
                     break;
 
                 case MemberExpr { TextLength: true } m:
@@ -3261,6 +3312,12 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov eax, [{open.Label}]   ; where {open.Name}'s elements are");
                 return;
             }
+            if (Binder.IsFieldView(e))
+            {
+                EmitViewAddress(e);
+                Emit("mov eax, [eax]          ; where its elements are");
+                return;
+            }
             if (e is NameExpr { Symbol: VariableSymbol { Grows: true } text })
             {
                 LoadText("eax", text);  // addr s: where its text is now
@@ -3277,11 +3334,27 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
+            EmitStorageAddress(e);
+        }
+
+        /// <summary>eax = where a variable, field or element is kept.</summary>
+        void EmitStorageAddress(Expr e)
+        {
             Place p = EmitPlace(e);
             string offset = p.Offset == 0 ? "" : $" + {p.Offset}";
             if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
             else if (bits32 || !p.Linear) Emit($"lea eax, {Operand(p)}");
             else Emit($"lea eax, [ebx{offset}]");   // (Operand would reach it through fs)
+        }
+
+        /// <summary>
+        /// eax = where an array without a size keeps where its elements are, how many there are
+        /// and its room (three u32s): an array variable's own, or a struct's field.
+        /// </summary>
+        void EmitViewAddress(Expr e)
+        {
+            if (e is NameExpr { Symbol: VariableSymbol v }) LoadAddress("eax", v.Label);
+            else EmitStorageAddress(e);
         }
 
         void EmitArithmetic(BinaryExpr binary)
@@ -4104,6 +4177,149 @@ namespace Phi.Compiler.CodeGen
         readonly HashSet<(string Kind, StructSymbol Struct)> objectRoutines = new();
         bool usesObjects;
 
+        readonly Dictionary<string, (string Kind, PhiType Element)> arrayRoutines = new();
+
+        /// <summary>
+        /// A routine for an array a struct owns (a field without a size), by where it's kept (eax):
+        /// free (its objects and its room), clone (into the slot at edx), and equal (with edx;
+        /// eax = 1 when they hold the same).
+        /// </summary>
+        string ArrayRoutine(string kind, PhiType element)
+        {
+            usesObjects = true;
+            string label = $"phi_array_{kind}_{(element.IsObject ? element.Struct!.Name : $"b{element.ElementSize}")}";
+            arrayRoutines.TryAdd(label, (kind, element));
+            return label;
+        }
+
+        void EmitArrayRoutine(string kind, PhiType element)
+        {
+            int size = element.ElementSize;
+            bool objects = element.IsObject;
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the array");
+            switch (kind)
+            {
+                case "free":
+                    if (objects)
+                    {
+                        Emit("push dword 0            ; [ebp - 8] which element");
+                        Label(".next");
+                        Emit("mov eax, [ebp - 8]");
+                        Emit("mov edx, [ebp - 4]");
+                        Emit("cmp eax, [edx + 4]");
+                        Emit("jae .freed");
+                        Emit("mov edx, [edx]");
+                        Emit("mov eax, [edx + eax * 4]");
+                        Emit($"call {ObjectRoutine("free", element.Struct!)}");
+                        Emit("inc dword [ebp - 8]");
+                        Emit("jmp .next");
+                        Label(".freed");
+                    }
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("push dword [eax]        ; its room (freeing 0 does nothing)");
+                    Emit($"call {HeapMethodLabel("Heap.Free")}");
+                    Emit("add esp, 4");
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("mov dword [eax], 0");
+                    Emit("mov dword [eax + 4], 0");
+                    Emit("mov dword [eax + 8], 0");
+                    break;
+
+                case "clone":
+                    Need("phi_out_of_memory");
+                    Emit("push edx                ; [ebp - 8] the copy");
+                    Emit("mov ecx, [eax + 4]");
+                    Emit("mov [edx + 4], ecx");
+                    Emit("mov ecx, [eax + 8]");
+                    Emit("mov [edx + 8], ecx");
+                    Emit("mov dword [edx], 0");
+                    Emit("test ecx, ecx");
+                    Emit("jz .done                ; no room: nothing to copy");
+                    if (size > 1) Emit($"imul ecx, ecx, {size}");
+                    Emit("push ecx");
+                    Emit($"call {HeapMethodLabel("Heap.Alloc")}");
+                    Emit("add esp, 4");
+                    Emit("test eax, eax");
+                    Emit("jz phi_out_of_memory");
+                    Emit("mov edx, [ebp - 8]");
+                    Emit("mov [edx], eax");
+                    Emit("mov edi, eax");
+                    Emit("mov esi, [ebp - 4]");
+                    Emit("mov ecx, [esi + 4]");
+                    Emit("mov esi, [esi]");
+                    if (size > 1) Emit($"imul ecx, ecx, {size}");
+                    Emit("rep movsb");
+                    if (objects)
+                    {
+                        // each object copied too, so the copy has its own
+                        Emit("push dword 0            ; [ebp - 12] which element");
+                        Label(".next");
+                        Emit("mov ecx, [ebp - 12]");
+                        Emit("mov edx, [ebp - 8]");
+                        Emit("cmp ecx, [edx + 4]");
+                        Emit("jae .done");
+                        Emit("mov edx, [edx]");
+                        Emit("mov eax, [edx + ecx * 4]");
+                        Emit($"call {ObjectRoutine("clone", element.Struct!)}");
+                        Emit("mov edx, [ebp - 8]");
+                        Emit("mov edx, [edx]");
+                        Emit("mov ecx, [ebp - 12]");
+                        Emit("mov [edx + ecx * 4], eax");
+                        Emit("inc dword [ebp - 12]");
+                        Emit("jmp .next");
+                    }
+                    Label(".done");
+                    break;
+
+                case "equal":
+                    Emit("push edx                ; [ebp - 8] the other");
+                    Emit("mov ecx, [eax + 4]");
+                    Emit("cmp ecx, [edx + 4]");
+                    Emit("jne .different          ; not as many");
+                    if (objects)
+                    {
+                        Emit("push dword 0            ; [ebp - 12] which element");
+                        Label(".next");
+                        Emit("mov ecx, [ebp - 12]");
+                        Emit("mov eax, [ebp - 4]");
+                        Emit("cmp ecx, [eax + 4]");
+                        Emit("jae .same");
+                        Emit("mov eax, [eax]");
+                        Emit("mov eax, [eax + ecx * 4]");
+                        Emit("mov edx, [ebp - 8]");
+                        Emit("mov edx, [edx]");
+                        Emit("mov edx, [edx + ecx * 4]");
+                        Emit($"call {ObjectRoutine("equal", element.Struct!)}");
+                        Emit("test eax, eax");
+                        Emit("jz .different");
+                        Emit("inc dword [ebp - 12]");
+                        Emit("jmp .next");
+                    }
+                    else
+                    {
+                        if (size > 1) Emit($"imul ecx, ecx, {size}");
+                        Emit("mov esi, [eax]");
+                        Emit("mov edi, [edx]");
+                        Emit("test ecx, ecx");
+                        Emit("jz .same");
+                        Emit("repe cmpsb");
+                        Emit("jne .different");
+                    }
+                    Label(".same");
+                    Emit("mov eax, 1");
+                    Emit("jmp .done");
+                    Label(".different");
+                    Emit("xor eax, eax");
+                    Label(".done");
+                    break;
+            }
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
         string ObjectRoutine(string kind, StructSymbol s)
         {
             usesObjects = true;
@@ -4164,6 +4380,11 @@ namespace Phi.Compiler.CodeGen
         {
             if (array is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
                 Emit($"mov eax, [{open.Label} + 4]");
+            else if (array.Type.Open)
+            {
+                EmitViewAddress(array);
+                Emit("mov eax, [eax + 4]      ; how many it has");
+            }
             else if (array.Type.Filled) EmitFilledCount(array);
             else Emit($"mov eax, {array.Type.Length}");
         }
@@ -4658,8 +4879,8 @@ namespace Phi.Compiler.CodeGen
             if (array.Type.Open)
             {
                 // past how many it has, up to its room, the slots are empty already
-                string label = ((VariableSymbol)((NameExpr)array).Symbol!).Label;
-                Emit($"mov eax, [{label} + 8]");
+                EmitViewAddress(array);
+                Emit("mov eax, [eax + 8]");
                 Emit("cmp [esp], eax");
             }
             else Emit($"cmp dword [esp], {array.Type.Length}");
@@ -4786,8 +5007,20 @@ namespace Phi.Compiler.CodeGen
         void EmitObjectRoutines()
         {
             var done = new HashSet<(string, StructSymbol)>();
-            while (objectRoutines.FirstOrDefault(r => !done.Contains(r)) is { Struct: not null } next)
+            var arraysDone = new HashSet<string>();
+            while (true)
             {
+                if (arrayRoutines.Keys.FirstOrDefault(l => !arraysDone.Contains(l)) is string pending)
+                {
+                    arraysDone.Add(pending);
+                    var (kind, element) = arrayRoutines[pending];
+                    Line("");
+                    Comment($"{kind} for a struct's array of {element} without a size");
+                    Label(pending);
+                    EmitArrayRoutine(kind, element);
+                    continue;
+                }
+                if (objectRoutines.FirstOrDefault(r => !done.Contains(r)) is not { Struct: not null } next) break;
                 done.Add(next);
                 Line("");
                 Comment($"{next.Kind} for {next.Struct.Name} objects");
@@ -5254,7 +5487,24 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>The owned slot followed with a loop: one of the struct's own type (a list's next).</summary>
         static OwnedSlot? Chain(StructSymbol s) =>
-            s.OwnedSlots.Where(o => o.Of == s).Select(o => (OwnedSlot?)o).LastOrDefault();
+            s.OwnedSlots.Where(o => o.Of == s && o.Array == null).Select(o => (OwnedSlot?)o).LastOrDefault();
+
+        /// <summary>
+        /// Calls a slot's free routine for the struct whose address is at obj: an object's (or
+        /// text's) with what the slot holds, an array's with where the slot is.
+        /// </summary>
+        void EmitSlotFree(OwnedSlot slot, string obj)
+        {
+            Emit($"mov eax, {obj}");
+            if (slot.Array != null)
+            {
+                Emit($"add eax, {slot.Offset}");
+                Emit($"call {ArrayRoutine("free", slot.Array)}");
+                return;
+            }
+            Emit($"mov eax, [eax + {slot.Offset}]");
+            Emit($"call {ObjectRoutine("free", slot.Of)}");
+        }
 
         static IEnumerable<OwnedSlot> NotChain(StructSymbol s) =>
             s.OwnedSlots.Where(o => o != Chain(s));
@@ -5269,11 +5519,7 @@ namespace Phi.Compiler.CodeGen
             Emit("jz .done");
             Emit("push eax                ; [ebp - 4] the object");
             foreach (OwnedSlot slot in NotChain(s))
-            {
-                Emit("mov eax, [ebp - 4]");
-                Emit($"mov eax, [eax + {slot.Offset}]");
-                Emit($"call {ObjectRoutine("free", slot.Of)}");
-            }
+                EmitSlotFree(slot, "[ebp - 4]");
             if (chain is OwnedSlot c)
             {
                 Emit("mov eax, [ebp - 4]");
@@ -5321,6 +5567,15 @@ namespace Phi.Compiler.CodeGen
             foreach (OwnedSlot slot in NotChain(s))
             {
                 Emit("mov eax, [ebp - 4]");
+                if (slot.Array != null)
+                {
+                    // its own room, with copies of the elements
+                    Emit($"add eax, {slot.Offset}");
+                    Emit("mov edx, [ebp - 12]");
+                    Emit($"add edx, {slot.Offset}");
+                    Emit($"call {ArrayRoutine("clone", slot.Array)}");
+                    continue;
+                }
                 Emit($"mov eax, [eax + {slot.Offset}]");
                 Emit($"call {ObjectRoutine("clone", slot.Of)}");
                 Emit("mov edx, [ebp - 12]");
@@ -5357,6 +5612,32 @@ namespace Phi.Compiler.CodeGen
                 Emit("mov esi, edx");
                 Emit($"mov ecx, {s.Size}");
                 Emit("rep movsb");
+                Emit("ret");
+                return;
+            }
+
+            if (s.OwnedSlots.Any(o => o.Array != null))
+            {
+                // a whole copy of the source first (it may be inside the target); then the target
+                // lets go of what it owns and takes the copy's values, and the copy's memory goes back
+                Emit("push ebp");
+                Emit("mov ebp, esp");
+                Emit("push eax                ; [ebp - 4] into");
+                Emit("mov eax, edx");
+                Emit($"call {ObjectRoutine("clone", s)}");
+                Emit("push eax                ; [ebp - 8] the copy");
+                foreach (OwnedSlot slot in s.OwnedSlots) EmitSlotFree(slot, "[ebp - 4]");
+                Emit("mov esi, [ebp - 8]");
+                Emit("mov edi, [ebp - 4]");
+                Emit($"mov ecx, {s.Size}");
+                Emit("rep movsb");
+                Emit("mov eax, [ebp - 8]");
+                if (s.Typed) Emit("sub eax, 4");
+                Emit("push eax");
+                Emit($"call {HeapMethodLabel("Heap.Free")}");
+                Emit("add esp, 4");
+                Emit("mov esp, ebp");
+                Emit("pop ebp");
                 Emit("ret");
                 return;
             }
@@ -5451,11 +5732,7 @@ namespace Phi.Compiler.CodeGen
             Label(".reuse");
             Emit("push eax                ; [ebp - 8] the object, emptied to be used again");
             foreach (OwnedSlot slot in s.OwnedSlots)
-            {
-                Emit("mov eax, [ebp - 8]");
-                Emit($"mov eax, [eax + {slot.Offset}]");
-                Emit($"call {ObjectRoutine("free", slot.Of)}");
-            }
+                EmitSlotFree(slot, "[ebp - 8]");
             Emit("mov edi, [ebp - 8]");
             Emit($"mov ecx, {s.Size}");
             Emit("xor al, al");
@@ -5496,16 +5773,26 @@ namespace Phi.Compiler.CodeGen
                     Emit("jne .different");
                 }
                 // past the slot: an object's address, or a text's address and its room
-                start = end + (s.OwnedSlots.Any(o => o.Offset == end && o.Of == StructSymbol.Text) ? 8 : 4);
+                start = end + (s.OwnedSlots.Any(o => o.Offset == end && o.Array != null) ? 12
+                               : s.OwnedSlots.Any(o => o.Offset == end && o.Of == StructSymbol.Text) ? 8 : 4);
             }
 
             foreach (OwnedSlot slot in NotChain(s))
             {
                 Emit("mov eax, [ebp - 4]");
-                Emit($"mov eax, [eax + {slot.Offset}]");
                 Emit("mov edx, [ebp - 8]");
-                Emit($"mov edx, [edx + {slot.Offset}]");
-                Emit($"call {ObjectRoutine("equal", slot.Of)}");
+                if (slot.Array != null)
+                {
+                    Emit($"add eax, {slot.Offset}");
+                    Emit($"add edx, {slot.Offset}");
+                    Emit($"call {ArrayRoutine("equal", slot.Array)}");
+                }
+                else
+                {
+                    Emit($"mov eax, [eax + {slot.Offset}]");
+                    Emit($"mov edx, [edx + {slot.Offset}]");
+                    Emit($"call {ObjectRoutine("equal", slot.Of)}");
+                }
                 Emit("test eax, eax");
                 Emit("jz .different");
             }
