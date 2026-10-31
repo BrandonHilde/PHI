@@ -811,6 +811,8 @@ These come after the basics work:
 - **Self-hosting:** rewrite the PHI compiler in PHI. **On hold** until every other feature in
   this plan is implemented.
 - **Real hardware and UEFI boot**
+- **Running on Linux, Windows and macOS** as ordinary programs: see
+  [Running on other systems](#running-on-other-systems)
 
 ---
 
@@ -1586,6 +1588,139 @@ Candidates, each a large project that tests a different side of PHI:
   hosted target (PHI programs that run outside PHI OS).
 
 ---
+
+## Running on other systems
+
+Not started, and not scheduled yet: this is the plan for when PHI programs should run on
+Linux, Windows and macOS as ordinary programs, as well as on PHI OS. It comes up in every
+AAA scenario (studio tools, build machines, editors and test machines all run on those
+systems), and it's most of the distance between PHI and a language a studio could choose.
+
+### What stays the same
+
+- PHI OS, the kernels, the samples and QEMU stay as they are. Running on another system
+  is another target, not a replacement.
+- The same program builds for PHI OS and for a host, unchanged.
+- What a program can do is what it already asks PHI OS for. A user program
+  (`phi.Name:Program`) never touches hardware: everything it does outside itself is one of
+  about 60 system calls (`OS.ReadFile`, `OS.WriteFile`, `OS.Grow` for its heap, `OS.GetTicks`,
+  `OS.Sleep`, the UDP and TCP calls, windows, sound), in one small runtime folder,
+  `lib/x86_32_user/`. A host target is a second version of that folder, answering each call
+  with that system's own, and a different file around the code (an executable instead of a
+  disk image).
+
+### To decide first
+
+- **How a program says where it runs.** A build flag (`phi build game.phi --target linux`)
+  keeps one program for every target; a base class (`:Program` beside a new one) makes it
+  part of the source. The flag is the likely choice.
+- **Which modules work where.** Most of `lib/phi` (data, text, crypto, math, file formats)
+  works anywhere. Drivers, the TCP/IP stack and the kernel's own modules are PHI OS only.
+  Each module gets marked, and using one where it can't run is an error.
+
+### Phases
+
+| # | Phase | Size | Demo at the end |
+|---|---|---|---|
+| H1 | Linux, 32-bit, console | Small | `phi build hello.phi --target linux` makes a program that runs on Linux |
+| H2 | Tests on the host | Small | `phi test --target linux` runs the program tests without QEMU |
+| H3 | Windows, 32-bit, console | Medium | the same program as a Windows `.exe` |
+| H4 | 64-bit on the hosts | Large | Linux and Windows 64-bit programs (with S10), and macOS |
+| H5 | The network and threads | Medium | the mmo server's world and lobby running as Linux programs |
+| H6 | Windows and graphics | Large | a PHI game window on Windows and Linux |
+| H7 | Tools for a host | Medium | a debugger steps through PHI lines; an editor shows PHI's errors |
+
+#### Phase H1: Linux, 32-bit, console
+
+1. **The executable:** an ELF file. NASM can write the ELF header itself, so no linker is
+   needed at first.
+2. **A runtime for Linux:** `lib/x86_32_linux/`, with the same calls as
+   `lib/x86_32_user/` made as Linux system calls: `log` and `ask` through `write` and
+   `read`, the heap through `mmap`, files through `open`, `read` and `write`, time through
+   `clock_gettime` and `nanosleep`, and `exit`. Linux system calls are traps with their
+   arguments in registers, as PHI OS's are, so most are a line or two each.
+3. **The target flag,** and an error for a module that only works on PHI OS.
+4. **Calls with no Linux equivalent** (`OS.PutCell`, the PHI OS process calls) are errors
+   for this target, not something that fails when it runs.
+
+**Done when:** the programs among the tests (`phi.Name:Program`, and `:Library` tests built
+as programs) build for Linux and give the same output as on PHI OS.
+
+#### Phase H2: Tests on the host
+
+1. **`phi test --target linux`** runs each test as a Linux program and compares its output,
+   as it now does with QEMU's serial port. On Windows it runs under WSL.
+2. **Both targets in the suite:** a test runs on PHI OS, and on the host as well when it
+   can, so the two can't drift apart.
+
+**Done when:** the program tests run on the host in a fraction of the time QEMU takes, and a
+difference between the two targets fails the run.
+
+#### Phase H3: Windows, 32-bit, console
+
+1. **The executable:** a PE file with an import table, since Windows has no fixed system
+   call numbers: programs call `kernel32.dll` (`WriteFile`, `ReadFile`, `VirtualAlloc`,
+   `CreateFileW`, `GetTickCount64`, `Sleep`, `ExitProcess`).
+2. **Calling those functions** the way Windows does (stdcall). This is the first piece of
+   calling C code, which C compatibility builds on later.
+3. **`lib/x86_32_windows/`,** the runtime, as for Linux. Text is converted to UTF-16 for the
+   file and console calls that need it.
+
+**Done when:** the same programs as H1 build as Windows `.exe` files and give the same output.
+
+#### Phase H4: 64-bit on the hosts
+
+Comes with S10 (the x86-64 backend). macOS only runs 64-bit programs, many Linux
+distributions don't install 32-bit support any more, and Windows on ARM emulates it, so
+32-bit is where hosting starts, not where it stays.
+
+1. **The x86-64 backend** from S10, and the System V (Linux, macOS) and Microsoft x64
+   calling conventions for system functions.
+2. **ELF64, PE32+ and Mach-O** executables.
+3. **macOS** (`lib/x86_64_macos/`), and ARM64 once there's an ARM backend (Apple machines,
+   Windows on ARM, phones and consoles).
+
+**Done when:** the H1 programs build and pass as 64-bit programs on Linux, Windows and macOS.
+
+#### Phase H5: The network and threads
+
+1. **Sockets:** the UDP and TCP calls answered by BSD sockets on Linux and macOS and
+   Winsock on Windows. PHI OS keeps its own network stack.
+2. **Threads:** `atomic` and `locked` work across threads made with pthreads or
+   `CreateThread`, with the same rules S9 sets on PHI OS. PHI's memory model is written
+   down in `docs/language.md`.
+
+**Done when:** `samples/mmo/`'s world and lobby run as Linux programs, with clients on PHI
+OS or on the host, and `phi load` holds the same tick rate.
+
+#### Phase H6: Windows and graphics
+
+1. **A window, drawing and input** behind the calls `gui.*` and `gfx.*` already use: Win32 on
+   Windows, Wayland or X11 on Linux, Cocoa on macOS, or one library that covers all three
+   (that needs C compatibility).
+2. **Sound** behind `audio.*`'s calls.
+3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
+   calling C.
+
+**Done when:** a PHI game (the arcade sample) runs in a window on Windows and Linux.
+
+#### Phase H7: Tools for a host
+
+1. **Debug information** (DWARF on Linux, PDB on Windows), so a debugger steps through PHI
+   lines and shows variables, not only the generated assembly.
+2. **A language server** for editors such as VS Code: errors as you type, going to a
+   definition, completion.
+3. **A formatter,** and a way to share and depend on modules (packages).
+
+**Done when:** a PHI program on Windows is stepped through by line in a debugger, and an
+editor shows its errors as it's written.
+
+### Order
+
+H1 and H2 together are worth doing early, on their own: they prove the split between a
+program and its system, and they make every test run much faster. H3 follows. H4 waits for
+S10, and H5-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
+lean on, so this plan is also where that hold would be reconsidered.
 
 ## References
 
