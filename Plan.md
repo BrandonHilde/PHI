@@ -605,9 +605,8 @@ The parts most worth doing next, roughly in order:
    with a caller's-text parameter: `method<str into: int>` (the user's choice; `into` is
    reserved now, and the library's `into` variables became `target`); tests
    `method_values_into`, `method_values_into_errors`.
-3. **Interfaces**, so a table of handlers (`struct.App` with method fields) can be checked
-   and filled in one place. Waiting for code that needs them before choosing a design
-   (`interface.Name` with `struct.X has Name`, or checked tables of method fields).
+3. **Interfaces**: done as `interface.Name` with `struct.X has Name` (see S7). Using them
+   for PhiOS's tables of handlers is the next step there.
 4. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM. (C compatibility and
    self-hosting are on hold until everything else is done.)
 
@@ -1343,7 +1342,24 @@ Goal: Scenario 1's second milestone, and the interface design Plan.md has been w
 tick rate, `phi test --bench` reports the tick time so a slowdown fails it, and the
 server's entity kinds are one interface.
 
-**Status: not started.**
+**Status: (1) and (2) done; (3) next.**
+
+- [x] (1) the design, chosen with the user: `interface.Shape { [Area] [Grow: int by;] }`
+  lists method headers, `struct.Circle has Shape { ... }` writes them, and what each
+  returns is taken from the structs (they must agree). A `Shape` owns its object, like a
+  `new` variable. Generic containers go through interfaces (the user's choice over a
+  built-in `map<K V>` and type parameters): a library container holds objects of an
+  interface, so it works for any struct that has it.
+- [x] (2) built: a missing method, or one that takes or returns something different, is a
+  compile error. `new Shape s` is a variable, `new Shape all[atmost 8]` an array and
+  `new Shape main;` a field, and `[Draw: Shape s;]` borrows one. `is` copies, `takes` hands
+  over, `is empty` frees, and `if a is b` compares. Each heap object of a struct that has an
+  interface keeps its type table's address in the 4 bytes before it. The table holds the
+  struct's free, clone and equal routines, then its methods at each interface's place. A
+  call through a `Shape` is a call through that table, made as a method value's call is.
+  For now an interface method returns a number (or nothing), and a struct stored in place
+  can't go into one. Tests: `interfaces`, `interfaces_errors`.
+- [ ] (3) entity kinds in `samples/mmo/`, and `gui.widgets` if it fits
 
 #### Phase S8: Containing errors
 

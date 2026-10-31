@@ -54,13 +54,23 @@ namespace Phi.Compiler.Syntax
         public Span TextSpan { get; init; }
     }
 
-    /// <summary>struct.Name { type field; type field[N]; }</summary>
+    /// <summary>
+    /// struct.Name { type field; type field[N]; }, or struct.Name has Shape { ... }; and
+    /// interface.Name { [Method: params;] }, the methods a struct that has it must have.
+    /// </summary>
     public sealed class StructDecl : Node
     {
         public SourceFile File { get; init; } = null!;
         public string Name { get; init; } = "";
         public List<FieldDecl> Fields { get; } = new();
         public StructSymbol? Symbol { get; set; }
+
+        /// <summary>The interfaces it has (struct.Circle has Shape), by name.</summary>
+        public List<(string Name, Span Span)> Has { get; } = new();
+
+        /// <summary>An interface: no fields, only the headers of the methods it asks for.</summary>
+        public bool IsInterface { get; init; }
+        public List<MethodDecl> Methods { get; } = new();
     }
 
     /// <summary>enum.Name { A  B  C: 10 }: names for numbers, as a type of their own.</summary>
@@ -553,6 +563,18 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>The operand is an object, whose address is the value it holds.</summary>
         public bool OfObject { get; set; }
+    }
+
+    /// <summary>
+    /// Made by the binder for shape.Area, where shape is an interface: the address of the method
+    /// of whichever struct the object is, from the type table kept just before it.
+    /// </summary>
+    public sealed class InterfaceMethodExpr : Expr
+    {
+        public Expr Receiver { get; init; } = null!;
+
+        /// <summary>Which method in the type table, after the free, clone and equal routines.</summary>
+        public int Slot { get; init; }
     }
 
     /// <summary>value as Type: the same bits, seen as another type (cut to fit a smaller number)</summary>

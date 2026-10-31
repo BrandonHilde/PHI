@@ -1,0 +1,9 @@
+31:2: error: a Shape holds an object of whichever struct it is, so declare it with new, like new Shape loose;
+34:7: error: a Shape takes a Circle that's an object: this one is stored in place, so declare it with new (new Circle c;)
+36:7: error: a Shape holds an object of a struct that has Shape, and this is a Point (struct.Point has Shape { ... } would give it one)
+37:7: error: interface Shape has no method Spin
+38:2: error: Shape.Grow takes 1 argument, but was given 2
+43:3: error: 'shape' borrows its Shape, which can't be replaced; only a new variable, field or element gets another
+13:2: error: Circle.Grow has to take what Shape says: [Grow: int by;]
+20:2: error: Square.Area returns nothing, but Shape's Area returns an int (as Circle.Area does): every struct with Shape has to return the same
+17:1: error: Square has Shape, so it needs a method [Grow: int by;]

@@ -1,0 +1,45 @@
+# Mistakes with interfaces that PHI catches when building.
+interface.Shape
+{
+	[Area]
+	[Grow: int by;]
+}
+
+struct.Circle has Shape
+{
+	int r;
+	[Area]
+	[end: 3 * r * r]
+	[Grow: u8 by;]
+	[end]
+}
+
+struct.Square has Shape
+{
+	int side;
+	[Area]
+	[end]
+}
+
+struct.Point
+{
+	int x;
+}
+
+phi.InterfacesErrors:Kernel
+{
+	Shape loose;
+	new Shape s;
+	Circle c;
+	s is c;
+	new Point p;
+	s is p;
+	call s.Spin;
+	call s.Grow: 1 2;
+	exit 0;
+
+	[Take: Shape shape;]
+		new Circle other;
+		shape is other;
+	[end]
+}

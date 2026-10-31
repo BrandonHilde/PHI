@@ -394,6 +394,36 @@ namespace Phi.Compiler.Semantics
         public static readonly StructSymbol Text = new() { Name = "_text" };
 
         public FieldSymbol? Find(string name) => Fields.FirstOrDefault(f => f.Name == name);
+
+        /// <summary>
+        /// interface.Name: no fields of its own. A variable of it (always new) owns an object of
+        /// any struct that has it, and its methods are called on whichever struct that is.
+        /// </summary>
+        public bool IsInterface => Decl?.IsInterface == true;
+
+        /// <summary>The interfaces this struct has (struct.Circle has Shape).</summary>
+        public List<StructSymbol> Interfaces { get; } = new();
+
+        /// <summary>For an interface: the structs that have it, in the order they were declared.</summary>
+        public List<StructSymbol> Members { get; } = new();
+
+        /// <summary>
+        /// For an interface: what each of its methods takes after self, and returns, taken from
+        /// the first struct that has it (every other one must agree). Null until worked out.
+        /// </summary>
+        public List<MethodSignature?> Signatures { get; } = new();
+
+        /// <summary>
+        /// For an interface: where its methods start in a struct's type table, counted in
+        /// methods, after every earlier interface's.
+        /// </summary>
+        public int TableStart { get; set; }
+
+        /// <summary>
+        /// A struct that has an interface: each of its objects on the heap keeps, just before it,
+        /// the address of the struct's type table, so a Shape knows what it holds.
+        /// </summary>
+        public bool Typed => Interfaces.Count > 0;
     }
 
     public sealed class FieldSymbol : Symbol

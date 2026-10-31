@@ -246,6 +246,7 @@ namespace Phi.Compiler.Semantics
                 }
             }
 
+            if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();
             CheckTextArguments();
 
@@ -539,8 +540,12 @@ namespace Phi.Compiler.Semantics
                 PathSymbol p => p.Type,
                 _ => null,
             };
-            return t != null && FieldsOf(t) is StructSymbol fields && FindStructMethod(fields, name[(dot + 1)..], scope) != null;
+            return t != null && FieldsOf(t) is StructSymbol fields && HasMethod(fields, name[(dot + 1)..], scope);
         }
+
+        /// <summary>A struct's method, or one its interface asks for.</summary>
+        bool HasMethod(StructSymbol s, string name, Scope scope) =>
+            s.IsInterface ? s.Decl.Methods.Any(m => m.Name == name) : FindStructMethod(s, name, scope) != null;
 
         /// <summary>The struct whose fields and methods x.name reaches: x's own, or through a ptr&lt;T&gt; to one.</summary>
         static StructSymbol? FieldsOf(PhiType t) =>
@@ -670,14 +675,140 @@ namespace Phi.Compiler.Semantics
                 var symbol = new StructSymbol { Name = d.Name, Decl = d };
                 if (enums.ContainsKey(d.Name) || !structs.TryAdd(d.Name, symbol))
                 {
-                    Error(d.Span, $"a struct or enum named {d.Name} already exists");
+                    Error(d.Span, $"a struct, interface or enum named {d.Name} already exists");
                     continue;
                 }
                 d.Symbol = symbol;
             }
 
+            // struct.Circle has Shape: which interfaces each struct has
+            int tableStart = 0;
+            foreach (StructSymbol s in structs.Values)
+            {
+                file = s.Decl.File;
+                if (s.IsInterface)
+                {
+                    s.TableStart = tableStart;
+                    tableStart += s.Decl.Methods.Count;
+                    foreach (MethodDecl m in s.Decl.Methods)
+                    {
+                        s.Signatures.Add(null);
+                        if (s.Decl.Methods.Count(o => o.Name == m.Name) > 1 && s.Decl.Methods.First(o => o.Name == m.Name) != m)
+                            Error(m.Span, $"interface {s.Name} already has a method named {m.Name}");
+                        // a str with a value is a copy (str name: '';), as in any method; nothing else has one
+                        foreach (VarDecl p in m.Parameters.Where(p => p.Values.Count > 0 && p.Type.Name != "str"))
+                            Error(p.Values[0].Span, "an interface's parameters have no defaults: a call through it gives every argument");
+                    }
+                    continue;
+                }
+                foreach (var (name, span) in s.Decl.Has)
+                {
+                    if (!structs.TryGetValue(name, out StructSymbol? iface) || !iface.IsInterface)
+                    {
+                        Error(span, iface == null ? $"unknown interface '{name}'" : $"{name} is a struct, not an interface; has names interfaces (interface.{name} {{ ... }})");
+                        continue;
+                    }
+                    if (s.Interfaces.Contains(iface))
+                    {
+                        Error(span, $"{s.Name} already has {name}");
+                        continue;
+                    }
+                    s.Interfaces.Add(iface);
+                    iface.Members.Add(s);
+                }
+            }
+
             foreach (StructSymbol s in structs.Values) Layout(s, new HashSet<StructSymbol>());
             foreach (StructSymbol s in structs.Values) FindOwnedSlots(s);
+        }
+
+        /// <summary>
+        /// The methods a struct's interfaces ask for: each one must be there, take what the
+        /// interface says, and return what every other struct with that interface returns.
+        /// Called once every method is declared, from the unit struct methods are in.
+        /// </summary>
+        void CheckInterfaces(Scope scope)
+        {
+            foreach (StructSymbol iface in structs.Values.Where(s => s.IsInterface))
+                for (int i = 0; i < iface.Decl.Methods.Count; i++)
+                    InterfaceSignature(iface, i, scope);
+
+            foreach (StructSymbol s in structs.Values.Where(s => s.Typed))
+            {
+                file = s.Decl.File;
+                foreach (StructSymbol iface in s.Interfaces)
+                    for (int i = 0; i < iface.Decl.Methods.Count; i++)
+                    {
+                        MethodDecl wanted = iface.Decl.Methods[i];
+                        MethodSymbol? m = FindStructMethod(s, wanted.Name, scope);
+                        if (m == null)
+                        {
+                            Error(s.Decl.Span, $"{s.Name} has {iface.Name}, so it needs a method [{InterfaceHeader(wanted)}]");
+                            continue;
+                        }
+                        MethodSignature? expected = iface.Signatures[i];
+                        if (expected == null) continue;
+                        MethodSignature own = SignatureOf(m);
+                        file = m.Decl.Owner.File;
+                        if (!own.Parameters.Skip(1).SequenceEqual(expected.Parameters.Skip(1)) || !own.Into.Skip(1).SequenceEqual(expected.Into.Skip(1)))
+                            Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} has to take what {iface.Name} says: [{InterfaceHeader(wanted)}]");
+                        else if (own.Result != expected.Result)
+                            Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} returns {Returns(own.Result)}, but {iface.Name}'s {wanted.Name} returns {Returns(expected.Result)} " +
+                                               $"(as {iface.Members[0].Name}.{wanted.Name} does): every struct with {iface.Name} has to return the same");
+                        file = s.Decl.File;
+                    }
+            }
+
+            static string Returns(PhiType t) => t.Kind == TypeKind.Void ? "nothing" : A(t);
+        }
+
+        static string InterfaceHeader(MethodDecl m) =>
+            m.Parameters.Count == 0 ? m.Name : $"{m.Name}: {string.Join(" ", m.Parameters.Select(p => $"{TypeText(p.Type)} {p.Name}{(p.Values.Count > 0 ? ": ''" : "")};"))}";
+
+        static string TypeText(TypeRef t) => t.Pointee != null ? $"{t.Name}<{TypeText(t.Pointee)}>" : t.Name;
+
+        /// <summary>
+        /// What an interface's method i takes (self first, then what the interface says) and
+        /// returns: the first struct with the interface decides what it returns.
+        /// </summary>
+        MethodSignature? InterfaceSignature(StructSymbol iface, int i, Scope scope)
+        {
+            if (iface.Signatures[i] is MethodSignature known) return known;
+            MethodDecl wanted = iface.Decl.Methods[i];
+            SourceFile was = file;
+            file = iface.Decl.File;
+            // self is the object it holds; then the parameters as a struct method's are seen from
+            // outside (a struct is borrowed, a str is a copy unless it's the caller's own text)
+            var parameters = new List<PhiType> { PhiType.PointerTo(PhiType.U8) };
+            var into = new List<bool> { false };
+            foreach (VarDecl p in wanted.Parameters)
+            {
+                PhiType t = ResolveType(p.Type, null, allowStr: true);
+                if (t.IsError) { file = was; return null; }
+                if (p.BufferSize != null || p.Unsized)
+                {
+                    Error(p.Span, "a method called through an interface can't take an array yet");
+                    file = was;
+                    return null;
+                }
+                parameters.Add(t.IsString ? PhiType.Str : t.IsStruct ? PhiType.ObjectOf(t.Struct!) : t);
+                into.Add(t.IsString && p.Values.Count == 0);   // str target; is the caller's own text
+            }
+            if (iface.Members.Count == 0) { file = was; return null; }   // nothing has it yet: nothing to call
+            MethodSymbol? first = FindStructMethod(iface.Members[0], wanted.Name, scope);
+            file = was;
+            if (first == null) return null;
+            PhiType result = SignatureOf(first).Result;
+            if (result.IsString || (!result.IsNumeric && !result.IsWide && !result.IsFloat && result.Kind != TypeKind.Void))
+            {
+                file = first.Decl.Owner.File;
+                Error(first.Decl.Span, $"a method called through an interface returns a number for now, and {iface.Members[0].Name}.{wanted.Name} returns a {result}");
+                file = was;
+                return null;
+            }
+            var signature = new MethodSignature(parameters, result, into);
+            iface.Signatures[i] = signature;
+            return signature;
         }
 
         /// <summary>
@@ -831,6 +962,11 @@ namespace Phi.Compiler.Semantics
                     }
                     s.Fields.Add(new FieldSymbol { Name = f.Name, Type = objects, Offset = offset });
                     offset += objects.ByteSize;
+                    continue;
+                }
+                if (type.IsStruct && type.Struct!.IsInterface)
+                {
+                    Error(f.Type.Span, $"a {type} holds an object of whichever struct it is, so the field is new: new {type} {f.Name};");
                     continue;
                 }
                 if (type.IsStruct) Layout(type.Struct!, inProgress);
@@ -1331,6 +1467,13 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            if (type.IsStruct && type.Struct!.IsInterface)
+            {
+                Error(d.Type.Span, $"a {type} holds an object of whichever struct it is, so declare it with new, like new {type} {d.Name}{(d.Unsized ? "[]" : d.BufferSize != null ? "[...]" : "")};");
+                v.Type = PhiType.Error;
+                return;
+            }
+
             if (type.IsStruct && type.Struct!.OwnsObjects)
             {
                 Error(d.Type.Span, $"{type} owns objects (it has new fields), so PHI has to manage it: declare it with new, like new {type} {d.Name}{(d.Unsized ? "[]" : d.BufferSize != null ? "[...]" : "")};");
@@ -1576,9 +1719,10 @@ namespace Phi.Compiler.Semantics
                     Error(d.AtAddress.Span, "a user program can't place an object at an address; only the kernel reaches memory directly");
                     return;
                 }
-                if (type.Struct!.OwnsObjects)
+                if (type.Struct!.OwnsObjects || type.Struct.IsInterface)
                 {
-                    Error(d.AtAddress.Span, $"{type} owns objects (it has new fields), which PHI can't manage in memory it didn't allocate");
+                    Error(d.AtAddress.Span, type.Struct.IsInterface ? $"a {type} holds an object PHI allocated, not memory at an address"
+                                                                    : $"{type} owns objects (it has new fields), which PHI can't manage in memory it didn't allocate");
                     return;
                 }
                 v.Ownership = Ownership.At;
@@ -2196,6 +2340,21 @@ namespace Phi.Compiler.Semantics
                 Error(value.Span, $"this is a pointer; to copy what it points at, write {Describe(value)}:0");
                 return null;
             }
+            else if (type.IsInterface && !owned)
+            {
+                Error(target.Span, $"'{Describe(target)}' borrows its {type.Name}, which can't be replaced; only a new variable, field or element gets another");
+                return null;
+            }
+            else if (type.IsInterface && value.Type.Struct != type)
+            {
+                // a struct's object, into an interface it has
+                if (InterfaceValueError(value, type) is string why)
+                {
+                    Error(value.Span, why);
+                    return null;
+                }
+                kind = IsObjectCall(value) ? ObjectAssignKind.Move : ObjectAssignKind.Copy;
+            }
             else if (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != type)
             {
                 Error(value.Span, $"'{Describe(target)}' is a {type.Name}, so it can only be given another {type.Name}, not a {value.Type}");
@@ -2221,6 +2380,23 @@ namespace Phi.Compiler.Semantics
             }
 
             return new ObjectAssignStmt { Target = target, Value = value, Kind = kind, Struct = type, TargetOwned = owned, Span = span };
+        }
+
+        /// <summary>
+        /// Why a value can't go where an interface goes, or null when it can: a struct that has
+        /// it, as a call's new object or one a new variable, field or element owns (an object
+        /// keeps its type table just before it, which a struct stored in place doesn't have).
+        /// </summary>
+        string? InterfaceValueError(Expr value, StructSymbol iface)
+        {
+            if (value.Type.IsError) return null;
+            StructSymbol? s = value.Type.IsObject || value.Type.IsStruct ? value.Type.Struct : null;
+            if (s == iface && value.Type.IsObject) return null;
+            if (s == null || s.IsInterface || !s.Interfaces.Contains(iface))
+                return $"a {iface.Name} holds an object of a struct that has {iface.Name}, and this is {A(value.Type)}" +
+                       (s is { IsInterface: false } && iface.Members.Count > 0 ? $" (struct.{s.Name} has {iface.Name} {{ ... }} would give it one)" : "");
+            if (value.Type.IsObject && (IsObjectCall(value) || IsOwnedPlace(value))) return null;
+            return $"a {iface.Name} takes a {s.Name} that's an object: this one is {(value.Type.IsStruct ? "stored in place" : "borrowed")}, so declare it with new (new {s.Name} {Describe(value)};)";
         }
 
         /// <summary>A call whose result is a new object, which the caller takes over.</summary>
@@ -2503,7 +2679,11 @@ namespace Phi.Compiler.Semantics
                 {
                     BindExpr(value, scope);
                     if (value.Type.IsError) continue;
-                    if (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr))
+                    if (element.Struct!.IsInterface && value.Type.Struct != element.Struct && InterfaceValueError(value, element.Struct) is string why)
+                        Error(value.Span, why);
+                    else if (element.Struct.IsInterface && value.Type.Struct != element.Struct && value is not (NameExpr or IndexExpr or MemberExpr))
+                        Error(value.Span, $"'{name}' holds {element.Struct.Name}s, so it takes a copy of one (a variable, field or element)");
+                    else if (!element.Struct.IsInterface && (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr)))
                         Error(value.Span, $"'{name}' holds {element.Struct!.Name} objects, so it takes a copy of another {element.Struct.Name} (a variable, field or element), not {A(value.Type)}");
                     else append.Values.Add(value);
                 }
@@ -2648,7 +2828,8 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            if (takes.Target.Type.Struct != takes.Source.Type.Struct)
+            if (takes.Target.Type.Struct != takes.Source.Type.Struct
+                && !(takes.Target.Type.Struct!.IsInterface && takes.Source.Type.Struct!.Interfaces.Contains(takes.Target.Type.Struct)))
             {
                 Error(takes.Source.Span, $"'{Describe(takes.Target)}' holds a {takes.Target.Type}, but '{Describe(takes.Source)}' is a {takes.Source.Type}");
                 return;
@@ -2824,6 +3005,57 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>
+        /// shape.Area: a call through an interface, to the method of whichever struct the shape
+        /// holds. It's called like a method value: the address comes from the object's type table.
+        /// </summary>
+        PointerCall? BindInterfaceCall(StructSymbol iface, Expr receiver, string method, string calleeName, Span calleeSpan,
+                                       List<Expr> arguments, Span span, Scope scope)
+        {
+            int i = iface.Decl.Methods.FindIndex(m => m.Name == method);
+            if (i < 0)
+            {
+                Error(calleeSpan, $"interface {iface.Name} has no method {method}");
+                return null;
+            }
+            if (receiver.Type.IsArray || !(receiver.Type.IsObject || receiver.Type.IsPointer))
+            {
+                Error(receiver.Span, $"call {method} on one {iface.Name}, not on a {receiver.Type}");
+                return null;
+            }
+            if (receiver is not (NameExpr or IndexExpr or MemberExpr))
+            {
+                Error(receiver.Span, $"call {iface.Name}'s methods on a variable, field or element");
+                return null;
+            }
+            MethodSignature? signature = InterfaceSignature(iface, i, new Scope { Unit = scope.Unit });
+            if (signature == null)
+            {
+                if (iface.Members.Count == 0) Error(calleeSpan, $"no struct has {iface.Name} yet (struct.Name has {iface.Name} {{ ... }}), so there's no {method} to call");
+                return null;
+            }
+
+            var target = new InterfaceMethodExpr { Receiver = receiver, Slot = iface.TableStart + i, Span = calleeSpan, Type = PhiType.MethodOf(signature) };
+            arguments.Insert(0, receiver);
+            int given = arguments.Count - 1, wanted = signature.Parameters.Count - 1;
+            if (given != wanted)
+                Error(span, $"{iface.Name}.{method} takes {Plural(wanted, "argument")}, but was given {given}");
+            for (int a = 1; a < Math.Min(arguments.Count, signature.Parameters.Count); a++)
+            {
+                string what = $"parameter '{iface.Decl.Methods[i].Parameters[a - 1].Name}' of {iface.Name}.{method}";
+                if (signature.Into[a])
+                {
+                    if (!arguments[a].Type.IsError && (!arguments[a].Type.IsString || !IsAssignable(arguments[a])))
+                        Error(arguments[a].Span, $"{what} is the caller's own str, which the method may write: give it a str variable, field or element");
+                    continue;
+                }
+                arguments[a] = Convert(arguments[a], signature.Parameters[a], what);
+            }
+            if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+                Error(calleeSpan, "interfaces need 32-bit code (a Kernel or a Program)");
+            return new PointerCall { Target = target, Signature = signature };
+        }
+
+        /// <summary>
         /// Resolves a call's method and checks its arguments; returns the MethodSymbol,
         /// BuiltinFunction or RawBlockDecl, or null after reporting an error.
         /// </summary>
@@ -2839,6 +3071,8 @@ namespace Phi.Compiler.Semantics
             if (calleeTarget is MemberExpr member)
             {
                 BindExpr(member.Target, scope);
+                if (FieldsOf(member.Target.Type) is { IsInterface: true } iface)
+                    return BindInterfaceCall(iface, member.Target, member.Member, calleeName, calleeSpan, arguments, span, scope);
                 if (FieldsOf(member.Target.Type) is StructSymbol fields && FindStructMethod(fields, member.Member, scope) is MethodSymbol found)
                 {
                     structMethod = found;
@@ -2851,6 +3085,8 @@ namespace Phi.Compiler.Semantics
             {
                 var receiver = new NameExpr { Name = calleeName[..dot], Span = calleeSpan };
                 BindExpr(receiver, scope);
+                if (FieldsOf(receiver.Type) is { IsInterface: true } iface)
+                    return BindInterfaceCall(iface, receiver, calleeName[(dot + 1)..], calleeName, calleeSpan, arguments, span, scope);
                 if (FieldsOf(receiver.Type) is StructSymbol fields && FindStructMethod(fields, calleeName[(dot + 1)..], scope) is MethodSymbol found)
                 {
                     structMethod = found;
@@ -3111,6 +3347,14 @@ namespace Phi.Compiler.Semantics
             // a new object from the call is handed over to the target
             if (result.IsObject || target.Type.IsObject)
             {
+                if (target.Type.Struct is { IsInterface: true } iface && result.IsObject && result.Struct != iface)
+                {
+                    if (!IsOwnedPlace(target))
+                        Error(target.Span, $"'{Describe(target)}' borrows its {iface.Name}, which can't be replaced; only a new variable, field or element gets another");
+                    else if (!result.Struct!.Interfaces.Contains(iface))
+                        Error(target.Span, $"{call.Callee} returns a {result}, which doesn't have {iface.Name}, so it can't be stored in '{Describe(target)}'");
+                    return;
+                }
                 if (!IsAssignable(target) || !(target.Type.IsObject || target.Type.IsStruct) || target.Type.Struct != result.Struct)
                     Error(target.Span, $"{call.Callee} returns a {result}, which can't be stored in {target.Type} '{Describe(target)}'");
                 return;
@@ -3276,7 +3520,7 @@ namespace Phi.Compiler.Semantics
                     FieldSymbol? field = fields?.Find(member.Member);
 
                     // (shapes:i.Area): the struct's method, with no arguments
-                    if (field == null && member.InParens && fields != null && FindStructMethod(fields, member.Member, scope) != null)
+                    if (field == null && member.InParens && fields != null && HasMethod(fields, member.Member, scope))
                     {
                         member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = member };
                         BindCallExpr(member.Call, scope);
@@ -3779,6 +4023,12 @@ namespace Phi.Compiler.Semantics
             if (target.IsObject)
             {
                 if (e.Type.IsObject && e.Type.Struct == target.Struct) return e;
+                if (target.Struct!.IsInterface && !(e is EmptyExpr || e.Type.IsPointer || ConstantFolder.Evaluate(e) == 0))
+                {
+                    // a Shape parameter borrows a Shape, or any struct's object that has Shape
+                    if (InterfaceValueError(e, target.Struct) is string why) Error(e.Span, $"{what}: {why}");
+                    return e;
+                }
                 if (e.Type.IsStruct && e.Type.Struct == target.Struct && e is NameExpr or IndexExpr or MemberExpr)
                     return new AddrExpr { Operand = e, Span = e.Span, Type = PhiType.PointerTo(e.Type) };
                 if (e.Type.IsPointer && (e.Type.Pointee!.Struct == target.Struct || e.Type.Pointee == PhiType.U8)) return e;

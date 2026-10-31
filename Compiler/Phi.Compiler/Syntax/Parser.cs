@@ -20,7 +20,7 @@ namespace Phi.Compiler.Syntax
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
-            "phi", "asm", "arm", "struct", "enum", "use", "const", "volatile", "atomic", "locked", "into",
+            "phi", "asm", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -192,7 +192,7 @@ namespace Phi.Compiler.Syntax
         bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
 
         bool AtTopLevelHeader =>
-            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum")) && PeekToken(1).Kind == TokenKind.Dot
+            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot
             || Current.StartsLine && AtWord("use");
 
         /// <summary>Skip ahead to a likely statement boundary after an error.</summary>
@@ -246,7 +246,7 @@ namespace Phi.Compiler.Syntax
                 return;
             }
 
-            if ((AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum")) && PeekToken(1).Kind == TokenKind.Dot)
+            if ((AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot)
             {
                 string kind = Advance().Text;
                 Advance(); // .
@@ -262,6 +262,9 @@ namespace Phi.Compiler.Syntax
                         return;
                     case "enum":
                         program.Enums.Add(ParseEnum(start, name));
+                        return;
+                    case "interface":
+                        program.Structs.Add(ParseInterface(start, name));
                         return;
                 }
 
@@ -345,10 +348,48 @@ namespace Phi.Compiler.Syntax
             return cls;
         }
 
+        /// <summary>interface.Name { [Area] [Draw: int x; int y;] }: method headers, one after another.</summary>
+        StructDecl ParseInterface(Token start, Token name)
+        {
+            var decl = new StructDecl { File = file, Name = name.Text, IsInterface = true, Span = start.Span.To(name.Span) };
+            Expect(TokenKind.OpenBrace, "'{'");
+            while (!At(TokenKind.CloseBrace) && !AtEnd)
+            {
+                Token open = Expect(TokenKind.OpenBracket, $"a method header like [Draw: int x;] in interface {name.Text}");
+                if (AtWord("end"))
+                    throw Error(Current.Span, $"an interface's methods have no body or [end]: each struct that has {name.Text} writes its own");
+                Token method = ExpectIdentifier("a method name");
+                CheckNotKeyword(method, "method");
+                var m = new MethodDecl { Name = method.Text, Span = open.Span.To(method.Span) };
+                if (Accept(TokenKind.Colon))
+                {
+                    while (!At(TokenKind.CloseBracket) && !AtEnd)
+                    {
+                        if (!AtDeclaration)
+                            throw Error(Current.Span, $"expected a parameter like 'int x;' but found {Current}");
+                        m.Parameters.Add(ParseVarDecl(allowBracketEnd: true));
+                    }
+                }
+                Expect(TokenKind.CloseBracket, "']' to close the method header");
+                decl.Methods.Add(m);
+            }
+            Expect(TokenKind.CloseBrace, $"'}}' to close interface {name.Text}");
+            return decl;
+        }
+
         StructDecl ParseStruct(Token start, Token name, ProgramNode program)
         {
-            Expect(TokenKind.OpenBrace, "'{'");
             var decl = new StructDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
+            // struct.Circle has Shape { ... }: the interfaces it has, whose methods it must have
+            if (AcceptWord("has"))
+            {
+                do
+                {
+                    Token iface = ExpectIdentifier("the name of an interface it has");
+                    decl.Has.Add((iface.Text, iface.Span));
+                } while (At(TokenKind.Identifier) && !AtWord("has"));
+            }
+            Expect(TokenKind.OpenBrace, "'{'");
             ClassDecl? methods = null;
 
             while (!At(TokenKind.CloseBrace) && !AtEnd)
@@ -1619,7 +1660,7 @@ namespace Phi.Compiler.Syntax
                         return new NameExpr { Name = t.Text, Span = t.Span };
                     }
                     // asm.Name { ... } (and struct., enum., phi.) written inside a class
-                    if (t.Text is "asm" or "arm" or "struct" or "enum" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
+                    if (t.Text is "asm" or "arm" or "struct" or "enum" or "interface" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
                         throw Error(t.Span, $"{t.Text}. blocks go at the top level of the file, outside any class" +
                                             (t.Text is "asm" or "arm" ? $"; write {t.Text}.Name {{ ... }} there and call Name; from the class" : ""));
                     if (ReservedWords.Contains(t.Text))

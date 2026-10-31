@@ -1,0 +1,117 @@
+# Interfaces: interface.Shape lists methods, a struct that has Shape writes them, and a
+# Shape owns an object of whichever struct it is, and calls go to that struct's methods.
+interface.Shape
+{
+	[Area]
+	[Grow: int by;]
+	[Describe: str target;]
+}
+
+struct.Circle has Shape
+{
+	int r;
+
+	[Area]
+	[end: 3 * r * r]
+
+	[Grow: int by;]
+		r++ by;
+	[end]
+
+	[Describe: str target;]
+		target is 'a circle of radius ' r;
+	[end]
+}
+
+struct.Rect has Shape
+{
+	int w;
+	int h;
+	new str name;
+
+	[Area]
+	[end: w * h]
+
+	[Grow: int by;]
+		w++ by;
+		h++ by;
+	[end]
+
+	[Describe: str target;]
+		target is name ' (' w ' by ' h ')';
+	[end]
+}
+
+struct.Scene
+{
+	new Shape main;
+	new Shape others[atmost 4];
+}
+
+phi.Interfaces:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		# a call's new object, taken over
+		new Shape s: (MakeCircle: 2);
+		debug 'circle area ' (s.Area) '\n';
+		call s.Grow: 1;
+		str text: '';
+		call s.Describe: text;
+		debug text ', area ' (s.Area) '\n';
+
+		# another struct in the same Shape: the circle is freed
+		new Rect r: 3 4;
+		r.name is 'a box';
+		s is r;
+		r.w is 100;                    # s has its own copy
+		call s.Describe: text;
+		debug 'now ' text ', area ' (s.Area) '\n';
+
+		# a copy of a Shape is the same struct
+		new Shape t: s;
+		debug 'same: ' (s is t) '\n';
+		call t.Grow: 1;
+		debug 'after growing one: ' (s is t) '\n';
+
+		# a Shape parameter borrows any Shape, or any struct's object that has Shape
+		debug 'areas: ' (AreaOf: s) ' ' (AreaOf: t) ' ' (AreaOf: r) '\n';
+
+		# takes hands an object over without copying
+		new Circle c: 5;
+		t takes c;
+		debug 'took a circle: ' (t.Area) ', and c is empty: ' (c is empty) '\n';
+
+		# in arrays, and in a struct's new fields
+		new Shape list[atmost 8];
+		new Circle one: 1;
+		list++ one r;
+		list++ s;
+		int total: 0;
+		while each shape in list
+			total++ (shape.Area);
+		;;
+		debug 'total of ' list.len ': ' total '\n';
+
+		new Scene scene;
+		call scene.main is MakeCircle: 10;
+		scene.others++ r;
+		new Scene copy: scene;
+		call copy.main.Grow: 1;
+		debug 'scene ' (scene.main.Area) ', its copy ' (copy.main.Area) ', other ' (copy.others:0.Area) '\n';
+
+		s is empty;
+		debug 'emptied: ' (s is empty) '\n';
+	[end]
+
+	[MakeCircle: int r;]
+		new Circle made: r;
+	[end: made]
+
+	[AreaOf: Shape shape;]
+	[end: (shape.Area)]
+}

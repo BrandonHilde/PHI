@@ -1321,7 +1321,7 @@ namespace Phi.Compiler.CodeGen
             {
                 // the call made a new object: the target takes it over
                 Emit("push eax");
-                EmitTakeOver(call.ResultTarget, result.Struct!);
+                EmitTakeOver(call.ResultTarget, call.ResultTarget.Type.Struct!);
                 return;
             }
             EmitStoreResult(call.ResultTarget, result);
@@ -3124,6 +3124,13 @@ namespace Phi.Compiler.CodeGen
                     EmitAddress(addr);
                     break;
 
+                case InterfaceMethodExpr method:
+                    // the object's type table is just before it
+                    EmitExpr(method.Receiver);
+                    Emit("mov eax, [eax - 4]      ; its type table");
+                    Emit($"mov eax, [eax + {TypeTableMethods + 4 * method.Slot}]");
+                    break;
+
                 case SizeofExpr size:
                     LoadConstant("eax", size.Value);
                     break;
@@ -4756,6 +4763,11 @@ namespace Phi.Compiler.CodeGen
                     EmitTextRoutine(next.Kind);
                     continue;
                 }
+                if (next.Struct.IsInterface)
+                {
+                    EmitInterfaceRoutine(next.Kind, next.Struct);
+                    continue;
+                }
                 switch (next.Kind)
                 {
                     case "free": EmitFreeRoutine(next.Struct); break;
@@ -4992,11 +5004,120 @@ namespace Phi.Compiler.CodeGen
         void EmitObjectAlloc(StructSymbol s)
         {
             Need("phi_out_of_memory");
-            Emit($"push dword {s.Size}");
+            Emit($"push dword {s.Size + (s.Typed ? 4 : 0)}");
             Emit($"call {HeapMethodLabel("Heap.Alloc")}");
             Emit("add esp, 4");
             Emit("test eax, eax");
             Emit("jz phi_out_of_memory");
+            if (s.Typed)
+            {
+                Emit($"mov dword [eax], {TypeTable(s)}   ; what it is, for an interface that holds it");
+                Emit("add eax, 4");
+            }
+        }
+
+        // ---------------------------------------------------------------- interfaces
+
+        /// <summary>The structs with interfaces whose objects were made, so their type tables go in the data.</summary>
+        readonly List<StructSymbol> typeTables = new();
+
+        /// <summary>Where a type table's methods start: after its free, clone and equal routines.</summary>
+        const int TypeTableMethods = 12;
+
+        string TypeTable(StructSymbol s)
+        {
+            if (!typeTables.Contains(s))
+            {
+                typeTables.Add(s);
+                ObjectRoutine("free", s);
+                ObjectRoutine("clone", s);
+                ObjectRoutine("equal", s);
+            }
+            return $"phi_type_{s.Name}";
+        }
+
+        /// <summary>
+        /// A struct's type table: its free, clone and equal routines, then for each interface it
+        /// has, at that interface's place, its methods (0 where it has another interface's place).
+        /// </summary>
+        void EmitTypeTables(StringBuilder output)
+        {
+            foreach (StructSymbol s in typeTables)
+            {
+                int count = s.Interfaces.Max(i => i.TableStart + i.Decl.Methods.Count);
+                var methods = Enumerable.Repeat("0", count).ToArray();
+                foreach (StructSymbol iface in s.Interfaces)
+                    for (int i = 0; i < iface.Decl.Methods.Count; i++)
+                    {
+                        string wanted = iface.Decl.Methods[i].Name;
+                        MethodSymbol? m = unit.Methods.FirstOrDefault(m => m.Decl.Owner.ForStruct?.Symbol == s && m.Decl.Name == wanted);
+                        if (m != null) methods[iface.TableStart + i] = m.Label;
+                    }
+                output.AppendLine($"phi_type_{s.Name}: dd phi_free_{s.Name}, phi_clone_{s.Name}, phi_equal_{s.Name}" +
+                                  (count > 0 ? ", " + string.Join(", ", methods) : ""));
+            }
+        }
+
+        /// <summary>
+        /// The routines for an interface's objects, called as any object's are: each goes to the
+        /// routine of whichever struct the object is, from its type table. A slot that gets
+        /// another one frees what it had (it may be another struct), and a new one starts empty.
+        /// </summary>
+        void EmitInterfaceRoutine(string kind, StructSymbol iface)
+        {
+            switch (kind)
+            {
+                case "free":
+                case "clone":
+                    Emit("test eax, eax");
+                    Emit("jz .done                ; nothing to free or copy");
+                    Emit("mov edx, [eax - 4]");
+                    Emit($"jmp [edx + {(kind == "free" ? 0 : 4)}]");
+                    Label(".done");
+                    Emit("ret");
+                    break;
+
+                case "equal":
+                    Emit("cmp eax, edx");
+                    Emit("je .same                ; the same object (or both empty)");
+                    Emit("test eax, eax");
+                    Emit("jz .different");
+                    Emit("test edx, edx");
+                    Emit("jz .different");
+                    Emit("mov ecx, [eax - 4]");
+                    Emit("cmp ecx, [edx - 4]");
+                    Emit("jne .different          ; different structs");
+                    Emit("jmp [ecx + 8]");
+                    Label(".same");
+                    Emit("mov eax, 1");
+                    Emit("ret");
+                    Label(".different");
+                    Emit("xor eax, eax");
+                    Emit("ret");
+                    break;
+
+                case "set":
+                    // a copy of the source (made first: it may be inside what the slot had)
+                    Emit("push eax                ; the slot");
+                    Emit("mov eax, edx");
+                    Emit($"call {ObjectRoutine("clone", iface)}");
+                    Emit("pop edx");
+                    Emit("xchg eax, [edx]         ; what it had, freed");
+                    Emit($"jmp {ObjectRoutine("free", iface)}");
+                    break;
+
+                case "renew":
+                    Emit("mov edx, eax");
+                    Emit("mov eax, [edx]");
+                    Emit("mov dword [edx], 0       ; a new one starts empty");
+                    Emit($"jmp {ObjectRoutine("free", iface)}");
+                    break;
+
+                default:
+                    // assign: the binder only lets a slot that owns its object get another one
+                    Emit("ret");
+                    break;
+            }
         }
 
         /// <summary>
@@ -5124,7 +5245,13 @@ namespace Phi.Compiler.CodeGen
                 Emit("mov eax, [ebp - 4]");
                 Emit($"push dword [eax + {c.Offset}]   ; [ebp - 8] the next one, freed by going round again");
             }
-            Emit("push dword [ebp - 4]");
+            if (s.Typed)
+            {
+                Emit("mov eax, [ebp - 4]");
+                Emit("sub eax, 4              ; its type table is where its memory starts");
+                Emit("push eax");
+            }
+            else Emit("push dword [ebp - 4]");
             Emit($"call {HeapMethodLabel("Heap.Free")}");
             Emit("add esp, 4");
             if (chain != null)
@@ -5383,6 +5510,7 @@ namespace Phi.Compiler.CodeGen
                 output.AppendLine($"{label}: times {size} db 0");
 
             if (usesObjects) output.AppendLine("phi_object_line: dd 0");
+            EmitTypeTables(output);
 
             foreach (var (value, label) in stringLabels)
                 output.AppendLine($"{label}: db {NasmBytes(value)}");

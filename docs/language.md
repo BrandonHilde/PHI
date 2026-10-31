@@ -88,7 +88,7 @@ variable, field, parameter, constant, method or struct:
 | Kind | Words |
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
-| Structure | `phi` `struct` `enum` `asm` `arm` `use` `const` `volatile` `isr` `end` `into` |
+| Structure | `phi` `struct` `enum` `interface` `asm` `arm` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
@@ -871,6 +871,72 @@ method<ptr<Counter> int: int> f: addr Counter.Add;   # as a method value, self c
   the OS classes of a 16-bit program (the boot sector, if that's all there is).
 - From outside the struct, a method is always called on a value (`c.Add`), never as
   `Counter.Add` on its own.
+
+### Interfaces
+
+An interface names methods that different structs share. A struct that `has` it must
+write each one, and a variable of the interface holds an object of any of those structs.
+Calling a method on that variable runs the method of whichever struct it holds.
+
+```phi
+interface.Shape
+{
+    [Area]
+    [Grow: int by;]
+    [Describe: str target;]
+}
+
+struct.Circle has Shape
+{
+    int r;
+
+    [Area]
+    [end: 3 * r * r]
+
+    [Grow: int by;]
+        r++ by;
+    [end]
+
+    [Describe: str target;]
+        target is 'a circle of radius ' r;
+    [end]
+}
+
+new Shape s: (MakeCircle: 2);       # takes over the call's new Circle
+log (s.Area);                       # Circle's Area: 12
+call s.Grow: 1;
+new Rect box: 3 4;
+s is box;                           # a copy of box; the circle is freed
+new Shape all[atmost 8];
+all++ box;                          # copies too
+while each shape in all
+    log (shape.Area) '\n';
+;;
+
+[AreaOf: Shape shape;]              # borrows a Shape, or a new Circle or Rect
+[end: (shape.Area)]
+```
+
+- **An interface lists method headers, with no body or `[end]`.** Its parameters are
+  written as any method's are: `str target;` is the caller's own text, and `str name: '';`
+  is a copy. Other parameters have no defaults, so a call through it gives every argument.
+- **What a method returns comes from the structs.** Every struct with the interface has to
+  return the same, and the first one says what that is. For now it's a number (or nothing).
+- **A struct can have several interfaces** (`struct.Player has Shape Named { ... }`), and it's
+  an error to leave out one of their methods, or to take something different.
+- **An interface variable owns its object**, like a `new` variable: it's declared with
+  `new` (in methods, classes, arrays and a struct's fields), starts empty unless it's given
+  a value, and its object is freed with it. `is` copies, `takes` hands an object over,
+  `is empty` frees it, and `if a is b` is true when both hold the same struct with the same
+  values.
+- **What goes into one is an object**: a call's new object, or a copy of one a `new`
+  variable, field or element holds. A struct stored in place (`Circle c;`) can't go in,
+  because every object of a struct that has an interface keeps what struct it is just
+  before its fields, and one stored in place doesn't.
+- **A parameter of the interface borrows**, as any struct parameter does, and it can't be
+  given another object.
+- The fields of a struct that has an interface are laid out as for any struct; `sizeof` is
+  the same. The 4 bytes that say what it is are only in front of its objects on the heap.
 
 ## Enums
 

@@ -1,0 +1,11 @@
+circle area 12
+a circle of radius 3, area 27
+now a box (3 by 4), area 12
+same: 1
+after growing one: 0
+areas: 12 20 400
+took a circle: 75, and c is empty: 1
+total of 3: 415
+scene 300, its copy 363, other 400
+emptied: 1
+blocks back: 1
