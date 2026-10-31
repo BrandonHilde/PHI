@@ -1,0 +1,96 @@
+# Which struct an interface value holds: if thing is Player p, and a when whose
+# branches name structs. Inside, p is that object as a Player (borrowed: the Entity
+# still owns it), so its own fields and methods can be used.
+interface.Entity
+{
+	[Id]
+}
+
+struct.Player has Entity
+{
+	u32 id;
+	int score;
+
+	[Id]
+	[end: id]
+
+	[Win: int points;]
+		score++ points;
+	[end]
+}
+
+struct.Rock has Entity
+{
+	u32 id;
+	int weight;
+
+	[Id]
+	[end: id]
+}
+
+struct.Bird has Entity
+{
+	u32 id;
+
+	[Id]
+	[end: id]
+}
+
+phi.InterfacesWhich:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		new Entity things[atmost 8];
+		new Player ann: 1 10;
+		new Rock big: 2 500;
+		new Bird tweet: 3;
+		things++ ann big tweet ann;
+
+		while each thing in things
+			if thing is Player p
+				call p.Win: 5;           # changes the one the array holds
+				debug 'player ' p.id ' has ' p.score '\n';
+			;;
+			elif thing is Rock r
+				debug 'rock ' r.id ' weighs ' r.weight '\n';
+			;;
+			else
+				debug 'something else: ' (thing.Id) '\n';
+			;;
+		;;
+
+		int players: 0;
+		while int i: 0; i < things.len; i++;
+			when things:i
+				is Player p
+					players++;
+					p.score is 0;
+				;;
+				is Rock
+					debug 'a rock at ' i '\n';
+				;;
+				else
+					debug 'not a player or a rock at ' i '\n';
+				;;
+			;;
+		;;
+		debug 'players: ' players '\n';
+
+		# the array's own objects were changed; ann's was copied in, so it wasn't
+		if things:0 is Player p
+			debug 'first player score now ' p.score ', ann still ' ann.score '\n';
+		;;
+
+		new Entity none: empty;
+		if none is Player p
+			debug 'never\n';
+		;;
+		else
+			debug 'empty holds nothing\n';
+		;;
+	[end]
+}

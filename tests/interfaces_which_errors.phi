@@ -1,0 +1,42 @@
+# Mistakes asking which struct an interface value holds.
+interface.Entity
+{
+	[Id]
+}
+
+struct.Player has Entity
+{
+	u32 id;
+	[Id]
+	[end: id]
+}
+
+struct.Point
+{
+	int x;
+}
+
+phi.InterfacesWhichErrors:Kernel
+{
+	new Entity e: empty;
+	new Player one: 1;
+	if e is Point p
+		log 'no';
+	;;
+	if one is Player q
+		log 'no';
+	;;
+	bln both: (e is Player r) and true;
+	when e
+		is Player a
+			log 'a';
+		;;
+		is Player b
+			log 'b';
+		;;
+		is 3
+			log 'c';
+		;;
+	;;
+	exit 0;
+}

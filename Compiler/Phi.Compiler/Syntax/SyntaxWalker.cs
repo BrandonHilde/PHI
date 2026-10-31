@@ -64,6 +64,7 @@ namespace Phi.Compiler.Syntax
                 SizeofExpr s => s.Operand != null ? new[] { s.Operand } : Array.Empty<Expr>(),
                 InExpr i => new[] { i.Port },
                 AtomicExpr a => new[] { a.Target, a.Value, a.Expected },
+                IsTypeExpr t => new[] { t.Value },
                 NewExpr n => n.Count != null ? new[] { n.Count } : Array.Empty<Expr>(),
                 UnaryExpr u => new[] { u.Operand },
                 BinaryExpr b => new[] { b.Left, b.Right },

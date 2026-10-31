@@ -1359,6 +1359,11 @@ server's entity kinds are one interface.
   call through a `Shape` is a call through that table, made as a method value's call is.
   For now an interface method returns a number (or nothing), and a struct stored in place
   can't go into one. Tests: `interfaces`, `interfaces_errors`.
+- [x] which struct an interface value holds (the user's choice of syntax): `if thing is Player p`,
+  where `p` borrows the object as a Player inside the `if`, and a `when` with `is Player p` /
+  `is Rock` branches. Each compares the type table address in front of the object. This is
+  what library containers built on interfaces need. Tests: `interfaces_which`,
+  `interfaces_which_errors`.
 - [x] (3) the mmo world's entity kinds are one interface: `interface.Entity` (`Id`, `X`, `Y`,
   `Kind`, `Tick`), which `Player` has, and two creatures that move on their own
   (`Wanderer`, `Patrol`). The players are `new Player players[atmost 32]`, which replaced a

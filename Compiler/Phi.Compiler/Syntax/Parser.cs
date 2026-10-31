@@ -1038,6 +1038,13 @@ namespace Phi.Compiler.Syntax
 
             var stmt = new IfStmt { Condition = condition, Span = keyword.Span.To(condition.Span) };
 
+            // if thing is Player p: inside, p is the Player it holds
+            if (condition is IsTypeExpr test)
+            {
+                test.Declares = true;
+                stmt.Then.Add(NarrowedDecl(test.Value, test.TypeName, test.TypeSpan, test.Name, test.NameSpan));
+            }
+
             // a guard on one line, with no ;; :  if key is 27 return true;
             if (!Current.StartsLine && OneLineIfWords.Any(AtWord))
             {
@@ -1066,6 +1073,17 @@ namespace Phi.Compiler.Syntax
 
             return stmt;
         }
+
+        /// <summary>The name a type test gives the object it found: new Player p, borrowed from value.</summary>
+        internal static VarDecl NarrowedDecl(Expr value, string type, Span typeSpan, string name, Span nameSpan) => new()
+        {
+            Type = new TypeRef { Name = type, Span = typeSpan },
+            Name = name,
+            NameSpan = nameSpan,
+            Span = typeSpan.To(nameSpan),
+            IsNew = true,
+            Narrows = value,
+        };
 
         /// <summary>when x  /  is a b ... ;;  /  else ... ;;  /  ;;</summary>
         Stmt ParseWhen()
@@ -1351,6 +1369,15 @@ namespace Phi.Compiler.Syntax
             {
                 Advance();
                 op = AcceptWord("not") ? BinaryOp.NotEqual : BinaryOp.Equal;
+
+                // thing is Player p: does the interface value hold a Player (then p is it)
+                if (op == BinaryOp.Equal && At(TokenKind.Identifier) && PeekToken(1).Kind == TokenKind.Identifier && !PeekToken(1).StartsLine
+                    && !ReservedWords.Contains(Current.Text) && !ReservedWords.Contains(PeekToken(1).Text) && PeekToken(2).Kind != TokenKind.Dot)
+                {
+                    Token type = Advance();
+                    Token name = Advance();
+                    return new IsTypeExpr { Value = left, TypeName = type.Text, TypeSpan = type.Span, Name = name.Text, NameSpan = name.Span, Span = left.Span.To(name.Span) };
+                }
             }
             else if (AtComparisonWord)
             {

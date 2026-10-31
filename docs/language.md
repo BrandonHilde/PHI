@@ -938,6 +938,35 @@ while each shape in all
 - The fields of a struct that has an interface are laid out as for any struct; `sizeof` is
   the same. The 4 bytes that say what it is are only in front of its objects on the heap.
 
+**Which struct it holds.** `if thing is Player p` is true when `thing` holds a Player.
+Inside the `if` (only there), `p` is that object as a Player, so its own fields and methods
+can be used. It borrows the object, and `thing` still owns it, so changing `p` changes
+what `thing` holds. A `when` does the same with one branch for each struct, and `is Rock`
+with no name just picks the branch. An empty value holds nothing, so it goes to `else`.
+
+```phi
+if thing is Player p
+    call p.Win: 5;
+;;
+
+when things:i
+    is Player p
+        p.score is 0;
+    ;;
+    is Rock
+        log 'a rock\n';
+    ;;
+    else
+        log 'something else\n';
+    ;;
+;;
+```
+
+- `is Player p` is the whole condition of an `if` or `elif` (not part of an `and`), since
+  `p` exists only when it's true.
+- The struct has to have the value's interface. Two tests in one method can use the same
+  name for the same struct.
+
 ## Enums
 
 An enum gives names to numbers, as a type of its own. Each name is one more than the one

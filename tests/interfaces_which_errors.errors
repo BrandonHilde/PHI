@@ -1,0 +1,5 @@
+23:10: error: Point doesn't have Entity, so an Entity never holds one
+26:5: error: is Player asks which struct an interface value holds, and this is a Player
+29:13: error: is Player r names what it finds, so it's an if's whole condition: if e is Player r
+34:6: error: Player already has a branch in this when
+37:3: error: this when picks a branch by the struct it holds, so each is names one, like is Player p

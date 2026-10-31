@@ -114,6 +114,7 @@ namespace Phi.Compiler.Semantics
         {
             DeclareEnums(program.Enums);
             DeclareStructs(program.Structs);
+            FindTypeBranches(program);
 
             // Kernel classes make a 32-bit kernel, Program classes a user program; otherwise
             // it is a 16-bit program
@@ -723,6 +724,61 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>
+        /// A when's is Player p (or is Player), where Player is a struct: a branch for when an
+        /// interface value holds one, with p as that Player inside it. Done once the structs are
+        /// known and before names are declared, since p is declared like any variable.
+        /// </summary>
+        void FindTypeBranches(ProgramNode program)
+        {
+            foreach (WhenStmt w in SyntaxWalker.Nodes(program).OfType<WhenStmt>().ToList())
+                foreach (WhenBranch branch in w.Branches)
+                {
+                    if (branch.Values is not [NameExpr type, ..] || branch.Values.Count > 2) continue;
+                    if (type.Name.Contains('.') || !structs.TryGetValue(type.Name, out StructSymbol? s) || s.IsInterface) continue;
+                    if (branch.Values.Count == 2 && (branch.Values[1] is not NameExpr name || name.Name.Contains('.'))) continue;
+                    branch.TypeName = type.Name;
+                    branch.TypeSpan = type.Span;
+                    if (branch.Values.Count == 2)
+                    {
+                        var n = (NameExpr)branch.Values[1];
+                        branch.Body.Insert(0, Parser.NarrowedDecl(w.Subject, type.Name, type.Span, n.Name, n.Span));
+                    }
+                    branch.Values.Clear();
+                }
+        }
+
+        /// <summary>
+        /// The struct a type test names (is Player p), which has to have the value's interface;
+        /// null after an error.
+        /// </summary>
+        StructSymbol? TypeTested(Expr value, string typeName, Span typeSpan)
+        {
+            if (value.Type.IsError) return null;
+            if (!(value.Type.IsObject && value.Type.Struct!.IsInterface))
+            {
+                Error(value.Span, $"is {typeName} asks which struct an interface value holds, and this is {A(value.Type)}");
+                return null;
+            }
+            if (value is not (NameExpr or IndexExpr or MemberExpr))
+            {
+                Error(value.Span, $"ask which struct a variable, field or element holds");
+                return null;
+            }
+            StructSymbol iface = value.Type.Struct!;
+            if (!structs.TryGetValue(typeName, out StructSymbol? s) || s.IsInterface)
+            {
+                Error(typeSpan, s == null ? $"unknown struct '{typeName}'" : $"{typeName} is an interface; is names a struct that has {iface.Name}");
+                return null;
+            }
+            if (!s.Interfaces.Contains(iface))
+            {
+                Error(typeSpan, $"{typeName} doesn't have {iface.Name}, so {A(value.Type)} never holds one");
+                return null;
+            }
+            return s;
+        }
+
+        /// <summary>
         /// The methods a struct's interfaces ask for: each one must be there, take what the
         /// interface says, and return what every other struct with that interface returns.
         /// Called once every method is declared, from the unit struct methods are in.
@@ -1300,6 +1356,12 @@ namespace Phi.Compiler.Semantics
                         ev.NeedsInitCode = true;
                         continue;
                     }
+                    // ... and two type tests can each name what they find the same, as the same struct
+                    if (existing is VariableSymbol { Decl.Narrows: not null } found && decl.Narrows != null && found.Decl.Type.Name == decl.Type.Name)
+                    {
+                        decl.Symbol = found;
+                        continue;
+                    }
                     // ... and two while each loops the same element, over arrays of the same kind
                     if (existing is VariableSymbol { Decl.EachOf: not null } element && decl.EachOf != null)
                     {
@@ -1675,6 +1737,15 @@ namespace Phi.Compiler.Semantics
         {
             VarDecl d = v.Decl;
             v.Type = PhiType.Error;
+
+            // if thing is Player p: p borrows the object thing holds (checked with the test)
+            if (d.Narrows != null)
+            {
+                if (!type.IsStruct || type.Struct!.IsInterface) return;
+                v.Ownership = Ownership.Borrowed;
+                v.Type = PhiType.ObjectOf(type.Struct);
+                return;
+            }
 
             if (!type.IsStruct)
             {
@@ -2246,6 +2317,7 @@ namespace Phi.Compiler.Semantics
         {
             v.NeedsInitCode = true;
             StructSymbol type = v.Type.Struct!;
+            if (decl.Narrows != null) return;   // the object the if or when found
 
             if (v.Type.IsObjectArray)
             {
@@ -2518,6 +2590,11 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         void BindWhen(WhenStmt w, Scope scope)
         {
+            if (w.Branches.Any(b => b.TypeName != null))
+            {
+                BindTypeWhen(w, scope);
+                return;
+            }
             BindExpr(w.Subject, scope);
             PhiType t = w.Subject.Type;
             bool text = t.IsString || (t.IsPointer && t.Pointee == PhiType.U8);
@@ -2565,6 +2642,26 @@ namespace Phi.Compiler.Semantics
                 if (missing.Count > 0)
                     diagnostics.Warning(file, w.Span, $"this when does nothing for {string.Join(", ", missing)}; add {(missing.Count == 1 ? "it" : "them")}, or an else");
             }
+        }
+
+        /// <summary>when shape  /  is Circle c ... ;;  /  is Rect r ... ;;  the struct an interface value holds.</summary>
+        void BindTypeWhen(WhenStmt w, Scope scope)
+        {
+            BindExpr(w.Subject, scope);
+            var seen = new HashSet<StructSymbol>();
+            foreach (WhenBranch branch in w.Branches)
+            {
+                if (branch.TypeName == null)
+                {
+                    Error(branch.Span, "this when picks a branch by the struct it holds, so each is names one, like is Player p");
+                    continue;
+                }
+                branch.Struct = TypeTested(w.Subject, branch.TypeName, branch.TypeSpan);
+                if (branch.Struct != null && !seen.Add(branch.Struct))
+                    Error(branch.TypeSpan, $"{branch.TypeName} already has a branch in this when");
+                BindBlock(branch.Body, scope);
+            }
+            if (w.Else != null) BindBlock(w.Else, scope);
         }
 
         int LineOf(Node n) => file.GetLocation(n.Span.Start).Line;
@@ -3593,6 +3690,18 @@ namespace Phi.Compiler.Semantics
                 case SizeofExpr size:
                     BindSizeof(size, scope);
                     break;
+
+                case IsTypeExpr test:
+                {
+                    BindExpr(test.Value, scope);
+                    test.Type = PhiType.Bool;
+                    test.Struct = TypeTested(test.Value, test.TypeName, test.TypeSpan);
+                    if (!test.Declares)
+                        Error(test.Span, $"is {test.TypeName} {test.Name} names what it finds, so it's an if's whole condition: if {Describe(test.Value)} is {test.TypeName} {test.Name}");
+                    else if (test.Struct != null && HeapMethod("Heap.Alloc", test.Span, scope, "an interface") == null)
+                        test.Struct = null;
+                    break;
+                }
 
                 case AtomicExpr atomic:
                 {

@@ -2360,8 +2360,20 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(when.Subject);
                 Emit($"mov dword [{subject}], eax");
             }
+            if (when.Branches.Any(b => b.Struct != null))
+            {
+                // which struct the interface value holds, from the type table just before it
+                Emit("test eax, eax");
+                Emit($"jz {otherwise}              ; empty: it holds nothing");
+                Emit("mov eax, [eax - 4]");
+            }
             for (int i = 0; i < when.Branches.Count; i++)
             {
+                if (when.Branches[i].Struct is StructSymbol type)
+                {
+                    Emit($"cmp eax, {TypeTable(type)}");
+                    Emit($"je {bodies[i]}");
+                }
                 foreach (Expr value in when.Branches[i].Values)
                 {
                     if (t.IsFloat)
@@ -3123,6 +3135,20 @@ namespace Phi.Compiler.CodeGen
                 case AddrExpr addr:
                     EmitAddress(addr);
                     break;
+
+                case IsTypeExpr test:
+                {
+                    // the struct's type table is just before the object (and 0 holds nothing)
+                    string none = NewLabel("nottype");
+                    EmitExpr(test.Value);
+                    Emit("test eax, eax");
+                    Emit($"jz {none}");
+                    Emit($"cmp dword [eax - 4], {TypeTable(test.Struct!)}");
+                    Emit("sete al");
+                    Emit("movzx eax, al");
+                    Label(none);
+                    break;
+                }
 
                 case InterfaceMethodExpr method:
                     // the object's type table is just before it
@@ -4101,6 +4127,14 @@ namespace Phi.Compiler.CodeGen
 
         void EmitNewDecl(VarDecl decl, VariableSymbol v)
         {
+            if (decl.Narrows != null)
+            {
+                // the object an interface value holds, which an if or when found to be this struct
+                EmitExpr(decl.Narrows);
+                EmitStoreEax(NameOf(v));
+                return;
+            }
+
             if (decl.AtAddress != null)
             {
                 // a view of memory that's already there

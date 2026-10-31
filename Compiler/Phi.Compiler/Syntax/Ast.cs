@@ -179,6 +179,12 @@ namespace Phi.Compiler.Syntax
         /// <summary>new T name at address: where the object already is.</summary>
         public Expr? AtAddress { get; set; }
 
+        /// <summary>
+        /// Made for if thing is Player p (and a when's is Player p): p is the object the
+        /// interface value holds, borrowed, as a Player. This is that value.
+        /// </summary>
+        public Expr? Narrows { get; init; }
+
         /// <summary>Set by the binder for new T name: v1 v2;  one assignment per field.</summary>
         public List<Stmt> FieldValues { get; } = new();
 
@@ -422,6 +428,31 @@ namespace Phi.Compiler.Syntax
     {
         public List<Expr> Values { get; } = new();
         public List<Stmt> Body { get; } = new();
+
+        /// <summary>
+        /// A when on an interface value: is Player p picks the branch when it holds a Player.
+        /// Set by the binder (the parser can't tell is Player p from is LEFT RIGHT).
+        /// </summary>
+        public string? TypeName { get; set; }
+        public Span TypeSpan { get; set; }
+        public StructSymbol? Struct { get; set; }
+    }
+
+    /// <summary>
+    /// value is Player p: true when the interface value holds a Player. As an if's whole
+    /// condition, p is that Player inside the if (a VarDecl the parser puts first in Then).
+    /// </summary>
+    public sealed class IsTypeExpr : Expr
+    {
+        public Expr Value { get; init; } = null!;
+        public string TypeName { get; init; } = "";
+        public Span TypeSpan { get; init; }
+        public string Name { get; init; } = "";
+        public Span NameSpan { get; init; }
+
+        /// <summary>The if declares the name (it's the whole condition).</summary>
+        public bool Declares { get; set; }
+        public StructSymbol? Struct { get; set; }
     }
 
     /// <summary>
