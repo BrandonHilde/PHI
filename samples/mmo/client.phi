@@ -3,7 +3,8 @@
 # quiet (it restarted), it joins again, and comes back where it was.
 #
 # phi run samples/mmo/server.phi starts three of these (see server.machines). Each
-# player is a square in its own color, and yours has a white border.
+# player is a square in its own color, and yours has a white border; the creatures
+# that move on their own are smaller grey squares.
 
 use drivers.vbe;
 use drivers.input;
@@ -16,9 +17,10 @@ phi.MmoClient:Kernel
 	const int RETRY: 500;                 # ms between JOINs until it answers
 
 	u32 colors: 0xFFFFFF 0xE0483E 0xF08A24 0xF5C542 0x3DBE5A 0x3CC8E0 0x2F6FE4 0xC84FD8;
-	u32 ids[Game.MAX_PLAYERS];
-	int xs[Game.MAX_PLAYERS];
-	int ys[Game.MAX_PLAYERS];
+	u32 ids[Game.MAX_THINGS];             # everything in the world: players and creatures
+	int xs[Game.MAX_THINGS];
+	int ys[Game.MAX_THINGS];
+	u8 kinds[Game.MAX_THINGS];
 	int count: 0;
 
 	bln joined: false;
@@ -105,18 +107,22 @@ phi.MmoClient:Kernel
 		;;
 	[end]
 
-	# where everyone is
+	# where everything is
 	[State]
 		count is d.data:1;
-		if count > Game.MAX_PLAYERS
-			count is Game.MAX_PLAYERS;
+		if count > Game.MAX_THINGS
+			count is Game.MAX_THINGS;
 		;;
-		bln all_moved: count > 0;
+		int players: 0;
+		bln all_moved: true;
 		while int i: 0; i < count; i++;
-			ptr<u8> p: addr d.data + 2 + i * 8;
+			ptr<u8> p: addr d.data + 2 + i * 9;
 			ids:i is (Net.Get32: p);
 			xs:i is (Net.Get16: p + 4);
 			ys:i is (Net.Get16: p + 6);
+			kinds:i is p:8;
+			if kinds:i is not Game.PLAYER continue;
+			players++;
 			if ids:i is Machine.number
 				my_x is xs:i;
 				my_y is ys:i;
@@ -125,11 +131,11 @@ phi.MmoClient:Kernel
 				all_moved is false;           # still where it started
 			;;
 		;;
-		if saw_everyone is false and count is Machine.count - 1
+		if saw_everyone is false and players is Machine.count - 1
 			saw_everyone is true;
-			log 'sees ' count ' players\n';
+			log 'sees ' players ' players\n';
 		;;
-		if saw_moves is false and saw_everyone and all_moved
+		if saw_moves is false and saw_everyone and players > 0 and all_moved
 			saw_moves is true;
 			log 'everyone has moved\n';
 		;;
@@ -138,6 +144,10 @@ phi.MmoClient:Kernel
 	[Draw]
 		call Draw.Clear: 0x1E2430;
 		while int i: 0; i < count; i++;
+			if kinds:i is not Game.PLAYER
+				call Draw.FillRect: xs:i + 2 ys:i + 2 Game.SIZE - 4 Game.SIZE - 4 0x9098A8;
+				continue;
+			;;
 			call Draw.FillRect: xs:i ys:i Game.SIZE Game.SIZE colors:(ids:i % 8);
 			if ids:i is Machine.number
 				call Draw.Rect: xs:i ys:i Game.SIZE Game.SIZE Draw.WHITE;

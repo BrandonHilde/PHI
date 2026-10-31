@@ -1342,7 +1342,7 @@ Goal: Scenario 1's second milestone, and the interface design Plan.md has been w
 tick rate, `phi test --bench` reports the tick time so a slowdown fails it, and the
 server's entity kinds are one interface.
 
-**Status: (1) and (2) done; (3) next.**
+**Status: (1), (2) and (3) done; the milestone's tick-time benchmark is what's left.**
 
 - [x] (1) the design, chosen with the user: `interface.Shape { [Area] [Grow: int by;] }`
   lists method headers, `struct.Circle has Shape { ... }` writes them, and what each
@@ -1359,7 +1359,15 @@ server's entity kinds are one interface.
   call through a `Shape` is a call through that table, made as a method value's call is.
   For now an interface method returns a number (or nothing), and a struct stored in place
   can't go into one. Tests: `interfaces`, `interfaces_errors`.
-- [ ] (3) entity kinds in `samples/mmo/`, and `gui.widgets` if it fits
+- [x] (3) the mmo world's entity kinds are one interface: `interface.Entity` (`Id`, `X`, `Y`,
+  `Kind`, `Tick`), which `Player` has, and two creatures that move on their own
+  (`Wanderer`, `Patrol`). The players are `new Player players[atmost 32]`, which replaced a
+  pool and a map of pointers, and the creatures are `new Entity creatures[atmost 4]`. One
+  `[Put: Entity thing; ...]` writes any kind into STATE, which now gives each entry's kind
+  (9 bytes), and the clients draw creatures as smaller grey squares. `gui.widgets` doesn't
+  fit yet: programs keep widgets in place (`Button ok;`) and `FocusChain` borrows pointers
+  to them, and an interface holds objects it owns.
+- [ ] the milestone's `phi load` / `phi test --bench` tick time
 
 #### Phase S8: Containing errors
 

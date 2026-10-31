@@ -5,7 +5,8 @@
 #   JOIN     client -> server   u32 player                 (every half second until WELCOME)
 #   WELCOME  server -> client   u16 x, u16 y               (where the player is: saved, or new)
 #   MOVE     client -> server   u32 player, u8 direction   (one STEP: LEFT, RIGHT, UP or DOWN)
-#   STATE    server -> client   u8 count, then u32 player, u16 x, u16 y for each (every tick)
+#   STATE    server -> client   u8 count, then u32 id, u16 x, u16 y, u8 kind for each
+#                               thing in the world: players and creatures (every tick)
 
 phi.Game:Library
 {
@@ -27,5 +28,13 @@ phi.Game:Library
 	const int STEP: 10;                   # how far one MOVE goes
 	const int START_X: 20;                # where new players start, down the left side
 	const int MAX_PLAYERS: 32;
-	const int STATE_SIZE: 2 + MAX_PLAYERS * 8;
+
+	# the kinds of things in the world, as STATE gives them
+	const u8 PLAYER: 1;
+	const u8 WANDERER: 2;                 # walks along a row, turning round at each side
+	const u8 PATROL: 3;                   # goes round a square
+
+	const int MAX_CREATURES: 4;
+	const int MAX_THINGS: MAX_PLAYERS + MAX_CREATURES;
+	const int STATE_SIZE: 2 + MAX_THINGS * 9;
 }

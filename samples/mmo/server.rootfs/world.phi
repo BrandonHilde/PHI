@@ -1,18 +1,31 @@
 # The mmo sample's world, a user program: players join over UDP, move a step at a
-# time, and are told where everyone is 20 times a second. Where each player is goes
-# into a save log as they move, so after a restart (of the machine, or of this program
-# after a crash) everyone comes back where they left off.
+# time, and are told where everything is 20 times a second: each other, and the
+# creatures that move on their own. Where each player is goes into a save log as they
+# move, so after a restart (of the machine, or of this program after a crash)
+# everyone comes back where they left off.
+#
+# Players and creatures are kinds of Entity: whatever their kind, they're sent to the
+# clients the same way, and each creature moves the way its own kind does.
 #
 # The server (server.phi, a kernel) starts the network and keeps this running with
 # proc.supervisor, beside the lobby (lobby.phi).
 
 use net.sockets;
 use data.map;
-use memory.pool;
 use user.savelog;
 use protocol;
 
-struct.Player
+# anything in the world
+interface.Entity
+{
+	[Id]
+	[X]
+	[Y]
+	[Kind]                      # Game.PLAYER, Game.WANDERER, ...
+	[Tick]                      # once a tick
+}
+
+struct.Player has Entity
 {
 	u32 id;
 	u32 address;                # where its client is
@@ -20,6 +33,94 @@ struct.Player
 	i32 x;
 	i32 y;
 	bln moved;                  # since it was last saved
+
+	[Id]
+	[end: id]
+
+	[X]
+	[end: x]
+
+	[Y]
+	[end: y]
+
+	[Kind]
+	[end: Game.PLAYER]
+
+	# a player moves when its client says (a MOVE), not on its own
+	[Tick]
+	[end]
+}
+
+# walks along a row, turning round at each side
+struct.Wanderer has Entity
+{
+	u32 id;
+	i32 x;
+	i32 y;
+	i32 dx;                     # how far it goes each tick, and which way
+
+	[Id]
+	[end: id]
+
+	[X]
+	[end: x]
+
+	[Y]
+	[end: y]
+
+	[Kind]
+	[end: Game.WANDERER]
+
+	[Tick]
+		if x + dx < 0 or x + dx > Game.WIDTH - Game.SIZE
+			dx is 0 - dx;
+		;;
+		x++ dx;
+	[end]
+}
+
+# goes round a square, one side at a time
+struct.Patrol has Entity
+{
+	u32 id;
+	i32 x;
+	i32 y;
+	int side;                   # 0 right, 1 down, 2 left, 3 up
+	int steps;                  # along this side
+
+	[Id]
+	[end: id]
+
+	[X]
+	[end: x]
+
+	[Y]
+	[end: y]
+
+	[Kind]
+	[end: Game.PATROL]
+
+	[Tick]
+		when side
+			is 0
+				x++ 2;
+			;;
+			is 1
+				y++ 2;
+			;;
+			is 2
+				x-- 2;
+			;;
+			is 3
+				y-- 2;
+			;;
+		;;
+		steps++;
+		if steps is 30
+			steps is 0;
+			side is (side + 1) % 4;
+		;;
+	[end]
 }
 
 # one record of the save log
@@ -35,8 +136,8 @@ phi.World:Program
 	const int TICK: 50;                   # ms: 20 ticks a second
 	const u32 NOBODY: 0xFFFFFFFF;
 
-	ptr<PoolData> players: (Pool.New: sizeof Player Game.MAX_PLAYERS);
-	ptr<MapData> by_id: (Map.New);        # player id -> ptr<Player>
+	new Player players[atmost Game.MAX_PLAYERS];
+	new Entity creatures[atmost Game.MAX_CREATURES];
 	ptr<MapData> saved: (Map.New);        # player id -> where they were: x << 16 | y
 	u8 message[Game.STATE_SIZE];
 	UdpDatagram d;
@@ -52,6 +153,7 @@ phi.World:Program
 	call SaveLog.Read: 'PLAYERS.LOG' sizeof SavedPlayer addr Restore;
 	log 'world started: ' saved:0.count ' saved players\n';
 	call Compact;
+	call AddCreatures;
 
 	int next_tick: (OS.GetTicks);
 	while true
@@ -59,12 +161,23 @@ phi.World:Program
 			call Handle;
 		;;
 		if (OS.GetTicks) - next_tick >= 0
+			while int i: 0; i < creatures.len; i++;
+				call creatures:i.Tick;
+			;;
 			call Save;
 			call SendState;
 			next_tick++ TICK;
 		;;
 		call OS.Sleep: 1;
 	;;
+
+	# the creatures, which aren't saved: they start again where they began
+	[AddCreatures]
+		new Wanderer high: 1001 0 60 3;
+		new Wanderer low: 1002 300 170 -2;
+		new Patrol guard: 1003 200 40;
+		creatures++ high low guard;
+	[end]
 
 	# ---- messages
 
@@ -83,13 +196,19 @@ phi.World:Program
 		;;
 	[end]
 
+	# which of the players has this id, or -1
+	[Find: u32 id: 0;]
+		while int i: 0; i < players.len; i++;
+			if players:i.id is id return i;
+		;;
+	[end: -1]
+
 	# a player joins (or joins again, after a restart of theirs or ours)
 	[Join: u32 id: 0;]
-		ptr<Player> p: (Map.Get: by_id id 0);
-		if p is 0
-			if by_id:0.count >= Game.MAX_PLAYERS return;
-			p is (Pool.Alloc: players);
-			p.id is id;
+		int i: (Find: id);
+		if i < 0
+			if players.len >= Game.MAX_PLAYERS return;
+			new Player p: id;
 			u32 where: (Map.Get: saved id NOBODY);
 			if where is not NOBODY
 				p.x is where >> 16;
@@ -101,23 +220,25 @@ phi.World:Program
 				p.y is 20 + id % 4 * 40;
 				log 'player ' id ' joined at ' p.x ' ' p.y '\n';
 			;;
-			call Map.Set: by_id id p;
+			players++ p;
+			i is players.len - 1;
 		;;
-		p.address is d.from;
-		p.port is d.from_port;
+		players:i.address is d.from;
+		players:i.port is d.from_port;
 
 		message:0 is Game.WELCOME;
-		call Net.Put16: addr message + 1 p.x;
-		call Net.Put16: addr message + 3 p.y;
-		call Udp.SendTo: s p.address p.port addr message 5;
+		call Net.Put16: addr message + 1 players:i.x;
+		call Net.Put16: addr message + 3 players:i.y;
+		call Udp.SendTo: s d.from d.from_port addr message 5;
 	[end]
 
 	# a step, if it comes from where the player joined from and stays in the world
 	[Move: u32 id: 0; u8 direction: 0;]
-		ptr<Player> p: (Map.Get: by_id id 0);
-		if p is 0 or p.address is not d.from or p.port is not d.from_port return;
-		int x: p.x;
-		int y: p.y;
+		int i: (Find: id);
+		if i < 0 return;
+		if players:i.address is not d.from or players:i.port is not d.from_port return;
+		int x: players:i.x;
+		int y: players:i.y;
 		when direction
 			is Game.LEFT
 				x-- Game.STEP;
@@ -133,9 +254,9 @@ phi.World:Program
 			;;
 		;;
 		if x >= 0 and y >= 0 and x <= Game.WIDTH - Game.SIZE and y <= Game.HEIGHT - Game.SIZE
-			p.x is x;
-			p.y is y;
-			p.moved is true;
+			players:i.x is x;
+			players:i.y is y;
+			players:i.moved is true;
 		;;
 	[end]
 
@@ -143,43 +264,43 @@ phi.World:Program
 
 	# every player that moved, into the save log
 	[Save]
-		int pos: (Map.Next: by_id);
-		while pos >= 0
-			ptr<Player> p: (Map.ValueAt: by_id pos);
-			if p.moved
-				record.id is p.id;
-				record.x is p.x;
-				record.y is p.y;
+		while int i: 0; i < players.len; i++;
+			if players:i.moved
+				record.id is players:i.id;
+				record.x is players:i.x;
+				record.y is players:i.y;
 				if (SaveLog.Add: 'PLAYERS.LOG' addr record sizeof SavedPlayer)
-					p.moved is false;
-					log 'saved player ' p.id ' at ' p.x ' ' p.y '\n';
+					players:i.moved is false;
+					log 'saved player ' record.id ' at ' record.x ' ' record.y '\n';
 				;;
 			;;
-			pos is (Map.Next: by_id pos);
 		;;
 	[end]
 
-	# where everyone is, to everyone
+	# where everything is, to every player
 	[SendState]
 		message:0 is Game.STATE;
-		message:1 is by_id:0.count;
+		message:1 is players.len + creatures.len;
 		u32 size: 2;
-		int pos: (Map.Next: by_id);
-		while pos >= 0
-			ptr<Player> p: (Map.ValueAt: by_id pos);
-			call Net.Put32: addr message + size p.id;
-			call Net.Put16: addr message + size + 4 p.x;
-			call Net.Put16: addr message + size + 6 p.y;
-			size++ 8;
-			pos is (Map.Next: by_id pos);
+		while int i: 0; i < players.len; i++;
+			size is (Put: players:i size);
 		;;
-		pos is (Map.Next: by_id);
-		while pos >= 0
-			ptr<Player> p: (Map.ValueAt: by_id pos);
-			call Udp.SendTo: s p.address p.port addr message size;
-			pos is (Map.Next: by_id pos);
+		while int i: 0; i < creatures.len; i++;
+			size is (Put: creatures:i size);
+		;;
+		while int i: 0; i < players.len; i++;
+			call Udp.SendTo: s players:i.address players:i.port addr message size;
 		;;
 	[end]
+
+	# one thing in the world, of any kind, into the STATE message at `offset`
+	[Put: Entity thing; u32 offset: 0;]
+		ptr<u8> p: addr message + offset;
+		call Net.Put32: p (thing.Id);
+		call Net.Put16: p + 4 (thing.X);
+		call Net.Put16: p + 6 (thing.Y);
+		p:8 is (thing.Kind);
+	[end: offset + 9]
 
 	# ---- the save log
 
