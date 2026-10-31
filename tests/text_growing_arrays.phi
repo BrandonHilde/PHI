@@ -33,11 +33,36 @@ phi.TextGrowingArrays:Kernel
 	names++ 'dee';
 	log names.len ': ' names:3 '\n';
 
+	# passed to a method that takes str rows[]: it reads them, and makes them longer
+	log 'letters: ' (Letters: names) '\n';
+	call Shout: names;
+	log names:0 ' ' names:3 '\n';
+
+	# compared whole, with another that grows and with one that has a most
+	str same[];
+	str fixed[atmost 4];
+	same++ 'x' 'y';
+	fixed++ 'x' 'y';
+	log 'compared: ' (same is fixed) ' ' (same is names) '\n';
+
 	# a method's own array, and its texts, go back to the heap when it ends
 	u32 before: Heap.used_blocks;
 	call Local;
 	log 'every block back: ' (Heap.used_blocks is before) '\n';
 	exit 0;
+
+	[Letters: str rows[];]
+		int total: 0;
+		while int i: 0; i < rows.len; i++;
+			total++ rows:i.len;
+		;;
+	[end: total]
+
+	[Shout: str rows[];]
+		while int i: 0; i < rows.len; i++;
+			rows:i is rows:i '!';
+		;;
+	[end]
 
 	[Local:]
 		str words[];

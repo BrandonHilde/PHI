@@ -111,6 +111,7 @@ namespace Phi.Compiler.CodeGen
             EmitObjectRoutines();
             EmitStrRoomRoutine();
             EmitArrayGrowRoutine();
+            EmitTextArrayGrowRoutine();
 
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
 
@@ -728,7 +729,7 @@ namespace Phi.Compiler.CodeGen
 
             foreach (VariableSymbol v in m.Locals)
             {
-                if (v.Type.TextTable)
+                if (v.Type.TextTable && !v.GrowingArray)
                 {
                     // a table of pointers, one per element, each to a buffer of its own (and then
                     // each one's room, when they grow, and a filled one's count)
@@ -1156,27 +1157,11 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitExpr(shrink.Value);
                     EmitIndexCheck(shrink, "jbe", $"dword [{growing.Label} + 4]");
-                    if (growing.Type.Element.IsHeapText)
+                    if (growing.Type.TextTable)
                     {
                         // the dropped elements' texts go back, and their slots are empty again
-                        string next = NewLabel("droptext"), done = NewLabel("droppedtexts");
                         Emit("push eax                ; the new count");
-                        Emit("push eax                ; the element being dropped");
-                        Label(next);
-                        Emit("mov eax, [esp]");
-                        Emit($"cmp eax, [{growing.Label} + 4]");
-                        Emit($"jae {done}");
-                        Emit($"mov ecx, [{growing.Label}]");
-                        Emit("lea ecx, [ecx + eax * 8]");
-                        Emit("push dword [ecx]        ; its text");
-                        Emit("mov dword [ecx], 0");
-                        Emit("mov dword [ecx + 4], 0");
-                        Emit($"call {HeapMethodLabel("Heap.Free")}");
-                        Emit("add esp, 4");
-                        Emit("inc dword [esp]");
-                        Emit($"jmp {next}");
-                        Label(done);
-                        Emit("add esp, 4");
+                        EmitFreeTexts(growing, "dword [esp]", empty: true);
                         Emit("pop eax");
                     }
                     Emit($"mov [{growing.Label} + 4], eax");
@@ -2516,7 +2501,8 @@ namespace Phi.Compiler.CodeGen
                 Emit("mov edx, [eax + 4]");
                 Emit("inc edx");
                 Emit($"mov ecx, {size}");
-                EmitArrayGrowCall();
+                if (t.TextTable) EmitTextArrayGrowCall();
+                else EmitArrayGrowCall();
                 Emit($"mov eax, [{growing.Label} + 4]");
                 Emit($"inc dword [{growing.Label} + 4]");
                 EmitScale(size);
@@ -2583,17 +2569,7 @@ namespace Phi.Compiler.CodeGen
             else if (element.IsString)
             {
                 bool text = value != null && (IsText(value.Type) || value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar);
-                if (element.IsHeapText)
-                {
-                    // a slot like a new str field's: the text's address, then its room (a new
-                    // slot is zeroed: empty, with no text yet)
-                    if (value != null)
-                    {
-                        Emit("push ebx                ; the element's slot");
-                        EmitGrowStoreAt(4, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
-                    }
-                }
-                else if (element.IsInlineText)
+                if (element.IsInlineText)
                 {
                     // the text goes where the element is, cut to fit
                     if (value == null) Emit("mov byte [ebx], 0        ; empty");
@@ -2625,7 +2601,10 @@ namespace Phi.Compiler.CodeGen
                 else
                 {
                     Emit("push ebx                ; the element's slot");
-                    EmitGrowStoreAt(4 * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
+                    // its room: after the table (a str array without a most: .max slots on)
+                    if (t.Open && append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } table })
+                        EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, view: table.Label);
+                    else EmitGrowStoreAt(4 * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
                 }
             }
             else if (value != null)
@@ -4272,32 +4251,131 @@ namespace Phi.Compiler.CodeGen
         void EmitGrowingArrayFree(VariableSymbol v)
         {
             if (v.Type.IsObjectArray) EmitFreeElements(NameOf(v), 0);
-            if (v.Type.Element.IsHeapText) EmitFreeTexts(v, 0);
+            if (v.Type.TextTable) EmitFreeTexts(v, "0", empty: false);
             Emit($"push dword [{v.Label}]   ; {v.Name}'s elements");
             Emit($"call {HeapMethodLabel("Heap.Free")}");
             Emit("add esp, 4");
         }
 
         /// <summary>
-        /// The texts of a str array that grows, from element `from` to how many it has: each
-        /// slot's text goes back to the heap (an empty slot holds 0, which Free skips).
+        /// The texts of a str array that grows, from element `from` (an operand) to how many it
+        /// has: each one on the heap goes back (one still empty, in the program's data, stays),
+        /// and with `empty` its slot is empty again, as a new one starts.
         /// </summary>
-        void EmitFreeTexts(VariableSymbol v, int from)
+        void EmitFreeTexts(VariableSymbol v, string from, bool empty)
         {
-            string next = NewLabel("freetext"), done = NewLabel("freedtexts");
-            Emit($"push dword {from}");
+            string next = NewLabel("freetext"), kept = NewLabel("keptext"), done = NewLabel("freedtexts");
+            Emit($"mov eax, {from}");
+            Emit("push eax                ; which element");
             Label(next);
             Emit("mov eax, [esp]");
             Emit($"cmp eax, [{v.Label} + 4]   ; how many {v.Name} has");
             Emit($"jae {done}");
             Emit($"mov ecx, [{v.Label}]");
-            Emit("push dword [ecx + eax * 8]   ; an element's text");
+            Emit($"mov edx, [{v.Label} + 8]");
+            Emit("lea edx, [ecx + edx * 4]   ; the rooms, after the texts");
+            Emit($"test dword [edx + eax * 4], {InData}");
+            Emit($"jnz {kept}");
+            Emit("push edx");
+            Emit("push ecx");
+            Emit("push dword [ecx + eax * 4]   ; an element's text");
             Emit($"call {HeapMethodLabel("Heap.Free")}");
             Emit("add esp, 4");
+            Emit("pop ecx");
+            Emit("pop edx");
+            Emit("mov eax, [esp]");
+            Label(kept);
+            if (empty)
+            {
+                Emit($"mov dword [ecx + eax * 4], {StringLabel("")}");
+                Emit($"mov dword [edx + eax * 4], {InData}");
+            }
             Emit("inc dword [esp]");
             Emit($"jmp {next}");
             Label(done);
             Emit("add esp, 4");
+        }
+
+        bool usesTextArrayGrow;
+
+        void EmitTextArrayGrowCall()
+        {
+            usesTextArrayGrow = true;
+            Need("phi_out_of_memory");
+            Emit("call phi_text_array_grow");
+        }
+
+        /// <summary>
+        /// phi_text_array_grow, for str arrays without a most: like phi_array_grow, but the
+        /// array holds each element's text address and then each one's room, so both move,
+        /// and a new element starts as the empty text in the program's data (never freed).
+        /// </summary>
+        void EmitTextArrayGrowRoutine()
+        {
+            if (!usesTextArrayGrow) return;
+            Line("");
+            Comment("room in a str array that grows: eax = the array, edx = how many");
+            Label("phi_text_array_grow");
+            Emit("cmp edx, [eax + 8]");
+            Emit("jbe .fits");
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the array");
+            Emit("mov ebx, [eax + 8]");
+            Emit("add ebx, ebx");
+            Emit("cmp ebx, edx");
+            Emit("jae .twice");
+            Emit("mov ebx, edx");
+            Label(".twice");
+            Emit("cmp ebx, 4");
+            Emit("jae .room");
+            Emit("mov ebx, 4");
+            Label(".room");
+            Emit("push ebx                ; [ebp - 8] the new room");
+            Emit("lea eax, [ebx * 8]");
+            Emit("push eax");
+            Emit($"call {HeapMethodLabel("Heap.Alloc")}");
+            Emit("add esp, 4");
+            Emit("test eax, eax");
+            Emit("jz phi_out_of_memory");
+            Emit("push eax                ; [ebp - 12] where they go now");
+            // every slot empty to begin with, then the ones it has move over
+            Emit("cld");
+            Emit("mov edi, eax");
+            Emit("mov ecx, [ebp - 8]");
+            Emit($"mov eax, {StringLabel("")}");
+            Emit("rep stosd");
+            Emit("mov ecx, [ebp - 8]");
+            Emit($"mov eax, {InData}");
+            Emit("rep stosd");
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov esi, [edx]");
+            Emit("test esi, esi");
+            Emit("jz .moved");
+            Emit("mov edi, [ebp - 12]");
+            Emit("mov ecx, [edx + 4]");
+            Emit("rep movsd               ; their texts' addresses");
+            Emit("mov esi, [edx]");
+            Emit("mov ecx, [edx + 8]");
+            Emit("lea esi, [esi + ecx * 4]");
+            Emit("mov edi, [ebp - 12]");
+            Emit("mov ecx, [ebp - 8]");
+            Emit("lea edi, [edi + ecx * 4]");
+            Emit("mov ecx, [edx + 4]");
+            Emit("rep movsd               ; and their rooms");
+            Emit("push dword [edx]");
+            Emit($"call {HeapMethodLabel("Heap.Free")}");
+            Emit("add esp, 4");
+            Label(".moved");
+            Emit("mov edx, [ebp - 4]");
+            Emit("mov eax, [ebp - 12]");
+            Emit("mov [edx], eax");
+            Emit("mov eax, [ebp - 8]");
+            Emit("mov [edx + 8], eax");
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Label(".fits");
+            Emit("ret");
         }
 
         /// <summary>phi_array_grow, for arrays without a size (see EmitArrayGrowCall).</summary>

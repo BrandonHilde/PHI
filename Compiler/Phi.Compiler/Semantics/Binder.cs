@@ -1333,8 +1333,9 @@ namespace Phi.Compiler.Semantics
                     Error(d.NameSpan, "an array without a size grows on the heap, which needs 32-bit code (a Kernel or a Program); give it a size");
                 else if (type.IsString)
                 {
-                    // each element is a slot like a new str field's: its text on the heap, growing
-                    v.Type = PhiType.HeapText.OpenOf();
+                    // laid out like what a str rows[] parameter sees: each element's text address,
+                    // then each one's room, so it can be passed to one
+                    v.Type = PhiType.Str.OpenOf();
                     v.GrowingArray = true;
                     return;
                 }
@@ -2427,12 +2428,10 @@ namespace Phi.Compiler.Semantics
                 Error(span, $"'{Describe(left)}' holds {A(a.Element)} and '{Describe(right)}' {A(b.Element)}; they have to hold the same kind");
                 return false;
             }
-            if (a.Open && a.Element.Kind == TypeKind.Str)
+            if (a.Open && a.Element.Kind == TypeKind.Str && how == "copied into")
             {
-                Error(span, a.Element.IsHeapText || b.Element.IsHeapText
-                    ? (how == "copied into"
-                        ? "a str array without a most can't be copied whole yet; copy its elements one at a time"
-                        : "a str array without a most can't be compared whole yet; compare its elements one at a time")
+                Error(span, IsGrowingArray(left) || IsGrowingArray(right)
+                    ? "a str array without a most can't be copied whole yet; copy its elements one at a time"
                     : $"the elements of an array parameter of strs can't be replaced yet");
                 return false;
             }
@@ -3812,8 +3811,6 @@ namespace Phi.Compiler.Semantics
                 if (target.TextTable && e.Type.IsArray && e.Type.Element.IsInlineText)
                     Error(e.Span, $"'{Describe(e)}' keeps each text in place, with a size, and {what} takes texts that grow; " +
                                   $"declare it as str {Describe(e)}[{e.Type.Length}]; (or [atmost {e.Type.Length}]) to pass it");
-                else if (e.Type.Element.IsHeapText)
-                    Error(e.Span, $"a str array without a most can't be passed as an array parameter yet");
                 else Error(e.Span, $"{what} is an array of {target.Element}s, and this is {A(e.Type)}");
                 return e;
             }

@@ -1,14 +1,9 @@
-# What a str array without a most can't do yet: be passed as an array parameter, or be
-# copied or compared whole
+# What a str array without a most can't do yet: be copied into whole (an element at a
+# time works)
 phi.Test:Kernel
 {
 	str names[];
 	str other[];
 	names++ 'ann';
-	log (Count: names) '\n';
 	other is names;
-	log (other is names) '\n';
-
-	[Count: str rows[];]
-	[end: rows.len]
 }
