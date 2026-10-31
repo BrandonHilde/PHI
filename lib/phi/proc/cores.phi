@@ -97,6 +97,7 @@ asm.CoresWake
 
 	mov dword [{APIC} + 0xF0], 0x1FF            ; the local APIC on (spurious interrupts: vector 0xFF)
 	mov dword [{APIC} + 0x300], 0x000C4500      ; INIT, to every core but this one
+	mov dword [phi_cores_running], 1           ; from now on a log takes a lock
 	ret
 
 ; The start routine, copied to START, so its addresses are worked out from there.

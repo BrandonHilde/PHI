@@ -932,7 +932,15 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case LogStmt log:
+                    // in a kernel, a whole log at a time across cores (nothing while there's one)
+                    bool lockLog = unit.Kind == UnitKind.Kernel;
+                    if (lockLog)
+                    {
+                        Need("phi_log_take");
+                        Emit("call phi_log_take");
+                    }
                     EmitLog(log);
+                    if (lockLog) Emit("call phi_log_give");
                     if (unit.Kind == UnitKind.Program && log.Target == LogTarget.ScreenAndSerial)
                     {
                         // a whole log statement reaches the screen at once, even with other programs running

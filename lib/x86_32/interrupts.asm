@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
 ; requires: phi_panic
 ; init: phi_interrupts_init
 ;
@@ -118,6 +118,9 @@ phi_isr_table:
 
 phi_isr_default:
     iretd
+
+; 1 once proc.cores has started other cores (so a log takes a lock: log_lock.asm)
+phi_cores_running: dd 0
 
 phi_interrupt_common:
     pushad

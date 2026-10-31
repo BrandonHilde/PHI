@@ -1469,7 +1469,14 @@ cores ends with `Heap.used_blocks` at 0.
   once, every block holding only its own core's number, and `Heap.used_blocks` back
   where it was (this is one of the "Done when"s). Without the lock the same test crashes
   at once (double frees, then a page fault on every core).
-- [ ] (2, the rest of the library) `log` and the console, the scheduler, files, the network
+- [x] (2, `log`) In a kernel, each `log` and `debug` statement is wrapped in a lock
+  (`lib/x86_32/log_lock.asm`) once `Cores.Start` has run, so a whole statement comes out
+  at once. It knows its core (by its local APIC ID), so a log whose value calls a method
+  that logs doesn't wait for itself, and it keeps that core's interrupts off while held.
+  Test `kernel32_cores_log` (four cores logging long lines: every one whole; with the
+  lock taken out, they come out mixed).
+- [ ] (2, the rest of the library) the scheduler, files, the network (a program's system
+  calls, once programs run on other cores)
 - [ ] (3) data per core, a scheduler on every core
 - [ ] (4) kernel threads, and what a class variable means in them
 

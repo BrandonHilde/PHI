@@ -1,0 +1,25 @@
+# log from four cores at once: each log statement comes out whole (kernel32_cores_log
+# .contains lists every line; mixed lines wouldn't be there). A log whose value calls a
+# method that logs too doesn't wait for itself.
+use proc.cores;
+
+phi.CoresLog:Kernel
+{
+	const int LINES: 25;
+
+	int n: (Cores.Start);
+	call Cores.Run: addr Talk;
+	log 'nested: ' (Inner) '\n';
+	log 'done\n';
+	exit 0;
+
+	[Talk: int core: 0;]
+		while int i: 0; i < LINES; i++;
+			log 'core ' core ' says: the quick brown fox jumps over the lazy dog, line ' i ' of ' LINES '\n';
+		;;
+	[end]
+
+	[Inner:]
+		log '(inner) ';
+	[end: 7]
+}
