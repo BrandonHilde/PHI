@@ -841,11 +841,18 @@ namespace Phi.Compiler.Semantics
             {
                 PhiType t = ResolveType(p.Type, null, allowStr: true);
                 if (t.IsError) { file = was; return null; }
-                if (p.BufferSize != null || p.Unsized)
+                if (p.BufferSize != null)
                 {
-                    Error(p.Span, "a method called through an interface can't take an array yet");
+                    Error(p.BufferSize.Span, $"an array parameter takes an array of any length; leave out the size: {p.Name}[]");
                     file = was;
                     return null;
+                }
+                if (p.Unsized)
+                {
+                    // int numbers[] (or new Point points[]): the caller's array, of any length
+                    parameters.Add((p.IsNew && t.IsStruct ? PhiType.ObjectOf(t.Struct!) : t.IsString ? PhiType.Str : t).OpenOf());
+                    into.Add(false);
+                    continue;
                 }
                 parameters.Add(t.IsString ? PhiType.Str : t.IsStruct ? PhiType.ObjectOf(t.Struct!) : t);
                 into.Add(t.IsString && p.Values.Count == 0);   // str target; is the caller's own text
@@ -2749,11 +2756,6 @@ namespace Phi.Compiler.Semantics
             if (a.Element != b.Element)
             {
                 Error(span, $"'{Describe(left)}' holds {A(a.Element)} and '{Describe(right)}' {A(b.Element)}; they have to hold the same kind");
-                return false;
-            }
-            if (a.Open && a.Element.Kind == TypeKind.Str && how == "copied into" && !IsGrowingArray(left))
-            {
-                Error(span, $"the elements of an array parameter of strs can't be replaced yet");
                 return false;
             }
             if (how == "copied into" && !a.Open && !b.Open)

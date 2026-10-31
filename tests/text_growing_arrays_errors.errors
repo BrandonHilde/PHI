@@ -1,1 +1,2 @@
-10:3: error: the elements of an array parameter of strs can't be replaced yet
+10:3: error: 'rows' holds a str and 'numbers' an int; they have to hold the same kind
+11:11: error: 'rows' is an array, so it takes another whole array, and this is an int; for one element, write rows:0 is ...

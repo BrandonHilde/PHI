@@ -939,8 +939,8 @@ while each shape in all
 ```
 
 - **An interface lists method headers, with no body or `[end]`.** Its parameters are
-  written as any method's are: `str target;` is the caller's own text, and `str name: '';`
-  is a copy. Other parameters have no defaults, so a call through it gives every argument.
+  written as any method's are: `str target;` is the caller's own text, `str name: '';`
+  is a copy, and `int points[];` takes an array of any length. Other parameters have no defaults, so a call through it gives every argument.
 - **What a method returns comes from the structs.** Every struct with the interface has to
   return the same, and the first one says what that is: a number, a `str`, a new object, or
   nothing.
@@ -2150,10 +2150,11 @@ log (Sum: a) ' ' (Sum: scores);        # any array of ints, fixed or atmost
   `T list[]` is an array of structs stored in place). Its elements are the caller's
   objects: `list:i is p` copies into one, and `list:i.x` reaches its fields.
 - It can be passed on to another method that takes one, or where a pointer to its elements
-  goes. Method values can't take arrays.
+  goes. Method values can't take arrays; an interface's methods can.
 - `str rows[]` takes any `str` array whose elements grow: one of values, `str names[8];` or
   `str names[atmost 64];` (32-bit code). Its elements are the caller's texts, so writing or
-  adding to one changes the caller's, and it grows as theirs would.
+  adding to one changes the caller's, and it grows as theirs would. A whole array copies
+  into it (`rows is other;`) when both have as many elements.
 
 ### Methods as values
 

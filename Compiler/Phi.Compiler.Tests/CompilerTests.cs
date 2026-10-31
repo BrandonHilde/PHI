@@ -494,7 +494,7 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         [InlineData("struct.A\n{\n str lines[4];\n}\n", "a str array in a struct needs a size for each text: str lines[8]: [40];")]
-        [InlineData("phi.B:Kernel\n{\n str names[];\n call F: names;\n [F: str rows[];]\n  str other[];\n  rows is other;\n [end]\n}\n", "can't be replaced yet")]
+        [InlineData("phi.B:Kernel\n{\n str names[];\n call F: names;\n [F: str rows[];]\n  int other[2];\n  rows is other;\n [end]\n}\n", "they have to hold the same kind")]
         [InlineData("phi.B:Kernel\n{\n str codes[2]: [3];\n call F: codes;\n [F: str rows[];]\n [end]\n}\n", "")]
         public void TextArrayErrors(string text, string message)
         {

@@ -1480,6 +1480,11 @@ namespace Phi.Compiler.CodeGen
                             pushed += PushWideOrFloat(types[i], value);
                             continue;
                         }
+                        if (types[i].Open)
+                        {
+                            pushed += PushArrayView(value);
+                            continue;
+                        }
                         EmitExpr(value);
                         if (types[i].IsString && !IsText(value.Type))
                         {
@@ -4709,8 +4714,9 @@ namespace Phi.Compiler.CodeGen
                     EmitPlaceAddress(copy.Target);
                     Emit("mov ecx, [esp + 4]");
                     Emit("lea eax, [eax + ecx * 4]");
-                    if (array.GrowingArray)
+                    if (array.GrowingArray || array.Type.Open)
                     {
+                        // its room is .max slots on (a str rows[] parameter's, the caller's)
                         Emit("push eax                ; the element's slot");
                         EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, rooms: $"dword [{array.Label} + 8]");
                     }

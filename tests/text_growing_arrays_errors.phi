@@ -1,4 +1,4 @@
-# A str array parameter's elements can't be replaced whole yet (one that grows can be)
+# What a str rows[] parameter takes when it's copied into: another array of texts
 phi.Test:Kernel
 {
 	str names[];
@@ -6,7 +6,8 @@ phi.Test:Kernel
 	call Replace: names;
 
 	[Replace: str rows[];]
-		str other[];
-		rows is other;
+		int numbers[2];
+		rows is numbers;
+		rows is 5;
 	[end]
 }

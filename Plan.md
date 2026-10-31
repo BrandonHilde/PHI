@@ -557,7 +557,8 @@ these were added:
 - [x] Gaps filled (2026-10-30): methods called through a method value or an interface return
   a `str` or a new object (`method<int: str>`, `method<: Point>`); `list++ (Make: 1);` takes a
   call's new object straight into an array of objects (and a plain struct array copies an
-  object's values); `x^^ n` (power, 32-bit whole numbers). Tests: `method_values_results`,
+  object's values); `x^^ n` (power, 32-bit whole numbers); interface methods take arrays
+  (`[Score: int points[];]`); a whole array copies into a `str rows[]` parameter. Tests: `method_values_results`,
   `append_new_objects`, `power` Tests: `growing_array_fields`, `growing_array_fields_errors`
 - [x] Array parameters of any length: `[Sum: int numbers[];]`, with `.len` and `.max`
 - [x] Whole arrays copied (`b is a;`) and compared (`a is b`), objects and text included

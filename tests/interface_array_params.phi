@@ -1,0 +1,71 @@
+# An interface's methods take arrays of any length, as any method does, and a whole array
+# copies into a str rows[] parameter (each of the caller's texts grows to fit).
+interface.Scorer
+{
+	[Score: int points[];]
+	[Label: str rows[];]
+}
+
+struct.Sum has Scorer
+{
+	int bonus;
+
+	[Score: int points[];]
+		int total: bonus;
+		while each p in points
+			total++ p;
+		;;
+	[end: total]
+
+	[Label: str rows[];]
+		str fresh[];
+		fresh++ 'sum' 'of';
+		while int i: 2; i < rows.len; i++;
+			fresh++ 'all';
+		;;
+		rows is fresh;
+	[end]
+}
+
+struct.Best has Scorer
+{
+	int unused;
+
+	[Score: int points[];]
+		int best: 0;
+		while each p in points
+			if p > best
+				best is p;
+			;;
+		;;
+	[end: best]
+
+	[Label: str rows[];]
+		while int i: 0; i < rows.len; i++;
+			rows:i is 'the best of a much longer list of names';
+		;;
+	[end]
+}
+
+phi.InterfaceArrayParams:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		int points[];
+		points++ 3 9 4;
+		new Scorer scorers[atmost 2];
+		new Sum sum: 100;
+		new Best best;
+		scorers++ sum best;
+		str names[];
+		names++ 'a' 'b' 'c';
+		while each scorer in scorers
+			call scorer.Label: names;
+			debug (scorer.Score: points) ': ' names:0 ' / ' names:1 ' / ' names:2 '\n';
+		;;
+	[end]
+}
