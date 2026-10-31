@@ -1,0 +1,103 @@
+# data.keyed: objects of any struct that has Keyed, found by key, with the struct got
+# back with is Player p; many added and removed, and the heap given back.
+use data.keyed;
+
+struct.Player has Keyed
+{
+	u32 id;
+	int score;
+
+	[Key]
+	[end: id]
+}
+
+struct.Monster has Keyed
+{
+	u32 number;
+	int health;
+
+	[Key]
+	[end: number]
+}
+
+phi.KeyedMapTest:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	call Many;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		new KeyedMap world;
+		new Player ann: 1042 5;
+		new Player bob: 7 0;
+		new Monster orc: 500 30;
+		debug 'added: ' (world.Add: ann) ' ' (world.Add: bob) ' ' (world.Add: orc) '\n';
+		debug 'again: ' (world.Add: ann) ', count ' world.items.len '\n';
+
+		int i: (world.Find: 1042);
+		if world.items:i is Player p
+			p.score++ 10;
+		;;
+		i is (world.Find: 1042);
+		if world.items:i is Player same
+			debug 'ann has ' same.score ' (her own copy still ' ann.score ')\n';
+		;;
+		debug 'has 500: ' (world.Has: 500) ', has 9: ' (world.Has: 9) ', find 9: ' (world.Find: 9) '\n';
+
+		int players: 0;
+		int health: 0;
+		while each thing in world.items
+			when thing
+				is Player
+					players++;
+				;;
+				is Monster m
+					health++ m.health;
+				;;
+			;;
+		;;
+		debug players ' players, and the monsters have ' health ' health\n';
+
+		debug 'removed: ' (world.Remove: 7) ' ' (world.Remove: 7) ', count ' world.items.len '\n';
+		debug 'still there: ' (world.Has: 1042) ' ' (world.Has: 500) '\n';
+
+		new KeyedMap copy: world;
+		call copy.Remove: 500;
+		debug 'copy ' copy.items.len ', world ' world.items.len '\n';
+	[end]
+
+	# a thousand added, every other one removed, and each looked for
+	[Many]
+		new KeyedMap map;
+		new Monster m;
+		while int i: 0; i < 1000; i++;
+			m.number is i * 7919;
+			m.health is i;
+			call map.Add: m;
+		;;
+		while int i: 0; i < 1000; i is i + 2;
+			call map.Remove: i * 7919;
+		;;
+		int found: 0;
+		int wrong: 0;
+		while int i: 0; i < 1000; i++;
+			int pos: (map.Find: i * 7919);
+			if pos >= 0
+				found++;
+				if map.items:pos is Monster that
+					if that.health is not i
+						wrong++;
+					;;
+				;;
+			;;
+			elif i % 2 is 1
+				wrong++;
+			;;
+		;;
+		debug 'found ' found ' of ' map.items.len ', wrong ' wrong ', places ' map.places.len '\n';
+		call map.Clear;
+		debug 'cleared: ' map.items.len '\n';
+	[end]
+}

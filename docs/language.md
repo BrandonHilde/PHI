@@ -1205,9 +1205,10 @@ The pieces can also be used directly:
 | `memory.list` | `List` | a growable list of u32 values: `New` →, `Add: list value`, `Get: list index` →, `Set: list index value`, `Delete: list`; the list's `count` and `capacity` |
 | `memory.pool` | `Pool` | many objects of one size, handed out and taken back without searching: `New: size per_chunk` →, `Alloc: pool` → (zeroed), `Free: pool object`, `Delete: pool` (all of them at once); the pool's `used` and `capacity`. Freeing twice, or into the wrong pool, stops the program |
 | `data.map` | `Map` | u32 keys to u32 values (an ID to an index or a pointer): `New` →, `Set: map key value`, `Get: map key otherwise` →, `Has: map key` →, `Remove: map key` →, `Next: map after` → (walks every key: `KeyAt`, `ValueAt`), `Clear`, `Delete`; the map's `count` |
+| `data.keyed` | `KeyedMap` (a struct) | objects of any struct that has `interface.Keyed` (`[Key]`, a u32), found by key: `Add: thing` → (a copy; false if the key is taken), `Find: key` → (where it is in `items`, or -1), `Has: key` →, `Remove: key` →, `Clear`; `items` holds them, so `if map.items:i is Player p` gets one back |
 | `data.queue` | `Queue` | records of one size, oldest out first: `New: size capacity` →, `Push: queue record` → (false when full), `Pop: queue into` → (false when empty), `Front: queue` → (the oldest, where it is), `Drop: queue`, `Clear`, `Delete`; the queue's `count` |
 
-`memory.pool`, `data.map` and `data.queue` work in user programs too, on the program's
+`memory.pool`, `data.map`, `data.keyed` and `data.queue` work in user programs too, on the program's
 heap. A server keeps its players like this:
 
 ```phi
@@ -2280,7 +2281,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
 | `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
-| `memory.pool`, `data.map`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
+| `memory.pool`, `data.map`, `data.keyed`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
 | `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16`, `fs.savelog` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |

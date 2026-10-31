@@ -1,0 +1,147 @@
+# Objects of any struct that has Keyed, found by their key (a u32): players by ID,
+# entities by number. On the heap (32-bit kernels and programs).
+#
+#   use data.keyed;
+#   struct.Player has Keyed
+#   {
+#       u32 id;
+#       int score;
+#       [Key]
+#       [end: id]
+#   }
+#
+#   new KeyedMap players;
+#   new Player ann: 1042;
+#   call players.Add: ann;                  # a copy; false if one has that key already
+#   int i: (players.Find: 1042);            # where it is in players.items, or -1
+#   if i >= 0
+#       if players.items:i is Player p      # the one the map holds, as a Player
+#           p.score++ 10;
+#       ;;
+#   ;;
+#   call players.Remove: 1042;              # false if none has it
+#   while each thing in players.items       # every one, in no particular order
+#       log (thing.Key) '\n';
+#   ;;
+#
+# The objects are in items, in no particular order: Remove moves the last one into the
+# gap. places is a table whose size is a power of 2, holding 1 + where each one is in
+# items (0 for a free place). A key's place comes from multiplying it by a large odd
+# number (Fibonacci hashing), and a taken place sends it to the next one along. The
+# table doubles when it's three-quarters full, so Add, Find and Remove take about the
+# same time however many there are. A KeyedMap is copied, compared and freed whole,
+# like any struct with new fields; an object's key shouldn't change while it's in one.
+
+interface.Keyed
+{
+	[Key]
+}
+
+struct.KeyedMap
+{
+	new Keyed items[];
+	u32 places[];               # 1 + where its object is in items, or 0 while it's free
+	u32 shift;                  # 32 minus the bits in places.len: a key's place is its hash >> shift
+
+	# where the one with this key is in items, or -1
+	[Find: u32 key: 0;]
+		if places.len is 0 return -1;
+		u32 pos: (Place: key);
+		while places:pos is not 0
+			int i: places:pos - 1;
+			if (items:i.Key) is key return i;
+			pos is (pos + 1) & (places.len - 1);
+		;;
+	[end: -1]
+
+	# true if one has this key
+	[Has: u32 key: 0;]
+	[end: (Find: key) >= 0]
+
+	# a copy of thing; false if one with its key is there already
+	[Add: Keyed thing;]
+		u32 key: (thing.Key);
+		if (Find: key) >= 0 return false;
+		if (items.len + 1) * 4 > places.len * 3
+			call Grow;
+		;;
+		items++ thing;
+		call Index: items.len - 1;
+	[end: true]
+
+	# the one with this key taken out and freed; false if none has it
+	[Remove: u32 key: 0;]
+		int i: (Find: key);
+		if i < 0 return false;
+		call Unplace: i;
+		int last: items.len - 1;
+		if i is not last
+			# the last one moves into the gap
+			call Unplace: last;
+			items:i takes items:last;
+			call Index: i;
+		;;
+		items.len is last;
+	[end: true]
+
+	# every one taken out and freed
+	[Clear]
+		items.len is 0;
+		places.len is 0;
+	[end]
+
+	# ---- the table
+
+	# where a key starts looking: its hash, cut to the table's size
+	[Place: u32 key: 0;]
+	[end: (key * 0x9E3779B1) >> shift]
+
+	# item i, put in the first free place from its key's
+	[Index: int i: 0;]
+		u32 pos: (Place: (items:i.Key));
+		while places:pos is not 0
+			pos is (pos + 1) & (places.len - 1);
+		;;
+		places:pos is i + 1;
+	[end]
+
+	# item i's place made free; the ones after it in the same run move back into the gap
+	# if their own place isn't between the gap and where they are, so they're still found
+	[Unplace: int i: 0;]
+		u32 mask: places.len - 1;
+		u32 pos: (Place: (items:i.Key));
+		while places:pos is not i + 1
+			pos is (pos + 1) & mask;
+		;;
+		u32 next: (pos + 1) & mask;
+		while places:next is not 0
+			int other: places:next - 1;
+			u32 home: (Place: (items:other.Key));
+			if ((next - home) & mask) >= ((next - pos) & mask)
+				places:pos is places:next;
+				pos is next;
+			;;
+			next is (next + 1) & mask;
+		;;
+		places:pos is 0;
+	[end]
+
+	# twice the places (16 at first), and every object placed again
+	[Grow]
+		int size: places.len * 2;
+		if size is 0
+			size is 16;
+			shift is 28;
+		;;
+		else
+			shift--;
+		;;
+		places.len is 0;
+		while places.len < size
+			places++ 0;
+		;;
+		while int i: 0; i < items.len; i++;
+			call Index: i;
+		;;
+	[end]
+}

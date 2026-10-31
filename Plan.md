@@ -1367,6 +1367,9 @@ server's entity kinds are one interface.
   `is Rock` branches. Each compares the type table address in front of the object. This is
   what library containers built on interfaces need. Tests: `interfaces_which`,
   `interfaces_which_errors`.
+- [x] the first container built on interfaces: `data.keyed`, a `KeyedMap` of objects of any
+  struct that has `interface.Keyed` (`[Key]`), found by key through a hash table kept in
+  its array fields without a size. Test: `keyed_map`.
 - [x] (3) the mmo world's entity kinds are one interface: `interface.Entity` (`Id`, `X`, `Y`,
   `Kind`, `Tick`), which `Player` has, and two creatures that move on their own
   (`Wanderer`, `Patrol`). The players are `new Player players[atmost 32]`, which replaced a
