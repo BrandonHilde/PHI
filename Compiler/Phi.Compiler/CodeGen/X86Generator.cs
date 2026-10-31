@@ -1484,6 +1484,15 @@ namespace Phi.Compiler.CodeGen
                         Emit("push eax");
                         pushed += 4;
                     }
+                    if (pointer.Signature.Result.IsString)
+                    {
+                        // somewhere for its str: a slot that grows to fit, freed when this method ends
+                        string slot = AllocTemp(8);
+                        if (currentMethod != null) resultSlots.Add(slot);
+                        LoadAddress("eax", slot);
+                        Emit("push eax");
+                        pushed += 4;
+                    }
                     EmitExpr(pointer.Target);
                     Emit(bits32 ? "call eax" : "call ax");
                     if (pushed > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushed}");
@@ -2537,7 +2546,7 @@ namespace Phi.Compiler.CodeGen
             }
             else if (element.IsStruct && value != null)
             {
-                EmitPlaceAddress(value);
+                EmitObjectAddress(value);
                 Emit("push eax                ; the struct to copy");
             }
             else if (element.IsString && value != null && (value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar))
@@ -2603,6 +2612,11 @@ namespace Phi.Compiler.CodeGen
                 // the slot is empty (dropped ones are emptied): a zeroed object, or a copy
                 Emit("mov eax, ebx");
                 if (value == null) Emit($"call {ObjectRoutine("renew", element.Struct!)}");
+                else if (Binder.IsObjectCall(value))
+                {
+                    Emit("pop edx");
+                    Emit("mov [ebx], edx          ; the call's new object, taken over");
+                }
                 else
                 {
                     Emit("pop edx");
@@ -3373,6 +3387,30 @@ namespace Phi.Compiler.CodeGen
                 case BinaryOp.BitXor: Emit("xor eax, ecx"); break;
                 case BinaryOp.ShiftLeft: Emit("shl eax, cl"); break;
                 case BinaryOp.ShiftRight: Emit(unsigned ? "shr eax, cl" : "sar eax, cl"); break;
+                case BinaryOp.Power:
+                {
+                    // multiplying by the base squared again and again, for each bit of the power;
+                    // a power below 0 is 0 (in whole numbers)
+                    string next = NewLabel("power"), skip = NewLabel("powerbit"), done = NewLabel("powered");
+                    Emit("mov edx, eax            ; the base");
+                    Emit("mov eax, 1");
+                    Emit("test ecx, ecx");
+                    Emit($"jns {next}");
+                    Emit("xor eax, eax");
+                    Emit($"jmp {done}");
+                    Label(next);
+                    Emit("test ecx, ecx");
+                    Emit($"jz {done}");
+                    Emit("test ecx, 1");
+                    Emit($"jz {skip}");
+                    Emit("imul eax, edx");
+                    Label(skip);
+                    Emit("imul edx, edx");
+                    Emit("shr ecx, 1");
+                    Emit($"jmp {next}");
+                    Label(done);
+                    break;
+                }
                 case BinaryOp.Divide:
                 case BinaryOp.Modulo:
                     if (unsigned)
@@ -3511,7 +3549,7 @@ namespace Phi.Compiler.CodeGen
                 NameExpr { Call: null, Symbol: VariableSymbol { Grows: false, TextRef: false } or FieldPathSymbol or ConstantSymbol } => true,
                 NameExpr { Call: null, Symbol: SelfFieldSymbol or PathSymbol } => true,
                 IndexExpr or MemberExpr { Call: null, Count: null, FilledLength: false, TextLength: false } => PlaceKeepsEax(e),
-                BinaryExpr { IsComparison: false, IsLogical: false, Op: not (BinaryOp.Divide or BinaryOp.Modulo) } b =>
+                BinaryExpr { IsComparison: false, IsLogical: false, Op: not (BinaryOp.Divide or BinaryOp.Modulo or BinaryOp.Power) } b =>
                     DirectOperand(b.Right, constantOnly: b.Op is BinaryOp.ShiftLeft or BinaryOp.ShiftRight) != null && OnlyEax(b.Left),
                 UnaryExpr { Op: UnaryOp.Negate or UnaryOp.BitNot } u => OnlyEax(u.Operand),
                 CastExpr c => OneRegister(c.Operand.Type) && OnlyEax(c.Operand),
@@ -4524,6 +4562,23 @@ namespace Phi.Compiler.CodeGen
                 if (t.IsObjectArray) EmitFreeElements(copy.Target, -1);
                 Emit("pop eax");
                 Emit($"mov [{growing.Label} + 4], eax");
+                return;
+            }
+            if (Binder.IsFieldView(copy.Target))
+            {
+                // a struct's array without a size grows to fit too
+                ObjectLine(copy);
+                Emit("push eax                ; how many it gets");
+                EmitViewAddress(copy.Target);
+                Emit("mov edx, [esp]");
+                Emit($"mov ecx, {t.Element.ElementSize}");
+                EmitArrayGrowCall();
+                Emit("mov eax, [esp]");
+                if (t.IsObjectArray) EmitFreeElements(copy.Target, -1);
+                EmitViewAddress(copy.Target);
+                Emit("pop ecx");
+                Emit("mov [eax + 4], ecx");
+                Emit("mov eax, ecx");
                 return;
             }
             if (!t.Open && !copy.Source.Type.Open) return;

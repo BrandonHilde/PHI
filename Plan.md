@@ -552,8 +552,13 @@ these were added:
 - [x] `while each x in list`, over any array
 - [x] Arrays that grow with no most: `int scores[];`, objects too
 - [x] Struct fields that are arrays without a size (`int scores[];`, `new Shape shapes[];`):
-  the struct owns them (copied, compared and freed with it). Not yet: copying a whole array
-  into one, and `str` elements. Tests: `growing_array_fields`, `growing_array_fields_errors`
+  the struct owns them (copied, compared and freed with it), and whole arrays copy into
+  them. Not yet: `str` elements.
+- [x] Gaps filled (2026-10-30): methods called through a method value or an interface return
+  a `str` or a new object (`method<int: str>`, `method<: Point>`); `list++ (Make: 1);` takes a
+  call's new object straight into an array of objects (and a plain struct array copies an
+  object's values); `x^^ n` (power, 32-bit whole numbers). Tests: `method_values_results`,
+  `append_new_objects`, `power` Tests: `growing_array_fields`, `growing_array_fields_errors`
 - [x] Array parameters of any length: `[Sum: int numbers[];]`, with `.len` and `.max`
 - [x] Whole arrays copied (`b is a;`) and compared (`a is b`), objects and text included
 - [x] Arrays of objects: `new T list[N]` and `new T list[atmost N]`, and struct fields like

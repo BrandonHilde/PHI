@@ -352,8 +352,8 @@ gives back the texts it no longer needs).
 objects), grows in the same way, and the struct owns it, so the struct is one PHI manages
 (declared with `new`). Copying the struct copies its arrays, comparing compares them, and
 they're freed with it. Its elements are numbers, structs, or objects. `++`, indexes, `.len`,
-`.len is`, `while each` and passing it to a method all work, and `board.scores.max` is its
-room. Not yet: copying a whole array into such a field (add to it with `++`), and `str`
+`.len is`, `while each`, copying a whole array in (`b.scores is other;`, which grows it to
+fit) and passing it to a method all work, and `board.scores.max` is its room. Not yet: `str`
 elements.
 
 ```phi
@@ -566,6 +566,7 @@ x-- y;         # subtract y
 x** 3;         # multiply by 3
 x// 2;         # divide by 2
 x%% 2;         # remainder of dividing by 2
+x^^ 3;         # to the power 3 (whole numbers of up to 32 bits; a power below 0 gives 0)
 list:2 is 7;   # one element
 task.id is 3;  # one field
 name is 'new text';
@@ -941,7 +942,8 @@ while each shape in all
   written as any method's are: `str target;` is the caller's own text, and `str name: '';`
   is a copy. Other parameters have no defaults, so a call through it gives every argument.
 - **What a method returns comes from the structs.** Every struct with the interface has to
-  return the same, and the first one says what that is. For now it's a number (or nothing).
+  return the same, and the first one says what that is: a number, a `str`, a new object, or
+  nothing.
 - **A struct can have several interfaces** (`struct.Player has Shape Named { ... }`), and it's
   an error to leave out one of their methods, or to take something different.
 - **An interface variable owns its object**, like a `new` variable: it's declared with
@@ -2185,7 +2187,8 @@ debug (shapes:i.area: addr shapes:i);
 - One that takes no arguments is called in parentheses, as `(Name)` is: with
   `method<: int> next;`, `(next)` is its result. Without them, `next` is the method itself,
   so `if next is 0` still checks whether one is set.
-- Methods called this way can't return a `str` yet (a method called by name can).
+- One can return a `str` (`method<int: str>`, in 32-bit code) or a new object
+  (`method<: Point>`), handed to the caller as a call by name's is.
 - After the callee, `:` with a space starts the arguments; `table:i` with no space is an index.
 - A method whose `str` parameter has no default writes into the caller's own text
   (`[Fill: str target;]`). Its type says so with `into` after `str`, and the argument has to
@@ -2362,7 +2365,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 ## Not supported yet
 
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
-  `has`, `^^` (power)
+  `has`, and `^^` on 64-bit and floating point numbers
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed

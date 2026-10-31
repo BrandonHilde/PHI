@@ -146,7 +146,7 @@ namespace Phi.Compiler.Tests
         [InlineData("method<int: int> f;\nint x: (f: 1 2);", "f is a method<int: int>, which takes 1 argument, but was given 2")]
         [InlineData("method<int> f;\nint x: (f: 1);", "f is a method<int>, which doesn't return a value, so it can't be used as one")]
         [InlineData("int n: 3;\ncall n: 1;", "'n' is a int, not a method")]
-        [InlineData("method<: str> f;", "a method called through a variable can't return a str yet")]
+        [InlineData("method<: str> f;", "a method called through a variable returns a str only in 32-bit code")]
         [InlineData("call Show:x;\nint x: 1;\n[Show: int v: 0;]\n[end]", "put a space after the ':' that starts the arguments: Show: ...")]
         public void MethodPointerErrors(string body, string message) => AssertError(Boot(body), message);
 
@@ -441,7 +441,7 @@ namespace Phi.Compiler.Tests
         [InlineData("[OS.Unknown]\n[end]", "isn't an event")]
         [InlineData("str s: 'a';\nif s > 'b'\n;;", "strings can only be compared")]
         [InlineData("dec pi: 3.14;", "isn't supported yet")]
-        [InlineData("int a: 1;\na ^^ 2;", "isn't supported yet")]
+        [InlineData("str a: 'x';\na ^^ 2;", "only works on numbers")]
         public void SemanticErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Theory]

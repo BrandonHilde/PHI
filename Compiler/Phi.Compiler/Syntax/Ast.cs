@@ -654,7 +654,7 @@ namespace Phi.Compiler.Syntax
 
     public enum BinaryOp
     {
-        Add, Subtract, Multiply, Divide, Modulo,
+        Add, Subtract, Multiply, Divide, Modulo, Power,
         BitAnd, BitOr, BitXor, ShiftLeft, ShiftRight,
         Equal, NotEqual, Less, LessEqual, Greater, GreaterEqual,
         And, Or,

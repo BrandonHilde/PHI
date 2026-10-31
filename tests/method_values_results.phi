@@ -1,0 +1,82 @@
+# Methods called through a method value or an interface can return a str (in a slot that
+# grows, as a call by name's does) or a new object, which the caller takes over.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+interface.Named
+{
+	[Name]
+	[Where]
+}
+
+struct.Town has Named
+{
+	str title: [20];
+	int x;
+
+	[Name]
+	[end: title]
+
+	[Where]
+		new Point here: x 0;
+	[end: here]
+}
+
+struct.Ship has Named
+{
+	int number;
+
+	[Name]
+		str made: '';
+		made is 'ship ' number;
+	[end: made]
+
+	[Where]
+		new Point here: number number;
+	[end: here]
+}
+
+phi.MethodValuesResults:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		method<int: str> say: addr Say;
+		debug (say: 3) '\n';
+		str kept: (say: 12);
+		debug 'kept: ' kept ' (' kept.len ')\n';
+
+		method<int int: Point> make: addr Make;
+		new Point p: (make: 4 5);
+		call p is make: 6 7;
+		debug 'point ' p.x ' ' p.y '\n';
+
+		new Named list[atmost 4];
+		new Town home;
+		home.title is 'Harbor';
+		home.x is 3;
+		new Ship boat: 9;
+		list++ home boat;
+		while each thing in list
+			new Point spot: (thing.Where);
+			debug (thing.Name) ' is at ' spot.x ' ' spot.y '\n';
+		;;
+	[end]
+
+	[Say: int times;]
+		str made: '';
+		while int i: 0; i < times; i++;
+			made++ 'ha';
+		;;
+	[end: made]
+
+	[Make: int x; int y;]
+		new Point made: x y;
+	[end: made]
+}

@@ -855,13 +855,6 @@ namespace Phi.Compiler.Semantics
             file = was;
             if (first == null) return null;
             PhiType result = SignatureOf(first).Result;
-            if (result.IsString || (!result.IsNumeric && !result.IsWide && !result.IsFloat && result.Kind != TypeKind.Void))
-            {
-                file = first.Decl.Owner.File;
-                Error(first.Decl.Span, $"a method called through an interface returns a number for now, and {iface.Members[0].Name}.{wanted.Name} returns a {result}");
-                file = was;
-                return null;
-            }
             var signature = new MethodSignature(parameters, result, into);
             iface.Signatures[i] = signature;
             return signature;
@@ -1140,6 +1133,7 @@ namespace Phi.Compiler.Semantics
                         .Select(p => p.IsStruct ? PhiType.ObjectOf(p.Struct!) : p).ToList();
                     PhiType result = t.Result == null ? PhiType.Void : ResolveType(t.Result, scope, allowStr: true);
                     if (parameters.Any(p => p.IsError) || result.IsError) return PhiType.Error;
+                    if (result.IsStruct) result = PhiType.ObjectOf(result.Struct!);   // a new object, handed to the caller
                     for (int i = 0; i < parameters.Count; i++)
                         if (t.ParameterInto[i] && !parameters[i].IsString)
                         {
@@ -1156,14 +1150,14 @@ namespace Phi.Compiler.Semantics
                         Error(t.Span, "a method called through a variable can't take an array yet");
                         return PhiType.Error;
                     }
-                    if (result.IsString)
+                    if (result.IsString && scope?.Unit is UnitKind.Boot or UnitKind.Os)
                     {
-                        Error(t.Result!.Span, "a method called through a variable can't return a str yet; return a number");
+                        Error(t.Result!.Span, "a method called through a variable returns a str only in 32-bit code (a Kernel or a Program); return a number");
                         return PhiType.Error;
                     }
-                    if (!result.IsNumeric && !result.IsWide && !result.IsFloat && result.Kind != TypeKind.Void)
+                    if (!result.IsNumeric && !result.IsWide && !result.IsFloat && !result.IsString && !result.IsObject && result.Kind != TypeKind.Void)
                     {
-                        Error(t.Result!.Span, $"a method returns a number or a str, not a {result}");
+                        Error(t.Result!.Span, $"a method returns a number, a str or an object, not {A(result)}");
                         return PhiType.Error;
                     }
                     return PhiType.MethodOf(new MethodSignature(parameters, result.IsNumeric ? PhiType.Int : result, t.ParameterInto.ToList()));
@@ -2580,9 +2574,10 @@ namespace Phi.Compiler.Semantics
                 return assign;
             }
 
-            if (assign.Op == AssignOp.Power)
+            // x^^ 3: x to that power, in whole numbers of up to 32 bits
+            if (assign.Op == AssignOp.Power && (target.Type.IsWide || target.Type.IsFloat))
             {
-                Error(assign.Span, "^^ (power) isn't supported yet");
+                Error(assign.Span, $"^^ works on whole numbers of up to 32 bits for now, and '{Describe(target)}' is {A(target.Type)}");
                 return assign;
             }
 
@@ -2603,6 +2598,7 @@ namespace Phi.Compiler.Semantics
                     AssignOp.Subtract => BinaryOp.Subtract,
                     AssignOp.Multiply => BinaryOp.Multiply,
                     AssignOp.Divide => BinaryOp.Divide,
+                    AssignOp.Power => BinaryOp.Power,
                     _ => BinaryOp.Modulo,
                 };
                 var combined = new BinaryExpr { Op = op, Left = target, Right = value, Span = assign.Span };
@@ -2729,11 +2725,6 @@ namespace Phi.Compiler.Semantics
                 return assign;
             }
             if (CheckArrayPair(target, source, assign.Span, "copied into") is false) return assign;
-            if (IsFieldView(target))
-            {
-                Error(target.Span, $"a whole array can't be copied into a field without a size yet; add the elements with {Describe(target)}++");
-                return assign;
-            }
             if (target.Type.IsObjectArray)
                 HeapMethod("Heap.Alloc", assign.Span, scope, "copying objects");
             return new ArrayAssignStmt { Target = target, Source = source, Span = assign.Span };
@@ -2822,17 +2813,20 @@ namespace Phi.Compiler.Semantics
             PhiType element = target.Type.Element;
             if (element.IsObject)
             {
-                // list++ a b; adds copies of a and b
+                // list++ a b; adds copies of a and b; list++ (Make: 1); takes the call's new object
                 foreach (Expr value in assign.Values ?? new List<Expr> { assign.Value })
                 {
+                    allowObjectTemp = true;
                     BindExpr(value, scope);
+                    allowObjectTemp = false;
                     if (value.Type.IsError) continue;
+                    bool place = value is NameExpr or IndexExpr or MemberExpr && !IsObjectCall(value);
                     if (element.Struct!.IsInterface && value.Type.Struct != element.Struct && InterfaceValueError(value, element.Struct) is string why)
                         Error(value.Span, why);
-                    else if (element.Struct.IsInterface && value.Type.Struct != element.Struct && value is not (NameExpr or IndexExpr or MemberExpr))
-                        Error(value.Span, $"'{name}' holds {element.Struct.Name}s, so it takes a copy of one (a variable, field or element)");
-                    else if (!element.Struct.IsInterface && (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr)))
-                        Error(value.Span, $"'{name}' holds {element.Struct!.Name} objects, so it takes a copy of another {element.Struct.Name} (a variable, field or element), not {A(value.Type)}");
+                    else if (!element.Struct.IsInterface && (!(value.Type.IsObject || value.Type.IsStruct) || value.Type.Struct != element.Struct))
+                        Error(value.Span, $"'{name}' holds {element.Struct!.Name} objects, so it takes another {element.Struct.Name} (a copy of a variable, field or element, or a call's new one), not {A(value.Type)}");
+                    else if (!place && !IsObjectCall(value))
+                        Error(value.Span, $"'{name}' takes a copy of a {element.Struct.Name} from a variable, field or element, or a call's new one");
                     else append.Values.Add(value);
                 }
                 return append;
@@ -2844,7 +2838,7 @@ namespace Phi.Compiler.Semantics
                 {
                     BindExpr(value, scope);
                     if (value.Type.IsError) continue;
-                    if (!value.Type.IsStruct || value.Type.IsArray || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr))
+                    if (!(value.Type.IsStruct || value.Type.IsObject) || value.Type.IsArray || value.Type.Struct != element.Struct || value is not (NameExpr or IndexExpr or MemberExpr))
                         Error(value.Span, $"'{name}' holds {element.Struct!.Name}s, so it takes a copy of another {element.Struct.Name} (a variable, field or element), not {A(value.Type)}");
                     else append.Values.Add(value);
                 }
@@ -3200,6 +3194,8 @@ namespace Phi.Compiler.Semantics
             }
             if (scope.Unit is UnitKind.Boot or UnitKind.Os)
                 Error(calleeSpan, "interfaces need 32-bit code (a Kernel or a Program)");
+            else if (signature.Result.IsString || signature.Result.IsObject)
+                HeapMethod("Heap.Alloc", span, scope, $"a {signature.Result} from {iface.Name}.{method}");
             return new PointerCall { Target = target, Signature = signature };
         }
 
@@ -3265,6 +3261,8 @@ namespace Phi.Compiler.Semantics
                 }
 
                 MethodSignature signature = pointer.Type.Signature!;
+                if (signature.Result.IsString || signature.Result.IsObject)
+                    HeapMethod("Heap.Alloc", span, scope, $"a {signature.Result} from {calleeName}");
                 if (arguments.Count != signature.Parameters.Count)
                     Error(span, $"{calleeName} is a {pointer.Type}, which takes {Plural(signature.Parameters.Count, "argument")}, but was given {arguments.Count}");
                 for (int i = 0; i < Math.Min(arguments.Count, signature.Parameters.Count); i++)
@@ -3948,8 +3946,6 @@ namespace Phi.Compiler.Semantics
                 switch (callee)
                 {
                     case MethodSymbol m when m.Unit == scope.Unit:
-                        if (ReturnTypeOf(m).IsObject)
-                            Error(addr.Span, $"{m.Name} returns an object, so it can't be used as a method value yet");
                         addr.CodeLabel = m.Label;
                         addr.Method = m;
                         name.Type = PhiType.Void;
@@ -4373,6 +4369,7 @@ namespace Phi.Compiler.Semantics
                         BinaryOp.Multiply => Wrap((long)x * y),
                         BinaryOp.Divide => y == 0 ? null : unsigned ? Wrap(ux / uy) : Wrap(x / y),
                         BinaryOp.Modulo => y == 0 ? null : unsigned ? Wrap(ux % uy) : Wrap(x % y),
+                        BinaryOp.Power => Power(x, y),
                         BinaryOp.BitAnd => x & y,
                         BinaryOp.BitOr => x | y,
                         BinaryOp.BitXor => x ^ y,
@@ -4395,6 +4392,16 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>32-bit two's complement, like the CPU.</summary>
         static long Wrap(long v) => (int)v;
+
+        /// <summary>x to the power y in 32 bits, as the code does it: a power below 0 is 0.</summary>
+        static long Power(int x, int y)
+        {
+            if (y < 0) return 0;
+            int result = 1;
+            for (; y > 0; y >>= 1, x = unchecked(x * x))
+                if ((y & 1) != 0) result = unchecked(result * x);
+            return result;
+        }
 
         /// <summary>The same in 64 bits: signed (i64) unless either side is a u64.</summary>
         static long? EvaluateWide(BinaryExpr b, long x, long y)

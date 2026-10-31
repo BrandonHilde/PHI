@@ -1,0 +1,68 @@
+# list++ (Make: ...): an array of objects takes a call's new object over, without a copy,
+# in every kind of array that grows or fills (and an interface's). A plain struct array
+# takes a copy of an object's values.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+interface.Shape
+{
+	[Area]
+}
+
+struct.Square has Shape
+{
+	int side;
+
+	[Area]
+	[end: side * side]
+}
+
+struct.Holder
+{
+	new Point points[];
+}
+
+phi.AppendNewObjects:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		new Point fixed[atmost 4];
+		fixed++ (Make: 1 2) (Make: 3 4);
+		debug 'atmost: ' fixed.len ' ' fixed:1.x '\n';
+
+		new Point growing[];
+		while int i: 0; i < 10; i++;
+			growing++ (Make: i i * i);
+		;;
+		debug 'growing: ' growing.len ' ' growing:9.y '\n';
+
+		new Holder h;
+		h.points++ (Make: 7 8);
+		debug 'field: ' h.points.len ' ' h.points:0.y '\n';
+
+		new Shape shapes[atmost 4];
+		shapes++ (Square: 3) (Square: 4);
+		debug 'shapes: ' (shapes:0.Area) ' ' (shapes:1.Area) '\n';
+
+		# an object's values copied into a plain array of Points
+		Point plain[atmost 2];
+		new Point one: 5 6;
+		plain++ one;
+		debug 'plain: ' plain:0.x ' ' plain:0.y '\n';
+	[end]
+
+	[Make: int x; int y;]
+		new Point made: x y;
+	[end: made]
+
+	[Square: int side;]
+		new Square made: side;
+	[end: made]
+}

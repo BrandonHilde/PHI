@@ -1,0 +1,34 @@
+# x^^ n: x to the power n, in whole numbers (a power below 0 gives 0), in 32-bit and
+# 16-bit code, worked out when it runs and when it's known as the program is built.
+phi.Power:Library
+{
+	int x: 3;
+	x^^ 4;
+	debug '3^^4 = ' x '\n';
+
+	int big: 2;
+	big^^ 31;
+	debug '2^^31 = ' big ' (wraps, as * does)\n';
+
+	int n: 0;
+	int zero: 7;
+	zero^^ n;
+	debug '7^^0 = ' zero '\n';
+
+	int minus: -2;
+	minus^^ 3;
+	debug '-2^^3 = ' minus '\n';
+
+	int under: 5;
+	under^^ -1;
+	debug '5^^-1 = ' under '\n';
+
+	u8 small: 2;
+	small^^ 9;
+	debug 'u8 2^^9 = ' small ' (cut to fit)\n';
+
+	int nums[3];
+	nums:1 is 10;
+	nums:1^^ 3;
+	debug 'an element: ' nums:1 '\n';
+}

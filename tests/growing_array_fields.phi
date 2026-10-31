@@ -83,6 +83,20 @@ phi.GrowingArrayFields:Kernel
 		copy.scores:0 is b.scores:0;
 		debug 'same again: ' (b is copy) '\n';
 
+		# whole arrays copied in: it grows to fit (or lets go of what's past the source's count)
+		int few[3];
+		few:0 is 1;
+		few:1 is 2;
+		few:2 is 3;
+		copy.scores is few;
+		copy.shapes is b.shapes;
+		new Shape one[atmost 1];
+		one++ big;
+		copy.shapes is one;
+		debug 'copied in: ' copy.scores.len ' ' copy.scores:2 ', shapes ' copy.shapes.len ' ' (copy.shapes:0.Area) '\n';
+		copy.scores is b.scores;
+		debug 'and back: ' copy.scores.len ' ' (copy.scores is b.scores) '\n';
+
 		# shorter: the objects it drops are freed
 		b.shapes.len is 1;
 		debug 'shapes left ' b.shapes.len '\n';
