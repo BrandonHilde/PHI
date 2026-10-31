@@ -748,6 +748,69 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>
+        /// list has x: an array of numbers, texts, structs or objects, and a value of the same kind;
+        /// text has 'abc' (or a chr): a str or ptr&lt;u8&gt;, and the text (or character) to look for.
+        /// </summary>
+        void BindHas(HasExpr has, Scope scope)
+        {
+            BindExpr(has.Collection, scope);
+            BindExpr(has.Value, scope);
+            has.Type = PhiType.Bool;
+            PhiType t = has.Collection.Type, v = has.Value.Type;
+            if (t.IsError || v.IsError) return;
+            if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+            {
+                Error(has.Span, "has needs 32-bit code (a Kernel or a Program)");
+                return;
+            }
+            static bool Text(PhiType p) => p.IsString || p.IsPointer && p.Pointee == PhiType.U8;
+            string name = Describe(has.Collection);
+
+            if (!t.IsArray)
+            {
+                if (!Text(t))
+                {
+                    Error(has.Collection.Span, $"has asks whether an array holds a value, or a text holds another, and '{name}' is {A(t)}");
+                    return;
+                }
+                if (v.IsChar) has.Kind = HasKind.Character;
+                else if (Text(v)) has.Kind = HasKind.Text;
+                else Error(has.Value.Span, $"'{name}' is text, so has looks for text or a chr in it, not {A(v)}");
+                return;
+            }
+
+            PhiType element = t.Element;
+            if (element.Kind == TypeKind.Str)
+            {
+                if (!Text(v)) Error(has.Value.Span, $"'{name}' holds texts, so has looks for text, not {A(v)}");
+                has.Kind = HasKind.Texts;
+                return;
+            }
+            if (element.IsObject || element.IsStruct)
+            {
+                StructSymbol s = element.Struct!;
+                if (!(v.IsObject || v.IsStruct) || v.Struct != s)
+                    Error(has.Value.Span, $"'{name}' holds {s.Name}s, so has looks for another {s.Name}, not {A(v)}");
+                else if (has.Value is not (NameExpr or IndexExpr or MemberExpr) || IsObjectCall(has.Value))
+                    Error(has.Value.Span, $"has compares with a {s.Name} in a variable, field or element");
+                has.Kind = element.IsObject ? HasKind.Objects : HasKind.Structs;
+                return;
+            }
+            if (!element.IsNumeric)
+            {
+                Error(has.Collection.Span, $"has works on arrays of numbers of up to 32 bits, texts, structs and objects, and '{name}' holds {element}s");
+                return;
+            }
+            if (element.IsEnum && v != element)
+            {
+                Error(has.Value.Span, $"'{name}' holds {element}s, so has looks for one of them (like {element}.{element.Enum!.Members[0].Name}), not {A(v)}");
+                return;
+            }
+            has.Value = Convert(has.Value, element.IsEnum ? element : PhiType.Int, $"what '{name}' is asked to have");
+            has.Kind = HasKind.Numbers;
+        }
+
+        /// <summary>
         /// The struct a type test names (is Player p), which has to have the value's interface;
         /// null after an error.
         /// </summary>
@@ -3746,6 +3809,10 @@ namespace Phi.Compiler.Semantics
 
                 case SizeofExpr size:
                     BindSizeof(size, scope);
+                    break;
+
+                case HasExpr has:
+                    BindHas(has, scope);
                     break;
 
                 case IsTypeExpr test:

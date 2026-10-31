@@ -638,6 +638,18 @@ if done break;
 if count is 0 call Show: 'empty';
 ```
 
+**has.** `list has x` is true when an array holds that value, each element compared as `is`
+compares it: numbers (and enums), texts, structs and objects. `text has 'abc'` is true when
+the text is somewhere in a `str` (or `ptr<u8>`), and `text has c` when a `chr` is (32-bit
+code):
+
+```phi
+if names has 'ann' ...
+if scores has 100 ...
+if line has 'GET ' ...
+if not (line has 9 as chr) ...     # no tab in it
+```
+
 ### when
 
 `when` picks one branch by a value: the first `is` line with an equal value runs, or
@@ -2366,7 +2378,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 ## Not supported yet
 
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
-  `has`, and `^^` on 64-bit and floating point numbers
+  `^^` on 64-bit and floating point numbers, and `has` on arrays of them
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed

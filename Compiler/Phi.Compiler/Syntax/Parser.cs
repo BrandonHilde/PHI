@@ -1385,7 +1385,10 @@ namespace Phi.Compiler.Syntax
             }
             else if (AtOperatorWord("has"))
             {
-                throw Error(Current.Span, "'has' is not supported yet");
+                // list has x, text has 'abc'
+                Advance();
+                Expr value = ParseBitOr();
+                return new HasExpr { Collection = left, Value = value, Span = left.Span.To(value.Span) };
             }
             else if (!Current.StartsLine)
             {

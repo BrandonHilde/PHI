@@ -3251,6 +3251,10 @@ namespace Phi.Compiler.CodeGen
                     EmitAddress(addr);
                     break;
 
+                case HasExpr has:
+                    EmitHas(has);
+                    break;
+
                 case IsTypeExpr test:
                 {
                     // the struct's type table is just before the object (and 0 holds nothing)
@@ -3409,6 +3413,115 @@ namespace Phi.Compiler.CodeGen
             if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
             else if (bits32 || !p.Linear) Emit($"lea eax, {Operand(p)}");
             else Emit($"lea eax, [ebx{offset}]");   // (Operand would reach it through fs)
+        }
+
+        /// <summary>eax = a text's address: '' in place of none (a str that grows has none until it's written).</summary>
+        void EmitTextValue(Expr e)
+        {
+            EmitExpr(e);
+            string some = NewLabel("hastext");
+            Emit("test eax, eax");
+            Emit($"jnz {some}");
+            Emit($"mov eax, {StringLabel("")}");
+            Label(some);
+        }
+
+        /// <summary>
+        /// eax = 1 when the array holds the value (each element compared in turn, as is compares),
+        /// or the text holds the other text or character; 0 when it doesn't.
+        /// </summary>
+        void EmitHas(HasExpr has)
+        {
+            if (has.Kind is HasKind.Text or HasKind.Character)
+            {
+                if (has.Kind == HasKind.Text) EmitTextValue(has.Value);
+                else EmitExpr(has.Value);
+                Emit("push eax                ; what to look for");
+                EmitTextValue(has.Collection);
+                Emit("mov esi, eax");
+                if (has.Kind == HasKind.Text)
+                {
+                    Need("phi_str_has");
+                    Emit("pop edi");
+                    Emit("call phi_str_has");
+                }
+                else
+                {
+                    Need("phi_str_has_char");
+                    Emit("pop eax");
+                    Emit("call phi_str_has_char");
+                }
+                return;
+            }
+
+            PhiType element = has.Collection.Type.Element;
+            int size = element.ElementSize;
+            string value = AllocTemp(4), index = AllocTemp(4);
+            string next = NewLabel("has"), yes = NewLabel("hasyes"), no = NewLabel("hasno"), done = NewLabel("hasdone");
+            if (has.Kind == HasKind.Texts) EmitTextValue(has.Value);
+            else if (has.Kind is HasKind.Objects or HasKind.Structs) EmitObjectAddress(has.Value);
+            else EmitExpr(has.Value);
+            Emit($"mov [{value}], eax         ; what to look for");
+            Emit($"mov dword [{index}], 0");
+            Label(next);
+            EmitArrayCount(has.Collection);
+            Emit($"cmp [{index}], eax");
+            Emit($"jae {no}");
+            EmitPlaceAddress(has.Collection);
+            Emit($"mov ecx, [{index}]");
+            if (size is 1 or 2 or 4 or 8) Emit($"lea eax, [eax + ecx * {size}]   ; the element");
+            else
+            {
+                Emit($"imul ecx, ecx, {size}");
+                Emit("add eax, ecx            ; the element");
+            }
+            switch (has.Kind)
+            {
+                case HasKind.Numbers:
+                    string extend = element.IsSigned ? "movsx" : "movzx";
+                    if (size == 1) Emit($"{extend} eax, byte [eax]");
+                    else if (size == 2) Emit($"{extend} eax, word [eax]");
+                    else Emit("mov eax, [eax]");
+                    Emit($"cmp eax, [{value}]");
+                    Emit($"je {yes}");
+                    break;
+
+                case HasKind.Texts:
+                {
+                    Need("phi_strcmp");
+                    if (element.IsInlineText) Emit("mov esi, eax");
+                    else
+                    {
+                        string some = NewLabel("hastext");
+                        Emit("mov esi, [eax]          ; its text");
+                        Emit("test esi, esi");
+                        Emit($"jnz {some}");
+                        Emit($"mov esi, {StringLabel("")}");
+                        Label(some);
+                    }
+                    Emit($"mov edi, [{value}]");
+                    Emit("call phi_strcmp          ; eax = 0 when they're the same");
+                    Emit("test eax, eax");
+                    Emit($"jz {yes}");
+                    break;
+                }
+
+                default:
+                    if (has.Kind == HasKind.Objects) Emit("mov eax, [eax]          ; its object");
+                    Emit($"mov edx, [{value}]");
+                    Emit($"call {ObjectRoutine("equal", element.Struct!)}");
+                    Emit("test eax, eax");
+                    Emit($"jnz {yes}");
+                    break;
+            }
+            Emit($"inc dword [{index}]");
+            Emit($"jmp {next}");
+            Label(yes);
+            Emit("mov eax, 1");
+            Emit($"jmp {done}");
+            Label(no);
+            Emit("xor eax, eax");
+            Label(done);
         }
 
         /// <summary>An operand holding a struct's str array field's room (.max), read now: for EmitGrowStoreAt.</summary>

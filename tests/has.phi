@@ -1,0 +1,79 @@
+# has: whether an array holds a value (compared as is compares: numbers, texts, structs and
+# objects), or a text holds another text or a character.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+enum.Tool
+{
+	PEN
+	BRUSH
+	ERASER
+}
+
+struct.Bag
+{
+	str names[];
+	str labels[4]: [12];
+	int counts[];
+}
+
+phi.HasTest:Kernel
+{
+	call Run;
+	exit 0;
+
+	[Run]
+		int scores[];
+		scores++ 10 -20 30;
+		debug 'scores has 30: ' (scores has 30) ', -20: ' (scores has -20) ', 5: ' (scores has 5) '\n';
+
+		u8 bytes[3];
+		bytes:1 is 200;
+		debug 'bytes has 200: ' (bytes has 200) ', 456: ' (bytes has 456) '\n';
+
+		Tool tools[atmost 4];
+		tools++ Tool.PEN Tool.ERASER;
+		debug 'tools has eraser: ' (tools has Tool.ERASER) ', brush: ' (tools has Tool.BRUSH) '\n';
+
+		str names[];
+		names++ 'ann' 'bob';
+		str who: 'bob';
+		debug 'names has bob: ' (names has who) ', cat: ' (names has 'cat') '\n';
+		str empty_names[];
+		debug 'nothing in an empty one: ' (empty_names has '') '\n';
+
+		new Bag bag;
+		bag.names++ 'sword';
+		bag.labels:2 is 'fire';
+		bag.counts++ 7;
+		debug 'bag: ' (bag.names has 'sword') ' ' (bag.labels has 'fire') ' ' (bag.labels has 'ice') ' ' (bag.counts has 7) '\n';
+
+		Point points[2];
+		points:1.x is 3;
+		points:1.y is 4;
+		Point p;
+		p.x is 3;
+		p.y is 4;
+		debug 'points has p: ' (points has p) '\n';
+		p.y is 5;
+		debug 'and now: ' (points has p) '\n';
+
+		new Point objects[atmost 4];
+		new Point a: 1 2;
+		objects++ a;
+		new Point b: 1 2;
+		debug 'objects has b: ' (objects has b) '\n';
+
+		str line: 'GET /index.html HTTP/1.1';
+		debug 'line has GET: ' (line has 'GET ') ', html: ' (line has '.html') ', POST: ' (line has 'POST') '\n';
+		debug 'has a space: ' (line has 32 as chr) ', a tab: ' (line has 9 as chr) ', the empty text: ' (line has '') '\n';
+		str nothing: '';
+		debug 'empty has x: ' (nothing has 'x') '\n';
+		if not (line has 'POST') and names has 'ann'
+			debug 'reads in an if\n';
+		;;
+	[end]
+}

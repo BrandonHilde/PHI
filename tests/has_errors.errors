@@ -1,0 +1,6 @@
+15:9: error: has asks whether an array holds a value, or a text holds another, and 'n' is an int
+16:19: error: 'names' holds texts, so has looks for text, not an int
+17:20: error: 'points' holds Points, so has looks for another Point, not an int
+18:9: error: has works on arrays of numbers of up to 32 bits, texts, structs and objects, and 'reals' holds f64s
+19:18: error: 'line' is text, so has looks for text or a chr in it, not an int
+20:20: error: what 'scores' is asked to have needs a number, but this is a str

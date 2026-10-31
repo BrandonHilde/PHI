@@ -438,6 +438,20 @@ namespace Phi.Compiler.Syntax
         public StructSymbol? Struct { get; set; }
     }
 
+    /// <summary>What a has test compares: see <see cref="HasExpr"/>.</summary>
+    public enum HasKind { Numbers, Texts, Objects, Structs, Text, Character }
+
+    /// <summary>
+    /// list has x: true when an array holds that value (compared as is compares them);
+    /// text has 'abc': true when the text is in it (or a chr, that character).
+    /// </summary>
+    public sealed class HasExpr : Expr
+    {
+        public Expr Collection { get; init; } = null!;
+        public Expr Value { get; set; } = null!;
+        public HasKind Kind { get; set; }
+    }
+
     /// <summary>
     /// value is Player p: true when the interface value holds a Player. As an if's whole
     /// condition, p is that Player inside the if (a VarDecl the parser puts first in Then).
