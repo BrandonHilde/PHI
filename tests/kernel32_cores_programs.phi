@@ -1,0 +1,45 @@
+# Programs on every core (Cores.SharePrograms): four busy programs at once, each given
+# back its own sum, and the cores that took them up. The sums are worked out here too,
+# so a program that ran wrong (or on a core that lost its place) shows.
+use proc.process;
+use proc.cores;
+
+phi.CoresPrograms:Kernel
+{
+	const int PROGRAMS: 4;
+	int pids[4];
+
+	int n: (Cores.Start);
+	call Cores.SharePrograms;
+	log 'cores: ' n '\n';
+
+	u8 args[8];
+	while int p: 0; p < PROGRAMS; p++;
+		args:0 is '1' + p;
+		args:1 is 0;
+		pids:p is (Process.Spawn: 'BUSY.BIN' addr args);
+	;;
+	bln right: true;
+	while int p: 0; p < PROGRAMS; p++;
+		int code: (Process.Wait: pids:p);
+		right is right and code is (Expected: p + 1);
+	;;
+	log 'every program gave back its own sum: ' right '\n';
+
+	int busy: 0;
+	while int c: 0; c < n; c++;
+		if (Cores.Ran: c) > 0
+			busy++;
+		;;
+	;;
+	log 'more than one core ran them: ' (busy > 1) '\n';
+	exit 0;
+
+	# what busy.phi works out for a seed
+	[Expected: int seed: 0;]
+		u32 sum: seed;
+		while u32 i: 0; i < 3000000; i++;
+			sum is sum * 31 + i;
+		;;
+	[end: (sum & 0x7FFF) as int]
+}

@@ -34,7 +34,11 @@ phi.Cores:Kernel
 	u32 cores_work: 0;                      # what Run runs: a method<int>
 	volatile u32 cores_generation: 0;       # one more for each Run
 	volatile u32 cores_done[8];             # the generation each core has finished
+	volatile u32 cores_join: 0;             # once SharePrograms has run: where the others go to run programs
+	u32 cores_timer_count: 0;               # the local APIC timer's counts in a millisecond
+	u32 cores_query: 0;
 	bln started: false;
+	bln sharing: false;
 
 	# start the other cores; how many cores there are in all (1 if there are no others)
 	[Start]
@@ -57,8 +61,12 @@ phi.Cores:Kernel
 	[end: count]
 
 	# run work on every core: work: 0 on this one, and work: n on core n; back once every
-	# core has finished
+	# core has finished. Once the cores share the programs, only work: 0 runs (here).
 	[Run: method<int> work: 0;]
+		if sharing
+			call work: 0;
+			return;
+		;;
 		cores_work is work;
 		cores_generation++;
 		if count > 1
@@ -71,6 +79,69 @@ phi.Cores:Kernel
 			;;
 		;;
 	[end]
+
+	# from now on the other cores run programs too (proc.process's): each takes up the
+	# next one that's ready, as this one does, with a timer of its own taking the CPU back
+	# every millisecond. The kernel's own code still runs here only.
+	[SharePrograms]
+		if sharing or count is 1 return;
+		sharing is true;
+		call OS.StartMultitasking;
+		# how fast the local APIC timer counts: against 20 ticks of the timer OS.GetTicks counts
+		call CoresTimerStart;
+		call OS.Sleep: 20;
+		call CoresTimerStop;
+		cores_timer_count is cores_timer_count / 20;
+		if cores_timer_count is 0
+			cores_timer_count is 1;
+		;;
+		call CoresShare;
+	[end]
+
+	# how many times core n has taken up a program since the cores shared them
+	[Ran: int core: 0;]
+		if sharing is false or core < 0 or core >= count return 0;
+		cores_query is core;
+		u32 runs: 0;
+		call runs is CoresRuns;
+	[end: runs]
+}
+
+# the local APIC timer counting down from the top, divided by 16, without interrupting
+asm.CoresTimerStart
+{
+	mov dword [{APIC} + 0x3E0], 3
+	mov dword [{APIC} + 0x320], 0x10000 | 0xF1  ; masked, one shot
+	mov dword [{APIC} + 0x380], 0xFFFFFFFF
+	ret
+}
+
+# how far it counted (into cores_timer_count), and stopped
+asm.CoresTimerStop
+{
+	mov eax, 0xFFFFFFFF
+	sub eax, [{APIC} + 0x390]
+	mov [{cores_timer_count}], eax
+	mov dword [{APIC} + 0x380], 0
+	ret
+}
+
+# the scheduler ready for the other cores, and them woken to come to it
+asm.CoresShare
+{
+	mov eax, [{cores_timer_count}]
+	call phi_share_cores
+	mov dword [{cores_join}], phi_core_join
+	mov dword [{APIC} + 0x300], 0x000C40F0      ; wake them: they look at cores_join
+	ret
+}
+
+# eax = how many times core cores_query has taken up a program
+asm.CoresRuns
+{
+	mov eax, [{cores_query}]
+	mov eax, [phi_core_runs + eax * 4]
+	ret
 }
 
 # the start routine in place at START, with what the other cores need from this one (its
@@ -142,6 +213,9 @@ cores_protected:
 	imul esp, eax, {STACK_SIZE}
 	add esp, [{cores_stacks}]
 	mov dword [{APIC} + 0xF0], 0x1FF            ; its local APIC on, or the wake interrupt can't reach it
+	mov ecx, [{APIC} + 0x20]
+	shr ecx, 24
+	mov [phi_core_of_apic + ecx], bl            ; its number, by its APIC ID (the scheduler looks it up)
 	fninit
 	mov eax, cores_main
 	jmp eax                                     ; (a jump to an address: this code was moved)
@@ -162,6 +236,11 @@ cores_start_end:
 ; work: its number, and its generation marked done. ebx holds its number.
 cores_main:
 	cli
+	mov eax, [{cores_join}]                     ; the cores share the programs now
+	test eax, eax
+	jz .no_programs
+	jmp eax
+.no_programs:
 	mov eax, [{cores_generation}]
 	cmp eax, [{cores_done} + ebx * 4]
 	jne .work

@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
+; provides: phi_interrupts_init phi_cores_running phi_core_of_apic phi_core_tick phi_switched phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
 ; requires: phi_panic
 ; init: phi_interrupts_init
 ;
@@ -121,6 +121,14 @@ phi_isr_default:
 
 ; 1 once proc.cores has started other cores (so a log takes a lock: log_lock.asm)
 phi_cores_running: dd 0
+; each core's number (proc.cores numbers them as they start), by its local APIC ID
+phi_core_of_apic: times 256 db 0
+; the timer of a core other than the first (vector 0xF1): eax = the saved state -> eax =
+; the state to resume (tasks.asm sets it once the cores share the programs)
+phi_core_tick: dd 0
+; run on the new task's stack right after a switch (tasks.asm: the task left can go to
+; another core only now that nothing here uses its stack)
+phi_switched: dd 0
 
 phi_interrupt_common:
     pushad
@@ -139,6 +147,8 @@ phi_interrupt_common:
     jb .exception
     cmp eax, 0x80
     je .syscall
+    cmp eax, 0xF1
+    je .core_timer
     cmp eax, IRQ_BASE + 16
     jae .schedule           ; vector 48: a task gives up the CPU (OS_Yield)
 
@@ -169,6 +179,7 @@ phi_interrupt_common:
     mov eax, esp
     call ebx                ; eax = the saved state of the task to resume
     mov esp, eax
+    call .switched
 .return:
     pop gs
     pop fs
@@ -177,6 +188,25 @@ phi_interrupt_common:
     popad
     add esp, 8              ; vector and error code
     iretd
+
+.switched:
+    mov ebx, [phi_switched]
+    test ebx, ebx
+    jz .not_hooked
+    call ebx
+.not_hooked:
+    ret
+
+.core_timer:
+    mov dword [0xFEE000B0], 0       ; the local APIC: handled
+    mov ebx, [phi_core_tick]
+    test ebx, ebx
+    jz .return
+    mov eax, esp
+    call ebx                        ; eax = the saved state to resume
+    mov esp, eax
+    call .switched
+    jmp .return
 
 .syscall:
     mov ebx, [phi_syscall_hook]

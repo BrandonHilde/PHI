@@ -1,0 +1,14 @@
+# kernel32_cores_programs' busy program: a long sum, worked out from its command line
+# (a number), given back as its exit code. It prints nothing, so the output doesn't
+# depend on which core ran it when.
+use user.text;
+
+phi.Busy:Program
+{
+	int seed: (Text.ToNumber: (OS.Arguments));
+	u32 sum: seed;
+	while u32 i: 0; i < 3000000; i++;
+		sum is sum * 31 + i;
+	;;
+	exit (sum & 0x7FFF) as int;
+}
