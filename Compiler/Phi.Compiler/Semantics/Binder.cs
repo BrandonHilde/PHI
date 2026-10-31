@@ -950,7 +950,7 @@ namespace Phi.Compiler.Semantics
                     Error(f.TextSize.Span, $"only text takes a size after ':'; for an array write {f.Name}[...]");
                     continue;
                 }
-                if (type.IsString && !f.IsNew)
+                if (type.IsString && !f.IsNew && !(f.Unsized && f.TextSize == null))
                 {
                     if (f.Count != null && f.TextSize != null)
                     {
@@ -1002,12 +1002,12 @@ namespace Phi.Compiler.Semantics
                         Error(f.Type.Span, $"{(type.Struct.IsInterface ? $"a {type} holds an object" : $"{type} owns objects")}, so the elements are new: new {type} {f.Name}[];");
                         continue;
                     }
-                    else if (type.Kind == TypeKind.Str || type.IsChar)
+                    else if (type.IsChar || type.Kind == TypeKind.Str && f.TextSize != null)
                     {
-                        Error(f.Span, $"a str array without a size can't be a field yet; give it one: str {f.Name}[8]: [40];");
+                        Error(f.Span, $"an array of texts without a size holds texts that grow: str {f.Name}[];");
                         continue;
                     }
-                    else element = type;
+                    else element = type.Kind == TypeKind.Str ? PhiType.Str : type;   // str names[]: each element grows too
                     if (element.IsStruct && !inProgress.Contains(element.Struct!)) Layout(element.Struct!, inProgress);
                     PhiType growing = element.OpenOf();
                     s.Fields.Add(new FieldSymbol { Name = f.Name, Type = growing, Offset = offset });

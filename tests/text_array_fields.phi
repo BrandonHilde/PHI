@@ -1,0 +1,77 @@
+# A struct's str array without a size: str names[]; grows, and each of its texts grows
+# too, as a str array variable without a size does. The struct owns them: copying it
+# copies the texts, comparing compares them, and they're freed with it.
+struct.Bag
+{
+	int id;
+	str names[];
+}
+
+phi.TextArrayFields:Kernel
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Run]
+		new Bag bag;
+		bag.names++ 'sword' 'shield';
+		bag.names++;
+		bag.names:2 is 'a potion of very long names that has to grow';
+		bag.names:0++ ' of fire';
+		debug bag.names.len ': ' bag.names:0 ', ' bag.names:1 ', ' bag.names:2 '\n';
+		debug 'lengths ' bag.names:0.len ' ' bag.names:2.len '\n';
+
+		str item: '';
+		while int i: 0; i < 20; i++;
+			item is 'item ' i;
+			bag.names++ item;
+		;;
+		debug 'now ' bag.names.len ', the last: ' bag.names:22 '\n';
+
+		call Shout: bag.names:1;
+		debug 'shouted: ' bag.names:1 '\n';
+		call Mark: bag.names;
+		debug 'marked: ' bag.names:0 ' ' bag.names:3 '\n';
+
+		# a copy has its own texts
+		new Bag copy: bag;
+		copy.names:0 is 'changed';
+		debug 'bag ' bag.names:0 ', copy ' copy.names:0 ', same: ' (bag is copy) '\n';
+		copy.names:0 is bag.names:0;
+		debug 'same again: ' (bag is copy) '\n';
+
+		# shorter, then longer again: dropped texts go back, new ones start empty
+		bag.names.len is 2;
+		bag.names++;
+		debug 'after shrinking: ' bag.names.len ' [' bag.names:2 ']\n';
+
+		# a whole array copied in
+		str few[atmost 3];
+		few++ 'a' 'b';
+		copy.names is few;
+		debug 'copied in: ' copy.names.len ' ' copy.names:1 '\n';
+		copy.names is bag.names;
+		debug 'and from a field: ' copy.names.len ' ' copy.names:0 '\n';
+
+		bag is copy;
+		debug 'copied over: ' bag.names.len ' ' (bag is copy) ' ' bag.names:2 '.' '\n';
+
+		int letters: 0;
+		while each name in copy.names
+			letters++ name.len;
+		;;
+		debug 'letters: ' letters '\n';
+	[end]
+
+	[Shout: str target;]
+		target++ '!';
+	[end]
+
+	[Mark: str rows[];]
+		while int i: 0; i < rows.len; i++;
+			rows:i is rows:i '?';
+		;;
+	[end]
+}

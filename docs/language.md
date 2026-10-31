@@ -353,8 +353,8 @@ objects), grows in the same way, and the struct owns it, so the struct is one PH
 (declared with `new`). Copying the struct copies its arrays, comparing compares them, and
 they're freed with it. Its elements are numbers, structs, or objects. `++`, indexes, `.len`,
 `.len is`, `while each`, copying a whole array in (`b.scores is other;`, which grows it to
-fit) and passing it to a method all work, and `board.scores.max` is its room. Not yet: `str`
-elements.
+fit) and passing it to a method all work, and `board.scores.max` is its room. A `str` one,
+`str names[];`, is like a `str` array variable without a size: each of its texts grows too.
 
 ```phi
 struct.Board

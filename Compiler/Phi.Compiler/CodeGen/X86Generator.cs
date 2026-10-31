@@ -1175,8 +1175,17 @@ namespace Phi.Compiler.CodeGen
                     Emit("push eax                ; the new count");
                     EmitViewAddress(shrink.Array);
                     Emit("mov edx, eax");
-                    Emit("pop eax");
+                    Emit("mov eax, [esp]");
                     EmitIndexCheck(shrink, "jbe", "dword [edx + 4]");
+                    if (shrink.Array.Type.TextTable)
+                    {
+                        // the dropped elements' texts go back, and their slots are empty again
+                        string view = ViewCopy(shrink.Array);
+                        EmitFreeTexts(view, "it", "dword [esp]", empty: true);
+                    }
+                    EmitViewAddress(shrink.Array);
+                    Emit("mov edx, eax");
+                    Emit("pop eax");
                     Emit("mov [edx + 4], eax");
                     if (shrink.Array.Type.IsObjectArray) EmitFreeElements(shrink.Array, -1);   // the dropped ones
                     break;
@@ -1892,6 +1901,28 @@ namespace Phi.Compiler.CodeGen
                     Emit("push eax");
                     return;
 
+                case IndexExpr { Target.Type: { Open: true, TextTable: true } } fieldText when Binder.IsFieldView(fieldText.Target):
+                {
+                    // an element of a struct's str array without a size: its text, and its room
+                    // .max slots on
+                    string slots = AllocTemp(16);
+                    string rooms = RoomsOf(fieldText.Target);
+                    EmitPlaceAddress(value);
+                    Emit($"mov [{slots} + 8], eax   ; the element's text slot");
+                    Emit("mov esi, eax");
+                    Emit("mov ecx, [esi]");
+                    Emit($"mov [{slots}], ecx");
+                    Emit($"mov ecx, {rooms}");
+                    Emit("lea esi, [esi + ecx*4]");
+                    Emit("mov ecx, [esi]");
+                    Emit($"mov [{slots} + 4], ecx");
+                    Emit($"mov [{slots} + 12], esi   ; and its room");
+                    LoadAddress("eax", slots);
+                    Emit("push eax");
+                    writeBacks.Add(slots);
+                    return;
+                }
+
                 case IndexExpr { Target: NameExpr { Symbol: VariableSymbol array } } when array.GrowingElements || array.Type is { Open: true, TextTable: true }:
                 {
                     string slots = AllocTemp(16);
@@ -2567,7 +2598,8 @@ namespace Phi.Compiler.CodeGen
                 Emit("mov edx, [eax + 4]");
                 Emit("inc edx");
                 Emit($"mov ecx, {size}");
-                EmitArrayGrowCall();
+                if (t.TextTable) EmitTextArrayGrowCall();
+                else EmitArrayGrowCall();
                 EmitViewAddress(append.Target);
                 Emit("mov edx, eax");
                 Emit("mov eax, [edx + 4]");
@@ -2691,7 +2723,9 @@ namespace Phi.Compiler.CodeGen
                     Emit("push ebx                ; the element's slot");
                     // its room: after the table (a str array without a most: .max slots on)
                     if (t.Open && append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } table })
-                        EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, view: table.Label);
+                        EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: $"dword [{table.Label} + 8]");
+                    else if (Binder.IsFieldView(append.Target))
+                        EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: RoomsOf(append.Target));
                     else EmitGrowStoreAt(4 * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
                 }
             }
@@ -2985,7 +3019,18 @@ namespace Phi.Compiler.CodeGen
                 Emit("push eax                ; the value");
                 EmitPlaceAddress(target);
                 Emit("push eax                ; the element's slot");
-                EmitGrowStoreAt(0, sourceIsString, append, unsigned, view.Label);
+                EmitGrowStoreAt(0, sourceIsString, append, unsigned, $"dword [{view.Label} + 8]");
+                return;
+            }
+
+            if (target is IndexExpr { Target.Type: { Open: true, TextTable: true } } fieldText && Binder.IsFieldView(fieldText.Target))
+            {
+                // an element of a struct's str array without a size
+                Emit("push eax                ; the value");
+                string rooms = RoomsOf(fieldText.Target);
+                EmitPlaceAddress(target);
+                Emit("push eax                ; the element's slot");
+                EmitGrowStoreAt(0, sourceIsString, append, unsigned, rooms);
                 return;
             }
 
@@ -3359,6 +3404,29 @@ namespace Phi.Compiler.CodeGen
             if (!p.Computed) LoadAddress("eax", p.Label!, p.Offset);
             else if (bits32 || !p.Linear) Emit($"lea eax, {Operand(p)}");
             else Emit($"lea eax, [ebx{offset}]");   // (Operand would reach it through fs)
+        }
+
+        /// <summary>An operand holding a struct's str array field's room (.max), read now: for EmitGrowStoreAt.</summary>
+        string RoomsOf(Expr array)
+        {
+            string room = AllocTemp(4);
+            EmitViewAddress(array);
+            Emit("mov eax, [eax + 8]");
+            Emit($"mov [{room}], eax");
+            return $"dword [{room}]";
+        }
+
+        /// <summary>A copy of an array field's view (where, how many, room), for code that reads it by a label.</summary>
+        string ViewCopy(Expr array)
+        {
+            string view = AllocTemp(12);
+            EmitViewAddress(array);
+            for (int i = 0; i < 12; i += 4)
+            {
+                Emit($"mov ecx, [eax + {i}]");
+                Emit($"mov [{view} + {i}], ecx");
+            }
+            return view;
         }
 
         /// <summary>
@@ -4225,13 +4293,141 @@ namespace Phi.Compiler.CodeGen
         string ArrayRoutine(string kind, PhiType element)
         {
             usesObjects = true;
-            string label = $"phi_array_{kind}_{(element.IsObject ? element.Struct!.Name : $"b{element.ElementSize}")}";
+            string label = $"phi_array_{kind}_{(element.IsObject ? element.Struct!.Name : element.Kind == TypeKind.Str ? "text" : $"b{element.ElementSize}")}";
             arrayRoutines.TryAdd(label, (kind, element));
             return label;
         }
 
+        /// <summary>
+        /// The routines for a struct's str array without a size (eax = where it's kept, and edx the
+        /// copy's or the other's): its texts after the room, then each one's room. A text in the
+        /// program's data (the InData bit: an empty one) is never freed or copied.
+        /// </summary>
+        void EmitTextArrayRoutine(string kind)
+        {
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            Emit("push eax                ; [ebp - 4] the array");
+            Emit("push edx                ; [ebp - 8] the copy, or the other");
+            Emit("push dword 0            ; [ebp - 12] which element");
+            switch (kind)
+            {
+                case "free":
+                    Label(".next");
+                    Emit("mov ecx, [ebp - 12]");
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("cmp ecx, [eax + 4]");
+                    Emit("jae .freed");
+                    Emit("mov edx, [eax + 8]");
+                    Emit("mov eax, [eax]");
+                    Emit("lea edx, [eax + edx * 4]   ; the rooms");
+                    Emit("inc dword [ebp - 12]");
+                    Emit($"test dword [edx + ecx * 4], {InData}");
+                    Emit("jnz .next");
+                    Emit("push dword [eax + ecx * 4]");
+                    Emit($"call {HeapMethodLabel("Heap.Free")}");
+                    Emit("add esp, 4");
+                    Emit("jmp .next");
+                    Label(".freed");
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("push dword [eax]        ; the texts and rooms (freeing 0 does nothing)");
+                    Emit($"call {HeapMethodLabel("Heap.Free")}");
+                    Emit("add esp, 4");
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("mov dword [eax], 0");
+                    Emit("mov dword [eax + 4], 0");
+                    Emit("mov dword [eax + 8], 0");
+                    break;
+
+                case "clone":
+                    Need("phi_out_of_memory");
+                    Need("phi_strlen");
+                    Emit("mov ecx, [eax + 4]");
+                    Emit("mov [edx + 4], ecx");
+                    Emit("mov ecx, [eax + 8]");
+                    Emit("mov [edx + 8], ecx");
+                    Emit("mov dword [edx], 0");
+                    Emit("test ecx, ecx");
+                    Emit("jz .done                ; no room: nothing to copy");
+                    Emit("shl ecx, 3              ; a text and a room for each");
+                    Emit("push ecx");
+                    Emit($"call {HeapMethodLabel("Heap.Alloc")}");
+                    Emit("add esp, 4");
+                    Emit("test eax, eax");
+                    Emit("jz phi_out_of_memory");
+                    Emit("mov edx, [ebp - 8]");
+                    Emit("mov [edx], eax");
+                    // every slot up to the room: one in the data stays as it is, one on the heap is copied
+                    Label(".next");
+                    Emit("mov ecx, [ebp - 12]");
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("cmp ecx, [eax + 8]");
+                    Emit("jae .done");
+                    Emit("mov edx, [eax + 8]");
+                    Emit("mov eax, [eax]");
+                    Emit("lea edx, [eax + edx * 4]   ; the rooms");
+                    Emit("mov eax, [eax + ecx * 4]   ; the text");
+                    Emit("mov edx, [edx + ecx * 4]   ; its room");
+                    Emit($"test edx, {InData}");
+                    Emit("jnz .keep");
+                    Emit($"call {ObjectRoutine("clone", StructSymbol.Text)}");
+                    Emit("push eax");
+                    Emit("mov esi, eax");
+                    Emit("call phi_strlen");
+                    Emit("lea edx, [eax + 1]      ; the copy's room: its text and zero");
+                    Emit("pop eax");
+                    Label(".keep");
+                    Emit("mov esi, [ebp - 8]");
+                    Emit("mov ecx, [esi + 8]");
+                    Emit("mov esi, [esi]");
+                    Emit("lea ecx, [esi + ecx * 4]");
+                    Emit("mov ebx, [ebp - 12]");
+                    Emit("mov [esi + ebx * 4], eax");
+                    Emit("mov [ecx + ebx * 4], edx");
+                    Emit("inc dword [ebp - 12]");
+                    Emit("jmp .next");
+                    Label(".done");
+                    break;
+
+                case "equal":
+                    Emit("mov ecx, [eax + 4]");
+                    Emit("cmp ecx, [edx + 4]");
+                    Emit("jne .different          ; not as many");
+                    Label(".next");
+                    Emit("mov ecx, [ebp - 12]");
+                    Emit("mov eax, [ebp - 4]");
+                    Emit("cmp ecx, [eax + 4]");
+                    Emit("jae .same");
+                    Emit("mov eax, [eax]");
+                    Emit("mov eax, [eax + ecx * 4]");
+                    Emit("mov edx, [ebp - 8]");
+                    Emit("mov edx, [edx]");
+                    Emit("mov edx, [edx + ecx * 4]");
+                    Emit($"call {ObjectRoutine("equal", StructSymbol.Text)}");
+                    Emit("test eax, eax");
+                    Emit("jz .different");
+                    Emit("inc dword [ebp - 12]");
+                    Emit("jmp .next");
+                    Label(".same");
+                    Emit("mov eax, 1");
+                    Emit("jmp .done");
+                    Label(".different");
+                    Emit("xor eax, eax");
+                    Label(".done");
+                    break;
+            }
+            Emit("mov esp, ebp");
+            Emit("pop ebp");
+            Emit("ret");
+        }
+
         void EmitArrayRoutine(string kind, PhiType element)
         {
+            if (element.Kind == TypeKind.Str)
+            {
+                EmitTextArrayRoutine(kind);
+                return;
+            }
             int size = element.ElementSize;
             bool objects = element.IsObject;
             Emit("push ebp");
@@ -4468,6 +4664,28 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
 
+            if (element.Kind == TypeKind.Str && Binder.IsFieldView(copy.Target))
+            {
+                // into a struct's str array without a size: each text grows to fit
+                EmitArrayCount(copy.Source);
+                EmitCopyFits(copy);
+                string rooms = RoomsOf(copy.Target);
+                EmitArrayCount(copy.Target);
+                EmitEachElement(() =>
+                {
+                    EmitPlaceAddress(copy.Source);
+                    Emit("mov ecx, [esp]");
+                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit("push edx                ; its text");
+                    EmitPlaceAddress(copy.Target);
+                    Emit("mov ecx, [esp + 4]");
+                    Emit("lea eax, [eax + ecx * 4]");
+                    Emit("push eax                ; the element's slot");
+                    EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, rooms: rooms);
+                });
+                return;
+            }
+
             if (element.Kind == TypeKind.Str)
             {
                 var array = (VariableSymbol)((NameExpr)copy.Target).Symbol!;
@@ -4494,7 +4712,7 @@ namespace Phi.Compiler.CodeGen
                     if (array.GrowingArray)
                     {
                         Emit("push eax                ; the element's slot");
-                        EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, view: array.Label);
+                        EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, rooms: $"dword [{array.Label} + 8]");
                     }
                     else if (array.GrowingElements)
                     {
@@ -4566,13 +4784,16 @@ namespace Phi.Compiler.CodeGen
             }
             if (Binder.IsFieldView(copy.Target))
             {
-                // a struct's array without a size grows to fit too
+                // a struct's array without a size grows to fit too (a str one first gives back
+                // the texts past the source's count)
                 ObjectLine(copy);
                 Emit("push eax                ; how many it gets");
+                if (t.TextTable) EmitFreeTexts(ViewCopy(copy.Target), "it", "dword [esp]", empty: true);
                 EmitViewAddress(copy.Target);
                 Emit("mov edx, [esp]");
                 Emit($"mov ecx, {t.Element.ElementSize}");
-                EmitArrayGrowCall();
+                if (t.TextTable) EmitTextArrayGrowCall();
+                else EmitArrayGrowCall();
                 Emit("mov eax, [esp]");
                 if (t.IsObjectArray) EmitFreeElements(copy.Target, -1);
                 EmitViewAddress(copy.Target);
@@ -4628,17 +4849,20 @@ namespace Phi.Compiler.CodeGen
         /// has: each one on the heap goes back (one still empty, in the program's data, stays),
         /// and with `empty` its slot is empty again, as a new one starts.
         /// </summary>
-        void EmitFreeTexts(VariableSymbol v, string from, bool empty)
+        void EmitFreeTexts(VariableSymbol v, string from, bool empty) => EmitFreeTexts(v.Label, v.Name, from, empty);
+
+        /// <summary>The same for the view at label (an array's own, or a copy of a field's).</summary>
+        void EmitFreeTexts(string label, string name, string from, bool empty)
         {
             string next = NewLabel("freetext"), kept = NewLabel("keptext"), done = NewLabel("freedtexts");
             Emit($"mov eax, {from}");
             Emit("push eax                ; which element");
             Label(next);
             Emit("mov eax, [esp]");
-            Emit($"cmp eax, [{v.Label} + 4]   ; how many {v.Name} has");
+            Emit($"cmp eax, [{label} + 4]   ; how many {name} has");
             Emit($"jae {done}");
-            Emit($"mov ecx, [{v.Label}]");
-            Emit($"mov edx, [{v.Label} + 8]");
+            Emit($"mov ecx, [{label}]");
+            Emit($"mov edx, [{label} + 8]");
             Emit("lea edx, [ecx + edx * 4]   ; the rooms, after the texts");
             Emit($"test dword [edx + eax * 4], {InData}");
             Emit($"jnz {kept}");
@@ -5190,7 +5414,7 @@ namespace Phi.Compiler.CodeGen
         /// The value is on the stack, and above it the slot that holds the text's address; the
         /// room is roomOffset bytes after the slot. Writes the value in, making room first.
         /// </summary>
-        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? view = null)
+        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? rooms = null)
         {
             if (sourceIsString)
             {
@@ -5217,10 +5441,10 @@ namespace Phi.Compiler.CodeGen
             }
             Emit("mov ecx, eax");
             Emit("mov edi, [esp]");
-            if (view != null)
+            if (rooms != null)
             {
-                // an element of a str rows[] parameter: its room is the caller's .max slots on
-                Emit($"mov ebx, [{view} + 8]");
+                // an element of a str array without a most: its room is .max slots on
+                Emit($"mov ebx, {rooms}");
                 Emit("lea ebx, [edi + ebx*4]");
             }
             else Emit($"lea ebx, [edi + {roomOffset}]");

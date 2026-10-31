@@ -6,7 +6,6 @@ interface.Shape
 
 struct.Bad
 {
-	str names[];
 	new int counts[];
 	Shape shapes[];
 }

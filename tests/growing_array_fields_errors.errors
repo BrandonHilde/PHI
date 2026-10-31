@@ -1,5 +1,4 @@
-9:2: error: a str array in a struct needs a size for each text: str names[8]: [40];
-10:6: error: new is for structs; for numbers, leave out new: int counts[];
-11:2: error: a Shape holds an object, so the elements are new: new Shape shapes[];
-21:2: error: Good owns objects (new fields, or arrays without a size), so PHI has to manage it: declare it with new, like new Good plain;
-26:20: error: the room in an array field without a size is read by name (like board.scores.max), not through an element or a call; .len works on either
+9:6: error: new is for structs; for numbers, leave out new: int counts[];
+10:2: error: a Shape holds an object, so the elements are new: new Shape shapes[];
+20:2: error: Good owns objects (new fields, or arrays without a size), so PHI has to manage it: declare it with new, like new Good plain;
+25:20: error: the room in an array field without a size is read by name (like board.scores.max), not through an element or a call; .len works on either

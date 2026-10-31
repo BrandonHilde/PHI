@@ -553,7 +553,7 @@ these were added:
 - [x] Arrays that grow with no most: `int scores[];`, objects too
 - [x] Struct fields that are arrays without a size (`int scores[];`, `new Shape shapes[];`):
   the struct owns them (copied, compared and freed with it), and whole arrays copy into
-  them. Not yet: `str` elements.
+  them; `str names[];` too, each text growing. Test: `text_array_fields`
 - [x] Gaps filled (2026-10-30): methods called through a method value or an interface return
   a `str` or a new object (`method<int: str>`, `method<: Point>`); `list++ (Make: 1);` takes a
   call's new object straight into an array of objects (and a plain struct array copies an
