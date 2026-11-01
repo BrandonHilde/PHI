@@ -1,0 +1,58 @@
+# Arrays that grow in a program: of numbers, pointers and structs, added to past their
+# room (their elements move), cut with .len is, passed as int numbers[], and a method's
+# own let go when it ends. A program, so it runs on Linux (32 and 64-bit) and Windows.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.GrowingArraysProgram:Program
+{
+	int scores[];
+	log scores.len ' ' scores.max '\n';
+	while int i: 0; i < 100; i++;
+		scores++ i * i;
+	;;
+	log scores.len ' ' (scores.max >= 100) ' ' scores:0 ' ' scores:99 ' ' (Sum: scores) '\n';
+	scores.len is 3;
+	scores++ 7;
+	log scores.len ' ' scores:2 ' ' scores:3 '\n';
+	Point points[];
+	points++;
+	points:0.y is 4;
+	Point p;
+	p.x is 5;
+	while int i: 0; i < 20; i++;
+		points++ p;
+	;;
+	log points.len ' ' points:0.y ' ' points:20.x '\n';
+	ptr<u8> texts[];
+	texts++ 'one' 'two';
+	while each t in texts
+		log t ' ';
+	;;
+	u8 bytes[];
+	while int i: 0; i < 300; i++;
+		bytes++ i;
+	;;
+	log bytes.len ' ' bytes:299 '\n';
+	u32 before: Heap.used_bytes;
+	call Build;
+	log 'heap back: ' (Heap.used_bytes is before) '\n';
+
+	[Sum: int numbers[];]
+		int total: 0;
+		while each n in numbers
+			total++ n;
+		;;
+	[end: total]
+
+	[Build]
+		int mine[];
+		while int i: 0; i < 50; i++;
+			mine++ i;
+		;;
+		log 'built ' mine.len ' ' (Sum: mine) '\n';
+	[end]
+}

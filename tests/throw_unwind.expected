@@ -1,0 +1,7 @@
+outer done outer
+no error
+caught: round 1 failed in inner 1 (line 44)
+outer done outer
+no error
+index: index out of range on line 51 in throw_unwind.phi
+heap back: 1

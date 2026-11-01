@@ -1,0 +1,43 @@
+# Arrays of structs in a program: [atmost N] ones added to (a copy, or one of zeros) and
+# cut with .len is, while each over them (changing the elements where they are), a str
+# field and a pointer into the array, and a fixed one an element is copied into. A
+# program, so it runs on Linux (32 and 64-bit) and Windows.
+struct.Player
+{
+	int id;
+	str name: [8];
+	i16 x;
+	ptr<Player> friend;
+}
+
+phi.StructArrays:Program
+{
+	Player players[atmost 4];
+	Player one;
+	one.id is 1;
+	one.name is 'Ann';
+	one.x is -3;
+	players++ one;
+	players++;
+	players:1.id is 2;
+	players:1.name is 'Bob';
+	players:1.friend is addr players:0;
+	one.name is 'Cy';
+	one.id is 3;
+	players++ one one;
+	log players.len ' ' players.max '\n';
+	while each p in players
+		log p.id ' ' p.name ' ' p.x ' ' (p.friend is not 0) '\n';
+		p.x++ 10;
+	;;
+	log players:0.x ' ' players:1.friend.name '\n';
+	players.len is 1;
+	players++;
+	log players.len ' [' players:1.name '] ' players:1.id '\n';
+	Player fixed[2];
+	fixed:1 is players:0;
+	while each f in fixed
+		log f.id ' ';
+	;;
+	log '\n';
+}

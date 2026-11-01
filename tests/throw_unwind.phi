@@ -1,0 +1,53 @@
+# Errors caught in a program after passing methods that own things: objects, a new str
+# field, a str that grows and an array that grows are given back on the way out (by a
+# throw, and by an index error), so the heap is as it was. A program, so it runs on
+# Linux (32 and 64-bit) and Windows.
+struct.Point
+{
+	int x;
+	new str label;
+}
+
+phi.ThrowUnwind:Program
+{
+	u32 before: Heap.used_blocks;
+	while int round: 0; round < 3; round++;
+		if call Outer: round throws err
+			log 'caught: ' err.text ' (line ' err.line ')\n';
+		;;
+		else
+			log 'no error\n';
+		;;
+	;;
+	int numbers[4];
+	int i: 9;
+	if call Index: i throws err
+		log 'index: ' err.message '\n';
+	;;
+	log 'heap back: ' (Heap.used_blocks is before) '\n';
+
+	[Outer: int round;]
+		new Point p: 1;
+		p.label is 'outer';
+		str grown: '';
+		grown is 'some text that grows';
+		call Inner: round;
+		log 'outer done ' p.label '\n';
+	[end]
+
+	[Inner: int round;]
+		new Point q: 2;
+		q.label is 'inner ' round;
+		int scores[];
+		scores++ 1 2 3;
+		if round is 1
+			throw 'round ' round ' failed in ' q.label;
+		;;
+	[end]
+
+	[Index: int pos;]
+		new Point r: 3;
+		int small[2];
+		small:pos is 1;
+	[end]
+}

@@ -1,6 +1,7 @@
 # Arrays of strs in a program: filled from texts, one that grows to atmost 8, a str set
-# and added to by index, .len and .max, while each over them, and an array of empty strs
-# (str slots[3]) whose texts start empty. A program, so it runs on Linux (32 and 64-bit).
+# and added to by index, .len and .max, while each over them, an element passed as the
+# caller's str, and an array of empty strs (str slots[3]) whose texts start empty. A
+# program, so it runs on Linux (32 and 64-bit) and Windows.
 phi.StrArrays:Program
 {
 	str days: 'Mon' 'Tue' 'Wed';
@@ -18,6 +19,11 @@ phi.StrArrays:Program
 		log '[' n ']';
 	;;
 	log '\n';
+
+	# an element passed as the caller's str: it grows there, and keeps what it became
+	call Sign: names:1;
+	call Sign: days:0;
+	log names:1 ' ' names:1.len ' ' days:0 '\n';
 	call Local;
 
 	[Local]
@@ -28,5 +34,9 @@ phi.StrArrays:Program
 			log s.len ' ';
 		;;
 		log '\n';
+	[end]
+
+	[Sign: str text;]
+		text++ ' signed';
 	[end]
 }

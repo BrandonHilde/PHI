@@ -1673,15 +1673,42 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   and passing one on work. Test `array_views` (new); 34 tests run as 64-bit programs.
 - [x] (a, sixth part) arrays of strs (`str days: 'Mon' 'Tue';`, `str names[atmost 8];`,
   `str slots[3];`): their texts' addresses and rooms are 8 bytes each in 64-bit code, and
-  indexes, `++`, `.len`, `.max`, `while each` and `is` work. Two fixes on the way, in 32-bit
+  indexes, `++`, `.len`, `.max`, `while each`, `is` and passing an element as the caller's
+  str (a copy of its slot, written back after the call) work. Two fixes on the way, in 32-bit
   code too: an array of strs with no size for its texts (`str slots[3];`) cleared its own
   table of addresses at the start instead of the texts they point to, and a program with
   one (`str names[atmost 8];`) didn't get the heap its texts grow on. Test `str_arrays`
   (new) on all three systems; 41 tests run as 64-bit programs.
-- [ ] (a, the rest) str fields, arrays of structs as parameters, arrays that
-  grow, objects, 64-bit numbers, floating point, method values, interfaces, catching
-  errors, `ask`, `x64` versions of the rest of the library's blocks, the rest of the system
-  calls: until every program test runs as a 64-bit Linux program too
+- [x] (a, seventh part) str fields kept in the struct (`str name: [8];`, `chr home[atmost
+  12];`): set, built, compared, indexed, `.len`, in arrays of structs and through pointers,
+  and passed as text or as the caller's str. Test `str_fields` (new) on all three systems;
+  42 tests run as 64-bit programs.
+- [x] (a, eighth part) copying and comparing structs (`b is a`, `if b is a`), objects
+  (`new Point a: 1 2;`, copies, comparing, `takes`, `is empty`, methods that borrow them
+  and give new ones, objects in objects: lists and trees), new str fields (`new str bio;`),
+  and struct methods. The routines each struct's objects get (free, clone, assign, set,
+  renew, equal) keep their frames in 8-byte slots in 64-bit code (`Pushed`), and
+  `lib/x86_64_linux/out_of_memory.asm` is new. Tests `struct_copy` and `objects_program`
+  (new) on all three systems; 44 tests run as 64-bit programs, and 14 of the kernel tests
+  made into programs (the crypto ones, the objects ones, `synth`, ...) give the same output
+  as 32-bit and 64-bit programs.
+- [x] (a, ninth part) arrays of structs (fixed and `[atmost N]`: `++` a copy or zeros, `while
+  each` over them), and arrays that grow (`int scores[];`) of numbers, pointers and structs:
+  in 64-bit code one is laid out as a view is (its elements' address, how many, its room:
+  16 bytes), so `phi_array_grow`, indexes, `.len`, `.len is` and passing one as `int
+  numbers[]` read it alike. Tests `struct_arrays` and `growing_arrays_program` (new) on all
+  three systems; 48 tests run as 64-bit programs, and 15 kernel tests as programs.
+- [x] (a, tenth part) catching errors (`if call ... throws err`, `throw`, and the runtime's
+  errors): a catch's record and each method's are 8 bytes a field in 64-bit code, as
+  `lib/x86_64_linux/throw.asm` reads them, so a throw gives back what the methods it passes
+  own. The rest of the system calls (`OS.Arguments`, keys, files and folders, memory,
+  clearing the screen) in `lib/x86_64_linux/system.asm`, and `ask` (`read_line.asm`). Test
+  `throw_unwind` (new) on all three systems; every program test that runs on Linux runs as
+  a 64-bit Linux program too (51).
+- [ ] (a, the rest) what only kernel tests use so far, made to work in 64-bit programs:
+  arrays of structs as parameters, arrays of objects, str arrays that grow, copying whole
+  arrays, struct fields without a size, 64-bit numbers, floating point, method values,
+  interfaces, `x64` versions of the rest of the library's blocks
 
 #### Phase S11: Running for real
 

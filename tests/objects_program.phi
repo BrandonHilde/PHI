@@ -1,0 +1,196 @@
+# Objects in a program: new allocates and PHI frees, is copies values and compares them,
+# takes hands one over, methods borrow them and give new ones, struct methods, objects in
+# objects (a list, a tree), and new str fields. A program, so it runs on Linux (32 and
+# 64-bit) and Windows; that everything was freed is checked at the end.
+struct.Point
+{
+	i16 x;
+	i16 y;
+
+	[Add: Point other;]
+		x++ other.x;
+		y++ other.y;
+	[end]
+}
+
+struct.Shape
+{
+	u8 kind;
+	Point corner;              # stored inside the Shape
+	new Point size;            # a separate object the Shape owns
+	new Shape inner;
+
+	[Area]
+		int area: 0;
+		if size is not empty
+			area is size.x * size.y;
+		;;
+		if inner is not empty
+			area++ (inner.Area);
+		;;
+	[end: area]
+}
+
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+struct.Tree
+{
+	int value;
+	new Tree left;
+	new Tree right;
+}
+
+struct.Account
+{
+	str id: [4];
+	new str bio;
+	int score;
+}
+
+phi.ObjectsProgram:Program
+{
+	u32 blocksBefore: Heap.used_blocks;
+	call Basics;
+	call Methods;
+	call List;
+	call Shapes;
+	call Trees;
+	call Texts;
+	log 'all freed: ' (Heap.used_blocks is blocksBefore) '\n';
+
+	[Basics]
+		new Point a: 1 2;
+		new Point b;
+		log 'b starts at ' b.x ' ' b.y '\n';
+		b is a;
+		b.x is 9;
+		log 'a ' a.x ' ' a.y ', b ' b.x ' ' b.y ', same: ' (a is b) '\n';
+		b.x is 1;
+		log 'same now: ' (a is b) ' ' (a is not b) '\n';
+		call Move: a 3 -4;
+		new Point c: (Make: 7 8);
+		call b is Make: 5 6;
+		log 'moved ' a.x ' ' a.y ', made ' c.x ' ' c.y ', b ' b.x ' ' b.y '\n';
+		ptr<Point> p: addr c;
+		log 'through a pointer ' p:0.x '\n';
+		int total: 0;
+		while int i: 0; i < 1000; i++;
+			new Point t: i 1;
+			total++ t.x + t.y;
+		;;
+		log 'loop total ' total '\n';
+	[end]
+
+	[Move: Point p; i16 dx: 0; i16 dy: 0;]
+		p.x++ dx;
+		p.y++ dy;
+	[end]
+
+	[Make: i16 x: 0; i16 y: 0;]
+		new Point made: x y;
+	[end: made]
+
+	[Methods]
+		new Point origin: 10 20;
+		new Point p: 1 2;
+		call p.Add: origin;
+		call origin.Add: p;
+		log 'added ' p.x ' ' p.y ', origin ' origin.x ' ' origin.y '\n';
+	[end]
+
+	[List]
+		new Node first: 10;
+		new Node node: 20;
+		node.next takes first;
+		log 'first is empty after takes: ' (first is empty) '\n';
+		new Node head: 30;
+		head.next takes node;
+		int n: 0;
+		ptr<Node> walk: addr head;
+		while walk is not 0
+			log walk.value ' ';
+			n++;
+			if walk.next is empty
+				walk is 0;
+			;;
+			else
+				walk is addr walk.next;
+			;;
+		;;
+		new Node copy: head;
+		copy.next.value is 99;
+		log '\n' n ' nodes, copy ' copy.next.value ' ' head.next.value ', same: ' (copy is head) '\n';
+		head.next is empty;
+		log 'cut: ' (head.next is empty) '\n';
+	[end]
+
+	[Shapes]
+		new Point unit: 21 42;
+		new Shape s;
+		s.corner.x is 3;
+		s.size is unit;
+		new Shape part;
+		part.size is s.size;
+		part.size.x is 1;
+		s.inner takes part;
+		log 'area ' (s.Area) '\n';
+		new Shape t: s;
+		t.inner.inner is t;
+		log 'copy area ' (t.Area) ', original ' (s.Area) ', same: ' (s is t) '\n';
+		t.inner.inner is empty;
+		log 'same again: ' (s is t) '\n';
+	[end]
+
+	# left goes by recursion, right by the loop
+	[Trees]
+		new Tree root: 1;
+		root.left is root;
+		root.right is root;
+		root.left.right is root;
+		root.right.right is root;
+		new Tree copy: root;
+		log 'sum ' (Sum: root) ', copies equal: ' (copy is root) '\n';
+		copy.right.right.value is 0;
+		log 'after a change: ' (copy is root) ' sum ' (Sum: copy) '\n';
+	[end]
+
+	[Sum: Tree t;]
+		int total: 0;
+		if t is not empty
+			total is t.value;
+			if t.left is not empty
+				total++ (Sum: t.left);
+			;;
+			if t.right is not empty
+				total++ (Sum: t.right);
+			;;
+		;;
+	[end: total]
+
+	[Texts]
+		new Account a;
+		log '[' a.bio '] ' a.bio.len '\n';
+		a.id is 'A1';
+		a.bio is 'Ada wrote';
+		a.bio++ ' the first program, for the Analytical Engine';
+		a.score is 7;
+		log a.bio '\n' a.bio.len ' ' a.bio:0 a.bio:4 '\n';
+		call Sign: a.bio;
+		log a.bio.len ' ' (a.bio is 'Ada wrote the first program, for the Analytical Engine. -A') '\n';
+		new Account b: a;
+		b.bio is 'Bob';
+		log a.bio.len ' ' b.bio ' ' (a is b) '\n';
+		b is a;
+		log (a is b) ' ' b.id ' ' b.score '\n';
+		b.bio++ '!';
+		log (a is b) '\n';
+	[end]
+
+	[Sign: str target;]
+		target++ '. -A';
+	[end]
+}

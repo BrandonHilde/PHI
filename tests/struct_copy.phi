@@ -1,0 +1,30 @@
+# Structs of values copied and compared as a whole (b is a; if b is a): in variables, in
+# an array and through a pointer, with a str field and a pointer field. A program, so it
+# runs on Linux (32 and 64-bit) and Windows.
+struct.Point
+{
+	int x;
+	int y;
+	str tag: [6];
+	ptr<Point> link;
+}
+
+phi.StructCopy:Program
+{
+	Point a;
+	a.x is 3;
+	a.y is -4;
+	a.tag is 'first';
+	a.link is addr a;
+	Point b;
+	b is a;
+	log b.x ' ' b.y ' ' b.tag ' ' (b is a) ' ' (b.link is addr a) '\n';
+	b.y is 9;
+	log (b is a) ' ' (b is not a) '\n';
+	Point many[3];
+	many:2 is a;
+	ptr<Point> p: addr many:2;
+	log p.tag ' ' (many:2 is a) ' ' (p:0 is b) '\n';
+	b is p:0;
+	log b.y ' ' (b is a) '\n';
+}
