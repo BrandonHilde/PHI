@@ -167,7 +167,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.I16 or TypeKind.U16 => 2,
             TypeKind.Pointer or TypeKind.Method or TypeKind.Object => AddressSize,
             TypeKind.I32 or TypeKind.U32 => 4,
-            TypeKind.Str => Room > 0 ? Room : Room < 0 ? 8 : 4,  // arrays of strings hold pointers, texts kept in place, or text slots that grow
+            TypeKind.Str => Room > 0 ? Room : Room < 0 ? 2 * AddressSize : AddressSize,  // arrays of strings hold pointers, texts kept in place, or text slots that grow
             TypeKind.Struct => Struct!.Size,
             TypeKind.Enum => 4,
             TypeKind.Lock => 4,
@@ -178,13 +178,13 @@ namespace Phi.Compiler.Semantics
         };
 
         /// <summary>Bytes taken by the whole value: every element, and a filled array's count.</summary>
-        public int ByteSize => Open ? 12 : IsInlineText ? Room : IsHeapText ? 2 * AddressSize : ElementSize * Math.Max(Length, 1) + (Filled ? (TextTable ? 4 * Length : 0) + 4 : 0);
+        public int ByteSize => Open ? AddressSize + 8 : IsInlineText ? Room : IsHeapText ? 2 * AddressSize : ElementSize * Math.Max(Length, 1) + (Filled ? (TextTable ? AddressSize * Length : 0) + 4 : 0);
 
         /// <summary>
         /// Where a filled array keeps its count, from the start of the array. A filled array of
         /// texts that grow has each one's room after the table, then the count.
         /// </summary>
-        public int CountOffset => TextTable ? 8 * Length : ElementSize * Length;
+        public int CountOffset => TextTable ? 2 * AddressSize * Length : ElementSize * Length;
 
         /// <summary>An array of strs that each keep their text elsewhere: a table of their addresses.</summary>
         public bool TextTable => IsArray && Kind == TypeKind.Str && Room == 0;

@@ -128,9 +128,13 @@ namespace Phi.Compiler.CodeGen
             // a str of its own: with a size, one that grows, or the caller's (a str target; parameter);
             // not yet a str field or an array of them
             static bool Text(PhiType t) => t.IsString && !t.IsInlineText && !t.IsHeapText;
+            // an array of strs with a table of where each one's text is: a fixed one or an
+            // [atmost N] one (their texts grow, or have a size); not yet one that grows itself
+            static bool TextArray(PhiType t) => t.TextTable && !t.Open;
             static bool KeptVar(VariableSymbol v) =>
-                v.Ownership == Ownership.None && !v.GrowingArray && !v.GrowingElements
-                && (Text(v.Type) || Kept(v.Type) && !v.Grows && !v.TextRef
+                v.Ownership == Ownership.None && !v.GrowingArray
+                && (Text(v.Type) || TextArray(v.Type)
+                    || !v.GrowingElements && Kept(v.Type) && !v.Grows && !v.TextRef
                     || v.IsParameter && v.Type.Open && ValueArray(v.Type) && v.Type.Kind != TypeKind.Str);
             // what a method takes and gives: also an array of numbers or pointers, as a parameter
             static bool Given(PhiType t) => Value(t) || Text(t) || t.Open && ValueArray(t) && t.Kind != TypeKind.Str;
@@ -155,7 +159,7 @@ namespace Phi.Compiler.CodeGen
                     case NameExpr { Symbol: VariableSymbol v }:
                         return KeptVar(v);
                     case NameExpr { Symbol: FieldPathSymbol f }:
-                        return Kept(f.Type);
+                        return Kept(f.Type) || TextArray(f.Type) && KeptVar(f.Root);
                     case NameExpr { Symbol: PathSymbol p }:
                         // through pointers (objects are still to come)
                         return KeptVar(p.Root) && Kept(p.Type);
@@ -167,7 +171,8 @@ namespace Phi.Compiler.CodeGen
                             return true;
                         }
                         // an element of an array kept in place, or a character of a str variable
-                        return (ix.Target.Type.IsArray || Text(ix.Target.Type) && ix.Target is NameExpr) && Place(ix.Target);
+                        // or of an element of an array of strs
+                        return (ix.Target.Type.IsArray || Text(ix.Target.Type) && ix.Target is NameExpr or IndexExpr) && Place(ix.Target);
                     case MemberExpr { Call: null, Field: not null } m when Kept(m.Type):
                         if (Pointer(m.Target.Type))
                         {
@@ -277,13 +282,13 @@ namespace Phi.Compiler.CodeGen
                     case StringBuildStmt build when Text(build.Target.Type) && Place(build.Target):
                         foreach (Expr part in build.Parts) Expression(part);
                         return;
-                    case AppendStmt add when ValueArray(add.Target.Type) && Place(add.Target):
+                    case AppendStmt add when (ValueArray(add.Target.Type) || TextArray(add.Target.Type)) && Place(add.Target):
                         foreach (Expr value in add.Values) Expression(value);
                         return;
                     case SetLengthStmt length when Place(length.Array):
                         Expression(length.Value);
                         return;
-                    case WhileEachStmt each when ValueArray(each.Array.Type) && Place(each.Array):
+                    case WhileEachStmt each when (ValueArray(each.Array.Type) || TextArray(each.Array.Type)) && Place(each.Array):
                         foreach (Stmt t in each.Body) Statement(t);
                         return;
                     case FreeStmt { Owner: null, Releaser: not null } f:
@@ -1003,9 +1008,9 @@ namespace Phi.Compiler.CodeGen
                     {
                         // an element that moved to the heap (one still in its own buffer stays)
                         string kept = NewLabel("own");
-                        Emit($"test dword [{array.Label} + {4 * (array.Count + i)}], {InData}");
+                        Emit($"test dword [{array.Label} + {Word * (array.Count + i)}], {InData}");
                         Emit($"jnz {kept}");
-                        Emit($"push dword [{array.Label} + {4 * i}]   ; {array.Name}:{i}");
+                        Emit($"push dword [{array.Label} + {Word * i}]   ; {array.Name}:{i}");
                         Emit($"call {HeapMethodLabel("Heap.Free")}");
                         Emit($"add esp, {Slot}");
                         Label(kept);
@@ -1298,7 +1303,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     // a table of pointers, one per element, each to a buffer of its own (and then
                     // each one's room, when they grow, and a filled one's count)
-                    v.Label = Reserve((v.GrowingElements ? 8 : 4) * v.Count + (v.Type.Filled ? 4 : 0));
+                    v.Label = Reserve((v.GrowingElements ? 2 * Word : Word) * v.Count + (v.Type.Filled ? 4 : 0));
                     var elements = new List<string>();
                     for (int i = 0; i < v.Count; i++) elements.Add(Reserve(v.Capacity));
                     frame.StrArrays.Add((v, elements));
@@ -1344,10 +1349,11 @@ namespace Phi.Compiler.CodeGen
             foreach (var (array, elements) in frame.StrArrays)
                 for (int i = 0; i < elements.Count; i++)
                 {
+                    // (each element's address, then each one's room, a word apart in 64-bit code too)
                     Emit($"lea eax, [{elements[i]}]");
-                    Emit($"mov [{array.Label} + {4 * i}], eax");
+                    Emit($"mov {Q} [{array.Label} + {Word * i}], {R("eax")}");
                     if (array.GrowingElements)
-                        Emit($"mov dword [{array.Label} + {4 * (array.Count + i)}], {array.Capacity} | {InData}");
+                        Emit($"mov dword [{array.Label} + {Word * (array.Count + i)}], {array.Capacity} | {InData}");
                 }
 
             foreach (var (p, slot) in frame.StrParams)
@@ -1817,6 +1823,15 @@ namespace Phi.Compiler.CodeGen
                 {
                     Emit("xor eax, eax");
                     EmitStoreEax(NameOf(v));
+                }
+                else if (v.Type.TextTable && !v.GrowingArray)
+                {
+                    // each element's text starts empty: the table says where each one is, and that stays
+                    for (int i = 0; i < v.Count; i++)
+                    {
+                        Emit($"mov {R("eax")}, {Q} [{v.Label} + {Word * i}]");
+                        Emit("mov byte [eax], 0");
+                    }
                 }
                 else
                 {
@@ -2604,7 +2619,7 @@ namespace Phi.Compiler.CodeGen
                     Emit("mov esi, eax");
                     Emit("mov ecx, [esi]");
                     Emit($"mov [{slots}], ecx");
-                    if (array.GrowingElements) Emit($"lea esi, [esi + {4 * array.Count}]");
+                    if (array.GrowingElements) Emit($"lea esi, [esi + {Word * array.Count}]");
                     else
                     {
                         Emit($"mov ecx, [{array.Label} + 8]");
@@ -2922,16 +2937,16 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(ix.Index);
                 Emit("push eax");
                 EmitPlaceAddress(element);
-                Emit("mov ebx, eax");
+                Emit($"mov {R("ebx")}, {R("eax")}");
                 Emit("pop eax");
                 if (unsafeDepth == 0)
                 {
-                    Emit($"mov edx, [ebx + {4 * array.Count}]");
+                    Emit($"mov edx, [ebx + {Word * array.Count}]");
                     Emit($"and edx, {RoomMask}      ; its room");
                     EmitIndexCheck(ix, "jb", "edx");
                 }
-                Emit("mov ebx, [ebx]");
-                Emit("add ebx, eax");
+                Emit($"mov {R("ebx")}, {Q} [ebx]");
+                Emit($"add {R("ebx")}, {R("eax")}");
                 return new Place { Computed = true, Linear = true };
             }
 
@@ -3450,7 +3465,7 @@ namespace Phi.Compiler.CodeGen
                 else if (value == null)
                 {
                     // the element's text (a dropped one's, if it was used before) starts empty
-                    Emit("mov eax, [ebx]");
+                    Emit($"mov {R("eax")}, {Q} [ebx]");
                     Emit("mov byte [eax], 0        ; empty");
                 }
                 else
@@ -3461,7 +3476,7 @@ namespace Phi.Compiler.CodeGen
                         EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: $"dword [{table.Label} + 8]");
                     else if (Binder.IsFieldView(append.Target))
                         EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: RoomsOf(append.Target));
-                    else EmitGrowStoreAt(4 * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
+                    else EmitGrowStoreAt(Word * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
                 }
             }
             else if (value != null)
@@ -3507,7 +3522,7 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>How a value of this type sits in memory: str array elements are 32-bit pointers.</summary>
-        static PhiType StorageType(PhiType t) => t.IsString ? PhiType.U32 : t;
+        PhiType StorageType(PhiType t) => t.IsString ? (bits64 ? PhiType.PointerTo(PhiType.U8) : PhiType.U32) : t;
 
         string LoadInstruction(PhiType type, string register, string operand)
         {
@@ -3784,7 +3799,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("push eax                ; the value");
                 EmitPlaceAddress(target);
                 Emit("push eax                ; the element's slot");
-                EmitGrowStoreAt(4 * array.Count, sourceIsString, append, unsigned);
+                EmitGrowStoreAt(Word * array.Count, sourceIsString, append, unsigned);
                 return;
             }
 
@@ -5661,7 +5676,7 @@ namespace Phi.Compiler.CodeGen
                     else if (array.GrowingElements)
                     {
                         Emit("push eax                ; the element's slot");
-                        EmitGrowStoreAt(4 * array.Count, sourceIsString: true, append: false, unsigned: false);
+                        EmitGrowStoreAt(Word * array.Count, sourceIsString: true, append: false, unsigned: false);
                     }
                     else
                     {
@@ -7148,9 +7163,10 @@ namespace Phi.Compiler.CodeGen
                     string text = values != null && i < values.Count ? AsText(values[i]) : "";
                     AppendString(sb, element, text, v.Capacity);
                 }
-                sb.AppendLine($"{v.Label}: dd {string.Join(", ", pointers)}");
+                // each element's address, then (when they grow) each one's room, a word for each
+                sb.AppendLine($"{v.Label}: {(bits64 ? "dq" : "dd")} {string.Join(", ", pointers)}");
                 if (v.GrowingElements)
-                    sb.AppendLine($"    dd {string.Join(", ", Enumerable.Repeat($"{v.Capacity} | {InData}", v.Count))}   ; each one's room: its own buffer");
+                    sb.AppendLine($"    dd {string.Join(", ", Enumerable.Repeat($"{v.Capacity} | {InData}{(bits64 ? ", 0" : "")}", v.Count))}   ; each one's room: its own buffer");
                 if (t.Filled) sb.AppendLine("    dd 0   ; how many are in it");
                 return sb.ToString();
             }

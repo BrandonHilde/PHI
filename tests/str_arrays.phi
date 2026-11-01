@@ -1,0 +1,32 @@
+# Arrays of strs in a program: filled from texts, one that grows to atmost 8, a str set
+# and added to by index, .len and .max, while each over them, and an array of empty strs
+# (str slots[3]) whose texts start empty. A program, so it runs on Linux (32 and 64-bit).
+phi.StrArrays:Program
+{
+	str days: 'Mon' 'Tue' 'Wed';
+	days:1 is 'Tuesday, the longest';
+	log days:0 ' ' days:1 ' ' days:2 ' ' days:1.len '\n';
+	days:2++ ' and more';
+	log days:2 ' first ' days:0:0 '\n';
+
+	str names[atmost 8];
+	names++ 'Ann' 'Bob';
+	names++ 42;
+	names:1++ ' Smith';
+	log names.len ' ' names.max ' ' names:1 ' ' names:2 '\n';
+	while each n in names
+		log '[' n ']';
+	;;
+	log '\n';
+	call Local;
+
+	[Local]
+		str slots[3];
+		slots:0 is 'zero';
+		slots:2 is 'two';
+		while each s in slots
+			log s.len ' ';
+		;;
+		log '\n';
+	[end]
+}

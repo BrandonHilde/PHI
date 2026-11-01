@@ -170,6 +170,8 @@ namespace Phi.Compiler
             // (a str without a size grows on the heap too)
             bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null }
                                                                  || n is VarDecl { BufferSize: null } d && (d.Type.Name == "str" || d.Type.Name == "var" && d.Values.Any(v => v is StringExpr))
+                                                                 // (an array of strs whose texts grow: str names[atmost 8];)
+                                                                 || n is VarDecl { BufferSize: not null, SizeAfterColon: false, TextSize: null, Type.Name: "str" }
                                                                  || n is VarDecl { Unsized: true })   // an array that grows
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
             string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;

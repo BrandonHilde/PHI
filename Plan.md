@@ -1671,7 +1671,14 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   view is 16 bytes in 64-bit code, laid out as in memory (the elements' address, then how
   many and the most, pushed as one 8-byte value), so `.len`, `.max`, indexes, `while each`
   and passing one on work. Test `array_views` (new); 34 tests run as 64-bit programs.
-- [ ] (a, the rest) str fields and arrays of strs, arrays of structs as parameters, arrays that
+- [x] (a, sixth part) arrays of strs (`str days: 'Mon' 'Tue';`, `str names[atmost 8];`,
+  `str slots[3];`): their texts' addresses and rooms are 8 bytes each in 64-bit code, and
+  indexes, `++`, `.len`, `.max`, `while each` and `is` work. Two fixes on the way, in 32-bit
+  code too: an array of strs with no size for its texts (`str slots[3];`) cleared its own
+  table of addresses at the start instead of the texts they point to, and a program with
+  one (`str names[atmost 8];`) didn't get the heap its texts grow on. Test `str_arrays`
+  (new) on all three systems; 41 tests run as 64-bit programs.
+- [ ] (a, the rest) str fields, arrays of structs as parameters, arrays that
   grow, objects, 64-bit numbers, floating point, method values, interfaces, catching
   errors, `ask`, `x64` versions of the rest of the library's blocks, the rest of the system
   calls: until every program test runs as a 64-bit Linux program too
