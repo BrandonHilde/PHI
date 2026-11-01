@@ -1,0 +1,111 @@
+# throw, and if call ... throws err: an error stops only the call it happened in. The
+# methods in between give back their objects and texts, the catch gets the error's text
+# and where it was, and an error PHI finds itself (an index out of range) is caught the
+# same way. The last error isn't caught, so it stops the kernel as errors always have.
+struct.Box
+{
+	int size;
+}
+
+struct.Big
+{
+	u8 data[16384];
+}
+
+phi.Test:Kernel
+{
+	int numbers: 1 2 3;
+
+	# a throw, caught
+	if call Check: 5 throws err
+		log 'caught: ' err '\n';
+		log 'kind ' (err.kind as int) ', line ' err.line ', file ' err.file ', text ' err.text '\n';
+	;;
+	else
+		log 'not caught\n';
+	;;
+
+	# no error: the else
+	if call Check: 1 throws err
+		log 'caught: ' err '\n';
+	;;
+	else
+		log 'no error, so the else\n';
+	;;
+
+	# from deep inside, past methods with objects and texts, which they give back
+	u32 before: Heap.used_blocks;
+	if call Outer: 3 throws err
+		log 'deep: ' err.text '\n';
+	;;
+	log 'blocks given back: ' (Heap.used_blocks is before) '\n';
+
+	# an index out of range
+	if call Read: 7 throws err
+		log 'index: ' err '\n';
+		log 'is INDEX: ' (err.kind is ErrorKind.INDEX) '\n';
+	;;
+
+	# a call with a result
+	int got: 0;
+	if call got is Twice: 21 throws err
+		log 'no\n';
+	;;
+	log 'got ' got '\n';
+
+	# a catch while handling another
+	if call Check: 9 throws outer
+		if call Read: 4 throws inner
+			log 'inner: ' inner.text ', outer: ' outer.text '\n';
+		;;
+	;;
+
+	# on one line
+	call Guarded;
+
+	# the heap out of room: the objects made on the way are given back
+	before is Heap.used_blocks;
+	if call Fill throws err
+		log 'memory: ' err.text ', kind ' (err.kind is ErrorKind.MEMORY) ', given back: ' (Heap.used_blocks is before) '\n';
+	;;
+
+	# one that isn't caught
+	log 'last\n';
+	call Check: 100;
+	log 'not reached\n';
+	exit 0;
+
+	[Check: int n: 0;]
+		if n > 2
+			throw 'too big: ' n;
+		;;
+	[end]
+
+	[Outer: int depth: 0;]
+		new Box b: depth;
+		str note: 'level ';
+		note++ depth;
+		if depth is 0
+			throw 'from the bottom';
+		;;
+		call Outer: depth - 1;
+	[end]
+
+	[Read: int i: 0;]
+	[end: numbers:i]
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+
+	[Guarded]
+		if call Check: 50 throws e return;
+		log 'not here\n';
+	[end]
+
+	[Fill]
+		new Big all[];
+		while true
+			all++;
+		;;
+	[end]
+}

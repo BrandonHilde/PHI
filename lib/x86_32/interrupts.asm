@@ -1,5 +1,5 @@
 ; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
-; requires: phi_panic
+; requires: phi_panic phi_catch_top
 ; init: phi_interrupts_init
 ;
 ; Protected-mode interrupts for 32-bit kernels. Every kernel gets this:
@@ -147,7 +147,10 @@ phi_interrupt_common:
     test ebx, ebx
     jz .end_of_interrupt
     push eax
+    push dword [phi_catch_top]
+    mov dword [phi_catch_top], 0    ; an error in a handler isn't caught by the code it interrupted
     call ebx
+    pop dword [phi_catch_top]
     pop eax
 .end_of_interrupt:
     mov ebx, eax
@@ -183,7 +186,10 @@ phi_interrupt_common:
     test ebx, ebx
     jz .return
     mov eax, esp
+    push dword [phi_catch_top]
+    mov dword [phi_catch_top], 0    ; nor in a system call, by the kernel code that was running
     call ebx                ; eax = 1 when the task can't continue right now
+    pop dword [phi_catch_top]
     test eax, eax
     jnz .schedule
     jmp .return

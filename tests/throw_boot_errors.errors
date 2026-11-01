@@ -1,0 +1,2 @@
+4:5: error: catching errors needs 32-bit code (a Kernel or a Program)
+7:2: error: throw needs 32-bit code (a Kernel or a Program)

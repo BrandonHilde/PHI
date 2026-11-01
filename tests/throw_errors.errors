@@ -1,0 +1,5 @@
+4:6: error: 'throw' is a keyword and can't be a variable name
+5:6: error: 'throws' is a keyword and can't be a variable name
+7:26: error: expected a name for the error after throws, like: if call Load: path throws err
+8:22: error: expected 'throws' and a name for the error, like: if call Load: path throws err
+9:2: error: 'throw' needs the error's text, like: throw 'no such file: ' path;

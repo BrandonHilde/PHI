@@ -22,6 +22,7 @@ namespace Phi.Compiler.Syntax
                 LogStmt l => l.Values.SelectMany(Nodes),
                 AskStmt a => Nodes(a.Target),
                 ExitStmt e => e.Code != null ? Nodes(e.Code) : Enumerable.Empty<Node>(),
+                ThrowStmt t => t.Text != null ? Nodes(t.Text) : t.Values.SelectMany(Nodes),
                 OutStmt o => Nodes(o.Port).Concat(Nodes(o.Value)),
                 FreeStmt f => Nodes(f.Pointer),
                 UnsafeStmt u => u.Body.SelectMany(Nodes),
@@ -54,6 +55,13 @@ namespace Phi.Compiler.Syntax
         public static IEnumerable<Node> Nodes(Expr expr)
         {
             yield return expr;
+
+            // the call it guards is a statement
+            if (expr is ThrowsExpr throws)
+            {
+                foreach (Node n in Nodes(throws.Call)) yield return n;
+                yield break;
+            }
 
             IEnumerable<Expr> children = expr switch
             {

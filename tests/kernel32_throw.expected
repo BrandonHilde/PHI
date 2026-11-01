@@ -1,0 +1,13 @@
+caught: too big: 5 on line 80 in kernel32_throw.phi
+kind 0, line 80, file kernel32_throw.phi, text too big: 5
+no error, so the else
+deep: from the bottom
+blocks given back: 1
+index: index out of range on line 95 in kernel32_throw.phi
+is INDEX: 1
+got 42
+inner: index out of range, outer: too big: 9
+memory: out of memory for a new object, kind 1, given back: 1
+last
+
+PHI: too big: 100 on line 80 in kernel32_throw.phi

@@ -21,6 +21,7 @@ namespace Phi.Compiler.Syntax
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
             "phi", "asm", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
+            "throw", "throws",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -632,6 +633,8 @@ namespace Phi.Compiler.Syntax
                     case "log":
                     case "debug":
                         return ParseLog();
+                    case "throw":
+                        return ParseThrow();
                     case "ask":
                     {
                         Advance();
@@ -871,7 +874,26 @@ namespace Phi.Compiler.Syntax
             return stmt;
         }
 
-        Stmt ParseCall()
+        /// <summary>throw 'no such file: ' path;  the values are the error's text, as log reads them</summary>
+        Stmt ParseThrow()
+        {
+            Token keyword = Advance();
+            var values = new List<Expr>();
+            while (!At(TokenKind.Semicolon))
+            {
+                if (values.Count > 0 && AtEndOfValues(IndentOf(keyword.Span.Start))) break;
+                if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon)) break;
+                values.Add(ParseListElement());
+            }
+            if (values.Count == 0) throw Error(keyword.Span, "'throw' needs the error's text, like: throw 'no such file: ' path;");
+            ExpectSemicolon();
+            var stmt = new ThrowStmt { Span = keyword.Span.To(Previous.Span) };
+            stmt.Values.AddRange(values);
+            return stmt;
+        }
+
+        /// <param name="beforeThrows">the call of an if call ... throws err: its arguments end at throws, not ';'</param>
+        Stmt ParseCall(bool beforeThrows = false)
         {
             Token keyword = Advance();
 
@@ -898,14 +920,14 @@ namespace Phi.Compiler.Syntax
 
             if (Accept(TokenKind.Colon))
             {
-                while (!At(TokenKind.Semicolon))
+                while (!At(TokenKind.Semicolon) && !(beforeThrows && AtWord("throws")))
                 {
-                    if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon))
-                        throw Error(new Span(Previous.Span.End, 0), "expected ';' to end the call");
+                    if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon) || beforeThrows && (Current.StartsLine || OneLineIfWords.Any(AtWord)))
+                        throw Error(new Span(Previous.Span.End, 0), beforeThrows ? "expected 'throws' and a name for the error, like: if call Load: path throws err" : "expected ';' to end the call");
                     arguments.Add(ParseListElement());
                 }
             }
-            ExpectSemicolon();
+            if (!beforeThrows) ExpectSemicolon();
 
             var call = new CallStmt
             {
@@ -1027,16 +1049,43 @@ namespace Phi.Compiler.Syntax
             return false;
         }
 
+        /// <summary>The struct an if call ... throws err makes err (lib/phi/error.phi).</summary>
+        public const string ErrorStruct = "Error";
+
+        /// <summary>call Load: path throws err  (an if's condition)</summary>
+        Expr ParseThrows()
+        {
+            var call = (CallStmt)ParseCall(beforeThrows: true);
+            if (!AcceptWord("throws"))
+                throw Error(Current.Span, "after the call, expected 'throws' and a name for the error, like: if call Load: path throws err");
+            if (Current.Kind != TokenKind.Identifier || Current.StartsLine)
+                throw Error(Current.Span, "expected a name for the error after throws, like: if call Load: path throws err");
+            Token name = Advance();
+            CheckNotKeyword(name, "variable");
+            return new ThrowsExpr { Call = call, Name = name.Text, NameSpan = name.Span, Span = call.Span.To(name.Span) };
+        }
+
         /// <summary>The statements that can follow an if's condition on the same line.</summary>
         static readonly string[] OneLineIfWords = { "return", "break", "continue", "call", "exit" };
 
         Stmt ParseIf()
         {
             Token keyword = Advance();
-            Expr condition = ParseExpression();
+            Expr condition = AtWord("call") ? ParseThrows() : ParseExpression();
             Accept(TokenKind.Semicolon);
 
             var stmt = new IfStmt { Condition = condition, Span = keyword.Span.To(condition.Span) };
+
+            // if call Load: path throws err: inside, err is the error
+            if (condition is ThrowsExpr throws)
+                stmt.Then.Add(new VarDecl
+                {
+                    Type = new TypeRef { Name = ErrorStruct, Span = throws.NameSpan },
+                    Name = throws.Name,
+                    NameSpan = throws.NameSpan,
+                    Span = throws.NameSpan,
+                    CatchesError = true,
+                });
 
             // if thing is Player p: inside, p is the Player it holds
             if (condition is IsTypeExpr test)

@@ -1503,9 +1503,27 @@ test where a zone program crashes on purpose shows its players back in a restart
   of another copy changed where that copy went. `Mem`'s blocks now read the method's own
   arguments from its frame, so nothing is shared and it's safe from interrupts (and, later,
   other cores).
-- [ ] (4) catching errors in the language: **not now** (the user, 2026-10-30). Errors are
-  contained at the program level (parts 1-3); revisit if kernel code turns out to need a
-  block that catches them.
+- [x] (4) catching errors in the language (2026-11-01; "not now" on 2026-10-30, then the
+  user's own idea, and their words): `if call Load: path throws err ... ;;` (and `else`)
+  stops only that call, and `throw 'no such file: ' path;` makes an error. Errors PHI
+  finds itself (an index out of range, the heap out of room) are caught the same way, and
+  one nothing catches stops the program as before, with the same message. `err` is an
+  `Error` (`lib/phi/lang/error.phi`, which a program that catches gets without a `use`):
+  kind, line, file, text, and a message that `log err` writes. Docs:
+  [Errors](docs/language.md#errors-throw-and-throws). Tests `kernel32_throw`,
+  `throw_program` (Linux, Windows), `kernel32_program_throw`, `throw_errors`,
+  `throw_cores_errors`, `throw_boot_errors`.
+  - How: a catch is a record on a list (`phi_catch_top`, `lib/x86_32*/throw.asm`) with
+    esp, ebp and where to go. In a program that catches, each method with things to give
+    back at its end keeps a record of itself while it runs (`phi_unwind_top`), and a throw
+    calls each one's `_unwind` routine (its tidying-up, with ebp at its frame) before
+    jumping to the catch. A program with no catch has none of this, so it costs nothing.
+  - Not caught: an error inside a `locked` block (what it guards may be half changed), and
+    in an interrupt handler or a system call (by the code they interrupted). A kernel that
+    starts other cores can't catch yet: the lists are one for the whole kernel, which needs
+    a list for each core. A CPU exception (dividing by zero, an empty object's page fault)
+    isn't an error a program can catch yet either: it goes to the panic screen, or ends a
+    program, as before.
 - [ ] (5) `phi fuzz`
 
 #### Phase S9: Several cores

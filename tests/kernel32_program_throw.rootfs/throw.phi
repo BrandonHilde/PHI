@@ -1,0 +1,54 @@
+# throw and catching errors in a user program on PHI OS (kernel32_program_throw runs it;
+# throw_program is the same as a Linux and a Windows program): the same as in a kernel,
+# and one that isn't caught ends the program with -1.
+struct.Box
+{
+	int size;
+}
+
+phi.Test:Program
+{
+	int numbers: 1 2 3;
+
+	if call Parse: 'x' throws err
+		log 'caught: ' err.text ' (line ' err.line ')\n';
+	;;
+
+	# the methods in between give back their objects and texts
+	u32 before: Heap.used_blocks;
+	if call Build: 3 throws err
+		log 'deep: ' err.text '\n';
+	;;
+	log 'blocks given back: ' (Heap.used_blocks is before) '\n';
+
+	# an error's message, kept as text
+	str saved: '';
+	if call Read: 9 throws err
+		saved is err;
+	;;
+	str again: ('was: ' err);
+	log saved '\n' again '\n';
+
+	log 'last\n';
+	call Read: 5;
+	log 'not reached\n';
+
+	[Parse: str text: '';]
+		if text is not '1'
+			throw 'not a number: ' text;
+		;;
+	[end]
+
+	[Build: int depth: 0;]
+		new Box b: depth;
+		str note: 'level ';
+		note++ depth;
+		if depth is 0
+			throw 'at the bottom';
+		;;
+		call Build: depth - 1;
+	[end]
+
+	[Read: int i: 0;]
+	[end: numbers:i]
+}

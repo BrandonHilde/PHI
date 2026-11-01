@@ -1,0 +1,13 @@
+# A user program that throws and catches errors (kernel32_program_throw.rootfs/throw.phi),
+# on PHI OS: its last error isn't caught, so it ends with -1, and the kernel carries on.
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+	int pid: (Process.Spawn: 'THROW.BIN');
+	int code: (Process.Wait: pid);
+	log 'exit code: ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

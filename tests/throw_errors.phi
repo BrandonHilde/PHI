@@ -1,0 +1,13 @@
+# What throw and if call ... throws take
+phi.Test:Kernel
+{
+	int throw: 1;
+	int throws: 2;
+
+	if call Check: 1 throws 5 return;
+	if call Check: 1 err return;
+	throw;
+
+	[Check: int n: 0;]
+	[end]
+}

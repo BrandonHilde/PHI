@@ -1,0 +1,28 @@
+# What `if call ... throws err` makes err: the error that stopped the call (32-bit kernels
+# and programs). A program that catches errors gets this file without a use.
+#
+#   if call Load: path throws err
+#       log err '\n';                       # no such file: A.TXT on line 12 in world.phi
+#       if err.kind is ErrorKind.INDEX ...
+#   ;;
+#
+# log, debug and text built from values write an Error's message: its text, then where it
+# happened, as an uncaught one is written. The runtime (throw.asm) fills in the same
+# layout, so the fields stay in this order and these sizes.
+
+# what kind of error it was
+enum.ErrorKind
+{
+	THROWN                      # a throw
+	INDEX                       # an index outside its array
+	MEMORY                      # no room on the heap for a new object
+}
+
+struct.Error
+{
+	ErrorKind kind;
+	int line;                   # where it happened
+	str file: [64];             # the file it's in ('' when it isn't known)
+	str text: [255];            # what went wrong
+	str message: [383];         # the text, then where: index out of range on line 12 in world.phi
+}

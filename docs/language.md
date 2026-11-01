@@ -89,7 +89,7 @@ variable, field, parameter, constant, method or struct:
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
 | Structure | `phi` `struct` `enum` `interface` `asm` `arm` `use` `const` `volatile` `isr` `end` `into` |
-| Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` |
+| Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
 | Input and output | `log` `debug` `ask` |
@@ -767,6 +767,52 @@ it gets none: `while u32 i: 0; i < 4; i++;` indexing an array of 4 or more with 
 `while int i: 0; i < list.len; i++;` indexing the array parameter `list`, as long as
 nothing in the loop changes `i` (a signed counter must also start at zero or more and
 count up). Any other index is still checked.
+
+### Errors: throw and throws
+
+An error stops the program (a kernel stops on the spot, and a user program ends with -1),
+unless it happened inside a call that an `if call ... throws` is guarding. Then only that
+call stops, and the `if` runs, with the error in the name after `throws` (32-bit kernels
+and programs):
+
+```phi
+if call Load: path throws err
+    log err '\n';               # no such file: A.TXT on line 12 in files.phi
+    return false;
+;;
+else
+    log 'loaded\n';             # (an else runs when nothing went wrong)
+;;
+
+[Load: str path;]
+    if (OS.FileSize: path) < 0
+        throw 'no such file: ' path;
+    ;;
+    ...
+[end]
+```
+
+- **`throw`** takes values as `log` does, which become the error's text.
+- **The errors PHI finds itself** are caught the same way: an index out of range, and the
+  heap out of room for a new object.
+- **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`
+  or `MEMORY`), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+  an uncaught error is written). `log`, `debug` and text built from values write its
+  message, so `log err;` and `str note: ('failed: ' err);` say everything.
+- **The methods in between give back what they own**, as if each had returned: their new
+  objects, and their texts and arrays that grow.
+- **An error inside a `locked` block** (or anything it calls) isn't caught: what the lock
+  guards may be half changed, so it stops the program.
+- **The call can give a result** (`if call n is Parse: text throws err`), and the guard
+  fits on one line (`if call Save: data throws err return false;`).
+- **Catches nest**: an error inside the `if`'s own code goes to the catch around that.
+- An error in an interrupt handler or a system call isn't caught by the code it
+  interrupted. A kernel that starts other cores (`proc.cores`) can't catch errors yet,
+  since the catches are one list for the whole kernel.
+- In a kernel, catching an error doesn't undo work that was half done (half of a file
+  written, a list half updated), so it suits work that stands alone, like one request or
+  one command. For a whole part of a system that may go wrong, a user program, which a
+  supervisor can start again, is still the way (see `proc.supervisor`).
 
 ## Pointers
 
@@ -2445,6 +2491,9 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
   `^^` on 64-bit and floating point numbers, and `has` on arrays of them
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
+- catching a CPU exception with `if call ... throws` (dividing by zero, using an empty
+  object): they still show the panic screen, or end a user program
+- catching errors in a kernel that starts other cores (`proc.cores`)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))

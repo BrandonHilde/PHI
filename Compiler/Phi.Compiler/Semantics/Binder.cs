@@ -1483,6 +1483,12 @@ namespace Phi.Compiler.Semantics
                         decl.Symbol = found;
                         continue;
                     }
+                    // ... and two catches each name their error the same
+                    if (existing is VariableSymbol { Decl.CatchesError: true } caught && decl.CatchesError)
+                    {
+                        decl.Symbol = caught;
+                        continue;
+                    }
                     // ... and two while each loops the same element, over arrays of the same kind
                     if (existing is VariableSymbol { Decl.EachOf: not null } element && decl.EachOf != null)
                     {
@@ -2178,9 +2184,11 @@ namespace Phi.Compiler.Semantics
                     return stmt; // handled when names were declared
 
                 case LogStmt log:
-                    foreach (Expr value in log.Values)
+                    for (int i = 0; i < log.Values.Count; i++)
                     {
+                        Expr value = log.Values[i];
                         BindExpr(value, scope);
+                        log.Values[i] = value = ErrorMessage(value, scope);
                         KeepTextPointer(value);
                         if (value.Type.IsArray && value.Type.Element == PhiType.U8 && value is NameExpr or MemberExpr)
                             Error(value.Span, $"can't print a u8 array; to print the text in it (up to a zero byte), write addr {Describe(value)}");
@@ -2260,6 +2268,23 @@ namespace Phi.Compiler.Semantics
                 case CallStmt call:
                     BindCall(call, scope);
                     return call;
+
+                case ThrowStmt t:
+                {
+                    if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+                        Error(t.Span, "throw needs 32-bit code (a Kernel or a Program)");
+                    if (t.Values is [StringExpr literal])
+                        t.Text = literal;
+                    else
+                    {
+                        // several values (or one that isn't a literal) are one text, as ('a' b) is
+                        var text = new TextExpr { Span = t.Values[0].Span.To(t.Values[^1].Span) };
+                        text.Parts.AddRange(t.Values);
+                        t.Text = text;
+                    }
+                    BindExpr(t.Text, scope);
+                    return t;
+                }
 
                 case IfStmt ifs:
                     BindCondition(ifs.Condition, scope);
@@ -2636,6 +2661,7 @@ namespace Phi.Compiler.Semantics
             allowObjectTemp = assign.Target.Type.IsObject || assign.Target.Type.IsStruct;
             BindExpr(assign.Value, scope);
             allowObjectTemp = false;
+            if (toStr) assign.Value = ErrorMessage(assign.Value, scope);    // text = err; is its message
 
             Expr target = assign.Target;
             if (target.Type.IsError || assign.Value.Type.IsError) return assign;
@@ -2986,10 +3012,11 @@ namespace Phi.Compiler.Semantics
             Expr target = assign.Target;
             bool append = assign.Op == AssignOp.Add;
             List<Expr> parts = assign.Values ?? new List<Expr> { assign.Value };
-            foreach (Expr part in parts)
+            for (int i = 0; i < parts.Count; i++)
             {
-                BindExpr(part, scope);
-                KeepTextPointer(part);
+                BindExpr(parts[i], scope);
+                parts[i] = ErrorMessage(parts[i], scope);
+                KeepTextPointer(parts[i]);
             }
 
             if (target.Type.IsError) return assign;
@@ -3622,6 +3649,19 @@ namespace Phi.Compiler.Semantics
 
         // ================================================================ expressions
 
+        /// <summary>
+        /// An Error (what if call ... throws err makes err) where text goes, in a log or built
+        /// text, is its message: what went wrong, then where.
+        /// </summary>
+        Expr ErrorMessage(Expr value, Scope scope)
+        {
+            if (!value.Type.IsStruct || value.Type.Struct?.Name != Parser.ErrorStruct || value is not (NameExpr or MemberExpr or IndexExpr))
+                return value;
+            var message = new MemberExpr { Target = value, Member = "message", MemberSpan = value.Span, Span = value.Span };
+            BindExpr(message, scope);
+            return message;
+        }
+
         void BindCondition(Expr condition, Scope scope)
         {
             BindExpr(condition, scope);
@@ -3848,9 +3888,11 @@ namespace Phi.Compiler.Semantics
                 case TextExpr text:
                     // each value written in as text, as s is a b c; does
                     text.Type = PhiType.Str;
-                    foreach (Expr part in text.Parts)
+                    for (int i = 0; i < text.Parts.Count; i++)
                     {
+                        Expr part = text.Parts[i];
                         BindExpr(part, scope);
+                        text.Parts[i] = part = ErrorMessage(part, scope);
                         KeepTextPointer(part);
                         if (part.Type.IsError) continue;
                         if (part.Type.IsArray && part.Type.Element == PhiType.U8 && part is NameExpr or MemberExpr)
@@ -3858,6 +3900,13 @@ namespace Phi.Compiler.Semantics
                         else if (!part.Type.IsNumeric && !part.Type.IsWide && !part.Type.IsFloat && !part.Type.IsString)
                             Error(part.Span, $"can't write {A(part.Type)} into a str; write one element or field at a time");
                     }
+                    break;
+
+                case ThrowsExpr throws:
+                    throws.Type = PhiType.Bool;
+                    if (scope.Unit is UnitKind.Boot or UnitKind.Os)
+                        Error(throws.Span, "catching errors needs 32-bit code (a Kernel or a Program)");
+                    BindCall(throws.Call, scope);
                     break;
 
                 case IsTypeExpr test:

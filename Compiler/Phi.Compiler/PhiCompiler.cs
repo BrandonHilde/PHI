@@ -29,6 +29,9 @@ namespace Phi.Compiler
         /// <summary>Where `use` looks for files that aren't next to the program.</summary>
         const string StandardLibrary = "lib/phi/";
 
+        /// <summary>The Error struct and ErrorKind enum, for a program that catches errors.</summary>
+        const string ErrorLibrary = "lang.error";
+
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
         /// <param name="host">Where the program runs: PHI OS, or (for a program) another system.</param>
         public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null, Host host = Host.PhiOS)
@@ -149,6 +152,11 @@ namespace Phi.Compiler
 
             var program = new ProgramNode { File = main };
             Load(main, program);
+
+            // a program that catches errors gets the Error struct they're caught in
+            if (SyntaxWalker.Nodes(program).Any(n => n is ThrowsExpr) && Resolve(ErrorLibrary, main, main, null) is SourceFile errors
+                && seen.Add(Key(errors)))
+                Load(errors, program);
 
             // a 32-bit kernel or a user program that uses new or free (or objects) gets a heap without
             // having to ask; its classes go first, so it is ready before the program's own code runs

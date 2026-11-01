@@ -1,0 +1,11 @@
+# throw and catching errors need 32-bit code
+phi.Test:Bootloader
+{
+	if call Check: 1 throws err
+		log err '\n';
+	;;
+	throw 'no';
+
+	[Check: int n: 0;]
+	[end]
+}

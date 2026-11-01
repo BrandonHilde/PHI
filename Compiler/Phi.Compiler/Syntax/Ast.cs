@@ -185,6 +185,9 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         public Expr? Narrows { get; init; }
 
+        /// <summary>The error of an if call ... throws err (its err).</summary>
+        public bool CatchesError { get; init; }
+
         /// <summary>Set by the binder for new T name: v1 v2;  one assignment per field.</summary>
         public List<Stmt> FieldValues { get; } = new();
 
@@ -226,6 +229,18 @@ namespace Phi.Compiler.Syntax
     public sealed class ExitStmt : Stmt
     {
         public Expr? Code { get; init; }
+    }
+
+    /// <summary>
+    /// throw 'no such file: ' path;  an error with that text, which stops the program unless
+    /// an if call ... throws err around the call it's in catches it
+    /// </summary>
+    public sealed class ThrowStmt : Stmt
+    {
+        public List<Expr> Values { get; } = new();
+
+        /// <summary>The values as one text (the binder makes it).</summary>
+        public Expr? Text { get; set; }
     }
 
     /// <summary>out port value;  outw port value;  outd port value;</summary>
@@ -384,7 +399,7 @@ namespace Phi.Compiler.Syntax
     {
         public Expr Target { get; init; } = null!;
         public AssignOp Op { get; init; }
-        public Expr Value { get; init; } = null!;
+        public Expr Value { get; set; } = null!;
 
         /// <summary>
         /// The right side read as a list, as log reads it, when that isn't just Value: in
@@ -445,6 +460,19 @@ namespace Phi.Compiler.Syntax
     public sealed class TextExpr : Expr
     {
         public List<Expr> Parts { get; } = new();
+    }
+
+    /// <summary>
+    /// if call Load: path throws err: true when the call throws an error (a throw, or one PHI
+    /// finds, like an index out of range), which then stops there instead of the program.
+    /// It's an if's whole condition, and err is the error inside the if (a VarDecl the parser
+    /// puts first in Then).
+    /// </summary>
+    public sealed class ThrowsExpr : Expr
+    {
+        public CallStmt Call { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public Span NameSpan { get; init; }
     }
 
     /// <summary>What a has test compares: see <see cref="HasExpr"/>.</summary>

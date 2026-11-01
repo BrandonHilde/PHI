@@ -385,6 +385,12 @@ namespace Phi.Compiler.CodeGen
                     Emit("mov es, ax");
                 }
                 Emit("cld");
+                if (Catches)
+                {
+                    // a throw in here mustn't jump into the code it interrupted: none is caught
+                    Emit("push dword [phi_catch_top]");
+                    Emit("mov dword [phi_catch_top], 0");
+                }
             }
 
             // the variables used most go in registers
@@ -436,6 +442,15 @@ namespace Phi.Compiler.CodeGen
                 Line(FenceStart);
             }
 
+            // a method that has things to give back at its end, in a program that catches errors,
+            // is on the list a throw looks at while it runs (see EmitIfThrows): off it now
+            string? unwindRecord = Catches && !m.IsInterruptHandler && NeedsTidyUp(m) ? AllocTemp(12) : null;
+            if (unwindRecord != null)
+            {
+                Emit($"mov ecx, [{unwindRecord}]");
+                Emit("mov [phi_unwind_top], ecx     ; done: off the list a throw looks at");
+            }
+
             if (m.ReturnType.IsString && GrowResults)
             {
                 // copy the result into the caller's slot (it grows to fit) before this frame goes away
@@ -471,7 +486,96 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov eax, [ebp + {frame.ResultSlot}]");
             }
 
-            // its strs that grow give their text back
+            EmitTidyUp(m);
+
+            StringBuilder body = code;
+            bool hasFrame = frameSize > 0 || m.Parameters.Count > 0 || m.ReturnType.IsString;
+            code = new StringBuilder();
+            if (hasFrame) EmitFrameStart(frame);
+            if (unwindRecord != null)
+            {
+                // on the list a throw looks at: the record before, what gives back this method's
+                // things, and this frame
+                Emit("mov eax, [phi_unwind_top]");
+                Emit($"mov [{unwindRecord}], eax");
+                Emit($"mov dword [{unwindRecord} + 4], {m.Label}_unwind");
+                Emit($"mov [{unwindRecord} + 8], ebp");
+                LoadAddress("eax", unwindRecord);
+                Emit("mov [phi_unwind_top], eax");
+            }
+            string start = code.ToString();
+            code = outer;
+            string bodyText = keepsRegisters ? CheckRegisterCode(m, body.ToString()) : body.ToString();
+
+            // callers keep variables in esi and edi, so a method that changes them (itself, or
+            // through anything but a method) saves them first, just below its frame, and gives them
+            // back at the end (an interrupt handler has saved every register already)
+            var saved = bits32 && !m.IsInterruptHandler
+                ? VariableRegisters.Where(r => MayChange(start + bodyText, r)).ToList()
+                : new List<string>();
+            if (hasFrame) EmitFrameSetup();
+            foreach (string register in saved) Emit($"push {register}                ; the caller's");
+            code.Append(start);
+            foreach (var (v, register, home) in inRegisters)
+                Emit(v.IsParameter ? $"mov {register}, [{home}]   ; {v.Name}" : $"xor {register}, {register}   ; {v.Name}");
+            code.Append(bodyText);
+            if (hasFrame)
+            {
+                for (int i = 0; i < saved.Count; i++) Emit($"mov {saved[i]}, [ebp - {frameSize + 4 * (i + 1)}]");
+                Emit("mov esp, ebp");
+                Emit("pop ebp");
+            }
+            else
+            {
+                for (int i = saved.Count - 1; i >= 0; i--) Emit($"pop {saved[i]}");
+            }
+            inRegisters.Clear();
+
+            if (frameSize > MaxFrame)
+                diagnostics.Error(file, m.Decl.Span, $"{m.Decl.Name} needs {frameSize} bytes of stack for its variables (at most {MaxFrame}); declare large buffers in the class instead");
+            currentMethod = null;
+
+            if (m.IsInterruptHandler)
+            {
+                if (Catches) Emit("pop dword [phi_catch_top]");
+                if (!bits32)
+                {
+                    Emit("pop fs");
+                    Emit("pop es");
+                    Emit("pop ds");
+                }
+                Emit("popad");
+                Emit(bits32 ? "iretd" : "iret");
+            }
+            else
+            {
+                Emit("ret");
+            }
+
+            // what a throw on its way past calls with ebp at this method's frame: the same tidying up
+            if (unwindRecord != null)
+            {
+                Line("");
+                Label($"{m.Label}_unwind");
+                currentMethod = m;
+                EmitTidyUp(m);
+                currentMethod = null;
+                Emit("ret");
+            }
+        }
+
+        /// <summary>True when a method gives something back at its end: texts that grow, or objects.</summary>
+        bool NeedsTidyUp(MethodSymbol m) =>
+            m.Parameters.Concat(m.Locals).Any(v => v.Grows) || resultSlots.Count > 0
+            || m.Locals.Any(v => v.GrowingElements || v.GrowingArray || v.Ownership == Ownership.Owned);
+
+        /// <summary>
+        /// The end of a method: its strs that grow give their text back, and its new objects go
+        /// away with it (one it returns was handed over already). The result in eax (or
+        /// edx:eax) stays. Uses only the method's frame, so a throw can run it too.
+        /// </summary>
+        void EmitTidyUp(MethodSymbol m)
+        {
             var growing = m.Parameters.Concat(m.Locals).Where(v => v.Grows).ToList();
             var growingArrays = m.Locals.Where(v => v.GrowingElements).ToList();
             bool wideResult = m.ReturnType.IsWide;
@@ -509,7 +613,6 @@ namespace Phi.Compiler.CodeGen
                 if (wideResult) Emit("pop edx");
             }
 
-            // the method's new objects go away with it (one it returns was handed over already)
             var owned = m.Locals.Where(v => v.Ownership == Ownership.Owned).ToList();
             if (owned.Count > 0)
             {
@@ -527,58 +630,6 @@ namespace Phi.Compiler.CodeGen
                 }
                 Emit("pop eax");
                 if (wideResult) Emit("pop edx");
-            }
-
-            StringBuilder body = code;
-            bool hasFrame = frameSize > 0 || m.Parameters.Count > 0 || m.ReturnType.IsString;
-            code = new StringBuilder();
-            if (hasFrame) EmitFrameStart(frame);
-            string start = code.ToString();
-            code = outer;
-            string bodyText = keepsRegisters ? CheckRegisterCode(m, body.ToString()) : body.ToString();
-
-            // callers keep variables in esi and edi, so a method that changes them (itself, or
-            // through anything but a method) saves them first, just below its frame, and gives them
-            // back at the end (an interrupt handler has saved every register already)
-            var saved = bits32 && !m.IsInterruptHandler
-                ? VariableRegisters.Where(r => MayChange(start + bodyText, r)).ToList()
-                : new List<string>();
-            if (hasFrame) EmitFrameSetup();
-            foreach (string register in saved) Emit($"push {register}                ; the caller's");
-            code.Append(start);
-            foreach (var (v, register, home) in inRegisters)
-                Emit(v.IsParameter ? $"mov {register}, [{home}]   ; {v.Name}" : $"xor {register}, {register}   ; {v.Name}");
-            code.Append(bodyText);
-            if (hasFrame)
-            {
-                for (int i = 0; i < saved.Count; i++) Emit($"mov {saved[i]}, [ebp - {frameSize + 4 * (i + 1)}]");
-                Emit("mov esp, ebp");
-                Emit("pop ebp");
-            }
-            else
-            {
-                for (int i = saved.Count - 1; i >= 0; i--) Emit($"pop {saved[i]}");
-            }
-            inRegisters.Clear();
-
-            if (frameSize > MaxFrame)
-                diagnostics.Error(file, m.Decl.Span, $"{m.Decl.Name} needs {frameSize} bytes of stack for its variables (at most {MaxFrame}); declare large buffers in the class instead");
-            currentMethod = null;
-
-            if (m.IsInterruptHandler)
-            {
-                if (!bits32)
-                {
-                    Emit("pop fs");
-                    Emit("pop es");
-                    Emit("pop ds");
-                }
-                Emit("popad");
-                Emit(bits32 ? "iretd" : "iret");
-            }
-            else
-            {
-                Emit("ret");
             }
         }
 
@@ -1148,6 +1199,21 @@ namespace Phi.Compiler.CodeGen
 
                 case WhenStmt branches:
                     EmitWhen(branches);
+                    break;
+
+                case IfStmt { Condition: ThrowsExpr throws } ifs:
+                    EmitIfThrows(ifs, throws);
+                    break;
+
+                case ThrowStmt t:
+                    // the runtime copies the text (it may be in this frame) before anything goes
+                    Need("phi_throw");
+                    EmitTextValue(t.Text!);
+                    Emit("mov edx, eax            ; the text");
+                    Emit($"mov eax, {LineOf(t)}");
+                    Emit($"mov esi, {StringLabel(System.IO.Path.GetFileName(file.Path))}");
+                    Emit($"mov ebx, {ErrorThrown}");
+                    Emit("jmp phi_throw");
                     break;
 
                 case IfStmt ifs:
@@ -1734,7 +1800,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitLocked(LockedStmt locked)
         {
-            string slot = AllocTemp(8);
+            string slot = AllocTemp(Catches ? 12 : 8);
             string spin = NewLabel("lock"), wait = NewLabel("lockwait"), held = NewLabel("locked");
             EmitPlaceAddress(locked.Lock);
             Emit($"mov [{slot}], eax          ; the lock's address");
@@ -1754,6 +1820,14 @@ namespace Phi.Compiler.CodeGen
             Emit($"jne {wait}");
             Emit($"jmp {spin}");
             Label(held);
+            if (Catches)
+            {
+                // what the lock guards may be half changed when something goes wrong in here, so
+                // no error is caught until it's given back: it stops the program
+                Emit("mov ecx, [phi_catch_top]");
+                Emit($"mov [{slot} + 8], ecx");
+                Emit("mov dword [phi_catch_top], 0");
+            }
 
             lockedBlocks.Add((slot, loops.Count, inlining.Count));
             foreach (Stmt s in locked.Body) EmitStatement(s);
@@ -1761,9 +1835,88 @@ namespace Phi.Compiler.CodeGen
             EmitUnlock(slot);
         }
 
+        // ================================================================ catching errors
+
+        /// <summary>ErrorKind.THROWN, the kind of error a throw makes (lib/phi/lang/error.phi).</summary>
+        const int ErrorThrown = 0;
+
+        /// <summary>The bytes of an Error, as the runtime (throw.asm) lays it out: kind, line, file, text, message.</summary>
+        const int ErrorSize = 4 + 4 + 65 + 256 + 384;
+
+        /// <summary>
+        /// True when the program catches errors (an if call ... throws err somewhere): then each
+        /// method with something to give back at its end (objects, texts that grow) keeps a
+        /// record of itself while it runs, so a throw can give those back on its way out.
+        /// </summary>
+        bool Catches => catches ??= bits32 && unit.Classes.SelectMany(c => c.Body)
+            .Concat(unit.Methods.SelectMany(m => m.Decl.Body))
+            .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
+        bool? catches;
+
+        /// <summary>
+        /// if call Load: path throws err  ... ;;  else ... ;;
+        ///
+        /// Before the call, a catch record goes on the list a throw looks at (phi_catch_top):
+        /// the catch before it, esp and ebp here, the methods' records at this point
+        /// (phi_unwind_top), and where to go. A throw gives back what each method in between
+        /// owns, puts esp and ebp back, and jumps there, with the error in phi_error; a call
+        /// that returns takes the record off again. The statement runs with the variables in
+        /// memory (it's fenced), since a throw doesn't come back through the methods that would
+        /// have put esi and edi back.
+        /// </summary>
+        void EmitIfThrows(IfStmt ifs, ThrowsExpr throws)
+        {
+            Need("phi_throw");
+            // the catches and the methods' records are one list for the whole kernel, which
+            // two cores would both be changing
+            if (unit.Kind == UnitKind.Kernel && unit.Classes.Any(c => c.Name == "Cores"))
+                diagnostics.Error(file, throws.Span, "catching errors doesn't work yet in a kernel that starts other cores (proc.cores); contain errors in programs instead");
+            string record = AllocTemp(20);
+            string caught = NewLabel("caught"), elseLabel = NewLabel("else"), endLabel = NewLabel("endif");
+            Emit("mov eax, [phi_catch_top]");
+            Emit($"mov [{record}], eax         ; the catch around this one");
+            Emit($"mov [{record} + 4], esp");
+            Emit($"mov [{record} + 8], ebp");
+            Emit("mov eax, [phi_unwind_top]");
+            Emit($"mov [{record} + 12], eax    ; the methods running now");
+            Emit($"mov dword [{record} + 16], {caught}");
+            LoadAddress("eax", record);
+            Emit("mov [phi_catch_top], eax");
+            EmitStatement(throws.Call);
+            Emit($"mov eax, [{record}]");
+            Emit("mov [phi_catch_top], eax     ; it came back: this catch is done");
+            Emit($"jmp {elseLabel}");
+
+            // the error: err (declared first in Then) gets a copy of it
+            Label(caught);
+            var decl = (VarDecl)ifs.Then[0];
+            EmitStatement(decl);
+            if (decl.Symbol is VariableSymbol err)
+            {
+                if (err.Type.Struct?.Size != ErrorSize)
+                    diagnostics.Error(file, decl.Span, $"the Error struct is {err.Type.Struct?.Size} bytes, and the runtime's is {ErrorSize}; lib/phi/lang/error.phi and throw.asm must agree");
+                LoadAddress("edi", err.Label);
+                Emit("mov esi, phi_error");
+                Emit($"mov ecx, {ErrorSize}");
+                Emit("rep movsb");
+            }
+            foreach (Stmt s in ifs.Then.Skip(1)) EmitStatement(s);
+            Emit($"jmp {endLabel}");
+
+            Label(elseLabel);
+            if (ifs.Else != null)
+                foreach (Stmt s in ifs.Else) EmitStatement(s);
+            Label(endLabel);
+        }
+
         /// <summary>Gives a lock back (through ecx, so a result in eax or edx:eax stays).</summary>
         void EmitUnlock(string slot)
         {
+            if (Catches)
+            {
+                Emit($"mov ecx, [{slot} + 8]");
+                Emit("mov [phi_catch_top], ecx      ; errors can be caught again");
+            }
             Emit($"mov ecx, [{slot}]");
             Emit("mov dword [ecx], 0        ; the lock back");
             Emit($"push dword [{slot} + 4]");
