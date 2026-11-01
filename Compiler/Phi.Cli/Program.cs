@@ -7,7 +7,9 @@ const string Usage = """
       phi build <file.phi> [-o <dir>] [--target <system>]
                                            compile to a bootable disk image; with --target linux or
                                            windows, a program (phi.Name:Program) becomes an ordinary
-                                           executable for that system instead (NAME, or NAME.exe)
+                                           executable for that system instead (NAME, or NAME.exe);
+                                           linux64 is a 64-bit Linux one (so far, programs that use
+                                           numbers, methods, if, while, when and log)
       phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
                                            with --target, run the executable here (a Linux one under

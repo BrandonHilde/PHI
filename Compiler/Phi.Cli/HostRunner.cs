@@ -19,9 +19,9 @@ namespace Phi.Cli
             switch (host)
             {
                 case Host.Windows when OperatingSystem.IsWindows():
-                case Host.Linux when OperatingSystem.IsLinux():
+                case Host.Linux or Host.Linux64 when OperatingSystem.IsLinux():
                     return true;
-                case Host.Linux when OperatingSystem.IsWindows():
+                case Host.Linux or Host.Linux64 when OperatingSystem.IsWindows():
                     wsl ??= HasWsl();
                     if (wsl == true) return true;
                     why = "Linux programs run here under WSL, which isn't installed (wsl --install)";

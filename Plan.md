@@ -1613,7 +1613,30 @@ Goal: 64-bit kernels and programs, with more than 4 GB of memory.
 **Done when:** the test suite passes as 64-bit kernels and programs, and `samples/mmo/`
 runs with 8 GB of memory.
 
-**Status: not started.**
+**Status: in progress (since 2026-11-01).** Decided with the user: `int` stays 32 bits and
+every sized type keeps its size (only pointers become 8 bytes); 64-bit host programs come
+before 64-bit kernels (H4 first, then the kernel); and 64-bit is a mode of the x86
+generator, not a second backend: x86-64 shares almost everything with 32-bit x86, so (2)
+the backend interface waits for ARM, which needs one. The user will test the macOS step on
+their Mac.
+
+The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit kernels
+(long mode, 4-level paging, the kernel library), (d) macOS.
+
+- [x] (a, first part) `--target linux64`: an ELF64 program at 0x400000 (`bits 64`), a
+  runtime of its own (`lib/x86_64_linux/`: the syscall instruction, console, numbers as
+  text), and the generator's 64-bit mode. What's the same at either width is translated as
+  each instruction is written (`Widen`: the stack and frame registers, push and pop, lea);
+  what isn't is each place's own (8-byte argument slots, parameters from rbp + 16, labels'
+  addresses by `lea ..., [rel label]`). So far: numbers up to 32 bits (and bln, chr,
+  enums), their variables and math, methods that take and give them, calls, if, while,
+  when, log, debug and exit. Anything else is an error saying it isn't in 64-bit programs
+  yet (`Check64`), which leaves that test to the other systems; 7 tests run as 64-bit
+  Linux programs (`bitwise`, `compare_words`, `if_else`, `math`, `numbers`, `while_loop`,
+  `while_many_iterations`). Register variables and inlining are off in 64-bit code for now.
+- [ ] (a, the rest) text, arrays, pointers, structs, the heap and objects, 64-bit numbers,
+  floating point, interfaces, the rest of the system calls: until every program test runs
+  as a 64-bit Linux program too
 
 #### Phase S11: Running for real
 

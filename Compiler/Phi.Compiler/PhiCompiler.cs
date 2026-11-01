@@ -46,7 +46,12 @@ namespace Phi.Compiler
             if (diagnostics.HasErrors)
                 return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host), Syntax = syntax, Bound = bound };
             if (bound == null || !generate)
+            {
+                // what 64-bit code can't do yet is found by the generator: a check needs it too
+                if (bound != null && host.Is64())
+                    foreach (BoundUnit u in bound.Units) X86Generator.Check(bound, u, diagnostics);
                 return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
+            }
 
             var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics)).ToList();
 

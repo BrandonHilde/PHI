@@ -114,7 +114,7 @@ namespace Phi.Cli
         /// <summary>phi test --target: run only on that system (PHI OS, or as Linux or Windows programs).</summary>
         public static Host? Only { get; set; }
 
-        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows };
+        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows, Host.Linux64 };
         const string ProgramWrapper = "\nphi.PhiTestProgram:Program\n{\n}\n";
 
         /// <summary>What only a test in QEMU can have: input typed into it, a web server, a sound card, other machines.</summary>
@@ -164,7 +164,7 @@ namespace Phi.Cli
                 if (!HostRunner.CanRun(host, out _)) continue;
                 var source = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), text + wrapper);
                 if (!PhiCompiler.Compile(source, generate: false, host: host).Success) continue;
-                yield return new Mode(host.Name().ToLowerInvariant(), wrapper, Host: host);
+                yield return new Mode(host.FlagName(), wrapper, Host: host);
             }
         }
 

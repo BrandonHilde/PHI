@@ -34,6 +34,9 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Where a Linux program is loaded: the usual address for a 32-bit ELF executable.</summary>
         public const uint LinuxAddress = 0x08048000;
 
+        /// <summary>Where a 64-bit Linux program is loaded (below 2 GB, so a label fits in an instruction).</summary>
+        public const uint Linux64Address = 0x400000;
+
         /// <summary>Where a Windows program is loaded: the usual image base for a 32-bit .exe.</summary>
         public const uint WindowsAddress = 0x400000;
 
@@ -41,6 +44,13 @@ namespace Phi.Compiler.CodeGen
         readonly BoundUnit unit;
         readonly DiagnosticBag diagnostics;
         readonly bool bits32;
+
+        /// <summary>
+        /// 64-bit code (a 64-bit Linux program): addresses, pointers and the stack are 64 bits,
+        /// and every number keeps its size (int stays 32 bits). bits32 is set too: what it means
+        /// beyond the registers (a heap, objects, 32-bit instructions) is the same.
+        /// </summary>
+        readonly bool bits64;
         readonly string libraryTarget;
 
         StringBuilder code = new();
@@ -56,8 +66,16 @@ namespace Phi.Compiler.CodeGen
             this.unit = unit;
             this.diagnostics = diagnostics;
             bits32 = unit.Kind is UnitKind.Kernel or UnitKind.Program;
+            bits64 = unit.Kind == UnitKind.Program && program.Host.Is64();
             libraryTarget = Binder.TargetOf(unit.Kind, program.Host);
             file = program.File;
+        }
+
+        /// <summary>Reports what a unit uses that its code can't do yet (64-bit code, for now), without generating it.</summary>
+        public static void Check(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
+        {
+            var gen = new X86Generator(program, unit, diagnostics);
+            if (gen.bits64) gen.Check64();
         }
 
         public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
@@ -73,8 +91,162 @@ namespace Phi.Compiler.CodeGen
 
         // ================================================================ layout
 
+        // ================================================================ 64-bit code, so far
+
+        /// <summary>
+        /// What 64-bit programs can do so far (S10 is teaching the generator the rest): numbers
+        /// of up to 32 bits (and bln, chr, enums), their variables, constants and math, methods
+        /// that take and give them, calls, if, while, when, log and exit. Anything else is an
+        /// error naming it, rather than code that's wrong.
+        /// </summary>
+        void Check64()
+        {
+            var reported = new HashSet<int>();
+            void Not(Node at, string what)
+            {
+                if (reported.Add(at.Span.Start))
+                    diagnostics.Error(file, at.Span, $"{what} isn't in 64-bit programs yet");
+            }
+            static bool Number(PhiType t) =>
+                !t.IsArray && (t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
+                               or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum);
+            bool Callable(object? callee) => callee switch
+            {
+                MethodSymbol m => m.Parameters.All(p => Number(p.Type)) && (m.ReturnType.Kind == TypeKind.Void || Number(m.ReturnType))
+                                  && m.Locals.All(v => Number(v.Type)) && !m.IsInterruptHandler && m.Decl.Owner.ForStruct == null,
+                BuiltinFunction b => b.Label is "OS_GetTicks" or "OS_Sleep" or "OS_Yield",
+                _ => false,
+            };
+
+            void Expression(Expr e)
+            {
+                switch (e)
+                {
+                    case NumberExpr or BoolExpr:
+                        return;
+                    case NameExpr { Symbol: ConstantSymbol }:
+                        return;
+                    case NameExpr { Call: CallExpr c }:
+                        Call(c, c.Resolved, c.Arguments);
+                        return;
+                    case NameExpr { Symbol: VariableSymbol v } when Number(v.Type):
+                        return;
+                    case CallExpr c:
+                        Call(c, c.Resolved, c.Arguments);
+                        return;
+                    case BinaryExpr b when Number(b.Left.Type) && Number(b.Right.Type):
+                        Expression(b.Left);
+                        Expression(b.Right);
+                        return;
+                    case UnaryExpr u when Number(u.Operand.Type):
+                        Expression(u.Operand);
+                        return;
+                    case CastExpr c when Number(c.Type) && Number(c.Operand.Type):
+                        Expression(c.Operand);
+                        return;
+                    default:
+                        Not(e, Number(e.Type) ? "this kind of expression" : $"{A(e.Type)}");
+                        return;
+                }
+            }
+
+            void Call(Node at, object? callee, List<Expr> arguments)
+            {
+                if (!Callable(callee))
+                {
+                    Not(at, callee is BuiltinFunction b ? b.Name : "calling a method that takes, gives or keeps anything but numbers");
+                    return;
+                }
+                foreach (Expr a in arguments) Expression(a);
+            }
+
+            void Statement(Stmt s)
+            {
+                switch (s)
+                {
+                    case ConstDecl or BreakStmt or ContinueStmt:
+                        return;
+                    case VarDecl d when d.Symbol is VariableSymbol v && Number(v.Type) && !d.IsNew && d.AtAddress == null:
+                        foreach (Expr value in d.Values) Expression(value);
+                        return;
+                    case AssignStmt a when a.Target is NameExpr { Symbol: VariableSymbol v } && Number(v.Type):
+                        Expression(a.Value);
+                        return;
+                    case LogStmt log:
+                        foreach (Expr value in log.Values)
+                            if (value is not StringExpr) Expression(value);
+                        return;
+                    case CallStmt c:
+                        if (c.ResultTarget != null && !(c.ResultTarget is NameExpr { Symbol: VariableSymbol r } && Number(r.Type)))
+                            Not(c, "keeping this kind of result");
+                        Call(c, c.Resolved, c.Arguments);
+                        return;
+                    case IfStmt { Condition: not ThrowsExpr } i:
+                        Expression(i.Condition);
+                        foreach (Stmt t in i.Then) Statement(t);
+                        foreach (Stmt t in i.Else ?? new()) Statement(t);
+                        return;
+                    case WhileStmt w:
+                        if (w.Init != null) Statement(w.Init);
+                        Expression(w.Condition);
+                        if (w.Step != null) Statement(w.Step);
+                        foreach (Stmt t in w.Body) Statement(t);
+                        return;
+                    case WhenStmt w when Number(w.Subject.Type):
+                        Expression(w.Subject);
+                        foreach (WhenBranch branch in w.Branches)
+                        {
+                            foreach (Expr v in branch.Values) Expression(v);
+                            foreach (Stmt t in branch.Body) Statement(t);
+                        }
+                        foreach (Stmt t in w.Else ?? new()) Statement(t);
+                        return;
+                    case ReturnStmt ret:
+                        if (ret.Value != null) Expression(ret.Value);
+                        return;
+                    case ExitStmt e:
+                        if (e.Code != null) Expression(e.Code);
+                        return;
+                    case UnsafeStmt u:
+                        foreach (Stmt t in u.Body) Statement(t);
+                        return;
+                    default:
+                        Not(s, "this statement");
+                        return;
+                }
+            }
+
+            foreach (ClassDecl cls in unit.Classes)
+            {
+                file = cls.File;
+                foreach (Stmt s in cls.Body) Statement(s);
+            }
+            foreach (MethodSymbol m in unit.Methods)
+            {
+                file = m.Decl.Owner.File;
+                foreach (VariableSymbol v in m.Parameters.Concat(m.Locals).Where(v => !Number(v.Type)))
+                    Not(v.Decl, $"{A(v.Type)} variable");
+                if (m.ReturnType.Kind != TypeKind.Void && !Number(m.ReturnType)) Not(m.Decl, $"a method that gives {A(m.ReturnType)}");
+                foreach (Stmt s in m.Decl.Body) Statement(s);
+                if (m.Decl.Result != null) Expression(m.Decl.Result);
+            }
+            file = program.File;
+        }
+
+        static string A(PhiType t)
+        {
+            string name = t.ToString();
+            return ("aeiou".Contains(name[0]) ? "an " : "a ") + name;
+        }
+
         string Build()
         {
+            if (bits64)
+            {
+                Check64();
+                if (diagnostics.HasErrors) return "";
+            }
+
             // every 32-bit kernel gets an interrupt table, so exceptions show the panic screen
             if (unit.Kind == UnitKind.Kernel) Need("phi_interrupts_init");
 
@@ -177,6 +349,15 @@ namespace Phi.Compiler.CodeGen
                     output.AppendLine("    cld");
                     break;
 
+                case UnitKind.Program when Host == Host.Linux64:
+                    output.AppendLine("bits 64");
+                    output.AppendLine($"org 0x{Linux64Address:X}");
+                    output.AppendLine();
+                    EmitElf64Header(output);
+                    output.AppendLine("phi_start:");
+                    output.AppendLine("    cld");
+                    break;
+
                 case UnitKind.Program when Host == Host.Windows:
                     output.AppendLine("bits 32");
                     output.AppendLine($"org 0x{WindowsAddress:X}");
@@ -273,6 +454,36 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>
+        /// The ELF header of a 64-bit Linux program, as for a 32-bit one: one segment, the whole
+        /// file, loaded at Linux64Address, readable, writable and runnable.
+        /// </summary>
+        static void EmitElf64Header(StringBuilder output)
+        {
+            output.AppendLine("phi_elf_header:");
+            output.AppendLine("    db 0x7F, 'ELF', 2, 1, 1, 0          ; 64-bit, little-endian, version 1, System V");
+            output.AppendLine("    times 8 db 0");
+            output.AppendLine("    dw 2                                 ; an executable");
+            output.AppendLine("    dw 0x3E                              ; for x86-64");
+            output.AppendLine("    dd 1");
+            output.AppendLine("    dq phi_start                         ; where it starts");
+            output.AppendLine("    dq phi_elf_segments - $$");
+            output.AppendLine("    dq 0                                 ; no sections");
+            output.AppendLine("    dd 0");
+            output.AppendLine("    dw phi_elf_segments - phi_elf_header");
+            output.AppendLine("    dw 56                                ; the size of a segment entry");
+            output.AppendLine("    dw 2                                 ; segments");
+            output.AppendLine("    dw 64, 0, 0");
+            output.AppendLine("phi_elf_segments:");
+            output.AppendLine("    dd 1, 7                              ; loaded: read, write, run");
+            output.AppendLine("    dq 0, $$, $$                         ; the whole file, at the start");
+            output.AppendLine("    dq phi_image_end - $$, phi_image_end - $$");
+            output.AppendLine("    dq 0x1000                            ; page aligned");
+            output.AppendLine("    dd 0x6474E551, 6                     ; the stack: read and write, not run");
+            output.AppendLine("    dq 0, 0, 0, 0, 0, 16");
+            output.AppendLine();
+        }
+
+        /// <summary>
         /// The headers of a Windows .exe (PE): a DOS stub that only points on, then one section
         /// holding everything, read, write and run. Section and file alignment are both a page, so
         /// a label's place in the file is its address less WindowsAddress, and no linker is needed.
@@ -325,7 +536,38 @@ namespace Phi.Compiler.CodeGen
 
         // ================================================================ emit helpers
 
-        void Emit(string instruction) => code.Append("    ").AppendLine(instruction);
+        void Emit(string instruction) => code.Append("    ").AppendLine(bits64 ? Widen(instruction) : instruction);
+
+        /// <summary>Bytes in an address.</summary>
+        int Word => bits64 ? 8 : bits32 ? 4 : 2;
+
+        /// <summary>Bytes a pushed value takes on the stack (16-bit code pushes 32-bit values too).</summary>
+        int Slot => bits64 ? 8 : 4;
+
+        /// <summary>A register as wide as an address, by its 32-bit name: R("eax") is rax in 64-bit code.</summary>
+        string R(string register) => bits64 && register.Length == 3 && register[0] == 'e' ? "r" + register[1..] : register;
+
+        static readonly System.Text.RegularExpressions.Regex StackRegisters = new(@"\be(sp|bp)\b");
+        static readonly System.Text.RegularExpressions.Regex PushPop = new(@"^(push|pop)\s+e(ax|bx|cx|dx|si|di|sp|bp)\b");
+        static readonly System.Text.RegularExpressions.Regex LeaInto = new(@"^lea\s+e(ax|bx|cx|dx|si|di)\b");
+
+        /// <summary>
+        /// An instruction written for 32-bit code, as 64-bit code: what's the same at either width
+        /// is translated here. The stack pointer and frame are always 64 bits; push and pop take
+        /// whole registers (a slot is 8 bytes); and lea works out an address, which is 64 bits.
+        /// What isn't the same (a value that's an address, how many bytes the pushes took) each
+        /// place that emits it gets right itself.
+        /// </summary>
+        static string Widen(string instruction)
+        {
+            string s = StackRegisters.Replace(instruction, "r$1");
+            s = PushPop.Replace(s, "$1 r$2");
+            s = LeaInto.Replace(s, "lea r$1");
+            if (s.StartsWith("push dword ")) s = "push qword " + s["push dword ".Length..];
+            else if (s.StartsWith("pushfd")) s = "pushfq" + s[6..];
+            else if (s.StartsWith("popfd")) s = "popfq" + s[5..];
+            return s;
+        }
         void Label(string label) => code.Append(label).AppendLine(":");
         void Line(string text) => code.AppendLine(text);
         string NewLabel(string hint) => $"phi_{hint}_{labelCount++}";
@@ -400,7 +642,7 @@ namespace Phi.Compiler.CodeGen
             addressTaken.Clear();
             foreach (Node n in m.Decl.Body.SelectMany(SyntaxWalker.Nodes))
                 if (n is AddrExpr { Operand: NameExpr { Symbol: VariableSymbol taken } }) addressTaken.Add(taken);
-            List<VariableSymbol> chosen = bits32
+            List<VariableSymbol> chosen = bits32 && !bits64
                 ? VariablePlanner.Choose(m, VariableRegisters.Length, FitsRegister, RunsInRegisters)
                 : new List<VariableSymbol>();
             Frame frame = LayOutFrame(m);
@@ -521,7 +763,7 @@ namespace Phi.Compiler.CodeGen
             code.Append(bodyText);
             if (hasFrame)
             {
-                for (int i = 0; i < saved.Count; i++) Emit($"mov {saved[i]}, [ebp - {frameSize + 4 * (i + 1)}]");
+                for (int i = 0; i < saved.Count; i++) Emit($"mov {R(saved[i])}, [ebp - {frameSize + Slot * (i + 1)}]");
                 Emit("mov esp, ebp");
                 Emit("pop ebp");
             }
@@ -866,7 +1108,7 @@ namespace Phi.Compiler.CodeGen
         Frame LayOutFrame(MethodSymbol m)
         {
             var frame = new Frame();
-            int slot = bits32 ? 8 : 6;
+            int slot = bits64 ? 16 : bits32 ? 8 : 6;
             if (m.ReturnType.IsString)
             {
                 frame.ResultSlot = slot;
@@ -986,7 +1228,8 @@ namespace Phi.Compiler.CodeGen
         void LoadAddress(string register, string home, int offset = 0)
         {
             string plus = offset == 0 ? "" : offset > 0 ? $" + {offset}" : $" - {-offset}";
-            Emit(InFrame(home) ? $"lea {register}, [{home}{plus}]" : $"mov {register}, {home}{plus}");
+            // (in 64-bit code, a label's address too, worked out from where the code is)
+            Emit(InFrame(home) ? $"lea {register}, [{home}{plus}]" : bits64 ? $"lea {R(register)}, [rel {home}{plus}]" : $"mov {register}, {home}{plus}");
         }
 
         void EmitRawBlock(RawBlockDecl raw)
@@ -1562,20 +1805,20 @@ namespace Phi.Compiler.CodeGen
                         if (p.TextRef)
                         {
                             PushTextRef(value!, writeBacks);
-                            pushedBytes += 4;
+                            pushedBytes += Slot;
                             continue;
                         }
                         if (bits32 && !p.Type.IsString && value != null && DirectOperand(value, constantOnly: false) is string asIs)
                         {
                             // a constant or a 32-bit variable is pushed as it is
                             Emit(asIs.Contains('[') || asIs.Contains('‹') ? $"push {asIs}" : $"push dword {asIs}");
-                            pushedBytes += 4;
+                            pushedBytes += Slot;
                             continue;
                         }
                         if (!p.Type.IsString && value != null && PlaceOperand(value))
                         {
                             Emit($"push dword {Operand(PlaceKeepingEax(value))}");
-                            pushedBytes += 4;
+                            pushedBytes += Slot;
                             continue;
                         }
                         if (value == null) Emit(p.Type.IsString ? $"mov eax, {StringLabel("")}" : "xor eax, eax");
@@ -1593,7 +1836,7 @@ namespace Phi.Compiler.CodeGen
                             LoadAddress("eax", text);
                         }
                         Emit("push eax");
-                        pushedBytes += 4;
+                        pushedBytes += Slot;
                     }
 
                     if (method.ReturnType.IsString)
@@ -1608,7 +1851,7 @@ namespace Phi.Compiler.CodeGen
                         }
                         else LoadAddress("eax", AllocTemp(method.ResultCapacity));
                         Emit("push eax");
-                        pushedBytes += 4;
+                        pushedBytes += Slot;
                     }
 
                     Emit($"call {method.Label}");
@@ -1630,7 +1873,7 @@ namespace Phi.Compiler.CodeGen
                     }
                     Need(builtin.Label);
                     Emit($"call {builtin.Label}");
-                    if (arguments.Count > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {arguments.Count * 4}");
+                    if (arguments.Count > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {arguments.Count * Slot}");
                     break;
                 }
 
@@ -2005,7 +2248,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         bool CanInline(MethodSymbol m)
         {
-            if (!bits32 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
+            if (!bits32 || bits64 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
             if (!inlinable.TryGetValue(m, out bool can))
             {
                 inlinable[m] = false;   // (a method that reaches itself isn't inlined)
@@ -2257,7 +2500,7 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>The bytes a parameter takes on the stack.</summary>
-        static int ParameterBytes(PhiType t) => t.Open ? 12 : t.ElementSize == 8 ? 8 : 4;
+        int ParameterBytes(PhiType t) => bits64 ? Slot : t.Open ? 12 : t.ElementSize == 8 ? 8 : 4;
 
         /// <summary>
         /// Pushes an array for an array parameter: the most it holds, how many it has, and where its
