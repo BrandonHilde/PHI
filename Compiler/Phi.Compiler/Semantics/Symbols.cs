@@ -148,12 +148,25 @@ namespace Phi.Compiler.Semantics
         public PhiType Element => this with { Length = 0, Filled = false, Open = false };
         public PhiType ArrayOf(int length) => this with { Length = length };
 
+        /// <summary>
+        /// Bytes in an address for the program being compiled: 8 in 64-bit code, 4 otherwise. The
+        /// binder sets it for each program (one at a time on a thread), so pointers, method values
+        /// and objects' places, and the structs they're in, are laid out for where it runs.
+        /// </summary>
+        [ThreadStatic] static int addressSize;
+        public static int AddressSize
+        {
+            get => addressSize == 0 ? 4 : addressSize;
+            set => addressSize = value;
+        }
+
         /// <summary>Bytes taken by one element in memory.</summary>
         public int ElementSize => Kind switch
         {
             TypeKind.I8 or TypeKind.U8 or TypeKind.Bool or TypeKind.Chr => 1,
             TypeKind.I16 or TypeKind.U16 => 2,
-            TypeKind.I32 or TypeKind.U32 or TypeKind.Pointer or TypeKind.Method or TypeKind.Object => 4,
+            TypeKind.Pointer or TypeKind.Method or TypeKind.Object => AddressSize,
+            TypeKind.I32 or TypeKind.U32 => 4,
             TypeKind.Str => Room > 0 ? Room : Room < 0 ? 8 : 4,  // arrays of strings hold pointers, texts kept in place, or text slots that grow
             TypeKind.Struct => Struct!.Size,
             TypeKind.Enum => 4,

@@ -2119,9 +2119,9 @@ phi run hello.phi --target linux -- a b  # build and run it here, with a b as it
 **64-bit programs** (in progress, S10 in [Plan.md](../Plan.md)): `--target linux64`
 builds a 64-bit Linux program. In 64-bit code pointers are 8 bytes, and every number keeps
 its size (`int` is 32 bits on every system). So far a 64-bit program can use numbers of up
-to 32 bits (and `bln`, `chr`, enums), methods that take and give them, `if`, `while`,
-`when`, `log`, `debug` and `exit`; anything else is an error saying it isn't in 64-bit
-programs yet.
+to 32 bits (and `bln`, `chr`, enums), arrays of them kept in place, pointers to them,
+methods that take and give those, `if`, `while`, `when`, `log`, `debug` and `exit`;
+anything else is an error saying it isn't in 64-bit programs yet.
 
 On Windows, `phi run --target linux` runs it under WSL. NASM writes the whole executable,
 so no linker or C library is involved: what a program asks PHI OS for, the program's

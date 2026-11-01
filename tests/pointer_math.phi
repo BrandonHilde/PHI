@@ -1,0 +1,43 @@
+# Pointers to numbers: addr, p:i, moving a pointer, comparing, an array where a pointer
+# goes, and pointers as parameters and results. A program, so it runs on Linux (32 and 64-bit)
+# and Windows: in 64-bit code pointers are 8 bytes, and this checks they act the same.
+phi.PointerMath:Program
+{
+	int numbers: 10 20 30 40;
+	u8 bytes[8];
+	ptr<int> p: addr numbers;
+	log 'p:2 ' p:2 '\n';
+	p:1 is 25;
+	log 'numbers:1 ' numbers:1 '\n';
+	p++ 4;
+	log 'moved: ' p:0 ' ' (p > (addr numbers)) '\n';
+	ptr<u8> b: bytes;
+	b:0 is 'h';
+	b:1 is 'i';
+	log 'text: ' b '\n';
+	ptr<int> last: (LastOf: addr numbers 4);
+	log 'last ' last:0 ', ' (Sum: addr numbers 4) '\n';
+	int local: 7;
+	call Bump: addr local;
+	log 'bumped ' local '\n';
+	if p is 0
+		log 'empty\n';
+	;;
+	else
+		log 'not empty\n';
+	;;
+
+	[LastOf: ptr<int> list: 0; int count: 0;]
+	[end: list + (count - 1) * 4]
+
+	[Sum: ptr<int> list: 0; int count: 0;]
+		int total: 0;
+		while int i: 0; i < count; i++;
+			total++ list:i;
+		;;
+	[end: total]
+
+	[Bump: ptr<int> x: 0;]
+		x:0 is x:0 + 1;
+	[end]
+}

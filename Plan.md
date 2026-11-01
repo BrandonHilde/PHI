@@ -1634,9 +1634,19 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   yet (`Check64`), which leaves that test to the other systems; 7 tests run as 64-bit
   Linux programs (`bitwise`, `compare_words`, `if_else`, `math`, `numbers`, `while_loop`,
   `while_many_iterations`). Register variables and inlining are off in 64-bit code for now.
-- [ ] (a, the rest) text, arrays, pointers, structs, the heap and objects, 64-bit numbers,
-  floating point, interfaces, the rest of the system calls: until every program test runs
-  as a 64-bit Linux program too
+- [x] (a, second part) arrays of numbers kept in place (fixed and `[atmost N]`: indexes,
+  their bounds checks and the index error, `.len`, `.max`, `sizeof`, `++`, `.len is`,
+  `while each`), and pointers to numbers (`addr`, `p:i`, `p + n`, comparing, casts,
+  parameters and results, a `ptr<u8>` printed as text). A pointer is 8 bytes in 64-bit
+  code (`PhiType.AddressSize`, which the binder sets for each program, so structs are laid
+  out for where they run). `p + n` is still typed as a number, so programs see no change,
+  but in 64-bit code it's worked out in all 64 bits (`IsAddress`). A register in a memory
+  operand is 64 bits (`Widen`). `lib/x86_64_linux/throw.asm` has 64-bit catch records
+  ready, but 64-bit code doesn't catch yet. Tests: 15 run as 64-bit Linux programs, and
+  `pointer_math` (new) on all three systems.
+- [ ] (a, the rest) text, arrays as parameters and arrays that grow, structs, the heap and
+  objects, 64-bit numbers, floating point, method values, interfaces, catching errors, the
+  rest of the system calls: until every program test runs as a 64-bit Linux program too
 
 #### Phase S11: Running for real
 

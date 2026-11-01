@@ -115,8 +115,11 @@ namespace Phi.Compiler.Semantics
             this.host = host;
         }
 
-        public static BoundProgram? Bind(ProgramNode program, DiagnosticBag diagnostics, Host host = Host.PhiOS) =>
-            new Binder(program.File, diagnostics, host).BindProgram(program);
+        public static BoundProgram? Bind(ProgramNode program, DiagnosticBag diagnostics, Host host = Host.PhiOS)
+        {
+            PhiType.AddressSize = host.Is64() ? 8 : 4;
+            return new Binder(program.File, diagnostics, host).BindProgram(program);
+        }
 
         void Error(Span span, string message) => diagnostics.Error(file, span, message);
 

@@ -107,13 +107,21 @@ namespace Phi.Compiler.CodeGen
                 if (reported.Add(at.Span.Start))
                     diagnostics.Error(file, at.Span, $"{what} isn't in 64-bit programs yet");
             }
-            static bool Number(PhiType t) =>
-                !t.IsArray && (t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
-                               or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum);
+            static bool NumberKind(PhiType t) =>
+                t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
+                    or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum;
+            static bool Number(PhiType t) => !t.IsArray && NumberKind(t);
+            // a pointer to numbers (a ptr<u8> is text too)
+            static bool Pointer(PhiType t) => t.IsPointer && !t.IsArray && t.Pointee is { IsArray: false } p && NumberKind(p);
+            static bool Value(PhiType t) => Number(t) || Pointer(t);
+            // an array of numbers kept in place: a fixed one or an [atmost N] one
+            static bool Numbers(VariableSymbol v) => v.Type.IsArray && NumberKind(v.Type) && !v.Type.Open && !v.GrowingArray;
+            static bool Kept(VariableSymbol v) => Value(v.Type) || Numbers(v);
+            static bool NumbersExpr(Expr e) => e is NameExpr { Symbol: VariableSymbol v } && Numbers(v);
             bool Callable(object? callee) => callee switch
             {
-                MethodSymbol m => m.Parameters.All(p => Number(p.Type)) && (m.ReturnType.Kind == TypeKind.Void || Number(m.ReturnType))
-                                  && m.Locals.All(v => Number(v.Type)) && !m.IsInterruptHandler && m.Decl.Owner.ForStruct == null,
+                MethodSymbol m => m.Parameters.All(p => Value(p.Type)) && (m.ReturnType.Kind == TypeKind.Void || Value(m.ReturnType))
+                                  && m.Locals.All(Kept) && !m.IsInterruptHandler && m.Decl.Owner.ForStruct == null,
                 BuiltinFunction b => b.Label is "OS_GetTicks" or "OS_Sleep" or "OS_Yield",
                 _ => false,
             };
@@ -129,23 +137,47 @@ namespace Phi.Compiler.CodeGen
                     case NameExpr { Call: CallExpr c }:
                         Call(c, c.Resolved, c.Arguments);
                         return;
-                    case NameExpr { Symbol: VariableSymbol v } when Number(v.Type):
+                    case NameExpr { Symbol: VariableSymbol v } when Value(v.Type) || Numbers(v):
+                        return;
+                    case AddrExpr { Operand: NameExpr { Symbol: VariableSymbol v } } when Kept(v):
+                        return;
+                    case AddrExpr { Operand: IndexExpr element } when NumbersExpr(element.Target) || Pointer(element.Target.Type):
+                        Expression(element);
+                        return;
+                    case IndexExpr ix when Pointer(ix.Target.Type) && Number(ix.Index.Type):
+                        Expression(ix.Target);
+                        Expression(ix.Index);
+                        return;
+                    case NameExpr { Symbol: LengthSymbol { Count: int } }:
+                        return;
+                    case NameExpr { Symbol: LengthSymbol { Filled: Expr filled } } when NumbersExpr(filled):
+                        return;
+                    case MemberExpr { Count: int }:
+                        return;
+                    case MemberExpr { FilledLength: true, Target: var counted } when NumbersExpr(counted):
+                        return;
+                    case SizeofExpr:
+                        return;
+                    case IndexExpr ix when NumbersExpr(ix.Target) && Number(ix.Index.Type):
+                        Expression(ix.Index);
                         return;
                     case CallExpr c:
                         Call(c, c.Resolved, c.Arguments);
                         return;
-                    case BinaryExpr b when Number(b.Left.Type) && Number(b.Right.Type):
+                    case BinaryExpr b when Value(b.Left.Type) && Value(b.Right.Type)
+                                           && (Number(b.Left.Type) && Number(b.Right.Type) && !IsAddress(b.Left) && !IsAddress(b.Right)
+                                               || b.Op is BinaryOp.Add or BinaryOp.Subtract || b.IsComparison):
                         Expression(b.Left);
                         Expression(b.Right);
                         return;
                     case UnaryExpr u when Number(u.Operand.Type):
                         Expression(u.Operand);
                         return;
-                    case CastExpr c when Number(c.Type) && Number(c.Operand.Type):
+                    case CastExpr c when Value(c.Type) && Value(c.Operand.Type):
                         Expression(c.Operand);
                         return;
                     default:
-                        Not(e, Number(e.Type) ? "this kind of expression" : $"{A(e.Type)}");
+                        Not(e, Number(e.Type) && e is not (StringExpr or TextExpr) ? Kind(e) : $"{A(e.Type)}");
                         return;
                 }
             }
@@ -166,15 +198,33 @@ namespace Phi.Compiler.CodeGen
                 {
                     case ConstDecl or BreakStmt or ContinueStmt:
                         return;
-                    case VarDecl d when d.Symbol is VariableSymbol v && Number(v.Type) && !d.IsNew && d.AtAddress == null:
+                    case VarDecl d when d.Symbol is VariableSymbol v && Kept(v) && !d.IsNew && d.AtAddress == null:
                         foreach (Expr value in d.Values) Expression(value);
                         return;
-                    case AssignStmt a when a.Target is NameExpr { Symbol: VariableSymbol v } && Number(v.Type):
+                    case AssignStmt a when a.Target is NameExpr { Symbol: VariableSymbol v } && Value(v.Type):
                         Expression(a.Value);
+                        return;
+                    case AssignStmt a when a.Target is IndexExpr ix && (NumbersExpr(ix.Target) || Pointer(ix.Target.Type)):
+                        Expression(ix);
+                        Expression(a.Value);
+                        return;
+                    case AppendStmt add when NumbersExpr(add.Target):
+                        foreach (Expr value in add.Values) Expression(value);
+                        return;
+                    case SetLengthStmt length when NumbersExpr(length.Array):
+                        Expression(length.Value);
+                        return;
+                    case WhileEachStmt each when NumbersExpr(each.Array):
+                        foreach (Stmt t in each.Body) Statement(t);
                         return;
                     case LogStmt log:
                         foreach (Expr value in log.Values)
-                            if (value is not StringExpr) Expression(value);
+                        {
+                            if (value is StringExpr) continue;
+                            // a ptr<u8> prints as its text; another pointer would print half an address
+                            if (Pointer(value.Type) && value.Type.Pointee != PhiType.U8) Not(value, $"printing {A(value.Type)}");
+                            else Expression(value);
+                        }
                         return;
                     case CallStmt c:
                         if (c.ResultTarget != null && !(c.ResultTarget is NameExpr { Symbol: VariableSymbol r } && Number(r.Type)))
@@ -211,7 +261,7 @@ namespace Phi.Compiler.CodeGen
                         foreach (Stmt t in u.Body) Statement(t);
                         return;
                     default:
-                        Not(s, "this statement");
+                        Not(s, Kind(s));
                         return;
                 }
             }
@@ -224,9 +274,9 @@ namespace Phi.Compiler.CodeGen
             foreach (MethodSymbol m in unit.Methods)
             {
                 file = m.Decl.Owner.File;
-                foreach (VariableSymbol v in m.Parameters.Concat(m.Locals).Where(v => !Number(v.Type)))
+                foreach (VariableSymbol v in m.Parameters.Where(v => !Value(v.Type)).Concat(m.Locals.Where(v => !Kept(v))))
                     Not(v.Decl, $"{A(v.Type)} variable");
-                if (m.ReturnType.Kind != TypeKind.Void && !Number(m.ReturnType)) Not(m.Decl, $"a method that gives {A(m.ReturnType)}");
+                if (m.ReturnType.Kind != TypeKind.Void && !Value(m.ReturnType)) Not(m.Decl, $"a method that gives {A(m.ReturnType)}");
                 foreach (Stmt s in m.Decl.Body) Statement(s);
                 if (m.Decl.Result != null) Expression(m.Decl.Result);
             }
@@ -236,8 +286,40 @@ namespace Phi.Compiler.CodeGen
         static string A(PhiType t)
         {
             string name = t.ToString();
-            return ("aeiou".Contains(name[0]) ? "an " : "a ") + name;
+            return ("aeio".Contains(name[0]) ? "an " : "a ") + name;    // a u8, an int
         }
+
+        /// <summary>What a statement or expression is, in words: for saying it isn't in 64-bit code yet.</summary>
+        static string Kind(Node n) => n switch
+        {
+            StringBuildStmt => "building text",
+            AppendStmt => "adding to an array",
+            ArrayAssignStmt => "copying a whole array",
+            ObjectAssignStmt => "copying an object",
+            TakesStmt => "takes",
+            WhileEachStmt => "while each",
+            SetLengthStmt => "setting an array's .len",
+            AtomicStmt or AtomicExpr => "atomic",
+            LockedStmt => "locked",
+            ThrowStmt => "throw",
+            IfStmt { Condition: ThrowsExpr } or ThrowsExpr => "catching errors",
+            AskStmt => "ask",
+            OutStmt or InExpr => "ports",
+            FreeStmt => "free",
+            AssignStmt => "assigning to this",
+            VarDecl { IsNew: true } => "new",
+            IndexExpr => "an index",
+            MemberExpr => "a field",
+            AddrExpr => "addr",
+            SizeofExpr => "sizeof",
+            HasExpr => "has",
+            TextExpr => "text in parentheses",
+            StringExpr => "text",
+            NewExpr => "new",
+            EmptyExpr => "empty",
+            IsTypeExpr => "is Struct name",
+            _ => n.GetType().Name,
+        };
 
         string Build()
         {
@@ -550,17 +632,22 @@ namespace Phi.Compiler.CodeGen
         static readonly System.Text.RegularExpressions.Regex StackRegisters = new(@"\be(sp|bp)\b");
         static readonly System.Text.RegularExpressions.Regex PushPop = new(@"^(push|pop)\s+e(ax|bx|cx|dx|si|di|sp|bp)\b");
         static readonly System.Text.RegularExpressions.Regex LeaInto = new(@"^lea\s+e(ax|bx|cx|dx|si|di)\b");
+        static readonly System.Text.RegularExpressions.Regex MemoryOperand = new(@"\[[^\]]*\]");
+        static readonly System.Text.RegularExpressions.Regex Register32 = new(@"\be(ax|bx|cx|dx|si|di)\b");
 
         /// <summary>
         /// An instruction written for 32-bit code, as 64-bit code: what's the same at either width
         /// is translated here. The stack pointer and frame are always 64 bits; push and pop take
         /// whole registers (a slot is 8 bytes); and lea works out an address, which is 64 bits.
         /// What isn't the same (a value that's an address, how many bytes the pushes took) each
-        /// place that emits it gets right itself.
+        /// place that emits it gets right itself. A register in a memory operand ([ebx + 4],
+        /// [label + eax*4]) is 64 bits too: what's in it is an address, or a number a 32-bit
+        /// instruction wrote (which clears the top half), such as an index already checked.
         /// </summary>
         static string Widen(string instruction)
         {
-            string s = StackRegisters.Replace(instruction, "r$1");
+            string s = MemoryOperand.Replace(instruction, m => Register32.Replace(m.Value, "r$1"));
+            s = StackRegisters.Replace(s, "r$1");
             s = PushPop.Replace(s, "$1 r$2");
             s = LeaInto.Replace(s, "lea r$1");
             if (s.StartsWith("push dword ")) s = "push qword " + s["push dword ".Length..];
@@ -1712,7 +1799,7 @@ namespace Phi.Compiler.CodeGen
                     else
                     {
                         EmitExpr(value);
-                        Emit("mov esi, eax");
+                        Emit($"mov {R("esi")}, {R("eax")}");
                     }
                     Emit($"call {print}");
                 }
@@ -1721,7 +1808,7 @@ namespace Phi.Compiler.CodeGen
                     string print = "phi_print" + suffix;
                     Need(print);
                     EmitNumberText(value);
-                    Emit("mov esi, eax");
+                    Emit($"mov {R("esi")}, {R("eax")}");
                     Emit($"call {print}");
                 }
                 else
@@ -2794,6 +2881,24 @@ namespace Phi.Compiler.CodeGen
             // through a pointer, or the characters of a str that isn't a plain variable
             bool viaValue = target.IsPointer || (target.IsString && ix.Target is not NameExpr { Symbol: VariableSymbol });
 
+            // 64-bit code: the address in all 64 bits, then the index (a pointer's isn't checked,
+            // so a negative one reaches before it)
+            if (bits64 && viaValue)
+            {
+                EmitExpr(ix.Target);
+                if (constant != null)
+                {
+                    Emit("mov rbx, rax");
+                    return new Place { Computed = true, Linear = true, Offset = (int)constant.Value * size };
+                }
+                Emit("push rax");
+                EmitIndexValue(ix, size);
+                Emit("movsxd rax, eax");
+                Emit("pop rbx");
+                Emit("add rbx, rax");
+                return new Place { Computed = true, Linear = true };
+            }
+
             // p:i with the index in a register variable (or a constant), and the pointer in one or in
             // memory: [p + i*size] as it is, with the pointer loaded into ebx at most
             if (PointerElementKeepsEax(ix))
@@ -2864,7 +2969,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("pop eax");
                 EmitIndexCheck(ix, "jb", "edx");
                 EmitScale(size);
-                Emit("add ebx, eax");
+                Emit($"add {R("ebx")}, {R("eax")}   ; (the index is checked: at least 0)");
                 return new Place { Computed = true, Linear = true };
             }
 
@@ -2896,7 +3001,8 @@ namespace Phi.Compiler.CodeGen
             else
             {
                 EmitIndexValue(ix, size);
-                Emit("mov ebx, eax");
+                // (in 64-bit code, a negative one in unsafe code stays before the array)
+                Emit(bits64 ? "movsxd rbx, eax" : "mov ebx, eax");
                 p.Computed = true;
             }
             return p;
@@ -3034,7 +3140,8 @@ namespace Phi.Compiler.CodeGen
         void EmitIndexError(Node at)
         {
             Emit($"mov eax, {LineOf(at)}   ; it stops here, so eax is free");
-            Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
+            if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
+            else Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
             Emit("jmp phi_index_error");
         }
 
@@ -3054,7 +3161,7 @@ namespace Phi.Compiler.CodeGen
         void EmitFilledCount(Expr array)
         {
             EmitPlaceAddress(array);
-            Emit("mov ebx, eax");
+            Emit($"mov {R("ebx")}, {R("eax")}");
             if (!bits32) Emit("push ebx");  // reaching memory in 16-bit code changes ebx
             Emit($"mov eax, dword {Operand(new Place { Computed = true, Linear = true, Offset = array.Type.CountOffset })}");
             if (!bits32) Emit("pop ebx");
@@ -3150,7 +3257,7 @@ namespace Phi.Compiler.CodeGen
                 if (!bits32) Emit("pop ebx");
                 Emit("mov eax, edx");
                 EmitScale(size);
-                Emit("add ebx, eax");
+                Emit($"add {R("ebx")}, {R("eax")}");
             }
 
             if (element.IsObject)
@@ -3295,14 +3402,16 @@ namespace Phi.Compiler.CodeGen
             {
                 1 => $"{(t.IsSigned ? "movsx" : "movzx")} {register}, byte {operand}",
                 2 => $"{(t.IsSigned ? "movsx" : "movzx")} {register}, word {operand}",
+                8 when bits64 => $"mov {R(register)}, qword {operand}",    // an address, in the whole register
                 _ => $"mov {register}, dword {operand}",
             };
         }
 
-        static string StoreInstruction(PhiType type, string operand) => StorageType(type).ElementSize switch
+        string StoreInstruction(PhiType type, string operand) => StorageType(type).ElementSize switch
         {
             1 => $"mov byte {operand}, al",
             2 => $"mov word {operand}, ax",
+            8 when bits64 => $"mov qword {operand}, rax",
             _ => $"mov dword {operand}, eax",
         };
 
@@ -4096,9 +4205,43 @@ namespace Phi.Compiler.CodeGen
             else EmitStorageAddress(e);
         }
 
+        /// <summary>
+        /// In 64-bit code, a value that's an address (64 bits): a pointer, or a number added to
+        /// or taken from one (p + n is typed as a number, but in 64-bit code it's worked out in
+        /// all 64 bits, so storing it in a pointer keeps the address whole). Never in 32-bit code,
+        /// where an address and a number are the same size.
+        /// </summary>
+        bool IsAddress(Expr e) => bits64 && e switch
+        {
+            _ when e.Type.IsPointer && !e.Type.IsArray => true,
+            BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract } b => IsAddress(b.Left) != IsAddress(b.Right),
+            _ => false,
+        };
+
+        /// <summary>
+        /// 64-bit code, with an address on at least one side: rax = the left, rcx = the right,
+        /// each in 64 bits (a number widened as its type says: a signed one keeps its sign).
+        /// </summary>
+        void EmitAddressOperands(BinaryExpr b)
+        {
+            EmitExpr(b.Right);
+            Emit("push rax");
+            EmitExpr(b.Left);
+            Emit("pop rcx");
+            if (!IsAddress(b.Left)) Emit(b.Left.Type.IsSigned ? "movsxd rax, eax" : "mov eax, eax");
+            if (!IsAddress(b.Right)) Emit(b.Right.Type.IsSigned ? "movsxd rcx, ecx" : "mov ecx, ecx");
+        }
+
         void EmitArithmetic(BinaryExpr binary)
         {
             bool unsigned = binary.Type.IsUnsigned32;
+            if (IsAddress(binary.Left) || IsAddress(binary.Right))
+            {
+                // an address moved by a number of bytes (or two addresses apart): in 64 bits
+                EmitAddressOperands(binary);
+                Emit(binary.Op == BinaryOp.Subtract ? "sub rax, rcx" : "add rax, rcx");
+                return;
+            }
             if (TryDirectArithmetic(binary, unsigned)) return;
             EmitOperands(binary);
 
@@ -4409,6 +4552,25 @@ namespace Phi.Compiler.CodeGen
                     Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
                     return;
 
+                case BinaryExpr { IsComparison: true } cmp when IsAddress(cmp.Left) || IsAddress(cmp.Right):
+                {
+                    // two addresses (or an address and a number) in 64 bits, as unsigned numbers
+                    EmitAddressOperands(cmp);
+                    Emit("cmp rax, rcx");
+                    BinaryOp op = jumpIf ? cmp.Op : Invert(cmp.Op);
+                    string jump = op switch
+                    {
+                        BinaryOp.Equal => "je",
+                        BinaryOp.NotEqual => "jne",
+                        BinaryOp.Less => "jb",
+                        BinaryOp.LessEqual => "jbe",
+                        BinaryOp.Greater => "ja",
+                        _ => "jae",
+                    };
+                    Emit($"{jump} {target}");
+                    return;
+                }
+
                 case BinaryExpr { IsComparison: true } cmp:
                 {
                     bool unsigned = cmp.Left.Type.IsUnsigned32 || cmp.Right.Type.IsUnsigned32;
@@ -4453,7 +4615,7 @@ namespace Phi.Compiler.CodeGen
             }
             EmitExpr(condition);
             if (condition.Type.IsWide) Emit("or eax, edx");
-            else Emit("test eax, eax");
+            else Emit(IsAddress(condition) ? "test rax, rax" : "test eax, eax");
             Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
         }
 
