@@ -1,0 +1,54 @@
+# Text in a program: fixed and growing strs, building and adding to them, comparing,
+# has, characters, .len and .max, a str copy and the caller's str as parameters, a str
+# result, and text in parentheses. A program, so it runs on Linux (32 and 64-bit) and
+# Windows: in 64-bit code a growing str's slot is 16 bytes.
+phi.TextBasics:Program
+{
+	str fixed: [20];
+	fixed is 'hello';
+	log fixed ' ' fixed.len ' of ' fixed.max '\n';
+
+	str name: 'Ada';
+	name++ ' Lovelace';
+	log 'name: ' name ', ' name.len '\n';
+
+	int line: 4;
+	str status: '';
+	status is 'Ln ' line + 1 ', Col ' 12;
+	log status '\n';
+
+	if name is 'Ada Lovelace'
+		log 'same\n';
+	;;
+	if name has 'Love'
+		log 'has Love\n';
+	;;
+	log 'first: ' name:0 ' then ' (name:1 as int) '\n';
+	name:0 is 'E';
+	log name '\n';
+
+	str long: '';
+	while int i: 0; i < 50; i++;
+		long++ i % 10;
+	;;
+	log long.len ' ' long '\n';
+
+	log (Greet: 'Bob') '\n';
+	str small: [8];
+	call Fill: small;
+	log 'filled: ' small '\n';
+	str grown: '';
+	call Fill: grown;
+	log 'grown: ' grown '\n';
+	str both: ('x' 1 'y' name.len);
+	log both '\n';
+
+	[Greet: str who: '';]
+		str text: 'hi ';
+		text++ who '!';
+	[end: text]
+
+	[Fill: str target;]
+		target is 'filled up past eight';
+	[end]
+}

@@ -1658,10 +1658,19 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
     version for it is an error naming it. `x64` is a reserved word. The heap's two blocks
     have one so far.
   Tests: 19 run as 64-bit Linux programs, and `heap_lists` (new) on all three systems.
-- [ ] (a, the rest) text (fixed and growing, and building it), arrays as parameters and
-  arrays that grow, objects, 64-bit numbers, floating point, method values, interfaces,
-  catching errors, `x64` versions of the rest of the library's blocks, the rest of the
-  system calls: until every program test runs as a 64-bit Linux program too
+- [x] (a, fourth part) text: strs with a size and strs that grow (a slot of its text's
+  address and its room, 16 bytes in 64-bit code), building them and adding to them, the
+  caller's str as a parameter, str results, comparing, `has`, characters, `.len`, `.max`,
+  text in parentheses, and `lib/x86_64_linux/text.asm`. Two fixes on the way: storing a
+  constant into an 8-byte place (`p.next is 0`) wrote only 4 of its bytes, and a method
+  giving a str took its hidden result argument as 4 bytes. A test's `NAME.MODE.expected`
+  is used before `NAME.expected` (`sizeof.linux64.expected`: a pointer is 8 bytes there).
+  Tests: 33 of the 51 that run as Linux programs run as 64-bit ones too, and
+  `text_basics` and `heap_churn` (new) on all three systems.
+- [ ] (a, the rest) str fields and arrays of strs, arrays as parameters and arrays that
+  grow, objects, 64-bit numbers, floating point, method values, interfaces, catching
+  errors, `ask`, `x64` versions of the rest of the library's blocks, the rest of the system
+  calls: until every program test runs as a 64-bit Linux program too
 
 #### Phase S11: Running for real
 

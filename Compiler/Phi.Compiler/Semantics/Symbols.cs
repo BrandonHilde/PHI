@@ -178,7 +178,7 @@ namespace Phi.Compiler.Semantics
         };
 
         /// <summary>Bytes taken by the whole value: every element, and a filled array's count.</summary>
-        public int ByteSize => Open ? 12 : IsInlineText ? Room : IsHeapText ? 8 : ElementSize * Math.Max(Length, 1) + (Filled ? (TextTable ? 4 * Length : 0) + 4 : 0);
+        public int ByteSize => Open ? 12 : IsInlineText ? Room : IsHeapText ? 2 * AddressSize : ElementSize * Math.Max(Length, 1) + (Filled ? (TextTable ? 4 * Length : 0) + 4 : 0);
 
         /// <summary>
         /// Where a filled array keeps its count, from the start of the array. A filled array of

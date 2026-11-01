@@ -320,7 +320,11 @@ namespace Phi.Cli
                 return $"missing from the output ({stopped}): {string.Join(" | ", missing)}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
             }
 
-            string expectedFile = Path.Combine(dir, name + ".expected");
+            // NAME.MODE.expected for what's meant to differ on that system (the size of a
+            // pointer, in 64-bit code), else NAME.expected
+            string expectedFile = File.Exists(Path.Combine(dir, variant + ".expected"))
+                ? Path.Combine(dir, variant + ".expected")
+                : Path.Combine(dir, name + ".expected");
             if (!File.Exists(expectedFile))
             {
                 File.WriteAllText(actualFile, actual);

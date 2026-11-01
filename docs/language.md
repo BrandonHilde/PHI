@@ -2120,8 +2120,9 @@ phi run hello.phi --target linux -- a b  # build and run it here, with a b as it
 builds a 64-bit Linux program. In 64-bit code pointers are 8 bytes, and every number keeps
 its size (`int` is 32 bits on every system). So far a 64-bit program can use numbers of up
 to 32 bits (and `bln`, `chr`, enums), pointers, structs made of those (in place or through
-a pointer), arrays of them kept in place, the heap (`new` and `free`), methods that take
-and give numbers and pointers, `if`, `while`, `when`, `log`, `debug` and `exit`; anything
+a pointer), arrays of them kept in place, the heap (`new` and `free`), `str` variables
+(with a size or growing: building, comparing, `has`, `.len`), methods that take and give
+numbers, pointers and text, `if`, `while`, `when`, `log`, `debug` and `exit`; anything
 else is an error saying it isn't in 64-bit programs yet. An address kept as a number is a
 `ptr<u8>` (the heap's `Heap.Alloc` gives one), so it's whole on every system.
 

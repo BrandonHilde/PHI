@@ -73,6 +73,12 @@ so with a comment line, `# runs only on PHI OS: why`. A test that is a `phi.Name
 runs only on the other systems (see `host_program.phi`). `phi test --target linux` (or
 `windows`) runs just those, without QEMU, in a few seconds.
 
+They run as 64-bit Linux programs too (`numbers (linux64)`; `--target linux64`), where the
+generator can build them: until 64-bit code can do everything (S10 in Plan.md), a test that
+uses what it can't yet is left to the other systems. What's meant to differ in 64-bit code,
+such as `sizeof` of a pointer, goes in `NAME.linux64.expected` (any mode can have one:
+`NAME.MODE.expected` is used before `NAME.expected`).
+
 A folder `NAME.rootfs/` becomes the FAT16 disk of a 32-bit test (see
 `kernel32_files.rootfs/`); `.phi` files in it are compiled into `.BIN` user programs (see
 `kernel32_processes.rootfs/`). `NAME.rootfs` can also be a file holding the path of a folder to
