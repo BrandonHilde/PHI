@@ -17,10 +17,10 @@ phi.MmoClient:Kernel
 	const int RETRY: 500;                 # ms between JOINs until it answers
 
 	u32 colors: 0xFFFFFF 0xE0483E 0xF08A24 0xF5C542 0x3DBE5A 0x3CC8E0 0x2F6FE4 0xC84FD8;
-	u32 ids[Game.MAX_THINGS];             # everything in the world: players and creatures
-	int xs[Game.MAX_THINGS];
-	int ys[Game.MAX_THINGS];
-	u8 kinds[Game.MAX_THINGS];
+	u32 ids[Game.MAX_SEEN];               # what the server says is near: players and creatures
+	int xs[Game.MAX_SEEN];
+	int ys[Game.MAX_SEEN];
+	u8 kinds[Game.MAX_SEEN];
 	int count: 0;
 
 	bln joined: false;
@@ -110,8 +110,8 @@ phi.MmoClient:Kernel
 	# where everything is
 	[State]
 		count is d.data:1;
-		if count > Game.MAX_THINGS
-			count is Game.MAX_THINGS;
+		if count > Game.MAX_SEEN
+			count is Game.MAX_SEEN;
 		;;
 		int players: 0;
 		bln all_moved: true;

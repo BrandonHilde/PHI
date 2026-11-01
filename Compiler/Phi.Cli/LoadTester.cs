@@ -4,21 +4,34 @@ namespace Phi.Cli
 {
     /// <summary>
     /// phi load: boots a server (machine 1, as Machine.address) on a VirtualNetwork with as
-    /// many load-client kernels (lib/phi/test/load.phi) as it takes to open the connections,
-    /// up to PerMachine each. Each client logs its connections in to the server's port
-    /// ("login NAME PASSWORD", answered "welcome NAME": the mmo sample's lobby), has each
-    /// say a numbered line once a second for the run ("say ...", answered "said ..."),
-    /// checking that every answer comes back in order, and prints its totals, which this
-    /// adds up. The clients are PHI kernels rather than connections from this computer:
-    /// QEMU's user network on Windows can only keep 64 connections from outside.
+    /// many load-client kernels as it takes to open the connections, up to PerMachine each.
+    ///
+    /// The default client (lib/phi/test/load.phi) logs its connections in to the server's port
+    /// ("login NAME PASSWORD", answered "welcome NAME": the mmo sample's lobby), has each say a
+    /// numbered line once a second for the run ("say ...", answered "said ..."), checking that
+    /// every answer comes back in order, and prints its totals, which this adds up. The clients
+    /// are PHI kernels rather than connections from this computer: QEMU's user network on
+    /// Windows can only keep 64 connections from outside.
+    ///
+    /// --client FILE uses another load-client kernel, built with the same LoadSettings and
+    /// Machine classes. Its last line is "load: NAME COUNT NAME COUNT ...", which this adds up
+    /// across the machines (taking the largest of a name that starts with "most"); it passes
+    /// when its "problems" count is 0.
+    ///
+    /// Either way, a server that writes "tick: N ticks in MS ms, L late, longest X ms, P players"
+    /// lines (the mmo world does, every 10 seconds) has its tick checked: after the first such
+    /// line, and once it has as many players as it gets in the run, no tick may be late.
     /// </summary>
     public static class LoadTester
     {
         const int PerMachine = 100;
         static readonly Regex Totals = new(@"load: connections (\d+) logged (\d+) answered (\d+) wrong (\d+) quit (\d+) latency (\d+) most (\d+)");
+        static readonly Regex Counts = new(@"^load: (.+)$", RegexOptions.Multiline);
+        static readonly Regex Ticks = new(@"tick: (\d+) ticks in (\d+) ms, (\d+) late, longest (\d+) ms, (\d+) players");
 
+        /// <param name="clientFile">a load-client kernel to use instead of lib/phi/test/load.phi</param>
         /// <param name="profile">sample where the server's CPU is, as phi profile does, and report it</param>
-        public static int Run(string phiFile, int connections, int seconds, int port, bool profile = false)
+        public static int Run(string phiFile, int connections, int seconds, int port, bool profile = false, string? clientFile = null)
         {
             string file = Path.GetFullPath(phiFile);
             string outDir = Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file) + ".load");
@@ -34,20 +47,20 @@ namespace Phi.Cli
             warnings.AddRange(server.Warnings);
             errors.AddRange(server.Errors);
 
-            // each client: a stub that uses the load client, told who it is and what to do
-            string stub = Path.Combine(outDir, "client.phi");
-            File.WriteAllText(stub, "# made by phi load\nuse test.load;\n");
+            // each client: the load client (or a stub that uses the default one), told who it is and what to do
+            string client = clientFile != null ? Path.GetFullPath(clientFile) : Path.Combine(outDir, "client.phi");
+            if (clientFile == null) File.WriteAllText(client, "# made by phi load\nuse test.load;\n");
             var images = new List<string> { server.ImagePath };
             for (int c = 0; c < clients && errors.Count == 0; c++)
             {
                 int number = c + 2;
                 int share = Math.Min(PerMachine, connections - c * PerMachine);
                 string settings = $"\nphi.LoadSettings:Library\n{{\n\tu32 connections: {share};\n\tu32 seconds: {seconds};\n\tu32 port: {port};\n}}\n";
-                BuildResult client = Builder.Build(stub, Path.Combine(outDir, $"client.{number}"),
+                BuildResult built = Builder.Build(client, Path.Combine(outDir, $"client.{number}"),
                     NetworkMachines.MachineClass(number, machines, 0x0A000300u + (uint)number, 0x0A000301) + settings);
-                warnings.AddRange(client.Warnings.Where(w => !warnings.Contains(w)));
-                errors.AddRange(client.Errors);
-                images.Add(client.ImagePath);
+                warnings.AddRange(built.Warnings.Where(w => !warnings.Contains(w)));
+                errors.AddRange(built.Errors);
+                images.Add(built.ImagePath);
             }
             foreach (string w in warnings.Distinct()) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
             foreach (string e in errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
@@ -58,45 +71,54 @@ namespace Phi.Cli
                 return 1;
             }
 
-            Console.WriteLine($"phi load: {connections} connections to {Path.GetRelativePath(Environment.CurrentDirectory, file)} " +
-                              $"(port {port}) from {clients} machines, for {seconds} s");
+            string what = clientFile == null
+                ? $"{connections} connections to {Path.GetRelativePath(Environment.CurrentDirectory, file)} (port {port})"
+                : $"{connections} of {Path.GetRelativePath(Environment.CurrentDirectory, client)} to {Path.GetRelativePath(Environment.CurrentDirectory, file)}";
+            Console.WriteLine($"phi load: {what} from {clients} machines, for {seconds} s");
 
             using var network = new VirtualNetwork(card: Qemu.NetworkCard);
             int? profilePort = profile ? Qemu.FreePort() : null;
             using var stopSampling = new CancellationTokenSource();
             Task<List<Profiler.Sample>>? sampler = profilePort is int pp ? Task.Run(() => Profiler.Collect(pp, stopSampling.Token)) : null;
 
+            Regex done = clientFile == null ? Totals : Counts;
             int clientsDone = 0;
             TimeSpan timeout = TimeSpan.FromSeconds(seconds + 240);
-            var runs = images.Select((image, i) => Task.Run(() => Qemu.RunHeadless(image, timeout,
-                i == 0
-                    ? _ => Volatile.Read(ref clientsDone) == clients                  // the server: until the clients are done
-                    : output =>
-                    {
-                        if (!Totals.IsMatch(output)) return false;
-                        Interlocked.Increment(ref clientsDone);
-                        return true;
-                    },
-                network: network.MachineArgs(i + 1), profilePort: i == 0 ? profilePort : null))).ToArray();
+            // when each of the server's tick reports came, by this computer's clock: a machine
+            // that can't keep up can fall behind in its own time too, which its ms wouldn't show
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var reportedAt = new List<double>();
+            bool ServerDone(string output)
+            {
+                int seen = Ticks.Matches(output).Count;
+                while (reportedAt.Count < seen) reportedAt.Add(clock.Elapsed.TotalMilliseconds);
+                return Volatile.Read(ref clientsDone) == clients;
+            }
+
+            // a client is done when its machine stops (it exits after its totals, which QEMU can
+            // do before its output is looked at again); the server runs until they all are
+            var runs = images.Select((image, i) => Task.Run(() =>
+            {
+                HeadlessResult run = Qemu.RunHeadless(image, timeout,
+                    i == 0 ? ServerDone : done.IsMatch,
+                    network: network.MachineArgs(i + 1), profilePort: i == 0 ? profilePort : null);
+                if (i > 0) Interlocked.Increment(ref clientsDone);
+                return run;
+            })).ToArray();
             Task.WaitAll(runs);
             stopSampling.Cancel();
 
             File.WriteAllText(Path.Combine(outDir, "server.txt"), runs[0].Result.Serial);
-            long count = 0, logged = 0, answered = 0, wrong = 0, quit = 0, latency = 0, most = 0;
             var problems = new List<string>();
+            var outputs = new List<string>();
             for (int i = 1; i < runs.Length; i++)
             {
                 HeadlessResult run = runs[i].Result;
                 File.WriteAllText(Path.Combine(outDir, $"client.{i + 1}.txt"), run.Serial);
-                Match m = Totals.Match(run.Serial);
-                if (!m.Success)
-                {
+                if (!done.IsMatch(run.Serial))
                     problems.Add($"machine {i + 1} didn't finish: {run.Explain(timeout, "no totals")}");
-                    continue;
-                }
-                long N(int g) => long.Parse(m.Groups[g].Value);
-                count += N(1); logged += N(2); answered += N(3); wrong += N(4); quit += N(5); latency += N(6);
-                most = Math.Max(most, N(7));
+                else
+                    outputs.Add(run.Serial);
             }
 
             if (sampler != null && sampler.Wait(TimeSpan.FromSeconds(5)))
@@ -106,6 +128,29 @@ namespace Phi.Cli
                 Console.WriteLine();
             }
 
+            bool ok = clientFile == null ? Lobby(outputs, connections, seconds) : Custom(outputs);
+            ok &= TickHeld(runs[0].Result.Serial, reportedAt);
+            Console.WriteLine($"  network:    {network.Frames:N0} frames");
+            foreach (string p in problems) Console.WriteLine("  " + p);
+            Console.WriteLine($"  (each machine's output: {Path.GetRelativePath(Environment.CurrentDirectory, outDir)})");
+
+            ok &= problems.Count == 0;
+            Console.WriteLine(ok ? "passed" : "FAILED");
+            return ok ? 0 : 1;
+        }
+
+        /// <summary>The default client's totals: every connection logged in, answered in order and quit.</summary>
+        static bool Lobby(List<string> outputs, int connections, int seconds)
+        {
+            long logged = 0, answered = 0, wrong = 0, quit = 0, latency = 0, most = 0;
+            foreach (string output in outputs)
+            {
+                Match m = Totals.Match(output);
+                long N(int g) => long.Parse(m.Groups[g].Value);
+                logged += N(2); answered += N(3); wrong += N(4); quit += N(5); latency += N(6);
+                most = Math.Max(most, N(7));
+            }
+
             long expected = (long)connections * seconds;
             Console.WriteLine($"  logged in:  {logged} of {connections}");
             Console.WriteLine($"  answered:   {answered:N0} lines (about {expected:N0} expected), " +
@@ -113,14 +158,68 @@ namespace Phi.Cli
             if (answered > 0)
                 Console.WriteLine($"  answers in: {(double)latency / answered:0.0} ms on average, {most} ms at most (in the kernel's ms)");
             Console.WriteLine($"  quit:       {quit} of {connections}");
-            Console.WriteLine($"  network:    {network.Frames:N0} frames");
-            foreach (string p in problems) Console.WriteLine("  " + p);
-            Console.WriteLine($"  (each machine's output: {Path.GetRelativePath(Environment.CurrentDirectory, outDir)})");
 
             // a line takes a second each, so a run can be a line or so short per connection
-            bool ok = problems.Count == 0 && logged == connections && quit == connections && wrong == 0 && answered >= expected - 2L * connections;
-            Console.WriteLine(ok ? "passed" : "FAILED");
-            return ok ? 0 : 1;
+            return logged == connections && quit == connections && wrong == 0 && answered >= expected - 2L * connections;
+        }
+
+        /// <summary>Another client's "load: NAME COUNT ..." line, added up across the machines; passes when problems is 0.</summary>
+        static bool Custom(List<string> outputs)
+        {
+            var totals = new List<(string Name, long Count)>();
+            foreach (string output in outputs)
+            {
+                string[] words = Counts.Matches(output).Last().Groups[1].Value.Trim().Split(' ', StringSplitOptions.RemoveEmptyEntries);
+                for (int w = 0; w + 1 < words.Length; w += 2)
+                {
+                    if (!long.TryParse(words[w + 1], out long count)) continue;
+                    int at = totals.FindIndex(t => t.Name == words[w]);
+                    if (at < 0) totals.Add((words[w], count));
+                    else totals[at] = (words[w], words[w].StartsWith("most") ? Math.Max(totals[at].Count, count) : totals[at].Count + count);
+                }
+            }
+            int width = totals.Count == 0 ? 0 : totals.Max(t => t.Name.Length) + 1;
+            foreach (var (name, count) in totals)
+                Console.WriteLine($"  {(name + ":").PadRight(width)} {count:N0}");
+            int problems = totals.FindIndex(t => t.Name == "problems");
+            if (problems < 0) Console.WriteLine("  the clients' load: lines have no problems count");
+            return problems >= 0 && totals[problems].Count == 0;
+        }
+
+        /// <summary>
+        /// The server's tick, if it says how it kept up: true when no tick was late once its
+        /// players were all in (leaving out the first report, which has the start in it), and
+        /// its clock kept up with this computer's over those reports.
+        /// </summary>
+        /// <param name="reportedAt">when each report came, in ms by this computer's clock</param>
+        static bool TickHeld(string serial, List<double> reportedAt)
+        {
+            var reports = Ticks.Matches(serial).Select((m, i) => (Ticks: long.Parse(m.Groups[1].Value), Ms: long.Parse(m.Groups[2].Value),
+                                                                  Late: long.Parse(m.Groups[3].Value), Longest: long.Parse(m.Groups[4].Value),
+                                                                  Players: long.Parse(m.Groups[5].Value),
+                                                                  // since the report before, by this computer's clock (NaN if it isn't known)
+                                                                  Host: i > 0 && i < reportedAt.Count ? reportedAt[i] - reportedAt[i - 1] : double.NaN)).ToList();
+            if (reports.Count == 0) return true;
+            long players = reports.Max(r => r.Players);
+            var counted = reports.Skip(1).SkipWhile(r => r.Players < players).ToList();
+            if (counted.Count == 0)
+            {
+                Console.WriteLine($"  tick:       not measured: the run ended before a report with all {players} players in (try more --seconds)");
+                return false;
+            }
+            long ticks = counted.Sum(r => r.Ticks), ms = counted.Sum(r => r.Ms), late = counted.Sum(r => r.Late);
+            Console.WriteLine($"  tick:       {ticks:N0} ticks in {ms / 1000.0:0.0} s ({ticks * 1000.0 / ms:0.0} a second) with {players} players, " +
+                              $"{late} late, longest {counted.Max(r => r.Longest)} ms");
+
+            // a report's ms against the time it took to come here (give or take how often the output is read)
+            var timed = counted.Where(r => !double.IsNaN(r.Host)).ToList();
+            double host = timed.Sum(r => r.Host), guest = timed.Sum(r => r.Ms);
+            bool kept = timed.All(r => r.Host <= r.Ms * 1.05 + 250);
+            if (timed.Count > 0)
+                Console.WriteLine($"  its clock:  {guest / 1000.0:0.0} s of the server's time took {host / 1000.0:0.0} s here" +
+                                  (kept ? "" : ": it fell behind, so its ms don't show how late the ticks really were " +
+                                               $"(each report: {string.Join(", ", timed.Select(r => $"{r.Ms / 1000.0:0.0} s in {r.Host / 1000.0:0.0}"))})"));
+            return late == 0 && kept;
         }
     }
 }

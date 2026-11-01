@@ -5,6 +5,7 @@
 #   use fs.savelog;
 #   PlayerSave p;
 #   call ok is SaveLog.Add: 'SAVES.LOG' addr p sizeof PlayerSave;          # false if the disk is full
+#   call ok is SaveLog.AddMany: 'SAVES.LOG' addr list sizeof PlayerSave n;  # n records, in one write
 #   int count: (SaveLog.Read: 'SAVES.LOG' sizeof PlayerSave addr Restore);  # -1 if there's no log
 #   call SaveLog.Clear: 'SAVES.LOG';
 #
@@ -27,6 +28,7 @@ phi.SaveLog:Kernel
 	const u32 MAX_RECORD: 1024;
 
 	u8 log_record[MAX_RECORD + 4];       # a record and its CRC, on its way to or from the disk
+	u8 log_batch[16384];                 # records and their CRCs, for AddMany
 	bln torn: false;                     # the last Read stopped at a damaged record
 
 	# add a record of size bytes to the end of the log at path; false if it couldn't be written
@@ -41,6 +43,30 @@ phi.SaveLog:Kernel
 		log_record:(size + 2) is crc >> 16;
 		log_record:(size + 3) is crc >> 24;
 	[end: (Fat.Append: path addr log_record size + 4)]
+
+	# add count records of size bytes each, one after another at records, to the end of
+	# the log at path, in as few writes as fit; false if any couldn't be written
+	[AddMany: ptr<u8> path: 0; ptr<u8> records: 0; u32 size: 0; u32 count: 0;]
+		if size is 0 or size > MAX_RECORD return false;
+		u32 used: 0;
+		while u32 r: 0; r < count; r++;
+			if used + size + 4 > sizeof log_batch
+				if (Fat.Append: path addr log_batch used) is false return false;
+				used is 0;
+			;;
+			ptr<u8> record: records + r * size;
+			while u32 i: 0; i < size; i++;
+				log_batch:(used + i) is record:i;
+			;;
+			u32 crc: (Crc32.Of: record size);
+			log_batch:(used + size) is crc;
+			log_batch:(used + size + 1) is crc >> 8;
+			log_batch:(used + size + 2) is crc >> 16;
+			log_batch:(used + size + 3) is crc >> 24;
+			used++ size + 4;
+		;;
+		if used is 0 return true;
+	[end: (Fat.Append: path addr log_batch used)]
 
 	# call every with each whole record in the log, oldest first; how many there were,
 	# or -1 if there's no log at path

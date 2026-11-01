@@ -1,8 +1,9 @@
 # Fat.Append and fs.savelog across a restart. The first boot adds 300 records of 20
 # bytes (so some cross from one 2 KB cluster into the next), then 7 bytes of a record
 # that was cut short; the input script restarts the machine on the same disk, and the
-# second boot reads the log back: 300 whole records, then the torn one. Then a file
-# that fills its cluster exactly, so the next Append starts a new one.
+# second boot reads the log back: 300 whole records, then the torn one. Then 1000
+# records in one AddMany, and a file that fills its cluster exactly, so the next Append
+# starts a new one.
 use fs.savelog;
 
 struct.Position
@@ -18,6 +19,7 @@ phi.Test:Kernel
 	u32 sum: 0;
 	int seen: 0;
 	u8 block[2048];
+	Position many[1000];
 
 	if (Fat.Exists: 'SAVES.LOG') is false
 		u32 free_before: (Fat.FreeClusters);
@@ -51,6 +53,15 @@ phi.Test:Kernel
 	sum is 0;
 	count is (SaveLog.Read: 'SAVES.LOG' sizeof Position addr Restore);
 	log 'after clearing: ' count ' records, ticks add up to ' sum ', torn: ' SaveLog.torn '\n';
+
+	# 1000 more in one call: 24 KB with their CRCs, so more than one batch
+	while int k: 0; k < 1000; k++;
+		many:k.tick is k;
+	;;
+	log 'many added: ' (SaveLog.AddMany: 'SAVES.LOG' addr many sizeof Position 1000) '\n';
+	sum is 0;
+	count is (SaveLog.Read: 'SAVES.LOG' sizeof Position addr Restore);
+	log 'after many: ' count ' records, ticks add up to ' sum ', last ' seen ', torn: ' SaveLog.torn '\n';
 	log 'no log: ' (SaveLog.Read: 'NONE.LOG' sizeof Position addr Restore) '\n';
 
 	# exactly one cluster, then ten bytes more

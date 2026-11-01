@@ -209,3 +209,32 @@ connection logged in and quit, and every answer came back, in order. Each machin
 is saved in `build/NAME.load/`. The clients are PHI kernels rather than connections from
 this computer because QEMU's user network on Windows keeps at most 64 connections from
 outside (it waits on its sockets with `select`).
+
+`--client FILE` boots another load-client kernel in place of the lobby's, such as the mmo
+world's players:
+
+```
+phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
+```
+
+It's built with the same `LoadSettings` (`connections`, `seconds`, `port`) and `Machine`
+classes, and its last line is `load: NAME COUNT NAME COUNT ...`. `phi load` adds each count
+up across the machines (and takes the largest of one whose name starts with `most`), and
+the run passes when `problems` comes to 0. `load_players.phi` plays its share of the
+players: each joins, steps four times a second, and counts the STATEs it's sent.
+
+**The tick.** A server that writes `tick: N ticks in MS ms, L late, longest X ms, P players`
+lines has its tick checked as well, whichever client is used; the mmo world writes one every
+10 seconds. Leaving out the first (it has the start in it) and any before the players are
+all in, no tick may be late. `phi load` also times when each report arrives here: a machine
+that can't keep up can fall behind in its own time too, where its own ms wouldn't show it, so
+a report that takes more than 5% longer here than it says fails the run.
+
+```
+  tick:       1,000 ticks in 50.0 s (20.0 a second) with 300 players, 0 late, longest 43 ms
+  its clock:  50.0 s of the server's time took 50.0 s here
+```
+
+The tick's own work is a benchmark, `samples/mmo/bench_tick.phi`: 500 players' moves,
+the creatures, the grid, and a STATE for each player, without the network, so the count is
+the same on every run.

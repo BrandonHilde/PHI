@@ -1,0 +1,67 @@
+# The mmo world's tick, timed: 500 players spread over the world, a quarter of them
+# taking a step each tick, then Zone's tick (the creatures move and everything goes into
+# the grid) and a STATE for every player, as server.rootfs/world.phi does 20 times a
+# second. Only the sending is left out, so the count is the same on every run.
+#
+# phi test --bench compares the count with bench_tick.bench. One more tick, not timed,
+# adds up the STATEs, which shows a change that tells players something different.
+use test.bench;
+use zone;
+
+phi.BenchTick:Kernel
+{
+	const int PLAYERS: 500;
+	const int TICKS: 5;
+
+	u8 message[Game.STATE_SIZE];
+	u32 seed: 12345;
+	u32 sum: 0;
+	int bytes: 0;
+	int wrong: 0;                         # STATEs that don't start with their player, or aren't full
+
+	while int i: 0; i < PLAYERS; i++;
+		call Zone.Add: 100 + i (Random: Game.WIDTH - Game.SIZE + 1) (Random: Game.HEIGHT - Game.SIZE + 1);
+	;;
+	log 'players: ' Zone.players.len '\n';
+
+	call Bench.Start;
+	while int t: 0; t < TICKS; t++;
+		call Tick: false;
+	;;
+	call Bench.Stop: 'tick of 500 players x5';
+	log 'states: ' TICKS * PLAYERS ', ' bytes ' bytes\n';
+
+	call Tick: true;
+	log 'one more: checksum ' sum ', ' wrong ' wrong\n';
+	exit 0;
+
+	# the moves that came in, the tick, and a STATE for each player
+	[Tick: bln check: false;]
+		while int i: 0; i < PLAYERS / 4; i++;
+			call Zone.Move: (Random: PLAYERS) ((Random: 4) + 1) as u8;
+		;;
+		call Zone.Tick;
+		while int i: 0; i < Zone.players.len; i++;
+			u32 size: (Zone.StateFor: i addr message);
+			bytes++ size;
+			if check
+				while u32 k: 0; k < size; k++;
+					sum is sum * 31 + message:k;
+				;;
+				# the player first, and as many as fit: the world is crowded
+				u32 first: (message:2 << 24) | (message:3 << 16) | (message:4 << 8) | message:5;
+				if first is not Zone.players:i.id or message:1 is not Game.MAX_SEEN
+					wrong++;
+				;;
+			;;
+		;;
+	[end]
+
+	# a number from 0 to limit - 1 (xorshift, so every run is the same)
+	[Random: u32 limit: 1;]
+		seed is seed ^ (seed << 13);
+		seed is seed ^ (seed >> 17);
+		seed is seed ^ (seed << 5);
+		int result: seed % limit;
+	[end: result]
+}

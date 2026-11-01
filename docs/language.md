@@ -2387,7 +2387,7 @@ are drivers in [lib/x86_32](../lib/x86_32).
 | `Bootloader.WaitForKeyPress` → | both | wait for a key and return its character |
 | `Bootloader.EnableVideoMode` | 16-bit | switch to 320×200 graphics with 256 colors |
 | `OS.SetupInteruptTimer` | both | run `[OS.TimerEvent]` 60 times a second |
-| `OS.GetTicks` → | 32-bit | milliseconds since the timer started |
+| `OS.GetTicks` → | 32-bit | milliseconds since the timer started (by the CPU's timestamp counter, so it keeps time when timer interrupts come late) |
 | `OS.Sleep: ms` | 32-bit | wait (other interrupts keep running) |
 | `OS.SetupKeyboardInterupt` | both | track keys and run `[OS.KeyboardEvent]` on every press and release (in 16-bit programs the BIOS keyboard, `ask` and `WaitForKeyPress` stop working) |
 | `OS.GetKey` → | both | the character of the last key pressed or released |
@@ -2430,6 +2430,12 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - For a **hardware interrupt**, `call OS.SetIrqHandler: 1 addr KeyPressed;` runs an
   ordinary method each time IRQ 1 fires and sends end-of-interrupt afterwards. The IRQ
   is unmasked for you.
+- The **timer** interrupts 1000 times a second, to wake sleeping tasks and switch between
+  them, but `OS.GetTicks` doesn't count those interrupts: its milliseconds come from the
+  CPU's timestamp counter, timed against the PIT when the timer starts. A count would lose
+  time whenever one interrupt comes before the last was taken (code that keeps interrupts
+  off, or a busy host: QEMU on Windows loses about a third of them even when idle).
+  `[OS.TimerEvent]` runs 60 times a second by the same clock.
 - For full control, `call OS.SetInterruptHandler: vector addr Handler;` points a vector
   straight at an `[isr]` method (which must call `OS.EndOfInterrupt` for hardware IRQs).
   This is also how software interrupts (`int 0x80` in an `asm.` block) are handled.

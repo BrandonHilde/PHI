@@ -1,0 +1,3 @@
+# Counts from phi test --bench (instructions run, under QEMU's -icount).
+# phi test --bench --save-bench replaces them with the latest counts.
+tick of 500 players x5  26999657

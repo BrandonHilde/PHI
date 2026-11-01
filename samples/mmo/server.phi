@@ -7,6 +7,8 @@
 #   phi run samples/mmo/server.phi      # the server and three clients (server.machines), each in a window
 #   phi test samples/mmo/server.phi     # the same, with the moves and a restart scripted
 #   phi load samples/mmo/server.phi     # hundreds of logins in the lobby at once
+#   phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
+#                                       # hundreds of players in the world, checking its tick
 #
 # It's machine 1 on the network that phi run and phi test make (see server.machines);
 # Machine.address is its address.

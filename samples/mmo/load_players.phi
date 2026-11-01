@@ -1,0 +1,143 @@
+# Players for phi load: a kernel that plays LoadSettings.connections players of the mmo
+# world at once, the way the clients (client.phi) do, to see the world hold its tick
+# with hundreds of them:
+#
+#   phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
+#
+# Each player joins (a JOIN every half second until its first STATE comes), then takes
+# a step in a random direction four times a second for the run, and counts the STATEs
+# it's sent, 20 a second. A machine's players share one socket, since a STATE says whose
+# it is: the player it's sent to comes first. The last line is what phi load adds up:
+#
+#   load: players 100 joined 100 states 119600 moves 24000 wrong 0 problems 0
+#
+# (wrong is a STATE that isn't one of ours or doesn't add up; problems is how many of
+# these failed: everyone joined, nothing wrong, and at least 90% of the STATEs came.)
+
+use net.udp;
+use protocol;
+
+phi.LoadPlayers:Kernel
+{
+	const int MOST: 128;                  # players from one machine
+	const int RETRY: 500;                 # ms between JOINs until the world answers
+	const int STEP_EVERY: 250;            # ms between a player's steps
+
+	bln joined[MOST];
+	int next_at[MOST];                    # when the player takes its next step
+	u8 message[8];
+	UdpDatagram d;
+	u32 seed: 0;
+
+	int count: LoadSettings.connections;
+	u32 first_id: Machine.number * 1000;  # players' ids: 1000 a machine apart
+	bln running: false;                   # in the run, after the joins
+	u32 joins: 0;
+	u32 states: 0;                        # STATEs in the run
+	u32 moves: 0;
+	u32 wrong: 0;
+
+	if count > MOST
+		count is MOST;
+	;;
+	seed is Machine.number * 2654435761;
+	bln ok: (Net.Start: Machine.address);
+	int s: (Udp.Open: 0 512);
+	call Run;
+
+	[Run]
+		# everyone joins (the world may still be starting)
+		int start: (OS.GetTicks);
+		int last_join: start - RETRY;
+		while joins < count and (OS.GetTicks) - start < 60000
+			if (OS.GetTicks) - last_join >= RETRY
+				while int c: 0; c < count; c++;
+					if joined:c is false
+						message:0 is Game.JOIN;
+						call Net.Put32: addr message + 1 first_id + c;
+						call Udp.SendTo: s Machine.first Game.PORT addr message 5;
+					;;
+				;;
+				last_join is (OS.GetTicks);
+			;;
+			call Receive;
+			call Net.Wait;
+		;;
+		log 'joined: ' joins ' of ' count '\n';
+
+		# a step from each, four times a second, spread over the quarter second
+		running is true;
+		start is (OS.GetTicks);
+		while int c: 0; c < count; c++;
+			next_at:c is start + c * STEP_EVERY / count;
+		;;
+		int stop: start + LoadSettings.seconds * 1000;
+		while (OS.GetTicks) - stop < 0
+			int now: (OS.GetTicks);
+			while int c: 0; c < count; c++;
+				if joined:c and now - next_at:c >= 0
+					message:0 is Game.MOVE;
+					call Net.Put32: addr message + 1 first_id + c;
+					message:5 is (Random: 4) + 1;
+					call Udp.SendTo: s Machine.first Game.PORT addr message 6;
+					moves++;
+					next_at:c++ STEP_EVERY;
+				;;
+			;;
+			call Receive;
+			call Net.Wait;
+		;;
+		running is false;
+
+		int expected: count * LoadSettings.seconds * 1000 / Game.TICK;
+		int problems: 0;
+		if joins < count
+			problems++;
+		;;
+		if wrong > 0
+			problems++;
+		;;
+		if states < expected * 9 / 10
+			problems++;
+		;;
+		log 'load: players ' count ' joined ' joins ' states ' states ' moves ' moves ' wrong ' wrong ' problems ' problems '\n';
+		exit 0;
+	[end]
+
+	# every datagram waiting: a STATE is the first one for its player (it joined), and
+	# counts in the run
+	[Receive]
+		while (Udp.Receive: s addr d)
+			if d.data:0 is not Game.STATE
+				continue;                     # a WELCOME: which player's isn't said
+			;;
+			int things: 0;
+			if d.length >= 2
+				things is d.data:1;
+			;;
+			if things < 1 or things > Game.MAX_SEEN or d.length is not 2 + things * 9
+				wrong++;
+				continue;
+			;;
+			int c: (Net.Get32: addr d.data + 2) - first_id;
+			if c < 0 or c >= count
+				wrong++;
+				continue;
+			;;
+			if joined:c is false
+				joined:c is true;
+				joins++;
+			;;
+			if running
+				states++;
+			;;
+		;;
+	[end]
+
+	# a number from 0 to limit - 1 (xorshift)
+	[Random: u32 limit: 1;]
+		seed is seed ^ (seed << 13);
+		seed is seed ^ (seed >> 17);
+		seed is seed ^ (seed << 5);
+	[end: seed % limit]
+}

@@ -901,6 +901,7 @@ they were measured on, so a tick at 20 a second has room for about 100 million.
 | | | a loot roll on a table of chances | 101 |
 | Memory | `bench_memory` | heap / pool / map (see S2) | 690 / 144 / 116 |
 | Security | `bench_crypto` | PBKDF2 (1,000 rounds), X25519 (a TLS handshake's key) | 39 M / 109 M |
+| The tick | `mmo/bench_tick` | one tick of the mmo world with 500 players: moves, creatures, the grid, a STATE each (S7) | 5.4 M |
 
 What stands out:
 - **Signing every packet with HMAC-SHA256 costs too much:** 1,000 players sending 20
@@ -929,7 +930,7 @@ milestone names its phases.
    around.
    *Done when:* a test boots the server and several scripted clients, each client sees the
    others move, and after a restart the server has their positions back.
-2. **Hundreds of players** (Phases S5–S7). A TCP server (listen, accept, a sliding window), register
+2. **Hundreds of players** (Phases S5–S7; done 2026-11-01: 300 players hold 20 ticks a second). A TCP server (listen, accept, a sliding window), register
    allocation in the code generator, and interfaces: this scenario is the kind of code
    item 3 of "Where things stand" was waiting for before choosing a design.
    *Done when:* a load test with hundreds of simulated clients holds a fixed tick rate,
@@ -1360,7 +1361,11 @@ Goal: Scenario 1's second milestone, and the interface design Plan.md has been w
 tick rate, `phi test --bench` reports the tick time so a slowdown fails it, and the
 server's entity kinds are one interface.
 
-**Status: (1), (2) and (3) done; the milestone's tick-time benchmark is what's left.**
+**Status: done (2026-11-01): milestone 2.** `phi load samples/mmo/server.phi --client
+samples/mmo/load_players.phi --connections 300 --seconds 60` holds 20 ticks a second (none
+late, the longest 43 ms of its 50, on either card). 400 holds too, but its longest ticks
+pass 50 ms (62); 500 doesn't (11 late on the RTL8139, 53 on virtio-net), which is the
+optimising phase's to fix (see below).
 
 - [x] (1) the design, chosen with the user: `interface.Shape { [Area] [Grow: int by;] }`
   lists method headers, `struct.Circle has Shape { ... }` writes them, and what each
@@ -1393,7 +1398,35 @@ server's entity kinds are one interface.
   (9 bytes), and the clients draw creatures as smaller grey squares. `gui.widgets` doesn't
   fit yet: programs keep widgets in place (`Button ok;`) and `FocusChain` borrows pointers
   to them, and an interface holds objects it owns.
-- [ ] the milestone's `phi load` / `phi test --bench` tick time
+- [x] the milestone's tick time, in `phi load` and `phi test --bench`:
+  - The world itself is `samples/mmo/zone.phi` now (the entities, their moves, a grid of
+    cells and what each player is told), so the world program (`world.phi`) and a
+    benchmark share it. Up to 512 players; a STATE is the player it's for, then what's
+    nearest it, a ring of cells at a time, up to 64 things, so it fits in a datagram however
+    crowded the world is (a quiet one is still sent whole). Players are found by id
+    through `data.map`, and the ones who moved are saved once a second in one write
+    (`SaveLog.AddMany`, kernel and program alike) rather than one a tick each. Each
+    player's join and save is logged while there are 8 or fewer.
+  - The world says how its tick kept up every 10 seconds
+    (`tick: 200 ticks in 10000 ms, 0 late, longest 41 ms, 300 players`). `phi load` checks
+    it: no tick late once the players are in, and the reports must come here as fast as
+    they say. `--client FILE` boots another load client: `samples/mmo/load_players.phi`
+    plays 100 players a machine (one socket each machine: a STATE names whose it is by
+    putting them first). Test `mmo/bench_tick` (500 players' tick, 5.4 M instructions).
+  - **The kernel's clock lost time**, which the load test found and is fixed: `OS.GetTicks`
+    counted timer interrupts, and QEMU on Windows loses about a third of them even when
+    idle (10 s took 14.7 s here), so every sleep and timeout ran long, and a late tick could
+    look on time. Its ms come from the timestamp counter now, timed against PIT channel 2
+    when the timer starts, and `[OS.TimerEvent]` keeps to 60 a second by it too.
+  - **For the optimising phase (not done now: the user, 2026-11-01, optimising waits for a
+    release):** most of a tick with 500 players is sending, not working out what to send
+    (`bench_tick`'s 5.4 M instructions are about a fifth of it). Telling the virtio card
+    about each frame costs about 80 µs under QEMU (500 a tick took 40 of the 50 ms; told
+    once a millisecond instead, with the rest of a burst on the next timer tick, it took
+    14), and `Net`'s UDP and IP sends copy and add up their checksums a byte at a time (16
+    bits at a time, RFC 1071, took about 10% off). Tried on 2026-11-01, both held 500
+    players with the longest tick 33 ms (virtio-net) and 44 (RTL8139), and were taken out
+    again to wait for that phase.
 
 #### Phase S8: Containing errors
 

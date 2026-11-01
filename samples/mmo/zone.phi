@@ -1,0 +1,278 @@
+# The mmo sample's world itself: the players and the creatures, their moves, and what
+# each player is told every tick. The world program (server.rootfs/world.phi) keeps it
+# on the network and saves the players; bench_tick.phi times its tick.
+#
+# Each tick puts everything into a grid of cells, and a player's STATE is that player,
+# then the things in its cell, then those in the ring of cells around it, and so on out
+# until it holds Game.MAX_SEEN. A quiet world fits in one STATE whole; in a crowded one
+# each player hears about what's near it, whatever the number of players.
+#
+# Players and creatures are kinds of Entity: whatever their kind, they're put into a
+# STATE the same way, and each creature moves the way its own kind does.
+
+use data.map;
+use protocol;
+
+# anything in the world
+interface.Entity
+{
+	[Id]
+	[X]
+	[Y]
+	[Kind]                      # Game.PLAYER, Game.WANDERER, ...
+	[Tick]                      # once a tick
+}
+
+struct.Player has Entity
+{
+	u32 id;
+	u32 address;                # where its client is
+	u32 port;
+	i32 x;
+	i32 y;
+	bln moved;                  # since it was last saved
+
+	[Id]
+	[end: id]
+
+	[X]
+	[end: x]
+
+	[Y]
+	[end: y]
+
+	[Kind]
+	[end: Game.PLAYER]
+
+	# a player moves when its client says (a MOVE), not on its own
+	[Tick]
+	[end]
+}
+
+# walks along a row, turning round at each side
+struct.Wanderer has Entity
+{
+	u32 id;
+	i32 x;
+	i32 y;
+	i32 dx;                     # how far it goes each tick, and which way
+
+	[Id]
+	[end: id]
+
+	[X]
+	[end: x]
+
+	[Y]
+	[end: y]
+
+	[Kind]
+	[end: Game.WANDERER]
+
+	[Tick]
+		if x + dx < 0 or x + dx > Game.WIDTH - Game.SIZE
+			dx is 0 - dx;
+		;;
+		x++ dx;
+	[end]
+}
+
+# goes round a square, one side at a time
+struct.Patrol has Entity
+{
+	u32 id;
+	i32 x;
+	i32 y;
+	int side;                   # 0 right, 1 down, 2 left, 3 up
+	int steps;                  # along this side
+
+	[Id]
+	[end: id]
+
+	[X]
+	[end: x]
+
+	[Y]
+	[end: y]
+
+	[Kind]
+	[end: Game.PATROL]
+
+	[Tick]
+		when side
+			is 0
+				x++ 2;
+			;;
+			is 1
+				y++ 2;
+			;;
+			is 2
+				x-- 2;
+			;;
+			is 3
+				y-- 2;
+			;;
+		;;
+		steps++;
+		if steps is 30
+			steps is 0;
+			side is (side + 1) % 4;
+		;;
+	[end]
+}
+
+phi.Zone:Library
+{
+	const u32 NOBODY: 0xFFFFFFFF;
+	const int CELL: 20;                       # the grid's cells are this big
+	const int ACROSS: Game.WIDTH / CELL;
+	const int DOWN: Game.HEIGHT / CELL;
+	const int RINGS: ACROSS - 1;              # rings of cells round any cell that cover the world
+
+	new Player players[atmost Game.MAX_PLAYERS];
+	new Entity creatures[atmost Game.MAX_CREATURES];
+	ptr<MapData> places: (Map.New);           # player id -> its place in players
+	int heads[ACROSS * DOWN];                 # the first thing in each cell, or -1
+	int next[Game.MAX_THINGS];                # the next thing in the same cell, or -1
+
+	# the creatures, which aren't saved: they start again where they began
+	new Wanderer high: 1001 0 60 3;
+	new Wanderer low: 1002 300 170 -2;
+	new Patrol guard: 1003 200 40;
+	creatures++ high low guard;
+
+	# which of the players has this id, or -1
+	[Find: u32 id: 0;]
+	[end: (Map.Get: places id NOBODY) as int]
+
+	# a new player at x y: its place in players, or -1 if the world is full
+	[Add: u32 id: 0; int x: 0; int y: 0;]
+		if players.len >= Game.MAX_PLAYERS return -1;
+		new Player p: id;
+		p.x is x;
+		p.y is y;
+		players++ p;
+		call Map.Set: places id players.len - 1;
+	[end: players.len - 1]
+
+	# a step for player i, if it stays in the world; true if it moved
+	[Move: int i: 0; u8 direction: 0;]
+		int x: players:i.x;
+		int y: players:i.y;
+		when direction
+			is Game.LEFT
+				x-- Game.STEP;
+			;;
+			is Game.RIGHT
+				x++ Game.STEP;
+			;;
+			is Game.UP
+				y-- Game.STEP;
+			;;
+			is Game.DOWN
+				y++ Game.STEP;
+			;;
+		;;
+		if x < 0 or y < 0 or x > Game.WIDTH - Game.SIZE or y > Game.HEIGHT - Game.SIZE return false;
+		players:i.x is x;
+		players:i.y is y;
+		players:i.moved is true;
+	[end: true]
+
+	# ---- every tick
+
+	# the creatures move, then everything goes into the grid: things 0 to players.len - 1
+	# are the players, and the creatures come after them
+	[Tick]
+		while int i: 0; i < creatures.len; i++;
+			call creatures:i.Tick;
+		;;
+		while int c: 0; c < ACROSS * DOWN; c++;
+			heads:c is -1;
+		;;
+		while int t: 0; t < players.len + creatures.len; t++;
+			int c: 0;
+			if t < players.len
+				c is (CellAt: players:t.x players:t.y);
+			;;
+			else
+				c is (CellAt: (creatures:(t - players.len).X) (creatures:(t - players.len).Y));
+			;;
+			next:t is heads:c;
+			heads:c is t;
+		;;
+	[end]
+
+	# the cell that x y is in
+	[CellAt: int x: 0; int y: 0;]
+		int cx: x / CELL;
+		int cy: y / CELL;
+		if cx < 0
+			cx is 0;
+		;;
+		if cx >= ACROSS
+			cx is ACROSS - 1;
+		;;
+		if cy < 0
+			cy is 0;
+		;;
+		if cy >= DOWN
+			cy is DOWN - 1;
+		;;
+	[end: cy * ACROSS + cx]
+
+	# player i's STATE into message (at least Game.STATE_SIZE bytes): the player, then
+	# what's nearest it, a ring of cells at a time; its size in bytes
+	[StateFor: int i: 0; ptr<u8> message: 0;]
+		message:0 is Game.STATE;
+		u32 size: (Put: players:i message 2);
+		int seen: 1;
+		int cell: (CellAt: players:i.x players:i.y);
+		int cx: cell % ACROSS;
+		int cy: cell / ACROSS;
+		while int r: 0; r <= RINGS and seen < Game.MAX_SEEN; r++;
+			while int y: cy - r; y <= cy + r; y++;
+				if y < 0 or y >= DOWN continue;
+				# the top and bottom rows of the ring whole, and only its sides in between
+				int step: 1;
+				if y is not cy - r and y is not cy + r
+					step is 2 * r;
+				;;
+				while int x: cx - r; x <= cx + r; x++ step;
+					if x < 0 or x >= ACROSS continue;
+					int t: heads:(y * ACROSS + x);
+					while t >= 0 and seen < Game.MAX_SEEN
+						if t is not i
+							if t < players.len
+								size is (Put: players:t message size);
+							;;
+							else
+								size is (Put: creatures:(t - players.len) message size);
+							;;
+							seen++;
+						;;
+						t is next:t;
+					;;
+				;;
+			;;
+		;;
+		message:1 is seen;
+	[end: size]
+
+	# one thing in the world, of any kind, into a STATE at offset
+	[Put: Entity thing; ptr<u8> message: 0; u32 offset: 0;]
+		ptr<u8> p: message + offset;
+		u32 id: (thing.Id);
+		p:0 is id >> 24;
+		p:1 is id >> 16;
+		p:2 is id >> 8;
+		p:3 is id;
+		int x: (thing.X);
+		p:4 is x >> 8;
+		p:5 is x;
+		int y: (thing.Y);
+		p:6 is y >> 8;
+		p:7 is y;
+		p:8 is (thing.Kind);
+	[end: offset + 9]
+}

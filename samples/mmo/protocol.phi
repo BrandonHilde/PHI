@@ -6,11 +6,13 @@
 #   WELCOME  server -> client   u16 x, u16 y               (where the player is: saved, or new)
 #   MOVE     client -> server   u32 player, u8 direction   (one STEP: LEFT, RIGHT, UP or DOWN)
 #   STATE    server -> client   u8 count, then u32 id, u16 x, u16 y, u8 kind for each
-#                               thing in the world: players and creatures (every tick)
+#                               thing: the player it's sent to first, then the players and
+#                               creatures nearest it, up to MAX_SEEN (every tick)
 
 phi.Game:Library
 {
 	const u32 PORT: 4000;
+	const int TICK: 50;                   # ms between STATEs: 20 ticks a second
 
 	const u8 JOIN: 1;
 	const u8 WELCOME: 2;
@@ -27,7 +29,7 @@ phi.Game:Library
 	const int SIZE: 10;                   # a player is a square this big
 	const int STEP: 10;                   # how far one MOVE goes
 	const int START_X: 20;                # where new players start, down the left side
-	const int MAX_PLAYERS: 32;
+	const int MAX_PLAYERS: 512;
 
 	# the kinds of things in the world, as STATE gives them
 	const u8 PLAYER: 1;
@@ -36,5 +38,6 @@ phi.Game:Library
 
 	const int MAX_CREATURES: 4;
 	const int MAX_THINGS: MAX_PLAYERS + MAX_CREATURES;
-	const int STATE_SIZE: 2 + MAX_THINGS * 9;
+	const int MAX_SEEN: 64;               # the most things one STATE tells a player about
+	const int STATE_SIZE: 2 + MAX_SEEN * 9;
 }

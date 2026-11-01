@@ -150,6 +150,9 @@ phi.Count:Program
        phi load samples/mmo/server.phi --connections 500 --seconds 60
                                          boot the game server with load-client kernels that log 500
                                          TCP connections in and keep them talking, checking every answer
+       phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
+                                         300 players in the game world at once, checking that it keeps
+                                         its 20 ticks a second
        phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
 
 The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each

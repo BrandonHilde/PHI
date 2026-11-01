@@ -38,12 +38,15 @@ const string Usage = """
                                            lines and methods that took the most time; with a window
                                            until you close it, or headless with --input (until the
                                            script ends) or --seconds
-      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--nic <card>] [--profile]
+      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--client <file.phi>] [--nic <card>] [--profile]
                                            boot a server with load-client kernels on one network, which
                                            open n TCP connections to it (default 100, to port 4001), log
                                            each in, and have each say a line a second for the run (default
                                            30 s), checking every answer comes back in order (the mmo
-                                           sample's lobby); --profile samples where the server's time goes
+                                           sample's lobby); --client uses another load-client kernel (such
+                                           as samples/mmo/load_players.phi, n players in the mmo world);
+                                           a server that reports its tick fails if a tick was late;
+                                           --profile samples where the server's time goes
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
@@ -295,11 +298,13 @@ static int Execute(string[] args)
                 string? count = Option("--connections");
                 string? seconds = Option("--seconds");
                 string? port = Option("--port");
+                string? client = Option("--client");
                 bool profile = Flag("--profile");
                 MemoryOption();
                 CoresOption();
                 NicOption();
                 if (rest.Count != 1) throw new ArgumentException("load needs exactly one .phi file");
+                if (client != null && !File.Exists(client)) throw new ArgumentException($"file not found: {client}");
                 int n = 100, s = 30, p = 4001;
                 if (count != null && (!int.TryParse(count, out n) || n < 1 || n > 1000))
                     throw new ArgumentException("--connections takes a number from 1 to 1000");
@@ -307,7 +312,7 @@ static int Execute(string[] args)
                     throw new ArgumentException("--seconds takes a number of seconds");
                 if (port != null && (!int.TryParse(port, out p) || p < 1 || p > 65535))
                     throw new ArgumentException("--port takes the server's TCP port");
-                return LoadTester.Run(rest[0], n, s, p, profile);
+                return LoadTester.Run(rest[0], n, s, p, profile, client);
             }
 
             case "serve":
