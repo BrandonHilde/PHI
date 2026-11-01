@@ -1,0 +1,45 @@
+# Arrays as parameters (int numbers[]): their .len and .max, indexes checked against how
+# many they have, changing the caller's elements, passing one on, and while each over one.
+# A program, so it runs on Linux (32 and 64-bit) and Windows: in 64-bit code the view a
+# method gets is 16 bytes (where the elements are, how many, the most).
+phi.ArrayViews:Program
+{
+	int three: 1 2 3;
+	int some[atmost 5];
+	some++ 10 20;
+	log (Sum: three) ' ' (Sum: some) ' ' (Sizes: three) ' ' (Sizes: some) '\n';
+	call Double: three;
+	log three:0 ' ' three:2 ' ' (Pass: three) '\n';
+	log (Count: some) '\n';
+	call Element: three 3;
+
+	[Sum: int numbers[];]
+		int total: 0;
+		while int i: 0; i < numbers.len; i++;
+			total++ numbers:i;
+		;;
+	[end: total]
+
+	[Sizes: int numbers[];]
+	[end: numbers.len * 100 + numbers.max]
+
+	[Double: int numbers[];]
+		while int i: 0; i < numbers.len; i++;
+			numbers:i** 2;
+		;;
+	[end]
+
+	[Pass: int numbers[];]
+	[end: (Sum: numbers)]
+
+	[Count: int numbers[];]
+		int n: 0;
+		while each x in numbers
+			n++ x;
+		;;
+	[end: n]
+
+	[Element: int numbers[]; int i: 0;]
+		log numbers:i '\n';
+	[end]
+}

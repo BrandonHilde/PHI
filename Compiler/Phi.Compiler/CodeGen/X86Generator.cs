@@ -130,8 +130,10 @@ namespace Phi.Compiler.CodeGen
             static bool Text(PhiType t) => t.IsString && !t.IsInlineText && !t.IsHeapText;
             static bool KeptVar(VariableSymbol v) =>
                 v.Ownership == Ownership.None && !v.GrowingArray && !v.GrowingElements
-                && (Text(v.Type) || Kept(v.Type) && !v.Grows && !v.TextRef);
-            static bool Given(PhiType t) => Value(t) || Text(t);    // what a method takes and gives
+                && (Text(v.Type) || Kept(v.Type) && !v.Grows && !v.TextRef
+                    || v.IsParameter && v.Type.Open && ValueArray(v.Type) && v.Type.Kind != TypeKind.Str);
+            // what a method takes and gives: also an array of numbers or pointers, as a parameter
+            static bool Given(PhiType t) => Value(t) || Text(t) || t.Open && ValueArray(t) && t.Kind != TypeKind.Str;
             // an array whose elements are numbers or pointers (what ++, .len is and while each work on so far)
             static bool ValueArray(PhiType t) => t.IsArray && (NumberKind(t) || Pointer(t.Element));
 
@@ -216,6 +218,8 @@ namespace Phi.Compiler.CodeGen
                     case NameExpr { Symbol: LengthSymbol { Count: int } }:
                         return;
                     case NameExpr { Symbol: LengthSymbol { Filled: Expr filled } } when Place(filled):
+                        return;
+                    case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol view } } when KeptVar(view):
                         return;
                     case MemberExpr { Count: int }:
                         return;
@@ -2655,7 +2659,7 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>The bytes a parameter takes on the stack.</summary>
-        int ParameterBytes(PhiType t) => bits64 ? Slot : t.Open ? 12 : t.ElementSize == 8 ? 8 : 4;
+        int ParameterBytes(PhiType t) => bits64 ? (t.Open ? 16 : Slot) : t.Open ? 12 : t.ElementSize == 8 ? 8 : 4;
 
         /// <summary>
         /// Pushes an array for an array parameter: the most it holds, how many it has, and where its
@@ -2663,6 +2667,9 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         int PushArrayView(Expr? array)
         {
+            // in 64-bit code a view is laid out as in memory, 16 bytes: its elements' address,
+            // then how many it has and the most it holds (pushed as one 8-byte value)
+            if (bits64) return PushArrayView64(array);
             if (array == null)
             {
                 Emit("push dword 0");
@@ -2686,6 +2693,35 @@ namespace Phi.Compiler.CodeGen
             Emit("push eax                ; its elements");
             return 12;
         }
+
+        int PushArrayView64(Expr? array)
+        {
+            if (array == null)
+            {
+                Emit("push qword 0");
+                Emit("push qword 0            ; no array: none");
+                return 16;
+            }
+            if (array.Type.Open)
+            {
+                EmitViewAddress(array);
+                Emit($"push qword [rax + {ViewCount}]   ; how many and the most, together");
+                Emit("push qword [rax]");
+                return 16;
+            }
+            EmitArrayCount(array);
+            Emit($"mov edx, {array.Type.Length}     ; the most it holds");
+            Emit("shl rdx, 32");
+            Emit("or rax, rdx              ; and how many it has, below it");
+            Emit("push rax");
+            EmitPlaceAddress(array);
+            Emit("push rax                ; its elements");
+            return 16;
+        }
+
+        /// <summary>Where a view of an array (a parameter, or one kept in memory) keeps how many it has, and the most it holds.</summary>
+        int ViewCount => bits64 ? 8 : 4;
+        int ViewMax => bits64 ? 12 : 8;
 
         /// <summary>
         /// Pushes an argument for a 64-bit or floating point parameter (0 when there's no value):
@@ -2857,10 +2893,11 @@ namespace Phi.Compiler.CodeGen
                     return new Place { Computed = true, Linear = true, Index = heldIndex, Scale = size };
                 }
                 EmitExpr(ix.Index);
-                if (unsafeDepth == 0 && !proved) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + 4]");
+                if (unsafeDepth == 0 && !proved) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + {ViewCount}]");
                 EmitScale(size);
-                Emit($"mov ebx, [{open.Label}]");
-                Emit("add ebx, eax");
+                if (bits64 && unsafeDepth > 0) Emit("movsxd rax, eax          ; (unchecked: it may be before the array)");
+                Emit($"mov {R("ebx")}, {Q} [{open.Label}]");
+                Emit($"add {R("ebx")}, {R("eax")}");
                 return new Place { Computed = true, Linear = true };
             }
 
@@ -3899,7 +3936,7 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol open } length }:
-                    Emit($"mov eax, [{open.Label} + {(length.Max ? 8 : 4)}]");
+                    Emit($"mov eax, [{open.Label} + {(length.Max ? ViewMax : ViewCount)}]");
                     break;
 
                 case MemberExpr { FilledLength: true } m:
@@ -4083,7 +4120,7 @@ namespace Phi.Compiler.CodeGen
         {
             if (e is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
             {
-                Emit($"mov eax, [{open.Label}]   ; where {open.Name}'s elements are");
+                Emit($"mov {R("eax")}, {Q} [{open.Label}]   ; where {open.Name}'s elements are");
                 return;
             }
             if (Binder.IsFieldView(e))
@@ -5519,11 +5556,11 @@ namespace Phi.Compiler.CodeGen
         void EmitArrayCount(Expr array)
         {
             if (array is NameExpr { Symbol: VariableSymbol { Type.Open: true } open })
-                Emit($"mov eax, [{open.Label} + 4]");
+                Emit($"mov eax, [{open.Label} + {ViewCount}]");
             else if (array.Type.Open)
             {
                 EmitViewAddress(array);
-                Emit("mov eax, [eax + 4]      ; how many it has");
+                Emit($"mov eax, [eax + {ViewCount}]      ; how many it has");
             }
             else if (array.Type.Filled) EmitFilledCount(array);
             else Emit($"mov eax, {array.Type.Length}");
