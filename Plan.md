@@ -811,8 +811,8 @@ These come after the basics work:
 - **Self-hosting:** rewrite the PHI compiler in PHI. **On hold** until every other feature in
   this plan is implemented.
 - **Real hardware and UEFI boot**
-- **Running on Linux, Windows and macOS** as ordinary programs: see
-  [Running on other systems](#running-on-other-systems)
+- **Running on Linux, Windows and macOS** as ordinary programs: 32-bit console programs on
+  Linux and Windows are done (H1-H3); see [Running on other systems](#running-on-other-systems)
 
 ---
 
@@ -1591,8 +1591,10 @@ Candidates, each a large project that tests a different side of PHI:
 
 ## Running on other systems
 
-Not started, and not scheduled yet: this is the plan for when PHI programs should run on
-Linux, Windows and macOS as ordinary programs, as well as on PHI OS. It comes up in every
+In progress: H1-H3 are done, so a PHI program builds as a 32-bit console program for Linux
+and Windows (`phi build hello.phi --target linux`), and the tests run on both. This is the
+plan for PHI programs running on Linux, Windows and macOS as ordinary programs, as well as
+on PHI OS. It comes up in every
 AAA scenario (studio tools, build machines, editors and test machines all run on those
 systems), and it's most of the distance between PHI and a language a studio could choose.
 
@@ -1609,14 +1611,17 @@ systems), and it's most of the distance between PHI and a language a studio coul
   with that system's own, and a different file around the code (an executable instead of a
   disk image).
 
-### To decide first
+### Decided
 
-- **How a program says where it runs.** A build flag (`phi build game.phi --target linux`)
-  keeps one program for every target; a base class (`:Program` beside a new one) makes it
-  part of the source. The flag is the likely choice.
-- **Which modules work where.** Most of `lib/phi` (data, text, crypto, math, file formats)
-  works anywhere. Drivers, the TCP/IP stack and the kernel's own modules are PHI OS only.
-  Each module gets marked, and using one where it can't run is an error.
+- **How a program says where it runs:** a build flag, `--target linux` (or `windows`, or
+  `phios`, the default), on `phi build`, `run`, `check` and `test`. The source doesn't
+  change.
+- **Which modules work where:** found by building, not marked by hand. A module that can't
+  work in a program on that system (it uses ports, interrupts, or a kernel's calls) fails to
+  bind there, and its errors become one at the `use` that brought it in: `drivers.ata doesn't
+  work in a Linux program (lib/phi/drivers/ata.phi:37: user programs can't use ports ...)`.
+  PHI OS programs get the same message for a kernel's module. So a module works wherever it
+  builds, with nothing to keep up to date.
 
 ### Phases
 
@@ -1646,6 +1651,17 @@ systems), and it's most of the distance between PHI and a language a studio coul
 **Done when:** the programs among the tests (`phi.Name:Program`, and `:Library` tests built
 as programs) build for Linux and give the same output as on PHI OS.
 
+**Status: done.** `lib/x86_32_linux/` answers the program calls with Linux system calls:
+`log` to standard output (a statement at a time, as on PHI OS) and `debug` to standard error,
+`ask` and `OS.ReadKey` from standard input (Enter is 13, as on PHI OS), files and folders,
+`OS.Arguments`, time, `OS.Grow` (the heap) through `brk`, memory through `sysinfo`, and
+`OS.ClearScreen` as a terminal code. The generator writes the ELF header itself, so the
+executable is NASM's flat output with no linker. Not there yet: `OS.ListFiles` and
+`OS.ListFolder` (a host's long names don't fit `FileInfo`'s 8.3 name), and what has no
+equivalent (`OS.PutCell`, `OS.IsKeyDown`, `OS.Reboot`, the PHI OS process calls); each is an
+error when the program is built. Sound, windows, the network and mailboxes come in H5 and
+H6. `phi run --target linux` runs the program under WSL on Windows.
+
 #### Phase H2: Tests on the host
 
 1. **`phi test --target linux`** runs each test as a Linux program and compares its output,
@@ -1655,6 +1671,16 @@ as programs) build for Linux and give the same output as on PHI OS.
 
 **Done when:** the program tests run on the host in a fraction of the time QEMU takes, and a
 difference between the two targets fails the run.
+
+**Status: done.** `phi test` runs each test that can be a program (`:Library` tests, built
+with a `:Program` wrapper, and `:Program` tests) on Linux and Windows too, where the computer
+can run them, after PHI OS: 46 of the tests, which pass on all three. A test is left to PHI OS
+when it doesn't build for the system or needs QEMU (an input script, a web server, sound,
+other machines); `pointers_structs` builds but writes to the VGA buffer, so it says
+`# runs only on PHI OS`. `phi test --target linux` runs only those, in about 8 seconds under
+WSL. `host_program` tests the calls a program makes of its system (files, folders, the heap,
+time, input), on Linux and Windows. Building them found that a PHI OS program couldn't use
+`has` on text (`lib/x86_32_user/` didn't have `str_has.asm`), now fixed.
 
 #### Phase H3: Windows, 32-bit, console
 
@@ -1667,6 +1693,16 @@ difference between the two targets fails the run.
    file and console calls that need it.
 
 **Done when:** the same programs as H1 build as Windows `.exe` files and give the same output.
+
+**Status: done.** `lib/x86_32_windows/` makes the same calls through `kernel32.dll`:
+`imports.asm` is the import table (the functions by name; Windows fills in their addresses),
+and each call is `call [phi_imp_Name]` with stdcall. The generator writes the PE headers: one
+section, with section and file alignment both a page, so no linker is needed here either.
+The heap is 128 MB of addresses reserved at the first `OS.Grow` and committed as it grows;
+paths are converted to UTF-16 for `CreateFileW` and the other `W` functions. Console text is
+written as bytes, not UTF-16 (PHI's text is bytes; the console shows ASCII the same either
+way). `OS.KeyAvailable` asks a pipe how much is waiting, and a console whether it has any
+input event, keys or not. The tests give the same output as on Linux and PHI OS.
 
 #### Phase H4: 64-bit on the hosts
 
@@ -1717,9 +1753,7 @@ editor shows its errors as it's written.
 
 ### Order
 
-H1 and H2 together are worth doing early, on their own: they prove the split between a
-program and its system, and they make every test run much faster. H3 follows. H4 waits for
-S10, and H5-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
+H1-H3 are done. H4 waits for S10, and H5-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
 lean on, so this plan is also where that hold would be reconsidered.
 
 ## References

@@ -14,6 +14,9 @@ namespace Phi.Cli
         public string ProgramPath => Path.ChangeExtension(ImagePath, ".bin");
         public bool IsProgram { get; set; }
 
+        /// <summary>For a program built for another system: the executable (NAME on Linux, NAME.exe on Windows).</summary>
+        public string? ExecutablePath { get; set; }
+
         /// <summary>NASM's listing of each unit is saved next to its .asm (as NAME.lst).</summary>
         public bool Listing { get; init; }
         public List<string> Errors { get; } = new();
@@ -46,8 +49,9 @@ namespace Phi.Cli
         /// <param name="appendSource">Extra PHI text added after the file's own (used by the test runner).</param>
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
         /// <param name="listing">Also save NASM's listing of each unit (NAME.lst), which phi profile maps addresses with.</param>
+        /// <param name="host">The system a program is for: PHI OS, or Linux or Windows (an ordinary executable).</param>
         public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
-                                        bool listing = false)
+                                        bool listing = false, Host host = Host.PhiOS)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
             var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img"), Listing = listing };
@@ -61,12 +65,27 @@ namespace Phi.Cli
             Directory.CreateDirectory(outDir);
 
             var source = SourceFile.Load(phiFile);
-            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource), kernel: kernel);
+            CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource),
+                                                         kernel: kernel, host: host);
 
             foreach (Diagnostic d in compiled.Diagnostics)
                 (d.Severity == Severity.Error ? result.Errors : result.Warnings).Add(d.ToString());
 
             if (!compiled.Success) return result;
+
+            if (host != Host.PhiOS)
+            {
+                // an ordinary program: NASM writes the whole executable, headers and all
+                byte[]? executable = Assemble(compiled.Units.Single(), outDir, Array.Empty<string>(), result);
+                if (executable == null) return result;
+                result.ExecutablePath = Path.Combine(outDir, name + (host == Host.Windows ? ".exe" : ""));
+                File.WriteAllBytes(result.ExecutablePath, executable);
+                if (!OperatingSystem.IsWindows())
+                    File.SetUnixFileMode(result.ExecutablePath, File.GetUnixFileMode(result.ExecutablePath)
+                                                                | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
+                result.IsProgram = true;
+                return result;
+            }
 
             if (compiled.Units.Any(u => u.Kind == UnitKind.Program))
             {

@@ -64,6 +64,15 @@ A test made only of `phi.Name:Library` classes runs twice, as a 16-bit program a
 32-bit kernel (`numbers (16-bit)`, `numbers (32-bit)`), against the same `.expected` file.
 Most language tests are written this way, so both code generators stay in step.
 
+Such a test also runs as a Linux and a Windows program (`numbers (linux)`, `numbers
+(windows)`), where this computer can run them (Linux under WSL on Windows), so PHI OS and
+the other systems give the same output. A test is left to PHI OS when it can't be built for
+them (it uses a driver, say) or has an `.input`, `.web`, `.sound`, `.machines` or `.errors`
+file. One that builds but needs a PHI OS machine (it writes to the screen's memory) says
+so with a comment line, `# runs only on PHI OS: why`. A test that is a `phi.Name:Program`
+runs only on the other systems (see `host_program.phi`). `phi test --target linux` (or
+`windows`) runs just those, without QEMU, in a few seconds.
+
 A folder `NAME.rootfs/` becomes the FAT16 disk of a 32-bit test (see
 `kernel32_files.rootfs/`); `.phi` files in it are compiled into `.BIN` user programs (see
 `kernel32_processes.rootfs/`). `NAME.rootfs` can also be a file holding the path of a folder to

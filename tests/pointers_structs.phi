@@ -1,3 +1,5 @@
+# runs only on PHI OS: it writes to the VGA text buffer
+
 struct.Point
 {
 	i16 x;

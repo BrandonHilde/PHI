@@ -109,7 +109,10 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi run file.phi --keep-disk` | boot a disk that keeps what the kernel saved (`build/NAME/NAME.kept.img`): each run puts the new kernel and any changed or new programs (`NAME.BIN`) on it but leaves its other files alone; delete it to start again |
 | `phi run file.phi --memory 512` | give the machine more memory than QEMU's 128 MB (up to 1024); the kernel's heap is about a quarter of it. `phi test` takes it too |
 | `phi check file.phi` | report errors without building |
-| `phi test` | boot every test in `tests/` without a window and check what each one prints |
+| `phi build file.phi --target linux` | build a program (`phi.Name:Program`) as an ordinary Linux executable instead (`--target windows`: a `.exe`); see [Programs on Linux and Windows](language.md#programs-on-linux-and-windows) |
+| `phi run file.phi --target linux -- args` | build it and run it here, with `args` as its command line (a Linux program runs under WSL on Windows) |
+| `phi test` | boot every test in `tests/` without a window and check what each one prints; the tests that can also run as Linux and Windows programs do |
+| `phi test --target linux` | run only the tests that can, as Linux programs, without QEMU (much faster); `--target windows` likewise |
 | `phi serve folder` | serve a folder over HTTP (`--https` for HTTPS) on your computer; a kernel in QEMU reaches it at `10.0.2.2` |
 
 The build folder keeps the generated assembly (`boot.asm`, `os.asm` or `kernel.asm`), with

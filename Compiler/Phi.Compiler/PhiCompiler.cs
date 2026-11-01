@@ -30,15 +30,19 @@ namespace Phi.Compiler
         const string StandardLibrary = "lib/phi/";
 
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
-        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null)
+        /// <param name="host">Where the program runs: PHI OS, or (for a program) another system.</param>
+        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null, Host host = Host.PhiOS)
         {
             var diagnostics = new DiagnosticBag();
+            var usedBy = new Dictionary<string, (SourceFile From, UseDecl Use)>(StringComparer.OrdinalIgnoreCase);
 
-            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics);
+            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics, usedBy);
             if (diagnostics.HasErrors) return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax };
 
-            BoundProgram? bound = Binder.Bind(syntax, diagnostics);
-            if (bound == null || diagnostics.HasErrors || !generate)
+            BoundProgram? bound = Binder.Bind(syntax, diagnostics, host);
+            if (diagnostics.HasErrors)
+                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host), Syntax = syntax, Bound = bound };
+            if (bound == null || !generate)
                 return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
 
             var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics)).ToList();
@@ -58,10 +62,57 @@ namespace Phi.Compiler
         public static CompileResult Compile(string path) => Compile(SourceFile.Load(path));
 
         /// <summary>
+        /// The standard library is tested, so an error inside it means a module was used where it
+        /// can't work (a driver in a program, a kernel's module on Linux). Its errors become one
+        /// at the program's `use` that brought the module in, with the first of them as the reason.
+        /// </summary>
+        static IReadOnlyList<Diagnostic> AtUses(IReadOnlyList<Diagnostic> diagnostics, Dictionary<string, (SourceFile From, UseDecl Use)> usedBy,
+                                                ProgramNode syntax, Host host)
+        {
+            string where = syntax.Classes.Any(c => c.Base == Binder.ProgramBase) ? host == Host.PhiOS ? "a PHI OS program" : $"a {host.Name()} program"
+                         : syntax.Classes.Any(c => c.Base == Binder.Kernel32Base) ? "a 32-bit kernel" : "a 16-bit program";
+            var result = new List<Diagnostic>();
+            var reported = new HashSet<UseDecl>();
+
+            foreach (Diagnostic d in diagnostics)
+            {
+                if (d.Severity != Severity.Error || d.File == null || !d.File.Path.StartsWith(StandardLibrary)
+                    || !usedBy.TryGetValue(Key(d.File), out var link))
+                {
+                    result.Add(d);
+                    continue;
+                }
+
+                // up the uses to the one in the program's own files
+                string module = d.File.Path[StandardLibrary.Length..^".phi".Length].Replace('/', '.');
+                while (link.From.Path.StartsWith(StandardLibrary) && usedBy.TryGetValue(Key(link.From), out var above))
+                    link = above;
+                if (link.From.Path.StartsWith(StandardLibrary))
+                {
+                    result.Add(d);
+                    continue;
+                }
+                if (!reported.Add(link.Use)) continue;
+
+                var (line, _) = d.File.GetLocation(d.Span.Start);
+                string what = link.Use.Path == module ? $"{module} doesn't work" : $"{link.Use.Path} needs {module}, which doesn't work";
+                result.Add(d with
+                {
+                    File = link.From,
+                    Span = link.Use.Span,
+                    Message = $"{what} in {where} ({d.File.Path}:{line}: {d.Message})",
+                });
+            }
+            return result;
+        }
+
+        /// <summary>
         /// Parses the program and every file it uses (and those files' uses). Used files come
         /// first, so their classes run before the program's own.
         /// </summary>
-        static ProgramNode ParseWithUses(SourceFile main, string? kernelFile, DiagnosticBag diagnostics)
+        /// <param name="usedBy">gets, for each file loaded by a `use`, that use and the file it's in</param>
+        static ProgramNode ParseWithUses(SourceFile main, string? kernelFile, DiagnosticBag diagnostics,
+                                         Dictionary<string, (SourceFile From, UseDecl Use)> usedBy)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Key(main) };
 
@@ -82,7 +133,11 @@ namespace Phi.Compiler
                         diagnostics.Error(file, use.Span, $"can't find {relative} {places} or in the standard library ({StandardLibrary})");
                         continue;
                     }
-                    if (seen.Add(Key(used))) Load(used, into);
+                    if (seen.Add(Key(used)))
+                    {
+                        usedBy[Key(used)] = (file, use);
+                        Load(used, into);
+                    }
                 }
 
                 into.Classes.AddRange(node.Classes);

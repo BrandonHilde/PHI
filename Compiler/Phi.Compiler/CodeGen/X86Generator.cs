@@ -31,6 +31,12 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Where a user program runs, in its own address space.</summary>
         public const uint ProgramAddress = 0x40000000;
 
+        /// <summary>Where a Linux program is loaded: the usual address for a 32-bit ELF executable.</summary>
+        public const uint LinuxAddress = 0x08048000;
+
+        /// <summary>Where a Windows program is loaded: the usual image base for a 32-bit .exe.</summary>
+        public const uint WindowsAddress = 0x400000;
+
         readonly BoundProgram program;
         readonly BoundUnit unit;
         readonly DiagnosticBag diagnostics;
@@ -50,7 +56,7 @@ namespace Phi.Compiler.CodeGen
             this.unit = unit;
             this.diagnostics = diagnostics;
             bits32 = unit.Kind is UnitKind.Kernel or UnitKind.Program;
-            libraryTarget = Binder.TargetOf(unit.Kind);
+            libraryTarget = Binder.TargetOf(unit.Kind, program.Host);
             file = program.File;
         }
 
@@ -71,6 +77,9 @@ namespace Phi.Compiler.CodeGen
         {
             // every 32-bit kernel gets an interrupt table, so exceptions show the panic screen
             if (unit.Kind == UnitKind.Kernel) Need("phi_interrupts_init");
+
+            // a Windows program reaches the system through kernel32.dll, named in its import table
+            if (Host == Host.Windows) Need("phi_imports");
 
             // the FPU (floating point numbers) starts clean
             if (bits32) Emit("fninit");
@@ -159,6 +168,24 @@ namespace Phi.Compiler.CodeGen
                     output.AppendLine("    cld");
                     break;
 
+                case UnitKind.Program when Host == Host.Linux:
+                    output.AppendLine("bits 32");
+                    output.AppendLine($"org 0x{LinuxAddress:X}");
+                    output.AppendLine();
+                    EmitElfHeader(output);
+                    output.AppendLine("phi_start:");
+                    output.AppendLine("    cld");
+                    break;
+
+                case UnitKind.Program when Host == Host.Windows:
+                    output.AppendLine("bits 32");
+                    output.AppendLine($"org 0x{WindowsAddress:X}");
+                    output.AppendLine();
+                    EmitPeHeader(output);
+                    output.AppendLine("phi_start:");
+                    output.AppendLine("    cld");
+                    break;
+
                 case UnitKind.Program:
                     // the kernel starts us in ring 3 with our own address space and stack
                     output.AppendLine("bits 32");
@@ -199,6 +226,9 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("; ---- data");
             EmitData(output);
 
+            if (Host == Host.Windows) output.AppendLine("align 4096, db 0             ; the file is whole pages (its file alignment)");
+            if (Host != Host.PhiOS) output.AppendLine("phi_image_end:");
+
             if (unit.Kind == UnitKind.Boot)
             {
                 output.AppendLine("phi_boot_drive: db 0");
@@ -208,6 +238,89 @@ namespace Phi.Compiler.CodeGen
             }
 
             return output.ToString();
+        }
+
+        /// <summary>Where this unit runs: a user program can be built for another system.</summary>
+        Host Host => unit.Kind == UnitKind.Program ? program.Host : Host.PhiOS;
+
+        /// <summary>
+        /// The ELF header of a Linux program, which NASM writes itself (no linker): the file is one
+        /// segment, loaded whole at LinuxAddress, readable, writable and runnable, as a PHI OS
+        /// program's memory is. The heap grows after it (brk).
+        /// </summary>
+        static void EmitElfHeader(StringBuilder output)
+        {
+            output.AppendLine("phi_elf_header:");
+            output.AppendLine("    db 0x7F, 'ELF', 1, 1, 1, 0          ; 32-bit, little-endian, version 1, System V");
+            output.AppendLine("    times 8 db 0");
+            output.AppendLine("    dw 2                                 ; an executable");
+            output.AppendLine("    dw 3                                 ; for the i386");
+            output.AppendLine("    dd 1");
+            output.AppendLine("    dd phi_start                         ; where it starts");
+            output.AppendLine("    dd phi_elf_segments - $$");
+            output.AppendLine("    dd 0                                 ; no sections");
+            output.AppendLine("    dd 0");
+            output.AppendLine("    dw phi_elf_segments - phi_elf_header");
+            output.AppendLine("    dw 32                                ; the size of a segment entry");
+            output.AppendLine("    dw 2                                 ; segments");
+            output.AppendLine("    dw 40, 0, 0");
+            output.AppendLine("phi_elf_segments:");
+            output.AppendLine("    dd 1, 0, $$, $$                      ; loaded: the whole file");
+            output.AppendLine("    dd phi_image_end - $$, phi_image_end - $$");
+            output.AppendLine("    dd 7, 0x1000                         ; read, write, run; page aligned");
+            output.AppendLine("    dd 0x6474E551, 0, 0, 0, 0, 0, 6, 16  ; the stack: read and write, not run");
+            output.AppendLine();
+        }
+
+        /// <summary>
+        /// The headers of a Windows .exe (PE): a DOS stub that only points on, then one section
+        /// holding everything, read, write and run. Section and file alignment are both a page, so
+        /// a label's place in the file is its address less WindowsAddress, and no linker is needed.
+        /// The import table (phi_imports) comes from the library.
+        /// </summary>
+        static void EmitPeHeader(StringBuilder output)
+        {
+            output.AppendLine("phi_pe_header:");
+            output.AppendLine("    db 'MZ'");
+            output.AppendLine("    times 0x3C - ($ - $$) db 0");
+            output.AppendLine("    dd phi_pe_signature - $$");
+            output.AppendLine("phi_pe_signature:");
+            output.AppendLine("    db 'PE', 0, 0");
+            output.AppendLine("    dw 0x014C                            ; for the i386");
+            output.AppendLine("    dw 1                                 ; sections");
+            output.AppendLine("    dd 0, 0, 0");
+            output.AppendLine("    dw phi_pe_sections - phi_pe_optional");
+            output.AppendLine("    dw 0x0103                            ; no relocations (it's always at its base), runnable, 32-bit");
+            output.AppendLine("phi_pe_optional:");
+            output.AppendLine("    dw 0x010B                            ; PE32");
+            output.AppendLine("    db 0, 0");
+            output.AppendLine("    dd phi_image_end - phi_pe_code, 0, 0");
+            output.AppendLine("    dd phi_start - $$                    ; where it starts");
+            output.AppendLine("    dd phi_pe_code - $$, phi_pe_code - $$");
+            output.AppendLine($"    dd 0x{WindowsAddress:X}");
+            output.AppendLine("    dd 0x1000, 0x1000                    ; section and file alignment");
+            output.AppendLine("    dw 6, 0, 0, 0, 6, 0                  ; Windows Vista and later");
+            output.AppendLine("    dd 0");
+            output.AppendLine("    dd phi_image_end - $$                ; the image's size");
+            output.AppendLine("    dd phi_pe_code - $$                  ; the headers' size");
+            output.AppendLine("    dd 0");
+            output.AppendLine("    dw 3                                 ; a console program");
+            output.AppendLine("    dw 0x8000                            ; aware of terminal services");
+            output.AppendLine("    dd 0x100000, 0x10000                 ; stack: 1 MB reserved, 64 KB committed");
+            output.AppendLine("    dd 0x100000, 0x1000                  ; the process heap (not used)");
+            output.AppendLine("    dd 0, 16                             ; 16 data directories:");
+            output.AppendLine("    dd 0, 0");
+            output.AppendLine("    dd phi_imports - $$, phi_imports_size ; the import table");
+            output.AppendLine("    times 14 dd 0, 0");
+            output.AppendLine("phi_pe_sections:");
+            output.AppendLine("    db '.text', 0, 0, 0");
+            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
+            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
+            output.AppendLine("    dd 0, 0, 0");
+            output.AppendLine("    dd 0xE0000060                        ; code and data, run, read, write");
+            output.AppendLine("    align 0x1000, db 0");
+            output.AppendLine("phi_pe_code:");
+            output.AppendLine();
         }
 
         // ================================================================ emit helpers

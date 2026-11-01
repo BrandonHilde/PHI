@@ -1,0 +1,22 @@
+arguments: []
+write 1
+append 1
+read 12 [hello, world]
+read at 7: 3 [wor]
+only the first 4: 4
+size 12
+make folder 1, again 0
+size of a folder -1
+move 1
+old size -1, new size 12
+delete full folder 0
+delete 1, again 0
+delete folder 1
+read missing -1
+slept 30 ms: 1
+heap 1 1 5 6 0
+memory 1 1
+asked []
+key 0
+debug output comes in order
+done

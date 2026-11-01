@@ -27,6 +27,9 @@ namespace Phi.Compiler.Semantics
         public BoundUnit? Kernel { get; init; }
         public BoundUnit? Program { get; init; }
 
+        /// <summary>Where the program runs (only a user program can run outside PHI OS).</summary>
+        public Host Host { get; init; }
+
         public IEnumerable<BoundUnit> Units => new[] { Boot, Os, Kernel, Program }.Where(u => u != null)!;
     }
 
@@ -45,9 +48,11 @@ namespace Phi.Compiler.Semantics
         public const string ProgramBase = "Program";
 
         /// <summary>The library each unit's code is built against.</summary>
-        public static string TargetOf(UnitKind unit) => unit switch
+        public static string TargetOf(UnitKind unit, Host host = Host.PhiOS) => unit switch
         {
             UnitKind.Kernel => "x86_32",
+            UnitKind.Program when host == Host.Linux => "x86_32_linux",
+            UnitKind.Program when host == Host.Windows => "x86_32_windows",
             UnitKind.Program => "x86_32_user",
             _ => "x86_16",
         };
@@ -63,6 +68,7 @@ namespace Phi.Compiler.Semantics
 
         readonly SourceFile mainFile;
         readonly DiagnosticBag diagnostics;
+        readonly Host host;
 
         /// <summary>The file the code being checked came from, for error locations.</summary>
         SourceFile file;
@@ -96,15 +102,16 @@ namespace Phi.Compiler.Semantics
         readonly HashSet<StructSymbol> slotsDone = new();
         int unsafeDepth;
 
-        Binder(SourceFile file, DiagnosticBag diagnostics)
+        Binder(SourceFile file, DiagnosticBag diagnostics, Host host)
         {
             mainFile = file;
             this.file = file;
             this.diagnostics = diagnostics;
+            this.host = host;
         }
 
-        public static BoundProgram? Bind(ProgramNode program, DiagnosticBag diagnostics) =>
-            new Binder(program.File, diagnostics).BindProgram(program);
+        public static BoundProgram? Bind(ProgramNode program, DiagnosticBag diagnostics, Host host = Host.PhiOS) =>
+            new Binder(program.File, diagnostics, host).BindProgram(program);
 
         void Error(Span span, string message) => diagnostics.Error(file, span, message);
 
@@ -121,6 +128,13 @@ namespace Phi.Compiler.Semantics
             bool userProgram = program.Classes.Any(c => c.Base == ProgramBase);
             bool protectedMode = !userProgram && program.Classes.Any(c => c.Base == Kernel32Base);
             BoundUnit? boot = null, os = null, kernel = null, user = null;
+
+            if (host != Host.PhiOS && !userProgram)
+            {
+                diagnostics.Error(mainFile, new Span(0, 0), $"only a program runs on {host.Name()}: its classes inherit {ProgramBase} " +
+                                                           $"(phi.Hello:{ProgramBase} {{ log 'hi'; }}); kernels and 16-bit programs run on PHI OS");
+                return null;
+            }
 
             if (userProgram)
             {
@@ -261,7 +275,7 @@ namespace Phi.Compiler.Semantics
                 Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
             }
 
-            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user };
+            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user, Host = host };
         }
 
         /// <summary>
@@ -3425,8 +3439,13 @@ namespace Phi.Compiler.Semantics
                         return builtin;
                     }
 
-                    if (!CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
+                    if (!CodeGen.Library.Provides(TargetOf(scope.Unit, host), builtin.Label))
                     {
+                        if (scope.Unit == UnitKind.Program && host != Host.PhiOS && CodeGen.Library.Provides(TargetOf(scope.Unit), builtin.Label))
+                        {
+                            Error(calleeSpan, $"{builtin.Name} isn't available in a {host.Name()} program; it works in a PHI OS program");
+                            return null;
+                        }
                         if (builtin.InKernel != null && scope.Unit == UnitKind.Kernel)
                         {
                             Error(calleeSpan, $"{builtin.Name} is a program's call; in a kernel it's {builtin.InKernel}, which needs use {builtin.InKernelUse};");

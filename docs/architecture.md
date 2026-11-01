@@ -14,6 +14,8 @@ library or the build. For the language itself, see [language.md](language.md).
 | `lib/x86_16/` | assembly library for 16-bit programs (uses the BIOS) |
 | `lib/x86_32/` | assembly library for 32-bit kernels: console, interrupts, panic screen, timer, keyboard, mouse, tasks |
 | `lib/x86_32_user/` | assembly library for user programs: system calls |
+| `lib/x86_32_linux/` | assembly library for programs built with `--target linux`: Linux system calls |
+| `lib/x86_32_windows/` | assembly library for programs built with `--target windows`: the `kernel32.dll` import table and calls |
 | `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, cryptography, sound, text |
 | `tests/` | programs that boot in QEMU, with the output they must produce |
 | `samples/` | example programs, including PHI OS |
@@ -137,10 +139,18 @@ kernel's number formatting without duplicating it.
 | 16-bit | sector 0: boot sector; sector 1 on: the OS classes |
 | 32-bit kernel | sector 0: stage 1; sectors 1-8: the loader; sector 9 on: the kernel; sector 2048 on: a 16 MB FAT16 partition |
 | user program | not an image: `NAME.bin`, to put in a kernel's rootfs |
+| program, `--target linux` | an ELF executable, `NAME`: its header and one segment, loaded at `0x08048000` |
+| program, `--target windows` | a PE executable, `NAME.exe`: its headers and one section at `0x400000`, with the import table in it |
 
 The kernel is assembled first, so the boot code can be given its exact size in sectors.
 [FatImage.cs](../Compiler/Phi.Cli/FatImage.cs) formats the partition from the program's
 `NAME.rootfs/` folder, compiling any `.phi` file there into a `.BIN` user program.
+
+An executable for another system needs no linker either: the generator writes its headers
+in front of the code ([X86Generator.cs](../Compiler/Phi.Compiler/CodeGen/X86Generator.cs),
+`EmitElfHeader` and `EmitPeHeader`), and NASM's flat output is the whole file. The program's
+library is `lib/x86_32_linux/` or `lib/x86_32_windows/` instead of `lib/x86_32_user/`: the
+same labels (`OS_ReadFile`, `phi_exit` ...), answered by that system.
 
 ## Inside a 32-bit kernel
 

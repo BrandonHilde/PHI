@@ -2,10 +2,16 @@ using Phi.Cli;
 
 const string Usage = """
     usage:
-      phi check <file.phi>                 report errors without building
-      phi build <file.phi> [-o <dir>]      compile to a bootable disk image
-      phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>]
+      phi check <file.phi> [--target <system>]
+                                           report errors without building
+      phi build <file.phi> [-o <dir>] [--target <system>]
+                                           compile to a bootable disk image; with --target linux or
+                                           windows, a program (phi.Name:Program) becomes an ordinary
+                                           executable for that system instead (NAME, or NAME.exe)
+      phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
+                                           with --target, run the executable here (a Linux one under
+                                           WSL on Windows), with the arguments after --;
                                            --keep-disk keeps the files a kernel saved for next time
                                            (programs from the rootfs are updated on it),
                                            --memory gives the machine more (or less) than 128 MB, up to 1024;
@@ -13,9 +19,12 @@ const string Usage = """
                                            boot together on one network, each in a window;
                                            --nic virtio gives the machine a virtio-net card (not an RTL8139)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
-                [--memory <MB>] [--cores <n>]
+                [--memory <MB>] [--cores <n>] [--target <system>]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
+                                           tests that can also run as Linux and Windows programs do,
+                                           where this computer can run them; --target linux (or
+                                           windows) runs only those, without QEMU;
                                            --input scripts the input instead of NAME.input,
                                            --contains checks for the lines of a file instead of NAME.expected,
                                            --keep-output saves NAME.actual even when it passes
@@ -65,6 +74,15 @@ static int Execute(string[] args)
     string command = args[0];
     var rest = args.Skip(1).ToList();
 
+    // phi run x.phi --target linux -- a b: what follows -- is the program's command line
+    var programArguments = new List<string>();
+    int dashes = rest.IndexOf("--");
+    if (dashes >= 0)
+    {
+        programArguments = rest.Skip(dashes + 1).ToList();
+        rest = rest.Take(dashes).ToList();
+    }
+
     string? Option(string name)
     {
         int i = rest.IndexOf(name);
@@ -76,6 +94,14 @@ static int Execute(string[] args)
     }
 
     bool Flag(string name) => rest.Remove(name);
+
+    Phi.Compiler.Host TargetOption()
+    {
+        string? target = Option("--target");
+        if (target == null) return Phi.Compiler.Host.PhiOS;
+        return Phi.Compiler.Hosts.Parse(target)
+               ?? throw new ArgumentException("--target takes the system: " + string.Join(", ", Phi.Compiler.Hosts.Names));
+    }
 
     void MemoryOption()
     {
@@ -115,13 +141,31 @@ static int Execute(string[] args)
                 string? outDir = Option("-o");
                 bool debug = Flag("--debug");
                 bool keepDisk = Flag("--keep-disk");
+                Phi.Compiler.Host host = TargetOption();
                 MemoryOption();
                 CoresOption();
                 NicOption();
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
+                if (programArguments.Count > 0 && host == Phi.Compiler.Host.PhiOS)
+                    throw new ArgumentException("arguments after -- are for a program built with --target linux or windows");
 
                 string file = Path.GetFullPath(rest[0]);
                 outDir ??= Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file));
+
+                if (host != Phi.Compiler.Host.PhiOS)
+                {
+                    BuildResult hosted = Builder.Build(file, outDir, host: host);
+                    foreach (string w in hosted.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
+                    foreach (string e in hosted.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
+                    if (!hosted.Success) return 1;
+                    if (command != "run")
+                    {
+                        Console.WriteLine($"built the {Phi.Compiler.Hosts.Name(host)} program {Path.GetRelativePath(Environment.CurrentDirectory, hosted.ExecutablePath!)}");
+                        return 0;
+                    }
+                    if (!HostRunner.CanRun(host, out string why)) throw new ArgumentException(why);
+                    return HostRunner.RunInteractive(hosted.ExecutablePath!, host, programArguments);
+                }
 
                 // NAME.machines: the program and the machines it lists, on one network
                 if (NetworkMachines.ManifestFor(file) is string manifest)
@@ -136,10 +180,12 @@ static int Execute(string[] args)
                 if (build.IsProgram)
                 {
                     Console.WriteLine($"built the program {Path.GetRelativePath(Environment.CurrentDirectory, build.ProgramPath)} " +
-                                      "(programs run inside a kernel: put the .phi file in a kernel's rootfs folder)");
+                                      "(programs run inside a kernel: put the .phi file in a kernel's rootfs folder, " +
+                                      "or build it with --target linux or windows)");
                     if (command == "run")
                     {
-                        Console.Error.WriteLine("error: a user program can't boot by itself; run a kernel whose rootfs has it");
+                        Console.Error.WriteLine("error: a user program can't boot by itself; run a kernel whose rootfs has it, " +
+                                                "or run it here with --target linux or windows");
                         return 1;
                     }
                     return 0;
@@ -177,10 +223,11 @@ static int Execute(string[] args)
 
             case "check":
             {
+                Phi.Compiler.Host host = TargetOption();
                 if (rest.Count != 1) throw new ArgumentException("check needs exactly one .phi file");
                 if (!File.Exists(rest[0])) throw new ArgumentException($"file not found: {rest[0]}");
 
-                var compiled = Phi.Compiler.PhiCompiler.Compile(Phi.Compiler.SourceFile.Load(rest[0]), generate: false);
+                var compiled = Phi.Compiler.PhiCompiler.Compile(Phi.Compiler.SourceFile.Load(rest[0]), generate: false, host: host);
                 foreach (var d in compiled.Diagnostics) Console.Error.WriteLine(d);
                 if (compiled.Success) Console.WriteLine($"{rest[0]}: no errors");
                 return compiled.Success ? 0 : 1;
@@ -196,6 +243,7 @@ static int Execute(string[] args)
                 bool saveBench = Flag("--save-bench");
                 bool bench = Flag("--bench") || saveBench;
                 string? tolerance = Option("--tolerance");
+                string? onlyTarget = Option("--target");
                 MemoryOption();
                 CoresOption();
                 NicOption();
@@ -204,6 +252,13 @@ static int Execute(string[] args)
                 double percent = DefaultTolerance;
                 if (tolerance != null && (!double.TryParse(tolerance, out percent) || percent < 0))
                     throw new ArgumentException("--tolerance takes a percentage, such as 5");
+                if (onlyTarget != null)
+                {
+                    TestRunner.Only = Phi.Compiler.Hosts.Parse(onlyTarget)
+                                      ?? throw new ArgumentException("--target takes the system: " + string.Join(", ", Phi.Compiler.Hosts.Names));
+                    if (TestRunner.Only != Phi.Compiler.Host.PhiOS && !HostRunner.CanRun(TestRunner.Only.Value, out string why))
+                        throw new ArgumentException(why);
+                }
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
                 // with no folder given, the samples that have tests run too
                 List<string>? samples = rest.Count > 0 ? null

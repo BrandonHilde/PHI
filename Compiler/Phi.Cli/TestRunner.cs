@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Phi.Compiler;
 
 namespace Phi.Cli
 {
@@ -14,6 +15,12 @@ namespace Phi.Cli
     ///
     /// A test whose classes are all :Library runs twice, as a 16-bit program and as a 32-bit
     /// kernel, so both code generators are checked against the same expected output.
+    ///
+    /// A test that can also be an ordinary program (its classes are all :Library, or it is a
+    /// :Program) runs as a Linux and a Windows program too, where this computer can run them
+    /// (Linux under WSL on Windows), so the targets can't drift apart. It is left to PHI OS when
+    /// it can't be built for the other system (it uses a driver, say), or needs what only QEMU
+    /// gives a test: an input script, a web server, recorded sound, other machines.
     ///
     /// A test named bench_NAME is a benchmark: its "bench WHAT COUNT" lines are left out when the
     /// output is compared, and with --bench only benchmarks run, each also checked against the
@@ -59,7 +66,14 @@ namespace Phi.Cli
                 return 1;
             }
 
-            var runs = tests.SelectMany(t => Modes(t).Select(m => (File: t, Mode: m))).ToList();
+            var runs = tests.SelectMany(t => Modes(t, bench != null).Select(m => (File: t, Mode: m))).ToList();
+            if (Only is Host only && only != Host.PhiOS)
+            {
+                int left = tests.Count - runs.Select(r => r.File).Distinct().Count();
+                Console.WriteLine($"{runs.Count} of {tests.Count} tests run as {only.Name()} programs" +
+                                  (left > 0 ? $" ({left} only run on PHI OS)" : ""));
+                if (runs.Count == 0) return 1;
+            }
 
             int passed = 0;
             foreach (var (test, mode) in runs)
@@ -91,8 +105,20 @@ namespace Phi.Cli
             return passed == runs.Count ? 0 : 1;
         }
 
-        /// <summary>How to turn a library-only test into a whole program, or (for a network test) the card the machines get.</summary>
-        sealed record Mode(string Name, string Wrapper, string? Card = null);
+        /// <summary>
+        /// How to turn a library-only test into a whole program, or (for a network test) the card
+        /// the machines get; and the system it runs on.
+        /// </summary>
+        sealed record Mode(string Name, string Wrapper, string? Card = null, Host Host = Host.PhiOS);
+
+        /// <summary>phi test --target: run only on that system (PHI OS, or as Linux or Windows programs).</summary>
+        public static Host? Only { get; set; }
+
+        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows };
+        const string ProgramWrapper = "\nphi.PhiTestProgram:Program\n{\n}\n";
+
+        /// <summary>What only a test in QEMU can have: input typed into it, a web server, a sound card, other machines.</summary>
+        static readonly string[] OnlyInQemu = { ".input", ".web", ".sound", ".machines", ".errors" };
 
         static readonly Mode[] BothModes =
         {
@@ -102,13 +128,47 @@ namespace Phi.Cli
 
         static readonly Regex LibraryClass = new(@"^\s*phi\.\w+\s*:\s*Library\b", RegexOptions.Multiline);
         static readonly Regex ProgramClass = new(@"^\s*phi\.\w+\s*:\s*(Bootloader|OS|Kernel)\b", RegexOptions.Multiline);
+        /// <summary>A test that builds as a program but needs a PHI OS machine (its memory, say) says so with this comment.</summary>
+        static readonly Regex PhiOsOnly = new(@"^#\s*runs only on PHI OS\b", RegexOptions.Multiline);
+        static readonly Regex UserProgramClass = new(@"^\s*phi\.\w+\s*:\s*Program\b", RegexOptions.Multiline);
 
         /// <summary>
         /// null for an ordinary test; both modes for a test made only of :Library classes; and
         /// each network card for a network test whose NAME.machines doesn't choose one, so both
         /// drivers are tested (--nic picks just one).
         /// </summary>
-        static IEnumerable<Mode?> Modes(string phiFile)
+        static IEnumerable<Mode?> Modes(string phiFile, bool bench)
+        {
+            var modes = new List<Mode?>();
+            if (Only is null or Host.PhiOS) modes.AddRange(PhiOsModes(phiFile));
+            if (Only != Host.PhiOS && !bench) modes.AddRange(HostModes(phiFile));
+            return modes;
+        }
+
+        /// <summary>The other systems a test runs on as an ordinary program (see the class's summary).</summary>
+        static IEnumerable<Mode?> HostModes(string phiFile)
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
+            string name = Path.GetFileNameWithoutExtension(phiFile);
+            string own = Path.Combine(dir, name);
+            if (OnlyInQemu.Any(e => File.Exists(own + e) || Directory.Exists(own + e))) yield break;
+
+            string text = File.ReadAllText(phiFile);
+            if (PhiOsOnly.IsMatch(text)) yield break;
+            bool program = UserProgramClass.IsMatch(text);
+            if (!program && !(LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text))) yield break;
+            string wrapper = program ? "" : ProgramWrapper;
+
+            foreach (Host host in OtherSystems.Where(h => Only == null || Only == h))
+            {
+                if (!HostRunner.CanRun(host, out _)) continue;
+                var source = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), text + wrapper);
+                if (!PhiCompiler.Compile(source, generate: false, host: host).Success) continue;
+                yield return new Mode(host.Name().ToLowerInvariant(), wrapper, Host: host);
+            }
+        }
+
+        static IEnumerable<Mode?> PhiOsModes(string phiFile)
         {
             if (NetworkMachines.ManifestFor(phiFile) is string manifest)
             {
@@ -116,6 +176,8 @@ namespace Phi.Cli
                 return Qemu.NetworkCards.Select(card => (Mode?)new Mode(card, "", card));
             }
             string text = File.ReadAllText(phiFile);
+            // a program boots only inside a kernel (from its rootfs), so on its own it's a test for the other systems
+            if (UserProgramClass.IsMatch(text)) return Array.Empty<Mode?>();
             bool libraryOnly = LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text);
             return libraryOnly ? BothModes : new Mode?[] { null };
         }
@@ -148,6 +210,9 @@ namespace Phi.Cli
             if (web != null)
                 wrapper += $"\nphi.TestWeb:Library\n{{\n\tstr url: 'http://10.0.2.2:{web.Port}';\n" +
                            $"\tstr secure_url: 'https://10.0.2.2:{secureWeb!.Port}';\n}}\n";
+
+            if (mode != null && mode.Host != Host.PhiOS)
+                return RunHosted(phiFile, timeout, mode, keepOutput, containsOverride);
 
             string machinesFile = Path.Combine(dir, name + ".machines");
             if (File.Exists(machinesFile))
@@ -227,6 +292,45 @@ namespace Phi.Cli
 
             string reason = run.Explain(timeout, "output did not match");
             return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
+        }
+
+        /// <summary>A test built as a Linux or Windows program, run here, and checked like one in QEMU.</summary>
+        static string? RunHosted(string phiFile, TimeSpan timeout, Mode mode, bool keepOutput, string? containsOverride)
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
+            string name = Path.GetFileNameWithoutExtension(phiFile);
+            string variant = $"{name}.{mode.Name}";
+            string actualFile = Path.Combine(dir, variant + ".actual");
+            if (File.Exists(actualFile)) File.Delete(actualFile);
+
+            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), mode.Wrapper, host: mode.Host);
+            if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
+
+            HostRunner.Result run = HostRunner.Run(build.ExecutablePath!, mode.Host, timeout);
+            string actual = Normalize(run.Output);
+            if (keepOutput) File.WriteAllText(actualFile, actual);
+            string stopped = run.TimedOut ? $"timed out after {timeout.TotalSeconds:0.#}s" : $"the program ended with {run.ExitCode}";
+
+            string containsFile = containsOverride ?? Path.Combine(dir, name + ".contains");
+            if (File.Exists(containsFile))
+            {
+                var missing = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0 && !actual.Contains(l)).ToList();
+                if (missing.Count == 0) return null;
+                File.WriteAllText(actualFile, actual);
+                return $"missing from the output ({stopped}): {string.Join(" | ", missing)}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
+            }
+
+            string expectedFile = Path.Combine(dir, name + ".expected");
+            if (!File.Exists(expectedFile))
+            {
+                File.WriteAllText(actualFile, actual);
+                return $"missing {name}.expected; the output was saved to {Path.GetFileName(actualFile)} " +
+                       "(rename it to .expected if it is correct)";
+            }
+            string expected = Normalize(File.ReadAllText(expectedFile));
+            if (actual == expected && !run.TimedOut) return null;
+            File.WriteAllText(actualFile, actual);
+            return $"output did not match ({stopped})\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 
         /// <summary>

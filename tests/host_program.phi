@@ -1,0 +1,57 @@
+# The calls a program makes of its system, as a Linux and a Windows program (phi test runs
+# a :Program test only on those; on PHI OS the kernel32_program_* tests cover them). The
+# files go in the folder phi test runs from, and are deleted again.
+
+phi.HostProgram:Program
+{
+	log 'arguments: [' (OS.Arguments) ']\n';
+
+	# files: write, add to, read (all, and from an offset), size
+	log 'write ' (OS.WriteFile: 'host_program.tmp' 'hello' 5) '\n';
+	log 'append ' (OS.AppendFile: 'host_program.tmp' ', world' 7) '\n';
+	u8 text[64];
+	int got: (OS.ReadFile: 'host_program.tmp' text text.len - 1);
+	text:got is 0;
+	log 'read ' got ' [' addr text:0 ']\n';
+	got is (OS.ReadFileAt: 'host_program.tmp' 7 text 3);
+	text:got is 0;
+	log 'read at 7: ' got ' [' addr text:0 ']\n';
+	log 'only the first 4: ' (OS.ReadFile: 'host_program.tmp' text 4) '\n';
+	log 'size ' (OS.FileSize: 'host_program.tmp') '\n';
+
+	# folders, and moving a file into one
+	log 'make folder ' (OS.MakeFolder: 'host_program.dir') ', again ' (OS.MakeFolder: 'host_program.dir') '\n';
+	log 'size of a folder ' (OS.FileSize: 'host_program.dir') '\n';
+	log 'move ' (OS.Rename: 'host_program.tmp' 'host_program.dir/moved.tmp') '\n';
+	log 'old size ' (OS.FileSize: 'host_program.tmp') ', new size ' (OS.FileSize: 'host_program.dir/moved.tmp') '\n';
+	log 'delete full folder ' (OS.DeleteFolder: 'host_program.dir') '\n';
+	log 'delete ' (OS.DeleteFile: 'host_program.dir/moved.tmp') ', again ' (OS.DeleteFile: 'host_program.dir/moved.tmp') '\n';
+	log 'delete folder ' (OS.DeleteFolder: 'host_program.dir') '\n';
+	log 'read missing ' (OS.ReadFile: 'host_program.tmp' text 4) '\n';
+
+	# time
+	int start: (OS.GetTicks);
+	call OS.Sleep: 30;
+	int slept: (OS.GetTicks) - start;
+	log 'slept 30 ms: ' (slept >= 30 and slept < 2000) '\n';
+
+	# memory: the heap grows past one piece from the system, and keeps what's in it
+	ptr<u8> big: new u8[3000000];
+	ptr<u8> more: new u8[3000000];
+	big:2999999 is 5;
+	more:0 is 6;
+	log 'heap ' (big is not 0) ' ' (more is not 0) ' ' big:2999999 ' ' more:0 ' ' more:2999999 '\n';
+	free big;
+	free more;
+	log 'memory ' ((OS.TotalMemory) > 0) ' ' ((OS.FreeMemory) <= (OS.TotalMemory)) '\n';
+
+	# input: phi test gives the program none
+	str line: 'unchanged';
+	ask line;
+	log 'asked [' line ']\n';
+	log 'key ' (OS.ReadKey) '\n';
+
+	debug 'debug output comes in order\n';
+	log 'done\n';
+	exit 4;
+}

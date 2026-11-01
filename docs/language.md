@@ -2055,6 +2055,47 @@ The system calls behind these (`int 0x80`, number in `eax`, argument in `ebx`, r
 `eax`) are listed in [lib/x86_32/tasks.asm](../lib/x86_32/tasks.asm). A kernel can add
 its own from number 16 up with `OS.SetSyscallHandler` (`proc.process` uses 16 for spawn).
 
+### Programs on Linux and Windows
+
+The same program builds as an ordinary Linux or Windows program, unchanged:
+
+```
+phi build hello.phi --target linux       # build/hello/hello, a 32-bit ELF executable
+phi build hello.phi --target windows     # build/hello/hello.exe
+phi run hello.phi --target linux -- a b  # build and run it here, with a b as its command line
+```
+
+On Windows, `phi run --target linux` runs it under WSL. NASM writes the whole executable,
+so no linker or C library is involved: what a program asks PHI OS for, the program's
+library for that system asks Linux (its system calls) or Windows (`kernel32.dll`)
+instead. Only `Program` and `Library` classes build for another system; kernels and
+16-bit programs are PHI OS's own.
+
+| In a program | On Linux and Windows |
+|---|---|
+| `log` | standard output, a whole statement at a time |
+| `debug` | standard error (what the serial port is on PHI OS) |
+| `ask`, `OS.ReadKey` →, `OS.KeyAvailable` → | standard input. The terminal shows what's typed and hands it over a line at a time, so `ReadKey` waits for Enter; Enter is 13, as on PHI OS, and the end of the input gives 0 (an `ask` gets an empty line) |
+| `exit code;` | the process's exit code |
+| `OS.Arguments` → | what follows the program's name on its command line (on Linux, its arguments joined by spaces) |
+| `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number |
+| `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | files and folders, by that system's paths (relative to the folder it runs in) |
+| `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed) |
+| `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
+| `OS.ClearScreen` | clears the terminal |
+
+The rest of PHI OS's calls (`OS.PutCell`, `OS.IsKeyDown`, `OS.Reboot`, starting and
+watching other programs, `OS.ListFiles` and `OS.ListFolder`, sound, windows, the network
+and mailboxes) aren't there yet, or have no equivalent: using one is an error when the
+program is built (`OS.PutCell isn't available in a Linux program; it works in a PHI OS
+program`). So is a module that can't work there, at the `use` that brings it in:
+
+```
+hello.phi:1:1: error: drivers.ata doesn't work in a Linux program (lib/phi/drivers/ata.phi:37: user programs can't use ports; only the kernel can talk to hardware)
+```
+
+Most of the standard library (data, text, crypto, math, file formats) works anywhere.
+
 ## Methods
 
 ```phi
