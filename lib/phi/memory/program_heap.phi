@@ -18,7 +18,7 @@ struct.HeapBlock
 	u32 used;                   # 1 while handed out
 	ptr<HeapBlock> next;        # the block after this one in memory
 	ptr<HeapBlock> previous;
-	u32 bin;                    # while free: which size list it's on (and the header stays 24 bytes)
+	u32 bin;                    # while free: which size list it's on
 }
 
 # the first bytes of a free block: its neighbors on its size's list
@@ -31,19 +31,20 @@ struct.HeapFreeLinks
 phi.Heap:Program
 {
 	const u32 HEAP_MAGIC: 0x48454150;        # 'HEAP'
-	const u32 HEADER: 24;
+	const u32 HEADER: sizeof HeapBlock;      # (24 bytes, or 32 in 64-bit code)
+	const u32 SMALLEST: sizeof HeapFreeLinks; # a free block keeps its list's links in it
 	const u32 GROW_MIN: 65536;               # asked of the kernel at a time, at least
 	const u32 PAGE_SIZE: 4096;
 	const u32 BINS: 28;                      # 8-15 bytes, 16-31, ... doubling; the last takes the rest
 
 	ptr<HeapBlock> heap_first: 0;
 	ptr<HeapBlock> heap_last: 0;
-	u32 heap_start: 0;
-	u32 heap_end: 0;
+	ptr<u8> heap_start: 0;
+	ptr<u8> heap_end: 0;
 	u32 used_bytes: 0;          # handed out right now (not counting headers)
 	u32 used_blocks: 0;
 	ptr<HeapBlock> heap_bins[BINS];
-	u32 heap_zero_at: 0;        # for HeapZero
+	ptr<u8> heap_zero_at: 0;    # for HeapZero
 	u32 heap_zero_words: 0;
 	u32 heap_bin_size: 0;       # for HeapBinOf
 	u32 heap_bin: 0;
@@ -51,10 +52,10 @@ phi.Heap:Program
 	# size bytes of zeroed memory, or 0 if the kernel has no more to give
 	[Alloc: u32 size: 0;]
 		u32 wanted: (size + 7) & ~7;
-		if wanted is 0
-			wanted is 8;
+		if wanted < SMALLEST
+			wanted is SMALLEST;
 		;;
-		u32 result: (Take: wanted);
+		ptr<u8> result: (Take: wanted);
 		if result is 0 and (More: wanted)
 			result is (Take: wanted);
 		;;
@@ -67,7 +68,7 @@ phi.Heap:Program
 		call RemoveFree: b;
 
 		# split off the rest when it's big enough to be a block of its own
-		if b:0.size >= wanted + HEADER + 8
+		if b:0.size >= wanted + HEADER + SMALLEST
 			ptr<HeapBlock> rest: b + HEADER + wanted;
 			rest:0.magic is HEAP_MAGIC;
 			rest:0.size is b:0.size - wanted - HEADER;
@@ -89,7 +90,7 @@ phi.Heap:Program
 		b:0.used is 1;
 		used_bytes++ b:0.size;
 		used_blocks++;
-		u32 result: b + HEADER;
+		ptr<u8> result: b + HEADER;
 		heap_zero_at is result;
 		heap_zero_words is b:0.size / 4;
 		call asm.HeapZero;
@@ -101,7 +102,7 @@ phi.Heap:Program
 		if bytes < GROW_MIN
 			bytes is GROW_MIN;
 		;;
-		u32 start: (OS.Grow: bytes);
+		ptr<u8> start: (OS.Grow: bytes);
 		if start is 0 return false;
 		bytes is (bytes + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);   # it maps whole pages
 		if heap_start is 0
@@ -131,7 +132,7 @@ phi.Heap:Program
 	[end: true]
 
 	# give back memory from Alloc; freeing 0 does nothing
-	[Free: u32 address: 0;]
+	[Free: ptr<u8> address: 0;]
 		if address is 0 return;
 		ptr<HeapBlock> b: address - HEADER;
 		bln valid: address >= heap_start + HEADER and address < heap_end;
@@ -139,7 +140,7 @@ phi.Heap:Program
 			valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
 		;;
 		if valid is false
-			log '\nPHI: free of memory that new did not hand out (or freed twice): ' address '\n';
+			log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
 			exit -1;
 		;;
 
@@ -272,5 +273,24 @@ asm.HeapBinOf
 	shr eax, 3
 	bsr eax, eax
 	mov [{heap_bin}], eax
+	ret
+}
+
+# the same two, for 64-bit code: the address in all of rdi
+x64.HeapZero
+{
+	mov rdi, [rel {heap_zero_at}]
+	mov ecx, [rel {heap_zero_words}]
+	xor eax, eax
+	rep stosd
+	ret
+}
+
+x64.HeapBinOf
+{
+	mov eax, [rel {heap_bin_size}]
+	shr eax, 3
+	bsr eax, eax
+	mov [rel {heap_bin}], eax
 	ret
 }

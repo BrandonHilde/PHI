@@ -1,4 +1,4 @@
-; provides: phi_exit OS_Sleep OS_GetTicks OS_Yield
+; provides: phi_exit OS_Sleep OS_GetTicks OS_Yield OS_Grow
 ; requires: phi_flush
 ; init: phi_linux_start
 ;
@@ -10,6 +10,7 @@
 ;
 ; Arguments PHI pushes are 8 bytes each in 64-bit code: the first is at [rsp + 8].
 SYS_EXIT_GROUP equ 231
+SYS_BRK        equ 12
 SYS_SCHED_YIELD equ 24
 SYS_NANOSLEEP  equ 35
 SYS_CLOCK_GETTIME equ 228
@@ -79,6 +80,47 @@ OS_Yield:
     syscall
     ret
 
+; arg: bytes -> rax = where the new memory starts (right after what the heap has), or 0.
+; The heap grows by moving the program's break, a page at a time.
+OS_Grow:
+    push rdi
+    push rsi
+    mov rax, [rel phi_heap_end]
+    test rax, rax
+    jnz .grow
+    mov eax, SYS_BRK
+    xor edi, edi                        ; where the break is now
+    syscall
+    add rax, 4095
+    and rax, ~4095
+    mov [rel phi_heap_end], rax
+.grow:
+    mov edx, [rsp + 24]                 ; (after the two pushes and the return address)
+    add rdx, 4095
+    and rdx, ~4095
+    add rdx, rax                        ; the new end
+    push rax
+    push rdx
+    mov eax, SYS_BRK
+    mov rdi, rdx
+    syscall
+    pop rdx
+    pop rcx
+    cmp rax, rdx
+    jne .failed                         ; Linux didn't move it
+    mov [rel phi_heap_end], rdx
+    mov rax, rcx
+    pop rsi
+    pop rdi
+    ret
+.failed:
+    xor eax, eax
+    pop rsi
+    pop rdi
+    ret
+
 phi_started: dd 0
+align 8
+phi_heap_end: dq 0                      ; the break: where the heap ends
 align 8
 phi_time:    dq 0, 0                    ; seconds, nanoseconds

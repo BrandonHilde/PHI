@@ -56,7 +56,7 @@ namespace Phi.Compiler.Syntax
             return n >= 4
                 && t[n - 2].Kind == TokenKind.Identifier
                 && t[n - 3].Kind == TokenKind.Dot
-                && (t[n - 4].IsWord("asm") || t[n - 4].IsWord("arm"));
+                && (t[n - 4].IsWord("asm") || t[n - 4].IsWord("x64") || t[n - 4].IsWord("arm"));
         }
 
         Token ReadRawBlock()

@@ -1644,9 +1644,24 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   operand is 64 bits (`Widen`). `lib/x86_64_linux/throw.asm` has 64-bit catch records
   ready, but 64-bit code doesn't catch yet. Tests: 15 run as 64-bit Linux programs, and
   `pointer_math` (new) on all three systems.
-- [ ] (a, the rest) text, arrays as parameters and arrays that grow, structs, the heap and
-  objects, 64-bit numbers, floating point, method values, interfaces, catching errors, the
-  rest of the system calls: until every program test runs as a 64-bit Linux program too
+- [x] (a, third part) structs made of numbers, pointers and arrays of them (in place,
+  arrays of them, and through pointers: `p.x`, `p:i.x`, `t.next.id`), arrays of pointers,
+  and the heap (`new`, `free`, `OS.Grow` by Linux's brk). Two decisions on the way:
+  - **Addresses are `ptr<u8>`** (the user's choice over a new address-sized number type):
+    the heaps (`memory.heap`, `memory.program_heap`) keep addresses in pointers now, so
+    `Heap.Alloc` gives a `ptr<u8>` and `Heap.Free` takes one, `OS.Grow` gives a `ptr<u8>`,
+    and a header's size is `sizeof HeapBlock` (24 bytes, or 32 in 64-bit code). 32-bit
+    code is the same as before.
+  - **`x64.Name { }`** is an assembly block's 64-bit version, beside `asm.Name { }` (chosen
+    after seeing code for `asm64.Name` and for rewriting in PHI): calls don't change, the
+    compiler takes the version for the code it's building, and using a block with no
+    version for it is an error naming it. `x64` is a reserved word. The heap's two blocks
+    have one so far.
+  Tests: 19 run as 64-bit Linux programs, and `heap_lists` (new) on all three systems.
+- [ ] (a, the rest) text (fixed and growing, and building it), arrays as parameters and
+  arrays that grow, objects, 64-bit numbers, floating point, method values, interfaces,
+  catching errors, `x64` versions of the rest of the library's blocks, the rest of the
+  system calls: until every program test runs as a 64-bit Linux program too
 
 #### Phase S11: Running for real
 

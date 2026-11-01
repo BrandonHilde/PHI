@@ -1,0 +1,57 @@
+# Structs in place and through pointers, and the heap: a list built with new, walked, and
+# freed. A program, so it runs on Linux (32 and 64-bit) and Windows; in 64-bit code a
+# pointer field is 8 bytes (sizeof Node is 16, not 12), and the heap's addresses are 64 bits.
+struct.Point
+{
+	i16 x;
+	i16 y;
+}
+
+struct.Node
+{
+	u32 value;
+	Point where;
+	ptr<Node> next;
+}
+
+phi.HeapLists:Program
+{
+	Point origin;
+	origin.x is 3;
+	origin.y is -4;
+	log 'origin ' origin.x ' ' origin.y '\n';
+
+	Point corners[4];
+	corners:2.x is 7;
+	log 'corner ' corners:2.x ' size ' sizeof Point '\n';
+
+	# a list on the heap
+	ptr<Node> first: 0;
+	while int i: 1; i <= 5; i++;
+		ptr<Node> n: new Node;
+		n.value is i * 10;
+		n.where.x is i;
+		n.next is first;
+		first is n;
+	;;
+	u32 total: 0;
+	ptr<Node> node: first;
+	while node is not 0
+		total++ node.value + node.where.x;
+		node is node.next;
+	;;
+	log 'total ' total ', blocks ' Heap.used_blocks '\n';
+
+	# free them all
+	while first is not 0
+		ptr<Node> next: first.next;
+		free first;
+		first is next;
+	;;
+	log 'after free ' Heap.used_blocks '\n';
+
+	ptr<u8> buffer: new u8[100000];
+	buffer:99999 is 42;
+	log 'big ' buffer:99999 ' ' Heap.used_blocks '\n';
+	free buffer;
+}

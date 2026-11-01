@@ -87,6 +87,10 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<UnitKind, BoundUnit> units = new();
         readonly Dictionary<(UnitKind, string), MethodSymbol> methodsByFullName = new();
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
+        readonly Dictionary<string, RawBlockDecl> x64Blocks = new();
+
+        /// <summary>An assembly block that's there, but not in the version this code needs.</summary>
+        sealed record MissingBlock(RawBlockDecl Block, string Why);
         readonly Dictionary<string, StructSymbol> structs = new();
         readonly Dictionary<string, EnumSymbol> enums = new();
         readonly HashSet<VarDecl> loopCounters = new();
@@ -228,8 +232,10 @@ namespace Phi.Compiler.Semantics
             foreach (RawBlockDecl raw in program.RawBlocks)
             {
                 file = raw.File;
-                if (!rawBlocks.TryAdd(raw.Name, raw))
-                    Error(raw.Span, $"an assembly block named {raw.Name} already exists");
+                // asm.Name for 16-bit and 32-bit code, and x64.Name beside it for 64-bit code
+                var blocks = raw.Language == "x64" ? x64Blocks : rawBlocks;
+                if (!blocks.TryAdd(raw.Name, raw))
+                    Error(raw.Span, $"an assembly block named {raw.Language}.{raw.Name} already exists");
             }
 
             foreach (var (cls, scope) in classScopes)
@@ -3500,11 +3506,15 @@ namespace Phi.Compiler.Semantics
                     return builtin;
                 }
 
+                case MissingBlock missing:
+                    Error(calleeSpan, missing.Why);
+                    return null;
+
                 case RawBlockDecl raw:
                 {
-                    if (raw.Language != "asm")
+                    if (raw.Language is not ("asm" or "x64"))
                     {
-                        Error(calleeSpan, $"{raw.Language}.{raw.Name} can't run on x86; only asm. blocks can be called");
+                        Error(calleeSpan, $"{raw.Language}.{raw.Name} can't run on x86; only asm. and x64. blocks can be called");
                         return null;
                     }
                     if (arguments.Count > 0)
@@ -3586,8 +3596,13 @@ namespace Phi.Compiler.Semantics
                 return builtin;
             }
 
-            string rawName = name.StartsWith("asm.") ? name[4..] : name;
-            if (rawBlocks.TryGetValue(rawName, out RawBlockDecl? raw)) return raw;
+            // an assembly block: the version for the code this is, 64-bit (x64.Name) or not (asm.Name)
+            string rawName = name.StartsWith("asm.") || name.StartsWith("x64.") ? name[4..] : name;
+            bool is64 = scope.Unit == UnitKind.Program && host.Is64();
+            if ((is64 ? x64Blocks : rawBlocks).TryGetValue(rawName, out RawBlockDecl? raw)) return raw;
+            if ((is64 ? rawBlocks : x64Blocks).TryGetValue(rawName, out RawBlockDecl? otherVersion))
+                return new MissingBlock(otherVersion, is64 ? $"asm.{rawName} has no 64-bit version: write x64.{rawName} beside it"
+                                                     : $"x64.{rawName} is for 64-bit code: this code needs asm.{rawName}");
 
             // a method in the other unit, for a better error message
             UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Os : UnitKind.Boot;
@@ -4106,10 +4121,14 @@ namespace Phi.Compiler.Semantics
                         // an interrupt handler ends with iret, so it can't be called like a method
                         if (!m.IsInterruptHandler) addr.Type = PhiType.MethodOf(SignatureOf(m));
                         return;
-                    case RawBlockDecl { Language: "asm" } raw:
+                    case RawBlockDecl { Language: "asm" or "x64" } raw:
                         UseRawBlock(units[scope.Unit], raw);
                         addr.CodeLabel = raw.Name;
                         name.Type = PhiType.Void;
+                        return;
+                    case MissingBlock missing:
+                        Error(name.Span, missing.Why);
+                        addr.Type = PhiType.Error;
                         return;
                 }
             }

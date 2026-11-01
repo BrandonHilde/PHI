@@ -186,7 +186,7 @@ namespace Phi.Compiler.Semantics
                     Description = "program: how many records are waiting in a mailbox, or -1 (user.mail does this)" },
             new() { Name = "OS.MailClose", Label = "OS_MailClose", Parameters = new[] { "box" }, Returns = true,
                     Description = "program: close one of its mailboxes; 1, or 0 if it isn't its own (user.mail does this)" },
-            new() { Name = "OS.Grow", Label = "OS_Grow", Parameters = new[] { "bytes" }, Returns = true,
+            new() { Name = "OS.Grow", Label = "OS_Grow", Parameters = new[] { "bytes" }, Returns = true, ReturnsText = true,
                     Description = "program: more memory for its heap, right after what it has; where it starts, or 0 (memory.heap does this for new)" },
             new() { Name = "OS.SetSyscallHandler", Label = "OS_SetSyscallHandler", Parameters = new[] { "handler" },
                     Description = "kernel: run a method for system calls numbered 16 and up" },

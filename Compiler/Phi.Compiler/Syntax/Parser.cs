@@ -20,7 +20,7 @@ namespace Phi.Compiler.Syntax
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
-            "phi", "asm", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
+            "phi", "asm", "x64", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
             "throw", "throws",
         };
 
@@ -193,7 +193,7 @@ namespace Phi.Compiler.Syntax
         bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
 
         bool AtTopLevelHeader =>
-            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot
+            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot
             || Current.StartsLine && AtWord("use");
 
         /// <summary>Skip ahead to a likely statement boundary after an error.</summary>
@@ -247,7 +247,7 @@ namespace Phi.Compiler.Syntax
                 return;
             }
 
-            if ((AtWord("phi") || AtWord("asm") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot)
+            if ((AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot)
             {
                 string kind = Advance().Text;
                 Advance(); // .
@@ -1750,7 +1750,7 @@ namespace Phi.Compiler.Syntax
                         return new NameExpr { Name = t.Text, Span = t.Span };
                     }
                     // asm.Name { ... } (and struct., enum., phi.) written inside a class
-                    if (t.Text is "asm" or "arm" or "struct" or "enum" or "interface" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
+                    if (t.Text is "asm" or "x64" or "arm" or "struct" or "enum" or "interface" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
                         throw Error(t.Span, $"{t.Text}. blocks go at the top level of the file, outside any class" +
                                             (t.Text is "asm" or "arm" ? $"; write {t.Text}.Name {{ ... }} there and call Name; from the class" : ""));
                     if (ReservedWords.Contains(t.Text))

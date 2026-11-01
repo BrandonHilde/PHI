@@ -26,7 +26,7 @@ struct.HeapBlock
 	u32 used;                   # 1 while handed out
 	ptr<HeapBlock> next;        # the block after this one in memory
 	ptr<HeapBlock> previous;
-	u32 bin;                    # while free: which size list it's on (and the header stays 24 bytes)
+	u32 bin;                    # while free: which size list it's on
 }
 
 # the first bytes of a free block: its neighbors on its size's list
@@ -39,18 +39,19 @@ struct.HeapFreeLinks
 phi.Heap:Kernel
 {
 	const u32 HEAP_MAGIC: 0x48454150;        # 'HEAP'
-	const u32 HEADER: 24;
+	const u32 HEADER: sizeof HeapBlock;      # (24 bytes, or 32 in 64-bit code)
+	const u32 SMALLEST: sizeof HeapFreeLinks; # a free block keeps its list's links in it
 	const u32 HEAP_MIN_FRAMES: 2048;         # 8 MB
 	const u32 BINS: 28;                      # the last takes every block of 1 GB and more
 
 	ptr<HeapBlock> heap_first: 0;
-	u32 heap_start: 0;
+	ptr<u8> heap_start: 0;
 	u32 heap_size: 0;
 	u32 used_bytes: 0;          # handed out right now (not counting headers)
 	u32 used_blocks: 0;
 	lock heap_lock;             # one core at a time in Alloc, Free and LargestFree
 	ptr<HeapBlock> heap_bins[BINS];
-	u32 heap_zero_at: 0;        # for HeapZero
+	ptr<u8> heap_zero_at: 0;    # for HeapZero
 	u32 heap_zero_words: 0;
 	u32 heap_bin_size: 0;       # for HeapBinOf
 	u32 heap_bin: 0;
@@ -77,17 +78,17 @@ phi.Heap:Kernel
 
 	# size bytes of zeroed memory, or 0 if no free block is big enough
 	[Alloc: u32 size: 0;]
-		u32 result: 0;
+		ptr<u8> result: 0;
 		u32 wanted: (size + 7) & ~7;
-		if wanted is 0
-			wanted is 8;
+		if wanted < SMALLEST
+			wanted is SMALLEST;
 		;;
 		locked heap_lock
 			ptr<HeapBlock> b: (FindFree: wanted);
 			if b is not 0
 				call RemoveFree: b;
 				# split off the rest when it's big enough to be a block of its own
-				if b:0.size >= wanted + HEADER + 8
+				if b:0.size >= wanted + HEADER + SMALLEST
 					ptr<HeapBlock> rest: b + HEADER + wanted;
 					rest:0.magic is HEAP_MAGIC;
 					rest:0.size is b:0.size - wanted - HEADER;
@@ -115,7 +116,7 @@ phi.Heap:Kernel
 	[end: result]
 
 	# give back memory from Alloc; freeing 0 does nothing
-	[Free: u32 address: 0;]
+	[Free: ptr<u8> address: 0;]
 		locked heap_lock
 			if address is not 0
 				ptr<HeapBlock> b: address - HEADER;
@@ -125,7 +126,7 @@ phi.Heap:Kernel
 				;;
 
 				if valid is false
-					log '\nPHI: free of memory that new did not hand out (or freed twice): ' address '\n';
+					log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
 					call HeapHalt;
 				;;
 

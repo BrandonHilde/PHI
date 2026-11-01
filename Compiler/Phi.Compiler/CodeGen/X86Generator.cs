@@ -95,9 +95,10 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>
         /// What 64-bit programs can do so far (S10 is teaching the generator the rest): numbers
-        /// of up to 32 bits (and bln, chr, enums), their variables, constants and math, methods
-        /// that take and give them, calls, if, while, when, log and exit. Anything else is an
-        /// error naming it, rather than code that's wrong.
+        /// of up to 32 bits (and bln, chr, enums), pointers, structs made of those (in place, or
+        /// through a pointer), arrays of them kept in place, the heap (new and free), methods
+        /// that take and give numbers and pointers, calls, if, while, when, log and exit.
+        /// Anything else is an error naming it, rather than code that's wrong.
         /// </summary>
         void Check64()
         {
@@ -107,62 +108,103 @@ namespace Phi.Compiler.CodeGen
                 if (reported.Add(at.Span.Start))
                     diagnostics.Error(file, at.Span, $"{what} isn't in 64-bit programs yet");
             }
+
             static bool NumberKind(PhiType t) =>
                 t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
                     or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum;
             static bool Number(PhiType t) => !t.IsArray && NumberKind(t);
-            // a pointer to numbers (a ptr<u8> is text too)
-            static bool Pointer(PhiType t) => t.IsPointer && !t.IsArray && t.Pointee is { IsArray: false } p && NumberKind(p);
+            // a pointer to numbers (a ptr<u8> is text too), to a pointer, or to a struct
+            static bool Pointer(PhiType t) => t.IsPointer && !t.IsArray && t.Pointee is { IsArray: false } p
+                                              && (NumberKind(p) || p.IsPointer || p.IsStruct);
             static bool Value(PhiType t) => Number(t) || Pointer(t);
-            // an array of numbers kept in place: a fixed one or an [atmost N] one
-            static bool Numbers(VariableSymbol v) => v.Type.IsArray && NumberKind(v.Type) && !v.Type.Open && !v.GrowingArray;
-            static bool Kept(VariableSymbol v) => Value(v.Type) || Numbers(v);
-            static bool NumbersExpr(Expr e) => e is NameExpr { Symbol: VariableSymbol v } && Numbers(v);
+            // a struct of what can be kept, with no objects in it
+            static bool Plain(StructSymbol s) => !s.OwnsObjects && s.Fields.All(f => Kept(f.Type));
+            // what a variable or field can be: a value, a plain struct, or an array of either
+            // kept in place (not text: that's still to come)
+            static bool Kept(PhiType t) =>
+                t.Kind != TypeKind.Str && !t.Open
+                && (Value(t) || t.IsStruct && Plain(t.Struct!)
+                    || t.IsArray && (NumberKind(t) || Pointer(t.Element) || t.Kind == TypeKind.Struct && Plain(t.Struct!)));
+            static bool KeptVar(VariableSymbol v) =>
+                Kept(v.Type) && !v.GrowingArray && !v.Grows && !v.TextRef && v.Ownership == Ownership.None;
+            // an array whose elements are numbers or pointers (what ++, .len is and while each work on so far)
+            static bool ValueArray(PhiType t) => t.IsArray && (NumberKind(t) || Pointer(t.Element));
+
             bool Callable(object? callee) => callee switch
             {
                 MethodSymbol m => m.Parameters.All(p => Value(p.Type)) && (m.ReturnType.Kind == TypeKind.Void || Value(m.ReturnType))
-                                  && m.Locals.All(Kept) && !m.IsInterruptHandler && m.Decl.Owner.ForStruct == null,
-                BuiltinFunction b => b.Label is "OS_GetTicks" or "OS_Sleep" or "OS_Yield",
+                                  && m.Locals.All(KeptVar) && !m.IsInterruptHandler && m.Decl.Owner.ForStruct == null,
+                BuiltinFunction b => b.Label is "OS_GetTicks" or "OS_Sleep" or "OS_Yield" or "OS_Grow",
+                RawBlockDecl => true,      // (the binder took the x64 one, or said there isn't one)
                 _ => false,
             };
+
+            // where a value is kept that 64-bit code can reach: a variable, a field, an element
+            // (checking the indexes and pointers on the way)
+            bool Place(Expr e)
+            {
+                switch (e)
+                {
+                    case NameExpr { Symbol: VariableSymbol v }:
+                        return KeptVar(v);
+                    case NameExpr { Symbol: FieldPathSymbol f }:
+                        return Kept(f.Type);
+                    case NameExpr { Symbol: PathSymbol p }:
+                        // through pointers (objects are still to come)
+                        return KeptVar(p.Root) && Kept(p.Type);
+                    case IndexExpr ix when Number(ix.Index.Type):
+                        Expression(ix.Index);
+                        if (Pointer(ix.Target.Type))
+                        {
+                            Expression(ix.Target);
+                            return true;
+                        }
+                        return ix.Target.Type.IsArray && Place(ix.Target);
+                    case MemberExpr { Call: null, Field: not null } m when Kept(m.Type):
+                        if (Pointer(m.Target.Type))
+                        {
+                            Expression(m.Target);
+                            return true;
+                        }
+                        return Place(m.Target);
+                    default:
+                        return false;
+                }
+            }
 
             void Expression(Expr e)
             {
                 switch (e)
                 {
-                    case NumberExpr or BoolExpr:
+                    case NumberExpr or BoolExpr or SizeofExpr:
                         return;
                     case NameExpr { Symbol: ConstantSymbol }:
                         return;
                     case NameExpr { Call: CallExpr c }:
                         Call(c, c.Resolved, c.Arguments);
                         return;
-                    case NameExpr { Symbol: VariableSymbol v } when Value(v.Type) || Numbers(v):
-                        return;
-                    case AddrExpr { Operand: NameExpr { Symbol: VariableSymbol v } } when Kept(v):
-                        return;
-                    case AddrExpr { Operand: IndexExpr element } when NumbersExpr(element.Target) || Pointer(element.Target.Type):
-                        Expression(element);
-                        return;
-                    case IndexExpr ix when Pointer(ix.Target.Type) && Number(ix.Index.Type):
-                        Expression(ix.Target);
-                        Expression(ix.Index);
-                        return;
-                    case NameExpr { Symbol: LengthSymbol { Count: int } }:
-                        return;
-                    case NameExpr { Symbol: LengthSymbol { Filled: Expr filled } } when NumbersExpr(filled):
-                        return;
-                    case MemberExpr { Count: int }:
-                        return;
-                    case MemberExpr { FilledLength: true, Target: var counted } when NumbersExpr(counted):
-                        return;
-                    case SizeofExpr:
-                        return;
-                    case IndexExpr ix when NumbersExpr(ix.Target) && Number(ix.Index.Type):
-                        Expression(ix.Index);
+                    case MemberExpr { Call: CallExpr c }:
+                        Call(c, c.Resolved, c.Arguments);
                         return;
                     case CallExpr c:
                         Call(c, c.Resolved, c.Arguments);
+                        return;
+                    case NameExpr { Symbol: LengthSymbol { Count: int } }:
+                        return;
+                    case NameExpr { Symbol: LengthSymbol { Filled: Expr filled } } when Place(filled):
+                        return;
+                    case MemberExpr { Count: int }:
+                        return;
+                    case MemberExpr { FilledLength: true, Target: var counted } when Place(counted):
+                        return;
+                    case NameExpr { Symbol: VariableSymbol or FieldPathSymbol or PathSymbol } or IndexExpr or MemberExpr { Call: null }:
+                        if (!Place(e)) Not(e, Number(e.Type) ? Kind(e) : A(e.Type));
+                        return;
+                    case AddrExpr { Operand: var operand } when Place(operand):
+                        return;
+                    case NewExpr n:
+                        if (n.Count != null) Expression(n.Count);
+                        if (n.Allocator == null || !Callable(n.Allocator)) Not(n, "new");
                         return;
                     case BinaryExpr b when Value(b.Left.Type) && Value(b.Right.Type)
                                            && (Number(b.Left.Type) && Number(b.Right.Type) && !IsAddress(b.Left) && !IsAddress(b.Right)
@@ -177,7 +219,7 @@ namespace Phi.Compiler.CodeGen
                         Expression(c.Operand);
                         return;
                     default:
-                        Not(e, Number(e.Type) && e is not (StringExpr or TextExpr) ? Kind(e) : $"{A(e.Type)}");
+                        Not(e, Number(e.Type) && e is not (StringExpr or TextExpr) ? Kind(e) : A(e.Type));
                         return;
                 }
             }
@@ -186,7 +228,7 @@ namespace Phi.Compiler.CodeGen
             {
                 if (!Callable(callee))
                 {
-                    Not(at, callee is BuiltinFunction b ? b.Name : "calling a method that takes, gives or keeps anything but numbers");
+                    Not(at, callee is BuiltinFunction b ? b.Name : "calling a method that takes, gives or keeps what 64-bit code can't yet");
                     return;
                 }
                 foreach (Expr a in arguments) Expression(a);
@@ -198,24 +240,23 @@ namespace Phi.Compiler.CodeGen
                 {
                     case ConstDecl or BreakStmt or ContinueStmt:
                         return;
-                    case VarDecl d when d.Symbol is VariableSymbol v && Kept(v) && !d.IsNew && d.AtAddress == null:
+                    case VarDecl d when d.Symbol is VariableSymbol v && KeptVar(v) && !d.IsNew && d.AtAddress == null:
                         foreach (Expr value in d.Values) Expression(value);
                         return;
-                    case AssignStmt a when a.Target is NameExpr { Symbol: VariableSymbol v } && Value(v.Type):
+                    case AssignStmt a when Value(a.Target.Type) && Place(a.Target):
                         Expression(a.Value);
                         return;
-                    case AssignStmt a when a.Target is IndexExpr ix && (NumbersExpr(ix.Target) || Pointer(ix.Target.Type)):
-                        Expression(ix);
-                        Expression(a.Value);
-                        return;
-                    case AppendStmt add when NumbersExpr(add.Target):
+                    case AppendStmt add when ValueArray(add.Target.Type) && Place(add.Target):
                         foreach (Expr value in add.Values) Expression(value);
                         return;
-                    case SetLengthStmt length when NumbersExpr(length.Array):
+                    case SetLengthStmt length when Place(length.Array):
                         Expression(length.Value);
                         return;
-                    case WhileEachStmt each when NumbersExpr(each.Array):
+                    case WhileEachStmt each when ValueArray(each.Array.Type) && Place(each.Array):
                         foreach (Stmt t in each.Body) Statement(t);
+                        return;
+                    case FreeStmt { Owner: null, Releaser: not null } f:
+                        Expression(f.Pointer);
                         return;
                     case LogStmt log:
                         foreach (Expr value in log.Values)
@@ -227,7 +268,7 @@ namespace Phi.Compiler.CodeGen
                         }
                         return;
                     case CallStmt c:
-                        if (c.ResultTarget != null && !(c.ResultTarget is NameExpr { Symbol: VariableSymbol r } && Number(r.Type)))
+                        if (c.ResultTarget != null && !(Value(c.ResultTarget.Type) && Place(c.ResultTarget)))
                             Not(c, "keeping this kind of result");
                         Call(c, c.Resolved, c.Arguments);
                         return;
@@ -274,7 +315,7 @@ namespace Phi.Compiler.CodeGen
             foreach (MethodSymbol m in unit.Methods)
             {
                 file = m.Decl.Owner.File;
-                foreach (VariableSymbol v in m.Parameters.Where(v => !Value(v.Type)).Concat(m.Locals.Where(v => !Kept(v))))
+                foreach (VariableSymbol v in m.Parameters.Where(v => !Value(v.Type)).Concat(m.Locals.Where(v => !KeptVar(v))))
                     Not(v.Decl, $"{A(v.Type)} variable");
                 if (m.ReturnType.Kind != TypeKind.Void && !Value(m.ReturnType)) Not(m.Decl, $"a method that gives {A(m.ReturnType)}");
                 foreach (Stmt s in m.Decl.Body) Statement(s);
@@ -1322,7 +1363,7 @@ namespace Phi.Compiler.CodeGen
         void EmitRawBlock(RawBlockDecl raw)
         {
             Line("");
-            Comment($"asm.{raw.Name}");
+            Comment($"{raw.Language}.{raw.Name}");
             Label(raw.Name);
 
             var text = new StringBuilder();
@@ -1339,7 +1380,7 @@ namespace Phi.Compiler.CodeGen
                 string? replacement = ResolveAsmName(name);
                 if (replacement != null) text.Append(replacement);
                 else diagnostics.Error(raw.File, new Span(raw.TextSpan.Start + open, close - open + 1),
-                        $"asm.{raw.Name} uses {{{name}}}, but there is no class variable or constant named '{name}'");
+                        $"{raw.Language}.{raw.Name} uses {{{name}}}, but there is no class variable or constant named '{name}'");
 
                 i = close + 1;
             }
@@ -2732,15 +2773,17 @@ namespace Phi.Compiler.CodeGen
                 case NameExpr { Symbol: PathSymbol path }:
                 {
                     // through objects: read the address each one is at, then go on from there (a
-                    // pointer in a register is the first address already)
+                    // pointer in a register is the first address already; each is a whole
+                    // address in 64-bit code)
+                    string loadAddress = bits64 ? "mov rbx, qword" : "mov ebx, dword";
                     if (RegisterOf(path.Root) is string rootRegister && path.BaseOffset == 0)
                     {
                         if (path.Hops.Count == 1) return new Place { Computed = true, Linear = true, Base = rootRegister, Offset = path.Hops[0] };
                         Emit($"mov ebx, {rootRegister}");
                     }
-                    else Emit($"mov ebx, dword {Operand(new Place { Label = path.Root.Label, Offset = path.BaseOffset })}");
+                    else Emit($"{loadAddress} {Operand(new Place { Label = path.Root.Label, Offset = path.BaseOffset })}");
                     for (int i = 0; i < path.Hops.Count - 1; i++)
-                        Emit($"mov ebx, dword {Operand(new Place { Computed = true, Linear = true, Offset = path.Hops[i] })}");
+                        Emit($"{loadAddress} {Operand(new Place { Computed = true, Linear = true, Offset = path.Hops[i] })}");
                     return new Place { Computed = true, Linear = true, Offset = path.Hops[^1] };
                 }
 
@@ -2752,7 +2795,7 @@ namespace Phi.Compiler.CodeGen
                     else
                     {
                         EmitExpr(m.Target);
-                        Emit("mov ebx, eax");
+                        Emit($"mov {R("ebx")}, {R("eax")}");
                     }
                     return new Place { Computed = true, Linear = true, Offset = m.Field!.Offset };
 
@@ -2885,6 +2928,13 @@ namespace Phi.Compiler.CodeGen
             // so a negative one reaches before it)
             if (bits64 && viaValue)
             {
+                // a pointer in a variable and a constant index: the address straight into rbx, so
+                // eax keeps the value being stored (as PlaceKeepsEax says)
+                if (PointerElementKeepsEax(ix))
+                {
+                    TryLoadSimple(ix.Target, "ebx", dryRun: false);
+                    return new Place { Computed = true, Linear = true, Offset = (int)constant!.Value * size };
+                }
                 EmitExpr(ix.Target);
                 if (constant != null)
                 {
@@ -4428,19 +4478,22 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Loads values that need no other registers straight into a register.</summary>
         bool TryLoadSimple(Expr e, string register, bool dryRun)
         {
+            // a label's address: in 64-bit code worked out from where the code is
+            string LabelInto(string label) => bits64 ? $"lea {R(register)}, [rel {label}]" : $"mov {register}, {label}";
             string? instruction = ConstantFolder.Evaluate(e) is long k
                 ? (k == 0 ? $"xor {register}, {register}" : $"mov {register}, {(int)k}")
                 : e switch
                 {
-                    StringExpr s => $"mov {register}, {StringLabel(s.Value)}",
+                    StringExpr s => LabelInto(StringLabel(s.Value)),
                     NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false, TextRef: false } v } =>
-                        InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : $"mov {register}, {v.Label}",
+                        InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : LabelInto(v.Label),
                     NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } =>
                         RegisterOf(v) is string held ? $"mov {register}, {held}" : LoadInstruction(v.Type, register, $"[{v.Label}]"),
-                    NameExpr { Call: null, Symbol: VariableSymbol { Type.IsObject: true } v } => $"mov {register}, dword [{v.Label}]",
-                    AddrExpr { CodeLabel: string code } => $"mov {register}, {code}",
+                    NameExpr { Call: null, Symbol: VariableSymbol { Type.IsObject: true } v } =>
+                        bits64 ? $"mov {R(register)}, qword [{v.Label}]" : $"mov {register}, dword [{v.Label}]",
+                    AddrExpr { CodeLabel: string code } => LabelInto(code),
                     AddrExpr { OfObject: false, Operand: NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false, Type.Open: false, Type.IsHeapText: false } v } } =>
-                        InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : $"mov {register}, {v.Label}",
+                        InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : LabelInto(v.Label),
                     NameExpr { Symbol: FieldPathSymbol { Type.IsNumeric: true } f } =>
                         LoadInstruction(f.Type, register, f.Offset == 0 ? $"[{f.Root.Label}]" : $"[{f.Root.Label} + {f.Offset}]"),
                     _ => null,

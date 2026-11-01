@@ -88,7 +88,7 @@ variable, field, parameter, constant, method or struct:
 | Kind | Words |
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
-| Structure | `phi` `struct` `enum` `interface` `asm` `arm` `use` `const` `volatile` `isr` `end` `into` |
+| Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
@@ -2119,9 +2119,11 @@ phi run hello.phi --target linux -- a b  # build and run it here, with a b as it
 **64-bit programs** (in progress, S10 in [Plan.md](../Plan.md)): `--target linux64`
 builds a 64-bit Linux program. In 64-bit code pointers are 8 bytes, and every number keeps
 its size (`int` is 32 bits on every system). So far a 64-bit program can use numbers of up
-to 32 bits (and `bln`, `chr`, enums), arrays of them kept in place, pointers to them,
-methods that take and give those, `if`, `while`, `when`, `log`, `debug` and `exit`;
-anything else is an error saying it isn't in 64-bit programs yet.
+to 32 bits (and `bln`, `chr`, enums), pointers, structs made of those (in place or through
+a pointer), arrays of them kept in place, the heap (`new` and `free`), methods that take
+and give numbers and pointers, `if`, `while`, `when`, `log`, `debug` and `exit`; anything
+else is an error saying it isn't in 64-bit programs yet. An address kept as a number is a
+`ptr<u8>` (the heap's `Heap.Alloc` gives one), so it's whole on every system.
 
 On Windows, `phi run --target linux` runs it under WSL. NASM writes the whole executable,
 so no linker or C library is involved: what a program asks PHI OS for, the program's
@@ -2393,6 +2395,32 @@ In a 16-bit program the code runs in real mode with `ds = es = ss = 0`; you may 
 any general-purpose register and `fs`, but you must keep `sp`, `bp` and the other segment
 registers. In a 32-bit kernel it runs in protected mode with flat segments; you may change
 any general-purpose register, but keep `esp`, `ebp` and the segment registers.
+
+**64-bit code** (a 64-bit program) takes a block's `x64.Name` version, written beside its
+`asm.Name` with the same name. The call doesn't change, and each kind of code gets the one
+for it; using a block that has no version for the code being built is an error naming it.
+An x64 block keeps `rsp` and `rbp`; an address is 64 bits (`mov rdi, [rel {at}]`), and
+`rel` reaches a variable wherever the program is loaded.
+
+```phi
+asm.Zero                   # 16-bit and 32-bit code
+{
+    mov edi, [{at}]
+    mov ecx, [{words}]
+    xor eax, eax
+    rep stosd
+    ret
+}
+
+x64.Zero                   # 64-bit code: the same, with the address in all of rdi
+{
+    mov rdi, [rel {at}]
+    mov ecx, [rel {words}]
+    xor eax, eax
+    rep stosd
+    ret
+}
+```
 
 ## Files
 
