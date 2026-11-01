@@ -1,0 +1,62 @@
+# 64-bit whole numbers (i64, u64) and floating point (f16, f32, f64) in a program: math,
+# shifts, comparing, as text, in struct fields and arrays, as parameters and results, and
+# converted between. A program, so it runs on Linux (32 and 64-bit) and Windows.
+struct.Sample
+{
+	i64 big;
+	f64 value;
+	f32 small;
+	f16 half;
+}
+
+phi.NumbersProgram:Program
+{
+	i64 a: 9000000000;
+	i64 b: -3;
+	u64 c: 18000000000000000000;
+	log a ' ' b ' ' c ' ' (a * b) ' ' (a / 7) ' ' (a % 7) ' ' (-a / 2) ' ' (c / 3) ' ' (c % 1000) '\n';
+	log (a << 3) ' ' (a >> 4) ' ' (c >> 60) ' ' (a & 255) ' ' (a > b) ' ' (b < a) ' ' (a is 9000000000) '\n';
+	f64 x: 2.5;
+	f32 y: 0.125;
+	f16 z: 1.5;
+	log x ' ' y ' ' z ' ' (x * y) ' ' (x / 3) ' ' (x % 1) ' ' (x > y) ' ' (Float.Sqrt: 2.0) '\n';
+	log (Twice: a) ' ' (Mix: x 3 y a) ' ' (Half: 9.0) '\n';
+	Sample s;
+	s.big is a + 1;
+	s.value is x * 4;
+	s.small is y + 1;
+	s.half is z * 2;
+	log s.big ' ' s.value ' ' s.small ' ' s.half '\n';
+	f64 values[atmost 4];
+	values++ 1.5 2.25;
+	i64 bigs[];
+	bigs++ a b 7;
+	i64 total: 0;
+	while each n in bigs
+		total++ n;
+	;;
+	log values.len ' ' values:1 ' ' bigs.len ' ' total '\n';
+	int whole: (x * 10) as int;
+	i64 fromFloat: (1.0e15 + 0.5) as i64;
+	f64 fromBig: a as f64;
+	u32 u: 4000000000;
+	f64 fromU: u as f64;
+	log whole ' ' fromFloat ' ' fromBig ' ' fromU ' ' (u as i64) '\n';
+	when b
+		is -3
+			log 'minus three\n';
+		;;
+	;;
+	str text: ('n=' a ' f=' x);
+	log text '\n';
+
+	[Twice: i64 n;]
+	[end: n * 2]
+
+	[Mix: f64 f; int i; f32 g; i64 w;]
+	[end: f * i + g + w as f64]
+
+	[Half: f64 v;]
+		f64 h: v / 2;
+	[end: h]
+}

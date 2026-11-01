@@ -1705,10 +1705,52 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   clearing the screen) in `lib/x86_64_linux/system.asm`, and `ask` (`read_line.asm`). Test
   `throw_unwind` (new) on all three systems; every program test that runs on Linux runs as
   a 64-bit Linux program too (51).
-- [ ] (a, the rest) what only kernel tests use so far, made to work in 64-bit programs:
-  arrays of structs as parameters, arrays of objects, str arrays that grow, copying whole
-  arrays, struct fields without a size, 64-bit numbers, floating point, method values,
-  interfaces, `x64` versions of the rest of the library's blocks
+- [x] (a, eleventh part) 64-bit whole numbers (`i64`, `u64`) and floating point (`f16`,
+  `f32`, `f64`). For now an i64 is still worked on in edx:eax and a float on the x87, as in
+  32-bit code (the same code: functionality first); what differs is that one goes as a
+  single 8-byte argument, and a value is loaded onto the FPU through memory rather than by
+  pushes. `lib/x86_64_linux/int64.asm` does the 32-bit code's routines in one register each,
+  and `float.asm` writes floats out. Test `numbers_program` (new) on all three systems; the
+  kernel tests `floats` and `int64` made into programs give the same output in both modes
+  (17 kernel tests so far).
+- [x] (a, twelfth part) arrays of objects (fixed, `[atmost N]` and growing), copying and
+  comparing whole arrays (`b is a`, `if b is a`: numbers, structs, strs and objects), and
+  arrays of structs as parameters (`Point points[]`). Tests `object_arrays_program`,
+  `array_copy_program` and `struct_array_params` (new) on all three systems; 19 kernel tests
+  made into programs give the same output in both modes. (`kernel32_throw` as a program
+  doesn't: its `Fill` grows an array until the heap runs out, which a 64-bit program, with
+  room for far more, doesn't reach before Linux stops it.)
+- [x] (a, thirteenth part) method values (`method<int: str> say: addr Say;`, called through
+  `rax`), and str arrays that grow (`str names[];`: each text's address and then each one's
+  room, 8 bytes apiece in 64-bit code, as fixed str arrays have them). A fix on the way: the
+  generator's size of an address was 2 bytes in 16-bit code, where it's 4, which broke
+  copying a str array there (`array_copy` in 16 bits). Test `str_growing_arrays` (new) on
+  all three systems; 22 kernel tests made into programs give the same output in both modes.
+- [x] (a, fourteenth part) interfaces (`interface.Shape`, structs that have them, calls
+  through a type table, `is Square`, `when` on what an interface value holds), and arrays of
+  objects in struct fields (`new Shape others[atmost 4];`, whose elements the binder now lays
+  out 8 bytes apart in 64-bit code). An object of a struct with interfaces keeps its 4-byte
+  type table address before it, and a type table's entries stay 4 bytes, in 64-bit code
+  too: the program is below 4 GB, so an entry is read into a register and jumped to. Test
+  `interfaces_program` (new, the kernel test as a program) on all three systems; 26 kernel
+  tests made into programs give the same output in both modes.
+- [x] (a, fifteenth part) a struct's arrays without a size (`int scores[];`, of numbers,
+  structs, strs and objects, in a struct): laid out as a view, so the routines each one gets
+  (free, clone, equal) and the code that grows, indexes, measures and cuts one read it at
+  `ViewCount` and `ViewMax`. Test `growing_array_fields_program` (new, the kernel test as a
+  program) on all three systems; 29 kernel tests made into programs give the same output in
+  both modes, among them `keyed_map`.
+- [x] (a, sixteenth part) str arrays and arrays of objects as parameters (`str rows[]`,
+  `new Node list[]`), arrays of texts kept in place (`str codes[atmost 2]: [3];`, in
+  variables and fields), and `has` on arrays (numbers of up to 32 bits and pointers, texts,
+  structs, objects). Tests `has_program`, `text_growing_arrays_program` and
+  `array_params_objects_program` (new, the kernel tests as programs) on all three systems.
+  Every kernel test that can be a program (35) now builds as a 64-bit Linux program and
+  gives the same output as a 32-bit one, but `kernel32_throw` (above); the rest use what
+  only a kernel has (drivers, ports, interrupts, cores).
+- [ ] (a, the rest) `x64` versions of the rest of the library's blocks, as programs need
+  them; `has` on arrays of 64-bit numbers and floats; atomic and locked (S9) in 64-bit
+  code
 
 #### Phase S11: Running for real
 

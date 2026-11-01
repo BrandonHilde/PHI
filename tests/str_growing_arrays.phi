@@ -1,0 +1,39 @@
+# Str arrays that grow, in a program (str names[];): added to past their room (texts and
+# rooms move), an element built and passed as the caller's str, while each, cut with
+# .len is, and copied and compared whole; their texts are freed when the method ends. A
+# program, so it runs on Linux (32 and 64-bit) and Windows.
+phi.StrGrowingArrays:Program
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	log 'heap back: ' (Heap.used_blocks is before) '\n';
+
+	[Run]
+		str names[];
+		log names.len ' ' names.max '\n';
+		names++ 'ann' 'bob';
+		names:1++ ' smith';
+		while int i: 0; i < 20; i++;
+			names++ ('player ' i);
+		;;
+		log names.len ' ' (names.max >= 22) ' ' names:0 ' ' names:1 ' ' names:21 ' ' names:21.len '\n';
+		call Sign: names:0;
+		log names:0 '\n';
+		int letters: 0;
+		while each n in names
+			letters++ n.len;
+		;;
+		log letters '\n';
+		names.len is 2;
+		names++ 'carl';
+		log names.len ' ' names:2 '\n';
+		str copy[];
+		copy is names;
+		copy:2 is 'dave';
+		log copy.len ' ' copy:2 ' ' names:2 ' ' (copy is names) '\n';
+	[end]
+
+	[Sign: str text;]
+		text++ ' (signed)';
+	[end]
+}

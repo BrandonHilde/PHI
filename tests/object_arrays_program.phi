@@ -1,0 +1,54 @@
+# Arrays of objects in a program: fixed (each one made), [atmost N] and growing ones added
+# to (a copy, a new one, a method's), walked, and cut (the dropped ones freed), with new
+# str and object fields; a method's are freed when it ends. A program, so it runs on
+# Linux (32 and 64-bit) and Windows.
+struct.Node
+{
+	int value;
+	new str name;
+	new Node next;
+}
+
+phi.ObjectArraysProgram:Program
+{
+	u32 before: Heap.used_blocks;
+	call Run;
+	log 'heap back: ' (Heap.used_blocks is before) '\n';
+
+	[Run]
+		new Node fixed[3];
+		fixed:0.value is 5;
+		fixed:2.name is 'third';
+		fixed:2.next is fixed:0;
+		log fixed:0.value ' [' fixed:1.name '] ' fixed:2.name ' ' fixed:2.next.value '\n';
+
+		new Node some[atmost 4];
+		new Node one: 7;
+		one.name is 'seven';
+		some++ one;
+		some++;
+		some:1.value is 8;
+		some++ (Make: 9);
+		log some.len ' ' some:0.name ' ' some:1.value ' ' some:2.name '\n';
+		some.len--;
+		log some.len '\n';
+
+		new Node many[];
+		while int i: 0; i < 40; i++;
+			many++ (Make: i);
+		;;
+		int total: 0;
+		while each n in many
+			total++ n.value;
+		;;
+		log many.len ' ' total ' ' many:39.name '\n';
+		many.len is 5;
+		many++ one;
+		log many.len ' ' many:5.name '\n';
+	[end]
+
+	[Make: int v;]
+		new Node made: v;
+		made.name is 'made ' v;
+	[end: made]
+}

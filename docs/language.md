@@ -2117,14 +2117,15 @@ phi run hello.phi --target linux -- a b  # build and run it here, with a b as it
 ```
 
 **64-bit programs** (in progress, S10 in [Plan.md](../Plan.md)): `--target linux64`
-builds a 64-bit Linux program. In 64-bit code pointers are 8 bytes, and every number keeps
-its size (`int` is 32 bits on every system). So far a 64-bit program can use numbers of up
-to 32 bits (and `bln`, `chr`, enums), pointers, structs made of those (in place or through
-a pointer), arrays of them kept in place, the heap (`new` and `free`), `str` variables
-(with a size or growing: building, comparing, `has`, `.len`), methods that take and give
-numbers, pointers and text, `if`, `while`, `when`, `log`, `debug` and `exit`; anything
-else is an error saying it isn't in 64-bit programs yet. An address kept as a number is a
-`ptr<u8>` (the heap's `Heap.Alloc` gives one), so it's whole on every system.
+builds a 64-bit Linux program. In 64-bit code pointers (and objects, and method values) are
+8 bytes, and every number keeps its size (`int` is 32 bits on every system). A 64-bit
+program can use what a 32-bit one can: numbers of every size and floating point, text,
+structs, objects and interfaces, arrays of all of them (fixed, `[atmost N]`, growing, and
+as parameters), method values, catching errors, `ask`, and the system's calls (files,
+arguments, time, memory). What it can't use yet (`atomic` and `locked`, and assembly
+blocks that have no `x64.Name { }` version) is an error saying it isn't in 64-bit
+programs yet. An address kept as a number is a `ptr<u8>` (the heap's `Heap.Alloc` gives
+one), so it's whole on every system.
 
 On Windows, `phi run --target linux` runs it under WSL. NASM writes the whole executable,
 so no linker or C library is involved: what a program asks PHI OS for, the program's

@@ -1,0 +1,64 @@
+# Whole arrays copied and compared in a program (b is a; if b is a): of numbers (into fixed,
+# [atmost N] and growing ones), structs, strs and objects (each one copied, and the
+# copies freed). A program, so it runs on Linux (32 and 64-bit) and Windows.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+struct.Node
+{
+	int value;
+	new str name;
+}
+
+phi.ArrayCopyProgram:Program
+{
+	int fixed: 1 2 3;
+	int copy[];
+	copy is fixed;
+	log copy.len ' ' (copy is fixed) '\n';
+	int back[3];
+	copy:0 is 5;
+	back is copy;
+	log back:0 back:1 back:2 ' ' (back is fixed) ' ' (back is copy) '\n';
+	int some[atmost 5];
+	some is fixed;
+	log some.len ' ' some:2 '\n';
+
+	Point a[2];
+	a:1.y is 7;
+	Point b[2];
+	b is a;
+	log b:1.y ' ' (a is b) '\n';
+	b:0.x is 1;
+	log (a is b) '\n';
+
+	str names: 'Ann' 'Bob';
+	str others[atmost 4];
+	others is names;
+	others:1++ ' Smith';
+	log others.len ' ' others:1 ' ' (others is names) '\n';
+	str two[2];
+	two is names;
+	log two:0 ' ' (two is names) '\n';
+
+	u32 before: Heap.used_blocks;
+	call Objects;
+	log 'heap back: ' (Heap.used_blocks is before) '\n';
+
+	[Objects]
+		new Node first[2];
+		first:0.value is 3;
+		first:1.name is 'one';
+		new Node second[atmost 3];
+		second is first;
+		log second.len ' ' second:1.name ' ' (second is first) '\n';
+		second:1.name++ '!';
+		log (second is first) ' ' first:1.name '\n';
+		new Node grown[];
+		grown is second;
+		log grown.len ' ' grown:1.name '\n';
+	[end]
+}

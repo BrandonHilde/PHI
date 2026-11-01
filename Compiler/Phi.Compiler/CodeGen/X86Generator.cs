@@ -111,14 +111,21 @@ namespace Phi.Compiler.CodeGen
 
             static bool NumberKind(PhiType t) =>
                 t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
-                    or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum;
+                    or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum
+                    or TypeKind.I64 or TypeKind.U64 or TypeKind.F16 or TypeKind.F32 or TypeKind.F64;
             static bool Number(PhiType t) => !t.IsArray && NumberKind(t);
+            // a number of up to 32 bits: what an index, and the number in pointer math, can be
+            static bool Small(PhiType t) => Number(t) && !t.IsWide && !t.IsFloat;
             // a pointer to numbers (a ptr<u8> is text too), to a pointer, or to a struct
             static bool Pointer(PhiType t) => t.IsPointer && !t.IsArray && t.Pointee is { IsArray: false } p
                                               && (NumberKind(p) || p.IsPointer || p.IsStruct);
-            static bool Value(PhiType t) => Number(t) || Pointer(t);
+            static bool Value(PhiType t) => Number(t) || Pointer(t) || MethodType(t);
+            // a method value (method<int: str> say: addr Say;) of a method that takes and gives what
+            // 64-bit code can
+            static bool MethodType(PhiType t) => t.Kind == TypeKind.Method && !t.IsArray && t.Signature is MethodSignature s
+                                                 && s.Parameters.All(Given) && (s.Result.Kind == TypeKind.Void || Given(s.Result));
             // a struct of what can be kept, with no objects in it
-            static bool Plain(StructSymbol s) => !s.OwnsObjects && s.Fields.All(f => Kept(f.Type) || f.Type.IsInlineText);
+            static bool Plain(StructSymbol s) => !s.OwnsObjects && s.Fields.All(f => Kept(f.Type) || f.Type.IsInlineText || TextsInPlace(f.Type));
             // what a variable or field can be: a value, a plain struct, or an array of either
             // kept in place (not text: that's still to come)
             static bool Kept(PhiType t) =>
@@ -130,35 +137,48 @@ namespace Phi.Compiler.CodeGen
             // text that's set and built where it is: a str of its own, or a str field (in place,
             // str name: [N];, or on the heap, new str bio;)
             static bool Str(PhiType t) => Text(t) || t.IsInlineText || t.IsHeapText;
-            // an array of strs with a table of where each one's text is: a fixed one or an
-            // [atmost N] one (their texts grow, or have a size); not yet one that grows itself
+            // an array of strs with a table of where each one's text is, fixed or [atmost N] (one
+            // that grows: a variable is let through by KeptVar, a struct's field by FieldArray)
             static bool TextArray(PhiType t) => t.TextTable && !t.Open;
-            // a struct objects can be of (new Point a;): its fields can be kept, are text, or are
-            // objects of such structs; not yet one an interface holds, or one with an array
-            // without a size
+            // an array of texts kept in place (str codes[atmost 2]: [3];): each element is its bytes
+            static bool TextsInPlace(PhiType t) => t.IsArray && !t.Open && t.Kind == TypeKind.Str && t.Room > 0;
+            // a struct objects can be of (new Point a;), or an interface: its fields can be kept, are
+            // text, are objects of such structs (or fixed or [atmost N] arrays of them), or are
+            // arrays without a size (FieldArray)
             static bool ObjectStruct(StructSymbol s, HashSet<StructSymbol>? seen = null)
             {
                 seen ??= new();
                 if (!seen.Add(s)) return true;      // (a list's next: it's being checked already)
-                return !s.Typed && !s.IsInterface && s.OwnedSlots.All(o => o.Array == null)
-                       && s.Fields.All(f => Kept(f.Type) || f.Type.IsInlineText || f.Type.IsHeapText
-                                            || (f.Type.IsObject || f.Type.IsStruct) && !f.Type.IsArray && ObjectStruct(f.Type.Struct!, seen));
+                return s.Fields.All(f => Kept(f.Type) || f.Type.IsInlineText || TextsInPlace(f.Type) || f.Type.IsHeapText
+                                         || (f.Type.IsObject || f.Type.IsStruct || f.Type.IsObjectArray)
+                                            && (!f.Type.IsArray || f.Type.IsObjectArray) && ObjectStruct(f.Type.Struct!, seen)
+                                         || FieldArray(f.Type));
             }
+            // a struct's array without a size (int scores[]; in a struct): of numbers, pointers,
+            // structs of values, strs or objects
+            static bool FieldArray(PhiType t) => t.Open && (ValueArray(t) || StructArray(t) || t.TextTable
+                                                            || t.IsObjectArray && ObjectStruct(t.Struct!));
             // an object (or a struct parameter, which is the caller's object) of such a struct
             static bool Object(PhiType t) => (t.IsObject || t.IsStruct) && !t.IsArray && ObjectStruct(t.Struct!);
+            // an array of objects (new Node list[4];, [atmost N], or one that grows)
+            static bool ObjectArray(PhiType t) => t.IsObjectArray && ObjectStruct(t.Struct!);
+            // an array copied or compared as a whole (b is a; if b is a)
+            static bool WholeArray(PhiType t) => ValueArray(t) || StructArray(t) || ObjectArray(t) || t.TextTable || TextsInPlace(t);
             // what a field can be
-            static bool Field(PhiType t) => Kept(t) || t.IsInlineText || t.IsHeapText || Object(t);
+            static bool Field(PhiType t) => Kept(t) || t.IsInlineText || TextsInPlace(t) || t.IsHeapText || Object(t) || ObjectArray(t) || FieldArray(t);
             static bool KeptVar(VariableSymbol v) =>
                 v.Ownership == Ownership.None && !v.GrowingArray
-                && (Text(v.Type) || TextArray(v.Type)
+                && (Text(v.Type) || TextArray(v.Type) || TextsInPlace(v.Type)
                     || !v.GrowingElements && Kept(v.Type) && !v.Grows && !v.TextRef
-                    || v.IsParameter && v.Type.Open && ValueArray(v.Type) && v.Type.Kind != TypeKind.Str)
+                    || v.IsParameter && v.Type.Open && (ValueArray(v.Type) && v.Type.Kind != TypeKind.Str || StructArray(v.Type) || v.Type.TextTable))
+                || v.IsParameter && v.Type.Open && ObjectArray(v.Type)
                 || v.Ownership is Ownership.Owned or Ownership.Borrowed && Object(v.Type)
+                || v.Ownership == Ownership.Owned && !v.IsParameter && ObjectArray(v.Type)
                 // an array that grows (int scores[];), of numbers, pointers or structs of them
-                || v.GrowingArray && v.Ownership == Ownership.None && !v.IsParameter && (ValueArray(v.Type) || StructArray(v.Type));
+                || v.GrowingArray && v.Ownership == Ownership.None && !v.IsParameter && (ValueArray(v.Type) || StructArray(v.Type) || v.Type.TextTable);
             // what a method takes and gives: also an array of numbers or pointers, as a parameter,
             // and objects
-            static bool Given(PhiType t) => Value(t) || Text(t) || t.Open && ValueArray(t) && t.Kind != TypeKind.Str || Object(t);
+            static bool Given(PhiType t) => Value(t) || Text(t) || t.Open && (ValueArray(t) && t.Kind != TypeKind.Str || StructArray(t) || t.TextTable || ObjectArray(t)) || Object(t);
             // an array whose elements are numbers or pointers (what ++, .len is and while each work on so far)
             static bool ValueArray(PhiType t) => t.IsArray && (NumberKind(t) || Pointer(t.Element));
             // an array of structs of values (fixed, [atmost N], or one that grows)
@@ -170,8 +190,9 @@ namespace Phi.Compiler.CodeGen
                                   && m.Locals.All(KeptVar) && !m.IsInterruptHandler
                                   && (m.Decl.Owner.ForStruct?.Symbol is not StructSymbol s || ObjectStruct(s)),
                 // the system calls (the binder took only those the runtime has)
-                BuiltinFunction b => b.Label.StartsWith("OS_") || b.Label == "Bootloader_WaitForKeyPress",
+                BuiltinFunction b => b.Label.StartsWith("OS_") || b.Label == "Bootloader_WaitForKeyPress" || b.FloatInstruction != null,
                 RawBlockDecl => true,      // (the binder took the x64 one, or said there isn't one)
+                PointerCall p => MethodType(PhiType.MethodOf(p.Signature)),
                 _ => false,
             };
 
@@ -184,14 +205,14 @@ namespace Phi.Compiler.CodeGen
                     case NameExpr { Symbol: VariableSymbol v }:
                         return KeptVar(v);
                     case NameExpr { Symbol: FieldPathSymbol f }:
-                        return KeptVar(f.Root) && (Field(f.Type) || TextArray(f.Type));
+                        return KeptVar(f.Root) && (Field(f.Type) || TextArray(f.Type) || ObjectArray(f.Type));
                     case NameExpr { Symbol: PathSymbol p }:
                         // through pointers and objects
                         return KeptVar(p.Root) && Field(p.Type);
                     case NameExpr { Symbol: SelfFieldSymbol f }:
                         // in a struct's method: through the struct it was called on
                         return Field(f.Type);
-                    case IndexExpr ix when Number(ix.Index.Type):
+                    case IndexExpr ix when Small(ix.Index.Type):
                         Expression(ix.Index);
                         if (Pointer(ix.Target.Type))
                         {
@@ -217,7 +238,7 @@ namespace Phi.Compiler.CodeGen
             {
                 switch (e)
                 {
-                    case NumberExpr or BoolExpr or SizeofExpr or StringExpr:
+                    case NumberExpr or DecimalExpr or BoolExpr or SizeofExpr or StringExpr:
                         return;
                     case NameExpr { Symbol: ConstantSymbol }:
                         return;
@@ -234,6 +255,21 @@ namespace Phi.Compiler.CodeGen
                     case HasExpr { Kind: HasKind.Text or HasKind.Character } has:
                         Expression(has.Collection);
                         Expression(has.Value);
+                        return;
+                    // an array has a value: numbers of up to 32 bits and pointers, texts, objects, structs
+                    case HasExpr has when has.Kind switch
+                    {
+                        HasKind.Numbers => Small(has.Collection.Type.Element) || Pointer(has.Collection.Type.Element),
+                        HasKind.Texts => has.Collection.Type.TextTable || TextsInPlace(has.Collection.Type),
+                        HasKind.Objects => ObjectArray(has.Collection.Type),
+                        _ => StructArray(has.Collection.Type),
+                    }:
+                        if (!Place(has.Collection)) Not(has.Collection, A(has.Collection.Type));
+                        Expression(has.Value);
+                        return;
+                    case BinaryExpr { ArrayCompare: true } arrays when WholeArray(arrays.Left.Type):
+                        if (!Place(arrays.Left)) Not(arrays.Left, A(arrays.Left.Type));
+                        if (!Place(arrays.Right)) Not(arrays.Right, A(arrays.Right.Type));
                         return;
                     case BinaryExpr { ObjectCompare: StructSymbol compared } same when ObjectStruct(compared):
                         // (is empty: whether an object field or a call's result has one)
@@ -261,6 +297,8 @@ namespace Phi.Compiler.CodeGen
                         return;
                     case NameExpr { Symbol: LengthSymbol { Text: Expr text } } when Place(text):
                         return;
+                    case NameExpr { Symbol: LengthSymbol { View: Expr view } } when Place(view):
+                        return;
                     case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol view } } when KeptVar(view):
                         return;
                     case MemberExpr { Count: int }:
@@ -272,20 +310,32 @@ namespace Phi.Compiler.CodeGen
                         return;
                     case AddrExpr { Operand: var operand } when Place(operand):
                         return;
+                    case AddrExpr { CodeLabel: not null }:
+                        return;     // (a method's address: a method value)
+                    case IsTypeExpr test:
+                        Expression(test.Value);
+                        return;
+                    case InterfaceMethodExpr method:
+                        // (the method an interface value's struct has, from its type table)
+                        Expression(method.Receiver);
+                        return;
                     case NewExpr n:
                         if (n.Count != null) Expression(n.Count);
                         if (n.Allocator == null || !Callable(n.Allocator)) Not(n, "new");
                         return;
                     case BinaryExpr b when Value(b.Left.Type) && Value(b.Right.Type)
                                            && (Number(b.Left.Type) && Number(b.Right.Type) && !IsAddress(b.Left) && !IsAddress(b.Right)
-                                               || b.Op is BinaryOp.Add or BinaryOp.Subtract || b.IsComparison):
+                                               // (pointer math, and comparing pointers, with numbers of up to 32 bits)
+                                               || (b.Op is BinaryOp.Add or BinaryOp.Subtract || b.IsComparison)
+                                                  && (Pointer(b.Left.Type) || Small(b.Left.Type)) && (Pointer(b.Right.Type) || Small(b.Right.Type))):
                         Expression(b.Left);
                         Expression(b.Right);
                         return;
                     case UnaryExpr u when Number(u.Operand.Type):
                         Expression(u.Operand);
                         return;
-                    case CastExpr c when Value(c.Type) && Value(c.Operand.Type):
+                    case CastExpr c when Number(c.Type) && Number(c.Operand.Type)
+                                         || (Pointer(c.Type) || Small(c.Type)) && (Pointer(c.Operand.Type) || Small(c.Operand.Type)):
                         Expression(c.Operand);
                         return;
                     default:
@@ -301,6 +351,7 @@ namespace Phi.Compiler.CodeGen
                     Not(at, callee is BuiltinFunction b ? b.Name : "calling a method that takes, gives or keeps what 64-bit code can't yet");
                     return;
                 }
+                if (callee is PointerCall through) Expression(through.Target);
                 foreach (Expr a in arguments) Expression(a);
             }
 
@@ -313,8 +364,10 @@ namespace Phi.Compiler.CodeGen
                     case VarDecl d when d.Symbol is VariableSymbol v && KeptVar(v) && !d.IsNew && d.AtAddress == null:
                         foreach (Expr value in d.Values) Expression(value);
                         return;
-                    case VarDecl { IsNew: true, AtAddress: null, Narrows: null } d when d.Symbol is VariableSymbol v && KeptVar(v):
-                        // a new object: from one value, or field by field
+                    case VarDecl { IsNew: true, AtAddress: null } d when d.Symbol is VariableSymbol v && KeptVar(v):
+                        // a new object: from one value, or field by field (or the object an
+                        // interface value holds, narrowed to its struct)
+                        if (d.Narrows != null) Expression(d.Narrows);
                         if (d.Source != null) Statement(d.Source);
                         foreach (Stmt field in d.FieldValues) Statement(field);
                         return;
@@ -326,6 +379,9 @@ namespace Phi.Compiler.CodeGen
                         if (o.Kind == ObjectAssignKind.Move) Expression(o.Value);
                         else if (o.Kind == ObjectAssignKind.Copy && !Place(o.Value)) Not(o.Value, A(o.Value.Type));
                         return;
+                    case ArrayAssignStmt copy when WholeArray(copy.Target.Type) && Place(copy.Target):
+                        if (!Place(copy.Source)) Not(copy.Source, A(copy.Source.Type));
+                        return;
                     case TakesStmt t when t.Struct != null && ObjectStruct(t.Struct):
                         if (!Place(t.Source)) Not(t.Source, A(t.Source.Type));
                         if (!Place(t.Target)) Not(t.Target, A(t.Target.Type));
@@ -336,13 +392,13 @@ namespace Phi.Compiler.CodeGen
                     case StringBuildStmt build when Str(build.Target.Type) && Place(build.Target):
                         foreach (Expr part in build.Parts) Expression(part);
                         return;
-                    case AppendStmt add when (ValueArray(add.Target.Type) || TextArray(add.Target.Type) || StructArray(add.Target.Type)) && Place(add.Target):
+                    case AppendStmt add when (ValueArray(add.Target.Type) || add.Target.Type.TextTable || TextsInPlace(add.Target.Type) || StructArray(add.Target.Type) || ObjectArray(add.Target.Type)) && Place(add.Target):
                         foreach (Expr value in add.Values) Expression(value);
                         return;
                     case SetLengthStmt length when Place(length.Array):
                         Expression(length.Value);
                         return;
-                    case WhileEachStmt each when (ValueArray(each.Array.Type) || TextArray(each.Array.Type) || StructArray(each.Array.Type)) && Place(each.Array):
+                    case WhileEachStmt each when (ValueArray(each.Array.Type) || each.Array.Type.TextTable || TextsInPlace(each.Array.Type) || StructArray(each.Array.Type) || ObjectArray(each.Array.Type)) && Place(each.Array):
                         foreach (Stmt t in each.Body) Statement(t);
                         return;
                     case FreeStmt { Owner: null, Releaser: not null } f:
@@ -384,7 +440,7 @@ namespace Phi.Compiler.CodeGen
                         if (w.Step != null) Statement(w.Step);
                         foreach (Stmt t in w.Body) Statement(t);
                         return;
-                    case WhenStmt w when Number(w.Subject.Type):
+                    case WhenStmt w when Number(w.Subject.Type) || Object(w.Subject.Type):
                         Expression(w.Subject);
                         foreach (WhenBranch branch in w.Branches)
                         {
@@ -762,8 +818,11 @@ namespace Phi.Compiler.CodeGen
 
         void Emit(string instruction) => code.Append("    ").AppendLine(bits64 ? Widen(instruction) : instruction);
 
-        /// <summary>Bytes in an address.</summary>
-        int Word => bits64 ? 8 : bits32 ? 4 : 2;
+        /// <summary>
+        /// Bytes in an address kept in memory (a pointer, an element of a str or object array): 8 in
+        /// 64-bit code, and 4 in 16-bit code too, as <see cref="PhiType.AddressSize"/> lays them out.
+        /// </summary>
+        int Word => bits64 ? 8 : 4;
 
         /// <summary>Bytes a pushed value takes on the stack (16-bit code pushes 32-bit values too).</summary>
         int Slot => bits64 ? 8 : 4;
@@ -2134,7 +2193,7 @@ namespace Phi.Compiler.CodeGen
                         {
                             // str into: the caller's text and its room, as a call by name passes it
                             PushTextRef(value, textWriteBacks);
-                            pushed += 4;
+                            pushed += Slot;
                             continue;
                         }
                         if (types[i].IsFloat || types[i].IsWide)
@@ -2158,7 +2217,7 @@ namespace Phi.Compiler.CodeGen
                             LoadAddress("eax", text);
                         }
                         Emit("push eax");
-                        pushed += 4;
+                        pushed += Slot;
                     }
                     if (pointer.Signature.Result.IsString)
                     {
@@ -2167,10 +2226,10 @@ namespace Phi.Compiler.CodeGen
                         if (currentMethod != null) resultSlots.Add(slot);
                         LoadAddress("eax", slot);
                         Emit("push eax");
-                        pushed += 4;
+                        pushed += Slot;
                     }
                     EmitExpr(pointer.Target);
-                    Emit(bits32 ? "call eax" : "call ax");
+                    Emit(bits64 ? "call rax" : bits32 ? "call eax" : "call ax");
                     if (pushed > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushed}");
                     EmitTextWriteBacks(textWriteBacks);
                     break;
@@ -2690,7 +2749,7 @@ namespace Phi.Compiler.CodeGen
                     if (array.GrowingElements) Emit($"lea esi, [esi + {Word * array.Count}]");
                     else
                     {
-                        Emit($"mov ecx, [{array.Label} + 8]");
+                        Emit($"mov ecx, [{array.Label} + {ViewMax}]");
                         Emit($"lea esi, [esi + ecx*{Word}]");
                     }
                     Emit("mov ecx, [esi]");
@@ -2820,6 +2879,15 @@ namespace Phi.Compiler.CodeGen
                     Emit("xor edx, edx");
                 }
                 else EmitWide(value);
+                if (bits64)
+                {
+                    // one 8-byte argument, as the halves are in memory
+                    Emit("shl rdx, 32");
+                    Emit("mov eax, eax");
+                    Emit("or rax, rdx");
+                    Emit("push eax");
+                    return 8;
+                }
                 Emit("push edx");
                 Emit("push eax");
                 return 8;
@@ -2833,7 +2901,8 @@ namespace Phi.Compiler.CodeGen
                 Emit("fstp qword [esp]");
                 return 8;
             }
-            Emit("sub esp, 4");
+            // (an argument takes 8 bytes in 64-bit code: an f32 is in its low half)
+            Emit($"sub esp, {Slot}");
             Emit("fstp dword [esp]");
             if (type.Kind == TypeKind.F16)
             {
@@ -2842,7 +2911,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("call phi_f32_to_f16");
                 Emit("mov [esp], eax");
             }
-            return 4;
+            return Slot;
         }
 
         /// <summary>Calls a one-parameter heap method (Heap.Alloc or Heap.Free) with a value.</summary>
@@ -3248,7 +3317,7 @@ namespace Phi.Compiler.CodeGen
             if (when.Branches.Any(b => b.Struct != null))
             {
                 // which struct the interface value holds, from the type table just before it
-                Emit("test eax, eax");
+                Emit($"test {R("eax")}, {R("eax")}");
                 Emit($"jz {otherwise}              ; empty: it holds nothing");
                 Emit("mov eax, [eax - 4]");
             }
@@ -3488,7 +3557,7 @@ namespace Phi.Compiler.CodeGen
                     case TypeKind.F32: Emit("fstp dword [ebx]"); break;
                     default:
                         Need("phi_f32_to_f16");
-                        Emit("sub esp, 4");
+                        Emit($"sub esp, {Slot}");
                         Emit("fstp dword [esp]");
                         Emit("pop eax");
                         Emit("call phi_f32_to_f16");
@@ -3541,7 +3610,7 @@ namespace Phi.Compiler.CodeGen
                     Emit("push ebx                ; the element's slot");
                     // its room: after the table (a str array without a most: .max slots on)
                     if (t.Open && append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } table })
-                        EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: $"dword [{table.Label} + 8]");
+                        EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: $"dword [{table.Label} + {ViewMax}]");
                     else if (Binder.IsFieldView(append.Target))
                         EmitGrowStoreAt(0, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32, rooms: RoomsOf(append.Target));
                     else EmitGrowStoreAt(Word * t.Length, sourceIsString: text, append: false, unsigned: value.Type.IsUnsigned32);
@@ -3846,7 +3915,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("push eax                ; the value");
                 EmitPlaceAddress(target);
                 Emit("push eax                ; the element's slot");
-                EmitGrowStoreAt(0, sourceIsString, append, unsigned, $"dword [{view.Label} + 8]");
+                EmitGrowStoreAt(0, sourceIsString, append, unsigned, $"dword [{view.Label} + {ViewMax}]");
                 return;
             }
 
@@ -4029,7 +4098,7 @@ namespace Phi.Compiler.CodeGen
 
                 case NameExpr { Symbol: LengthSymbol { View: Expr view } length }:
                     EmitViewAddress(view);
-                    Emit($"mov eax, [eax + {(length.Max ? 8 : 4)}]");
+                    Emit($"mov eax, [eax + {(length.Max ? ViewMax : ViewCount)}]");
                     break;
 
                 case MemberExpr { TextLength: true } m:
@@ -4086,7 +4155,7 @@ namespace Phi.Compiler.CodeGen
                     // the struct's type table is just before the object (and 0 holds nothing)
                     string none = NewLabel("nottype");
                     EmitExpr(test.Value);
-                    Emit("test eax, eax");
+                    Emit($"test {R("eax")}, {R("eax")}");
                     Emit($"jz {none}");
                     Emit($"cmp dword [eax - 4], {TypeTable(test.Struct!)}");
                     Emit("sete al");
@@ -4189,7 +4258,7 @@ namespace Phi.Compiler.CodeGen
         {
             if (addr.CodeLabel != null)
             {
-                Emit($"mov eax, {addr.CodeLabel}");
+                LoadAddress("eax", addr.CodeLabel);
                 return;
             }
 
@@ -4209,7 +4278,7 @@ namespace Phi.Compiler.CodeGen
             if (Binder.IsFieldView(e))
             {
                 EmitViewAddress(e);
-                Emit("mov eax, [eax]          ; where its elements are");
+                Emit($"mov {R("eax")}, {Q} [eax]          ; where its elements are");
                 return;
             }
             if (e is NameExpr { Symbol: VariableSymbol { Grows: true } text })
@@ -4308,12 +4377,12 @@ namespace Phi.Compiler.CodeGen
 
             PhiType element = has.Collection.Type.Element;
             int size = element.ElementSize;
-            string value = AllocTemp(4), index = AllocTemp(4);
+            string value = AllocTemp(Slot), index = AllocTemp(4);
             string next = NewLabel("has"), yes = NewLabel("hasyes"), no = NewLabel("hasno"), done = NewLabel("hasdone");
             if (has.Kind == HasKind.Texts) EmitTextValue(has.Value);
             else if (has.Kind is HasKind.Objects or HasKind.Structs) EmitObjectAddress(has.Value);
             else EmitExpr(has.Value);
-            Emit($"mov [{value}], eax         ; what to look for");
+            Emit($"mov {Q} [{value}], {R("eax")}         ; what to look for");
             Emit($"mov dword [{index}], 0");
             Label(next);
             EmitArrayCount(has.Collection);
@@ -4325,7 +4394,7 @@ namespace Phi.Compiler.CodeGen
             else
             {
                 Emit($"imul ecx, ecx, {size}");
-                Emit("add eax, ecx            ; the element");
+                Emit($"add {R("eax")}, {R("ecx")}            ; the element");
             }
             switch (has.Kind)
             {
@@ -4333,25 +4402,26 @@ namespace Phi.Compiler.CodeGen
                     string extend = element.IsSigned ? "movsx" : "movzx";
                     if (size == 1) Emit($"{extend} eax, byte [eax]");
                     else if (size == 2) Emit($"{extend} eax, word [eax]");
+                    else if (size == 8 && bits64) Emit("mov rax, [rax]          ; (a pointer: all of it)");
                     else Emit("mov eax, [eax]");
-                    Emit($"cmp eax, [{value}]");
+                    Emit(size == 8 && bits64 ? $"cmp rax, [{value}]" : $"cmp eax, [{value}]");
                     Emit($"je {yes}");
                     break;
 
                 case HasKind.Texts:
                 {
                     Need("phi_strcmp");
-                    if (element.IsInlineText) Emit("mov esi, eax");
+                    if (element.IsInlineText) Emit($"mov {R("esi")}, {R("eax")}");
                     else
                     {
                         string some = NewLabel("hastext");
-                        Emit("mov esi, [eax]          ; its text");
-                        Emit("test esi, esi");
+                        Emit($"mov {R("esi")}, {Q} [eax]          ; its text");
+                        Emit($"test {R("esi")}, {R("esi")}");
                         Emit($"jnz {some}");
-                        Emit($"mov esi, {StringLabel("")}");
+                        LoadAddress("esi", StringLabel(""));
                         Label(some);
                     }
-                    Emit($"mov edi, [{value}]");
+                    Emit($"mov {R("edi")}, {Q} [{value}]");
                     Emit("call phi_strcmp          ; eax = 0 when they're the same");
                     Emit("test eax, eax");
                     Emit($"jz {yes}");
@@ -4359,8 +4429,8 @@ namespace Phi.Compiler.CodeGen
                 }
 
                 default:
-                    if (has.Kind == HasKind.Objects) Emit("mov eax, [eax]          ; its object");
-                    Emit($"mov edx, [{value}]");
+                    if (has.Kind == HasKind.Objects) Emit($"mov {R("eax")}, {Q} [eax]          ; its object");
+                    Emit($"mov {R("edx")}, {Q} [{value}]");
                     Emit($"call {ObjectRoutine("equal", element.Struct!)}");
                     Emit("test eax, eax");
                     Emit($"jnz {yes}");
@@ -4381,7 +4451,7 @@ namespace Phi.Compiler.CodeGen
         {
             string room = AllocTemp(4);
             EmitViewAddress(array);
-            Emit("mov eax, [eax + 8]");
+            Emit($"mov eax, [eax + {ViewMax}]");
             Emit($"mov [{room}], eax");
             return $"dword [{room}]";
         }
@@ -4389,9 +4459,9 @@ namespace Phi.Compiler.CodeGen
         /// <summary>A copy of an array field's view (where, how many, room), for code that reads it by a label.</summary>
         string ViewCopy(Expr array)
         {
-            string view = AllocTemp(12);
+            string view = AllocTemp(ViewMax + 4);
             EmitViewAddress(array);
-            for (int i = 0; i < 12; i += 4)
+            for (int i = 0; i < ViewMax + 4; i += 4)
             {
                 Emit($"mov ecx, [eax + {i}]");
                 Emit($"mov [{view} + {i}], ecx");
@@ -4865,7 +4935,8 @@ namespace Phi.Compiler.CodeGen
                 else if (e.Type.IsUnsigned32)
                 {
                     EmitExpr(e);
-                    Emit("push dword 0");
+                    if (bits64) Emit("mov eax, eax              ; (the top half clear: one 8-byte push)");
+                    else Emit("push dword 0");
                     Emit("push eax");
                     Emit("fild qword [esp]");
                     Emit("add esp, 8");
@@ -4950,6 +5021,16 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Pushes registers (the last is the low half) and loads them into st0 as a whole number (or as an f32).</summary>
         void PushAndLoad(string size, string first, string? second = null, bool isFloat = false)
         {
+            if (bits64)
+            {
+                // (a push is 8 bytes there: the halves are written to the stack instead)
+                Emit("sub esp, 8");
+                Emit($"mov [esp], {second ?? first}");
+                if (second != null) Emit($"mov [esp + 4], {first}");
+                Emit($"{(isFloat ? "fld" : "fild")} {size} [esp]");
+                Emit("add esp, 8");
+                return;
+            }
             Emit($"push {first}");
             if (second != null) Emit($"push {second}");
             Emit($"{(isFloat ? "fld" : "fild")} {size} [esp]");
@@ -4977,7 +5058,7 @@ namespace Phi.Compiler.CodeGen
                 case TypeKind.F32: Emit($"fstp dword {Operand(place)}"); break;
                 default:
                     Need("phi_f32_to_f16");
-                    Emit("sub esp, 4");
+                    Emit($"sub esp, {Slot}");
                     Emit("fstp dword [esp]");
                     Emit("pop eax");
                     Emit("call phi_f32_to_f16");
@@ -5331,108 +5412,111 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitTextArrayRoutine(string kind)
         {
+            // (in 64-bit code each text's address and each room take 8 bytes, a room in the low
+            // half, and the frame's values 8 bytes each)
+            string array = Pushed(1), other = Pushed(2), which = $"dword [ebp - {3 * Slot}]";
             Emit("push ebp");
             Emit("mov ebp, esp");
-            Emit("push eax                ; [ebp - 4] the array");
-            Emit("push edx                ; [ebp - 8] the copy, or the other");
-            Emit("push dword 0            ; [ebp - 12] which element");
+            Emit($"push eax                ; {array} the array");
+            Emit($"push edx                ; {other} the copy, or the other");
+            Emit($"push dword 0            ; {which} which element");
             switch (kind)
             {
                 case "free":
                     Label(".next");
-                    Emit("mov ecx, [ebp - 12]");
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("cmp ecx, [eax + 4]");
+                    Emit($"mov ecx, {which}");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"cmp ecx, [eax + {ViewCount}]");
                     Emit("jae .freed");
-                    Emit("mov edx, [eax + 8]");
-                    Emit("mov eax, [eax]");
-                    Emit("lea edx, [eax + edx * 4]   ; the rooms");
-                    Emit("inc dword [ebp - 12]");
-                    Emit($"test dword [edx + ecx * 4], {InData}");
+                    Emit($"mov edx, [eax + {ViewMax}]");
+                    Emit($"mov {R("eax")}, {Q} [eax]");
+                    Emit($"lea edx, [eax + edx * {Word}]   ; the rooms");
+                    Emit($"inc {which}");
+                    Emit($"test dword [edx + ecx * {Word}], {InData}");
                     Emit("jnz .next");
-                    Emit("push dword [eax + ecx * 4]");
+                    Emit($"push {Q} [eax + ecx * {Word}]");
                     Emit($"call {HeapMethodLabel("Heap.Free")}");
                     Emit($"add esp, {Slot}");
                     Emit("jmp .next");
                     Label(".freed");
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("push dword [eax]        ; the texts and rooms (freeing 0 does nothing)");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"push {Q} [eax]        ; the texts and rooms (freeing 0 does nothing)");
                     Emit($"call {HeapMethodLabel("Heap.Free")}");
                     Emit($"add esp, {Slot}");
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("mov dword [eax], 0");
-                    Emit("mov dword [eax + 4], 0");
-                    Emit("mov dword [eax + 8], 0");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"mov {Q} [eax], 0");
+                    Emit($"mov dword [eax + {ViewCount}], 0");
+                    Emit($"mov dword [eax + {ViewMax}], 0");
                     break;
 
                 case "clone":
                     Need("phi_out_of_memory");
                     Need("phi_strlen");
-                    Emit("mov ecx, [eax + 4]");
-                    Emit("mov [edx + 4], ecx");
-                    Emit("mov ecx, [eax + 8]");
-                    Emit("mov [edx + 8], ecx");
-                    Emit("mov dword [edx], 0");
+                    Emit($"mov ecx, [eax + {ViewCount}]");
+                    Emit($"mov [edx + {ViewCount}], ecx");
+                    Emit($"mov ecx, [eax + {ViewMax}]");
+                    Emit($"mov [edx + {ViewMax}], ecx");
+                    Emit($"mov {Q} [edx], 0");
                     Emit("test ecx, ecx");
                     Emit("jz .done                ; no room: nothing to copy");
-                    Emit("shl ecx, 3              ; a text and a room for each");
+                    Emit($"imul ecx, ecx, {2 * Word}    ; a text and a room for each");
                     Emit("push ecx");
                     Emit($"call {HeapMethodLabel("Heap.Alloc")}");
                     Emit($"add esp, {Slot}");
-                    Emit("test eax, eax");
+                    Emit($"test {R("eax")}, {R("eax")}");
                     Emit("jz phi_out_of_memory");
-                    Emit("mov edx, [ebp - 8]");
-                    Emit("mov [edx], eax");
+                    Emit($"mov {R("edx")}, {other}");
+                    Emit($"mov {Q} [edx], {R("eax")}");
                     // every slot up to the room: one in the data stays as it is, one on the heap is copied
                     Label(".next");
-                    Emit("mov ecx, [ebp - 12]");
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("cmp ecx, [eax + 8]");
+                    Emit($"mov ecx, {which}");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"cmp ecx, [eax + {ViewMax}]");
                     Emit("jae .done");
-                    Emit("mov edx, [eax + 8]");
-                    Emit("mov eax, [eax]");
-                    Emit("lea edx, [eax + edx * 4]   ; the rooms");
-                    Emit("mov eax, [eax + ecx * 4]   ; the text");
-                    Emit("mov edx, [edx + ecx * 4]   ; its room");
+                    Emit($"mov edx, [eax + {ViewMax}]");
+                    Emit($"mov {R("eax")}, {Q} [eax]");
+                    Emit($"lea edx, [eax + edx * {Word}]   ; the rooms");
+                    Emit($"mov {R("eax")}, {Q} [eax + ecx * {Word}]   ; the text");
+                    Emit($"mov edx, [edx + ecx * {Word}]   ; its room");
                     Emit($"test edx, {InData}");
                     Emit("jnz .keep");
                     Emit($"call {ObjectRoutine("clone", StructSymbol.Text)}");
                     Emit("push eax");
-                    Emit("mov esi, eax");
+                    Emit($"mov {R("esi")}, {R("eax")}");
                     Emit("call phi_strlen");
                     Emit("lea edx, [eax + 1]      ; the copy's room: its text and zero");
                     Emit("pop eax");
                     Label(".keep");
-                    Emit("mov esi, [ebp - 8]");
-                    Emit("mov ecx, [esi + 8]");
-                    Emit("mov esi, [esi]");
-                    Emit("lea ecx, [esi + ecx * 4]");
-                    Emit("mov ebx, [ebp - 12]");
-                    Emit("mov [esi + ebx * 4], eax");
-                    Emit("mov [ecx + ebx * 4], edx");
-                    Emit("inc dword [ebp - 12]");
+                    Emit($"mov {R("esi")}, {other}");
+                    Emit($"mov ecx, [esi + {ViewMax}]");
+                    Emit($"mov {R("esi")}, {Q} [esi]");
+                    Emit($"lea ecx, [esi + ecx * {Word}]");
+                    Emit($"mov ebx, {which}");
+                    Emit($"mov {Q} [esi + ebx * {Word}], {R("eax")}");
+                    Emit($"mov [ecx + ebx * {Word}], edx");
+                    Emit($"inc {which}");
                     Emit("jmp .next");
                     Label(".done");
                     break;
 
                 case "equal":
-                    Emit("mov ecx, [eax + 4]");
-                    Emit("cmp ecx, [edx + 4]");
+                    Emit($"mov ecx, [eax + {ViewCount}]");
+                    Emit($"cmp ecx, [edx + {ViewCount}]");
                     Emit("jne .different          ; not as many");
                     Label(".next");
-                    Emit("mov ecx, [ebp - 12]");
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("cmp ecx, [eax + 4]");
+                    Emit($"mov ecx, {which}");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"cmp ecx, [eax + {ViewCount}]");
                     Emit("jae .same");
-                    Emit("mov eax, [eax]");
-                    Emit("mov eax, [eax + ecx * 4]");
-                    Emit("mov edx, [ebp - 8]");
-                    Emit("mov edx, [edx]");
-                    Emit("mov edx, [edx + ecx * 4]");
+                    Emit($"mov {R("eax")}, {Q} [eax]");
+                    Emit($"mov {R("eax")}, {Q} [eax + ecx * {Word}]");
+                    Emit($"mov {R("edx")}, {other}");
+                    Emit($"mov {R("edx")}, {Q} [edx]");
+                    Emit($"mov {R("edx")}, {Q} [edx + ecx * {Word}]");
                     Emit($"call {ObjectRoutine("equal", StructSymbol.Text)}");
                     Emit("test eax, eax");
                     Emit("jz .different");
-                    Emit("inc dword [ebp - 12]");
+                    Emit($"inc {which}");
                     Emit("jmp .next");
                     Label(".same");
                     Emit("mov eax, 1");
@@ -5454,114 +5538,125 @@ namespace Phi.Compiler.CodeGen
                 EmitTextArrayRoutine(kind);
                 return;
             }
+            // the view is where its elements are, how many, its room (see ViewCount and ViewMax);
+            // the frame's values are 8 bytes each in 64-bit code (Pushed)
             int size = element.ElementSize;
             bool objects = element.IsObject;
+            string array = Pushed(1), other = Pushed(2);
             Emit("push ebp");
             Emit("mov ebp, esp");
-            Emit("push eax                ; [ebp - 4] the array");
+            Emit($"push eax                ; {array} the array");
             switch (kind)
             {
                 case "free":
+                {
                     if (objects)
                     {
-                        Emit("push dword 0            ; [ebp - 8] which element");
+                        string which = $"dword [ebp - {2 * Slot}]";
+                        Emit($"push dword 0            ; {which} which element");
                         Label(".next");
-                        Emit("mov eax, [ebp - 8]");
-                        Emit("mov edx, [ebp - 4]");
-                        Emit("cmp eax, [edx + 4]");
+                        Emit($"mov eax, {which}");
+                        Emit($"mov {R("edx")}, {array}");
+                        Emit($"cmp eax, [edx + {ViewCount}]");
                         Emit("jae .freed");
-                        Emit("mov edx, [edx]");
-                        Emit("mov eax, [edx + eax * 4]");
+                        Emit($"mov {R("edx")}, {Q} [edx]");
+                        Emit($"mov {R("eax")}, {Q} [edx + eax * {Word}]");
                         Emit($"call {ObjectRoutine("free", element.Struct!)}");
-                        Emit("inc dword [ebp - 8]");
+                        Emit($"inc {which}");
                         Emit("jmp .next");
                         Label(".freed");
                     }
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("push dword [eax]        ; its room (freeing 0 does nothing)");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"push {Q} [eax]        ; its room (freeing 0 does nothing)");
                     Emit($"call {HeapMethodLabel("Heap.Free")}");
                     Emit($"add esp, {Slot}");
-                    Emit("mov eax, [ebp - 4]");
-                    Emit("mov dword [eax], 0");
-                    Emit("mov dword [eax + 4], 0");
-                    Emit("mov dword [eax + 8], 0");
+                    Emit($"mov {R("eax")}, {array}");
+                    Emit($"mov {Q} [eax], 0");
+                    Emit($"mov dword [eax + {ViewCount}], 0");
+                    Emit($"mov dword [eax + {ViewMax}], 0");
                     break;
+                }
 
                 case "clone":
+                {
                     Need("phi_out_of_memory");
-                    Emit("push edx                ; [ebp - 8] the copy");
-                    Emit("mov ecx, [eax + 4]");
-                    Emit("mov [edx + 4], ecx");
-                    Emit("mov ecx, [eax + 8]");
-                    Emit("mov [edx + 8], ecx");
-                    Emit("mov dword [edx], 0");
+                    Emit($"push edx                ; {other} the copy");
+                    Emit($"mov ecx, [eax + {ViewCount}]");
+                    Emit($"mov [edx + {ViewCount}], ecx");
+                    Emit($"mov ecx, [eax + {ViewMax}]");
+                    Emit($"mov [edx + {ViewMax}], ecx");
+                    Emit($"mov {Q} [edx], 0");
                     Emit("test ecx, ecx");
                     Emit("jz .done                ; no room: nothing to copy");
                     if (size > 1) Emit($"imul ecx, ecx, {size}");
                     Emit("push ecx");
                     Emit($"call {HeapMethodLabel("Heap.Alloc")}");
                     Emit($"add esp, {Slot}");
-                    Emit("test eax, eax");
+                    Emit($"test {R("eax")}, {R("eax")}");
                     Emit("jz phi_out_of_memory");
-                    Emit("mov edx, [ebp - 8]");
-                    Emit("mov [edx], eax");
-                    Emit("mov edi, eax");
-                    Emit("mov esi, [ebp - 4]");
-                    Emit("mov ecx, [esi + 4]");
-                    Emit("mov esi, [esi]");
+                    Emit($"mov {R("edx")}, {other}");
+                    Emit($"mov {Q} [edx], {R("eax")}");
+                    Emit($"mov {R("edi")}, {R("eax")}");
+                    Emit($"mov {R("esi")}, {array}");
+                    Emit($"mov ecx, [esi + {ViewCount}]");
+                    Emit($"mov {R("esi")}, {Q} [esi]");
                     if (size > 1) Emit($"imul ecx, ecx, {size}");
                     Emit("rep movsb");
                     if (objects)
                     {
                         // each object copied too, so the copy has its own
-                        Emit("push dword 0            ; [ebp - 12] which element");
+                        string which = $"dword [ebp - {3 * Slot}]";
+                        Emit($"push dword 0            ; {which} which element");
                         Label(".next");
-                        Emit("mov ecx, [ebp - 12]");
-                        Emit("mov edx, [ebp - 8]");
-                        Emit("cmp ecx, [edx + 4]");
+                        Emit($"mov ecx, {which}");
+                        Emit($"mov {R("edx")}, {other}");
+                        Emit($"cmp ecx, [edx + {ViewCount}]");
                         Emit("jae .done");
-                        Emit("mov edx, [edx]");
-                        Emit("mov eax, [edx + ecx * 4]");
+                        Emit($"mov {R("edx")}, {Q} [edx]");
+                        Emit($"mov {R("eax")}, {Q} [edx + ecx * {Word}]");
                         Emit($"call {ObjectRoutine("clone", element.Struct!)}");
-                        Emit("mov edx, [ebp - 8]");
-                        Emit("mov edx, [edx]");
-                        Emit("mov ecx, [ebp - 12]");
-                        Emit("mov [edx + ecx * 4], eax");
-                        Emit("inc dword [ebp - 12]");
+                        Emit($"mov {R("edx")}, {other}");
+                        Emit($"mov {R("edx")}, {Q} [edx]");
+                        Emit($"mov ecx, {which}");
+                        Emit($"mov {Q} [edx + ecx * {Word}], {R("eax")}");
+                        Emit($"inc {which}");
                         Emit("jmp .next");
                     }
                     Label(".done");
                     break;
+                }
 
                 case "equal":
-                    Emit("push edx                ; [ebp - 8] the other");
-                    Emit("mov ecx, [eax + 4]");
-                    Emit("cmp ecx, [edx + 4]");
+                {
+                    Emit($"push edx                ; {other} the other");
+                    Emit($"mov ecx, [eax + {ViewCount}]");
+                    Emit($"cmp ecx, [edx + {ViewCount}]");
                     Emit("jne .different          ; not as many");
                     if (objects)
                     {
-                        Emit("push dword 0            ; [ebp - 12] which element");
+                        string which = $"dword [ebp - {3 * Slot}]";
+                        Emit($"push dword 0            ; {which} which element");
                         Label(".next");
-                        Emit("mov ecx, [ebp - 12]");
-                        Emit("mov eax, [ebp - 4]");
-                        Emit("cmp ecx, [eax + 4]");
+                        Emit($"mov ecx, {which}");
+                        Emit($"mov {R("eax")}, {array}");
+                        Emit($"cmp ecx, [eax + {ViewCount}]");
                         Emit("jae .same");
-                        Emit("mov eax, [eax]");
-                        Emit("mov eax, [eax + ecx * 4]");
-                        Emit("mov edx, [ebp - 8]");
-                        Emit("mov edx, [edx]");
-                        Emit("mov edx, [edx + ecx * 4]");
+                        Emit($"mov {R("eax")}, {Q} [eax]");
+                        Emit($"mov {R("eax")}, {Q} [eax + ecx * {Word}]");
+                        Emit($"mov {R("edx")}, {other}");
+                        Emit($"mov {R("edx")}, {Q} [edx]");
+                        Emit($"mov {R("edx")}, {Q} [edx + ecx * {Word}]");
                         Emit($"call {ObjectRoutine("equal", element.Struct!)}");
                         Emit("test eax, eax");
                         Emit("jz .different");
-                        Emit("inc dword [ebp - 12]");
+                        Emit($"inc {which}");
                         Emit("jmp .next");
                     }
                     else
                     {
                         if (size > 1) Emit($"imul ecx, ecx, {size}");
-                        Emit("mov esi, [eax]");
-                        Emit("mov edi, [edx]");
+                        Emit($"mov {R("esi")}, {Q} [eax]");
+                        Emit($"mov {R("edi")}, {Q} [edx]");
                         Emit("test ecx, ecx");
                         Emit("jz .same");
                         Emit("repe cmpsb");
@@ -5574,6 +5669,7 @@ namespace Phi.Compiler.CodeGen
                     Emit("xor eax, eax");
                     Label(".done");
                     break;
+                }
             }
             Emit("mov esp, ebp");
             Emit("pop ebp");
@@ -5679,11 +5775,11 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitPlaceAddress(copy.Source);
                     Emit("mov ecx, [esp]");
-                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit($"mov {R("edx")}, {Q} [eax + ecx * {Word}]");
                     Emit("push edx                ; the source's object (or 0)");
                     EmitPlaceAddress(copy.Target);
-                    Emit("mov ecx, [esp + 4]");
-                    Emit("lea eax, [eax + ecx * 4]");
+                    Emit($"mov ecx, [esp + {Slot}]");
+                    Emit($"lea eax, [eax + ecx * {Word}]");
                     Emit("pop edx");
                     Emit($"call {ObjectRoutine("set", element.Struct!)}");
                 });
@@ -5701,11 +5797,11 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitPlaceAddress(copy.Source);
                     Emit("mov ecx, [esp]");
-                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit($"mov {R("edx")}, {Q} [eax + ecx * {Word}]");
                     Emit("push edx                ; its text");
                     EmitPlaceAddress(copy.Target);
-                    Emit("mov ecx, [esp + 4]");
-                    Emit("lea eax, [eax + ecx * 4]");
+                    Emit($"mov ecx, [esp + {Slot}]");
+                    Emit($"lea eax, [eax + ecx * {Word}]");
                     Emit("push eax                ; the element's slot");
                     EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, rooms: rooms);
                 });
@@ -5730,16 +5826,16 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitPlaceAddress(copy.Source);
                     Emit("mov ecx, [esp]");
-                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit($"mov {R("edx")}, {Q} [eax + ecx * {Word}]");
                     Emit("push edx                ; its text");
                     EmitPlaceAddress(copy.Target);
-                    Emit("mov ecx, [esp + 4]");
-                    Emit("lea eax, [eax + ecx * 4]");
+                    Emit($"mov ecx, [esp + {Slot}]");
+                    Emit($"lea eax, [eax + ecx * {Word}]");
                     if (array.GrowingArray || array.Type.Open)
                     {
                         // its room is .max slots on (a str rows[] parameter's, the caller's)
                         Emit("push eax                ; the element's slot");
-                        EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, rooms: $"dword [{array.Label} + 8]");
+                        EmitGrowStoreAt(0, sourceIsString: true, append: false, unsigned: false, rooms: $"dword [{array.Label} + {ViewMax}]");
                     }
                     else if (array.GrowingElements)
                     {
@@ -5749,7 +5845,7 @@ namespace Phi.Compiler.CodeGen
                     else
                     {
                         Need("phi_strcpy");
-                        Emit("mov edi, [eax]");
+                        Emit($"mov {R("edi")}, {Q} [eax]");
                         Emit("pop esi");
                         Emit($"mov ecx, {array.Capacity}");
                         Emit("call phi_strcpy");
@@ -5765,7 +5861,7 @@ namespace Phi.Compiler.CodeGen
             EmitPlaceAddress(copy.Source);
             Emit("push eax");
             EmitPlaceAddress(copy.Target);
-            Emit("mov edi, eax");
+            Emit($"mov {R("edi")}, {R("eax")}");
             Emit("pop esi");
             Emit("pop ecx");
             if (t.Filled) Emit($"mov [edi + {t.CountOffset}], ecx");
@@ -5791,7 +5887,7 @@ namespace Phi.Compiler.CodeGen
                 LoadAddress("eax", texts.Label);
                 EmitTextArrayGrowCall();
                 Emit("pop eax");
-                Emit($"mov [{texts.Label} + 4], eax");
+                Emit($"mov [{texts.Label} + {ViewCount}], eax");
                 return;
             }
             if (copy.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
@@ -5885,17 +5981,18 @@ namespace Phi.Compiler.CodeGen
             Emit($"mov eax, {from}");
             Emit("push eax                ; which element");
             Label(next);
+            // (each address and each room is 8 bytes in 64-bit code)
             Emit("mov eax, [esp]");
-            Emit($"cmp eax, [{label} + 4]   ; how many {name} has");
+            Emit($"cmp eax, [{label} + {ViewCount}]   ; how many {name} has");
             Emit($"jae {done}");
-            Emit($"mov ecx, [{label}]");
-            Emit($"mov edx, [{label} + 8]");
-            Emit("lea edx, [ecx + edx * 4]   ; the rooms, after the texts");
-            Emit($"test dword [edx + eax * 4], {InData}");
+            Emit($"mov {R("ecx")}, {Q} [{label}]");
+            Emit($"mov edx, [{label} + {ViewMax}]");
+            Emit($"lea edx, [ecx + edx * {Word}]   ; the rooms, after the texts");
+            Emit($"test dword [edx + eax * {Word}], {InData}");
             Emit($"jnz {kept}");
             Emit("push edx");
             Emit("push ecx");
-            Emit("push dword [ecx + eax * 4]   ; an element's text");
+            Emit($"push {Q} [ecx + eax * {Word}]   ; an element's text");
             Emit($"call {HeapMethodLabel("Heap.Free")}");
             Emit($"add esp, {Slot}");
             Emit("pop ecx");
@@ -5904,8 +6001,13 @@ namespace Phi.Compiler.CodeGen
             Label(kept);
             if (empty)
             {
-                Emit($"mov dword [ecx + eax * 4], {StringLabel("")}");
-                Emit($"mov dword [edx + eax * 4], {InData}");
+                if (bits64)
+                {
+                    LoadAddress("ebx", StringLabel(""));
+                    Emit("mov [rcx + rax * 8], rbx");
+                }
+                else Emit($"mov dword [ecx + eax * 4], {StringLabel("")}");
+                Emit($"mov dword [edx + eax * {Word}], {InData}");
             }
             Emit("inc dword [esp]");
             Emit($"jmp {next}");
@@ -5933,12 +6035,14 @@ namespace Phi.Compiler.CodeGen
             Line("");
             Comment("room in a str array that grows: eax = the array, edx = how many");
             Label("phi_text_array_grow");
-            Emit("cmp edx, [eax + 8]");
+            // (each address and each room is 8 bytes in 64-bit code: stosq and movsq)
+            string each = bits64 ? "q" : "d";
+            Emit($"cmp edx, [eax + {ViewMax}]");
             Emit("jbe .fits");
             Emit("push ebp");
             Emit("mov ebp, esp");
-            Emit("push eax                ; [ebp - 4] the array");
-            Emit("mov ebx, [eax + 8]");
+            Emit($"push eax                ; {Pushed(1)} the array");
+            Emit($"mov ebx, [eax + {ViewMax}]");
             Emit("add ebx, ebx");
             Emit("cmp ebx, edx");
             Emit("jae .twice");
@@ -5948,47 +6052,48 @@ namespace Phi.Compiler.CodeGen
             Emit("jae .room");
             Emit("mov ebx, 4");
             Label(".room");
-            Emit("push ebx                ; [ebp - 8] the new room");
-            Emit("lea eax, [ebx * 8]");
+            Emit($"push ebx                ; {Pushed(2)} the new room");
+            Emit($"imul eax, ebx, {2 * Word}");
             Emit("push eax");
             Emit($"call {HeapMethodLabel("Heap.Alloc")}");
             Emit($"add esp, {Slot}");
-            Emit("test eax, eax");
+            Emit($"test {R("eax")}, {R("eax")}");
             Emit("jz phi_out_of_memory");
-            Emit("push eax                ; [ebp - 12] where they go now");
+            Emit($"push eax                ; {Pushed(3)} where they go now");
             // every slot empty to begin with, then the ones it has move over
+            string room = $"dword [ebp - {2 * Slot}]";
             Emit("cld");
-            Emit("mov edi, eax");
-            Emit("mov ecx, [ebp - 8]");
-            Emit($"mov eax, {StringLabel("")}");
-            Emit("rep stosd");
-            Emit("mov ecx, [ebp - 8]");
+            Emit($"mov {R("edi")}, {R("eax")}");
+            Emit($"mov ecx, {room}");
+            LoadAddress("eax", StringLabel(""));
+            Emit($"rep stos{each}");
+            Emit($"mov ecx, {room}");
             Emit($"mov eax, {InData}");
-            Emit("rep stosd");
-            Emit("mov edx, [ebp - 4]");
-            Emit("mov esi, [edx]");
-            Emit("test esi, esi");
+            Emit($"rep stos{each}");
+            Emit($"mov {R("edx")}, {Pushed(1)}");
+            Emit($"mov {R("esi")}, {Q} [edx]");
+            Emit($"test {R("esi")}, {R("esi")}");
             Emit("jz .moved");
-            Emit("mov edi, [ebp - 12]");
-            Emit("mov ecx, [edx + 4]");
-            Emit("rep movsd               ; their texts' addresses");
-            Emit("mov esi, [edx]");
-            Emit("mov ecx, [edx + 8]");
-            Emit("lea esi, [esi + ecx * 4]");
-            Emit("mov edi, [ebp - 12]");
-            Emit("mov ecx, [ebp - 8]");
-            Emit("lea edi, [edi + ecx * 4]");
-            Emit("mov ecx, [edx + 4]");
-            Emit("rep movsd               ; and their rooms");
-            Emit("push dword [edx]");
+            Emit($"mov {R("edi")}, {Pushed(3)}");
+            Emit($"mov ecx, [edx + {ViewCount}]");
+            Emit($"rep movs{each}               ; their texts' addresses");
+            Emit($"mov {R("esi")}, {Q} [edx]");
+            Emit($"mov ecx, [edx + {ViewMax}]");
+            Emit($"lea esi, [esi + ecx * {Word}]");
+            Emit($"mov {R("edi")}, {Pushed(3)}");
+            Emit($"mov ecx, {room}");
+            Emit($"lea edi, [edi + ecx * {Word}]");
+            Emit($"mov ecx, [edx + {ViewCount}]");
+            Emit($"rep movs{each}               ; and their rooms");
+            Emit($"push {Q} [edx]");
             Emit($"call {HeapMethodLabel("Heap.Free")}");
             Emit($"add esp, {Slot}");
             Label(".moved");
-            Emit("mov edx, [ebp - 4]");
-            Emit("mov eax, [ebp - 12]");
-            Emit("mov [edx], eax");
-            Emit("mov eax, [ebp - 8]");
-            Emit("mov [edx + 8], eax");
+            Emit($"mov {R("edx")}, {Pushed(1)}");
+            Emit($"mov {R("eax")}, {Pushed(3)}");
+            Emit($"mov {Q} [edx], {R("eax")}");
+            Emit($"mov eax, {room}");
+            Emit($"mov [edx + {ViewMax}], eax");
             Emit("mov esp, ebp");
             Emit("pop ebp");
             Label(".fits");
@@ -6063,13 +6168,13 @@ namespace Phi.Compiler.CodeGen
             Emit("push dword 0            ; which one");
             Label(next);
             Emit("mov eax, [esp]");
-            Emit("cmp eax, [esp + 4]");
+            Emit($"cmp eax, [esp + {Slot}]");
             Emit($"jae {done}");
             body();
             Emit("inc dword [esp]");
             Emit($"jmp {next}");
             Label(done);
-            Emit("add esp, 8");
+            Emit($"add esp, {2 * Slot}");
         }
 
         /// <summary>eax = 1 when two whole arrays have the same number of elements, all equal.</summary>
@@ -6093,11 +6198,11 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitPlaceAddress(cmp.Right);
                     Emit("mov ecx, [esp]");
-                    Emit("mov edx, [eax + ecx * 4]");
+                    Emit($"mov {R("edx")}, {Q} [eax + ecx * {Word}]");
                     Emit("push edx");
                     EmitPlaceAddress(cmp.Left);
-                    Emit("mov ecx, [esp + 4]");
-                    Emit("mov eax, [eax + ecx * 4]");
+                    Emit($"mov ecx, [esp + {Slot}]");
+                    Emit($"mov {R("eax")}, {Q} [eax + ecx * {Word}]");
                     Emit("pop edx");
                     if (element.IsObject)
                     {
@@ -6108,8 +6213,8 @@ namespace Phi.Compiler.CodeGen
                     else
                     {
                         Need("phi_strcmp");
-                        Emit("mov esi, eax");
-                        Emit("mov edi, edx");
+                        Emit($"mov {R("esi")}, {R("eax")}");
+                        Emit($"mov {R("edi")}, {R("edx")}");
                         Emit("call phi_strcmp          ; eax = 0 when equal");
                         Emit("test eax, eax");
                         Emit($"jnz {unequal}");
@@ -6118,7 +6223,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("mov eax, 1");
                 Emit($"jmp {done}");
                 Label(unequal);
-                Emit("add esp, 8              ; the loop's count and number");
+                Emit($"add esp, {2 * Slot}              ; the loop's count and number");
                 Emit($"jmp {differ}");
             }
             else
@@ -6128,7 +6233,7 @@ namespace Phi.Compiler.CodeGen
                 EmitPlaceAddress(cmp.Right);
                 Emit("push eax");
                 EmitPlaceAddress(cmp.Left);
-                Emit("mov esi, eax");
+                Emit($"mov {R("esi")}, {R("eax")}");
                 Emit("pop edi");
                 Emit("pop ecx");
                 Emit("cld");
@@ -6162,7 +6267,7 @@ namespace Phi.Compiler.CodeGen
             Label(next);
             LoadAddress("eax", v.Label);
             Emit("mov edx, [esp]");
-            Emit("lea eax, [eax + edx * 4]");
+            Emit($"lea eax, [eax + edx * {Word}]");
             Emit($"call {ObjectRoutine("renew", s)}");
             Emit("inc dword [esp]");
             Emit($"cmp dword [esp], {v.Type.Length}");
@@ -6186,16 +6291,16 @@ namespace Phi.Compiler.CodeGen
             {
                 // past how many it has, up to its room, the slots are empty already
                 EmitViewAddress(array);
-                Emit("mov eax, [eax + 8]");
+                Emit($"mov eax, [eax + {ViewMax}]");
                 Emit("cmp [esp], eax");
             }
             else Emit($"cmp dword [esp], {array.Type.Length}");
             Emit($"jae {done}");
             EmitPlaceAddress(array);
             Emit("mov edx, [esp]");
-            Emit("lea edx, [eax + edx * 4]");
-            Emit("mov eax, [edx]");
-            Emit("mov dword [edx], 0       ; empty");
+            Emit($"lea edx, [eax + edx * {Word}]");
+            Emit($"mov {R("eax")}, {Q} [edx]");
+            Emit($"mov {Q} [edx], 0       ; empty");
             Emit($"call {ObjectRoutine("free", s)}");
             Emit("inc dword [esp]");
             Emit($"jmp {next}");
@@ -6598,7 +6703,7 @@ namespace Phi.Compiler.CodeGen
             if (s.Typed)
             {
                 Emit($"mov dword [eax], {TypeTable(s)}   ; what it is, for an interface that holds it");
-                Emit("add eax, 4");
+                Emit($"add {R("eax")}, 4");
             }
         }
 
@@ -6653,27 +6758,39 @@ namespace Phi.Compiler.CodeGen
         {
             switch (kind)
             {
+                // (a type table's entries are 4 bytes in 64-bit code too: the program is below 4 GB,
+                // so each is read into a register, then jumped to)
                 case "free":
                 case "clone":
-                    Emit("test eax, eax");
+                    Emit($"test {R("eax")}, {R("eax")}");
                     Emit("jz .done                ; nothing to free or copy");
                     Emit("mov edx, [eax - 4]");
-                    Emit($"jmp [edx + {(kind == "free" ? 0 : 4)}]");
+                    if (bits64)
+                    {
+                        Emit($"mov edx, [rdx + {(kind == "free" ? 0 : 4)}]");
+                        Emit("jmp rdx");
+                    }
+                    else Emit($"jmp [edx + {(kind == "free" ? 0 : 4)}]");
                     Label(".done");
                     Emit("ret");
                     break;
 
                 case "equal":
-                    Emit("cmp eax, edx");
+                    Emit($"cmp {R("eax")}, {R("edx")}");
                     Emit("je .same                ; the same object (or both empty)");
-                    Emit("test eax, eax");
+                    Emit($"test {R("eax")}, {R("eax")}");
                     Emit("jz .different");
-                    Emit("test edx, edx");
+                    Emit($"test {R("edx")}, {R("edx")}");
                     Emit("jz .different");
                     Emit("mov ecx, [eax - 4]");
                     Emit("cmp ecx, [edx - 4]");
                     Emit("jne .different          ; different structs");
-                    Emit("jmp [ecx + 8]");
+                    if (bits64)
+                    {
+                        Emit("mov ecx, [rcx + 8]");
+                        Emit("jmp rcx");
+                    }
+                    else Emit("jmp [ecx + 8]");
                     Label(".same");
                     Emit("mov eax, 1");
                     Emit("ret");
@@ -6685,17 +6802,17 @@ namespace Phi.Compiler.CodeGen
                 case "set":
                     // a copy of the source (made first: it may be inside what the slot had)
                     Emit("push eax                ; the slot");
-                    Emit("mov eax, edx");
+                    Emit($"mov {R("eax")}, {R("edx")}");
                     Emit($"call {ObjectRoutine("clone", iface)}");
                     Emit("pop edx");
-                    Emit("xchg eax, [edx]         ; what it had, freed");
+                    Emit($"xchg {R("eax")}, {Q} [edx]         ; what it had, freed");
                     Emit($"jmp {ObjectRoutine("free", iface)}");
                     break;
 
                 case "renew":
-                    Emit("mov edx, eax");
-                    Emit("mov eax, [edx]");
-                    Emit("mov dword [edx], 0       ; a new one starts empty");
+                    Emit($"mov {R("edx")}, {R("eax")}");
+                    Emit($"mov {R("eax")}, {Q} [edx]");
+                    Emit($"mov {Q} [edx], 0       ; a new one starts empty");
                     Emit($"jmp {ObjectRoutine("free", iface)}");
                     break;
 

@@ -1,0 +1,47 @@
+# Arrays of structs as parameters in a program (Point points[]): a fixed, an [atmost N]
+# and a growing one passed, read by index and by while each, and changed in place. A
+# program, so it runs on Linux (32 and 64-bit) and Windows.
+struct.Point
+{
+	int x;
+	int y;
+	str tag: [6];
+}
+
+phi.StructArrayParams:Program
+{
+	Point fixed[3];
+	fixed:1.x is 4;
+	fixed:2.tag is 'two';
+	Point some[atmost 4];
+	some++;
+	some:0.y is 9;
+	Point grown[];
+	while int i: 0; i < 10; i++;
+		grown++;
+		grown:i.x is i;
+	;;
+	log (Sum: fixed) ' ' (Sum: some) ' ' (Sum: grown) ' ' (Tags: fixed) '\n';
+	call Move: grown 100;
+	log grown:9.x ' ' (Sum: grown) '\n';
+
+	[Sum: Point points[];]
+		int total: 0;
+		while each p in points
+			total++ p.x + p.y;
+		;;
+	[end: total]
+
+	[Tags: Point points[];]
+		int n: 0;
+		while int i: 0; i < points.len; i++;
+			n++ points:i.tag.len;
+		;;
+	[end: n]
+
+	[Move: Point points[]; int by;]
+		while each p in points
+			p.x++ by;
+		;;
+	[end]
+}

@@ -1,0 +1,80 @@
+# has in a program (the kernel test has, as a program, with log for debug): whether an
+# array holds a value (numbers, texts, structs and objects), or a text holds another text
+# or a character. A program, so it runs on Linux (32 and 64-bit) and Windows.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+enum.Tool
+{
+	PEN
+	BRUSH
+	ERASER
+}
+
+struct.Bag
+{
+	str names[];
+	str labels[4]: [12];
+	int counts[];
+}
+
+phi.HasProgram:Program
+{
+	call Run;
+	exit 0;
+
+	[Run]
+		int scores[];
+		scores++ 10 -20 30;
+		log 'scores has 30: ' (scores has 30) ', -20: ' (scores has -20) ', 5: ' (scores has 5) '\n';
+
+		u8 bytes[3];
+		bytes:1 is 200;
+		log 'bytes has 200: ' (bytes has 200) ', 456: ' (bytes has 456) '\n';
+
+		Tool tools[atmost 4];
+		tools++ Tool.PEN Tool.ERASER;
+		log 'tools has eraser: ' (tools has Tool.ERASER) ', brush: ' (tools has Tool.BRUSH) '\n';
+
+		str names[];
+		names++ 'ann' 'bob';
+		str who: 'bob';
+		log 'names has bob: ' (names has who) ', cat: ' (names has 'cat') '\n';
+		str empty_names[];
+		log 'nothing in an empty one: ' (empty_names has '') '\n';
+
+		new Bag bag;
+		bag.names++ 'sword';
+		bag.labels:2 is 'fire';
+		bag.counts++ 7;
+		log 'bag: ' (bag.names has 'sword') ' ' (bag.labels has 'fire') ' ' (bag.labels has 'ice') ' ' (bag.counts has 7) '\n';
+
+		Point points[2];
+		points:1.x is 3;
+		points:1.y is 4;
+		Point p;
+		p.x is 3;
+		p.y is 4;
+		log 'points has p: ' (points has p) '\n';
+		p.y is 5;
+		log 'and now: ' (points has p) '\n';
+
+		new Point objects[atmost 4];
+		new Point a: 1 2;
+		objects++ a;
+		new Point b: 1 2;
+		log 'objects has b: ' (objects has b) '\n';
+
+		str line: 'GET /index.html HTTP/1.1';
+		log 'line has GET: ' (line has 'GET ') ', html: ' (line has '.html') ', POST: ' (line has 'POST') '\n';
+		log 'has a space: ' (line has 32 as chr) ', a tab: ' (line has 9 as chr) ', the empty text: ' (line has '') '\n';
+		str nothing: '';
+		log 'empty has x: ' (nothing has 'x') '\n';
+		if not (line has 'POST') and names has 'ann'
+			log 'reads in an if\n';
+		;;
+	[end]
+}

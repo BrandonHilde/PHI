@@ -1003,7 +1003,7 @@ namespace Phi.Compiler.Semantics
                 {
                     // each element is an object the struct owns
                     for (int i = 0; i < f.Type.Length; i++)
-                        s.OwnedSlots.Add(new OwnedSlot(f.Offset + 4 * i, f.Type.Struct!));
+                        s.OwnedSlots.Add(new OwnedSlot(f.Offset + PhiType.AddressSize * i, f.Type.Struct!));
                     continue;
                 }
                 if (f.Type.Kind != TypeKind.Struct) continue;
