@@ -444,6 +444,10 @@ else
 Declaring a name again where the first one is still in sight (in the same block, or in a
 block inside it) is an error. Two loops that declare the same counter share it, as before.
 
+A class's own code (the statements directly in it, which run when it starts) works the
+same way: a name declared again in a separate block there is a variable of its own. A name
+declared once, in a block or not, is the class's variable, which its methods can use too.
+
 ### Constants
 
 ```phi
@@ -732,7 +736,8 @@ while each p in points
 ;;
 ```
 
-The same name can be used in another `while each` loop over the same kind of array.
+The same name can be used in another `while each` loop, over any array: each loop's is a
+variable of its own.
 
 ### Ports
 

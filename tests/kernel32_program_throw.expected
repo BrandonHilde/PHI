@@ -1,10 +1,10 @@
-caught: not a number: x (line 38)
+caught: not a number: x (line 39)
 deep: at the bottom
 blocks given back: 1
-index out of range on line 53 in throw.phi
-was: index out of range on line 53 in throw.phi
+index out of range on line 54 in throw.phi
+was: index out of range on line 54 in throw.phi
 last
 
-PHI: index out of range on line 53 in throw.phi
+PHI: index out of range on line 54 in throw.phi
 exit code: -1
 memory back: 1

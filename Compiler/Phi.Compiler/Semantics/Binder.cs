@@ -96,9 +96,13 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         readonly HashSet<VariableSymbol> blockScoped = new();
 
-        /// <summary>The block-scoped variables in sight while binding blockMethod: one table per open block.</summary>
+        /// <summary>
+        /// The block-scoped variables in sight while binding blockMethod, or blockClass's own code:
+        /// one table per open block.
+        /// </summary>
         readonly List<Dictionary<string, VariableSymbol>> blockNames = new();
         MethodSymbol? blockMethod;
+        ClassDecl? blockClass;
         readonly HashSet<StructSymbol> slotsDone = new();
         int unsafeDepth;
 
@@ -227,7 +231,8 @@ namespace Phi.Compiler.Semantics
             foreach (var (cls, scope) in classScopes)
             {
                 file = cls.File;
-                DeclareNames(scope, CollectDeclarations(cls.Body), isParameter: false);
+                // as in a method: a name declared again in a separate block is a variable of its own
+                DeclareLocals(scope, cls.Body);
                 foreach (MethodDecl m in cls.Methods) DeclareMethod(scope, m);
             }
 
@@ -236,7 +241,11 @@ namespace Phi.Compiler.Semantics
             foreach (var (cls, scope) in classScopes)
             {
                 file = cls.File;
+                blockClass = cls;
+                blockNames.Add(new());
                 BindStatements(cls.Body, scope, classLevel: true);
+                blockNames.Clear();
+                blockClass = null;
 
                 foreach (MethodDecl m in cls.Methods)
                 {
@@ -1468,37 +1477,9 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
 
-                if (scope.Names.TryGetValue(decl.Name, out Symbol? existing))
+                // (a name declared again in a separate block doesn't come here: see DeclareLocals)
+                if (scope.Names.ContainsKey(decl.Name))
                 {
-                    // two loops can each declare the same counter: while int i: 0; ...
-                    if (existing is VariableSymbol ev && loopCounters.Contains(decl) && ev.Decl.Type.ToString() == decl.Type.ToString() && ev.Decl.BufferSize == null)
-                    {
-                        decl.Symbol = ev;
-                        ev.NeedsInitCode = true;
-                        continue;
-                    }
-                    // ... and two type tests can each name what they find the same, as the same struct
-                    if (existing is VariableSymbol { Decl.Narrows: not null } found && decl.Narrows != null && found.Decl.Type.Name == decl.Type.Name)
-                    {
-                        decl.Symbol = found;
-                        continue;
-                    }
-                    // ... and two catches each name their error the same
-                    if (existing is VariableSymbol { Decl.CatchesError: true } caught && decl.CatchesError)
-                    {
-                        decl.Symbol = caught;
-                        continue;
-                    }
-                    // ... and two while each loops the same element, over arrays of the same kind
-                    if (existing is VariableSymbol { Decl.EachOf: not null } element && decl.EachOf != null)
-                    {
-                        BindExpr(decl.EachOf, scope);
-                        if (decl.EachOf.Type.IsArray && EachElementType(decl.EachOf.Type.Element) == element.Type)
-                        {
-                            decl.Symbol = element;
-                            continue;
-                        }
-                    }
                     Error(decl.NameSpan, $"'{decl.Name}' is already declared in {ScopeName(scope)}");
                     continue;
                 }
@@ -1939,13 +1920,18 @@ namespace Phi.Compiler.Semantics
         {
             foreach (BoundUnit unit in units.Values)
             {
+                // by the name each is under: one declared again in a separate block is name#1, ...
                 var classLevel = classScopes.Values.Where(s => s.Unit == unit.Kind)
-                    .SelectMany(s => s.Names.Values.OfType<VariableSymbol>()).ToList();
-                var shared = classLevel.GroupBy(v => v.Name).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
+                    .SelectMany(s => s.Names.Where(n => n.Value is VariableSymbol).Select(n => n.Key)).ToList();
+                var shared = classLevel.GroupBy(k => k).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
 
                 foreach (var (cls, scope) in classScopes.Where(p => p.Value.Unit == unit.Kind))
-                    foreach (VariableSymbol v in scope.Names.Values.OfType<VariableSymbol>())
-                        v.Label = shared.Contains(v.Name) ? $"VALUE_{cls.Name}_{v.Name}" : $"VALUE_{v.Name}";
+                    foreach (var (key, symbol) in scope.Names)
+                    {
+                        if (symbol is not VariableSymbol v) continue;
+                        string name = key.Replace('#', '_');
+                        v.Label = shared.Contains(key) ? $"VALUE_{cls.Name}_{name}" : $"VALUE_{name}";
+                    }
 
                 foreach (var (method, scope) in methodScopes.Where(p => p.Value.Unit == unit.Kind))
                     foreach (var (key, symbol) in scope.Names)
@@ -2019,7 +2005,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>A name in the block, the method, self's fields or the class: everything but other classes.</summary>
         Symbol? LookupHere(string name, Scope scope)
         {
-            if (scope.Method != null && scope.Method == blockMethod)
+            if (scope.Method != null ? scope.Method == blockMethod : scope.Class == blockClass)
                 for (int i = blockNames.Count - 1; i >= 0; i--)
                     if (blockNames[i].TryGetValue(name, out VariableSymbol? inBlock))
                         return inBlock;
@@ -2147,7 +2133,8 @@ namespace Phi.Compiler.Semantics
         {
             UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Os : UnitKind.Boot;
             string head = name.Split('.')[0];
-            if (scope.Method != null && methodScopes[scope.Method.Decl].Names.ContainsKey(head + "#0"))
+            if (scope.Method != null && methodScopes[scope.Method.Decl].Names.ContainsKey(head + "#0")
+                || scope.Method == null && classScopes[scope.Class].Names.ContainsKey(head + "#0"))
                 return $"'{head}' is declared only inside blocks (if, else, while) that have ended here; declare it before them to use it here";
             if (name.Contains('.') && LookupSimple(head, scope) is VariableSymbol v)
                 return FieldsOf(v.Type) is StructSymbol fields ? $"{fields.Name} has no field '{name[(head.Length + 1)..]}'" : $"'{head}' is a {v.Type}, which has no '{name[(head.Length + 1)..]}'";

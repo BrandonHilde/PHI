@@ -1,6 +1,26 @@
 phi.BlockScope:Library
 {
 	str word: 'abcde';
+
+	# in the class's own code as in a method: each block has a variable of its own
+	if word.len > 2
+		int part: 7;
+		debug part ' ';
+	;;
+	if word.len > 3
+		str part: 'seven';
+		debug part '\n';
+	;;
+	int counts: 1 2 3;
+	str names: 'a' 'b';
+	while each item in counts
+		debug item;
+	;;
+	while each item in names
+		debug item;
+	;;
+	debug '\n';
+
 	call Move: 0 3;
 	call Move: 3 0;
 	call Kinds: 1;

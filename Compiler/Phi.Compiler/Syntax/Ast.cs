@@ -185,9 +185,6 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         public Expr? Narrows { get; init; }
 
-        /// <summary>The error of an if call ... throws err (its err).</summary>
-        public bool CatchesError { get; init; }
-
         /// <summary>Set by the binder for new T name: v1 v2;  one assignment per field.</summary>
         public List<Stmt> FieldValues { get; } = new();
 

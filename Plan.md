@@ -595,6 +595,12 @@ these were added:
   inside a class and for a string that ends with a line break written into it; `OS.Idle`
   (a kernel's main loop rests until something happens); `App.SetResizable`; `reboot` in
   input scripts (restart on the same disk)
+- [x] Names in a class's own code are scoped by block, as they are in a method
+  (2026-11-01): a name declared again in a separate block there is a variable of its own.
+  This replaced three special cases for class code (`is Player p`, `while each` over the
+  same kind of array, and `throws err`), which only let a name be shared when both
+  declarations matched; two loops still share their counter, by the rule methods use.
+  Tests `block_scope`, `block_scope_errors`.
 
 The parts most worth doing next, roughly in order:
 
@@ -1449,7 +1455,7 @@ Goal: a mistake stops only the work it was part of, not the whole machine.
 test where a zone program crashes on purpose shows its players back in a restarted zone
 (this half: `kernel32_program_restart`).
 
-**Status: in progress.**
+**Status: parts 1-4 done; part 5 (`phi fuzz`) waits for the work before a release.**
 - [x] (1) Network system calls for programs (80 to 94). The kernel has `use net.calls`;
   a program has `use net.sockets`, whose `Udp`, `Tcp` and `Net` have the kernel's methods,
   so code moves by changing its `use` line. Every socket, connection and listener belongs
@@ -1524,7 +1530,8 @@ test where a zone program crashes on purpose shows its players back in a restart
     a list for each core. A CPU exception (dividing by zero, an empty object's page fault)
     isn't an error a program can catch yet either: it goes to the panic screen, or ends a
     program, as before.
-- [ ] (5) `phi fuzz`
+- [ ] (5) `phi fuzz`: **later**, with the optimisations, before a release (the user,
+  2026-11-01). Until then this phase's "Done when" waits on it; parts 1-4 are done.
 
 #### Phase S9: Several cores
 

@@ -1,2 +1,3 @@
-12:8: error: 't' is declared only inside blocks (if, else, while) that have ended here
-15:7: error: 'count' is already declared in method BlockScopeErrors.Mixed; a name can be declared again only in a separate block
+9:8: error: 'gone' is declared only inside blocks (if, else, while) that have ended here; declare it before them to use it here
+19:8: error: 't' is declared only inside blocks (if, else, while) that have ended here; declare it before them to use it here
+22:7: error: 'count' is already declared in method BlockScopeErrors.Mixed; a name can be declared again only in a separate block (another branch or loop)

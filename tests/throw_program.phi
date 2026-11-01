@@ -23,10 +23,11 @@ phi.Test:Program
 
 	# an error's message, kept as text
 	str saved: '';
+	str again: '';
 	if call Read: 9 throws err
 		saved is err;
+		again is ('was: ' err);
 	;;
-	str again: ('was: ' err);
 	log saved '\n' again '\n';
 
 	log 'last\n';

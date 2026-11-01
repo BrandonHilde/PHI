@@ -1084,7 +1084,6 @@ namespace Phi.Compiler.Syntax
                     Name = throws.Name,
                     NameSpan = throws.NameSpan,
                     Span = throws.NameSpan,
-                    CatchesError = true,
                 });
 
             // if thing is Player p: inside, p is the Player it holds
