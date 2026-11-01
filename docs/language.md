@@ -2117,7 +2117,8 @@ phi run hello.phi --target linux -- a b  # build and run it here, with a b as it
 ```
 
 **64-bit programs** (in progress, S10 in [Plan.md](../Plan.md)): `--target linux64`
-builds a 64-bit Linux program. In 64-bit code pointers (and objects, and method values) are
+builds a 64-bit Linux program, and `--target windows64` a 64-bit Windows one. In 64-bit
+code pointers (and objects, and method values) are
 8 bytes, and every number keeps its size (`int` is 32 bits on every system). A 64-bit
 program can use what a 32-bit one can: numbers of every size and floating point, text,
 structs, objects and interfaces, arrays of all of them (fixed, `[atmost N]`, growing, and

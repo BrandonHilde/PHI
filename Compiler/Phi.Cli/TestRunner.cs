@@ -114,7 +114,7 @@ namespace Phi.Cli
         /// <summary>phi test --target: run only on that system (PHI OS, or as Linux or Windows programs).</summary>
         public static Host? Only { get; set; }
 
-        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows, Host.Linux64 };
+        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows, Host.Linux64, Host.Windows64 };
         const string ProgramWrapper = "\nphi.PhiTestProgram:Program\n{\n}\n";
 
         /// <summary>What only a test in QEMU can have: input typed into it, a web server, a sound card, other machines.</summary>

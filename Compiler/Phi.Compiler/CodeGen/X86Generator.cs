@@ -335,7 +335,7 @@ namespace Phi.Compiler.CodeGen
                         Expression(u.Operand);
                         return;
                     case CastExpr c when Number(c.Type) && Number(c.Operand.Type)
-                                         || (Pointer(c.Type) || Small(c.Type)) && (Pointer(c.Operand.Type) || Small(c.Operand.Type)):
+                                         || (Pointer(c.Type) || Small(c.Type) || c.Type.IsWide) && (Pointer(c.Operand.Type) || Small(c.Operand.Type) || c.Operand.Type.IsWide):
                         Expression(c.Operand);
                         return;
                     default:
@@ -531,7 +531,7 @@ namespace Phi.Compiler.CodeGen
             if (unit.Kind == UnitKind.Kernel) Need("phi_interrupts_init");
 
             // a Windows program reaches the system through kernel32.dll, named in its import table
-            if (Host == Host.Windows) Need("phi_imports");
+            if (Host.IsWindows()) Need("phi_imports");
 
             // the FPU (floating point numbers) starts clean
             if (bits32) Emit("fninit");
@@ -647,6 +647,15 @@ namespace Phi.Compiler.CodeGen
                     output.AppendLine("    cld");
                     break;
 
+                case UnitKind.Program when Host == Host.Windows64:
+                    output.AppendLine("bits 64");
+                    output.AppendLine($"org 0x{WindowsAddress:X}");
+                    output.AppendLine();
+                    EmitPe64Header(output);
+                    output.AppendLine("phi_start:");
+                    output.AppendLine("    cld");
+                    break;
+
                 case UnitKind.Program:
                     // the kernel starts us in ring 3 with our own address space and stack
                     output.AppendLine("bits 32");
@@ -687,7 +696,7 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("; ---- data");
             EmitData(output);
 
-            if (Host == Host.Windows) output.AppendLine("align 4096, db 0             ; the file is whole pages (its file alignment)");
+            if (Host.IsWindows()) output.AppendLine("align 4096, db 0             ; the file is whole pages (its file alignment)");
             if (Host != Host.PhiOS) output.AppendLine("phi_image_end:");
 
             if (unit.Kind == UnitKind.Boot)
@@ -799,6 +808,57 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("    dw 0x8000                            ; aware of terminal services");
             output.AppendLine("    dd 0x100000, 0x10000                 ; stack: 1 MB reserved, 64 KB committed");
             output.AppendLine("    dd 0x100000, 0x1000                  ; the process heap (not used)");
+            output.AppendLine("    dd 0, 16                             ; 16 data directories:");
+            output.AppendLine("    dd 0, 0");
+            output.AppendLine("    dd phi_imports - $$, phi_imports_size ; the import table");
+            output.AppendLine("    times 14 dd 0, 0");
+            output.AppendLine("phi_pe_sections:");
+            output.AppendLine("    db '.text', 0, 0, 0");
+            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
+            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
+            output.AppendLine("    dd 0, 0, 0");
+            output.AppendLine("    dd 0xE0000060                        ; code and data, run, read, write");
+            output.AppendLine("    align 0x1000, db 0");
+            output.AppendLine("phi_pe_code:");
+            output.AppendLine();
+        }
+
+        /// <summary>
+        /// The headers of a 64-bit Windows .exe (PE32+), laid out as EmitPeHeader's: for the
+        /// x86-64, with an 8-byte image base and stack and heap sizes. It loads at its base
+        /// (no relocations, and no DYNAMIC_BASE), below 2 GB, so the code's 32-bit addresses
+        /// of labels hold.
+        /// </summary>
+        static void EmitPe64Header(StringBuilder output)
+        {
+            output.AppendLine("phi_pe_header:");
+            output.AppendLine("    db 'MZ'");
+            output.AppendLine("    times 0x3C - ($ - $$) db 0");
+            output.AppendLine("    dd phi_pe_signature - $$");
+            output.AppendLine("phi_pe_signature:");
+            output.AppendLine("    db 'PE', 0, 0");
+            output.AppendLine("    dw 0x8664                            ; for the x86-64");
+            output.AppendLine("    dw 1                                 ; sections");
+            output.AppendLine("    dd 0, 0, 0");
+            output.AppendLine("    dw phi_pe_sections - phi_pe_optional");
+            output.AppendLine("    dw 0x0023                            ; no relocations (it's always at its base), runnable, large addresses");
+            output.AppendLine("phi_pe_optional:");
+            output.AppendLine("    dw 0x020B                            ; PE32+");
+            output.AppendLine("    db 0, 0");
+            output.AppendLine("    dd phi_image_end - phi_pe_code, 0, 0");
+            output.AppendLine("    dd phi_start - $$                    ; where it starts");
+            output.AppendLine("    dd phi_pe_code - $$");
+            output.AppendLine($"    dq 0x{WindowsAddress:X}");
+            output.AppendLine("    dd 0x1000, 0x1000                    ; section and file alignment");
+            output.AppendLine("    dw 6, 0, 0, 0, 6, 0                  ; Windows Vista and later");
+            output.AppendLine("    dd 0");
+            output.AppendLine("    dd phi_image_end - $$                ; the image's size");
+            output.AppendLine("    dd phi_pe_code - $$                  ; the headers' size");
+            output.AppendLine("    dd 0");
+            output.AppendLine("    dw 3                                 ; a console program");
+            output.AppendLine("    dw 0x8000                            ; aware of terminal services");
+            output.AppendLine("    dq 0x100000, 0x10000                 ; stack: 1 MB reserved, 64 KB committed");
+            output.AppendLine("    dq 0x100000, 0x1000                  ; the process heap (not used)");
             output.AppendLine("    dd 0, 16                             ; 16 data directories:");
             output.AppendLine("    dd 0, 0");
             output.AppendLine("    dd phi_imports - $$, phi_imports_size ; the import table");
@@ -4177,6 +4237,15 @@ namespace Phi.Compiler.CodeGen
 
                 case CastExpr cast:
                     if (cast.Operand.Type.IsFloat) EmitFloatToWhole(cast.Operand);
+                    else if (bits64 && cast.Type.IsPointer && cast.Operand.Type.IsWide)
+                    {
+                        // a 64-bit number made an address: its halves, joined
+                        EmitWide(cast.Operand);
+                        Emit("shl rdx, 32");
+                        Emit("mov eax, eax");
+                        Emit("or rax, rdx");
+                        break;
+                    }
                     else EmitExpr(cast.Operand);
                     // a smaller number keeps the low bytes, like storing it would
                     switch (cast.Type.Kind)
@@ -5186,7 +5255,14 @@ namespace Phi.Compiler.CodeGen
             if (!e.Type.IsWide)
             {
                 EmitExpr(e);
-                Emit(e.Type.IsSigned ? "cdq" : "xor edx, edx");
+                if (IsAddress(e))
+                {
+                    // an address is all of rax in 64-bit code: its high half goes to edx
+                    Emit("mov rdx, rax");
+                    Emit("shr rdx, 32");
+                    Emit("mov eax, eax");
+                }
+                else Emit(e.Type.IsSigned ? "cdq" : "xor edx, edx");
                 return;
             }
 

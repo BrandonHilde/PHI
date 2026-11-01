@@ -78,7 +78,7 @@ namespace Phi.Cli
                 // an ordinary program: NASM writes the whole executable, headers and all
                 byte[]? executable = Assemble(compiled.Units.Single(), outDir, Array.Empty<string>(), result);
                 if (executable == null) return result;
-                result.ExecutablePath = Path.Combine(outDir, name + (host == Host.Windows ? ".exe" : ""));
+                result.ExecutablePath = Path.Combine(outDir, name + (host.IsWindows() ? ".exe" : ""));
                 File.WriteAllBytes(result.ExecutablePath, executable);
                 if (!OperatingSystem.IsWindows())
                     File.SetUnixFileMode(result.ExecutablePath, File.GetUnixFileMode(result.ExecutablePath)

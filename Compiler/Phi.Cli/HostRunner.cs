@@ -18,7 +18,7 @@ namespace Phi.Cli
             why = "";
             switch (host)
             {
-                case Host.Windows when OperatingSystem.IsWindows():
+                case Host.Windows or Host.Windows64 when OperatingSystem.IsWindows():
                 case Host.Linux or Host.Linux64 when OperatingSystem.IsLinux():
                     return true;
                 case Host.Linux or Host.Linux64 when OperatingSystem.IsWindows():
@@ -60,7 +60,7 @@ namespace Phi.Cli
         static ProcessStartInfo Start(string program, Host host, IEnumerable<string> arguments, bool merge)
         {
             var args = arguments.ToList();
-            if (host == Host.Windows)
+            if (host.IsWindows())
             {
                 if (!merge)
                 {

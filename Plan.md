@@ -1751,6 +1751,18 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
 - [ ] (a, the rest) `x64` versions of the rest of the library's blocks, as programs need
   them; `has` on arrays of 64-bit numbers and floats; atomic and locked (S9) in 64-bit
   code
+- [x] (b) `--target windows64`: a PE32+ .exe at 0x400000 (no relocations, so the code's
+  32-bit addresses of labels hold), the same generated code as a 64-bit Linux program, and
+  a runtime of its own (`lib/x86_64_windows/`: kernel32's functions called the x64 way, in
+  rcx, rdx, r8 and r9 with the stack aligned and its shadow space, by `PHI_CALL`; the
+  import table's entries 8 bytes), which shares the pure routines and errors with
+  `lib/x86_64_linux/`. Its heap is reserved past 4 GB (at 0x500000000), so every address
+  must be whole: the test suite and the kernel tests made into programs give the same
+  output there as everywhere else. Casting between a pointer and an `i64` or `u64` keeps
+  all of the address now. Every program test runs as a 64-bit Windows program too.
+  (Windows programs, 32 and 64-bit, sometimes take more than the 10 seconds a test has
+  when the whole suite runs, a test or two a run, and pass when run again: something
+  outside PHI, still to look into.)
 
 #### Phase S11: Running for real
 
@@ -1913,6 +1925,11 @@ distributions don't install 32-bit support any more, and Windows on ARM emulates
 
 **Done when:** the H1 programs build and pass as 64-bit programs on Linux, Windows and macOS.
 
+**Status: in progress.** 64-bit Linux and Windows programs (`--target linux64`,
+`--target windows64`) are done with S10's (a) and (b): ELF64 and PE32+, the System V
+system calls and the Microsoft x64 calling convention, and every program test passing on
+both. macOS is next after the 64-bit kernels; the user will test it on their Mac.
+
 #### Phase H5: The network and threads
 
 1. **Sockets:** the UDP and TCP calls answered by BSD sockets on Linux and macOS and
@@ -1948,7 +1965,7 @@ editor shows its errors as it's written.
 
 ### Order
 
-H1-H3 are done. H4 waits for S10, and H5-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
+H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work), and H5-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
 lean on, so this plan is also where that hold would be reconsidered.
 
 ## References
