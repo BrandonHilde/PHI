@@ -1,0 +1,76 @@
+# Programs on every core (Cores.SharePrograms): one program alone, then four at once,
+# each busy with its own work and asking the kernel the time again and again (a system
+# call, which takes the kernel lock), so the cores take turns in the kernel. The four
+# run on more than one core (seen from the kernel, on the first core, so the others) and
+# finish in much less than four times as long (about 1.7 times, on QEMU); each gives
+# the same answer as the one alone; and all their memory comes back.
+use proc.process;
+use proc.cores;
+
+phi.CoresPrograms:Kernel
+{
+	int pids[4];
+	u8 seen[4];                           # which cores each was seen on (bit n: core n)
+	u32 framesBefore: Frames.free_frames;
+
+	log 'sharing: ' (Cores.SharePrograms) ', cores: ' Cores.count '\n';
+
+	int start: (OS.GetTicks);
+	int alone: (Process.Wait: (Process.Spawn: 'SPIN.BIN'));
+	int one: (OS.GetTicks) - start;
+
+	start is (OS.GetTicks);
+	while int i: 0; i < 4; i++;
+		pids:i is (Process.Spawn: 'SPIN.BIN');
+	;;
+	bln running: true;
+	while running
+		running is false;
+		while int i: 0; i < 4; i++;
+			watched_task is pids:i;
+			u32 core: 0;
+			call core is CoresProgramsOn;
+			if core > 0
+				seen:i is seen:i | (1 << (core - 1));
+			;;
+			if (OS.TaskState: pids:i) < 5
+				running is true;
+			;;
+		;;
+		call OS.Idle;
+	;;
+	int four: (OS.GetTicks) - start;
+	bln same: true;
+	u8 cores: 0;
+	while int i: 0; i < 4; i++;
+		same is same and (Process.Wait: pids:i) is alone;
+		cores is cores | seen:i;
+	;;
+	int used: 0;
+	while int c: 0; c < 8; c++;
+		if (cores & (1 << c)) is not 0
+			used++;
+		;;
+	;;
+	log 'same answers: ' same ', on several cores: ' (used >= 2) ', faster: ' (four < one * 3) '\n';
+	# one killed while another core runs it: its memory goes back only once that core has
+	# let go of it
+	int endless: (Process.Spawn: 'FOREVER.BIN');
+	call OS.Sleep: 100;
+	watched_task is endless;
+	u32 where: 0;
+	call where is CoresProgramsOn;
+	log 'killed: ' (OS.KillTask: endless) ', it was running: ' (where > 0) ', its code: ' (Process.Wait: endless) '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+
+	u32 watched_task: 0;
+}
+
+# the core running watched_task, plus 1 (0: none), from the scheduler
+asm.CoresProgramsOn
+{
+	mov eax, [{watched_task}]
+	mov eax, [phi_task_core + eax * 4]
+	ret
+}

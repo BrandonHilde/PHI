@@ -1426,6 +1426,15 @@ call Cores.Run: addr Part;     # Part: 0 here, Part: 1, 2 ... on the others; bac
 - Interrupts from devices and the timer still go to the first core only.
 - Up to 8 cores take part; any more stay halted.
 
+**Programs on every core.** `call Cores.SharePrograms;` (in a kernel that runs programs,
+`proc.process`) has the other cores run programs too, from then on: each takes a ready
+program no other core is running, and its own timer (its local APIC's) takes the CPU back
+every 10 ms. Kernel code (system calls, interrupts, and the kernel's own code) still runs
+on one core at a time: it holds one kernel lock, which a kernel lets go of while it waits
+(`Process.Wait`, `OS.Sleep`, `OS.Idle`, `OS.Yield`), so the kernel library needs no
+change. A program killed while another core runs it is freed once that core has let go
+of it. `Run` can't be used once programs share the cores.
+
 ### atomic and locked
 
 `atomic` before a statement makes it one step that no other core can come between: the

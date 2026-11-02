@@ -1,5 +1,5 @@
 ; provides: OS_SetupInteruptTimer OS_GetTicks OS_Sleep
-; requires: phi_irq_register
+; requires: phi_irq_register phi_kernel_halt
 ; hooks: OS_TimerEvent
 ;
 ; The PIT on IRQ 0, at 1000 interrupts a second (32-bit kernels). OS_GetTicks
@@ -147,8 +147,7 @@ OS_Sleep:
     sub eax, ebx            ; elapsed, correct even when the counter wraps
     cmp eax, [ebp + 8]
     jae .done
-    sti
-    hlt
+    call phi_kernel_halt    ; sti; hlt (letting other cores into the kernel meanwhile)
     jmp .wait
 .done:
     pop ebx

@@ -1580,7 +1580,8 @@ cores ends with `Heap.used_blocks` at 0.
     a read takes.
   - Not yet: Cores.Start and the kernels switching to it by themselves; IRQs sent to other
     cores.
-- [ ] (1, rest) a timer on each core (the local APIC's)
+- [x] (1, rest) a timer on each other core (its local APIC's, counting for 10 ms, measured
+  against the first core's clock), which takes the CPU back from its programs (with 3)
 - [x] (2, the language) `atomic` and `locked` (the user's choice, 2026-10-30: words in the
   language). `atomic x++ n;`, `atomic x-- n;` (lock add/sub), `atomic x is v;` (xchg) and
   `atomic x is v when old` (lock cmpxchg; as a statement or a bln value) on a number,
@@ -1606,9 +1607,25 @@ cores ends with `Heap.used_blocks` at 0.
   that logs doesn't wait for itself, and it keeps that core's interrupts off while held.
   Test `kernel32_cores_log` (four cores logging long lines: every one whole; with the
   lock taken out, they come out mixed).
-- [ ] (2, the rest of the library) the scheduler, files, the network (a program's system
-  calls, once programs run on other cores)
-- [ ] (3) data per core, a scheduler on every core
+- [x] (2, the rest of the library) and (3), together: programs on every core, with **one
+  kernel lock** (the user's choice, 2026-11-01). `Cores.SharePrograms` has the other cores
+  run programs from then on; each core takes a ready program no other core is running.
+  Kernel code (interrupts, system calls, and the kernel's own code, task 0, which stays on
+  the first core) runs on one core at a time under a ticket lock, so the scheduler, files,
+  the network and the rest of the kernel library work unchanged. Whoever holds the lock
+  sets `phi_current_task` to its core's task, so everything that reads it is as it was.
+  Each core counts how deep it is in kernel code (the kernel's own code counts 1) and
+  holds the lock while that isn't 0; the kernel lets go of it while it waits (`OS.Idle`,
+  `OS.Sleep`, `OS.Yield`, so `Process.Wait`). Data per core: its task, its depth, its TSS
+  (where ring 3's interrupts land), and for each other core an idle loop. A program
+  killed while another core runs it counts as running until that core has let go of it,
+  so its memory isn't freed under it. Single-core kernels don't change: the lock is only
+  there once `SharePrograms` has run. Test `kernel32_cores_programs`: four busy programs
+  making system calls on 3 or 4 cores at once, finishing in about 1.7 times the time one
+  takes alone (four times, on one core), each with the same answer, then one killed while
+  another core runs it, and every frame of memory back.
+  - Not yet: finer locks than the one, which the benchmarks would justify part by part;
+    devices' interrupts sent to other cores.
 - [ ] (4) kernel threads, and what a class variable means in them
 
 #### Phase S10: 64-bit

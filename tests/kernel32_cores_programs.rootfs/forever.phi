@@ -1,0 +1,8 @@
+# Never stops, and never asks the kernel for anything: only a kill ends it.
+phi.Forever:Program
+{
+	u32 n: 0;
+	while true
+		n++;
+	;;
+}

@@ -1,5 +1,5 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame
-; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_task_core
+; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_core_of_apic phi_kernel_halt
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
 ; directory and kernel stack, and the kernel itself as task 0.
@@ -13,6 +13,10 @@
 ; Every switch happens at the end of an interrupt: the saved state on the task's
 ; kernel stack (see interrupts.asm) is what the next iretd resumes.
 MAX_TASKS     equ 16
+MAX_CORES     equ 8                ; as proc.cores has it
+TSS_SIZE      equ 104
+TICK_VECTOR   equ 0xF1             ; another core's own timer (its local APIC's)
+LOCAL_APIC    equ 0xFEE00000
 TASK_FREE     equ 0
 TASK_READY    equ 1
 TASK_SLEEPING equ 2
@@ -47,14 +51,28 @@ OS_StartMultitasking:
     mov byte [phi_tasks_started], 1
     cli
 
-    ; a GDT with user segments and the TSS (which holds the kernel stack for ring 3)
-    mov dword [phi_tss + 8], KERNEL_DATA      ; ss0
-    mov word [phi_tss + 102], 104             ; no I/O permission bitmap
-    mov eax, phi_tss
-    mov [phi_gdt_tss + 2], ax
+    ; a GDT with user segments and a TSS for each core (which holds the kernel stack for
+    ; ring 3: core n's is at phi_tss + n * TSS_SIZE, selector TSS_SELECTOR + n * 8)
+    push edi
+    xor ecx, ecx
+.tss:
+    imul edx, ecx, TSS_SIZE
+    add edx, phi_tss
+    mov dword [edx + 8], KERNEL_DATA          ; ss0
+    mov word [edx + 102], TSS_SIZE            ; no I/O permission bitmap
+    lea edi, [phi_gdt_tss + ecx * 8]
+    mov word [edi], TSS_SIZE - 1
+    mov [edi + 2], dx
+    mov eax, edx
     shr eax, 16
-    mov [phi_gdt_tss + 4], al
-    mov [phi_gdt_tss + 7], ah
+    mov [edi + 4], al
+    mov byte [edi + 5], 10001001b             ; present, a 32-bit TSS
+    mov byte [edi + 6], 0
+    mov [edi + 7], ah
+    inc ecx
+    cmp ecx, MAX_CORES
+    jb .tss
+    pop edi
     lgdt [phi_gdt_descriptor]
     jmp KERNEL_CODE:.reload
 .reload:
@@ -83,6 +101,7 @@ OS_StartMultitasking:
     mov dword [phi_current_task], 0
 
     mov dword [phi_scheduler], phi_schedule
+    mov dword [phi_share_hook], phi_share_cores
     mov dword [phi_syscall_hook], phi_syscall
     mov dword [phi_user_fault], phi_task_fault
     sti
@@ -158,48 +177,121 @@ OS_CreateUserTask:
     ret
 
 ; ---- the scheduler: eax = saved state of the current task -> eax = the one to resume
+;
+; Round robin over the tasks that are ready: on the first core the kernel (task 0) takes
+; its turn too, and is what runs when nothing else can; once programs share the cores,
+; each other core takes a ready program no other core is running, or its idle loop
+; (MAX_TASKS + its number) when there's none. This runs with the kernel lock held.
 phi_schedule:
     mov ebx, [phi_current_task]
+    cmp ebx, MAX_TASKS
+    jae .save_idle
     mov [phi_task_esp + ebx * 4], eax
-    call phi_wake_tasks
-
-    ; round robin: the next ready task after the current one (the current one last)
+    jmp .saved
+.save_idle:
+    mov [phi_idle_esp - MAX_TASKS * 4 + ebx * 4], eax
+.saved:
+    call phi_wake_tasks                       ; (which may change ebx: giving a program a key)
     mov ebx, [phi_current_task]
+    call phi_this_core
+    mov edi, eax                              ; this core
+
+    mov esi, ebx                              ; where the round starts
+    cmp esi, MAX_TASKS
+    jb .round
+    mov esi, [phi_last_picked]
+.round:
     mov ecx, 1
 .next:
-    lea edx, [ebx + ecx]
+    lea edx, [esi + ecx]
     and edx, MAX_TASKS - 1
     cmp dword [phi_task_state + edx * 4], TASK_READY
-    je .found
+    jne .skip
+    test edx, edx
+    jnz .program
+    test edi, edi
+    jz .found                                 ; the kernel, on the first core
+    jmp .skip
+.program:
+    cmp edx, ebx
+    je .found                                 ; itself, still ready
+    cmp dword [phi_task_core + edx * 4], 0
+    je .found                                 ; no other core is running it
+.skip:
     inc ecx
     cmp ecx, MAX_TASKS
     jbe .next
-    xor edx, edx                              ; the kernel is always ready
+    xor edx, edx                              ; nothing: the kernel (always ready), or on
+    test edi, edi                             ; another core its idle loop
+    jz .found
+    lea edx, [MAX_TASKS + edi]
 .found:
+    ; which core runs which task
+    cmp ebx, MAX_TASKS
+    jae .old_off
+    mov dword [phi_task_core + ebx * 4], 0
+.old_off:
+    cmp edx, MAX_TASKS
+    jae .new_on
+    lea eax, [edi + 1]
+    mov [phi_task_core + edx * 4], eax
+    mov [phi_last_picked], edx
+.new_on:
+    ; the kernel's own code counts as being in the kernel (it holds the lock while it runs)
+    cmp dword [phi_enter_hook], 0
+    je .depth_done
+    test ebx, ebx
+    jnz .old_not_kernel
+    dec dword [phi_core_depth + edi * 4]
+.old_not_kernel:
+    test edx, edx
+    jnz .depth_done
+    inc dword [phi_core_depth + edi * 4]
+.depth_done:
+
     ; each task has its own FPU registers (floating point numbers): the old task's are
-    ; saved (which also clears them), and the new one's put back, or left clean for a new task
+    ; saved (which also clears them), and the new one's put back, or left clean for a new
+    ; task; an idle loop has none
     cmp edx, ebx
     je .same_fpu
+    cmp ebx, MAX_TASKS
+    jae .old_saved
     imul esi, ebx, FPU_STATE
     fnsave [phi_task_fpu + esi]
+.old_saved:
+    cmp edx, MAX_TASKS
+    jae .same_fpu
     cmp byte [phi_task_fpu_fresh + edx], 0
     je .restore_fpu
     mov byte [phi_task_fpu_fresh + edx], 0
+    fninit
     jmp .same_fpu
 .restore_fpu:
     imul esi, edx, FPU_STATE
     frstor [phi_task_fpu + esi]
 .same_fpu:
     mov [phi_current_task], edx
+    mov [phi_core_task + edi * 4], edx
+    xor ecx, ecx                              ; (an idle loop has the kernel's address space)
+    cmp edx, MAX_TASKS
+    jae .space
+    mov ecx, edx
     mov eax, [phi_task_kstack + edx * 4]
-    mov [phi_tss + 4], eax                    ; esp0: where ring 3 interrupts land
-    mov eax, [phi_task_cr3 + edx * 4]
+    imul esi, edi, TSS_SIZE
+    mov [phi_tss + esi + 4], eax              ; esp0: where ring 3 interrupts land, on this core
+.space:
+    mov eax, [phi_task_cr3 + ecx * 4]
     mov ecx, cr3
     cmp eax, ecx
     je .same_space
     mov cr3, eax
 .same_space:
+    cmp edx, MAX_TASKS
+    jae .resume_idle
     mov eax, [phi_task_esp + edx * 4]
+    ret
+.resume_idle:
+    mov eax, [phi_idle_esp - MAX_TASKS * 4 + edx * 4]
     ret
 
 ; make blocked tasks ready when what they wait for has happened
@@ -430,10 +522,170 @@ phi_task_fault:
 .address:    db ', address ', 0
 .newline:    db 13, 10, 0
 
+; ---- programs on every core (Process.UseAllCores), with one kernel lock
+;
+; User programs run on any core at once, but kernel code (interrupts, system calls, and
+; the kernel's own code, task 0) runs on one core at a time: it holds the kernel lock,
+; a ticket lock, so cores get it in the order they asked. Each core counts how deep it
+; is in kernel code (phi_core_depth: the kernel's own code is 1, each interrupt adds 1)
+; and holds the lock while that isn't 0. Whoever holds it sets phi_current_task to its
+; core's task, so everything that reads phi_current_task stays as it was.
+
+; eax = this core's number (0 for the first; always 0 until programs share the cores)
+phi_this_core:
+    xor eax, eax
+    cmp dword [phi_enter_hook], 0
+    je .first
+    mov eax, [LOCAL_APIC + 0x20]
+    shr eax, 24
+    movzx eax, byte [phi_core_of_apic + eax]
+.first:
+    ret
+
+; with interrupts off: into the kernel (the lock, unless this core holds it); changes eax, ecx
+phi_kernel_enter:
+    call phi_this_core
+    mov ecx, eax
+    cmp dword [phi_core_depth + ecx * 4], 0
+    jne .deeper
+    call phi_kernel_take
+    mov eax, [phi_core_task + ecx * 4]
+    mov [phi_current_task], eax
+.deeper:
+    inc dword [phi_core_depth + ecx * 4]
+    ret
+
+; with interrupts off: out of the kernel (the lock given back once this core is out); changes eax, ecx
+phi_kernel_leave:
+    call phi_this_core
+    dec dword [phi_core_depth + eax * 4]
+    jnz .held
+    lock inc dword [phi_kernel_serving]
+.held:
+    ret
+
+; wait for the kernel lock (a ticket, then its turn); keeps ecx
+phi_kernel_take:
+    mov eax, 1
+    lock xadd [phi_kernel_next], eax
+.wait:
+    cmp [phi_kernel_serving], eax
+    je .taken
+    pause
+    jmp .wait
+.taken:
+    ret
+
+; sti; hlt for kernel code that waits (OS_Sleep, OS_Idle), with the lock let go meanwhile
+; and taken back after; keeps ebx, esi and edi
+phi_kernel_halt_unlocked:
+    cli
+    call phi_this_core
+    mov ecx, eax
+    mov eax, [phi_core_depth + ecx * 4]
+    test eax, eax
+    jz .plain                                 ; (kernel code on another core without the lock: Cores.Run)
+    push eax
+    mov dword [phi_core_depth + ecx * 4], 0
+    lock inc dword [phi_kernel_serving]
+    sti
+    hlt                                       ; (an interrupt here takes the lock for itself)
+    cli
+    call phi_this_core
+    mov ecx, eax
+    call phi_kernel_take
+    pop dword [phi_core_depth + ecx * 4]
+    mov eax, [phi_core_task + ecx * 4]
+    mov [phi_current_task], eax
+    sti
+    ret
+.plain:
+    sti
+    hlt
+    ret
+
+; let the cores waiting for the lock have it, then take it back (the kernel's OS_Yield)
+phi_kernel_let_in:
+    cmp dword [phi_enter_hook], 0
+    je .alone
+    pushfd
+    cli
+    call phi_this_core
+    mov ecx, eax
+    push dword [phi_core_depth + ecx * 4]
+    mov dword [phi_core_depth + ecx * 4], 0
+    lock inc dword [phi_kernel_serving]
+    pause
+    call phi_kernel_take
+    pop dword [phi_core_depth + ecx * 4]
+    mov eax, [phi_core_task + ecx * 4]
+    mov [phi_current_task], eax
+    popfd
+.alone:
+    ret
+
+; the kernel's own code (task 0, on the first core) starts sharing: eax = the count for
+; the other cores' timers (their local APICs', for TIMESLICE ms). The other cores join
+; when proc.cores wakes them (phi_core_join).
+phi_share_cores:
+    pushfd
+    cli
+    mov [phi_tick_count], eax
+    mov eax, [phi_current_task]
+    mov [phi_core_task], eax
+    mov dword [phi_task_core], 1              ; task 0 runs on core 0
+    call phi_kernel_take
+    mov dword [phi_core_depth], 1             ; the kernel's own code holds the lock
+    mov ecx, TICK_VECTOR
+    mov eax, phi_isr_tick
+    call phi_set_gate
+    mov dword [phi_halt_hook], phi_kernel_halt_unlocked
+    mov dword [phi_core_join_hook], phi_core_join
+    mov dword [phi_leave_hook], phi_kernel_leave
+    mov dword [phi_enter_hook], phi_kernel_enter
+    popfd
+    ret
+
+; another core joins (from proc.cores, ebx = its number): this GDT and its own TSS, its
+; local APIC's timer to take programs back, then its idle loop, which the timer
+; interrupts to run programs
+phi_core_join:
+    cli
+    lgdt [phi_gdt_descriptor]
+    jmp KERNEL_CODE:.reload
+.reload:
+    mov ax, KERNEL_DATA
+    mov ds, ax
+    mov es, ax
+    mov fs, ax
+    mov gs, ax
+    mov ss, ax
+    lea eax, [TSS_SELECTOR + ebx * 8]
+    ltr ax
+    lea eax, [MAX_TASKS + ebx]
+    mov [phi_core_task + ebx * 4], eax        ; its idle loop, to start with
+    mov dword [LOCAL_APIC + 0x3E0], 3         ; the timer counts every 16 bus clocks
+    mov dword [LOCAL_APIC + 0x320], 0x20000 | TICK_VECTOR   ; again and again
+    mov eax, [phi_tick_count]
+    mov [LOCAL_APIC + 0x380], eax
+    fninit
+.idle:
+    sti
+    hlt
+    jmp .idle
+
+; another core's timer: it can take the CPU back from its program
+phi_isr_tick:
+    mov dword [LOCAL_APIC + 0xB0], 0          ; end of interrupt
+    push dword 0
+    push dword TICK_VECTOR
+    jmp phi_interrupt_common
+
 ; ---- for PHI code in the kernel
 
 OS_Yield:
     int YIELD_VECTOR
+    call phi_kernel_let_in      ; (once programs share the cores: their system calls get a turn)
     ret
 
 ; give the CPU to the programs; if none of them can run when it comes back (all
@@ -444,13 +696,15 @@ OS_Idle:
     mov ecx, 1
 .task:
     cmp dword [phi_task_state + ecx * 4], TASK_READY
-    je .done
+    jne .not_ready
+    cmp dword [phi_task_core + ecx * 4], 0
+    je .done                ; ready, and no other core is running it: it's this core's to run
+.not_ready:
     inc ecx
     cmp ecx, MAX_TASKS
     jb .task
     call OS_SetupInteruptTimer  ; so there's always a next interrupt (it starts only once)
-    sti
-    hlt                     ; sti; hlt can't miss an interrupt in between
+    call phi_kernel_halt    ; sti; hlt (which can't miss an interrupt in between), the kernel lock let go
 .done:
     ret
 
@@ -463,7 +717,14 @@ OS_CurrentTask:
 OS_TaskState:
     mov eax, [esp + 4]
     and eax, MAX_TASKS - 1
+    mov ecx, [phi_task_core + eax * 4]
     mov eax, [phi_task_state + eax * 4]
+    cmp eax, TASK_EXITED
+    jb .done
+    test ecx, ecx
+    jz .done
+    mov eax, TASK_READY     ; killed, but another core is still running it until its next tick:
+.done:                      ; its memory mustn't be freed yet
     ret
 
 OS_TaskExitCode:
@@ -561,6 +822,16 @@ phi_task_parent:       times MAX_TASKS dd 0
 phi_task_exit:         times MAX_TASKS dd 0
 phi_task_wake:         times MAX_TASKS dd 0
 phi_task_wait:         times MAX_TASKS dd 0
+phi_task_core:         times MAX_TASKS dd 0     ; the core running it, plus 1 (0: none)
+
+; programs on every core (phi_share_cores)
+phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket
+phi_kernel_serving:    dd 0                    ; and whose turn it is
+phi_core_depth:        times MAX_CORES dd 0    ; how deep each core is in kernel code
+phi_core_task:         times MAX_CORES dd 0    ; the task each core is running
+phi_idle_esp:          times MAX_CORES dd 0    ; each other core's idle loop, while a program runs there
+phi_last_picked:       dd 0                    ; where an idle core starts looking
+phi_tick_count:        dd 0                    ; the other cores' timers
 
 align 8
 phi_gdt:
@@ -574,8 +845,7 @@ phi_gdt:
     dw 0xFFFF, 0x0000
     db 0x00, 11110010b, 11001111b, 0x00    ; 0x20 user data (ring 3)
 phi_gdt_tss:
-    dw 103, 0x0000
-    db 0x00, 10001001b, 00000000b, 0x00    ; 0x28 the TSS (base filled in at startup)
+    times MAX_CORES dq 0                   ; 0x28 and on: each core's TSS (filled in at startup)
 phi_gdt_end:
 phi_gdt_descriptor:
     dw phi_gdt_end - phi_gdt - 1
@@ -583,4 +853,4 @@ phi_gdt_descriptor:
 
 align 4
 phi_tss:
-    times 104 db 0
+    times MAX_CORES * TSS_SIZE db 0

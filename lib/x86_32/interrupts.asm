@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_core_of_apic phi_kernel_halt
 ; requires: phi_panic phi_catch_top
 ; init: phi_interrupts_init
 ;
@@ -136,6 +136,11 @@ phi_interrupt_common:
     mov fs, ax
     mov gs, ax
     cld
+    mov eax, [phi_enter_hook]       ; once programs share the cores: the kernel lock (tasks.asm)
+    test eax, eax
+    jz .entered
+    call eax
+.entered:
     mov eax, [esp + FRAME_VECTOR]
     cmp eax, IRQ_BASE
     jb .exception
@@ -170,6 +175,11 @@ phi_interrupt_common:
     call ebx                ; eax = the saved state of the task to resume
     mov esp, eax
 .return:
+    mov eax, [phi_leave_hook]
+    test eax, eax
+    jz .left
+    call eax
+.left:
     pop gs
     pop fs
     pop es
@@ -266,6 +276,18 @@ OS_MaskIrq:
     pop ebp
     ret
 
+; sti; hlt: wait for an interrupt (letting go of the kernel lock meanwhile, once programs
+; share the cores, so system calls on other cores aren't held up by a kernel that waits)
+phi_kernel_halt:
+    mov eax, [phi_halt_hook]
+    test eax, eax
+    jz .plain
+    jmp eax
+.plain:
+    sti
+    hlt
+    ret
+
 ; ebx = irq: tell whichever controller sent it that it has been handled (changes eax)
 phi_end_of_interrupt:
     mov eax, [phi_local_apic]
@@ -358,6 +380,17 @@ phi_local_apic:   dd 0
 phi_io_apic:      dd 0
 phi_irq_inputs:   times 16 db 0
 phi_irq_routes:   times 16 dd 0
+
+; once programs share the cores (tasks.asm's phi_share_cores): entering and leaving the
+; kernel take and give back the kernel lock, a halt lets go of it meanwhile, and another
+; core waiting for work (proc.cores) joins the scheduler instead
+phi_enter_hook:     dd 0
+phi_leave_hook:     dd 0
+phi_halt_hook:      dd 0
+phi_core_join_hook: dd 0
+phi_share_hook:     dd 0                ; phi_share_cores, once multitasking has started
+; each core's number by its local APIC ID (proc.cores fills it in: the first core is 0)
+phi_core_of_apic:   times 256 db 0
 phi_scheduler:    dd 0
 phi_syscall_hook: dd 0
 phi_user_fault:   dd 0

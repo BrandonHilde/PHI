@@ -1,0 +1,15 @@
+# Busy for a while, asking the kernel the time every 4096 rounds (a system call, so the
+# kernel lock is wanted from every core at once), then gives back what it worked out.
+phi.Spin:Program
+{
+	u32 sum: 0;
+	u32 calls: 0;
+	while u32 i: 0; i < 30000000; i++;
+		sum is sum * 31 + i;
+		if (i & 4095) is 0
+			int now: (OS.GetTicks);
+			calls++;
+		;;
+	;;
+	exit (sum & 0x7F) + (calls > 0) * 128;
+}
