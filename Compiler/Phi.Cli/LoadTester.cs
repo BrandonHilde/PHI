@@ -19,6 +19,7 @@ namespace Phi.Cli
     /// when its "problems" count is 0.
     ///
     /// Either way, a server that writes "tick: N ticks in MS ms, L late, longest X ms, P players"
+    /// (or "zone Z tick: ...", one for each zone of a world split into zones)
     /// lines (the mmo world does, every 10 seconds) has its tick checked: after the first such
     /// line, and once it has as many players as it gets in the run, no tick may be late.
     /// </summary>
@@ -28,7 +29,7 @@ namespace Phi.Cli
         static readonly Regex Totals = new(@"load: connections (\d+) logged (\d+) answered (\d+) wrong (\d+) quit (\d+) latency (\d+) most (\d+)");
         static readonly Regex Handshakes = new(@" handshake (\d+) refused (\d+)");
         static readonly Regex Counts = new(@"^load: (.+)$", RegexOptions.Multiline);
-        static readonly Regex Ticks = new(@"tick: (\d+) ticks in (\d+) ms, (\d+) late, longest (\d+) ms, (\d+) players");
+        static readonly Regex Ticks = new(@"(?:zone (\d+) )?tick: (\d+) ticks in (\d+) ms, (\d+) late, longest (\d+) ms, (\d+) players");
 
         /// <param name="clientFile">a load-client kernel to use instead of lib/phi/test/load.phi</param>
         /// <param name="profile">sample where the server's CPU is, as phi profile does, and report it</param>
@@ -204,37 +205,55 @@ namespace Phi.Cli
         /// <summary>
         /// The server's tick, if it says how it kept up: true when no tick was late once its
         /// players were all in (leaving out the first report, which has the start in it), and
-        /// its clock kept up with this computer's over those reports.
+        /// its clock kept up with this computer's over those reports. A world split into zones
+        /// reports each (zone N tick: ...): each zone is looked at on its own, then together.
         /// </summary>
         /// <param name="reportedAt">when each report came, in ms by this computer's clock</param>
         static bool TickHeld(string serial, List<double> reportedAt)
         {
-            var reports = Ticks.Matches(serial).Select((m, i) => (Ticks: long.Parse(m.Groups[1].Value), Ms: long.Parse(m.Groups[2].Value),
-                                                                  Late: long.Parse(m.Groups[3].Value), Longest: long.Parse(m.Groups[4].Value),
-                                                                  Players: long.Parse(m.Groups[5].Value),
-                                                                  // since the report before, by this computer's clock (NaN if it isn't known)
-                                                                  Host: i > 0 && i < reportedAt.Count ? reportedAt[i] - reportedAt[i - 1] : double.NaN)).ToList();
-            if (reports.Count == 0) return true;
-            long players = reports.Max(r => r.Players);
-            var counted = reports.Skip(1).SkipWhile(r => r.Players < players).ToList();
-            if (counted.Count == 0)
+            var all = Ticks.Matches(serial).Select((m, i) => (Zone: m.Groups[1].Success ? int.Parse(m.Groups[1].Value) : 0,
+                                                              Ticks: long.Parse(m.Groups[2].Value), Ms: long.Parse(m.Groups[3].Value),
+                                                              Late: long.Parse(m.Groups[4].Value), Longest: long.Parse(m.Groups[5].Value),
+                                                              Players: long.Parse(m.Groups[6].Value),
+                                                              At: i < reportedAt.Count ? reportedAt[i] : double.NaN)).ToList();
+            if (all.Count == 0) return true;
+
+            var counted = new List<(long Ticks, long Ms, long Late, long Longest, double Host)>();
+            long players = 0;
+            int zones = 0;
+            foreach (var zone in all.GroupBy(r => r.Zone))
             {
-                Console.WriteLine($"  tick:       not measured: the run ended before a report with all {players} players in (try more --seconds)");
-                return false;
+                var reports = zone.ToList();
+                long most = reports.Max(r => r.Players);
+                players += most;
+                zones++;
+                // since this zone's report before, by this computer's clock (NaN if it isn't known)
+                var timed = reports.Select((r, i) => (r.Ticks, r.Ms, r.Late, r.Longest, r.Players,
+                                                      Host: i > 0 ? r.At - reports[i - 1].At : double.NaN)).ToList();
+                var kept = timed.Skip(1).SkipWhile(r => r.Players < most).ToList();
+                if (kept.Count == 0)
+                {
+                    Console.WriteLine($"  tick:       not measured: the run ended before a report with all {most} players in" +
+                                      (zone.Key > 0 ? $" in zone {zone.Key}" : "") + " (try more --seconds)");
+                    return false;
+                }
+                counted.AddRange(kept.Select(r => (r.Ticks, r.Ms, r.Late, r.Longest, r.Host)));
             }
+
             long ticks = counted.Sum(r => r.Ticks), ms = counted.Sum(r => r.Ms), late = counted.Sum(r => r.Late);
-            Console.WriteLine($"  tick:       {ticks:N0} ticks in {ms / 1000.0:0.0} s ({ticks * 1000.0 / ms:0.0} a second) with {players} players, " +
+            Console.WriteLine($"  tick:       {ticks:N0} ticks in {ms / 1000.0:0.0} s ({ticks * 1000.0 / ms:0.0} a second" +
+                              (zones > 1 ? $" in each of {zones} zones" : "") + $") with {players} players, " +
                               $"{late} late, longest {counted.Max(r => r.Longest)} ms");
 
             // a report's ms against the time it took to come here (give or take how often the output is read)
-            var timed = counted.Where(r => !double.IsNaN(r.Host)).ToList();
-            double host = timed.Sum(r => r.Host), guest = timed.Sum(r => r.Ms);
-            bool kept = timed.All(r => r.Host <= r.Ms * 1.05 + 250);
-            if (timed.Count > 0)
+            var hosted = counted.Where(r => !double.IsNaN(r.Host)).ToList();
+            double host = hosted.Sum(r => r.Host), guest = hosted.Sum(r => r.Ms);
+            bool clockKept = hosted.All(r => r.Host <= r.Ms * 1.05 + 250);
+            if (hosted.Count > 0)
                 Console.WriteLine($"  its clock:  {guest / 1000.0:0.0} s of the server's time took {host / 1000.0:0.0} s here" +
-                                  (kept ? "" : ": it fell behind, so its ms don't show how late the ticks really were " +
-                                               $"(each report: {string.Join(", ", timed.Select(r => $"{r.Ms / 1000.0:0.0} s in {r.Host / 1000.0:0.0}"))})"));
-            return late == 0 && kept;
+                                  (clockKept ? "" : ": it fell behind, so its ms don't show how late the ticks really were " +
+                                               $"(each report: {string.Join(", ", hosted.Select(r => $"{r.Ms / 1000.0:0.0} s in {r.Host / 1000.0:0.0}"))})"));
+            return late == 0 && clockKept;
         }
     }
 }

@@ -39,15 +39,25 @@ phi.World:Program
 	UdpDatagram d;
 	SavedPlayer records[Game.MAX_PLAYERS];
 
-	int s: (Udp.Open: Game.PORT 256);
+	# which zone this is: 0, unless the command line says (server.phi starts one world for
+	# each zone, on ports from Game.PORT up); each saves its players in a log of its own
+	int zone: (ZoneNumber);
+	str saves: 'PLAYERS.LOG';
+	str prefix: '';
+	if zone > 0
+		saves is 'PLAYERS' zone '.LOG';
+		prefix is 'zone ' zone ' ';
+	;;
+
+	int s: (Udp.Open: Game.PORT + zone 256);
 	if s < 0
-		log 'world: no network, or the port is taken\n';
+		log prefix 'world: no network, or the port is taken\n';
 		exit 1;
 	;;
 
 	# where everyone was; then the log is written again with just that, to keep it small
-	call SaveLog.Read: 'PLAYERS.LOG' sizeof SavedPlayer addr Restore;
-	log 'world started: ' saved:0.count ' saved players\n';
+	call SaveLog.Read: saves sizeof SavedPlayer addr Restore;
+	log prefix 'world started: ' saved:0.count ' saved players\n';
 	call Compact;
 
 	int ticks: 0;
@@ -75,7 +85,7 @@ phi.World:Program
 			next_tick++ TICK;
 			if ticks % REPORT_EVERY is 0
 				int clock: (OS.GetTicks);
-				log 'tick: ' REPORT_EVERY ' ticks in ' clock - reported ' ms, ' late ' late, longest ' longest ' ms, ' Zone.players.len ' players\n';
+				log prefix 'tick: ' REPORT_EVERY ' ticks in ' clock - reported ' ms, ' late ' late, longest ' longest ' ms, ' Zone.players.len ' players\n';
 				reported is clock;
 				late is 0;
 				longest is 0;
@@ -83,6 +93,16 @@ phi.World:Program
 		;;
 		call OS.Sleep: 1;
 	;;
+
+	# the zone number on the command line (a whole number), or 0
+	[ZoneNumber]
+		ptr<u8> line: (OS.Arguments);
+		int n: 0;
+		if line is 0 return 0;
+		while int i: 0; line:i >= '0' and line:i <= '9'; i++;
+			n is n * 10 + line:i - '0';
+		;;
+	[end: n]
 
 	# ---- messages
 
@@ -116,10 +136,10 @@ phi.World:Program
 			if i < 0 return;
 			if Zone.players.len <= CHATTY
 				if where is not NOBODY
-					log 'restored player ' id ' at ' x ' ' y '\n';
+					log prefix 'restored player ' id ' at ' x ' ' y '\n';
 				;;
 				else
-					log 'player ' id ' joined at ' x ' ' y '\n';
+					log prefix 'player ' id ' joined at ' x ' ' y '\n';
 				;;
 			;;
 		;;
@@ -154,12 +174,12 @@ phi.World:Program
 			;;
 		;;
 		if n is 0 return;
-		if (SaveLog.AddMany: 'PLAYERS.LOG' addr records sizeof SavedPlayer n) is false return;
+		if (SaveLog.AddMany: saves addr records sizeof SavedPlayer n) is false return;
 		while int i: 0; i < Zone.players.len; i++;
 			if Zone.players:i.moved
 				Zone.players:i.moved is false;
 				if Zone.players.len <= CHATTY
-					log 'saved player ' Zone.players:i.id ' at ' Zone.players:i.x ' ' Zone.players:i.y '\n';
+					log prefix 'saved player ' Zone.players:i.id ' at ' Zone.players:i.x ' ' Zone.players:i.y '\n';
 				;;
 			;;
 		;;
@@ -183,7 +203,7 @@ phi.World:Program
 
 	# the log again, with one record for each player
 	[Compact]
-		call SaveLog.Clear: 'PLAYERS.LOG';
+		call SaveLog.Clear: saves;
 		int n: 0;
 		int pos: (Map.Next: saved);
 		while pos >= 0 and n < Game.MAX_PLAYERS
@@ -194,6 +214,6 @@ phi.World:Program
 			n++;
 			pos is (Map.Next: saved pos);
 		;;
-		call SaveLog.AddMany: 'PLAYERS.LOG' addr records sizeof SavedPlayer n;
+		call SaveLog.AddMany: saves addr records sizeof SavedPlayer n;
 	[end]
 }

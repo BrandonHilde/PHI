@@ -4,6 +4,7 @@
 #
 #   use proc.supervisor;
 #   int zone: (Supervisor.Keep: 'ZONE.BIN');    # started now; -1 if it can't be
+#   int other: (Supervisor.Keep: 'ZONE.BIN' '2'); # with a command line (OS.Arguments), every time
 #   while true
 #       call Supervisor.Check;                  # starts again any that stopped with an error
 #       call OS.Yield;                          # the programs run
@@ -21,9 +22,11 @@ phi.Supervisor:Kernel
 {
 	const int MAX_KEPT: 8;
 	const int PATH_SIZE: 16;
+	const int ARGUMENTS_SIZE: 32;
 	const int STEADY: 1000;                 # ms a program runs before its restarts count afresh
 
 	u8 paths[128];                          # PATH_SIZE for each
+	u8 command_lines[256];                  # ARGUMENTS_SIZE for each (empty: none)
 	int pid[MAX_KEPT];                      # 0: not running (finished, given up on, or unused)
 	int restarts[MAX_KEPT];                 # times it was started again
 	int in_a_row[MAX_KEPT];                 # restarts with no more than STEADY ms between them
@@ -32,9 +35,10 @@ phi.Supervisor:Kernel
 	bln used[MAX_KEPT];
 	int give_up_after: 5;
 
-	# start a program and keep it running; a number for it, or -1 if it can't start (or
-	# its path is longer than 15 characters, or MAX_KEPT are kept already)
-	[Keep: ptr<u8> path: 0;]
+	# start a program and keep it running, with a command line if it has one; a number for
+	# it, or -1 if it can't start (or its path is longer than 15 characters, its command line
+	# than 31, or MAX_KEPT are kept already)
+	[Keep: ptr<u8> path: 0; ptr<u8> arguments: 0;]
 		int k: -1;
 		while int i: 0; i < MAX_KEPT and k < 0; i++;
 			if used:i is false
@@ -50,7 +54,18 @@ phi.Supervisor:Kernel
 			n++;
 		;;
 		to:n is 0;
-		int started: (Process.Spawn: to);
+		ptr<u8> line: addr command_lines + k * ARGUMENTS_SIZE;
+		line:0 is 0;
+		if arguments is not 0
+			n is 0;
+			while arguments:n is not 0
+				if n >= ARGUMENTS_SIZE - 1 return -1;
+				line:n is arguments:n;
+				n++;
+			;;
+			line:n is 0;
+		;;
+		int started: (Start: k);
 		if started < 0 return -1;
 		used:k is true;
 		pid:k is started;
@@ -72,7 +87,7 @@ phi.Supervisor:Kernel
 						in_a_row:k is 0;
 					;;
 					if in_a_row:k < give_up_after
-						int started: (Process.Spawn: addr paths + k * PATH_SIZE);
+						int started: (Start: k);
 						if started > 0
 							pid:k is started;
 							restarts:k++;
@@ -85,6 +100,12 @@ phi.Supervisor:Kernel
 			;;
 		;;
 	[end: count]
+
+	# kept program k started, with its command line if it has one; its process, or -1
+	[Start: int k: 0;]
+		ptr<u8> line: addr command_lines + k * ARGUMENTS_SIZE;
+		if line:0 is 0 return (Process.Spawn: addr paths + k * PATH_SIZE);
+	[end: (Process.Spawn: addr paths + k * PATH_SIZE line)]
 
 	# whether a kept program is running (false once it finished, or was given up on)
 	[Running: int k: 0;]

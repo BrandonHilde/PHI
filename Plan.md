@@ -1624,6 +1624,10 @@ cores ends with `Heap.used_blocks` at 0.
   making system calls on 3 or 4 cores at once, finishing in about 1.7 times the time one
   takes alone (four times, on one core), each with the same answer, then one killed while
   another core runs it, and every frame of memory back.
+  - Found later, with the mmo's kill and restart: a program killed while its core waited
+    for the kernel lock to make a system call made the call once it got the lock, and a
+    call that sets its state (to sleep, say) brought it back, so it never ended. A system
+    call from a task that has been stopped now isn't made.
   - Not yet: finer locks than the one, which the benchmarks would justify part by part;
     devices' interrupts sent to other cores.
 - [x] (4) kernel threads, and what a class variable means in them (the user's choice,
@@ -1641,6 +1645,22 @@ cores ends with `Heap.used_blocks` at 0.
   a shared total with atomic, using the heap, first on one core and then on several;
   four busy threads on two or more cores, faster than one after the other), and unit
   tests for the warning. Nothing in the library or the samples warns.
+- [ ] (the demo) `samples/mmo`'s zones on 4 cores: the world can be split into zones
+  (`Game.ZONES` in `protocol.phi`), each its own world program on its own port
+  (`Game.PORT + n`) with its own save log, which `Supervisor.Keep` starts with its zone on
+  the command line; the server shares the cores (`Cores.SharePrograms`); `phi load`'s
+  players spread over the zones, and it checks each zone's tick (`zone N tick: ...`).
+  The scripted test (`mmo/server`) passes with 1 zone and with 4, killing zone 0's world
+  while another core runs it and seeing it back with its players. Measured with `phi
+  load` (400 players, 40 s): **one zone holds its tick** (20 a second, none late, the
+  longest 67 ms), but **four zones don't** (18 a second each, every tick late, the longest
+  92 ms; with 100 players, 2 late and the longest 89 ms). A shorter timeslice on the other
+  cores changed nothing, so it isn't waking up late. What's left is the one kernel lock:
+  every STATE a zone sends is a system call through the network, and each zone polls
+  the network and sleeps a thousand times a second, all of them taking turns for the
+  lock that one zone alone never waits for. So `Game.ZONES` stays 1 until the network
+  path has a lock of its own (the finer locks the user's choice left for when a benchmark
+  shows the need: this is that benchmark).
 
 #### Phase S10: 64-bit
 

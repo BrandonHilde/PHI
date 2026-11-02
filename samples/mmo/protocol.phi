@@ -11,7 +11,8 @@
 
 phi.Game:Library
 {
-	const u32 PORT: 4000;
+	const u32 PORT: 4000;                 # the world's zone 0; zone n is on PORT + n
+	const int ZONES: 1;                   # world programs, each a zone of its own (server.phi): see Plan.md's S9 for 4
 	const int TICK: 50;                   # ms between STATEs: 20 ticks a second
 
 	const u8 JOIN: 1;

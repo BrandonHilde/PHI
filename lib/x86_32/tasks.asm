@@ -350,6 +350,11 @@ phi_wake_tasks:
 phi_syscall:
     mov ebp, eax
     mov [phi_syscall_frame], eax
+    ; killed while it waited for the kernel lock (another core stopped it): it doesn't make
+    ; the call, which could set its state again (sleeping, say) and bring it back
+    mov ecx, [phi_current_task]
+    cmp dword [phi_task_state + ecx * 4], TASK_EXITED
+    jae .killed
     mov ebx, [ebp + F_EBX]
     mov eax, [ebp + F_EAX]
     cmp eax, 10
@@ -459,6 +464,9 @@ phi_syscall:
     mov dword [ebp + F_EAX], -1
 .done:
     xor eax, eax
+    ret
+.killed:
+    mov eax, 1                                ; it can't continue: the scheduler moves on
     ret
 
 ; is ebx a zero-terminated string inside the current program's memory?

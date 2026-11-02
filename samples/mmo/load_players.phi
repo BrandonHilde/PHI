@@ -55,7 +55,7 @@ phi.LoadPlayers:Kernel
 					if joined:c is false
 						message:0 is Game.JOIN;
 						call Net.Put32: addr message + 1 first_id + c;
-						call Udp.SendTo: s Machine.first Game.PORT addr message 5;
+						call Udp.SendTo: s Machine.first Game.PORT + c % Game.ZONES addr message 5;
 					;;
 				;;
 				last_join is (OS.GetTicks);
@@ -79,7 +79,7 @@ phi.LoadPlayers:Kernel
 					message:0 is Game.MOVE;
 					call Net.Put32: addr message + 1 first_id + c;
 					message:5 is (Random: 4) + 1;
-					call Udp.SendTo: s Machine.first Game.PORT addr message 6;
+					call Udp.SendTo: s Machine.first Game.PORT + c % Game.ZONES addr message 6;
 					moves++;
 					next_at:c++ STEP_EVERY;
 				;;
