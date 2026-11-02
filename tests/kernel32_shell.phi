@@ -1,3 +1,4 @@
+# takes up to 30 seconds: it types 34 lines, plays Pong and runs most of the userland
 # The whole userland from samples/os.rootfs (see kernel32_shell.rootfs): boot into
 # the shell, run commands, play Pong, quit back to the prompt.
 use proc.process;

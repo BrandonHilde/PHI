@@ -83,7 +83,7 @@ namespace Phi.Cli
             {
                 string name = TestName(test) + (mode == null ? "" : $" ({mode.Name})");
                 var report = new List<string>();
-                string? failure = RunOne(test, timeout, mode, input, keepOutput, contains, bench, report);
+                string? failure = RunOne(test, TimeFor(test, timeout), mode, input, keepOutput, contains, bench, report);
 
                 if (failure == null)
                 {
@@ -139,7 +139,21 @@ namespace Phi.Cli
         /// kernel and on the other systems.
         /// </summary>
         static readonly Regex Not16Bit = new(@"^#\s*runs only in 32 and 64 bits\b", RegexOptions.Multiline);
-        static readonly Regex UserProgramClass = new(@"^\s*phi\.\w+\s*:\s*Program\b", RegexOptions.Multiline);
+        /// <summary>
+        /// A test that needs longer than the usual time (one that types a long input script, say)
+        /// says so with this comment: "# takes up to N seconds: why".
+        /// </summary>
+        static readonly Regex TakesUpTo = new(@"^#\s*takes up to (\d+) seconds\b", RegexOptions.Multiline);
+
+        /// <summary>The time a test gets: what --timeout gives, or more if the test asks for it.</summary>
+        static TimeSpan TimeFor(string phiFile, TimeSpan timeout)
+        {
+            Match m = TakesUpTo.Match(File.ReadAllText(phiFile));
+            return m.Success && int.TryParse(m.Groups[1].Value, out int seconds) && seconds > timeout.TotalSeconds
+                ? TimeSpan.FromSeconds(seconds) : timeout;
+        }
+
+        static readonly Regex UserProgramClass =new(@"^\s*phi\.\w+\s*:\s*Program\b", RegexOptions.Multiline);
 
         /// <summary>
         /// null for an ordinary test; both modes for a test made only of :Library classes; and
