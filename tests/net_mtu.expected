@@ -1,0 +1,4 @@
+dhcp: 1, address 1, mtu 1400, mss 1360
+udp of 1372 bytes: 1, of 1373: 0
+machine 2: echoed 32768
+machine 3: echoed 32768

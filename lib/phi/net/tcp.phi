@@ -80,7 +80,7 @@ phi.Tcp:Kernel
 	const u32 BUFFER_SIZE: 8192;          # each way; a power of 2
 	const u32 HEADER: 20;
 	const u32 DEFAULT_MSS: 536;
-	const u32 OUR_MSS: 1460;
+	const u32 OUR_MSS: 1460;              # the most data in a segment on Ethernet (OurMss: on this network)
 	const int RETRIES: 8;
 	const int FIRST_WAIT: 200;            # ms before sending again; doubles each time
 	const int RETRY_WAIT: 1000;           # ms Connect waits for each answer to its SYN
@@ -227,7 +227,7 @@ phi.Tcp:Kernel
 		c.rx_count-- n;
 
 		# we told the other side we had (almost) no room: say there is room again
-		if c.window_sent < OUR_MSS and c.state is OPEN and c.remote_closed is false
+		if c.window_sent < (OurMss) and c.state is OPEN and c.remote_closed is false
 			call SendSegment: c c.send_next ACK 0 0;
 		;;
 	[end: n]
@@ -562,8 +562,8 @@ phi.Tcp:Kernel
 			if size < 2 break;
 			pos++ size;
 		;;
-		if c.mss > OUR_MSS
-			c.mss is OUR_MSS;
+		if c.mss > (OurMss)
+			c.mss is (OurMss);
 		;;
 	[end]
 
@@ -692,7 +692,7 @@ phi.Tcp:Kernel
 		if (flags & SYN) is not 0
 			s:20 is 2;
 			s:21 is 4;
-			call Net.Put16: s + 22 OUR_MSS;
+			call Net.Put16: s + 22 (OurMss);
 		;;
 		if length > 0
 			call Mem.Copy: s + header data length;
@@ -792,6 +792,10 @@ phi.Tcp:Kernel
 		if table:handle is 0 return false;
 		ptr<TcpConnection> c: table:handle;
 	[end: c.remote_ip is remote_ip and c.remote_port is remote_port and c.local_port is local_port]
+
+	# the most data a segment carries on this network: its MTU less the IP and TCP headers
+	[OurMss]
+	[end: Net.mtu - Net.IP_HEADER - HEADER]
 
 	[Key: u32 remote_ip: 0; u32 remote_port: 0; u32 local_port: 0;]
 	[end: remote_ip ^ (remote_port << 16) ^ local_port ^ (remote_ip >> 16)]

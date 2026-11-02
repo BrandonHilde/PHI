@@ -1,0 +1,5 @@
+# a network like some clouds': it answers DHCP itself, with an MTU of 1400, and drops
+# anything bigger
+dhcp
+mtu 1400
+net_mtu_client.phi 2

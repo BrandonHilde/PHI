@@ -1495,9 +1495,9 @@ subjectAltName names, or its IP addresses), go back to a root the program trusts
 have signed the handshake. If any of that fails, so does the connection, and the error
 says why; `Tls.verified` says it checked out. A program trusts roots before connecting:
 `call Roots.TrustAll;` (`crypto.roots`, a few that many sites go back to) or `call
-X509.Trust: der length;` for its own. Keys can be RSA (up to 4096 bits) or P-256, with
-SHA-256; a chain through a P-384 CA (Let's Encrypt's E5 and E6, say) doesn't check out
-yet, and neither are dates checked (PHI has no clock that knows the date).
+X509.Trust: der length;` for its own. Keys can be RSA (up to 4096 bits), P-256 or P-384,
+with SHA-256 or SHA-384 (so Let's Encrypt's ECDSA chains check out too); dates aren't
+checked yet (PHI has no clock that knows the date).
 
 The layers, each usable on its own:
 
@@ -1507,14 +1507,14 @@ The layers, each usable on its own:
 | `drivers.nic` | `Nic` | whichever card the machine has: `Start` →, `Send: frame length` →, `Receive: buffer max` → (0 when nothing is waiting), `Dropped` →; `mac`, `kind` (`Nic.RTL8139` or `Nic.VIRTIO`) |
 | `drivers.rtl8139`, `drivers.virtio_net` | `Rtl8139`, `VirtioNet` | the two cards, with the same calls as `Nic`; `frames_dropped`, `interrupts` |
 | `drivers.virtio` | `Virtio` | what virtio devices share (legacy PCI): `Begin: io features` →, `SetUpQueue: io n queue` →, `Ready: io`, `Notify: io n`, `Used: queue` →; structs `Virtqueue`, `VirtqDesc` |
-| `net.net` | `Net` | `Start` → (by DHCP), `Start: address mask router` → (no DHCP), `Configure: ip netmask gateway dns`; `ip`, `netmask`, `gateway`, `dns`, `dhcp_ok`; `Ping: address timeout` → (ms, or -1); `SendUdp: to from_port to_port data length` →, `Listen: port`, `WaitUdp: timeout` → (the datagram is in `udp_data`); `ParseIp: text` →, `PrintIp: address` |
+| `net.net` | `Net` | `Start` → (by DHCP), `Start: address mask router` → (no DHCP), `Configure: ip netmask gateway dns`; `ip`, `netmask`, `gateway`, `dns`, `mtu` (1500, or less where DHCP says so, as some clouds do: what IP sends and TCP's segments keep to), `dhcp_ok`; `Ping: address timeout` → (ms, or -1); `SendUdp: to from_port to_port data length` →, `Listen: port`, `WaitUdp: timeout` → (the datagram is in `udp_data`); `ParseIp: text` →, `PrintIp: address` |
 | `net.udp` | `Udp` | sockets: `Open: port queue` → a socket or -1 (port 0 picks one), `Receive: s datagram` → (never waits), `Wait: s datagram timeout` →, `SendTo: s address port data length` →, `Close: s`; a `UdpDatagram` has `from`, `from_port`, `length` and `data`; each socket's `received` and `dropped` |
 | `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
 | `net.dns` | `Dns` | `Resolve: name` → an address, or 0 |
 | `net.tcp` | `Tcp` | clients: `Connect: address port` → a connection or -1, `Write: c data length` → (waits until it's all taken), `Read: c buffer max` → (waits for something: 0 once the other side has closed, -1 on a timeout), `Close: c`; `timeout` (ms, 10000). Never waiting: `Begin: address port` → a connection still connecting, `State: c` → (1 open, 0 connecting, -1 failed), `Take: c buffer max` → (0 if nothing yet, `Tcp.CLOSED_AND_READ` once closed). Servers, never waiting: `Listen: port backlog` → a listener or -1, `Accept: listener` → a connection or -1, `StopListening: listener`, `Waiting: c` → bytes to read (-1 once closed), `Send: c data length` → how much fitted, `Address: c` →; `open_count`, `retransmits` |
 | `net.calls` | `NetCalls` | the network for user programs: `use` it in the kernel (see below) |
 | `net.tls` | `Tls` | one TLS 1.3 client connection over the kernel's TCP, which waits as it goes: `Connect: address port host` → (false: `error` says why), `Write: data length` →, `Read: buffer max` → (0 once the server has closed), `Close`; `suite`, `alert`, `verified` |
-| `net.tls13` | `Tls13` | TLS 1.3 itself, either side, any kind of program, with no input or output of its own: a `TlsSession` each, `Client: session host` or `Server: session identity` (a `TlsIdentity`: `Identity: identity certificate length key length`, `AddIssuer`), then `Room` and `Received: session count` for what arrives, `Pending`, `Outgoing` and `Sent: session count` for what to send, `Read`, `Write`, `Close`, `Free`; `connected`, `failed`, `error`, `verified` |
+| `net.tls13` | `Tls13` | TLS 1.3 itself, either side, any kind of program, with no input or output of its own: a `TlsSession` each, `Client: session host` or `Server: session identity` (a `TlsIdentity`: `Identity: identity certificate length key length`, a P-256 or P-384 key, which signs the handshake; `AddIssuer`), then `Room` and `Received: session count` for what arrives, `Pending`, `Outgoing` and `Sent: session count` for what to send, `Read`, `Write`, `Close`, `Free`; `connected`, `failed`, `error`, `verified` |
 | `net.http` | `Http` | `Get: url buffer max` → the response's size or -1, for `http://` and `https://`; `status`, `body` (where the body starts), `error` |
 
 Addresses are `u32`s with the first number in the top byte (`10.0.2.15` is
@@ -1920,6 +1920,7 @@ call X25519.Base: addr public addr secret;   # the public half of a key pair
 |---|---|---|
 | `crypto.bytes` | `Bytes` | `PrintHex: data length`, `FromHex: text buffer max` → (bytes, or -1), `Equal: a b length` → (takes the same time whatever the bytes are), `Copy: to from length`, `Zero: buffer length` |
 | `crypto.sha256` | `Sha256` | `Hash: data length digest`; in pieces: `Init`, `Update`, `Final` on a `Sha256State`, and `Copy: from to` |
+| `crypto.sha512` | `Sha512` | SHA-512 and SHA-384 (32-bit and 64-bit code): `Hash: data length digest` (64 bytes), `Hash384` (48); in pieces: `Init` or `Init384`, `Update`, `Final` on a `Sha512State`, and `Copy: from to` |
 | `crypto.hmac` | `Hmac`, `Hkdf` | `Hmac.Mac: key key_length data length output` (or `Start`, `Update`, `Finish`); `Hkdf.Extract: salt salt_length ikm ikm_length prk`, `Hkdf.Expand: prk info info_length output length` |
 | `crypto.pbkdf2` | `Pbkdf2` | for storing passwords: `Derive: password password_length salt salt_length iterations output length`, PBKDF2-HMAC-SHA256. Keep the salt (random, from `Random.Fill`), the count and the result; to check a password, derive it again and compare with `Bytes.Equal`. 1,000 rounds are about 39 million instructions |
 | `crypto.chacha20` | `ChaCha20` | `Xor: key nonce counter data length` (encrypts or decrypts in place), `Block` |
@@ -1930,9 +1931,11 @@ call X25519.Base: addr public addr secret;   # the public half of a key pair
 | `crypto.x25519` | `X25519` | `Base: public secret`, `ScalarMult: output secret their_public` (the shared secret) |
 | `crypto.random` | `Random` | `Fill: buffer length`; `random_hardware` says whether the CPU's RDRAND was used |
 | `crypto.bignum` | `Big` | numbers of up to 4096 bits in 16-bit limbs: `Setup: modulus bytes count` (a `Modulus`), `FromBytes`, `ToBytes`, `Compare`, `Add`, `Subtract`, `MontMul`, `PowMod: r base exponent count modulus` → |
-| `crypto.rsa` | `Rsa` | checking a signature of a SHA-256 digest: `VerifyPkcs1: modulus length exponent length digest signature length` →, `VerifyPss` (MGF1-SHA256, a 32-byte salt) → |
+| `crypto.rsa` | `Rsa` | checking a signature of a SHA-256 digest: `VerifyPkcs1: modulus length exponent length digest signature length` → (a SHA-384 one with `48` after), `VerifyPss` (MGF1-SHA256, a 32-byte salt) → |
 | `crypto.der` | `Der` | reading DER: `Element: p left` →, `Next: cursor` →, `Enter: cursor` (a `DerCursor` over what was read), `IsOid`, `Number: output count` →; then `tag`, `content`, `length` |
-| `crypto.p256` | `P256` | ECDSA P-256: `Verify: public digest r s` → (public: 65 bytes, 04 then x and y), `Sign: r s private digest` → (RFC 6979: no random numbers), `PublicFrom: public private` →, `ReadPrivate: private public der length` → (a SEC 1 or PKCS #8 key file) |
+| `crypto.p256` | `P256` | ECDSA P-256: `Verify: public digest r s` → (public: 65 bytes, 04 then x and y; a SHA-256 digest), `VerifyDigest: public digest length r s` → (a digest of any size), `Sign: r s private digest` → (RFC 6979: no random numbers), `PublicFrom: public private` →, `ReadPrivate: private public der length` → (a SEC 1 or PKCS #8 key file) |
+| `crypto.p384` | `P384` | ECDSA P-384, the same calls as `P256` with 48-byte numbers, 97-byte public keys and SHA-384 digests |
+| `crypto.ec` | `Ec` | the math `P256` and `P384` share, for any curve y^2 = x^3 - 3x + b: an `EcCurve` from `Setup: curve bytes p n b g` (hex), then `Verify`, `Sign`, `PublicFrom`, `ReadPrivate` on it |
 | `crypto.x509` | `X509` | certificates: `Parse: certificate der length` →, `CheckSignature: certificate issuer` →, `MatchesHost: certificate host` →, `Trust: der length`, `Untrust`, `Chain: certificates count host` → (false: `error` says why) |
 | `crypto.roots` | `Roots` | `TrustAll`: a few RSA roots many sites go back to (ISRG Root X1, DigiCert Global Root G2 and Global Root CA, GlobalSign Root CA - R3, USERTrust RSA) |
 
@@ -2477,7 +2480,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
 | `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |
-| `crypto.bytes`, `crypto.sha256`, `crypto.hmac`, `crypto.pbkdf2`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
+| `crypto.bytes`, `crypto.sha256`, `crypto.sha512`, `crypto.hmac`, `crypto.pbkdf2`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
 | `test.bench` | class `Bench` (32-bit kernels and programs): `Start`, `Stop: name` → (writes `bench NAME COUNT` to COM1 and returns the count), `Count` → (the timestamp counter, a `u64`); for benchmarks, see [tests/README.md](../tests/README.md#benchmarks) |
 
 ## Built-in functions
@@ -2557,8 +2560,8 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
-- networking in user programs (only 32-bit kernels have the network), certificates with
-  P-384 keys or SHA-384 and their dates, and network cards other than the RTL8139 and
+- networking in user programs (only 32-bit kernels have the network), certificates' dates,
+  RSA-PSS with SHA-384, and network cards other than the RTL8139 and
   virtio-net
 - NVMe disks with 4096-byte sectors, and disks above 4 GB in memory (where a 32-bit kernel
   can't reach their registers)

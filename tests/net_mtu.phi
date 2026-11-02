@@ -1,0 +1,60 @@
+# A network with a smaller MTU than Ethernet's (net_mtu.machines: 1400, as some clouds
+# have, which DHCP says and the network keeps to, dropping bigger frames): this kernel and
+# two clients (net_mtu_client.phi) get their addresses and the MTU by DHCP, so TCP's
+# segments fit, and each client sends 32 KB, which comes back. A UDP datagram too big for
+# the MTU isn't sent.
+use net.tcp;
+
+phi.MtuServer:Kernel
+{
+	const int MOST: 8;                    # machine numbers go up to this
+
+	int handles[MOST];
+	u32 echoed[MOST];
+	int finished: 0;
+	u8 buffer[2048];
+
+	log 'dhcp: ' (Net.Start) ', address ' (Net.ip is Machine.address) ', mtu ' Net.mtu ', mss ' (Tcp.OurMss) '\n';
+	log 'udp of 1372 bytes: ' (Net.SendUdp: Machine.address + 1 5001 5001 addr buffer 1372)
+	    ', of 1373: ' (Net.SendUdp: Machine.address + 1 5001 5001 addr buffer 1373) '\n';
+	int listener: (Tcp.Listen: 5000);
+	call Run;
+
+	[Run]
+		while int m: 0; m < MOST; m++;
+			handles:m is -1;
+		;;
+		int start: (OS.GetTicks);
+		while finished < Machine.count - 1 and (OS.GetTicks) - start < 60000
+			int c: (Tcp.Accept: listener);
+			if c >= 0
+				handles:((Tcp.Address: c) & 0xFF) is c;
+			;;
+			while int m: 2; m <= Machine.count; m++;
+				call Serve: m;
+			;;
+			call Net.Wait;
+		;;
+		while int m: 2; m <= Machine.count; m++;
+			log 'machine ' m ': echoed ' echoed:m '\n';
+		;;
+		exit 0;
+	[end]
+
+	# one client: what it sends goes back, and once it has closed, so does this side
+	[Serve: int m: 0;]
+		int c: handles:m;
+		if c < 0 return;
+		int ready: (Tcp.Waiting: c);
+		if ready > 0
+			int got: (Tcp.Read: c addr buffer 2048);
+			int taken: (Tcp.Write: c addr buffer got);       # (the client reads as it sends)
+			echoed:m++ taken;
+		;;
+		elif ready < 0
+			call Tcp.Close: c;
+			handles:m is -1;
+			finished++;
+		;;
+	[end]
+}

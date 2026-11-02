@@ -1807,10 +1807,24 @@ them, step 4).
     64 bits`, new for tests too big for a 16-bit program); `net_http` now trusts the test
     server's own certificate (`TestWeb.root`) and checks it, and with nothing trusted
     fails to connect.
-  - Not yet: P-384 and SHA-384 (Let's Encrypt's ECDSA chains, DigiCert's G3, Microsoft's
-    and Azure's chains are signed with them), and dates: a kernel has the date
-    (`drivers.rtc`, the machine's clock, which QEMU sets from the host's), so a kernel's
-    TLS could check them; a program on Linux or Windows would need a call for the date.
+  - [x] P-384 and SHA-384 (Let's Encrypt's ECDSA chains, DigiCert's G3, Microsoft's and
+    Azure's chains are signed with them). `crypto.sha512` (SHA-512 and SHA-384; 64-bit
+    numbers, so not in 16-bit programs); the curve math moved out of `crypto.p256` into
+    `crypto.ec`, where the curve is a parameter (an `EcCurve`), so `crypto.p384` is the
+    same code with P-384's numbers, and a digest of any size works with either curve.
+    `crypto.x509` reads P-384 keys and ecdsa-with-SHA384 and sha384WithRSAEncryption
+    signatures; `net.tls13` checks a server's ecdsa_secp384r1_sha384 handshake signature,
+    and a server's `TlsIdentity` can have a P-384 key. Tests `crypto_sha512` (FIPS 180-2's
+    examples and .NET's digests), `crypto_p384` (OpenSSL's signatures and key files, and
+    a P-256 key .NET used with SHA-384), `crypto_x509_p384` (a chain made the way Let's
+    Encrypt's is), `tls_memory` (a P-384 server), and `tls_host_p384`: Windows' own TLS
+    client checks a PHI server's P-384 chain and handshake signature. What it costs
+    (`bench_tls`): signing 271 million instructions, checking 326 million, about 3.3 times
+    P-256's; faster crypto waits for the optimizations, as before.
+  - Not yet: dates. A kernel has the date (`drivers.rtc`, the machine's clock, which QEMU
+    sets from the host's), so a kernel's TLS could check them; a program on Linux or
+    Windows would need a call for the date. And RSA-PSS with SHA-384 (TLS servers with RSA
+    keys sign with SHA-256 when it's offered, as it is).
 - [x] (2) server-side TLS, so logins go over TLS. Its foundations first (the user's
   "build good foundations"):
   - [x] ECDSA P-256 signing (`P256.Sign`) with RFC 6979's nonce, so it needs no random
@@ -1871,7 +1885,14 @@ them, step 4).
     were checked on each too.
   - Not yet: NVMe disks with 4096-byte sectors, and a disk whose registers are above 4 GB
     (out of a 32-bit kernel's reach: a 64-bit kernel, step 4, will have them).
-- [ ] (4) booting on a cloud machine, (5) the deployment guide
+- [ ] (4) booting on a cloud machine. Getting ready, with what can be checked here:
+  - [x] a network's MTU: some clouds' networks carry less than Ethernet's 1500 bytes
+    (Google Cloud's 1460) and say so by DHCP (option 26). `Net.mtu` takes it, and what IP
+    sends and TCP's segments (the MSS it offers and takes) keep to it. The test network
+    can act like such a cloud: `mtu N` drops bigger frames and `dhcp` answers DHCP itself
+    (test `net_mtu`: three machines by DHCP on a 1400-byte network, 32 KB each way; with
+    the MTU ignored, TCP stalls on the dropped frames).
+- [ ] (5) the deployment guide
 
 ### Scenarios to write up next
 

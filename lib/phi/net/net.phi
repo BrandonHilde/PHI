@@ -31,7 +31,7 @@ phi.Net:Kernel
 	const u32 IP_HEADER: 20;
 	const u32 UDP_HEADER: 8;
 	const u32 FRAME_SIZE: 1536;
-	const u32 MTU: 1500;                  # the most an IP packet can hold, headers included
+	const u32 MTU: 1500;                  # the most an IP packet can hold, headers included (on Ethernet)
 
 	const u32 TYPE_IP: 0x0800;
 	const u32 TYPE_ARP: 0x0806;
@@ -55,6 +55,7 @@ phi.Net:Kernel
 	u32 netmask: 0xFFFFFF00;
 	u32 gateway: QEMU_GATEWAY;
 	u32 dns: QEMU_DNS;
+	u32 mtu: MTU;                         # this network's: less where DHCP says so (1460 on some clouds)
 	bln started: false;
 	bln dhcp_ok: false;                   # false: Start fell back to QEMU's addresses
 	u32 packets_received: 0;
@@ -272,7 +273,7 @@ phi.Net:Kernel
 		int entry: 0;
 		call entry is FindArp: hop;
 
-		if length + IP_HEADER > MTU
+		if length + IP_HEADER > mtu
 			sent is false;
 		;;
 		elif entry < 0 and to is not BROADCAST
@@ -427,7 +428,7 @@ phi.Net:Kernel
 		bln sent: false;
 		bln known: false;
 		call known is Resolve: to;
-		if known and length <= MTU - IP_HEADER - UDP_HEADER
+		if known and length <= mtu - IP_HEADER - UDP_HEADER
 			ptr<u8> u: addr udp_out;
 			call Put16: u from_port;
 			call Put16: u + 2 to_port;

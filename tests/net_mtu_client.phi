@@ -1,0 +1,62 @@
+# One of net_mtu's two clients (see net_mtu.phi): gets its address by DHCP, connects
+# (trying again until the server listens), sends 32 KB while reading it back, checks
+# every byte, and closes.
+use net.tcp;
+
+phi.MtuClient:Kernel
+{
+	const u32 TOTAL: 32768;
+
+	u8 chunk[1024];
+	u8 buffer[2048];
+	log 'dhcp: ' (Net.Start) ', address ' (Net.ip is Machine.address) ', mtu ' Net.mtu '\n';
+	int c: -1;
+	while int tries: 0; tries < 30 and c < 0; tries++;
+		c is (Tcp.Connect: Machine.first 5000);
+		if c < 0
+			call OS.Sleep: 200;
+		;;
+	;;
+	log 'connected: ' (c >= 0) '\n';
+	call Run;
+
+	[Run]
+		u32 me: Machine.number;
+		u32 sent: 0;
+		u32 received: 0;
+		bln in_order: true;
+		int start: (OS.GetTicks);
+		while (sent < TOTAL or received < TOTAL) and (OS.GetTicks) - start < 30000
+			if sent < TOTAL
+				u32 n: TOTAL - sent;
+				if n > 1024
+					n is 1024;
+				;;
+				while u32 i: 0; i < n; i++;
+					chunk:i is ((sent + i) * 7 + me) & 0xFF;
+				;;
+				int taken: (Tcp.Send: c addr chunk n);
+				if taken > 0
+					sent++ taken;
+				;;
+			;;
+			int ready: (Tcp.Waiting: c);
+			if ready > 0
+				int got: (Tcp.Read: c addr buffer 2048);
+				while int i: 0; i < got; i++;
+					if buffer:i is not ((received + i) * 7 + me) & 0xFF
+						in_order is false;
+					;;
+				;;
+				received++ got;
+			;;
+			elif ready < 0
+				break;
+			;;
+			call Net.Wait;
+		;;
+		log 'sent ' sent ', received ' received ', in order: ' in_order '\n';
+		call Tcp.Close: c 10000;
+		exit 0;
+	[end]
+}

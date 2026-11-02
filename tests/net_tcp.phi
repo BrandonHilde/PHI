@@ -43,7 +43,9 @@ phi.TcpServer:Kernel
 		while int m: 2; m <= Machine.count; m++;
 			log 'machine ' m ': received ' received:m ', in order: ' in_order:m ', sent ' sent:m '\n';
 		;;
-		log 'sent again: ' (Tcp.retransmits > 0) ', kept early segments: ' (Tcp.early_segments > 0) '\n';
+		# (which frames are lost differs from run to run: this side may never need to send one
+		# again, when only the clients' were lost)
+		log 'lost frames made up for: ' (Tcp.retransmits > 0 or Tcp.early_segments > 0) '\n';
 
 		# the closed connections linger until their FINs are answered
 		start is (OS.GetTicks);

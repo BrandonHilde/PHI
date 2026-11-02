@@ -115,11 +115,14 @@ one (copies of one file share them); a mismatch is saved as `NAME.actual` for th
 its own. See `net_udp.phi`, and `samples/mmo/` for one with input scripts and a restart.
 `phi run` boots the same machines, each in a window (see the README). A line `lose 1 in 40`
 in the `.machines` file makes the hub lose every 40th frame, so a test sees what happens
-when frames go missing (see `net_tcp.machines`). The machines are joined by a switch that
-learns where each Ethernet address is, so a frame goes only to its destination (or to
-everyone, for a broadcast). Every network test runs twice, once with each network card
-(`net_tcp (rtl8139)`, `net_tcp (virtio)`), unless its `.machines` file has a line
-`card virtio` (or `card rtl8139`) or `phi test` is given `--nic`.
+when frames go missing (see `net_tcp.machines`). Like some clouds' networks, a line `mtu
+1400` makes it drop every frame whose IP packet is bigger than that, and a line `dhcp` makes
+it answer DHCP itself, giving machine N 10.0.3.N (its `Machine.address`) and the MTU, so
+the machines can `Net.Start` by DHCP (see `net_mtu.machines`). The machines are joined
+by a switch that learns where each Ethernet address is, so a frame goes only to its
+destination (or to everyone, for a broadcast). Every network test runs twice, once with
+each network card (`net_tcp (rtl8139)`, `net_tcp (virtio)`), unless its `.machines` file
+has a line `card virtio` (or `card rtl8139`) or `phi test` is given `--nic`.
 
 In the same way, a kernel test that uses the disk itself (`use fs.fat16`, `drivers.disk` or
 `drivers.block`) runs once on each kind of disk: `kernel32_files (ide)`, `(virtio)` and

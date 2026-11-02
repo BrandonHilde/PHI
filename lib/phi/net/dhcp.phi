@@ -1,9 +1,9 @@
-# DHCP: asking the network for an address, a gateway and a DNS server. Net.Start
-# does this; call Dhcp.Configure again to renew. 32-bit kernels.
+# DHCP: asking the network for an address, a gateway, a DNS server and (where it isn't
+# 1500) its MTU. Net.Start does this; call Dhcp.Configure again to renew. 32-bit kernels.
 #
 #   use net.net;
 #   bln ok: false;
-#   call ok is Dhcp.Configure;      # sets Net.ip, Net.netmask, Net.gateway, Net.dns
+#   call ok is Dhcp.Configure;      # sets Net.ip, Net.netmask, Net.gateway, Net.dns, Net.mtu
 #
 # Discover (broadcast) -> an offer from a server -> Request that address -> its Ack.
 
@@ -24,6 +24,7 @@ phi.Dhcp:Kernel
 	const u32 OPTION_NETMASK: 1;
 	const u32 OPTION_ROUTER: 3;
 	const u32 OPTION_DNS: 6;
+	const u32 OPTION_MTU: 26;             # the network's MTU, where it isn't Ethernet's 1500
 	const u32 OPTION_REQUESTED_IP: 50;
 	const u32 OPTION_TYPE: 53;
 	const u32 OPTION_SERVER: 54;
@@ -43,6 +44,7 @@ phi.Dhcp:Kernel
 	u32 reply_netmask: 0;
 	u32 reply_router: 0;
 	u32 reply_dns: 0;
+	u32 reply_mtu: 0;
 	u32 reply_server: 0;
 
 	# true once the network has given us an address
@@ -82,6 +84,10 @@ phi.Dhcp:Kernel
 			if reply_dns is not 0
 				Net.dns is reply_dns;
 			;;
+			# a smaller MTU (never more than Ethernet's, or less than IP allows)
+			if reply_mtu >= 576 and reply_mtu < Net.MTU
+				Net.mtu is reply_mtu;
+			;;
 		;;
 		call Net.Listen: 0;
 	[end: done]
@@ -117,11 +123,12 @@ phi.Dhcp:Kernel
 			pos++ 6;
 		;;
 		m:pos is OPTION_PARAMETERS;
-		m:(pos + 1) is 3;
+		m:(pos + 1) is 4;
 		m:(pos + 2) is OPTION_NETMASK;
 		m:(pos + 3) is OPTION_ROUTER;
 		m:(pos + 4) is OPTION_DNS;
-		pos++ 5;
+		m:(pos + 5) is OPTION_MTU;
+		pos++ 6;
 		m:pos is OPTION_END;
 
 		bln sent: false;
@@ -159,6 +166,7 @@ phi.Dhcp:Kernel
 			reply_netmask is 0;
 			reply_router is 0;
 			reply_dns is 0;
+			reply_mtu is 0;
 			reply_server is 0;
 			u32 pos: OPTIONS;
 			bln more: true;
@@ -181,6 +189,9 @@ phi.Dhcp:Kernel
 					;;
 					elif code is OPTION_ROUTER and size >= 4
 						call reply_router is Net.Get32: value;
+					;;
+					elif code is OPTION_MTU and size >= 2
+						call reply_mtu is Net.Get16: value;
 					;;
 					elif code is OPTION_DNS and size >= 4
 						call reply_dns is Net.Get32: value;
