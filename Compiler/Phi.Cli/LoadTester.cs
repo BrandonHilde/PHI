@@ -26,12 +26,15 @@ namespace Phi.Cli
     {
         const int PerMachine = 100;
         static readonly Regex Totals = new(@"load: connections (\d+) logged (\d+) answered (\d+) wrong (\d+) quit (\d+) latency (\d+) most (\d+)");
+        static readonly Regex Handshakes = new(@" handshake (\d+) refused (\d+)");
         static readonly Regex Counts = new(@"^load: (.+)$", RegexOptions.Multiline);
         static readonly Regex Ticks = new(@"tick: (\d+) ticks in (\d+) ms, (\d+) late, longest (\d+) ms, (\d+) players");
 
         /// <param name="clientFile">a load-client kernel to use instead of lib/phi/test/load.phi</param>
         /// <param name="profile">sample where the server's CPU is, as phi profile does, and report it</param>
-        public static int Run(string phiFile, int connections, int seconds, int port, bool profile = false, string? clientFile = null)
+        /// <param name="root">with host: each connection is TLS, trusting this root (a DER file) for a certificate for host</param>
+        public static int Run(string phiFile, int connections, int seconds, int port, bool profile = false, string? clientFile = null,
+                              string? root = null, string? host = null)
         {
             string file = Path.GetFullPath(phiFile);
             string outDir = Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file) + ".load");
@@ -55,7 +58,11 @@ namespace Phi.Cli
             {
                 int number = c + 2;
                 int share = Math.Min(PerMachine, connections - c * PerMachine);
-                string settings = $"\nphi.LoadSettings:Library\n{{\n\tu32 connections: {share};\n\tu32 seconds: {seconds};\n\tu32 port: {port};\n}}\n";
+                // with --root and --host, TLS: the root's DER to trust, and the name the certificate is for
+                string tls = root != null
+                    ? $"\tbln tls: true;\n\tstr host: '{host}';\n\tu8 root: {string.Join(" ", File.ReadAllBytes(root).Select(b => $"0x{b:X2}"))};\n"
+                    : "\tbln tls: false;\n\tstr host: '';\n\tu8 root: 0;\n";
+                string settings = $"\nphi.LoadSettings:Library\n{{\n\tu32 connections: {share};\n\tu32 seconds: {seconds};\n\tu32 port: {port};\n{tls}}}\n";
                 BuildResult built = Builder.Build(client, Path.Combine(outDir, $"client.{number}"),
                     NetworkMachines.MachineClass(number, machines, 0x0A000300u + (uint)number, 0x0A000301) + settings);
                 warnings.AddRange(built.Warnings.Where(w => !warnings.Contains(w)));
@@ -142,16 +149,24 @@ namespace Phi.Cli
         /// <summary>The default client's totals: every connection logged in, answered in order and quit.</summary>
         static bool Lobby(List<string> outputs, int connections, int seconds)
         {
-            long logged = 0, answered = 0, wrong = 0, quit = 0, latency = 0, most = 0;
+            long logged = 0, answered = 0, wrong = 0, quit = 0, latency = 0, most = 0, handshake = -1, refused = 0;
             foreach (string output in outputs)
             {
                 Match m = Totals.Match(output);
                 long N(int g) => long.Parse(m.Groups[g].Value);
                 logged += N(2); answered += N(3); wrong += N(4); quit += N(5); latency += N(6);
                 most = Math.Max(most, N(7));
+                Match h = Handshakes.Match(output);
+                if (h.Success)
+                {
+                    handshake = Math.Max(handshake, long.Parse(h.Groups[1].Value));
+                    refused += long.Parse(h.Groups[2].Value);
+                }
             }
 
             long expected = (long)connections * seconds;
+            if (handshake >= 0)
+                Console.WriteLine($"  TLS:        every handshake done in {handshake:N0} ms (the slowest machine's), {refused} refused");
             Console.WriteLine($"  logged in:  {logged} of {connections}");
             Console.WriteLine($"  answered:   {answered:N0} lines (about {expected:N0} expected), " +
                               (wrong == 0 ? "all in order" : $"{wrong} wrong or out of order"));
@@ -160,7 +175,7 @@ namespace Phi.Cli
             Console.WriteLine($"  quit:       {quit} of {connections}");
 
             // a line takes a second each, so a run can be a line or so short per connection
-            return logged == connections && quit == connections && wrong == 0 && answered >= expected - 2L * connections;
+            return logged == connections && quit == connections && wrong == 0 && refused == 0 && answered >= expected - 2L * connections;
         }
 
         /// <summary>Another client's "load: NAME COUNT ..." line, added up across the machines; passes when problems is 0.</summary>

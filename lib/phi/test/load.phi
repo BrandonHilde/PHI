@@ -11,8 +11,14 @@
 #   load: connections 100 logged 100 answered 6000 wrong 0 quit 100 latency 1200 most 40
 #
 # (latency is the total, in ms, of the time each answer took; most is the longest.)
+#
+# With LoadSettings.tls, every connection is TLS 1.3 (net.tlslink), checking the server's
+# certificate is for LoadSettings.host and goes back to LoadSettings.root (DER): each
+# finishes its handshake before it logs in, and the time that takes is in the totals
+# (handshake MS, and how many failed).
 
 use net.tcp;
+use net.tlslink;
 use user.text;
 
 phi.LoadClient:Kernel
@@ -41,10 +47,19 @@ phi.LoadClient:Kernel
 	u32 latency: 0;
 	int most: 0;
 
+	ptr<TlsLink> links: 0;                # with LoadSettings.tls: each connection's TLS
+	u32 secure: 0;                        # handshakes done
+	u32 refused: 0;                       # handshakes that failed
+	int handshake: 0;                     # ms they all took
+
 	if count > MOST
 		count is MOST;
 	;;
 	bln ok: (Net.Start: Machine.address);
+	if LoadSettings.tls
+		call X509.Trust: addr LoadSettings.root LoadSettings.root.len;
+		links is new TlsLink[count];
+	;;
 	call Run;
 
 	[Run]
@@ -58,6 +73,22 @@ phi.LoadClient:Kernel
 					call OS.Sleep: 100;
 				;;
 			;;
+			if LoadSettings.tls and handles:c >= 0
+				if not (Secure.Connect: addr links:c handles:c addr LoadSettings.host)
+					handles:c is -1;
+				;;
+			;;
+		;;
+
+		# every handshake done (or failed) before anyone logs in
+		if LoadSettings.tls
+			start is (OS.GetTicks);
+			while secure + refused < count and (OS.GetTicks) - start < 120000
+				call Answers;
+				call Net.Wait;
+			;;
+			handshake is (OS.GetTicks) - start;
+			log 'handshakes: ' secure ' done, ' refused ' refused, in ' handshake ' ms\n';
 		;;
 
 		# log every one in
@@ -110,7 +141,16 @@ phi.LoadClient:Kernel
 			call Answers;
 			call Net.Wait;
 		;;
-		log 'load: connections ' count ' logged ' logged ' answered ' answered ' wrong ' wrong ' quit ' quit ' latency ' latency ' most ' most '\n';
+		log 'load: connections ' count ' logged ' logged ' answered ' answered ' wrong ' wrong ' quit ' quit ' latency ' latency ' most ' most;
+		if LoadSettings.tls
+			log ' handshake ' handshake ' refused ' refused;
+			while int c: 0; c < count; c++;
+				if handles:c >= 0
+					call Secure.Close: addr links:c;
+				;;
+			;;
+		;;
+		log '\n';
 		exit 0;
 	[end]
 
@@ -124,6 +164,11 @@ phi.LoadClient:Kernel
 	# text, and a line break, to connection c
 	[Say: int c: 0;]
 		if handles:c < 0 return;
+		if LoadSettings.tls
+			int taken: (Secure.Write: addr links:c text text.len);
+			taken is (Secure.Write: addr links:c '\n' 1);
+			return;
+		;;
 		call Tcp.Send: handles:c text text.len;
 		call Tcp.Send: handles:c '\n' 1;
 	[end]
@@ -131,20 +176,53 @@ phi.LoadClient:Kernel
 	# what has come in on every connection, a line at a time
 	[Answers]
 		while int c: 0; c < count; c++;
-			if handles:c >= 0 and (Tcp.Waiting: handles:c) > 0
-				int n: (Tcp.Read: handles:c addr got 512);
-				ptr<u8> line: addr lines + c * LINE;
-				while int i: 0; i < n; i++;
-					if got:i is '\n'
-						line:(lengths:c) is 0;
-						lengths:c is 0;
-						call Answer: c line;
-					;;
-					elif lengths:c < LINE - 1
-						line:(lengths:c) is got:i;
-						lengths:c++;
-					;;
+			if handles:c >= 0
+				if LoadSettings.tls
+					call Pump: c;
 				;;
+				elif (Tcp.Waiting: handles:c) > 0
+					call Lines: c (Tcp.Read: handles:c addr got 512);
+				;;
+			;;
+		;;
+	[end]
+
+	# connection c's TLS: on with it, and its lines
+	[Pump: int c: 0;]
+		ptr<TlsLink> link: addr links:c;
+		bln was: link.session.connected;
+		bln going: (Secure.Pump: link);
+		if link.session.connected and not was
+			secure++;
+		;;
+		if not going
+			if not link.session.connected
+				refused++;
+				log 'handshake ' c ' failed: ' link.session.error '\n';
+			;;
+			call Secure.Close: link;
+			handles:c is -1;
+			return;
+		;;
+		int n: (Secure.Read: link addr got 512);
+		while n > 0
+			call Lines: c n;
+			n is (Secure.Read: link addr got 512);
+		;;
+	[end]
+
+	# n bytes that came in on connection c (in got), a line at a time
+	[Lines: int c: 0; int n: 0;]
+		ptr<u8> line: addr lines + c * LINE;
+		while int i: 0; i < n; i++;
+			if got:i is '\n'
+				line:(lengths:c) is 0;
+				lengths:c is 0;
+				call Answer: c line;
+			;;
+			elif lengths:c < LINE - 1
+				line:(lengths:c) is got:i;
+				lengths:c++;
 			;;
 		;;
 	[end]

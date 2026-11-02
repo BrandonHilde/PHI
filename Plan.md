@@ -1808,9 +1808,10 @@ them, step 4).
     server's own certificate (`TestWeb.root`) and checks it, and with nothing trusted
     fails to connect.
   - Not yet: P-384 and SHA-384 (Let's Encrypt's ECDSA chains, DigiCert's G3, Microsoft's
-    and Azure's chains are signed with them), and dates (PHI has no clock that knows the
-    date yet).
-- [ ] (2) server-side TLS, so logins go over TLS. Its foundations first (the user's
+    and Azure's chains are signed with them), and dates: a kernel has the date
+    (`drivers.rtc`, the machine's clock, which QEMU sets from the host's), so a kernel's
+    TLS could check them; a program on Linux or Windows would need a call for the date.
+- [x] (2) server-side TLS, so logins go over TLS. Its foundations first (the user's
   "build good foundations"):
   - [x] ECDSA P-256 signing (`P256.Sign`) with RFC 6979's nonce, so it needs no random
     numbers, and key files (`P256.ReadPrivate`: SEC 1 and PKCS #8). It matches RFC 6979's
@@ -1836,8 +1837,16 @@ them, step 4).
     crypto_x509's leaf and three PHI clients (`net.tls`, checking the certificate) on a
     network that loses one frame in 40, each sending 20000 bytes it echoes, on both
     network cards.
-  - [ ] the lobby (`samples/mmo/`) taking logins over TLS, and its clients checking the
-    certificate
+  - [x] the lobby (`samples/mmo/`) takes logins over TLS only, showing the sample's own
+    certificate (`samples/mmo/certs/`: a root and a P-256 certificate for
+    `lobby.mmo.phi.test` it signs, whose keys are public, for the sample), and `phi load`'s
+    clients check it (`--root FILE --host NAME`). 100 logins over TLS: every handshake done
+    in 14.8 s (both sides in QEMU), every answer in order, and the world's tick never late.
+    What a handshake costs (test `bench_tls`): signing (the server) 79 million
+    instructions, checking a P-256 signature 99 million and an RSA-2048 one 40 million (the
+    client checks one of each), X25519 34 million on each side: about 115 million on the
+    lobby's side and 175 million on a client's. Faster crypto waits for the optimizations
+    before a release.
   - [x] a check against another TLS 1.3 client: an input script's `tls PORT HOST ROOT TEXT`
     has QEMU forward the port, and the host's own client (.NET's SslStream: Windows'
     SChannel) connect to a PHI server, check its chain and host, and get a line echoed

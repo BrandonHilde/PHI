@@ -1,0 +1,6 @@
+# Counts from phi test --bench (instructions run, under QEMU's -icount).
+# phi test --bench --save-bench replaces them with the latest counts.
+p256 sign        79469473
+p256 verify      98904301
+rsa-2048 verify  39679768
+x509 chain of 2  138941606

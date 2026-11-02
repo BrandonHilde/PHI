@@ -209,14 +209,17 @@ to 100 connections each) on one network, and checks what the server does under t
 connections:
 
 ```
-phi load samples/mmo/server.phi --connections 500 --seconds 60
-phi load samples/mmo/server.phi --connections 100 --profile    # and where the server's time went
+phi load samples/mmo/server.phi --connections 500 --seconds 60 --root samples/mmo/certs/root.der --host lobby.mmo.phi.test
+phi load samples/mmo/server.phi --connections 100 --profile --root samples/mmo/certs/root.der --host lobby.mmo.phi.test
 ```
 
 Each connection logs in (`login NAME PASSWORD`, answered `welcome NAME`), says a numbered
 line once a second (`say ...`, answered `said ...`) and finally `quit` (answered `bye`),
-the protocol of the mmo sample's lobby (`samples/mmo/server.rootfs/lobby.phi`, a user program). It passes when every
-connection logged in and quit, and every answer came back, in order. Each machine's output
+the protocol of the mmo sample's lobby (`samples/mmo/server.rootfs/lobby.phi`, a user program). With
+`--root FILE --host NAME` every connection is TLS 1.3, checking the server's certificate is
+for NAME and goes back to the root in FILE (DER); the lobby only takes TLS, with the
+sample's certificate (`samples/mmo/certs/`). It passes when every connection's handshake
+worked, it logged in and quit, and every answer came back, in order. Each machine's output
 is saved in `build/NAME.load/`. The clients are PHI kernels rather than connections from
 this computer because QEMU's user network on Windows keeps at most 64 connections from
 outside (it waits on its sockets with `select`).

@@ -40,7 +40,7 @@ const string Usage = """
                                            lines and methods that took the most time; with a window
                                            until you close it, or headless with --input (until the
                                            script ends) or --seconds
-      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--client <file.phi>] [--nic <card>] [--profile]
+      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--client <file.phi>] [--root <file.der> --host <name>] [--nic <card>] [--profile]
                                            boot a server with load-client kernels on one network, which
                                            open n TCP connections to it (default 100, to port 4001), log
                                            each in, and have each say a line a second for the run (default
@@ -48,6 +48,8 @@ const string Usage = """
                                            sample's lobby); --client uses another load-client kernel (such
                                            as samples/mmo/load_players.phi, n players in the mmo world);
                                            a server that reports its tick fails if a tick was late;
+                                           --root and --host make each connection TLS, checking the server's
+                                           certificate is for that host and goes back to that root (DER);
                                            --profile samples where the server's time goes
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
@@ -301,6 +303,8 @@ static int Execute(string[] args)
                 string? seconds = Option("--seconds");
                 string? port = Option("--port");
                 string? client = Option("--client");
+                string? root = Option("--root");
+                string? host = Option("--host");
                 bool profile = Flag("--profile");
                 MemoryOption();
                 CoresOption();
@@ -314,7 +318,9 @@ static int Execute(string[] args)
                     throw new ArgumentException("--seconds takes a number of seconds");
                 if (port != null && (!int.TryParse(port, out p) || p < 1 || p > 65535))
                     throw new ArgumentException("--port takes the server's TCP port");
-                return LoadTester.Run(rest[0], n, s, p, profile, client);
+                if (root != null && !File.Exists(root)) throw new ArgumentException($"file not found: {root}");
+                if ((root == null) != (host == null)) throw new ArgumentException("--root and --host go together: the root to trust, and the name the server's certificate is for");
+                return LoadTester.Run(rest[0], n, s, p, profile, client, root, host);
             }
 
             case "serve":

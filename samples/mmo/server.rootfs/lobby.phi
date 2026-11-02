@@ -1,4 +1,4 @@
-# The mmo sample's lobby, a user program: players log in over TCP with a name and a
+# The mmo sample's lobby, a user program: players log in over TLS with a name and a
 # password, and can talk. The server (server.phi, a kernel) keeps it running with
 # proc.supervisor, beside the world (world.phi): if the lobby crashes it's started
 # again, with its accounts, and the world carries on. It takes a line at a time:
@@ -8,13 +8,20 @@
 #   say TEXT              ->  said TEXT           (once logged in)
 #   quit                  ->  bye, and the connection closes
 #
+# Each connection is TLS 1.3 (net.tlslink): the lobby shows LOBBY.CRT, a certificate for
+# lobby.mmo.phi.test, and signs with LOBBY.KEY (both DER, on its disk; the sample's own,
+# from certs/, whose README says how to make them). A client trusts certs/root.der and
+# checks the certificate, so the passwords go encrypted, to the lobby and nobody else.
+#
 # Each password is kept as a PBKDF2 hash with a random salt of its own (crypto.pbkdf2),
 # in a save log, so accounts last across restarts. ROUNDS is low (100) for now: in
 # PHI's code today a thousand rounds are about 39 million instructions, which adds up
-# when hundreds of players log in at once. `phi load samples/mmo/server.phi` logs in
+# when hundreds of players log in at once (and a TLS handshake is about 115 million on
+# the lobby's side, tests/bench_tls.bench). `phi load samples/mmo/server.phi` logs in
 # hundreds of connections and keeps them talking.
 
 use net.sockets;
+use net.tlslink;
 use data.map;
 use memory.pool;
 use user.savelog;
@@ -36,6 +43,7 @@ struct.Session
 	ptr<Account> account;
 	u32 length;                 # bytes in line so far
 	u8 line[128];
+	TlsLink link;               # its TLS
 }
 
 phi.Lobby:Program
@@ -49,33 +57,60 @@ phi.Lobby:Program
 	ptr<PoolData> session_pool: 0;
 	ptr<PoolData> account_pool: 0;
 	ptr<MapData> accounts: 0;             # a name's hash -> its Account
+	TlsIdentity identity;                 # what the lobby shows
+	u8 certificate[2048];
+	u8 key[256];
 	u8 got[512];
 	u8 reply[160];
 	u8 hash[32];
 	u32 logins: 0;
 
-	call Open;
-	while true
-		call Serve;
-		call OS.Sleep: 1;
+	if (Open)
+		while true
+			call Serve;
+			call OS.Sleep: 1;
+		;;
 	;;
 
-	# the accounts from the log, and the port open
+	# the identity and the accounts from their files, and the port open; false if the
+	# lobby can't show who it is
 	[Open]
+		int certificate_length: (OS.ReadFile: 'LOBBY.CRT' addr certificate 2048);
+		int key_length: (OS.ReadFile: 'LOBBY.KEY' addr key 256);
+		if certificate_length <= 0 or key_length <= 0
+			log 'lobby: no LOBBY.CRT and LOBBY.KEY to show\n';
+			return false;
+		;;
+		if not (Tls13.Identity: addr identity addr certificate certificate_length addr key key_length)
+			log 'lobby: LOBBY.CRT and LOBBY.KEY: ' X509.error '\n';
+			return false;
+		;;
+		call Bytes.Zero: addr key 256;
 		session_pool is (Pool.New: sizeof Session 64);
 		account_pool is (Pool.New: sizeof Account 64);
 		accounts is (Map.New);
 		call SaveLog.Read: 'ACCOUNTS.LOG' sizeof Account addr Restore;
 		listener is (Tcp.Listen: PORT 128);
-		log 'lobby open on port ' PORT ': ' accounts:0.count ' accounts\n';
-	[end]
+		log 'lobby open on port ' PORT ' (TLS): ' accounts:0.count ' accounts\n';
+	[end: true]
 
 	# new connections, and what has arrived on each (never waits)
 	[Serve]
 		while true
 			int c: (Tcp.Accept: listener);
 			if c < 0 break;
-			sessions:c is (Pool.Alloc: session_pool);
+			ptr<Session> s: (Pool.Alloc: session_pool);
+			if s is 0 or not (Secure.Accept: addr s.link c addr identity)
+				call Tcp.Close: c;
+				if s is not 0
+					call Pool.Free: session_pool s;
+				;;
+			;;
+			else
+				s.logged_in is false;
+				s.length is 0;
+				sessions:c is s;
+			;;
 		;;
 		while int c: 0; c < MOST; c++;
 			if sessions:c is not 0
@@ -84,28 +119,29 @@ phi.Lobby:Program
 		;;
 	[end]
 
-	# what has arrived on a connection, a line at a time
+	# on with the connection's TLS, and what has arrived on it, a line at a time
 	[Read: int c: 0;]
-		int ready: (Tcp.Waiting: c);
-		if ready < 0                          # closed, or broken
+		ptr<Session> s: sessions:c;
+		if not (Secure.Pump: addr s.link)         # closed, broken, or its TLS failed
 			call Forget: c;
 			return;
 		;;
-		if ready is 0 return;
-		ptr<Session> s: sessions:c;
 		ptr<u8> line: s.line;
-		int n: (Tcp.Read: c addr got 512);
-		while int i: 0; i < n; i++;
-			if got:i is '\n'
-				line:(s.length) is 0;
-				s.length is 0;
-				call Line: c;
-				if sessions:c is 0 return;        # that line closed it
+		int n: (Secure.Read: addr s.link addr got 512);
+		while n > 0
+			while int i: 0; i < n; i++;
+				if got:i is '\n'
+					line:(s.length) is 0;
+					s.length is 0;
+					call Line: c;
+					if sessions:c is 0 return;    # that line closed it
+				;;
+				elif got:i is not '\r' and s.length < 127
+					line:(s.length) is got:i;
+					s.length++;
+				;;
 			;;
-			elif got:i is not '\r' and s.length < 127
-				line:(s.length) is got:i;
-				s.length++;
-			;;
+			n is (Secure.Read: addr s.link addr got 512);
 		;;
 	[end]
 
@@ -119,6 +155,7 @@ phi.Lobby:Program
 			call Text.CopyWord: rest addr name 15;
 			call Text.CopyWord: (Text.AfterWord: rest) addr password 63;
 			call Login: c addr name addr password;
+			call Bytes.Zero: addr password 64;
 		;;
 		elif s.logged_in and (Text.StartsWith: line 'say ')
 			call Text.Copy: addr reply 'said ' 160;
@@ -127,7 +164,6 @@ phi.Lobby:Program
 		;;
 		elif (Text.Equal: line 'quit')
 			call Say: c 'bye';
-			call Tcp.Close: c;
 			call Forget: c;
 		;;
 		else
@@ -166,14 +202,18 @@ phi.Lobby:Program
 		call Say: c addr reply;
 	[end]
 
-	# a line back to the connection
+	# a line back to the connection (it goes as Pump gets the chance)
 	[Say: int c: 0; ptr<u8> text: 0;]
-		call Tcp.Send: c text (Text.Length: text);
-		call Tcp.Send: c '\n' 1;
+		ptr<Session> s: sessions:c;
+		int taken: (Secure.Write: addr s.link text (Text.Length: text));
+		taken is (Secure.Write: addr s.link '\n' 1);
 	[end]
 
+	# a connection gone: its TLS closed (close_notify, if it's still there) and its session freed
 	[Forget: int c: 0;]
-		call Pool.Free: session_pool sessions:c;
+		ptr<Session> s: sessions:c;
+		call Secure.Close: addr s.link;
+		call Pool.Free: session_pool s;
 		sessions:c is 0;
 	[end]
 
