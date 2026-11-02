@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_core_of_apic phi_kernel_halt
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt
 ; requires: phi_panic phi_catch_top
 ; init: phi_interrupts_init
 ;
@@ -162,10 +162,17 @@ phi_interrupt_common:
 .end_of_interrupt:
     mov ebx, eax
     call phi_end_of_interrupt
-    ; the timer takes the CPU away from user programs (the kernel gives it up itself)
+    ; the timer takes the CPU away from user programs (the kernel gives it up itself), and
+    ; from a kernel thread (proc.threads) that isn't in the middle of kernel code
     test ebx, ebx
     jnz .return
     test byte [esp + FRAME_CS], 3
+    jnz .schedule
+    mov eax, [phi_preempt_hook]
+    test eax, eax
+    jz .return
+    call eax                ; eax = 1 if what was interrupted can be put aside
+    test eax, eax
     jz .return
 .schedule:
     mov ebx, [phi_scheduler]
@@ -389,6 +396,7 @@ phi_leave_hook:     dd 0
 phi_halt_hook:      dd 0
 phi_core_join_hook: dd 0
 phi_share_hook:     dd 0                ; phi_share_cores, once multitasking has started
+phi_preempt_hook:   dd 0                ; once kernel threads have started: whether the timer may take the CPU back
 ; each core's number by its local APIC ID (proc.cores fills it in: the first core is 0)
 phi_core_of_apic:   times 256 db 0
 phi_scheduler:    dd 0

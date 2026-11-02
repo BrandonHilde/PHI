@@ -1,0 +1,102 @@
+# Kernel threads (proc.threads): four threads, each adding up its share of an array into
+# its own element (no lock needed: no other thread writes there), adding to a total
+# everyone shares with atomic, and using the heap (which has a lock of its own). First on
+# one core, taking turns with the kernel; then with the cores shared, where they run at
+# once on several, and four take much less than four times as long as one.
+use proc.threads;
+use proc.cores;
+
+phi.ThreadsTest:Kernel
+{
+	const int SIZE: 4000;
+	const int WORK: 3000000;
+
+	u32 data[4000];
+	u32 sums[4];
+	u32 total: 0;
+	u32 blocks: 0;
+	u8 cores_seen: 0;
+	int threads[4];
+
+	while int i: 0; i < SIZE; i++;
+		data:i is i;
+	;;
+	u32 used_before: Heap.used_blocks;
+
+	call Four: addr Part;
+	log 'one core: sums ' sums:0 ' ' sums:1 ' ' sums:2 ' ' sums:3 ', total ' total ', blocks ' blocks
+	    ', heap back: ' (Heap.used_blocks is used_before) '\n';
+
+	log 'sharing: ' (Cores.SharePrograms) '\n';
+	used_before is Heap.used_blocks;              # (starting the other cores gave them stacks from the heap)
+	total is 0;
+	blocks is 0;
+	call Four: addr Part;
+	log 'shared: total ' total ', blocks ' blocks ', heap back: ' (Heap.used_blocks is used_before) '\n';
+
+	int start: (OS.GetTicks);
+	call Threads.Wait: (Threads.Start: addr Busy 0);
+	int one: (OS.GetTicks) - start;
+	start is (OS.GetTicks);
+	call Four: addr Busy;
+	int four: (OS.GetTicks) - start;
+	int cores: 0;
+	while int c: 0; c < 8; c++;
+		if (cores_seen & (1 << c)) is not 0
+			cores++;
+		;;
+	;;
+	log 'on several cores: ' (cores >= 2) ', faster: ' (four < one * 3) '\n';
+	exit 0;
+
+	# four threads of work, and back when all have finished
+	[Four: method<int> work: 0;]
+		while int i: 0; i < 4; i++;
+			threads:i is (Threads.Start: work i);
+		;;
+		while int i: 0; i < 4; i++;
+			call Threads.Wait: threads:i;
+		;;
+	[end]
+
+	# a quarter of the array, into this thread's own element, then the total
+	[Part: int part: 0;]
+		u32 sum: 0;
+		int i: part;
+		while i < SIZE
+			sum++ data:i;
+			i++ 4;
+		;;
+		sums:part is sum;
+		atomic total++ sum;
+		while int k: 0; k < 200; k++;
+			ptr<u8> block: new u8[64];
+			block:0 is part;
+			free block;
+			atomic blocks++;
+		;;
+	[end]
+
+	# busy for a while, noting which core it's on
+	[Busy: int part: 0;]
+		u32 x: part;
+		while int i: 0; i < WORK; i++;
+			x is x * 31 + i;
+			if (i & 65535) is 0
+				u32 core: 0;
+				call core is ThreadsCore;
+				atomic cores_seen is cores_seen | (1 << core) when cores_seen;
+			;;
+		;;
+		sums:part is x;
+	[end]
+}
+
+# eax = this core's number (proc.cores numbers them by their APIC IDs)
+asm.ThreadsCore
+{
+	mov eax, [0xFEE00020]
+	shr eax, 24
+	movzx eax, byte [phi_core_of_apic + eax]
+	ret
+}

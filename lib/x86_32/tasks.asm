@@ -1,5 +1,5 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_task_core
-; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_core_of_apic phi_kernel_halt
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_task_core phi_thread_start
+; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
 ; directory and kernel stack, and the kernel itself as task 0.
@@ -168,6 +168,7 @@ OS_CreateUserTask:
     mov [phi_task_stack_bottom + ecx * 4], eax
     mov dword [phi_task_heap_end + ecx * 4], 0   ; no heap until it grows one
     mov byte [phi_task_fpu_fresh + ecx], 1       ; its FPU starts clean
+    mov byte [phi_task_thread + ecx], 0          ; a program, not a thread
     mov eax, [phi_current_task]
     mov [phi_task_parent + ecx * 4], eax
     mov dword [phi_task_exit + ecx * 4], 0
@@ -681,6 +682,119 @@ phi_isr_tick:
     push dword TICK_VECTOR
     jmp phi_interrupt_common
 
+; ---- kernel threads (proc.threads): a method run as a task of its own, in ring 0 on any
+; core, without the kernel lock, so threads run at the same time on several cores (once
+; programs share them). The timer takes the CPU back from a thread as from a program.
+
+; eax = the method (a method<int>), ecx = the value it's given, edx = the top of its own
+; stack -> eax = the thread's task number, or -1 if every task is taken
+phi_thread_start:
+    push ebx
+    push esi
+    push edi
+    pushfd
+    cli
+    mov esi, eax
+    cmp dword [phi_enter_hook], 0
+    je .alone
+    push ecx
+    push edx
+    call phi_kernel_enter                     ; (the task table is the scheduler's)
+    pop edx
+    pop ecx
+.alone:
+    mov dword [phi_preempt_hook], phi_thread_preemptible
+    mov ebx, 1
+.find:
+    cmp dword [phi_task_state + ebx * 4], TASK_FREE
+    je .found
+    inc ebx
+    cmp ebx, MAX_TASKS
+    jb .find
+    mov eax, -1
+    jmp .out
+.found:
+    ; on its stack: the method and its value for phi_thread_main, and below them the state
+    ; the scheduler resumes (an iretd within ring 0: no user esp and ss)
+    sub edx, 8
+    mov [edx], esi
+    mov [edx + 4], ecx
+    mov edi, edx
+    sub edi, F_SIZE - 8
+    push edi
+    mov ecx, (F_SIZE - 8) / 4
+    xor eax, eax
+    rep stosd
+    pop edi
+    mov dword [edi + 0], KERNEL_DATA          ; gs
+    mov dword [edi + 4], KERNEL_DATA          ; fs
+    mov dword [edi + 8], KERNEL_DATA          ; es
+    mov dword [edi + 12], KERNEL_DATA         ; ds
+    mov dword [edi + F_EIP], phi_thread_main
+    mov dword [edi + F_EIP + 4], KERNEL_CODE
+    mov dword [edi + F_EIP + 8], 0x202        ; interrupts on
+    mov [phi_task_esp + ebx * 4], edi
+    mov eax, [phi_task_cr3]
+    mov [phi_task_cr3 + ebx * 4], eax         ; the kernel's address space
+    mov [phi_task_kstack + ebx * 4], edx
+    xor eax, eax
+    mov [phi_task_image_end + ebx * 4], eax
+    mov [phi_task_stack_bottom + ebx * 4], eax
+    mov [phi_task_heap_end + ebx * 4], eax
+    mov [phi_task_exit + ebx * 4], eax
+    mov byte [phi_task_fpu_fresh + ebx], 1
+    mov byte [phi_task_thread + ebx], 1
+    mov eax, [phi_current_task]
+    mov [phi_task_parent + ebx * 4], eax
+    mov dword [phi_task_state + ebx * 4], TASK_READY
+    mov eax, ebx
+.out:
+    cmp dword [phi_enter_hook], 0
+    je .done
+    push eax
+    call phi_kernel_leave
+    pop eax
+.done:
+    popfd
+    pop edi
+    pop esi
+    pop ebx
+    ret
+
+; where a thread starts: [esp] = its method, [esp + 4] = its value (which the method finds
+; as its argument); when the method returns, the thread has finished
+phi_thread_main:
+    pop eax
+    call eax
+    cli
+    call phi_this_core
+    mov ecx, [phi_core_task + eax * 4]        ; this thread (phi_current_task is the lock holder's)
+    mov dword [phi_task_state + ecx * 4], TASK_EXITED
+    int YIELD_VECTOR                          ; it isn't ready: the scheduler won't come back
+.finished:
+    hlt
+    jmp .finished
+
+; eax = 1 if the task the timer interrupted is a kernel thread in its own code (not in
+; the middle of kernel code: only this interrupt deep), so the timer may put it aside
+phi_thread_preemptible:
+    call phi_this_core
+    mov ecx, [phi_core_task + eax * 4]
+    cmp ecx, MAX_TASKS
+    jae .no
+    cmp byte [phi_task_thread + ecx], 0
+    je .no
+    cmp dword [phi_enter_hook], 0
+    je .yes                                   ; (one core and no lock: a thread is never in kernel code)
+    cmp dword [phi_core_depth + eax * 4], 1
+    jne .no
+.yes:
+    mov eax, 1
+    ret
+.no:
+    xor eax, eax
+    ret
+
 ; ---- for PHI code in the kernel
 
 OS_Yield:
@@ -823,6 +937,7 @@ phi_task_exit:         times MAX_TASKS dd 0
 phi_task_wake:         times MAX_TASKS dd 0
 phi_task_wait:         times MAX_TASKS dd 0
 phi_task_core:         times MAX_TASKS dd 0     ; the core running it, plus 1 (0: none)
+phi_task_thread:       times MAX_TASKS db 0     ; 1 for a kernel thread (proc.threads)
 
 ; programs on every core (phi_share_cores)
 phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket

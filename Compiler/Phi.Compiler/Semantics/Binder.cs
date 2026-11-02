@@ -284,6 +284,7 @@ namespace Phi.Compiler.Semantics
             if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();
             CheckTextArguments();
+            CheckThreadWrites();
 
             foreach (var (cls, scope) in classScopes)
                 foreach (var (name, symbol) in scope.Names)
@@ -480,6 +481,91 @@ namespace Phi.Compiler.Semantics
         /// A parameter counts as written when the method assigns or adds to it, sets a character
         /// of it, asks into it, or hands it to another method that writes it.
         /// </summary>
+        /// <summary>
+        /// Code another thread runs (a method given by address to Threads.Start or Cores.Run, and
+        /// the methods it calls) shares the class variables with everything else: a write to one
+        /// outside a locked block (or an atomic step) is warned about, since another thread may
+        /// read or write it at the same moment. An element of an array isn't: that's how each
+        /// thread keeps a result of its own (sums:part is sum;).
+        /// </summary>
+        void CheckThreadWrites()
+        {
+            var methods = units.Values.SelectMany(u => u.Methods).ToList();
+            var runs = new Dictionary<MethodSymbol, string>();      // a method, and what runs it
+            var queue = new Queue<MethodSymbol>();
+
+            static bool Runner(object? callee, out string name)
+            {
+                name = callee is MethodSymbol m ? m.Name : "";          // (a method's name is in full: Class.Name)
+                return name is "Threads.Start" or "Cores.Run";
+            }
+            void Entries(IEnumerable<Node> nodes)
+            {
+                foreach (Node n in nodes)
+                {
+                    (object? callee, List<Expr>? args) = n switch
+                    {
+                        CallStmt c => (c.Resolved, c.Arguments),
+                        CallExpr c => (c.Resolved, c.Arguments),
+                        _ => (null, null),
+                    };
+                    if (args == null || !Runner(callee, out string runner)) continue;
+                    foreach (Expr a in args)
+                        if (a is AddrExpr { Method: MethodSymbol work } && runs.TryAdd(work, runner))
+                            queue.Enqueue(work);
+                }
+            }
+            foreach (var cls in classScopes.Keys) Entries(cls.Body.SelectMany(SyntaxWalker.Nodes));
+            foreach (MethodSymbol m in methods) Entries(m.Decl.Body.SelectMany(SyntaxWalker.Nodes));
+
+            // and every method that code calls
+            while (queue.Count > 0)
+            {
+                MethodSymbol m = queue.Dequeue();
+                foreach (Node n in m.Decl.Body.SelectMany(SyntaxWalker.Nodes))
+                {
+                    object? callee = n switch { CallStmt c => c.Resolved, CallExpr c => c.Resolved, _ => null };
+                    if (callee is MethodSymbol called && !Runner(called, out _) && runs.TryAdd(called, runs[m]))
+                        queue.Enqueue(called);
+                }
+            }
+
+            foreach (var (m, runner) in runs)
+            {
+                List<Node> nodes = m.Decl.Body.SelectMany(SyntaxWalker.Nodes).ToList();
+                var guarded = new HashSet<Node>(nodes.OfType<LockedStmt>().SelectMany(l => l.Body.SelectMany(SyntaxWalker.Nodes)));
+                foreach (Node n in nodes)
+                {
+                    if (guarded.Contains(n)) continue;
+                    Expr? target = n switch
+                    {
+                        AssignStmt a => a.Target,
+                        StringBuildStmt s => s.Target,
+                        AppendStmt a => a.Target,
+                        ArrayAssignStmt a => a.Target,
+                        SetLengthStmt s => s.Array,
+                        ObjectAssignStmt o => o.Target,
+                        _ => null,
+                    };
+                    if (target == null || ClassVariableWritten(target) is not string name) continue;
+                    file = m.Decl.Owner.File;
+                    diagnostics.Warning(file, target.Span,
+                        $"{runner} runs {m.Decl.Name} on another thread, which shares '{name}' with the rest of the program: " +
+                        "write it in a locked block, or with atomic");
+                }
+            }
+        }
+
+        /// <summary>The class variable a write changes (whole, or a field of it), or null: a method's
+        /// own variable, through a pointer, or an element of an array.</summary>
+        static string? ClassVariableWritten(Expr target) => target switch
+        {
+            NameExpr { Symbol: VariableSymbol { IsLocal: false } v } => v.Name,
+            NameExpr { Symbol: FieldPathSymbol { Root.IsLocal: false } f } => f.Root.Name,
+            MemberExpr m => ClassVariableWritten(m.Target),
+            _ => null,
+        };
+
         void CheckTextArguments()
         {
             var bodies = classScopes.Keys.SelectMany(c => c.Methods.Where(m => m.Symbol != null).Select(m => (c.File, m.Body))

@@ -454,6 +454,29 @@ namespace Phi.Compiler.Tests
 
         static string Kernel(string body) => "phi.Test:Kernel\n{\n" + body + "\n}\n";
 
+        const string ThreadKernel = "use proc.threads;\nuse proc.cores;\nphi.Test:Kernel\n{\n int total: 0;\n int sums[4];\n lock guard;\n Point where;\n";
+
+        [Theory]
+        [InlineData("call Threads.Start: addr Work 0;\n[Work: int n: 0;]\n total++;\n[end]", "Threads.Start runs Work on another thread, which shares 'total'")]
+        [InlineData("call Threads.Start: addr Work 0;\n[Work: int n: 0;]\n call Add: n;\n[end]\n[Add: int n: 0;]\n total is total + n;\n[end]", "Threads.Start runs Add on another thread, which shares 'total'")]
+        [InlineData("call Cores.Run: addr Work;\n[Work: int n: 0;]\n where.x is n;\n[end]", "Cores.Run runs Work on another thread, which shares 'where'")]
+        public void AThreadWritingASharedVariableWarns(string body, string message)
+        {
+            CompileResult result = Compile("struct.Point\n{\n int x;\n}\n" + ThreadKernel + body + "\n}\n");
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
+        }
+
+        [Theory]
+        [InlineData("call Threads.Start: addr Work 0;\n[Work: int n: 0;]\n atomic total++ n;\n locked guard\n  total is total + 1;\n ;;\n sums:n is n;\n int mine: n;\n mine++;\n[end]")]
+        [InlineData("total++;\ncall Work: 1;\n[Work: int n: 0;]\n total++;\n[end]")]      // no thread runs it
+        public void AThreadsGuardedOrOwnWritesDontWarn(string body)
+        {
+            CompileResult result = Compile("struct.Point\n{\n int x;\n}\n" + ThreadKernel + body + "\n}\n");
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Severity.Warning);
+        }
+
         [Theory]
         // a pointer into the method's own text, handed back through a variable (the PhiOS wallpaper bug)
         [InlineData("call W: 1;\n[W: int n: 0;]\n str names: 'Ocean' 'Meadow';\n ptr<u8> name: names:n;\n[end: name]", "this points into 'names', which belongs to W")]

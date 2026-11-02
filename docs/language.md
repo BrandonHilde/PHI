@@ -1435,6 +1435,30 @@ on one core at a time: it holds one kernel lock, which a kernel lets go of while
 change. A program killed while another core runs it is freed once that core has let go
 of it. `Run` can't be used once programs share the cores.
 
+**Kernel threads.** `proc.threads` runs a method on its own, at the same time as the
+kernel's code and other threads, on whichever core is free:
+
+```phi
+use proc.threads;
+
+int t: (Threads.Start: addr Count 3);     # Count: 3, as a thread of its own (-1 if it can't start)
+call Threads.Wait: t;                      # back once Count has returned
+log (Threads.Done: t);                     # whether it has finished, without waiting
+```
+
+- A thread is a task in ring 0 with a stack of its own, which the timer shares the CPU
+  with, like a program. It runs without the kernel lock, so after `Cores.SharePrograms`
+  threads run at once on several cores; on one core they take turns with the kernel,
+  which gives up the CPU when it waits.
+- In a thread, the heap, `log`, `atomic` and `locked` work; files, the network and the
+  `OS.` calls don't yet (they're the kernel lock's).
+- A thread shares the class variables with everything else. Code a thread runs (the
+  method given to `Threads.Start` or `Cores.Run`, and every method it calls) that writes
+  a class variable, or a field of one, outside a `locked` block or an `atomic` step gets a
+  warning: another thread may be reading or writing it at the same moment. An element of
+  an array isn't warned about, since that's how each thread keeps a result of its own
+  (`sums:part is sum;`).
+
 ### atomic and locked
 
 `atomic` before a statement makes it one step that no other core can come between: the
@@ -2484,6 +2508,7 @@ and the classes of used files run before the classes that use them.
 | `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
+| `proc.cores`, `proc.threads` | 32-bit kernels: the other cores (`Cores.Start`, `Run`, `SharePrograms`) and kernel threads (`Threads.Start: method value`, `Wait`, `Done`): see [Several cores](#several-cores-32-bit-kernels) |
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |

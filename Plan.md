@@ -1626,7 +1626,21 @@ cores ends with `Heap.used_blocks` at 0.
   another core runs it, and every frame of memory back.
   - Not yet: finer locks than the one, which the benchmarks would justify part by part;
     devices' interrupts sent to other cores.
-- [ ] (4) kernel threads, and what a class variable means in them
+- [x] (4) kernel threads, and what a class variable means in them (the user's choice,
+  2026-11-01: shared by every thread, with a warning for writes that aren't guarded).
+  `proc.threads`: `Threads.Start: method value` runs it as a task of its own, in ring 0
+  with a stack of its own, scheduled on any core like a program and without the kernel
+  lock, so threads run at once on several cores once programs share them; `Wait` and
+  `Done`. The first core's timer takes the CPU back from a thread as from a program (not
+  from kernel code inside an interrupt: the core's depth says). When its method returns,
+  a thread marks itself finished and gives up the CPU. The compiler warns when code a
+  thread runs (a method given to `Threads.Start` or `Cores.Run`, and every method it
+  calls) writes a class variable, or a field of one, outside `locked` or `atomic`; an
+  array's element isn't warned about, as that's how each thread keeps its own result.
+  Test `kernel32_threads` (four threads summing their parts into their own elements and
+  a shared total with atomic, using the heap, first on one core and then on several;
+  four busy threads on two or more cores, faster than one after the other), and unit
+  tests for the warning. Nothing in the library or the samples warns.
 
 #### Phase S10: 64-bit
 
