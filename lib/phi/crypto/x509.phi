@@ -13,7 +13,8 @@
 # can be RSA (of up to 4096 bits) or ECDSA on P-256 or P-384, and signatures RSA PKCS #1
 # v1.5 or ECDSA, over SHA-256 or SHA-384. A host name is matched against the certificate's
 # subjectAltName DNS names (*.example.com matches one label), or an IPv4 address against
-# its iPAddress names. Dates aren't checked yet: PHI has no clock that knows the date.
+# its iPAddress names. Each certificate but the root must be within its dates, now
+# (OS.Now), or at X509.now when that's set.
 
 use crypto.der;
 use crypto.rsa;
@@ -64,6 +65,10 @@ phi.X509:Library
 	const u32 MAX_DEPTH: 8;
 
 	str error: '';
+	# the time the dates are checked against, as seconds since 1970 (UTC): 0 for the time
+	# now (OS.Now), or a time of its own (a test's, say, whose certificates were made then)
+	u32 now: 0;
+	u32 x509_month_days: 0 31 59 90 120 151 181 212 243 273 304 334;   # days before each month
 
 	Certificate x509_roots[16];
 	u32 x509_root_count: 0;
@@ -403,12 +408,23 @@ phi.X509:Library
 		if count is 0 return (X509.Fail: 'no certificate');
 		if not (X509.MatchesHost: addr certs:0 host) return (X509.Fail: 'the certificate isn\'t for this host');
 		u32 i: 0;
+		u32 time: now;
+		if time is 0
+			time is (OS.Now);
+		;;
 		while i < count and i < MAX_DEPTH
 			ptr<Certificate> c: addr certs:i;
-			# a trusted root itself, or one a trusted root signed
+			# a trusted root itself (which is trusted whatever its dates)
 			while u32 k: 0; k < x509_root_count; k++;
 				ptr<Certificate> root: addr x509_roots:k;
 				if c.der_length is root.der_length and (Bytes.Equal: c.der root.der c.der_length) return true;
+			;;
+			# any other must be within its dates
+			if time < (X509.Time: c.not_before c.not_before_length) return (X509.Fail: 'a certificate isn\'t valid yet');
+			if time > (X509.Time: c.not_after c.not_after_length) return (X509.Fail: 'a certificate has expired');
+			# one a trusted root signed
+			while u32 k: 0; k < x509_root_count; k++;
+				ptr<Certificate> root: addr x509_roots:k;
 				if (X509.SameName: c.issuer c.issuer_length root.subject root.subject_length)
 					if (X509.CheckSignature: c root) return true;
 				;;
@@ -426,6 +442,54 @@ phi.X509:Library
 		;;
 	[end: (X509.Fail: 'the chain is too long')]
 
+
+	# a certificate's date (UTCTime YYMMDDHHMMSSZ, its years 1950 to 2049, or
+	# GeneralizedTime YYYYMMDDHHMMSSZ) as seconds since 1970 (UTC); 0 before 1970, and the
+	# most a u32 holds from 2106 on (and for text that isn't a date)
+	[Time: ptr<u8> text: 0; u32 length: 0;]
+		int year: 0;
+		ptr<u8> rest: text;
+		if length is 13
+			year is (X509.Digits: text 2);
+			if year < 50
+				year++ 2000;
+			;;
+			else
+				year++ 1900;
+			;;
+			rest is text + 2;
+		;;
+		elif length is 15
+			year is (X509.Digits: text 4);
+			rest is text + 4;
+		;;
+		else
+			return 0xFFFFFFFF;
+		;;
+		u32 month: (X509.Digits: rest 2);
+		u32 day: (X509.Digits: rest + 2 2);
+		u32 hour: (X509.Digits: rest + 4 2);
+		u32 minute: (X509.Digits: rest + 6 2);
+		u32 second: (X509.Digits: rest + 8 2);
+		if year < 1970 return 0;
+		if year >= 2106 or month < 1 or month > 12 return 0xFFFFFFFF;
+		# the days before this year (and the leap days among them), this month, and today
+		int before: year - 1;
+		u32 days: 365 * (year - 1970) + before / 4 - before / 100 + before / 400 - 477;
+		days++ x509_month_days:(month - 1) + day - 1;
+		bln leap: (year % 4 is 0 and year % 100 is not 0) or year % 400 is 0;
+		if leap and month > 2
+			days++;
+		;;
+	[end: days * 86400 + hour * 3600 + minute * 60 + second]
+
+	# count decimal digits at text as a number
+	[Digits: ptr<u8> text: 0; u32 count: 0;]
+		u32 n: 0;
+		while u32 i: 0; i < count; i++;
+			n is n * 10 + text:i - 48;
+		;;
+	[end: n]
 	# error = why, and false
 	[Fail: ptr<u8> why: 0;]
 		error is why;

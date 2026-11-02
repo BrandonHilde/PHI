@@ -27,6 +27,7 @@ phi.CryptoX509P384:Library
 	log 'signatures: ' (X509.CheckSignature: addr trusted addr trusted) ' ' (X509.CheckSignature: addr chain:1 addr trusted)
 	    ' ' (X509.CheckSignature: addr chain:0 addr chain:1) ' ' (X509.CheckSignature: addr own addr own)
 	    ', wrong signer: ' (X509.CheckSignature: addr chain:0 addr trusted) '\n';
+	X509.now is 1793923200;                   # 2026-11-05: the certificates are from 2026-11-02
 	log 'trust: ' (X509.Trust: addr root 515) '\n';
 	log 'chain: ' (X509.Chain: addr chain:0 2 'phi.test') ' ' X509.error '\n';
 	log 'another host: ' (X509.Chain: addr chain:0 2 'example.com') ' (' X509.error ')\n';

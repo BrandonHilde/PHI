@@ -53,6 +53,7 @@ phi.BenchTls:Kernel
 	call Bench.Stop: 'rsa-2048 verify';
 	log 'rsa: ' good '\n';
 
+	X509.now is 1793923200;                   # 2026-11-05: the test certificates are from 2026-11-02
 	call X509.Trust: addr root 843;
 	call Bench.Start;
 	good is (X509.Parse: addr chain:0 addr leaf 428) and (X509.Parse: addr chain:1 addr middle 632) and (X509.Chain: addr chain:0 2 'phi.test');

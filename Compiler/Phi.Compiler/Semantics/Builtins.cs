@@ -22,7 +22,10 @@ namespace Phi.Compiler.Semantics
         public bool ReturnsText { get; init; }
 
         /// <summary>What a call gives back, for one that Returns.</summary>
-        public PhiType ResultType => FloatInstruction != null ? PhiType.F64 : ReturnsText ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
+        public PhiType ResultType => FloatInstruction != null ? PhiType.F64 : ReturnsText ? PhiType.PointerTo(PhiType.U8) : ReturnsUnsigned ? PhiType.U32 : PhiType.Int;
+
+        /// <summary>The result is a u32 (OS.Now: past 2038, when an int would go negative).</summary>
+        public bool ReturnsUnsigned { get; init; }
 
         /// <summary>
         /// For a program's call: what a 32-bit kernel calls to do the same (Fat.ReadFile), and
@@ -80,6 +83,8 @@ namespace Phi.Compiler.Semantics
                     Description = "32-bit: milliseconds since the timer started" },
             new() { Name = "OS.Sleep", Label = "OS_Sleep", Parameters = new[] { "milliseconds" },
                     Description = "32-bit: wait" },
+            new() { Name = "OS.Now", Label = "OS_Now", Returns = true, ReturnsUnsigned = true,
+                    Description = "32-bit: the date and time now, as seconds since the start of 1970 (UTC)" },
 
             new() { Name = "OS.SetupMouse", Label = "OS_SetupMouse",
                     Description = "Turn on the PS/2 mouse" },

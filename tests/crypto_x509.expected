@@ -8,6 +8,9 @@ hosts: 1 1 1, not: 0 0 0 0
 untrusted: 0 (no trusted root signed the chain)
 trust: 1
 chain: 1 1
+dates: 1793577638 to 1825113638
+before: 0 (a certificate isn't valid yet)
+after: 0 (a certificate has expired)
 another host: 0 (the certificate isn't for this host)
 no intermediate: 0 (no trusted root signed the chain)
 the intermediate alone: 0 (the certificate isn't for this host)

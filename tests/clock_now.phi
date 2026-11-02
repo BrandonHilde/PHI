@@ -1,0 +1,11 @@
+# runs only in 32 and 64 bits: OS.Now needs 32-bit code
+# OS.Now, the date and time as seconds since 1970 (UTC), on every system: today is between
+# 2026 and 2100, and it goes on by about a second over a sleep of one.
+phi.ClockNow:Library
+{
+	u32 now: (OS.Now);
+	log 'now ok: ' (now > 1767225600 and now < 4102444800) '\n';      # 2026-01-01 and 2100-01-01
+	call OS.Sleep: 1100;
+	u32 later: (OS.Now);
+	log 'a second on: ' (later - now >= 1 and later - now <= 3) '\n';
+}

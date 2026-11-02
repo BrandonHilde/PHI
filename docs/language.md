@@ -1539,8 +1539,9 @@ have signed the handshake. If any of that fails, so does the connection, and the
 says why; `Tls.verified` says it checked out. A program trusts roots before connecting:
 `call Roots.TrustAll;` (`crypto.roots`, a few that many sites go back to) or `call
 X509.Trust: der length;` for its own. Keys can be RSA (up to 4096 bits), P-256 or P-384,
-with SHA-256 or SHA-384 (so Let's Encrypt's ECDSA chains check out too); dates aren't
-checked yet (PHI has no clock that knows the date).
+with SHA-256 or SHA-384 (so Let's Encrypt's ECDSA chains check out too). Each certificate
+but the root must be within its dates, now (`OS.Now`), or at `X509.now` when a program
+sets it (seconds since 1970: a test whose certificates were made at a given time does).
 
 The layers, each usable on its own:
 
@@ -2047,6 +2048,7 @@ drivers. Instead:
 | `log`, `debug`, `ask` | through the kernel's console and keyboard; a `log` statement reaches the screen whole |
 | `exit code;` | end the program; the end of the main code is `exit 0` |
 | `OS.Sleep: ms`, `OS.GetTicks` →, `OS.Yield` | timing |
+| `OS.Now` → | the date and time, as seconds since 1970 (UTC), a `u32`: from the kernel's clock |
 | `OS.ReadKey` →, `OS.KeyAvailable` →, `Bootloader.WaitForKeyPress` → | the keyboard |
 | `OS.CurrentTask` → | this program's process number |
 | `OS.Spawn: path` → | start another program; its process number, or -1 |
@@ -2203,6 +2205,7 @@ instead. Only `Program` and `Library` classes build for another system; kernels 
 | `exit code;` | the process's exit code |
 | `OS.Arguments` → | what follows the program's name on its command line (on Linux, its arguments joined by spaces) |
 | `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number |
+| `OS.Now` → | the date and time, as seconds since 1970 (UTC): Linux's `time`, Windows' `GetSystemTimeAsFileTime` |
 | `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | files and folders, by that system's paths (relative to the folder it runs in) |
 | `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
@@ -2543,6 +2546,7 @@ are drivers in [lib/x86_32](../lib/x86_32).
 | `Bootloader.EnableVideoMode` | 16-bit | switch to 320×200 graphics with 256 colors |
 | `OS.SetupInteruptTimer` | both | run `[OS.TimerEvent]` 60 times a second |
 | `OS.GetTicks` → | 32-bit | milliseconds since the timer started (by the CPU's timestamp counter, so it keeps time when timer interrupts come late) |
+| `OS.Now` → | 32-bit | the date and time, as seconds since 1970 (UTC), a `u32` (good until 2106): a kernel reads the CMOS clock (QEMU's is in UTC), a program asks its system |
 | `OS.Sleep: ms` | 32-bit | wait (other interrupts keep running) |
 | `OS.SetupKeyboardInterupt` | both | track keys and run `[OS.KeyboardEvent]` on every press and release (in 16-bit programs the BIOS keyboard, `ask` and `WaitForKeyPress` stop working) |
 | `OS.GetKey` → | both | the character of the last key pressed or released |
@@ -2604,9 +2608,8 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
-- networking in user programs (only 32-bit kernels have the network), certificates' dates,
-  RSA-PSS with SHA-384, and network cards other than the RTL8139 and
-  virtio-net
+- networking in user programs (only 32-bit kernels have the network), RSA-PSS with
+  SHA-384, and network cards other than the RTL8139 and virtio-net
 - NVMe disks with 4096-byte sectors, and disks above 4 GB in memory (where a 32-bit kernel
   can't reach their registers)
 - recording sound, sound cards other than the AC'97, and compressed audio (MP3, Ogg, ADPCM WAV files)

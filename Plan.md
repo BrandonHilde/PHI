@@ -1932,10 +1932,16 @@ them, step 4).
     client checks a PHI server's P-384 chain and handshake signature. What it costs
     (`bench_tls`): signing 271 million instructions, checking 326 million, about 3.3 times
     P-256's; faster crypto waits for the optimizations, as before.
-  - Not yet: dates. A kernel has the date (`drivers.rtc`, the machine's clock, which QEMU
-    sets from the host's), so a kernel's TLS could check them; a program on Linux or
-    Windows would need a call for the date. And RSA-PSS with SHA-384 (TLS servers with RSA
-    keys sign with SHA-256 when it's offered, as it is).
+  - [x] dates: `OS.Now` (new: seconds since 1970, UTC, a `u32`) on every system: a kernel
+    reads the CMOS clock (`lib/x86_32/clock.asm`), a PHI OS program asks it (system call
+    43), Linux has `time` and Windows `GetSystemTimeAsFileTime`, all four agreeing with the
+    host to the second (test `clock_now`). `X509.Chain` checks each certificate but the
+    root against it, or against `X509.now` when that's set; the tests whose certificates
+    are from 2026-11-02 set it to 2026-11-05, so they don't start failing when those
+    expire (`crypto_x509` checks before and after a leaf's dates too).
+  - Not yet: RSA-PSS with SHA-384 (TLS servers with RSA keys sign with SHA-256 when it's
+    offered, as it is).
+
 - [x] (2) server-side TLS, so logins go over TLS. Its foundations first (the user's
   "build good foundations"):
   - [x] ECDSA P-256 signing (`P256.Sign`) with RFC 6979's nonce, so it needs no random

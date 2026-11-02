@@ -32,6 +32,7 @@ phi.TlsMemory:Library
 	log 'identity: ' (Tls13.Identity: addr identity addr leaf 428 addr key 121) ' '
 	    (Tls13.AddIssuer: addr identity addr middle 632) ' ' X509.error '\n';
 	log 'the wrong key: ' (Tls13.Identity: addr other addr middle 632 addr key 121) ' (' X509.error ')\n';
+	X509.now is 1793923200;                   # 2026-11-05: the test certificates are from 2026-11-02
 	call X509.Trust: addr root 843;
 
 	# the handshake

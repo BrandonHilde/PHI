@@ -1,4 +1,4 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit OS_Now phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -481,3 +481,12 @@ UCONTEXT_EIP     equ 20 + 56
 phi_fault_to: dd 0
 phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask
     dd phi_fault_handler, SA_SIGINFO | SA_RESTORER, phi_fault_return, 0, 0
+
+; eax = the date and time, as seconds since 1970 (UTC): time
+OS_Now:
+    push ebx
+    mov eax, 13                         ; SYS_TIME
+    xor ebx, ebx
+    int 0x80
+    pop ebx
+    ret

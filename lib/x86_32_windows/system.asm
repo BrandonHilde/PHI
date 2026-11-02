@@ -1,4 +1,4 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit OS_Now phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all phi_imports
 ; init: phi_windows_start
 ;
@@ -551,3 +551,16 @@ CONTEXT_EBX   equ 0xA4                  ; in an x86 CONTEXT
 CONTEXT_ECX   equ 0xAC
 CONTEXT_EIP   equ 0xB8
 phi_fault_to: dd 0
+
+; eax = the date and time, as seconds since 1970 (UTC): Windows counts 100 ns since 1601
+OS_Now:
+    sub esp, 8
+    push esp
+    call [phi_imp_GetSystemTimeAsFileTime]
+    pop eax
+    pop edx
+    sub eax, 0xD53E8000                 ; 116444736000000000: 1601 to 1970
+    sbb edx, 0x019DB1DE
+    mov ecx, 10000000
+    div ecx
+    ret

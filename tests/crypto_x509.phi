@@ -36,8 +36,17 @@ phi.CryptoX509:Library
 	    ' ' (X509.MatchesHost: addr chain:0 '.games.phi.test') '\n';
 
 	log 'untrusted: ' (X509.Chain: addr chain:0 2 'phi.test') ' (' X509.error ')\n';
+	X509.now is 1793923200;                   # 2026-11-05: the certificates are from 2026-11-02
 	log 'trust: ' (X509.Trust: addr root 843) '\n';
 	log 'chain: ' (X509.Chain: addr chain:0 2 'phi.test') ' ' (X509.Chain: addr chain:0 2 'zone7.games.phi.test') '\n';
+
+	# the leaf is good for a year from 2026-11-02: not before it, nor after
+	log 'dates: ' (X509.Time: chain:0.not_before chain:0.not_before_length) ' to ' (X509.Time: chain:0.not_after chain:0.not_after_length) '\n';
+	X509.now is 1777593600;                   # 2026-05-01
+	log 'before: ' (X509.Chain: addr chain:0 2 'phi.test') ' (' X509.error ')\n';
+	X509.now is 1830297600;                   # 2028-01-01
+	log 'after: ' (X509.Chain: addr chain:0 2 'phi.test') ' (' X509.error ')\n';
+	X509.now is 1793923200;
 	log 'another host: ' (X509.Chain: addr chain:0 2 'example.com') ' (' X509.error ')\n';
 	log 'no intermediate: ' (X509.Chain: addr chain:0 1 'phi.test') ' (' X509.error ')\n';
 	log 'the intermediate alone: ' (X509.Chain: addr chain:1 1 'phi.test') ' (' X509.error ')\n';

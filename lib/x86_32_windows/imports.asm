@@ -32,6 +32,7 @@
     PHI_FUNCTION GetConsoleMode
     PHI_FUNCTION SetConsoleMode
     PHI_FUNCTION AddVectoredExceptionHandler
+    PHI_FUNCTION GetSystemTimeAsFileTime
 %endmacro
 
 align 4, db 0

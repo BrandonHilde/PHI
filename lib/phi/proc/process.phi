@@ -93,6 +93,7 @@ phi.Process:Kernel
 	const u32 SYS_RENAME: 40;
 	const u32 SYS_DELETE_FOLDER: 41;
 	const u32 SYS_APPEND_FILE: 42;
+	const u32 SYS_NOW: 43;
 	const u32 SYS_MORE: 64;                 # from here on, more_calls handles them
 
 	const u32 HEAP_LIMIT: 0x48000000;       # a program's heap is at most 124 MB (from USER_TOP)
@@ -482,6 +483,9 @@ phi.Process:Kernel
 		;;
 		elif number is SYS_KILL
 			call result is OS.KillTask: first;
+		;;
+		elif number is SYS_NOW
+			result is (OS.Now);
 		;;
 		elif number is SYS_FREE_MEMORY
 			result is Frames.free_frames * 4;
