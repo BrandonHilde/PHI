@@ -4,6 +4,7 @@
 #   use drivers.pci;
 #   u32 card: 0;
 #   call card is Pci.Find: 0x10EC 0x8139;        # vendor and device; Pci.NOT_FOUND if absent
+#   u32 disk: (Pci.FindClass: 0x010802);         # or by what it is: an NVMe disk
 #   u32 io: 0;
 #   call io is Pci.Bar: card 0;                  # an I/O port or memory address
 #
@@ -18,6 +19,7 @@ phi.Pci:Library
 
 	const u32 REG_ID: 0x00;               # vendor (low 16 bits), device (high)
 	const u32 REG_COMMAND: 0x04;
+	const u32 REG_CLASS: 0x08;            # class code in bits 8-31, revision in 0-7
 	const u32 REG_HEADER: 0x0C;           # header type in bits 16-23
 	const u32 REG_BAR0: 0x10;
 	const u32 REG_INTERRUPT: 0x3C;        # interrupt line in the low byte
@@ -39,8 +41,16 @@ phi.Pci:Library
 
 	# the first device with this vendor and device id, or NOT_FOUND
 	[Find: u32 vendor: 0; u32 product: 0;]
+	[end: (Search: REG_ID 0xFFFFFFFF (product << 16) | vendor)]
+
+	# the first device of a kind, by its class code (class << 16 | subclass << 8 | interface:
+	# 0x010802 is an NVMe disk), whoever made it; or NOT_FOUND
+	[FindClass: u32 code: 0;]
+	[end: (Search: REG_CLASS 0xFFFFFF00 code << 8)]
+
+	# the first device whose register at offset, masked, is wanted; or NOT_FOUND
+	[Search: u32 offset: 0; u32 mask: 0; u32 wanted: 0;]
 		u32 found: NOT_FOUND;
-		u32 wanted: (product << 16) | vendor;
 		while u32 bus: 0; bus < 256 and found is NOT_FOUND; bus++;
 			while u32 slot: 0; slot < 32 and found is NOT_FOUND; slot++;
 				u32 device: (bus << 16) | (slot << 11);
@@ -56,7 +66,7 @@ phi.Pci:Library
 					;;
 					while u32 f: 0; f < functions and found is NOT_FOUND; f++;
 						call id is Read: device | (f << 8) REG_ID;
-						if id is wanted
+						if (id & 0xFFFF) is not 0xFFFF and ((Read: device | (f << 8) offset) & mask) is wanted
 							found is device | (f << 8);
 						;;
 					;;

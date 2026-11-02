@@ -1,0 +1,7 @@
+start: 1 sectors: 34816
+read: 1 signature: 85 170
+write: 1
+read back: 1 same: 1
+one: 1 same: 1
+none: 0 too many: 0
+past the end: 0

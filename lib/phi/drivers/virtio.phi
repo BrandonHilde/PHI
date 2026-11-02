@@ -1,0 +1,126 @@
+# What every virtio device has, through its legacy PCI interface: the registers at the
+# start of its I/O ports, the steps that turn it on, and its queues. 32-bit kernels.
+# drivers.virtio_net (a network card) and drivers.virtio_blk (a disk) use this.
+#
+#   use drivers.virtio;
+#   u32 io: (Pci.Bar: card 0);
+#   u32 features: (Virtio.Begin: io wanted);      # reset it; the features both sides have
+#   Virtqueue queue;
+#   bln ok: (Virtio.SetUpQueue: io 0 addr queue);
+#   call Virtio.Ready: io;                        # it may start using its queues
+#
+# A queue is three lists in memory that the driver and the device share:
+#   desc   a table of buffers (VirtqDesc): where each is, how long, whether the device
+#          writes into it, and the next buffer when several make up one request
+#   avail  the driver's list: flags, then a count (16 bits, wrapping round), then a place
+#          for each buffer it has given the device (the first of a request's buffers)
+#   used   the device's list, on a page of its own: flags, a count, then for each buffer
+#          handed back its number and how many bytes the device wrote into it
+# The queue's size (how many buffers) is the device's choice: 256 on QEMU, say.
+
+use drivers.pci;
+use memory.heap;                # first, so new works in a Start called while the kernel starts (drivers.disk)
+use memory.mem;
+
+# one buffer in a queue's table
+struct.VirtqDesc
+{
+	u32 address;                # where it is (the low 32 bits; the high ones are 0)
+	u32 address_high;
+	u32 length;
+	u16 flags;
+	u16 next;
+}
+
+# where a queue's lists are, from SetUpQueue
+struct.Virtqueue
+{
+	u32 size;                   # how many buffers it has room for
+	ptr<VirtqDesc> desc;
+	ptr<u16> avail;             # avail:0 the flags, avail:1 the count, avail:(2 + i) a place
+	ptr<u8> used;
+}
+
+phi.Virtio:Kernel
+{
+	const u32 VENDOR: 0x1AF4;
+
+	# registers, as offsets from the device's I/O ports; its own come after these (DEVICE)
+	const u32 REG_FEATURES: 0x00;
+	const u32 REG_GUEST_FEATURES: 0x04;
+	const u32 REG_QUEUE_ADDRESS: 0x08;    # the queue's page number
+	const u32 REG_QUEUE_SIZE: 0x0C;
+	const u32 REG_QUEUE_SELECT: 0x0E;
+	const u32 REG_QUEUE_NOTIFY: 0x10;
+	const u32 REG_STATUS: 0x12;
+	const u32 REG_INTERRUPT: 0x13;        # reading it acknowledges the interrupt
+	const u32 DEVICE: 0x14;
+
+	const u8 STATUS_ACKNOWLEDGE: 1;
+	const u8 STATUS_DRIVER: 2;
+	const u8 STATUS_DRIVER_OK: 4;
+
+	const u16 DESC_NEXT: 1;               # the request goes on in the buffer called next
+	const u16 DESC_WRITE: 2;              # the device writes into this buffer
+	const u16 NO_INTERRUPT: 1;            # in avail:0: no interrupt when a buffer comes back
+	const u32 PAGE: 4096;
+
+	# reset the device and tell it a driver has found it; the features it offers that are
+	# also in wanted, which it's told are the ones in use
+	[Begin: u32 io: 0; u32 wanted: 0;]
+		out (io + REG_STATUS) 0;
+		out (io + REG_STATUS) STATUS_ACKNOWLEDGE;
+		out (io + REG_STATUS) STATUS_ACKNOWLEDGE | STATUS_DRIVER;
+		u32 features: (ind (io + REG_FEATURES)) & wanted;
+		outd (io + REG_GUEST_FEATURES) features;
+	[end: features]
+
+	# the driver is ready: the device may use its queues
+	[Ready: u32 io: 0;]
+		out (io + REG_STATUS) STATUS_ACKNOWLEDGE | STATUS_DRIVER | STATUS_DRIVER_OK;
+	[end]
+
+	# make a queue's lists, page-aligned and empty, and tell the device where they are;
+	# false if the device has no such queue or there's no memory for it
+	[SetUpQueue: u32 io: 0; u32 queue: 0; ptr<Virtqueue> q: 0;]
+		outw (io + REG_QUEUE_SELECT) queue;
+		u32 size: inw (io + REG_QUEUE_SIZE);
+		if size is 0 return false;
+		u32 bytes: (UsedOffset: size) + 6 + 8 * size;
+		ptr<u8> memory: new u8[bytes + PAGE];
+		if memory is 0 return false;
+		call Mem.Fill: memory 0 bytes + PAGE;
+		u32 base: (memory + PAGE - 1) & ~(PAGE - 1);
+		q:0.size is size;
+		q:0.desc is base;
+		q:0.avail is base + 16 * size;
+		q:0.used is base + (UsedOffset: size);
+		outd (io + REG_QUEUE_ADDRESS) base / PAGE;
+	[end: true]
+
+	# tell the device there's something new in a queue
+	[Notify: u32 io: 0; u32 queue: 0;]
+		outw (io + REG_QUEUE_NOTIFY) queue;
+	[end]
+
+	# how many buffers the device has handed back (16 bits, so it wraps round), read in
+	# one go: read a byte at a time, it could be half before and half after the device
+	# changes it
+	[Used: ptr<Virtqueue> q: 0;]
+		volatile ptr<u16> words: q:0.used;            # the device writes it
+	[end: words:1]
+
+	# the n-th buffer handed back (counting from 0, wrapping round the queue): its number
+	[UsedId: ptr<Virtqueue> q: 0; u32 n: 0;]
+		volatile ptr<u32> element: q:0.used + 4 + (n % q:0.size) * 8;
+	[end: element:0]
+
+	# and how many bytes the device wrote into it
+	[UsedLength: ptr<Virtqueue> q: 0; u32 n: 0;]
+		volatile ptr<u32> element: q:0.used + 4 + (n % q:0.size) * 8;
+	[end: element:1]
+
+	# where the used list starts: after the table and the avail list, on a new page
+	[UsedOffset: u32 size: 0;]
+	[end: (16 * size + 6 + 2 * size + PAGE - 1) & ~(PAGE - 1)]
+}

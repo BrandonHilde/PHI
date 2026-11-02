@@ -64,15 +64,16 @@ namespace Phi.Cli
         // (VirtualNetwork.MachineArgs, for several machines on one network)
         // forwards: host port for each guest TCP port, which 127.0.0.1:host reaches (an input
         // script's tls lines), on the user network
+        // disk: ide, virtio or nvme, in place of DiskKind
         static List<string> MachineArgs(string image, string audio, IReadOnlyList<string>? network = null,
-                                        IReadOnlyDictionary<int, int>? forwards = null)
+                                        IReadOnlyDictionary<int, int>? forwards = null, string? disk = null)
         {
             var args = new List<string>
             {
                 "-cpu", "qemu32,+rdrand",
-                "-drive", $"file={image},format=raw,if=ide,index=0",
                 "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
             };
+            args.AddRange(DriveArgs(image, disk ?? DiskKind));
             string user = "user,id=net0" + string.Concat((forwards ?? new Dictionary<int, int>()).Select(f => $",hostfwd=tcp:127.0.0.1:{f.Value}-:{f.Key}"));
             args.AddRange(network ?? new[] { "-netdev", user, "-device", $"{CardDevice(NetworkCard)},netdev=net0,romfile=" });
             args.AddRange(new[]
@@ -95,6 +96,22 @@ namespace Phi.Cli
         public static string NetworkCard { get; set; } = "rtl8139";
 
         public static readonly string[] NetworkCards = { "rtl8139", "virtio" };
+
+        /// <summary>
+        /// The disk machines get (phi run/test --disk): an IDE one (drivers.ata), a virtio-blk one
+        /// (drivers.virtio_blk) or an NVMe one (drivers.nvme); the BIOS boots from any of them.
+        /// </summary>
+        public static string DiskKind { get; set; } = "ide";
+
+        public static readonly string[] DiskKinds = { "ide", "virtio", "nvme" };
+
+        /// <summary>QEMU's arguments for the machine's disk, the image, as that kind of disk.</summary>
+        static string[] DriveArgs(string image, string kind) => kind switch
+        {
+            "virtio" => new[] { "-drive", $"file={image},format=raw,if=virtio" },
+            "nvme" => new[] { "-drive", $"file={image},format=raw,if=none,id=disk0", "-device", "nvme,serial=phi0,drive=disk0" },
+            _ => new[] { "-drive", $"file={image},format=raw,if=ide,index=0" },
+        };
 
         /// <summary>QEMU's name for a network card.</summary>
         public static string CardDevice(string card) => card == "virtio" ? "virtio-net-pci" : "rtl8139";
@@ -172,17 +189,19 @@ namespace Phi.Cli
         /// With <paramref name="countInstructions"/>, the timestamp counter counts instructions (for benchmarks);
         /// with <paramref name="profilePort"/>, a second monitor listens there for phi profile;
         /// with <paramref name="network"/>, the network card is plugged into that instead of QEMU's user network.
+        /// <paramref name="disk"/> is the kind of disk (ide, virtio or nvme), in place of DiskKind.
         /// </summary>
         public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
                                                  IReadOnlyList<string>? input = null, string? recordTo = null,
                                                  string? screenshots = null, bool countInstructions = false,
-                                                 int? profilePort = null, IReadOnlyList<string>? network = null)
+                                                 int? profilePort = null, IReadOnlyList<string>? network = null,
+                                                 string? disk = null)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
             // a guest port the script reaches over TLS (tls PORT ...) is forwarded from a free one here
             Dictionary<int, int>? forwards = input?.Select(InputScript.TlsPort).OfType<int>().Distinct().ToDictionary(g => g, _ => FreePort());
-            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network, forwards);
+            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network, forwards, disk);
             if (countInstructions) args.AddRange(CountInstructions);
             if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
             // a script that restarts the machine (reboot) needs a reset to restart it rather than

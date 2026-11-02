@@ -121,6 +121,11 @@ everyone, for a broadcast). Every network test runs twice, once with each networ
 (`net_tcp (rtl8139)`, `net_tcp (virtio)`), unless its `.machines` file has a line
 `card virtio` (or `card rtl8139`) or `phi test` is given `--nic`.
 
+In the same way, a kernel test that uses the disk itself (`use fs.fat16`, `drivers.disk` or
+`drivers.block`) runs once on each kind of disk: `kernel32_files (ide)`, `(virtio)` and
+`(nvme)`, against the same `.expected` file, unless `phi test` is given `--disk`, which
+gives every test that disk (see `disk_block.phi`).
+
 A sample is a test too when it has a `.expected`, `.contains` or `.machines` file: plain
 `phi test` runs those after `tests/`, named by their folder (`mmo/server`, so `-f mmo`
 picks it).

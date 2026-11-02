@@ -16,6 +16,9 @@ namespace Phi.Cli
     /// A test whose classes are all :Library runs twice, as a 16-bit program and as a 32-bit
     /// kernel, so both code generators are checked against the same expected output.
     ///
+    /// A kernel test that uses the disk itself (use fs.fat16, drivers.disk or drivers.block) runs
+    /// on each kind of disk, IDE, virtio-blk and NVMe, so every driver is checked (--disk picks one).
+    ///
     /// A test that can also be an ordinary program (its classes are all :Library, or it is a
     /// :Program) runs as a Linux and a Windows program too, where this computer can run them
     /// (Linux under WSL on Windows), so the targets can't drift apart. It is left to PHI OS when
@@ -107,9 +110,9 @@ namespace Phi.Cli
 
         /// <summary>
         /// How to turn a library-only test into a whole program, or (for a network test) the card
-        /// the machines get; and the system it runs on.
+        /// the machines get, or (for a disk test) the disk; and the system it runs on.
         /// </summary>
-        sealed record Mode(string Name, string Wrapper, string? Card = null, Host Host = Host.PhiOS);
+        sealed record Mode(string Name, string Wrapper, string? Card = null, Host Host = Host.PhiOS, string? Disk = null);
 
         /// <summary>phi test --target: run only on that system (PHI OS, or as Linux or Windows programs).</summary>
         public static Host? Only { get; set; }
@@ -186,11 +189,18 @@ namespace Phi.Cli
             if (UserProgramClass.IsMatch(text)) return Array.Empty<Mode?>();
             bool libraryOnly = LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text);
             if (libraryOnly && Not16Bit.IsMatch(text)) return new Mode?[] { BothModes[1] };
+            if (!libraryOnly && !DiskChosen && UsesDisk.IsMatch(text))
+                return Qemu.DiskKinds.Select(disk => (Mode?)new Mode(disk, "", Disk: disk));
             return libraryOnly ? BothModes : new Mode?[] { null };
         }
 
+        static readonly Regex UsesDisk = new(@"^\s*use\s+(fs\.fat16|drivers\.disk|drivers\.block)\s*;", RegexOptions.Multiline);
+
         /// <summary>phi test --nic: every test uses that card, and network tests run once.</summary>
         public static bool NicChosen { get; set; }
+
+        /// <summary>phi test --disk: every test uses that disk, and disk tests run once.</summary>
+        public static bool DiskChosen { get; set; }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
         /// <param name="report">gets lines to show under the test's result (a benchmark's counts)</param>
@@ -262,7 +272,7 @@ namespace Phi.Cli
                 var lines = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();
                 HeadlessResult partial = Qemu.RunHeadless(build.ImagePath, timeout,
                     output => lines.All(l => Normalize(output).Contains(l)), input,
-                    screenshots: Path.GetDirectoryName(build.ImagePath));
+                    screenshots: Path.GetDirectoryName(build.ImagePath), disk: mode?.Disk);
                 string text = Normalize(partial.Serial);
                 var missing = lines.Where(l => !text.Contains(l)).ToList();
                 if (keepOutput) File.WriteAllText(actualFile, text);
@@ -275,7 +285,7 @@ namespace Phi.Cli
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
                 expected == null ? null : output => Normalize(output).Contains(expected), input, recording,
-                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null);
+                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null, disk: mode?.Disk);
 
             string actual = Normalize(run.Serial);
             if (keepOutput) File.WriteAllText(actualFile, actual);

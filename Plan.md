@@ -1853,7 +1853,25 @@ them, step 4).
     (test `tls_host_client`, on both network cards). So both sides of PHI's TLS have met
     another implementation: the client Windows' server (`net_http`), the server Windows'
     client.
-- [ ] (3) virtio-blk and NVMe, (4) booting on a cloud machine, (5) the deployment guide
+- [x] (3) Disks a cloud machine has, behind one block layer:
+  - `drivers.block`: whichever disk the machine has (virtio-blk, then NVMe, then IDE), as
+    sectors from the start of the disk, with its size; `drivers.disk` (the FAT partition)
+    now sits on it, so the file system, programs and saved files work on any of them.
+  - `drivers.virtio`: what virtio devices share (the legacy PCI registers, turning one on,
+    its queues), which `drivers.virtio_net` now uses too.
+  - `drivers.virtio_blk` and `drivers.nvme` (any maker's NVMe disk, found by its PCI class
+    with the new `Pci.FindClass`: an admin queue, Identify, one I/O queue pair, page
+    lists for requests of more than two pages, the disk's own limit on a request). Both
+    poll, and go through a buffer of their own, so a caller's buffer can be anywhere.
+    `Ata` gained `Present` and `Sectors` (IDENTIFY).
+  - `phi run` and `phi test` take `--disk virtio` or `--disk nvme`; a kernel test that uses
+    the disk itself runs on all three (test `disk_block`: the size, sector 0, a request
+    bigger than the drivers' buffers, a count the layer refuses, past the end; and
+    `kernel32_files`, `kernel32_folders`, `kernel32_reboot`). Programs loaded from the disk
+    were checked on each too.
+  - Not yet: NVMe disks with 4096-byte sectors, and a disk whose registers are above 4 GB
+    (out of a 32-bit kernel's reach: a 64-bit kernel, step 4, will have them).
+- [ ] (4) booting on a cloud machine, (5) the deployment guide
 
 ### Scenarios to write up next
 

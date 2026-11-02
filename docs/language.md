@@ -1503,9 +1503,10 @@ The layers, each usable on its own:
 
 | File | Class | What it does |
 |---|---|---|
-| `drivers.pci` | `Pci` | `Find: vendor device` → (or `Pci.NOT_FOUND`), `Read`/`Write: device offset`, `Bar: device n` →, `Irq` →, `EnableBusMaster` |
+| `drivers.pci` | `Pci` | `Find: vendor device` → (or `Pci.NOT_FOUND`), `FindClass: code` → (by what it is: `0x010802` an NVMe disk), `Read`/`Write: device offset`, `Bar: device n` →, `Irq` →, `EnableBusMaster` |
 | `drivers.nic` | `Nic` | whichever card the machine has: `Start` →, `Send: frame length` →, `Receive: buffer max` → (0 when nothing is waiting), `Dropped` →; `mac`, `kind` (`Nic.RTL8139` or `Nic.VIRTIO`) |
 | `drivers.rtl8139`, `drivers.virtio_net` | `Rtl8139`, `VirtioNet` | the two cards, with the same calls as `Nic`; `frames_dropped`, `interrupts` |
+| `drivers.virtio` | `Virtio` | what virtio devices share (legacy PCI): `Begin: io features` →, `SetUpQueue: io n queue` →, `Ready: io`, `Notify: io n`, `Used: queue` →; structs `Virtqueue`, `VirtqDesc` |
 | `net.net` | `Net` | `Start` → (by DHCP), `Start: address mask router` → (no DHCP), `Configure: ip netmask gateway dns`; `ip`, `netmask`, `gateway`, `dns`, `dhcp_ok`; `Ping: address timeout` → (ms, or -1); `SendUdp: to from_port to_port data length` →, `Listen: port`, `WaitUdp: timeout` → (the datagram is in `udp_data`); `ParseIp: text` →, `PrintIp: address` |
 | `net.udp` | `Udp` | sockets: `Open: port queue` → a socket or -1 (port 0 picks one), `Receive: s datagram` → (never waits), `Wait: s datagram timeout` →, `SendTo: s address port data length` →, `Close: s`; a `UdpDatagram` has `from`, `from_port`, `length` and `data`; each socket's `received` and `dropped` |
 | `net.dhcp` | `Dhcp` | `Configure` → (`Net.Start` does this) |
@@ -2460,8 +2461,10 @@ and the classes of used files run before the classes that use them.
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
 | `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
 | `memory.pool`, `data.map`, `data.keyed`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
-| `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk |
-| `drivers.disk` | class `Disk` (both): the disk's FAT partition as numbered sectors: `partition_found`, `Read`, `Write` |
+| `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk, `Present` →, `Sectors` → |
+| `drivers.virtio_blk`, `drivers.nvme` | classes `VirtioBlk` and `Nvme` (32-bit kernels): a virtio-blk disk and an NVMe one (any maker's: found by its PCI class), with `Start` →, the same `Read` and `Write` as `Ata`, and `sectors`; both poll, and their sectors go through the driver's own buffer, so the caller's can be anywhere. An NVMe disk's sectors must be 512 bytes |
+| `drivers.block` | class `Block` (32-bit kernels): whichever disk the machine has (virtio-blk, then NVMe, then IDE), as numbered sectors from the start of the disk: `Start` →, `Read: sector count buffer` →, `Write` →, `Sectors` →, `kind` (`Block.ATA`, `Block.VIRTIO` or `Block.NVME`). `phi run` and `phi test` give a machine an IDE disk, or another kind with `--disk virtio` or `--disk nvme` |
+| `drivers.disk` | class `Disk` (32-bit kernels): the disk's FAT partition, on whichever disk `Block` found, as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16`, `fs.savelog` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
@@ -2555,8 +2558,10 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
 - networking in user programs (only 32-bit kernels have the network), certificates with
-  P-384 keys or SHA-384 and their dates, accepting incoming connections (TCP is
-  client-only), and network cards other than the RTL8139
+  P-384 keys or SHA-384 and their dates, and network cards other than the RTL8139 and
+  virtio-net
+- NVMe disks with 4096-byte sectors, and disks above 4 GB in memory (where a 32-bit kernel
+  can't reach their registers)
 - recording sound, sound cards other than the AC'97, and compressed audio (MP3, Ogg, ADPCM WAV files)
 
 ## How it is built

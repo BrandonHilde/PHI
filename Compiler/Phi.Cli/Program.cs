@@ -8,8 +8,8 @@ const string Usage = """
                                            compile to a bootable disk image; with --target linux or
                                            windows, a program (phi.Name:Program) becomes an ordinary
                                            executable for that system instead (NAME, or NAME.exe);
-                                           linux64 is a 64-bit Linux one (so far, programs that use
-                                           numbers, pointers, structs, the heap, text, methods, if, while, when and log)
+                                           linux64 and windows64 are 64-bit ones (not yet with atomic
+                                           or locked, or assembly blocks without an x64 version)
       phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
                                            with --target, run the executable here (a Linux one under
@@ -19,7 +19,8 @@ const string Usage = """
                                            --memory gives the machine more (or less) than 128 MB, up to 1024;
                                            with NAME.machines next to it, it and the machines listed there
                                            boot together on one network, each in a window;
-                                           --nic virtio gives the machine a virtio-net card (not an RTL8139)
+                                           --nic virtio gives the machine a virtio-net card (not an RTL8139),
+                                           --disk virtio or nvme a virtio-blk or NVMe disk (not an IDE one)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
                 [--memory <MB>] [--cores <n>] [--target <system>]
                                            boot each test headless and compare its serial
@@ -138,6 +139,16 @@ static int Execute(string[] args)
         TestRunner.NicChosen = true;
     }
 
+    void DiskOption()
+    {
+        string? disk = Option("--disk");
+        if (disk == null) return;
+        if (!Qemu.DiskKinds.Contains(disk))
+            throw new ArgumentException("--disk takes the kind of disk: " + string.Join(" or ", Qemu.DiskKinds));
+        Qemu.DiskKind = disk;
+        TestRunner.DiskChosen = true;
+    }
+
     try
     {
         switch (command)
@@ -152,6 +163,7 @@ static int Execute(string[] args)
                 MemoryOption();
                 CoresOption();
                 NicOption();
+                DiskOption();
                 if (rest.Count != 1) throw new ArgumentException($"{command} needs exactly one .phi file");
                 if (programArguments.Count > 0 && host == Phi.Compiler.Host.PhiOS)
                     throw new ArgumentException("arguments after -- are for a program built with --target linux or windows");
@@ -254,6 +266,7 @@ static int Execute(string[] args)
                 MemoryOption();
                 CoresOption();
                 NicOption();
+                DiskOption();
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 if (contains != null && !File.Exists(contains)) throw new ArgumentException($"file not found: {contains}");
                 double percent = DefaultTolerance;
@@ -284,6 +297,7 @@ static int Execute(string[] args)
                 MemoryOption();
                 CoresOption();
                 NicOption();
+                DiskOption();
                 if (rest.Count != 1) throw new ArgumentException("profile needs exactly one .phi file");
                 if (input != null && !File.Exists(input)) throw new ArgumentException($"file not found: {input}");
                 double? time = null;
@@ -309,6 +323,7 @@ static int Execute(string[] args)
                 MemoryOption();
                 CoresOption();
                 NicOption();
+                DiskOption();
                 if (rest.Count != 1) throw new ArgumentException("load needs exactly one .phi file");
                 if (client != null && !File.Exists(client)) throw new ArgumentException($"file not found: {client}");
                 int n = 100, s = 30, p = 4001;

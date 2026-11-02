@@ -1,0 +1,161 @@
+# Driver for the virtio-blk disk that QEMU (and cloud machines) offer, through its
+# legacy PCI interface (drivers.virtio). 32-bit kernels. The same calls as drivers.ata,
+# and drivers.block uses whichever disk the machine has.
+#
+#   use drivers.virtio_blk;
+#   bln ok: (VirtioBlk.Start);                   # false if there's no such disk
+#   call ok is VirtioBlk.Read: 0 1 buffer;       # sector 0, one sector (512 bytes)
+#   call ok is VirtioBlk.Write: 100 1 buffer;
+#   log VirtioBlk.sectors;                       # how big the disk is
+#
+# Each request is three buffers in the disk's one queue: a header (read or write, and
+# the first sector), the sectors themselves, and a byte the disk sets to 0 when it has
+# done the request. The driver waits for that (it polls; the disk is asked for no
+# interrupts), so a request is finished when Read or Write returns. The sectors go
+# through the driver's own buffer, so the caller's can be anywhere a kernel can reach
+# (a program's memory, say), and a request of more than BUFFER_SECTORS goes as several.
+# No features are asked for, so the disk writes each sector before it says it's done
+# (no write cache to flush).
+
+use drivers.pci;
+use drivers.virtio;
+use memory.heap;                # first, so new works in a Start called while the kernel starts (drivers.disk)
+use memory.mem;
+
+# the start of a request
+struct.VirtioBlkHeader
+{
+	u32 type;                   # IN (read) or OUT (write)
+	u32 reserved;
+	u32 sector;                 # the first sector (the low 32 bits; the high ones are 0)
+	u32 sector_high;
+}
+
+phi.VirtioBlk:Kernel
+{
+	const u32 PRODUCT: 0x1001;            # a disk, with the legacy interface
+	const u32 REG_CAPACITY: 0x14;         # Virtio.DEVICE: the disk's size in sectors (64 bits)
+	const u32 QUEUE: 0;
+
+	const u32 IN: 0;
+	const u32 OUT: 1;
+	const u8 STATUS_OK: 0;
+	const u32 SECTOR: 512;
+	const u32 BUFFER_SECTORS: 128;        # 64 KB at a time
+	const int TIMEOUT: 5000;              # ms a request may take
+
+	bln started: false;
+	u32 io: 0;
+	u32 sectors: 0;                       # how many the disk has (at most 2 TB of them)
+	u32 sectors_read: 0;
+	u32 sectors_written: 0;
+
+	Virtqueue queue;
+	u32 given: 0;                         # how many requests the disk has been given
+	ptr<VirtioBlkHeader> header: 0;
+	ptr<u8> status: 0;
+	ptr<u8> data: 0;
+
+	# find the disk and turn it on; false if there isn't one
+	[Start]
+		if started return true;
+		u32 disk: (Pci.Find: Virtio.VENDOR PRODUCT);
+		if disk is Pci.NOT_FOUND return false;
+		call Pci.EnableBusMaster: disk;
+		io is (Pci.Bar: disk 0);
+
+		call Virtio.Begin: io 0;
+		sectors is ind (io + REG_CAPACITY);
+		if (ind (io + REG_CAPACITY + 4)) is not 0
+			sectors is 0xFFFFFFFF;
+		;;
+		if not (Virtio.SetUpQueue: io QUEUE addr queue) return false;
+		if queue.size < 3 return false;
+
+		# the header and the status byte, then the sectors on a page of their own
+		ptr<u8> memory: new u8[Virtio.PAGE + BUFFER_SECTORS * SECTOR];
+		if memory is 0 return false;
+		header is memory;
+		status is memory + sizeof VirtioBlkHeader;
+		data is memory + Virtio.PAGE;
+
+		# every request is the same three buffers: header, sectors, status
+		queue.desc:0.address is header;
+		queue.desc:0.length is sizeof VirtioBlkHeader;
+		queue.desc:0.flags is Virtio.DESC_NEXT;
+		queue.desc:0.next is 1;
+		queue.desc:1.address is data;
+		queue.desc:1.next is 2;
+		queue.desc:2.address is status;
+		queue.desc:2.length is 1;
+		queue.desc:2.flags is Virtio.DESC_WRITE;
+		queue.avail:0 is Virtio.NO_INTERRUPT;
+
+		call Virtio.Ready: io;
+		started is true;
+	[end: true]
+
+	# read count sectors starting at lba into buffer (512 bytes each)
+	[Read: u32 lba: 0; u32 count: 1; ptr<u8> buffer: 0;]
+		if not started return false;
+		while count > 0
+			u32 n: count;
+			if n > BUFFER_SECTORS
+				n is BUFFER_SECTORS;
+			;;
+			if not (Request: IN lba n) return false;
+			call Mem.Copy: buffer data n * SECTOR;
+			sectors_read++ n;
+			lba++ n;
+			count-- n;
+			buffer++ n * SECTOR;
+		;;
+	[end: true]
+
+	# write count sectors starting at lba from buffer
+	[Write: u32 lba: 0; u32 count: 1; ptr<u8> buffer: 0;]
+		if not started return false;
+		while count > 0
+			u32 n: count;
+			if n > BUFFER_SECTORS
+				n is BUFFER_SECTORS;
+			;;
+			call Mem.Copy: data buffer n * SECTOR;
+			if not (Request: OUT lba n) return false;
+			sectors_written++ n;
+			lba++ n;
+			count-- n;
+			buffer++ n * SECTOR;
+		;;
+	[end: true]
+
+	# one request of n sectors (at most BUFFER_SECTORS) between the disk and data; false
+	# if the disk said it failed (outside the disk, say) or took too long, after which
+	# the disk isn't used again
+	[Request: u32 type: 0; u32 lba: 0; u32 n: 0;]
+		header:0.type is type;
+		header:0.reserved is 0;
+		header:0.sector is lba;
+		header:0.sector_high is 0;
+		status:0 is 0xFF;
+		queue.desc:1.length is n * SECTOR;
+		queue.desc:1.flags is Virtio.DESC_NEXT;
+		if type is IN
+			queue.desc:1.flags is Virtio.DESC_NEXT | Virtio.DESC_WRITE;
+		;;
+
+		queue.avail:(2 + given % queue.size) is 0;            # the request starts at buffer 0
+		given is (given + 1) & 0xFFFF;
+		queue.avail:1 is given;
+		call Virtio.Notify: io QUEUE;
+
+		int start: (OS.GetTicks);
+		while (Virtio.Used: addr queue) is not given
+			if (OS.GetTicks) - start > TIMEOUT
+				started is false;                               # its queue is out of step now
+				return false;
+			;;
+		;;
+		volatile ptr<u8> done: status;                         # the disk wrote it
+	[end: done:0 is STATUS_OK]
+}

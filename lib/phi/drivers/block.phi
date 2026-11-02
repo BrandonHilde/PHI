@@ -1,0 +1,65 @@
+# The disk, whichever kind the machine has: a virtio-blk disk (drivers.virtio_blk), an
+# NVMe one (drivers.nvme) or an IDE one (drivers.ata), as numbered 512-byte sectors from
+# the start of the disk. drivers.disk uses this, so the file system works with any of
+# them. 32-bit kernels.
+#
+#   use drivers.block;
+#   bln ok: (Block.Start);                       # false if there's no disk
+#   call ok is Block.Read: 0 1 buffer;           # sector 0, one sector
+#   call ok is Block.Write: 100 1 buffer;
+#   log (Block.Sectors);                         # how big the disk is
+#   log Block.kind is Block.NVME;
+#
+# A machine with disks of more than one kind gets the first of virtio-blk, NVMe and IDE.
+# phi run and phi test give a machine an IDE disk unless they're told otherwise
+# (--disk virtio, --disk nvme). A count of sectors is 1 to 255 at a time, as an IDE disk
+# allows.
+
+use drivers.ata;
+use drivers.nvme;
+use drivers.virtio_blk;
+
+phi.Block:Kernel
+{
+	const u32 NONE: 0;
+	const u32 ATA: 1;
+	const u32 VIRTIO: 2;
+	const u32 NVME: 3;
+
+	u32 kind: NONE;
+
+	# find the disk; false if there's none
+	[Start]
+		if kind is not NONE return true;
+		if (VirtioBlk.Start)
+			kind is VIRTIO;
+		;;
+		elif (Nvme.Start)
+			kind is NVME;
+		;;
+		elif (Ata.Present)
+			kind is ATA;
+		;;
+	[end: kind is not NONE]
+
+	# how many sectors the disk has
+	[Sectors]
+		if kind is VIRTIO return VirtioBlk.sectors;
+		if kind is NVME return Nvme.sectors;
+		if kind is ATA return (Ata.Sectors);
+	[end: 0]
+
+	[Read: u32 sector: 0; u32 count: 1; ptr<u8> buffer: 0;]
+		if count is 0 or count > 255 return false;
+		if kind is VIRTIO return (VirtioBlk.Read: sector count buffer);
+		if kind is NVME return (Nvme.Read: sector count buffer);
+		if kind is ATA return (Ata.Read: sector count buffer);
+	[end: false]
+
+	[Write: u32 sector: 0; u32 count: 1; ptr<u8> buffer: 0;]
+		if count is 0 or count > 255 return false;
+		if kind is VIRTIO return (VirtioBlk.Write: sector count buffer);
+		if kind is NVME return (Nvme.Write: sector count buffer);
+		if kind is ATA return (Ata.Write: sector count buffer);
+	[end: false]
+}

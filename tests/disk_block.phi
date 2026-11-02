@@ -1,0 +1,29 @@
+# The block layer (drivers.block), on each kind of disk: its size, sector 0, a request
+# bigger than the virtio-blk driver's buffer, and sectors outside the disk.
+use drivers.block;
+
+phi.BlockTest:Kernel
+{
+	u8 sector[512];
+	ptr<u8> many: new u8[200 * 512];
+	ptr<u8> back: new u8[200 * 512];
+
+	debug 'start: ' (Block.Start) ' sectors: ' (Block.Sectors) '\n';
+	debug 'read: ' (Block.Read: 0 1 addr sector) ' signature: ' sector:510 ' ' sector:511 '\n';
+
+	# 200 sectors near the end of the disk, written and read back in one request each
+	while u32 i: 0; i < 200 * 512; i++;
+		many:i is i * 7 + i / 512;
+	;;
+	u32 last: (Block.Sectors) - 200;
+	debug 'write: ' (Block.Write: last 200 many) '\n';
+	debug 'read back: ' (Block.Read: last 200 back) ' same: ' (Mem.Equal: many back 200 * 512) '\n';
+
+	# one sector of it, on its own
+	debug 'one: ' (Block.Read: last + 150 1 addr sector) ' same: ' (Mem.Equal: addr sector many + 150 * 512 512) '\n';
+
+	# a count the layer doesn't take, and sectors past the end
+	debug 'none: ' (Block.Read: 0 0 back) ' too many: ' (Block.Read: 0 256 back) '\n';
+	debug 'past the end: ' (Block.Read: (Block.Sectors) 1 back) '\n';
+	exit 0;
+}

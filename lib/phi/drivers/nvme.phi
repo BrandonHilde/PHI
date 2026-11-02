@@ -1,0 +1,301 @@
+# Driver for NVMe disks, which most cloud machines have (and QEMU's nvme device): found
+# by what they are (PCI class 01:08:02), whoever made them. 32-bit kernels. The same
+# calls as drivers.ata and drivers.virtio_blk, and drivers.block uses whichever disk the
+# machine has.
+#
+#   use drivers.nvme;
+#   bln ok: (Nvme.Start);                        # false if there's no such disk
+#   call ok is Nvme.Read: 0 1 buffer;            # sector 0, one sector (512 bytes)
+#   call ok is Nvme.Write: 100 1 buffer;
+#   log Nvme.sectors;                            # how big the disk is
+#
+# The disk's registers are memory (its first BAR, mapped with Paging.MapDevice). The
+# driver and the disk share queues in memory: the driver writes 64-byte commands into a
+# submission queue and rings its doorbell (a register); the disk writes a 16-byte answer
+# for each into a completion queue, flipping a phase bit each time round the queue, so a
+# new answer can be told from an old one. The admin queue (0) sets the disk up: what it
+# is (Identify) and an I/O queue pair (1) for reading and writing. The driver polls for
+# each answer (the disk is asked for no interrupts), so a request is finished when Read
+# or Write returns. As with virtio-blk, the sectors go through the driver's own buffer,
+# so the caller's can be anywhere a kernel can reach, BUFFER_SECTORS at a time (or fewer,
+# when the disk takes less in one request). The disk is the first namespace (1), whose
+# sectors must be 512 bytes: 4096-byte ones aren't handled yet.
+
+use drivers.pci;
+use memory.heap;                # first, so new works in a Start called while the kernel starts (drivers.disk)
+use memory.mem;
+use memory.paging;
+
+# a command, in a submission queue
+struct.NvmeCommand
+{
+	u32 opcode;                 # the command in bits 0-7, its number in bits 16-31
+	u32 namespace;
+	u32 reserved[2];
+	u32 metadata[2];
+	u32 prp1;                   # the data's first page (the low 32 bits; the high ones are 0)
+	u32 prp1_high;
+	u32 prp2;                   # its second page, or a list of the pages after the first
+	u32 prp2_high;
+	u32 cdw10;                  # the command's own values
+	u32 cdw11;
+	u32 cdw12;
+	u32 cdw13;
+	u32 cdw14;
+	u32 cdw15;
+}
+
+# an answer, in a completion queue
+struct.NvmeAnswer
+{
+	u32 result;
+	u32 reserved;
+	u32 queue_head;             # how far the disk has read the submission queue
+	u32 status;                 # the command's number in bits 0-15, the phase in bit 16, the status above
+}
+
+# a submission queue and its completion queue
+struct.NvmeQueue
+{
+	ptr<NvmeCommand> commands;
+	ptr<NvmeAnswer> answers;
+	u32 size;                   # places in each
+	u32 tail;                   # where the next command goes
+	u32 head;                   # where the next answer will be
+	u32 phase;                  # the phase bit the next answer will have
+	u32 tail_doorbell;          # the registers that say where tail and head are
+	u32 head_doorbell;
+	u32 next_id;
+}
+
+phi.Nvme:Kernel
+{
+	const u32 CLASS: 0x010802;            # mass storage, non-volatile memory, NVMe
+
+	# registers, as offsets from the disk's memory
+	const u32 REG_CAPABILITIES: 0x00;     # 64 bits
+	const u32 REG_CONFIG: 0x14;
+	const u32 REG_STATUS: 0x1C;
+	const u32 REG_ADMIN_SIZES: 0x24;
+	const u32 REG_ADMIN_SUBMIT: 0x28;     # 64 bits
+	const u32 REG_ADMIN_COMPLETE: 0x30;   # 64 bits
+	const u32 DOORBELLS: 0x1000;
+	const u32 REGISTERS: 0x4000;          # what's mapped: the registers and the first doorbells
+
+	const u32 CONFIG_ENABLE: 1;
+	const u32 CONFIG_QUEUES: 0x460000;    # 64-byte commands (2^6) and 16-byte answers (2^4)
+	const u32 STATUS_READY: 1;
+	const u32 STATUS_FATAL: 2;
+
+	const u32 ADMIN_CREATE_SUBMIT: 0x01;
+	const u32 ADMIN_CREATE_COMPLETE: 0x05;
+	const u32 ADMIN_IDENTIFY: 0x06;
+	const u32 IDENTIFY_NAMESPACE: 0;
+	const u32 IDENTIFY_CONTROLLER: 1;
+	const u32 WRITE: 0x01;
+	const u32 READ: 0x02;
+
+	const u32 ADMIN_SIZE: 16;
+	const u32 IO_SIZE: 64;
+	const u32 NAMESPACE: 1;
+	const u32 PAGE: 4096;
+	const u32 SECTOR: 512;
+	const u32 BUFFER_SECTORS: 128;        # 64 KB at a time
+	const int TIMEOUT: 5000;              # ms a command may take
+
+	bln started: false;
+	u32 registers: 0;
+	u32 stride: 4;                        # bytes from one doorbell to the next
+	int ready_ms: 0;                      # how long the disk may take to turn on or off
+	u32 sectors: 0;                       # how many the disk has (at most 2 TB of them)
+	u32 most_sectors: BUFFER_SECTORS;     # in one request
+	u32 sectors_read: 0;
+	u32 sectors_written: 0;
+
+	NvmeQueue admin;
+	NvmeQueue io;
+	ptr<u8> info: 0;                      # a page for what Identify says
+	ptr<u32> pages: 0;                    # a page for a request's list of pages
+	ptr<u8> data: 0;                      # the sectors, page-aligned
+
+	# find the disk, set it up and turn it on; false if there isn't one (or it isn't one
+	# this driver can use: above 4 GB, or not 512-byte sectors)
+	[Start]
+		if started return true;
+		u32 disk: (Pci.FindClass: CLASS);
+		if disk is Pci.NOT_FOUND return false;
+		call Pci.EnableBusMaster: disk;
+		registers is (Pci.Bar: disk 0);
+		u32 bar: (Pci.Read: disk Pci.REG_BAR0);
+		if (bar & 6) is 4 and (Pci.Read: disk Pci.REG_BAR0 + 4) is not 0 return false;   # a 32-bit kernel can't reach it
+		if registers is 0 return false;
+		call Paging.MapDevice: registers REGISTERS;
+
+		u32 low: (Register: REG_CAPABILITIES);
+		u32 high: (Register: REG_CAPABILITIES + 4);
+		stride is 4 << (high & 0xF);
+		ready_ms is ((low >> 24) & 0xFF) * 500 + 500;
+		u32 largest: (low & 0xFFFF) + 1;                       # the most a queue can hold
+
+		ptr<u8> memory: new u8[PAGE * (3 + BUFFER_SECTORS * SECTOR / PAGE)];
+		if memory is 0 return false;
+		u32 aligned: (memory + PAGE - 1) & ~(PAGE - 1);
+		info is aligned;
+		pages is aligned + PAGE;
+		data is aligned + 2 * PAGE;
+
+		# off, then on with the admin queue
+		call SetRegister: REG_CONFIG 0;
+		if not (WaitReady: 0) return false;
+		if not (MakeQueue: addr admin 0 (Smaller: ADMIN_SIZE largest)) return false;
+		call SetRegister: REG_ADMIN_SIZES ((admin.size - 1) << 16) | (admin.size - 1);
+		call SetRegister: REG_ADMIN_SUBMIT admin.commands;
+		call SetRegister: REG_ADMIN_SUBMIT + 4 0;
+		call SetRegister: REG_ADMIN_COMPLETE admin.answers;
+		call SetRegister: REG_ADMIN_COMPLETE + 4 0;
+		call SetRegister: REG_CONFIG CONFIG_ENABLE | CONFIG_QUEUES;
+		if not (WaitReady: STATUS_READY) return false;
+
+		# the most it takes in one request (in pages of the smallest size it has: 4096 bytes)
+		if not (Command: addr admin ADMIN_IDENTIFY 0 info 0 IDENTIFY_CONTROLLER 0 0) return false;
+		u32 transfer: info:77;
+		if transfer is not 0 and transfer < 5
+			most_sectors is (PAGE << transfer) / SECTOR;
+		;;
+
+		# the disk's size, and that its sectors are 512 bytes
+		if not (Command: addr admin ADMIN_IDENTIFY NAMESPACE info 0 IDENTIFY_NAMESPACE 0 0) return false;
+		ptr<u32> words: info;
+		sectors is words:0;
+		if words:1 is not 0
+			sectors is 0xFFFFFFFF;
+		;;
+		u32 format: words:(32 + (info:26 & 0xF));
+		if ((format >> 16) & 0xFF) is not 9 return false;      # 2^9: 512 bytes
+
+		# the I/O queues: the answers first, as the commands name where theirs go
+		if not (MakeQueue: addr io 1 (Smaller: IO_SIZE largest)) return false;
+		u32 sizes: ((io.size - 1) << 16) | 1;
+		if not (Command: addr admin ADMIN_CREATE_COMPLETE 0 io.answers 0 sizes 1 0) return false;
+		if not (Command: addr admin ADMIN_CREATE_SUBMIT 0 io.commands 0 sizes (1 << 16) | 1 0) return false;
+		started is true;
+	[end: true]
+
+	# read count sectors starting at lba into buffer (512 bytes each)
+	[Read: u32 lba: 0; u32 count: 1; ptr<u8> buffer: 0;]
+		if not started return false;
+		while count > 0
+			u32 n: (Smaller: count most_sectors);
+			if not (Request: READ lba n) return false;
+			call Mem.Copy: buffer data n * SECTOR;
+			sectors_read++ n;
+			lba++ n;
+			count-- n;
+			buffer++ n * SECTOR;
+		;;
+	[end: true]
+
+	# write count sectors starting at lba from buffer
+	[Write: u32 lba: 0; u32 count: 1; ptr<u8> buffer: 0;]
+		if not started return false;
+		while count > 0
+			u32 n: (Smaller: count most_sectors);
+			call Mem.Copy: data buffer n * SECTOR;
+			if not (Request: WRITE lba n) return false;
+			sectors_written++ n;
+			lba++ n;
+			count-- n;
+			buffer++ n * SECTOR;
+		;;
+	[end: true]
+
+	# n sectors between the disk and data: the first page, and the second or a list of the rest
+	[Request: u32 opcode: 0; u32 lba: 0; u32 n: 0;]
+		u32 count: (n * SECTOR + PAGE - 1) / PAGE;
+		u32 second: 0;
+		if count is 2
+			second is data + PAGE;
+		;;
+		elif count > 2
+			while u32 i: 1; i < count; i++;
+				pages:(2 * (i - 1)) is data + i * PAGE;
+				pages:(2 * (i - 1) + 1) is 0;
+			;;
+			second is pages;
+		;;
+	[end: (Command: addr io opcode NAMESPACE data second lba 0 n - 1)]
+
+	# send a command and wait for its answer: false if the disk said it failed or took too
+	# long, after which the disk isn't used again
+	[Command: ptr<NvmeQueue> q: 0; u32 opcode: 0; u32 namespace: 0; u32 prp1: 0; u32 prp2: 0; u32 cdw10: 0; u32 cdw11: 0; u32 cdw12: 0;]
+		ptr<NvmeCommand> c: q:0.commands + q:0.tail * sizeof NvmeCommand;
+		call Mem.Fill: c 0 sizeof NvmeCommand;
+		c:0.opcode is opcode | (q:0.next_id << 16);
+		c:0.namespace is namespace;
+		c:0.prp1 is prp1;
+		c:0.prp2 is prp2;
+		c:0.cdw10 is cdw10;
+		c:0.cdw11 is cdw11;
+		c:0.cdw12 is cdw12;
+		q:0.next_id is (q:0.next_id + 1) & 0xFFFF;
+		q:0.tail is (q:0.tail + 1) % q:0.size;
+		call SetRegister: q:0.tail_doorbell q:0.tail;
+
+		volatile ptr<u32> answer: q:0.answers + q:0.head * sizeof NvmeAnswer;
+		int start: (OS.GetTicks);
+		while ((answer:3 >> 16) & 1) is not q:0.phase
+			if (OS.GetTicks) - start > TIMEOUT
+				started is false;
+				return false;
+			;;
+		;;
+		u32 status: answer:3 >> 17;
+		q:0.head is (q:0.head + 1) % q:0.size;
+		if q:0.head is 0
+			q:0.phase is q:0.phase ^ 1;
+		;;
+		call SetRegister: q:0.head_doorbell q:0.head;
+	[end: status is 0]
+
+	# a queue pair's memory, each page-aligned and empty, and its doorbells
+	[MakeQueue: ptr<NvmeQueue> q: 0; u32 id: 0; u32 size: 0;]
+		u32 commands: (size * sizeof NvmeCommand + PAGE - 1) & ~(PAGE - 1);
+		u32 answers: (size * sizeof NvmeAnswer + PAGE - 1) & ~(PAGE - 1);
+		ptr<u8> memory: new u8[commands + answers + PAGE];
+		if memory is 0 return false;
+		call Mem.Fill: memory 0 commands + answers + PAGE;
+		u32 aligned: (memory + PAGE - 1) & ~(PAGE - 1);
+		q:0.commands is aligned;
+		q:0.answers is aligned + commands;
+		q:0.size is size;
+		q:0.tail is 0;
+		q:0.head is 0;
+		q:0.phase is 1;
+		q:0.next_id is 0;
+		q:0.tail_doorbell is DOORBELLS + (2 * id) * stride;
+		q:0.head_doorbell is DOORBELLS + (2 * id + 1) * stride;
+	[end: true]
+
+	# wait for the disk to say it's on (STATUS_READY) or off (0); false if it doesn't in
+	# the time it said it might take, or it has failed
+	[WaitReady: u32 wanted: 0;]
+		int start: (OS.GetTicks);
+		while ((Register: REG_STATUS) & STATUS_READY) is not wanted
+			if ((Register: REG_STATUS) & STATUS_FATAL) is not 0 return false;
+			if (OS.GetTicks) - start > ready_ms return false;
+		;;
+	[end: true]
+
+	[Register: u32 offset: 0;]
+		volatile ptr<u32> r: registers + offset;
+	[end: r:0]
+
+	[SetRegister: u32 offset: 0; u32 value: 0;]
+		volatile ptr<u32> r: registers + offset;
+		r:0 is value;
+	[end]
+
+	[Smaller: u32 a: 0; u32 b: 0;]
+		if a < b return a;
+	[end: b]
+}

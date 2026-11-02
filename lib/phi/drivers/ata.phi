@@ -29,12 +29,34 @@ phi.Ata:Library
 	const u8 COMMAND_READ: 0x20;
 	const u8 COMMAND_WRITE: 0x30;
 	const u8 COMMAND_FLUSH: 0xE7;
+	const u8 COMMAND_IDENTIFY: 0xEC;
 
 	u32 sectors_read: 0;
 	u32 sectors_written: 0;
 
 	# no interrupts from the drive: this driver polls
 	out ATA_CONTROL 0x02;
+
+	# whether the drive is there: with no controller, nothing drives the status port's
+	# lines and it reads as 0xFF; a controller with no drive reads as 0
+	[Present]
+		out ATA_DRIVE 0xE0;                       # the master drive
+		u8 status: in ATA_STATUS;
+		status is in ATA_STATUS;
+		status is in ATA_STATUS;
+		status is in ATA_STATUS;
+	[end: status is not 0xFF and status is not 0]
+
+	# how many sectors the drive has that 28-bit sector numbers reach; 0 if it doesn't say
+	[Sectors]
+		u16 info[256];
+		call Select: 0 0;
+		out ATA_COMMAND COMMAND_IDENTIFY;
+		if not (WaitForData) return 0;
+		while u32 w: 0; w < 256; w++;
+			info:w is inw ATA_DATA;
+		;;
+	[end: info:60 | ((info:61 as u32) << 16)]
 
 	# read count sectors (1-255) starting at lba into buffer (512 bytes each)
 	[Read: u32 lba: 0; u32 count: 1; ptr<u16> buffer: 0;]

@@ -1,4 +1,5 @@
-# The disk's FAT partition, as numbered sectors (the block-device layer).
+# The disk's FAT partition, as numbered sectors, on whichever disk the machine has
+# (drivers.block). 32-bit kernels.
 #
 #   use drivers.disk;
 #   if Disk.partition_found
@@ -8,7 +9,7 @@
 # the first FAT partition. Sector numbers are relative to the partition, and
 # reads and writes outside it fail, so a file system can't touch anything else.
 
-use drivers.ata;
+use drivers.block;
 
 struct.PartitionEntry
 {
@@ -20,7 +21,7 @@ struct.PartitionEntry
 	u32 sector_count;
 }
 
-phi.Disk:Library
+phi.Disk:Kernel
 {
 	u8 disk_mbr[512];
 	bln partition_found: false;
@@ -32,7 +33,9 @@ phi.Disk:Library
 
 	[FindPartition]
 		bln ok: false;
-		call ok is Ata.Read: 0 1 addr disk_mbr;
+		if (Block.Start)
+			call ok is Block.Read: 0 1 addr disk_mbr;
+		;;
 		if ok and disk_mbr:510 is 0x55 and disk_mbr:511 is 0xAA
 			ptr<PartitionEntry> entries: addr disk_mbr:446;
 			while int i: 0; i < 4 and partition_found is false; i++;
@@ -51,14 +54,14 @@ phi.Disk:Library
 	[Read: u32 sector: 0; u32 count: 1; ptr<u16> buffer: 0;]
 		bln ok: false;
 		if partition_found and sector + count <= partition_sectors
-			call ok is Ata.Read: partition_start + sector count buffer;
+			call ok is Block.Read: partition_start + sector count buffer;
 		;;
 	[end: ok]
 
 	[Write: u32 sector: 0; u32 count: 1; ptr<u16> buffer: 0;]
 		bln ok: false;
 		if partition_found and sector + count <= partition_sectors
-			call ok is Ata.Write: partition_start + sector count buffer;
+			call ok is Block.Write: partition_start + sector count buffer;
 		;;
 	[end: ok]
 }

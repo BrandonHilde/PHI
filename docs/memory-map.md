@@ -1,7 +1,7 @@
 # Memory map and boot process
 
 PHI builds two kinds of programs. Both boot from a raw disk image (`phi build`), as an
-IDE hard disk in QEMU.
+IDE hard disk in QEMU (or, for a kernel, a virtio-blk or NVMe one: `--disk`).
 
 ## 16-bit programs (`Bootloader` and `OS` classes)
 
