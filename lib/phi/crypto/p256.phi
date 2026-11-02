@@ -1,18 +1,29 @@
-# Checking ECDSA signatures on the P-256 curve (FIPS 186-4, SEC 1), of a SHA-256 digest:
-# what most certificates and TLS servers that don't use RSA sign with. Any kind of
-# program.
+# ECDSA on the P-256 curve (FIPS 186-4, SEC 1) with SHA-256 digests: checking signatures
+# (what most certificates and TLS servers that don't use RSA sign with), and making them
+# with a private key. Any kind of program.
 #
 #   use crypto.p256;
 #   bln good: (P256.Verify: public addr digest r s);
 #
-# public is the key as a certificate holds it, 65 bytes (04, then x and y); r and s are
-# the signature's two numbers, 32 big-endian bytes each.
+#   u8 private[32];
+#   u8 public[65];
+#   bln ok: (P256.ReadPrivate: private public der length);   # a key file's DER (SEC 1 or PKCS #8)
+#   ok is (P256.Sign: r s private addr digest);
+#
+# public is the key as a certificate holds it, 65 bytes (04, then x and y); a private key
+# is 32 big-endian bytes; r and s are the signature's two numbers, 32 bytes each. Sign
+# makes its nonce from the key and the digest (RFC 6979), not from random numbers: the
+# same digest signs the same way, and a weak random generator can't give the key away.
 #
 # The numbers are crypto.bignum's, 16 limbs of 16 bits, kept in Montgomery form (x R mod
 # p) while the points are worked on, and the points in Jacobian coordinates (x / z^2,
-# y / z^3), so that adding them needs no division until the end.
+# y / z^3), so that adding them needs no division until the end. Signing takes as long as
+# the numbers make it: it isn't made to take the same time whatever the key, so a program
+# others can time precisely shouldn't sign with a key that matters.
 
 use crypto.bignum;
+use crypto.der;
+use crypto.hmac;
 
 # a point on the curve, (x / z^2, y / z^3); z is 0 for the point at infinity
 struct.P256Point
@@ -48,6 +59,21 @@ phi.P256:Library
 	u32 p256_w[18];
 	u32 p256_u1[18];
 	u32 p256_u2[18];
+
+	# for signing
+	u32 p256_d[18];                           # the private key
+	u32 p256_k[18];                           # the nonce
+	u8 sign_v[32];                            # RFC 6979's V and K
+	u8 sign_key[32];
+	u8 sign_x[32];                            # the private key, and the digest mod n, as bytes
+	u8 sign_h[32];
+	u8 sign_byte[1];
+	P256Point p256_point;
+	u8 p256_xy[64];
+
+	# the object identifiers ReadPrivate reads
+	u8 p256_oid_ec: 0x2A 0x86 0x48 0xCE 0x3D 0x02 0x01;
+	u8 p256_oid_curve: 0x2A 0x86 0x48 0xCE 0x3D 0x03 0x01 0x07;
 
 	# for the point math
 	u32 t_a[18];
@@ -116,6 +142,154 @@ phi.P256:Library
 			call Big.Subtract: addr t_b addr p256_order.n LIMBS;
 		;;
 	[end: (Big.Compare: addr t_b addr p256_r LIMBS) is 0]
+
+	# r and s (32 bytes each) = private's signature of a SHA-256 digest, with its nonce from
+	# RFC 6979; false if private isn't a key (0, or not below n)
+	[Sign: ptr<u8> r: 0; ptr<u8> s: 0; ptr<u8> private: 0; ptr<u8> digest: 0;]
+		call P256.Ready;
+		if not (P256.ReadScalar: addr p256_d private) return false;
+		call Bytes.Copy: addr sign_x private 32;
+		# e = the digest mod n (as a number, and as bytes for the nonce)
+		call Big.FromBytes: addr p256_e LIMBS digest 32;
+		if (Big.Compare: addr p256_e addr p256_order.n LIMBS) >= 0
+			call Big.Subtract: addr p256_e addr p256_order.n LIMBS;
+		;;
+		call Big.ToBytes: addr sign_h 32 addr p256_e LIMBS;
+
+		# V = 1 1 ... 1, K = 0 0 ... 0, then K and V from the key and the digest
+		while u32 i: 0; i < 32; i++;
+			sign_v:i is 1;
+			sign_key:i is 0;
+		;;
+		call P256.Rekey: 0 true;
+		call P256.Rekey: 1 true;
+		while true
+			# the next candidate: V = HMAC(K, V), as a number
+			call Hmac.Mac: addr sign_key 32 addr sign_v 32 addr sign_v;
+			call Big.FromBytes: addr p256_k LIMBS addr sign_v 32;
+			if not (Big.IsZero: addr p256_k LIMBS) and (Big.Compare: addr p256_k addr p256_order.n LIMBS) < 0
+				# r = (k G).x mod n
+				call P256.ScalarMult: addr p256_point addr p256_k addr p256_g;
+				call P256.Affine: addr p256_xy addr p256_point;
+				call Big.FromBytes: addr p256_r LIMBS addr p256_xy 32;
+				if (Big.Compare: addr p256_r addr p256_order.n LIMBS) >= 0
+					call Big.Subtract: addr p256_r addr p256_order.n LIMBS;
+				;;
+				if not (Big.IsZero: addr p256_r LIMBS)
+					# s = (e + r d) / k mod n
+					call P256.TimesModN: addr p256_s addr p256_r addr p256_d;
+					call P256.PlusModN: addr p256_s addr p256_s addr p256_e;
+					call Big.PowMod: addr p256_w addr p256_k addr p256_n_minus_2 32 addr p256_order;
+					call P256.TimesModN: addr p256_s addr p256_w addr p256_s;
+					if not (Big.IsZero: addr p256_s LIMBS)
+						call Big.ToBytes: r 32 addr p256_r LIMBS;
+						call Big.ToBytes: s 32 addr p256_s LIMBS;
+						return true;
+					;;
+				;;
+			;;
+			# (almost never) not a nonce that works: K and V move on
+			call P256.Rekey: 0 false;
+		;;
+	[end: false]
+
+	# RFC 6979's K = HMAC(K, V b [x h]) and V = HMAC(K, V), with x and h when keyed
+	[Rekey: u32 b: 0; bln keyed: false;]
+		sign_byte:0 is b;
+		call Hmac.Start: addr sign_key 32;
+		call Hmac.Update: addr sign_v 32;
+		call Hmac.Update: addr sign_byte 1;
+		if keyed
+			call Hmac.Update: addr sign_x 32;
+			call Hmac.Update: addr sign_h 32;
+		;;
+		call Hmac.Finish: addr sign_key;
+		call Hmac.Mac: addr sign_key 32 addr sign_v 32 addr sign_v;
+	[end]
+
+	# public (65 bytes: 04, x, y) = the public key of private (32 bytes); false if private
+	# isn't a key
+	[PublicFrom: ptr<u8> public: 0; ptr<u8> private: 0;]
+		call P256.Ready;
+		if not (P256.ReadScalar: addr p256_d private) return false;
+		call P256.ScalarMult: addr p256_point addr p256_d addr p256_g;
+		public:0 is 4;
+		call P256.Affine: public + 1 addr p256_point;
+	[end: true]
+
+	# private (32 bytes) and public (65 bytes) = the key in a key file's DER: SEC 1's
+	# ECPrivateKey (openssl ecparam -genkey) or PKCS #8 holding one (openssl genpkey); false
+	# if it isn't a P-256 private key
+	[ReadPrivate: ptr<u8> private: 0; ptr<u8> public: 0; ptr<u8> der: 0; u32 length: 0;]
+		if not (Der.Element: der length) or Der.tag is not Der.SEQUENCE return false;
+		DerCursor key;
+		call Der.Enter: addr key;
+		if not (Der.Next: addr key) or Der.tag is not Der.INTEGER or Der.length is not 1 return false;
+		u32 version: Der.content:0;
+		if version is 0
+			# PKCS #8: the algorithm (an EC key on P-256), then the ECPrivateKey in an OCTET STRING
+			if not (Der.Next: addr key) or Der.tag is not Der.SEQUENCE return false;
+			DerCursor algorithm;
+			call Der.Enter: addr algorithm;
+			if not (Der.Next: addr algorithm) or not (Der.IsOid: addr p256_oid_ec 7) return false;
+			if not (Der.Next: addr algorithm) or not (Der.IsOid: addr p256_oid_curve 8) return false;
+			if not (Der.Next: addr key) or Der.tag is not Der.OCTET_STRING return false;
+			return (P256.ReadPrivate: private public Der.content Der.length);
+		;;
+		# ECPrivateKey: version 1, the key, then (both optional) the curve and the public key
+		if version is not 1 return false;
+		if not (Der.Next: addr key) or Der.tag is not Der.OCTET_STRING or Der.length > 32 return false;
+		if not (Der.Number: private 32) return false;
+		while (Der.Next: addr key)
+			if Der.tag is 0xA0
+				DerCursor curve;
+				call Der.Enter: addr curve;
+				if not (Der.Next: addr curve) or not (Der.IsOid: addr p256_oid_curve 8) return false;
+			;;
+		;;
+	[end: (P256.PublicFrom: public private)]
+
+	# k (limbs) = 32 bytes of a scalar; false if it's 0 or not below n
+	[ReadScalar: ptr<u32> k: 0; ptr<u8> bytes: 0;]
+		call Big.FromBytes: k LIMBS bytes 32;
+	[end: not (Big.IsZero: k LIMBS) and (Big.Compare: k addr p256_order.n LIMBS) < 0]
+
+	# r = k a, one bit of k at a time from the top
+	[ScalarMult: ptr<P256Point> r: 0; ptr<u32> k: 0; ptr<P256Point> a: 0;]
+		call P256.Infinity: r;
+		int bit: 255;
+		while bit >= 0
+			call P256.Double: r r;
+			if ((k:(bit >> 4) >> (bit & 15)) & 1) is 1
+				call P256.Add: r r a;
+			;;
+			bit--;
+		;;
+	[end]
+
+	# xy (64 bytes: x then y) = a, out of Jacobian coordinates and Montgomery form (a isn't
+	# the point at infinity)
+	[Affine: ptr<u8> xy: 0; ptr<P256Point> a: 0;]
+		call Big.MontPow: addr t_a addr a.z addr p256_p_minus_2 32 addr p256_field;   # 1/z
+		call P256.Mul: addr t_b addr t_a addr t_a;                                     # 1/z^2
+		call P256.Mul: addr t_c addr a.x addr t_b;
+		call P256.Mul: addr t_c addr t_c addr p256_plain_one;
+		call Big.ToBytes: xy 32 addr t_c LIMBS;
+		call P256.Mul: addr t_b addr t_b addr t_a;                                     # 1/z^3
+		call P256.Mul: addr t_c addr a.y addr t_b;
+		call P256.Mul: addr t_c addr t_c addr p256_plain_one;
+		call Big.ToBytes: xy + 32 32 addr t_c LIMBS;
+	[end]
+
+	# r = a + b mod n (both below n)
+	[PlusModN: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.Copy: addr t_plus a LIMBS;
+		u32 carry: (Big.Add: addr t_plus b LIMBS);
+		if carry is not 0 or (Big.Compare: addr t_plus addr p256_order.n LIMBS) >= 0
+			call Big.Subtract: addr t_plus addr p256_order.n LIMBS;
+		;;
+		call Big.Copy: r addr t_plus LIMBS;
+	[end]
 
 	# point = the 64 bytes x and y, in Montgomery form with z 1; false if it isn't on
 	# the curve (y^2 = x^3 - 3x + b) or a number isn't below p

@@ -1,0 +1,10 @@
+rfc public: 1 1
+rfc sign: 1 r 1 s 1
+rfc checks: 1
+sec 1: 1 1
+pkcs 8: 1 1
+sign: 1 as openssl did: 1 1, checks: 1
+another digest: 0
+zero: 0 0
+n: 0
+not a key file: 0

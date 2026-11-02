@@ -1,0 +1,105 @@
+# Reading DER (ITU-T X.690), the encoding certificates and keys are in: each element is
+# a tag, a length and its content, and a SEQUENCE's content is more elements. Any kind of
+# program.
+#
+#   use crypto.der;
+#   DerCursor c;
+#   c.pos is der;
+#   c.stop is der + length;
+#   if (Der.Next: addr c) and Der.tag is Der.SEQUENCE
+#       DerCursor inside;
+#       call Der.Enter: addr inside;            # the SEQUENCE's elements, one Next at a time
+#       ...
+#   ;;
+#
+# After Element or Next, Der.tag, Der.content and Der.length are the element read, and
+# Der.next is just past it. Only one-byte tags, and lengths of up to 3 bytes (16 MB), as
+# certificates and keys have.
+
+use crypto.bytes;
+
+# where reading has got to: from pos up to stop
+struct.DerCursor
+{
+	ptr<u8> pos;
+	ptr<u8> stop;
+}
+
+phi.Der:Library
+{
+	const u32 BOOLEAN: 1;
+	const u32 INTEGER: 2;
+	const u32 BIT_STRING: 3;
+	const u32 OCTET_STRING: 4;
+	const u32 NULL: 5;
+	const u32 OID: 6;
+	const u32 SEQUENCE: 0x30;
+	const u32 SET: 0x31;
+
+	# the element read last
+	u32 tag: 0;
+	ptr<u8> content: 0;
+	u32 length: 0;
+	ptr<u8> next: 0;
+
+	# the element at p (left bytes there): its tag, content and where the next begins;
+	# false if it doesn't fit
+	[Element: ptr<u8> p: 0; u32 left: 0;]
+		if left < 2 return false;
+		tag is p:0;
+		u32 first: p:1;
+		u32 header: 2;
+		u32 size: first;
+		if first >= 0x80
+			u32 count: first & 0x7F;
+			if count is 0 or count > 3 or left < 2 + count return false;
+			size is 0;
+			while u32 i: 0; i < count; i++;
+				size is (size << 8) | p:(2 + i);
+			;;
+			header is 2 + count;
+		;;
+		if size > left - header return false;
+		content is p + header;
+		length is size;
+		next is p + header + size;
+	[end: true]
+
+	# the next element at the cursor, which moves past it; false at its end, or if it
+	# doesn't fit
+	[Next: ptr<DerCursor> c: 0;]
+		u32 left: (c.stop as u32) - (c.pos as u32);
+		if left is 0 return false;
+		if not (Der.Element: c.pos left) return false;
+		c.pos is next;
+	[end: true]
+
+	# inner covers the content of the element read last
+	[Enter: ptr<DerCursor> inner: 0;]
+		inner.pos is content;
+		inner.stop is content + length;
+	[end]
+
+	# whether the element read last is the object identifier oid (count bytes)
+	[IsOid: ptr<u8> oid: 0; u32 count: 0;]
+	[end: tag is OID and length is count and (Bytes.Equal: content oid count)]
+
+	# output = the INTEGER (or OCTET STRING) read last, as count big-endian bytes (zeros
+	# in front); false if it's longer
+	[Number: ptr<u8> output: 0; u32 count: 0;]
+		ptr<u8> from: content;
+		u32 size: length;
+		while size > 0 and from:0 is 0
+			from is from + 1;
+			size--;
+		;;
+		if size > count return false;
+		call Bytes.Zero: output count - size;
+		call Bytes.Copy: output + count - size from size;
+	[end: true]
+
+	# the bytes from start up to the element read last's end (an element's whole DER,
+	# when start is where it began)
+	[Since: ptr<u8> start: 0;]
+	[end: (next as u32) - (start as u32)]
+}

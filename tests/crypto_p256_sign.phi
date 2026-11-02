@@ -1,0 +1,53 @@
+# runs only in 32 and 64 bits: its numbers take more room than a 16-bit program has
+# ECDSA P-256 signing with RFC 6979's nonce, against RFC 6979's own example (A.2.5: the
+# key C9AF..., the message 'sample') and a key OpenSSL 3.2 made, whose signature OpenSSL
+# made the same way (openssl pkeyutl -sign -pkeyopt nonce-type:1); the key read from its
+# SEC 1 and PKCS #8 files; each signature checked; and keys that aren't keys refused.
+use crypto.p256;
+use crypto.sha256;
+
+phi.CryptoP256Sign:Library
+{
+	u8 private[32];
+	u8 public[65];
+	u8 expected[65];
+	u8 r[32];
+	u8 s[32];
+	u8 want[64];
+	u8 digest[32];
+	u8 sec1[121];
+	u8 pkcs8[138];
+
+	# RFC 6979, A.2.5
+	call Bytes.FromHex: 'c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721' addr private 32;
+	call Bytes.FromHex: '0460fed4ba255a9d31c961eb74c6356d68c049b8923b61fa6ce669622e60f29fb67903fe1008b8bc99a41ae9e95628bc64f2f1b20c2d7e9f5177a3c294d4462299' addr expected 65;
+	call Bytes.FromHex: 'efd48b2aacb6a8fd1140dd9cd45e81d69d2c877b56aaf991c34d0ea84eaf3716f7cb1c942d657c41d436c7a1b6e29f65f3e900dbb9aff4064dc4ab2f843acda8' addr want 64;
+	call Sha256.Hash: 'sample' 6 addr digest;
+	log 'rfc public: ' (P256.PublicFrom: addr public addr private) ' ' (Bytes.Equal: addr public addr expected 65) '\n';
+	log 'rfc sign: ' (P256.Sign: addr r addr s addr private addr digest)
+	    ' r ' (Bytes.Equal: addr r addr want 32) ' s ' (Bytes.Equal: addr s addr want + 32 32) '\n';
+	log 'rfc checks: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+
+	# a key OpenSSL made, from its files
+	call Bytes.FromHex: '30770201010420674555316abaf42618965f03a4c2017d6f1a199aca447248d3e0fe1f8c4b40b9a00a06082a8648ce3d030107a14403420004e096196095b736bc3bb35d6d81fbff6d57dab5e315734ee94b6a46d1150a8ad47a432d2490f48f41a581009f82204f624a0fa88097ed75bcfadfbf511f9b0517' addr sec1 121;
+	call Bytes.FromHex: '308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b0201010420674555316abaf42618965f03a4c2017d6f1a199aca447248d3e0fe1f8c4b40b9a14403420004e096196095b736bc3bb35d6d81fbff6d57dab5e315734ee94b6a46d1150a8ad47a432d2490f48f41a581009f82204f624a0fa88097ed75bcfadfbf511f9b0517' addr pkcs8 138;
+	call Bytes.FromHex: '04e096196095b736bc3bb35d6d81fbff6d57dab5e315734ee94b6a46d1150a8ad47a432d2490f48f41a581009f82204f624a0fa88097ed75bcfadfbf511f9b0517' addr expected 65;
+	call Bytes.Zero: addr public 65;
+	log 'sec 1: ' (P256.ReadPrivate: addr private addr public addr sec1 121) ' ' (Bytes.Equal: addr public addr expected 65) '\n';
+	call Bytes.Zero: addr public 65;
+	log 'pkcs 8: ' (P256.ReadPrivate: addr private addr public addr pkcs8 138) ' ' (Bytes.Equal: addr public addr expected 65) '\n';
+	call Bytes.FromHex: 'a0b8f378e7c2a6b8c1142ce56390914ec78d78def53e47ba4ef17b3bff3f4c96db44c904375d65742fe97f8408f6d93356ce99ecb923f42d322cfca8703d3172' addr want 64;
+	call Sha256.Hash: 'PHI signs this message.' 23 addr digest;
+	log 'sign: ' (P256.Sign: addr r addr s addr private addr digest)
+	    ' as openssl did: ' (Bytes.Equal: addr r addr want 32) ' ' (Bytes.Equal: addr s addr want + 32 32)
+	    ', checks: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+	digest:0 is digest:0 ^ 1;
+	log 'another digest: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+
+	# 0 and n aren't keys
+	call Bytes.Zero: addr private 32;
+	log 'zero: ' (P256.Sign: addr r addr s addr private addr digest) ' ' (P256.PublicFrom: addr public addr private) '\n';
+	call Bytes.FromHex: 'ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551' addr private 32;
+	log 'n: ' (P256.Sign: addr r addr s addr private addr digest) '\n';
+	log 'not a key file: ' (P256.ReadPrivate: addr private addr public addr want 64) '\n';
+}

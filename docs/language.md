@@ -1929,7 +1929,8 @@ call X25519.Base: addr public addr secret;   # the public half of a key pair
 | `crypto.random` | `Random` | `Fill: buffer length`; `random_hardware` says whether the CPU's RDRAND was used |
 | `crypto.bignum` | `Big` | numbers of up to 4096 bits in 16-bit limbs: `Setup: modulus bytes count` (a `Modulus`), `FromBytes`, `ToBytes`, `Compare`, `Add`, `Subtract`, `MontMul`, `PowMod: r base exponent count modulus` → |
 | `crypto.rsa` | `Rsa` | checking a signature of a SHA-256 digest: `VerifyPkcs1: modulus length exponent length digest signature length` →, `VerifyPss` (MGF1-SHA256, a 32-byte salt) → |
-| `crypto.p256` | `P256` | checking an ECDSA P-256 signature: `Verify: public digest r s` → (public: 65 bytes, 04 then x and y) |
+| `crypto.der` | `Der` | reading DER: `Element: p left` →, `Next: cursor` →, `Enter: cursor` (a `DerCursor` over what was read), `IsOid`, `Number: output count` →; then `tag`, `content`, `length` |
+| `crypto.p256` | `P256` | ECDSA P-256: `Verify: public digest r s` → (public: 65 bytes, 04 then x and y), `Sign: r s private digest` → (RFC 6979: no random numbers), `PublicFrom: public private` →, `ReadPrivate: private public der length` → (a SEC 1 or PKCS #8 key file) |
 | `crypto.x509` | `X509` | certificates: `Parse: certificate der length` →, `CheckSignature: certificate issuer` →, `MatchesHost: certificate host` →, `Trust: der length`, `Untrust`, `Chain: certificates count host` → (false: `error` says why) |
 | `crypto.roots` | `Roots` | `TrustAll`: a few RSA roots many sites go back to (ISRG Root X1, DigiCert Global Root G2 and Global Root CA, GlobalSign Root CA - R3, USERTrust RSA) |
 
