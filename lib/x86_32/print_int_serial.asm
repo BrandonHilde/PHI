@@ -1,20 +1,24 @@
 ; provides: phi_print_int_serial phi_print_uint_serial
 ; requires: phi_int_to_str phi_print_serial
 ;
-; Print eax in decimal to COM1 only: signed or unsigned.
+; Print eax in decimal to COM1 only: signed or unsigned. The digits
+; are on this call's own stack, so cores printing at the same time don't share them.
 phi_print_int_serial:
-    mov edi, phi_print_int_serial_text
+    sub esp, 12
+    mov edi, esp
     mov ecx, 12
     call phi_int_to_str
-    mov esi, phi_print_int_serial_text
-    jmp phi_print_serial
+    mov esi, esp
+    call phi_print_serial
+    add esp, 12
+    ret
 
 phi_print_uint_serial:
-    mov edi, phi_print_int_serial_text
+    sub esp, 12
+    mov edi, esp
     mov ecx, 12
     call phi_uint_to_str
-    mov esi, phi_print_int_serial_text
-    jmp phi_print_serial
-
-phi_print_int_serial_text:
-    times 12 db 0
+    mov esi, esp
+    call phi_print_serial
+    add esp, 12
+    ret

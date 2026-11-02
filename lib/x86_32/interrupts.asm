@@ -1,5 +1,5 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt
-; requires: phi_panic phi_catch_top
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_load_core_fs
+; requires: phi_panic
 ; init: phi_interrupts_init
 ;
 ; Protected-mode interrupts for 32-bit kernels. Every kernel gets this:
@@ -28,6 +28,34 @@ PIC2_DATA  equ 0xA1
 KERNEL_CS  equ 0x08
 
 phi_interrupts_init:
+    ; the GDT: each core's data segment, based at its block, then loaded, with fs this core's
+    xor ecx, ecx
+.core_segment:
+    imul eax, ecx, PHI_CORE_BLOCK
+    add eax, phi_core_blocks
+    mov [eax + PHI_CORE_SELF], eax
+    lea edx, [phi_gdt_cores + ecx * 8]
+    mov word [edx], PHI_CORE_BLOCK - 1       ; its limit: the block
+    mov [edx + 2], ax                        ; its base
+    shr eax, 16
+    mov [edx + 4], al
+    mov byte [edx + 5], 10010010b            ; present, ring 0, data
+    mov byte [edx + 6], 0
+    mov [edx + 7], ah
+    inc ecx
+    cmp ecx, PHI_CORES
+    jb .core_segment
+    lgdt [phi_gdt_descriptor]
+    jmp 0x08:.reloaded
+.reloaded:
+    mov ax, 0x10
+    mov ds, ax
+    mov es, ax
+    mov gs, ax
+    mov ss, ax
+    mov ax, PHI_CORE_SELECTOR
+    mov fs, ax
+
     ; remap the PICs (ICW1-ICW4)
     mov al, 0x11            ; start initialization, expect ICW4
     out PIC1_CMD, al
@@ -133,8 +161,8 @@ phi_interrupt_common:
     mov ax, 0x10            ; kernel data
     mov ds, ax
     mov es, ax
-    mov fs, ax
     mov gs, ax
+    call phi_load_core_fs   ; and this core's block
     cld
     mov eax, [phi_enter_hook]       ; once programs share the cores: the kernel lock (tasks.asm)
     test eax, eax
@@ -154,10 +182,10 @@ phi_interrupt_common:
     test ebx, ebx
     jz .end_of_interrupt
     push eax
-    push dword [phi_catch_top]
-    mov dword [phi_catch_top], 0    ; an error in a handler isn't caught by the code it interrupted
+    push dword [fs:PHI_CORE_CATCH]
+    mov dword [fs:PHI_CORE_CATCH], 0    ; an error in a handler isn't caught by the code it interrupted
     call ebx
-    pop dword [phi_catch_top]
+    pop dword [fs:PHI_CORE_CATCH]
     pop eax
 .end_of_interrupt:
     mov ebx, eax
@@ -182,6 +210,12 @@ phi_interrupt_common:
     call ebx                ; eax = the saved state of the task to resume
     mov esp, eax
 .return:
+    ; kernel code goes on with this core's block in fs, whichever core it last ran on (a
+    ; thread, or a system call put aside on one core and resumed on another)
+    test byte [esp + FRAME_CS], 3
+    jnz .to_user
+    mov [esp + 4], fs
+.to_user:
     mov eax, [phi_leave_hook]
     test eax, eax
     jz .left
@@ -200,10 +234,10 @@ phi_interrupt_common:
     test ebx, ebx
     jz .return
     mov eax, esp
-    push dword [phi_catch_top]
-    mov dword [phi_catch_top], 0    ; nor in a system call, by the kernel code that was running
+    push dword [fs:PHI_CORE_CATCH]
+    mov dword [fs:PHI_CORE_CATCH], 0    ; nor in a system call, by the kernel code that was running
     call ebx                ; eax = 1 when the task can't continue right now
-    pop dword [phi_catch_top]
+    pop dword [fs:PHI_CORE_CATCH]
     test eax, eax
     jnz .schedule
     jmp .return
@@ -281,6 +315,20 @@ OS_MaskIrq:
     mov eax, [ebp + 8]
     call phi_mask
     pop ebp
+    ret
+
+; fs = this core's block (its number from its local APIC's ID once other cores have
+; started; changes eax)
+phi_load_core_fs:
+    xor eax, eax
+    cmp dword [phi_cores_running], 0
+    je .first
+    mov eax, [0xFEE00020]
+    shr eax, 24
+    movzx eax, byte [phi_core_of_apic + eax]
+.first:
+    lea eax, [PHI_CORE_SELECTOR + eax * 8]
+    mov fs, ax
     ret
 
 ; sti; hlt: wait for an interrupt (letting go of the kernel lock meanwhile, once programs
@@ -402,3 +450,43 @@ phi_core_of_apic:   times 256 db 0
 phi_scheduler:    dd 0
 phi_syscall_hook: dd 0
 phi_user_fault:   dd 0
+
+; ---- the GDT, and a block of data for each core
+;
+; Every kernel's segments: its code and data (flat), user programs' (tasks.asm), a TSS
+; for each core (tasks.asm fills them in), and for each core a data segment whose base is
+; that core's block, which kernel code reaches through fs: fs:PHI_CORE_CATCH is the
+; innermost catch of the code this core is running (lib/x86_32/throw.asm), so threads on
+; different cores catch errors of their own. The scheduler keeps each task's (tasks.asm).
+PHI_CORE_SELF     equ 0                 ; the block's own address
+PHI_CORE_CATCH    equ 4                 ; the innermost catch, or 0
+PHI_CORE_UNWIND   equ 8                 ; the innermost running method with things to give back, or 0
+PHI_CORE_ERROR    equ 12                ; the error being thrown (an Error: 713 bytes)
+PHI_CORE_FLAGS    equ 728               ; interrupts as they were at the throw, until the catch has the error
+PHI_CORE_BLOCK    equ 1024
+PHI_CORE_SELECTOR equ 0x68              ; core n's data segment is PHI_CORE_SELECTOR + n * 8
+PHI_CORES         equ 8                 ; as proc.cores has it
+
+align 8
+phi_gdt:
+    dq 0
+    dw 0xFFFF, 0x0000
+    db 0x00, 10011010b, 11001111b, 0x00    ; 0x08 kernel code
+    dw 0xFFFF, 0x0000
+    db 0x00, 10010010b, 11001111b, 0x00    ; 0x10 kernel data
+    dw 0xFFFF, 0x0000
+    db 0x00, 11111010b, 11001111b, 0x00    ; 0x18 user code (ring 3)
+    dw 0xFFFF, 0x0000
+    db 0x00, 11110010b, 11001111b, 0x00    ; 0x20 user data (ring 3)
+phi_gdt_tss:
+    times PHI_CORES dq 0                   ; 0x28 and on: each core's TSS (tasks.asm fills them in)
+phi_gdt_cores:
+    times PHI_CORES dq 0                   ; 0x68 and on: each core's block (filled in at startup)
+phi_gdt_end:
+phi_gdt_descriptor:
+    dw phi_gdt_end - phi_gdt - 1
+    dd phi_gdt
+
+align 16
+phi_core_blocks:
+    times PHI_CORES * PHI_CORE_BLOCK db 0

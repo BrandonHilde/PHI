@@ -1,0 +1,71 @@
+# Catching errors on several cores at once: each core has its own list of catches (in
+# its block, through fs) and the scheduler keeps each task's, so four threads, each
+# throwing from inside methods that hold text the throw must give back, and running out
+# of an array's range, each catch only their own errors: each says whose it was. Then the
+# kernel's own code catches one. The heap ends where it began.
+use proc.threads;
+use proc.cores;
+
+phi.ThrowCores:Kernel
+{
+	const int ROUNDS: 300;
+
+	u32 caught[4];
+	u32 wrong[4];
+	u32 small[3];
+	int threads[4];
+
+	u32 used_before: 0;
+	log 'sharing: ' (Cores.SharePrograms) '\n';
+	used_before is Heap.used_blocks;
+
+	while int i: 0; i < 4; i++;
+		threads:i is (Threads.Start: addr Catcher i);
+	;;
+	while int i: 0; i < 4; i++;
+		call Threads.Wait: threads:i;
+	;;
+	log 'threads: ' caught:0 ' ' caught:1 ' ' caught:2 ' ' caught:3 ' caught, '
+	    (wrong:0 + wrong:1 + wrong:2 + wrong:3) ' not their own, heap back: ' (Heap.used_blocks is used_before) '\n';
+
+	# the kernel's own code catches too, while nothing else runs
+	if call Deep: 9 3 throws err
+		log 'the kernel: ' err.text '\n';
+	;;
+	exit 0;
+
+	# ROUNDS errors of its own: thrown three methods deep, and an index out of range
+	[Catcher: int part: 0;]
+		while int r: 0; r < ROUNDS; r++;
+			if call Deep: part 3 throws err
+				if (err.text has ('part ' part)) and err.line > 0
+					atomic caught:part++;
+				;;
+				else
+					atomic wrong:part++;
+				;;
+			;;
+			if call Outside: part throws err
+				if err.kind is ErrorKind.INDEX
+					atomic caught:part++;
+				;;
+				else
+					atomic wrong:part++;
+				;;
+			;;
+		;;
+	[end]
+
+	# depth methods down, each holding text a throw has to give back, then a throw
+	[Deep: int part: 0; int depth: 0;]
+		str held: ('held by part ' part ' at ' depth);
+		if depth is 0
+			throw ('from part ' part);
+		;;
+		call Deep: part depth - 1;
+	[end]
+
+	[Outside: int part: 0;]
+		small:(part + 3) is 1;
+	[end]
+}

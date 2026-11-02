@@ -16,7 +16,8 @@ phi_int_to_str:
     neg eax
     inc ebx
 .start:
-    mov esi, phi_int_to_str_scratch + 11   ; digits are built backwards from the end
+    sub esp, 12             ; the digits, on this call's own stack (another core, or thread,
+    lea esi, [esp + 11]     ; may be writing a number at the same time), backwards from the end
     mov byte [esi], 0
     mov ecx, 10
 .digit:
@@ -32,8 +33,7 @@ phi_int_to_str:
     dec esi
     mov byte [esi], '-'
 .copy:
-    pop ecx
-    jmp phi_strcpy
-
-phi_int_to_str_scratch:
-    times 12 db 0
+    mov ecx, [esp + 12]
+    call phi_strcpy
+    add esp, 16
+    ret

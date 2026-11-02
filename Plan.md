@@ -1525,11 +1525,21 @@ test where a zone program crashes on purpose shows its players back in a restart
     calls each one's `_unwind` routine (its tidying-up, with ebp at its frame) before
     jumping to the catch. A program with no catch has none of this, so it costs nothing.
   - Not caught: an error inside a `locked` block (what it guards may be half changed), and
-    in an interrupt handler or a system call (by the code they interrupted). A kernel that
-    starts other cores can't catch yet: the lists are one for the whole kernel, which needs
-    a list for each core. A CPU exception (dividing by zero, an empty object's page fault)
+    in an interrupt handler or a system call (by the code they interrupted). A CPU exception (dividing by zero, an empty object's page fault)
     isn't an error a program can catch yet either: it goes to the panic screen, or ends a
     program, as before.
+- [x] (part 6) catching errors in kernels that use several cores: the catches, the methods'
+  records and the error being thrown were one each for the whole kernel. Each core now
+  has a block of its own (`interrupts.asm`, which owns the GDT now: a data segment for
+  each core whose base is its block), reached through `fs` in kernel code; the scheduler
+  keeps each task's catches as the cores take turns, kernel code resuming on a core gets
+  that core's `fs`, and a throw turns interrupts off until the catch has copied its error.
+  Found on the way: turning a number into text (`phi_int_to_str`, the 64-bit and floating
+  point ones, and printing) wrote its digits in one buffer for the whole kernel, so two
+  cores writing a number at once could swap digits; each call has its own now. Test
+  `kernel32_throw_cores` (four threads on several cores, each catching 600 errors of its
+  own, thrown from methods holding text to give back and from an index out of range: none
+  mixed up, and the heap back where it was).
 - [ ] (5) `phi fuzz`: **later**, with the optimisations, before a release (the user,
   2026-11-01). Until then this phase's "Done when" waits on it; parts 1-4 are done.
 

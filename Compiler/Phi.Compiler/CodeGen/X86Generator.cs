@@ -992,9 +992,16 @@ namespace Phi.Compiler.CodeGen
                 Emit("cld");
                 if (Catches)
                 {
+                    // (a kernel's catches are this core's, through fs, which may be a program's now)
+                    if (unit.Kind == UnitKind.Kernel)
+                    {
+                        Need("phi_load_core_fs");
+                        Emit("push fs");
+                        Emit("call phi_load_core_fs");
+                    }
                     // a throw in here mustn't jump into the code it interrupted: none is caught
-                    Emit("push dword [phi_catch_top]");
-                    Emit("mov dword [phi_catch_top], 0");
+                    Emit($"push dword [{CatchTop}]");
+                    Emit($"mov dword [{CatchTop}], 0");
                 }
             }
 
@@ -1053,7 +1060,7 @@ namespace Phi.Compiler.CodeGen
             if (unwindRecord != null)
             {
                 Emit($"mov {R("ecx")}, {Q} [{unwindRecord}]");
-                Emit($"mov {Q} [phi_unwind_top], {R("ecx")}     ; done: off the list a throw looks at");
+                Emit($"mov {Q} [{UnwindTop}], {R("ecx")}     ; done: off the list a throw looks at");
             }
 
             if (m.ReturnType.IsString && GrowResults)
@@ -1101,13 +1108,13 @@ namespace Phi.Compiler.CodeGen
             {
                 // on the list a throw looks at: the record before, what gives back this method's
                 // things, and this frame
-                Emit($"mov {R("eax")}, {Q} [phi_unwind_top]");
+                Emit($"mov {R("eax")}, {Q} [{UnwindTop}]");
                 Emit($"mov {Q} [{unwindRecord}], {R("eax")}");
                 LoadAddress("eax", $"{m.Label}_unwind");
                 Emit($"mov {Q} [{unwindRecord} + {Slot}], {R("eax")}");
                 Emit($"mov {Q} [{unwindRecord} + {2 * Slot}], ebp");
                 LoadAddress("eax", unwindRecord);
-                Emit($"mov {Q} [phi_unwind_top], {R("eax")}");
+                Emit($"mov {Q} [{UnwindTop}], {R("eax")}");
             }
             string start = code.ToString();
             code = outer;
@@ -1143,7 +1150,11 @@ namespace Phi.Compiler.CodeGen
 
             if (m.IsInterruptHandler)
             {
-                if (Catches) Emit("pop dword [phi_catch_top]");
+                if (Catches)
+                {
+                    Emit($"pop dword [{CatchTop}]");
+                    if (unit.Kind == UnitKind.Kernel) Emit("pop fs");
+                }
                 if (!bits32)
                 {
                     Emit("pop fs");
@@ -2452,9 +2463,9 @@ namespace Phi.Compiler.CodeGen
             {
                 // what the lock guards may be half changed when something goes wrong in here, so
                 // no error is caught until it's given back: it stops the program
-                Emit($"mov {R("ecx")}, {Q} [phi_catch_top]");
+                Emit($"mov {R("ecx")}, {Q} [{CatchTop}]");
                 Emit($"mov [{slot} + {2 * Slot}], {R("ecx")}");
-                Emit($"mov {Q} [phi_catch_top], 0");
+                Emit($"mov {Q} [{CatchTop}], 0");
             }
 
             lockedBlocks.Add((slot, loops.Count, inlining.Count));
@@ -2476,6 +2487,14 @@ namespace Phi.Compiler.CodeGen
         /// method with something to give back at its end (objects, texts that grow) keeps a
         /// record of itself while it runs, so a throw can give those back on its way out.
         /// </summary>
+        /// <summary>
+        /// Where the innermost catch and the innermost method with things to give back are kept: in
+        /// a kernel, in this core's block (fs, interrupts.asm), so threads on several cores catch
+        /// errors of their own and the scheduler keeps each task's; in a program, in its own variables.
+        /// </summary>
+        string CatchTop => unit.Kind == UnitKind.Kernel ? "fs:PHI_CORE_CATCH" : "phi_catch_top";
+        string UnwindTop => unit.Kind == UnitKind.Kernel ? "fs:PHI_CORE_UNWIND" : "phi_unwind_top";
+
         bool Catches => catches ??= bits32 && unit.Classes.SelectMany(c => c.Body)
             .Concat(unit.Methods.SelectMany(m => m.Decl.Body))
             .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
@@ -2495,26 +2514,22 @@ namespace Phi.Compiler.CodeGen
         void EmitIfThrows(IfStmt ifs, ThrowsExpr throws)
         {
             Need("phi_throw");
-            // the catches and the methods' records are one list for the whole kernel, which
-            // two cores would both be changing
-            if (unit.Kind == UnitKind.Kernel && unit.Classes.Any(c => c.Name == "Cores"))
-                diagnostics.Error(file, throws.Span, "catching errors doesn't work yet in a kernel that starts other cores (proc.cores); contain errors in programs instead");
             // (each field is 8 bytes in 64-bit code)
             string record = AllocTemp(5 * Slot);
             string caught = NewLabel("caught"), elseLabel = NewLabel("else"), endLabel = NewLabel("endif");
-            Emit($"mov {R("eax")}, {Q} [phi_catch_top]");
+            Emit($"mov {R("eax")}, {Q} [{CatchTop}]");
             Emit($"mov {Q} [{record}], {R("eax")}         ; the catch around this one");
             Emit($"mov {Q} [{record} + {Slot}], esp");
             Emit($"mov {Q} [{record} + {2 * Slot}], ebp");
-            Emit($"mov {R("eax")}, {Q} [phi_unwind_top]");
+            Emit($"mov {R("eax")}, {Q} [{UnwindTop}]");
             Emit($"mov {Q} [{record} + {3 * Slot}], {R("eax")}    ; the methods running now");
             LoadAddress("eax", caught);
             Emit($"mov {Q} [{record} + {4 * Slot}], {R("eax")}");
             LoadAddress("eax", record);
-            Emit($"mov {Q} [phi_catch_top], {R("eax")}");
+            Emit($"mov {Q} [{CatchTop}], {R("eax")}");
             EmitStatement(throws.Call);
             Emit($"mov {R("eax")}, {Q} [{record}]");
-            Emit($"mov {Q} [phi_catch_top], {R("eax")}     ; it came back: this catch is done");
+            Emit($"mov {Q} [{CatchTop}], {R("eax")}     ; it came back: this catch is done");
             Emit($"jmp {elseLabel}");
 
             // the error: err (declared first in Then) gets a copy of it
@@ -2526,9 +2541,22 @@ namespace Phi.Compiler.CodeGen
                 if (err.Type.Struct?.Size != ErrorSize)
                     diagnostics.Error(file, decl.Span, $"the Error struct is {err.Type.Struct?.Size} bytes, and the runtime's is {ErrorSize}; lib/phi/lang/error.phi and throw.asm must agree");
                 LoadAddress("edi", err.Label);
-                LoadAddress("esi", "phi_error");
+                if (unit.Kind == UnitKind.Kernel)
+                {
+                    // this core's error (interrupts.asm's block for it, through fs)
+                    Emit("mov esi, [fs:PHI_CORE_SELF]");
+                    Emit("add esi, PHI_CORE_ERROR");
+                }
+                else LoadAddress("esi", "phi_error");
                 Emit($"mov ecx, {ErrorSize}");
                 Emit("rep movsb");
+            }
+            // a kernel's throw turned interrupts off, so nothing came between it and the copy
+            // (another error on this core, or this code moving to another): they're back now
+            if (unit.Kind == UnitKind.Kernel)
+            {
+                Emit("push dword [fs:PHI_CORE_FLAGS]");
+                Emit("popfd");
             }
             foreach (Stmt s in ifs.Then.Skip(1)) EmitStatement(s);
             Emit($"jmp {endLabel}");
@@ -2545,7 +2573,7 @@ namespace Phi.Compiler.CodeGen
             if (Catches)
             {
                 Emit($"mov {R("ecx")}, [{slot} + {2 * Slot}]");
-                Emit($"mov {Q} [phi_catch_top], {R("ecx")}      ; errors can be caught again");
+                Emit($"mov {Q} [{CatchTop}], {R("ecx")}      ; errors can be caught again");
             }
             Emit($"mov {R("ecx")}, [{slot}]");
             Emit("mov dword [ecx], 0        ; the lock back");

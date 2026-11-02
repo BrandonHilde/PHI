@@ -813,8 +813,8 @@ else
   fits on one line (`if call Save: data throws err return false;`).
 - **Catches nest**: an error inside the `if`'s own code goes to the catch around that.
 - An error in an interrupt handler or a system call isn't caught by the code it
-  interrupted. A kernel that starts other cores (`proc.cores`) can't catch errors yet,
-  since the catches are one list for the whole kernel.
+  interrupted. In a kernel each core has its own list of catches, and each task (a
+  thread, say) keeps its own as the cores take turns, so threads catch their own errors.
 - In a kernel, catching an error doesn't undo work that was half done (half of a file
   written, a list half updated), so it suits work that stands alone, like one request or
   one command. For a whole part of a system that may go wrong, a user program, which a
@@ -2595,7 +2595,6 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - catching a CPU exception with `if call ... throws` (dividing by zero, using an empty
   object): they still show the panic screen, or end a user program
-- catching errors in a kernel that starts other cores (`proc.cores`)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))

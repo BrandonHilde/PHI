@@ -185,6 +185,8 @@ cores_protected:
 	mov eax, [{APIC} + 0x20]
 	shr eax, 24
 	mov [phi_core_of_apic + eax], bl            ; its number, by its APIC ID
+	lea eax, [PHI_CORE_SELECTOR + ebx * 8]
+	mov fs, ax                                  ; its own block (interrupts.asm)
 	fninit
 	mov eax, cores_main
 	jmp eax                                     ; (a jump to an address: this code was moved)

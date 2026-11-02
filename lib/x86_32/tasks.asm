@@ -1,5 +1,5 @@
 ; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_task_core phi_thread_start
-; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt
+; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
 ; directory and kernel stack, and the kernel itself as task 0.
@@ -73,16 +73,7 @@ OS_StartMultitasking:
     cmp ecx, MAX_CORES
     jb .tss
     pop edi
-    lgdt [phi_gdt_descriptor]
-    jmp KERNEL_CODE:.reload
-.reload:
-    mov ax, KERNEL_DATA
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
-    mov ax, TSS_SELECTOR
+    mov ax, TSS_SELECTOR                      ; (the GDT is interrupts.asm's, loaded at startup)
     ltr ax
 
     ; int 0x80 can be used from ring 3; vector 48 gives up the CPU
@@ -169,6 +160,8 @@ OS_CreateUserTask:
     mov dword [phi_task_heap_end + ecx * 4], 0   ; no heap until it grows one
     mov byte [phi_task_fpu_fresh + ecx], 1       ; its FPU starts clean
     mov byte [phi_task_thread + ecx], 0          ; a program, not a thread
+    mov dword [phi_task_catch + ecx * 4], 0
+    mov dword [phi_task_unwind + ecx * 4], 0
     mov eax, [phi_current_task]
     mov [phi_task_parent + ecx * 4], eax
     mov dword [phi_task_exit + ecx * 4], 0
@@ -271,6 +264,23 @@ phi_schedule:
     imul esi, edx, FPU_STATE
     frstor [phi_task_fpu + esi]
 .same_fpu:
+    ; each task's catches (lib/x86_32/throw.asm): this core's block holds the running task's
+    cmp ebx, MAX_TASKS
+    jae .catches_kept
+    mov eax, [fs:PHI_CORE_CATCH]
+    mov [phi_task_catch + ebx * 4], eax
+    mov eax, [fs:PHI_CORE_UNWIND]
+    mov [phi_task_unwind + ebx * 4], eax
+.catches_kept:
+    xor eax, eax
+    xor ecx, ecx
+    cmp edx, MAX_TASKS
+    jae .catches_set
+    mov eax, [phi_task_catch + edx * 4]
+    mov ecx, [phi_task_unwind + edx * 4]
+.catches_set:
+    mov [fs:PHI_CORE_CATCH], eax
+    mov [fs:PHI_CORE_UNWIND], ecx
     mov [phi_current_task], edx
     mov [phi_core_task + edi * 4], edx
     xor ecx, ecx                              ; (an idle loop has the kernel's address space)
@@ -655,20 +665,13 @@ phi_share_cores:
     popfd
     ret
 
-; another core joins (from proc.cores, ebx = its number): this GDT and its own TSS, its
+; another core joins (from proc.cores, ebx = its number): its own TSS and block, its
 ; local APIC's timer to take programs back, then its idle loop, which the timer
 ; interrupts to run programs
 phi_core_join:
     cli
-    lgdt [phi_gdt_descriptor]
-    jmp KERNEL_CODE:.reload
-.reload:
-    mov ax, KERNEL_DATA
-    mov ds, ax
-    mov es, ax
-    mov fs, ax
-    mov gs, ax
-    mov ss, ax
+    lea eax, [PHI_CORE_SELECTOR + ebx * 8]
+    mov fs, ax                                ; its block (proc.cores set it too)
     lea eax, [TSS_SELECTOR + ebx * 8]
     ltr ax
     lea eax, [MAX_TASKS + ebx]
@@ -752,6 +755,8 @@ phi_thread_start:
     mov [phi_task_exit + ebx * 4], eax
     mov byte [phi_task_fpu_fresh + ebx], 1
     mov byte [phi_task_thread + ebx], 1
+    mov dword [phi_task_catch + ebx * 4], 0
+    mov dword [phi_task_unwind + ebx * 4], 0
     mov eax, [phi_current_task]
     mov [phi_task_parent + ebx * 4], eax
     mov dword [phi_task_state + ebx * 4], TASK_READY
@@ -946,6 +951,8 @@ phi_task_wake:         times MAX_TASKS dd 0
 phi_task_wait:         times MAX_TASKS dd 0
 phi_task_core:         times MAX_TASKS dd 0     ; the core running it, plus 1 (0: none)
 phi_task_thread:       times MAX_TASKS db 0     ; 1 for a kernel thread (proc.threads)
+phi_task_catch:        times MAX_TASKS dd 0     ; its catches and methods' records, while another task runs
+phi_task_unwind:       times MAX_TASKS dd 0
 
 ; programs on every core (phi_share_cores)
 phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket
@@ -955,24 +962,6 @@ phi_core_task:         times MAX_CORES dd 0    ; the task each core is running
 phi_idle_esp:          times MAX_CORES dd 0    ; each other core's idle loop, while a program runs there
 phi_last_picked:       dd 0                    ; where an idle core starts looking
 phi_tick_count:        dd 0                    ; the other cores' timers
-
-align 8
-phi_gdt:
-    dq 0
-    dw 0xFFFF, 0x0000
-    db 0x00, 10011010b, 11001111b, 0x00    ; 0x08 kernel code
-    dw 0xFFFF, 0x0000
-    db 0x00, 10010010b, 11001111b, 0x00    ; 0x10 kernel data
-    dw 0xFFFF, 0x0000
-    db 0x00, 11111010b, 11001111b, 0x00    ; 0x18 user code (ring 3)
-    dw 0xFFFF, 0x0000
-    db 0x00, 11110010b, 11001111b, 0x00    ; 0x20 user data (ring 3)
-phi_gdt_tss:
-    times MAX_CORES dq 0                   ; 0x28 and on: each core's TSS (filled in at startup)
-phi_gdt_end:
-phi_gdt_descriptor:
-    dw phi_gdt_end - phi_gdt - 1
-    dd phi_gdt
 
 align 4
 phi_tss:

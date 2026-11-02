@@ -6,7 +6,7 @@ phi.Crash:Kernel
 
 asm.LoadBadSegment
 {
-	mov ax, 0x98            ; GDT entry 19: the loader's GDT only has 3
+	mov ax, 0xF8            ; GDT entry 31: the kernel's GDT has 21 (interrupts.asm)
 	mov ds, ax
 	ret
 }

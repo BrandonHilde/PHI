@@ -14,8 +14,9 @@ phi_float_to_str:
     sub esp, 16                 ; [ebp - 8] the millionths (a qword), [ebp - 12] the exponent
     push ecx                    ; [ebp - 20] the size
     push edi                    ; [ebp - 24] the destination
-    mov dword [ebp - 12], 0
-    mov edi, phi_float_scratch
+    sub esp, 48                 ; [ebp - 72] the text, on this call's own stack (another core may
+    mov dword [ebp - 12], 0     ; be writing a number at the same time)
+    lea edi, [ebp - 72]
 
     fxam                        ; what kind of number: c3 c2 c0, and c1 its sign
     fnstsw ax
@@ -123,7 +124,7 @@ phi_float_to_str:
     mov byte [edi], 0
     mov ecx, [ebp - 20]
     mov edi, [ebp - 24]
-    mov esi, phi_float_scratch
+    lea esi, [ebp - 72]
     call phi_strcpy
     mov esp, ebp
     pop ebp
@@ -241,5 +242,3 @@ phi_float_one:
     dq 1.0
 phi_float_million:
     dq 1000000.0
-phi_float_scratch:
-    times 48 db 0

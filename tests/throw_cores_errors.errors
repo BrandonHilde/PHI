@@ -1,1 +1,0 @@
-7:5: error: catching errors doesn't work yet in a kernel that starts other cores (proc.cores); contain errors in programs instead

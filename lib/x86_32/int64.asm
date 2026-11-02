@@ -137,7 +137,8 @@ phi_int64_to_str:
     neg edx
     mov dword [esp], 1
 .start:
-    mov esi, phi_int64_scratch + 21     ; digits are built backwards from the end
+    sub esp, 24                         ; the digits, on this call's own stack (another core may
+    lea esi, [esp + 21]                 ; be writing a number too), backwards from the end
     mov byte [esi], 0
 .digit:
     push esi
@@ -151,15 +152,13 @@ phi_int64_to_str:
     mov ecx, eax
     or ecx, edx
     jnz .digit
-    pop ebx
-    test ebx, ebx
-    jz .copy
+    cmp dword [esp + 24], 0             ; negative?
+    je .copy
     dec esi
     mov byte [esi], '-'
 .copy:
-    pop edi
-    pop ecx
-    jmp phi_strcpy
-
-phi_int64_scratch:
-    times 22 db 0
+    mov edi, [esp + 28]
+    mov ecx, [esp + 32]
+    call phi_strcpy
+    add esp, 36
+    ret
