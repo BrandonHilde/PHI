@@ -1810,8 +1810,38 @@ them, step 4).
   - Not yet: P-384 and SHA-384 (Let's Encrypt's ECDSA chains, DigiCert's G3, Microsoft's
     and Azure's chains are signed with them), and dates (PHI has no clock that knows the
     date yet).
-- [ ] (2) server-side TLS, (3) virtio-blk and NVMe, (4) booting on a cloud machine, (5)
-  the deployment guide
+- [ ] (2) server-side TLS, so logins go over TLS. Its foundations first (the user's
+  "build good foundations"):
+  - [x] ECDSA P-256 signing (`P256.Sign`) with RFC 6979's nonce, so it needs no random
+    numbers, and key files (`P256.ReadPrivate`: SEC 1 and PKCS #8). It matches RFC 6979's
+    own example and OpenSSL's deterministic signatures (test `crypto_p256_sign`). The DER
+    reader moved out of `crypto.x509` into `crypto.der`.
+  - [x] `net.tls13`: TLS 1.3 as an engine with no input or output of its own, each
+    connection a `TlsSession` (keys, transcript, buffers), either side: the client as
+    before, and a server that shows a `TlsIdentity` (its certificates, and its P-256 key,
+    checked to be the certificate's) and signs the handshake. What arrives is given to
+    it (`Room`, `Received`), and what it makes is taken from it (`Pending`, `Outgoing`,
+    `Sent`), so a kernel's TCP, a program's sockets and a test's memory all drive it the
+    same way. A side that fails sends the other an alert saying why; a client's records
+    are encrypted from the ServerHello on, as RFC 8446 has it. `net.tls` is now the
+    kernel's blocking client on top of it (the same calls as before). `crypto.random`'s
+    blocks have `x64` versions. Test `tls_memory`: a client and a server joined in
+    memory, on every system but 16-bit: the handshake, data both ways, 40000 bytes,
+    close_notify, ChaCha20-Poly1305 and a wildcard name, and a wrong host, nothing trusted
+    and a changed byte refused (with the alerts each side sees).
+  - [x] `net.tlslink`: TLS on a TCP connection, driven without ever waiting (`Secure.Accept`
+    or `Connect`, then `Pump` each time round a server's loop, `Read`, `Write`, `Close`),
+    through whichever `Tcp` the program uses (a kernel's `net.tcp`, a program's
+    `net.sockets`, which have the same calls). Test `net_tls`: a PHI server showing
+    crypto_x509's leaf and three PHI clients (`net.tls`, checking the certificate) on a
+    network that loses one frame in 40, each sending 20000 bytes it echoes, on both
+    network cards.
+  - [ ] the lobby (`samples/mmo/`) taking logins over TLS, and its clients checking the
+    certificate
+  - [ ] a check against another TLS 1.3 client (the server side has only met PHI's own;
+    the client side has met Windows' server): a port forwarded into QEMU, and .NET's
+    SslStream connecting to a PHI server
+- [ ] (3) virtio-blk and NVMe, (4) booting on a cloud machine, (5) the deployment guide
 
 ### Scenarios to write up next
 

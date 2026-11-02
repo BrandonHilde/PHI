@@ -1,0 +1,13 @@
+identity: 1 1 
+the wrong key: 0 (the key isn't the certificate's)
+connected: 1 1, verified: 1, suite: 4865 4865, rounds: 2 
+client writes: 13
+server reads: 13 [hello, server]
+server writes: 13
+client reads: 13 [hello, client], then: 0
+bulk: 40000 sent, 40000 received, sum 4980240
+closed: 1 -1
+another host: 0 0 (the server's certificate: the certificate isn't for this host; the other side refused the certificate (alert 42))
+chacha20 and a wildcard: 1 1 4867 4867
+nothing trusted: 0 (the server's certificate: no trusted root signed the chain; the other side refused the certificate (alert 42))
+changed on the way: 0 (a record failed its integrity check; the other side sent alert 20)

@@ -1,0 +1,57 @@
+# One of net_tls's three clients (see net_tls.phi): trusts crypto_x509's root, connects
+# to the server as phi.test (net.tls checks its certificate), sends 20000 bytes and reads
+# them back, checking every one, and closes.
+use net.tls;
+
+phi.TlsClient:Kernel
+{
+	const u32 TOTAL: 20000;
+
+	u8 root[843];
+	u8 chunk[1000];
+	u8 buffer[2048];
+	call Bytes.FromHex: '308203473082022fa00302010202143f415cf159833e958ea455fc426c959a83e42315300d06092a864886f70d01010b0500302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f74301e170d3236313130323030303033385a170d3336313033303030303033385a302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f7430820122300d06092a864886f70d01010105000382010f003082010a0282010100c69e8e84d43ea7c0484e412b39db908a68bf492ad8a4f917fd76de20e051e2ae6b7c1fc06e89d5d9a90a66cc1d77727c0cd3351a5af67cec6fc0dc5cdbbd06202c1d44c57cf966f0ef28cbc765d2e3fcca3815be2343edc4a54be74ed2db9f85260c9fb3909152382a952e0410bfdd641bd94f980e798bf09752d90b0a125dc88bdd276474cb2f2fd36ac64f5a9f69e874b9cecaf0900a623515c4088321da26010241dc7aa352b511a4cd6365c68c07bc8b79b6f7751726d504bb9dbbf64c9fee022eb00b94697d8d41898d5ea47c1dc9f2387f15c3bbb48aac31986c237fcef704e5a6e590469f375f73144b238c0358ad34c7a28fbfa171a306a5996e95810203010001a3633061301d0603551d0e0416041465b68750b3b8e9948a95a61957646ce19538dd89301f0603551d2304183016801465b68750b3b8e9948a95a61957646ce19538dd89300f0603551d130101ff040530030101ff300e0603551d0f0101ff040403020106300d06092a864886f70d01010b05000382010100515134ee911e3e35dbaabcb22b4c3c95743cad5ef11a0492e6e7e80bf83ac2dfff971915c17d23beed3cf5fe5b223860499685238e26885eb31422ee272f996e055c2b4dca50b37b99361151bd3efbed9138bb9de63028cda53d9f0338df9928e37d295021568aecec0957c3331b72cbb1bb8dded5aed9aeae43144e907e272deecca6244dab2aa83b5946bfbbf3883f1f072a69eaa69a822518292391b8ce4ba65a5469a01143ec002d3932c9797ef965c0cc85b0089e3c50c41e2b8e93eb60ec81cead738d1843f24603f1b2cbb7e38f4b5a02cd489900593b17c4319607a3e12d9df81cba5329c3db6754bc4b33c4e1986453e91c910dd930729e875b8b6a' addr root 843;
+	call X509.Trust: addr root 843;
+	bln ok: (Net.Start: Machine.address);
+	bln connected: false;
+	while int tries: 0; tries < 30 and not connected; tries++;
+		connected is (Tls.Connect: Machine.first 5443 'phi.test');
+		if not connected
+			call OS.Sleep: 200;
+		;;
+	;;
+	log 'connected: ' connected ', verified: ' Tls.verified ' ' Tls.error '\n';
+	call Run;
+
+	[Run]
+		u32 me: Machine.number;
+		u32 sent: 0;
+		u32 received: 0;
+		bln in_order: true;
+		while sent < TOTAL
+			u32 n: TOTAL - sent;
+			if n > 1000
+				n is 1000;
+			;;
+			while u32 i: 0; i < n; i++;
+				chunk:i is ((sent + i) * 7 + me) & 0xFF;
+			;;
+			int wrote: (Tls.Write: addr chunk n);
+			if wrote < 0 break;
+			sent++ n;
+		;;
+		while received < TOTAL
+			int got: (Tls.Read: addr buffer 2048);
+			if got <= 0 break;
+			while int i: 0; i < got; i++;
+				if buffer:i is not ((received + i) * 7 + me) & 0xFF
+					in_order is false;
+				;;
+			;;
+			received++ got;
+		;;
+		log 'sent ' sent ', received ' received ', in order: ' in_order '\n';
+		call Tls.Close;
+		exit 0;
+	[end]
+}

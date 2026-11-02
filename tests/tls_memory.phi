@@ -1,0 +1,149 @@
+# runs only in 32 and 64 bits: its numbers take more room than a 16-bit program has
+# TLS 1.3 with both sides in this program (net.tls13): a server showing the leaf of
+# crypto_x509's chain (its P-256 key, then the intermediate) and a client that trusts the
+# root, joined in memory. The handshake, data both ways (a little, then 40000 bytes),
+# close_notify; then a client that wants another host, one that trusts nothing, one that
+# offers only ChaCha20-Poly1305, and a byte changed on the way, each of which must fail
+# (or, for ChaCha20, work).
+use net.tls13;
+
+phi.TlsMemory:Library
+{
+	u8 root[843];
+	u8 middle[632];
+	u8 leaf[428];
+	u8 key[121];
+	u8 buffer[2000];
+	TlsIdentity identity;
+	TlsIdentity other;
+	TlsSession client;
+	TlsSession server;
+	u32 rounds: 0;
+
+	call Bytes.FromHex: '308203473082022fa00302010202143f415cf159833e958ea455fc426c959a83e42315300d06092a864886f70d01010b0500302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f74301e170d3236313130323030303033385a170d3336313033303030303033385a302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f7430820122300d06092a864886f70d01010105000382010f003082010a0282010100c69e8e84d43ea7c0484e412b39db908a68bf492ad8a4f917fd76de20e051e2ae6b7c1fc06e89d5d9a90a66cc1d77727c0cd3351a5af67cec6fc0dc5cdbbd06202c1d44c57cf966f0ef28cbc765d2e3fcca3815be2343edc4a54be74ed2db9f85260c9fb3909152382a952e0410bfdd641bd94f980e798bf09752d90b0a125dc88bdd276474cb2f2fd36ac64f5a9f69e874b9cecaf0900a623515c4088321da26010241dc7aa352b511a4cd6365c68c07bc8b79b6f7751726d504bb9dbbf64c9fee022eb00b94697d8d41898d5ea47c1dc9f2387f15c3bbb48aac31986c237fcef704e5a6e590469f375f73144b238c0358ad34c7a28fbfa171a306a5996e95810203010001a3633061301d0603551d0e0416041465b68750b3b8e9948a95a61957646ce19538dd89301f0603551d2304183016801465b68750b3b8e9948a95a61957646ce19538dd89300f0603551d130101ff040530030101ff300e0603551d0f0101ff040403020106300d06092a864886f70d01010b05000382010100515134ee911e3e35dbaabcb22b4c3c95743cad5ef11a0492e6e7e80bf83ac2dfff971915c17d23beed3cf5fe5b223860499685238e26885eb31422ee272f996e055c2b4dca50b37b99361151bd3efbed9138bb9de63028cda53d9f0338df9928e37d295021568aecec0957c3331b72cbb1bb8dded5aed9aeae43144e907e272deecca6244dab2aa83b5946bfbbf3883f1f072a69eaa69a822518292391b8ce4ba65a5469a01143ec002d3932c9797ef965c0cc85b0089e3c50c41e2b8e93eb60ec81cead738d1843f24603f1b2cbb7e38f4b5a02cd489900593b17c4319607a3e12d9df81cba5329c3db6754bc4b33c4e1986453e91c910dd930729e875b8b6a' addr root 843;
+	call Bytes.FromHex: '308202743082015ca003020102020102300d06092a864886f70d01010b0500302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f74301e170d3236313130323030303033385a170d3331313130313030303033385a30333111300f060355040a0c085048492054657374311e301c06035504030c15504849205465737420496e7465726d6564696174653059301306072a8648ce3d020106082a8648ce3d03010703420004e1aafacec6eed0c1fc348e895697eb745577514537d5c88a1819826322b84efb278336da9b5aabc9d89920dc2db1125456f4fb182922373be06bb64e5edc33bba366306430120603551d130101ff040830060101ff020100300e0603551d0f0101ff040403020204301d0603551d0e0416041484e82f7630f5dd4c711ba7cb42808acaf76e92da301f0603551d2304183016801465b68750b3b8e9948a95a61957646ce19538dd89300d06092a864886f70d01010b050003820101008d03d84bb1095a930c40c1d61d45f2226b0a92142744f719dcf00d6a1a9cb3c37408deeb51e8bb0af0aff8e069f4d63325d9201987a01fb392d0cc383e2755a5c996d66e5bb89c24fe587d46ddbb483e99ac10696e907d8a40210e89f47b7f0fd3255c13450e9d7ee3b05509d3c0b96be162bb6b6e0a0563e593518fbb729c28e52dd8febfbd0a9958207f9229b72ccfc7479dcf62eb4d1fbae9593dadc2af0521c7edfe9915f073403757105ecfd6f8099e6539e44299379224caba65aee3be80f252fcb403fc8666b7f861406ce7a8a4b3bbd14713dc64d70fb330d1aeec510438f27dff93b9fdecb4aa5861ba1ab396554752018c4cf204cf0d60c45235e1' addr middle 632;
+	call Bytes.FromHex: '308201a83082014fa003020102020103300a06082a8648ce3d04030230333111300f060355040a0c085048492054657374311e301c06035504030c15504849205465737420496e7465726d656469617465301e170d3236313130323030303033385a170d3237313130323030303033385a30133111300f06035504030c087068692e746573743059301306072a8648ce3d020106082a8648ce3d03010703420004b82ac3af23fdfe999807bb6b796499fc55d95dfda7e6c66db34219034f33a66253cfc9efce24a7f64bd19c0627079a227ec5e7d515201056f72ba50bf8f27c45a374307230090603551d130402300030250603551d11041e301c82087068692e7465737482102a2e67616d65732e7068692e74657374301d0603551d0e04160414bdd1fa8bfce9ba29a1afdb1bef117c7ba311cbb6301f0603551d2304183016801484e82f7630f5dd4c711ba7cb42808acaf76e92da300a06082a8648ce3d040302034700304402203b642ee4ce78f1569cbbcd23d6a45d9f1d96268897f3409e5fa55cfd144168de022021b88e2d8b384ae1e4d176d6f6b64658b4f22f1b93ab17139c3ff882c79584e3' addr leaf 428;
+	call Bytes.FromHex: '307702010104201c3c67d53150963e964e28135a7ee1e5c73592704c32240dbc57d6a0cbbe4378a00a06082a8648ce3d030107a14403420004b82ac3af23fdfe999807bb6b796499fc55d95dfda7e6c66db34219034f33a66253cfc9efce24a7f64bd19c0627079a227ec5e7d515201056f72ba50bf8f27c45' addr key 121;
+	log 'identity: ' (Tls13.Identity: addr identity addr leaf 428 addr key 121) ' '
+	    (Tls13.AddIssuer: addr identity addr middle 632) ' ' X509.error '\n';
+	log 'the wrong key: ' (Tls13.Identity: addr other addr middle 632 addr key 121) ' (' X509.error ')\n';
+	call X509.Trust: addr root 843;
+
+	# the handshake
+	call Start: 'phi.test' 3;
+	log 'connected: ' client.connected ' ' server.connected ', verified: ' client.verified
+	    ', suite: ' client.suite ' ' server.suite ', rounds: ' rounds ' ' client.error server.error '\n';
+
+	# a little each way
+	log 'client writes: ' (Tls13.Write: addr client 'hello, server' 13) '\n';
+	call Shuttle;
+	int got: (Tls13.Read: addr server addr buffer 2000);
+	buffer:got is 0;
+	log 'server reads: ' got ' [' addr buffer ']\n';
+	log 'server writes: ' (Tls13.Write: addr server 'hello, client' 13) '\n';
+	call Shuttle;
+	got is (Tls13.Read: addr client addr buffer 2000);
+	buffer:got is 0;
+	log 'client reads: ' got ' [' addr buffer '], then: ' (Tls13.Read: addr client addr buffer 2000) '\n';
+
+	# 40000 bytes, server to client, as it would go: written as there's room, read as it comes
+	u32 sent: 0;
+	u32 received: 0;
+	u32 sum: 0;
+	u8 chunk[1000];
+	while u32 i: 0; i < 1000; i++;
+		chunk:i is i % 251;
+	;;
+	while received < 40000 and rounds < 1000
+		if sent < 40000
+			u32 n: 40000 - sent;
+			if n > 1000
+				n is 1000;
+			;;
+			int took: (Tls13.Write: addr server addr chunk n);
+			if took > 0
+				sent++ took;
+			;;
+		;;
+		call Shuttle;
+		got is (Tls13.Read: addr client addr buffer 2000);
+		while got > 0
+			while int i: 0; i < got; i++;
+				sum++ buffer:i;
+			;;
+			received++ got;
+			got is (Tls13.Read: addr client addr buffer 2000);
+		;;
+		rounds++;
+	;;
+	log 'bulk: ' sent ' sent, ' received ' received, sum ' sum '\n';
+
+	# close_notify
+	call Tls13.Close: addr client;
+	call Shuttle;
+	log 'closed: ' server.closed ' ' (Tls13.Read: addr server addr buffer 2000) '\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+
+	call Start: 'other.test' 3;
+	log 'another host: ' client.connected ' ' server.connected ' (' client.error '; ' server.error ')\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+
+	call Start: 'zone4.games.phi.test' 2;
+	log 'chacha20 and a wildcard: ' client.connected ' ' server.connected ' ' client.suite ' ' server.suite '\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+
+	call X509.Untrust;
+	call Start: 'phi.test' 3;
+	log 'nothing trusted: ' client.connected ' (' client.error '; ' server.error ')\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+	call X509.Trust: addr root 843;
+
+	# a byte of the server's first flight changed (in its certificate's signature)
+	call Tls13.Client: addr client 'phi.test';
+	call Tls13.Server: addr server addr identity;
+	call Move: addr client addr server 0;
+	u32 n: (Tls13.Pending: addr server);
+	ptr<u8> flight: (Tls13.Outgoing: addr server);
+	flight:(n - 300) is flight:(n - 300) ^ 1;
+	call Shuttle;
+	call Shuttle;
+	log 'changed on the way: ' client.connected ' (' client.error '; ' server.error ')\n';
+	call Tls13.Free: addr client;
+	call Tls13.Free: addr server;
+
+	# a fresh pair, joined until they're connected (or one fails)
+	[Start: ptr<u8> host: 0; u32 offer: 3;]
+		client.offer is offer;
+		server.offer is 3;
+		call Tls13.Client: addr client host;
+		call Tls13.Server: addr server addr identity;
+		rounds is 0;
+		while rounds < 20 and not (client.connected and server.connected) and not client.failed and not server.failed
+			call Shuttle;
+			rounds++;
+		;;
+		call Shuttle;                     # (an alert a failed side sent)
+	[end]
+
+	# what each side has to send, given to the other
+	[Shuttle]
+		call Move: addr client addr server 0;
+		call Move: addr server addr client 0;
+	[end]
+
+	# as much of from's output as to has room for (all of it, or none if bytes is 1)
+	[Move: ptr<TlsSession> from: 0; ptr<TlsSession> to: 0; u32 none: 0;]
+		u32 n: (Tls13.Pending: from);
+		if n > to.room
+			n is to.room;
+		;;
+		if n is 0 or to.failed return;
+		call Bytes.Copy: (Tls13.Room: to) (Tls13.Outgoing: from) n;
+		call Tls13.Sent: from n;
+		call Tls13.Received: to n;
+	[end]
+}

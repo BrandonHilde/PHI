@@ -1,0 +1,5 @@
+identity: 1 1
+listening: 1
+machine 2: handshake 1, echoed 20000
+machine 3: handshake 1, echoed 20000
+machine 4: handshake 1, echoed 20000

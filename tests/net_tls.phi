@@ -1,0 +1,78 @@
+# A TLS server (net.tlslink over net.tcp): this kernel shows the leaf of crypto_x509's
+# chain (its P-256 key, then the intermediate) on port 5443, and three clients
+# (net_tls_client.phi, with net.tls, which checks the certificate) each send 20000 bytes,
+# which it sends back, over a network that loses one frame in 40 (net_tls.machines). It
+# looks after the three at once without ever waiting.
+use net.tcp;
+use net.tlslink;
+
+phi.TlsServer:Kernel
+{
+	const int MOST: 8;                    # machine numbers go up to this
+
+	u8 middle[632];
+	u8 leaf[428];
+	u8 key[121];
+	TlsIdentity identity;
+	TlsLink links[8];
+	bln open[8];
+	u32 echoed[8];
+	bln shook[8];
+	int finished: 0;
+	u8 buffer[2048];
+
+	call Bytes.FromHex: '308202743082015ca003020102020102300d06092a864886f70d01010b0500302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f74301e170d3236313130323030303033385a170d3331313130313030303033385a30333111300f060355040a0c085048492054657374311e301c06035504030c15504849205465737420496e7465726d6564696174653059301306072a8648ce3d020106082a8648ce3d03010703420004e1aafacec6eed0c1fc348e895697eb745577514537d5c88a1819826322b84efb278336da9b5aabc9d89920dc2db1125456f4fb182922373be06bb64e5edc33bba366306430120603551d130101ff040830060101ff020100300e0603551d0f0101ff040403020204301d0603551d0e0416041484e82f7630f5dd4c711ba7cb42808acaf76e92da301f0603551d2304183016801465b68750b3b8e9948a95a61957646ce19538dd89300d06092a864886f70d01010b050003820101008d03d84bb1095a930c40c1d61d45f2226b0a92142744f719dcf00d6a1a9cb3c37408deeb51e8bb0af0aff8e069f4d63325d9201987a01fb392d0cc383e2755a5c996d66e5bb89c24fe587d46ddbb483e99ac10696e907d8a40210e89f47b7f0fd3255c13450e9d7ee3b05509d3c0b96be162bb6b6e0a0563e593518fbb729c28e52dd8febfbd0a9958207f9229b72ccfc7479dcf62eb4d1fbae9593dadc2af0521c7edfe9915f073403757105ecfd6f8099e6539e44299379224caba65aee3be80f252fcb403fc8666b7f861406ce7a8a4b3bbd14713dc64d70fb330d1aeec510438f27dff93b9fdecb4aa5861ba1ab396554752018c4cf204cf0d60c45235e1' addr middle 632;
+	call Bytes.FromHex: '308201a83082014fa003020102020103300a06082a8648ce3d04030230333111300f060355040a0c085048492054657374311e301c06035504030c15504849205465737420496e7465726d656469617465301e170d3236313130323030303033385a170d3237313130323030303033385a30133111300f06035504030c087068692e746573743059301306072a8648ce3d020106082a8648ce3d03010703420004b82ac3af23fdfe999807bb6b796499fc55d95dfda7e6c66db34219034f33a66253cfc9efce24a7f64bd19c0627079a227ec5e7d515201056f72ba50bf8f27c45a374307230090603551d130402300030250603551d11041e301c82087068692e7465737482102a2e67616d65732e7068692e74657374301d0603551d0e04160414bdd1fa8bfce9ba29a1afdb1bef117c7ba311cbb6301f0603551d2304183016801484e82f7630f5dd4c711ba7cb42808acaf76e92da300a06082a8648ce3d040302034700304402203b642ee4ce78f1569cbbcd23d6a45d9f1d96268897f3409e5fa55cfd144168de022021b88e2d8b384ae1e4d176d6f6b64658b4f22f1b93ab17139c3ff882c79584e3' addr leaf 428;
+	call Bytes.FromHex: '307702010104201c3c67d53150963e964e28135a7ee1e5c73592704c32240dbc57d6a0cbbe4378a00a06082a8648ce3d030107a14403420004b82ac3af23fdfe999807bb6b796499fc55d95dfda7e6c66db34219034f33a66253cfc9efce24a7f64bd19c0627079a227ec5e7d515201056f72ba50bf8f27c45' addr key 121;
+	log 'identity: ' (Tls13.Identity: addr identity addr leaf 428 addr key 121) ' ' (Tls13.AddIssuer: addr identity addr middle 632) '\n';
+	bln ok: (Net.Start: Machine.address);
+	int listener: (Tcp.Listen: 5443);
+	log 'listening: ' (listener >= 0) '\n';
+	call Run;
+
+	[Run]
+		int start: (OS.GetTicks);
+		while finished < Machine.count - 1 and (OS.GetTicks) - start < 120000
+			int c: (Tcp.Accept: listener);
+			if c >= 0
+				int m: (Tcp.Address: c) & 0xFF;
+				if (Secure.Accept: addr links:m c addr identity)
+					open:m is true;
+				;;
+			;;
+			while int m: 2; m <= Machine.count; m++;
+				if open:m
+					call Serve: m;
+				;;
+			;;
+			call Net.Wait;
+		;;
+		while int m: 2; m <= Machine.count; m++;
+			log 'machine ' m ': handshake ' shook:m ', echoed ' echoed:m '\n';
+		;;
+		exit 0;
+	[end]
+
+	# one client: on with its handshake, and what it sends, sent back
+	[Serve: int m: 0;]
+		ptr<TlsLink> link: addr links:m;
+		bln going: (Secure.Pump: link);
+		if link.session.connected
+			shook:m is true;
+		;;
+		int got: (Secure.Read: link addr buffer 2048);
+		while got > 0
+			int taken: (Secure.Write: link addr buffer got);
+			echoed:m++ taken;
+			got is (Secure.Read: link addr buffer 2048);
+		;;
+		if not going
+			if link.session.failed
+				log 'machine ' m ' failed: ' link.session.error '\n';
+			;;
+			call Secure.Close: link;
+			open:m is false;
+			finished++;
+		;;
+	[end]
+}

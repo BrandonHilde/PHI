@@ -1,0 +1,1236 @@
+# TLS 1.3 (RFC 8446), both sides, as an engine that doesn't do any input or output
+# itself: each connection is a TlsSession, which is given what arrived from the other side
+# and holds what to send it, so the same engine serves a client and a server, over a
+# kernel's TCP, a program's sockets, or a test's memory. Any kind of program.
+#
+#   use net.tls13;
+#   TlsSession s;
+#   bln ok: (Tls13.Client: addr s 'phi.test');           # (or Tls13.Server: addr s addr identity)
+#   while not s.connected and not s.failed
+#       # send what it has
+#       u32 n: (Tls13.Pending: addr s);
+#       ... write n bytes from (Tls13.Outgoing: addr s), then: call Tls13.Sent: addr s written;
+#       # and give it what arrives
+#       ... read up to s.room bytes into (Tls13.Room: addr s), then: call Tls13.Received: addr s got;
+#   ;;
+#   int taken: (Tls13.Write: addr s data length);        # queued to send (as records)
+#   int got: (Tls13.Read: addr s buffer max);            # data that has arrived: 0 if none yet, -1 once closed
+#   call Tls13.Close: addr s;                            # close_notify, to send
+#   call Tls13.Free: addr s;
+#
+# A client checks the server's certificate (crypto.x509): it must be for the host, go
+# back to a root the program trusts (X509.Trust), and have signed the handshake
+# (CertificateVerify, with a P-256 or RSA-PSS key). A server shows a TlsIdentity: its
+# certificate (and any CA certificates between it and the root) and its P-256 key, which
+# signs the handshake (crypto.p256, RFC 6979 nonces). Keys are agreed with X25519, records
+# are encrypted with AES-128-GCM or ChaCha20-Poly1305, SHA-256 throughout. No session
+# resumption, early data, HelloRetryRequest or client certificates.
+#
+# s.error says why a session failed; the other side is sent an alert saying so too.
+# Each session has its own buffers on the heap (about 80 KB while it shakes hands, 70 KB
+# after), which Free gives back.
+
+use crypto.hmac;
+use crypto.aesgcm;
+use crypto.chachapoly;
+use crypto.x25519;
+use crypto.random;
+use crypto.x509;
+use crypto.p256;
+
+# what a server shows: its certificates and its key
+struct.TlsIdentity
+{
+	ptr<u8> list;               # the certificates as a Certificate message lists them
+	u32 list_length;
+	u32 list_room;
+	u8 private[32];             # its P-256 key
+	u8 public[65];
+	bln ready;
+}
+
+# one connection, either side
+struct.TlsSession
+{
+	bln server;
+	bln connected;              # the handshake is done: data can go both ways
+	bln failed;                 # it can't go on (error says why)
+	bln closed;                 # the other side sent close_notify
+	bln verified;               # (a client) the server's certificate checked out
+	str error: [100];
+	u32 alert;                  # the alert the other side sent, if it sent one
+	u32 suite;                  # the cipher suite agreed
+	u32 offer;                  # suites to offer or take: 1 AES-128-GCM, 2 ChaCha20-Poly1305, 3 both
+	u32 stage;
+	bln encrypting;             # our records are encrypted
+	bln decrypting;             # theirs are
+
+	ptr<u8> input;              # what arrived: whole records first, then part of one
+	u32 input_length;
+	u32 room;                   # bytes Room has space for
+	u32 app_at;                 # data waiting to be read, in the first record of input
+	u32 app_left;
+	u32 app_record;             # that record's size, dropped once its data is read
+	ptr<u8> output;             # records to send
+	u32 output_length;
+	ptr<u8> messages;           # handshake messages waiting to be whole (only while shaking hands)
+	u32 messages_length;
+
+	Sha256State transcript;
+	u8 handshake_secret[32];
+	u8 master_secret[32];
+	u8 client_secret[32];
+	u8 server_secret[32];
+	u8 client_next[32];         # (a server) the client's application secret, for after its Finished
+	u32 key_length;
+	u8 write_key[32];
+	u8 write_iv[12];
+	u32 write_sequence;
+	u8 read_key[32];
+	u8 read_iv[12];
+	u32 read_sequence;
+	u8 private[32];             # our X25519 key
+	u8 public[32];
+
+	ptr<TlsIdentity> identity;  # (a server) what it shows
+	str host: [255];            # (a client) who the server must be
+	Certificate chain[4];       # (a client) the server's certificates, its own first
+	u32 chain_count;
+	ptr<u8> chain_der;          # a copy of its Certificate message, which chain points into
+}
+
+phi.Tls13:Library
+{
+	const u32 RECORD_MAX: 16640;          # the most a record's body can be: 16 KB, padding and tag
+	const u32 PLAIN_MAX: 16384;           # the most data a record can carry
+	const u32 HANDSHAKE_MAX: 32768;       # the largest handshake message taken
+	const u32 HEADER: 5;
+	const u32 INPUT_MAX: 33290;           # two whole records
+	const u32 OUTPUT_MAX: 33290;
+
+	const u32 TYPE_CHANGE_CIPHER_SPEC: 20;
+	const u32 TYPE_ALERT: 21;
+	const u32 TYPE_HANDSHAKE: 22;
+	const u32 TYPE_APPLICATION: 23;
+
+	const u32 CLIENT_HELLO: 1;
+	const u32 SERVER_HELLO: 2;
+	const u32 NEW_SESSION_TICKET: 4;
+	const u32 ENCRYPTED_EXTENSIONS: 8;
+	const u32 CERTIFICATE: 11;
+	const u32 CERTIFICATE_REQUEST: 13;
+	const u32 CERTIFICATE_VERIFY: 15;
+	const u32 FINISHED: 20;
+	const u32 KEY_UPDATE: 24;
+
+	const u32 AES_128_GCM: 0x1301;
+	const u32 CHACHA20_POLY1305: 0x1303;
+	const u32 X25519_GROUP: 0x001D;
+	const u32 ECDSA_P256_SHA256: 0x0403;
+	const u32 RSA_PSS_SHA256: 0x0804;
+
+	# a session's stage
+	const u32 CLIENT_WAITING_FOR_HELLO: 0;
+	const u32 CLIENT_HANDSHAKING: 1;
+	const u32 SERVER_WAITING_FOR_HELLO: 2;
+	const u32 SERVER_WAITING_FOR_FINISHED: 3;
+	const u32 DONE: 4;
+
+	# alerts sent
+	const u32 ALERT_HANDSHAKE_FAILURE: 40;
+	const u32 ALERT_BAD_CERTIFICATE: 42;
+	const u32 ALERT_DECODE_ERROR: 50;
+	const u32 ALERT_DECRYPT_ERROR: 51;
+	const u32 ALERT_PROTOCOL_VERSION: 70;
+	const u32 ALERT_INTERNAL_ERROR: 80;
+	const u32 ALERT_UNEXPECTED_MESSAGE: 10;
+	const u32 ALERT_RECORD_OVERFLOW: 22;
+	const u32 ALERT_BAD_MAC: 20;
+
+	# shared by every session: each call finishes with them before it returns
+	ptr<u8> tls_build: 0;                 # a handshake message being made (HANDSHAKE_MAX bytes, made once)
+	u8 tls_hash[32];
+	u8 tls_empty_hash[32];
+	u8 tls_zeros[32];
+	u8 tls_scratch[32];
+	u8 tls_finished_key[32];
+	u8 tls_verify[32];
+	u8 tls_shared[32];
+	u8 tls_peer_public[32];
+	u8 tls_nonce[12];
+	u8 tls_info[300];
+	u8 tls_signed[130];
+	u8 tls_small[8];
+	u8 tls_r[32];
+	u8 tls_s[32];
+	Sha256State tls_snapshot;
+	u8 tls_hello_retry: 0xcf 0x21 0xad 0x74 0xe5 0x9a 0x61 0x11 0xbe 0x1d 0x8c 0x02 0x1e 0x65 0xb8 0x91
+		0xc2 0xa2 0x11 0x16 0x7a 0xbb 0x8c 0x5e 0x07 0x9e 0x09 0xe2 0xc8 0xa8 0x33 0x9c;
+
+	# ---- starting
+
+	# s, a client of host (the name the certificate must be for: a DNS name or an IPv4
+	# address), with its ClientHello ready to send; false if there's no memory for it
+	[Client: ptr<TlsSession> s: 0; ptr<u8> host: 0;]
+		if not (Tls13.Begin: s false) return false;
+		s.host is host;
+		s.stage is CLIENT_WAITING_FOR_HELLO;
+		s.chain_count is 0;
+		s.chain_der is new u8[HANDSHAKE_MAX];
+		if s.chain_der is 0 return (Tls13.Fail: s 'not enough memory for TLS' ALERT_INTERNAL_ERROR);
+		call Tls13.SendClientHello: s host;
+	[end: not s.failed]
+
+	# s, a server showing identity, waiting for a ClientHello; false if there's no memory
+	# for it, or the identity isn't ready
+	[Server: ptr<TlsSession> s: 0; ptr<TlsIdentity> identity: 0;]
+		if not (Tls13.Begin: s true) return false;
+		if not identity.ready return (Tls13.Fail: s 'the server has no identity (Tls13.Identity)' ALERT_INTERNAL_ERROR);
+		s.identity is identity;
+		s.stage is SERVER_WAITING_FOR_HELLO;
+	[end: true]
+
+	# a session made new, with its buffers
+	[Begin: ptr<TlsSession> s: 0; bln server: false;]
+		u32 offer: s.offer;
+		if offer is 0 or offer > 3
+			offer is 3;
+		;;
+		call Bytes.Zero: s as ptr<u8> sizeof TlsSession;
+		s.offer is offer;
+		s.server is server;
+		s.error is '';
+		s.input is new u8[INPUT_MAX];
+		s.output is new u8[OUTPUT_MAX];
+		s.messages is new u8[HANDSHAKE_MAX];
+		if tls_build is 0
+			tls_build is new u8[HANDSHAKE_MAX];
+		;;
+		s.room is INPUT_MAX;
+		call Bytes.Zero: addr tls_zeros 32;
+		call Sha256.Hash: addr tls_zeros 0 addr tls_empty_hash;
+		call Sha256.Init: addr s.transcript;
+		if s.input is 0 or s.output is 0 or s.messages is 0 or tls_build is 0
+			s.failed is true;
+			s.error is 'not enough memory for TLS';
+			return false;
+		;;
+	[end: true]
+
+	# give back s's buffers and forget its keys
+	[Free: ptr<TlsSession> s: 0;]
+		call Tls13.FreeHandshake: s;
+		if s.input is not 0
+			free s.input;
+		;;
+		if s.output is not 0
+			free s.output;
+		;;
+		s.input is 0;
+		s.output is 0;
+		call Bytes.Zero: addr s.write_key 32;
+		call Bytes.Zero: addr s.read_key 32;
+		call Bytes.Zero: addr s.client_secret 32;
+		call Bytes.Zero: addr s.server_secret 32;
+		call Bytes.Zero: addr s.client_next 32;
+		call Bytes.Zero: addr s.private 32;
+	[end]
+
+	# what only the handshake needed
+	[FreeHandshake: ptr<TlsSession> s: 0;]
+		if s.messages is not 0
+			free s.messages;
+			s.messages is 0;
+		;;
+		if s.chain_der is not 0
+			free s.chain_der;
+			s.chain_der is 0;
+		;;
+		s.chain_count is 0;
+		call Bytes.Zero: addr s.handshake_secret 32;
+		call Bytes.Zero: addr s.master_secret 32;
+	[end]
+
+	# ---- a server's identity
+
+	# id = a certificate (DER) and its P-256 key (a SEC 1 or PKCS #8 file's DER), which must
+	# be the certificate's; false if they aren't (X509.error or the reason in Tls13's)
+	[Identity: ptr<TlsIdentity> id: 0; ptr<u8> certificate: 0; u32 certificate_length: 0; ptr<u8> key: 0; u32 key_length: 0;]
+		id.ready is false;
+		Certificate c;
+		if not (X509.Parse: addr c certificate certificate_length) return false;
+		if c.key_kind is not X509.P256
+			X509.error is 'a server key that isn\'t P-256';
+			return false;
+		;;
+		if not (P256.ReadPrivate: addr id.private addr id.public key key_length)
+			X509.error is 'a key file that can\'t be read';
+			return false;
+		;;
+		if not (Bytes.Equal: addr id.public c.point 65)
+			X509.error is 'the key isn\'t the certificate\'s';
+			return false;
+		;;
+		id.list_length is 0;
+		id.list_room is 0;
+		if not (Tls13.AddCertificate: id certificate certificate_length) return false;
+		id.ready is true;
+	[end: true]
+
+	# a CA certificate (DER) for id to show after its own, the next one up the chain
+	[AddIssuer: ptr<TlsIdentity> id: 0; ptr<u8> certificate: 0; u32 certificate_length: 0;]
+	[end: (Tls13.AddCertificate: id certificate certificate_length)]
+
+	[AddCertificate: ptr<TlsIdentity> id: 0; ptr<u8> der: 0; u32 length: 0;]
+		u32 needed: id.list_length + 3 + length + 2;
+		if needed > HANDSHAKE_MAX - 16
+			X509.error is 'too many certificates to show';
+			return false;
+		;;
+		if needed > id.list_room
+			ptr<u8> bigger: new u8[HANDSHAKE_MAX];
+			if bigger is 0
+				X509.error is 'not enough memory';
+				return false;
+			;;
+			if id.list is not 0
+				call Bytes.Copy: bigger id.list id.list_length;
+				free id.list;
+			;;
+			id.list is bigger;
+			id.list_room is HANDSHAKE_MAX;
+		;;
+		ptr<u8> p: id.list + id.list_length;
+		call Tls13.Put24: p length;
+		call Bytes.Copy: p + 3 der length;
+		call Tls13.Put16: p + 3 + length 0;          # no extensions
+		id.list_length is needed;
+	[end: true]
+
+	# ---- what goes back and forth
+
+	# where what arrives goes: s.room bytes fit there, then call Received
+	[Room: ptr<TlsSession> s: 0;]
+	[end: s.input + s.input_length]
+
+	# count bytes arrived at Room: the records they complete are handled (which may give
+	# data to Read, and things to send); false if the session failed
+	[Received: ptr<TlsSession> s: 0; u32 count: 0;]
+		if s.failed return false;
+		if count > s.room return (Tls13.Fail: s 'more arrived than there was room for' ALERT_INTERNAL_ERROR);
+		s.input_length++ count;
+		call Tls13.Process: s;
+	[end: not s.failed]
+
+	# bytes waiting to be sent
+	[Pending: ptr<TlsSession> s: 0;]
+	[end: s.output_length]
+
+	# where they are
+	[Outgoing: ptr<TlsSession> s: 0;]
+	[end: s.output]
+
+	# count of them were sent
+	[Sent: ptr<TlsSession> s: 0; u32 count: 0;]
+		if count > s.output_length
+			count is s.output_length;
+		;;
+		u32 left: s.output_length - count;
+		call Bytes.Copy: s.output s.output + count left;
+		s.output_length is left;
+	[end]
+
+	# data that has arrived (up to max bytes): how many; 0 if none has yet, -1 once the
+	# other side has closed (or the session failed) and everything is read
+	[Read: ptr<TlsSession> s: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		if s.app_left is 0
+			if s.closed or s.failed return -1;
+			return 0;
+		;;
+		int n: s.app_left;
+		if n > max
+			n is max;
+		;;
+		call Bytes.Copy: buffer s.input + s.app_at n;
+		s.app_at++ n;
+		s.app_left-- n;
+		if s.app_left is 0
+			# that record is done with: on to the ones after it
+			call Tls13.Drop: s s.app_record;
+			call Tls13.Process: s;
+		;;
+	[end: n]
+
+	# queue data to send, as records: how much of it there was room for (all of it, unless
+	# what's waiting to be sent is too much); -1 if the session isn't connected
+	[Write: ptr<TlsSession> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		if not s.connected or s.failed return -1;
+		u32 done: 0;
+		while done < length
+			u32 n: length - done;
+			if n > PLAIN_MAX
+				n is PLAIN_MAX;
+			;;
+			if s.output_length + HEADER + n + 17 > OUTPUT_MAX
+				return done;
+			;;
+			call Tls13.SendRecord: s TYPE_APPLICATION data + done n;
+			done++ n;
+		;;
+	[end: done]
+
+	# queue close_notify: we'll send no more
+	[Close: ptr<TlsSession> s: 0;]
+		if s.connected and not s.failed
+			tls_small:0 is 1;                     # a warning...
+			tls_small:1 is 0;                     # ...that we're closing
+			call Tls13.SendRecord: s TYPE_ALERT addr tls_small 2;
+		;;
+		s.connected is false;
+	[end]
+
+	# ---- records
+
+	# handle each whole record in input, until there's data waiting to be read
+	[Process: ptr<TlsSession> s: 0;]
+		while not s.failed and s.app_left is 0 and s.input_length >= HEADER
+			ptr<u8> r: s.input;
+			u32 type: r:0;
+			u32 length: (Tls13.Get16: r + 3);
+			if length > RECORD_MAX
+				call Tls13.Fail: s 'a record that is too long' ALERT_RECORD_OVERFLOW;
+				return;
+			;;
+			if s.input_length < HEADER + length break;
+			u32 size: HEADER + length;
+			bln keep: false;
+			if type is TYPE_CHANGE_CIPHER_SPEC and not s.connected
+				keep is false;                    # sent for middleboxes; it means nothing in TLS 1.3
+			;;
+			elif not s.decrypting
+				if type is TYPE_HANDSHAKE
+					call Tls13.AddMessages: s r + HEADER length;
+				;;
+				elif type is TYPE_ALERT
+					call Tls13.ReadAlert: s r + HEADER length;
+				;;
+				else
+					call Tls13.Fail: s 'a record that should have been a handshake' ALERT_UNEXPECTED_MESSAGE;
+				;;
+			;;
+			elif type is not TYPE_APPLICATION
+				call Tls13.Fail: s 'a record that should have been encrypted' ALERT_UNEXPECTED_MESSAGE;
+			;;
+			else
+				u32 inner: (Tls13.OpenRecord: s r length);
+				if not s.failed
+					u32 inner_type: r:(HEADER + inner);
+					if inner_type is TYPE_HANDSHAKE
+						call Tls13.AddMessages: s r + HEADER inner;
+					;;
+					elif inner_type is TYPE_ALERT
+						call Tls13.ReadAlert: s r + HEADER inner;
+					;;
+					elif inner_type is TYPE_APPLICATION and s.connected
+						if inner > 0
+							s.app_at is HEADER;
+							s.app_left is inner;
+							s.app_record is size;
+							keep is true;
+						;;
+					;;
+					else
+						call Tls13.Fail: s 'data before the handshake finished' ALERT_UNEXPECTED_MESSAGE;
+					;;
+				;;
+			;;
+			if not keep
+				call Tls13.Drop: s size;
+			;;
+		;;
+	[end]
+
+	# the first size bytes of input are done with
+	[Drop: ptr<TlsSession> s: 0; u32 size: 0;]
+		u32 left: s.input_length - size;
+		call Bytes.Copy: s.input s.input + size left;
+		s.input_length is left;
+		s.room is INPUT_MAX - left;
+	[end]
+
+	# decrypt the record at r (length bytes after its header) in place: the length of its
+	# content, whose real type is the byte after it (the session fails if it doesn't
+	# check out)
+	[OpenRecord: ptr<TlsSession> s: 0; ptr<u8> r: 0; u32 length: 0;]
+		if length <= 16
+			call Tls13.Fail: s 'a record too short to be encrypted' ALERT_DECODE_ERROR;
+			return 0;
+		;;
+		u32 sealed: length - 16;
+		call Tls13.MakeNonce: addr s.read_iv s.read_sequence;
+		bln good: false;
+		if s.suite is AES_128_GCM
+			good is (AesGcm.Open: addr s.read_key addr tls_nonce r HEADER r + HEADER sealed r + HEADER + sealed);
+		;;
+		else
+			good is (ChaChaPoly.Open: addr s.read_key addr tls_nonce r HEADER r + HEADER sealed r + HEADER + sealed);
+		;;
+		s.read_sequence++;
+		if not good
+			call Tls13.Fail: s 'a record failed its integrity check' ALERT_BAD_MAC;
+			return 0;
+		;;
+		# the real type is the last byte that isn't padding (zeros)
+		u32 n: sealed;
+		while n > 0 and r:(HEADER + n - 1) is 0
+			n--;
+		;;
+		if n is 0
+			call Tls13.Fail: s 'an encrypted record with no type' ALERT_UNEXPECTED_MESSAGE;
+			return 0;
+		;;
+	[end: n - 1]
+
+	# queue a record: as it is until our keys are set, encrypted after (but a
+	# ChangeCipherSpec, which is never encrypted)
+	[SendRecord: ptr<TlsSession> s: 0; u32 type: 0; ptr<u8> data: 0; u32 length: 0;]
+		if s.output_length + HEADER + length + 17 > OUTPUT_MAX
+			s.failed is true;
+			s.error is 'too much waiting to be sent';
+			return;
+		;;
+		ptr<u8> r: s.output + s.output_length;
+		r:1 is 3;
+		r:2 is 3;
+		if s.encrypting and type is not TYPE_CHANGE_CIPHER_SPEC
+			call Bytes.Copy: r + HEADER data length;
+			r:(HEADER + length) is type;
+			u32 body: length + 1;
+			r:0 is TYPE_APPLICATION;
+			call Tls13.Put16: r + 3 body + 16;
+			call Tls13.MakeNonce: addr s.write_iv s.write_sequence;
+			if s.suite is AES_128_GCM
+				call AesGcm.Seal: addr s.write_key addr tls_nonce r HEADER r + HEADER body r + HEADER + body;
+			;;
+			else
+				call ChaChaPoly.Seal: addr s.write_key addr tls_nonce r HEADER r + HEADER body r + HEADER + body;
+			;;
+			s.write_sequence++;
+			s.output_length++ HEADER + body + 16;
+		;;
+		else
+			r:0 is type;
+			if type is TYPE_HANDSHAKE and not s.server
+				r:2 is 1;                         # the ClientHello's record says TLS 1.0, as usual
+			;;
+			call Tls13.Put16: r + 3 length;
+			call Bytes.Copy: r + HEADER data length;
+			s.output_length++ HEADER + length;
+		;;
+	[end]
+
+	# queue a handshake message (any length: records of up to 16 KB) and add it to the transcript
+	[SendMessage: ptr<TlsSession> s: 0; ptr<u8> message: 0; u32 length: 0;]
+		call Sha256.Update: addr s.transcript message length;
+		u32 done: 0;
+		while done < length and not s.failed
+			u32 n: length - done;
+			if n > PLAIN_MAX
+				n is PLAIN_MAX;
+			;;
+			call Tls13.SendRecord: s TYPE_HANDSHAKE message + done n;
+			done++ n;
+		;;
+	[end]
+
+	# the nonce for a record: the key's IV xored with the record's sequence number
+	[MakeNonce: ptr<u8> iv: 0; u32 sequence: 0;]
+		call Bytes.Copy: addr tls_nonce iv 12;
+		tls_nonce:8 is tls_nonce:8 ^ (sequence >> 24);
+		tls_nonce:9 is tls_nonce:9 ^ (sequence >> 16);
+		tls_nonce:10 is tls_nonce:10 ^ (sequence >> 8);
+		tls_nonce:11 is tls_nonce:11 ^ sequence;
+	[end]
+
+	# an alert from the other side: close_notify ends the connection; anything else fails it
+	[ReadAlert: ptr<TlsSession> s: 0; ptr<u8> body: 0; u32 length: 0;]
+		if length < 2
+			call Tls13.Fail: s 'an alert that can\'t be read' ALERT_DECODE_ERROR;
+			return;
+		;;
+		s.alert is body:1;
+		if s.alert is 0
+			s.closed is true;
+			if not s.connected
+				s.failed is true;
+				s.error is 'the other side closed the connection during the handshake';
+			;;
+			return;
+		;;
+		s.failed is true;
+		s.connected is false;
+		if s.alert is 40
+			s.error is 'the other side refused the handshake: no cipher or key in common (alert 40)';
+		;;
+		elif s.alert is 42
+			s.error is 'the other side refused the certificate (alert 42)';
+		;;
+		elif s.alert is 70
+			s.error is 'the other side doesn\'t speak TLS 1.3 (alert 70)';
+		;;
+		elif s.alert is 112
+			s.error is 'the server doesn\'t know that host name (alert 112)';
+		;;
+		else
+			s.error is ('the other side sent alert ' s.alert);
+		;;
+	[end]
+
+	# s fails: error = why, and the other side is sent an alert saying so; false
+	[Fail: ptr<TlsSession> s: 0; ptr<u8> why: 0; u32 alert: 0;]
+		if s.failed return false;
+		s.error is why;
+		if s.output is not 0
+			tls_small:0 is 2;                     # fatal
+			tls_small:1 is alert;
+			call Tls13.SendRecord: s TYPE_ALERT addr tls_small 2;
+		;;
+		s.failed is true;
+		s.connected is false;
+	[end: false]
+
+	# ---- handshake messages
+
+	# add handshake bytes, and handle each message that is now whole
+	[AddMessages: ptr<TlsSession> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		if s.messages is 0
+			# after the handshake: only KeyUpdate and session tickets come, each whole in a record
+			if length >= 4 and data:0 is KEY_UPDATE and length is 5
+				call Tls13.ReadKeyUpdate: s data:4;
+			;;
+			return;
+		;;
+		if s.messages_length + length > HANDSHAKE_MAX
+			call Tls13.Fail: s 'a handshake message that is too big' ALERT_DECODE_ERROR;
+			return;
+		;;
+		call Bytes.Copy: s.messages + s.messages_length data length;
+		s.messages_length++ length;
+		while not s.failed and s.messages is not 0 and s.messages_length >= 4
+			u32 size: 4 + (Tls13.Get24: s.messages + 1);
+			if size > HANDSHAKE_MAX
+				call Tls13.Fail: s 'a handshake message that is too big' ALERT_DECODE_ERROR;
+				return;
+			;;
+			if size > s.messages_length return;
+			call Tls13.HandleMessage: s s.messages size;
+			if s.messages is not 0
+				u32 left: s.messages_length - size;
+				call Bytes.Copy: s.messages s.messages + size left;
+				s.messages_length is left;
+			;;
+		;;
+	[end]
+
+	[HandleMessage: ptr<TlsSession> s: 0; ptr<u8> message: 0; u32 size: 0;]
+		u32 type: message:0;
+		ptr<u8> body: message + 4;
+		u32 length: size - 4;
+		u32 stage: s.stage;
+		if stage is CLIENT_WAITING_FOR_HELLO
+			if type is not SERVER_HELLO return (Tls13.Fail: s 'the server sent something other than a ServerHello' ALERT_UNEXPECTED_MESSAGE);
+			call Sha256.Update: addr s.transcript message size;
+			call Tls13.ReadServerHello: s body length;
+			if not s.failed and s.messages_length is not size
+				call Tls13.Fail: s 'the ServerHello came with more in its record' ALERT_UNEXPECTED_MESSAGE;
+			;;
+		;;
+		elif stage is CLIENT_HANDSHAKING
+			if type is ENCRYPTED_EXTENSIONS
+				call Sha256.Update: addr s.transcript message size;
+			;;
+			elif type is CERTIFICATE
+				call Sha256.Update: addr s.transcript message size;
+				call Tls13.ReadCertificate: s message size;
+			;;
+			elif type is CERTIFICATE_VERIFY
+				# (it signs the transcript up to the Certificate, so it goes in after)
+				call Tls13.ReadCertificateVerify: s body length;
+				call Sha256.Update: addr s.transcript message size;
+			;;
+			elif type is FINISHED
+				call Tls13.ReadServerFinished: s message size;
+			;;
+			elif type is CERTIFICATE_REQUEST
+				call Tls13.Fail: s 'the server wants a client certificate, which PHI can\'t send' ALERT_HANDSHAKE_FAILURE;
+			;;
+			else
+				call Tls13.Fail: s 'the server sent an unexpected handshake message' ALERT_UNEXPECTED_MESSAGE;
+			;;
+		;;
+		elif stage is SERVER_WAITING_FOR_HELLO
+			if type is not CLIENT_HELLO return (Tls13.Fail: s 'the client sent something other than a ClientHello' ALERT_UNEXPECTED_MESSAGE);
+			call Sha256.Update: addr s.transcript message size;
+			call Tls13.ReadClientHello: s body length;
+		;;
+		elif stage is SERVER_WAITING_FOR_FINISHED
+			if type is not FINISHED return (Tls13.Fail: s 'the client sent something other than its Finished' ALERT_UNEXPECTED_MESSAGE);
+			call Tls13.ReadClientFinished: s message size;
+		;;
+	[end: not s.failed]
+
+	# ---- the client's side
+
+	[SendClientHello: ptr<TlsSession> s: 0; ptr<u8> host: 0;]
+		call Random.Fill: addr s.private 32;
+		call X25519.Base: addr s.public addr s.private;
+
+		ptr<u8> h: tls_build;
+		u32 pos: 4;                           # after the message header, filled in at the end
+		h:pos is 3;                           # "TLS 1.2", as TLS 1.3 asks
+		h:(pos + 1) is 3;
+		pos++ 2;
+		call Random.Fill: h + pos 32;
+		pos++ 32;
+		h:pos is 32;                          # a session id, which middleboxes expect
+		call Random.Fill: h + pos + 1 32;
+		pos++ 33;
+
+		u32 suites: 0;
+		if (s.offer & 1) is not 0
+			call Tls13.Put16: h + pos + 2 + suites AES_128_GCM;
+			suites++ 2;
+		;;
+		if (s.offer & 2) is not 0
+			call Tls13.Put16: h + pos + 2 + suites CHACHA20_POLY1305;
+			suites++ 2;
+		;;
+		call Tls13.Put16: h + pos suites;
+		pos++ 2 + suites;
+		h:pos is 1;                           # compression: none
+		h:(pos + 1) is 0;
+		pos++ 2;
+
+		u32 extensions: pos;
+		pos++ 2;
+		# server_name, for a name (not an address)
+		u32 host_length: 0;
+		while host:host_length is not 0
+			host_length++;
+		;;
+		if host_length > 0 and host_length < 256 and not (X509.ReadAddress: host)
+			call Tls13.Put16: h + pos 0;
+			call Tls13.Put16: h + pos + 2 host_length + 5;
+			call Tls13.Put16: h + pos + 4 host_length + 3;
+			h:(pos + 6) is 0;                 # a host name
+			call Tls13.Put16: h + pos + 7 host_length;
+			call Bytes.Copy: h + pos + 9 host host_length;
+			pos++ 9 + host_length;
+		;;
+		# supported_groups: x25519
+		call Tls13.Put16: h + pos 10;
+		call Tls13.Put16: h + pos + 2 4;
+		call Tls13.Put16: h + pos + 4 2;
+		call Tls13.Put16: h + pos + 6 X25519_GROUP;
+		pos++ 8;
+		# signature_algorithms, the ones crypto.x509 checks: ECDSA P-256 and RSA-PSS for the
+		# handshake, and RSA PKCS #1 for certificates, all with SHA-256
+		u32 algorithms: 0x0403 0x0804 0x0401;
+		call Tls13.Put16: h + pos 13;
+		call Tls13.Put16: h + pos + 2 2 + algorithms.len * 2;
+		call Tls13.Put16: h + pos + 4 algorithms.len * 2;
+		pos++ 6;
+		while u32 i: 0; i < algorithms.len; i++;
+			call Tls13.Put16: h + pos algorithms:i;
+			pos++ 2;
+		;;
+		# supported_versions: TLS 1.3
+		call Tls13.Put16: h + pos 43;
+		call Tls13.Put16: h + pos + 2 3;
+		h:(pos + 4) is 2;
+		call Tls13.Put16: h + pos + 5 0x0304;
+		pos++ 7;
+		# key_share: our X25519 public key
+		call Tls13.Put16: h + pos 51;
+		call Tls13.Put16: h + pos + 2 38;
+		call Tls13.Put16: h + pos + 4 36;
+		call Tls13.Put16: h + pos + 6 X25519_GROUP;
+		call Tls13.Put16: h + pos + 8 32;
+		call Bytes.Copy: h + pos + 10 addr s.public 32;
+		pos++ 42;
+		call Tls13.Put16: h + extensions pos - extensions - 2;
+
+		h:0 is CLIENT_HELLO;
+		call Tls13.Put24: h + 1 pos - 4;
+		call Tls13.SendMessage: s h pos;
+	[end]
+
+	[ReadServerHello: ptr<TlsSession> s: 0; ptr<u8> body: 0; u32 length: 0;]
+		if length < 40 return (Tls13.Fail: s 'a ServerHello that can\'t be read' ALERT_DECODE_ERROR);
+		if (Bytes.Equal: body + 2 addr tls_hello_retry 32)
+			return (Tls13.Fail: s 'the server wants a key exchange PHI doesn\'t offer (HelloRetryRequest)' ALERT_HANDSHAKE_FAILURE);
+		;;
+		u32 pos: 34;
+		pos++ 1 + body:pos;                   # the session id we sent, echoed
+		if pos + 5 > length return (Tls13.Fail: s 'a ServerHello that can\'t be read' ALERT_DECODE_ERROR);
+		s.suite is (Tls13.Get16: body + pos);
+		pos++ 3;                              # the suite, and compression
+		u32 stop: pos + 2 + (Tls13.Get16: body + pos);
+		pos++ 2;
+		if stop > length return (Tls13.Fail: s 'a ServerHello that can\'t be read' ALERT_DECODE_ERROR);
+		bln tls13: false;
+		bln have_key: false;
+		while pos + 4 <= stop
+			u32 type: (Tls13.Get16: body + pos);
+			u32 size: (Tls13.Get16: body + pos + 2);
+			pos++ 4;
+			if pos + size > stop return (Tls13.Fail: s 'a ServerHello that can\'t be read' ALERT_DECODE_ERROR);
+			if type is 43 and size is 2
+				tls13 is ((Tls13.Get16: body + pos) is 0x0304);
+			;;
+			if type is 51 and size is 36
+				if (Tls13.Get16: body + pos) is X25519_GROUP and (Tls13.Get16: body + pos + 2) is 32
+					call Bytes.Copy: addr tls_peer_public body + pos + 4 32;
+					have_key is true;
+				;;
+			;;
+			pos++ size;
+		;;
+		if not tls13 return (Tls13.Fail: s 'the server doesn\'t speak TLS 1.3' ALERT_PROTOCOL_VERSION);
+		if not (Tls13.TakeSuite: s s.suite) return (Tls13.Fail: s 'the server chose a cipher PHI didn\'t offer' ALERT_HANDSHAKE_FAILURE);
+		if not have_key return (Tls13.Fail: s 'the server sent no X25519 key' ALERT_HANDSHAKE_FAILURE);
+		if not (Tls13.HandshakeSecrets: s) return false;
+		call Tls13.SetReadKeys: s addr s.server_secret;
+		# from here on what we send is encrypted too, alerts included
+		call Tls13.SetWriteKeys: s addr s.client_secret;
+		s.encrypting is true;
+		s.decrypting is true;
+		s.stage is CLIENT_HANDSHAKING;
+	[end: true]
+
+	# the server's certificates, from its Certificate message (size bytes, header and all):
+	# a request context, then each certificate (3 bytes of length, its DER, 2 bytes of
+	# length and its extensions), its own first
+	[ReadCertificate: ptr<TlsSession> s: 0; ptr<u8> message: 0; u32 size: 0;]
+		call Bytes.Copy: s.chain_der message size;
+		ptr<u8> p: s.chain_der + 4;
+		u32 left: size - 4;
+		if left < 4 or 1 + p:0 + 3 > left return (Tls13.Fail: s 'a Certificate message that can\'t be read' ALERT_DECODE_ERROR);
+		u32 context: p:0;
+		p is p + 1 + context;
+		left is left - 1 - context;
+		u32 list: (Tls13.Get24: p);
+		p is p + 3;
+		left is left - 3;
+		if list > left return (Tls13.Fail: s 'a Certificate message that can\'t be read' ALERT_DECODE_ERROR);
+		s.chain_count is 0;
+		while list >= 5 and s.chain_count < 4
+			u32 length: (Tls13.Get24: p);
+			if 3 + length + 2 > list return (Tls13.Fail: s 'a Certificate message that can\'t be read' ALERT_DECODE_ERROR);
+			if not (X509.Parse: addr s.chain:(s.chain_count) p + 3 length)
+				return (Tls13.Fail: s ('the server\'s certificate: ' X509.error) ALERT_BAD_CERTIFICATE);
+			;;
+			s.chain_count++;
+			u32 entry: 3 + length + 2 + (Tls13.Get16: p + 3 + length);
+			if entry > list return (Tls13.Fail: s 'a Certificate message that can\'t be read' ALERT_DECODE_ERROR);
+			p is p + entry;
+			list is list - entry;
+		;;
+		if s.chain_count is 0 return (Tls13.Fail: s 'the server sent no certificate' ALERT_BAD_CERTIFICATE);
+	[end: true]
+
+	# check the server's CertificateVerify (body: the scheme, then the signature): its own
+	# certificate's key signed the transcript so far, and that certificate is for the host
+	# and goes back to a trusted root
+	[ReadCertificateVerify: ptr<TlsSession> s: 0; ptr<u8> body: 0; u32 length: 0;]
+		if s.chain_count is 0 return (Tls13.Fail: s 'a CertificateVerify without a certificate' ALERT_UNEXPECTED_MESSAGE);
+		if length < 4 return (Tls13.Fail: s 'a CertificateVerify that can\'t be read' ALERT_DECODE_ERROR);
+		u32 scheme: (Tls13.Get16: body);
+		u32 signature_length: (Tls13.Get16: body + 2);
+		if 4 + signature_length > length return (Tls13.Fail: s 'a CertificateVerify that can\'t be read' ALERT_DECODE_ERROR);
+		call Tls13.SignedContent: s;
+		ptr<Certificate> own: addr s.chain:0;
+		bln good: false;
+		if scheme is ECDSA_P256_SHA256 and own.key_kind is X509.P256
+			if (X509.ReadEcdsa: body + 4 signature_length)
+				good is (P256.Verify: own.point addr tls_scratch addr X509.x509_r addr X509.x509_s);
+			;;
+		;;
+		if scheme is RSA_PSS_SHA256 and own.key_kind is X509.RSA
+			good is (Rsa.VerifyPss: own.modulus own.modulus_length own.exponent own.exponent_length
+			                        addr tls_scratch body + 4 signature_length);
+		;;
+		if not good return (Tls13.Fail: s 'the server\'s CertificateVerify signature doesn\'t check out' ALERT_DECRYPT_ERROR);
+		if not (X509.Chain: addr s.chain:0 s.chain_count addr s.host)
+			return (Tls13.Fail: s ('the server\'s certificate: ' X509.error) ALERT_BAD_CERTIFICATE);
+		;;
+		s.verified is true;
+	[end: true]
+
+	# check the server's Finished, send ours, and switch to the application keys
+	[ReadServerFinished: ptr<TlsSession> s: 0; ptr<u8> message: 0; u32 size: 0;]
+		if not s.verified return (Tls13.Fail: s 'the server never showed its certificate' ALERT_UNEXPECTED_MESSAGE);
+		if not (Tls13.FinishedMatches: s addr s.server_secret message size)
+			return (Tls13.Fail: s 'the server\'s Finished doesn\'t match: the handshake was tampered with' ALERT_DECRYPT_ERROR);
+		;;
+		call Sha256.Update: addr s.transcript message size;
+		call Tls13.TranscriptHash: s;
+		# the application secrets come from the transcript up to the server's Finished
+		call Tls13.ExpandLabel: addr s.master_secret 'c ap traffic' addr tls_hash 32 addr s.client_next 32;
+		call Tls13.ExpandLabel: addr s.master_secret 's ap traffic' addr tls_hash 32 addr tls_scratch 32;
+		# our Finished: a ChangeCipherSpec first, for middleboxes, then it with the handshake key
+		# (ours since the ServerHello)
+		tls_small:0 is 1;
+		call Tls13.SendRecord: s TYPE_CHANGE_CIPHER_SPEC addr tls_small 1;
+		call Tls13.SendFinished: s addr s.client_secret;
+		call Bytes.Copy: addr s.client_secret addr s.client_next 32;
+		call Bytes.Copy: addr s.server_secret addr tls_scratch 32;
+		call Tls13.SetWriteKeys: s addr s.client_secret;
+		call Tls13.SetReadKeys: s addr s.server_secret;
+		call Tls13.Connected: s;
+	[end: true]
+
+	# ---- the server's side
+
+	# the client's hello: a cipher both have, TLS 1.3, its X25519 key and our signature
+	# scheme; then everything up to our Finished goes back at once
+	[ReadClientHello: ptr<TlsSession> s: 0; ptr<u8> body: 0; u32 length: 0;]
+		if length < 38 return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+		u32 pos: 34;
+		u32 id_length: body:pos;
+		ptr<u8> id: body + pos + 1;
+		if id_length > 32 return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+		pos++ 1 + id_length;
+		if pos + 2 > length return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+		u32 suites: (Tls13.Get16: body + pos);
+		pos++ 2;
+		if pos + suites + 1 > length return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+		# the first of its suites we take
+		s.suite is 0;
+		u32 i: 0;
+		while i + 1 < suites and s.suite is 0
+			u32 suite: (Tls13.Get16: body + pos + i);
+			if (Tls13.TakeSuite: s suite)
+				s.suite is suite;
+			;;
+			i++ 2;
+		;;
+		pos++ suites;
+		pos++ 1 + body:pos;                   # compression
+		if pos + 2 > length return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+		u32 stop: pos + 2 + (Tls13.Get16: body + pos);
+		pos++ 2;
+		if stop > length return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+		bln tls13: false;
+		bln have_key: false;
+		bln can_sign: false;
+		while pos + 4 <= stop
+			u32 type: (Tls13.Get16: body + pos);
+			u32 size: (Tls13.Get16: body + pos + 2);
+			pos++ 4;
+			if pos + size > stop return (Tls13.Fail: s 'a ClientHello that can\'t be read' ALERT_DECODE_ERROR);
+			ptr<u8> e: body + pos;
+			if type is 43 and size >= 1
+				# supported_versions: a byte of length, then two each
+				u32 k: 1;
+				while k + 1 <= e:0 and k + 1 < size
+					if (Tls13.Get16: e + k) is 0x0304
+						tls13 is true;
+					;;
+					k++ 2;
+				;;
+			;;
+			if type is 51 and size >= 2
+				# key_share: two bytes of length, then each group, its key's length, the key
+				u32 k: 2;
+				while k + 4 <= size and not have_key
+					u32 group: (Tls13.Get16: e + k);
+					u32 key_size: (Tls13.Get16: e + k + 2);
+					if k + 4 + key_size > size
+						k is size;
+					;;
+					elif group is X25519_GROUP and key_size is 32
+						call Bytes.Copy: addr tls_peer_public e + k + 4 32;
+						have_key is true;
+					;;
+					else
+						k++ 4 + key_size;
+					;;
+				;;
+			;;
+			if type is 13 and size >= 2
+				# signature_algorithms: two bytes of length, then two each
+				u32 k: 2;
+				while k + 2 <= size
+					if (Tls13.Get16: e + k) is ECDSA_P256_SHA256
+						can_sign is true;
+					;;
+					k++ 2;
+				;;
+			;;
+			pos++ size;
+		;;
+		if not tls13 return (Tls13.Fail: s 'the client doesn\'t speak TLS 1.3' ALERT_PROTOCOL_VERSION);
+		if s.suite is 0 return (Tls13.Fail: s 'no cipher in common with the client' ALERT_HANDSHAKE_FAILURE);
+		if not have_key return (Tls13.Fail: s 'the client offers no X25519 key' ALERT_HANDSHAKE_FAILURE);
+		if not can_sign return (Tls13.Fail: s 'the client can\'t check an ECDSA P-256 signature' ALERT_HANDSHAKE_FAILURE);
+
+		# our key, and the ServerHello: the session id echoed, the suite, TLS 1.3, our key
+		call Random.Fill: addr s.private 32;
+		call X25519.Base: addr s.public addr s.private;
+		ptr<u8> h: tls_build;
+		u32 w: 4;
+		h:w is 3;
+		h:(w + 1) is 3;
+		call Random.Fill: h + w + 2 32;
+		w++ 34;
+		h:w is id_length;
+		call Bytes.Copy: h + w + 1 id id_length;
+		w++ 1 + id_length;
+		call Tls13.Put16: h + w s.suite;
+		h:(w + 2) is 0;
+		w++ 3;
+		call Tls13.Put16: h + w 6 + 40;      # the extensions' length
+		w++ 2;
+		call Tls13.Put16: h + w 43;
+		call Tls13.Put16: h + w + 2 2;
+		call Tls13.Put16: h + w + 4 0x0304;
+		w++ 6;
+		call Tls13.Put16: h + w 51;
+		call Tls13.Put16: h + w + 2 36;
+		call Tls13.Put16: h + w + 4 X25519_GROUP;
+		call Tls13.Put16: h + w + 6 32;
+		call Bytes.Copy: h + w + 8 addr s.public 32;
+		w++ 40;
+		h:0 is SERVER_HELLO;
+		call Tls13.Put24: h + 1 w - 4;
+		call Tls13.SendMessage: s h w;
+		tls_small:0 is 1;
+		call Tls13.SendRecord: s TYPE_CHANGE_CIPHER_SPEC addr tls_small 1;
+		if not (Tls13.HandshakeSecrets: s) return false;
+		call Tls13.SetWriteKeys: s addr s.server_secret;
+		call Tls13.SetReadKeys: s addr s.client_secret;
+		s.encrypting is true;
+		s.decrypting is true;
+
+		# EncryptedExtensions (none)
+		h:0 is ENCRYPTED_EXTENSIONS;
+		call Tls13.Put24: h + 1 2;
+		call Tls13.Put16: h + 4 0;
+		call Tls13.SendMessage: s h 6;
+
+		# Certificate: no request context, then the list
+		ptr<TlsIdentity> me: s.identity;
+		h:0 is CERTIFICATE;
+		call Tls13.Put24: h + 1 1 + 3 + me.list_length;
+		h:4 is 0;
+		call Tls13.Put24: h + 5 me.list_length;
+		call Bytes.Copy: h + 8 me.list me.list_length;
+		call Tls13.SendMessage: s h 8 + me.list_length;
+
+		# CertificateVerify: our key's signature of the transcript so far
+		call Tls13.SignedContent: s;
+		if not (P256.Sign: addr tls_r addr tls_s addr me.private addr tls_scratch)
+			return (Tls13.Fail: s 'the server\'s key can\'t sign' ALERT_INTERNAL_ERROR);
+		;;
+		u32 signature: (Tls13.EncodeEcdsa: h + 8);
+		h:0 is CERTIFICATE_VERIFY;
+		call Tls13.Put24: h + 1 4 + signature;
+		call Tls13.Put16: h + 4 ECDSA_P256_SHA256;
+		call Tls13.Put16: h + 6 signature;
+		call Tls13.SendMessage: s h 8 + signature;
+
+		# Finished, then the application secrets from the transcript up to it: ours now,
+		# the client's once its Finished comes
+		call Tls13.SendFinished: s addr s.server_secret;
+		call Tls13.TranscriptHash: s;
+		call Tls13.ExpandLabel: addr s.master_secret 'c ap traffic' addr tls_hash 32 addr s.client_next 32;
+		call Tls13.ExpandLabel: addr s.master_secret 's ap traffic' addr tls_hash 32 addr tls_scratch 32;
+		call Tls13.SetWriteKeys: s addr tls_scratch;
+		call Bytes.Copy: addr s.server_secret addr tls_scratch 32;
+		s.stage is SERVER_WAITING_FOR_FINISHED;
+	[end: true]
+
+	# check the client's Finished, and switch to its application key
+	[ReadClientFinished: ptr<TlsSession> s: 0; ptr<u8> message: 0; u32 size: 0;]
+		if not (Tls13.FinishedMatches: s addr s.client_secret message size)
+			return (Tls13.Fail: s 'the client\'s Finished doesn\'t match: the handshake was tampered with' ALERT_DECRYPT_ERROR);
+		;;
+		call Sha256.Update: addr s.transcript message size;
+		call Bytes.Copy: addr s.client_secret addr s.client_next 32;
+		call Tls13.SetReadKeys: s addr s.client_secret;
+		call Tls13.Connected: s;
+	[end: true]
+
+	# place (72 bytes of room) = tls_r and tls_s as a DER Ecdsa-Sig-Value; its length
+	[EncodeEcdsa: ptr<u8> place: 0;]
+		u32 r: (Tls13.EncodeInteger: place + 2 addr tls_r);
+		u32 s: (Tls13.EncodeInteger: place + 2 + r addr tls_s);
+		place:0 is 0x30;
+		place:1 is r + s;
+	[end: 2 + r + s]
+
+	# place = a 32-byte number as a DER INTEGER (no zeros in front, but one if the top bit is
+	# set, as it would read as negative); its length
+	[EncodeInteger: ptr<u8> place: 0; ptr<u8> number: 0;]
+		u32 skip: 0;
+		while skip < 31 and number:skip is 0
+			skip++;
+		;;
+		u32 count: 32 - skip;
+		u32 pad: 0;
+		if number:skip >= 0x80
+			pad is 1;
+		;;
+		place:0 is Der.INTEGER;
+		place:1 is count + pad;
+		place:2 is 0;
+		call Bytes.Copy: place + 2 + pad number + skip count;
+	[end: 2 + pad + count]
+
+	# ---- both sides
+
+	# whether suite is one this session offers or takes; if so, its key's length is set
+	[TakeSuite: ptr<TlsSession> s: 0; u32 suite: 0;]
+		if suite is AES_128_GCM and (s.offer & 1) is not 0
+			s.key_length is 16;
+			return true;
+		;;
+		if suite is CHACHA20_POLY1305 and (s.offer & 2) is not 0
+			s.key_length is 32;
+			return true;
+		;;
+	[end: false]
+
+	# the handshake secrets, from our X25519 key and theirs (tls_peer_public), the hellos
+	# being in the transcript; false if their key was bad
+	[HandshakeSecrets: ptr<TlsSession> s: 0;]
+		call X25519.ScalarMult: addr tls_shared addr s.private addr tls_peer_public;
+		call Bytes.Zero: addr s.private 32;
+		if (Bytes.Equal: addr tls_shared addr tls_zeros 32) return (Tls13.Fail: s 'a bad X25519 key' ALERT_HANDSHAKE_FAILURE);
+		# early secret (no pre-shared key) -> handshake secret, from the shared secret
+		call Hkdf.Extract: addr tls_zeros 32 addr tls_zeros 32 addr tls_scratch;
+		call Tls13.ExpandLabel: addr tls_scratch 'derived' addr tls_empty_hash 32 addr s.master_secret 32;
+		call Hkdf.Extract: addr s.master_secret 32 addr tls_shared 32 addr s.handshake_secret;
+		call Bytes.Zero: addr tls_shared 32;
+		call Tls13.TranscriptHash: s;
+		call Tls13.ExpandLabel: addr s.handshake_secret 'c hs traffic' addr tls_hash 32 addr s.client_secret 32;
+		call Tls13.ExpandLabel: addr s.handshake_secret 's hs traffic' addr tls_hash 32 addr s.server_secret 32;
+		# handshake secret -> master secret, for the application keys later
+		call Tls13.ExpandLabel: addr s.handshake_secret 'derived' addr tls_empty_hash 32 addr tls_scratch 32;
+		call Hkdf.Extract: addr tls_scratch 32 addr tls_zeros 32 addr s.master_secret;
+	[end: true]
+
+	# tls_scratch = the SHA-256 of what CertificateVerify signs: 64 spaces, the label (the
+	# server's), a 0, and the transcript's hash
+	[SignedContent: ptr<TlsSession> s: 0;]
+		call Tls13.TranscriptHash: s;
+		while u32 i: 0; i < 64; i++;
+			tls_signed:i is 32;
+		;;
+		call Bytes.Copy: addr tls_signed + 64 'TLS 1.3, server CertificateVerify' 33;
+		tls_signed:97 is 0;
+		call Bytes.Copy: addr tls_signed + 98 addr tls_hash 32;
+		call Sha256.Hash: addr tls_signed 130 addr tls_scratch;
+	[end]
+
+	# whether a Finished (size bytes, header and all) is the MAC secret's side makes of the
+	# transcript so far
+	[FinishedMatches: ptr<TlsSession> s: 0; ptr<u8> secret: 0; ptr<u8> message: 0; u32 size: 0;]
+		if size is not 36 return false;
+		call Tls13.ExpandLabel: secret 'finished' addr tls_zeros 0 addr tls_finished_key 32;
+		call Tls13.TranscriptHash: s;
+		call Hmac.Mac: addr tls_finished_key 32 addr tls_hash 32 addr tls_verify;
+	[end: (Bytes.Equal: addr tls_verify message + 4 32)]
+
+	# send our Finished: the MAC, from our side's secret, of the transcript so far
+	[SendFinished: ptr<TlsSession> s: 0; ptr<u8> secret: 0;]
+		call Tls13.ExpandLabel: secret 'finished' addr tls_zeros 0 addr tls_finished_key 32;
+		call Tls13.TranscriptHash: s;
+		ptr<u8> h: tls_build;
+		h:0 is FINISHED;
+		call Tls13.Put24: h + 1 32;
+		call Hmac.Mac: addr tls_finished_key 32 addr tls_hash 32 h + 4;
+		call Tls13.SendMessage: s h 36;
+	[end]
+
+	# the handshake is done
+	[Connected: ptr<TlsSession> s: 0;]
+		call Tls13.FreeHandshake: s;
+		s.stage is DONE;
+		s.connected is true;
+	[end]
+
+	# the other side moved to new keys; if it asks, so do we
+	[ReadKeyUpdate: ptr<TlsSession> s: 0; u32 requested: 0;]
+		ptr<u8> theirs: addr s.server_secret;
+		ptr<u8> ours: addr s.client_secret;
+		if s.server
+			theirs is addr s.client_secret;
+			ours is addr s.server_secret;
+		;;
+		call Tls13.ExpandLabel: theirs 'traffic upd' addr tls_zeros 0 addr tls_scratch 32;
+		call Bytes.Copy: theirs addr tls_scratch 32;
+		call Tls13.SetReadKeys: s theirs;
+		if requested is 1
+			tls_small:0 is KEY_UPDATE;
+			call Tls13.Put24: addr tls_small + 1 1;
+			tls_small:4 is 0;
+			call Tls13.SendRecord: s TYPE_HANDSHAKE addr tls_small 5;
+			call Tls13.ExpandLabel: ours 'traffic upd' addr tls_zeros 0 addr tls_scratch 32;
+			call Bytes.Copy: ours addr tls_scratch 32;
+			call Tls13.SetWriteKeys: s ours;
+		;;
+	[end]
+
+	[SetReadKeys: ptr<TlsSession> s: 0; ptr<u8> secret: 0;]
+		call Tls13.ExpandLabel: secret 'key' addr tls_zeros 0 addr s.read_key s.key_length;
+		call Tls13.ExpandLabel: secret 'iv' addr tls_zeros 0 addr s.read_iv 12;
+		s.read_sequence is 0;
+	[end]
+
+	[SetWriteKeys: ptr<TlsSession> s: 0; ptr<u8> secret: 0;]
+		call Tls13.ExpandLabel: secret 'key' addr tls_zeros 0 addr s.write_key s.key_length;
+		call Tls13.ExpandLabel: secret 'iv' addr tls_zeros 0 addr s.write_iv 12;
+		s.write_sequence is 0;
+	[end]
+
+	# HKDF-Expand-Label: HKDF-Expand with the length, 'tls13 ' + label and a context
+	[ExpandLabel: ptr<u8> secret: 0; ptr<u8> label: 0; ptr<u8> context: 0; u32 context_length: 0; ptr<u8> output: 0; u32 length: 0;]
+		u32 label_length: 0;
+		while label:label_length is not 0
+			label_length++;
+		;;
+		ptr<u8> info: addr tls_info;
+		call Tls13.Put16: info length;
+		info:2 is 6 + label_length;
+		call Bytes.Copy: info + 3 'tls13 ' 6;
+		call Bytes.Copy: info + 9 label label_length;
+		info:(9 + label_length) is context_length;
+		call Bytes.Copy: info + 10 + label_length context context_length;
+		call Hkdf.Expand: secret info 10 + label_length + context_length output length;
+	[end]
+
+	# tls_hash = the hash of the handshake so far (the transcript carries on)
+	[TranscriptHash: ptr<TlsSession> s: 0;]
+		call Sha256.Copy: addr s.transcript addr tls_snapshot;
+		call Sha256.Final: addr tls_snapshot addr tls_hash;
+	[end]
+
+	[Put16: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 8;
+		p:1 is value;
+	[end]
+
+	[Get16: ptr<u8> p: 0;]
+	[end: (p:0 << 8) | p:1]
+
+	[Put24: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 16;
+		p:1 is value >> 8;
+		p:2 is value;
+	[end]
+
+	[Get24: ptr<u8> p: 0;]
+	[end: (p:0 << 16) | (p:1 << 8) | p:2]
+}

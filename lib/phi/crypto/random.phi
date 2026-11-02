@@ -139,3 +139,37 @@ asm.RandomTimestamp
 	mov [{random_word}], eax
 	ret
 }
+
+# the same three in 64-bit code, where they need nothing different
+x64.RandomDetect
+{
+	mov dword [{random_ok}], 0
+	mov eax, 1
+	cpuid
+	bt ecx, 30
+	jnc .done
+	mov dword [{random_ok}], 1
+.done:
+	ret
+}
+
+x64.RandomHardwareWord
+{
+	mov ecx, 32
+.again:
+	rdrand eax
+	jc .got
+	dec ecx
+	jnz .again
+	xor eax, eax
+.got:
+	mov [{random_word}], eax
+	ret
+}
+
+x64.RandomTimestamp
+{
+	rdtsc
+	mov [{random_word}], eax
+	ret
+}
