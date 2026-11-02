@@ -1,0 +1,14 @@
+# CPU exceptions caught as errors in a user program on PHI OS
+# (kernel32_program_faults.rootfs/faults.phi): the kernel sends the program to its own
+# catch instead of stopping it. Its last one isn't caught, so it ends with -1, and the
+# kernel carries on with all the program's memory back.
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+	int code: (Process.Wait: (Process.Spawn: 'FAULTS.BIN'));
+	log 'exit code: ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

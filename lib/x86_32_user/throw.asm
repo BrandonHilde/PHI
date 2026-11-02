@@ -1,5 +1,6 @@
-; provides: phi_throw phi_catch_top phi_unwind_top phi_error
-; requires: phi_print phi_exit
+; provides: phi_throw phi_catch_top phi_unwind_top phi_error phi_fault_init phi_fault_entry
+; requires: phi_print phi_exit phi_fault_register
+; init: phi_fault_init
 ;
 ; Errors (user programs): a throw, an index out of range or the heap out of room
 ; all come here, with eax = the line, esi = the file's name (0 if not known),
@@ -42,6 +43,8 @@ phi_throw:
     mov ecx, 383
     mov esi, phi_error + ERROR_TEXT
     call .append
+    cmp dword [phi_error + ERROR_LINE], 0
+    je .said                        ; (a CPU exception's line isn't known: the text alone)
     mov esi, .on_line
     call .append
     mov eax, [phi_error + ERROR_LINE]
@@ -142,3 +145,33 @@ phi_throw:
 phi_catch_top:  dd 0                ; the innermost catch, or 0
 phi_unwind_top: dd 0                ; the innermost running method that has things to give back, or 0
 phi_error:      times ERROR_SIZE db 0
+
+; ---- CPU exceptions, caught as errors
+;
+; Dividing by zero, or using memory that isn't there (an empty object, a null pointer),
+; stops a program in the CPU. Where the system can (PHI OS: system.asm's
+; phi_fault_register), it sends the program here instead, with ebx = the kind of error,
+; and it's thrown like any other: caught by a catch, or printed and the program ended.
+ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
+ERROR_KIND_EMPTY  equ 4
+
+phi_fault_init:
+    mov eax, phi_fault_entry
+    jmp phi_fault_register
+
+phi_fault_entry:
+    mov edx, .refused
+    cmp ebx, ERROR_KIND_DIVIDE
+    jne .not_divide
+    mov edx, .divided
+.not_divide:
+    cmp ebx, ERROR_KIND_EMPTY
+    jne .thrown
+    mov edx, .empty
+.thrown:
+    xor eax, eax                        ; the line isn't known
+    xor esi, esi                        ; nor the file
+    jmp phi_throw
+.divided: db 'division by zero', 0
+.empty:   db 'an empty object or a null pointer was used', 0
+.refused: db 'memory that is not there was used, or the CPU refused an instruction', 0

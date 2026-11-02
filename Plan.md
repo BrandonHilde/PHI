@@ -1525,9 +1525,7 @@ test where a zone program crashes on purpose shows its players back in a restart
     calls each one's `_unwind` routine (its tidying-up, with ebp at its frame) before
     jumping to the catch. A program with no catch has none of this, so it costs nothing.
   - Not caught: an error inside a `locked` block (what it guards may be half changed), and
-    in an interrupt handler or a system call (by the code they interrupted). A CPU exception (dividing by zero, an empty object's page fault)
-    isn't an error a program can catch yet either: it goes to the panic screen, or ends a
-    program, as before.
+    in an interrupt handler or a system call (by the code they interrupted).
 - [x] (part 6) catching errors in kernels that use several cores: the catches, the methods'
   records and the error being thrown were one each for the whole kernel. Each core now
   has a block of its own (`interrupts.asm`, which owns the GDT now: a data segment for
@@ -1540,6 +1538,21 @@ test where a zone program crashes on purpose shows its players back in a restart
   `kernel32_throw_cores` (four threads on several cores, each catching 600 errors of its
   own, thrown from methods holding text to give back and from an index out of range: none
   mixed up, and the heap back where it was).
+- [x] (part 7) CPU exceptions as errors: dividing by zero, an empty object or a null
+  pointer (a page fault under 4 KB), memory that isn't there and a general protection fault
+  become `ErrorKind.DIVIDE`, `EMPTY` and `ACCESS`. In a kernel, the exception path asks
+  `throw.asm` (`phi_fault_hook`), which, inside a catch, changes the saved state so the
+  interrupt returns into `phi_throw` on the faulting code's own stack; anywhere else (no
+  catch, a `locked` block, an interrupt handler) it's the panic screen as before. A PHI OS
+  program that catches tells the kernel its fault entry at startup (system call 10, from
+  its `throw.asm`'s init through `phi_fault_register`, which each system has), and the
+  kernel sends a faulting program there rather than stopping it, unless its stack has run
+  off its end or the entry itself faulted. Tests `kernel32_throw_faults`,
+  `kernel32_program_faults`, and a divide in `kernel32_throw_cores`'s threads.
+  - Not yet: Linux and Windows programs (`phi_fault_register` does nothing there; a signal
+    handler, or Windows' exception handlers, would send them the same way), and the line
+    a CPU exception happened on (the code's addresses aren't mapped back to lines at run
+    time).
 - [ ] (5) `phi fuzz`: **later**, with the optimisations, before a release (the user,
   2026-11-01). Until then this phase's "Done when" waits on it; parts 1-4 are done.
 

@@ -1,0 +1,65 @@
+# CPU exceptions caught as errors in a kernel: inside a catch, dividing by zero, using an
+# empty object, reading through a null pointer and reading memory past the end of RAM
+# each become an error of their own kind, two methods down, with text there to give
+# back; the kernel carries on, and the heap ends where it began.
+
+struct.Node
+{
+	int value;
+}
+
+phi.ThrowFaults:Kernel
+{
+	int zero: 0;
+	u32 used_before: Heap.used_blocks;
+
+	if call Deep: 2 0 throws err
+		log 'divide: ' (err.kind is ErrorKind.DIVIDE) ' ' err '\n';
+	;;
+	if call Deep: 2 1 throws err
+		log 'empty: ' (err.kind is ErrorKind.EMPTY) ' ' err '\n';
+	;;
+	if call Deep: 2 2 throws err
+		log 'null: ' (err.kind is ErrorKind.EMPTY) '\n';
+	;;
+	if call Deep: 2 3 throws err
+		log 'past the end: ' (err.kind is ErrorKind.ACCESS) ' ' err '\n';
+	;;
+	# and the same again: nothing was left behind by the first ones
+	int caught: 0;
+	while int i: 0; i < 50; i++;
+		if call Deep: 3 (i % 4) throws err
+			caught++;
+		;;
+	;;
+	log 'again: ' caught ' caught, heap back: ' (Heap.used_blocks is used_before) '\n';
+	log 'still running\n';
+	exit 0;
+
+	# depth methods down, each holding text the error has to give back, then the fault
+	[Deep: int depth: 0; int what: 0;]
+		str held: ('held at ' depth);
+		if depth > 0
+			call Deep: depth - 1 what;
+			return;
+		;;
+		when what
+			is 0
+				int n: 7 / zero;
+			;;
+			is 1
+				new Node node;
+				node is empty;
+				int v: node.value;
+			;;
+			is 2
+				ptr<u32> nothing: 0;
+				u32 w: nothing:0;
+			;;
+			else
+				ptr<u32> far: 0xC0000000;
+				u32 w: far:0;
+			;;
+		;;
+	[end]
+}

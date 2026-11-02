@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_load_core_fs
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_load_core_fs phi_fault_hook
 ; requires: phi_panic
 ; init: phi_interrupts_init
 ;
@@ -244,7 +244,19 @@ phi_interrupt_common:
 
 .exception:
     test byte [esp + FRAME_CS], 3
+    jnz .user_exception
+    ; kernel code inside a catch: dividing by zero or using memory that isn't there becomes
+    ; an error it catches (lib/x86_32/throw.asm sets the hook)
+    mov eax, [phi_fault_hook]
+    test eax, eax
     jz .panic
+    push esp
+    call eax                ; eax = 1 if the state now goes to the throw
+    add esp, 4
+    test eax, eax
+    jz .panic
+    jmp .return
+.user_exception:
     mov ebx, [phi_user_fault]
     test ebx, ebx
     jz .panic
@@ -445,6 +457,7 @@ phi_halt_hook:      dd 0
 phi_core_join_hook: dd 0
 phi_share_hook:     dd 0                ; phi_share_cores, once multitasking has started
 phi_preempt_hook:   dd 0                ; once kernel threads have started: whether the timer may take the CPU back
+phi_fault_hook:     dd 0                ; throw.asm's, in a kernel that catches errors: CPU exceptions as errors
 ; each core's number by its local APIC ID (proc.cores fills it in: the first core is 0)
 phi_core_of_apic:   times 256 db 0
 phi_scheduler:    dd 0

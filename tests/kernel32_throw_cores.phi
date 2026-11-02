@@ -1,8 +1,9 @@
 # Catching errors on several cores at once: each core has its own list of catches (in
 # its block, through fs) and the scheduler keeps each task's, so four threads, each
-# throwing from inside methods that hold text the throw must give back, and running out
-# of an array's range, each catch only their own errors: each says whose it was. Then the
-# kernel's own code catches one. The heap ends where it began.
+# throwing from inside methods that hold text the throw must give back, running out of an
+# array's range and dividing by zero (a CPU exception), each catch only their own errors:
+# each says whose it was. Then the kernel's own code catches one. The heap ends where it
+# began.
 use proc.threads;
 use proc.cores;
 
@@ -53,6 +54,14 @@ phi.ThrowCores:Kernel
 					atomic wrong:part++;
 				;;
 			;;
+			if call Divide: part throws err
+				if err.kind is ErrorKind.DIVIDE
+					atomic caught:part++;
+				;;
+				else
+					atomic wrong:part++;
+				;;
+			;;
 		;;
 	[end]
 
@@ -67,5 +76,10 @@ phi.ThrowCores:Kernel
 
 	[Outside: int part: 0;]
 		small:(part + 3) is 1;
+	[end]
+
+	# a CPU exception: dividing by zero
+	[Divide: int part: 0;]
+		int n: part / (part - part);
 	[end]
 }

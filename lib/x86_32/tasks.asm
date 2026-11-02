@@ -43,6 +43,9 @@ F_ECX equ 40
 F_EAX equ 44
 F_VECTOR equ 48
 F_EIP equ 56
+ERROR_DIVIDE  equ 3              ; ErrorKind (lib/phi/lang/error.phi), for a program's fault entry
+ERROR_EMPTY   equ 4
+ERROR_ACCESS  equ 5
 F_SIZE equ 76                   ; everything, including the user esp and ss
 
 OS_StartMultitasking:
@@ -160,6 +163,7 @@ OS_CreateUserTask:
     mov dword [phi_task_heap_end + ecx * 4], 0   ; no heap until it grows one
     mov byte [phi_task_fpu_fresh + ecx], 1       ; its FPU starts clean
     mov byte [phi_task_thread + ecx], 0          ; a program, not a thread
+    mov dword [phi_task_fault_entry + ecx * 4], 0
     mov dword [phi_task_catch + ecx * 4], 0
     mov dword [phi_task_unwind + ecx * 4], 0
     mov eax, [phi_current_task]
@@ -367,11 +371,11 @@ phi_syscall:
     jae .killed
     mov ebx, [ebp + F_EBX]
     mov eax, [ebp + F_EAX]
-    cmp eax, 10
+    cmp eax, 11
     jae .extension
     jmp [.table + eax * 4]
 .table:
-    dd .exit, .write, .debug, .read_key, .sleep, .ticks, .getpid, .yield, .key_available, .wait
+    dd .exit, .write, .debug, .read_key, .sleep, .ticks, .getpid, .yield, .key_available, .wait, .fault_entry
 
 .exit:
     mov ecx, [phi_current_task]
@@ -459,6 +463,16 @@ phi_syscall:
     mov eax, 1
     ret
 
+.fault_entry:
+    ; where this program catches CPU exceptions (its throw.asm's phi_fault_entry): in its code
+    mov ecx, [phi_current_task]
+    cmp ebx, USER_BASE
+    jb .invalid
+    cmp ebx, [phi_task_image_end + ecx * 4]
+    jae .invalid
+    mov [phi_task_fault_entry + ecx * 4], ebx
+    jmp .done
+
 .extension:
     ; numbers from 16 up go to the kernel's PHI handler (OS_SetSyscallHandler)
     mov edx, [phi_syscall_extension]
@@ -507,9 +521,42 @@ phi_user_string:
     stc
     ret
 
-; ---- an exception in a user program: eax = saved state. Stop the program.
+; ---- an exception in a user program: eax = saved state. A program that catches errors
+; (it said where, with system call 10) goes there for the ones it can catch, to be thrown:
+; dividing by zero, memory that isn't there, what the CPU refused. Otherwise it's stopped.
 phi_task_fault:
     mov ebp, eax
+    mov ecx, [phi_current_task]
+    mov edx, [phi_task_fault_entry + ecx * 4]
+    test edx, edx
+    jz .stop
+    mov eax, [ebp + F_VECTOR]
+    mov ebx, ERROR_DIVIDE
+    test eax, eax
+    jz .send
+    mov ebx, ERROR_ACCESS
+    cmp eax, 13
+    je .send
+    cmp eax, 14
+    jne .stop
+    mov eax, cr2
+    cmp eax, 4096
+    jae .send
+    mov ebx, ERROR_EMPTY
+.send:
+    ; not when its stack has run off its end, or the entry itself was stopped: the throw
+    ; would only be stopped again
+    mov eax, [ebp + F_EIP + 12]               ; its esp
+    cmp eax, [phi_task_stack_bottom + ecx * 4]
+    jbe .stop
+    cmp eax, USER_TOP
+    ja .stop
+    cmp [ebp + F_EIP], edx
+    je .stop
+    mov [ebp + F_EIP], edx
+    mov [ebp + F_EBX], ebx
+    ret
+.stop:
     mov esi, .stopped
     call phi_print
     mov eax, [phi_current_task]
@@ -953,6 +1000,7 @@ phi_task_core:         times MAX_TASKS dd 0     ; the core running it, plus 1 (0
 phi_task_thread:       times MAX_TASKS db 0     ; 1 for a kernel thread (proc.threads)
 phi_task_catch:        times MAX_TASKS dd 0     ; its catches and methods' records, while another task runs
 phi_task_unwind:       times MAX_TASKS dd 0
+phi_task_fault_entry:  times MAX_TASKS dd 0     ; where a program catches CPU exceptions (system call 10), or 0
 
 ; programs on every core (phi_share_cores)
 phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket

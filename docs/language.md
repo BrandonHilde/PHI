@@ -812,6 +812,11 @@ else
 - **The call can give a result** (`if call n is Parse: text throws err`), and the guard
   fits on one line (`if call Save: data throws err return false;`).
 - **Catches nest**: an error inside the `if`'s own code goes to the catch around that.
+- **The CPU's errors are caught too**: dividing a whole number by zero
+  (`ErrorKind.DIVIDE`), using an empty object or a null pointer (`ErrorKind.EMPTY`), and
+  memory that isn't there or an instruction the CPU refuses (`ErrorKind.ACCESS`), in a
+  kernel and in a PHI OS program alike. Their line isn't known, so the message is the text
+  alone. On Linux and Windows they still end the program, as before.
 - An error in an interrupt handler or a system call isn't caught by the code it
   interrupted. In a kernel each core has its own list of catches, and each task (a
   thread, say) keeps its own as the cores take turns, so threads catch their own errors.
@@ -2572,7 +2577,8 @@ Every kernel starts with an interrupt table and interrupts enabled. The interrup
 controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the keyboard 33).
 
 - A **CPU exception** (dividing by zero, a bad memory access, an invalid instruction)
-  shows the **panic screen**: the exception's name and number, its error code, the
+  that isn't caught (see Errors: inside a catch, dividing by zero, an empty object or a null
+  pointer, and memory that isn't there become errors) shows the **panic screen**: the exception's name and number, its error code, the
   instruction address (`eip`) and every register, on a red screen and on COM1. Then the
   CPU stops.
 - For a **hardware interrupt**, `call OS.SetIrqHandler: 1 addr KeyPressed;` runs an
@@ -2593,8 +2599,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
   and `^^` on 64-bit and floating point numbers
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
-- catching a CPU exception with `if call ... throws` (dividing by zero, using an empty
-  object): they still show the panic screen, or end a user program
+- catching CPU exceptions in Linux and Windows programs (they still end the program there)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))

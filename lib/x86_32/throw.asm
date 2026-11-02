@@ -1,5 +1,6 @@
-; provides: phi_throw
-; requires: phi_print phi_load_core_fs
+; provides: phi_throw phi_fault_init
+; requires: phi_print phi_load_core_fs phi_fault_hook
+; init: phi_fault_init
 ;
 ; Errors (32-bit kernels): a throw, an index out of range or the heap out of room
 ; all come here, with eax = the line, esi = the file's name (0 if not known),
@@ -45,10 +46,13 @@ phi_throw:
     call .copy
 
     ; the message: the text, ' on line ', the line, then ' in ' and the file if it's known
+    ; (a CPU exception's line isn't: then the text alone)
     lea edi, [ebp + ERROR_MESSAGE]
     mov ecx, 383
     lea esi, [ebp + ERROR_TEXT]
     call .append
+    cmp dword [ebp + ERROR_LINE], 0
+    je .said
     mov esi, .on_line
     call .append
     mov eax, [ebp + ERROR_LINE]
@@ -151,3 +155,63 @@ phi_throw:
 .newline:
     db 13, 10, 0
 
+
+; ---- CPU exceptions in kernel code, caught as errors
+;
+; Dividing by zero, using memory that isn't there (an empty object, a null pointer) and
+; what the CPU refuses (a general protection fault) in kernel code that is inside a catch
+; become errors like any other: interrupts.asm's exception path calls phi_fault_hook,
+; which this sets, and the saved state is changed so that returning from the interrupt
+; goes to phi_throw, on the faulting code's own stack. Anywhere else (no catch, inside a
+; locked block, in an interrupt handler) they still stop the kernel with the panic screen.
+ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
+ERROR_KIND_EMPTY  equ 4
+ERROR_KIND_ACCESS equ 5
+FRAME_EBX         equ 32                ; in the state interrupts.asm saved
+FRAME_EDX         equ 36
+FRAME_EAX         equ 44
+FRAME_VECTOR      equ 48
+FRAME_EIP         equ 56
+FRAME_ESI         equ 20
+
+phi_fault_init:
+    mov dword [phi_fault_hook], phi_fault
+    ret
+
+; [esp + 4] = the saved state of kernel code an exception came in -> eax = 1 if it will be
+; thrown as an error when the interrupt returns (the state is changed), 0 if not
+phi_fault:
+    mov ecx, [esp + 4]
+    xor eax, eax
+    cmp dword [fs:PHI_CORE_CATCH], 0
+    je .not
+    mov edx, [ecx + FRAME_VECTOR]
+    cmp edx, 0
+    je .divide
+    cmp edx, 13
+    je .access
+    cmp edx, 14
+    jne .not
+    mov eax, cr2
+    cmp eax, 4096
+    jae .access
+    mov dword [ecx + FRAME_EBX], ERROR_KIND_EMPTY
+    mov dword [ecx + FRAME_EDX], .empty
+    jmp .throw
+.divide:
+    mov dword [ecx + FRAME_EBX], ERROR_KIND_DIVIDE
+    mov dword [ecx + FRAME_EDX], .divided
+    jmp .throw
+.access:
+    mov dword [ecx + FRAME_EBX], ERROR_KIND_ACCESS
+    mov dword [ecx + FRAME_EDX], .refused
+.throw:
+    mov dword [ecx + FRAME_EAX], 0            ; the line isn't known
+    mov dword [ecx + FRAME_ESI], 0            ; nor the file
+    mov dword [ecx + FRAME_EIP], phi_throw
+    mov eax, 1
+.not:
+    ret
+.divided: db 'division by zero', 0
+.empty:   db 'an empty object or a null pointer was used', 0
+.refused: db 'memory that is not there was used, or the CPU refused an instruction', 0

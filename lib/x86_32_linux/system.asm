@@ -1,4 +1,4 @@
-; provides: phi_exit phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -410,3 +410,9 @@ phi_poll: dd 0, 0
 phi_stat: times 96 db 0
 phi_sysinfo: times 64 db 0
 phi_arguments: times ARGUMENTS_SIZE db 0
+
+; where the system sends this program when the CPU stops it (throw.asm's phi_fault_entry):
+; not yet on this system (a signal handler, or an exception handler, would), so such an
+; error still ends the program
+phi_fault_register:
+    ret
