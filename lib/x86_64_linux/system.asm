@@ -1,4 +1,4 @@
-; provides: phi_exit phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -478,3 +478,70 @@ phi_time:    dq 0, 0                    ; seconds, nanoseconds
 phi_stat: times 144 db 0
 phi_sysinfo: times 128 db 0
 phi_arguments: times ARGUMENTS_SIZE db 0
+
+; rax = where this program goes when the CPU stops it (dividing by zero, or memory that
+; isn't there): throw.asm's phi_fault_entry, with ebx = the kind of error. Linux sends a
+; signal (SIGFPE, SIGSEGV); its handler changes the stopped code's registers in the
+; signal's saved context, so when the handler returns (rt_sigreturn) it carries on there,
+; as PHI OS sends a program
+phi_fault_register:
+    push rdi
+    push rsi
+    mov [rel phi_fault_to], rax
+    mov edi, SIGFPE
+    call .handle
+    mov edi, SIGSEGV
+    call .handle
+    pop rsi
+    pop rdi
+    ret
+.handle:
+    mov eax, SYS_RT_SIGACTION
+    lea rsi, [rel phi_fault_action]
+    xor edx, edx                        ; (the old one isn't wanted)
+    mov r10d, 8                         ; the size of a signal mask
+    syscall
+    ret
+
+; the signal handler: edi = the signal, rsi its siginfo (the address at +16), rdx the
+; ucontext (the registers from +40 on)
+phi_fault_handler:
+    mov eax, ERROR_DIVIDE
+    cmp edi, SIGFPE
+    je .send
+    mov eax, ERROR_ACCESS
+    cmp qword [rsi + 16], 4096
+    jae .send
+    mov eax, ERROR_EMPTY
+.send:
+    mov rcx, [rel phi_fault_to]
+    cmp [rdx + UCONTEXT_RIP], rcx
+    je .again                           ; the entry itself was stopped: it would only be again
+    mov [rdx + UCONTEXT_RBX], rax
+    mov [rdx + UCONTEXT_RIP], rcx
+    ret
+.again:
+    mov eax, SYS_EXIT_GROUP
+    mov edi, -1
+    syscall
+
+; where a signal handler returns to: the registers back from the context, as it changed them
+phi_fault_return:
+    mov eax, SYS_RT_SIGRETURN
+    syscall
+
+SYS_RT_SIGACTION equ 13
+SYS_RT_SIGRETURN equ 15
+SIGFPE           equ 8
+SIGSEGV          equ 11
+SA_SIGINFO       equ 4
+SA_RESTORER      equ 0x04000000
+ERROR_DIVIDE     equ 3                  ; ErrorKind (lib/phi/lang/error.phi)
+ERROR_EMPTY      equ 4
+ERROR_ACCESS     equ 5
+UCONTEXT_RBX     equ 40 + 11 * 8        ; in a ucontext: its registers' rbx and rip
+UCONTEXT_RIP     equ 40 + 16 * 8
+align 8
+phi_fault_to: dq 0
+phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask
+    dq phi_fault_handler, SA_SIGINFO | SA_RESTORER, phi_fault_return, 0

@@ -1,0 +1,5 @@
+divide: 1 division by zero
+empty: 1 an empty object or a null pointer was used
+null: 1
+not its own: 1 memory that is not there was used, or the CPU refused an instruction
+again: 50 caught

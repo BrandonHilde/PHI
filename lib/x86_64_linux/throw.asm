@@ -1,5 +1,6 @@
-; provides: phi_throw phi_catch_top phi_unwind_top phi_error
-; requires: phi_print phi_exit
+; provides: phi_throw phi_catch_top phi_unwind_top phi_error phi_fault_init phi_fault_entry
+; requires: phi_print phi_exit phi_fault_register
+; init: phi_fault_init
 ;
 ; Errors in 64-bit programs, as in 32-bit ones (x86_32_user/throw.asm): eax = the line,
 ; rsi = the file's name (0 if not known), rdx = the text, ebx = the kind. The error goes
@@ -8,8 +9,7 @@
 ;
 ; Records here are 8 bytes a field: a catch's +0 the catch before it, +8 rsp, +16 rbp,
 ; +24 phi_unwind_top when it was set, +32 where to go; a method's +0 the record before it,
-; +8 what gives back its things, +16 its rbp. (64-bit code doesn't catch errors yet, so
-; there are none of either so far: each error goes to the end.)
+; +8 what gives back its things, +16 its rbp.
 ERROR_KIND    equ 0
 ERROR_LINE    equ 4
 ERROR_FILE    equ 8
@@ -35,6 +35,8 @@ phi_throw:
     mov ecx, 383
     lea rsi, [rel phi_error + ERROR_TEXT]
     call .append
+    cmp dword [rel phi_error + ERROR_LINE], 0
+    je .said                        ; (a CPU exception's line isn't known: the text alone)
     lea rsi, [rel .on_line]
     call .append
     mov eax, [rel phi_error + ERROR_LINE]
@@ -136,3 +138,30 @@ align 8
 phi_catch_top:  dq 0                ; the innermost catch, or 0
 phi_unwind_top: dq 0                ; the innermost running method that has things to give back, or 0
 phi_error:      times ERROR_SIZE db 0
+
+; ---- CPU exceptions, caught as errors (as x86_32_user/throw.asm has them): the system
+; (system.asm's phi_fault_register) sends a program the CPU stopped here, with ebx = the
+; kind of error, and it's thrown like any other
+ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
+ERROR_KIND_EMPTY  equ 4
+
+phi_fault_init:
+    lea rax, [rel phi_fault_entry]
+    jmp phi_fault_register
+
+phi_fault_entry:
+    lea rdx, [rel .refused]
+    cmp ebx, ERROR_KIND_DIVIDE
+    jne .not_divide
+    lea rdx, [rel .divided]
+.not_divide:
+    cmp ebx, ERROR_KIND_EMPTY
+    jne .thrown
+    lea rdx, [rel .empty]
+.thrown:
+    xor eax, eax                        ; the line isn't known
+    xor esi, esi                        ; nor the file
+    jmp phi_throw
+.divided: db 'division by zero', 0
+.empty:   db 'an empty object or a null pointer was used', 0
+.refused: db 'memory that is not there was used, or the CPU refused an instruction', 0

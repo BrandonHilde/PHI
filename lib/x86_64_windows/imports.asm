@@ -33,6 +33,7 @@
     PHI_FUNCTION WaitForSingleObject
     PHI_FUNCTION GetConsoleMode
     PHI_FUNCTION SetConsoleMode
+    PHI_FUNCTION AddVectoredExceptionHandler
 %endmacro
 
 align 8, db 0

@@ -1549,10 +1549,16 @@ test where a zone program crashes on purpose shows its players back in a restart
   kernel sends a faulting program there rather than stopping it, unless its stack has run
   off its end or the entry itself faulted. Tests `kernel32_throw_faults`,
   `kernel32_program_faults`, and a divide in `kernel32_throw_cores`'s threads.
-  - Not yet: Linux and Windows programs (`phi_fault_register` does nothing there; a signal
-    handler, or Windows' exception handlers, would send them the same way), and the line
-    a CPU exception happened on (the code's addresses aren't mapped back to lines at run
-    time).
+  - [x] Linux and Windows programs, 32 and 64 bits: `phi_fault_register` installs a signal
+    handler for SIGFPE and SIGSEGV on Linux (`rt_sigaction`, with a restorer for
+    `rt_sigreturn`), and a vectored exception handler on Windows
+    (`AddVectoredExceptionHandler`), which each change the stopped code's saved registers
+    so it carries on in the fault entry, as PHI OS sends a program. Test `faults_program`,
+    the same output on all four. An uncaught one now ends a program as any error does
+    (`PHI:` and the message, then -1), not with the system's own crash.
+  - Not yet: the line a CPU exception happened on (the code's addresses aren't mapped
+    back to lines at run time).
+
 - [ ] (5) `phi fuzz`: **later**, with the optimisations, before a release (the user,
   2026-11-01). Until then this phase's "Done when" waits on it; parts 1-4 are done.
 

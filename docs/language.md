@@ -815,8 +815,9 @@ else
 - **The CPU's errors are caught too**: dividing a whole number by zero
   (`ErrorKind.DIVIDE`), using an empty object or a null pointer (`ErrorKind.EMPTY`), and
   memory that isn't there or an instruction the CPU refuses (`ErrorKind.ACCESS`), in a
-  kernel and in a PHI OS program alike. Their line isn't known, so the message is the text
-  alone. On Linux and Windows they still end the program, as before.
+  kernel, in a PHI OS program, and in a Linux or Windows program (32 or 64 bits) alike.
+  Their line isn't known, so the message is the text alone. Uncaught, a program prints
+  the error and ends with -1, as for any error.
 - An error in an interrupt handler or a system call isn't caught by the code it
   interrupted. In a kernel each core has its own list of catches, and each task (a
   thread, say) keeps its own as the cores take turns, so threads catch their own errors.
@@ -2599,7 +2600,6 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
   and `^^` on 64-bit and floating point numbers
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
-- catching CPU exceptions in Linux and Windows programs (they still end the program there)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))

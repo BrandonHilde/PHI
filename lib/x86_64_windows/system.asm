@@ -1,4 +1,4 @@
-; provides: phi_exit phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all phi_imports
 ; init: phi_windows_start
 ;
@@ -559,3 +559,52 @@ phi_attributes: times 36 db 0
 phi_wide_path: times WIDE_PATH dw 0
 phi_wide_to: times WIDE_PATH dw 0
 phi_arguments: times ARGUMENTS_SIZE db 0
+
+; rax = where this program goes when the CPU stops it (dividing by zero, or memory that
+; isn't there): throw.asm's phi_fault_entry, with ebx = the kind of error. Windows tells a
+; vectored exception handler first, which changes the stopped code's registers (its
+; CONTEXT) so it carries on there, as PHI OS sends a program
+phi_fault_register:
+    mov [rel phi_fault_to], rax
+    mov ecx, 1                          ; before any other handler
+    lea rdx, [rel phi_fault_handler]
+    PHI_CALL AddVectoredExceptionHandler
+    ret
+
+; Windows' call (rcx = its EXCEPTION_POINTERS) -> eax = -1 to carry on in the changed
+; CONTEXT, 0 to let Windows go on (and end the program, as before); it changes only what
+; a call may (rax, rcx, rdx, r8)
+phi_fault_handler:
+    mov rdx, [rcx]                      ; the EXCEPTION_RECORD
+    mov rcx, [rcx + 8]                  ; the CONTEXT
+    mov eax, [rdx]                      ; what happened
+    cmp eax, 0xC0000094                 ; EXCEPTION_INT_DIVIDE_BY_ZERO
+    je .divide
+    cmp eax, 0xC0000005                 ; EXCEPTION_ACCESS_VIOLATION: its address in [rdx + 40]
+    jne .not_ours
+    mov eax, ERROR_ACCESS
+    cmp qword [rdx + 40], 4096
+    jae .send
+    mov eax, ERROR_EMPTY
+    jmp .send
+.divide:
+    mov eax, ERROR_DIVIDE
+.send:
+    mov r8, [rel phi_fault_to]
+    cmp [rcx + CONTEXT_RIP], r8
+    je .not_ours                        ; the entry itself was stopped: it would only be again
+    mov [rcx + CONTEXT_RBX], rax
+    mov [rcx + CONTEXT_RIP], r8
+    mov eax, -1                         ; EXCEPTION_CONTINUE_EXECUTION
+    ret
+.not_ours:
+    xor eax, eax                        ; EXCEPTION_CONTINUE_SEARCH
+    ret
+
+ERROR_DIVIDE  equ 3                     ; ErrorKind (lib/phi/lang/error.phi)
+ERROR_EMPTY   equ 4
+ERROR_ACCESS  equ 5
+CONTEXT_RBX   equ 0x90                  ; in an x64 CONTEXT
+CONTEXT_RIP   equ 0xF8
+align 8
+phi_fault_to: dq 0

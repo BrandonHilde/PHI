@@ -501,8 +501,50 @@ phi_wide_path: times WIDE_PATH dw 0
 phi_wide_to: times WIDE_PATH dw 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
-; where the system sends this program when the CPU stops it (throw.asm's phi_fault_entry):
-; not yet on this system (a signal handler, or an exception handler, would), so such an
-; error still ends the program
+; eax = where this program goes when the CPU stops it (dividing by zero, or memory that
+; isn't there): throw.asm's phi_fault_entry, with ebx = the kind of error. Windows tells a
+; vectored exception handler first, which changes the stopped code's registers (its
+; CONTEXT) so it carries on there, as PHI OS sends a program
 phi_fault_register:
+    mov [phi_fault_to], eax
+    push phi_fault_handler
+    push 1                              ; before any other handler
+    call [phi_imp_AddVectoredExceptionHandler]
     ret
+
+; Windows' call (stdcall: [esp + 4] = its EXCEPTION_POINTERS) -> eax = -1 to carry on in
+; the changed CONTEXT, 0 to let Windows go on (and end the program, as before)
+phi_fault_handler:
+    mov ecx, [esp + 4]
+    mov edx, [ecx]                      ; the EXCEPTION_RECORD
+    mov ecx, [ecx + 4]                  ; the CONTEXT
+    mov eax, [edx]                      ; what happened
+    cmp eax, 0xC0000094                 ; EXCEPTION_INT_DIVIDE_BY_ZERO
+    je .divide
+    cmp eax, 0xC0000005                 ; EXCEPTION_ACCESS_VIOLATION: its address in [edx + 24]
+    jne .not_ours
+    mov eax, ERROR_ACCESS
+    cmp dword [edx + 24], 4096
+    jae .send
+    mov eax, ERROR_EMPTY
+    jmp .send
+.divide:
+    mov eax, ERROR_DIVIDE
+.send:
+    mov edx, [phi_fault_to]
+    cmp [ecx + CONTEXT_EIP], edx
+    je .not_ours                        ; the entry itself was stopped: it would only be again
+    mov [ecx + CONTEXT_EBX], eax
+    mov [ecx + CONTEXT_EIP], edx
+    mov eax, -1                         ; EXCEPTION_CONTINUE_EXECUTION
+    ret 4
+.not_ours:
+    xor eax, eax                        ; EXCEPTION_CONTINUE_SEARCH
+    ret 4
+
+ERROR_DIVIDE  equ 3                     ; ErrorKind (lib/phi/lang/error.phi)
+ERROR_EMPTY   equ 4
+ERROR_ACCESS  equ 5
+CONTEXT_EBX   equ 0xA4                  ; in an x86 CONTEXT
+CONTEXT_EIP   equ 0xB8
+phi_fault_to: dd 0

@@ -411,8 +411,70 @@ phi_stat: times 96 db 0
 phi_sysinfo: times 64 db 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
-; where the system sends this program when the CPU stops it (throw.asm's phi_fault_entry):
-; not yet on this system (a signal handler, or an exception handler, would), so such an
-; error still ends the program
+; eax = where this program goes when the CPU stops it (dividing by zero, or memory that
+; isn't there): throw.asm's phi_fault_entry, with ebx = the kind of error. Linux sends a
+; signal (SIGFPE, SIGSEGV); its handler changes the stopped code's registers in the
+; signal's saved context, so when the handler returns (rt_sigreturn) it carries on there,
+; as PHI OS sends a program
 phi_fault_register:
+    push ebx
+    mov [phi_fault_to], eax
+    mov ebx, SIGFPE
+    call .handle
+    mov ebx, SIGSEGV
+    call .handle
+    pop ebx
     ret
+.handle:
+    mov eax, SYS_RT_SIGACTION
+    mov ecx, phi_fault_action
+    xor edx, edx                        ; (the old one isn't wanted)
+    push esi
+    mov esi, 8                          ; the size of a signal mask
+    int 0x80
+    pop esi
+    ret
+
+; the signal handler: [esp + 4] = the signal, [esp + 8] its siginfo (the address at +12),
+; [esp + 12] the ucontext (the registers from +20 on)
+phi_fault_handler:
+    mov ecx, [esp + 12]
+    mov eax, ERROR_DIVIDE
+    cmp dword [esp + 4], SIGFPE
+    je .send
+    mov eax, ERROR_ACCESS
+    mov edx, [esp + 8]
+    cmp dword [edx + 12], 4096
+    jae .send
+    mov eax, ERROR_EMPTY
+.send:
+    mov edx, [phi_fault_to]
+    cmp [ecx + UCONTEXT_EIP], edx
+    je .again                           ; the entry itself was stopped: it would only be again
+    mov [ecx + UCONTEXT_EBX], eax
+    mov [ecx + UCONTEXT_EIP], edx
+    ret
+.again:
+    mov eax, SYS_EXIT_GROUP
+    mov ebx, -1
+    int 0x80
+
+; where a signal handler returns to: the registers back from the context, as it changed them
+phi_fault_return:
+    mov eax, SYS_RT_SIGRETURN
+    int 0x80
+
+SYS_RT_SIGACTION equ 174
+SYS_RT_SIGRETURN equ 173
+SIGFPE           equ 8
+SIGSEGV          equ 11
+SA_SIGINFO       equ 4
+SA_RESTORER      equ 0x04000000
+ERROR_DIVIDE     equ 3                  ; ErrorKind (lib/phi/lang/error.phi)
+ERROR_EMPTY      equ 4
+ERROR_ACCESS     equ 5
+UCONTEXT_EBX     equ 20 + 32            ; in a ucontext: its sigcontext's ebx and eip
+UCONTEXT_EIP     equ 20 + 56
+phi_fault_to: dd 0
+phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask
+    dd phi_fault_handler, SA_SIGINFO | SA_RESTORER, phi_fault_return, 0, 0
