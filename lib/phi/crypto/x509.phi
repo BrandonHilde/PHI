@@ -1,0 +1,466 @@
+# X.509 certificates (RFC 5280): reading one (DER), checking that its issuer signed it,
+# that it's for a host name, and that a chain of them goes back to a root that's
+# trusted. Any kind of program.
+#
+#   use crypto.x509;
+#   call X509.Trust: root_der root_length;          # a root certificate to trust
+#   Certificate chain[4];
+#   bln ok: (X509.Parse: addr chain:0 leaf_der leaf_length);
+#   ok is (X509.Parse: addr chain:1 middle_der middle_length);
+#   ok is (X509.Chain: addr chain:0 2 'phi.test');  # false: X509.error says why
+#
+# A Certificate points into the DER it was read from, which must stay where it is. Keys
+# can be RSA (of up to 4096 bits) or ECDSA on P-256, and signatures sha256WithRSAEncryption
+# or ecdsa-with-SHA256. A host name is matched against the certificate's subjectAltName
+# DNS names (*.example.com matches one label), or an IPv4 address against its iPAddress
+# names. Dates aren't checked yet: PHI has no clock that knows the date.
+
+use crypto.rsa;
+use crypto.p256;
+
+# what's read from a certificate; each ptr<u8> points into its DER
+struct.Certificate
+{
+	ptr<u8> der;
+	u32 der_length;
+	ptr<u8> tbs;                    # the part that's signed, header and all
+	u32 tbs_length;
+	u32 signed_with;                # X509.RSA_SHA256, X509.ECDSA_SHA256, or 0 for another way
+	ptr<u8> signature;              # the signature's bytes
+	u32 signature_length;
+	ptr<u8> issuer;                 # who signed it, as a DER Name (compared byte for byte)
+	u32 issuer_length;
+	ptr<u8> subject;                # who it's for, the same way
+	u32 subject_length;
+	ptr<u8> not_before;             # its dates, as text (YYMMDDHHMMSSZ, or YYYYMMDDHHMMSSZ)
+	u32 not_before_length;
+	ptr<u8> not_after;
+	u32 not_after_length;
+	u32 key_kind;                   # X509.RSA, X509.P256, or 0 for another kind
+	ptr<u8> modulus;                # an RSA key's
+	u32 modulus_length;
+	ptr<u8> exponent;
+	u32 exponent_length;
+	ptr<u8> point;                  # a P-256 key: 65 bytes, 04 then x and y
+	bln ca;                         # it may sign other certificates
+	int path_length;                # how many certificates may come between it and a leaf (-1: any)
+	ptr<u8> names;                  # its subjectAltName's names, as DER (0 if it has none)
+	u32 names_length;
+}
+
+# where reading DER has got to: from pos up to stop
+struct.DerCursor
+{
+	ptr<u8> pos;
+	ptr<u8> stop;
+}
+
+phi.X509:Library
+{
+	const u32 RSA: 1;
+	const u32 P256: 2;
+	const u32 RSA_SHA256: 1;
+	const u32 ECDSA_SHA256: 2;
+	const u32 MAX_ROOTS: 16;
+	const u32 MAX_DEPTH: 8;
+
+	str error: '';
+
+	# the element Element (or Next) read last
+	u32 der_tag: 0;
+	ptr<u8> der_content: 0;
+	u32 der_length: 0;
+	ptr<u8> der_next: 0;                  # just past it
+
+	Certificate x509_roots[16];
+	u32 x509_root_count: 0;
+	u8 x509_digest[32];
+	u8 x509_r[32];
+	u8 x509_s[32];
+	u8 x509_address[4];
+
+	# the object identifiers this reads
+	u8 oid_rsa_sha256: 0x2A 0x86 0x48 0x86 0xF7 0x0D 0x01 0x01 0x0B;
+	u8 oid_ecdsa_sha256: 0x2A 0x86 0x48 0xCE 0x3D 0x04 0x03 0x02;
+	u8 oid_rsa: 0x2A 0x86 0x48 0x86 0xF7 0x0D 0x01 0x01 0x01;
+	u8 oid_ec: 0x2A 0x86 0x48 0xCE 0x3D 0x02 0x01;
+	u8 oid_p256: 0x2A 0x86 0x48 0xCE 0x3D 0x03 0x01 0x07;
+	u8 oid_basic_constraints: 0x55 0x1D 0x13;
+	u8 oid_alt_names: 0x55 0x1D 0x11;
+	u8 oid_key_usage: 0x55 0x1D 0x0F;
+
+	# ---- reading DER
+
+	# the element at p (left bytes there): its tag, content and where the next begins;
+	# false if it doesn't fit
+	[Element: ptr<u8> p: 0; u32 left: 0;]
+		if left < 2 return false;
+		der_tag is p:0;
+		u32 first: p:1;
+		u32 header: 2;
+		u32 length: first;
+		if first >= 0x80
+			u32 count: first & 0x7F;
+			if count is 0 or count > 3 or left < 2 + count return false;
+			length is 0;
+			while u32 i: 0; i < count; i++;
+				length is (length << 8) | p:(2 + i);
+			;;
+			header is 2 + count;
+		;;
+		if length > left - header return false;
+		der_content is p + header;
+		der_length is length;
+		der_next is p + header + length;
+	[end: true]
+
+	# the next element at the cursor, which moves past it; false at its end, or if it
+	# doesn't fit
+	[Next: ptr<DerCursor> c: 0;]
+		u32 left: (c.stop as u32) - (c.pos as u32);
+		if left is 0 return false;
+		if not (X509.Element: c.pos left) return false;
+		c.pos is der_next;
+	[end: true]
+
+	# inner covers the content of the element read last
+	[Enter: ptr<DerCursor> inner: 0;]
+		inner.pos is der_content;
+		inner.stop is der_content + der_length;
+	[end]
+
+	# whether the element read last is the object identifier oid (count bytes)
+	[IsOid: ptr<u8> oid: 0; u32 count: 0;]
+	[end: der_tag is 6 and der_length is count and (Bytes.Equal: der_content oid count)]
+
+	# ---- reading a certificate
+
+	# c = the certificate in der (length bytes); false if it can't be read (error says why)
+	[Parse: ptr<Certificate> c: 0; ptr<u8> der: 0; u32 length: 0;]
+		error is '';
+		c.der is der;
+		c.der_length is length;
+		c.signed_with is 0;
+		c.key_kind is 0;
+		c.ca is false;
+		c.path_length is -1;
+		c.names is 0;
+		c.names_length is 0;
+
+		DerCursor top;
+		top.pos is der;
+		top.stop is der + length;
+		if not (X509.Next: addr top) or der_tag is not 0x30 return (X509.Fail: 'not a certificate');
+		DerCursor whole;
+		call X509.Enter: addr whole;
+
+		# the part that's signed
+		ptr<u8> start: whole.pos;
+		if not (X509.Next: addr whole) or der_tag is not 0x30 return (X509.Fail: 'no tbsCertificate');
+		c.tbs is start;
+		c.tbs_length is (der_next as u32) - (start as u32);
+		DerCursor tbs;
+		call X509.Enter: addr tbs;
+		if not (X509.Next: addr tbs) return (X509.Fail: 'an empty tbsCertificate');
+		if der_tag is 0xA0
+			if not (X509.Next: addr tbs) return (X509.Fail: 'no serial number');   # (past the version)
+		;;
+		if der_tag is not 2 return (X509.Fail: 'no serial number');
+		if not (X509.Next: addr tbs) or der_tag is not 0x30 return (X509.Fail: 'no signature algorithm');
+
+		start is tbs.pos;
+		if not (X509.Next: addr tbs) or der_tag is not 0x30 return (X509.Fail: 'no issuer');
+		c.issuer is start;
+		c.issuer_length is (der_next as u32) - (start as u32);
+
+		if not (X509.Next: addr tbs) or der_tag is not 0x30 return (X509.Fail: 'no validity');
+		DerCursor dates;
+		call X509.Enter: addr dates;
+		if not (X509.Next: addr dates) return (X509.Fail: 'no notBefore');
+		c.not_before is der_content;
+		c.not_before_length is der_length;
+		if not (X509.Next: addr dates) return (X509.Fail: 'no notAfter');
+		c.not_after is der_content;
+		c.not_after_length is der_length;
+
+		start is tbs.pos;
+		if not (X509.Next: addr tbs) or der_tag is not 0x30 return (X509.Fail: 'no subject');
+		c.subject is start;
+		c.subject_length is (der_next as u32) - (start as u32);
+
+		if not (X509.Next: addr tbs) or der_tag is not 0x30 return (X509.Fail: 'no public key');
+		if not (X509.ReadKey: c) return false;
+
+		# the extensions, [3], after the optional unique IDs ([1] and [2])
+		while (X509.Next: addr tbs)
+			if der_tag is 0xA3
+				if not (X509.ReadExtensions: c) return false;
+			;;
+		;;
+
+		# how it's signed, then the signature
+		if not (X509.Next: addr whole) or der_tag is not 0x30 return (X509.Fail: 'no signatureAlgorithm');
+		DerCursor algorithm;
+		call X509.Enter: addr algorithm;
+		if not (X509.Next: addr algorithm) return (X509.Fail: 'no signatureAlgorithm');
+		if (X509.IsOid: addr oid_rsa_sha256 9)
+			c.signed_with is RSA_SHA256;
+		;;
+		if (X509.IsOid: addr oid_ecdsa_sha256 8)
+			c.signed_with is ECDSA_SHA256;
+		;;
+		if not (X509.Next: addr whole) or der_tag is not 3 or der_length < 1 return (X509.Fail: 'no signatureValue');
+		c.signature is der_content + 1;               # (past the count of unused bits)
+		c.signature_length is der_length - 1;
+	[end: true]
+
+	# the public key, from the SubjectPublicKeyInfo read last
+	[ReadKey: ptr<Certificate> c: 0;]
+		DerCursor info;
+		call X509.Enter: addr info;
+		if not (X509.Next: addr info) or der_tag is not 0x30 return (X509.Fail: 'no key algorithm');
+		DerCursor algorithm;
+		call X509.Enter: addr algorithm;
+		if not (X509.Next: addr algorithm) return (X509.Fail: 'no key algorithm');
+		u32 kind: 0;
+		if (X509.IsOid: addr oid_rsa 9)
+			kind is RSA;
+		;;
+		if (X509.IsOid: addr oid_ec 7)
+			if (X509.Next: addr algorithm) and (X509.IsOid: addr oid_p256 8)
+				kind is P256;
+			;;
+		;;
+		if not (X509.Next: addr info) or der_tag is not 3 or der_length < 1 return (X509.Fail: 'no key');
+		ptr<u8> key: der_content + 1;
+		u32 key_length: der_length - 1;
+		if kind is P256
+			if key_length is not 65 or key:0 is not 4 return (X509.Fail: 'a P-256 key that isn\'t 65 bytes, 04 first');
+			c.point is key;
+		;;
+		if kind is RSA
+			# RSAPublicKey: the modulus, then the exponent
+			if not (X509.Element: key key_length) or der_tag is not 0x30 return (X509.Fail: 'an RSA key that can\'t be read');
+			DerCursor numbers;
+			call X509.Enter: addr numbers;
+			if not (X509.Next: addr numbers) or der_tag is not 2 return (X509.Fail: 'no RSA modulus');
+			c.modulus is der_content;
+			c.modulus_length is der_length;
+			if not (X509.Next: addr numbers) or der_tag is not 2 return (X509.Fail: 'no RSA exponent');
+			c.exponent is der_content;
+			c.exponent_length is der_length;
+		;;
+		c.key_kind is kind;
+	[end: true]
+
+	# basicConstraints and subjectAltName, from the [3] read last; false for an extension
+	# marked critical that this doesn't know
+	[ReadExtensions: ptr<Certificate> c: 0;]
+		DerCursor outer;
+		call X509.Enter: addr outer;
+		if not (X509.Next: addr outer) or der_tag is not 0x30 return (X509.Fail: 'extensions that can\'t be read');
+		DerCursor list;
+		call X509.Enter: addr list;
+		while (X509.Next: addr list)
+			if der_tag is not 0x30 return (X509.Fail: 'an extension that can\'t be read');
+			DerCursor one;
+			call X509.Enter: addr one;
+			if not (X509.Next: addr one) or der_tag is not 6 return (X509.Fail: 'an extension without its identifier');
+			u32 which: 0;
+			if (X509.IsOid: addr oid_basic_constraints 3)
+				which is 1;
+			;;
+			if (X509.IsOid: addr oid_alt_names 3)
+				which is 2;
+			;;
+			if (X509.IsOid: addr oid_key_usage 3)
+				which is 3;
+			;;
+			bln critical: false;
+			if not (X509.Next: addr one) return (X509.Fail: 'an extension without its value');
+			if der_tag is 1
+				critical is der_length is 1 and der_content:0 is not 0;
+				if not (X509.Next: addr one) return (X509.Fail: 'an extension without its value');
+			;;
+			if der_tag is not 4 return (X509.Fail: 'an extension without its value');
+			if which is 0 and critical return (X509.Fail: 'an extension PHI doesn\'t know is marked critical');
+			if which is 1
+				# BasicConstraints: cA (false if it isn't there), then pathLenConstraint
+				if not (X509.Element: der_content der_length) or der_tag is not 0x30 return (X509.Fail: 'basicConstraints that can\'t be read');
+				DerCursor basic;
+				call X509.Enter: addr basic;
+				if (X509.Next: addr basic) and der_tag is 1
+					c.ca is der_length is 1 and der_content:0 is not 0;
+					if (X509.Next: addr basic) and der_tag is 2 and der_length is 1
+						c.path_length is der_content:0;
+					;;
+				;;
+			;;
+			if which is 2
+				if not (X509.Element: der_content der_length) or der_tag is not 0x30 return (X509.Fail: 'subjectAltName that can\'t be read');
+				c.names is der_content;
+				c.names_length is der_length;
+			;;
+		;;
+	[end: true]
+
+	# ---- checking
+
+	# whether issuer's key signed c
+	[CheckSignature: ptr<Certificate> c: 0; ptr<Certificate> issuer: 0;]
+		call Sha256.Hash: c.tbs c.tbs_length addr x509_digest;
+		if c.signed_with is RSA_SHA256 and issuer.key_kind is RSA
+			return (Rsa.VerifyPkcs1: issuer.modulus issuer.modulus_length issuer.exponent issuer.exponent_length
+			                         addr x509_digest c.signature c.signature_length);
+		;;
+		if c.signed_with is ECDSA_SHA256 and issuer.key_kind is P256
+			if not (X509.ReadEcdsa: c.signature c.signature_length) return false;
+			return (P256.Verify: issuer.point addr x509_digest addr x509_r addr x509_s);
+		;;
+	[end: false]
+
+	# x509_r and x509_s = the two numbers of a DER ECDSA signature, 32 bytes each
+	[ReadEcdsa: ptr<u8> der: 0; u32 length: 0;]
+		if not (X509.Element: der length) or der_tag is not 0x30 return false;
+		DerCursor numbers;
+		call X509.Enter: addr numbers;
+		if not (X509.Next: addr numbers) or der_tag is not 2 return false;
+		if not (X509.Number32: addr x509_r) return false;
+		if not (X509.Next: addr numbers) or der_tag is not 2 return false;
+	[end: (X509.Number32: addr x509_s)]
+
+	# output = the INTEGER read last, as 32 big-endian bytes; false if it's longer
+	[Number32: ptr<u8> output: 0;]
+		ptr<u8> from: der_content;
+		u32 count: der_length;
+		while count > 0 and from:0 is 0
+			from is from + 1;
+			count--;
+		;;
+		if count > 32 return false;
+		call Bytes.Zero: output 32 - count;
+		call Bytes.Copy: output + 32 - count from count;
+	[end: true]
+
+	# whether c is for host (text): one of its subjectAltName DNS names is host, or is
+	# *.rest where host is a label and then rest; letters match whatever their case
+	[MatchesHost: ptr<Certificate> c: 0; ptr<u8> host: 0;]
+		if c.names is 0 return false;
+		u32 host_length: 0;
+		while host:host_length is not 0
+			host_length++;
+		;;
+		bln address: (X509.ReadAddress: host);
+		DerCursor names;
+		names.pos is c.names;
+		names.stop is c.names + c.names_length;
+		while (X509.Next: addr names)
+			if address
+				# an IPv4 address host is one of its iPAddress names
+				if der_tag is 0x87 and der_length is 4 and (Bytes.Equal: der_content addr x509_address 4) return true;
+			;;
+			elif der_tag is 0x82                     # dNSName
+				if (X509.SameText: der_content der_length host host_length) return true;
+				if der_length > 2 and der_content:0 is 42 and der_content:1 is 46       # *.
+					# past the host's first label (which mustn't be empty)
+					u32 dot: 0;
+					while dot < host_length and host:dot is not 46
+						dot++;
+					;;
+					if dot > 0 and dot < host_length
+						if (X509.SameText: der_content + 2 der_length - 2 host + dot + 1 host_length - dot - 1) return true;
+					;;
+				;;
+			;;
+		;;
+	[end: false]
+
+	# whether host is an IPv4 address written out (10.0.2.2): if so, x509_address = its 4 bytes
+	[ReadAddress: ptr<u8> host: 0;]
+		u32 i: 0;
+		while u32 part: 0; part < 4; part++;
+			u32 value: 0;
+			u32 digits: 0;
+			while host:i >= 48 and host:i <= 57 and digits < 3
+				value is value * 10 + host:i - 48;
+				digits++;
+				i++;
+			;;
+			if digits is 0 or value > 255 return false;
+			x509_address:part is value;
+			if part < 3
+				if host:i is not 46 return false;
+				i++;
+			;;
+		;;
+	[end: host:i is 0]
+
+	# whether a (a_length bytes) and b are the same text, whatever the case of their letters
+	[SameText: ptr<u8> a: 0; u32 a_length: 0; ptr<u8> b: 0; u32 b_length: 0;]
+		if a_length is not b_length return false;
+		while u32 i: 0; i < a_length; i++;
+			u32 x: a:i;
+			u32 y: b:i;
+			if x >= 65 and x <= 90
+				x++ 32;
+			;;
+			if y >= 65 and y <= 90
+				y++ 32;
+			;;
+			if x is not y return false;
+		;;
+	[end: true]
+
+	# whether two DER Names are the same
+	[SameName: ptr<u8> a: 0; u32 a_length: 0; ptr<u8> b: 0; u32 b_length: 0;]
+	[end: a_length is b_length and (Bytes.Equal: a b a_length)]
+
+	# ---- chains
+
+	# trust the root certificate in der (length bytes), which must stay where it is
+	[Trust: ptr<u8> der: 0; u32 length: 0;]
+		if x509_root_count >= MAX_ROOTS return (X509.Fail: 'too many roots');
+		if not (X509.Parse: addr x509_roots:x509_root_count der length) return false;
+		x509_root_count++;
+	[end: true]
+
+	# forget the roots
+	[Untrust]
+		x509_root_count is 0;
+	[end]
+
+	# whether certs (count of them: the server's own first, then each one's issuer) are
+	# for host and go back to a trusted root; error says why not
+	[Chain: ptr<Certificate> certs: 0; u32 count: 0; ptr<u8> host: 0;]
+		error is '';
+		if count is 0 return (X509.Fail: 'no certificate');
+		if not (X509.MatchesHost: addr certs:0 host) return (X509.Fail: 'the certificate isn\'t for this host');
+		u32 i: 0;
+		while i < count and i < MAX_DEPTH
+			ptr<Certificate> c: addr certs:i;
+			# a trusted root itself, or one a trusted root signed
+			while u32 k: 0; k < x509_root_count; k++;
+				ptr<Certificate> root: addr x509_roots:k;
+				if c.der_length is root.der_length and (Bytes.Equal: c.der root.der c.der_length) return true;
+				if (X509.SameName: c.issuer c.issuer_length root.subject root.subject_length)
+					if (X509.CheckSignature: c root) return true;
+				;;
+			;;
+			# else the next one signed it
+			if i + 1 >= count return (X509.Fail: 'no trusted root signed the chain');
+			ptr<Certificate> up: addr certs:(i + 1);
+			if not (X509.SameName: c.issuer c.issuer_length up.subject up.subject_length)
+				return (X509.Fail: 'a certificate\'s issuer isn\'t the next one');
+			;;
+			if not up.ca return (X509.Fail: 'a certificate is signed by one that isn\'t a CA');
+			if up.path_length >= 0 and i > up.path_length return (X509.Fail: 'the chain is longer than a CA allows');
+			if not (X509.CheckSignature: c up) return (X509.Fail: 'a certificate\'s signature doesn\'t check out');
+			i++;
+		;;
+	[end: (X509.Fail: 'the chain is too long')]
+
+	# error = why, and false
+	[Fail: ptr<u8> why: 0;]
+		error is why;
+	[end: false]
+}

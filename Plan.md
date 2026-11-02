@@ -1781,7 +1781,37 @@ Goal: Scenario 1's third milestone: the server boots on a cloud machine.
 QEMU, players log in over TLS with a certificate the client checks, and it survives the
 fuzzing from S8.
 
-**Status: not started.**
+**Status: in progress (since 2026-11-01).** The order chosen with the user: what doesn't
+need 64-bit kernels first (kernels stay 32-bit until booting on a cloud machine needs
+them, step 4).
+
+- [x] (1) Checking certificates, all in PHI, any kind of program:
+  - `crypto.bignum`: numbers of up to 4096 bits as 16-bit limbs (every product and carry
+    fits 32 bits), multiplied modulo an odd number by Montgomery's way (no division).
+  - `crypto.rsa`: RSA signatures of a SHA-256 digest, PKCS #1 v1.5 and PSS.
+  - `crypto.p256`: ECDSA on P-256 (Jacobian points, Shamir's way for u1 G + u2 Q, the key
+    checked to be on the curve).
+  - `crypto.x509`: DER, certificates (keys, signatures, names, dates as text,
+    basicConstraints, subjectAltName; an unknown critical extension fails), a signature
+    checked by its issuer's key, host names (wildcards, letter case, IPv4 addresses), and a
+    chain followed back to a trusted root (issuers in order, CAs, path lengths).
+  - `crypto.roots`: five RSA roots (ISRG Root X1, DigiCert Global Root G2 and Global
+    Root CA, GlobalSign R3, USERTrust RSA), from Windows' store, with their fingerprints.
+  - `net.tls` checks the server's certificate: its chain, the host, and CertificateVerify
+    (P-256 or RSA-PSS over the transcript). A connection whose certificate doesn't check
+    out fails (the error says why); `Tls.verified` is true when it did. ClientHello offers
+    only what's checked (0x0403, 0x0804, 0x0401).
+  - Tests `crypto_rsa`, `crypto_p256`, `crypto_x509` (a chain OpenSSL made, and changed
+    ones that must fail), `crypto_roots` (Let's Encrypt's real R11, signed by ISRG Root X1
+    with RSA-4096), each a library test on every system but 16-bit (`# runs only in 32 and
+    64 bits`, new for tests too big for a 16-bit program); `net_http` now trusts the test
+    server's own certificate (`TestWeb.root`) and checks it, and with nothing trusted
+    fails to connect.
+  - Not yet: P-384 and SHA-384 (Let's Encrypt's ECDSA chains, DigiCert's G3, Microsoft's
+    and Azure's chains are signed with them), and dates (PHI has no clock that knows the
+    date yet).
+- [ ] (2) server-side TLS, (3) virtio-blk and NVMe, (4) booting on a cloud machine, (5)
+  the deployment guide
 
 ### Scenarios to write up next
 

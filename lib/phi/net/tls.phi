@@ -14,8 +14,10 @@
 # with AES-128-GCM or ChaCha20-Poly1305 (whichever the server picks), with SHA-256
 # for the key schedule.
 #
-# THE SERVER'S CERTIFICATE IS NOT CHECKED YET (Tls.verified is false): the connection
-# is encrypted, but anyone who can intercept it could pretend to be the server.
+# The server's certificate is checked (crypto.x509): it must be for host, go back to a
+# root the program trusts (X509.Trust: root_der length, before connecting), and have
+# signed the handshake (CertificateVerify, with its P-256 or RSA-PSS key); if any of that
+# fails, so does Connect. Tls.verified says it was checked. Dates aren't checked yet.
 #
 # The handshake: we send a ClientHello with our X25519 key; the ServerHello has the
 # server's; both sides turn the shared secret into handshake keys. The server sends
@@ -30,6 +32,7 @@ use crypto.aesgcm;
 use crypto.chachapoly;
 use crypto.x25519;
 use crypto.random;
+use crypto.x509;
 use user.text;
 
 phi.Tls:Kernel
@@ -65,7 +68,7 @@ phi.Tls:Kernel
 	str error: [100];                     # why Connect, Read or Write failed
 	u32 alert: 0;                         # the alert the server sent, if it sent one
 	u32 suite: 0;                         # the cipher suite the server chose
-	bln verified: false;                  # the certificate was checked (not yet: always false)
+	bln verified: false;                  # the server's certificate was checked, and is good
 	u32 offer: 3;                         # suites to offer: 1 AES-128-GCM, 2 ChaCha20-Poly1305, 3 both
 
 	int tls_connection: -1;
@@ -83,6 +86,12 @@ phi.Tls:Kernel
 	u32 tls_inner_length: 0;
 	u32 tls_app_at: 0;                    # unread application data in tls_record
 	u32 tls_app_left: 0;
+
+	Certificate tls_chain[4];             # the server's certificates, its own first
+	u32 tls_chain_count: 0;
+	ptr<u8> tls_chain_der: 0;             # a copy of its Certificate message, which tls_chain points into
+	str tls_host: [255];                  # who the certificate must be for
+	u8 tls_signed[130];                   # what CertificateVerify signs
 
 	Sha256State tls_transcript;
 	Sha256State tls_snapshot;
@@ -128,7 +137,8 @@ phi.Tls:Kernel
 			tls_record is new u8[HEADER + RECORD_MAX];
 			tls_send is new u8[HEADER + RECORD_MAX];
 			tls_messages is new u8[HANDSHAKE_MAX];
-			if tls_record is 0 or tls_send is 0 or tls_messages is 0
+			tls_chain_der is new u8[HANDSHAKE_MAX];
+			if tls_record is 0 or tls_send is 0 or tls_messages is 0 or tls_chain_der is 0
 				error is 'not enough memory for TLS';
 				ok is false;
 			;;
@@ -142,6 +152,8 @@ phi.Tls:Kernel
 		tls_closed is false;
 		tls_messages_length is 0;
 		tls_app_left is 0;
+		tls_chain_count is 0;
+		tls_host is host;
 		call Bytes.Zero: addr tls_zeros 32;
 		call Sha256.Hash: addr tls_zeros 0 addr tls_empty_hash;
 
@@ -300,8 +312,9 @@ phi.Tls:Kernel
 		call Net.Put16: h + pos + 4 2;
 		call Net.Put16: h + pos + 6 X25519_GROUP;
 		pos++ 8;
-		# signature_algorithms: ECDSA P-256/P-384, RSA-PSS, RSA PKCS#1, Ed25519
-		u32 algorithms: 0x0403 0x0503 0x0804 0x0805 0x0806 0x0401 0x0501 0x0601 0x0807;
+		# signature_algorithms, the ones crypto.x509 checks: ECDSA P-256 and RSA-PSS for the
+		# handshake, and RSA PKCS #1 for certificates, all with SHA-256
+		u32 algorithms: 0x0403 0x0804 0x0401;
 		call Net.Put16: h + pos 13;
 		call Net.Put16: h + pos + 2 2 + algorithms.len * 2;
 		call Net.Put16: h + pos + 4 algorithms.len * 2;
@@ -449,8 +462,16 @@ phi.Tls:Kernel
 				error is 'the server wants a client certificate, which PHI cannot send';
 				ok is false;
 			;;
-			elif type is ENCRYPTED_EXTENSIONS or type is CERTIFICATE or type is CERTIFICATE_VERIFY
-				# the certificate and its signature aren't checked yet (see the top of the file)
+			elif type is CERTIFICATE
+				call Sha256.Update: addr tls_transcript message size;
+				call ok is ReadCertificate: message size;
+			;;
+			elif type is CERTIFICATE_VERIFY
+				# (it signs the transcript up to the Certificate, so it goes in after)
+				call ok is ReadCertificateVerify: body length;
+				call Sha256.Update: addr tls_transcript message size;
+			;;
+			elif type is ENCRYPTED_EXTENSIONS
 				call Sha256.Update: addr tls_transcript message size;
 			;;
 			else
@@ -572,6 +593,105 @@ phi.Tls:Kernel
 		;;
 	[end: ok]
 
+	# the server's certificates, from its Certificate message (size bytes, header and all):
+	# a request context, then each certificate (3 bytes of length, its DER, 2 bytes of
+	# length and its extensions), its own first
+	[ReadCertificate: ptr<u8> message: 0; u32 size: 0;]
+		call Bytes.Copy: tls_chain_der message size;
+		ptr<u8> p: tls_chain_der + 4;
+		u32 left: size - 4;
+		if left < 4 or 1 + p:0 + 3 > left
+			error is 'a Certificate message that can't be read';
+			return false;
+		;;
+		u32 context: p:0;
+		p is p + 1 + context;
+		left is left - 1 - context;
+		u32 list: (p:0 << 16) | (p:1 << 8) | p:2;
+		p is p + 3;
+		left is left - 3;
+		if list > left
+			error is 'a Certificate message that can't be read';
+			return false;
+		;;
+		tls_chain_count is 0;
+		while list >= 5 and tls_chain_count < tls_chain.len
+			u32 length: (p:0 << 16) | (p:1 << 8) | p:2;
+			if 3 + length + 2 > list
+				error is 'a Certificate message that can't be read';
+				return false;
+			;;
+			if not (X509.Parse: addr tls_chain:tls_chain_count p + 3 length)
+				error is ('the server\'s certificate: ' X509.error);
+				return false;
+			;;
+			tls_chain_count++;
+			u32 extensions: (p:(3 + length) << 8) | p:(4 + length);
+			u32 entry: 3 + length + 2 + extensions;
+			if entry > list
+				error is 'a Certificate message that can't be read';
+				return false;
+			;;
+			p is p + entry;
+			list is list - entry;
+		;;
+		if tls_chain_count is 0
+			error is 'the server sent no certificate';
+			return false;
+		;;
+	[end: true]
+
+	# check the server's CertificateVerify (body: the scheme, then the signature): its own
+	# certificate's key signed the transcript so far, and that certificate is for the host
+	# and goes back to a trusted root
+	[ReadCertificateVerify: ptr<u8> body: 0; u32 length: 0;]
+		if tls_chain_count is 0
+			error is 'a CertificateVerify without a certificate';
+			return false;
+		;;
+		if length < 4
+			error is 'a CertificateVerify that can't be read';
+			return false;
+		;;
+		u32 scheme: (body:0 << 8) | body:1;
+		u32 signature_length: (body:2 << 8) | body:3;
+		if 4 + signature_length > length
+			error is 'a CertificateVerify that can't be read';
+			return false;
+		;;
+
+		# what's signed: 64 spaces, a label, a 0, and the transcript's hash
+		call TranscriptHash;
+		while u32 i: 0; i < 64; i++;
+			tls_signed:i is 32;
+		;;
+		call Bytes.Copy: addr tls_signed + 64 'TLS 1.3, server CertificateVerify' 33;
+		tls_signed:97 is 0;
+		call Bytes.Copy: addr tls_signed + 98 addr tls_hash 32;
+		call Sha256.Hash: addr tls_signed 130 addr tls_scratch;
+
+		ptr<Certificate> own: addr tls_chain:0;
+		bln good: false;
+		if scheme is 0x0403 and own.key_kind is X509.P256
+			if (X509.ReadEcdsa: body + 4 signature_length)
+				good is (P256.Verify: own.point addr tls_scratch addr X509.x509_r addr X509.x509_s);
+			;;
+		;;
+		if scheme is 0x0804 and own.key_kind is X509.RSA
+			good is (Rsa.VerifyPss: own.modulus own.modulus_length own.exponent own.exponent_length
+			                        addr tls_scratch body + 4 signature_length);
+		;;
+		if good is false
+			error is 'the server\'s CertificateVerify signature doesn\'t check out';
+			return false;
+		;;
+		if not (X509.Chain: addr tls_chain:0 tls_chain_count addr tls_host)
+			error is ('the server\'s certificate: ' X509.error);
+			return false;
+		;;
+		verified is true;
+	[end: true]
+
 	# check the server's Finished, send ours, and switch to the application keys
 	[ReadFinished: ptr<u8> message: 0; u32 size: 0;]
 		call ExpandLabel: addr tls_server_secret 'finished' addr tls_zeros 0 addr tls_finished_key 32;
@@ -583,6 +703,10 @@ phi.Tls:Kernel
 		;;
 		if ok is false
 			error is 'the server's Finished does not match: the handshake was tampered with';
+		;;
+		if ok and verified is false
+			error is 'the server never showed its certificate';
+			ok is false;
 		;;
 
 		if ok

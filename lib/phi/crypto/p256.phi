@@ -1,0 +1,293 @@
+# Checking ECDSA signatures on the P-256 curve (FIPS 186-4, SEC 1), of a SHA-256 digest:
+# what most certificates and TLS servers that don't use RSA sign with. Any kind of
+# program.
+#
+#   use crypto.p256;
+#   bln good: (P256.Verify: public addr digest r s);
+#
+# public is the key as a certificate holds it, 65 bytes (04, then x and y); r and s are
+# the signature's two numbers, 32 big-endian bytes each.
+#
+# The numbers are crypto.bignum's, 16 limbs of 16 bits, kept in Montgomery form (x R mod
+# p) while the points are worked on, and the points in Jacobian coordinates (x / z^2,
+# y / z^3), so that adding them needs no division until the end.
+
+use crypto.bignum;
+
+# a point on the curve, (x / z^2, y / z^3); z is 0 for the point at infinity
+struct.P256Point
+{
+	u32 x[18];
+	u32 y[18];
+	u32 z[18];
+}
+
+phi.P256:Library
+{
+	const u32 LIMBS: 16;
+
+	Modulus p256_field;                       # p, the field's prime
+	Modulus p256_order;                       # n, how many points the curve has
+	bln p256_ready: false;
+	u8 p256_bytes[32];
+	u8 p256_p_minus_2[32];
+	u8 p256_n_minus_2[32];
+	u32 p256_b[18];                           # the curve's b, in Montgomery form
+	u32 p256_one[18];                         # 1, in Montgomery form
+	u32 p256_plain_one[18];                   # 1
+	P256Point p256_g;                         # the curve's generator
+	P256Point p256_q;                         # the key
+	P256Point p256_gq;                        # the generator plus the key
+	P256Point p256_sum;
+	u32 t_plus[18];                           # (Plus's and Minus's own, as the others hold results meanwhile)
+	u32 t_minus[18];
+
+	u32 p256_r[18];
+	u32 p256_s[18];
+	u32 p256_e[18];
+	u32 p256_w[18];
+	u32 p256_u1[18];
+	u32 p256_u2[18];
+
+	# for the point math
+	u32 t_a[18];
+	u32 t_b[18];
+	u32 t_c[18];
+	u32 t_d[18];
+	u32 t_e[18];
+	u32 t_f[18];
+	u32 t_g[18];
+	u32 t_h[18];
+	u32 t_i[18];
+	u32 t_j[18];
+	u32 t_k[18];
+	u32 t_l[18];
+
+	# whether r and s (32 bytes each) are public's signature of a SHA-256 digest
+	[Verify: ptr<u8> public: 0; ptr<u8> digest: 0; ptr<u8> r: 0; ptr<u8> s: 0;]
+		call P256.Ready;
+		if public:0 is not 4 return false;
+
+		# 1 <= r, s < n
+		call Big.FromBytes: addr p256_r LIMBS r 32;
+		call Big.FromBytes: addr p256_s LIMBS s 32;
+		if (Big.IsZero: addr p256_r LIMBS) or (Big.Compare: addr p256_r addr p256_order.n LIMBS) >= 0 return false;
+		if (Big.IsZero: addr p256_s LIMBS) or (Big.Compare: addr p256_s addr p256_order.n LIMBS) >= 0 return false;
+
+		# the key: a point on the curve
+		if not (P256.Load: addr p256_q public + 1) return false;
+
+		# w = 1/s, u1 = e w and u2 = r w, all mod n (e is the digest, below 2n)
+		call Big.FromBytes: addr p256_e LIMBS digest 32;
+		if (Big.Compare: addr p256_e addr p256_order.n LIMBS) >= 0
+			call Big.Subtract: addr p256_e addr p256_order.n LIMBS;
+		;;
+		call Big.PowMod: addr p256_w addr p256_s addr p256_n_minus_2 32 addr p256_order;
+		call P256.TimesModN: addr p256_u1 addr p256_e addr p256_w;
+		call P256.TimesModN: addr p256_u2 addr p256_r addr p256_w;
+
+		# u1 G + u2 Q, one bit of each at a time from the top (Shamir's way)
+		call P256.Add: addr p256_gq addr p256_g addr p256_q;
+		call P256.Infinity: addr p256_sum;
+		int bit: 255;
+		while bit >= 0
+			call P256.Double: addr p256_sum addr p256_sum;
+			u32 b1: (p256_u1:(bit >> 4) >> (bit & 15)) & 1;
+			u32 b2: (p256_u2:(bit >> 4) >> (bit & 15)) & 1;
+			if b1 is 1 and b2 is 1
+				call P256.Add: addr p256_sum addr p256_sum addr p256_gq;
+			;;
+			if b1 is 1 and b2 is 0
+				call P256.Add: addr p256_sum addr p256_sum addr p256_g;
+			;;
+			if b1 is 0 and b2 is 1
+				call P256.Add: addr p256_sum addr p256_sum addr p256_q;
+			;;
+			bit--;
+		;;
+		if (Big.IsZero: addr p256_sum.z LIMBS) return false;
+
+		# its x, out of Jacobian coordinates and Montgomery form, mod n, must be r
+		call Big.MontPow: addr t_a addr p256_sum.z addr p256_p_minus_2 32 addr p256_field;   # 1/z
+		call P256.Mul: addr t_b addr t_a addr t_a;
+		call P256.Mul: addr t_b addr t_b addr p256_sum.x;
+		call P256.Mul: addr t_b addr t_b addr p256_plain_one;                                  # plain x
+		if (Big.Compare: addr t_b addr p256_order.n LIMBS) >= 0
+			call Big.Subtract: addr t_b addr p256_order.n LIMBS;
+		;;
+	[end: (Big.Compare: addr t_b addr p256_r LIMBS) is 0]
+
+	# point = the 64 bytes x and y, in Montgomery form with z 1; false if it isn't on
+	# the curve (y^2 = x^3 - 3x + b) or a number isn't below p
+	[Load: ptr<P256Point> point: 0; ptr<u8> xy: 0;]
+		call Big.FromBytes: addr point.x LIMBS xy 32;
+		call Big.FromBytes: addr point.y LIMBS xy + 32 32;
+		if (Big.Compare: addr point.x addr p256_field.n LIMBS) >= 0 return false;
+		if (Big.Compare: addr point.y addr p256_field.n LIMBS) >= 0 return false;
+		call P256.Mul: addr point.x addr point.x addr p256_field.r2;
+		call P256.Mul: addr point.y addr point.y addr p256_field.r2;
+		call Big.Copy: addr point.z addr p256_one LIMBS;
+		call P256.Mul: addr t_a addr point.y addr point.y;          # y^2
+		call P256.Mul: addr t_b addr point.x addr point.x;
+		call P256.Mul: addr t_b addr t_b addr point.x;              # x^3
+		call P256.Plus: addr t_c addr point.x addr point.x;
+		call P256.Plus: addr t_c addr t_c addr point.x;             # 3x
+		call P256.Minus: addr t_b addr t_b addr t_c;
+		call P256.Plus: addr t_b addr t_b addr p256_b;
+	[end: (Big.Compare: addr t_a addr t_b LIMBS) is 0]
+
+	# r = 2a (r may be a); with a = -3, as P-256 has (dbl-2001-b)
+	[Double: ptr<P256Point> r: 0; ptr<P256Point> a: 0;]
+		call P256.Mul: addr t_a addr a.z addr a.z;                  # delta = z^2
+		call P256.Mul: addr t_b addr a.y addr a.y;                  # gamma = y^2
+		call P256.Mul: addr t_c addr a.x addr t_b;                  # beta = x gamma
+		call P256.Minus: addr t_d addr a.x addr t_a;
+		call P256.Plus: addr t_e addr a.x addr t_a;
+		call P256.Mul: addr t_d addr t_d addr t_e;
+		call P256.Plus: addr t_e addr t_d addr t_d;
+		call P256.Plus: addr t_d addr t_e addr t_d;                 # alpha = 3 (x - delta)(x + delta)
+		# z3 = (y + z)^2 - gamma - delta, before y and z change
+		call P256.Plus: addr t_e addr a.y addr a.z;
+		call P256.Mul: addr t_e addr t_e addr t_e;
+		call P256.Minus: addr t_e addr t_e addr t_b;
+		call P256.Minus: addr r.z addr t_e addr t_a;
+		# x3 = alpha^2 - 8 beta
+		call P256.Plus: addr t_c addr t_c addr t_c;
+		call P256.Plus: addr t_c addr t_c addr t_c;                 # 4 beta
+		call P256.Plus: addr t_f addr t_c addr t_c;                 # 8 beta
+		call P256.Mul: addr t_e addr t_d addr t_d;
+		call P256.Minus: addr r.x addr t_e addr t_f;
+		# y3 = alpha (4 beta - x3) - 8 gamma^2
+		call P256.Minus: addr t_e addr t_c addr r.x;
+		call P256.Mul: addr t_e addr t_d addr t_e;
+		call P256.Mul: addr t_f addr t_b addr t_b;
+		call P256.Plus: addr t_f addr t_f addr t_f;
+		call P256.Plus: addr t_f addr t_f addr t_f;
+		call P256.Plus: addr t_f addr t_f addr t_f;
+		call P256.Minus: addr r.y addr t_e addr t_f;
+	[end]
+
+	# r = a + b (r may be either) (add-2007-bl)
+	[Add: ptr<P256Point> r: 0; ptr<P256Point> a: 0; ptr<P256Point> b: 0;]
+		if (Big.IsZero: addr a.z LIMBS)
+			call P256.CopyPoint: r b;
+			return;
+		;;
+		if (Big.IsZero: addr b.z LIMBS)
+			call P256.CopyPoint: r a;
+			return;
+		;;
+		call P256.Mul: addr t_a addr a.z addr a.z;                  # z1z1
+		call P256.Mul: addr t_b addr b.z addr b.z;                  # z2z2
+		call P256.Mul: addr t_c addr a.x addr t_b;                  # u1
+		call P256.Mul: addr t_d addr b.x addr t_a;                  # u2
+		call P256.Mul: addr t_e addr a.y addr b.z;
+		call P256.Mul: addr t_e addr t_e addr t_b;                  # s1
+		call P256.Mul: addr t_f addr b.y addr a.z;
+		call P256.Mul: addr t_f addr t_f addr t_a;                  # s2
+		call P256.Minus: addr t_g addr t_d addr t_c;                # h = u2 - u1
+		call P256.Minus: addr t_h addr t_f addr t_e;                # s2 - s1
+		if (Big.IsZero: addr t_g LIMBS)
+			# the same x: the same point (double it), or each other's opposite (infinity)
+			if (Big.IsZero: addr t_h LIMBS)
+				call P256.Double: r a;
+			;;
+			else
+				call P256.Infinity: r;
+			;;
+			return;
+		;;
+		call P256.Plus: addr t_h addr t_h addr t_h;                 # rr = 2 (s2 - s1)
+		call P256.Plus: addr t_i addr t_g addr t_g;
+		call P256.Mul: addr t_i addr t_i addr t_i;                  # i = (2h)^2
+		call P256.Mul: addr t_j addr t_g addr t_i;                  # j = h i
+		call P256.Mul: addr t_k addr t_c addr t_i;                  # v = u1 i
+		# z3 = ((z1 + z2)^2 - z1z1 - z2z2) h, before r changes
+		call P256.Plus: addr t_l addr a.z addr b.z;
+		call P256.Mul: addr t_l addr t_l addr t_l;
+		call P256.Minus: addr t_l addr t_l addr t_a;
+		call P256.Minus: addr t_l addr t_l addr t_b;
+		call P256.Mul: addr t_l addr t_l addr t_g;
+		# x3 = rr^2 - j - 2v
+		call P256.Mul: addr t_a addr t_h addr t_h;
+		call P256.Minus: addr t_a addr t_a addr t_j;
+		call P256.Minus: addr t_a addr t_a addr t_k;
+		call P256.Minus: addr t_a addr t_a addr t_k;
+		# y3 = rr (v - x3) - 2 s1 j
+		call P256.Minus: addr t_b addr t_k addr t_a;
+		call P256.Mul: addr t_b addr t_h addr t_b;
+		call P256.Mul: addr t_c addr t_e addr t_j;
+		call P256.Plus: addr t_c addr t_c addr t_c;
+		call P256.Minus: addr t_b addr t_b addr t_c;
+		call Big.Copy: addr r.x addr t_a LIMBS;
+		call Big.Copy: addr r.y addr t_b LIMBS;
+		call Big.Copy: addr r.z addr t_l LIMBS;
+	[end]
+
+	[Infinity: ptr<P256Point> r: 0;]
+		call Big.Copy: addr r.x addr p256_one LIMBS;
+		call Big.Copy: addr r.y addr p256_one LIMBS;
+		while u32 i: 0; i < LIMBS; i++;
+			r.z:i is 0;
+		;;
+	[end]
+
+	[CopyPoint: ptr<P256Point> r: 0; ptr<P256Point> a: 0;]
+		call Big.Copy: addr r.x addr a.x LIMBS;
+		call Big.Copy: addr r.y addr a.y LIMBS;
+		call Big.Copy: addr r.z addr a.z LIMBS;
+	[end]
+
+	# r = a b mod p (Montgomery's product)
+	[Mul: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.MontMul: r a b addr p256_field;
+	[end]
+
+	# r = a + b mod p (r may be a or b)
+	[Plus: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.Copy: addr t_plus a LIMBS;
+		u32 carry: (Big.Add: addr t_plus b LIMBS);
+		if carry is not 0 or (Big.Compare: addr t_plus addr p256_field.n LIMBS) >= 0
+			call Big.Subtract: addr t_plus addr p256_field.n LIMBS;
+		;;
+		call Big.Copy: r addr t_plus LIMBS;
+	[end]
+
+	# r = a - b mod p (r may be a or b)
+	[Minus: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.Copy: addr t_minus a LIMBS;
+		if (Big.Subtract: addr t_minus b LIMBS) is not 0
+			call Big.Add: addr t_minus addr p256_field.n LIMBS;
+		;;
+		call Big.Copy: r addr t_minus LIMBS;
+	[end]
+
+	# r = a b mod n (both plain)
+	[TimesModN: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.MontMul: r a b addr p256_order;                     # a b / R
+		call Big.MontMul: r r addr p256_order.r2 addr p256_order;    # times R^2 / R: a b
+	[end]
+
+	# the curve's numbers, the first time
+	[Ready]
+		if p256_ready return;
+		p256_ready is true;
+		call Bytes.FromHex: 'ffffffff00000001000000000000000000000000ffffffffffffffffffffffff' addr p256_bytes 32;
+		call Big.Setup: addr p256_field addr p256_bytes 32;
+		call Bytes.FromHex: 'ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc632551' addr p256_bytes 32;
+		call Big.Setup: addr p256_order addr p256_bytes 32;
+		call Bytes.FromHex: 'ffffffff00000001000000000000000000000000fffffffffffffffffffffffd' addr p256_p_minus_2 32;
+		call Bytes.FromHex: 'ffffffff00000000ffffffffffffffffbce6faada7179e84f3b9cac2fc63254f' addr p256_n_minus_2 32;
+		while u32 i: 0; i < LIMBS; i++;
+			p256_plain_one:i is 0;
+		;;
+		p256_plain_one:0 is 1;
+		call P256.Mul: addr p256_one addr p256_plain_one addr p256_field.r2;
+		call Bytes.FromHex: '5ac635d8aa3a93e7b3ebbd55769886bc651d06b0cc53b0f63bce3c3e27d2604b' addr p256_bytes 32;
+		call Big.FromBytes: addr p256_b LIMBS addr p256_bytes 32;
+		call P256.Mul: addr p256_b addr p256_b addr p256_field.r2;
+		u8 g[64];
+		call Bytes.FromHex: '6b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c2964fe342e2fe1a7f9b8ee7eb4a7c0f9e162bce33576b315ececbb6406837bf51f5' addr g 64;
+		call P256.Load: addr p256_g addr g;
+	[end]
+}

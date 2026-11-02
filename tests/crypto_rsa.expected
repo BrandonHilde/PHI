@@ -1,0 +1,10 @@
+bytes: 1792
+pkcs1, 2048 bits: 1
+pss, 2048 bits: 1
+pkcs1, 4096 bits: 1
+pss as pkcs1: 0
+pkcs1 as pss: 0
+another key: 0
+another digest: 0 0
+a changed signature: 0
+past the modulus: 0

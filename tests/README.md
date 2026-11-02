@@ -62,7 +62,10 @@ Two optional files change what a test does:
 
 A test made only of `phi.Name:Library` classes runs twice, as a 16-bit program and as a
 32-bit kernel (`numbers (16-bit)`, `numbers (32-bit)`), against the same `.expected` file.
-Most language tests are written this way, so both code generators stay in step.
+Most language tests are written this way, so both code generators stay in step. One too big
+for a 16-bit program (a 16-bit program's classes share 32 KB) says so with a comment line,
+`# runs only in 32 and 64 bits: why`, and runs as a 32-bit kernel and on the other systems
+(see `crypto_rsa.phi`).
 
 Such a test also runs as a Linux and a Windows program (`numbers (linux)`, `numbers
 (windows)`), where this computer can run them (Linux under WSL on Windows), so PHI OS and

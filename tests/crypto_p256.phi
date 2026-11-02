@@ -1,0 +1,34 @@
+# runs only in 32 and 64 bits: its numbers take more room than a 16-bit program has
+# ECDSA on P-256 with SHA-256: a signature OpenSSL 3.2 made (openssl ecparam -name
+# prime256v1 -genkey, then openssl dgst -sha256 -sign), checked; then the digest, the
+# signature and the key each changed a little, which must fail.
+use crypto.p256;
+use crypto.sha256;
+
+phi.CryptoP256:Library
+{
+	u8 public[65];
+	u8 r[32];
+	u8 s[32];
+	u8 digest[32];
+	int got: 0;
+
+	got is (Bytes.FromHex: '04e096196095b736bc3bb35d6d81fbff6d57dab5e315734ee94b6a46d1150a8ad47a432d2490f48f41a581009f82204f624a0fa88097ed75bcfadfbf511f9b0517' addr public 65);
+	got++ (Bytes.FromHex: '74a38ba6e9a6751461041ee15e7b1a32e3f0c2a95b453d23e97245b31abf2032' addr r 32);
+	got++ (Bytes.FromHex: '77e0f6bead0d10dc4f7c72ee92b49b0ba93d644933bf591e935aa241d22e5aae' addr s 32);
+	log 'bytes: ' got '\n';
+	call Sha256.Hash: 'PHI signs this message.' 23 addr digest;
+	log 'good: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+
+	digest:0 is digest:0 ^ 1;
+	log 'another digest: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+	digest:0 is digest:0 ^ 1;
+	s:31 is s:31 ^ 1;
+	log 'a changed s: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+	s:31 is s:31 ^ 1;
+	log 'r and s swapped: ' (P256.Verify: addr public addr digest addr s addr r) '\n';
+	public:64 is public:64 ^ 1;
+	log 'a key off the curve: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+	public:64 is public:64 ^ 1;
+	log 'good again: ' (P256.Verify: addr public addr digest addr r addr s) '\n';
+}

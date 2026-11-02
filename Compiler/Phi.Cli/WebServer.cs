@@ -127,6 +127,9 @@ namespace Phi.Cli
             return inside && File.Exists(full) ? full : null;
         }
 
+        /// <summary>The certificate the https server shows (self-signed, for 10.0.2.2 and localhost), as DER: a test trusts it as its root.</summary>
+        public static byte[] CertificateDer => Certificate.Value.RawData;
+
         static readonly Lazy<X509Certificate2> Certificate = new(() =>
         {
             using ECDsa key = ECDsa.Create(ECCurve.NamedCurves.nistP256);

@@ -1,0 +1,43 @@
+# runs only in 32 and 64 bits: its numbers take more room than a 16-bit program has
+# RSA signatures of a SHA-256 digest checked: PKCS #1 v1.5 with 2048 and 4096-bit keys,
+# and PSS (MGF1-SHA256, a 32-byte salt), all made by OpenSSL 3.2 (openssl dgst -sha256
+# -sign, with -sigopt rsa_padding_mode:pss -sigopt rsa_pss_saltlen:32 for PSS); then
+# each one changed a little, which must fail.
+use crypto.rsa;
+
+phi.CryptoRsa:Library
+{
+	u8 n2048[256];
+	u8 n4096[512];
+	u8 pkcs1[256];
+	u8 pss[256];
+	u8 pkcs1_4096[512];
+	u8 e: 1 0 1;                    # 65537
+	u8 digest[32];
+	int got: 0;
+
+	got is (Bytes.FromHex: 'c69e8e84d43ea7c0484e412b39db908a68bf492ad8a4f917fd76de20e051e2ae6b7c1fc06e89d5d9a90a66cc1d77727c0cd3351a5af67cec6fc0dc5cdbbd06202c1d44c57cf966f0ef28cbc765d2e3fcca3815be2343edc4a54be74ed2db9f85260c9fb3909152382a952e0410bfdd641bd94f980e798bf09752d90b0a125dc88bdd276474cb2f2fd36ac64f5a9f69e874b9cecaf0900a623515c4088321da26010241dc7aa352b511a4cd6365c68c07bc8b79b6f7751726d504bb9dbbf64c9fee022eb00b94697d8d41898d5ea47c1dc9f2387f15c3bbb48aac31986c237fcef704e5a6e590469f375f73144b238c0358ad34c7a28fbfa171a306a5996e9581' addr n2048 256);
+	got++ (Bytes.FromHex: 'c76bfa7c1a2e9b69846e32045cd8e395d3d4b20165c1a9708388cae0060cea0e46ab09589856dacd5a874d8ab86c34e5054132e4caeb803a8f957e1fd087a9e30523b4110ef0542c950de90e0f19923f5298814741c59a0b7ed15b91e7ea411a524b8e36f4406e5b3a6a07d42c8cf7c63a7b7a66d4787af1d3fb18c00333d2c7b1e99f5375b9fafe6e0fd52a6204c6de12ec77b1ffdb497f65a05e30eb5f3d5f158b3c7c470b42bcbfbde38ea60f590de5390dc9d15c417b6fb83ba9bc0bde27c2c149ea037be3856a8f7a01a7e397045fa89d314ef71b7a4d10bf9c680d809fc5b1b089b2d149afc724c0b51c0ffec74271b65984c1e9ad04bf3c289f37f31c5e1fb0458bbcfc7de04989fa1dc887fe7ff357e3a0c19f6c90b2e26326ac3f609cd46eda145c912120f7c7e7f2f5945c3c0250f65696d71c6a2098c91728faf3eb70e4472c5cef63b7c306d041fc535483f4aab0aa21cdcb4a9ab16864dd24c07968775f76a5318285b89d4ff99eeee4f3091515aedf7126f21e8c8ef48af49f4de95626f92cf744e42ab1c98bba200e97461378115989c0cad436a11c093eaa201835eff918baf67e5d5638c9d4fa247eea07dc1649da15f964f184724c6c1b1fb62cccd3c693f42b160ac3e92569ccccdb1bf9ba31d3e398a964a4e9bbcb9b2488829a65ce16cf256fc6747600796f34197e74410bc70f1e0c5df86e71a8a5' addr n4096 512);
+	got++ (Bytes.FromHex: '56604dcec8924b27d792ff5bb68ae474e3f19534449520d1b64e34cf02af931ad565dab1a231b4e2bdcc90b3ec8c434cbba1358bbc987b1463354bc3870e1254b539b3f1c1c11de4bc7aa9c993ef6b87bbab840751db2db12d87adf6de4d4441a5415b99b6f0acc6199ba3dde94d29e3dd708cdefbd9c232e3061ad58168c8a9635219fb3452b0dc0ef3ee0b7bc349cefaa5c365210be5b5285d00b7f23fc9aba91206ccc30286c65710d97f92a6367f87c9692d3a74d2a36c6113a7beda2539cb256f7f1edd92300f1bb0df47df97c430dacb6fa6ba3edca25af3aa2a6eb077b8740face8d0692bec945805a372ba40e70cb3694ae6b196048cfe0a1840216e' addr pkcs1 256);
+	got++ (Bytes.FromHex: '28c9272a55f6358b782f69606de9539815dd0defebbb2ba13946f11bffef81903e2ec1a7195567c00f60333835687e5331061a3e5793e54dc179e9969996987634e74a52e2177547a11060db0608e07473e1cc7d118f37018720f35beabf97b0707e95977ac9d6fa27dcf6a7b66cec21f26216efc624f205ebd0dc99e0aada80626944d30ee31f6f8ee3f49d0bb5ce10d8ed52bd70e67538ac65967688849746c7c94780500c0cdb4021203f79fe22c1ca1ae5d77b1818991e3b477053f80db46ac7d5ef4e7d88779e7f3b96d09b95f61ceb69fceb7acd4a4c09ea4a4778d7a1152706569511651f5dc77fb28fc8ed911a68e832fbc759782fa2614608df2d11' addr pss 256);
+	got++ (Bytes.FromHex: '5423792c6e82a6599c9b234bcef3dd475acdd4ddddb4ef8999f51ec6073625a6dce17cccb52fbf5de85679434eabdb132cd68c414304fa556442cda8ae1120e452a2fd9281f064c09d19a2d9f88828a84daad43bf9888e4fa7bc7cf0f77879587ed21fa09250b0c77383df9defe80c2584d1271df4e4563af2a62f4a6c0f27612e34fb4fe47cf900318c77c9f17f64a6b8da869b2ad27d4ebd90bbad922df13236f0b6f70d097fb37e4e178d0899750a3d5d590d2b171c8891a2176ced17fa901bdf5bb879ae71b37ba2956d4bf4828aff8d498dd7f7fc17c456463866591153893e15e6c4ab24828c35f4117c4ec0c6f64c85ffe921e4d31a2e83b1a371e3941f6b5ac98e9cd4735a05fbd999229ca41862de8e568fe15f0b70b45b5b608feb80bafb72e7485ea7c52e3e31a86065d2ec60b7e8a6021c02aea33f676638e1e175ca1b9e7aeb347d64785b49634cff595417da9f01045b6c7a84b21cc8434688eaf504783e09f32492e0904e4164bb8e09072be23d341183e6e1bdd487a219c82a4ff6d88d805adce84a4ce4d869ba57814fc8b4dd537667f3dfa4176826a7f3c0fcdde5faeebca2d4f186bd992b4ff86f38146c86ec249af6824fdef5d9dc30115ac821296a0cdeda2e59e6f303e192f1c40ac4582817d9f9cfa11af6fc833fe92fbb059cac40b73f4fd82157e590ca1b60d704db496ac9cc4b11c5c2031793' addr pkcs1_4096 512);
+	log 'bytes: ' got '\n';
+	call Sha256.Hash: 'PHI signs this message.' 23 addr digest;
+
+	log 'pkcs1, 2048 bits: ' (Rsa.VerifyPkcs1: addr n2048 256 addr e 3 addr digest addr pkcs1 256) '\n';
+	log 'pss, 2048 bits: ' (Rsa.VerifyPss: addr n2048 256 addr e 3 addr digest addr pss 256) '\n';
+	log 'pkcs1, 4096 bits: ' (Rsa.VerifyPkcs1: addr n4096 512 addr e 3 addr digest addr pkcs1_4096 512) '\n';
+
+	# the wrong kind, the wrong key, another digest, a changed signature
+	log 'pss as pkcs1: ' (Rsa.VerifyPkcs1: addr n2048 256 addr e 3 addr digest addr pss 256) '\n';
+	log 'pkcs1 as pss: ' (Rsa.VerifyPss: addr n2048 256 addr e 3 addr digest addr pkcs1 256) '\n';
+	log 'another key: ' (Rsa.VerifyPkcs1: addr n4096 512 addr e 3 addr digest addr pkcs1 256) '\n';
+	digest:5 is digest:5 ^ 1;
+	log 'another digest: ' (Rsa.VerifyPkcs1: addr n2048 256 addr e 3 addr digest addr pkcs1 256)
+	    ' ' (Rsa.VerifyPss: addr n2048 256 addr e 3 addr digest addr pss 256) '\n';
+	digest:5 is digest:5 ^ 1;
+	pss:100 is pss:100 ^ 0x40;
+	log 'a changed signature: ' (Rsa.VerifyPss: addr n2048 256 addr e 3 addr digest addr pss 256) '\n';
+	# a signature past the modulus can't be one
+	log 'past the modulus: ' (Rsa.VerifyPkcs1: addr n2048 256 addr e 3 addr digest addr n2048 256) '\n';
+}

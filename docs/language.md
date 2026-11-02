@@ -1489,9 +1489,15 @@ else
 ```
 
 `samples/web.phi` asks for URLs and prints what comes back. `https://` URLs go over TLS
-1.3 (`net.tls`), with AES-128-GCM or ChaCha20-Poly1305, whichever the server picks. **The
-server's certificate isn't checked yet** (`Tls.verified` is false): the connection is
-encrypted, but someone who can intercept it could pretend to be the server.
+1.3 (`net.tls`), with AES-128-GCM or ChaCha20-Poly1305, whichever the server picks. The
+server's certificate is checked (`crypto.x509`): it must be for the host (its
+subjectAltName names, or its IP addresses), go back to a root the program trusts, and
+have signed the handshake. If any of that fails, so does the connection, and the error
+says why; `Tls.verified` says it checked out. A program trusts roots before connecting:
+`call Roots.TrustAll;` (`crypto.roots`, a few that many sites go back to) or `call
+X509.Trust: der length;` for its own. Keys can be RSA (up to 4096 bits) or P-256, with
+SHA-256; a chain through a P-384 CA (Let's Encrypt's E5 and E6, say) doesn't check out
+yet, and neither are dates checked (PHI has no clock that knows the date).
 
 The layers, each usable on its own:
 
@@ -1921,9 +1927,15 @@ call X25519.Base: addr public addr secret;   # the public half of a key pair
 | `crypto.aesgcm` | `AesGcm` | AES-128-GCM: `Seal` and `Open`, like `ChaChaPoly` (with a 16-byte key) |
 | `crypto.x25519` | `X25519` | `Base: public secret`, `ScalarMult: output secret their_public` (the shared secret) |
 | `crypto.random` | `Random` | `Fill: buffer length`; `random_hardware` says whether the CPU's RDRAND was used |
+| `crypto.bignum` | `Big` | numbers of up to 4096 bits in 16-bit limbs: `Setup: modulus bytes count` (a `Modulus`), `FromBytes`, `ToBytes`, `Compare`, `Add`, `Subtract`, `MontMul`, `PowMod: r base exponent count modulus` → |
+| `crypto.rsa` | `Rsa` | checking a signature of a SHA-256 digest: `VerifyPkcs1: modulus length exponent length digest signature length` →, `VerifyPss` (MGF1-SHA256, a 32-byte salt) → |
+| `crypto.p256` | `P256` | checking an ECDSA P-256 signature: `Verify: public digest r s` → (public: 65 bytes, 04 then x and y) |
+| `crypto.x509` | `X509` | certificates: `Parse: certificate der length` →, `CheckSignature: certificate issuer` →, `MatchesHost: certificate host` →, `Trust: der length`, `Untrust`, `Chain: certificates count host` → (false: `error` says why) |
+| `crypto.roots` | `Roots` | `TrustAll`: a few RSA roots many sites go back to (ISRG Root X1, DigiCert Global Root G2 and Global Root CA, GlobalSign Root CA - R3, USERTrust RSA) |
 
-PHI's math is 32-bit, so the big-number math keeps numbers as many 8-bit pieces, which
-keeps every product within 32 bits. An X25519 takes about 35 ms in QEMU. AES looks
+The big-number math keeps numbers as many small pieces (8 bits in X25519, 16 in
+`crypto.bignum`), which keeps every product within 32 bits. An X25519 takes about 35 ms
+in QEMU. AES looks
 bytes up in tables, which a program sharing the CPU could time through the cache. `Random` mixes
 RDRAND (QEMU, as `phi` starts it, answers with the host's random numbers) and timing into
 a ChaCha20 generator. Without RDRAND it has only timing, which isn't good enough for real
@@ -2540,9 +2552,9 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
-- networking in user programs (only 32-bit kernels have the network), checking TLS
-  certificates (`https://` is encrypted, but the server isn't verified), accepting incoming
-  connections (TCP is client-only), and network cards other than the RTL8139
+- networking in user programs (only 32-bit kernels have the network), certificates with
+  P-384 keys or SHA-384 and their dates, accepting incoming connections (TCP is
+  client-only), and network cards other than the RTL8139
 - recording sound, sound cards other than the AC'97, and compressed audio (MP3, Ogg, ADPCM WAV files)
 
 ## How it is built

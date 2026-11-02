@@ -130,6 +130,12 @@ namespace Phi.Cli
         static readonly Regex ProgramClass = new(@"^\s*phi\.\w+\s*:\s*(Bootloader|OS|Kernel)\b", RegexOptions.Multiline);
         /// <summary>A test that builds as a program but needs a PHI OS machine (its memory, say) says so with this comment.</summary>
         static readonly Regex PhiOsOnly = new(@"^#\s*runs only on PHI OS\b", RegexOptions.Multiline);
+        /// <summary>
+        /// A library test too big for a 16-bit program (its code and variables in one 64 KB
+        /// segment, at most 32 KB of OS classes) says so with this comment: it runs as a 32-bit
+        /// kernel and on the other systems.
+        /// </summary>
+        static readonly Regex Not16Bit = new(@"^#\s*runs only in 32 and 64 bits\b", RegexOptions.Multiline);
         static readonly Regex UserProgramClass = new(@"^\s*phi\.\w+\s*:\s*Program\b", RegexOptions.Multiline);
 
         /// <summary>
@@ -179,6 +185,7 @@ namespace Phi.Cli
             // a program boots only inside a kernel (from its rootfs), so on its own it's a test for the other systems
             if (UserProgramClass.IsMatch(text)) return Array.Empty<Mode?>();
             bool libraryOnly = LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text);
+            if (libraryOnly && Not16Bit.IsMatch(text)) return new Mode?[] { BothModes[1] };
             return libraryOnly ? BothModes : new Mode?[] { null };
         }
 
@@ -202,14 +209,16 @@ namespace Phi.Cli
             string inputFile = inputOverride ?? Path.Combine(dir, name + ".input");
 
             // NAME.web/: files the program can fetch, at TestWeb.url ('http://10.0.2.2:PORT') and
-            // TestWeb.secure_url ('https://10.0.2.2:PORT')
+            // TestWeb.secure_url ('https://10.0.2.2:PORT'), whose certificate is TestWeb.root (DER,
+            // for X509.Trust)
             string webDir = Path.Combine(dir, name + ".web");
             using WebServer? web = Directory.Exists(webDir) ? new WebServer(webDir) : null;
             using WebServer? secureWeb = web != null ? new WebServer(webDir, secure: true) : null;
             string wrapper = mode?.Wrapper ?? "";
             if (web != null)
                 wrapper += $"\nphi.TestWeb:Library\n{{\n\tstr url: 'http://10.0.2.2:{web.Port}';\n" +
-                           $"\tstr secure_url: 'https://10.0.2.2:{secureWeb!.Port}';\n}}\n";
+                           $"\tstr secure_url: 'https://10.0.2.2:{secureWeb!.Port}';\n" +
+                           $"\tu8 root: {string.Join(" ", WebServer.CertificateDer.Select(b => $"0x{b:X2}"))};\n}}\n";
 
             if (mode != null && mode.Host != Host.PhiOS)
                 return RunHosted(phiFile, timeout, mode, keepOutput, containsOverride);

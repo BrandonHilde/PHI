@@ -1,0 +1,16 @@
+bytes: 1903
+read: 1 1 1 
+keys: 1 2 2, signed with: 1 1 2
+ca: 1 1 0, path lengths: -1 0
+rsa modulus bytes: 257, exponent bytes: 3
+signatures: 1 1 1, wrong signer: 0
+hosts: 1 1 1, not: 0 0 0 0
+untrusted: 0 (no trusted root signed the chain)
+trust: 1
+chain: 1 1
+another host: 0 (the certificate isn't for this host)
+no intermediate: 0 (no trusted root signed the chain)
+the intermediate alone: 0 (the certificate isn't for this host)
+changed: 0 (a certificate's signature doesn't check out)
+as it was: 1
+roots forgotten: 0

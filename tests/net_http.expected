@@ -26,7 +26,8 @@ GET /missing.html: status 404
 a closed port: -1 could not connect
 
 https:
-GET /: 198 bytes, status 200, certificate checked: 0
+nothing trusted: -1 the server's certificate: no trusted root signed the chain
+GET /: 198 bytes, status 200, certificate checked: 1
 HTTP/1.0 200 OK
 Content-Type: text/html
 Content-Length: 114

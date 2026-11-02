@@ -45,6 +45,12 @@ phi.NetHttp:Kernel
 	# AES-128-GCM; ChaCha20-Poly1305 is checked by crypto_chacha)
 	log '\nhttps:\n';
 	call SecureAddress: '/';
+	# with no root trusted, the server's certificate can't be checked: no connection
+	call size is Http.Get: addr url page PAGE_SIZE;
+	log 'nothing trusted: ' size ' ' Http.error '\n';
+	# the test's server's own certificate (self-signed, for 10.0.2.2) as the root
+	call X509.Trust: addr TestWeb.root TestWeb.root.len;
+	call SecureAddress: '/';
 	call size is Http.Get: addr url page PAGE_SIZE;
 	log 'GET /: ' size ' bytes, status ' Http.status ', certificate checked: ' Tls.verified ' ' Http.error '\n';
 	log page '\n';

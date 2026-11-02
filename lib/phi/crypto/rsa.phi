@@ -1,0 +1,144 @@
+# Checking RSA signatures (RFC 8017) made with SHA-256: PKCS #1 v1.5 (what certificates
+# are mostly signed with) and PSS (what TLS 1.3 servers sign their handshake with). Keys
+# of up to 4096 bits. Any kind of program.
+#
+#   use crypto.rsa;
+#   u8 digest[32];
+#   call Sha256.Hash: message length addr digest;
+#   bln good: (Rsa.VerifyPkcs1: modulus 256 exponent 3 addr digest signature 256);
+#   good is (Rsa.VerifyPss: modulus 256 exponent 3 addr digest signature 256);
+#
+# The modulus and exponent are big-endian bytes, as a certificate holds them (a leading
+# 0 is fine). PSS here is with MGF1 over SHA-256 and a 32-byte salt, as TLS 1.3 has it.
+
+use crypto.bignum;
+use crypto.sha256;
+
+phi.Rsa:Library
+{
+	Modulus rsa_modulus;
+	u32 rsa_s[258];
+	u8 rsa_em[512];                         # the signature opened: s^e mod n, as bytes
+	u8 rsa_mask[512];
+	u8 rsa_check[32];
+	u8 rsa_counter[4];
+	u32 rsa_k: 0;                           # bytes in the modulus
+	u32 rsa_bits: 0;                        # bits in the modulus
+	Sha256State rsa_sha;
+
+	# SHA-256's DigestInfo, which comes before the digest in a PKCS #1 v1.5 signature
+	u8 rsa_info: 0x30 0x31 0x30 0x0D 0x06 0x09 0x60 0x86 0x48 0x01 0x65 0x03 0x04 0x02 0x01 0x05 0x00 0x04 0x20;
+
+	# whether signature (signature_length bytes) is modulus's PKCS #1 v1.5 signature of a
+	# SHA-256 digest
+	[VerifyPkcs1: ptr<u8> modulus: 0; u32 modulus_length: 0; ptr<u8> exponent: 0; u32 exponent_length: 0;
+	              ptr<u8> digest: 0; ptr<u8> signature: 0; u32 signature_length: 0;]
+		if not (Rsa.Open: modulus modulus_length exponent exponent_length signature signature_length) return false;
+		# 00 01, then FF to fill, 00, the DigestInfo and the digest
+		u32 tail: 19 + 32;
+		if rsa_k < tail + 11 return false;
+		bln good: rsa_em:0 is 0 and rsa_em:1 is 1;
+		u32 fill: rsa_k - tail - 1;
+		while u32 i: 2; i < fill; i++;
+			if rsa_em:i is not 0xFF
+				good is false;
+			;;
+		;;
+		if rsa_em:fill is not 0
+			good is false;
+		;;
+		if not (Bytes.Equal: addr rsa_em + fill + 1 addr rsa_info 19)
+			good is false;
+		;;
+		if not (Bytes.Equal: addr rsa_em + fill + 20 digest 32)
+			good is false;
+		;;
+	[end: good]
+
+	# whether signature is modulus's PSS signature of a SHA-256 digest (MGF1-SHA256, a
+	# 32-byte salt)
+	[VerifyPss: ptr<u8> modulus: 0; u32 modulus_length: 0; ptr<u8> exponent: 0; u32 exponent_length: 0;
+	            ptr<u8> digest: 0; ptr<u8> signature: 0; u32 signature_length: 0;]
+		if not (Rsa.Open: modulus modulus_length exponent exponent_length signature signature_length) return false;
+		# the encoded message has one bit less than the modulus: its own length in bytes,
+		# and where it starts in rsa_em (a byte on if that bit leaves a whole byte)
+		u32 em_bits: rsa_bits - 1;
+		u32 em_length: (em_bits + 7) / 8;
+		ptr<u8> em: addr rsa_em + (rsa_k - em_length);
+		if rsa_k > em_length and rsa_em:0 is not 0 return false;
+		if em_length < 32 + 32 + 2 return false;
+		if em:(em_length - 1) is not 0xBC return false;
+
+		# masked DB, then H; DB = masked DB ^ MGF1(H)
+		u32 db_length: em_length - 32 - 1;
+		ptr<u8> h: em + db_length;
+		u32 unused: 8 * em_length - em_bits;                 # high bits of DB that must be 0
+		u32 top: 0xFF >> unused;
+		if (em:0 & (0xFF ^ top)) is not 0 return false;
+		call Rsa.Mgf1: addr rsa_mask db_length h;
+		while u32 i: 0; i < db_length; i++;
+			rsa_mask:i is rsa_mask:i ^ em:i;
+		;;
+		rsa_mask:0 is rsa_mask:0 & top;
+
+		# DB is zeros, 01, then the salt
+		u32 salt_at: db_length - 32;
+		while u32 i: 0; i < salt_at - 1; i++;
+			if rsa_mask:i is not 0 return false;
+		;;
+		if rsa_mask:(salt_at - 1) is not 1 return false;
+
+		# H = SHA-256 of eight zeros, the digest and the salt
+		call Sha256.Init: addr rsa_sha;
+		call Bytes.Zero: addr rsa_check 8;
+		call Sha256.Update: addr rsa_sha addr rsa_check 8;
+		call Sha256.Update: addr rsa_sha digest 32;
+		call Sha256.Update: addr rsa_sha addr rsa_mask + salt_at 32;
+		call Sha256.Final: addr rsa_sha addr rsa_check;
+	[end: (Bytes.Equal: addr rsa_check h 32)]
+
+	# rsa_em = signature ^ exponent mod modulus, as rsa_k bytes; false if the numbers
+	# don't make sense together (the signature as long as the modulus, and below it)
+	[Open: ptr<u8> modulus: 0; u32 modulus_length: 0; ptr<u8> exponent: 0; u32 exponent_length: 0;
+	       ptr<u8> signature: 0; u32 signature_length: 0;]
+		while modulus_length > 0 and modulus:0 is 0
+			modulus is modulus + 1;
+			modulus_length--;
+		;;
+		if not (Big.Setup: addr rsa_modulus modulus modulus_length) return false;
+		rsa_k is modulus_length;
+		rsa_bits is 8 * modulus_length;
+		u32 first: modulus:0;
+		while (first & 0x80) is 0
+			first is first << 1;
+			rsa_bits--;
+		;;
+		if signature_length is not rsa_k return false;
+		if not (Big.FromBytes: addr rsa_s rsa_modulus.limbs signature signature_length) return false;
+		if not (Big.PowMod: addr rsa_s addr rsa_s exponent exponent_length addr rsa_modulus) return false;
+		call Big.ToBytes: addr rsa_em rsa_k addr rsa_s rsa_modulus.limbs;
+	[end: true]
+
+	# mask (length bytes) = MGF1-SHA256 of the 32-byte seed
+	[Mgf1: ptr<u8> mask: 0; u32 length: 0; ptr<u8> seed: 0;]
+		u32 done: 0;
+		u32 counter: 0;
+		while done < length
+			rsa_counter:0 is (counter >> 24) & 255;
+			rsa_counter:1 is (counter >> 16) & 255;
+			rsa_counter:2 is (counter >> 8) & 255;
+			rsa_counter:3 is counter & 255;
+			call Sha256.Init: addr rsa_sha;
+			call Sha256.Update: addr rsa_sha seed 32;
+			call Sha256.Update: addr rsa_sha addr rsa_counter 4;
+			call Sha256.Final: addr rsa_sha addr rsa_check;
+			u32 take: length - done;
+			if take > 32
+				take is 32;
+			;;
+			call Bytes.Copy: mask + done addr rsa_check take;
+			done++ take;
+			counter++;
+		;;
+	[end]
+}

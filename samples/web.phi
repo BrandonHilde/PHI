@@ -6,9 +6,12 @@
 #
 # Type a URL and the kernel prints the raw response: the status line, the headers
 # and the page's HTML. An empty line fetches http://example.com/. https:// works
-# too, but the server's certificate isn't checked yet.
+# too, for a server whose certificate goes back to one of crypto.roots' roots through
+# RSA and P-256 keys (a site behind Let's Encrypt's R10 or R11, say); one that doesn't
+# check out isn't fetched, and the error says why.
 
 use net.http;
+use crypto.roots;
 
 phi.Web:Kernel
 {
@@ -17,6 +20,7 @@ phi.Web:Kernel
 	str url: [200];
 
 	log 'PHI web\n';
+	call Roots.TrustAll;
 	bln ok: false;
 	call ok is Net.Start;
 	if ok is false

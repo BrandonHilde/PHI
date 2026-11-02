@@ -1,0 +1,241 @@
+# Big numbers for public-key cryptography (RSA, and the curve math of ECDSA): unsigned
+# numbers of up to 4096 bits, kept as 16-bit limbs, least significant first, one to a
+# u32, so that a product of two limbs and what's carried still fit in 32 bits. Any kind
+# of program.
+#
+#   use crypto.bignum;
+#   Modulus m;
+#   bln ok: (Big.Setup: addr m modulus 256);      # big-endian bytes, as certificates have them
+#   u32 x[258];
+#   ok is (Big.FromBytes: addr x m.limbs signature 256);
+#   ok is (Big.PowMod: addr x addr x exponent 3 addr m);    # x = x^e mod m
+#   call Big.ToBytes: output 256 addr x m.limbs;
+#
+# Multiplying modulo m is Montgomery's way, with no division: Setup works out what that
+# needs once for each modulus, which must be odd (an RSA modulus and a curve's primes
+# are). A number given to MontMul or PowMod has the modulus's limbs, and is below it.
+
+use crypto.bytes;
+
+# a modulus, and what multiplying by Montgomery's way needs for it
+struct.Modulus
+{
+	u32 n[258];                 # the modulus, in limbs
+	u32 r2[258];                # R^2 mod n, where R = 2^(16 limbs): it brings a number into Montgomery form
+	u32 limbs;                  # how many limbs n has
+	u32 inverse;                # -1/n mod 2^16
+}
+
+phi.Big:Library
+{
+	const u32 MAX: 258;         # limbs a number can have: 4096 bits, and two to spare
+	const u32 MOST: 256;        # the most limbs a modulus can have (4096 bits)
+
+	u32 big_t[260];
+	u32 big_one[258];
+	u32 big_x[258];
+	u32 big_acc[258];
+
+	# x (limbs limbs) = count big-endian bytes; false if the number needs more limbs
+	[FromBytes: ptr<u32> x: 0; u32 limbs: 0; ptr<u8> bytes: 0; u32 count: 0;]
+		bln fits: true;
+		while u32 i: 0; i < limbs; i++;
+			x:i is 0;
+		;;
+		while u32 i: 0; i < count; i++;
+			u32 b: bytes:(count - 1 - i);
+			u32 limb: i >> 1;
+			if limb >= limbs
+				if b is not 0
+					fits is false;
+				;;
+			;;
+			else
+				if (i & 1) is 1
+					x:limb is x:limb | (b << 8);
+				;;
+				else
+					x:limb is x:limb | b;
+				;;
+			;;
+		;;
+	[end: fits]
+
+	# count big-endian bytes = x (limbs limbs); the high bytes are 0 if count is more
+	[ToBytes: ptr<u8> bytes: 0; u32 count: 0; ptr<u32> x: 0; u32 limbs: 0;]
+		while u32 i: 0; i < count; i++;
+			u32 limb: i >> 1;
+			u32 v: 0;
+			if limb < limbs
+				v is x:limb;
+			;;
+			if (i & 1) is 1
+				v is v >> 8;
+			;;
+			bytes:(count - 1 - i) is v & 255;
+		;;
+	[end]
+
+	# -1, 0 or 1 as a is below, equal to or above b
+	[Compare: ptr<u32> a: 0; ptr<u32> b: 0; u32 limbs: 0;]
+		int result: 0;
+		u32 i: limbs;
+		while i > 0 and result is 0
+			i--;
+			if a:i < b:i
+				result is -1;
+			;;
+			if a:i > b:i
+				result is 1;
+			;;
+		;;
+	[end: result]
+
+	# a = a - b; the borrow out (1 when b was the bigger)
+	[Subtract: ptr<u32> a: 0; ptr<u32> b: 0; u32 limbs: 0;]
+		u32 borrow: 0;
+		while u32 i: 0; i < limbs; i++;
+			u32 d: a:i + 0x10000 - b:i - borrow;
+			a:i is d & 0xFFFF;
+			borrow is 1 - (d >> 16);
+		;;
+	[end: borrow]
+
+	# a = a + b; the carry out (1 when the sum needs another limb)
+	[Add: ptr<u32> a: 0; ptr<u32> b: 0; u32 limbs: 0;]
+		u32 carry: 0;
+		while u32 i: 0; i < limbs; i++;
+			u32 s: a:i + b:i + carry;
+			a:i is s & 0xFFFF;
+			carry is s >> 16;
+		;;
+	[end: carry]
+
+	# r = a
+	[Copy: ptr<u32> r: 0; ptr<u32> a: 0; u32 limbs: 0;]
+		while u32 i: 0; i < limbs; i++;
+			r:i is a:i;
+		;;
+	[end]
+
+	# whether x is 0
+	[IsZero: ptr<u32> x: 0; u32 limbs: 0;]
+		u32 any: 0;
+		while u32 i: 0; i < limbs; i++;
+			any is any | x:i;
+		;;
+	[end: any is 0]
+
+	# m ready for count big-endian bytes of an odd modulus (leading zeros are fine);
+	# false if it's even, 0, or more than 4096 bits
+	[Setup: ptr<Modulus> m: 0; ptr<u8> bytes: 0; u32 count: 0;]
+		while count > 0 and bytes:0 is 0
+			bytes is bytes + 1;
+			count--;
+		;;
+		if count is 0 or count > MOST * 2 return false;
+		if (bytes:(count - 1) & 1) is 0 return false;
+		m.limbs is (count + 1) / 2;
+		call Big.FromBytes: addr m.n m.limbs bytes count;
+
+		# -1/n mod 2^16, by Newton's way: each step doubles the bits that are right
+		u32 n0: m.n:0;
+		u32 inverse: 1;
+		while int step: 0; step < 5; step++;
+			inverse is (inverse * (2 - n0 * inverse)) & 0xFFFF;
+		;;
+		m.inverse is (0x10000 - inverse) & 0xFFFF;
+
+		# R^2 mod n: 1, doubled 2 * 16 * limbs times, taking n off whenever it's past n
+		ptr<u32> x: addr m.r2;
+		while u32 i: 0; i < m.limbs; i++;
+			x:i is 0;
+		;;
+		x:0 is 1;
+		while u32 k: 0; k < 32 * m.limbs; k++;
+			u32 carry: 0;
+			while u32 i: 0; i < m.limbs; i++;
+				u32 v: (x:i << 1) | carry;
+				x:i is v & 0xFFFF;
+				carry is v >> 16;
+			;;
+			if carry is not 0 or (Big.Compare: x addr m.n m.limbs) >= 0
+				call Big.Subtract: x addr m.n m.limbs;
+			;;
+		;;
+	[end: true]
+
+	# r = a * b / R mod n (Montgomery's product); r may be a or b
+	[MontMul: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0; ptr<Modulus> m: 0;]
+		u32 n: m.limbs;
+		while u32 j: 0; j < n + 2; j++;
+			big_t:j is 0;
+		;;
+		while u32 i: 0; i < n; i++;
+			# t = t + a * b:i
+			u32 bi: b:i;
+			u32 c: 0;
+			while u32 j: 0; j < n; j++;
+				u32 v: big_t:j + a:j * bi + c;
+				big_t:j is v & 0xFFFF;
+				c is v >> 16;
+			;;
+			u32 top: big_t:n + c;
+			big_t:n is top & 0xFFFF;
+			big_t:(n + 1) is top >> 16;
+
+			# t = (t + q * n) / 2^16, with q making the low limb 0
+			u32 q: (big_t:0 * m.inverse) & 0xFFFF;
+			u32 v: big_t:0 + q * m.n:0;
+			c is v >> 16;
+			while u32 j: 1; j < n; j++;
+				v is big_t:j + q * m.n:j + c;
+				big_t:(j - 1) is v & 0xFFFF;
+				c is v >> 16;
+			;;
+			v is big_t:n + c;
+			big_t:(n - 1) is v & 0xFFFF;
+			big_t:n is big_t:(n + 1) + (v >> 16);
+		;;
+		# it's below 2n: n off once more if it's past
+		if big_t:n is not 0 or (Big.Compare: addr big_t addr m.n n) >= 0
+			call Big.Subtract: addr big_t addr m.n n;
+		;;
+		while u32 j: 0; j < n; j++;
+			r:j is big_t:j;
+		;;
+	[end]
+
+	# r = base ^ exponent mod n, the exponent as e_count big-endian bytes; false if the
+	# base isn't below n
+	[PowMod: ptr<u32> r: 0; ptr<u32> base: 0; ptr<u8> exponent: 0; u32 e_count: 0; ptr<Modulus> m: 0;]
+		u32 n: m.limbs;
+		if (Big.Compare: base addr m.n n) >= 0 return false;
+		call Big.MontMul: addr big_x base addr m.r2 m;        # base, in Montgomery form
+		call Big.MontPow: r addr big_x exponent e_count m;
+		call Big.MontMul: r r addr big_one m;                 # out of Montgomery form (MontPow left big_one 1)
+	[end: true]
+
+	# r = base ^ exponent with both in Montgomery form (x R mod n), the exponent as e_count
+	# big-endian bytes; r may be base
+	[MontPow: ptr<u32> r: 0; ptr<u32> base: 0; ptr<u8> exponent: 0; u32 e_count: 0; ptr<Modulus> m: 0;]
+		u32 n: m.limbs;
+		while u32 j: 0; j < n; j++;
+			big_one:j is 0;
+		;;
+		big_one:0 is 1;
+		call Big.MontMul: addr big_acc addr big_one addr m.r2 m;   # 1, in Montgomery form
+		while u32 i: 0; i < e_count; i++;
+			u32 byte: exponent:i;
+			int bit: 7;
+			while bit >= 0
+				call Big.MontMul: addr big_acc addr big_acc addr big_acc m;
+				if ((byte >> bit) & 1) is 1
+					call Big.MontMul: addr big_acc addr big_acc base m;
+				;;
+				bit--;
+			;;
+		;;
+		call Big.Copy: r addr big_acc n;
+	[end]
+}
