@@ -19,6 +19,12 @@
 # sleeps for a millisecond. The frames share the buffers in this class, so the code
 # that handles them (HandleArp, HandleIp and what they call, like Tcp.Receive and
 # Udp.Deliver) must never call anything that waits.
+#
+# The network has a lock of its own (Lock and Unlock): one core at a time in its code,
+# with interrupts off on that core meanwhile. It can be taken again by the core that
+# holds it (Tcp.Write calls Net.Wait, which calls Poll), and Wait lets it go while it
+# sleeps. net.calls takes it instead of the kernel's lock, so programs on several cores
+# (proc.cores) use the network while the rest of the kernel carries on.
 
 use drivers.nic;
 use net.dhcp;
@@ -80,6 +86,11 @@ phi.Net:Kernel
 	u32 udp_from_port: 0;
 	u8 udp_out[MTU];
 
+	# the network's lock (Lock)
+	u32 lock_owner: 0;                    # the holding core's block (its fs:0), or 0
+	u32 lock_depth: 0;                    # how many times it has taken it
+	u32 lock_flags: 0;                    # its interrupt flag from before
+
 	# ICMP
 	u8 icmp_out[MTU];
 	u32 ping_id: 0x5048;
@@ -89,6 +100,13 @@ phi.Net:Kernel
 	# turn the card on and get an address, by DHCP unless one is given (with its
 	# network's mask and router); false if there is no card
 	[Start: u32 address: 0; u32 mask: 0xFFFFFF00; u32 router: 0;]
+		call Lock;
+		bln result: (StartLocked: address mask router);
+		call Unlock;
+	[end: result]
+
+	# Start's work, holding the network's lock
+	[StartLocked: u32 address: 0; u32 mask: 0xFFFFFF00; u32 router: 0;]
 		if started is false
 			call started is Nic.Start;
 			if started and address is not 0
@@ -119,6 +137,13 @@ phi.Net:Kernel
 
 	# handle every frame the card has received; returns how many there were
 	[Poll]
+		call Lock;
+		u32 result: (PollLocked);
+		call Unlock;
+	[end: result]
+
+	# Poll's work, holding the network's lock
+	[PollLocked]
 		u32 count: 0;
 		u32 length: 1;
 		while length > 0
@@ -139,13 +164,33 @@ phi.Net:Kernel
 		call Tcp.Tick;                    # TCP's timers: sending again what wasn't acknowledged
 	[end: count]
 
-	# poll, and if nothing came, sleep until the next timer tick (1 ms)
+	# poll, and if nothing came, sleep until the next timer tick (1 ms), with the lock
+	# let go meanwhile
 	[Wait]
-		u32 got: 0;
-		call got is Poll;
+		call Lock;
+		u32 got: (Poll);
 		if got is 0
+			u32 flags: lock_flags;
+			u32 depth: 0;
+			call depth is asm.NetLetGo;
 			call OS.Sleep: 1;
+			call Lock;
+			lock_depth is depth;
+			lock_flags is flags;
 		;;
+		call Unlock;
+	[end]
+
+	# ---- the network's lock
+
+	# take it (waiting while another core has it), or once more
+	[Lock]
+		call asm.NetLock;
+	[end]
+
+	# give it back (once the times it was taken are all given back)
+	[Unlock]
+		call asm.NetUnlock;
 	[end]
 
 	# ---- ARP: finding the Ethernet address that goes with an IP address
@@ -184,6 +229,13 @@ phi.Net:Kernel
 	# make sure we know where to send packets for this address (asking with ARP and
 	# waiting if we don't yet); false if nobody answered
 	[Resolve: u32 to: 0;]
+		call Lock;
+		bln result: (ResolveLocked: to);
+		call Unlock;
+	[end: result]
+
+	# Resolve's work, holding the network's lock
+	[ResolveLocked: u32 to: 0;]
 		u32 hop: 0;
 		call hop is NextHop: to;
 		int entry: 0;
@@ -267,6 +319,13 @@ phi.Net:Kernel
 	# ARP request goes out, so trying again soon works) or the packet is too big.
 	# This never waits, so the code that handles arriving frames may use it.
 	[SendIp: u32 to: 0; u32 protocol: 0; ptr<u8> data: 0; u32 length: 0;]
+		call Lock;
+		bln result: (SendIpLocked: to protocol data length);
+		call Unlock;
+	[end: result]
+
+	# SendIp's work, holding the network's lock
+	[SendIpLocked: u32 to: 0; u32 protocol: 0; ptr<u8> data: 0; u32 length: 0;]
 		bln sent: false;
 		u32 hop: 0;
 		call hop is NextHop: to;
@@ -386,6 +445,13 @@ phi.Net:Kernel
 
 	# send a ping; the round trip in milliseconds, or -1 if no reply came in time
 	[Ping: u32 to: 0; int timeout: 1000;]
+		call Lock;
+		int result: (PingLocked: to timeout);
+		call Unlock;
+	[end: result]
+
+	# Ping's work, holding the network's lock
+	[PingLocked: u32 to: 0; int timeout: 1000;]
 		int result: -1;
 		bln known: false;
 		call known is Resolve: to;
@@ -425,6 +491,13 @@ phi.Net:Kernel
 
 	# send a datagram (waiting to learn where to send it, if need be)
 	[SendUdp: u32 to: 0; u32 from_port: 0; u32 to_port: 0; ptr<u8> data: 0; u32 length: 0;]
+		call Lock;
+		bln result: (SendUdpLocked: to from_port to_port data length);
+		call Unlock;
+	[end: result]
+
+	# SendUdp's work, holding the network's lock
+	[SendUdpLocked: u32 to: 0; u32 from_port: 0; u32 to_port: 0; ptr<u8> data: 0; u32 length: 0;]
 		bln sent: false;
 		bln known: false;
 		call known is Resolve: to;
@@ -450,12 +523,26 @@ phi.Net:Kernel
 
 	# wait for datagrams sent to this port (0 stops); the next one goes to udp_data
 	[Listen: u32 port: 0;]
+		call Lock;
+		call ListenLocked: port;
+		call Unlock;
+	[end]
+
+	# Listen's work, holding the network's lock
+	[ListenLocked: u32 port: 0;]
 		udp_port is port;
 		udp_ready is false;
 	[end]
 
 	# wait for a datagram on the Listen port; its length (in udp_data), or -1
 	[WaitUdp: int timeout: 1000;]
+		call Lock;
+		int result: (WaitUdpLocked: timeout);
+		call Unlock;
+	[end: result]
+
+	# WaitUdp's work, holding the network's lock
+	[WaitUdpLocked: int timeout: 1000;]
 		int start: 0;
 		call start is OS.GetTicks;
 		int now: start;
@@ -573,4 +660,55 @@ phi.Net:Kernel
 	[PrintIp: u32 address: 0;]
 		log (address >> 24) '.' ((address >> 16) & 0xFF) '.' ((address >> 8) & 0xFF) '.' (address & 0xFF);
 	[end]
+}
+
+# Net.Lock: the holder's core is told by its block's address (fs:0), so the core that
+# has it goes deeper instead of waiting
+asm.NetLock
+{
+	pushfd
+	pop edx
+	cli
+	mov ecx, [fs:0]
+	cmp [{lock_owner}], ecx
+	je .deeper
+	xor eax, eax
+	lock cmpxchg [{lock_owner}], ecx
+	je .taken
+.wait:
+	pause                                 ; (waiting by reading, which keeps the holder's
+	cmp dword [{lock_owner}], 0           ; memory out of the waiters' way)
+	jne .wait
+	xor eax, eax
+	lock cmpxchg [{lock_owner}], ecx
+	jne .wait
+.taken:
+	mov [{lock_flags}], edx
+.deeper:
+	inc dword [{lock_depth}]
+	ret
+}
+
+asm.NetUnlock
+{
+	dec dword [{lock_depth}]
+	jnz .held
+	mov edx, [{lock_flags}]
+	mov dword [{lock_owner}], 0
+	push edx
+	popfd
+.held:
+	ret
+}
+
+# Net.Wait: the lock let go however deep this core is; eax = how deep that was
+asm.NetLetGo
+{
+	mov eax, [{lock_depth}]
+	mov dword [{lock_depth}], 0
+	mov edx, [{lock_flags}]
+	mov dword [{lock_owner}], 0
+	push edx
+	popfd
+	ret
 }

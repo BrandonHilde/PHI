@@ -1439,7 +1439,9 @@ program no other core is running, and its own timer (its local APIC's) takes the
 every 10 ms. Kernel code (system calls, interrupts, and the kernel's own code) still runs
 on one core at a time: it holds one kernel lock, which a kernel lets go of while it waits
 (`Process.Wait`, `OS.Sleep`, `OS.Idle`, `OS.Yield`), so the kernel library needs no
-change. A program killed while another core runs it is freed once that core has let go
+change. The network has a lock of its own (`Net.Lock`): programs' network calls
+(`net.calls`) hold it instead of the kernel lock, so they only wait for each other, not
+for the rest of the kernel. A program killed while another core runs it is freed once that core has let go
 of it. `Run` can't be used once programs share the cores.
 
 **Kernel threads.** `proc.threads` runs a method on its own, at the same time as the

@@ -1,5 +1,5 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_task_core phi_thread_start
-; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_own_calls phi_own_first phi_own_count phi_task_core phi_thread_start
+; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_core_blocks phi_own_call_hook
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
 ; directory and kernel stack, and the kernel itself as task 0.
@@ -37,6 +37,7 @@ USER_BASE     equ 0x40000000
 USER_TOP      equ 0x40400000
 
 ; offsets in the saved state
+F_ESI equ 20
 F_EBX equ 32
 F_EDX equ 36
 F_ECX equ 40
@@ -96,6 +97,7 @@ OS_StartMultitasking:
 
     mov dword [phi_scheduler], phi_schedule
     mov dword [phi_share_hook], phi_share_cores
+    mov dword [phi_own_call_hook], phi_own_call
     mov dword [phi_syscall_hook], phi_syscall
     mov dword [phi_user_fault], phi_task_fault
     sti
@@ -610,6 +612,14 @@ phi_this_core:
 .first:
     ret
 
+; eax = this core's number, from its block (fs, in kernel code), which is quicker to read
+; than its local APIC's ID
+phi_fs_core:
+    mov eax, [fs:PHI_CORE_SELF]
+    sub eax, phi_core_blocks
+    shr eax, 10                               ; (PHI_CORE_BLOCK bytes each)
+    ret
+
 ; with interrupts off: into the kernel (the lock, unless this core holds it); changes eax, ecx
 phi_kernel_enter:
     call phi_this_core
@@ -670,6 +680,47 @@ phi_kernel_halt_unlocked:
 .plain:
     sti
     hlt
+    ret
+
+; a system call with a lock of its own (phi_own_first and the phi_own_count after it, which
+; net.calls sets for the network's calls) is answered by phi_own_calls (number, then the
+; saved ebx, ecx, edx and esi; its result in eax) without the kernel lock, so calls on
+; other cores, and the rest of the kernel, don't wait for it (nor it for them); from
+; phi_interrupt_common, with interrupts off and [esp + 4] the saved state. eax = 1 if it
+; was one of those (answered), else 0, with the other registers kept.
+phi_own_call:
+    push ebp
+    lea ebp, [esp + 8]
+    mov eax, [ebp + F_EAX]
+    sub eax, [phi_own_first]
+    cmp eax, [phi_own_count]
+    jae .not_own
+    ; (from a program another core has stopped: not made, as phi_syscall does)
+    call OS_CurrentTask
+    cmp dword [phi_task_state + eax * 4], TASK_EXITED
+    jae .refused
+    push dword [fs:PHI_CORE_CATCH]
+    mov dword [fs:PHI_CORE_CATCH], 0          ; an error in it isn't caught by what it interrupted
+    push dword [ebp + F_EAX]                  ; (PHI's arguments go first to last)
+    push dword [ebp + F_EBX]
+    push dword [ebp + F_ECX]
+    push dword [ebp + F_EDX]
+    push dword [ebp + F_ESI]
+    call [phi_own_calls]
+    add esp, 20
+    pop dword [fs:PHI_CORE_CATCH]
+    mov [ebp + F_EAX], eax
+    mov eax, 1
+    pop ebp
+    ret
+.refused:
+    mov dword [ebp + F_EAX], -1
+    mov eax, 1
+    pop ebp
+    ret
+.not_own:
+    xor eax, eax
+    pop ebp
     ret
 
 ; let the cores waiting for the lock have it, then take it back (the kernel's OS_Yield)
@@ -884,8 +935,15 @@ OS_Idle:
 .done:
     ret
 
+; (this core's task: phi_current_task is the kernel lock holder's, which a system call
+; answered without it, phi_own_call, doesn't hold)
 OS_CurrentTask:
     mov eax, [phi_current_task]
+    cmp dword [phi_enter_hook], 0
+    je .alone
+    call phi_fs_core
+    mov eax, [phi_core_task + eax * 4]
+.alone:
     ret
 
 ; arg: task -> eax = its state (0 free, 1 ready, 2 sleeping, 3 waiting for a key,
@@ -1003,6 +1061,11 @@ phi_task_thread:       times MAX_TASKS db 0     ; 1 for a kernel thread (proc.th
 phi_task_catch:        times MAX_TASKS dd 0     ; its catches and methods' records, while another task runs
 phi_task_unwind:       times MAX_TASKS dd 0
 phi_task_fault_entry:  times MAX_TASKS dd 0     ; where a program catches CPU exceptions (system call 10), or 0
+
+; system calls with a lock of their own (phi_own_call)
+phi_own_calls:         dd 0
+phi_own_first:         dd 0
+phi_own_count:         dd 0                    ; 0: none
 
 ; programs on every core (phi_share_cores)
 phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket

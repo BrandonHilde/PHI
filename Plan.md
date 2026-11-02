@@ -1697,6 +1697,32 @@ cores ends with `Heap.used_blocks` at 0.
   lock that one zone alone never waits for. So `Game.ZONES` stays 1 until the network
   path has a lock of its own (the finer locks the user's choice left for when a benchmark
   shows the need: this is that benchmark).
+  - [x] the network's own lock (the user's choice, 2026-11-02). `Net.Lock` and `Unlock`:
+    one core at a time in the network's code, with that core's interrupts off; the core
+    holding it can take it again (`Tcp.Write` calls `Net.Wait`, which calls `Poll`), and
+    `Net.Wait` lets it go while it sleeps. Every public method of `Net`, `Udp` and `Tcp`
+    takes it (a wrapper around its `...Locked` work). The cards' drivers keep their queue
+    of received frames under a lock of their own (`rx_lock`), shared by the interrupt and
+    `Receive`. Programs' network calls (80 to 94) don't take the kernel lock at all: the
+    system call entry asks `tasks.asm`'s `phi_own_call` first, which sends a range of
+    numbers that `net.calls` registered (`phi_own_first`, `phi_own_count`) straight to
+    `NetCalls.Calls`, which takes the network's lock; `OS.CurrentTask` now gives this
+    core's task, not the kernel lock holder's.
+    - Measured on the way, with counters added for the runs: a first version that only
+      let the kernel lock go once inside `net.calls` made things worse. Each call then
+      took the kernel lock twice, and the entry before it (the general system call path)
+      held it about 90,000 cycles each time, more than the network work itself. Waiting
+      for the network's lock by reading first (and exchanging only once it looks free)
+      cut its holds by about a third under contention.
+    - With `phi load` (400 players, 40 s): **one zone** now holds its tick with nothing
+      late (20 a second, the longest 59 ms; 11 late and 169 ms before, measured the same
+      day). **Four zones** no longer get stuck (before, at 400 players, the worlds never
+      emptied their queues of datagrams). Each keeps 20 ticks a second with every player,
+      but about 7% of ticks are late, the longest 110 ms, so `Game.ZONES` stays 1. What's
+      left: all the zones' network work is one lock's (one card, one queue), and,
+      probably, each zone's once-a-second save, which goes to the one disk under the
+      kernel lock and is part of the tick's time (even 10 players a zone had 50 ms
+      ticks; not measured yet).
 
 #### Phase S10: 64-bit
 

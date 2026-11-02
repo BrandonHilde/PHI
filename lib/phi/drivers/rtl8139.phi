@@ -87,7 +87,7 @@ phi.Rtl8139:Kernel
 	u32 tx_next: 0;
 	ptr<QueueData> waiting: 0;
 	Rtl8139Frame incoming;      # a frame on its way from the ring to the queue
-	u32 rtl_flags: 0;           # the interrupt flag from before Lock
+	lock rx_lock;                # the queue, between the interrupt (on any core) and Receive
 
 	# find the card and turn it on; false if there isn't one
 	[Start]
@@ -164,29 +164,31 @@ phi.Rtl8139:Kernel
 	[Receive: ptr<u8> to: 0; u32 max: 0;]
 		u32 length: 0;
 		if started
-			call asm.Rtl8139Lock;
-			call TakeFrames;                             # in case interrupts are off
-			ptr<Rtl8139Frame> frame: (Queue.Front: waiting);
-			if frame is not 0
-				length is frame:0.length;
-				if length > max
-					length is max;
+			locked rx_lock
+				call TakeFrames;                             # in case interrupts are off
+				ptr<Rtl8139Frame> frame: (Queue.Front: waiting);
+				if frame is not 0
+					length is frame:0.length;
+					if length > max
+						length is max;
+					;;
+					call Mem.Copy: to frame:0.data length;
+					call Queue.Drop: waiting;
 				;;
-				call Mem.Copy: to frame:0.data length;
-				call Queue.Drop: waiting;
 			;;
-			call asm.Rtl8139Unlock;
 		;;
 	[end: length]
 
 	# the card's interrupt: frames from the ring into the queue
 	[Interrupt]
 		interrupts++;
-		call TakeFrames;
+		locked rx_lock
+			call TakeFrames;
+		;;
 	[end]
 
 	# move every frame in the ring to the queue (dropping what doesn't fit), and
-	# acknowledge what the card has flagged; with interrupts off
+	# acknowledge what the card has flagged; holding rx_lock
 	[TakeFrames]
 		while ((in (io + REG_COMMAND)) & COMMAND_RX_EMPTY) is 0
 			volatile ptr<u8> packet: rx + rx_offset;     # the card writes here
@@ -229,20 +231,3 @@ phi.Rtl8139:Kernel
 	[end]
 }
 
-# interrupts off, remembering whether they were on
-asm.Rtl8139Lock
-{
-	pushfd
-	pop eax
-	mov [{rtl_flags}], eax
-	cli
-	ret
-}
-
-# interrupts back the way they were
-asm.Rtl8139Unlock
-{
-	push dword [{rtl_flags}]
-	popfd
-	ret
-}

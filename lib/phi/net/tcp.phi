@@ -130,6 +130,13 @@ phi.Tcp:Kernel
 
 	# connect to a port; a connection number, or -1 if nobody answered (or refused)
 	[Connect: u32 to: 0; u32 port: 0;]
+		call Net.Lock;
+		int result: (ConnectLocked: to port);
+		call Net.Unlock;
+	[end: result]
+
+	# Connect's work, holding the network's lock
+	[ConnectLocked: u32 to: 0; u32 port: 0;]
 		int handle: (Begin: to port);
 		if handle < 0 return -1;
 		while (State: handle) is 0
@@ -144,6 +151,13 @@ phi.Tcp:Kernel
 	# start connecting to a port without waiting: a connection number to ask State about
 	# (Tick sends the SYN again each RETRY_WAIT ms), or -1 if the address can't be reached
 	[Begin: u32 to: 0; u32 port: 0;]
+		call Net.Lock;
+		int result: (BeginLocked: to port);
+		call Net.Unlock;
+	[end: result]
+
+	# Begin's work, holding the network's lock
+	[BeginLocked: u32 to: 0; u32 port: 0;]
 		if (Net.Resolve: to) is false return -1;
 		int ticks: (OS.GetTicks);
 		u32 local: FIRST_PORT + ((ticks + next_port) & 0x3FFF);
@@ -165,6 +179,13 @@ phi.Tcp:Kernel
 	# how a connection from Begin is doing: 1 once it's open, 0 while it's connecting,
 	# -1 if it was refused, nobody answered, or there's no such connection
 	[State: int handle: 0;]
+		call Net.Lock;
+		int result: (StateLocked: handle);
+		call Net.Unlock;
+	[end: result]
+
+	# State's work, holding the network's lock
+	[StateLocked: int handle: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 or c.reset return -1;
 		if c.state is OPEN return 1;
@@ -173,6 +194,13 @@ phi.Tcp:Kernel
 	# send data, waiting while the send buffer is full; the bytes sent, or -1 if the
 	# connection broke (or nothing could be sent for timeout ms)
 	[Write: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
+		call Net.Lock;
+		int result: (WriteLocked: handle data length);
+		call Net.Unlock;
+	[end: result]
+
+	# Write's work, holding the network's lock
+	[WriteLocked: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
 		u32 done: 0;
 		int idle: (OS.GetTicks);
 		while done < length
@@ -195,6 +223,13 @@ phi.Tcp:Kernel
 	# bytes, 0 once the other side has closed and everything is read, -1 on a timeout or
 	# a reset
 	[Read: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
+		call Net.Lock;
+		int result: (ReadLocked: handle to max);
+		call Net.Unlock;
+	[end: result]
+
+	# Read's work, holding the network's lock
+	[ReadLocked: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
 		int start: (OS.GetTicks);
 		while true
 			int got: (Take: handle to max);
@@ -209,6 +244,13 @@ phi.Tcp:Kernel
 	# CLOSED_AND_READ once the other side has closed and everything is read, -1 after a
 	# reset (or if there's no such connection)
 	[Take: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
+		call Net.Lock;
+		int result: (TakeLocked: handle to max);
+		call Net.Unlock;
+	[end: result]
+
+	# Take's work, holding the network's lock
+	[TakeLocked: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 return -1;
 		call Net.Poll;
@@ -239,6 +281,13 @@ phi.Tcp:Kernel
 	# for a kernel about to stop, whose last data and FIN must still be sent again if a
 	# frame is lost.
 	[Close: int handle: 0; int wait: 0;]
+		call Net.Lock;
+		call CloseLocked: handle wait;
+		call Net.Unlock;
+	[end]
+
+	# Close's work, holding the network's lock
+	[CloseLocked: int handle: 0; int wait: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 or c.closing return;
 		c.closing is true;
@@ -262,6 +311,13 @@ phi.Tcp:Kernel
 	# take connections to port; a listener number, or -1 if the port is taken (or the
 	# heap is full). Up to backlog connections wait for Accept; more are refused.
 	[Listen: u32 port: 0; u32 backlog: 64;]
+		call Net.Lock;
+		int result: (ListenLocked: port backlog);
+		call Net.Unlock;
+	[end: result]
+
+	# Listen's work, holding the network's lock
+	[ListenLocked: u32 port: 0; u32 backlog: 64;]
 		int found: -1;
 		while int i: 0; i < MAX_LISTENERS; i++;
 			if listeners:i.port is port return -1;
@@ -278,6 +334,13 @@ phi.Tcp:Kernel
 
 	# a connection that has come in on a listener, or -1 if none is waiting (never waits)
 	[Accept: int listener: 0;]
+		call Net.Lock;
+		int result: (AcceptLocked: listener);
+		call Net.Unlock;
+	[end: result]
+
+	# Accept's work, holding the network's lock
+	[AcceptLocked: int listener: 0;]
 		call Net.Poll;
 		if listener < 0 or listener >= MAX_LISTENERS or listeners:listener.port is 0 return -1;
 		int handle: -1;
@@ -286,6 +349,13 @@ phi.Tcp:Kernel
 
 	# stop taking connections on a listener's port; the ones waiting for Accept are closed
 	[StopListening: int listener: 0;]
+		call Net.Lock;
+		call StopListeningLocked: listener;
+		call Net.Unlock;
+	[end]
+
+	# StopListening's work, holding the network's lock
+	[StopListeningLocked: int listener: 0;]
 		if listener < 0 or listener >= MAX_LISTENERS or listeners:listener.port is 0 return;
 		int handle: -1;
 		while (Queue.Pop: listeners:listener.ready addr handle)
@@ -309,6 +379,13 @@ phi.Tcp:Kernel
 	# how much can be read now; -1 once the connection is closed (and everything is
 	# read) or reset; never waits
 	[Waiting: int handle: 0;]
+		call Net.Lock;
+		int result: (WaitingLocked: handle);
+		call Net.Unlock;
+	[end: result]
+
+	# Waiting's work, holding the network's lock
+	[WaitingLocked: int handle: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 return -1;
 		if c.rx_count > 0 return c.rx_count;
@@ -319,6 +396,13 @@ phi.Tcp:Kernel
 	# side has room for; how many it took (0 when the buffer is full), or -1 if the
 	# connection is broken or closing; never waits
 	[Send: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
+		call Net.Lock;
+		int result: (SendLocked: handle data length);
+		call Net.Unlock;
+	[end: result]
+
+	# Send's work, holding the network's lock
+	[SendLocked: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 or c.reset or c.closing or c.state is not OPEN return -1;
 		call Net.Poll;
@@ -334,6 +418,13 @@ phi.Tcp:Kernel
 
 	# the address of the other end of a connection (0 if there's no such connection)
 	[Address: int handle: 0;]
+		call Net.Lock;
+		u32 result: (AddressLocked: handle);
+		call Net.Unlock;
+	[end: result]
+
+	# Address's work, holding the network's lock
+	[AddressLocked: int handle: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 return 0;
 	[end: c.remote_ip]

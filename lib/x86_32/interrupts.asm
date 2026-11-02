@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_load_core_fs phi_fault_hook
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_load_core_fs phi_fault_hook phi_own_call_hook phi_core_blocks
 ; requires: phi_panic
 ; init: phi_interrupts_init
 ;
@@ -164,6 +164,17 @@ phi_interrupt_common:
     mov gs, ax
     call phi_load_core_fs   ; and this core's block
     cld
+    ; a system call with a lock of its own (tasks.asm's phi_own_call: the network's) is
+    ; answered here, without the kernel lock
+    cmp dword [esp + FRAME_VECTOR], 0x80
+    jne .locking
+    mov eax, [phi_own_call_hook]
+    test eax, eax
+    jz .locking
+    call eax                ; eax = 1 if it was one of those, answered
+    test eax, eax
+    jnz .left
+.locking:
     mov eax, [phi_enter_hook]       ; once programs share the cores: the kernel lock (tasks.asm)
     test eax, eax
     jz .entered
@@ -458,6 +469,7 @@ phi_core_join_hook: dd 0
 phi_share_hook:     dd 0                ; phi_share_cores, once multitasking has started
 phi_preempt_hook:   dd 0                ; once kernel threads have started: whether the timer may take the CPU back
 phi_fault_hook:     dd 0                ; throw.asm's, in a kernel that catches errors: CPU exceptions as errors
+phi_own_call_hook:  dd 0                ; tasks.asm's: system calls answered without the kernel lock
 ; each core's number by its local APIC ID (proc.cores fills it in: the first core is 0)
 phi_core_of_apic:   times 256 db 0
 phi_scheduler:    dd 0

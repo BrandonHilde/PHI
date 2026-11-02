@@ -7,7 +7,9 @@
 # A program uses Udp and Tcp from net.sockets, which make the system calls answered here
 # (80 to 94). Each one does a single step that never waits (polling the card first), and
 # the program's side does the waiting, so a program that waits for the network doesn't
-# hold up the kernel or the other programs.
+# hold up the kernel or the other programs. They hold the network's lock (Net.Lock)
+# and not the kernel's (the system call entry sends them here without it): on several
+# cores (proc.cores), programs' network calls only wait for each other.
 #
 # Every socket, connection and listener belongs to the process that opened it: a
 # program can only use its own, and when it ends (or crashes) they're all closed. The
@@ -56,6 +58,9 @@ phi.NetCalls:Kernel
 	method<int> other_release: Process.on_release;
 	Process.more_calls is addr Calls;
 	Process.on_release is addr Release;
+	# and they come straight here, holding the network's lock instead of the kernel's
+	method<u32 u32 u32 u32 u32: int> own_calls: addr Calls;
+	call asm.NetCallsOwnLock;
 
 	[Calls: u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
 		if number < SYS_NET_ADDRESS or number > SYS_TCP_STOP_LISTENING
@@ -72,6 +77,14 @@ phi.NetCalls:Kernel
 			return Net.ip;
 		;;
 		if Net.started is false return -1;
+
+		call Net.Lock;
+		int result: (Answer: pid number a b c d);
+		call Net.Unlock;
+	[end: result]
+
+	# a network call, holding the network's lock (and not the kernel's)
+	[Answer: int pid: 0; u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
 		call Net.Poll;
 
 		if number is SYS_UDP_OPEN return (UdpOpen: pid a b);
@@ -172,6 +185,7 @@ phi.NetCalls:Kernel
 
 	# a program is ending (or has crashed): everything it had is closed
 	[Release: int pid: 0;]
+		call Net.Lock;
 		while int s: 0; s < SOCKETS; s++;
 			if socket_owner:s is pid
 				call Udp.Close: s;
@@ -190,8 +204,19 @@ phi.NetCalls:Kernel
 				listener_owner:l is 0;
 			;;
 		;;
+		call Net.Unlock;
 		if other_release is not 0
 			call other_release: pid;
 		;;
 	[end]
+}
+
+# the network's calls are answered without the kernel lock (tasks.asm's phi_own_call)
+asm.NetCallsOwnLock
+{
+	mov eax, [{own_calls}]
+	mov [phi_own_calls], eax
+	mov dword [phi_own_first], {SYS_NET_ADDRESS}
+	mov dword [phi_own_count], {SYS_TCP_STOP_LISTENING} - {SYS_NET_ADDRESS} + 1
+	ret
 }

@@ -60,7 +60,7 @@ phi.VirtioNet:Kernel
 	u32 tx_next: 0;                       # how many frames we've given the card to send
 	ptr<QueueData> waiting: 0;
 	VirtioFrame incoming;                 # a frame on its way from a buffer to the queue
-	u32 virtio_flags: 0;                  # the interrupt flag from before Lock
+	lock rx_lock;                          # the queue, between the interrupt (on any core) and Receive
 
 	# find the card and turn it on; false if there isn't one
 	[Start]
@@ -132,18 +132,18 @@ phi.VirtioNet:Kernel
 	[Receive: ptr<u8> to: 0; u32 max: 0;]
 		u32 length: 0;
 		if started
-			call asm.VirtioLock;
-			call TakeFrames;                                    # in case interrupts are off
-			ptr<VirtioFrame> frame: (Queue.Front: waiting);
-			if frame is not 0
-				length is frame:0.length;
-				if length > max
-					length is max;
+			locked rx_lock
+				call TakeFrames;                                    # in case interrupts are off
+				ptr<VirtioFrame> frame: (Queue.Front: waiting);
+				if frame is not 0
+					length is frame:0.length;
+					if length > max
+						length is max;
+					;;
+					call Mem.Copy: to frame:0.data length;
+					call Queue.Drop: waiting;
 				;;
-				call Mem.Copy: to frame:0.data length;
-				call Queue.Drop: waiting;
 			;;
-			call asm.VirtioUnlock;
 		;;
 	[end: length]
 
@@ -151,11 +151,13 @@ phi.VirtioNet:Kernel
 	[Interrupt]
 		u8 cause: in (io + Virtio.REG_INTERRUPT);              # acknowledges it
 		interrupts++;
-		call TakeFrames;
+		locked rx_lock
+			call TakeFrames;
+		;;
 	[end]
 
 	# every buffer the card has handed back: its frame into the queue (or dropped, when
-	# the queue is full), and the buffer back to the card; with interrupts off
+	# the queue is full), and the buffer back to the card; holding rx_lock
 	[TakeFrames]
 		bln gave: false;
 		while (Virtio.Used: addr rx) is not rx_seen
@@ -187,20 +189,3 @@ phi.VirtioNet:Kernel
 	[end]
 }
 
-# interrupts off, remembering whether they were on
-asm.VirtioLock
-{
-	pushfd
-	pop eax
-	mov [{virtio_flags}], eax
-	cli
-	ret
-}
-
-# interrupts back the way they were
-asm.VirtioUnlock
-{
-	push dword [{virtio_flags}]
-	popfd
-	ret
-}

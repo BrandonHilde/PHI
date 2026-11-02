@@ -44,6 +44,13 @@ phi.Udp:Kernel
 	# a socket for datagrams sent to port (0: any free port), keeping up to queue of
 	# them; -1 if the port is taken, every socket is open, or the heap is full
 	[Open: u32 port: 0; u32 queue: 64;]
+		call Net.Lock;
+		int result: (OpenLocked: port queue);
+		call Net.Unlock;
+	[end: result]
+
+	# Open's work, holding the network's lock
+	[OpenLocked: u32 port: 0; u32 queue: 64;]
 		if port is 0
 			port is (FreePort);
 		;;
@@ -65,6 +72,13 @@ phi.Udp:Kernel
 
 	# close a socket: datagrams for its port are no longer kept
 	[Close: int s: -1;]
+		call Net.Lock;
+		call CloseLocked: s;
+		call Net.Unlock;
+	[end]
+
+	# Close's work, holding the network's lock
+	[CloseLocked: int s: -1;]
 		if (Valid: s) is false return;
 		call Queue.Delete: sockets:s.datagrams;
 		sockets:s.datagrams is 0;
@@ -74,12 +88,26 @@ phi.Udp:Kernel
 	# the oldest datagram for the socket, into target; false if none is waiting (it
 	# never waits)
 	[Receive: int s: -1; ptr<UdpDatagram> target: 0;]
+		call Net.Lock;
+		bln result: (ReceiveLocked: s target);
+		call Net.Unlock;
+	[end: result]
+
+	# Receive's work, holding the network's lock
+	[ReceiveLocked: int s: -1; ptr<UdpDatagram> target: 0;]
 		if (Valid: s) is false return false;
 		call Net.Poll;
 	[end: (Queue.Pop: sockets:s.datagrams target)]
 
 	# like Receive, but waits up to timeout ms for a datagram to arrive
 	[Wait: int s: -1; ptr<UdpDatagram> target: 0; int timeout: 1000;]
+		call Net.Lock;
+		bln result: (WaitLocked: s target timeout);
+		call Net.Unlock;
+	[end: result]
+
+	# Wait's work, holding the network's lock
+	[WaitLocked: int s: -1; ptr<UdpDatagram> target: 0; int timeout: 1000;]
 		if (Valid: s) is false return false;
 		int start: (OS.GetTicks);
 		while true
@@ -92,6 +120,13 @@ phi.Udp:Kernel
 	# send length bytes of data to port at an address, from the socket's port; false
 	# if it couldn't be sent (nobody answered ARP, or it's longer than MAX_DATA)
 	[SendTo: int s: -1; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
+		call Net.Lock;
+		bln result: (SendToLocked: s to port data length);
+		call Net.Unlock;
+	[end: result]
+
+	# SendTo's work, holding the network's lock
+	[SendToLocked: int s: -1; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
 		if (Valid: s) is false or length > MAX_DATA return false;
 	[end: (Net.SendUdp: to sockets:s.port port data length)]
 
