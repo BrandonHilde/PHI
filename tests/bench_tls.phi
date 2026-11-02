@@ -1,8 +1,10 @@
 # Benchmarks for what a TLS handshake costs beyond bench_crypto's: phi test --bench
-# compares the counts with bench_tls.bench. A server signs once (P-256); a client checks
-# that signature and the chain (here crypto_x509's: an ECDSA signature and an RSA-2048
-# one), and each side does one X25519 (bench_crypto). Each result is printed too.
+# compares the counts with bench_tls.bench. A server signs once (P-256, or P-384); a
+# client checks that signature and the chain (here crypto_x509's: an ECDSA signature and
+# an RSA-2048 one; or P-384 ones, as Let's Encrypt's ECDSA chains have), and each side
+# does one X25519 (bench_crypto). Each result is printed too.
 use crypto.x509;
+use crypto.sha512;
 use test.bench;
 
 phi.BenchTls:Kernel
@@ -19,6 +21,11 @@ phi.BenchTls:Kernel
 	u8 middle[632];
 	u8 leaf[428];
 	Certificate chain[2];
+	u8 private384[48];
+	u8 public384[97];
+	u8 digest384[48];
+	u8 r384[48];
+	u8 s384[48];
 
 	call Bytes.FromHex: 'c9afa9d845ba75166b5c215767b1d6934e50c3db36e89b127b8a622b120f6721' addr private 32;
 	call Sha256.Hash: 'sample' 6 addr digest;
@@ -51,5 +58,16 @@ phi.BenchTls:Kernel
 	good is (X509.Parse: addr chain:0 addr leaf 428) and (X509.Parse: addr chain:1 addr middle 632) and (X509.Chain: addr chain:0 2 'phi.test');
 	call Bench.Stop: 'x509 chain of 2';
 	log 'chain: ' good '\n';
+
+	call Bytes.FromHex: '06b9cd63cd88584b760a2c4448ee90efda0f7568eb5f35287c4e41b8cbfeec986b870f4b893918c1c6cd3cc1695a80f9' addr private384 48;
+	call P384.PublicFrom: addr public384 addr private384;
+	call Sha512.Hash384: 'sample' 6 addr digest384;
+	call Bench.Start;
+	signed is (P384.Sign: addr r384 addr s384 addr private384 addr digest384);
+	call Bench.Stop: 'p384 sign';
+	call Bench.Start;
+	good is (P384.Verify: addr public384 addr digest384 addr r384 addr s384);
+	call Bench.Stop: 'p384 verify';
+	log 'p384: ' signed ' ' good '\n';
 	exit 0;
 }

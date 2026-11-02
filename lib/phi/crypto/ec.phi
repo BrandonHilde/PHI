@@ -1,0 +1,497 @@
+# ECDSA (FIPS 186-4, SEC 1) on the NIST curves, y^2 = x^3 - 3x + b mod p: checking
+# signatures, and making them with a private key. Each curve is an EcCurve, which
+# crypto.p256 and crypto.p384 set up; this is the math they share. Any kind of program.
+#
+#   use crypto.p256;
+#   bln good: (P256.Verify: public addr digest r s);   # as P256 and P384 call these:
+#   bln good: (Ec.Verify: addr P256.curve public digest 32 r s);
+#
+# A number is c.bytes big-endian bytes (32 for P-256, 48 for P-384); a public key is as
+# a certificate holds it, 1 + 2 c.bytes bytes (04, then x and y); r and s are the
+# signature's two numbers. A digest of any size works: its first c.bytes bytes are used
+# (FIPS 186-4's leftmost bits), so a P-384 key can check a SHA-256 digest and a P-256
+# key a SHA-384 one. Sign makes its nonce from the key and the digest (RFC 6979, with
+# HMAC-SHA256), not from random numbers: the same digest signs the same way, and a weak
+# random generator can't give the key away.
+#
+# The numbers are crypto.bignum's, 16 bits to a limb, kept in Montgomery form (x R mod
+# p) while the points are worked on, and the points in Jacobian coordinates (x / z^2,
+# y / z^3), so that adding them needs no division until the end. Signing takes as long
+# as the numbers make it: it isn't made to take the same time whatever the key, so a
+# program others can time precisely shouldn't sign with a key that matters.
+
+use crypto.bignum;
+use crypto.der;
+use crypto.hmac;
+
+# a point on a curve, (x / z^2, y / z^3); z is 0 for the point at infinity
+struct.EcPoint
+{
+	u32 x[26];
+	u32 y[26];
+	u32 z[26];
+}
+
+# a curve, from Ec.Setup
+struct.EcCurve
+{
+	u32 limbs;                  # in a number: 16 (P-256) or 24 (P-384)
+	u32 bytes;                  # in a number: 32 or 48
+	Modulus field;              # p, the field's prime
+	Modulus order;              # n, how many points the curve has
+	u8 p_minus_2[48];           # for 1/z and 1/s (Fermat's way)
+	u8 n_minus_2[48];
+	u32 b[26];                  # the curve's b, in Montgomery form
+	u32 one[26];                # 1, in Montgomery form
+	u32 plain_one[26];          # 1
+	EcPoint g;                  # the curve's generator
+}
+
+phi.Ec:Library
+{
+	const u32 MAX_BYTES: 48;
+
+	u8 ec_oid_key: 0x2A 0x86 0x48 0xCE 0x3D 0x02 0x01;     # an EC public key, in a PKCS #8 file
+
+	ptr<EcCurve> ec: 0;                       # the curve being worked on
+	EcPoint ec_q;                             # the key
+	EcPoint ec_gq;                            # the generator plus the key
+	EcPoint ec_sum;
+	EcPoint ec_point;
+	u32 ec_r[26];
+	u32 ec_s[26];
+	u32 ec_e[26];
+	u32 ec_w[26];
+	u32 ec_u1[26];
+	u32 ec_u2[26];
+	u8 ec_bytes[48];
+	u8 ec_xy[96];
+
+	# for signing
+	u32 ec_d[26];                             # the private key
+	u32 ec_k[26];                             # the nonce
+	u8 sign_v[32];                            # RFC 6979's V and K
+	u8 sign_key[32];
+	u8 sign_x[48];                            # the private key, and the digest mod n, as bytes
+	u8 sign_h[48];
+	u8 sign_t[64];                            # V after V, for a nonce longer than one
+	u8 sign_byte[1];
+
+	# for the point math
+	u32 t_plus[26];                           # (Plus's and Minus's own, as the others hold results meanwhile)
+	u32 t_minus[26];
+	u32 t_a[26];
+	u32 t_b[26];
+	u32 t_c[26];
+	u32 t_d[26];
+	u32 t_e[26];
+	u32 t_f[26];
+	u32 t_g[26];
+	u32 t_h[26];
+	u32 t_i[26];
+	u32 t_j[26];
+	u32 t_k[26];
+	u32 t_l[26];
+
+	# a curve from its numbers, as hex: p, n, b, and the generator's x and y one after the
+	# other; bytes is how big each number is
+	[Setup: ptr<EcCurve> c: 0; u32 bytes: 0; ptr<u8> p: 0; ptr<u8> n: 0; ptr<u8> b: 0; ptr<u8> g: 0;]
+		ec is c;
+		c.bytes is bytes;
+		c.limbs is bytes / 2;
+		call Bytes.FromHex: p addr ec_bytes bytes;
+		call Big.Setup: addr c.field addr ec_bytes bytes;
+		call Ec.MinusTwo: addr c.p_minus_2 addr ec_bytes;
+		call Bytes.FromHex: n addr ec_bytes bytes;
+		call Big.Setup: addr c.order addr ec_bytes bytes;
+		call Ec.MinusTwo: addr c.n_minus_2 addr ec_bytes;
+		while u32 i: 0; i < c.limbs; i++;
+			c.plain_one:i is 0;
+		;;
+		c.plain_one:0 is 1;
+		call Ec.Mul: addr c.one addr c.plain_one addr c.field.r2;
+		call Bytes.FromHex: b addr ec_bytes bytes;
+		call Big.FromBytes: addr c.b c.limbs addr ec_bytes bytes;
+		call Ec.Mul: addr c.b addr c.b addr c.field.r2;
+		call Bytes.FromHex: g addr ec_xy 2 * bytes;
+		call Ec.Load: addr c.g addr ec_xy;
+	[end]
+
+	# whether r and s are public's signature of a digest (of digest_length bytes)
+	[Verify: ptr<EcCurve> c: 0; ptr<u8> public: 0; ptr<u8> digest: 0; u32 digest_length: 0; ptr<u8> r: 0; ptr<u8> s: 0;]
+		ec is c;
+		u32 limbs: c.limbs;
+		if public:0 is not 4 return false;
+
+		# 1 <= r, s < n
+		call Big.FromBytes: addr ec_r limbs r c.bytes;
+		call Big.FromBytes: addr ec_s limbs s c.bytes;
+		if (Big.IsZero: addr ec_r limbs) or (Big.Compare: addr ec_r addr c.order.n limbs) >= 0 return false;
+		if (Big.IsZero: addr ec_s limbs) or (Big.Compare: addr ec_s addr c.order.n limbs) >= 0 return false;
+
+		# the key: a point on the curve
+		if not (Ec.Load: addr ec_q public + 1) return false;
+
+		# w = 1/s, u1 = e w and u2 = r w, all mod n
+		call Ec.DigestNumber: addr ec_e digest digest_length;
+		call Big.PowMod: addr ec_w addr ec_s addr c.n_minus_2 c.bytes addr c.order;
+		call Ec.TimesModN: addr ec_u1 addr ec_e addr ec_w;
+		call Ec.TimesModN: addr ec_u2 addr ec_r addr ec_w;
+
+		# u1 G + u2 Q, one bit of each at a time from the top (Shamir's way)
+		call Ec.Add: addr ec_gq addr c.g addr ec_q;
+		call Ec.Infinity: addr ec_sum;
+		int bit: c.bytes * 8 - 1;
+		while bit >= 0
+			call Ec.Double: addr ec_sum addr ec_sum;
+			u32 b1: (ec_u1:(bit >> 4) >> (bit & 15)) & 1;
+			u32 b2: (ec_u2:(bit >> 4) >> (bit & 15)) & 1;
+			if b1 is 1 and b2 is 1
+				call Ec.Add: addr ec_sum addr ec_sum addr ec_gq;
+			;;
+			if b1 is 1 and b2 is 0
+				call Ec.Add: addr ec_sum addr ec_sum addr c.g;
+			;;
+			if b1 is 0 and b2 is 1
+				call Ec.Add: addr ec_sum addr ec_sum addr ec_q;
+			;;
+			bit--;
+		;;
+		if (Big.IsZero: addr ec_sum.z limbs) return false;
+
+		# its x, out of Jacobian coordinates and Montgomery form, mod n, must be r
+		call Big.MontPow: addr t_a addr ec_sum.z addr c.p_minus_2 c.bytes addr c.field;   # 1/z
+		call Ec.Mul: addr t_b addr t_a addr t_a;
+		call Ec.Mul: addr t_b addr t_b addr ec_sum.x;
+		call Ec.Mul: addr t_b addr t_b addr c.plain_one;                                    # plain x
+		if (Big.Compare: addr t_b addr c.order.n limbs) >= 0
+			call Big.Subtract: addr t_b addr c.order.n limbs;
+		;;
+	[end: (Big.Compare: addr t_b addr ec_r limbs) is 0]
+
+	# r and s (c.bytes each) = private's signature of a digest, with its nonce from RFC
+	# 6979; false if private isn't a key (0, or not below n)
+	[Sign: ptr<EcCurve> c: 0; ptr<u8> r: 0; ptr<u8> s: 0; ptr<u8> private: 0; ptr<u8> digest: 0; u32 digest_length: 0;]
+		ec is c;
+		u32 limbs: c.limbs;
+		u32 bytes: c.bytes;
+		if not (Ec.ReadScalar: addr ec_d private) return false;
+		call Bytes.Copy: addr sign_x private bytes;
+		# e = the digest mod n (as a number, and as bytes for the nonce)
+		call Ec.DigestNumber: addr ec_e digest digest_length;
+		call Big.ToBytes: addr sign_h bytes addr ec_e limbs;
+
+		# V = 1 1 ... 1, K = 0 0 ... 0, then K and V from the key and the digest
+		while u32 i: 0; i < 32; i++;
+			sign_v:i is 1;
+			sign_key:i is 0;
+		;;
+		call Ec.Rekey: 0 true;
+		call Ec.Rekey: 1 true;
+		while true
+			# the next candidate: V = HMAC(K, V) until there are enough bytes, as a number
+			u32 got: 0;
+			while got < bytes
+				call Hmac.Mac: addr sign_key 32 addr sign_v 32 addr sign_v;
+				call Bytes.Copy: addr sign_t + got addr sign_v 32;
+				got++ 32;
+			;;
+			call Big.FromBytes: addr ec_k limbs addr sign_t bytes;
+			if not (Big.IsZero: addr ec_k limbs) and (Big.Compare: addr ec_k addr c.order.n limbs) < 0
+				# r = (k G).x mod n
+				call Ec.ScalarMult: addr ec_point addr ec_k addr c.g;
+				call Ec.Affine: addr ec_xy addr ec_point;
+				call Big.FromBytes: addr ec_r limbs addr ec_xy bytes;
+				if (Big.Compare: addr ec_r addr c.order.n limbs) >= 0
+					call Big.Subtract: addr ec_r addr c.order.n limbs;
+				;;
+				if not (Big.IsZero: addr ec_r limbs)
+					# s = (e + r d) / k mod n
+					call Ec.TimesModN: addr ec_s addr ec_r addr ec_d;
+					call Ec.PlusModN: addr ec_s addr ec_s addr ec_e;
+					call Big.PowMod: addr ec_w addr ec_k addr c.n_minus_2 bytes addr c.order;
+					call Ec.TimesModN: addr ec_s addr ec_w addr ec_s;
+					if not (Big.IsZero: addr ec_s limbs)
+						call Big.ToBytes: r bytes addr ec_r limbs;
+						call Big.ToBytes: s bytes addr ec_s limbs;
+						return true;
+					;;
+				;;
+			;;
+			# (almost never) not a nonce that works: K and V move on
+			call Ec.Rekey: 0 false;
+		;;
+	[end: false]
+
+	# public (1 + 2 c.bytes bytes: 04, x, y) = the public key of private (c.bytes); false
+	# if private isn't a key
+	[PublicFrom: ptr<EcCurve> c: 0; ptr<u8> public: 0; ptr<u8> private: 0;]
+		ec is c;
+		if not (Ec.ReadScalar: addr ec_d private) return false;
+		call Ec.ScalarMult: addr ec_point addr ec_d addr c.g;
+		public:0 is 4;
+		call Ec.Affine: public + 1 addr ec_point;
+	[end: true]
+
+	# private (c.bytes) and public (1 + 2 c.bytes) = the key in a key file's DER: SEC 1's
+	# ECPrivateKey (openssl ecparam -genkey) or PKCS #8 holding one (openssl genpkey); false
+	# if it isn't a private key on the curve whose object identifier is oid
+	[ReadPrivate: ptr<EcCurve> c: 0; ptr<u8> oid: 0; u32 oid_length: 0; ptr<u8> private: 0; ptr<u8> public: 0; ptr<u8> der: 0; u32 length: 0;]
+		if not (Der.Element: der length) or Der.tag is not Der.SEQUENCE return false;
+		DerCursor key;
+		call Der.Enter: addr key;
+		if not (Der.Next: addr key) or Der.tag is not Der.INTEGER or Der.length is not 1 return false;
+		u32 version: Der.content:0;
+		if version is 0
+			# PKCS #8: the algorithm (an EC key on this curve), then the ECPrivateKey in an OCTET STRING
+			if not (Der.Next: addr key) or Der.tag is not Der.SEQUENCE return false;
+			DerCursor algorithm;
+			call Der.Enter: addr algorithm;
+			if not (Der.Next: addr algorithm) or not (Der.IsOid: addr ec_oid_key 7) return false;
+			if not (Der.Next: addr algorithm) or not (Der.IsOid: oid oid_length) return false;
+			if not (Der.Next: addr key) or Der.tag is not Der.OCTET_STRING return false;
+			return (Ec.ReadPrivate: c oid oid_length private public Der.content Der.length);
+		;;
+		# ECPrivateKey: version 1, the key, then (both optional) the curve and the public key
+		if version is not 1 return false;
+		if not (Der.Next: addr key) or Der.tag is not Der.OCTET_STRING or Der.length > c.bytes return false;
+		if not (Der.Number: private c.bytes) return false;
+		while (Der.Next: addr key)
+			if Der.tag is 0xA0
+				DerCursor named;
+				call Der.Enter: addr named;
+				if not (Der.Next: addr named) or not (Der.IsOid: oid oid_length) return false;
+			;;
+		;;
+	[end: (Ec.PublicFrom: c public private)]
+
+	# ---- for the methods above, on the curve ec
+
+	# e = a digest as a number: its first ec.bytes bytes (all of a shorter one), mod n
+	# (below 2n, as n is more than half of 2^(8 bytes))
+	[DigestNumber: ptr<u32> e: 0; ptr<u8> digest: 0; u32 length: 0;]
+		if length > ec.bytes
+			length is ec.bytes;
+		;;
+		call Big.FromBytes: e ec.limbs digest length;
+		if (Big.Compare: e addr ec.order.n ec.limbs) >= 0
+			call Big.Subtract: e addr ec.order.n ec.limbs;
+		;;
+	[end]
+
+	# RFC 6979's K = HMAC(K, V b [x h]) and V = HMAC(K, V), with x and h when keyed
+	[Rekey: u32 b: 0; bln keyed: false;]
+		sign_byte:0 is b;
+		call Hmac.Start: addr sign_key 32;
+		call Hmac.Update: addr sign_v 32;
+		call Hmac.Update: addr sign_byte 1;
+		if keyed
+			call Hmac.Update: addr sign_x ec.bytes;
+			call Hmac.Update: addr sign_h ec.bytes;
+		;;
+		call Hmac.Finish: addr sign_key;
+		call Hmac.Mac: addr sign_key 32 addr sign_v 32 addr sign_v;
+	[end]
+
+	# to = number - 2 (big-endian bytes, ec.bytes of them; the number is odd, so the last
+	# byte doesn't borrow)
+	[MinusTwo: ptr<u8> to: 0; ptr<u8> number: 0;]
+		call Bytes.Copy: to number ec.bytes;
+		to:(ec.bytes - 1) is number:(ec.bytes - 1) - 2;
+	[end]
+
+	# k (limbs) = a scalar's bytes; false if it's 0 or not below n
+	[ReadScalar: ptr<u32> k: 0; ptr<u8> bytes: 0;]
+		call Big.FromBytes: k ec.limbs bytes ec.bytes;
+	[end: not (Big.IsZero: k ec.limbs) and (Big.Compare: k addr ec.order.n ec.limbs) < 0]
+
+	# r = k a, one bit of k at a time from the top
+	[ScalarMult: ptr<EcPoint> r: 0; ptr<u32> k: 0; ptr<EcPoint> a: 0;]
+		call Ec.Infinity: r;
+		int bit: ec.bytes * 8 - 1;
+		while bit >= 0
+			call Ec.Double: r r;
+			if ((k:(bit >> 4) >> (bit & 15)) & 1) is 1
+				call Ec.Add: r r a;
+			;;
+			bit--;
+		;;
+	[end]
+
+	# xy (x then y, ec.bytes each) = a, out of Jacobian coordinates and Montgomery form (a
+	# isn't the point at infinity)
+	[Affine: ptr<u8> xy: 0; ptr<EcPoint> a: 0;]
+		call Big.MontPow: addr t_a addr a.z addr ec.p_minus_2 ec.bytes addr ec.field;   # 1/z
+		call Ec.Mul: addr t_b addr t_a addr t_a;                                         # 1/z^2
+		call Ec.Mul: addr t_c addr a.x addr t_b;
+		call Ec.Mul: addr t_c addr t_c addr ec.plain_one;
+		call Big.ToBytes: xy ec.bytes addr t_c ec.limbs;
+		call Ec.Mul: addr t_b addr t_b addr t_a;                                         # 1/z^3
+		call Ec.Mul: addr t_c addr a.y addr t_b;
+		call Ec.Mul: addr t_c addr t_c addr ec.plain_one;
+		call Big.ToBytes: xy + ec.bytes ec.bytes addr t_c ec.limbs;
+	[end]
+
+	# r = a + b mod n (both below n)
+	[PlusModN: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.Copy: addr t_plus a ec.limbs;
+		u32 carry: (Big.Add: addr t_plus b ec.limbs);
+		if carry is not 0 or (Big.Compare: addr t_plus addr ec.order.n ec.limbs) >= 0
+			call Big.Subtract: addr t_plus addr ec.order.n ec.limbs;
+		;;
+		call Big.Copy: r addr t_plus ec.limbs;
+	[end]
+
+	# point = x and y (ec.bytes each), in Montgomery form with z 1; false if it isn't on
+	# the curve (y^2 = x^3 - 3x + b) or a number isn't below p
+	[Load: ptr<EcPoint> point: 0; ptr<u8> xy: 0;]
+		u32 limbs: ec.limbs;
+		call Big.FromBytes: addr point.x limbs xy ec.bytes;
+		call Big.FromBytes: addr point.y limbs xy + ec.bytes ec.bytes;
+		if (Big.Compare: addr point.x addr ec.field.n limbs) >= 0 return false;
+		if (Big.Compare: addr point.y addr ec.field.n limbs) >= 0 return false;
+		call Ec.Mul: addr point.x addr point.x addr ec.field.r2;
+		call Ec.Mul: addr point.y addr point.y addr ec.field.r2;
+		call Big.Copy: addr point.z addr ec.one limbs;
+		call Ec.Mul: addr t_a addr point.y addr point.y;          # y^2
+		call Ec.Mul: addr t_b addr point.x addr point.x;
+		call Ec.Mul: addr t_b addr t_b addr point.x;              # x^3
+		call Ec.Plus: addr t_c addr point.x addr point.x;
+		call Ec.Plus: addr t_c addr t_c addr point.x;             # 3x
+		call Ec.Minus: addr t_b addr t_b addr t_c;
+		call Ec.Plus: addr t_b addr t_b addr ec.b;
+	[end: (Big.Compare: addr t_a addr t_b limbs) is 0]
+
+	# r = 2a (r may be a); with a = -3, as the NIST curves have (dbl-2001-b)
+	[Double: ptr<EcPoint> r: 0; ptr<EcPoint> a: 0;]
+		call Ec.Mul: addr t_a addr a.z addr a.z;                  # delta = z^2
+		call Ec.Mul: addr t_b addr a.y addr a.y;                  # gamma = y^2
+		call Ec.Mul: addr t_c addr a.x addr t_b;                  # beta = x gamma
+		call Ec.Minus: addr t_d addr a.x addr t_a;
+		call Ec.Plus: addr t_e addr a.x addr t_a;
+		call Ec.Mul: addr t_d addr t_d addr t_e;
+		call Ec.Plus: addr t_e addr t_d addr t_d;
+		call Ec.Plus: addr t_d addr t_e addr t_d;                 # alpha = 3 (x - delta)(x + delta)
+		# z3 = (y + z)^2 - gamma - delta, before y and z change
+		call Ec.Plus: addr t_e addr a.y addr a.z;
+		call Ec.Mul: addr t_e addr t_e addr t_e;
+		call Ec.Minus: addr t_e addr t_e addr t_b;
+		call Ec.Minus: addr r.z addr t_e addr t_a;
+		# x3 = alpha^2 - 8 beta
+		call Ec.Plus: addr t_c addr t_c addr t_c;
+		call Ec.Plus: addr t_c addr t_c addr t_c;                 # 4 beta
+		call Ec.Plus: addr t_f addr t_c addr t_c;                 # 8 beta
+		call Ec.Mul: addr t_e addr t_d addr t_d;
+		call Ec.Minus: addr r.x addr t_e addr t_f;
+		# y3 = alpha (4 beta - x3) - 8 gamma^2
+		call Ec.Minus: addr t_e addr t_c addr r.x;
+		call Ec.Mul: addr t_e addr t_d addr t_e;
+		call Ec.Mul: addr t_f addr t_b addr t_b;
+		call Ec.Plus: addr t_f addr t_f addr t_f;
+		call Ec.Plus: addr t_f addr t_f addr t_f;
+		call Ec.Plus: addr t_f addr t_f addr t_f;
+		call Ec.Minus: addr r.y addr t_e addr t_f;
+	[end]
+
+	# r = a + b (r may be either) (add-2007-bl)
+	[Add: ptr<EcPoint> r: 0; ptr<EcPoint> a: 0; ptr<EcPoint> b: 0;]
+		u32 limbs: ec.limbs;
+		if (Big.IsZero: addr a.z limbs)
+			call Ec.CopyPoint: r b;
+			return;
+		;;
+		if (Big.IsZero: addr b.z limbs)
+			call Ec.CopyPoint: r a;
+			return;
+		;;
+		call Ec.Mul: addr t_a addr a.z addr a.z;                  # z1z1
+		call Ec.Mul: addr t_b addr b.z addr b.z;                  # z2z2
+		call Ec.Mul: addr t_c addr a.x addr t_b;                  # u1
+		call Ec.Mul: addr t_d addr b.x addr t_a;                  # u2
+		call Ec.Mul: addr t_e addr a.y addr b.z;
+		call Ec.Mul: addr t_e addr t_e addr t_b;                  # s1
+		call Ec.Mul: addr t_f addr b.y addr a.z;
+		call Ec.Mul: addr t_f addr t_f addr t_a;                  # s2
+		call Ec.Minus: addr t_g addr t_d addr t_c;                # h = u2 - u1
+		call Ec.Minus: addr t_h addr t_f addr t_e;                # s2 - s1
+		if (Big.IsZero: addr t_g limbs)
+			# the same x: the same point (double it), or each other's opposite (infinity)
+			if (Big.IsZero: addr t_h limbs)
+				call Ec.Double: r a;
+			;;
+			else
+				call Ec.Infinity: r;
+			;;
+			return;
+		;;
+		call Ec.Plus: addr t_h addr t_h addr t_h;                 # rr = 2 (s2 - s1)
+		call Ec.Plus: addr t_i addr t_g addr t_g;
+		call Ec.Mul: addr t_i addr t_i addr t_i;                  # i = (2h)^2
+		call Ec.Mul: addr t_j addr t_g addr t_i;                  # j = h i
+		call Ec.Mul: addr t_k addr t_c addr t_i;                  # v = u1 i
+		# z3 = ((z1 + z2)^2 - z1z1 - z2z2) h, before r changes
+		call Ec.Plus: addr t_l addr a.z addr b.z;
+		call Ec.Mul: addr t_l addr t_l addr t_l;
+		call Ec.Minus: addr t_l addr t_l addr t_a;
+		call Ec.Minus: addr t_l addr t_l addr t_b;
+		call Ec.Mul: addr t_l addr t_l addr t_g;
+		# x3 = rr^2 - j - 2v
+		call Ec.Mul: addr t_a addr t_h addr t_h;
+		call Ec.Minus: addr t_a addr t_a addr t_j;
+		call Ec.Minus: addr t_a addr t_a addr t_k;
+		call Ec.Minus: addr t_a addr t_a addr t_k;
+		# y3 = rr (v - x3) - 2 s1 j
+		call Ec.Minus: addr t_b addr t_k addr t_a;
+		call Ec.Mul: addr t_b addr t_h addr t_b;
+		call Ec.Mul: addr t_c addr t_e addr t_j;
+		call Ec.Plus: addr t_c addr t_c addr t_c;
+		call Ec.Minus: addr t_b addr t_b addr t_c;
+		call Big.Copy: addr r.x addr t_a limbs;
+		call Big.Copy: addr r.y addr t_b limbs;
+		call Big.Copy: addr r.z addr t_l limbs;
+	[end]
+
+	[Infinity: ptr<EcPoint> r: 0;]
+		call Big.Copy: addr r.x addr ec.one ec.limbs;
+		call Big.Copy: addr r.y addr ec.one ec.limbs;
+		while u32 i: 0; i < ec.limbs; i++;
+			r.z:i is 0;
+		;;
+	[end]
+
+	[CopyPoint: ptr<EcPoint> r: 0; ptr<EcPoint> a: 0;]
+		call Big.Copy: addr r.x addr a.x ec.limbs;
+		call Big.Copy: addr r.y addr a.y ec.limbs;
+		call Big.Copy: addr r.z addr a.z ec.limbs;
+	[end]
+
+	# r = a b mod p (Montgomery's product)
+	[Mul: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.MontMul: r a b addr ec.field;
+	[end]
+
+	# r = a + b mod p (r may be a or b)
+	[Plus: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.Copy: addr t_plus a ec.limbs;
+		u32 carry: (Big.Add: addr t_plus b ec.limbs);
+		if carry is not 0 or (Big.Compare: addr t_plus addr ec.field.n ec.limbs) >= 0
+			call Big.Subtract: addr t_plus addr ec.field.n ec.limbs;
+		;;
+		call Big.Copy: r addr t_plus ec.limbs;
+	[end]
+
+	# r = a - b mod p (r may be a or b)
+	[Minus: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.Copy: addr t_minus a ec.limbs;
+		if (Big.Subtract: addr t_minus b ec.limbs) is not 0
+			call Big.Add: addr t_minus addr ec.field.n ec.limbs;
+		;;
+		call Big.Copy: r addr t_minus ec.limbs;
+	[end]
+
+	# r = a b mod n (both plain)
+	[TimesModN: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		call Big.MontMul: r a b addr ec.order;                    # a b / R
+		call Big.MontMul: r r addr ec.order.r2 addr ec.order;     # times R^2 / R: a b
+	[end]
+}

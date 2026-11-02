@@ -1,0 +1,237 @@
+# SHA-512 and SHA-384 (FIPS 180-4): a 64-byte or 48-byte digest of any amount of data.
+# SHA-384 is SHA-512 started from other numbers and cut to 48 bytes; certificates signed
+# with P-384 keys use it. 32-bit kernels and programs (the math is 64-bit numbers).
+#
+#   use crypto.sha512;
+#   u8 digest[64];
+#   call Sha512.Hash: 'abc' 3 addr digest;
+#   call Sha512.Hash384: 'abc' 3 addr digest;     # the first 48 bytes
+#
+# For data that arrives in pieces, keep a Sha512State, as with crypto.sha256:
+#
+#   Sha512State s;
+#   call Sha512.Init384: addr s;                 # or Init, for SHA-512
+#   call Sha512.Update: addr s first 100;
+#   call Sha512.Final: addr s addr digest;       # 48 or 64 bytes, as Init said
+#
+# Sha512.Copy duplicates a state, so a digest of what has come so far can be taken while
+# the original carries on.
+
+use crypto.bytes;
+
+struct.Sha512State
+{
+	u64 h[8];
+	u8 block[128];
+	u32 used;                   # bytes waiting in block
+	u32 bytes_low;              # how many bytes have been added, as 64 bits
+	u32 bytes_high;
+	u32 size;                   # the digest's bytes: 64, or 48 for SHA-384
+}
+
+phi.Sha512:Library
+{
+	const u32 DIGEST_SIZE: 64;
+	const u32 DIGEST_SIZE_384: 48;
+	const u32 BLOCK_SIZE: 128;
+
+	# the round constants, each as its high then its low 32 bits
+	u32 sha512_halves: 0x428a2f98 0xd728ae22 0x71374491 0x23ef65cd 0xb5c0fbcf 0xec4d3b2f 0xe9b5dba5 0x8189dbbc
+		0x3956c25b 0xf348b538 0x59f111f1 0xb605d019 0x923f82a4 0xaf194f9b 0xab1c5ed5 0xda6d8118
+		0xd807aa98 0xa3030242 0x12835b01 0x45706fbe 0x243185be 0x4ee4b28c 0x550c7dc3 0xd5ffb4e2
+		0x72be5d74 0xf27b896f 0x80deb1fe 0x3b1696b1 0x9bdc06a7 0x25c71235 0xc19bf174 0xcf692694
+		0xe49b69c1 0x9ef14ad2 0xefbe4786 0x384f25e3 0x0fc19dc6 0x8b8cd5b5 0x240ca1cc 0x77ac9c65
+		0x2de92c6f 0x592b0275 0x4a7484aa 0x6ea6e483 0x5cb0a9dc 0xbd41fbd4 0x76f988da 0x831153b5
+		0x983e5152 0xee66dfab 0xa831c66d 0x2db43210 0xb00327c8 0x98fb213f 0xbf597fc7 0xbeef0ee4
+		0xc6e00bf3 0x3da88fc2 0xd5a79147 0x930aa725 0x06ca6351 0xe003826f 0x14292967 0x0a0e6e70
+		0x27b70a85 0x46d22ffc 0x2e1b2138 0x5c26c926 0x4d2c6dfc 0x5ac42aed 0x53380d13 0x9d95b3df
+		0x650a7354 0x8baf63de 0x766a0abb 0x3c77b2a8 0x81c2c92e 0x47edaee6 0x92722c85 0x1482353b
+		0xa2bfe8a1 0x4cf10364 0xa81a664b 0xbc423001 0xc24b8b70 0xd0f89791 0xc76c51a3 0x0654be30
+		0xd192e819 0xd6ef5218 0xd6990624 0x5565a910 0xf40e3585 0x5771202a 0x106aa070 0x32bbd1b8
+		0x19a4c116 0xb8d2d0c8 0x1e376c08 0x5141ab53 0x2748774c 0xdf8eeb99 0x34b0bcb5 0xe19b48a8
+		0x391c0cb3 0xc5c95a63 0x4ed8aa4a 0xe3418acb 0x5b9cca4f 0x7763e373 0x682e6ff3 0xd6b2b8a3
+		0x748f82ee 0x5defb2fc 0x78a5636f 0x43172f60 0x84c87814 0xa1f0ab72 0x8cc70208 0x1a6439ec
+		0x90befffa 0x23631e28 0xa4506ceb 0xde82bde9 0xbef9a3f7 0xb2c67915 0xc67178f2 0xe372532b
+		0xca273ece 0xea26619c 0xd186b8c7 0x21c0c207 0xeada7dd6 0xcde0eb1e 0xf57d4f7f 0xee6ed178
+		0x06f067aa 0x72176fba 0x0a637dc5 0xa2c898a6 0x113f9804 0xbef90dae 0x1b710b35 0x131c471b
+		0x28db77f5 0x23047d84 0x32caab7b 0x40c72493 0x3c9ebe0a 0x15c9bebc 0x431d67c4 0x9c100d4c
+		0x4cc5d4be 0xcb3e42b6 0x597f299c 0xfc657e2a 0x5fcb6fab 0x3ad6faec 0x6c44198c 0x4a475817;
+	# where SHA-512 and SHA-384 start
+	u32 sha512_start: 0x6a09e667 0xf3bcc908 0xbb67ae85 0x84caa73b 0x3c6ef372 0xfe94f82b 0xa54ff53a 0x5f1d36f1
+		0x510e527f 0xade682d1 0x9b05688c 0x2b3e6c1f 0x1f83d9ab 0xfb41bd6b 0x5be0cd19 0x137e2179;
+	u32 sha384_start: 0xcbbb9d5d 0xc1059ed8 0x629a292a 0x367cd507 0x9159015a 0x3070dd17 0x152fecd8 0xf70e5939
+		0x67332667 0xffc00b31 0x8eb44a87 0x68581511 0xdb0c2e0d 0x64f98fa7 0x47b5481d 0xbefa4fa4;
+
+	u64 sha512_k[80];
+	bln sha512_ready: false;
+	u64 sha512_w[80];
+	Sha512State sha512_one;               # for Hash and Hash384
+
+	# the SHA-512 digest of length bytes of data (64 bytes)
+	[Hash: ptr<u8> data: 0; u32 length: 0; ptr<u8> digest: 0;]
+		call Init: addr sha512_one;
+		call Update: addr sha512_one data length;
+		call Final: addr sha512_one digest;
+	[end]
+
+	# the SHA-384 digest (48 bytes)
+	[Hash384: ptr<u8> data: 0; u32 length: 0; ptr<u8> digest: 0;]
+		call Init384: addr sha512_one;
+		call Update: addr sha512_one data length;
+		call Final: addr sha512_one digest;
+	[end]
+
+	[Init: ptr<Sha512State> s: 0;]
+		call Start: s sha512_start DIGEST_SIZE;
+	[end]
+
+	[Init384: ptr<Sha512State> s: 0;]
+		call Start: s sha384_start DIGEST_SIZE_384;
+	[end]
+
+	[Update: ptr<Sha512State> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		u32 total: s:0.bytes_low + length;
+		if total < s:0.bytes_low
+			s:0.bytes_high++;
+		;;
+		s:0.bytes_low is total;
+
+		ptr<u8> block: addr s:0.block;
+		u32 i: 0;
+		while i < length
+			if s:0.used is 0 and length - i >= BLOCK_SIZE
+				# a whole block straight from the data
+				call Compress: addr s:0.h data + i;
+				i++ BLOCK_SIZE;
+			;;
+			else
+				block:(s:0.used) is data:i;
+				s:0.used++;
+				i++;
+				if s:0.used is BLOCK_SIZE
+					call Compress: addr s:0.h block;
+					s:0.used is 0;
+				;;
+			;;
+		;;
+	[end]
+
+	# finish: the digest goes to digest (64 or 48 bytes); the state needs Init before reuse
+	[Final: ptr<Sha512State> s: 0; ptr<u8> digest: 0;]
+		u32 bits_high: (s:0.bytes_high << 3) | (s:0.bytes_low >> 29);
+		u32 bits_low: s:0.bytes_low << 3;
+		ptr<u8> block: addr s:0.block;
+
+		# a 1 bit, zeros, then the length in bits in the last 16 bytes of a block
+		u32 pos: s:0.used;
+		block:pos is 0x80;
+		pos++;
+		if pos > 112
+			while pos < BLOCK_SIZE
+				block:pos is 0;
+				pos++;
+			;;
+			call Compress: addr s:0.h block;
+			pos is 0;
+		;;
+		while pos < 120
+			block:pos is 0;
+			pos++;
+		;;
+		call PutBig: block + 120 bits_high;
+		call PutBig: block + 124 bits_low;
+		call Compress: addr s:0.h block;
+
+		ptr<u64> h: addr s:0.h;
+		while u32 i: 0; i < s:0.size / 8; i++;
+			call PutBig: digest + i * 8 (h:i >> 32) as u32;
+			call PutBig: digest + i * 8 + 4 h:i as u32;
+		;;
+		s:0.used is 0;
+	[end]
+
+	[Copy: ptr<Sha512State> from: 0; ptr<Sha512State> to: 0;]
+		call Bytes.Copy: to from sizeof Sha512State;
+	[end]
+
+	# a state from its starting numbers (as halves) and its digest's size
+	[Start: ptr<Sha512State> s: 0; ptr<u32> halves: 0; u32 size: 0;]
+		if not sha512_ready
+			while u32 i: 0; i < 80; i++;
+				sha512_k:i is ((sha512_halves:(2 * i) as u64) << 32) | sha512_halves:(2 * i + 1);
+			;;
+			sha512_ready is true;
+		;;
+		ptr<u64> h: addr s:0.h;
+		while u32 i: 0; i < 8; i++;
+			h:i is ((halves:(2 * i) as u64) << 32) | halves:(2 * i + 1);
+		;;
+		s:0.used is 0;
+		s:0.bytes_low is 0;
+		s:0.bytes_high is 0;
+		s:0.size is size;
+	[end]
+
+	[PutBig: ptr<u8> p: 0; u32 value: 0;]
+		p:0 is value >> 24;
+		p:1 is value >> 16;
+		p:2 is value >> 8;
+		p:3 is value;
+	[end]
+
+	[GetBig: ptr<u8> p: 0;]
+		u32 value: (p:0 << 24) | (p:1 << 16) | (p:2 << 8) | p:3;
+	[end: value]
+
+	# x turned right by n bits
+	[Turn: u64 x: 0; u32 n: 0;]
+	[end: (x >> n) | (x << (64 - n))]
+
+	# mix one 128-byte block into the hash
+	[Compress: ptr<u64> h: 0; ptr<u8> m: 0;]
+		unsafe
+			while u32 i: 0; i < 16; i++;
+				sha512_w:i is (((GetBig: m + i * 8) as u64) << 32) | (GetBig: m + i * 8 + 4);
+			;;
+			while u32 i: 16; i < 80; i++;
+				u64 w15: sha512_w:(i - 15);
+				u64 w2: sha512_w:(i - 2);
+				u64 sigma0: (Turn: w15 1) ^ (Turn: w15 8) ^ (w15 >> 7);
+				u64 sigma1: (Turn: w2 19) ^ (Turn: w2 61) ^ (w2 >> 6);
+				sha512_w:i is sha512_w:(i - 16) + sigma0 + sha512_w:(i - 7) + sigma1;
+			;;
+
+			u64 a: h:0;
+			u64 b: h:1;
+			u64 c: h:2;
+			u64 d: h:3;
+			u64 e: h:4;
+			u64 f: h:5;
+			u64 g: h:6;
+			u64 hh: h:7;
+			while u32 i: 0; i < 80; i++;
+				u64 sum1: (Turn: e 14) ^ (Turn: e 18) ^ (Turn: e 41);
+				u64 choose: (e & f) ^ (~e & g);
+				u64 t1: hh + sum1 + choose + sha512_k:i + sha512_w:i;
+				u64 sum0: (Turn: a 28) ^ (Turn: a 34) ^ (Turn: a 39);
+				u64 majority: (a & b) ^ (a & c) ^ (b & c);
+				hh is g;
+				g is f;
+				f is e;
+				e is d + t1;
+				d is c;
+				c is b;
+				b is a;
+				a is t1 + sum0 + majority;
+			;;
+			h:0 is h:0 + a;
+			h:1 is h:1 + b;
+			h:2 is h:2 + c;
+			h:3 is h:3 + d;
+			h:4 is h:4 + e;
+			h:5 is h:5 + f;
+			h:6 is h:6 + g;
+			h:7 is h:7 + hh;
+		;;
+	[end]
+}

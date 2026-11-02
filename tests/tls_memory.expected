@@ -11,3 +11,5 @@ another host: 0 0 (the server's certificate: the certificate isn't for this host
 chacha20 and a wildcard: 1 1 4867 4867
 nothing trusted: 0 (the server's certificate: no trusted root signed the chain; the other side refused the certificate (alert 42))
 changed on the way: 0 (a record failed its integrity check; the other side sent alert 20)
+p-384 identity: 1 1 
+p-384: 1 1, verified: 1 

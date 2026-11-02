@@ -1,0 +1,13 @@
+sha-384: 1
+another digest: 0
+a changed s: 0
+r and s swapped: 0
+a key off the curve: 0
+sha-256: 1
+sec 1: 1 1
+pkcs 8: 1 1
+not a p-256 key: 0
+sign: 1, checks: 1
+another digest: 0
+zero: 0 0
+p-256, sha-384: 1

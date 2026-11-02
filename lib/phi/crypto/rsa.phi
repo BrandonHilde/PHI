@@ -1,12 +1,13 @@
 # Checking RSA signatures (RFC 8017) made with SHA-256: PKCS #1 v1.5 (what certificates
-# are mostly signed with) and PSS (what TLS 1.3 servers sign their handshake with). Keys
-# of up to 4096 bits. Any kind of program.
+# are mostly signed with; SHA-384 too) and PSS (what TLS 1.3 servers sign their handshake
+# with). Keys of up to 4096 bits. Any kind of program.
 #
 #   use crypto.rsa;
 #   u8 digest[32];
 #   call Sha256.Hash: message length addr digest;
 #   bln good: (Rsa.VerifyPkcs1: modulus 256 exponent 3 addr digest signature 256);
 #   good is (Rsa.VerifyPss: modulus 256 exponent 3 addr digest signature 256);
+#   good is (Rsa.VerifyPkcs1: modulus 256 exponent 3 addr digest384 signature 256 48);
 #
 # The modulus and exponent are big-endian bytes, as a certificate holds them (a leading
 # 0 is fine). PSS here is with MGF1 over SHA-256 and a 32-byte salt, as TLS 1.3 has it.
@@ -26,16 +27,24 @@ phi.Rsa:Library
 	u32 rsa_bits: 0;                        # bits in the modulus
 	Sha256State rsa_sha;
 
-	# SHA-256's DigestInfo, which comes before the digest in a PKCS #1 v1.5 signature
+	# the DigestInfo of SHA-256 and SHA-384, which comes before the digest in a PKCS #1 v1.5 signature
 	u8 rsa_info: 0x30 0x31 0x30 0x0D 0x06 0x09 0x60 0x86 0x48 0x01 0x65 0x03 0x04 0x02 0x01 0x05 0x00 0x04 0x20;
+	u8 rsa_info_384: 0x30 0x41 0x30 0x0D 0x06 0x09 0x60 0x86 0x48 0x01 0x65 0x03 0x04 0x02 0x02 0x05 0x00 0x04 0x30;
 
 	# whether signature (signature_length bytes) is modulus's PKCS #1 v1.5 signature of a
-	# SHA-256 digest
+	# SHA-256 digest (or, with digest_length 48, a SHA-384 one)
 	[VerifyPkcs1: ptr<u8> modulus: 0; u32 modulus_length: 0; ptr<u8> exponent: 0; u32 exponent_length: 0;
-	              ptr<u8> digest: 0; ptr<u8> signature: 0; u32 signature_length: 0;]
+	              ptr<u8> digest: 0; ptr<u8> signature: 0; u32 signature_length: 0; u32 digest_length: 32;]
+		ptr<u8> info: addr rsa_info;
+		if digest_length is 48
+			info is addr rsa_info_384;
+		;;
+		elif digest_length is not 32
+			return false;
+		;;
 		if not (Rsa.Open: modulus modulus_length exponent exponent_length signature signature_length) return false;
 		# 00 01, then FF to fill, 00, the DigestInfo and the digest
-		u32 tail: 19 + 32;
+		u32 tail: 19 + digest_length;
 		if rsa_k < tail + 11 return false;
 		bln good: rsa_em:0 is 0 and rsa_em:1 is 1;
 		u32 fill: rsa_k - tail - 1;
@@ -47,10 +56,10 @@ phi.Rsa:Library
 		if rsa_em:fill is not 0
 			good is false;
 		;;
-		if not (Bytes.Equal: addr rsa_em + fill + 1 addr rsa_info 19)
+		if not (Bytes.Equal: addr rsa_em + fill + 1 info 19)
 			good is false;
 		;;
-		if not (Bytes.Equal: addr rsa_em + fill + 20 digest 32)
+		if not (Bytes.Equal: addr rsa_em + fill + 20 digest digest_length)
 			good is false;
 		;;
 	[end: good]

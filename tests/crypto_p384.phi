@@ -1,0 +1,70 @@
+# runs only in 32 and 64 bits: its numbers take more room than a 16-bit program has
+# ECDSA on P-384 (crypto.p384, crypto.ec): signatures OpenSSL 3.2 made with a P-384 key
+# (openssl ecparam -name secp384r1 -genkey, then openssl dgst -sha384 -sign, and -sha256)
+# checked, and changed a little, which must fail; the key read from its SEC 1 and PKCS #8
+# files; a signature PHI makes, checked; and a P-256 signature .NET made of a SHA-384
+# digest (its first 32 bytes are what's signed).
+use crypto.p256;
+use crypto.p384;
+use crypto.sha512;
+
+phi.CryptoP384:Library
+{
+	u8 public[97];
+	u8 expected[97];
+	u8 private[48];
+	u8 r[48];
+	u8 s[48];
+	u8 digest[48];
+	u8 short[32];
+	u8 sec1[167];
+	u8 pkcs8[185];
+	u8 public256[65];
+
+	call Bytes.FromHex: '0442d4c74f7c4088f668cbcf2b025a3a993c01be94f327c02f6c88b8dc43789b27eaa61e94b7cb4c4a3f2f5e6af76924d2b3b8cf7e94cd6631b30d00a744f55ce63589ca106a0b45b891d5079af883f4350b850a199741ca550d31886ca93c4d26' addr expected 97;
+	call Bytes.Copy: addr public addr expected 97;
+	call Bytes.FromHex: 'f9aeb154cc6f32c96455223233fd4ce6903aab46378a681c692e1e417f7933cc3a61d2ad01da132c5ad8775c85eb6dda' addr r 48;
+	call Bytes.FromHex: '6e0c3173677116fd5498bb81a7e9fd53dc198634f83ad3a362f505d4eeba85da613f79e000cb8309947a4e30e56789a0' addr s 48;
+	call Sha512.Hash384: 'PHI signs this message.' 23 addr digest;
+	log 'sha-384: ' (P384.Verify: addr public addr digest addr r addr s) '\n';
+	digest:0 is digest:0 ^ 1;
+	log 'another digest: ' (P384.Verify: addr public addr digest addr r addr s) '\n';
+	digest:0 is digest:0 ^ 1;
+	s:47 is s:47 ^ 1;
+	log 'a changed s: ' (P384.Verify: addr public addr digest addr r addr s) '\n';
+	s:47 is s:47 ^ 1;
+	log 'r and s swapped: ' (P384.Verify: addr public addr digest addr s addr r) '\n';
+	public:96 is public:96 ^ 1;
+	log 'a key off the curve: ' (P384.Verify: addr public addr digest addr r addr s) '\n';
+	public:96 is public:96 ^ 1;
+
+	# the same key, a SHA-256 digest
+	call Bytes.FromHex: 'cff670743b6c0563cbc3c2a877670f36eac5005189e7c476ddfa82fa80c5c45a0a3e0bfb87b6fdee278467e6136d539c' addr r 48;
+	call Bytes.FromHex: 'b546952d477a54cae64a3e2293a30f92bd9b8a472994ac6bfa3453b5052db87dfaa3b33dd59cc1eef5bb0d5e9fb53318' addr s 48;
+	call Sha256.Hash: 'PHI signs this message.' 23 addr short;
+	log 'sha-256: ' (P384.VerifyDigest: addr public addr short 32 addr r addr s) '\n';
+
+	# the key, from its files
+	call Bytes.FromHex: '3081a4020101043006b9cd63cd88584b760a2c4448ee90efda0f7568eb5f35287c4e41b8cbfeec986b870f4b893918c1c6cd3cc1695a80f9a00706052b81040022a1640362000442d4c74f7c4088f668cbcf2b025a3a993c01be94f327c02f6c88b8dc43789b27eaa61e94b7cb4c4a3f2f5e6af76924d2b3b8cf7e94cd6631b30d00a744f55ce63589ca106a0b45b891d5079af883f4350b850a199741ca550d31886ca93c4d26' addr sec1 167;
+	call Bytes.FromHex: '3081b6020100301006072a8648ce3d020106052b8104002204819e30819b020101043006b9cd63cd88584b760a2c4448ee90efda0f7568eb5f35287c4e41b8cbfeec986b870f4b893918c1c6cd3cc1695a80f9a1640362000442d4c74f7c4088f668cbcf2b025a3a993c01be94f327c02f6c88b8dc43789b27eaa61e94b7cb4c4a3f2f5e6af76924d2b3b8cf7e94cd6631b30d00a744f55ce63589ca106a0b45b891d5079af883f4350b850a199741ca550d31886ca93c4d26' addr pkcs8 185;
+	call Bytes.Zero: addr public 97;
+	log 'sec 1: ' (P384.ReadPrivate: addr private addr public addr sec1 167) ' ' (Bytes.Equal: addr public addr expected 97) '\n';
+	call Bytes.Zero: addr public 97;
+	log 'pkcs 8: ' (P384.ReadPrivate: addr private addr public addr pkcs8 185) ' ' (Bytes.Equal: addr public addr expected 97) '\n';
+	log 'not a p-256 key: ' (P256.ReadPrivate: addr private addr public256 addr pkcs8 185) '\n';
+
+	# PHI signs, and checks what it signed
+	call Sha512.Hash384: 'PHI signs this message.' 23 addr digest;
+	log 'sign: ' (P384.Sign: addr r addr s addr private addr digest) ', checks: ' (P384.Verify: addr expected addr digest addr r addr s) '\n';
+	digest:0 is digest:0 ^ 1;
+	log 'another digest: ' (P384.Verify: addr expected addr digest addr r addr s) '\n';
+	call Bytes.Zero: addr private 48;
+	log 'zero: ' (P384.Sign: addr r addr s addr private addr digest) ' ' (P384.PublicFrom: addr public addr private) '\n';
+
+	# P-256 with a SHA-384 digest
+	call Bytes.FromHex: '04cf68c42c02a869ec5f69d6ae6d201e6d78e72e15aac9c7e51f077f87b4691faf33df62b8b416870834e01bc5e6bb4ebca0f5ef5b6e0367039be1f9cedf38bc9a' addr public256 65;
+	call Bytes.FromHex: '180b4d52f8306a16e8ae003d5b41d524f38f50605cd9b86396dd3e2fa29f3bd7' addr r 32;
+	call Bytes.FromHex: '2e81421db4798de569243d554e24b6087f71a2cd0d4380bb8091f711bc4ba174' addr s 32;
+	call Sha512.Hash384: 'PHI signs this message.' 23 addr digest;
+	log 'p-256, sha-384: ' (P256.VerifyDigest: addr public256 addr digest 48 addr r addr s) '\n';
+}

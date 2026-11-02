@@ -1,0 +1,62 @@
+# runs only in 32 and 64 bits: SHA-512's math is 64-bit numbers
+# SHA-512 and SHA-384 against FIPS 180-2's test vectors and .NET's for the rest.
+use crypto.sha512;
+
+phi.CryptoSha512:Library
+{
+	u8 output[64];
+	u8 data[1000];
+	Sha512State s;
+	Sha512State copy;
+
+	log 'sha512 empty:\n';
+	call Sha512.Hash: addr data 0 addr output;
+	call Bytes.PrintHex: addr output 64;
+
+	log 'sha512 abc:\n';
+	call Sha512.Hash: 'abc' 3 addr output;
+	call Bytes.PrintHex: addr output 64;
+
+	log 'sha384 abc:\n';
+	call Sha512.Hash384: 'abc' 3 addr output;
+	call Bytes.PrintHex: addr output 48;
+
+	# 112 bytes: the length no longer fits the first block's padding
+	log 'sha384 896 bits:\n';
+	call Sha512.Hash384: 'abcdefghbcdefghicdefghijdefghijkefghijklfghijklmghijklmnhijklmnoijklmnopjklmnopqklmnopqrlmnopqrsmnopqrstnopqrstu' 112 addr output;
+	call Bytes.PrintHex: addr output 48;
+
+	# 1000 bytes, added 7 at a time: the block buffer and the length in the padding
+	log 'sha384 1000 bytes in pieces:\n';
+	while u32 i: 0; i < 1000; i++;
+		data:i is (i * 7 + 3) & 0xFF;
+	;;
+	call Sha512.Init384: addr s;
+	u32 done: 0;
+	while done < 1000
+		u32 piece: 7;
+		if 1000 - done < 7
+			piece is 1000 - done;
+		;;
+		call Sha512.Update: addr s addr data + done piece;
+		done++ piece;
+	;;
+	call Sha512.Final: addr s addr output;
+	call Bytes.PrintHex: addr output 48;
+
+	log 'sha512 the same, at once:\n';
+	call Sha512.Hash: addr data 1000 addr output;
+	call Bytes.PrintHex: addr output 64;
+
+	# a copy of a state carries on separately
+	log 'sha384 abc and abd from one state:\n';
+	call Sha512.Init384: addr s;
+	call Sha512.Update: addr s 'ab' 2;
+	call Sha512.Copy: addr s addr copy;
+	call Sha512.Update: addr s 'c' 1;
+	call Sha512.Update: addr copy 'd' 1;
+	call Sha512.Final: addr s addr output;
+	call Bytes.PrintHex: addr output 48;
+	call Sha512.Final: addr copy addr output;
+	call Bytes.PrintHex: addr output 48;
+}

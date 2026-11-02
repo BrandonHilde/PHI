@@ -44,8 +44,10 @@ struct.TlsIdentity
 	ptr<u8> list;               # the certificates as a Certificate message lists them
 	u32 list_length;
 	u32 list_room;
-	u8 private[32];             # its P-256 key
-	u8 public[65];
+	u32 scheme;                 # how it signs: ECDSA_P256_SHA256 or ECDSA_P384_SHA384
+	u32 size;                   # bytes in a number of its key: 32 or 48
+	u8 private[48];             # its key (P-256 or P-384)
+	u8 public[97];
 	bln ready;
 }
 
@@ -127,6 +129,7 @@ phi.Tls13:Library
 	const u32 CHACHA20_POLY1305: 0x1303;
 	const u32 X25519_GROUP: 0x001D;
 	const u32 ECDSA_P256_SHA256: 0x0403;
+	const u32 ECDSA_P384_SHA384: 0x0503;
 	const u32 RSA_PSS_SHA256: 0x0804;
 
 	# a session's stage
@@ -152,7 +155,7 @@ phi.Tls13:Library
 	u8 tls_hash[32];
 	u8 tls_empty_hash[32];
 	u8 tls_zeros[32];
-	u8 tls_scratch[32];
+	u8 tls_scratch[48];
 	u8 tls_finished_key[32];
 	u8 tls_verify[32];
 	u8 tls_shared[32];
@@ -161,8 +164,8 @@ phi.Tls13:Library
 	u8 tls_info[300];
 	u8 tls_signed[130];
 	u8 tls_small[8];
-	u8 tls_r[32];
-	u8 tls_s[32];
+	u8 tls_r[48];
+	u8 tls_s[48];
 	Sha256State tls_snapshot;
 	u8 tls_hello_retry: 0xcf 0x21 0xad 0x74 0xe5 0x9a 0x61 0x11 0xbe 0x1d 0x8c 0x02 0x1e 0x65 0xb8 0x91
 		0xc2 0xa2 0x11 0x16 0x7a 0xbb 0x8c 0x5e 0x07 0x9e 0x09 0xe2 0xc8 0xa8 0x33 0x9c;
@@ -253,21 +256,33 @@ phi.Tls13:Library
 
 	# ---- a server's identity
 
-	# id = a certificate (DER) and its P-256 key (a SEC 1 or PKCS #8 file's DER), which must
-	# be the certificate's; false if they aren't (X509.error or the reason in Tls13's)
+	# id = a certificate (DER) and its P-256 or P-384 key (a SEC 1 or PKCS #8 file's DER),
+	# which must be the certificate's; false if they aren't (X509.error or the reason in
+	# Tls13's)
 	[Identity: ptr<TlsIdentity> id: 0; ptr<u8> certificate: 0; u32 certificate_length: 0; ptr<u8> key: 0; u32 key_length: 0;]
 		id.ready is false;
 		Certificate c;
 		if not (X509.Parse: addr c certificate certificate_length) return false;
-		if c.key_kind is not X509.P256
-			X509.error is 'a server key that isn\'t P-256';
+		bln read: false;
+		if c.key_kind is X509.P256
+			id.scheme is ECDSA_P256_SHA256;
+			id.size is 32;
+			read is (P256.ReadPrivate: addr id.private addr id.public key key_length);
+		;;
+		elif c.key_kind is X509.P384
+			id.scheme is ECDSA_P384_SHA384;
+			id.size is 48;
+			read is (P384.ReadPrivate: addr id.private addr id.public key key_length);
+		;;
+		else
+			X509.error is 'a server key that isn\'t P-256 or P-384';
 			return false;
 		;;
-		if not (P256.ReadPrivate: addr id.private addr id.public key key_length)
+		if not read
 			X509.error is 'a key file that can\'t be read';
 			return false;
 		;;
-		if not (Bytes.Equal: addr id.public c.point 65)
+		if not (Bytes.Equal: addr id.public c.point 1 + 2 * id.size)
 			X509.error is 'the key isn\'t the certificate\'s';
 			return false;
 		;;
@@ -733,9 +748,9 @@ phi.Tls13:Library
 		call Tls13.Put16: h + pos + 4 2;
 		call Tls13.Put16: h + pos + 6 X25519_GROUP;
 		pos++ 8;
-		# signature_algorithms, the ones crypto.x509 checks: ECDSA P-256 and RSA-PSS for the
-		# handshake, and RSA PKCS #1 for certificates, all with SHA-256
-		u32 algorithms: 0x0403 0x0804 0x0401;
+		# signature_algorithms, the ones crypto.x509 checks: ECDSA (P-256 with SHA-256, P-384
+		# with SHA-384) and RSA-PSS for the handshake, and RSA PKCS #1 for certificates
+		u32 algorithms: 0x0403 0x0503 0x0804 0x0401 0x0501;
 		call Tls13.Put16: h + pos 13;
 		call Tls13.Put16: h + pos + 2 2 + algorithms.len * 2;
 		call Tls13.Put16: h + pos + 4 algorithms.len * 2;
@@ -848,12 +863,21 @@ phi.Tls13:Library
 		u32 scheme: (Tls13.Get16: body);
 		u32 signature_length: (Tls13.Get16: body + 2);
 		if 4 + signature_length > length return (Tls13.Fail: s 'a CertificateVerify that can\'t be read' ALERT_DECODE_ERROR);
-		call Tls13.SignedContent: s;
+		u32 digest_length: 32;
+		if scheme is ECDSA_P384_SHA384
+			digest_length is 48;
+		;;
+		call Tls13.SignedContent: s digest_length;
 		ptr<Certificate> own: addr s.chain:0;
 		bln good: false;
 		if scheme is ECDSA_P256_SHA256 and own.key_kind is X509.P256
-			if (X509.ReadEcdsa: body + 4 signature_length)
+			if (X509.ReadEcdsa: body + 4 signature_length 32)
 				good is (P256.Verify: own.point addr tls_scratch addr X509.x509_r addr X509.x509_s);
+			;;
+		;;
+		if scheme is ECDSA_P384_SHA384 and own.key_kind is X509.P384
+			if (X509.ReadEcdsa: body + 4 signature_length 48)
+				good is (P384.Verify: own.point addr tls_scratch addr X509.x509_r addr X509.x509_s);
 			;;
 		;;
 		if scheme is RSA_PSS_SHA256 and own.key_kind is X509.RSA
@@ -959,10 +983,11 @@ phi.Tls13:Library
 				;;
 			;;
 			if type is 13 and size >= 2
-				# signature_algorithms: two bytes of length, then two each
+				# signature_algorithms: two bytes of length, then two each; ours must be one
+				ptr<TlsIdentity> own: s.identity;
 				u32 k: 2;
 				while k + 2 <= size
-					if (Tls13.Get16: e + k) is ECDSA_P256_SHA256
+					if (Tls13.Get16: e + k) is own.scheme
 						can_sign is true;
 					;;
 					k++ 2;
@@ -973,7 +998,7 @@ phi.Tls13:Library
 		if not tls13 return (Tls13.Fail: s 'the client doesn\'t speak TLS 1.3' ALERT_PROTOCOL_VERSION);
 		if s.suite is 0 return (Tls13.Fail: s 'no cipher in common with the client' ALERT_HANDSHAKE_FAILURE);
 		if not have_key return (Tls13.Fail: s 'the client offers no X25519 key' ALERT_HANDSHAKE_FAILURE);
-		if not can_sign return (Tls13.Fail: s 'the client can\'t check an ECDSA P-256 signature' ALERT_HANDSHAKE_FAILURE);
+		if not can_sign return (Tls13.Fail: s 'the client can\'t check a signature by the server\'s key' ALERT_HANDSHAKE_FAILURE);
 
 		# our key, and the ServerHello: the session id echoed, the suite, TLS 1.3, our key
 		call Random.Fill: addr s.private 32;
@@ -1029,14 +1054,20 @@ phi.Tls13:Library
 		call Tls13.SendMessage: s h 8 + me.list_length;
 
 		# CertificateVerify: our key's signature of the transcript so far
-		call Tls13.SignedContent: s;
-		if not (P256.Sign: addr tls_r addr tls_s addr me.private addr tls_scratch)
-			return (Tls13.Fail: s 'the server\'s key can\'t sign' ALERT_INTERNAL_ERROR);
+		bln signed: false;
+		if me.scheme is ECDSA_P384_SHA384
+			call Tls13.SignedContent: s 48;
+			signed is (P384.Sign: addr tls_r addr tls_s addr me.private addr tls_scratch);
 		;;
-		u32 signature: (Tls13.EncodeEcdsa: h + 8);
+		else
+			call Tls13.SignedContent: s 32;
+			signed is (P256.Sign: addr tls_r addr tls_s addr me.private addr tls_scratch);
+		;;
+		if not signed return (Tls13.Fail: s 'the server\'s key can\'t sign' ALERT_INTERNAL_ERROR);
+		u32 signature: (Tls13.EncodeEcdsa: h + 8 me.size);
 		h:0 is CERTIFICATE_VERIFY;
 		call Tls13.Put24: h + 1 4 + signature;
-		call Tls13.Put16: h + 4 ECDSA_P256_SHA256;
+		call Tls13.Put16: h + 4 me.scheme;
 		call Tls13.Put16: h + 6 signature;
 		call Tls13.SendMessage: s h 8 + signature;
 
@@ -1062,22 +1093,23 @@ phi.Tls13:Library
 		call Tls13.Connected: s;
 	[end: true]
 
-	# place (72 bytes of room) = tls_r and tls_s as a DER Ecdsa-Sig-Value; its length
-	[EncodeEcdsa: ptr<u8> place: 0;]
-		u32 r: (Tls13.EncodeInteger: place + 2 addr tls_r);
-		u32 s: (Tls13.EncodeInteger: place + 2 + r addr tls_s);
+	# place (104 bytes of room) = tls_r and tls_s (size bytes each) as a DER
+	# Ecdsa-Sig-Value; its length
+	[EncodeEcdsa: ptr<u8> place: 0; u32 size: 32;]
+		u32 r: (Tls13.EncodeInteger: place + 2 addr tls_r size);
+		u32 s: (Tls13.EncodeInteger: place + 2 + r addr tls_s size);
 		place:0 is 0x30;
 		place:1 is r + s;
 	[end: 2 + r + s]
 
-	# place = a 32-byte number as a DER INTEGER (no zeros in front, but one if the top bit is
-	# set, as it would read as negative); its length
-	[EncodeInteger: ptr<u8> place: 0; ptr<u8> number: 0;]
+	# place = a number of size bytes as a DER INTEGER (no zeros in front, but one if the top
+	# bit is set, as it would read as negative); its length
+	[EncodeInteger: ptr<u8> place: 0; ptr<u8> number: 0; u32 size: 32;]
 		u32 skip: 0;
-		while skip < 31 and number:skip is 0
+		while skip < size - 1 and number:skip is 0
 			skip++;
 		;;
-		u32 count: 32 - skip;
+		u32 count: size - skip;
 		u32 pad: 0;
 		if number:skip >= 0x80
 			pad is 1;
@@ -1121,9 +1153,10 @@ phi.Tls13:Library
 		call Hkdf.Extract: addr tls_scratch 32 addr tls_zeros 32 addr s.master_secret;
 	[end: true]
 
-	# tls_scratch = the SHA-256 of what CertificateVerify signs: 64 spaces, the label (the
-	# server's), a 0, and the transcript's hash
-	[SignedContent: ptr<TlsSession> s: 0;]
+	# tls_scratch = the SHA-256 (or, with digest_length 48, the SHA-384) of what
+	# CertificateVerify signs: 64 spaces, the label (the server's), a 0, and the
+	# transcript's hash
+	[SignedContent: ptr<TlsSession> s: 0; u32 digest_length: 32;]
 		call Tls13.TranscriptHash: s;
 		while u32 i: 0; i < 64; i++;
 			tls_signed:i is 32;
@@ -1131,7 +1164,12 @@ phi.Tls13:Library
 		call Bytes.Copy: addr tls_signed + 64 'TLS 1.3, server CertificateVerify' 33;
 		tls_signed:97 is 0;
 		call Bytes.Copy: addr tls_signed + 98 addr tls_hash 32;
-		call Sha256.Hash: addr tls_signed 130 addr tls_scratch;
+		if digest_length is 48
+			call Sha512.Hash384: addr tls_signed 130 addr tls_scratch;
+		;;
+		else
+			call Sha256.Hash: addr tls_signed 130 addr tls_scratch;
+		;;
 	[end]
 
 	# whether a Finished (size bytes, header and all) is the MAC secret's side makes of the

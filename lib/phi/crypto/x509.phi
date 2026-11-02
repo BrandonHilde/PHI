@@ -10,14 +10,16 @@
 #   ok is (X509.Chain: addr chain:0 2 'phi.test');  # false: X509.error says why
 #
 # A Certificate points into the DER it was read from, which must stay where it is. Keys
-# can be RSA (of up to 4096 bits) or ECDSA on P-256, and signatures sha256WithRSAEncryption
-# or ecdsa-with-SHA256. A host name is matched against the certificate's subjectAltName
-# DNS names (*.example.com matches one label), or an IPv4 address against its iPAddress
-# names. Dates aren't checked yet: PHI has no clock that knows the date.
+# can be RSA (of up to 4096 bits) or ECDSA on P-256 or P-384, and signatures RSA PKCS #1
+# v1.5 or ECDSA, over SHA-256 or SHA-384. A host name is matched against the certificate's
+# subjectAltName DNS names (*.example.com matches one label), or an IPv4 address against
+# its iPAddress names. Dates aren't checked yet: PHI has no clock that knows the date.
 
 use crypto.der;
 use crypto.rsa;
 use crypto.p256;
+use crypto.p384;
+use crypto.sha512;
 
 # what's read from a certificate; each ptr<u8> points into its DER
 struct.Certificate
@@ -26,7 +28,7 @@ struct.Certificate
 	u32 der_length;
 	ptr<u8> tbs;                    # the part that's signed, header and all
 	u32 tbs_length;
-	u32 signed_with;                # X509.RSA_SHA256, X509.ECDSA_SHA256, or 0 for another way
+	u32 signed_with;                # X509.RSA_SHA256, ECDSA_SHA256, RSA_SHA384, ECDSA_SHA384, or 0 for another way
 	ptr<u8> signature;              # the signature's bytes
 	u32 signature_length;
 	ptr<u8> issuer;                 # who signed it, as a DER Name (compared byte for byte)
@@ -37,12 +39,12 @@ struct.Certificate
 	u32 not_before_length;
 	ptr<u8> not_after;
 	u32 not_after_length;
-	u32 key_kind;                   # X509.RSA, X509.P256, or 0 for another kind
+	u32 key_kind;                   # X509.RSA, X509.P256, X509.P384, or 0 for another kind
 	ptr<u8> modulus;                # an RSA key's
 	u32 modulus_length;
 	ptr<u8> exponent;
 	u32 exponent_length;
-	ptr<u8> point;                  # a P-256 key: 65 bytes, 04 then x and y
+	ptr<u8> point;                  # an ECDSA key: 04 then x and y (65 bytes for P-256, 97 for P-384)
 	bln ca;                         # it may sign other certificates
 	int path_length;                # how many certificates may come between it and a leaf (-1: any)
 	ptr<u8> names;                  # its subjectAltName's names, as DER (0 if it has none)
@@ -53,8 +55,11 @@ phi.X509:Library
 {
 	const u32 RSA: 1;
 	const u32 P256: 2;
+	const u32 P384: 3;
 	const u32 RSA_SHA256: 1;
 	const u32 ECDSA_SHA256: 2;
+	const u32 RSA_SHA384: 3;
+	const u32 ECDSA_SHA384: 4;
 	const u32 MAX_ROOTS: 16;
 	const u32 MAX_DEPTH: 8;
 
@@ -62,17 +67,20 @@ phi.X509:Library
 
 	Certificate x509_roots[16];
 	u32 x509_root_count: 0;
-	u8 x509_digest[32];
-	u8 x509_r[32];
-	u8 x509_s[32];
+	u8 x509_digest[48];
+	u8 x509_r[48];
+	u8 x509_s[48];
 	u8 x509_address[4];
 
 	# the object identifiers this reads
 	u8 oid_rsa_sha256: 0x2A 0x86 0x48 0x86 0xF7 0x0D 0x01 0x01 0x0B;
 	u8 oid_ecdsa_sha256: 0x2A 0x86 0x48 0xCE 0x3D 0x04 0x03 0x02;
+	u8 oid_rsa_sha384: 0x2A 0x86 0x48 0x86 0xF7 0x0D 0x01 0x01 0x0C;
+	u8 oid_ecdsa_sha384: 0x2A 0x86 0x48 0xCE 0x3D 0x04 0x03 0x03;
 	u8 oid_rsa: 0x2A 0x86 0x48 0x86 0xF7 0x0D 0x01 0x01 0x01;
 	u8 oid_ec: 0x2A 0x86 0x48 0xCE 0x3D 0x02 0x01;
 	u8 oid_p256: 0x2A 0x86 0x48 0xCE 0x3D 0x03 0x01 0x07;
+	u8 oid_p384: 0x2B 0x81 0x04 0x00 0x22;
 	u8 oid_basic_constraints: 0x55 0x1D 0x13;
 	u8 oid_alt_names: 0x55 0x1D 0x11;
 	u8 oid_key_usage: 0x55 0x1D 0x0F;
@@ -153,6 +161,12 @@ phi.X509:Library
 		if (Der.IsOid: addr oid_ecdsa_sha256 8)
 			c.signed_with is ECDSA_SHA256;
 		;;
+		if (Der.IsOid: addr oid_rsa_sha384 9)
+			c.signed_with is RSA_SHA384;
+		;;
+		if (Der.IsOid: addr oid_ecdsa_sha384 8)
+			c.signed_with is ECDSA_SHA384;
+		;;
 		if not (Der.Next: addr whole) or Der.tag is not 3 or Der.length < 1 return (X509.Fail: 'no signatureValue');
 		c.signature is Der.content + 1;               # (past the count of unused bits)
 		c.signature_length is Der.length - 1;
@@ -170,9 +184,12 @@ phi.X509:Library
 		if (Der.IsOid: addr oid_rsa 9)
 			kind is RSA;
 		;;
-		if (Der.IsOid: addr oid_ec 7)
-			if (Der.Next: addr algorithm) and (Der.IsOid: addr oid_p256 8)
+		if (Der.IsOid: addr oid_ec 7) and (Der.Next: addr algorithm)
+			if (Der.IsOid: addr oid_p256 8)
 				kind is P256;
+			;;
+			if (Der.IsOid: addr oid_p384 5)
+				kind is P384;
 			;;
 		;;
 		if not (Der.Next: addr info) or Der.tag is not 3 or Der.length < 1 return (X509.Fail: 'no key');
@@ -180,6 +197,10 @@ phi.X509:Library
 		u32 key_length: Der.length - 1;
 		if kind is P256
 			if key_length is not 65 or key:0 is not 4 return (X509.Fail: 'a P-256 key that isn\'t 65 bytes, 04 first');
+			c.point is key;
+		;;
+		if kind is P384
+			if key_length is not 97 or key:0 is not 4 return (X509.Fail: 'a P-384 key that isn\'t 97 bytes, 04 first');
 			c.point is key;
 		;;
 		if kind is RSA
@@ -252,26 +273,41 @@ phi.X509:Library
 
 	# whether issuer's key signed c
 	[CheckSignature: ptr<Certificate> c: 0; ptr<Certificate> issuer: 0;]
-		call Sha256.Hash: c.tbs c.tbs_length addr x509_digest;
-		if c.signed_with is RSA_SHA256 and issuer.key_kind is RSA
-			return (Rsa.VerifyPkcs1: issuer.modulus issuer.modulus_length issuer.exponent issuer.exponent_length
-			                         addr x509_digest c.signature c.signature_length);
+		# the digest of what's signed: SHA-256's 32 bytes or SHA-384's 48
+		u32 digest_length: 32;
+		if c.signed_with is RSA_SHA384 or c.signed_with is ECDSA_SHA384
+			digest_length is 48;
+			call Sha512.Hash384: c.tbs c.tbs_length addr x509_digest;
 		;;
-		if c.signed_with is ECDSA_SHA256 and issuer.key_kind is P256
-			if not (X509.ReadEcdsa: c.signature c.signature_length) return false;
-			return (P256.Verify: issuer.point addr x509_digest addr x509_r addr x509_s);
+		else
+			call Sha256.Hash: c.tbs c.tbs_length addr x509_digest;
+		;;
+		bln rsa: c.signed_with is RSA_SHA256 or c.signed_with is RSA_SHA384;
+		bln ecdsa: c.signed_with is ECDSA_SHA256 or c.signed_with is ECDSA_SHA384;
+		if rsa and issuer.key_kind is RSA
+			return (Rsa.VerifyPkcs1: issuer.modulus issuer.modulus_length issuer.exponent issuer.exponent_length
+			                         addr x509_digest c.signature c.signature_length digest_length);
+		;;
+		if ecdsa and issuer.key_kind is P256
+			if not (X509.ReadEcdsa: c.signature c.signature_length 32) return false;
+			return (P256.VerifyDigest: issuer.point addr x509_digest digest_length addr x509_r addr x509_s);
+		;;
+		if ecdsa and issuer.key_kind is P384
+			if not (X509.ReadEcdsa: c.signature c.signature_length 48) return false;
+			return (P384.VerifyDigest: issuer.point addr x509_digest digest_length addr x509_r addr x509_s);
 		;;
 	[end: false]
 
-	# x509_r and x509_s = the two numbers of a DER ECDSA signature, 32 bytes each
-	[ReadEcdsa: ptr<u8> der: 0; u32 length: 0;]
+	# x509_r and x509_s = the two numbers of a DER ECDSA signature, size bytes each (32 for
+	# P-256, 48 for P-384)
+	[ReadEcdsa: ptr<u8> der: 0; u32 length: 0; u32 size: 32;]
 		if not (Der.Element: der length) or Der.tag is not 0x30 return false;
 		DerCursor numbers;
 		call Der.Enter: addr numbers;
 		if not (Der.Next: addr numbers) or Der.tag is not 2 return false;
-		if not (Der.Number: addr x509_r 32) return false;
+		if not (Der.Number: addr x509_r size) return false;
 		if not (Der.Next: addr numbers) or Der.tag is not 2 return false;
-	[end: (Der.Number: addr x509_s 32)]
+	[end: (Der.Number: addr x509_s size)]
 
 	# whether c is for host (text): one of its subjectAltName DNS names is host, or is
 	# *.rest where host is a label and then rest; letters match whatever their case

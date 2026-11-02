@@ -1,0 +1,69 @@
+# ECDSA on the P-384 curve (FIPS 186-4, SEC 1), as crypto.p256 for P-256: checking
+# signatures (certificate authorities such as Let's Encrypt's E5 and E6 sign with P-384
+# keys, over SHA-384 digests), and making them. The math is crypto.ec's. Any kind of
+# program.
+#
+#   use crypto.p384;
+#   bln good: (P384.Verify: public addr digest r s);         # a SHA-384 digest (crypto.sha512)
+#   good is (P384.VerifyDigest: public digest 32 r s);       # one of another size
+#
+#   u8 private[48];
+#   u8 public[97];
+#   bln ok: (P384.ReadPrivate: private public der length);   # a key file's DER (SEC 1 or PKCS #8)
+#   ok is (P384.Sign: r s private addr digest);
+#
+# public is the key as a certificate holds it, 97 bytes (04, then x and y); a private key
+# is 48 big-endian bytes; r and s are the signature's two numbers, 48 bytes each. Sign's
+# nonce is RFC 6979's, made with HMAC-SHA256 (so not the RFC's own P-384 examples, which
+# use SHA-384's HMAC).
+
+use crypto.ec;
+
+phi.P384:Library
+{
+	const u32 BYTES: 48;
+
+	EcCurve curve;
+	bln p384_ready: false;
+
+	# the curve's object identifier, in key files (secp384r1)
+	u8 p384_oid: 0x2B 0x81 0x04 0x00 0x22;
+
+	# whether r and s (48 bytes each) are public's signature of a SHA-384 digest
+	[Verify: ptr<u8> public: 0; ptr<u8> digest: 0; ptr<u8> r: 0; ptr<u8> s: 0;]
+	[end: (P384.VerifyDigest: public digest 48 r s)]
+
+	# the same, for a digest of any size (its first 48 bytes, of a longer one)
+	[VerifyDigest: ptr<u8> public: 0; ptr<u8> digest: 0; u32 length: 0; ptr<u8> r: 0; ptr<u8> s: 0;]
+		call P384.Ready;
+	[end: (Ec.Verify: addr curve public digest length r s)]
+
+	# r and s (48 bytes each) = private's signature of a SHA-384 digest; false if private
+	# isn't a key (0, or not below n)
+	[Sign: ptr<u8> r: 0; ptr<u8> s: 0; ptr<u8> private: 0; ptr<u8> digest: 0;]
+		call P384.Ready;
+	[end: (Ec.Sign: addr curve r s private digest 48)]
+
+	# public (97 bytes: 04, x, y) = the public key of private (48 bytes); false if private
+	# isn't a key
+	[PublicFrom: ptr<u8> public: 0; ptr<u8> private: 0;]
+		call P384.Ready;
+	[end: (Ec.PublicFrom: addr curve public private)]
+
+	# private (48 bytes) and public (97 bytes) = the key in a key file's DER (SEC 1 or
+	# PKCS #8); false if it isn't a P-384 private key
+	[ReadPrivate: ptr<u8> private: 0; ptr<u8> public: 0; ptr<u8> der: 0; u32 length: 0;]
+		call P384.Ready;
+	[end: (Ec.ReadPrivate: addr curve addr p384_oid 5 private public der length)]
+
+	# the curve's numbers, the first time
+	[Ready]
+		if p384_ready return;
+		p384_ready is true;
+		call Ec.Setup: addr curve BYTES
+			'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff'
+			'ffffffffffffffffffffffffffffffffffffffffffffffffc7634d81f4372ddf581a0db248b0a77aecec196accc52973'
+			'b3312fa7e23ee7e4988e056be3f82d19181d9c6efe8141120314088f5013875ac656398d8a2ed19d2a85c8edd3ec2aef'
+			'aa87ca22be8b05378eb1c71ef320ad746e1d3b628ba79b9859f741e082542a385502f25dbf55296c3a545e3872760ab73617de4a96262c6f5d9e98bf9292dc29f8f41dbd289a147ce9da3113b5f0b8c00a60b1ce1d7e819d7a431d7c90ea0e5f';
+	[end]
+}

@@ -1,0 +1,8 @@
+read: 1 1 1 1 
+keys: 3 3 2 1, signed with: 4 4 4 3
+signatures: 1 1 1 1, wrong signer: 0
+trust: 1
+chain: 1 
+another host: 0 (the certificate isn't for this host)
+changed: 0 (a certificate's signature doesn't check out)
+as it was: 1
