@@ -1567,7 +1567,20 @@ cores ends with `Heap.used_blocks` at 0.
     interrupts to other cores) will.
   - Until locks (2), work on another core must only touch its own data: no heap, log,
     files or network there.
-- [ ] (1, rest) the I/O APIC in place of the PIC, a timer on each core
+- [x] (1, the I/O APIC) `drivers.acpi` reads ACPI's MADT (found from the RSDP the BIOS
+  leaves below 1 MB): the cores' local APIC IDs, the I/O APIC, and how ISA IRQs are wired
+  to its inputs (QEMU's timer, IRQ 0, comes in on input 2; IRQs a PCI card shares are level
+  triggered). `drivers.apic`'s `Apic.Start` moves the IRQs there, with the vectors they had,
+  and masks the PICs; the runtime (`interrupts.asm`) then masks and unmasks in the I/O APIC
+  and sends end-of-interrupt to the local APIC, so drivers and handlers don't change. Tests
+  `kernel32_acpi`, `kernel32_apic` (the timer, masking, the keyboard) and
+  `kernel32_apic_net` (DHCP and a ping over each card's interrupt).
+  - Found on the way: the EBDA's segment, where the RSDP may be, is in page 0, which
+    paging leaves unmapped for null pointers; `Paging.ReadLowWord` maps it for the moment
+    a read takes.
+  - Not yet: Cores.Start and the kernels switching to it by themselves; IRQs sent to other
+    cores.
+- [ ] (1, rest) a timer on each core (the local APIC's)
 - [x] (2, the language) `atomic` and `locked` (the user's choice, 2026-10-30: words in the
   language). `atomic x++ n;`, `atomic x-- n;` (lock add/sub), `atomic x is v;` (xchg) and
   `atomic x is v when old` (lock cmpxchg; as a statement or a bln value) on a number,

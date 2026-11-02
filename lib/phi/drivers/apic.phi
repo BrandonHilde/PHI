@@ -1,0 +1,150 @@
+# The APICs (32-bit kernels): moving the devices' interrupts from the old 8259 PICs to the
+# I/O APIC, which every core's local APIC can take them from, and this core's local APIC.
+#
+#   use drivers.apic;
+#   bln ok: (Apic.Start);                # false if the machine has no I/O APIC (ACPI says)
+#   log Apic.id;                         # this core's local APIC ID
+#
+# Start reads ACPI's MADT for where the I/O APIC is and which input each ISA IRQ comes in
+# on (QEMU's timer, IRQ 0, comes in on input 2) and how (an IRQ a PCI card shares is level
+# triggered). It gives each IRQ an entry with the vector it had (32 + IRQ), sent to this
+# core, masked as it was on the PICs; then it masks the PICs. From then on the runtime
+# (interrupts.asm) masks and unmasks IRQs in the I/O APIC and sends end-of-interrupt to
+# the local APIC. Handlers, OS.SetIrqHandler and OS.MaskIrq work as before.
+
+use drivers.acpi;
+use memory.paging;
+
+phi.Apic:Kernel
+{
+	const u32 VECTOR_BASE: 32;            # IRQ n is vector 32 + n, as on the PICs
+	const u32 SPURIOUS: 0xFF;             # the vector the local APIC sends for nothing
+	const u32 REG_ID: 0x20;
+	const u32 REG_SPURIOUS: 0xF0;
+	const u32 ENABLE: 0x100;
+	const u32 MASKED: 0x10000;
+	const u32 ACTIVE_LOW: 0x2000;
+	const u32 LEVEL: 0x8000;
+	const u8 NONE: 0xFF;                  # an IRQ with no input of its own
+
+	bln started: false;
+	u32 local: 0;                         # this core's local APIC (every core's is at the same address)
+	u32 io: 0;                            # the I/O APIC
+	u32 id: 0;                            # this core's local APIC ID
+	u8 inputs[16];                        # the input each IRQ comes in on
+	u32 routes[16];                       # its entry's low half: vector, polarity, trigger
+	u32 pic_masks: 0;                     # which IRQs the PICs had masked (bit n: IRQ n)
+
+	# move the IRQs to the I/O APIC; false (and the PICs as they were) if there's none
+	[Start]
+		if started return true;
+		if not (Acpi.Start) or Acpi.io_apic is 0 return false;
+		local is Acpi.local_apic;
+		io is Acpi.io_apic;
+		call Paging.MapDevice: local 4096;
+		call Paging.MapDevice: io 4096;
+		call LocalOn;
+		id is (Local: REG_ID) >> 24;
+
+		while u32 irq: 0; irq < 16; irq++;
+			u32 input: (Acpi.Input: irq) - Acpi.io_apic_base;
+			u32 flags: (Acpi.Flags: irq);
+			u32 route: VECTOR_BASE + irq;
+			if (flags & 3) is 3
+				route is route | ACTIVE_LOW;
+			;;
+			if ((flags >> 2) & 3) is 3
+				route is route | LEVEL;
+			;;
+			inputs:irq is input;
+			routes:irq is route;
+		;;
+		# an IRQ whose input another's override takes (IRQ 2, the PICs' cascade, where QEMU's
+		# timer comes in) has none of its own
+		while u32 irq: 0; irq < 16; irq++;
+			if (Acpi.Input: irq) is irq
+				while u32 other: 0; other < 16; other++;
+					if other is not irq and (Acpi.Input: other) is irq
+						inputs:irq is NONE;
+					;;
+				;;
+			;;
+		;;
+		call asm.ApicTakeOver;
+		started is true;
+	[end: true]
+
+	# a local APIC register
+	[Local: u32 offset: 0;]
+		volatile ptr<u32> r: local + offset;
+	[end: r:0]
+
+	# this core's local APIC on, with SPURIOUS for interrupts that turn out to be nothing
+	[LocalOn]
+		volatile ptr<u32> r: local + REG_SPURIOUS;
+		r:0 is ENABLE | SPURIOUS;
+	[end]
+
+	# an I/O APIC register, through its index register and window
+	[SetIo: u32 index: 0; u32 value: 0;]
+		volatile ptr<u32> select: io;
+		volatile ptr<u32> window: io + 0x10;
+		select:0 is index;
+		window:0 is value;
+	[end]
+}
+
+# with interrupts off: every entry written (to this core, masked as the PIC had it), the
+# PICs masked, and the runtime told, so masks and end-of-interrupt go to the APICs; the
+# spurious vector does nothing
+asm.ApicTakeOver
+{
+	pushfd
+	cli
+	in al, 0xA1
+	mov ah, al
+	in al, 0x21
+	movzx eax, ax
+	mov [{pic_masks}], eax
+	mov ecx, 0
+.entry:
+	movzx eax, byte [{inputs} + ecx]
+	mov [phi_irq_inputs + ecx], al
+	cmp al, 0xFF
+	je .next                            ; no input of its own
+	lea eax, [0x10 + eax * 2]
+	mov edx, [{io}]
+	inc eax
+	mov [edx], eax                      ; the high half: which core
+	mov ebx, [{id}]
+	shl ebx, 24
+	mov [edx + 0x10], ebx
+	dec eax
+	mov [edx], eax                      ; the low half: vector, polarity, trigger, mask
+	mov ebx, [{routes} + ecx * 4]
+	bt dword [{pic_masks}], ecx
+	jnc .open
+	or ebx, 0x10000
+.open:
+	mov [edx + 0x10], ebx
+	mov [phi_irq_routes + ecx * 4], ebx
+	and dword [phi_irq_routes + ecx * 4], ~0x10000
+.next:
+	inc ecx
+	cmp ecx, 16
+	jb .entry
+	mov al, 0xFF
+	out 0xA1, al
+	out 0x21, al                        ; the PICs: nothing more from them
+	mov eax, [{local}]
+	mov [phi_local_apic], eax
+	mov eax, [{io}]
+	mov [phi_io_apic], eax
+	mov eax, phi_apic_spurious
+	mov ecx, 0xFF
+	call phi_set_gate
+	popfd
+	ret
+phi_apic_spurious:
+	iretd
+}

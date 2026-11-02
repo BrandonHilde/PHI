@@ -1,0 +1,14 @@
+# The network with the IRQs on the I/O APIC (drivers.apic): the card's interrupt is a PCI
+# one, level triggered, on an input ACPI names. DHCP gets an address and the gateway
+# answers a ping, so frames come in on the card's interrupt.
+use drivers.apic;
+use net.net;
+
+phi.ApicNet:Kernel
+{
+	log 'apic: ' (Apic.Start) '\n';
+	log 'dhcp: ' (Net.Start) ' ' Net.dhcp_ok '\n';
+	log 'ping: ' ((Net.Ping: Net.gateway 2000) >= 0) '\n';
+	log 'interrupts: ' (Nic.kind is Nic.VIRTIO and VirtioNet.interrupts > 0 or Nic.kind is Nic.RTL8139 and Rtl8139.interrupts > 0) '\n';
+	exit 0;
+}

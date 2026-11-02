@@ -1,0 +1,138 @@
+# ACPI's tables (32-bit kernels): what the firmware says the machine has. So far the
+# MADT: every core's local APIC, the I/O APIC (where devices' interrupts go in place of
+# the old 8259 PIC), and how the ISA interrupts (the timer's IRQ 0, the keyboard's 1) are
+# wired to its inputs, which isn't always one to one.
+#
+#   use drivers.acpi;
+#   bln ok: (Acpi.Start);                # false if the firmware has no tables
+#   log Acpi.cores ' cores, the first APIC ' Acpi.core_ids:0;
+#   u32 input: (Acpi.Input: 0);          # the I/O APIC input the timer's IRQ 0 comes in on
+#
+# The firmware leaves a pointer (the RSDP, "RSD PTR ") in the BIOS's memory, below 1 MB.
+# It leads to the RSDT, a list of tables, each with a 4-letter name and a checksum; the
+# MADT is "APIC". Its entries follow its header, each a type and a length.
+
+use memory.mem;
+use memory.paging;
+
+phi.Acpi:Kernel
+{
+	const u32 MAX_CORES: 16;
+	const u32 MAX_OVERRIDES: 16;
+	const u32 HEADER: 36;                 # every table's header: name, length, checksum ...
+
+	bln found: false;
+	u32 rsdt: 0;
+	u32 local_apic: 0xFEE00000;           # every core's local APIC, at the same address
+	u32 cores: 0;                         # cores the firmware says are there and enabled
+	u8 core_ids[16];                      # their local APIC IDs, in the firmware's order
+	u32 io_apic: 0;                       # the first I/O APIC's address (0 if there's none)
+	u32 io_apic_id: 0;
+	u32 io_apic_base: 0;                  # the first input it takes (its GSI base)
+	u32 override_count: 0;
+	u8 override_irq[16];                  # ISA IRQ override_irq:i comes in on input override_input:i
+	u32 override_input[16];
+	u16 override_flags[16];               # its polarity and trigger, if not the ISA ones
+
+	# find the tables and read the MADT; false if the firmware has none
+	[Start]
+		if found return true;
+		u32 rsdp: (FindRsdp);
+		if rsdp is 0 return false;
+		ptr<u32> words: rsdp + 16;
+		rsdt is words:0;
+		if not (Valid: rsdt) return false;
+		u32 madt: (Find: 'APIC');
+		if madt is 0 return false;
+		call ReadMadt: madt;
+		found is true;
+	[end: true]
+
+	# the I/O APIC input an ISA IRQ comes in on (its override, if there is one)
+	[Input: u32 irq: 0;]
+		while u32 i: 0; i < override_count; i++;
+			if override_irq:i is irq return override_input:i;
+		;;
+	[end: irq]
+
+	# an ISA IRQ's flags from its override: 0 for the ISA way (active high, edge
+	# triggered); bits 0-1 are the polarity (3: active low), bits 2-3 the trigger (3: level)
+	[Flags: u32 irq: 0;]
+		while u32 i: 0; i < override_count; i++;
+			if override_irq:i is irq return override_flags:i;
+		;;
+	[end: 0]
+
+	# the table with this name (from the RSDT), or 0
+	[Find: ptr<u8> name: 0;]
+		ptr<u32> header: rsdt;
+		u32 count: (header:1 - HEADER) / 4;
+		ptr<u32> entries: rsdt + HEADER;
+		while u32 i: 0; i < count; i++;
+			u32 table: entries:i;
+			if (Mem.Equal: table name 4) and (Valid: table) return table;
+		;;
+	[end: 0]
+
+	# ---- reading
+
+	# the RSDP: in the first KB of the extended BIOS data area (its segment is at 0x40E),
+	# or in the BIOS's memory from 0xE0000, on a 16-byte boundary; 0 if it isn't there
+	[FindRsdp]
+		u32 segment: (Paging.ReadLowWord: 0x40E);
+		u32 start: segment << 4;
+		if start is not 0
+			u32 rsdp: (Search: start start + 1024);
+			if rsdp is not 0 return rsdp;
+		;;
+	[end: (Search: 0xE0000 0x100000)]
+
+	[Search: u32 from: 0; u32 to: 0;]
+		while u32 pos: from; pos < to; pos++ 16;
+			if (Mem.Equal: pos 'RSD PTR ' 8) and (Sum: pos 20) is 0 return pos;
+		;;
+	[end: 0]
+
+	# whether a table's bytes add up to 0, as its checksum makes them
+	[Valid: u32 table: 0;]
+		if table is 0 return false;
+		ptr<u32> header: table;
+	[end: header:1 >= HEADER and (Sum: table header:1) is 0]
+
+	[Sum: ptr<u8> bytes: 0; u32 count: 0;]
+		u32 sum: 0;
+		while u32 i: 0; i < count; i++;
+			sum is (sum + bytes:i) & 0xFF;
+		;;
+	[end: sum]
+
+	# the MADT's entries: cores (type 0), I/O APICs (1) and ISA interrupt overrides (2)
+	[ReadMadt: u32 madt: 0;]
+		ptr<u32> header: madt;
+		local_apic is header:9;
+		ptr<u8> entry: madt + HEADER + 8;
+		ptr<u8> stop: madt + header:1;
+		while entry + 2 <= stop and entry:1 >= 2
+			u32 type: entry:0;
+			if type is 0 and (entry:4 & 1) is not 0 and cores < MAX_CORES
+				core_ids:cores is entry:3;
+				cores++;
+			;;
+			elif type is 1 and io_apic is 0
+				ptr<u32> address: entry + 4;
+				io_apic_id is entry:2;
+				io_apic is address:0;
+				io_apic_base is address:1;
+			;;
+			elif type is 2 and override_count < MAX_OVERRIDES
+				ptr<u32> input: entry + 4;
+				ptr<u16> flags: entry + 8;
+				override_irq:override_count is entry:3;
+				override_input:override_count is input:0;
+				override_flags:override_count is flags:0;
+				override_count++;
+			;;
+			entry++ entry:1;
+		;;
+	[end]
+}

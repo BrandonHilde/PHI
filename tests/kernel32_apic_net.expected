@@ -1,0 +1,4 @@
+apic: 1
+dhcp: 1 1
+ping: 1
+interrupts: 1

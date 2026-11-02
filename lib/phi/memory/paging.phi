@@ -24,6 +24,8 @@ phi.Paging:Kernel
 	ptr<u32> page_directory: 0;
 	ptr<u32> low_table: 0;               # the first 4 MB
 	u32 mapped_bytes: 0;
+	u32 low_word_at: 0;                  # for ReadLowWord
+	u32 low_word: 0;
 
 	call Init;
 
@@ -60,6 +62,14 @@ phi.Paging:Kernel
 			call FlushTlb;
 		;;
 	[end]
+
+	# the 16 bits at address in the BIOS's first page (its data area: the EBDA's segment at
+	# 0x40E, say), which stays unmapped so a null pointer faults: mapped for the moment it
+	# takes to read, with interrupts off
+	[ReadLowWord: u32 address: 0;]
+		low_word_at is address;
+		call asm.PagingReadLowWord;
+	[end: low_word]
 }
 
 asm.EnablePaging
@@ -79,5 +89,21 @@ asm.FlushTlb
 {
 	mov eax, cr3                ; reloading cr3 forgets every cached translation
 	mov cr3, eax
+	ret
+}
+
+asm.PagingReadLowWord
+{
+	pushfd
+	cli
+	mov ecx, [{low_table}]
+	mov dword [ecx], 0x3        ; page 0: present, writable
+	invlpg [0]
+	mov edx, [{low_word_at}]
+	movzx eax, word [edx]
+	mov [{low_word}], eax
+	mov dword [ecx], 0          ; unmapped again
+	invlpg [0]
+	popfd
 	ret
 }

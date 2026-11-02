@@ -1,0 +1,22 @@
+# drivers.apic: the IRQs moved from the 8259 PICs to the I/O APIC. The timer (IRQ 0, which
+# QEMU brings in on input 2) still ticks and wakes OS.Sleep, the keyboard (IRQ 1) still
+# types, and an IRQ masked and unmasked again still interrupts.
+use drivers.apic;
+
+phi.ApicTest:Kernel
+{
+	str line: [40];
+	log 'apic: ' (Apic.Start) ', this core: ' Apic.id ', timer on input ' Apic.inputs:0 ', cascade: ' (Apic.inputs:2 is Apic.NONE) '\n';
+	int start: (OS.GetTicks);
+	call OS.Sleep: 50;
+	log 'slept: ' ((OS.GetTicks) - start >= 50) '\n';
+	call OS.MaskIrq: 0;
+	call OS.UnmaskIrq: 0;
+	start is (OS.GetTicks);
+	call OS.Sleep: 20;
+	log 'again: ' ((OS.GetTicks) - start >= 20) '\n';
+	log 'type: ';
+	ask line;
+	log 'typed: ' line '\n';
+	exit 0;
+}

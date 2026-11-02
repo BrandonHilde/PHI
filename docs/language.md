@@ -1284,7 +1284,7 @@ The pieces can also be used directly:
 | File | Class | What it does |
 |---|---|---|
 | `memory.frames` | `Frames` | physical memory in 4 KB frames: `Alloc` →, `AllocContiguous: count` →, `Free: address`; `free_frames`, `total_frames`, `memory_top` |
-| `memory.paging` | `Paging` | identity paging with page 0 unmapped; `page_directory`, `mapped_bytes` |
+| `memory.paging` | `Paging` | identity paging with page 0 unmapped; `page_directory`, `mapped_bytes`; `MapDevice: address bytes`; `ReadLowWord: address` → (16 bits from the BIOS's first page, which stays unmapped) |
 | `memory.heap` | `Heap` | `Alloc: size` →, `Free: address`, `LargestFree` →; `used_bytes`, `used_blocks`, `heap_size`. Free blocks are kept on lists by size, so `Alloc` takes about as long with 100,000 blocks in use as with ten |
 | `memory.list` | `List` | a growable list of u32 values: `New` →, `Add: list value`, `Get: list index` →, `Set: list index value`, `Delete: list`; the list's `count` and `capacity` |
 | `memory.pool` | `Pool` | many objects of one size, handed out and taken back without searching: `New: size per_chunk` →, `Alloc: pool` → (zeroed), `Free: pool object`, `Delete: pool` (all of them at once); the pool's `used` and `capacity`. Freeing twice, or into the wrong pool, stops the program |
@@ -2481,6 +2481,8 @@ and the classes of used files run before the classes that use them.
 | `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
 | `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
+| `drivers.acpi` | class `Acpi` (32-bit kernels): ACPI's MADT: `Start` →, `cores` and `core_ids` (local APIC IDs), `local_apic`, `io_apic`, `io_apic_base`, `Input: irq` → (the I/O APIC input an ISA IRQ comes in on), `Flags: irq` → (its polarity and trigger), `Find: name` → (any table by its 4 letters) |
+| `drivers.apic` | class `Apic` (32-bit kernels): `Start` → moves the IRQs from the 8259 PICs to the I/O APIC (the same vectors, to this core; handlers, `OS.SetIrqHandler` and `OS.MaskIrq` work as before), and turns this core's local APIC on; `id` |
 | `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
 | `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |
 | `crypto.bytes`, `crypto.sha256`, `crypto.sha512`, `crypto.hmac`, `crypto.pbkdf2`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |

@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes
 ; requires: phi_panic phi_catch_top
 ; init: phi_interrupts_init
 ;
@@ -8,6 +8,8 @@
 ;   - a 256-entry IDT: exceptions go to the panic screen, IRQs to the handler
 ;     registered for them (then end-of-interrupt is sent automatically)
 ;   - interrupts are enabled, with every IRQ masked until a driver unmasks it
+;   - drivers.apic can move the IRQs to the I/O APIC (the same vectors): masks and
+;     end-of-interrupt then go there and to the local APIC (phi_io_apic, phi_local_apic)
 ;
 ; Multitasking (tasks.asm) plugs in through three hooks, which are 0 until then:
 ; phi_scheduler picks the task to resume, phi_syscall_hook handles int 0x80,
@@ -154,12 +156,7 @@ phi_interrupt_common:
     pop eax
 .end_of_interrupt:
     mov ebx, eax
-    mov al, 0x20
-    cmp ebx, 8
-    jb .master
-    out PIC2_CMD, al        ; IRQ 8-15 also need the second controller told
-.master:
-    out PIC1_CMD, al
+    call phi_end_of_interrupt
     ; the timer takes the CPU away from user programs (the kernel gives it up itself)
     test ebx, ebx
     jnz .return
@@ -236,12 +233,10 @@ OS_SetIrqHandler:
 OS_EndOfInterrupt:
     push ebp
     mov ebp, esp
-    mov al, 0x20
-    cmp dword [ebp + 8], 8
-    jb .master
-    out PIC2_CMD, al
-.master:
-    out PIC1_CMD, al
+    push ebx
+    mov ebx, [ebp + 8]
+    call phi_end_of_interrupt
+    pop ebx
     pop ebp
     ret
 
@@ -267,20 +262,71 @@ OS_MaskIrq:
     push ebp
     mov ebp, esp
     mov eax, [ebp + 8]
-    call phi_irq_port_and_bit
-    in al, dx
-    or al, ah
-    out dx, al
+    call phi_mask
     pop ebp
     ret
 
-; eax = irq
+; ebx = irq: tell whichever controller sent it that it has been handled (changes eax)
+phi_end_of_interrupt:
+    mov eax, [phi_local_apic]
+    test eax, eax
+    jz .pic
+    mov dword [eax + 0xB0], 0       ; the local APIC's end-of-interrupt register
+    ret
+.pic:
+    mov al, 0x20
+    cmp ebx, 8
+    jb .master
+    out PIC2_CMD, al        ; IRQ 8-15 also need the second controller told
+.master:
+    out PIC1_CMD, al
+    ret
+
+; eax = irq: let it interrupt
 phi_unmask:
+    cmp dword [phi_io_apic], 0
+    jne .io_apic
     call phi_irq_port_and_bit
     in al, dx
     not ah
     and al, ah
     out dx, al
+    ret
+.io_apic:
+    mov ecx, [phi_irq_routes + eax * 4]
+    jmp phi_io_apic_route
+
+; eax = irq: keep it from interrupting
+phi_mask:
+    cmp dword [phi_io_apic], 0
+    jne .io_apic
+    call phi_irq_port_and_bit
+    in al, dx
+    or al, ah
+    out dx, al
+    ret
+.io_apic:
+    mov ecx, [phi_irq_routes + eax * 4]
+    or ecx, 0x10000                 ; masked
+    jmp phi_io_apic_route
+
+; eax = irq, ecx = the low half of its I/O APIC redirection entry: written (with
+; interrupts off, as the I/O APIC is reached through an index register and a window)
+phi_io_apic_route:
+    movzx eax, byte [phi_irq_inputs + eax]
+    cmp eax, 0xFF
+    je .none                        ; an IRQ with no input of its own (IRQ 2, the PICs' cascade)
+    pushfd
+    cli
+    push edx
+    lea eax, [0x10 + eax * 2]       ; the entry's low half
+    mov edx, [phi_io_apic]
+    mov [edx], eax                  ; IOREGSEL
+    mov [edx + 0x10], ecx           ; IOWIN
+    pop edx
+    popfd
+    ret
+.none:
     ret
 
 ; eax = irq -> dx = the controller's mask port, ah = the irq's bit
@@ -304,6 +350,14 @@ phi_idt_descriptor:
     dd phi_idt
 phi_irq_handlers:
     times 16 dd 0
+
+; once drivers.apic has moved the IRQs from the 8259 PICs to the I/O APIC: the local
+; APIC's address (end-of-interrupt goes there), the I/O APIC's, and for each IRQ the input
+; it comes in on and its redirection entry's low half (its vector, polarity and trigger)
+phi_local_apic:   dd 0
+phi_io_apic:      dd 0
+phi_irq_inputs:   times 16 db 0
+phi_irq_routes:   times 16 dd 0
 phi_scheduler:    dd 0
 phi_syscall_hook: dd 0
 phi_user_fault:   dd 0

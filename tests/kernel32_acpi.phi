@@ -1,0 +1,16 @@
+# ACPI's MADT, as QEMU's firmware gives it for a machine with 4 cores: each core's local
+# APIC, the I/O APIC, and the ISA interrupts it moves (the timer's IRQ 0 comes in on
+# input 2; the keyboard's IRQ 1 on input 1, as it is).
+use drivers.acpi;
+
+phi.AcpiTest:Kernel
+{
+	log 'tables: ' (Acpi.Start) ', cores: ' Acpi.cores ', ids:';
+	while u32 i: 0; i < Acpi.cores; i++;
+		log ' ' Acpi.core_ids:i;
+	;;
+	log '\nlocal apic: ' (Acpi.local_apic is 0xFEE00000) ', i/o apic: ' (Acpi.io_apic is 0xFEC00000)
+	    ', inputs from ' Acpi.io_apic_base '\n';
+	log 'irq 0: input ' (Acpi.Input: 0) ', irq 1: input ' (Acpi.Input: 1) ', irq 9 flags: ' (Acpi.Flags: 9) '\n';
+	exit 0;
+}
