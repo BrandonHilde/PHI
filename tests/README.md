@@ -40,6 +40,7 @@ Two optional files change what a test does:
   | `screenshot NAME` | save the screen as `build/TEST/NAME.png` |
   | `mouse_to X Y` | move the mouse pointer to (X, Y) on the screen |
   | `reboot` | restart the machine on the same disk, so what the kernel saved is still there (its output carries on); with one in the script, a kernel's own `OS.Reboot` restarts it too |
+  | `tls PORT HOST ROOT TEXT` | connect to the guest's TCP `PORT` with the host's own TLS 1.3 client (.NET's, Windows' SChannel on Windows), check its certificate is for `HOST` and goes back to `ROOT` (a root certificate's DER, in hex), send `TEXT` and a newline and expect them back; QEMU forwards the port from the start (see `tls_host_client`) |
   | `click X Y` | move there and click the left button |
   | `dclick X Y` | move there and double-click |
   | `drag X1 Y1 X2 Y2` | press the left button at (X1, Y1), move to (X2, Y2) and let go |

@@ -62,7 +62,10 @@ namespace Phi.Cli
         // UTC, as text), which drivers.rtc reads, since QEMU's clock is in UTC.
         // network: the card and what it's plugged into, in place of QEMU's user network
         // (VirtualNetwork.MachineArgs, for several machines on one network)
-        static List<string> MachineArgs(string image, string audio, IReadOnlyList<string>? network = null)
+        // forwards: host port for each guest TCP port, which 127.0.0.1:host reaches (an input
+        // script's tls lines), on the user network
+        static List<string> MachineArgs(string image, string audio, IReadOnlyList<string>? network = null,
+                                        IReadOnlyDictionary<int, int>? forwards = null)
         {
             var args = new List<string>
             {
@@ -70,7 +73,8 @@ namespace Phi.Cli
                 "-drive", $"file={image},format=raw,if=ide,index=0",
                 "-device", $"isa-debug-exit,iobase=0x{DebugExitPort:x},iosize=0x04",
             };
-            args.AddRange(network ?? new[] { "-netdev", "user,id=net0", "-device", $"{CardDevice(NetworkCard)},netdev=net0,romfile=" });
+            string user = "user,id=net0" + string.Concat((forwards ?? new Dictionary<int, int>()).Select(f => $",hostfwd=tcp:127.0.0.1:{f.Value}-:{f.Key}"));
+            args.AddRange(network ?? new[] { "-netdev", user, "-device", $"{CardDevice(NetworkCard)},netdev=net0,romfile=" });
             args.AddRange(new[]
             {
                 "-audiodev", audio,
@@ -176,7 +180,9 @@ namespace Phi.Cli
         {
             int? monitorPort = input != null ? FreePort() : null;
 
-            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network);
+            // a guest port the script reaches over TLS (tls PORT ...) is forwarded from a free one here
+            Dictionary<int, int>? forwards = input?.Select(InputScript.TlsPort).OfType<int>().Distinct().ToDictionary(g => g, _ => FreePort());
+            var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network, forwards);
             if (countInstructions) args.AddRange(CountInstructions);
             if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
             // a script that restarts the machine (reboot) needs a reset to restart it rather than
@@ -213,7 +219,7 @@ namespace Phi.Cli
             if (input != null)
             {
                 string Serial() { lock (gate) return serial.ToString(); }
-                script = Task.Run(() => InputScript.Run(monitorPort!.Value, input, Serial, cancel.Token, screenshots));
+                script = Task.Run(() => InputScript.Run(monitorPort!.Value, input, Serial, cancel.Token, screenshots, forwards));
             }
 
             var clock = Stopwatch.StartNew();

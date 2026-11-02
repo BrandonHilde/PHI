@@ -21,6 +21,11 @@ namespace Phi.Cli
     ///   drag X1 Y1 X2 Y2  press the left button at (X1, Y1), move to (X2, Y2) and let go
     ///   reboot            restart the machine on the same disk, so what the kernel saved is
     ///                     still there (the serial output carries on from before)
+    ///   tls PORT HOST ROOT TEXT
+    ///                     connect to the guest's TCP PORT with the host's own TLS 1.3 client,
+    ///                     check its certificate is for HOST and goes back to ROOT (a root
+    ///                     certificate's DER in hex), send TEXT and a newline, and expect them
+    ///                     back (QEMU forwards the port from the start)
     ///   anything else     sent to the QEMU monitor as-is, e.g. sendkey ret, mouse_move 10 -5,
     ///                     mouse_button 1
     ///
@@ -64,9 +69,76 @@ namespace Phi.Cli
             return found;
         }
 
+        /// <summary>The guest port a tls line connects to (QEMU forwards it from the start), or null.</summary>
+        public static int? TlsPort(string line)
+        {
+            string[] words = line.Trim().Split(' ', 3);
+            return words.Length >= 2 && words[0] == "tls" && int.TryParse(words[1], out int port) ? port : null;
+        }
+
+        /// <summary>
+        /// tls PORT HOST ROOT TEXT: .NET's TLS 1.3 client (the host's own, Windows' SChannel on
+        /// Windows) connects to the guest's PORT, checks its certificate is for HOST and goes back
+        /// to ROOT (a root certificate's DER, in hex), sends TEXT and a newline, and expects them
+        /// back. null when it all worked, otherwise what didn't.
+        /// </summary>
+        static string? TlsEcho(string rest, IReadOnlyDictionary<int, int>? forwards, CancellationToken cancel)
+        {
+            string[] parts = rest.Split(' ', 4);
+            if (parts.Length != 4 || !int.TryParse(parts[0], out int guestPort))
+                return "expected 'tls PORT HOST ROOT TEXT'";
+            if (forwards == null || !forwards.TryGetValue(guestPort, out int hostPort))
+                return $"port {guestPort} isn't forwarded";
+            string host = parts[1], text = parts[3];
+            using var root = new System.Security.Cryptography.X509Certificates.X509Certificate2(Convert.FromHexString(parts[2]));
+
+            using var tcp = new TcpClient();
+            tcp.Connect("127.0.0.1", hostPort);
+            tcp.ReceiveTimeout = tcp.SendTimeout = 10000;
+            string? why = null;
+            using var tls = new System.Net.Security.SslStream(tcp.GetStream(), false, (_, certificate, chain, errors) =>
+            {
+                // its chain checked against ROOT alone, with the certificates it sent
+                if (certificate == null) { why = "the server showed no certificate"; return false; }
+                if ((errors & System.Net.Security.SslPolicyErrors.RemoteCertificateNameMismatch) != 0) { why = $"the certificate isn't for {host}"; return false; }
+                using var check = new System.Security.Cryptography.X509Certificates.X509Chain();
+                check.ChainPolicy.TrustMode = System.Security.Cryptography.X509Certificates.X509ChainTrustMode.CustomRootTrust;
+                check.ChainPolicy.CustomTrustStore.Add(root);
+                check.ChainPolicy.RevocationMode = System.Security.Cryptography.X509Certificates.X509RevocationMode.NoCheck;
+                if (chain != null) check.ChainPolicy.ExtraStore.AddRange(chain.ChainPolicy.ExtraStore);
+                bool good = check.Build(new System.Security.Cryptography.X509Certificates.X509Certificate2(certificate));
+                if (!good) why = "the chain doesn't go back to the root: " + string.Join(", ", check.ChainStatus.Select(s => s.StatusInformation.Trim()));
+                return good;
+            });
+            try
+            {
+                tls.AuthenticateAsClient(new System.Net.Security.SslClientAuthenticationOptions
+                {
+                    TargetHost = host,
+                    EnabledSslProtocols = System.Security.Authentication.SslProtocols.Tls13,
+                });
+            }
+            catch (Exception e) { return why ?? $"the handshake failed: {e.Message}"; }
+
+            byte[] line = Encoding.UTF8.GetBytes(text + "\n");
+            tls.Write(line);
+            tls.Flush();
+            var back = new List<byte>();
+            var one = new byte[1];
+            try
+            {
+                while (back.Count < line.Length && tls.Read(one, 0, 1) == 1) back.Add(one[0]);
+            }
+            catch (IOException e) { return $"reading the answer: {e.Message}"; }
+            string answer = Encoding.UTF8.GetString(back.ToArray());
+            if (answer != text + "\n") return $"sent \"{text}\" and got \"{answer.TrimEnd()}\" back";
+            tls.ShutdownAsync().Wait(2000);
+            return null;
+        }
+
         /// <returns>null when every line ran, otherwise what went wrong</returns>
         public static string? Run(int port, IReadOnlyList<string> lines, Func<string> serial, CancellationToken cancel,
-                                  string? folder = null)
+                                  string? folder = null, IReadOnlyDictionary<int, int>? forwards = null)
         {
             folder ??= Path.GetTempPath();
             Screenshot? screen = null; // consecutive pixel checks share one screendump
@@ -158,6 +230,13 @@ namespace Phi.Cli
                     case "wait":
                         Delay(int.Parse(rest), cancel);
                         break;
+
+                    case "tls":
+                    {
+                        string? failed = TlsEcho(rest, forwards, cancel);
+                        if (failed != null) return $"input script: tls: {failed}";
+                        break;
+                    }
 
                     case "reboot":
                         Send("system_reset");

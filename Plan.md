@@ -1838,9 +1838,12 @@ them, step 4).
     network cards.
   - [ ] the lobby (`samples/mmo/`) taking logins over TLS, and its clients checking the
     certificate
-  - [ ] a check against another TLS 1.3 client (the server side has only met PHI's own;
-    the client side has met Windows' server): a port forwarded into QEMU, and .NET's
-    SslStream connecting to a PHI server
+  - [x] a check against another TLS 1.3 client: an input script's `tls PORT HOST ROOT TEXT`
+    has QEMU forward the port, and the host's own client (.NET's SslStream: Windows'
+    SChannel) connect to a PHI server, check its chain and host, and get a line echoed
+    (test `tls_host_client`, on both network cards). So both sides of PHI's TLS have met
+    another implementation: the client Windows' server (`net_http`), the server Windows'
+    client.
 - [ ] (3) virtio-blk and NVMe, (4) booting on a cloud machine, (5) the deployment guide
 
 ### Scenarios to write up next
