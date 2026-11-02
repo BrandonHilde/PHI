@@ -175,8 +175,10 @@ phi.Tcp:Program
 		;;
 	[end: -1]
 
-	# finish the connection: what's still in its send buffer goes, then a FIN
-	[Close: int handle: 0;]
+	# finish the connection: what's still in its send buffer goes, then a FIN. (wait is
+	# for net.tcp's sake, which has the same calls: here the kernel finishes the close,
+	# even after the program has stopped.)
+	[Close: int handle: 0; int wait: 0;]
 		call OS.TcpClose: handle;
 	[end]
 

@@ -22,6 +22,8 @@ use net.tls13;
 
 phi.Tls:Kernel
 {
+	const int CLOSE_WAIT: 5000;           # ms Close waits for the server to have everything
+
 	str error: [100];                     # why Connect, Read or Write failed
 	u32 alert: 0;                         # the alert the server sent, if it sent one
 	u32 suite: 0;                         # the cipher suite the server chose
@@ -94,7 +96,8 @@ phi.Tls:Kernel
 		;;
 	[end: -1]
 
-	# say goodbye (close_notify) and close the TCP connection
+	# say goodbye (close_notify) and close the TCP connection, waiting (up to CLOSE_WAIT ms)
+	# until the server has all of it, so a kernel can stop straight afterwards
 	[Close]
 		if tls_open
 			if tls_connection >= 0
@@ -105,7 +108,7 @@ phi.Tls:Kernel
 			tls_open is false;
 		;;
 		if tls_connection >= 0
-			call Tcp.Close: tls_connection;
+			call Tcp.Close: tls_connection CLOSE_WAIT;
 			tls_connection is -1;
 		;;
 	[end]

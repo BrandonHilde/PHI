@@ -234,8 +234,11 @@ phi.Tcp:Kernel
 
 	# finish the connection: what's still in the send buffer goes, then a FIN. Its
 	# number is free to use again now; the connection itself lingers until the FIN is
-	# answered (or LINGER ms), handled by Tick.
-	[Close: int handle: 0;]
+	# answered (or LINGER ms), handled by Tick. With wait, this keeps the network going
+	# until the other side has acknowledged everything, the FIN too, for up to wait ms:
+	# for a kernel about to stop, whose last data and FIN must still be sent again if a
+	# frame is lost.
+	[Close: int handle: 0; int wait: 0;]
 		ptr<TcpConnection> c: (Get: handle);
 		if c is 0 or c.closing return;
 		c.closing is true;
@@ -245,6 +248,12 @@ phi.Tcp:Kernel
 		;;
 		else
 			call Forget: handle;
+		;;
+		int start: (OS.GetTicks);
+		while (OS.GetTicks) - start < wait
+			if table:handle is not c return;                    # finished (or reset)
+			if c.fin_sent and c.send_unacked is c.send_next return;
+			call Net.Wait;
 		;;
 	[end]
 
