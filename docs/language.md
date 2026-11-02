@@ -661,7 +661,8 @@ if count is 0 call Show: 'empty';
 ```
 
 **has.** `list has x` is true when an array holds that value, each element compared as `is`
-compares it: numbers (and enums), texts, structs and objects. `text has 'abc'` is true when
+compares it: numbers of every size (and enums; floats by value, so `0.0` finds `-0.0` and
+`nan` finds nothing), texts, structs and objects. `text has 'abc'` is true when
 the text is somewhere in a `str` (or `ptr<u8>`), and `text has c` when a `chr` is (32-bit
 code):
 
@@ -1455,13 +1456,15 @@ locked counter_lock
 ;;
 ```
 
-- `atomic` works on a variable, field or element that is a number, `bln` or pointer of up
-  to 32 bits. A method's variable used with it stays in memory (never in a register).
+- `atomic` works on a variable, field or element that is a number or `bln` of up to 32
+  bits, or a pointer (8 bytes in 64-bit code). A method's variable used with it stays in
+  memory (never in a register).
 - A `locked` block turns interrupts off on its own core while it holds the lock, so an
   interrupt handler that wants the same lock can't wait forever for the code it
-  interrupted. Keep locked blocks short.
+  interrupted. Keep locked blocks short. A program's `locked` block leaves interrupts alone
+  (they're its system's, and a program may not turn them off): it only takes the lock.
 - A lock starts free; it can't have a value (`lock guard;`), and isn't a number.
-- Both need 32-bit code: 16-bit code runs on one core.
+- Both need 32-bit or 64-bit code: 16-bit code runs on one core.
 
 ## The network (32-bit kernels)
 
@@ -2141,7 +2144,7 @@ code pointers (and objects, and method values) are
 program can use what a 32-bit one can: numbers of every size and floating point, text,
 structs, objects and interfaces, arrays of all of them (fixed, `[atmost N]`, growing, and
 as parameters), method values, catching errors, `ask`, and the system's calls (files,
-arguments, time, memory). What it can't use yet (`atomic` and `locked`, and assembly
+arguments, time, memory), and `atomic` and `locked`. What it can't use yet (assembly
 blocks that have no `x64.Name { }` version) is an error saying it isn't in 64-bit
 programs yet. An address kept as a number is a `ptr<u8>` (the heap's `Heap.Alloc` gives
 one), so it's whole on every system.
@@ -2552,7 +2555,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 ## Not supported yet
 
 - `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
-  `^^` on 64-bit and floating point numbers, and `has` on arrays of them
+  and `^^` on 64-bit and floating point numbers
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - catching a CPU exception with `if call ... throws` (dividing by zero, using an empty
   object): they still show the panic screen, or end a user program

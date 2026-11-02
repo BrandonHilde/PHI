@@ -839,9 +839,9 @@ namespace Phi.Compiler.Semantics
                 has.Kind = element.IsObject ? HasKind.Objects : HasKind.Structs;
                 return;
             }
-            if (!element.IsNumeric)
+            if (!element.IsNumeric && !element.IsFloat && !element.IsWide)
             {
-                Error(has.Collection.Span, $"has works on arrays of numbers of up to 32 bits, texts, structs and objects, and '{name}' holds {element}s");
+                Error(has.Collection.Span, $"has works on arrays of numbers, texts, structs and objects, and '{name}' holds {element}s");
                 return;
             }
             if (element.IsEnum && v != element)
@@ -849,7 +849,10 @@ namespace Phi.Compiler.Semantics
                 Error(has.Value.Span, $"'{name}' holds {element}s, so has looks for one of them (like {element}.{element.Enum!.Members[0].Name}), not {A(v)}");
                 return;
             }
-            has.Value = Convert(has.Value, element.IsEnum ? element : PhiType.Int, $"what '{name}' is asked to have");
+            // the value as the elements are: a 64-bit number, or a floating point one (compared as is compares
+            // them: 0.0 is -0.0, and nan is nothing), or up to 32 bits
+            PhiType wanted = element.IsEnum ? element : element.IsFloat ? PhiType.F64 : element.IsWide ? element : PhiType.Int;
+            has.Value = Convert(has.Value, wanted, $"what '{name}' is asked to have");
             has.Kind = HasKind.Numbers;
         }
 
@@ -2358,8 +2361,8 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>
-        /// The parts of an atomic step: a variable, field or element in memory, a number, bln
-        /// or pointer of up to 32 bits, and values that fit it (an amount, for ++ and --).
+        /// The parts of an atomic step: a variable, field or element in memory, a number or bln
+        /// of up to 32 bits or a pointer, and values that fit it (an amount, for ++ and --).
         /// </summary>
         void BindAtomic(Expr target, ref Expr value, ref Expr? expected, bool amount, Span span, Scope scope)
         {
@@ -2377,9 +2380,11 @@ namespace Phi.Compiler.Semantics
                 Error(target.Span, "atomic works on a variable, a field or an array element");
                 return;
             }
-            if (!target.Type.IsNumeric || target.Type.ElementSize is not (1 or 2 or 4))
+            // (a pointer is as wide as an address: 8 bytes in 64-bit code)
+            bool pointer = target.Type.IsPointer && !target.Type.IsArray;
+            if (!target.Type.IsNumeric || !pointer && target.Type.ElementSize is not (1 or 2 or 4))
             {
-                Error(target.Span, $"atomic works on numbers, bln and pointers of up to 32 bits, and '{Describe(target)}' is a {target.Type}");
+                Error(target.Span, $"atomic works on a pointer, or a number or bln of up to 32 bits, and '{Describe(target)}' is a {target.Type}");
                 return;
             }
             value = Convert(value, amount ? PhiType.Int : target.Type, "the value");

@@ -10,12 +10,12 @@ phi.HasErrors:Kernel
 	str names[];
 	int n: 5;
 	Point points[2];
-	f64 reals[2];
+	lock guards[2];
 	str line: 'x';
 	bln a: n has 5;
 	bln b: names has 5;
 	bln c: points has n;
-	bln d: reals has 1.5;
+	bln d: guards has 1;
 	bln e: line has 7;
 	bln f: scores has 'a long text';
 	exit 0;

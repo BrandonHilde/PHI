@@ -1748,9 +1748,20 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   Every kernel test that can be a program (35) now builds as a 64-bit Linux program and
   gives the same output as a 32-bit one, but `kernel32_throw` (above); the rest use what
   only a kernel has (drivers, ports, interrupts, cores).
-- [ ] (a, the rest) `x64` versions of the rest of the library's blocks, as programs need
-  them; `has` on arrays of 64-bit numbers and floats; atomic and locked (S9) in 64-bit
-  code
+- [x] (a, the rest) what was left for 64-bit programs:
+  - `atomic` and `locked` (S9): an atomic step on a pointer is all 8 bytes of it, and a
+    locked block keeps its slots as wide as an address. Found on the way: a *program's*
+    `locked` block turned interrupts off (`cli`), which a program in ring 3 may not do, so
+    it stopped the program, on PHI OS and on Linux and Windows alike (only kernels had
+    tests). A program's block now only takes the lock. Test `atomic_program`.
+  - `has` on arrays of 64-bit numbers (whole: both halves) and of floating point numbers
+    (compared as `is` compares them: `0.0` finds `-0.0`, `nan` finds nothing), in 32-bit
+    code too, where `has` turned them away before. Test `has_numbers`.
+  - `x64` versions of the blocks programs can reach: `memory.mem`'s four (they read their
+    method's arguments, 8 bytes apart in 64-bit code), `gfx.draw`'s three (whose addresses
+    were `u32`s; they're pointers now) and `test.bench`'s. Tests `mem` (a library test now,
+    so on every system) and `draw_surface` (drawing into memory). The blocks left without
+    one are kernels' (the heap, paging, cores and drivers), as kernels stay 32-bit.
 - [x] (b) `--target windows64`: a PE32+ .exe at 0x400000 (no relocations, so the code's
   32-bit addresses of labels hold), the same generated code as a 64-bit Linux program, and
   a runtime of its own (`lib/x86_64_windows/`: kernel32's functions called the x64 way, in

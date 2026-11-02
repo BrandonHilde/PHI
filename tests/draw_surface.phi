@@ -1,0 +1,34 @@
+# runs only in 32 and 64 bits: gfx.draw is for 32-bit and 64-bit code
+# gfx.draw on a surface in memory (64 x 32 pixels), through each of its rows in assembly:
+# filling (Clear, FillRect), blending (BlendRect) and copying (Blit), with clipping at the
+# edges, then lines and single pixels; a few pixels and a sum of them all are printed.
+use gfx.draw;
+
+phi.DrawSurface:Library
+{
+	u32 pixels[2048];
+	u32 image[12];
+
+	call Draw.Target: addr pixels 64 32;
+	call Draw.Clear: 0x101010;
+	call Draw.FillRect: 4 4 10 6 0xFF0000;
+	call Draw.FillRect: 60 28 10 10 0x00FF00;            # partly off the edge
+	call Draw.BlendRect: 8 6 10 6 0x0000FF 128;
+	while int i: 0; i < 12; i++;
+		image:i is 0x010101 * (i * 20);
+	;;
+	call Draw.Blit: 40 2 4 3 addr image 4;
+	call Draw.Blit: -2 20 4 3 addr image 4;                # partly off the edge
+	call Draw.Line: 0 31 63 0 0xFFFFFF;
+	call Draw.Pixel: 30 15 0x123456;
+
+	log 'filled: ' (Draw.GetPixel: 5 5) ' ' (Draw.GetPixel: 63 31) ' ' (Draw.GetPixel: 0 0) '\n';
+	log 'blended: ' (Draw.GetPixel: 9 7) ' ' (Draw.GetPixel: 15 10) '\n';
+	log 'copied: ' (Draw.GetPixel: 41 3) ' ' (Draw.GetPixel: 43 4) ' ' (Draw.GetPixel: 0 21) '\n';
+	log 'pixel: ' (Draw.GetPixel: 30 15) ', off the surface: ' (Draw.GetPixel: 64 0) '\n';
+	u32 sum: 0;
+	while int i: 0; i < 2048; i++;
+		sum is sum * 31 + pixels:i;
+	;;
+	log 'sum: ' sum '\n';
+}

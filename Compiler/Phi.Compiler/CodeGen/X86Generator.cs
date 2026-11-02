@@ -111,7 +111,7 @@ namespace Phi.Compiler.CodeGen
 
             static bool NumberKind(PhiType t) =>
                 t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
-                    or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum
+                    or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum or TypeKind.Lock
                     or TypeKind.I64 or TypeKind.U64 or TypeKind.F16 or TypeKind.F32 or TypeKind.F64;
             static bool Number(PhiType t) => !t.IsArray && NumberKind(t);
             // a number of up to 32 bits: what an index, and the number in pointer math, can be
@@ -252,14 +252,20 @@ namespace Phi.Compiler.CodeGen
                     case MemberExpr { TextLength: true } length:
                         Expression(length.Target);
                         return;
+                    // atomic x is v when old, as a value: the variable, field or element in memory
+                    case AtomicExpr swap:
+                        if (!Place(swap.Target)) Not(swap.Target, A(swap.Target.Type));
+                        Expression(swap.Value);
+                        Expression(swap.Expected);
+                        return;
                     case HasExpr { Kind: HasKind.Text or HasKind.Character } has:
                         Expression(has.Collection);
                         Expression(has.Value);
                         return;
-                    // an array has a value: numbers of up to 32 bits and pointers, texts, objects, structs
+                    // an array has a value: numbers and pointers, texts, objects, structs
                     case HasExpr has when has.Kind switch
                     {
-                        HasKind.Numbers => Small(has.Collection.Type.Element) || Pointer(has.Collection.Type.Element),
+                        HasKind.Numbers => Number(has.Collection.Type.Element) || Pointer(has.Collection.Type.Element),
                         HasKind.Texts => has.Collection.Type.TextTable || TextsInPlace(has.Collection.Type),
                         HasKind.Objects => ObjectArray(has.Collection.Type),
                         _ => StructArray(has.Collection.Type),
@@ -454,6 +460,15 @@ namespace Phi.Compiler.CodeGen
                         return;
                     case ExitStmt e:
                         if (e.Code != null) Expression(e.Code);
+                        return;
+                    case AtomicStmt atomic:
+                        if (!Place(atomic.Target)) Not(atomic.Target, A(atomic.Target.Type));
+                        Expression(atomic.Value);
+                        if (atomic.Expected != null) Expression(atomic.Expected);
+                        return;
+                    case LockedStmt locked:
+                        if (!Place(locked.Lock)) Not(locked.Lock, A(locked.Lock.Type));
+                        foreach (Stmt t in locked.Body) Statement(t);
                         return;
                     case UnsafeStmt u:
                         foreach (Stmt t in u.Body) Statement(t);
@@ -2398,24 +2413,35 @@ namespace Phi.Compiler.CodeGen
         /// <summary>
         /// locked guard ... ;; takes the lock with xchg (spinning while another core has it,
         /// with interrupts back on), runs the body with this core's interrupts off, and gives it
-        /// back: at the end, and on a return, break or continue that leaves the block.
+        /// back: at the end, and on a return, break or continue that leaves the block. A program
+        /// leaves interrupts alone (they're its system's, and cli would stop it): it only takes
+        /// the lock, waiting while another thread has it. The block keeps three slots (each as
+        /// wide as an address): the lock's address, the flags from before it, and the catches.
         /// </summary>
         void EmitLocked(LockedStmt locked)
         {
-            string slot = AllocTemp(Catches ? 12 : 8);
+            bool kernel = unit.Kind != UnitKind.Program;
+            string slot = AllocTemp(3 * Slot);
             string spin = NewLabel("lock"), wait = NewLabel("lockwait"), held = NewLabel("locked");
             EmitPlaceAddress(locked.Lock);
-            Emit($"mov [{slot}], eax          ; the lock's address");
-            Emit("pushfd");
-            Emit($"pop dword [{slot} + 4]      ; interrupts as they were");
+            Emit($"mov [{slot}], {R("eax")}          ; the lock's address");
+            if (kernel)
+            {
+                Emit("pushfd");
+                Emit($"pop {R("ecx")}");
+                Emit($"mov [{slot} + {Slot}], {R("ecx")}      ; interrupts as they were");
+            }
             Label(spin);
-            Emit("cli");
+            if (kernel) Emit("cli");
             Emit("mov ecx, 1");
             Emit("xchg [eax], ecx           ; take it if it's free (0)");
             Emit("test ecx, ecx");
             Emit($"jz {held}");
-            Emit($"push dword [{slot} + 4]");
-            Emit("popfd                    ; another core has it: interrupts as they were while waiting");
+            if (kernel)
+            {
+                Emit($"push {Q} [{slot} + {Slot}]");
+                Emit("popfd                    ; another core has it: interrupts as they were while waiting");
+            }
             Label(wait);
             Emit("pause");
             Emit("cmp dword [eax], 0");
@@ -2426,9 +2452,9 @@ namespace Phi.Compiler.CodeGen
             {
                 // what the lock guards may be half changed when something goes wrong in here, so
                 // no error is caught until it's given back: it stops the program
-                Emit("mov ecx, [phi_catch_top]");
-                Emit($"mov [{slot} + 8], ecx");
-                Emit("mov dword [phi_catch_top], 0");
+                Emit($"mov {R("ecx")}, {Q} [phi_catch_top]");
+                Emit($"mov [{slot} + {2 * Slot}], {R("ecx")}");
+                Emit($"mov {Q} [phi_catch_top], 0");
             }
 
             lockedBlocks.Add((slot, loops.Count, inlining.Count));
@@ -2518,13 +2544,16 @@ namespace Phi.Compiler.CodeGen
         {
             if (Catches)
             {
-                Emit($"mov ecx, [{slot} + 8]");
-                Emit("mov [phi_catch_top], ecx      ; errors can be caught again");
+                Emit($"mov {R("ecx")}, [{slot} + {2 * Slot}]");
+                Emit($"mov {Q} [phi_catch_top], {R("ecx")}      ; errors can be caught again");
             }
-            Emit($"mov ecx, [{slot}]");
+            Emit($"mov {R("ecx")}, [{slot}]");
             Emit("mov dword [ecx], 0        ; the lock back");
-            Emit($"push dword [{slot} + 4]");
-            Emit("popfd                    ; and interrupts as they were");
+            if (unit.Kind != UnitKind.Program)
+            {
+                Emit($"push {Q} [{slot} + {Slot}]");
+                Emit("popfd                    ; and interrupts as they were");
+            }
         }
 
         /// <summary>
@@ -2547,6 +2576,7 @@ namespace Phi.Compiler.CodeGen
         {
             1 => register[1] + "l",
             2 => register[1..],
+            8 => "r" + register[1..],
             _ => register,
         };
 
@@ -2559,7 +2589,7 @@ namespace Phi.Compiler.CodeGen
                 return;
             }
             int bytes = StorageType(atomic.Target.Type).ElementSize;
-            string size = bytes switch { 1 => "byte", 2 => "word", _ => "dword" };
+            string size = bytes switch { 1 => "byte", 2 => "word", 8 => "qword", _ => "dword" };
             EmitExpr(atomic.Value);
             Emit("push eax");
             Place p = EmitPlace(atomic.Target);
@@ -2577,7 +2607,7 @@ namespace Phi.Compiler.CodeGen
         void EmitCompareSwap(Expr target, Expr value, Expr expected)
         {
             int bytes = StorageType(target.Type).ElementSize;
-            string size = bytes switch { 1 => "byte", 2 => "word", _ => "dword" };
+            string size = bytes switch { 1 => "byte", 2 => "word", 8 => "qword", _ => "dword" };
             EmitExpr(value);
             Emit("push eax");
             EmitExpr(expected);
@@ -4446,12 +4476,21 @@ namespace Phi.Compiler.CodeGen
 
             PhiType element = has.Collection.Type.Element;
             int size = element.ElementSize;
-            string value = AllocTemp(Slot), index = AllocTemp(4);
+            bool wide = has.Kind == HasKind.Numbers && element.IsWide, floating = has.Kind == HasKind.Numbers && element.IsFloat;
+            string value = AllocTemp(wide || floating ? 8 : Slot), index = AllocTemp(4);
             string next = NewLabel("has"), yes = NewLabel("hasyes"), no = NewLabel("hasno"), done = NewLabel("hasdone");
             if (has.Kind == HasKind.Texts) EmitTextValue(has.Value);
             else if (has.Kind is HasKind.Objects or HasKind.Structs) EmitObjectAddress(has.Value);
+            else if (wide) EmitWide(has.Value);
+            else if (floating) EmitFloat(has.Value);
             else EmitExpr(has.Value);
-            Emit($"mov {Q} [{value}], {R("eax")}         ; what to look for");
+            if (wide)
+            {
+                Emit($"mov [{value}], eax         ; what to look for");
+                Emit($"mov [{value} + 4], edx");
+            }
+            else if (floating) Emit($"fstp qword [{value}]       ; what to look for (as an f64: exact for every kind)");
+            else Emit($"mov {Q} [{value}], {R("eax")}         ; what to look for");
             Emit($"mov dword [{index}], 0");
             Label(next);
             EmitArrayCount(has.Collection);
@@ -4467,6 +4506,39 @@ namespace Phi.Compiler.CodeGen
             }
             switch (has.Kind)
             {
+                case HasKind.Numbers when wide:
+                    // the low halves, then the high ones
+                    Emit("mov ecx, [eax]");
+                    Emit($"cmp ecx, [{value}]");
+                    string differs = NewLabel("hasdiffers");
+                    Emit($"jne {differs}");
+                    Emit("mov ecx, [eax + 4]");
+                    Emit($"cmp ecx, [{value} + 4]");
+                    Emit($"je {yes}");
+                    Label(differs);
+                    break;
+
+                case HasKind.Numbers when floating:
+                    // as is compares them: on the FPU, where nan is equal to nothing
+                    if (element.Kind == TypeKind.F64) Emit("fld qword [eax]");
+                    else if (element.Kind == TypeKind.F32) Emit("fld dword [eax]");
+                    else
+                    {
+                        Need("phi_f16_to_f32");
+                        Emit("movzx eax, word [eax]");
+                        Emit("call phi_f16_to_f32");
+                        PushAndLoad("dword", "eax", isFloat: true);
+                    }
+                    Emit($"fld qword [{value}]");
+                    Emit("fcompp");
+                    Emit("fnstsw ax");
+                    Emit("sahf");
+                    string unordered = NewLabel("hasnan");
+                    Emit($"jp {unordered}");
+                    Emit($"je {yes}");
+                    Label(unordered);
+                    break;
+
                 case HasKind.Numbers:
                     string extend = element.IsSigned ? "movsx" : "movzx";
                     if (size == 1) Emit($"{extend} eax, byte [eax]");

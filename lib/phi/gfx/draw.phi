@@ -1,5 +1,5 @@
 # Drawing in 32-bit color: rectangles, lines, circles, gradients, images and text.
-# 32-bit kernels and user programs.
+# 32-bit kernels and user programs, and 64-bit programs.
 #
 #   use drivers.vbe;                         # Screen.Start points Draw at its back buffer
 #   call Draw.FillRect: 10 10 100 50 Draw.BLUE;
@@ -88,11 +88,11 @@ phi.Draw:Library
 	int target_depth: 0;
 
 	# for the assembly loops below
-	u32 draw_fill_to: 0;
+	ptr<u32> draw_fill_to: 0;            # (an address: all 64 bits of it in 64-bit code)
 	u32 draw_fill_count: 0;
 	u32 draw_fill_color: 0;
-	u32 draw_copy_from: 0;
-	u32 draw_copy_to: 0;
+	ptr<u32> draw_copy_from: 0;
+	ptr<u32> draw_copy_to: 0;
 	u32 draw_copy_count: 0;
 	u32 draw_blend_rb: 0;
 	u32 draw_blend_g: 0;
@@ -625,6 +625,49 @@ asm.DrawBlendRow
 	or eax, ebx
 	mov [edi], eax
 	add edi, 4
+	dec ecx
+	jnz .pixel
+	ret
+}
+
+# 64-bit code: the same, with the addresses in all of rdi and rsi
+x64.DrawFillRow
+{
+	mov rdi, [rel {draw_fill_to}]
+	mov ecx, [rel {draw_fill_count}]
+	mov eax, [rel {draw_fill_color}]
+	rep stosd
+	ret
+}
+x64.DrawCopyRow
+{
+	mov rsi, [rel {draw_copy_from}]
+	mov rdi, [rel {draw_copy_to}]
+	mov ecx, [rel {draw_copy_count}]
+	rep movsd
+	ret
+}
+x64.DrawBlendRow
+{
+	mov rdi, [rel {draw_fill_to}]
+	mov ecx, [rel {draw_fill_count}]
+	mov esi, [rel {draw_blend_keep}]
+.pixel:
+	mov ebx, [rdi]
+	mov eax, ebx
+	and eax, 0xFF00FF
+	imul eax, esi
+	add eax, [rel {draw_blend_rb}]
+	shr eax, 8
+	and eax, 0xFF00FF
+	and ebx, 0xFF00
+	imul ebx, esi
+	add ebx, [rel {draw_blend_g}]
+	shr ebx, 8
+	and ebx, 0xFF00
+	or eax, ebx
+	mov [rdi], eax
+	add rdi, 4
 	dec ecx
 	jnz .pixel
 	ret

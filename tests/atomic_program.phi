@@ -1,0 +1,80 @@
+# atomic and locked in a program (kernel32_atomic's forms, on one thread): each atomic
+# step on numbers of each size and on a pointer, compare-and-swap as a statement and as a
+# value, and a locked block left by its end, a return and a break, each of which gives
+# the lock back (the next one would wait forever otherwise). A program leaves interrupts
+# alone: they're its system's.
+
+struct.Slot
+{
+	u32 owner;
+	lock guard;
+}
+
+phi.AtomicProgram:Program
+{
+	u32 hits: 0;
+	u16 small: 0;
+	u8 tiny: 250;
+	int signed: -5;
+	ptr<u8> where: 0;
+	u8 bytes[4];
+	lock guard;
+	Slot slots[2];
+
+	atomic hits++;
+	atomic hits++ 10;
+	atomic hits-- 3;
+	atomic small++ 1000;
+	atomic tiny++ 10;                     # 260 wraps to 4
+	atomic signed++ 2;
+	log 'add: ' hits ' ' small ' ' tiny ' ' signed '\n';
+
+	atomic hits is 99;
+	atomic hits is 7 when 99;             # it was 99: now 7
+	atomic hits is 8 when 99;             # it isn't: stays 7
+	bln swapped: (atomic small is 1 when 1000);
+	bln missed: (atomic small is 2 when 1000);
+	log 'swap: ' hits ' ' small ' ' swapped ' ' missed '\n';
+
+	# a pointer (8 bytes in 64-bit code)
+	atomic where is addr bytes;
+	bln moved: (atomic where is addr bytes:2 when addr bytes);
+	log 'pointer: ' (where is addr bytes:2) ' ' moved '\n';
+
+	# a field of an array element
+	atomic slots:1.owner++ 5;
+	log 'field: ' slots:1.owner '\n';
+
+	# locked: its end, a return and a break each give the lock back
+	int counted: 0;
+	locked guard
+		counted++;
+	;;
+	call Inside;
+	call Inside;
+	while int i: 0; i < 3; i++;
+		locked guard
+			counted++;
+			break;
+		;;
+	;;
+	locked slots:0.guard
+		locked guard
+			counted++;
+		;;
+	;;
+	# each lock is free again: taken once more, it doesn't wait
+	locked guard
+		locked slots:0.guard
+			counted++;
+		;;
+	;;
+	log 'locked: ' counted ' ' (Inside) '\n';
+
+	# returns from inside a locked block
+	[Inside]
+		locked guard
+			return 41;
+		;;
+	[end: 0]
+}

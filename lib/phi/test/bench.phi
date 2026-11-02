@@ -1,4 +1,5 @@
-# Timing code, for benchmarks. Any 32-bit program (kernels and user programs).
+# Timing code, for benchmarks. Any 32-bit program (kernels and user programs), and 64-bit
+# programs.
 #
 #   use test.bench;
 #   call Bench.Start;
@@ -46,5 +47,13 @@ asm.BenchReadCounter
 	rdtsc
 	mov [{bench_now}], eax
 	mov [{bench_now} + 4], edx
+	ret
+}
+
+x64.BenchReadCounter
+{
+	rdtsc
+	mov [rel {bench_now}], eax
+	mov [rel {bench_now} + 4], edx
 	ret
 }

@@ -1,5 +1,5 @@
 # Copying and filling memory with the CPU's string instructions (rep movs, rep stos).
-# 32-bit kernels and programs.
+# 32-bit kernels and programs, and 64-bit programs.
 #
 #   use memory.mem;
 #   call Mem.Copy: to from 4096;              # the areas must not overlap
@@ -8,9 +8,10 @@
 #   call Mem.Fill32: pixels 0xFFFFFF 640;     # 640 white pixels
 #
 # Each method's asm block reads the method's own arguments from its stack frame (the last
-# one at [ebp + 8], the one before it at [ebp + 12], and so on: see LayOutFrame in the code
-# generator), so nothing is shared between calls, and an interrupt handler (a network
-# card's, say) can copy while the code it interrupted is in the middle of a copy too.
+# one at [ebp + 8], the one before it at [ebp + 12], and so on; in 64-bit code [rbp + 16],
+# [rbp + 24] and so on: see LayOutFrame in the code generator), so nothing is shared
+# between calls, and an interrupt handler (a network card's, say) can copy while the code
+# it interrupted is in the middle of a copy too.
 
 phi.Mem:Library
 {
@@ -111,6 +112,69 @@ asm.MemFillWords
 	mov edi, [ebp + 16]
 	mov ecx, [ebp + 8]
 	mov eax, [ebp + 12]
+	rep stosd
+	ret
+}
+
+# 64-bit code: the same, with the arguments 8 bytes apart (the last at [rbp + 16]) and the
+# addresses in all of rdi and rsi
+x64.MemCopyForward
+{
+	mov rdi, [rbp + 32]
+	mov rsi, [rbp + 24]
+	mov ecx, [rbp + 16]
+	mov edx, ecx
+	shr ecx, 2
+	rep movsd
+	mov ecx, edx
+	and ecx, 3
+	rep movsb
+	ret
+}
+x64.MemMove
+{
+	mov rdi, [rbp + 32]
+	mov rsi, [rbp + 24]
+	mov ecx, [rbp + 16]
+	cmp rdi, rsi
+	jbe .forward
+	lea rax, [rsi + rcx]
+	cmp rdi, rax
+	jae .forward
+	lea rsi, [rsi + rcx - 1]
+	lea rdi, [rdi + rcx - 1]
+	std
+	rep movsb
+	cld
+	ret
+.forward:
+	mov edx, ecx
+	shr ecx, 2
+	rep movsd
+	mov ecx, edx
+	and ecx, 3
+	rep movsb
+	ret
+}
+x64.MemFillBytes
+{
+	mov rdi, [rbp + 32]
+	mov ecx, [rbp + 16]
+	movzx eax, byte [rbp + 24]
+	imul eax, eax, 0x01010101
+	mov edx, ecx
+	shr ecx, 2
+	rep stosd
+	mov ecx, edx
+	and ecx, 3
+	rep stosb
+	ret
+}
+x64.MemFillWords
+{
+	mov rdi, [rbp + 32]
+	mov ecx, [rbp + 16]
+	mov eax, [rbp + 24]
 	rep stosd
 	ret
 }
