@@ -594,6 +594,8 @@ phi_fault_handler:
     cmp [rcx + CONTEXT_RIP], r8
     je .not_ours                        ; the entry itself was stopped: it would only be again
     mov [rcx + CONTEXT_RBX], rax
+    mov rax, [rcx + CONTEXT_RIP]
+    mov [rcx + CONTEXT_RCX], rax        ; where it happened, for its line
     mov [rcx + CONTEXT_RIP], r8
     mov eax, -1                         ; EXCEPTION_CONTINUE_EXECUTION
     ret
@@ -605,6 +607,7 @@ ERROR_DIVIDE  equ 3                     ; ErrorKind (lib/phi/lang/error.phi)
 ERROR_EMPTY   equ 4
 ERROR_ACCESS  equ 5
 CONTEXT_RBX   equ 0x90                  ; in an x64 CONTEXT
+CONTEXT_RCX   equ 0x80
 CONTEXT_RIP   equ 0xF8
 align 8
 phi_fault_to: dq 0

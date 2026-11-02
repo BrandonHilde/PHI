@@ -206,8 +206,11 @@ phi_fault:
     mov dword [ecx + FRAME_EBX], ERROR_KIND_ACCESS
     mov dword [ecx + FRAME_EDX], .refused
 .throw:
-    mov dword [ecx + FRAME_EAX], 0            ; the line isn't known
-    mov dword [ecx + FRAME_ESI], 0            ; nor the file
+    ; its line and file, from the address it happened at (phi_line_at)
+    mov eax, [ecx + FRAME_EIP]
+    call phi_line_at
+    mov [ecx + FRAME_EAX], eax
+    mov [ecx + FRAME_ESI], esi
     mov dword [ecx + FRAME_EIP], phi_throw
     mov eax, 1
 .not:
@@ -215,3 +218,38 @@ phi_fault:
 .divided: db 'division by zero', 0
 .empty:   db 'an empty object or a null pointer was used', 0
 .refused: db 'memory that is not there was used, or the CPU refused an instruction', 0
+
+; eax = an address in the program's code -> eax = the line it's on, esi = its file's name;
+; 0 and 0 when it isn't PHI code (an asm block, the runtime) or isn't known (the program's
+; phi_lines, which the code generator writes: a count, then each line's address, line and
+; file, in the order the code is in)
+phi_line_at:
+    push ebx
+    push ecx
+    push edx
+    mov ecx, [phi_lines]
+    lea edx, [phi_lines + 4]
+    xor ebx, ebx                        ; the last mark at or before the address
+.next:
+    test ecx, ecx
+    jz .found
+    cmp [edx], eax
+    ja .found
+    mov ebx, edx
+    add edx, 12
+    dec ecx
+    jmp .next
+.found:
+    xor eax, eax
+    xor esi, esi
+    test ebx, ebx
+    jz .done
+    mov eax, [ebx + 4]
+    test eax, eax
+    jz .done                            ; (past the end of the PHI code)
+    mov esi, [ebx + 8]
+.done:
+    pop edx
+    pop ecx
+    pop ebx
+    ret

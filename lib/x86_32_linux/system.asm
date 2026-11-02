@@ -452,6 +452,8 @@ phi_fault_handler:
     cmp [ecx + UCONTEXT_EIP], edx
     je .again                           ; the entry itself was stopped: it would only be again
     mov [ecx + UCONTEXT_EBX], eax
+    mov eax, [ecx + UCONTEXT_EIP]
+    mov [ecx + UCONTEXT_ECX], eax       ; where it happened, for its line
     mov [ecx + UCONTEXT_EIP], edx
     ret
 .again:
@@ -474,6 +476,7 @@ ERROR_DIVIDE     equ 3                  ; ErrorKind (lib/phi/lang/error.phi)
 ERROR_EMPTY      equ 4
 ERROR_ACCESS     equ 5
 UCONTEXT_EBX     equ 20 + 32            ; in a ucontext: its sigcontext's ebx and eip
+UCONTEXT_ECX     equ 20 + 40
 UCONTEXT_EIP     equ 20 + 56
 phi_fault_to: dd 0
 phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask

@@ -1556,8 +1556,15 @@ test where a zone program crashes on purpose shows its players back in a restart
     so it carries on in the fault entry, as PHI OS sends a program. Test `faults_program`,
     the same output on all four. An uncaught one now ends a program as any error does
     (`PHI:` and the message, then -1), not with the system's own crash.
-  - Not yet: the line a CPU exception happened on (the code's addresses aren't mapped
-    back to lines at run time).
+  - [x] the line a CPU exception happened on: a program that catches errors has a line
+    table, `phi_lines` (each line's code's address, the line and its file's name, in the
+    order the code is in, ending with a mark after the PHI code), which the runtime's
+    `phi_line_at` looks the faulting address up in; each system passes that address to
+    the fault entry. A fault inside an asm block or the runtime has no line.
+  - Not yet: a line for a fault in the runtime (a null text given to a routine), which
+    would need the caller's line, from its stack; and the panic screen's line (the table
+    is only in programs that catch, to keep kernels small).
+
 
 - [ ] (5) `phi fuzz`: **later**, with the optimisations, before a release (the user,
   2026-11-01). Until then this phase's "Done when" waits on it; parts 1-4 are done.

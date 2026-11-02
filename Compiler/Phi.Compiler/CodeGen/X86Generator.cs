@@ -583,11 +583,18 @@ namespace Phi.Compiler.CodeGen
             }
 
             foreach (MethodSymbol m in unit.Methods) EmitMethod(m);
+            // what follows isn't PHI code: an exception in it has no line
+            if (lineMarks.Count > 0)
+            {
+                Label("phi_line_end");
+                lineMarks.Add(("phi_line_end", 0, "0"));
+            }
             foreach (RawBlockDecl raw in unit.RawBlocks) EmitRawBlock(raw);
             EmitObjectRoutines();
             EmitStrRoomRoutine();
             EmitArrayGrowRoutine();
             EmitTextArrayGrowRoutine();
+            EmitLineTable();
 
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
 
@@ -941,6 +948,12 @@ namespace Phi.Compiler.CodeGen
 
         static string FileName(SourceFile f) => f.Path.Replace('\\', '/');
 
+        /// <summary>
+        /// Where each line's code starts, the line and its file's name, in a program that catches
+        /// errors: a CPU exception's error says its line from them (the runtime's phi_line_at).
+        /// </summary>
+        readonly List<(string Label, int Line, string File)> lineMarks = new();
+
         /// <summary>Puts the source line above the code it produced, which helps when reading the .asm.</summary>
         void SourceComment(Node node)
         {
@@ -951,6 +964,14 @@ namespace Phi.Compiler.CodeGen
             string[] lines = file.Text.Split('\n');
             string text = line - 1 < lines.Length ? lines[line - 1].Trim() : "";
             code.AppendLine($"    ; {line}: {text}");
+
+            // in a program that catches errors, where this line's code starts (see phi_lines)
+            if (Catches)
+            {
+                string label = $"phi_line_{lineMarks.Count}";
+                Label(label);
+                lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
+            }
         }
 
         void Need(string librarySymbol) => librarySymbols.Add(librarySymbol);
@@ -6590,6 +6611,24 @@ namespace Phi.Compiler.CodeGen
         }
 
         // ---------------------------------------------------------------- the routines
+
+        /// <summary>
+        /// phi_lines: how many marks, then each mark's address, line and file name (as wide as an
+        /// address each), in the order the code is in; none in a program that doesn't catch
+        /// errors. The runtime looks an address up in it (phi_line_at).
+        /// </summary>
+        void EmitLineTable()
+        {
+            if (!bits32) return;
+            string size = bits64 ? "dq" : "dd";
+            Line("");
+            Comment("where each line's code starts, the line and its file (a CPU exception's error says its line)");
+            Line("align 8");
+            Label("phi_lines");
+            Line($"    {size} {lineMarks.Count}");
+            foreach (var (label, line, name) in lineMarks)
+                Line($"    {size} {label}, {line}, {name}");
+        }
 
         void EmitObjectRoutines()
         {

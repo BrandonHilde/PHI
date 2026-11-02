@@ -141,7 +141,7 @@ phi_error:      times ERROR_SIZE db 0
 
 ; ---- CPU exceptions, caught as errors (as x86_32_user/throw.asm has them): the system
 ; (system.asm's phi_fault_register) sends a program the CPU stopped here, with ebx = the
-; kind of error, and it's thrown like any other
+; kind of error and rcx = where it happened, and it's thrown like any other
 ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
 ERROR_KIND_EMPTY  equ 4
 
@@ -159,9 +159,43 @@ phi_fault_entry:
     jne .thrown
     lea rdx, [rel .empty]
 .thrown:
-    xor eax, eax                        ; the line isn't known
-    xor esi, esi                        ; nor the file
+    mov rax, rcx                        ; the line and file of where it happened, if they're known
+    call phi_line_at
     jmp phi_throw
 .divided: db 'division by zero', 0
 .empty:   db 'an empty object or a null pointer was used', 0
 .refused: db 'memory that is not there was used, or the CPU refused an instruction', 0
+
+; rax = an address in the program's code -> eax = the line it's on, rsi = its file's name;
+; 0 and 0 when it isn't PHI code (an asm block, the runtime) or isn't known (the program's
+; phi_lines: a count, then each line's address, line and file, 8 bytes each)
+phi_line_at:
+    push rbx
+    push rcx
+    push rdx
+    mov rcx, [rel phi_lines]
+    lea rdx, [rel phi_lines + 8]
+    xor ebx, ebx                        ; the last mark at or before the address
+.next:
+    test rcx, rcx
+    jz .found
+    cmp [rdx], rax
+    ja .found
+    mov rbx, rdx
+    add rdx, 24
+    dec rcx
+    jmp .next
+.found:
+    xor eax, eax
+    xor esi, esi
+    test rbx, rbx
+    jz .done
+    mov eax, [rbx + 8]
+    test eax, eax
+    jz .done                            ; (past the end of the PHI code)
+    mov rsi, [rbx + 16]
+.done:
+    pop rdx
+    pop rcx
+    pop rbx
+    ret

@@ -1,5 +1,5 @@
-divide: 1 division by zero
-empty: 1 an empty object or a null pointer was used
+divide: 1 division by zero on line 42 in faults_program.phi
+empty: 1 an empty object or a null pointer was used on line 47 in faults_program.phi
 null: 1
-not its own: 1 memory that is not there was used, or the CPU refused an instruction
+not its own: 1 memory that is not there was used, or the CPU refused an instruction on line 55 in faults_program.phi
 again: 50 caught

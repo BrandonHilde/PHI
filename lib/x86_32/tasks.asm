@@ -553,6 +553,8 @@ phi_task_fault:
     ja .stop
     cmp [ebp + F_EIP], edx
     je .stop
+    mov eax, [ebp + F_EIP]
+    mov [ebp + F_ECX], eax                    ; where it happened, for its line
     mov [ebp + F_EIP], edx
     mov [ebp + F_EBX], ebx
     ret

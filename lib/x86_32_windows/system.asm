@@ -535,6 +535,8 @@ phi_fault_handler:
     cmp [ecx + CONTEXT_EIP], edx
     je .not_ours                        ; the entry itself was stopped: it would only be again
     mov [ecx + CONTEXT_EBX], eax
+    mov eax, [ecx + CONTEXT_EIP]
+    mov [ecx + CONTEXT_ECX], eax        ; where it happened, for its line
     mov [ecx + CONTEXT_EIP], edx
     mov eax, -1                         ; EXCEPTION_CONTINUE_EXECUTION
     ret 4
@@ -546,5 +548,6 @@ ERROR_DIVIDE  equ 3                     ; ErrorKind (lib/phi/lang/error.phi)
 ERROR_EMPTY   equ 4
 ERROR_ACCESS  equ 5
 CONTEXT_EBX   equ 0xA4                  ; in an x86 CONTEXT
+CONTEXT_ECX   equ 0xAC
 CONTEXT_EIP   equ 0xB8
 phi_fault_to: dd 0

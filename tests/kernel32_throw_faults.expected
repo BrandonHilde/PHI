@@ -1,6 +1,6 @@
-divide: 1 division by zero
-empty: 1 an empty object or a null pointer was used
+divide: 1 division by zero on line 48 in kernel32_throw_faults.phi
+empty: 1 an empty object or a null pointer was used on line 53 in kernel32_throw_faults.phi
 null: 1
-past the end: 1 memory that is not there was used, or the CPU refused an instruction
+past the end: 1 memory that is not there was used, or the CPU refused an instruction on line 61 in kernel32_throw_faults.phi
 again: 50 caught, heap back: 1
 still running

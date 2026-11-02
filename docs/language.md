@@ -815,9 +815,10 @@ else
 - **The CPU's errors are caught too**: dividing a whole number by zero
   (`ErrorKind.DIVIDE`), using an empty object or a null pointer (`ErrorKind.EMPTY`), and
   memory that isn't there or an instruction the CPU refuses (`ErrorKind.ACCESS`), in a
-  kernel, in a PHI OS program, and in a Linux or Windows program (32 or 64 bits) alike.
-  Their line isn't known, so the message is the text alone. Uncaught, a program prints
-  the error and ends with -1, as for any error.
+  kernel, in a PHI OS program, and in a Linux or Windows program (32 or 64 bits) alike,
+  with the line they happened on (`division by zero on line 42 in world.phi`; inside an
+  asm block or the runtime there's none, and the message is the text alone). Uncaught, a
+  program prints the error and ends with -1, as for any error.
 - An error in an interrupt handler or a system call isn't caught by the code it
   interrupted. In a kernel each core has its own list of catches, and each task (a
   thread, say) keeps its own as the cores take turns, so threads catch their own errors.

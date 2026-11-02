@@ -151,7 +151,8 @@ phi_error:      times ERROR_SIZE db 0
 ; Dividing by zero, or using memory that isn't there (an empty object, a null pointer),
 ; stops a program in the CPU. Where the system can (PHI OS: system.asm's
 ; phi_fault_register), it sends the program here instead, with ebx = the kind of error,
-; and it's thrown like any other: caught by a catch, or printed and the program ended.
+; and ecx = where it happened (the faulting instruction), and it's thrown like any other:
+; caught by a catch, or printed and the program ended.
 ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
 ERROR_KIND_EMPTY  equ 4
 
@@ -169,9 +170,44 @@ phi_fault_entry:
     jne .thrown
     mov edx, .empty
 .thrown:
-    xor eax, eax                        ; the line isn't known
-    xor esi, esi                        ; nor the file
+    mov eax, ecx                        ; the line and file of where it happened, if they're known
+    call phi_line_at
     jmp phi_throw
 .divided: db 'division by zero', 0
 .empty:   db 'an empty object or a null pointer was used', 0
 .refused: db 'memory that is not there was used, or the CPU refused an instruction', 0
+
+; eax = an address in the program's code -> eax = the line it's on, esi = its file's name;
+; 0 and 0 when it isn't PHI code (an asm block, the runtime) or isn't known (the program's
+; phi_lines, which the code generator writes: a count, then each line's address, line and
+; file, in the order the code is in)
+phi_line_at:
+    push ebx
+    push ecx
+    push edx
+    mov ecx, [phi_lines]
+    lea edx, [phi_lines + 4]
+    xor ebx, ebx                        ; the last mark at or before the address
+.next:
+    test ecx, ecx
+    jz .found
+    cmp [edx], eax
+    ja .found
+    mov ebx, edx
+    add edx, 12
+    dec ecx
+    jmp .next
+.found:
+    xor eax, eax
+    xor esi, esi
+    test ebx, ebx
+    jz .done
+    mov eax, [ebx + 4]
+    test eax, eax
+    jz .done                            ; (past the end of the PHI code)
+    mov esi, [ebx + 8]
+.done:
+    pop edx
+    pop ecx
+    pop ebx
+    ret

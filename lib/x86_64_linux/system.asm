@@ -518,6 +518,8 @@ phi_fault_handler:
     cmp [rdx + UCONTEXT_RIP], rcx
     je .again                           ; the entry itself was stopped: it would only be again
     mov [rdx + UCONTEXT_RBX], rax
+    mov rax, [rdx + UCONTEXT_RIP]
+    mov [rdx + UCONTEXT_RCX], rax       ; where it happened, for its line
     mov [rdx + UCONTEXT_RIP], rcx
     ret
 .again:
@@ -540,6 +542,7 @@ ERROR_DIVIDE     equ 3                  ; ErrorKind (lib/phi/lang/error.phi)
 ERROR_EMPTY      equ 4
 ERROR_ACCESS     equ 5
 UCONTEXT_RBX     equ 40 + 11 * 8        ; in a ucontext: its registers' rbx and rip
+UCONTEXT_RCX     equ 40 + 14 * 8
 UCONTEXT_RIP     equ 40 + 16 * 8
 align 8
 phi_fault_to: dq 0
