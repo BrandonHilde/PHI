@@ -2441,7 +2441,14 @@ starting that phase.
    table. `sockets_program` on all four, and `phi load` holds on both systems: 500 TLS
    logins, 300 players with none late. A program gets only the parts it uses (a built-in it
    calls brings its part's modules, as `new` brings the heap), so one that has no network
-   doesn't import or start Winsock. Next: threads.) A module for each part (the network, threads, files,
+   doesn't import or start Winsock. Threads are done too, 2026-11-03: `OS.ThreadStart`,
+   `ThreadDone` and `ThreadFree` are `threads.phi` (a thread's number, under a lock the
+   assembly didn't have, and the frame its first instructions find) on `threads_linux.phi`
+   and `threads_windows.phi`. Each `threads.asm` keeps what has to be assembly: the block's
+   setup, a thread's first instructions, and on Linux `clone` itself (`OS.ThreadClone`: the
+   new thread comes back from it on another stack), on Windows only where those
+   instructions are (`OS.ThreadEntry`, for `CreateThread`). Test
+   `threads_starting_program`: threads starting threads at once, on all four hosts.) A module for each part (the network, threads, files,
    time) holding what every system shares (checking a socket's kind, keeping thread
    slots, the waiting and retrying), on top of a small module per system of constants and
    calls (Linux's numbers, Windows' functions). Moved a part at a time, the assembly
@@ -2468,6 +2475,29 @@ Along the way, smaller things that make building PHI easier:
 and Windows (32 and 64 bits), with assembly only for the pieces in (4); every test passes
 on all five systems as before; and a new call a program makes of its system can be added
 in PHI alone.
+
+**Status: done (2026-11-03).** System calls and outside functions are in the language, and
+time, files, the network and threads on the hosts are PHI modules in `lib/phi/host/`, about
+4,000 lines of assembly lighter: 639 tests on all five systems, and `phi load` holds on
+Linux and Windows. The network and threads are one module for both systems over a small
+one for each; files are a module for each system (one for both widths of each), since Linux
+and Windows share almost nothing there beyond what a call means. A new call can be added in
+PHI alone (`sys_calls_program`, `outside_functions_program` do).
+- Still assembly, beyond (4), and could move when something needs it: `OS.CurrentTask`,
+  `OS.Grow` (under every program's heap), `OS.TotalMemory` and `OS.FreeMemory`; and what's
+  tied to assembly the code generator calls directly: `log`'s buffer (`phi_print`,
+  `phi_flush`), reading lines and keys (`ask` and `OS.ReadKey` share a buffer), and
+  `OS.ClearScreen`, which flushes the log first. PHI OS programs keep their assembly: their
+  calls are the kernel's, one instruction each.
+- Not yet: floats, and 64-bit numbers in a 32-bit program, to and from outside functions;
+  callbacks (a window system calling PHI code); structs laid out as C lays them out; and
+  libraries on Linux and macOS, loaded with the program. H7 needs all of these.
+- Open: `sockets_program` on 64-bit Windows ended with -1 once in a full run (2026-11-03,
+  before the network moved to PHI) and couldn't be made to again; a test that passes only
+  on its second run now keeps its first run's output (`NAME.first.actual`).
+- A hazard for the language, not only here: PHI converts between `int` and pointers without
+  a word, so leaving `: ptr<u8>` off a declaration that gives a pointer loses its top half
+  in 64-bit code, silently.
 
 Decided (2026-11-02): **a module names its system where it names where it runs.** The
 word after the colon already says that (`:Kernel` only in kernels, `:Program` only in
@@ -2575,9 +2605,9 @@ editor shows its errors as it's written.
 
 H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work, macOS
 waits). H5 is done (2026-11-03): sockets and threads on every system, PHI's memory model,
-and the mmo's world and lobby under `phi load` as programs here. H6 (the runtime in PHI) comes next, before H7,
-because it makes H7 and macOS cheaper: each of them is a PHI module then, not an assembly
-file for each system. H8 follows. C compatibility, still on hold, is what H7 and part of
+and the mmo's world and lobby under `phi load` as programs here. H6 (the runtime in PHI) is
+done (2026-11-03), which makes H7 and macOS cheaper: each of them is a PHI module now, not an
+assembly file for each system. H7 is next, and H8 follows. C compatibility, still on hold, is what H7 and part of
 H8 lean on; H6's outside functions are its first half, so this plan is also where that
 hold would be reconsidered.
 

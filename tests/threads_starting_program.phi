@@ -1,0 +1,41 @@
+# Threads that start threads, all at once, in a program on Linux and Windows (lib/phi/host/
+# threads.phi, H6 step 3): four threads each start eight more, wait for them and do it
+# again, five times over, so thread numbers are taken and given back from many threads at
+# the same moment. If two threads got one number, a thread's stack or handle would be lost
+# or waited for twice, and the count would come out wrong or the program stop.
+use user.threads;
+
+phi.ThreadsStartingProgram:Program
+{
+	u32 ran: 0;
+	u32 refused: 0;
+	int leaders[4];
+
+	while int t: 0; t < 4; t++;
+		leaders:t is (Threads.Start: addr Lead t);
+	;;
+	while int t: 0; t < 4; t++;
+		call Threads.Wait: leaders:t;
+	;;
+	log 'ran: ' ran ' of ' (4 * 8 * 5) ', refused: ' refused '\n';
+	log 'a number that is no thread: ' (Threads.Done: 63) '\n';
+
+	[Lead: int me: 0;]
+		int helpers[8];
+		while int round: 0; round < 5; round++;
+			while int h: 0; h < 8; h++;
+				helpers:h is (Threads.Start: addr Help h);
+				if helpers:h < 0
+					atomic refused++ 1;
+				;;
+			;;
+			while int h: 0; h < 8; h++;
+				call Threads.Wait: helpers:h;
+			;;
+		;;
+	[end]
+
+	[Help: int which: 0;]
+		atomic ran++ 1;
+	[end]
+}

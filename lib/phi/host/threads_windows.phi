@@ -1,0 +1,31 @@
+# Threads' calls that are Windows' own, for threads.phi (H6 step 3), 32 and 64 bits: a
+# Windows thread (CreateThread), which runs on a stack Windows gives it; of the stack the
+# program gives it, the top holds its block and what it's to run. It starts at the first
+# instructions in threads.asm (OS.ThreadEntry says where), and has finished once its handle
+# is signaled.
+
+use 'kernel32.dll' as Kernel32;
+
+phi.ThreadSystem:Windows
+{
+	ptr<u8> handles[64];                  # each thread's handle
+
+	# start it, with what's in its frame: false if Windows won't
+	[Begin: int thread: 0; ptr<ThreadFrame> frame: 0;]
+		ptr<u8> handle: (Kernel32.CreateThread: 0 0 (OS.ThreadEntry) frame 0 0);
+		if handle is 0 return false;
+		handles:thread is handle;
+	[end: true]
+
+	[Finished: int thread: 0;]
+	[end: (Kernel32.WaitForSingleObject: handles:thread 0) is 0]
+
+	[Forget: int thread: 0;]
+		call Kernel32.CloseHandle: handles:thread;
+		handles:thread is 0;
+	[end]
+}
+
+Kernel32.CreateThread: ptr<u8> attributes  u32 stack  ptr<u8> start  ptr<ThreadFrame> given  u32 flags  ptr<u32> id: ptr<u8>;
+Kernel32.WaitForSingleObject: ptr<u8> handle  u32 wait;
+Kernel32.CloseHandle: ptr<u8> handle;

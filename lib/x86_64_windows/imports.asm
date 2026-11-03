@@ -17,7 +17,6 @@
     PHI_FUNCTION GetCurrentProcessId
     PHI_FUNCTION VirtualAlloc
     PHI_FUNCTION GlobalMemoryStatusEx
-    PHI_FUNCTION CloseHandle
     PHI_FUNCTION GetFileType
     PHI_FUNCTION PeekNamedPipe
     PHI_FUNCTION WaitForSingleObject
@@ -26,7 +25,6 @@
     PHI_FUNCTION AddVectoredExceptionHandler
     PHI_FUNCTION TlsAlloc
     PHI_FUNCTION TlsSetValue
-    PHI_FUNCTION CreateThread
 %endmacro
 %macro PHI_WINMM 0
     PHI_FUNCTION timeBeginPeriod

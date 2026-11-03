@@ -1,0 +1,28 @@
+# Threads' calls that are Linux's own, for threads.phi (H6 step 3), 32 and 64 bits: a
+# Linux thread made with clone, sharing the program's memory, files and signal handlers.
+# clone itself is assembly (threads.asm's OS_ThreadClone): the new thread comes back from
+# it on another stack, which a PHI method's own frame isn't on. Linux writes the thread's
+# id in its place when it starts and clears it when the thread has gone
+# (CLONE_CHILD_CLEARTID), so a place that's 0 again is a thread that no longer uses its
+# stack. A thread ends with exit (only itself); the program's exit is exit_group.
+
+phi.ThreadSystem:Linux
+{
+	int ids[64];                          # each thread's Linux id while it runs, 0 once it has gone
+
+	# start it, with what's in its frame: false if Linux won't
+	[Begin: int thread: 0; ptr<ThreadFrame> frame: 0;]
+		ids:thread is -1;
+		if (OS.ThreadClone: frame addr ids:thread) < 0
+			ids:thread is 0;
+			return false;
+		;;
+	[end: true]
+
+	[Finished: int thread: 0;]
+	[end: ids:thread is 0]
+
+	# (Linux keeps nothing of a thread that has gone)
+	[Forget: int thread: 0;]
+	[end]
+}

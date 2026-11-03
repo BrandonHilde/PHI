@@ -1,0 +1,65 @@
+# Threads in a program on Linux or Windows, in PHI (H6 step 3): OS.ThreadStart, ThreadDone
+# and ThreadFree, which user.threads calls. This is what the systems share: a thread's
+# number, and what its first instructions find on its stack. ThreadSystem
+# (threads_linux.phi, threads_windows.phi) starts it and says when it has finished. Those
+# first instructions stay assembly, in each system's threads.asm: they run on the new stack
+# before there's anything PHI code needs (its block, reached through gs, fs or a TLS slot).
+
+# what a new thread's first instructions find, just below its block at the top of its stack
+struct.ThreadFrame
+{
+	method<int> work;
+	ptr<u8> value;
+}
+
+phi.HostThreads:Program
+{
+	const int MOST: 64;                   # user.threads' MOST; 0 is the program's first thread
+	const int BLOCK: 1024;                # throw.asm's PHI_THREAD_SIZE: its catches and its error
+
+	bln taken[64];                        # the thread numbers in use
+	lock numbers;                         # (a thread can start threads too)
+
+	# OS.ThreadStart: run work: value as a thread of its own, on the stack from bottom to top;
+	# its number (1 to MOST - 1), or -1
+	[ThreadStart: method<int> work: 0; int value: 0; ptr<u8> bottom: 0; ptr<u8> top: 0;]
+		int thread: -1;
+		locked numbers
+			int i: 1;
+			while thread < 0 and i < MOST
+				if not taken:i
+					taken:i is true;
+					thread is i;
+				;;
+				i++;
+			;;
+		;;
+		if thread < 0 return -1;
+		ptr<ThreadFrame> frame: top - BLOCK - sizeof ThreadFrame;
+		frame.work is work;
+		frame.value is value;
+		if not (ThreadSystem.Begin: thread frame)
+			call Give: thread;
+			return -1;
+		;;
+	[end: thread]
+
+	# OS.ThreadDone: 1 once it has finished, 0 while it runs, -1 if it isn't a thread
+	[ThreadDone: int thread: 0;]
+		if thread <= 0 or thread >= MOST or not taken:thread return -1;
+		if (ThreadSystem.Finished: thread) return 1;
+	[end: 0]
+
+	# OS.ThreadFree: 1 with its number given back, or 0 if it hasn't finished
+	[ThreadFree: int thread: 0;]
+		if (ThreadDone: thread) is not 1 return 0;
+		call ThreadSystem.Forget: thread;
+		call Give: thread;
+	[end: 1]
+
+	[Give: int thread: 0;]
+		locked numbers
+			taken:thread is false;
+		;;
+	[end]
+}

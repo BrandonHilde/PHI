@@ -2353,10 +2353,11 @@ Up to six values; the number goes in `eax`, and the answer comes back there. Win
 no system calls a program makes itself: its programs call DLLs' functions.
 
 The standard library does this itself: in a Linux or Windows program, time (`OS.Sleep`,
-`OS.GetTicks`, `OS.Now`, `OS.Yield`), files (`OS.ReadFile` to `OS.Rename`) and the network
-(`net.sockets`' calls) are done by modules in `lib/phi/host/` (`time_*.phi`, `files_*.phi`,
-`net.phi` on `net_linux.phi` and `net_windows.phi`, with Linux's numbers in `linux32.phi`
-and `linux64.phi`), which every such program gets, rather than by assembly. Two modules may declare the same system call or
+`OS.GetTicks`, `OS.Now`, `OS.Yield`), files (`OS.ReadFile` to `OS.Rename`), the network
+(`net.sockets`' calls) and threads (`user.threads`' calls) are done by modules in
+`lib/phi/host/` (`time_*.phi`, `files_*.phi`, `net*.phi`, `threads*.phi`, with Linux's
+numbers in `linux32.phi` and `linux64.phi`) rather than by assembly. A program gets only
+the parts it uses, as it gets the heap only if it uses `new`. Two modules may declare the same system call or
 outside function if they declare it the same way (a program's own module and these);
 declaring it differently is an error.
 
