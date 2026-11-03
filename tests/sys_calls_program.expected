@@ -1,0 +1,8 @@
+before
+written by a system call
+after
+a process number: 1
+the same twice: 1
+closing what is not open: -9
+closing 1000: -9
+a page of its own: 42

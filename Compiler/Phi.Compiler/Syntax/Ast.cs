@@ -14,6 +14,9 @@ namespace Phi.Compiler.Syntax
         public SourceFile File { get; init; } = null!;
         public List<ClassDecl> Classes { get; } = new();
         public List<RawBlockDecl> RawBlocks { get; } = new();
+        public List<SysCallDecl> SysCalls { get; } = new();
+        public List<LibraryUseDecl> Libraries { get; } = new();
+        public List<OutsideFunctionDecl> OutsideFunctions { get; } = new();
         public List<StructDecl> Structs { get; } = new();
         public List<EnumDecl> Enums { get; } = new();
         public List<UseDecl> Uses { get; } = new();
@@ -52,6 +55,53 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
         public string Text { get; init; } = "";
         public Span TextSpan { get; init; }
+    }
+
+    /// <summary>
+    /// sys.Name: number  type name  type name ...;  a system call, declared once with its
+    /// number and what it takes, and used by name (call fd is sys.Socket: 2 1 0;). Only in a
+    /// module for a system that has system calls (phi.Name:Linux, :Linux32, :Linux64, :PhiOS).
+    /// What it gives is an int, or what ': type' at the end says (sys.Mmap: 9 ...: ptr&lt;u8&gt;;).
+    /// </summary>
+    public sealed class SysCallDecl : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public long Number { get; init; }
+        public List<SysCallParameter> Parameters { get; } = new();
+        public TypeRef? Result { get; set; }
+
+        /// <summary>What it gives, as the binder resolved it (an int when it doesn't say).</summary>
+        public PhiType? ResultType { get; set; }
+    }
+
+    public sealed record SysCallParameter(TypeRef Type, string Name, Span Span);
+
+    /// <summary>use 'kernel32.dll' as Kernel32;  a library outside PHI, known by a name that reads as a class's</summary>
+    public sealed class LibraryUseDecl : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Path { get; init; } = "";
+        public string Name { get; init; } = "";
+    }
+
+    /// <summary>
+    /// Kernel32.CreateThread: type name ...: result;  a function of an outside library (named by
+    /// use '...' as Kernel32 in the same file), declared once with what it takes and, after
+    /// ':', what it gives (an int when it doesn't say), and used by name as a class's method
+    /// is (call h is Kernel32.CreateThread: ...;). Only in a :Windows module, for now.
+    /// </summary>
+    public sealed class OutsideFunctionDecl : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Library { get; init; } = "";
+        public string Name { get; init; } = "";
+        public List<SysCallParameter> Parameters { get; } = new();
+        public TypeRef? Result { get; set; }
+
+        /// <summary>As the binder resolved them: the library's file, and what the function gives.</summary>
+        public string LibraryPath { get; set; } = "";
+        public PhiType? ResultType { get; set; }
     }
 
     /// <summary>

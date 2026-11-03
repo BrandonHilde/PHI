@@ -1,0 +1,18 @@
+# Functions of outside libraries declared in PHI (use 'kernel32.dll' as Kernel32;, H6 step
+# 2), called by name from a :Windows module (support/win_raw.phi): numbers, text and
+# pointers to them and back, six values at once, a pointer that comes back, Windows'
+# own error number, and a library the runtime doesn't import (user32.dll). Win has no
+# version for Linux, so it runs only on Windows, 32 and 64 bits.
+use support.win_raw;
+
+phi.OutsideFunctionsProgram:Program
+{
+	str word: 'shout';
+	log 'a process number: ' ((Win.Pid) > 0) '\n';
+	log 'hello is ' (Win.Length: 'hello') ' long\n';
+	log 'in capitals, in place: ' (Win.Upper: word) ' ' word '\n';
+	log 'six values: ' (Win.Wide) '\n';
+	log 'a page of its own: ' (Win.Page) '\n';
+	log 'closing nothing: ' (Win.CloseNothing) '\n';
+	log 'a command line: ' ((Win.CommandLength) > 0) '\n';
+}

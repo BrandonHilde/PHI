@@ -21,7 +21,7 @@ namespace Phi.Compiler.Syntax
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
             "phi", "asm", "x64", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
-            "throw", "throws",
+            "throw", "throws", "sys",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -193,8 +193,12 @@ namespace Phi.Compiler.Syntax
         bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
 
         bool AtTopLevelHeader =>
-            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot
-            || Current.StartsLine && AtWord("use");
+            Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface") || AtWord("sys")) && PeekToken(1).Kind == TokenKind.Dot
+            || Current.StartsLine && AtWord("use")
+            || Current.StartsLine && libraryNames.Contains(Current.Text) && PeekToken(1).Kind == TokenKind.Dot;
+
+        /// <summary>The names this file gives outside libraries (use 'kernel32.dll' as Kernel32;).</summary>
+        readonly HashSet<string> libraryNames = new();
 
         /// <summary>Skip ahead to a likely statement boundary after an error.</summary>
         void Synchronize()
@@ -238,6 +242,18 @@ namespace Phi.Compiler.Syntax
         {
             Token start = Current;
 
+            if (AtWord("use") && PeekToken(1).Kind == TokenKind.String)
+            {
+                program.Libraries.Add(ParseLibraryUse(start));
+                return;
+            }
+
+            if (At(TokenKind.Identifier) && libraryNames.Contains(Current.Text) && PeekToken(1).Kind == TokenKind.Dot)
+            {
+                program.OutsideFunctions.Add(ParseOutsideFunction(start));
+                return;
+            }
+
             if (AtWord("use"))
             {
                 Advance();
@@ -247,7 +263,7 @@ namespace Phi.Compiler.Syntax
                 return;
             }
 
-            if ((AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface")) && PeekToken(1).Kind == TokenKind.Dot)
+            if ((AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface") || AtWord("sys")) && PeekToken(1).Kind == TokenKind.Dot)
             {
                 string kind = Advance().Text;
                 Advance(); // .
@@ -255,6 +271,9 @@ namespace Phi.Compiler.Syntax
 
                 switch (kind)
                 {
+                    case "sys":
+                        program.SysCalls.Add(ParseSysCall(start, name));
+                        return;
                     case "phi":
                         program.Classes.Add(ParseClass(start, name));
                         return;
@@ -286,6 +305,77 @@ namespace Phi.Compiler.Syntax
             }
 
             throw Error(Current.Span, $"expected a class (phi.Name:Base {{ ... }}) but found {Current}");
+        }
+
+        /// <summary>sys.Name: number  type name  type name ...;  (the 'sys.Name' read already)</summary>
+        SysCallDecl ParseSysCall(Token start, Token name)
+        {
+            CheckNotKeyword(name, "system call");
+            Expect(TokenKind.Colon, $"':' and the system call's number, like sys.{name.Text}: 41 int fd;");
+            Token number = Current;
+            if (number.Kind != TokenKind.Number)
+                throw Error(number.Span, $"expected the system call's number after sys.{name.Text}: but found {number}");
+            Advance();
+            var decl = new SysCallDecl { File = file, Name = name.Text, Number = number.Value is ulong huge ? unchecked((long)huge) : (long)number.Value!, Span = start.Span.To(number.Span) };
+            decl.Result = ParseOutsideParameters($"sys.{name.Text}", decl.Parameters);
+            return decl;
+        }
+
+        /// <summary>
+        /// What a system call or outside function takes, up to its ';': type name pairs, then
+        /// ': type' for what it gives (null when it doesn't say), as a method type's result is.
+        /// </summary>
+        TypeRef? ParseOutsideParameters(string what, List<SysCallParameter> parameters)
+        {
+            TypeRef? result = null;
+            while (!At(TokenKind.Semicolon))
+            {
+                if (AtEnd || Current.StartsLine)
+                    throw Error(new Span(Previous.Span.End, 0), $"expected ';' to end {what}");
+                if (Accept(TokenKind.Colon))
+                {
+                    result = ParseType();
+                    if (!At(TokenKind.Semicolon))
+                        throw Error(Current.Span, $"expected ';' after what {what} gives ({result.Name}), but found {Current}");
+                    break;
+                }
+                TypeRef type = ParseType();
+                Token parameter = ExpectIdentifier($"a name for what {what} takes, after its type ({type.Name})");
+                CheckNotKeyword(parameter, "parameter");
+                parameters.Add(new SysCallParameter(type, parameter.Text, type.Span.To(parameter.Span)));
+            }
+            Advance();
+            return result;
+        }
+
+        /// <summary>use 'kernel32.dll' as Kernel32;</summary>
+        LibraryUseDecl ParseLibraryUse(Token start)
+        {
+            Advance(); // use
+            Token path = Advance();
+            if (!AcceptWord("as"))
+                throw Error(Current.Span, $"expected 'as' and a name for the library, like use '{path.Value}' as Kernel32;");
+            Token name = ExpectIdentifier("a name for the library, like Kernel32");
+            CheckNotKeyword(name, "library");
+            if (!char.IsUpper(name.Text[0]))
+                Error(name.Span, $"a library's name reads as a class's does, so it starts with a capital: as {char.ToUpper(name.Text[0])}{name.Text[1..]}");
+            ExpectSemicolon();
+            libraryNames.Add(name.Text);
+            return new LibraryUseDecl { File = file, Path = (string)path.Value!, Name = name.Text, Span = start.Span.To(name.Span) };
+        }
+
+        /// <summary>Kernel32.CreateThread: type name ...: result;  or  Kernel32.GetCurrentProcessId;</summary>
+        OutsideFunctionDecl ParseOutsideFunction(Token start)
+        {
+            Token library = Advance();
+            Advance(); // .
+            Token name = ExpectIdentifier($"the name of a function in {library.Text}");
+            var decl = new OutsideFunctionDecl { File = file, Library = library.Text, Name = name.Text, Span = start.Span.To(name.Span) };
+            // with nothing to take or give, just its name and ';'
+            if (Accept(TokenKind.Semicolon)) return decl;
+            Expect(TokenKind.Colon, $"':' and what {library.Text}.{name.Text} takes, or ';'");
+            decl.Result = ParseOutsideParameters($"{library.Text}.{name.Text}", decl.Parameters);
+            return decl;
         }
 
         /// <summary>enum.Name { A  B: 5  C }: one name a line, each one more than the last unless it says.</summary>
@@ -969,7 +1059,9 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         int ScanPostfix(int i)
         {
-            if (!IsName(PeekToken(i))) return -1;
+            // (sys.Name: args): a system call, by the name it was declared with
+            bool systemCall = PeekToken(i).Text == "sys" && PeekToken(i).Kind == TokenKind.Identifier && PeekToken(i + 1).Kind == TokenKind.Dot;
+            if (!IsName(PeekToken(i)) && !systemCall) return -1;
             i++;
             while (true)
             {
@@ -1750,6 +1842,12 @@ namespace Phi.Compiler.Syntax
                         return new NameExpr { Name = t.Text, Span = t.Span };
                     }
                     // asm.Name { ... } (and struct., enum., phi.) written inside a class
+                    // (sys.GetPid): a system call that takes nothing, as (Name) calls a method
+                    if (t.Text is "sys" && PeekToken(1).Kind == TokenKind.Dot)
+                    {
+                        string callee = ParseQualifiedName(out Span calleeSpan);
+                        return new CallExpr { Callee = callee, CalleeSpan = calleeSpan, Span = calleeSpan };
+                    }
                     if (t.Text is "asm" or "x64" or "arm" or "struct" or "enum" or "interface" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
                         throw Error(t.Span, $"{t.Text}. blocks go at the top level of the file, outside any class" +
                                             (t.Text is "asm" or "arm" ? $"; write {t.Text}.Name {{ ... }} there and call Name; from the class" : ""));

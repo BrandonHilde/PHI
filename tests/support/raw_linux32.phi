@@ -1,0 +1,31 @@
+# 32-bit Linux's system calls for sys_calls_program.phi: int 0x80, with i386's numbers.
+
+phi.Raw:Linux32
+{
+	# text (ending at its 0) to standard output, straight from the system
+	[Say: ptr<u8> text: 0;]
+		u32 length: 0;
+		while text:length is not 0
+			length++;
+		;;
+		int written: (sys.Write: 1 text length);
+	[end]
+
+	[Pid]
+	[end: (sys.GetPid)]
+
+	[Close: int fd: 0;]
+	[end: (sys.Close: fd)]
+
+	# a page of memory of its own (mmap2: six values, and a pointer back; in 64-bit
+	# code the page is above 4 GB, so a pointer cut to 32 bits wouldn't reach it)
+	[Page]
+		ptr<u8> page: (sys.Map: 0 4096 3 0x22 -1 0);
+		page:100 is 42;
+	[end: page:100]
+}
+
+sys.Write: 4  int fd  ptr<u8> data  u32 length;
+sys.GetPid: 20;
+sys.Map: 192  ptr<u8> address  u32 size  int protect  int flags  int fd  u32 offset: ptr<u8>;
+sys.Close: 6  int fd;

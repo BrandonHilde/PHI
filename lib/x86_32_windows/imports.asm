@@ -66,6 +66,9 @@ phi_imports:
     dd phi_kernel32_lookup - $$, 0, 0, phi_kernel32_name - $$, phi_kernel32_addresses - $$
     dd phi_ws2_32_lookup - $$, 0, 0, phi_ws2_32_name - $$, phi_ws2_32_addresses - $$
     dd phi_winmm_lookup - $$, 0, 0, phi_winmm_name - $$, phi_winmm_addresses - $$
+%ifmacro PHI_OUTSIDE_DESCRIPTORS 0
+    PHI_OUTSIDE_DESCRIPTORS                ; the libraries the program's own code declares
+%endif
     times 5 dd 0                        ; the end of the table
 phi_imports_size equ $ - phi_imports
 
@@ -114,3 +117,7 @@ phi_name_%1:
 phi_kernel32_name: db 'kernel32.dll', 0
 phi_ws2_32_name: db 'ws2_32.dll', 0
 phi_winmm_name: db 'winmm.dll', 0
+
+%ifmacro PHI_OUTSIDE_TABLES 0
+    PHI_OUTSIDE_TABLES                     ; their names, and where Windows puts their addresses
+%endif

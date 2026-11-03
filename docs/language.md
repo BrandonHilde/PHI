@@ -88,7 +88,7 @@ variable, field, parameter, constant, method or struct:
 | Kind | Words |
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
-| Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `use` `const` `volatile` `isr` `end` `into` |
+| Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
@@ -2294,6 +2294,95 @@ hello.phi:1:1: error: drivers.ata doesn't work in a Linux program (lib/phi/drive
 ```
 
 Most of the standard library (data, text, crypto, math, file formats) works anywhere.
+
+### A system's own modules, and system calls
+
+A module can be one system's own: its classes say which instead of `:Program`. The same
+name can have a version for each system, each in a file of its own, and the code that uses
+it never says which; the compiler builds the version for the system it's building for and
+leaves the others out:
+
+```phi
+# raw_linux32.phi                       # raw_linux64.phi
+phi.Raw:Linux32                         phi.Raw:Linux64
+{                                       {
+    [Pid]                                   [Pid]
+    [end: (sys.GetPid)]                     [end: (sys.GetPid)]
+}                                       }
+sys.GetPid: 20;                         sys.GetPid: 39;
+
+# the program
+use raw_linux32;
+use raw_linux64;
+phi.Hello:Program
+{
+    log 'my number: ' (Raw.Pid) '\n';
+}
+```
+
+| Word | Built for |
+|---|---|
+| `:Linux` | Linux programs, 32 and 64 bits |
+| `:Linux32`, `:Linux64` | Linux programs of one width (the system calls' numbers differ between them) |
+| `:Windows` | Windows programs, 32 and 64 bits (Windows' functions are the same in both) |
+| `:PhiOS` | PHI OS programs |
+
+A system's word is a kind of `:Program`: its classes are a program's, and they're left
+out of a kernel. A file with one system's classes has only that system's. A name with no
+version for the system being built is an error where it's used (`Raw has no version for
+Windows: there's only :Linux32 and :Linux64`), when the program is built; so is a name
+with two versions for one system (a `:Linux` and a `:Linux64`).
+
+**System calls.** `sys.Name: number  type name ...;` declares one, at the top level of a
+system's module, with that system's number for it and what it takes; the code uses it by
+name, as `call fd is sys.Open: path 0;` or `(sys.Open: path 0)`, and `(sys.GetPid)` when
+it takes nothing. Each value is checked against its type, as a method's are. The answer
+comes back as the system gives it: on Linux a number that's negative when it says no
+(`-9`, EBADF). It's an `int`, or what `: type` at the end says, as a method type's result
+is written (`sys.Map: 9  ptr<u8> address  u32 size ...: ptr<u8>;`): a pointer is all 64
+bits of it in 64-bit code, where an `int` would keep only 32. A system call is only in a module for a system that has them (`:Linux`,
+`:Linux32`, `:Linux64`, `:PhiOS`), and is used only from that module's classes, so the
+code that is one system's alone stays in the files marked for it.
+
+| System | Instruction | Values in |
+|---|---|---|
+| PHI OS, 32-bit Linux | `int 0x80` | `ebx`, `ecx`, `edx`, `esi`, `edi`, `ebp` |
+| 64-bit Linux | `syscall` | `rdi`, `rsi`, `rdx`, `r10`, `r8`, `r9` |
+
+Up to six values; the number goes in `eax`, and the answer comes back there. Windows has
+no system calls a program makes itself: its programs call DLLs' functions.
+
+**Outside functions.** A library outside PHI (on Windows, a DLL) is brought in with `use`
+and its file's name, quoted, under a name that reads as a class's; each of its functions
+the module calls is declared once, as a system call is but without a number, and called by
+that name:
+
+```phi
+use 'kernel32.dll' as Kernel32;
+use 'user32.dll' as User32;
+
+phi.Win:Windows
+{
+    [Page]
+        ptr<u8> page: (Kernel32.VirtualAlloc: 0 4096 0x3000 4);
+    [end: page]
+}
+
+Kernel32.VirtualAlloc: ptr<u8> address  u32 size  u32 kind  u32 protect: ptr<u8>;
+Kernel32.GetLastError;                          # takes nothing, gives an int
+Kernel32.GetCommandLineA: : ptr<u8>;            # takes nothing, gives a pointer
+User32.CharUpperA: ptr<u8> text: ptr<u8>;
+```
+
+The compiler puts each function that's called in the program's import table (a library
+the runtime already uses, such as kernel32.dll, gets a second entry; Windows reads them one
+by one) and calls it as Windows' functions are called: in 32-bit code (stdcall) the values
+are pushed last first and the function takes them off; in 64-bit code the first four go in
+`rcx`, `rdx`, `r8` and `r9` and the rest on the stack, above 32 bytes the function may
+write, with the stack 16 bytes aligned. A function takes and gives numbers, `bln`, `chr`,
+enums and pointers; floats, and 64-bit numbers in a 32-bit program, aren't there yet. For
+now outside libraries are only in `:Windows` modules, whose classes alone may call them;
+Linux's and macOS's (a library loaded with the program) come with H7.
 
 ## Methods
 

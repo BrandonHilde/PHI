@@ -11,6 +11,9 @@ namespace Phi.Compiler.Semantics
         public List<RawBlockDecl> RawBlocks { get; } = new();
         public HashSet<BuiltinFunction> UsedBuiltins { get; } = new();
 
+        /// <summary>The outside libraries' functions the code calls, for the import table.</summary>
+        public List<OutsideFunctionDecl> OutsideFunctions { get; } = new();
+
         /// <summary>Class-level names, for {name} in asm blocks: variables and constants.</summary>
         public Dictionary<string, Symbol> ClassNames { get; } = new();
     }
@@ -90,6 +93,22 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
         readonly Dictionary<string, RawBlockDecl> x64Blocks = new();
 
+        /// <summary>The system calls declared for this build (sys.Name), and the types of what each takes.</summary>
+        readonly Dictionary<string, SysCallDecl> sysCalls = new();
+        readonly Dictionary<SysCallDecl, List<PhiType>> sysTypes = new();
+
+        /// <summary>The outside libraries by the names they're given, and their functions (Kernel32.CreateThread).</summary>
+        readonly Dictionary<string, LibraryUseDecl> libraries = new();
+        readonly Dictionary<string, OutsideFunctionDecl> outsideFunctions = new();
+        readonly Dictionary<OutsideFunctionDecl, List<PhiType>> outsideTypes = new();
+
+        /// <summary>
+        /// The classes left out because they're for another system (phi.Name:Windows, built for
+        /// Linux): each name, and the systems it has versions for, so using it says so.
+        /// </summary>
+        readonly Dictionary<string, List<string>> otherSystems = new();
+        readonly HashSet<string> keptClassNames = new();
+
         /// <summary>An assembly block that's there, but not in the version this code needs.</summary>
         sealed record MissingBlock(RawBlockDecl Block, string Why);
         readonly Dictionary<string, StructSymbol> structs = new();
@@ -136,9 +155,11 @@ namespace Phi.Compiler.Semantics
             DeclareStructs(program.Structs);
             FindTypeBranches(program);
 
-            // Kernel classes make a 32-bit kernel, Program classes a user program; otherwise
-            // it is a 16-bit program
-            bool userProgram = program.Classes.Any(c => c.Base == ProgramBase);
+            // Kernel classes make a 32-bit kernel, Program classes a user program (and a
+            // system's own classes, :Linux or :Windows, are a program's); otherwise it is a
+            // 16-bit program
+            bool userProgram = program.Classes.Any(c => c.Base == ProgramBase || SystemBases.ContainsKey(c.Base));
+            KeepThisSystem(program, userProgram);
             bool protectedMode = !userProgram && program.Classes.Any(c => c.Base == Kernel32Base);
             BoundUnit? boot = null, os = null, kernel = null, user = null;
 
@@ -188,7 +209,7 @@ namespace Phi.Compiler.Semantics
                 file = cls.File;
                 UnitKind unit;
                 if (cls.ForStruct != null) continue; // placed below, once every unit exists
-                if (userProgram && cls.Base is not (ProgramBase or LibraryBase))
+                if (userProgram && cls.Base is not (ProgramBase or LibraryBase) && !SystemBases.ContainsKey(cls.Base))
                 {
                     Error(cls.BaseSpan, $"class {cls.Name} ({cls.Base}) can't be part of a user program; a program's classes inherit " +
                                         $"{ProgramBase} (or {LibraryBase})");
@@ -203,7 +224,7 @@ namespace Phi.Compiler.Semantics
                 if (cls.Base == BootBase) unit = UnitKind.Boot;
                 else if (cls.Base == KernelBase) unit = UnitKind.Os;
                 else if (cls.Base == Kernel32Base) unit = UnitKind.Kernel;
-                else if (cls.Base == ProgramBase) unit = UnitKind.Program;
+                else if (cls.Base == ProgramBase || SystemBases.ContainsKey(cls.Base)) unit = UnitKind.Program;
                 else if (cls.Base == LibraryBase) unit = userProgram ? UnitKind.Program : protectedMode ? UnitKind.Kernel : UnitKind.Os;
                 else
                 {
@@ -237,6 +258,46 @@ namespace Phi.Compiler.Semantics
                 var blocks = raw.Language == "x64" ? x64Blocks : rawBlocks;
                 if (!blocks.TryAdd(raw.Name, raw))
                     Error(raw.Span, $"an assembly block named {raw.Language}.{raw.Name} already exists");
+            }
+
+            foreach (SysCallDecl sys in program.SysCalls)
+            {
+                file = sys.File;
+                if (!sysCalls.TryAdd(sys.Name, sys))
+                {
+                    Error(sys.Span, $"a system call named sys.{sys.Name} already exists for this system");
+                    continue;
+                }
+                if (sys.Parameters.Count > 6)
+                    Error(sys.Span, $"sys.{sys.Name} takes {sys.Parameters.Count} values, but a system call takes at most 6");
+                sysTypes[sys] = sys.Parameters.Select(p => ResolveType(p.Type, null, allowStr: false)).ToList();
+                sys.ResultType = sys.Result != null ? ResolveType(sys.Result, null, allowStr: false) : PhiType.Int;
+            }
+
+            foreach (LibraryUseDecl library in program.Libraries)
+            {
+                file = library.File;
+                if (libraries.TryGetValue(library.Name, out LibraryUseDecl? named) && !named.Path.Equals(library.Path, StringComparison.OrdinalIgnoreCase))
+                    Error(library.Span, $"{library.Name} is already the name of '{named.Path}' ({named.File.Path}); give '{library.Path}' another");
+                else libraries.TryAdd(library.Name, library);
+            }
+            foreach (OutsideFunctionDecl f in program.OutsideFunctions)
+            {
+                file = f.File;
+                string full = $"{f.Library}.{f.Name}";
+                if (!libraries.TryGetValue(f.Library, out LibraryUseDecl? library)) continue;
+                if (!outsideFunctions.TryAdd(full, f))
+                {
+                    Error(f.Span, $"{full} is already declared ({outsideFunctions[full].File.Path}); declare a function once");
+                    continue;
+                }
+                f.LibraryPath = library.Path;
+                var types = f.Parameters.Select(p => ResolveType(p.Type, null, allowStr: false)).ToList();
+                outsideTypes[f] = types;
+                f.ResultType = f.Result != null ? ResolveType(f.Result, null, allowStr: false) : PhiType.Int;
+                for (int i = 0; i < types.Count; i++)
+                    if (OutsideTypeProblem(types[i]) is string problem) Error(f.Parameters[i].Span, $"{full}'s '{f.Parameters[i].Name}' is {problem}");
+                if (f.Result != null && OutsideTypeProblem(f.ResultType) is string given) Error(f.Result.Span, $"what {full} gives is {given}");
             }
 
             foreach (var (cls, scope) in classScopes)
@@ -2239,6 +2300,7 @@ namespace Phi.Compiler.Semantics
             if (name.Contains('.') && LookupSimple(head, scope) is VariableSymbol v)
                 return FieldsOf(v.Type) is StructSymbol fields ? $"{fields.Name} has no field '{name[(head.Length + 1)..]}'" : $"'{head}' is a {v.Type}, which has no '{name[(head.Length + 1)..]}'";
 
+            if (OnlyElsewhere(name) is string elsewhere) return elsewhere;
             if (scope.Unit == UnitKind.Kernel) return $"unknown name '{name}'";
             bool inOtherUnit = classScopes.Values.Any(s => s.Unit == other && s.Names.ContainsKey(head));
             if (inOtherUnit)
@@ -3307,6 +3369,14 @@ namespace Phi.Compiler.Semantics
                 case RawBlockDecl:
                     CheckResultTarget(call, PhiType.Int); // eax
                     break;
+
+                case SysCallDecl sys:
+                    CheckResultTarget(call, sys.ResultType ?? PhiType.Int);
+                    break;
+
+                case OutsideFunctionDecl f:
+                    CheckResultTarget(call, f.ResultType ?? PhiType.Int);
+                    break;
             }
         }
 
@@ -3348,6 +3418,14 @@ namespace Phi.Compiler.Semantics
 
                 case RawBlockDecl:
                     call.Type = PhiType.Int; // eax
+                    break;
+
+                case SysCallDecl sys:
+                    call.Type = sys.ResultType ?? PhiType.Int;
+                    break;
+
+                case OutsideFunctionDecl f:
+                    call.Type = f.ResultType ?? PhiType.Int;
                     break;
             }
         }
@@ -3602,6 +3680,40 @@ namespace Phi.Compiler.Semantics
                     Error(calleeSpan, missing.Why);
                     return null;
 
+                case OutsideFunctionDecl f:
+                {
+                    string full = $"{f.Library}.{f.Name}";
+                    if (scope.Class.Base != "Windows")
+                    {
+                        Error(calleeSpan, $"{full} is a function of '{f.LibraryPath}', used only from a :Windows module (for now), " +
+                                          $"not from {scope.Class.Name} (:{scope.Class.Base})");
+                        return null;
+                    }
+                    List<PhiType> types = outsideTypes[f];
+                    if (arguments.Count != types.Count)
+                        Error(span, $"{full} takes {Plural(types.Count, "value")}" + (types.Count > 0 ? $" ({string.Join(", ", f.Parameters.Select(p => p.Name))})" : "") + $", but was given {arguments.Count}");
+                    for (int i = 0; i < Math.Min(arguments.Count, types.Count); i++)
+                        arguments[i] = Convert(arguments[i], types[i], $"'{f.Parameters[i].Name}' of {full}");
+                    if (!unit.OutsideFunctions.Contains(f)) unit.OutsideFunctions.Add(f);
+                    return f;
+                }
+
+                case SysCallDecl sys:
+                {
+                    if (!CallingSystems.Contains(scope.Class.Base))
+                    {
+                        Error(calleeSpan, $"sys.{sys.Name} is a system call, used only in a module for a system that has them " +
+                                          $"(phi.Name:Linux, :Linux32, :Linux64 or :PhiOS), not in {scope.Class.Name} (:{scope.Class.Base})");
+                        return null;
+                    }
+                    List<PhiType> types = sysTypes[sys];
+                    if (arguments.Count != types.Count)
+                        Error(span, $"sys.{sys.Name} takes {Plural(types.Count, "value")} ({string.Join(", ", sys.Parameters.Select(p => p.Name))}), but was given {arguments.Count}");
+                    for (int i = 0; i < Math.Min(arguments.Count, types.Count); i++)
+                        arguments[i] = Convert(arguments[i], types[i], $"'{sys.Parameters[i].Name}' of sys.{sys.Name}");
+                    return sys;
+                }
+
                 case RawBlockDecl raw:
                 {
                     if (raw.Language is not ("asm" or "x64"))
@@ -3616,9 +3728,109 @@ namespace Phi.Compiler.Semantics
                 }
 
                 default:
-                    Error(calleeSpan, $"unknown method '{calleeName}'");
+                    Error(calleeSpan, OnlyElsewhere(calleeName) ?? (calleeName.StartsWith("sys.")
+                        ? $"there's no system call {calleeName} for {host.Name()}: declare it as {calleeName}: number  type name ...; in this system's module"
+                        : $"unknown method '{calleeName}'"));
                     return null;
             }
+        }
+
+        /// <summary>
+        /// The words for a system's own classes (phi.Sockets:Linux), and the systems each is
+        /// built for: a class is left out of a build for any other system. They're programs'.
+        /// </summary>
+        public static readonly Dictionary<string, Host[]> SystemBases = new()
+        {
+            ["Linux"] = new[] { Host.Linux, Host.Linux64 },
+            ["Linux32"] = new[] { Host.Linux },
+            ["Linux64"] = new[] { Host.Linux64 },
+            ["Windows"] = new[] { Host.Windows, Host.Windows64 },
+            ["PhiOS"] = new[] { Host.PhiOS },
+        };
+
+        /// <summary>The systems whose modules make system calls (sys.Name): Windows has none, only its DLLs' functions.</summary>
+        static readonly HashSet<string> CallingSystems = new() { "Linux", "Linux32", "Linux64", "PhiOS" };
+
+        /// <summary>
+        /// Leaves out what's for another system: its classes, and its files' asm. blocks and
+        /// system calls. A file with a system's classes is that system's alone; a system call
+        /// goes only in such a file, of a system that has them.
+        /// </summary>
+        void KeepThisSystem(ProgramNode program, bool userProgram)
+        {
+            var systemOf = new Dictionary<SourceFile, string>();
+            foreach (var classes in program.Classes.Where(c => c.ForStruct == null).GroupBy(c => c.File))
+            {
+                var systems = classes.Where(c => SystemBases.ContainsKey(c.Base)).Select(c => c.Base).Distinct().ToList();
+                if (systems.Count == 0) continue;
+                file = classes.Key;
+                ClassDecl? other = classes.FirstOrDefault(c => c.Base != systems[0]);
+                if (other != null)
+                    Error(other.BaseSpan, $"this file is for :{systems[0]} ({classes.First(c => c.Base == systems[0]).Name}), so each of its classes is too; " +
+                                          $"{other.Name} (:{other.Base}) goes in a file of its own");
+                systemOf[classes.Key] = systems[0];
+            }
+
+            bool Kept(SourceFile f) => !systemOf.TryGetValue(f, out string? system) || userProgram && SystemBases[system].Contains(host);
+
+            foreach (ClassDecl cls in program.Classes.Where(c => c.ForStruct == null && !Kept(c.File)))
+            {
+                if (!otherSystems.TryGetValue(cls.Name, out List<string>? where)) otherSystems[cls.Name] = where = new();
+                if (!where.Contains(cls.Base)) where.Add(cls.Base);
+            }
+
+            // one version of each name for this system
+            var kept = program.Classes.Where(c => c.ForStruct == null && Kept(c.File)).ToList();
+            foreach (var same in kept.Where(c => SystemBases.ContainsKey(c.Base)).GroupBy(c => c.Name).Where(g => g.Count() > 1))
+            {
+                ClassDecl second = same.Skip(1).First();
+                file = second.File;
+                Error(second.BaseSpan, $"{same.Key} has a :{same.First().Base} and a :{second.Base} version, so which one {host.Name()} builds is unclear; keep one");
+            }
+            foreach (ClassDecl c in kept) keptClassNames.Add(c.Name);
+
+            foreach (SysCallDecl sys in program.SysCalls)
+            {
+                file = sys.File;
+                if (!systemOf.TryGetValue(sys.File, out string? system))
+                    Error(sys.Span, $"sys.{sys.Name} goes in a module for the system it calls, one whose classes are :Linux, :Linux32, :Linux64 or :PhiOS " +
+                                    "(the system calls' numbers are that system's own)");
+                else if (!CallingSystems.Contains(system))
+                    Error(sys.Span, $"{system} has no system calls a program makes itself, so sys.{sys.Name} can't be in a :{system} module");
+            }
+
+            foreach (LibraryUseDecl library in program.Libraries.Where(l => !systemOf.TryGetValue(l.File, out string? s) || s != "Windows"))
+            {
+                file = library.File;
+                Error(library.Span, $"'{library.Path}' is an outside library, used only in a :Windows module for now " +
+                                    "(phi.Name:Windows; Linux's and macOS's libraries come with H7)");
+            }
+
+            program.Classes.RemoveAll(c => c.ForStruct == null && !Kept(c.File));
+            program.Libraries.RemoveAll(l => !Kept(l.File) || !systemOf.TryGetValue(l.File, out string? s) || s != "Windows");
+            program.OutsideFunctions.RemoveAll(f => !Kept(f.File) || !systemOf.TryGetValue(f.File, out string? s) || s != "Windows");
+            program.RawBlocks.RemoveAll(r => !Kept(r.File));
+            program.SysCalls.RemoveAll(s => !Kept(s.File) || !systemOf.TryGetValue(s.File, out string? system) || !CallingSystems.Contains(system));
+        }
+
+        /// <summary>
+        /// Why a type can't go to or come from an outside function yet, or null: a number, bln,
+        /// chr, enum or pointer goes in one register, as the system's functions take them.
+        /// </summary>
+        string? OutsideTypeProblem(PhiType t)
+        {
+            if (t.IsFloat) return $"a {t}, and floats to and from outside functions aren't there yet";
+            if (!t.IsNumeric || t.IsArray) return $"a {t}, but an outside function takes and gives only numbers, bln, chr, enums and pointers";
+            if (!host.Is64() && !t.IsPointer && t.ElementSize == 8) return $"a {t}, and 64-bit numbers to and from a 32-bit program's outside functions aren't there yet";
+            return null;
+        }
+
+        /// <summary>For a name (or Name.Member) whose class is only another system's: why it can't be used here; else null.</summary>
+        string? OnlyElsewhere(string name)
+        {
+            string head = name.Split('.')[0];
+            if (keptClassNames.Contains(head) || !otherSystems.TryGetValue(head, out List<string>? where)) return null;
+            return $"{head} has no version for {host.Name()}: there's only {string.Join(" and ", where.Select(w => ":" + w))}";
         }
 
         /// <summary>
@@ -3687,6 +3899,9 @@ namespace Phi.Compiler.Semantics
                 }
                 return builtin;
             }
+
+            if (name.StartsWith("sys.") && sysCalls.TryGetValue(name[4..], out SysCallDecl? sys)) return sys;
+            if (outsideFunctions.TryGetValue(name, out OutsideFunctionDecl? outside)) return outside;
 
             // an assembly block: the version for the code this is, 64-bit (x64.Name) or not (asm.Name)
             string rawName = name.StartsWith("asm.") || name.StartsWith("x64.") ? name[4..] : name;

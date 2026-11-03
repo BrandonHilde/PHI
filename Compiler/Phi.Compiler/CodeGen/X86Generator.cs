@@ -192,6 +192,7 @@ namespace Phi.Compiler.CodeGen
                 // the system calls (the binder took only those the runtime has)
                 BuiltinFunction b => b.Label.StartsWith("OS_") || b.Label == "Bootloader_WaitForKeyPress" || b.FloatInstruction != null,
                 RawBlockDecl => true,      // (the binder took the x64 one, or said there isn't one)
+                SysCallDecl or OutsideFunctionDecl => true,
                 PointerCall p => MethodType(PhiType.MethodOf(p.Signature)),
                 _ => false,
             };
@@ -702,6 +703,13 @@ namespace Phi.Compiler.CodeGen
                 output.AppendLine($"    call {init}");
 
             output.Append(code);
+
+            // before the library: its imports.asm puts these in the table
+            if (Host.IsWindows())
+            {
+                output.AppendLine();
+                EmitOutsideImports(output);
+            }
 
             foreach (LibraryFile lib in library)
             {
@@ -1629,6 +1637,150 @@ namespace Phi.Compiler.CodeGen
             Emit(InFrame(home) ? $"lea {register}, [{home}{plus}]" : bits64 ? $"lea {R(register)}, [rel {home}{plus}]" : $"mov {register}, {home}{plus}");
         }
 
+        /// <summary>
+        /// sys.Name: values, a system call: each value in the register the system takes it in
+        /// (ebx, ecx, edx, esi, edi, ebp for int 0x80, on PHI OS and 32-bit Linux; rdi, rsi,
+        /// rdx, r10, r8, r9 for syscall, on 64-bit Linux), the call's number in eax, and the
+        /// answer back in eax (all of rax, for a pointer in 64-bit code) as the system gives it
+        /// (-errno when Linux says no). The values
+        /// are worked out first, each pushed, so none is lost to another's register; the
+        /// registers PHI keeps its own things in (the frame, the variables) are kept.
+        /// </summary>
+        void EmitSystemCall(SysCallDecl sys, List<Expr> arguments)
+        {
+            string[] registers = bits64 ? new[] { "rdi", "rsi", "rdx", "r10", "r8", "r9" } : new[] { "ebx", "ecx", "edx", "esi", "edi", "ebp" };
+            string[] kept = bits64 ? new[] { "rsi", "rdi" } : new[] { "ebp", "edi", "esi", "ebx" };
+            Comment($"sys.{sys.Name}, system call {sys.Number}");
+            foreach (string r in kept) Emit($"push {r}");
+            foreach (Expr value in arguments)
+            {
+                EmitExpr(value);
+                Emit("push eax");
+            }
+            for (int i = arguments.Count - 1; i >= 0; i--) Emit($"pop {registers[i]}");
+            Emit($"mov eax, {sys.Number}");
+            Emit(bits64 ? "syscall" : "int 0x80");
+            foreach (string r in kept.Reverse()) Emit($"pop {r}");
+        }
+
+        /// <summary>
+        /// A call to an outside library's function (Kernel32.CreateThread: ...), through the
+        /// address Windows wrote into the import table when it loaded the program. In 32-bit
+        /// code (stdcall) the values are pushed last first and the function takes them off; in
+        /// 64-bit code the first four go in rcx, rdx, r8 and r9 and the rest on the stack, above
+        /// 32 bytes the function may write (its shadow space), the stack 16-byte aligned. Its
+        /// answer is in eax (all of rax for a pointer). r12 keeps where the stack was.
+        /// </summary>
+        void EmitOutsideCall(OutsideFunctionDecl f, List<Expr> arguments)
+        {
+            string label = OutsideLabel(f);
+            Comment($"{f.Library}.{f.Name}, from {f.LibraryPath}");
+            if (!bits64)
+            {
+                for (int i = arguments.Count - 1; i >= 0; i--)
+                {
+                    EmitExpr(arguments[i]);
+                    Emit("push eax");
+                }
+                Emit($"call [{label}]");
+                return;
+            }
+
+            int n = arguments.Count;
+            Emit("push r12");
+            foreach (Expr value in arguments)
+            {
+                EmitExpr(value);
+                Emit("push eax");
+            }
+            Emit("mov r12, rsp");                      // the values: the first at [r12 + 8 * (n - 1)]
+            Emit($"sub rsp, {32 + 8 * Math.Max(0, n - 4)}");
+            Emit("and rsp, -16");
+            string[] registers = { "rcx", "rdx", "r8", "r9" };
+            for (int i = 0; i < n; i++)
+            {
+                string value = $"[r12 + {8 * (n - 1 - i)}]";
+                if (i < 4) Emit($"mov {registers[i]}, {value}");
+                else
+                {
+                    Emit($"mov rax, {value}");
+                    Emit($"mov [rsp + {32 + 8 * (i - 4)}], rax");
+                }
+            }
+            Emit($"call [rel {label}]");
+            Emit("mov rsp, r12");
+            if (n > 0) Emit($"add rsp, {8 * n}");
+            Emit("pop r12");
+        }
+
+        /// <summary>
+        /// Where Windows puts an outside function's address: one slot for each library and name,
+        /// whichever name the library was given (phi_outside_2_CreateThread).
+        /// </summary>
+        string OutsideLabel(OutsideFunctionDecl f)
+        {
+            var libraries = OutsideLibraries();
+            int index = libraries.FindIndex(l => l.Path.Equals(f.LibraryPath, StringComparison.OrdinalIgnoreCase));
+            return $"phi_outside_{index}_{f.Name}";
+        }
+
+        /// <summary>The outside libraries the code calls, each with the functions it calls of it, in the order they're met.</summary>
+        List<(string Path, List<string> Functions)> OutsideLibraries()
+        {
+            var libraries = new List<(string Path, List<string> Functions)>();
+            foreach (OutsideFunctionDecl f in unit.OutsideFunctions)
+            {
+                int at = libraries.FindIndex(l => l.Path.Equals(f.LibraryPath, StringComparison.OrdinalIgnoreCase));
+                if (at < 0)
+                {
+                    libraries.Add((f.LibraryPath, new List<string>()));
+                    at = libraries.Count - 1;
+                }
+                if (!libraries[at].Functions.Contains(f.Name)) libraries[at].Functions.Add(f.Name);
+            }
+            return libraries;
+        }
+
+        /// <summary>
+        /// The import table's entries for the outside functions the code calls, as two macros the
+        /// library's imports.asm puts in its table: PHI_OUTSIDE_DESCRIPTORS (one for each library,
+        /// among the runtime's own: kernel32.dll may have two, which Windows reads one by one)
+        /// and PHI_OUTSIDE_TABLES (each library's names and the slots Windows writes addresses in).
+        /// </summary>
+        void EmitOutsideImports(StringBuilder output)
+        {
+            var libraries = OutsideLibraries();
+            if (libraries.Count == 0) return;
+            string entry = bits64 ? "dq" : "dd";
+            output.AppendLine("; the outside libraries' functions this program calls (see imports.asm)");
+            output.AppendLine("%macro PHI_OUTSIDE_DESCRIPTORS 0");
+            for (int i = 0; i < libraries.Count; i++)
+                output.AppendLine($"    dd phi_outside_{i}_lookup - $$, 0, 0, phi_outside_{i}_name - $$, phi_outside_{i}_addresses - $$");
+            output.AppendLine("%endmacro");
+            output.AppendLine("%macro PHI_OUTSIDE_TABLES 0");
+            for (int i = 0; i < libraries.Count; i++)
+            {
+                var (path, functions) = libraries[i];
+                output.AppendLine($"align {Slot}, db 0");
+                output.AppendLine($"phi_outside_{i}_lookup:");
+                foreach (string name in functions) output.AppendLine($"    {entry} phi_outside_{i}_{name}_name - $$");
+                output.AppendLine($"    {entry} 0");
+                output.AppendLine($"phi_outside_{i}_addresses:");
+                foreach (string name in functions) output.AppendLine($"phi_outside_{i}_{name}: {entry} phi_outside_{i}_{name}_name - $$");
+                output.AppendLine($"    {entry} 0");
+                foreach (string name in functions)
+                {
+                    output.AppendLine($"phi_outside_{i}_{name}_name:");
+                    output.AppendLine("    dw 0");
+                    output.AppendLine($"    db '{name}', 0");
+                    output.AppendLine("    align 2, db 0");
+                }
+                output.AppendLine($"phi_outside_{i}_name: db '{path}', 0");
+            }
+            output.AppendLine("%endmacro");
+            output.AppendLine();
+        }
+
         void EmitRawBlock(RawBlockDecl raw)
         {
             Line("");
@@ -2160,6 +2312,8 @@ namespace Phi.Compiler.CodeGen
                 MethodSymbol method => method.ReturnType,
                 PointerCall pointer => pointer.Signature.Result,
                 BuiltinFunction { FloatInstruction: not null } => PhiType.F64,
+                SysCallDecl sys => sys.ResultType ?? PhiType.Int,
+                OutsideFunctionDecl outside => outside.ResultType ?? PhiType.Int,
                 _ => PhiType.Int,
             };
             if (call.ResultTarget == null)
@@ -2286,6 +2440,14 @@ namespace Phi.Compiler.CodeGen
 
                 case RawBlockDecl raw:
                     Emit($"call {raw.Name}");
+                    break;
+
+                case SysCallDecl sys:
+                    EmitSystemCall(sys, arguments);
+                    break;
+
+                case OutsideFunctionDecl outside:
+                    EmitOutsideCall(outside, arguments);
                     break;
 
                 case PointerCall pointer:

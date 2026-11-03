@@ -1,0 +1,52 @@
+# Windows' own functions for outside_functions_program.phi, declared in PHI (H6 step 2):
+# kernel32.dll's, which the runtime imports too, and user32.dll's, which it doesn't.
+
+use 'kernel32.dll' as Kernel32;
+use 'user32.dll' as User32;
+
+phi.Win:Windows
+{
+	u16 wide[8];
+
+	[Pid]
+	[end: (Kernel32.GetCurrentProcessId)]
+
+	[Length: ptr<u8> text: 0;]
+	[end: (Kernel32.lstrlenA: text)]
+
+	# text in capitals, where it is (CharUpperA gives back where that is)
+	[Upper: ptr<u8> text: 0;]
+		ptr<u8> same: (User32.CharUpperA: text);
+	[end: same is text]
+
+	# six values: on 64-bit Windows the last two go on the stack
+	[Wide]
+		int n: (Kernel32.MultiByteToWideChar: 65001 0 'hi' -1 addr wide 8);
+	[end: n is 3 and wide:0 is 104 and wide:1 is 105 and wide:2 is 0]
+
+	# a page of memory: a pointer back, used, then freed
+	[Page]
+		ptr<u8> page: (Kernel32.VirtualAlloc: 0 4096 0x3000 4);
+		page:100 is 42;
+		u8 back: page:100;
+		int freed: (Kernel32.VirtualFree: page 0 0x8000);
+	[end: back is 42 and freed is not 0]
+
+	# Windows' answer to closing no handle at all: ERROR_INVALID_HANDLE
+	[CloseNothing]
+		int closed: (Kernel32.CloseHandle: 0);
+	[end: (Kernel32.GetLastError)]
+
+	[CommandLength]
+	[end: (Kernel32.lstrlenA: (Kernel32.GetCommandLineA))]
+}
+
+Kernel32.GetCurrentProcessId;
+Kernel32.GetLastError;
+Kernel32.lstrlenA: ptr<u8> text;
+Kernel32.GetCommandLineA: : ptr<u8>;
+Kernel32.MultiByteToWideChar: u32 page  u32 flags  ptr<u8> text  int length  ptr<u16> wide  int room;
+Kernel32.VirtualAlloc: ptr<u8> address  u32 size  u32 kind  u32 protect: ptr<u8>;
+Kernel32.VirtualFree: ptr<u8> address  u32 size  u32 kind;
+Kernel32.CloseHandle: ptr<u8> handle;
+User32.CharUpperA: ptr<u8> text: ptr<u8>;

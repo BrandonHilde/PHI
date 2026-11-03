@@ -1,0 +1,21 @@
+# System calls written in PHI (sys.Name, H6 step 1). Each system's module declares the
+# calls it makes with that system's numbers (support/raw_linux32.phi, raw_linux64.phi), and
+# the program uses Raw the same way whichever is built. On Linux, 32 and 64 bits: a line
+# written to standard output by a system call itself, the process's number, a call that
+# takes nothing used as a value, and Linux's answer when it says no (-9, EBADF, for
+# closing a file that isn't open), and a page of memory from a call of six values that
+# gives a pointer. Raw has no version for Windows, so it runs only on Linux.
+use support.raw_linux32;
+use support.raw_linux64;
+
+phi.SysCallsProgram:Program
+{
+	log 'before\n';
+	call Raw.Say: 'written by a system call\n';
+	log 'after\n';
+	log 'a process number: ' ((Raw.Pid) > 0) '\n';
+	log 'the same twice: ' ((Raw.Pid) is (Raw.Pid)) '\n';
+	log 'closing what is not open: ' (Raw.Close: -1) '\n';
+	log 'closing 1000: ' (Raw.Close: 1000) '\n';
+	log 'a page of its own: ' (Raw.Page) '\n';
+}

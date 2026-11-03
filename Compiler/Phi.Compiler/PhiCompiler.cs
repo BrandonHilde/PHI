@@ -150,6 +150,9 @@ namespace Phi.Compiler
 
                 into.Classes.AddRange(node.Classes);
                 into.RawBlocks.AddRange(node.RawBlocks);
+                into.SysCalls.AddRange(node.SysCalls);
+                into.Libraries.AddRange(node.Libraries);
+                into.OutsideFunctions.AddRange(node.OutsideFunctions);
                 into.Structs.AddRange(node.Structs);
                 into.Enums.AddRange(node.Enums);
                 into.Uses.AddRange(node.Uses);
@@ -182,6 +185,9 @@ namespace Phi.Compiler
             Load(heap, withHeap);
             withHeap.Classes.AddRange(program.Classes);
             withHeap.RawBlocks.AddRange(program.RawBlocks);
+            withHeap.SysCalls.AddRange(program.SysCalls);
+            withHeap.Libraries.AddRange(program.Libraries);
+            withHeap.OutsideFunctions.AddRange(program.OutsideFunctions);
             withHeap.Structs.AddRange(program.Structs);
             withHeap.Enums.AddRange(program.Enums);
             withHeap.Uses.AddRange(program.Uses);

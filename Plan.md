@@ -2390,13 +2390,22 @@ starting that phase.
    at that moment (it would mean reading the kernel's task table), and 16-bit programs'
    calls.
 
-1. **System calls in the language.** A call that takes a system call's number and up to
+1. **System calls in the language** (done 2026-11-03: `sys.Name` declarations and the
+   system words `:Linux`, `:Linux32`, `:Linux64`, `:Windows`, `:PhiOS`, as decided below;
+   test `sys_calls_program` on both Linuxes, and `SystemModuleTests`). As planned: A call that takes a system call's number and up to
    six arguments and gives its result, which the code generator writes for the target:
    `int 0x80` with ebx, ecx, edx, esi, edi, ebp (PHI OS, 32-bit Linux), or `syscall` with
    rdi, rsi, rdx, r10, r8, r9 (64-bit Linux, macOS later). Linux's answer comes back as it
    is (-errno when it fails). Only in programs (a kernel has no one to ask). First users:
-   the Linux runtimes' simplest calls (time, sleep, files).
-2. **Outside functions.** A declaration of a function in another library (on Windows, a
+   the Linux runtimes' simplest calls (time, sleep, files). (Not yet: moving those needs
+   `OS.Sleep` and the rest answered by a PHI module rather than an assembly routine,
+   which is step 3's to build; step 1 is the language and its tests.)
+2. **Outside functions** (done 2026-11-03, on Windows: `use 'kernel32.dll' as Kernel32;`
+   and `Kernel32.Name: type name ...: result;`, as decided below, with the result type the
+   user chose for both, `: type` at the end, as method types write it; test
+   `outside_functions_program` on 32- and 64-bit Windows, including user32.dll, six values
+   and a pointer back, and `SystemModuleTests`. Not yet: floats, and 64-bit numbers in a
+   32-bit program). As planned: A declaration of a function in another library (on Windows, a
    DLL's: `CreateThread` in kernel32.dll, `connect` in ws2_32.dll), with its arguments;
    the compiler adds it to the program's import table and calls it as that system's
    functions are called (stdcall in 32 bits; in 64, the first four in rcx, rdx, r8 and
