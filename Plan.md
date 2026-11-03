@@ -2608,15 +2608,32 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
      hidden window, with messages posted to it and its pixels read back, so nothing pops up.
      Not yet: `OS.OpenWindow` gives -1 (starting a program by a path on its disk is PHI OS's
      way), and a window's messages come only to the thread that made it.
-   - [ ] Linux. X11's protocol is a socket, so it needs no library: `net.sockets`-like calls
-     over `/tmp/.X11-unix`, in PHI, and WSLg shows it on this computer.
+   - [x] Linux, 32 and 64 bits (2026-11-03): `lib/phi/host/window_linux.phi` answers the same
+     calls by speaking X11's protocol over its socket (`/tmp/.X11-unix/X0`), so it needs no
+     library, on `sys.` calls alone. Pixels go to a pixmap the server keeps, copied to the
+     window when they change or it needs painting, in pieces as long as the server takes. X
+     has no double click (two presses close enough are one) and says a held key came up and
+     went down again as it repeats (passed over, so a game sees it held). The font is the
+     server's own, drawn a character at a time and read back; only ASCII, since its other
+     codes aren't code page 437's. No authentication yet (a server that wants a cookie
+     refuses). `window_program` runs on all four hosts, hidden, on `WindowTest` (a small module
+     for each system that plays the user), so on Linux it needs an X server (WSLg has one);
+     without one it fails. All the samples build for Linux; text from the X font has been
+     looked at in an image of a hidden window's pixels, but no window on Linux has been seen
+     on the screen yet: that's for someone at the computer.
+   - [x] A game on `gui.app`: `samples/desktop.rootfs/paddles.phi` (held keys, 60 frames a
+     second), the same program on PHI OS's desktop, Windows and Linux. It builds for all
+     five; it hasn't been played yet. A hidden window at its size takes well under a
+     millisecond a frame on all four hosts; a visible one on WSLg adds what its compositor
+     does, and that hasn't been measured.
    - [ ] macOS, with H4's.
 2. **Sound** behind `audio.*`'s calls.
 3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
    calling C functions (H6's outside functions, and on Linux, loading a library).
 
 **Done when:** a PHI game runs in a window on Windows and Linux. (The arcade sample is a
-16-bit program that writes to the VGA card, so it isn't the one; a game on `gui.app` is.)
+16-bit program that writes to the VGA card, so it isn't the one; `paddles` is, once it has
+been played on both.)
 
 #### Phase H8: Tools for a host
 

@@ -2,25 +2,71 @@
 # shown: messages posted to the program's own window, as Windows would send them, and the
 # pixels it paints, asked for in a bitmap (WM_PRINTCLIENT: PrintWindow won't print a hidden
 # window). The window stays hidden (HostWindow.visible), so nothing pops up and nothing
-# takes the keys from whoever's at the computer.
+# takes the keys from whoever's at the computer. x11_window.phi is the same for X.
 
 use 'gdi32.dll' as Gdi32;
 use 'user32.dll' as User32;
 
-phi.WinTest:Windows
+phi.WindowTest:Windows
 {
 	# a message in the window's queue, as Windows would put it there
 	[Post: u32 message: 0; int w: 0; int l: 0;]
 		call User32.PostMessageW: HostWindow.window message w as ptr<u8> l as ptr<u8>;
 	[end]
 
-	# a message handled now
-	[Send: u32 message: 0; int w: 0; int l: 0;]
-		ptr<u8> answer: (User32.SendMessageW: HostWindow.window message w as ptr<u8> l as ptr<u8>);
-	[end]
-
 	[At: int x: 0; int y: 0;]
 	[end: (y << 16) | x]
+
+	# Windows' number for a key by Input's (only those the test uses)
+	[VirtualKey: int key: 0;]
+		if key is Events.KEY_UP return 0x26;
+		if key is 'w' return 0x57;
+	[end: key]
+
+	[TypeChar: int c: 0;]
+		call Post: 0x102 c 0;             # WM_CHAR
+	[end]
+
+	[KeyDown: int key: 0;]
+		call Post: 0x100 (VirtualKey: key) 0;
+	[end]
+
+	[KeyUp: int key: 0;]
+		call Post: 0x101 (VirtualKey: key) 0;
+	[end]
+
+	[MoveTo: int x: 0; int y: 0;]
+		call Post: 0x200 0 (At: x y);
+	[end]
+
+	[LeftDown: int x: 0; int y: 0;]
+		call Post: 0x201 1 (At: x y);
+	[end]
+
+	[LeftUp: int x: 0; int y: 0;]
+		call Post: 0x202 0 (At: x y);
+	[end]
+
+	[LeftDouble: int x: 0; int y: 0;]
+		call Post: 0x203 1 (At: x y);
+	[end]
+
+	[RightDown: int x: 0; int y: 0;]
+		call Post: 0x204 2 (At: x y);
+	[end]
+
+	[RightUp: int x: 0; int y: 0;]
+		call Post: 0x205 0 (At: x y);
+	[end]
+
+	# a notch towards the user
+	[WheelDown: int x: 0; int y: 0;]
+		call Post: 0x20A (-120 << 16) (At: x y);
+	[end]
+
+	[CloseIt]
+		call Post: 0x10 0 0;              # WM_CLOSE
+	[end]
 
 	# the window's inside, across and down
 	[ClientWidth]
@@ -36,8 +82,8 @@ phi.WinTest:Windows
 	[TitleLength]
 	[end: (User32.GetWindowTextLengthW: HostWindow.window)]
 
-	# whether the window has the frame its size is changed by
-	[HasThickFrame]
+	# whether the user can change its size (it has the frame that's done with)
+	[CanResize]
 	[end: ((User32.GetWindowLongW: HostWindow.window (-16)) & 0x40000) is not 0]
 
 	# the color shown at x, y (0x00RRGGBB), from what the window paints

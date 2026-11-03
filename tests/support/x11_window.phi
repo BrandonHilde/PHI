@@ -1,0 +1,161 @@
+# What window_program.phi asks of an X server, to play the part of the user and look at what's
+# shown: events sent to the program's own window with SendEvent, as the server would send them
+# (each followed by a round trip, so it's here by the time the call returns), and the pixels
+# of its pixmap read back. The window is never mapped (HostWindow.visible), so nothing pops up
+# and nothing takes the keys from whoever's at the computer. win_window.phi is the same for Windows.
+
+phi.WindowTest:Linux
+{
+	u32 time: 1000;                       # when the events happen: 50 ms apart
+
+	# an event for the window, as the server lays one out
+	[Event: int kind: 0; int detail: 0; int state: 0; int x: 0; int y: 0;]
+		time++ 50;
+		call HostWindow.Start: HostWindow.SEND_EVENT 0;
+		call HostWindow.Put32: HostWindow.window;
+		call HostWindow.Put32: 0;         # to whoever made the window: us
+		call HostWindow.Put8: kind;
+		call HostWindow.Put8: detail;
+		call HostWindow.Put16: 0;
+		call HostWindow.Put32: time;
+		call HostWindow.Put32: HostWindow.root;
+		call HostWindow.Put32: HostWindow.window;
+		call HostWindow.Put32: 0;
+		call HostWindow.Put16: x;
+		call HostWindow.Put16: y;
+		call HostWindow.Put16: x;
+		call HostWindow.Put16: y;
+		call HostWindow.Put16: state;
+		call HostWindow.Put16: 1;
+		call HostWindow.Send;
+		call HostWindow.Sync;
+	[end]
+
+	# the key that makes this symbol
+	[KeyMaking: u32 symbol: 0;]
+		int keys: HostWindow.last_key - HostWindow.first_key + 1;
+		while int k: 0; k < keys; k++;
+			if HostWindow.keymap:(k * HostWindow.per_key) is symbol return HostWindow.first_key + k;
+		;;
+	[end: 0]
+
+	# X's symbol for a key by Input's number (only those the test uses)
+	[SymbolOf: int key: 0;]
+		if key is Events.KEY_UP return 0xFF52;
+	[end: key]
+
+	[TypeChar: int c: 0;]
+		call Event: HostWindow.KEY_PRESS (KeyMaking: c) 0 0 0;
+		call Event: HostWindow.KEY_RELEASE (KeyMaking: c) 0 0 0;
+	[end]
+
+	[KeyDown: int key: 0;]
+		call Event: HostWindow.KEY_PRESS (KeyMaking: (SymbolOf: key)) 0 0 0;
+	[end]
+
+	[KeyUp: int key: 0;]
+		call Event: HostWindow.KEY_RELEASE (KeyMaking: (SymbolOf: key)) 0 0 0;
+	[end]
+
+	[MoveTo: int x: 0; int y: 0;]
+		call Event: HostWindow.MOTION 0 0 x y;
+	[end]
+
+	[LeftDown: int x: 0; int y: 0;]
+		call Event: HostWindow.BUTTON_PRESS 1 0 x y;
+	[end]
+
+	[LeftUp: int x: 0; int y: 0;]
+		call Event: HostWindow.BUTTON_RELEASE 1 0x100 x y;
+	[end]
+
+	# (X has no double click: a second press soon enough is one)
+	[LeftDouble: int x: 0; int y: 0;]
+		call Event: HostWindow.BUTTON_PRESS 1 0 x y;
+	[end]
+
+	[RightDown: int x: 0; int y: 0;]
+		call Event: HostWindow.BUTTON_PRESS 3 0 x y;
+	[end]
+
+	[RightUp: int x: 0; int y: 0;]
+		call Event: HostWindow.BUTTON_RELEASE 3 0x400 x y;
+	[end]
+
+	# a notch towards the user
+	[WheelDown: int x: 0; int y: 0;]
+		call Event: HostWindow.BUTTON_PRESS 5 0 x y;
+	[end]
+
+	# what a window manager's close box sends
+	[CloseIt]
+		call HostWindow.Start: HostWindow.SEND_EVENT 0;
+		call HostWindow.Put32: HostWindow.window;
+		call HostWindow.Put32: 0;
+		call HostWindow.Put8: HostWindow.CLIENT_MESSAGE;
+		call HostWindow.Put8: 32;
+		call HostWindow.Put16: 0;
+		call HostWindow.Put32: HostWindow.window;
+		call HostWindow.Put32: HostWindow.protocols;
+		call HostWindow.Put32: HostWindow.delete_window;
+		while int i: 0; i < 4; i++;
+			call HostWindow.Put32: 0;
+		;;
+		call HostWindow.Send;
+		call HostWindow.Sync;
+	[end]
+
+	[Geometry: int place: 0;]
+		call HostWindow.Start: HostWindow.GET_GEOMETRY 0;
+		call HostWindow.Put32: HostWindow.window;
+		call HostWindow.Send;
+		if not (HostWindow.WaitReply) return 0;
+		int value: (HostWindow.Get16: place);
+		call HostWindow.Done;
+	[end: value]
+
+	[ClientWidth]
+	[end: (Geometry: 16)]
+
+	[ClientHeight]
+	[end: (Geometry: 18)]
+
+	# a property's reply is left at the start of what's come in
+	[Property: u32 property: 0; u32 kind: 0;]
+		call HostWindow.Start: HostWindow.GET_PROPERTY 0;
+		call HostWindow.Put32: HostWindow.window;
+		call HostWindow.Put32: property;
+		call HostWindow.Put32: kind;
+		call HostWindow.Put32: 0;
+		call HostWindow.Put32: 100;
+		call HostWindow.Send;
+	[end: (HostWindow.WaitReply)]
+
+	[TitleLength]
+		if not (Property: HostWindow.ATOM_WM_NAME HostWindow.ATOM_STRING) return 0;
+		int length: (HostWindow.Get32: 16);
+		call HostWindow.Done;
+	[end: length]
+
+	# whether the user can change its size (no least and most size in its hints)
+	[CanResize]
+		if not (Property: HostWindow.ATOM_NORMAL_HINTS HostWindow.ATOM_SIZE_HINTS) return false;
+		u32 flags: (HostWindow.Get32: 32);
+		call HostWindow.Done;
+	[end: (flags & 0x30) is 0]
+
+	# the color shown at x, y (0x00RRGGBB)
+	[PixelAt: int x: 0; int y: 0;]
+		call HostWindow.Start: HostWindow.GET_IMAGE 2;
+		call HostWindow.Put32: HostWindow.picture;
+		call HostWindow.Put16: x;
+		call HostWindow.Put16: y;
+		call HostWindow.Put16: 1;
+		call HostWindow.Put16: 1;
+		call HostWindow.Put32: 0xFFFFFFFF;
+		call HostWindow.Send;
+		if not (HostWindow.WaitReply) return 0;
+		u32 color: (HostWindow.Get32: 32) & 0xFFFFFF;
+		call HostWindow.Done;
+	[end: color]
+}

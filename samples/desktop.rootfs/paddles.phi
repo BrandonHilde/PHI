@@ -1,0 +1,201 @@
+# A small game in a window: keep the ball in play with your paddle, against one that follows
+# the ball a little too slowly. The same program runs on PHI OS's desktop, on Windows and on
+# Linux, since all it asks for is gui.app's window and OS.IsKeyDown's held keys:
+#
+#   phi run samples/desktop.rootfs/paddles.phi --target windows64
+#   phi run samples/desktop.rootfs/paddles.phi --target linux64
+#
+#   W and S, or the up and down arrows: your paddle
+#   Space: serve       Q: quit
+use gui.app;
+
+phi.Paddles:Program
+{
+	const int W: 480;
+	const int H: 320;
+	const int FRAME: 16;                  # ms a frame: about 60 a second
+	const int PADDLE_W: 8;
+	const int PADDLE_H: 56;
+	const int BALL: 8;
+	const int MARGIN: 16;
+	const int MY_SPEED: 5;
+	const int ITS_SPEED: 3;               # slower than the ball can go: it can be beaten
+	const int WIN_AT: 7;
+	const u32 BACK: 0x101828;
+	const u32 LINE: 0x34425C;
+	const u32 MINE: 0x3DBE5A;
+	const u32 ITS: 0xE0483E;
+	const u32 TEXT: 0xE8ECF4;
+
+	int my_y: (H - PADDLE_H) / 2;
+	int its_y: (H - PADDLE_H) / 2;
+	int ball_x: 0;
+	int ball_y: 0;
+	int speed_x: 0;
+	int speed_y: 0;
+	int my_score: 0;
+	int its_score: 0;
+	bln in_play: false;
+	bln playing: true;
+	u32 seed: 1;
+
+	if (App.Open: W H) is false
+		log 'no window\n';
+		exit 1;
+	;;
+	call App.SetTitle: 'Paddles';
+	call App.SetResizable: false;
+	seed is (OS.GetTicks) | 1;
+	call PlaceBall;
+
+	int next_frame: (OS.GetTicks);
+	while playing
+		while (App.NextEvent)
+			if App.event.kind is Events.CLOSE
+				playing is false;
+			;;
+		;;
+		call Step;
+		call Paint;
+
+		# the next frame at its time, however long this one took
+		next_frame++ FRAME;
+		int wait: next_frame - (OS.GetTicks);
+		if wait > 0
+			call OS.Sleep: wait;
+		;;
+		else
+			next_frame is (OS.GetTicks);      # fell behind: start again from now
+		;;
+	;;
+	exit 0;
+
+	# a frame of the game
+	[Step]
+		if (OS.IsKeyDown: 'q') is 1
+			playing is false;
+		;;
+		if (OS.IsKeyDown: 'w') is 1 or (OS.IsKeyDown: Events.KEY_UP) is 1
+			my_y is my_y - MY_SPEED;
+		;;
+		if (OS.IsKeyDown: 's') is 1 or (OS.IsKeyDown: Events.KEY_DOWN) is 1
+			my_y is my_y + MY_SPEED;
+		;;
+		my_y is (Within: my_y 0 H - PADDLE_H);
+
+		# the other paddle goes after the ball, at its own pace
+		int its_middle: its_y + PADDLE_H / 2;
+		if ball_y < its_middle - 4
+			its_y is its_y - ITS_SPEED;
+		;;
+		elif ball_y > its_middle + 4
+			its_y is its_y + ITS_SPEED;
+		;;
+		its_y is (Within: its_y 0 H - PADDLE_H);
+
+		if not in_play
+			if (OS.IsKeyDown: ' ') is 1
+				call Serve;
+			;;
+			return;
+		;;
+
+		ball_x++ speed_x;
+		ball_y++ speed_y;
+		if ball_y < 0
+			ball_y is 0;
+			speed_y is 0 - speed_y;
+		;;
+		if ball_y > H - BALL
+			ball_y is H - BALL;
+			speed_y is 0 - speed_y;
+		;;
+
+		# my paddle, on the left
+		if speed_x < 0 and ball_x <= MARGIN + PADDLE_W and ball_x + BALL >= MARGIN and ball_y + BALL >= my_y and ball_y <= my_y + PADDLE_H
+			ball_x is MARGIN + PADDLE_W;
+			call Bounce: my_y;
+		;;
+		# its paddle, on the right
+		if speed_x > 0 and ball_x + BALL >= W - MARGIN - PADDLE_W and ball_x <= W - MARGIN and ball_y + BALL >= its_y and ball_y <= its_y + PADDLE_H
+			ball_x is W - MARGIN - PADDLE_W - BALL;
+			call Bounce: its_y;
+		;;
+
+		if ball_x < 0
+			its_score++;
+			call PlaceBall;
+		;;
+		if ball_x > W
+			my_score++;
+			call PlaceBall;
+		;;
+	[end]
+
+	# off a paddle: it comes back faster, and where it hit says how steeply
+	[Bounce: int paddle_y: 0;]
+		int hit: ball_y + BALL / 2 - (paddle_y + PADDLE_H / 2);
+		speed_y is hit / 6;
+		speed_x is 0 - speed_x;
+		if speed_x > 0 and speed_x < 9
+			speed_x++;
+		;;
+		if speed_x < 0 and speed_x > -9
+			speed_x--;
+		;;
+	[end]
+
+	[PlaceBall]
+		ball_x is (W - BALL) / 2;
+		ball_y is (H - BALL) / 2;
+		speed_x is 0;
+		speed_y is 0;
+		in_play is false;
+	[end]
+
+	[Serve]
+		if my_score >= WIN_AT or its_score >= WIN_AT
+			my_score is 0;
+			its_score is 0;
+		;;
+		seed is seed * 1103515245 + 12345;
+		speed_x is 4;
+		if (seed & 0x10000) is 0
+			speed_x is -4;
+		;;
+		speed_y is ((seed >> 20) & 7) - 3;
+		in_play is true;
+	[end]
+
+	[Within: int value: 0; int least: 0; int most: 0;]
+		if value < least return least;
+		if value > most return most;
+	[end: value]
+
+	[Paint]
+		call Draw.Clear: BACK;
+		int y: 0;
+		while y < H
+			call Draw.FillRect: W / 2 - 1 y 2 10 LINE;
+			y++ 20;
+		;;
+		call Draw.FillRect: MARGIN my_y PADDLE_W PADDLE_H MINE;
+		call Draw.FillRect: W - MARGIN - PADDLE_W its_y PADDLE_W PADDLE_H ITS;
+		call Draw.FillRect: ball_x ball_y BALL BALL TEXT;
+
+		str score: [24];
+		score is my_score '  ' its_score;
+		call Draw.Text: W / 2 - score.len * 4 8 score TEXT;
+		if not in_play
+			if my_score >= WIN_AT
+				call Draw.Text: 188 120 'You won!' MINE;
+			;;
+			elif its_score >= WIN_AT
+				call Draw.Text: 184 120 'It won...' ITS;
+			;;
+			call Draw.Text: 148 150 'Space to serve, Q to quit' TEXT;
+			call Draw.Text: 164 170 'W and S move your paddle' LINE;
+		;;
+		call App.Present;
+	[end]
+}

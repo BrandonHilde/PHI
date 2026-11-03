@@ -6,7 +6,8 @@
 # In text mode the card keeps the shapes of its 256 characters (code page 437) in
 # memory plane 2. Only a kernel can reach the card, so Screen.LoadFont (drivers.vbe)
 # copies them here, and Screen.Start does that before it switches to graphics; a user
-# program gets a copy from the kernel (gui.app does this, with OS.CopyFont).
+# program gets a copy from the kernel (gui.app does this, with OS.CopyFont). On Windows and
+# Linux OS.CopyFont draws them from the system's own font instead (lib/phi/host/window_*.phi).
 
 phi.Font:Library
 {

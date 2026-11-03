@@ -1,0 +1,993 @@
+# A window in a Linux program, in PHI (H7 step 1), 32 and 64 bits: the calls gui.app makes
+# (OS.SurfaceOpen, SurfacePresent, NextEvent, CopyFont, SetWindowTitle, SetResizable,
+# WindowFocused, IsKeyDown), answered by an X server. So a program with a window on PHI OS or
+# Windows is a program with a window here, unchanged.
+#
+# X11 is a protocol over a socket, so this needs no library: it connects to the server's
+# socket (/tmp/.X11-unix/X0, for display :0) with Linux's system calls, and writes requests
+# and reads events as the protocol lays them out, little-endian. The program's pixels go to a
+# pixmap kept by the server, which is copied to the window when they change and whenever the
+# window needs painting. No authentication is tried: a local server that wants a cookie
+# refuses, and the window can't open.
+#
+# Replies come back on the same socket among the events, and those are queued as they're met.
+# One thread (the one that opens the window) draws and takes the events.
+
+use gui.events;
+
+phi.HostWindow:Linux
+{
+	const int MOST_EVENTS: 256;
+	const int MOST_KEYS: 512;
+	const int IN_ROOM: 65536;             # the most of one reply (a keyboard's map fits)
+	const int OUT_ROOM: 4096;
+
+	# requests
+	const int CREATE_WINDOW: 1;
+	const int MAP_WINDOW: 8;
+	const int CONFIGURE_WINDOW: 12;
+	const int GET_GEOMETRY: 14;
+	const int INTERN_ATOM: 16;
+	const int CHANGE_PROPERTY: 18;
+	const int GET_PROPERTY: 20;
+	const int SEND_EVENT: 25;
+	const int OPEN_FONT: 45;
+	const int CREATE_PIXMAP: 53;
+	const int FREE_PIXMAP: 54;
+	const int CREATE_GC: 55;
+	const int COPY_AREA: 62;
+	const int FILL_RECTANGLES: 70;
+	const int PUT_IMAGE: 72;
+	const int GET_IMAGE: 73;
+	const int IMAGE_TEXT: 76;
+	const int GET_KEYBOARD_MAP: 101;
+	const int GET_INPUT_FOCUS: 43;
+
+	# events
+	const int X_ERROR: 0;
+	const int X_REPLY: 1;
+	const int KEY_PRESS: 2;
+	const int KEY_RELEASE: 3;
+	const int BUTTON_PRESS: 4;
+	const int BUTTON_RELEASE: 5;
+	const int MOTION: 6;
+	const int FOCUS_IN: 9;
+	const int FOCUS_OUT: 10;
+	const int EXPOSE: 12;
+	const int CONFIGURE: 22;
+	const int CLIENT_MESSAGE: 33;
+
+	# atoms every server has
+	const int ATOM_ATOM: 4;
+	const int ATOM_STRING: 31;
+	const int ATOM_WM_NAME: 39;
+	const int ATOM_NORMAL_HINTS: 40;
+	const int ATOM_SIZE_HINTS: 41;
+
+	const int EVENT_MASK: 0x220A4F;       # keys, buttons, motion, exposure, structure, focus
+	const int DOUBLE_MS: 400;             # X has no double click: two presses this close are one
+	const int DOUBLE_PIXELS: 4;
+	const int BIT_LEFT: 1;
+	const int BIT_RIGHT: 2;
+	const int BIT_MIDDLE: 4;
+
+	int server: -1;                       # the socket
+	u32 id_base: 0;
+	u32 next_id: 1;
+	u32 root: 0;
+	u32 root_visual: 0;
+	int depth: 0;
+	int most_bytes: 0;                    # the longest request the server takes
+	int first_key: 0;
+	int last_key: 0;
+	u32 protocols: 0;                     # WM_PROTOCOLS
+	u32 delete_window: 0;                 # WM_DELETE_WINDOW
+
+	u32 window: 0;
+	u32 picture: 0;                       # the pixmap: what's shown
+	u32 pen: 0;                           # a GC
+	ptr<u32> pixels: 0;                   # the program's, once it has shown them
+	int width: 0;                         # how many there are
+	int height: 0;
+	int client_width: 0;                  # the window's inside, as it last was
+	int client_height: 0;
+	bln resizable: true;
+	bln visible: true;                    # (a test's stays hidden: nothing pops up, nothing takes the keys)
+	bln focused: false;
+	str title: [255];
+
+	u8 outgoing[4096];                         # the request being written
+	int filled: 0;
+	ptr<u8> incoming: 0;                  # what the server has sent, from its first unread message
+	int have: 0;
+	int last_error: 0;                    # the code of the last error the server sent, 0 if none
+	bln gone: false;                      # the server has closed
+	int reply_length: 0;                  # how long the reply WaitReply found is
+
+	ptr<u32> keymap: 0;                   # each key's symbols, per_key of them for each
+	int per_key: 0;
+
+	GuiEvent queue[256];
+	int first: 0;
+	int waiting: 0;
+	bln held[512];                        # the keys held, by Input's numbers
+	int buttons: 0;                       # those held
+	u32 last_press: 0;                    # when, and where, the left button last went down
+	int last_x: 0;
+	int last_y: 0;
+	bln was_double: false;
+
+	# OS.SurfaceOpen: a window showing w x h pixels (or the program's window, at that size):
+	# 1, or 0 if there's no server, or it won't make it
+	[SurfaceOpen: int w: 0; int h: 0;]
+		if w <= 0 or h <= 0 return 0;
+		pixels is 0;                      # (the program frees the ones it had)
+		if window is 0
+			if not (Connect) return 0;
+			width is w;
+			height is h;
+			call Create;
+			return 1;
+		;;
+		if w is not width or h is not height
+			call NewPicture: w h;
+		;;
+		width is w;
+		height is h;
+		if w is not client_width or h is not client_height
+			call Fit: w h;
+		;;
+	[end: 1]
+
+	# OS.SurfacePresent: show pixels now
+	[SurfacePresent: ptr<u8> shown: 0;]
+		pixels is shown as ptr<u32>;
+		call PutPixels;
+		call CopyToWindow;
+		call Pump;
+	[end: 1]
+
+	# OS.NextEvent: the next event into event: 1, or 0 if there's none yet
+	[NextEvent: ptr<GuiEvent> event: 0;]
+		call Pump;
+		if waiting is 0 return 0;
+		event:0 is queue:first;
+		first is (first + 1) % MOST_EVENTS;
+		waiting--;
+	[end: 1]
+
+	# OS.SetWindowTitle: what the window is called
+	[SetWindowTitle: ptr<u8> text: 0;]
+		title is text;
+		if window is not 0
+			call SendTitle;
+		;;
+	[end: 1]
+
+	# OS.SetResizable: whether the user can change the window's size
+	[SetResizable: int yes: 1;]
+		resizable is (yes is not 0);
+		if window is not 0
+			call SendHints;
+		;;
+	[end: 1]
+
+	# OS.WindowFocused: 1 while the window is in front, getting the keys
+	[WindowFocused]
+		call Pump;
+		if focused return 1;
+	[end: 0]
+
+	# OS.OpenWindow: a program in a window of its own. (Not yet here: it's PHI OS's way of
+	# starting a program, by a path on its disk.)
+	[OpenWindow: ptr<u8> path: 0; ptr<u8> arguments: 0;]
+	[end: -1]
+
+	# OS.IsKeyDown: whether a key is held, for games, by Input's numbers ('w', Events.KEY_UP ...)
+	[IsKeyDown: int key: 0;]
+		call Pump;
+		if key < 0 or key >= MOST_KEYS or not held:key return 0;
+	[end: 1]
+
+	# OS.CopyFont: the font's 256 shapes, 16 rows of 8 pixels each, leftmost in bit 7: the
+	# server's own font, drawn one character at a time and read back. A server has few fonts
+	# for certain, so the first of these it knows; what isn't ASCII stays empty, as its codes
+	# aren't code page 437's. 0 if it has none.
+	[CopyFont: ptr<u8> glyphs: 0;]
+		if not (Connect) return 0;
+		u32 font: (OpenFirstFont);
+		if font is 0 return 0;
+
+		u32 cell: (NewId);
+		call Start: CREATE_PIXMAP depth;
+		call Put32: cell;
+		call Put32: root;
+		call Put16: 8;
+		call Put16: 16;
+		call Send;
+		u32 ink: (NewId);
+		call Start: CREATE_GC 0;
+		call Put32: ink;
+		call Put32: cell;
+		call Put32: 0x400C;               # foreground, background, font
+		call Put32: 0xFFFFFF;
+		call Put32: 0;
+		call Put32: font;
+		call Send;
+
+		while int c: 33; c < 127; c++;
+			# (a cell's rest stays blank: the text is drawn on black, and read back)
+			call Start: IMAGE_TEXT 8;
+			call Put32: cell;
+			call Put32: ink;
+			call Put16: 0;
+			call Put16: 12;
+			call Put8: c;
+			int spaces: 0;
+			while spaces < 7
+				call Put8: 32;
+				spaces++;
+			;;
+			call Send;
+
+			call Start: GET_IMAGE 2;
+			call Put32: cell;
+			call Put16: 0;
+			call Put16: 0;
+			call Put16: 8;
+			call Put16: 16;
+			call Put32: 0xFFFFFFFF;
+			call Send;
+			if not (WaitReply) return 0;
+			while int row: 0; row < 16; row++;
+				int bits: 0;
+				while int x: 0; x < 8; x++;
+					bits is bits << 1;
+					if ((Get32: 32 + (row * 8 + x) * 4) & 0xFFFFFF) is not 0
+						bits is bits | 1;
+					;;
+				;;
+				glyphs:(c * 16 + row) is bits;
+			;;
+			call Done;
+		;;
+		call Start: FREE_PIXMAP 0;
+		call Put32: cell;
+		call Send;
+	[end: 1]
+
+	# ---- the connection
+
+	# to the server's socket, once: true if there is one, and it let us in
+	[Connect]
+		if server >= 0 return true;
+		incoming is new u8[IN_ROOM];
+		int s: (sys.Socket: 1 1 0);       # AF_UNIX, SOCK_STREAM
+		if s < 0 return false;
+
+		u8 place[110];                    # a sockaddr_un
+		place:0 is 1;
+		int number: (DisplayNumber);
+		str path: '/tmp/.X11-unix/X';
+		path++ number;
+		int i: 0;
+		while i < path.len and i < 100
+			place:(2 + i) is path:i;
+			i++;
+		;;
+		if (sys.Connect: s addr place 2 + i + 1) is not 0
+			call sys.Close: s;
+			return false;
+		;;
+		server is s;
+
+		# who we are: little-endian, X11, with no authentication
+		call Put8: 0x6C;
+		call Put8: 0;
+		call Put16: 11;
+		call Put16: 0;
+		call Put16: 0;
+		call Put16: 0;
+		call Put16: 0;
+		call SendRaw;
+
+		# what it says: 8 bytes, then how many more
+		while have < 8
+			if not (Fill: true) return false;
+		;;
+		int total: 8 + (Get16: 6) * 4;
+		if total > IN_ROOM return false;
+		while have < total
+			if not (Fill: true) return false;
+		;;
+		if incoming:0 is not 1            # 0: refused; 2: it wants authentication
+			call Forget: total;
+			call sys.Close: server;
+			server is -1;
+			return false;
+		;;
+
+		id_base is (Get32: 12);
+		most_bytes is (Get16: 26) * 4;
+		int vendor: (Get16: 24);
+		int formats: incoming:29;
+		first_key is incoming:34;
+		last_key is incoming:35;
+		int screen: 40 + ((vendor + 3) & ~3) + formats * 8;
+		root is (Get32: screen);
+		root_visual is (Get32: screen + 32);
+		depth is incoming:(screen + 38);
+		call Forget: total;
+
+		protocols is (Atom: 'WM_PROTOCOLS');
+		delete_window is (Atom: 'WM_DELETE_WINDOW');
+		call ReadKeyboard;
+	[end: true]
+
+	# the display's number, from DISPLAY in the program's environment (:0 if it isn't there)
+	[DisplayNumber]
+		u8 all[2048];
+		int n: (OS.ReadFile: '/proc/self/environ' addr all 2047);
+		if n <= 0 return 0;
+		int i: 0;
+		while i + 9 < n
+			if all:i is 'D' and all:(i + 1) is 'I' and all:(i + 2) is 'S' and all:(i + 3) is 'P' and all:(i + 4) is 'L' and all:(i + 5) is 'A' and all:(i + 6) is 'Y' and all:(i + 7) is '=' and all:(i + 8) is ':' and (i is 0 or all:(i - 1) is 0)
+				int number: 0;
+				int d: i + 9;
+				while d < n and all:d >= '0' and all:d <= '9'
+					number is number * 10 + all:d - '0';
+					d++;
+				;;
+				return number;
+			;;
+			i++;
+		;;
+	[end: 0]
+
+	[NewId]
+		u32 id: id_base | next_id;
+		next_id++;
+	[end: id]
+
+	# the name's atom, which the server makes if it has to
+	[Atom: ptr<u8> name: 0;]
+		int length: 0;
+		while name:length is not 0
+			length++;
+		;;
+		call Start: INTERN_ATOM 0;
+		call Put16: length;
+		call Put16: 0;
+		while int i: 0; i < length; i++;
+			call Put8: name:i;
+		;;
+		call Send;
+		if not (WaitReply) return 0;
+		u32 atom: (Get32: 8);
+		call Done;
+	[end: atom]
+
+	# which symbols each key makes
+	[ReadKeyboard]
+		call Start: GET_KEYBOARD_MAP 0;
+		call Put8: first_key;
+		call Put8: last_key - first_key + 1;
+		call Put16: 0;
+		call Send;
+		if not (WaitReply) return;
+		per_key is incoming:1;
+		int count: (Get32: 4);
+		keymap is new u32[count + 1];
+		while int i: 0; i < count; i++;
+			keymap:i is (Get32: 32 + i * 4);
+		;;
+		call Done;
+	[end]
+
+	# a font's id, of the first the server knows; 0 if it knows none
+	[OpenFirstFont]
+		u32 font: (TryFont: '8x16');
+		if font is 0
+			font is (TryFont: '-misc-fixed-medium-r-semicondensed--13-120-75-75-c-60-iso8859-1');
+		;;
+		if font is 0
+			font is (TryFont: 'fixed');
+		;;
+	[end: font]
+
+	[TryFont: ptr<u8> name: 0;]
+		int length: 0;
+		while name:length is not 0
+			length++;
+		;;
+		u32 font: (NewId);
+		last_error is 0;
+		call Start: OPEN_FONT 0;
+		call Put32: font;
+		call Put16: length;
+		call Put16: 0;
+		while int i: 0; i < length; i++;
+			call Put8: name:i;
+		;;
+		call Send;
+		call Sync;                        # (an error comes back on its own)
+		if last_error is not 0 return 0;
+	[end: font]
+
+	# ---- the window
+
+	[Create]
+		window is (NewId);
+		call Start: CREATE_WINDOW depth;
+		call Put32: window;
+		call Put32: root;
+		call Put16: 0;                    # where: the window manager's choice
+		call Put16: 0;
+		call Put16: width;
+		call Put16: height;
+		call Put16: 0;                    # no border
+		call Put16: 1;                    # InputOutput
+		call Put32: root_visual;
+		call Put32: 0x802;                # the background, and the events we want
+		call Put32: 0;
+		call Put32: EVENT_MASK;
+		call Send;
+		client_width is width;
+		client_height is height;
+
+		if title.len is 0
+			title is 'PHI';
+		;;
+		call SendTitle;
+		call SendHints;
+		call Start: CHANGE_PROPERTY 0;    # closing it asks us (WM_DELETE_WINDOW)
+		call Put32: window;
+		call Put32: protocols;
+		call Put32: ATOM_ATOM;
+		call Put8: 32;
+		call Put8: 0;
+		call Put16: 0;
+		call Put32: 1;
+		call Put32: delete_window;
+		call Send;
+
+		pen is (NewId);
+		call Start: CREATE_GC 0;
+		call Put32: pen;
+		call Put32: window;
+		call Put32: 0x10000;              # no events from its copies
+		call Put32: 0;
+		call Send;
+		call NewPicture: width height;
+
+		if visible
+			call Start: MAP_WINDOW 0;
+			call Put32: window;
+			call Send;
+		;;
+	[end]
+
+	# the pixmap, made w x h, black until something's shown
+	[NewPicture: int w: 0; int h: 0;]
+		if picture is not 0
+			call Start: FREE_PIXMAP 0;
+			call Put32: picture;
+			call Send;
+		;;
+		picture is (NewId);
+		call Start: CREATE_PIXMAP depth;
+		call Put32: picture;
+		call Put32: window;
+		call Put16: w;
+		call Put16: h;
+		call Send;
+		call Start: FILL_RECTANGLES 0;
+		call Put32: picture;
+		call Put32: pen;
+		call Put16: 0;
+		call Put16: 0;
+		call Put16: w;
+		call Put16: h;
+		call Send;
+	[end]
+
+	[SendTitle]
+		call Start: CHANGE_PROPERTY 0;
+		call Put32: window;
+		call Put32: ATOM_WM_NAME;
+		call Put32: ATOM_STRING;
+		call Put8: 8;
+		call Put8: 0;
+		call Put16: 0;
+		call Put32: title.len;
+		while int i: 0; i < title.len; i++;
+			call Put8: title:i;
+		;;
+		call Send;
+	[end]
+
+	# WM_NORMAL_HINTS: a window that can't be resized says its size is its least and its most
+	[SendHints]
+		call Start: CHANGE_PROPERTY 0;
+		call Put32: window;
+		call Put32: ATOM_NORMAL_HINTS;
+		call Put32: ATOM_SIZE_HINTS;
+		call Put8: 32;
+		call Put8: 0;
+		call Put16: 0;
+		call Put32: 18;
+		int flags: 0;
+		if not resizable
+			flags is 0x30;                # PMinSize, PMaxSize
+		;;
+		call Put32: flags;
+		while int i: 1; i < 18; i++;
+			if i is 5 or i is 7
+				call Put32: width;
+			;;
+			elif i is 6 or i is 8
+				call Put32: height;
+			;;
+			else
+				call Put32: 0;
+			;;
+		;;
+		call Send;
+	[end]
+
+	# the window's inside made w x h
+	[Fit: int w: 0; int h: 0;]
+		call Start: CONFIGURE_WINDOW 0;
+		call Put32: window;
+		call Put16: 0x0C;                 # its width and height
+		call Put16: 0;
+		call Put32: w;
+		call Put32: h;
+		call Send;
+		call Sync;
+	[end]
+
+	# the program's pixels to the pixmap, as many rows at a time as one request can hold
+	[PutPixels]
+		if pixels is 0 return;
+		int row_bytes: width * 4;
+		int rows_at_once: (most_bytes - 24) / row_bytes;
+		if rows_at_once < 1 return;
+		int y: 0;
+		while y < height
+			int rows: height - y;
+			if rows > rows_at_once
+				rows is rows_at_once;
+			;;
+			call Start: PUT_IMAGE 2;          # ZPixmap
+			call Put32: picture;
+			call Put32: pen;
+			call Put16: width;
+			call Put16: rows;
+			call Put16: 0;
+			call Put16: y;
+			call Put8: 0;
+			call Put8: depth;
+			call Put16: 0;
+			# its length says the pixels are coming, straight after
+			int words: 6 + rows * width;
+			outgoing:2 is words;
+			outgoing:3 is words >> 8;
+			call SendRaw;
+			call SendAll: addr pixels:(y * width) as ptr<u8> rows * row_bytes;
+			y++ rows;
+		;;
+	[end]
+
+	[CopyToWindow]
+		if picture is 0 return;
+		call Start: COPY_AREA 0;
+		call Put32: picture;
+		call Put32: window;
+		call Put32: pen;
+		call Put16: 0;
+		call Put16: 0;
+		call Put16: 0;
+		call Put16: 0;
+		call Put16: width;
+		call Put16: height;
+		call Send;
+	[end]
+
+	# ---- writing requests
+
+	[Start: int request: 0; int small: 0;]
+		filled is 0;
+		call Put8: request;
+		call Put8: small;
+		call Put16: 0;                    # (its length, when it's finished)
+	[end]
+
+	[Put8: int value: 0;]
+		outgoing:filled is value;
+		filled++;
+	[end]
+
+	[Put16: int value: 0;]
+		outgoing:filled is value;
+		outgoing:(filled + 1) is value >> 8;
+		filled++ 2;
+	[end]
+
+	[Put32: u32 value: 0;]
+		outgoing:filled is value;
+		outgoing:(filled + 1) is value >> 8;
+		outgoing:(filled + 2) is value >> 16;
+		outgoing:(filled + 3) is value >> 24;
+		filled++ 4;
+	[end]
+
+	# the request, made up to whole words, its length in them at its third byte
+	[Send]
+		while (filled & 3) is not 0
+			call Put8: 0;
+		;;
+		int words: filled / 4;
+		outgoing:2 is words;
+		outgoing:3 is words >> 8;
+		call SendRaw;
+	[end]
+
+	[SendRaw]
+		call SendAll: addr outgoing filled;
+		filled is 0;
+	[end]
+
+	[SendAll: ptr<u8> data: 0; int length: 0;]
+		int done: 0;
+		while done < length and server >= 0
+			int n: (sys.SendTo: server addr data:done length - done 0x4000 0 0);   # MSG_NOSIGNAL
+			if n is -4 continue;              # stopped by a signal: on with it
+			if n <= 0
+				gone is true;
+				return;
+			;;
+			done++ n;
+		;;
+	[end]
+
+	# ---- reading what comes back
+
+	# more from the socket, waiting for it if told to: true if some came
+	[Fill: bln wait: false;]
+		if server < 0 or gone or have >= IN_ROOM return false;
+		int flags: 0x40;                  # MSG_DONTWAIT
+		if wait
+			flags is 0;
+		;;
+		int n: (sys.RecvFrom: server addr incoming:have IN_ROOM - have flags 0 0);
+		if n is 0
+			gone is true;
+			call Add: Events.CLOSE 0 0 0 0 0 0;   # the server has gone: as good as closing it
+			return false;
+		;;
+		if n < 0 return false;
+		have++ n;
+	[end: true]
+
+	# how long the first message is, once it's all here; 0 if it isn't yet
+	[Whole: bln wait: false;]
+		while true
+			if have >= 32
+				int length: 32;
+				if incoming:0 is X_REPLY
+					length is 32 + (Get32: 4) * 4;
+				;;
+				if length > IN_ROOM return 0;
+				if have >= length return length;
+			;;
+			if not (Fill: wait) return 0;
+		;;
+	[end: 0]
+
+	# the first message is read: on to the next
+	[Forget: int length: 0;]
+		int left: have - length;
+		while int i: 0; i < left; i++;
+			incoming:i is incoming:(length + i);
+		;;
+		have is left;
+	[end]
+
+	# everything the server has sent so far, handled
+	[Pump]
+		while true
+			int length: (Whole: false);
+			if length is 0 return;
+			call Handle: length;
+		;;
+	[end]
+
+	# the request just sent's reply, at the start of incoming, with what came before it
+	# handled: false if the server has gone. Done goes on past it.
+	[WaitReply]
+		while true
+			int length: (Whole: true);
+			if length is 0 return false;
+			if incoming:0 is X_REPLY
+				reply_length is length;
+				return true;
+			;;
+			call Handle: length;
+		;;
+	[end: false]
+
+	[Done]
+		call Forget: reply_length;
+	[end]
+
+	# everything the server has to say about what's been asked so far: it answers in order,
+	# so once this has its reply, every event and error before it has been handled
+	[Sync]
+		call Start: GET_INPUT_FOCUS 0;
+		call Send;
+		if (WaitReply)
+			call Done;
+		;;
+	[end]
+
+	[Get16: int place: 0;]
+		int value: incoming:place | (incoming:(place + 1) << 8);
+	[end: value]
+
+	[Get32: int place: 0;]
+		u32 value: incoming:place | (incoming:(place + 1) << 8) | (incoming:(place + 2) << 16) | (incoming:(place + 3) << 24);
+	[end: value]
+
+	# 16 bits that can be negative (a place left of or above the window)
+	[GetSigned: int place: 0;]
+		int value: (Get16: place);
+		if value >= 0x8000 return value - 0x10000;
+	[end: value]
+
+	# ---- events
+
+	# the first message, an event or an error (a reply nobody's waiting for is passed over)
+	[Handle: int length: 0;]
+		int kind: incoming:0 & 0x7F;      # (the top bit says another client sent it)
+		if kind is X_ERROR
+			last_error is incoming:1;
+		;;
+		elif kind is KEY_PRESS
+			call KeyDown;
+		;;
+		elif kind is KEY_RELEASE
+			call KeyUp: length;
+		;;
+		elif kind is BUTTON_PRESS
+			call ButtonDown;
+		;;
+		elif kind is BUTTON_RELEASE
+			call ButtonUp;
+		;;
+		elif kind is MOTION
+			call Moved;
+		;;
+		elif kind is FOCUS_IN
+			focused is true;
+		;;
+		elif kind is FOCUS_OUT
+			focused is false;
+			while int i: 0; i < MOST_KEYS; i++;
+				held:i is false;
+			;;
+		;;
+		elif kind is EXPOSE
+			if (Get16: 16) is 0               # the last of them
+				call CopyToWindow;
+			;;
+		;;
+		elif kind is CONFIGURE
+			client_width is (Get16: 20);
+			client_height is (Get16: 22);
+			call Resized;
+		;;
+		elif kind is CLIENT_MESSAGE
+			if (Get32: 8) is protocols and (Get32: 12) is delete_window
+				call Add: Events.CLOSE 0 0 0 0 0 0;   # the program ends itself
+			;;
+		;;
+		call Forget: length;
+	[end]
+
+	# the window's size changed: tell the program, if it isn't already drawing at that size.
+	# (X says so at each step of a drag: one waiting is brought up to date.)
+	[Resized]
+		if client_width is width and client_height is height return;
+		if waiting > 0
+			int last: (first + waiting - 1) % MOST_EVENTS;
+			if queue:last.kind is Events.RESIZE
+				queue:last.x is client_width;
+				queue:last.y is client_height;
+				return;
+			;;
+		;;
+		call Add: Events.RESIZE client_width client_height 0 0 0 0;
+	[end]
+
+	[Add: int kind: 0; int x: 0; int y: 0; int value: 0; int clicks: 0; int wheel: 0; int pressed: 0;]
+		if waiting >= MOST_EVENTS return;     # nobody's taking them: the newest are lost
+		int place: (first + waiting) % MOST_EVENTS;
+		queue:place.kind is kind;
+		queue:place.x is x;
+		queue:place.y is y;
+		queue:place.value is value;
+		queue:place.clicks is clicks;
+		queue:place.wheel is wheel;
+		queue:place.pressed is pressed;
+		waiting++;
+	[end]
+
+	# ---- keys
+
+	# the symbol a key makes, as the keyboard's map has it, alone or with Shift
+	[Symbol: int key: 0; int with_shift: 0;]
+		if keymap is 0 or key < first_key or key > last_key or per_key is 0 return 0;
+		int place: (key - first_key) * per_key;
+		if with_shift is not 0 and per_key > 1 and keymap:(place + 1) is not 0
+			return keymap:(place + 1);
+		;;
+	[end: keymap:place]
+
+	# a symbol as Input numbers keys: its own number for keys that type nothing, else the
+	# character; 0 if it's neither (Shift itself, say)
+	[KeyNumber: u32 symbol: 0;]
+		if symbol >= 32 and symbol < 127 return symbol;
+		if symbol >= 0xFFBE and symbol <= 0xFFC9 return Events.KEY_F1 + symbol - 0xFFBE;
+		when symbol
+			is 0xFF08
+				return Events.KEY_BACKSPACE;
+			;;
+			is 0xFF09
+				return Events.KEY_TAB;
+			;;
+			is 0xFF0D
+				return Events.KEY_ENTER;
+			;;
+			is 0xFF1B
+				return Events.KEY_ESCAPE;
+			;;
+			is 0xFF50
+				return Events.KEY_HOME;
+			;;
+			is 0xFF51
+				return Events.KEY_LEFT;
+			;;
+			is 0xFF52
+				return Events.KEY_UP;
+			;;
+			is 0xFF53
+				return Events.KEY_RIGHT;
+			;;
+			is 0xFF54
+				return Events.KEY_DOWN;
+			;;
+			is 0xFF55
+				return Events.KEY_PAGEUP;
+			;;
+			is 0xFF56
+				return Events.KEY_PAGEDOWN;
+			;;
+			is 0xFF57
+				return Events.KEY_END;
+			;;
+			is 0xFF63
+				return Events.KEY_INSERT;
+			;;
+			is 0xFFFF
+				return Events.KEY_DELETE;
+			;;
+		;;
+	[end: 0]
+
+	# an event's state, as Events' MOD_ bits
+	[Modifiers: int state: 0;]
+		int bits: 0;
+		if (state & 1) is not 0
+			bits is bits | Events.MOD_SHIFT;
+		;;
+		if (state & 4) is not 0
+			bits is bits | Events.MOD_CTRL;
+		;;
+		if (state & 8) is not 0
+			bits is bits | Events.MOD_ALT;
+		;;
+	[end: bits]
+
+	[KeyDown]
+		int code: incoming:1;
+		int state: (Get16: 28);
+		int mods: (Modifiers: state);
+		int plain: (KeyNumber: (Symbol: code 0));
+		if plain is 0 return;
+		if plain < MOST_KEYS
+			held:plain is true;
+		;;
+		# what it types, with Shift (keys that type nothing are the same either way); with
+		# Ctrl or Alt, the key itself
+		int key: (KeyNumber: (Symbol: code state & 1));
+		if key is 0 or (mods & (Events.MOD_CTRL | Events.MOD_ALT)) is not 0
+			key is plain;
+		;;
+		call Add: Events.KEY 0 0 key | mods 0 0 0;
+	[end]
+
+	# a key came up, unless it's the key repeating: X says it came up and went down again
+	# at the same moment, and a game asking if it's held shouldn't see that
+	[KeyUp: int length: 0;]
+		int code: incoming:1;
+		if have >= length + 32 and (incoming:length & 0x7F) is KEY_PRESS and incoming:(length + 1) is code and (Get32: length + 4) is (Get32: 4)
+			return;
+		;;
+		int plain: (KeyNumber: (Symbol: code 0));
+		if plain > 0 and plain < MOST_KEYS
+			held:plain is false;
+		;;
+	[end]
+
+	# ---- the mouse
+
+	# X numbers buttons 1 left, 2 middle, 3 right; 4 and 5 are the wheel, up and down
+	[Bit: int button: 0;]
+		if button is 1 return BIT_LEFT;
+		if button is 2 return BIT_MIDDLE;
+		if button is 3 return BIT_RIGHT;
+	[end: 0]
+
+	[ButtonDown]
+		int button: incoming:1;
+		int x: (GetSigned: 24);
+		int y: (GetSigned: 26);
+		if button is 4 or button is 5
+			int turned: 1;
+			if button is 4
+				turned is -1;
+			;;
+			call Add: Events.MOUSE x y buttons 0 turned 0;
+			return;
+		;;
+		int bit: (Bit: button);
+		if bit is 0 return;
+		buttons is buttons | bit;
+		int clicks: 0;
+		if button is 1
+			clicks is 1;
+			u32 now: (Get32: 4);
+			if not was_double and now - last_press < DOUBLE_MS and x - last_x < DOUBLE_PIXELS and last_x - x < DOUBLE_PIXELS and y - last_y < DOUBLE_PIXELS and last_y - y < DOUBLE_PIXELS
+				clicks is 2;
+			;;
+			was_double is (clicks is 2);
+			last_press is now;
+			last_x is x;
+			last_y is y;
+		;;
+		call Add: Events.MOUSE x y buttons clicks 0 bit;
+	[end]
+
+	[ButtonUp]
+		int bit: (Bit: incoming:1);
+		if bit is 0 return;
+		buttons is buttons & ~bit;
+		call Add: Events.MOUSE (GetSigned: 24) (GetSigned: 26) buttons 0 0 0;
+	[end]
+
+	# moves come fast: one still waiting is brought up to date, not added to
+	[Moved]
+		int x: (GetSigned: 24);
+		int y: (GetSigned: 26);
+		if waiting > 0
+			int last: (first + waiting - 1) % MOST_EVENTS;
+			if queue:last.kind is Events.MOUSE and queue:last.clicks is 0 and queue:last.pressed is 0 and queue:last.wheel is 0 and queue:last.value is buttons
+				queue:last.x is x;
+				queue:last.y is y;
+				return;
+			;;
+		;;
+		call Add: Events.MOUSE x y buttons 0 0 0;
+	[end]
+}

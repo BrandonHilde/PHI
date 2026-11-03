@@ -16,7 +16,7 @@ wheel: 1
 resize: 1 300 150
 resized: 1, inside: 300 x 150
 shown again: 1
-title: 5, frame: 1
-fixed frame: 0, in front: 0
+title: 5, can be resized: 1
+then not: 0, in front: 0
 a program in a window of its own: -1
 close: 1
