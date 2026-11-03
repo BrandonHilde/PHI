@@ -2126,8 +2126,9 @@ systems), and it's most of the distance between PHI and a language a studio coul
 | H3 | Windows, 32-bit, console | Medium | the same program as a Windows `.exe` |
 | H4 | 64-bit on the hosts | Large | Linux and Windows 64-bit programs (with S10), and macOS |
 | H5 | The network and threads | Medium | the mmo server's world and lobby running as Linux programs |
-| H6 | Windows and graphics | Large | a PHI game window on Windows and Linux |
-| H7 | Tools for a host | Medium | a debugger steps through PHI lines; an editor shows PHI's errors |
+| H6 | The runtime in PHI | Medium | the hosts' sockets and threads written once, in PHI, with a little assembly per system |
+| H7 | Windows and graphics | Large | a PHI game window on Windows and Linux |
+| H8 | Tools for a host | Medium | a debugger steps through PHI lines; an editor shows PHI's errors |
 
 #### Phase H1: Linux, 32-bit, console
 
@@ -2154,7 +2155,7 @@ executable is NASM's flat output with no linker. Not there yet: `OS.ListFiles` a
 `OS.ListFolder` (a host's long names don't fit `FileInfo`'s 8.3 name), and what has no
 equivalent (`OS.PutCell`, `OS.IsKeyDown`, `OS.Reboot`, the PHI OS process calls); each is an
 error when the program is built. Sound, windows, the network and mailboxes come in H5 and
-H6. `phi run --target linux` runs the program under WSL on Windows.
+H7. `phi run --target linux` runs the program under WSL on Windows.
 
 #### Phase H2: Tests on the host
 
@@ -2322,18 +2323,76 @@ OS or on the host, and `phi load` holds the same tick rate.
   kept so on a weaker one later. Every class variable now starts on a word in 32- and
   64-bit code, so that holds (and atomic steps don't straddle cache lines).
 
-#### Phase H6: Windows and graphics
+#### Phase H6: The runtime in PHI
+
+Goal: what each system's runtime does that is logic rather than machine detail is written
+once, in PHI, so a feature that reaches outside a program (files, the network, threads,
+and next windows, sound and the GPU in H7) costs one PHI module, not an assembly file
+for each system.
+
+Why now: today every call a program makes of its system is hand-written assembly in each
+host's folder (`lib/x86_32_linux/`, `lib/x86_64_linux/`, `lib/x86_32_windows/`,
+`lib/x86_64_windows/`, and `lib/x86_32_user/` for PHI OS). H5's sockets were about 15
+routines for each of the four hosts, and its threads five versions of one job, each with
+its own registers and rules, and mistakes that only show when they run. H7 adds windows,
+sound and the GPU, and macOS (H4) a fifth host, so the cost is about to multiply. And H7
+needs half of this anyway: calling Vulkan, Direct3D or a window system is calling an
+outside function, best built once as a general piece (good foundations first). No C is
+involved: PHI makes the system calls, and calls other libraries' functions the way they
+expect, itself. It's also the first half of C compatibility (calling C functions), without
+starting that phase.
+
+1. **System calls in the language.** A call that takes a system call's number and up to
+   six arguments and gives its result, which the code generator writes for the target:
+   `int 0x80` with ebx, ecx, edx, esi, edi, ebp (PHI OS, 32-bit Linux), or `syscall` with
+   rdi, rsi, rdx, r10, r8, r9 (64-bit Linux, macOS later). Linux's answer comes back as it
+   is (-errno when it fails). Only in programs (a kernel has no one to ask). First users:
+   the Linux runtimes' simplest calls (time, sleep, files).
+2. **Outside functions.** A declaration of a function in another library (on Windows, a
+   DLL's: `CreateThread` in kernel32.dll, `connect` in ws2_32.dll), with its arguments;
+   the compiler adds it to the program's import table and calls it as that system's
+   functions are called (stdcall in 32 bits; in 64, the first four in rcx, rdx, r8 and
+   r9, 32 bytes of room, the stack aligned). The Windows runtimes move onto it. On Linux
+   and macOS a library's functions need the program to be linked against it at load
+   time (an ELF interpreter, or the macOS loader): that part waits for H7, when a window
+   system or the GPU first needs it.
+3. **The runtimes' logic in PHI.** A module for each part (the network, threads, files,
+   time) holding what every system shares (checking a socket's kind, keeping thread
+   slots, the waiting and retrying), on top of a small module per system of constants and
+   calls (Linux's numbers, Windows' functions). Moved a part at a time, the assembly
+   version staying until the PHI one passes the same tests on every system. Windows' file
+   calls from several threads at once (H5's gap) are fixed on the way, once for all.
+4. **What stays assembly,** a few dozen lines for each system: where a program starts
+   (before any PHI code can run), a new thread's first instructions (on its new stack),
+   the handlers that turn a CPU fault into a throw (they change the stopped code's
+   registers), loading the thread's block (`gs`, `fs`, the TLS slot), and `throw`'s jump
+   back to its catch.
+
+**Done when:** the hosts' sockets, threads and file calls are PHI modules shared by Linux
+and Windows (32 and 64 bits), with assembly only for the pieces in (4); every test passes
+on all five systems as before; and a new call a program makes of its system can be added
+in PHI alone.
+
+To decide with the user before starting:
+- how a system call is written (a built-in class like `Linux.Call: number args`, a
+  reserved word, or something else), and which systems it's allowed on;
+- how an outside function is declared (its library, its name, its arguments' types);
+- how the compiler picks a system's own module (the per-system constants and calls): by
+  folder (`lib/phi/host/linux/...`), by a line in the module saying which systems it's
+  for, or as now, by whichever builds there.
+
+#### Phase H7: Windows and graphics
 
 1. **A window, drawing and input** behind the calls `gui.*` and `gfx.*` already use: Win32 on
    Windows, Wayland or X11 on Linux, Cocoa on macOS, or one library that covers all three
-   (that needs C compatibility).
+   (that needs C compatibility, or H6's outside functions).
 2. **Sound** behind `audio.*`'s calls.
 3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
-   calling C.
+   calling C functions (H6's outside functions, and on Linux, loading a library).
 
 **Done when:** a PHI game (the arcade sample) runs in a window on Windows and Linux.
 
-#### Phase H7: Tools for a host
+#### Phase H8: Tools for a host
 
 1. **Debug information** (DWARF on Linux, PDB on Windows), so a debugger steps through PHI
    lines and shows variables, not only the generated assembly.
@@ -2346,9 +2405,13 @@ editor shows its errors as it's written.
 
 ### Order
 
-H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work), H5 is
-under way (sockets on the hosts), and H6-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
-lean on, so this plan is also where that hold would be reconsidered.
+H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work, macOS
+waits). H5 is nearly done: sockets and threads on every system, PHI's memory model; left
+is `phi load` against a world on the host. H6 (the runtime in PHI) comes next, before H7,
+because it makes H7 and macOS cheaper: each of them is a PHI module then, not an assembly
+file for each system. H8 follows. C compatibility, still on hold, is what H7 and part of
+H8 lean on; H6's outside functions are its first half, so this plan is also where that
+hold would be reconsidered.
 
 ## References
 
