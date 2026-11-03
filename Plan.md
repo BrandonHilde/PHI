@@ -2342,6 +2342,30 @@ involved: PHI makes the system calls, and calls other libraries' functions the w
 expect, itself. It's also the first half of C compatibility (calling C functions), without
 starting that phase.
 
+0. **Seeing where a run stopped** (done 2026-11-02, first, because moving the runtime out of
+   assembly will make exactly the hangs and crashes that were hardest to find in H5, which
+   showed only "timed out after 10s"). A test that runs out of time now says where each
+   thread was and the calls that led there, as PHI lines and library routines:
+   ```
+   where it was when it was stopped:
+     thread 1: OS_Sleep (system.asm), in system call 162 (nanosleep)
+         called from Threads.Wait, lib/phi/user/threads.phi:48: call OS.Sleep: 1;
+         called from HangThreads (class body), hang_threads.phi:11: call Threads.Wait: t;
+     thread 2: HangThreads.Waiter, hang_threads.phi:15: locked guard
+   ```
+   On PHI OS it's each CPU (read through a QEMU monitor), kernel or program; on Windows
+   each thread (stopped and read with `GetThreadContext`); on Linux each thread (stopped
+   with SIGSTOP and read through `/proc`). The calls are the values on the thread's stack
+   that are where one of the program's calls returns to (from NASM's listing), so they're
+   found through assembly and system code too. A method written out in its caller is
+   named as such, with its own file. A test that fails runs once more, and one that passes
+   then is listed at the end: the computer was busy, or a race is worth a look
+   (`--no-retry` turns it off). The first full run with it showed what H5's flaky Windows
+   timeouts were: nothing was running from the `.exe` when time ran out, so it hadn't
+   started (Windows checks each new `.exe` first), and a timeout like that now says so. Not yet: a PHI OS program's threads that aren't on a CPU
+   at that moment (it would mean reading the kernel's task table), and 16-bit programs'
+   calls.
+
 1. **System calls in the language.** A call that takes a system call's number and up to
    six arguments and gives its result, which the code generator writes for the target:
    `int 0x80` with ebx, ecx, edx, esi, edi, ebp (PHI OS, 32-bit Linux), or `syscall` with
@@ -2367,6 +2391,17 @@ starting that phase.
    the handlers that turn a CPU fault into a throw (they change the stopped code's
    registers), loading the thread's block (`gs`, `fs`, the TLS slot), and `throw`'s jump
    back to its catch.
+
+Along the way, smaller things that make building PHI easier:
+- **Errors that say what to write instead** for the mistakes that cost a build each in H5:
+  `(asm.X)` as a value (write `call x is asm.X`), several values for one text without
+  parentheses (write `('W' me '.LOG')`), as a keyword used as a name already does.
+- **`phi check` for every system at once,** so a change that breaks one system's module
+  (step 3) shows in seconds, not after a whole test run.
+- **A warning when `phi` is older than `lib/`** (the library is built into it, so a
+  change there needs `dotnet build` first, and a stale one tests the old library).
+- **`docs/language.md` in a file for each part** (threads, text, errors...), with an index:
+  at 2,700 lines it's read in pieces, so a rule in another piece can be missed.
 
 **Done when:** the hosts' sockets, threads and file calls are PHI modules shared by Linux
 and Windows (32 and 64 bits), with assembly only for the pieces in (4); every test passes

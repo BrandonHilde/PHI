@@ -79,13 +79,32 @@ namespace Phi.Cli
             }
 
             int passed = 0;
+            var secondRun = new List<string>();
             foreach (var (test, mode) in runs)
             {
                 string name = TestName(test) + (mode == null ? "" : $" ({mode.Name})");
                 var report = new List<string>();
-                string? failure = RunOne(test, TimeFor(test, timeout), mode, input, keepOutput, contains, bench, report);
+                string? failure = RunGuarded(test, TimeFor(test, timeout), mode, input, keepOutput, contains, bench, report);
 
-                if (failure == null)
+                // a test that failed runs once more, unless what failed was its build (that won't change)
+                string? first = null;
+                if (failure != null && Retry && !IsBuildFailure(failure))
+                {
+                    first = failure;
+                    report.Clear();
+                    failure = RunGuarded(test, TimeFor(test, timeout), mode, input, keepOutput, contains, bench, report);
+                }
+
+                if (failure == null && first != null)
+                {
+                    passed++;
+                    secondRun.Add(name);
+                    Write(ConsoleColor.Yellow, "PASS ");
+                    Console.WriteLine(name + " (on its second run)");
+                    foreach (string line in report) Console.WriteLine("     " + line);
+                    foreach (string line in first.Split('\n').TakeWhile(l => !l.StartsWith("---"))) Console.WriteLine("     the first run: " + line);
+                }
+                else if (failure == null)
                 {
                     passed++;
                     Write(ConsoleColor.Green, "PASS ");
@@ -104,6 +123,14 @@ namespace Phi.Cli
             Console.WriteLine();
             Write(passed == runs.Count ? ConsoleColor.Green : ConsoleColor.Red, $"{passed}/{runs.Count} passed");
             Console.WriteLine();
+            if (secondRun.Count > 0)
+            {
+                // a busy computer slows a test past its time; but a test that fails only some of the
+                // time can also be a race between threads, so they're named, not hidden
+                Write(ConsoleColor.Yellow, $"{secondRun.Count} passed only on a second run: {string.Join(", ", secondRun)}");
+                Console.WriteLine();
+                Console.WriteLine("(the computer was busy, or the test has a race worth a look: phi test --no-retry -f NAME)");
+            }
 
             return passed == runs.Count ? 0 : 1;
         }
@@ -210,11 +237,26 @@ namespace Phi.Cli
 
         static readonly Regex UsesDisk = new(@"^\s*use\s+(fs\.fat16|drivers\.disk|drivers\.block)\s*;", RegexOptions.Multiline);
 
+        /// <summary>A test that fails runs once more (phi test --no-retry turns that off).</summary>
+        public static bool Retry { get; set; } = true;
+
+        static bool IsBuildFailure(string failure) =>
+            failure.StartsWith("build failed") || failure.StartsWith("expected compile errors") || failure.StartsWith("missing errors")
+            || failure.StartsWith("missing ") && failure.Contains(".expected");
+
         /// <summary>phi test --nic: every test uses that card, and network tests run once.</summary>
         public static bool NicChosen { get; set; }
 
         /// <summary>phi test --disk: every test uses that disk, and disk tests run once.</summary>
         public static bool DiskChosen { get; set; }
+
+        /// <summary>RunOne, with a file it couldn't write or read (one still in use, say) as the test's failure rather than the end of the run.</summary>
+        static string? RunGuarded(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput, string? containsOverride,
+                                  BenchOptions? bench, List<string> report)
+        {
+            try { return RunOne(phiFile, timeout, mode, inputOverride, keepOutput, containsOverride, bench, report); }
+            catch (IOException e) { return $"couldn't run: {e.Message}"; }
+        }
 
         /// <returns>null on success, otherwise a description of the failure</returns>
         /// <param name="report">gets lines to show under the test's result (a benchmark's counts)</param>
@@ -251,7 +293,8 @@ namespace Phi.Cli
             if (File.Exists(machinesFile))
                 return RunNetwork(phiFile, machinesFile, timeout, wrapper, keepOutput, mode?.Card);
 
-            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), wrapper);
+            string outDir = Path.Combine(dir, "build", variant);
+            BuildResult build = Builder.Build(phiFile, outDir, wrapper, listing: true);
 
             // NAME.errors: the program must fail to compile, with each listed message
             if (File.Exists(errorsFile))
@@ -286,20 +329,20 @@ namespace Phi.Cli
                 var lines = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0).ToList();
                 HeadlessResult partial = Qemu.RunHeadless(build.ImagePath, timeout,
                     output => lines.All(l => Normalize(output).Contains(l)), input,
-                    screenshots: Path.GetDirectoryName(build.ImagePath), disk: mode?.Disk);
+                    screenshots: Path.GetDirectoryName(build.ImagePath), disk: mode?.Disk, where: true);
                 string text = Normalize(partial.Serial);
                 var missing = lines.Where(l => !text.Contains(l)).ToList();
                 if (keepOutput) File.WriteAllText(actualFile, text);
                 if (missing.Count == 0 && partial.InputError == null) return null;
 
                 File.WriteAllText(actualFile, text);
-                string why = partial.Explain(timeout, "missing from the output: " + string.Join(" | ", missing));
+                string why = partial.Explain(timeout, "missing from the output: " + string.Join(" | ", missing)) + WhereIt(partial.Stopped, outDir);
                 return $"{why}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{text}";
             }
 
             HeadlessResult run = Qemu.RunHeadless(build.ImagePath, timeout,
                 expected == null ? null : output => Normalize(output).Contains(expected), input, recording,
-                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null, disk: mode?.Disk);
+                Path.GetDirectoryName(build.ImagePath), countInstructions: bench != null, disk: mode?.Disk, where: true);
 
             string actual = Normalize(run.Serial);
             if (keepOutput) File.WriteAllText(actualFile, actual);
@@ -323,7 +366,7 @@ namespace Phi.Cli
 
             File.WriteAllText(actualFile, actual);
 
-            string reason = run.Explain(timeout, "output did not match");
+            string reason = run.Explain(timeout, "output did not match") + WhereIt(run.Stopped, outDir);
             return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 
@@ -336,13 +379,19 @@ namespace Phi.Cli
             string actualFile = Path.Combine(dir, variant + ".actual");
             if (File.Exists(actualFile)) File.Delete(actualFile);
 
-            BuildResult build = Builder.Build(phiFile, Path.Combine(dir, "build", variant), mode.Wrapper, host: mode.Host);
+            string outDir = Path.Combine(dir, "build", variant);
+            BuildResult build = Builder.Build(phiFile, outDir, mode.Wrapper, listing: true, host: mode.Host);
             if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
 
             HostRunner.Result run = HostRunner.Run(build.ExecutablePath!, mode.Host, timeout);
             string actual = Normalize(run.Output);
             if (keepOutput) File.WriteAllText(actualFile, actual);
             string stopped = run.TimedOut ? $"timed out after {timeout.TotalSeconds:0.#}s" : $"the program ended with {run.ExitCode}";
+            string where = WhereIt(run.Stopped, outDir);
+            // a Windows program is looked for by its .exe; none running means it hadn't started
+            if (run.TimedOut && mode.Host.IsWindows() && run.Stopped.Count == 0)
+                where = "\nnothing was running from its .exe when its time ran out: it may never have started " +
+                        "(Windows checks a new .exe before running it, which can take a while on a busy computer)";
 
             string containsFile = containsOverride ?? Path.Combine(dir, name + ".contains");
             if (File.Exists(containsFile))
@@ -350,7 +399,7 @@ namespace Phi.Cli
                 var missing = File.ReadAllLines(containsFile).Select(l => l.TrimEnd()).Where(l => l.Length > 0 && !actual.Contains(l)).ToList();
                 if (missing.Count == 0) return null;
                 File.WriteAllText(actualFile, actual);
-                return $"missing from the output ({stopped}): {string.Join(" | ", missing)}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
+                return $"missing from the output ({stopped}): {string.Join(" | ", missing)}{where}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
             }
 
             // NAME.MODE.expected for what's meant to differ on that system (the size of a
@@ -367,7 +416,7 @@ namespace Phi.Cli
             string expected = Normalize(File.ReadAllText(expectedFile));
             if (actual == expected && !run.TimedOut) return null;
             File.WriteAllText(actualFile, actual);
-            return $"output did not match ({stopped})\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
+            return $"output did not match ({stopped}){where}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 
         /// <summary>
@@ -464,6 +513,14 @@ namespace Phi.Cli
             return files.Where(f => !listed.Contains(Path.GetFullPath(f)))
                         .Where(f => new[] { ".expected", ".contains", ".machines" }.Any(e => File.Exists(Path.ChangeExtension(f, e))))
                         .OrderBy(f => f, StringComparer.OrdinalIgnoreCase).ToList();
+        }
+
+        /// <summary>For a run that timed out: where it was (see Where), on lines of its own after the reason; else "".</summary>
+        static string WhereIt(IReadOnlyList<StoppedThread> stopped, string outDir)
+        {
+            if (stopped.Count == 0) return "";
+            string report = Where.Report(stopped, Where.MapsIn(outDir));
+            return report.Length == 0 ? "" : "\n" + report;
         }
 
         /// <summary>Line endings and trailing whitespace don't matter, and neither do a benchmark's counts.</summary>

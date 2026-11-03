@@ -2794,7 +2794,7 @@ namespace Phi.Compiler.CodeGen
 
             // the arguments first, all of them, before any parameter's place changes
             var places = new List<(VariableSymbol Variable, string Label, string? Register)>();
-            Comment($"{m.Name}, written out here");
+            Comment($"{m.Name}, written out here ({FileName(m.Decl.Owner.File)})");
             for (int i = 0; i < m.Parameters.Count; i++)
             {
                 VariableSymbol p = m.Parameters[i];
@@ -2853,6 +2853,7 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(m.Decl.Result);
             }
             if (returnUsed) Label(returnLabel);
+            Comment($"{m.Name}, written out up to here");
 
             inlining.RemoveAt(inlining.Count - 1);
             inRegisters.RemoveRange(inRegisters.Count - aliases, aliases);

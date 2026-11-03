@@ -22,18 +22,27 @@ namespace Phi.Cli
     public sealed class AddressMap
     {
         static readonly Regex Offset = new(@"^\s*\d+ ([0-9A-F]{8}) \S");
+        // the instruction's bytes, in hex; NASM puts an address it fills in later in [] or ()
+        static readonly Regex Bytes = new(@"^\s*\d+ [0-9A-F]{8} ([0-9A-F\[\]\(\)]+)");
+        static readonly Regex Call = new(@"^(?:<\d+>\s*)?call\b", RegexOptions.IgnoreCase);
         static readonly Regex Org = new(@"^org (0x[0-9A-Fa-f]+|\d+)");
         static readonly Regex SourceLine = new(@"^; (\d+): (.*)$");
         static readonly Regex ClassStart = new(@"^; ---- class (\S+) \((.+)\)$");
         static readonly Regex MethodStart = new(@"^; (?:method|event|interrupt handler) (\S+) \((.+)\)$");
         static readonly Regex RawBlock = new(@"^; asm\.(\S+)$");
         static readonly Regex LibraryFile = new(@"^; ---- library: (\S+)");
+        // a method written out in its caller (inlined), and where its code ends
+        static readonly Regex InlineStart = new(@"^; (\S+), written out here \((.+)\)$");
+        static readonly Regex InlineEnd = new(@"^; (\S+), written out up to here$");
         static readonly Regex GlobalLabel = new(@"^([A-Za-z_]\w*):");
 
         // labels the generator makes for jumps inside a method (phi_while_3, phi_inbounds_12)
         static readonly Regex JumpLabel = new(@"^phi_[a-z]+_\d+$");
 
         readonly List<(uint Address, CodePlace Place)> starts = new();
+
+        // the address right after each call instruction: where its call returns to
+        readonly HashSet<uint> returns = new();
 
         public uint Start { get; private set; }
         public uint End { get; private set; }
@@ -52,6 +61,7 @@ namespace Phi.Cli
             bool library = false;
             bool labelled = false;  // the comment just read named the code, so its label doesn't
             uint end = 0;
+            var callers = new Stack<CodePlace>(); // where each method written out in place was written
 
             foreach (string raw in lines)
             {
@@ -67,6 +77,13 @@ namespace Phi.Cli
                         ? uint.Parse(m.Groups[1].Value[2..], NumberStyles.HexNumber) : uint.Parse(m.Groups[1].Value);
                 else if ((m = SourceLine.Match(trimmed)).Success && !library)
                     place = place with { Line = int.Parse(m.Groups[1].Value), Text = m.Groups[2].Value.Trim() };
+                else if ((m = InlineStart.Match(trimmed)).Success && !library)
+                {
+                    callers.Push(place);
+                    place = new CodePlace($"{m.Groups[1].Value} (written out in {place.Routine})", m.Groups[2].Value, 0, "");
+                }
+                else if (InlineEnd.IsMatch(trimmed) && !library && callers.Count > 0)
+                    place = callers.Pop();
                 else if ((m = ClassStart.Match(trimmed)).Success)
                     place = new CodePlace($"{m.Groups[1].Value} (class body)", m.Groups[2].Value, 0, "");
                 else if ((m = MethodStart.Match(trimmed)).Success)
@@ -99,6 +116,9 @@ namespace Phi.Cli
                     uint address = org + uint.Parse(at.Groups[1].Value, NumberStyles.HexNumber);
                     if (map.starts.Count == 0 || map.starts[^1].Place != place) map.starts.Add((address, place));
                     end = address + 1;
+                    Match bytes = Bytes.Match(raw.Length > column ? raw[..column] : raw);
+                    if (Call.IsMatch(trimmed) && bytes.Success)
+                        map.returns.Add(address + (uint)(bytes.Groups[1].Value.Count(Uri.IsHexDigit) / 2));
                 }
             }
 
@@ -109,6 +129,15 @@ namespace Phi.Cli
             }
             return map;
         }
+
+        /// <summary>
+        /// Whether a value is where one of this unit's calls returns to, so a value found on a
+        /// stack is (most likely) a call that hasn't returned yet.
+        /// </summary>
+        public bool IsReturn(ulong value) => value <= uint.MaxValue && returns.Contains((uint)value);
+
+        /// <summary>The code at an address (a 64-bit program's, say), or null if it isn't in this unit's code.</summary>
+        public CodePlace? Find(ulong address) => address <= uint.MaxValue ? Find((uint)address) : null;
 
         /// <summary>The code at an address, or null if it isn't in this unit's code.</summary>
         public CodePlace? Find(uint address)
@@ -224,7 +253,7 @@ namespace Phi.Cli
         }
 
         /// <summary>What the monitor sends up to its next "(qemu) " prompt; null when it closes.</summary>
-        static string? ReadPrompt(NetworkStream stream)
+        internal static string? ReadPrompt(NetworkStream stream)
         {
             var text = new StringBuilder();
             var buffer = new byte[4096];

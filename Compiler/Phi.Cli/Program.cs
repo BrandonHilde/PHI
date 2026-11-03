@@ -22,7 +22,7 @@ const string Usage = """
                                            --nic virtio gives the machine a virtio-net card (not an RTL8139),
                                            --disk virtio or nvme a virtio-blk or NVMe disk (not an IDE one)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
-                [--memory <MB>] [--cores <n>] [--target <system>]
+                [--memory <MB>] [--cores <n>] [--target <system>] [--no-retry]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
                                            tests that can also run as Linux and Windows programs do,
@@ -30,7 +30,10 @@ const string Usage = """
                                            windows) runs only those, without QEMU;
                                            --input scripts the input instead of NAME.input,
                                            --contains checks for the lines of a file instead of NAME.expected,
-                                           --keep-output saves NAME.actual even when it passes
+                                           --keep-output saves NAME.actual even when it passes;
+                                           a test that fails runs once more, and one that passes then is
+                                           listed at the end (--no-retry: no second run); one that runs
+                                           out of time says where each thread (or CPU) was
       phi test  --bench [-f <name>] [--save-bench] [--tolerance <percent>]
                                            run the benchmarks (tests/bench_NAME.phi) counting instructions,
                                            and fail one whose counts are more than the tolerance
@@ -259,6 +262,7 @@ static int Execute(string[] args)
                 string? input = Option("--input");
                 string? contains = Option("--contains");
                 bool keepOutput = Flag("--keep-output");
+                TestRunner.Retry = !Flag("--no-retry");
                 bool saveBench = Flag("--save-bench");
                 bool bench = Flag("--bench") || saveBench;
                 string? tolerance = Option("--tolerance");

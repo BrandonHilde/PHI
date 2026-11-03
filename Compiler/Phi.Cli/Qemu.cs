@@ -22,6 +22,9 @@ namespace Phi.Cli
         /// </summary>
         public bool StoppedByItself { get; init; }
 
+        /// <summary>When it timed out (and was asked to look): where each CPU was (see Where).</summary>
+        public IReadOnlyList<StoppedThread> Stopped { get; init; } = Array.Empty<StoppedThread>();
+
         /// <summary>What QEMU printed to stderr.</summary>
         public string QemuErrors { get; init; } = string.Empty;
 
@@ -149,7 +152,7 @@ namespace Phi.Cli
         // benchmark's counts are the same on every computer
         static readonly string[] CountInstructions = { "-icount", "shift=0,sleep=off" };
 
-        /// <summary>A second monitor, which phi profile reads the CPU's registers from.</summary>
+        /// <summary>A second monitor, which phi profile (or Where, for a run that timed out) reads the CPU's registers from.</summary>
         static string[] ProfileMonitor(int port) => new[] { "-monitor", $"tcp:127.0.0.1:{port},server,nowait" };
 
         /// <summary>Runs QEMU with a window; serial output goes to this terminal.</summary>
@@ -190,12 +193,14 @@ namespace Phi.Cli
         /// with <paramref name="profilePort"/>, a second monitor listens there for phi profile;
         /// with <paramref name="network"/>, the network card is plugged into that instead of QEMU's user network.
         /// <paramref name="disk"/> is the kind of disk (ide, virtio or nvme), in place of DiskKind.
+        /// With <paramref name="where"/>, a run that times out is stopped and each CPU's registers
+        /// and stack are read (through a monitor of its own) before QEMU is ended.
         /// </summary>
         public static HeadlessResult RunHeadless(string image, TimeSpan timeout, Func<string, bool>? isDone = null,
                                                  IReadOnlyList<string>? input = null, string? recordTo = null,
                                                  string? screenshots = null, bool countInstructions = false,
                                                  int? profilePort = null, IReadOnlyList<string>? network = null,
-                                                 string? disk = null)
+                                                 string? disk = null, bool where = false)
         {
             int? monitorPort = input != null ? FreePort() : null;
 
@@ -204,6 +209,8 @@ namespace Phi.Cli
             var args = MachineArgs(image, recordTo != null ? RecordAudio(recordTo) : "none,id=snd0", network, forwards, disk);
             if (countInstructions) args.AddRange(CountInstructions);
             if (profilePort != null) args.AddRange(ProfileMonitor(profilePort.Value));
+            int? wherePort = where ? FreePort() : null;
+            if (wherePort != null) args.AddRange(ProfileMonitor(wherePort.Value));
             // a script that restarts the machine (reboot) needs a reset to restart it rather than
             // stop QEMU; a triple fault then restarts it too, and the timeout catches that
             if (input != null && input.Any(InputScript.IsReboot)) args.Remove("-no-reboot");
@@ -265,6 +272,8 @@ namespace Phi.Cli
                 Thread.Sleep(25);
             }
 
+            List<StoppedThread> stopped = timedOut && wherePort != null && !p.HasExited ? Where.FromQemu(wherePort.Value) : new();
+
             int? exitValue = null;
             bool byItself = false;
             if (p.HasExited)
@@ -294,7 +303,7 @@ namespace Phi.Cli
                 return new HeadlessResult
                 {
                     Serial = serial.ToString(), TimedOut = timedOut, DebugExitValue = exitValue, InputError = inputError,
-                    StoppedByItself = byItself, QemuErrors = byItself ? qemuErrors : "",
+                    StoppedByItself = byItself, QemuErrors = byItself ? qemuErrors : "", Stopped = stopped,
                 };
         }
 

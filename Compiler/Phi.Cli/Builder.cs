@@ -48,7 +48,10 @@ namespace Phi.Cli
 
         /// <param name="appendSource">Extra PHI text added after the file's own (used by the test runner).</param>
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
-        /// <param name="listing">Also save NASM's listing of each unit (NAME.lst), which phi profile maps addresses with.</param>
+        /// <param name="listing">
+        /// Also save NASM's listing of each unit (NAME.lst), and of the programs on a kernel's
+        /// disk, which phi profile and a test that times out map addresses with.
+        /// </param>
         /// <param name="host">The system a program is for: PHI OS, or Linux or Windows (an ordinary executable).</param>
         public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
                                         bool listing = false, Host host = Host.PhiOS)
@@ -79,7 +82,7 @@ namespace Phi.Cli
                 byte[]? executable = Assemble(compiled.Units.Single(), outDir, Array.Empty<string>(), result);
                 if (executable == null) return result;
                 result.ExecutablePath = Path.Combine(outDir, name + (host.IsWindows() ? ".exe" : ""));
-                File.WriteAllBytes(result.ExecutablePath, executable);
+                WriteWhenFree(result.ExecutablePath, executable);
                 if (!OperatingSystem.IsWindows())
                     File.SetUnixFileMode(result.ExecutablePath, File.GetUnixFileMode(result.ExecutablePath)
                                                                 | UnixFileMode.UserExecute | UnixFileMode.GroupExecute | UnixFileMode.OtherExecute);
@@ -105,10 +108,10 @@ namespace Phi.Cli
         }
 
         /// <summary>A user program from a kernel's rootfs, compiled for its disk; null (with errors) if it fails.</summary>
-        static byte[]? CompileProgram(string phiFile, string kernel, string outDir, List<string> errors)
+        static byte[]? CompileProgram(string phiFile, string kernel, string outDir, List<string> errors, bool listing)
         {
             string dir = Path.Combine(outDir, "programs", Path.GetFileNameWithoutExtension(phiFile));
-            BuildResult built = Build(phiFile, dir, kernel: kernel);
+            BuildResult built = Build(phiFile, dir, kernel: kernel, listing: listing);
             // a mistake in code that several programs use is reported once, not once for each
             errors.AddRange(built.Errors.Where(e => !errors.Contains(e)));
             if (!built.Success) return null;
@@ -192,7 +195,7 @@ namespace Phi.Cli
                 throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
 
             var fsErrors = new List<string>();
-            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors));
+            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors, result.Listing));
             if (fsErrors.Count > 0)
             {
                 result.Errors.AddRange(fsErrors);
@@ -209,6 +212,26 @@ namespace Phi.Cli
         }
 
         static int Sectors(byte[] bin) => (bin.Length + SectorSize - 1) / SectorSize;
+
+        /// <summary>
+        /// Writes an executable, waiting (up to 5 seconds) while the last one is still in use: a
+        /// program that was just ended can keep its file open a moment longer on Windows.
+        /// </summary>
+        static void WriteWhenFree(string path, byte[] bytes)
+        {
+            for (int tries = 0; ; tries++)
+            {
+                try
+                {
+                    File.WriteAllBytes(path, bytes);
+                    return;
+                }
+                catch (IOException) when (tries < 50)
+                {
+                    Thread.Sleep(100);
+                }
+            }
+        }
 
         static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)
         {

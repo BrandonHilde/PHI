@@ -26,6 +26,31 @@ why the run stopped: `timed out after 10s` (with the input script's line, if one
 running), or `QEMU stopped by itself` when the program never reached `exit` or its expected
 output, which is usually a triple fault (`phi run --debug` logs interrupts and resets).
 
+A test that times out also says where it was: each CPU (in QEMU) or each thread (a Linux
+or Windows program), as the PHI line or library routine it was in and the calls that led
+there, found on its stack:
+
+```
+FAIL hang_threads (linux)
+     output did not match (timed out after 3s)
+     where it was when it was stopped:
+       thread 1: OS_Sleep (system.asm), in system call 162 (nanosleep)
+           called from Threads.Wait, lib/phi/user/threads.phi:48: call OS.Sleep: 1;
+           called from HangThreads (class body), hang_threads.phi:11: call Threads.Wait: t;
+       thread 2: HangThreads.Waiter, hang_threads.phi:15: locked guard
+           called from phi_host_thread_main (threads.asm)
+```
+
+A call is a value on the stack that is where one of the program's calls returns to, so
+once in a while one a finished call left behind shows up too. On PHI OS only what is on a
+CPU at that moment is seen (a program's thread that is waiting isn't), and `(in NAME)`
+says which program's code it is. Each build keeps NASM's listings (`build/NAME/*.lst`),
+which the addresses are looked up in.
+
+A test that fails runs once more. One that passes then is shown in yellow and listed at the
+end: the computer was busy, or the test has a race between threads worth a look.
+`--no-retry` runs each test once.
+
 Two optional files change what a test does:
 
 - **`NAME.input`** types keys and moves the mouse, through the QEMU monitor. One command
