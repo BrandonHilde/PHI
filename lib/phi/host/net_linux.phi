@@ -1,0 +1,167 @@
+# The network's calls that are Linux's own, for net.phi (H6 step 3), 32 and 64 bits:
+# Linux's sockets, non-blocking, through its system calls (whose numbers are linux32.phi's
+# and linux64.phi's). Each answer is as Linux gives it: negative (-errno) when it says no.
+
+use net.datagram;
+
+phi.NetSystem:Linux
+{
+	const int INET: 2;                    # AF_INET
+	const int STREAM: 1;
+	const int DATAGRAM: 2;
+	const int NON_BLOCKING: 0x800;        # SOCK_NONBLOCK
+	const int CLOSED_ON_EXEC: 0x80000;    # SOCK_CLOEXEC
+	const int SOCKET_LEVEL: 1;            # SOL_SOCKET
+	const int REUSE_ADDRESS: 2;           # SO_REUSEADDR
+	const int ERROR: 4;                   # SO_ERROR
+	const int RECEIVE_ROOM: 8;            # SO_RCVBUF
+	const int PEEK: 2;                    # MSG_PEEK
+	const int DONT_WAIT: 0x40;            # MSG_DONTWAIT
+	const int NO_SIGNAL: 0x4000;          # MSG_NOSIGNAL: a broken connection isn't a SIGPIPE
+	const int READABLE: 0x541B;           # FIONREAD
+	const int AGAIN: -11;                 # EAGAIN: not yet
+	const int INTERRUPTED: -4;            # EINTR: stopped by a signal, so not yet either
+	const int IN_PROGRESS: -115;          # EINPROGRESS
+	const int DATAGRAM_MOST: 1472;        # what a UdpDatagram holds
+
+	# a new non-blocking socket (a stream for TCP, else datagrams), or 0
+	[Open: bln stream: false;]
+		int type: DATAGRAM;
+		if stream
+			type is STREAM;
+		;;
+	[end: (Kept: (sys.Socket: INET type | NON_BLOCKING | CLOSED_ON_EXEC 0))]
+
+	# a file descriptor from Linux as a socket here; 0 when it gave none (or 0, which is
+	# standard input's, closed: here 0 is no socket)
+	[Kept: int fd: -1;]
+		if fd is 0
+			call sys.Close: fd;
+		;;
+		if fd <= 0 return 0;
+		ptr<u8> s: fd;
+	[end: s]
+
+	[Close: ptr<u8> s: 0;]
+		call sys.Close: s;
+	[end]
+
+	# s on port, at every address the machine has
+	[Bind: ptr<u8> s: 0; u32 port: 0;]
+		u8 place[16];
+		call HostNet.Address: addr place 0 port;
+	[end: (sys.Bind: s addr place 16) is 0]
+
+	[ReceiveRoom: ptr<u8> s: 0; u32 bytes: 0;]
+		int room: bytes;
+		call sys.SetSockOpt: s SOCKET_LEVEL RECEIVE_ROOM addr room 4;
+	[end]
+
+	# the oldest datagram waiting into datagram: 1, or 0 if none is
+	[ReceiveFrom: ptr<u8> s: 0; ptr<UdpDatagram> datagram: 0;]
+		u8 place[16];
+		int length: 16;
+		int n: (sys.RecvFrom: s addr datagram.data DATAGRAM_MOST DONT_WAIT addr place addr length);
+		if n < 0 return 0;
+		datagram.length is n;
+		datagram.from is (HostNet.AddressOf: addr place);
+		datagram.from_port is (HostNet.PortOf: addr place);
+	[end: 1]
+
+	# data to port at address to: 1 if it went
+	[SendTo: ptr<u8> s: 0; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
+		u8 place[16];
+		call HostNet.Address: addr place to port;
+		if (sys.SendTo: s data length DONT_WAIT | NO_SIGNAL addr place 16) < 0 return 0;
+	[end: 1]
+
+	# connecting to port at address to: 1 connected already, 0 connecting, -1 it can't
+	[Connect: ptr<u8> s: 0; u32 to: 0; u32 port: 0;]
+		u8 place[16];
+		call HostNet.Address: addr place to port;
+		int answer: (sys.Connect: s addr place 16);
+		if answer is 0 return 1;
+		if answer is IN_PROGRESS return 0;
+	[end: -1]
+
+	# a connecting socket: 1 now it's open, 0 still connecting, -1 it couldn't
+	[Connected: ptr<u8> s: 0;]
+		if (Broken: s) return -1;
+		u8 place[16];
+		int length: 16;
+		if (sys.GetPeerName: s addr place addr length) is 0 return 1;
+	[end: 0]
+
+	# true if an error waits on s (a refused connection, a reset): it's broken for good
+	[Broken: ptr<u8> s: 0;]
+		int error: 0;
+		int length: 4;
+		if (sys.GetSockOpt: s SOCKET_LEVEL ERROR addr error addr length) is not 0 return true;
+	[end: error is not 0]
+
+	# the bytes Linux took (0 while it has no room), or -1 if the connection is broken
+	[Send: ptr<u8> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		int n: (sys.SendTo: s data length DONT_WAIT | NO_SIGNAL 0 0);
+		if n >= 0 return n;
+		if n is AGAIN or n is INTERRUPTED return 0;
+	[end: -1]
+
+	# the bytes read, 0 if none have come, -2 once the other end has closed and all is read,
+	# -1 if it's broken
+	[Receive: ptr<u8> s: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		int n: (sys.RecvFrom: s buffer max DONT_WAIT 0 0);
+		if n > 0 return n;
+		if n is 0 return -2;
+		if n is AGAIN or n is INTERRUPTED return 0;
+	[end: -1]
+
+	# s listening on port; a port a program listened on just before can be listened on again at once
+	[Listen: ptr<u8> s: 0; u32 port: 0; u32 backlog: 0;]
+		int yes: 1;
+		call sys.SetSockOpt: s SOCKET_LEVEL REUSE_ADDRESS addr yes 4;
+		if not (Bind: s port) return false;
+	[end: (sys.Listen: s backlog) is 0]
+
+	# a connection waiting on listener s, non-blocking too, or 0
+	[Accept: ptr<u8> s: 0;]
+	[end: (Kept: (sys.Accept4: s 0 0 NON_BLOCKING | CLOSED_ON_EXEC))]
+
+	# the bytes that can be read now, or -1 once the other end has closed (and all is read)
+	# or it's broken
+	[Waiting: ptr<u8> s: 0;]
+		int count: 0;
+		if (sys.Ioctl: s READABLE addr count) is not 0 return -1;
+		if count > 0 return count;
+		# nothing: closed, or not yet? A peek says (0 bytes once it's closed); something that
+		# came just after the count was taken is there to read, not a close
+		u8 one[1];
+		int n: (sys.RecvFrom: s addr one 1 PEEK | DONT_WAIT 0 0);
+		if n > 0 return n;
+		if n is AGAIN or n is INTERRUPTED return 0;
+	[end: -1]
+
+	# the other end's address, or 0
+	[PeerAddress: ptr<u8> s: 0;]
+		u8 place[16];
+		int length: 16;
+		if (sys.GetPeerName: s addr place addr length) is not 0 return 0;
+	[end: (HostNet.AddressOf: addr place)]
+
+	# the address the machine would reach the internet from: a datagram socket "connected"
+	# to 8.8.8.8 sends nothing, but Linux picks it; 127.0.0.1 if there's none
+	[Address]
+		u32 found: 0x7F000001;
+		int fd: (sys.Socket: INET DATAGRAM | CLOSED_ON_EXEC 0);
+		if fd < 0 return found;
+		u8 place[16];
+		call HostNet.Address: addr place 0x08080808 53;
+		int length: 16;
+		if (sys.Connect: fd addr place 16) is 0 and (sys.GetSockName: fd addr place addr length) is 0
+			u32 mine: (HostNet.AddressOf: addr place);
+			if mine is not 0
+				found is mine;
+			;;
+		;;
+		call sys.Close: fd;
+	[end: found]
+}

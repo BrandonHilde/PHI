@@ -187,27 +187,39 @@ namespace Phi.Compiler
                 program = withHeap;
             }
 
-            // a program on another system gets its system's own modules, which do what the
-            // runtime's assembly did (OS.Sleep and the rest: see Builtins' OnHost); first of
-            // all, so they're ready before anything else runs. Each system keeps its own.
+            // a program on another system gets the parts of its system's own modules that it
+            // uses, which do what the runtime's assembly did (OS.Sleep and the rest: see
+            // Builtins' OnHost); first of all, so they're ready before anything else runs.
+            // Each system keeps its own.
             if (user && host != Host.PhiOS)
             {
-                var withHost = new ProgramNode { File = main };
-                foreach (string module in HostModules)
-                    if (Resolve(module, main, main, null) is SourceFile own && seen.Add(Key(own)))
-                        Load(own, withHost);
-                Append(program, withHost);
-                program = withHost;
+                var used = SyntaxWalker.Nodes(program)
+                    .Select(n => n switch { CallStmt c => c.Callee, CallExpr c => c.Callee, NameExpr v => v.Name, _ => null })
+                    .Where(name => name != null && name.StartsWith("OS."))
+                    .Select(name => Builtins.Find(name!)?.OnHost?.Split('.')[0])
+                    .OfType<string>().ToHashSet();
+                if (used.Count > 0)
+                {
+                    var withHost = new ProgramNode { File = main };
+                    foreach (string module in HostParts.Where(p => used.Contains(p.Class)).SelectMany(p => p.Modules).Prepend("host.linux64").Prepend("host.linux32"))
+                        if (Resolve(module, main, main, null) is SourceFile own && seen.Add(Key(own)))
+                            Load(own, withHost);
+                    Append(program, withHost);
+                    program = withHost;
+                }
             }
             return program;
         }
 
-        /// <summary>The systems' own modules (lib/phi/host/), one for each part and system.</summary>
-        static readonly string[] HostModules =
+        /// <summary>
+        /// The systems' own modules (lib/phi/host/): each part, by the class that answers its
+        /// built-ins, and its modules. (linux32 and linux64, Linux's numbers, go with any.)
+        /// </summary>
+        static readonly (string Class, string[] Modules)[] HostParts =
         {
-            "host.linux32", "host.linux64",                               // Linux's numbers, for each width
-            "host.time_linux32", "host.time_linux64", "host.time_windows",
-            "host.files_linux", "host.files_windows",
+            ("HostTime", new[] { "host.time_linux32", "host.time_linux64", "host.time_windows" }),
+            ("HostFiles", new[] { "host.files_linux", "host.files_windows" }),
+            ("HostNet", new[] { "host.net", "host.net_linux", "host.net_windows" }),
         };
 
         /// <summary>Adds everything in from after what into has.</summary>

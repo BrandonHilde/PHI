@@ -2432,7 +2432,16 @@ starting that phase.
    declared by two modules if they declare it the same way (a program's own and
    lib/phi/host's); differently is an error. And a program test that builds for no system
    now fails, saying why, rather than passing by running nowhere (that hid a clash).
-   Next: the network, then threads.) A module for each part (the network, threads, files,
+   The network is done too, 2026-11-03: `OS.NetAddress` and `OS.UdpOpen` to
+   `OS.TcpStopListening` are `net.phi` (what the systems share: the slots, the kinds and
+   the states of a connection, the addresses, a lock around the slots that the assembly
+   didn't have) on `net_linux.phi` and `net_windows.phi` (a `NetSystem` of a call or two
+   each); a socket number on Linux is a slot now, as it was on Windows. The four
+   `sockets.asm` are gone (about 2,500 lines), with ws2_32.dll's list in the import
+   table. `sockets_program` on all four, and `phi load` holds on both systems: 500 TLS
+   logins, 300 players with none late. A program gets only the parts it uses (a built-in it
+   calls brings its part's modules, as `new` brings the heap), so one that has no network
+   doesn't import or start Winsock. Next: threads.) A module for each part (the network, threads, files,
    time) holding what every system shares (checking a socket's kind, keeping thread
    slots, the waiting and retrying), on top of a small module per system of constants and
    calls (Linux's numbers, Windows' functions). Moved a part at a time, the assembly

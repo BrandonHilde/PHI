@@ -121,7 +121,7 @@ namespace Phi.Compiler.Tests
         [InlineData("use raw;\nphi.Test:Program\n{\n log (sys.GetPid);\n}\n", "phi.Raw:Linux\n{\n}\nsys.GetPid: 20;\n", "used only in a module for a system that has them")]
         // too few values
         [InlineData("use raw;\nphi.Test:Program\n{\n}\n", "phi.Raw:Linux\n{\n [Say]\n  int n: (sys.Write: 1);\n [end]\n}\nsys.Write: 4  int fd  ptr<u8> data  u32 length;\n",
-                    "sys.Write takes 3 values (fd, data, count), but was given 1")]
+                    "sys.Write takes 3 values (fd, data, length), but was given 1")]
         // one that isn't declared
         [InlineData("use raw;\nphi.Test:Program\n{\n}\n", "phi.Raw:Linux\n{\n [Say]\n  int n: (sys.Fork: 0);\n [end]\n}\n", "there's no system call sys.Fork for Linux")]
         public void ASystemCallGoesWhereItsNumbersBelong(string main, string module, string error)
@@ -201,16 +201,34 @@ namespace Phi.Compiler.Tests
         {
             // lib/phi/host/linux32.phi declares sys.Close: 6 int fd; and so may a program's own module
             string same = "phi.Raw:Linux32\n{\n [Shut]\n [end: (sys.Close: 3)]\n}\nsys.Close: 6  int handle;\n";
-            CompileResult result = Build(Host.Linux, ("main.phi", "use raw;\nphi.Test:Program\n{\n log (Raw.Shut);\n}\n"), ("raw.phi", same));
+            CompileResult result = Build(Host.Linux, ("main.phi", "use raw;\nphi.Test:Program\n{\n call OS.Sleep: 1;\n log (Raw.Shut);\n}\n"), ("raw.phi", same));
             Assert.True(result.Success, Errors(result));
 
             string other = "phi.Raw:Linux32\n{\n [Shut]\n [end: (sys.Close: 3)]\n}\nsys.Close: 7  int handle;\n";
-            result = Build(Host.Linux, ("main.phi", "use raw;\nphi.Test:Program\n{\n log (Raw.Shut);\n}\n"), ("raw.phi", other));
+            result = Build(Host.Linux, ("main.phi", "use raw;\nphi.Test:Program\n{\n call OS.Sleep: 1;\n log (Raw.Shut);\n}\n"), ("raw.phi", other));
             Assert.Contains("sys.Close is declared differently in lib/phi/host/linux32.phi (number 6: int)", Errors(result));
 
             string function = "use 'kernel32.dll' as Kernel32;\nphi.Win:Windows\n{\n [Shut]\n [end: (Kernel32.CloseHandle: 0)]\n}\nKernel32.CloseHandle: u32 handle;\n";
-            result = Build(Host.Windows, ("main.phi", "use win;\nphi.Test:Program\n{\n log (Win.Shut);\n}\n"), ("win.phi", function));
+            result = Build(Host.Windows, ("main.phi", "use win;\nphi.Test:Program\n{\n log (OS.FileSize: 'x');\n log (Win.Shut);\n}\n"), ("win.phi", function));
             Assert.Contains("Kernel32.CloseHandle is declared differently in lib/phi/host/files_windows.phi (ptr<u8>)", Errors(result));
+        }
+
+        [Theory]
+        [InlineData("log 'hi';", new string[0], new[] { "M_HostTime", "M_HostFiles", "M_HostNet" })]
+        [InlineData("call OS.Sleep: 1;", new[] { "M_HostTime_Sleep" }, new[] { "M_HostFiles", "M_HostNet" })]
+        [InlineData("log (OS.FileSize: 'x');", new[] { "M_HostFiles_FileSize" }, new[] { "M_HostTime", "M_HostNet" })]
+        [InlineData("log (OS.NetAddress);", new[] { "M_HostNet_NetAddress" }, new[] { "M_HostTime", "M_HostFiles" })]
+        public void AProgramGetsOnlyThePartsOfItsSystemItUses(string body, string[] has, string[] hasNot)
+        {
+            foreach (Host host in new[] { Host.Linux, Host.Linux64, Host.Windows, Host.Windows64 })
+            {
+                CompileResult result = Build(host, ("main.phi", "phi.Test:Program\n{\n " + body + "\n}\n"));
+                Assert.True(result.Success, Errors(result));
+                string text = result.Units.Single().Text;
+                foreach (string s in has) Assert.Contains(s, text);
+                foreach (string s in hasNot) Assert.DoesNotContain(s, text);
+                if (body.Contains("Net") == false) Assert.DoesNotContain("ws2_32", text);
+            }
         }
 
         [Fact]

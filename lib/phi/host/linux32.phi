@@ -1,5 +1,5 @@
 # 32-bit Linux's own, for the host modules that are Linux's (time_linux32.phi,
-# files_linux.phi): its system calls' numbers (i386's, through int 0x80), and the little
+# files_linux.phi, net_linux.phi): its system calls' numbers (i386's, through int 0x80), and the little
 # that differs from 64-bit Linux beyond them. linux64.phi is the same for x86-64.
 
 phi.LinuxLayout:Linux32
@@ -28,3 +28,17 @@ sys.SchedYield: 158;
 sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
 sys.Stat: 195  ptr<u8> path  ptr<u32> info;
 sys.ClockGetTime: 265  int clock  ptr<int> now;
+
+# the sockets (Linux 4.3 and later has a call for each, not one socketcall)
+sys.Ioctl: 54  int fd  int request  ptr<int> value;
+sys.Socket: 359  int family  int type  int protocol;
+sys.Bind: 361  int fd  ptr<u8> address  int length;
+sys.Connect: 362  int fd  ptr<u8> address  int length;
+sys.Listen: 363  int fd  int backlog;
+sys.Accept4: 364  int fd  ptr<u8> address  ptr<int> length  int flags;
+sys.GetSockOpt: 365  int fd  int level  int name  ptr<int> value  ptr<int> length;
+sys.SetSockOpt: 366  int fd  int level  int name  ptr<int> value  int length;
+sys.GetSockName: 367  int fd  ptr<u8> address  ptr<int> length;
+sys.GetPeerName: 368  int fd  ptr<u8> address  ptr<int> length;
+sys.SendTo: 369  int fd  ptr<u8> data  u32 length  int flags  ptr<u8> to  int tolength;
+sys.RecvFrom: 371  int fd  ptr<u8> buffer  u32 length  int flags  ptr<u8> from  ptr<int> fromlength;

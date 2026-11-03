@@ -4,8 +4,7 @@
 ;
 ; What a PHI OS program asks its kernel for, answered by kernel32.dll in a 64-bit Windows
 ; program, as x86_32_windows/system.asm does in a 32-bit one (see imports.asm for how its
-; functions are called). Paths are converted to UTF-16 for the functions that take them,
-; a byte a character.
+; functions are called). Time, files and the network are PHI now, in lib/phi/host/.
 ;
 ; Arguments PHI pushes are 8 bytes each in 64-bit code: the first is at [rsp + 8]. Each
 ; call keeps rsi and rdi.

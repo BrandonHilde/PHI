@@ -1,9 +1,11 @@
 ; provides: phi_imports
 ;
-; The import table of a Windows program: kernel32.dll, ws2_32.dll (Winsock, for the
-; network) and winmm.dll (for the timer's step: see phi_windows_start), and the functions of them this library calls as [phi_imp_NAME]. Windows has
-; no fixed system call numbers, so a program asks for functions by name and Windows
-; writes their addresses here when it loads the program. Each takes its arguments on the stack, pushed last first, and
+; The import table of a Windows program: kernel32.dll and winmm.dll (for the timer's
+; step: see phi_windows_start), the functions of them this library calls as
+; [phi_imp_NAME], and the outside functions the program's PHI code declares (the runtime's
+; own modules in lib/phi/host/, and any other). Windows has no fixed system call numbers,
+; so a program asks for functions by name and Windows writes their addresses here when it
+; loads the program. Each takes its arguments on the stack, pushed last first, and
 ; removes them itself (stdcall); it keeps ebx, esi, edi and ebp, and can change eax,
 ; ecx and edx. Every Windows program gets the whole list.
 %macro PHI_KERNEL32 0
@@ -26,26 +28,6 @@
     PHI_FUNCTION TlsSetValue
     PHI_FUNCTION CreateThread
 %endmacro
-%macro PHI_WS2_32 0
-    PHI_FUNCTION WSAStartup
-    PHI_FUNCTION WSAGetLastError
-    PHI_FUNCTION socket
-    PHI_FUNCTION closesocket
-    PHI_FUNCTION ioctlsocket
-    PHI_FUNCTION bind
-    PHI_FUNCTION connect
-    PHI_FUNCTION listen
-    PHI_FUNCTION accept
-    PHI_FUNCTION send
-    PHI_FUNCTION recv
-    PHI_FUNCTION sendto
-    PHI_FUNCTION recvfrom
-    PHI_FUNCTION select
-    PHI_FUNCTION setsockopt
-    PHI_FUNCTION getsockopt
-    PHI_FUNCTION getpeername
-    PHI_FUNCTION getsockname
-%endmacro
 %macro PHI_WINMM 0
     PHI_FUNCTION timeBeginPeriod
 %endmacro
@@ -53,7 +35,6 @@
 align 4, db 0
 phi_imports:
     dd phi_kernel32_lookup - $$, 0, 0, phi_kernel32_name - $$, phi_kernel32_addresses - $$
-    dd phi_ws2_32_lookup - $$, 0, 0, phi_ws2_32_name - $$, phi_ws2_32_addresses - $$
     dd phi_winmm_lookup - $$, 0, 0, phi_winmm_name - $$, phi_winmm_addresses - $$
 %ifmacro PHI_OUTSIDE_DESCRIPTORS 0
     PHI_OUTSIDE_DESCRIPTORS                ; the libraries the program's own code declares
@@ -68,9 +49,6 @@ phi_imports_size equ $ - phi_imports
 phi_kernel32_lookup:
     PHI_KERNEL32
     dd 0
-phi_ws2_32_lookup:
-    PHI_WS2_32
-    dd 0
 phi_winmm_lookup:
     PHI_WINMM
     dd 0
@@ -82,9 +60,6 @@ phi_imp_%1: dd phi_name_%1 - $$
 %endmacro
 phi_kernel32_addresses:
     PHI_KERNEL32
-    dd 0
-phi_ws2_32_addresses:
-    PHI_WS2_32
     dd 0
 phi_winmm_addresses:
     PHI_WINMM
@@ -99,12 +74,10 @@ phi_name_%1:
     align 2, db 0
 %endmacro
     PHI_KERNEL32
-    PHI_WS2_32
     PHI_WINMM
 %unmacro PHI_FUNCTION 1
 
 phi_kernel32_name: db 'kernel32.dll', 0
-phi_ws2_32_name: db 'ws2_32.dll', 0
 phi_winmm_name: db 'winmm.dll', 0
 
 %ifmacro PHI_OUTSIDE_TABLES 0

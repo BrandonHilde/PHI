@@ -1,0 +1,209 @@
+# The network's calls that are Windows' own, for net.phi (H6 step 3), 32 and 64 bits:
+# Winsock (ws2_32.dll), non-blocking. Winsock is started with the program. Two of its
+# ways differ from Linux's: getpeername already works while a connection is connecting,
+# so a connection is open once select says it can be written to; and a datagram's send
+# that came back unreachable shows as a reset on the next receive, which is passed over.
+
+use net.datagram;
+use 'ws2_32.dll' as Ws2;
+
+phi.NetSystem:Windows
+{
+	const int INET: 2;                    # AF_INET
+	const int STREAM: 1;
+	const int DATAGRAM: 2;
+	const int TCP: 6;
+	const int UDP: 17;
+	const int SOCKET_LEVEL: 0xFFFF;       # SOL_SOCKET
+	const int RECEIVE_ROOM: 0x1002;       # SO_RCVBUF
+	const int ERROR: 0x1007;              # SO_ERROR
+	const u32 NON_BLOCKING: 0x8004667E;   # FIONBIO
+	const u32 READABLE: 0x4004667F;       # FIONREAD
+	const int PEEK: 2;                    # MSG_PEEK
+	const int WOULD_BLOCK: 10035;         # WSAEWOULDBLOCK: not yet
+	const int TOO_BIG: 10040;             # WSAEMSGSIZE
+	const int RESET: 10054;               # WSAECONNRESET
+	const int DATAGRAM_MOST: 1472;        # what a UdpDatagram holds
+
+	u8 started[512];                      # what WSAStartup tells (not used)
+	int ready: (Ws2.WSAStartup: 0x0202 addr started);   # Winsock 2.2
+
+	# a new non-blocking socket (TCP, else UDP), or 0
+	[Open: bln stream: false;]
+		ptr<u8> s: 0;
+		if stream
+			s is (Ws2.socket: INET STREAM TCP);
+		;;
+		else
+			s is (Ws2.socket: INET DATAGRAM UDP);
+		;;
+	[end: (Kept: s)]
+
+	# a socket from Winsock, made non-blocking; 0 if there's none (INVALID_SOCKET)
+	[Kept: ptr<u8> s: 0;]
+		if (s as int) is -1 or s is 0 return 0;
+		u32 yes: 1;
+		int done: (Ws2.ioctlsocket: s NON_BLOCKING addr yes);
+	[end: s]
+
+	[Close: ptr<u8> s: 0;]
+		int done: (Ws2.closesocket: s);
+	[end]
+
+	# s on port, at every address the machine has
+	[Bind: ptr<u8> s: 0; u32 port: 0;]
+		u8 place[16];
+		call HostNet.Address: addr place 0 port;
+	[end: (Ws2.bind: s addr place 16) is 0]
+
+	[ReceiveRoom: ptr<u8> s: 0; u32 bytes: 0;]
+		int room: bytes;
+		int done: (Ws2.setsockopt: s SOCKET_LEVEL RECEIVE_ROOM addr room 4);
+	[end]
+
+	# the oldest datagram waiting into datagram: 1, or 0 if none is (one too big for it is
+	# cut short)
+	[ReceiveFrom: ptr<u8> s: 0; ptr<UdpDatagram> datagram: 0;]
+		u8 place[16];
+		while true
+			int length: 16;
+			int n: (Ws2.recvfrom: s addr datagram.data DATAGRAM_MOST 0 addr place addr length);
+			if n is -1
+				int why: (Ws2.WSAGetLastError);
+				if why is TOO_BIG
+					n is DATAGRAM_MOST;
+				;;
+				elif why is not RESET
+					return 0;
+				;;
+			;;
+			if n >= 0
+				datagram.length is n;
+				datagram.from is (HostNet.AddressOf: addr place);
+				datagram.from_port is (HostNet.PortOf: addr place);
+				return 1;
+			;;
+		;;
+	[end: 0]
+
+	# data to port at address to: 1 if it went
+	[SendTo: ptr<u8> s: 0; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
+		u8 place[16];
+		call HostNet.Address: addr place to port;
+		if (Ws2.sendto: s data length 0 addr place 16) is -1 return 0;
+	[end: 1]
+
+	# connecting to port at address to: 1 connected already, 0 connecting, -1 it can't
+	[Connect: ptr<u8> s: 0; u32 to: 0; u32 port: 0;]
+		u8 place[16];
+		call HostNet.Address: addr place to port;
+		if (Ws2.connect: s addr place 16) is 0 return 1;
+		if (Ws2.WSAGetLastError) is WOULD_BLOCK return 0;
+	[end: -1]
+
+	# a connecting socket: 1 now it's open (select says it can be written to), 0 still
+	# connecting, -1 it couldn't (select says it failed)
+	[Connected: ptr<u8> s: 0;]
+		ptr<u8> writable[2];              # an fd_set of one: how many, then the socket
+		ptr<u8> failing[2];
+		writable:0 is 1;
+		writable:1 is s;
+		failing:0 is 1;
+		failing:1 is s;
+		int wait[2];                      # a timeval of 0: just look
+		if (Ws2.select: 0 0 addr writable addr failing addr wait) is -1 return -1;
+		if failing:0 is not 0 return -1;
+		if writable:0 is not 0 return 1;
+	[end: 0]
+
+	# true if an error waits on s (a reset): it's broken for good
+	[Broken: ptr<u8> s: 0;]
+		int error: 0;
+		int length: 4;
+		if (Ws2.getsockopt: s SOCKET_LEVEL ERROR addr error addr length) is not 0 return true;
+	[end: error is not 0]
+
+	# the bytes Winsock took (0 while it has no room), or -1 if the connection is broken
+	[Send: ptr<u8> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		int n: (Ws2.send: s data length 0);
+		if n >= 0 return n;
+		if (Ws2.WSAGetLastError) is WOULD_BLOCK return 0;
+	[end: -1]
+
+	# the bytes read, 0 if none have come, -2 once the other end has closed and all is read,
+	# -1 if it's broken
+	[Receive: ptr<u8> s: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		int n: (Ws2.recv: s buffer max 0);
+		if n > 0 return n;
+		if n is 0 return -2;
+		if (Ws2.WSAGetLastError) is WOULD_BLOCK return 0;
+	[end: -1]
+
+	# s listening on port
+	[Listen: ptr<u8> s: 0; u32 port: 0; u32 backlog: 0;]
+		if not (Bind: s port) return false;
+	[end: (Ws2.listen: s backlog) is 0]
+
+	# a connection waiting on listener s, made non-blocking, or 0
+	[Accept: ptr<u8> s: 0;]
+	[end: (Kept: (Ws2.accept: s 0 0))]
+
+	# the bytes that can be read now, or -1 once the other end has closed (and all is read)
+	# or it's broken
+	[Waiting: ptr<u8> s: 0;]
+		u32 count: 0;
+		if (Ws2.ioctlsocket: s READABLE addr count) is not 0 return -1;
+		if count > 0 return count;
+		# nothing: closed, or not yet? A peek says (0 bytes once it's closed); something that
+		# came just after the count was taken is there to read, not a close
+		u8 one[1];
+		int n: (Ws2.recv: s addr one 1 PEEK);
+		if n > 0 return n;
+		if n is 0 return -1;
+		if (Ws2.WSAGetLastError) is WOULD_BLOCK return 0;
+	[end: -1]
+
+	# the other end's address, or 0
+	[PeerAddress: ptr<u8> s: 0;]
+		u8 place[16];
+		int length: 16;
+		if (Ws2.getpeername: s addr place addr length) is not 0 return 0;
+	[end: (HostNet.AddressOf: addr place)]
+
+	# the address the machine would reach the internet from (a UDP socket "connected" to
+	# 8.8.8.8 sends nothing, but Windows picks it), or 127.0.0.1
+	[Address]
+		u32 found: 0x7F000001;
+		ptr<u8> s: (Ws2.socket: INET DATAGRAM UDP);
+		if (s as int) is -1 return found;
+		u8 place[16];
+		call HostNet.Address: addr place 0x08080808 53;
+		int length: 16;
+		if (Ws2.connect: s addr place 16) is 0 and (Ws2.getsockname: s addr place addr length) is 0
+			u32 mine: (HostNet.AddressOf: addr place);
+			if mine is not 0
+				found is mine;
+			;;
+		;;
+		int done: (Ws2.closesocket: s);
+	[end: found]
+}
+
+Ws2.WSAStartup: u32 version  ptr<u8> data;
+Ws2.WSAGetLastError;
+Ws2.socket: int family  int type  int protocol: ptr<u8>;
+Ws2.closesocket: ptr<u8> s;
+Ws2.ioctlsocket: ptr<u8> s  u32 command  ptr<u32> value;
+Ws2.bind: ptr<u8> s  ptr<u8> address  int length;
+Ws2.connect: ptr<u8> s  ptr<u8> address  int length;
+Ws2.listen: ptr<u8> s  int backlog;
+Ws2.accept: ptr<u8> s  ptr<u8> address  ptr<int> length: ptr<u8>;
+Ws2.send: ptr<u8> s  ptr<u8> data  u32 length  int flags;
+Ws2.recv: ptr<u8> s  ptr<u8> buffer  u32 length  int flags;
+Ws2.sendto: ptr<u8> s  ptr<u8> data  u32 length  int flags  ptr<u8> to  int tolength;
+Ws2.recvfrom: ptr<u8> s  ptr<u8> buffer  u32 length  int flags  ptr<u8> from  ptr<int> fromlength;
+Ws2.select: int count  ptr<u8> readable  ptr<ptr<u8>> writable  ptr<ptr<u8>> failing  ptr<int> wait;
+Ws2.setsockopt: ptr<u8> s  int level  int name  ptr<int> value  int length;
+Ws2.getsockopt: ptr<u8> s  int level  int name  ptr<int> value  ptr<int> length;
+Ws2.getpeername: ptr<u8> s  ptr<u8> address  ptr<int> length;
+Ws2.getsockname: ptr<u8> s  ptr<u8> address  ptr<int> length;

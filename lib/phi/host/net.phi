@@ -1,0 +1,224 @@
+# The network in a program on Linux or Windows, in PHI (H6 step 3): the calls a PHI OS
+# program makes of its kernel's network (OS.UdpOpen to OS.TcpStopListening, which
+# net.sockets makes), answered by the system's own sockets. This is what both systems
+# share; NetSystem (net_linux.phi, net_windows.phi) is what differs, a call or two each.
+#
+# A socket, connection or listener is a slot here, holding the system's socket and what
+# kind it is (a bit each, so a call can take several): a number that isn't a slot of the
+# right kind is refused, as on PHI OS, where a program can't use what isn't its own. A
+# connection is connecting until TcpState sees it open, and failed for good once it sees
+# it fail or break. Every call never waits; net.sockets does the waiting. Addresses and
+# ports are numbers as PHI has them (10.0.2.2 is 0x0A000202); the systems want them high
+# byte first, in a sockaddr_in laid out the same on both.
+
+use net.datagram;
+
+phi.HostNet:Program
+{
+	const int MOST: 1024;                 # slots
+	const u8 UDP: 1;
+	const u8 TCP: 2;                      # a connection that's open
+	const u8 LISTENER: 4;
+	const u8 FAILED: 8;                   # a connection that couldn't connect, or broke
+	const u8 CONNECTING: 16;
+	const int QUEUED: 1536;               # the room a waiting datagram takes
+
+	u8 kinds[1024];                       # each slot's kind, 0 if it's free
+	ptr<u8> sockets[1024];                # the system's socket in each
+	lock slots;                           # (threads take and free slots at once)
+
+	# OS.NetAddress: this machine's address, the one it reaches the internet from (or 127.0.0.1)
+	[NetAddress]
+	[end: (NetSystem.Address)]
+
+	# OS.UdpOpen: a socket for datagrams to port (0: any free one), with room for about
+	# queue of them waiting; -1 if the port is taken
+	[UdpOpen: u32 port: 0; u32 queue: 64;]
+		ptr<u8> s: (NetSystem.Open: false);
+		if s is 0 return -1;
+		if not (NetSystem.Bind: s port)
+			call NetSystem.Close: s;
+			return -1;
+		;;
+		call NetSystem.ReceiveRoom: s queue * QUEUED;
+	[end: (Keep: s UDP)]
+
+	# OS.UdpClose: 1, or 0 if it isn't a socket
+	[UdpClose: int slot: -1;]
+	[end: (Forget: slot UDP)]
+
+	# OS.UdpReceive: 1 with the oldest datagram waiting in datagram, or 0 if there's none
+	[UdpReceive: int slot: -1; ptr<UdpDatagram> datagram: 0;]
+		if (KindOf: slot) is not UDP return 0;
+	[end: (NetSystem.ReceiveFrom: sockets:slot datagram)]
+
+	# OS.UdpSend: data to port at address to, from the socket in socket_port's low 16 bits
+	# (the port in its high 16): 1 if it went
+	[UdpSend: u32 socket_port: 0; u32 to: 0; ptr<u8> data: 0; u32 length: 0;]
+		int slot: socket_port & 0xFFFF;
+		if (KindOf: slot) is not UDP return 0;
+	[end: (NetSystem.SendTo: sockets:slot to socket_port >> 16 data length)]
+
+	# OS.TcpBegin: a connection to port at address to, still connecting (or open already),
+	# or -1 if it can't even start
+	[TcpBegin: u32 to: 0; u32 port: 0;]
+		ptr<u8> s: (NetSystem.Open: true);
+		if s is 0 return -1;
+		int begun: (NetSystem.Connect: s to port);
+		if begun < 0
+			call NetSystem.Close: s;
+			return -1;
+		;;
+		u8 kind: CONNECTING;
+		if begun is 1
+			kind is TCP;
+		;;
+	[end: (Keep: s kind)]
+
+	# OS.TcpState: 1 open, 0 still connecting, -1 failed (or broken, or not a connection)
+	[TcpState: int slot: -1;]
+		u8 kind: (KindOf: slot);
+		if kind is TCP
+			if (NetSystem.Broken: sockets:slot)
+				call Mark: slot FAILED;
+				return -1;
+			;;
+			return 1;
+		;;
+		if kind is CONNECTING
+			int state: (NetSystem.Connected: sockets:slot);
+			if state is 1
+				call Mark: slot TCP;
+			;;
+			elif state < 0
+				call Mark: slot FAILED;
+			;;
+			return state;
+		;;
+	[end: -1]
+
+	# OS.TcpSend: the bytes the system took (0 while it has no room, or the connection is
+	# still connecting), or -1 if it's broken
+	[TcpSend: int slot: -1; ptr<u8> data: 0; u32 length: 0;]
+		u8 kind: (KindOf: slot);
+		if kind is CONNECTING return 0;
+		if kind is not TCP return -1;
+	[end: (NetSystem.Send: sockets:slot data length)]
+
+	# OS.TcpTake: the bytes read into buffer, 0 if none have come yet, -2 once the other end
+	# has closed and everything is read, -1 if it's broken
+	[TcpTake: int slot: -1; ptr<u8> buffer: 0; u32 max: 0;]
+		u8 kind: (KindOf: slot);
+		if kind is CONNECTING or kind is TCP and max is 0 return 0;
+		if kind is not TCP return -1;
+	[end: (NetSystem.Receive: sockets:slot buffer max)]
+
+	# OS.TcpClose: 1. The system sends what's left, then a FIN, after the program goes on.
+	[TcpClose: int slot: -1;]
+		int forgotten: (Forget: slot TCP | CONNECTING | FAILED);
+	[end: 1]
+
+	# OS.TcpListen: a listener on port, with room for backlog connections waiting to be
+	# accepted; -1 if the port is taken
+	[TcpListen: u32 port: 0; u32 backlog: 64;]
+		ptr<u8> s: (NetSystem.Open: true);
+		if s is 0 return -1;
+		if not (NetSystem.Listen: s port backlog)
+			call NetSystem.Close: s;
+			return -1;
+		;;
+	[end: (Keep: s LISTENER)]
+
+	# OS.TcpAccept: a connection that has come in, or -1 if none is waiting
+	[TcpAccept: int slot: -1;]
+		if (KindOf: slot) is not LISTENER return -1;
+		ptr<u8> s: (NetSystem.Accept: sockets:slot);
+		if s is 0 return -1;
+	[end: (Keep: s TCP)]
+
+	# OS.TcpWaiting: the bytes that can be read now (0 while connecting), or -1 once the
+	# other end has closed (and everything is read) or it's broken
+	[TcpWaiting: int slot: -1;]
+		u8 kind: (KindOf: slot);
+		if kind is CONNECTING return 0;
+		if kind is not TCP return -1;
+	[end: (NetSystem.Waiting: sockets:slot)]
+
+	# OS.TcpAddress: the other end's address, or 0
+	[TcpAddress: int slot: -1;]
+		u8 kind: (KindOf: slot);
+		if kind is not TCP and kind is not CONNECTING return 0;
+	[end: (NetSystem.PeerAddress: sockets:slot)]
+
+	# OS.TcpStopListening: 1, or 0 if it isn't a listener; connections waiting for Accept are closed
+	[TcpStopListening: int slot: -1;]
+	[end: (Forget: slot LISTENER)]
+
+	# ---- the slots
+
+	# a free slot for the system's socket s, as kind; -1 (and s closed) if every one is taken
+	[Keep: ptr<u8> s: 0; u8 kind: 0;]
+		int slot: -1;
+		locked slots
+			int i: 0;
+			while slot < 0 and i < MOST
+				if kinds:i is 0
+					kinds:i is kind;
+					sockets:i is s;
+					slot is i;
+				;;
+				i++;
+			;;
+		;;
+		if slot < 0
+			call NetSystem.Close: s;
+		;;
+	[end: slot]
+
+	# what slot is (0 if it's free, or no slot at all)
+	[KindOf: int slot: -1;]
+		if slot < 0 or slot >= MOST return 0;
+	[end: kinds:slot]
+
+	[Mark: int slot: -1; u8 kind: 0;]
+		locked slots
+			kinds:slot is kind;
+		;;
+	[end]
+
+	# closes slot's socket and frees the slot, if it's one of the kinds: 1, else 0
+	[Forget: int slot: -1; u8 kinds_of: 0;]
+		if ((KindOf: slot) & kinds_of) is 0 return 0;
+		ptr<u8> s: sockets:slot;
+		locked slots
+			kinds:slot is 0;
+			sockets:slot is 0;
+		;;
+		call NetSystem.Close: s;
+	[end: 1]
+
+	# ---- addresses, as both systems lay them out (a sockaddr_in: the family, the port and
+	# the address high byte first, then 8 zeros)
+
+	[Address: ptr<u8> place: 0; u32 address: 0; u32 port: 0;]
+		place:0 is 2;                        # AF_INET
+		place:1 is 0;
+		place:2 is port >> 8;
+		place:3 is port;
+		place:4 is address >> 24;
+		place:5 is address >> 16;
+		place:6 is address >> 8;
+		place:7 is address;
+		while int i: 8; i < 16; i++;
+			place:i is 0;
+		;;
+	[end]
+
+	[AddressOf: ptr<u8> place: 0;]
+		u32 address: (place:4 << 24) | (place:5 << 16) | (place:6 << 8) | place:7;
+	[end: address]
+
+	[PortOf: ptr<u8> place: 0;]
+		u32 port: (place:2 << 8) | place:3;
+	[end: port]
+}

@@ -6,7 +6,7 @@
 ; the 32-bit ones: a number in eax, arguments in ebx, ecx, edx, esi, edi; every register
 ; but eax is kept). The calls PHI OS has that Linux has no answer for (the screen's
 ; cells, other PHI OS programs, sound, windows) aren't here, so using one is an error
-; when the program is built. The network's are in sockets.asm.
+; when the program is built. Time, files and the network are PHI now, in lib/phi/host/.
 SYS_EXIT_GROUP equ 252
 SYS_READ      equ 3
 SYS_GETPID    equ 20
