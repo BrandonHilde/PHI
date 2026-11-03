@@ -2596,11 +2596,25 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
 1. **A window, drawing and input** behind the calls `gui.*` and `gfx.*` already use: Win32 on
    Windows, Wayland or X11 on Linux, Cocoa on macOS, or one library that covers all three
    (that needs C compatibility, or H6's outside functions).
+   - [x] Windows, 32 and 64 bits (2026-11-03): `lib/phi/host/window_windows.phi` answers
+     `OS.SurfaceOpen`, `SurfacePresent`, `NextEvent`, `CopyFont`, `SetWindowTitle`,
+     `SetResizable`, `WindowFocused` and `IsKeyDown`. `samples/desktop.rootfs/`'s `sketch`,
+     `notes`, `form` and `clock` build unchanged and run in real windows, with their widgets
+     and text; seen on screen, typing and the close box tried by hand. The font is Windows'
+     Consolas at 8x16, not smoothed, for code page 437, drawn into `Font.glyphs` when a window
+     opens (PHI OS copies the VGA card's; no font data to carry). Test `window_program`: a
+     hidden window, with messages posted to it and its pixels read back, so nothing pops up.
+     Not yet: `OS.OpenWindow` gives -1 (starting a program by a path on its disk is PHI OS's
+     way), and a window's messages come only to the thread that made it.
+   - [ ] Linux. X11's protocol is a socket, so it needs no library: `net.sockets`-like calls
+     over `/tmp/.X11-unix`, in PHI, and WSLg shows it on this computer.
+   - [ ] macOS, with H4's.
 2. **Sound** behind `audio.*`'s calls.
 3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
    calling C functions (H6's outside functions, and on Linux, loading a library).
 
-**Done when:** a PHI game (the arcade sample) runs in a window on Windows and Linux.
+**Done when:** a PHI game runs in a window on Windows and Linux. (The arcade sample is a
+16-bit program that writes to the VGA card, so it isn't the one; a game on `gui.app` is.)
 
 #### Phase H8: Tools for a host
 

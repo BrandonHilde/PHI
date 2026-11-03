@@ -1865,6 +1865,13 @@ Dragging a window's bottom right corner resizes it. When the button is let go th
 program gets `Events.RESIZE`, with the new size in `App.event.x` and `.y`: it calls
 `App.Resize: w h` and draws again.
 
+**On Windows** a program with a window builds and runs unchanged, 32 or 64 bits, in a real
+window: `phi run sketch.phi --target windows64`. `lib/phi/host/window_windows.phi` answers the
+calls below with Win32. There `App.OpenWindow` gives -1 (starting a program by a path on its
+disk is PHI OS's way), Windows keeps a window's messages for the thread that opened it, so
+that thread draws and takes the events, and the font is Windows' Consolas in the same 8x16
+cells. A Linux program can't have a window yet.
+
 **What a program with a window can ask for.** On top of everything a
 [program](#programs-and-processes) can do, `gui.app` gives it:
 
@@ -2354,9 +2361,10 @@ no system calls a program makes itself: its programs call DLLs' functions.
 
 The standard library does this itself: in a Linux or Windows program, time (`OS.Sleep`,
 `OS.GetTicks`, `OS.Now`, `OS.Yield`), files (`OS.ReadFile` to `OS.Rename`), the network
-(`net.sockets`' calls) and threads (`user.threads`' calls) are done by modules in
-`lib/phi/host/` (`time_*.phi`, `files_*.phi`, `net*.phi`, `threads*.phi`, with Linux's
-numbers in `linux32.phi` and `linux64.phi`) rather than by assembly. A program gets only
+(`net.sockets`' calls), threads (`user.threads`' calls) and on Windows a window (`gui.app`'s
+calls) are done by modules in `lib/phi/host/` (`time_*.phi`, `files_*.phi`, `net*.phi`,
+`threads*.phi`, `window_windows.phi`, with Linux's numbers in `linux32.phi` and
+`linux64.phi`) rather than by assembly. A program gets only
 the parts it uses, as it gets the heap only if it uses `new`. Two modules may declare the same system call or
 outside function if they declare it the same way (a program's own module and these);
 declaring it differently is an error.

@@ -175,7 +175,7 @@ static int Execute(string[] args)
                     throw new ArgumentException("arguments after -- are for a program built with --target linux or windows");
 
                 string file = Path.GetFullPath(rest[0]);
-                outDir ??= Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file));
+                outDir ??= Path.Combine(Builder.BuildHome(file), "build", Path.GetFileNameWithoutExtension(file));
 
                 if (host != Phi.Compiler.Host.PhiOS)
                 {

@@ -1,0 +1,611 @@
+# A window in a Windows program, in PHI (H7 step 1), 32 and 64 bits: the calls gui.app makes
+# (OS.SurfaceOpen, SurfacePresent, NextEvent, CopyFont, SetWindowTitle, SetResizable,
+# WindowFocused, IsKeyDown), answered by Win32. So a program with a window on PHI OS is a
+# program with a window on Windows, unchanged.
+#
+# The program's pixels (Draw's: 0x00RRGGBB, a row at a time from the top) go to the window
+# as they are. Windows calls WindowProc with what happens to the window, and it queues events
+# as gui.surfaces does on PHI OS. Windows keeps a window's messages for the thread that made
+# it, so that thread does the drawing and takes the events (they come in NextEvent, and
+# Present lets them through too).
+
+use gui.events;
+use 'kernel32.dll' as Kernel32;
+use 'user32.dll' as User32;
+use 'gdi32.dll' as Gdi32;
+
+struct.WinClass foreign                   # WNDCLASSEXW
+{
+	u32 size;
+	u32 style;
+	ptr<u8> procedure;
+	i32 class_extra;
+	i32 window_extra;
+	ptr<u8> instance;
+	ptr<u8> icon;
+	ptr<u8> cursor;
+	ptr<u8> background;
+	ptr<u8> menu;
+	ptr<u16> name;
+	ptr<u8> small_icon;
+}
+
+struct.WinMessage foreign                 # MSG
+{
+	ptr<u8> window;
+	u32 message;
+	ptr<u8> w;
+	ptr<u8> l;
+	u32 time;
+	i32 x;
+	i32 y;
+}
+
+struct.WinRect foreign                    # RECT
+{
+	i32 left;
+	i32 top;
+	i32 right;
+	i32 bottom;
+}
+
+struct.WinPoint foreign                   # POINT
+{
+	i32 x;
+	i32 y;
+}
+
+struct.WinPaint foreign                   # PAINTSTRUCT
+{
+	ptr<u8> dc;
+	i32 erase;
+	WinRect area;
+	i32 restore;
+	i32 update;
+	u8 reserved[32];
+}
+
+struct.WinBitmap foreign                  # BITMAPINFO, with no colors
+{
+	u32 size;
+	i32 width;
+	i32 height;                           # negative: from the top down
+	u16 planes;
+	u16 bits;
+	u32 compression;
+	u32 image_size;
+	i32 x_per_meter;
+	i32 y_per_meter;
+	u32 colors_used;
+	u32 colors_important;
+	u32 first_color;
+}
+
+phi.HostWindow:Windows
+{
+	const int MOST_EVENTS: 256;
+	const int MOST_KEYS: 512;
+
+	# what Windows tells a window
+	const u32 SIZE: 0x05;
+	const u32 PAINT: 0x0F;
+	const u32 CLOSE: 0x10;
+	const u32 ERASE: 0x14;
+	const u32 KILL_FOCUS: 0x08;
+	const u32 KEY_DOWN: 0x100;
+	const u32 KEY_UP: 0x101;
+	const u32 CHAR: 0x102;
+	const u32 SYS_KEY_DOWN: 0x104;
+	const u32 SYS_KEY_UP: 0x105;
+	const u32 SYS_CHAR: 0x106;
+	const u32 MOUSE_MOVE: 0x200;
+	const u32 LEFT_DOWN: 0x201;
+	const u32 LEFT_UP: 0x202;
+	const u32 LEFT_DOUBLE: 0x203;
+	const u32 RIGHT_DOWN: 0x204;
+	const u32 RIGHT_UP: 0x205;
+	const u32 MIDDLE_DOWN: 0x207;
+	const u32 MIDDLE_UP: 0x208;
+	const u32 WHEEL: 0x20A;
+	const u32 ENTER_SIZING: 0x231;
+	const u32 EXIT_SIZING: 0x232;
+	const u32 PRINT_CLIENT: 0x318;
+
+	const u32 STYLE_RESIZABLE: 0x00CF0000;    # WS_OVERLAPPEDWINDOW
+	const u32 STYLE_FIXED: 0x00C80000;        # no thick frame, no maximize box
+	const u32 DOUBLE_CLICKS: 8;               # CS_DBLCLKS
+	const u32 PLACE_ANYWHERE: 0x80000000;     # CW_USEDEFAULT
+	const u32 COPY: 0x00CC0020;               # SRCCOPY
+	const int BIT_LEFT: 1;
+	const int BIT_RIGHT: 2;
+	const int BIT_MIDDLE: 4;
+
+	ptr<u8> window: 0;
+	ptr<u32> pixels: 0;                   # the program's, once it has shown them
+	int width: 0;                         # how many there are
+	int height: 0;
+	int client_width: 0;                  # the window's inside, as it last was
+	int client_height: 0;
+	bln sizing: false;                    # the user is dragging its edge
+	bln resizable: true;
+	bln visible: true;                    # (a test's stays hidden: nothing pops up, nothing takes the keys)
+	u16 title[256];
+
+	GuiEvent queue[256];
+	int first: 0;
+	int waiting: 0;
+	bln held[512];                        # the keys held, by Input's numbers
+
+	# OS.SurfaceOpen: a window showing w x h pixels (or the program's window, at that size):
+	# 1, or 0 if Windows won't make it
+	[SurfaceOpen: int w: 0; int h: 0;]
+		if w <= 0 or h <= 0 return 0;
+		pixels is 0;                      # (the program frees the ones it had)
+		width is w;
+		height is h;
+		if window is 0 return (Create: w h);
+		if w is not client_width or h is not client_height
+			call Fit: w h;
+		;;
+	[end: 1]
+
+	# OS.SurfacePresent: show pixels now
+	[SurfacePresent: ptr<u8> shown: 0;]
+		pixels is shown as ptr<u32>;
+		call User32.InvalidateRect: window 0 0;
+		call User32.UpdateWindow: window;
+		call Pump;
+	[end: 1]
+
+	# OS.NextEvent: the next event into event: 1, or 0 if there's none yet
+	[NextEvent: ptr<GuiEvent> event: 0;]
+		call Pump;
+		if waiting is 0 return 0;
+		event:0 is queue:first;
+		first is (first + 1) % MOST_EVENTS;
+		waiting--;
+	[end: 1]
+
+	# OS.SetWindowTitle: what the window is called
+	[SetWindowTitle: ptr<u8> text: 0;]
+		int i: 0;
+		while i < 255 and text:i is not 0
+			title:i is text:i;
+			i++;
+		;;
+		title:i is 0;
+		if window is not 0
+			call User32.SetWindowTextW: window addr title;
+		;;
+	[end: 1]
+
+	# OS.SetResizable: whether the user can change the window's size
+	[SetResizable: int yes: 1;]
+		resizable is (yes is not 0);
+		if window is not 0
+			call User32.SetWindowLongW: window (-16) (Style);
+			call User32.SetWindowPos: window 0 0 0 0 0 0x37;   # NOSIZE NOMOVE NOZORDER NOACTIVATE FRAMECHANGED
+		;;
+	[end: 1]
+
+	# OS.WindowFocused: 1 while the window is in front, getting the keys
+	[WindowFocused]
+		if window is not 0 and (User32.GetForegroundWindow) is window return 1;
+	[end: 0]
+
+	# OS.OpenWindow: a program in a window of its own. (Not yet here: it's PHI OS's way of
+	# starting a program, by a path on its disk.)
+	[OpenWindow: ptr<u8> path: 0; ptr<u8> arguments: 0;]
+	[end: -1]
+
+	# OS.IsKeyDown: whether a key is held, for games, by Input's numbers ('w', Events.KEY_UP ...)
+	[IsKeyDown: int key: 0;]
+		call Pump;
+		if key < 0 or key >= MOST_KEYS or not held:key return 0;
+	[end: 1]
+
+	# OS.CopyFont: the font's 256 shapes, 16 rows of 8 pixels each, leftmost in bit 7: Windows'
+	# own console font, scaled to fit and not smoothed, for code page 437, the same characters
+	# as the VGA card's on PHI OS
+	[CopyFont: ptr<u8> glyphs: 0;]
+		ptr<u8> dc: (Gdi32.CreateCompatibleDC: 0);
+		ptr<u8> picture: (Gdi32.CreateBitmap: 8 16 1 1 0);
+		if dc is 0 or picture is 0 return 0;
+		ptr<u8> font: (Gdi32.CreateFontA: 16 8 0 0 400 0 0 0 255 0 0 3 49 'Consolas');
+		if font is 0
+			font is (Gdi32.GetStockObject: 10);   # OEM_FIXED_FONT
+		;;
+		ptr<u8> old_picture: (Gdi32.SelectObject: dc picture);
+		ptr<u8> old_font: (Gdi32.SelectObject: dc font);
+		call Gdi32.SetBkColor: dc 0xFFFFFF;
+		call Gdi32.SetTextColor: dc 0;
+		u8 rows[32];                      # 16 rows, each padded to 2 bytes
+		u8 one[2];
+		WinRect cell;
+		cell.right is 8;
+		cell.bottom is 16;
+		while int c: 0; c < 256; c++;
+			one:0 is c;
+			call Gdi32.ExtTextOutA: dc 0 0 2 addr cell addr one 1 0;   # ETO_OPAQUE: all of the cell, too
+			call Gdi32.GetBitmapBits: picture 32 addr rows;
+			while int r: 0; r < 16; r++;
+				glyphs:(c * 16 + r) is ~rows:(r * 2);   # the ink is what's dark
+			;;
+		;;
+		call Gdi32.SelectObject: dc old_font;
+		call Gdi32.SelectObject: dc old_picture;
+		call Gdi32.DeleteObject: picture;
+		call Gdi32.DeleteDC: dc;
+	[end: 1]
+
+	# ---- the window
+
+	[Style]
+		if resizable return STYLE_RESIZABLE;
+	[end: STYLE_FIXED]
+
+	[Create: int w: 0; int h: 0;]
+		u16 class_name[16];
+		call HostFiles.Widen: 'PhiWindow' addr class_name;
+		if title:0 is 0
+			call SetWindowTitle: 'PHI';
+		;;
+		ptr<u8> instance: (Kernel32.GetModuleHandleW: 0);
+		WinClass kind;
+		kind.size is sizeof WinClass;
+		kind.style is DOUBLE_CLICKS;
+		kind.procedure is addr foreign WindowProc;
+		kind.instance is instance;
+		kind.cursor is (User32.LoadCursorW: 0 32512 as ptr<u8>);   # IDC_ARROW
+		kind.name is addr class_name;
+		if (User32.RegisterClassExW: addr kind) is 0 return 0;
+
+		WinRect outer;
+		outer.right is w;
+		outer.bottom is h;
+		call User32.AdjustWindowRect: addr outer (Style) 0;
+		window is (User32.CreateWindowExW: 0 addr class_name addr title (Style) PLACE_ANYWHERE PLACE_ANYWHERE outer.right - outer.left outer.bottom - outer.top 0 0 instance 0);
+		if window is 0 return 0;
+		client_width is w;
+		client_height is h;
+		if visible
+			call User32.ShowWindow: window 5;   # SW_SHOW
+		;;
+		call User32.UpdateWindow: window;
+		call Pump;
+	[end: 1]
+
+	# the window's inside made w x h
+	[Fit: int w: 0; int h: 0;]
+		WinRect outer;
+		outer.right is w;
+		outer.bottom is h;
+		call User32.AdjustWindowRect: addr outer (Style) 0;
+		call User32.SetWindowPos: window 0 0 0 outer.right - outer.left outer.bottom - outer.top 0x16;   # NOMOVE NOZORDER NOACTIVATE
+		client_width is w;
+		client_height is h;
+	[end]
+
+	# what Windows has for the window: it calls WindowProc from DispatchMessageW
+	[Pump]
+		WinMessage m;
+		while (User32.PeekMessageW: addr m 0 0 0 1) is not 0
+			call User32.TranslateMessage: addr m;
+			call User32.DispatchMessageW: addr m;
+		;;
+	[end]
+
+	# the program's pixels on dc, filling the window's inside (stretched while its size is
+	# being changed, until the program has drawn at the new one)
+	[Show: ptr<u8> dc: 0;]
+		if pixels is 0 return;
+		WinBitmap bitmap;
+		bitmap.size is 40;
+		bitmap.width is width;
+		bitmap.height is 0 - height;
+		bitmap.planes is 1;
+		bitmap.bits is 32;
+		call Gdi32.StretchDIBits: dc 0 0 client_width client_height 0 0 width height pixels as ptr<u8> addr bitmap 0 COPY;
+	[end]
+
+	# Windows calls this with what happens to the window
+	[WindowProc: ptr<u8> from_window: 0; u32 message: 0; ptr<u8> w: 0; ptr<u8> l: 0;]
+		ptr<u8> answer: 0;
+		int word: w as int;
+		int low: l as int;
+		when message
+			is PAINT
+				WinPaint paint;
+				ptr<u8> dc: (User32.BeginPaint: from_window addr paint);
+				call Show: dc;
+				call User32.EndPaint: from_window addr paint;
+			;;
+			is PRINT_CLIENT
+				call Show: w;
+			;;
+			is ERASE
+				answer is 1 as ptr<u8>;       # the pixels cover it all
+			;;
+			is CLOSE
+				call Add: Events.CLOSE 0 0 0 0 0 0;   # the program ends itself
+			;;
+			is SIZE
+				if word is not 1              # not minimized
+					client_width is low & 0xFFFF;
+					client_height is (low >> 16) & 0xFFFF;
+					if not sizing
+						call Resized;
+					;;
+				;;
+			;;
+			is ENTER_SIZING
+				sizing is true;
+			;;
+			is EXIT_SIZING
+				sizing is false;
+				call Resized;
+			;;
+			is KILL_FOCUS
+				while int i: 0; i < MOST_KEYS; i++;
+					held:i is false;
+				;;
+			;;
+			is KEY_DOWN
+				call KeyDown: word;
+			;;
+			is KEY_UP
+				call KeyUp: word;
+			;;
+			is SYS_KEY_DOWN
+				call KeyDown: word;
+				answer is (User32.DefWindowProcW: from_window message w l);   # (Alt+F4)
+			;;
+			is SYS_KEY_UP
+				call KeyUp: word;
+				answer is (User32.DefWindowProcW: from_window message w l);
+			;;
+			is SYS_CHAR
+				answer is 0;                  # (or Windows beeps at Alt and a letter)
+			;;
+			is CHAR
+				call Typed: word;
+			;;
+			is MOUSE_MOVE
+				call Mouse: low word 0 0;
+			;;
+			is LEFT_DOWN
+				call User32.SetCapture: from_window;
+				call Mouse: low word 1 BIT_LEFT;
+			;;
+			is LEFT_DOUBLE
+				call User32.SetCapture: from_window;
+				call Mouse: low word 2 BIT_LEFT;
+			;;
+			is RIGHT_DOWN
+				call User32.SetCapture: from_window;
+				call Mouse: low word 0 BIT_RIGHT;
+			;;
+			is MIDDLE_DOWN
+				call User32.SetCapture: from_window;
+				call Mouse: low word 0 BIT_MIDDLE;
+			;;
+			is LEFT_UP
+				call MouseUp: low word;
+			;;
+			is RIGHT_UP
+				call MouseUp: low word;
+			;;
+			is MIDDLE_UP
+				call MouseUp: low word;
+			;;
+			is WHEEL
+				call Wheel: from_window low word;
+			;;
+			else
+				answer is (User32.DefWindowProcW: from_window message w l);
+			;;
+		;;
+	[end: answer]
+
+	# the window's size changed: tell the program, if it isn't already drawing at that size
+	[Resized]
+		if client_width is 0 or client_height is 0 return;
+		if client_width is width and client_height is height return;
+		call Add: Events.RESIZE client_width client_height 0 0 0 0;
+	[end]
+
+	# ---- events
+
+	[Add: int kind: 0; int x: 0; int y: 0; int value: 0; int clicks: 0; int wheel: 0; int pressed: 0;]
+		if waiting >= MOST_EVENTS return;     # nobody's taking them: the newest are lost
+		int place: (first + waiting) % MOST_EVENTS;
+		queue:place.kind is kind;
+		queue:place.x is x;
+		queue:place.y is y;
+		queue:place.value is value;
+		queue:place.clicks is clicks;
+		queue:place.wheel is wheel;
+		queue:place.pressed is pressed;
+		waiting++;
+	[end]
+
+	# the modifiers held, as Events' MOD_ bits
+	[Modifiers]
+		int bits: 0;
+		if ((User32.GetKeyState: 0x10) & 0x8000) is not 0
+			bits is bits | Events.MOD_SHIFT;
+		;;
+		if ((User32.GetKeyState: 0x11) & 0x8000) is not 0
+			bits is bits | Events.MOD_CTRL;
+		;;
+		if ((User32.GetKeyState: 0x12) & 0x8000) is not 0
+			bits is bits | Events.MOD_ALT;
+		;;
+	[end: bits]
+
+	# a key Windows numbers (a virtual key) as Input numbers it: its own number for keys
+	# that type nothing, else the character, in lower case; 0 if it has neither
+	[KeyNumber: int virtual_key: 0;]
+		if virtual_key >= 0x70 and virtual_key <= 0x7B return Events.KEY_F1 + virtual_key - 0x70;
+		when virtual_key
+			is 0x26
+				return Events.KEY_UP;
+			;;
+			is 0x28
+				return Events.KEY_DOWN;
+			;;
+			is 0x25
+				return Events.KEY_LEFT;
+			;;
+			is 0x27
+				return Events.KEY_RIGHT;
+			;;
+			is 0x24
+				return Events.KEY_HOME;
+			;;
+			is 0x23
+				return Events.KEY_END;
+			;;
+			is 0x2E
+				return Events.KEY_DELETE;
+			;;
+			is 0x21
+				return Events.KEY_PAGEUP;
+			;;
+			is 0x22
+				return Events.KEY_PAGEDOWN;
+			;;
+			is 0x2D
+				return Events.KEY_INSERT;
+			;;
+		;;
+		int c: (User32.MapVirtualKeyW: virtual_key 2) & 0xFFFF;   # MAPVK_VK_TO_CHAR
+		if c >= 65 and c <= 90
+			c is c + 32;
+		;;
+		if c >= 256
+			c is 0;
+		;;
+	[end: c]
+
+	# a key went down: it's held; keys that type nothing are events here, as are Ctrl's and Alt's
+	# (the others come as characters, in Typed)
+	[KeyDown: int virtual_key: 0;]
+		int key: (KeyNumber: virtual_key);
+		if key is 0 return;
+		if key < MOST_KEYS
+			held:key is true;
+		;;
+		int mods: (Modifiers);
+		if key >= 256 or key is 8 or key is 9 or key is 13 or key is 27
+			call Add: Events.KEY 0 0 key | mods 0 0 0;
+		;;
+		elif (mods & (Events.MOD_CTRL | Events.MOD_ALT)) is not 0
+			call Add: Events.KEY 0 0 key | mods 0 0 0;
+		;;
+	[end]
+
+	[KeyUp: int virtual_key: 0;]
+		int key: (KeyNumber: virtual_key);
+		if key > 0 and key < MOST_KEYS
+			held:key is false;
+		;;
+	[end]
+
+	# a character Windows made of the keys: a key event, if it's one that prints
+	[Typed: int c: 0;]
+		if c < 32 or c >= 256 or c is 127 return;
+		int mods: (Modifiers);
+		call Add: Events.KEY 0 0 c | (mods & Events.MOD_SHIFT) 0 0 0;
+	[end]
+
+	# the mouse moved, or a button went down (clicks: 1, or 2 for a double click)
+	[Mouse: int place: 0; int buttons: 0; int clicks: 0; int pressed: 0;]
+		int x: (Signed: place & 0xFFFF);
+		int y: (Signed: (place >> 16) & 0xFFFF);
+		int value: (Buttons: buttons);
+		# moves come fast: one still waiting is brought up to date, not added to
+		if clicks is 0 and pressed is 0 and waiting > 0
+			int last: (first + waiting - 1) % MOST_EVENTS;
+			if queue:last.kind is Events.MOUSE and queue:last.clicks is 0 and queue:last.pressed is 0 and queue:last.wheel is 0 and queue:last.value is value
+				queue:last.x is x;
+				queue:last.y is y;
+				return;
+			;;
+		;;
+		call Add: Events.MOUSE x y value clicks 0 pressed;
+	[end]
+
+	# a button came up: the mouse is let go once none is held
+	[MouseUp: int place: 0; int buttons: 0;]
+		if (Buttons: buttons) is 0
+			call User32.ReleaseCapture;
+		;;
+		call Add: Events.MOUSE (Signed: place & 0xFFFF) (Signed: (place >> 16) & 0xFFFF) (Buttons: buttons) 0 0 0;
+	[end]
+
+	# the wheel: where it is comes from the screen's corner; down is positive here, up there
+	[Wheel: ptr<u8> from_window: 0; int place: 0; int buttons: 0;]
+		WinPoint point;
+		point.x is (Signed: place & 0xFFFF);
+		point.y is (Signed: (place >> 16) & 0xFFFF);
+		call User32.ScreenToClient: from_window addr point;
+		int turned: (Signed: (buttons >> 16) & 0xFFFF);
+		call Add: Events.MOUSE point.x point.y (Buttons: buttons) 0 (0 - turned) / 120 0;
+	[end]
+
+	# Windows' MK_ bits as Events' buttons
+	[Buttons: int bits: 0;]
+		int buttons: 0;
+		if (bits & 1) is not 0
+			buttons is buttons | BIT_LEFT;
+		;;
+		if (bits & 2) is not 0
+			buttons is buttons | BIT_RIGHT;
+		;;
+		if (bits & 0x10) is not 0
+			buttons is buttons | BIT_MIDDLE;
+		;;
+	[end: buttons]
+
+	# 16 bits that can be negative (a place left of or above the window)
+	[Signed: int bits: 0;]
+		if bits >= 0x8000 return bits - 0x10000;
+	[end: bits]
+}
+
+Kernel32.GetModuleHandleW: ptr<u16> name: ptr<u8>;
+User32.RegisterClassExW: ptr<WinClass> kind;
+User32.CreateWindowExW: u32 extra  ptr<u16> kind  ptr<u16> title  u32 style  u32 x  u32 y  int w  int h  ptr<u8> parent  ptr<u8> menu  ptr<u8> instance  ptr<u8> param: ptr<u8>;
+User32.DefWindowProcW: ptr<u8> window  u32 message  ptr<u8> w  ptr<u8> l: ptr<u8>;
+User32.ShowWindow: ptr<u8> window  int how;
+User32.UpdateWindow: ptr<u8> window;
+User32.InvalidateRect: ptr<u8> window  ptr<WinRect> area  int erase;
+User32.SetWindowTextW: ptr<u8> window  ptr<u16> text;
+User32.SetWindowLongW: ptr<u8> window  int index  u32 value;
+User32.SetWindowPos: ptr<u8> window  ptr<u8> after  int x  int y  int w  int h  u32 flags;
+User32.AdjustWindowRect: ptr<WinRect> area  u32 style  int menu;
+User32.GetForegroundWindow: : ptr<u8>;
+User32.LoadCursorW: ptr<u8> instance  ptr<u8> name: ptr<u8>;
+User32.PeekMessageW: ptr<WinMessage> m  ptr<u8> window  u32 lowest  u32 highest  u32 remove;
+User32.TranslateMessage: ptr<WinMessage> m;
+User32.DispatchMessageW: ptr<WinMessage> m: ptr<u8>;
+User32.BeginPaint: ptr<u8> window  ptr<WinPaint> paint: ptr<u8>;
+User32.EndPaint: ptr<u8> window  ptr<WinPaint> paint;
+User32.GetKeyState: int key;
+User32.MapVirtualKeyW: u32 key  u32 how;
+User32.SetCapture: ptr<u8> window: ptr<u8>;
+User32.ReleaseCapture;
+User32.ScreenToClient: ptr<u8> window  ptr<WinPoint> point;
+Gdi32.StretchDIBits: ptr<u8> dc  int x  int y  int w  int h  int from_x  int from_y  int from_w  int from_h  ptr<u8> pixels  ptr<WinBitmap> bitmap  u32 usage  u32 how;
+Gdi32.CreateCompatibleDC: ptr<u8> dc: ptr<u8>;
+Gdi32.CreateBitmap: int w  int h  u32 planes  u32 bits  ptr<u8> data: ptr<u8>;
+Gdi32.CreateFontA: int h  int w  int escapement  int orientation  int weight  u32 italic  u32 underline  u32 strike  u32 charset  u32 precision  u32 clip  u32 quality  u32 pitch  ptr<u8> name: ptr<u8>;
+Gdi32.GetStockObject: int which: ptr<u8>;
+Gdi32.SelectObject: ptr<u8> dc  ptr<u8> object: ptr<u8>;
+Gdi32.SetBkColor: ptr<u8> dc  u32 color;
+Gdi32.SetTextColor: ptr<u8> dc  u32 color;
+Gdi32.ExtTextOutA: ptr<u8> dc  int x  int y  u32 options  ptr<WinRect> area  ptr<u8> text  u32 count  ptr<int> spacing;
+Gdi32.GetBitmapBits: ptr<u8> picture  int bytes  ptr<u8> bits;
+Gdi32.DeleteObject: ptr<u8> object;
+Gdi32.DeleteDC: ptr<u8> dc;

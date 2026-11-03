@@ -187,12 +187,7 @@ namespace Phi.Cli
                 return 1;
             }
             string file = Path.GetFullPath(phiFile);
-            // not inside a kernel's rootfs folder, which becomes its disk: next to the folder instead
-            string home = Path.GetDirectoryName(file)!;
-            string folderName = Path.GetFileName(home);
-            if (folderName.Equals("rootfs", StringComparison.OrdinalIgnoreCase) || folderName.EndsWith(".rootfs", StringComparison.OrdinalIgnoreCase))
-                home = Path.GetDirectoryName(home)!;
-            string outDir = Path.Combine(home, "build", $"{Path.GetFileNameWithoutExtension(file)}.load.{target.FlagName()}");
+            string outDir = Path.Combine(Builder.BuildHome(file), "build", $"{Path.GetFileNameWithoutExtension(file)}.load.{target.FlagName()}");
             Directory.CreateDirectory(outDir);
 
             int clients = (connections + PerMachine - 1) / PerMachine;

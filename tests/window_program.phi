@@ -1,0 +1,102 @@
+# A window on Windows, behind gui.app's calls (lib/phi/host/window_windows.phi, H7 step 1): the
+# same program a PHI OS desktop would run. Its pixels shown, the font, and what the user does:
+# keys, held keys, the mouse and its buttons, the wheel, resizing, and closing it. The window is
+# hidden and support/win_window.phi plays the user, so nothing pops up or takes the keys.
+use gui.app;
+use support.win_window;
+
+phi.WindowProgram:Program
+{
+	HostWindow.visible is false;
+
+	log 'open: ' (App.Open: 200 100) ', inside: ' (WinTest.ClientWidth) ' x ' (WinTest.ClientHeight) '\n';
+	log 'no event yet: ' (App.NextEvent) '\n';
+
+	# the font: shapes for the letters, nothing for a space
+	int ink_a: 0;
+	int ink_space: 0;
+	while int r: 0; r < 16; r++;
+		ink_a++ Font.glyphs:('A' * 16 + r);
+		ink_space++ Font.glyphs:(' ' * 16 + r);
+	;;
+	log 'the font: ' Font.loaded ', an A has ink: ' (ink_a > 0) ', a space has: ' ink_space '\n';
+
+	# what's drawn is what's shown
+	call Draw.Clear: 0x102030;
+	call Draw.FillRect: 10 10 20 20 0xE0483E;
+	call App.Present;
+	log 'shown: ' ((WinTest.PixelAt: 5 5) is 0x102030) ' ' ((WinTest.PixelAt: 15 15) is 0xE0483E) ' ' ((WinTest.PixelAt: 199 99) is 0x102030) '\n';
+
+	# keys: one that types, one that doesn't, and one held
+	call WinTest.Post: 0x102 'a' 0;              # WM_CHAR
+	call Next;
+	log 'typed: ' (App.event.kind is Events.KEY) ' ' ((App.event.value & Events.KEY_MASK) is 'a') '\n';
+	call WinTest.Post: 0x100 0x26 0;             # WM_KEYDOWN, the up arrow
+	call Next;
+	log 'up: ' ((App.event.value & Events.KEY_MASK) is Events.KEY_UP) ', held: ' (OS.IsKeyDown: Events.KEY_UP) '\n';
+	call WinTest.Post: 0x101 0x26 0;             # WM_KEYUP
+	log 'let go: ' (OS.IsKeyDown: Events.KEY_UP) '\n';
+	call WinTest.Post: 0x100 0x57 0;             # the W key: held as 'w', as a game looks for it
+	log 'w held: ' (OS.IsKeyDown: 'w') '\n';
+	call WinTest.Post: 0x101 0x57 0;
+	log 'w let go: ' (OS.IsKeyDown: 'w') '\n';
+	call Drain;
+
+	# the mouse: moves come together, a press says which button
+	call WinTest.Post: 0x200 0 (WinTest.At: 1 1);
+	call WinTest.Post: 0x200 0 (WinTest.At: 2 2);
+	call WinTest.Post: 0x200 0 (WinTest.At: 30 40);
+	call Next;
+	log 'moved: ' App.event.x ' ' App.event.y ', and no more: ' (App.NextEvent) '\n';
+	call WinTest.Post: 0x201 1 (WinTest.At: 31 41);   # the left button down
+	call Next;
+	log 'left: ' App.event.x ' ' App.event.y ' buttons ' App.event.value ' clicks ' App.event.clicks ' pressed ' App.event.pressed '\n';
+	call WinTest.Post: 0x202 0 (WinTest.At: 31 41);   # and up
+	call Next;
+	log 'up: buttons ' App.event.value ' clicks ' App.event.clicks ' pressed ' App.event.pressed '\n';
+	call WinTest.Post: 0x203 1 (WinTest.At: 31 41);   # a double click
+	call Next;
+	log 'double: clicks ' App.event.clicks '\n';
+	call WinTest.Post: 0x202 0 (WinTest.At: 31 41);
+	call Next;
+	call WinTest.Post: 0x204 2 (WinTest.At: 5 6);     # the right button
+	call Next;
+	log 'right: buttons ' App.event.value ' pressed ' App.event.pressed '\n';
+	call WinTest.Post: 0x205 0 (WinTest.At: 5 6);
+	call Next;
+	call WinTest.Post: 0x20A (-120 << 16) (WinTest.At: 5 6);   # the wheel, a notch towards the user
+	call Next;
+	log 'wheel: ' App.event.wheel '\n';
+
+	# a new size (as dragging its edge would make it): the program is told, and draws at it
+	call HostWindow.Fit: 300 150;
+	call Next;
+	log 'resize: ' (App.event.kind is Events.RESIZE) ' ' App.event.x ' ' App.event.y '\n';
+	log 'resized: ' (App.Resize: App.event.x App.event.y) ', inside: ' (WinTest.ClientWidth) ' x ' (WinTest.ClientHeight) '\n';
+	call Draw.Clear: 0x3DBE5A;
+	call App.Present;
+	log 'shown again: ' ((WinTest.PixelAt: 299 149) is 0x3DBE5A) '\n';
+
+	# its title, its frame, and whether it's in front (it's hidden)
+	call App.SetTitle: 'Hello';
+	log 'title: ' (WinTest.TitleLength) ', frame: ' (WinTest.HasThickFrame) '\n';
+	call App.SetResizable: false;
+	log 'fixed frame: ' (WinTest.HasThickFrame) ', in front: ' (App.Focused) '\n';
+	log 'a program in a window of its own: ' (App.OpenWindow: 'X.BIN' '') '\n';
+
+	# closing it asks the program
+	call WinTest.Post: 0x10 0 0;                 # WM_CLOSE
+	call Next;
+	log 'close: ' (App.event.kind is Events.CLOSE) '\n';
+	exit 0;
+
+	# the next event, however long Windows takes with it
+	[Next]
+		call App.WaitEvent;
+	[end]
+
+	[Drain]
+		while (App.NextEvent)
+		;;
+	[end]
+}

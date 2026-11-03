@@ -1,0 +1,68 @@
+# What window_program.phi asks of Windows, to play the part of the user and look at what's
+# shown: messages posted to the program's own window, as Windows would send them, and the
+# pixels it paints, asked for in a bitmap (WM_PRINTCLIENT: PrintWindow won't print a hidden
+# window). The window stays hidden (HostWindow.visible), so nothing pops up and nothing
+# takes the keys from whoever's at the computer.
+
+use 'gdi32.dll' as Gdi32;
+use 'user32.dll' as User32;
+
+phi.WinTest:Windows
+{
+	# a message in the window's queue, as Windows would put it there
+	[Post: u32 message: 0; int w: 0; int l: 0;]
+		call User32.PostMessageW: HostWindow.window message w as ptr<u8> l as ptr<u8>;
+	[end]
+
+	# a message handled now
+	[Send: u32 message: 0; int w: 0; int l: 0;]
+		ptr<u8> answer: (User32.SendMessageW: HostWindow.window message w as ptr<u8> l as ptr<u8>);
+	[end]
+
+	[At: int x: 0; int y: 0;]
+	[end: (y << 16) | x]
+
+	# the window's inside, across and down
+	[ClientWidth]
+		WinRect area;
+		call User32.GetClientRect: HostWindow.window addr area;
+	[end: area.right]
+
+	[ClientHeight]
+		WinRect area;
+		call User32.GetClientRect: HostWindow.window addr area;
+	[end: area.bottom]
+
+	[TitleLength]
+	[end: (User32.GetWindowTextLengthW: HostWindow.window)]
+
+	# whether the window has the frame its size is changed by
+	[HasThickFrame]
+	[end: ((User32.GetWindowLongW: HostWindow.window (-16)) & 0x40000) is not 0]
+
+	# the color shown at x, y (0x00RRGGBB), from what the window paints
+	[PixelAt: int x: 0; int y: 0;]
+		ptr<u8> screen: (User32.GetDC: 0);
+		ptr<u8> dc: (Gdi32.CreateCompatibleDC: screen);
+		ptr<u8> picture: (Gdi32.CreateCompatibleBitmap: screen 400 300);
+		ptr<u8> old: (Gdi32.SelectObject: dc picture);
+		ptr<u8> answer: (User32.SendMessageW: HostWindow.window 0x318 dc 4 as ptr<u8>);   # WM_PRINTCLIENT, PRF_CLIENT
+		u32 color: (Gdi32.GetPixel: dc x y);
+		call Gdi32.SelectObject: dc old;
+		call Gdi32.DeleteObject: picture;
+		call Gdi32.DeleteDC: dc;
+		call User32.ReleaseDC: 0 screen;
+		# (Windows says colors as 0x00BBGGRR)
+		u32 rgb: ((color & 0xFF) << 16) | (color & 0xFF00) | ((color >> 16) & 0xFF);
+	[end: rgb]
+}
+
+User32.PostMessageW: ptr<u8> window  u32 message  ptr<u8> w  ptr<u8> l;
+User32.SendMessageW: ptr<u8> window  u32 message  ptr<u8> w  ptr<u8> l: ptr<u8>;
+User32.GetClientRect: ptr<u8> window  ptr<WinRect> area;
+User32.GetWindowTextLengthW: ptr<u8> window;
+User32.GetWindowLongW: ptr<u8> window  int index;
+User32.GetDC: ptr<u8> window: ptr<u8>;
+User32.ReleaseDC: ptr<u8> window  ptr<u8> dc;
+Gdi32.CreateCompatibleBitmap: ptr<u8> dc  int w  int h: ptr<u8>;
+Gdi32.GetPixel: ptr<u8> dc  int x  int y: u32;

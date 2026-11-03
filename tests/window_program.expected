@@ -1,0 +1,22 @@
+open: 1, inside: 200 x 100
+no event yet: 0
+the font: 1, an A has ink: 1, a space has: 0
+shown: 1 1 1
+typed: 1 1
+up: 1, held: 1
+let go: 0
+w held: 1
+w let go: 0
+moved: 30 40, and no more: 0
+left: 31 41 buttons 1 clicks 1 pressed 1
+up: buttons 0 clicks 0 pressed 0
+double: clicks 2
+right: buttons 2 pressed 2
+wheel: 1
+resize: 1 300 150
+resized: 1, inside: 300 x 150
+shown again: 1
+title: 5, frame: 1
+fixed frame: 0, in front: 0
+a program in a window of its own: -1
+close: 1

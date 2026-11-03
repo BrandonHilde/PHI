@@ -154,6 +154,18 @@ namespace Phi.Cli
         }
 
         /// <summary>
+        /// Where a file's build folder goes: next to it, or for a program in a kernel's rootfs
+        /// folder, next to that folder (which becomes a disk, with only 8.3 names).
+        /// </summary>
+        public static string BuildHome(string file)
+        {
+            string home = Path.GetDirectoryName(Path.GetFullPath(file))!;
+            string name = Path.GetFileName(home);
+            bool rootfs = name.Equals("rootfs", StringComparison.OrdinalIgnoreCase) || name.EndsWith(".rootfs", StringComparison.OrdinalIgnoreCase);
+            return rootfs ? Path.GetDirectoryName(home)! : home;
+        }
+
+        /// <summary>
         /// The folder copied into a kernel's file system: NAME.rootfs/ or rootfs/ next to the
         /// program. NAME.rootfs can also be a text file holding the path of a folder to use.
         /// </summary>
