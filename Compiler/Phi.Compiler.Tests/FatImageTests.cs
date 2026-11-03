@@ -205,5 +205,18 @@ namespace Phi.Compiler.Tests
             Assert.False(result.Success);
             Assert.Single(result.Errors, e => e.Contains("nothing"));
         }
+
+        [Fact]
+        public void AProgramInARootfsBuiltOnItsOwnUsesWhatIsNextToItsKernel()
+        {
+            File.WriteAllText(Path.Combine(root, "shared.phi"), "phi.Shared:Library\n{\n\tconst int PORT: 4000;\n}\n");
+            string rootfs = Path.Combine(root, "server.rootfs");
+            Directory.CreateDirectory(rootfs);
+            string program = Path.Combine(rootfs, "world.phi");
+            File.WriteAllText(program, "use shared;\n\nphi.World:Program\n{\n\tlog Shared.PORT;\n}\n");
+
+            BuildResult result = Builder.Build(program, Path.Combine(root, "build"), host: Host.Linux);
+            Assert.True(result.Success, string.Join("\n", result.Errors));
+        }
     }
 }

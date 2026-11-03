@@ -209,7 +209,8 @@ namespace Phi.Compiler
         /// <summary>
         /// use a.b; is the file a/b.phi: next to the file that uses it, else next to the main
         /// program, else (for a program in a kernel's rootfs) next to the kernel, else in the
-        /// standard library.
+        /// standard library. A program in a rootfs folder built on its own (for Linux, say)
+        /// looks in the folder around it, where its kernel is, as it does built for the kernel.
         /// </summary>
         static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main, string? kernel)
         {
@@ -217,6 +218,9 @@ namespace Phi.Compiler
 
             var places = new List<string> { from.Path, main.Path };
             if (kernel != null) places.Add(kernel);
+            else if (Path.GetDirectoryName(Path.GetFullPath(main.Path)) is string folder
+                     && (Path.GetFileName(folder) == "rootfs" || folder.EndsWith(".rootfs")))
+                places.Add(Path.Combine(Path.GetDirectoryName(folder) ?? "", Path.GetFileName(main.Path)));
             foreach (string near in places)
             {
                 if (near.StartsWith(StandardLibrary)) continue;

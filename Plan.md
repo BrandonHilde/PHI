@@ -2243,6 +2243,17 @@ OS or on the host, and `phi load` holds the same tick rate.
     connecting, so a connection is "connecting" until `select` says it can be written to
     (or failed). And Windows asks the first time a new program opens a socket whether it
     may use the network (its firewall); until someone answers, UDP sockets fail.
+- [x] (the demo, first part) `samples/mmo/`'s world and lobby build as Linux and Windows
+  programs, unchanged. A program in a rootfs folder built on its own now finds modules
+  next to its kernel, as it does when the kernel builds it (`use zone;`). Tried by hand:
+  the world on Windows with a Python player, and on Linux with a PHI one (a Linux program
+  too): it joins, moves, gets 20 STATEs a second, and is back where it was after a
+  restart; the lobby on Windows with Python's TLS client (OpenSSL), which checks its
+  certificate: TLS 1.3, a login, `say`, the account kept across a restart, a wrong
+  password refused.
+  - Not yet: `phi load` against a world running on the host (its load clients are PHI OS
+    kernels on the test network), which the "Done when" asks for.
+- [ ] (2) threads on the hosts, and (3) PHI's memory model in `docs/language.md`
 
 #### Phase H6: Windows and graphics
 
