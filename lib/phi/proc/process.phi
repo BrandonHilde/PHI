@@ -19,6 +19,12 @@
 # more_calls, and on_release hears when a program's memory is about to go back; each
 # passes on what isn't its own to the one that was set before it.
 #
+# A program's threads (user.threads) are tasks of it (OS.CreateUserThread): system calls
+# 44 to 46 start one on a stack the program gives it, say whether one has finished, and
+# give a finished one's number back. Each has a kernel stack of its own; what's left of
+# them goes back with the program. What a program has goes by its program
+# (OS.CurrentProcess), whichever of its threads asks.
+#
 # The file calls (17 to 21, 31, 38 to 42) are answered by FileCalls, holding the file
 # system's lock (Fat.Lock) and not the kernel's, so on several cores (proc.cores) a
 # program reading or writing a file holds up only other files, not the rest of the
@@ -63,7 +69,7 @@ phi.Process:Kernel
 	const u32 STACK_PAGES: 16;              # 64 KB
 	const u32 PAGE_USER: 7;                 # present, writable, user mode may use it
 	const u32 KERNEL_STACK_SIZE: 8192;
-	const int MAX_PROCESSES: 16;
+	const int MAX_PROCESSES: 64;            # as many tasks as the scheduler has (lib/x86_32/tasks.asm)
 
 	const u32 TASK_FREE: 0;
 	const u32 TASK_EXITED: 5;
@@ -99,22 +105,26 @@ phi.Process:Kernel
 	const u32 SYS_DELETE_FOLDER: 41;
 	const u32 SYS_APPEND_FILE: 42;
 	const u32 SYS_NOW: 43;
+	const u32 SYS_THREAD_START: 44;
+	const u32 SYS_THREAD_DONE: 45;
+	const u32 SYS_THREAD_FREE: 46;
 	const u32 SYS_MORE: 64;                 # from here on, more_calls handles them
 
 	const u32 HEAP_LIMIT: 0x48000000;       # a program's heap is at most 124 MB (from USER_TOP)
 	const u32 GROW_SPARE: 256;              # frames left for the kernel when a program grows
 
-	u32 process_directory[16];              # 0: no process with this number
-	u32 process_kernel_stack[16];
-	u32 process_image_end[16];
-	u32 process_heap_end[16];               # its heap is USER_TOP up to this
-	u8 process_names[256];                  # 16 bytes for each process
+	u32 process_directory[64];              # 0: no process with this number
+	u32 process_kernel_stack[64];
+	u32 process_image_end[64];
+	u32 process_heap_end[64];               # its heap is USER_TOP up to this
+	u8 process_names[1024];                 # 16 bytes for each process
 	u32 started: 0;
 	int exit_code: 0;                       # of the program Ended last saw end
 	u8 call_path[64];                       # copies of a system call's text arguments
 	u8 call_arguments[256];
 	u8 file_path[64];                       # ... and of a file call's (FileCalls, under Fat's lock)
 	u8 file_path_to[64];                    # where Rename moves file_path to
+	u32 thread_kernel_stack[64];            # each thread's kernel stack, by its task number (0: not a thread)
 
 	# system calls 64 and up: their number and four arguments, and the result to give back
 	method<u32 u32 u32 u32 u32: int> more_calls: 0;
@@ -310,10 +320,15 @@ phi.Process:Kernel
 		buffer:(NAME_SIZE - 1) is 0;
 	[end: (buffer:0 is not 0)]
 
-	# give a finished program's memory back
+	# give a finished program's memory back (and what's left of its threads)
 	[Release: int pid: 0;]
 		if on_release is not 0
 			call on_release: pid;
+		;;
+		while int t: 1; t < MAX_PROCESSES; t++;
+			if t is not pid and thread_kernel_stack:t is not 0 and (OS.TaskProcess: t) is pid
+				call FreeThread: t;
+			;;
 		;;
 		ptr<u32> directory: process_directory:pid;
 		# its 4 MB of code, data and stack, then each 4 MB its heap grew into
@@ -329,6 +344,37 @@ phi.Process:Kernel
 		call OS.FreeTask: pid;
 	[end]
 
+	# a finished thread's kernel stack and number back
+	[FreeThread: int t: 0;]
+		call Frames.Free: thread_kernel_stack:t;
+		call Frames.Free: thread_kernel_stack:t + PAGE_SIZE;
+		thread_kernel_stack:t is 0;
+		call OS.FreeTask: t;
+	[end]
+
+	# a thread of the calling program: entry in its code, esp in the stack it gives (bottom
+	# up to top, in its heap); its task number, or -1
+	[StartThread: u32 entry: 0; u32 esp: 0; u32 bottom: 0; u32 top: 0;]
+		int pid: (OS.CurrentProcess);
+		if pid <= 0 or pid >= MAX_PROCESSES or process_directory:pid is 0 return -1;
+		if entry < USER_BASE or entry >= process_image_end:pid return -1;
+		if bottom < USER_TOP or top > process_heap_end:pid or bottom >= top or esp <= bottom or esp > top return -1;
+		ptr<u8> stack: (Frames.AllocContiguous: 2);
+		if stack is 0 return -1;
+		int t: (OS.CreateUserThread: pid entry esp stack + KERNEL_STACK_SIZE bottom top);
+		if t < 0
+			call Frames.Free: stack;
+			call Frames.Free: stack + PAGE_SIZE;
+			return -1;
+		;;
+		thread_kernel_stack:t is stack;
+	[end: t]
+
+	# is t a thread of the calling program?
+	[OwnThread: u32 t: 0;]
+		if t >= MAX_PROCESSES or thread_kernel_stack:t is 0 return false;
+	[end: (OS.TaskProcess: t) is (OS.CurrentProcess)]
+
 	# give back a page table and every page it maps
 	[ReleaseTable: ptr<u32> table: 0;]
 		while u32 i: 0; i < 1024; i++;
@@ -342,7 +388,7 @@ phi.Process:Kernel
 	# map bytes more (whole pages, zeroed) at the end of the calling program's heap;
 	# where the new memory starts, or 0 if there's no room
 	[Grow: u32 bytes: 0;]
-		int pid: (OS.CurrentTask);
+		int pid: (OS.CurrentProcess);
 		u32 start: process_heap_end:pid;
 		u32 pages: (bytes + PAGE_SIZE - 1) / PAGE_SIZE;
 		if pid <= 0 or pid >= MAX_PROCESSES or start is 0 or pages is 0 return 0;
@@ -384,7 +430,7 @@ phi.Process:Kernel
 	# is [address, address + length) memory the calling program owns?
 	[UserRange: u32 address: 0; u32 length: 0;]
 		u32 caller: 0;
-		call caller is OS.CurrentTask;
+		call caller is OS.CurrentProcess;
 		u32 last: address + length;
 		bln inImage: address >= USER_BASE and last >= address and last <= process_image_end:caller;
 		bln inStack: address >= USER_TOP - STACK_PAGES * PAGE_SIZE and last >= address and last <= USER_TOP;
@@ -493,6 +539,23 @@ phi.Process:Kernel
 		;;
 		elif number is SYS_GROW
 			call result is Grow: first;
+		;;
+		elif number is SYS_THREAD_START
+			call result is StartThread: first second third fourth;
+		;;
+		elif number is SYS_THREAD_DONE
+			if (OwnThread: first)
+				result is (OS.TaskState: first) >= TASK_EXITED;
+			;;
+		;;
+		elif number is SYS_THREAD_FREE
+			if (OwnThread: first)
+				result is 0;
+				if (OS.TaskState: first) >= TASK_EXITED
+					call FreeThread: first;
+					result is 1;
+				;;
+			;;
 		;;
 		elif number >= SYS_MORE
 			if more_calls is not 0

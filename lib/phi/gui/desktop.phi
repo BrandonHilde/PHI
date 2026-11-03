@@ -72,7 +72,7 @@ phi.Desktop:Kernel
 	# OS.IsKeyDown for a program: what Input says, but only for the program in front
 	[HeldKey: u32 key: 0;]
 		if windows.len is 0 return 0;
-		if windows:(windows.len - 1).pid is not (OS.CurrentTask) return 0;
+		if windows:(windows.len - 1).pid is not (OS.CurrentProcess) return 0;
 		if (Input.IsDown: key) return 1;
 	[end: 0]
 

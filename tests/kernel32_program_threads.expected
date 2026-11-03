@@ -1,0 +1,18 @@
+started: 1 1 1 1
+done: 1
+parts: 500500 1500500 2500500 3500500
+atomic total: 8002000, locked total: 8002000, all: 1
+each in this program: 1
+one core: exit 7
+sharing: 1
+started: 1 1 1 1
+done: 1
+parts: 500500 1500500 2500500 3500500
+atomic total: 8002000, locked total: 8002000, all: 1
+each in this program: 1
+every core: exit 7
+dividing
+
+PHI: division by zero
+a thread failed: exit -1
+memory back: 1

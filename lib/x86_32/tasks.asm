@@ -1,8 +1,13 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_own_add phi_task_core phi_thread_start
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_own_add phi_task_core phi_thread_start OS_CreateUserThread OS_TaskProcess OS_CurrentProcess
 ; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_core_blocks phi_own_call_hook
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
-; directory and kernel stack, and the kernel itself as task 0.
+; directory and kernel stack, and the kernel itself as task 0. A program's threads are
+; tasks too, with its page directory and a kernel stack and a stack of their own: each
+; task knows its program (phi_task_process: the program's first task, which is its
+; number; 0 for the kernel and its threads), and what a program has (its memory, the
+; checks on what it passes, its fault entry) goes by its program. When a program ends
+; (exit, a fault, a kill) every task of it ends.
 ;
 ;   - the timer takes the CPU away from a user program; the kernel gives it up
 ;     itself (OS_Yield, or when its main code ends), so kernel code never runs
@@ -12,7 +17,7 @@
 ;
 ; Every switch happens at the end of an interrupt: the saved state on the task's
 ; kernel stack (see interrupts.asm) is what the next iretd resumes.
-MAX_TASKS     equ 16
+MAX_TASKS     equ 64               ; a power of 2 (the scheduler wraps round with and)
 MAX_CORES     equ 8                ; as proc.cores has it
 TSS_SIZE      equ 104
 TICK_VECTOR   equ 0xF1             ; another core's own timer (its local APIC's)
@@ -165,16 +170,107 @@ OS_CreateUserTask:
     mov [phi_task_stack_bottom + ecx * 4], eax
     mov dword [phi_task_heap_end + ecx * 4], 0   ; no heap until it grows one
     mov byte [phi_task_fpu_fresh + ecx], 1       ; its FPU starts clean
-    mov byte [phi_task_thread + ecx], 0          ; a program, not a thread
+    mov byte [phi_task_thread + ecx], 0          ; a program, not a kernel thread
     mov dword [phi_task_fault_entry + ecx * 4], 0
     mov dword [phi_task_catch + ecx * 4], 0
     mov dword [phi_task_unwind + ecx * 4], 0
+    mov [phi_task_process + ecx * 4], ecx        ; a program of its own
+    mov dword [phi_task_stack_top + ecx * 4], USER_TOP
     mov eax, [phi_current_task]
+    mov eax, [phi_task_process + eax * 4]        ; (a program a thread starts is its program's child)
     mov [phi_task_parent + ecx * 4], eax
     mov dword [phi_task_exit + ecx * 4], 0
     mov dword [phi_task_state + ecx * 4], TASK_READY
     mov eax, ecx
     pop ebp
+    ret
+
+; args: program, entry, user esp, kernel stack top, bottom and top of the user stack
+; -> eax = a new task of the program (a thread, in its address space), or -1
+OS_CreateUserThread:
+    push ebp
+    mov ebp, esp
+    push ebx
+    mov ebx, [ebp + 8]                        ; the program
+    mov ecx, 1
+.find:
+    cmp dword [phi_task_state + ecx * 4], TASK_FREE
+    je .found
+    inc ecx
+    cmp ecx, MAX_TASKS
+    jb .find
+    mov eax, -1
+    pop ebx
+    pop ebp
+    ret
+.found:
+    mov edi, [ebp + 20]
+    sub edi, F_SIZE
+    push edi
+    push ecx
+    mov ecx, F_SIZE / 4
+    xor eax, eax
+    rep stosd
+    pop ecx
+    pop edi
+    mov dword [edi + 0], USER_DATA            ; gs
+    mov dword [edi + 4], USER_DATA            ; fs
+    mov dword [edi + 8], USER_DATA            ; es
+    mov dword [edi + 12], USER_DATA           ; ds
+    mov eax, [ebp + 12]
+    mov [edi + F_EIP], eax
+    mov dword [edi + F_EIP + 4], USER_CODE
+    mov dword [edi + F_EIP + 8], 0x202        ; interrupts on
+    mov eax, [ebp + 16]
+    mov [edi + F_EIP + 12], eax               ; user esp
+    mov dword [edi + F_EIP + 16], USER_DATA   ; user ss
+
+    mov [phi_task_esp + ecx * 4], edi
+    mov eax, [phi_task_cr3 + ebx * 4]         ; the program's memory
+    mov [phi_task_cr3 + ecx * 4], eax
+    mov eax, [ebp + 20]
+    mov [phi_task_kstack + ecx * 4], eax
+    mov eax, [phi_task_image_end + ebx * 4]
+    mov [phi_task_image_end + ecx * 4], eax
+    mov eax, [phi_task_heap_end + ebx * 4]
+    mov [phi_task_heap_end + ecx * 4], eax
+    mov eax, [ebp + 24]
+    mov [phi_task_stack_bottom + ecx * 4], eax
+    mov eax, [ebp + 28]
+    mov [phi_task_stack_top + ecx * 4], eax
+    mov byte [phi_task_fpu_fresh + ecx], 1
+    mov byte [phi_task_thread + ecx], 0
+    mov dword [phi_task_fault_entry + ecx * 4], 0
+    mov dword [phi_task_catch + ecx * 4], 0
+    mov dword [phi_task_unwind + ecx * 4], 0
+    mov [phi_task_process + ecx * 4], ebx
+    mov [phi_task_parent + ecx * 4], ebx
+    mov dword [phi_task_exit + ecx * 4], 0
+    mov dword [phi_task_state + ecx * 4], TASK_READY
+    mov eax, ecx
+    pop ebx
+    pop ebp
+    ret
+
+; end every task of program eax (those still running or waiting), each with exit code edx;
+; keeps the other registers
+phi_end_program:
+    push ecx
+    mov ecx, 1
+.task:
+    cmp [phi_task_process + ecx * 4], eax
+    jne .next
+    cmp dword [phi_task_state + ecx * 4], TASK_READY
+    jb .next
+    cmp dword [phi_task_state + ecx * 4], TASK_EXITED
+    jae .next
+    mov [phi_task_exit + ecx * 4], edx
+    mov dword [phi_task_state + ecx * 4], TASK_EXITED
+.next:
+    inc ecx
+    cmp ecx, MAX_TASKS
+    jb .task
+    pop ecx
     ret
 
 ; ---- the scheduler: eax = saved state of the current task -> eax = the one to resume
@@ -374,16 +470,35 @@ phi_syscall:
     jae .killed
     mov ebx, [ebp + F_EBX]
     mov eax, [ebp + F_EAX]
-    cmp eax, 11
+    cmp eax, 12
     jae .extension
     jmp [.table + eax * 4]
 .table:
-    dd .exit, .write, .debug, .read_key, .sleep, .ticks, .getpid, .yield, .key_available, .wait, .fault_entry
+    dd .exit, .write, .debug, .read_key, .sleep, .ticks, .getpid, .yield, .key_available, .wait, .fault_entry, .thread_end
 
 .exit:
+    ; the whole program ends, whichever of its tasks asked
     mov ecx, [phi_current_task]
-    mov [phi_task_exit + ecx * 4], ebx
+    mov eax, [phi_task_process + ecx * 4]
+    mov edx, ebx
+    call phi_end_program
+    mov eax, 1
+    ret
+
+.thread_end:
+    ; a thread's method has returned: that thread has finished (the program's first task
+    ; finishing is the program's end)
+    mov ecx, [phi_current_task]
+    mov eax, [phi_task_process + ecx * 4]
+    cmp eax, ecx
+    je .exit_zero
+    mov dword [phi_task_exit + ecx * 4], 0
     mov dword [phi_task_state + ecx * 4], TASK_EXITED
+    mov eax, 1
+    ret
+.exit_zero:
+    xor edx, edx
+    call phi_end_program
     mov eax, 1
     ret
 
@@ -430,6 +545,7 @@ phi_syscall:
 
 .getpid:
     mov eax, [phi_current_task]
+    mov eax, [phi_task_process + eax * 4]     ; its program's number, from any of its threads
     mov [ebp + F_EAX], eax
     jmp .done
 
@@ -443,11 +559,14 @@ phi_syscall:
     jmp .done
 
 .wait:
-    ; only for a child of the caller
+    ; only for a child of the caller's program
     mov ecx, [phi_current_task]
     cmp ebx, MAX_TASKS
     jae .invalid
-    cmp [phi_task_parent + ebx * 4], ecx
+    mov eax, [phi_task_process + ecx * 4]
+    cmp [phi_task_parent + ebx * 4], eax
+    jne .invalid
+    cmp [phi_task_process + ebx * 4], ebx     ; (a program, not one of its threads)
     jne .invalid
     mov eax, [phi_task_state + ebx * 4]
     cmp eax, TASK_FREE
@@ -469,6 +588,7 @@ phi_syscall:
 .fault_entry:
     ; where this program catches CPU exceptions (its throw.asm's phi_fault_entry): in its code
     mov ecx, [phi_current_task]
+    mov ecx, [phi_task_process + ecx * 4]
     cmp ebx, USER_BASE
     jb .invalid
     cmp ebx, [phi_task_image_end + ecx * 4]
@@ -500,6 +620,7 @@ phi_syscall:
 ; carry set if not
 phi_user_string:
     mov ecx, [phi_current_task]
+    mov ecx, [phi_task_process + ecx * 4]     ; (its program's first task has its ranges)
     mov esi, ebx
 .byte:
     cmp esi, USER_BASE
@@ -530,7 +651,8 @@ phi_user_string:
 phi_task_fault:
     mov ebp, eax
     mov ecx, [phi_current_task]
-    mov edx, [phi_task_fault_entry + ecx * 4]
+    mov edx, [phi_task_process + ecx * 4]
+    mov edx, [phi_task_fault_entry + edx * 4]
     test edx, edx
     jz .stop
     mov eax, [ebp + F_VECTOR]
@@ -549,10 +671,10 @@ phi_task_fault:
 .send:
     ; not when its stack has run off its end, or the entry itself was stopped: the throw
     ; would only be stopped again
-    mov eax, [ebp + F_EIP + 12]               ; its esp
+    mov eax, [ebp + F_EIP + 12]               ; its esp (on this thread's own stack)
     cmp eax, [phi_task_stack_bottom + ecx * 4]
     jbe .stop
-    cmp eax, USER_TOP
+    cmp eax, [phi_task_stack_top + ecx * 4]
     ja .stop
     cmp [ebp + F_EIP], edx
     je .stop
@@ -565,6 +687,7 @@ phi_task_fault:
     mov esi, .stopped
     call phi_print
     mov eax, [phi_current_task]
+    mov eax, [phi_task_process + eax * 4]
     call phi_print_int
     mov esi, .stopped_by
     call phi_print
@@ -583,9 +706,10 @@ phi_task_fault:
 .end:
     mov esi, .newline
     call phi_print
-    mov ecx, [phi_current_task]
-    mov dword [phi_task_exit + ecx * 4], -1
-    mov dword [phi_task_state + ecx * 4], TASK_EXITED
+    mov eax, [phi_current_task]               ; the whole program, every thread of it
+    mov eax, [phi_task_process + eax * 4]
+    mov edx, -1
+    call phi_end_program
     ret
 .stopped:    db 13, 10, 'PHI: program ', 0
 .stopped_by: db ' stopped by exception ', 0
@@ -904,6 +1028,8 @@ phi_thread_start:
     mov [phi_task_exit + ebx * 4], eax
     mov byte [phi_task_fpu_fresh + ebx], 1
     mov byte [phi_task_thread + ebx], 1
+    mov [phi_task_process + ebx * 4], eax     ; (the kernel's)
+    mov [phi_task_stack_top + ebx * 4], eax
     mov dword [phi_task_catch + ebx * 4], 0
     mov dword [phi_task_unwind + ebx * 4], 0
     mov eax, [phi_current_task]
@@ -995,19 +1121,49 @@ OS_CurrentTask:
 .alone:
     ret
 
-; arg: task -> eax = its state (0 free, 1 ready, 2 sleeping, 3 waiting for a key,
-; 4 waiting for a child, 5 exited, 6 exited and collected by its parent)
-OS_TaskState:
+; -> eax = the program this core's task belongs to (its first task's number), or 0 for
+; the kernel and its threads
+OS_CurrentProcess:
+    call OS_CurrentTask
+    mov eax, [phi_task_process + eax * 4]
+    ret
+
+; arg: task -> eax = the program it belongs to (0: the kernel's)
+OS_TaskProcess:
     mov eax, [esp + 4]
     and eax, MAX_TASKS - 1
-    mov ecx, [phi_task_core + eax * 4]
-    mov eax, [phi_task_state + eax * 4]
+    mov eax, [phi_task_process + eax * 4]
+    ret
+
+; arg: task -> eax = its state (0 free, 1 ready, 2 sleeping, 3 waiting for a key,
+; 4 waiting for a child, 5 exited, 6 exited and collected by its parent). A program
+; counts as running until none of its tasks is still running on another core (killed,
+; but that core runs it until its next tick): its memory mustn't be freed until then.
+OS_TaskState:
+    mov edx, [esp + 4]
+    and edx, MAX_TASKS - 1
+    mov eax, [phi_task_state + edx * 4]
     cmp eax, TASK_EXITED
     jb .done
-    test ecx, ecx
-    jz .done
-    mov eax, TASK_READY     ; killed, but another core is still running it until its next tick:
-.done:                      ; its memory mustn't be freed yet
+    xor ecx, ecx
+.task:
+    cmp ecx, edx                              ; itself, or a task of its program
+    je .check
+    test edx, edx
+    jz .next
+    cmp [phi_task_process + ecx * 4], edx
+    jne .next
+.check:
+    cmp dword [phi_task_core + ecx * 4], 0
+    jne .running
+.next:
+    inc ecx
+    cmp ecx, MAX_TASKS
+    jb .task
+.done:
+    ret
+.running:
+    mov eax, TASK_READY
     ret
 
 OS_TaskExitCode:
@@ -1022,40 +1178,53 @@ OS_TaskParent:
     mov eax, [phi_task_parent + eax * 4]
     ret
 
-; arg: task: its slot can be used again (its memory must already be freed)
-; args: task, end of its heap (its heap starts at USER_TOP)
+; args: program, end of its heap (its heap starts at USER_TOP), for every task of it
 OS_SetTaskHeapEnd:
     mov eax, [esp + 4]
     and eax, MAX_TASKS - 1
-    mov ecx, [esp + 8]
-    mov [phi_task_heap_end + eax * 4], ecx
+    mov edx, [esp + 8]
+    mov [phi_task_heap_end + eax * 4], edx
+    mov ecx, 1
+.task:
+    cmp [phi_task_process + ecx * 4], eax
+    jne .next
+    mov [phi_task_heap_end + ecx * 4], edx
+.next:
+    inc ecx
+    cmp ecx, MAX_TASKS
+    jb .task
     ret
 
+; arg: task: its slot can be used again (its memory must already be freed)
 OS_FreeTask:
     mov eax, [esp + 4]
     and eax, MAX_TASKS - 1
     jz .kernel
+    mov dword [phi_task_process + eax * 4], 0
     mov dword [phi_task_state + eax * 4], TASK_FREE
 .kernel:
     ret
 
-; arg: task -> eax = 1 if it was stopped (with exit code -1). The kernel, the task
-; doing the killing, and tasks that have already finished can't be killed.
+; arg: task -> eax = 1 if its program was stopped (every task of it, with exit code -1).
+; The kernel, the program doing the killing, and programs that have already finished
+; can't be killed.
 OS_KillTask:
     mov eax, [esp + 4]
     cmp eax, MAX_TASKS
     jae .no
+    mov eax, [phi_task_process + eax * 4]     ; (a thread's program)
     test eax, eax
     jz .no
-    cmp eax, [phi_current_task]
+    mov ecx, [phi_current_task]
+    cmp eax, [phi_task_process + ecx * 4]
     je .no
     mov ecx, [phi_task_state + eax * 4]
     cmp ecx, TASK_READY
     jb .no
     cmp ecx, TASK_EXITED
     jae .no
-    mov dword [phi_task_exit + eax * 4], -1
-    mov dword [phi_task_state + eax * 4], TASK_EXITED
+    mov edx, -1
+    call phi_end_program
     mov eax, 1
     ret
 .no:
@@ -1110,6 +1279,8 @@ phi_task_thread:       times MAX_TASKS db 0     ; 1 for a kernel thread (proc.th
 phi_task_catch:        times MAX_TASKS dd 0     ; its catches and methods' records, while another task runs
 phi_task_unwind:       times MAX_TASKS dd 0
 phi_task_fault_entry:  times MAX_TASKS dd 0     ; where a program catches CPU exceptions (system call 10), or 0
+phi_task_process:      times MAX_TASKS dd 0     ; the program it belongs to (its first task), 0: the kernel's
+phi_task_stack_top:    times MAX_TASKS dd 0     ; the top of its user stack (its bottom: phi_task_stack_bottom)
 
 ; system calls with a lock of their own (phi_own_call): first, how many, method; each 12 bytes
 phi_own_ranges:        dd 0

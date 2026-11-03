@@ -40,7 +40,7 @@ phi.NetCalls:Kernel
 	const u32 SYS_TCP_ADDRESS: 93;
 	const u32 SYS_TCP_STOP_LISTENING: 94;
 
-	const int MAX_PROCESSES: 16;
+	const int MAX_PROCESSES: 64;
 	const int SOCKETS: 16;                  # as many as Udp has
 	const int CONNECTIONS: 1024;            # ... as Tcp has
 	const int LISTENERS: 8;
@@ -70,7 +70,7 @@ phi.NetCalls:Kernel
 			;;
 			return passed;
 		;;
-		int pid: (OS.CurrentTask);
+		int pid: (OS.CurrentProcess);
 		if pid <= 0 or pid >= MAX_PROCESSES return -1;
 		if number is SYS_NET_ADDRESS
 			if Net.started is false return 0;

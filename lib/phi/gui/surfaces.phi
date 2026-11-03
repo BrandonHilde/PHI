@@ -44,25 +44,25 @@ phi.Surfaces:Kernel
 	const u32 SYS_FOCUSED: 70;
 	const u32 SYS_RESIZABLE: 71;
 	const int TITLE_SIZE: 32;
-	const int MAX_PROCESSES: 16;
+	const int MAX_PROCESSES: 64;
 	const int QUEUE: 32;
 	const int MOST_SIDE: 4096;
 	const int MOST_PIXELS: 1920 * 1200;
 
-	ptr<u32> pixels[16];        # each process's surface (0: none)
-	int width[16];
-	int height[16];
-	int presents[16];           # how many pictures it has shown
-	bln changed[16];            # a new one since TakeChanged last looked
-	GuiEvent queue[512];        # QUEUE events for each process
-	int head[16];
-	int tail[16];
-	u8 titles[512];             # TITLE_SIZE for each process: what it asked to be called
-	bln title_changed[16];      # a title TakeTitle hasn't taken yet
-	bln new_window[16];         # started by App.OpenWindow, waiting for TakeNewWindow
-	bln fixed_size[16];         # said it can't handle Events.RESIZE (App.SetResizable: false)
+	ptr<u32> pixels[64];        # each process's surface (0: none)
+	int width[64];
+	int height[64];
+	int presents[64];           # how many pictures it has shown
+	bln changed[64];            # a new one since TakeChanged last looked
+	GuiEvent queue[2048];       # QUEUE events for each process
+	int head[64];
+	int tail[64];
+	u8 titles[2048];            # TITLE_SIZE for each process: what it asked to be called
+	bln title_changed[64];      # a title TakeTitle hasn't taken yet
+	bln new_window[64];         # started by App.OpenWindow, waiting for TakeNewWindow
+	bln fixed_size[64];         # said it can't handle Events.RESIZE (App.SetResizable: false)
 	int front: 0;               # the process whose window is in front (the window manager sets it)
-	int buttons_held[16];       # the mouse buttons in the last MOUSE event each process was sent
+	int buttons_held[64];       # the mouse buttons in the last MOUSE event each process was sent
 
 	# what had the system calls and the release before us (net.calls, say): we pass
 	# theirs on
@@ -80,7 +80,7 @@ phi.Surfaces:Kernel
 			;;
 			return passed;
 		;;
-		int pid: (OS.CurrentTask);
+		int pid: (OS.CurrentProcess);
 		if pid <= 0 or pid >= MAX_PROCESSES return -1;
 		if number is SYS_SURFACE_OPEN return (Open: pid a b);
 		if number is SYS_SURFACE_PRESENT return (Present: pid a);

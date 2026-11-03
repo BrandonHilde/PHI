@@ -2256,7 +2256,16 @@ OS or on the host, and `phi load` holds the same tick rate.
 - [ ] (2) threads in programs, on every system (the user's choice, 2026-11-02: PHI OS
   programs too, so a program behaves the same everywhere), with the kernel's calls
   (`Threads.Start`, `Wait`, `Done`, as `proc.threads` has them). The parts:
-  - [ ] (a) PHI OS: several tasks in one program. Each task knows its program
+  - [x] (a) PHI OS: several tasks in one program (2026-11-02). Done as planned:
+    `phi_task_process`, `OS.CreateUserThread`, system calls 11 (a thread's end) and 44 to
+    46, `user.threads` and `lib/x86_32_user/threads.asm`, the program's end ending every
+    task of it, its memory back once no core runs any. `MAX_TASKS` is 64 (and the tables
+    sized by processes in `proc.process`, `net.calls`, `proc.mail`, `gui.surfaces`,
+    `proc.threads`). Test `kernel32_program_threads` (four threads on one core and on
+    every core, atomic and locked across them; a thread's uncaught error ends the
+    program; every frame back). The heap and catching in several threads at once wait
+    for (b) and (c).
+  - (a, as planned) PHI OS: several tasks in one program. Each task knows its program
     (`phi_task_process`); a thread is a task with the program's page directory, its own
     kernel stack and a stack the program gives it from its heap. System calls start one,
     end one, say whether one is done and give its number back. What belongs to a

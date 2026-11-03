@@ -1,0 +1,54 @@
+# Threads for programs: a method run on its own, at the same time as the rest of the
+# program, on whichever core is free. The same calls as a kernel's proc.threads:
+#
+#   use user.threads;
+#   int t: (Threads.Start: addr Count 3);      # Count: 3 runs on its own; -1 if it can't start
+#   ...
+#   call Threads.Wait: t;                       # back once Count has returned
+#   log (Threads.Done: t);                      # whether it has finished, without waiting
+#
+#   [Count: int part: 0;]
+#       ...
+#   [end]
+#
+# A thread finishes when its method returns (at its end, or a return). exit in any
+# thread ends the whole program, as an error nothing catches does in any of them. A
+# thread shares the class variables with the rest of the program, so what it writes
+# should go through locked or atomic (or into data that's only its own, like its element
+# of an array). Each has a stack of STACK_SIZE from the heap.
+
+phi.Threads:Program
+{
+	const u32 STACK_SIZE: 65536;
+	const int MOST: 64;                     # as many as a program can have at once
+
+	ptr<u8> stacks[64];                     # each thread's stack, by its number
+
+	# run work: value as a thread of its own; its number, or -1 if it can't start
+	[Start: method<int> work: 0; int value: 0;]
+		ptr<u8> stack: new u8[STACK_SIZE];
+		if stack is 0 return -1;
+		int thread: (OS.ThreadStart: work value stack stack + STACK_SIZE);
+		if thread <= 0 or thread >= MOST
+			free stack;
+			return -1;
+		;;
+		stacks:thread is stack;
+	[end: thread]
+
+	# whether a thread has finished (its method has returned)
+	[Done: int thread: 0;]
+		if thread <= 0 or thread >= MOST or stacks:thread is 0 return true;
+	[end: (OS.ThreadDone: thread) is not 0]
+
+	# wait until a thread has finished, then give its stack and number back
+	[Wait: int thread: 0;]
+		if thread <= 0 or thread >= MOST or stacks:thread is 0 return;
+		while (OS.ThreadDone: thread) is 0
+			call OS.Sleep: 1;
+		;;
+		call OS.ThreadFree: thread;
+		free stacks:thread;
+		stacks:thread is 0;
+	[end]
+}

@@ -1,0 +1,21 @@
+# Threads in a PHI OS program (user.threads), on one core and then with programs on
+# every core: four threads summing parts of an array, with atomic and locked across them;
+# then a program whose thread divides by zero, which nothing catches, so the whole
+# program ends. Every frame of memory comes back.
+use proc.process;
+use proc.cores;
+
+phi.ProgramThreads:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+
+	int code: (Process.Wait: (Process.Spawn: 'SUMMER.BIN'));
+	log 'one core: exit ' code '\n';
+	log 'sharing: ' (Cores.SharePrograms) '\n';
+	code is (Process.Wait: (Process.Spawn: 'SUMMER.BIN'));
+	log 'every core: exit ' code '\n';
+	code is (Process.Wait: (Process.Spawn: 'FAULTY.BIN'));
+	log 'a thread failed: exit ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

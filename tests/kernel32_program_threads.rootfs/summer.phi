@@ -1,0 +1,51 @@
+# kernel32_program_threads' program: four threads each sum a quarter of an array into
+# their own element, add to a shared total with atomic and to another in a locked block,
+# and say which program they're in. Then it checks what they worked out.
+use user.threads;
+
+phi.Summer:Program
+{
+	const int COUNT: 4000;
+	const int PARTS: 4;
+
+	u32 numbers[4000];
+	u32 sums[4];
+	u32 programs[4];
+	u32 total: 0;
+	u32 counted: 0;
+	lock guard;
+	int threads[4];
+
+	while int i: 0; i < COUNT; i++;
+		numbers:i is i + 1;
+	;;
+	while int p: 0; p < PARTS; p++;
+		threads:p is (Threads.Start: addr Sum p);
+	;;
+	log 'started: ' (threads:0 > 0) ' ' (threads:1 > 0) ' ' (threads:2 > 0) ' ' (threads:3 > 0) '\n';
+	while int p: 0; p < PARTS; p++;
+		call Threads.Wait: threads:p;
+	;;
+	log 'done: ' (Threads.Done: threads:0) '\n';
+	log 'parts: ' sums:0 ' ' sums:1 ' ' sums:2 ' ' sums:3 '\n';
+	log 'atomic total: ' total ', locked total: ' counted ', all: ' (total is COUNT * (COUNT + 1) / 2) '\n';
+	bln same: true;
+	while int p: 0; p < PARTS; p++;
+		same is same and programs:p is (OS.CurrentTask);
+	;;
+	log 'each in this program: ' same '\n';
+	exit 7;
+
+	[Sum: int part: 0;]
+		u32 sum: 0;
+		while int i: part * COUNT / PARTS; i < (part + 1) * COUNT / PARTS; i++;
+			sum++ numbers:i;
+			atomic total++ numbers:i;
+			locked guard
+				counted is counted + numbers:i;
+			;;
+		;;
+		sums:part is sum;
+		programs:part is (OS.CurrentTask);
+	[end]
+}

@@ -1485,6 +1485,25 @@ log (Threads.Done: t);                     # whether it has finished, without wa
   an array isn't warned about, since that's how each thread keeps a result of its own
   (`sums:part is sum;`).
 
+**Threads in programs** (in progress, H5 in [Plan.md](../Plan.md)). A PHI OS program has
+the same calls, from `user.threads`:
+
+```phi
+use user.threads;
+
+int t: (Threads.Start: addr Count 3);     # Count: 3, as a thread of this program
+call Threads.Wait: t;
+```
+
+- A thread is a task of the program, in its memory, on a stack of its own (64 KB, from the
+  heap); once programs share the cores, a program's threads run at once on several.
+- A thread finishes when its method returns. `exit` in any thread ends the whole program,
+  and so does an error nothing catches (or a fault) in any of them.
+- What belongs to a program (its sockets, its mailboxes, its memory's checks) is the
+  program's, whichever thread uses it; `OS.CurrentTask` gives the program's number.
+- Not yet: catching errors in more than one thread at once (a program's catches are one
+  list for now), and the heap from several threads at once.
+
 ### atomic and locked
 
 `atomic` before a statement makes it one step that no other core can come between: the

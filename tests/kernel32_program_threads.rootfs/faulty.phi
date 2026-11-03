@@ -1,0 +1,18 @@
+# kernel32_program_threads' second program: a thread divides by zero, which nothing
+# catches, so the whole program ends (with -1), the rest of it included.
+use user.threads;
+
+phi.Faulty:Program
+{
+	int zero: 0;
+	int t: (Threads.Start: addr Divide 10);
+	while true
+		call OS.Sleep: 1;
+	;;
+
+	[Divide: int n: 0;]
+		call OS.Sleep: 20;
+		log 'dividing\n';
+		log n / zero;
+	[end]
+}
