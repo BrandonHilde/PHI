@@ -1,5 +1,5 @@
-; provides: phi_throw phi_main_thread phi_fault_init phi_fault_entry
-; requires: phi_print phi_exit phi_fault_register phi_thread_setup phi_thread_block
+; provides: phi_throw phi_fault_init phi_fault_entry
+; requires: phi_print phi_exit phi_fault_register phi_thread_block phi_log_take phi_log_back
 ; init: phi_fault_init
 ;
 ; Errors in 64-bit programs, as in 32-bit ones (x86_32_user/throw.asm): eax = the line,
@@ -7,12 +7,12 @@
 ; into the running thread's block (PHI_THREAD_ERROR), laid out as an Error is (kind,
 ; line, file, text, message); then a catch carries on, or PHI: and the message are
 ; printed and the program ends with -1. Each thread has a block of its own, as in 32-bit
-; programs: phi_main_thread for the first, and each system's runtime says where the
-; running thread's is (phi_thread_setup, phi_thread_block: fs on Linux, a TLS slot on
-; Windows).
+; programs: each system's runtime (its threads.asm) gives the first thread one and says
+; where the running thread's is (phi_thread_block: fs on Linux, a TLS slot on Windows).
 ;
 ; Records here are 8 bytes a field: a catch's +0 the catch before it, +8 rsp, +16 rbp,
-; +24 the unwind list when it was set, +32 where to go; a method's +0 the record before
+; +24 the unwind list when it was set, +32 where to go, +40 how deep the thread was in
+; the log's lock (put back here); a method's +0 the record before
 ; it, +8 what gives back its things, +16 its rbp.
 PHI_THREAD_SELF   equ 0                 ; the block's own address
 PHI_THREAD_CATCH  equ 8                 ; the innermost catch, or 0
@@ -91,6 +91,12 @@ phi_throw:
     pop rbx
     jmp .unwind
 .resume:
+    push rbx
+    push rdi
+    mov rax, [rbx + 40]
+    call phi_log_back
+    pop rdi
+    pop rbx
     mov rax, [rbx]
     mov [rdi + PHI_THREAD_CATCH], rax   ; this catch is done
     mov rsp, [rbx + 8]
@@ -99,6 +105,8 @@ phi_throw:
 
 .uncaught:
     push rdi
+    call phi_log_take               ; (printed whole, even with other threads logging)
+    mov rdi, [rsp]
     lea rsi, [rel .prefix]
     call phi_print
     pop rdi
@@ -160,8 +168,6 @@ phi_throw:
 .newline:
     db 13, 10, 0
 
-align 8, db 0
-phi_main_thread: times PHI_THREAD_SIZE db 0     ; the block of the program's first thread
 
 ; ---- CPU exceptions, caught as errors (as x86_32_user/throw.asm has them): the system
 ; (system.asm's phi_fault_register) sends a program the CPU stopped here, with ebx = the
@@ -170,8 +176,6 @@ ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
 ERROR_KIND_EMPTY  equ 4
 
 phi_fault_init:
-    lea rax, [rel phi_main_thread]      ; the first thread's block, before anything can throw
-    call phi_thread_setup
     lea rax, [rel phi_fault_entry]
     jmp phi_fault_register
 

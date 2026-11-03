@@ -467,6 +467,17 @@ namespace Phi.Compiler.Tests
             Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
         }
 
+        [Fact]
+        public void AProgramsThreadWritingASharedVariableWarns()
+        {
+            // a program's threads (user.threads) are told apart from the rest of it the same way
+            CompileResult result = Compile("use user.threads;\nphi.Test:Program\n{\n int total: 0;\n int t: (Threads.Start: addr Work 0);\n" +
+                                           "[Work: int n: 0;]\n total++;\n[end]\n}\n");
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning
+                && d.Message.Contains("Threads.Start runs Work on another thread, which shares 'total' with the rest of the program"));
+        }
+
         [Theory]
         [InlineData("call Threads.Start: addr Work 0;\n[Work: int n: 0;]\n atomic total++ n;\n locked guard\n  total is total + 1;\n ;;\n sums:n is n;\n int mine: n;\n mine++;\n[end]")]
         [InlineData("total++;\ncall Work: 1;\n[Work: int n: 0;]\n total++;\n[end]")]      // no thread runs it

@@ -1,5 +1,5 @@
-; provides: phi_throw phi_main_thread phi_fault_init phi_fault_entry
-; requires: phi_print phi_exit phi_fault_register phi_thread_setup phi_thread_block
+; provides: phi_throw phi_fault_init phi_fault_entry
+; requires: phi_print phi_exit phi_fault_register phi_thread_block phi_log_take phi_log_back
 ; init: phi_fault_init
 ;
 ; Errors (user programs): a throw, an index out of range or the heap out of room
@@ -8,8 +8,8 @@
 ;
 ; Each thread has a block of its own (PHI_THREAD_...): the innermost catch, the innermost
 ; running method with things to give back, and the error being thrown, so threads catch
-; errors of their own. The program's first thread has phi_main_thread; each system's
-; runtime keeps where the running thread's is (phi_thread_setup, phi_thread_block), and
+; errors of their own. Each system's runtime (its threads.asm) gives the program's first
+; thread one and keeps where the running thread's is (phi_thread_block), and
 ; the code generator reaches it the same way (gs, fs, or a TLS slot on Windows).
 ;
 ; The error goes into the thread's block, laid out as an Error is: kind, line, file (64
@@ -23,7 +23,8 @@
 ;     as it did before errors could be caught (a supervisor may start it again)
 ;
 ; A catch record (see X86Generator.EmitIfThrows): +0 the catch before it, +4 esp,
-; +8 ebp, +12 the unwind list when it was set, +16 where to go. A method's record:
+; +8 ebp, +12 the unwind list when it was set, +16 where to go, +20 how deep the thread
+; was in the log's lock (put back here: log_lock.asm). A method's record:
 ; +0 the record before it, +4 what gives back its things, +8 its ebp.
 PHI_THREAD_SELF   equ 0                 ; the block's own address
 PHI_THREAD_CATCH  equ 4                 ; the innermost catch, or 0
@@ -102,6 +103,12 @@ phi_throw:
     pop ebx
     jmp .unwind
 .resume:
+    push ebx
+    push edi
+    mov eax, [ebx + 20]
+    call phi_log_back
+    pop edi
+    pop ebx
     mov eax, [ebx]
     mov [edi + PHI_THREAD_CATCH], eax   ; this catch is done
     mov esp, [ebx + 4]
@@ -110,6 +117,8 @@ phi_throw:
 
 .uncaught:
     push edi
+    call phi_log_take               ; (printed whole, even with other threads logging)
+    mov edi, [esp]
     mov esi, .prefix
     call phi_print
     pop edi
@@ -171,8 +180,6 @@ phi_throw:
 .newline:
     db 13, 10, 0
 
-align 4, db 0
-phi_main_thread: times PHI_THREAD_SIZE db 0     ; the block of the program's first thread
 
 ; ---- CPU exceptions, caught as errors
 ;
@@ -185,8 +192,6 @@ ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
 ERROR_KIND_EMPTY  equ 4
 
 phi_fault_init:
-    mov eax, phi_main_thread            ; the first thread's block, before anything can throw
-    call phi_thread_setup
     mov eax, phi_fault_entry
     jmp phi_fault_register
 

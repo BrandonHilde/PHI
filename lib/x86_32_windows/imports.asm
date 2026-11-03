@@ -35,6 +35,7 @@
     PHI_FUNCTION GetSystemTimeAsFileTime
     PHI_FUNCTION TlsAlloc
     PHI_FUNCTION TlsSetValue
+    PHI_FUNCTION CreateThread
 %endmacro
 %macro PHI_WS2_32 0
     PHI_FUNCTION WSAStartup

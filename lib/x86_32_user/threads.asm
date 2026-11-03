@@ -1,4 +1,5 @@
-; provides: OS_ThreadStart OS_ThreadDone OS_ThreadFree phi_thread_setup phi_thread_block
+; provides: OS_ThreadStart OS_ThreadDone OS_ThreadFree phi_thread_setup phi_thread_block phi_main_thread
+; init: phi_threads_init
 ;
 ; A PHI OS program's threads (user.threads): each is a task of the program in the kernel
 ; (proc.process's system calls 44 to 46), on a stack the program gives it. The top of the
@@ -77,3 +78,11 @@ phi_thread_setup:
 phi_thread_block:
     mov eax, [gs:0]
     ret
+
+; the program's first thread gets its block before any of its code runs
+phi_threads_init:
+    mov eax, phi_main_thread
+    jmp phi_thread_setup
+
+align 4, db 0
+phi_main_thread: times 1024 db 0        ; the block of the program's first thread

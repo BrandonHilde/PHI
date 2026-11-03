@@ -1737,21 +1737,22 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case LogStmt log:
-                    // in a kernel, a whole log at a time across cores (nothing while there's one)
-                    bool lockLog = unit.Kind == UnitKind.Kernel;
+                    // a whole log at a time: in a kernel across cores (nothing while there's one),
+                    // in a program across its threads
+                    bool lockLog = unit.Kind is UnitKind.Kernel or UnitKind.Program;
                     if (lockLog)
                     {
                         Need("phi_log_take");
                         Emit("call phi_log_take");
                     }
                     EmitLog(log);
-                    if (lockLog) Emit("call phi_log_give");
                     if (unit.Kind == UnitKind.Program && log.Target == LogTarget.ScreenAndSerial)
                     {
                         // a whole log statement reaches the screen at once, even with other programs running
                         Need("phi_flush");
                         Emit("call phi_flush");
                     }
+                    if (lockLog) Emit("call phi_log_give");
                     break;
 
                 case AskStmt ask:
@@ -2574,7 +2575,9 @@ namespace Phi.Compiler.CodeGen
         ///
         /// Before the call, a catch record goes on the list a throw looks at (phi_catch_top):
         /// the catch before it, esp and ebp here, the methods' records at this point
-        /// (phi_unwind_top), and where to go. A throw gives back what each method in between
+        /// (phi_unwind_top), where to go, and how deep this thread (or core) is in the log's
+        /// lock (phi_log_held), which the throw puts back: an error in a log's value doesn't
+        /// keep the lock. A throw gives back what each method in between
         /// owns, puts esp and ebp back, and jumps there, with the error in phi_error; a call
         /// that returns takes the record off again. The statement runs with the variables in
         /// memory (it's fenced), since a throw doesn't come back through the methods that would
@@ -2584,7 +2587,7 @@ namespace Phi.Compiler.CodeGen
         {
             Need("phi_throw");
             // (each field is 8 bytes in 64-bit code)
-            string record = AllocTemp(5 * Slot);
+            string record = AllocTemp(6 * Slot);
             string caught = NewLabel("caught"), elseLabel = NewLabel("else"), endLabel = NewLabel("endif");
             EmitBlockField($"mov {R("eax")}, {Q} [{{0}}]", "CATCH");
             Emit($"mov {Q} [{record}], {R("eax")}         ; the catch around this one");
@@ -2594,6 +2597,9 @@ namespace Phi.Compiler.CodeGen
             Emit($"mov {Q} [{record} + {3 * Slot}], {R("eax")}    ; the methods running now");
             LoadAddress("eax", caught);
             Emit($"mov {Q} [{record} + {4 * Slot}], {R("eax")}");
+            Need("phi_log_held");
+            Emit("call phi_log_held");
+            Emit($"mov {Q} [{record} + {5 * Slot}], {R("eax")}    ; how deep in the log's lock");
             LoadAddress("eax", record);
             EmitBlockField($"mov {Q} [{{0}}], {R("eax")}", "CATCH");
             EmitStatement(throws.Call);

@@ -1,0 +1,44 @@
+# kernel32_program_threads' fourth program: four threads at once make text that grows and
+# objects on the heap and give them back, again and again, and log whole lines, which
+# must not mix. The heap ends as it started.
+use user.threads;
+
+struct.Note
+{
+	int part;
+	new str text;
+}
+
+phi.Maker:Program
+{
+	const int PARTS: 4;
+	const int TIMES: 300;
+
+	u32 made[4];
+	int threads[4];
+
+	u32 blocks: Heap.used_blocks;
+	while int p: 0; p < PARTS; p++;
+		threads:p is (Threads.Start: addr Make p);
+	;;
+	while int p: 0; p < PARTS; p++;
+		call Threads.Wait: threads:p;
+	;;
+	log 'made: ' made:0 ' ' made:1 ' ' made:2 ' ' made:3 ', the heap as it was: ' (Heap.used_blocks is blocks) '\n';
+	exit 0;
+
+	[Make: int part: 0;]
+		while int i: 0; i < TIMES; i++;
+			new Note n: part;
+			while int k: 0; k < 20; k++;
+				n.text++ 'word ';
+			;;
+			if n.text.len is 100
+				made:part is made:part + 1;
+			;;
+			if i % 100 is 0
+				log 'a whole line from a thread, written at once\n';
+			;;
+		;;
+	[end]
+}

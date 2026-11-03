@@ -1,0 +1,108 @@
+# Threads in a program on the host (user.threads: Linux's clone, Windows' CreateThread).
+# phi test runs a :Program test only on Linux and Windows; on PHI OS,
+# kernel32_program_threads covers the same. Four threads at once, each time: summing
+# parts of an array with atomic and locked across them; catching errors of their own;
+# using the heap (text that grows, objects) and logging whole lines, which must not mix.
+use user.threads;
+
+struct.Note
+{
+	int part;
+	new str text;
+}
+
+phi.ThreadsProgram:Program
+{
+	const int COUNT: 4000;
+	const int PARTS: 4;
+	const int TIMES: 300;
+
+	u32 numbers[4000];
+	u32 sums[4];
+	u32 total: 0;
+	u32 counted: 0;
+	lock guard;
+	u32 caught[4];
+	u32 wrong[4];
+	u32 made[4];
+	int zero: 0;
+	int threads[4];
+
+	while int i: 0; i < COUNT; i++;
+		numbers:i is i + 1;
+	;;
+	u32 blocks: Heap.used_blocks;
+
+	call RunAll: addr Sum;
+	log 'parts: ' sums:0 ' ' sums:1 ' ' sums:2 ' ' sums:3 '\n';
+	log 'atomic total: ' total ', locked total: ' counted ', all: ' (total is COUNT * (COUNT + 1) / 2) '\n';
+
+	call RunAll: addr Catch;
+	log 'caught: ' caught:0 ' ' caught:1 ' ' caught:2 ' ' caught:3 ', wrong: ' (wrong:0 + wrong:1 + wrong:2 + wrong:3) '\n';
+
+	call RunAll: addr Make;
+	log 'made: ' made:0 ' ' made:1 ' ' made:2 ' ' made:3 ', the heap as it was: ' (Heap.used_blocks is blocks) '\n';
+	log 'done: ' (Threads.Done: threads:0) '\n';
+
+	# the four parts at once, each a thread
+	[RunAll: method<int> work: 0;]
+		while int p: 0; p < PARTS; p++;
+			threads:p is (Threads.Start: work p);
+		;;
+		while int p: 0; p < PARTS; p++;
+			call Threads.Wait: threads:p;
+		;;
+	[end]
+
+	[Sum: int part: 0;]
+		u32 sum: 0;
+		while int i: part * COUNT / PARTS; i < (part + 1) * COUNT / PARTS; i++;
+			sum++ numbers:i;
+			atomic total++ numbers:i;
+			locked guard
+				counted is counted + numbers:i;
+			;;
+		;;
+		sums:part is sum;
+	[end]
+
+	[Catch: int part: 0;]
+		while int i: 0; i < TIMES; i++;
+			if call Fail: part i throws err
+				bln right: (i % 2 is 0 and err.kind is ErrorKind.THROWN and err.line > 0) or (i % 2 is 1 and err.kind is ErrorKind.INDEX);
+				if right
+					caught:part is caught:part + 1;
+				;;
+				else
+					wrong:part is wrong:part + 1;
+				;;
+			;;
+			else
+				wrong:part is wrong:part + 1;
+			;;
+		;;
+	[end]
+
+	[Fail: int part: 0; int i: 0;]
+		if i % 2 is 0
+			throw 'from a thread';
+		;;
+		log numbers:(COUNT + part);
+	[end]
+
+	# text that grows and objects, made and given back again and again, and lines logged
+	[Make: int part: 0;]
+		while int i: 0; i < TIMES; i++;
+			new Note n: part;
+			while int k: 0; k < 20; k++;
+				n.text++ 'word ';
+			;;
+			if n.text.len is 100
+				made:part is made:part + 1;
+			;;
+			if i % 100 is 0
+				log 'a whole line from a thread, written at once\n';
+			;;
+		;;
+	[end]
+}

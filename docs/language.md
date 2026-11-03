@@ -1485,8 +1485,8 @@ log (Threads.Done: t);                     # whether it has finished, without wa
   an array isn't warned about, since that's how each thread keeps a result of its own
   (`sums:part is sum;`).
 
-**Threads in programs** (in progress, H5 in [Plan.md](../Plan.md)). A PHI OS program has
-the same calls, from `user.threads`:
+**Threads in programs** (in progress, H5 in [Plan.md](../Plan.md)). A program has the
+same calls, from `user.threads`, on PHI OS, Linux and Windows:
 
 ```phi
 use user.threads;
@@ -1495,14 +1495,16 @@ int t: (Threads.Start: addr Count 3);     # Count: 3, as a thread of this progra
 call Threads.Wait: t;
 ```
 
-- A thread is a task of the program, in its memory, on a stack of its own (64 KB, from the
-  heap); once programs share the cores, a program's threads run at once on several.
+- On PHI OS a thread is a task of the program, in its memory, on a stack of its own (64
+  KB, from the heap); once programs share the cores, a program's threads run at once on
+  several. On Linux it's a thread made with `clone`, and on Windows with `CreateThread`.
 - A thread finishes when its method returns. `exit` in any thread ends the whole program,
   and so does an error nothing catches (or a fault) in any of them.
 - What belongs to a program (its sockets, its mailboxes, its memory's checks) is the
   program's, whichever thread uses it; `OS.CurrentTask` gives the program's number.
 - Each thread catches errors of its own: its catches, and the error it throws, are its own.
-- Not yet: the heap and `log` from several threads at once.
+  The heap and `log` work from several threads at once (a `log` comes out whole).
+- Not yet: Windows' file calls from several threads at once, and `ask` from several.
 
 ### atomic and locked
 

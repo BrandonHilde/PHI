@@ -9,7 +9,8 @@
 # to 124 MB. Blocks are kept in address order, each with a header, so Free can
 # merge a block with free neighbors; free blocks are also on lists by size, and
 # Alloc takes the first that fits from them and splits it, as the kernel's heap
-# (memory.heap) does. A program runs on its own, so nothing needs to be locked.
+# (memory.heap) does. A program's threads (user.threads) share it, so Alloc, Free and
+# LargestFree take a lock: one thread at a time in them.
 
 struct.HeapBlock
 {
@@ -48,6 +49,7 @@ phi.Heap:Program
 	u32 heap_zero_words: 0;
 	u32 heap_bin_size: 0;       # for HeapBinOf
 	u32 heap_bin: 0;
+	lock heap_lock;             # one thread at a time in Alloc, Free and LargestFree
 
 	# size bytes of zeroed memory, or 0 if the kernel has no more to give
 	[Alloc: u32 size: 0;]
@@ -55,9 +57,12 @@ phi.Heap:Program
 		if wanted < SMALLEST
 			wanted is SMALLEST;
 		;;
-		ptr<u8> result: (Take: wanted);
-		if result is 0 and (More: wanted)
+		ptr<u8> result: 0;
+		locked heap_lock
 			result is (Take: wanted);
+			if result is 0 and (More: wanted)
+				result is (Take: wanted);
+			;;
 		;;
 	[end: result]
 
@@ -134,63 +139,67 @@ phi.Heap:Program
 	# give back memory from Alloc; freeing 0 does nothing
 	[Free: ptr<u8> address: 0;]
 		if address is 0 return;
-		ptr<HeapBlock> b: address - HEADER;
-		bln valid: address >= heap_start + HEADER and address < heap_end;
-		if valid
-			valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
-		;;
-		if valid is false
-			log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
-			exit -1;
-		;;
+		locked heap_lock
+			ptr<HeapBlock> b: address - HEADER;
+			bln valid: address >= heap_start + HEADER and address < heap_end;
+			if valid
+				valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
+			;;
+			if valid is false
+				log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
+				exit -1;
+			;;
 
-		b:0.used is 0;
-		used_bytes-- b:0.size;
-		used_blocks--;
+			b:0.used is 0;
+			used_bytes-- b:0.size;
+			used_blocks--;
 
-		# merge with the next block, then the previous one, if they are free
-		ptr<HeapBlock> next: b:0.next;
-		if next is not 0 and next:0.used is 0
-			call RemoveFree: next;
-			b:0.size++ HEADER + next:0.size;
-			b:0.next is next:0.next;
-			next:0.magic is 0;
-			if b:0.next is not 0
-				ptr<HeapBlock> after: b:0.next;
-				after:0.previous is b;
+			# merge with the next block, then the previous one, if they are free
+			ptr<HeapBlock> next: b:0.next;
+			if next is not 0 and next:0.used is 0
+				call RemoveFree: next;
+				b:0.size++ HEADER + next:0.size;
+				b:0.next is next:0.next;
+				next:0.magic is 0;
+				if b:0.next is not 0
+					ptr<HeapBlock> after: b:0.next;
+					after:0.previous is b;
+				;;
+				if heap_last is next
+					heap_last is b;
+				;;
 			;;
-			if heap_last is next
-				heap_last is b;
+			ptr<HeapBlock> merged: b;
+			ptr<HeapBlock> previous: b:0.previous;
+			if previous is not 0 and previous:0.used is 0
+				call RemoveFree: previous;
+				previous:0.size++ HEADER + b:0.size;
+				previous:0.next is b:0.next;
+				b:0.magic is 0;
+				if previous:0.next is not 0
+					ptr<HeapBlock> later: previous:0.next;
+					later:0.previous is previous;
+				;;
+				if heap_last is b
+					heap_last is previous;
+				;;
+				merged is previous;
 			;;
+			call AddFree: merged;
 		;;
-		ptr<HeapBlock> merged: b;
-		ptr<HeapBlock> previous: b:0.previous;
-		if previous is not 0 and previous:0.used is 0
-			call RemoveFree: previous;
-			previous:0.size++ HEADER + b:0.size;
-			previous:0.next is b:0.next;
-			b:0.magic is 0;
-			if previous:0.next is not 0
-				ptr<HeapBlock> later: previous:0.next;
-				later:0.previous is previous;
-			;;
-			if heap_last is b
-				heap_last is previous;
-			;;
-			merged is previous;
-		;;
-		call AddFree: merged;
 	[end]
 
 	# the largest block Alloc could hand out without asking the kernel for more
 	[LargestFree]
 		u32 largest: 0;
-		ptr<HeapBlock> b: heap_first;
-		while b is not 0
-			if b:0.used is 0 and b:0.size > largest
-				largest is b:0.size;
+		locked heap_lock
+			ptr<HeapBlock> b: heap_first;
+			while b is not 0
+				if b:0.used is 0 and b:0.size > largest
+					largest is b:0.size;
+				;;
+				b is b:0.next;
 			;;
-			b is b:0.next;
 		;;
 	[end: largest]
 

@@ -123,13 +123,14 @@ phi_read_char:
 OS_KeyAvailable:
     push rsi
     push rdi
-    mov dword [rel phi_poll], 0         ; standard input
-    mov dword [rel phi_poll + 4], 1     ; anything to read?
+    mov rax, 0x100000000                ; a pollfd: standard input, anything to read? (on the stack)
+    push rax
     mov eax, SYS_POLL
-    lea rdi, [rel phi_poll]
+    mov rdi, rsp
     mov esi, 1
     xor edx, edx                        ; don't wait
     syscall
+    add rsp, 8
     pop rdi
     pop rsi
     cmp rax, 1
@@ -137,20 +138,23 @@ OS_KeyAvailable:
     movzx eax, al
     ret
 
-; eax = milliseconds by the monotonic clock (only the low 32 bits: it wraps, as ticks do)
+; eax = milliseconds by the monotonic clock (only the low 32 bits: it wraps, as ticks do).
+; The time is read onto the stack, so threads can ask at once.
 phi_now:
     push rdi
     push rsi
+    sub rsp, 16
     mov eax, SYS_CLOCK_GETTIME
     mov edi, CLOCK_MONOTONIC
-    lea rsi, [rel phi_time]
+    mov rsi, rsp
     syscall
-    mov rax, [rel phi_time + 8]         ; nanoseconds
+    mov rax, [rsp + 8]                  ; nanoseconds
     xor edx, edx
     mov ecx, 1000000
     div rcx
-    imul rcx, [rel phi_time], 1000      ; seconds
+    imul rcx, [rsp], 1000               ; seconds
     add rax, rcx
+    add rsp, 16
     pop rsi
     pop rdi
     ret
@@ -168,16 +172,18 @@ OS_Sleep:
     jle .done
     push rdi
     push rsi
+    sub rsp, 16                         ; (on the stack: threads sleep at once)
     xor edx, edx
     mov ecx, 1000
     div ecx
-    mov [rel phi_time], rax
+    mov [rsp], rax
     imul edx, edx, 1000000
-    mov [rel phi_time + 8], rdx
+    mov [rsp + 8], rdx
     mov eax, SYS_NANOSLEEP
-    lea rdi, [rel phi_time]
+    mov rdi, rsp
     xor esi, esi
     syscall
+    add rsp, 16
     pop rsi
     pop rdi
 .done:
@@ -324,22 +330,25 @@ phi_file_write_args:
 OS_FileSize:
     push rsi
     push rdi
+    sub rsp, 144                        ; (Linux's stat, on the stack)
     mov eax, SYS_STAT
-    mov rdi, [rsp + 24]
-    lea rsi, [rel phi_stat]
+    mov rdi, [rsp + 144 + 24]
+    mov rsi, rsp
     syscall
-    pop rdi
-    pop rsi
     test rax, rax
     jnz .failed
-    mov eax, [rel phi_stat + 24]        ; its mode
+    mov eax, [rsp + 24]                 ; its mode
     and eax, 0xF000
     cmp eax, 0x8000                     ; a regular file
     jne .failed
-    mov eax, [rel phi_stat + 48]        ; its size
-    ret
+    mov eax, [rsp + 48]                 ; its size
+    jmp .done
 .failed:
     mov eax, -1
+.done:
+    add rsp, 144
+    pop rdi
+    pop rsi
     ret
 
 ; rax = what a system call gave -> 1 if it worked (0), else 0
@@ -440,16 +449,18 @@ OS_FreeMemory:
 phi_memory:
     push rdi
     push rdx
+    sub rsp, 128                        ; (Linux's sysinfo, on the stack)
     mov eax, SYS_SYSINFO
-    lea rdi, [rel phi_sysinfo]
+    mov rdi, rsp
     syscall
-    pop rdx
-    pop rdi
-    lea rcx, [rel phi_sysinfo]
-    mov rax, [rcx + rdx]
-    mov ecx, [rcx + 104]                ; in units of mem_unit bytes
+    mov rdx, [rsp + 128]
+    mov rax, [rsp + rdx]
+    mov ecx, [rsp + 104]                ; in units of mem_unit bytes
     mul rcx
     shr rax, 10                         ; (a u32 of KB: up to 4 TB)
+    add rsp, 128
+    pop rdx
+    pop rdi
     ret
 
 ; clear the terminal and put the cursor at its top left
@@ -471,12 +482,8 @@ phi_byte: db 0
 phi_last_byte: db 0
 align 4
 phi_started: dd 0
-phi_poll: dd 0, 0
 align 8
 phi_heap_end: dq 0                      ; the break: where the heap ends
-phi_time:    dq 0, 0                    ; seconds, nanoseconds
-phi_stat: times 144 db 0
-phi_sysinfo: times 128 db 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
 ; rax = where this program goes when the CPU stops it (dividing by zero, or memory that

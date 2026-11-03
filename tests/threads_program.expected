@@ -1,0 +1,17 @@
+parts: 500500 1500500 2500500 3500500
+atomic total: 8002000, locked total: 8002000, all: 1
+caught: 300 300 300 300, wrong: 0
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+made: 300 300 300 300, the heap as it was: 1
+done: 1

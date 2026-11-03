@@ -13,6 +13,20 @@ each in this program: 1
 every core: exit 7
 caught: 600 600 600 600, wrong: 0
 catching in every thread: exit 0
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+a whole line from a thread, written at once
+made: 300 300 300 300, the heap as it was: 1
+the heap and log in every thread: exit 0
 dividing
 
 PHI: division by zero

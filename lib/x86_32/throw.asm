@@ -1,5 +1,5 @@
 ; provides: phi_throw phi_fault_init
-; requires: phi_print phi_load_core_fs phi_fault_hook
+; requires: phi_print phi_load_core_fs phi_fault_hook phi_log_back
 ; init: phi_fault_init
 ;
 ; Errors (32-bit kernels): a throw, an index out of range or the heap out of room
@@ -85,6 +85,10 @@ phi_throw:
     pop ebx
     jmp .unwind
 .resume:
+    push ebx
+    mov eax, [ebx + 20]                 ; the log's lock as it was at the catch
+    call phi_log_back
+    pop ebx
     mov eax, [ebx]
     mov [fs:PHI_CORE_CATCH], eax        ; this catch is done
     mov esp, [ebx + 4]

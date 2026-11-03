@@ -114,30 +114,34 @@ phi_read_char:
 
 ; eax = 1 if there's input waiting
 OS_KeyAvailable:
-    mov dword [phi_poll], 0             ; standard input
-    mov dword [phi_poll + 4], 1         ; anything to read?
+    push dword 1                        ; anything to read?
+    push dword 0                        ; standard input
     mov eax, SYS_POLL
-    mov ebx, phi_poll
+    mov ebx, esp
     mov ecx, 1
     xor edx, edx                        ; don't wait
     int 0x80
+    add esp, 8
     cmp eax, 1
     sete al
     movzx eax, al
     ret
 
-; eax = milliseconds since some moment (the clock that only goes forward)
+; eax = milliseconds since some moment (the clock that only goes forward). The time is
+; read onto the stack, so threads can ask at once.
 phi_now:
+    sub esp, 8
     mov eax, SYS_CLOCK_GETTIME
     mov ebx, CLOCK_MONOTONIC
-    mov ecx, phi_time
+    mov ecx, esp
     int 0x80
-    mov eax, [phi_time + 4]             ; nanoseconds
+    mov eax, [esp + 4]                  ; nanoseconds
     xor edx, edx
     mov ecx, 1000000
     div ecx
-    imul ecx, [phi_time], 1000          ; seconds
+    imul ecx, [esp], 1000               ; seconds
     add eax, ecx
+    add esp, 8
     ret
 
 ; -> milliseconds since the program started
@@ -151,16 +155,18 @@ OS_Sleep:
     mov eax, [esp + 4]
     test eax, eax
     jle .done
+    sub esp, 8                          ; (on the stack: threads sleep at once)
     xor edx, edx
     mov ecx, 1000
     div ecx
-    mov [phi_time], eax
+    mov [esp], eax
     imul edx, edx, 1000000
-    mov [phi_time + 4], edx
+    mov [esp + 4], edx
     mov eax, SYS_NANOSLEEP
-    mov ebx, phi_time
+    mov ebx, esp
     xor ecx, ecx
     int 0x80
+    add esp, 8
 .done:
     ret
 
@@ -284,19 +290,22 @@ OS_AppendFile:
 
 ; arg: path -> its size in bytes, or -1 if it isn't a file
 OS_FileSize:
-    mov eax, SYS_STAT64
     mov ebx, [esp + 4]
-    mov ecx, phi_stat
+    sub esp, 96                         ; (Linux's stat64, on the stack)
+    mov eax, SYS_STAT64
+    mov ecx, esp
     int 0x80
     test eax, eax
     jnz .failed
-    mov eax, [phi_stat + 16]            ; its mode
+    mov eax, [esp + 16]                 ; its mode
     and eax, 0xF000
     cmp eax, 0x8000                     ; a regular file
     jne .failed
-    mov eax, [phi_stat + 44]            ; its size
+    mov eax, [esp + 44]                 ; its size
+    add esp, 96
     ret
 .failed:
+    add esp, 96
     mov eax, -1
     ret
 
@@ -380,14 +389,16 @@ OS_FreeMemory:
     mov edx, 20                         ; sysinfo's freeram
 
 phi_memory:
+    sub esp, 64                         ; (Linux's sysinfo, on the stack)
     push edx
     mov eax, SYS_SYSINFO
-    mov ebx, phi_sysinfo
+    lea ebx, [esp + 4]
     int 0x80
     pop edx
-    mov eax, [phi_sysinfo + edx]
-    mul dword [phi_sysinfo + 52]        ; in units of mem_unit bytes
+    mov eax, [esp + edx]
+    mul dword [esp + 52]                ; in units of mem_unit bytes
     shrd eax, edx, 10
+    add esp, 64
     ret
 
 ; clear the terminal and put the cursor at its top left
@@ -405,10 +416,6 @@ phi_last_byte: db 0
 align 4
 phi_started: dd 0
 phi_heap_end: dd 0
-phi_time: dd 0, 0
-phi_poll: dd 0, 0
-phi_stat: times 96 db 0
-phi_sysinfo: times 64 db 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
 ; eax = where this program goes when the CPU stops it (dividing by zero, or memory that

@@ -2289,12 +2289,30 @@ OS or on the host, and `phi load` holds the same tick rate.
     catches and methods' records (`phi_catch_top`, `phi_unwind_top`) are one per thread.
     On PHI OS a user segment whose base the scheduler sets for the task it runs; on Linux
     the thread area (32-bit, `gs`) or `fs` (64-bit); on Windows a TLS slot.
-  - [ ] (c) The program's side: `user.threads` (`Threads`, the same calls) on PHI OS, and
+  - [x] (c) (2026-11-02) Threads on the hosts: `OS.ThreadStart`, `ThreadDone` and
+    `ThreadFree` in each host's `threads.asm`: Linux's `clone` (the program's memory,
+    files and signal handlers shared, the thread's slot cleared by Linux when it has gone)
+    and Windows' `CreateThread` (on the stacks Windows gives them; finished once the
+    handle is signaled). The program's heap takes a lock; each `log` takes a lock in
+    programs too (the line flushed inside it), told the thread by its block, so the first
+    thread's block is set up in every program now (each `threads.asm`'s
+    `phi_threads_init`). A catch keeps how deep its thread (or core, in a kernel) was in
+    the log's lock, and a throw back to it puts that back: before, an error in a log's
+    value kept the lock, which hung every other thread, and in a kernel with cores left
+    interrupts off. Linux's runtimes keep their scratch for system calls (the time, stat,
+    poll, sysinfo) on the stack. Tests `threads_program` (sums, catching, the heap and
+    whole lines from four threads at once, on all four hosts) and the heap and log in
+    `kernel32_program_threads`.
+    - Not yet: Windows' file calls from several threads at once (they share the buffers
+      their paths are made wide in), and `ask` or `OS.ReadKey` from several at once.
+  - (c, as planned) The program's side: `user.threads` (`Threads`, the same calls) on PHI OS, and
     the host runtimes: a thread is `clone` on Linux (no C library) and `CreateThread` on
     Windows. What the runtimes keep in one place for everyone (the line `log` is building,
     scratch for system calls) becomes the thread's own or takes a lock, and the program's
     heap (`memory.program_heap`, which assumed it ran alone) takes one.
-  - [ ] (d) The class-variable warning (S9) for the methods a program's threads run.
+  - [x] (d) The class-variable warning (S9) for the methods a program's threads run: it
+    already finds them (by `Threads.Start`, which `user.threads` has too); a unit test
+    says so.
   - [ ] (e) Tests on all five systems: threads summing their parts, atomic and locked
     across them, the heap from several threads, catching errors in each.
 - [ ] (3) PHI's memory model in `docs/language.md`: what `atomic` and `locked` promise,

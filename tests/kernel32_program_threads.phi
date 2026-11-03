@@ -1,8 +1,8 @@
 # Threads in a PHI OS program (user.threads), on one core and then with programs on
 # every core: four threads summing parts of an array, with atomic and locked across them;
-# four threads catching errors of their own at the same time; then a program whose thread
-# divides by zero, which nothing catches, so the whole program ends. Every frame of
-# memory comes back.
+# four threads catching errors of their own at the same time; four using the heap and
+# logging at once; then a program whose thread divides by zero, which nothing catches,
+# so the whole program ends. Every frame of memory comes back.
 use proc.process;
 use proc.cores;
 
@@ -17,6 +17,8 @@ phi.ProgramThreads:Kernel
 	log 'every core: exit ' code '\n';
 	code is (Process.Wait: (Process.Spawn: 'CATCHER.BIN'));
 	log 'catching in every thread: exit ' code '\n';
+	code is (Process.Wait: (Process.Spawn: 'MAKER.BIN'));
+	log 'the heap and log in every thread: exit ' code '\n';
 	code is (Process.Wait: (Process.Spawn: 'FAULTY.BIN'));
 	log 'a thread failed: exit ' code '\n';
 	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
