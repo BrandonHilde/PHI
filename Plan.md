@@ -2253,7 +2253,31 @@ OS or on the host, and `phi load` holds the same tick rate.
   password refused.
   - Not yet: `phi load` against a world running on the host (its load clients are PHI OS
     kernels on the test network), which the "Done when" asks for.
-- [ ] (2) threads on the hosts, and (3) PHI's memory model in `docs/language.md`
+- [ ] (2) threads in programs, on every system (the user's choice, 2026-11-02: PHI OS
+  programs too, so a program behaves the same everywhere), with the kernel's calls
+  (`Threads.Start`, `Wait`, `Done`, as `proc.threads` has them). The parts:
+  - [ ] (a) PHI OS: several tasks in one program. Each task knows its program
+    (`phi_task_process`); a thread is a task with the program's page directory, its own
+    kernel stack and a stack the program gives it from its heap. System calls start one,
+    end one, say whether one is done and give its number back. What belongs to a
+    program (sockets, files' checks, mailboxes, its heap's end) goes by its program, not
+    its task. When a program ends (`exit`, an error nothing catches, a fault, a kill) all
+    its threads end, and its memory goes back once no core runs any of them. More tasks
+    than 16 (`MAX_TASKS`), since threads take them too.
+  - [ ] (b) A block of its own for each thread, as each core has in a kernel: a program's
+    catches and methods' records (`phi_catch_top`, `phi_unwind_top`) are one per thread.
+    On PHI OS a user segment whose base the scheduler sets for the task it runs; on Linux
+    the thread area (32-bit, `gs`) or `fs` (64-bit); on Windows a TLS slot.
+  - [ ] (c) The program's side: `user.threads` (`Threads`, the same calls) on PHI OS, and
+    the host runtimes: a thread is `clone` on Linux (no C library) and `CreateThread` on
+    Windows. What the runtimes keep in one place for everyone (the line `log` is building,
+    scratch for system calls) becomes the thread's own or takes a lock, and the program's
+    heap (`memory.program_heap`, which assumed it ran alone) takes one.
+  - [ ] (d) The class-variable warning (S9) for the methods a program's threads run.
+  - [ ] (e) Tests on all five systems: threads summing their parts, atomic and locked
+    across them, the heap from several threads, catching errors in each.
+- [ ] (3) PHI's memory model in `docs/language.md`: what `atomic` and `locked` promise,
+  on PHI OS and on the hosts.
 
 #### Phase H6: Windows and graphics
 
