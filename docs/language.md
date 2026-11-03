@@ -1546,6 +1546,37 @@ locked counter_lock
 - A lock starts free; it can't have a value (`lock guard;`), and isn't a number.
 - Both need 32-bit or 64-bit code: 16-bit code runs on one core.
 
+**What threads see of each other's writes** (PHI's memory model). The same on PHI OS,
+Linux and Windows, in kernels and programs, 32 and 64 bits:
+
+- **A `locked` block sees everything the last thread to hold its lock wrote** before it
+  gave the lock back, in that block or before it. Data that's only ever changed inside
+  blocks of the same lock is never seen half changed.
+- **An `atomic` step is one step for every thread**, and also orders: whatever a thread
+  wrote before an atomic step, another thread sees once it sees that step's result (an
+  `atomic x is v`, say, that another thread's `atomic ... when` or read of `x` finds).
+  So a flag set with `atomic` after filling in a record tells another thread the record
+  is ready.
+- **Plain reads and writes of class variables** (and fields and elements of them) from
+  several threads at once, without either: each read or write of a number of up to 32
+  bits, a `bln` or a pointer is whole (never half of one value and half of another) when
+  it's aligned: every class variable starts on a word, and an element or field is
+  aligned when its place in the array or struct is a multiple of its size (structs have
+  no padding: put 32-bit fields before smaller ones). Each thread's writes are seen by
+  the others in the order it made them. But a thread
+  can read a variable before its own earlier write to another one is seen, and nothing
+  stops two threads' read-change-write steps (`total++`) from losing one: that's what
+  `atomic` and `locked` are for, and what the compiler warns about in code a thread runs.
+  Class variables are always read from memory, so a loop that waits for one to change
+  sees the change; a method's own variables are its thread's alone.
+- **Wider values** (`i64`, `u64` in 32-bit code, floats, structs, text) can be seen half
+  written by a plain read while another thread writes them: guard them with a lock.
+- `volatile` is for memory a device changes, not for threads: it doesn't order anything.
+
+These are the promises to rely on: today every system PHI runs on is x86, whose own rules
+give at least this much, and a later system with weaker ones (ARM) will keep these by
+putting what's needed into `atomic`, `locked` and lock handover.
+
 ## The network (32-bit kernels)
 
 `phi run` and `phi test` give every machine an RTL8139 network card (or, with `--nic

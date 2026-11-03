@@ -7533,6 +7533,9 @@ namespace Phi.Compiler.CodeGen
             foreach (VariableSymbol v in unit.Variables.Distinct())
             {
                 if (v.Type.IsError || v.IsLocal) continue; // a method's variables are in its frame
+                // each starts on a word, so a number or pointer in it is read and written whole by
+                // other threads (and atomic steps on it stay one cache line's)
+                if (bits32) output.AppendLine($"align {Slot}, db 0");
                 output.Append(DataFor(v));
             }
 

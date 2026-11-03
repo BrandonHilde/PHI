@@ -1,8 +1,8 @@
 phi.Bounds:Library
 {
-	int numbers: 1 2 3;
+	int numbers: 1 2 3 4;                 # (four: so guard comes right after it, on a word)
 	int guard: 0;
-	int i: 3;
+	int i: 4;
 
 	unsafe
 		# no check: this writes just past the array, into guard

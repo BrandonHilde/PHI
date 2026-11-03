@@ -2313,10 +2313,14 @@ OS or on the host, and `phi load` holds the same tick rate.
   - [x] (d) The class-variable warning (S9) for the methods a program's threads run: it
     already finds them (by `Threads.Start`, which `user.threads` has too); a unit test
     says so.
-  - [ ] (e) Tests on all five systems: threads summing their parts, atomic and locked
+  - [x] (e) Tests on all five systems (`threads_program`, `kernel32_program_threads`): threads summing their parts, atomic and locked
     across them, the heap from several threads, catching errors in each.
-- [ ] (3) PHI's memory model in `docs/language.md`: what `atomic` and `locked` promise,
-  on PHI OS and on the hosts.
+- [x] (3) PHI's memory model in `docs/language.md` (2026-11-02): what a `locked` block
+  sees (everything the lock's last holder wrote), what an `atomic` step orders, what
+  plain reads and writes of class variables give (whole when aligned, each thread's in
+  its order, nothing more), wider values, and `volatile`; the same on every system and
+  kept so on a weaker one later. Every class variable now starts on a word in 32- and
+  64-bit code, so that holds (and atomic steps don't straddle cache lines).
 
 #### Phase H6: Windows and graphics
 
