@@ -2373,13 +2373,37 @@ and Windows (32 and 64 bits), with assembly only for the pieces in (4); every te
 on all five systems as before; and a new call a program makes of its system can be added
 in PHI alone.
 
+Decided (2026-11-02): **a module names its system where it names where it runs.** The
+word after the colon already says that (`:Kernel` only in kernels, `:Program` only in
+programs, `:Library` anywhere); the systems are narrower kinds of `:Program`:
+
+```phi
+phi.Sockets:Linux    { ... }     # built only for Linux programs, 32 and 64 bits
+phi.Sockets:Windows  { ... }     # built only for Windows programs, 32 and 64 bits
+```
+
+- The words: `:Linux`, `:Windows`, `:PhiOS` (PHI OS programs only), `:MacOS` when it
+  comes; `:Linux32` and `:Linux64` for one width only (Linux's system call numbers differ
+  completely between them; Windows' functions don't, so it has no width words).
+- One name, a version per system, each in its own file. Callers write `Sockets.Send: ...`
+  and never say which system; the compiler builds the version for the target and skips
+  the rest. A name can't have both a `:Linux` and a `:Linux64` version (which to build
+  would be unclear); that's an error.
+- Using a name with no version for the target is an error where it's used ("Sockets has
+  no version for macOS"), when the program is built, never a missing piece when it runs.
+- A system's word implies a program: nothing PHI builds runs as a Linux or Windows
+  kernel, so the module never says both.
+- Raw system calls are allowed only in `:Linux`, `:Linux32`, `:Linux64`, `:PhiOS` (and
+  later `:MacOS`) modules, and outside functions only in `:Windows` ones (and later where
+  H7 loads libraries), so the code that is one system's alone stays in the files marked
+  for it, and everything else is the same everywhere.
+- H7's class for a window on the screen is `Window` (singular), not to be confused with
+  `:Windows`.
+
 To decide with the user before starting:
 - how a system call is written (a built-in class like `Linux.Call: number args`, a
-  reserved word, or something else), and which systems it's allowed on;
-- how an outside function is declared (its library, its name, its arguments' types);
-- how the compiler picks a system's own module (the per-system constants and calls): by
-  folder (`lib/phi/host/linux/...`), by a line in the module saying which systems it's
-  for, or as now, by whichever builds there.
+  reserved word, or something else);
+- how an outside function is declared (its library, its name, its arguments' types).
 
 #### Phase H7: Windows and graphics
 
