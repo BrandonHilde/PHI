@@ -1081,7 +1081,7 @@ namespace Phi.Compiler.CodeGen
             if (unwindRecord != null)
             {
                 Emit($"mov {R("ecx")}, {Q} [{unwindRecord}]");
-                Emit($"mov {Q} [{UnwindTop}], {R("ecx")}     ; done: off the list a throw looks at");
+                EmitBlockField($"mov {Q} [{{0}}], {R("ecx")}     ; done: off the list a throw looks at", "UNWIND");
             }
 
             if (m.ReturnType.IsString && GrowResults)
@@ -1129,13 +1129,13 @@ namespace Phi.Compiler.CodeGen
             {
                 // on the list a throw looks at: the record before, what gives back this method's
                 // things, and this frame
-                Emit($"mov {R("eax")}, {Q} [{UnwindTop}]");
+                EmitBlockField($"mov {R("eax")}, {Q} [{{0}}]", "UNWIND");
                 Emit($"mov {Q} [{unwindRecord}], {R("eax")}");
                 LoadAddress("eax", $"{m.Label}_unwind");
                 Emit($"mov {Q} [{unwindRecord} + {Slot}], {R("eax")}");
                 Emit($"mov {Q} [{unwindRecord} + {2 * Slot}], ebp");
                 LoadAddress("eax", unwindRecord);
-                Emit($"mov {Q} [{UnwindTop}], {R("eax")}");
+                EmitBlockField($"mov {Q} [{{0}}], {R("eax")}", "UNWIND");
             }
             string start = code.ToString();
             code = outer;
@@ -2484,9 +2484,9 @@ namespace Phi.Compiler.CodeGen
             {
                 // what the lock guards may be half changed when something goes wrong in here, so
                 // no error is caught until it's given back: it stops the program
-                Emit($"mov {R("ecx")}, {Q} [{CatchTop}]");
+                EmitBlockField($"mov {R("ecx")}, {Q} [{{0}}]", "CATCH");
                 Emit($"mov [{slot} + {2 * Slot}], {R("ecx")}");
-                Emit($"mov {Q} [{CatchTop}], 0");
+                EmitBlockField($"mov {Q} [{{0}}], 0", "CATCH");
             }
 
             lockedBlocks.Add((slot, loops.Count, inlining.Count));
@@ -2509,12 +2509,60 @@ namespace Phi.Compiler.CodeGen
         /// record of itself while it runs, so a throw can give those back on its way out.
         /// </summary>
         /// <summary>
-        /// Where the innermost catch and the innermost method with things to give back are kept: in
-        /// a kernel, in this core's block (fs, interrupts.asm), so threads on several cores catch
-        /// errors of their own and the scheduler keeps each task's; in a program, in its own variables.
+        /// Where the innermost catch, the innermost method with things to give back and the error
+        /// being thrown are kept: in a kernel, in this core's block (fs, interrupts.asm), so
+        /// threads on several cores catch errors of their own and the scheduler keeps each task's;
+        /// in a program, in each thread's block (throw.asm), through gs (PHI OS, 32-bit Linux) or
+        /// fs (64-bit Linux). Windows keeps fs and gs for itself, so there the block's address is
+        /// in a TLS slot (null here).
         /// </summary>
-        string CatchTop => unit.Kind == UnitKind.Kernel ? "fs:PHI_CORE_CATCH" : "phi_catch_top";
-        string UnwindTop => unit.Kind == UnitKind.Kernel ? "fs:PHI_CORE_UNWIND" : "phi_unwind_top";
+        string? BlockSegment => unit.Kind == UnitKind.Kernel || Host == Host.Linux64 ? "fs"
+            : Host.IsWindows() ? null : "gs";
+        string BlockField(string field) => unit.Kind == UnitKind.Kernel ? $"PHI_CORE_{field}" : $"PHI_THREAD_{field}";
+
+        /// <summary>The catch field as a memory operand, where there's a segment for it (not on Windows).</summary>
+        string CatchTop => $"{BlockSegment}:{BlockField("CATCH")}";
+
+        /// <summary>
+        /// An instruction on a field of this core's or thread's block (CATCH, UNWIND): {0} in it
+        /// is the field's address. On Windows the block is loaded into a register that the
+        /// instruction doesn't use, kept on the stack meanwhile.
+        /// </summary>
+        void EmitBlockField(string instruction, string field)
+        {
+            if (BlockSegment is string segment)
+            {
+                Emit(string.Format(instruction, $"{segment}:{BlockField(field)}"));
+                return;
+            }
+            string spare = instruction.Contains("dx") ? "ecx" : "edx";
+            Emit($"push {R(spare)}");
+            EmitLoadBlock(spare);
+            Emit(string.Format(instruction, $"{R(spare)} + {BlockField(field)}"));
+            Emit($"pop {R(spare)}");
+        }
+
+        /// <summary>A register (named as in 32-bit code) = this core's or thread's block.</summary>
+        void EmitLoadBlock(string register)
+        {
+            if (BlockSegment is string segment)
+            {
+                Emit($"mov {R(register)}, [{segment}:{BlockField("SELF")}]");
+                return;
+            }
+            // the TLS slot phi_tls_index in the thread's TEB (its TlsSlots: fs:0xE10, or gs:0x1480 in 64-bit code)
+            Need("phi_tls_index");
+            if (bits64)
+            {
+                Emit($"mov {register}, [rel phi_tls_index]");
+                Emit($"mov {R(register)}, [gs:0x1480 + {R(register)} * 8]");
+            }
+            else
+            {
+                Emit($"mov {register}, [phi_tls_index]");
+                Emit($"mov {register}, [fs:0xE10 + {register} * 4]");
+            }
+        }
 
         bool Catches => catches ??= bits32 && unit.Classes.SelectMany(c => c.Body)
             .Concat(unit.Methods.SelectMany(m => m.Decl.Body))
@@ -2538,19 +2586,19 @@ namespace Phi.Compiler.CodeGen
             // (each field is 8 bytes in 64-bit code)
             string record = AllocTemp(5 * Slot);
             string caught = NewLabel("caught"), elseLabel = NewLabel("else"), endLabel = NewLabel("endif");
-            Emit($"mov {R("eax")}, {Q} [{CatchTop}]");
+            EmitBlockField($"mov {R("eax")}, {Q} [{{0}}]", "CATCH");
             Emit($"mov {Q} [{record}], {R("eax")}         ; the catch around this one");
             Emit($"mov {Q} [{record} + {Slot}], esp");
             Emit($"mov {Q} [{record} + {2 * Slot}], ebp");
-            Emit($"mov {R("eax")}, {Q} [{UnwindTop}]");
+            EmitBlockField($"mov {R("eax")}, {Q} [{{0}}]", "UNWIND");
             Emit($"mov {Q} [{record} + {3 * Slot}], {R("eax")}    ; the methods running now");
             LoadAddress("eax", caught);
             Emit($"mov {Q} [{record} + {4 * Slot}], {R("eax")}");
             LoadAddress("eax", record);
-            Emit($"mov {Q} [{CatchTop}], {R("eax")}");
+            EmitBlockField($"mov {Q} [{{0}}], {R("eax")}", "CATCH");
             EmitStatement(throws.Call);
             Emit($"mov {R("eax")}, {Q} [{record}]");
-            Emit($"mov {Q} [{CatchTop}], {R("eax")}     ; it came back: this catch is done");
+            EmitBlockField($"mov {Q} [{{0}}], {R("eax")}     ; it came back: this catch is done", "CATCH");
             Emit($"jmp {elseLabel}");
 
             // the error: err (declared first in Then) gets a copy of it
@@ -2562,13 +2610,9 @@ namespace Phi.Compiler.CodeGen
                 if (err.Type.Struct?.Size != ErrorSize)
                     diagnostics.Error(file, decl.Span, $"the Error struct is {err.Type.Struct?.Size} bytes, and the runtime's is {ErrorSize}; lib/phi/lang/error.phi and throw.asm must agree");
                 LoadAddress("edi", err.Label);
-                if (unit.Kind == UnitKind.Kernel)
-                {
-                    // this core's error (interrupts.asm's block for it, through fs)
-                    Emit("mov esi, [fs:PHI_CORE_SELF]");
-                    Emit("add esi, PHI_CORE_ERROR");
-                }
-                else LoadAddress("esi", "phi_error");
+                // this core's error, or this thread's (the block's, through fs or gs)
+                EmitLoadBlock("esi");
+                Emit($"add {R("esi")}, {BlockField("ERROR")}");
                 Emit($"mov ecx, {ErrorSize}");
                 Emit("rep movsb");
             }
@@ -2594,7 +2638,7 @@ namespace Phi.Compiler.CodeGen
             if (Catches)
             {
                 Emit($"mov {R("ecx")}, [{slot} + {2 * Slot}]");
-                Emit($"mov {Q} [{CatchTop}], {R("ecx")}      ; errors can be caught again");
+                EmitBlockField($"mov {Q} [{{0}}], {R("ecx")}      ; errors can be caught again", "CATCH");
             }
             Emit($"mov {R("ecx")}, [{slot}]");
             Emit("mov dword [ecx], 0        ; the lock back");

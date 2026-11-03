@@ -2273,7 +2273,19 @@ OS or on the host, and `phi load` holds the same tick rate.
     its task. When a program ends (`exit`, an error nothing catches, a fault, a kill) all
     its threads end, and its memory goes back once no core runs any of them. More tasks
     than 16 (`MAX_TASKS`), since threads take them too.
-  - [ ] (b) A block of its own for each thread, as each core has in a kernel: a program's
+  - [x] (b) A block of its own for each thread (2026-11-02), as each core has in a kernel:
+    its innermost catch, its methods' records and the error it throws
+    (`PHI_THREAD_...` in each `throw.asm`; `phi_main_thread` for the first thread, and a
+    new thread's at the top of its stack). Each system's runtime has `phi_thread_setup`
+    and `phi_thread_block`, and the code generator reaches the block as the runtime does:
+    on PHI OS through `gs`, a descriptor of the task's own (`phi_gdt_tasks`, one for each
+    task, its base set by system call 12, so the scheduler needn't change anything); on
+    32-bit Linux through `gs` too (`set_thread_area`); on 64-bit Linux through `fs`
+    (`arch_prctl`); on Windows, whose `fs` and `gs` are its own, from a TLS slot in the
+    TEB (`TlsAlloc`, read at `fs:0xE10` or `gs:0x1480`). Test `kernel32_program_threads`:
+    four threads on every core each catching 600 errors at once (throws with texts of
+    their own, indexes out of range, divisions by zero), none mixed up.
+  - (b, as planned) A block of its own for each thread, as each core has in a kernel: a program's
     catches and methods' records (`phi_catch_top`, `phi_unwind_top`) are one per thread.
     On PHI OS a user segment whose base the scheduler sets for the task it runs; on Linux
     the thread area (32-bit, `gs`) or `fs` (64-bit); on Windows a TLS slot.

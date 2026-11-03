@@ -1,0 +1,100 @@
+# kernel32_program_threads' third program: four threads catch errors at the same time,
+# each 600 of its own (a throw with its own text, an index out of range, a division by
+# zero), so each thread's catches and the error it throws are its own: none may be mixed
+# up with another thread's.
+use user.threads;
+
+phi.Catcher:Program
+{
+	const int TIMES: 600;
+	const int PARTS: 4;
+
+	u32 numbers[4];
+	u32 caught[4];
+	u32 wrong[4];
+	int zero: 0;
+	int threads[4];
+
+	while int p: 0; p < PARTS; p++;
+		threads:p is (Threads.Start: addr Catch p);
+	;;
+	while int p: 0; p < PARTS; p++;
+		call Threads.Wait: threads:p;
+	;;
+	log 'caught: ' caught:0 ' ' caught:1 ' ' caught:2 ' ' caught:3 ', wrong: ' (wrong:0 + wrong:1 + wrong:2 + wrong:3) '\n';
+	exit 0;
+
+	[Catch: int part: 0;]
+		while int i: 0; i < TIMES; i++;
+			if call Fail: part i throws err
+				bln right: false;
+				when i % 3
+					is 0
+						right is err.kind is ErrorKind.THROWN and (Mine: part addr err);
+					;;
+					is 1
+						right is err.kind is ErrorKind.INDEX;
+					;;
+					is 2
+						right is err.kind is ErrorKind.DIVIDE;
+					;;
+				;;
+				if right
+					caught:part is caught:part + 1;
+				;;
+				else
+					wrong:part is wrong:part + 1;
+				;;
+			;;
+			else
+				wrong:part is wrong:part + 1;
+			;;
+		;;
+	[end]
+
+	# a throw, an index out of range, or a division by zero
+	[Fail: int part: 0; int i: 0;]
+		when i % 3
+			is 0
+				call Throw: part;
+			;;
+			is 1
+				log numbers:(PARTS + part);
+			;;
+			is 2
+				log part / zero;
+			;;
+		;;
+	[end]
+
+	[Throw: int part: 0;]
+		when part
+			is 0
+				throw 'part zero';
+			;;
+			is 1
+				throw 'part one';
+			;;
+			is 2
+				throw 'part two';
+			;;
+		;;
+		throw 'part three';
+	[end]
+
+	# is err's text the one part throws? (compared with each text as it is, so nothing is
+	# made on the heap, which isn't for several threads yet)
+	[Mine: int part: 0; ptr<Error> err: 0;]
+		when part
+			is 0
+				return err.text is 'part zero';
+			;;
+			is 1
+				return err.text is 'part one';
+			;;
+			is 2
+				return err.text is 'part two';
+			;;
+		;;
+	[end: err.text is 'part three']
+}

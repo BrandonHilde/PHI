@@ -1,5 +1,5 @@
 ; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_own_add phi_task_core phi_thread_start OS_CreateUserThread OS_TaskProcess OS_CurrentProcess
-; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_core_blocks phi_own_call_hook
+; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_core_blocks phi_own_call_hook phi_gdt phi_gdt_tasks
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
 ; directory and kernel stack, and the kernel itself as task 0. A program's threads are
@@ -38,6 +38,7 @@ TSS_SELECTOR  equ 0x28
 YIELD_VECTOR  equ 48
 SYSCALL_VECTOR equ 0x80
 OWN_RANGES equ 8               ; ranges of system calls with a lock of their own (phi_own_add)
+THREAD_BLOCK equ 1024          ; a program thread's block (its throw.asm's PHI_THREAD_SIZE)
 
 USER_BASE     equ 0x40000000
 USER_TOP      equ 0x40400000
@@ -470,11 +471,11 @@ phi_syscall:
     jae .killed
     mov ebx, [ebp + F_EBX]
     mov eax, [ebp + F_EAX]
-    cmp eax, 12
+    cmp eax, 13
     jae .extension
     jmp [.table + eax * 4]
 .table:
-    dd .exit, .write, .debug, .read_key, .sleep, .ticks, .getpid, .yield, .key_available, .wait, .fault_entry, .thread_end
+    dd .exit, .write, .debug, .read_key, .sleep, .ticks, .getpid, .yield, .key_available, .wait, .fault_entry, .thread_end, .thread_block
 
 .exit:
     ; the whole program ends, whichever of its tasks asked
@@ -594,6 +595,42 @@ phi_syscall:
     cmp ebx, [phi_task_image_end + ecx * 4]
     jae .invalid
     mov [phi_task_fault_entry + ecx * 4], ebx
+    jmp .done
+
+.thread_block:
+    ; ebx = the calling thread's block (its catches and the error it throws: 1024 bytes of its
+    ; program's memory): a data segment of its own whose base is the block, which the program
+    ; loads into gs; its selector back (each task has one: phi_gdt_tasks)
+    mov ecx, [phi_current_task]
+    mov edx, [phi_task_process + ecx * 4]
+    lea eax, [ebx + THREAD_BLOCK]
+    cmp eax, ebx
+    jb .invalid                               ; (wrapped round)
+    cmp ebx, USER_BASE
+    jb .invalid
+    cmp eax, [phi_task_image_end + edx * 4]
+    jbe .block_ok                             ; in its code and data
+    cmp ebx, [phi_task_stack_bottom + edx * 4]
+    jb .invalid
+    cmp eax, USER_TOP
+    jbe .block_ok                             ; on its first thread's stack
+    cmp ebx, USER_TOP
+    jb .invalid
+    cmp eax, [phi_task_heap_end + edx * 4]
+    ja .invalid                               ; (or in its heap)
+.block_ok:
+    lea edx, [phi_gdt_tasks + ecx * 8]
+    mov word [edx], THREAD_BLOCK - 1          ; its limit: the block
+    mov [edx + 2], bx                         ; its base
+    mov eax, ebx
+    shr eax, 16
+    mov [edx + 4], al
+    mov byte [edx + 5], 11110010b             ; present, ring 3, data
+    mov byte [edx + 6], 01000000b             ; 32-bit, the limit in bytes
+    mov [edx + 7], ah
+    sub edx, phi_gdt
+    or edx, 3
+    mov [ebp + F_EAX], edx
     jmp .done
 
 .extension:

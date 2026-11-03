@@ -1501,8 +1501,8 @@ call Threads.Wait: t;
   and so does an error nothing catches (or a fault) in any of them.
 - What belongs to a program (its sockets, its mailboxes, its memory's checks) is the
   program's, whichever thread uses it; `OS.CurrentTask` gives the program's number.
-- Not yet: catching errors in more than one thread at once (a program's catches are one
-  list for now), and the heap from several threads at once.
+- Each thread catches errors of its own: its catches, and the error it throws, are its own.
+- Not yet: the heap and `log` from several threads at once.
 
 ### atomic and locked
 

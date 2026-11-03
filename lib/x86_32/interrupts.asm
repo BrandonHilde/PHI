@@ -1,4 +1,4 @@
-; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_load_core_fs phi_fault_hook phi_own_call_hook phi_core_blocks
+; provides: phi_interrupts_init phi_cores_running phi_idt phi_irq_register phi_irq_handlers phi_set_gate phi_interrupt_common phi_scheduler phi_syscall_hook phi_user_fault OS_SetInterruptHandler OS_SetIrqHandler OS_EndOfInterrupt OS_EnableInterrupts OS_DisableInterrupts OS_UnmaskIrq OS_MaskIrq phi_local_apic phi_io_apic phi_irq_inputs phi_irq_routes phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt phi_gdt_tss phi_gdt_tasks phi_gdt_descriptor phi_load_core_fs phi_fault_hook phi_own_call_hook phi_core_blocks
 ; requires: phi_panic
 ; init: phi_interrupts_init
 ;
@@ -491,6 +491,7 @@ PHI_CORE_FLAGS    equ 728               ; interrupts as they were at the throw, 
 PHI_CORE_BLOCK    equ 1024
 PHI_CORE_SELECTOR equ 0x68              ; core n's data segment is PHI_CORE_SELECTOR + n * 8
 PHI_CORES         equ 8                 ; as proc.cores has it
+PHI_TASKS         equ 64                ; as tasks.asm's MAX_TASKS
 
 align 8
 phi_gdt:
@@ -507,6 +508,8 @@ phi_gdt_tss:
     times PHI_CORES dq 0                   ; 0x28 and on: each core's TSS (tasks.asm fills them in)
 phi_gdt_cores:
     times PHI_CORES dq 0                   ; 0x68 and on: each core's block (filled in at startup)
+phi_gdt_tasks:
+    times PHI_TASKS dq 0                   ; 0xA8 and on: each task's thread block, for a program's gs (tasks.asm, system call 12)
 phi_gdt_end:
 phi_gdt_descriptor:
     dw phi_gdt_end - phi_gdt - 1

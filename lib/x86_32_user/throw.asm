@@ -1,24 +1,35 @@
-; provides: phi_throw phi_catch_top phi_unwind_top phi_error phi_fault_init phi_fault_entry
-; requires: phi_print phi_exit phi_fault_register
+; provides: phi_throw phi_main_thread phi_fault_init phi_fault_entry
+; requires: phi_print phi_exit phi_fault_register phi_thread_setup phi_thread_block
 ; init: phi_fault_init
 ;
 ; Errors (user programs): a throw, an index out of range or the heap out of room
 ; all come here, with eax = the line, esi = the file's name (0 if not known),
 ; edx = the text and ebx = the kind (ErrorKind in lib/phi/lang/error.phi).
 ;
-; The error goes into phi_error, laid out as an Error is: kind, line, file (64
+; Each thread has a block of its own (PHI_THREAD_...): the innermost catch, the innermost
+; running method with things to give back, and the error being thrown, so threads catch
+; errors of their own. The program's first thread has phi_main_thread; each system's
+; runtime keeps where the running thread's is (phi_thread_setup, phi_thread_block), and
+; the code generator reaches it the same way (gs, fs, or a TLS slot on Windows).
+;
+; The error goes into the thread's block, laid out as an Error is: kind, line, file (64
 ; characters and a zero), text (255 and a zero), and message (the text, then
 ; where: 383 and a zero). Then:
 ;
 ;   - with a catch (an if call ... throws err running), each method between here
-;     and it gives back what it owns (its record on phi_unwind_top says how), esp
+;     and it gives back what it owns (its record on the unwind list says how), esp
 ;     and ebp go back to where the catch was set, and it carries on there
 ;   - with none, PHI: and the message are printed, and the program ends with -1,
 ;     as it did before errors could be caught (a supervisor may start it again)
 ;
 ; A catch record (see X86Generator.EmitIfThrows): +0 the catch before it, +4 esp,
-; +8 ebp, +12 phi_unwind_top when it was set, +16 where to go. A method's record:
+; +8 ebp, +12 the unwind list when it was set, +16 where to go. A method's record:
 ; +0 the record before it, +4 what gives back its things, +8 its ebp.
+PHI_THREAD_SELF   equ 0                 ; the block's own address
+PHI_THREAD_CATCH  equ 4                 ; the innermost catch, or 0
+PHI_THREAD_UNWIND equ 8                 ; the innermost running method with things to give back, or 0
+PHI_THREAD_ERROR  equ 12                ; the error being thrown (an Error)
+PHI_THREAD_SIZE   equ 1024
 ERROR_KIND    equ 0
 ERROR_LINE    equ 4
 ERROR_FILE    equ 8
@@ -28,63 +39,81 @@ ERROR_SIZE    equ 713
 
 phi_throw:
     cld
-    mov [phi_error + ERROR_KIND], ebx
-    mov [phi_error + ERROR_LINE], eax
-    mov edi, phi_error + ERROR_FILE
+    push eax                        ; (the line)
+    call phi_thread_block
+    lea edi, [eax + PHI_THREAD_ERROR]
+    pop eax
+    push edi                        ; [esp]: this thread's error
+    mov [edi + ERROR_KIND], ebx
+    mov [edi + ERROR_LINE], eax
+    add edi, ERROR_FILE
     mov ecx, 64
     call .copy
     mov esi, edx
-    mov edi, phi_error + ERROR_TEXT
+    mov edi, [esp]
+    add edi, ERROR_TEXT
     mov ecx, 255
     call .copy
 
     ; the message: the text, ' on line ', the line, then ' in ' and the file if it's known
-    mov edi, phi_error + ERROR_MESSAGE
+    mov edi, [esp]
+    add edi, ERROR_MESSAGE
     mov ecx, 383
-    mov esi, phi_error + ERROR_TEXT
+    mov esi, [esp]
+    add esi, ERROR_TEXT
     call .append
-    cmp dword [phi_error + ERROR_LINE], 0
+    mov eax, [esp]
+    cmp dword [eax + ERROR_LINE], 0
     je .said                        ; (a CPU exception's line isn't known: the text alone)
     mov esi, .on_line
     call .append
-    mov eax, [phi_error + ERROR_LINE]
+    mov eax, [esp]
+    mov eax, [eax + ERROR_LINE]
     call .number
-    cmp byte [phi_error + ERROR_FILE], 0
+    mov eax, [esp]
+    cmp byte [eax + ERROR_FILE], 0
     je .said
     mov esi, .in_file
     call .append
-    mov esi, phi_error + ERROR_FILE
+    mov esi, [esp]
+    add esi, ERROR_FILE
     call .append
 .said:
     mov byte [edi], 0
 
-    mov ebx, [phi_catch_top]
+    pop edi
+    sub edi, PHI_THREAD_ERROR       ; the block
+    mov ebx, [edi + PHI_THREAD_CATCH]
     test ebx, ebx
     jz .uncaught
 .unwind:
     ; each method that's still running above the catch gives back its things
-    mov esi, [phi_unwind_top]
+    mov esi, [edi + PHI_THREAD_UNWIND]
     cmp esi, [ebx + 12]
     je .resume
     mov eax, [esi]
-    mov [phi_unwind_top], eax       ; off the list first
+    mov [edi + PHI_THREAD_UNWIND], eax  ; off the list first
     push ebx
+    push edi
     mov eax, [esi + 4]
     mov ebp, [esi + 8]
     call eax
+    pop edi
     pop ebx
     jmp .unwind
 .resume:
     mov eax, [ebx]
-    mov [phi_catch_top], eax        ; this catch is done
+    mov [edi + PHI_THREAD_CATCH], eax   ; this catch is done
     mov esp, [ebx + 4]
     mov ebp, [ebx + 8]
     jmp [ebx + 16]
 
 .uncaught:
+    push edi
     mov esi, .prefix
     call phi_print
-    mov esi, phi_error + ERROR_MESSAGE
+    pop edi
+    lea esi, [edi + PHI_THREAD_ERROR + ERROR_MESSAGE]
     call phi_print
     mov esi, .newline
     call phi_print
@@ -142,9 +171,8 @@ phi_throw:
 .newline:
     db 13, 10, 0
 
-phi_catch_top:  dd 0                ; the innermost catch, or 0
-phi_unwind_top: dd 0                ; the innermost running method that has things to give back, or 0
-phi_error:      times ERROR_SIZE db 0
+align 4, db 0
+phi_main_thread: times PHI_THREAD_SIZE db 0     ; the block of the program's first thread
 
 ; ---- CPU exceptions, caught as errors
 ;
@@ -157,6 +185,8 @@ ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
 ERROR_KIND_EMPTY  equ 4
 
 phi_fault_init:
+    mov eax, phi_main_thread            ; the first thread's block, before anything can throw
+    call phi_thread_setup
     mov eax, phi_fault_entry
     jmp phi_fault_register
 

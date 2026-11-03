@@ -1,18 +1,22 @@
-; provides: OS_ThreadStart OS_ThreadDone OS_ThreadFree
+; provides: OS_ThreadStart OS_ThreadDone OS_ThreadFree phi_thread_setup phi_thread_block
 ;
 ; A PHI OS program's threads (user.threads): each is a task of the program in the kernel
-; (proc.process's system calls 44 to 46), on a stack the program gives it. It starts at
-; phi_thread_main, which calls its method with its value, and ends the thread when the
-; method returns (system call 11).
+; (proc.process's system calls 44 to 46), on a stack the program gives it. The top of the
+; stack is the thread's block (its catches and the error it throws: throw.asm's
+; PHI_THREAD_...), which the kernel gives a segment of its own (system call 12) that the
+; thread reaches through gs. It starts at phi_thread_main, which calls its method with its
+; value, and ends the thread when the method returns (system call 11).
 SYS_THREAD_END   equ 11
+SYS_THREAD_BLOCK equ 12
 SYS_THREAD_START equ 44
 SYS_THREAD_DONE  equ 45
 SYS_THREAD_FREE  equ 46
+THREAD_BLOCK     equ 1024               ; throw.asm's PHI_THREAD_SIZE
 
 ; args: method value stackBottom stackTop -> the thread's number, or -1
 OS_ThreadStart:
-    mov edx, [esp + 16]                 ; the top of its stack: its method and value go there
-    sub edx, 8
+    mov edx, [esp + 16]                 ; the top of its stack: its block, and below it its
+    sub edx, THREAD_BLOCK + 8           ; method and value
     mov eax, [esp + 4]
     mov [edx], eax
     mov eax, [esp + 8]
@@ -40,11 +44,36 @@ OS_ThreadFree:
     ret
 
 ; where a thread starts: [esp] = its method, [esp + 4] = its value (which the method finds
-; as its argument); when the method returns, the thread has finished
+; as its argument), and above them its block; when the method returns, it has finished
 phi_thread_main:
+    lea eax, [esp + 8]
+    call phi_thread_setup
     pop eax
     call eax
     mov eax, SYS_THREAD_END
     int 0x80
 .never:
     jmp .never
+
+; eax = a block of THREAD_BLOCK bytes: the running thread's from now on (no catches yet),
+; reached through gs; keeps the other registers
+phi_thread_setup:
+    mov [eax], eax                      ; PHI_THREAD_SELF: its own address
+    mov dword [eax + 4], 0              ; PHI_THREAD_CATCH
+    mov dword [eax + 8], 0              ; PHI_THREAD_UNWIND
+    push ebx
+    mov ebx, eax
+    mov eax, SYS_THREAD_BLOCK
+    int 0x80
+    test eax, eax
+    js .done
+    mov gs, ax
+.done:
+    mov eax, ebx
+    pop ebx
+    ret
+
+; -> eax = the running thread's block; keeps the other registers
+phi_thread_block:
+    mov eax, [gs:0]
+    ret

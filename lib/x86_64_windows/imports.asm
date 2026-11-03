@@ -35,6 +35,8 @@
     PHI_FUNCTION SetConsoleMode
     PHI_FUNCTION AddVectoredExceptionHandler
     PHI_FUNCTION GetSystemTimeAsFileTime
+    PHI_FUNCTION TlsAlloc
+    PHI_FUNCTION TlsSetValue
 %endmacro
 %macro PHI_WS2_32 0
     PHI_FUNCTION WSAStartup

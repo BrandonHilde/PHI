@@ -11,6 +11,8 @@ parts: 500500 1500500 2500500 3500500
 atomic total: 8002000, locked total: 8002000, all: 1
 each in this program: 1
 every core: exit 7
+caught: 600 600 600 600, wrong: 0
+catching in every thread: exit 0
 dividing
 
 PHI: division by zero
