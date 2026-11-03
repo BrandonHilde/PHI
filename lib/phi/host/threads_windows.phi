@@ -12,7 +12,7 @@ phi.ThreadSystem:Windows
 
 	# start it, with what's in its frame: false if Windows won't
 	[Begin: int thread: 0; ptr<ThreadFrame> frame: 0;]
-		ptr<u8> handle: (Kernel32.CreateThread: 0 0 (OS.ThreadEntry) frame 0 0);
+		ptr<u8> handle: (Kernel32.CreateThread: 0 0 (OS.ThreadEntry) as ptr<u8> frame 0 0);
 		if handle is 0 return false;
 		handles:thread is handle;
 	[end: true]

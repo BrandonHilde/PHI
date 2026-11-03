@@ -1,0 +1,57 @@
+# Pools in a program on Linux and Windows (memory.pool), where an address can be 8 bytes:
+# the links of its free list and each slot's tag have to hold all of one. Objects are handed
+# out, written, given back and handed out again; every chunk goes back to the heap.
+use memory.pool;
+
+struct.Monster
+{
+	u32 id;
+	u32 health;
+}
+
+struct.Tiny
+{
+	u8 one;
+}
+
+phi.PoolProgram:Program
+{
+	ptr<Monster> made[100];
+	ptr<PoolData> monsters: (Pool.New: sizeof Monster 8);
+
+	while int i: 0; i < 100; i++;
+		made:i is (Pool.Alloc: monsters);
+		made:i.id is i;
+		made:i.health is 100 + i;
+	;;
+	log 'used ' monsters:0.used ' of ' monsters:0.capacity '\n';
+
+	int wrong: 0;
+	while int i: 0; i < 100; i++;
+		if made:i.id is not i or made:i.health is not 100 + i
+			wrong++;
+		;;
+	;;
+	log 'wrong ' wrong '\n';
+
+	# back, and out again: the last one given back is the next handed out, zeroed
+	ptr<Monster> third: made:3;
+	call Pool.Free: monsters made:3;
+	call Pool.Free: monsters made:50;
+	ptr<Monster> again: (Pool.Alloc: monsters);
+	log 'the last back is first out: ' (again is made:50) ', zeroed: ' again.health '\n';
+	ptr<Monster> next: (Pool.Alloc: monsters);
+	log 'then the one before: ' (next is third) ', used ' monsters:0.used '\n';
+
+	# objects smaller than an address still have room for the link
+	ptr<PoolData> tiny: (Pool.New: sizeof Tiny 4);
+	ptr<Tiny> a: (Pool.Alloc: tiny);
+	ptr<Tiny> b: (Pool.Alloc: tiny);
+	call Pool.Free: tiny a;
+	call Pool.Free: tiny b;
+	log 'tiny: ' ((Pool.Alloc: tiny) is b) ' ' ((Pool.Alloc: tiny) is a) '\n';
+
+	call Pool.Delete: tiny;
+	call Pool.Delete: monsters;
+	log 'deleted\n';
+}

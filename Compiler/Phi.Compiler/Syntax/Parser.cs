@@ -21,7 +21,7 @@ namespace Phi.Compiler.Syntax
             "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
             "phi", "asm", "x64", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
-            "throw", "throws", "sys",
+            "throw", "throws", "sys", "foreign",
         };
 
         /// <summary>Other names for the keywords people most often reach for as variable names.</summary>
@@ -471,6 +471,8 @@ namespace Phi.Compiler.Syntax
         StructDecl ParseStruct(Token start, Token name, ProgramNode program)
         {
             var decl = new StructDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
+            // struct.Message foreign { ... }: laid out as C lays a struct out
+            decl.IsForeign = AcceptWord("foreign");
             // struct.Circle has Shape { ... }: the interfaces it has, whose methods it must have
             if (AcceptWord("has"))
             {
@@ -1692,8 +1694,9 @@ namespace Phi.Compiler.Syntax
             if (AtWord("addr"))
             {
                 Advance();
+                bool foreign = AcceptWord("foreign");
                 Expr operand = ParsePostfix();
-                return new AddrExpr { Operand = operand, Span = t.Span.To(operand.Span) };
+                return new AddrExpr { Operand = operand, Foreign = foreign, Span = t.Span.To(operand.Span) };
             }
 
             if (AtWord("sizeof"))

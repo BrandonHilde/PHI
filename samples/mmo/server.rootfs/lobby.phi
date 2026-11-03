@@ -53,10 +53,11 @@ phi.Lobby:Program
 	const int MOST: 1024;                 # Tcp.MAX_CONNECTIONS: a session for each connection number
 
 	int listener: -1;
-	u32 sessions[MOST];                   # by connection number: its Session, or 0
+	ptr<Session> sessions[MOST];          # by connection number: its Session, or 0
 	ptr<PoolData> session_pool: 0;
 	ptr<PoolData> account_pool: 0;
-	ptr<MapData> accounts: 0;             # a name's hash -> its Account
+	ptr<MapData> accounts: 0;             # a name's hash -> where its Account is in every, and 1
+	ptr<Account> every[];                 # every account
 	TlsIdentity identity;                 # what the lobby shows
 	u8 certificate[2048];
 	u8 key[256];
@@ -184,7 +185,7 @@ phi.Lobby:Program
 			call Text.Copy: a.name name 16;
 			call Random.Fill: a.salt 16;
 			call Pbkdf2.Derive: password (Text.Length: password) a.salt 16 ROUNDS a.hash 32;
-			call Map.Set: accounts (Hash: name) a;
+			call Remember: a;
 			call SaveLog.Add: 'ACCOUNTS.LOG' a as ptr<u8> sizeof Account;
 		;;
 		else
@@ -219,11 +220,17 @@ phi.Lobby:Program
 
 	# the account with a name, or 0
 	[Find: ptr<u8> name: 0;]
-		ptr<Account> a: (Map.Get: accounts (Hash: name) 0);
-		if a is not 0 and (Text.Equal: a.name name) is false
-			a is 0;                           # another name with the same hash
-		;;
+		u32 place: (Map.Get: accounts (Hash: name) 0);
+		if place is 0 return 0;
+		ptr<Account> a: every:(place - 1);
+		if (Text.Equal: a.name name) is false return 0;   # another name with the same hash
 	[end: a]
+
+	# a's place, known by its name's hash
+	[Remember: ptr<Account> a: 0;]
+		every++ a;
+		call Map.Set: accounts (Hash: a.name) every.len;
+	[end]
 
 	# FNV-1a: a 32-bit hash of the name
 	[Hash: ptr<u8> text: 0;]
@@ -237,6 +244,6 @@ phi.Lobby:Program
 	[Restore: ptr<u8> bytes: 0;]
 		ptr<Account> a: (Pool.Alloc: account_pool);
 		call Mem.Copy: a as ptr<u8> bytes sizeof Account;
-		call Map.Set: accounts (Hash: a.name) a;
+		call Remember: a;
 	[end]
 }

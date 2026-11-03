@@ -584,6 +584,7 @@ namespace Phi.Compiler.CodeGen
             }
 
             foreach (MethodSymbol m in unit.Methods) EmitMethod(m);
+            foreach (MethodSymbol m in unit.ForeignEntries) EmitForeignEntry(m);
             // what follows isn't PHI code: an exception in it has no line
             if (lineMarks.Count > 0)
             {
@@ -1646,6 +1647,46 @@ namespace Phi.Compiler.CodeGen
         /// are worked out first, each pushed, so none is lost to another's register; the
         /// registers PHI keeps its own things in (the frame, the variables) are kept.
         /// </summary>
+        /// <summary>
+        /// Where outside code calls a PHI method (addr foreign Name), the way it calls things.
+        /// A method takes its values on the stack, the last one nearest; Windows' way is the
+        /// first one nearest (stdcall, in 32-bit code, whose callee takes them off), or the first
+        /// four in rcx, rdx, r8 and r9 and the rest above 32 bytes of room (64-bit code). Outside
+        /// code also expects to find the registers it keeps as it left them.
+        /// </summary>
+        void EmitForeignEntry(MethodSymbol m)
+        {
+            int n = m.Parameters.Count;
+            Line("");
+            Comment($"where outside code calls {m.Name}");
+            Label(Binder.ForeignEntry(m));
+            string[] kept = bits64 ? new[] { "rbx", "rsi", "rdi", "r12", "r13", "r14", "r15" } : new[] { "ebx", "esi", "edi" };
+            Emit("push ebp");
+            Emit("mov ebp, esp");
+            foreach (string r in kept) Emit($"push {r}");
+            Emit("cld");
+            string[] registers = { "rcx", "rdx", "r8", "r9" };
+            for (int i = 0; i < n; i++)
+            {
+                if (!bits64) Emit($"push dword [ebp + {8 + 4 * i}]");
+                else if (i < 4) Emit($"push {registers[i]}");
+                else Emit($"push qword [rbp + {48 + 8 * (i - 4)}]");
+            }
+            Emit($"call {m.Label}");
+            if (n > 0) Emit($"add esp, {n * Slot}");
+            foreach (string r in kept.Reverse()) Emit($"pop {r}");
+            Emit("pop ebp");
+            Emit(!bits64 && n > 0 ? $"ret {4 * n}" : "ret");
+        }
+
+        void EmitAddIndex()
+        {
+            // an address is all of rbx in 64-bit code; a 32-bit add would lose its top half.
+            // (the index is 32 bits, and in unsafe code can be negative)
+            if (bits64) Emit("movsxd rax, eax");
+            Emit($"add {R("ebx")}, {R("eax")}");
+        }
+
         void EmitSystemCall(SysCallDecl sys, List<Expr> arguments)
         {
             string[] registers = bits64 ? new[] { "rdi", "rsi", "rdx", "r10", "r8", "r9" } : new[] { "ebx", "ecx", "edx", "esi", "edi", "ebp" };
@@ -3536,7 +3577,7 @@ namespace Phi.Compiler.CodeGen
                 else
                 {
                     EmitExpr(ix.Target);
-                    Emit("mov ebx, eax");
+                    Emit($"mov {R("ebx")}, {R("eax")}");
                 }
                 return constant != null
                     ? new Place { Computed = true, Linear = true, Offset = (int)constant.Value * size }
@@ -3557,7 +3598,8 @@ namespace Phi.Compiler.CodeGen
             {
                 TryLoadSimple(ix.Target, "ebx", dryRun: false);
                 TryLoadSimple(ix.Index, "eax", dryRun: false);
-                Emit(size == 1 ? "add ebx, eax" : $"lea ebx, [ebx + eax*{size}]");
+                if (size == 1) EmitAddIndex();
+                else Emit($"lea ebx, [ebx + eax*{size}]");
                 return new Place { Computed = true, Linear = true };
             }
 
@@ -3567,13 +3609,13 @@ namespace Phi.Compiler.CodeGen
 
                 if (constant != null)
                 {
-                    Emit("mov ebx, eax");
+                    Emit($"mov {R("ebx")}, {R("eax")}");
                     return new Place { Computed = true, Linear = true, Offset = (int)constant.Value * size };
                 }
                 Emit("push eax");
                 EmitIndexValue(ix, size);
                 Emit("pop ebx");
-                Emit("add ebx, eax");
+                EmitAddIndex();
                 return new Place { Computed = true, Linear = true };
             }
 
@@ -3614,7 +3656,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("push ebx");
                 EmitIndexValue(ix, size);
                 Emit("pop ebx");
-                Emit("add ebx, eax");
+                EmitAddIndex();
             }
             else
             {

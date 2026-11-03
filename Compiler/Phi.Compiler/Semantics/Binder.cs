@@ -14,6 +14,9 @@ namespace Phi.Compiler.Semantics
         /// <summary>The outside libraries' functions the code calls, for the import table.</summary>
         public List<OutsideFunctionDecl> OutsideFunctions { get; } = new();
 
+        /// <summary>The methods outside code calls (addr foreign Name), each needing an entry.</summary>
+        public List<MethodSymbol> ForeignEntries { get; } = new();
+
         /// <summary>Class-level names, for {name} in asm blocks: variables and constants.</summary>
         public Dictionary<string, Symbol> ClassNames { get; } = new();
     }
@@ -1206,6 +1209,11 @@ namespace Phi.Compiler.Semantics
                 }
 
                 PhiType type = ResolveType(f.Type, scope: null, allowStr: true);
+                if (s.Decl.IsForeign && (f.IsNew || f.TextSize != null || type.IsString || f.Unsized))
+                {
+                    Error(f.Span, $"{f.Name}: a foreign struct holds what C does: numbers, pointers, arrays of them, and other foreign structs");
+                    continue;
+                }
                 if (type.IsChar && f.Count != null && f.TextSize == null && !f.IsNew)
                 {
                     // chr name[24]; (or [atmost 24]) is text, the same as str name: [24];
@@ -1333,13 +1341,36 @@ namespace Phi.Compiler.Semantics
                 }
 
                 int size = type.ByteSize;
+                if (s.Decl.IsForeign)
+                {
+                    // each field on a multiple of its own size, as C has it
+                    int? alignment = ForeignAlignment(type);
+                    if (alignment == null)
+                    {
+                        Error(f.Type.Span, $"{f.Name} is {A(type)}, but a foreign struct holds what C does: numbers, pointers, arrays of them, and other foreign structs");
+                        continue;
+                    }
+                    offset = (offset + alignment.Value - 1) / alignment.Value * alignment.Value;
+                    s.Alignment = Math.Max(s.Alignment, alignment.Value);
+                }
                 s.Fields.Add(new FieldSymbol { Name = f.Name, Type = type, Offset = offset });
                 offset += size;
             }
 
+            // (so that in an array each one starts as C would have it)
+            if (s.Decl.IsForeign) offset = (offset + s.Alignment - 1) / s.Alignment * s.Alignment;
             s.Size = offset;
             s.LayoutDone = true;
             inProgress.Remove(s);
+        }
+
+        /// <summary>What a foreign struct's field of this type starts on a multiple of; null if it can't be in one.</summary>
+        static int? ForeignAlignment(PhiType t)
+        {
+            if (t.IsError) return 1;
+            if (t.Kind == TypeKind.Struct) return t.Struct is { Decl.IsForeign: true } s ? s.Alignment : null;
+            if (t.Kind == TypeKind.Str || t.IsObject || t.Open || t.Filled) return null;
+            return t.IsArray ? t.ElementSize : t.ByteSize;
         }
 
         /// <summary>Turns a written type into a PhiType. str is only allowed for variables.</summary>
@@ -3966,6 +3997,7 @@ namespace Phi.Compiler.Semantics
 
             if (target.Type.IsNumeric && result.IsString)
                 Error(target.Span, $"{call.Callee} returns a str, which can't be stored in {target.Type} '{Describe(target)}'");
+            WarnPointerWidth(target, result, target.Type, $"'{Describe(target)}'");
         }
 
         static string UnitName(UnitKind unit) => unit switch
@@ -4428,9 +4460,45 @@ namespace Phi.Compiler.Semantics
             return null;
         }
 
+        /// <summary>
+        /// addr foreign Name: where outside code (a window system, say) can call a method, the
+        /// way it calls things. The generator makes that entry; each value and what it gives go
+        /// in a register, as with an outside function. In a :Windows module, for now.
+        /// </summary>
+        void BindForeignAddr(AddrExpr addr, Scope scope)
+        {
+            addr.Type = PhiType.PointerTo(PhiType.U8);
+            if (addr.Operand is not NameExpr name || Lookup(name.Name, scope) != null || ResolveCallee(name.Name, scope) is not MethodSymbol m || m.Unit != scope.Unit)
+            {
+                Error(addr.Operand.Span, "addr foreign takes a method, for outside code to call");
+                addr.Type = PhiType.Error;
+                return;
+            }
+            name.Type = PhiType.Void;
+            if (scope.Class.Base != "Windows")
+                Error(addr.Span, $"addr foreign {m.Decl.Name} is for outside code to call, used only in a :Windows module (for now), not in {scope.Class.Name} (:{scope.Class.Base})");
+            for (int i = 0; i < m.Parameters.Count; i++)
+                if (OutsideTypeProblem(m.Parameters[i].Type) is string problem)
+                    Error(addr.Span, $"{m.Decl.Name}'s '{m.Parameters[i].Name}' is {problem}");
+            PhiType result = ReturnTypeOf(m);
+            if (result.Kind != TypeKind.Void && OutsideTypeProblem(result) is string gives)
+                Error(addr.Span, $"what {m.Decl.Name} gives is {gives}");
+            addr.CodeLabel = ForeignEntry(m);
+            if (!units[scope.Unit].ForeignEntries.Contains(m)) units[scope.Unit].ForeignEntries.Add(m);
+        }
+
+        /// <summary>The label of the entry outside code calls a method through.</summary>
+        public static string ForeignEntry(MethodSymbol m) => "phi_foreign_" + m.Label;
+
         void BindAddr(AddrExpr addr, Scope scope)
         {
             addr.Type = PhiType.U32;
+
+            if (addr.Foreign)
+            {
+                BindForeignAddr(addr, scope);
+                return;
+            }
 
             // addr Method: the address of code, for interrupt handlers
             if (addr.Operand is NameExpr name && Lookup(name.Name, scope) == null)
@@ -4629,8 +4697,9 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            b.Left = Convert(b.Left, PhiType.Int, "the left side");
-            b.Right = Convert(b.Right, PhiType.Int, "the right side");
+            // (math on a pointer keeps all of it: only where the answer goes can cut it)
+            if (!b.Left.Type.IsPointer && !PointerMath(b.Left)) b.Left = Convert(b.Left, PhiType.Int, "the left side");
+            if (!b.Right.Type.IsPointer && !PointerMath(b.Right)) b.Right = Convert(b.Right, PhiType.Int, "the right side");
             b.Type = b.IsComparison || b.IsLogical ? PhiType.Bool : ArithmeticType(b.Left.Type, b.Right.Type);
         }
 
@@ -4674,6 +4743,26 @@ namespace Phi.Compiler.Semantics
         /// its character code wherever a number is expected. Numbers of any size convert to
         /// each other (larger values are cut to fit when stored).
         /// </summary>
+        /// <summary>
+        /// In 64-bit code a pointer is 64 bits and an int 32, so a pointer put in a number loses
+        /// its top half, and a number put in a pointer never had one, with nothing said. `as`
+        /// says it's meant; a constant (0, say, or an address) goes in a pointer whole.
+        /// </summary>
+        void WarnPointerWidth(Expr e, PhiType from, PhiType to, string what)
+        {
+            if (!host.Is64() || !from.IsNumeric || !to.IsNumeric) return;
+            bool fromPointer = from.IsPointer || PointerMath(e);
+            if (fromPointer == to.IsPointer) return;
+            if (fromPointer)
+                diagnostics.Warning(file, e.Span, $"{what} is {A(to)}, which keeps only 32 bits of this pointer in 64-bit code; write `as {to}` if that's meant");
+            else if (ConstantFolder.Evaluate(e) == null)
+                diagnostics.Warning(file, e.Span, $"{what} is a {to}, 64 bits in 64-bit code, and this is {A(from)}, so its top half is lost; write `as {to}` if that's meant");
+        }
+
+        /// <summary>p + n or p - n: a pointer moved, which keeps all of it. (p - q is how far apart they are: a number.)</summary>
+        static bool PointerMath(Expr e) => e is BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract } b
+            && (b.Left.Type.IsPointer || PointerMath(b.Left)) != (b.Right.Type.IsPointer || PointerMath(b.Right));
+
         Expr Convert(Expr e, PhiType target, string what)
         {
             if (e.Type.IsError || target.IsError) return e;
@@ -4781,7 +4870,11 @@ namespace Phi.Compiler.Semantics
 
             if (target.IsNumeric)
             {
-                if (e.Type.IsNumeric) return e;
+                if (e.Type.IsNumeric)
+                {
+                    WarnPointerWidth(e, e.Type, target, what);
+                    return e;
+                }
                 if (target.IsPointer && e.Type.IsString) return e; // a str's value is its address
 
                 // a str array is a table of pointers, one per element: where a pointer goes, the table's address

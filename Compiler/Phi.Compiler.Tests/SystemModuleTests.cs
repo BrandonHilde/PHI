@@ -231,6 +231,81 @@ namespace Phi.Compiler.Tests
             }
         }
 
+        const string Callback = "use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [On: ptr<u8> window: 0; ptr<u8> value: 0;]\n [end: 1]\n" +
+                                " [Go]\n [end: (User32.EnumWindows: addr foreign On 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n";
+
+        [Fact]
+        public void A32BitForeignEntryPutsTheValuesInPhisOrderAndTakesThemOff()
+        {
+            CompileResult result = Build(Host.Windows, ("main.phi", "use win;\nphi.Test:Program\n{\n log (Win.Go);\n}\n"), ("win.phi", Callback));
+            Assert.True(result.Success, Errors(result));
+            string text = result.Units.Single().Text;
+            int at = text.IndexOf("phi_foreign_M_Win_On:");
+            Assert.True(at >= 0, text);
+            string entry = text[at..text.IndexOf("ret 8", at)];
+            Assert.True(entry.IndexOf("push dword [ebp + 8]") < entry.IndexOf("push dword [ebp + 12]"), entry);   // the first first
+            Assert.Contains("call M_Win_On", entry);
+            Assert.Contains("add esp, 8", entry);
+        }
+
+        [Fact]
+        public void A64BitForeignEntryTakesTheFirstFourFromRegistersAndKeepsWhatWindowsKeeps()
+        {
+            string module = "use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [On: int a: 0; int b: 0; int c: 0; int d: 0; int e: 0;]\n [end: a]\n" +
+                            " [Go]\n [end: (User32.EnumWindows: addr foreign On 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n";
+            CompileResult result = Build(Host.Windows64, ("main.phi", "use win;\nphi.Test:Program\n{\n log (Win.Go);\n}\n"), ("win.phi", module));
+            Assert.True(result.Success, Errors(result));
+            string text = result.Units.Single().Text;
+            int at = text.IndexOf("phi_foreign_M_Win_On:");
+            string entry = text[at..text.IndexOf("call M_Win_On", at)];
+            foreach (string kept in new[] { "push rbx", "push rsi", "push rdi", "push r12", "push r15" }) Assert.Contains(kept, entry);
+            Assert.True(entry.IndexOf("push rcx") < entry.IndexOf("push rdx") && entry.IndexOf("push r8") < entry.IndexOf("push r9"), entry);
+            Assert.Contains("push qword [rbp + 48]", entry);     // the fifth: past the return address, rbp and 32 bytes of room
+        }
+
+        [Theory]
+        [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [Go]\n  int n: 1;\n [end: (User32.EnumWindows: addr foreign n 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n",
+                    Host.Windows, "addr foreign takes a method")]
+        [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [On: f64 x: 0;]\n [end: 1]\n [Go]\n [end: (User32.EnumWindows: addr foreign On 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n",
+                    Host.Windows, "On's 'x' is a f64, and floats to and from outside functions aren't there yet")]
+        [InlineData("phi.Raw:Linux\n{\n [On]\n [end: 1]\n [Go]\n  ptr<u8> p: addr foreign On;\n [end: 0]\n}\n",
+                    Host.Linux, "addr foreign On is for outside code to call, used only in a :Windows module (for now)")]
+        public void AForeignEntryIsForAMethodThatTakesWhatARegisterHolds(string module, Host host, string error)
+        {
+            CompileResult result = Build(host, ("main.phi", "use win;\nphi.Test:Program\n{\n}\n"), ("win.phi", module));
+            Assert.False(result.Success);
+            Assert.Contains(error, Errors(result));
+        }
+
+        [Theory]
+        [InlineData(Host.Linux, 12, 12, 4)]         // a pointer on 4s
+        [InlineData(Host.Linux64, 12, 24, 8)]       // a pointer on 8s: padding before it, and at the end
+        public void AForeignStructIsLaidOutAsCDoes(Host host, int padded, int withPointer, int pointerAt)
+        {
+            string main = "struct.Padded foreign\n{\n u8 a;\n u32 b;\n u8 c;\n}\n" +
+                          "struct.WithPointer foreign\n{\n u8 a;\n ptr<u8> p;\n u32 c;\n}\n" +
+                          "struct.Packed\n{\n u8 a;\n u32 b;\n}\n" +
+                          "phi.Test:Program\n{\n log (sizeof Padded) ' ' (sizeof WithPointer) ' ' (sizeof Packed);\n WithPointer w;\n w.p is 0;\n}\n";
+            CompileResult result = Build(host, ("main.phi", main));
+            Assert.True(result.Success, Errors(result));
+            var fields = result.Syntax!.Structs.Single(s => s.Name == "WithPointer").Symbol!.Fields;
+            Assert.Equal(pointerAt, fields[1].Offset);
+            Assert.Equal(withPointer, result.Syntax.Structs.Single(s => s.Name == "WithPointer").Symbol!.Size);
+            Assert.Equal(padded, result.Syntax.Structs.Single(s => s.Name == "Padded").Symbol!.Size);
+            Assert.Equal(5, result.Syntax.Structs.Single(s => s.Name == "Packed").Symbol!.Size);   // the others stay packed
+        }
+
+        [Theory]
+        [InlineData("str.name", "struct.S foreign\n{\n str name;\n}\n")]
+        [InlineData("new", "struct.T\n{\n int x;\n}\nstruct.S foreign\n{\n new T t;\n}\n")]
+        [InlineData("inner", "struct.T\n{\n int x;\n}\nstruct.S foreign\n{\n T inner;\n}\n")]
+        public void AForeignStructHoldsOnlyWhatCDoes(string _, string structs)
+        {
+            CompileResult result = Build(Host.Linux, ("main.phi", structs + "phi.Test:Program\n{\n}\n"));
+            Assert.False(result.Success);
+            Assert.Contains("a foreign struct holds what C does", Errors(result));
+        }
+
         [Fact]
         public void APhiOsProgramHasSystemCallsToo()
         {

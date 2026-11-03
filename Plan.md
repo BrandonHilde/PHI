@@ -2490,14 +2490,18 @@ PHI alone (`sys_calls_program`, `outside_functions_program` do).
   `OS.ClearScreen`, which flushes the log first. PHI OS programs keep their assembly: their
   calls are the kernel's, one instruction each.
 - Not yet: floats, and 64-bit numbers in a 32-bit program, to and from outside functions;
-  callbacks (a window system calling PHI code); structs laid out as C lays them out; and
-  libraries on Linux and macOS, loaded with the program. H7 needs all of these.
+  and libraries on Linux and macOS, loaded with the program. H7 needs these. (Callbacks and
+  C's struct layout came first in H7: `addr foreign`, `struct.Name foreign`.)
 - Open: `sockets_program` on 64-bit Windows ended with -1 once in a full run (2026-11-03,
   before the network moved to PHI) and couldn't be made to again; a test that passes only
   on its second run now keeps its first run's output (`NAME.first.actual`).
-- A hazard for the language, not only here: PHI converts between `int` and pointers without
-  a word, so leaving `: ptr<u8>` off a declaration that gives a pointer loses its top half
-  in 64-bit code, silently.
+- A pointer and a number in 64-bit code now warn (the user's call, 2026-11-03): a pointer in
+  a 32-bit number, or a number that isn't constant in a pointer, unless `as` says it's meant.
+  Its first sweep found `memory.pool` keeping addresses in u32s, and the lobby too. And the
+  lobby on 64-bit Windows, whose heap is past 4 GB on purpose, found a compiler bug no warning
+  could: an array in a struct reached through a pointer and indexed by a variable lost its
+  address's top half (`add ebx, eax`). Test `high_addresses_program`. 64-bit Linux's heap is
+  low (brk), which hides such bugs; worth moving past 4 GB too, as Windows' is.
 
 Decided (2026-11-02): **a module names its system where it names where it runs.** The
 word after the colon already says that (`:Kernel` only in kernels, `:Program` only in
@@ -2580,6 +2584,14 @@ Kernel32.CloseHandle:  ptr<u8> handle;
   form when H7 first loads one.
 
 #### Phase H7: Windows and graphics
+
+What it needed of the language first, done 2026-11-03 (the user's word, `foreign`, chosen
+because `from` is a name on 168 lines today and reserved words stay reserved):
+- [x] `addr foreign Name`: where outside code calls a PHI method (test `foreign_program`:
+  Windows' `EnumWindows` calling PHI, stopping early, in 32 and 64 bits).
+- [x] `struct.Name foreign`: C's layout, in 32 and 64 bits (a real `MSG` and `SYSTEM_INFO`
+  read back from Windows). PHI's own structs stay packed.
+- [ ] Floats to and from outside functions (the GPU's); libraries on Linux and macOS.
 
 1. **A window, drawing and input** behind the calls `gui.*` and `gfx.*` already use: Win32 on
    Windows, Wayland or X11 on Linux, Cocoa on macOS, or one library that covers all three

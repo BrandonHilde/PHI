@@ -1,0 +1,6 @@
+array in a struct: 21 32
+bytes in a struct: 7
+through a pointer in a struct: 9 9
+a pointer and an index: 5 6
+a table of pointers: 11
+given to a method: 13

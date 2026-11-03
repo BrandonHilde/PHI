@@ -1,0 +1,58 @@
+# Every way of reaching an element through an address that needs all 64 bits. A 64-bit
+# Windows program's heap is past 4 GB on purpose, so an address cut to 32 bits shows there;
+# the lobby's TLS client found one that wasn't kept whole: an array in a struct reached
+# through a pointer, indexed by a variable (s.chain:(s.chain_count)).
+struct.Inner
+{
+	u32 a;
+	u32 b;
+}
+
+struct.Outer
+{
+	u32 before;
+	Inner items[4];
+	u8 bytes[8];
+	u32 count;
+	ptr<Inner> more;
+}
+
+phi.HighAddressesProgram:Program
+{
+	ptr<Outer> o: new Outer;
+	ptr<Inner> more: new Inner[3];
+	o.more is more;
+
+	int i: 2;
+	o.count is 3;
+	o.items:i.a is 21;                    # an element of an array in a struct, by a variable
+	o.items:(o.count).b is 32;            # by a field
+	ptr<Inner> got: addr o.items:i;       # the address of one
+	log 'array in a struct: ' got.a ' ' o.items:3.b '\n';
+
+	o.bytes:i is 7;                       # bytes, by a variable
+	ptr<u8> byte: addr o.bytes:i;
+	log 'bytes in a struct: ' byte:0 '\n';
+
+	o.more:i.b is 9;                      # through a pointer in a struct
+	ptr<Inner> far: addr o.more:i;
+	log 'through a pointer in a struct: ' far.b ' ' more:2.b '\n';
+
+	ptr<u8> raw: new u8[64];
+	raw:i is 5;                           # a pointer in a variable
+	raw:(i + 1) is 6;                     # by a sum
+	ptr<u8> moved: raw + i;
+	log 'a pointer and an index: ' moved:0 ' ' moved:1 '\n';
+
+	ptr<ptr<Inner>> table: new ptr<Inner>[4];
+	table:i is more;                      # a table of pointers
+	table:i:1.a is 11;
+	log 'a table of pointers: ' more:1.a '\n';
+
+	call Set: addr o.items:1 13;          # given to a method
+	log 'given to a method: ' o.items:1.a '\n';
+
+	[Set: ptr<Inner> inner: 0; u32 value: 0;]
+		inner.a is value;
+	[end]
+}

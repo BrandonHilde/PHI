@@ -1,0 +1,6 @@
+windows it was called for: 1
+stopped after one: 1
+a message back through its queue: 1
+page size: 4096, granularity: 65536, processors: 1
+a padded struct: 12, its second field at 4, one inside another: 20
+sizes: 28 36

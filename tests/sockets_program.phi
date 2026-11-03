@@ -1,7 +1,8 @@
 # The network in a program on the host (net.sockets answered by the system's own
 # sockets): UDP and TCP to itself, over 127.0.0.1. phi test runs a :Program test only on
 # Linux and Windows; on PHI OS, net_programs covers the same calls. The ports are picked
-# from the process number, so two runs at once don't share them.
+# from the process number, so two runs at once don't share them, and it moves on from any
+# the system won't give (Windows keeps whole blocks of ports for itself, Hyper-V's say).
 use net.sockets;
 
 phi.SocketsProgram:Program
@@ -14,9 +15,32 @@ phi.SocketsProgram:Program
 
 	log 'an address: ' ((Net.Address) is not 0) '\n';
 
+	# three ports in a row that can be had: UDP's two, and TCP's
+	int a: -1;
+	int b: -1;
+	int tries: 0;
+	while (a < 0 or b < 0) and tries < 100
+		a is (Udp.Open: port);
+		b is (Udp.Open: port + 1);
+		int trial: (Tcp.Listen: port + 2);
+		if trial >= 0
+			call Tcp.StopListening: trial;
+		;;
+		if a < 0 or b < 0 or trial < 0
+			if a >= 0
+				call Udp.Close: a;
+			;;
+			if b >= 0
+				call Udp.Close: b;
+			;;
+			a is -1;
+			b is -1;
+			port is port + 3;
+		;;
+		tries++;
+	;;
+
 	# UDP: two sockets trading datagrams
-	int a: (Udp.Open: port);
-	int b: (Udp.Open: port + 1);
 	log 'udp open: ' (a >= 0) ' ' (b >= 0) ', the same port again: ' (Udp.Open: port) '\n';
 	log 'nothing waiting: ' (Udp.Receive: a addr d) '\n';
 	log 'sent: ' (Udp.SendTo: b home port 'hello' 5) '\n';

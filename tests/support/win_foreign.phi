@@ -1,0 +1,133 @@
+# What foreign_program.phi asks of Windows: a callback (addr foreign), and structs laid out
+# as C lays them out (struct.Name foreign), whose padding differs in 32 and 64 bits.
+
+use 'kernel32.dll' as Kernel32;
+use 'user32.dll' as User32;
+
+# Windows' MSG: 28 bytes in 32-bit code; in 64-bit code 48, with padding after message and
+# after y (the struct is on 8s)
+struct.Message foreign
+{
+	ptr<u8> window;
+	u32 message;
+	ptr<u8> w;
+	ptr<u8> l;
+	u32 time;
+	i32 x;
+	i32 y;
+}
+
+# Windows' SYSTEM_INFO: 36 bytes in 32-bit code, 48 in 64
+struct.SystemInfo foreign
+{
+	u16 architecture;
+	u16 reserved;
+	u32 page_size;
+	ptr<u8> lowest;
+	ptr<u8> highest;
+	ptr<u8> mask;
+	u32 processors;
+	u32 kind;
+	u32 granularity;
+	u16 level;
+	u16 revision;
+}
+
+# C's rules on their own: a u8 then a u32 has 3 bytes between; the whole on a multiple of 4
+struct.Padded foreign
+{
+	u8 first;
+	u32 second;
+	u8 third;
+}
+
+# one inside another, and an array
+struct.Nested foreign
+{
+	u8 tag;
+	Padded inner;
+	u16 pair[2];
+}
+
+phi.WinForeign:Windows
+{
+	int seen: 0;
+	int wrong: 0;
+	int stop_after: 0;
+
+	# Windows calls this for each top-level window, with the value given to EnumWindows
+	[OnWindow: ptr<u8> window: 0; ptr<u8> value: 0;]
+		seen++;
+		if (value as int) is not 4242 or window is 0
+			wrong++;
+		;;
+		if stop_after > 0 and seen >= stop_after return 0;     # 0: no more
+	[end: 1]
+
+	# how many windows it was called for, and whether all it was given was right
+	[Windows]
+		seen is 0;
+		wrong is 0;
+		stop_after is 0;
+		int done: (User32.EnumWindows: addr foreign OnWindow (4242 as ptr<u8>));
+		if done is 0 or wrong is not 0 return -1;
+	[end: seen]
+
+	# stopped early: Windows hands back the 0, and calls it no more
+	[WindowsStopped]
+		seen is 0;
+		wrong is 0;
+		stop_after is 1;
+		int done: (User32.EnumWindows: addr foreign OnWindow (4242 as ptr<u8>));
+	[end: done is 0 and seen is 1 and wrong is 0]
+
+	# a message to this thread's own queue, read back into a Message
+	[MessageBack]
+		Message m;
+		int queue: (User32.PeekMessageW: addr m 0 0 0 0);      # (makes the queue)
+		int posted: (User32.PostThreadMessageW: (Kernel32.GetCurrentThreadId) 0x8001 (7 as ptr<u8>) (9 as ptr<u8>));
+		if posted is 0 return false;
+		if (User32.PeekMessageW: addr m 0 0x8001 0x8001 1) is 0 return false;
+	[end: m.message is 0x8001 and (m.w as int) is 7 and (m.l as int) is 9]
+
+	# what Windows says of the machine, which only reads right if the fields are in their places
+	[Granularity]
+		SystemInfo info;
+		call Kernel32.GetSystemInfo: addr info;
+	[end: info.granularity]
+
+	[PageSize]
+		SystemInfo info;
+		call Kernel32.GetSystemInfo: addr info;
+	[end: info.page_size]
+
+	[ProcessorsAreSane]
+		SystemInfo info;
+		call Kernel32.GetSystemInfo: addr info;
+	[end: info.processors > 0 and info.processors < 4096]
+
+	# each struct's size, and the place of a field after padding
+	[MessageSize]
+	[end: sizeof Message]
+
+	[InfoSize]
+	[end: sizeof SystemInfo]
+
+	[PaddedSize]
+	[end: sizeof Padded]
+
+	[NestedSize]
+	[end: sizeof Nested]
+
+	[SecondAt]
+		Padded p;
+		ptr<u8> start: addr p as ptr<u8>;
+		ptr<u8> second: addr p.second as ptr<u8>;
+	[end: second - start]
+}
+
+Kernel32.GetCurrentThreadId;
+Kernel32.GetSystemInfo: ptr<SystemInfo> info;
+User32.EnumWindows: ptr<u8> callback  ptr<u8> value;
+User32.PeekMessageW: ptr<Message> m  ptr<u8> window  u32 lowest  u32 highest  u32 remove;
+User32.PostThreadMessageW: int thread  u32 message  ptr<u8> w  ptr<u8> l;

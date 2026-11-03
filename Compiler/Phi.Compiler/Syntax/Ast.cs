@@ -118,6 +118,9 @@ namespace Phi.Compiler.Syntax
         /// <summary>The interfaces it has (struct.Circle has Shape), by name.</summary>
         public List<(string Name, Span Span)> Has { get; } = new();
 
+        /// <summary>struct.Name foreign { }: laid out as C lays a struct out, for outside functions.</summary>
+        public bool IsForeign { get; set; }
+
         /// <summary>An interface: no fields, only the headers of the methods it asks for.</summary>
         public bool IsInterface { get; init; }
         public List<MethodDecl> Methods { get; } = new();
@@ -686,6 +689,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>When the operand names a method or asm block.</summary>
         public string? CodeLabel { get; set; }
+
+        /// <summary>addr foreign Name: where outside code calls the method, the way it calls things.</summary>
+        public bool Foreign { get; init; }
 
         /// <summary>The method, when the operand names one.</summary>
         public MethodSymbol? Method { get; set; }

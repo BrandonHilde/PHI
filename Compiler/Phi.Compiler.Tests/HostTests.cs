@@ -22,6 +22,29 @@ namespace Phi.Compiler.Tests
             Assert.Contains("phi_image_end:", text);
         }
 
+        [Theory]
+        [InlineData("ptr<u8> p: new u8[8];\n int n: p;", "'n' is an int, which keeps only 32 bits of this pointer")]
+        [InlineData("int n: 5;\n ptr<u8> p: n;", "'p' is a ptr<u8>, 64 bits in 64-bit code, and this is an int, so its top half is lost")]
+        [InlineData("ptr<u8> p: new u8[8];\n u32 n: p + 4;", "keeps only 32 bits of this pointer")]
+        public void In64BitCodeAPointerAndANumberDontMixQuietly(string body, string warning)
+        {
+            Assert.Contains(Compile(Program(body), Host.Linux64).Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(warning));
+            // in 32-bit code they're the same size
+            Assert.DoesNotContain(Compile(Program(body), Host.Linux).Diagnostics, d => d.Message.Contains("32 bits of this") || d.Message.Contains("top half"));
+        }
+
+        [Theory]
+        [InlineData("ptr<u8> p: new u8[8];\n int n: p as int;")]            // as says it's meant
+        [InlineData("ptr<u8> p: 0;\n p is 0;")]                             // a constant goes in whole
+        [InlineData("ptr<u8> p: new u8[8];\n ptr<u8> q: p + 4;\n q is q - 2;\n p:1 is 3;")]   // math on a pointer keeps all of it
+        [InlineData("ptr<u8> p: new u8[8];\n ptr<u8> q: p + 4;\n int apart: q - p;")]          // how far apart two are is a number
+        public void In64BitCodeWhatsMeantOrWholeIsntWarnedAbout(string body)
+        {
+            CompileResult result = Compile(Program(body), Host.Linux64);
+            Assert.True(result.Success, Errors(result));
+            Assert.DoesNotContain(result.Diagnostics, d => d.Message.Contains("32 bits of this") || d.Message.Contains("top half"));
+        }
+
         [Fact]
         public void EachSystemHasItsOwnRuntime()
         {

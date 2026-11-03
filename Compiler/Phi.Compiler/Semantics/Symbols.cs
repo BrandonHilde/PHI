@@ -400,6 +400,9 @@ namespace Phi.Compiler.Semantics
         public int Size { get; set; }
         public bool LayoutDone { get; set; }
 
+        /// <summary>What its address is a multiple of, in a foreign struct: its largest field's.</summary>
+        public int Alignment { get; set; } = 1;
+
         /// <summary>
         /// Every object this struct owns, in address order: its `new` fields, including those of
         /// struct fields stored inside it. Freeing, copying or comparing one of these structs also

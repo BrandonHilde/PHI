@@ -1,5 +1,6 @@
-# Maps from u32 keys to u32 values, such as an ID to an index or a pointer, on the
-# heap (32-bit kernels and programs).
+# Maps from u32 keys to u32 values, such as an ID to an index, on the heap (32-bit kernels
+# and programs). (A value is 32 bits in 64-bit code too, so keep a pointer's place in a
+# table, not the pointer.)
 #
 #   use data.map;
 #   ptr<MapData> players: (Map.New);

@@ -37,7 +37,7 @@ phi.HostThreads:Program
 		if thread < 0 return -1;
 		ptr<ThreadFrame> frame: top - BLOCK - sizeof ThreadFrame;
 		frame.work is work;
-		frame.value is value;
+		frame.value is value as ptr<u8>;
 		if not (ThreadSystem.Begin: thread frame)
 			call Give: thread;
 			return -1;

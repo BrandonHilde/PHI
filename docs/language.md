@@ -88,7 +88,7 @@ variable, field, parameter, constant, method or struct:
 | Kind | Words |
 |---|---|
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
-| Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `use` `const` `volatile` `isr` `end` `into` |
+| Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `foreign` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
@@ -2392,6 +2392,43 @@ write, with the stack 16 bytes aligned. A function takes and gives numbers, `bln
 enums and pointers; floats, and 64-bit numbers in a 32-bit program, aren't there yet. For
 now outside libraries are only in `:Windows` modules, whose classes alone may call them;
 Linux's and macOS's (a library loaded with the program) come with H7.
+
+**Being called from outside.** `addr foreign Name` is where outside code can call a method:
+a window system's window procedure, say, or anything else that takes a function. The
+compiler makes an entry for it that takes the values the system's way, keeps the registers
+the system expects to find as it left them, calls the method, and returns the system's way.
+What it takes and gives go in a register, as with an outside function. Give a pointer back
+as a pointer (`[end: p]`, with `p` a `ptr<u8>`), since an `int` is only 32 bits in 64-bit code.
+It runs on the thread that called it, so that has to be one PHI started (the program's own
+or a `Threads` one), and an error thrown out of it would have to cross the system's frames:
+catch what can go wrong inside it.
+
+```phi
+[OnWindow: ptr<u8> window: 0; ptr<u8> value: 0;]
+    count++;
+[end: 1]                                        # 1: carry on
+
+int done: (User32.EnumWindows: addr foreign OnWindow 0);
+```
+
+**Structs as C lays them out.** A PHI struct is packed, each field right after the last.
+Outside code expects C's layout: `struct.Name foreign` puts each field on a multiple of its
+own size, with padding before it if it needs some, and rounds the whole up to a multiple of
+its largest field, so it matches in 32 and 64 bits without writing the padding by hand. It
+holds what C does: numbers, pointers, arrays of them, and other foreign structs.
+
+```phi
+struct.Message foreign          # 28 bytes in 32-bit code, 48 in 64-bit code
+{
+    ptr<u8> window;
+    u32 message;
+    ptr<u8> w;                  # (after 4 bytes of padding, in 64-bit code)
+    ptr<u8> l;
+    u32 time;
+    i32 x;
+    i32 y;
+}
+```
 
 ## Methods
 

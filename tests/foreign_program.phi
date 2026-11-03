@@ -1,0 +1,14 @@
+# Windows calling PHI code (addr foreign), and structs as C lays them out (struct.Name
+# foreign), in 32- and 64-bit programs (support/win_foreign.phi). Win has no version for
+# Linux, so it runs only on Windows.
+use support.win_foreign;
+
+phi.ForeignProgram:Program
+{
+	log 'windows it was called for: ' ((WinForeign.Windows) > 0) '\n';
+	log 'stopped after one: ' (WinForeign.WindowsStopped) '\n';
+	log 'a message back through its queue: ' (WinForeign.MessageBack) '\n';
+	log 'page size: ' (WinForeign.PageSize) ', granularity: ' (WinForeign.Granularity) ', processors: ' (WinForeign.ProcessorsAreSane) '\n';
+	log 'a padded struct: ' (WinForeign.PaddedSize) ', its second field at ' (WinForeign.SecondAt) ', one inside another: ' (WinForeign.NestedSize) '\n';
+	log 'sizes: ' (WinForeign.MessageSize) ' ' (WinForeign.InfoSize) '\n';
+}
