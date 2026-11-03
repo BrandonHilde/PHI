@@ -2599,8 +2599,10 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
    - [x] Windows, 32 and 64 bits (2026-11-03): `lib/phi/host/window_windows.phi` answers
      `OS.SurfaceOpen`, `SurfacePresent`, `NextEvent`, `CopyFont`, `SetWindowTitle`,
      `SetResizable`, `WindowFocused` and `IsKeyDown`. `samples/desktop.rootfs/`'s `sketch`,
-     `notes`, `form` and `clock` build unchanged and run in real windows, with their widgets
-     and text; seen on screen, typing and the close box tried by hand. The font is Windows'
+     `notes`, `form` and `clock` build unchanged. `form` (64-bit) and `notes` (32-bit) have
+     been run in real windows and looked at, with real keystrokes in `notes` and the close
+     button on both; `sketch` and `clock` only built so far, and the mouse only through the
+     test's posted messages. The font is Windows'
      Consolas at 8x16, not smoothed, for code page 437, drawn into `Font.glyphs` when a window
      opens (PHI OS copies the VGA card's; no font data to carry). Test `window_program`: a
      hidden window, with messages posted to it and its pixels read back, so nothing pops up.
