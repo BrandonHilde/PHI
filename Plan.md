@@ -1589,7 +1589,7 @@ Goal: one server uses every core of its machine.
 tick shows them doing more work than one core, and a test that hammers the heap from 4
 cores ends with `Heap.used_blocks` at 0.
 
-**Status: in progress.**
+**Status: done but the demo's 4-zone tick, which waits for the optimising phase (2026-11-02).**
 - [x] (1, first part) `proc.cores`: `Cores.Start` wakes every other core at once (the
   local APIC's INIT and STARTUP to all but this one) with a start routine copied to
   `0x1000`. Each comes into 32-bit mode with the first core's GDT, interrupt table and
@@ -1752,9 +1752,10 @@ cores ends with `Heap.used_blocks` at 0.
       about 30 ms in good ones. Each `Rtl8139.Send` waits, holding the network's lock
       with interrupts off, for one of the card's 4 transmit buffers, which free up as
       QEMU hands frames to the test network's switch (`VirtualNetwork`, on the host),
-      which a slow client machine can hold up. So `Game.ZONES` stays 1; what's left is the
-      network's speed with four senders (the optimising phase's), and why runs get worse
-      one after another on the host.
+      which a slow client machine can hold up. The runs vary because the computer they ran
+      on was in use meanwhile (the user, 2026-11-02). So `Game.ZONES` stays 1, and the
+      4-zone tick (the network's speed with four senders) waits for the optimising phase
+      before a release, on a machine kept for measuring; the rest of S9 is done.
 
 #### Phase S10: 64-bit
 
