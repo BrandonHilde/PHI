@@ -2352,6 +2352,11 @@ code that is one system's alone stays in the files marked for it.
 Up to six values; the number goes in `eax`, and the answer comes back there. Windows has
 no system calls a program makes itself: its programs call DLLs' functions.
 
+The standard library does this itself: in a Linux or Windows program, `OS.Sleep`,
+`OS.GetTicks`, `OS.Now` and `OS.Yield` are done by the system's own module in
+`lib/phi/host/` (`time_linux32.phi`, `time_linux64.phi`, `time_windows.phi`), which every
+such program gets, rather than by assembly.
+
 **Outside functions.** A library outside PHI (on Windows, a DLL) is brought in with `use`
 and its file's name, quoted, under a name that reads as a class's; each of its functions
 the module calls is declared once, as a system call is but without a number, and called by

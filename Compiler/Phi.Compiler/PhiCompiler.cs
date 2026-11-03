@@ -39,7 +39,7 @@ namespace Phi.Compiler
             var diagnostics = new DiagnosticBag();
             var usedBy = new Dictionary<string, (SourceFile From, UseDecl Use)>(StringComparer.OrdinalIgnoreCase);
 
-            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics, usedBy);
+            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics, usedBy, host);
             if (diagnostics.HasErrors) return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax };
 
             BoundProgram? bound = Binder.Bind(syntax, diagnostics, host);
@@ -120,7 +120,7 @@ namespace Phi.Compiler
         /// </summary>
         /// <param name="usedBy">gets, for each file loaded by a `use`, that use and the file it's in</param>
         static ProgramNode ParseWithUses(SourceFile main, string? kernelFile, DiagnosticBag diagnostics,
-                                         Dictionary<string, (SourceFile From, UseDecl Use)> usedBy)
+                                         Dictionary<string, (SourceFile From, UseDecl Use)> usedBy, Host host = Host.PhiOS)
         {
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Key(main) };
 
@@ -179,19 +179,43 @@ namespace Phi.Compiler
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
             string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;
             SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main, null) : null;
-            if (heap == null || !seen.Add(Key(heap))) return program;
+            if (heap != null && seen.Add(Key(heap)))
+            {
+                var withHeap = new ProgramNode { File = main };
+                Load(heap, withHeap);
+                Append(program, withHeap);
+                program = withHeap;
+            }
 
-            var withHeap = new ProgramNode { File = main };
-            Load(heap, withHeap);
-            withHeap.Classes.AddRange(program.Classes);
-            withHeap.RawBlocks.AddRange(program.RawBlocks);
-            withHeap.SysCalls.AddRange(program.SysCalls);
-            withHeap.Libraries.AddRange(program.Libraries);
-            withHeap.OutsideFunctions.AddRange(program.OutsideFunctions);
-            withHeap.Structs.AddRange(program.Structs);
-            withHeap.Enums.AddRange(program.Enums);
-            withHeap.Uses.AddRange(program.Uses);
-            return withHeap;
+            // a program on another system gets its system's own modules, which do what the
+            // runtime's assembly did (OS.Sleep and the rest: see Builtins' OnHost); first of
+            // all, so they're ready before anything else runs. Each system keeps its own.
+            if (user && host != Host.PhiOS)
+            {
+                var withHost = new ProgramNode { File = main };
+                foreach (string module in HostModules)
+                    if (Resolve(module, main, main, null) is SourceFile own && seen.Add(Key(own)))
+                        Load(own, withHost);
+                Append(program, withHost);
+                program = withHost;
+            }
+            return program;
+        }
+
+        /// <summary>The systems' own modules (lib/phi/host/), one for each part and system.</summary>
+        static readonly string[] HostModules = { "host.time_linux32", "host.time_linux64", "host.time_windows" };
+
+        /// <summary>Adds everything in from after what into has.</summary>
+        static void Append(ProgramNode from, ProgramNode into)
+        {
+            into.Classes.AddRange(from.Classes);
+            into.RawBlocks.AddRange(from.RawBlocks);
+            into.SysCalls.AddRange(from.SysCalls);
+            into.Libraries.AddRange(from.Libraries);
+            into.OutsideFunctions.AddRange(from.OutsideFunctions);
+            into.Structs.AddRange(from.Structs);
+            into.Enums.AddRange(from.Enums);
+            into.Uses.AddRange(from.Uses);
         }
 
         static string Key(SourceFile f)

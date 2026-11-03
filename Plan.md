@@ -2413,7 +2413,15 @@ starting that phase.
    and macOS a library's functions need the program to be linked against it at load
    time (an ELF interpreter, or the macOS loader): that part waits for H7, when a window
    system or the GPU first needs it.
-3. **The runtimes' logic in PHI.** A module for each part (the network, threads, files,
+3. **The runtimes' logic in PHI.** (Under way. Time is done, 2026-11-03: `OS.Sleep`,
+   `OS.GetTicks`, `OS.Now` and `OS.Yield` in a Linux or Windows program are answered by
+   `lib/phi/host/time_linux32.phi`, `time_linux64.phi` and `time_windows.phi`, through
+   their own system calls and Windows' functions; a built-in names the method that does it
+   on a host (`OnHost = "HostTime.Sleep"`), as `InKernel` does for a kernel, and the
+   compiler gives every host program those modules, first, each system keeping its own.
+   The four routines are gone from the hosts' assembly (about 220 lines), with `phi_now`,
+   the start time and four Windows imports; test `time_program`, and the mmo world under
+   `phi load` holds its tick on both. Next: files, then the network, then threads.) A module for each part (the network, threads, files,
    time) holding what every system shares (checking a socket's kind, keeping thread
    slots, the waiting and retrying), on top of a small module per system of constants and
    calls (Linux's numbers, Windows' functions). Moved a part at a time, the assembly

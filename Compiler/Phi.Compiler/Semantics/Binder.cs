@@ -151,15 +151,16 @@ namespace Phi.Compiler.Semantics
 
         BoundProgram? BindProgram(ProgramNode program)
         {
+            // Kernel classes make a 32-bit kernel, Program classes a user program (and a
+            // system's own classes, :Linux or :Windows, are a program's); otherwise it is a
+            // 16-bit program. What's for another system is left out first.
+            bool userProgram = program.Classes.Any(c => c.Base == ProgramBase || SystemBases.ContainsKey(c.Base));
+            KeepThisSystem(program, userProgram);
+
             DeclareEnums(program.Enums);
             DeclareStructs(program.Structs);
             FindTypeBranches(program);
 
-            // Kernel classes make a 32-bit kernel, Program classes a user program (and a
-            // system's own classes, :Linux or :Windows, are a program's); otherwise it is a
-            // 16-bit program
-            bool userProgram = program.Classes.Any(c => c.Base == ProgramBase || SystemBases.ContainsKey(c.Base));
-            KeepThisSystem(program, userProgram);
             bool protectedMode = !userProgram && program.Classes.Any(c => c.Base == Kernel32Base);
             BoundUnit? boot = null, os = null, kernel = null, user = null;
 
@@ -3752,8 +3753,8 @@ namespace Phi.Compiler.Semantics
         static readonly HashSet<string> CallingSystems = new() { "Linux", "Linux32", "Linux64", "PhiOS" };
 
         /// <summary>
-        /// Leaves out what's for another system: its classes, and its files' asm. blocks and
-        /// system calls. A file with a system's classes is that system's alone; a system call
+        /// Leaves out what's for another system: its classes, and its files' structs, enums,
+        /// asm. blocks, system calls and outside functions. A file with a system's classes is that system's alone; a system call
         /// goes only in such a file, of a system that has them.
         /// </summary>
         void KeepThisSystem(ProgramNode program, bool userProgram)
@@ -3806,7 +3807,9 @@ namespace Phi.Compiler.Semantics
                                     "(phi.Name:Windows; Linux's and macOS's libraries come with H7)");
             }
 
-            program.Classes.RemoveAll(c => c.ForStruct == null && !Kept(c.File));
+            program.Classes.RemoveAll(c => !Kept(c.File));
+            program.Structs.RemoveAll(s => !Kept(s.File));
+            program.Enums.RemoveAll(e => !Kept(e.File));
             program.Libraries.RemoveAll(l => !Kept(l.File) || !systemOf.TryGetValue(l.File, out string? s) || s != "Windows");
             program.OutsideFunctions.RemoveAll(f => !Kept(f.File) || !systemOf.TryGetValue(f.File, out string? s) || s != "Windows");
             program.RawBlocks.RemoveAll(r => !Kept(r.File));
@@ -3891,6 +3894,9 @@ namespace Phi.Compiler.Semantics
 
             if (Builtins.Find(name) is BuiltinFunction builtin)
             {
+                // a program on another system: its system's own PHI module does it (OS.Sleep -> HostTime.Sleep)
+                if (builtin.OnHost != null && scope.Unit == UnitKind.Program && host != Host.PhiOS
+                    && methodsByFullName.TryGetValue((scope.Unit, builtin.OnHost), out m)) return m;
                 // a program's call in a kernel goes to the kernel's own version (OS.ReadFile -> Fat.ReadFile)
                 if (builtin.InKernel != null && scope.Unit == UnitKind.Kernel)
                 {

@@ -35,6 +35,13 @@ namespace Phi.Compiler.Semantics
         public string? InKernel { get; init; }
         public string? InKernelUse { get; init; }
 
+        /// <summary>
+        /// For a program on another system: the method of the system's own PHI module that does
+        /// it (HostTime.Sleep, in lib/phi/host/), which every such program gets. The call goes
+        /// there rather than to the runtime's assembly routine (H6 step 3).
+        /// </summary>
+        public string? OnHost { get; init; }
+
         /// <summary>Null when the function works in both the boot sector and the kernel.</summary>
         public UnitKind? OnlyIn { get; init; }
 
@@ -79,11 +86,11 @@ namespace Phi.Compiler.Semantics
                     Description = "32-bit: wait for a key press and return its character" },
             new() { Name = "OS.KeyAvailable", Label = "OS_KeyAvailable", Returns = true,
                     Description = "32-bit: 1 if OS.ReadKey has a character waiting" },
-            new() { Name = "OS.GetTicks", Label = "OS_GetTicks", Returns = true,
+            new() { Name = "OS.GetTicks", Label = "OS_GetTicks", OnHost = "HostTime.GetTicks", Returns = true,
                     Description = "32-bit: milliseconds since the timer started" },
-            new() { Name = "OS.Sleep", Label = "OS_Sleep", Parameters = new[] { "milliseconds" },
+            new() { Name = "OS.Sleep", Label = "OS_Sleep", OnHost = "HostTime.Sleep", Parameters = new[] { "milliseconds" },
                     Description = "32-bit: wait" },
-            new() { Name = "OS.Now", Label = "OS_Now", Returns = true, ReturnsUnsigned = true,
+            new() { Name = "OS.Now", Label = "OS_Now", OnHost = "HostTime.Now", Returns = true, ReturnsUnsigned = true,
                     Description = "32-bit: the date and time now, as seconds since the start of 1970 (UTC)" },
 
             new() { Name = "OS.SetupMouse", Label = "OS_SetupMouse",
@@ -109,7 +116,7 @@ namespace Phi.Compiler.Semantics
             new() { Name = "OS.EnableInterrupts", Label = "OS_EnableInterrupts", Description = "sti" },
 
             // ---- tasks (lib/x86_32/tasks.asm in kernels, system calls in programs)
-            new() { Name = "OS.Yield", Label = "OS_Yield", Description = "give the CPU to another task" },
+            new() { Name = "OS.Yield", Label = "OS_Yield", OnHost = "HostTime.Yield", Description = "give the CPU to another task" },
             new() { Name = "OS.Idle", Label = "OS_Idle",
                     Description = "kernel: give the CPU to the programs, and if none of them can run, wait for the next interrupt instead of coming straight back" },
 

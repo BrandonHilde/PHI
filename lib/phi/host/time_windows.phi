@@ -1,0 +1,41 @@
+# Time in a Windows program, 32 or 64 bits, in PHI (H6 step 3): OS.Sleep, OS.GetTicks,
+# OS.Now and OS.Yield are answered here, by Windows' functions. Its timer steps by 1 ms
+# (the runtime asks for that with timeBeginPeriod when the program starts), so Sleep and
+# timeGetTime count in milliseconds, as everywhere else.
+
+use 'kernel32.dll' as Kernel32;
+use 'winmm.dll' as Winmm;
+
+phi.HostTime:Windows
+{
+	int started: (Winmm.timeGetTime);     # OS.GetTicks counts from here
+
+	# OS.Sleep: wait this many milliseconds
+	[Sleep: int ms: 0;]
+		if ms <= 0 return;
+		call Kernel32.Sleep: ms;
+	[end]
+
+	# OS.GetTicks: milliseconds since the program started
+	[GetTicks]
+	[end: (Winmm.timeGetTime) - started]
+
+	# OS.Now: seconds since the start of 1970 (UTC). Windows counts in tenths of a
+	# microsecond since 1601.
+	[Now]
+		u32 parts[2];                     # the low half, then the high half
+		call Kernel32.GetSystemTimeAsFileTime: addr parts;
+		u64 since: ((parts:1 as u64) << 32) | parts:0;
+		u32 seconds: ((since - 116444736000000000) / 10000000) as u32;
+	[end: seconds]
+
+	# OS.Yield: let another thread or program have the CPU
+	[Yield]
+		int switched: (Kernel32.SwitchToThread);
+	[end]
+}
+
+Kernel32.Sleep: u32 ms;
+Kernel32.GetSystemTimeAsFileTime: ptr<u32> parts;
+Kernel32.SwitchToThread;
+Winmm.timeGetTime;

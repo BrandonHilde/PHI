@@ -27,8 +27,12 @@ namespace Phi.Compiler.Tests
         {
             string linux = Compile(Program("call OS.Sleep: 1;"), Host.Linux).Units.Single().Text;
             string windows = Compile(Program("call OS.Sleep: 1;"), Host.Windows).Units.Single().Text;
-            Assert.Contains("SYS_NANOSLEEP", linux);
-            Assert.Contains("call [phi_imp_Sleep]", windows);
+            // OS.Sleep is the system's PHI module's (lib/phi/host/time_*.phi), by its own calls
+            Assert.Contains("call M_HostTime_Sleep", linux);
+            Assert.Contains("; sys.NanoSleep, system call 162", linux);
+            Assert.Contains("call M_HostTime_Sleep", windows);
+            Assert.Contains("; Kernel32.Sleep, from kernel32.dll", windows);
+            Assert.DoesNotContain("OS_Sleep:", linux + windows);
             Assert.Contains("phi_imports:", windows);
             Assert.DoesNotContain("int 0x80", windows);
         }

@@ -1,4 +1,4 @@
-; provides: phi_exit OS_Now phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all phi_imports
 ; init: phi_windows_start
 ;
@@ -50,16 +50,14 @@ WIDE_PATH     equ 1024                  ; characters
 %endmacro
 %endif
 
-; Called before the program's code: keeps the time it started (OS.GetTicks counts from
-; there) and its command line after its own name.
+; Called before the program's code: keeps its command line after its own name. Windows'
+; timer steps every 15.6 ms unless a program asks for less, so OS.Sleep: 1 would sleep up
+; to 15 ms here and 1 ms everywhere else: the program asks for 1 ms steps, which
+; timeGetTime then counts in too (GetTickCount64 still steps by 15.6). Time itself is
+; lib/phi/host/time_windows.phi's, in PHI.
 phi_windows_start:
-; Windows' timer steps every 15.6 ms unless a program asks for less, so OS.Sleep: 1 would
-; sleep up to 15 ms here and 1 ms everywhere else: the program asks for 1 ms steps. Its
-; clock is timeGetTime, which then counts in them too (GetTickCount64 still steps by 15.6).
     mov ecx, 1
     PHI_CALL timeBeginPeriod
-    PHI_CALL timeGetTime
-    mov [rel phi_started], eax
     PHI_CALL GetCommandLineA
     mov rsi, rax
     mov ah, ' '                         ; what ends the program's name
@@ -180,25 +178,6 @@ OS_KeyAvailable:
 .none:
     xor eax, eax
     pop rbx
-    ret
-
-; -> milliseconds since the program started
-OS_GetTicks:
-    PHI_CALL timeGetTime
-    sub eax, [rel phi_started]
-    ret
-
-; arg: milliseconds
-OS_Sleep:
-    mov ecx, [rsp + 8]
-    test ecx, ecx
-    jle .done
-    PHI_CALL Sleep
-.done:
-    ret
-
-OS_Yield:
-    PHI_CALL SwitchToThread
     ret
 
 ; -> this program's process number
@@ -556,7 +535,6 @@ align 8, db 0
 phi_memory_status: times 64 db 0
 phi_heap_start: dq 0
 phi_heap_end: dq 0
-phi_started: dd 0
 phi_read_count: dd 0
 phi_total: dd 0
 phi_console_mode: dd 0
@@ -616,16 +594,3 @@ CONTEXT_RCX   equ 0x80
 CONTEXT_RIP   equ 0xF8
 align 8
 phi_fault_to: dq 0
-
-; eax = the date and time, as seconds since 1970 (UTC): Windows counts 100 ns since 1601
-OS_Now:
-    sub rsp, 8
-    mov rcx, rsp
-    PHI_CALL GetSystemTimeAsFileTime
-    pop rax
-    mov rcx, 116444736000000000
-    sub rax, rcx
-    xor edx, edx
-    mov ecx, 10000000
-    div rcx
-    ret

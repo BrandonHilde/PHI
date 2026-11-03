@@ -1,4 +1,4 @@
-; provides: phi_exit OS_Now phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -19,25 +19,19 @@ SYS_MKDIR     equ 39
 SYS_RMDIR     equ 40
 SYS_BRK       equ 45
 SYS_SYSINFO   equ 116
-SYS_SCHED_YIELD equ 158
-SYS_NANOSLEEP equ 162
 SYS_POLL      equ 168
 SYS_STAT64    equ 195
-SYS_CLOCK_GETTIME equ 265
 
 O_WRONLY      equ 1
 O_CREAT       equ 0x40
 O_TRUNC       equ 0x200
 O_APPEND      equ 0x400
-CLOCK_MONOTONIC equ 1
 ARGUMENTS_SIZE equ 1024
 
 ; Called before the program's code, while the stack is as Linux left it: [esp + 4] is how
-; many arguments there are, then their addresses, the program's own name first. Keeps the
-; time it started (OS.GetTicks counts from there) and its arguments joined by spaces.
+; many arguments there are, then their addresses, the program's own name first. Keeps its
+; arguments joined by spaces. (Time is lib/phi/host/time_linux*.phi's, in PHI.)
 phi_linux_start:
-    call phi_now
-    mov [phi_started], eax
     mov ecx, [esp + 4]
     lea esi, [esp + 12]
     mov edi, phi_arguments
@@ -125,54 +119,6 @@ OS_KeyAvailable:
     cmp eax, 1
     sete al
     movzx eax, al
-    ret
-
-; eax = milliseconds since some moment (the clock that only goes forward). The time is
-; read onto the stack, so threads can ask at once.
-phi_now:
-    sub esp, 8
-    mov eax, SYS_CLOCK_GETTIME
-    mov ebx, CLOCK_MONOTONIC
-    mov ecx, esp
-    int 0x80
-    mov eax, [esp + 4]                  ; nanoseconds
-    xor edx, edx
-    mov ecx, 1000000
-    div ecx
-    imul ecx, [esp], 1000               ; seconds
-    add eax, ecx
-    add esp, 8
-    ret
-
-; -> milliseconds since the program started
-OS_GetTicks:
-    call phi_now
-    sub eax, [phi_started]
-    ret
-
-; arg: milliseconds
-OS_Sleep:
-    mov eax, [esp + 4]
-    test eax, eax
-    jle .done
-    sub esp, 8                          ; (on the stack: threads sleep at once)
-    xor edx, edx
-    mov ecx, 1000
-    div ecx
-    mov [esp], eax
-    imul edx, edx, 1000000
-    mov [esp + 4], edx
-    mov eax, SYS_NANOSLEEP
-    mov ebx, esp
-    xor ecx, ecx
-    int 0x80
-    add esp, 8
-.done:
-    ret
-
-OS_Yield:
-    mov eax, SYS_SCHED_YIELD
-    int 0x80
     ret
 
 ; -> this program's process number
@@ -414,7 +360,6 @@ phi_clear_end:
 phi_byte: db 0
 phi_last_byte: db 0
 align 4
-phi_started: dd 0
 phi_heap_end: dd 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
@@ -488,12 +433,3 @@ UCONTEXT_EIP     equ 20 + 56
 phi_fault_to: dd 0
 phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask
     dd phi_fault_handler, SA_SIGINFO | SA_RESTORER, phi_fault_return, 0, 0
-
-; eax = the date and time, as seconds since 1970 (UTC): time
-OS_Now:
-    push ebx
-    mov eax, 13                         ; SYS_TIME
-    xor ebx, ebx
-    int 0x80
-    pop ebx
-    ret

@@ -12,8 +12,6 @@
     PHI_FUNCTION ReadFile
     PHI_FUNCTION ExitProcess
     PHI_FUNCTION GetCommandLineA
-    PHI_FUNCTION Sleep
-    PHI_FUNCTION SwitchToThread
     PHI_FUNCTION GetCurrentProcessId
     PHI_FUNCTION VirtualAlloc
     PHI_FUNCTION GlobalMemoryStatusEx
@@ -31,7 +29,6 @@
     PHI_FUNCTION GetConsoleMode
     PHI_FUNCTION SetConsoleMode
     PHI_FUNCTION AddVectoredExceptionHandler
-    PHI_FUNCTION GetSystemTimeAsFileTime
     PHI_FUNCTION TlsAlloc
     PHI_FUNCTION TlsSetValue
     PHI_FUNCTION CreateThread
@@ -58,7 +55,6 @@
 %endmacro
 %macro PHI_WINMM 0
     PHI_FUNCTION timeBeginPeriod
-    PHI_FUNCTION timeGetTime
 %endmacro
 
 align 4, db 0

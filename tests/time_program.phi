@@ -1,0 +1,46 @@
+# Time in a program on Linux and Windows, done by each system's PHI module (lib/phi/host/
+# time_*.phi, H6 step 3) rather than the runtime's assembly: the date (OS.Now), the
+# milliseconds since the program started (OS.GetTicks, which start near 0 and only go
+# forward), sleeping (OS.Sleep, nothing for 0 or less) and yielding (OS.Yield). Threads
+# sleep at once: four sleeping 200 ms take about 200 ms, not 800.
+use user.threads;
+
+phi.TimeProgram:Program
+{
+	u32 now: (OS.Now);
+	log 'a date after 2025 and before 2100: ' (now > 1735689600 and now < 4102444800) '\n';
+
+	int first: (OS.GetTicks);
+	log 'ticks start near 0: ' (first >= 0 and first < 5000) '\n';
+
+	int start: (OS.GetTicks);
+	call OS.Sleep: 50;
+	int slept: (OS.GetTicks) - start;
+	log 'slept 50 ms: ' (slept >= 50 and slept < 2000) '\n';
+
+	start is (OS.GetTicks);
+	call OS.Sleep: 0;
+	call OS.Sleep: -5;
+	log 'no sleep for 0 or less: ' ((OS.GetTicks) - start < 50) '\n';
+
+	int before: (OS.GetTicks);
+	while int i: 0; i < 100; i++;
+		call OS.Yield;
+	;;
+	log 'yielding goes on: ' ((OS.GetTicks) >= before) '\n';
+
+	int threads[4];
+	start is (OS.GetTicks);
+	while int t: 0; t < 4; t++;
+		threads:t is (Threads.Start: addr Nap t);
+	;;
+	while int t: 0; t < 4; t++;
+		call Threads.Wait: threads:t;
+	;;
+	int took: (OS.GetTicks) - start;
+	log 'four threads slept at once: ' (took >= 200 and took < 700) '\n';
+
+	[Nap: int which: 0;]
+		call OS.Sleep: 200;
+	[end]
+}

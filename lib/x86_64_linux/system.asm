@@ -1,4 +1,4 @@
-; provides: phi_exit OS_Now phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -15,30 +15,24 @@ SYS_STAT       equ 4
 SYS_POLL       equ 7
 SYS_LSEEK      equ 8
 SYS_BRK        equ 12
-SYS_SCHED_YIELD equ 24
-SYS_NANOSLEEP  equ 35
 SYS_GETPID     equ 39
 SYS_RENAME     equ 82
 SYS_MKDIR      equ 83
 SYS_RMDIR      equ 84
 SYS_UNLINK     equ 87
 SYS_SYSINFO    equ 99
-SYS_CLOCK_GETTIME equ 228
 SYS_EXIT_GROUP equ 231
 
 O_WRONLY       equ 1
 O_CREAT        equ 0x40
 O_TRUNC        equ 0x200
 O_APPEND       equ 0x400
-CLOCK_MONOTONIC equ 1
 ARGUMENTS_SIZE equ 1024
 
 ; Called before the program's code, while the stack is as Linux left it: [rsp + 8] is how
-; many arguments there are, then their addresses, the program's own name first. Keeps the
-; time it started (OS.GetTicks counts from there) and its arguments joined by spaces.
+; many arguments there are, then their addresses, the program's own name first. Keeps its
+; arguments joined by spaces. (Time is lib/phi/host/time_linux*.phi's, in PHI.)
 phi_linux_start:
-    call phi_now
-    mov [rel phi_started], eax
     mov ecx, [rsp + 8]
     lea rsi, [rsp + 24]
     lea rdi, [rel phi_arguments]
@@ -136,62 +130,6 @@ OS_KeyAvailable:
     cmp rax, 1
     sete al
     movzx eax, al
-    ret
-
-; eax = milliseconds by the monotonic clock (only the low 32 bits: it wraps, as ticks do).
-; The time is read onto the stack, so threads can ask at once.
-phi_now:
-    push rdi
-    push rsi
-    sub rsp, 16
-    mov eax, SYS_CLOCK_GETTIME
-    mov edi, CLOCK_MONOTONIC
-    mov rsi, rsp
-    syscall
-    mov rax, [rsp + 8]                  ; nanoseconds
-    xor edx, edx
-    mov ecx, 1000000
-    div rcx
-    imul rcx, [rsp], 1000               ; seconds
-    add rax, rcx
-    add rsp, 16
-    pop rsi
-    pop rdi
-    ret
-
-; -> milliseconds since the program started
-OS_GetTicks:
-    call phi_now
-    sub eax, [rel phi_started]
-    ret
-
-; arg: milliseconds
-OS_Sleep:
-    mov eax, [rsp + 8]
-    test eax, eax
-    jle .done
-    push rdi
-    push rsi
-    sub rsp, 16                         ; (on the stack: threads sleep at once)
-    xor edx, edx
-    mov ecx, 1000
-    div ecx
-    mov [rsp], rax
-    imul edx, edx, 1000000
-    mov [rsp + 8], rdx
-    mov eax, SYS_NANOSLEEP
-    mov rdi, rsp
-    xor esi, esi
-    syscall
-    add rsp, 16
-    pop rsi
-    pop rdi
-.done:
-    ret
-
-OS_Yield:
-    mov eax, SYS_SCHED_YIELD
-    syscall
     ret
 
 ; -> this program's process number
@@ -481,7 +419,6 @@ phi_clear_end:
 phi_byte: db 0
 phi_last_byte: db 0
 align 4
-phi_started: dd 0
 align 8
 phi_heap_end: dq 0                      ; the break: where the heap ends
 phi_arguments: times ARGUMENTS_SIZE db 0
@@ -555,12 +492,3 @@ align 8
 phi_fault_to: dq 0
 phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask
     dq phi_fault_handler, SA_SIGINFO | SA_RESTORER, phi_fault_return, 0
-
-; eax = the date and time, as seconds since 1970 (UTC): time
-OS_Now:
-    push rdi
-    mov eax, 201                        ; SYS_TIME
-    xor edi, edi
-    syscall
-    pop rdi
-    ret

@@ -1,0 +1,44 @@
+# Time in a 32-bit Linux program, in PHI (H6 step 3): OS.Sleep, OS.GetTicks, OS.Now and
+# OS.Yield are answered here, by Linux's system calls (int 0x80, with i386's numbers). The
+# compiler adds this module to every 32-bit Linux program, first, as it does the heap;
+# time_linux64.phi and time_windows.phi are the other systems'.
+
+phi.HostTime:Linux32
+{
+	const int MONOTONIC: 1;               # a clock that only goes forward
+	int started: (Clock);                 # OS.GetTicks counts from here
+
+	# OS.Sleep: wait this many milliseconds (its time on the stack, so threads sleep at once)
+	[Sleep: int ms: 0;]
+		if ms <= 0 return;
+		int wanted[2];                    # seconds, nanoseconds
+		wanted:0 is ms / 1000;
+		wanted:1 is (ms % 1000) * 1000000;
+		int done: (sys.NanoSleep: addr wanted 0);
+	[end]
+
+	# OS.GetTicks: milliseconds since the program started
+	[GetTicks]
+	[end: (Clock) - started]
+
+	# OS.Now: seconds since the start of 1970 (UTC)
+	[Now]
+	[end: (sys.Time: 0)]
+
+	# OS.Yield: let another thread or program have the CPU
+	[Yield]
+		int done: (sys.SchedYield);
+	[end]
+
+	# the monotonic clock, in milliseconds
+	[Clock]
+		int now[2];                       # seconds, nanoseconds
+		int done: (sys.ClockGetTime: MONOTONIC addr now);
+		int ms: now:0 * 1000 + now:1 / 1000000;
+	[end: ms]
+}
+
+sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
+sys.ClockGetTime: 265  int clock  ptr<int> now;
+sys.Time: 13  ptr<u32> seconds: u32;
+sys.SchedYield: 158;
