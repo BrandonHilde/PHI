@@ -44,7 +44,7 @@ const string Usage = """
                                            lines and methods that took the most time; with a window
                                            until you close it, or headless with --input (until the
                                            script ends) or --seconds
-      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--client <file.phi>] [--root <file.der> --host <name>] [--nic <card>] [--profile]
+      phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--client <file.phi>] [--root <file.der> --host <name>] [--nic <card>] [--profile] [--target <system>]
                                            boot a server with load-client kernels on one network, which
                                            open n TCP connections to it (default 100, to port 4001), log
                                            each in, and have each say a line a second for the run (default
@@ -54,7 +54,10 @@ const string Usage = """
                                            a server that reports its tick fails if a tick was late;
                                            --root and --host make each connection TLS, checking the server's
                                            certificate is for that host and goes back to that root (DER);
-                                           --profile samples where the server's time goes
+                                           --profile samples where the server's time goes;
+                                           --target linux (or windows) runs a server program (such as
+                                           samples/mmo/server.rootfs/world.phi) and the clients as
+                                           programs on this computer instead
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
@@ -323,6 +326,7 @@ static int Execute(string[] args)
                 string? client = Option("--client");
                 string? root = Option("--root");
                 string? host = Option("--host");
+                string? onLoad = Option("--target");
                 bool profile = Flag("--profile");
                 MemoryOption();
                 CoresOption();
@@ -339,7 +343,11 @@ static int Execute(string[] args)
                     throw new ArgumentException("--port takes the server's TCP port");
                 if (root != null && !File.Exists(root)) throw new ArgumentException($"file not found: {root}");
                 if ((root == null) != (host == null)) throw new ArgumentException("--root and --host go together: the root to trust, and the name the server's certificate is for");
-                return LoadTester.Run(rest[0], n, s, p, profile, client, root, host);
+                Phi.Compiler.Host target = Phi.Compiler.Host.PhiOS;
+                if (onLoad != null)
+                    target = Phi.Compiler.Hosts.Parse(onLoad) ?? throw new ArgumentException("--target takes the system: " + string.Join(", ", Phi.Compiler.Hosts.Names));
+                if (profile && target != Phi.Compiler.Host.PhiOS) throw new ArgumentException("--profile samples a kernel in QEMU, so it goes without --target");
+                return LoadTester.Run(rest[0], n, s, p, profile, client, root, host, target);
             }
 
             case "serve":

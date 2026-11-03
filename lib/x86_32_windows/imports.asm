@@ -1,7 +1,7 @@
 ; provides: phi_imports
 ;
-; The import table of a Windows program: kernel32.dll and ws2_32.dll (Winsock, for the
-; network), and the functions of them this library calls as [phi_imp_NAME]. Windows has
+; The import table of a Windows program: kernel32.dll, ws2_32.dll (Winsock, for the
+; network) and winmm.dll (for the timer's step: see phi_windows_start), and the functions of them this library calls as [phi_imp_NAME]. Windows has
 ; no fixed system call numbers, so a program asks for functions by name and Windows
 ; writes their addresses here when it loads the program. Each takes its arguments on the stack, pushed last first, and
 ; removes them itself (stdcall); it keeps ebx, esi, edi and ebp, and can change eax,
@@ -12,7 +12,6 @@
     PHI_FUNCTION ReadFile
     PHI_FUNCTION ExitProcess
     PHI_FUNCTION GetCommandLineA
-    PHI_FUNCTION GetTickCount64
     PHI_FUNCTION Sleep
     PHI_FUNCTION SwitchToThread
     PHI_FUNCTION GetCurrentProcessId
@@ -57,11 +56,16 @@
     PHI_FUNCTION getpeername
     PHI_FUNCTION getsockname
 %endmacro
+%macro PHI_WINMM 0
+    PHI_FUNCTION timeBeginPeriod
+    PHI_FUNCTION timeGetTime
+%endmacro
 
 align 4, db 0
 phi_imports:
     dd phi_kernel32_lookup - $$, 0, 0, phi_kernel32_name - $$, phi_kernel32_addresses - $$
     dd phi_ws2_32_lookup - $$, 0, 0, phi_ws2_32_name - $$, phi_ws2_32_addresses - $$
+    dd phi_winmm_lookup - $$, 0, 0, phi_winmm_name - $$, phi_winmm_addresses - $$
     times 5 dd 0                        ; the end of the table
 phi_imports_size equ $ - phi_imports
 
@@ -75,6 +79,9 @@ phi_kernel32_lookup:
 phi_ws2_32_lookup:
     PHI_WS2_32
     dd 0
+phi_winmm_lookup:
+    PHI_WINMM
+    dd 0
 %unmacro PHI_FUNCTION 1
 
 ; where Windows puts their addresses
@@ -87,6 +94,9 @@ phi_kernel32_addresses:
 phi_ws2_32_addresses:
     PHI_WS2_32
     dd 0
+phi_winmm_addresses:
+    PHI_WINMM
+    dd 0
 %unmacro PHI_FUNCTION 1
 
 %macro PHI_FUNCTION 1
@@ -98,7 +108,9 @@ phi_name_%1:
 %endmacro
     PHI_KERNEL32
     PHI_WS2_32
+    PHI_WINMM
 %unmacro PHI_FUNCTION 1
 
 phi_kernel32_name: db 'kernel32.dll', 0
 phi_ws2_32_name: db 'ws2_32.dll', 0
+phi_winmm_name: db 'winmm.dll', 0

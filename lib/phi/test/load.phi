@@ -1,7 +1,11 @@
-# The other end of phi load: a kernel that opens many TCP connections to a server
+# The other end of phi load: a client that opens many TCP connections to a server
 # (machine 1) and keeps them busy, as players in a lobby would. phi load builds it with a
 # class LoadSettings (connections, seconds, port) and boots several of them on one
-# network with the server (see Compiler/Phi.Cli/LoadTester.cs).
+# network with the server (see Compiler/Phi.Cli/LoadTester.cs); or, with --target linux
+# or windows, runs several as programs on this computer, against a server program.
+#
+# It's a :Library with no network of its own: phi load adds the one for where it runs
+# (net.tcp in a kernel, net.sockets in a program), whose calls are the same.
 #
 # Each connection logs in ("login NAME PASSWORD", answered "welcome NAME"), then says a
 # numbered line once a second ("say ...", answered "said ..."), checking that every
@@ -17,11 +21,10 @@
 # finishes its handshake before it logs in, and the time that takes is in the totals
 # (handshake MS, and how many failed).
 
-use net.tcp;
 use net.tlslink;
 use user.text;
 
-phi.LoadClient:Kernel
+phi.LoadClient:Library
 {
 	const int MOST: 256;                  # connections from one machine
 	const int LINE: 64;                   # the longest answer kept

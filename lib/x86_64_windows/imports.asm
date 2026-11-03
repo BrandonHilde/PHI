@@ -1,7 +1,7 @@
 ; provides: phi_imports
 ;
 ; The import table of a 64-bit Windows program (PE32+), as x86_32_windows/imports.asm's:
-; kernel32.dll and ws2_32.dll (Winsock), and the functions of them this library calls as
+; kernel32.dll, ws2_32.dll (Winsock) and winmm.dll, and the functions of them this library calls as
 ; [rel phi_imp_NAME]. Each entry is 8 bytes here. A function takes its first four arguments in rcx, rdx, r8 and r9 (the
 ; rest on the stack), wants 32 bytes of room above its return address that it may write
 ; (its shadow space) and the stack 16-byte aligned when it's called, and gives its result in
@@ -14,7 +14,6 @@
     PHI_FUNCTION ReadFile
     PHI_FUNCTION ExitProcess
     PHI_FUNCTION GetCommandLineA
-    PHI_FUNCTION GetTickCount64
     PHI_FUNCTION Sleep
     PHI_FUNCTION SwitchToThread
     PHI_FUNCTION GetCurrentProcessId
@@ -59,11 +58,16 @@
     PHI_FUNCTION getpeername
     PHI_FUNCTION getsockname
 %endmacro
+%macro PHI_WINMM 0
+    PHI_FUNCTION timeBeginPeriod
+    PHI_FUNCTION timeGetTime
+%endmacro
 
 align 8, db 0
 phi_imports:
     dd phi_kernel32_lookup - $$, 0, 0, phi_kernel32_name - $$, phi_kernel32_addresses - $$
     dd phi_ws2_32_lookup - $$, 0, 0, phi_ws2_32_name - $$, phi_ws2_32_addresses - $$
+    dd phi_winmm_lookup - $$, 0, 0, phi_winmm_name - $$, phi_winmm_addresses - $$
     times 5 dd 0                        ; the end of the table
 phi_imports_size equ $ - phi_imports
 
@@ -78,6 +82,9 @@ phi_kernel32_lookup:
 phi_ws2_32_lookup:
     PHI_WS2_32
     dq 0
+phi_winmm_lookup:
+    PHI_WINMM
+    dq 0
 %unmacro PHI_FUNCTION 1
 
 ; where Windows puts their addresses
@@ -90,6 +97,9 @@ phi_kernel32_addresses:
 phi_ws2_32_addresses:
     PHI_WS2_32
     dq 0
+phi_winmm_addresses:
+    PHI_WINMM
+    dq 0
 %unmacro PHI_FUNCTION 1
 
 %macro PHI_FUNCTION 1
@@ -101,7 +111,9 @@ phi_name_%1:
 %endmacro
     PHI_KERNEL32
     PHI_WS2_32
+    PHI_WINMM
 %unmacro PHI_FUNCTION 1
 
 phi_kernel32_name: db 'kernel32.dll', 0
 phi_ws2_32_name: db 'ws2_32.dll', 0
+phi_winmm_name: db 'winmm.dll', 0

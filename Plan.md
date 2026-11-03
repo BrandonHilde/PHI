@@ -2229,7 +2229,12 @@ both. macOS is next after the 64-bit kernels; the user will test it on their Mac
 **Done when:** `samples/mmo/`'s world and lobby run as Linux programs, with clients on PHI
 OS or on the host, and `phi load` holds the same tick rate.
 
-**Status: in progress (since 2026-11-02).**
+**Status: done (2026-11-03).** The world and the lobby run as Linux and Windows programs,
+and `phi load --target linux` (or `windows`) plays them with clients that are programs
+too, all on this computer: 500 players in the world for a minute at 20 ticks a second,
+none late (the longest 4 ms on Linux, 5 on Windows), and 500 TLS logins in the lobby,
+30,000 lines answered in order, 500 quits, on both. The same clients still play the
+kernels on PHI OS (500 logins; 300 players, none late).
 - [x] (1) Sockets on Linux and Windows, 32 and 64 bits: `net.sockets`' calls (`OS.UdpOpen`
   to `OS.TcpStopListening`, the 15 that net.calls answers on PHI OS) in each system's
   `sockets.asm`: Linux's socket system calls (non-blocking, `MSG_DONTWAIT`), and Winsock
@@ -2252,8 +2257,27 @@ OS or on the host, and `phi load` holds the same tick rate.
   restart; the lobby on Windows with Python's TLS client (OpenSSL), which checks its
   certificate: TLS 1.3, a login, `say`, the account kept across a restart, a wrong
   password refused.
-  - Not yet: `phi load` against a world running on the host (its load clients are PHI OS
-    kernels on the test network), which the "Done when" asks for.
+  - [x] (2026-11-03) `phi load` against a world on the host. `phi load FILE --target
+    linux` takes a program (`server.rootfs/world.phi` or `lobby.phi`), runs it here in a
+    folder of its own with copies of the files beside it (the lobby's certificate), as a
+    fresh disk has them, and runs the clients as programs (a hundred connections each) to
+    127.0.0.1. The clients (`lib/phi/test/load.phi`, `samples/mmo/load_players.phi`) are
+    now `:Library` with no network of their own: phi load adds the one for where they run
+    (`net.tcp` and `net.udp` in a kernel, `net.sockets` in a program, which got `Net.Start`
+    and `Net.Wait` so the calls are the same), and the class that makes them a kernel or a
+    program. Found on the way:
+    - `Tcp.Waiting` on Linux and Windows said a connection had closed when data came in
+      between its two looks (the count, then a peek): about 17 of 500 lobby connections
+      died mid-run that way. Data the peek finds is now data waiting; an interrupted call
+      on Linux is "not yet", as in `Send` and `Read`.
+    - On Windows, `OS.Sleep: 1` slept up to 15.6 ms and `OS.GetTicks` stepped by 15.6 ms
+      (the timer's usual step), so the world's ticks looked late, or took "0 ms". A program
+      now asks for 1 ms steps (`timeBeginPeriod`, from `winmm.dll`, a third DLL in its
+      import table) and its clock is `timeGetTime`: the same milliseconds as elsewhere.
+    - A module's classes start in the order they're used, so the default client's file
+      has the network's `use` lines before `use test.load;` (its body talks to the
+      network as it starts). And on a host the build goes next to a rootfs folder, not in
+      it (a kernel's disk is made from it).
 - [ ] (2) threads in programs, on every system (the user's choice, 2026-11-02: PHI OS
   programs too, so a program behaves the same everywhere), with the kernel's calls
   (`Threads.Start`, `Wait`, `Done`, as `proc.threads` has them). The parts:
@@ -2513,8 +2537,8 @@ editor shows its errors as it's written.
 ### Order
 
 H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work, macOS
-waits). H5 is nearly done: sockets and threads on every system, PHI's memory model; left
-is `phi load` against a world on the host. H6 (the runtime in PHI) comes next, before H7,
+waits). H5 is done (2026-11-03): sockets and threads on every system, PHI's memory model,
+and the mmo's world and lobby under `phi load` as programs here. H6 (the runtime in PHI) comes next, before H7,
 because it makes H7 and macOS cheaper: each of them is a PHI module then, not an assembly
 file for each system. H8 follows. C compatibility, still on hold, is what H7 and part of
 H8 lean on; H6's outside functions are its first half, so this plan is also where that

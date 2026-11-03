@@ -56,22 +56,29 @@ namespace Phi.Cli
         /// The process for the program, with its standard error going where its standard output
         /// does (in order, as a PHI OS program's debug lines are among its log lines on the serial
         /// port) when <paramref name="merge"/> is set. A Linux program's process number is written
-        /// to <paramref name="pidFile"/>, so it can be found if it has to be stopped.
+        /// to <paramref name="pidFile"/>, so it can be found if it has to be stopped. With
+        /// <paramref name="folder"/>, it runs there (where the files it opens are).
         /// </summary>
-        static ProcessStartInfo Start(string program, Host host, IEnumerable<string> arguments, bool merge, string? pidFile = null)
+        static ProcessStartInfo Start(string program, Host host, IEnumerable<string> arguments, bool merge, string? pidFile = null,
+                                      string? folder = null)
         {
             var args = arguments.ToList();
             if (host.IsWindows())
             {
+                ProcessStartInfo windows;
                 if (!merge)
                 {
-                    var direct = new ProcessStartInfo(program);
-                    foreach (string a in args) direct.ArgumentList.Add(a);
-                    return direct;
+                    windows = new ProcessStartInfo(program);
+                    foreach (string a in args) windows.ArgumentList.Add(a);
                 }
-                // cmd joins the two; /s keeps the quotes around the program's path
-                string quoted = string.Join(" ", args.Select(a => $"\"{a}\""));
-                return new ProcessStartInfo("cmd.exe", $"/d /s /c \"\"{Path.GetFullPath(program)}\" {quoted} 2>&1\"");
+                else
+                {
+                    // cmd joins the two; /s keeps the quotes around the program's path
+                    string quoted = string.Join(" ", args.Select(a => $"\"{a}\""));
+                    windows = new ProcessStartInfo("cmd.exe", $"/d /s /c \"\"{Path.GetFullPath(program)}\" {quoted} 2>&1\"");
+                }
+                if (folder != null) windows.WorkingDirectory = Path.GetFullPath(folder);
+                return windows;
             }
 
             bool viaWsl = OperatingSystem.IsWindows();
@@ -80,6 +87,7 @@ namespace Phi.Cli
             if (viaWsl) psi.ArgumentList.Add("/bin/sh");
             psi.ArgumentList.Add("-c");
             string own = pidFile != null ? $"echo $$ > '{(viaWsl ? WslPath(pidFile) : pidFile)}'; " : "";
+            if (folder != null) own = $"cd '{(viaWsl ? WslPath(folder) : Path.GetFullPath(folder))}' || exit 1; " + own;
             psi.ArgumentList.Add(own + (merge ? "exec \"$0\" \"$@\" 2>&1" : "exec \"$0\" \"$@\""));
             psi.ArgumentList.Add(viaWsl ? WslPath(program) : Path.GetFullPath(program));
             foreach (string a in args) psi.ArgumentList.Add(a);
@@ -128,6 +136,66 @@ namespace Phi.Cli
             Task.WaitAll(stdout, stderr);
             return new Result(stdout.Result + stderr.Result, finished ? p.ExitCode : -1, !finished, stopped);
         }
+
+        /// <summary>
+        /// A program running beside others (phi load's server): what it has written so far
+        /// (both outputs), until it's stopped.
+        /// </summary>
+        public sealed class Running : IDisposable
+        {
+            readonly Process process;
+            readonly string program;
+            readonly Host host;
+            readonly string? pidFile;
+            readonly System.Text.StringBuilder output = new();
+            readonly object gate = new();
+
+            internal Running(string program, Host host, string folder)
+            {
+                this.program = program;
+                this.host = host;
+                pidFile = host.IsLinux() ? program + ".pid" : null;
+                if (pidFile != null && File.Exists(pidFile)) File.Delete(pidFile);
+                ProcessStartInfo psi = HostRunner.Start(program, host, Array.Empty<string>(), merge: true, pidFile, folder);
+                psi.RedirectStandardOutput = true;
+                psi.RedirectStandardError = true;
+                psi.RedirectStandardInput = true;
+                psi.UseShellExecute = false;
+                process = Process.Start(psi)!;
+                process.StandardInput.Close();
+                process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (gate) output.Append(e.Data).Append('\n'); };
+                process.ErrorDataReceived += (_, e) => { if (e.Data != null) lock (gate) output.Append(e.Data).Append('\n'); };
+                process.BeginOutputReadLine();
+                process.BeginErrorReadLine();
+            }
+
+            public string Output { get { lock (gate) return output.ToString(); } }
+
+            public bool HasEnded => process.HasExited;
+
+            /// <summary>Ends the program (if it hasn't ended), and waits until it has.</summary>
+            public void Stop()
+            {
+                if (pidFile != null && File.Exists(pidFile))
+                    RunLinuxScript("kill -KILL $(cat \"$1\") 2>/dev/null", pidFile);
+                if (!process.HasExited)
+                {
+                    try { process.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                    process.WaitForExit(5000);
+                }
+                if (host.IsWindows()) EndLeftOver(program);
+                process.WaitForExit(2000); // the last of its output
+            }
+
+            public void Dispose()
+            {
+                Stop();
+                process.Dispose();
+            }
+        }
+
+        /// <summary>Starts the program in <paramref name="folder"/>, with nothing to read, to run until it's stopped.</summary>
+        public static Running StartBeside(string program, Host host, string folder) => new(program, host, folder);
 
         /// <summary>Ends whatever still runs from the program's file (one cmd.exe started, if it outlived cmd), and waits until it has.</summary>
         static void EndLeftOver(string program)

@@ -32,6 +32,7 @@ MSG_DONTWAIT       equ 0x40
 MSG_NOSIGNAL       equ 0x4000
 FIONREAD           equ 0x541B
 EAGAIN             equ 11
+EINTR              equ 4
 EINPROGRESS        equ 115
 
 SOCKETS_MOST       equ 1024
@@ -384,7 +385,10 @@ OS_TcpSend:
     test eax, eax
     jns .done
     cmp eax, -EAGAIN
+    je .again
+    cmp eax, -EINTR                     ; (stopped by a signal: not yet, either)
     jne .broken
+.again:
     xor eax, eax
     jmp .done
 .broken:
@@ -414,7 +418,10 @@ OS_TcpTake:
     jg .done
     jz .closed
     cmp eax, -EAGAIN
+    je .again
+    cmp eax, -EINTR                     ; (stopped by a signal: not yet, either)
     jne .broken
+.again:
 .none:
     xor eax, eax
     jmp .done
@@ -533,8 +540,15 @@ OS_TcpWaiting:
     xor r9d, r9d
     mov eax, SYS_RECVFROM
     syscall
+    ; something that came just after the count was taken is there to read, not a close
+    test eax, eax
+    jg .done
+    jz .closed                          ; 0 bytes: the other side has closed
     cmp eax, -EAGAIN
+    je .zero
+    cmp eax, -EINTR
     jne .closed
+.zero:
     xor eax, eax
     jmp .done
 .closed:

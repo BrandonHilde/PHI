@@ -590,8 +590,10 @@ OS_TcpWaiting:
     mov r8d, 1
     mov r9d, MSG_PEEK
     PHI_CALL recv
-    cmp eax, -1
-    jne .closed
+    ; something that came just after the count was taken is there to read, not a close
+    test eax, eax
+    jg .done
+    jz .closed                          ; 0 bytes: the other side has closed
     PHI_CALL WSAGetLastError
     cmp eax, WSAEWOULDBLOCK
     jne .closed

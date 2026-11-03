@@ -2275,13 +2275,13 @@ instead. Only `Program` and `Library` classes build for another system; kernels 
 | `ask`, `OS.ReadKey` →, `OS.KeyAvailable` → | standard input. The terminal shows what's typed and hands it over a line at a time, so `ReadKey` waits for Enter; Enter is 13, as on PHI OS, and the end of the input gives 0 (an `ask` gets an empty line) |
 | `exit code;` | the process's exit code |
 | `OS.Arguments` → | what follows the program's name on its command line (on Linux, its arguments joined by spaces) |
-| `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number |
+| `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number. Both count in milliseconds on every system: a Windows program asks for its timer to step by 1 ms (`timeBeginPeriod`, from `winmm.dll`), since it would otherwise step by 15.6 ms, and its clock is `timeGetTime` |
 | `OS.Now` → | the date and time, as seconds since 1970 (UTC): Linux's `time`, Windows' `GetSystemTimeAsFileTime` |
 | `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | files and folders, by that system's paths (relative to the folder it runs in) |
 | `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
 | `OS.ClearScreen` | clears the terminal |
-| `net.sockets`' `Udp`, `Tcp` and `Net` | the system's own sockets (Linux's, or Winsock): UDP and TCP to any address, listening and accepting, each call never waiting as on PHI OS. `Net.Address` is the address the machine reaches the internet from (or 127.0.0.1). A program's sockets are its own: a number that isn't one it opened is refused |
+| `net.sockets`' `Udp`, `Tcp` and `Net` | the system's own sockets (Linux's, or Winsock): UDP and TCP to any address, listening and accepting, each call never waiting as on PHI OS. `Net.Address` is the address the machine reaches the internet from (or 127.0.0.1). A program's sockets are its own: a number that isn't one it opened is refused. `Net.Start` and `Net.Wait` are there as in a kernel (true if the system's network is there; a millisecond's sleep), so code that calls them moves by its `use` line too |
 
 The rest of PHI OS's calls (`OS.PutCell`, `OS.IsKeyDown`, `OS.Reboot`, starting and
 watching other programs, `OS.ListFiles` and `OS.ListFolder`, sound, windows and

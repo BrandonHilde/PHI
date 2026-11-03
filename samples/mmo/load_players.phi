@@ -1,8 +1,11 @@
-# Players for phi load: a kernel that plays LoadSettings.connections players of the mmo
+# Players for phi load: a client that plays LoadSettings.connections players of the mmo
 # world at once, the way the clients (client.phi) do, to see the world hold its tick
 # with hundreds of them:
 #
 #   phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
+#   phi load samples/mmo/server.rootfs/world.phi --target linux --client samples/mmo/load_players.phi --connections 300 --seconds 60
+#
+# (the second: the world as a Linux program on this computer, and the players too)
 #
 # Each player joins (a JOIN every half second until its first STATE comes), then takes
 # a step in a random direction four times a second for the run, and counts the STATEs
@@ -14,10 +17,12 @@
 # (wrong is a STATE that isn't one of ours or doesn't add up; problems is how many of
 # these failed: everyone joined, nothing wrong, and at least 90% of the STATEs came.)
 
-use net.udp;
 use protocol;
 
-phi.LoadPlayers:Kernel
+# (a :Library with no network of its own: phi load adds the one for where it runs, net.udp
+# in a kernel or net.sockets in a program, so the same players play a world on PHI OS or
+# one on this computer: phi load samples/mmo/server.rootfs/world.phi --target linux ...)
+phi.LoadPlayers:Library
 {
 	const int MOST: 128;                  # players from one machine
 	const int RETRY: 500;                 # ms between JOINs until the world answers

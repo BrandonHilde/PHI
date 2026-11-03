@@ -568,8 +568,10 @@ OS_TcpWaiting:
     push eax
     push ebx
     call [phi_imp_recv]
-    cmp eax, -1
-    jne .closed
+    ; something that came just after the count was taken is there to read, not a close
+    test eax, eax
+    jg .done
+    jz .closed                          ; 0 bytes: the other side has closed
     call [phi_imp_WSAGetLastError]
     cmp eax, WSAEWOULDBLOCK
     jne .closed

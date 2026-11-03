@@ -1,4 +1,5 @@
 using System.Text.RegularExpressions;
+using Phi.Compiler;
 
 namespace Phi.Cli
 {
@@ -13,7 +14,16 @@ namespace Phi.Cli
     /// are PHI kernels rather than connections from this computer: QEMU's user network on
     /// Windows can only keep 64 connections from outside.
     ///
-    /// --client FILE uses another load-client kernel, built with the same LoadSettings and
+    /// A client is a :Library with no network of its own: phi load adds the one for where it
+    /// runs (net.tcp and net.udp in a kernel, net.sockets in a program, whose calls are the
+    /// same), and the class that makes it a kernel or a program.
+    ///
+    /// With a host (--target linux or windows), the server is a program (a world or lobby from a
+    /// kernel's rootfs, say) run on this computer, in a folder of its own with copies of the
+    /// files beside it (a certificate, say), as a fresh disk would have them; and the clients are
+    /// programs too, one for each PerMachine connections, reaching it at 127.0.0.1.
+    ///
+    /// --client FILE uses another load client, built with the same LoadSettings and
     /// Machine classes. Its last line is "load: NAME COUNT NAME COUNT ...", which this adds up
     /// across the machines (taking the largest of a name that starts with "most"); it passes
     /// when its "problems" count is 0.
@@ -34,9 +44,11 @@ namespace Phi.Cli
         /// <param name="clientFile">a load-client kernel to use instead of lib/phi/test/load.phi</param>
         /// <param name="profile">sample where the server's CPU is, as phi profile does, and report it</param>
         /// <param name="root">with host: each connection is TLS, trusting this root (a DER file) for a certificate for host</param>
+        /// <param name="target">PHI OS (kernels on a network), or a system the server and clients run on here as programs</param>
         public static int Run(string phiFile, int connections, int seconds, int port, bool profile = false, string? clientFile = null,
-                              string? root = null, string? host = null)
+                              string? root = null, string? host = null, Host target = Host.PhiOS)
         {
+            if (target != Host.PhiOS) return RunOnHost(phiFile, target, connections, seconds, port, clientFile, root, host);
             string file = Path.GetFullPath(phiFile);
             string outDir = Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file) + ".load");
             Directory.CreateDirectory(outDir);
@@ -53,19 +65,14 @@ namespace Phi.Cli
 
             // each client: the load client (or a stub that uses the default one), told who it is and what to do
             string client = clientFile != null ? Path.GetFullPath(clientFile) : Path.Combine(outDir, "client.phi");
-            if (clientFile == null) File.WriteAllText(client, "# made by phi load\nuse test.load;\n");
+            if (clientFile == null) File.WriteAllText(client, Stub(KernelClient));
             var images = new List<string> { server.ImagePath };
             for (int c = 0; c < clients && errors.Count == 0; c++)
             {
                 int number = c + 2;
                 int share = Math.Min(PerMachine, connections - c * PerMachine);
-                // with --root and --host, TLS: the root's DER to trust, and the name the certificate is for
-                string tls = root != null
-                    ? $"\tbln tls: true;\n\tstr host: '{host}';\n\tu8 root: {string.Join(" ", File.ReadAllBytes(root).Select(b => $"0x{b:X2}"))};\n"
-                    : "\tbln tls: false;\n\tstr host: '';\n\tu8 root: 0;\n";
-                string settings = $"\nphi.LoadSettings:Library\n{{\n\tu32 connections: {share};\n\tu32 seconds: {seconds};\n\tu32 port: {port};\n{tls}}}\n";
-                BuildResult built = Builder.Build(client, Path.Combine(outDir, $"client.{number}"),
-                    NetworkMachines.MachineClass(number, machines, 0x0A000300u + (uint)number, 0x0A000301) + settings);
+                BuildResult built = Builder.Build(client, Path.Combine(outDir, $"client.{number}"), KernelClient +
+                    NetworkMachines.MachineClass(number, machines, 0x0A000300u + (uint)number, 0x0A000301) + Settings(share, seconds, port, root, host));
                 warnings.AddRange(built.Warnings.Where(w => !warnings.Contains(w)));
                 errors.AddRange(built.Errors);
                 images.Add(built.ImagePath);
@@ -141,6 +148,131 @@ namespace Phi.Cli
             Console.WriteLine($"  network:    {network.Frames:N0} frames");
             foreach (string p in problems) Console.WriteLine("  " + p);
             Console.WriteLine($"  (each machine's output: {Path.GetRelativePath(Environment.CurrentDirectory, outDir)})");
+
+            ok &= problems.Count == 0;
+            Console.WriteLine(ok ? "passed" : "FAILED");
+            return ok ? 0 : 1;
+        }
+
+        /// <summary>What makes a load client (a :Library) a kernel, with the network it uses.</summary>
+        const string KernelClient = "\nuse net.tcp;\nuse net.udp;\nphi.LoadMachine:Kernel\n{\n}\n";
+
+        /// <summary>What makes a load client a program, with the network it uses.</summary>
+        const string ProgramClient = "\nuse net.sockets;\nphi.LoadMachine:Program\n{\n}\n";
+
+        const uint Loopback = 0x7F000001;
+
+        /// <summary>
+        /// The default client's file: the network's use lines first, since a module's classes
+        /// start in the order they're used (the client's body talks to the network as it starts).
+        /// </summary>
+        static string Stub(string wrapper) =>
+            "# made by phi load\n" + string.Concat(wrapper.Split('\n').Where(l => l.StartsWith("use ")).Select(l => l + "\n")) + "use test.load;\n";
+
+        /// <summary>The class LoadSettings a client is built with: its share of the connections, the run, and TLS's root and name (with --root and --host).</summary>
+        static string Settings(int share, int seconds, int port, string? root, string? host)
+        {
+            string tls = root != null
+                ? $"\tbln tls: true;\n\tstr host: '{host}';\n\tu8 root: {string.Join(" ", File.ReadAllBytes(root).Select(b => $"0x{b:X2}"))};\n"
+                : "\tbln tls: false;\n\tstr host: '';\n\tu8 root: 0;\n";
+            return $"\nphi.LoadSettings:Library\n{{\n\tu32 connections: {share};\n\tu32 seconds: {seconds};\n\tu32 port: {port};\n{tls}}}\n";
+        }
+
+        /// <summary>phi load --target: the server program and its clients, all as programs on this computer.</summary>
+        static int RunOnHost(string phiFile, Host target, int connections, int seconds, int port, string? clientFile, string? root, string? host)
+        {
+            if (!HostRunner.CanRun(target, out string why))
+            {
+                Console.Error.WriteLine("error: " + why);
+                return 1;
+            }
+            string file = Path.GetFullPath(phiFile);
+            // not inside a kernel's rootfs folder, which becomes its disk: next to the folder instead
+            string home = Path.GetDirectoryName(file)!;
+            string folderName = Path.GetFileName(home);
+            if (folderName.Equals("rootfs", StringComparison.OrdinalIgnoreCase) || folderName.EndsWith(".rootfs", StringComparison.OrdinalIgnoreCase))
+                home = Path.GetDirectoryName(home)!;
+            string outDir = Path.Combine(home, "build", $"{Path.GetFileNameWithoutExtension(file)}.load.{target.FlagName()}");
+            Directory.CreateDirectory(outDir);
+
+            int clients = (connections + PerMachine - 1) / PerMachine;
+            int machines = clients + 1;
+            var errors = new List<string>();
+            var warnings = new List<string>();
+
+            BuildResult server = Builder.Build(file, Path.Combine(outDir, "server"), listing: true, host: target);
+            warnings.AddRange(server.Warnings);
+            errors.AddRange(server.Errors);
+
+            string client = clientFile != null ? Path.GetFullPath(clientFile) : Path.Combine(outDir, "client.phi");
+            if (clientFile == null) File.WriteAllText(client, Stub(ProgramClient));
+            var programs = new List<string>();
+            for (int c = 0; c < clients && errors.Count == 0; c++)
+            {
+                int number = c + 2;
+                int share = Math.Min(PerMachine, connections - c * PerMachine);
+                BuildResult built = Builder.Build(client, Path.Combine(outDir, $"client.{number}"), ProgramClient +
+                    NetworkMachines.MachineClass(number, machines, Loopback, Loopback) + Settings(share, seconds, port, root, host),
+                    host: target);
+                warnings.AddRange(built.Warnings.Where(w => !warnings.Contains(w)));
+                errors.AddRange(built.Errors);
+                if (built.ExecutablePath != null) programs.Add(built.ExecutablePath);
+            }
+            foreach (string w in warnings.Distinct()) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
+            foreach (string e in errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
+            if (errors.Count > 0) return 1;
+
+            // the server's own folder: the files beside it, as a fresh disk has them, and nothing it saved last time
+            string folder = Path.Combine(outDir, "server.files");
+            if (Directory.Exists(folder)) Directory.Delete(folder, recursive: true);
+            Directory.CreateDirectory(folder);
+            foreach (string f in Directory.GetFiles(Path.GetDirectoryName(file)!).Where(f => !f.EndsWith(".phi", StringComparison.OrdinalIgnoreCase)))
+                File.Copy(f, Path.Combine(folder, Path.GetFileName(f)));
+
+            string what = clientFile == null
+                ? $"{connections} connections to {Path.GetRelativePath(Environment.CurrentDirectory, file)} (port {port})"
+                : $"{connections} of {Path.GetRelativePath(Environment.CurrentDirectory, client)} to {Path.GetRelativePath(Environment.CurrentDirectory, file)}";
+            Console.WriteLine($"phi load: {what}, all {target.Name()} programs here ({clients} clients), for {seconds} s");
+
+            Regex done = clientFile == null ? Totals : Counts;
+            TimeSpan timeout = TimeSpan.FromSeconds(seconds + 240);
+            var clock = System.Diagnostics.Stopwatch.StartNew();
+            var reportedAt = new List<double>();
+            void Look(string output)
+            {
+                int seen = Ticks.Matches(output).Count;
+                while (reportedAt.Count < seen) reportedAt.Add(clock.Elapsed.TotalMilliseconds);
+            }
+
+            string serverOutput;
+            HostRunner.Result[] results;
+            using (HostRunner.Running running = HostRunner.StartBeside(server.ExecutablePath!, target, folder))
+            {
+                var runs = programs.Select(p => Task.Run(() => HostRunner.Run(p, target, timeout))).ToArray();
+                while (!Task.WaitAll(runs, 100)) Look(running.Output);
+                Look(running.Output);
+                running.Stop();
+                serverOutput = running.Output;
+                results = runs.Select(r => r.Result).ToArray();
+            }
+
+            File.WriteAllText(Path.Combine(outDir, "server.txt"), serverOutput);
+            var problems = new List<string>();
+            var outputs = new List<string>();
+            for (int i = 0; i < results.Length; i++)
+            {
+                File.WriteAllText(Path.Combine(outDir, $"client.{i + 2}.txt"), results[i].Output);
+                if (!done.IsMatch(results[i].Output))
+                    problems.Add($"client {i + 2} didn't finish: " +
+                                 (results[i].TimedOut ? $"timed out after {timeout.TotalSeconds:0}s" : $"it ended with {results[i].ExitCode}, with no totals"));
+                else
+                    outputs.Add(results[i].Output);
+            }
+
+            bool ok = clientFile == null ? Lobby(outputs, connections, seconds) : Custom(outputs);
+            ok &= TickHeld(serverOutput, reportedAt);
+            foreach (string p in problems) Console.WriteLine("  " + p);
+            Console.WriteLine($"  (each program's output: {Path.GetRelativePath(Environment.CurrentDirectory, outDir)})");
 
             ok &= problems.Count == 0;
             Console.WriteLine(ok ? "passed" : "FAILED");

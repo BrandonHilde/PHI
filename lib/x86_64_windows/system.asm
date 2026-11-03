@@ -53,7 +53,12 @@ WIDE_PATH     equ 1024                  ; characters
 ; Called before the program's code: keeps the time it started (OS.GetTicks counts from
 ; there) and its command line after its own name.
 phi_windows_start:
-    PHI_CALL GetTickCount64
+; Windows' timer steps every 15.6 ms unless a program asks for less, so OS.Sleep: 1 would
+; sleep up to 15 ms here and 1 ms everywhere else: the program asks for 1 ms steps. Its
+; clock is timeGetTime, which then counts in them too (GetTickCount64 still steps by 15.6).
+    mov ecx, 1
+    PHI_CALL timeBeginPeriod
+    PHI_CALL timeGetTime
     mov [rel phi_started], eax
     PHI_CALL GetCommandLineA
     mov rsi, rax
@@ -179,7 +184,7 @@ OS_KeyAvailable:
 
 ; -> milliseconds since the program started
 OS_GetTicks:
-    PHI_CALL GetTickCount64
+    PHI_CALL timeGetTime
     sub eax, [rel phi_started]
     ret
 

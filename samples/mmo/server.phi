@@ -12,6 +12,10 @@
 #                                       # hundreds of logins in the lobby at once, over TLS
 #   phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
 #                                       # hundreds of players in the world, checking its tick
+#   phi load samples/mmo/server.rootfs/world.phi --target linux --client samples/mmo/load_players.phi --connections 500 --seconds 60
+#   phi load samples/mmo/server.rootfs/lobby.phi --target windows --root samples/mmo/certs/root.der --host lobby.mmo.phi.test --connections 500
+#                                       # the same with the world (or lobby) and the players as
+#                                       # programs on this computer (--target linux or windows)
 #
 # It's machine 1 on the network that phi run and phi test make (see server.machines);
 # Machine.address is its address.
