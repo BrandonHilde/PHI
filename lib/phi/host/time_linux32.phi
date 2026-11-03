@@ -1,7 +1,7 @@
 # Time in a 32-bit Linux program, in PHI (H6 step 3): OS.Sleep, OS.GetTicks, OS.Now and
 # OS.Yield are answered here, by Linux's system calls (int 0x80, with i386's numbers). The
 # compiler adds this module to every 32-bit Linux program, first, as it does the heap;
-# time_linux64.phi and time_windows.phi are the other systems'.
+# time_linux64.phi and time_windows.phi are the other systems'. The numbers are linux32.phi's.
 
 phi.HostTime:Linux32
 {
@@ -37,8 +37,3 @@ phi.HostTime:Linux32
 		int ms: now:0 * 1000 + now:1 / 1000000;
 	[end: ms]
 }
-
-sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
-sys.ClockGetTime: 265  int clock  ptr<int> now;
-sys.Time: 13  ptr<u32> seconds: u32;
-sys.SchedYield: 158;

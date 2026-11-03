@@ -1,4 +1,4 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -9,24 +9,12 @@
 ; Arguments PHI pushes are 8 bytes each in 64-bit code: the first is at [rsp + 8]. Each
 ; call keeps rsi and rdi.
 SYS_READ       equ 0
-SYS_OPEN       equ 2
-SYS_CLOSE      equ 3
-SYS_STAT       equ 4
 SYS_POLL       equ 7
-SYS_LSEEK      equ 8
 SYS_BRK        equ 12
 SYS_GETPID     equ 39
-SYS_RENAME     equ 82
-SYS_MKDIR      equ 83
-SYS_RMDIR      equ 84
-SYS_UNLINK     equ 87
 SYS_SYSINFO    equ 99
 SYS_EXIT_GROUP equ 231
 
-O_WRONLY       equ 1
-O_CREAT        equ 0x40
-O_TRUNC        equ 0x200
-O_APPEND       equ 0x400
 ARGUMENTS_SIZE equ 1024
 
 ; Called before the program's code, while the stack is as Linux left it: [rsp + 8] is how
@@ -142,199 +130,6 @@ OS_CurrentTask:
 OS_Arguments:
     lea rax, [rel phi_arguments]
     ret
-
-; rdi = path, rsi = offset, rbx = buffer, edx = most bytes -> eax = bytes read, or -1
-; (changes rbx, rcx, rdx, rsi, rdi, r8, r11)
-phi_file_read:
-    mov r8, rsi                         ; the offset
-    push rdx
-    mov eax, SYS_OPEN
-    xor esi, esi                        ; to read
-    syscall
-    pop rdx
-    test rax, rax
-    js .failed
-    mov rdi, rax                        ; the file
-    test r8, r8
-    jz .read
-    push rdx
-    mov eax, SYS_LSEEK
-    mov rsi, r8
-    xor edx, edx                        ; from the start
-    syscall
-    pop rdx
-    test rax, rax
-    js .close_failed
-.read:
-    xor r8d, r8d                        ; bytes read
-.more:
-    cmp r8d, edx
-    jge .close
-    push rdx
-    mov eax, SYS_READ
-    lea rsi, [rbx + r8]
-    sub edx, r8d
-    syscall
-    pop rdx
-    test rax, rax
-    js .close_failed
-    jz .close                           ; the end of the file
-    add r8d, eax
-    jmp .more
-.close:
-    mov eax, SYS_CLOSE
-    syscall
-    mov eax, r8d
-    ret
-.close_failed:
-    mov eax, SYS_CLOSE
-    syscall
-.failed:
-    mov eax, -1
-    ret
-
-; args: path buffer max -> bytes read, or -1
-OS_ReadFile:
-    push rsi
-    push rdi
-    mov rdi, [rsp + 24]
-    xor esi, esi
-    mov rbx, [rsp + 32]
-    mov edx, [rsp + 40]
-    call phi_file_read
-    pop rdi
-    pop rsi
-    ret
-
-; args: path offset buffer max -> bytes read, or -1
-OS_ReadFileAt:
-    push rsi
-    push rdi
-    mov rdi, [rsp + 24]
-    mov esi, [rsp + 32]
-    mov rbx, [rsp + 40]
-    mov edx, [rsp + 48]
-    call phi_file_read
-    pop rdi
-    pop rsi
-    ret
-
-; rdi = path, esi = O_TRUNC or O_APPEND, rbx = data, r8d = length -> eax = 1 if written
-; (changes rbx, rcx, rdx, rsi, rdi, r11)
-phi_file_write:
-    mov eax, SYS_OPEN
-    or esi, O_WRONLY | O_CREAT
-    mov edx, 0o644                      ; the owner can write it, everyone can read it
-    syscall
-    test rax, rax
-    js .failed
-    mov rdi, rax
-    mov rsi, rbx
-    mov edx, r8d
-    call phi_write_all
-    push rax
-    mov eax, SYS_CLOSE
-    syscall
-    pop rax
-    ret
-.failed:
-    xor eax, eax
-    ret
-
-; args: path data length -> 1 if written
-OS_WriteFile:
-    push rsi
-    push rdi
-    mov esi, O_TRUNC
-    jmp phi_file_write_args
-
-; args: path data length -> 1 if added to the end (a new file if there's none)
-OS_AppendFile:
-    push rsi
-    push rdi
-    mov esi, O_APPEND
-
-; esi = how the file opens, with rsi and rdi pushed: the arguments are past them
-phi_file_write_args:
-    mov rdi, [rsp + 24]
-    mov rbx, [rsp + 32]
-    mov r8d, [rsp + 40]
-    call phi_file_write
-    pop rdi
-    pop rsi
-    ret
-
-; arg: path -> its size in bytes, or -1 if it isn't a file
-OS_FileSize:
-    push rsi
-    push rdi
-    sub rsp, 144                        ; (Linux's stat, on the stack)
-    mov eax, SYS_STAT
-    mov rdi, [rsp + 144 + 24]
-    mov rsi, rsp
-    syscall
-    test rax, rax
-    jnz .failed
-    mov eax, [rsp + 24]                 ; its mode
-    and eax, 0xF000
-    cmp eax, 0x8000                     ; a regular file
-    jne .failed
-    mov eax, [rsp + 48]                 ; its size
-    jmp .done
-.failed:
-    mov eax, -1
-.done:
-    add rsp, 144
-    pop rdi
-    pop rsi
-    ret
-
-; rax = what a system call gave -> 1 if it worked (0), else 0
-phi_succeeded:
-    pop rdi
-    pop rsi
-    test rax, rax
-    sete al
-    movzx eax, al
-    ret
-
-; arg: path -> 1 if deleted
-OS_DeleteFile:
-    push rsi
-    push rdi
-    mov eax, SYS_UNLINK
-    mov rdi, [rsp + 24]
-    syscall
-    jmp phi_succeeded
-
-; arg: path -> 1 if made
-OS_MakeFolder:
-    push rsi
-    push rdi
-    mov eax, SYS_MKDIR
-    mov rdi, [rsp + 24]
-    mov esi, 0o755
-    syscall
-    jmp phi_succeeded
-
-; arg: path -> 1 if deleted (only an empty folder)
-OS_DeleteFolder:
-    push rsi
-    push rdi
-    mov eax, SYS_RMDIR
-    mov rdi, [rsp + 24]
-    syscall
-    jmp phi_succeeded
-
-; args: from to -> 1 if renamed (or moved)
-OS_Rename:
-    push rsi
-    push rdi
-    mov eax, SYS_RENAME
-    mov rdi, [rsp + 24]
-    mov rsi, [rsp + 32]
-    syscall
-    jmp phi_succeeded
 
 ; arg: bytes -> rax = where the new memory starts (right after what the heap has), or 0.
 ; The heap grows by moving the program's break, a page at a time.

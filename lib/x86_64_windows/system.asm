@@ -1,4 +1,4 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all phi_imports
 ; init: phi_windows_start
 ;
@@ -11,15 +11,6 @@
 ; call keeps rsi and rdi.
 STD_INPUT_HANDLE equ -10
 STD_OUTPUT_HANDLE equ -11
-GENERIC_READ  equ 0x80000000
-GENERIC_WRITE equ 0x40000000
-FILE_APPEND_DATA equ 4
-FILE_SHARE_ALL equ 7                    ; others can read, write and delete it meanwhile
-CREATE_ALWAYS equ 2
-OPEN_EXISTING equ 3
-OPEN_ALWAYS   equ 4
-FILE_ATTRIBUTE_NORMAL equ 0x80
-FILE_ATTRIBUTE_DIRECTORY equ 0x10
 FILE_TYPE_PIPE equ 3
 MEM_COMMIT    equ 0x1000
 MEM_RESERVE   equ 0x2000
@@ -28,7 +19,6 @@ HEAP_RESERVE  equ 0x400000000           ; 16 GB of addresses: a 64-bit heap has 
 HEAP_AT       equ 0x500000000           ; where they start (past 4 GB, so every address must be whole)
 ENABLE_VIRTUAL_TERMINAL_PROCESSING equ 4
 ARGUMENTS_SIZE equ 1024
-WIDE_PATH     equ 1024                  ; characters
 
 ; (the same as console.asm's: whichever comes first defines it)
 %ifnmacro PHI_CALL 1-4
@@ -190,254 +180,6 @@ OS_Arguments:
     lea rax, [rel phi_arguments]
     ret
 
-; rsi = a path, rdi = room for WIDE_PATH characters -> rax = rdi, the path in UTF-16
-; there. Changes ecx, rsi and rdi.
-phi_wide:
-    push rdi
-    mov ecx, WIDE_PATH - 1
-.char:
-    movzx eax, byte [rsi]
-    test eax, eax
-    jz .done
-    mov [rdi], ax
-    inc rsi
-    add rdi, 2
-    dec ecx
-    jnz .char
-.done:
-    mov word [rdi], 0
-    pop rax
-    ret
-
-; rcx = a path in UTF-16, edx = what for (GENERIC_READ ...), r8d = how (OPEN_EXISTING ...)
-; -> rax = the file's handle, or -1
-phi_open:
-    mov r10d, r8d
-    mov r8d, FILE_SHARE_ALL
-    xor r9d, r9d                        ; no security attributes
-    PHI_CALL CreateFileW, r10, FILE_ATTRIBUTE_NORMAL, 0
-    ret
-
-; rsi = path, eax = offset, rdi = buffer, ebx = most bytes -> eax = bytes read, or -1
-; (changes rsi; the file's handle is kept in it, which kernel32 keeps)
-phi_file_read:
-    push rax                            ; the offset
-    push rdi
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    pop rdi
-    mov rcx, rax
-    mov edx, GENERIC_READ
-    mov r8d, OPEN_EXISTING
-    call phi_open
-    pop rcx                             ; the offset
-    cmp rax, -1
-    je .failed
-    mov rsi, rax                        ; the file
-    test ecx, ecx
-    jz .read
-    mov edx, ecx
-    mov rcx, rsi
-    xor r8d, r8d
-    xor r9d, r9d                        ; from the start
-    PHI_CALL SetFilePointer
-    cmp eax, -1
-    je .close_failed
-.read:
-    mov dword [rel phi_total], 0
-.more:
-    mov eax, [rel phi_total]
-    cmp eax, ebx
-    jge .close
-    mov r8d, ebx
-    sub r8d, eax
-    lea rdx, [rdi + rax]
-    mov rcx, rsi
-    lea r9, [rel phi_read_count]
-    PHI_CALL ReadFile, 0
-    test eax, eax
-    jz .close_failed
-    mov eax, [rel phi_read_count]
-    test eax, eax
-    jz .close                           ; the end of the file
-    add [rel phi_total], eax
-    jmp .more
-.close:
-    mov rcx, rsi
-    PHI_CALL CloseHandle
-    mov eax, [rel phi_total]
-    ret
-.close_failed:
-    mov rcx, rsi
-    PHI_CALL CloseHandle
-.failed:
-    mov eax, -1
-    ret
-
-; args: path buffer max -> bytes read, or -1
-OS_ReadFile:
-    push rsi
-    push rdi
-    push rbx
-    mov rsi, [rsp + 32]
-    xor eax, eax
-    mov rdi, [rsp + 40]
-    mov ebx, [rsp + 48]
-    call phi_file_read
-    pop rbx
-    pop rdi
-    pop rsi
-    ret
-
-; args: path offset buffer max -> bytes read, or -1
-OS_ReadFileAt:
-    push rsi
-    push rdi
-    push rbx
-    mov rsi, [rsp + 32]
-    mov eax, [rsp + 40]
-    mov rdi, [rsp + 48]
-    mov ebx, [rsp + 56]
-    call phi_file_read
-    pop rbx
-    pop rdi
-    pop rsi
-    ret
-
-; rsi = path, ebx = GENERIC_WRITE or FILE_APPEND_DATA, ecx = CREATE_ALWAYS or OPEN_ALWAYS,
-; rdi = data, edx = length -> eax = 1 if written
-phi_file_write:
-    push rdx
-    push rcx
-    push rdi
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    pop rdi
-    pop r8                              ; how it opens
-    mov edx, ebx
-    mov rcx, rax
-    call phi_open
-    pop rdx
-    cmp rax, -1
-    je .failed
-    mov rbx, rax                        ; the file (kernel32 keeps rbx)
-    mov rsi, rdi
-    call phi_write_all
-    push rax
-    mov rcx, rbx
-    PHI_CALL CloseHandle
-    pop rax
-    ret
-.failed:
-    xor eax, eax
-    ret
-
-; args: path data length -> 1 if written
-OS_WriteFile:
-    mov ebx, GENERIC_WRITE
-    mov ecx, CREATE_ALWAYS
-    jmp phi_file_write_args
-
-; args: path data length -> 1 if added to the end (a new file if there's none)
-OS_AppendFile:
-    mov ebx, FILE_APPEND_DATA
-    mov ecx, OPEN_ALWAYS
-
-; ebx and ecx as phi_file_write takes them; the arguments are OS_WriteFile's
-phi_file_write_args:
-    push rsi
-    push rdi
-    push rbx
-    mov rsi, [rsp + 32]
-    mov rdi, [rsp + 40]
-    mov edx, [rsp + 48]
-    call phi_file_write
-    pop rbx
-    pop rdi
-    pop rsi
-    ret
-
-; arg: path -> its size in bytes, or -1 if it isn't a file
-OS_FileSize:
-    push rsi
-    push rdi
-    mov rsi, [rsp + 24]
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    mov rcx, rax
-    xor edx, edx                        ; the standard information
-    lea r8, [rel phi_attributes]
-    PHI_CALL GetFileAttributesExW
-    pop rdi
-    pop rsi
-    test eax, eax
-    jz .failed
-    test byte [rel phi_attributes], FILE_ATTRIBUTE_DIRECTORY
-    jnz .failed
-    mov eax, [rel phi_attributes + 32]  ; its size (the low 32 bits)
-    ret
-.failed:
-    mov eax, -1
-    ret
-
-; eax = what a function gave, with rsi and rdi pushed -> 1 if it worked (not 0), else 0
-phi_succeeded:
-    pop rdi
-    pop rsi
-    test eax, eax
-    setnz al
-    movzx eax, al
-    ret
-
-; arg: path -> 1 if deleted
-OS_DeleteFile:
-    push rsi
-    push rdi
-    mov rsi, [rsp + 24]
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    mov rcx, rax
-    PHI_CALL DeleteFileW
-    jmp phi_succeeded
-
-; arg: path -> 1 if made
-OS_MakeFolder:
-    push rsi
-    push rdi
-    mov rsi, [rsp + 24]
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    mov rcx, rax
-    xor edx, edx
-    PHI_CALL CreateDirectoryW
-    jmp phi_succeeded
-
-; arg: path -> 1 if deleted (only an empty folder)
-OS_DeleteFolder:
-    push rsi
-    push rdi
-    mov rsi, [rsp + 24]
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    mov rcx, rax
-    PHI_CALL RemoveDirectoryW
-    jmp phi_succeeded
-
-; args: from to -> 1 if renamed (or moved)
-OS_Rename:
-    push rsi
-    push rdi
-    mov rsi, [rsp + 32]
-    lea rdi, [rel phi_wide_to]
-    call phi_wide
-    mov rsi, [rsp + 24]
-    lea rdi, [rel phi_wide_path]
-    call phi_wide
-    lea rcx, [rel phi_wide_path]
-    lea rdx, [rel phi_wide_to]
-    PHI_CALL MoveFileW
-    jmp phi_succeeded
-
 ; arg: bytes -> rax = where the new memory starts (whole pages, zeroed, right after the
 ; last it gave), or 0. The heap's addresses are reserved the first time, and each call
 ; commits the next part of them.
@@ -536,11 +278,7 @@ phi_memory_status: times 64 db 0
 phi_heap_start: dq 0
 phi_heap_end: dq 0
 phi_read_count: dd 0
-phi_total: dd 0
 phi_console_mode: dd 0
-phi_attributes: times 36 db 0
-phi_wide_path: times WIDE_PATH dw 0
-phi_wide_to: times WIDE_PATH dw 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
 ; rax = where this program goes when the CPU stops it (dividing by zero, or memory that

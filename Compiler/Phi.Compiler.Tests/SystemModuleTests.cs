@@ -121,9 +121,9 @@ namespace Phi.Compiler.Tests
         [InlineData("use raw;\nphi.Test:Program\n{\n log (sys.GetPid);\n}\n", "phi.Raw:Linux\n{\n}\nsys.GetPid: 20;\n", "used only in a module for a system that has them")]
         // too few values
         [InlineData("use raw;\nphi.Test:Program\n{\n}\n", "phi.Raw:Linux\n{\n [Say]\n  int n: (sys.Write: 1);\n [end]\n}\nsys.Write: 4  int fd  ptr<u8> data  u32 length;\n",
-                    "sys.Write takes 3 values (fd, data, length), but was given 1")]
+                    "sys.Write takes 3 values (fd, data, count), but was given 1")]
         // one that isn't declared
-        [InlineData("use raw;\nphi.Test:Program\n{\n}\n", "phi.Raw:Linux\n{\n [Say]\n  int n: (sys.Read: 0);\n [end]\n}\n", "there's no system call sys.Read for Linux")]
+        [InlineData("use raw;\nphi.Test:Program\n{\n}\n", "phi.Raw:Linux\n{\n [Say]\n  int n: (sys.Fork: 0);\n [end]\n}\n", "there's no system call sys.Fork for Linux")]
         public void ASystemCallGoesWhereItsNumbersBelong(string main, string module, string error)
         {
             var files = new List<(string, string)> { ("main.phi", main) };
@@ -194,6 +194,23 @@ namespace Phi.Compiler.Tests
         {
             CompileResult result = Build(Host.Windows, ("main.phi", "use win;\nphi.Test:Program\n{\n log (User32.MessageBeep: 0);\n}\n"), ("win.phi", User32));
             Assert.Contains("User32.MessageBeep is a function of 'user32.dll', used only from a :Windows module (for now), not from Test (:Program)", Errors(result));
+        }
+
+        [Fact]
+        public void TwoModulesMayDeclareTheSameCallTheSameWayButNotDifferently()
+        {
+            // lib/phi/host/linux32.phi declares sys.Close: 6 int fd; and so may a program's own module
+            string same = "phi.Raw:Linux32\n{\n [Shut]\n [end: (sys.Close: 3)]\n}\nsys.Close: 6  int handle;\n";
+            CompileResult result = Build(Host.Linux, ("main.phi", "use raw;\nphi.Test:Program\n{\n log (Raw.Shut);\n}\n"), ("raw.phi", same));
+            Assert.True(result.Success, Errors(result));
+
+            string other = "phi.Raw:Linux32\n{\n [Shut]\n [end: (sys.Close: 3)]\n}\nsys.Close: 7  int handle;\n";
+            result = Build(Host.Linux, ("main.phi", "use raw;\nphi.Test:Program\n{\n log (Raw.Shut);\n}\n"), ("raw.phi", other));
+            Assert.Contains("sys.Close is declared differently in lib/phi/host/linux32.phi (number 6: int)", Errors(result));
+
+            string function = "use 'kernel32.dll' as Kernel32;\nphi.Win:Windows\n{\n [Shut]\n [end: (Kernel32.CloseHandle: 0)]\n}\nKernel32.CloseHandle: u32 handle;\n";
+            result = Build(Host.Windows, ("main.phi", "use win;\nphi.Test:Program\n{\n log (Win.Shut);\n}\n"), ("win.phi", function));
+            Assert.Contains("Kernel32.CloseHandle is declared differently in lib/phi/host/files_windows.phi (ptr<u8>)", Errors(result));
         }
 
         [Fact]

@@ -15,14 +15,7 @@
     PHI_FUNCTION GetCurrentProcessId
     PHI_FUNCTION VirtualAlloc
     PHI_FUNCTION GlobalMemoryStatusEx
-    PHI_FUNCTION CreateFileW
     PHI_FUNCTION CloseHandle
-    PHI_FUNCTION SetFilePointer
-    PHI_FUNCTION GetFileAttributesExW
-    PHI_FUNCTION DeleteFileW
-    PHI_FUNCTION CreateDirectoryW
-    PHI_FUNCTION RemoveDirectoryW
-    PHI_FUNCTION MoveFileW
     PHI_FUNCTION GetFileType
     PHI_FUNCTION PeekNamedPipe
     PHI_FUNCTION WaitForSingleObject

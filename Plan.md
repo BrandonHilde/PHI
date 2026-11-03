@@ -2421,7 +2421,18 @@ starting that phase.
    compiler gives every host program those modules, first, each system keeping its own.
    The four routines are gone from the hosts' assembly (about 220 lines), with `phi_now`,
    the start time and four Windows imports; test `time_program`, and the mmo world under
-   `phi load` holds its tick on both. Next: files, then the network, then threads.) A module for each part (the network, threads, files,
+   `phi load` holds its tick on both. Files are done too, 2026-11-03: `OS.ReadFile`,
+   `ReadFileAt`, `WriteFile`, `AppendFile`, `FileSize`, `DeleteFile`, `MakeFolder`,
+   `DeleteFolder` and `Rename` are `files_linux.phi` (one module for both widths, on
+   `linux32.phi`'s and `linux64.phi`'s numbers and the one layout that differs, stat's)
+   and `files_windows.phi`, whose UTF-16 paths are on each call's own stack: H5's gap,
+   Windows' file calls from several threads at once, is closed (test
+   `files_threads_program`: four threads at once on all four hosts). About 860 more lines
+   of assembly gone, with seven Windows imports. A system call or outside function may be
+   declared by two modules if they declare it the same way (a program's own and
+   lib/phi/host's); differently is an error. And a program test that builds for no system
+   now fails, saying why, rather than passing by running nowhere (that hid a clash).
+   Next: the network, then threads.) A module for each part (the network, threads, files,
    time) holding what every system shares (checking a socket's kind, keeping thread
    slots, the waiting and retrying), on top of a small module per system of constants and
    calls (Linux's numbers, Windows' functions). Moved a part at a time, the assembly

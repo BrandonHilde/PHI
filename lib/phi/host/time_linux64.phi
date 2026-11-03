@@ -1,5 +1,6 @@
 # Time in a 64-bit Linux program, in PHI (H6 step 3): as time_linux32.phi, with x86-64's
-# numbers (syscall) and its timespec, whose seconds and nanoseconds are 64 bits each.
+# numbers (syscall, from linux64.phi) and its timespec, whose seconds and nanoseconds are
+# 64 bits each.
 
 phi.HostTime:Linux64
 {
@@ -35,8 +36,3 @@ phi.HostTime:Linux64
 		int ms: (now:0 * 1000 + now:1 / 1000000) as int;
 	[end: ms]
 }
-
-sys.NanoSleep: 35  ptr<i64> wanted  ptr<i64> left;
-sys.ClockGetTime: 228  int clock  ptr<i64> now;
-sys.Time: 201  ptr<u32> seconds: u32;
-sys.SchedYield: 24;

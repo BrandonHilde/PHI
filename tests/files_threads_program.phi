@@ -1,0 +1,55 @@
+# Files from four threads at once, in a program on Linux and Windows (lib/phi/host/
+# files_*.phi, H6 step 3): each writes a file of its own, adds to it, reads it back whole
+# and from the middle, checks its size, renames and deletes it, fifty times over, all at
+# the same time. On Windows each call makes its path's UTF-16 on its own thread's stack;
+# the runtime's assembly used to share one buffer for it (H5's gap). A thread counts the
+# times anything came back wrong.
+use user.threads;
+
+phi.FilesThreadsProgram:Program
+{
+	const int TIMES: 50;
+	u32 wrong[4];
+	u32 done[4];
+	int threads[4];
+
+	while int t: 0; t < 4; t++;
+		threads:t is (Threads.Start: addr Work t);
+	;;
+	while int t: 0; t < 4; t++;
+		call Threads.Wait: threads:t;
+	;;
+	log 'rounds: ' done:0 ' ' done:1 ' ' done:2 ' ' done:3 '\n';
+	log 'wrong: ' (wrong:0 + wrong:1 + wrong:2 + wrong:3) '\n';
+	log 'left behind: ' (OS.FileSize: 'files_threads_0.tmp') ' ' (OS.FileSize: 'files_threads_0.moved') '\n';
+
+	[Work: int me: 0;]
+		str path: [40];
+		str moved: [40];
+		str text: [40];
+		u8 back[64];
+		path is 'files_threads_' me '.tmp';
+		moved is 'files_threads_' me '.moved';
+		while int i: 0; i < TIMES; i++;
+			text is 'thread ' me ' round ' i;
+			int length: text.len;
+			if (OS.WriteFile: path text length) is not 1 or (OS.AppendFile: path '!' 1) is not 1
+				wrong:me++;
+			;;
+			if (OS.ReadFile: path addr back 64) is not length + 1 or back:length is not '!' or back:7 is not '0' + me
+				wrong:me++;
+			;;
+			# from the middle: 'round ...'
+			if (OS.ReadFileAt: path 9 addr back 5) is not 5 or back:0 is not 'r'
+				wrong:me++;
+			;;
+			if (OS.FileSize: path) is not length + 1
+				wrong:me++;
+			;;
+			if (OS.Rename: path moved) is not 1 or (OS.FileSize: path) is not -1 or (OS.DeleteFile: moved) is not 1
+				wrong:me++;
+			;;
+			done:me++;
+		;;
+	[end]
+}

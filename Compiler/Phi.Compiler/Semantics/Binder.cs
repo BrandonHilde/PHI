@@ -264,11 +264,15 @@ namespace Phi.Compiler.Semantics
             foreach (SysCallDecl sys in program.SysCalls)
             {
                 file = sys.File;
-                if (!sysCalls.TryAdd(sys.Name, sys))
+                if (sysCalls.TryGetValue(sys.Name, out SysCallDecl? first))
                 {
-                    Error(sys.Span, $"a system call named sys.{sys.Name} already exists for this system");
+                    // two modules may declare the same call the same way (a program's own, and lib/phi/host's)
+                    if (first.Number != sys.Number || Shape(first.Parameters, first.Result) != Shape(sys.Parameters, sys.Result))
+                        Error(sys.Span, $"sys.{sys.Name} is declared differently in {first.File.Path} (number {first.Number}: " +
+                                        $"{Shape(first.Parameters, first.Result)}); one name is one system call, declared the same way everywhere");
                     continue;
                 }
+                sysCalls[sys.Name] = sys;
                 if (sys.Parameters.Count > 6)
                     Error(sys.Span, $"sys.{sys.Name} takes {sys.Parameters.Count} values, but a system call takes at most 6");
                 sysTypes[sys] = sys.Parameters.Select(p => ResolveType(p.Type, null, allowStr: false)).ToList();
@@ -287,11 +291,14 @@ namespace Phi.Compiler.Semantics
                 file = f.File;
                 string full = $"{f.Library}.{f.Name}";
                 if (!libraries.TryGetValue(f.Library, out LibraryUseDecl? library)) continue;
-                if (!outsideFunctions.TryAdd(full, f))
+                if (outsideFunctions.TryGetValue(full, out OutsideFunctionDecl? declared))
                 {
-                    Error(f.Span, $"{full} is already declared ({outsideFunctions[full].File.Path}); declare a function once");
+                    if (Shape(declared.Parameters, declared.Result) != Shape(f.Parameters, f.Result))
+                        Error(f.Span, $"{full} is declared differently in {declared.File.Path} ({Shape(declared.Parameters, declared.Result)}); " +
+                                      "one name is one function, declared the same way everywhere");
                     continue;
                 }
+                outsideFunctions[full] = f;
                 f.LibraryPath = library.Path;
                 var types = f.Parameters.Select(p => ResolveType(p.Type, null, allowStr: false)).ToList();
                 outsideTypes[f] = types;
@@ -3815,6 +3822,10 @@ namespace Phi.Compiler.Semantics
             program.RawBlocks.RemoveAll(r => !Kept(r.File));
             program.SysCalls.RemoveAll(s => !Kept(s.File) || !systemOf.TryGetValue(s.File, out string? system) || !CallingSystems.Contains(system));
         }
+
+        /// <summary>What a system call or outside function takes and gives, by type alone: 'int ptr<u8> u32: ptr<u8>'.</summary>
+        static string Shape(List<SysCallParameter> parameters, TypeRef? result) =>
+            string.Join(" ", parameters.Select(p => TypeText(p.Type))) + (result != null ? ": " + TypeText(result) : "");
 
         /// <summary>
         /// Why a type can't go to or come from an outside function yet, or null: a number, bln,

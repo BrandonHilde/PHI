@@ -91,6 +91,10 @@ namespace Phi.Cli
                 if (failure != null && Retry && !IsBuildFailure(failure))
                 {
                     first = failure;
+                    // what the first run wrote is kept, as NAME.first.actual: the second run's replaces NAME.actual
+                    string actual = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(test))!,
+                                                 Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : "." + mode.Name));
+                    if (File.Exists(actual + ".actual")) File.Copy(actual + ".actual", actual + ".first.actual", overwrite: true);
                     report.Clear();
                     failure = RunGuarded(test, TimeFor(test, timeout), mode, input, keepOutput, contains, bench, report);
                 }
@@ -103,6 +107,9 @@ namespace Phi.Cli
                     Console.WriteLine(name + " (on its second run)");
                     foreach (string line in report) Console.WriteLine("     " + line);
                     foreach (string line in first.Split('\n').TakeWhile(l => !l.StartsWith("---"))) Console.WriteLine("     the first run: " + line);
+                    string kept = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(test))!,
+                                               Path.GetFileNameWithoutExtension(test) + (mode == null ? "" : "." + mode.Name) + ".first.actual");
+                    if (File.Exists(kept)) Console.WriteLine($"     (its output is in {Path.GetFileName(kept)})");
                 }
                 else if (failure == null)
                 {
@@ -209,13 +216,21 @@ namespace Phi.Cli
             if (!program && !(LibraryClass.IsMatch(text) && !ProgramClass.IsMatch(text))) yield break;
             string wrapper = program ? "" : ProgramWrapper;
 
+            Host? firstHere = null;
+            int built = 0;
             foreach (Host host in OtherSystems.Where(h => Only == null || Only == h))
             {
                 if (!HostRunner.CanRun(host, out _)) continue;
+                firstHere ??= host;
                 var source = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), text + wrapper);
                 if (!PhiCompiler.Compile(source, generate: false, host: host).Success) continue;
+                built++;
                 yield return new Mode(host.FlagName(), wrapper, Host: host);
             }
+            // a program that builds for none of them runs on none, which would pass by saying
+            // nothing: it runs on the first, where its build fails and says why
+            if (program && built == 0 && Only == null && firstHere is Host first)
+                yield return new Mode(first.FlagName(), wrapper, Host: first);
         }
 
         static IEnumerable<Mode?> PhiOsModes(string phiFile)

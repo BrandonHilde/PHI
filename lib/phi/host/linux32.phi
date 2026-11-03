@@ -1,0 +1,30 @@
+# 32-bit Linux's own, for the host modules that are Linux's (time_linux32.phi,
+# files_linux.phi): its system calls' numbers (i386's, through int 0x80), and the little
+# that differs from 64-bit Linux beyond them. linux64.phi is the same for x86-64.
+
+phi.LinuxLayout:Linux32
+{
+	# a file's size, or -1 if it isn't a file (Linux's stat64: the mode at byte 16, the
+	# size at 44)
+	[FileSize: ptr<u8> path: 0;]
+		u32 info[24];
+		if (sys.Stat: path addr info) is not 0 return -1;
+		if (info:4 & 0xF000) is not 0x8000 return -1;   # not a regular file
+		int size: info:11;
+	[end: size]
+}
+
+sys.Read: 3  int fd  ptr<u8> buffer  u32 count;
+sys.Write: 4  int fd  ptr<u8> data  u32 count;
+sys.Open: 5  ptr<u8> path  int flags  int mode;
+sys.Close: 6  int fd;
+sys.Unlink: 10  ptr<u8> path;
+sys.Time: 13  ptr<u32> seconds: u32;
+sys.LSeek: 19  int fd  int offset  int whence;
+sys.Rename: 38  ptr<u8> from  ptr<u8> to;
+sys.MakeDir: 39  ptr<u8> path  int mode;
+sys.RemoveDir: 40  ptr<u8> path;
+sys.SchedYield: 158;
+sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
+sys.Stat: 195  ptr<u8> path  ptr<u32> info;
+sys.ClockGetTime: 265  int clock  ptr<int> now;

@@ -1,0 +1,137 @@
+# Files in a Windows program, 32 or 64 bits, in PHI (H6 step 3): OS.ReadFile, ReadFileAt,
+# WriteFile, AppendFile, FileSize, DeleteFile, MakeFolder, DeleteFolder and Rename are
+# answered here, by kernel32.dll's functions. Windows takes a path in UTF-16: each call
+# makes its own on its stack, as everything else it needs, so threads use files at once.
+
+use 'kernel32.dll' as Kernel32;
+
+phi.HostFiles:Windows
+{
+	const u32 READ: 0x80000000;           # GENERIC_READ
+	const u32 WRITE: 0x40000000;          # GENERIC_WRITE
+	const u32 APPEND_DATA: 4;
+	const u32 SHARE_ALL: 7;               # others can read, write and delete it meanwhile
+	const u32 CREATE_ALWAYS: 2;
+	const u32 OPEN_EXISTING: 3;
+	const u32 OPEN_ALWAYS: 4;
+	const u32 NORMAL: 0x80;
+	const u32 FOLDER: 0x10;
+	const int WIDE: 1024;                 # the most characters of a path, and its 0
+
+	# OS.ReadFile: up to max bytes of the file into buffer: how many, or -1
+	[ReadFile: ptr<u8> path: 0; ptr<u8> buffer: 0; int max: 0;]
+	[end: (ReadFileAt: path 0 buffer max)]
+
+	# OS.ReadFileAt: the same, from offset bytes in
+	[ReadFileAt: ptr<u8> path: 0; int offset: 0; ptr<u8> buffer: 0; int max: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+		ptr<u8> file: (Kernel32.CreateFileW: addr wide READ SHARE_ALL 0 OPEN_EXISTING NORMAL 0);
+		if (file as int) is -1 return -1;
+		if offset is not 0 and ((Kernel32.SetFilePointer: file offset 0 0) as int) is -1
+			call Kernel32.CloseHandle: file;
+			return -1;
+		;;
+		int got: 0;
+		u32 count: 0;
+		while got < max
+			if (Kernel32.ReadFile: file addr buffer:got max - got addr count 0) is 0
+				call Kernel32.CloseHandle: file;
+				return -1;
+			;;
+			if count is 0 break;              # the end of the file
+			got++ count;
+		;;
+		call Kernel32.CloseHandle: file;
+	[end: got]
+
+	# OS.WriteFile: the file is data now (a new one if there's none): 1 if written
+	[WriteFile: ptr<u8> path: 0; ptr<u8> data: 0; int length: 0;]
+	[end: (Write: path WRITE CREATE_ALWAYS data length)]
+
+	# OS.AppendFile: data added to the end of the file (a new one if there's none)
+	[AppendFile: ptr<u8> path: 0; ptr<u8> data: 0; int length: 0;]
+	[end: (Write: path APPEND_DATA OPEN_ALWAYS data length)]
+
+	[Write: ptr<u8> path: 0; u32 access: 0; u32 how: 0; ptr<u8> data: 0; int length: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+		ptr<u8> file: (Kernel32.CreateFileW: addr wide access SHARE_ALL 0 how NORMAL 0);
+		if (file as int) is -1 return 0;
+		int written: 1;
+		int done: 0;
+		u32 count: 0;
+		while written is 1 and done < length
+			if (Kernel32.WriteFile: file addr data:done length - done addr count 0) is 0 or count is 0
+				written is 0;
+			;;
+			else
+				done++ count;
+			;;
+		;;
+		call Kernel32.CloseHandle: file;
+	[end: written]
+
+	# OS.FileSize: its size in bytes, or -1 if it isn't a file
+	[FileSize: ptr<u8> path: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+		u32 info[9];                      # attributes, three times, then the size: high, low
+		if (Kernel32.GetFileAttributesExW: addr wide 0 addr info) is 0 return -1;
+		if (info:0 & FOLDER) is not 0 return -1;
+		int size: info:8;
+	[end: size]
+
+	# OS.DeleteFile, MakeFolder, DeleteFolder (only an empty one) and Rename: 1 if done
+	[DeleteFile: ptr<u8> path: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+	[end: (Done: (Kernel32.DeleteFileW: addr wide))]
+
+	[MakeFolder: ptr<u8> path: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+	[end: (Done: (Kernel32.CreateDirectoryW: addr wide 0))]
+
+	[DeleteFolder: ptr<u8> path: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+	[end: (Done: (Kernel32.RemoveDirectoryW: addr wide))]
+
+	# (two paths: each in a method of its own, as a method's own room is at most 4 KB)
+	[Rename: ptr<u8> from: 0; ptr<u8> to: 0;]
+		u16 wide[1024];
+		call Widen: from addr wide;
+	[end: (RenameTo: addr wide to)]
+
+	[RenameTo: ptr<u16> from: 0; ptr<u8> to: 0;]
+		u16 wide[1024];
+		call Widen: to addr wide;
+	[end: (Done: (Kernel32.MoveFileW: from addr wide))]
+
+	# a path's bytes as UTF-16, each as it is, ending with a 0 (at most WIDE - 1 of them)
+	[Widen: ptr<u8> path: 0; ptr<u16> wide: 0;]
+		int i: 0;
+		while i < WIDE - 1 and path:i is not 0
+			wide:i is path:i;
+			i++;
+		;;
+		wide:i is 0;
+	[end]
+
+	# a function's answer: 1 if it worked (not 0), 0 if Windows said no
+	[Done: int answer: 0;]
+		if answer is not 0 return 1;
+	[end: 0]
+}
+
+Kernel32.CreateFileW: ptr<u16> path  u32 access  u32 share  ptr<u8> security  u32 how  u32 flags  ptr<u8> template: ptr<u8>;
+Kernel32.SetFilePointer: ptr<u8> file  int distance  ptr<int> high  u32 from: u32;
+Kernel32.ReadFile: ptr<u8> file  ptr<u8> buffer  u32 count  ptr<u32> read  ptr<u8> overlapped;
+Kernel32.WriteFile: ptr<u8> file  ptr<u8> data  u32 count  ptr<u32> written  ptr<u8> overlapped;
+Kernel32.CloseHandle: ptr<u8> handle;
+Kernel32.GetFileAttributesExW: ptr<u16> path  int level  ptr<u32> info;
+Kernel32.DeleteFileW: ptr<u16> path;
+Kernel32.CreateDirectoryW: ptr<u16> path  ptr<u8> security;
+Kernel32.RemoveDirectoryW: ptr<u16> path;
+Kernel32.MoveFileW: ptr<u16> from  ptr<u16> to;

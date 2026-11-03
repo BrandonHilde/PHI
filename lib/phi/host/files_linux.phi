@@ -1,0 +1,88 @@
+# Files in a Linux program, 32 or 64 bits, in PHI (H6 step 3): OS.ReadFile, ReadFileAt,
+# WriteFile, AppendFile, FileSize, DeleteFile, MakeFolder, DeleteFolder and Rename are
+# answered here, by Linux's system calls. Both widths share this; their numbers, and a
+# file's size (stat's layout differs), are linux32.phi's and linux64.phi's. Everything a
+# call needs is on its own stack, so threads use files at once.
+
+phi.HostFiles:Linux
+{
+	const int READ_ONLY: 0;
+	const int WRITE_ONLY: 1;
+	const int CREATE: 0x40;
+	const int TRUNCATE: 0x200;
+	const int APPEND: 0x400;
+	const int FILE_MODE: 420;             # 0644: the owner can write it, everyone can read it
+	const int FOLDER_MODE: 493;           # 0755
+
+	# OS.ReadFile: up to max bytes of the file into buffer: how many, or -1
+	[ReadFile: ptr<u8> path: 0; ptr<u8> buffer: 0; int max: 0;]
+	[end: (ReadFileAt: path 0 buffer max)]
+
+	# OS.ReadFileAt: the same, from offset bytes in
+	[ReadFileAt: ptr<u8> path: 0; int offset: 0; ptr<u8> buffer: 0; int max: 0;]
+		int fd: (sys.Open: path READ_ONLY 0);
+		if fd < 0 return -1;
+		if offset is not 0 and (sys.LSeek: fd offset 0) < 0
+			call sys.Close: fd;
+			return -1;
+		;;
+		int got: 0;
+		while got < max
+			int n: (sys.Read: fd addr buffer:got max - got);
+			if n < 0
+				call sys.Close: fd;
+				return -1;
+			;;
+			if n is 0 break;                  # the end of the file
+			got++ n;
+		;;
+		call sys.Close: fd;
+	[end: got]
+
+	# OS.WriteFile: the file is data now (a new one if there's none): 1 if written
+	[WriteFile: ptr<u8> path: 0; ptr<u8> data: 0; int length: 0;]
+	[end: (Write: path TRUNCATE data length)]
+
+	# OS.AppendFile: data added to the end of the file (a new one if there's none)
+	[AppendFile: ptr<u8> path: 0; ptr<u8> data: 0; int length: 0;]
+	[end: (Write: path APPEND data length)]
+
+	[Write: ptr<u8> path: 0; int how: 0; ptr<u8> data: 0; int length: 0;]
+		int fd: (sys.Open: path WRITE_ONLY | CREATE | how FILE_MODE);
+		if fd < 0 return 0;
+		int written: 1;
+		int done: 0;
+		while written is 1 and done < length
+			int n: (sys.Write: fd addr data:done length - done);   # (a pipe can take less at a time)
+			if n <= 0
+				written is 0;
+			;;
+			else
+				done++ n;
+			;;
+		;;
+		call sys.Close: fd;
+	[end: written]
+
+	# OS.FileSize: its size in bytes, or -1 if it isn't a file
+	[FileSize: ptr<u8> path: 0;]
+	[end: (LinuxLayout.FileSize: path)]
+
+	# OS.DeleteFile, MakeFolder, DeleteFolder (only an empty one) and Rename: 1 if done
+	[DeleteFile: ptr<u8> path: 0;]
+	[end: (Done: (sys.Unlink: path))]
+
+	[MakeFolder: ptr<u8> path: 0;]
+	[end: (Done: (sys.MakeDir: path FOLDER_MODE))]
+
+	[DeleteFolder: ptr<u8> path: 0;]
+	[end: (Done: (sys.RemoveDir: path))]
+
+	[Rename: ptr<u8> from: 0; ptr<u8> to: 0;]
+	[end: (Done: (sys.Rename: from to))]
+
+	# a system call's answer: 1 if it worked (0), 0 if Linux said no
+	[Done: int answer: 0;]
+		if answer is 0 return 1;
+	[end: 0]
+}

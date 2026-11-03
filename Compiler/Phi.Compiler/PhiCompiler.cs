@@ -203,7 +203,12 @@ namespace Phi.Compiler
         }
 
         /// <summary>The systems' own modules (lib/phi/host/), one for each part and system.</summary>
-        static readonly string[] HostModules = { "host.time_linux32", "host.time_linux64", "host.time_windows" };
+        static readonly string[] HostModules =
+        {
+            "host.linux32", "host.linux64",                               // Linux's numbers, for each width
+            "host.time_linux32", "host.time_linux64", "host.time_windows",
+            "host.files_linux", "host.files_windows",
+        };
 
         /// <summary>Adds everything in from after what into has.</summary>
         static void Append(ProgramNode from, ProgramNode into)

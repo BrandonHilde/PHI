@@ -1,4 +1,4 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_ReadFile OS_ReadFileAt OS_WriteFile OS_AppendFile OS_DeleteFile OS_FileSize OS_MakeFolder OS_DeleteFolder OS_Rename OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
 ; requires: phi_flush phi_write_all
 ; init: phi_linux_start
 ;
@@ -9,23 +9,11 @@
 ; when the program is built. The network's are in sockets.asm.
 SYS_EXIT_GROUP equ 252
 SYS_READ      equ 3
-SYS_OPEN      equ 5
-SYS_CLOSE     equ 6
-SYS_UNLINK    equ 10
 SYS_GETPID    equ 20
-SYS_LSEEK     equ 19
-SYS_RENAME    equ 38
-SYS_MKDIR     equ 39
-SYS_RMDIR     equ 40
 SYS_BRK       equ 45
 SYS_SYSINFO   equ 116
 SYS_POLL      equ 168
-SYS_STAT64    equ 195
 
-O_WRONLY      equ 1
-O_CREAT       equ 0x40
-O_TRUNC       equ 0x200
-O_APPEND      equ 0x400
 ARGUMENTS_SIZE equ 1024
 
 ; Called before the program's code, while the stack is as Linux left it: [esp + 4] is how
@@ -131,166 +119,6 @@ OS_CurrentTask:
 OS_Arguments:
     mov eax, phi_arguments
     ret
-
-; ebx = path, esi = offset, edi = buffer, edx = most bytes -> eax = bytes read, or -1
-phi_file_read:
-    mov eax, SYS_OPEN
-    xor ecx, ecx                        ; to read
-    push edx
-    int 0x80
-    pop edx
-    test eax, eax
-    js .failed
-    mov ebx, eax                        ; the file
-    test esi, esi
-    jz .read
-    mov eax, SYS_LSEEK
-    mov ecx, esi
-    push edx
-    xor edx, edx                        ; from the start
-    int 0x80
-    pop edx
-    test eax, eax
-    js .close_failed
-.read:
-    xor esi, esi                        ; bytes read
-.more:
-    cmp esi, edx
-    jge .close
-    mov eax, SYS_READ
-    lea ecx, [edi + esi]
-    push edx
-    sub edx, esi
-    int 0x80
-    pop edx
-    test eax, eax
-    js .close_failed
-    jz .close                           ; the end of the file
-    add esi, eax
-    jmp .more
-.close:
-    mov eax, SYS_CLOSE
-    int 0x80
-    mov eax, esi
-    ret
-.close_failed:
-    mov eax, SYS_CLOSE
-    int 0x80
-.failed:
-    mov eax, -1
-    ret
-
-; args: path buffer max -> bytes read, or -1
-OS_ReadFile:
-    mov ebx, [esp + 4]
-    xor esi, esi
-    mov edi, [esp + 8]
-    mov edx, [esp + 12]
-    jmp phi_file_read
-
-; args: path offset buffer max -> bytes read, or -1
-OS_ReadFileAt:
-    mov ebx, [esp + 4]
-    mov esi, [esp + 8]
-    mov edi, [esp + 12]
-    mov edx, [esp + 16]
-    jmp phi_file_read
-
-; ebx = path, ecx = O_TRUNC or O_APPEND, edi = data, edx = length -> eax = 1 if written
-phi_file_write:
-    mov eax, SYS_OPEN
-    or ecx, O_WRONLY | O_CREAT
-    push edx
-    mov edx, 0o644                      ; the owner can write it, everyone can read it
-    int 0x80
-    pop edx
-    test eax, eax
-    js .failed
-    mov ebx, eax
-    mov ecx, edi
-    call phi_write_all
-    push eax
-    mov eax, SYS_CLOSE
-    int 0x80
-    pop eax
-    ret
-.failed:
-    xor eax, eax
-    ret
-
-; args: path data length -> 1 if written
-OS_WriteFile:
-    mov ebx, [esp + 4]
-    mov ecx, O_TRUNC
-    mov edi, [esp + 8]
-    mov edx, [esp + 12]
-    jmp phi_file_write
-
-; args: path data length -> 1 if added to the end (a new file if there's none)
-OS_AppendFile:
-    mov ebx, [esp + 4]
-    mov ecx, O_APPEND
-    mov edi, [esp + 8]
-    mov edx, [esp + 12]
-    jmp phi_file_write
-
-; arg: path -> its size in bytes, or -1 if it isn't a file
-OS_FileSize:
-    mov ebx, [esp + 4]
-    sub esp, 96                         ; (Linux's stat64, on the stack)
-    mov eax, SYS_STAT64
-    mov ecx, esp
-    int 0x80
-    test eax, eax
-    jnz .failed
-    mov eax, [esp + 16]                 ; its mode
-    and eax, 0xF000
-    cmp eax, 0x8000                     ; a regular file
-    jne .failed
-    mov eax, [esp + 44]                 ; its size
-    add esp, 96
-    ret
-.failed:
-    add esp, 96
-    mov eax, -1
-    ret
-
-; eax = what a system call gave -> 1 if it worked (0), else 0
-phi_succeeded:
-    test eax, eax
-    sete al
-    movzx eax, al
-    ret
-
-; arg: path -> 1 if deleted
-OS_DeleteFile:
-    mov eax, SYS_UNLINK
-    mov ebx, [esp + 4]
-    int 0x80
-    jmp phi_succeeded
-
-; arg: path -> 1 if made
-OS_MakeFolder:
-    mov eax, SYS_MKDIR
-    mov ebx, [esp + 4]
-    mov ecx, 0o755
-    int 0x80
-    jmp phi_succeeded
-
-; arg: path -> 1 if deleted (only an empty folder)
-OS_DeleteFolder:
-    mov eax, SYS_RMDIR
-    mov ebx, [esp + 4]
-    int 0x80
-    jmp phi_succeeded
-
-; args: from to -> 1 if renamed (or moved)
-OS_Rename:
-    mov eax, SYS_RENAME
-    mov ebx, [esp + 4]
-    mov ecx, [esp + 8]
-    int 0x80
-    jmp phi_succeeded
 
 ; arg: bytes -> where the new memory starts (whole pages, zeroed, right after the last
 ; it gave), or 0. The heap is the program's break, which Linux moves with brk.
