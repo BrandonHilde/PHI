@@ -144,6 +144,12 @@ phi.WindowTest:Linux
 		call HostWindow.Done;
 	[end: (flags & 0x30) is 0]
 
+	# whether a window that's showing still is once it can't be resized (here its hints are
+	# all that changes: nothing that says whether it's showing)
+	[ShownWhenMadeFixed]
+		call HostWindow.SetResizable: 0;
+	[end: true]
+
 	# the color shown at x, y (0x00RRGGBB)
 	[PixelAt: int x: 0; int y: 0;]
 		call HostWindow.Start: HostWindow.GET_IMAGE 2;

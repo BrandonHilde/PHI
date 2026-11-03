@@ -86,6 +86,7 @@ phi.WindowProgram:Program
 	call App.SetResizable: false;
 	log 'then not: ' (WindowTest.CanResize) ', in front: ' (App.Focused) '\n';
 	log 'a program in a window of its own: ' (App.OpenWindow: 'X.BIN' '') '\n';
+	log 'still shown once it cannot be resized: ' (WindowTest.ShownWhenMadeFixed) '\n';
 
 	# closing it asks the program
 	call WindowTest.CloseIt;

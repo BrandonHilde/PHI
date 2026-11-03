@@ -86,6 +86,17 @@ phi.WindowTest:Windows
 	[CanResize]
 	[end: ((User32.GetWindowLongW: HostWindow.window (-16)) & 0x40000) is not 0]
 
+	# whether a window that's showing still is once it can't be resized: the two are in one
+	# word of Windows', and a game that asked for this vanished. (The window is shown off the
+	# screen and without taking the keys, and hidden again.)
+	[ShownWhenMadeFixed]
+		call User32.SetWindowPos: HostWindow.window 0 (-32000) (-32000) 0 0 0x15;   # NOSIZE NOZORDER NOACTIVATE
+		call User32.ShowWindow: HostWindow.window 4;      # SW_SHOWNOACTIVATE
+		call HostWindow.SetResizable: 0;
+		int shown: (User32.IsWindowVisible: HostWindow.window);
+		call User32.ShowWindow: HostWindow.window 0;      # SW_HIDE
+	[end: shown is not 0]
+
 	# the color shown at x, y (0x00RRGGBB), from what the window paints
 	[PixelAt: int x: 0; int y: 0;]
 		ptr<u8> screen: (User32.GetDC: 0);
@@ -108,6 +119,7 @@ User32.SendMessageW: ptr<u8> window  u32 message  ptr<u8> w  ptr<u8> l: ptr<u8>;
 User32.GetClientRect: ptr<u8> window  ptr<WinRect> area;
 User32.GetWindowTextLengthW: ptr<u8> window;
 User32.GetWindowLongW: ptr<u8> window  int index;
+User32.IsWindowVisible: ptr<u8> window;
 User32.GetDC: ptr<u8> window: ptr<u8>;
 User32.ReleaseDC: ptr<u8> window  ptr<u8> dc;
 Gdi32.CreateCompatibleBitmap: ptr<u8> dc  int w  int h: ptr<u8>;

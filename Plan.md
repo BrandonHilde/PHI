@@ -2618,22 +2618,22 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
      codes aren't code page 437's. No authentication yet (a server that wants a cookie
      refuses). `window_program` runs on all four hosts, hidden, on `WindowTest` (a small module
      for each system that plays the user), so on Linux it needs an X server (WSLg has one);
-     without one it fails. All the samples build for Linux; text from the X font has been
-     looked at in an image of a hidden window's pixels, but no window on Linux has been seen
-     on the screen yet: that's for someone at the computer.
+     without one it fails. All the samples build for Linux; `paddles` has been played on it
+     (WSLg, 64 bits), by the user.
    - [x] A game on `gui.app`: `samples/desktop.rootfs/paddles.phi` (held keys, 60 frames a
      second), the same program on PHI OS's desktop, Windows and Linux. It builds for all
-     five; it hasn't been played yet. A hidden window at its size takes well under a
-     millisecond a frame on all four hosts; a visible one on WSLg adds what its compositor
-     does, and that hasn't been measured.
+     five, and the user has played it on 64-bit Windows and Linux (2026-11-03). That found
+     what the hidden test couldn't: making a window fixed-size hid it on Windows, as its
+     style and whether it's showing are one word. `window_program` now shows its window off
+     the screen to check. Not played yet: the 32-bit builds, and PHI OS's desktop.
    - [ ] macOS, with H4's.
 2. **Sound** behind `audio.*`'s calls.
 3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
    calling C functions (H6's outside functions, and on Linux, loading a library).
 
 **Done when:** a PHI game runs in a window on Windows and Linux. (The arcade sample is a
-16-bit program that writes to the VGA card, so it isn't the one; `paddles` is, once it has
-been played on both.)
+16-bit program that writes to the VGA card, so it isn't the one; `paddles` is, and step 1 is
+done: played on both, 2026-11-03.) The rest of H7 is sound and the GPU.
 
 #### Phase H8: Tools for a host
 

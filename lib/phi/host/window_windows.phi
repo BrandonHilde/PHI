@@ -183,7 +183,9 @@ phi.HostWindow:Windows
 	[SetResizable: int yes: 1;]
 		resizable is (yes is not 0);
 		if window is not 0
-			call User32.SetWindowLongW: window (-16) (Style);
+			# (keeping whether it's showing, which is in the same word)
+			u32 showing: (User32.GetWindowLongW: window (-16)) & 0x10000000;   # WS_VISIBLE
+			call User32.SetWindowLongW: window (-16) (Style) | showing;
 			call User32.SetWindowPos: window 0 0 0 0 0 0x37;   # NOSIZE NOMOVE NOZORDER NOACTIVATE FRAMECHANGED
 		;;
 	[end: 1]
@@ -583,6 +585,7 @@ User32.UpdateWindow: ptr<u8> window;
 User32.InvalidateRect: ptr<u8> window  ptr<WinRect> area  int erase;
 User32.SetWindowTextW: ptr<u8> window  ptr<u16> text;
 User32.SetWindowLongW: ptr<u8> window  int index  u32 value;
+User32.GetWindowLongW: ptr<u8> window  int index;
 User32.SetWindowPos: ptr<u8> window  ptr<u8> after  int x  int y  int w  int h  u32 flags;
 User32.AdjustWindowRect: ptr<WinRect> area  u32 style  int menu;
 User32.GetForegroundWindow: : ptr<u8>;

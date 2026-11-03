@@ -19,4 +19,5 @@ shown again: 1
 title: 5, can be resized: 1
 then not: 0, in front: 0
 a program in a window of its own: -1
+still shown once it cannot be resized: 1
 close: 1
