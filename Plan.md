@@ -2424,11 +2424,34 @@ sys.Close:  3   int fd;
 - Allowed only in the modules for systems with system calls (see above); `sys.Name` in a
   `:Windows`, `:Program` or `:Library` module is an error.
 
-To decide with the user before starting:
-- how an outside function is declared. Proposed: the same shape as `sys.`, with its
-  library where the number goes (`dll.CreateThread: 'kernel32.dll' ptr<u8> attributes
-  u32 stack ...;`), used as `call h is dll.CreateThread: ...`; the word (`dll.`, `win.`,
-  `lib.`) is still to pick.
+Decided (2026-11-02): **an outside library is brought in with `use`, under a class-like
+name, and each function used is declared once with its arguments:**
+
+```phi
+phi.Threads:Windows
+{
+	[Start: ...
+		call h is Kernel32.CreateThread: 0 0 work value 0 0;
+	;]
+}
+
+use 'kernel32.dll' as Kernel32;
+Kernel32.CreateThread: ptr<u8> attributes u32 stack ptr<u8> start ptr<u8> value u32 flags ptr<u32> id;
+Kernel32.CloseHandle:  ptr<u8> handle;
+```
+
+- `use`, PHI's word for bringing code in, with the file's name quoted (`use kernel32.dll`
+  would be read as a PHI file, `kernel32/dll.phi`); `as` is already a reserved word.
+- The name after `as` is capitalized and reads as a class does (`Kernel32.CreateThread:`
+  like `OS.Now` or `Sockets.Send:`); a lowercase name would look like a variable's field.
+- Each function is declared once, as a `sys.Name` is but without a number, because a
+  library lists only its functions' names: the compiler needs the arguments to call it
+  correctly (in 32 bits the function removes its own arguments, so a wrong count breaks
+  the stack; in 64, floats go in other registers than integers), and checks every use
+  against them. The compiler adds the library and its functions to the program's import
+  table.
+- Allowed only in `:Windows` modules for now; Linux and macOS libraries use the same
+  form when H7 first loads one.
 
 #### Phase H7: Windows and graphics
 
