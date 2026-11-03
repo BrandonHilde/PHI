@@ -2400,10 +2400,35 @@ phi.Sockets:Windows  { ... }     # built only for Windows programs, 32 and 64 bi
 - H7's class for a window on the screen is `Window` (singular), not to be confused with
   `:Windows`.
 
+Decided (2026-11-02): **a system call is a `sys.Name` declared once with its number, and
+used by name,** as `asm.Name` blocks are:
+
+```phi
+phi.Sockets:Linux64
+{
+	[Open: ...
+		call fd is sys.Socket: 2 1 0;      # used by name, like asm.Name
+	;]
+}
+
+sys.Socket: 41  int domain int type int protocol;   # declared once, with its number
+sys.Close:  3   int fd;
+```
+
+- `sys` becomes a reserved word, beside `asm`, `x64` and `arm` (no `.phi` file uses it).
+- The word after the dot is the programmer's name for the call, as after `asm.`; the
+  number is written only in the declaration, so a `:Linux32` and a `:Linux64` version of
+  a module differ in their declarations and not in the code that uses them.
+- The declaration lists the arguments' types, and the compiler checks every use against
+  them; the answer comes back as the system gives it (on Linux, -errno when it fails).
+- Allowed only in the modules for systems with system calls (see above); `sys.Name` in a
+  `:Windows`, `:Program` or `:Library` module is an error.
+
 To decide with the user before starting:
-- how a system call is written (a built-in class like `Linux.Call: number args`, a
-  reserved word, or something else);
-- how an outside function is declared (its library, its name, its arguments' types).
+- how an outside function is declared. Proposed: the same shape as `sys.`, with its
+  library where the number goes (`dll.CreateThread: 'kernel32.dll' ptr<u8> attributes
+  u32 stack ...;`), used as `call h is dll.CreateThread: ...`; the word (`dll.`, `win.`,
+  `lib.`) is still to pick.
 
 #### Phase H7: Windows and graphics
 
