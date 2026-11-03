@@ -1,0 +1,8 @@
+taken twice: depth 2, held 1
+given once: depth 1, held 1
+given twice: depth 0, held 0
+let go from 3: held 0
+taken again: depth 3, held 1
+all given back: held 0
+adds from 4 cores, each taking it twice: 1
+held at the end: 0

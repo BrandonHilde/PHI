@@ -1,4 +1,4 @@
-; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_own_calls phi_own_first phi_own_count phi_task_core phi_thread_start
+; provides: OS_StartMultitasking OS_CreateUserTask OS_SetTaskHeapEnd OS_TaskState OS_TaskExitCode OS_TaskParent OS_FreeTask OS_KillTask OS_Reboot OS_Yield OS_Idle OS_CurrentTask OS_SetSyscallHandler OS_SyscallFrame phi_share_cores phi_own_add phi_task_core phi_thread_start
 ; requires: phi_set_gate phi_idt phi_scheduler phi_syscall_hook phi_user_fault OS_SetupInteruptTimer OS_GetTicks OS_KeyAvailable OS_SetupKeyboardInterupt phi_take_key phi_print phi_print_serial phi_print_int phi_print_hex phi_enter_hook phi_leave_hook phi_halt_hook phi_core_join_hook phi_share_hook phi_preempt_hook phi_core_of_apic phi_kernel_halt phi_gdt_tss phi_gdt_descriptor phi_core_blocks phi_own_call_hook
 ;
 ; Tasks for 32-bit kernels: user programs in ring 3, each with its own page
@@ -32,6 +32,7 @@ USER_DATA     equ 0x20 | 3
 TSS_SELECTOR  equ 0x28
 YIELD_VECTOR  equ 48
 SYSCALL_VECTOR equ 0x80
+OWN_RANGES equ 8               ; ranges of system calls with a lock of their own (phi_own_add)
 
 USER_BASE     equ 0x40000000
 USER_TOP      equ 0x40400000
@@ -682,19 +683,31 @@ phi_kernel_halt_unlocked:
     hlt
     ret
 
-; a system call with a lock of its own (phi_own_first and the phi_own_count after it, which
-; net.calls sets for the network's calls) is answered by phi_own_calls (number, then the
-; saved ebx, ecx, edx and esi; its result in eax) without the kernel lock, so calls on
-; other cores, and the rest of the kernel, don't wait for it (nor it for them); from
-; phi_interrupt_common, with interrupts off and [esp + 4] the saved state. eax = 1 if it
-; was one of those (answered), else 0, with the other registers kept.
+; a system call with a lock of its own (a range of numbers that phi_own_add registered:
+; the network's, net.calls, and the files', proc.process) is answered by that range's
+; method (number, then the saved ebx, ecx, edx and esi; its result in eax) without the
+; kernel lock, so calls on other cores, and the rest of the kernel, don't wait for it (nor
+; it for them); from phi_interrupt_common, with interrupts off and [esp + 4] the saved
+; state. eax = 1 if it was one of those (answered), else 0, with the other registers kept.
 phi_own_call:
     push ebp
     lea ebp, [esp + 8]
-    mov eax, [ebp + F_EAX]
-    sub eax, [phi_own_first]
-    cmp eax, [phi_own_count]
+    push ecx
+    push edx
+    xor ecx, ecx
+.find:
+    cmp ecx, [phi_own_ranges]
     jae .not_own
+    mov eax, [ebp + F_EAX]
+    mov edx, ecx
+    imul edx, edx, 12
+    sub eax, [phi_own_table + edx]
+    cmp eax, [phi_own_table + edx + 4]
+    jb .found
+    inc ecx
+    jmp .find
+.found:
+    push dword [phi_own_table + edx + 8]      ; its method
     ; (from a program another core has stopped: not made, as phi_syscall does)
     call OS_CurrentTask
     cmp dword [phi_task_state + eax * 4], TASK_EXITED
@@ -706,21 +719,57 @@ phi_own_call:
     push dword [ebp + F_ECX]
     push dword [ebp + F_EDX]
     push dword [ebp + F_ESI]
-    call [phi_own_calls]
+    call [esp + 24]                           ; (past the arguments and the catch)
     add esp, 20
     pop dword [fs:PHI_CORE_CATCH]
+    add esp, 4
     mov [ebp + F_EAX], eax
     mov eax, 1
-    pop ebp
-    ret
+    jmp .left
 .refused:
+    add esp, 4
     mov dword [ebp + F_EAX], -1
     mov eax, 1
-    pop ebp
-    ret
+    jmp .left
 .not_own:
     xor eax, eax
+.left:
+    pop edx
+    pop ecx
     pop ebp
+    ret
+
+; system calls eax to eax + ecx - 1 are answered by the method at edx, without the kernel
+; lock (phi_own_call): for a part of the kernel with a lock of its own. At most
+; OWN_RANGES of them; registering a range again changes its method. Keeps the registers.
+phi_own_add:
+    push ebx
+    push esi
+    xor ebx, ebx
+.look:
+    cmp ebx, [phi_own_ranges]
+    jae .new
+    mov esi, ebx
+    imul esi, esi, 12
+    cmp [phi_own_table + esi], eax
+    je .set
+    inc ebx
+    jmp .look
+.new:
+    cmp ebx, OWN_RANGES
+    jae .full
+    mov esi, ebx
+    imul esi, esi, 12
+    mov [phi_own_table + esi], eax
+.set:
+    mov [phi_own_table + esi + 4], ecx
+    mov [phi_own_table + esi + 8], edx
+    cmp ebx, [phi_own_ranges]
+    jb .full
+    inc dword [phi_own_ranges]                ; (counted once the entry is whole)
+.full:
+    pop esi
+    pop ebx
     ret
 
 ; let the cores waiting for the lock have it, then take it back (the kernel's OS_Yield)
@@ -1062,10 +1111,9 @@ phi_task_catch:        times MAX_TASKS dd 0     ; its catches and methods' recor
 phi_task_unwind:       times MAX_TASKS dd 0
 phi_task_fault_entry:  times MAX_TASKS dd 0     ; where a program catches CPU exceptions (system call 10), or 0
 
-; system calls with a lock of their own (phi_own_call)
-phi_own_calls:         dd 0
-phi_own_first:         dd 0
-phi_own_count:         dd 0                    ; 0: none
+; system calls with a lock of their own (phi_own_call): first, how many, method; each 12 bytes
+phi_own_ranges:        dd 0
+phi_own_table:         times OWN_RANGES * 3 dd 0
 
 ; programs on every core (phi_share_cores)
 phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket

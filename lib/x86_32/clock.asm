@@ -4,7 +4,9 @@
 ; the start of 1970, UTC (QEMU's clock is in UTC; drivers.rtc reads the same clock, with
 ; time zones). Its registers hold the date as BCD or binary, and the hour in 12 or 24 hours,
 ; as status register B says; it's read again while an update was in progress, and until
-; two reads agree. The years are 2000 to 2099.
+; two reads agree. The years are 2000 to 2099. The clock's two ports are one core's at a
+; time (phi_clock_lock, with that core's interrupts off), since a file's date (fs.fat16) is
+; read without the kernel lock.
 CMOS_INDEX equ 0x70
 CMOS_DATA  equ 0x71
 
@@ -15,6 +17,18 @@ OS_Now:
     push edx
     push esi
     push edi
+    pushfd
+    cli
+.take:
+    mov eax, 1
+    xchg eax, [phi_clock_lock]
+    test eax, eax
+    jz .again
+.wait:
+    pause
+    cmp dword [phi_clock_lock], 0
+    jne .wait
+    jmp .take
 .again:
     call .read
     mov esi, eax                        ; the first read: seconds of the day and the date,
@@ -24,6 +38,8 @@ OS_Now:
     jne .again
     cmp edx, edi
     jne .again
+    mov dword [phi_clock_lock], 0
+    popfd
 
     ; edx = year << 16 | month << 8 | day; eax = hour << 16 | minute << 8 | second
     push eax
@@ -194,3 +210,5 @@ OS_Now:
 ; days before each month in a year that isn't a leap year
 .before:
     dd 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
+
+phi_clock_lock: dd 0                    ; 1 while a core reads the clock

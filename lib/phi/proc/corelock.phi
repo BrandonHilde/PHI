@@ -1,0 +1,90 @@
+# A lock for one part of a kernel (the network, the file system) on several cores: one
+# core at a time in that part's code, with that core's interrupts off while it holds it,
+# as a locked block has them. Unlike a locked block, the core that holds it can take it
+# again, so the part's public methods can call each other: it's given back when every
+# Take has been given back. The core is told by its block's address (fs:0).
+#
+#   use proc.corelock;
+#   CoreLock guard;
+#   call guard.Take;                      # waits while another core has it
+#   ...
+#   call guard.Give;
+#
+#   u32 depth: (guard.LetGo);             # let go however deep this core is (to sleep) ...
+#   call OS.Sleep: 1;
+#   call guard.TakeAgain: depth;          # ... and back as deep as it was
+
+struct.CoreLock
+{
+	volatile u32 owner;                   # the holding core's block (its fs:0), or 0
+	u32 depth;                            # how many times it has taken it
+	u32 flags;                            # its flags from before it took it (interrupts on or off)
+
+	# take it, waiting while another core has it; or once more, on the core that has it
+	[Take]
+		u32 before: 0;
+		call before is asm.CoreLockFlags;
+		call OS.DisableInterrupts;
+		u32 me: 0;
+		call me is asm.CoreLockThisCore;
+		if owner is not me
+			bln got: atomic owner is me when 0;
+			while got is false
+				while owner is not 0          # (waiting by reading keeps the holder's memory
+					call asm.CoreLockPause;   # out of the waiters' way)
+				;;
+				got is atomic owner is me when 0;
+			;;
+			flags is before;
+		;;
+		depth++;
+	[end]
+
+	# give it back once; the last time, the interrupts are as they were before
+	[Give]
+		depth--;
+		if depth is 0
+			call Release;
+		;;
+	[end]
+
+	# give it back however many times it was taken; how many that was
+	[LetGo]
+		u32 was: depth;
+		depth is 0;
+		call Release;
+	[end: was]
+
+	# take it again as many times as LetGo said
+	[TakeAgain: u32 times: 1;]
+		call Take;
+		depth is times;
+	[end]
+
+	[Release]
+		u32 before: flags;
+		atomic owner is 0;
+		if (before & 0x200) is not 0 call OS.EnableInterrupts;
+	[end]
+}
+
+# the flags register (bit 9 is whether interrupts are on)
+asm.CoreLockFlags
+{
+	pushfd
+	pop eax
+	ret
+}
+
+# this core's block (fs:0 is its own address), which tells the cores apart
+asm.CoreLockThisCore
+{
+	mov eax, [fs:0]
+	ret
+}
+
+asm.CoreLockPause
+{
+	pause
+	ret
+}

@@ -1,0 +1,63 @@
+# Programs on several cores writing files at once: their file calls take the file
+# system's lock (fs.fat16) and not the kernel's, while the kernel's own code reads the
+# disk too. Four writers each append to a file of their own and to one they share, and
+# read their own back; every record in the shared file must be whole and they must all
+# be there.
+use proc.process;
+use proc.cores;
+
+phi.CoresFiles:Kernel
+{
+	const int RECORDS: 50;                # each writer's, as writer.phi has it
+
+	int pids[4];
+	int counts[5];                        # records in ALL.LOG from each writer (1 to 4)
+	u8 all[8192];
+	str number: [4];
+
+	log 'sharing: ' (Cores.SharePrograms) '\n';
+	call Fat.WriteFile: 'ALL.LOG' addr all 0;
+	while int i: 0; i < 4; i++;
+		number is i + 1;
+		pids:i is (Process.Spawn: 'WRITER.BIN' number);
+	;;
+
+	# the kernel's own file calls meanwhile
+	int looks: 0;
+	bln running: true;
+	while running
+		running is false;
+		while int i: 0; i < 4; i++;
+			if (OS.TaskState: pids:i) < 5
+				running is true;
+			;;
+		;;
+		if (Fat.FileSize: 'ALL.LOG') >= 0
+			looks++;
+		;;
+		call OS.Idle;
+	;;
+	bln all_fine: true;
+	while int i: 0; i < 4; i++;
+		all_fine is all_fine and (Process.Wait: pids:i) is 1;
+	;;
+	log 'each wrote and read back only its own: ' all_fine ', the kernel looked too: ' (looks > 0) '\n';
+
+	int got: (Fat.ReadFile: 'ALL.LOG' addr all 8192);
+	log 'shared file: ' got ' bytes\n';
+	bln whole: true;
+	while int r: 0; r < got / 32; r++;
+		u8 who: all:(r * 32);
+		while int k: 1; k < 32; k++;
+			whole is whole and all:(r * 32 + k) is who;
+		;;
+		if who >= 1 and who <= 4
+			counts:who++;
+		;;
+		else
+			whole is false;
+		;;
+	;;
+	log 'every record whole: ' whole ', from each: ' counts:1 ' ' counts:2 ' ' counts:3 ' ' counts:4 '\n';
+	exit 0;
+}

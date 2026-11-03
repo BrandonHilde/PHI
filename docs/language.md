@@ -1439,10 +1439,27 @@ program no other core is running, and its own timer (its local APIC's) takes the
 every 10 ms. Kernel code (system calls, interrupts, and the kernel's own code) still runs
 on one core at a time: it holds one kernel lock, which a kernel lets go of while it waits
 (`Process.Wait`, `OS.Sleep`, `OS.Idle`, `OS.Yield`), so the kernel library needs no
-change. The network has a lock of its own (`Net.Lock`): programs' network calls
-(`net.calls`) hold it instead of the kernel lock, so they only wait for each other, not
-for the rest of the kernel. A program killed while another core runs it is freed once that core has let go
-of it. `Run` can't be used once programs share the cores.
+change. The network and the file system have locks of their own (`Net.Lock`,
+`Fat.Lock`): programs' network calls (`net.calls`) and file calls (`proc.process`) hold
+those instead of the kernel lock, so a program's network calls only wait for other
+network calls and its file calls for other file calls, not for the rest of the kernel. A
+program killed while another core runs it is freed once that core has let go of it.
+`Run` can't be used once programs share the cores.
+
+**A lock for a part of the kernel.** `proc.corelock`'s `CoreLock` is the lock the network
+and the file system have: one core at a time, with that core's interrupts off while it
+holds it, as in a `locked` block. Unlike a `locked` block, the core that holds it can take
+it again, so a part whose methods call each other can have each of them take it:
+
+```phi
+use proc.corelock;
+
+CoreLock guard;
+call guard.Take;                           # waits while another core has it
+call guard.Give;                           # free once every Take is given back
+u32 depth: (guard.LetGo);                  # let go however deep, to sleep...
+call guard.TakeAgain: depth;               # ...and taken back as deep as it was
+```
 
 **Kernel threads.** `proc.threads` runs a method on its own, at the same time as the
 kernel's code and other threads, on whichever core is free:

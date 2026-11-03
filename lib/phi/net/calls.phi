@@ -214,9 +214,9 @@ phi.NetCalls:Kernel
 # the network's calls are answered without the kernel lock (tasks.asm's phi_own_call)
 asm.NetCallsOwnLock
 {
-	mov eax, [{own_calls}]
-	mov [phi_own_calls], eax
-	mov dword [phi_own_first], {SYS_NET_ADDRESS}
-	mov dword [phi_own_count], {SYS_TCP_STOP_LISTENING} - {SYS_NET_ADDRESS} + 1
+	mov eax, {SYS_NET_ADDRESS}
+	mov ecx, {SYS_TCP_STOP_LISTENING} - {SYS_NET_ADDRESS} + 1
+	mov edx, [{own_calls}]
+	call phi_own_add
 	ret
 }

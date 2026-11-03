@@ -1,0 +1,30 @@
+# One of kernel32_cores_files' writers: appends 50 records to a file of its own and 50
+# to one the writers share, each 32 bytes of its number (from the command line), then
+# reads its own file back. Its exit code is 1 when every write worked and everything it
+# read back was its own.
+phi.Writer:Program
+{
+	const int RECORDS: 50;
+
+	u8 record[32];
+	u8 back[4096];
+
+	ptr<u8> line: (OS.Arguments);
+	u8 me: line:0 - '0';
+	str own: ('W' me '.LOG');
+	while int i: 0; i < 32; i++;
+		record:i is me;
+	;;
+
+	bln ok: true;
+	while int r: 0; r < RECORDS; r++;
+		ok is ok and (OS.AppendFile: own addr record 32) is 1;
+		ok is ok and (OS.AppendFile: 'ALL.LOG' addr record 32) is 1;
+	;;
+	int got: (OS.ReadFile: own addr back 4096);
+	ok is ok and got is RECORDS * 32;
+	while int i: 0; i < got; i++;
+		ok is ok and back:i is me;
+	;;
+	exit ok;
+}

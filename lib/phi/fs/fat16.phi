@@ -20,14 +20,18 @@
 # Paths use / between folders and 8.3 names (README.TXT, DOCS/NOTES.TXT); case
 # doesn't matter. Long file names aren't read. New files can go in any existing
 # folder that has a free entry (folders don't grow yet). Files and folders get the
-# date and time from the clock when they're written. `phi build` fills the disk from
-# the program's NAME.rootfs/ (or rootfs/) folder.
+# date and time from the clock (OS.Now) when they're written. `phi build` fills the
+# disk from the program's NAME.rootfs/ (or rootfs/) folder.
 #
 # The whole FAT is kept in memory and written back after every change.
+#
+# The file system has a lock of its own (proc.corelock): each method here takes it, so
+# one core at a time is in its code, and programs' file calls (proc.process) take it
+# instead of the kernel's lock, so a program writing a file holds up only other files.
 
 use drivers.disk;
-use drivers.rtc;
 use memory.heap;
+use proc.corelock;
 use fs.fileinfo;                # FileInfo, which programs use too (OS.ListFolder)
 
 # the start of the partition's first sector: the BIOS Parameter Block
@@ -76,6 +80,7 @@ phi.Fat:Kernel
 	const u16 CHAIN_END: 0xFFF8;        # this and above: the last cluster of a file
 	const u16 CHAIN_LAST: 0xFFFF;
 
+	CoreLock guard;                       # the file system's lock
 	bln mounted: false;
 	u32 sectors_per_cluster: 0;
 	u32 cluster_bytes: 0;
@@ -135,16 +140,42 @@ phi.Fat:Kernel
 		;;
 	[end]
 
+	# ---- the file system's lock: each method below takes it, so code that makes several
+	# calls as one (proc.process's file calls, which copy their path first) takes it around
+	# them
+
+	[Lock]
+		call guard.Take;
+	[end]
+
+	[Unlock]
+		call guard.Give;
+	[end]
+
 	# ------------------------------------------------------------ reading
 
 	# bytes copied into buffer (at most max), or -1 if the file isn't there
 	[ReadFile: ptr<u8> path: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		call guard.Take;
+		int result: (ReadFileLocked: path buffer max);
+		call guard.Give;
+	[end: result]
+
+	# ReadFile's work, holding the file system's lock
+	[ReadFileLocked: ptr<u8> path: 0; ptr<u8> buffer: 0; u32 max: 0;]
 		int copied: 0;
 		call copied is ReadAt: path 0 buffer max;
 	[end: copied]
 
 	# the same, starting offset bytes into the file (0 bytes at or past its end)
 	[ReadAt: ptr<u8> path: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		call guard.Take;
+		int result: (ReadAtLocked: path offset buffer max);
+		call guard.Give;
+	[end: result]
+
+	# ReadAt's work, holding the file system's lock
+	[ReadAtLocked: ptr<u8> path: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
 		int copied: -1;
 		bln exists: false;
 		call exists is Resolve: path;
@@ -186,6 +217,13 @@ phi.Fat:Kernel
 
 	# the file's size in bytes, or -1 if it isn't there
 	[FileSize: ptr<u8> path: 0;]
+		call guard.Take;
+		int result: (FileSizeLocked: path);
+		call guard.Give;
+	[end: result]
+
+	# FileSize's work, holding the file system's lock
+	[FileSizeLocked: ptr<u8> path: 0;]
 		int size: -1;
 		bln exists: false;
 		call exists is Resolve: path;
@@ -195,6 +233,13 @@ phi.Fat:Kernel
 	[end: size]
 
 	[Exists: ptr<u8> path: 0;]
+		call guard.Take;
+		bln result: (ExistsLocked: path);
+		call guard.Give;
+	[end: result]
+
+	# Exists's work, holding the file system's lock
+	[ExistsLocked: ptr<u8> path: 0;]
 		bln exists: false;
 		call exists is Resolve: path;
 	[end: exists]
@@ -202,6 +247,13 @@ phi.Fat:Kernel
 	# print a folder ('' is the root); returns how many entries it has, or -1 if
 	# there's no such folder
 	[List: ptr<u8> path: 0;]
+		call guard.Take;
+		int result: (ListLocked: path);
+		call guard.Give;
+	[end: result]
+
+	# List's work, holding the file system's lock
+	[ListLocked: ptr<u8> path: 0;]
 		int count: 0;
 		u32 directory: 0;
 		bln ok: true;
@@ -248,6 +300,13 @@ phi.Fat:Kernel
 	# create or replace a file; false if a folder in the path is missing,
 	# the folder has no free entry, or the disk is full
 	[WriteFile: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
+		call guard.Take;
+		bln result: (WriteFileLocked: path data length);
+		call guard.Give;
+	[end: result]
+
+	# WriteFile's work, holding the file system's lock
+	[WriteFileLocked: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
 		bln ok: false;
 		bln exists: false;
 		call exists is Resolve: path;
@@ -333,6 +392,13 @@ phi.Fat:Kernel
 	# The data goes to the disk first, then the FAT (only if the file needed another
 	# cluster), then the new size: if the machine stops part way, the file is as it was.
 	[Append: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
+		call guard.Take;
+		bln result: (AppendLocked: path data length);
+		call guard.Give;
+	[end: result]
+
+	# Append's work, holding the file system's lock
+	[AppendLocked: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
 		if (Resolve: path) is false return (WriteFile: path data length);
 		if (found.attributes & ATTR_DIRECTORY) is not 0 return false;
 		if length is 0 return true;
@@ -440,6 +506,13 @@ phi.Fat:Kernel
 	[end: ok]
 
 	[Delete: ptr<u8> path: 0;]
+		call guard.Take;
+		bln result: (DeleteLocked: path);
+		call guard.Give;
+	[end: result]
+
+	# Delete's work, holding the file system's lock
+	[DeleteLocked: ptr<u8> path: 0;]
 		bln ok: false;
 		call ok is Resolve: path;
 		ok is ok and (found.attributes & ATTR_DIRECTORY) is 0;
@@ -459,6 +532,13 @@ phi.Fat:Kernel
 	# the entries of a folder ('' is the root) copied into `into`, at most max of them;
 	# returns how many, or -1 if there's no such folder
 	[Entries: ptr<u8> path: 0; ptr<FileInfo> target: 0; int max: 0;]
+		call guard.Take;
+		int result: (EntriesLocked: path target max);
+		call guard.Give;
+	[end: result]
+
+	# Entries's work, holding the file system's lock
+	[EntriesLocked: ptr<u8> path: 0; ptr<FileInfo> target: 0; int max: 0;]
 		u32 directory: (FolderCluster: path);
 		if directory is NO_FOLDER
 			return -1;
@@ -500,6 +580,13 @@ phi.Fat:Kernel
 
 	# make a folder; false if it's there already, its parent isn't, or there's no room
 	[MakeFolder: ptr<u8> path: 0;]
+		call guard.Take;
+		bln result: (MakeFolderLocked: path);
+		call guard.Give;
+	[end: result]
+
+	# MakeFolder's work, holding the file system's lock
+	[MakeFolderLocked: ptr<u8> path: 0;]
 		if (Resolve: path) or not parent_found
 			return false;
 		;;
@@ -538,6 +625,13 @@ phi.Fat:Kernel
 
 	# delete a folder, which must be empty
 	[DeleteFolder: ptr<u8> path: 0;]
+		call guard.Take;
+		bln result: (DeleteFolderLocked: path);
+		call guard.Give;
+	[end: result]
+
+	# DeleteFolder's work, holding the file system's lock
+	[DeleteFolderLocked: ptr<u8> path: 0;]
 		if not (Resolve: path) or (found.attributes & ATTR_DIRECTORY) is 0
 			return false;
 		;;
@@ -560,6 +654,13 @@ phi.Fat:Kernel
 	# rename a file or folder, or move it to another folder; false if `from` isn't there,
 	# `to` is, or the folder for `to` doesn't exist or has no room
 	[Rename: ptr<u8> from: 0; ptr<u8> to: 0;]
+		call guard.Take;
+		bln result: (RenameLocked: from to);
+		call guard.Give;
+	[end: result]
+
+	# Rename's work, holding the file system's lock
+	[RenameLocked: ptr<u8> from: 0; ptr<u8> to: 0;]
 		if not (Resolve: from)
 			return false;
 		;;
@@ -622,6 +723,13 @@ phi.Fat:Kernel
 	[end: true]
 
 	[FreeClusters]
+		call guard.Take;
+		u32 result: (FreeClustersLocked);
+		call guard.Give;
+	[end: result]
+
+	# FreeClusters's work, holding the file system's lock
+	[FreeClustersLocked]
 		u32 count: 0;
 		while u32 c: 2; c < cluster_count + 2; c++;
 			if fat_table:c is 0
@@ -663,9 +771,27 @@ phi.Fat:Kernel
 
 	# the date and time from the clock, as FAT keeps them; `created` sets the creation time too
 	[Stamp: ptr<DirEntry> e: 0; bln created: false;]
-		call Rtc.Read;
-		u16 date: ((Rtc.year - 1980) << 9) | (Rtc.month << 5) | Rtc.day;
-		u16 time: (Rtc.hour << 11) | (Rtc.minute << 5) | (Rtc.second / 2);
+		# OS.Now (seconds since 1970) as a date, by the days since 0000-03-01 in 400-year
+		# eras (Howard Hinnant's civil_from_days), so March starts each year
+		u32 now: (OS.Now);
+		u32 seconds: now % 86400;
+		u32 days: now / 86400 + 719468;
+		u32 era: days / 146097;
+		u32 of_era: days - era * 146097;
+		u32 years: (of_era - of_era / 1460 + of_era / 36524 - of_era / 146096) / 365;
+		u32 of_year: of_era - (365 * years + years / 4 - years / 100);
+		u32 shifted: (5 * of_year + 2) / 153;           # 0 is March
+		u32 day: of_year - (153 * shifted + 2) / 5 + 1;
+		u32 month: shifted + 3;
+		if shifted >= 10
+			month is shifted - 9;
+		;;
+		u32 year: era * 400 + years;
+		if month <= 2
+			year++;
+		;;
+		u16 date: ((year - 1980) << 9) | (month << 5) | day;
+		u16 time: ((seconds / 3600) << 11) | ((seconds / 60 % 60) << 5) | (seconds % 60 / 2);
 		e:0.write_date is date;
 		e:0.write_time is time;
 		e:0.access_date is date;

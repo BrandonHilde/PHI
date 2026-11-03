@@ -1723,6 +1723,38 @@ cores ends with `Heap.used_blocks` at 0.
       probably, each zone's once-a-second save, which goes to the one disk under the
       kernel lock and is part of the tick's time (even 10 players a zone had 50 ms
       ticks; not measured yet).
+  - [x] the file system's own lock (2026-11-02), after measuring the save. With 4 zones
+    and 400 players, timing each part of a tick: a zone's save (`OS.AppendFile`) held the
+    kernel lock for 20 to 30 ms, and the other zones' calls waited for it. With saving
+    turned off, one run had 1 tick late of 2,400 once the players were in; with it on, 598.
+    So:
+    - `proc.corelock`: `CoreLock`, the network's lock made into a struct any part of the
+      kernel can have (`Take`, `Give`, `LetGo`, `TakeAgain`): one core at a time, its
+      interrupts off while held, and taken again by the core that holds it. `Net.Lock` is
+      one now. Test `kernel32_corelock`.
+    - `Fat` has one: each public method takes it (a wrapper around its `...Locked` work).
+      Programs' file calls (17 to 21, 31, 38 to 42) go to `Process.FileCalls` without the
+      kernel lock, holding `Fat.Lock`. `phi_own_call` takes up to 8 ranges of calls now
+      (`phi_own_add`: first, how many, method), the network's and the files'. Test
+      `kernel32_cores_files` (four programs on several cores appending to their own file
+      and a shared one while the kernel reads the disk: every record whole).
+    - A file's date is from `OS.Now` (worked out from the seconds, as Hinnant's
+      civil_from_days), not `drivers.rtc`, and `OS.Now` reads the CMOS clock under a lock
+      of its own (`phi_clock_lock`), since a file call no longer has the kernel lock.
+      `Rtc.Read` in a kernel isn't under that lock yet (only `samples/terminal.phi` uses it).
+    - Measured: a save took 10 to 23 ms in a good run, and only holds up other saves. But
+      the 4-zone run varies too much between identical runs for one to show the whole
+      effect: 2 late of 2,400 in the best run, and the same code in later runs 320, 800 and
+      more. Six runs back to back, three before and three after, went 307, 1,108, 1,600
+      late and then 1,600, 1,190 and 800 (ticks counted fall when the zones fall behind),
+      getting worse run after run whichever code was in. In every bad run the time is in
+      sending: a tick's 100 STATEs took 70 to 200 ms (receiving up to 200 ms), against
+      about 30 ms in good ones. Each `Rtl8139.Send` waits, holding the network's lock
+      with interrupts off, for one of the card's 4 transmit buffers, which free up as
+      QEMU hands frames to the test network's switch (`VirtualNetwork`, on the host),
+      which a slow client machine can hold up. So `Game.ZONES` stays 1; what's left is the
+      network's speed with four senders (the optimising phase's), and why runs get worse
+      one after another on the host.
 
 #### Phase S10: 64-bit
 

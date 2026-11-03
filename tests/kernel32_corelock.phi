@@ -1,0 +1,50 @@
+# proc.corelock: a lock the core holding it can take again. On one core: taken twice
+# and given back twice, then let go however deep and taken back as deep. Then four cores
+# at once, each taking it twice around plain math on a shared count, where nothing may
+# be lost.
+use proc.cores;
+use proc.corelock;
+
+phi.CoreLockTest:Kernel
+{
+	const int TIMES: 20000;
+
+	CoreLock guard;
+	u32 counts[1];                              # (an element: each core's writes are the lock's to guard)
+
+	call guard.Take;
+	call guard.Take;
+	log 'taken twice: depth ' guard.depth ', held ' (guard.owner is not 0) '\n';
+	call guard.Give;
+	log 'given once: depth ' guard.depth ', held ' (guard.owner is not 0) '\n';
+	call guard.Give;
+	log 'given twice: depth ' guard.depth ', held ' (guard.owner is not 0) '\n';
+
+	call guard.Take;
+	call guard.Take;
+	call guard.Take;
+	u32 depth: (guard.LetGo);
+	log 'let go from ' depth ': held ' (guard.owner is not 0) '\n';
+	call guard.TakeAgain: depth;
+	log 'taken again: depth ' guard.depth ', held ' (guard.owner is not 0) '\n';
+	call guard.Give;
+	call guard.Give;
+	call guard.Give;
+	log 'all given back: held ' (guard.owner is not 0) '\n';
+
+	int n: (Cores.Start);
+	call Cores.Run: addr AddMany;
+	log 'adds from ' n ' cores, each taking it twice: ' (counts:0 is n * TIMES) '\n';
+	log 'held at the end: ' (guard.owner is not 0) '\n';
+	exit 0;
+
+	[AddMany: int core: 0;]
+		while int i: 0; i < TIMES; i++;
+			call guard.Take;
+			call guard.Take;
+			counts:0 is counts:0 + 1;
+			call guard.Give;
+			call guard.Give;
+		;;
+	[end]
+}

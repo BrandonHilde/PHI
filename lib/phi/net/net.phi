@@ -27,6 +27,7 @@
 # (proc.cores) use the network while the rest of the kernel carries on.
 
 use drivers.nic;
+use proc.corelock;
 use net.dhcp;
 use net.tcp;
 use net.udp;
@@ -86,10 +87,7 @@ phi.Net:Kernel
 	u32 udp_from_port: 0;
 	u8 udp_out[MTU];
 
-	# the network's lock (Lock)
-	u32 lock_owner: 0;                    # the holding core's block (its fs:0), or 0
-	u32 lock_depth: 0;                    # how many times it has taken it
-	u32 lock_flags: 0;                    # its interrupt flag from before
+	CoreLock guard;                       # the network's lock (Lock)
 
 	# ICMP
 	u8 icmp_out[MTU];
@@ -170,13 +168,9 @@ phi.Net:Kernel
 		call Lock;
 		u32 got: (Poll);
 		if got is 0
-			u32 flags: lock_flags;
-			u32 depth: 0;
-			call depth is asm.NetLetGo;
+			u32 depth: (guard.LetGo);
 			call OS.Sleep: 1;
-			call Lock;
-			lock_depth is depth;
-			lock_flags is flags;
+			call guard.TakeAgain: depth;
 		;;
 		call Unlock;
 	[end]
@@ -185,12 +179,12 @@ phi.Net:Kernel
 
 	# take it (waiting while another core has it), or once more
 	[Lock]
-		call asm.NetLock;
+		call guard.Take;
 	[end]
 
 	# give it back (once the times it was taken are all given back)
 	[Unlock]
-		call asm.NetUnlock;
+		call guard.Give;
 	[end]
 
 	# ---- ARP: finding the Ethernet address that goes with an IP address
@@ -662,53 +656,3 @@ phi.Net:Kernel
 	[end]
 }
 
-# Net.Lock: the holder's core is told by its block's address (fs:0), so the core that
-# has it goes deeper instead of waiting
-asm.NetLock
-{
-	pushfd
-	pop edx
-	cli
-	mov ecx, [fs:0]
-	cmp [{lock_owner}], ecx
-	je .deeper
-	xor eax, eax
-	lock cmpxchg [{lock_owner}], ecx
-	je .taken
-.wait:
-	pause                                 ; (waiting by reading, which keeps the holder's
-	cmp dword [{lock_owner}], 0           ; memory out of the waiters' way)
-	jne .wait
-	xor eax, eax
-	lock cmpxchg [{lock_owner}], ecx
-	jne .wait
-.taken:
-	mov [{lock_flags}], edx
-.deeper:
-	inc dword [{lock_depth}]
-	ret
-}
-
-asm.NetUnlock
-{
-	dec dword [{lock_depth}]
-	jnz .held
-	mov edx, [{lock_flags}]
-	mov dword [{lock_owner}], 0
-	push edx
-	popfd
-.held:
-	ret
-}
-
-# Net.Wait: the lock let go however deep this core is; eax = how deep that was
-asm.NetLetGo
-{
-	mov eax, [{lock_depth}]
-	mov dword [{lock_depth}], 0
-	mov edx, [{lock_flags}]
-	mov dword [{lock_owner}], 0
-	push edx
-	popfd
-	ret
-}
