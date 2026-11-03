@@ -1,0 +1,79 @@
+# The network in a program on the host (net.sockets answered by the system's own
+# sockets): UDP and TCP to itself, over 127.0.0.1. phi test runs a :Program test only on
+# Linux and Windows; on PHI OS, net_programs covers the same calls. The ports are picked
+# from the process number, so two runs at once don't share them.
+use net.sockets;
+
+phi.SocketsProgram:Program
+{
+	u32 port: 40000 + (OS.CurrentTask) % 20000;
+	u32 home: (Net.ParseIp: '127.0.0.1');
+	UdpDatagram d;
+	u8 big[16000];
+	u8 got[16000];
+
+	log 'an address: ' ((Net.Address) is not 0) '\n';
+
+	# UDP: two sockets trading datagrams
+	int a: (Udp.Open: port);
+	int b: (Udp.Open: port + 1);
+	log 'udp open: ' (a >= 0) ' ' (b >= 0) ', the same port again: ' (Udp.Open: port) '\n';
+	log 'nothing waiting: ' (Udp.Receive: a addr d) '\n';
+	log 'sent: ' (Udp.SendTo: b home port 'hello' 5) '\n';
+	if (Udp.Wait: a addr d 2000)
+		d.data:(d.length) is 0;
+		log 'received ' d.length ' [' addr d.data:0 '] from home: ' (d.from is home) ', its port: ' (d.from_port is port + 1) '\n';
+		call Udp.SendTo: a d.from d.from_port 'back' 4;
+	;;
+	if (Udp.Wait: b addr d 2000)
+		log 'answered: ' d.length '\n';
+	;;
+	log 'close: ' (OS.UdpClose: a) ', again: ' (OS.UdpClose: a) ', a number that is no socket: ' (OS.UdpClose: 999) '\n';
+	log 'send on a closed socket: ' (Udp.SendTo: a home port + 1 'x' 1) '\n';
+	call Udp.Close: b;
+
+	# TCP: a listener, a connection to it, and the one it accepts
+	int listener: (Tcp.Listen: port + 2);
+	log 'listening: ' (listener >= 0) ', accept with nobody there: ' (Tcp.Accept: listener) '\n';
+	int c: (Tcp.Connect: home port + 2);
+	int s: -1;
+	int start: (OS.GetTicks);
+	while s < 0 and (OS.GetTicks) - start < 2000
+		s is (Tcp.Accept: listener);
+		call OS.Sleep: 1;
+	;;
+	log 'connected: ' (c >= 0) ', accepted: ' (s >= 0) ', state: ' (OS.TcpState: c) ', from home: ' ((Tcp.Address: s) is home) '\n';
+
+	log 'wrote: ' (Tcp.Write: c 'ping' 4) '\n';
+	int n: (Tcp.Read: s got got.len - 1);
+	got:n is 0;
+	log 'read ' n ' [' addr got:0 ']\n';
+
+	# 16000 bytes back, read in whatever pieces they come in
+	while int i: 0; i < big.len; i++;
+		big:i is i * 7;
+	;;
+	log 'wrote back: ' (Tcp.Write: s big big.len) '\n';
+	u32 total: 0;
+	while total < big.len
+		int piece: (Tcp.Read: c addr got:total got.len - total);
+		if piece <= 0 break;
+		total++ piece;
+	;;
+	bln same: true;
+	while int i: 0; i < big.len; i++;
+		same is same and got:i is big:i;
+	;;
+	log 'read back ' total ', the same: ' same '\n';
+
+	# closing: the other side reads what's left, then 0
+	call Tcp.Write: c 'bye' 3;
+	call Tcp.Close: c;
+	n is (Tcp.Read: s got 100);
+	log 'after the close: ' n ', then ' (Tcp.Read: s got 100) ', waiting: ' (Tcp.Waiting: s) '\n';
+	call Tcp.Close: s;
+	log 'a connection on a udp call: ' (OS.UdpReceive: s addr d) ', a udp socket on a tcp call: ' (Tcp.Send: b 'x' 1) '\n';
+
+	call Tcp.StopListening: listener;
+	log 'stopped: accept gives ' (Tcp.Accept: listener) ', connecting now gives ' (Tcp.Connect: home port + 2) '\n';
+}

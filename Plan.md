@@ -2228,6 +2228,22 @@ both. macOS is next after the 64-bit kernels; the user will test it on their Mac
 **Done when:** `samples/mmo/`'s world and lobby run as Linux programs, with clients on PHI
 OS or on the host, and `phi load` holds the same tick rate.
 
+**Status: in progress (since 2026-11-02).**
+- [x] (1) Sockets on Linux and Windows, 32 and 64 bits: `net.sockets`' calls (`OS.UdpOpen`
+  to `OS.TcpStopListening`, the 15 that net.calls answers on PHI OS) in each system's
+  `sockets.asm`: Linux's socket system calls (non-blocking, `MSG_DONTWAIT`), and Winsock
+  (`ws2_32.dll`, a second DLL in every Windows program's import table, started the first
+  time it's needed). Each call never waits, as on PHI OS. A program's sockets are checked
+  as on PHI OS: on Linux a socket is its file descriptor, kept with its kind (UDP,
+  connection, listener), so a wrong number (standard output, say) is refused; on Windows
+  it's a slot holding Winsock's socket, whose handles can be any number. `Net.Address` is
+  the address the machine would reach the internet from (or 127.0.0.1). Test
+  `sockets_program` (UDP and TCP to itself over 127.0.0.1) on all four.
+  - Found on the way: on Windows, `getpeername` works on a connection that is still
+    connecting, so a connection is "connecting" until `select` says it can be written to
+    (or failed). And Windows asks the first time a new program opens a socket whether it
+    may use the network (its firewall); until someone answers, UDP sockets fail.
+
 #### Phase H6: Windows and graphics
 
 1. **A window, drawing and input** behind the calls `gui.*` and `gfx.*` already use: Win32 on
@@ -2252,7 +2268,8 @@ editor shows its errors as it's written.
 
 ### Order
 
-H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work), and H5-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
+H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work), H5 is
+under way (sockets on the hosts), and H6-H7 come after it. C compatibility, still on hold, is what H6 and part of H7
 lean on, so this plan is also where that hold would be reconsidered.
 
 ## References

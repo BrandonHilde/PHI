@@ -1,8 +1,8 @@
 ; provides: phi_imports
 ;
 ; The import table of a 64-bit Windows program (PE32+), as x86_32_windows/imports.asm's:
-; kernel32.dll, and the functions of it this library calls as [rel phi_imp_NAME]. Each entry
-; is 8 bytes here. A function takes its first four arguments in rcx, rdx, r8 and r9 (the
+; kernel32.dll and ws2_32.dll (Winsock), and the functions of them this library calls as
+; [rel phi_imp_NAME]. Each entry is 8 bytes here. A function takes its first four arguments in rcx, rdx, r8 and r9 (the
 ; rest on the stack), wants 32 bytes of room above its return address that it may write
 ; (its shadow space) and the stack 16-byte aligned when it's called, and gives its result in
 ; rax; it keeps rbx, rbp, rdi, rsi, rsp and r12 to r15, and can change rax, rcx, rdx and
@@ -36,10 +36,31 @@
     PHI_FUNCTION AddVectoredExceptionHandler
     PHI_FUNCTION GetSystemTimeAsFileTime
 %endmacro
+%macro PHI_WS2_32 0
+    PHI_FUNCTION WSAStartup
+    PHI_FUNCTION WSAGetLastError
+    PHI_FUNCTION socket
+    PHI_FUNCTION closesocket
+    PHI_FUNCTION ioctlsocket
+    PHI_FUNCTION bind
+    PHI_FUNCTION connect
+    PHI_FUNCTION listen
+    PHI_FUNCTION accept
+    PHI_FUNCTION send
+    PHI_FUNCTION recv
+    PHI_FUNCTION sendto
+    PHI_FUNCTION recvfrom
+    PHI_FUNCTION select
+    PHI_FUNCTION setsockopt
+    PHI_FUNCTION getsockopt
+    PHI_FUNCTION getpeername
+    PHI_FUNCTION getsockname
+%endmacro
 
 align 8, db 0
 phi_imports:
     dd phi_kernel32_lookup - $$, 0, 0, phi_kernel32_name - $$, phi_kernel32_addresses - $$
+    dd phi_ws2_32_lookup - $$, 0, 0, phi_ws2_32_name - $$, phi_ws2_32_addresses - $$
     times 5 dd 0                        ; the end of the table
 phi_imports_size equ $ - phi_imports
 
@@ -51,6 +72,9 @@ align 8, db 0
 phi_kernel32_lookup:
     PHI_KERNEL32
     dq 0
+phi_ws2_32_lookup:
+    PHI_WS2_32
+    dq 0
 %unmacro PHI_FUNCTION 1
 
 ; where Windows puts their addresses
@@ -59,6 +83,9 @@ phi_imp_%1: dq phi_name_%1 - $$
 %endmacro
 phi_kernel32_addresses:
     PHI_KERNEL32
+    dq 0
+phi_ws2_32_addresses:
+    PHI_WS2_32
     dq 0
 %unmacro PHI_FUNCTION 1
 
@@ -70,6 +97,8 @@ phi_name_%1:
     align 2, db 0
 %endmacro
     PHI_KERNEL32
+    PHI_WS2_32
 %unmacro PHI_FUNCTION 1
 
 phi_kernel32_name: db 'kernel32.dll', 0
+phi_ws2_32_name: db 'ws2_32.dll', 0

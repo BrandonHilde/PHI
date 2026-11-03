@@ -2229,10 +2229,11 @@ instead. Only `Program` and `Library` classes build for another system; kernels 
 | `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
 | `OS.ClearScreen` | clears the terminal |
+| `net.sockets`' `Udp`, `Tcp` and `Net` | the system's own sockets (Linux's, or Winsock): UDP and TCP to any address, listening and accepting, each call never waiting as on PHI OS. `Net.Address` is the address the machine reaches the internet from (or 127.0.0.1). A program's sockets are its own: a number that isn't one it opened is refused |
 
 The rest of PHI OS's calls (`OS.PutCell`, `OS.IsKeyDown`, `OS.Reboot`, starting and
-watching other programs, `OS.ListFiles` and `OS.ListFolder`, sound, windows, the network
-and mailboxes) aren't there yet, or have no equivalent: using one is an error when the
+watching other programs, `OS.ListFiles` and `OS.ListFolder`, sound, windows and
+mailboxes) aren't there yet, or have no equivalent: using one is an error when the
 program is built (`OS.PutCell isn't available in a Linux program; it works in a PHI OS
 program`). So is a module that can't work there, at the `use` that brings it in:
 

@@ -1,0 +1,17 @@
+an address: 1
+udp open: 1 1, the same port again: -1
+nothing waiting: 0
+sent: 1
+received 5 [hello] from home: 1, its port: 1
+answered: 4
+close: 1, again: 0, a number that is no socket: 0
+send on a closed socket: 0
+listening: 1, accept with nobody there: -1
+connected: 1, accepted: 1, state: 1, from home: 1
+wrote: 4
+read 4 [ping]
+wrote back: 16000
+read back 16000, the same: 1
+after the close: 3, then 0, waiting: -1
+a connection on a udp call: 0, a udp socket on a tcp call: -1
+stopped: accept gives -1, connecting now gives -1

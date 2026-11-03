@@ -4,8 +4,8 @@
 ;
 ; What a PHI OS program asks its kernel for, answered by kernel32.dll (see imports.asm
 ; for how its functions are called). The calls PHI OS has that Windows has no answer for
-; here (the screen's cells, other PHI OS programs, sound, windows, the network for now)
-; aren't here, so using one is an error when the program is built. Paths are converted
+; here (the screen's cells, other PHI OS programs, sound, windows) aren't here, so using
+; one is an error when the program is built. The network's are in sockets.asm. Paths are converted
 ; to UTF-16 for the functions that take them, a byte a character.
 STD_INPUT_HANDLE equ -10
 STD_OUTPUT_HANDLE equ -11

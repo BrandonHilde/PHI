@@ -5,8 +5,8 @@
 ; What a PHI OS program asks its kernel for, answered by Linux system calls (int 0x80,
 ; the 32-bit ones: a number in eax, arguments in ebx, ecx, edx, esi, edi; every register
 ; but eax is kept). The calls PHI OS has that Linux has no answer for (the screen's
-; cells, other PHI OS programs, sound, windows, the network for now) aren't here, so
-; using one is an error when the program is built.
+; cells, other PHI OS programs, sound, windows) aren't here, so using one is an error
+; when the program is built. The network's are in sockets.asm.
 SYS_EXIT_GROUP equ 252
 SYS_READ      equ 3
 SYS_OPEN      equ 5
