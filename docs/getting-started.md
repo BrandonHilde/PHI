@@ -104,6 +104,8 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | Command | What it does |
 |---|---|
 | `phi build file.phi` | compile to a bootable disk image, in `build/file/` next to the program |
+| `phi check file.phi` | report errors without building: a program as it is, a module in a program around it |
+| `phi lsp` | the language server, for an editor: see [editors/vscode](../editors/vscode/README.md) |
 | `phi run file.phi` | build, then boot it in QEMU; serial output (`log` and `debug`) also prints in your terminal |
 | `phi run file.phi --debug` | start paused, waiting for a debugger (see below) |
 | `phi run file.phi --keep-disk` | boot a disk that keeps what the kernel saved (`build/NAME/NAME.kept.img`): each run puts the new kernel and any changed or new programs (`NAME.BIN`) on it but leaves its other files alone; delete it to start again |

@@ -37,6 +37,9 @@ namespace Phi.Compiler.Syntax
         public Span BaseSpan { get; init; }
         public List<MethodDecl> Methods { get; } = new();
 
+        /// <summary>Where its closing brace ends, for finding the class around a place in the file.</summary>
+        public int End { get; set; }
+
         /// <summary>Statements at class level run in order when the class starts.</summary>
         public List<Stmt> Body { get; } = new();
 
@@ -172,6 +175,9 @@ namespace Phi.Compiler.Syntax
 
         public ClassDecl Owner { get; set; } = null!;
         public MethodSymbol? Symbol { get; set; }
+
+        /// <summary>Where its [end] ends, for finding the method around a place in the file.</summary>
+        public int End { get; set; }
     }
 
     /// <summary>A type as written: int, u16, str, Task, ptr&lt;u8&gt;</summary>

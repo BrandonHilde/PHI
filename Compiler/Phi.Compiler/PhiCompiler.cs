@@ -21,6 +21,12 @@ namespace Phi.Compiler
 
         public ProgramNode? Syntax { get; init; }
         public BoundProgram? Bound { get; init; }
+
+        /// <summary>Each `use` in the program and its files: the file it's in, and the file it loaded.</summary>
+        public IReadOnlyDictionary<UseDecl, (SourceFile From, SourceFile Target)> Uses { get; init; } = new Dictionary<UseDecl, (SourceFile, SourceFile)>();
+
+        /// <summary>Every file the program is made of, by <see cref="PhiCompiler.FileKey"/>.</summary>
+        public IReadOnlySet<string> Files { get; init; } = new HashSet<string>();
     }
 
     /// <summary>source -> Lexer -> Parser -> Binder -> X86Generator -> NASM source</summary>
@@ -35,28 +41,48 @@ namespace Phi.Compiler
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
         /// <param name="host">Where the program runs: PHI OS, or (for a program) another system.</param>
         /// <param name="debug">For a debugger: see X86Generator's debugInfo.</param>
-        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null, Host host = Host.PhiOS, bool debug = false)
+        /// <param name="open">Text to read in place of files on the disk, by <see cref="FileKey"/>: an editor's unsaved files.</param>
+        /// <param name="bindAnyway">
+        /// With errors in the parsing, still work out what the names that did parse are: an
+        /// editor's going to a definition and completing a name go on while the code is half written.
+        /// </param>
+        /// <param name="wholeHost">Give a program every part of its system's runtime, used or not, to check them.</param>
+        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null, Host host = Host.PhiOS, bool debug = false,
+                                            IReadOnlyDictionary<string, string>? open = null, bool bindAnyway = false, bool wholeHost = false)
         {
             var diagnostics = new DiagnosticBag();
             var usedBy = new Dictionary<string, (SourceFile From, UseDecl Use)>(StringComparer.OrdinalIgnoreCase);
+            var uses = new Dictionary<UseDecl, (SourceFile From, SourceFile Target)>();
+            var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics, usedBy, host);
-            if (diagnostics.HasErrors) return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax };
+            ProgramNode syntax = ParseWithUses(file, kernel, diagnostics, usedBy, uses, files, open, host, wholeHost);
+            if (diagnostics.HasErrors)
+            {
+                BoundProgram? partial = null;
+                if (bindAnyway)
+                {
+                    // half-written code can be what no finished program is, so a failure here only
+                    // means fewer names are known (its errors would follow from the parsing's anyway)
+                    try { partial = Binder.Bind(syntax, new DiagnosticBag(), host); }
+                    catch (Exception e) when (e is not OutOfMemoryException) { }
+                }
+                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host, open), Syntax = syntax, Bound = partial, Uses = uses, Files = files };
+            }
 
             BoundProgram? bound = Binder.Bind(syntax, diagnostics, host);
             if (diagnostics.HasErrors)
-                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host), Syntax = syntax, Bound = bound };
+                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host, open), Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             if (bound == null || !generate)
             {
                 // what 64-bit code can't do yet is found by the generator: a check needs it too
                 if (bound != null && host.Is64())
                     foreach (BoundUnit u in bound.Units) X86Generator.Check(bound, u, diagnostics);
-                return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
+                return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             }
 
             var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics, debug)).ToList();
 
-            var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
+            var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             if (!result.Success) return result;
 
             result.Units.AddRange(units);
@@ -74,9 +100,10 @@ namespace Phi.Compiler
         /// The standard library is tested, so an error inside it means a module was used where it
         /// can't work (a driver in a program, a kernel's module on Linux). Its errors become one
         /// at the program's `use` that brought the module in, with the first of them as the reason.
+        /// (A library file that's open in an editor is being written, so its errors stay its own.)
         /// </summary>
         static IReadOnlyList<Diagnostic> AtUses(IReadOnlyList<Diagnostic> diagnostics, Dictionary<string, (SourceFile From, UseDecl Use)> usedBy,
-                                                ProgramNode syntax, Host host)
+                                                ProgramNode syntax, Host host, IReadOnlyDictionary<string, string>? open)
         {
             string where = syntax.Classes.Any(c => c.Base == Binder.ProgramBase) ? host == Host.PhiOS ? "a PHI OS program" : $"a {host.Name()} program"
                          : syntax.Classes.Any(c => c.Base == Binder.Kernel32Base) ? "a 32-bit kernel" : "a 16-bit program";
@@ -86,7 +113,7 @@ namespace Phi.Compiler
             foreach (Diagnostic d in diagnostics)
             {
                 if (d.Severity != Severity.Error || d.File == null || !d.File.Path.StartsWith(StandardLibrary)
-                    || !usedBy.TryGetValue(Key(d.File), out var link))
+                    || open?.ContainsKey(Key(d.File)) == true || !usedBy.TryGetValue(Key(d.File), out var link))
                 {
                     result.Add(d);
                     continue;
@@ -120,10 +147,14 @@ namespace Phi.Compiler
         /// first, so their classes run before the program's own.
         /// </summary>
         /// <param name="usedBy">gets, for each file loaded by a `use`, that use and the file it's in</param>
+        /// <param name="uses">gets each `use`, the file it's in and the file it loaded</param>
+        /// <param name="seen">gets every file of the program</param>
         static ProgramNode ParseWithUses(SourceFile main, string? kernelFile, DiagnosticBag diagnostics,
-                                         Dictionary<string, (SourceFile From, UseDecl Use)> usedBy, Host host = Host.PhiOS)
+                                         Dictionary<string, (SourceFile From, UseDecl Use)> usedBy,
+                                         Dictionary<UseDecl, (SourceFile From, SourceFile Target)> uses, HashSet<string> seen,
+                                         IReadOnlyDictionary<string, string>? open, Host host = Host.PhiOS, bool wholeHost = false)
         {
-            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { Key(main) };
+            seen.Add(Key(main));
 
             void Load(SourceFile file, ProgramNode into)
             {
@@ -131,7 +162,7 @@ namespace Phi.Compiler
 
                 foreach (UseDecl use in node.Uses)
                 {
-                    SourceFile? used = Resolve(use.Path, file, main, kernelFile);
+                    SourceFile? used = Resolve(use.Path, file, main, kernelFile, open);
                     if (used == null)
                     {
                         string relative = use.Path.Replace('.', '/') + ".phi";
@@ -142,6 +173,7 @@ namespace Phi.Compiler
                         diagnostics.Error(file, use.Span, $"can't find {relative} {places} or in the standard library ({StandardLibrary})");
                         continue;
                     }
+                    uses[use] = (file, used);
                     if (seen.Add(Key(used)))
                     {
                         usedBy[Key(used)] = (file, use);
@@ -163,7 +195,7 @@ namespace Phi.Compiler
             Load(main, program);
 
             // a program that catches errors gets the Error struct they're caught in
-            if (SyntaxWalker.Nodes(program).Any(n => n is ThrowsExpr) && Resolve(ErrorLibrary, main, main, null) is SourceFile errors
+            if (SyntaxWalker.Nodes(program).Any(n => n is ThrowsExpr) && Resolve(ErrorLibrary, main, main, null, open) is SourceFile errors
                 && seen.Add(Key(errors)))
                 Load(errors, program);
 
@@ -179,7 +211,7 @@ namespace Phi.Compiler
                                                                  || n is VarDecl { Unsized: true })   // an array that grows
                             || program.Structs.Any(s => s.Fields.Any(f => f.IsNew));
             string? heapFile = !usesHeap ? null : user ? "memory.program_heap" : kernel ? "memory.heap" : null;
-            SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main, null) : null;
+            SourceFile? heap = heapFile != null ? Resolve(heapFile, main, main, null, open) : null;
             if (heap != null && seen.Add(Key(heap)))
             {
                 var withHeap = new ProgramNode { File = main };
@@ -199,11 +231,12 @@ namespace Phi.Compiler
                     .Where(name => name != null && name.StartsWith("OS."))
                     .Select(name => Builtins.Find(name!)?.OnHost?.Split('.')[0])
                     .OfType<string>().ToHashSet();
+                if (wholeHost) used.UnionWith(HostParts.Select(p => p.Class));
                 if (used.Count > 0)
                 {
                     var withHost = new ProgramNode { File = main };
                     foreach (string module in HostParts.Where(p => used.Contains(p.Class)).SelectMany(p => p.Modules).Prepend("host.linux64").Prepend("host.linux32"))
-                        if (Resolve(module, main, main, null) is SourceFile own && seen.Add(Key(own)))
+                        if (Resolve(module, main, main, null, open) is SourceFile own && seen.Add(Key(own)))
                             Load(own, withHost);
                     Append(program, withHost);
                     program = withHost;
@@ -240,10 +273,13 @@ namespace Phi.Compiler
             into.Uses.AddRange(from.Uses);
         }
 
-        static string Key(SourceFile f)
+        static string Key(SourceFile f) => FileKey(f.Path);
+
+        /// <summary>What says two paths are one file: the same name for a file on the disk and its embedded copy.</summary>
+        public static string FileKey(string path)
         {
-            if (f.Path.StartsWith(StandardLibrary)) return f.Path;
-            string full = Path.GetFullPath(f.Path);
+            if (path.StartsWith(StandardLibrary)) return path;
+            string full = Path.GetFullPath(path);
 
             // a standard library file opened from the repository's lib/phi/ is the same file as
             // its embedded copy, so library files that use each other aren't loaded twice
@@ -264,7 +300,7 @@ namespace Phi.Compiler
         /// standard library. A program in a rootfs folder built on its own (for Linux, say)
         /// looks in the folder around it, where its kernel is, as it does built for the kernel.
         /// </summary>
-        static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main, string? kernel)
+        static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main, string? kernel, IReadOnlyDictionary<string, string>? open)
         {
             string relative = dotted.Replace('.', '/') + ".phi";
 
@@ -277,10 +313,12 @@ namespace Phi.Compiler
             {
                 if (near.StartsWith(StandardLibrary)) continue;
                 string local = Path.Combine(Path.GetDirectoryName(near) ?? "", relative);
+                if (open != null && open.TryGetValue(FileKey(local), out string? unsaved)) return new SourceFile(local, unsaved);
                 if (File.Exists(local)) return SourceFile.Load(local);
             }
 
             string resource = StandardLibrary + relative;
+            if (open != null && open.TryGetValue(resource, out string? unsavedLibrary)) return new SourceFile(resource, unsavedLibrary);
             using Stream? stream = typeof(PhiCompiler).Assembly.GetManifestResourceStream(resource)
                                    ?? FindResource(resource);
             if (stream == null) return null;

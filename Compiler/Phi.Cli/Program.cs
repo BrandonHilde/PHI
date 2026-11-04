@@ -64,6 +64,9 @@ const string Usage = """
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
+      phi lsp                              the language server, for an editor: errors as you type, going
+                                           to a definition and completing names, over standard input and
+                                           output (editors/vscode is the extension for VS Code)
     """;
 
 // how much over its baseline (in percent) a benchmark's count may be: -icount makes the counts
@@ -252,11 +255,13 @@ static int Execute(string[] args)
 
             case "check":
             {
-                Phi.Compiler.Host host = TargetOption();
+                Phi.Compiler.Host? host = Option("--target") is string system
+                    ? Phi.Compiler.Hosts.Parse(system) ?? throw new ArgumentException("--target takes the system: " + string.Join(", ", Phi.Compiler.Hosts.Names))
+                    : null;
                 if (rest.Count != 1) throw new ArgumentException("check needs exactly one .phi file");
                 if (!File.Exists(rest[0])) throw new ArgumentException($"file not found: {rest[0]}");
 
-                var compiled = Phi.Compiler.PhiCompiler.Compile(Phi.Compiler.SourceFile.Load(rest[0]), generate: false, host: host);
+                var compiled = new SourceChecker(host).Check(rest[0], File.ReadAllText(rest[0]));
                 foreach (var d in compiled.Diagnostics) Console.Error.WriteLine(d);
                 if (compiled.Success) Console.WriteLine($"{rest[0]}: no errors");
                 return compiled.Success ? 0 : 1;
@@ -354,6 +359,9 @@ static int Execute(string[] args)
                 if (profile && target != Phi.Compiler.Host.PhiOS) throw new ArgumentException("--profile samples a kernel in QEMU, so it goes without --target");
                 return LoadTester.Run(rest[0], n, s, p, profile, client, root, host, target);
             }
+
+            case "lsp":
+                return new LanguageServer(Console.OpenStandardInput(), Console.OpenStandardOutput(), Console.Error).Run();
 
             case "serve":
             {

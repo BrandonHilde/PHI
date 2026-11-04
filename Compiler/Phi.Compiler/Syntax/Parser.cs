@@ -436,6 +436,7 @@ namespace Phi.Compiler.Syntax
             }
 
             Expect(TokenKind.CloseBrace, $"'}}' to close class {name.Text}");
+            cls.End = Previous.Span.End;
             return cls;
         }
 
@@ -544,6 +545,7 @@ namespace Phi.Compiler.Syntax
             }
 
             Expect(TokenKind.CloseBrace, $"'}}' to close struct {name.Text}");
+            if (methods != null) methods.End = Previous.Span.End;
             return decl;
         }
 
@@ -652,6 +654,7 @@ namespace Phi.Compiler.Syntax
             Advance(); // end
             if (Accept(TokenKind.Colon)) method.Result = ParseExpression();
             Expect(TokenKind.CloseBracket, "']' after [end");
+            method.End = Previous.Span.End;
 
             return method;
         }

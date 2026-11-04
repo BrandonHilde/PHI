@@ -23,6 +23,15 @@ namespace Phi.Compiler
             if (index < 0) index = ~index - 1;
             return (index + 1, offset - lineStarts[index] + 1);
         }
+
+        /// <summary>Where a 0-based line and column are in the text, kept inside it.</summary>
+        public int GetOffset(int line, int column)
+        {
+            if (line < 0) return 0;
+            if (line >= lineStarts.Count) return Text.Length;
+            int end = line + 1 < lineStarts.Count ? lineStarts[line + 1] : Text.Length;
+            return Math.Clamp(lineStarts[line] + column, lineStarts[line], end);
+        }
     }
 
     public readonly record struct Span(int Start, int Length)

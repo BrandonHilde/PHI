@@ -8,3 +8,7 @@ obj/
 build/
 *.img
 *.actual
+
+# editors/vscode
+node_modules/
+*.vsix
