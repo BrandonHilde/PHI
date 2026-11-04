@@ -26,8 +26,8 @@ phi.MailTest:Kernel
 
 	bln got: (Mail.Receive: box addr h);
 	log 'from zone b: ' got ', sent by zone b: ' (Mail.sender is b) ', player ' h.player ' now at ' h.x ', ' h.y '\n';
-	log 'zone b box gone: ' ((Mail.Find: 'zoneb') is -1) ', its number reaches: ' (Mail.Send: h.box addr h) '\n';
+	log 'zone b box gone: ' ((Mail.Find: 'zoneb') is -1) ', its number reaches: ' (Mail.Send: h.box as int addr h) '\n';
 	int again: (Mail.Open: 'zoneb' sizeof Handover 8);
-	log 'opened again: ' (again >= 0) ', a new number: ' (again is not h.box) ', the old one reaches: ' (Mail.Send: h.box addr h) '\n';
+	log 'opened again: ' (again >= 0) ', a new number: ' (again is not h.box) ', the old one reaches: ' (Mail.Send: h.box as int addr h) '\n';
 	exit 0;
 }

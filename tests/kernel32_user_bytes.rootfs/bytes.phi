@@ -1,0 +1,36 @@
+# kernel32_user_bytes's program: asks the kernel to copy to and from its memory, and to and
+# from places that aren't its own.
+use support.user_bytes_calls;
+
+phi.BytesProgram:Program
+{
+	u8 mine[9];
+	mine:8 is 0;
+
+	log 'to mine: ' (BytesCalls.ToUser: addr mine 8) ' ';
+	while int i: 0; i < 8; i++;
+		log mine:i as chr;
+	;;
+	log '\n';
+
+	# nothing to copy needs no checking
+	log 'none: ' (BytesCalls.ToUser: 0 0) ' ' (BytesCalls.FromUser: 0 0) '\n';
+
+	# the kernel's own memory, either way
+	ptr<u8> kernels: (BytesCalls.WhereKept) as u32;
+	log 'to the kernel: ' (BytesCalls.ToUser: kernels 8) '\n';
+	log 'from the kernel: ' (BytesCalls.FromUser: kernels 8) '\n';
+
+	# a count that went negative is a huge u32
+	int negative: -2147483647 - 1;
+	log 'negative count: ' (BytesCalls.ToUser: addr mine negative) ' ' (BytesCalls.FromUser: addr mine negative) '\n';
+	log 'minus one: ' (BytesCalls.ToUser: addr mine (-1)) ' ' (BytesCalls.FromUser: addr mine (-1)) '\n';
+
+	# starting in its memory and running out of it: the whole of it is checked, not its start
+	log 'past its end: ' (BytesCalls.ToUser: addr mine 0x7FFFFFFF) ' ' (BytesCalls.FromUser: addr mine 0x7FFFFFFF) '\n';
+
+	# and what it's allowed to change does change
+	mine:0 is 'Z';
+	log 'from mine: ' (BytesCalls.FromUser: addr mine 1) '\n';
+	exit 7;
+}

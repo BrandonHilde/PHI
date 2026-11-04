@@ -82,7 +82,7 @@ phi.Surfaces:Kernel
 		;;
 		int pid: (OS.CurrentProcess);
 		if pid <= 0 or pid >= MAX_PROCESSES return -1;
-		if number is SYS_SURFACE_OPEN return (Open: pid a b);
+		if number is SYS_SURFACE_OPEN return (Open: pid a as int b as int);
 		if number is SYS_SURFACE_PRESENT return (Present: pid a);
 		if number is SYS_NEXT_EVENT return (Next: pid a);
 		if number is SYS_COPY_FONT return (CopyFont: a);

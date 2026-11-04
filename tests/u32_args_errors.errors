@@ -1,0 +1,5 @@
+5:13: error: parameter 'value' is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32
+6:13: error: parameter 'value' is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32
+7:13: error: parameter 'value' is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32
+8:16: error: parameter 'value' is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32
+9:13: error: argument 1 of kept is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32

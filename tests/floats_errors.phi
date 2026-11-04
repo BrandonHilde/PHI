@@ -8,4 +8,9 @@ phi.FloatsErrors:Kernel
 	f32 y: ~x;
 	str s: 'a';
 	f64 z: s;
+
+	# a whole-number method's early return
+	[Whole: int n: 0;]
+		if n is 1 return 1.5;
+	[end: 0]
 }

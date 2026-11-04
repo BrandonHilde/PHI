@@ -20,7 +20,8 @@ namespace Phi.Cli
         /// <param name="Root">The program it's a part of, when that isn't the file with Added after it.</param>
         /// <param name="Added">More source after the program's own: a wrapper, the class Machine.</param>
         /// <param name="WholeHost">The program has every part of the system's runtime.</param>
-        sealed record Plan(Host Host, string Added = "", string? Root = null, bool WholeHost = false);
+        /// <param name="OnlyAdded">The program is only what's Added: Root isn't on the disk.</param>
+        sealed record Plan(Host Host, string Added = "", string? Root = null, bool WholeHost = false, bool OnlyAdded = false);
 
         /// <summary>The longest list of programs tried for a module, as each is a whole compile.</summary>
         const int MostUsers = 8;
@@ -69,8 +70,7 @@ namespace Phi.Cli
             {
                 CompileResult result = p.Root == null
                     ? PhiCompiler.Compile(new SourceFile(path, text + p.Added), generate: false, host: p.Host, open: withThis, bindAnyway: bindAnyway, wholeHost: p.WholeHost)
-                    // (the program around a system's runtime is only what's Added: it's not on the disk)
-                    : PhiCompiler.Compile(new SourceFile(p.Root, (p.WholeHost ? "" : TextOf(p.Root, withThis)) + p.Added), generate: false, host: p.Host, open: withThis,
+                    : PhiCompiler.Compile(new SourceFile(p.Root, (p.OnlyAdded ? "" : TextOf(p.Root, withThis)) + p.Added), generate: false, host: p.Host, open: withThis,
                                           bindAnyway: bindAnyway, wholeHost: p.WholeHost);
                 return Only(key, result);
             }
@@ -141,7 +141,20 @@ namespace Phi.Cli
             // in a program with all of its system's runtime
             if (partOfRuntime)
                 foreach (Host system in ownSystem is Host one ? new[] { one } : new[] { Host.Linux, Host.Windows })
-                    yield return new Plan(target ?? system, "use memory.program_heap;" + ProgramWrapper, Root: RuntimeRoot(path), WholeHost: true);
+                    yield return new Plan(target ?? system, "use memory.program_heap;" + ProgramWrapper, Root: RuntimeRoot(path), WholeHost: true, OnlyAdded: true);
+
+            // a module in a subfolder, whose uses are written from the folder above it, as its
+            // program finds them: in the smallest program there, which isn't on the disk
+            string? top = FolderItsUsesAreFrom(path, own, open);
+            if (top != null && ownSystem == null && !partOfRuntime)
+            {
+                string use = "use " + Path.GetRelativePath(top, Path.ChangeExtension(Path.GetFullPath(path), null)).Replace(Path.DirectorySeparatorChar, '.') + ";\n";
+                string root = Path.Combine(top, "phi_check_module.phi");
+                if (host == Host.PhiOS && !own.Classes.Any(c => c.Base == Binder.ProgramBase))
+                    yield return new Plan(host, use + KernelWrapper, Root: root, OnlyAdded: true);
+                if (!own.Classes.Any(c => c.Base == Binder.KernelBase))
+                    yield return new Plan(host, use + ProgramWrapper, Root: root, OnlyAdded: true);
+            }
 
             if (ownSystem == null && !partOfRuntime)
             {
@@ -159,7 +172,7 @@ namespace Phi.Cli
             }
 
             // in a program that uses it, as it's built
-            foreach (string user in UsersOf(path, open))
+            foreach (string user in UsersOf(path, open, top))
             {
                 var parsing = new DiagnosticBag();
                 ProgramNode theirs = Parser.Parse(new SourceFile(user, TextOf(user, open)), parsing);
@@ -272,14 +285,14 @@ namespace Phi.Cli
             !own.Classes.Any(c => c.Name == "LoadSettings") && text.Contains("LoadSettings.");
 
         /// <summary>The .phi files in this repository (or folder, without one) with a `use` of this file's name.</summary>
-        static IEnumerable<string> UsersOf(string path, IReadOnlyDictionary<string, string> open)
+        static IEnumerable<string> UsersOf(string path, IReadOnlyDictionary<string, string> open, string? top)
         {
             string full = Path.GetFullPath(path);
             string name = Path.GetFileNameWithoutExtension(full);
             var use = new Regex($@"^\s*use\s+([\w]+\.)*{Regex.Escape(name)}\s*;", RegexOptions.Multiline);
 
             int found = 0;
-            foreach (string file in PhiFiles(RepositoryOf(full)))
+            foreach (string file in PhiFiles(RepositoryOf(full, top)))
             {
                 if (file.Equals(full, StringComparison.OrdinalIgnoreCase)) continue;
                 string text;
@@ -291,13 +304,35 @@ namespace Phi.Cli
             }
         }
 
-        /// <summary>The folder above a file with a .git in it, or else the file's own.</summary>
-        static string RepositoryOf(string file)
+        /// <summary>The folder above a file with a .git in it; else the folder its uses are from, or its own.</summary>
+        static string RepositoryOf(string file, string? top)
         {
             string own = Path.GetDirectoryName(file) ?? "";
             for (string? dir = own; dir != null; dir = Path.GetDirectoryName(dir))
                 if (Directory.Exists(Path.Combine(dir, ".git"))) return dir;
-            return own;
+            return top ?? own;
+        }
+
+        /// <summary>
+        /// A use is found next to the file, next to its program or in the standard library. For
+        /// a module by itself, one that's none of those says where its program must be: the
+        /// nearest folder above it that has every such use. Null if it has none, or none does.
+        /// </summary>
+        static string? FolderItsUsesAreFrom(string path, ProgramNode own, IReadOnlyDictionary<string, string> open)
+        {
+            string full = Path.GetFullPath(path);
+            string? here = Path.GetDirectoryName(full);
+            bool Has(string folder, string use)
+            {
+                string file = Path.Combine(folder, use.Replace('.', Path.DirectorySeparatorChar) + ".phi");
+                return open.ContainsKey(PhiCompiler.FileKey(file)) || File.Exists(file);
+            }
+
+            List<string> missing = own.Uses.Select(u => u.Path).Where(u => here != null && !Has(here, u) && !PhiCompiler.InStandardLibrary(u)).ToList();
+            if (here == null || missing.Count == 0) return null;
+            for (string? dir = Path.GetDirectoryName(here); dir != null; dir = Path.GetDirectoryName(dir))
+                if (missing.All(u => Has(dir, u))) return dir;
+            return null;
         }
 
         static IEnumerable<string> PhiFiles(string folder)

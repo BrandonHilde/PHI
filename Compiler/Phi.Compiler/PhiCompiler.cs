@@ -327,6 +327,14 @@ namespace Phi.Compiler
             return new SourceFile(resource, reader.ReadToEnd());
         }
 
+        /// <summary>Whether a `use` of this name finds a module of the standard library.</summary>
+        public static bool InStandardLibrary(string dotted)
+        {
+            string resource = StandardLibrary + dotted.Replace('.', '/') + ".phi";
+            using Stream? stream = typeof(PhiCompiler).Assembly.GetManifestResourceStream(resource) ?? FindResource(resource);
+            return stream != null;
+        }
+
         static Stream? FindResource(string name)
         {
             // resource names may use either slash, depending on how they were embedded

@@ -1,0 +1,16 @@
+# kernel32_user_bytes's system calls, on the program's side.
+sys.ToUser: 110 ptr<u8> to u32 count;
+sys.FromUser: 111 ptr<u8> from u32 count;
+sys.WhereKept: 112;
+
+phi.BytesCalls:PhiOS
+{
+	[ToUser: ptr<u8> to: 0; u32 count: 0;]
+	[end: (sys.ToUser: to count)]
+
+	[FromUser: ptr<u8> from: 0; u32 count: 0;]
+	[end: (sys.FromUser: from count)]
+
+	[WhereKept]
+	[end: (sys.WhereKept)]
+}

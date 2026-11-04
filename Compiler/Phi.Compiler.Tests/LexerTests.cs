@@ -116,6 +116,24 @@ namespace Phi.Compiler.Tests
         }
 
         [Theory]
+        [InlineData("'can''t'")]
+        [InlineData("''''")]
+        [InlineData("'one''two' 'three'")]
+        public void AStringRightAfterAStringIsAnError(string text)
+        {
+            Lex(text, out var diagnostics);
+            Assert.Contains(diagnostics.Items, d => d.Severity == Severity.Error && d.Message.Contains("write it once ('can't')"));
+        }
+
+        [Theory]
+        [InlineData("'can't'")]
+        [InlineData(@"'can\'t'")]
+        [InlineData("'one' 'two'")]
+        [InlineData("''")]
+        [InlineData("'' ''")]
+        public void AQuoteInsideAStringOrAfterASpaceIsFine(string text) => Lex(text);
+
+        [Theory]
         [InlineData(@"'\x4'")]
         [InlineData(@"'\xG1'")]
         [InlineData(@"'\x'")]

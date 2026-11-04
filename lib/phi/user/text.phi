@@ -159,7 +159,7 @@ phi.Text:Library
 	# to the nearest unit); returns the new length
 	[AppendSize: ptr<u8> to: 0; u32 bytes: 0; int size: 0;]
 		if bytes < 1024
-			call AppendNumber: to bytes size;
+			call AppendNumber: to bytes as int size;
 			if bytes is 1
 				return (Append: to ' byte' size);
 			;;
@@ -179,7 +179,7 @@ phi.Text:Library
 		if bytes % unit >= unit / 2
 			whole++;
 		;;
-		call AppendNumber: to whole size;
+		call AppendNumber: to whole as int size;
 	[end: (Append: to name size)]
 
 	# drop spaces at the end

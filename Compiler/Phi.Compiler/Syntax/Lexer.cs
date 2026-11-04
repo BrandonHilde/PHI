@@ -144,7 +144,13 @@ namespace Phi.Compiler.Syntax
             }
 
             if (char.IsDigit(c)) return ReadNumber();
-            if (c == '\'') return ReadString();
+            if (c == '\'')
+            {
+                Token read = ReadString();
+                if (Peek() == '\'')
+                    diagnostics.Error(file, new Span(pos, 1), "a string has just ended here, so this quote starts a second one; for a quote inside a string, write it once ('can't') or as \\' (put a space between them for two strings)");
+                return read;
+            }
 
             pos++;
             TokenKind kind;

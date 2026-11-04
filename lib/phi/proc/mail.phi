@@ -165,21 +165,21 @@ phi.Mail:Kernel
 			if number is SYS_MAIL_FIND return (Find: addr call_name);
 			return (OpenFor: pid addr call_name b c);
 		;;
-		int place: (Place: a);
+		int place: (Place: a as int);
 		if place < 0 return -1;
 		u32 size: boxes:place.size;
 		if number is SYS_MAIL_SEND
 			if (Process.UserRange: b size) is false return 0;
-			if (SendFrom: pid a b) return 1;
+			if (SendFrom: pid a as int b) return 1;
 			return 0;
 		;;
 		if number is SYS_MAIL_RECEIVE
 			if (Process.UserRange: b size) is false return 0;
-			return (ReceiveFor: pid a b);
+			return (ReceiveFor: pid a as int b);
 		;;
-		if number is SYS_MAIL_WAITING return (Waiting: a);
+		if number is SYS_MAIL_WAITING return (Waiting: a as int);
 		if number is SYS_MAIL_CLOSE
-			if (CloseFor: pid a) return 1;
+			if (CloseFor: pid a as int) return 1;
 			return 0;
 		;;
 	[end: -1]

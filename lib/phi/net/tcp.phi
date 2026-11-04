@@ -703,7 +703,7 @@ phi.Tcp:Kernel
 			return;
 		;;
 		retransmits++;
-		c.resend_at is (Later: FIRST_WAIT << c.retries);
+		c.resend_at is (Later: (FIRST_WAIT << c.retries) as int);
 		if c.state is SYN_RECEIVED
 			call SendSegment: c c.send_unacked SYN | ACK 0 0;
 			return;

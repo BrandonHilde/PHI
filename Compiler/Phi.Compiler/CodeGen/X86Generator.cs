@@ -1509,7 +1509,7 @@ namespace Phi.Compiler.CodeGen
             LockedStmt l => SafeRoot(l.Lock),
             IfStmt i => SafeValue(i.Condition),
             WhileStmt w => (w.Init == null || SafeStatement(w.Init)) && SafeValue(w.Condition) && (w.Step == null || SafeStatement(w.Step)),
-            WhenStmt w => OneRegister(w.Subject.Type) && !(w.Subject.Type.IsPointer && w.Subject.Type.Pointee == PhiType.U8)
+            WhenStmt w => OneRegister(w.Subject.Type) && !w.Subject.Type.IsTextPointer
                           && SafeValue(w.Subject) && w.Branches.All(b => b.Values.All(SafeValue)),
             _ => SafeStatement(s),
         };
@@ -2458,8 +2458,8 @@ namespace Phi.Compiler.CodeGen
             }
         }
 
-        /// <summary>A str, or a ptr&lt;u8&gt;: the address of zero-terminated text, copied or printed as text.</summary>
-        static bool IsText(PhiType t) => t.IsString || (t.IsPointer && t.Pointee == PhiType.U8);
+        /// <summary>A str, or a text pointer: the address of zero-terminated text, copied or printed as text.</summary>
+        static bool IsText(PhiType t) => t.IsString || t.IsTextPointer;
 
         /// <summary>The label of a string whose address is known without running code.</summary>
         string? StaticAddress(Expr e) => e switch
@@ -3810,7 +3810,7 @@ namespace Phi.Compiler.CodeGen
         void EmitWhen(WhenStmt when)
         {
             PhiType t = when.Subject.Type;
-            bool text = !t.IsNumeric && !t.IsWide && !t.IsFloat || t.IsPointer && t.Pointee == PhiType.U8;
+            bool text = !t.IsNumeric && !t.IsWide && !t.IsFloat || t.IsTextPointer;
             string subject = AllocTemp(t.IsWide || t.IsFloat ? 8 : 4);
             string end = NewLabel("endwhen");
             string otherwise = when.Else != null ? NewLabel("whenelse") : end;

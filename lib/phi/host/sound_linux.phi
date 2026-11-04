@@ -168,7 +168,7 @@ phi.SoundSystem:Linux
 		if output_ms > MOST_OUTPUT_MS
 			output_ms is MOST_OUTPUT_MS;
 		;;
-		int left: (Frames: began + (Lasts: run_bytes) + output_ms - now) * 4;
+		int left: (Frames: (began + (Lasts: run_bytes) + output_ms - now) as int) * 4;
 		if left < held
 			left is held;
 		;;

@@ -595,6 +595,18 @@ these were added:
   inside a class and for a string that ends with a line break written into it; `OS.Idle`
   (a kernel's main loop rests until something happens); `App.SetResizable`; `reboot` in
   input scripts (restart on the same disk)
+- [x] From PhiOS's MATURITY.md and a read of its kernel (2026-11-04): a `u32` going to an `int`
+  parameter is an error, unless it's a constant that fits or known to (`x & 0xFF`, `x >> 1`,
+  `x / 2`, `x % 100`), which caught a real hole in PhiOS's clipboard call, and in the library
+  only places that check first, so those say `as int`; a `ptr<chr>` is text as a `ptr<u8>` is,
+  and a moved one is too wherever it goes into a `str` (`s is p + 1` and `s is addr t:1` wrote
+  the address, `s++ p + 1` the text); an early `return` of a float or a 64-bit number works;
+  `'can''t'` is an error; `Process.CopyBytesFromUser` and `CopyBytesToUser`; `phi check` and
+  `phi lsp` find a module's uses from the folder above it when it isn't in a repository, or
+  when nothing uses it yet. Not done from that list: `const f64` (a class variable for now),
+  `FatImage.cs` stamping files in local time where the kernel uses UTC, and an `int` going
+  to a `u32` parameter, which is everywhere and would need its own look (a negative count is
+  what `Mem.Copy` gets that way; the checked copies above refuse it)
 - [x] Names in a class's own code are scoped by block, as they are in a method
   (2026-11-01): a name declared again in a separate block there is a variable of its own.
   This replaced three special cases for class code (`is Player p`, `while each` over the

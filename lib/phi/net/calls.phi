@@ -90,14 +90,14 @@ phi.NetCalls:Kernel
 		if number is SYS_UDP_OPEN return (UdpOpen: pid a b);
 		if number is SYS_UDP_CLOSE
 			if (OwnsSocket: pid a) is false return 0;
-			call Udp.Close: a;
+			call Udp.Close: a as int;
 			socket_owner:a is 0;
 			return 1;
 		;;
 		if number is SYS_UDP_RECEIVE
 			if (OwnsSocket: pid a) is false return 0;
 			if (Process.UserRange: b sizeof UdpDatagram) is false return 0;
-			if (Udp.Receive: a b) return 1;
+			if (Udp.Receive: a as int b) return 1;
 			return 0;
 		;;
 		if number is SYS_UDP_SEND
@@ -105,7 +105,7 @@ phi.NetCalls:Kernel
 			u32 s: a & 0xFFFF;
 			if (OwnsSocket: pid s) is false return 0;
 			if (Process.UserRange: c d) is false return 0;
-			if (Udp.SendTo: s b a >> 16 c d) return 1;
+			if (Udp.SendTo: s as int b a >> 16 c d) return 1;
 			return 0;
 		;;
 
@@ -128,7 +128,7 @@ phi.NetCalls:Kernel
 		;;
 		if number is SYS_TCP_ACCEPT
 			if (OwnsListener: pid a) is false return -1;
-			int accepted: (Tcp.Accept: a);
+			int accepted: (Tcp.Accept: a as int);
 			if accepted >= 0
 				connection_owner:accepted is pid;
 			;;
@@ -136,26 +136,26 @@ phi.NetCalls:Kernel
 		;;
 		if number is SYS_TCP_STOP_LISTENING
 			if (OwnsListener: pid a) is false return 0;
-			call Tcp.StopListening: a;
+			call Tcp.StopListening: a as int;
 			listener_owner:a is 0;
 			return 1;
 		;;
 
 		# the rest are about a connection the program has
 		if (OwnsConnection: pid a) is false return -1;
-		if number is SYS_TCP_STATE return (Tcp.State: a);
-		if number is SYS_TCP_WAITING return (Tcp.Waiting: a);
-		if number is SYS_TCP_ADDRESS return (Tcp.Address: a);
+		if number is SYS_TCP_STATE return (Tcp.State: a as int);
+		if number is SYS_TCP_WAITING return (Tcp.Waiting: a as int);
+		if number is SYS_TCP_ADDRESS return (Tcp.Address: a as int);
 		if number is SYS_TCP_SEND
 			if (Process.UserRange: b c) is false return -1;
-			return (Tcp.Send: a b c);
+			return (Tcp.Send: a as int b c);
 		;;
 		if number is SYS_TCP_TAKE
 			if (Process.UserRange: b c) is false return -1;
-			return (Tcp.Take: a b c);
+			return (Tcp.Take: a as int b c);
 		;;
 		if number is SYS_TCP_CLOSE
-			call Tcp.Close: a;
+			call Tcp.Close: a as int;
 			connection_owner:a is 0;
 			return 1;
 		;;

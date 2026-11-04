@@ -1,0 +1,24 @@
+phi.UnsignedArguments:Kernel
+{
+	u32 big: 0x80000000;
+	method<int: int> kept: addr Take;
+	call Take: big;
+	call Take: big + 1;
+	call Take: 0x80000000;
+	int n: (Take: big);
+	call kept: big;
+
+	# what's said to be meant, or known to fit, or can't be too big
+	call Take: big as int;
+	call Take: 5;
+	call Take: big & 0xFF;
+	call Take: big >> 1;
+	call Take: big / 2;
+	call Take: big % 100;
+	u8 small: 1;
+	call Take: small;
+	log n '\n';
+
+	[Take: int value: 0;]
+	[end: value]
+}

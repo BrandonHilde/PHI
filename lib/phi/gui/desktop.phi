@@ -73,7 +73,7 @@ phi.Desktop:Kernel
 	[HeldKey: u32 key: 0;]
 		if windows.len is 0 return 0;
 		if windows:(windows.len - 1).pid is not (OS.CurrentProcess) return 0;
-		if (Input.IsDown: key) return 1;
+		if (Input.IsDown: key as int) return 1;
 	[end: 0]
 
 	# start a program from the disk in a window with its top left at (x, y); its process

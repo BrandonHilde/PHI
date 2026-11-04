@@ -105,6 +105,9 @@ namespace Phi.Compiler.Semantics
         public bool IsError => Kind == TypeKind.Error;
         public bool IsString => !IsArray && Kind == TypeKind.Str;
         public bool IsPointer => !IsArray && Kind == TypeKind.Pointer;
+
+        /// <summary>A ptr&lt;u8&gt; or ptr&lt;chr&gt;: the address of zero-terminated text, written out as that text.</summary>
+        public bool IsTextPointer => IsPointer && (Pointee == U8 || Pointee == Chr);
         public bool IsStruct => !IsArray && Kind == TypeKind.Struct;
 
         /// <summary>A struct reached through its address: x.field works on it like on a struct.</summary>

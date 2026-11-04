@@ -458,6 +458,22 @@ phi.Process:Kernel
 		;;
 	[end: ok and ended]
 
+	# count bytes from the calling program's memory; false, with nothing copied, if any of
+	# them isn't its own. A count that went negative somewhere is a huge u32 here, so it fails.
+	[CopyBytesFromUser: u32 from: 0; ptr<u8> to: 0; u32 count: 0;]
+		if count is 0 return true;
+		if (UserRange: from count) is false return false;
+		call Mem.Copy: to from count;
+	[end: true]
+
+	# count bytes into the calling program's memory; false, with nothing copied, if any of
+	# them isn't its own
+	[CopyBytesToUser: u32 to: 0; ptr<u8> from: 0; u32 count: 0;]
+		if count is 0 return true;
+		if (UserRange: to count) is false return false;
+		call Mem.Copy: to from count;
+	[end: true]
+
 	# system calls numbered 16 and up, from programs: the number is in the saved
 	# eax, arguments in ebx, ecx and edx, and the result goes back in eax
 	[HandleSyscall]
@@ -552,7 +568,7 @@ phi.Process:Kernel
 			if (OwnThread: first)
 				result is 0;
 				if (OS.TaskState: first) >= TASK_EXITED
-					call FreeThread: first;
+					call FreeThread: first as int;
 					result is 1;
 				;;
 			;;
@@ -618,7 +634,7 @@ phi.Process:Kernel
 		;;
 		if number is SYS_LIST_FOLDER
 			if not (UserRange: second third * sizeof FileInfo) or third >= 0x10000 return -1;
-			return (Fat.Entries: addr file_path second third);
+			return (Fat.Entries: addr file_path second third as int);
 		;;
 		if number is SYS_MAKE_FOLDER return (Fat.MakeFolder: addr file_path);
 		if number is SYS_RENAME

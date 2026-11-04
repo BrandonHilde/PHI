@@ -1,0 +1,56 @@
+# A pointer to text moved along is the rest of the text, however it's written into a str
+# or printed, and a ptr<chr> is as much text as a ptr<u8> is.
+phi.TextPointerWrites:Kernel
+{
+	str text: 'hello';
+	ptr<u8> p: text;
+	str s: [20];
+
+	s is p + 1;
+	debug s '\n';
+	s is '';
+	s++ p + 1;
+	debug s '\n';
+	s is p + 1 - 1;
+	debug s '\n';
+
+	s is addr text:1;
+	debug s '\n';
+	s is '';
+	s++ addr text:2;
+	debug s '\n';
+
+	str made: p + 2;
+	debug made '\n';
+	str alsoMade: addr text:3;
+	debug alsoMade '\n';
+
+	call Show: p + 4;
+	call Show: addr text:1;
+
+	ptr<chr> c: addr text:1;
+	debug c '\n';
+	debug c + 1 '\n';
+	debug c:0 '\n';
+	s is c;
+	debug s '\n';
+	s is c + 2;
+	debug s '\n';
+	when c
+		is 'ello'
+			debug 'a when knows it\n';
+		;;
+	;;
+
+	# a pointer that isn't to text stays a number, and so does how far apart two are
+	int numbers: 5 6;
+	ptr<int> q: addr numbers:0;
+	s is (q + 1) - q;
+	debug s '\n';
+	s is (p + 3) - p;
+	debug s '\n';
+
+	[Show: str shown: '';]
+		debug shown '\n';
+	[end]
+}

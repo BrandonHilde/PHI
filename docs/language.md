@@ -111,8 +111,9 @@ adding errors of their own.
 | Constants | `Colors.Black` … `Colors.White` (the 16 VGA colors), and your own `const` |
 
 A quote followed directly by a letter or digit doesn't end a string, which is why
-`'hasn't'` works. Strings can span several lines. A number too big for `int` (like
-`0x80000000`) is a `u32`.
+`'hasn't'` works. Doubling a quote doesn't make one: `'can''t'` is an error, since it would
+be two strings with nothing between them (write `'can't'`, or `'can\'t'`). Strings can span
+several lines. A number too big for `int` (like `0x80000000`) is a `u32`.
 
 ## Variables
 
@@ -557,8 +558,10 @@ exit 0;                         # stop QEMU (used by tests); halts on real hardw
 ```
 
 `log` and `debug` print strings as text and numbers in decimal (`u32` and pointers as
-unsigned). A `ptr<u8>` prints as the zero-terminated text it points to, like a `str`; to
-print the address instead, put it in a `u32` first. On the screen, a new line needs `\r\n`.
+unsigned). A `ptr<u8>` or `ptr<chr>` prints as the zero-terminated text it points to, like a
+`str`, and so does one moved along (`p + 1` is the text from its second character, and
+`addr s:1` is a `ptr<chr>`); to print the address instead, put it in a `u32` first. On the
+screen, a new line needs `\r\n`.
 
 ### Assignment
 
@@ -576,6 +579,7 @@ list:2 is 7;   # one element
 task.id is 3;  # one field
 name is 'new text';
 name is line;  # line is a ptr<u8>: copies the text it points to (cut to fit)
+name is line + 1;   # the same text from its second character, as name++ line + 1; adds it
 ```
 
 `b is h is 64;` stores whether `h is 64` in `b`, which reads ambiguously, so it's a warning;
@@ -1950,7 +1954,11 @@ y` draws it (through `Draw`, so cut to the view), and `PostKey: pid key`, `PostM
 y buttons clicks wheel` and `PostClose: pid` queue events for it (32 each). The system calls
 underneath are `OS.SurfaceOpen: w h`, `OS.SurfacePresent: pixels`, `OS.NextEvent: event` and
 `OS.CopyFont: glyphs` (64 to 67); `proc.process` hands calls from 64 up to
-`Process.more_calls`, so other libraries can add their own.
+`Process.more_calls`, so other libraries can add their own. A call's arguments come from the
+program, so what it reads or writes has to be the program's own memory:
+`Process.CopyBytesFromUser: from to count` and `Process.CopyBytesToUser: to from count` copy
+only if every byte is, and say whether they did; `Process.CopyFromUser: from to max` does the
+same for a string.
 
 ## Sound
 
@@ -2521,9 +2529,14 @@ if (IsReady: port)
   method variable or field that takes no arguments (see [Methods as values](#methods-as-values)).
   The method must return a value. Without the parentheses (`if Ready: 3`) the error says to
   add them.
+- **A `u32` going to an `int` parameter** is an error, as it comes out negative from 2
+  billion up, and gets past a method's own check like `if n > 0`. Write `as int` if that's
+  meant, or have the method take a `u32`. A constant that fits is fine, and so is what's
+  known to fit: `x & 0xFF`, `x >> 1`, `x / 2`, `x % 100`. This is about your own methods: an
+  `OS.` call takes a `u32` the same on every system.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
-  ends one that has `[end]`. The value must be the same kind (number or `str`) as the one
-  after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
+  ends one that has `[end]`. The value must be the same kind (number, float, 64-bit number
+  or `str`) as the one after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
   even when every way out is a `return` (`[end: 0]` will do). A string literal there
   (`[end: 'none']`) makes a `str` method, unless a `return` hands back an `addr` or a
   `ptr<u8>`: then the method is a `ptr<u8>` one, and the literal's address is its result.

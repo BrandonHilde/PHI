@@ -1,0 +1,38 @@
+# A return before [end: value] gives back what [end: value] does: a float or a 64-bit
+# number too, whatever kind of number is written after the return.
+phi.ReturnsEarly:Kernel
+{
+	log (Float: 1) ' ' (Float: 2) ' ' (Float: 3) ' ' (Float: 4) ' ' (Float: 5) '\n';
+	log (Narrow: 1) ' ' (Narrow: 2) '\n';
+	log (Wide: 1) ' ' (Wide: 2) ' ' (Wide: 3) '\n';
+	log (Half: 9) ' ' (Half: -1) '\n';
+	f64 sum: (Float: 1) + (Float: 3);
+	log sum '\n';
+
+	[Float: int n: 0;]
+		if n is 1 return 1.5;
+		if n is 2 return 2;
+		f32 small: 2.5;
+		if n is 3 return small;
+		if n is 4
+			return 0.25 + 0.5;
+		;;
+	[end: 0.0]
+
+	[Narrow: int n: 0;]
+		f32 result: 0.5;
+		if n is 1 return 1.25;
+	[end: result]
+
+	[Wide: int n: 0;]
+		u64 big: 5000000000;
+		if n is 1 return big + 1;
+		if n is 2 return 7;
+	[end: big]
+
+	# a method that calls itself, leaving early with a float
+	[Half: int n: 0;]
+		if n < 0 return -0.5;
+		if n > 0 return (Half: n - 10) / 2.0;
+	[end: 1.0]
+}

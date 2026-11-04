@@ -12,7 +12,7 @@ phi.MyKernel:Kernel
 	# what the loader found out about the machine
 	ptr<BootInfo> boot: Boot.info;
 	call Vga.Print: 'Memory map entries: ';
-	call Vga.PrintNumber: boot:0.region_count;
+	call Vga.PrintNumber: boot:0.region_count as int;
 	call Vga.Print: '\n';
 
 	# straight to video memory, without the driver

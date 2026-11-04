@@ -780,6 +780,77 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AModuleInASubfolderFindsItsUsesFromTheFolderAboveIt()
+        {
+            // (no program uses them yet, and there's no repository to look for one in)
+            Write("lib/one.phi", "phi.One:Library\n{\n\t[Value]\n\t[end: 1]\n}\n");
+            string two = Write("lib/two.phi", "use lib.one;\nphi.Two:Library\n{\n\t[Value]\n\t[end: (One.Value) + 1]\n}\n");
+            CompileResult result = new SourceChecker().Check(two, File.ReadAllText(two));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Fact]
+        public void AModuleInASubfolderStillHasItsOwnMistakesFound()
+        {
+            Write("lib/one.phi", "phi.One:Library\n{\n\t[Value]\n\t[end: 1]\n}\n");
+            string two = Write("lib/two.phi", "use lib.one;\nphi.Two:Library\n{\n\tnothingCalledThis++ 1;\n}\n");
+            CompileResult result = new SourceChecker().Check(two, File.ReadAllText(two));
+            Diagnostic error = Assert.Single(result.Diagnostics.Where(d => d.Severity == Severity.Error));
+            Assert.Contains("nothingCalledThis", error.Message);
+        }
+
+        [Fact]
+        public void AModuleInASubfolderIsCheckedWithItsUnsavedText()
+        {
+            Write("lib/one.phi", "phi.One:Library\n{\n\t[Value]\n\t[end: 1]\n}\n");
+            string two = Write("lib/two.phi", "use lib.one;\nphi.Two:Library\n{\n\t[Value]\n\t[end: (One.Value) + 1]\n}\n");
+            CompileResult result = new SourceChecker().Check(two, "use lib.one;\nphi.Two:Library\n{\n\tchangedSinceSaved++ 1;\n}\n");
+            Assert.Contains(result.Diagnostics, d => d.Message.Contains("changedSinceSaved"));
+        }
+
+        [Fact]
+        public void AUseThatsNowhereIsStillAnError()
+        {
+            string lost = Write("lib/lost.phi", "use lib.nothing;\nphi.Lost:Library\n{\n}\n");
+            CompileResult result = new SourceChecker().Check(lost, File.ReadAllText(lost));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("can't find lib/nothing.phi"));
+        }
+
+        [Fact]
+        public void AModuleThatNeedsItsProgramIsCheckedInOneAboveIt()
+        {
+            // (Shared comes only from the program, so a smallest program around the module isn't enough)
+            Write("shared.phi", "phi.Shared:Library\n{\n\tint value: 1;\n}\n");
+            Write("lib/one.phi", "phi.One:Library\n{\n\t[Value]\n\t[end: 1]\n}\n");
+            string two = Write("lib/two.phi", "use lib.one;\nphi.Two:Library\n{\n\tShared.value++ (One.Value);\n}\n");
+            Write("main.phi", "use shared;\nuse lib.two;\nphi.Main:Kernel\n{\n}\n");
+            CompileResult result = new SourceChecker().Check(two, File.ReadAllText(two));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData(Host.PhiOS)]
+        [InlineData(Host.Linux)]
+        [InlineData(Host.Windows64)]
+        public void AU32GoesToAnOSCallTheSameOnEverySystem(Host system)
+        {
+            // (on another system a module with int parameters does the call, which a program doesn't see)
+            string path = Write("append.phi", "phi.Append:Program\n{\n\tu32 size: 1;\n\tcall OS.AppendFile: 'x.txt' 'y' size;\n}\n");
+            CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData(Host.PhiOS)]
+        [InlineData(Host.Linux)]
+        public void AU32GoingToAMethodsIntIsTheSameErrorOnEverySystem(Host system)
+        {
+            string path = Write("own.phi", "phi.Own:Program\n{\n\tu32 size: 1;\n\tcall Take: size;\n\t[Take: int n: 0;]\n\t[end]\n}\n");
+            CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("comes out negative"));
+        }
+
+        [Fact]
         public void TheSystemAskedForIsTheOneChecked()
         {
             string path = Write("hello.phi", "phi.Hello:Program\n{\n\tlog 'hi';\n}\n");

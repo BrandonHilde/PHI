@@ -435,7 +435,7 @@ namespace Phi.Compiler.Semantics
             m.Decl.Body.SelectMany(SyntaxWalker.Nodes).OfType<ReturnStmt>().Any(r => r.Value switch
             {
                 AddrExpr a => !(a.Operand is NameExpr target && Lookup(target.Name, methodScopes[m.Decl]) is not VariableSymbol), // not addr Method
-                NameExpr n => Lookup(n.Name, methodScopes[m.Decl]) is VariableSymbol { Type: { IsPointer: true, IsArray: false } t } && t.Pointee == PhiType.U8,
+                NameExpr n => Lookup(n.Name, methodScopes[m.Decl]) is VariableSymbol { Type: { IsTextPointer: true } },
                 _ => false,
             });
 
@@ -445,7 +445,7 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         static void KeepTextPointer(Expr e)
         {
-            if (e is BinaryExpr && !e.Type.IsPointer && MovedPointer(e) is PhiType moved && moved.Pointee == PhiType.U8)
+            if (e is BinaryExpr && !e.Type.IsPointer && MovedPointer(e) is PhiType { IsTextPointer: true } moved)
                 e.Type = moved;
         }
 
@@ -964,7 +964,7 @@ namespace Phi.Compiler.Semantics
                 Error(has.Span, "has needs 32-bit code (a Kernel or a Program)");
                 return;
             }
-            static bool Text(PhiType p) => p.IsString || p.IsPointer && p.Pointee == PhiType.U8;
+            static bool Text(PhiType p) => p.IsString || p.IsTextPointer;
             string name = Describe(has.Collection);
 
             if (!t.IsArray)
@@ -2946,7 +2946,7 @@ namespace Phi.Compiler.Semantics
             }
             BindExpr(w.Subject, scope);
             PhiType t = w.Subject.Type;
-            bool text = t.IsString || (t.IsPointer && t.Pointee == PhiType.U8);
+            bool text = t.IsString || t.IsTextPointer;
             if (!t.IsError && !text && !t.IsNumeric && !t.IsWide && !t.IsFloat)
                 Error(w.Subject.Span, $"when needs a number, an enum or text, and this is {A(t)}");
 
@@ -2962,7 +2962,7 @@ namespace Phi.Compiler.Semantics
 
                     if (text)
                     {
-                        if (!value.Type.IsString && !(value.Type.IsPointer && value.Type.Pointee == PhiType.U8))
+                        if (!value.Type.IsString && !value.Type.IsTextPointer)
                             Error(value.Span, $"this when is on text, so each value is text too, and this is a {value.Type}");
                         else if (value is StringExpr s && !seenText.TryAdd(s.Value, value))
                             Error(value.Span, $"'{s.Value}' is already a value of this when (line {LineOf(seenText[s.Value])})");
@@ -3158,7 +3158,7 @@ namespace Phi.Compiler.Semantics
                     BindExpr(value, scope);
                     if (value.Type.IsError) continue;
                     KeepTextPointer(value);
-                    if (!value.Type.IsNumeric && !value.Type.IsString && !(value.Type.IsPointer && value.Type.Pointee == PhiType.U8))
+                    if (!value.Type.IsNumeric && !value.Type.IsString && !value.Type.IsTextPointer)
                         Error(value.Span, $"'{name}' holds text, so it takes text or a number, not {A(value.Type)}");
                     else append.Values.Add(value);
                 }
@@ -3369,12 +3369,12 @@ namespace Phi.Compiler.Semantics
             if (!result.IsString && ret.Value is StringExpr { Value.Length: 1 })
                 ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
             // a string literal lives as long as the program, so its address can be handed back
-            else if (result.IsPointer && result.Pointee == PhiType.U8 && ret.Value is StringExpr)
+            else if (result.IsTextPointer && ret.Value is StringExpr)
                 ret.Value = Convert(ret.Value, result, "the returned value");
             else if (result.IsString != ret.Value.Type.IsString)
                 Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : result.IsPointer ? result.ToString() : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
             else if (!result.IsString)
-                ret.Value = Convert(ret.Value, result.IsPointer ? result : PhiType.Int, "the returned value");
+                ret.Value = Convert(ret.Value, result.IsPointer || result.IsFloat || result.IsWide ? result : PhiType.Int, "the returned value");
         }
 
         void BindCall(CallStmt call, Scope scope)
@@ -3513,7 +3513,7 @@ namespace Phi.Compiler.Semantics
                         Error(arguments[a].Span, $"{what} is the caller's own str, which the method may write: give it a str variable, field or element");
                     continue;
                 }
-                arguments[a] = Convert(arguments[a], signature.Parameters[a], what);
+                arguments[a] = ConvertArgument(arguments[a], signature.Parameters[a], what);
             }
             if (scope.Unit is UnitKind.Boot or UnitKind.Os)
                 Error(calleeSpan, "interfaces need 32-bit code (a Kernel or a Program)");
@@ -3598,7 +3598,7 @@ namespace Phi.Compiler.Semantics
                             Error(arguments[i].Span, $"argument {i + 1} of {calleeName} is a str into, which the method may write: give it a str variable, field or element");
                         continue;
                     }
-                    arguments[i] = Convert(arguments[i], signature.Parameters[i], $"argument {i + 1} of {calleeName}");
+                    arguments[i] = ConvertArgument(arguments[i], signature.Parameters[i], $"argument {i + 1} of {calleeName}");
                 }
                 return new PointerCall { Target = pointer, Signature = signature };
             }
@@ -3642,7 +3642,11 @@ namespace Phi.Compiler.Semantics
                     for (int i = 0; i < Math.Min(count, Math.Min(method.Parameters.Count, arguments.Count)); i++)
                     {
                         WarnStrLengthAsSize(arguments[i], method.Parameters[i].Name);
-                        arguments[i] = Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
+                        // (OS.AppendFile: on another system its own module does it, and how that
+                        // module takes its numbers isn't something a program should have to answer to)
+                        arguments[i] = Builtins.Find(calleeName) != null
+                            ? Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'")
+                            : ConvertArgument(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
                     }
 
                     return method;
@@ -4763,6 +4767,36 @@ namespace Phi.Compiler.Semantics
         static bool PointerMath(Expr e) => e is BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract } b
             && (b.Left.Type.IsPointer || PointerMath(b.Left)) != (b.Right.Type.IsPointer || PointerMath(b.Right));
 
+        /// <summary>
+        /// An argument, which is Convert plus one rule: a u32 going to an int parameter comes out
+        /// negative from 2 billion up, and that gets past the checks a method makes on its int
+        /// (`if n > 0`), so it isn't done quietly. `as int` says it's meant.
+        /// </summary>
+        Expr ConvertArgument(Expr e, PhiType target, string what)
+        {
+            if (target == PhiType.Int && e.Type == PhiType.U32 && !FitsAnInt(e))
+            {
+                Error(e.Span, $"{what} is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32");
+                return e;
+            }
+            return Convert(e, target, what);
+        }
+
+        /// <summary>A u32 that's known to be under 2 billion: a constant, or what a mask, a shift, a division or a remainder leaves.</summary>
+        static bool FitsAnInt(Expr e)
+        {
+            static bool Small(Expr x) => ConstantFolder.Evaluate(x) is long v && v >= 0 && v <= int.MaxValue;
+            if (Small(e)) return true;
+            return e is BinaryExpr b && b.Op switch
+            {
+                BinaryOp.BitAnd => Small(b.Left) || Small(b.Right),
+                BinaryOp.Modulo => Small(b.Right),
+                BinaryOp.Divide => ConstantFolder.Evaluate(b.Right) is long over && over >= 2,
+                BinaryOp.ShiftRight => ConstantFolder.Evaluate(b.Right) is long by && by >= 1,
+                _ => false,
+            };
+        }
+
         Expr Convert(Expr e, PhiType target, string what)
         {
             if (e.Type.IsError || target.IsError) return e;
@@ -4882,9 +4916,9 @@ namespace Phi.Compiler.Semantics
                 {
                     PhiType table = PhiType.PointerTo(PhiType.PointerTo(PhiType.U8));
                     // where text goes, the table's bytes would be taken for text
-                    if (target.Pointee == PhiType.U8)
+                    if (target.IsTextPointer)
                     {
-                        Error(e.Span, $"{what} is text (a ptr<u8>), but '{Describe(e)}' is a str array (several values make an array); " +
+                        Error(e.Span, $"{what} is text (a {target}), but '{Describe(e)}' is a str array (several values make an array); " +
                                       $"pass one element ({Describe(e)}:0), or to join values into one str, build it: s is a b;");
                         return e;
                     }
@@ -4905,6 +4939,7 @@ namespace Phi.Compiler.Semantics
 
             if (target.IsString)
             {
+                KeepTextPointer(e); // text + n is the rest of the text, as it is in s++ text + n
                 if (e.Type.IsString || e.Type.IsNumeric) return e; // numbers are written out as text
                 Error(e.Span, $"{what} needs a str, but this is a {e.Type}");
                 return e;
