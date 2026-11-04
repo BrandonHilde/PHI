@@ -1,0 +1,18 @@
+phi.NameAlone:Bootloader
+{
+	bln first: false;
+
+	madeUpName
+
+	int : 5;
+
+	[Run]
+		alsoMadeUp
+		int kept: 1;
+		kept++ 1;
+		some.dotted
+		kept++ 1;
+		onSameLine 5;
+		lastOne
+	[end]
+}

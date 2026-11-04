@@ -1345,6 +1345,13 @@ namespace Phi.Compiler.Syntax
             else if (Accept(TokenKind.SlashSlash)) op = AssignOp.Divide;
             else if (Accept(TokenKind.PercentPercent)) op = AssignOp.Modulo;
             else if (Accept(TokenKind.CaretCaret)) op = AssignOp.Power;
+            else if (Current.StartsLine || AtEnd)
+            {
+                // a name alone on its line: it's the name that's wrong, and the next line is its own
+                // statement, which is still read (so its mistakes are found and its names known)
+                Error(target.Span, $"expected an assignment like 'x is 5;' or 'x++;' after '{file.Text[target.Span.Start..target.Span.End]}'");
+                return new UnsafeStmt { Span = target.Span };
+            }
             else throw Error(Current.Span, $"expected an assignment like 'x is 5;' or 'x++;' but found {Current}");
 
             // x++; and x--; step by one

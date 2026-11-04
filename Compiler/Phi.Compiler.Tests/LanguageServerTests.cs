@@ -311,6 +311,23 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void ANameAloneIsUnderlinedItselfAndTheNextLineStillCounts()
+        {
+            var (text, line, character) = Marked("phi.Main:Kernel\n{\n\tmadeUpName\n\n\tint after: 1;\n\t[Run]\n\t\t|\n\t[end]\n}\n");
+            string uri = Uri("main.phi");
+            session.Open(uri, text);
+
+            JsonNode error = session.WaitForDiagnostics(uri, d => d.Count > 0)[0]!;
+            Assert.Contains("madeUpName", (string)error["message"]!);
+            Assert.Equal(2, (int)error["range"]!["start"]!["line"]!);
+            Assert.Equal(1, (int)error["range"]!["start"]!["character"]!);
+            Assert.Equal(11, (int)error["range"]!["end"]!["character"]!);
+
+            JsonNode result = session.Request("textDocument/completion", Place(uri, line, character))!;
+            Assert.Contains(result["items"]!.AsArray(), i => (string)i!["label"]! == "after");
+        }
+
+        [Fact]
         public void AWarningIsAWarning()
         {
             Write("other.phi", "phi.Other:Library\n{\n\tint shared: 1;\n}\n");
