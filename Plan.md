@@ -2644,12 +2644,13 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
    - Not done: a machine with no sound device fails `sound_program` rather than skipping it,
      the same gap as `window_program` has with no X server; sound from another machine (PULSE_SERVER as
      `tcp:`); recording.
-3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
+3. **The GPU, on hold** until everything else is done (the user's choice, 2026-11-03; ask them
+   again then). A game needs it: Vulkan, Direct3D 12 or Metal. Large, and depends on
    calling C functions (H6's outside functions, and on Linux, loading a library).
 
 **Done when:** a PHI game runs in a window on Windows and Linux. (The arcade sample is a
 16-bit program that writes to the VGA card, so it isn't the one; `paddles` is, and step 1 is
-done: played on both, 2026-11-03.) The rest of H7 is the GPU; sound is built.
+done: played on both, 2026-11-03.) Sound is built too, and the rest of H7, the GPU, is on hold.
 
 #### Phase H8: Tools for a host
 
