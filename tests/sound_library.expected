@@ -1,0 +1,10 @@
+silent: 0
+song: 1, 499 ms
+playing after: 0
+started: 1
+it moved: 1, playing: 1
+stopped early, playing: 0
+a mistake: 0, not a note or a command
+no file: 0, no such file
+song from a file: 1, 124 ms
+[exited with 0]

@@ -1,0 +1,21 @@
+silent: 0
+rate: 22050
+too low: 8000, too high: 48000
+and back: 44100
+nothing to play: 0
+took: 8820
+something to play: 1
+played for a while: 1, and ended: 0
+it fills up: 1, after half a second or more: 1
+stopped: 0
+took again: 8820
+song: 1, 499 ms
+took about that long: 1
+playing after: 0
+started: 1
+it moved: 1, playing: 1
+stopped early, playing: 0, at: 0
+a mistake: 0, not a note or a command
+no file: 0, no such file
+song from a file: 1, 124 ms
+a WAV file: 1, 99 ms, error:

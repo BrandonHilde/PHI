@@ -21,6 +21,7 @@ sys.Close: 3  int fd;
 sys.Stat: 4  ptr<u8> path  ptr<u32> info;
 sys.LSeek: 8  int fd  int offset  int whence;
 sys.SchedYield: 24;
+sys.GetUserId: 102;
 sys.NanoSleep: 35  ptr<i64> wanted  ptr<i64> left;
 sys.Rename: 82  ptr<u8> from  ptr<u8> to;
 sys.MakeDir: 83  ptr<u8> path  int mode;

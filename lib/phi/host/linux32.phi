@@ -25,6 +25,7 @@ sys.Rename: 38  ptr<u8> from  ptr<u8> to;
 sys.MakeDir: 39  ptr<u8> path  int mode;
 sys.RemoveDir: 40  ptr<u8> path;
 sys.SchedYield: 158;
+sys.GetUserId: 199;
 sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
 sys.Stat: 195  ptr<u8> path  ptr<u32> info;
 sys.ClockGetTime: 265  int clock  ptr<int> now;

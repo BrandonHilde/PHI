@@ -221,7 +221,9 @@ namespace Phi.Compiler
             ("HostFiles", new[] { "host.files_linux", "host.files_windows" }),
             ("HostNet", new[] { "host.net", "host.net_linux", "host.net_windows" }),
             ("HostThreads", new[] { "host.threads", "host.threads_linux", "host.threads_windows" }),
-            ("HostWindow", new[] { "host.files_linux", "host.files_windows", "host.window_windows", "host.window_linux" }),
+            ("HostWindow", new[] { "host.files_linux", "host.files_windows", "host.environment_linux", "host.window_windows", "host.window_linux" }),
+            ("HostSound", new[] { "host.time_linux32", "host.time_linux64", "host.time_windows", "host.files_linux", "host.files_windows",
+                                  "host.environment_linux", "host.sound", "host.sound_windows", "host.sound_linux" }),
         };
 
         /// <summary>Adds everything in from after what into has.</summary>

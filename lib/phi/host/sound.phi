@@ -1,0 +1,107 @@
+# Sound in a program on Linux or Windows, in PHI (H7 step 2): the calls a PHI OS program makes
+# of its kernel's sound card (OS.SoundWrite, SoundRate, SoundQueued, SoundStop, SoundVolume,
+# which audio.sound makes), answered by the system's own sound. This is what both systems
+# share; SoundSystem (sound_linux.phi, sound_windows.phi) is what differs.
+#
+# Sound is 16-bit stereo, as on the AC'97. The device opens at the first call that needs it;
+# a machine with no sound answers -1 from then on, as a kernel with no card does. Threads can
+# make these calls at once, as they can on PHI OS.
+
+phi.HostSound:Program
+{
+	const int LEAST_RATE: 8000;
+	const int MOST_RATE: 48000;
+
+	int rate: 0;                          # what the device is open at; 0 if it isn't
+	int volume: 100;
+	bln tried: false;                     # it has been opened, or couldn't be
+	lock card;
+
+	# OS.SoundRate: frames a second (8000 to 48000); the rate it plays at now, or -1 if there's
+	# no sound. What's waiting to play is dropped if the rate changes.
+	[SetRate: int hz: 48000;]
+		if hz < LEAST_RATE
+			hz is LEAST_RATE;
+		;;
+		if hz > MOST_RATE
+			hz is MOST_RATE;
+		;;
+		int result: -1;
+		locked card
+			call result is Change: hz;
+		;;
+	[end: result]
+
+	# OS.SoundWrite: give it sound: the bytes it took (0 while it's full), or -1 if there's none
+	[Write: ptr<u8> data: 0; int length: 0;]
+		int result: -1;
+		locked card
+			if (Ready)
+				result is 0;
+				if length > 0
+					call result is SoundSystem.Put: data length;
+				;;
+			;;
+		;;
+	[end: result]
+
+	# OS.SoundQueued: bytes still to play, what was written last among them, or -1
+	[Queued]
+		int result: -1;
+		locked card
+			if (Ready)
+				call result is SoundSystem.Left;
+			;;
+		;;
+	[end: result]
+
+	# OS.SoundStop: stop at once, dropping what hasn't played
+	[Stop]
+		int result: -1;
+		locked card
+			if (Ready)
+				call SoundSystem.Drop;
+				result is 0;
+			;;
+		;;
+	[end: result]
+
+	# OS.SoundVolume: 0 (silent) to 100 (loudest), or -1
+	[SetVolume: int percent: 100;]
+		if percent < 0
+			percent is 0;
+		;;
+		if percent > 100
+			percent is 100;
+		;;
+		int result: -1;
+		locked card
+			volume is percent;
+			if (Ready)
+				call SoundSystem.SetVolume: percent;
+				result is 0;
+			;;
+		;;
+	[end: result]
+
+	# whether it's open, opening it at the card's own rate if nothing has yet
+	[Ready]
+		if rate > 0 return true;
+		if not tried
+			call Change: 48000;
+		;;
+	[end: rate > 0]
+
+	[Change: int hz: 0;]
+		if hz is rate return rate;
+		if tried and rate is 0 return -1;     # it's been tried: there's no sound on this machine
+		tried is true;
+		if rate > 0
+			call SoundSystem.Close;
+		;;
+		rate is 0;
+		if not (SoundSystem.Open: hz) return -1;
+		rate is hz;
+		call SoundSystem.SetVolume: volume;
+	[end: rate]
+}

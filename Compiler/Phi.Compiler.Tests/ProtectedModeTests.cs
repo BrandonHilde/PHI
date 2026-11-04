@@ -87,6 +87,7 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("OS.ReadFile: 'A.TXT' 0 10", "in a kernel it's Fat.ReadFile, which needs use fs.fat16;")]
         [InlineData("OS.TaskName: 1 0", "in a kernel it's Process.TaskName, which needs use proc.process;")]
+        [InlineData("OS.SoundQueued", "in a kernel it's Ac97.Left, which needs use drivers.ac97;")]
         public void AProgramsCallInAKernelSaysWhatTheKernelUses(string call, string message) =>
             AssertError($"phi.K:Kernel\n{{\n call {call};\n}}\n", message);
 

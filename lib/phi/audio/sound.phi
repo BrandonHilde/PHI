@@ -1,5 +1,7 @@
-# Music in a 32-bit kernel: songs (audio.synth) and WAV files (audio.wav), from the disk
-# or written in the program, played on the AC'97 sound card (drivers.ac97).
+# Music: songs (audio.synth) and WAV files (audio.wav), from the disk or written in the
+# program, played with the OS.Sound calls. So it's the same in a program on PHI OS, on Windows
+# (waveOut) and on Linux (PulseAudio), and in a 32-bit kernel, which says what it plays them
+# on and reads them from: use drivers.ac97; use fs.fat16;
 #
 #   use audio.sound;
 #   bln ok: false;
@@ -20,12 +22,10 @@
 #
 # A file whose name ends in .WAV is a WAV file; anything else is a song.
 
-use drivers.ac97;
-use fs.fat16;
 use audio.wav;
 use audio.synth;
 
-phi.Sound:Kernel
+phi.Sound:Library
 {
 	const u32 CARD_RATE: 44100;              # the card always plays at this rate
 	const u32 CHUNK_FRAMES: 1024;            # of a song, made at a time
@@ -54,7 +54,7 @@ phi.Sound:Kernel
 	u32 pending_at: 0;
 	u32 pending_end: 0;
 	ptr<u8> song_text: 0;
-	u32 start_bytes: 0;                      # Ac97.bytes_written when it started
+	u32 written: 0;                          # bytes given to the card since it started
 
 	# play a song or WAV file from the disk, waiting until it ends; false if it can't
 	[PlayFile: ptr<u8> path: 0;]
@@ -96,7 +96,7 @@ phi.Sound:Kernel
 		call ok is Prepare;
 		int size: 0;
 		if ok
-			call size is Fat.FileSize: path;
+			call size is OS.FileSize: path;
 			if size < 0
 				error is 'no such file';
 				ok is false;
@@ -110,7 +110,7 @@ phi.Sound:Kernel
 
 		if ok and isWav
 			int got: 0;
-			call got is Fat.ReadAt: path 0 raw HEADER_SIZE;
+			call got is OS.ReadFileAt: path 0 raw HEADER_SIZE;
 			call ok is Wav.Parse: raw got size;
 			if ok is false
 				error is Wav.error;
@@ -146,7 +146,7 @@ phi.Sound:Kernel
 			;;
 			else
 				int length: 0;
-				call length is Fat.ReadFile: path song_text MAX_SONG - 1;
+				call length is OS.ReadFile: path song_text MAX_SONG - 1;
 				song_text:length is 0;
 				call ok is StartSong: song_text;
 			;;
@@ -159,15 +159,19 @@ phi.Sound:Kernel
 		bln room: true;
 		while playing and room
 			if pending_at < pending_end
-				u32 taken: 0;
-				call taken is Ac97.Write: pending + pending_at pending_end - pending_at;
+				int taken: 0;
+				call taken is OS.SoundWrite: pending + pending_at pending_end - pending_at;
+				if taken < 0                 # the sound has gone
+					taken is 0;
+					playing is false;
+				;;
 				pending_at++ taken;
+				written++ taken;
 				room is (pending_at is pending_end);
 			;;
 			elif source_done
-				call Ac97.Flush;
-				u32 left: 0;
-				call left is Ac97.Queued;
+				int left: 0;
+				call left is OS.SoundQueued;
 				playing is left > 0;
 				room is false;
 			;;
@@ -179,18 +183,18 @@ phi.Sound:Kernel
 
 	# how far it has got, in milliseconds: what the card has played so far
 	[Position]
-		u32 queued: 0;
-		call queued is Ac97.Queued;
-		u32 frames: (Ac97.bytes_written - start_bytes - queued) / 4;
-		if playing is false
-			frames is 0;
+		int queued: 0;
+		call queued is OS.SoundQueued;
+		u32 frames: 0;
+		if playing and queued >= 0 and queued < written
+			frames is (written - queued) / 4;
 		;;
 	[end: (frames / rate) * 1000 + (frames % rate) * 1000 / rate]
 
 	# stop at once
 	[Stop]
 		if playing
-			call Ac97.Stop;
+			call OS.SoundStop;
 		;;
 		playing is false;
 		source is 0;
@@ -216,7 +220,7 @@ phi.Sound:Kernel
 			;;
 			int got: 0;
 			if length > 0
-				call got is Fat.ReadAt: addr wav_path wav_at raw length;
+				call got is OS.ReadFileAt: addr wav_path wav_at raw length;
 			;;
 			if got > 0
 				wav_at++ got;
@@ -237,7 +241,7 @@ phi.Sound:Kernel
 	[end]
 
 	[Begin]
-		start_bytes is Ac97.bytes_written;
+		written is 0;
 		source_done is false;
 		pending_at is 0;
 		pending_end is 0;
@@ -255,15 +259,16 @@ phi.Sound:Kernel
 
 	# find the card and get the buffers; false if there's no card
 	[Prepare]
-		bln ok: false;
 		error is '';
 		error_line is 0;
-		call ok is Ac97.Start;
+		int got: 0;
+		call got is OS.SoundRate: CARD_RATE;
+		bln ok: got > 0;
 		if ok is false
-			error is 'there is no sound card (PHI has a driver for the AC'97)';
+			error is 'there is no sound card';
 		;;
 		else
-			call rate is Ac97.SetRate: CARD_RATE;
+			rate is got;
 			if raw is 0
 				raw is new u8[READ_SIZE];
 				converted is new u8[READ_SIZE * 4];

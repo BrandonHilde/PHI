@@ -1,5 +1,7 @@
 # WAV files and songs from the disk, played with audio.sound: four WAV files in
 # different formats, then a song. phi test checks the recording (sound_files.sound).
+use drivers.ac97;
+use fs.fat16;
 use audio.sound;
 
 phi.SoundFiles:Kernel

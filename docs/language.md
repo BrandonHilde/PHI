@@ -1952,10 +1952,16 @@ underneath are `OS.SurfaceOpen: w h`, `OS.SurfacePresent: pixels`, `OS.NextEvent
 `OS.CopyFont: glyphs` (64 to 67); `proc.process` hands calls from 64 up to
 `Process.more_calls`, so other libraries can add their own.
 
-## Sound (32-bit kernels)
+## Sound
 
-`phi run` and `phi test` give every machine an AC'97 sound card, which `drivers.ac97` drives.
-`audio.sound` plays music on it: songs written as text, and WAV files.
+`audio.sound` plays music: songs written as text, and WAV files. It's the same in a program
+on PHI OS, Windows and Linux, and in a 32-bit kernel, which also says what it plays them on
+and reads them from (`use drivers.ac97; use fs.fat16;`). `phi run` and `phi test` give every
+machine an AC'97 sound card, which `drivers.ac97` drives; **on Windows** a program's sound
+goes through winmm's `waveOut`, and **on Linux** to PulseAudio over its socket, with no library
+needed, as a window speaks to X. PHI OS's programs and those two answer the same `OS.Sound`
+calls, 16-bit stereo at 8000 to 48000 frames a second, and a machine with no sound gets
+`-1` from them and `there is no sound card` from `Sound.error`.
 
 ```phi
 use audio.sound;
@@ -2007,7 +2013,7 @@ The layers, each usable on its own:
 
 | File | Class | What it does |
 |---|---|---|
-| `drivers.ac97` | `Ac97` | the card: `Start` →, `SetRate: hz` →, `SetVolume: percent`, `Write: data length` → (bytes taken; never waits), `Play: data length` (waits for room), `Flush`, `Drain` (waits until it has played), `Queued` →, `Stop`; `rate`, `bytes_written` |
+| `drivers.ac97` | `Ac97` | the card: `Start` →, `StartAt: hz` → (`OS.SoundRate` in a kernel: starts it; -1 if there's no card), `Left` → (`OS.SoundQueued` in a kernel), `SetRate: hz` →, `SetVolume: percent`, `Write: data length` → (bytes taken; never waits), `Play: data length` (waits for room), `Flush`, `Drain` (waits until it has played), `Queued` →, `Stop`; `rate`, `bytes_written` |
 | `audio.synth` | `Synth` | `Load: song rate` → (false: `error` on `error_line`), `Render: buffer frames` → (frames made; 0 at the end), `Rewind`; `voices`, `milliseconds`, `finished` |
 | `audio.wav` | `Wav` | `Parse: header length file_size` → (false: `error`), `Convert: data length output` → (to 16-bit stereo), `StartResample: rate`, `Resample: data frames output` →, `ResampleRoom: frames` →; `rate`, `channels`, `bits`, `frame_bytes`, `data_start`, `data_size`, `milliseconds` |
 | `audio.sound` | `Sound` | `PlayFile: path` →, `PlaySong: text` →, `StartFile` →, `StartSong` →, `Pump`, `Position` →, `Stop`; `playing`, `milliseconds`, `error`, `error_line` |
@@ -2745,8 +2751,8 @@ and the classes of used files run before the classes that use them.
 | `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.acpi` | class `Acpi` (32-bit kernels): ACPI's MADT: `Start` →, `cores` and `core_ids` (local APIC IDs), `local_apic`, `io_apic`, `io_apic_base`, `Input: irq` → (the I/O APIC input an ISA IRQ comes in on), `Flags: irq` → (its polarity and trigger), `Find: name` → (any table by its 4 letters) |
 | `drivers.apic` | class `Apic` (32-bit kernels): `Start` → moves the IRQs from the 8259 PICs to the I/O APIC (the same vectors, to this core; handlers, `OS.SetIrqHandler` and `OS.MaskIrq` work as before), and turns this core's local APIC on; `id` |
-| `drivers.ac97`, `audio.sound` | 32-bit kernels: see [Sound](#sound-32-bit-kernels) |
-| `audio.synth`, `audio.wav` | any program: see [Sound](#sound-32-bit-kernels) |
+| `drivers.ac97` | 32-bit kernels: see [Sound](#sound) |
+| `audio.sound`, `audio.synth`, `audio.wav` | any program or kernel: see [Sound](#sound) |
 | `crypto.bytes`, `crypto.sha256`, `crypto.sha512`, `crypto.hmac`, `crypto.pbkdf2`, `crypto.chacha20`, `crypto.poly1305`, `crypto.chachapoly`, `crypto.aes`, `crypto.aesgcm`, `crypto.x25519`, `crypto.random` | any program: see [Cryptography](#cryptography) |
 | `test.bench` | class `Bench` (32-bit kernels and programs): `Start`, `Stop: name` → (writes `bench NAME COUNT` to COM1 and returns the count), `Count` → (the timestamp counter, a `u64`); for benchmarks, see [tests/README.md](../tests/README.md#benchmarks) |
 

@@ -1,0 +1,108 @@
+# Sound in a program, the same on PHI OS, Windows and Linux: the OS.Sound calls and audio.sound
+# on them (lib/phi/host/sound*.phi for the last two, H7 step 2). It all really plays, through
+# the AC'97, waveOut or PulseAudio, and takes as long as it should, at volume 0, so running the
+# tests makes no noise. On a machine with no sound device this can't pass.
+use audio.sound;
+
+phi.SoundProgram:Program
+{
+	log 'silent: ' (OS.SoundVolume: 0) '\n';  # before anything plays
+	ptr<u8> sound: new u8[8820];              # 50 ms at 44100
+
+	# the rate: what it plays at, within what the AC'97 can do
+	log 'rate: ' (OS.SoundRate: 22050) '\n';
+	log 'too low: ' (OS.SoundRate: 100) ', too high: ' (OS.SoundRate: 99999) '\n';
+	log 'and back: ' (OS.SoundRate: 44100) '\n';
+	log 'nothing to play: ' (OS.SoundQueued) '\n';
+
+	# what's written plays, and takes its time
+	log 'took: ' (OS.SoundWrite: sound 8820) '\n';
+	log 'something to play: ' ((OS.SoundQueued) > 0) '\n';
+	int started: (OS.GetTicks);
+	call WaitForEnd;
+	log 'played for a while: ' (((OS.GetTicks) - started) >= 20) ', and ended: ' (OS.SoundQueued) '\n';
+
+	# there's a limit to what it holds, of at least half a second
+	int total: 0;
+	int taken: 1;
+	while taken > 0 and total < 4000000
+		call taken is OS.SoundWrite: sound 8820;
+		total++ taken;
+	;;
+	log 'it fills up: ' (taken is 0) ', after half a second or more: ' (total >= 88200) '\n';
+
+	# stopping drops it, and it can play again
+	call OS.SoundStop;
+	log 'stopped: ' (OS.SoundQueued) '\n';
+	log 'took again: ' (OS.SoundWrite: sound 8820) '\n';
+	call WaitForEnd;
+
+	# a song, which is waited for
+	started is (OS.GetTicks);
+	log 'song: ' (Sound.PlaySong: 't240 l16 cdefgab>c') ', ' Sound.milliseconds ' ms\n';
+	log 'took about that long: ' (((OS.GetTicks) - started) >= 400) '\n';
+	log 'playing after: ' Sound.playing '\n';
+
+	# a song that's started, with a position that moves, and stopped early
+	log 'started: ' (Sound.StartSong: 't60 l1 c c c c') '\n';
+	int moved: 0;
+	int tries: 0;
+	while moved is 0 and tries < 2000
+		call Sound.Pump;
+		call moved is Sound.Position;
+		call OS.Sleep: 5;
+		tries++;
+	;;
+	log 'it moved: ' (moved > 0) ', playing: ' Sound.playing '\n';
+	call Sound.Stop;
+	log 'stopped early, playing: ' Sound.playing ', at: ' (Sound.Position) '\n';
+
+	# what it can't play says why
+	log 'a mistake: ' (Sound.PlaySong: 'k') ', ' Sound.error '\n';
+	log 'no file: ' (Sound.PlayFile: 'NONE.SNG') ', ' Sound.error '\n';
+
+	# a song from a file
+	str song: 't240 l16 cd';
+	call OS.WriteFile: 'PHISOUND.SNG' addr song song.len;
+	log 'song from a file: ' (Sound.PlayFile: 'PHISOUND.SNG') ', ' Sound.milliseconds ' ms\n';
+	call OS.DeleteFile: 'PHISOUND.SNG';
+
+	# a WAV file at a rate of its own, resampled: a tenth of a second at 11025, 8 bits, mono
+	ptr<u8> wav: new u8[44 + 1102];
+	call Text4: wav 0 'RIFF';
+	call Number: wav 4 36 + 1102;
+	call Text4: wav 8 'WAVE';
+	call Text4: wav 12 'fmt ';
+	call Number: wav 16 16;
+	call Number: wav 20 1 | (1 << 16);        # PCM, one channel
+	call Number: wav 24 11025;
+	call Number: wav 28 11025;
+	call Number: wav 32 1 | (8 << 16);        # a byte a frame, 8 bits
+	call Text4: wav 36 'data';
+	call Number: wav 40 1102;
+	while int i: 0; i < 1102; i++;
+		wav:(44 + i) is 128;
+	;;
+	call OS.WriteFile: 'PHISOUND.WAV' wav 44 + 1102;
+	log 'a WAV file: ' (Sound.PlayFile: 'PHISOUND.WAV') ', ' Sound.milliseconds ' ms, error: ' Sound.error '\n';
+	call OS.DeleteFile: 'PHISOUND.WAV';
+	exit 0;
+
+	[WaitForEnd]
+		while (OS.SoundQueued) > 0
+			call OS.Sleep: 2;
+		;;
+	[end]
+
+	[Text4: ptr<u8> to: 0; int place: 0; ptr<u8> text: 0;]
+		while int i: 0; i < 4; i++;
+			to:(place + i) is text:i;
+		;;
+	[end]
+
+	[Number: ptr<u8> to: 0; int place: 0; u32 value: 0;]
+		while int i: 0; i < 4; i++;
+			to:(place + i) is (value >> (i * 8)) & 0xFF;
+		;;
+	[end]
+}

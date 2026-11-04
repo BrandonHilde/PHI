@@ -575,8 +575,7 @@ phi.Process:Kernel
 			call result is Ac97.SetRate: first;
 		;;
 		elif number is SYS_SOUND_QUEUED
-			call Ac97.Flush;
-			call result is Ac97.Queued;
+			call result is Ac97.Left;
 		;;
 		elif number is SYS_SOUND_STOP
 			call Ac97.Stop;

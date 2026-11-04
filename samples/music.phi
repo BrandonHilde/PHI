@@ -8,6 +8,8 @@
 # music.rootfs). Type a number to play something; any key stops it. While it plays,
 # the kernel keeps the sound card fed (Sound.Pump) and draws how far it has got.
 
+use drivers.ac97;
+use fs.fat16;
 use audio.sound;
 
 phi.Music:Kernel

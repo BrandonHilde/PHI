@@ -114,6 +114,13 @@ phi.Ac97:Kernel
 		;;
 	[end: started]
 
+	# OS.SoundRate in a kernel: starts the card if it hasn't been; the rate it plays at, or
+	# -1 if there's no card
+	[StartAt: u32 hz: 48000;]
+		if not (Start) return -1;
+		int got: (SetRate: hz);
+	[end: got]
+
 	# frames a second (8000 to 48000); the rate the card plays at afterwards, which is
 	# always 48000 on a codec that can't change it. What is waiting to play changes speed
 	# too, so call Drain first. Changing it often isn't a good idea: QEMU starts its
@@ -242,6 +249,14 @@ phi.Ac97:Kernel
 			call Reset;
 		;;
 	[end]
+
+	# OS.SoundQueued in a kernel: bytes still to play, with a partly filled buffer sent to the
+	# card, as nothing plays it otherwise; -1 if there's no card
+	[Left]
+		if not started return -1;
+		call Flush;
+		int left: (Queued);
+	[end: left]
 
 	# bytes written that haven't played yet (counting a partly filled buffer)
 	[Queued]

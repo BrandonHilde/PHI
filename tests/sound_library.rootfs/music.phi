@@ -1,0 +1,30 @@
+# What sound_library.phi runs: a program's music on PHI OS, at volume 0
+use audio.sound;
+
+phi.Music:Program
+{
+	log 'silent: ' (OS.SoundVolume: 0) '\n';
+	log 'song: ' (Sound.PlaySong: 't240 l16 cdefgab>c') ', ' Sound.milliseconds ' ms\n';
+	log 'playing after: ' Sound.playing '\n';
+
+	log 'started: ' (Sound.StartSong: 't60 l1 c c c c') '\n';
+	int moved: 0;
+	int tries: 0;
+	while moved is 0 and tries < 2000
+		call Sound.Pump;
+		call moved is Sound.Position;
+		call OS.Sleep: 5;
+		tries++;
+	;;
+	log 'it moved: ' (moved > 0) ', playing: ' Sound.playing '\n';
+	call Sound.Stop;
+	log 'stopped early, playing: ' Sound.playing '\n';
+
+	log 'a mistake: ' (Sound.PlaySong: 'k') ', ' Sound.error '\n';
+	log 'no file: ' (Sound.PlayFile: 'NONE.SNG') ', ' Sound.error '\n';
+
+	str song: 't240 l16 cd';
+	call OS.WriteFile: 'TUNE.SNG' addr song song.len;
+	log 'song from a file: ' (Sound.PlayFile: 'TUNE.SNG') ', ' Sound.milliseconds ' ms\n';
+	call OS.DeleteFile: 'TUNE.SNG';
+}

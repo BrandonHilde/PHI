@@ -326,23 +326,16 @@ phi.HostWindow:Linux
 
 	# the display's number, from DISPLAY in the program's environment (:0 if it isn't there)
 	[DisplayNumber]
-		u8 all[2048];
-		int n: (OS.ReadFile: '/proc/self/environ' addr all 2047);
-		if n <= 0 return 0;
-		int i: 0;
-		while i + 9 < n
-			if all:i is 'D' and all:(i + 1) is 'I' and all:(i + 2) is 'S' and all:(i + 3) is 'P' and all:(i + 4) is 'L' and all:(i + 5) is 'A' and all:(i + 6) is 'Y' and all:(i + 7) is '=' and all:(i + 8) is ':' and (i is 0 or all:(i - 1) is 0)
-				int number: 0;
-				int d: i + 9;
-				while d < n and all:d >= '0' and all:d <= '9'
-					number is number * 10 + all:d - '0';
-					d++;
-				;;
-				return number;
-			;;
-			i++;
+		ptr<u8> display: (LinuxEnvironment.Find: 'DISPLAY');
+		if display is 0 return 0;
+		if display:0 is not ':' return 0;
+		int number: 0;
+		int d: 1;
+		while display:d >= '0' and display:d <= '9'
+			number is number * 10 + display:d - '0';
+			d++;
 		;;
-	[end: 0]
+	[end: number]
 
 	[NewId]
 		u32 id: id_base | next_id;

@@ -2627,13 +2627,29 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
      style and whether it's showing are one word. `window_program` now shows its window off
      the screen to check. Not played yet: the 32-bit builds, and PHI OS's desktop.
    - [ ] macOS, with H4's.
-2. **Sound** behind `audio.*`'s calls.
+2. **Sound** behind `audio.*`'s calls: done (2026-11-03), with nothing new to learn: programs
+   already had `OS.SoundWrite`, `SoundRate`, `SoundQueued`, `SoundStop` and `SoundVolume`.
+   - [x] `Sound` is a library on those calls, so it works in any program, not only a kernel.
+     (A kernel's calls go to `Ac97` and `Fat`, which it names with `use`.)
+   - [x] Windows: winmm's `waveOut` (`lib/phi/host/sound_windows.phi`).
+   - [x] Linux: PulseAudio's native protocol over its socket, with no library, 32 and 64 bits
+     (`sound_linux.phi`). Tried against WSLg's PulseAudio only: not yet a desktop's, or
+     PipeWire's stand-in for it, nor a server that wants its cookie.
+   - [x] `sound_program` runs the same program at volume 0 on all four and they print the same;
+     `sound_library` runs `Sound` in a PHI OS program. It's how long sound takes that they
+     check, not how it sounds. `paddles` makes sounds now, for ears to check; not yet heard.
+   - What's "still to play" on Linux is counted by the clock from when the server starts on
+     it, as the server reads well ahead of what's heard, and WSLg's output misreports what it
+     holds. A sound that's about to end can be up to the output's real latency early.
+   - Not done: a machine with no sound device fails `sound_program` rather than skipping it,
+     the same gap as `window_program` has with no X server; sound from another machine (PULSE_SERVER as
+     `tcp:`); recording.
 3. **The GPU,** which a game needs: Vulkan, Direct3D 12 or Metal. Large, and depends on
    calling C functions (H6's outside functions, and on Linux, loading a library).
 
 **Done when:** a PHI game runs in a window on Windows and Linux. (The arcade sample is a
 16-bit program that writes to the VGA card, so it isn't the one; `paddles` is, and step 1 is
-done: played on both, 2026-11-03.) The rest of H7 is sound and the GPU.
+done: played on both, 2026-11-03.) The rest of H7 is the GPU; sound is built.
 
 #### Phase H8: Tools for a host
 

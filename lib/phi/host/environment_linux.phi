@@ -1,0 +1,38 @@
+# A Linux program's environment, for the host modules that look something up in it (a window's
+# DISPLAY, sound's server). The kernel gives it as /proc/self/environ: NAME=value, each ended
+# by a zero. A desktop's can be long, so it's all read, once.
+
+phi.LinuxEnvironment:Linux
+{
+	const int ROOM: 65536;
+
+	ptr<u8> all: 0;
+	int length: 0;
+
+	# what name is set to, or 0 if it isn't
+	[Find: ptr<u8> name: 0;]
+		if all is 0
+			all is new u8[ROOM];
+			call length is OS.ReadFile: '/proc/self/environ' all ROOM - 1;
+			if length < 0
+				length is 0;
+			;;
+			all:length is 0;
+		;;
+		ptr<u8> value: 0;
+		int i: 0;
+		while i < length and value is 0
+			int k: 0;
+			while name:k is not 0 and all:(i + k) is name:k
+				k++;
+			;;
+			if name:k is 0 and all:(i + k) is '='
+				value is all + i + k + 1;
+			;;
+			while i < length and all:i is not 0
+				i++;
+			;;
+			i++;
+		;;
+	[end: value]
+}

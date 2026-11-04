@@ -1,0 +1,175 @@
+# Sound on Windows, 32 or 64 bits (H7 step 2), with winmm's waveOut: a ring of buffers, as the
+# AC'97 driver has, each handed to Windows when it's full or when the program asks what's left.
+# Windows marks a buffer in its header as it plays it, so nothing here needs a callback.
+
+use 'winmm.dll' as Winmm;
+
+struct.WinWaveFormat foreign              # WAVEFORMATEX
+{
+	u16 format;
+	u16 channels;
+	u32 rate;
+	u32 bytes_a_second;
+	u16 frame_bytes;
+	u16 bits;
+	u16 extra;
+}
+
+struct.WinWaveHeader foreign              # WAVEHDR
+{
+	ptr<u8> data;
+	u32 length;
+	u32 recorded;
+	ptr<u8> user;
+	u32 flags;
+	u32 loops;
+	ptr<u8> next;
+	ptr<u8> reserved;
+}
+
+struct.WinTime foreign                    # MMTIME, as bytes
+{
+	u32 kind;
+	u32 bytes;
+	u32 rest;
+}
+
+phi.SoundSystem:Windows
+{
+	const int BUFFERS: 32;
+	const int BUFFER_SIZE: 4096;          # as the AC'97's
+	const u32 ANY_DEVICE: 0xFFFFFFFF;
+	const u32 PREPARED: 2;
+	const u32 IN_QUEUE: 0x10;
+	const u32 TIME_BYTES: 4;
+
+	ptr<u8> device: 0;
+	ptr<u8> buffers: 0;
+	WinWaveHeader headers[32];
+	int next: 0;                          # the buffer being filled
+	int fill: 0;                          # bytes in it so far
+	u32 sent: 0;                          # bytes handed to Windows since it was last reset
+
+	[Open: int hz: 0;]
+		if buffers is 0
+			buffers is new u8[BUFFERS * BUFFER_SIZE];
+		;;
+		WinWaveFormat wanted;
+		wanted.format is 1;               # WAVE_FORMAT_PCM
+		wanted.channels is 2;
+		wanted.rate is hz;
+		wanted.bytes_a_second is hz * 4;
+		wanted.frame_bytes is 4;
+		wanted.bits is 16;
+		wanted.extra is 0;
+		bln opened: (Winmm.waveOutOpen: addr device ANY_DEVICE addr wanted 0 0 0) is 0;
+		if opened
+			call Forget;
+		;;
+	[end: opened]
+
+	[Close]
+		call Drop;
+		call Winmm.waveOutClose: device;
+		device is 0;
+	[end]
+
+	# what fits of length bytes of data: 0 while every buffer is playing
+	[Put: ptr<u8> data: 0; int length: 0;]
+		int taken: 0;
+		while taken < length and (Free: next)
+			int chunk: BUFFER_SIZE - fill;
+			if chunk > length - taken
+				chunk is length - taken;
+			;;
+			ptr<u8> to: buffers + next * BUFFER_SIZE + fill;
+			while int i: 0; i < chunk; i++;
+				to:i is data:(taken + i);
+			;;
+			fill++ chunk;
+			taken++ chunk;
+			if fill is BUFFER_SIZE
+				call Commit;
+			;;
+		;;
+	[end: taken]
+
+	# bytes still to play, handing Windows what has been held back for a full buffer
+	[Left]
+		call Commit;
+		bln playing: false;
+		while int i: 0; i < BUFFERS; i++;
+			if (headers:i.flags & IN_QUEUE) is not 0
+				playing is true;
+			;;
+		;;
+		if not playing return 0;
+		WinTime place;
+		place.kind is TIME_BYTES;
+		place.bytes is 0;
+		place.rest is 0;
+		call Winmm.waveOutGetPosition: device addr place sizeof WinTime;
+		int left: sent - place.bytes;
+		if left < 4                       # (a buffer is still with it: not quite done)
+			left is 4;
+		;;
+	[end: left]
+
+	[Drop]
+		call Winmm.waveOutReset: device;
+		call Forget;
+	[end]
+
+	# percent of the way up, as PulseAudio's scale goes: 100 is all of it, 50 an eighth
+	[SetVolume: int percent: 100;]
+		u32 level: percent * percent * percent * 655 / 10000;
+		if percent is 100
+			level is 0xFFFF;
+		;;
+		call Winmm.waveOutSetVolume: device (level << 16) | level;
+	[end]
+
+	# whether a buffer isn't with Windows (so it can be filled), done with it if it was
+	[Free: int i: 0;]
+		if (headers:i.flags & IN_QUEUE) is not 0 return false;
+		if (headers:i.flags & PREPARED) is not 0
+			call Winmm.waveOutUnprepareHeader: device addr headers:i sizeof WinWaveHeader;
+			headers:i.flags is 0;
+		;;
+	[end: true]
+
+	# the buffer being filled goes to Windows, if there's anything in it
+	[Commit]
+		if fill is 0 return;
+		if not (Free: next) return;
+		ptr<WinWaveHeader> header: addr headers:next;
+		header:0.data is buffers + next * BUFFER_SIZE;
+		header:0.length is fill;
+		header:0.flags is 0;
+		header:0.loops is 0;
+		call Winmm.waveOutPrepareHeader: device header sizeof WinWaveHeader;
+		call Winmm.waveOutWrite: device header sizeof WinWaveHeader;
+		sent++ fill;
+		fill is 0;
+		next is (next + 1) % BUFFERS;
+	[end]
+
+	# Windows has none of the buffers (it has just opened or been reset): start again
+	[Forget]
+		while int i: 0; i < BUFFERS; i++;
+			call Free: i;
+		;;
+		next is 0;
+		fill is 0;
+		sent is 0;
+	[end]
+}
+
+Winmm.waveOutOpen: ptr<u8> device  u32 which  ptr<WinWaveFormat> format  ptr<u8> callback  ptr<u8> instance  u32 flags;
+Winmm.waveOutClose: ptr<u8> device;
+Winmm.waveOutReset: ptr<u8> device;
+Winmm.waveOutPrepareHeader: ptr<u8> device  ptr<WinWaveHeader> header  u32 size;
+Winmm.waveOutUnprepareHeader: ptr<u8> device  ptr<WinWaveHeader> header  u32 size;
+Winmm.waveOutWrite: ptr<u8> device  ptr<WinWaveHeader> header  u32 size;
+Winmm.waveOutGetPosition: ptr<u8> device  ptr<WinTime> place  u32 size;
+Winmm.waveOutSetVolume: ptr<u8> device  u32 level;

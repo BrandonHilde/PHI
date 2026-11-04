@@ -1,6 +1,6 @@
 # A small game in a window: keep the ball in play with your paddle, against one that follows
 # the ball a little too slowly. The same program runs on PHI OS's desktop, on Windows and on
-# Linux, since all it asks for is gui.app's window and OS.IsKeyDown's held keys:
+# Linux, since all it asks for is gui.app's window, OS.IsKeyDown's held keys and audio.sound:
 #
 #   phi run samples/desktop.rootfs/paddles.phi --target windows64
 #   phi run samples/desktop.rootfs/paddles.phi --target linux64
@@ -8,6 +8,7 @@
 #   W and S, or the up and down arrows: your paddle
 #   Space: serve       Q: quit
 use gui.app;
+use audio.sound;
 
 phi.Paddles:Program
 {
@@ -57,6 +58,7 @@ phi.Paddles:Program
 		;;
 		call Step;
 		call Paint;
+		call Sound.Pump;
 
 		# the next frame at its time, however long this one took
 		next_frame++ FRAME;
@@ -105,10 +107,12 @@ phi.Paddles:Program
 		if ball_y < 0
 			ball_y is 0;
 			speed_y is 0 - speed_y;
+			call Sound.StartSong: 't240 @1 o4 l32 g';
 		;;
 		if ball_y > H - BALL
 			ball_y is H - BALL;
 			speed_y is 0 - speed_y;
+			call Sound.StartSong: 't240 @1 o4 l32 g';
 		;;
 
 		# my paddle, on the left
@@ -124,16 +128,19 @@ phi.Paddles:Program
 
 		if ball_x < 0
 			its_score++;
+			call Sound.StartSong: 't200 @2 o3 l16 e c <g';
 			call PlaceBall;
 		;;
 		if ball_x > W
 			my_score++;
+			call Sound.StartSong: 't200 @2 o5 l16 c e g';
 			call PlaceBall;
 		;;
 	[end]
 
 	# off a paddle: it comes back faster, and where it hit says how steeply
 	[Bounce: int paddle_y: 0;]
+		call Sound.StartSong: 't240 @1 o5 l32 c';
 		int hit: ball_y + BALL / 2 - (paddle_y + PADDLE_H / 2);
 		speed_y is hit / 6;
 		speed_x is 0 - speed_x;

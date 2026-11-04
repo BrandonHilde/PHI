@@ -1,0 +1,14 @@
+# audio.sound in a program on PHI OS (sound_library.rootfs/music.phi), where it goes through the
+# system calls, as play.phi does by hand. sound_files has it in a kernel, on the card itself,
+# and sound_program on Windows and Linux.
+use proc.process;
+
+phi.SoundLibrary:Kernel
+{
+	int pid: 0;
+	call pid is Process.Spawn: 'MUSIC.BIN' '';
+	int code: 0;
+	call code is Process.Wait: pid;
+	log '[exited with ' code ']\n';
+	exit 0;
+}

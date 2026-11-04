@@ -1,0 +1,535 @@
+# Sound on Linux, 32 and 64 bits (H7 step 2), from PulseAudio or PipeWire's stand-in for it,
+# which every desktop runs (WSLg too). Its native protocol runs over a socket, so this needs
+# no library, as a window needs none for X: it connects with Linux's system calls and writes
+# packets as the protocol lays them out, high byte first.
+#
+# A packet is 20 bytes saying how long it is and which channel it's for, and then either
+# sound for a stream's channel, or a command: tagged values, the first two the command's
+# number and a tag that its reply repeats. The server asks for sound (REQUEST) as it wants
+# more, and what's asked for is all that's sent, so writing never waits for long. It lets in
+# a program of the same user by the socket's own credentials; a cookie is sent in case not.
+#
+# Protocol version 13 is asked for: every server has it, and it has all this needs.
+
+phi.SoundSystem:Linux
+{
+	const int VERSION: 13;
+	const int IN_ROOM: 65536;
+	const int MOST_SOUND: 4096;           # of a packet
+	const int QUEUE_ROOM: 131072;         # 32 x 4096, as the AC'97's ring
+	const int START_AFTER: 4096;          # it waits for this much before it starts playing
+	const int MOST_OUTPUT_MS: 100;        # how much of what an output says it's holding is believed
+	const u32 NONE: 0xFFFFFFFF;           # no channel (so, a command), no such number
+
+	# commands
+	const u32 ERROR: 0;
+	const u32 REPLY: 2;
+	const u32 CREATE_STREAM: 3;
+	const u32 DELETE_STREAM: 4;
+	const u32 AUTHENTICATE: 8;
+	const u32 CLIENT_NAME: 9;
+	const u32 GET_LATENCY: 14;
+	const u32 SET_VOLUME: 37;
+	const u32 FLUSH: 42;
+	const u32 TRIGGER: 43;
+	const u32 REQUEST: 61;
+	const u32 STREAM_KILLED: 64;
+
+	# where a command's values start in a packet: its number at 21, its tag at 26
+	const int VALUES: 30;
+
+	int server: -1;
+	bln gone: false;                      # the server has closed, or ended our stream
+	int rate: 0;
+	u32 channel: 0xFFFFFFFF;              # our stream, for sound and commands
+	u32 sink_input: 0;                    # our stream, for its volume
+	int requested: 0;                     # how much sound the server wants
+	bln sounding: false;                  # something has been written that may not have played
+	int began: 0;                         # OS.GetTicks when what's playing began
+	u32 run_bytes: 0;                     # how much has been written since, without a gap
+
+	u8 outgoing[4608];
+	int filled: 0;
+	u32 next_tag: 1;
+	u32 last_tag: 0;
+	ptr<u8> incoming: 0;                  # what the server has sent, from its first unread packet
+	int have: 0;
+	u8 path[256];
+
+	[Open: int hz: 0;]
+		if not (Connect) return false;
+		rate is hz;
+		gone is false;
+		sounding is false;
+
+		call Command: CREATE_STREAM;
+		call PutSampleSpec: hz;
+		call Put8: 'm';                   # the channels: front left and right
+		call Put8: 2;
+		call Put8: 1;
+		call Put8: 2;
+		call PutU32: NONE;                # the server's default output
+		call Put8: 'N';
+		call PutU32: QUEUE_ROOM;          # the most it holds
+		call PutBool: false;              # not paused
+		call PutU32: QUEUE_ROOM;          # how much it asks to be kept full
+		call PutU32: START_AFTER;
+		call PutU32: MOST_SOUND;          # the least it asks for at a time
+		call PutU32: 0;                   # not started in step with another stream
+		call PutVolume: 100;
+		while int i: 0; i < 7; i++;       # no_remap to variable_rate
+			call PutBool: false;
+		;;
+		call PutBool: false;              # not muted
+		call PutBool: false;              # adjust_latency
+		call PutName: 'media.name';
+		call Send;
+		if not (WaitReply: last_tag) return false;
+		bln ok: ((Get32: 21) is REPLY);
+		if ok
+			channel is (Get32: VALUES + 1);
+			sink_input is (Get32: VALUES + 6);
+			requested is (Get32: VALUES + 11);
+		;;
+		call Forget;
+	[end: ok]
+
+	[Close]
+		if channel is not NONE and not gone
+			call Command: DELETE_STREAM;
+			call PutU32: channel;
+			call Send;
+			if (WaitReply: last_tag)
+				call Forget;
+			;;
+		;;
+		channel is NONE;
+	[end]
+
+	# what the server has asked for, of length bytes of data; -1 if it has gone
+	[Put: ptr<u8> data: 0; int length: 0;]
+		call Pump;
+		if gone return -1;
+		int taken: 0;
+		while taken < length and requested > 0 and not gone
+			int chunk: length - taken;
+			if chunk > requested
+				chunk is requested;
+			;;
+			if chunk > MOST_SOUND
+				chunk is MOST_SOUND;
+			;;
+			while int i: 0; i < chunk; i++;
+				outgoing:(20 + i) is data:(taken + i);
+			;;
+			filled is 20 + chunk;
+			call SendPacket: channel;
+			requested-- chunk;
+			taken++ chunk;
+			call Wrote: chunk;
+		;;
+	[end: taken]
+
+	# bytes still to play. Sound lasts as long as it lasts from when the server starts on it:
+	# the server's own numbers can't say more, as it reads ahead of what's heard, and an output
+	# that's just woken says it holds nothing, while WSLg's says more and more as time goes by.
+	# So that's what's counted, with what the output says it holds, up to a point (a stream
+	# that ended now would lose that). If it's waiting for more before it starts, this starts it.
+	[Left]
+		call Pump;
+		if gone return -1;
+		if not sounding return 0;
+		call Command: GET_LATENCY;
+		call PutU32: channel;
+		call Put8: 'T';                   # when this was asked, which it only gives back
+		call Put32: 0;
+		call Put32: 0;
+		call Send;
+		if not (WaitReply: last_tag) return -1;
+		if (Get32: 21) is not REPLY
+			call Forget;
+			return -1;
+		;;
+		# two times, whether it's playing, two clocks, then where it's written to and read to
+		int output_ms: (Get32: VALUES + 5) / 1000;
+		bln playing: (incoming:(VALUES + 18) is '1');
+		int held: (Get32: VALUES + 42) - (Get32: VALUES + 51);
+		call Forget;
+
+		if held > 0 and not playing
+			call Command: TRIGGER;
+			call PutU32: channel;
+			call Send;
+		;;
+		int now: (OS.GetTicks);
+		if held >= run_bytes              # it hasn't started on it yet
+			began is now;
+		;;
+		if output_ms > MOST_OUTPUT_MS
+			output_ms is MOST_OUTPUT_MS;
+		;;
+		int left: (Frames: began + (Lasts: run_bytes) + output_ms - now) * 4;
+		if left < held
+			left is held;
+		;;
+		if left <= 0
+			sounding is false;
+			return 0;
+		;;
+	[end: left]
+
+	[Drop]
+		sounding is false;
+		call Pump;
+		if gone return;
+		call Command: FLUSH;
+		call PutU32: channel;
+		call Send;
+		if (WaitReply: last_tag)
+			call Forget;
+		;;
+	[end]
+
+	[SetVolume: int percent: 100;]
+		if gone return;
+		call Command: SET_VOLUME;
+		call PutU32: sink_input;
+		call PutVolume: percent;
+		call Send;
+		if (WaitReply: last_tag)
+			call Forget;
+		;;
+	[end]
+
+	[Frames: int ms: 0;]
+	[end: ms * rate / 1000]
+
+	# how many milliseconds that much sound lasts
+	[Lasts: u32 bytes: 0;]
+		u32 frames: bytes / 4;
+	[end: (frames / rate) * 1000 + (frames % rate) * 1000 / rate]
+
+	# this much more was written: after what's playing, or starting now if that has ended
+	[Wrote: int bytes: 0;]
+		int now: (OS.GetTicks);
+		if not sounding or began + (Lasts: run_bytes) < now
+			began is now;
+			run_bytes is 0;
+		;;
+		run_bytes++ bytes;
+		sounding is true;
+	[end]
+
+	# ---- the connection
+
+	# to the server, once: true if there is one, and it let us in. It's where PULSE_SERVER
+	# says, or the desktop's place for it, or where WSLg has it.
+	[Connect]
+		if server >= 0 return true;
+		if incoming is 0
+			incoming is new u8[IN_ROOM];
+		;;
+		bln found: false;
+		ptr<u8> named: (LinuxEnvironment.Find: 'PULSE_SERVER');
+		if named is not 0
+			# (unix:/a/path, or just the path; a server elsewhere on a network isn't tried)
+			if named:0 is 'u' and named:1 is 'n' and named:2 is 'i' and named:3 is 'x' and named:4 is ':'
+				named is named + 5;
+			;;
+			if named:0 is '/'
+				call Join: named '';
+				call found is TryPath;
+			;;
+		;;
+		ptr<u8> runtime: (LinuxEnvironment.Find: 'XDG_RUNTIME_DIR');
+		if not found and runtime is not 0
+			call Join: runtime '/pulse/native';
+			call found is TryPath;
+		;;
+		if not found
+			str theirs: '/run/user/';
+			theirs++ (sys.GetUserId);
+			theirs++ '/pulse/native';
+			int length: theirs.len;
+			while int i: 0; i < length; i++;
+				path:i is theirs:i;
+			;;
+			path:length is 0;
+			call found is TryPath;
+		;;
+		if not found
+			call Join: '/mnt/wslg/runtime-dir/pulse/native' '';
+			call found is TryPath;
+		;;
+		if not found return false;
+
+		u8 cookie[256];
+		call ReadCookie: addr cookie;
+		call Command: AUTHENTICATE;
+		call PutU32: VERSION;
+		call Put8: 'x';
+		call Put32: 256;
+		while int i: 0; i < 256; i++;
+			call Put8: cookie:i;
+		;;
+		call Send;
+		bln ok: (WaitReply: last_tag);
+		if ok
+			ok is ((Get32: 21) is REPLY);
+			call Forget;
+		;;
+		if ok
+			call Command: CLIENT_NAME;
+			call PutName: 'application.name';
+			call Send;
+			call ok is WaitReply: last_tag;
+			if ok
+				call Forget;
+			;;
+		;;
+		if not ok
+			call sys.Close: server;
+			server is -1;
+		;;
+	[end: ok]
+
+	# the socket at path, as the server
+	[TryPath]
+		int s: (sys.Socket: 1 1 0);       # AF_UNIX, SOCK_STREAM
+		if s < 0 return false;
+		u8 place[110];                    # a sockaddr_un
+		place:0 is 1;
+		int i: 0;
+		while path:i is not 0 and i < 107
+			place:(2 + i) is path:i;
+			i++;
+		;;
+		if (sys.Connect: s addr place 2 + i + 1) is not 0
+			call sys.Close: s;
+			return false;
+		;;
+		server is s;
+		have is 0;
+	[end: true]
+
+	# the cookie, if the user has one where they're kept
+	[ReadCookie: ptr<u8> cookie: 0;]
+		while int i: 0; i < 256; i++;
+			cookie:i is 0;
+		;;
+		ptr<u8> named: (LinuxEnvironment.Find: 'PULSE_COOKIE');
+		if named is not 0
+			if (OS.ReadFile: named cookie 256) is 256 return;
+		;;
+		ptr<u8> home: (LinuxEnvironment.Find: 'HOME');
+		if home is 0 return;
+		call Join: home '/.config/pulse/cookie';
+		if (OS.ReadFile: addr path cookie 256) is 256 return;
+		call Join: home '/.pulse-cookie';
+		call OS.ReadFile: addr path cookie 256;
+	[end]
+
+	# path is the two together
+	[Join: ptr<u8> first: 0; ptr<u8> second: 0;]
+		int n: 0;
+		int i: 0;
+		while first:i is not 0 and n < 255
+			path:n is first:i;
+			i++;
+			n++;
+		;;
+		i is 0;
+		while second:i is not 0 and n < 255
+			path:n is second:i;
+			i++;
+			n++;
+		;;
+		path:n is 0;
+	[end]
+
+	# ---- writing
+
+	# a command's start: its number, and a new tag (kept in last_tag)
+	[Command: u32 number: 0;]
+		filled is 20;
+		call PutU32: number;
+		call PutU32: next_tag;
+		last_tag is next_tag;
+		next_tag++;
+	[end]
+
+	[Put8: int value: 0;]
+		outgoing:filled is value;
+		filled++;
+	[end]
+
+	[Put32: u32 value: 0;]
+		call Put8: value >> 24;
+		call Put8: (value >> 16) & 0xFF;
+		call Put8: (value >> 8) & 0xFF;
+		call Put8: value & 0xFF;
+	[end]
+
+	[PutU32: u32 value: 0;]
+		call Put8: 'L';
+		call Put32: value;
+	[end]
+
+	[PutBool: bln value: false;]
+		if value
+			call Put8: '1';
+		;;
+		else
+			call Put8: '0';
+		;;
+	[end]
+
+	# 16-bit stereo, low byte first
+	[PutSampleSpec: int hz: 0;]
+		call Put8: 'a';
+		call Put8: 3;
+		call Put8: 2;
+		call Put32: hz;
+	[end]
+
+	# both channels at percent of the way up, on the scale the server's own controls show
+	[PutVolume: int percent: 100;]
+		u32 level: (percent * 0x10000 / 100) as u32;
+		call Put8: 'v';
+		call Put8: 2;
+		call Put32: level;
+		call Put32: level;
+	[end]
+
+	# a list of one property, this name's, saying PHI
+	[PutName: ptr<u8> name: 0;]
+		call Put8: 'P';
+		call Put8: 't';
+		int i: 0;
+		while name:i is not 0
+			call Put8: name:i;
+			i++;
+		;;
+		call Put8: 0;
+		call PutU32: 4;
+		call Put8: 'x';
+		call Put32: 4;
+		call Put8: 'P';
+		call Put8: 'H';
+		call Put8: 'I';
+		call Put8: 0;
+		call Put8: 'N';
+	[end]
+
+	[Send]
+		call SendPacket: NONE;
+	[end]
+
+	# outgoing, with the 20 bytes that say what it is
+	[SendPacket: u32 to_channel: 0;]
+		int ending_at: filled;
+		filled is 0;
+		call Put32: ending_at - 20;
+		call Put32: to_channel;
+		call Put32: 0;
+		call Put32: 0;
+		call Put32: 0;
+		int done: 0;
+		while done < ending_at and server >= 0 and not gone
+			int n: (sys.SendTo: server addr outgoing:done ending_at - done 0x4000 0 0);   # MSG_NOSIGNAL
+			if n is -4 continue;              # stopped by a signal: on with it
+			if n <= 0
+				gone is true;
+			;;
+			else
+				done++ n;
+			;;
+		;;
+		filled is 0;
+	[end]
+
+	# ---- reading
+
+	[Get32: int place: 0;]
+		u32 value: incoming:place;
+		value is (value << 8) | incoming:(place + 1);
+		value is (value << 8) | incoming:(place + 2);
+		value is (value << 8) | incoming:(place + 3);
+	[end: value]
+
+	# more from the socket, waiting for it if told to: true if some came
+	[Fill: bln wait: false;]
+		if server < 0 or gone or have >= IN_ROOM return false;
+		int flags: 0x40;                  # MSG_DONTWAIT
+		if wait
+			flags is 0;
+		;;
+		int n: -4;
+		while n is -4                     # (stopped by a signal)
+			n is (sys.RecvFrom: server addr incoming:have IN_ROOM - have flags 0 0);
+		;;
+		if n is 0
+			gone is true;
+		;;
+		if n <= 0 return false;
+		have++ n;
+	[end: true]
+
+	# whether the first packet is all here
+	[Whole: bln wait: false;]
+		while true
+			if have >= 20
+				int length: 20 + (Get32: 0);
+				if length > IN_ROOM or length < 20
+					gone is true;
+					return false;
+				;;
+				if have >= length return true;
+			;;
+			if not (Fill: wait) return false;
+		;;
+	[end: false]
+
+	# the first packet is read: on to the next
+	[Forget]
+		int length: 20 + (Get32: 0);
+		int left: have - length;
+		while int i: 0; i < left; i++;
+			incoming:i is incoming:(length + i);
+		;;
+		have is left;
+	[end]
+
+	# everything the server has sent so far, handled
+	[Pump]
+		while (Whole: false)
+			call Handle;
+			call Forget;
+		;;
+	[end]
+
+	# the reply to tag at the start of incoming, with what came before it handled: false if
+	# the server has gone. Forget goes on past it.
+	[WaitReply: u32 tag: 0;]
+		while (Whole: true)
+			if (Get32: 4) is NONE and (Get32: 26) is tag
+				u32 number: (Get32: 21);
+				if number is REPLY or number is ERROR return true;
+			;;
+			call Handle;
+			call Forget;
+		;;
+	[end: false]
+
+	# a packet the server sent by itself. (The rest say it started, ran out, and so on.)
+	[Handle]
+		if (Get32: 4) is not NONE return;
+		u32 number: (Get32: 21);
+		if number is REQUEST and (Get32: VALUES + 1) is channel
+			requested++ (Get32: VALUES + 6);
+		;;
+		elif number is STREAM_KILLED and (Get32: VALUES + 1) is channel
+			gone is true;
+		;;
+	[end]
+}
