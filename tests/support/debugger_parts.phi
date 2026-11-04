@@ -1,0 +1,7 @@
+# debugger.phi's second file: a debugger follows the program into it.
+phi.Parts:Library
+{
+	[Double: int n: 0;]
+		int twice: n * 2;
+	[end: twice]
+}

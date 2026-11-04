@@ -1,0 +1,38 @@
+# A --debug build in a real debugger (lib: Compiler/Phi.Cli/Pdb.cs, H8 step 1). debugger.cdb is
+# what's asked of Microsoft's cdb, and debugger.expected what it should say: breakpoints on
+# lines, stepping by line, into and out of methods, across files, the stack, and each kind of
+# variable, by name and with its type. Run where cdb is installed.
+use support.debugger_parts;
+
+struct.Point
+{
+	int x;
+	int y;
+	ptr<Point> next;
+}
+
+phi.Debugger:Program
+{
+	str title: 'a class text';
+	int numbers[4];
+	numbers:2 is 7;
+	Point place;
+	place.x is 3;
+	place.y is 4;
+	u64 big: 5000000000;
+	f64 half: 0.5;
+	chr letter: 'q';
+	bln yes: true;
+	call Show: 'hello' addr place;
+	int result: (Parts.Double: 21);
+	result is result + 1;
+	exit 0;
+
+	[Show: ptr<u8> text: 0; ptr<Point> point: 0;]
+		str name: 'grown';
+		str fixed: [20];
+		fixed is 'fixed';
+		int count: point:0.x + 1;
+		count is count + 1;
+	[end]
+}

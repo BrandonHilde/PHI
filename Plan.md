@@ -2656,6 +2656,18 @@ done: played on both, 2026-11-03.) Sound is built too, and the rest of H7, the G
 
 1. **Debug information** (DWARF on Linux, PDB on Windows), so a debugger steps through PHI
    lines and shows variables, not only the generated assembly.
+   - [x] Windows, 32 and 64 bits (2026-11-03): `--debug` writes a `.pdb`, by phi itself as
+     there's no linker (`Compiler/Phi.Cli/Pdb.cs`). Breakpoints on lines, stepping, the stack
+     (64-bit code has a table of its methods for that, which only `--debug` builds carry),
+     variables by name and type, structs through pointers, text as text. Such a build keeps
+     variables in memory, writes every method out and gives each a frame, and its variables
+     are in a section of their own, as `dbghelp` takes a variable in the code's section for
+     a piece of that code. `tests/debugger.cdb` drives Microsoft's `cdb`, and `phi test
+     --debug-builds` runs every Windows program test built that way. Only `cdb` has been
+     tried: not WinDbg, Visual Studio or VS Code.
+   - [ ] Enums by name (they show as numbers), and the growing arrays' counts (a `T x[]` shows
+     as a pointer to its first element).
+   - [ ] Linux: DWARF. WSL has no `gdb` or `readelf` here to check it with.
 2. **A language server** for editors such as VS Code: errors as you type, going to a
    definition, completion.
 3. **A formatter,** and a way to share and depend on modules (packages).

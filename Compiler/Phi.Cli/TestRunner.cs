@@ -146,7 +146,7 @@ namespace Phi.Cli
         /// How to turn a library-only test into a whole program, or (for a network test) the card
         /// the machines get, or (for a disk test) the disk; and the system it runs on.
         /// </summary>
-        sealed record Mode(string Name, string Wrapper, string? Card = null, Host Host = Host.PhiOS, string? Disk = null);
+        sealed record Mode(string Name, string Wrapper, string? Card = null, Host Host = Host.PhiOS, string? Disk = null, bool Debugger = false);
 
         /// <summary>phi test --target: run only on that system (PHI OS, or as Linux or Windows programs).</summary>
         public static Host? Only { get; set; }
@@ -209,6 +209,15 @@ namespace Phi.Cli
             string name = Path.GetFileNameWithoutExtension(phiFile);
             string own = Path.Combine(dir, name);
             if (OnlyInQemu.Any(e => File.Exists(own + e) || Directory.Exists(own + e))) yield break;
+
+            // NAME.cdb: it's what a debugger is asked of the program, where there's one to ask
+            if (File.Exists(own + ".cdb"))
+            {
+                foreach (Host host in new[] { Host.Windows, Host.Windows64 }.Where(h => Only == null || Only == h))
+                    if (HostRunner.CanRun(host, out _) && DebuggerRunner.Find(host) != null)
+                        yield return new Mode(host.FlagName(), "", Host: host, Debugger: true);
+                yield break;
+            }
 
             string text = File.ReadAllText(phiFile);
             if (PhiOsOnly.IsMatch(text)) yield break;
@@ -302,7 +311,7 @@ namespace Phi.Cli
                            $"\tu8 root: {string.Join(" ", WebServer.CertificateDer.Select(b => $"0x{b:X2}"))};\n}}\n";
 
             if (mode != null && mode.Host != Host.PhiOS)
-                return RunHosted(phiFile, timeout, mode, keepOutput, containsOverride);
+                return mode.Debugger ? RunDebugger(phiFile, timeout, mode, keepOutput) : RunHosted(phiFile, timeout, mode, keepOutput, containsOverride);
 
             string machinesFile = Path.Combine(dir, name + ".machines");
             if (File.Exists(machinesFile))
@@ -385,6 +394,42 @@ namespace Phi.Cli
             return $"{reason}\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
         }
 
+        /// <summary>
+        /// A test with NAME.cdb: a --debug build, run in Microsoft's debugger, with what it says
+        /// (DebuggerRunner) compared with NAME.expected, or NAME.MODE.expected.
+        /// </summary>
+        static string? RunDebugger(string phiFile, TimeSpan timeout, Mode mode, bool keepOutput)
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
+            string name = Path.GetFileNameWithoutExtension(phiFile);
+            string variant = $"{name}.{mode.Name}";
+            string actualFile = Path.Combine(dir, variant + ".actual");
+            if (File.Exists(actualFile)) File.Delete(actualFile);
+
+            string outDir = Path.Combine(dir, "build", variant);
+            BuildResult build = Builder.Build(phiFile, outDir, host: mode.Host, debug: true);
+            if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
+
+            string actual = Normalize(DebuggerRunner.Run(build.ExecutablePath!, mode.Host, Path.Combine(dir, name + ".cdb"), timeout));
+            if (keepOutput) File.WriteAllText(actualFile, actual);
+            string expectedFile = File.Exists(Path.Combine(dir, variant + ".expected"))
+                ? Path.Combine(dir, variant + ".expected")
+                : Path.Combine(dir, name + ".expected");
+            if (!File.Exists(expectedFile))
+            {
+                File.WriteAllText(actualFile, actual);
+                return $"missing {name}.expected; the output was saved to {Path.GetFileName(actualFile)} " +
+                       "(rename it to .expected if it is correct)";
+            }
+            string expected = Normalize(File.ReadAllText(expectedFile));
+            if (actual == expected) return null;
+            File.WriteAllText(actualFile, actual);
+            return $"what the debugger said did not match\n--- expected\n{expected}\n--- actual (saved to {Path.GetFileName(actualFile)})\n{actual}";
+        }
+
+        /// <summary>phi test --debug-builds: every test that's a program is built as --debug would, to see they do the same.</summary>
+        public static bool DebugBuilds { get; set; }
+
         /// <summary>A test built as a Linux or Windows program, run here, and checked like one in QEMU.</summary>
         static string? RunHosted(string phiFile, TimeSpan timeout, Mode mode, bool keepOutput, string? containsOverride)
         {
@@ -395,7 +440,7 @@ namespace Phi.Cli
             if (File.Exists(actualFile)) File.Delete(actualFile);
 
             string outDir = Path.Combine(dir, "build", variant);
-            BuildResult build = Builder.Build(phiFile, outDir, mode.Wrapper, listing: true, host: mode.Host);
+            BuildResult build = Builder.Build(phiFile, outDir, mode.Wrapper, listing: true, host: mode.Host, debug: DebugBuilds);
             if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
 
             HostRunner.Result run = HostRunner.Run(build.ExecutablePath!, mode.Host, timeout);

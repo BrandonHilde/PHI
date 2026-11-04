@@ -1,0 +1,84 @@
+---- a breakpoint on a line
+bp `debugger!debugger.phi:35`
+bp `debugger!debugger_parts.phi:5`
+g
+Breakpoint 0 hit
+>   35: 		int count: point:0.x + 1;
+debugger!Debugger.Show:
+---- the stack
+k
+debugger!Debugger.Show [debugger.phi @ 35]
+debugger!Debugger [debugger.phi @ 26]
+---- what's in the method
+dv /t
+char * text = 0x... "hello"
+struct Point * point = 0x...
+char * name = 0x... "grown"
+char [21] fixed = char [21] "fixed"
+int count = 0n0
+dx point
+point            : 0x... [Type: Point *]
+    [+0x...] x                : 3 [Type: int]
+    [+0x...] y                : 4 [Type: int]
+    [+0x...] next             : 0x... [Type: Point *]
+dx text
+text             : 0x... : "hello" [Type: char *]
+    104 'h' [Type: char]
+---- stepping by line
+p
+>   36: 		count is count + 1;
+debugger!Debugger.Show:
+dv /t
+char * text = 0x... "hello"
+struct Point * point = 0x...
+char * name = 0x... "grown"
+char [21] fixed = char [21] "fixed"
+int count = 0n4
+---- the start's own
+.frame 1
+debugger!Debugger [debugger.phi @ 26]
+dv /t
+char * title = 0x... "a class text"
+int [4] numbers = int [4]
+struct Point place = struct Point
+unsigned int64 big = 0x...
+double half = 0.5
+char letter = 0n113 'q'
+bool yes = true
+int result = 0n0
+dx numbers
+numbers          [Type: int [4]]
+    [0]              : 0 [Type: int]
+    [1]              : 0 [Type: int]
+    [2]              : 7 [Type: int]
+    [3]              : 0 [Type: int]
+dx place
+place            [Type: Point]
+    [+0x...] x                : 3 [Type: int]
+    [+0x...] y                : 4 [Type: int]
+    [+0x...] next             : 0x... [Type: Point *]
+dx big,d
+big,d            : 5000000000 [Type: unsigned __int64]
+dx half
+half             : 0.500000 [Type: double]
+---- out of it, and on into another file
+g
+Breakpoint 1 hit
+>    5: 		int twice: n * 2;
+debugger!Parts.Double:
+k
+debugger!Parts.Double [debugger_parts.phi @ 5]
+debugger!Debugger [debugger.phi @ 27]
+dv /t
+int n = 0n21
+int twice = 0n0
+---- back out, by stepping
+p
+>    6: 	[end: twice]
+debugger!Parts.Double:
+p
+>   27: 	int result: (Parts.Double: 21);
+debugger!Debugger:
+---- one of the standard library's, by name
+dx heap_lock
+heap_lock        : 0x... [Type: unsigned int]

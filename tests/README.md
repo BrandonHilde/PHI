@@ -103,6 +103,13 @@ so with a comment line, `# runs only on PHI OS: why`. A test that is a `phi.Name
 runs only on the other systems (see `host_program.phi`). `phi test --target linux` (or
 `windows`) runs just those, without QEMU, in a few seconds.
 
+A test with `NAME.cdb` is about a `--debug` build's `.pdb`: it runs in Microsoft's debugger, as
+a 32-bit and a 64-bit Windows program, where `cdb` is installed. `NAME.cdb` is the commands, and
+`NAME.expected` what `cdb` should say from its first `.echo ---- ` on, without the addresses and
+registers that change from run to run (see `debugger.phi`). `phi test --debug-builds` builds
+every Windows program test as `--debug` does, since such a build compiles differently, and
+should still do the same.
+
 They run as 64-bit Linux and Windows programs too (`numbers (linux64)`, `numbers
 (windows64)`; `--target linux64`, `--target windows64`), where the generator can build
 them: until 64-bit code can do everything (S10 in Plan.md), a test that uses what it can't

@@ -54,7 +54,7 @@ namespace Phi.Cli
         /// </param>
         /// <param name="host">The system a program is for: PHI OS, or Linux or Windows (an ordinary executable).</param>
         public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
-                                        bool listing = false, Host host = Host.PhiOS)
+                                        bool listing = false, Host host = Host.PhiOS, bool debug = false)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
             var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img"), Listing = listing };
@@ -69,7 +69,7 @@ namespace Phi.Cli
 
             var source = SourceFile.Load(phiFile);
             CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource),
-                                                         kernel: kernel, host: host);
+                                                         kernel: kernel, host: host, debug: debug && host.IsWindows());
 
             foreach (Diagnostic d in compiled.Diagnostics)
                 (d.Severity == Severity.Error ? result.Errors : result.Warnings).Add(d.ToString());
@@ -79,9 +79,11 @@ namespace Phi.Cli
             if (host != Host.PhiOS)
             {
                 // an ordinary program: NASM writes the whole executable, headers and all
-                byte[]? executable = Assemble(compiled.Units.Single(), outDir, Array.Empty<string>(), result);
+                AsmUnit unit = compiled.Units.Single();
+                byte[]? executable = Assemble(unit, outDir, Array.Empty<string>(), result);
                 if (executable == null) return result;
                 result.ExecutablePath = Path.Combine(outDir, name + (host.IsWindows() ? ".exe" : ""));
+                if (unit.Debug != null) Pdb.Write(unit.Debug, outDir, name, host, executable);
                 WriteWhenFree(result.ExecutablePath, executable);
                 if (!OperatingSystem.IsWindows())
                     File.SetUnixFileMode(result.ExecutablePath, File.GetUnixFileMode(result.ExecutablePath)
@@ -249,14 +251,17 @@ namespace Phi.Cli
         {
             string asmPath = Path.Combine(outDir, unit.Name + ".asm");
             string binPath = Path.Combine(outDir, unit.Name + ".bin");
-            File.WriteAllText(asmPath, unit.Text);
+            // a debugger's information needs to know where every label ended up. (NASM takes the
+            // map's name as one word, so it's just the name, with NASM running in the folder.)
+            string mapLine = unit.Debug != null ? $"[map symbols {unit.Name}.map]\n" : "";
+            File.WriteAllText(asmPath, mapLine + unit.Text);
 
-            var args = new List<string> { "-f", "bin", "-o", binPath };
-            if (result.Listing) args.AddRange(new[] { "-l", Path.ChangeExtension(asmPath, ".lst") });
+            var args = new List<string> { "-f", "bin", "-o", Path.GetFullPath(binPath) };
+            if (result.Listing) args.AddRange(new[] { "-l", Path.GetFullPath(Path.ChangeExtension(asmPath, ".lst")) });
             args.AddRange(defines);
-            args.Add(asmPath);
+            args.Add(Path.GetFullPath(asmPath));
 
-            var (code, output) = Toolchain.Run(Toolchain.Nasm, args);
+            var (code, output) = Toolchain.Run(Toolchain.Nasm, args, unit.Debug != null ? Path.GetFullPath(outDir) : null);
             if (code != 0)
             {
                 Match tooBig = Regex.Match(output, @"TIMES value (-\d+) is negative");

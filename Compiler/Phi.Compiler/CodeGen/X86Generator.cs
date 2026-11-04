@@ -9,6 +9,9 @@ namespace Phi.Compiler.CodeGen
         public UnitKind Kind { get; init; }
         public string Name { get; init; } = "";
         public string Text { get; init; } = "";
+
+        /// <summary>What a debugger needs to know of the code, in a --debug build of a program.</summary>
+        public DebugInfo? Debug { get; init; }
     }
 
     /// <summary>
@@ -53,6 +56,12 @@ namespace Phi.Compiler.CodeGen
         readonly bool bits64;
         readonly string libraryTarget;
 
+        /// <summary>
+        /// A --debug build: what the code is, for a debugger. Such a build keeps every variable in
+        /// memory and writes every method out, each with a frame, so what it says is always so.
+        /// </summary>
+        readonly DebugInfo? debugInfo;
+
         StringBuilder code = new();
         readonly HashSet<string> librarySymbols = new();
         readonly Dictionary<string, string> stringLabels = new();
@@ -60,8 +69,9 @@ namespace Phi.Compiler.CodeGen
         SourceFile file;
         (SourceFile?, int) lastComment;
 
-        X86Generator(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
+        X86Generator(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics, bool debug = false)
         {
+            debugInfo = debug && unit.Kind == UnitKind.Program ? new DebugInfo() : null;
             this.program = program;
             this.unit = unit;
             this.diagnostics = diagnostics;
@@ -78,14 +88,16 @@ namespace Phi.Compiler.CodeGen
             if (gen.bits64) gen.Check64();
         }
 
-        public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
+        public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics, bool debug = false)
         {
-            var gen = new X86Generator(program, unit, diagnostics);
+            var gen = new X86Generator(program, unit, diagnostics, debug);
+            string text = gen.Build();
             return new AsmUnit
             {
                 Kind = unit.Kind,
                 Name = unit.Kind switch { UnitKind.Boot => "boot", UnitKind.Os => "os", UnitKind.Program => "program", _ => "kernel" },
-                Text = gen.Build(),
+                Text = text,
+                Debug = gen.debugInfo,
             };
         }
 
@@ -560,6 +572,26 @@ namespace Phi.Compiler.CodeGen
                 foreach (Stmt s in cls.Body) EmitStatement(s);
             }
 
+            if (debugInfo != null)
+            {
+                // what the classes' own statements do is one procedure, whose variables are the
+                // classes' own, wherever they're used
+                var start = new DebugMethod
+                {
+                    Name = unit.Classes.LastOrDefault(c => c.File == program.File)?.Name ?? "start",
+                    Label = "phi_start",
+                    EndLabel = "phi_halt",
+                    IsStart = true,
+                };
+                // (the standard library's own can be asked for, but they aren't listed with the
+                // program's)
+                var libraryOwn = unit.Classes.Where(c => c.File.Path.Replace('\\', '/').StartsWith("lib/phi/"))
+                    .SelectMany(c => c.Body).SelectMany(SyntaxWalker.Nodes)
+                    .Select(n => (n as VarDecl)?.Symbol).OfType<VariableSymbol>().ToHashSet();
+                start.Variables.AddRange(unit.Variables.Select(v => DebugVariableOf(v) with { Library = libraryOwn.Contains(v) }));
+                debugInfo.Methods.Add(start);
+            }
+
             Line("");
             Label("phi_halt");
             switch (unit.Kind)
@@ -597,6 +629,7 @@ namespace Phi.Compiler.CodeGen
             EmitArrayGrowRoutine();
             EmitTextArrayGrowRoutine();
             EmitLineTable();
+            if (debugInfo != null && Host.IsWindows()) EmitWindowsDebugTables();
 
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
 
@@ -666,8 +699,9 @@ namespace Phi.Compiler.CodeGen
                     output.AppendLine("bits 32");
                     output.AppendLine($"org 0x{WindowsAddress:X}");
                     output.AppendLine();
-                    EmitPeHeader(output);
+                    EmitPeHeader(output, debugInfo != null);
                     output.AppendLine("phi_start:");
+                    if (debugInfo != null) output.AppendLine("    push ebp\n    mov ebp, esp          ; where a debugger's walk of the stack ends");
                     output.AppendLine("    cld");
                     break;
 
@@ -675,8 +709,9 @@ namespace Phi.Compiler.CodeGen
                     output.AppendLine("bits 64");
                     output.AppendLine($"org 0x{WindowsAddress:X}");
                     output.AppendLine();
-                    EmitPe64Header(output);
+                    EmitPe64Header(output, debugInfo != null);
                     output.AppendLine("phi_start:");
+                    if (debugInfo != null) output.AppendLine("    push rbp\n    mov rbp, rsp          ; where a debugger's walk of the stack ends");
                     output.AppendLine("    cld");
                     break;
 
@@ -724,6 +759,7 @@ namespace Phi.Compiler.CodeGen
             // a 4 KB page, QEMU throws away its translation of that code on every write, which made
             // hot loops run up to ~200 times slower
             if (bits32) output.AppendLine("align 4096, db 0");
+            if (debugInfo != null && Host.IsWindows()) output.AppendLine("phi_pe_data:");
             output.AppendLine("; ---- data");
             EmitData(output);
 
@@ -809,7 +845,7 @@ namespace Phi.Compiler.CodeGen
         /// a label's place in the file is its address less WindowsAddress, and no linker is needed.
         /// The import table (phi_imports) comes from the library.
         /// </summary>
-        static void EmitPeHeader(StringBuilder output)
+        static void EmitPeHeader(StringBuilder output, bool debug)
         {
             output.AppendLine("phi_pe_header:");
             output.AppendLine("    db 'MZ'");
@@ -818,7 +854,7 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("phi_pe_signature:");
             output.AppendLine("    db 'PE', 0, 0");
             output.AppendLine("    dw 0x014C                            ; for the i386");
-            output.AppendLine("    dw 1                                 ; sections");
+            output.AppendLine($"    dw {(debug ? 2 : 1)}                                 ; sections");
             output.AppendLine("    dd 0, 0, 0");
             output.AppendLine("    dw phi_pe_sections - phi_pe_optional");
             output.AppendLine("    dw 0x0103                            ; no relocations (it's always at its base), runnable, 32-bit");
@@ -842,16 +878,51 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("    dd 0, 16                             ; 16 data directories:");
             output.AppendLine("    dd 0, 0");
             output.AppendLine("    dd phi_imports - $$, phi_imports_size ; the import table");
-            output.AppendLine("    times 14 dd 0, 0");
+            EmitDebugDirectories(output, debug, unwinds: false);
             output.AppendLine("phi_pe_sections:");
-            output.AppendLine("    db '.text', 0, 0, 0");
-            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
-            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
-            output.AppendLine("    dd 0, 0, 0");
-            output.AppendLine("    dd 0xE0000060                        ; code and data, run, read, write");
+            EmitPeSections(output, debug);
             output.AppendLine("    align 0x1000, db 0");
             output.AppendLine("phi_pe_code:");
             output.AppendLine();
+        }
+
+        /// <summary>
+        /// One section, which is everything: code and data, run, read, write. A --debug build has
+        /// its variables in a second one, the same to run, as a debugger takes a variable in the
+        /// section of the code that uses it for a piece of that code.
+        /// </summary>
+        static void EmitPeSections(StringBuilder output, bool debug)
+        {
+            string end = debug ? "phi_pe_data" : "phi_image_end";
+            output.AppendLine("    db '.text', 0, 0, 0");
+            output.AppendLine($"    dd {end} - phi_pe_code, phi_pe_code - $$");
+            output.AppendLine($"    dd {end} - phi_pe_code, phi_pe_code - $$");
+            output.AppendLine("    dd 0, 0, 0");
+            output.AppendLine("    dd 0xE0000060                        ; code and data, run, read, write");
+            if (!debug) return;
+            output.AppendLine("    db '.data', 0, 0, 0");
+            output.AppendLine("    dd phi_image_end - phi_pe_data, phi_pe_data - $$");
+            output.AppendLine("    dd phi_image_end - phi_pe_data, phi_pe_data - $$");
+            output.AppendLine("    dd 0, 0, 0");
+            output.AppendLine("    dd 0xE0000060");
+        }
+
+        /// <summary>
+        /// The data directories after the import table: in a --debug build, where the debug
+        /// directory is and, in 64-bit code, how to walk the stack (see EmitWindowsDebugTables).
+        /// </summary>
+        static void EmitDebugDirectories(StringBuilder output, bool debug, bool unwinds)
+        {
+            if (!debug)
+            {
+                output.AppendLine("    times 14 dd 0, 0");
+                return;
+            }
+            output.AppendLine("    dd 0, 0");
+            output.AppendLine(unwinds ? "    dd phi_unwinds - $$, phi_unwinds_size ; how to walk the stack" : "    dd 0, 0");
+            output.AppendLine("    times 2 dd 0, 0");
+            output.AppendLine("    dd phi_debug_directory - $$, 28      ; where the .pdb is");
+            output.AppendLine("    times 9 dd 0, 0");
         }
 
         /// <summary>
@@ -860,7 +931,7 @@ namespace Phi.Compiler.CodeGen
         /// (no relocations, and no DYNAMIC_BASE), below 2 GB, so the code's 32-bit addresses
         /// of labels hold.
         /// </summary>
-        static void EmitPe64Header(StringBuilder output)
+        static void EmitPe64Header(StringBuilder output, bool debug)
         {
             output.AppendLine("phi_pe_header:");
             output.AppendLine("    db 'MZ'");
@@ -869,7 +940,7 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("phi_pe_signature:");
             output.AppendLine("    db 'PE', 0, 0");
             output.AppendLine("    dw 0x8664                            ; for the x86-64");
-            output.AppendLine("    dw 1                                 ; sections");
+            output.AppendLine($"    dw {(debug ? 2 : 1)}                                 ; sections");
             output.AppendLine("    dd 0, 0, 0");
             output.AppendLine("    dw phi_pe_sections - phi_pe_optional");
             output.AppendLine("    dw 0x0023                            ; no relocations (it's always at its base), runnable, large addresses");
@@ -893,13 +964,9 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("    dd 0, 16                             ; 16 data directories:");
             output.AppendLine("    dd 0, 0");
             output.AppendLine("    dd phi_imports - $$, phi_imports_size ; the import table");
-            output.AppendLine("    times 14 dd 0, 0");
+            EmitDebugDirectories(output, debug, unwinds: true);
             output.AppendLine("phi_pe_sections:");
-            output.AppendLine("    db '.text', 0, 0, 0");
-            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
-            output.AppendLine("    dd phi_image_end - phi_pe_code, phi_pe_code - $$");
-            output.AppendLine("    dd 0, 0, 0");
-            output.AppendLine("    dd 0xE0000060                        ; code and data, run, read, write");
+            EmitPeSections(output, debug);
             output.AppendLine("    align 0x1000, db 0");
             output.AppendLine("phi_pe_code:");
             output.AppendLine();
@@ -973,6 +1040,7 @@ namespace Phi.Compiler.CodeGen
             string[] lines = file.Text.Split('\n');
             string text = line - 1 < lines.Length ? lines[line - 1].Trim() : "";
             code.AppendLine($"    ; {line}: {text}");
+            if (debugInfo != null) MarkDebugLine(file, line);
 
             // in a program that catches errors, where this line's code starts (see phi_lines)
             if (Catches)
@@ -981,6 +1049,49 @@ namespace Phi.Compiler.CodeGen
                 Label(label);
                 lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
             }
+        }
+
+        void MarkDebugLine(SourceFile where, int line)
+        {
+            string label = $"phi_debug_{debugInfo!.Lines.Count}";
+            Label(label);
+            debugInfo.Lines.Add(new DebugLine(label, line, where));
+        }
+
+        DebugVariable DebugVariableOf(VariableSymbol v) => new(v.Name, v.Type, v.Label, v.Grows, v.Capacity, v.TextRef);
+
+        /// <summary>
+        /// In a --debug build of a Windows program: the debug directory and the record it points
+        /// at, which says which .pdb goes with this program (phi fills the record in once the
+        /// program's built, see Builder), and in 64-bit code a table of the methods, as a debugger
+        /// can't walk a 64-bit stack without one. They all start and end the same way, so one
+        /// description of how serves them all: rbp was pushed, and then holds the frame.
+        /// </summary>
+        void EmitWindowsDebugTables()
+        {
+            Line("");
+            Comment("what a debugger looks for");
+            Line("align 4");
+            Label("phi_debug_directory");
+            Line("    dd 0, 0");
+            Line("    dw 0, 0");
+            Line("    dd 2                     ; CodeView");
+            Line($"    dd {DebugInfo.RecordSize}");
+            Line("    dd phi_debug_record - $$, phi_debug_record - $$");
+            Label("phi_debug_record");
+            Line($"    times {DebugInfo.RecordSize} db 0");
+            if (!bits64) return;
+
+            Line("align 4");
+            Label("phi_unwind_info");
+            Line("    db 1, 4, 2, 0x05         ; version 1; 4 bytes of start; 2 steps; rbp holds the frame");
+            Line("    db 4, 0x03               ; after 4 bytes: rbp has been set");
+            Line("    db 1, 0x50               ; after 1 byte: rbp has been pushed");
+            Line("align 4");
+            Label("phi_unwinds");
+            foreach (DebugMethod m in debugInfo!.Methods.OrderBy(m => !m.IsStart))
+                Line($"    dd {m.Label} - $$, {m.EndLabel} - $$, phi_unwind_info - $$");
+            Line("phi_unwinds_size equ $ - phi_unwinds");
         }
 
         void Need(string librarySymbol) => librarySymbols.Add(librarySymbol);
@@ -1005,6 +1116,11 @@ namespace Phi.Compiler.CodeGen
             string kind = m.IsHook ? "event" : m.IsInterruptHandler ? "interrupt handler" : "method";
             Comment($"{kind} {m.Name} ({FileName(file)})");
             Label(m.Label);
+            if (debugInfo != null)
+            {
+                lastComment = default;
+                MarkDebugLine(file, LineOf(m.Decl));
+            }
 
             if (m.IsInterruptHandler)
             {
@@ -1042,10 +1158,17 @@ namespace Phi.Compiler.CodeGen
             addressTaken.Clear();
             foreach (Node n in m.Decl.Body.SelectMany(SyntaxWalker.Nodes))
                 if (n is AddrExpr { Operand: NameExpr { Symbol: VariableSymbol taken } }) addressTaken.Add(taken);
-            List<VariableSymbol> chosen = bits32 && !bits64
+            List<VariableSymbol> chosen = bits32 && !bits64 && debugInfo == null
                 ? VariablePlanner.Choose(m, VariableRegisters.Length, FitsRegister, RunsInRegisters)
                 : new List<VariableSymbol>();
             Frame frame = LayOutFrame(m);
+            DebugMethod? debugMethod = null;
+            if (debugInfo != null)
+            {
+                debugMethod = new DebugMethod { Name = $"{m.Decl.Owner.Name}.{m.Decl.Name}", Label = m.Label, EndLabel = $"{m.Label}_debug_end" };
+                debugMethod.Variables.AddRange(m.Parameters.Concat(m.Locals).Select(DebugVariableOf));
+                debugInfo.Methods.Add(debugMethod);
+            }
             for (int i = 0; i < chosen.Count; i++) inRegisters.Add((chosen[i], VariableRegisters[i], chosen[i].Label));
             bool keepsRegisters = inRegisters.Count > 0;
 
@@ -1131,7 +1254,7 @@ namespace Phi.Compiler.CodeGen
             EmitTidyUp(m);
 
             StringBuilder body = code;
-            bool hasFrame = frameSize > 0 || m.Parameters.Count > 0 || m.ReturnType.IsString;
+            bool hasFrame = frameSize > 0 || m.Parameters.Count > 0 || m.ReturnType.IsString || debugInfo != null;
             code = new StringBuilder();
             if (hasFrame) EmitFrameStart(frame);
             if (unwindRecord != null)
@@ -1198,6 +1321,7 @@ namespace Phi.Compiler.CodeGen
             {
                 Emit("ret");
             }
+            if (debugMethod != null) Label(debugMethod.EndLabel);
 
             // what a throw on its way past calls with ebp at this method's frame: the same tidying up
             if (unwindRecord != null)
@@ -2941,7 +3065,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         bool CanInline(MethodSymbol m)
         {
-            if (!bits32 || bits64 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
+            if (debugInfo != null || !bits32 || bits64 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
             if (!inlinable.TryGetValue(m, out bool can))
             {
                 inlinable[m] = false;   // (a method that reaches itself isn't inlined)

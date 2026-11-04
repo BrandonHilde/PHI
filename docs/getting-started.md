@@ -189,6 +189,39 @@ gdb -ex "target remote localhost:1234" -ex "set architecture i386" -ex "break *0
 `0x10000` is where a 32-bit kernel starts. For a 16-bit program, use `set architecture
 i8086` and `break *0x7c00`.
 
+### Debugging a Windows program
+
+`--debug` with `--target windows` or `windows64` also writes `NAME.pdb` next to `NAME.exe`,
+so a Windows debugger stops on PHI's lines, follows them through methods and files, and shows
+the call stack and each variable by its name and type:
+
+```
+phi build file.phi --target windows64 --debug
+cdb -y build\file build\file\file.exe
+```
+
+In `cdb` (from the Windows SDK's Debugging Tools; 32-bit programs use its `x86` one):
+
+| Command | What it does |
+|---|---|
+| `.lines -e`, then `l+t` and `l+s` | step by PHI's lines, and show each one |
+| ``bp `file!file.phi:12` `` | stop at line 12 of file.phi |
+| `g` | carry on |
+| `p`, `t`, `gu` | the next line; the next line, going into a method; out of this method |
+| `k` | the call stack |
+| `dv /t` | this method's variables (at the start of a program, its classes' own) |
+| `dx place`, `dx point` | a variable, and through a pointer, the struct it points at |
+
+A `--debug` build keeps every variable in memory and writes every method out, so what the
+debugger shows is what's there. It runs slower for that, but does the same as any other
+build. A `ptr<u8>` shows as text, since it usually is. The standard library's sources go in
+`build\file\source`, for stepping into them.
+
+Other debuggers that read `.pdb` files should work too (WinDbg and Visual Studio open the
+`.exe`), though `cdb` is the one that's been tried. In VS Code, the C/C++ extension's
+`cppvsdbg` debugger needs `"debug.allowBreakpointsEverywhere": true` to set a breakpoint in a
+`.phi` file. A Linux program has no debug information yet.
+
 ## Next
 
 [Tutorial 1: your first boot sector](tutorial/01-boot-sector.md).

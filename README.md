@@ -143,6 +143,7 @@ phi.Count:Program
                                          world and the lobby are programs the kernel restarts if they
                                          crash (press K in the server's window to see it)
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
+       phi build x.phi --target windows64 --debug   with a .pdb: a debugger steps through its lines
        phi check file.phi                report errors without building
        phi test                          boot every test in tests/ headless and check its output
        phi test --bench                  run the benchmarks and compare their counts with the saved ones

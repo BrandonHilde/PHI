@@ -12,6 +12,8 @@ const string Usage = """
                                            or locked, or assembly blocks without an x64 version)
       phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
+                                           --target windows or windows64 with --debug (on build too)
+                                           writes a NAME.pdb, so a debugger steps through its PHI lines;
                                            with --target, run the executable here (a Linux one under
                                            WSL on Windows), with the arguments after --;
                                            --keep-disk keeps the files a kernel saved for next time
@@ -22,7 +24,7 @@ const string Usage = """
                                            --nic virtio gives the machine a virtio-net card (not an RTL8139),
                                            --disk virtio or nvme a virtio-blk or NVMe disk (not an IDE one)
       phi test  [dir|file.phi] [-f <name>] [--timeout <sec>] [--input <file>] [--contains <file>] [--keep-output]
-                [--memory <MB>] [--cores <n>] [--target <system>] [--no-retry]
+                [--memory <MB>] [--cores <n>] [--target <system>] [--no-retry] [--debug-builds]
                                            boot each test headless and compare its serial
                                            output with NAME.expected (default dir: tests/);
                                            tests that can also run as Linux and Windows programs do,
@@ -32,7 +34,8 @@ const string Usage = """
                                            --contains checks for the lines of a file instead of NAME.expected,
                                            --keep-output saves NAME.actual even when it passes;
                                            a test that fails runs once more, and one that passes then is
-                                           listed at the end (--no-retry: no second run); one that runs
+                                           listed at the end (--no-retry: no second run; --debug-builds:
+                                           Windows programs as --debug makes them, to see they do the same); one that runs
                                            out of time says where each thread (or CPU) was
       phi test  --bench [-f <name>] [--save-bench] [--tolerance <percent>]
                                            run the benchmarks (tests/bench_NAME.phi) counting instructions,
@@ -179,7 +182,8 @@ static int Execute(string[] args)
 
                 if (host != Phi.Compiler.Host.PhiOS)
                 {
-                    BuildResult hosted = Builder.Build(file, outDir, host: host);
+                    if (debug && !Phi.Compiler.Hosts.IsWindows(host)) Console.Error.WriteLine("warning: --debug makes a .pdb, for Windows; a Linux program has no debug information yet");
+                    BuildResult hosted = Builder.Build(file, outDir, host: host, debug: debug);
                     foreach (string w in hosted.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
                     foreach (string e in hosted.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
                     if (!hosted.Success) return 1;
@@ -266,6 +270,7 @@ static int Execute(string[] args)
                 string? contains = Option("--contains");
                 bool keepOutput = Flag("--keep-output");
                 TestRunner.Retry = !Flag("--no-retry");
+                TestRunner.DebugBuilds = Flag("--debug-builds");
                 bool saveBench = Flag("--save-bench");
                 bool bench = Flag("--bench") || saveBench;
                 string? tolerance = Option("--tolerance");

@@ -1,0 +1,33 @@
+.lines -e
+l+t
+l+s
+.echo ---- a breakpoint on a line
+bp `debugger!debugger.phi:35`
+bp `debugger!debugger_parts.phi:5`
+g
+.echo ---- the stack
+k
+.echo ---- what's in the method
+dv /t
+dx point
+dx text
+.echo ---- stepping by line
+p
+dv /t
+.echo ---- the start's own
+.frame 1
+dv /t
+dx numbers
+dx place
+dx big,d
+dx half
+.echo ---- out of it, and on into another file
+g
+k
+dv /t
+.echo ---- back out, by stepping
+p
+p
+.echo ---- one of the standard library's, by name
+dx heap_lock
+q

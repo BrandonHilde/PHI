@@ -44,7 +44,7 @@ namespace Phi.Cli
         }
 
         /// <summary>Runs a tool to completion and captures its output.</summary>
-        public static (int ExitCode, string Output) Run(string exe, IEnumerable<string> args)
+        public static (int ExitCode, string Output) Run(string exe, IEnumerable<string> args, string? folder = null)
         {
             var psi = new ProcessStartInfo(exe)
             {
@@ -52,6 +52,7 @@ namespace Phi.Cli
                 RedirectStandardError = true,
                 UseShellExecute = false,
             };
+            if (folder != null) psi.WorkingDirectory = folder;
             foreach (string a in args) psi.ArgumentList.Add(a);
 
             using Process p = Process.Start(psi)!;

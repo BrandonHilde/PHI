@@ -34,7 +34,8 @@ namespace Phi.Compiler
 
         /// <param name="kernel">For a program in a kernel's rootfs: the kernel's file, whose folder `use` searches too.</param>
         /// <param name="host">Where the program runs: PHI OS, or (for a program) another system.</param>
-        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null, Host host = Host.PhiOS)
+        /// <param name="debug">For a debugger: see X86Generator's debugInfo.</param>
+        public static CompileResult Compile(SourceFile file, bool generate = true, string? kernel = null, Host host = Host.PhiOS, bool debug = false)
         {
             var diagnostics = new DiagnosticBag();
             var usedBy = new Dictionary<string, (SourceFile From, UseDecl Use)>(StringComparer.OrdinalIgnoreCase);
@@ -53,7 +54,7 @@ namespace Phi.Compiler
                 return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
             }
 
-            var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics)).ToList();
+            var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics, debug)).ToList();
 
             var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound };
             if (!result.Success) return result;
