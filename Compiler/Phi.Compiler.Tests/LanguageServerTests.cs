@@ -732,6 +732,9 @@ namespace Phi.Compiler.Tests
         [InlineData("tests/foreign_program.phi")]       // a program for one system
         [InlineData("tests/sys_calls_program.phi")]
         [InlineData("tests/block_scope.phi")]           // a test of :Library classes
+        [InlineData("tests/net_http.phi")]              // phi test gives it class TestWeb
+        [InlineData("samples/mmo/load_players.phi")]    // phi load gives it its network, Machine and LoadSettings
+        [InlineData("lib/phi/test/load.phi")]
         public void AFileThatsRightHasNoErrors(string file)
         {
             string path = Path.Combine(RepoRoot(), file);
@@ -745,6 +748,7 @@ namespace Phi.Compiler.Tests
         [InlineData("lib/phi/net/tlslink.phi")]
         [InlineData("lib/phi/data/keyed.phi")]
         [InlineData("samples/mmo/server.phi")]
+        [InlineData("samples/mmo/load_players.phi")]
         public void AMistakeInAFileIsFoundWhereverItsChecked(string file)
         {
             string path = Path.Combine(RepoRoot(), file);

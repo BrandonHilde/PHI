@@ -2682,9 +2682,10 @@ done: played on both, 2026-11-03.) Sound is built too, and the rest of H7, the G
    - [x] `SourceChecker`, which `phi check` uses too: a module is checked in a smallest program
      around it, its system's whole runtime or a program here that uses it, and only the errors in
      it are reported. Before, `phi check` said 144 of this repository's files had errors they
-     didn't have (a module not being a program, the class Machine); it's 4 now, of which
-     `samples/code.phi` is a real one, and `lib/phi/test/load.phi`, `samples/mmo/load_players.phi`
-     and `tests/net_http.phi` need classes the test tools generate when they run.
+     didn't have (a module not being a program, the class Machine); it's 1 now,
+     `samples/code.phi`, which is a real one. What the test tools make when they run is there
+     too: a load client's network, Machine and LoadSettings, and the TestWeb of a test with a
+     NAME.web folder.
    - [ ] In the server too, so other editors get them and they come from the compiler: hover,
      finding every use of a name, renaming (the extension's scanner does these for now), and a
      program's other systems: a program is checked for one system (PHI OS unless what it uses

@@ -162,6 +162,10 @@ namespace Phi.Cli
 
         const uint Loopback = 0x7F000001;
 
+        /// <summary>What a run of phi load adds to a load client, for checking one: which machine it is and how many connections don't matter to a check.</summary>
+        internal static string ClientAdded(bool kernel) => (kernel ? KernelClient : ProgramClient) +
+            NetworkMachines.MachineClass(2, 2, 0x0A000302, 0x0A000301) + Settings(1, 1, 4001, null, null);
+
         /// <summary>
         /// The default client's file: the network's use lines first, since a module's classes
         /// start in the order they're used (the client's body talks to the network as it starts).
@@ -174,7 +178,7 @@ namespace Phi.Cli
         {
             string tls = root != null
                 ? $"\tbln tls: true;\n\tstr host: '{host}';\n\tu8 root: {string.Join(" ", File.ReadAllBytes(root).Select(b => $"0x{b:X2}"))};\n"
-                : "\tbln tls: false;\n\tstr host: '';\n\tu8 root: 0;\n";
+                : "\tbln tls: false;\n\tstr host: '';\n\tu8 root[1];\n";
             return $"\nphi.LoadSettings:Library\n{{\n\tu32 connections: {share};\n\tu32 seconds: {seconds};\n\tu32 port: {port};\n{tls}}}\n";
         }
 

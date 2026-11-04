@@ -282,6 +282,12 @@ namespace Phi.Cli
             catch (IOException e) { return $"couldn't run: {e.Message}"; }
         }
 
+        /// <summary>The class TestWeb a test with a NAME.web folder is built with.</summary>
+        internal static string WebClass(int port, int securePort, IEnumerable<byte> root) =>
+            $"\nphi.TestWeb:Library\n{{\n\tstr url: 'http://10.0.2.2:{port}';\n" +
+            $"\tstr secure_url: 'https://10.0.2.2:{securePort}';\n" +
+            $"\tu8 root: {string.Join(" ", root.Select(b => $"0x{b:X2}"))};\n}}\n";
+
         /// <returns>null on success, otherwise a description of the failure</returns>
         /// <param name="report">gets lines to show under the test's result (a benchmark's counts)</param>
         static string? RunOne(string phiFile, TimeSpan timeout, Mode? mode, string? inputOverride, bool keepOutput, string? containsOverride,
@@ -306,9 +312,7 @@ namespace Phi.Cli
             using WebServer? secureWeb = web != null ? new WebServer(webDir, secure: true) : null;
             string wrapper = mode?.Wrapper ?? "";
             if (web != null)
-                wrapper += $"\nphi.TestWeb:Library\n{{\n\tstr url: 'http://10.0.2.2:{web.Port}';\n" +
-                           $"\tstr secure_url: 'https://10.0.2.2:{secureWeb!.Port}';\n" +
-                           $"\tu8 root: {string.Join(" ", WebServer.CertificateDer.Select(b => $"0x{b:X2}"))};\n}}\n";
+                wrapper += WebClass(web.Port, secureWeb!.Port, WebServer.CertificateDer);
 
             if (mode != null && mode.Host != Host.PhiOS)
                 return mode.Debugger ? RunDebugger(phiFile, timeout, mode, keepOutput) : RunHosted(phiFile, timeout, mode, keepOutput, containsOverride);

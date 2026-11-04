@@ -122,13 +122,20 @@ namespace Phi.Cli
         /// <summary>The ways to check a file, most likely first.</summary>
         IEnumerable<Plan> Plans(string path, ProgramNode own, bool isProgram, bool partOfRuntime, Host? ownSystem, IReadOnlyDictionary<string, string> open)
         {
-            string machine = MachineClassFor(path, own);
+            string machine = MachineClassFor(path, own) + WebClassFor(path, own);
             Host host = target ?? ownSystem ?? Host.PhiOS;
 
             if (isProgram)
             {
                 yield return new Plan(host, machine);
                 yield break;
+            }
+
+            // a load client: as phi load builds it, in a kernel or a program
+            if (ownSystem == null && !partOfRuntime && IsLoadClient(TextOf(path, open), own))
+            {
+                if (host == Host.PhiOS) yield return new Plan(host, LoadTester.ClientAdded(kernel: true));
+                yield return new Plan(host, LoadTester.ClientAdded(kernel: false));
             }
 
             // in a program with all of its system's runtime
@@ -158,7 +165,7 @@ namespace Phi.Cli
                 ProgramNode theirs = Parser.Parse(new SourceFile(user, TextOf(user, open)), parsing);
                 if (parsing.HasErrors) continue;
                 Host system = target ?? SystemOf(theirs) ?? ownSystem ?? Host.PhiOS;
-                string theirMachine = MachineClassFor(user, theirs);
+                string theirMachine = MachineClassFor(user, theirs) + WebClassFor(user, theirs);
                 if (IsProgram(theirs))
                 {
                     yield return new Plan(system, theirMachine, Root: user);
@@ -251,6 +258,18 @@ namespace Phi.Cli
                     return NetworkMachines.MachineClass(1, 1, 0x0A000301, 0x0A000301);
             return "";
         }
+
+        /// <summary>The class TestWeb, for a test with a NAME.web folder, which phi test serves while it runs. Its addresses don't matter to a check.</summary>
+        static string WebClassFor(string path, ProgramNode own)
+        {
+            if (own.Classes.Any(c => c.Name == "TestWeb")) return "";
+            string full = Path.GetFullPath(path);
+            return Directory.Exists(Path.ChangeExtension(full, ".web")) ? TestRunner.WebClass(80, 443, new byte[2]) : "";
+        }
+
+        /// <summary>Whether a module is a client for phi load: it reads the class LoadSettings, which phi load makes.</summary>
+        static bool IsLoadClient(string text, ProgramNode own) =>
+            !own.Classes.Any(c => c.Name == "LoadSettings") && text.Contains("LoadSettings.");
 
         /// <summary>The .phi files in this repository (or folder, without one) with a `use` of this file's name.</summary>
         static IEnumerable<string> UsersOf(string path, IReadOnlyDictionary<string, string> open)
