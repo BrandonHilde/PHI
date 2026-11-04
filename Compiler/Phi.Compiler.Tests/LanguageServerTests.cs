@@ -286,6 +286,31 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AnErrorBetweenTokensUnderlinesTheOneBeforeIt()
+        {
+            string uri = Uri("main.phi");
+            session.Open(uri, "phi.Main:Kernel\n{\n\tlog 'no end'\n\tlog 'next';\n}\n");
+            JsonNode range = session.WaitForDiagnostics(uri, d => d.Count > 0)[0]!["range"]!;
+            Assert.Equal(2, (int)range["start"]!["line"]!);
+            Assert.Equal(5, (int)range["start"]!["character"]!);
+            Assert.Equal(13, (int)range["end"]!["character"]!);
+        }
+
+        [Fact]
+        public void AQuestionThatCompilesAFileSaysItsErrorsToo()
+        {
+            string uri = Uri("main.phi");
+            session.Open(uri, "phi.Main:Kernel\n{\n}\n");
+            session.WaitForDiagnostics(uri, d => d.Count == 0);
+
+            // asked straight after the change, so the question is what compiles it
+            session.Change(uri, "phi.Main:Kernel\n{\n\tmissing++ 1;\n}\n");
+            session.Request("textDocument/definition", Place(uri, 2, 1));
+            JsonArray errors = session.WaitForDiagnostics(uri, d => d.Count > 0);
+            Assert.Contains("missing", (string)errors[0]!["message"]!);
+        }
+
+        [Fact]
         public void AWarningIsAWarning()
         {
             Write("other.phi", "phi.Other:Library\n{\n\tint shared: 1;\n}\n");
@@ -531,10 +556,39 @@ namespace Phi.Compiler.Tests
         [InlineData("OS.|", "Sleep")]
         [InlineData("OS.Sl|", "Sleep")]
         [InlineData("spot.|x", "y")]
+        [InlineData("Colors.|", "White")]
+        [InlineData("OS.|", "TimerEvent")]
         public void CompletesTheMembersOf(string written, string expected)
         {
             var labels = CompleteAt("main.phi", Program.Replace("call Add: kept;", "call Add: kept;\n\t\t" + written)).Select(i => i.Label);
             Assert.Contains(expected, labels);
+        }
+
+        /// <summary>A module with an error isn't bound at all, so all there is to go on is how it's written.</summary>
+        [Theory]
+        [InlineData("many:1.|", "x")]
+        [InlineData("many.|", "len")]
+        [InlineData("one.|", "inner")]
+        [InlineData("one.inner.|", "y")]
+        public void CompletesInAModuleThatsNeverBeenRight(string written, string expected)
+        {
+            string text = "struct.Point\n{\n\tint x;\n\tint y;\n}\nstruct.Box\n{\n\tPoint inner;\n}\n" +
+                          "phi.Module:Library\n{\n\tPoint many[3];\n\tBox one;\n\t" + written + "\n}\n";
+            Assert.Contains(expected, CompleteAt("module.phi", text).Select(i => i.Label));
+        }
+
+        [Fact]
+        public void AnErrorInAModuleKeepsWhatWasKnownAboutIt()
+        {
+            string uri = Uri("module.phi");
+            const string Good = "phi.Module:Library\n{\n\tPoint many[3];\n}\nstruct.Point\n{\n\tint x;\n}\n";
+            session.Open(uri, Good);
+            session.WaitForDiagnostics(uri, d => d.Count == 0);
+
+            var (text, line, character) = Marked(Good.Replace("many[3];", "many[3];\n\tmany:1.|"));
+            session.Change(uri, text);
+            JsonNode result = session.Request("textDocument/completion", Place(uri, line, character))!;
+            Assert.Contains(result["items"]!.AsArray(), i => (string)i!["label"]! == "x");
         }
 
         [Fact]

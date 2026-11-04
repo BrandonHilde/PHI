@@ -145,7 +145,7 @@ phi.Count:Program
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi build x.phi --target windows64 --debug   with a .pdb: a debugger steps through its lines
        phi check file.phi                report errors without building
-       phi lsp                           the language server, for an editor (editors/vscode for VS Code)
+       phi lsp                           the language server, for an editor (PHI-VSCODE is the extension for VS Code)
        phi test                          boot every test in tests/ headless and check its output
        phi test --bench                  run the benchmarks and compare their counts with the saved ones
        phi profile samples/web.phi       boot it, then list the PHI lines that took the most time

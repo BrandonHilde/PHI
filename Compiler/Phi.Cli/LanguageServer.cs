@@ -4,6 +4,7 @@ using System.Text.Json;
 using System.Text.Json.Nodes;
 using Phi.Compiler;
 using Phi.Compiler.Language;
+using Phi.Compiler.Syntax;
 
 namespace Phi.Cli
 {
@@ -271,7 +272,7 @@ namespace Phi.Cli
                 foreach (Diagnostic d in items)
                     array.Add(new JsonObject
                     {
-                        ["range"] = RangeOf(file, d.Span),
+                        ["range"] = RangeOf(file, Visible(file, d.Span)),
                         // 1 is an error, 2 a warning
                         ["severity"] = d.Severity == Severity.Error ? 1 : 2,
                         ["source"] = "phi",
@@ -298,7 +299,12 @@ namespace Phi.Cli
         (Document Document, int Offset)? Place(JsonObject p)
         {
             if (Find((string)p["textDocument"]!["uri"]!) is not Document document) return null;
-            if (document.Stale || document.Index == null) Compile(document);
+            if (document.Stale || document.Index == null)
+            {
+                MarkUsersStale(document.Key);
+                Compile(document);
+                PublishAll();
+            }
             if (document.File == null) return null;
             JsonNode position = p["position"]!;
             return (document, document.File.GetOffset((int)position["line"]!, (int)position["character"]!));
@@ -331,10 +337,13 @@ namespace Phi.Cli
 
         /// <summary>
         /// The index for a place. Where the file doesn't parse (a class not closed yet is left out
-        /// altogether), what was declared in it last time is better than knowing nothing.
+        /// altogether, and a module with an error isn't bound, so it has no types), what was known
+        /// about it last time is better than knowing less.
         /// </summary>
         static ProgramIndex IndexAround(Document document, int offset) =>
-            document.Index!.Knows(offset) || document.LastGood == null ? document.Index! : new ProgramIndex(document.LastGood, document.File!, earlier: true);
+            document.LastGood == null || document.Index!.Knows(offset) && document.Result?.Bound != null
+                ? document.Index!
+                : new ProgramIndex(document.LastGood, document.File!, earlier: true);
 
         /// <summary>The numbers the protocol has for kinds of completion.</summary>
         static int KindOf(NameKind kind) => kind switch
@@ -362,6 +371,23 @@ namespace Phi.Cli
         {
             string? uri = UriOf(file);
             return uri == null ? null : new JsonObject { ["uri"] = uri, ["range"] = RangeOf(file, span) };
+        }
+
+        /// <summary>
+        /// A span something can be underlined in. "expected ';'" is at the place between two
+        /// tokens, with no length: it's about the token that ends there, or else the one that starts there.
+        /// </summary>
+        static Span Visible(SourceFile file, Span span)
+        {
+            if (span.Length > 0) return span;
+            Token? starting = null;
+            foreach (Token t in new Lexer(file, new DiagnosticBag()).Lex())
+            {
+                if (t.Kind == TokenKind.EndOfFile) break;
+                if (t.Span.End == span.Start && t.Span.Length > 0) return t.Span;
+                if (t.Span.Start == span.Start && t.Span.Length > 0) starting ??= t;
+            }
+            return starting?.Span ?? span;
         }
 
         static JsonObject RangeOf(SourceFile file, Span span)

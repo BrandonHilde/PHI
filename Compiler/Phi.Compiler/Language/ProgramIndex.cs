@@ -241,12 +241,20 @@ namespace Phi.Compiler.Language
 
         NameInfo Describe(VarDecl v, SourceFile file, NameKind kind = NameKind.Variable)
         {
-            PhiType? type = v.Symbol?.Type is { IsError: false } known ? known : FromSyntax(v.Type);
+            PhiType? type = v.Symbol?.Type is { IsError: false } known ? known : FromSyntax(v);
             return new NameInfo(kind, v.Name, type?.ToString() ?? v.Type.ToString(), file, v.NameSpan, type, v);
         }
 
         static NameInfo Describe(ConstDecl c, SourceFile file) =>
             new(NameKind.Constant, c.Name, c.Type.ToString(), file, c.NameSpan, null, c);
+
+        /// <summary>A variable's type from how it's declared. (Several values are an array's, but a struct's fields in one.)</summary>
+        PhiType? FromSyntax(VarDecl v)
+        {
+            PhiType? type = FromSyntax(v.Type);
+            bool array = v.BufferSize != null && !v.SizeAfterColon || v.Filled || v.Unsized || v.Values.Count > 1 && type is { IsStruct: false };
+            return array ? type?.ArrayOf(1) : type;
+        }
 
         /// <summary>A type as far as can be told from how it's written, for code the binder didn't get to.</summary>
         PhiType? FromSyntax(TypeRef type)
@@ -288,7 +296,9 @@ namespace Phi.Compiler.Language
         IEnumerable<NameInfo> FieldsOf(StructDecl s) =>
             s.Fields.Select(f =>
             {
-                PhiType? type = s.Symbol?.Find(f.Name)?.Type is { IsError: false } known ? known : FromSyntax(f.Type);
+                PhiType? type = s.Symbol?.Find(f.Name)?.Type is { IsError: false } known ? known
+                    : f.Count != null || f.Filled || f.Unsized ? FromSyntax(f.Type)?.ArrayOf(1)
+                    : FromSyntax(f.Type);
                 return new NameInfo(NameKind.Field, f.Name, type?.ToString() ?? f.Type.ToString(), s.File, NameAtEndOf(f.Span, f.Name), type, f);
             });
 
@@ -345,11 +355,18 @@ namespace Phi.Compiler.Language
             return decl == null ? Array.Empty<NameInfo>() : FieldsOf(decl).Concat(MethodsOfStruct(decl));
         }
 
-        IEnumerable<NameInfo> BuiltinsIn(string group) =>
-            Builtins.Functions.SelectMany(f => f.Aliases.Prepend(f.Name).Select(n => (Name: n, Function: f)))
-                .Where(b => b.Name.StartsWith(group + "."))
-                .Select(b => new NameInfo(NameKind.Function, b.Name[(group.Length + 1)..],
-                                          $"{b.Name}{(b.Function.Parameters.Length > 0 ? ": " + string.Join(" ", b.Function.Parameters) : "")}"));
+        IEnumerable<NameInfo> BuiltinsIn(string group)
+        {
+            string prefix = group + ".";
+            foreach (BuiltinFunction f in Builtins.Functions)
+                foreach (string name in f.Aliases.Prepend(f.Name).Where(n => n.StartsWith(prefix)))
+                    yield return new NameInfo(NameKind.Function, name[prefix.Length..],
+                                              $"{name}{(f.Parameters.Length > 0 ? ": " + string.Join(" ", f.Parameters) : "")}");
+            foreach (HookInfo hook in Builtins.Hooks.Where(h => h.Name.StartsWith(prefix)))
+                yield return new NameInfo(NameKind.Function, hook.Name[prefix.Length..], $"[{hook.Name}] event");
+            foreach (var (name, value) in Builtins.Constants.Where(c => c.Key.StartsWith(prefix)))
+                yield return new NameInfo(NameKind.Constant, name[prefix.Length..], value.ToString());
+        }
 
         IEnumerable<NameInfo> OutsideFunctionsOf(string library) =>
             program.OutsideFunctions.Where(f => f.Library == library)
@@ -378,11 +395,9 @@ namespace Phi.Compiler.Language
             foreach (RawBlockDecl b in program.RawBlocks) yield return DescribeBlock(b);
             foreach (LibraryUseDecl l in program.Libraries)
                 yield return new NameInfo(NameKind.Group, l.Name, $"'{l.Path}'", l.File, NameAtEndOf(l.Span, l.Name));
-            foreach (string group in Builtins.Functions.Select(f => f.Name.Split('.')[0]).Distinct())
+            foreach (string group in Builtins.Functions.Select(f => f.Name).Concat(Builtins.Constants.Keys).Select(n => n.Split('.')[0]).Distinct())
                 if (!program.Classes.Any(c => c.Name == group))
                     yield return new NameInfo(NameKind.Group, group, "PHI's own");
-            foreach (var (name, _) in Builtins.Constants)
-                yield return new NameInfo(NameKind.Constant, name, "PHI's own");
         }
 
         // ------------------------------------------------------------ completing a name

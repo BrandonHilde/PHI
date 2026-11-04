@@ -66,7 +66,7 @@ const string Usage = """
                                            a kernel in QEMU reaches it at 10.0.2.2
       phi lsp                              the language server, for an editor: errors as you type, going
                                            to a definition and completing names, over standard input and
-                                           output (editors/vscode is the extension for VS Code)
+                                           output (PHI-VSCODE is the extension for VS Code)
     """;
 
 // how much over its baseline (in percent) a benchmark's count may be: -icount makes the counts

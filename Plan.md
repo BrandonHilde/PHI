@@ -2670,25 +2670,25 @@ done: played on both, 2026-11-03.) Sound is built too, and the rest of H7, the G
    - [ ] Linux: DWARF. WSL has no `gdb` or `readelf` here to check it with.
 2. **A language server** for editors such as VS Code: errors as you type, going to a
    definition, completion.
-   - [x] `phi lsp` and `editors/vscode` (2026-11-03), with no packages on the server's side
-     (the extension has `vscode-languageclient`). Errors as you type, from unsaved text and in
+   - [x] `phi lsp` (2026-11-03), with no packages, which the VS Code extension
+     ([PHI-VSCODE](https://github.com/BrandonHilde/PHI-VSCODE), its 0.2.0) runs. Errors as you type, from unsaved text and in
      every file the open programs are made of; F12 to what a name is, through `a.b:i.c`,
      across files, to the file of a `use` and into the standard library; completion of what's
      in sight, and after a dot, including in code that doesn't parse yet. It answers from the
-     tokens around the place and what's declared, so half-written code works. Tried in VS Code
-     (`editors/vscode/test`, inside a real one); no other editor yet.
+     tokens around the place and what's declared, so half-written code works. The extension
+     asks it first for definitions and completions, and adds what its own scanner knows (hover,
+     references, rename, documents on completions). Tried in VS Code (that repository's
+     `test:integration`, inside a real one, against this repository); no other editor yet.
    - [x] `SourceChecker`, which `phi check` uses too: a module is checked in a smallest program
      around it, its system's whole runtime or a program here that uses it, and only the errors in
      it are reported. Before, `phi check` said 144 of this repository's files had errors they
      didn't have (a module not being a program, the class Machine); it's 4 now, of which
      `samples/code.phi` is a real one, and `lib/phi/test/load.phi`, `samples/mmo/load_players.phi`
      and `tests/net_http.phi` need classes the test tools generate when they run.
-   - [ ] Hover, finding every use of a name, renaming, and a program's other systems: a program
-     is checked for one system (PHI OS unless what it uses says otherwise).
-   - [ ] To decide with the user: how `phi lsp` and the extension in
-     [PHI-VSCODE](https://github.com/BrandonHilde/PHI-VSCODE) come together. That one has hover,
-     references, rename, signature help, outline, folding, build and run, from a scanner of its
-     own and `phi check`; `editors/vscode` only starts `phi lsp`, and the two can't be on at once.
+   - [ ] In the server too, so other editors get them and they come from the compiler: hover,
+     finding every use of a name, renaming (the extension's scanner does these for now), and a
+     program's other systems: a program is checked for one system (PHI OS unless what it uses
+     says otherwise).
 3. **A formatter,** and a way to share and depend on modules (packages).
 
 **Done when:** a PHI program on Windows is stepped through by line in a debugger, and an

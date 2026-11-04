@@ -30,7 +30,7 @@ together. Some common changes:
 | add a driver or library | a `.phi` file in `lib/phi/`, used with `use folder.name;` |
 | add a system call | `lib/phi/proc/process.phi` (kernel side, numbers 16+) and `lib/x86_32_user/system.asm` (program side) |
 | add a shell command | a `.phi` file in `samples/os.rootfs/` (see [tutorial 8](docs/tutorial/08-shell-command.md)) |
-| add to what an editor can do | `Compiler/Phi.Cli/LanguageServer.cs`, `Compiler/Phi.Compiler/Language/ProgramIndex.cs` (see [editors/vscode](editors/vscode/README.md)) |
+| add to what an editor can do | `Compiler/Phi.Cli/LanguageServer.cs`, `Compiler/Phi.Compiler/Language/ProgramIndex.cs` (VS Code's side is in [PHI-VSCODE](https://github.com/BrandonHilde/PHI-VSCODE)) |
 
 ## Before you open a pull request
 
