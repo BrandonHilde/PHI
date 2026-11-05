@@ -1,4 +1,4 @@
-; provides: phi_exit OS_Now phi_fault_register OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_AppendFile OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_WindowNew OS_WindowSelect OS_WindowClose OS_NetAddress OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
+; provides: phi_exit OS_Now phi_fault_register OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_AppendFile OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_WindowNew OS_WindowSelect OS_WindowClose OS_NetAddress OS_NetNameServer OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
 ;
 ; requires: phi_flush
 ;
@@ -50,6 +50,7 @@ SYS_WINDOW_NEW equ 72
 SYS_WINDOW_SELECT equ 73
 SYS_WINDOW_CLOSE equ 74
 SYS_NET_ADDRESS equ 80   ; 80 and up: net.calls in the kernel
+SYS_NET_NAME_SERVER equ 95
 SYS_UDP_OPEN equ 81
 SYS_UDP_CLOSE equ 82
 SYS_UDP_RECEIVE equ 83
@@ -210,6 +211,7 @@ PHI_SYSCALL OS_WindowNew, SYS_WINDOW_NEW, 0      ; -> its number, or -1
 PHI_SYSCALL OS_WindowSelect, SYS_WINDOW_SELECT, 1 ; window -> 1, or 0
 PHI_SYSCALL OS_WindowClose, SYS_WINDOW_CLOSE, 1  ; window -> 1, or 0
 PHI_SYSCALL OS_NetAddress, SYS_NET_ADDRESS, 0   ; -> this machine's address, or 0 if the kernel has no network
+PHI_SYSCALL OS_NetNameServer, SYS_NET_NAME_SERVER, 0 ; -> the name server's address, or 0
 PHI_SYSCALL OS_UdpOpen, SYS_UDP_OPEN, 2   ; port queue -> socket, or -1
 PHI_SYSCALL OS_UdpClose, SYS_UDP_CLOSE, 1   ; socket -> 1, or 0 if it isn't ours
 PHI_SYSCALL OS_UdpReceive, SYS_UDP_RECEIVE, 2   ; socket datagram -> 1, or 0 if none is waiting

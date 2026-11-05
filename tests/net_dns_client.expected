@@ -1,0 +1,14 @@
+client: 1
+one.phi.test: 10.20.30.40
+behind.phi.test: 5.6.7.8
+top.phi.test: 200.1.2.3
+nothing.phi.test: 0.0.0.0
+10.9.8.7: 10.9.8.7
+the name server is the first machine: 1
+program: one.phi.test: 10.20.30.40
+program: behind.phi.test: 5.6.7.8
+program: top.phi.test: 200.1.2.3
+program: nothing.phi.test: 0.0.0.0
+program: 10.9.8.7: 10.9.8.7
+program: localhost: 127.0.0.1
+the program ended with 5

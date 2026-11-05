@@ -1,0 +1,188 @@
+# net.sockets' Dns, on Linux and Windows, 32 and 64 bits, with no real name server needed: a small
+# one on a thread here, over 127.0.0.1, gives each answer a name asks for. An address, one behind
+# another name (a CNAME), one that isn't known, a server that says nothing, an answer to some other
+# question, and names that can't be asked. kernel32_dns_program does it on PHI OS.
+use net.sockets;
+use user.threads;
+use user.math;
+
+phi.DnsProgram:Program
+{
+	u32 home: (Net.ParseIp: '127.0.0.1');
+	int server_socket: -1;
+	bln stopping: false;
+	int questions: 0;
+
+	# a port that can be had, for the server to answer on
+	u32 port: 41000 + (OS.CurrentTask) % 9000;
+	while server_socket < 0
+		server_socket is (Udp.Open: port);
+		if server_socket < 0
+			port++;
+		;;
+	;;
+	int t: (Threads.Start: addr Serve 0);
+
+	# what doesn't need asking
+	log 'an address: ' ((Dns.Resolve: '10.0.2.2') is (Net.ParseIp: '10.0.2.2')) '\n';
+	log 'localhost: ' ((Dns.Resolve: 'localhost') is home) ' ' ((Dns.Resolve: 'LocalHost') is home) '\n';
+	log 'nothing: ' (Dns.Resolve: '') '\n';
+	log 'asked so far: ' questions '\n';
+
+	Dns.server is home;
+	Dns.server_port is port;
+	Dns.wait is 300;
+
+	call Ask: 'one.phi.test';
+	call Ask: 'one.phi.test.';
+	call Ask: 'behind.phi.test';
+	call Ask: 'many.phi.test';
+	call Ask: 'top.phi.test';
+	log 'each asked what it should be: ' (questions > 0) '\n';
+
+	# nothing to find: the server says so, or says nothing, and each is asked up to three times
+	Dns.tries is 2;
+	questions is 0;
+	call Ask: 'nothing.phi.test';
+	log 'tried: ' questions '\n';
+	questions is 0;
+	call Ask: 'silent.phi.test';
+	log 'tried: ' questions '\n';
+	call Ask: 'wrongid.phi.test';
+	call Ask: 'cut.phi.test';
+	call Ask: 'notanswer.phi.test';
+	call Ask: 'looped.phi.test';
+	Dns.tries is 3;
+
+	# what can't be asked, so nothing's sent
+	questions is 0;
+	call Ask: 'two..dots.test';
+	call Ask: '.first.test';
+	call Ask: 'aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa.test';
+	log 'sent for those: ' questions '\n';
+
+	# a server that isn't there: no answer, and it comes back
+	Dns.server_port is port + 1;
+	Dns.tries is 1;
+	Dns.wait is 100;
+	call Ask: 'one.phi.test';
+
+	atomic stopping is true;
+	call Threads.Wait: t;
+	call Udp.Close: server_socket;
+
+	# the system's own: some address, or 0 if there's no network. (What it knows isn't asked: this
+	# test works with no internet.)
+	log 'the system has a say: ' ((OS.NetNameServer) is not 0 or (OS.NetNameServer) is 0) '\n';
+
+	[Ask: ptr<u8> name: 0;]
+		u32 address: (Dns.Resolve: name);
+		log name ': ';
+		call Net.PrintIp: address;
+		log '\n';
+	[end]
+
+	# the name server: answers each question as the name in it says
+	[Serve: int unused: 0;]
+		UdpDatagram d;
+		while not stopping
+			if (Udp.Wait: server_socket addr d 20)
+				atomic questions++;
+				call Answer: addr d;
+			;;
+		;;
+	[end]
+
+	[Answer: ptr<UdpDatagram> d: 0;]
+		# the first part of the name: its length, then it
+		ptr<u8> q: addr d.data;
+		int size: q:12;
+		str first: '';
+		while int i: 0; i < size; i++;
+			first++ q:(13 + i) as chr;
+		;;
+		int question_end: 12;
+		while q:question_end is not 0
+			question_end++ q:question_end + 1;
+		;;
+		question_end++ 5;
+
+		u8 reply[512];
+		while int i: 0; i < question_end; i++;
+			reply:i is q:i;
+		;;
+		call Net.Put16: addr reply + 2 0x8180;
+		call Net.Put16: addr reply + 4 1;
+		call Net.Put16: addr reply + 6 0;
+		int pos: question_end;
+		if first is 'one'
+			pos is (A: addr reply pos 1 10 20 30 40);
+		;;
+		elif first is 'top'
+			pos is (A: addr reply pos 1 200 1 2 3);
+		;;
+		elif first is 'behind'
+			# a CNAME first, with a name that points back at the question's, then the address
+			pos is (Cname: addr reply pos);
+			pos is (A: addr reply pos 2 5 6 7 8);
+		;;
+		elif first is 'many'
+			pos is (A: addr reply pos 1 9 9 9 1);
+			pos is (A: addr reply pos 2 9 9 9 2);
+		;;
+		elif first is 'nothing'
+			call Net.Put16: addr reply + 2 0x8183;       # NXDOMAIN
+		;;
+		elif first is 'silent'
+			return;
+		;;
+		elif first is 'wrongid'
+			call Net.Put16: addr reply (Net.Get16: q) + 1;
+			pos is (A: addr reply pos 1 66 66 66 66);
+		;;
+		elif first is 'notanswer'
+			call Net.Put16: addr reply + 2 0x0100;       # a question, not an answer
+			pos is (A: addr reply pos 1 66 66 66 66);
+		;;
+		elif first is 'cut'
+			# it says there's an answer, and stops before it
+			call Net.Put16: addr reply + 6 1;
+			reply:pos is 0xC0;
+			reply:(pos + 1) is 12;
+			pos++ 4;
+		;;
+		elif first is 'looped'
+			# a name that never ends, past the end of what came
+			call Net.Put16: addr reply + 6 1;
+			reply:pos is 60;
+			pos++;
+		;;
+		bln sent: (Udp.SendTo: server_socket d.from d.from_port addr reply pos as u32);
+	[end]
+
+	# an answer, an address for the question's name: where it ends. count is how many there are.
+	[A: ptr<u8> r: 0; int pos: 0; int count: 0; int a: 0; int b: 0; int c: 0; int e: 0;]
+		call Net.Put16: r + 6 count;
+		r:pos is 0xC0;                       # the name: as it is at 12
+		r:(pos + 1) is 12;
+		call Net.Put16: r + pos + 2 1;       # A
+		call Net.Put16: r + pos + 4 1;       # IN
+		call Net.Put32: r + pos + 6 300;
+		call Net.Put16: r + pos + 10 4;
+		r:(pos + 12) is a;
+		r:(pos + 13) is b;
+		r:(pos + 14) is c;
+		r:(pos + 15) is e;
+	[end: pos + 16]
+
+	[Cname: ptr<u8> r: 0; int pos: 0;]
+		r:pos is 0xC0;
+		r:(pos + 1) is 12;
+		call Net.Put16: r + pos + 2 5;       # CNAME
+		call Net.Put16: r + pos + 4 1;
+		call Net.Put32: r + pos + 6 300;
+		call Net.Put16: r + pos + 10 2;
+		r:(pos + 12) is 0xC0;
+		r:(pos + 13) is 12;
+	[end: pos + 14]
+}

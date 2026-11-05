@@ -31,6 +31,36 @@ phi.HostNet:Program
 	[NetAddress]
 	[end: (NetSystem.Address)]
 
+	# 'a.b.c.d' as a number, for what the system says as text; 0 if it isn't one
+	[ParseAddress: ptr<u8> text: 0;]
+		u32 address: 0;
+		u32 part: 0;
+		int digits: 0;
+		int dots: 0;
+		int i: 0;
+		while text:i is not 0
+			if text:i >= '0' and text:i <= '9' and digits < 3
+				part is part * 10 + text:i - '0';
+				digits++;
+			;;
+			elif text:i is '.' and digits > 0 and dots < 3 and part <= 255
+				address is (address << 8) | part;
+				part is 0;
+				digits is 0;
+				dots++;
+			;;
+			else
+				return 0 as u32;
+			;;
+			i++;
+		;;
+		if dots is not 3 or digits is 0 or part > 255 return 0 as u32;
+	[end: (address << 8) | part]
+
+	# OS.NetNameServer: the address of the system's name server, or 0 if it doesn't know one
+	[NameServer]
+	[end: (NetSystem.NameServer)]
+
 	# OS.UdpOpen: a socket for datagrams to port (0: any free one), with room for about
 	# queue of them waiting; -1 if the port is taken
 	[UdpOpen: u32 port: 0; u32 queue: 64;]

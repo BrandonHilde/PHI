@@ -1,0 +1,81 @@
+# A name server for net_dns_client (see net_dns.machines): names on PHI OS, a kernel's Dns and a
+# program's, over a real (if small) network. It answers until the client says it's done, and
+# knows one.phi.test, behind.phi.test (a CNAME, then its address) and top.phi.test (200.1.2.3).
+use net.udp;
+
+phi.NetDns:Kernel
+{
+	const u32 PORT: 53;
+	bln ok: (Net.Start: Machine.address);
+	int s: (Udp.Open: PORT);
+	log 'server: ' ok ' ' (s >= 0) '\n';
+	UdpDatagram d;
+	u8 reply[512];
+	int answered: 0;
+	bln going: true;
+	while going
+		if (Udp.Wait: s addr d 100)
+			if d.data:0 is 'd' and d.length is 4
+				going is false;
+			;;
+			else
+				call Answer;
+				answered++;
+			;;
+		;;
+	;;
+	log 'server: answered ' (answered > 0) '\n';
+	exit 0;
+
+	[Answer]
+		ptr<u8> q: addr d.data;
+		int first: q:13;                      # the first letter of the name
+		int question_end: 12;
+		while q:question_end is not 0
+			question_end++ q:question_end + 1;
+		;;
+		question_end++ 5;
+		while int i: 0; i < question_end; i++;
+			reply:i is q:i;
+		;;
+		call Net.Put16: addr reply + 2 0x8180;
+		call Net.Put16: addr reply + 4 1;
+		int pos: question_end;
+		if first is 'o'
+			pos is (A: pos 1 10 20 30 40);
+		;;
+		elif first is 't'
+			pos is (A: pos 1 200 1 2 3);
+		;;
+		elif first is 'b'
+			reply:pos is 0xC0;
+			reply:(pos + 1) is 12;
+			call Net.Put16: addr reply + pos + 2 5;
+			call Net.Put16: addr reply + pos + 4 1;
+			call Net.Put32: addr reply + pos + 6 300;
+			call Net.Put16: addr reply + pos + 10 2;
+			reply:(pos + 12) is 0xC0;
+			reply:(pos + 13) is 12;
+			pos is (A: pos + 14 2 5 6 7 8);
+		;;
+		else
+			call Net.Put16: addr reply + 2 0x8183;
+			call Net.Put16: addr reply + 6 0;
+		;;
+		call Udp.SendTo: s d.from d.from_port addr reply pos as u32;
+	[end]
+
+	[A: int pos: 0; int count: 0; int a: 0; int b: 0; int c: 0; int e: 0;]
+		call Net.Put16: addr reply + 6 count;
+		reply:pos is 0xC0;
+		reply:(pos + 1) is 12;
+		call Net.Put16: addr reply + pos + 2 1;
+		call Net.Put16: addr reply + pos + 4 1;
+		call Net.Put32: addr reply + pos + 6 300;
+		call Net.Put16: addr reply + pos + 10 4;
+		reply:(pos + 12) is a;
+		reply:(pos + 13) is b;
+		reply:(pos + 14) is c;
+		reply:(pos + 15) is e;
+	[end: pos + 16]
+}

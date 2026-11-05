@@ -1,0 +1,91 @@
+# DNS's messages: a question for a name's address, and reading the answer (RFC 1035). What a
+# kernel's net.dns and a program's Dns (net.sockets) share; each sends them its own way, and each
+# has the Net whose Get16, Put16 and Get32 this uses.
+
+phi.DnsMessage:Library
+{
+	const u32 HEADER: 12;
+	const u32 TYPE_A: 1;                  # an IPv4 address
+	const u32 CLASS_INTERNET: 1;
+	const u32 MOST_NAME: 253;             # DNS's limit, written out
+
+	# a question for name's address, in query (room bytes): its length, or 0 if the name can't be one
+	[Question: ptr<u8> query: 0; u32 room: 0; u32 id: 0; ptr<u8> name: 0;]
+		call Net.Put16: query id;
+		call Net.Put16: query + 2 0x0100;      # please ask other servers if need be
+		call Net.Put16: query + 4 1;           # one question
+		call Net.Put16: query + 6 0;
+		call Net.Put16: query + 8 0;
+		call Net.Put16: query + 10 0;
+
+		# 'www.example.com' is written 3 www 7 example 3 com 0
+		u32 pos: HEADER;
+		u32 label: pos;                        # where the current part's length goes
+		pos++;
+		u32 i: 0;
+		while name:i is not 0
+			if pos + 6 >= room or i >= MOST_NAME return 0;
+			if name:i is '.'
+				if pos - label - 1 is 0 return 0;   # an empty part: a..b, or .a
+				if name:(i + 1) is not 0
+					query:label is pos - label - 1;
+					label is pos;
+					pos++;
+				;;
+			;;
+			else
+				query:pos is name:i;
+				pos++;
+				if pos - label - 1 > 63 return 0;   # a part has at most 63 characters
+			;;
+			i++;
+		;;
+		if pos - label - 1 is 0 return 0;      # no name at all
+		query:label is pos - label - 1;
+		query:pos is 0;
+		pos++;
+		call Net.Put16: query + pos TYPE_A;
+		call Net.Put16: query + pos + 2 CLASS_INTERNET;
+	[end: pos + 4]
+
+	# the first address in the answer to question id, of length bytes at r; 0 if it's not there
+	[Answer: ptr<u8> r: 0; u32 length: 0; u32 id: 0;]
+		if length < HEADER return 0;
+		u32 flags: (Net.Get16: r + 2) as u32;
+		u32 questions: (Net.Get16: r + 4) as u32;
+		u32 answers: (Net.Get16: r + 6) as u32;
+
+		# an answer (the top bit), to our question, without an error (the low 4 bits)
+		if ((Net.Get16: r) as u32) is not id or (flags & 0x8000) is 0 or (flags & 0x000F) is not 0 return 0;
+
+		u32 address: 0;
+		u32 pos: HEADER;
+		while u32 q: 0; q < questions and pos < length; q++;
+			pos is (SkipName: r pos length) + 4;  # and its type and class
+		;;
+		while u32 a: 0; a < answers and address is 0; a++;
+			pos is (SkipName: r pos length);
+			if pos + 10 > length return 0;
+			u32 type: (Net.Get16: r + pos) as u32;
+			u32 class: (Net.Get16: r + pos + 2) as u32;
+			u32 size: (Net.Get16: r + pos + 8) as u32;
+			pos++ 10;
+			# other answers (like a CNAME, another name for the same host) are passed over
+			if type is TYPE_A and class is CLASS_INTERNET and size is 4 and pos + 4 <= length
+				address is (Net.Get32: r + pos);
+			;;
+			pos++ size;
+		;;
+	[end: address]
+
+	# where the name at pos ends: names are parts, each with its length first, ending with 0 or
+	# with a 2-byte pointer to the rest of the name elsewhere in the message
+	[SkipName: ptr<u8> r: 0; u32 pos: 0; u32 length: 0;]
+		while pos < length
+			u32 b: r:pos;
+			if b is 0 return pos + 1;
+			if (b & 0xC0) is 0xC0 return pos + 2;
+			pos++ b + 1;
+		;;
+	[end: pos]
+}

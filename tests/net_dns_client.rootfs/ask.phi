@@ -1,0 +1,22 @@
+# A PHI OS program asking names of its kernel's name server (net_dns runs it), through net.sockets.
+use net.sockets;
+
+phi.Ask:Program
+{
+	log 'the name server is the first machine: ' ((OS.NetNameServer) is not 0) '\n';
+	call Show: 'one.phi.test';
+	call Show: 'behind.phi.test';
+	call Show: 'top.phi.test';
+	Dns.tries is 1;
+	call Show: 'nothing.phi.test';
+	call Show: '10.9.8.7';
+	call Show: 'localhost';
+	exit 5;
+
+	[Show: ptr<u8> name: 0;]
+		u32 address: (Dns.Resolve: name);
+		log 'program: ' name ': ';
+		call Net.PrintIp: address;
+		log '\n';
+	[end]
+}

@@ -179,6 +179,8 @@ namespace Phi.Compiler.Semantics
                     Description = "program: which window the calls for one act on from now on, 0 being its first; 1, or 0 if it has no such window" },
             new() { Name = "OS.WindowClose", Label = "OS_WindowClose", OnHost = "HostWindow.WindowClose", Parameters = new[] { "window" }, Returns = true,
                     Description = "program: a window OS.WindowNew made is gone; 1, or 0 if it has no such window (its first ends with the program)" },
+            new() { Name = "OS.NetNameServer", Label = "OS_NetNameServer", OnHost = "HostNet.NameServer", Returns = true,
+                    Description = "program: the address of the system's name server, or 0 if it doesn't know one (net.sockets' Dns asks it)" },
             new() { Name = "OS.NetAddress", Label = "OS_NetAddress", OnHost = "HostNet.NetAddress", Returns = true,
                     Description = "program: this machine's address, or 0 if the kernel has no network (net.sockets does this)" },
             new() { Name = "OS.UdpOpen", Label = "OS_UdpOpen", OnHost = "HostNet.UdpOpen", Parameters = new[] { "port", "queue" }, Returns = true,
