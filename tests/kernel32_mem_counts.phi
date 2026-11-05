@@ -1,4 +1,4 @@
-# mem_counts on PHI OS: in a kernel, a count of 2 GB or more is the same error; a program's
+# mem_counts on PHI OS: in a kernel, a count of 2 billion or more is the same error; a program's
 # ends the program and the kernel carries on (kernel32_mem_counts.rootfs/counts.phi); and
 # one in an interrupt isn't caught by the code it interrupted, so it stops the kernel there.
 use memory.mem;

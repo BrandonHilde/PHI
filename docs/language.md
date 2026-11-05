@@ -804,7 +804,7 @@ else
 
 - **`throw`** takes values as `log` does, which become the error's text.
 - **The errors PHI finds itself** are caught the same way: an index out of range, the
-  heap out of room for a new object, and a count of 2 GB or more to `Mem.Copy`, `Move`, `Fill`
+  heap out of room for a new object, and a count of 2 billion or more to `Mem.Copy`, `Move`, `Fill`
   or `Fill32` (a negative number, or a subtraction below 0, which would otherwise run through
   all of memory; the error names the line of the call, and nothing is copied).
 - **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
@@ -2767,7 +2767,7 @@ and the classes of used files run before the classes that use them.
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
-| `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 GB or more to any but `Equal` is an error at the call |
+| `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 billion or more to any but `Equal` is an error at the call |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
 | `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.acpi` | class `Acpi` (32-bit kernels): ACPI's MADT: `Start` →, `cores` and `core_ids` (local APIC IDs), `local_apic`, `io_apic`, `io_apic_base`, `Input: irq` → (the I/O APIC input an ISA IRQ comes in on), `Flags: irq` → (its polarity and trigger), `Find: name` → (any table by its 4 letters) |

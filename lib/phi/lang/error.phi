@@ -19,7 +19,7 @@ enum.ErrorKind
 	DIVIDE                      # a whole number divided by zero (the CPU says so)
 	EMPTY                       # an empty object or a null pointer used (the memory at 0 isn't there)
 	ACCESS                      # memory that isn't there, or an instruction the CPU refused
-	COUNT                       # a Mem call's count of 2 GB or more: negative, or a subtraction below 0
+	COUNT                       # a Mem call's count of 2 billion or more: negative, or a subtraction below 0
 }
 
 struct.Error

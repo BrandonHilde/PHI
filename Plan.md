@@ -612,9 +612,9 @@ these were added:
   of the rest hold bits rather than amounts, so `as u32` means the same bits and checks
   nothing. `.len`, `.max`, `x & c` and constants need no `as`. No type rule sees a subtraction
   below 0, so `Mem.Copy`, `Move`, `Fill` and `Fill32` also stop with `ErrorKind.COUNT` on a
-  count of 2 GB or more, checked at the call so that the error names its line (on 64-bit
+  count of 2 billion or more, checked at the call so that the error names its line (on 64-bit
   programs too, so a bigger copy there is several calls). Not covered: `u32 z: n;`, a call
-  through a method value, a count that's wrong but under 2 GB, and a method that isn't `Mem`'s
+  through a method value, a count that's wrong but under that, and a method that isn't `Mem`'s
   doing its own loop over a bad count. Tests `u32_args_errors`, `mem_counts`,
   `kernel32_mem_counts`.
 - [x] Names in a class's own code are scoped by block, as they are in a method

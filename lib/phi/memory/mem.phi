@@ -13,7 +13,7 @@
 # between calls, and an interrupt handler (a network card's, say) can copy while the code
 # it interrupted is in the middle of a copy too.
 #
-# A count of 2 GB or more to Copy, Move, Fill or Fill32 is a negative number or a subtraction
+# A count of 2 billion or more to Copy, Move, Fill or Fill32 is a negative number or a subtraction
 # below 0, and is an error (ErrorKind.COUNT). The compiler checks it where each is called
 # (EmitMemCountCheck), so the error names that line rather than one in this file.
 

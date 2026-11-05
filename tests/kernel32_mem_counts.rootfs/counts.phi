@@ -1,4 +1,4 @@
-# A PHI OS program's Mem call with a count of 2 GB or more (kernel32_mem_counts runs it): the
+# A PHI OS program's Mem call with a count of 2 billion or more (kernel32_mem_counts runs it): the
 # error can be caught, and when it isn't, the program ends with -1 and the kernel carries on.
 use memory.mem;
 

@@ -2502,7 +2502,7 @@ namespace Phi.Compiler.CodeGen
             m.Decl.Name is "Copy" or "Move" or "Fill" or "Fill32" && m.Decl.Owner.File.Path == "lib/phi/memory/mem.phi";
 
         /// <summary>
-        /// The count just pushed for a Mem call, 2 GB or more: a negative number, or a subtraction
+        /// The count just pushed for a Mem call, 2 billion or more: a negative number, or a subtraction
         /// that went below 0, and copying that many bytes would run through all of memory. It's
         /// checked here rather than in mem.phi so that the error names the line of the call.
         /// </summary>
@@ -2510,10 +2510,10 @@ namespace Phi.Compiler.CodeGen
         {
             if (ConstantFolder.Evaluate(count) is long known && known >= 0 && known <= int.MaxValue) return;
             string ok = NewLabel("count_ok");
-            Emit("cmp dword [esp], 0        ; the count, which has its top bit set from 2 GB up");
+            Emit("cmp dword [esp], 0        ; the count, which has its top bit set from 2 billion up");
             Emit($"jge {ok}");
             Need("phi_throw");
-            LoadAddress("edx", StringLabel($"a count of 2 GB or more for Mem.{method.Decl.Name} (a negative number, or a subtraction below 0)"));
+            LoadAddress("edx", StringLabel($"a count of 2 billion or more for Mem.{method.Decl.Name} (a negative number, or a subtraction below 0)"));
             Emit($"mov eax, {LineOf(count)}");
             if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
             else Emit($"mov esi, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");

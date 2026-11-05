@@ -1,4 +1,4 @@
-# A count of 2 GB or more to Mem.Copy, Move, Fill or Fill32 is a negative number or a
+# A count of 2 billion or more to Mem.Copy, Move, Fill or Fill32 is a negative number or a
 # subtraction below 0, and going through with it would run through all of memory. It's an
 # error naming the line of the call, that can be caught, and nothing is copied. (Run as a
 # Linux and a Windows program; kernel32_mem_counts runs this on PHI OS and in a kernel.)
