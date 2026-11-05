@@ -4,14 +4,16 @@
 
 phi.LinuxLayout:Linux32
 {
-	# a file's size, or -1 if it isn't a file (Linux's stat64: the mode at byte 16, the
-	# size at 44)
+	# a file's size, or -1 if it isn't a file, and an error from 2 GB up, which an int can't
+	# hold (Linux's stat64: the mode at byte 16, the size at 44)
 	[FileSize: ptr<u8> path: 0;]
 		u32 info[24];
 		if (sys.Stat: path addr info) is not 0 return -1;
 		if (info:4 & 0xF000) is not 0x8000 return -1;   # not a regular file
-		int size: info:11;
-	[end: size]
+		if info:12 is not 0 or info:11 >= 0x80000000
+			throw 'a file of 2 GB or more is more than OS.FileSize can say: ' path;
+		;;
+	[end: info:11 as int]
 }
 
 sys.Read: 3  int fd  ptr<u8> buffer  u32 count;

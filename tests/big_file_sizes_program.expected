@@ -1,0 +1,10 @@
+made: 1
+small: 5
+0 2147483647: 2147483647
+0 2147483648: too big: 1
+0 3221225472: too big: 1
+1 0: too big: 1
+1 1073741824: too big: 1
+no such file: -1
+deleted: 1
+gone: -1

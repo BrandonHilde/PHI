@@ -64,7 +64,8 @@ phi.HostFiles:Linux
 		call sys.Close: fd;
 	[end: written]
 
-	# OS.FileSize: its size in bytes, or -1 if it isn't a file
+	# OS.FileSize: its size in bytes, or -1 if it isn't a file, and an error from 2 GB up,
+	# which an int can't hold
 	[FileSize: ptr<u8> path: 0;]
 	[end: (LinuxLayout.FileSize: path)]
 

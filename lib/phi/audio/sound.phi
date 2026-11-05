@@ -96,8 +96,11 @@ phi.Sound:Library
 		call ok is Prepare;
 		int size: 0;
 		if ok
-			call size is OS.FileSize: path;
-			if size < 0
+			if call size is OS.FileSize: path throws err
+				error is err.text;      # (more than an int can say)
+				ok is false;
+			;;
+			elif size < 0
 				error is 'no such file';
 				ok is false;
 			;;

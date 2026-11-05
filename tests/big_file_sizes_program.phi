@@ -1,0 +1,40 @@
+# OS.FileSize on a file an int can't hold the size of, on Linux and Windows, 32 and 64 bits:
+# an error that can be caught, rather than a wrong number. (4 GB's low half is 0, and 5 GB's
+# is 1 GB, which is what keeping only the low half used to say. PHI OS's FAT16 stops at 2 GB.)
+# BigFile makes each one at once, with no room taken for it.
+use support.big_file_linux32;
+use support.big_file_linux64;
+use support.big_file_windows;
+
+phi.BigFileSizes:Program
+{
+	str path: ((BigFile.Folder) 'phi_big_' (BigFile.Pid) '.bin');
+
+	log 'made: ' (OS.WriteFile: path 'hello' 5) '\n';
+	log 'small: ' (OS.FileSize: path) '\n';
+
+	call Try: 0 0x7FFFFFFF;         # the most that fits
+	call Try: 0 0x80000000;         # 2 GB
+	call Try: 0 0xC0000000;         # 3 GB
+	call Try: 1 0;                  # 4 GB
+	call Try: 1 0x40000000;         # 5 GB
+
+	# what it always said
+	log 'no such file: ' (OS.FileSize: 'phi_big_there_is_no_such_file') '\n';
+	log 'deleted: ' (OS.DeleteFile: path) '\n';
+	log 'gone: ' (OS.FileSize: path) '\n';
+
+	[Try: u32 high: 0; u32 low: 0;]
+		if not (BigFile.Resize: path high low)
+			log 'could not make it\n';
+			return;
+		;;
+		int size: 0;
+		if call size is OS.FileSize: path throws err
+			log high ' ' low ': too big: ' (err.text has '2 GB or more') '\n';
+		;;
+		else
+			log high ' ' low ': ' size '\n';
+		;;
+	[end]
+}

@@ -1,0 +1,20 @@
+# A file made any size at once, with no room taken for it, for big_file_sizes_program.phi: on
+# 64-bit Linux, in /tmp, which holds the gap as nothing. The same BigFile as the other systems'.
+
+phi.BigFile:Linux64
+{
+	[Folder]
+	[end: '/tmp/']
+
+	[Pid]
+	[end: (sys.GetPid)]
+
+	# the file at path made (high * 4 GB + low) bytes long
+	[Resize: ptr<u8> path: 0; u32 high: 0; u32 low: 0;]
+		u64 size: high;
+		size is (size << 32) | low;
+	[end: (sys.Truncate: path size as ptr<u8>) is 0]
+}
+
+sys.GetPid: 39;
+sys.Truncate: 76  ptr<u8> path  ptr<u8> length;

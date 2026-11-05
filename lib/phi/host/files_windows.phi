@@ -72,15 +72,18 @@ phi.HostFiles:Windows
 		call Kernel32.CloseHandle: file;
 	[end: written]
 
-	# OS.FileSize: its size in bytes, or -1 if it isn't a file
+	# OS.FileSize: its size in bytes, or -1 if it isn't a file, and an error from 2 GB up,
+	# which an int can't hold
 	[FileSize: ptr<u8> path: 0;]
 		u16 wide[1024];
 		call Widen: path addr wide;
 		u32 info[9];                      # attributes, three times, then the size: high, low
 		if (Kernel32.GetFileAttributesExW: addr wide 0 addr info) is 0 return -1;
 		if (info:0 & FOLDER) is not 0 return -1;
-		int size: info:8;
-	[end: size]
+		if info:7 is not 0 or info:8 >= 0x80000000
+			throw 'a file of 2 GB or more is more than OS.FileSize can say: ' path;
+		;;
+	[end: info:8 as int]
 
 	# OS.DeleteFile, MakeFolder, DeleteFolder (only an empty one) and Rename: 1 if done
 	[DeleteFile: ptr<u8> path: 0;]

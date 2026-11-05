@@ -622,7 +622,10 @@ these were added:
   billion or more, checked at the call so that the error names its line (on 64-bit programs
   too, so a bigger copy there is several calls); not through a method value. Also fixed: the
   `Wav.Parse` calls in `audio/sound.phi` and `samples/os.rootfs/play.phi`, which passed on a
-  failed read's -1. Still wrong: a Linux program's `FileSize` keeps 32 bits of a file's size.
+  failed read's -1. `OS.FileSize` on a file of 2 GB or more, which an `int` can't hold, is an
+  error on Linux and Windows (it kept the low half, so 5 GB said 1 GB; test
+  `big_file_sizes_program`). There's no way yet to ask a file's real size past that, and
+  `OS.ReadFileAt`'s offset stops at 2 GB too.
   Tests `numbers_checked`, `kernel32_numbers_checked`, `u32_args_errors`, `mem_counts`,
   `kernel32_mem_counts`.
 - [x] Names in a class's own code are scoped by block, as they are in a method

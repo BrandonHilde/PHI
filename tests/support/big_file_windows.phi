@@ -1,0 +1,42 @@
+# A file made any size at once, with no room taken for it, for big_file_sizes_program.phi: on
+# Windows, a sparse file beside the test, which holds the gap as nothing. The same BigFile as
+# the other systems'.
+
+use 'kernel32.dll' as Kernel32;
+
+phi.BigFile:Windows
+{
+	const u32 WRITE: 0x40000000;
+	const u32 OPEN_EXISTING: 3;
+	const u32 NORMAL: 0x80;
+	const u32 SET_SPARSE: 0x900C4;
+
+	[Folder]
+	[end: '']
+
+	[Pid]
+	[end: (Kernel32.GetCurrentProcessId)]
+
+	# the file at path made (high * 4 GB + low) bytes long
+	[Resize: ptr<u8> path: 0; u32 high: 0; u32 low: 0;]
+		u16 wide[1024];
+		int length: (Kernel32.MultiByteToWideChar: 65001 0 path (-1) addr wide 1024);
+		ptr<u8> file: (Kernel32.CreateFileW: addr wide WRITE 0 0 OPEN_EXISTING NORMAL 0);
+		if (file as int) is -1 or length is 0 return false;
+		u32 returned: 0;
+		int sparse: (Kernel32.DeviceIoControl: file SET_SPARSE 0 0 0 0 addr returned 0);
+		int up: high as int;
+		u32 moved: (Kernel32.SetFilePointer: file low as int addr up 0);
+		int ended: (Kernel32.SetEndOfFile: file);
+		int closed: (Kernel32.CloseHandle: file);
+		if moved is 0xFFFFFFFF and low is not 0xFFFFFFFF return false;
+	[end: sparse is not 0 and ended is not 0 and closed is not 0]
+}
+
+Kernel32.GetCurrentProcessId;
+Kernel32.MultiByteToWideChar: u32 page  u32 flags  ptr<u8> text  int length  ptr<u16> wide  int room;
+Kernel32.CreateFileW: ptr<u16> path  u32 access  u32 share  ptr<u8> security  u32 how  u32 flags  ptr<u8> model: ptr<u8>;
+Kernel32.DeviceIoControl: ptr<u8> file  u32 code  ptr<u8> input  u32 input_size  ptr<u8> output  u32 output_size ptr<u32> returned  ptr<u8> overlapped;
+Kernel32.SetFilePointer: ptr<u8> file  int distance  ptr<int> high  u32 from: u32;
+Kernel32.SetEndOfFile: ptr<u8> file;
+Kernel32.CloseHandle: ptr<u8> file;

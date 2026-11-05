@@ -2305,7 +2305,7 @@ instead. Only `Program` and `Library` classes build for another system; kernels 
 | `OS.Arguments` → | what follows the program's name on its command line (on Linux, its arguments joined by spaces) |
 | `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number. Both count in milliseconds on every system: a Windows program asks for its timer to step by 1 ms (`timeBeginPeriod`, from `winmm.dll`), since it would otherwise step by 15.6 ms, and its clock is `timeGetTime` |
 | `OS.Now` → | the date and time, as seconds since 1970 (UTC): Linux's `time`, Windows' `GetSystemTimeAsFileTime` |
-| `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | files and folders, by that system's paths (relative to the folder it runs in) |
+| `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | files and folders, by that system's paths (relative to the folder it runs in). `OS.FileSize` on a file of 2 GB or more is an error, as an `int` can't hold its size |
 | `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
 | `OS.ClearScreen` | clears the terminal |
