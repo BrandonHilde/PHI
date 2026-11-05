@@ -1,0 +1,24 @@
+# the window is at (40, 40): its inside starts at (42, 60); the area is at (10, 10) inside, and
+# its first line's text starts at (16, 14) inside, each character 8 wide and 16 high
+expect area: open
+wait 300
+type hi
+sendkey ret
+type there
+sendkey up
+sendkey home
+sendkey shift-end
+type yo
+sendkey ctrl-a
+sendkey delete
+type one
+sendkey ret
+type two words
+# a click on the first line, at its end
+click 94 76
+expect next caret 3 anchor 3
+# a double click on the second line's second word
+dclick 122 92
+expect next caret 13 anchor 8
+type x
+sendkey esc

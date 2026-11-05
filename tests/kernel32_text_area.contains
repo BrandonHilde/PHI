@@ -1,0 +1,15 @@
+area: open
+area: hi caret 2 anchor 2
+area: hi/ caret 3 anchor 3
+area: hi/there caret 8 anchor 8
+area: hi/there caret 2 anchor 2
+area: hi/there caret 0 anchor 0
+area: hi/there caret 2 anchor 0
+area: yo/there caret 2 anchor 2
+area: yo/there caret 8 anchor 0
+area:  caret 0 anchor 0
+area: one/two words caret 13 anchor 13
+area: one/two words caret 3 anchor 3
+area: one/two words caret 13 anchor 8
+area: one/two x caret 9 anchor 9
+desktop: no windows left

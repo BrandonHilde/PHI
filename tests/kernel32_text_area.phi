@@ -1,0 +1,16 @@
+# A TextArea in a program's window on PHI OS's desktop, from real keys and clicks: lines typed,
+# the caret moved, a click, a selection replaced (kernel32_text_area.rootfs/area.phi).
+use gui.desktop;
+
+phi.Test:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	call Desktop.Start;
+	int pid: (Desktop.Run: 'AREA.BIN' 'Area' 40 40);
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+	;;
+	debug 'desktop: no windows left\n';
+	exit 0;
+}

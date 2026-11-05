@@ -1,0 +1,61 @@
+# A TextArea in a window: each change is logged, with / for a new line. Esc ends it.
+use gui.app;
+use gui.widgets;
+
+phi.AreaApp:Program
+{
+	TextArea area;
+
+	if (App.Open: 300 150) is false
+		exit 1;
+	;;
+	call area.Place: 10 10 280 130;
+	area.focused is true;
+	call Paint;
+	log 'area: open\n';
+
+	while true
+		call App.WaitEvent;
+		int kind: App.event.kind;
+		if kind is Events.CLOSE
+			exit 0;
+		;;
+		bln changed: false;
+		if kind is Events.KEY
+			int done: (area.Key: App.event.value);
+			if done is 3
+				call area.Free;
+				exit 0;
+			;;
+			changed is done is 1;
+		;;
+		if kind is Events.MOUSE
+			changed is (area.Mouse: App.event);
+		;;
+		if changed
+			call Paint;
+			call Show;
+		;;
+	;;
+
+	[Paint]
+		call Draw.Clear: Widgets.FACE;
+		call area.Paint;
+		call App.Present;
+	[end]
+
+	[Show]
+		log 'area: ';
+		while int i: 0; i < area.len; i++;
+			if area.text:i is 10
+				log '/';
+			;;
+			else
+				str one: '';
+				one++ area.text:i as chr;
+				log one;
+			;;
+		;;
+		log ' caret ' area.cursor ' anchor ' area.anchor '\n';
+	[end]
+}

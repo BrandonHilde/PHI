@@ -1,4 +1,4 @@
-# Widgets for windows: buttons, check boxes, text fields and lists, drawn with
+# Widgets for windows: buttons, check boxes, text fields, text areas and lists, drawn with
 # gfx.draw. 32-bit kernels and user programs (with gui.app).
 #
 #   use gui.widgets;
@@ -551,6 +551,463 @@ struct.ListBox
 	[end]
 }
 
+# many lines of text to type into and scroll through: the caret moves by character, line and
+# page, Shift with those keys, Ctrl+A, a drag or a double click selects, typing replaces what's
+# selected, and the wheel scrolls. It grows as it's typed into, up to most bytes, and doesn't
+# wrap: a long line scrolls sideways as the caret goes along it. Lines end with a \n.
+#
+#   TextArea notes;
+#   call notes.Place: 10 10 300 200;
+#   call notes.Set: 'first line\nsecond line';
+#   int done: (notes.Key: App.event.value);    # 3 for Esc (Enter is a new line here)
+#   call notes.Mouse: App.event;
+#   call notes.Paint;
+#   log notes.text;                            # all of it, with a zero after it
+#   call notes.Insert: 'pasted' 6;             # in place of what's selected
+#   int n: (notes.CopySelection: buffer 1024); # the selected text, for a clipboard
+#   call notes.Free;                           # its text goes back to the heap
+struct.TextArea
+{
+	int x;
+	int y;
+	int w;
+	int h;
+	ptr<u8> text;               # all of it, with a zero after it
+	int len;
+	int room;                   # the bytes text has
+	int most;                   # how many characters it takes (1 MB unless it's changed)
+	int cursor;                 # where the next character goes, 0 to len
+	int anchor;                 # the other end of the selection: the same as cursor when none is
+	int top;                    # the first line shown
+	int left;                   # how many characters of each line are off to the left
+	int column;                 # where Up and Down aim for, as lines are shorter or longer
+	bln focused;                # it gets the keys
+	bln dragging;               # the left button went down on it and is still held
+
+	[Place: int ax: 0; int ay: 0; int aw: 0; int ah: 0;]
+		x is ax;
+		y is ay;
+		w is aw;
+		h is ah;
+		most is 1048576;
+		call Reserve: 0;
+	[end]
+
+	# everything in it replaced
+	[Set: ptr<u8> value: 0;]
+		len is 0;
+		cursor is 0;
+		anchor is 0;
+		top is 0;
+		left is 0;
+		column is 0;
+		call Reserve: 0;
+		text:0 is 0;
+		call Insert: value (Text.Length: value);
+		call MoveTo: 0 false;
+	[end]
+
+	# its text goes back to the heap
+	[Free]
+		if text is not 0
+			free text;
+		;;
+		text is 0;
+		room is 0;
+		len is 0;
+		cursor is 0;
+		anchor is 0;
+	[end]
+
+	[SelectAll]
+		anchor is 0;
+		cursor is len;
+	[end]
+
+	[SelectionStart]
+	[end: (Math.Min: anchor cursor)]
+
+	[SelectionEnd]
+	[end: (Math.Max: anchor cursor)]
+
+	# the selected text into buffer (size bytes, with the zero), for a clipboard; its length
+	[CopySelection: ptr<u8> buffer: 0; int size: 0;]
+		int from: (SelectionStart);
+		int n: (Math.Min: (SelectionEnd) - from size - 1);
+		while int i: 0; i < n; i++;
+			buffer:i is text:(from + i);
+		;;
+		buffer:n is 0;
+	[end: n]
+
+	# count characters of value in place of what's selected, as many as most leaves room for
+	[Insert: ptr<u8> value: 0; int count: 0;]
+		call DeleteSelection;
+		int n: (Math.Min: count most - len);
+		if n <= 0 return;
+		call Reserve: len + n;
+		int i: len;
+		while i > cursor
+			i--;
+			text:(i + n) is text:i;
+		;;
+		while int k: 0; k < n; k++;
+			text:(cursor + k) is value:k;
+		;;
+		len++ n;
+		text:len is 0;
+		cursor++ n;
+		anchor is cursor;
+		call Settled;
+	[end]
+
+	# a key: 0 if it wasn't for it, 1 if it changed the text, the caret or the selection, 3 for Esc
+	[Key: int key: 0;]
+		int k: key & Events.KEY_MASK;
+		bln shift: (key & Events.MOD_SHIFT) is not 0;
+		bln ctrl: (key & Events.MOD_CTRL) is not 0;
+		if ctrl and (k is 'a' or k is 'A')
+			call SelectAll;
+			return 1;
+		;;
+		when k
+			is Events.KEY_ESCAPE
+				return 3;
+			;;
+			is Events.KEY_ENTER
+				u8 line: 10;
+				call Insert: addr line 1;
+				return 1;
+			;;
+			is Events.KEY_TAB
+				# spaces to the next multiple of 4, as the font has no tab
+				u8 spaces[4];
+				int fill: 4 - (cursor - (LineStart: cursor)) % 4;
+				while int i: 0; i < fill; i++;
+					spaces:i is ' ';
+				;;
+				call Insert: addr spaces fill;
+				return 1;
+			;;
+			is Events.KEY_LEFT
+				if anchor is not cursor and shift is false
+					call MoveTo: (SelectionStart) false;
+				;;
+				else
+					call MoveTo: cursor - 1 shift;
+				;;
+				return 1;
+			;;
+			is Events.KEY_RIGHT
+				if anchor is not cursor and shift is false
+					call MoveTo: (SelectionEnd) false;
+				;;
+				else
+					call MoveTo: cursor + 1 shift;
+				;;
+				return 1;
+			;;
+			is Events.KEY_UP
+				call MoveLines: (-1) shift;
+				return 1;
+			;;
+			is Events.KEY_DOWN
+				call MoveLines: 1 shift;
+				return 1;
+			;;
+			is Events.KEY_PAGEUP
+				call MoveLines: 0 - (Rows) shift;
+				return 1;
+			;;
+			is Events.KEY_PAGEDOWN
+				call MoveLines: (Rows) shift;
+				return 1;
+			;;
+			is Events.KEY_HOME
+				if ctrl
+					call MoveTo: 0 shift;
+				;;
+				else
+					call MoveTo: (LineStart: cursor) shift;
+				;;
+				return 1;
+			;;
+			is Events.KEY_END
+				if ctrl
+					call MoveTo: len shift;
+				;;
+				else
+					call MoveTo: (LineEnd: cursor) shift;
+				;;
+				return 1;
+			;;
+			is Events.KEY_BACKSPACE
+				if (DeleteSelection) is false and cursor > 0
+					cursor--;
+					call Remove: cursor;
+				;;
+				anchor is cursor;
+				call Settled;
+				return 1;
+			;;
+			is Events.KEY_DELETE
+				if (DeleteSelection) is false and cursor < len
+					call Remove: cursor;
+				;;
+				anchor is cursor;
+				call Settled;
+				return 1;
+			;;
+		;;
+		if (key & (Events.MOD_CTRL | Events.MOD_ALT)) is not 0 return 0;
+		if k >= 32 and k < 127
+			u8 typed: k as u8;
+			call Insert: addr typed 1;
+			return 1;
+		;;
+	[end: 0]
+
+	# a click on it gives it the keys and puts the caret there (a double click selects the word,
+	# and moving with the button held selects up to the mouse); a click elsewhere takes the keys
+	# away; the wheel scrolls it when it's over it; true when that changed anything
+	[Mouse: GuiEvent e;]
+		bln on: (Widgets.Inside: e.x e.y x y w h);
+		if e.wheel is not 0
+			if on is false return false;
+			int was_top: top;
+			top is (Math.Clamp: top + e.wheel * 3 0 (Math.Max: (Lines) - (Rows) 0));
+			return top is not was_top;
+		;;
+		if e.clicks is 0
+			if dragging and (e.value & 1) is not 0
+				int to: (Spot: e.x e.y);
+				if to is cursor return false;
+				cursor is to;
+				call Settled;
+				return true;
+			;;
+			dragging is false;
+			return false;
+		;;
+		bln was: focused;
+		focused is on;
+		dragging is on;
+		if on
+			call MoveTo: (Spot: e.x e.y) false;
+			if e.clicks is 2
+				call SelectWord;
+			;;
+			return true;
+		;;
+	[end: was]
+
+	[Paint]
+		u32 edge: Widgets.EDGE;
+		if focused
+			edge is Widgets.ACCENT;
+		;;
+		call Draw.FillRect: x y w h Widgets.FIELD;
+		call Draw.Rect: x y w h edge;
+		call Draw.PushClip: x + 4 y + 2 w - 8 - Widgets.BAR h - 4;
+		int rows: (Rows);
+		int start: (StartOfLine: top);
+		int from: (SelectionStart);
+		int to: (SelectionEnd);
+		int caret_line: (LineOf: cursor);
+		while int row: 0; row <= rows and start <= len; row++;
+			int stop: (LineEnd: start);
+			int py: y + 4 + row * 16;
+			# what's selected on this line, and the end of the line if the selection goes on past it
+			int a: (Math.Max: from start);
+			int b: (Math.Min: to stop);
+			if b > a or (to > stop and from <= stop)
+				int wide: b - a;
+				if to > stop
+					wide++;
+				;;
+				call Draw.FillRect: x + 6 + (a - start - left) * 8 py wide * 8 16 Widgets.SELECT;
+			;;
+			if stop - start > left
+				call Draw.TextN: x + 6 py text + start + left stop - start - left Widgets.TEXT;
+			;;
+			if focused and top + row is caret_line
+				call Draw.FillRect: x + 6 + (cursor - start - left) * 8 py 2 16 Widgets.ACCENT;
+			;;
+			start is stop + 1;
+		;;
+		call Draw.PopClip;
+		# the scroll bar, when it doesn't all fit
+		int lines: (Lines);
+		if lines > rows
+			int track: h - 4;
+			int thumb: (Math.Max: track * rows / lines 8);
+			int place: (track - thumb) * top / (Math.Max: lines - rows 1);
+			call Draw.FillRect: x + w - Widgets.BAR - 1 y + 2 + place Widgets.BAR thumb Widgets.EDGE;
+		;;
+	[end]
+
+	# ---- how it's laid out
+
+	# how many whole lines fit
+	[Rows]
+	[end: (Math.Max: (h - 8) / 16 1)]
+
+	# how many characters fit across
+	[Columns]
+	[end: (Math.Max: (w - 12 - Widgets.BAR) / 8 1)]
+
+	# how many lines there are: one more than the \n in it
+	[Lines]
+	[end: (LineOf: len) + 1]
+
+	# which line pos is on, from 0
+	[LineOf: int pos: 0;]
+		int line: 0;
+		while int i: 0; i < pos; i++;
+			if text:i is 10
+				line++;
+			;;
+		;;
+	[end: line]
+
+	# where a line starts (the end of the text past the last line)
+	[StartOfLine: int line: 0;]
+		int i: 0;
+		while line > 0 and i < len
+			if text:i is 10
+				line--;
+			;;
+			i++;
+		;;
+	[end: i]
+
+	[LineStart: int pos: 0;]
+		while pos > 0 and text:(pos - 1) is not 10
+			pos--;
+		;;
+	[end: pos]
+
+	[LineEnd: int pos: 0;]
+		while pos < len and text:pos is not 10
+			pos++;
+		;;
+	[end: pos]
+
+	# the place in the text nearest to the mouse
+	[Spot: int px: 0; int py: 0;]
+		int line: (Math.Clamp: top + (py - y - 4) / 16 0 (Lines) - 1);
+		int start: (StartOfLine: line);
+		int along: (Math.Max: (px - x - 6 + 4) / 8 + left 0);
+	[end: (Math.Min: start + along (LineEnd: start))]
+
+	# ---- changing it
+
+	# there's room for wanted characters and a zero (it doubles, so typing isn't slow)
+	[Reserve: int wanted: 0;]
+		if wanted + 1 <= room return;
+		int bigger: (Math.Max: room * 2 256);
+		while bigger < wanted + 1
+			bigger is bigger * 2;
+		;;
+		ptr<u8> grown: new u8[bigger];
+		while int i: 0; i < len; i++;
+			grown:i is text:i;
+		;;
+		grown:len is 0;
+		if text is not 0
+			free text;
+		;;
+		text is grown;
+		room is bigger;
+	[end]
+
+	# the caret to pos (kept inside the text); extend keeps the selection's other end
+	[MoveTo: int pos: 0; bln extend: false;]
+		cursor is (Math.Clamp: pos 0 len);
+		if extend is false
+			anchor is cursor;
+		;;
+		call Settled;
+	[end]
+
+	# the caret by count lines (up if it's negative), aiming for the column it was last moved to
+	[MoveLines: int count: 0; bln extend: false;]
+		int line: (Math.Clamp: (LineOf: cursor) + count 0 (Lines) - 1);
+		int start: (StartOfLine: line);
+		cursor is (Math.Min: start + column (LineEnd: start));
+		if extend is false
+			anchor is cursor;
+		;;
+		call InSight;
+	[end]
+
+	# the word the caret is on, selected: letters, digits and _, or else the one character
+	[SelectWord]
+		int from: cursor;
+		int to: cursor;
+		while from > 0 and (Widgets.WordCharacter: text:(from - 1))
+			from--;
+		;;
+		while to < len and (Widgets.WordCharacter: text:to)
+			to++;
+		;;
+		if from is to and to < len
+			to++;
+		;;
+		anchor is from;
+		cursor is to;
+		call Settled;
+	[end]
+
+	# the character at pos taken out
+	[Remove: int pos: 0;]
+		while int i: pos; i < len; i++;
+			text:i is text:(i + 1);
+		;;
+		len--;
+	[end]
+
+	# the selected text taken out; false when nothing was selected
+	[DeleteSelection]
+		int from: (SelectionStart);
+		int gone: (SelectionEnd) - from;
+		if gone is 0 return false;
+		while int i: from; i + gone <= len; i++;
+			text:i is text:(i + gone);
+		;;
+		len-- gone;
+		cursor is from;
+		anchor is from;
+		call Settled;
+	[end: true]
+
+	# the caret has moved along: Up and Down aim for here from now on
+	[Settled]
+		column is cursor - (LineStart: cursor);
+		call InSight;
+	[end]
+
+	# the caret kept in sight
+	[InSight]
+		int line: (LineOf: cursor);
+		int rows: (Rows);
+		if line < top
+			top is line;
+		;;
+		elif line >= top + rows
+			top is line - rows + 1;
+		;;
+		int along: cursor - (LineStart: cursor);
+		int columns: (Columns);
+		if along < left
+			left is along;
+		;;
+		elif along >= left + columns
+			left is along - columns + 1;
+		;;
+	[end]
+}
+
 phi.Widgets:Library
 {
 	# the colors
@@ -570,6 +1027,10 @@ phi.Widgets:Library
 	# is (px, py) inside the w x h rectangle at (x, y)
 	[Inside: int px: 0; int py: 0; int x: 0; int y: 0; int w: 0; int h: 0;]
 	[end: px >= x and py >= y and px < x + w and py < y + h]
+
+	# a letter, a digit or _: part of a word, for a double click
+	[WordCharacter: u8 c: 0;]
+	[end: (c >= 'a' and c <= 'z') or (c >= 'A' and c <= 'Z') or (c >= '0' and c <= '9') or c is '_']
 
 	# text in the dimmer color, for labels next to fields
 	[Label: int x: 0; int y: 0; ptr<u8> text: 0;]

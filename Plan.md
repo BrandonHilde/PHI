@@ -681,7 +681,9 @@ The parts most worth doing next, roughly in order:
    (open, save, a message), and a multi-line `TextArea`. PhiOS draws its dialogs inside the
    app's own window (`shared/dialog.phi`) and wrote Notepad's editor itself for want of
    these. Done after the sixth PhiOS assessment: selection in `TextField`, Tab between
-   fields (`FocusChain`) and `GuiEvent.pressed` for right-button presses.
+   fields (`FocusChain`) and `GuiEvent.pressed` for right-button presses. Done 2026-11-04:
+   `TextArea` in `gui.widgets` (tests `textarea`, `kernel32_text_area`): selection, the wheel,
+   growing; it doesn't wrap, has no undo, and its scroll bar shows but can't be dragged yet.
 2. **Text everywhere: done (2026-10-29),** after the sixth and seventh PhiOS assessments. Text
    works the same in variables, struct fields, parameters and array elements:
    `str name: [24];` (also `[atmost 24]`, `chr name[24]`) in a struct; `new str bio;` for text

@@ -1964,6 +1964,13 @@ call Draw.Clear: Widgets.FACE;
 call name.Paint;                        # ... and each of the others, then App.Present
 ```
 
+A `TextArea` is many lines to type into and scroll through, with its text on the heap, growing
+as it's typed into (up to its `most`, 1 MB unless that's changed): `call notes.Place: x y w h;`,
+`notes.Set: text`, `notes.Key`, `notes.Mouse` and `notes.Paint` as a field has, plus `Insert: text
+count` and `Free`. The caret moves by character, line and page; selecting works as a field's
+does; the wheel scrolls it; and `notes.text` is all of it, each line ending with a `\n`. It
+doesn't wrap: a long line scrolls sideways as the caret goes along it.
+
 A `TextField` selects text with Shift and the arrows, Home or End, with Ctrl+A, with a drag
 or with a double click, and typing replaces what's selected. `SelectAll`, `SelectionStart`,
 `SelectionEnd` and `CopySelection: buffer size` → work with it from the program. A

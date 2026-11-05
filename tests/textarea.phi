@@ -1,0 +1,210 @@
+# runs only in 32 and 64 bits: gfx.draw is for 32-bit and 64-bit code
+# gui.widgets' TextArea, driven by keys and the mouse as a window's events would: typing, a new
+# line, the caret by character, line and page, selecting, what's selected replaced, a double
+# click, a drag, scrolling, growing, and what it draws. Its text and caret are logged after
+# each step, with / for a new line.
+use gui.widgets;
+
+phi.TextAreaTest:Library
+{
+	ptr<u32> pixels: new u32[40000];    # 200 x 200
+	GuiEvent event;
+	TextArea area;
+
+	call Draw.Target: pixels 200 200;
+	# 10 rows of text, in a box 8 + 10 * 16 high, and 20 characters across
+	call area.Place: 10 10 182 168;
+	log 'rows: ' (area.Rows) ', columns: ' (area.Columns) '\n';
+	call Show;
+
+	# typing, and a new line
+	call Type: 'hello';
+	call Press: Events.KEY_ENTER;
+	call Type: 'world';
+	call Show;
+
+	# along, and up and down: Up and Down keep aiming for the column they started from
+	call Press: Events.KEY_LEFT;
+	call Press: Events.KEY_LEFT;
+	call Show;
+	call Press: Events.KEY_UP;
+	call Show;
+	call Press: Events.KEY_END;
+	call Press: Events.KEY_DOWN;
+	call Show;
+	call Press: Events.KEY_HOME;
+	call Press: Events.KEY_LEFT;
+	call Show;
+	call Press: Events.KEY_RIGHT;
+	call Show;
+
+	# past the ends of it
+	call Press: Events.KEY_UP;
+	call Press: Events.KEY_UP;
+	call Press: Events.KEY_END | Events.MOD_CTRL;
+	call Press: Events.KEY_RIGHT;
+	call Press: Events.KEY_DOWN;
+	call Show;
+	call Press: Events.KEY_HOME | Events.MOD_CTRL;
+	call Press: Events.KEY_LEFT;
+	call Show;
+
+	# taking back, across a line
+	call Press: Events.KEY_DELETE;
+	call Show;
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_HOME;
+	call Press: Events.KEY_BACKSPACE;
+	call Show;
+	call Press: Events.KEY_ENTER;
+	call Show;
+
+	# selecting across a line, and what's selected replaced and copied
+	call Press: Events.KEY_HOME | Events.MOD_CTRL;
+	call Press: Events.KEY_RIGHT;
+	call Press: Events.KEY_DOWN | Events.MOD_SHIFT;
+	call Show;
+	u8 copied[32];
+	int n: (area.CopySelection: addr copied 32);
+	ptr<u8> shown: addr copied;
+	call Plain: shown;
+	log ' is ' n ' selected\n';
+	call Type: 'X';
+	call Show;
+	call Press: 'a' | Events.MOD_CTRL;
+	call Show;
+	call Press: Events.KEY_BACKSPACE;
+	call Show;
+
+	# a Tab: spaces to the next multiple of 4, and keys that aren't for it
+	call Type: 'ab';
+	call Press: Events.KEY_TAB;
+	call Type: 'c';
+	call Show;
+	log 'esc: ' (area.Key: Events.KEY_ESCAPE) ', ctrl+q: ' (area.Key: 'q' | Events.MOD_CTRL) ', F1: ' (area.Key: Events.KEY_F1) '\n';
+
+	# the mouse: a click, a double click on a word, and a drag across lines
+	call area.Set: 'one two three\nfour five';
+	log 'not focused: ' area.focused ', a click: ' (Click: 10 + 6 + 5 * 8 14 1) ', focused: ' area.focused '\n';
+	call Show;
+	call Click: 10 + 6 + 5 * 8 14 2;
+	call Show;
+	call Click: 10 + 6 + 8 * 8 14 1;
+	call Drag: 10 + 6 + 2 * 8 14 + 16;
+	call Show;
+	call Let;
+	log 'moved with no button: ' (Drag: 50 50) '\n';
+	call Show;
+	log 'a click elsewhere: ' (Click: 195 195 1) ', focused: ' area.focused '\n';
+
+	# many lines: a page down, the view following, the wheel, and more than its first room
+	str line: 'a line of text\n';
+	call area.Set: '';
+	while int i: 0; i < 40; i++;
+		call area.Insert: line line.len;
+	;;
+	call area.Insert: 'the last one' 12;
+	log 'lines: ' (area.Lines) ', length: ' area.len ', room: ' area.room ', top: ' area.top '\n';
+	call Press: Events.KEY_HOME | Events.MOD_CTRL;
+	log 'home, top: ' area.top '\n';
+	call Press: Events.KEY_PAGEDOWN;
+	log 'a page down: line ' (area.LineOf: area.cursor) ', top ' area.top '\n';
+	call Press: Events.KEY_PAGEDOWN;
+	log 'another: line ' (area.LineOf: area.cursor) ', top ' area.top '\n';
+	call Press: Events.KEY_PAGEUP;
+	log 'and up: line ' (area.LineOf: area.cursor) ', top ' area.top '\n';
+	log 'the wheel: ' (Wheel: 20 20 2) ', top ' area.top ', away from it: ' (Wheel: 195 195 2) ', top ' area.top '\n';
+	log 'up past the top: ' (Wheel: 20 20 -100) ', top ' area.top ', and again: ' (Wheel: 20 20 -1) '\n';
+	log 'down past the end: ' (Wheel: 20 20 100) ', top ' area.top '\n';
+
+	# a long line scrolls sideways as the caret goes along it
+	call area.Set: '';
+	call Type: 'abcdefghijklmnopqrstuvwxyz0123456789';
+	log 'along: ' area.cursor ', left ' area.left '\n';
+	call Press: Events.KEY_HOME;
+	log 'home: left ' area.left '\n';
+
+	# as much as it takes
+	call area.Set: '';
+	area.most is 5;
+	call Type: 'abcdefgh';
+	call Show;
+	area.most is 1048576;
+
+	# what it draws: the caret when it has the keys, what's selected, and the scroll bar
+	call area.Set: 'abc\ndef';
+	area.focused is true;
+	call Draw.Clear: 0;
+	call area.Paint;
+	log 'caret at the start: ' ((Draw.GetPixel: 16 15) is Widgets.ACCENT) ', on the second line: ' ((Draw.GetPixel: 16 31) is Widgets.ACCENT) '\n';
+	call Press: Events.KEY_END | Events.MOD_CTRL;
+	call Draw.Clear: 0;
+	call area.Paint;
+	log 'caret at the end: ' ((Draw.GetPixel: 16 + 3 * 8 31) is Widgets.ACCENT) ', not at the start: ' ((Draw.GetPixel: 16 15) is Widgets.ACCENT) '\n';
+	log 'the edge: ' ((Draw.GetPixel: 10 10) is Widgets.ACCENT) '\n';
+	call Press: 'a' | Events.MOD_CTRL;
+	call Draw.Clear: 0;
+	call area.Paint;
+	log 'selected: ' ((Draw.GetPixel: 24 15) is Widgets.SELECT) ' ' ((Draw.GetPixel: 24 31) is Widgets.SELECT) ', past it: ' ((Draw.GetPixel: 120 15) is Widgets.FIELD) '\n';
+	log 'no bar when it all fits: ' ((Draw.GetPixel: 185 20) is Widgets.FIELD) '\n';
+	call area.Set: '1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20';
+	call Draw.Clear: 0;
+	call area.Paint;
+	log 'a bar when it does not: ' ((Draw.GetPixel: 185 20) is Widgets.EDGE) '\n';
+
+	call area.Free;
+	log 'freed: ' (area.text is 0) ' ' area.len '\n';
+	call area.Free;
+
+	# ---- what the window would send
+
+	[Press: int key: 0;]
+		int ignored: (area.Key: key);
+	[end]
+
+	[Type: str typed;]
+		while int i: 0; i < typed.len; i++;
+			call Press: typed:i as int;
+		;;
+	[end]
+
+	[Mouse: int mx: 0; int my: 0; int buttons: 0; int clicks: 0; int wheel: 0;]
+		event.x is mx;
+		event.y is my;
+		event.value is buttons;
+		event.clicks is clicks;
+		event.wheel is wheel;
+	[end: (area.Mouse: event)]
+
+	[Click: int mx: 0; int my: 0; int clicks: 1;]
+	[end: (Mouse: mx my 1 clicks 0)]
+
+	[Drag: int mx: 0; int my: 0;]
+	[end: (Mouse: mx my 1 0 0)]
+
+	[Let]
+	[end: (Mouse: 0 0 0 0 0)]
+
+	[Wheel: int mx: 0; int my: 0; int turned: 0;]
+	[end: (Mouse: mx my 0 0 turned)]
+
+	# text, with / for each new line
+	[Plain: ptr<u8> what: 0;]
+		while int i: 0; what:i is not 0; i++;
+			if what:i is 10
+				log '/';
+			;;
+			else
+				str one: '';
+				one++ what:i as chr;
+				log one;
+			;;
+		;;
+	[end]
+
+	[Show]
+		log '[';
+		call Plain: area.text;
+		log '] caret ' area.cursor ', anchor ' area.anchor ', line ' (area.LineOf: area.cursor) '\n';
+	[end]
+}

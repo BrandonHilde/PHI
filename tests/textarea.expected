@@ -1,0 +1,45 @@
+rows: 10, columns: 20
+[] caret 0, anchor 0, line 0
+[hello/world] caret 11, anchor 11, line 1
+[hello/world] caret 9, anchor 9, line 1
+[hello/world] caret 3, anchor 3, line 0
+[hello/world] caret 11, anchor 11, line 1
+[hello/world] caret 5, anchor 5, line 0
+[hello/world] caret 6, anchor 6, line 1
+[hello/world] caret 11, anchor 11, line 1
+[hello/world] caret 0, anchor 0, line 0
+[ello/world] caret 0, anchor 0, line 0
+[elloworld] caret 4, anchor 4, line 0
+[ello/world] caret 5, anchor 5, line 1
+[ello/world] caret 6, anchor 1, line 1
+llo/w is 5 selected
+[eXorld] caret 2, anchor 2, line 0
+[eXorld] caret 6, anchor 0, line 0
+[] caret 0, anchor 0, line 0
+[ab  c] caret 5, anchor 5, line 0
+esc: 3, ctrl+q: 0, F1: 0
+not focused: 0, a click: 1, focused: 1
+[one two three/four five] caret 5, anchor 5, line 0
+[one two three/four five] caret 7, anchor 4, line 0
+[one two three/four five] caret 16, anchor 8, line 1
+moved with no button: 0
+[one two three/four five] caret 16, anchor 8, line 1
+a click elsewhere: 1, focused: 0
+lines: 41, length: 612, room: 1024, top: 31
+home, top: 0
+a page down: line 10, top 1
+another: line 20, top 11
+and up: line 10, top 10
+the wheel: 1, top 16, away from it: 0, top 16
+up past the top: 1, top 0, and again: 0
+down past the end: 1, top 31
+along: 36, left 17
+home: left 0
+[abcde] caret 5, anchor 5, line 0
+caret at the start: 1, on the second line: 0
+caret at the end: 1, not at the start: 0
+the edge: 1
+selected: 1 1, past it: 1
+no bar when it all fits: 1
+a bar when it does not: 1
+freed: 1 0
