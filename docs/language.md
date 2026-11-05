@@ -803,10 +803,12 @@ else
 ```
 
 - **`throw`** takes values as `log` does, which become the error's text.
-- **The errors PHI finds itself** are caught the same way: an index out of range, and the
-  heap out of room for a new object.
-- **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`
-  or `MEMORY`), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+- **The errors PHI finds itself** are caught the same way: an index out of range, the
+  heap out of room for a new object, and a count of 2 GB or more to `Mem.Copy`, `Move`, `Fill`
+  or `Fill32` (a negative number, or a subtraction below 0, which would otherwise run through
+  all of memory; the error names the line of the call, and nothing is copied).
+- **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
+  `MEMORY` or `COUNT`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
   an uncaught error is written). `log`, `debug` and text built from values write its
   message, so `log err;` and `str note: ('failed: ' err);` say everything.
 - **The methods in between give back what they own**, as if each had returned: their new
@@ -2534,6 +2536,12 @@ if (IsReady: port)
   meant, or have the method take a `u32`. A constant that fits is fine, and so is what's
   known to fit: `x & 0xFF`, `x >> 1`, `x / 2`, `x % 100`. This is about your own methods: an
   `OS.` call takes a `u32` the same on every system.
+- **A signed number going to a `u32` parameter** is an error too, as `-1` comes out as
+  4294967295, and a count of that runs through all of memory. Write `as u32` if that's meant,
+  which keeps the same bits (a value that's only passed along, like a key, needs no check),
+  or have the method take an `int`. A constant that isn't negative is fine, and so is what
+  can't be negative: `.len`, `.max`, `x & 0xFF`. Again, an `OS.` call takes an `int` the same
+  on every system. An `int` going to a `u32` variable (`u32 z: n;`) is still quiet.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number, float, 64-bit number
   or `str`) as the one after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
@@ -2759,7 +2767,7 @@ and the classes of used files run before the classes that use them.
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
-| `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos` |
+| `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 GB or more to any but `Equal` is an error at the call |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |
 | `drivers.pci`, `drivers.nic`, `drivers.rtl8139`, `drivers.virtio_net`, `net.net`, `net.udp`, `net.dhcp`, `net.dns`, `net.tcp`, `net.tls`, `net.http` | 32-bit kernels: see [The network](#the-network-32-bit-kernels) |
 | `drivers.acpi` | class `Acpi` (32-bit kernels): ACPI's MADT: `Start` →, `cores` and `core_ids` (local APIC IDs), `local_apic`, `io_apic`, `io_apic_base`, `Input: irq` → (the I/O APIC input an ISA IRQ comes in on), `Flags: irq` → (its polarity and trigger), `Find: name` → (any table by its 4 letters) |

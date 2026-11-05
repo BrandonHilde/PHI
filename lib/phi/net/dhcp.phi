@@ -145,7 +145,7 @@ phi.Dhcp:Kernel
 			int length: 0;
 			call length is Net.WaitUdp: WAIT - (now - start);
 			if length > OPTIONS
-				call found is Read: length;
+				call found is Read: length as u32;
 				found is found and reply_type is type;
 			;;
 			call now is OS.GetTicks;

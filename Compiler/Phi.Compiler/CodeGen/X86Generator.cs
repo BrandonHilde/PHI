@@ -2497,6 +2497,31 @@ namespace Phi.Compiler.CodeGen
             EmitStoreResult(call.ResultTarget, result);
         }
 
+        /// <summary>Mem's calls that run the CPU's string instructions for a count: their last parameter.</summary>
+        static bool TakesAMemCount(MethodSymbol m) =>
+            m.Decl.Name is "Copy" or "Move" or "Fill" or "Fill32" && m.Decl.Owner.File.Path == "lib/phi/memory/mem.phi";
+
+        /// <summary>
+        /// The count just pushed for a Mem call, 2 GB or more: a negative number, or a subtraction
+        /// that went below 0, and copying that many bytes would run through all of memory. It's
+        /// checked here rather than in mem.phi so that the error names the line of the call.
+        /// </summary>
+        void EmitMemCountCheck(MethodSymbol method, Expr count)
+        {
+            if (ConstantFolder.Evaluate(count) is long known && known >= 0 && known <= int.MaxValue) return;
+            string ok = NewLabel("count_ok");
+            Emit("cmp dword [esp], 0        ; the count, which has its top bit set from 2 GB up");
+            Emit($"jge {ok}");
+            Need("phi_throw");
+            LoadAddress("edx", StringLabel($"a count of 2 GB or more for Mem.{method.Decl.Name} (a negative number, or a subtraction below 0)"));
+            Emit($"mov eax, {LineOf(count)}");
+            if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
+            else Emit($"mov esi, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
+            Emit($"mov ebx, {ErrorCount}");
+            Emit("jmp phi_throw");
+            Label(ok);
+        }
+
         /// <summary>Calls a method, built-in or asm block; a result comes back in eax.</summary>
         void EmitCallTo(object? callee, List<Expr> arguments)
         {
@@ -2580,6 +2605,7 @@ namespace Phi.Compiler.CodeGen
                         pushedBytes += Slot;
                     }
 
+                    if (bits32 && arguments.Count == count && TakesAMemCount(method)) EmitMemCountCheck(method, arguments[^1]);
                     Emit($"call {method.Label}");
                     if (pushedBytes > 0) Emit($"add {(bits32 ? "esp" : "sp")}, {pushedBytes}");
                     EmitTextWriteBacks(writeBacks);
@@ -2827,6 +2853,9 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>ErrorKind.THROWN, the kind of error a throw makes (lib/phi/lang/error.phi).</summary>
         const int ErrorThrown = 0;
+
+        /// <summary>ErrorKind.COUNT, a Mem call's count that can't be right.</summary>
+        const int ErrorCount = 6;
 
         /// <summary>The bytes of an Error, as the runtime (throw.asm) lays it out: kind, line, file, text, message.</summary>
         const int ErrorSize = 4 + 4 + 65 + 256 + 384;

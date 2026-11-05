@@ -35,26 +35,26 @@ phi.CryptoAesGcm:Kernel
 	call n is Bytes.FromHex: 'cafebabefacedbaddecaf888' addr nonce 12;
 	call length is Bytes.FromHex: 'd9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39' addr data 400;
 	call header_length is Bytes.FromHex: 'feedfacedeadbeeffeedfacedeadbeefabaddad2' addr header 32;
-	call AesGcm.Seal: addr key addr nonce addr header header_length addr data length addr tag;
-	call Bytes.PrintHex: addr data length;
+	call AesGcm.Seal: addr key addr nonce addr header header_length as u32 addr data length as u32 addr tag;
+	call Bytes.PrintHex: addr data length as u32;
 	call Bytes.PrintHex: addr tag 16;
 
-	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length as u32 addr data length as u32 addr tag;
 	log 'opens: ' ok ', back to the text: ';
 	call n is Bytes.FromHex: 'd9313225f88406e5a55909c5aff5269a86a7a9531534f7da2e4c303d8a318a721c3c0c95956809532fcf0e2449a6b525b16aedf5aa0de657ba637b39' addr block 0;
 	log (data:0 is 0xd9 and data:59 is 0x39) '\n';
 
-	call AesGcm.Seal: addr key addr nonce addr header header_length addr data length addr tag;
+	call AesGcm.Seal: addr key addr nonce addr header header_length as u32 addr data length as u32 addr tag;
 	data:20 is data:20 ^ 1;
-	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length as u32 addr data length as u32 addr tag;
 	log 'a changed byte opens: ' ok '\n';
 	data:20 is data:20 ^ 1;
 	header:3 is header:3 ^ 1;
-	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length as u32 addr data length as u32 addr tag;
 	log 'a changed header opens: ' ok '\n';
 	header:3 is header:3 ^ 1;
 	tag:0 is tag:0 ^ 1;
-	call ok is AesGcm.Open: addr key addr nonce addr header header_length addr data length addr tag;
+	call ok is AesGcm.Open: addr key addr nonce addr header header_length as u32 addr data length as u32 addr tag;
 	log 'a changed tag opens: ' ok '\n';
 
 	log 'tags for other lengths:\n';

@@ -1,0 +1,44 @@
+# mem_counts on PHI OS: in a kernel, a count of 2 GB or more is the same error; a program's
+# ends the program and the kernel carries on (kernel32_mem_counts.rootfs/counts.phi); and
+# one in an interrupt isn't caught by the code it interrupted, so it stops the kernel there.
+use memory.mem;
+use proc.process;
+
+phi.Test:Kernel
+{
+	u8 a[16];
+	u8 b[16];
+	u32 size: 2;
+	int negative: -5;
+
+	if call Mem.Copy: addr a addr b negative as u32 throws err
+		log err '\n';
+		log (err.kind is ErrorKind.COUNT) ' ' err.line ' ' err.file '\n';
+	;;
+	if call Mem.Fill: addr a 9 size - 4 throws err
+		log err '\n';
+	;;
+	log 'nothing filled: ' a:0 '\n';
+
+	call Mem.Fill: addr b 7 16;
+	call Mem.Copy: addr a addr b 16;
+	log 'copied: ' a:15 '\n';
+
+	int code: (Process.Wait: (Process.Spawn: 'COUNTS.BIN'));
+	log 'exit code: ' code '\n';
+
+	call OS.SetupInteruptTimer;
+	if call Wait throws err
+		log 'not caught here: ' err '\n';
+	;;
+	log 'not here\n';
+
+	[Wait]
+		while true
+		;;
+	[end]
+
+	[OS.TimerEvent]
+		call Mem.Copy: addr a addr b negative as u32;
+	[end]
+}

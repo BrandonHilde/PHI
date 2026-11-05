@@ -19,6 +19,35 @@ phi.UnsignedArguments:Kernel
 	call Take: small;
 	log n '\n';
 
+	# the other way: a signed number going to a u32
+	int count: 3;
+	i16 short: 3;
+	i8 tiny: 3;
+	method<u32: u32> keptU: addr TakeU;
+	call TakeU: count;
+	call TakeU: count + 1;
+	call TakeU: (-1);
+	call TakeU: short;
+	call TakeU: tiny;
+	call TakeU: (Take: 5);
+	call keptU: count;
+
+	# what's said to be meant, or can't be negative, or was never signed
+	int numbers: 1 2 3;
+	str text: 'abc';
+	call TakeU: count as u32;
+	call TakeU: (-1) as u32;
+	call TakeU: 5;
+	call TakeU: 0x80000000;
+	call TakeU: count & 0xFF;
+	call TakeU: numbers.len;
+	call TakeU: text.len;
+	call TakeU: small;
+	call TakeU: big;
+
 	[Take: int value: 0;]
+	[end: value]
+
+	[TakeU: u32 value: 0;]
 	[end: value]
 }

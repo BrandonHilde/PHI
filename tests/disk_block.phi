@@ -24,6 +24,6 @@ phi.BlockTest:Kernel
 
 	# a count the layer doesn't take, and sectors past the end
 	debug 'none: ' (Block.Read: 0 0 back) ' too many: ' (Block.Read: 0 256 back) '\n';
-	debug 'past the end: ' (Block.Read: (Block.Sectors) 1 back) '\n';
+	debug 'past the end: ' (Block.Read: (Block.Sectors) as u32 1 back) '\n';
 	exit 0;
 }

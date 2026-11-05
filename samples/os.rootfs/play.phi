@@ -105,7 +105,10 @@ phi.Play:Program
 		bln ok: false;
 		int got: 0;
 		call got is OS.ReadFileAt: addr name 0 addr raw HEADER_SIZE;
-		call ok is Wav.Parse: addr raw got size;
+		if got < 0
+			got is 0;                       # nothing was read, so Parse says it isn't a WAV file
+		;;
+		call ok is Wav.Parse: addr raw got as u32 size as u32;
 		if ok is false
 			log 'play: ' Wav.error '\n';
 		;;
@@ -144,11 +147,11 @@ phi.Play:Program
 					pos++ got;
 					u32 bytes: 0;
 					if resampling
-						call bytes is Wav.Convert: addr raw got addr converted;
+						call bytes is Wav.Convert: addr raw got as u32 addr converted;
 						call bytes is Wav.Resample: addr converted bytes / 4 addr pending;
 					;;
 					else
-						call bytes is Wav.Convert: addr raw got addr pending;
+						call bytes is Wav.Convert: addr raw got as u32 addr pending;
 					;;
 					call Send: addr pending bytes;
 				;;

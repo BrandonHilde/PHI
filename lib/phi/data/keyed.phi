@@ -98,7 +98,7 @@ struct.KeyedMap
 
 	# item i, put in the first free place from its key's
 	[Index: int i: 0;]
-		u32 pos: (Place: (items:i.Key));
+		u32 pos: (Place: (items:i.Key) as u32);
 		while places:pos is not 0
 			pos is (pos + 1) & (places.len - 1);
 		;;
@@ -109,14 +109,14 @@ struct.KeyedMap
 	# if their own place isn't between the gap and where they are, so they're still found
 	[Unplace: int i: 0;]
 		u32 mask: places.len - 1;
-		u32 pos: (Place: (items:i.Key));
+		u32 pos: (Place: (items:i.Key) as u32);
 		while places:pos is not i + 1
 			pos is (pos + 1) & mask;
 		;;
 		u32 next: (pos + 1) & mask;
 		while places:next is not 0
 			int other: places:next - 1;
-			u32 home: (Place: (items:other.Key));
+			u32 home: (Place: (items:other.Key) as u32);
 			if ((next - home) & mask) >= ((next - pos) & mask)
 				places:pos is places:next;
 				pos is next;

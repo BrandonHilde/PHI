@@ -41,7 +41,7 @@ phi.SoundPlay:Kernel
 		if (f * 550 * 2 / WAV_RATE) % 2 is 1
 			value is -12000;
 		;;
-		call Put16: 44 + f * 2 value;
+		call Put16: 44 + f * 2 value as u32;
 	;;
 	call ok is Fat.WriteFile: 'TEST.WAV' wav 44 + data_size;
 	call Run: 'PLAY.BIN' 'TEST.WAV';

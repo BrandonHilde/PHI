@@ -4768,9 +4768,11 @@ namespace Phi.Compiler.Semantics
             && (b.Left.Type.IsPointer || PointerMath(b.Left)) != (b.Right.Type.IsPointer || PointerMath(b.Right));
 
         /// <summary>
-        /// An argument, which is Convert plus one rule: a u32 going to an int parameter comes out
-        /// negative from 2 billion up, and that gets past the checks a method makes on its int
-        /// (`if n > 0`), so it isn't done quietly. `as int` says it's meant.
+        /// An argument, which is Convert plus a rule each way: a u32 going to an int parameter comes
+        /// out negative from 2 billion up, and that gets past the checks a method makes on its int
+        /// (`if n > 0`); a signed number going to a u32 parameter comes out in the billions if it's
+        /// negative, and a count of that is the end of whatever it's counting. Neither is done
+        /// quietly. `as int` and `as u32` say it's meant.
         /// </summary>
         Expr ConvertArgument(Expr e, PhiType target, string what)
         {
@@ -4779,7 +4781,26 @@ namespace Phi.Compiler.Semantics
                 Error(e.Span, $"{what} is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32");
                 return e;
             }
+            if (target == PhiType.U32 && (e.Type == PhiType.Int || e.Type == PhiType.I16 || e.Type == PhiType.I8) && !NeverNegative(e))
+            {
+                Error(e.Span, $"{what} is a u32, and this is {A(e.Type)}, which comes out in the billions if it's negative; write `as u32` if that's meant, or take {A(e.Type)}");
+                return e;
+            }
             return Convert(e, target, what);
+        }
+
+        /// <summary>A signed number that's known not to be negative: a constant, how long something is, or what a mask leaves.</summary>
+        static bool NeverNegative(Expr e)
+        {
+            static bool Small(Expr x) => ConstantFolder.Evaluate(x) is long v && v >= 0 && v <= int.MaxValue;
+            if (ConstantFolder.Evaluate(e) is long known) return known >= 0;
+            return e switch
+            {
+                NameExpr { Symbol: LengthSymbol } => true,
+                MemberExpr m => m.Count != null || m.FilledLength || m.TextLength,
+                BinaryExpr { Op: BinaryOp.BitAnd } b => Small(b.Left) || Small(b.Right),
+                _ => false,
+            };
         }
 
         /// <summary>A u32 that's known to be under 2 billion: a constant, or what a mask, a shift, a division or a remainder leaves.</summary>

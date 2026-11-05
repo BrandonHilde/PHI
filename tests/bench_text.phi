@@ -31,7 +31,7 @@ phi.BenchText:Kernel
 	# each name's hash as the key of a map, then every name found again
 	call Bench.Start;
 	while int i: 0; i < PLAYERS; i++;
-		call Map.Set: by_name (Hash: names:i) i;
+		call Map.Set: by_name (Hash: names:i) i as u32;
 	;;
 	call Bench.Stop: 'hash and add 1000 names';
 	int found: 0;

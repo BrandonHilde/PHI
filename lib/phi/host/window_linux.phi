@@ -513,13 +513,13 @@ phi.HostWindow:Linux
 		if not resizable
 			flags is 0x30;                # PMinSize, PMaxSize
 		;;
-		call Put32: flags;
+		call Put32: flags as u32;
 		while int i: 1; i < 18; i++;
 			if i is 5 or i is 7
-				call Put32: width;
+				call Put32: width as u32;
 			;;
 			elif i is 6 or i is 8
-				call Put32: height;
+				call Put32: height as u32;
 			;;
 			else
 				call Put32: 0;
@@ -534,8 +534,8 @@ phi.HostWindow:Linux
 		call Put32: window;
 		call Put16: 0x0C;                 # its width and height
 		call Put16: 0;
-		call Put32: w;
-		call Put32: h;
+		call Put32: w as u32;
+		call Put32: h as u32;
 		call Send;
 		call Sync;
 	[end]

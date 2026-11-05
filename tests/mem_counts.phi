@@ -1,0 +1,55 @@
+# A count of 2 GB or more to Mem.Copy, Move, Fill or Fill32 is a negative number or a
+# subtraction below 0, and going through with it would run through all of memory. It's an
+# error naming the line of the call, that can be caught, and nothing is copied. (Run as a
+# Linux and a Windows program; kernel32_mem_counts runs this on PHI OS and in a kernel.)
+use memory.mem;
+
+phi.Test:Program
+{
+	u8 a[16];
+	u8 b[16];
+	u32 words[4];
+	int negative: -5;
+	u32 size: 2;
+
+	# each of the four, with where it happened
+	if call Mem.Copy: addr a addr b negative as u32 throws err
+		log err '\n';
+		log (err.kind is ErrorKind.COUNT) ' ' err.line ' ' err.file '\n';
+	;;
+	if call Mem.Move: addr a addr b negative as u32 throws err
+		log err '\n';
+	;;
+	if call Mem.Fill: addr a 9 negative as u32 throws err
+		log err '\n';
+	;;
+	if call Mem.Fill32: addr words:0 9 negative as u32 throws err
+		log err '\n';
+	;;
+	log 'nothing filled: ' a:0 ' ' words:0 '\n';
+
+	# a subtraction below 0 has no negative number in it to see, and a constant is no different
+	if call Mem.Copy: addr a addr b size - 4 throws err
+		log err '\n';
+	;;
+	if call Mem.Copy: addr a addr b 0xFFFFFFFF throws err
+		log err '\n';
+	;;
+
+	# a count that's right goes through
+	call Mem.Fill: addr b 7 16;
+	call Mem.Copy: addr a addr b 16;
+	log 'copied: ' a:0 ' ' a:15 '\n';
+	u32 three: 3;
+	call Mem.Fill: addr a 1 three;
+	log 'filled: ' a:2 ' ' a:3 '\n';
+	call Mem.Copy: addr a addr b 0;
+	call Mem.Move: addr a + 1 addr a 4;
+	log 'moved: ' a:1 '\n';
+	call Mem.Fill32: addr words:0 9 4;
+	log 'words: ' words:3 '\n';
+
+	# not caught, it ends the program as any error does
+	call Mem.Copy: addr a addr b size - 4;
+	log 'not here\n';
+}

@@ -20,7 +20,7 @@ phi.BenchTick:Kernel
 	int wrong: 0;                         # STATEs that don't start with their player, or aren't full
 
 	while int i: 0; i < PLAYERS; i++;
-		call Zone.Add: 100 + i (Random: Game.WIDTH - Game.SIZE + 1) (Random: Game.HEIGHT - Game.SIZE + 1);
+		call Zone.Add: (100 + i) as u32 (Random: Game.WIDTH - Game.SIZE + 1) (Random: Game.HEIGHT - Game.SIZE + 1);
 	;;
 	log 'players: ' Zone.players.len '\n';
 

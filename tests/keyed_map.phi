@@ -78,12 +78,12 @@ phi.KeyedMapTest:Kernel
 			call map.Add: m;
 		;;
 		while int i: 0; i < 1000; i is i + 2;
-			call map.Remove: i * 7919;
+			call map.Remove: (i * 7919) as u32;
 		;;
 		int found: 0;
 		int wrong: 0;
 		while int i: 0; i < 1000; i++;
-			int pos: (map.Find: i * 7919);
+			int pos: (map.Find: (i * 7919) as u32);
 			if pos >= 0
 				found++;
 				if map.items:pos is Monster that

@@ -850,6 +850,26 @@ namespace Phi.Compiler.Tests
             Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("comes out negative"));
         }
 
+        [Theory]
+        [InlineData(Host.PhiOS)]
+        [InlineData(Host.Linux)]
+        public void AnIntGoesToAnOSCallTheSameOnEverySystem(Host system)
+        {
+            string path = Write("append_int.phi", "phi.Append:Program\n{\n\tint size: 1;\n\tcall OS.AppendFile: 'x.txt' 'y' size;\n}\n");
+            CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData(Host.PhiOS)]
+        [InlineData(Host.Linux)]
+        public void AnIntGoingToAMethodsU32IsTheSameErrorOnEverySystem(Host system)
+        {
+            string path = Write("own_u32.phi", "phi.Own:Program\n{\n\tint size: 1;\n\tcall Take: size;\n\t[Take: u32 n: 0;]\n\t[end]\n}\n");
+            CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("comes out in the billions"));
+        }
+
         [Fact]
         public void TheSystemAskedForIsTheOneChecked()
         {

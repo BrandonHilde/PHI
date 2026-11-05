@@ -111,7 +111,10 @@ phi.Sound:Library
 		if ok and isWav
 			int got: 0;
 			call got is OS.ReadFileAt: path 0 raw HEADER_SIZE;
-			call ok is Wav.Parse: raw got size;
+			if got < 0
+				got is 0;                   # nothing was read, so Parse says it isn't a WAV file
+			;;
+			call ok is Wav.Parse: raw got as u32 size as u32;
 			if ok is false
 				error is Wav.error;
 			;;
@@ -226,11 +229,11 @@ phi.Sound:Library
 				wav_at++ got;
 				if resampling
 					u32 bytes: 0;
-					call bytes is Wav.Convert: raw got converted;
+					call bytes is Wav.Convert: raw got as u32 converted;
 					call pending_end is Wav.Resample: converted bytes / 4 pending;
 				;;
 				else
-					call pending_end is Wav.Convert: raw got pending;
+					call pending_end is Wav.Convert: raw got as u32 pending;
 				;;
 			;;
 			source_done is got <= 0 or wav_at >= wav_end;

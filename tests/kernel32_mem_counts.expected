@@ -1,0 +1,12 @@
+a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 14 in kernel32_mem_counts.phi
+1 14 kernel32_mem_counts.phi
+a count of 2 GB or more for Mem.Fill (a negative number, or a subtraction below 0) on line 18 in kernel32_mem_counts.phi
+nothing filled: 0
+copied: 7
+a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 11 in counts.phi
+copied: 7
+
+PHI: a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 17 in counts.phi
+exit code: -1
+
+PHI: a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 42 in kernel32_mem_counts.phi

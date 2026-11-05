@@ -1,0 +1,14 @@
+a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 16 in mem_counts.phi
+1 16 mem_counts.phi
+a count of 2 GB or more for Mem.Move (a negative number, or a subtraction below 0) on line 20 in mem_counts.phi
+a count of 2 GB or more for Mem.Fill (a negative number, or a subtraction below 0) on line 23 in mem_counts.phi
+a count of 2 GB or more for Mem.Fill32 (a negative number, or a subtraction below 0) on line 26 in mem_counts.phi
+nothing filled: 0 0
+a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 32 in mem_counts.phi
+a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 35 in mem_counts.phi
+copied: 7 7
+filled: 1 7
+moved: 1
+words: 9
+
+PHI: a count of 2 GB or more for Mem.Copy (a negative number, or a subtraction below 0) on line 53 in mem_counts.phi

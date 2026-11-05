@@ -389,7 +389,7 @@ phi.SoundSystem:Linux
 		call Put8: 'a';
 		call Put8: 3;
 		call Put8: 2;
-		call Put32: hz;
+		call Put32: hz as u32;
 	[end]
 
 	# both channels at percent of the way up, on the scale the server's own controls show
@@ -429,7 +429,7 @@ phi.SoundSystem:Linux
 	[SendPacket: u32 to_channel: 0;]
 		int ending_at: filled;
 		filled is 0;
-		call Put32: ending_at - 20;
+		call Put32: (ending_at - 20) as u32;
 		call Put32: to_channel;
 		call Put32: 0;
 		call Put32: 0;

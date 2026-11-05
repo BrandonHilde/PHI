@@ -174,7 +174,7 @@ phi.Screen:Kernel
 			return false;
 		;;
 
-		call Paging.MapDevice: framebuffer w * h * 4;
+		call Paging.MapDevice: framebuffer (w * h * 4) as u32;
 		front is framebuffer;
 		width is w;
 		height is h;

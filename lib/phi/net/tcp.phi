@@ -264,7 +264,7 @@ phi.Tcp:Kernel
 		if n > max
 			n is max;
 		;;
-		call FromRing: addr c.rx_buffer c.rx_start to n;
+		call FromRing: addr c.rx_buffer c.rx_start to n as u32;
 		c.rx_start is (c.rx_start + n) & (BUFFER_SIZE - 1);
 		c.rx_count-- n;
 
@@ -851,7 +851,7 @@ phi.Tcp:Kernel
 		c.listener is listener;
 		c.mss is DEFAULT_MSS;
 		table:handle is c;
-		call Map.Set: by_key (Key: remote_ip remote_port local_port) handle;
+		call Map.Set: by_key (Key: remote_ip remote_port local_port) handle as u32;
 		open_count++;
 	[end: handle]
 

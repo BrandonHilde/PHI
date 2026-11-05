@@ -28,9 +28,9 @@ phi.BenchMessages:Kernel
 	while int i: 0; i < MESSAGES; i++;
 		ptr<u8> m: buffer + i * SIZE;
 		m:0 is MOVE;
-		call Put32: m + 1 1000 + i;
-		call Put16: m + 5 i * 3;
-		call Put16: m + 7 i * 7;
+		call Put32: m + 1 (1000 + i) as u32;
+		call Put16: m + 5 (i * 3) as u32;
+		call Put16: m + 7 (i * 7) as u32;
 		m:9 is i & 0xFF;
 	;;
 	call Bench.Stop: 'pack 10000 move messages';
@@ -67,7 +67,7 @@ phi.BenchMessages:Kernel
 	ptr<MapData> sessions: (Map.New);
 	while int c: 0; c < CLIENTS; c++;
 		clients:c is ((Random: 65536) << 16) | (Random: 65536);    # address's last 2 bytes, port
-		call Map.Set: sessions clients:c c;
+		call Map.Set: sessions clients:c c as u32;
 	;;
 	u32 found: 0;
 	call Bench.Start;

@@ -1,0 +1,19 @@
+# A PHI OS program's Mem call with a count of 2 GB or more (kernel32_mem_counts runs it): the
+# error can be caught, and when it isn't, the program ends with -1 and the kernel carries on.
+use memory.mem;
+
+phi.Counts:Program
+{
+	u8 a[16];
+	u8 b[16];
+	u32 size: 2;
+
+	if call Mem.Copy: addr a addr b size - 4 throws err
+		log err '\n';
+	;;
+	call Mem.Fill: addr b 7 16;
+	call Mem.Copy: addr a addr b 16;
+	log 'copied: ' a:15 '\n';
+	call Mem.Copy: addr a addr b size - 4;
+	log 'not here\n';
+}

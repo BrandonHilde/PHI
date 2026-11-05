@@ -121,7 +121,7 @@ phi.Tls:Kernel
 				error is 'the connection broke';
 				return false;
 			;;
-			call Tls13.Sent: addr tls_session sent;
+			call Tls13.Sent: addr tls_session sent as u32;
 		;;
 	[end: true]
 
@@ -139,7 +139,7 @@ phi.Tls:Kernel
 			;;
 			return false;
 		;;
-		if not (Tls13.Received: addr tls_session got)
+		if not (Tls13.Received: addr tls_session got as u32)
 			error is tls_session.error;
 			alert is tls_session.alert;
 			return false;

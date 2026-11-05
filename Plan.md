@@ -604,9 +604,19 @@ these were added:
   `'can''t'` is an error; `Process.CopyBytesFromUser` and `CopyBytesToUser`; `phi check` and
   `phi lsp` find a module's uses from the folder above it when it isn't in a repository, or
   when nothing uses it yet. Not done from that list: `const f64` (a class variable for now),
-  `FatImage.cs` stamping files in local time where the kernel uses UTC, and an `int` going
-  to a `u32` parameter, which is everywhere and would need its own look (a negative count is
-  what `Mem.Copy` gets that way; the checked copies above refuse it)
+  and `FatImage.cs` stamping files in local time where the kernel uses UTC
+- [x] A signed number going to a `u32` parameter is an error unless it says `as u32`
+  (2026-11-04), as in C#, Rust, Go, Swift and Zig, and for the same reason as `u32` to `int`.
+  It flagged 104 places, of which two outside the tests could really go negative (the
+  `Wav.Parse` calls in `audio/sound.phi` and `samples/os.rootfs/play.phi`, now fixed); a third
+  of the rest hold bits rather than amounts, so `as u32` means the same bits and checks
+  nothing. `.len`, `.max`, `x & c` and constants need no `as`. No type rule sees a subtraction
+  below 0, so `Mem.Copy`, `Move`, `Fill` and `Fill32` also stop with `ErrorKind.COUNT` on a
+  count of 2 GB or more, checked at the call so that the error names its line (on 64-bit
+  programs too, so a bigger copy there is several calls). Not covered: `u32 z: n;`, a call
+  through a method value, a count that's wrong but under 2 GB, and a method that isn't `Mem`'s
+  doing its own loop over a bad count. Tests `u32_args_errors`, `mem_counts`,
+  `kernel32_mem_counts`.
 - [x] Names in a class's own code are scoped by block, as they are in a method
   (2026-11-01): a name declared again in a separate block there is a variable of its own.
   This replaced three special cases for class code (`is Player p`, `while each` over the

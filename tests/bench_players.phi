@@ -163,8 +163,8 @@ phi.BenchPlayers:Kernel
 		while int i: 0; i < PLAYERS; i++;
 			ptr<u8> p: saved + i * RECORD;
 			call Put32: p records:i.id;
-			call Put32: p + 4 records:i.x;
-			call Put32: p + 8 records:i.y;
+			call Put32: p + 4 records:i.x as u32;
+			call Put32: p + 8 records:i.y as u32;
 			call Put32: p + 12 records:i.level;
 			call Put32: p + 16 records:i.gold;
 			ptr<u8> name: records:i.name;

@@ -151,7 +151,7 @@ phi.Process:Kernel
 		if size > 0 and pages + STACK_PAGES <= 1024
 			ptr<u8> image: new u8[size];
 			int got: 0;
-			call got is Fat.ReadFile: path image size;
+			call got is Fat.ReadFile: path image size as u32;
 
 			ptr<u32> directory: 0;
 			ptr<u32> table: 0;

@@ -62,7 +62,7 @@ phi.TlsServer:Kernel
 		;;
 		int got: (Secure.Read: link addr buffer 2048);
 		while got > 0
-			int taken: (Secure.Write: link addr buffer got);
+			int taken: (Secure.Write: link addr buffer got as u32);
 			echoed:m++ taken;
 			got is (Secure.Read: link addr buffer 2048);
 		;;

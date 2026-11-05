@@ -152,7 +152,7 @@ phi.Zone:Library
 		p.x is x;
 		p.y is y;
 		players++ p;
-		call Map.Set: places id players.len - 1;
+		call Map.Set: places id (players.len - 1) as u32;
 	[end: players.len - 1]
 
 	# a step for player i, if it stays in the world; true if it moved

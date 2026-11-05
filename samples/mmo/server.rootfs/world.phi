@@ -147,8 +147,8 @@ phi.World:Program
 		Zone.players:i.port is d.from_port;
 
 		message:0 is Game.WELCOME;
-		call Net.Put16: addr message + 1 Zone.players:i.x;
-		call Net.Put16: addr message + 3 Zone.players:i.y;
+		call Net.Put16: addr message + 1 Zone.players:i.x as u32;
+		call Net.Put16: addr message + 3 Zone.players:i.y as u32;
 		call Udp.SendTo: s d.from d.from_port addr message 5;
 	[end]
 
@@ -174,7 +174,7 @@ phi.World:Program
 			;;
 		;;
 		if n is 0 return;
-		if (SaveLog.AddMany: saves addr records sizeof SavedPlayer n) is false return;
+		if (SaveLog.AddMany: saves addr records sizeof SavedPlayer n as u32) is false return;
 		while int i: 0; i < Zone.players.len; i++;
 			if Zone.players:i.moved
 				Zone.players:i.moved is false;
@@ -198,7 +198,7 @@ phi.World:Program
 	# a record from the log: the last one for each player is where they are
 	[Restore: ptr<u8> bytes: 0;]
 		ptr<SavedPlayer> r: bytes as ptr<SavedPlayer>;
-		call Map.Set: saved r.id (r.x << 16) | r.y;
+		call Map.Set: saved r.id ((r.x << 16) | r.y) as u32;
 	[end]
 
 	# the log again, with one record for each player
@@ -214,6 +214,6 @@ phi.World:Program
 			n++;
 			pos is (Map.Next: saved pos);
 		;;
-		call SaveLog.AddMany: saves addr records sizeof SavedPlayer n;
+		call SaveLog.AddMany: saves addr records sizeof SavedPlayer n as u32;
 	[end]
 }

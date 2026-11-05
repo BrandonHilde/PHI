@@ -23,8 +23,8 @@ phi.BytesProgram:Program
 
 	# a count that went negative is a huge u32
 	int negative: -2147483647 - 1;
-	log 'negative count: ' (BytesCalls.ToUser: addr mine negative) ' ' (BytesCalls.FromUser: addr mine negative) '\n';
-	log 'minus one: ' (BytesCalls.ToUser: addr mine (-1)) ' ' (BytesCalls.FromUser: addr mine (-1)) '\n';
+	log 'negative count: ' (BytesCalls.ToUser: addr mine negative as u32) ' ' (BytesCalls.FromUser: addr mine negative as u32) '\n';
+	log 'minus one: ' (BytesCalls.ToUser: addr mine (-1) as u32) ' ' (BytesCalls.FromUser: addr mine (-1) as u32) '\n';
 
 	# starting in its memory and running out of it: the whole of it is checked, not its start
 	log 'past its end: ' (BytesCalls.ToUser: addr mine 0x7FFFFFFF) ' ' (BytesCalls.FromUser: addr mine 0x7FFFFFFF) '\n';

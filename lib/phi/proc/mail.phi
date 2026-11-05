@@ -128,7 +128,7 @@ phi.Mail:Kernel
 	[SendFrom: int from: 0; int box: 0; ptr<u8> record: 0;]
 		int b: (Place: box);
 		if b < 0 return false;
-		call PutWord: addr letter from;
+		call PutWord: addr letter from as u32;
 		call Mem.Copy: addr letter + 4 record boxes:b.size;
 	[end: (Queue.Push: boxes:b.records addr letter)]
 

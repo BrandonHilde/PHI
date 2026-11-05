@@ -13,7 +13,7 @@ phi.BenchDraw:Kernel
 
 	call Bench.Start;
 	while int i: 0; i < 10; i++;
-		call Draw.FillRect: 0 0 W H (Draw.Rgb: i * 20 100 200);
+		call Draw.FillRect: 0 0 W H (Draw.Rgb: i * 20 100 200) as u32;
 	;;
 	call Bench.Stop: 'fill rect 320x200 x10';
 	call Sum: 'fill rect';
@@ -34,7 +34,7 @@ phi.BenchDraw:Kernel
 
 	call Bench.Start;
 	while int r: 90; r > 0; r--;
-		call Draw.FillCircle: W / 2 H / 2 r (Draw.Rgb: r * 2 0 255 - r);
+		call Draw.FillCircle: W / 2 H / 2 r (Draw.Rgb: r * 2 0 255 - r) as u32;
 	;;
 	call Bench.Stop: 'fill circle radius 1 to 90';
 	call Sum: 'fill circle';

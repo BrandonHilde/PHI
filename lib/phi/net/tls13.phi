@@ -366,7 +366,7 @@ phi.Tls13:Library
 		if n > max
 			n is max;
 		;;
-		call Bytes.Copy: buffer s.input + s.app_at n;
+		call Bytes.Copy: buffer s.input + s.app_at n as u32;
 		s.app_at++ n;
 		s.app_left-- n;
 		if s.app_left is 0

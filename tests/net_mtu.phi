@@ -48,7 +48,7 @@ phi.MtuServer:Kernel
 		int ready: (Tcp.Waiting: c);
 		if ready > 0
 			int got: (Tcp.Read: c addr buffer 2048);
-			int taken: (Tcp.Write: c addr buffer got);       # (the client reads as it sends)
+			int taken: (Tcp.Write: c addr buffer got as u32);       # (the client reads as it sends)
 			echoed:m++ taken;
 		;;
 		elif ready < 0

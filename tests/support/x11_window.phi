@@ -45,16 +45,16 @@ phi.WindowTest:Linux
 	[end: key]
 
 	[TypeChar: int c: 0;]
-		call Event: HostWindow.KEY_PRESS (KeyMaking: c) 0 0 0;
-		call Event: HostWindow.KEY_RELEASE (KeyMaking: c) 0 0 0;
+		call Event: HostWindow.KEY_PRESS (KeyMaking: c as u32) 0 0 0;
+		call Event: HostWindow.KEY_RELEASE (KeyMaking: c as u32) 0 0 0;
 	[end]
 
 	[KeyDown: int key: 0;]
-		call Event: HostWindow.KEY_PRESS (KeyMaking: (SymbolOf: key)) 0 0 0;
+		call Event: HostWindow.KEY_PRESS (KeyMaking: (SymbolOf: key) as u32) 0 0 0;
 	[end]
 
 	[KeyUp: int key: 0;]
-		call Event: HostWindow.KEY_RELEASE (KeyMaking: (SymbolOf: key)) 0 0 0;
+		call Event: HostWindow.KEY_RELEASE (KeyMaking: (SymbolOf: key) as u32) 0 0 0;
 	[end]
 
 	[MoveTo: int x: 0; int y: 0;]
