@@ -610,8 +610,8 @@ these were added:
   going to a `u32`, or a `u32` of 2 billion or more going to an `int`, as a parameter, a
   variable, a field, an element, a result or a new array's size. `as` keeps the same bits and
   checks nothing, and a constant that can't fit is an error when it's built. This replaced
-  compile errors on arguments alone (the `u32` to `int` one above, and one the other way for
-  a day): those pushed people to write `as`, after which a `-1` went through silently, and a
+  compile errors on arguments alone (the `u32` to `int` one above, and one the other way,
+  briefly): those pushed people to write `as`, after which a `-1` went through silently, and a
   variable got round them. Of the 243 places it checks, 54 hold raw bits or differences meant
   to wrap and say `as` (bytes put together, a syscall's -1, an IP address), and methods that
   ended in a `u32` but returned -1 became `int` methods (`Tcp.Write`). A missed one only fails
