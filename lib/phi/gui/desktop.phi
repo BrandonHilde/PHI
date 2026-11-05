@@ -165,13 +165,22 @@ phi.Desktop:Kernel
 		int i: windows.len - 1;
 		while i >= 0
 			int pid: windows:i.pid;
-			u32 state: (OS.TaskState: pid) as u32;
-			if state is Process.TASK_FREE or state >= Process.TASK_EXITED
+			u32 state: (OS.TaskState: (Surfaces.Owner: pid)) as u32;
+			if not (Surfaces.Alive: pid)
+				# a window its program has closed: the program carries on
 				if dragging is pid
 					dragging is -1;
 				;;
 				call Remove: i;
-				call Process.Wait: pid;
+			;;
+			elif state is Process.TASK_FREE or state >= Process.TASK_EXITED
+				if dragging is pid
+					dragging is -1;
+				;;
+				call Remove: i;
+				if (Surfaces.Owner: pid) is pid
+					call Process.Wait: pid;
+				;;
 			;;
 			elif (Surfaces.TakeChanged: pid)
 				dirty is true;
@@ -197,7 +206,7 @@ phi.Desktop:Kernel
 				x is windows:(windows.len - 1).x + 24;
 				y is windows:(windows.len - 1).y + 24;
 			;;
-			if (Add: pid '' x y) is false
+			if (Add: pid '' x y) is false and (Surfaces.Owner: pid) is pid
 				call OS.KillTask: pid;             # too many windows
 			;;
 			pid is (Surfaces.TakeNewWindow);

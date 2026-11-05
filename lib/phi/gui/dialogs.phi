@@ -13,8 +13,9 @@
 #       call OS.WriteFile: Dialogs.path data length;
 #   ;;
 #
-# The window's close button or a new size, while one is up, comes to the program's own loop as
-# an event once it's done. MessageBox and FilePicker do the work: a program can draw and drive
+# They go over App's window, and keys and clicks in a program's other windows are ignored until
+# they're done. A close button or a new size, in any window, while one is up, comes to the program's
+# own loop as an event once it's done. MessageBox and FilePicker do the work: a program can draw and drive
 # one itself, as a part of its own window, with Mouse, Key and Paint as a widget has.
 
 use gui.app;
@@ -463,9 +464,8 @@ phi.Dialogs:Program
 	const int MOST_FILES: 512;  # what a file dialog lists of a folder
 
 	str path: [1023];           # what Open or Save chose
-	GuiEvent resized;
-	bln was_resized;
-	bln was_closed;
+	GuiEvent later[8];          # what's for the program's loop when the dialog's done
+	int later_count;
 
 	# a message, with an OK button
 	[Message: ptr<u8> text: 0;]
@@ -483,14 +483,17 @@ phi.Dialogs:Program
 			call App.Present;
 			call App.WaitEvent;
 			int kind: App.event.kind;
-			if kind is Events.KEY
+			if App.event.window is not 0
+				call ForAnother;
+			;;
+			elif kind is Events.KEY
 				call box.Key: App.event.value;
 			;;
 			elif kind is Events.MOUSE
 				call box.Mouse: App.event;
 			;;
 			elif kind is Events.CLOSE
-				was_closed is true;
+				call Later;
 				box.done is true;
 			;;
 			elif kind is Events.RESIZE
@@ -529,14 +532,17 @@ phi.Dialogs:Program
 			call App.Present;
 			call App.WaitEvent;
 			int kind: App.event.kind;
-			if kind is Events.KEY
+			if App.event.window is not 0
+				call ForAnother;
+			;;
+			elif kind is Events.KEY
 				call picker.Key: App.event.value;
 			;;
 			elif kind is Events.MOUSE
 				call picker.Mouse: App.event;
 			;;
 			elif kind is Events.CLOSE
-				was_closed is true;
+				call Later;
 				picker.done is true;
 			;;
 			elif kind is Events.RESIZE
@@ -580,10 +586,7 @@ phi.Dialogs:Program
 	# program hears of it when the dialog's done.
 	[Resized: ptr<u32> old: 0;]
 		free old;
-		was_resized is true;
-		resized.kind is Events.RESIZE;
-		resized.x is App.event.x;
-		resized.y is App.event.y;
+		call Later;
 		bln made: (App.Resize: App.event.x App.event.y);
 		call Draw.Clear: Widgets.FACE;
 	[end: (Begin)]
@@ -593,16 +596,25 @@ phi.Dialogs:Program
 		call Draw.Blit: 0 0 App.width App.height under App.width;
 		free under;
 		call App.Present;
-		if was_resized
-			call App.PutBack: resized;
+		while int i: 0; i < later_count; i++;
+			call App.PutBack: later:i;
 		;;
-		if was_closed
-			GuiEvent closing;
-			closing.kind is Events.CLOSE;
-			call App.PutBack: closing;
+		later_count is 0;
+	[end]
+
+	# the event for the program's loop, once the dialog's done
+	[Later]
+		if later_count < 8
+			later:later_count is App.event;
+			later_count++;
 		;;
-		was_resized is false;
-		was_closed is false;
+	[end]
+
+	# an event for another of the program's windows: keys and clicks are ignored, as a dialog's up
+	[ForAnother]
+		if App.event.kind is Events.CLOSE or App.event.kind is Events.RESIZE
+			call Later;
+		;;
 	[end]
 
 	# a dialog's box

@@ -1,0 +1,11 @@
+two: open 1
+two: key 97 in 1 focused 1
+two: click in 1 at 10 10
+two: click in 0 at 8 10
+two: key 98 in 0 focused 1
+two: click in 1 at 224 106
+two: close in 1
+two: closed 1
+two: opened 1
+two: ending with one open
+desktop: no windows left

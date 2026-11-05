@@ -1971,6 +1971,25 @@ count` and `Free`. The caret moves by character, line and page; selecting works 
 does; the wheel scrolls it; and `notes.text` is all of it, each line ending with a `\n`. It
 doesn't wrap: a long line scrolls sideways as the caret goes along it.
 
+**Several windows.** A program's window is number 0, which is App's, and it can open more, each
+with a number of its own, on PHI OS's desktop, Windows and Linux alike:
+
+```phi
+int tools: (Windows.Open: 200 300);             # another window; -1 if it can't (7 at most)
+call Windows.SetTitle: tools 'Tools';
+call Windows.Use: tools;                        # Draw draws on it from now on
+call Draw.Clear: Draw.WHITE;
+call Windows.Present: tools;
+call Windows.Use: 0;                            # and back to App's
+```
+
+Each event says which window it's for, in `App.event.window`, and all of them come through
+`App.NextEvent` and `App.WaitEvent`. A close button only asks: `Windows.Close: tools` closes that
+one and the program carries on (when the program ends, they all go). A new size is `Windows.Resize:
+App.event.window App.event.x App.event.y`, which needs `Windows.Use` again if it's being drawn on.
+`Windows.Width`, `Height`, `SetResizable` and `Focused` take a number too, 0 meaning App's, and
+App's own calls go on acting on window 0 whatever else is open.
+
 **Menus and dialogs** are drawn by PHI inside the window, so they're the same on every system.
 `gui.menu` has a `MenuBar`, which is painted last as what's open lies over the window:
 
@@ -2005,8 +2024,10 @@ if (Dialogs.Save: 'DOCS' 'NOTES.TXT')           # asks before replacing a file
 ;;
 ```
 
-If the window is closed or resized while one's up, that comes to the program's loop as an event
-once it's done (`App.PutBack` is how: anything else that waits for events can use it too).
+A dialog goes over App's window, and keys and clicks in a program's other windows are ignored
+until it's done. If any window is closed or resized while one's up, that comes to the program's
+loop as an event once it's done (`App.PutBack` is how: anything else that waits for events can use
+it too).
 `samples/desktop.rootfs/editor.phi` is all of these in one small program.
 
 A `TextField` selects text with Shift and the arrows, Home or End, with Ctrl+A, with a drag

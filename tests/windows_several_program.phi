@@ -1,0 +1,135 @@
+# A program with several windows (gui.app's Windows), on Linux and Windows, 32 and 64 bits: each
+# with its own pixels, title and size, events that say which they're for, and one closed while the
+# others carry on, with App's calls knowing nothing of it. They're hidden, and WindowTest plays
+# the user (as in window_program), acting on whichever is selected.
+# kernel32_windows_several does it on PHI OS's desktop.
+use gui.dialogs;
+use support.win_window;
+use support.x11_window;
+
+phi.WindowsSeveralProgram:Program
+{
+	HostWindow.visible is false;
+
+	log 'first: ' (App.Open: 200 100) '\n';
+	call Draw.Clear: 0x102030;
+	call App.Present;
+
+	int two: (Windows.Open: 300 150);
+	int three: (Windows.Open: 120 80);
+	log 'numbers: ' two ' ' three '\n';
+	log 'sizes: ' (Windows.Width: 0) ' ' (Windows.Height: 0) ', ' (Windows.Width: two) ' ' (Windows.Height: two) ', ' (Windows.Width: three) ' ' (Windows.Height: three) '\n';
+
+	# each draws on its own, and each shows its own
+	call Windows.Use: two;
+	call Draw.Clear: 0x00FF00;
+	call Windows.Present: two;
+	call Windows.Use: three;
+	call Draw.Clear: 0x0000FF;
+	call Windows.Present: three;
+	call Windows.Use: 0;
+	log 'on the first again: ' ((Draw.GetPixel: 5 5) is 0x102030) '\n';
+	call Shown: 'shown';
+
+	# what App does goes to the first, whichever was last used
+	call Draw.FillRect: 0 0 10 10 0xFF0000;
+	call App.Present;
+	log 'the first drawn on: ' (Pixel: 0 5 5) ', the others not: ' (Pixel: two 5 5) ' ' (Pixel: three 5 5) '\n';
+
+	# events say which they're for
+	call OS.WindowSelect: two;
+	call WindowTest.TypeChar: 'a';
+	call OS.WindowSelect: three;
+	call WindowTest.TypeChar: 'b';
+	call OS.WindowSelect: 0;
+	call WindowTest.TypeChar: 'c';
+	call Next: 'a key';
+	call Next: 'a key';
+	call Next: 'a key';
+
+	call OS.WindowSelect: three;
+	call WindowTest.LeftDown: 7 9;
+	call WindowTest.LeftUp: 7 9;
+	call OS.WindowSelect: 0;
+	call App.WaitEvent;
+	log 'a click: in ' (App.event.window is three) ' at ' App.event.x ' ' App.event.y '\n';
+	call App.WaitEvent;
+
+	# titles are each their own
+	call Windows.SetTitle: 0 'First';
+	call Windows.SetTitle: two 'Second window';
+	call OS.WindowSelect: two;
+	log 'its title: ' (WindowTest.TitleLength) ', ';
+	call OS.WindowSelect: 0;
+	log 'and the first: ' (WindowTest.TitleLength) '\n';
+
+	# a new size for one
+	log 'resized: ' (Windows.Resize: two 150 60) ', ' (Windows.Width: two) ' ' (Windows.Height: two) '\n';
+	call Windows.Use: two;
+	call Draw.Clear: 0xFFFF00;
+	call Windows.Present: two;
+	call Windows.Use: 0;
+	log 'it shows: ' ((Pixel: two 5 5) is 0xFFFF00) ', and the first is as it was: ' (App.width is 200) ' ' ((Pixel: 0 50 50) is 0x102030) '\n';
+
+	# a close button: the program decides, and only that one goes
+	call OS.WindowSelect: three;
+	call WindowTest.CloseIt;
+	call OS.WindowSelect: 0;
+	call App.WaitEvent;
+	log 'closing: ' (App.event.kind is Events.CLOSE) ' in ' (App.event.window is three) '\n';
+	call Windows.Use: three;
+	log 'closed: ' (Windows.Close: three) ', again: ' (Windows.Close: three) ', the first: ' (Windows.Close: 0) '\n';
+	log 'drawing on the first after: ' (Draw.pixels is App.pixels) ', selecting it: ' (OS.WindowSelect: three) '\n';
+	log 'not a number of one: ' (OS.WindowSelect: -1) ' ' (OS.WindowSelect: 99) ' ' (OS.WindowClose: 99) ' ' (OS.WindowClose: 0) '\n';
+	call OS.WindowSelect: 0;
+	log 'the others are there: ' ((Pixel: 0 50 50) is 0x102030) ' ' ((Pixel: two 5 5) is 0xFFFF00) '\n';
+
+	# its number's free for another, which starts afresh
+	int again: (Windows.Open: 40 40);
+	log 'another: ' (again is three) ' ' (Windows.Width: again) '\n';
+	call Windows.Close: again;
+
+	# as many as there's room for
+	int most[9];
+	int opened: 0;
+	while int i: 0; i < 9; i++;
+		most:i is (Windows.Open: 16 16);
+		if most:i >= 0
+			opened++;
+		;;
+	;;
+	log 'opened: ' opened ' more, then ' most:8 '\n';
+	while int i: 0; i < 9; i++;
+		if most:i >= 0
+			call Windows.Close: most:i;
+		;;
+	;;
+
+	# a dialog over the first: keys in another are ignored, and its close waits for the program
+	call OS.WindowSelect: two;
+	call WindowTest.TypeChar: 'x';
+	call WindowTest.CloseIt;
+	call OS.WindowSelect: 0;
+	call WindowTest.KeyDown: Events.KEY_ENTER;
+	call WindowTest.KeyUp: Events.KEY_ENTER;
+	call Dialogs.Message: 'over the first';
+	log 'after the dialog: ' (App.NextEvent) ' close: ' (App.event.kind is Events.CLOSE) ' in ' (App.event.window is two) ', and no more: ' (App.NextEvent) '\n';
+	call Windows.Close: two;
+	call App.Present;
+	log 'one window left: ' ((Pixel: 0 50 50) is 0x102030) '\n';
+
+	[Next: str what;]
+		call App.WaitEvent;
+		log what ': ' (App.event.value & Events.KEY_MASK) ' in ' App.event.window '\n';
+	[end]
+
+	[Pixel: int n: 0; int x: 0; int y: 0;]
+		int selected: (OS.WindowSelect: n);
+		u32 pixel: (WindowTest.PixelAt: x y) as u32;
+		selected is (OS.WindowSelect: 0);
+	[end: pixel & 0xFFFFFF]
+
+	[Shown: str what;]
+		log what ': ' ((Pixel: 0 5 5) is 0x102030) ' ' ((Pixel: two 5 5) is 0x00FF00) ' ' ((Pixel: three 5 5) is 0x0000FF) '\n';
+	[end]
+}

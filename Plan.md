@@ -693,8 +693,17 @@ The parts most worth doing next, roughly in order:
    all of it, run on PHI OS's desktop with real keys and clicks (`kernel32_editor`) and looked at
    in screenshots there; on Linux and Windows the dialogs have only run hidden. Not yet: a
    clipboard shared with other programs, right-click menus, and a menu's submenus; a file dialog
-   lists 512 entries at most. Left of this item: several windows in a program, each with a number,
-   as a stream or a socket has, with `App`'s calls staying on the first.
+   lists 512 entries at most.
+   Done 2026-11-05 too, which finishes this item: several windows in a program, each with a number,
+   as a stream or a socket has (`Windows` in `gui.app`), and `App`'s calls staying on window 0,
+   so existing programs don't change. An event says which window it's for. Underneath are three new
+   calls, `OS.WindowNew`, `OS.WindowSelect` and `OS.WindowClose`, with the calls a window already had
+   acting on whichever is selected. On PHI OS each is a surface of its own to the window manager;
+   on Windows and Linux the variables each already had are swapped when another is selected, so
+   their drawing and events code stayed as it was. Tests `windows_several_program` (all four hosts,
+   hidden) and `kernel32_windows_several` (the desktop, real keys and clicks, and looked at in
+   screenshots). Not yet run in visible windows on Windows or Linux. Seven windows at most, as
+   well as App's, and no window owned by another, so a tool window can go behind its main one.
 2. **Text everywhere: done (2026-10-29),** after the sixth and seventh PhiOS assessments. Text
    works the same in variables, struct fields, parameters and array elements:
    `str name: [24];` (also `[atmost 24]`, `chr name[24]`) in a struct; `new str bio;` for text

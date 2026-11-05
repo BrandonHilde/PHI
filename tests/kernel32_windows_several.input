@@ -1,0 +1,36 @@
+# the first window's frame is at (40, 40) and its inside at (42, 60), 200 x 100. The second's a
+# little below and right of it, and bigger, so some of each always shows: frame (64, 64), inside
+# (66, 84), 240 x 120, its close box near (288, 74)
+expect two: open 1
+wait 500
+screenshot two_windows
+# the second is in front
+type a
+expect next two: key 97 in 1 focused 1
+# a click in the second, then in what shows of the first, which comes forward and gets the keys
+click 76 94
+expect next two: click in 1 at 10 10
+click 50 70
+expect next two: click in 0 at 8 10
+wait 200
+screenshot first_in_front
+type b
+expect next two: key 98 in 0 focused 1
+# back to the second, from what shows of it, then its close box
+click 290 190
+expect next two: click in 1 at 224 106
+wait 300
+click 288 74
+expect next two: close in 1
+expect next two: closed 1
+wait 300
+screenshot one_left
+# another, which comes up in front
+type n
+expect next two: opened 1
+wait 400
+screenshot another
+# back to the first, and Esc ends the program with that one open
+click 45 65
+wait 300
+sendkey esc

@@ -15,8 +15,26 @@
 
 use gui.events;
 
+# what's kept of a window while another's selected
+struct.XPane
+{
+	bln used;
+	u32 window;
+	u32 picture;
+	u32 pen;
+	ptr<u32> pixels;
+	int width;
+	int height;
+	int client_width;
+	int client_height;
+	bln resizable;
+	bln focused;
+	str title: [255];
+}
+
 phi.HostWindow:Linux
 {
+	const int MOST_WINDOWS: 8;
 	const int MOST_EVENTS: 256;
 	const int MOST_KEYS: 512;
 	const int IN_ROOM: 65536;             # the most of one reply (a keyboard's map fits)
@@ -24,6 +42,7 @@ phi.HostWindow:Linux
 
 	# requests
 	const int CREATE_WINDOW: 1;
+	const int DESTROY_WINDOW: 4;
 	const int MAP_WINDOW: 8;
 	const int CONFIGURE_WINDOW: 12;
 	const int GET_GEOMETRY: 14;
@@ -83,6 +102,9 @@ phi.HostWindow:Linux
 	u32 protocols: 0;                     # WM_PROTOCOLS
 	u32 delete_window: 0;                 # WM_DELETE_WINDOW
 
+	XPane panes[8];                       # each window's, but for the one selected, whose are below
+	int selected: 0;                      # the window whose things the variables below hold
+
 	u32 window: 0;
 	u32 picture: 0;                       # the pixmap: what's shown
 	u32 pen: 0;                           # a GC
@@ -116,6 +138,94 @@ phi.HostWindow:Linux
 	int last_x: 0;
 	int last_y: 0;
 	bln was_double: false;
+
+	# OS.WindowNew: another window, with nothing in it until it's selected and SurfaceOpen is
+	# called: its number, or -1 if there's no room for one
+	[WindowNew]
+		panes:0.used is true;
+		while int n: 1; n < MOST_WINDOWS; n++;
+			if not panes:n.used
+				panes:n.used is true;
+				panes:n.resizable is true;
+				return n;
+			;;
+		;;
+	[end: -1]
+
+	# OS.WindowSelect: the window the calls for one act on: 1, or 0 if there's no such window
+	[WindowSelect: int n: 0;]
+		if n is not 0 and (n < 0 or n >= MOST_WINDOWS or not panes:n.used) return 0;
+		call Select: n;
+	[end: 1]
+
+	# OS.WindowClose: a window WindowNew made is gone (the first ends with the program)
+	[WindowClose: int n: 0;]
+		if n <= 0 or n >= MOST_WINDOWS or not panes:n.used return 0;
+		int was: selected;
+		if was is n
+			was is 0;
+		;;
+		call Select: n;
+		if window is not 0
+			call Start: DESTROY_WINDOW 0;
+			call Put32: window;
+			call Send;
+			call Start: FREE_PIXMAP 0;
+			call Put32: picture;
+			call Send;
+		;;
+		window is 0;
+		picture is 0;
+		pen is 0;
+		pixels is 0;
+		width is 0;
+		height is 0;
+		client_width is 0;
+		client_height is 0;
+		resizable is true;
+		focused is false;
+		title is '';
+		panes:n.used is false;
+		call Select: was;
+	[end: 1]
+
+	# the variables hold window n's things from here on, and the last one's are kept
+	[Select: int n: 0;]
+		if n is selected return;
+		ptr<XPane> kept: addr panes:selected;
+		kept.window is window;
+		kept.picture is picture;
+		kept.pen is pen;
+		kept.pixels is pixels;
+		kept.width is width;
+		kept.height is height;
+		kept.client_width is client_width;
+		kept.client_height is client_height;
+		kept.resizable is resizable;
+		kept.focused is focused;
+		kept.title is title;
+		ptr<XPane> pane: addr panes:n;
+		window is pane.window;
+		picture is pane.picture;
+		pen is pane.pen;
+		pixels is pane.pixels;
+		width is pane.width;
+		height is pane.height;
+		client_width is pane.client_width;
+		client_height is pane.client_height;
+		resizable is pane.resizable;
+		focused is pane.focused;
+		title is pane.title;
+		selected is n;
+	[end]
+
+	# the number of the window the server knows by this; what's selected if it's none of them
+	[NumberOf: u32 id: 0;]
+		if id is window return selected;
+		while int n: 0; n < MOST_WINDOWS; n++;
+			if panes:n.used and panes:n.window is id and n is not selected return n;
+		;;
+	[end: selected]
 
 	# OS.SurfaceOpen: a window showing w x h pixels (or the program's window, at that size):
 	# 1, or 0 if there's no server, or it won't make it
@@ -742,6 +852,22 @@ phi.HostWindow:Linux
 
 	# the first message, an event or an error (a reply nobody's waiting for is passed over)
 	[Handle: int length: 0;]
+		int was: selected;
+		call Select: (NumberOf: (EventWindow));
+		call Happened: length;
+		call Select: was;
+	[end]
+
+	# the window the event at the start of incoming is about; 0 if it isn't about one
+	[EventWindow]
+		int kind: incoming:0 & 0x7F;
+		if kind >= KEY_PRESS and kind <= MOTION return (Get32: 12) as u32;
+		if kind is FOCUS_IN or kind is FOCUS_OUT or kind is EXPOSE or kind is CLIENT_MESSAGE return (Get32: 4) as u32;
+		if kind is CONFIGURE return (Get32: 8) as u32;
+	[end: 0 as u32]
+
+	# what the server said, about the window that's selected
+	[Happened: int length: 0;]
 		int kind: incoming:0 & 0x7F;      # (the top bit says another client sent it)
 		if kind is X_ERROR
 			last_error is incoming:1;
@@ -813,6 +939,7 @@ phi.HostWindow:Linux
 		queue:place.clicks is clicks;
 		queue:place.wheel is wheel;
 		queue:place.pressed is pressed;
+		queue:place.window is selected;
 		waiting++;
 	[end]
 

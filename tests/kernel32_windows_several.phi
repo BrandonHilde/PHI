@@ -1,0 +1,18 @@
+# takes up to 40 seconds: it clicks and types through several windows
+# A program with several windows on PHI OS's desktop, from real keys and clicks: keys go to the one
+# in front, a click brings one forward and says which it's in, its close box closes only that one,
+# and when the program ends the one it left open goes too (kernel32_windows_several.rootfs/two.phi).
+use gui.desktop;
+
+phi.Test:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	call Desktop.Start;
+	int pid: (Desktop.Run: 'TWO.BIN' 'First' 40 40);
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+	;;
+	debug 'desktop: no windows left\n';
+	exit 0;
+}

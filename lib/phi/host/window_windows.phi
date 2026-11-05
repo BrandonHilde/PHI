@@ -81,8 +81,24 @@ struct.WinBitmap foreign                  # BITMAPINFO, with no colors
 	u32 first_color;
 }
 
+# what's kept of a window while another's selected
+struct.WinPane
+{
+	bln used;
+	ptr<u8> window;
+	ptr<u32> pixels;
+	int width;
+	int height;
+	int client_width;
+	int client_height;
+	bln sizing;
+	bln resizable;
+	u16 title[256];
+}
+
 phi.HostWindow:Windows
 {
+	const int MOST_WINDOWS: 8;
 	const int MOST_EVENTS: 256;
 	const int MOST_KEYS: 512;
 
@@ -120,6 +136,10 @@ phi.HostWindow:Windows
 	const int BIT_RIGHT: 2;
 	const int BIT_MIDDLE: 4;
 
+	WinPane panes[8];                     # each window's, but for the one selected, whose are below
+	int selected: 0;                      # the window whose things the variables below hold
+	bln class_made: false;
+
 	ptr<u8> window: 0;
 	ptr<u32> pixels: 0;                   # the program's, once it has shown them
 	int width: 0;                         # how many there are
@@ -135,6 +155,90 @@ phi.HostWindow:Windows
 	int first: 0;
 	int waiting: 0;
 	bln held[512];                        # the keys held, by Input's numbers
+
+	# OS.WindowNew: another window, with nothing in it until it's selected and SurfaceOpen is
+	# called: its number, or -1 if there's no room for one
+	[WindowNew]
+		panes:0.used is true;
+		while int n: 1; n < MOST_WINDOWS; n++;
+			if not panes:n.used
+				panes:n.used is true;
+				panes:n.resizable is true;
+				return n;
+			;;
+		;;
+	[end: -1]
+
+	# OS.WindowSelect: the window the calls for one act on: 1, or 0 if there's no such window
+	[WindowSelect: int n: 0;]
+		if n is not 0 and (n < 0 or n >= MOST_WINDOWS or not panes:n.used) return 0;
+		call Select: n;
+	[end: 1]
+
+	# OS.WindowClose: a window WindowNew made is gone (the first ends with the program)
+	[WindowClose: int n: 0;]
+		if n <= 0 or n >= MOST_WINDOWS or not panes:n.used return 0;
+		int was: selected;
+		if was is n
+			was is 0;
+		;;
+		call Select: n;
+		if window is not 0
+			call User32.DestroyWindow: window;
+		;;
+		window is 0;
+		pixels is 0;
+		width is 0;
+		height is 0;
+		client_width is 0;
+		client_height is 0;
+		sizing is false;
+		resizable is true;
+		title:0 is 0;
+		panes:n.used is false;
+		call Select: was;
+	[end: 1]
+
+	# the variables hold window n's things from here on, and the last one's are kept
+	[Select: int n: 0;]
+		if n is selected return;
+		call Keep: addr panes:selected;
+		ptr<WinPane> pane: addr panes:n;
+		window is pane.window;
+		pixels is pane.pixels;
+		width is pane.width;
+		height is pane.height;
+		client_width is pane.client_width;
+		client_height is pane.client_height;
+		sizing is pane.sizing;
+		resizable is pane.resizable;
+		while int i: 0; i < 256; i++;
+			title:i is pane.title:i;
+		;;
+		selected is n;
+	[end]
+
+	[Keep: ptr<WinPane> pane: 0;]
+		pane.window is window;
+		pane.pixels is pixels;
+		pane.width is width;
+		pane.height is height;
+		pane.client_width is client_width;
+		pane.client_height is client_height;
+		pane.sizing is sizing;
+		pane.resizable is resizable;
+		while int i: 0; i < 256; i++;
+			pane.title:i is title:i;
+		;;
+	[end]
+
+	# the number of the window Windows knows by this; what's selected if it's one still being made
+	[NumberOf: ptr<u8> from_window: 0;]
+		if from_window is window return selected;
+		while int n: 0; n < MOST_WINDOWS; n++;
+			if panes:n.used and panes:n.window is from_window and n is not selected return n;
+		;;
+	[end: selected]
 
 	# OS.SurfaceOpen: a window showing w x h pixels (or the program's window, at that size):
 	# 1, or 0 if Windows won't make it
@@ -253,14 +357,17 @@ phi.HostWindow:Windows
 			call SetWindowTitle: 'PHI';
 		;;
 		ptr<u8> instance: (Kernel32.GetModuleHandleW: 0);
-		WinClass kind;
-		kind.size is sizeof WinClass;
-		kind.style is DOUBLE_CLICKS;
-		kind.procedure is addr foreign WindowProc;
-		kind.instance is instance;
-		kind.cursor is (User32.LoadCursorW: 0 32512 as ptr<u8>);   # IDC_ARROW
-		kind.name is addr class_name;
-		if (User32.RegisterClassExW: addr kind) is 0 return 0;
+		if not class_made
+			WinClass kind;
+			kind.size is sizeof WinClass;
+			kind.style is DOUBLE_CLICKS;
+			kind.procedure is addr foreign WindowProc;
+			kind.instance is instance;
+			kind.cursor is (User32.LoadCursorW: 0 32512 as ptr<u8>);   # IDC_ARROW
+			kind.name is addr class_name;
+			if (User32.RegisterClassExW: addr kind) is 0 return 0;
+			class_made is true;
+		;;
 
 		WinRect outer;
 		outer.right is w;
@@ -297,6 +404,14 @@ phi.HostWindow:Windows
 		;;
 	[end]
 
+	# Windows calls this with what happens to any of the windows, whichever is selected
+	[WindowProc: ptr<u8> from_window: 0; u32 message: 0; ptr<u8> w: 0; ptr<u8> l: 0;]
+		int was: selected;
+		call Select: (NumberOf: from_window);
+		ptr<u8> answer: (Happened: from_window message w l);
+		call Select: was;
+	[end: answer]
+
 	# the program's pixels on dc, filling the window's inside (stretched while its size is
 	# being changed, until the program has drawn at the new one)
 	[Show: ptr<u8> dc: 0;]
@@ -310,8 +425,8 @@ phi.HostWindow:Windows
 		call Gdi32.StretchDIBits: dc 0 0 client_width client_height 0 0 width height pixels as ptr<u8> addr bitmap 0 COPY;
 	[end]
 
-	# Windows calls this with what happens to the window
-	[WindowProc: ptr<u8> from_window: 0; u32 message: 0; ptr<u8> w: 0; ptr<u8> l: 0;]
+	# what happened to the window that's selected
+	[Happened: ptr<u8> from_window: 0; u32 message: 0; ptr<u8> w: 0; ptr<u8> l: 0;]
 		ptr<u8> answer: 0;
 		int word: w as int;
 		int low: l as int;
@@ -428,6 +543,7 @@ phi.HostWindow:Windows
 		queue:place.clicks is clicks;
 		queue:place.wheel is wheel;
 		queue:place.pressed is pressed;
+		queue:place.window is selected;
 		waiting++;
 	[end]
 
@@ -598,6 +714,7 @@ User32.EndPaint: ptr<u8> window  ptr<WinPaint> paint;
 User32.GetKeyState: int key;
 User32.MapVirtualKeyW: u32 key  u32 how;
 User32.SetCapture: ptr<u8> window: ptr<u8>;
+User32.DestroyWindow: ptr<u8> window;
 User32.ReleaseCapture;
 User32.ScreenToClient: ptr<u8> window  ptr<WinPoint> point;
 Gdi32.StretchDIBits: ptr<u8> dc  int x  int y  int w  int h  int from_x  int from_y  int from_w  int from_h  ptr<u8> pixels  ptr<WinBitmap> bitmap  u32 usage  u32 how;

@@ -1,0 +1,54 @@
+# Two windows on PHI OS's desktop, then a third, each a colour of its own, saying what comes to which.
+# In the first, Esc ends the program; n opens another.
+use gui.app;
+
+phi.Two:Program
+{
+	if (App.Open: 200 100) is false
+		exit 1;
+	;;
+	call Draw.Clear: 0xE0483E;
+	call App.Present;
+
+	int other: (Windows.Open: 240 120);
+	call Windows.SetTitle: other 'Second';
+	call Paint: other 0x48E03E;
+	log 'two: open ' other '\n';
+
+	while true
+		call App.WaitEvent;
+		int kind: App.event.kind;
+		int which: App.event.window;
+		if kind is Events.KEY
+			int key: App.event.value & Events.KEY_MASK;
+			log 'two: key ' key ' in ' which ' focused ' (Windows.Focused: which) '\n';
+			if key is Events.KEY_ESCAPE and which is 0
+				log 'two: ending with one open\n';
+				exit 3;
+			;;
+			if key is 'n' and which is 0
+				other is (Windows.Open: 100 50);
+				call Windows.SetTitle: other 'Third';
+				call Paint: other 0x3E48E0;
+				log 'two: opened ' other '\n';
+			;;
+		;;
+		elif kind is Events.MOUSE and App.event.clicks > 0
+			log 'two: click in ' which ' at ' App.event.x ' ' App.event.y '\n';
+		;;
+		elif kind is Events.CLOSE
+			log 'two: close in ' which '\n';
+			if which is 0
+				exit 0;
+			;;
+			log 'two: closed ' (Windows.Close: which) '\n';
+		;;
+	;;
+
+	[Paint: int n: 0; u32 color: 0;]
+		call Windows.Use: n;
+		call Draw.Clear: color;
+		call Windows.Present: n;
+		call Windows.Use: 0;
+	[end]
+}

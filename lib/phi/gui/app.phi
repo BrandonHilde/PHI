@@ -29,6 +29,22 @@
 #   int pid: (App.OpenWindow: 'VIEWER.BIN' 'TODO.TXT'); # another program, in its own window
 #   if (App.Focused) ...                                # is this window in front?
 #   call App.SetResizable: false;                       # it can't redraw at another size
+#
+# A program can open more windows, each with a number of its own; App's window is 0. An event says
+# which it's for (App.event.window), and Draw draws on whichever Windows.Use last said:
+#
+#   int tools: (Windows.Open: 200 300);                 # another window; -1 if it can't
+#   call Windows.SetTitle: tools 'Tools';
+#   call Windows.Use: tools;
+#   call Draw.Clear: Draw.WHITE;
+#   call Windows.Present: tools;
+#   call Windows.Use: 0;                                # and back to App's
+#   if App.event.kind is Events.CLOSE and App.event.window is tools
+#       call Windows.Close: tools;                      # only that one goes
+#   ;;
+#   if App.event.kind is Events.RESIZE
+#       call Windows.Resize: App.event.window App.event.x App.event.y;
+#   ;;
 
 use gfx.draw;
 use gui.events;
@@ -39,7 +55,7 @@ phi.App:Program
 	int width: 0;
 	int height: 0;
 	GuiEvent event;             # the event NextEvent or WaitEvent took
-	GuiEvent back_events[2];    # what's been put back, for NextEvent to give again (see PutBack)
+	GuiEvent back_events[8];    # what's been put back, for NextEvent to give again (see PutBack)
 	int back_count: 0;
 
 	# a window of w x h pixels, drawn on with Draw; false if the kernel can't make one
@@ -78,11 +94,12 @@ phi.App:Program
 	[end: (OS.NextEvent: addr event) is 1]
 
 	# an event for NextEvent to give next, for something that waits for events of its own (a
-	# dialog) to leave one for the program's loop. A close comes first; one of each is kept.
+	# dialog) to leave one for the program's loop. The last one put back comes first; one of
+	# each kind is kept for each window.
 	[PutBack: GuiEvent back;]
 		int same: -1;
 		while int i: 0; i < back_count; i++;
-			if back_events:i.kind is back.kind
+			if back_events:i.kind is back.kind and back_events:i.window is back.window
 				same is i;
 			;;
 		;;
@@ -90,7 +107,7 @@ phi.App:Program
 			back_events:same is back;
 			return;
 		;;
-		if back_count >= 2 return;
+		if back_count >= 8 return;
 		back_events:back_count is back;
 		back_count++;
 	[end]
@@ -121,4 +138,131 @@ phi.App:Program
 			call OS.Sleep: 10;
 		;;
 	[end]
+}
+
+# a program's windows by number, 0 being App's: the calls for one say which, and the system's own
+# are left acting on App's, so App's calls never need to know about these
+phi.Windows:Program
+{
+	const int MOST: 8;
+
+	ptr<u32> pixels[8];
+	int widths[8];
+	int heights[8];
+
+	# another window of w x h pixels: its number, or -1 if there's no making one
+	[Open: int w: 0; int h: 0;]
+		int n: (OS.WindowNew);
+		if n < 0 return -1;
+		if n >= MOST or not (Make: n w h)
+			int closed: (OS.WindowClose: n);
+			return -1;
+		;;
+	[end: n]
+
+	# Draw draws on this window from now on
+	[Use: int n: 0;]
+		if n is 0
+			call Draw.Target: App.pixels App.width App.height;
+			return;
+		;;
+		if not (Valid: n) return;
+		call Draw.Target: pixels:n widths:n heights:n;
+	[end]
+
+	# show what's been drawn on it
+	[Present: int n: 0;]
+		if n is 0
+			call App.Present;
+			return;
+		;;
+		if not (Valid: n) return;
+		int selected: (OS.WindowSelect: n);
+		call OS.SurfacePresent: pixels:n;
+		selected is (OS.WindowSelect: 0);
+	[end]
+
+	# a new size (after Events.RESIZE for it): what was drawn is gone, so draw again, and Use it
+	# again if it was the one being drawn on; false if there's no making it that size
+	[Resize: int n: 0; int w: 0; int h: 0;]
+		if n is 0 return (App.Resize: w h);
+		if not (Valid: n) return false;
+	[end: (Make: n w h)]
+
+	[Width: int n: 0;]
+		if n is 0 return App.width;
+		if not (Valid: n) return 0;
+	[end: widths:n]
+
+	[Height: int n: 0;]
+		if n is 0 return App.height;
+		if not (Valid: n) return 0;
+	[end: heights:n]
+
+	[SetTitle: int n: 0; ptr<u8> title: 0;]
+		if n is 0
+			call App.SetTitle: title;
+			return;
+		;;
+		if not (Valid: n) return;
+		int selected: (OS.WindowSelect: n);
+		call OS.SetWindowTitle: title;
+		selected is (OS.WindowSelect: 0);
+	[end]
+
+	[SetResizable: int n: 0; bln yes: true;]
+		if n is 0
+			call App.SetResizable: yes;
+			return;
+		;;
+		if not (Valid: n) return;
+		int selected: (OS.WindowSelect: n);
+		call OS.SetResizable: yes;
+		selected is (OS.WindowSelect: 0);
+	[end]
+
+	# is it in front, getting the keys?
+	[Focused: int n: 0;]
+		if n is 0 return (App.Focused);
+		if not (Valid: n) return false;
+		int selected: (OS.WindowSelect: n);
+		bln focused: (OS.WindowFocused) is 1;
+		selected is (OS.WindowSelect: 0);
+	[end: focused]
+
+	# it's gone, and App's is drawn on if it was being; false if there's no such window (App's
+	# goes when the program ends)
+	[Close: int n: 0;]
+		if n is 0 or not (Valid: n) return false;
+		if Draw.pixels is pixels:n
+			call Use: 0;
+		;;
+		int closed: (OS.WindowClose: n);
+		free pixels:n;
+		pixels:n is 0;
+	[end: closed is 1]
+
+	# its surface at this size, and pixels for it
+	[Make: int n: 0; int w: 0; int h: 0;]
+		int selected: (OS.WindowSelect: n);
+		int made: (OS.SurfaceOpen: w h);
+		selected is (OS.WindowSelect: 0);
+		if made is 0 return false;
+		if pixels:n is not 0
+			if Draw.pixels is pixels:n
+				call Use: 0;
+			;;
+			free pixels:n;
+		;;
+		pixels:n is new u32[w * h];
+		widths:n is w;
+		heights:n is h;
+		if not Font.loaded and (OS.CopyFont: addr Font.glyphs) is 1
+			Font.loaded is true;
+		;;
+	[end: true]
+
+	[Valid: int n: 0;]
+		if n <= 0 or n >= MOST return false;
+	[end: pixels:n is not 0]
 }
