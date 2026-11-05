@@ -342,6 +342,10 @@ namespace Phi.Compiler.CodeGen
                         if (n.Count != null) Expression(n.Count);
                         if (n.Allocator == null || !Callable(n.Allocator)) Not(n, "new");
                         return;
+                    case BinaryExpr { IsComparison: true } none when MethodType(none.Left.Type) && ConstantFolder.Evaluate(none.Right) == 0:
+                        // (is a method value there? if f is 0)
+                        Expression(none.Left);
+                        return;
                     case BinaryExpr b when Value(b.Left.Type) && Value(b.Right.Type)
                                            && (Number(b.Left.Type) && Number(b.Right.Type) && !IsAddress(b.Left) && !IsAddress(b.Right)
                                                // (pointer math, and comparing pointers, with numbers of up to 32 bits)
@@ -462,7 +466,7 @@ namespace Phi.Compiler.CodeGen
                         if (w.Step != null) Statement(w.Step);
                         foreach (Stmt t in w.Body) Statement(t);
                         return;
-                    case WhenStmt w when Number(w.Subject.Type) || Object(w.Subject.Type):
+                    case WhenStmt w when Number(w.Subject.Type) || Object(w.Subject.Type) || Text(w.Subject.Type):
                         Expression(w.Subject);
                         foreach (WhenBranch branch in w.Branches)
                         {
@@ -2528,7 +2532,7 @@ namespace Phi.Compiler.CodeGen
         void EmitMemCountCheck(MethodSymbol method, Expr count)
         {
             if (ConstantFolder.Evaluate(count) is long known && known >= 0 && known <= int.MaxValue) return;
-            string ok = NewLabel("count_ok");
+            string ok = NewLabel("countok");
             Emit("cmp dword [esp], 0        ; the count, which has its top bit set from 2 billion up");
             Emit($"jge {ok}");
             EmitStop($"a count of 2 billion or more for Mem.{method.Decl.Name} (a negative number, or a subtraction below 0)", count, ErrorCount);
@@ -2542,7 +2546,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitNumberCheck(CheckedNumberExpr check)
         {
-            string ok = NewLabel("number_ok");
+            string ok = NewLabel("numberok");
             Emit("test eax, eax");
             Emit($"jns {ok}");
             EmitStop(check.Type == PhiType.U32 ? "a negative number can't be a u32" : "a u32 of 2 billion or more can't be an int", check, ErrorConvert);
@@ -3882,7 +3886,7 @@ namespace Phi.Compiler.CodeGen
         {
             PhiType t = when.Subject.Type;
             bool text = !t.IsNumeric && !t.IsWide && !t.IsFloat || t.IsTextPointer;
-            string subject = AllocTemp(t.IsWide || t.IsFloat ? 8 : 4);
+            string subject = AllocTemp(t.IsWide || t.IsFloat || text && bits64 ? 8 : 4);
             string end = NewLabel("endwhen");
             string otherwise = when.Else != null ? NewLabel("whenelse") : end;
             var bodies = when.Branches.Select(_ => NewLabel("whenis")).ToList();
@@ -3901,7 +3905,8 @@ namespace Phi.Compiler.CodeGen
             else
             {
                 EmitExpr(when.Subject);
-                Emit($"mov dword [{subject}], eax");
+                // (text is an address: all of it in 64-bit code)
+                Emit(text && bits64 ? $"mov qword [{subject}], rax" : $"mov dword [{subject}], eax");
             }
             if (when.Branches.Any(b => b.Struct != null))
             {
@@ -3945,8 +3950,8 @@ namespace Phi.Compiler.CodeGen
                     {
                         Need("phi_strcmp");
                         EmitExpr(value);
-                        Emit("mov edi, eax");
-                        Emit($"mov esi, [{subject}]");
+                        Emit($"mov {R("edi")}, {R("eax")}");
+                        Emit($"mov {R("esi")}, [{subject}]");
                         Emit("call phi_strcmp          ; eax = 0 when equal");
                         Emit("test eax, eax");
                         Emit($"jz {bodies[i]}");

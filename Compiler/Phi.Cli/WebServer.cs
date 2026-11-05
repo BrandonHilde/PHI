@@ -9,9 +9,11 @@ using System.Text;
 namespace Phi.Cli
 {
     /// <summary>
-    /// A small HTTP/1.0 server for network tests: it serves the files in a folder on
-    /// 127.0.0.1, which a guest on QEMU's user network reaches as 10.0.2.2. Responses
-    /// have no date or server name, so a test's output is the same every time.
+    /// A small HTTP server for network tests: it serves the files in a folder on 127.0.0.1,
+    /// which a guest on QEMU's user network reaches as 10.0.2.2. Responses have no date or
+    /// server name, so a test's output is the same every time. A Range header gets part of a file.
+    /// /pattern/N is N bytes, each its place mod 251, /chunked/FILE is a file in chunks, and
+    /// /moved/FILE redirects to it, for what a real server does that a folder can't show.
     ///
     /// A secure server speaks HTTPS (TLS 1.3 only) with a self-signed certificate made when
     /// phi starts, for 10.0.2.2 and localhost.
@@ -66,27 +68,64 @@ namespace Phi.Cli
                         });
                         stream = tls;
                     }
-                    string request = ReadRequest(stream);
+                    string request = ReadRequest(stream, out string headers);
                     string[] words = request.Split(' ', 3);
+                    string path = words.Length >= 2 ? words[1] : "";
+                    string version = words.Length >= 3 ? words[2].Trim() : "HTTP/1.0";
 
-                    byte[] body;
-                    string status;
-                    string? file = words.Length >= 2 && words[0] == "GET" ? Find(words[1]) : null;
-                    if (file != null)
+                    if (path.StartsWith("/moved/", StringComparison.Ordinal))
                     {
-                        status = "200 OK";
-                        body = File.ReadAllBytes(file);
+                        stream.Write(Encoding.ASCII.GetBytes($"{version} 302 Found\r\nLocation: /{path[7..]}\r\nContent-Length: 0\r\n\r\n"));
                     }
                     else
                     {
-                        status = "404 Not Found";
-                        body = Encoding.ASCII.GetBytes("<html><body>not found</body></html>\n");
+                        byte[] body;
+                        string status;
+                        bool chunked = path.StartsWith("/chunked/", StringComparison.Ordinal);
+                        string? file = null;
+                        bool found = true;
+                        if (path.StartsWith("/pattern/", StringComparison.Ordinal) && int.TryParse(path[9..], out int size))
+                        {
+                            body = new byte[size];
+                            for (int i = 0; i < size; i++) body[i] = (byte)(i % 251);
+                        }
+                        else if (words.Length >= 2 && words[0] == "GET" && (file = Find(chunked ? path[8..] : path)) != null)
+                            body = File.ReadAllBytes(file);
+                        else
+                        {
+                            found = false;
+                            body = Encoding.ASCII.GetBytes("<html><body>not found</body></html>\n");
+                        }
+                        status = found ? "200 OK" : "404 Not Found";
+                        string type = file == null || file.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ? "text/html" : "text/plain";
+                        string extra = "";
+                        int total = body.Length;
+                        int from = found ? RangeStart(headers) : 0;
+                        if (from > 0 && from < total)
+                        {
+                            status = "206 Partial Content";
+                            extra = $"Content-Range: bytes {from}-{total - 1}/{total}\r\n";
+                            body = body[from..];
+                        }
+                        if (chunked && found)
+                        {
+                            stream.Write(Encoding.ASCII.GetBytes($"{version} {status}\r\nContent-Type: {type}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"));
+                            for (int at = 0; at < body.Length;)
+                            {
+                                int n = Math.Min(7, body.Length - at);
+                                stream.Write(Encoding.ASCII.GetBytes($"{n:x}\r\n"));
+                                stream.Write(body, at, n);
+                                stream.Write(Encoding.ASCII.GetBytes("\r\n"));
+                                at += n;
+                            }
+                            stream.Write(Encoding.ASCII.GetBytes("0\r\n\r\n"));
+                        }
+                        else
+                        {
+                            stream.Write(Encoding.ASCII.GetBytes($"{version} {status}\r\nContent-Type: {type}\r\nContent-Length: {body.Length}\r\n{extra}Connection: close\r\n\r\n"));
+                            stream.Write(body);
+                        }
                     }
-
-                    string type = file != null && !file.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ? "text/plain" : "text/html";
-                    string header = $"HTTP/1.0 {status}\r\nContent-Type: {type}\r\nContent-Length: {body.Length}\r\nConnection: close\r\n\r\n";
-                    stream.Write(Encoding.ASCII.GetBytes(header));
-                    stream.Write(body);
                     stream.Flush();
                     tls?.ShutdownAsync().Wait();       // TLS's close_notify
                     client.Client.Shutdown(SocketShutdown.Send);
@@ -101,8 +140,18 @@ namespace Phi.Cli
             }
         }
 
-        // the request line; the headers after it are read and ignored
-        static string ReadRequest(Stream stream)
+        // where a Range: bytes=N- starts; 0 if there's none
+        static int RangeStart(string headers)
+        {
+            foreach (string line in headers.Split("\r\n"))
+                if (line.StartsWith("Range: bytes=", StringComparison.OrdinalIgnoreCase)
+                    && int.TryParse(line[13..].TrimEnd('-'), out int from))
+                    return from;
+            return 0;
+        }
+
+        // the request line, and the headers after it
+        static string ReadRequest(Stream stream, out string headers)
         {
             var text = new StringBuilder();
             int b;
@@ -114,6 +163,7 @@ namespace Phi.Cli
             }
             string all = text.ToString();
             int end = all.IndexOf("\r\n", StringComparison.Ordinal);
+            headers = end >= 0 ? all[end..] : "";
             return end >= 0 ? all[..end] : all;
         }
 

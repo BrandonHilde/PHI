@@ -6,9 +6,15 @@
 #   int s: (Stream.Open: 'world.pak');            # -1 if it can't be opened
 #   int got: (Stream.Read: s addr buffer 65536);  # the bytes, 0 at the end, -1 if it failed
 #   call Stream.Seek: s 5368709120;               # false past the end, and it stays put
-#   u64 at: (Stream.Position: s);
+#   u64 where: (Stream.Position: s);
 #   u64 size: (Stream.Size: s);                   # as it was when it was opened
 #   call Stream.Close: s;
+#
+# With use net.webstream as well (and net.sockets), Open takes an http:// or https:// URL, and the
+# rest is the same: Seek asks the server to start from there, and is false if it can't, Size is 0 if
+# the server didn't say, and a read waits as long as the server takes (Web.timeout), so it's what
+# net.webstream's read-ahead (fs.readahead) is for. Without that, a URL can't be opened: a program
+# that reads only files doesn't carry a TLS client and its certificates.
 #
 # A stream is a number here, as a socket is: one that isn't open is refused (-1, false, or 0
 # for a position or a size). Threads may each read their own stream at once; two reading one
@@ -29,17 +35,36 @@ phi.Stream:Program
 	ptr<u8> files[64];                  # what the system knows each by
 	u64 sizes[64];
 	u64 places[64];
+	bln web[64];                        # it's a URL's: what's in files is net.web's number for it
 	lock slots;                         # (threads open and close at once)
+
+	# what net.webstream gives, so that this only needs net.web if a program wants it
+	method<ptr<u8>: int> web_open: 0;
+	method<int ptr<u8> u32: int> web_read: 0;
+	method<int u64: int> web_seek: 0;
+	method<int: u64> web_size: 0;
+	method<int> web_close: 0;
 
 	# the file at path, to read; its number, or -1 if it can't be opened (it isn't there, it's
 	# a folder) or MOST are open already
 	[Open: ptr<u8> path: 0;]
-		ptr<u8> file: (StreamSystem.Open: path);
-		if (file as int) is -1 return -1;
+		bln url: (IsUrl: path);
+		ptr<u8> file: 0;
 		u64 size: 0;
-		if not (StreamSystem.SizeOf: file addr size)
-			call StreamSystem.Close: file;
-			return -1;
+		if url
+			if web_open is 0 return -1;
+			int request: (web_open: path);
+			if request < 0 return -1;
+			file is request as ptr<u8>;
+			size is (web_size: request);
+		;;
+		else
+			file is (StreamSystem.Open: path);
+			if (file as int) is -1 return -1;
+			if not (StreamSystem.SizeOf: file addr size)
+				call StreamSystem.Close: file;
+				return -1;
+			;;
 		;;
 		int s: -1;
 		locked slots
@@ -51,13 +76,32 @@ phi.Stream:Program
 			;;
 		;;
 		if s < 0
-			call StreamSystem.Close: file;
+			if url
+				call web_close: file as int;
+			;;
+			else
+				call StreamSystem.Close: file;
+			;;
 			return -1;
 		;;
 		files:s is file;
 		sizes:s is size;
 		places:s is 0;
+		web:s is url;
 	[end: s]
+
+	# does it start http:// or https://, whatever the case?
+	[IsUrl: ptr<u8> path: 0;]
+		ptr<u8> word: 'http';
+		int i: 0;
+		while i < 4
+			if (path:i | 32) is not word:i return false;
+			i++;
+		;;
+		if (path:i | 32) is 's'
+			i++;
+		;;
+	[end: path:i is ':' and path:(i + 1) is '/' and path:(i + 2) is '/']
 
 	# up to max bytes from where it's got to, into to: how many, 0 at the end of the file, -1
 	# if it isn't open or the read failed
@@ -66,7 +110,13 @@ phi.Stream:Program
 		if max > MOST_AT_ONCE
 			max is MOST_AT_ONCE;
 		;;
-		int got: (StreamSystem.Read: files:s to max);
+		int got: 0;
+		if web:s
+			got is (web_read: files:s as int to max);
+		;;
+		else
+			got is (StreamSystem.Read: files:s to max);
+		;;
 		if got > 0
 			places:s is places:s + got;
 		;;
@@ -75,7 +125,17 @@ phi.Stream:Program
 	# reading goes on from position; false if that's past the end of the file (the end itself
 	# is fine, and reads give 0), or it isn't open, and then it stays where it was
 	[Seek: int s: -1; u64 position: 0;]
-		if not (Valid: s) or position > sizes:s return false;
+		if not (Valid: s) return false;
+		if web:s
+			# (a size of 0 is one the server didn't say: then it's the server that can refuse)
+			if sizes:s > 0 and position > sizes:s return false;
+			int again: (web_seek: files:s as int position);
+			if again < 0 return false;
+			files:s is again as ptr<u8>;
+			places:s is position;
+			return true;
+		;;
+		if position > sizes:s return false;
 		if not (StreamSystem.Seek: files:s position) return false;
 		places:s is position;
 	[end: true]
@@ -93,7 +153,12 @@ phi.Stream:Program
 	# false if it wasn't open
 	[Close: int s: -1;]
 		if not (Valid: s) return false;
-		call StreamSystem.Close: files:s;
+		if web:s
+			call web_close: files:s as int;
+		;;
+		else
+			call StreamSystem.Close: files:s;
+		;;
 		locked slots
 			opened:s is false;
 		;;

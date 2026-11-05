@@ -1,0 +1,97 @@
+# takes up to 90 seconds: it makes many TLS handshakes, in a kernel and then in a program
+# net.web and Stream on URLs on PHI OS, in a kernel and in a program (net_web.rootfs/fetch.phi),
+# against phi test's web server, over http and over https with .NET's TLS. A page, one in chunks, a
+# redirect, a 404, a server reached by no name, and a stream read through and sought in.
+use proc.process;
+use net.calls;
+use net.tcp;
+use net.dns;
+use net.webstream;
+use fs.stream;
+
+phi.NetWeb:Kernel
+{
+	u8 buffer[1024];
+
+	bln started: (Net.Start);
+	log 'network: ' started '\n';
+	call X509.Trust: addr TestWeb.root TestWeb.root.len;
+
+	call Both: addr TestWeb.url;
+	call Both: addr TestWeb.secure_url;
+
+	log 'a stream too big for a program to keep: ';
+	str big: (addr TestWeb.secure_url '/pattern/200000');
+	int s: (Stream.Open: addr big:0);
+	log (Stream.Size: s) '\n';
+	call Stream.Close: s;
+
+	# a program does the same for itself: its own net.web, its own TLS
+	log 'for the program: ' (Fat.WriteFile: 'ROOT.DER' addr TestWeb.root TestWeb.root.len) ' ' (Fat.WriteFile: 'PLAIN.TXT' addr TestWeb.url 0) ' ' (Fat.WriteFile: 'SECURE.TXT' addr TestWeb.secure_url 0) '\n';
+	str plain_url: (addr TestWeb.url:0);
+	str secure_url: (addr TestWeb.secure_url:0);
+	call Fat.WriteFile: 'PLAIN.TXT' addr plain_url:0 plain_url.len;
+	call Fat.WriteFile: 'SECURE.TXT' addr secure_url:0 secure_url.len;
+	int code: (Process.Wait: (Process.Spawn: 'FETCH.BIN'));
+	log 'the program ended with ' code '\n';
+	exit 0;
+
+	[Both: ptr<u8> base: 0;]
+		call Fetch: base '/hello.txt';
+		call Fetch: base '/chunked/hello.txt';
+		call Fetch: base '/moved/hello.txt';
+		call Fetch: base '/nothing.txt';
+
+		str url: (base '/pattern/200000');
+		int s: (Stream.Open: addr url:0);
+		log 'a stream: ' (s >= 0) ', size ' (Stream.Size: s) '\n';
+		log 'all of it: ' (ReadAll: s 0) ', at ' (Stream.Position: s) ', then ' (Stream.Read: s addr buffer 10) '\n';
+		call At: s 150000;
+		call At: s 3;
+		log 'past the end: ' (Stream.Seek: s 200001) ', closed: ' (Stream.Close: s) '\n';
+	[end]
+
+	[Fetch: ptr<u8> base: 0; ptr<u8> path: 0;]
+		str url: (base path);
+		log path ': ';
+		int r: (Web.Get: addr url:0);
+		if r < 0
+			log 'failed: ' Web.error '\n';
+			return;
+		;;
+		int got: (Web.Read: r addr buffer 1000);
+		int total: 0;
+		log (Web.Status: r) ' [';
+		while got > 0
+			buffer:got is 0;
+			ptr<u8> text: addr buffer;
+			log text;
+			total++ got;
+			got is (Web.Read: r addr buffer 1000);
+		;;
+		log '] ' total ', then ' got '\n';
+		call Web.Close: r;
+	[end]
+
+	[ReadAll: int s: 0; int from: 0;]
+		int total: from;
+		bln right: true;
+		int got: (Stream.Read: s addr buffer 1000);
+		while got > 0
+			while int i: 0; i < got; i++;
+				if buffer:i is not (total + i) % 251
+					right is false;
+				;;
+			;;
+			total++ got;
+			got is (Stream.Read: s addr buffer 1000);
+		;;
+		log 'read ' total ' right ' right ' ';
+	[end: right]
+
+	[At: int s: 0; int where: 0;]
+		log 'to ' where ': ' (Stream.Seek: s where);
+		int n: (Stream.Read: s addr buffer 1);
+		log ', ' n ', right ' (buffer:0 is where % 251) ', at ' (Stream.Position: s) '\n';
+	[end]
+}

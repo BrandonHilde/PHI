@@ -1,0 +1,796 @@
+# Web requests over HTTP/1.1 and HTTPS, read as they arrive. In any program, and in a 32-bit kernel:
+# use net.sockets (a program), or net.tcp and net.dns (a kernel), as well, as they're what this
+# connects through.
+#
+#   use net.sockets;
+#   use net.web;
+#   int r: (Web.Get: 'https://example.com/page.html');       # -1 if it failed: Web.error says why
+#   log (Web.Status: r);                                     # 200, say
+#   u64 size: (Web.Size: r);                                 # if (Web.SizeKnown: r)
+#   int got: (Web.Read: r addr buffer 4096);                 # the bytes, 0 at the end, -1 if it failed
+#   call Web.Close: r;
+#
+#   int posted: (Web.Send: 'POST' 'https://example.com/score' 'Content-Type: text/plain\r\n' data length);
+#   u8 kind[64];
+#   int n: (Web.Header: posted 'Content-Type' addr kind 64); # its length; -1 if there's none
+#
+# A certificate must check out for an https:// URL, against the roots in crypto.roots unless a
+# program has trusted its own (X509.Trust). Redirects are followed, up to 5 of them; a chunked
+# answer reads the same as any other. net.webstream puts this behind Stream.Open. Threads may each
+# use their own requests at once; Web.error is the last error of any of them.
+
+use net.tlslink;
+use crypto.roots;
+use user.text;
+use user.math;
+
+struct.WebReply
+{
+	bln used;
+	bln secure;
+	int connection;
+	ptr<TlsLink> link;
+	u32 port;
+	str host: [255];
+	str path: [2047];
+	str url: [2047];            # where it ended up, after any redirects
+	ptr<u8> held;               # what's come but hasn't been asked for
+	int held_at;
+	int held_length;
+	ptr<u8> headers;            # the response's headers, as they came, with a zero after
+	int headers_length;
+	int status;
+	u64 size;
+	bln size_known;
+	int body;                   # Web.NONE, LENGTH, CHUNKED or UNTIL_CLOSE
+	u64 left;                   # what's left of the length, or of this chunk
+	bln ended;
+	bln failed;
+}
+
+phi.Web:Library
+{
+	const int MOST: 16;                  # requests open at once
+	const int HELD_ROOM: 16384;
+	const int HEADERS_ROOM: 16384;
+	const int MOST_REDIRECTS: 5;
+
+	const int NONE: 0;
+	const int LENGTH: 1;
+	const int CHUNKED: 2;
+	const int UNTIL_CLOSE: 3;
+
+	int timeout: 15000;                  # ms a request waits for the server, each time it waits
+	str error: [127];                    # why the last thing failed
+	WebReply replies[16];
+	lock slots;
+	lock roots;
+	bln roots_looked_at: false;
+
+	# ---- what programs call
+
+	[Get: ptr<u8> url: 0;]
+	[end: (Send: 'GET' url)]
+
+	# a request, and its answer's status and headers: its number, or -1 if it failed. headers are
+	# whole lines, each ending \r\n, of what's to be sent besides what this always sends.
+	[Send: ptr<u8> verb: 0; ptr<u8> url: 0; ptr<u8> extra: 0; ptr<u8> data: 0; u32 length: 0;]
+	[end: (Request: verb url extra data length 0 as u64)]
+
+	# the same URL from position bytes in, as a new request, for going back or forward in what's
+	# being read: -1 if that failed, or the server can't start part way
+	[From: int r: -1; u64 position: 0;]
+		if not (Valid: r) return -1;
+		int again: (Request: 'GET' addr replies:r.url:0 0 0 0 position);
+		if again < 0 return -1;
+		int status: replies:again.status;
+		if status is 206 or (status is 200 and position is 0) return again;
+		error is 'the server can\'t start part way through';
+		call Close: again;
+	[end: -1]
+
+	[Status: int r: -1;]
+		if not (Valid: r) return -1;
+	[end: replies:r.status]
+
+	# how long the whole thing is; 0 if it isn't known
+	[Size: int r: -1;]
+		if not (Valid: r) return 0 as u64;
+	[end: replies:r.size]
+
+	[SizeKnown: int r: -1;]
+		if not (Valid: r) return false;
+	[end: replies:r.size_known]
+
+	# nothing more will be read: what a seek to the very end is
+	[MarkEnded: int r: -1;]
+		if (Valid: r)
+			replies:r.ended is true;
+			replies:r.left is 0;
+		;;
+	[end]
+
+	# up to max bytes of the answer: how many, 0 at its end, -1 if it failed or was cut short
+	[Read: int r: -1; ptr<u8> to: 0; u32 max: 0;]
+		if not (Valid: r) return -1;
+		ptr<WebReply> w: addr replies:r;
+		if w.failed return -1;
+		if w.ended or max is 0 return 0;
+		if max > 0x7FFFFFFF
+			max is 0x7FFFFFFF;
+		;;
+		when w.body
+			is NONE
+				w.ended is true;
+				return 0;
+			;;
+			is LENGTH
+				if w.left is 0
+					w.ended is true;
+					return 0;
+				;;
+				return (Sized: w to max);
+			;;
+			is UNTIL_CLOSE
+				int got: (Take: w to max);
+				if got is 0
+					w.ended is true;
+				;;
+				elif got < 0
+					w.failed is true;
+				;;
+				return got;
+			;;
+		;;
+		# chunked: a size in hex on a line, that much, and an empty line; 0 for the size at the end
+		if w.left is 0
+			if not (NextChunk: w) return -1;
+			if w.ended return 0;
+		;;
+		int taken: (Sized: w to max);
+		if taken > 0 and w.left is 0
+			if not (ChunkEnd: w) return -1;
+		;;
+	[end: taken]
+
+	# a header of the answer, its name in any case, into target (size bytes, ending with a zero):
+	# how long it is, or -1 if there's none
+	[Header: int r: -1; ptr<u8> name: 0; ptr<u8> target: 0; int size: 0;]
+		if not (Valid: r) return -1;
+	[end: (HeaderOf: addr replies:r name target size)]
+
+	[Close: int r: -1;]
+		if not (Valid: r) return false;
+		call Hang: addr replies:r;
+		free replies:r.held;
+		free replies:r.headers;
+		locked slots
+			replies:r.used is false;
+		;;
+	[end: true]
+
+	[Valid: int r: -1;]
+		if r < 0 or r >= MOST return false;
+	[end: replies:r.used]
+
+	# ---- a request
+
+	[Request: ptr<u8> verb: 0; ptr<u8> url: 0; ptr<u8> extra: 0; ptr<u8> data: 0; u32 length: 0; u64 position: 0;]
+		int r: (Slot);
+		if r < 0
+			error is 'too many web requests are open';
+			return -1;
+		;;
+		ptr<WebReply> w: addr replies:r;
+		w.held is new u8[HELD_ROOM];
+		w.headers is new u8[HEADERS_ROOM];
+		w.url is url;
+		bln posting: true;
+		int redirects: 0;
+		while true
+			if not (Ask: w verb extra data length position)
+				call Close: r;
+				return -1;
+			;;
+			u8 location[2048];
+			int found: (HeaderOf: w 'Location' addr location 2048);
+			int status: w.status;
+			bln moved: status is 301 or status is 302 or status is 303 or status is 307 or status is 308;
+			if not moved or found <= 0 break;
+			if redirects >= MOST_REDIRECTS
+				error is 'too many redirects';
+				call Close: r;
+				return -1;
+			;;
+			redirects++;
+			call Hang: w;
+			if not (Follow: w addr location)
+				error is 'a redirect to somewhere that can\'t be asked';
+				call Close: r;
+				return -1;
+			;;
+			# (what's sent with a POST doesn't go on to where a 301, 302 or 303 goes)
+			if status is 303 or status is 301 or status is 302
+				verb is 'GET';
+				data is 0;
+				length is 0;
+				extra is 0;
+			;;
+		;;
+	[end: r]
+
+	# a free slot, or -1
+	[Slot]
+		int r: -1;
+		locked slots
+			while int i: 0; i < MOST and r < 0; i++;
+				if not replies:i.used
+					replies:i.used is true;
+					r is i;
+				;;
+			;;
+		;;
+		if r >= 0
+			replies:r.link is 0;
+			replies:r.connection is -1;
+		;;
+	[end: r]
+
+	# connected to where w.url says, the request sent, and the answer's headers read
+	[Ask: ptr<WebReply> w: 0; ptr<u8> verb: 0; ptr<u8> extra: 0; ptr<u8> data: 0; u32 length: 0; u64 position: 0;]
+		if not (ParseUrl: w) return false;
+		if not (Connect: w) return false;
+		w.held_at is 0;
+		w.held_length is 0;
+		w.headers_length is 0;
+		w.status is 0;
+		w.size is 0;
+		w.size_known is false;
+		w.ended is false;
+		w.failed is false;
+		w.left is 0;
+
+		str request: (verb ' ' w.path ' HTTP/1.1\r\nHost: ' w.host);
+		if w.port is not 80 and w.port is not 443
+			request++ ':';
+			request++ w.port;
+		;;
+		request++ '\r\nUser-Agent: PHI\r\nAccept-Encoding: identity\r\nConnection: close\r\n';
+		if position > 0
+			request++ 'Range: bytes=';
+			call AppendWide: request position;
+			request++ '-\r\n';
+		;;
+		if length > 0 or data is not 0
+			request++ 'Content-Length: ';
+			request++ length;
+			request++ '\r\n';
+		;;
+		if extra is not 0
+			request++ extra;
+		;;
+		request++ '\r\n';
+		if not (Write: w addr request:0 request.len as u32) return false;
+		if data is not 0 and length > 0 and not (Write: w data length) return false;
+
+		# (a 100 Continue goes before the real answer)
+		bln more: true;
+		while more
+			if not (ReadHeaders: w) return false;
+			more is (w.status is 100);
+		;;
+		call Understand: w verb;
+	[end: true]
+
+	# what to read, from the headers
+	[Understand: ptr<WebReply> w: 0; ptr<u8> verb: 0;]
+		u8 value[128];
+		bln no_body: w.status is 204 or w.status is 304 or (verb:0 is 'H' and verb:1 is 'E');
+		w.body is UNTIL_CLOSE;
+		if no_body
+			w.body is NONE;
+		;;
+		elif (HeaderOf: w 'Transfer-Encoding' addr value 128) >= 0 and (Contains: addr value 'chunked')
+			w.body is CHUNKED;
+		;;
+		elif (HeaderOf: w 'Content-Length' addr value 128) >= 0
+			w.body is LENGTH;
+			w.left is (Digits: addr value);
+		;;
+		# (what a HEAD says too, though nothing comes)
+		if (HeaderOf: w 'Content-Length' addr value 128) >= 0
+			w.size is (Digits: addr value);
+			w.size_known is true;
+		;;
+		# part of something says how long the whole thing is, after a /
+		if w.status is 206 and (HeaderOf: w 'Content-Range' addr value 128) >= 0
+			int i: 0;
+			while value:i is not 0 and value:i is not '/'
+				i++;
+			;;
+			if value:i is '/' and value:(i + 1) is not '*'
+				w.size is (Digits: addr value:(i + 1));
+				w.size_known is true;
+			;;
+		;;
+	[end]
+
+	# w.url as scheme, host, port and path; false if it isn't an http:// or https:// one
+	[ParseUrl: ptr<WebReply> w: 0;]
+		ptr<u8> u: addr w.url:0;
+		int at_host: 0;
+		if (StartsWith: u 'https://')
+			w.secure is true;
+			w.port is 443;
+			at_host is 8;
+		;;
+		elif (StartsWith: u 'http://')
+			w.secure is false;
+			w.port is 80;
+			at_host is 7;
+		;;
+		else
+			error is 'that isn\'t an http:// or https:// URL';
+			return false;
+		;;
+		int i: at_host;
+		w.host is '';
+		while u:i is not 0 and u:i is not '/' and u:i is not ':' and u:i is not '?' and u:i is not '#'
+			if i - at_host >= 255
+				error is 'the URL\'s host is too long';
+				return false;
+			;;
+			w.host++ u:i as chr;
+			i++;
+		;;
+		if w.host.len is 0
+			error is 'the URL has no host';
+			return false;
+		;;
+		if u:i is ':'
+			i++;
+			u32 number: 0;
+			int digits: 0;
+			while u:i >= '0' and u:i <= '9' and digits < 6
+				number is number * 10 + (u:i - '0') as u32;
+				digits++;
+				i++;
+			;;
+			if digits is 0 or number is 0 or number > 65535
+				error is 'the URL\'s port isn\'t one';
+				return false;
+			;;
+			w.port is number;
+		;;
+		w.path is '';
+		if u:i is not '/'
+			w.path++ '/';
+		;;
+		while u:i is not 0 and u:i is not '#'
+			w.path++ u:i as chr;
+			i++;
+		;;
+	[end: true]
+
+	# w.url is where a redirect says: a whole URL, one from the root of this host, or one beside
+	# what was asked
+	[Follow: ptr<WebReply> w: 0; ptr<u8> location: 0;]
+		if (StartsWith: location 'https://') or (StartsWith: location 'http://')
+			w.url is location;
+			return true;
+		;;
+		str next: 'http';
+		if w.secure
+			next++ 's';
+		;;
+		next++ '://';
+		next++ w.host;
+		next++ ':';
+		next++ w.port;
+		if location:0 is '/'
+			next++ location;
+		;;
+		else
+			# beside what was asked: up to the last / before any ?
+			int last: 0;
+			int i: 0;
+			while i < w.path.len and w.path:i is not '?'
+				if w.path:i is '/'
+					last is i;
+				;;
+				i++;
+			;;
+			while int k: 0; k <= last; k++;
+				next++ w.path:k;
+			;;
+			next++ location;
+		;;
+		w.url is addr next:0;
+	[end: true]
+
+	# the address found, connected, and for https:// the handshake done
+	[Connect: ptr<WebReply> w: 0;]
+		u32 address: (Dns.Resolve: addr w.host:0);
+		if address is 0
+			error is 'could not find the address of the host';
+			return false;
+		;;
+		w.connection is (Tcp.Connect: address w.port);
+		if w.connection < 0
+			error is 'could not connect';
+			return false;
+		;;
+		if not w.secure return true;
+		call TrustRoots;
+		w.link is new TlsLink;
+		if not (Secure.Connect: w.link w.connection addr w.host:0)
+			error is w.link.session.error;
+			return false;
+		;;
+		int start: (OS.GetTicks);
+		while not w.link.session.connected
+			if not (Secure.Pump: w.link)
+				error is w.link.session.error;
+				if error.len is 0
+					error is 'the server closed the connection during the handshake';
+				;;
+				return false;
+			;;
+			if w.link.session.connected break;
+			if (OS.GetTicks) - start > timeout
+				error is 'the server stopped answering during the handshake';
+				return false;
+			;;
+			call Net.Wait;
+		;;
+		# (the last of the handshake goes out)
+		bln pumped: (Secure.Pump: w.link);
+	[end: true]
+
+	# the built-in roots, unless the program has trusted its own
+	[TrustRoots]
+		locked roots
+			if not roots_looked_at
+				roots_looked_at is true;
+				if X509.x509_root_count is 0
+					locked Secure.crypto
+						call Roots.TrustAll;
+					;;
+				;;
+			;;
+		;;
+	[end]
+
+	# the connection closed, and what TLS had goes back
+	[Hang: ptr<WebReply> w: 0;]
+		if w.link is not 0
+			call Secure.Close: w.link;
+			free w.link;
+			w.link is 0;
+		;;
+		elif w.connection >= 0
+			call Tcp.Close: w.connection;
+		;;
+		w.connection is -1;
+	[end]
+
+	# ---- to and from the server
+
+	[Write: ptr<WebReply> w: 0; ptr<u8> data: 0; u32 length: 0;]
+		if not w.secure
+			if (Tcp.Write: w.connection data length) is not length as int
+				error is 'the connection broke while sending';
+				return false;
+			;;
+			return true;
+		;;
+		u32 done: 0;
+		int start: (OS.GetTicks);
+		while done < length
+			int taken: (Secure.Write: w.link data + done length - done);
+			if taken < 0
+				error is 'the connection broke while sending';
+				return false;
+			;;
+			done++ taken;
+			if not (Secure.Pump: w.link)
+				error is 'the connection broke while sending';
+				return false;
+			;;
+			if taken > 0
+				start is (OS.GetTicks);
+			;;
+			elif (OS.GetTicks) - start > timeout
+				error is 'the server stopped taking what\'s sent';
+				return false;
+			;;
+			else
+				call Net.Wait;
+			;;
+		;;
+	[end: true]
+
+	# more into w.held, when it's empty: how much came, 0 once the other side has closed, -1 if it
+	# failed or took too long
+	[Fill: ptr<WebReply> w: 0;]
+		w.held_at is 0;
+		w.held_length is 0;
+		int start: (OS.GetTicks);
+		while true
+			int got: 0;
+			if w.secure
+				got is (Secure.Read: w.link w.held HELD_ROOM);
+				if got > 0
+					w.held_length is got;
+					return got;
+				;;
+				bln going: (Secure.Pump: w.link);
+				got is (Secure.Read: w.link w.held HELD_ROOM);
+				if got > 0
+					w.held_length is got;
+					return got;
+				;;
+				if w.link.session.failed
+					error is w.link.session.error;
+					return -1;
+				;;
+				if w.link.session.closed or not going return 0;
+			;;
+			else
+				int ready: (Tcp.Waiting: w.connection);
+				if ready < 0 return 0;
+				if ready > 0
+					got is (Tcp.Read: w.connection w.held HELD_ROOM);
+					if got > 0
+						w.held_length is got;
+						return got;
+					;;
+					if got is 0 return 0;
+				;;
+			;;
+			if (OS.GetTicks) - start > timeout
+				error is 'the server stopped answering';
+				return -1;
+			;;
+			call Net.Wait;
+		;;
+	[end: -1]
+
+	# up to max bytes of what's come: how many, 0 once there's no more, -1 if it failed
+	[Take: ptr<WebReply> w: 0; ptr<u8> to: 0; u32 max: 0;]
+		if w.held_at >= w.held_length
+			int filled: (Fill: w);
+			if filled <= 0 return filled;
+		;;
+		u32 n: (w.held_length - w.held_at) as u32;
+		if n > max
+			n is max;
+		;;
+		while u32 i: 0; i < n; i++;
+			to:i is w.held:(w.held_at as u32 + i);
+		;;
+		w.held_at++ n as int;
+	[end: n as int]
+
+	# the next byte, or -1
+	[Byte: ptr<WebReply> w: 0;]
+		if w.held_at >= w.held_length
+			if (Fill: w) <= 0 return -1;
+		;;
+		int b: w.held:(w.held_at);
+		w.held_at++;
+	[end: b]
+
+	# some of what's left of a length or a chunk
+	[Sized: ptr<WebReply> w: 0; ptr<u8> to: 0; u32 max: 0;]
+		u32 wanted: max;
+		if w.left < max
+			wanted is w.left as u32;
+		;;
+		int got: (Take: w to wanted);
+		if got <= 0
+			if got is 0
+				error is 'the answer was cut short';
+			;;
+			w.failed is true;
+			return -1;
+		;;
+		w.left is w.left - got;
+	[end: got]
+
+	# the size line of a chunk: w.left is its size, or the answer has ended
+	[NextChunk: ptr<WebReply> w: 0;]
+		u64 size: 0;
+		int digits: 0;
+		int b: (Byte: w);
+		while b >= 0 and (HexDigit: b) >= 0 and digits < 16
+			size is (size << 4) + (HexDigit: b);
+			digits++;
+			b is (Byte: w);
+		;;
+		# (anything after the size, up to the end of its line, doesn't matter here)
+		while b >= 0 and b is not 10
+			b is (Byte: w);
+		;;
+		if b < 0 or digits is 0
+			error is 'the answer was cut short';
+			w.failed is true;
+			return false;
+		;;
+		if size > 0
+			w.left is size;
+			return true;
+		;;
+		# the last: then any trailers, up to an empty line
+		w.ended is true;
+		int on_line: 0;
+		b is (Byte: w);
+		while b >= 0
+			if b is 10
+				if on_line is 0 return true;
+				on_line is 0;
+			;;
+			elif b is not 13
+				on_line++;
+			;;
+			b is (Byte: w);
+		;;
+	[end: true]
+
+	# the line's end after a chunk's bytes
+	[ChunkEnd: ptr<WebReply> w: 0;]
+		int b: (Byte: w);
+		if b is 13
+			b is (Byte: w);
+		;;
+		if b is not 10
+			error is 'the answer was cut short';
+			w.failed is true;
+			return false;
+		;;
+	[end: true]
+
+	# the status line and headers, into w.headers
+	[ReadHeaders: ptr<WebReply> w: 0;]
+		int n: 0;
+		int b: (Byte: w);
+		while b >= 0
+			if n >= HEADERS_ROOM - 1
+				error is 'the answer\'s headers are too long';
+				return false;
+			;;
+			w.headers:n is b;
+			n++;
+			# an empty line ends them
+			if b is 10 and n >= 2 and (w.headers:(n - 2) is 10 or (w.headers:(n - 2) is 13 and n >= 3 and w.headers:(n - 3) is 10))
+				break;
+			;;
+			b is (Byte: w);
+		;;
+		if b < 0
+			if error.len is 0 or n is 0
+				error is 'no answer from the server';
+			;;
+			return false;
+		;;
+		w.headers:n is 0;
+		w.headers_length is n;
+		# HTTP/1.1 200 OK
+		if not (StartsWith: w.headers 'HTTP/')
+			error is 'the answer isn\'t HTTP';
+			return false;
+		;;
+		int i: 5;
+		while i < n and w.headers:i is not ' '
+			i++;
+		;;
+		int status: 0;
+		i++;
+		while i < n and w.headers:i >= '0' and w.headers:i <= '9'
+			status is status * 10 + w.headers:i - '0';
+			i++;
+		;;
+		if status < 100 or status > 999
+			error is 'the answer has no status';
+			return false;
+		;;
+		w.status is status;
+	[end: true]
+
+	[HeaderOf: ptr<WebReply> w: 0; ptr<u8> name: 0; ptr<u8> target: 0; int size: 0;]
+		int name_length: (Text.Length: name);
+		int i: 0;
+		# past the status line
+		while i < w.headers_length and w.headers:i is not 10
+			i++;
+		;;
+		i++;
+		while i < w.headers_length
+			int line: i;
+			while i < w.headers_length and w.headers:i is not 10
+				i++;
+			;;
+			bln same: i - line > name_length and w.headers:(line + name_length) is ':';
+			int k: 0;
+			while same and k < name_length
+				same is ((Lower: w.headers:(line + k)) is (Lower: name:k));
+				k++;
+			;;
+			if same
+				int from: line + name_length + 1;
+				while from < i and (w.headers:from is ' ' or w.headers:from is 9)
+					from++;
+				;;
+				int to: i;
+				while to > from and (w.headers:(to - 1) is 13 or w.headers:(to - 1) is ' ')
+					to--;
+				;;
+				int n: (Math.Min: to - from size - 1);
+				while int c: 0; c < n; c++;
+					target:c is w.headers:(from + c);
+				;;
+				target:(Math.Max: n 0) is 0;
+				return n;
+			;;
+			i++;
+		;;
+	[end: -1]
+
+	# ---- text
+
+	[StartsWith: ptr<u8> text: 0; ptr<u8> start: 0;]
+		int i: 0;
+		while start:i is not 0
+			if (Lower: text:i) is not (Lower: start:i) return false;
+			i++;
+		;;
+	[end: true]
+
+	# does it say this, whatever the case?
+	[Contains: ptr<u8> text: 0; ptr<u8> part: 0;]
+		int i: 0;
+		while text:i is not 0
+			if (StartsWith: text + i part) return true;
+			i++;
+		;;
+	[end: false]
+
+	[Lower: int c: 0;]
+		if c >= 'A' and c <= 'Z' return c + 32;
+	[end: c]
+
+	[HexDigit: int c: 0;]
+		if c >= '0' and c <= '9' return c - '0';
+		if c >= 'a' and c <= 'f' return c - 'a' + 10;
+		if c >= 'A' and c <= 'F' return c - 'A' + 10;
+	[end: -1]
+
+	# the digits at the start of text, as a number
+	[Digits: ptr<u8> text: 0;]
+		u64 number: 0;
+		int i: 0;
+		while text:i >= '0' and text:i <= '9'
+			number is number * 10 + (text:i - '0');
+			i++;
+		;;
+	[end: number]
+
+	# a 64-bit number written on the end of text
+	[AppendWide: str target; u64 number: 0;]
+		u8 digits[24];
+		int n: 0;
+		if number is 0
+			digits:0 is '0';
+			n is 1;
+		;;
+		while number > 0
+			digits:n is ('0' + (number % 10) as int) as u8;
+			number is number / 10;
+			n++;
+		;;
+		while n > 0
+			n--;
+			target++ digits:n as chr;
+		;;
+	[end]
+}

@@ -1,0 +1,70 @@
+# A PHI OS program's own web requests (net_web runs it): its own net.web and TLS, through its
+# kernel's sockets, with the URLs and the root to trust from the disk, and read ahead on a thread.
+use net.sockets;
+use net.webstream;
+use user.stream;
+use user.threads;
+use fs.readahead;
+
+phi.Fetch:Program
+{
+	u8 buffer[1024];
+	u8 base[128];
+	ptr<u8> root: new u8[4096];
+
+	int root_length: (OS.ReadFile: 'ROOT.DER' root 4096);
+	log 'program: a root: ' (X509.Trust: root root_length as u32) '\n';
+
+	int n: (OS.ReadFile: 'PLAIN.TXT' addr base 127);
+	base:n is 0;
+	call Fetch: addr base '/hello.txt';
+	call Fetch: addr base '/chunked/hello.txt';
+	n is (OS.ReadFile: 'SECURE.TXT' addr base 127);
+	base:n is 0;
+	call Fetch: addr base '/hello.txt';
+	call Fetch: addr base '/chunked/hello.txt';
+	call Fetch: addr base '/moved/hello.txt';
+
+	str url: (addr base '/pattern/200000');
+	int s: (Stream.Open: addr url:0);
+	log 'program: a stream, size ' (Stream.Size: s) '\n';
+	log 'program: to 150000: ' (Stream.Seek: s 150000);
+	int got: (Stream.Read: s addr buffer 1);
+	log ', ' got ', right ' (buffer:0 is 150000 % 251) '\n';
+
+	log 'program: and back to the start: ' (Stream.Seek: s 0) '\n';
+	int r: (ReadAhead.Start: s 16384);
+	int total: 0;
+	bln right: true;
+	got is 0;
+	while got >= 0
+		got is (ReadAhead.Take: r addr buffer 1000);
+		if got > 0
+			while int i: 0; i < got; i++;
+				if buffer:i is not (total + i) % 251
+					right is false;
+				;;
+			;;
+			total++ got;
+		;;
+		elif got is 0
+			call OS.Sleep: 1;
+		;;
+	;;
+	log 'program: read ahead: ' total ' right ' right '\n';
+	log 'program: stopped: ' (ReadAhead.Stop: r) ', closed: ' (Stream.Close: s) '\n';
+	exit 6;
+
+	[Fetch: ptr<u8> from: 0; ptr<u8> path: 0;]
+		str whole: (from path);
+		log 'program: ' path ': ';
+		int w: (Web.Get: addr whole:0);
+		if w < 0
+			log 'failed: ' Web.error '\n';
+			return;
+		;;
+		int size: (Web.Read: w addr buffer 1000);
+		log (Web.Status: w) ' ' size '\n';
+		call Web.Close: w;
+	[end]
+}

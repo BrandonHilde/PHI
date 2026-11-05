@@ -1,0 +1,440 @@
+# A small web and name server on a thread, for web_program.phi: so a program can test net.web with
+# nothing outside itself, in every way a server can answer. It answers every name with 127.0.0.1,
+# and http on one port and https on another (as phi.test, with the certificate chain net_tls uses).
+#
+# It handles one connection at a time, and that's enough here, as it gives up on a client that has
+# stopped reading (one that has gone on to a new request for another part, say) after half a second, and
+# goes on to the next; /never leaves its connection open.
+
+use net.tlslink;
+use user.threads;
+use user.text;
+
+phi.WebTestServer:Program
+{
+	const int BIG: 300000;
+
+	u32 http_port: 0;
+	u32 https_port: 0;
+	u32 dns_port: 0;
+	bln stopping: false;
+	int thread: -1;
+
+	u8 middle[632];
+	u8 leaf[428];
+	u8 key[121];
+	u8 root_der[843];
+	TlsIdentity identity;
+
+	int http_listener: -1;
+	int https_listener: -1;
+	int dns_socket: -1;
+
+	# for what's being answered
+	bln secure: false;
+	int connection: -1;
+	TlsLink link;
+	u8 asked[4096];
+	int asked_length: 0;
+	int body_at: 0;
+	int body_length: 0;
+	str verb: [15];
+	str path: [255];
+	int asks: 0;                          # how many requests it has had
+	int hung: -1;
+	bln gave_up: false;                   # the client stopped reading what's being sent
+
+	# three ports that can be had, and the thread
+	[Start]
+		call Bytes.FromHex: '308201a83082014fa003020102020103300a06082a8648ce3d04030230333111300f060355040a0c085048492054657374311e301c06035504030c15504849205465737420496e7465726d656469617465301e170d3236313130323030303033385a170d3237313130323030303033385a30133111300f06035504030c087068692e746573743059301306072a8648ce3d020106082a8648ce3d03010703420004b82ac3af23fdfe999807bb6b796499fc55d95dfda7e6c66db34219034f33a66253cfc9efce24a7f64bd19c0627079a227ec5e7d515201056f72ba50bf8f27c45a374307230090603551d130402300030250603551d11041e301c82087068692e7465737482102a2e67616d65732e7068692e74657374301d0603551d0e04160414bdd1fa8bfce9ba29a1afdb1bef117c7ba311cbb6301f0603551d2304183016801484e82f7630f5dd4c711ba7cb42808acaf76e92da300a06082a8648ce3d040302034700304402203b642ee4ce78f1569cbbcd23d6a45d9f1d96268897f3409e5fa55cfd144168de022021b88e2d8b384ae1e4d176d6f6b64658b4f22f1b93ab17139c3ff882c79584e3' addr leaf 428;
+		call Bytes.FromHex: '308202743082015ca003020102020102300d06092a864886f70d01010b0500302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f74301e170d3236313130323030303033385a170d3331313130313030303033385a30333111300f060355040a0c085048492054657374311e301c06035504030c15504849205465737420496e7465726d6564696174653059301306072a8648ce3d020106082a8648ce3d03010703420004e1aafacec6eed0c1fc348e895697eb745577514537d5c88a1819826322b84efb278336da9b5aabc9d89920dc2db1125456f4fb182922373be06bb64e5edc33bba366306430120603551d130101ff040830060101ff020100300e0603551d0f0101ff040403020204301d0603551d0e0416041484e82f7630f5dd4c711ba7cb42808acaf76e92da301f0603551d2304183016801465b68750b3b8e9948a95a61957646ce19538dd89300d06092a864886f70d01010b050003820101008d03d84bb1095a930c40c1d61d45f2226b0a92142744f719dcf00d6a1a9cb3c37408deeb51e8bb0af0aff8e069f4d63325d9201987a01fb392d0cc383e2755a5c996d66e5bb89c24fe587d46ddbb483e99ac10696e907d8a40210e89f47b7f0fd3255c13450e9d7ee3b05509d3c0b96be162bb6b6e0a0563e593518fbb729c28e52dd8febfbd0a9958207f9229b72ccfc7479dcf62eb4d1fbae9593dadc2af0521c7edfe9915f073403757105ecfd6f8099e6539e44299379224caba65aee3be80f252fcb403fc8666b7f861406ce7a8a4b3bbd14713dc64d70fb330d1aeec510438f27dff93b9fdecb4aa5861ba1ab396554752018c4cf204cf0d60c45235e1' addr middle 632;
+		call Bytes.FromHex: '307702010104201c3c67d53150963e964e28135a7ee1e5c73592704c32240dbc57d6a0cbbe4378a00a06082a8648ce3d030107a14403420004b82ac3af23fdfe999807bb6b796499fc55d95dfda7e6c66db34219034f33a66253cfc9efce24a7f64bd19c0627079a227ec5e7d515201056f72ba50bf8f27c45' addr key 121;
+		call Bytes.FromHex: '308203473082022fa00302010202143f415cf159833e958ea455fc426c959a83e42315300d06092a864886f70d01010b0500302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f74301e170d3236313130323030303033385a170d3336313033303030303033385a302b3111300f060355040a0c0850484920546573743116301406035504030c0d504849205465737420526f6f7430820122300d06092a864886f70d01010105000382010f003082010a0282010100c69e8e84d43ea7c0484e412b39db908a68bf492ad8a4f917fd76de20e051e2ae6b7c1fc06e89d5d9a90a66cc1d77727c0cd3351a5af67cec6fc0dc5cdbbd06202c1d44c57cf966f0ef28cbc765d2e3fcca3815be2343edc4a54be74ed2db9f85260c9fb3909152382a952e0410bfdd641bd94f980e798bf09752d90b0a125dc88bdd276474cb2f2fd36ac64f5a9f69e874b9cecaf0900a623515c4088321da26010241dc7aa352b511a4cd6365c68c07bc8b79b6f7751726d504bb9dbbf64c9fee022eb00b94697d8d41898d5ea47c1dc9f2387f15c3bbb48aac31986c237fcef704e5a6e590469f375f73144b238c0358ad34c7a28fbfa171a306a5996e95810203010001a3633061301d0603551d0e0416041465b68750b3b8e9948a95a61957646ce19538dd89301f0603551d2304183016801465b68750b3b8e9948a95a61957646ce19538dd89300f0603551d130101ff040530030101ff300e0603551d0f0101ff040403020106300d06092a864886f70d01010b05000382010100515134ee911e3e35dbaabcb22b4c3c95743cad5ef11a0492e6e7e80bf83ac2dfff971915c17d23beed3cf5fe5b223860499685238e26885eb31422ee272f996e055c2b4dca50b37b99361151bd3efbed9138bb9de63028cda53d9f0338df9928e37d295021568aecec0957c3331b72cbb1bb8dded5aed9aeae43144e907e272deecca6244dab2aa83b5946bfbbf3883f1f072a69eaa69a822518292391b8ce4ba65a5469a01143ec002d3932c9797ef965c0cc85b0089e3c50c41e2b8e93eb60ec81cead738d1843f24603f1b2cbb7e38f4b5a02cd489900593b17c4319607a3e12d9df81cba5329c3db6754bc4b33c4e1986453e91c910dd930729e875b8b6a' addr root_der 843;
+		bln made: (Tls13.Identity: addr identity addr leaf 428 addr key 121) and (Tls13.AddIssuer: addr identity addr middle 632);
+		log 'the server: ' made '\n';
+
+		u32 port: 43000 + ((OS.CurrentTask) % 9000) as u32;
+		while http_listener < 0 or https_listener < 0 or dns_socket < 0
+			if http_listener >= 0
+				call Tcp.StopListening: http_listener;
+			;;
+			if https_listener >= 0
+				call Tcp.StopListening: https_listener;
+			;;
+			if dns_socket >= 0
+				call Udp.Close: dns_socket;
+			;;
+			http_listener is (Tcp.Listen: port);
+			https_listener is (Tcp.Listen: port + 1);
+			dns_socket is (Udp.Open: port + 2);
+			http_port is port;
+			https_port is port + 1;
+			dns_port is port + 2;
+			port++ 3;
+		;;
+		thread is (Threads.Start: addr Serve 0);
+	[end]
+
+	[Stop]
+		atomic stopping is true;
+		call Threads.Wait: thread;
+		call Tcp.StopListening: http_listener;
+		call Tcp.StopListening: https_listener;
+		call Udp.Close: dns_socket;
+	[end]
+
+	# the root of the certificates it shows, to trust
+	[TrustRoot]
+		call X509.Trust: addr root_der 843;
+	[end]
+
+	[Serve: int unused: 0;]
+		UdpDatagram d;
+		while not stopping
+			bln did: false;
+			if (Udp.Receive: dns_socket addr d)
+				call Name: addr d;
+				did is true;
+			;;
+			int c: (Tcp.Accept: http_listener);
+			if c >= 0
+				call Answer: c false;
+				did is true;
+			;;
+			c is (Tcp.Accept: https_listener);
+			if c >= 0
+				call Answer: c true;
+				did is true;
+			;;
+			if not did
+				call OS.Sleep: 1;
+			;;
+		;;
+	[end]
+
+	# every name is here
+	[Name: ptr<UdpDatagram> d: 0;]
+		u8 reply[512];
+		ptr<u8> q: addr d.data;
+		int ended: 12;
+		while q:ended is not 0
+			ended++ q:ended + 1;
+		;;
+		ended++ 5;
+		while int i: 0; i < ended; i++;
+			reply:i is q:i;
+		;;
+		call Net.Put16: addr reply + 2 0x8180;
+		call Net.Put16: addr reply + 4 1;
+		call Net.Put16: addr reply + 6 1;
+		int pos: ended;
+		reply:pos is 0xC0;
+		reply:(pos + 1) is 12;
+		call Net.Put16: addr reply + pos + 2 1;
+		call Net.Put16: addr reply + pos + 4 1;
+		call Net.Put32: addr reply + pos + 6 300;
+		call Net.Put16: addr reply + pos + 10 4;
+		call Net.Put32: addr reply + pos + 12 0x7F000001;
+		bln sent: (Udp.SendTo: dns_socket d.from d.from_port addr reply (pos + 16) as u32);
+	[end]
+
+	# a request on a new connection, answered, and closed
+	[Answer: int c: 0; bln on_tls: false;]
+		connection is c;
+		secure is on_tls;
+		gave_up is false;
+		if secure
+			if not (Secure.Accept: addr link c addr identity)
+				call Tcp.Close: c;
+				return;
+			;;
+			int start: (OS.GetTicks);
+			while not link.session.connected
+				if not (Secure.Pump: addr link) or (OS.GetTicks) - start > 5000
+					call Secure.Close: addr link;
+					return;
+				;;
+				if not link.session.connected
+					call OS.Sleep: 1;
+				;;
+			;;
+		;;
+		if (ReadRequest)
+			atomic asks++;
+			call Respond;
+		;;
+		if path is '/never'
+			return;
+		;;
+		call Hang;
+	[end]
+
+	[Hang]
+		if secure
+			# (what's left goes, then close_notify)
+			int start: (OS.GetTicks);
+			while not gave_up and (Tls13.Pending: addr link.session) > 0 and (OS.GetTicks) - start < 5000
+				if not (Secure.Pump: addr link) break;
+				call OS.Sleep: 1;
+			;;
+			call Secure.Close: addr link;
+		;;
+		else
+			call Tcp.Close: connection;
+		;;
+	[end]
+
+	# the verb, the path, the headers and any body
+	[ReadRequest]
+		asked_length is 0;
+		int start: (OS.GetTicks);
+		body_at is -1;
+		while body_at < 0 and asked_length < 4095
+			int got: (Some: addr asked:asked_length 4095 - asked_length);
+			if got < 0 return false;
+			asked_length++ got;
+			while int i: 3; i < asked_length; i++;
+				if asked:i is 10 and asked:(i - 1) is 13 and asked:(i - 2) is 10 and asked:(i - 3) is 13 and body_at < 0
+					body_at is i + 1;
+				;;
+			;;
+			if got is 0
+				if (OS.GetTicks) - start > 5000 return false;
+				call OS.Sleep: 1;
+			;;
+		;;
+		if body_at < 0 return false;
+		asked:asked_length is 0;
+		verb is '';
+		int i: 0;
+		while asked:i is not ' '
+			verb++ asked:i as chr;
+			i++;
+		;;
+		i++;
+		path is '';
+		while asked:i is not ' '
+			path++ asked:i as chr;
+			i++;
+		;;
+		# what's still to come of the body
+		int wanted: (HeaderNumber: 'Content-Length: ');
+		start is (OS.GetTicks);
+		while asked_length - body_at < wanted and asked_length < 4095
+			int got: (Some: addr asked:asked_length 4095 - asked_length);
+			if got < 0 return false;
+			asked_length++ got;
+			if got is 0
+				if (OS.GetTicks) - start > 5000 return false;
+				call OS.Sleep: 1;
+			;;
+		;;
+		asked:asked_length is 0;
+		body_length is asked_length - body_at;
+	[end: true]
+
+	# what's there now, without waiting: how much; -1 once it's closed
+	[Some: ptr<u8> to: 0; int room: 0;]
+		if secure
+			if not (Secure.Pump: addr link) return -1;
+			int got: (Secure.Read: addr link to room as u32);
+			if got < 0 return 0;
+			return got;
+		;;
+		int ready: (Tcp.Waiting: connection);
+		if ready < 0 return -1;
+		if ready is 0 return 0;
+	[end: (Tcp.Read: connection to room as u32)]
+
+	# the number after this in the request; 0 if it isn't there
+	[HeaderNumber: ptr<u8> name: 0;]
+		int place: (Find: name);
+		if place < 0 return 0;
+		int number: 0;
+		place++ (Text.Length: name);
+		while asked:place >= '0' and asked:place <= '9'
+			number is number * 10 + asked:place - '0';
+			place++;
+		;;
+	[end: number]
+
+	# where this is in the request; -1 if it isn't
+	[Find: ptr<u8> what: 0;]
+		int length: (Text.Length: what);
+		while int i: 0; i + length <= body_at; i++;
+			bln same: true;
+			while int k: 0; k < length and same; k++;
+				same is (asked:(i + k) is what:k);
+			;;
+			if same return i;
+		;;
+	[end: -1]
+
+	# length bytes to the client, or as much as it takes: gave_up if it stops taking them
+	[Out: ptr<u8> data: 0; int length: 0;]
+		if length <= 0 or gave_up return;
+		int done: 0;
+		int moved: (OS.GetTicks);
+		while done < length or (secure and (Tls13.Pending: addr link.session) > 0)
+			int took: 0;
+			if secure
+				u32 waiting: (Tls13.Pending: addr link.session);
+				if done < length
+					took is (Secure.Write: addr link data + done (length - done) as u32);
+					if took < 0 return;
+					done++ took;
+				;;
+				if not (Secure.Pump: addr link) return;
+				if (Tls13.Pending: addr link.session) < waiting
+					took++;
+				;;
+			;;
+			else
+				took is (Tcp.Send: connection data + done (length - done) as u32);
+				if took < 0 return;
+				done++ took;
+			;;
+			if took > 0
+				moved is (OS.GetTicks);
+			;;
+			elif (OS.GetTicks) - moved > 500
+				gave_up is true;
+				return;
+			;;
+			else
+				call OS.Sleep: 1;
+			;;
+		;;
+	[end]
+
+	[Say: str text;]
+		call Out: addr text:0 text.len;
+	[end]
+
+	[Respond]
+		when path
+			is '/hello'
+				call Say: 'HTTP/1.1 200 OK\r\nContent-Type: text/plain\r\nX-Phi-Test: Yes  \r\nContent-Length: 11\r\n\r\nhello, web\n';
+			;;
+			is '/chunked'
+				call Say: 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n';
+				call Say: '5\r\nhello\r\n';
+				call Say: '7;with=extension\r\n, chunk\r\n';
+				call Say: 'A\r\ns of text\n\r\n';
+				call Say: '0\r\nX-Trailer: after\r\n\r\n';
+			;;
+			is '/chunked-cut'
+				call Say: 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n5\r\nhel';
+			;;
+			is '/close'
+				call Say: 'HTTP/1.0 200 OK\r\n\r\nuntil it closes\n';
+			;;
+			is '/moved'
+				call Say: 'HTTP/1.1 302 Found\r\nLocation: /hello\r\nContent-Length: 0\r\n\r\n';
+			;;
+			is '/moved-whole'
+				str whole: ('HTTP/1.1 301 Moved\r\nContent-Length: 0\r\nLocation: http://phi.test:' http_port '/hello\r\n\r\n');
+				call Say: whole;
+			;;
+			is '/dir/beside'
+				call Say: 'HTTP/1.1 307 Temporary\r\nLocation: there?x=1\r\nContent-Length: 0\r\n\r\n';
+			;;
+			is '/dir/there?x=1'
+				call Say: 'HTTP/1.1 200 OK\r\nContent-Length: 7\r\n\r\nbeside\n';
+			;;
+			is '/loop'
+				call Say: 'HTTP/1.1 302 Found\r\nLocation: /loop\r\nContent-Length: 0\r\n\r\n';
+			;;
+			is '/see-other'
+				call Say: 'HTTP/1.1 303 See Other\r\nLocation: /echo\r\nContent-Length: 0\r\n\r\n';
+			;;
+			is '/echo'
+				call Echo;
+			;;
+			is '/big'
+				call Big: true;
+			;;
+			is '/big-no-range'
+				call Big: false;
+			;;
+			is '/missing'
+				call Say: 'HTTP/1.1 404 Not Found\r\nContent-Length: 10\r\n\r\nnot here!\n';
+			;;
+			is '/cut'
+				call Say: 'HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort';
+			;;
+			is '/garbage'
+				call Say: 'this is not what a web server says\r\n\r\n';
+			;;
+			is '/nothing'
+				call Say: 'HTTP/1.1 204 No Content\r\n\r\n';
+			;;
+			is '/continue'
+				call Say: 'HTTP/1.1 100 Continue\r\n\r\nHTTP/1.1 200 OK\r\nContent-Length: 6\r\n\r\nafter\n';
+			;;
+			is '/never'
+				hung is connection;
+			;;
+			else
+				call Say: 'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n';
+			;;
+		;;
+	[end]
+
+	# what it was asked: the verb and path, a header, and the body
+	[Echo]
+		str body: (verb ' ' path '\n');
+		int place: (Find: 'X-Custom: ');
+		if place >= 0
+			body++ 'custom: ';
+			place++ 10;
+			while asked:place is not 13
+				body++ asked:place as chr;
+				place++;
+			;;
+			body++ '\n';
+		;;
+		if body_length > 0
+			body++ 'body: ';
+			while int i: 0; i < body_length; i++;
+				body++ asked:(body_at + i) as chr;
+			;;
+			body++ '\n';
+		;;
+		str head: ('HTTP/1.1 200 OK\r\nContent-Length: ' body.len '\r\n\r\n');
+		call Say: head;
+		call Say: body;
+	[end]
+
+	# BIG bytes, each the place it's at mod 251, from where a Range says if it can
+	[Big: bln can_range: false;]
+		int from: 0;
+		int place: (Find: 'Range: bytes=');
+		if can_range and place >= 0
+			from is (HeaderNumber: 'Range: bytes=');
+		;;
+		if from >= BIG
+			call Say: 'HTTP/1.1 416 Range Not Satisfiable\r\nContent-Length: 0\r\n\r\n';
+			return;
+		;;
+		if can_range and place >= 0
+			str head: ('HTTP/1.1 206 Partial Content\r\nContent-Range: bytes ' from '-' BIG - 1 '/' BIG '\r\nContent-Length: ' BIG - from '\r\n\r\n');
+			call Say: head;
+		;;
+		else
+			str head: ('HTTP/1.1 200 OK\r\nContent-Length: ' BIG '\r\n\r\n');
+			call Say: head;
+		;;
+		u8 piece[1024];
+		int at_byte: from;
+		while at_byte < BIG and not gave_up
+			int n: 0;
+			while n < 1024 and at_byte + n < BIG
+				piece:n is ((at_byte + n) % 251) as u8;
+				n++;
+			;;
+			call Out: addr piece n;
+			at_byte++ n;
+		;;
+	[end]
+}

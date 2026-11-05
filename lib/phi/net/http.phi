@@ -17,8 +17,9 @@
 #   ;;
 #
 # Requests are HTTP/1.0, so the server sends the page as it is (never in chunks) and
-# closes the connection at its end. https:// URLs go over TLS 1.3 (net.tls), which
-# encrypts the connection but doesn't check the server's certificate yet.
+# closes the connection at its end. https:// URLs go over TLS 1.3 (net.tls), and the server's
+# certificate is checked (Tls.verified). net.web does more, in a program as well as a kernel, and
+# reads an answer as it comes rather than all at once.
 
 use net.dns;
 use net.tcp;

@@ -1,0 +1,41 @@
+network: 1
+/hello.txt: 200 [hello from the server
+] 22, then 0
+/chunked/hello.txt: 200 [hello from the server
+] 22, then 0
+/moved/hello.txt: 200 [hello from the server
+] 22, then 0
+/nothing.txt: 404 [<html><body>not found</body></html>
+] 36, then 0
+a stream: 1, size 200000
+all of it: read 200000 right 1 1, at 200000, then 0
+to 150000: 1, 1, right 1, at 150001
+to 3: 1, 1, right 1, at 4
+past the end: 0, closed: 1
+/hello.txt: 200 [hello from the server
+] 22, then 0
+/chunked/hello.txt: 200 [hello from the server
+] 22, then 0
+/moved/hello.txt: 200 [hello from the server
+] 22, then 0
+/nothing.txt: 404 [<html><body>not found</body></html>
+] 36, then 0
+a stream: 1, size 200000
+all of it: read 200000 right 1 1, at 200000, then 0
+to 150000: 1, 1, right 1, at 150001
+to 3: 1, 1, right 1, at 4
+past the end: 0, closed: 1
+a stream too big for a program to keep: 200000
+for the program: 1 1 1
+program: a root: 1
+program: /hello.txt: 200 22
+program: /chunked/hello.txt: 200 7
+program: /hello.txt: 200 22
+program: /chunked/hello.txt: 200 7
+program: /moved/hello.txt: 200 22
+program: a stream, size 200000
+program: to 150000: 1, 1, right 1
+program: and back to the start: 1
+program: read ahead: 200000 right 1
+program: stopped: 1, closed: 1
+the program ended with 6

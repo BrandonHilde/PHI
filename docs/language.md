@@ -1408,6 +1408,47 @@ call ReadAhead.Seek: r 8192;                    # what was ready is dropped
 call ReadAhead.Stop: r;                         # the thread ends; the stream's still open
 ```
 
+**A URL reads the same way.** With `use net.webstream` as well, `Stream.Open` takes an `http://`
+or `https://` URL, in a program (with `net.sockets`) or a kernel (with `net.tcp` and `net.dns`):
+
+```phi
+use net.sockets;
+use user.stream;
+use net.webstream;
+int s: (Stream.Open: 'https://example.com/world.pak');   # -1 if it failed: Web.error says why
+int got: (Stream.Read: s addr buffer 65536);
+call Stream.Seek: s 1048576;                             # false if the server can't start there
+u64 size: (Stream.Size: s);                              # 0 if the server didn't say
+```
+
+`Open` fails on a status of 400 or above, and a read waits for the server, up to `Web.timeout` ms,
+so `fs.readahead` works on one too, for a game that can't wait for the network.
+
+**Web requests.** `net.web` is what's under that, for anything else a program wants of a server. It
+speaks HTTP/1.1 and HTTPS, follows up to 5 redirects, and reads an answer as it comes, whether it
+has a length, comes in chunks or runs until the server closes:
+
+```phi
+use net.sockets;                                # in a kernel: net.tcp and net.dns
+use net.web;
+int r: (Web.Get: 'https://example.com/page.html');
+log (Web.Status: r);                            # 200, say
+int got: (Web.Read: r addr buffer 4096);        # the bytes, 0 at the end, -1 if it failed or was cut short
+call Web.Close: r;
+
+int posted: (Web.Send: 'POST' url 'Content-Type: text/plain\r\n' data length);
+u8 kind[64];
+int n: (Web.Header: posted 'Content-Type' addr kind 64);   # its length; -1 if there's none
+```
+
+A certificate must check out for an `https://` URL, against the roots in `crypto.roots` unless a
+program has trusted its own with `X509.Trust`. Not yet: HTTP/2, IPv6 addresses, and uploading a
+body a piece at a time.
+
+**Names.** `Dns.Resolve: name` gives a name's address, 0 if it can't be found, in a program as in a
+kernel. A program tries `localhost`, then the system's hosts file, then its name server
+(`OS.NetNameServer`).
+
 **Saving as things change.** `fs.savelog` keeps records of one size in a file, each with a
 CRC-32 (`data.crc32`), added with `Fat.Append`. A kernel adds a record whenever something
 changes, and reads them all back when it starts again. A record cut short, or damaged,
@@ -2878,7 +2919,7 @@ and the classes of used files run before the classes that use them.
 | `drivers.block` | class `Block` (32-bit kernels): whichever disk the machine has (virtio-blk, then NVMe, then IDE), as numbered sectors from the start of the disk: `Start` →, `Read: sector count buffer` →, `Write` →, `Sectors` →, `kind` (`Block.ATA`, `Block.VIRTIO` or `Block.NVME`). `phi run` and `phi test` give a machine an IDE disk, or another kind with `--disk virtio` or `--disk nvme` |
 | `drivers.disk` | class `Disk` (32-bit kernels): the disk's FAT partition, on whichever disk `Block` found, as numbered sectors: `partition_found`, `Read`, `Write` |
 | `fs.fat16`, `fs.savelog`, `fs.stream`, `fs.stream_calls` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
-| `user.stream`, `fs.readahead` | a program's streams, and a stream read ahead on a thread (a kernel's too): see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `user.stream`, `fs.readahead`, `net.web`, `net.webstream` | a program's streams, a stream read ahead on a thread, web requests, and streams on URLs (a kernel's too): see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |

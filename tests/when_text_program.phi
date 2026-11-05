@@ -1,0 +1,48 @@
+# when on text, and asking whether a method value has been set, in a program on Linux and Windows,
+# 32 and 64 bits (a kernel's are in enum_when and methods_as_values): each is an address that's
+# all 64 bits in 64-bit code.
+phi.WhenTextProgram:Program
+{
+	method<int: int> doubled: 0;
+
+	call Say: 'one';
+	call Say: 'two';
+	call Say: 'three';
+	call Say: 'four';
+	call Say: '';
+	str built: 'tw';
+	built++ 'o';
+	call Say: built;
+
+	log 'not set: ' (doubled is 0) ' ' (doubled is not 0) '\n';
+	if doubled is 0
+		log 'none yet\n';
+	;;
+	doubled is addr Twice;
+	log 'set: ' (doubled is 0) ' ' (doubled is not 0) '\n';
+	if doubled is not 0
+		log 'and it works: ' (doubled: 21) '\n';
+	;;
+	doubled is 0;
+	log 'cleared: ' (doubled is 0) '\n';
+
+	[Say: str word;]
+		when word
+			is 'one'
+				log 'the first\n';
+			;;
+			is 'two' 'three'
+				log 'the second or third: ' word '\n';
+			;;
+			is ''
+				log 'nothing\n';
+			;;
+			else
+				log 'something else: ' word '\n';
+			;;
+		;;
+	[end]
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+}

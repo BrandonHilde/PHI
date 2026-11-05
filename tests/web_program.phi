@@ -1,0 +1,242 @@
+# takes up to 120 seconds: it waits out two servers that never answer, for each scheme
+# net.web on Linux and Windows, 32 and 64 bits, against a small web server on a thread
+# (support/web_test_server.phi), over http and https: lengths, chunks, until it closes, redirects, a
+# POST and headers, status codes, and answers that fail in each way. Then net.webstream: Stream on a
+# URL, seeking, and reading ahead. net_web does it on PHI OS, against .NET's TLS.
+use net.sockets;
+use net.web;
+use net.webstream;
+use user.stream;
+use fs.readahead;
+use support.web_test_server;
+
+phi.WebProgram:Program
+{
+	u8 buffer[1024];
+
+	X509.now is 1793923200;                  # 2026-11-05: the test certificates are from 2026-11-02
+	Web.timeout is 4000;
+	call WebTestServer.Start;
+	Dns.server is (Net.ParseIp: '127.0.0.1');
+	Dns.server_port is WebTestServer.dns_port;
+	Dns.wait is 500;
+
+	str plain: ('http://phi.test:' WebTestServer.http_port);
+	str secure: ('https://phi.test:' WebTestServer.https_port);
+
+	log '--- before there is any root of its own\n';
+	call Fetch: secure '/hello';
+	log 'trusted: ' (X509.x509_root_count > 0) '\n';
+	call WebTestServer.TrustRoot;
+	log '--- over http\n';
+	call Both: plain;
+	log '--- over https\n';
+	call Both: secure;
+
+	log '--- what only makes sense once\n';
+	call Show: (Web.Get: 'ftp://phi.test/x') 'ftp';
+	call Show: (Web.Get: 'http://') 'no host';
+	call Show: (Web.Get: 'http://phi.test:99999/') 'no such port';
+	call Show: (Web.Get: 'https://127.0.0.1:9') 'nobody there, on https';
+	int nobody: (Web.Get: 'http://127.0.0.1:9/');
+	log 'nobody there: ' nobody ', ' Web.error '\n';
+
+	# a certificate that's for another name: the name server says it's here, and it isn't that one
+	str other: ('https://other.test:' WebTestServer.https_port '/hello');
+	call Show: (Web.Get: other) 'for another name';
+
+	log '--- as many as there is room for\n';
+	int many[17];
+	int open: 0;
+	str hello: (plain '/hello');
+	while int i: 0; i < 17; i++;
+		many:i is (Web.Get: hello);
+		if many:i >= 0
+			open++;
+		;;
+	;;
+	log 'open: ' open ', one more: ' many:16 ', because: ' Web.error '\n';
+	while int i: 0; i < 16; i++;
+		call Web.Close: many:i;
+	;;
+	log 'not a number of one: ' (Web.Status: -1) ' ' (Web.Read: 16 addr buffer 10) ' ' (Web.Close: 3) '\n';
+
+	log '--- a stream\n';
+	call Streams: plain;
+	log '--- a stream over https\n';
+	call Streams: secure;
+	log '--- reading ahead\n';
+	call Ahead: plain;
+	call Ahead: secure;
+
+	call WebTestServer.Stop;
+	log 'stopped\n';
+
+	# the same for either scheme
+	[Both: str base;]
+		call Fetch: base '/hello';
+		call Fetch: base '/chunked';
+		call Fetch: base '/close';
+		call Fetch: base '/moved';
+		call Fetch: base '/dir/beside';
+		call Fetch: base '/loop';
+		call Fetch: base '/missing';
+		call Fetch: base '/nothing';
+		call Fetch: base '/continue';
+		call Fetch: base '/cut';
+		call Fetch: base '/chunked-cut';
+		call Fetch: base '/garbage';
+		call Fetch: base '/never';
+		# no path at all, and a fragment that isn't sent
+		call Fetch: base '';
+		call Fetch: base '/hello#part';
+
+		# a header it was sent
+		str url: (base '/hello');
+		int r: (Web.Get: url);
+		u8 value[32];
+		int n: (Web.Header: r 'x-PHI-test' addr value 32);
+		ptr<u8> text: addr value;
+		log 'a header: ' n ' [' text ']';
+		log ', cut to fit: ' (Web.Header: r 'Content-Type' addr value 5) ' [' text ']';
+		log ', not there: ' (Web.Header: r 'X-Nothing' addr value 32) '\n';
+		call Web.Close: r;
+
+		# what's sent
+		str echo: (base '/echo');
+		call Show: (Web.Send: 'POST' echo 'X-Custom: yes\r\n' 'the body' 8) 'a POST';
+		call Show: (Web.Send: 'PUT' echo 0 'b' 1) 'a PUT';
+		call Show: (Web.Send: 'DELETE' echo) 'a DELETE';
+		call Show: (Web.Send: 'HEAD' (base '/hello')) 'a HEAD';
+		str other: (base '/see-other');
+		call Show: (Web.Send: 'POST' other 'X-Custom: gone\r\n' 'gone too' 8) 'a POST sent on as a GET';
+		str moved: (plain '/moved-whole');
+		call Show: (Web.Get: moved) 'moved, to a whole URL';
+	[end]
+
+	[Fetch: str base; str path;]
+		str url: (base path);
+		log path;
+		call Show: (Web.Get: url) '';
+	[end]
+
+	# a request's status, size and everything in it
+	[Show: int r: -1; str what;]
+		log what ': ';
+		if r < 0
+			log 'failed: ' Web.error '\n';
+			return;
+		;;
+		log (Web.Status: r);
+		if (Web.SizeKnown: r)
+			log ', size ' (Web.Size: r);
+		;;
+		log ' [';
+		int total: 0;
+		int got: (Web.Read: r addr buffer 1000);
+		while got > 0
+			buffer:got is 0;
+			ptr<u8> text: addr buffer;
+			log text;
+			total++ got;
+			got is (Web.Read: r addr buffer 1000);
+		;;
+		log '] ' total;
+		if got < 0
+			log ', then failed: ' Web.error;
+		;;
+		log ', again: ' (Web.Read: r addr buffer 10) '\n';
+		call Web.Close: r;
+	[end]
+
+	# the big one, in order, then back and forward, as Stream does for a file
+	[Streams: str base;]
+		str big: (base '/big');
+		int s: (Stream.Open: big);
+		log 'opened: ' (s >= 0) ', size ' (Stream.Size: s) ', at ' (Stream.Position: s) '\n';
+		log 'all of it: ' (ReadAll: s 0) ', at ' (Stream.Position: s) ', then: ' (Stream.Read: s addr buffer 10) '\n';
+		call At: s 100000;
+		call At: s 7;
+		call At: s 299999;
+		log 'past the end: ' (Stream.Seek: s 300001) ', still at ' (Stream.Position: s) '\n';
+		log 'the end: ' (Stream.Seek: s 300000) ', reads ' (Stream.Read: s addr buffer 10) '\n';
+		call At: s 5;
+		log 'closed: ' (Stream.Close: s) ' ' (Stream.Close: s) '\n';
+
+		# a server that won't start part way: back to the start works, and anywhere else stays put
+		str stuck: (base '/big-no-range');
+		s is (Stream.Open: stuck);
+		log 'no ranges: ' (Stream.Read: s addr buffer 10) ', to 50: ' (Stream.Seek: s 50) ', still at ' (Stream.Position: s) '\n';
+		log 'and it reads on: ' (Stream.Read: s addr buffer 10) ', byte ' buffer:0 ', to 0: ' (Stream.Seek: s 0) ', byte: ' (Stream.Read: s addr buffer 1) ' ' buffer:0 '\n';
+		call Stream.Close: s;
+
+		# no size said
+		str until: (base '/close');
+		s is (Stream.Open: until);
+		log 'no size: ' (Stream.Size: s) ', reads ' (Stream.Read: s addr buffer 100) '\n';
+		call Stream.Close: s;
+
+		# what can't be opened, and a file is still a file
+		str missing: (base '/missing');
+		log 'a 404: ' (Stream.Open: missing) ', ' Web.error '\n';
+		str never: (base '/never');
+		log 'no answer: ' (Stream.Open: never) ', ' Web.error '\n';
+	[end]
+
+	[ReadAll: int s: 0; int from: 0;]
+		int total: from;
+		bln right: true;
+		int got: (Stream.Read: s addr buffer 1000);
+		while got > 0
+			while int i: 0; i < got; i++;
+				if buffer:i is not (total + i) % 251
+					right is false;
+				;;
+			;;
+			total++ got;
+			got is (Stream.Read: s addr buffer 1000);
+		;;
+		log 'read ' total ' right ' right ' ';
+	[end: right]
+
+	[At: int s: 0; int where: 0;]
+		log 'to ' where ': ' (Stream.Seek: s where);
+		int n: (Stream.Read: s addr buffer 1);
+		log ', ' n ', right ' (buffer:0 is where % 251) ', at ' (Stream.Position: s) '\n';
+	[end]
+
+	# fs.readahead on a URL: it's the same to it
+	[Ahead: str base;]
+		str big: (base '/big');
+		int s: (Stream.Open: big);
+		int r: (ReadAhead.Start: s 16384);
+		int total: 0;
+		bln right: true;
+		int got: 0;
+		while got >= 0
+			got is (ReadAhead.Take: r addr buffer 1000);
+			if got > 0
+				while int i: 0; i < got; i++;
+					if buffer:i is not (total + i) % 251
+						right is false;
+					;;
+				;;
+				total++ got;
+			;;
+			elif got is 0
+				call OS.Sleep: 1;
+			;;
+		;;
+		log 'read ahead: ' total ' right ' right '\n';
+		log 'seek: ' (ReadAhead.Seek: r 12345);
+		got is 0;
+		while got is 0
+			got is (ReadAhead.Take: r addr buffer 100);
+			if got is 0
+				call OS.Sleep: 1;
+			;;
+		;;
+		log ', ' (got > 0) ' right ' (buffer:0 is 12345 % 251) '\n';
+		log 'stopped: ' (ReadAhead.Stop: r) ', closed: ' (Stream.Close: s) '\n';
+	[end]
+}

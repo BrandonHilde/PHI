@@ -1,0 +1,58 @@
+# Stream.Open on http:// and https:// URLs: with this as well as user.stream (or fs.stream), a URL
+# reads as a file does, and fs.readahead works on it too.
+#
+#   use net.sockets;        # (in a kernel: net.tcp and net.dns)
+#   use user.stream;        # (in a kernel: fs.stream)
+#   use net.webstream;
+#   int s: (Stream.Open: 'https://example.com/world.pak');   # -1 if it failed: Web.error says why
+#   int got: (Stream.Read: s addr buffer 65536);
+#   call Stream.Seek: s 1048576;                             # false if the server can't start there
+#   u64 size: (Stream.Size: s);                              # 0 if the server didn't say
+#   call Stream.Close: s;
+#
+# A status of 400 or above can't be read as the file it was asked for, so Open fails on one.
+
+use net.web;
+
+phi.WebStream:Library
+{
+	Stream.web_open is addr Open;
+	Stream.web_read is addr Read;
+	Stream.web_seek is addr Seek;
+	Stream.web_size is addr Size;
+	Stream.web_close is addr Close;
+
+	[Open: ptr<u8> url: 0;]
+		int r: (Web.Get: url);
+		if r < 0 return -1;
+		int status: (Web.Status: r);
+		if status >= 400
+			Web.error is 'the server said ';
+			Web.error++ status;
+			call Web.Close: r;
+			return -1;
+		;;
+	[end: r]
+
+	[Read: int r: -1; ptr<u8> to: 0; u32 max: 0;]
+	[end: (Web.Read: r to max)]
+
+	# from position bytes in: the request's number from now on, or -1 if it stays as it was
+	[Seek: int r: -1; u64 position: 0;]
+		# the very end is nothing to ask for, and a server would call it out of range
+		if (Web.SizeKnown: r) and position is (Web.Size: r)
+			call Web.MarkEnded: r;
+			return r;
+		;;
+		int again: (Web.From: r position);
+		if again < 0 return -1;
+		call Web.Close: r;
+	[end: again]
+
+	[Size: int r: -1;]
+	[end: (Web.Size: r)]
+
+	[Close: int r: -1;]
+		bln closed: (Web.Close: r);
+	[end]
+}

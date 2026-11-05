@@ -674,6 +674,26 @@ these were added:
   Not in this: writing through a stream, overlapped I/O or `io_uring` (threads first), a file
   system past FAT16, and `OS.FileSize` and `OS.ReadFileAt`, which still stop at 2 GB (a program
   wanting more uses a stream). Not measured: how fast any of it is under a real game's load.
+- [x] **Streams on URLs, and web requests in any program (2026-11-05).** Before this, only a kernel
+  could fetch a URL (`Http.Get`, HTTP/1.0, into one buffer), and a program couldn't even turn a name
+  into an address. Now:
+  1. `Dns` in programs on every system, with `OS.NetNameServer` (kernel, `/etc/resolv.conf`,
+     `GetNetworkParams`) and the hosts file; `DnsMessage` is shared with the kernel's. Tests
+     `dns_program`, `net_dns`.
+  2. `net.web`: HTTP/1.1 and HTTPS, on `Tcp`, `Secure` and `Dns`, so the same code in a program and
+     a kernel. Chunks, redirects, `POST` and headers, status codes. Answers are read as they come.
+  3. `net.webstream`: `Stream.Open` on a URL, `Seek` by a range request, and so `fs.readahead` on
+     one. It's a hook, so a program that reads only files doesn't carry TLS and its roots.
+  4. Tests `web_program` (four hosts, a server on a thread, http and https) and `net_web` (PHI OS, a
+     kernel and a program, against .NET's TLS through `WebServer`, which now has ranges, chunks and
+     redirects). None of this has met a real internet server yet: the tests have no internet.
+  Found on the way: `Tls13.Received` left `s.room` as it was, so what arrived could overflow a
+  session's buffer (`tls_memory`), a heap overflow the other end could cause. `crypto.*` keeps its
+  state in shared variables, so `Secure` holds a lock around it and TLS is safe from several threads,
+  one at a time; a kernel or program that calls `Tls13` directly from several threads isn't. `when` on
+  text and `f is 0` on a method value didn't work in 64-bit programs (`when_text_program`).
+  Not yet: HTTP/2, IPv6, uploading a piece at a time, cookies, keeping a connection open between
+  requests, and `Http`, which could now be a thin layer on `net.web`.
 
 The parts most worth doing next, roughly in order:
 

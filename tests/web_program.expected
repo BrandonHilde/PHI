@@ -1,0 +1,130 @@
+the server: 1
+--- before there is any root of its own
+/hello: failed: the server's certificate: no trusted root signed the chain
+trusted: 1
+--- over http
+/hello: 200, size 11 [hello, web
+] 11, again: 0
+/chunked: 200 [hello, chunks of text
+] 22, again: 0
+/close: 200 [until it closes
+] 16, again: 0
+/moved: 200, size 11 [hello, web
+] 11, again: 0
+/dir/beside: 200, size 7 [beside
+] 7, again: 0
+/loop: failed: too many redirects
+/missing: 404, size 10 [not here!
+] 10, again: 0
+/nothing: 204 [] 0, again: 0
+/continue: 200, size 6 [after
+] 6, again: 0
+/cut: 200, size 100 [short] 5, then failed: the answer was cut short, again: -1
+/chunked-cut: 200 [hel] 3, then failed: the answer was cut short, again: -1
+/garbage: failed: the answer isn't HTTP
+/never: failed: no answer from the server
+: 404, size 0 [] 0, again: 0
+/hello#part: 200, size 11 [hello, web
+] 11, again: 0
+a header: 3 [Yes], cut to fit: 4 [text], not there: -1
+a POST: 200, size 38 [POST /echo
+custom: yes
+body: the body
+] 38, again: 0
+a PUT: 200, size 18 [PUT /echo
+body: b
+] 18, again: 0
+a DELETE: 200, size 13 [DELETE /echo
+] 13, again: 0
+a HEAD: 200, size 11 [] 0, again: 0
+a POST sent on as a GET: 200, size 10 [GET /echo
+] 10, again: 0
+moved, to a whole URL: 200, size 11 [hello, web
+] 11, again: 0
+--- over https
+/hello: 200, size 11 [hello, web
+] 11, again: 0
+/chunked: 200 [hello, chunks of text
+] 22, again: 0
+/close: 200 [until it closes
+] 16, again: 0
+/moved: 200, size 11 [hello, web
+] 11, again: 0
+/dir/beside: 200, size 7 [beside
+] 7, again: 0
+/loop: failed: too many redirects
+/missing: 404, size 10 [not here!
+] 10, again: 0
+/nothing: 204 [] 0, again: 0
+/continue: 200, size 6 [after
+] 6, again: 0
+/cut: 200, size 100 [short] 5, then failed: the answer was cut short, again: -1
+/chunked-cut: 200 [hel] 3, then failed: the answer was cut short, again: -1
+/garbage: failed: the answer isn't HTTP
+/never: failed: no answer from the server
+: 404, size 0 [] 0, again: 0
+/hello#part: 200, size 11 [hello, web
+] 11, again: 0
+a header: 3 [Yes], cut to fit: 4 [text], not there: -1
+a POST: 200, size 38 [POST /echo
+custom: yes
+body: the body
+] 38, again: 0
+a PUT: 200, size 18 [PUT /echo
+body: b
+] 18, again: 0
+a DELETE: 200, size 13 [DELETE /echo
+] 13, again: 0
+a HEAD: 200, size 11 [] 0, again: 0
+a POST sent on as a GET: 200, size 10 [GET /echo
+] 10, again: 0
+moved, to a whole URL: 200, size 11 [hello, web
+] 11, again: 0
+--- what only makes sense once
+ftp: failed: that isn't an http:// or https:// URL
+no host: failed: the URL has no host
+no such port: failed: the URL's port isn't one
+nobody there, on https: failed: could not connect
+nobody there: -1, could not connect
+for another name: failed: the server's certificate: the certificate isn't for this host
+--- as many as there is room for
+open: 16, one more: -1, because: too many web requests are open
+not a number of one: -1 -1 0
+--- a stream
+opened: 1, size 300000, at 0
+all of it: read 300000 right 1 1, at 300000, then: 0
+to 100000: 1, 1, right 1, at 100001
+to 7: 1, 1, right 1, at 8
+to 299999: 1, 1, right 1, at 300000
+past the end: 0, still at 300000
+the end: 1, reads 0
+to 5: 1, 1, right 1, at 6
+closed: 1 0
+no ranges: 10, to 50: 0, still at 10
+and it reads on: 10, byte 10, to 0: 1, byte: 1 0
+no size: 0, reads 16
+a 404: -1, the server said 404
+no answer: -1, no answer from the server
+--- a stream over https
+opened: 1, size 300000, at 0
+all of it: read 300000 right 1 1, at 300000, then: 0
+to 100000: 1, 1, right 1, at 100001
+to 7: 1, 1, right 1, at 8
+to 299999: 1, 1, right 1, at 300000
+past the end: 0, still at 300000
+the end: 1, reads 0
+to 5: 1, 1, right 1, at 6
+closed: 1 0
+no ranges: 10, to 50: 0, still at 10
+and it reads on: 10, byte 10, to 0: 1, byte: 1 0
+no size: 0, reads 16
+a 404: -1, the server said 404
+no answer: -1, no answer from the server
+--- reading ahead
+read ahead: 300000 right 1
+seek: 1, 1 right 1
+stopped: 1, closed: 1
+read ahead: 300000 right 1
+seek: 1, 1 right 1
+stopped: 1, closed: 1
+stopped

@@ -14,6 +14,9 @@
 #   int got: (Secure.Read: addr link buffer max);        # data that has come: 0 if none yet
 #   int taken: (Secure.Write: addr link data length);    # sent as Pump gets the chance
 #
+# Threads may use links at once: the protocol's own workings (crypto.*) are shared by every
+# connection, so one thread at a time does anything with them, and the others wait for it.
+#
 # Secure.Connect: link c host is a client's side, the same way. The protocol is net.tls13's:
 # link.session is the TlsSession (link.session.connected once the handshake is done).
 
@@ -28,20 +31,38 @@ struct.TlsLink
 
 phi.Secure:Library
 {
+	lock crypto;                # one thread at a time in net.tls13 and crypto.*
+
 	# link = the server's side of TLS on connection c, showing identity; false if there's no memory for it
 	[Accept: ptr<TlsLink> link: 0; int c: -1; ptr<TlsIdentity> identity: 0;]
 		link.connection is c;
-	[end: (Tls13.Server: addr link.session identity)]
+		bln ok: false;
+		locked crypto
+			ok is (Tls13.Server: addr link.session identity);
+		;;
+	[end: ok]
 
 	# link = a client's side of TLS on connection c, to host (what its certificate must be
 	# for); false if there's no memory for it
 	[Connect: ptr<TlsLink> link: 0; int c: -1; ptr<u8> host: 0;]
 		link.connection is c;
-	[end: (Tls13.Client: addr link.session host)]
+		bln ok: false;
+		locked crypto
+			ok is (Tls13.Client: addr link.session host);
+		;;
+	[end: ok]
 
 	# send what the session has (as much as TCP takes now), and give it what has come;
 	# false once it can't go on (TCP closed or broke, or the session failed)
 	[Pump: ptr<TlsLink> link: 0;]
+		bln going: false;
+		locked crypto
+			going is (Pumped: link);
+		;;
+	[end: going]
+
+	# (with the lock)
+	[Pumped: ptr<TlsLink> link: 0;]
 		ptr<TlsSession> s: addr link.session;
 		while (Tls13.Pending: s) > 0
 			int taken: (Tcp.Send: link.connection (Tls13.Outgoing: s) (Tls13.Pending: s));
@@ -71,24 +92,34 @@ phi.Secure:Library
 
 	# data that has come (up to max bytes): how many; 0 if none yet, -1 once it's closed
 	[Read: ptr<TlsLink> link: 0; ptr<u8> buffer: 0; u32 max: 0;]
-	[end: (Tls13.Read: addr link.session buffer max)]
+		int got: 0;
+		locked crypto
+			got is (Tls13.Read: addr link.session buffer max);
+		;;
+	[end: got]
 
 	# data to send: how much was taken (it goes as Pump gets the chance); -1 if the
 	# handshake isn't done
 	[Write: ptr<TlsLink> link: 0; ptr<u8> data: 0; u32 length: 0;]
-	[end: (Tls13.Write: addr link.session data length)]
+		int taken: 0;
+		locked crypto
+			taken is (Tls13.Write: addr link.session data length);
+		;;
+	[end: taken]
 
 	# close_notify, sent if TCP takes it now, then the connection closed and the session freed
 	[Close: ptr<TlsLink> link: 0;]
-		call Tls13.Close: addr link.session;
-		ptr<TlsSession> s: addr link.session;
-		if (Tls13.Pending: s) > 0 and link.connection >= 0
-			int taken: (Tcp.Send: link.connection (Tls13.Outgoing: s) (Tls13.Pending: s));
+		locked crypto
+			call Tls13.Close: addr link.session;
+			ptr<TlsSession> s: addr link.session;
+			if (Tls13.Pending: s) > 0 and link.connection >= 0
+				int taken: (Tcp.Send: link.connection (Tls13.Outgoing: s) (Tls13.Pending: s));
+			;;
+			if link.connection >= 0
+				call Tcp.Close: link.connection;
+			;;
+			link.connection is -1;
+			call Tls13.Free: s;
 		;;
-		if link.connection >= 0
-			call Tcp.Close: link.connection;
-		;;
-		link.connection is -1;
-		call Tls13.Free: s;
 	[end]
 }

@@ -6,9 +6,13 @@
 #   int s: (Stream.Open: 'WORLD.PAK');            # -1 if it can't be opened
 #   int got: (Stream.Read: s addr buffer 65536);  # the bytes, 0 at the end, -1 if it failed
 #   call Stream.Seek: s 1048576;                  # false past the end, and it stays put
-#   u64 at: (Stream.Position: s);
+#   u64 where: (Stream.Position: s);
 #   u64 size: (Stream.Size: s);
 #   call Stream.Close: s;
+#
+# With use net.webstream as well (and net.tcp and net.dns), Open takes an http:// or https:// URL,
+# as a program's does: see user.stream. That's the kernel's own Open: a program's URLs are opened
+# on its own side, by its own net.web.
 #
 # A stream is a number, as a socket is: one that isn't open is refused (-1, false, or 0 for a
 # position or a size). A file that's rewritten while it's open reads as it is now, and one
@@ -28,45 +32,108 @@ phi.Stream:Kernel
 	int owners[64];                     # the process each is for; 0 for the kernel
 	u32 places[64];                     # how far in each has got
 	FatPlace files[64];
+	bln web[64];                        # it's a URL's: requests has net.web's number for it
+	int requests[64];
+	u64 web_places[64];
+	u64 web_sizes[64];
 	lock slots;                         # (programs and threads open and close at once)
 
+	# what net.webstream gives, so that this only needs net.web if a kernel wants it
+	method<ptr<u8>: int> web_open: 0;
+	method<int ptr<u8> u32: int> web_read: 0;
+	method<int u64: int> web_seek: 0;
+	method<int: u64> web_size: 0;
+	method<int> web_close: 0;
+
 	[Open: ptr<u8> path: 0;]
-	[end: (OpenFor: 0 path)]
+		if not (IsUrl: path) return (OpenFor: 0 path);
+		if web_open is 0 return -1;
+		int request: (web_open: path);
+		if request < 0 return -1;
+		int s: (Slot: 0);
+		if s < 0
+			call web_close: request;
+			return -1;
+		;;
+		web:s is true;
+		requests:s is request;
+		web_places:s is 0;
+		web_sizes:s is (web_size: request);
+	[end: s]
 
 	[Read: int s: -1; ptr<u8> to: 0; u32 max: 0;]
+		if (Valid: 0 s) and web:s
+			int got: (web_read: requests:s to max);
+			if got > 0
+				web_places:s is web_places:s + got;
+			;;
+			return got;
+		;;
 	[end: (ReadFor: 0 s to max)]
 
 	[Seek: int s: -1; u64 position: 0;]
+		if (Valid: 0 s) and web:s
+			if web_sizes:s > 0 and position > web_sizes:s return false;
+			int again: (web_seek: requests:s position);
+			if again < 0 return false;
+			requests:s is again;
+			web_places:s is position;
+			return true;
+		;;
 	[end: (SeekFor: 0 s position)]
 
 	[Position: int s: -1;]
 		if not (Valid: 0 s) return 0 as u64;
+		if web:s return web_places:s;
 		u64 place: places:s;
 	[end: place]
 
 	[Size: int s: -1;]
 		if not (Valid: 0 s) return 0 as u64;
+		if web:s return web_sizes:s;
 		u64 size: files:s.size;
 	[end: size]
 
 	[Close: int s: -1;]
+		if (Valid: 0 s) and web:s
+			call web_close: requests:s;
+		;;
 	[end: (CloseFor: 0 s)]
+
+	# does it start http:// or https://, whatever the case?
+	[IsUrl: ptr<u8> path: 0;]
+		ptr<u8> word: 'http';
+		int i: 0;
+		while i < 4
+			if (path:i | 32) is not word:i return false;
+			i++;
+		;;
+		if (path:i | 32) is 's'
+			i++;
+		;;
+	[end: path:i is ':' and path:(i + 1) is '/' and path:(i + 2) is '/']
+
+	# a free slot, for the owner; -1 if there's none
+	[Slot: int owner: 0;]
+		int s: -1;
+		locked slots
+			while int i: 0; i < MOST and s < 0; i++;
+				if not opened:i
+					opened:i is true;
+					owners:i is owner;
+					web:i is false;
+					s is i;
+				;;
+			;;
+		;;
+	[end: s]
 
 	# ---- the same for a process
 
 	# the file at path, to read; its number, or -1 if it can't be opened (it isn't there, it's
 	# a folder) or MOST are open already
 	[OpenFor: int owner: 0; ptr<u8> path: 0;]
-		int s: -1;
-		locked slots
-			while int i: 0; i < MOST and s < 0; i++;
-				if not opened:i
-					opened:i is true;
-					owners:i is -1;     # (taken, and nobody's yet)
-					s is i;
-				;;
-			;;
-		;;
+		int s: (Slot: -1);                  # (taken, and nobody's yet)
 		if s < 0 return -1;
 		if not (Fat.PlaceOpen: path addr files:s)
 			locked slots
