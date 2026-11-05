@@ -31,6 +31,19 @@ phi.BigFile:Windows
 		int closed: (Kernel32.CloseHandle: file);
 		if moved is 0xFFFFFFFF and low is not 0xFFFFFFFF return false;
 	[end: sparse is not 0 and ended is not 0 and closed is not 0]
+
+	# length bytes of text written (high * 4 GB + low) bytes in
+	[Mark: ptr<u8> path: 0; u32 high: 0; u32 low: 0; ptr<u8> text: 0; u32 length: 0;]
+		u16 wide[1024];
+		int chars: (Kernel32.MultiByteToWideChar: 65001 0 path (-1) addr wide 1024);
+		ptr<u8> file: (Kernel32.CreateFileW: addr wide WRITE 0 0 OPEN_EXISTING NORMAL 0);
+		if (file as int) is -1 or chars is 0 return false;
+		int up: high as int;
+		u32 moved: (Kernel32.SetFilePointer: file low as int addr up 0);
+		u32 wrote: 0;
+		int ok: (Kernel32.WriteFile: file text length addr wrote 0);
+		int closed: (Kernel32.CloseHandle: file);
+	[end: moved is low and ok is not 0 and wrote is length]
 }
 
 Kernel32.GetCurrentProcessId;
@@ -39,4 +52,5 @@ Kernel32.CreateFileW: ptr<u16> path  u32 access  u32 share  ptr<u8> security  u3
 Kernel32.DeviceIoControl: ptr<u8> file  u32 code  ptr<u8> input  u32 input_size  ptr<u8> output  u32 output_size ptr<u32> returned  ptr<u8> overlapped;
 Kernel32.SetFilePointer: ptr<u8> file  int distance  ptr<int> high  u32 from: u32;
 Kernel32.SetEndOfFile: ptr<u8> file;
+Kernel32.WriteFile: ptr<u8> file  ptr<u8> data  u32 count  ptr<u32> written  ptr<u8> overlapped;
 Kernel32.CloseHandle: ptr<u8> file;

@@ -1,0 +1,195 @@
+# A stream read ahead on a thread of its own, so a game can take what's ready without waiting
+# for the disk. In a program (or, with fs.stream and proc.threads, a kernel):
+#
+#   use user.stream;
+#   use user.threads;
+#   use fs.readahead;
+#   int s: (Stream.Open: 'WORLD.PAK');
+#   int r: (ReadAhead.Start: s 1048576);          # keeps up to 1 MB ready; -1 if it can't start
+#   int got: (ReadAhead.Take: r addr buffer 4096);  # what's ready, and never waits:
+#                                                 # the bytes, 0 if none yet, -1 at the end
+#   call ReadAhead.Seek: r 8192;                  # what was ready is dropped, and it reads from there
+#   call ReadAhead.Stop: r;                       # the thread ends; the stream's still open
+#
+# One thread takes from a reader at a time. While it's running, the reader's thread is the one
+# using the stream: Seek here rather than Stream.Seek, and don't Stream.Read it.
+
+phi.ReadAhead:Library
+{
+	const int MOST: 8;                  # running at once
+	const u32 CHUNK: 65536;             # the most it reads between looking up
+	const int WAIT: 1;                  # ms it sleeps when there's nothing for it to do
+
+	bln used[8];
+	int streams[8];
+	int threads[8];
+	ptr<u8> rings[8];
+	u32 rooms[8];                       # each ring's size
+	u32 starts[8];                      # where what's ready starts in it
+	u32 filled[8];                      # how much is ready
+	bln ended[8];                       # the end of the file, or a read that failed
+	bln stopping[8];
+	bln seeking[8];                     # there's somewhere new to read from
+	u64 seek_to[8];
+	u32 turns[8];                       # one more each Seek, so bytes from before it are dropped
+	lock rings_lock;
+
+	# reads stream ahead, with room bytes kept ready; its number, or -1 if it can't start
+	[Start: int stream: -1; u32 room: 0;]
+		if room is 0 return -1;
+		ptr<u8> ring: new u8[room];
+		if ring is 0 return -1;
+		int r: -1;
+		locked rings_lock
+			while int i: 0; i < MOST and r < 0; i++;
+				if not used:i
+					used:i is true;
+					r is i;
+				;;
+			;;
+		;;
+		if r < 0
+			free ring;
+			return -1;
+		;;
+		streams:r is stream;
+		rings:r is ring;
+		rooms:r is room;
+		starts:r is 0;
+		filled:r is 0;
+		ended:r is false;
+		stopping:r is false;
+		seeking:r is false;
+		turns:r is 0;
+		int thread: (Threads.Start: addr Reading r);
+		if thread < 0
+			free ring;
+			locked rings_lock
+				used:r is false;
+			;;
+			return -1;
+		;;
+		threads:r is thread;
+	[end: r]
+
+	# up to max bytes of what's ready, into to, and never waits: how many, 0 if none yet, -1
+	# at the end of the file (once all of it is taken), if a read failed, or it isn't running
+	[Take: int r: -1; ptr<u8> to: 0; u32 max: 0;]
+		if not (Valid: r) return -1;
+		u32 n: 0;
+		u32 from: 0;
+		bln done: false;
+		u32 turn: 0;
+		locked rings_lock
+			n is filled:r;
+			from is starts:r;
+			done is ended:r;
+			turn is turns:r;
+		;;
+		if n is 0
+			if done return -1;
+			return 0;
+		;;
+		if n > max
+			n is max;
+		;;
+		# only this thread takes, and the reader doesn't write what's ready, so it's left alone
+		# for the copy; what's copied is only taken away if no Seek dropped it meanwhile
+		u32 copied: 0;
+		while copied < n
+			to:copied is rings:r:((from + copied) % rooms:r);
+			copied++;
+		;;
+		locked rings_lock
+			if turns:r is turn
+				starts:r is (from + n) % rooms:r;
+				filled:r is filled:r - n;
+			;;
+		;;
+	[end: n as int]
+
+	# reading goes on from position, and what was ready is dropped; false if that's past the end
+	# of the file, or it isn't running
+	[Seek: int r: -1; u64 position: 0;]
+		if not (Valid: r) or position > (Stream.Size: streams:r) return false;
+		locked rings_lock
+			seek_to:r is position;
+			seeking:r is true;
+			starts:r is 0;
+			filled:r is 0;
+			ended:r is false;
+			turns:r++;
+		;;
+	[end: true]
+
+	# the thread ends and the ring goes back; the stream is still open, wherever it had got to
+	[Stop: int r: -1;]
+		if not (Valid: r) return false;
+		locked rings_lock
+			stopping:r is true;
+		;;
+		call Threads.Wait: threads:r;
+		free rings:r;
+		locked rings_lock
+			used:r is false;
+		;;
+	[end: true]
+
+	# the thread: fills the ring as there's room in it
+	[Reading: int r: 0;]
+		bln going: true;
+		while going
+			bln seek: false;
+			u64 position: 0;
+			u32 room: 0;
+			u32 next: 0;
+			bln done: false;
+			u32 turn: 0;
+			locked rings_lock
+				going is not stopping:r;
+				seek is seeking:r;
+				position is seek_to:r;
+				seeking:r is false;
+				room is rooms:r - filled:r;
+				next is (starts:r + filled:r) % rooms:r;
+				done is ended:r;
+				turn is turns:r;
+			;;
+			if seek
+				if not (Stream.Seek: streams:r position)
+					locked rings_lock
+						ended:r is true;
+					;;
+				;;
+			;;
+			elif going and (done or room is 0)
+				call OS.Sleep: WAIT;
+			;;
+			elif going
+				# what's free up to the ring's end, so the read is in one piece
+				u32 want: rooms:r - next;
+				if want > room
+					want is room;
+				;;
+				if want > CHUNK
+					want is CHUNK;
+				;;
+				int got: (Stream.Read: streams:r rings:r + next want);
+				locked rings_lock
+					if turns:r is turn
+						if got > 0
+							filled:r is filled:r + got;
+						;;
+						else
+							ended:r is true;
+						;;
+					;;
+				;;
+			;;
+		;;
+	[end]
+
+	[Valid: int r: -1;]
+		if r < 0 or r >= MOST return false;
+	[end: used:r]
+}

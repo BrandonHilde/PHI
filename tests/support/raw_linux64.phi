@@ -24,7 +24,17 @@ phi.Raw:Linux64
 		ptr<u8> page: (sys.Map: 0 4096 3 0x22 -1 0);
 		page:100 is 42;
 	[end: page:100]
+
+	# a position past 4 GB in a file of no size, and back: all 64 bits of it each way
+	[Far: u64 where: 0;]
+		int fd: (sys.MemoryFile: 'far' 0);
+		u64 got: (sys.SeekFar: fd where 0);
+		int closed: (sys.Close: fd);
+	[end: got]
 }
+
+sys.MemoryFile: 319  ptr<u8> name  int flags;
+sys.SeekFar: 8  int fd  u64 where  int from: u64;
 
 sys.Write: 1  int fd  ptr<u8> data  u32 length;
 sys.GetPid: 39;

@@ -12,7 +12,18 @@ phi.BigFile:Linux32
 	# the file at path made (high * 4 GB + low) bytes long
 	[Resize: ptr<u8> path: 0; u32 high: 0; u32 low: 0;]
 	[end: (sys.Truncate64: path low high) is 0]
+
+	# length bytes of text written (high * 4 GB + low) bytes in
+	[Mark: ptr<u8> path: 0; u32 high: 0; u32 low: 0; ptr<u8> text: 0; u32 length: 0;]
+		int fd: (sys.OpenToMark: path 0x8001 0);      # O_WRONLY | O_LARGEFILE
+		if fd < 0 return false;
+		int wrote: (sys.WriteAt: fd text length low high);
+		int closed: (sys.CloseMarked: fd);
+	[end: wrote is length]
 }
 
 sys.GetPid: 20;
 sys.Truncate64: 193  ptr<u8> path  u32 low  u32 high;
+sys.OpenToMark: 5  ptr<u8> path  int flags  int mode;
+sys.WriteAt: 181  int fd  ptr<u8> data  u32 count  u32 low  u32 high;
+sys.CloseMarked: 6  int fd;

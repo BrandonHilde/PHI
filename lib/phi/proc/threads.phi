@@ -14,8 +14,9 @@
 # STACK_SIZE, which the timer shares the CPU with like a program. It runs without the
 # kernel lock, so threads run at once on several cores once Cores.SharePrograms has run
 # (on one core, they take turns with the kernel, which gives up the CPU when it waits).
-# The heap, log, atomic and locked work in a thread; files, the network and the OS.*
-# calls don't yet, as they're the kernel lock's. A thread shares the class variables
+# The heap, log, atomic, locked and files (their own lock's; fs.readahead reads on a thread)
+# work in a thread; the network and most OS.* calls don't yet, as they're the kernel lock's.
+# A thread shares the class variables
 # with everything else, so what it writes should go through locked or atomic (or into
 # data that's only its own, like its element of an array).
 

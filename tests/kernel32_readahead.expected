@@ -1,0 +1,12 @@
+made: 1
+started: 1
+taken: 100000, the same: 1
+seek: 1
+from 50000: 1, right: 1
+stopped: 1, closed: 1
+program started: 1
+program taken: 100000, the same: 1
+program seek: 1
+program from 50000: 1, right: 1
+program stopped: 1, closed: 1
+exit code: 3

@@ -1376,6 +1376,38 @@ each folder holds as many new files as it has free entries (the root holds 511).
 are written to the disk image, so a kernel sees them the next time it boots the same image
 (`phi build` makes a fresh image each time).
 
+**Reading a big file a piece at a time.** `fs.stream` keeps a file open and remembers its
+place, so reading on doesn't look the path up or walk its clusters again. A program's
+`user.stream` has the same calls, on Linux and Windows past 4 GB, and on PHI OS with
+`use fs.stream_calls` in its kernel:
+
+```phi
+use fs.stream;
+int s: (Stream.Open: 'WORLD.PAK');              # -1 if it can't be opened
+int got: (Stream.Read: s addr buffer 65536);    # the bytes, 0 at the end, -1 if it failed
+call Stream.Seek: s 1048576;                    # false past the end, and it stays put
+u64 where: (Stream.Position: s);
+u64 size: (Stream.Size: s);
+call Stream.Close: s;
+```
+
+A stream is a number, as a socket is, and one that isn't open is refused. A program's are its
+own, and closed when it ends. A file rewritten while it's open reads as it is now, and one
+that's deleted gives -1, on PHI OS. Threads may each read their own stream at once.
+
+`fs.readahead` reads a stream on a thread of its own, so a game takes what's ready without
+waiting for the disk. It uses whichever `Stream` and `Threads` the program has:
+
+```phi
+use user.stream;
+use user.threads;                               # in a kernel: fs.stream and proc.threads
+use fs.readahead;
+int r: (ReadAhead.Start: s 1048576);            # keeps up to 1 MB ready; -1 if it can't start
+int got: (ReadAhead.Take: r addr buffer 4096);  # never waits: the bytes, 0 if none yet, -1 at the end
+call ReadAhead.Seek: r 8192;                    # what was ready is dropped
+call ReadAhead.Stop: r;                         # the thread ends; the stream's still open
+```
+
 **Saving as things change.** `fs.savelog` keeps records of one size in a file, each with a
 CRC-32 (`data.crc32`), added with `Fat.Append`. A kernel adds a record whenever something
 changes, and reads them all back when it starts again. A record cut short, or damaged,
@@ -2367,7 +2399,8 @@ name, as `call fd is sys.Open: path 0;` or `(sys.Open: path 0)`, and `(sys.GetPi
 it takes nothing. Each value is checked against its type, as a method's are. The answer
 comes back as the system gives it: on Linux a number that's negative when it says no
 (`-9`, EBADF). It's an `int`, or what `: type` at the end says, as a method type's result
-is written (`sys.Map: 9  ptr<u8> address  u32 size ...: ptr<u8>;`): a pointer is all 64
+is written (`sys.Map: 9  ptr<u8> address  u32 size ...: ptr<u8>;`, and a `u64` value or result
+is all 64 bits in 64-bit code, and an error in a 32-bit system's, whose calls take two halves): a pointer is all 64
 bits of it in 64-bit code, where an `int` would keep only 32. A system call is only in a module for a system that has them (`:Linux`,
 `:Linux32`, `:Linux64`, `:PhiOS`), and is used only from that module's classes, so the
 code that is one system's alone stays in the files marked for it.
@@ -2776,7 +2809,8 @@ and the classes of used files run before the classes that use them.
 | `drivers.virtio_blk`, `drivers.nvme` | classes `VirtioBlk` and `Nvme` (32-bit kernels): a virtio-blk disk and an NVMe one (any maker's: found by its PCI class), with `Start` →, the same `Read` and `Write` as `Ata`, and `sectors`; both poll, and their sectors go through the driver's own buffer, so the caller's can be anywhere. An NVMe disk's sectors must be 512 bytes |
 | `drivers.block` | class `Block` (32-bit kernels): whichever disk the machine has (virtio-blk, then NVMe, then IDE), as numbered sectors from the start of the disk: `Start` →, `Read: sector count buffer` →, `Write` →, `Sectors` →, `kind` (`Block.ATA`, `Block.VIRTIO` or `Block.NVME`). `phi run` and `phi test` give a machine an IDE disk, or another kind with `--disk virtio` or `--disk nvme` |
 | `drivers.disk` | class `Disk` (32-bit kernels): the disk's FAT partition, on whichever disk `Block` found, as numbered sectors: `partition_found`, `Read`, `Write` |
-| `fs.fat16`, `fs.savelog` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `fs.fat16`, `fs.savelog`, `fs.stream`, `fs.stream_calls` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
+| `user.stream`, `fs.readahead` | a program's streams, and a stream read ahead on a thread (a kernel's too): see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |

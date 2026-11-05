@@ -18,4 +18,7 @@ phi.SysCallsProgram:Program
 	log 'closing what is not open: ' (Raw.Close: -1) '\n';
 	log 'closing 1000: ' (Raw.Close: 1000) '\n';
 	log 'a page of its own: ' (Raw.Page) '\n';
+	u64 far: 5368709120;
+	log 'all of a 64-bit number, there and back: ' (Raw.Far: far) '\n';
+	log 'and a small one: ' (Raw.Far: 5) '\n';
 }

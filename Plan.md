@@ -635,6 +635,42 @@ these were added:
   declarations matched; two loops still share their counter, by the rule methods use.
   Tests `block_scope`, `block_scope_errors`.
 
+- [x] **File streaming, in PHI (2026-11-04).** Reading a big file a piece at a time, with a
+  file kept open and positions past 4 GB, the same calls on every system (`user.stream` in a
+  program, `fs.stream` in a kernel):
+
+  ```phi
+  use user.stream;
+  int s: (Stream.Open: 'world.pak');          # -1 if it can't be opened
+  int got: (Stream.Read: s addr buffer 65536); # the bytes, 0 at the end, -1 if it failed
+  call Stream.Seek: s 5368709120;             # false past the end; u64 positions
+  u64 where: (Stream.Position: s);
+  u64 size: (Stream.Size: s);
+  call Stream.Close: s;
+  ```
+
+  1. **A `sys.` call carries a whole `u64`** in 64-bit code, and declaring one on a 32-bit
+     system is an error (it was cut to 32 bits, with nothing said). Test `sys_calls_program`.
+     Also: `phi check` crashed on one system's module that nothing uses yet.
+  2. **Linux and Windows, 32 and 64 bits.** `Stream` over `open`, `read`, `lseek` / `_llseek`,
+     `CreateFileW`, `ReadFile` and `SetFilePointer`, all in PHI. A stream is a slot, as a
+     socket is: a number that isn't one is refused. Test `stream_program` reads marks written
+     either side of 2 GB and 4 GB and at 5 GB in sparse files, so a seek is seen to land.
+  3. **PHI OS: a kernel's and a program's.** `Fat` has a saved place in a file (`FatPlace`), so
+     reading on doesn't look the path up or walk the chain again, and gives up its lock
+     between clusters. A program's streams are its own, closed when it ends, answered without
+     the kernel lock (`fs.stream_calls`). Freeing clusters counts in `Fat.frees`, and a place
+     that sees a new count looks the file up again, so a file rewritten while it's open reads
+     as it is now, and a deleted one gives -1, not what's in its clusters since. FAT16 still
+     stops at 2 GB. Test `kernel32_stream`.
+  4. **Reading ahead on a thread** (`fs.readahead`), so a game takes what's ready without
+     waiting for the disk, in a program or a kernel. Tests `readahead_program`,
+     `kernel32_readahead`.
+
+  Not in this: writing through a stream, overlapped I/O or `io_uring` (threads first), a file
+  system past FAT16, and `OS.FileSize` and `OS.ReadFileAt`, which still stop at 2 GB (a program
+  wanting more uses a stream). Not measured: how fast any of it is under a real game's load.
+
 The parts most worth doing next, roughly in order:
 
 1. **More for windows:** a program opening more than one window, menus, and dialog boxes

@@ -4,6 +4,21 @@
 
 phi.LinuxLayout:Linux64
 {
+	const int LARGE_FILE: 0;              # (nothing to ask for: every file is one here)
+
+	# an open file's size, into size; false if it isn't a regular file
+	[SizeOf: int fd: 0; ptr<u64> size: 0;]
+		u32 info[36];
+		if (sys.FStat: fd addr info) is not 0 return false;
+		if (info:6 & 0xF000) is not 0x8000 return false;
+		u64 whole: info:13;
+		size:0 is (whole << 32) | info:12;
+	[end: true]
+
+	# reading goes on from position; false if Linux says no
+	[SeekTo: int fd: 0; u64 position: 0;]
+	[end: (sys.LSeek64: fd position 0) is position]
+
 	# a file's size, or -1 if it isn't a file, and an error from 2 GB up, which an int can't
 	# hold (Linux's stat: the mode at byte 24, the size at 48)
 	[FileSize: ptr<u8> path: 0;]
@@ -21,6 +36,8 @@ sys.Write: 1  int fd  ptr<u8> data  u32 count;
 sys.Open: 2  ptr<u8> path  int flags  int mode;
 sys.Close: 3  int fd;
 sys.Stat: 4  ptr<u8> path  ptr<u32> info;
+sys.FStat: 5  int fd  ptr<u32> info;
+sys.LSeek64: 8  int fd  u64 position  int whence: u64;
 sys.LSeek: 8  int fd  int offset  int whence;
 sys.SchedYield: 24;
 sys.GetUserId: 102;

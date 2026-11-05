@@ -1,0 +1,111 @@
+# A stream read ahead on a thread (fs.readahead), on Linux and Windows, 32 and 64 bits: a file
+# much bigger than the room kept ready comes through whole, a take never waits, a seek drops
+# what was ready, and stopping leaves the stream open. kernel32_readahead does the same on PHI OS.
+use user.stream;
+use user.threads;
+use fs.readahead;
+use support.big_file_linux32;
+use support.big_file_linux64;
+use support.big_file_windows;
+
+phi.ReadAheadProgram:Program
+{
+	const int SIZE: 300000;
+	const int ROOM: 16384;
+	ptr<u8> data: new u8[SIZE];
+	ptr<u8> read: new u8[SIZE];
+	u8 piece[64];
+	str path: ('phi_readahead_' (BigFile.Pid) '.bin');
+	while int i: 0; i < SIZE; i++;
+		data:i is (i % 251) as u8;
+	;;
+	log 'made: ' (OS.WriteFile: path data SIZE) '\n';
+
+	int s: (Stream.Open: path);
+	int r: (ReadAhead.Start: s ROOM);
+	log 'started: ' (r >= 0) '\n';
+
+	# all of it, in pieces of an odd size, sleeping when it's not ready yet
+	int total: 0;
+	int got: 0;
+	while got >= 0
+		got is (ReadAhead.Take: r read + total 777);
+		if got > 0
+			total++ got;
+		;;
+		elif got is 0
+			call OS.Sleep: 1;
+		;;
+	;;
+	bln same: true;
+	while int i: 0; i < SIZE; i++;
+		if read:i is not data:i
+			same is false;
+		;;
+	;;
+	log 'taken: ' total ', the same: ' same ', and after the end: ' (ReadAhead.Take: r read 10) '\n';
+
+	# back from the end, and to the middle while it has things ready
+	log 'seek: ' (ReadAhead.Seek: r 100000) '\n';
+	call Next: r 100000;
+	log 'seek: ' (ReadAhead.Seek: r 5) '\n';
+	call Next: r 5;
+	call Next: r 69;
+	log 'past the end: ' (ReadAhead.Seek: r 300001) '\n';
+
+	# a seek to the end: nothing more, and then -1
+	log 'the end: ' (ReadAhead.Seek: r 300000) '\n';
+	got is 0;
+	while got is 0
+		got is (ReadAhead.Take: r addr piece 64);
+		if got is 0
+			call OS.Sleep: 1;
+		;;
+	;;
+	log 'takes: ' got '\n';
+
+	log 'stopped: ' (ReadAhead.Stop: r) ' ' (ReadAhead.Stop: r) ', take after: ' (ReadAhead.Take: r addr piece 64) '\n';
+	log 'the stream is still open: ' ((Stream.Size: s) is SIZE) '\n';
+	log 'and it reads: ' (Stream.Seek: s 0) ' ' (Stream.Read: s addr piece 64) '\n';
+
+	# one that's never read from can stop too, with its reader waiting for room
+	int waiting: (ReadAhead.Start: s ROOM);
+	call OS.Sleep: 20;
+	log 'stopped waiting: ' (ReadAhead.Stop: waiting) '\n';
+
+	# as many as there's room for
+	int many[9];
+	int running: 0;
+	while int i: 0; i < 9; i++;
+		many:i is (ReadAhead.Start: s 64);
+		if many:i >= 0
+			running++;
+		;;
+	;;
+	log 'running at once: ' running ', one more: ' many:8 '\n';
+	while int i: 0; i < 8; i++;
+		call ReadAhead.Stop: many:i;
+	;;
+	log 'nothing to read into: ' (ReadAhead.Start: s 0) '\n';
+	log 'closed: ' (Stream.Close: s) ', deleted: ' (OS.DeleteFile: path) '\n';
+
+	# 64 bytes from where it's been sent, once they're ready, checked
+	[Next: int reader: 0; int from: 0;]
+		int n: 0;
+		while n < 64
+			int more: (ReadAhead.Take: reader addr piece + n 64 - n);
+			if more < 0 break;
+			n++ more;
+			if more is 0
+				call OS.Sleep: 1;
+			;;
+		;;
+		bln right: true;
+		while int i: 0; i < n; i++;
+			if piece:i is not data:(from + i)
+				right is false;
+			;;
+		;;
+		log 'from ' from ': ' n ' right: ' right '\n';
+	[end]
+}

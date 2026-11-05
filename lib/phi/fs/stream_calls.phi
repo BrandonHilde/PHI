@@ -1,0 +1,78 @@
+# Streams for user programs, on the kernel's side. 32-bit kernels with proc.process.
+#
+#   use fs.stream_calls;
+#   int pid: (Process.Spawn: 'GAME.BIN');       # a program with use user.stream
+#
+# A program uses Stream from user.stream, which makes the system calls answered here (102 to
+# 106). A stream belongs to the process that opened it: a program can only use its own, and
+# they're all closed when it ends (or crashes). Pointers a program passes are checked to be
+# inside its memory, as file calls' are. These hold the file system's lock and not the kernel's,
+# so a program waiting for the disk doesn't hold up the others.
+
+use proc.process;
+use fs.stream;
+
+phi.StreamCalls:Kernel
+{
+	const u32 SYS_STREAM_OPEN: 102;
+	const u32 SYS_STREAM_SIZE: 103;
+	const u32 SYS_STREAM_READ: 104;
+	const u32 SYS_STREAM_SEEK: 105;
+	const u32 SYS_STREAM_CLOSE: 106;
+	const int MAX_PROCESSES: 64;
+
+	# what had the system calls and the release before us: we pass theirs on
+	method<u32 u32 u32 u32 u32: int> other_calls: Process.more_calls;
+	method<int> other_release: Process.on_release;
+	Process.more_calls is addr Calls;
+	Process.on_release is addr Release;
+	# and they come straight here, with no kernel lock
+	method<u32 u32 u32 u32 u32: int> own_calls: addr Calls;
+	call asm.StreamCallsOwnLock;
+
+	[Calls: u32 number: 0; u32 a: 0; u32 b: 0; u32 c: 0; u32 d: 0;]
+		if number < SYS_STREAM_OPEN or number > SYS_STREAM_CLOSE
+			int passed: -1;
+			if other_calls is not 0
+				call passed is other_calls: number a b c d;
+			;;
+			return passed;
+		;;
+		int pid: (OS.CurrentProcess);
+		if pid <= 0 or pid >= MAX_PROCESSES return -1;
+		if number is SYS_STREAM_OPEN
+			u8 path[256];
+			if not (Process.CopyFromUser: a addr path 256) return -1;
+			return (Stream.OpenFor: pid addr path);
+		;;
+		# (a number a program passes can be anything, and is refused if it isn't its own)
+		int s: a as int;
+		if number is SYS_STREAM_SIZE return (Stream.SizeFor: pid s);
+		if number is SYS_STREAM_READ
+			if not (Process.UserRange: b c) return -1;
+			return (Stream.ReadFor: pid s b as ptr<u8> c);
+		;;
+		if number is SYS_STREAM_SEEK
+			if (Stream.SeekFor: pid s b) return 1;
+			return 0;
+		;;
+		if (Stream.CloseFor: pid s) return 1;
+	[end: 0]
+
+	[Release: int pid: 0;]
+		call Stream.CloseAllFor: pid;
+		if other_release is not 0
+			call other_release: pid;
+		;;
+	[end]
+}
+
+# the stream calls are answered without the kernel lock (tasks.asm's phi_own_call)
+asm.StreamCallsOwnLock
+{
+	mov eax, {SYS_STREAM_OPEN}
+	mov ecx, {SYS_STREAM_CLOSE} - {SYS_STREAM_OPEN} + 1
+	mov edx, [{own_calls}]
+	call phi_own_add
+	ret
+}

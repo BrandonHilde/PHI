@@ -1,0 +1,91 @@
+# Reading a file a piece at a time (user.stream), on Linux and Windows, 32 and 64 bits: on
+# from where it had got to, back and forward, the end, a number that isn't a stream, and how
+# many can be open. Then a sparse file past 5 GB with text written at places either side of
+# 2 GB and 4 GB, so a seek is seen to land where it was sent. kernel32_stream_programs runs
+# the first part on PHI OS, where FAT16 stops at 2 GB.
+use user.stream;
+use user.math;
+use support.big_file_linux32;
+use support.big_file_linux64;
+use support.big_file_windows;
+
+phi.StreamProgram:Program
+{
+	u8 buffer[64];
+	str path: ((BigFile.Folder) 'phi_stream_' (BigFile.Pid) '.bin');
+	str folder: ((BigFile.Folder) 'phi_stream_' (BigFile.Pid) '_folder');
+
+	log 'made: ' (OS.WriteFile: path 'hello stream' 12) '\n';
+	int s: (Stream.Open: path);
+	log 'opened: ' (s >= 0) ', size ' (Stream.Size: s) ', at ' (Stream.Position: s) '\n';
+
+	# on from where it's got to
+	call Take: s 5;
+	call Take: s 3;
+	call Take: s 60;
+	call Take: s 60;
+
+	# back, forward, and the edges
+	log 'back to 6: ' (Stream.Seek: s 6) '\n';
+	call Take: s 60;
+	log 'the end: ' (Stream.Seek: s 12) '\n';
+	call Take: s 60;
+	log 'past the end: ' (Stream.Seek: s 13) ', still at ' (Stream.Position: s) '\n';
+	log 'negative: ' (Stream.Seek: s (-1)) ', still at ' (Stream.Position: s) '\n';
+	log 'back to 0: ' (Stream.Seek: s 0) '\n';
+	call Take: s 5;
+
+	# what isn't a stream
+	log 'closed: ' (Stream.Close: s) ' ' (Stream.Close: s) '\n';
+	log 'after closing: ' (Stream.Read: s addr buffer 5) ' ' (Stream.Seek: s 0) ' ' (Stream.Size: s) ' ' (Stream.Position: s) '\n';
+	log 'not a number of one: ' (Stream.Read: -1 addr buffer 5) ' ' (Stream.Read: 64 addr buffer 5) ' ' (Stream.Read: 1000 addr buffer 5) '\n';
+	log 'no such file: ' (Stream.Open: 'phi_stream_there_is_no_such_file') '\n';
+	log 'a folder: ' (OS.MakeFolder: folder) ' ' (Stream.Open: folder) ' ' (OS.DeleteFolder: folder) '\n';
+
+	# as many as there's room for, and room again after closing one
+	int many[65];
+	int open: 0;
+	while int i: 0; i < 65; i++;
+		many:i is (Stream.Open: path);
+		if many:i >= 0
+			open++;
+		;;
+	;;
+	log 'open at once: ' open ', one more: ' many:64 '\n';
+	log 'one closed: ' (Stream.Close: many:10) ', and open again: ' (Stream.Open: path) '\n';
+	while int i: 0; i < 64; i++;
+		call Stream.Close: i;
+	;;
+
+	# past 2 GB and 4 GB
+	u64 twoGB: 2147483648;
+	u64 fourGB: 4294967296;
+	u64 fiveGB: 5368709120;
+	log 'big: ' (BigFile.Resize: path 1 0x40000010) '\n';
+	log 'marks: ' (BigFile.Mark: path 0 0x7FFFFFFE 'edge of two' 11) ' ' (BigFile.Mark: path 0 0xFFFFFFFE 'edge of four' 12) ' ' (BigFile.Mark: path 1 0x40000000 'five' 4) '\n';
+	s is (Stream.Open: path);
+	log 'size: ' (Stream.Size: s) '\n';
+	call Far: s fiveGB 4;
+	call Far: s fourGB - 2 12;
+	call Far: s twoGB - 2 11;
+	call Far: s fiveGB 4;
+	log 'on from the far one: ' (Stream.Read: s addr buffer 12) ', at ' (Stream.Position: s) '\n';
+	log 'the end: ' (Stream.Read: s addr buffer 12) '\n';
+	log 'past it: ' (Stream.Seek: s (Stream.Size: s) + 1) '\n';
+	log 'closed: ' (Stream.Close: s) '\n';
+	log 'deleted: ' (OS.DeleteFile: path) '\n';
+
+	# count bytes on from where it's got to
+	[Take: int stream: 0; u32 count: 0;]
+		int got: (Stream.Read: stream addr buffer count);
+		buffer:(Math.Max: got 0) is 0;
+		ptr<u8> text: addr buffer;
+		log got ' [' text '] at ' (Stream.Position: stream) '\n';
+	[end]
+
+	# count bytes from a place far in
+	[Far: int stream: 0; u64 where: 0; u32 count: 0;]
+		log 'to ' where ': ' (Stream.Seek: stream where) ' ';
+		call Take: stream count;
+	[end]
+}

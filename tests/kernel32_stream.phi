@@ -1,0 +1,96 @@
+# Streams in a kernel and its programs (fs.stream, fs.stream_calls): a file read on in pieces
+# across its clusters, back and forward; what happens when it's rewritten or deleted while it's
+# open; and a program's, which it reads the same way, can't use the kernel's, and has closed for
+# it when it ends (kernel32_stream.rootfs/streams.phi).
+use fs.stream_calls;
+use memory.mem;
+use user.math;
+
+phi.Test:Kernel
+{
+	const int SIZE: 20000;
+	ptr<u8> data: new u8[SIZE];
+	ptr<u8> read: new u8[SIZE];
+	while int i: 0; i < SIZE; i++;
+		data:i is (i % 251) as u8;
+	;;
+	log 'written: ' (Fat.WriteFile: 'DATA.BIN' data SIZE) '\n';
+
+	int s: (Stream.Open: 'DATA.BIN');
+	log 'opened: ' (s >= 0) ', size ' (Stream.Size: s) ', at ' (Stream.Position: s) '\n';
+
+	# all of it, in pieces that don't line up with its clusters
+	int total: 0;
+	int got: (Stream.Read: s read 777);
+	while got > 0
+		total++ got;
+		got is (Stream.Read: s read + total 777);
+	;;
+	log 'read: ' total ', the end: ' got ', the same: ' (Mem.Equal: data read SIZE) '\n';
+
+	# back and forward, each reading what's there
+	call At: s 12345;
+	call At: s 5;
+	call At: s 19999;
+	call At: s 8192;
+	log 'past the end: ' (Stream.Seek: s 20001) ', still at ' (Stream.Position: s) '\n';
+	log 'the end: ' (Stream.Seek: s 20000) ' ' (Stream.Read: s read 10) '\n';
+
+	# what isn't a stream
+	log 'no such file: ' (Stream.Open: 'NOSUCH.BIN') '\n';
+	log 'a folder: ' (Fat.MakeFolder: 'SOMEDIR') ' ' (Stream.Open: 'SOMEDIR') '\n';
+	log 'not a number of one: ' (Stream.Read: -1 read 5) ' ' (Stream.Read: 64 read 5) ' ' (Stream.Read: 63 read 5) '\n';
+
+	# as many as there's room for
+	int many[65];
+	int open: 0;
+	while int i: 0; i < 65; i++;
+		many:i is (Stream.Open: 'DATA.BIN');
+		if many:i >= 0
+			open++;
+		;;
+	;;
+	log 'open with this one: ' (open + 1) ', one more: ' many:64 '\n';
+	while int i: 0; i < 64; i++;
+		if many:i >= 0
+			call Stream.Close: many:i;
+		;;
+	;;
+
+	# rewritten while it's open: what's read is what's there now, not what's in its old clusters
+	log 'seek: ' (Stream.Seek: s 2) '\n';
+	log 'rewritten: ' (Fat.WriteFile: 'DATA.BIN' 'ABCDEFGH' 8) '\n';
+	got is (Stream.Read: s read 100);
+	read:(Math.Max: got 0) is 0;
+	log 'the new text from 2: ' got ' [' read '], size ' (Stream.Size: s) '\n';
+	log 'past its new end: ' (Stream.Seek: s 9) '\n';
+
+	# deleted while it's open
+	log 'back: ' (Stream.Seek: s 0) ', deleted: ' (Fat.Delete: 'DATA.BIN') ', read: ' (Stream.Read: s read 8) '\n';
+	log 'closed: ' (Stream.Close: s) ' ' (Stream.Close: s) '\n';
+
+	# a program's
+	log 'a file for the program: ' (Fat.WriteFile: 'SHARED.TXT' 'hello stream' 12) '\n';
+	int mine: (Stream.Open: 'SHARED.TXT');
+	log 'the kernel has ' mine '\n';
+	int code: (Process.Wait: (Process.Spawn: 'STREAMS.BIN'));
+	log 'it left one open, and ended with ' code '\n';
+
+	# closed when it ended: all but the kernel's can be opened
+	open is 0;
+	while int i: 0; i < 64; i++;
+		many:i is (Stream.Open: 'SHARED.TXT');
+		if many:i >= 0
+			open++;
+		;;
+	;;
+	log 'open with the kernel one: ' (open + 1) '\n';
+	log 'still its own: ' (Stream.Read: mine read 5) '\n';
+	exit 0;
+
+	[At: int stream: 0; u64 where: 0;]
+		log 'to ' where ': ' (Stream.Seek: stream where);
+		int n: (Stream.Read: stream read 1);
+		log ', ' n ', byte ' read:0 ', right: ' (read:0 is data:(where as int)) ', at ' (Stream.Position: stream) '\n';
+	[end]
+}

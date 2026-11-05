@@ -1,0 +1,45 @@
+# A PHI OS program's stream read ahead on one of its threads (kernel32_readahead runs it).
+use user.stream;
+use user.threads;
+use fs.readahead;
+
+phi.Ahead:Program
+{
+	const int SIZE: 100000;
+	const int ROOM: 8192;
+	ptr<u8> read: new u8[SIZE];
+
+	int s: (Stream.Open: 'AHEAD.BIN');
+	int r: (ReadAhead.Start: s ROOM);
+	log 'program started: ' (r >= 0) '\n';
+	int total: 0;
+	int got: 0;
+	while got >= 0
+		got is (ReadAhead.Take: r read + total 777);
+		if got > 0
+			total++ got;
+		;;
+		elif got is 0
+			call OS.Sleep: 1;
+		;;
+	;;
+	bln same: true;
+	while int i: 0; i < SIZE; i++;
+		if read:i is not (i % 251)
+			same is false;
+		;;
+	;;
+	log 'program taken: ' total ', the same: ' same '\n';
+
+	log 'program seek: ' (ReadAhead.Seek: r 50000) '\n';
+	got is 0;
+	while got is 0
+		got is (ReadAhead.Take: r read 64);
+		if got is 0
+			call OS.Sleep: 1;
+		;;
+	;;
+	log 'program from 50000: ' (got > 0) ', right: ' (read:0 is 50000 % 251) '\n';
+	log 'program stopped: ' (ReadAhead.Stop: r) ', closed: ' (Stream.Close: s) '\n';
+	exit 3;
+}

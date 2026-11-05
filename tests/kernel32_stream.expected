@@ -1,0 +1,38 @@
+written: 1
+opened: 1, size 20000, at 0
+read: 20000, the end: 0, the same: 1
+to 12345: 1, 1, byte 46, right: 1, at 12346
+to 5: 1, 1, byte 5, right: 1, at 6
+to 19999: 1, 1, byte 170, right: 1, at 20000
+to 8192: 1, 1, byte 160, right: 1, at 8193
+past the end: 0, still at 8193
+the end: 1 0
+no such file: -1
+a folder: 1 -1
+not a number of one: -1 -1 -1
+open with this one: 64, one more: -1
+seek: 1
+rewritten: 1
+the new text from 2: 6 [CDEFGH], size 8
+past its new end: 0
+back: 1, deleted: 1, read: -1
+closed: 1 0
+a file for the program: 1
+the kernel has 0
+opened: 1, size 12, at 0
+5 [hello] at 5
+3 [ st] at 8
+4 [ream] at 12
+0 [] at 12
+back to 6: 1
+6 [stream] at 12
+past the end: 0, still at 12
+negative: 0, still at 12
+closed: 1 0
+no such file: -1
+not its own: -1 -1
+a buffer in the kernel: -1, and this one still reads: 5 [hello] at 5
+left open: 1
+it left one open, and ended with 7
+open with the kernel one: 64
+still its own: 5

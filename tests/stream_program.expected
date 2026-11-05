@@ -1,0 +1,33 @@
+made: 1
+opened: 1, size 12, at 0
+5 [hello] at 5
+3 [ st] at 8
+4 [ream] at 12
+0 [] at 12
+back to 6: 1
+6 [stream] at 12
+the end: 1
+0 [] at 12
+past the end: 0, still at 12
+negative: 0, still at 12
+back to 0: 1
+5 [hello] at 5
+closed: 1 0
+after closing: -1 0 0 0
+not a number of one: -1 -1 -1
+no such file: -1
+a folder: 1 -1 1
+open at once: 64, one more: -1
+one closed: 1, and open again: 10
+big: 1
+marks: 1 1 1
+size: 5368709136
+to 5368709120: 1 4 [five] at 5368709124
+to 4294967294: 1 12 [edge of four] at 4294967306
+to 2147483646: 1 11 [edge of two] at 2147483657
+to 5368709120: 1 4 [five] at 5368709124
+on from the far one: 12, at 5368709136
+the end: 0
+past it: 0
+closed: 1
+deleted: 1

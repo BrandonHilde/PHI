@@ -1,0 +1,123 @@
+# Reading a big file a piece at a time, in a 32-bit kernel: the file stays open and remembers
+# its place, so reading on doesn't look the path up or walk its clusters from the start. The
+# same calls as a program's user.stream:
+#
+#   use fs.stream;
+#   int s: (Stream.Open: 'WORLD.PAK');            # -1 if it can't be opened
+#   int got: (Stream.Read: s addr buffer 65536);  # the bytes, 0 at the end, -1 if it failed
+#   call Stream.Seek: s 1048576;                  # false past the end, and it stays put
+#   u64 at: (Stream.Position: s);
+#   u64 size: (Stream.Size: s);
+#   call Stream.Close: s;
+#
+# A stream is a number, as a socket is: one that isn't open is refused (-1, false, or 0 for a
+# position or a size). A file that's rewritten while it's open reads as it is now, and one
+# that's deleted gives -1, rather than what has been put in its clusters since. Positions
+# are u64 as a program's are, though FAT16 stops at 2 GB.
+#
+# Programs' streams (use fs.stream_calls) are kept here too, and each can only use its own.
+
+use fs.fat16;
+
+phi.Stream:Kernel
+{
+	const int MOST: 64;                 # streams open at once, the kernel's and programs'
+	const u32 MOST_AT_ONCE: 0x7FFFFFFF; # the most one read gives, which an int can say
+
+	bln opened[64];
+	int owners[64];                     # the process each is for; 0 for the kernel
+	u32 places[64];                     # how far in each has got
+	FatPlace files[64];
+	lock slots;                         # (programs and threads open and close at once)
+
+	[Open: ptr<u8> path: 0;]
+	[end: (OpenFor: 0 path)]
+
+	[Read: int s: -1; ptr<u8> to: 0; u32 max: 0;]
+	[end: (ReadFor: 0 s to max)]
+
+	[Seek: int s: -1; u64 position: 0;]
+	[end: (SeekFor: 0 s position)]
+
+	[Position: int s: -1;]
+		if not (Valid: 0 s) return 0 as u64;
+		u64 place: places:s;
+	[end: place]
+
+	[Size: int s: -1;]
+		if not (Valid: 0 s) return 0 as u64;
+		u64 size: files:s.size;
+	[end: size]
+
+	[Close: int s: -1;]
+	[end: (CloseFor: 0 s)]
+
+	# ---- the same for a process
+
+	# the file at path, to read; its number, or -1 if it can't be opened (it isn't there, it's
+	# a folder) or MOST are open already
+	[OpenFor: int owner: 0; ptr<u8> path: 0;]
+		int s: -1;
+		locked slots
+			while int i: 0; i < MOST and s < 0; i++;
+				if not opened:i
+					opened:i is true;
+					owners:i is -1;     # (taken, and nobody's yet)
+					s is i;
+				;;
+			;;
+		;;
+		if s < 0 return -1;
+		if not (Fat.PlaceOpen: path addr files:s)
+			locked slots
+				opened:s is false;
+			;;
+			return -1;
+		;;
+		places:s is 0;
+		owners:s is owner;
+	[end: s]
+
+	[ReadFor: int owner: 0; int s: -1; ptr<u8> to: 0; u32 max: 0;]
+		if not (Valid: owner s) return -1;
+		if max > MOST_AT_ONCE
+			max is MOST_AT_ONCE;
+		;;
+		int got: (Fat.PlaceRead: addr files:s places:s to max);
+		if got > 0
+			places:s++ got;
+		;;
+	[end: got]
+
+	[SeekFor: int owner: 0; int s: -1; u64 position: 0;]
+		if not (Valid: owner s) or position > files:s.size return false;
+		places:s is position as u32;
+	[end: true]
+
+	# its size, or -1 if it isn't this process's
+	[SizeFor: int owner: 0; int s: -1;]
+		if not (Valid: owner s) return -1;
+	[end: files:s.size as int]
+
+	[CloseFor: int owner: 0; int s: -1;]
+		if not (Valid: owner s) return false;
+		locked slots
+			opened:s is false;
+		;;
+	[end: true]
+
+	# a process has ended: its streams are closed
+	[CloseAllFor: int owner: 0;]
+		locked slots
+			while int i: 0; i < MOST; i++;
+				if opened:i and owners:i is owner
+					opened:i is false;
+				;;
+			;;
+		;;
+	[end]
+
+	[Valid: int owner: 0; int s: -1;]
+		if s < 0 or s >= MOST return false;
+	[end: opened:s and owners:s is owner]
+}

@@ -1821,15 +1821,30 @@ namespace Phi.Compiler.CodeGen
             string[] kept = bits64 ? new[] { "rsi", "rdi" } : new[] { "ebp", "edi", "esi", "ebx" };
             Comment($"sys.{sys.Name}, system call {sys.Number}");
             foreach (string r in kept) Emit($"push {r}");
-            foreach (Expr value in arguments)
+            for (int i = 0; i < arguments.Count; i++)
             {
-                EmitExpr(value);
+                if (i < sys.ParameterTypes.Count && sys.ParameterTypes[i].IsWide && bits64)
+                {
+                    // a 64-bit number is all of one register: its halves, joined
+                    EmitWide(arguments[i]);
+                    Emit("shl rdx, 32");
+                    Emit("mov eax, eax");
+                    Emit("or rax, rdx");
+                }
+                else EmitExpr(arguments[i]);
                 Emit("push eax");
             }
             for (int i = arguments.Count - 1; i >= 0; i--) Emit($"pop {registers[i]}");
             Emit($"mov eax, {sys.Number}");
             Emit(bits64 ? "syscall" : "int 0x80");
             foreach (string r in kept.Reverse()) Emit($"pop {r}");
+            if (bits64 && sys.ResultType is { IsWide: true })
+            {
+                // and one comes back the same way, for edx:eax
+                Emit("mov rdx, rax");
+                Emit("shr rdx, 32");
+                Emit("mov eax, eax");
+            }
         }
 
         /// <summary>

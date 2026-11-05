@@ -279,6 +279,7 @@ namespace Phi.Compiler.Semantics
                 if (sys.Parameters.Count > 6)
                     Error(sys.Span, $"sys.{sys.Name} takes {sys.Parameters.Count} values, but a system call takes at most 6");
                 sysTypes[sys] = sys.Parameters.Select(p => ResolveType(p.Type, null, allowStr: false)).ToList();
+                sys.ParameterTypes = sysTypes[sys];
                 sys.ResultType = sys.Result != null ? ResolveType(sys.Result, null, allowStr: false) : PhiType.Int;
             }
 
@@ -3752,6 +3753,8 @@ namespace Phi.Compiler.Semantics
                         return null;
                     }
                     List<PhiType> types = sysTypes[sys];
+                    if (!host.Is64() && (types.Any(t => t.IsWide) || sys.ResultType!.IsWide))
+                        Error(span, $"sys.{sys.Name} has a 64-bit number, and a 32-bit system's calls take and give 32 bits at a time; declare its two halves");
                     if (arguments.Count != types.Count)
                         Error(span, $"sys.{sys.Name} takes {Plural(types.Count, "value")} ({string.Join(", ", sys.Parameters.Select(p => p.Name))}), but was given {arguments.Count}");
                     for (int i = 0; i < Math.Min(arguments.Count, types.Count); i++)

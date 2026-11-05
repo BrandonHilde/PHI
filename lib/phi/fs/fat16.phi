@@ -70,6 +70,18 @@ struct.DirEntry
 	u32 size;
 }
 
+# Where a reader has got to in a file (fs.stream), so that reading on doesn't look the path up
+# or walk the file's clusters from the start again.
+struct.FatPlace
+{
+	str path: [255];
+	u32 first;              # the file's first cluster
+	u32 size;
+	u32 cluster;            # the one it read last, the index'th of the file
+	u32 index;
+	u32 frees;              # Fat.frees when this was looked up
+}
+
 phi.Fat:Kernel
 {
 	const u8 ATTR_VOLUME: 0x08;
@@ -105,6 +117,7 @@ phi.Fat:Kernel
 	u32 parent_directory: 0;            # the folder the last name is (or would be) in; 0 = root
 
 	str display_name: [12];
+	u32 frees: 0;                       # how many times clusters have been freed, for FatPlace
 
 	call Mount;
 
@@ -231,6 +244,81 @@ phi.Fat:Kernel
 			size is found.size as int;
 		;;
 	[end: size]
+
+	# ---- a place in a file, for reading on from
+
+	# place is the file at path; false if it isn't one, or the path is longer than a place holds
+	[PlaceOpen: ptr<u8> path: 0; ptr<FatPlace> place: 0;]
+		u32 length: 0;
+		while path:length is not 0
+			if length >= 255 return false;
+			length++;
+		;;
+		while u32 i: 0; i <= length; i++;
+			place.path:i is path:i;
+		;;
+		call guard.Take;
+		bln ok: (PlaceLook: place);
+		call guard.Give;
+	[end: ok]
+
+	# up to max bytes from offset in, as ReadAt, but on from where place had got to: -1 if the
+	# file has gone (the lock is given up between clusters, so a long read holds up nothing long)
+	[PlaceRead: ptr<FatPlace> place: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		u32 copied: 0;
+		while copied < max
+			call guard.Take;
+			int chunk: (PlaceChunk: place offset + copied buffer + copied max - copied);
+			call guard.Give;
+			if chunk < 0
+				if copied is 0 return -1;
+				break;
+			;;
+			if chunk is 0 break;
+			copied++ chunk;
+		;;
+	[end: copied as int]
+
+	# (with the lock) the file place's path is now, from the start: its clusters are only
+	# known to be its own until some are freed, as they may be someone else's after that
+	[PlaceLook: ptr<FatPlace> place: 0;]
+		if not (Resolve: addr place.path) or (found.attributes & ATTR_DIRECTORY) is not 0 return false;
+		place.first is found.cluster;
+		place.size is found.size;
+		place.cluster is found.cluster;
+		place.index is 0;
+		place.frees is frees;
+	[end: true]
+
+	# (with the lock) what's left of the cluster that offset is in: the bytes, 0 at the end, -1 if
+	# the file has gone or the disk failed
+	[PlaceChunk: ptr<FatPlace> place: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		if place.frees is not frees and not (PlaceLook: place) return -1;
+		if offset >= place.size return 0;
+		u32 index: offset / cluster_bytes;
+		if index < place.index
+			place.cluster is place.first;
+			place.index is 0;
+		;;
+		while place.index < index and place.cluster >= 2 and place.cluster < CHAIN_END
+			place.cluster is fat_table:(place.cluster);
+			place.index++;
+		;;
+		if place.cluster < 2 or place.cluster >= CHAIN_END return 0;
+
+		u32 within: offset % cluster_bytes;
+		u32 chunk: cluster_bytes - within;
+		if chunk > place.size - offset
+			chunk is place.size - offset;
+		;;
+		if chunk > max
+			chunk is max;
+		;;
+		if not (ReadCluster: place.cluster) return -1;
+		while u32 k: 0; k < chunk; k++;
+			buffer:k is cluster_buffer:(within + k);
+		;;
+	[end: chunk as int]
 
 	[Exists: ptr<u8> path: 0;]
 		call guard.Take;
@@ -995,6 +1083,7 @@ phi.Fat:Kernel
 	[end: result]
 
 	[FreeChain: u32 cluster: 0;]
+		frees++;
 		while cluster >= 2 and cluster < CHAIN_END
 			u32 next: fat_table:cluster;
 			fat_table:cluster is 0;

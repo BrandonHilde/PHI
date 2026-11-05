@@ -191,6 +191,15 @@ namespace Phi.Cli
                     yield return new Plan(system, theirMachine + ProgramWrapper, Root: user);
                 }
             }
+
+            // one system's module that nothing uses yet: in the smallest program for that system
+            // (it can't have a program added to it, as a file with one system's classes has only those)
+            if (ownSystem is Host itsSystem && !partOfRuntime)
+            {
+                string folder = top ?? Path.GetDirectoryName(Path.GetFullPath(path))!;
+                string use = "use " + Path.GetRelativePath(folder, Path.ChangeExtension(Path.GetFullPath(path), null)).Replace(Path.DirectorySeparatorChar, '.') + ";\n";
+                yield return new Plan(target ?? itsSystem, use + ProgramWrapper, Root: Path.Combine(folder, "phi_check_module.phi"), OnlyAdded: true);
+            }
         }
 
         /// <summary>For a program with errors: the systems its modules are for, if it uses any that aren't this one's.</summary>

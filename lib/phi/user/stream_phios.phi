@@ -1,0 +1,35 @@
+# Streams' calls on PHI OS, for user.stream: system calls, which the kernel answers if it has
+# use fs.stream_calls. A kernel's stream number is known by the program as its file, and
+# FAT16's files stop at 2 GB, so a position always fits in 32 bits by the time it gets here.
+
+phi.StreamSystem:PhiOS
+{
+	# the file to read, or -1
+	[Open: ptr<u8> path: 0;]
+		int s: (sys.StreamOpen: path);
+		if s < 0 return (-1) as ptr<u8>;
+	[end: s as ptr<u8>]
+
+	# its size, into size; false if it can't say
+	[SizeOf: ptr<u8> file: 0; ptr<u64> size: 0;]
+		int known: (sys.StreamSize: file as int);
+		if known < 0 return false;
+		size:0 is known;
+	[end: true]
+
+	[Read: ptr<u8> file: 0; ptr<u8> to: 0; u32 max: 0;]
+	[end: (sys.StreamRead: file as int to max)]
+
+	[Seek: ptr<u8> file: 0; u64 position: 0;]
+	[end: (sys.StreamSeek: file as int position as u32) is 1]
+
+	[Close: ptr<u8> file: 0;]
+		int closed: (sys.StreamClose: file as int);
+	[end]
+}
+
+sys.StreamOpen: 102  ptr<u8> path;
+sys.StreamSize: 103  int stream;
+sys.StreamRead: 104  int stream  ptr<u8> to  u32 max;
+sys.StreamSeek: 105  int stream  u32 position;
+sys.StreamClose: 106  int stream;

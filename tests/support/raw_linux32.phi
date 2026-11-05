@@ -23,7 +23,18 @@ phi.Raw:Linux32
 		ptr<u8> page: (sys.Map: 0 4096 3 0x22 -1 0);
 		page:100 is 42;
 	[end: page:100]
+
+	# a position past 4 GB in a file of no size, and back: _llseek takes its two halves
+	[Far: u64 where: 0;]
+		int fd: (sys.MemoryFile: 'far' 0);
+		u64 got: 0;
+		int ok: (sys.SeekFar: fd (where >> 32) as u32 where as u32 addr got 0);
+		int closed: (sys.Close: fd);
+	[end: got]
 }
+
+sys.MemoryFile: 356  ptr<u8> name  int flags;
+sys.SeekFar: 140  int fd  u32 high  u32 low  ptr<u64> result  int from;
 
 sys.Write: 4  int fd  ptr<u8> data  u32 length;
 sys.GetPid: 20;

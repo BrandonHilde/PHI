@@ -1,0 +1,105 @@
+# Reading a big file a piece at a time, in a program on Linux, Windows or PHI OS: the file
+# stays open and remembers its place, so reading on costs what a read costs, and positions
+# go past 4 GB. The same calls as a kernel's fs.stream:
+#
+#   use user.stream;
+#   int s: (Stream.Open: 'world.pak');            # -1 if it can't be opened
+#   int got: (Stream.Read: s addr buffer 65536);  # the bytes, 0 at the end, -1 if it failed
+#   call Stream.Seek: s 5368709120;               # false past the end, and it stays put
+#   u64 at: (Stream.Position: s);
+#   u64 size: (Stream.Size: s);                   # as it was when it was opened
+#   call Stream.Close: s;
+#
+# A stream is a number here, as a socket is: one that isn't open is refused (-1, false, or 0
+# for a position or a size). Threads may each read their own stream at once; two reading one
+# stream need a lock, as they'd get each other's bytes. What's different on each system is
+# StreamSystem's (lib/phi/host/stream_linux.phi, stream_windows.phi, and stream_phios.phi
+# here, whose kernel needs use fs.stream_calls, and whose FAT16 files stop at 2 GB).
+
+use host.stream_linux;
+use host.stream_windows;
+use user.stream_phios;
+
+phi.Stream:Program
+{
+	const int MOST: 64;                 # streams open at once
+	const u32 MOST_AT_ONCE: 0x7FFFFFFF; # the most one read gives, which an int can say
+
+	bln opened[64];
+	ptr<u8> files[64];                  # what the system knows each by
+	u64 sizes[64];
+	u64 places[64];
+	lock slots;                         # (threads open and close at once)
+
+	# the file at path, to read; its number, or -1 if it can't be opened (it isn't there, it's
+	# a folder) or MOST are open already
+	[Open: ptr<u8> path: 0;]
+		ptr<u8> file: (StreamSystem.Open: path);
+		if (file as int) is -1 return -1;
+		u64 size: 0;
+		if not (StreamSystem.SizeOf: file addr size)
+			call StreamSystem.Close: file;
+			return -1;
+		;;
+		int s: -1;
+		locked slots
+			while int i: 0; i < MOST and s < 0; i++;
+				if not opened:i
+					opened:i is true;
+					s is i;
+				;;
+			;;
+		;;
+		if s < 0
+			call StreamSystem.Close: file;
+			return -1;
+		;;
+		files:s is file;
+		sizes:s is size;
+		places:s is 0;
+	[end: s]
+
+	# up to max bytes from where it's got to, into to: how many, 0 at the end of the file, -1
+	# if it isn't open or the read failed
+	[Read: int s: -1; ptr<u8> to: 0; u32 max: 0;]
+		if not (Valid: s) return -1;
+		if max > MOST_AT_ONCE
+			max is MOST_AT_ONCE;
+		;;
+		int got: (StreamSystem.Read: files:s to max);
+		if got > 0
+			places:s is places:s + got;
+		;;
+	[end: got]
+
+	# reading goes on from position; false if that's past the end of the file (the end itself
+	# is fine, and reads give 0), or it isn't open, and then it stays where it was
+	[Seek: int s: -1; u64 position: 0;]
+		if not (Valid: s) or position > sizes:s return false;
+		if not (StreamSystem.Seek: files:s position) return false;
+		places:s is position;
+	[end: true]
+
+	# how far in it's got; 0 if it isn't open
+	[Position: int s: -1;]
+		if not (Valid: s) return 0 as u64;
+	[end: places:s]
+
+	# the file's size when it was opened; 0 if it isn't open
+	[Size: int s: -1;]
+		if not (Valid: s) return 0 as u64;
+	[end: sizes:s]
+
+	# false if it wasn't open
+	[Close: int s: -1;]
+		if not (Valid: s) return false;
+		call StreamSystem.Close: files:s;
+		locked slots
+			opened:s is false;
+		;;
+	[end: true]
+
+	[Valid: int s: -1;]
+		if s < 0 or s >= MOST return false;
+	[end: opened:s]
+}

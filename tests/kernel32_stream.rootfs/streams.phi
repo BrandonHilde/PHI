@@ -1,0 +1,43 @@
+# A PHI OS program's streams (kernel32_stream runs it): the same calls as on Linux and Windows
+# (stream_program), its buffer checked, the kernel's stream out of its reach, and the ones it
+# leaves open closed for it when it ends.
+use user.stream;
+use user.math;
+
+phi.Streams:Program
+{
+	u8 buffer[64];
+
+	int s: (Stream.Open: 'SHARED.TXT');
+	log 'opened: ' (s >= 0) ', size ' (Stream.Size: s) ', at ' (Stream.Position: s) '\n';
+	call Take: s 5;
+	call Take: s 3;
+	call Take: s 60;
+	call Take: s 60;
+	log 'back to 6: ' (Stream.Seek: s 6) '\n';
+	call Take: s 60;
+	log 'past the end: ' (Stream.Seek: s 13) ', still at ' (Stream.Position: s) '\n';
+	log 'negative: ' (Stream.Seek: s (-1)) ', still at ' (Stream.Position: s) '\n';
+	log 'closed: ' (Stream.Close: s) ' ' (Stream.Close: s) '\n';
+	log 'no such file: ' (Stream.Open: 'NOSUCH.TXT') '\n';
+
+	# what's the kernel's isn't this program's, whatever number it tries
+	log 'not its own: ' (StreamSystem.Read: 0 as ptr<u8> addr buffer 5) ' ' (StreamSystem.Read: 1 as ptr<u8> addr buffer 5) '\n';
+
+	# a buffer that isn't in its memory is refused
+	s is (Stream.Open: 'SHARED.TXT');
+	log 'a buffer in the kernel: ' (Stream.Read: s 0x1000 as ptr<u8> 5) ', and this one still reads: ';
+	call Take: s 5;
+
+	# left open
+	int alsoOpen: (Stream.Open: 'SHARED.TXT');
+	log 'left open: ' (alsoOpen >= 0) '\n';
+	exit 7;
+
+	[Take: int stream: 0; u32 count: 0;]
+		int got: (Stream.Read: stream addr buffer count);
+		buffer:(Math.Max: got 0) is 0;
+		ptr<u8> text: addr buffer;
+		log got ' [' text '] at ' (Stream.Position: stream) '\n';
+	[end]
+}

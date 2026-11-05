@@ -1,0 +1,33 @@
+# Streams' calls that are Linux's own, for user.stream, 32 and 64 bits: a file descriptor,
+# through Linux's system calls (whose numbers, and what differs between the widths, are
+# linux32.phi's and linux64.phi's).
+
+use host.linux32;
+use host.linux64;
+
+phi.StreamSystem:Linux
+{
+	const int READ_ONLY: 0;
+
+	# the file to read, or -1
+	[Open: ptr<u8> path: 0;]
+		int fd: (sys.Open: path READ_ONLY | LinuxLayout.LARGE_FILE 0);
+		if fd < 0 return (-1) as ptr<u8>;
+	[end: fd as ptr<u8>]
+
+	# its size, into size; false if it isn't a regular file
+	[SizeOf: ptr<u8> file: 0; ptr<u64> size: 0;]
+	[end: (LinuxLayout.SizeOf: file as int size)]
+
+	[Read: ptr<u8> file: 0; ptr<u8> to: 0; u32 max: 0;]
+		int got: (sys.Read: file as int to max);
+		if got < 0 return -1;               # (Linux says -errno)
+	[end: got]
+
+	[Seek: ptr<u8> file: 0; u64 position: 0;]
+	[end: (LinuxLayout.SeekTo: file as int position)]
+
+	[Close: ptr<u8> file: 0;]
+		int closed: (sys.Close: file as int);
+	[end]
+}

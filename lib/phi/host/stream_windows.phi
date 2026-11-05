@@ -1,0 +1,44 @@
+# Streams' calls that are Windows' own, for user.stream, 32 and 64 bits: a file handle,
+# through kernel32.dll's functions.
+
+use 'kernel32.dll' as Kernel32;
+
+phi.StreamSystem:Windows
+{
+	const u32 READ: 0x80000000;           # GENERIC_READ
+	const u32 SHARE_ALL: 7;
+	const u32 OPEN_EXISTING: 3;
+	const u32 NORMAL: 0x80;
+
+	# the file to read, or -1 (a folder is one Windows won't open this way)
+	[Open: ptr<u8> path: 0;]
+		u16 wide[1024];
+		int length: (Kernel32.MultiByteToWideChar: 65001 0 path (-1) addr wide 1024);
+		if length is 0 return (-1) as ptr<u8>;
+	[end: (Kernel32.CreateFileW: addr wide READ SHARE_ALL 0 OPEN_EXISTING NORMAL 0)]
+
+	# its size, into size; false if Windows can't say
+	[SizeOf: ptr<u8> file: 0; ptr<u64> size: 0;]
+	[end: (Kernel32.GetFileSizeEx: file size) is not 0]
+
+	[Read: ptr<u8> file: 0; ptr<u8> to: 0; u32 max: 0;]
+		u32 count: 0;
+		if (Kernel32.ReadFile: file to max addr count 0) is 0 return -1;
+	[end: count as int]
+
+	[Seek: ptr<u8> file: 0; u64 position: 0;]
+		int high: (position >> 32) as int;
+		u32 low: position as u32;
+	[end: (Kernel32.SetFilePointer: file low as int addr high 0) is low]
+
+	[Close: ptr<u8> file: 0;]
+		int closed: (Kernel32.CloseHandle: file);
+	[end]
+}
+
+Kernel32.MultiByteToWideChar: u32 page  u32 flags  ptr<u8> text  int length  ptr<u16> wide  int room;
+Kernel32.CreateFileW: ptr<u16> path  u32 access  u32 share  ptr<u8> security  u32 how  u32 flags  ptr<u8> template: ptr<u8>;
+Kernel32.GetFileSizeEx: ptr<u8> file  ptr<u64> size;
+Kernel32.ReadFile: ptr<u8> file  ptr<u8> buffer  u32 count  ptr<u32> read  ptr<u8> overlapped;
+Kernel32.SetFilePointer: ptr<u8> file  int distance  ptr<int> high  u32 from: u32;
+Kernel32.CloseHandle: ptr<u8> handle;

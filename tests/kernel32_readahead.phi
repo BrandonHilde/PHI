@@ -1,0 +1,50 @@
+# A stream read ahead on a thread (fs.readahead) on PHI OS: in a kernel, with proc.threads, and
+# in a program, with user.threads (kernel32_readahead.rootfs/ahead.phi). A file much bigger than
+# the room kept ready comes through whole, and a seek drops what was ready.
+use fs.stream_calls;
+use fs.readahead;
+use proc.threads;
+use memory.mem;
+
+phi.Test:Kernel
+{
+	const int SIZE: 100000;
+	const int ROOM: 8192;
+	ptr<u8> data: new u8[SIZE];
+	ptr<u8> read: new u8[SIZE];
+	while int i: 0; i < SIZE; i++;
+		data:i is (i % 251) as u8;
+	;;
+	log 'made: ' (Fat.WriteFile: 'AHEAD.BIN' data SIZE) '\n';
+
+	int s: (Stream.Open: 'AHEAD.BIN');
+	int r: (ReadAhead.Start: s ROOM);
+	log 'started: ' (r >= 0) '\n';
+	int total: 0;
+	int got: 0;
+	while got >= 0
+		got is (ReadAhead.Take: r read + total 777);
+		if got > 0
+			total++ got;
+		;;
+		elif got is 0
+			call OS.Yield;
+		;;
+	;;
+	log 'taken: ' total ', the same: ' (Mem.Equal: data read SIZE) '\n';
+
+	log 'seek: ' (ReadAhead.Seek: r 50000) '\n';
+	got is 0;
+	while got is 0
+		got is (ReadAhead.Take: r read 64);
+		if got is 0
+			call OS.Yield;
+		;;
+	;;
+	log 'from 50000: ' (got > 0) ', right: ' (Mem.Equal: data + 50000 read got) '\n';
+	log 'stopped: ' (ReadAhead.Stop: r) ', closed: ' (Stream.Close: s) '\n';
+
+	int code: (Process.Wait: (Process.Spawn: 'AHEAD2.BIN'));
+	log 'exit code: ' code '\n';
+	exit 0;
+}

@@ -881,6 +881,18 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void ASystemCallWithA64BitNumberIsAnErrorOnA32BitSystem()
+        {
+            string path = Write("wide_32.phi", "phi.Wide:Linux32\n{\n\t[Try: u64 w: 0;]\n\t[end: (sys.Far: w)]\n}\nsys.Far: 200  u64 where: u64;\n");
+            CompileResult result = new SourceChecker(Host.Linux).Check(path, File.ReadAllText(path));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("declare its two halves"));
+
+            path = Write("wide_64.phi", "phi.Wide:Linux64\n{\n\t[Try: u64 w: 0;]\n\t[end: (sys.Far: w)]\n}\nsys.Far: 200  u64 where: u64;\n");
+            result = new SourceChecker(Host.Linux64).Check(path, File.ReadAllText(path));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Fact]
         public void TheSystemAskedForIsTheOneChecked()
         {
             string path = Write("hello.phi", "phi.Hello:Program\n{\n\tlog 'hi';\n}\n");

@@ -76,6 +76,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>What it gives, as the binder resolved it (an int when it doesn't say).</summary>
         public PhiType? ResultType { get; set; }
+
+        /// <summary>What each value is, as the binder resolved them.</summary>
+        public List<PhiType> ParameterTypes { get; set; } = new();
     }
 
     public sealed record SysCallParameter(TypeRef Type, string Name, Span Span);

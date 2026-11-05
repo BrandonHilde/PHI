@@ -4,6 +4,23 @@
 
 phi.LinuxLayout:Linux32
 {
+	const int LARGE_FILE: 0x8000;         # O_LARGEFILE: a file of 2 GB or more can be opened
+
+	# an open file's size, into size; false if it isn't a regular file
+	[SizeOf: int fd: 0; ptr<u64> size: 0;]
+		u32 info[24];
+		if (sys.FStat64: fd addr info) is not 0 return false;
+		if (info:4 & 0xF000) is not 0x8000 return false;
+		u64 whole: info:12;
+		size:0 is (whole << 32) | info:11;
+	[end: true]
+
+	# reading goes on from position; false if Linux says no (_llseek takes its two halves)
+	[SeekTo: int fd: 0; u64 position: 0;]
+		u64 got: 0;
+		if (sys.LLSeek: fd (position >> 32) as u32 position as u32 addr got 0) is not 0 return false;
+	[end: got is position]
+
 	# a file's size, or -1 if it isn't a file, and an error from 2 GB up, which an int can't
 	# hold (Linux's stat64: the mode at byte 16, the size at 44)
 	[FileSize: ptr<u8> path: 0;]
@@ -30,6 +47,8 @@ sys.SchedYield: 158;
 sys.GetUserId: 199;
 sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
 sys.Stat: 195  ptr<u8> path  ptr<u32> info;
+sys.FStat64: 197  int fd  ptr<u32> info;
+sys.LLSeek: 140  int fd  u32 high  u32 low  ptr<u64> result  int whence;
 sys.ClockGetTime: 265  int clock  ptr<int> now;
 
 # the sockets (Linux 4.3 and later has a call for each, not one socketcall)
