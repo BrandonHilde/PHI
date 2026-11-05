@@ -1,0 +1,53 @@
+# OS.ListFolder on Linux and Windows, 32 and 64 bits: what's in a folder, with long names, what's
+# a folder, sizes and dates; none of . and ..; as many as it's asked for; and a folder that isn't
+# there. (kernel32_program_folders does it on PHI OS.) The order is the system's, so it's sorted
+# by looking each one up.
+use fs.fileinfo;
+use support.big_file_linux32;
+use support.big_file_linux64;
+use support.big_file_windows;
+
+phi.ListFolderProgram:Program
+{
+	FileInfo entries[16];
+	str folder: ('phi_list_' (BigFile.Pid));
+	str one: (folder '/short.txt');
+	str two: (folder '/a name of the kind that a FAT16 disk could never hold, and then some more.data');
+	str inner: (folder '/inner');
+
+	log 'made: ' (OS.MakeFolder: folder) ' ' (OS.WriteFile: one 'hello' 5) ' ' (OS.WriteFile: two 'abc' 3) ' ' (OS.MakeFolder: inner) '\n';
+
+	int count: (OS.ListFolder: folder entries entries.len);
+	log 'in it: ' count '\n';
+	call Show: 'short.txt' count;
+	call Show: 'a name of the kind that a FAT16 disk could never hold, and then some more.data' count;
+	call Show: 'inner' count;
+
+	# a date that's about now, as the file was only just written
+	int i: (Find: 'short.txt' count);
+	log 'a date: ' (entries:i.year >= 2026) ' ' (entries:i.month >= 1 and entries:i.month <= 12) ' ' (entries:i.day >= 1 and entries:i.day <= 31) ' ' (entries:i.hour < 24) ' ' (entries:i.minute < 60) '\n';
+
+	log 'only two: ' (OS.ListFolder: folder entries 2) '\n';
+	log 'none: ' (OS.ListFolder: folder entries 0) '\n';
+	log 'an empty one: ' (OS.ListFolder: inner entries entries.len) '\n';
+	log 'not there: ' (OS.ListFolder: 'phi_list_there_is_no_such_folder' entries entries.len) '\n';
+	log 'a file: ' (OS.ListFolder: one entries entries.len) '\n';
+	log 'here: ' ((OS.ListFolder: '' entries entries.len) > 0) '\n';
+
+	log 'tidied: ' (OS.DeleteFile: one) ' ' (OS.DeleteFile: two) ' ' (OS.DeleteFolder: inner) ' ' (OS.DeleteFolder: folder) '\n';
+
+	[Find: str name; int how_many: 0;]
+		while int k: 0; k < how_many; k++;
+			if entries:k.name is name return k;
+		;;
+	[end: -1]
+
+	[Show: str name; int how_many: 0;]
+		int k: (Find: name how_many);
+		if k < 0
+			log name ': not there\n';
+			return;
+		;;
+		log entries:k.name ': size ' entries:k.size ', a folder: ' entries:k.folder '\n';
+	[end]
+}

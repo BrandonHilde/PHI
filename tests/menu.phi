@@ -1,0 +1,176 @@
+# runs only in 32 and 64 bits: gfx.draw is for 32-bit and 64-bit code
+# gui.menu's MenuBar, driven by keys and the mouse as a window's events would: opening, going
+# around, choosing, what's disabled and what's a line, an item's own key, and what it draws.
+use gui.menu;
+
+phi.MenuTest:Library
+{
+	const int OPEN: 11;
+	const int SAVE: 12;
+	const int QUIT: 13;
+	const int WRAP: 21;
+	const int ZOOM: 22;
+	const int ABOUT: 31;
+
+	ptr<u32> pixels: new u32[40000];    # 200 x 200
+	GuiEvent event;
+	MenuBar menu;
+
+	call Draw.Target: pixels 200 200;
+	call menu.Place: 0 0 200;
+	int file: (menu.AddMenu: 'File');
+	int view: (menu.AddMenu: 'View');
+	int help: (menu.AddMenu: 'Help');
+	call menu.AddItem: file 'Open' OPEN 'Ctrl+O' 'o' | Events.MOD_CTRL;
+	call menu.AddItem: file 'Save' SAVE 'Ctrl+S' 's' | Events.MOD_CTRL;
+	call menu.AddLine: file;
+	call menu.AddItem: file 'Quit' QUIT;
+	call menu.AddItem: view 'Wrap' WRAP;
+	call menu.AddItem: view 'Zoom' ZOOM;
+	call menu.AddItem: help 'About this' ABOUT;
+	call menu.Enable: SAVE false;
+	call menu.Check: WRAP true;
+
+	# file is at x 0 and is 48 wide, view at 48, help at 96; the bar is 22 high; a menu's rows
+	# start at y 23 and are 22 high, with a line 9 high
+	log 'widths: ' (menu.TitleWidth: 0) ' ' (menu.TitleX: 1) ' ' (menu.TitleX: 2) '\n';
+
+	# a click on a title opens it, an item chooses, and it closes
+	call Click: 10 10;
+	call Show: 'click File';
+	call Let: 10 10;
+	call Show: 'let go on the title';
+	call Move: 10 30;
+	call Show: 'over Open';
+	log 'chose: ' (Click: 10 30) '\n';
+	call Show: 'after choosing';
+
+	# press a title, drag down, let go
+	call Click: 10 10;
+	call Show: 'pressed File';
+	call Held: 10 85;
+	call Show: 'over Quit';
+	log 'chose by letting go: ' (Let: 10 85) '\n';
+	call Show: 'after';
+
+	# what can't be chosen: a disabled item, and a line
+	call Click: 10 10;
+	call Let: 10 10;
+	log 'disabled: ' (Click: 10 52);
+	call Show: ' ';
+	call Move: 10 52;
+	call Show: 'over Save';
+	log 'the line: ' (Click: 10 70);
+	call Show: ' ';
+
+	# sliding along the bar with one open, and the same title again closes it
+	call Move: 60 10;
+	call Show: 'slid to View';
+	log 'on the same title: ' (Click: 60 10);
+	call Show: ' ';
+	log 'took: ' menu.took '\n';
+
+	# a click outside closes it, and is the menu's
+	call Click: 10 10;
+	call Let: 10 10;
+	log 'outside: ' (Click: 150 150);
+	call Show: ' ';
+	log 'took: ' menu.took '\n';
+	log 'outside with none open: ' (Click: 150 150);
+	call Show: ' ';
+	log 'took: ' menu.took '\n';
+
+	# the keys
+	log 'F10: ' (Press: Events.KEY_F10);
+	call Show: ' ';
+	log 'down: ' (Press: Events.KEY_DOWN);
+	call Show: 'past Save and the line, disabled';
+	log 'down: ' (Press: Events.KEY_DOWN);
+	call Show: 'around';
+	log 'up: ' (Press: Events.KEY_UP);
+	call Show: 'back';
+	log 'right: ' (Press: Events.KEY_RIGHT);
+	call Show: ' ';
+	log 'enter: ' (Press: Events.KEY_ENTER) '\n';
+	call Show: 'chose Wrap';
+	log 'alt+h: ' (Press: 'h' | Events.MOD_ALT);
+	call Show: ' ';
+	log 'left and around: ' (Press: Events.KEY_LEFT);
+	call Show: ' ';
+	log 'any other key: ' (Press: 'x');
+	log ' took: ' menu.took '\n';
+	log 'esc: ' (Press: Events.KEY_ESCAPE);
+	call Show: ' ';
+
+	# an item's key, either case, and one that isn't anything's
+	log 'ctrl+o: ' (Press: 'o' | Events.MOD_CTRL) ' took: ' menu.took '\n';
+	log 'ctrl+O: ' (Press: 'O' | Events.MOD_CTRL) '\n';
+	log 'disabled ctrl+s: ' (Press: 's' | Events.MOD_CTRL) '\n';
+	log 'plain o: ' (Press: 'o') ' took: ' menu.took '\n';
+	log 'alt+q: ' (Press: 'q' | Events.MOD_ALT) ' took: ' menu.took '\n';
+
+	# changing what's enabled
+	call menu.Enable: SAVE;
+	log 'enabled ctrl+s: ' (Press: 's' | Events.MOD_CTRL) '\n';
+
+	# what it draws
+	call Draw.Clear: 0;
+	call menu.Paint;
+	log 'the bar: ' ((Draw.GetPixel: 150 5) is Widgets.BUTTON) ', below it: ' ((Draw.GetPixel: 150 40) is 0) '\n';
+	call Click: 10 10;
+	call Let: 10 10;
+	call Move: 10 30;
+	call Draw.Clear: 0;
+	call menu.Paint;
+	log 'the title: ' ((Draw.GetPixel: 2 2) is Widgets.ACCENT) ', the item: ' ((Draw.GetPixel: 5 30) is Widgets.ACCENT) ', the next: ' ((Draw.GetPixel: 5 50) is Widgets.FIELD) '\n';
+	call menu.Close;
+
+	# Help's menu would go off the right of the bar: it moves left to stay on it
+	call Press: 'h' | Events.MOD_ALT;
+	log 'help at: ' (menu.DropX) ', ' (menu.DropWidth) ' wide\n';
+	call menu.Close;
+
+	# as many as it takes
+	MenuBar full;
+	call full.Place: 0 0 200;
+	while int i: 0; i < 8; i++;
+		call full.AddMenu: 'M';
+	;;
+	log 'one menu too many: ' (full.AddMenu: 'M') '\n';
+	while int i: 0; i < 70; i++;
+		call full.AddItem: 0 'I' i + 1;
+	;;
+	log 'items kept: ' full.item_count '\n';
+
+	# ---- what the window would send
+
+	[Mouse: int mx: 0; int my: 0; int buttons: 0; int clicks: 0;]
+		event.x is mx;
+		event.y is my;
+		event.value is buttons;
+		event.clicks is clicks;
+	[end: (menu.Mouse: event)]
+
+	[Click: int mx: 0; int my: 0;]
+	[end: (Mouse: mx my 1 1)]
+
+	[Held: int mx: 0; int my: 0;]
+	[end: (Mouse: mx my 1 0)]
+
+	[Move: int mx: 0; int my: 0;]
+	[end: (Mouse: mx my 0 0)]
+
+	[Let: int mx: 0; int my: 0;]
+	[end: (Mouse: mx my 0 0)]
+
+	[Press: int key: 0;]
+	[end: (menu.Key: key)]
+
+	[Show: str what;]
+		log what ': opened ' menu.opened;
+		if menu.opened
+			log ' menu ' menu.open;
+		;;
+		log ' lit ' menu.lit '\n';
+	[end]
+}

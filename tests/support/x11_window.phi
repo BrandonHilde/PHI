@@ -42,6 +42,11 @@ phi.WindowTest:Linux
 	# X's symbol for a key by Input's number (only those the test uses)
 	[SymbolOf: int key: 0;]
 		if key is Events.KEY_UP return 0xFF52;
+		if key is Events.KEY_DOWN return 0xFF54;
+		if key is Events.KEY_LEFT return 0xFF51;
+		if key is Events.KEY_RIGHT return 0xFF53;
+		if key is Events.KEY_ENTER return 0xFF0D;
+		if key is Events.KEY_ESCAPE return 0xFF1B;
 	[end: key]
 
 	[TypeChar: int c: 0;]

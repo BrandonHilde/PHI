@@ -1,0 +1,274 @@
+# gui.dialogs' MessageBox and FilePicker, driven by keys and the mouse as a window's events would,
+# on Linux and Windows, 32 and 64 bits: a message wrapped to fit, its buttons, a folder's files in
+# order, going into folders and up, picking, typing a name, and what can't be chosen.
+# (dialogs_window_program runs them as dialogs, in a window; kernel32_editor on PHI OS.)
+use gui.dialogs;
+use support.big_file_linux32;
+use support.big_file_linux64;
+use support.big_file_windows;
+
+phi.DialogsProgram:Program
+{
+	ptr<u32> pixels: new u32[120000];   # 400 x 300
+	GuiEvent event;
+	MessageBox box;
+	FilePicker picker;
+	str folder: ('phi_pick_' (BigFile.Pid));
+
+	call Draw.Target: pixels 400 300;
+
+	# ---- a message
+
+	call box.Place: 400 300 'A short one.' 'OK';
+	log 'one line: ' (box.LineCount) ', ' box.count ' button, at ' box.x ' ' box.y ', ' box.w ' x ' box.h '\n';
+	call box.Place: 400 300 'first line\nand then a much longer one that has to wrap around at the edge of the box, as it goes on and on' 'Save' 'Discard' 'Cancel';
+	log 'wrapped: ' (box.LineCount) ' lines, ' box.count ' buttons, ' (box.Columns) ' columns\n';
+	int start: 0;
+	while start < box.text.len
+		int stop: (box.LineStop: start);
+		str line: '';
+		while int i: start; i < stop; i++;
+			line++ box.text:i as chr;
+		;;
+		log '[' line ']\n';
+		start is (box.Next: stop);
+	;;
+	call box.Place: 400 300 'averyveryverylongwordwithnospacesthatcannotpossiblyfitononelineofthisboxatallsoitiscut' 'OK';
+	log 'a long word: ' (box.LineCount) ' lines\n';
+	call box.Place: 400 300 '' 'OK';
+	log 'nothing: ' (box.LineCount) ' line\n';
+	call box.Place: 100 50 'a window too small for it' 'OK';
+	log 'a small window: ' box.x ' ' box.y ', ' box.w ' wide\n';
+
+	# the keys
+	call box.Place: 400 300 'Which?' 'One' 'Two' 'Three';
+	log 'focus: ' box.focus;
+	call box.Key: Events.KEY_RIGHT;
+	log ' right ' box.focus;
+	call box.Key: Events.KEY_TAB;
+	log ' tab ' box.focus;
+	call box.Key: Events.KEY_RIGHT;
+	log ' around ' box.focus;
+	call box.Key: Events.KEY_LEFT;
+	log ' left around ' box.focus '\n';
+	call box.Key: 'x';
+	log 'another key: ' box.done '\n';
+	call box.Key: Events.KEY_ENTER;
+	log 'enter: ' box.done ' ' box.result '\n';
+	call box.Place: 400 300 'Which?' 'One' 'Two';
+	call box.Key: Events.KEY_ESCAPE;
+	log 'esc: ' box.done ' ' box.result '\n';
+
+	# the mouse: pressed and let go on a button
+	call box.Place: 400 300 'Which?' 'One' 'Two' 'Three';
+	int bx: box.buttons:1.x + 5;
+	int by: box.buttons:1.y + 5;
+	call Click: bx by;
+	log 'pressed: ' box.done '\n';
+	call Let: bx by;
+	log 'let go: ' box.done ' ' box.result '\n';
+	call box.Place: 400 300 'Which?' 'One' 'Two' 'Three';
+	call Click: bx by;
+	call Let: 5 5;
+	log 'let go elsewhere: ' box.done '\n';
+
+	# what it draws: its box, on what's there
+	call Draw.Clear: 0;
+	call box.Paint;
+	log 'drawn: ' ((Draw.GetPixel: box.x + 2 box.y + 2) is Widgets.FACE) ', around it: ' ((Draw.GetPixel: 2 2) is 0) ', the focus: ' ((Draw.GetPixel: box.buttons:0.x - 1 box.buttons:0.y + 5) is Widgets.ACCENT) '\n';
+
+	# ---- a folder
+
+	str a: (folder '/a.txt');
+	str b: (folder '/B.txt');
+	str inner: (folder '/inner');
+	str zed: (folder '/Zed');
+	str deep: (folder '/inner/deep.txt');
+	log 'made: ' (OS.MakeFolder: folder) ' ' (OS.WriteFile: a 'a' 1) ' ' (OS.WriteFile: b 'bb' 2) ' ' (OS.MakeFolder: inner) ' ' (OS.MakeFolder: zed) ' ' (OS.WriteFile: deep 'deep' 4) '\n';
+
+	call picker.Place: 400 300 'Open a file' folder false;
+	call Rows: 'the list';
+
+	# down the list: a file's name comes into the field, and a folder's doesn't
+	call Press: Events.KEY_DOWN;
+	call Show: 'down to ..';
+	call Press: Events.KEY_DOWN;
+	call Show: 'down to inner/';
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_DOWN;
+	call Show: 'down to a.txt';
+	call Press: Events.KEY_DOWN;
+	call Show: 'down to B.txt';
+	call Press: Events.KEY_DOWN;
+	call Show: 'and no further';
+
+	# into a folder and back
+	call Press: Events.KEY_UP;
+	call Press: Events.KEY_UP;
+	call Press: Events.KEY_UP;
+	call Show: 'up to inner/';
+	call Press: Events.KEY_ENTER;
+	call Show: 'in it';
+	call Rows: 'its list';
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_ENTER;
+	call Show: 'up with ..';
+	call Rows: 'back';
+
+	# a file picked, and chosen
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_ENTER;
+	call Show: 'chose a.txt';
+	log 'its path is the folder and it: ' (picker.path is a) '\n';
+	call picker.Free;
+
+	# typed instead: one that's there, whatever the list says, and one that isn't
+	call picker.Place: 400 300 'Open a file' folder false;
+	call Type: 'b.txt.nope';
+	call Show: 'typed';
+	call Press: Events.KEY_ENTER;
+	call Show: 'not there, so it stays';
+	call Press: Events.KEY_BACKSPACE;
+	call Type: 'B.txt';
+	call Show: 'typed over what was selected';
+	call Press: Events.KEY_ENTER;
+	call Show: 'there';
+	log 'its path: ' (picker.path is b) '\n';
+	call picker.Free;
+
+	# a folder's name typed goes into it, either case, with a / or without
+	call picker.Place: 400 300 'Open a file' folder false;
+	call Type: 'INNER/';
+	call Press: Events.KEY_ENTER;
+	call Show: 'typed a folder';
+	call picker.Free;
+
+	# nothing typed and nothing picked does nothing; Esc cancels
+	call picker.Place: 400 300 'Open a file' folder false;
+	call Press: Events.KEY_ENTER;
+	call Show: 'nothing';
+	call Press: Events.KEY_ESCAPE;
+	call Show: 'esc';
+	call picker.Free;
+	log 'freed: ' (picker.entries is 0) '\n';
+	call picker.Free;
+
+	# a name for saving: the one it suggests, and one that doesn't exist yet is fine
+	call picker.Place: 400 300 'Save as' folder true 'new.txt';
+	call Show: 'suggested';
+	call Press: Events.KEY_ENTER;
+	call Show: 'chosen';
+	log 'its path ends with it: ' ((Text.Length: addr picker.path:0) is folder.len + 8) '\n';
+	call picker.Free;
+
+	# saving, picking a file there takes its name, and a folder keeps what's typed
+	call picker.Place: 400 300 'Save as' folder true 'kept.txt';
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_DOWN;
+	call Show: 'a folder';
+	call Press: Events.KEY_DOWN;
+	call Press: Events.KEY_DOWN;
+	call Show: 'a file';
+	call picker.Free;
+
+	# the mouse: a row, a double click, a double click on a folder, the buttons
+	call picker.Place: 400 300 'Open a file' folder false;
+	int rx: picker.list.x + 10;
+	int first_row: picker.list.y + 2;
+	event.x is rx;
+	event.y is first_row + Widgets.ROW * 3;
+	event.value is 1;
+	event.clicks is 1;
+	call picker.Mouse: event;
+	call Show: 'clicked a.txt';
+	event.y is first_row + Widgets.ROW;
+	event.clicks is 2;
+	call picker.Mouse: event;
+	call Show: 'double clicked inner/';
+	call picker.Free;
+	call picker.Place: 400 300 'Open a file' folder false;
+	event.y is first_row + Widgets.ROW * 3;
+	event.clicks is 2;
+	call picker.Mouse: event;
+	call Show: 'double clicked a.txt';
+	call picker.Free;
+	call picker.Place: 400 300 'Open a file' folder false;
+	call Press: 'x';
+	event.x is picker.cancel.x + 5;
+	event.y is picker.cancel.y + 5;
+	event.value is 1;
+	event.clicks is 1;
+	call picker.Mouse: event;
+	event.value is 0;
+	event.clicks is 0;
+	call picker.Mouse: event;
+	call Show: 'cancel pressed';
+	call picker.Free;
+
+	# what it draws
+	call picker.Place: 400 300 'Open a file' folder false;
+	call Draw.Clear: 0;
+	call picker.Paint;
+	log 'drawn: ' ((Draw.GetPixel: picker.x + 2 picker.y + 2) is Widgets.FACE) ', around it: ' ((Draw.GetPixel: 2 2) is 0) '\n';
+	call picker.Free;
+
+	# up from where it runs: .. and more of them, as there's nothing left of the path to take off
+	call picker.Place: 400 300 'Open a file' '' false;
+	log 'at the start, ..: ' picker.has_up '\n';
+	call picker.GoUp;
+	log 'up: [' picker.folder ']\n';
+	call picker.GoUp;
+	log 'up: [' picker.folder ']\n';
+	call picker.Free;
+
+	# a folder that isn't there has nothing in it, and can still be left
+	call picker.Place: 400 300 'Open a file' 'phi_pick_there_is_no_such_folder' false;
+	log 'not there: ' picker.count ' ' picker.has_up '\n';
+	call picker.Free;
+
+	log 'tidied: ' (OS.DeleteFile: a) ' ' (OS.DeleteFile: b) ' ' (OS.DeleteFile: deep) ' ' (OS.DeleteFolder: inner) ' ' (OS.DeleteFolder: zed) ' ' (OS.DeleteFolder: folder) '\n';
+
+	# ---- what the window would send
+
+	[Click: int mx: 0; int my: 0;]
+		event.x is mx;
+		event.y is my;
+		event.value is 1;
+		event.clicks is 1;
+		call box.Mouse: event;
+	[end]
+
+	[Let: int mx: 0; int my: 0;]
+		event.x is mx;
+		event.y is my;
+		event.value is 0;
+		event.clicks is 0;
+		call box.Mouse: event;
+	[end]
+
+	[Press: int key: 0;]
+		call picker.Key: key;
+	[end]
+
+	[Type: str typed;]
+		while int i: 0; i < typed.len; i++;
+			call Press: typed:i as int;
+		;;
+	[end]
+
+	# the folder without the part of it that's different each time
+	[Show: str what;]
+		log what ': folder ' (picker.folder.len - folder.len) ', name [' picker.name.text '], row ' picker.list.selected ', done ' picker.done ', chosen ' picker.chosen '\n';
+	[end]
+
+	[Rows: str what;]
+		log what ':';
+		while int i: 0; i < picker.list.count; i++;
+			log ' ' picker.rows:i;
+		;;
+		log '\n';
+	[end]
+}

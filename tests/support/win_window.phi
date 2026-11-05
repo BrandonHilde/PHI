@@ -20,6 +20,11 @@ phi.WindowTest:Windows
 	# Windows' number for a key by Input's (only those the test uses)
 	[VirtualKey: int key: 0;]
 		if key is Events.KEY_UP return 0x26;
+		if key is Events.KEY_DOWN return 0x28;
+		if key is Events.KEY_LEFT return 0x25;
+		if key is Events.KEY_RIGHT return 0x27;
+		if key is Events.KEY_ENTER return 0x0D;
+		if key is Events.KEY_ESCAPE return 0x1B;
 		if key is 'w' return 0x57;
 	[end: key]
 

@@ -4,6 +4,8 @@
 # file's size (stat's layout differs), are linux32.phi's and linux64.phi's. Everything a
 # call needs is on its own stack, so threads use files at once.
 
+use fs.fileinfo;
+
 phi.HostFiles:Linux
 {
 	const int READ_ONLY: 0;
@@ -11,6 +13,7 @@ phi.HostFiles:Linux
 	const int CREATE: 0x40;
 	const int TRUNCATE: 0x200;
 	const int APPEND: 0x400;
+	const int ONLY_FOLDER: 0x10000;       # O_DIRECTORY
 	const int FILE_MODE: 420;             # 0644: the owner can write it, everyone can read it
 	const int FOLDER_MODE: 493;           # 0755
 
@@ -63,6 +66,100 @@ phi.HostFiles:Linux
 		;;
 		call sys.Close: fd;
 	[end: written]
+
+	# OS.ListFolder: what's in a folder, up to max of it, into target (not . or ..): how many, or
+	# -1 if it isn't a folder. In the order Linux gives them.
+	[ListFolder: ptr<u8> path: 0; ptr<FileInfo> target: 0; int max: 0;]
+		ptr<u8> folder: path;
+		if path:0 is 0
+			folder is '.';
+		;;
+		int fd: (sys.Open: folder READ_ONLY | ONLY_FOLDER | LinuxLayout.LARGE_FILE 0);
+		if fd < 0 return -1;
+		u8 records[2048];
+		int count: 0;
+		int got: (sys.GetDents: fd addr records 2048);
+		while got > 0 and count < max
+			int at_record: 0;
+			while at_record < got and count < max
+				ptr<u8> record: addr records:at_record;
+				int length: record:16 | (record:17 << 8);
+				ptr<u8> name: record + 19;     # (after two 8-byte numbers, a length and a kind)
+				if not (Dots: name) and (Entry: folder name addr target:count)
+					count++;
+				;;
+				at_record++ length;
+			;;
+			got is (sys.GetDents: fd addr records 2048);
+		;;
+		int closed: (sys.Close: fd);
+	[end: count]
+
+	# . or ..
+	[Dots: ptr<u8> name: 0;]
+		if name:0 is not '.' return false;
+	[end: name:1 is 0 or (name:1 is '.' and name:2 is 0)]
+
+	# what's called name in folder, into entry; false if it's gone already
+	[Entry: ptr<u8> folder: 0; ptr<u8> name: 0; ptr<FileInfo> entry: 0;]
+		u8 whole[1024];
+		int n: 0;
+		while folder:n is not 0 and n < 760
+			whole:n is folder:n;
+			n++;
+		;;
+		whole:n is '/';
+		n++;
+		int k: 0;
+		while name:k is not 0 and k < 255
+			whole:(n + k) is name:k;
+			entry.name:k is name:k;
+			k++;
+		;;
+		whole:(n + k) is 0;
+		entry.name:k is 0;
+		u64 size: 0;
+		u32 seconds: 0;
+		int mode: (LinuxLayout.StatOf: addr whole addr size addr seconds);
+		if mode < 0 return false;
+		entry.folder is ((mode & 0xF000) is 0x4000);
+		entry.size is 0;
+		if not entry.folder
+			if size > 0xFFFFFFFF
+				entry.size is 0xFFFFFFFF;
+			;;
+			else
+				entry.size is size as u32;
+			;;
+		;;
+		call Date: seconds entry;
+	[end: true]
+
+	# seconds since 1970 as a date and a time (UTC), from how many days each year and month has
+	[Date: u32 seconds: 0; ptr<FileInfo> entry: 0;]
+		u32 days: seconds / 86400;
+		u32 left: seconds % 86400;
+		entry.hour is (left / 3600) as u8;
+		entry.minute is ((left % 3600) / 60) as u8;
+		# (days from 0000-03-01, in the 400 years the calendar repeats after)
+		u32 z: days + 719468;
+		u32 era: z / 146097;
+		u32 of_era: z - era * 146097;
+		u32 year_of_era: (of_era - of_era / 1460 + of_era / 36524 - of_era / 146096) / 365;
+		u32 of_year: of_era - (365 * year_of_era + year_of_era / 4 - year_of_era / 100);
+		u32 shifted: (5 * of_year + 2) / 153;
+		entry.day is (of_year - (153 * shifted + 2) / 5 + 1) as u8;
+		u32 month: shifted + 3;
+		if shifted >= 10
+			month is shifted - 9;
+		;;
+		entry.month is month as u8;
+		u32 year: year_of_era + era * 400;
+		if month <= 2
+			year++;
+		;;
+		entry.year is year as u16;
+	[end]
 
 	# OS.FileSize: its size in bytes, or -1 if it isn't a file, and an error from 2 GB up,
 	# which an int can't hold

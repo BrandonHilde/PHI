@@ -581,6 +581,7 @@ struct.TextArea
 	int top;                    # the first line shown
 	int left;                   # how many characters of each line are off to the left
 	int column;                 # where Up and Down aim for, as lines are shorter or longer
+	int edits;                  # one more each time the text changes: is it what it was when saved?
 	bln focused;                # it gets the keys
 	bln dragging;               # the left button went down on it and is still held
 
@@ -601,6 +602,7 @@ struct.TextArea
 		top is 0;
 		left is 0;
 		column is 0;
+		edits++;
 		call Reserve: 0;
 		text:0 is 0;
 		call Insert: value (Text.Length: value);
@@ -658,6 +660,7 @@ struct.TextArea
 		text:len is 0;
 		cursor++ n;
 		anchor is cursor;
+		edits++;
 		call Settled;
 	[end]
 
@@ -965,6 +968,7 @@ struct.TextArea
 			text:i is text:(i + 1);
 		;;
 		len--;
+		edits++;
 	[end]
 
 	# the selected text taken out; false when nothing was selected
@@ -978,6 +982,7 @@ struct.TextArea
 		len-- gone;
 		cursor is from;
 		anchor is from;
+		edits++;
 		call Settled;
 	[end: true]
 

@@ -1971,6 +1971,44 @@ count` and `Free`. The caret moves by character, line and page; selecting works 
 does; the wheel scrolls it; and `notes.text` is all of it, each line ending with a `\n`. It
 doesn't wrap: a long line scrolls sideways as the caret goes along it.
 
+**Menus and dialogs** are drawn by PHI inside the window, so they're the same on every system.
+`gui.menu` has a `MenuBar`, which is painted last as what's open lies over the window:
+
+```phi
+use gui.menu;
+MenuBar menu;
+call menu.Place: 0 0 W;
+int file: (menu.AddMenu: 'File');
+call menu.AddItem: file 'Open...' OPEN 'Ctrl+O' 'o' | Events.MOD_CTRL;  # any command but 0
+call menu.AddLine: file;
+call menu.AddItem: file 'Quit' QUIT;
+call menu.Enable: OPEN false;                   # shown dimmer, and can't be chosen
+call menu.Check: QUIT true;                     # a tick beside it
+int chosen: (menu.Mouse: App.event);            # or menu.Key: App.event.value: a command, or 0
+if menu.took ...                                # the event was the menu's: don't act on it too
+call menu.Paint;
+```
+
+F10, or Alt and a title's first letter, opens one, the arrows go around it, Enter chooses and Esc
+closes; an item's own key works when nothing's open. `gui.dialogs` has dialogs that wait for
+their answer over the window as it was, and put it back:
+
+```phi
+use gui.dialogs;
+call Dialogs.Message: 'The file was saved.';
+int answer: (Dialogs.Ask: 'Save the changes?' 'Save' 'Discard' 'Cancel');  # 0 to 2; -1 for Esc
+if (Dialogs.Open: 'DOCS')                       # in that folder; '' is where it runs
+    int got: (OS.ReadFile: Dialogs.path buffer size);
+;;
+if (Dialogs.Save: 'DOCS' 'NOTES.TXT')           # asks before replacing a file
+    call OS.WriteFile: Dialogs.path data length;
+;;
+```
+
+If the window is closed or resized while one's up, that comes to the program's loop as an event
+once it's done (`App.PutBack` is how: anything else that waits for events can use it too).
+`samples/desktop.rootfs/editor.phi` is all of these in one small program.
+
 A `TextField` selects text with Shift and the arrows, Home or End, with Ctrl+A, with a drag
 or with a double click, and typing replaces what's selected. `SelectAll`, `SelectionStart`,
 `SelectionEnd` and `CopySelection: buffer size` → work with it from the program. A
@@ -2344,7 +2382,7 @@ instead. Only `Program` and `Library` classes build for another system; kernels 
 | `OS.Arguments` → | what follows the program's name on its command line (on Linux, its arguments joined by spaces) |
 | `OS.GetTicks` →, `OS.Sleep: ms`, `OS.Yield`, `OS.CurrentTask` → | milliseconds since the program started; sleeping; the process number. Both count in milliseconds on every system: a Windows program asks for its timer to step by 1 ms (`timeBeginPeriod`, from `winmm.dll`), since it would otherwise step by 15.6 ms, and its clock is `timeGetTime` |
 | `OS.Now` → | the date and time, as seconds since 1970 (UTC): Linux's `time`, Windows' `GetSystemTimeAsFileTime` |
-| `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | files and folders, by that system's paths (relative to the folder it runs in). `OS.FileSize` on a file of 2 GB or more is an error, as an `int` can't hold its size |
+| `OS.ReadFile`, `OS.ReadFileAt`, `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.FileSize`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename`, `OS.ListFolder` | files and folders, by that system's paths (relative to the folder it runs in). A `FileInfo`'s name is whole here, not 8.3. `OS.FileSize` on a file of 2 GB or more is an error, as an `int` can't hold its size |
 | `new`, objects, text that grows | the heap, which grows as on PHI OS (Linux's `brk`, or memory Windows reserves and commits as it's needed) |
 | `OS.FreeMemory` →, `OS.TotalMemory` → | the machine's memory, in KB |
 | `OS.ClearScreen` | clears the terminal |
@@ -2824,7 +2862,7 @@ and the classes of used files run before the classes that use them.
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `proc.cores`, `proc.threads` | 32-bit kernels: the other cores (`Cores.Start`, `Run`, `SharePrograms`) and kernel threads (`Threads.Start: method value`, `Wait`, `Done`): see [Several cores](#several-cores-32-bit-kernels) |
-| `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
+| `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets`, `gui.menu`, `gui.dialogs` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 billion or more to any but `Equal` is an error at the call |

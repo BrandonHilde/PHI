@@ -1,0 +1,618 @@
+# Dialog boxes for a program's window, drawn by PHI, so they're the same on every system: a
+# message, a question, and choosing a file to open or a name to save as. Each waits for its answer,
+# over the window as it was, and puts the window back.
+#
+#   use gui.dialogs;
+#   call Dialogs.Message: 'The file was saved.';
+#   int answer: (Dialogs.Ask: 'Save the changes?' 'Save' 'Discard' 'Cancel');
+#                                                 # 0, 1 or 2 for which, -1 for Esc or a close
+#   if (Dialogs.Open: 'DOCS')                     # starts in that folder ('' is where it runs)
+#       int got: (OS.ReadFile: Dialogs.path buffer size);
+#   ;;
+#   if (Dialogs.Save: 'DOCS' 'NOTES.TXT')         # the name it suggests; asks before replacing a file
+#       call OS.WriteFile: Dialogs.path data length;
+#   ;;
+#
+# The window's close button or a new size, while one is up, comes to the program's own loop as
+# an event once it's done. MessageBox and FilePicker do the work: a program can draw and drive
+# one itself, as a part of its own window, with Mouse, Key and Paint as a widget has.
+
+use gui.app;
+use gui.widgets;
+use fs.fileinfo;
+
+# a message and up to three buttons: done when one is pressed, or Esc is
+struct.MessageBox
+{
+	int x;
+	int y;
+	int w;
+	int h;
+	str text: [511];
+	Button buttons[3];
+	str labels[3]: [31];
+	int count;
+	int focus;                  # the button Enter presses, which Left, Right and Tab move
+	bln done;
+	int result;                 # which button, or -1 for Esc
+
+	[Place: int window_w: 0; int window_h: 0; ptr<u8> message: 0; ptr<u8> first: 0; ptr<u8> second: 0; ptr<u8> third: 0;]
+		text is message;
+		labels:0 is first;
+		count is 1;
+		if second is not 0
+			labels:1 is second;
+			count is 2;
+		;;
+		if third is not 0
+			labels:2 is third;
+			count is 3;
+		;;
+		focus is 0;
+		done is false;
+		result is -1;
+		call Layout: window_w window_h;
+	[end]
+
+	# in the middle of a window this big
+	[Layout: int window_w: 0; int window_h: 0;]
+		w is (Math.Max: (Math.Min: window_w - 20 360) 120);
+		h is 16 + 16 * (LineCount) + 16 + 24 + 12;
+		x is (Math.Max: (window_w - w) / 2 0);
+		y is (Math.Max: (window_h - h) / 2 0);
+		int bx: x + w - 10;
+		int i: count;
+		while i > 0
+			i--;
+			int wide: (Math.Max: 16 + 8 * (Text.Length: labels:i) 72);
+			bx is bx - wide;
+			call buttons:i.Place: bx y + h - 12 - 24 wide 24 labels:i;
+			bx is bx - 8;
+		;;
+	[end]
+
+	[Mouse: GuiEvent e;]
+		while int i: 0; i < count; i++;
+			if (buttons:i.Mouse: e)
+				done is true;
+				result is i;
+			;;
+		;;
+	[end]
+
+	[Key: int key: 0;]
+		int k: key & Events.KEY_MASK;
+		when k
+			is Events.KEY_ENTER
+				done is true;
+				result is focus;
+			;;
+			is Events.KEY_ESCAPE
+				done is true;
+				result is -1;
+			;;
+			is Events.KEY_RIGHT Events.KEY_TAB
+				focus is (focus + 1) % count;
+			;;
+			is Events.KEY_LEFT
+				focus is (focus + count - 1) % count;
+			;;
+		;;
+	[end]
+
+	[Paint]
+		call Dialogs.Panel: x y w h;
+		int row: y + 16;
+		int start: 0;
+		int length: text.len;
+		while start < length
+			int stop: (LineStop: start);
+			call Draw.TextN: x + 12 row addr text:start stop - start Widgets.TEXT;
+			row++ 16;
+			start is (Next: stop);
+		;;
+		while int i: 0; i < count; i++;
+			call buttons:i.Paint;
+		;;
+		call Draw.Rect: buttons:focus.x - 1 buttons:focus.y - 1 buttons:focus.w + 2 buttons:focus.h + 2 Widgets.ACCENT;
+	[end]
+
+	# ---- wrapping the text
+
+	[Columns]
+	[end: (Math.Max: (w - 24) / 8 1)]
+
+	[LineCount]
+		int lines: 0;
+		int start: 0;
+		int length: text.len;
+		while start < length
+			lines++;
+			start is (Next: (LineStop: start));
+		;;
+	[end: (Math.Max: lines 1)]
+
+	# where the line from start ends: a new line, the last space that fits, or as many as fit
+	[LineStop: int start: 0;]
+		int columns: (Columns);
+		int length: text.len;
+		int space: -1;
+		int i: start;
+		while i < length and i - start < columns
+			if text:i is 10 return i;
+			if text:i is ' '
+				space is i;
+			;;
+			i++;
+		;;
+		if i >= length return length;
+		if text:i is 10 or text:i is ' ' return i;
+		if space >= 0 return space;
+	[end: i]
+
+	# where the next line starts, after what a line stopped at
+	[Next: int stop: 0;]
+		if stop < text.len and (text:stop is 10 or text:stop is ' ') return stop + 1;
+	[end: stop]
+}
+
+# a folder's files to pick from, or a name to give one: done when it's chosen (chosen is true, and
+# path says which) or cancelled. Folders are listed first, each ending with /, and .. goes up.
+struct.FilePicker
+{
+	int x;
+	int y;
+	int w;
+	int h;
+	str title: [31];
+	bln saving;                 # a name for a file that may not exist yet
+	str folder: [511];
+	str path: [1023];           # what was chosen: the folder and the name
+	TextField name;
+	ListBox list;
+	Button ok;
+	Button cancel;
+	ptr<FileInfo> entries;      # what's in the folder (on the heap, until Free)
+	ptr<ptr<FileInfo>> order;   # them in the order they're listed
+	ptr<ptr<u8>> rows;          # what each row says
+	int count;
+	bln has_up;                 # the first row is ..
+	int picked;                 # the row the name came from; -1 if it was typed
+	bln done;
+	bln chosen;
+
+	[Place: int window_w: 0; int window_h: 0; ptr<u8> heading: 0; ptr<u8> start: 0; bln for_saving: false; ptr<u8> suggested: 0;]
+		title is heading;
+		folder is start;
+		saving is for_saving;
+		done is false;
+		chosen is false;
+		picked is -1;
+		entries is new FileInfo[Dialogs.MOST_FILES];
+		order is new ptr<FileInfo>[Dialogs.MOST_FILES];
+		rows is new ptr<u8>[Dialogs.MOST_FILES + 1];
+		call Layout: window_w window_h;
+		name.focused is true;
+		call name.Set: '';
+		if suggested is not 0
+			call name.Set: suggested;
+		;;
+		call Load;
+	[end]
+
+	# what it took from the heap goes back
+	[Free]
+		if entries is not 0
+			free entries;
+			free order;
+			free rows;
+		;;
+		entries is 0;
+		order is 0;
+		rows is 0;
+	[end]
+
+	# in the middle of a window this big
+	[Layout: int window_w: 0; int window_h: 0;]
+		w is (Math.Max: (Math.Min: window_w - 20 420) 200);
+		h is (Math.Max: (Math.Min: window_h - 20 320) 180);
+		x is (Math.Max: (window_w - w) / 2 0);
+		y is (Math.Max: (window_h - h) / 2 0);
+		call name.Place: x + 12 y + h - 12 - 24 - 8 - 24 w - 24;
+		call list.Place: x + 12 y + 46 w - 24 h - 46 - 12 - 24 - 8 - 24 - 8;
+		call cancel.Place: x + w - 12 - 72 y + h - 12 - 24 72 24 'Cancel';
+		if saving
+			call ok.Place: x + w - 12 - 72 - 8 - 72 y + h - 12 - 24 72 24 'Save';
+		;;
+		else
+			call ok.Place: x + w - 12 - 72 - 8 - 72 y + h - 12 - 24 72 24 'Open';
+		;;
+	[end]
+
+	[Mouse: GuiEvent e;]
+		if (cancel.Mouse: e)
+			done is true;
+			return;
+		;;
+		if (ok.Mouse: e)
+			call Accept;
+			return;
+		;;
+		call name.Mouse: e;
+		name.focused is true;
+		int did: (list.Mouse: e);
+		if did > 0
+			call FromList;
+		;;
+		if did is 2
+			call Accept;
+		;;
+	[end]
+
+	[Key: int key: 0;]
+		int k: key & Events.KEY_MASK;
+		when k
+			is Events.KEY_ESCAPE
+				done is true;
+				return;
+			;;
+			is Events.KEY_ENTER
+				call Accept;
+				return;
+			;;
+			is Events.KEY_UP Events.KEY_DOWN Events.KEY_PAGEUP Events.KEY_PAGEDOWN
+				int moved: (list.Key: key);
+				call FromList;
+				return;
+			;;
+		;;
+		if (name.Key: key) is 1
+			picked is -1;
+		;;
+	[end]
+
+	[Paint]
+		call Dialogs.Panel: x y w h;
+		call Draw.Text: x + 12 y + 8 title Widgets.TEXT;
+		call Draw.PushClip: x + 12 y + 26 w - 24 16;
+		call Draw.Text: x + 12 y + 26 folder Widgets.TEXT_DIM;
+		call Draw.PopClip;
+		call list.Paint;
+		call name.Paint;
+		call ok.Paint;
+		call cancel.Paint;
+	[end]
+
+	# ---- what's in the folder
+
+	# the folder listed: folders first, then files, each lot in order whatever the case
+	[Load]
+		int n: (OS.ListFolder: addr folder:0 entries Dialogs.MOST_FILES);
+		count is (Math.Max: n 0);
+		has_up is (CanGoUp);
+		while int i: 0; i < count; i++;
+			ptr<FileInfo> one: addr entries:i;
+			int k: i;
+			while k > 0 and (Before: one order:(k - 1))
+				order:k is order:(k - 1);
+				k--;
+			;;
+			order:k is one;
+		;;
+		int row: 0;
+		if has_up
+			rows:0 is '..';
+			row is 1;
+		;;
+		while int i: 0; i < count; i++;
+			ptr<FileInfo> one: order:i;
+			int length: one.name.len;
+			if one.folder and length < 255
+				one.name:length is '/';
+				one.name:(length + 1) is 0;
+			;;
+			rows:(row + i) is addr one.name:0;
+		;;
+		call list.SetItems: rows row + count;
+		list.selected is -1;
+		list.first is 0;
+		picked is -1;
+	[end]
+
+	# a place to go up to: part of the path to take off, or on a system that has more above where
+	# a program runs, .. itself. (A FAT16 disk has nothing above its top.)
+	[CanGoUp]
+		if folder.len > 0 return true;
+		FileInfo any;
+	[end: (OS.ListFolder: '..' addr any 1) >= 0]
+
+	# does a come before b in the list?
+	[Before: ptr<FileInfo> a: 0; ptr<FileInfo> b: 0;]
+		if a.folder is not b.folder return a.folder;
+		int i: 0;
+		while a.name:i is not 0 and b.name:i is not 0
+			int ca: (Dialogs.Lower: a.name:i);
+			int cb: (Dialogs.Lower: b.name:i);
+			if ca is not cb return ca < cb;
+			i++;
+		;;
+	[end: a.name:i is 0 and b.name:i is not 0]
+
+	# ---- choosing
+
+	# the row selected in the list now says what Accept will do
+	[FromList]
+		int row: list.selected;
+		picked is row;
+		if row < 0 or (has_up and row is 0) return;
+		ptr<FileInfo> one: (Row: row);
+		if not one.folder
+			call name.Set: addr one.name:0;
+		;;
+	[end]
+
+	# what a row is; 0 for ..
+	[Row: int row: 0;]
+		if has_up
+			if row is 0 return 0 as ptr<FileInfo>;
+			row--;
+		;;
+	[end: order:row]
+
+	# Enter, the button, or a double click: into a folder, or the file is chosen
+	[Accept]
+		if picked >= 0
+			if has_up and picked is 0
+				call GoUp;
+				return;
+			;;
+			ptr<FileInfo> one: (Row: picked);
+			if one.folder
+				call GoInto: addr one.name:0;
+				return;
+			;;
+			call Choose: addr one.name:0;
+			return;
+		;;
+		if name.len is 0 return;
+		# a folder's name typed goes into it, as choosing it would
+		while int i: 0; i < count; i++;
+			if order:i.folder and (SameFolderName: order:i)
+				call GoInto: addr order:i.name:0;
+				return;
+			;;
+		;;
+		call Choose: addr name.text:0;
+	[end]
+
+	# does what's typed say this folder, whose name now ends with /?
+	[SameFolderName: ptr<FileInfo> one: 0;]
+		int length: one.name.len - 1;
+		int typed: name.len;
+		if typed > 0 and name.text:(typed - 1) is '/'
+			typed--;
+		;;
+		if typed is not length return false;
+		while int i: 0; i < length; i++;
+			if (Dialogs.Lower: name.text:i) is not (Dialogs.Lower: one.name:i) return false;
+		;;
+	[end: true]
+
+	# path is the folder and this name, and that's the choice: if it's there, unless saving
+	[Choose: ptr<u8> file: 0;]
+		path is '';
+		if folder.len > 0
+			path is folder;
+			path++ '/';
+		;;
+		path++ file;
+		if not saving and not (Dialogs.Exists: addr path:0)
+			call name.SelectAll;
+			return;
+		;;
+		done is true;
+		chosen is true;
+	[end]
+
+	[GoInto: ptr<u8> entry: 0;]
+		int length: (Text.Length: entry);
+		if length > 0 and entry:(length - 1) is '/'
+			length--;
+		;;
+		if folder.len + 1 + length >= 511 return;
+		if folder.len > 0
+			folder++ '/';
+		;;
+		while int i: 0; i < length; i++;
+			folder++ entry:i as chr;
+		;;
+		call Moved;
+	[end]
+
+	# the last part of the path off; or if there's none left, or it's already .., one more ..
+	[GoUp]
+		int length: folder.len;
+		bln dots: length >= 2 and folder:(length - 1) is '.' and folder:(length - 2) is '.' and (length is 2 or folder:(length - 3) is '/');
+		if length is 0 or dots
+			if length > 0
+				folder++ '/';
+			;;
+			folder++ '..';
+		;;
+		else
+			int i: length - 1;
+			while i >= 0 and folder:i is not '/'
+				i--;
+			;;
+			folder:(Math.Max: i 0) is 0;
+		;;
+		call Moved;
+	[end]
+
+	# in another folder now: a file's name from the last one goes, but a name being saved as stays
+	[Moved]
+		if not saving
+			call name.Set: '';
+		;;
+		call Load;
+	[end]
+}
+
+phi.Dialogs:Program
+{
+	const int MOST_FILES: 512;  # what a file dialog lists of a folder
+
+	str path: [1023];           # what Open or Save chose
+	GuiEvent resized;
+	bln was_resized;
+	bln was_closed;
+
+	# a message, with an OK button
+	[Message: ptr<u8> text: 0;]
+		int answer: (Ask: text 'OK');
+	[end]
+
+	# a question: which button was pressed, from 0, or -1 for Esc or the window being closed
+	[Ask: ptr<u8> text: 0; ptr<u8> first: 0; ptr<u8> second: 0; ptr<u8> third: 0;]
+		new MessageBox box;
+		call box.Place: App.width App.height text first second third;
+		ptr<u32> under: (Begin);
+		while not box.done
+			call Backdrop: under;
+			call box.Paint;
+			call App.Present;
+			call App.WaitEvent;
+			int kind: App.event.kind;
+			if kind is Events.KEY
+				call box.Key: App.event.value;
+			;;
+			elif kind is Events.MOUSE
+				call box.Mouse: App.event;
+			;;
+			elif kind is Events.CLOSE
+				was_closed is true;
+				box.done is true;
+			;;
+			elif kind is Events.RESIZE
+				under is (Resized: under);
+				call box.Layout: App.width App.height;
+			;;
+		;;
+		call Finish: under;
+	[end: box.result]
+
+	# a file that's there to open, starting in folder; true if one was chosen (path says which)
+	[Open: ptr<u8> folder: 0;]
+	[end: (Pick: 'Open a file' folder false 0)]
+
+	# a name to save as, starting in folder and suggesting a name; true if one was chosen (path
+	# says which), having asked if it should replace a file that's there
+	[Save: ptr<u8> folder: 0; ptr<u8> suggested: 0;]
+	[end: (Pick: 'Save as' folder true suggested)]
+
+	# is there something at path? (a file too big for its size to be said is still there)
+	[Exists: ptr<u8> at_path: 0;]
+		int size: -1;
+		if call size is OS.FileSize: at_path throws err
+			return true;
+		;;
+	[end: size >= 0]
+
+	[Pick: ptr<u8> heading: 0; ptr<u8> folder: 0; bln saving: false; ptr<u8> suggested: 0;]
+		new FilePicker picker;
+		call picker.Place: App.width App.height heading folder saving suggested;
+		ptr<u32> under: (Begin);
+		bln going: true;
+		while going
+			call Backdrop: under;
+			call picker.Paint;
+			call App.Present;
+			call App.WaitEvent;
+			int kind: App.event.kind;
+			if kind is Events.KEY
+				call picker.Key: App.event.value;
+			;;
+			elif kind is Events.MOUSE
+				call picker.Mouse: App.event;
+			;;
+			elif kind is Events.CLOSE
+				was_closed is true;
+				picker.done is true;
+			;;
+			elif kind is Events.RESIZE
+				under is (Resized: under);
+				call picker.Layout: App.width App.height;
+			;;
+			if picker.done and picker.chosen and saving and (Exists: addr picker.path:0)
+				# (over the window as it is, with the picker on it, as the question's about it)
+				str question: ('Replace ' picker.path '?');
+				if (Ask: addr question:0 'Replace' 'Cancel') is not 0
+					picker.done is false;
+					picker.chosen is false;
+				;;
+			;;
+			going is not picker.done;
+		;;
+		bln chosen: picker.chosen;
+		path is picker.path;
+		call picker.Free;
+		call Finish: under;
+	[end: chosen]
+
+	# ---- for each of them
+
+	# the window as it is, kept, to put back afterwards
+	[Begin]
+		int total: App.width * App.height;
+		ptr<u32> under: new u32[total];
+		while int i: 0; i < total; i++;
+			under:i is App.pixels:i;
+		;;
+	[end: under]
+
+	# what a dialog's drawn over: the window as it was, dimmed
+	[Backdrop: ptr<u32> under: 0;]
+		call Draw.Blit: 0 0 App.width App.height under App.width;
+		call Draw.BlendRect: 0 0 App.width App.height 0 96;
+	[end]
+
+	# the window has a new size, and what was kept is no use: a plain one to draw over. The
+	# program hears of it when the dialog's done.
+	[Resized: ptr<u32> old: 0;]
+		free old;
+		was_resized is true;
+		resized.kind is Events.RESIZE;
+		resized.x is App.event.x;
+		resized.y is App.event.y;
+		bln made: (App.Resize: App.event.x App.event.y);
+		call Draw.Clear: Widgets.FACE;
+	[end: (Begin)]
+
+	# the window as it was, and what's for the program's loop back in the queue
+	[Finish: ptr<u32> under: 0;]
+		call Draw.Blit: 0 0 App.width App.height under App.width;
+		free under;
+		call App.Present;
+		if was_resized
+			call App.PutBack: resized;
+		;;
+		if was_closed
+			GuiEvent closing;
+			closing.kind is Events.CLOSE;
+			call App.PutBack: closing;
+		;;
+		was_resized is false;
+		was_closed is false;
+	[end]
+
+	# a dialog's box
+	[Panel: int x: 0; int y: 0; int w: 0; int h: 0;]
+		call Draw.FillRect: x + 3 y + 3 w h Widgets.TEXT_DIM;
+		call Draw.FillRect: x y w h Widgets.FACE;
+		call Draw.Rect: x y w h Widgets.EDGE;
+	[end]
+
+	[Lower: int c: 0;]
+		if c >= 'A' and c <= 'Z' return c + 32;
+	[end: c]
+}

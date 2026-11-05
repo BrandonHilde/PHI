@@ -1,0 +1,55 @@
+one line: 1, 1 button, at 20 108, 360 x 84
+wrapped: 4 lines, 3 buttons, 42 columns
+[first line]
+[and then a much longer one that has to]
+[wrap around at the edge of the box, as it]
+[goes on and on]
+a long word: 3 lines
+nothing: 1 line
+a small window: 0 0, 120 wide
+focus: 0 right 1 tab 2 around 0 left around 2
+another key: 0
+enter: 1 2
+esc: 1 -1
+pressed: 0
+let go: 1 1
+let go elsewhere: 0
+drawn: 1, around it: 1, the focus: 1
+made: 1 1 1 1 1 1
+the list: .. inner/ Zed/ a.txt B.txt
+down to ..: folder 0, name [], row 0, done 0, chosen 0
+down to inner/: folder 0, name [], row 1, done 0, chosen 0
+down to a.txt: folder 0, name [a.txt], row 3, done 0, chosen 0
+down to B.txt: folder 0, name [B.txt], row 4, done 0, chosen 0
+and no further: folder 0, name [B.txt], row 4, done 0, chosen 0
+up to inner/: folder 0, name [a.txt], row 1, done 0, chosen 0
+in it: folder 6, name [], row -1, done 0, chosen 0
+its list: .. deep.txt
+up with ..: folder 0, name [], row -1, done 0, chosen 0
+back: .. inner/ Zed/ a.txt B.txt
+chose a.txt: folder 0, name [a.txt], row 3, done 1, chosen 1
+its path is the folder and it: 1
+typed: folder 0, name [b.txt.nope], row -1, done 0, chosen 0
+not there, so it stays: folder 0, name [b.txt.nope], row -1, done 0, chosen 0
+typed over what was selected: folder 0, name [B.txt], row -1, done 0, chosen 0
+there: folder 0, name [B.txt], row -1, done 1, chosen 1
+its path: 1
+typed a folder: folder 6, name [], row -1, done 0, chosen 0
+nothing: folder 0, name [], row -1, done 0, chosen 0
+esc: folder 0, name [], row -1, done 1, chosen 0
+freed: 1
+suggested: folder 0, name [new.txt], row -1, done 0, chosen 0
+chosen: folder 0, name [new.txt], row -1, done 1, chosen 1
+its path ends with it: 1
+a folder: folder 0, name [kept.txt], row 1, done 0, chosen 0
+a file: folder 0, name [a.txt], row 3, done 0, chosen 0
+clicked a.txt: folder 0, name [a.txt], row 3, done 0, chosen 0
+double clicked inner/: folder 6, name [], row -1, done 0, chosen 0
+double clicked a.txt: folder 0, name [a.txt], row 3, done 1, chosen 1
+cancel pressed: folder 0, name [x], row -1, done 1, chosen 0
+drawn: 1, around it: 1
+at the start, ..: 1
+up: [..]
+up: [../..]
+not there: 0 1
+tidied: 1 1 1 1 1 1

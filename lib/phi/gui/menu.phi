@@ -1,0 +1,425 @@
+# A menu bar for a window, drawn by PHI, so it's the same on every system. 32-bit kernels and
+# programs (with gui.app).
+#
+#   use gui.menu;
+#   const int OPEN: 1;                         # a command: any number but 0
+#   const int QUIT: 2;
+#   const int WRAP: 3;
+#   MenuBar menu;
+#   call menu.Place: 0 0 W;
+#   int file: (menu.AddMenu: 'File');
+#   call menu.AddItem: file 'Open...' OPEN 'Ctrl+O' 'o' | Events.MOD_CTRL;
+#   call menu.AddLine: file;
+#   call menu.AddItem: file 'Quit' QUIT;
+#   int view: (menu.AddMenu: 'View');
+#   call menu.AddItem: view 'Wrap lines' WRAP;
+#   call menu.Check: WRAP true;
+#   ...
+#   if App.event.kind is Events.MOUSE
+#       int chosen: (menu.Mouse: App.event);   # a command, or 0
+#   ;;
+#   if App.event.kind is Events.KEY
+#       int chosen: (menu.Key: App.event.value);
+#   ;;
+#   if menu.took ...                           # that was the menu's: don't act on it too
+#   call menu.Paint;                           # last, as what's open lies over the window
+#
+# With the mouse: press a title and let go on an item, or click a title and then click an item.
+# With the keys: F10 or Alt and a title's first letter opens one, the arrows go around, Enter
+# chooses and Esc closes; an item's own key works when nothing's open.
+
+use gui.widgets;
+
+struct.MenuItem
+{
+	str label: [31];
+	str hint: [15];             # what's shown at its right, like Ctrl+O
+	int command;
+	int key;                    # the key that chooses it, with the MOD_ bits; 0 for none
+	int menu;                   # which menu it's in
+	bln disabled;
+	bln checked;
+	bln line;                   # a line between items, rather than an item
+}
+
+struct.MenuBar
+{
+	int x;
+	int y;
+	int w;
+	str titles[8]: [15];
+	int title_count;
+	MenuItem items[64];
+	int item_count;
+	bln opened;                 # one is open
+	int open;                   # which
+	int lit;                    # the item the mouse or the arrows are on; -1 for none
+	bln dragging;               # the button went down on a title, and hasn't been let go
+	bln took;                   # the last event was the menu's
+
+	[Place: int mx: 0; int my: 0; int mw: 0;]
+		x is mx;
+		y is my;
+		w is mw;
+		lit is -1;
+	[end]
+
+	# a menu on the bar: its number, for AddItem, or -1 if there's no room for it
+	[AddMenu: ptr<u8> title: 0;]
+		if title_count >= 8 return -1;
+		titles:title_count is title;
+		title_count++;
+	[end: title_count - 1]
+
+	# an item, choosing command; hint and key (the MOD_ bits too) can be left out
+	[AddItem: int menu: 0; ptr<u8> text: 0; int command: 0; ptr<u8> hint: 0; int key: 0;]
+		if item_count >= 64 return;
+		items:item_count.label is text;
+		if hint is not 0
+			items:item_count.hint is hint;
+		;;
+		items:item_count.command is command;
+		items:item_count.key is key;
+		items:item_count.menu is menu;
+		item_count++;
+	[end]
+
+	# a line between items
+	[AddLine: int menu: 0;]
+		if item_count >= 64 return;
+		items:item_count.line is true;
+		items:item_count.menu is menu;
+		item_count++;
+	[end]
+
+	# a disabled item shows, dimmer, and can't be chosen
+	[Enable: int command: 0; bln yes: true;]
+		while int i: 0; i < item_count; i++;
+			if items:i.command is command and not items:i.line
+				items:i.disabled is not yes;
+			;;
+		;;
+	[end]
+
+	# a tick beside it
+	[Check: int command: 0; bln yes: true;]
+		while int i: 0; i < item_count; i++;
+			if items:i.command is command and not items:i.line
+				items:i.checked is yes;
+			;;
+		;;
+	[end]
+
+	[Close]
+		opened is false;
+		lit is -1;
+		dragging is false;
+	[end]
+
+	# a key: the command it chose, or 0. took says if it was the menu's. All keys are, while one is open.
+	[Key: int key: 0;]
+		took is false;
+		int k: key & Events.KEY_MASK;
+		if not opened
+			if key is Events.KEY_F10 and title_count > 0
+				call Open: 0;
+				call Light: 1;
+				took is true;
+				return 0;
+			;;
+			if (key & Events.MOD_ALT) is not 0
+				int menu: (TitleStartingWith: k);
+				if menu >= 0
+					call Open: menu;
+					call Light: 1;
+					took is true;
+					return 0;
+				;;
+			;;
+			return (ItemsKey: key);
+		;;
+		took is true;
+		when k
+			is Events.KEY_ESCAPE
+				call Close;
+			;;
+			is Events.KEY_LEFT
+				call Open: (open + title_count - 1) % title_count;
+				call Light: 1;
+			;;
+			is Events.KEY_RIGHT
+				call Open: (open + 1) % title_count;
+				call Light: 1;
+			;;
+			is Events.KEY_DOWN
+				call Light: 1;
+			;;
+			is Events.KEY_UP
+				call Light: (-1);
+			;;
+			is Events.KEY_ENTER
+				if lit >= 0
+					return (Choose: lit);
+				;;
+			;;
+		;;
+	[end: 0]
+
+	# the mouse: the command it chose, or 0. took says if it was the menu's. All of it is, while one is open.
+	[Mouse: GuiEvent e;]
+		took is false;
+		int title: (TitleAt: e.x e.y);
+		int item: -1;
+		if opened
+			item is (ItemAt: e.x e.y);
+		;;
+		bln held: (e.value & 1) is not 0;
+
+		if e.clicks > 0
+			if title >= 0
+				took is true;
+				if opened and open is title
+					call Close;
+				;;
+				else
+					call Open: title;
+					dragging is true;
+				;;
+				return 0;
+			;;
+			if opened
+				took is true;
+				if item >= 0
+					if not items:item.line and not items:item.disabled
+						return (Choose: item);
+					;;
+					return 0;
+				;;
+				call Close;
+			;;
+			return 0;
+		;;
+
+		if opened
+			took is true;
+			if title >= 0 and title is not open
+				call Open: title;
+				dragging is held;
+			;;
+			if item >= 0 and not items:item.line and not items:item.disabled
+				lit is item;
+			;;
+			elif item < 0
+				lit is -1;
+			;;
+			# let go on an item, after pressing the title and dragging down to it
+			if dragging and not held
+				dragging is false;
+				if item >= 0 and not items:item.line and not items:item.disabled
+					return (Choose: item);
+				;;
+				if title < 0
+					call Close;
+				;;
+			;;
+		;;
+	[end: 0]
+
+	[Paint]
+		call Draw.FillRect: x y w Menus.BAR Widgets.BUTTON;
+		call Draw.Line: x y + Menus.BAR - 1 x + w - 1 y + Menus.BAR - 1 Widgets.EDGE;
+		while int t: 0; t < title_count; t++;
+			int tx: (TitleX: t);
+			if opened and open is t
+				call Draw.FillRect: tx y (TitleWidth: t) Menus.BAR - 1 Widgets.ACCENT;
+				call Draw.Text: tx + 8 y + 3 titles:t Widgets.FIELD;
+			;;
+			else
+				call Draw.Text: tx + 8 y + 3 titles:t Widgets.TEXT;
+			;;
+		;;
+		if not opened return;
+
+		int px: (DropX);
+		int py: y + Menus.BAR;
+		int pw: (DropWidth);
+		int ph: (DropHeight);
+		call Draw.FillRect: px + 2 py + 2 pw ph Widgets.TEXT_DIM;     # its shadow
+		call Draw.FillRect: px py pw ph Widgets.FIELD;
+		call Draw.Rect: px py pw ph Widgets.EDGE;
+		int row: py + 1;
+		while int i: 0; i < item_count; i++;
+			if items:i.menu is open
+				if items:i.line
+					call Draw.Line: px + 4 row + 4 px + pw - 5 row + 4 Widgets.EDGE;
+					row++ Menus.LINE;
+				;;
+				else
+					call PaintItem: i px row pw;
+					row++ Menus.ROW;
+				;;
+			;;
+		;;
+	[end]
+
+	# ---- how it's laid out
+
+	[TitleWidth: int t: 0;]
+	[end: 16 + 8 * (Text.Length: titles:t)]
+
+	[TitleX: int t: 0;]
+		int tx: x;
+		while int i: 0; i < t; i++;
+			tx++ (TitleWidth: i);
+		;;
+	[end: tx]
+
+	[TitleAt: int px: 0; int py: 0;]
+		if py < y or py >= y + Menus.BAR return -1;
+		while int t: 0; t < title_count; t++;
+			int tx: (TitleX: t);
+			if px >= tx and px < tx + (TitleWidth: t) return t;
+		;;
+	[end: -1]
+
+	# wide enough for what's in it, and moved left if it would go off the right of the bar
+	[DropWidth]
+		int most: 80;
+		while int i: 0; i < item_count; i++;
+			if items:i.menu is open and not items:i.line
+				int wide: 44 + 8 * (Text.Length: items:i.label);
+				int hint_length: (Text.Length: items:i.hint);
+				if hint_length > 0
+					wide++ 16 + 8 * hint_length;
+				;;
+				most is (Math.Max: most wide);
+			;;
+		;;
+	[end: most]
+
+	[DropHeight]
+		int high: 2;
+		while int i: 0; i < item_count; i++;
+			if items:i.menu is open
+				if items:i.line
+					high++ Menus.LINE;
+				;;
+				else
+					high++ Menus.ROW;
+				;;
+			;;
+		;;
+	[end: high]
+
+	[DropX]
+		int px: (TitleX: open);
+		int pw: (DropWidth);
+		if px + pw > x + w
+			px is x + w - pw;
+		;;
+	[end: (Math.Max: px x)]
+
+	# the item at a place in the open menu (a line is one); -1 if it's not on any
+	[ItemAt: int px: 0; int py: 0;]
+		int left: (DropX);
+		if px < left or px >= left + (DropWidth) return -1;
+		int row: y + Menus.BAR + 1;
+		if py < row return -1;
+		while int i: 0; i < item_count; i++;
+			if items:i.menu is open
+				int high: Menus.ROW;
+				if items:i.line
+					high is Menus.LINE;
+				;;
+				if py < row + high return i;
+				row++ high;
+			;;
+		;;
+	[end: -1]
+
+	# ---- changing it
+
+	[Open: int menu: 0;]
+		opened is true;
+		open is menu;
+		lit is -1;
+	[end]
+
+	# the highlight to the next item in that direction that can be chosen, going around
+	[Light: int direction: 1;]
+		int i: lit;
+		if i < 0 and direction < 0
+			i is item_count;
+		;;
+		while int tries: 0; tries <= item_count; tries++;
+			i is (i + direction + item_count) % item_count;
+			if items:i.menu is open and not items:i.line and not items:i.disabled
+				lit is i;
+				return;
+			;;
+		;;
+		lit is -1;
+	[end]
+
+	[Choose: int item: 0;]
+		int command: items:item.command;
+		call Close;
+		took is true;
+	[end: command]
+
+	# the first title starting with a letter, either case; -1 if none does
+	[TitleStartingWith: int letter: 0;]
+		int wanted: (Menus.Lower: letter);
+		while int t: 0; t < title_count; t++;
+			if (Menus.Lower: titles:t:0) is wanted return t;
+		;;
+	[end: -1]
+
+	# the command of an item this key chooses: 0 if none does, or it's disabled
+	[ItemsKey: int key: 0;]
+		int wanted: (Menus.LowerKey: key);
+		while int i: 0; i < item_count; i++;
+			if items:i.key is not 0 and (Menus.LowerKey: items:i.key) is wanted and not items:i.line
+				if items:i.disabled return 0;
+				took is true;
+				return items:i.command;
+			;;
+		;;
+	[end: 0]
+
+	[PaintItem: int i: 0; int px: 0; int row: 0; int pw: 0;]
+		u32 color: Widgets.TEXT;
+		if items:i.disabled
+			color is Widgets.TEXT_DIM;
+		;;
+		elif lit is i
+			call Draw.FillRect: px + 1 row pw - 2 Menus.ROW Widgets.ACCENT;
+			color is Widgets.FIELD;
+		;;
+		if items:i.checked
+			call Draw.Line: px + 8 row + 11 px + 11 row + 15 color;
+			call Draw.Line: px + 11 row + 15 px + 16 row + 6 color;
+		;;
+		call Draw.Text: px + 24 row + 3 items:i.label color;
+		int hint_length: (Text.Length: items:i.hint);
+		if hint_length > 0
+			call Draw.Text: px + pw - 8 - 8 * hint_length row + 3 items:i.hint color;
+		;;
+	[end]
+}
+
+phi.Menus:Library
+{
+	const int BAR: 22;          # the bar's height
+	const int ROW: 22;          # an item's
+	const int LINE: 9;          # a line's
+
+	[Lower: int c: 0;]
+		if c >= 'A' and c <= 'Z' return c + 32;
+	[end: c]
+
+	# a key with its letter in lower case, so Ctrl+O is Ctrl+o however Shift or Caps Lock was
+	[LowerKey: int key: 0;]
+		int k: key & Events.KEY_MASK;
+	[end: (key - k) + (Lower: k)]
+}

@@ -1,0 +1,218 @@
+# A small text editor: a menu, a text area, and dialogs to open and save, and to ask before
+# changes are lost. The same program on PHI OS's desktop, Windows and Linux.
+use gui.menu;
+use gui.dialogs;
+
+phi.EditorApp:Program
+{
+	const int NEW: 1;
+	const int OPEN: 2;
+	const int SAVE: 3;
+	const int SAVE_AS: 4;
+	const int QUIT: 5;
+	const int CUT: 6;
+	const int COPY: 7;
+	const int PASTE: 8;
+	const int SELECT_ALL: 9;
+
+	const int MOST: 1048576;            # what it'll open or hold
+
+	MenuBar menu;
+	TextArea area;
+	str path: [1023];                   # the file it's editing; '' for a new one
+	int saved_edits: 0;                 # area.edits when it was last the same as the file
+	ptr<u8> clipboard: 0;
+	int clipboard_len: 0;
+
+	if (App.Open: 400 300) is false
+		exit 1;
+	;;
+	int file: (menu.AddMenu: 'File');
+	call menu.AddItem: file 'New' NEW 'Ctrl+N' 'n' | Events.MOD_CTRL;
+	call menu.AddItem: file 'Open...' OPEN 'Ctrl+O' 'o' | Events.MOD_CTRL;
+	call menu.AddItem: file 'Save' SAVE 'Ctrl+S' 's' | Events.MOD_CTRL;
+	call menu.AddItem: file 'Save as...' SAVE_AS;
+	call menu.AddLine: file;
+	call menu.AddItem: file 'Quit' QUIT;
+	int edit: (menu.AddMenu: 'Edit');
+	call menu.AddItem: edit 'Cut' CUT 'Ctrl+X' 'x' | Events.MOD_CTRL;
+	call menu.AddItem: edit 'Copy' COPY 'Ctrl+C' 'c' | Events.MOD_CTRL;
+	call menu.AddItem: edit 'Paste' PASTE 'Ctrl+V' 'v' | Events.MOD_CTRL;
+	call menu.AddLine: edit;
+	call menu.AddItem: edit 'Select all' SELECT_ALL;
+	call Layout;
+	area.focused is true;
+	call ShowTitle;
+	call Paint;
+
+	while true
+		call App.WaitEvent;
+		int kind: App.event.kind;
+		if kind is Events.CLOSE
+			call Do: QUIT;
+		;;
+		elif kind is Events.RESIZE
+			bln made: (App.Resize: App.event.x App.event.y);
+			call Layout;
+		;;
+		elif kind is Events.KEY
+			int chosen: (menu.Key: App.event.value);
+			if chosen is not 0
+				call Do: chosen;
+			;;
+			elif not menu.took
+				int typed: (area.Key: App.event.value);
+			;;
+		;;
+		elif kind is Events.MOUSE
+			int picked: (menu.Mouse: App.event);
+			if picked is not 0
+				call Do: picked;
+			;;
+			elif not menu.took
+				bln clicked: (area.Mouse: App.event);
+			;;
+		;;
+		area.focused is not menu.opened;
+		call ShowTitle;
+		call Paint;
+	;;
+
+	[Layout]
+		call menu.Place: 0 0 App.width;
+		call area.Place: 0 Menus.BAR App.width App.height - Menus.BAR;
+	[end]
+
+	[Paint]
+		call Draw.Clear: Widgets.FACE;
+		call area.Paint;
+		call menu.Paint;
+		call App.Present;
+	[end]
+
+	# the file's name, and * if there are changes to save
+	[ShowTitle]
+		str title: 'Editor - ';
+		if path.len is 0
+			title++ 'new';
+		;;
+		else
+			title++ path;
+		;;
+		if (Changed)
+			title++ ' *';
+		;;
+		call App.SetTitle: addr title:0;
+	[end]
+
+	[Changed]
+	[end: area.edits is not saved_edits]
+
+	[Do: int command: 0;]
+		when command
+			is NEW
+				if (OkToLose)
+					call area.Set: '';
+					path is '';
+					saved_edits is area.edits;
+				;;
+			;;
+			is OPEN
+				if (OkToLose) and (Dialogs.Open: '')
+					call Load: addr Dialogs.path:0;
+				;;
+			;;
+			is SAVE
+				bln saved: (Save);
+			;;
+			is SAVE_AS
+				bln saved: (SaveAs);
+			;;
+			is QUIT
+				if (OkToLose)
+					call area.Free;
+					exit 0;
+				;;
+			;;
+			is CUT
+				call Copy;
+				call area.DeleteSelection;
+			;;
+			is COPY
+				call Copy;
+			;;
+			is PASTE
+				if clipboard is not 0
+					call area.Insert: clipboard clipboard_len;
+				;;
+			;;
+			is SELECT_ALL
+				call area.SelectAll;
+			;;
+		;;
+	[end]
+
+	# true if there's nothing to lose, or the user has said what to do about it
+	[OkToLose]
+		if not (Changed) return true;
+		int answer: (Dialogs.Ask: 'Save the changes first?' 'Save' 'Discard' 'Cancel');
+		if answer is 0 return (Save);
+	[end: answer is 1]
+
+	[Save]
+		if path.len is 0 return (SaveAs);
+	[end: (WriteTo: addr path:0)]
+
+	[SaveAs]
+		ptr<u8> suggested: 'NOTES.TXT';
+		if path.len > 0
+			suggested is addr path:0;
+		;;
+		if not (Dialogs.Save: '' suggested) return false;
+	[end: (WriteTo: addr Dialogs.path:0)]
+
+	[WriteTo: ptr<u8> where: 0;]
+		if (OS.WriteFile: where area.text area.len) is not 1
+			call Dialogs.Message: 'That file could not be written.';
+			return false;
+		;;
+		path is where;
+		saved_edits is area.edits;
+	[end: true]
+
+	[Load: ptr<u8> where: 0;]
+		int size: -1;
+		if call size is OS.FileSize: where throws err
+			call Dialogs.Message: err.text;
+			return;
+		;;
+		if size < 0 or size > MOST
+			call Dialogs.Message: 'That file is too big to open here.';
+			return;
+		;;
+		ptr<u8> bytes: new u8[size + 1];
+		int got: (OS.ReadFile: where bytes size);
+		if got < 0
+			free bytes;
+			call Dialogs.Message: 'That file could not be read.';
+			return;
+		;;
+		call area.Set: '';
+		call area.Insert: bytes got;
+		call area.MoveTo: 0 false;
+		free bytes;
+		path is where;
+		saved_edits is area.edits;
+	[end]
+
+	# what's selected, into the program's own clipboard
+	[Copy]
+		int n: (area.SelectionEnd) - (area.SelectionStart);
+		if n is 0 return;
+		if clipboard is not 0
+			free clipboard;
+		;;
+		clipboard is new u8[n + 1];
+		clipboard_len is (area.CopySelection: clipboard n + 1);
+	[end]
+}

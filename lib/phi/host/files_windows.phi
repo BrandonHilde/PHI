@@ -4,6 +4,7 @@
 # makes its own on its stack, as everything else it needs, so threads use files at once.
 
 use 'kernel32.dll' as Kernel32;
+use fs.fileinfo;
 
 phi.HostFiles:Windows
 {
@@ -72,6 +73,69 @@ phi.HostFiles:Windows
 		call Kernel32.CloseHandle: file;
 	[end: written]
 
+	# OS.ListFolder: what's in a folder, up to max of it, into target (not . or ..): how many, or
+	# -1 if it isn't a folder. In the order Windows gives them.
+	[ListFolder: ptr<u8> path: 0; ptr<FileInfo> target: 0; int max: 0;]
+		u16 wide[1024];
+		call Widen: path addr wide;
+		int n: 0;
+		while wide:n is not 0
+			n++;
+		;;
+		if n > 0
+			wide:n is '/';
+			n++;
+		;;
+		wide:n is '*';
+		wide:(n + 1) is 0;
+		# WIN32_FIND_DATAW: attributes, three times, the size (high, low), then the name
+		u8 found[592];
+		ptr<u8> search: (Kernel32.FindFirstFileW: addr wide addr found);
+		if (search as int) is -1 return -1;
+		int count: 0;
+		bln more: true;
+		while more and count < max
+			if not (Dots: addr found:44)
+				call Entry: addr found addr target:count;
+				count++;
+			;;
+			more is ((Kernel32.FindNextFileW: search addr found) is not 0);
+		;;
+		int closed: (Kernel32.FindClose: search);
+	[end: count]
+
+	# . or .., as UTF-16
+	[Dots: ptr<u8> name: 0;]
+		if name:0 is not '.' or name:1 is not 0 return false;
+		if name:2 is 0 and name:3 is 0 return true;
+	[end: name:2 is '.' and name:3 is 0 and name:4 is 0 and name:5 is 0]
+
+	# what's found, into entry
+	[Entry: ptr<u8> found: 0; ptr<FileInfo> entry: 0;]
+		ptr<u32> words: found as ptr<u32>;
+		int written: (Kernel32.WideCharToMultiByte: 65001 0 found + 44 (-1) addr entry.name:0 256 0 0);
+		if written is 0
+			entry.name:0 is 0;
+		;;
+		entry.name:255 is 0;
+		entry.folder is ((words:0 & FOLDER) is not 0);
+		entry.size is 0;
+		if not entry.folder
+			entry.size is words:8;
+			if words:7 is not 0
+				entry.size is 0xFFFFFFFF;
+			;;
+		;;
+		u16 stamp[8];                       # year, month, day of the week, day, hour, minute
+		if (Kernel32.FileTimeToSystemTime: found + 20 addr stamp) is not 0
+			entry.year is stamp:0;
+			entry.month is stamp:1 as u8;
+			entry.day is stamp:3 as u8;
+			entry.hour is stamp:4 as u8;
+			entry.minute is stamp:5 as u8;
+		;;
+	[end]
+
 	# OS.FileSize: its size in bytes, or -1 if it isn't a file, and an error from 2 GB up,
 	# which an int can't hold
 	[FileSize: ptr<u8> path: 0;]
@@ -134,6 +198,11 @@ Kernel32.ReadFile: ptr<u8> file  ptr<u8> buffer  u32 count  ptr<u32> read  ptr<u
 Kernel32.WriteFile: ptr<u8> file  ptr<u8> data  u32 count  ptr<u32> written  ptr<u8> overlapped;
 Kernel32.CloseHandle: ptr<u8> handle;
 Kernel32.GetFileAttributesExW: ptr<u16> path  int level  ptr<u32> info;
+Kernel32.FindFirstFileW: ptr<u16> pattern  ptr<u8> found: ptr<u8>;
+Kernel32.FindNextFileW: ptr<u8> search  ptr<u8> found;
+Kernel32.FindClose: ptr<u8> search;
+Kernel32.WideCharToMultiByte: u32 page  u32 flags  ptr<u8> wide  int length  ptr<u8> text  int room  ptr<u8> default_character  ptr<u8> used_default;
+Kernel32.FileTimeToSystemTime: ptr<u8> time  ptr<u16> stamp;
 Kernel32.DeleteFileW: ptr<u16> path;
 Kernel32.CreateDirectoryW: ptr<u16> path  ptr<u8> security;
 Kernel32.RemoveDirectoryW: ptr<u16> path;

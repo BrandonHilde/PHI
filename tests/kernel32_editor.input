@@ -1,0 +1,54 @@
+# the window is at (40, 40): its inside starts at (42, 60). The menu bar is 22 high: File is at
+# x 0 and 48 wide, Edit at 48; a menu's rows start at y 23 inside and are 22 high, with a line 9.
+expect editor: running 1
+wait 800
+type first
+sendkey ret
+type second
+# Ctrl+S: nothing to save it as yet, so the dialog, suggesting NOTES.TXT
+sendkey ctrl-s
+wait 400
+sendkey ret
+wait 400
+# something new, then Ctrl+O: asked about the changes, Discard is the second button
+sendkey ctrl-n
+wait 200
+type draft
+sendkey ctrl-o
+wait 400
+sendkey right
+sendkey ret
+wait 400
+type NOTES.TXT
+sendkey ret
+wait 400
+# it's open, with the caret at the start: added to, then saved from the menu with the mouse
+type top
+click 62 70
+wait 200
+click 62 136
+wait 400
+# Select all from the Edit menu, then copy and paste it after itself
+click 110 70
+wait 200
+# File's four rows are not Edit's: Edit's are Cut, Copy, Paste, a line, Select all
+click 110 164
+wait 200
+sendkey ctrl-c
+sendkey ctrl-end
+sendkey ret
+sendkey ctrl-v
+wait 200
+# saved as another name, through File, Save as
+click 62 70
+wait 200
+click 62 158
+wait 400
+sendkey ctrl-a
+type SECOND.TXT
+sendkey ret
+wait 400
+# File, Quit, with nothing to save
+click 62 70
+wait 200
+click 62 189

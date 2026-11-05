@@ -240,7 +240,7 @@ namespace Phi.Compiler.Semantics
                     Description = "program: print a folder; how many entries it has" },
             new() { Name = "OS.FileSize", Label = "OS_FileSize", OnHost = "HostFiles.FileSize", InKernel = "Fat.FileSize", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: a file's size, or -1" },
-            new() { Name = "OS.ListFolder", Label = "OS_ListFolder", InKernel = "Fat.Entries", InKernelUse = "fs.fat16", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.ListFolder", Label = "OS_ListFolder", OnHost = "HostFiles.ListFolder", InKernel = "Fat.Entries", InKernelUse = "fs.fat16", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: a folder's entries, as FileInfo (use fs.fileinfo), into up to max of them; how many, or -1" },
             new() { Name = "OS.MakeFolder", Label = "OS_MakeFolder", OnHost = "HostFiles.MakeFolder", InKernel = "Fat.MakeFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: make a folder; 1 if made" },

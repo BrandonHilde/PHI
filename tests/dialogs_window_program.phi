@@ -1,0 +1,94 @@
+# gui.dialogs as dialogs: each waits for its answer in a real window on Linux and Windows, 32 and
+# 64 bits, and puts the window back. The window is hidden, and WindowTest (as in window_program)
+# plays the user, with what they do waiting in the queue before the dialog looks.
+use gui.dialogs;
+use support.win_window;
+use support.x11_window;
+use support.big_file_linux32;
+use support.big_file_linux64;
+use support.big_file_windows;
+
+phi.DialogsWindowProgram:Program
+{
+	HostWindow.visible is false;
+	str folder: ('phi_dialog_' (BigFile.Pid));
+	str there: (folder '/there.txt');
+
+	log 'open: ' (App.Open: 400 300) '\n';
+	call Draw.Clear: 0x102030;
+	call Draw.FillRect: 10 10 20 20 0xE0483E;
+	call App.Present;
+
+	# a message: Enter, and the window is as it was
+	call Tap: Events.KEY_ENTER;
+	call Dialogs.Message: 'Hello';
+	call WindowBack: 'a message';
+
+	# a question: moving along, then Enter
+	call Tap: Events.KEY_RIGHT;
+	call Tap: Events.KEY_ENTER;
+	log 'right, enter: ' (Dialogs.Ask: 'Which?' 'One' 'Two' 'Three') '\n';
+	call WindowBack: 'a question';
+	call Tap: Events.KEY_ESCAPE;
+	log 'esc: ' (Dialogs.Ask: 'Which?' 'One' 'Two') '\n';
+
+	# with the mouse, on the second of two buttons
+	MessageBox same;
+	call same.Place: 400 300 'Which?' 'One' 'Two';
+	call WindowTest.LeftDown: same.buttons:1.x + 5 same.buttons:1.y + 5;
+	call WindowTest.LeftUp: same.buttons:1.x + 5 same.buttons:1.y + 5;
+	log 'the mouse: ' (Dialogs.Ask: 'Which?' 'One' 'Two') '\n';
+
+	# nothing's left over for the program, after any of those
+	log 'an event after: ' (App.NextEvent) '\n';
+
+	# the window closed while one is up: it's -1, and the program hears of it after
+	call WindowTest.CloseIt;
+	log 'closed: ' (Dialogs.Ask: 'Which?' 'One' 'Two') '\n';
+	log 'then an event: ' (App.NextEvent) ', a close: ' (App.event.kind is Events.CLOSE) ', and no more: ' (App.NextEvent) '\n';
+
+	# files
+	log 'made: ' (OS.MakeFolder: folder) ' ' (OS.WriteFile: there 'hello' 5) '\n';
+	call Type: 'there.txt';
+	call Tap: Events.KEY_ENTER;
+	log 'open: ' (Dialogs.Open: folder) ', the path: ' (Dialogs.path is there) '\n';
+	call WindowBack: 'open';
+	call Tap: Events.KEY_ESCAPE;
+	log 'esc: ' (Dialogs.Open: folder) '\n';
+
+	# saving: a new name goes straight through
+	call Tap: Events.KEY_ENTER;
+	log 'save: ' (Dialogs.Save: folder 'fresh.txt') '\n';
+	log 'its name: ' ((Text.Length: addr Dialogs.path:0) is folder.len + 10) '\n';
+
+	# a name that's there is asked about: first the question's Cancel, leaving the dialog up,
+	# then Esc; then its Replace
+	call Tap: Events.KEY_ENTER;         # the name
+	call Tap: Events.KEY_RIGHT;         # to the question's Cancel
+	call Tap: Events.KEY_ENTER;
+	call Tap: Events.KEY_ESCAPE;        # back in the dialog
+	log 'not replaced: ' (Dialogs.Save: folder 'there.txt') '\n';
+	call Tap: Events.KEY_ENTER;
+	call Tap: Events.KEY_ENTER;
+	log 'replaced: ' (Dialogs.Save: folder 'there.txt') ', the path: ' (Dialogs.path is there) '\n';
+	call WindowBack: 'save';
+
+	log 'tidied: ' (OS.DeleteFile: there) ' ' (OS.DeleteFolder: folder) '\n';
+
+	[Tap: int key: 0;]
+		call WindowTest.KeyDown: key;
+		call WindowTest.KeyUp: key;
+	[end]
+
+	[Type: str typed;]
+		while int i: 0; i < typed.len; i++;
+			call WindowTest.TypeChar: typed:i as int;
+		;;
+	[end]
+
+	# is it as it was, in what's drawn and what's shown?
+	[WindowBack: str what;]
+		log what ', the window back: ' ((Draw.GetPixel: 5 5) is 0x102030) ' ' ((Draw.GetPixel: 15 15) is 0xE0483E) ' ' ((Draw.GetPixel: 200 150) is 0x102030);
+		log ', shown: ' ((WindowTest.PixelAt: 5 5) is 0x102030) ' ' ((WindowTest.PixelAt: 200 150) is 0x102030) '\n';
+	[end]
+}

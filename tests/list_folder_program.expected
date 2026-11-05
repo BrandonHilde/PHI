@@ -1,0 +1,13 @@
+made: 1 1 1 1
+in it: 3
+short.txt: size 5, a folder: 0
+a name of the kind that a FAT16 disk could never hold, and then some more.data: size 3, a folder: 0
+inner: size 0, a folder: 1
+a date: 1 1 1 1 1
+only two: 2
+none: 0
+an empty one: 0
+not there: -1
+a file: -1
+here: 1
+tidied: 1 1 1 1

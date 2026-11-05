@@ -15,6 +15,16 @@ phi.LinuxLayout:Linux64
 		size:0 is (whole << 32) | info:12;
 	[end: true]
 
+	# what's at path: its mode, or -1 if there's nothing; its size and when it was last written
+	# (seconds since 1970) into what's given
+	[StatOf: ptr<u8> path: 0; ptr<u64> size: 0; ptr<u32> seconds: 0;]
+		u32 info[36];
+		if (sys.Stat: path addr info) is not 0 return -1;
+		u64 whole: info:13;
+		size:0 is (whole << 32) | info:12;
+		seconds:0 is info:22;
+	[end: info:6 as int]
+
 	# reading goes on from position; false if Linux says no
 	[SeekTo: int fd: 0; u64 position: 0;]
 	[end: (sys.LSeek64: fd position 0) is position]
@@ -37,6 +47,7 @@ sys.Open: 2  ptr<u8> path  int flags  int mode;
 sys.Close: 3  int fd;
 sys.Stat: 4  ptr<u8> path  ptr<u32> info;
 sys.FStat: 5  int fd  ptr<u32> info;
+sys.GetDents: 217  int fd  ptr<u8> buffer  u32 count;
 sys.LSeek64: 8  int fd  u64 position  int whence: u64;
 sys.LSeek: 8  int fd  int offset  int whence;
 sys.SchedYield: 24;

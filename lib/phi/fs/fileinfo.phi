@@ -8,8 +8,8 @@
 
 struct.FileInfo
 {
-	str name: [12];         # NAME.EXT
-	u32 size;               # in bytes (0 for a folder)
+	str name: [255];        # NAME.EXT on PHI OS's FAT16, and whole on Linux and Windows
+	u32 size;               # in bytes (0 for a folder; 4 GB less a byte for anything bigger)
 	bln folder;
 	u16 year;               # when it was last written (0 if the disk doesn't say)
 	u8 month;

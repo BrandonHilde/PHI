@@ -1,0 +1,28 @@
+# takes up to 60 seconds: it types and waits through every dialog and menu
+# samples/desktop.rootfs/editor.phi on PHI OS's desktop, from real keys and clicks: typing, saving
+# through its dialog, opening through another having said not to save, the menu with the mouse,
+# cut and paste. What's on the disk after it has quit says what it did.
+use gui.desktop;
+
+phi.Test:Kernel
+{
+	bln ok: (Screen.Start: 640 480);
+	call Desktop.Start;
+	int pid: (Desktop.Run: 'EDITOR.BIN' 'Editor' 40 40);
+	debug 'editor: running ' (pid > 0) '\n';
+	while Desktop.windows.len > 0
+		call Desktop.Step;
+		call OS.Yield;
+	;;
+	debug 'desktop: no windows left\n';
+
+	u8 read[256];
+	int got: (Fat.ReadFile: 'NOTES.TXT' addr read 255);
+	read:(Math.Max: got 0) is 0;
+	ptr<u8> text: addr read;
+	debug 'NOTES.TXT: ' got ' [' text ']\n';
+	got is (Fat.ReadFile: 'SECOND.TXT' addr read 255);
+	read:(Math.Max: got 0) is 0;
+	debug 'SECOND.TXT: ' got ' [' text ']\n';
+	exit 0;
+}

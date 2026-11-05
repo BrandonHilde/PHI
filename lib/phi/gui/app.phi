@@ -39,6 +39,8 @@ phi.App:Program
 	int width: 0;
 	int height: 0;
 	GuiEvent event;             # the event NextEvent or WaitEvent took
+	GuiEvent back_events[2];    # what's been put back, for NextEvent to give again (see PutBack)
+	int back_count: 0;
 
 	# a window of w x h pixels, drawn on with Draw; false if the kernel can't make one
 	[Open: int w: 0; int h: 0;]
@@ -68,7 +70,30 @@ phi.App:Program
 
 	# the next event into App.event; false when there's none yet
 	[NextEvent]
+		if back_count > 0
+			back_count--;
+			event is back_events:back_count;
+			return true;
+		;;
 	[end: (OS.NextEvent: addr event) is 1]
+
+	# an event for NextEvent to give next, for something that waits for events of its own (a
+	# dialog) to leave one for the program's loop. A close comes first; one of each is kept.
+	[PutBack: GuiEvent back;]
+		int same: -1;
+		while int i: 0; i < back_count; i++;
+			if back_events:i.kind is back.kind
+				same is i;
+			;;
+		;;
+		if same >= 0
+			back_events:same is back;
+			return;
+		;;
+		if back_count >= 2 return;
+		back_events:back_count is back;
+		back_count++;
+	[end]
 
 	# name the window (the window manager cuts it to fit its title bar)
 	[SetTitle: ptr<u8> title: 0;]

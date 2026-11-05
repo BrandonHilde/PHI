@@ -684,6 +684,17 @@ The parts most worth doing next, roughly in order:
    fields (`FocusChain`) and `GuiEvent.pressed` for right-button presses. Done 2026-11-04:
    `TextArea` in `gui.widgets` (tests `textarea`, `kernel32_text_area`): selection, the wheel,
    growing; it doesn't wrap, has no undo, and its scroll bar shows but can't be dragged yet.
+   Done 2026-11-05: menus and dialogs, drawn by PHI so they're the same everywhere (the user's
+   choice, over each system's own): `gui.menu`'s `MenuBar` (test `menu`), and `gui.dialogs`'
+   `Message`, `Ask`, `Open` and `Save`, on `MessageBox` and `FilePicker` (tests `dialogs_program`
+   and `dialogs_window_program`, on all four hosts), with `App.PutBack` for what happens while one's
+   up. `OS.ListFolder` on Linux and Windows came with them, and `FileInfo`'s name is 255
+   characters rather than 8.3 (test `list_folder_program`). `samples/desktop.rootfs/editor.phi` is
+   all of it, run on PHI OS's desktop with real keys and clicks (`kernel32_editor`) and looked at
+   in screenshots there; on Linux and Windows the dialogs have only run hidden. Not yet: a
+   clipboard shared with other programs, right-click menus, and a menu's submenus; a file dialog
+   lists 512 entries at most. Left of this item: several windows in a program, each with a number,
+   as a stream or a socket has, with `App`'s calls staying on the first.
 2. **Text everywhere: done (2026-10-29),** after the sixth and seventh PhiOS assessments. Text
    works the same in variables, struct fields, parameters and array elements:
    `str name: [24];` (also `[atmost 24]`, `chr name[24]`) in a struct; `new str bio;` for text

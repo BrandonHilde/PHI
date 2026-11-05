@@ -1,0 +1,42 @@
+widths: 48 48 96
+click File: opened 1 menu 0 lit -1
+let go on the title: opened 1 menu 0 lit -1
+over Open: opened 1 menu 0 lit 0
+chose: 11
+after choosing: opened 0 lit -1
+pressed File: opened 1 menu 0 lit -1
+over Quit: opened 1 menu 0 lit 3
+chose by letting go: 13
+after: opened 0 lit -1
+disabled: 0 : opened 1 menu 0 lit -1
+over Save: opened 1 menu 0 lit -1
+the line: 0 : opened 1 menu 0 lit -1
+slid to View: opened 1 menu 1 lit -1
+on the same title: 0 : opened 0 lit -1
+took: 1
+outside: 0 : opened 0 lit -1
+took: 1
+outside with none open: 0 : opened 0 lit -1
+took: 0
+F10: 0 : opened 1 menu 0 lit 0
+down: 0past Save and the line, disabled: opened 1 menu 0 lit 3
+down: 0around: opened 1 menu 0 lit 0
+up: 0back: opened 1 menu 0 lit 3
+right: 0 : opened 1 menu 1 lit 4
+enter: 21
+chose Wrap: opened 0 lit -1
+alt+h: 0 : opened 1 menu 2 lit 6
+left and around: 0 : opened 1 menu 1 lit 4
+any other key: 0 took: 1
+esc: 0 : opened 0 lit -1
+ctrl+o: 11 took: 1
+ctrl+O: 11
+disabled ctrl+s: 0
+plain o: 0 took: 0
+alt+q: 0 took: 0
+enabled ctrl+s: 12
+the bar: 1, below it: 1
+the title: 1, the item: 1, the next: 1
+help at: 76, 124 wide
+one menu too many: -1
+items kept: 64
