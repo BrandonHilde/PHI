@@ -334,6 +334,7 @@ phi.Tls13:Library
 		if s.failed return false;
 		if count > s.room return (Tls13.Fail: s 'more arrived than there was room for' ALERT_INTERNAL_ERROR);
 		s.input_length++ count;
+		s.room is INPUT_MAX - s.input_length;
 		call Tls13.Process: s;
 	[end: not s.failed]
 

@@ -6,6 +6,8 @@ server reads: 13 [hello, server]
 server writes: 13
 client reads: 13 [hello, client], then: 0
 bulk: 40000 sent, 40000 received, sum 4980240
+unread: full 1, room right 1, failed 0
+and it read on: 1, failed 0
 closed: 1 -1
 another host: 0 0 (the server's certificate: the certificate isn't for this host; the other side refused the certificate (alert 42))
 chacha20 and a wildcard: 1 1 4867 4867

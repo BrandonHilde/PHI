@@ -84,6 +84,35 @@ phi.TlsMemory:Library
 	;;
 	log 'bulk: ' sent ' sent, ' received ' received, sum ' sum '\n';
 
+	# a side that's sent to faster than it reads: what it says it has room for must shrink as
+	# bytes come in, or the next ones go past the end of its buffer. Then it's all there to read.
+	u32 given: 0;
+	bln room_right: true;
+	while client.room > 0 and given < 200000
+		int took: (Tls13.Write: addr server addr chunk 1000);
+		u32 waiting: (Tls13.Pending: addr server);
+		u32 fits: waiting;
+		if fits > client.room
+			fits is client.room;
+		;;
+		call Bytes.Copy: (Tls13.Room: addr client) (Tls13.Outgoing: addr server) fits;
+		call Tls13.Sent: addr server fits;
+		bln fine: (Tls13.Received: addr client fits);
+		given++ fits;
+		if client.input_length + client.room is not Tls13.INPUT_MAX
+			room_right is false;
+		;;
+	;;
+	log 'unread: full ' (client.room is 0) ', room right ' room_right ', failed ' client.failed '\n';
+	u32 unread: 0;
+	got is (Tls13.Read: addr client addr buffer 2000);
+	while got > 0
+		unread++ got;
+		call Shuttle;
+		got is (Tls13.Read: addr client addr buffer 2000);
+	;;
+	log 'and it read on: ' (unread > 30000) ', failed ' client.failed '\n';
+
 	# close_notify
 	call Tls13.Close: addr client;
 	call Shuttle;
