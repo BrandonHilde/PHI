@@ -1,0 +1,11 @@
+map: 4294967295 2147483648 1 4294967295
+walked: 3221225473, removed: 1 0
+keyed: 1 1 1
+by a negative key: 1 1 1
+pixels: 4279246896 4294967295 2158743023 off the edge: 0
+blended: 462615
+address: 3355509251 200.1.2.3
+bytes: 1 4294967295 65535
+least: -2147483648 -2147483648 11
+minus one: -1 -7
+a thread was given: -5

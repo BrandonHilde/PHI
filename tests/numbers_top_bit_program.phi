@@ -1,0 +1,103 @@
+# Values with their top bit set, through the library's calls that carry raw values: a number
+# that would come out as a different number is an error (numbers_checked), so a value that's
+# only bits must never set that off. A map's values and keys, a keyed object's key,
+# a colour with its top bit, an IP address from 128.x up, bytes put together, the most negative
+# int written out, and a thread's value. (Run on Linux and Windows, 32 and 64 bits.)
+use data.map;
+use data.keyed;
+use gfx.draw;
+use net.sockets;
+use user.text;
+use user.threads;
+
+struct.ByBits has Keyed
+{
+	u32 id;
+	[Key]
+	[end: id]
+}
+
+struct.BySigned has Keyed
+{
+	int number;
+	[Key]
+	[end: number]
+}
+
+phi.TopBit:Program
+{
+	const u32 TOP: 0x80000000;
+	const u32 ALL: 0xFFFFFFFF;
+	int given: 0;
+
+	# a map: keys, values and what isn't there
+	ptr<MapData> map: (Map.New);
+	call Map.Set: map TOP ALL;
+	call Map.Set: map ALL TOP;
+	call Map.Set: map 1 0xC0000000;
+	u32 got: (Map.Get: map TOP);
+	log 'map: ' got ' ' (Map.Get: map ALL) ' ' (Map.Has: map TOP) ' ' (Map.Get: map 2 ALL) '\n';
+	u32 total: 0;
+	int pos: (Map.Next: map);
+	while pos >= 0
+		total is total ^ (Map.KeyAt: map pos) ^ (Map.ValueAt: map pos);
+		pos is (Map.Next: map pos);
+	;;
+	log 'walked: ' total ', removed: ' (Map.Remove: map TOP) ' ' (Map.Has: map TOP) '\n';
+	call Map.Delete: map;
+
+	# keyed objects, by a key with its top bit and by a negative number
+	new KeyedMap keyed;
+	new ByBits big: 0xF0000001;
+	log 'keyed: ' (keyed.Add: big) ' ' ((keyed.Find: 0xF0000001) >= 0) ' ' (keyed.Remove: 0xF0000001) '\n';
+	new BySigned negative: -5;
+	log 'by a negative key: ' (keyed.Add: negative) ' ' ((keyed.Find: (-5) as u32) >= 0) ' ' (keyed.Remove: (-5) as u32) '\n';
+
+	# colours with their top bit
+	u32 pixels[64];
+	call Draw.Target: addr pixels 8 8;
+	call Draw.Clear: 0xFF102030;
+	call Draw.Pixel: 1 1 0xFFFFFFFF;
+	call Draw.FillRect: 2 2 2 2 0x80ABCDEF;
+	u32 corner: (Draw.GetPixel: 0 0);
+	u32 white: (Draw.GetPixel: 1 1);
+	log 'pixels: ' corner ' ' white ' ' (Draw.GetPixel: 2 2) ' off the edge: ' (Draw.GetPixel: 100 100) '\n';
+	call Draw.BlendRect: 0 0 8 8 0xFF000000 128;
+	u32 blended: (Draw.GetPixel: 0 0);
+	log 'blended: ' (blended & 0xFFFFFF) '\n';
+	call Draw.Line: 0 7 7 0 corner;
+	call Draw.Pixel: 0 0 (Draw.GetPixel: 1 1);
+
+	# an IP address from 128.x up, and bytes put together
+	u32 address: (Net.ParseIp: '200.1.2.3');
+	log 'address: ' address ' ';
+	call Net.PrintIp: address;
+	log '\n';
+	u8 bytes[8];
+	call Net.Put32: addr bytes address;
+	u32 again: (Net.Get32: addr bytes);
+	call Net.Put32: addr bytes ALL;
+	u32 ones: (Net.Get32: addr bytes);
+	call Net.Put16: addr bytes 0xFFFF;
+	log 'bytes: ' (again is address) ' ' ones ' ' (Net.Get16: addr bytes) '\n';
+
+	# the most negative int, written out
+	int least: 0x80000000 as int;
+	u8 text[32];
+	text:0 is 0;
+	int length: (Text.AppendNumber: addr text least 32);
+	ptr<u8> written: addr text;
+	log 'least: ' least ' ' written ' ' length '\n';
+	text:0 is 0;
+	length is (Text.AppendNumber: addr text (-1) 32);
+	log 'minus one: ' written ' ' (Text.ToNumber: '-7') '\n';
+
+	# a thread's value
+	int t: (Threads.Start: addr Work (-5));
+	call Threads.Wait: t;
+	log 'a thread was given: ' given '\n';
+
+	[Work: int value: 0;]
+		atomic given is value;
+	[end]
+}

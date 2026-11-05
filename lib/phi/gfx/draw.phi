@@ -275,9 +275,9 @@ phi.Draw:Library
 		int px: x + origin_x;
 		int py: y + origin_y;
 		if px >= clip_x0 and px < clip_x1 and py >= clip_y0 and py < clip_y1
-			return (pixels:(py * width + px)) as int;
+			return pixels:(py * width + px);
 		;;
-	[end: 0]
+	[end: 0 as u32]
 
 	[HLine: int x: 0; int y: 0; int w: 0; u32 color: 0;]
 		call FillRect: x y w 1 color;

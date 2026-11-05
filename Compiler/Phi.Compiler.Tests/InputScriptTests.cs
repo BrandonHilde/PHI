@@ -24,5 +24,38 @@ namespace Phi.Compiler.Tests
             Assert.Equal(-1, InputScript.FindExpected(TwoLogins, "welcome", next: true, seen: TwoLogins.Length));
             Assert.Equal(-1, InputScript.FindExpected("short", "welcome", next: true, seen: 100));
         }
+
+        /// <summary>What a script says when the machine ends as soon as it's connected to it.</summary>
+        static string? RunAgainstAMachineThatEnds(params string[] lines)
+        {
+            var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
+            listener.Start();
+            int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
+            Task closing = Task.Run(() =>
+            {
+                using System.Net.Sockets.TcpClient accepted = listener.AcceptTcpClient();
+                accepted.Client.LingerState = new System.Net.Sockets.LingerOption(true, 0);    // it's gone at once
+            });
+            try { return InputScript.Run(port, lines, () => "", CancellationToken.None); }
+            finally
+            {
+                closing.Wait();
+                listener.Stop();
+            }
+        }
+
+        [Fact]
+        public void AMachineThatEndsDuringTheLastLineIsNotAFailure()
+        {
+            Assert.Null(RunAgainstAMachineThatEnds("type abcdef"));
+            Assert.Null(RunAgainstAMachineThatEnds("sendkey a", "# and nothing after it", ""));
+        }
+
+        [Fact]
+        public void AMachineThatEndsWithLinesLeftSaysWhichOneItDidntGetTo()
+        {
+            string? why = RunAgainstAMachineThatEnds("type abcdef", "", "sendkey b", "sendkey c");
+            Assert.Equal("the input script hadn't got to line 3: sendkey b", why);
+        }
     }
 }

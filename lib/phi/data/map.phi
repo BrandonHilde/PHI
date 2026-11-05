@@ -18,7 +18,8 @@
 #       pos is (Map.Next: players pos);
 #   ;;
 #
-# Any u32 can be a key, 0 included. The keys are kept in a table whose size is a power
+# Any u32 can be a key, 0 included, and any u32 a value. A negative number going in says
+# `as u32` and coming out says `as int`, as a number that's kept as bits does anywhere. The keys are kept in a table whose size is a power
 # of 2: a key's place comes from multiplying it by a large odd number (Fibonacci
 # hashing), and a taken place sends it to the next one along. The table doubles when
 # it's three-quarters full, so Set, Get, Has and Remove take about the same time

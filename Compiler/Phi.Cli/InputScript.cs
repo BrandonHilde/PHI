@@ -152,10 +152,19 @@ namespace Phi.Cli
                 try { while (stream.Read(buffer, 0, buffer.Length) > 0) { } } catch { }
             });
 
+            // the machine can end at any point in a line, if that line is what made it end: a click
+            // that shuts it down has nothing to let go of, and the line is as done as it gets
+            bool ended = false;
             void Send(string command)
             {
+                if (ended) return;
                 byte[] bytes = Encoding.ASCII.GetBytes(command + "\n");
-                stream.Write(bytes, 0, bytes.Length);
+                try { stream.Write(bytes, 0, bytes.Length); }
+                catch (Exception e) when (e is IOException or ObjectDisposedException)
+                {
+                    ended = true;
+                    return;
+                }
                 Delay(150, cancel); // sendkey holds a key for 100 ms
             }
 
@@ -200,7 +209,8 @@ namespace Phi.Cli
             {
                 string line = lines[i].Trim();
                 if (line.Length == 0 || line.StartsWith('#')) continue;
-                if (cancel.IsCancellationRequested) return Stopped();
+                // (a line that hasn't run, so what happened is the program stopping before it)
+                if (ended || cancel.IsCancellationRequested) return $"the input script hadn't got to line {i + 1}: {line}";
                 lineNumber = i + 1;
                 running = line;
 

@@ -1,0 +1,43 @@
+# numbers_top_bit_program's kernel side: values with their top bit set in a kernel's calls, and
+# through a system call to a program (kernel32_numbers_top_bit.rootfs/address.phi) with this
+# kernel at 200.1.2.3, whose address is a u32 with its top bit set, on any network from 128.x up.
+use proc.process;
+use net.calls;
+use memory.list;
+use data.map;
+
+phi.Test:Kernel
+{
+	const u32 TOP: 0x80000000;
+	const u32 ALL: 0xFFFFFFFF;
+
+	# a list, whose values can be anything
+	ptr<ListData> list: (List.New);
+	call List.Add: list ALL;
+	call List.Add: list TOP;
+	call List.Set: list 0 0xDEADBEEF;
+	u32 first: (List.Get: list 0);
+	log 'list: ' first ' ' (List.Get: list 1) '\n';
+	call List.Delete: list;
+
+	ptr<MapData> map: (Map.New);
+	call Map.Set: map TOP ALL;
+	u32 got: (Map.Get: map TOP);
+	log 'map: ' got '\n';
+	call Map.Delete: map;
+
+	# the address, here and in a program
+	bln ok: (Net.Start: (Net.ParseIp: '200.1.2.3'));
+	u32 mine: Net.ip;
+	log 'network: ' ok ', address ' mine ' ';
+	call Net.PrintIp: mine;
+	log '\n';
+	u8 bytes[4];
+	call Net.Put32: addr bytes mine;
+	u32 again: (Net.Get32: addr bytes);
+	log 'bytes: ' (again is mine) '\n';
+
+	int code: (Process.Wait: (Process.Spawn: 'ADDRESS.BIN'));
+	log 'exit code: ' code '\n';
+	exit 0;
+}

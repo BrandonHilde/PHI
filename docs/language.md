@@ -2590,7 +2590,9 @@ if (IsReady: port)
   constant that fits, `.len`, `.max`, `x & 0xFF`, and for a `u32` going to an `int`, `x >> 1`,
   `x / 2` and `x % 100`. Arithmetic on a variable isn't a conversion (`u32 x: 2; x-- 4;` wraps,
   which is what `Mem`'s own check is for), an index has its own check, and an `OS.` call takes
-  either kind the same on every system. In a kernel an error that isn't caught stops the
+  either kind the same on every system. An `OS.` call's result is an `int`, so one holding bits
+  says `as u32` going into a `u32`, as `u32 now: (OS.GetTicks) as u32;` does once a machine has
+  been up for 25 days; `Net.Address` and the like do that for you. In a kernel an error that isn't caught stops the
   kernel, so a value that comes from a program should be checked first, not left to this.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number, float, 64-bit number

@@ -1,0 +1,12 @@
+# A program asking its kernel's address, which has its top bit set (kernel32_numbers_top_bit
+# runs it): through a system call, and into a u32, with nothing to say.
+use net.sockets;
+
+phi.Address:Program
+{
+	u32 mine: (Net.Address);
+	log 'a program sees ' mine ' ';
+	call Net.PrintIp: mine;
+	log '\n';
+	exit 4;
+}

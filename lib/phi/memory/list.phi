@@ -10,7 +10,8 @@
 #   call List.Delete: numbers;
 #
 # Get and Set stop the kernel with a message if the index is outside the list.
-# The values can be anything that fits in 32 bits, including pointers.
+# The values can be anything that fits in 32 bits, including pointers. A negative number going
+# in says `as u32` and coming out says `as int`, as a number that's kept as bits does anywhere.
 
 use memory.heap;
 

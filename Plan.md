@@ -615,7 +615,11 @@ these were added:
   variable got round them. Of the 243 places it checks, 54 hold raw bits or differences meant
   to wrap and say `as` (bytes put together, a syscall's -1, an IP address), and methods that
   ended in a `u32` but returned -1 became `int` methods (`Tcp.Write`). A missed one only fails
-  when its top bit is set, so a bad value in a place the tests don't reach shows up later. Not
+  when its top bit is set, so a bad value in a place the tests don't reach shows up later, and
+  `numbers_top_bit_program` and `kernel32_numbers_top_bit` send such values through the library's
+  calls: that found `Draw.GetPixel`, `Net.Address`, `Tcp.Address` and `Block.Sectors` giving raw
+  bits as an `int`, which stopped a caller putting them in a `u32` (192.168.x.x, say), and they
+  give a `u32` now. Not
   covered: arithmetic (`x-- 4` wraps), a value from an `OS.` call's own conversion, and 64-bit
   numbers, which already need `as`. No conversion rule sees a subtraction below 0 either, so
   `Mem.Copy`, `Move`, `Fill` and `Fill32` also stop with `ErrorKind.COUNT` on a count of 2
@@ -2766,13 +2770,24 @@ editor shows its errors as it's written.
 
 ### Order
 
-H1-H3 are done. H4 is under way with S10 (64-bit Linux and Windows programs work, macOS
-waits). H5 is done (2026-11-03): sockets and threads on every system, PHI's memory model,
-and the mmo's world and lobby under `phi load` as programs here. H6 (the runtime in PHI) is
-done (2026-11-03), which makes H7 and macOS cheaper: each of them is a PHI module now, not an
-assembly file for each system. H7 is next, and H8 follows. C compatibility, still on hold, is what H7 and part of
-H8 lean on; H6's outside functions are its first half, so this plan is also where that
-hold would be reconsidered.
+As of 2026-11-04. H1-H3, H5 and H6 are done, and 64-bit Linux and Windows programs work (H4,
+with S10). H7's windows and sound are done on Windows and Linux, and H8's debugger on Windows
+and language server are built.
+
+Waiting, each for something:
+
+- **macOS** (H4, H7, H8's parts of it): not started; nothing has needed it yet.
+- **The GPU** (H7): on hold until everything else is done, then to be asked about again.
+- **C compatibility and self-hosting:** on hold until the other features are done. H6's
+  outside functions are the first half of C compatibility.
+- **A real cloud machine, and 64-bit kernels:** no boot on one until there's a release, and
+  kernels stay 32-bit until that needs them.
+- **`phi fuzz` and optimising:** in the phase before a release, in an environment of their own.
+
+Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, a formatter
+and packages. What's next overall is the list above called "The parts most worth doing next",
+whose first item is more for windows (several in a program, menus, dialog boxes, a multi-line
+`TextArea`).
 
 ## References
 

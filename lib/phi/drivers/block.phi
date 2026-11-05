@@ -44,10 +44,10 @@ phi.Block:Kernel
 
 	# how many sectors the disk has
 	[Sectors]
-		if kind is VIRTIO return VirtioBlk.sectors as int;
-		if kind is NVME return Nvme.sectors as int;
-		if kind is ATA return (Ata.Sectors) as int;
-	[end: 0]
+		if kind is VIRTIO return VirtioBlk.sectors;
+		if kind is NVME return Nvme.sectors;
+		if kind is ATA return (Ata.Sectors) as u32;
+	[end: 0 as u32]
 
 	[Read: u32 sector: 0; u32 count: 1; ptr<u8> buffer: 0;]
 		if count is 0 or count > 255 return false;

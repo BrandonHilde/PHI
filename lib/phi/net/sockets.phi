@@ -24,7 +24,7 @@ phi.Net:Program
 {
 	# this machine's address, or 0 if the kernel hasn't started the network
 	[Address:]
-	[end: (OS.NetAddress)]
+	[end: (OS.NetAddress) as u32]
 
 	# (the same as the kernel's Net, for the numbers in packets and addresses)
 	# numbers in packets are big-endian: the most significant byte first
@@ -221,5 +221,5 @@ phi.Tcp:Program
 
 	# the address of the other end of a connection (0 if there's no such connection)
 	[Address: int handle: 0;]
-	[end: (OS.TcpAddress: handle)]
+	[end: (OS.TcpAddress: handle) as u32]
 }

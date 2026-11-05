@@ -1,0 +1,18 @@
+# A kernel that exits because of what its input script just did: the first of a line of keys
+# ends it (kernel32_exit_from_input.input), and that isn't a failure of the test, as there's
+# nothing left for the script to do once the line it's on has ended the machine.
+phi.ExitFromInput:Kernel
+{
+	int keys: 0;
+	call OS.SetIrqHandler: 1 addr KeyPressed;
+	debug 'ready\n';
+	while keys < 1
+	;;
+	debug 'a key, so it ends\n';
+	exit 0;
+
+	[KeyPressed]
+		u8 scan: in 0x60;
+		keys++;
+	[end]
+}
