@@ -124,7 +124,7 @@ phi.LoadPlayers:Library
 				wrong++;
 				continue;
 			;;
-			int c: (Net.Get32: addr d.data + 2) - first_id;
+			int c: ((Net.Get32: addr d.data + 2) - first_id) as int;
 			if c < 0 or c >= count
 				wrong++;
 				continue;

@@ -366,7 +366,7 @@ phi.Tls13:Library
 		if n > max
 			n is max;
 		;;
-		call Bytes.Copy: buffer s.input + s.app_at n as u32;
+		call Bytes.Copy: buffer s.input + s.app_at n;
 		s.app_at++ n;
 		s.app_left-- n;
 		if s.app_left is 0
@@ -387,12 +387,12 @@ phi.Tls13:Library
 				n is PLAIN_MAX;
 			;;
 			if s.output_length + HEADER + n + 17 > OUTPUT_MAX
-				return done;
+				return done as int;
 			;;
 			call Tls13.SendRecord: s TYPE_APPLICATION data + done n;
 			done++ n;
 		;;
-	[end: done]
+	[end: done as int]
 
 	# queue close_notify: we'll send no more
 	[Close: ptr<TlsSession> s: 0;]

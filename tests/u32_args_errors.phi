@@ -1,49 +1,30 @@
+# A constant that can never fit where it's going is an error when the program is built.
+# Anything else that might not fit is checked when it runs (numbers_checked), and what's
+# known to fit, or says `as`, isn't.
 phi.UnsignedArguments:Kernel
 {
-	u32 big: 0x80000000;
 	method<int: int> kept: addr Take;
-	call Take: big;
-	call Take: big + 1;
-	call Take: 0x80000000;
-	int n: (Take: big);
-	call kept: big;
-
-	# what's said to be meant, or known to fit, or can't be too big
-	call Take: big as int;
-	call Take: 5;
-	call Take: big & 0xFF;
-	call Take: big >> 1;
-	call Take: big / 2;
-	call Take: big % 100;
-	u8 small: 1;
-	call Take: small;
-	log n '\n';
-
-	# the other way: a signed number going to a u32
-	int count: 3;
-	i16 short: 3;
-	i8 tiny: 3;
 	method<u32: u32> keptU: addr TakeU;
-	call TakeU: count;
-	call TakeU: count + 1;
-	call TakeU: (-1);
-	call TakeU: short;
-	call TakeU: tiny;
-	call TakeU: (Take: 5);
-	call keptU: count;
 
-	# what's said to be meant, or can't be negative, or was never signed
-	int numbers: 1 2 3;
-	str text: 'abc';
-	call TakeU: count as u32;
+	call Take: 0x80000000;
+	int a: 0x80000000;
+	a is 0xFFFFFFFF;
+	call kept: 0xFFFFFFFF;
+
+	call TakeU: (-1);
+	u32 b: -1;
+	b is -5;
+	call keptU: (-1);
+
+	# what fits, and what says it's meant
+	int c: 0x7FFFFFFF;
+	c is 0x80000000 as int;
+	u32 d: 0x80000000;
+	d is (-1) as u32;
+	call Take: 0xFFFFFFFF as int;
 	call TakeU: (-1) as u32;
 	call TakeU: 5;
-	call TakeU: 0x80000000;
-	call TakeU: count & 0xFF;
-	call TakeU: numbers.len;
-	call TakeU: text.len;
-	call TakeU: small;
-	call TakeU: big;
+	log a ' ' b ' ' c ' ' d '\n';
 
 	[Take: int value: 0;]
 	[end: value]

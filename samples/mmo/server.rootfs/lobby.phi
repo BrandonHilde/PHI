@@ -82,7 +82,7 @@ phi.Lobby:Program
 			log 'lobby: no LOBBY.CRT and LOBBY.KEY to show\n';
 			return false;
 		;;
-		if not (Tls13.Identity: addr identity addr certificate certificate_length as u32 addr key key_length as u32)
+		if not (Tls13.Identity: addr identity addr certificate certificate_length addr key key_length)
 			log 'lobby: LOBBY.CRT and LOBBY.KEY: ' X509.error '\n';
 			return false;
 		;;
@@ -184,12 +184,12 @@ phi.Lobby:Program
 			a is (Pool.Alloc: account_pool);
 			call Text.Copy: a.name name 16;
 			call Random.Fill: a.salt 16;
-			call Pbkdf2.Derive: password (Text.Length: password) as u32 a.salt 16 ROUNDS a.hash 32;
+			call Pbkdf2.Derive: password (Text.Length: password) a.salt 16 ROUNDS a.hash 32;
 			call Remember: a;
 			call SaveLog.Add: 'ACCOUNTS.LOG' a as ptr<u8> sizeof Account;
 		;;
 		else
-			call Pbkdf2.Derive: password (Text.Length: password) as u32 a.salt 16 ROUNDS addr hash 32;
+			call Pbkdf2.Derive: password (Text.Length: password) a.salt 16 ROUNDS addr hash 32;
 			if (Bytes.Equal: addr hash a.hash 32) is false
 				call Say: c 'wrong password';
 				return;
@@ -206,7 +206,7 @@ phi.Lobby:Program
 	# a line back to the connection (it goes as Pump gets the chance)
 	[Say: int c: 0; ptr<u8> text: 0;]
 		ptr<Session> s: sessions:c;
-		int taken: (Secure.Write: addr s.link text (Text.Length: text) as u32);
+		int taken: (Secure.Write: addr s.link text (Text.Length: text));
 		taken is (Secure.Write: addr s.link '\n' 1);
 	[end]
 

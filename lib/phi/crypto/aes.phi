@@ -47,14 +47,14 @@ phi.Aes:Library
 		unsafe
 			while u32 i: 0; i < 4; i++;
 				u32 pos: i * 4;
-				aes_round_keys:i is (key:pos << 24) | (key:(pos + 1) << 16) | (key:(pos + 2) << 8) | key:(pos + 3);
+				aes_round_keys:i is ((key:pos << 24) | (key:(pos + 1) << 16) | (key:(pos + 2) << 8) | key:(pos + 3)) as u32;
 			;;
 			while u32 i: 4; i < 44; i++;
 				u32 t: aes_round_keys:(i - 1);
 				if (i & 3) is 0
 					# rotate a byte left, put each byte through the S-box, add the round constant
 					u32 r: (t << 8) | (t >> 24);
-					t is (aes_sbox:(r >> 24) << 24) | (aes_sbox:((r >> 16) & 255) << 16) | (aes_sbox:((r >> 8) & 255) << 8) | aes_sbox:(r & 255);
+					t is ((aes_sbox:(r >> 24) << 24) | (aes_sbox:((r >> 16) & 255) << 16) | (aes_sbox:((r >> 8) & 255) << 8) | aes_sbox:(r & 255)) as u32;
 					t is t ^ aes_rcon:((i >> 2) - 1);
 				;;
 				aes_round_keys:i is aes_round_keys:(i - 4) ^ t;
@@ -86,10 +86,10 @@ phi.Aes:Library
 				k++ 4;
 			;;
 			# the last round has no MixColumns: just the S-box, with the rows shifted
-			t0 is (aes_sbox:(s0 >> 24) << 24) | (aes_sbox:((s1 >> 16) & 255) << 16) | (aes_sbox:((s2 >> 8) & 255) << 8) | aes_sbox:(s3 & 255);
-			t1 is (aes_sbox:(s1 >> 24) << 24) | (aes_sbox:((s2 >> 16) & 255) << 16) | (aes_sbox:((s3 >> 8) & 255) << 8) | aes_sbox:(s0 & 255);
-			t2 is (aes_sbox:(s2 >> 24) << 24) | (aes_sbox:((s3 >> 16) & 255) << 16) | (aes_sbox:((s0 >> 8) & 255) << 8) | aes_sbox:(s1 & 255);
-			t3 is (aes_sbox:(s3 >> 24) << 24) | (aes_sbox:((s0 >> 16) & 255) << 16) | (aes_sbox:((s1 >> 8) & 255) << 8) | aes_sbox:(s2 & 255);
+			t0 is ((aes_sbox:(s0 >> 24) << 24) | (aes_sbox:((s1 >> 16) & 255) << 16) | (aes_sbox:((s2 >> 8) & 255) << 8) | aes_sbox:(s3 & 255)) as u32;
+			t1 is ((aes_sbox:(s1 >> 24) << 24) | (aes_sbox:((s2 >> 16) & 255) << 16) | (aes_sbox:((s3 >> 8) & 255) << 8) | aes_sbox:(s0 & 255)) as u32;
+			t2 is ((aes_sbox:(s2 >> 24) << 24) | (aes_sbox:((s3 >> 16) & 255) << 16) | (aes_sbox:((s0 >> 8) & 255) << 8) | aes_sbox:(s1 & 255)) as u32;
+			t3 is ((aes_sbox:(s3 >> 24) << 24) | (aes_sbox:((s0 >> 16) & 255) << 16) | (aes_sbox:((s1 >> 8) & 255) << 8) | aes_sbox:(s2 & 255)) as u32;
 			call PutBig: output t0 ^ aes_round_keys:40;
 			call PutBig: output + 4 t1 ^ aes_round_keys:41;
 			call PutBig: output + 8 t2 ^ aes_round_keys:42;

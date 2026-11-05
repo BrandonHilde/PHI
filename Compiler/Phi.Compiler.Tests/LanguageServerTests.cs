@@ -843,11 +843,11 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData(Host.PhiOS)]
         [InlineData(Host.Linux)]
-        public void AU32GoingToAMethodsIntIsTheSameErrorOnEverySystem(Host system)
+        public void AU32ConstantThatCantBeAnIntIsTheSameErrorOnEverySystem(Host system)
         {
-            string path = Write("own.phi", "phi.Own:Program\n{\n\tu32 size: 1;\n\tcall Take: size;\n\t[Take: int n: 0;]\n\t[end]\n}\n");
+            string path = Write("own.phi", "phi.Own:Program\n{\n\tcall Take: 0x80000000;\n\t[Take: int n: 0;]\n\t[end]\n}\n");
             CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
-            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("comes out negative"));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("too big for one"));
         }
 
         [Theory]
@@ -863,11 +863,21 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData(Host.PhiOS)]
         [InlineData(Host.Linux)]
-        public void AnIntGoingToAMethodsU32IsTheSameErrorOnEverySystem(Host system)
+        public void ANegativeConstantGoingToAU32IsTheSameErrorOnEverySystem(Host system)
         {
-            string path = Write("own_u32.phi", "phi.Own:Program\n{\n\tint size: 1;\n\tcall Take: size;\n\t[Take: u32 n: 0;]\n\t[end]\n}\n");
+            string path = Write("own_u32.phi", "phi.Own:Program\n{\n\tcall Take: (-1);\n\t[Take: u32 n: 0;]\n\t[end]\n}\n");
             CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
-            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("comes out in the billions"));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error && d.Message.Contains("can't be one"));
+        }
+
+        [Theory]
+        [InlineData(Host.PhiOS)]
+        [InlineData(Host.Linux)]
+        public void ANumberThatMightNotFitBuildsAndIsCheckedWhenItRuns(Host system)
+        {
+            string path = Write("checked.phi", "phi.Own:Program\n{\n\tint size: 1;\n\tu32 big: 1;\n\tcall TakeU: size;\n\tcall Take: big;\n\t[TakeU: u32 n: 0;]\n\t[end]\n\t[Take: int n: 0;]\n\t[end]\n}\n");
+            CompileResult result = new SourceChecker(system).Check(path, File.ReadAllText(path));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
         }
 
         [Fact]

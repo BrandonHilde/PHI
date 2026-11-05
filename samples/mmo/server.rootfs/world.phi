@@ -174,7 +174,7 @@ phi.World:Program
 			;;
 		;;
 		if n is 0 return;
-		if (SaveLog.AddMany: saves addr records sizeof SavedPlayer n as u32) is false return;
+		if (SaveLog.AddMany: saves addr records sizeof SavedPlayer n) is false return;
 		while int i: 0; i < Zone.players.len; i++;
 			if Zone.players:i.moved
 				Zone.players:i.moved is false;
@@ -214,6 +214,6 @@ phi.World:Program
 			n++;
 			pos is (Map.Next: saved pos);
 		;;
-		call SaveLog.AddMany: saves addr records sizeof SavedPlayer n as u32;
+		call SaveLog.AddMany: saves addr records sizeof SavedPlayer n;
 	[end]
 }

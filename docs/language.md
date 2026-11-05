@@ -806,9 +806,11 @@ else
 - **The errors PHI finds itself** are caught the same way: an index out of range, the
   heap out of room for a new object, and a count of 2 billion or more to `Mem.Copy`, `Move`, `Fill`
   or `Fill32` (a negative number, or a subtraction below 0, which would otherwise run through
-  all of memory; the error names the line of the call, and nothing is copied).
+  all of memory; the error names the line of the call, and nothing is copied), and a number
+  that would come out as a different number (a negative one going to a `u32`, or a `u32` of 2
+  billion or more going to an `int`; `as` says the same bits are meant).
 - **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
-  `MEMORY` or `COUNT`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+  `MEMORY`, `COUNT` or `CONVERT`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
   an uncaught error is written). `log`, `debug` and text built from values write its
   message, so `log err;` and `str note: ('failed: ' err);` say everything.
 - **The methods in between give back what they own**, as if each had returned: their new
@@ -2531,17 +2533,32 @@ if (IsReady: port)
   method variable or field that takes no arguments (see [Methods as values](#methods-as-values)).
   The method must return a value. Without the parentheses (`if Ready: 3`) the error says to
   add them.
-- **A `u32` going to an `int` parameter** is an error, as it comes out negative from 2
-  billion up, and gets past a method's own check like `if n > 0`. Write `as int` if that's
-  meant, or have the method take a `u32`. A constant that fits is fine, and so is what's
-  known to fit: `x & 0xFF`, `x >> 1`, `x / 2`, `x % 100`. This is about your own methods: an
-  `OS.` call takes a `u32` the same on every system.
-- **A signed number going to a `u32` parameter** is an error too, as `-1` comes out as
-  4294967295, and a count of that runs through all of memory. Write `as u32` if that's meant,
-  which keeps the same bits (a value that's only passed along, like a key, needs no check),
-  or have the method take an `int`. A constant that isn't negative is fine, and so is what
-  can't be negative: `.len`, `.max`, `x & 0xFF`. Again, an `OS.` call takes an `int` the same
-  on every system. An `int` going to a `u32` variable (`u32 z: n;`) is still quiet.
+- **A number that would come out as a different number is an error when it runs:** a
+  negative number going to a `u32` (`-1` would be 4294967295, and a count of that runs through
+  all of memory), or a `u32` of 2 billion or more going to an `int` (it would be negative, and
+  get past a check like `if n > 0`). That goes for a parameter, a variable, a field, an
+  element, a result and a new array's size, and it can be caught
+  ([Errors: throw and throws](#errors-throw-and-throws)).
+
+  ```phi
+  int n: -1;
+  if call Take: n throws err        # a negative number can't be a u32 on line 2 in game.phi
+      log err '\n';
+  ;;
+  call Take: n as u32;              # `as` keeps the same bits, and checks nothing
+  call Take: (-1);                  # a constant that can't fit is an error when it's built
+
+  [Take: u32 count: 0;]
+  [end]
+  ```
+
+  So write `as` for raw bits: bytes put together (`(p:3 << 24) | ...`), a hash, an address, or
+  a difference that's meant to wrap. A number that can't be a problem isn't checked: a
+  constant that fits, `.len`, `.max`, `x & 0xFF`, and for a `u32` going to an `int`, `x >> 1`,
+  `x / 2` and `x % 100`. Arithmetic on a variable isn't a conversion (`u32 x: 2; x-- 4;` wraps,
+  which is what `Mem`'s own check is for), an index has its own check, and an `OS.` call takes
+  either kind the same on every system. In a kernel an error that isn't caught stops the
+  kernel, so a value that comes from a program should be checked first, not left to this.
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number, float, 64-bit number
   or `str`) as the one after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed

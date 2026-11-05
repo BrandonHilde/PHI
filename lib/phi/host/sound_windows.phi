@@ -109,7 +109,7 @@ phi.SoundSystem:Windows
 		place.bytes is 0;
 		place.rest is 0;
 		call Winmm.waveOutGetPosition: device addr place sizeof WinTime;
-		int left: sent - place.bytes;
+		int left: (sent - place.bytes) as int;
 		if left < 4                       # (a buffer is still with it: not quite done)
 			left is 4;
 		;;

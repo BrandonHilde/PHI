@@ -165,7 +165,7 @@ phi.Desktop:Kernel
 		int i: windows.len - 1;
 		while i >= 0
 			int pid: windows:i.pid;
-			u32 state: (OS.TaskState: pid);
+			u32 state: (OS.TaskState: pid) as u32;
 			if state is Process.TASK_FREE or state >= Process.TASK_EXITED
 				if dragging is pid
 					dragging is -1;

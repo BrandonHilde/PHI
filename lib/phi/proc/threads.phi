@@ -39,7 +39,7 @@ phi.Threads:Kernel
 		ptr<u8> stack: new u8[STACK_SIZE];
 		if stack is 0 return -1;
 		thread_work is work;
-		thread_value is value;
+		thread_value is value as u32;
 		thread_stack is stack + STACK_SIZE;
 		call ThreadsStart;
 		if thread_task < 0

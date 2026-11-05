@@ -20,6 +20,7 @@ enum.ErrorKind
 	EMPTY                       # an empty object or a null pointer used (the memory at 0 isn't there)
 	ACCESS                      # memory that isn't there, or an instruction the CPU refused
 	COUNT                       # a Mem call's count of 2 billion or more: negative, or a subtraction below 0
+	CONVERT                     # a negative number going to a u32, or a u32 of 2 billion or more to an int
 }
 
 struct.Error

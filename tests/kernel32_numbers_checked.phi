@@ -1,0 +1,45 @@
+# numbers_checked on PHI OS: in a kernel, a number that comes out as a different number is the
+# same error; a program's ends the program and the kernel carries on
+# (kernel32_numbers_checked.rootfs/numbers.phi); and one in an interrupt isn't caught by the
+# code it interrupted, so it stops the kernel there.
+use proc.process;
+
+phi.Test:Kernel
+{
+	int negative: -1;
+	u32 big: 0x80000000;
+
+	if call TakeU: negative throws err
+		log err '\n';
+		log (err.kind is ErrorKind.CONVERT) ' ' err.line ' ' err.file '\n';
+	;;
+	if call Take: big throws err
+		log err '\n';
+	;;
+	log 'as: ' (TakeU: negative as u32) ' ' (Take: big as int) '\n';
+
+	int code: (Process.Wait: (Process.Spawn: 'NUMBERS.BIN'));
+	log 'exit code: ' code '\n';
+
+	call OS.SetupInteruptTimer;
+	if call Wait throws err
+		log 'not caught here: ' err '\n';
+	;;
+	log 'not here\n';
+
+	[Take: int value: 0;]
+	[end: value]
+
+	[TakeU: u32 value: 0;]
+	[end: value]
+
+	[Wait]
+		while true
+		;;
+	[end]
+
+	[OS.TimerEvent]
+		u32 z: negative;
+		log 'not here ' z '\n';
+	[end]
+}

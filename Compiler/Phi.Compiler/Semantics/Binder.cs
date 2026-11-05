@@ -2602,7 +2602,7 @@ namespace Phi.Compiler.Semantics
                 CheckNotKeepingResult(value, v.Type.Element, $"'{decl.Name}'");
                 // str s: f; writes a float or 64-bit number out as text, like s is f;
                 if (v.Type.IsString && !v.Type.IsArray && (value.Type.IsFloat || value.Type.IsWide)) continue;
-                decl.Values[i] = Convert(value, v.Type.Element, $"'{decl.Name}'");
+                decl.Values[i] = ConvertChecked(value, v.Type.Element, $"'{decl.Name}'");
             }
 
             // str path: home '/DOCS'; reads like text being built, but several values make an array:
@@ -2729,7 +2729,7 @@ namespace Phi.Compiler.Semantics
                     Type = field.Type,
                 };
                 CheckNotKeepingResult(value, field.Type, $"{type.Name}.{field.Name}");
-                Expr converted = Convert(value, field.Type, $"{type.Name}.{field.Name}");
+                Expr converted = ConvertChecked(value, field.Type, $"{type.Name}.{field.Name}");
                 decl.FieldValues.Add(new AssignStmt { Target = fieldTarget, Op = AssignOp.Set, Value = converted, Span = value.Span });
             }
         }
@@ -2926,7 +2926,7 @@ namespace Phi.Compiler.Semantics
             else
             {
                 CheckNotKeepingResult(value, target.Type, $"'{Describe(target)}'");
-                value = Convert(value, target.Type, $"'{Describe(target)}'");
+                value = ConvertChecked(value, target.Type, $"'{Describe(target)}'");
             }
 
             return new AssignStmt { Target = target, Op = AssignOp.Set, Value = value, Span = assign.Span };
@@ -3174,7 +3174,7 @@ namespace Phi.Compiler.Semantics
             {
                 BindExpr(value, scope);
                 if (value.Type.IsError) continue;
-                append.Values.Add(Convert(value, element, $"an element of '{name}'"));
+                append.Values.Add(ConvertChecked(value, element, $"an element of '{name}'"));
             }
             return append;
         }
@@ -3374,7 +3374,9 @@ namespace Phi.Compiler.Semantics
             else if (result.IsString != ret.Value.Type.IsString)
                 Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : result.IsPointer ? result.ToString() : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
             else if (!result.IsString)
-                ret.Value = Convert(ret.Value, result.IsPointer || result.IsFloat || result.IsWide ? result : PhiType.Int, "the returned value");
+                ret.Value = result == PhiType.Int || result == PhiType.U32
+                    ? ConvertChecked(ret.Value, result, "the returned value")
+                    : Convert(ret.Value, result.IsPointer || result.IsFloat || result.IsWide ? result : PhiType.Int, "the returned value");
         }
 
         void BindCall(CallStmt call, Scope scope)
@@ -3513,7 +3515,7 @@ namespace Phi.Compiler.Semantics
                         Error(arguments[a].Span, $"{what} is the caller's own str, which the method may write: give it a str variable, field or element");
                     continue;
                 }
-                arguments[a] = ConvertArgument(arguments[a], signature.Parameters[a], what);
+                arguments[a] = ConvertChecked(arguments[a], signature.Parameters[a], what);
             }
             if (scope.Unit is UnitKind.Boot or UnitKind.Os)
                 Error(calleeSpan, "interfaces need 32-bit code (a Kernel or a Program)");
@@ -3598,7 +3600,7 @@ namespace Phi.Compiler.Semantics
                             Error(arguments[i].Span, $"argument {i + 1} of {calleeName} is a str into, which the method may write: give it a str variable, field or element");
                         continue;
                     }
-                    arguments[i] = ConvertArgument(arguments[i], signature.Parameters[i], $"argument {i + 1} of {calleeName}");
+                    arguments[i] = ConvertChecked(arguments[i], signature.Parameters[i], $"argument {i + 1} of {calleeName}");
                 }
                 return new PointerCall { Target = pointer, Signature = signature };
             }
@@ -3646,7 +3648,7 @@ namespace Phi.Compiler.Semantics
                         // module takes its numbers isn't something a program should have to answer to)
                         arguments[i] = Builtins.Find(calleeName) != null
                             ? Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'")
-                            : ConvertArgument(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
+                            : ConvertChecked(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
                     }
 
                     return method;
@@ -3736,7 +3738,7 @@ namespace Phi.Compiler.Semantics
                     if (arguments.Count != types.Count)
                         Error(span, $"{full} takes {Plural(types.Count, "value")}" + (types.Count > 0 ? $" ({string.Join(", ", f.Parameters.Select(p => p.Name))})" : "") + $", but was given {arguments.Count}");
                     for (int i = 0; i < Math.Min(arguments.Count, types.Count); i++)
-                        arguments[i] = Convert(arguments[i], types[i], $"'{f.Parameters[i].Name}' of {full}");
+                        arguments[i] = ConvertChecked(arguments[i], types[i], $"'{f.Parameters[i].Name}' of {full}");
                     if (!unit.OutsideFunctions.Contains(f)) unit.OutsideFunctions.Add(f);
                     return f;
                 }
@@ -3753,7 +3755,7 @@ namespace Phi.Compiler.Semantics
                     if (arguments.Count != types.Count)
                         Error(span, $"sys.{sys.Name} takes {Plural(types.Count, "value")} ({string.Join(", ", sys.Parameters.Select(p => p.Name))}), but was given {arguments.Count}");
                     for (int i = 0; i < Math.Min(arguments.Count, types.Count); i++)
-                        arguments[i] = Convert(arguments[i], types[i], $"'{sys.Parameters[i].Name}' of sys.{sys.Name}");
+                        arguments[i] = ConvertChecked(arguments[i], types[i], $"'{sys.Parameters[i].Name}' of sys.{sys.Name}");
                     return sys;
                 }
 
@@ -4302,6 +4304,9 @@ namespace Phi.Compiler.Semantics
                     BindCallExpr(call, scope);
                     break;
 
+                case CheckedNumberExpr:
+                    break;      // (made by the binder, so already bound)
+
                 case CastExpr cast:
                 {
                     BindExpr(cast.Operand, scope);
@@ -4438,7 +4443,7 @@ namespace Phi.Compiler.Semantics
             if (n.Count != null)
             {
                 BindExpr(n.Count, scope);
-                count = Convert(n.Count, PhiType.U32, "the number of elements");
+                count = ConvertChecked(n.Count, PhiType.U32, "the number of elements");
                 n.Count = count;
             }
 
@@ -4768,25 +4773,30 @@ namespace Phi.Compiler.Semantics
             && (b.Left.Type.IsPointer || PointerMath(b.Left)) != (b.Right.Type.IsPointer || PointerMath(b.Right));
 
         /// <summary>
-        /// An argument, which is Convert plus a rule each way: a u32 going to an int parameter comes
-        /// out negative from 2 billion up, and that gets past the checks a method makes on its int
-        /// (`if n > 0`); a signed number going to a u32 parameter comes out in the billions if it's
-        /// negative, and a count of that is the end of whatever it's counting. Neither is done
-        /// quietly. `as int` and `as u32` say it's meant.
+        /// A value going somewhere with a type of its own (a variable, a field, a parameter, a
+        /// result), which is Convert plus a rule each way: a u32 going to an int comes out negative
+        /// from 2 billion up, and that gets past the checks made on an int (`if n > 0`); a signed
+        /// number going to a u32 comes out in the billions if it's negative, and a count of that is
+        /// the end of whatever it's counting. Neither happens quietly: a constant that can't fit is
+        /// an error here, and anything else that might not is checked when it runs, an error that
+        /// `if call ... throws` can catch. `as int` and `as u32` keep the same bits and check nothing.
         /// </summary>
-        Expr ConvertArgument(Expr e, PhiType target, string what)
+        Expr ConvertChecked(Expr e, PhiType target, string what)
         {
-            if (target == PhiType.Int && e.Type == PhiType.U32 && !FitsAnInt(e))
+            bool toInt = target == PhiType.Int && e.Type == PhiType.U32;
+            bool toU32 = target == PhiType.U32 && (e.Type == PhiType.Int || e.Type == PhiType.I16 || e.Type == PhiType.I8);
+            if (!toInt && !toU32) return Convert(e, target, what);
+
+            if (ConstantFolder.Evaluate(e) is long known)
             {
-                Error(e.Span, $"{what} is an int, and this is a u32, which comes out negative from 2 billion up; write `as int` if that's meant, or take a u32");
-                return e;
+                if (toInt && known > int.MaxValue)
+                    Error(e.Span, $"{what} is an int, and {known} is too big for one; write `as int` for the same bits, or take a u32");
+                if (toU32 && known < 0)
+                    Error(e.Span, $"{what} is a u32, and {known} can't be one; write `as u32` for the same bits, or take {A(e.Type)}");
+                return Convert(e, target, what);
             }
-            if (target == PhiType.U32 && (e.Type == PhiType.Int || e.Type == PhiType.I16 || e.Type == PhiType.I8) && !NeverNegative(e))
-            {
-                Error(e.Span, $"{what} is a u32, and this is {A(e.Type)}, which comes out in the billions if it's negative; write `as u32` if that's meant, or take {A(e.Type)}");
-                return e;
-            }
-            return Convert(e, target, what);
+            if (toInt ? FitsAnInt(e) : NeverNegative(e)) return Convert(e, target, what);
+            return new CheckedNumberExpr { Operand = Convert(e, target, what), Span = e.Span, Type = target };
         }
 
         /// <summary>A signed number that's known not to be negative: a constant, how long something is, or what a mask leaves.</summary>

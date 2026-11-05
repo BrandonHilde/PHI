@@ -59,7 +59,7 @@ phi.CryptoHash:Kernel
 
 	log 'hmac rfc 4231 case 1:\n';
 	call n is Bytes.FromHex: '0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b' addr key 200;
-	call Hmac.Mac: addr key n as u32 'Hi There' 8 addr output;
+	call Hmac.Mac: addr key n 'Hi There' 8 addr output;
 	call Bytes.PrintHex: addr output 32;
 
 	log 'hmac rfc 4231 case 6 (a key longer than a block):\n';
@@ -76,9 +76,9 @@ phi.CryptoHash:Kernel
 	call salt_length is Bytes.FromHex: '000102030405060708090a0b0c' addr salt 32;
 	call info_length is Bytes.FromHex: 'f0f1f2f3f4f5f6f7f8f9' addr info 32;
 	u8 prk[32];
-	call Hkdf.Extract: addr salt salt_length as u32 addr key n as u32 addr prk;
+	call Hkdf.Extract: addr salt salt_length addr key n addr prk;
 	call Bytes.PrintHex: addr prk 32;
-	call Hkdf.Expand: addr prk addr info info_length as u32 addr output 42;
+	call Hkdf.Expand: addr prk addr info info_length addr output 42;
 	call Bytes.PrintHex: addr output 42;
 
 	log 'done\n';

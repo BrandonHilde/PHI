@@ -1,0 +1,16 @@
+# A PHI OS program's number that comes out as a different number (kernel32_numbers_checked runs
+# it): the error can be caught, and when it isn't, the program ends with -1 and the kernel
+# carries on.
+phi.Numbers:Program
+{
+	int negative: -1;
+
+	if call TakeU: negative throws err
+		log err '\n';
+	;;
+	log 'as u32: ' (TakeU: negative as u32) '\n';
+	log 'not here: ' (TakeU: negative) '\n';
+
+	[TakeU: u32 value: 0;]
+	[end: value]
+}

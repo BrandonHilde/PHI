@@ -31,7 +31,7 @@ phi.Echo:Program
 	;;
 	log 'echo: accepted from the client: ' ((Tcp.Address: c) is client) '\n';
 	int n: (Tcp.Read: c addr buffer 256);
-	int sent: (Tcp.Write: c addr buffer n as u32);
+	int sent: (Tcp.Write: c addr buffer n);
 	log 'echo: read ' n ', wrote ' sent '\n';
 	log 'echo: then the end: ' (Tcp.Read: c addr buffer 256) '\n';
 	call Tcp.Close: c;

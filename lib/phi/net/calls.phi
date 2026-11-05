@@ -74,7 +74,7 @@ phi.NetCalls:Kernel
 		if pid <= 0 or pid >= MAX_PROCESSES return -1;
 		if number is SYS_NET_ADDRESS
 			if Net.started is false return 0;
-			return Net.ip;
+			return Net.ip as int;
 		;;
 		if Net.started is false return -1;
 
@@ -145,7 +145,7 @@ phi.NetCalls:Kernel
 		if (OwnsConnection: pid a) is false return -1;
 		if number is SYS_TCP_STATE return (Tcp.State: a as int);
 		if number is SYS_TCP_WAITING return (Tcp.Waiting: a as int);
-		if number is SYS_TCP_ADDRESS return (Tcp.Address: a as int);
+		if number is SYS_TCP_ADDRESS return (Tcp.Address: a as int) as int;
 		if number is SYS_TCP_SEND
 			if (Process.UserRange: b c) is false return -1;
 			return (Tcp.Send: a as int b c);

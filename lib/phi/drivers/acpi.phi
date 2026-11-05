@@ -37,12 +37,12 @@ phi.Acpi:Kernel
 	# find the tables and read the MADT; false if the firmware has none
 	[Start]
 		if found return true;
-		u32 rsdp: (FindRsdp);
+		u32 rsdp: (FindRsdp) as u32;
 		if rsdp is 0 return false;
 		ptr<u32> words: rsdp + 16;
 		rsdt is words:0;
 		if not (Valid: rsdt) return false;
-		u32 madt: (Find: 'APIC');
+		u32 madt: (Find: 'APIC') as u32;
 		if madt is 0 return false;
 		call ReadMadt: madt;
 		found is true;
@@ -70,7 +70,7 @@ phi.Acpi:Kernel
 		ptr<u32> entries: rsdt + HEADER;
 		while u32 i: 0; i < count; i++;
 			u32 table: entries:i;
-			if (Mem.Equal: table name 4) and (Valid: table) return table;
+			if (Mem.Equal: table name 4) and (Valid: table) return table as int;
 		;;
 	[end: 0]
 
@@ -82,14 +82,14 @@ phi.Acpi:Kernel
 		u32 segment: (Paging.ReadLowWord: 0x40E);
 		u32 start: segment << 4;
 		if start is not 0
-			u32 rsdp: (Search: start start + 1024);
-			if rsdp is not 0 return rsdp;
+			u32 rsdp: (Search: start start + 1024) as u32;
+			if rsdp is not 0 return rsdp as int;
 		;;
 	[end: (Search: 0xE0000 0x100000)]
 
 	[Search: u32 from: 0; u32 to: 0;]
 		while u32 pos: from; pos < to; pos++ 16;
-			if (Mem.Equal: pos 'RSD PTR ' 8) and (Sum: pos 20) is 0 return pos;
+			if (Mem.Equal: pos 'RSD PTR ' 8) and (Sum: pos 20) is 0 return pos as int;
 		;;
 	[end: 0]
 

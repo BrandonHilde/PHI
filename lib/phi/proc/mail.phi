@@ -97,7 +97,7 @@ phi.Mail:Kernel
 	[Waiting: int box: 0;]
 		int b: (Place: box);
 		if b < 0 return -1;
-	[end: boxes:b.records:0.count]
+	[end: boxes:b.records:0.count as int]
 
 	[Close: int box: 0;]
 		call CloseFor: 0 box;

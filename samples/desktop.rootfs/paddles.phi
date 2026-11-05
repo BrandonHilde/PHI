@@ -46,7 +46,7 @@ phi.Paddles:Program
 	;;
 	call App.SetTitle: 'Paddles';
 	call App.SetResizable: false;
-	seed is (OS.GetTicks) | 1;
+	seed is ((OS.GetTicks) | 1) as u32;
 	call PlaceBall;
 
 	int next_frame: (OS.GetTicks);
@@ -170,7 +170,7 @@ phi.Paddles:Program
 		if (seed & 0x10000) is 0
 			speed_x is -4;
 		;;
-		speed_y is ((seed >> 20) & 7) - 3;
+		speed_y is (((seed >> 20) & 7) - 3) as int;
 		in_play is true;
 	[end]
 

@@ -49,7 +49,7 @@ phi.BenchTick:Kernel
 					sum is sum * 31 + message:k;
 				;;
 				# the player first, and as many as fit: the world is crowded
-				u32 first: (message:2 << 24) | (message:3 << 16) | (message:4 << 8) | message:5;
+				u32 first: ((message:2 << 24) | (message:3 << 16) | (message:4 << 8) | message:5) as u32;
 				if first is not Zone.players:i.id or message:1 is not Game.MAX_SEEN
 					wrong++;
 				;;

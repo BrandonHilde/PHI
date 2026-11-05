@@ -262,7 +262,7 @@ phi.Zone:Library
 	# one thing in the world, of any kind, into a STATE at offset
 	[Put: Entity thing; ptr<u8> message: 0; u32 offset: 0;]
 		ptr<u8> p: message + offset;
-		u32 id: (thing.Id);
+		u32 id: (thing.Id) as u32;
 		p:0 is id >> 24;
 		p:1 is id >> 16;
 		p:2 is id >> 8;

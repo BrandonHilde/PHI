@@ -97,6 +97,6 @@ phi.ChaCha20:Library
 	[end]
 
 	[GetLittle: ptr<u8> p: 0;]
-		u32 value: p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24);
+		u32 value: (p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24)) as u32;
 	[end: value]
 }

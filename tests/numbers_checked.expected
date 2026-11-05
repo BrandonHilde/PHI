@@ -1,0 +1,24 @@
+a negative number can't be a u32 on line 23 in numbers_checked.phi
+1 23 numbers_checked.phi
+a u32 of 2 billion or more can't be an int on line 27 in numbers_checked.phi
+1 27 numbers_checked.phi
+a negative number can't be a u32 on line 31 in numbers_checked.phi
+a negative number can't be a u32 on line 34 in numbers_checked.phi
+a negative number can't be a u32 on line 37 in numbers_checked.phi
+variable: a negative number can't be a u32 on line 98 in numbers_checked.phi
+assigned: a negative number can't be a u32 on line 104 in numbers_checked.phi
+field: a negative number can't be a u32 on line 109 in numbers_checked.phi
+element: a negative number can't be a u32 on line 113 in numbers_checked.phi
+int: a u32 of 2 billion or more can't be an int on line 117 in numbers_checked.phi
+returned to an int: a u32 of 2 billion or more can't be an int on line 122 in numbers_checked.phi
+returned to a u32: a negative number can't be a u32 on line 126 in numbers_checked.phi
+new: a negative number can't be a u32 on line 130 in numbers_checked.phi
+as u32: 4294967295
+as int: -2147483648
+there and back: 4294967295 -1
+the most: 2147483647 2147483647 2147483647 2147483647
+zero: 0
+lengths: 3 3
+wrapped: 4294967294
+not here: 
+PHI: a negative number can't be a u32 on line 89 in numbers_checked.phi

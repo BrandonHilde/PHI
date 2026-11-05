@@ -72,7 +72,7 @@ phi.Tls:Kernel
 			done++ taken;
 			if not (Tls.Flush) return -1;
 		;;
-	[end: length]
+	[end: length as int]
 
 	# read what the server sent: the number of bytes, 0 once it has closed the
 	# connection, or -1 on an error (error says what) or a timeout
@@ -121,7 +121,7 @@ phi.Tls:Kernel
 				error is 'the connection broke';
 				return false;
 			;;
-			call Tls13.Sent: addr tls_session sent as u32;
+			call Tls13.Sent: addr tls_session sent;
 		;;
 	[end: true]
 
@@ -139,7 +139,7 @@ phi.Tls:Kernel
 			;;
 			return false;
 		;;
-		if not (Tls13.Received: addr tls_session got as u32)
+		if not (Tls13.Received: addr tls_session got)
 			error is tls_session.error;
 			alert is tls_session.alert;
 			return false;

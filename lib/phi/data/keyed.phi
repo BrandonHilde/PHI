@@ -60,7 +60,7 @@ struct.KeyedMap
 
 	# a copy of thing; false if one with its key is there already
 	[Add: Keyed thing;]
-		u32 key: (thing.Key);
+		u32 key: (thing.Key) as u32;
 		if (Find: key) >= 0 return false;
 		if (items.len + 1) * 4 > places.len * 3
 			call Grow;

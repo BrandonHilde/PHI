@@ -48,7 +48,7 @@ phi.Apic:Kernel
 
 		while u32 irq: 0; irq < 16; irq++;
 			u32 input: (Acpi.Input: irq) - Acpi.io_apic_base;
-			u32 flags: (Acpi.Flags: irq);
+			u32 flags: (Acpi.Flags: irq) as u32;
 			u32 route: VECTOR_BASE + irq;
 			if (flags & 3) is 3
 				route is route | ACTIVE_LOW;

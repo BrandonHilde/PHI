@@ -729,7 +729,7 @@ phi.HostWindow:Linux
 	[end: value]
 
 	[Get32: int place: 0;]
-		u32 value: incoming:place | (incoming:(place + 1) << 8) | (incoming:(place + 2) << 16) | (incoming:(place + 3) << 24);
+		u32 value: (incoming:place | (incoming:(place + 1) << 8) | (incoming:(place + 2) << 16) | (incoming:(place + 3) << 24)) as u32;
 	[end: value]
 
 	# 16 bits that can be negative (a place left of or above the window)

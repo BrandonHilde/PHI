@@ -353,6 +353,9 @@ namespace Phi.Compiler.CodeGen
                     case UnaryExpr u when Number(u.Operand.Type):
                         Expression(u.Operand);
                         return;
+                    case CheckedNumberExpr c:
+                        Expression(c.Operand);
+                        return;
                     case CastExpr c when Number(c.Type) && Number(c.Operand.Type)
                                          || (Pointer(c.Type) || Small(c.Type) || c.Type.IsWide) && (Pointer(c.Operand.Type) || Small(c.Operand.Type) || c.Operand.Type.IsWide):
                         Expression(c.Operand);
@@ -1543,6 +1546,7 @@ namespace Phi.Compiler.CodeGen
             IndexExpr ix => OneRegister(ix.Type) && !ix.Target.Type.IsString && SafeRoot(ix.Target) && SafeValue(ix.Index),
             AddrExpr a => a.CodeLabel != null || !a.OfObject && !a.Operand.Type.IsHeapText && SafeRoot(a.Operand),
             CastExpr c => OneRegister(c.Type) && OneRegister(c.Operand.Type) && SafeValue(c.Operand),
+            CheckedNumberExpr c => SafeValue(c.Operand),
             InExpr i => SafeValue(i.Port),
             AtomicExpr a => SafeValue(a.Target) && SafeValue(a.Value) && SafeValue(a.Expected),
             UnaryExpr u => OneRegister(u.Operand.Type) && SafeValue(u.Operand),
@@ -2512,14 +2516,34 @@ namespace Phi.Compiler.CodeGen
             string ok = NewLabel("count_ok");
             Emit("cmp dword [esp], 0        ; the count, which has its top bit set from 2 billion up");
             Emit($"jge {ok}");
+            EmitStop($"a count of 2 billion or more for Mem.{method.Decl.Name} (a negative number, or a subtraction below 0)", count, ErrorCount);
+            Label(ok);
+        }
+
+        /// <summary>
+        /// The number in eax, going to a variable, field, parameter or result of the other kind: its
+        /// top bit is set if it's a negative number going to a u32, or a u32 of 2 billion or more
+        /// going to an int, and either comes out as a different number.
+        /// </summary>
+        void EmitNumberCheck(CheckedNumberExpr check)
+        {
+            string ok = NewLabel("number_ok");
+            Emit("test eax, eax");
+            Emit($"jns {ok}");
+            EmitStop(check.Type == PhiType.U32 ? "a negative number can't be a u32" : "a u32 of 2 billion or more can't be an int", check, ErrorConvert);
+            Label(ok);
+        }
+
+        /// <summary>Stops with an error (what if call ... throws catches) naming the line and file of a node.</summary>
+        void EmitStop(string text, Node at, int kind)
+        {
             Need("phi_throw");
-            LoadAddress("edx", StringLabel($"a count of 2 billion or more for Mem.{method.Decl.Name} (a negative number, or a subtraction below 0)"));
-            Emit($"mov eax, {LineOf(count)}");
+            LoadAddress("edx", StringLabel(text));
+            Emit($"mov eax, {LineOf(at)}");
             if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
             else Emit($"mov esi, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
-            Emit($"mov ebx, {ErrorCount}");
+            Emit($"mov ebx, {kind}");
             Emit("jmp phi_throw");
-            Label(ok);
         }
 
         /// <summary>Calls a method, built-in or asm block; a result comes back in eax.</summary>
@@ -2856,6 +2880,9 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>ErrorKind.COUNT, a Mem call's count that can't be right.</summary>
         const int ErrorCount = 6;
+
+        /// <summary>ErrorKind.CONVERT, a number that comes out as a different number where it went.</summary>
+        const int ErrorConvert = 7;
 
         /// <summary>The bytes of an Error, as the runtime (throw.asm) lays it out: kind, line, file, text, message.</summary>
         const int ErrorSize = 4 + 4 + 65 + 256 + 384;
@@ -4722,6 +4749,11 @@ namespace Phi.Compiler.CodeGen
                     LoadConstant("eax", size.Value);
                     break;
 
+                case CheckedNumberExpr check:
+                    EmitExpr(check.Operand);
+                    if (bits32) EmitNumberCheck(check);
+                    break;
+
                 case CastExpr cast:
                     if (cast.Operand.Type.IsFloat) EmitFloatToWhole(cast.Operand);
                     else if (bits64 && cast.Type.IsPointer && cast.Operand.Type.IsWide)
@@ -5293,6 +5325,7 @@ namespace Phi.Compiler.CodeGen
                     DirectOperand(b.Right, constantOnly: b.Op is BinaryOp.ShiftLeft or BinaryOp.ShiftRight) != null && OnlyEax(b.Left),
                 UnaryExpr { Op: UnaryOp.Negate or UnaryOp.BitNot } u => OnlyEax(u.Operand),
                 CastExpr c => OneRegister(c.Operand.Type) && OnlyEax(c.Operand),
+                CheckedNumberExpr c => OnlyEax(c.Operand),
                 _ => false,
             };
         }

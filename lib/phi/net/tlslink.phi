@@ -47,7 +47,7 @@ phi.Secure:Library
 			int taken: (Tcp.Send: link.connection (Tls13.Outgoing: s) (Tls13.Pending: s));
 			if taken < 0 return false;
 			if taken is 0 break;
-			call Tls13.Sent: s taken as u32;
+			call Tls13.Sent: s taken;
 		;;
 		int ready: (Tcp.Waiting: link.connection);
 		while ready > 0 and s.room > 0 and not s.failed
@@ -57,7 +57,7 @@ phi.Secure:Library
 			;;
 			int got: (Tcp.Read: link.connection (Tls13.Room: s) n);
 			if got <= 0 break;
-			call Tls13.Received: s got as u32;
+			call Tls13.Received: s got;
 			ready is (Tcp.Waiting: link.connection);
 		;;
 		# (what the session made of it, such as the rest of its handshake, goes next time)

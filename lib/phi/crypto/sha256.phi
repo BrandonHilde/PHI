@@ -141,7 +141,7 @@ phi.Sha256:Library
 		unsafe
 			while u32 i: 0; i < 16; i++;
 				u32 pos: i * 4;
-				sha_w:i is (m:pos << 24) | (m:(pos + 1) << 16) | (m:(pos + 2) << 8) | m:(pos + 3);
+				sha_w:i is ((m:pos << 24) | (m:(pos + 1) << 16) | (m:(pos + 2) << 8) | m:(pos + 3)) as u32;
 			;;
 			while u32 i: 16; i < 64; i++;
 				u32 w15: sha_w:(i - 15);

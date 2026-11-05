@@ -151,7 +151,7 @@ phi.Process:Kernel
 		if size > 0 and pages + STACK_PAGES <= 1024
 			ptr<u8> image: new u8[size];
 			int got: 0;
-			call got is Fat.ReadFile: path image size as u32;
+			call got is Fat.ReadFile: path image size;
 
 			ptr<u32> directory: 0;
 			ptr<u32> table: 0;
@@ -256,7 +256,7 @@ phi.Process:Kernel
 	[Ended: int pid: 0;]
 		if pid <= 0 or pid >= MAX_PROCESSES or process_directory:pid is 0 return true;
 		call CollectFinished;
-		u32 state: (OS.TaskState: pid);
+		u32 state: (OS.TaskState: pid) as u32;
 		if state is not TASK_EXITED and state is not TASK_COLLECTED return false;
 		exit_code is (OS.TaskExitCode: pid);
 		call Release: pid;
@@ -525,7 +525,7 @@ phi.Process:Kernel
 			call result is OS.KillTask: first;
 		;;
 		elif number is SYS_NOW
-			result is (OS.Now);
+			result is (OS.Now) as int;
 		;;
 		elif number is SYS_FREE_MEMORY
 			result is Frames.free_frames * 4;
@@ -602,7 +602,7 @@ phi.Process:Kernel
 			result is 0;
 		;;
 
-		frame:0.eax is result;
+		frame:0.eax is result as u32;
 	[end]
 
 	# the file calls (17 to 21, 31, 38 to 42): the number and four arguments, as the

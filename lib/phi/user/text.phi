@@ -130,9 +130,9 @@ phi.Text:Library
 	[AppendPadded: ptr<u8> to: 0; int n: 0; int width: 0; int size: 0;]
 		u8 digits[12];
 		int count: 0;
-		u32 left: n;
+		u32 left: n as u32;
 		if n < 0
-			left is 0 - n;    # as a u32, so even -2147483648 has its digits
+			left is (0 - n) as u32;    # as a u32, so even -2147483648 has its digits
 		;;
 		while (left > 0 or count < width or count is 0) and count < 11
 			digits:count is '0' + left % 10;

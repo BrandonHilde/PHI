@@ -41,7 +41,7 @@ phi.Dns:Kernel
 				int got: 0;
 				call got is Net.WaitUdp: WAIT;
 				if got > 0
-					call address is ReadAnswer: got as u32;
+					call address is ReadAnswer: got;
 				;;
 				tries++;
 			;;

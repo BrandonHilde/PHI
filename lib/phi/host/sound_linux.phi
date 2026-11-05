@@ -153,7 +153,7 @@ phi.SoundSystem:Linux
 		# two times, whether it's playing, two clocks, then where it's written to and read to
 		int output_ms: (Get32: VALUES + 5) / 1000;
 		bln playing: (incoming:(VALUES + 18) is '1');
-		int held: (Get32: VALUES + 42) - (Get32: VALUES + 51);
+		int held: ((Get32: VALUES + 42) - (Get32: VALUES + 51)) as int;
 		call Forget;
 
 		if held > 0 and not playing

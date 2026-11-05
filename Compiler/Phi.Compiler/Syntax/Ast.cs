@@ -725,6 +725,16 @@ namespace Phi.Compiler.Syntax
         public TypeRef TargetType { get; init; } = null!;
     }
 
+    /// <summary>
+    /// A number going to a variable, field, parameter or result of the other kind, made by the
+    /// binder: a negative number to a u32, or a u32 of 2 billion or more to an int, is an error
+    /// when it runs. (`as` makes a CastExpr, which keeps the bits and checks nothing.)
+    /// </summary>
+    public sealed class CheckedNumberExpr : Expr
+    {
+        public Expr Operand { get; set; } = null!;
+    }
+
     /// <summary>sizeof Type   or   sizeof variable   (bytes, known when the program is built)</summary>
     public sealed class SizeofExpr : Expr
     {

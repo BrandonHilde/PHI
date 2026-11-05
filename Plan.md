@@ -605,17 +605,25 @@ these were added:
   `phi lsp` find a module's uses from the folder above it when it isn't in a repository, or
   when nothing uses it yet. Not done from that list: `const f64` (a class variable for now),
   and `FatImage.cs` stamping files in local time where the kernel uses UTC
-- [x] A signed number going to a `u32` parameter is an error unless it says `as u32`
-  (2026-11-04), as in C#, Rust, Go, Swift and Zig, and for the same reason as `u32` to `int`.
-  It flagged 104 places, of which two outside the tests could really go negative (the
-  `Wav.Parse` calls in `audio/sound.phi` and `samples/os.rootfs/play.phi`, now fixed); a third
-  of the rest hold bits rather than amounts, so `as u32` means the same bits and checks
-  nothing. `.len`, `.max`, `x & c` and constants need no `as`. No type rule sees a subtraction
-  below 0, so `Mem.Copy`, `Move`, `Fill` and `Fill32` also stop with `ErrorKind.COUNT` on a
-  count of 2 billion or more, checked at the call so that the error names its line (on 64-bit
-  programs too, so a bigger copy there is several calls). Not covered: `u32 z: n;`, a call
-  through a method value, a count that's wrong but under that, and a method that isn't `Mem`'s
-  doing its own loop over a bad count. Tests `u32_args_errors`, `mem_counts`,
+- [x] A number that would come out as a different number is an error when it runs
+  (2026-11-04), `ErrorKind.CONVERT`, that `if call ... throws` can catch: a negative number
+  going to a `u32`, or a `u32` of 2 billion or more going to an `int`, as a parameter, a
+  variable, a field, an element, a result or a new array's size. `as` keeps the same bits and
+  checks nothing, and a constant that can't fit is an error when it's built. This replaced
+  compile errors on arguments alone (the `u32` to `int` one above, and one the other way for
+  a day): those pushed people to write `as`, after which a `-1` went through silently, and a
+  variable got round them. Of the 243 places it checks, 54 hold raw bits or differences meant
+  to wrap and say `as` (bytes put together, a syscall's -1, an IP address), and methods that
+  ended in a `u32` but returned -1 became `int` methods (`Tcp.Write`). A missed one only fails
+  when its top bit is set, so a bad value in a place the tests don't reach shows up later. Not
+  covered: arithmetic (`x-- 4` wraps), a value from an `OS.` call's own conversion, and 64-bit
+  numbers, which already need `as`. No conversion rule sees a subtraction below 0 either, so
+  `Mem.Copy`, `Move`, `Fill` and `Fill32` also stop with `ErrorKind.COUNT` on a count of 2
+  billion or more, checked at the call so that the error names its line (on 64-bit programs
+  too, so a bigger copy there is several calls); not through a method value. Also fixed: the
+  `Wav.Parse` calls in `audio/sound.phi` and `samples/os.rootfs/play.phi`, which passed on a
+  failed read's -1. Still wrong: a Linux program's `FileSize` keeps 32 bits of a file's size.
+  Tests `numbers_checked`, `kernel32_numbers_checked`, `u32_args_errors`, `mem_counts`,
   `kernel32_mem_counts`.
 - [x] Names in a class's own code are scoped by block, as they are in a method
   (2026-11-01): a name declared again in a separate block there is a variable of its own.

@@ -275,7 +275,7 @@ phi.Draw:Library
 		int px: x + origin_x;
 		int py: y + origin_y;
 		if px >= clip_x0 and px < clip_x1 and py >= clip_y0 and py < clip_y1
-			return pixels:(py * width + px);
+			return (pixels:(py * width + px)) as int;
 		;;
 	[end: 0]
 
@@ -449,7 +449,7 @@ phi.Draw:Library
 		int b1: bottom & 255;
 		int span: (Math.Max: h - 1 1);
 		while int i: 0; i < h; i++;
-			u32 color: (Rgb: r0 + (r1 - r0) * i / span g0 + (g1 - g0) * i / span b0 + (b1 - b0) * i / span);
+			u32 color: (Rgb: r0 + (r1 - r0) * i / span g0 + (g1 - g0) * i / span b0 + (b1 - b0) * i / span) as u32;
 			call FillRect: x y + i w 1 color;
 		;;
 	[end]

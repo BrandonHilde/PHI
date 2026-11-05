@@ -32,7 +32,7 @@ phi.NetHttp:Kernel
 	call Address: '/big.txt';
 	call size is Http.Get: addr url page PAGE_SIZE;
 	log 'GET /big.txt: ' size ' bytes, status ' Http.status ', body ' (size - Http.body) ' bytes\n';
-	call CheckLines: Http.body size as u32;
+	call CheckLines: Http.body size;
 
 	call Address: '/missing.html';
 	call size is Http.Get: addr url page PAGE_SIZE;
@@ -58,7 +58,7 @@ phi.NetHttp:Kernel
 	call SecureAddress: '/big.txt';
 	call size is Http.Get: addr url page PAGE_SIZE;
 	log 'GET /big.txt: ' size ' bytes, status ' Http.status ', body ' (size - Http.body) ' bytes\n';
-	call CheckLines: Http.body size as u32;
+	call CheckLines: Http.body size;
 
 	call SecureAddress: '/missing.html';
 	call size is Http.Get: addr url page PAGE_SIZE;

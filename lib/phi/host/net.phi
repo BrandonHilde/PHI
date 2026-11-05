@@ -215,7 +215,7 @@ phi.HostNet:Program
 	[end]
 
 	[AddressOf: ptr<u8> place: 0;]
-		u32 address: (place:4 << 24) | (place:5 << 16) | (place:6 << 8) | place:7;
+		u32 address: ((place:4 << 24) | (place:5 << 16) | (place:6 << 8) | place:7) as u32;
 	[end: address]
 
 	[PortOf: ptr<u8> place: 0;]

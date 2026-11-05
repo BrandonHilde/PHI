@@ -184,10 +184,10 @@ phi.AesGcm:Library
 	# and again (GCM's bit order runs backwards), and the rest are sums of those
 	[MakeTable]
 		unsafe
-			u32 v0: (gcm_block:0 << 24) | (gcm_block:1 << 16) | (gcm_block:2 << 8) | gcm_block:3;
-			u32 v1: (gcm_block:4 << 24) | (gcm_block:5 << 16) | (gcm_block:6 << 8) | gcm_block:7;
-			u32 v2: (gcm_block:8 << 24) | (gcm_block:9 << 16) | (gcm_block:10 << 8) | gcm_block:11;
-			u32 v3: (gcm_block:12 << 24) | (gcm_block:13 << 16) | (gcm_block:14 << 8) | gcm_block:15;
+			u32 v0: ((gcm_block:0 << 24) | (gcm_block:1 << 16) | (gcm_block:2 << 8) | gcm_block:3) as u32;
+			u32 v1: ((gcm_block:4 << 24) | (gcm_block:5 << 16) | (gcm_block:6 << 8) | gcm_block:7) as u32;
+			u32 v2: ((gcm_block:8 << 24) | (gcm_block:9 << 16) | (gcm_block:10 << 8) | gcm_block:11) as u32;
+			u32 v3: ((gcm_block:12 << 24) | (gcm_block:13 << 16) | (gcm_block:14 << 8) | gcm_block:15) as u32;
 			while u32 k: 0; k < 4; k++;
 				gcm_table:k is 0;
 			;;

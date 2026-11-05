@@ -83,7 +83,7 @@ phi.SaveLog:Kernel
 				torn is true;
 				break;
 			;;
-			u32 crc: log_record:size | (log_record:(size + 1) << 8) | (log_record:(size + 2) << 16) | (log_record:(size + 3) << 24);
+			u32 crc: (log_record:size | (log_record:(size + 1) << 8) | (log_record:(size + 2) << 16) | (log_record:(size + 3) << 24)) as u32;
 			if crc is not (Crc32.Of: addr log_record size)
 				torn is true;
 				break;

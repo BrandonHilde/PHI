@@ -1,0 +1,11 @@
+a negative number can't be a u32 on line 12 in kernel32_numbers_checked.phi
+1 12 kernel32_numbers_checked.phi
+a u32 of 2 billion or more can't be an int on line 16 in kernel32_numbers_checked.phi
+as: 4294967295 -2147483648
+a negative number can't be a u32 on line 8 in numbers.phi
+as u32: 4294967295
+not here:
+PHI: a negative number can't be a u32 on line 12 in numbers.phi
+exit code: -1
+
+PHI: a negative number can't be a u32 on line 42 in kernel32_numbers_checked.phi

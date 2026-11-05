@@ -175,7 +175,7 @@ phi.Http:Kernel
 			pos++;
 			int number: 0;
 			call number is Text.ToNumber: pos;
-			port is number;
+			port is number as u32;
 			while pos:0 >= '0' and pos:0 <= '9'
 				pos++;
 			;;

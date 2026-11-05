@@ -1,0 +1,133 @@
+# A negative number going to a u32, or a u32 of 2 billion or more going to an int, is an error
+# when it runs, naming the line, that if call ... throws can catch: as a parameter, a variable,
+# a field, an element, a result or a new array's size. `as` keeps the same bits and checks
+# nothing. (Run as a Linux and a Windows program; kernel32_numbers_checked runs it on PHI OS.)
+struct.Box
+{
+	u32 count;
+	int size;
+}
+
+phi.Test:Program
+{
+	Box box;
+	u32 data[2];
+	int numbers: 1 2 3;
+	str text: 'abc';
+	int negative: -1;
+	u32 big: 0x80000000;
+	i16 short: -1;
+	i8 tiny: -1;
+
+	# parameters, with what the error says
+	if call TakeU: negative throws err
+		log err '\n';
+		log (err.kind is ErrorKind.CONVERT) ' ' err.line ' ' err.file '\n';
+	;;
+	if call Take: big throws err
+		log err '\n';
+		log (err.kind is ErrorKind.CONVERT) ' ' err.line ' ' err.file '\n';
+	;;
+	if call TakeU: short throws err
+		log err '\n';
+	;;
+	if call TakeU: tiny throws err
+		log err '\n';
+	;;
+	if call TakeU: negative - 1 throws err
+		log err '\n';
+	;;
+
+	# everywhere else a value goes
+	if call ToVariable throws err
+		log 'variable: ' err '\n';
+	;;
+	if call Assigned throws err
+		log 'assigned: ' err '\n';
+	;;
+	if call ToField throws err
+		log 'field: ' err '\n';
+	;;
+	if call ToElement throws err
+		log 'element: ' err '\n';
+	;;
+	if call ToInt throws err
+		log 'int: ' err '\n';
+	;;
+	if call GivesInt throws err
+		log 'returned to an int: ' err '\n';
+	;;
+	if call GivesU32 throws err
+		log 'returned to a u32: ' err '\n';
+	;;
+	if call MakesNew throws err
+		log 'new: ' err '\n';
+	;;
+
+	# `as` keeps the same bits, and checks nothing
+	log 'as u32: ' (TakeU: negative as u32) '\n';
+	log 'as int: ' (Take: big as int) '\n';
+	u32 bits: negative as u32;
+	int back: bits as int;
+	log 'there and back: ' bits ' ' back '\n';
+
+	# what fits goes through, right up to the edge
+	int most: 0x7FFFFFFF;
+	u32 fits: most;
+	int fitsBack: fits;
+	log 'the most: ' fits ' ' fitsBack ' ' (TakeU: most) ' ' (Take: fits) '\n';
+	int none: 0;
+	log 'zero: ' (TakeU: none) '\n';
+	log 'lengths: ' (TakeU: numbers.len) ' ' (TakeU: text.len) '\n';
+
+	# a variable's own arithmetic isn't a conversion
+	u32 wrapped: 2;
+	wrapped-- 4;
+	log 'wrapped: ' wrapped '\n';
+
+	# not caught, it ends the program as any error does
+	log 'not here: ' (TakeU: negative) '\n';
+
+	[Take: int value: 0;]
+	[end: value]
+
+	[TakeU: u32 value: 0;]
+	[end: value]
+
+	[ToVariable]
+		u32 z: negative;
+		log 'not here ' z '\n';
+	[end]
+
+	[Assigned]
+		u32 z: 0;
+		z is negative;
+		log 'not here ' z '\n';
+	[end]
+
+	[ToField]
+		box.count is negative;
+	[end]
+
+	[ToElement]
+		data:0 is negative;
+	[end]
+
+	[ToInt]
+		int n: big;
+		log 'not here ' n '\n';
+	[end]
+
+	[GivesInt]
+		if big > 0 return big;
+	[end: 0]
+
+	[GivesU32]
+		if negative < 0 return negative;
+	[end: big]
+
+	[MakesNew]
+		ptr<u8> p: new u8[negative];
+		log 'not here ' p '\n';
+	[end]
+}

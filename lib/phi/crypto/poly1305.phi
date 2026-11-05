@@ -75,7 +75,7 @@ phi.Poly1305:Library
 			poly_g:j is poly_h:j;
 		;;
 		call Add: addr poly_h addr poly_minus_p;
-		u32 mask: -(poly_h:16 >> 7);
+		u32 mask: (-(poly_h:16 >> 7)) as u32;
 		while u32 j: 0; j < 17; j++;
 			poly_h:j is poly_h:j ^ (mask & (poly_g:j ^ poly_h:j));
 		;;

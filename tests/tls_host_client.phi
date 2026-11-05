@@ -36,7 +36,7 @@ phi.TlsHostClient:Kernel
 		going is (Secure.Pump: addr link);
 		int got: (Secure.Read: addr link addr buffer 512);
 		while got > 0
-			echoed++ (Secure.Write: addr link addr buffer got as u32);
+			echoed++ (Secure.Write: addr link addr buffer got);
 			got is (Secure.Read: addr link addr buffer 512);
 		;;
 		call Net.Wait;

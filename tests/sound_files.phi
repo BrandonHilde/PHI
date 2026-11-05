@@ -20,7 +20,7 @@ phi.SoundFiles:Kernel
 	int got: 0;
 	call got is Fat.ReadFile: 'TONE8.WAV' header 4096;
 	bln ok: false;
-	call ok is Wav.Parse: header got as u32;
+	call ok is Wav.Parse: header got;
 	ptr<u8> converted: new u8[64];
 	u32 bytes: 0;
 	call bytes is Wav.Convert: header + Wav.data_start 4 converted;
@@ -51,7 +51,7 @@ phi.SoundFiles:Kernel
 		bln ok: false;
 		int file_size: 0;
 		call file_size is Fat.FileSize: path;
-		call ok is Wav.Parse: header size as u32 file_size as u32;
+		call ok is Wav.Parse: header size file_size;
 		log path ': ';
 		if ok
 			log Wav.rate ' Hz, ' Wav.channels ' channel(s), ' Wav.bits ' bits, data at ' Wav.data_start ', ' Wav.data_size ' bytes, ' Wav.milliseconds ' ms\n';
