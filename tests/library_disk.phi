@@ -1,0 +1,14 @@
+# library: library_src/shapes.phi
+# A compiled library in a program on a PHI OS disk (library_disk.rootfs/user.phi): the library's
+# code is inside USER.BIN, so PHI OS has nothing to load, and the file isn't on the disk at all.
+use proc.process;
+
+phi.LibraryDisk:Kernel
+{
+	int pid: 0;
+	call pid is Process.Spawn: 'USER.BIN' '';
+	int code: 0;
+	call code is Process.Wait: pid;
+	log '[exited with ' code ']\n';
+	exit 0;
+}

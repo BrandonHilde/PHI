@@ -4,6 +4,9 @@ namespace Phi.Compiler
     {
         public string Path { get; }
         public string Text { get; }
+
+        /// <summary>For a file of a compiled library: declarations with no code, from a .philib.</summary>
+        public Libraries.CompiledTarget? Compiled { get; init; }
         readonly List<int> lineStarts = new() { 0 };
 
         public SourceFile(string path, string text)

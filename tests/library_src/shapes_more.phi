@@ -1,0 +1,8 @@
+# A second file of the library for the test library_use: its code goes in the same .philib.
+phi.More:Library
+{
+	int value: 2;
+
+	[Answer]
+	[end: 40]
+}

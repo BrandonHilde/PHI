@@ -1,0 +1,36 @@
+# Mistakes with what an interface says its methods return.
+interface.Plugin
+{
+	[Number: : int]
+	[Name: : str]
+	[Bad: : Nothing]
+	[Where: : ptr<u8>]
+}
+
+struct.Wrong has Plugin
+{
+	[Number]
+		str text: 'not a number';
+	[end: text]
+
+	[Name]
+	[end: 5]
+
+	[Bad]
+	[end]
+
+	[Where]
+	[end: 5]
+}
+
+interface.Silent
+{
+	[Quiet]
+}
+
+phi.InterfaceResultsErrors:Kernel
+{
+	[Use: Silent s;]
+		call s.Quiet;
+	[end]
+}

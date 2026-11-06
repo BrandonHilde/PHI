@@ -1,4 +1,6 @@
 using System.Text;
+using System.Text.RegularExpressions;
+using Phi.Compiler.Libraries;
 using Phi.Compiler.Semantics;
 using Phi.Compiler.Syntax;
 
@@ -12,6 +14,17 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>What a debugger needs to know of the code, in a --debug build of a program.</summary>
         public DebugInfo? Debug { get; init; }
+
+        /// <summary>A library's build: the lists its code comes with, which the object file doesn't say.</summary>
+        public LibraryUnit? Library { get; init; }
+    }
+
+    /// <summary>What generating a library leaves besides its assembly (which NASM makes an object file of).</summary>
+    public sealed class LibraryUnit
+    {
+        public CompiledTarget Target { get; } = new();
+        public List<string> Exports { get; } = new();
+        public List<(string Label, int Line, string File)> Lines { get; } = new();
     }
 
     /// <summary>
@@ -98,6 +111,7 @@ namespace Phi.Compiler.CodeGen
                 Name = unit.Kind switch { UnitKind.Boot => "boot", UnitKind.Os => "os", UnitKind.Program => "program", _ => "kernel" },
                 Text = text,
                 Debug = gen.debugInfo,
+                Library = gen.libraryUnit,
             };
         }
 
@@ -562,19 +576,41 @@ namespace Phi.Compiler.CodeGen
                 if (diagnostics.HasErrors) return "";
             }
 
+            if (program.Library != null) return BuildLibrary();
+
             // every 32-bit kernel gets an interrupt table, so exceptions show the panic screen
             if (unit.Kind == UnitKind.Kernel) Need("phi_interrupts_init");
 
             // a Windows program reaches the system through kernel32.dll, named in its import table
             if (Host.IsWindows()) Need("phi_imports");
 
+            // what the compiled libraries' code uses, which nothing here would ask for
+            foreach (CompiledTarget compiled in unit.CompiledLibraries)
+            {
+                foreach (string symbol in compiled.RuntimeSymbols) Need(symbol);
+                if (compiled.UsesObjects) usesObjects = true;
+            }
+            foreach (StructSymbol s in unit.LibraryTypeTables) TypeTable(s);
+            foreach (StructSymbol iface in unit.LibraryInterfaceSlots) InterfaceSlot(iface);
+
             // the FPU (floating point numbers) starts clean
             if (bits32) Emit("fninit");
 
             // the program's own code first: it decides which library routines are needed
+            var startedLibraries = new HashSet<CompiledTarget>();
             foreach (ClassDecl cls in unit.Classes)
             {
                 file = cls.File;
+                // a compiled library's classes run together, in the order they're in in it
+                if (cls.File.Compiled is CompiledTarget compiled)
+                {
+                    if (startedLibraries.Add(compiled))
+                    {
+                        Comment($"---- the classes of the library {compiled.Name}");
+                        Emit($"call {compiled.StartLabel}");
+                    }
+                    continue;
+                }
                 Comment($"---- class {cls.Name} ({FileName(file)})");
                 foreach (Stmt s in cls.Body) EmitStatement(s);
             }
@@ -595,7 +631,7 @@ namespace Phi.Compiler.CodeGen
                 var libraryOwn = unit.Classes.Where(c => c.File.Path.Replace('\\', '/').StartsWith("lib/phi/"))
                     .SelectMany(c => c.Body).SelectMany(SyntaxWalker.Nodes)
                     .Select(n => (n as VarDecl)?.Symbol).OfType<VariableSymbol>().ToHashSet();
-                start.Variables.AddRange(unit.Variables.Select(v => DebugVariableOf(v) with { Library = libraryOwn.Contains(v) }));
+                start.Variables.AddRange(unit.Variables.Where(v => !v.IsOutside).Select(v => DebugVariableOf(v) with { Library = libraryOwn.Contains(v) }));
                 debugInfo.Methods.Add(start);
             }
 
@@ -622,23 +658,36 @@ namespace Phi.Compiler.CodeGen
                     break;
             }
 
-            foreach (MethodSymbol m in unit.Methods) EmitMethod(m);
-            foreach (MethodSymbol m in unit.ForeignEntries) EmitForeignEntry(m);
+            foreach (MethodSymbol m in unit.Methods.Where(m => !m.IsOutside)) EmitMethod(m);
+            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
+            // the compiled libraries' code goes here, once it's known what of it the rest reaches
+            int librariesAt = code.Length;
             // what follows isn't PHI code: an exception in it has no line
-            if (lineMarks.Count > 0)
-            {
-                Label("phi_line_end");
-                lineMarks.Add(("phi_line_end", 0, "0"));
-            }
-            foreach (RawBlockDecl raw in unit.RawBlocks) EmitRawBlock(raw);
+            bool lineEnd = lineMarks.Count > 0 || unit.CompiledLibraries.Any(c => c.Lines.Count > 0) && Catches;
+            if (lineEnd) Label("phi_line_end");
+            foreach (RawBlockDecl raw in unit.RawBlocks.Where(r => r.File.Compiled == null)) EmitRawBlock(raw);
             EmitObjectRoutines();
             EmitStrRoomRoutine();
             EmitArrayGrowRoutine();
             EmitTextArrayGrowRoutine();
-            EmitLineTable();
             if (debugInfo != null && Host.IsWindows()) EmitWindowsDebugTables();
 
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
+
+            // the file names of the libraries' lines go in the data too
+            if (Catches)
+                foreach (string name in unit.CompiledLibraries.SelectMany(c => c.Lines).Select(l => l.File).Distinct())
+                    StringLabel(name);
+
+            // written now, as the libraries' code is only what these reach too
+            var dataText = new StringBuilder();
+            EmitData(dataText);
+            var reached = ReachedLibrarySections(library, dataText);
+            var libraryCode = new StringBuilder();
+            foreach (CompiledTarget compiled in unit.CompiledLibraries) AppendCompiledCode(libraryCode, compiled, reached);
+            code.Insert(librariesAt, libraryCode.ToString());
+            if (lineEnd) lineMarks.Add(("phi_line_end", 0, "0"));
+            EmitLineTable();
 
             // events used by the library that the program doesn't handle
             var defined = unit.Methods.Select(m => m.Label).ToHashSet();
@@ -652,6 +701,8 @@ namespace Phi.Compiler.CodeGen
             var output = new StringBuilder();
             string what = unit.Kind switch { UnitKind.Boot => "Boot sector", UnitKind.Os => "OS classes", UnitKind.Program => "User program", _ => "32-bit kernel" };
             output.AppendLine($"; {what} generated by phi from {Path.GetFileName(program.File.Path)}");
+            foreach (StructSymbol iface in interfaceSlots)
+                output.AppendLine($"phi_slot_{iface.Name} equ {TypeTableMethods + 4 * iface.TableStart}");
 
             switch (unit.Kind)
             {
@@ -768,7 +819,8 @@ namespace Phi.Compiler.CodeGen
             if (bits32) output.AppendLine("align 4096, db 0");
             if (debugInfo != null && Host.IsWindows()) output.AppendLine("phi_pe_data:");
             output.AppendLine("; ---- data");
-            EmitData(output);
+            output.Append(dataText);
+            foreach (CompiledTarget compiled in unit.CompiledLibraries) AppendCompiledSection(output, compiled, CompiledTarget.Variables);
 
             if (Host.IsWindows()) output.AppendLine("align 4096, db 0             ; the file is whole pages (its file alignment)");
             if (Host != Host.PhiOS) output.AppendLine("phi_image_end:");
@@ -786,6 +838,201 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>Where this unit runs: a user program can be built for another system.</summary>
         Host Host => unit.Kind == UnitKind.Program ? program.Host : Host.PhiOS;
+
+        // ================================================================ compiled libraries
+
+        LibraryUnit? libraryUnit;
+
+        /// <summary>
+        /// A library's assembly, for NASM to make an object file of: its own classes' code as a
+        /// routine the program calls where they'd run, its own methods, and its variables in a
+        /// section of their own (a Windows program's code isn't writable). Labels it doesn't
+        /// define are the program's to give: what's outside its own files, and the runtime's.
+        /// Those it doesn't export stay inside it, so no two libraries' can clash.
+        /// </summary>
+        string BuildLibrary()
+        {
+            LibraryBuild build = program.Library!;
+            var result = new LibraryUnit();
+            libraryUnit = result;
+            result.Target.Name = CompiledTarget.LabelName(build.Name);
+
+            Label(result.Target.StartLabel);
+            Emit("cld");
+            foreach (ClassDecl cls in unit.Classes.Where(c => !program.IsOutside(c.File)))
+            {
+                file = cls.File;
+                Comment($"---- class {cls.Name} ({FileName(file)})");
+                foreach (Stmt s in cls.Body) EmitStatement(s);
+            }
+            Emit("ret");
+
+            // each method in a section of its own, so a program can leave out those it doesn't reach
+            int sections = 0;
+            foreach (MethodSymbol m in unit.Methods.Where(m => !m.IsOutside))
+            {
+                Line($"section .t{sections++} progbits alloc exec nowrite align=1");
+                EmitMethod(m);
+            }
+            Line("section .text");
+            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
+            foreach (RawBlockDecl raw in unit.RawBlocks.Where(r => !program.IsOutside(r.File))) EmitRawBlock(raw);
+            EmitObjectRoutines();
+            EmitStrRoomRoutine();
+            EmitArrayGrowRoutine();
+            EmitTextArrayGrowRoutine();
+
+            var data = new StringBuilder();
+            EmitData(data);
+
+            // what the object file won't say
+            CompiledTarget t = result.Target;
+            t.RuntimeSymbols.AddRange(librarySymbols.OrderBy(s => s));
+            t.RawBlocks.AddRange(unit.RawBlocks.Where(r => program.IsOutside(r.File)).Select(r => $"{r.Language}.{r.Name}"));
+            t.OutsideFunctions.AddRange(unit.OutsideFunctions.Select(f => $"{f.Library}.{f.Name}"));
+            t.TypeTables.AddRange(typeTables.Select(s => s.Name));
+            t.InterfaceSlots.AddRange(interfaceSlots.Select(s => s.Name));
+            t.UsesObjects = usesObjects;
+            var fileNames = stringLabels.ToDictionary(p => p.Value, p => p.Key);
+            foreach (var (label, line, name) in lineMarks) result.Lines.Add((label, line, fileNames[name]));
+
+            result.Exports.Add(t.StartLabel);
+            result.Exports.AddRange(unit.Methods.Where(m => !m.IsOutside).Select(m => m.Label));
+            result.Exports.AddRange(unit.Variables.Where(v => !v.IsOutside && !v.IsLocal && !v.Type.IsError).Select(v => v.Label).Distinct());
+
+            string text = code.ToString() + data;
+            var defined = new HashSet<string>(Regex.Matches(text, @"^\s*([A-Za-z_$][\w$]*)(?::|\s+equ\b)", RegexOptions.Multiline).Select(m => m.Groups[1].Value));
+            var words = new HashSet<string>(Regex.Matches(text, @"[A-Za-z_$][\w$]*").Select(m => m.Value));
+
+            // the labels that are the program's to give
+            var outside = new HashSet<string>(unit.Methods.Where(m => m.IsOutside).Select(m => m.Label));
+            outside.UnionWith(unit.Variables.Where(v => v.IsOutside && !v.IsLocal).Select(v => v.Label));
+            outside.UnionWith(unit.RawBlocks.Where(r => program.IsOutside(r.File)).Select(r => r.Name));
+            outside.UnionWith(unit.OutsideFunctions.Select(OutsideLabel));
+            outside.UnionWith(typeTables.Select(s => $"phi_type_{s.Name}"));
+            outside.UnionWith(interfaceSlots.Select(s => $"phi_slot_{s.Name}"));
+            outside.Add("phi_halt");
+            outside.Add("phi_object_line");
+            var constants = new Dictionary<string, string>();
+            foreach (LibraryFile runtime in Library.Load(libraryTarget))
+            {
+                outside.UnionWith(runtime.Provides);
+                outside.UnionWith(runtime.Hooks);
+                // a number the generated code uses by name, like a thread block's field: the library gets its own copy
+                foreach (Match m in Regex.Matches(runtime.Text, @"^([A-Za-z_][\w]*)\s+equ\s+([-+*()|&<>\s0-9A-Fa-fxX]+?)\s*(?:;.*)?$", RegexOptions.Multiline))
+                    constants.TryAdd(m.Groups[1].Value, m.Groups[2].Value);
+            }
+
+            var output = new StringBuilder();
+            output.AppendLine($"; The library {build.Name} generated by phi from {Path.GetFileName(program.File.Path)}");
+            output.AppendLine(bits64 ? "bits 64" : "bits 32");
+            foreach (string label in result.Exports.Where(defined.Contains)) output.AppendLine($"global {label}");
+            foreach (string label in outside.Where(l => words.Contains(l) && !defined.Contains(l)).OrderBy(l => l)) output.AppendLine($"extern {label}");
+            foreach (var (name, value) in constants.Where(c => words.Contains(c.Key) && !defined.Contains(c.Key)).OrderBy(c => c.Key)) output.AppendLine($"{name} equ {value}");
+            output.AppendLine("section .text align=16");
+            output.Append(code);
+            output.AppendLine("section .data align=16");
+            output.Append(data);
+            return output.ToString();
+        }
+
+        /// <summary>
+        /// The sections of the compiled libraries a program gets: each one's code that's always
+        /// there and its variables, and what those and the program reach, following the addresses
+        /// each section needs. A method nothing reaches is left out, as if it weren't written.
+        /// </summary>
+        HashSet<(CompiledTarget Library, int Section)> ReachedLibrarySections(List<LibraryFile> runtime, StringBuilder data)
+        {
+            var reached = new HashSet<(CompiledTarget, int)>();
+            if (unit.CompiledLibraries.Count == 0) return reached;
+
+            var exports = new Dictionary<string, (CompiledTarget Library, int Section)>();
+            foreach (CompiledTarget compiled in unit.CompiledLibraries)
+                foreach (LibraryExport e in compiled.Exports)
+                    exports.TryAdd(e.Name, (compiled, e.Section));
+
+            var waiting = new Stack<(CompiledTarget Library, int Section)>();
+            void Reach((CompiledTarget, int) section)
+            {
+                if (reached.Add(section)) waiting.Push(section);
+            }
+
+            foreach (CompiledTarget compiled in unit.CompiledLibraries)
+            {
+                Reach((compiled, CompiledTarget.AlwaysCode));
+                Reach((compiled, CompiledTarget.Variables));
+            }
+
+            // what the program's code and data, and the runtime, name
+            var names = Regex.Matches(code.ToString() + data + string.Concat(runtime.Select(f => f.Text)), @"[A-Za-z_$][\w$]*");
+            foreach (string name in names.Select(m => m.Value).Distinct())
+                if (exports.TryGetValue(name, out var section)) Reach(section);
+
+            while (waiting.Count > 0)
+            {
+                var (library, section) = waiting.Pop();
+                foreach (Relocation r in library.Relocations.Where(r => r.Section == section))
+                {
+                    if (r.Symbol == null) Reach((library, r.TargetSection));
+                    else if (exports.TryGetValue(r.Symbol, out var target)) Reach(target);
+                }
+            }
+            return reached;
+        }
+
+        /// <summary>
+        /// A compiled library's code, in with the program's methods so an error in it can say its
+        /// line: the sections that are reached, with the labels of what's in them.
+        /// </summary>
+        void AppendCompiledCode(StringBuilder into, CompiledTarget compiled, HashSet<(CompiledTarget, int)> reached)
+        {
+            into.AppendLine();
+            into.AppendLine($"; the library {compiled.Name}");
+            for (int section = 0; section < compiled.Sections.Count; section++)
+                if (section != CompiledTarget.Variables && reached.Contains((compiled, section)))
+                    AppendCompiledSection(into, compiled, section);
+            foreach (LibraryExport e in compiled.Exports.Where(e => reached.Contains((compiled, e.Section))))
+                into.AppendLine($"{e.Name} equ {compiled.SectionLabel(e.Section)} + {e.Offset}");
+            if (Catches)
+                foreach (LibraryLine line in compiled.Lines.Where(l => reached.Contains((compiled, l.Section))))
+                    lineMarks.Add(($"{compiled.SectionLabel(line.Section)} + {line.Offset}", line.Line, StringLabel(line.File)));
+        }
+
+        /// <summary>
+        /// A compiled library's bytes, with each address it couldn't know written as its label:
+        /// NASM fills them in with the rest of the program's, so no linker is needed.
+        /// </summary>
+        static void AppendCompiledSection(StringBuilder output, CompiledTarget compiled, int section)
+        {
+            byte[] bytes = compiled.Sections[section].Bytes;
+            output.AppendLine($"align {compiled.Sections[section].Align}, db 0");
+            output.AppendLine($"{compiled.SectionLabel(section)}:");
+
+            void Raw(int from, int to)
+            {
+                for (int i = from; i < to; i += 64)
+                {
+                    output.Append("db ");
+                    for (int b = i; b < Math.Min(i + 64, to); b++)
+                    {
+                        if (b > i) output.Append(',');
+                        output.Append(bytes[b]);
+                    }
+                    output.AppendLine();
+                }
+            }
+
+            int at = 0;
+            foreach (Relocation r in compiled.Relocations.Where(r => r.Section == section))
+            {
+                Raw(at, r.Offset);
+                string size = r.Width switch { 8 => "dq", 4 => "dd", 2 => "dw", _ => "db" };
+                string target = r.Symbol ?? compiled.SectionLabel(r.TargetSection);
+                output.AppendLine($"{size} {target} + ({r.Addend}){(r.Relative ? " - $" : "")}");
+                at = r.Offset + r.Width;
+            }
+            Raw(at, bytes.Length);
+        }
 
         /// <summary>
         /// The ELF header of a Linux program, which NASM writes itself (no linker): the file is one
@@ -1907,10 +2154,14 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         string OutsideLabel(OutsideFunctionDecl f)
         {
-            var libraries = OutsideLibraries();
-            int index = libraries.FindIndex(l => l.Path.Equals(f.LibraryPath, StringComparison.OrdinalIgnoreCase));
-            return $"phi_outside_{index}_{f.Name}";
+            return $"phi_outside_{ImportName(f.LibraryPath)}_{f.Name}";
         }
+
+        /// <summary>
+        /// The slot's label says which library by its file's name, not its number among the
+        /// program's: a compiled library's code uses the label without knowing the rest.
+        /// </summary>
+        static string ImportName(string path) => CompiledTarget.LabelName(path.ToLowerInvariant());
 
         /// <summary>The outside libraries the code calls, each with the functions it calls of it, in the order they're met.</summary>
         List<(string Path, List<string> Functions)> OutsideLibraries()
@@ -1954,7 +2205,7 @@ namespace Phi.Compiler.CodeGen
                 foreach (string name in functions) output.AppendLine($"    {entry} phi_outside_{i}_{name}_name - $$");
                 output.AppendLine($"    {entry} 0");
                 output.AppendLine($"phi_outside_{i}_addresses:");
-                foreach (string name in functions) output.AppendLine($"phi_outside_{i}_{name}: {entry} phi_outside_{i}_{name}_name - $$");
+                foreach (string name in functions) output.AppendLine($"phi_outside_{ImportName(path)}_{name}: {entry} phi_outside_{i}_{name}_name - $$");
                 output.AppendLine($"    {entry} 0");
                 foreach (string name in functions)
                 {
@@ -2967,9 +3218,9 @@ namespace Phi.Compiler.CodeGen
             }
         }
 
-        bool Catches => catches ??= bits32 && unit.Classes.SelectMany(c => c.Body)
+        bool Catches => catches ??= bits32 && (program.Library != null || unit.CompiledLibraries.Count > 0 || unit.Classes.SelectMany(c => c.Body)
             .Concat(unit.Methods.SelectMany(m => m.Decl.Body))
-            .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
+            .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr));
         bool? catches;
 
         /// <summary>
@@ -3140,6 +3391,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         bool CanInline(MethodSymbol m)
         {
+            if (m.Decl.IsCompiled) return false;   // its code is in its library
             if (debugInfo != null || !bits32 || bits64 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
             if (!inlinable.TryGetValue(m, out bool can))
             {
@@ -4762,7 +5014,7 @@ namespace Phi.Compiler.CodeGen
                     // the object's type table is just before it
                     EmitExpr(method.Receiver);
                     Emit("mov eax, [eax - 4]      ; its type table");
-                    Emit($"mov eax, [eax + {TypeTableMethods + 4 * method.Slot}]");
+                    Emit($"mov eax, [eax + {InterfaceSlot(method.Interface)} + {4 * method.Index}]");
                     break;
 
                 case SizeofExpr size:
@@ -7396,11 +7648,26 @@ namespace Phi.Compiler.CodeGen
             if (!typeTables.Contains(s))
             {
                 typeTables.Add(s);
+                // (there's one table of each in a program, which the final build writes)
+                if (program.Library != null) return $"phi_type_{s.Name}";
                 ObjectRoutine("free", s);
                 ObjectRoutine("clone", s);
                 ObjectRoutine("equal", s);
             }
             return $"phi_type_{s.Name}";
+        }
+
+        /// <summary>The interfaces whose methods this code calls, each with a slot label.</summary>
+        readonly List<StructSymbol> interfaceSlots = new();
+
+        /// <summary>
+        /// Where an interface's methods start in a type table, as a label: only the whole program
+        /// knows every interface, so it's a name in the code, which a library's can be compiled with.
+        /// </summary>
+        string InterfaceSlot(StructSymbol iface)
+        {
+            if (!interfaceSlots.Contains(iface)) interfaceSlots.Add(iface);
+            return $"phi_slot_{iface.Name}";
         }
 
         /// <summary>
@@ -7943,7 +8210,7 @@ namespace Phi.Compiler.CodeGen
         {
             foreach (VariableSymbol v in unit.Variables.Distinct())
             {
-                if (v.Type.IsError || v.IsLocal) continue; // a method's variables are in its frame
+                if (v.Type.IsError || v.IsLocal || v.IsOutside) continue; // a method's variables are in its frame
                 // each starts on a word, so a number or pointer in it is read and written whole by
                 // other threads (and atomic steps on it stay one cache line's)
                 if (bits32) output.AppendLine($"align {Slot}, db 0");
@@ -7953,8 +8220,11 @@ namespace Phi.Compiler.CodeGen
             foreach (var (label, size) in staticTemps)
                 output.AppendLine($"{label}: times {size} db 0");
 
-            if (usesObjects) output.AppendLine("phi_object_line: dd 0");
-            EmitTypeTables(output);
+            if (program.Library == null)
+            {
+                if (usesObjects) output.AppendLine("phi_object_line: dd 0");
+                EmitTypeTables(output);
+            }
 
             foreach (var (value, label) in stringLabels)
                 output.AppendLine($"{label}: db {NasmBytes(value)}");

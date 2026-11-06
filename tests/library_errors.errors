@@ -1,0 +1,11 @@
+22:10: error: the library shapes already has a class named More, so this one needs another name
+14:7: error: unknown method 'Shapes.Missing'
+15:19: error: parameter 'a' needs a number, but this is a str
+17:10: error: Shapes.Fill doesn't return a value (it ends with [end]), so it can't be used as one
+18:9: error: unknown name 'Shapes.calls2'
+7:2: error: Wrong.Area returns a str, but Shape's Area returns an int: every struct with Shape has to return the same
+5:1: error: Wrong has Shape, so it needs a method [Name: : str]
+5:1: error: Wrong has Shape, so it needs a method [Grow: int by;]
+5:1: error: Wrong has Shape, so it needs a method [Where: : ptr<u8>]
+16:20: error: Fill writes 'target', so it needs a str to write into (a str variable or field), not a string literal
+17:23: error: Fill writes 'target', so it needs a str to write into (a str variable or field), not a number

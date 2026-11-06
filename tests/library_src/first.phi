@@ -1,0 +1,15 @@
+# The first library for the test library_chain_program: an interface of its own.
+interface.Alpha
+{
+	[One: : int]
+}
+
+phi.First:Library
+{
+	int runs: 0;
+	runs is 1;
+
+	[Call: Alpha thing;]
+		runs++;
+	[end: (thing.One)]
+}

@@ -2836,11 +2836,65 @@ done: played on both, 2026-11-03.) Sound is built too, and the rest of H7, the G
 **Done when:** a PHI program on Windows is stepped through by line in a debugger, and an
 editor shows its errors as it's written.
 
+#### Phase H9: Compiled libraries
+
+**Status: done (2026-11-05).** A project compiles into one file, and another project includes
+that file without having the first one's source (the user's goal: a codebase of libraries that
+extend PHI and are reused). The library's code goes inside the program, so there is nothing
+extra to ship, and PHI OS needs no library system. See
+[Compiled libraries](docs/language.md#compiled-libraries) and
+[docs/architecture.md](docs/architecture.md#compiled-libraries).
+
+```
+phi build physics.phi --library     # makes physics.philib
+use physics;                        # finds physics.phi or physics.philib
+```
+
+Chosen by the user: the file holds machine code, not assembly text; a library exposes everything
+it declares (marking what's public can come later); `--library`, `.philib` and `use` finding
+either; and `[Area: : int]` for what an interface's method returns.
+
+- [x] Interface slots as labels (`phi_slot_Shape`), with no change to what programs do. Class
+  variables' labels are always `VALUE_Class_name`, and an import slot's says its library by name.
+  Checked over 31 builds of 10 programs: the machine code stayed byte-identical.
+- [x] An interface can say what a method returns. Pointers and `chr`s now stay what they are
+  through an interface: a pointer used to be cut to an `int`, which lost its top half on 64-bit
+  Windows, whose heap is above 4 GB.
+- [x] Methods bound from their headers alone, and each file's interface written as PHI.
+- [x] `--library`, for every system: an ELF object from NASM, and no linker. The final build
+  writes the bytes as source, with `dd label` at each address, in its usual `-f bin` run.
+- [x] Libraries that use libraries, a version check, and two libraries with interfaces of their
+  own in one program.
+- [x] A program gets only the methods it reaches: each method is a section of the object.
+
+**Tests:** `library_use_program` (Linux and Windows, 32 and 64-bit), `library_use` (a kernel),
+`library_disk` (a program on a PHI OS disk), `library_chain_program`, `library_errors`,
+`interface_results_program`, `interface_results_errors`. By hand: the same program gave the same output from
+source and from the library on all four host systems, and all of `lib/phi/crypto` as one 1.2 MB
+library passed every crypto test run against it (40 runs, with RSA, P-384 and X.509). A
+program using only SHA-256 from it kept 7 of its sections, with no RSA.
+
+**Not done, and not needed yet:**
+
+- A library's class variables and text always go in, reached or not: only methods are left out.
+- A program can't call a library's `asm.` blocks directly, and a debugger steps over its code.
+- Calls into a library aren't written out in place, as a small method's can be. A program with a
+  library always keeps the records that catching errors needs. (Speed: for the optimising phase.)
+- Not tried: going to a definition in a library from an editor, whose file isn't text.
+- `library_use_program (windows)` failed once and passed on its retry, the first run after a
+  compiler rebuild (2026-11-05); 26 runs in a row with no retries then passed, some with the
+  library built fresh. Its failure wasn't saved. The full suite (764 of 764) had one retry of
+  the same kind, `interfaces_program (windows64)`, whose `.exe` never started while Windows checked
+  it, which may be what this was too. If it comes back with its program running, look there.
+
+**Not in this phase:** DLLs and `.so` files, loading a library while a program runs, and C code
+calling PHI. Reading C's object files could use the same route, and stays with C compatibility.
+
 ### Order
 
-As of 2026-11-04. H1-H3, H5 and H6 are done, and 64-bit Linux and Windows programs work (H4,
+As of 2026-11-05. H1-H3, H5 and H6 are done, and 64-bit Linux and Windows programs work (H4,
 with S10). H7's windows and sound are done on Windows and Linux, and H8's debugger on Windows
-and language server are built.
+and language server are built. H9's compiled libraries are done.
 
 Waiting, each for something:
 

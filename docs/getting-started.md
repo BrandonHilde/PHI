@@ -104,6 +104,7 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | Command | What it does |
 |---|---|
 | `phi build file.phi` | compile to a bootable disk image, in `build/file/` next to the program |
+| `phi build file.phi --library` | compile a library (`phi.Name:Library`) to `file.philib`, which another program includes with `use file;` without its source: see [Compiled libraries](language.md#compiled-libraries) |
 | `phi check file.phi` | report errors without building: a program as it is, a module (or a program's class that's part of another program) in a program around it |
 | `phi lsp` | the language server, for an editor: errors as you type, going to a definition, completing names. In VS Code, the [PHI extension](https://github.com/BrandonHilde/PHI-VSCODE) runs it |
 | `phi run file.phi` | build, then boot it in QEMU; serial output (`log` and `debug`) also prints in your terminal |

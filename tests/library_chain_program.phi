@@ -1,0 +1,58 @@
+# library: library_src/first.phi library_src/chain
+# library: library_src/chain/outer.phi library_src/chain
+# Two compiled libraries, one using the other, each with an interface of its own, and the
+# program with one more and a struct that has all three. Using the first library directly as well
+# includes it once.
+use library_src.chain.outer;
+use library_src.chain.first;
+
+interface.Gamma
+{
+	[Four: : int]
+}
+
+struct.Mine has Gamma Beta Alpha
+{
+	int base;
+
+	[One]
+	[end: base + 100]
+
+	[Two]
+	[end: base + 200]
+
+	[Three]
+	[end: base + 300]
+
+	[Four]
+	[end: base + 400]
+}
+
+phi.LibraryChain:Program
+{
+	log Outer.seen ' ' First.runs '\n';
+
+	new Mine m: 1000;
+	new Alpha a: m;
+	new Beta b: m;
+	new Gamma g: m;
+	log (a.One) ' ' (b.Two) ' ' (b.Three) ' ' (g.Four) '\n';
+	log (Outer.Sum: b) ' ' (Outer.CallFirst: a) ' ' (First.Call: a) '\n';
+
+	new Both both: 10;
+	new Alpha a2: both;
+	new Beta b2: both;
+	log (a2.One) ' ' (b2.Two) ' ' (Outer.Sum: b2) ' ' (First.Call: a2) '\n';
+
+	if a is Mine mine
+		log 'a is Mine, base ' mine.base '\n';
+	;;
+	if a2 is Mine other
+		log 'a2 is Mine, base ' other.base '\n';
+	;;
+	else
+		log 'a2 is not Mine\n';
+	;;
+	log First.runs '\n';
+	exit 0;
+}

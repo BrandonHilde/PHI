@@ -265,6 +265,8 @@ namespace Phi.Cli
 
             var items = Directory.EnumerateFileSystemEntries(folder)
                 .Where(path => !Path.GetFileName(path).StartsWith('.'))   // .gitkeep and friends
+                // (a compiled library's code is in the programs that use it: nothing loads the file)
+                .Where(path => !path.EndsWith(Phi.Compiler.Libraries.CompiledLibrary.Extension, StringComparison.OrdinalIgnoreCase))
                 .OrderBy(path => path, StringComparer.OrdinalIgnoreCase);
 
             foreach (string item in items)

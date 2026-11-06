@@ -139,17 +139,16 @@ namespace Phi.Compiler.Tests
                               "User32.MessageBoxA: ptr<u8> window  ptr<u8> text  ptr<u8> title  u32 kind;\n";
 
         [Theory]
-        [InlineData(Host.Windows, "call [phi_outside_{0}_MessageBeep]")]
-        [InlineData(Host.Windows64, "call [rel phi_outside_{0}_MessageBeep]")]
+        [InlineData(Host.Windows, "call [phi_outside_user32_dll_MessageBeep]")]
+        [InlineData(Host.Windows64, "call [rel phi_outside_user32_dll_MessageBeep]")]
         public void AnOutsideFunctionIsInTheImportTableAndCalledThroughIt(Host host, string call)
         {
             CompileResult result = Build(host, ("main.phi", "use win;\nphi.Test:Program\n{\n log (Win.Beep);\n}\n"), ("win.phi", User32));
             Assert.True(result.Success, Errors(result));
             string text = result.Units.Single().Text;
             // (the runtime's own modules call kernel32.dll and winmm.dll too, so user32.dll's place in the list varies)
-            var named = System.Text.RegularExpressions.Regex.Match(text, @"phi_outside_(\d+)_name: db 'user32.dll', 0");
-            Assert.True(named.Success, text);
-            Assert.Contains(string.Format(call, named.Groups[1].Value), text);
+            Assert.Matches(@"phi_outside_\d+_name: db 'user32.dll', 0", text);
+            Assert.Contains(call, text);
             Assert.Contains("PHI_OUTSIDE_DESCRIPTORS", text);
             Assert.Contains("db 'MessageBeep', 0", text);
             Assert.Contains("db 'CharUpperA', 0", text);

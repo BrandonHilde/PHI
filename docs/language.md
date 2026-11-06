@@ -1039,9 +1039,24 @@ while each shape in all
 - **An interface lists method headers, with no body or `[end]`.** Its parameters are
   written as any method's are: `str target;` is the caller's own text, `str name: '';`
   is a copy, and `int points[];` takes an array of any length. Other parameters have no defaults, so a call through it gives every argument.
-- **What a method returns comes from the structs.** Every struct with the interface has to
-  return the same, and the first one says what that is: a number, a `str`, a new object, or
-  nothing.
+- **What a method returns comes from the structs, unless the interface says.** Every struct
+  with the interface has to return the same, and the first one says what that is: a number, a
+  `str`, a new object, or nothing. Or the interface says, after a second `:`, and then code can
+  call it before any struct has it, as a library's code does for structs that programs write:
+
+  ```phi
+  interface.Plugin
+  {
+      [Number: : int]            # takes nothing, returns an int
+      [Scaled: int by; : int]
+      [Name: : str]
+      [Where: : ptr<u8>]
+      [Run: int times;]          # doesn't say: what the structs return (in a library with no struct, nothing)
+  }
+  ```
+
+  A pointer stays a whole pointer and a `chr` still prints as a character, whichever way it
+  was said.
 - **A struct can have several interfaces** (`struct.Player has Shape Named { ... }`), and it's
   an error to leave out one of their methods, or to take something different.
 - **An interface variable owns its object**, like a `new` variable: it's declared with
@@ -2916,7 +2931,55 @@ use support.helpers;         # loads support/helpers.phi
 program, then (for a program in a kernel's rootfs) next to the kernel, then in the standard
 library ([lib/phi](../lib/phi)). So the programs of a rootfs can share code kept in a folder
 next to the kernel, like `lib/widgets.phi` used as `use lib.widgets;`. Each file is loaded once,
-and the classes of used files run before the classes that use them.
+and the classes of used files run before the classes that use them. At each of those places, a
+`.phi` file comes before a compiled library of the same name, `a/b.philib` (below).
+
+### Compiled libraries
+
+A project can be compiled into one file, which another project includes without having its
+source:
+
+```
+phi build physics.phi --library     # physics.philib, next to physics.phi (or in -o)
+```
+
+```phi
+use physics;                        # in a program in another folder, with physics.philib next to it
+```
+
+The `.phi` file's classes are `phi.Name:Library`, and it and the files it uses from beside it
+are the library: everything they declare can be used, as if they were next to the program. A
+library has no start of its own, so a `phi.Name:Program` class is an error. Each `use` of
+one finds the file by name as it would a `.phi` file, so a program doesn't change when the source is
+swapped for the compiled file.
+
+**The code goes inside the program,** so there's nothing to ship with it and nothing is loaded
+when it runs. PHI OS needs no library system for this: a program is still one `NAME.BIN`, and a
+`.philib` in a rootfs folder isn't put on the disk.
+
+**One file for every system.** It has a version for each one the library builds for: PHI OS
+programs, PHI OS kernels, and 32 and 64-bit Linux and Windows (`--target` builds only that one).
+One that doesn't build, like a driver on Linux, is left out and the build says why; using the library there is
+an error that says which systems it has. If none builds, those are the build's errors. 16-bit
+programs can't use one.
+
+**A library that uses others.** The standard library's modules it uses aren't copied in: the
+program compiles one copy of each, whichever libraries want it. Another compiled library is
+needed next to this one (or next to the program), and is included once however many use it.
+The library's classes run together, after those of what it uses, where its `use` first puts them.
+
+**A program only gets what it reaches.** Methods that nothing calls are left out. The library's
+class variables and text always go in, and so does its classes' own code.
+
+**Rebuild it with PHI.** A library has to be built by the same build of `phi` that uses it, so
+keep its source: another one is an error saying to build it again. (The conventions between
+compiled code can change until there's a release.)
+
+**Not there:** a program can't call a library's `asm.` blocks directly, only its methods. Two
+libraries, or a library and a program, can't both have a class, struct or enum of the same name:
+that's an error. A debugger steps over a library's code, since its source isn't there. Calls
+into a library aren't written out in place, as a small method's can be. A library is for PHI code:
+DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)'s.
 
 ### Standard library
 

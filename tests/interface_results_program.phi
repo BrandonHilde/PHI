@@ -1,0 +1,100 @@
+# An interface can say what its methods return, after a second ':'. Then the code that calls
+# them needs no struct that has it to be written first, and a struct that has it comes later
+# (as one in a program does, for an interface in a library). Every kind of result, on every system.
+interface.Plugin
+{
+	[Number: : int]
+	[Scaled: int by; : int]
+	[Name: : str]
+	[Letter: : chr]
+	[Where: : ptr<u8>]
+	[Size: : u32]
+	[Run: int times;]
+}
+
+phi.InterfaceResults:Program
+{
+	new Doubler d: 21;
+	new Plugin p: d;
+	call Show: p;
+
+	new Tens t: 3;
+	p is t;
+	call Show: p;
+	exit 0;
+
+	[Show: Plugin plugin;]
+		log (plugin.Name) ' ' (plugin.Number) ' ' (plugin.Scaled: 2) ' ' (plugin.Letter) ' ' (plugin.Size) '\n';
+		ptr<u8> text: (plugin.Where);
+		log 'it says ' text '\n';
+		call plugin.Run: 2;
+	[end]
+}
+
+struct.Doubler has Plugin
+{
+	int value;
+
+	[Number]
+	[end: value * 2]
+
+	[Scaled: int by;]
+	[end: value * 2 * by]
+
+	[Name]
+		str name: 'doubler';
+	[end: name]
+
+	[Letter]
+	[end: 'd']
+
+	# (on the heap, which is above 4 GB in a 64-bit Windows program: a pointer has to stay whole)
+	[Where]
+		ptr<u8> memory: new u8[3];
+		memory:0 is 'o';
+		memory:1 is 'k';
+		memory:2 is 0;
+	[end: memory]
+
+	[Size]
+		u32 size: 7;
+	[end: size]
+
+	[Run: int times;]
+		log 'doubler runs ' times '\n';
+	[end]
+}
+
+struct.Tens has Plugin
+{
+	int value;
+
+	[Number]
+	[end: value * 10]
+
+	[Scaled: int by;]
+	[end: value * 10 * by]
+
+	[Name]
+		str name: 'tens';
+	[end: name]
+
+	[Letter]
+	[end: 't']
+
+	[Where]
+	[end: addr Note]
+
+	[Size]
+		u32 size: 8;
+	[end: size]
+
+	[Run: int times;]
+		log 'tens runs ' times '\n';
+	[end]
+}
+
+phi.Note:Library
+{
+	str Note: 'hello';
+}

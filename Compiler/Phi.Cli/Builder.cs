@@ -1,6 +1,7 @@
 using System.Text.RegularExpressions;
 using Phi.Compiler;
 using Phi.Compiler.CodeGen;
+using Phi.Compiler.Libraries;
 using Phi.Compiler.Semantics;
 
 namespace Phi.Cli
@@ -32,6 +33,17 @@ namespace Phi.Cli
     ///
     /// See docs/memory-map.md.
     /// </summary>
+    /// <summary>What phi build --library made: the systems it built for, and those it didn't with why.</summary>
+    public sealed class LibraryBuildResult
+    {
+        public string LibraryPath { get; init; } = "";
+        public List<string> Built { get; } = new();
+        public List<(string System, string Why)> Skipped { get; } = new();
+        public List<string> Errors { get; } = new();
+        public List<string> Warnings { get; } = new();
+        public bool Success => Errors.Count == 0;
+    }
+
     public static class Builder
     {
         const int SectorSize = 512;
@@ -106,6 +118,77 @@ namespace Phi.Cli
                 : Layout16(compiled, outDir, result);
 
             if (image != null) File.WriteAllBytes(result.ImagePath, image);
+            return result;
+        }
+
+        /// <summary>
+        /// phi build NAME.phi --library: NAME.philib, with a version for each system the library
+        /// builds for (or only <paramref name="only"/>). One that doesn't build for a system (a
+        /// driver on Linux, say) just has no version for it; if none builds, those are the errors.
+        /// </summary>
+        public static LibraryBuildResult BuildLibrary(string phiFile, string outDir, Host? only = null)
+        {
+            string name = Path.GetFileNameWithoutExtension(phiFile);
+            var result = new LibraryBuildResult { LibraryPath = Path.Combine(outDir, name + CompiledLibrary.Extension) };
+            if (!File.Exists(phiFile))
+            {
+                result.Errors.Add($"File not found: {phiFile}");
+                return result;
+            }
+
+            Directory.CreateDirectory(outDir);
+            string work = Path.Combine(Path.GetTempPath(), "phi-library-" + Guid.NewGuid().ToString("N"));
+            Directory.CreateDirectory(work);
+            var library = new CompiledLibrary { Name = name };
+            List<string>? firstErrors = null;
+            try
+            {
+                var source = SourceFile.Load(phiFile);
+                foreach (LibraryPlatform platform in LibraryPlatform.All.Where(p => only == null || p.Host == only))
+                {
+                    var file = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text);
+                    CompileResult compiled = PhiCompiler.CompileLibrary(file, platform, name);
+                    foreach (Diagnostic w in compiled.Diagnostics.Where(d => d.Severity != Severity.Error))
+                        if (!result.Warnings.Contains(w.ToString())) result.Warnings.Add(w.ToString());
+
+                    var errors = compiled.Diagnostics.Where(d => d.Severity == Severity.Error).Select(d => d.ToString()).ToList();
+                    if (errors.Count == 0)
+                    {
+                        AsmUnit unit = compiled.Units.Single();
+                        string asm = Path.Combine(work, platform.Key + ".asm");
+                        string obj = Path.Combine(work, platform.Key + ".o");
+                        File.WriteAllText(asm, unit.Text);
+                        var (code, output) = Toolchain.Run(Toolchain.Nasm, new[] { "-f", platform.Host.Is64() ? "elf64" : "elf32", "-o", obj, asm }, null);
+                        if (code != 0)
+                        {
+                            errors.Add($"nasm failed on {name} for {platform.Description} (this is a bug in phi, or in an asm. block):\n{output}");
+                        }
+                        else
+                        {
+                            CompiledTarget target = unit.Library!.Target;
+                            target.Path = result.LibraryPath;
+                            ElfObject.ReadInto(target, File.ReadAllBytes(obj), unit.Library.Exports, unit.Library.Lines);
+                            library.Targets[platform.Key] = target;
+                            result.Built.Add(platform.Description);
+                            continue;
+                        }
+                    }
+
+                    firstErrors ??= errors;
+                    result.Skipped.Add((platform.Description, errors[0]));
+                }
+            }
+            finally
+            {
+                try { Directory.Delete(work, recursive: true); } catch (IOException) { }
+            }
+
+            if (library.Targets.Count == 0)
+            {
+                result.Errors.AddRange(firstErrors ?? new List<string> { "nothing to build" });
+                return result;
+            }
+            library.Write(result.LibraryPath);
             return result;
         }
 

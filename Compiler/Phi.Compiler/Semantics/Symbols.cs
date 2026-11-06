@@ -295,6 +295,12 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         public bool TextRef { get; set; }
 
+        /// <summary>A str parameter with no default that the method writes into, or passes on to a method that does.</summary>
+        public bool Written { get; set; }
+
+        /// <summary>A class variable whose storage is in other code: a compiled library's, or one the final build compiles.</summary>
+        public bool IsOutside { get; set; }
+
         /// <summary>
         /// A str array whose elements grow, in a 32-bit kernel or a user program. Its storage is the
         /// table of each element's text (so it's still a ptr&lt;ptr&lt;u8&gt;&gt;), then each element's
@@ -493,5 +499,8 @@ namespace Phi.Compiler.Semantics
         public bool ReturnTypeAssumed { get; set; }
         public bool IsHook { get; init; }
         public bool IsInterruptHandler { get; init; }
+
+        /// <summary>Its code is elsewhere: in a compiled library, or one the final build compiles.</summary>
+        public bool IsOutside { get; init; }
     }
 }

@@ -1,5 +1,6 @@
 using Assembly = System.Reflection.Assembly;
 using Phi.Compiler.CodeGen;
+using Phi.Compiler.Libraries;
 using Phi.Compiler.Semantics;
 using Phi.Compiler.Syntax;
 
@@ -97,6 +98,42 @@ namespace Phi.Compiler
         public static CompileResult Compile(string path) => Compile(SourceFile.Load(path));
 
         /// <summary>
+        /// A library for one system, up to NASM's part: its unit's assembly and lists, with the
+        /// interface and the modules it uses. Its own files are the one given and those it uses
+        /// from beside it; the standard library's modules and other compiled libraries stay
+        /// outside its code.
+        /// </summary>
+        public static CompileResult CompileLibrary(SourceFile file, LibraryPlatform platform, string name)
+        {
+            var diagnostics = new DiagnosticBag();
+            var usedBy = new Dictionary<string, (SourceFile From, UseDecl Use)>(StringComparer.OrdinalIgnoreCase);
+            var uses = new Dictionary<UseDecl, (SourceFile From, SourceFile Target)>();
+            var files = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+            var loaded = new List<SourceFile>();
+
+            ProgramNode syntax = ParseWithUses(file, null, diagnostics, usedBy, uses, files, null, platform.Host, false, platform, loaded);
+            var own = loaded.Where(f => f.Compiled == null && !f.Path.StartsWith(StandardLibrary)).ToList();
+            if (diagnostics.HasErrors)
+                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, platform.Host, null), Syntax = syntax, Uses = uses, Files = files };
+
+            var build = new LibraryBuild(platform.Kernel ? UnitKind.Kernel : UnitKind.Program, name, own.ToHashSet());
+            BoundProgram? bound = Binder.Bind(syntax, diagnostics, platform.Host, build);
+            if (diagnostics.HasErrors || bound == null)
+                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, platform.Host, null), Syntax = syntax, Bound = bound, Uses = uses, Files = files };
+
+            BoundUnit unit = bound.Units.Single();
+            AsmUnit asm = X86Generator.Generate(bound, unit, diagnostics);
+            var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
+            if (!result.Success || asm.Library == null) return result;
+
+            result.Units.Add(asm);
+            CompiledTarget target = asm.Library.Target;
+            target.Interface.AddRange(InterfaceWriter.Write(syntax, own, uses));
+            target.Modules.AddRange(loaded.Where(f => f.Path.StartsWith(StandardLibrary)).Select(f => f.Path[StandardLibrary.Length..^".phi".Length].Replace('/', '.')));
+            return result;
+        }
+
+        /// <summary>
         /// The standard library is tested, so an error inside it means a module was used where it
         /// can't work (a driver in a program, a kernel's module on Linux). Its errors become one
         /// at the program's `use` that brought the module in, with the first of them as the reason.
@@ -152,17 +189,31 @@ namespace Phi.Compiler
         static ProgramNode ParseWithUses(SourceFile main, string? kernelFile, DiagnosticBag diagnostics,
                                          Dictionary<string, (SourceFile From, UseDecl Use)> usedBy,
                                          Dictionary<UseDecl, (SourceFile From, SourceFile Target)> uses, HashSet<string> seen,
-                                         IReadOnlyDictionary<string, string>? open, Host host = Host.PhiOS, bool wholeHost = false)
+                                         IReadOnlyDictionary<string, string>? open, Host host = Host.PhiOS, bool wholeHost = false,
+                                         LibraryPlatform? buildingFor = null, List<SourceFile>? loaded = null)
         {
             seen.Add(Key(main));
+
+            // which of a compiled library's versions the program takes, once its kind is known
+            LibraryPlatform? platform = buildingFor;
 
             void Load(SourceFile file, ProgramNode into)
             {
                 ProgramNode node = Parser.Parse(file, diagnostics);
+                platform ??= LibraryPlatform.Of(host, kernelFile == null && node.Classes.Any(c => c.Base == Binder.Kernel32Base));
 
                 foreach (UseDecl use in node.Uses)
                 {
-                    SourceFile? used = Resolve(use.Path, file, main, kernelFile, open);
+                    SourceFile? used;
+                    try
+                    {
+                        used = Resolve(use.Path, file, main, kernelFile, open, platform);
+                    }
+                    catch (LibraryFileException e)
+                    {
+                        diagnostics.Error(file, use.Span, e.Message);
+                        continue;
+                    }
                     if (used == null)
                     {
                         string relative = use.Path.Replace('.', '/') + ".phi";
@@ -177,10 +228,12 @@ namespace Phi.Compiler
                     if (seen.Add(Key(used)))
                     {
                         usedBy[Key(used)] = (file, use);
-                        Load(used, into);
+                        if (used.Compiled != null) LoadCompiled(used, into);
+                        else Load(used, into);
                     }
                 }
 
+                loaded?.Add(file);    // (after those it uses, as its classes are)
                 into.Classes.AddRange(node.Classes);
                 into.RawBlocks.AddRange(node.RawBlocks);
                 into.SysCalls.AddRange(node.SysCalls);
@@ -189,6 +242,22 @@ namespace Phi.Compiler
                 into.Structs.AddRange(node.Structs);
                 into.Enums.AddRange(node.Enums);
                 into.Uses.AddRange(node.Uses);
+            }
+
+            // a compiled library: the modules its code uses, then each of its own files' interface
+            void LoadCompiled(SourceFile library, ProgramNode into)
+            {
+                CompiledTarget compiled = library.Compiled!;
+                into.CompiledLibraries.Add(compiled);
+                foreach (string module in compiled.Modules)
+                    if (Resolve(module, main, main, null, open) is SourceFile standard && seen.Add(Key(standard)))
+                        Load(standard, into);
+                foreach (InterfaceFile part in compiled.Interface.SkipLast(1))
+                {
+                    var file = new SourceFile(Path.Combine(compiled.Path, part.Name), part.Text) { Compiled = compiled };
+                    if (seen.Add(Key(file))) Load(file, into);
+                }
+                Load(library, into);
             }
 
             var program = new ProgramNode { File = main };
@@ -201,8 +270,8 @@ namespace Phi.Compiler
 
             // a 32-bit kernel or a user program that uses new or free (or objects) gets a heap without
             // having to ask; its classes go first, so it is ready before the program's own code runs
-            bool kernel = program.Classes.Any(c => c.Base == Binder.Kernel32Base);
-            bool user = program.Classes.Any(c => c.Base == Binder.ProgramBase);
+            bool kernel = buildingFor != null ? buildingFor.Kernel : program.Classes.Any(c => c.Base == Binder.Kernel32Base);
+            bool user = buildingFor != null ? !buildingFor.Kernel : program.Classes.Any(c => c.Base == Binder.ProgramBase);
             // (a str without a size grows on the heap too)
             bool usesHeap = SyntaxWalker.Nodes(program).Any(n => n is NewExpr or FreeStmt or TakesStmt or VarDecl { IsNew: true, AtAddress: null }
                                                                  || n is VarDecl { BufferSize: null } d && (d.Type.Name == "str" || d.Type.Name == "var" && d.Values.Any(v => v is StringExpr))
@@ -271,6 +340,7 @@ namespace Phi.Compiler
             into.Structs.AddRange(from.Structs);
             into.Enums.AddRange(from.Enums);
             into.Uses.AddRange(from.Uses);
+            into.CompiledLibraries.AddRange(from.CompiledLibraries);
         }
 
         static string Key(SourceFile f) => FileKey(f.Path);
@@ -300,11 +370,16 @@ namespace Phi.Compiler
         /// standard library. A program in a rootfs folder built on its own (for Linux, say)
         /// looks in the folder around it, where its kernel is, as it does built for the kernel.
         /// </summary>
-        static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main, string? kernel, IReadOnlyDictionary<string, string>? open)
+        /// <remarks>At each place a source file comes before a compiled library of the same name.</remarks>
+        /// <param name="platform">Which of a compiled library's versions to take; with none, compiled libraries aren't looked for.</param>
+        /// <exception cref="LibraryFileException">There's a compiled library, which can't be used.</exception>
+        static SourceFile? Resolve(string dotted, SourceFile from, SourceFile main, string? kernel, IReadOnlyDictionary<string, string>? open, LibraryPlatform? platform = null)
         {
             string relative = dotted.Replace('.', '/') + ".phi";
 
             var places = new List<string> { from.Path, main.Path };
+            // (a file of a compiled library is seen as inside it: libraries it uses are next to it)
+            if (from.Compiled != null) places.Insert(0, from.Compiled.Path);
             if (kernel != null) places.Add(kernel);
             else if (FolderOfRootfs(main.Path) is string above)
                 places.Add(Path.Combine(above, Path.GetFileName(main.Path)));
@@ -314,6 +389,9 @@ namespace Phi.Compiler
                 string local = Path.Combine(Path.GetDirectoryName(near) ?? "", relative);
                 if (open != null && open.TryGetValue(FileKey(local), out string? unsaved)) return new SourceFile(local, unsaved);
                 if (File.Exists(local)) return SourceFile.Load(local);
+
+                string compiled = Path.ChangeExtension(local, CompiledLibrary.Extension);
+                if (platform != null && File.Exists(compiled)) return LoadLibraryInterface(compiled, platform);
             }
 
             string resource = StandardLibrary + relative;
@@ -324,6 +402,19 @@ namespace Phi.Compiler
 
             using var reader = new StreamReader(stream);
             return new SourceFile(resource, reader.ReadToEnd());
+        }
+
+        /// <summary>A compiled library's main file, as declarations; its version for this system is the one that's kept.</summary>
+        static SourceFile LoadLibraryInterface(string path, LibraryPlatform platform)
+        {
+            CompiledLibrary library = CompiledLibrary.Load(path);
+            if (!library.Targets.TryGetValue(platform.Key, out CompiledTarget? target))
+            {
+                var has = LibraryPlatform.All.Where(p => library.Targets.ContainsKey(p.Key)).Select(p => p.Description);
+                throw new LibraryFileException($"{Path.GetFileName(path)} wasn't built for {platform.Description}, only {string.Join(", ", has)}");
+            }
+            if (target.Interface.Count == 0) throw new LibraryFileException($"{Path.GetFileName(path)} is damaged: it has no interface");
+            return new SourceFile(path, target.Interface[^1].Text) { Compiled = target };
         }
 
         /// <summary>For a file anywhere inside a rootfs or NAME.rootfs folder: the folder that one is in, where its kernel is. Null for any other.</summary>

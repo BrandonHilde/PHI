@@ -9,8 +9,12 @@ const string Usage = """
                                            windows, a program (phi.Name:Program) becomes an ordinary
                                            executable for that system instead (NAME, or NAME.exe);
                                            linux64 and windows64 are 64-bit ones (not yet with atomic
-                                           or locked, or assembly blocks without an x64 version)
-      phi run   <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
+                                           or locked, or assembly blocks without an x64 version);
+                                           with --library, a library (phi.Name:Library): NAME.philib, next
+                                           to the file or in -o, for each system it builds for (or only
+                                           --target's), which another program includes with use NAME;
+                                           without this file or any of its source
+      phi run  <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
                                            --target windows or windows64 with --debug (on build too)
                                            writes a NAME.pdb, so a debugger steps through its PHI lines;
@@ -171,6 +175,8 @@ static int Execute(string[] args)
                 string? outDir = Option("-o");
                 bool debug = Flag("--debug");
                 bool keepDisk = Flag("--keep-disk");
+                bool asLibrary = Flag("--library");
+                bool targetGiven = args.Contains("--target");
                 Phi.Compiler.Host host = TargetOption();
                 MemoryOption();
                 CoresOption();
@@ -181,6 +187,20 @@ static int Execute(string[] args)
                     throw new ArgumentException("arguments after -- are for a program built with --target linux or windows");
 
                 string file = Path.GetFullPath(rest[0]);
+
+                if (asLibrary)
+                {
+                    if (command == "run") throw new ArgumentException("a library doesn't run by itself: build it (phi build NAME.phi --library), and use it from a program");
+                    LibraryBuildResult library = Builder.BuildLibrary(file, outDir ?? Path.GetDirectoryName(file)!, targetGiven ? host : null);
+                    foreach (string w in library.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
+                    foreach (string e in library.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
+                    if (!library.Success) return 1;
+                    Console.WriteLine($"built the library {Path.GetRelativePath(Environment.CurrentDirectory, library.LibraryPath)} for {string.Join(", ", library.Built)}");
+                    foreach (var (system, why) in library.Skipped)
+                        Console.WriteLine($"  not for {system}: {why}");
+                    return 0;
+                }
+
                 outDir ??= Path.Combine(Builder.BuildHome(file), "build", Path.GetFileNameWithoutExtension(file));
 
                 if (host != Phi.Compiler.Host.PhiOS)

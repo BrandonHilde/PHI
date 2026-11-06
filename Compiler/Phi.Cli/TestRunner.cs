@@ -190,12 +190,46 @@ namespace Phi.Cli
         static readonly Regex UserProgramClass =new(@"^\s*phi\.\w+\s*:\s*Program\b", RegexOptions.Multiline);
 
         /// <summary>
+        /// A test of a compiled library says what to build first, in order, with this comment:
+        /// "# library: FILE.phi" puts FILE.philib next to the test, or "# library: FILE.phi FOLDER"
+        /// in that folder. Each is built once in a run.
+        /// </summary>
+        static readonly Regex LibraryToBuild = new(@"^#\s*library:\s*(\S+)(?:[ \t]+(\S+))?[ \t]*\r?$", RegexOptions.Multiline);
+        static readonly Dictionary<string, string?> builtLibraries = new();
+
+        /// <returns>Why a library wouldn't build, or null.</returns>
+        static string? BuildTestLibraries(string phiFile)
+        {
+            string dir = Path.GetDirectoryName(Path.GetFullPath(phiFile))!;
+            foreach (Match m in LibraryToBuild.Matches(File.ReadAllText(phiFile)))
+            {
+                string source = Path.GetFullPath(Path.Combine(dir, m.Groups[1].Value));
+                string into = m.Groups[2].Success ? Path.GetFullPath(Path.Combine(dir, m.Groups[2].Value)) : dir;
+                lock (builtLibraries)
+                {
+                    if (!builtLibraries.TryGetValue(source + "|" + into, out string? problem))
+                    {
+                        LibraryBuildResult built = Builder.BuildLibrary(source, into);
+                        problem = built.Success ? null : $"the library {m.Groups[1].Value} didn't build:\n" + string.Join("\n", built.Errors);
+                        builtLibraries[source + "|" + into] = problem;
+                    }
+                    if (problem != null) return problem;
+                }
+            }
+            return null;
+        }
+
+        /// <summary>
         /// null for an ordinary test; both modes for a test made only of :Library classes; and
         /// each network card for a network test whose NAME.machines doesn't choose one, so both
         /// drivers are tested (--nic picks just one).
         /// </summary>
         static IEnumerable<Mode?> Modes(string phiFile, bool bench)
         {
+            // (which systems it runs on is found by compiling it, which needs its libraries; one
+            // that won't build is reported when the test runs)
+            BuildTestLibraries(phiFile);
+
             var modes = new List<Mode?>();
             if (Only is null or Host.PhiOS) modes.AddRange(PhiOsModes(phiFile));
             if (Only != Host.PhiOS && !bench) modes.AddRange(HostModes(phiFile));
@@ -303,6 +337,8 @@ namespace Phi.Cli
 
             string errorsFile = Path.Combine(dir, name + ".errors");
             string inputFile = inputOverride ?? Path.Combine(dir, name + ".input");
+
+            if (BuildTestLibraries(phiFile) is string libraryProblem) return libraryProblem;
 
             // NAME.web/: files the program can fetch, at TestWeb.url ('http://10.0.2.2:PORT') and
             // TestWeb.secure_url ('https://10.0.2.2:PORT'), whose certificate is TestWeb.root (DER,

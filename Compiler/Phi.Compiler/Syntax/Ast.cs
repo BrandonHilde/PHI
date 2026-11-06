@@ -20,6 +20,9 @@ namespace Phi.Compiler.Syntax
         public List<StructDecl> Structs { get; } = new();
         public List<EnumDecl> Enums { get; } = new();
         public List<UseDecl> Uses { get; } = new();
+
+        /// <summary>The compiled libraries the program includes, each once.</summary>
+        public List<Libraries.CompiledTarget> CompiledLibraries { get; } = new();
     }
 
     /// <summary>use drivers.vga_text;   (loads drivers/vga_text.phi)</summary>
@@ -138,6 +141,7 @@ namespace Phi.Compiler.Syntax
         public SourceFile File { get; init; } = null!;
         public string Name { get; init; } = "";
         public List<EnumMember> Members { get; } = new();
+        public EnumSymbol? Symbol { get; set; }
     }
 
     /// <summary>One name of an enum, with the value written for it (or null: one more than the last).</summary>
@@ -165,6 +169,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>str name: [24];  how many characters a str field holds.</summary>
         public Expr? TextSize { get; init; }
+
+        /// <summary>The whole declaration as it's written, for a library's interface.</summary>
+        public Span Text { get; init; }
     }
 
     /// <summary>[Name: params] body [end: result]   or   [isr Name] body [end]</summary>
@@ -175,6 +182,21 @@ namespace Phi.Compiler.Syntax
         public List<VarDecl> Parameters { get; } = new();
         public List<Stmt> Body { get; } = new();
         public Expr? Result { get; set; }
+
+        /// <summary>What it returns, where its header says so: an interface's [Area: : int].</summary>
+        public TypeRef? DeclaredResult { get; set; }
+
+        /// <summary>From a compiled library: it has no code here, only this header.</summary>
+        public bool IsCompiled { get; set; }
+
+        /// <summary>It returns a value: by [end: value], or as a compiled library's header says.</summary>
+        public bool HasResult => Result != null || IsCompiled && DeclaredResult != null;
+
+        /// <summary>From a compiled library: the room a caller gives a str result.</summary>
+        public int DeclaredRoom { get; set; }
+
+        /// <summary>From a compiled library: the str parameters it writes into.</summary>
+        public List<string> Writes { get; } = new();
 
         public ClassDecl Owner { get; set; } = null!;
         public MethodSymbol? Symbol { get; set; }
@@ -254,6 +276,9 @@ namespace Phi.Compiler.Syntax
         public ObjectAssignStmt? Source { get; set; }
 
         public VariableSymbol? Symbol { get; set; }
+
+        /// <summary>A class variable or parameter's whole declaration as it's written, for a library's interface.</summary>
+        public Span? Text { get; set; }
     }
 
     /// <summary>const type name: value;</summary>
@@ -263,6 +288,9 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
         public Span NameSpan { get; init; }
         public Expr Value { get; init; } = null!;
+
+        /// <summary>Its value, once the binder has worked it out.</summary>
+        public long? KnownValue { get; set; }
     }
 
     // ---------------------------------------------------------------- statements
@@ -717,8 +745,11 @@ namespace Phi.Compiler.Syntax
     {
         public Expr Receiver { get; init; } = null!;
 
-        /// <summary>Which method in the type table, after the free, clone and equal routines.</summary>
-        public int Slot { get; init; }
+        /// <summary>The interface, whose methods have their place in every type table.</summary>
+        public StructSymbol Interface { get; init; } = null!;
+
+        /// <summary>Which of its methods.</summary>
+        public int Index { get; init; }
     }
 
     /// <summary>value as Type: the same bits, seen as another type (cut to fit a smaller number)</summary>

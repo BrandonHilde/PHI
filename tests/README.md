@@ -20,6 +20,11 @@ phi test -f menu --keep-output                         # save NAME.actual even w
 On a mismatch (or always, with `--keep-output`) the real output is saved as `NAME.actual`. To add a test, write
 `NAME.phi`, run `phi test -f NAME`, check `NAME.actual`, and rename it to `NAME.expected`.
 
+A test of a compiled library says what to build first with a comment line, `# library:
+FILE.phi` (putting `FILE.philib` next to the test) or `# library: FILE.phi FOLDER`, one for each
+in the order they're needed; each is built once in a run (see `library_use_program.phi`). The
+source goes in `library_src/`, away from the test, so that `use` finds the compiled file.
+
 Each test gets 10 seconds (`--timeout <sec>` changes that), or more if it says so with a
 comment line `# takes up to N seconds: why` (see `kernel32_shell.phi`). A failure says
 why the run stopped: `timed out after 10s` (with the input script's line, if one was

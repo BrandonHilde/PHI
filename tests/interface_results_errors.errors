@@ -1,0 +1,5 @@
+34:8: error: no struct has Silent yet (struct.Name has Silent { ... }), so there's no Quiet to call
+6:10: error: unknown type 'Nothing'
+12:2: error: Wrong.Number returns a str, but Plugin's Number returns an int: every struct with Plugin has to return the same
+16:2: error: Wrong.Name returns an int, but Plugin's Name returns a str: every struct with Plugin has to return the same
+22:2: error: Wrong.Where returns an int, but Plugin's Where returns a ptr<u8>: every struct with Plugin has to return the same

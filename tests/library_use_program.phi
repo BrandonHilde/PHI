@@ -1,0 +1,73 @@
+# library: library_src/shapes.phi
+# A program that uses a compiled library, with none of its source next to it: its methods,
+# class variables, constants, enums, structs and interfaces, and a struct of the program's own
+# that has the library's interface. A program, so it runs on Linux and Windows too.
+use shapes;
+
+struct.Circle has Shape
+{
+	int r;
+
+	[Area]
+	[end: 3 * r * r]
+
+	[Name]
+		str name: 'circle';
+	[end: name]
+
+	[Grow: int by;]
+		r++ by;
+	[end]
+
+	[Where]
+	[end: addr Shapes.greeting]
+}
+
+phi.LibraryUse:Program
+{
+	# the library's classes have already run
+	log Shapes.started ' ' Shapes.greeting ' ' Shapes.origin.x ' ' Shapes.origin.y '\n';
+	log (Shapes.Count) ' ' (Shapes.Count) ' ' Shapes.calls ' ' Shapes.table:2 '\n';
+	log Shapes.LIMIT ' ' Color.Blue '\n';
+	log (Shapes.Add: 1 2) ' ' (Shapes.Add: 5) ' ' (Shapes.Greet: 'there') ' ' (Shapes.Upper: 'q') '\n';
+
+	str filled: '';
+	call Shapes.Fill: filled;
+	log filled '\n';
+
+	# its struct, with its methods, in the program's own variable
+	new Point p: 3 4;
+	call p.Moved: 1;
+	log (p.Sum) ' ' (Shapes.origin.Sum) '\n';
+
+	# the same interface over its struct and ours, both ways across
+	new Circle c: 2;
+	new Shape shape: c;
+	str text: '';
+	call Shapes.Describe: shape text;
+	log text ' ' (Shapes.Total: shape) '\n';
+	call shape is Shapes.MakeSquare: 3;
+	call shape.Grow: 1;
+	call Shapes.Describe: shape text;
+	ptr<u8> where: (shape.Where);
+	log text ' ' where '\n';
+	if shape is Square s
+		log 'a square of side ' s.side ' labelled ' s.label '\n';
+	;;
+
+	int numbers: 1 2 3 4;
+	log (Shapes.SumOf: numbers) ' ' (Shapes.Tint: Color.Green) ' ' (Shapes.FromMore) '\n';
+
+	# an error thrown inside it, caught here
+	if call Shapes.Fail: 1 throws e
+		log 'caught: ' e.message '\n';
+	;;
+	else
+		log 'no error\n';
+	;;
+	if call Shapes.Divide: 1 0 throws e
+		log 'caught: ' e.message '\n';
+	;;
+	log (Shapes.DoubleCalls) '\n';
+	exit 0;
+}

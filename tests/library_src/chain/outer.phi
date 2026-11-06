@@ -1,0 +1,40 @@
+# The second library for the test library_chain_program: it uses the first, compiled, and has
+# an interface of its own, so two libraries compiled apart have to agree where each one's methods
+# are in a type table.
+use first;
+
+interface.Beta
+{
+	[Two: : int]
+	[Three: : int]
+}
+
+struct.Both has Alpha Beta
+{
+	int base;
+
+	[One]
+	[end: base + 1]
+
+	[Two]
+	[end: base + 2]
+
+	[Three]
+	[end: base + 3]
+}
+
+phi.Outer:Library
+{
+	# the first library's classes run before this one's
+	int seen: First.runs;
+
+	[Sum: Beta thing;]
+	[end: (thing.Two) + (thing.Three)]
+
+	[Make: int base;]
+		new Both made: base;
+	[end: made]
+
+	[CallFirst: Alpha thing;]
+	[end: (First.Call: thing)]
+}

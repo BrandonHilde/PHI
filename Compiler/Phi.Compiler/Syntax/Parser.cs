@@ -425,7 +425,10 @@ namespace Phi.Compiler.Syntax
                     }
                     else
                     {
-                        cls.Body.Add(ParseStatement());
+                        int from = Current.Span.Start;
+                        Stmt statement = ParseStatement();
+                        if (statement is VarDecl variable) variable.Text = Span.FromBounds(from, Previous.Span.End);
+                        cls.Body.Add(statement);
                     }
                 }
                 catch (ParseError)
@@ -457,9 +460,15 @@ namespace Phi.Compiler.Syntax
                 {
                     while (!At(TokenKind.CloseBracket) && !AtEnd)
                     {
+                        // [Area: : int]  [Grow: int by; : int]: what it returns, after the second ':'
+                        if (Accept(TokenKind.Colon))
+                        {
+                            m.DeclaredResult = ParseType();
+                            break;
+                        }
                         if (!AtDeclaration)
                             throw Error(Current.Span, $"expected a parameter like 'int x;' but found {Current}");
-                        m.Parameters.Add(ParseVarDecl(allowBracketEnd: true));
+                        m.Parameters.Add(ParseParameter());
                     }
                 }
                 Expect(TokenKind.CloseBracket, "']' to close the method header");
@@ -514,6 +523,7 @@ namespace Phi.Compiler.Syntax
                         continue;
                     }
 
+                    int fieldStart = Current.Span.Start;
                     bool isVolatile = AcceptWord("volatile");
                     bool isNew = AcceptWord("new");
                     TypeRef type = ParseType();
@@ -535,7 +545,7 @@ namespace Phi.Compiler.Syntax
                     }
                     ExpectSemicolon();
                     decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew, Volatile = isVolatile,
-                                                    TextSize = textSize, Span = type.Span.To(field.Span) });
+                                                    TextSize = textSize, Span = type.Span.To(field.Span), Text = Span.FromBounds(fieldStart, Previous.Span.End) });
                 }
                 catch (ParseError)
                 {
@@ -621,15 +631,28 @@ namespace Phi.Compiler.Syntax
             {
                 while (!At(TokenKind.CloseBracket) && !AtEnd)
                 {
+                    if (file.Compiled != null && Accept(TokenKind.Colon))
+                    {
+                        ParseCompiledResult(method);
+                        break;
+                    }
                     // (new Node list[] is an array of objects, which only new says)
                     if (AtNewDeclaration && !(PeekToken(3).Kind == TokenKind.OpenBracket && PeekToken(4).Kind == TokenKind.CloseBracket))
                         throw Error(Current.Span, "a parameter borrows the caller's object, so it's written without new: Point p;");
                     if (!AtDeclaration && !AtNewDeclaration)
                         throw Error(Current.Span, $"expected a parameter like 'int count: 0;' but found {Current}");
-                    method.Parameters.Add(ParseVarDecl(allowBracketEnd: true));
+                    method.Parameters.Add(ParseParameter());
                 }
             }
             Expect(TokenKind.CloseBracket, "']' to close the method header");
+
+            // a compiled library's method is only this header: its code is in the library
+            if (file.Compiled != null)
+            {
+                method.IsCompiled = true;
+                method.End = Previous.Span.End;
+                return method;
+            }
 
             while (!AtMethodEnd && !AtEnd && !At(TokenKind.CloseBrace))
             {
@@ -657,6 +680,32 @@ namespace Phi.Compiler.Syntax
             method.End = Previous.Span.End;
 
             return method;
+        }
+
+        /// <summary>A parameter, keeping its text for a library's interface.</summary>
+        VarDecl ParseParameter()
+        {
+            int start = Current.Span.Start;
+            VarDecl parameter = ParseVarDecl(allowBracketEnd: true);
+            parameter.Text = Span.FromBounds(start, Previous.Span.End);
+            return parameter;
+        }
+
+        /// <summary>
+        /// In a compiled library's interface, what a method's header says after a second ':':
+        /// what it returns (void for nothing), the room for a str result, and the str parameters
+        /// it writes into. [Name: : str room 64]  [Fill: str target; : void writes target]
+        /// </summary>
+        void ParseCompiledResult(MethodDecl method)
+        {
+            if (!AcceptWord("void")) method.DeclaredResult = ParseType();
+            if (AcceptWord("room"))
+            {
+                Token room = Advance();
+                method.DeclaredRoom = room.Value is ulong huge ? (int)huge : (int)(long)room.Value!;
+            }
+            if (AcceptWord("writes"))
+                while (At(TokenKind.Identifier)) method.Writes.Add(Advance().Text);
         }
 
         string ParseQualifiedName(out Span span)

@@ -1,0 +1,41 @@
+# A PHI OS program that uses the compiled library next to the kernel (see library_disk.phi).
+use shapes;
+
+struct.Circle has Shape
+{
+	int r;
+
+	[Area]
+	[end: 3 * r * r]
+
+	[Name]
+		str name: 'circle';
+	[end: name]
+
+	[Grow: int by;]
+		r++ by;
+	[end]
+
+	[Where]
+	[end: addr Shapes.greeting]
+}
+
+phi.User:Program
+{
+	log Shapes.started ' ' Shapes.greeting '\n';
+	log (Shapes.Count) ' ' (Shapes.Greet: 'disk') '\n';
+
+	new Circle c: 2;
+	new Shape shape: c;
+	str text: '';
+	call Shapes.Describe: shape text;
+	log text '\n';
+	call shape is Shapes.MakeSquare: 3;
+	call Shapes.Describe: shape text;
+	log text '\n';
+
+	if call Shapes.Fail: 1 throws e
+		log 'caught: ' e.message '\n';
+	;;
+	exit 7;
+}

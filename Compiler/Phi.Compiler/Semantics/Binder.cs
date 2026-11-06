@@ -11,6 +11,13 @@ namespace Phi.Compiler.Semantics
         public List<RawBlockDecl> RawBlocks { get; } = new();
         public HashSet<BuiltinFunction> UsedBuiltins { get; } = new();
 
+        /// <summary>The compiled libraries whose code goes in this unit.</summary>
+        public List<Libraries.CompiledTarget> CompiledLibraries { get; } = new();
+
+        /// <summary>The structs and interfaces those libraries' code needs a type table or a slot for.</summary>
+        public List<StructSymbol> LibraryTypeTables { get; } = new();
+        public List<StructSymbol> LibraryInterfaceSlots { get; } = new();
+
         /// <summary>The outside libraries' functions the code calls, for the import table.</summary>
         public List<OutsideFunctionDecl> OutsideFunctions { get; } = new();
 
@@ -25,6 +32,13 @@ namespace Phi.Compiler.Semantics
     /// A 16-bit program has a Boot unit and maybe an Os unit; a 32-bit program has only a
     /// Kernel unit (the compiler supplies its boot sector and loader).
     /// </summary>
+    /// <summary>
+    /// Building a library rather than a program: what it's for, and which files are its own.
+    /// Everything else stays outside its code (the standard library's modules, which the final
+    /// build compiles once, and other compiled libraries).
+    /// </summary>
+    public sealed record LibraryBuild(UnitKind Kind, string Name, IReadOnlySet<SourceFile> Own);
+
     public sealed class BoundProgram
     {
         public SourceFile File { get; init; } = null!;
@@ -35,6 +49,12 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>Where the program runs (only a user program can run outside PHI OS).</summary>
         public Host Host { get; init; }
+
+        /// <summary>This is a library being built, not a program.</summary>
+        public LibraryBuild? Library { get; init; }
+
+        /// <summary>Whether a file's code is elsewhere, so this build only uses its labels.</summary>
+        public bool IsOutside(SourceFile file) => file.Compiled != null || Library != null && !Library.Own.Contains(file);
 
         public IEnumerable<BoundUnit> Units => new[] { Boot, Os, Kernel, Program }.Where(u => u != null)!;
     }
@@ -134,19 +154,25 @@ namespace Phi.Compiler.Semantics
         readonly HashSet<StructSymbol> slotsDone = new();
         int unsafeDepth;
 
-        Binder(SourceFile file, DiagnosticBag diagnostics, Host host)
+        readonly LibraryBuild? library;
+
+        Binder(SourceFile file, DiagnosticBag diagnostics, Host host, LibraryBuild? library)
         {
             mainFile = file;
             this.file = file;
             this.diagnostics = diagnostics;
             this.host = host;
+            this.library = library;
         }
 
-        public static BoundProgram? Bind(ProgramNode program, DiagnosticBag diagnostics, Host host = Host.PhiOS)
+        public static BoundProgram? Bind(ProgramNode program, DiagnosticBag diagnostics, Host host = Host.PhiOS, LibraryBuild? library = null)
         {
             PhiType.AddressSize = host.Is64() ? 8 : 4;
-            return new Binder(program.File, diagnostics, host).BindProgram(program);
+            return new Binder(program.File, diagnostics, host, library).BindProgram(program);
         }
+
+        /// <summary>Whether a file's code is elsewhere: a compiled library's, or one a library being built only uses.</summary>
+        bool IsOutside(SourceFile f) => f.Compiled != null || library != null && !library.Own.Contains(f);
 
         void Error(Span span, string message) => diagnostics.Error(file, span, message);
 
@@ -157,14 +183,21 @@ namespace Phi.Compiler.Semantics
             // Kernel classes make a 32-bit kernel, Program classes a user program (and a
             // system's own classes, :Linux or :Windows, are a program's); otherwise it is a
             // 16-bit program. What's for another system is left out first.
-            bool userProgram = program.Classes.Any(c => c.Base == ProgramBase || SystemBases.ContainsKey(c.Base));
+            bool userProgram = library != null ? library.Kind == UnitKind.Program : program.Classes.Any(c => c.Base == ProgramBase || SystemBases.ContainsKey(c.Base));
             KeepThisSystem(program, userProgram);
+
+            if (library != null)
+                foreach (ClassDecl cls in program.Classes.Where(c => c.Base == ProgramBase && library.Own.Contains(c.File)))
+                {
+                    file = cls.File;
+                    Error(cls.BaseSpan, $"class {cls.Name} is a program, but this is a library, which has no start of its own: its classes inherit {LibraryBase} (phi.{cls.Name}:{LibraryBase})");
+                }
 
             DeclareEnums(program.Enums);
             DeclareStructs(program.Structs);
             FindTypeBranches(program);
 
-            bool protectedMode = !userProgram && program.Classes.Any(c => c.Base == Kernel32Base);
+            bool protectedMode = !userProgram && (library?.Kind == UnitKind.Kernel || program.Classes.Any(c => c.Base == Kernel32Base));
             BoundUnit? boot = null, os = null, kernel = null, user = null;
 
             if (host != Host.PhiOS && !userProgram)
@@ -186,6 +219,8 @@ namespace Phi.Compiler.Semantics
             }
             else
             {
+                if (program.CompiledLibraries.Count > 0)
+                    diagnostics.Error(mainFile, new Span(0, 0), $"{program.CompiledLibraries[0].Name} is a compiled library, which is for 32-bit code and up: a Kernel or a Program");
                 var bootClasses = program.Classes.Where(c => c.Base == BootBase).ToList();
                 if (bootClasses.Count == 0)
                 {
@@ -246,6 +281,17 @@ namespace Phi.Compiler.Semantics
 
                 units[unit].Classes.Add(cls);
                 classScopes[cls] = new Scope { Class = cls, Unit = unit };
+            }
+
+            // a compiled library's classes are its own: its code uses their names as they are
+            foreach (var same in classScopes.Keys.GroupBy(c => c.Name).Where(g => g.Count() > 1 && g.Any(c => c.File.Compiled != null)))
+            {
+                ClassDecl compiled = same.First(c => c.File.Compiled != null);
+                foreach (ClassDecl other in same.Where(c => c != compiled && c.File != compiled.File))
+                {
+                    file = other.File;
+                    Error(other.BaseSpan, $"the library {compiled.File.Compiled!.Name} already has a class named {same.Key}, so this one needs another name");
+                }
             }
 
             foreach (ClassDecl cls in program.Classes.Where(c => c.ForStruct != null))
@@ -327,7 +373,8 @@ namespace Phi.Compiler.Semantics
                 file = cls.File;
                 blockClass = cls;
                 blockNames.Add(new());
-                BindStatements(cls.Body, scope, classLevel: true);
+                // (a compiled library's variables run their code in the library)
+                if (cls.File.Compiled == null) BindStatements(cls.Body, scope, classLevel: true);
                 blockNames.Clear();
                 blockClass = null;
 
@@ -356,6 +403,7 @@ namespace Phi.Compiler.Semantics
 
             if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();
+            if (units.TryGetValue(structUnit, out BoundUnit? main)) IncludeCompiledLibraries(program, main);
             CheckTextArguments();
             CheckThreadWrites();
 
@@ -369,7 +417,27 @@ namespace Phi.Compiler.Semantics
                 Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
             }
 
-            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user, Host = host };
+            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user, Host = host, Library = library };
+        }
+
+        /// <summary>What the code of the compiled libraries needs from the rest of the program, which only their lists say.</summary>
+        void IncludeCompiledLibraries(ProgramNode program, BoundUnit unit)
+        {
+            foreach (Libraries.CompiledTarget compiled in program.CompiledLibraries)
+            {
+                unit.CompiledLibraries.Add(compiled);
+                foreach (string name in compiled.RawBlocks)
+                {
+                    var blocks = name.StartsWith("x64.") ? x64Blocks : rawBlocks;
+                    if (blocks.TryGetValue(name[4..], out RawBlockDecl? raw) && !unit.RawBlocks.Contains(raw)) unit.RawBlocks.Add(raw);
+                }
+                foreach (string name in compiled.OutsideFunctions)
+                    if (outsideFunctions.TryGetValue(name, out OutsideFunctionDecl? f) && !unit.OutsideFunctions.Contains(f)) unit.OutsideFunctions.Add(f);
+                foreach (string name in compiled.TypeTables)
+                    if (structs.TryGetValue(name, out StructSymbol? s) && !unit.LibraryTypeTables.Contains(s)) unit.LibraryTypeTables.Add(s);
+                foreach (string name in compiled.InterfaceSlots)
+                    if (structs.TryGetValue(name, out StructSymbol? s) && !unit.LibraryInterfaceSlots.Contains(s)) unit.LibraryInterfaceSlots.Add(s);
+            }
         }
 
         /// <summary>
@@ -672,6 +740,11 @@ namespace Phi.Compiler.Semantics
                                                            .Append((c.File, c.Body))).ToList();
             var written = new HashSet<VariableSymbol>();
 
+            // a compiled library's method has no body to look in, so its header says
+            foreach (MethodDecl m in classScopes.Keys.SelectMany(c => c.Methods).Where(m => m.Symbol != null))
+                foreach (string name in m.Writes)
+                    if (m.Symbol!.Parameters.FirstOrDefault(p => p.Name == name) is VariableSymbol parameter) written.Add(parameter);
+
             static VariableSymbol? TextRefOf(Expr? e) => e switch
             {
                 NameExpr { Symbol: VariableSymbol { TextRef: true } v } => v,
@@ -709,6 +782,7 @@ namespace Phi.Compiler.Semantics
                                 changed = true;
                     }
             }
+            foreach (VariableSymbol parameter in written) parameter.Written = true;
 
             foreach (var (source, body) in bodies)
             {
@@ -853,6 +927,7 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
                 var symbol = new EnumSymbol { Name = d.Name, Decl = d };
+                d.Symbol = symbol;
                 if (!enums.TryAdd(d.Name, symbol))
                 {
                     Error(d.Span, $"an enum named {d.Name} already exists");
@@ -1103,9 +1178,11 @@ namespace Phi.Compiler.Semantics
                         file = m.Decl.Owner.File;
                         if (!own.Parameters.Skip(1).SequenceEqual(expected.Parameters.Skip(1)) || !own.Into.Skip(1).SequenceEqual(expected.Into.Skip(1)))
                             Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} has to take what {iface.Name} says: [{InterfaceHeader(wanted)}]");
-                        else if (own.Result != expected.Result)
-                            Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} returns {Returns(own.Result)}, but {iface.Name}'s {wanted.Name} returns {Returns(expected.Result)} " +
-                                               $"(as {iface.Members[0].Name}.{wanted.Name} does): every struct with {iface.Name} has to return the same");
+                        // (numbers, characters and pointers are told apart only where the interface says which)
+                        else if (own.Result != (expected.Result.IsNumeric ? PhiType.Int : expected.Result)
+                                 || wanted.DeclaredResult != null && ReturnTypeOf(m).IsPointer != expected.Result.IsPointer)
+                            Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} returns {Returns(ReturnTypeOf(m))}, but {iface.Name}'s {wanted.Name} returns {Returns(expected.Result)}" +
+                                               (wanted.DeclaredResult != null ? "" : $" (as {iface.Members[0].Name}.{wanted.Name} does)") + $": every struct with {iface.Name} has to return the same");
                         file = s.Decl.File;
                     }
             }
@@ -1113,14 +1190,24 @@ namespace Phi.Compiler.Semantics
             static string Returns(PhiType t) => t.Kind == TypeKind.Void ? "nothing" : A(t);
         }
 
-        static string InterfaceHeader(MethodDecl m) =>
-            m.Parameters.Count == 0 ? m.Name : $"{m.Name}: {string.Join(" ", m.Parameters.Select(p => $"{TypeText(p.Type)} {p.Name}{(p.Values.Count > 0 ? ": ''" : "")};"))}";
+        static string InterfaceHeader(MethodDecl m)
+        {
+            string result = m.DeclaredResult != null ? $" : {TypeText(m.DeclaredResult)}" : "";
+            if (m.Parameters.Count == 0) return m.DeclaredResult != null ? $"{m.Name}:{result}" : m.Name;
+            return $"{m.Name}: {string.Join(" ", m.Parameters.Select(p => $"{TypeText(p.Type)} {p.Name}{(p.Values.Count > 0 ? ": ''" : "")};"))}{result}";
+        }
 
         static string TypeText(TypeRef t) => t.Pointee != null ? $"{t.Name}<{TypeText(t.Pointee)}>" : t.Name;
 
         /// <summary>
+        /// What a call through an interface gives: a number is an int, as a method's result is, but
+        /// a pointer stays one, whole in 64-bit code, and a chr still prints as a character.
+        /// </summary>
+        static PhiType InterfaceResult(PhiType t) => t.IsPointer || t.IsChar || !t.IsNumeric ? t : PhiType.Int;
+
+        /// <summary>
         /// What an interface's method i takes (self first, then what the interface says) and
-        /// returns: the first struct with the interface decides what it returns.
+        /// returns: what its header says, or else what the first struct with the interface returns.
         /// </summary>
         MethodSignature? InterfaceSignature(StructSymbol iface, int i, Scope scope)
         {
@@ -1152,11 +1239,32 @@ namespace Phi.Compiler.Semantics
                 parameters.Add(t.IsString ? PhiType.Str : t.IsStruct ? PhiType.ObjectOf(t.Struct!) : t);
                 into.Add(t.IsString && p.Values.Count == 0);   // str target; is the caller's own text
             }
-            if (iface.Members.Count == 0) { file = was; return null; }   // nothing has it yet: nothing to call
-            MethodSymbol? first = FindStructMethod(iface.Members[0], wanted.Name, scope);
-            file = was;
-            if (first == null) return null;
-            PhiType result = SignatureOf(first).Result;
+            PhiType result;
+            if (wanted.DeclaredResult != null)
+            {
+                // the interface says, so no struct has to: seen as a method's result is
+                PhiType declared = ResolveType(wanted.DeclaredResult, null, allowStr: true);
+                file = was;
+                if (declared.IsError) return null;
+                result = declared.IsString ? PhiType.Str : declared.IsStruct ? PhiType.ObjectOf(declared.Struct!) : InterfaceResult(declared);
+            }
+            else
+            {
+                // a library's method that doesn't say returns nothing, since it may be the program's
+                // structs that have the interface; in a program, nothing could ever run this call
+                if (iface.Decl.File.Compiled != null || library != null && iface.Members.Count == 0)
+                {
+                    file = was;
+                    var nothing = new MethodSignature(parameters, PhiType.Void, into);
+                    iface.Signatures[i] = nothing;
+                    return nothing;
+                }
+                if (iface.Members.Count == 0) { file = was; return null; }   // nothing has it yet: nothing to call
+                MethodSymbol? first = FindStructMethod(iface.Members[0], wanted.Name, scope);
+                file = was;
+                if (first == null) return null;
+                result = InterfaceResult(ReturnTypeOf(first));
+            }
             var signature = new MethodSignature(parameters, result, into);
             iface.Signatures[i] = signature;
             return signature;
@@ -1665,6 +1773,7 @@ namespace Phi.Compiler.Semantics
                     scope.Names[$"{decl.Name}#0"] = earlier[0].Symbol;
                 }
                 var symbol = new VariableSymbol { Name = decl.Name, Decl = decl, Unit = scope.Unit };
+                symbol.IsOutside = IsOutside(scope.Class.File);
                 decl.Symbol = symbol;
                 scope.Names[$"{decl.Name}#{earlier.Count}"] = symbol;
                 blockScoped.Add(symbol);
@@ -1713,6 +1822,7 @@ namespace Phi.Compiler.Semantics
                 }
 
                 var symbol = new VariableSymbol { Name = decl.Name, Decl = decl, Unit = scope.Unit, IsParameter = isParameter };
+                symbol.IsOutside = IsOutside(scope.Class.File);
                 decl.Symbol = symbol;
                 scope.Names[decl.Name] = symbol;
                 units[scope.Unit].Variables.Add(symbol);
@@ -1753,6 +1863,7 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            c.KnownValue = known.Value;
             scope.Names[c.Name] = new ConstantSymbol { Name = c.Name, Value = known.Value, Type = type };
         }
 
@@ -1801,7 +1912,20 @@ namespace Phi.Compiler.Semantics
                 Unit = unit,
                 IsHook = hook != null,
                 IsInterruptHandler = method.IsInterruptHandler,
+                IsOutside = IsOutside(classScope.Class.File),
             };
+
+            if (method.IsCompiled)
+            {
+                // nothing to work out what it returns from: the library's interface says
+                symbol.ResultBound = true;
+                symbol.ResultCapacity = method.DeclaredRoom;
+                if (method.DeclaredResult != null)
+                {
+                    PhiType result = ResolveType(method.DeclaredResult, null, allowStr: true);
+                    symbol.ReturnType = result.IsString ? PhiType.Str : result.IsStruct ? PhiType.ObjectOf(result.Struct!) : result;
+                }
+            }
 
             if (!methodsByFullName.TryAdd((unit, fullName), symbol))
             {
@@ -2141,24 +2265,20 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>
-        /// Class variables are VALUE_name (so asm blocks can use {name}); if two classes in the
-        /// same unit use a name, both get the class added. Method variables are always qualified.
+        /// Class variables are VALUE_Class_name, which nothing else in the program can change, so
+        /// code compiled apart (a library) can use them by that name; asm blocks use {name}.
+        /// Method variables are qualified too.
         /// </summary>
         void AssignVariableLabels()
         {
             foreach (BoundUnit unit in units.Values)
             {
-                // by the name each is under: one declared again in a separate block is name#1, ...
-                var classLevel = classScopes.Values.Where(s => s.Unit == unit.Kind)
-                    .SelectMany(s => s.Names.Where(n => n.Value is VariableSymbol).Select(n => n.Key)).ToList();
-                var shared = classLevel.GroupBy(k => k).Where(g => g.Count() > 1).Select(g => g.Key).ToHashSet();
-
                 foreach (var (cls, scope) in classScopes.Where(p => p.Value.Unit == unit.Kind))
                     foreach (var (key, symbol) in scope.Names)
                     {
                         if (symbol is not VariableSymbol v) continue;
-                        string name = key.Replace('#', '_');
-                        v.Label = shared.Contains(key) ? $"VALUE_{cls.Name}_{name}" : $"VALUE_{name}";
+                        // by the name it's under: one declared again in a separate block is name#1, ...
+                        v.Label = $"VALUE_{cls.Name}_{key.Replace('#', '_')}";
                     }
 
                 foreach (var (method, scope) in methodScopes.Where(p => p.Value.Unit == unit.Kind))
@@ -3369,7 +3489,7 @@ namespace Phi.Compiler.Semantics
             }
 
             string name = method.Decl.Name;
-            if (method.Decl.Result == null)
+            if (!method.Decl.HasResult)
             {
                 if (ret.Value != null)
                     Error(ret.Value.Span, $"{name} doesn't return a value (it ends with [end]), so return can't take one");
@@ -3424,7 +3544,7 @@ namespace Phi.Compiler.Semantics
                     break;
 
                 case MethodSymbol method:
-                    if (method.Decl.Result == null)
+                    if (!method.Decl.HasResult)
                         Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it would need [end: value])");
                     else
                         CheckResultTarget(call, ReturnTypeOf(method));
@@ -3474,7 +3594,7 @@ namespace Phi.Compiler.Semantics
                     break;
 
                 case MethodSymbol method:
-                    if (method.Decl.Result == null)
+                    if (!method.Decl.HasResult)
                         Error(call.CalleeSpan, $"{method.Name} doesn't return a value (it ends with [end]), so it can't be used as one");
                     else
                         call.Type = ReturnTypeOf(method);
@@ -3529,7 +3649,7 @@ namespace Phi.Compiler.Semantics
                 return null;
             }
 
-            var target = new InterfaceMethodExpr { Receiver = receiver, Slot = iface.TableStart + i, Span = calleeSpan, Type = PhiType.MethodOf(signature) };
+            var target = new InterfaceMethodExpr { Receiver = receiver, Interface = iface, Index = i, Span = calleeSpan, Type = PhiType.MethodOf(signature) };
             arguments.Insert(0, receiver);
             int given = arguments.Count - 1, wanted = signature.Parameters.Count - 1;
             if (given != wanted)

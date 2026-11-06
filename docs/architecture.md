@@ -152,6 +152,40 @@ in front of the code ([X86Generator.cs](../Compiler/Phi.Compiler/CodeGen/X86Gene
 library is `lib/x86_32_linux/` or `lib/x86_32_windows/` instead of `lib/x86_32_user/`: the
 same labels (`OS_ReadFile`, `phi_exit` ...), answered by that system.
 
+### Compiled libraries
+
+`phi build NAME.phi --library` ([Builder.cs](../Compiler/Phi.Cli/Builder.cs), `BuildLibrary`)
+makes `NAME.philib` ([CompiledLibrary.cs](../Compiler/Phi.Compiler/Libraries/CompiledLibrary.cs))
+with no linker, for each system in turn:
+
+1. `PhiCompiler.CompileLibrary` binds the library as a program would be, but the files that
+   aren't its own are only used by name (`LibraryBuild`, `IsOutside`), and the generator's
+   `BuildLibrary` writes assembly for an object file: its classes' code as a routine, its
+   methods each in a section, its variables in `.data`, `extern` for the labels that are the
+   program's to give, and `global` for its methods and class variables.
+2. NASM makes an ELF object of it (`-f elf32` or `-f elf64`, on every system), and `ElfObject`
+   reads out the sections and every address that's still to fill in. Names that aren't exported
+   stay inside, so no two libraries' can clash.
+3. `InterfaceWriter` writes what a program sees: each of its files as PHI with no code, read back
+   by the same parser, whose methods end at their header. That says what they return, what room
+   a `str` result needs, and which `str` parameters they write into, which would otherwise come from
+   their bodies.
+
+```phi
+[Greet: str who; : str room 256]
+[Fill: str target; : void writes target]
+```
+
+Then a program's `use` finds it (`PhiCompiler.Resolve`), its interface binds like any other file,
+and the generator writes what it reaches as source in the program's usual `-f bin` run (`db`
+lines, with `dd label + n` at each address, or `dd label + n - $` where it's relative), so NASM
+fills in every address and the ELF and PE headers stay where they are. Only the final build
+knows the whole program, so what depends on that is a label in the library's code and is written
+then: each interface's place in a type table (`phi_slot_Shape`), the type tables, and an outside
+function's import slot. A class variable's label is always `VALUE_Class_name` so nothing else can
+change it, and the library's list of lines joins the program's. Any compiled library makes the
+program one that catches errors (`Catches`), since its code was compiled to allow for that.
+
 ## Inside a 32-bit kernel
 
 The boot process and memory layout are in [memory-map.md](memory-map.md). The layers, from

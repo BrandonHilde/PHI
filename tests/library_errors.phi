@@ -1,0 +1,25 @@
+# library: library_src/shapes.phi
+# What a program gets wrong with a compiled library is found as it would be from the source.
+use shapes;
+
+struct.Wrong has Shape
+{
+	[Area]
+		str text: 'not a number';
+	[end: text]
+}
+
+phi.LibraryErrors:Kernel
+{
+	call Shapes.Missing;
+	call Shapes.Add: 'text';
+	call Shapes.Fill: 'a literal';
+	int a: (Shapes.Fill: a);
+	str s: Shapes.calls2;
+}
+
+# a class with the name of one of the library's
+phi.More:Library
+{
+	int mine: 1;
+}

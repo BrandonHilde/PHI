@@ -1,0 +1,156 @@
+# A library for the test library_use: what a program can see and use of one, compiled, without
+# its source. Everything here runs on every system, and in a kernel.
+use user.text;
+use shapes_more;
+
+enum.Color
+{
+	Red
+	Green: 5
+	Blue
+}
+
+# an interface: the library's own struct has it, and so does the program's
+interface.Shape
+{
+	[Area: : int]
+	[Name: : str]
+	[Grow: int by;]
+	[Where: : ptr<u8>]
+}
+
+struct.Square has Shape
+{
+	int side;
+	new str label;
+
+	[Area]
+	[end: side * side]
+
+	[Name]
+		str name: 'square';
+	[end: name]
+
+	[Grow: int by;]
+		side++ by;
+	[end]
+
+	[Where]
+		ptr<u8> memory: new u8[3];
+		memory:0 is 's';
+		memory:1 is 'q';
+		memory:2 is 0;
+	[end: memory]
+}
+
+struct.Point
+{
+	int x;
+	int y;
+
+	[Sum]
+	[end: x + y]
+
+	[Moved: int by;]
+		x++ by;
+		y++ by;
+	[end]
+}
+
+phi.Shapes:Library
+{
+	const int LIMIT: 100;
+	int calls: 41;
+	int table: 10 20 30;
+	str greeting: 'hello from a library';
+	u32 started: 0;
+	Point origin;
+
+	started is 12345;
+	origin.x is 7;
+	origin.y is 8;
+
+	[Count]
+		calls++;
+	[end: calls]
+
+	[Add: int a; int b: 10;]
+	[end: a + b]
+
+	[Greet: str who;]
+		str text: ('hi ' who);
+	[end: text]
+
+	[Upper: chr c;]
+	[end: (Text.Upper: c)]
+
+	[Fill: str target;]
+		target is 'filled by the library';
+	[end]
+
+	[Total: Shape shape;]
+	[end: (shape.Area)]
+
+	[Describe: Shape shape; str target;]
+		str name: (shape.Name);
+		target is name ' of ' (shape.Area);
+	[end]
+
+	[MakeSquare: int side;]
+		new Square made: side;
+		made.label is 'made';
+	[end: made]
+
+	[Tint: Color color;]
+		if color is Color.Green return 1;
+	[end: 2]
+
+	[SumOf: int numbers[];]
+		int total: 0;
+		int i: 0;
+		while i < numbers.len
+			total++ numbers:i;
+			i++;
+		;;
+	[end: total]
+
+	[Fail: int code;]
+		if code > 0
+			throw 'the library failed';
+		;;
+	[end: code]
+
+	[FromMore]
+	[end: (More.Answer) + More.value]
+
+	# (a CPU's exception in the library's code: where it happened is in the library's list of lines)
+	[Divide: int a; int b;]
+		int result: 0;
+		result is a / b;
+	[end: result]
+
+	# its own assembly block, with a version for each kind of code
+	[DoubleCalls]
+		int result: 0;
+		call result is CallsDoubled;
+	[end: result]
+
+	# nothing calls this, so a program doesn't get it
+	[NeverCalled]
+		log 'this text is only in a program with NeverCalled';
+	[end]
+}
+
+asm.CallsDoubled
+{
+	mov eax, [{calls}]
+	add eax, eax
+	ret
+}
+
+x64.CallsDoubled
+{
+	mov eax, [rel {calls}]
+	add eax, eax
+	ret
+}
