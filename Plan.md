@@ -2911,6 +2911,35 @@ Waiting, each for something:
   (a `text.utf8` library to walk characters, a larger font loaded from a file). The one compiler
   part is string literals, where anything beyond ASCII is an error for now.
 
+From the assessment written after building weblib (November 2026), done: an uncaught CPU error
+always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
+any thread of a Linux or Windows program and on a PHI OS program's first; f64 math is exact to
+the f64 on every system (the x87 set to double precision); `[Make: : ptr<Node>]`, with a
+pointer cut to 32 bits now an error; `(F: x).field` and `(F: x):0`; `not` on an object's method;
+an operator can start a line inside parentheses; `(p as u8[n])`, a checked array from a pointer;
+a `.philib` keeps files by their path; `X509.MAX_ROOTS` is 4,096 in a table that grows; and
+`tests/c_programmers.phi` holds that page to what PHI does. Still to do, each for something:
+
+- **`phi fuzz` and optimising, to add to the list above:** a jump table for a dense `when`
+  (interpreters and parsers; weblib nested `when`s by hand); SSE2 for floating point; register
+  allocation; making `NASMENV=-O1` the default for development builds. A string test weblib ran
+  took 92 s with the program heap and 1 s with its own slab allocator: the heap has had size
+  lists since S2, so `FindFree` walks only one list, but that's the case to look at (blocks of
+  nearly one size). The same sieve took 642 ms in PHI and 353 ms in C#.
+- **A write-up with options first, as generics had:** method values that carry data (no
+  closures now, so state goes through class variables, which keeps a library off threads); and a
+  checked heap for development (filling what's freed, marking the ends of what's allocated), to
+  catch a pointer's use after free or past its end; an array made with `as` covers the second, where it's used.
+- **`str` overflow, decision waiting:** whether text that doesn't fit throws rather than being
+  cut. There are 35 `str`s with a size in `lib/phi` and 156 in PhiOS, each of which can cut,
+  and `Error` itself relies on it (a long `throw` is cut to its 255 characters). An uncaught
+  one would stop a kernel that today only loses some text.
+- **The stack running out, not yet:** a PHI OS program's threads (their stacks are on the heap with
+  nothing below them), and a kernel's own stack, which runs down through low memory into the
+  kernel with no fault; catching that needs a check at each call, or paging in every kernel.
+- **Long argument lists:** the formatter (below) adds parentheses around an argument that's an
+  expression, rather than the language taking commas, which would make two ways to write a call.
+
 Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, a formatter
 and packages. Everything in the list above called "The parts most worth doing next" is done up
 to its last item, the [Later](#later) list.

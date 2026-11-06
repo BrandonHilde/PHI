@@ -42,6 +42,7 @@ phi.LinuxLayout:Linux64
 }
 
 sys.Read: 0  int fd  ptr<u8> buffer  u32 count;
+sys.MemoryProtect: 10  ptr<u8> start  u32 length  int how;
 sys.Write: 1  int fd  ptr<u8> data  u32 count;
 sys.Open: 2  ptr<u8> path  int flags  int mode;
 sys.Close: 3  int fd;

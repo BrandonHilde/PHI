@@ -1,0 +1,129 @@
+# runs only in 32 and 64 bits: it uses f64s and text that grows
+# Every example and claim in docs/phi-for-c-programmers.md that can run, so the page can't drift
+# from what PHI does. Change one, and change the other.
+
+struct.Point
+{
+	int x;
+	int y;
+
+	[Add: int by: 0;]
+	[end: x + by]
+}
+
+enum.Tool
+{
+	PENCIL
+	BRUSH: 5
+}
+
+phi.CProgrammers:Library
+{
+	# ---- the table
+	int a: 1 -2;
+	log a:0 ' ' a:1 '\n';
+	int x: (Twice: 3) * 2;
+	log x ' ' (Seven) '\n';
+	if x is 12
+		log 'is compares\n';
+	;;
+	Tool tool: Tool.BRUSH;
+	log (tool is Tool.BRUSH) '\n';
+	method<int: int> f: addr Twice;
+	log (f: 4) '\n';
+	new Point p: 1 2;
+	log (p.Add: 3) '\n';
+	new Point copied;
+	copied is p;
+	copied.x is 9;
+	log p.x ' ' copied.x '\n';
+	new Point moved;
+	moved takes copied;
+	log moved.x ' ' (copied is empty) '\n';
+	chr c: 'h';
+	u8 n: 104;
+	log c ' ' n '\n';
+	log (sizeof Point / sizeof int) '\n';
+	log ((1 + 2) as u8) '\n';
+	ptr<Point> reached: addr p;
+	log reached.x ' ' reached:0.y '\n';
+	log (Float.Sqrt: 16) '\n';
+	while each v in a
+		log v ' ';
+	;;
+	log '\n';
+
+	# ---- spacing around -
+	int steps: 1 -1 2 -2;
+	log steps.len '\n';
+	log (Two: 5 -1) ' ' (One: 5 - 1) '\n';
+
+	# ---- a variable in each branch, each its own; one that's still in sight can't be declared again
+	if x is 12
+		int got: 1;
+		log got '\n';
+	;;
+	else
+		int got: 2;
+		log got '\n';
+	;;
+
+	# ---- precedence
+	int flags: 6;
+	log (flags & 4 is 4) ' ' ((1 < 2) is false) '\n';
+	# a line can break after an operator, and inside parentheses before one
+	int broken: 1 +
+		2;
+	int inParens: (1 + 2
+		+ 3);
+	log broken ' ' inParens '\n';
+
+	# ---- a str grows to its most, and what doesn't fit is cut
+	str grows: 'abc';
+	grows is 'abcdef';
+	log grows ' ' grows.len '\n';
+	str sized: [3];
+	sized is 'abcdef';
+	log sized ' ' sized.len ' ' sized.max '\n';
+
+	# ---- a str result stays by copying it
+	str kept: '';
+	kept is (Name);
+	log kept '\n';
+
+	# ---- arrays work where pointers are expected
+	u8 buffer[4];
+	call Fill: buffer;
+	log buffer:0 '\n';
+
+	# ---- array indexes are checked, in a way that can be caught
+	int three[3];
+	int outside: 3;
+	if call Touch: outside throws err
+		log (err.kind is ErrorKind.INDEX) '\n';
+	;;
+
+	[Twice: int v: 0;]
+	[end: v * 2]
+
+	[Seven]
+	[end: 7]
+
+	[Two: int first: 0; int second: 0;]
+	[end: first + second]
+
+	[One: int only: 0;]
+	[end: only]
+
+	[Name]
+		str result: 'Ann';
+	[end: result]
+
+	[Fill: ptr<u8> to: 0;]
+		to:0 is 9;
+	[end]
+
+	[Touch: int i: 0;]
+		three:i is 1;
+	[end]
+}

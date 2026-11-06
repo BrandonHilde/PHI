@@ -1,0 +1,11 @@
+caught 0: 1 the stack ran out: calls too deep
+caught 1: 1 the stack ran out: calls too deep
+caught 2: 1 the stack ran out: calls too deep
+caught 3: 1 the stack ran out: calls too deep
+still recurses: 45150
+holding: the stack ran out: calls too deep
+the end
+
+PHI: the stack ran out: calls too deep on line 36 in stack.phi
+exit code: -1
+memory back: 1

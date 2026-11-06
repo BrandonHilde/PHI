@@ -406,6 +406,7 @@ namespace Phi.Compiler.Semantics
             if (units.TryGetValue(structUnit, out BoundUnit? main)) IncludeCompiledLibraries(program, main);
             CheckTextArguments();
             CheckThreadWrites();
+            CheckPointerViews(program);
 
             foreach (var (cls, scope) in classScopes)
                 foreach (var (name, symbol) in scope.Names)
@@ -441,8 +442,8 @@ namespace Phi.Compiler.Semantics
         }
 
         /// <summary>
-        /// What a method returns, from its [end: value]. A call may come before the method it
-        /// calls, so the value is bound the first time anyone asks.
+        /// What a method returns: as its header says, or from its [end: value]. A call may come
+        /// before the method it calls, so the value is bound the first time anyone asks.
         /// </summary>
         PhiType ReturnTypeOf(MethodSymbol m)
         {
@@ -451,6 +452,7 @@ namespace Phi.Compiler.Semantics
 
             if (m.ResultBinding)
             {
+                if (m.Decl.DeclaredResult != null) return m.ReturnType;
                 // A's [end: ...] calls A, as in [end: n * (Factorial: n - 1)]: assume a number,
                 // and check the assumption once the value's type is known
                 m.ReturnTypeAssumed = true;
@@ -465,9 +467,14 @@ namespace Phi.Compiler.Semantics
 
             allowObjectTemp = true;
             BindExpr(result, methodScopes[m.Decl]);
+            if (m.Decl.DeclaredResult != null)
+            {
+                if (m.ReturnType.IsObject) HeapMethod("Heap.Alloc", result.Span, methodScopes[m.Decl], $"returning a {m.ReturnType}");
+                if (!result.Type.IsError && !m.ReturnType.IsError) m.Decl.Result = FitResult(m, result);
+            }
             // [end: 'none'] in a method whose returns hand back text pointers is a ptr<u8> method too
             // (the literal lives as long as the program, so its address can be handed back)
-            if (result is StringExpr && ReturnsTextPointer(m))
+            else if (result is StringExpr && ReturnsTextPointer(m))
             {
                 m.ReturnType = PhiType.PointerTo(PhiType.U8);
                 m.Decl.Result = Convert(result, m.ReturnType, "the returned value");
@@ -641,6 +648,18 @@ namespace Phi.Compiler.Semantics
                     Check(kept.Value, kept.Target.Type, "kept in a class variable");
             }
             Check(m.Result, m.Symbol.ReturnType, "handed back");
+        }
+
+        /// <summary>An array made from a pointer has no place of its own to live, so it only goes to a method that takes an array.</summary>
+        void CheckPointerViews(ProgramNode program)
+        {
+            foreach (ClassDecl cls in program.Classes)
+            {
+                file = cls.File;
+                foreach (Node node in cls.Body.Concat(cls.Methods.SelectMany(m => m.Body)).SelectMany(SyntaxWalker.Nodes).Concat(cls.Methods.Where(m => m.Result != null).SelectMany(m => SyntaxWalker.Nodes(m.Result!))))
+                    if (node is PointerViewExpr { Passed: false } view && !view.Type.IsError)
+                        Error(view.Span, "an array made with `as` can only be passed to a method that takes an array (u8 bytes[])");
+            }
         }
 
         /// <summary>
@@ -1920,11 +1939,14 @@ namespace Phi.Compiler.Semantics
                 // nothing to work out what it returns from: the library's interface says
                 symbol.ResultBound = true;
                 symbol.ResultCapacity = method.DeclaredRoom;
-                if (method.DeclaredResult != null)
-                {
-                    PhiType result = ResolveType(method.DeclaredResult, null, allowStr: true);
-                    symbol.ReturnType = result.IsString ? PhiType.Str : result.IsStruct ? PhiType.ObjectOf(result.Struct!) : result;
-                }
+            }
+            if (method.DeclaredResult != null)
+            {
+                PhiType result = ResolveType(method.DeclaredResult, null, allowStr: true);
+                symbol.ReturnType = result.IsString ? PhiType.Str : result.IsStruct ? PhiType.ObjectOf(result.Struct!) : result;
+                // (a call's result is at least 32 bits, so a smaller number would need cutting at each return)
+                if (!method.IsCompiled && result.Kind is TypeKind.U8 or TypeKind.I8 or TypeKind.U16 or TypeKind.I16)
+                    Error(method.DeclaredResult.Span, $"a method returns a whole number as an int or a u32, not {A(result)}; say int or u32, and store it in {A(result)} if it's wanted");
             }
 
             if (!methodsByFullName.TryAdd((unit, fullName), symbol))
@@ -3505,26 +3527,38 @@ namespace Phi.Compiler.Semantics
             PhiType result = ReturnTypeOf(method);
             if (ret.Value.Type.IsError || result.IsError) return;
             method.ReturnValues.Add(ret.Value);
+            ret.Value = FitResult(method, ret.Value);
+        }
 
-            if (result.IsObject || ret.Value.Type.IsObject || ret.Value.Type.IsStruct)
+        /// <summary>A value going back from a method (a return, or an [end: value] whose header says what it returns).</summary>
+        Expr FitResult(MethodSymbol method, Expr value)
+        {
+            PhiType result = method.ReturnType;
+            string name = method.Decl.Name;
+            string from = method.Decl.DeclaredResult != null ? "its header says so" : "from its [end: value]";
+
+            if (result.IsObject || value.Type.IsObject || value.Type.IsStruct)
             {
-                if (ret.Value.Type.Struct != result.Struct || !(ret.Value.Type.IsObject || ret.Value.Type.IsStruct))
-                    Error(ret.Value.Span, $"{name} returns a {result} (from its [end: value]), but this is a {ret.Value.Type}");
-                return;
+                if (value.Type.Struct != result.Struct || !(value.Type.IsObject || value.Type.IsStruct))
+                    Error(value.Span, $"{name} returns {A(result)} ({from}), but this is {A(value.Type)}");
+                return value;
             }
 
             // a one-character string like '/' is a number here, as anywhere a number goes
-            if (!result.IsString && ret.Value is StringExpr { Value.Length: 1 })
-                ret.Value = Convert(ret.Value, PhiType.Int, "the returned value");
+            if (!result.IsString && value is StringExpr { Value.Length: 1 } && !(result.IsTextPointer && method.Decl.DeclaredResult != null))
+                return Convert(value, PhiType.Int, "the returned value");
             // a string literal lives as long as the program, so its address can be handed back
-            else if (result.IsTextPointer && ret.Value is StringExpr)
-                ret.Value = Convert(ret.Value, result, "the returned value");
-            else if (result.IsString != ret.Value.Type.IsString)
-                Error(ret.Value.Span, $"{name} returns a {(result.IsString ? "str" : result.IsPointer ? result.ToString() : "number")} (from its [end: value]), but this is a {ret.Value.Type}");
-            else if (!result.IsString)
-                ret.Value = result == PhiType.Int || result == PhiType.U32
-                    ? ConvertChecked(ret.Value, result, "the returned value")
-                    : Convert(ret.Value, result.IsPointer || result.IsFloat || result.IsWide ? result : PhiType.Int, "the returned value");
+            if (result.IsTextPointer && value is StringExpr)
+                return Convert(value, result, "the returned value");
+            if (result.IsString != value.Type.IsString)
+            {
+                Error(value.Span, $"{name} returns a {(result.IsString ? "str" : result.IsPointer ? result.ToString() : "number")} ({from}), but this is {A(value.Type)}");
+                return value;
+            }
+            if (result.IsString) return value;
+            return result == PhiType.Int || result == PhiType.U32
+                ? ConvertChecked(value, result, "the returned value")
+                : Convert(value, result.IsPointer || result.IsFloat || result.IsWide ? result : PhiType.Int, "the returned value");
         }
 
         void BindCall(CallStmt call, Scope scope)
@@ -4476,6 +4510,24 @@ namespace Phi.Compiler.Semantics
                     break;
                 }
 
+                case PointerViewExpr view:
+                {
+                    BindExpr(view.Pointer, scope);
+                    BindExpr(view.Count, scope);
+                    PhiType element = ResolveType(view.ElementType, scope, allowStr: false);
+                    view.Type = PhiType.Error;
+                    if (view.Pointer.Type.IsError || view.Count.Type.IsError || element.IsError) break;
+                    if (!view.Pointer.Type.IsPointer && view.Pointer is not AddrExpr && !PointerMath(view.Pointer))
+                    {
+                        Error(view.Pointer.Span, $"`as {element}[count]` makes an array from a pointer, and this is {A(view.Pointer.Type)}");
+                        break;
+                    }
+                    // (a negative count is an error when it runs, as for a new array's size)
+                    view.Count = ConvertChecked(view.Count, PhiType.U32, "the count");
+                    view.Type = element.OpenOf();
+                    break;
+                }
+
                 case InExpr input:
                     if (scope.Unit == UnitKind.Program)
                         Error(input.Span, "user programs can't use ports; only the kernel can talk to hardware");
@@ -4493,8 +4545,7 @@ namespace Phi.Compiler.Semantics
                     unary.Type = unary.Op == UnaryOp.Not ? PhiType.Bool : unary.Operand.Type;
                     break;
 
-                case UnaryExpr unary:
-                    BindExpr(unary.Operand, scope);
+                case UnaryExpr unary:     // (the first case bound its operand: once, as a call on an object adds the object to its arguments)
                     unary.Operand = Convert(unary.Operand, PhiType.Int, unary.Op switch
                     {
                         UnaryOp.Negate => "'-'",
@@ -4905,7 +4956,8 @@ namespace Phi.Compiler.Semantics
         /// <summary>
         /// In 64-bit code a pointer is 64 bits and an int 32, so a pointer put in a number loses
         /// its top half, and a number put in a pointer never had one, with nothing said. `as`
-        /// says it's meant; a constant (0, say, or an address) goes in a pointer whole.
+        /// says it's meant; a constant (0, say, or an address) goes in a pointer whole. A pointer
+        /// losing its top half is an error: it works until the program's memory is above 4 GB.
         /// </summary>
         void WarnPointerWidth(Expr e, PhiType from, PhiType to, string what)
         {
@@ -4913,7 +4965,7 @@ namespace Phi.Compiler.Semantics
             bool fromPointer = from.IsPointer || PointerMath(e);
             if (fromPointer == to.IsPointer) return;
             if (fromPointer)
-                diagnostics.Warning(file, e.Span, $"{what} is {A(to)}, which keeps only 32 bits of this pointer in 64-bit code; write `as {to}` if that's meant");
+                Error(e.Span, $"{what} is {A(to)}, which keeps only 32 bits of this pointer in 64-bit code; write `as {to}` if that's meant");
             else if (ConstantFolder.Evaluate(e) == null)
                 diagnostics.Warning(file, e.Span, $"{what} is a {to}, 64 bits in 64-bit code, and this is {A(from)}, so its top half is lost; write `as {to}` if that's meant");
         }
@@ -5038,6 +5090,7 @@ namespace Phi.Compiler.Semantics
             // an array parameter: any array holding the same kind of element
             if (target.Open)
             {
+                if (e is PointerViewExpr pointerView) pointerView.Passed = true;   // (if it's the wrong kind, that's said here)
                 if (e.Type.IsArray && e.Type.Element == target.Element) return e;
                 if (target.TextTable && e.Type.IsArray && e.Type.Element.IsInlineText)
                     Error(e.Span, $"'{Describe(e)}' keeps each text in place, with a size, and {what} takes texts that grow; " +

@@ -21,6 +21,7 @@ enum.ErrorKind
 	ACCESS                      # memory that isn't there, or an instruction the CPU refused
 	COUNT                       # a Mem call's count of 2 billion or more: negative, or a subtraction below 0
 	CONVERT                     # a negative number going to a u32, or a u32 of 2 billion or more to an int
+	STACK                       # the stack ran out: calls too deep, usually a method that never stops calling itself
 }
 
 struct.Error

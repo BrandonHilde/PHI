@@ -1,0 +1,15 @@
+# A program with no catch anywhere still prints what the CPU stopped it for, with its line,
+# rather than ending with no word about it.
+
+struct.Node
+{
+	int value;
+}
+
+phi.UncaughtFaultProgram:Program
+{
+	log 'before\n';
+	ptr<Node> nothing: 0;
+	log nothing:0.value '\n';
+	log 'not reached\n';
+}

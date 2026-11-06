@@ -1,0 +1,83 @@
+# runs only in 32 and 64 bits: its elements are on the heap, in a 32-bit kernel or a program
+# An array made from a pointer and a count, for a method that takes an array (u8 bytes[]):
+# its indexes are checked against the count, as any array's are, and an error can be caught.
+# Part of an array, memory from new, structs, and passing it on all work.
+
+struct.Point
+{
+	int x;
+	int y;
+}
+
+phi.PointerViews:Library
+{
+	ptr<u8> bytes: new u8[8];
+	while int i: 0; i < 8; i++;
+		bytes:i is i * 10;
+	;;
+	log (Sum: bytes as u8[4]) ' ' (Sizes: bytes as u8[8]) '\n';
+	log (Sum: (bytes + 2) as u8[2]) '\n';
+	log (Pass: bytes as u8[3]) '\n';
+
+	# the method changes the memory the pointer points at
+	call Double: bytes as u8[2];
+	log bytes:0 ' ' bytes:1 ' ' bytes:2 '\n';
+
+	# part of an array
+	int numbers: 1 2 3 4 5;
+	log (Total: addr numbers:1 as int[3]) '\n';
+	int count: 2;
+	log (Total: addr numbers:3 as int[count]) '\n';
+
+	# structs
+	ptr<Point> points: new Point[3];
+	points:2.y is 42;
+	log (LastY: points as Point[3]) '\n';
+
+	# past its end is an error, where a pointer's isn't
+	if call Touch: bytes as u8[4] 3 throws err
+		log 'inside: wrong\n';
+	;;
+	if call Touch: bytes as u8[4] 4 throws err
+		log (err.kind is ErrorKind.INDEX) '\n';
+	;;
+	# and a count that's less than none is too
+	int less: -1;
+	if call Touch: bytes as u8[less] 0 throws err
+		log (err.kind is ErrorKind.CONVERT) '\n';
+	;;
+	log (Sum: bytes as u8[0]) '\n';
+
+	[Sum: u8 b[];]
+		int total: 0;
+		while each x in b
+			total++ x;
+		;;
+	[end: total]
+
+	[Sizes: u8 b[];]
+	[end: b.len * 100 + b.max]
+
+	[Pass: u8 b[];]
+	[end: (Sum: b)]
+
+	[Double: u8 b[];]
+		while int i: 0; i < b.len; i++;
+			b:i** 2;
+		;;
+	[end]
+
+	[Total: int n[];]
+		int total: 0;
+		while each x in n
+			total++ x;
+		;;
+	[end: total]
+
+	[LastY: Point p[];]
+	[end: p:(p.len - 1).y]
+
+	[Touch: u8 b[]; int i: 0;]
+		b:i is 1;
+	[end]
+}

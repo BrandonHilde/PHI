@@ -1,0 +1,59 @@
+# A call's result used straight away, as a variable would be: its fields, its elements and the
+# fields of those, with and without arguments; and not or - on a call on an object, whose
+# object goes in once.
+
+struct.Node
+{
+	int value;
+	ptr<Node> next;
+
+	[Add: int x: 0;]
+	[end: value + x]
+
+	[IsZero: int x: 0;]
+	[end: x is 0]
+}
+
+phi.CallResultsProgram:Program
+{
+	ptr<Node> nodes: new Node[3];
+	nodes:0.value is 10;
+	nodes:1.value is 20;
+	nodes:2.value is 30;
+	nodes:0.next is addr nodes:1;
+	nodes:1.next is addr nodes:2;
+
+	log (First).value '\n';
+	log (First):0.value '\n';
+	log (Find: 1).value '\n';
+	log (Find: 2):0.value '\n';
+	log (Find: 0):1.value '\n';
+	log (Find: 0).next.value '\n';
+	log (Find: 0).next.next.value '\n';
+	log (Bytes):1 '\n';
+
+	new Node one;
+	one.value is 5;
+	if not (one.IsZero: 1)
+		log 'not zero\n';
+	;;
+	if not (one.IsZero: 0)
+		log 'wrong\n';
+	;;
+	bln no: not (one.IsZero: 1);
+	log no '\n';
+	log (- (one.Add: 1)) '\n';
+	log (~ (one.Add: 1)) '\n';
+
+	[First]
+	[end: nodes]
+
+	[Find: int i: 0;]
+	[end: addr nodes:i]
+
+	[Bytes]
+		ptr<u8> b: new u8[2];
+		b:0 is 7;
+		b:1 is 8;
+	[end: b]
+}

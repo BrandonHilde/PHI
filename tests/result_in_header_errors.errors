@@ -1,0 +1,6 @@
+27:15: error: a method returns a whole number as an int or a u32, not a u8; say int or u32, and store it in a u8 if it's wanted
+30:17: error: unknown type 'Nothing'
+18:8: error: WrongObject returns a Node (its header says so), but this is an Other
+22:8: error: TextForNumber returns a number (its header says so), but this is a str
+25:8: error: NumberForText returns a str (its header says so), but this is an int
+34:10: error: ReturnsWrong returns a Node (its header says so), but this is an int

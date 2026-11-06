@@ -5,8 +5,7 @@ beta 4
 exit codes: 1 2
 ran at the same time: 1
 crash: writing to kernel memory
-stopped by exception 14
-address 0x00100000
+PHI: memory that is not there was used, or the CPU refused an instruction on line 5 in crash.phi
 crash exit code: -1
 child: running as process
 parent: child

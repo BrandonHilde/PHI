@@ -3,7 +3,8 @@
 PHI looks different from C, but most of it maps across directly. This page covers the
 differences that catch people out: the ones that compile without complaint and then do the
 wrong thing, or that give an error you might not expect. The full rules are in the
-[language reference](language.md).
+[language reference](language.md). What's here that can run is part of
+[tests/c_programmers.phi](../tests/c_programmers.phi), which `phi test` runs, so it stays true.
 
 ## Syntax
 
@@ -17,6 +18,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `x = f(a) * 2;` | `x is (f: a) * 2;` | A call used as a value goes in parentheses, with a space after `:`. |
 | `g()` as a value | `(g)` | A call with no arguments. |
 | `return v;` | `return v;` | The method's normal result is the `[end: v]` at its end. |
+| `Node *make(int v)` | `[Make: int v: 0; : ptr<Node>]` | What it returns can go after a second `:`; without it, it's worked out from `[end: v]`, and `[end: 0]` makes it an `int`. |
 | `break;`, `continue;` | `break;`, `continue;` | Only in `while` loops. |
 | `if (!ok) return 0;` | `if not ok return 0;` | One line, no `;;`, for `return`, `break`, `continue`, `call` and `exit`. |
 | `for (int x : list)` (C++) | `while each x in list` | `x` is a copy, or for structs and objects the element itself. |
@@ -63,21 +65,25 @@ if (EndsWith: name '.BMP')
 variables are on the stack, as in C, and start at zero on every call. Variables declared in
 a class have fixed addresses and are shared by everything, including interrupt handlers.
 Two differences from C:
-- A method's variables share one scope across the whole method. Declaring `int got` in both
-  branches of an `if` is an error ("already declared"). Declare it once, above the `if`.
+- A variable declared in a block is visible until the method ends, not only until the block
+  does, as long as it's the only one of that name. Declaring `int got` in both branches of an
+  `if` is fine, and each is its own, but then using `got` after the `if` is an error. Declaring
+  it again while the first is still in sight is an error too ("already declared").
 - A method's variables can take at most 4096 bytes of stack. Put large buffers in the class.
 
 **Operator precedence differs from C.** The bitwise operators bind tighter than
 comparisons, so `flags & 4 is 4` means `(flags & 4) is 4`, which is the opposite of C.
 Only one comparison is allowed per expression: write `(a < b) is false`. A binary operator
-must be on the same line as its left side.
+goes on the same line as its left side, except inside parentheses: a line can always break
+after an operator, and inside `( )` before one too.
 
 **Math is signed or unsigned by type.** Arithmetic is done in 32 bits. It's unsigned if
 either side is a `u32` or a pointer, which affects `/`, `%`, `>>` and comparisons.
 
-**A `str` has a fixed capacity, and longer text is silently cut.** The capacity comes from
-the declaration: `str s: 'abc';` holds 3 characters, and `str s: [40];` holds 40. Assigning
-`'abcdef'` to a 3-character `str` stores `abc`.
+**A `str` grows up to its most, and longer text is silently cut.** The most comes from the
+declaration: `str s: [40];` holds 40 characters, and a `str` with no size given, like
+`str s: 'abc';`, grows up to 65,535. `.max` says what it is. Assigning `'abcdef'` to a
+`str s: [3];` stores `abc`.
 
 **A method's `str` result lasts only for the statement that called it.** It's copied into
 a temporary in the caller, so `ptr<u8> name: (Name);` would point at memory reused by the
@@ -97,7 +103,8 @@ meant.
 
 **Array indexes are checked.** An index outside the array stops the program with
 `PHI: index out of range on line N in FILE.phi`, and a constant index is checked at build time. Code
-inside an `unsafe` block skips the checks, and a pointer is never checked.
+inside an `unsafe` block skips the checks, and a pointer is never checked. To have them checked,
+pass `(p as u8[n])` to a method that takes `u8 bytes[]`.
 
 **Some common names are keywords.** These can't be variable names: `end`, `at`, `is`, `in`,
 `out`, `addr`, `as`, `sizeof`, `method`, `new`, `free`, `takes`, `empty`, `has`, `break`, `continue`, `return`,

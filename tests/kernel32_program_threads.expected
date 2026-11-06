@@ -29,6 +29,6 @@ made: 300 300 300 300, the heap as it was: 1
 the heap and log in every thread: exit 0
 dividing
 
-PHI: division by zero
+PHI: division by zero on line 16 in faulty.phi
 a thread failed: exit -1
 memory back: 1

@@ -16,6 +16,8 @@
     PHI_FUNCTION GetCommandLineA
     PHI_FUNCTION GetCurrentProcessId
     PHI_FUNCTION VirtualAlloc
+    PHI_FUNCTION VirtualProtect
+    PHI_FUNCTION SetThreadStackGuarantee
     PHI_FUNCTION GlobalMemoryStatusEx
     PHI_FUNCTION GetFileType
     PHI_FUNCTION PeekNamedPipe

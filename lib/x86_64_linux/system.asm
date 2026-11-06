@@ -1,5 +1,5 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
-; requires: phi_flush phi_write_all
+; provides: phi_exit phi_fault_register phi_stack_restore phi_spare_stack phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; requires: phi_flush phi_write_all phi_thread_block phi_main_thread
 ; init: phi_linux_start
 ;
 ; What a PHI OS program asks its kernel for, answered by 64-bit Linux system calls (the
@@ -222,15 +222,35 @@ phi_arguments: times ARGUMENTS_SIZE db 0
 ; isn't there): throw.asm's phi_fault_entry, with ebx = the kind of error. Linux sends a
 ; signal (SIGFPE, SIGSEGV); its handler changes the stopped code's registers in the
 ; signal's saved context, so when the handler returns (rt_sigreturn) it carries on there,
-; as PHI OS sends a program
+; as PHI OS sends a program. A stack that has run out has no room for the handler, or for
+; the throw after it, so the handler runs on a spare stack (each thread has its own:
+; threads.asm's), and the throw carries on there
 phi_fault_register:
     push rdi
     push rsi
+    push r8
+    push r9
     mov [rel phi_fault_to], rax
+    xor edi, edi
+    mov esi, SPARE_STACK
+    mov edx, 3                          ; read and write
+    mov r10d, 0x22                      ; private, not from a file
+    mov r8, -1
+    xor r9d, r9d
+    mov eax, SYS_MMAP
+    syscall
+    cmp rax, -4096
+    ja .no_spare
+    lea rcx, [rax + SPARE_STACK]
+    mov [rel phi_main_thread + THREAD_SPARE], rcx
+    call phi_spare_stack
+.no_spare:
     mov edi, SIGFPE
     call .handle
     mov edi, SIGSEGV
     call .handle
+    pop r9
+    pop r8
     pop rsi
     pop rdi
     ret
@@ -242,12 +262,58 @@ phi_fault_register:
     syscall
     ret
 
+; rax = the bottom of SPARE_STACK bytes: where this thread's signal handler runs
+phi_spare_stack:
+    push rdi
+    push rsi
+    sub rsp, 24                         ; Linux's stack_t: where, flags, how big
+    mov [rsp], rax
+    mov qword [rsp + 8], 0
+    mov qword [rsp + 16], SPARE_STACK
+    mov rdi, rsp
+    xor esi, esi                        ; (the old one isn't wanted)
+    mov eax, SYS_SIGALTSTACK
+    syscall
+    add rsp, 24
+    pop rsi
+    pop rdi
+    ret
+
+; after a throw of the stack running out, on its way back to the catch: nothing to do here,
+; as what's past the end of the stack stays there to be stopped by
+phi_stack_restore:
+    ret
+
 ; the signal handler: edi = the signal, rsi its siginfo (the address at +16), rdx the
 ; ucontext (the registers from +40 on)
 phi_fault_handler:
     mov eax, ERROR_DIVIDE
     cmp edi, SIGFPE
     je .send
+    ; the stack has run out if the memory is just by the stack pointer. On the spare stack
+    ; itself there's nowhere further to go.
+    mov rcx, [rsi + 16]
+    mov r8, [rdx + UCONTEXT_RSP]
+    lea r9, [r8 + 4096]
+    cmp rcx, r9
+    ja .memory
+    lea r9, [r8 - 65536]
+    cmp rcx, r9
+    jb .memory
+    call phi_thread_block
+    mov rax, [rax + THREAD_SPARE]
+    test rax, rax
+    jz .again
+    lea r9, [rax - SPARE_STACK]
+    cmp r8, r9
+    jb .to_spare
+    cmp r8, rax
+    jbe .again
+.to_spare:
+    mov [rdx + UCONTEXT_RSP], rax
+    mov eax, ERROR_STACK
+    jmp .send
+.memory:
     mov eax, ERROR_ACCESS
     cmp qword [rsi + 16], 4096
     jae .send
@@ -273,17 +339,24 @@ phi_fault_return:
 
 SYS_RT_SIGACTION equ 13
 SYS_RT_SIGRETURN equ 15
+SYS_MMAP         equ 9
+SYS_SIGALTSTACK  equ 131
+SPARE_STACK      equ 16384
+THREAD_SPARE     equ 1016               ; throw.asm's PHI_THREAD_SPARE
 SIGFPE           equ 8
 SIGSEGV          equ 11
 SA_SIGINFO       equ 4
 SA_RESTORER      equ 0x04000000
+SA_ONSTACK       equ 0x08000000
 ERROR_DIVIDE     equ 3                  ; ErrorKind (lib/phi/lang/error.phi)
 ERROR_EMPTY      equ 4
 ERROR_ACCESS     equ 5
+ERROR_STACK      equ 8
 UCONTEXT_RBX     equ 40 + 11 * 8        ; in a ucontext: its registers' rbx and rip
 UCONTEXT_RCX     equ 40 + 14 * 8
+UCONTEXT_RSP     equ 40 + 15 * 8
 UCONTEXT_RIP     equ 40 + 16 * 8
 align 8
 phi_fault_to: dq 0
 phi_fault_action:                       ; the kernel's sigaction: handler, flags, restorer, mask
-    dq phi_fault_handler, SA_SIGINFO | SA_RESTORER, phi_fault_return, 0
+    dq phi_fault_handler, SA_SIGINFO | SA_RESTORER | SA_ONSTACK, phi_fault_return, 0

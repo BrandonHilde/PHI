@@ -1,0 +1,18 @@
+# runs only in 32 and 64 bits: its elements are on the heap, in a 32-bit kernel or a program
+# An array made from a pointer goes to a method that takes one, of the same kind of element,
+# and only a pointer makes one.
+phi.PointerViewsErrors:Library
+{
+	ptr<u8> p: new u8[4];
+	int number: 5;
+	log (Sum: number as u8[2]) '\n';
+	log (Sum: p as int[2]) '\n';
+	log (Plain: p as u8[2]) '\n';
+	log (p as u8[2]) '\n';
+
+	[Sum: u8 b[];]
+	[end: b.len]
+
+	[Plain: int n: 0;]
+	[end: n]
+}

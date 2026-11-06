@@ -1,0 +1,31 @@
+# runs only in 32 and 64 bits: f64 is a 32-bit kernel's and a program's
+# An f64 sum or difference is the nearest f64 to the true answer, on every system. Worked out
+# at more precision first, then rounded again, these come out on the wrong side of a halfway
+# point: 1 + (2^-53 + 2^-78) is a little over halfway between 1 and the next f64 up, so it's
+# that next one, and extended precision would round it down to exactly halfway first, then
+# to 1. The total at the end is many steps, the same on every system to the last bit.
+
+phi.FloatExact:Library
+{
+	f64 over: (Half: 1.0 53) + (Half: 1.0 78);
+
+	f64 sum: 1.0 + over;
+	log 'sum: ' (sum > 1.0) '\n';
+
+	f64 under: 1.0 - (Half: over 1);
+	log 'difference: ' (under < 1.0) '\n';
+
+	f64 total: 0.0;
+	while int i: 1; i <= 1000; i++;
+		f64 one: 1.0;
+		total is total + one / i;
+	;;
+	i64 whole: (total * 1000000000000.0) as i64;
+	log 'total: ' (whole is 7485470860550) '\n';
+
+	[Half: f64 x: 0.0; int times: 0;]
+		while int i: 0; i < times; i++;
+			x is x / 2.0;
+		;;
+	[end: x]
+}

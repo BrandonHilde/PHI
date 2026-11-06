@@ -1,0 +1,36 @@
+# A long expression across lines: after an operator anywhere, and before one inside parentheses,
+# where the ')' says where it ends. A negative number starting a line in a list of values
+# is still a value of its own. parens_lines_errors.phi: outside parentheses it's an error.
+phi.ParensLines:Library
+{
+	int one: 1;
+	int two: 2;
+	int after: one +
+		two;
+	int before: (one + two
+		+ 3
+		* 2);
+	log after ' ' before '\n';
+
+	if (one is 1
+		and two is 2)
+		log 'both\n';
+	;;
+	if (one is 9
+		or two
+			is 2)
+		log 'either\n';
+	;;
+	log (Sum: one
+		+ two
+		two) '\n';
+
+	int nested: ((one
+		+ two)
+		* (two
+		+ two));
+	log nested '\n';
+
+	[Sum: int a: 0; int b: 0;]
+	[end: a + b]
+}

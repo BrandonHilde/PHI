@@ -1,5 +1,5 @@
 ; provides: phi_throw phi_fault_init phi_fault_entry
-; requires: phi_print phi_exit phi_fault_register phi_thread_block phi_log_take phi_log_back
+; requires: phi_print phi_exit phi_fault_register phi_stack_restore phi_thread_block phi_log_take phi_log_back
 ; init: phi_fault_init
 ;
 ; Errors in 64-bit programs, as in 32-bit ones (x86_32_user/throw.asm): eax = the line,
@@ -18,6 +18,7 @@ PHI_THREAD_SELF   equ 0                 ; the block's own address
 PHI_THREAD_CATCH  equ 8                 ; the innermost catch, or 0
 PHI_THREAD_UNWIND equ 16                ; the innermost running method with things to give back, or 0
 PHI_THREAD_ERROR  equ 24                ; the error being thrown (an Error)
+PHI_THREAD_SPARE  equ 1016              ; the top of its spare stack (system.asm's and threads.asm's)
 PHI_THREAD_SIZE   equ 1024
 ERROR_KIND    equ 0
 ERROR_LINE    equ 4
@@ -93,6 +94,12 @@ phi_throw:
 .resume:
     push rbx
     push rdi
+    cmp dword [rdi + PHI_THREAD_ERROR + ERROR_KIND], ERROR_KIND_STACK
+    jne .stack_is_fine
+    call phi_stack_restore          ; (it's still on its spare stack)
+    mov rdi, [rsp]
+    mov rbx, [rsp + 8]
+.stack_is_fine:
     mov rax, [rbx + 40]
     call phi_log_back
     pop rdi
@@ -171,9 +178,12 @@ phi_throw:
 
 ; ---- CPU exceptions, caught as errors (as x86_32_user/throw.asm has them): the system
 ; (system.asm's phi_fault_register) sends a program the CPU stopped here, with ebx = the
-; kind of error and rcx = where it happened, and it's thrown like any other
+; kind of error and rcx = where it happened, and it's thrown like any other. When the
+; stack has run out, it sends it here on the thread's spare stack, so the throw has room
+; to run and the methods it gives back for have theirs left as they were
 ERROR_KIND_DIVIDE equ 3                 ; ErrorKind in lib/phi/lang/error.phi
 ERROR_KIND_EMPTY  equ 4
+ERROR_KIND_STACK  equ 8
 
 phi_fault_init:
     lea rax, [rel phi_fault_entry]
@@ -186,14 +196,19 @@ phi_fault_entry:
     lea rdx, [rel .divided]
 .not_divide:
     cmp ebx, ERROR_KIND_EMPTY
-    jne .thrown
+    jne .not_empty
     lea rdx, [rel .empty]
+.not_empty:
+    cmp ebx, ERROR_KIND_STACK
+    jne .thrown
+    lea rdx, [rel .stack]
 .thrown:
     mov rax, rcx                        ; the line and file of where it happened, if they're known
     call phi_line_at
     jmp phi_throw
 .divided: db 'division by zero', 0
 .empty:   db 'an empty object or a null pointer was used', 0
+.stack:   db 'the stack ran out: calls too deep', 0
 .refused: db 'memory that is not there was used, or the CPU refused an instruction', 0
 
 ; rax = an address in the program's code -> eax = the line it's on, rsi = its file's name;

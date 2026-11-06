@@ -1,0 +1,4 @@
+8:12: error: `as u8[count]` makes an array from a pointer, and this is an int
+9:12: error: parameter 'b' is an array of u8s, and this is an int array
+10:14: error: an array made with `as` can only be passed to a method that takes an array (u8 bytes[])
+11:7: error: an array made with `as` can only be passed to a method that takes an array (u8 bytes[])

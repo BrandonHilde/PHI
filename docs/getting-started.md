@@ -30,6 +30,11 @@ qemu-system-i386 --version
 If they're installed somewhere else, set `PHI_NASM` and `PHI_QEMU` to their full paths
 instead.
 
+A big program spends most of its build in NASM, making each jump as short as it can. While
+developing one, set the environment variable `NASMENV=-O1`: NASM reads it itself, and builds
+many times faster for a program a few percent larger. (`phi build` suggests it when NASM takes
+more than 30 seconds.) Leave it off for a kernel's boot code, which has to fit its sector.
+
 > PHI is developed and tested on Windows. The compiler is plain .NET and should work on
 > Linux and macOS too; if something doesn't, please open an issue.
 

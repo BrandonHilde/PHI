@@ -1,0 +1,37 @@
+# runs only in 32 and 64 bits: it's about f64s and objects too
+# What's wrong with a method whose header says what it returns.
+
+struct.Node
+{
+	int value;
+}
+
+struct.Other
+{
+	int value;
+}
+
+phi.ResultInHeaderErrors:Library
+{
+	[WrongObject: : Node]
+		new Other o;
+	[end: o]
+
+	[TextForNumber: : int]
+		str s: 'abc';
+	[end: s]
+
+	[NumberForText: : str]
+	[end: 5]
+
+	[TooSmall: : u8]
+	[end: 1]
+
+	[NoSuchType: : Nothing]
+	[end: 1]
+
+	[ReturnsWrong: : Node]
+		return 3;
+		new Node n;
+	[end: n]
+}

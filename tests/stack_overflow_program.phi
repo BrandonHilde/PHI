@@ -1,0 +1,56 @@
+# A method that never stops calling itself: the stack running out is an error like any other,
+# caught here, again and again, with what the methods in between hold given back, on the first
+# thread and on threads of its own. Normal recursion still works after it. The last one isn't
+# caught, so it's printed and the program ends. Its line isn't here, as it depends on which
+# instruction of Down runs out (PHI OS's is kernel32_program_stack.rootfs).
+use user.threads;
+
+struct.Node
+{
+	int value;
+}
+
+phi.StackOverflowProgram:Program
+{
+	while int round: 0; round < 4; round++;
+		if call Down: 0 throws err
+			log 'caught ' round ': ' (err.kind is ErrorKind.STACK) ' ' err.text '\n';
+		;;
+	;;
+	log 'still recurses: ' (Sum: 300) '\n';
+
+	if call Holding throws err
+		log 'holding: ' err.text '\n';
+	;;
+
+	int t: (Threads.Start: addr Runaway 1);
+	call Threads.Wait: t;
+	t is (Threads.Start: addr Runaway 2);
+	call Threads.Wait: t;
+
+	log 'the end\n';
+	call Down: 0;
+	log 'not reached\n';
+
+	[Runaway: int part: 0;]
+		if call Down: 0 throws err
+			log 'thread ' part ': ' (err.kind is ErrorKind.STACK) ' ' err.text '\n';
+		;;
+	[end]
+
+	[Holding]
+		new Node held;
+		str text: 'held';
+		call Down: 0;
+	[end]
+
+	[Sum: int n: 0;]
+		if n is 0 return 0;
+	[end: (Sum: n - 1) + n]
+
+	[Down: int n: 0;]
+		int x[64];
+		x:0 is n;
+		call Down: n + 1;
+	[end: x:0]
+}

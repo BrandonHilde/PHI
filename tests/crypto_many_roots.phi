@@ -1,0 +1,17 @@
+# runs only in 32 and 64 bits: its numbers take more room than a 16-bit program has
+# A project can bring a long list of roots: more than a few, all of them kept, and the list
+# can be forgotten and started again. One root, many times over, stands for them.
+use crypto.roots;
+
+phi.CryptoManyRoots:Library
+{
+	while u32 i: 0; i < 200; i++;
+		call X509.Trust: addr Roots.root_isrg_x1 Roots.root_isrg_x1.len;
+	;;
+	log 'roots: ' X509.x509_root_count ' ' X509.x509_roots.len ' ' X509.error '\n';
+	log 'the last: ' X509.x509_roots:199.ca ' ' X509.x509_roots:199.modulus_length '\n';
+	call X509.Untrust;
+	log 'forgotten: ' X509.x509_root_count ' ' X509.x509_roots.len '\n';
+	call X509.Trust: addr Roots.root_digicert_g2 Roots.root_digicert_g2.len;
+	log 'again: ' X509.x509_root_count ' ' X509.x509_roots:0.ca '\n';
+}

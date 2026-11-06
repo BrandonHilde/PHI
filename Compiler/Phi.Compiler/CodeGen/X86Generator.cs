@@ -374,6 +374,10 @@ namespace Phi.Compiler.CodeGen
                     case CheckedNumberExpr c:
                         Expression(c.Operand);
                         return;
+                    case PointerViewExpr view:
+                        Expression(view.Pointer);
+                        Expression(view.Count);
+                        return;
                     case CastExpr c when Number(c.Type) && Number(c.Operand.Type)
                                          || (Pointer(c.Type) || Small(c.Type) || c.Type.IsWide) && (Pointer(c.Operand.Type) || Small(c.Operand.Type) || c.Operand.Type.IsWide):
                         Expression(c.Operand);
@@ -584,6 +588,10 @@ namespace Phi.Compiler.CodeGen
             // a Windows program reaches the system through kernel32.dll, named in its import table
             if (Host.IsWindows()) Need("phi_imports");
 
+            // the CPU stopping a program is an error like any other, which ends it with the error's
+            // message (and its line) whether or not the program catches any
+            if (unit.Kind == UnitKind.Program) Need("phi_throw");
+
             // what the compiled libraries' code uses, which nothing here would ask for
             foreach (CompiledTarget compiled in unit.CompiledLibraries)
             {
@@ -593,8 +601,16 @@ namespace Phi.Compiler.CodeGen
             foreach (StructSymbol s in unit.LibraryTypeTables) TypeTable(s);
             foreach (StructSymbol iface in unit.LibraryInterfaceSlots) InterfaceSlot(iface);
 
-            // the FPU (floating point numbers) starts clean
-            if (bits32) Emit("fninit");
+            // the FPU (floating point numbers) starts clean, working in f64s: with its own more exact
+            // numbers, a result would be rounded twice, and not always be the nearest f64 to the answer
+            if (bits32)
+            {
+                Emit("fninit");
+                Emit("sub esp, 4");
+                Emit("mov word [esp], 0x27F");
+                Emit("fldcw [esp]");
+                Emit("add esp, 4");
+            }
 
             // the program's own code first: it decides which library routines are needed
             var startedLibraries = new HashSet<CompiledTarget>();
@@ -663,7 +679,7 @@ namespace Phi.Compiler.CodeGen
             // the compiled libraries' code goes here, once it's known what of it the rest reaches
             int librariesAt = code.Length;
             // what follows isn't PHI code: an exception in it has no line
-            bool lineEnd = lineMarks.Count > 0 || unit.CompiledLibraries.Any(c => c.Lines.Count > 0) && Catches;
+            bool lineEnd = lineMarks.Count > 0 || unit.CompiledLibraries.Any(c => c.Lines.Count > 0) && MarksLines;
             if (lineEnd) Label("phi_line_end");
             foreach (RawBlockDecl raw in unit.RawBlocks.Where(r => r.File.Compiled == null)) EmitRawBlock(raw);
             EmitObjectRoutines();
@@ -675,7 +691,7 @@ namespace Phi.Compiler.CodeGen
             List<LibraryFile> library = Library.Resolve(libraryTarget, librarySymbols.OrderBy(s => s));
 
             // the file names of the libraries' lines go in the data too
-            if (Catches)
+            if (MarksLines)
                 foreach (string name in unit.CompiledLibraries.SelectMany(c => c.Lines).Select(l => l.File).Distinct())
                     StringLabel(name);
 
@@ -993,7 +1009,7 @@ namespace Phi.Compiler.CodeGen
                     AppendCompiledSection(into, compiled, section);
             foreach (LibraryExport e in compiled.Exports.Where(e => reached.Contains((compiled, e.Section))))
                 into.AppendLine($"{e.Name} equ {compiled.SectionLabel(e.Section)} + {e.Offset}");
-            if (Catches)
+            if (MarksLines)
                 foreach (LibraryLine line in compiled.Lines.Where(l => reached.Contains((compiled, l.Section))))
                     lineMarks.Add(($"{compiled.SectionLabel(line.Section)} + {line.Offset}", line.Line, StringLabel(line.File)));
         }
@@ -1296,13 +1312,16 @@ namespace Phi.Compiler.CodeGen
             code.AppendLine($"    ; {line}: {text}");
             if (debugInfo != null) MarkDebugLine(file, line);
 
-            // in a program that catches errors, where this line's code starts (see phi_lines)
-            if (Catches)
-            {
-                string label = $"phi_line_{lineMarks.Count}";
-                Label(label);
-                lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
-            }
+            MarkLine(line);
+        }
+
+        /// <summary>Where this line's code starts (see phi_lines).</summary>
+        void MarkLine(int line)
+        {
+            if (!MarksLines) return;
+            string label = $"phi_line_{lineMarks.Count}";
+            Label(label);
+            lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
         }
 
         void MarkDebugLine(SourceFile where, int line)
@@ -1375,6 +1394,8 @@ namespace Phi.Compiler.CodeGen
                 lastComment = default;
                 MarkDebugLine(file, LineOf(m.Decl));
             }
+            // (the stack running out stops a method before its first line, setting up its variables)
+            MarkLine(LineOf(m.Decl));
 
             if (m.IsInterruptHandler)
             {
@@ -3218,6 +3239,12 @@ namespace Phi.Compiler.CodeGen
             }
         }
 
+        /// <summary>
+        /// True when the code says where each line starts, for an error from the CPU to say its
+        /// line: every program, as one that catches nothing still prints it, and a kernel that catches.
+        /// </summary>
+        bool MarksLines => Catches || unit.Kind == UnitKind.Program;
+
         bool Catches => catches ??= bits32 && (program.Library != null || unit.CompiledLibraries.Count > 0 || unit.Classes.SelectMany(c => c.Body)
             .Concat(unit.Methods.SelectMany(m => m.Decl.Body))
             .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr));
@@ -3663,6 +3690,15 @@ namespace Phi.Compiler.CodeGen
                 Emit("push dword 0            ; no array: none");
                 return 12;
             }
+            if (array is PointerViewExpr pointerView)
+            {
+                EmitExpr(pointerView.Count);
+                Emit("push eax                ; the most it holds");
+                Emit("push eax                ; how many it has");
+                EmitExpr(pointerView.Pointer);
+                Emit("push eax                ; its elements");
+                return 12;
+            }
             PhiType t = array.Type;
             if (t.Open)
             {
@@ -3686,6 +3722,18 @@ namespace Phi.Compiler.CodeGen
             {
                 Emit("push qword 0");
                 Emit("push qword 0            ; no array: none");
+                return 16;
+            }
+            if (array is PointerViewExpr pointerView)
+            {
+                EmitExpr(pointerView.Count);
+                Emit("mov eax, eax");
+                Emit("mov rdx, rax");
+                Emit("shl rdx, 32");
+                Emit("or rax, rdx              ; how many it has, and the most it holds, the same");
+                Emit("push rax");
+                EmitExpr(pointerView.Pointer);
+                Emit("push rax                ; its elements");
                 return 16;
             }
             if (array.Type.Open)
@@ -7327,8 +7375,7 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>
         /// phi_lines: how many marks, then each mark's address, line and file name (as wide as an
-        /// address each), in the order the code is in; none in a program that doesn't catch
-        /// errors. The runtime looks an address up in it (phi_line_at).
+        /// address each), in the order the code is in. The runtime looks an address up in it (phi_line_at).
         /// </summary>
         void EmitLineTable()
         {

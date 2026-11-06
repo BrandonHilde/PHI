@@ -1,0 +1,41 @@
+# A method that never stops calling itself: an error like any other, caught again and again
+# with what the methods in between hold given back, then one that isn't caught.
+
+struct.Node
+{
+	int value;
+}
+
+phi.Stack:Program
+{
+	while int round: 0; round < 4; round++;
+		if call Down: 0 throws err
+			log 'caught ' round ': ' (err.kind is ErrorKind.STACK) ' ' err.text '\n';
+		;;
+	;;
+	log 'still recurses: ' (Sum: 300) '\n';
+
+	if call Holding throws err
+		log 'holding: ' err.text '\n';
+	;;
+
+	log 'the end\n';
+	call Down: 0;
+	log 'not reached\n';
+
+	[Holding]
+		new Node held;
+		str text: 'held';
+		call Down: 0;
+	[end]
+
+	[Sum: int n: 0;]
+		if n is 0 return 0;
+	[end: (Sum: n - 1) + n]
+
+	[Down: int n: 0;]
+		int x[64];
+		x:0 is n;
+		call Down: n + 1;
+	[end: x:0]
+}

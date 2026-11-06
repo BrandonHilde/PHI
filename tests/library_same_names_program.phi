@@ -1,0 +1,9 @@
+# library: library_src/same_names/both.phi
+# A compiled library with two files of one name, in different folders: both are in it, and a
+# program can use what's in each, not only what the library's own code reaches.
+use both;
+
+phi.LibrarySameNamesProgram:Program
+{
+	log (ParserOne.Which) ' ' (ParserTwo.Which) ' ' (both.Sum) '\n';
+}

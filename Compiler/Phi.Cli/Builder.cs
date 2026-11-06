@@ -331,6 +331,8 @@ namespace Phi.Cli
             }
         }
 
+        const int SlowAssembly = 30;
+
         static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)
         {
             string asmPath = Path.Combine(outDir, unit.Name + ".asm");
@@ -345,7 +347,11 @@ namespace Phi.Cli
             args.AddRange(defines);
             args.Add(Path.GetFullPath(asmPath));
 
+            var clock = System.Diagnostics.Stopwatch.StartNew();
             var (code, output) = Toolchain.Run(Toolchain.Nasm, args, unit.Debug != null ? Path.GetFullPath(outDir) : null);
+            // most of a big program's build is NASM making each jump as short as it can
+            if (clock.Elapsed.TotalSeconds >= SlowAssembly && Environment.GetEnvironmentVariable("NASMENV") == null)
+                result.Warnings.Add($"NASM took {clock.Elapsed.TotalSeconds:F0} s; while developing, set the environment variable NASMENV=-O1 for builds many times faster and a program a few percent larger");
             if (code != 0)
             {
                 Match tooBig = Regex.Match(output, @"TIMES value (-\d+) is negative");

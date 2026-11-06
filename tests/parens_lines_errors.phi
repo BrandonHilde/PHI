@@ -1,0 +1,6 @@
+# Outside parentheses, an operator starting a line isn't a continuation.
+phi.ParensLinesErrors:Library
+{
+	int a: 1
+		+ 2;
+}

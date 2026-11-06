@@ -109,16 +109,15 @@ phi.Crash:Program
 }
 ```
 
-`Process.Spawn: 'CRASH.BIN'` starts it, and the kernel prints something like
+`Process.Spawn: 'CRASH.BIN'` starts it, and it ends with
 
 ```
-PHI: program 1 stopped by exception 14 at 0x40000019, address 0x00100000
+PHI: memory that is not there was used, or the CPU refused an instruction on line 4 in crash.phi
 ```
 
-Exception 14 is a page fault, `0x40000019` is the program's instruction that caused it, and
-`0x00100000` is the address it tried to write.
-
-and carries on. `Process.Wait` returns -1 for it.
+The CPU stopped it at the write, and the kernel handed that back to the program as an error,
+one it could have caught with `if call ... throws err`. It didn't, so it's printed with its
+line and the program ends. The kernel carries on, and `Process.Wait` returns -1 for it.
 
 ## Try this
 

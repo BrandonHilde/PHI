@@ -1,0 +1,68 @@
+# runs only in 32 and 64 bits: it uses f64s and 64-bit numbers
+# What a method returns, said in its header after a second ':', with or without parameters.
+# Its [end: value] and returns then go to that type: [end: 0] is a null pointer in a method that
+# returns a pointer. A method that calls itself, or one further down the file, knows it too.
+# Without one, it's worked out from [end: value], as ever.
+
+struct.Node
+{
+	int value;
+
+	[Next: : ptr<Node>]
+	[end: 0]
+
+	[Plus: int by: 0; : int]
+	[end: value + by]
+}
+
+phi.ResultInHeader:Library
+{
+	ptr<Node> none: (Find: -1);
+	log (none is 0) '\n';
+	ptr<Node> found: (Find: 3);
+	log found.value ' ' (Find: 3).value '\n';
+	log (Later) '\n';
+	log (Factorial: 5) '\n';
+	log (Big) ' ' (Half) ' ' (Yes) ' ' (Letter) '\n';
+	log (Text) ' ' (TextPointer) '\n';
+	new Node made: (Make: 7);
+	log made.value ' ' (made.Plus: 1) ' ' ((made.Next) is 0) '\n';
+
+	[Find: int i: 0; : ptr<Node>]
+		if i < 0 return 0;
+		ptr<Node> n: new Node;
+		n.value is i;
+		return n;
+	[end: 0]
+
+	[Later: : int]
+	[end: (Find: 4).value + 1]
+
+	[Factorial: int n: 0; : int]
+		if n <= 1 return 1;
+	[end: n * (Factorial: n - 1)]
+
+	[Big: : i64]
+	[end: 5000000000]
+
+	[Half: : f64]
+	[end: 0.5]
+
+	[Yes: : bln]
+	[end: 1 is 1]
+
+	[Letter: : chr]
+	[end: 'Q']
+
+	[Text: : str]
+		str s: 'hello';
+	[end: s]
+
+	[TextPointer: : ptr<u8>]
+	[end: 'x']
+
+	[Make: int v: 0; : Node]
+		new Node n;
+		n.value is v;
+	[end: n]
+}

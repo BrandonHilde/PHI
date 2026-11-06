@@ -206,8 +206,8 @@ log (Float.Sqrt: 2) ' ' (Float.Round: 2.5); # 1.414214 2
 - `Float.Sqrt`, `Abs`, `Sin`, `Cos` (radians), `Round` (halves to even), `Floor`, `Ceil`
   and `Trunc` each take one number and give an `f64`.
 - `f16` is for storing many numbers in little memory: it keeps about 3 digits, up to
-  65504. Math on any kind happens with more precision than any of them, and is rounded
-  when it's stored.
+  65504. Math on any kind happens in `f64`s, and each result is the nearest `f64` to the true
+  answer, on every system; it's rounded again if it's stored in a smaller kind.
 - They work as variables, fields, array elements, parameters, results, method values
   and a `when`'s value, in 32-bit kernels and programs. Each program keeps its own floating
   point registers when the CPU switches between them, but an interrupt handler shouldn't
@@ -529,7 +529,16 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
 - Two strings compare as text, but only with `is` / `==` / `is not` / `!=`.
 - In a condition, any number counts as true unless it is 0.
 - A binary operator must be on the same line as its left side. This is how
-  `if ready` followed by a statement on the next line knows where the condition ends.
+  `if ready` followed by a statement on the next line knows where the condition ends. A long
+  expression can break after an operator anywhere, and inside parentheses before one too,
+  where the `)` says where it ends:
+
+  ```phi
+  int total: price +
+      tax;
+  int width: (left + middle
+      + right);
+  ```
 - The index after `:` is a number, a single name, a class's constant or variable
   (`handlers:Wm.NOTEPAD`), or something in parentheses: `cells:(row * 80 + column)`.
   A dotted name after `:` counts as a class's member when it starts with a capital letter
@@ -811,7 +820,7 @@ else
   that would come out as a different number (a negative one going to a `u32`, or a `u32` of 2
   billion or more going to an `int`; `as` says the same bits are meant).
 - **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
-  `MEMORY`, `COUNT` or `CONVERT`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+  `MEMORY`, `COUNT`, `CONVERT` or `STACK`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
   an uncaught error is written). `log`, `debug` and text built from values write its
   message, so `log err;` and `str note: ('failed: ' err);` say everything.
 - **The methods in between give back what they own**, as if each had returned: their new
@@ -827,7 +836,14 @@ else
   kernel, in a PHI OS program, and in a Linux or Windows program (32 or 64 bits) alike,
   with the line they happened on (`division by zero on line 42 in world.phi`; inside an
   asm block or the runtime there's none, and the message is the text alone). Uncaught, a
-  program prints the error and ends with -1, as for any error.
+  program prints the error and ends with -1, as for any error, whether or not it catches
+  anything anywhere else.
+- **The stack running out is caught too** (`ErrorKind.STACK`: `the stack ran out: calls too deep
+  on line 12 in parser.phi`), usually a method that never stops calling itself. It works on
+  any thread of a Linux or Windows program, and on the first thread of a PHI OS program, and
+  it can happen and be caught again and again. Each thread keeps some memory aside, a spare
+  stack, for the error to run on. Not yet: a PHI OS program's other threads, and a kernel's
+  own stack, where running past the end writes over what's below it, with no error.
 - An error in an interrupt handler or a system call isn't caught by the code it
   interrupted. In a kernel each core has its own list of catches, and each task (a
   thread, say) keeps its own as the cores take turns, so threads catch their own errors.
@@ -1460,7 +1476,7 @@ int n: (Web.Header: posted 'Content-Type' addr kind 64);   # its length; -1 if t
 A certificate must check out for an `https://` URL, against the roots in `crypto.roots` unless a
 program has trusted its own with `X509.Trust`. Those are only a few, so a site that goes back to
 another root fails with `no trusted root`: which roots to trust is up to the project, which brings
-what it needs and holds up to 16 at once (`X509.MAX_ROOTS`). Not yet: HTTP/2, IPv6 addresses, and
+what it needs, as many as it likes up to `X509.MAX_ROOTS` (4,096). Not yet: HTTP/2, IPv6 addresses, and
 uploading a body a piece at a time.
 
 **Names.** `Dns.Resolve: name` gives a name's address, 0 if it can't be found, in a program as in a
@@ -1594,8 +1610,8 @@ int t: (Threads.Start: addr Count 3);     # Count: 3, as a thread of this progra
 call Threads.Wait: t;
 ```
 
-- On PHI OS a thread is a task of the program, in its memory, on a stack of its own (64
-  KB, from the heap); once programs share the cores, a program's threads run at once on
+- On PHI OS a thread is a task of the program, in its memory, on a stack of its own (about
+  88 KB, from the heap); once programs share the cores, a program's threads run at once on
   several. On Linux it's a thread made with `clone`, and on Windows with `CreateThread`.
 - A thread finishes when its method returns. `exit` in any thread ends the whole program,
   and so does an error nothing catches (or a fault) in any of them.
@@ -2269,8 +2285,9 @@ phi.Kernel:Kernel
 
 Each program has its own memory: its code and data at `0x40000000`, a 64 KB stack ending
 at `0x40400000`, a heap above that, and nothing else it can reach. The timer shares the CPU between running
-programs. A program that touches memory that isn't its own is stopped with a message
-(`PHI: program 3 stopped by exception 14 ...`) and the kernel carries on.
+programs. A program that touches memory that isn't its own gets an error it can catch; if it
+doesn't, it's stopped with the error's message (`PHI: memory that is not there was used, or the
+CPU refused an instruction on line 5 in crash.phi`) and the kernel carries on.
 
 **The kernel runs one thing at a time.** Its own code keeps the CPU until it waits
 (`Process.Wait`, `Process.WaitAll`, `OS.Yield`, `OS.Idle`) or its main code ends; only then do
@@ -2628,6 +2645,12 @@ struct.Message foreign          # 28 bytes in 32-bit code, 48 in 64-bit code
     log 'hello ' who;
 [end]
 
+[Make: int value: 0; : ptr<Node>]   # what it returns, after a second ':' (it can be left out)
+    if value < 0 return 0;
+    ptr<Node> n: new Node;
+    n.value is value;
+[end: n]
+
 call Greet;                     # who is 'world'
 call Greet: 'PHI';
 call total is Add: 2 3;         # store the result
@@ -2747,6 +2770,16 @@ if (IsReady: port)
   [end: n * (Factorial: n - 1)]
   ```
 
+- **What a method returns** is worked out from its `[end: value]`, or said in its header
+  after a second `:`, as an interface's methods say it: `[Size: : int]`,
+  `[Find: int id: 0; : ptr<Node>]`. Then its `[end: value]` and each `return` go to that type,
+  so `[end: 0]` and `return 0;` are null pointers in a method that returns a pointer, and a
+  reader can see what it returns from the top. It can be any type a method can return, with a
+  whole number being an `int`, `u32`, `i64` or `u64`, and the method has to end with a value.
+- In 64-bit code a pointer going to a 32-bit number (an `int` variable, a parameter, or a
+  method whose `[end: 0]` made it return an `int`) is an error, since it only works until the
+  program's memory is above 4 GB. `as int` says the cut is meant; a number going to a pointer
+  is a warning, as it may be an address.
 - A method's variables take stack space while it runs, at most 4096 bytes per method; put
   large buffers in the class.
 - A method called through its address (`addr Handler`, for an IRQ or a system call) gets no
@@ -2780,6 +2813,21 @@ log (Sum: a) ' ' (Sum: scores);        # any array of ints, fixed or atmost
   objects: `list:i is p` copies into one, and `list:i.x` reaches its fields.
 - It can be passed on to another method that takes one, or where a pointer to its elements
   goes. Method values can't take arrays; an interface's methods can.
+- **A pointer and a count make one**, with `as`: `(p as u8[n])` is the `n` elements at `p`.
+  The method's indexes are checked against `n`, where a pointer's never are, so passing
+  this in place of a pointer and a length is how code that works through pointers gets
+  checked. It's also how to pass part of an array: `(addr a:2 as int[3])`. A negative count is
+  an error when it runs (`ErrorKind.CONVERT`). It can only be passed to such a parameter, and
+  it's the program's word for it that the memory is there and that many elements long.
+
+  ```phi
+  ptr<u8> bytes: new u8[size];
+  call Parse: bytes as u8[size];
+
+  [Parse: u8 input[];]
+      chr c: input:i as chr;      # an index past size is an error, which can be caught
+  [end]
+  ```
 - `str rows[]` takes any `str` array whose elements grow: one of values, `str names[8];` or
   `str names[atmost 64];` (32-bit code). Its elements are the caller's texts, so writing or
   adding to one changes the caller's, and it grows as theirs would. A whole array copies

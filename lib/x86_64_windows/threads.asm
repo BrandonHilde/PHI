@@ -1,6 +1,6 @@
 ; provides: phi_thread_setup phi_thread_block phi_tls_index phi_main_thread OS_ThreadEntry
 ; init: phi_threads_init
-; requires: phi_imports phi_print phi_exit
+; requires: phi_imports phi_print phi_exit phi_stack_guarantee
 ;
 ; Each thread's block in a 64-bit Windows program (throw.asm's PHI_THREAD_...), as in a
 ; 32-bit one (x86_32_windows/threads.asm): its address is in a TLS slot of the thread's
@@ -95,7 +95,8 @@ OS_ThreadEntry:
     ret
 
 ; where a new thread starts (Windows calls it): rcx = its method and value, then its
-; block; when the method returns, the thread ends
+; block; when the method returns, the thread ends. The first of its stack is its spare
+; stack (for the stack running out: system.asm's phi_fault_register).
 phi_host_thread_main:
     push rbx
     push rbp
@@ -108,7 +109,10 @@ phi_host_thread_main:
     mov rbx, rcx
     lea rax, [rbx + 16]
     call phi_thread_setup
+    mov [rax + THREAD_SPARE], rsp
     mov rbp, rsp
+    sub rsp, SPARE_STACK
+    call phi_stack_guarantee
     push qword [rbx + 8]
     call [rbx]
     mov rsp, rbp

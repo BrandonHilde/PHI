@@ -1,5 +1,5 @@
-; provides: phi_exit phi_fault_register phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
-; requires: phi_flush phi_write_all phi_imports
+; provides: phi_exit phi_fault_register phi_stack_restore phi_stack_guarantee phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen
+; requires: phi_flush phi_write_all phi_imports phi_thread_block phi_main_thread
 ; init: phi_windows_start
 ;
 ; What a PHI OS program asks its kernel for, answered by kernel32.dll (see imports.asm
@@ -253,12 +253,43 @@ phi_arguments: times ARGUMENTS_SIZE db 0
 ; eax = where this program goes when the CPU stops it (dividing by zero, or memory that
 ; isn't there): throw.asm's phi_fault_entry, with ebx = the kind of error. Windows tells a
 ; vectored exception handler first, which changes the stopped code's registers (its
-; CONTEXT) so it carries on there, as PHI OS sends a program
+; CONTEXT) so it carries on there, as PHI OS sends a program. A stack that has run out
+; has room left for the handler (phi_stack_guarantee) but not for the throw after it, which
+; carries on on a spare stack (each thread has its own: threads.asm's)
 phi_fault_register:
     mov [phi_fault_to], eax
+    push 4                              ; PAGE_READWRITE
+    push 0x3000                         ; MEM_COMMIT | MEM_RESERVE
+    push SPARE_STACK
+    push 0
+    call [phi_imp_VirtualAlloc]
+    test eax, eax
+    jz .no_spare
+    add eax, SPARE_STACK
+    mov [phi_main_thread + THREAD_SPARE], eax
+.no_spare:
+    call phi_stack_guarantee
     push phi_fault_handler
     push 1                              ; before any other handler
     call [phi_imp_AddVectoredExceptionHandler]
+    ret
+
+; keeps room at the stack's end for Windows to call the handler when this thread's stack
+; runs out
+phi_stack_guarantee:
+    push phi_stack_room
+    call [phi_imp_SetThreadStackGuarantee]
+    ret
+
+; after a throw of the stack running out, on its way back to the catch: Windows took its
+; guard off the end of the stack when it ran out, and it goes back on, or the next time
+; would be past the end with no warning
+phi_stack_restore:
+    push phi_stack_room_old
+    push 0x104                          ; PAGE_READWRITE | PAGE_GUARD
+    push STACK_GUARD
+    push dword [fs:8]                   ; the TEB's StackLimit: the lowest it has used
+    call [phi_imp_VirtualProtect]
     ret
 
 ; Windows' call (stdcall: [esp + 4] = its EXCEPTION_POINTERS) -> eax = -1 to carry on in
@@ -270,8 +301,17 @@ phi_fault_handler:
     mov eax, [edx]                      ; what happened
     cmp eax, 0xC0000094                 ; EXCEPTION_INT_DIVIDE_BY_ZERO
     je .divide
+    cmp eax, 0xC00000FD                 ; EXCEPTION_STACK_OVERFLOW
+    je .stack
     cmp eax, 0xC0000005                 ; EXCEPTION_ACCESS_VIOLATION: its address in [edx + 24]
     jne .not_ours
+    ; the stack has run out too if the memory is just by the stack pointer (from 64 KB
+    ; under it to 4 KB over it)
+    mov eax, [edx + 24]
+    sub eax, [ecx + CONTEXT_ESP]
+    add eax, 65536
+    cmp eax, 65536 + 4096
+    jbe .stack
     mov eax, ERROR_ACCESS
     cmp dword [edx + 24], 4096
     jae .send
@@ -279,6 +319,18 @@ phi_fault_handler:
     jmp .send
 .divide:
     mov eax, ERROR_DIVIDE
+    jmp .send
+.stack:
+    call phi_thread_block
+    mov eax, [eax + THREAD_SPARE]
+    test eax, eax
+    jz .not_ours
+    mov edx, eax                        ; unless the spare stack itself has run out
+    sub edx, [ecx + CONTEXT_ESP]
+    cmp edx, SPARE_STACK
+    jbe .not_ours
+    mov [ecx + CONTEXT_ESP], eax
+    mov eax, ERROR_STACK
 .send:
     mov edx, [phi_fault_to]
     cmp [ecx + CONTEXT_EIP], edx
@@ -296,7 +348,14 @@ phi_fault_handler:
 ERROR_DIVIDE  equ 3                     ; ErrorKind (lib/phi/lang/error.phi)
 ERROR_EMPTY   equ 4
 ERROR_ACCESS  equ 5
+ERROR_STACK   equ 8
+SPARE_STACK   equ 16384
+STACK_GUARD   equ 4096
+THREAD_SPARE  equ 1020                  ; throw.asm's PHI_THREAD_SPARE
+CONTEXT_ESP   equ 0xC4
 CONTEXT_EBX   equ 0xA4                  ; in an x86 CONTEXT
 CONTEXT_ECX   equ 0xAC
 CONTEXT_EIP   equ 0xB8
 phi_fault_to: dd 0
+phi_stack_room: dd 32768                ; what's kept for the handler
+phi_stack_room_old: dd 0

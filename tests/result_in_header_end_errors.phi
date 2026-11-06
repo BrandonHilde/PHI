@@ -1,0 +1,6 @@
+# A method whose header says what it returns ends with a value.
+phi.ResultInHeaderEndErrors:Library
+{
+	[NoValue: : int]
+	[end]
+}

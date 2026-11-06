@@ -1,0 +1,3 @@
+before
+
+PHI: an empty object or a null pointer was used on line 13 in uncaught_fault_program.phi

@@ -1,5 +1,6 @@
 ; provides: phi_thread_setup phi_thread_block phi_main_thread OS_ThreadClone
 ; init: phi_threads_init
+; requires: phi_spare_stack
 ;
 ; A 64-bit Linux program's threads (user.threads) are Linux threads made with clone, as in
 ; 32-bit programs (x86_32_linux/threads.asm): the program's memory, files and signal
@@ -73,12 +74,19 @@ OS_ThreadClone:
     ret
 
 ; where a new thread starts: [rsp] = its method, [rsp + 8] = its value, and above them
-; its block; when the method returns, the thread ends
+; its block; when the method returns, the thread ends. Below them is its spare stack
+; (for the stack running out: system.asm's phi_fault_register), then the stack it runs on.
 phi_host_thread_main:
     lea rax, [rsp + 16]
     call phi_thread_setup
-    pop rax
-    call rax
+    mov rbx, [rsp]
+    mov r12, [rsp + 8]
+    mov [rax + THREAD_SPARE], rsp
+    lea rax, [rsp - SPARE_STACK]
+    call phi_spare_stack
+    sub rsp, SPARE_STACK
+    push r12
+    call rbx
     mov eax, SYS_THREAD_EXIT
     xor edi, edi
     syscall

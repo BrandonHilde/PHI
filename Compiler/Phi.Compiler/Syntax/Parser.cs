@@ -631,9 +631,11 @@ namespace Phi.Compiler.Syntax
             {
                 while (!At(TokenKind.CloseBracket) && !AtEnd)
                 {
-                    if (file.Compiled != null && Accept(TokenKind.Colon))
+                    // what it returns, after a second ':' (a compiled library's says a little more)
+                    if (Accept(TokenKind.Colon))
                     {
-                        ParseCompiledResult(method);
+                        if (file.Compiled != null) ParseCompiledResult(method);
+                        else method.DeclaredResult = ParseType();
                         break;
                     }
                     // (new Node list[] is an array of objects, which only new says)
@@ -676,6 +678,8 @@ namespace Phi.Compiler.Syntax
             Advance(); // [
             Advance(); // end
             if (Accept(TokenKind.Colon)) method.Result = ParseExpression();
+            if (method.DeclaredResult != null && method.Result == null)
+                throw Error(Previous.Span, $"{name}'s header says what it returns, so it ends with [end: value]");
             Expect(TokenKind.CloseBracket, "']' after [end");
             method.End = Previous.Span.End;
 
@@ -1522,8 +1526,16 @@ namespace Phi.Compiler.Syntax
             && PeekToken(1).Span.Start == Current.Span.End;
 
         /// <summary>A binary operator only continues an expression on the same line.</summary>
-        bool AtOperator(TokenKind kind) => At(kind) && !Current.StartsLine;
-        bool AtOperatorWord(string word) => AtWord(word) && !Current.StartsLine;
+        /// <summary>
+        /// A binary operator goes on the same line as its left side, which is how `if ready` with
+        /// a statement on the next line knows where the condition ends. Inside parentheses the
+        /// ')' says where it ends, so one can start a line there.
+        /// </summary>
+        bool OperatorMayFollow => !Current.StartsLine || parenDepth > 0;
+        int parenDepth;
+
+        bool AtOperator(TokenKind kind) => At(kind) && OperatorMayFollow;
+        bool AtOperatorWord(string word) => AtWord(word) && OperatorMayFollow;
 
         static Expr Binary(BinaryOp op, Expr left, Expr right) =>
             new BinaryExpr { Op = op, Left = left, Right = right, Span = left.Span.To(right.Span) };
@@ -1559,7 +1571,7 @@ namespace Phi.Compiler.Syntax
             ["atleast"] = BinaryOp.GreaterEqual,
         };
 
-        bool AtComparisonWord => !Current.StartsLine && Current.Kind == TokenKind.Identifier && ComparisonWords.ContainsKey(Current.Text);
+        bool AtComparisonWord => OperatorMayFollow && Current.Kind == TokenKind.Identifier && ComparisonWords.ContainsKey(Current.Text);
 
         Expr ParseComparison()
         {
@@ -1609,7 +1621,7 @@ namespace Phi.Compiler.Syntax
             if (op == null) return left;
             Expr result = Binary(op.Value, left, ParseBitOr());
 
-            bool another = !Current.StartsLine && (AtWord("is") || AtComparisonWord || Current.Kind is TokenKind.EqualsEquals or TokenKind.BangEquals
+            bool another = OperatorMayFollow && (AtWord("is") || AtComparisonWord || Current.Kind is TokenKind.EqualsEquals or TokenKind.BangEquals
                 or TokenKind.Less or TokenKind.Greater or TokenKind.LessEquals or TokenKind.GreaterEquals);
             if (another)
                 throw Error(Current.Span, "comparisons can't be chained; use parentheses, like (a < b) is false, or 'and'");
@@ -1687,7 +1699,7 @@ namespace Phi.Compiler.Syntax
             return left;
         }
 
-        /// <summary>A unary expression, then any number of `as Type`: w:0.data as ptr&lt;Note&gt;</summary>
+        /// <summary>A unary expression, then any number of `as Type`: w:0.data as ptr&lt;Note&gt;, or p as u8[count]</summary>
         Expr ParseUnary()
         {
             Expr expr = ParseUnaryOperand();
@@ -1695,7 +1707,14 @@ namespace Phi.Compiler.Syntax
             {
                 Advance();
                 TypeRef type = ParseType();
-                expr = new CastExpr { Operand = expr, TargetType = type, Span = expr.Span.To(type.Span) };
+                if (At(TokenKind.OpenBracket) && !Current.StartsLine)
+                {
+                    Advance();
+                    Expr count = ParseExpression();
+                    Token close = Expect(TokenKind.CloseBracket, "']'");
+                    expr = new PointerViewExpr { Pointer = expr, ElementType = type, Count = count, Span = expr.Span.To(close.Span) };
+                }
+                else expr = new CastExpr { Operand = expr, TargetType = type, Span = expr.Span.To(type.Span) };
             }
             return expr;
         }
@@ -1783,26 +1802,30 @@ namespace Phi.Compiler.Syntax
             return ParsePostfix();
         }
 
-        /// <summary>name, name:index, name:i:j, tasks:i.field</summary>
+        /// <summary>name, name:index, name:i:j, tasks:i.field, (Find: id).field, (Find: id):0.field</summary>
         /// <param name="stopAtArguments">
         /// For a callee: a ':' followed by a space starts the arguments, not an index.
         /// </param>
         Expr ParsePostfix(bool stopAtArguments = false)
         {
+            bool inParens = At(TokenKind.OpenParen);
             Expr expr = ParsePrimary();
+            // (a call's result can be used as a variable's can)
+            bool result = inParens && expr is CallExpr or NameExpr { InParens: true } or MemberExpr { InParens: true };
 
             while (!Current.StartsLine)
             {
                 if (stopAtArguments && At(TokenKind.Colon) && PeekToken(1).Span.Start > Current.Span.End) break;
 
-                if (At(TokenKind.Colon) && expr is NameExpr or IndexExpr or MemberExpr)
+                if (At(TokenKind.Colon) && (result || expr is NameExpr or IndexExpr or MemberExpr))
                 {
                     Advance();
                     Expr index = ParseIndex();
                     expr = new IndexExpr { Target = expr, Index = index, Span = expr.Span.To(index.Span) };
                 }
-                else if (At(TokenKind.Dot) && expr is IndexExpr or MemberExpr && PeekToken(1).Kind == TokenKind.Identifier)
+                else if (At(TokenKind.Dot) && (result || expr is IndexExpr or MemberExpr) && PeekToken(1).Kind == TokenKind.Identifier)
                 {
+                    result = false;
                     Advance();
                     Token member = Advance();
                     expr = new MemberExpr { Target = expr, Member = member.Text, MemberSpan = member.Span, Span = expr.Span.To(member.Span) };
@@ -1842,6 +1865,31 @@ namespace Phi.Compiler.Syntax
         static bool IsClassMember(string first, string member) =>
             char.IsUpper(first[0]) && (first.Any(char.IsLower) || member.All(c => !char.IsLower(c)));
 
+        /// <summary>What's after a '(': a call, (Name), one value, or several that make one text.</summary>
+        Expr ParseInParens(Token open)
+        {
+            if (AtCallInParens()) return ParseCallExpr(open);
+
+            Expr inner = ParseExpression();
+
+            // ('Hello ' name): several values in parentheses are one text built from them
+            if (!At(TokenKind.CloseParen) && !AtEnd)
+            {
+                var parts = new List<Expr> { inner };
+                while (!At(TokenKind.CloseParen) && !AtEnd)
+                    parts.Add(ParseListElement());
+                Token close = Expect(TokenKind.CloseParen, "')'");
+                var text = new TextExpr { Span = open.Span.To(close.Span) };
+                text.Parts.AddRange(parts);
+                return text;
+            }
+            Expect(TokenKind.CloseParen, "')'");
+            // (Name) may be a call with no arguments, which the binder decides
+            if (inner is NameExpr named) named.InParens = true;
+            if (inner is MemberExpr member) member.InParens = true;
+            return inner;
+        }
+
         Expr ParsePrimary()
         {
             Token t = Current;
@@ -1865,26 +1913,9 @@ namespace Phi.Compiler.Syntax
                 case TokenKind.OpenParen:
                 {
                     Advance();
-                    if (AtCallInParens()) return ParseCallExpr(t);
-
-                    Expr inner = ParseExpression();
-
-                    // ('Hello ' name): several values in parentheses are one text built from them
-                    if (!At(TokenKind.CloseParen) && !AtEnd)
-                    {
-                        var parts = new List<Expr> { inner };
-                        while (!At(TokenKind.CloseParen) && !AtEnd)
-                            parts.Add(ParseListElement());
-                        Token close = Expect(TokenKind.CloseParen, "')'");
-                        var text = new TextExpr { Span = t.Span.To(close.Span) };
-                        text.Parts.AddRange(parts);
-                        return text;
-                    }
-                    Expect(TokenKind.CloseParen, "')'");
-                    // (Name) may be a call with no arguments, which the binder decides
-                    if (inner is NameExpr named) named.InParens = true;
-                    if (inner is MemberExpr member) member.InParens = true;
-                    return inner;
+                    parenDepth++;
+                    try { return ParseInParens(t); }
+                    finally { parenDepth--; }
                 }
 
                 case TokenKind.Identifier:

@@ -61,7 +61,7 @@ phi.X509:Library
 	const u32 ECDSA_SHA256: 2;
 	const u32 RSA_SHA384: 3;
 	const u32 ECDSA_SHA384: 4;
-	const u32 MAX_ROOTS: 16;
+	const u32 MAX_ROOTS: 4096;              # (a long list is fine; an endless one isn't)
 	const u32 MAX_DEPTH: 8;
 
 	str error: '';
@@ -70,7 +70,7 @@ phi.X509:Library
 	u32 now: 0;
 	u32 x509_month_days: 0 31 59 90 120 151 181 212 243 273 304 334;   # days before each month
 
-	Certificate x509_roots[16];
+	Certificate x509_roots[];
 	u32 x509_root_count: 0;
 	u8 x509_digest[48];
 	u8 x509_r[48];
@@ -392,12 +392,15 @@ phi.X509:Library
 	# trust the root certificate in der (length bytes), which must stay where it is
 	[Trust: ptr<u8> der: 0; u32 length: 0;]
 		if x509_root_count >= MAX_ROOTS return (X509.Fail: 'too many roots');
-		if not (X509.Parse: addr x509_roots:x509_root_count der length) return false;
+		Certificate root;
+		if not (X509.Parse: addr root der length) return false;
+		x509_roots++ root;
 		x509_root_count++;
 	[end: true]
 
 	# forget the roots
 	[Untrust]
+		x509_roots.len is 0;
 		x509_root_count is 0;
 	[end]
 

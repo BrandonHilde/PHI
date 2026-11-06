@@ -1,0 +1,13 @@
+# A user program's first stack running out on PHI OS (kernel32_program_stack.rootfs/stack.phi):
+# the kernel sends it to its own catch on its spare stack, several times. The last isn't
+# caught, so it ends with -1, and the kernel carries on with all the program's memory back.
+use proc.process;
+
+phi.Test:Kernel
+{
+	u32 framesBefore: Frames.free_frames;
+	int code: (Process.Wait: (Process.Spawn: 'STACK.BIN'));
+	log 'exit code: ' code '\n';
+	log 'memory back: ' (Frames.free_frames is framesBefore) '\n';
+	exit 0;
+}

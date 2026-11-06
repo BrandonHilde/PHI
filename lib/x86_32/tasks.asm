@@ -42,6 +42,8 @@ THREAD_BLOCK equ 1024          ; a program thread's block (its throw.asm's PHI_T
 
 USER_BASE     equ 0x40000000
 USER_TOP      equ 0x40400000
+USER_STACK_BOTTOM equ USER_TOP - 65536  ; a program's first stack (process.phi's STACK_PAGES)
+USER_SPARE_TOP    equ USER_STACK_BOTTOM - 8192  ; under its gap, the spare stack (SPARE_PAGES, GAP_PAGES)
 
 ; offsets in the saved state
 F_ESI equ 20
@@ -54,6 +56,7 @@ F_EIP equ 56
 ERROR_DIVIDE  equ 3              ; ErrorKind (lib/phi/lang/error.phi), for a program's fault entry
 ERROR_EMPTY   equ 4
 ERROR_ACCESS  equ 5
+ERROR_STACK   equ 8
 F_SIZE equ 76                   ; everything, including the user esp and ss
 
 OS_StartMultitasking:
@@ -363,6 +366,7 @@ phi_schedule:
     je .restore_fpu
     mov byte [phi_task_fpu_fresh + edx], 0
     fninit
+    fldcw [phi_fpu_double]                    ; (it works in f64s, as X86Generator's start says)
     jmp .same_fpu
 .restore_fpu:
     imul esi, edx, FPU_STATE
@@ -684,7 +688,8 @@ phi_user_string:
 
 ; ---- an exception in a user program: eax = saved state. A program that catches errors
 ; (it said where, with system call 10) goes there for the ones it can catch, to be thrown:
-; dividing by zero, memory that isn't there, what the CPU refused. Otherwise it's stopped.
+; dividing by zero, memory that isn't there, what the CPU refused, its first thread's stack
+; running out. Otherwise it's stopped.
 phi_task_fault:
     mov ebp, eax
     mov ecx, [phi_current_task]
@@ -706,15 +711,23 @@ phi_task_fault:
     jae .send
     mov ebx, ERROR_EMPTY
 .send:
-    ; not when its stack has run off its end, or the entry itself was stopped: the throw
-    ; would only be stopped again
-    mov eax, [ebp + F_EIP + 12]               ; its esp (on this thread's own stack)
-    cmp eax, [phi_task_stack_bottom + ecx * 4]
-    jbe .stop
-    cmp eax, [phi_task_stack_top + ecx * 4]
-    ja .stop
+    ; not when the entry itself was stopped, or a thread's stack has run off its end: the
+    ; throw would only be stopped again. The first thread goes on on the spare stack under
+    ; its stack (unless that's where it was), so the throw has room.
     cmp [ebp + F_EIP], edx
     je .stop
+    mov eax, [ebp + F_EIP + 12]               ; its esp (on this thread's own stack)
+    cmp eax, [phi_task_stack_top + ecx * 4]
+    ja .stop
+    cmp eax, [phi_task_stack_bottom + ecx * 4]
+    ja .room
+    cmp dword [phi_task_stack_bottom + ecx * 4], USER_STACK_BOTTOM
+    jne .stop
+    cmp eax, USER_SPARE_TOP
+    jbe .stop
+    mov dword [ebp + F_EIP + 12], USER_SPARE_TOP
+    mov ebx, ERROR_STACK
+.room:
     mov eax, [ebp + F_EIP]
     mov [ebp + F_ECX], eax                    ; where it happened, for its line
     mov [ebp + F_EIP], edx
@@ -1305,6 +1318,7 @@ phi_task_image_end:    times MAX_TASKS dd 0
 phi_task_stack_bottom: times MAX_TASKS dd 0
 phi_task_heap_end:     times MAX_TASKS dd 0
 phi_task_fpu_fresh:    times MAX_TASKS db 0
+phi_fpu_double: dw 0x27F
 FPU_STATE              equ 108                 ; what fnsave keeps
 phi_task_fpu:          times MAX_TASKS * FPU_STATE db 0
 phi_task_parent:       times MAX_TASKS dd 0

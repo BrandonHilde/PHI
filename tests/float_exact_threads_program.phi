@@ -1,0 +1,22 @@
+# A thread's f64 sums are as exact as the first thread's (float_exact.phi): each system starts
+# a thread's floating point in its own way, and it's the same sum on all of them.
+use user.threads;
+
+phi.FloatExactThreadsProgram:Program
+{
+	call Sum: 0;
+	int t: (Threads.Start: addr Sum 1);
+	call Threads.Wait: t;
+
+	[Sum: int part: 0;]
+		f64 over: (Half: 1.0 53) + (Half: 1.0 78);
+		f64 sum: 1.0 + over;
+		log 'part ' part ': ' (sum > 1.0) '\n';
+	[end]
+
+	[Half: f64 x: 0.0; int times: 0;]
+		while int i: 0; i < times; i++;
+			x is x / 2.0;
+		;;
+	[end: x]
+}

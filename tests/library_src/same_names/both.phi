@@ -1,0 +1,9 @@
+# A library with two files of one name, in different folders (library_same_names_program.phi).
+use one.parser;
+use two.parser;
+
+phi.both:Library
+{
+	[Sum]
+	[end: (ParserOne.Which) + (ParserTwo.Which)]
+}

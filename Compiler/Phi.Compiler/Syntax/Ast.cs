@@ -183,7 +183,7 @@ namespace Phi.Compiler.Syntax
         public List<Stmt> Body { get; } = new();
         public Expr? Result { get; set; }
 
-        /// <summary>What it returns, where its header says so: an interface's [Area: : int].</summary>
+        /// <summary>What it returns, where its header says so: [Make: : ptr&lt;Node&gt;], an interface's [Area: : int].</summary>
         public TypeRef? DeclaredResult { get; set; }
 
         /// <summary>From a compiled library: it has no code here, only this header.</summary>
@@ -757,6 +757,19 @@ namespace Phi.Compiler.Syntax
     {
         public Expr Operand { get; set; } = null!;
         public TypeRef TargetType { get; init; } = null!;
+    }
+
+    /// <summary>
+    /// p as u8[count]: count elements starting at a pointer, as an array, for a method that takes
+    /// one (u8 bytes[]), whose indexes are then checked against count as any array's are.
+    /// </summary>
+    public sealed class PointerViewExpr : Expr
+    {
+        public Expr Pointer { get; set; } = null!;
+        public TypeRef ElementType { get; init; } = null!;
+        public Expr Count { get; set; } = null!;
+        /// <summary>It went to an array parameter, the one place it can go.</summary>
+        public bool Passed { get; set; }
     }
 
     /// <summary>

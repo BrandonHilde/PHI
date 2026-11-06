@@ -23,12 +23,13 @@ namespace Phi.Compiler.Tests
         }
 
         [Theory]
-        [InlineData("ptr<u8> p: new u8[8];\n int n: p;", "'n' is an int, which keeps only 32 bits of this pointer")]
-        [InlineData("int n: 5;\n ptr<u8> p: n;", "'p' is a ptr<u8>, 64 bits in 64-bit code, and this is an int, so its top half is lost")]
-        [InlineData("ptr<u8> p: new u8[8];\n u32 n: p + 4;", "keeps only 32 bits of this pointer")]
-        public void In64BitCodeAPointerAndANumberDontMixQuietly(string body, string warning)
+        [InlineData("ptr<u8> p: new u8[8];\n int n: p;", Severity.Error, "'n' is an int, which keeps only 32 bits of this pointer")]
+        [InlineData("int n: 5;\n ptr<u8> p: n;", Severity.Warning, "'p' is a ptr<u8>, 64 bits in 64-bit code, and this is an int, so its top half is lost")]
+        [InlineData("ptr<u8> p: new u8[8];\n u32 n: p + 4;", Severity.Error, "keeps only 32 bits of this pointer")]
+        [InlineData("ptr<u8> p: (Make);\n [Make]\n ptr<u8> q: new u8[8];\n return q;\n [end: 0]", Severity.Error, "the returned value is an int, which keeps only 32 bits of this pointer")]
+        public void In64BitCodeAPointerAndANumberDontMixQuietly(string body, Severity severity, string message)
         {
-            Assert.Contains(Compile(Program(body), Host.Linux64).Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(warning));
+            Assert.Contains(Compile(Program(body), Host.Linux64).Diagnostics, d => d.Severity == severity && d.Message.Contains(message));
             // in 32-bit code they're the same size
             Assert.DoesNotContain(Compile(Program(body), Host.Linux).Diagnostics, d => d.Message.Contains("32 bits of this") || d.Message.Contains("top half"));
         }

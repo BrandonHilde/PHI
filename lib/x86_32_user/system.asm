@@ -1,4 +1,4 @@
-; provides: phi_exit OS_Now phi_fault_register OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_AppendFile OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_WindowNew OS_WindowSelect OS_WindowClose OS_NetAddress OS_NetNameServer OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
+; provides: phi_exit OS_Now phi_fault_register phi_stack_restore OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_Sleep OS_GetTicks OS_Yield OS_CurrentTask OS_Spawn OS_Run OS_Wait OS_Arguments OS_ReadFile OS_WriteFile OS_DeleteFile OS_ListFiles OS_FileSize OS_TaskState OS_TaskName OS_Kill OS_FreeMemory OS_TotalMemory OS_Reboot OS_ClearScreen OS_PutCell OS_IsKeyDown OS_ReadFileAt OS_SoundWrite OS_SoundRate OS_SoundQueued OS_SoundStop OS_SoundVolume OS_Grow OS_ListFolder OS_MakeFolder OS_Rename OS_DeleteFolder OS_AppendFile OS_SurfaceOpen OS_SurfacePresent OS_NextEvent OS_CopyFont OS_SetWindowTitle OS_OpenWindow OS_WindowFocused OS_SetResizable OS_WindowNew OS_WindowSelect OS_WindowClose OS_NetAddress OS_NetNameServer OS_UdpOpen OS_UdpClose OS_UdpReceive OS_UdpSend OS_TcpBegin OS_TcpState OS_TcpSend OS_TcpTake OS_TcpClose OS_TcpListen OS_TcpAccept OS_TcpWaiting OS_TcpAddress OS_TcpStopListening OS_MailOpen OS_MailFind OS_MailSend OS_MailReceive OS_MailWaiting OS_MailClose
 ;
 ; requires: phi_flush
 ;
@@ -236,6 +236,11 @@ PHI_SYSCALL OS_TcpStopListening, SYS_TCP_STOP_LISTENING, 1   ; listener -> 1, or
 ; eax = where the kernel sends this program when the CPU stops it (dividing by zero, or
 ; memory that isn't there), with ebx = the kind of error (throw.asm's phi_fault_entry):
 ; system call 10
+; after a throw of the stack running out, on its way back to the catch: nothing to do, as
+; what's past the end of the stack stays there to be stopped by
+phi_stack_restore:
+    ret
+
 phi_fault_register:
     push ebx
     mov ebx, eax

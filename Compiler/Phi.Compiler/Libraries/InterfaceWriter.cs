@@ -18,9 +18,11 @@ namespace Phi.Compiler.Libraries
     {
         public static List<InterfaceFile> Write(ProgramNode program, IReadOnlyList<SourceFile> own, IReadOnlyDictionary<UseDecl, (SourceFile From, SourceFile Target)> uses)
         {
+            // each by its path from the library's own file, as two folders can each have a parser.phi
+            string home = Path.GetDirectoryName(Path.GetFullPath(own[^1].Path))!;
             var files = new List<InterfaceFile>();
             foreach (SourceFile file in own)
-                files.Add(new InterfaceFile(Path.GetFileName(file.Path), WriteFile(file, program, own, uses)));
+                files.Add(new InterfaceFile(Path.GetRelativePath(home, Path.GetFullPath(file.Path)).Replace('\\', '/'), WriteFile(file, program, own, uses)));
             return files;
         }
 

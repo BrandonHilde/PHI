@@ -1,6 +1,6 @@
 ; provides: phi_thread_setup phi_thread_block phi_tls_index phi_main_thread OS_ThreadEntry
 ; init: phi_threads_init
-; requires: phi_imports phi_print phi_exit
+; requires: phi_imports phi_print phi_exit phi_stack_guarantee
 ;
 ; Each thread's block in a Windows program (throw.asm's PHI_THREAD_...: its catches and
 ; the error it throws). Windows keeps fs (and gs) for itself, so the block's address is in
@@ -66,7 +66,8 @@ OS_ThreadEntry:
     ret
 
 ; where a new thread starts (Windows calls it, stdcall): [esp + 4] = its method and value,
-; then its block; when the method returns, the thread ends
+; then its block; when the method returns, the thread ends. The first of its stack is its
+; spare stack (for the stack running out: system.asm's phi_fault_register).
 phi_host_thread_main:
     push ebx
     push esi
@@ -75,7 +76,10 @@ phi_host_thread_main:
     mov ebx, [esp + 20]
     lea eax, [ebx + 8]
     call phi_thread_setup
+    mov [eax + THREAD_SPARE], esp
     mov ebp, esp
+    sub esp, SPARE_STACK
+    call phi_stack_guarantee
     push dword [ebx + 4]
     call [ebx]
     mov esp, ebp
