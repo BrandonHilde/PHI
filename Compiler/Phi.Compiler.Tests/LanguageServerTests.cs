@@ -735,6 +735,7 @@ namespace Phi.Compiler.Tests
         [InlineData("tests/net_http.phi")]              // phi test gives it class TestWeb
         [InlineData("samples/mmo/load_players.phi")]    // phi load gives it its network, Machine and LoadSettings
         [InlineData("lib/phi/test/load.phi")]
+        [InlineData("tests/support/web_test_server.phi")] // a :Program class that's a module of a test
         public void AFileThatsRightHasNoErrors(string file)
         {
             string path = Path.Combine(RepoRoot(), file);
@@ -806,6 +807,81 @@ namespace Phi.Compiler.Tests
             string two = Write("lib/two.phi", "use lib.one;\nphi.Two:Library\n{\n\t[Value]\n\t[end: (One.Value) + 1]\n}\n");
             CompileResult result = new SourceChecker().Check(two, "use lib.one;\nphi.Two:Library\n{\n\tchangedSinceSaved++ 1;\n}\n");
             Assert.Contains(result.Diagnostics, d => d.Message.Contains("changedSinceSaved"));
+        }
+
+        [Fact]
+        public void AProgramInASubfolderOfARootfsFindsItsUsesNextToItsKernel()
+        {
+            Write("lib/one.phi", "phi.One:Library\n{\n\t[Value]\n\t[end: 1]\n}\n");
+            Write("os.phi", "phi.Os:Kernel\n{\n}\n");
+            string app = Write("os.rootfs/APPS/app.phi", "use lib.one;\nphi.App:Program\n{\n\tlog (One.Value);\n}\n");
+            CompileResult result = new SourceChecker().Check(app, File.ReadAllText(app));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+
+            string wrong = Write("os.rootfs/APPS/wrong.phi", "use lib.one;\nphi.Wrong:Program\n{\n\tnothingCalledThis++ 1;\n}\n");
+            result = new SourceChecker().Check(wrong, File.ReadAllText(wrong));
+            Diagnostic error = Assert.Single(result.Diagnostics.Where(d => d.Severity == Severity.Error));
+            Assert.Contains("nothingCalledThis", error.Message);
+        }
+
+        [Theory]
+        [InlineData("Program")]
+        [InlineData("Kernel")]
+        public void AModuleWithItsOwnClassOfAProgramIsCheckedAsAModule(string kind)
+        {
+            // like a project's phi.Game:Program, with uses written from the folder above it
+            Write("lib/one.phi", "phi.One:Library\n{\n\t[Value]\n\t[end: 1]\n}\n");
+            string two = Write("lib/two.phi", $"use lib.one;\nphi.Two:{kind}\n{{\n\t[Value]\n\t[end: (One.Value) + 1]\n}}\n");
+            CompileResult result = new SourceChecker().Check(two, File.ReadAllText(two));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+
+            result = new SourceChecker().Check(two, $"use lib.one;\nphi.Two:{kind}\n{{\n\tnothingCalledThis++ 1;\n}}\n");
+            Diagnostic error = Assert.Single(result.Diagnostics.Where(d => d.Severity == Severity.Error));
+            Assert.Contains("nothingCalledThis", error.Message);
+        }
+
+        [Fact]
+        public void AModuleWithAProgramClassThatNeedsItsProgramIsCheckedInIt()
+        {
+            // (Shared comes only from the program that uses both)
+            Write("shared.phi", "phi.Shared:Library\n{\n\tint value: 1;\n}\n");
+            string part = Write("support/part.phi", "phi.Part:Program\n{\n\tShared.value++ 1;\n}\n");
+            Write("main.phi", "use shared;\nuse support.part;\nphi.Main:Program\n{\n}\n");
+            CompileResult result = new SourceChecker().Check(part, File.ReadAllText(part));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Fact]
+        public void AModuleIsCheckedInAProgramThatHasItThroughAnotherModule()
+        {
+            // (Shared comes only from the program, which doesn't use the module itself)
+            Write("shared.phi", "phi.Shared:Library\n{\n\tint value: 1;\n}\n");
+            string inner = Write("inner.phi", "phi.Inner:Library\n{\n\tShared.value++ 1;\n}\n");
+            Write("outer.phi", "use inner;\nphi.Outer:Library\n{\n}\n");
+            Write("main.phi", "use shared;\nuse outer;\nphi.Main:Program\n{\n}\n");
+            CompileResult result = new SourceChecker().Check(inner, File.ReadAllText(inner));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Fact]
+        public void AModuleWithNoUsesFindsItsProgramInAProjectWithNoRepository()
+        {
+            // (it has no uses to say where its program is, and there's no .git above it)
+            Write("shared.phi", "phi.Shared:Library\n{\n\tint value: 1;\n}\n");
+            string part = Write("lib/part.phi", "phi.Part:Library\n{\n\tShared.value++ 1;\n}\n");
+            Write("main.phi", "use shared;\nuse lib.part;\nphi.Main:Program\n{\n}\n");
+            CompileResult result = new SourceChecker().Check(part, File.ReadAllText(part));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Fact]
+        public void AModuleThatDoesntParseStillFindsItsUses()
+        {
+            Write("lib/one.phi", "phi.One:Library\n{\n}\n");
+            string two = Write("lib/two.phi", "use lib.one;\nphi.Two:Library\n{\n}\n");
+            CompileResult result = new SourceChecker().Check(two, "use lib.one;\nphi.Two:Library\n{\n\tint;\n}\n", bindAnyway: true);
+            Assert.DoesNotContain(result.Diagnostics, d => d.Message.Contains("can't find"));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Error);
         }
 
         [Fact]

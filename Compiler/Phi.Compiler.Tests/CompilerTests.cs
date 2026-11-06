@@ -189,12 +189,22 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("ptr<u8> kept: (Pick: 1);")]
         [InlineData("ptr<u8> kept: '';\nkept is (Pick: 1);")]
-        [InlineData("ptr<u8> kept: '';\nkept is (Name);\n[Name]\n[end: 'x']")]
+        [InlineData("ptr<u8> kept: '';\nkept is (Name);\n[Name]\n[end: 'xy']")]
         public void AStrResultCantBeKeptByAPointer(string body)
         {
             string methods = "\n[Pick: int n: 0;]\n if n > 1 return 'first';\n[end: 'second']";
             AssertError(Boot(body + methods), "returns a str, which only lasts until the end of this statement");
         }
+
+        [Theory]
+        [InlineData("ptr<u8> kept: (Name);\n[Name]\n[end: 'x']")]
+        [InlineData("chr c: 'x';\nptr<u8> kept: c;")]
+        [InlineData("str s: 'text';\ncall Takes: s:0;\n[Takes: ptr<u8> p: 0;]\n[end]")]
+        public void ACharacterIsntAnAddress(string body) => AssertError(Boot(body), "an address, and this is a chr, a character");
+
+        [Fact]
+        public void ACharacterCanBeAnAddressIfItSaysSo() =>
+            Assert.True(Compile(Boot("chr c: 'x';\nptr<u8> kept: c as ptr<u8>;")).Success);
 
         [Fact]
         public void AStrResultCanBePassedAsAPointer()

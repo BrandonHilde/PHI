@@ -175,11 +175,12 @@ PHI source line shown above the code it produced.
 
 <h4>What's Next:</h4>
 
-All eight phases of the [roadmap](./Plan.md) are done: PHI compiles boot sectors, 32-bit
-kernels and user programs, and PHI OS ties them together. Next, roughly in order:
+PHI compiles boot sectors, 32-bit kernels and their programs, which PHI OS ties together, and
+ordinary programs for Linux and Windows in 32 or 64 bits. Next, roughly in order (the
+[roadmap](./Plan.md) has the rest):
 
-1. A heap for user programs, so `new` works there too
-2. Growable strings
-3. A GUI toolkit (windows and widgets) on top of the graphics library
-4. Later: checking TLS certificates, 64-bit, an ARM backend, C compatibility, and
-   rewriting the compiler in PHI (see [Plan.md](./Plan.md#later))
+1. A core language that's solid throughout, before more is added to it
+2. More tools: hover, finding uses and renaming in the language server, debug information on
+   Linux, a formatter and packages
+3. Later: macOS, 64-bit kernels, an ARM backend, C compatibility, and rewriting the compiler
+   in PHI (see [Plan.md](./Plan.md#later))

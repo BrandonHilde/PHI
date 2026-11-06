@@ -11,8 +11,10 @@ namespace Phi.Cli
     /// only make sense with what's around them (lib/phi/host's work as a family; net.tlslink
     /// needs the Tcp its program has), so it's checked in the first of these that has no errors
     /// in it: a smallest program around it, its system's runtime, or a program here that uses it.
-    /// Only the errors in the file itself are reported. An instance keeps what worked, so a
-    /// mistake in a module that's being written is one check and not a search.
+    /// A file with a :Program or :Kernel class can be a module too, so one that has errors by
+    /// itself is tried in those as well. Only the errors in the file itself are reported. An
+    /// instance keeps what worked, so a mistake in a module that's being written is one check
+    /// and not a search.
     /// </summary>
     public sealed class SourceChecker
     {
@@ -25,6 +27,9 @@ namespace Phi.Cli
 
         /// <summary>The longest list of programs tried for a module, as each is a whole compile.</summary>
         const int MostUsers = 8;
+
+        /// <summary>How far up a project with no repository is looked for.</summary>
+        const int FoldersAboveAModule = 3;
 
         /// <summary>Where the modules are that answer programs' calls on other systems.</summary>
         const string RuntimeFolder = "lib/phi/host/";
@@ -61,10 +66,15 @@ namespace Phi.Cli
             Host? ownSystem = SystemOf(own);
 
             // (what's added would read as part of a class that was never closed, so with parse
-            // errors the file goes by itself: only those errors are reported)
+            // errors the file goes by itself: only those errors are reported, and its uses are
+            // found from where its program would find them)
             if (parsing.HasErrors)
+            {
+                string? usesFrom = FolderItsUsesAreFrom(path, own, withThis);
                 return Only(key, PhiCompiler.Compile(new SourceFile(path, text), generate: false, host: target ?? ownSystem ?? plan?.Host ?? Host.PhiOS,
+                                                     kernel: usesFrom == null ? null : Path.Combine(usesFrom, "phi_check_module.phi"),
                                                      open: withThis, bindAnyway: bindAnyway));
+            }
 
             CompileResult Run(Plan p)
             {
@@ -124,15 +134,15 @@ namespace Phi.Cli
         {
             string machine = MachineClassFor(path, own) + WebClassFor(path, own);
             Host host = target ?? ownSystem ?? Host.PhiOS;
+            string? top = FolderItsUsesAreFrom(path, own, open);
 
-            if (isProgram)
-            {
-                yield return new Plan(host, machine);
-                yield break;
-            }
+            // a program by itself, unless its uses say it's in a subfolder of one. Then, or if it
+            // has errors by itself, it can be a module with a class of its own: lib/game.phi's
+            // phi.Game:Program, a kernel's phi.Wm:Kernel. The plans below find what it's a part of.
+            if (isProgram && top == null) yield return new Plan(host, machine);
 
             // a load client: as phi load builds it, in a kernel or a program
-            if (ownSystem == null && !partOfRuntime && IsLoadClient(TextOf(path, open), own))
+            if (!isProgram && ownSystem == null && !partOfRuntime && IsLoadClient(TextOf(path, open), own))
             {
                 if (host == Host.PhiOS) yield return new Plan(host, LoadTester.ClientAdded(kernel: true));
                 yield return new Plan(host, LoadTester.ClientAdded(kernel: false));
@@ -145,7 +155,6 @@ namespace Phi.Cli
 
             // a module in a subfolder, whose uses are written from the folder above it, as its
             // program finds them: in the smallest program there, which isn't on the disk
-            string? top = FolderItsUsesAreFrom(path, own, open);
             if (top != null && ownSystem == null && !partOfRuntime)
             {
                 string use = "use " + Path.GetRelativePath(top, Path.ChangeExtension(Path.GetFullPath(path), null)).Replace(Path.DirectorySeparatorChar, '.') + ";\n";
@@ -156,7 +165,7 @@ namespace Phi.Cli
                     yield return new Plan(host, use + ProgramWrapper, Root: root, OnlyAdded: true);
             }
 
-            if (ownSystem == null && !partOfRuntime)
+            if (!isProgram && ownSystem == null && !partOfRuntime)
             {
                 if (host != Host.PhiOS) yield return new Plan(host, machine + ProgramWrapper);
                 else
@@ -293,33 +302,73 @@ namespace Phi.Cli
         static bool IsLoadClient(string text, ProgramNode own) =>
             !own.Classes.Any(c => c.Name == "LoadSettings") && text.Contains("LoadSettings.");
 
-        /// <summary>The .phi files in this repository (or folder, without one) with a `use` of this file's name.</summary>
+        /// <summary>
+        /// The .phi files in this repository (or folder, without one) with a `use` of this file's
+        /// name, then those with a `use` of theirs: a program can have a module through another.
+        /// </summary>
         static IEnumerable<string> UsersOf(string path, IReadOnlyDictionary<string, string> open, string? top)
         {
             string full = Path.GetFullPath(path);
-            string name = Path.GetFileNameWithoutExtension(full);
-            var use = new Regex($@"^\s*use\s+([\w]+\.)*{Regex.Escape(name)}\s*;", RegexOptions.Multiline);
+            List<string> files = PhiFiles(RepositoryOf(full, top)).ToList();
+            var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { full };
+            var used = new Queue<string>(new[] { full });
 
             int found = 0;
-            foreach (string file in PhiFiles(RepositoryOf(full, top)))
+            while (used.TryDequeue(out string? module))
             {
-                if (file.Equals(full, StringComparison.OrdinalIgnoreCase)) continue;
-                string text;
-                try { text = TextOf(file, open); }
-                catch (IOException) { continue; }   // gone since the folder was listed
-                if (!use.IsMatch(text)) continue;
-                yield return file;
-                if (++found == MostUsers) yield break;
+                string name = Path.GetFileNameWithoutExtension(module);
+                var use = new Regex($@"^\s*use\s+([\w]+\.)*{Regex.Escape(name)}\s*;", RegexOptions.Multiline);
+                foreach (string file in files)
+                {
+                    if (seen.Contains(file)) continue;
+                    string text;
+                    try { text = TextOf(file, open); }
+                    catch (IOException) { continue; }   // gone since the folder was listed
+                    if (!use.IsMatch(text)) continue;
+                    seen.Add(file);
+                    used.Enqueue(file);
+                    yield return file;
+                    if (++found == MostUsers) yield break;
+                }
             }
         }
 
-        /// <summary>The folder above a file with a .git in it; else the folder its uses are from, or its own.</summary>
+        /// <summary>
+        /// The folder above a file with a .git in it. Without one, the folder its uses are from,
+        /// or else the highest of the few folders above it that show they're its project.
+        /// </summary>
         static string RepositoryOf(string file, string? top)
         {
             string own = Path.GetDirectoryName(file) ?? "";
             for (string? dir = own; dir != null; dir = Path.GetDirectoryName(dir))
                 if (Directory.Exists(Path.Combine(dir, ".git"))) return dir;
-            return top ?? own;
+            if (top != null) return top;
+
+            string highest = own;
+            string? above = Path.GetDirectoryName(own);
+            for (int i = 0; i < FoldersAboveAModule && above != null; i++, above = Path.GetDirectoryName(above))
+                if (IsProjectOf(above, own)) highest = above;
+            return highest;
+        }
+
+        /// <summary>
+        /// Whether a folder above a module's is its project, and not only somewhere it happens to
+        /// be (a .phi file left in the temporary folder says nothing): it has a kernel's rootfs,
+        /// or a file right there uses something in the module's folder.
+        /// </summary>
+        static bool IsProjectOf(string folder, string moduleFolder)
+        {
+            try
+            {
+                if (Directory.Exists(Path.Combine(folder, "rootfs")) || Directory.EnumerateDirectories(folder, "*.rootfs").Any()) return true;
+                string from = Path.GetRelativePath(folder, moduleFolder).Replace(Path.DirectorySeparatorChar, '.');
+                var use = new Regex($@"^\s*use\s+{Regex.Escape(from)}\.", RegexOptions.Multiline);
+                return Directory.EnumerateFiles(folder, "*.phi").Any(f => use.IsMatch(File.ReadAllText(f)));
+            }
+            catch (Exception e) when (e is UnauthorizedAccessException or IOException)
+            {
+                return false;
+            }
         }
 
         /// <summary>
@@ -337,7 +386,9 @@ namespace Phi.Cli
                 return open.ContainsKey(PhiCompiler.FileKey(file)) || File.Exists(file);
             }
 
-            List<string> missing = own.Uses.Select(u => u.Path).Where(u => here != null && !Has(here, u) && !PhiCompiler.InStandardLibrary(u)).ToList();
+            // (a program anywhere in a rootfs finds them next to its kernel, as it's built)
+            string? kernels = PhiCompiler.FolderOfRootfs(full);
+            List<string> missing = own.Uses.Select(u => u.Path).Where(u => here != null && !Has(here, u) && !(kernels != null && Has(kernels, u)) && !PhiCompiler.InStandardLibrary(u)).ToList();
             if (here == null || missing.Count == 0) return null;
             for (string? dir = Path.GetDirectoryName(here); dir != null; dir = Path.GetDirectoryName(dir))
                 if (missing.All(u => Has(dir, u))) return dir;
@@ -347,10 +398,20 @@ namespace Phi.Cli
         static IEnumerable<string> PhiFiles(string folder)
         {
             if (!Directory.Exists(folder)) yield break;
+            string[] files, folders;
+            try
+            {
+                files = Directory.GetFiles(folder, "*.phi");
+                folders = Directory.GetDirectories(folder);
+            }
+            catch (Exception e) when (e is UnauthorizedAccessException or IOException)
+            {
+                yield break;   // one that can't be read has nothing to go by
+            }
             // (.NAME.phi: an editor's copy of unsaved text, here for a moment)
-            foreach (string file in Directory.EnumerateFiles(folder, "*.phi").Where(f => !Path.GetFileName(f).StartsWith('.')).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            foreach (string file in files.Where(f => !Path.GetFileName(f).StartsWith('.')).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
                 yield return file;
-            foreach (string sub in Directory.EnumerateDirectories(folder).OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
+            foreach (string sub in folders.OrderBy(f => f, StringComparer.OrdinalIgnoreCase))
             {
                 string name = Path.GetFileName(sub);
                 if (name is "build" or "bin" or "obj" or "node_modules" || name.StartsWith('.')) continue;

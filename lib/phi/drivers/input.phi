@@ -184,9 +184,19 @@ phi.Input:Kernel
 		mouse_tail is (mouse_tail + 1) % MOUSE_QUEUE;
 	[end: true]
 
-	# forget mouse events that haven't been taken yet
+	# forget mouse events that haven't been taken yet, but not what they did: a button let go is up
+	# (or the next press wouldn't be a click), and a press that's forgotten doesn't start a double
+	# click. One that arrives while this runs stays in the queue.
 	[FlushMouse]
-		mouse_tail is mouse_head;
+		int last: mouse_head;
+		while mouse_tail is not last
+			int buttons: mouse_queue_buttons:mouse_tail;
+			if (buttons & 1) is not 0 and (last_event_buttons & 1) is 0
+				pressed_once is false;
+			;;
+			last_event_buttons is buttons;
+			mouse_tail is (mouse_tail + 1) % MOUSE_QUEUE;
+		;;
 	[end]
 
 	# ------------------------------------------------------------ keyboard

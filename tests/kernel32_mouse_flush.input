@@ -1,0 +1,18 @@
+expect ready
+click 100 50
+wait 200
+type a
+expect one
+# far from the first, so it can't be a double click
+click 300 200
+wait 200
+type b
+expect two
+click 30 30
+wait 100
+type c
+expect three
+# in the same place: a double click if the forgotten one counted
+click 30 30
+wait 100
+type d

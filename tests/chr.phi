@@ -34,4 +34,47 @@ phi.Chars:Library
 	# bytes still print as numbers
 	u8 raw: 104;
 	log raw '\n';
+
+	# a method's result is a character, when all it gives back is one
+	log (Letter) ' ' (First) ' ' (Either: 0) (Either: 1) (Either: 2) (Either: 3) (Either: 4) '\n';
+	chr got: (Letter);
+	word is 'x';
+	word++ (First);
+	str made: (Letter);
+	log got ' ' word ' ' made ' ' ((Letter) is 'N') ' ' ((Letter) + 1) ' ' sizeof got '\n';
+	call got is First;
+	log got '\n';
+
+	# with any other return, it's what it would be without one: a number stays whole, and text is text
+	log (NextOf: 0) ' ' ((NextOf: 0) is -1) ' ' (NextOf: 1) '\n';
+	str named: (Named: 1);
+	log (Named: 0) ' ' (Named: 1) ' ' named.len '\n';
+	log (Pointed: 0) ' ' (Pointed: 1) '\n';
+
+	[Letter]
+	[end: 'N']
+
+	[First]
+	[end: name:0]
+
+	[Either: int n: 0;]
+		if n is 0 return 'a';
+		chr c: 'b';
+		if n is 1 return c;
+		if n is 2 return name:2;
+		if n is 3 return (n + 96) as chr;
+	[end: 'z']
+
+	[NextOf: int n: 0;]
+		if n is 0 return -1;
+	[end: name:0]
+
+	[Named: int n: 0;]
+		if n is 0 return 'text';
+	[end: 'x']
+
+	[Pointed: int n: 0;]
+		ptr<u8> p: addr name;
+		if n is 0 return p;
+	[end: '-']
 }

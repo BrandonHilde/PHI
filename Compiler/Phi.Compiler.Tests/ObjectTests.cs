@@ -35,7 +35,7 @@ namespace Phi.Compiler.Tests
         [Fact]
         public void AnObjectsFieldCantKeepAStrResult() =>
             AssertError("struct.Label\n{\n ptr<u8> text;\n}\n" +
-                        Kernel("new Label l: (Name);\n[Name]\n[end: 'x']"),
+                        Kernel("new Label l: (Name);\n[Name]\n[end: 'xy']"),
                         "Name returns a str, which only lasts until the end of this statement, so Label.text can't keep a pointer to it");
 
         [Fact]

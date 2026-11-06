@@ -41,6 +41,27 @@ namespace Phi.Compiler.Tests
             Assert.Equal("one\ntwo", t.Value);
         }
 
+        [Theory]
+        [InlineData("'héllo'", 2)]
+        [InlineData("'日本'", 1)]            // reported once for a string
+        [InlineData("'ok' '\U0001F600'", 6)]
+        public void AStringBeyondAsciiIsAnError(string text, int column)
+        {
+            Lex(text, out var diagnostics);
+            Diagnostic error = Assert.Single(diagnostics.Items);
+            Assert.Equal(Severity.Error, error.Severity);
+            Assert.Contains("ASCII", error.Message);
+            Assert.Equal(column, error.Span.Start);
+        }
+
+        [Fact]
+        public void BytesAboveAsciiAreWrittenAsEscapes()
+        {
+            Assert.Equal("í", Lex("'\\xED'")[0].Value);
+            // and a comment can say anything
+            Assert.Equal(TokenKind.Number, Lex("# héllo 日本\n1")[0].Kind);
+        }
+
         [Fact]
         public void BinarySuffixNeedsAWordBoundary()
         {

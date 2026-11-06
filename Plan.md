@@ -684,6 +684,9 @@ these were added:
      a kernel. Chunks, redirects, `POST` and headers, status codes. Answers are read as they come.
   3. `net.webstream`: `Stream.Open` on a URL, `Seek` by a range request, and so `fs.readahead` on
      one. It's a hook, so a program that reads only files doesn't carry TLS and its roots.
+     Which roots to trust is the project's to decide, not PHI's (the user's choice, 2026-11-05):
+     PHI keeps `X509.Trust` and the few in `crypto.roots`, and won't ship a full list like
+     Mozilla's. PhiOS's browser brings its own (`WEB/ROOTS.BIN`).
   4. Tests `web_program` (four hosts, a server on a thread, http and https) and `net_web` (PHI OS, a
      kernel and a program, against .NET's TLS through `WebServer`, which now has ranges, chunks and
      redirects). None of this has met a real internet server yet: the tests have no internet.
@@ -694,6 +697,29 @@ these were added:
   text and `f is 0` on a method value didn't work in 64-bit programs (`when_text_program`).
   Not yet: HTTP/2, IPv6, uploading a piece at a time, cookies, keeping a connection open between
   requests, and `Http`, which could now be a thin layer on `net.web`.
+- [x] From PhiOS's MATURITY.md again (2026-11-05), the core list:
+  - `FlushMouse` keeps what the events it forgets did: a release forgotten left the button held,
+    so the next click was lost (test `kernel32_mouse_flush`).
+  - `phi build` passes on warnings from a rootfs's programs, each once. They were dropped, so
+    a kernel built clean while `phi check` found 28 in its programs.
+  - `chr` is a result type: `[end: 'N']` and `[end: name:0]` give a character, if each `return`
+    is a character too (test `chr`). `[end: c]` was a number, so `log (F)` printed `113`, and
+    `[end: 'N']` a `str`, so `chr c: (Letter);` failed. With any other return it's as before,
+    since `return -1;` beside `[end: name:i]` needs -1 to stay -1. A one-character `[end: '-']`
+    beside a return of a `ptr<u8>` is a `ptr<u8>` method now, as a longer one was. A `chr` going
+    to a pointer is an error without `as`, as it would only be found when it's used.
+  - A string with a character beyond ASCII is an error, not silently wrong bytes (`'é'`
+    was 233, `'日'` was `?`); comments can hold any, and `\xNN` is any byte.
+  - `phi check` and `phi lsp`'s false errors in a project of several files (29 of PhiOS's 42
+    files had some, and `tests/support/web_test_server.phi` did; none now): a file
+    with a `:Program` or `:Kernel` class can be a module, so one with errors by itself is tried
+    in what uses it; a program in a rootfs's subfolder finds its uses next to the kernel, in a
+    build too; a program can have a module through another module; a project with no `.git` is
+    looked for up to 3 folders up; a file that doesn't parse doesn't also say it can't find its
+    uses.
+  - Stale docs: Windows' file calls from several threads were already fixed in H6 (only `ask`
+    from several threads is still not done), and `language.md`, the README and `crypto.roots`
+    said what was true long ago.
 
 The parts most worth doing next, roughly in order:
 
@@ -744,8 +770,8 @@ The parts most worth doing next, roughly in order:
    `method_values_into`, `method_values_into_errors`.
 3. **Interfaces**: done as `interface.Name` with `struct.X has Name` (see S7). Using them
    for PhiOS's tables of handlers is the next step there.
-4. Then the [Later](#later) list: TLS certificates, 64-bit mode, ARM. (C compatibility and
-   self-hosting are on hold until everything else is done.)
+4. Then the [Later](#later) list. (C compatibility and self-hosting are on hold until
+   everything else is done.)
 
 ---
 
@@ -912,14 +938,14 @@ These come after the basics work:
   drawing and the VGA font (`gfx.draw`, `gfx.font`), and the keyboard and mouse on their
   interrupts (`drivers.input`), and windows for programs with a desktop and widgets
   (`gui.*`). Still to do: other fonts (and text bigger than 8x16 that isn't blocky)
-- **64-bit long mode**, then an **ARM** backend (QEMU `virt` machine). The README's
+- **64-bit long mode:** done for Linux and Windows programs; kernels stay 32-bit until a
+  real cloud machine needs them. Then an **ARM** backend (QEMU `virt` machine). The README's
   planned x86→ARM translator becomes a second compiler backend.
 - **Networking:** done: PCI, an RTL8139 driver, ARP, IPv4, ICMP, UDP, DHCP, DNS, a TCP
   client, HTTP/1.0, and a TLS 1.3 client for https (`lib/phi/net/`, `samples/web.phi`) with
   its cryptography (`lib/phi/crypto/`: SHA-256, HMAC, HKDF, AES-128-GCM, ChaCha20-Poly1305,
-  X25519, random numbers). Still to do: **checking the server's certificate** (X.509,
-  RSA and ECDSA signatures, a set of trusted roots), listening for connections (a server),
-  the e1000 card, and interrupts instead of polling
+  X25519, random numbers), the server's certificate checked (`crypto.x509`), and listening for
+  connections. Still to do: the e1000 card, and interrupts instead of polling
 - **Sound:** done: an AC'97 driver (`drivers.ac97`), a synthesizer for songs written as text
   in the style of MML (`audio.synth`: 4 voices, square, pulse, triangle, sawtooth, sine and
   noise), WAV files with resampling (`audio.wav`), `audio.sound` to play them from a kernel,
@@ -2444,7 +2470,7 @@ kernels on PHI OS (500 logins; 300 players, none late).
     whole lines from four threads at once, on all four hosts) and the heap and log in
     `kernel32_program_threads`.
     - Not yet: Windows' file calls from several threads at once (they share the buffers
-      their paths are made wide in), and `ask` or `OS.ReadKey` from several at once.
+      their paths are made wide in; fixed in H6), and `ask` or `OS.ReadKey` from several at once.
   - (c, as planned) The program's side: `user.threads` (`Threads`, the same calls) on PHI OS, and
     the host runtimes: a thread is `clone` on Linux (no C library) and `CreateThread` on
     Windows. What the runtimes keep in one place for everyone (the line `log` is building,
@@ -2825,11 +2851,15 @@ Waiting, each for something:
 - **A real cloud machine, and 64-bit kernels:** no boot on one until there's a release, and
   kernels stay 32-bit until that needs them.
 - **`phi fuzz` and optimising:** in the phase before a release, in an environment of their own.
+- **Characters beyond ASCII:** waiting until the core language is solid (the user's choice,
+  2026-11-05); English text in ASCII for now. Worked out so far: `str` stays bytes, with UTF-8
+  for other text, and `.len` and `s:i` keep counting bytes, so nearly all of it can be PHI code
+  (a `text.utf8` library to walk characters, a larger font loaded from a file). The one compiler
+  part is string literals, where anything beyond ASCII is an error for now.
 
 Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, a formatter
-and packages. What's next overall is the list above called "The parts most worth doing next",
-whose first item is more for windows (several in a program, menus, dialog boxes, a multi-line
-`TextArea`).
+and packages. Everything in the list above called "The parts most worth doing next" is done up
+to its last item, the [Later](#later) list.
 
 ## References
 

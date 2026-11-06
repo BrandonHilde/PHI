@@ -110,12 +110,13 @@ namespace Phi.Cli
         }
 
         /// <summary>A user program from a kernel's rootfs, compiled for its disk; null (with errors) if it fails.</summary>
-        static byte[]? CompileProgram(string phiFile, string kernel, string outDir, List<string> errors, bool listing)
+        static byte[]? CompileProgram(string phiFile, string kernel, string outDir, List<string> errors, List<string> warnings, bool listing)
         {
             string dir = Path.Combine(outDir, "programs", Path.GetFileNameWithoutExtension(phiFile));
             BuildResult built = Build(phiFile, dir, kernel: kernel, listing: listing);
             // a mistake in code that several programs use is reported once, not once for each
             errors.AddRange(built.Errors.Where(e => !errors.Contains(e)));
+            warnings.AddRange(built.Warnings.Where(w => !warnings.Contains(w)));
             if (!built.Success) return null;
             if (!built.IsProgram)
             {
@@ -209,7 +210,7 @@ namespace Phi.Cli
                 throw new InvalidOperationException($"stage2 must be exactly {Stage2Sectors} sectors");
 
             var fsErrors = new List<string>();
-            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors, result.Listing));
+            byte[] partition = FatImage.Build(rootfs, fsErrors, source => CompileProgram(source, kernelFile, outDir, fsErrors, result.Warnings, result.Listing));
             if (fsErrors.Count > 0)
             {
                 result.Errors.AddRange(fsErrors);

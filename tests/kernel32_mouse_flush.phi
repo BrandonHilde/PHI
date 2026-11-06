@@ -1,0 +1,44 @@
+use drivers.input;
+
+phi.MouseFlushTest:Kernel
+{
+	call Input.Start;
+	debug 'ready\n';
+
+	# a press is taken and its release forgotten: the button is up, so the next press is a click
+	call WaitFor: 'a';
+	bln took: (Input.NextMouse);
+	call Show;
+	call Input.FlushMouse;
+	debug 'left ' (Input.NextMouse) '\n';
+	call Input.FlushMouse;                 # with nothing to forget, nothing changes
+	debug 'one\n';
+	call WaitFor: 'b';
+	call ShowAll;
+
+	# a whole click forgotten can't be the first of a double click
+	debug 'two\n';
+	call WaitFor: 'c';
+	call Input.FlushMouse;
+	debug 'three\n';
+	call WaitFor: 'd';
+	call ShowAll;
+	debug 'done\n';
+
+	[WaitFor: int wanted: 0;]
+		int key: 0;
+		while (key & Input.KEY_MASK) is not wanted
+			key is (Input.NextKey);
+		;;
+	[end]
+
+	[Show]
+		debug Input.event_buttons ' ' Input.event_clicks '\n';
+	[end]
+
+	[ShowAll]
+		while (Input.NextMouse)
+			call Show;
+		;;
+	[end]
+}

@@ -399,10 +399,16 @@ namespace Phi.Compiler.Semantics
             BindExpr(result, methodScopes[m.Decl]);
             // [end: 'none'] in a method whose returns hand back text pointers is a ptr<u8> method too
             // (the literal lives as long as the program, so its address can be handed back)
-            if (result is StringExpr { Value.Length: not 1 } && ReturnsTextPointer(m))
+            if (result is StringExpr && ReturnsTextPointer(m))
             {
                 m.ReturnType = PhiType.PointerTo(PhiType.U8);
                 m.Decl.Result = Convert(result, m.ReturnType, "the returned value");
+            }
+            // [end: 'N'] and [end: name:0] are characters, when each of its returns is one too
+            else if ((result is StringExpr { Value.Length: 1 } || result.Type.IsChar) && ReturnsOnlyCharacters(m))
+            {
+                m.ReturnType = PhiType.Chr;
+                if (result is StringExpr) m.Decl.Result = Convert(result, m.ReturnType, "the returned value");
             }
             else if (result.Type.IsString) m.ReturnType = PhiType.Str;
             else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
@@ -439,6 +445,27 @@ namespace Phi.Compiler.Semantics
                 NameExpr n => Lookup(n.Name, methodScopes[m.Decl]) is VariableSymbol { Type: { IsTextPointer: true } },
                 _ => false,
             });
+
+        /// <summary>
+        /// Is each of the method's return statements surely a character? Any other (return -1,
+        /// return name) makes its result what it was without them: a number can't be cut to a
+        /// byte, as code like `if (Next) is -1` counts on it, and text is text. Asked before the
+        /// body is bound, so it looks at what each return names.
+        /// </summary>
+        bool ReturnsOnlyCharacters(MethodSymbol m)
+        {
+            Scope scope = methodScopes[m.Decl];
+            bool IsCharacters(string name) => Lookup(name, scope) is VariableSymbol { Type: var t }
+                                              && (t.IsArray ? t.Element.IsChar : t.IsString || t.Pointee == PhiType.Chr);
+            return m.Decl.Body.SelectMany(SyntaxWalker.Nodes).OfType<ReturnStmt>().All(r => r.Value switch
+            {
+                StringExpr { Value.Length: 1 } => true,
+                NameExpr n => Lookup(n.Name, scope) is VariableSymbol { Type.IsChar: true },
+                CastExpr { TargetType.Name: "chr" } => true,
+                IndexExpr { Target: NameExpr text } => IsCharacters(text.Name),
+                _ => false,
+            });
+        }
 
         /// <summary>
         /// In a list of things to print or write into a str, text + n is still text (the rest of
@@ -4940,6 +4967,9 @@ namespace Phi.Compiler.Semantics
             {
                 if (e.Type.IsNumeric)
                 {
+                    // (a character is never an address: this would be found only when it's used)
+                    if (target.IsPointer && e.Type.IsChar)
+                        Error(e.Span, $"{what} is {A(target)}, an address, and this is a chr, a character; write `as {target}` if that's meant");
                     WarnPointerWidth(e, e.Type, target, what);
                     return e;
                 }

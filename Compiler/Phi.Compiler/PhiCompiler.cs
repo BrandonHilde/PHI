@@ -306,9 +306,8 @@ namespace Phi.Compiler
 
             var places = new List<string> { from.Path, main.Path };
             if (kernel != null) places.Add(kernel);
-            else if (Path.GetDirectoryName(Path.GetFullPath(main.Path)) is string folder
-                     && (Path.GetFileName(folder) == "rootfs" || folder.EndsWith(".rootfs")))
-                places.Add(Path.Combine(Path.GetDirectoryName(folder) ?? "", Path.GetFileName(main.Path)));
+            else if (FolderOfRootfs(main.Path) is string above)
+                places.Add(Path.Combine(above, Path.GetFileName(main.Path)));
             foreach (string near in places)
             {
                 if (near.StartsWith(StandardLibrary)) continue;
@@ -325,6 +324,15 @@ namespace Phi.Compiler
 
             using var reader = new StreamReader(stream);
             return new SourceFile(resource, reader.ReadToEnd());
+        }
+
+        /// <summary>For a file anywhere inside a rootfs or NAME.rootfs folder: the folder that one is in, where its kernel is. Null for any other.</summary>
+        public static string? FolderOfRootfs(string path)
+        {
+            for (string? folder = Path.GetDirectoryName(Path.GetFullPath(path)); folder != null; folder = Path.GetDirectoryName(folder))
+                if (Path.GetFileName(folder) == "rootfs" || folder.EndsWith(".rootfs"))
+                    return Path.GetDirectoryName(folder);
+            return null;
         }
 
         /// <summary>Whether a `use` of this name finds a module of the standard library.</summary>

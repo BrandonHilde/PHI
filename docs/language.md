@@ -1,8 +1,9 @@
 # PHI language reference
 
-This describes the language as the compiler in `Compiler/Phi.Compiler` implements it today
-(16-bit x86, QEMU). Ideas that aren't implemented yet live in [Syntax/](../Syntax) and
-[Plan.md](../Plan.md).
+This describes the language as the compiler in `Compiler/Phi.Compiler` implements it today:
+16-bit programs and 32-bit kernels and their programs on PHI OS (run in QEMU), and programs for
+Linux and Windows, in 32 or 64 bits. Ideas that aren't implemented yet live in [Syntax/](../Syntax)
+and [Plan.md](../Plan.md).
 
 ## Program structure
 
@@ -105,7 +106,7 @@ adding errors of their own.
 |---|---|
 | Numbers | `42`, `-7`, `0x2A`, `101010b` (binary), `1_000` |
 | Booleans | `true`, `false` (stored as 1 and 0) |
-| Strings | `'hello'`; `'hasn't'` works without escaping |
+| Strings | `'hello'`; `'hasn't'` works without escaping. ASCII characters only for now: any other is an error, and a byte above 127 is written as `\xNN` |
 | Escapes | `\r` `\n` `\t` `\0` `\\` `\'`, and `\xNN` for any byte by its two hex digits (`'\xED'` is φ in the VGA font) |
 | Characters | a one-character string like `'w'` is its character code wherever a number is expected; where text goes (a `str`, a `ptr<u8>` parameter, `log`) it's still text |
 | Constants | `Colors.Black` … `Colors.White` (the 16 VGA colors), and your own `const` |
@@ -1442,8 +1443,10 @@ int n: (Web.Header: posted 'Content-Type' addr kind 64);   # its length; -1 if t
 ```
 
 A certificate must check out for an `https://` URL, against the roots in `crypto.roots` unless a
-program has trusted its own with `X509.Trust`. Not yet: HTTP/2, IPv6 addresses, and uploading a
-body a piece at a time.
+program has trusted its own with `X509.Trust`. Those are only a few, so a site that goes back to
+another root fails with `no trusted root`: which roots to trust is up to the project, which brings
+what it needs and holds up to 16 at once (`X509.MAX_ROOTS`). Not yet: HTTP/2, IPv6 addresses, and
+uploading a body a piece at a time.
 
 **Names.** `Dns.Resolve: name` gives a name's address, 0 if it can't be found, in a program as in a
 kernel. A program tries `localhost`, then the system's hosts file, then its name server
@@ -1584,8 +1587,8 @@ call Threads.Wait: t;
 - What belongs to a program (its sockets, its mailboxes, its memory's checks) is the
   program's, whichever thread uses it; `OS.CurrentTask` gives the program's number.
 - Each thread catches errors of its own: its catches, and the error it throws, are its own.
-  The heap and `log` work from several threads at once (a `log` comes out whole).
-- Not yet: Windows' file calls from several threads at once, and `ask` from several.
+  The heap, `log` and file calls work from several threads at once (a `log` comes out whole).
+- Not yet: `ask` from several threads at once.
 
 ### atomic and locked
 
@@ -1889,7 +1892,8 @@ if (Screen.Start: 800 600)                     # false without the adapter (or t
 
   The wheel needs a mouse that speaks the IntelliMouse protocol, as QEMU's does
   (`Input.has_wheel`); `Input.wheel` adds up every turn. `FlushMouse` forgets events not
-  taken yet.
+  taken yet: a button let go is still up afterward, and a press forgotten isn't the first of a
+  double click.
 - `Paging.MapDevice: address bytes` makes other device memory reachable the same way.
 
 [samples/sketch.phi](../samples/sketch.phi) is a small drawing program using all three.
@@ -2657,7 +2661,14 @@ if (IsReady: port)
   `str`, and a `ptr<T>` result can be indexed. Moving a pointer keeps its type there too:
   `[end: path + start]` with `path` a `ptr<u8>` is still text. A `ptr<u8>` method can also
   `return 'text';` (a string literal lives as long as the program; a method's own `str`
-  doesn't).
+  doesn't). A `chr` result stays a character, as `[end: name:0]` and `[end: 'N']` give: `log`
+  and text write it as one, and `chr c: (Letter);` takes it. That's when each `return` is a
+  character too (a one-character string, a `chr`, `name:i`, or `x as chr`). With any other
+  return, a method is what it would be without one: `[end: name:i]` beside `return -1;` gives a
+  number, so -1 stays -1, and `[end: 'x']` beside `return name;` a `str`. Called through a
+  method value or an interface, any result that's a number is an `int`, so it takes `as chr`
+  there to be written as a character. A `chr` isn't an address: giving one to a pointer is an
+  error (`c as ptr<u8>` if that's meant).
 - A `str` result is copied into a temporary that lasts until the end of the statement, so
   it can be passed on (`call Draw.Text: x y (Name) color;`) or stored in a `str`, but not
   kept by a pointer: `ptr<u8> t: (Name);` is an error. For text that outlives the call,
@@ -2704,8 +2715,9 @@ if (IsReady: port)
 - **Leaving early.** `return value;` ends a method that has `[end: value]`, and `return;`
   ends one that has `[end]`. The value must be the same kind (number, float, 64-bit number
   or `str`) as the one after `[end: ...]`. The `[end: value]` decides what kind of method it is, so it's needed
-  even when every way out is a `return` (`[end: 0]` will do). A string literal there
-  (`[end: 'none']`) makes a `str` method, unless a `return` hands back an `addr` or a
+  even when every way out is a `return` (`[end: 0]` will do). A string literal of other than
+  one character there (`[end: 'none']`) makes a `str` method, and so does one of one character
+  beside a `return` of text. Unless a `return` hands back an `addr` or a
   `ptr<u8>`: then the method is a `ptr<u8>` one, and the literal's address is its result.
 - Methods can be called before they appear, and from any class in the same unit
   (`call Other.Method;` to be explicit).
@@ -3013,8 +3025,8 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
-- networking in user programs (only 32-bit kernels have the network), RSA-PSS with
-  SHA-384, and network cards other than the RTL8139 and virtio-net
+- characters beyond ASCII in strings (a byte above 127 can be written as `\xNN`)
+- RSA-PSS with SHA-384, and network cards other than the RTL8139 and virtio-net
 - NVMe disks with 4096-byte sectors, and disks above 4 GB in memory (where a 32-bit kernel
   can't reach their registers)
 - recording sound, sound cards other than the AC'97, and compressed audio (MP3, Ogg, ADPCM WAV files)

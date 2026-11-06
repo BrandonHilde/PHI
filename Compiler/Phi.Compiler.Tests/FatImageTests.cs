@@ -207,6 +207,24 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AWarningInCodeOfTheRootfsReachesTheBuildOnce()
+        {
+            // (a string that ends with a line break written into it warns)
+            File.WriteAllText(Path.Combine(root, "noisy.phi"), "phi.Noisy:Library\n{\n\tlog 'shared\n';\n}\n");
+            File.WriteAllText(Path.Combine(root, "os.phi"), "phi.Os:Kernel\n{\n\tlog 'hi';\n}\n");
+            string apps = Path.Combine(root, "os.rootfs", "APPS");
+            Directory.CreateDirectory(apps);
+            foreach (string name in new[] { "one", "two" })
+                File.WriteAllText(Path.Combine(apps, name + ".phi"), $"use noisy;\n\nphi.P{name}:Program\n{{\n\tlog '{name}\n';\n}}\n");
+
+            BuildResult result = Builder.Build(Path.Combine(root, "os.phi"), Path.Combine(root, "build"));
+            Assert.True(result.Success, string.Join("\n", result.Errors));
+            Assert.Single(result.Warnings, w => w.Contains("noisy.phi"));
+            Assert.Single(result.Warnings, w => w.Contains("one.phi"));
+            Assert.Single(result.Warnings, w => w.Contains("two.phi"));
+        }
+
+        [Fact]
         public void AProgramInARootfsBuiltOnItsOwnUsesWhatIsNextToItsKernel()
         {
             File.WriteAllText(Path.Combine(root, "shared.phi"), "phi.Shared:Library\n{\n\tconst int PORT: 4000;\n}\n");

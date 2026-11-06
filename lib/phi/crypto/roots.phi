@@ -5,10 +5,10 @@
 #   call Roots.TrustAll;            # X509.Trust each of them
 #
 # Each is the root's DER as Windows' certificate store has it (its SHA-256 fingerprint is
-# beside it, to check against the CA's). They're all RSA, which is what crypto.x509 can
-# check a chain back to for now: a chain through a P-384 CA (Let's Encrypt's E5 and E6,
-# DigiCert's G3) needs P-384, still to come. A root expires on its date, and new ones
-# come along: this list will want updating.
+# beside it, to check against the CA's). They're only a few, all RSA: which roots to trust is
+# for each project to decide, and it brings any others to X509.Trust, which takes RSA, P-256
+# and P-384 keys. A root expires on its date, and new ones come along: this list will want
+# updating.
 
 use crypto.x509;
 

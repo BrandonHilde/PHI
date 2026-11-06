@@ -276,6 +276,7 @@ namespace Phi.Compiler.Syntax
             int start = pos;
             pos++; // opening quote
             var sb = new StringBuilder();
+            bool beyondAscii = false;
 
             while (true)
             {
@@ -319,6 +320,14 @@ namespace Phi.Compiler.Syntax
                 if (c == '\'' && !char.IsLetterOrDigit(Peek())) break;
 
                 if (c == '\r' && Peek() == '\n') continue; // keep multi-line strings as \n only
+
+                // a character beyond ASCII would be cut to one wrong byte, with nothing to say so
+                if (c > 127 && !beyondAscii)
+                {
+                    beyondAscii = true;
+                    diagnostics.Error(file, new Span(pos - 1, char.IsHighSurrogate(c) ? 2 : 1),
+                        "a string can only hold ASCII characters for now, and this isn't one; for a byte above 127, write it as \\xNN");
+                }
                 sb.Append(c);
             }
 
