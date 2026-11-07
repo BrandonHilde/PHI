@@ -6,7 +6,8 @@
 # A program that uses new or free gets this file automatically. The heap starts
 # empty, right above the program's stack (0x40400000), and grows when nothing in
 # it fits: it asks the kernel for more with OS.Grow, at least 64 KB at a time, up
-# to 124 MB. Blocks are kept in address order, each with a header, so Free can
+# to most_bytes (below), and up to what the system has: 124 MB on PHI OS. Blocks are
+# kept in address order, each with a header, so Free can
 # merge a block with free neighbors; free blocks are also on lists by size, and
 # Alloc takes the first that fits from them and splits it, as the kernel's heap
 # (memory.heap) does. A program's threads (user.threads) share it, so Alloc, Free and
@@ -37,6 +38,13 @@ phi.Heap:Program
 	const u32 GROW_MIN: 65536;               # asked of the kernel at a time, at least
 	const u32 PAGE_SIZE: 4096;
 	const u32 BINS: 28;                      # 8-15 bytes, 16-31, ... doubling; the last takes the rest
+	const u32 MOST_32: 134217728;            # 128 MB: a 32-bit program's heap, unless it says otherwise
+
+	# The most the heap grows to, which the program decides: `Heap.most_bytes is 600000000;`
+	# lets it have 600 MB, and a smaller number holds it to less. 0 is the default: 128 MB in a
+	# 32-bit program, which leaves the rest of its 4 GB of addresses to everything else, and no
+	# limit but the system's in a 64-bit one. The system can always give less than this.
+	u64 most_bytes: 0;
 
 	ptr<HeapBlock> heap_first: 0;
 	ptr<HeapBlock> heap_last: 0;
@@ -106,6 +114,17 @@ phi.Heap:Program
 		u32 bytes: wanted + HEADER;
 		if bytes < GROW_MIN
 			bytes is GROW_MIN;
+		;;
+		u64 most: most_bytes;
+		if most is 0 and sizeof ptr<u8> is 4
+			most is MOST_32;
+		;;
+		if most is not 0
+			u64 size: 0;
+			if heap_start is not 0
+				size is (heap_end - heap_start) as u64;
+			;;
+			if size + bytes > most return false;
 		;;
 		ptr<u8> start: (OS.Grow: bytes);
 		if start is 0 return false;

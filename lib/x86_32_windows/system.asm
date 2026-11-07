@@ -13,7 +13,8 @@ FILE_TYPE_PIPE equ 3
 MEM_COMMIT    equ 0x1000
 MEM_RESERVE   equ 0x2000
 PAGE_READWRITE equ 4
-HEAP_RESERVE  equ 0x8000000             ; 128 MB: more than the heap ever asks for
+HEAP_RESERVE  equ 0x40000000            ; 1 GB of addresses for the heap, if there's that much free
+HEAP_LEAST    equ 0x8000000             ; and if not, at least 128 MB (the heap's own default limit)
 ENABLE_VIRTUAL_TERMINAL_PROCESSING equ 4
 ARGUMENTS_SIZE equ 1024
 
@@ -158,20 +159,32 @@ OS_Arguments:
 
 ; arg: bytes -> where the new memory starts (whole pages, zeroed, right after the last
 ; it gave), or 0. The heap's addresses are reserved the first time, and each call commits
-; the next part of them.
+; the next part of them. How far the heap may grow is memory.program_heap's to say
+; (Heap.most_bytes); this only reserves room for it: 1 GB, or half that and so on down to
+; 128 MB if the addresses free in one piece are fewer.
 OS_Grow:
     mov eax, [phi_heap_start]
     test eax, eax
     jnz .grow
+    mov ecx, HEAP_RESERVE
+.reserve:
+    push ecx                            ; (VirtualAlloc can change ecx)
     push PAGE_READWRITE
     push MEM_RESERVE
-    push HEAP_RESERVE
+    push ecx
     push 0
     call [phi_imp_VirtualAlloc]
+    pop ecx
     test eax, eax
-    jz .failed
+    jnz .reserved
+    shr ecx, 1
+    cmp ecx, HEAP_LEAST
+    jae .reserve
+    jmp .failed
+.reserved:
     mov [phi_heap_start], eax
     mov [phi_heap_end], eax
+    mov [phi_heap_reserved], ecx
 .grow:
     mov edx, [esp + 4]
     add edx, 4095
@@ -181,7 +194,7 @@ OS_Grow:
     sub ecx, [phi_heap_start]
     add ecx, edx
     jc .failed
-    cmp ecx, HEAP_RESERVE
+    cmp ecx, [phi_heap_reserved]
     ja .failed
     push edx
     push PAGE_READWRITE
@@ -247,6 +260,7 @@ phi_memory_status: times 64 db 0
 phi_read_count: dd 0
 phi_heap_start: dd 0
 phi_heap_end: dd 0
+phi_heap_reserved: dd 0
 phi_console_mode: dd 0
 phi_arguments: times ARGUMENTS_SIZE db 0
 
