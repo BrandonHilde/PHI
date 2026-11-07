@@ -28,6 +28,7 @@ phi.SoundSystem:Linux
 	const u32 DELETE_STREAM: 4;
 	const u32 AUTHENTICATE: 8;
 	const u32 CLIENT_NAME: 9;
+	const u32 DRAIN: 12;
 	const u32 GET_LATENCY: 14;
 	const u32 SET_VOLUME: 37;
 	const u32 FLUSH: 42;
@@ -47,6 +48,7 @@ phi.SoundSystem:Linux
 	bln sounding: false;                  # something has been written that may not have played
 	int began: 0;                         # OS.GetTicks when what's playing began
 	u32 run_bytes: 0;                     # how much has been written since, without a gap
+	bln draining: false;                  # asked to play what it's holding, since the last write
 
 	u8 outgoing[4608];
 	int filled: 0;
@@ -153,7 +155,13 @@ phi.SoundSystem:Linux
 		# two times, whether it's playing, two clocks, then where it's written to and read to
 		int output_ms: (Get32: VALUES + 5) / 1000;
 		bln playing: (incoming:(VALUES + 18) is '1');
-		int held: ((Get32: VALUES + 42) - (Get32: VALUES + 51)) as int;
+		# (the low halves of both, which can wrap: the server can read past what was written, as
+		# PipeWire's does when it's drained and plays silence on, which is nothing held)
+		u32 ahead: (Get32: VALUES + 42) - (Get32: VALUES + 51);
+		int held: 0;
+		if ahead < 0x80000000
+			held is ahead as int;
+		;;
 		call Forget;
 
 		if held > 0 and not playing
@@ -169,6 +177,15 @@ phi.SoundSystem:Linux
 			output_ms is MOST_OUTPUT_MS;
 		;;
 		int left: (Frames: (began + (Lasts: run_bytes) + output_ms - now) as int) * 4;
+		# PipeWire's server keeps back an end shorter than it plays at a time, waiting for more,
+		# so one that should have played by now is drained: it's played out, and the reply
+		# (which only says it was) is let go by when it comes
+		if left <= 0 and held > 0 and not draining
+			call Command: DRAIN;
+			call PutU32: channel;
+			call Send;
+			draining is true;
+		;;
 		if left < held
 			left is held;
 		;;
@@ -180,6 +197,7 @@ phi.SoundSystem:Linux
 
 	[Drop]
 		sounding is false;
+		draining is false;
 		call Pump;
 		if gone return;
 		call Command: FLUSH;
@@ -218,6 +236,7 @@ phi.SoundSystem:Linux
 		;;
 		run_bytes++ bytes;
 		sounding is true;
+		draining is false;
 	[end]
 
 	# ---- the connection
@@ -280,7 +299,7 @@ phi.SoundSystem:Linux
 		;;
 		if ok
 			call Command: CLIENT_NAME;
-			call PutName: 'application.name';
+			call PutClient;
 			call Send;
 			call ok is WaitReply: last_tag;
 			if ok
@@ -404,6 +423,30 @@ phi.SoundSystem:Linux
 	# a list of one property, this name's, saying PHI
 	[PutName: ptr<u8> name: 0;]
 		call Put8: 'P';
+		call PutProperty: name 'PHI';
+		call Put8: 'N';
+	[end]
+
+	# the client's properties: its name, and its process's id, as every client gives it (a
+	# desktop's tools look it up, and one, uresourced, stops if a stream has none)
+	[PutClient]
+		call Put8: 'P';
+		call PutProperty: 'application.name' 'PHI';
+		str id: '';
+		id++ (sys.GetProcessId);
+		u8 text[24];
+		int n: 0;
+		while n < id.len and n < 23
+			text:n is id:n;
+			n++;
+		;;
+		text:n is 0;
+		call PutProperty: 'application.process.id' addr text;
+		call Put8: 'N';
+	[end]
+
+	# one property of a list: its name, and its value's text and the zero after it
+	[PutProperty: ptr<u8> name: 0; ptr<u8> value: 0;]
 		call Put8: 't';
 		int i: 0;
 		while name:i is not 0
@@ -411,14 +454,17 @@ phi.SoundSystem:Linux
 			i++;
 		;;
 		call Put8: 0;
-		call PutU32: 4;
+		int length: 0;
+		while value:length is not 0
+			length++;
+		;;
+		call PutU32: length + 1;
 		call Put8: 'x';
-		call Put32: 4;
-		call Put8: 'P';
-		call Put8: 'H';
-		call Put8: 'I';
+		call Put32: length + 1;
+		while int k: 0; k < length; k++;
+			call Put8: value:k;
+		;;
 		call Put8: 0;
-		call Put8: 'N';
 	[end]
 
 	[Send]

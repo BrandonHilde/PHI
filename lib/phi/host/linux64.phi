@@ -53,6 +53,7 @@ sys.LSeek64: 8  int fd  u64 position  int whence: u64;
 sys.LSeek: 8  int fd  int offset  int whence;
 sys.SchedYield: 24;
 sys.GetUserId: 102;
+sys.GetProcessId: 39;
 sys.NanoSleep: 35  ptr<i64> wanted  ptr<i64> left;
 sys.Rename: 82  ptr<u8> from  ptr<u8> to;
 sys.MakeDir: 83  ptr<u8> path  int mode;

@@ -56,6 +56,7 @@ sys.MakeDir: 39  ptr<u8> path  int mode;
 sys.RemoveDir: 40  ptr<u8> path;
 sys.SchedYield: 158;
 sys.GetUserId: 199;
+sys.GetProcessId: 20;
 sys.NanoSleep: 162  ptr<int> wanted  ptr<int> left;
 sys.Stat: 195  ptr<u8> path  ptr<u32> info;
 sys.FStat64: 197  int fd  ptr<u32> info;
