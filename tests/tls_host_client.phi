@@ -41,7 +41,9 @@ phi.TlsHostClient:Kernel
 		;;
 		call Net.Wait;
 	;;
-	log 'connected: ' link.session.connected ', suite ' link.session.suite ', echoed ' echoed ' ' link.session.error '\n';
+	# which suite depends on the order the host's TLS library offers them in: Windows' SChannel
+	# gets AES-128-GCM, OpenSSL (on Linux) ChaCha20-Poly1305; either is one PHI offers
+	log 'connected: ' link.session.connected ', a suite PHI offers: ' ((link.session.suite is Tls13.AES_128_GCM) or (link.session.suite is Tls13.CHACHA20_POLY1305)) ', echoed ' echoed ' ' link.session.error '\n';
 	call Secure.Close: addr link;
 	exit 0;
 }
