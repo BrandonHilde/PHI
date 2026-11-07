@@ -2935,11 +2935,14 @@ still cut). Still to do, each for something:
   catch a pointer's use after free or past its end; an array made with `as` covers the second, where it's used.
 - **The stack running out, not yet:** a kernel's own stack, which runs down through low memory
   into the kernel with no fault; catching that needs a check at each call, or paging in every kernel.
-- **Long argument lists:** the formatter (below) adds parentheses around an argument that's an
-  expression, rather than the language taking commas, which would make two ways to write a call.
 
-Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, a formatter
-and packages. Everything in the list above called "The parts most worth doing next" is done up
+H8's formatter is built: `phi fmt`, and in `phi lsp` for an editor. It changes only a file's layout,
+and adds parentheses around an expression in a call with several arguments, rather than the
+language taking commas, which would make two ways to write a call. The library hasn't been run
+through it (about 470 lines would gain parentheses). `FormatterTests` compiles programs both ways
+and compares the code; `PHI_FMT_ALL=1 dotnet test` does it for every test, after changing it.
+
+Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, and packages. Everything in the list above called "The parts most worth doing next" is done up
 to its last item, the [Later](#later) list.
 
 ## References

@@ -125,6 +125,7 @@ namespace Phi.Cli
                 case "textDocument/didSave": Saved(p!["textDocument"]!); return null;
                 case "workspace/didChangeWatchedFiles": DiskChanged(); return null;
                 case "textDocument/definition": return Definition(p!);
+                case "textDocument/formatting": return Formatted(p!);
                 case "textDocument/completion": return Completion(p!);
                 default:
                     known = false;
@@ -146,6 +147,7 @@ namespace Phi.Cli
                     // 1: the whole text with each change
                     ["textDocumentSync"] = new JsonObject { ["openClose"] = true, ["change"] = 1, ["save"] = true },
                     ["definitionProvider"] = true,
+                    ["documentFormattingProvider"] = true,
                     ["completionProvider"] = new JsonObject { ["triggerCharacters"] = new JsonArray(".") },
                 },
                 ["serverInfo"] = new JsonObject { ["name"] = "phi lsp" },
@@ -308,6 +310,26 @@ namespace Phi.Cli
             if (document.File == null) return null;
             JsonNode position = p["position"]!;
             return (document, document.File.GetOffset((int)position["line"]!, (int)position["character"]!));
+        }
+
+        /// <summary>The whole file laid out as phi fmt lays it out; nothing if it doesn't parse, or is laid out already.</summary>
+        JsonNode? Formatted(JsonObject p)
+        {
+            string uri = (string)p["textDocument"]!["uri"]!;
+            if (!documents.TryGetValue(PhiCompiler.FileKey(PathOf(uri)), out Document? document)) return null;
+            string? laid = Phi.Compiler.Language.Formatter.Format(new SourceFile(document.Path, document.Text), new DiagnosticBag());
+            if (laid == null || laid == document.Text) return new JsonArray();
+            int lastLine = document.Text.Count(c => c == '\n');
+            int lastLineLength = document.Text.Length - (document.Text.LastIndexOf('\n') + 1);
+            return new JsonArray(new JsonObject
+            {
+                ["range"] = new JsonObject
+                {
+                    ["start"] = new JsonObject { ["line"] = 0, ["character"] = 0 },
+                    ["end"] = new JsonObject { ["line"] = lastLine, ["character"] = lastLineLength },
+                },
+                ["newText"] = laid,
+            });
         }
 
         JsonNode? Definition(JsonObject p)

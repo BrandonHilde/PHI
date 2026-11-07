@@ -147,6 +147,7 @@ phi.Count:Program
        phi build x.phi --library         a compiled library: x.philib, which another program includes
                                          with use x; without any of its source
        phi check file.phi                report errors without building
+       phi fmt file.phi                  lay out a file, or a folder of them
        phi lsp                           the language server, for an editor (PHI-VSCODE is the extension for VS Code)
        phi test                          boot every test in tests/ headless and check its output
        phi test --bench                  run the benchmarks and compare their counts with the saved ones

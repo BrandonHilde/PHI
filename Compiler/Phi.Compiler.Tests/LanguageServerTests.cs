@@ -667,8 +667,28 @@ namespace Phi.Compiler.Tests
             using var other = new Session(root);
             JsonNode capabilities = other.Request("initialize", new JsonObject { ["rootUri"] = new Uri(root).AbsoluteUri })!["capabilities"]!;
             Assert.True((bool)capabilities["definitionProvider"]!);
+            Assert.True((bool)capabilities["documentFormattingProvider"]!);
             Assert.Equal(1, (int)capabilities["textDocumentSync"]!["change"]!);
             Assert.Contains(capabilities["completionProvider"]!["triggerCharacters"]!.AsArray(), c => (string)c! == ".");
+        }
+
+        JsonNode FormattingOf(string name, string text)
+        {
+            string uri = Uri(name);
+            session.Open(uri, text);
+            return session.Request("textDocument/formatting", new JsonObject { ["textDocument"] = new JsonObject { ["uri"] = uri } });
+        }
+
+        [Fact]
+        public void LaysOutAFileAsPhiFmtDoes()
+        {
+            JsonArray edits = FormattingOf("messy.phi", "phi.Messy:Program\n{\n   log 1;\n}\n").AsArray();
+            Assert.Equal("phi.Messy:Program\n{\n\tlog 1;\n}\n", (string)Assert.Single(edits)!["newText"]!);
+            Assert.Equal(0, (int)edits[0]!["range"]!["start"]!["line"]!);
+            Assert.Equal(4, (int)edits[0]!["range"]!["end"]!["line"]!);
+
+            Assert.Empty(FormattingOf("tidy.phi", "phi.Tidy:Program\n{\n\tlog 1;\n}\n").AsArray());
+            Assert.Empty(FormattingOf("broken.phi", "phi.Broken:Program\n{\n   if\n}\n").AsArray());
         }
 
         [Fact]

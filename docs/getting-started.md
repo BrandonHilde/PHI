@@ -111,6 +111,7 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi build file.phi` | compile to a bootable disk image, in `build/file/` next to the program |
 | `phi build file.phi --library` | compile a library (`phi.Name:Library`) to `file.philib`, which another program includes with `use file;` without its source: see [Compiled libraries](language.md#compiled-libraries) |
 | `phi check file.phi` | report errors without building: a program as it is, a module (or a program's class that's part of another program) in a program around it |
+| `phi fmt file.phi` | lay out a file, or every `.phi` file in a folder, in place: tabs for what each line is inside, no trailing spaces, and parentheses around an expression in a call with several arguments (`call Add: x (y + h) w;`). It only changes the layout: what the file compiles to stays the same, and a file with errors is left alone. `--check` changes nothing, and fails if a file would change |
 | `phi lsp` | the language server, for an editor: errors as you type, going to a definition, completing names. In VS Code, the [PHI extension](https://github.com/BrandonHilde/PHI-VSCODE) runs it |
 | `phi run file.phi` | build, then boot it in QEMU; serial output (`log` and `debug`) also prints in your terminal |
 | `phi run file.phi --debug` | start paused, waiting for a debugger (see below) |

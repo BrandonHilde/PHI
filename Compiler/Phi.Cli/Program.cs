@@ -4,6 +4,11 @@ const string Usage = """
     usage:
       phi check <file.phi> [--target <system>]
                                            report errors without building
+      phi fmt <file.phi or folder> ... [--check]
+                                           lay out each file in place: indentation by tabs, no trailing
+                                           spaces, and parentheses around an expression in a call with
+                                           several arguments; --check changes nothing, and fails if
+                                           any file would change
       phi build <file.phi> [-o <dir>] [--target <system>]
                                            compile to a bootable disk image; with --target linux or
                                            windows, a program (phi.Name:Program) becomes an ordinary
@@ -286,6 +291,9 @@ static int Execute(string[] args)
                 if (compiled.Success) Console.WriteLine($"{rest[0]}: no errors");
                 return compiled.Success ? 0 : 1;
             }
+
+            case "fmt":
+                return Formatting.Run(rest, Flag("--check"));
 
             case "test":
             {

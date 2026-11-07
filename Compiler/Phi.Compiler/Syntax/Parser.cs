@@ -85,6 +85,26 @@ namespace Phi.Compiler.Syntax
         public static ProgramNode Parse(SourceFile file, DiagnosticBag diagnostics) =>
             new Parser(file, diagnostics).ParseProgram();
 
+        /// <summary>For phi fmt: what the file is made of.</summary>
+        public IReadOnlyList<Token> Tokens => tokens;
+
+        /// <summary>For phi fmt: each argument of a call that has several, by its first and last token.</summary>
+        public List<(int First, int Last, Expr Argument)> ListedArguments { get; } = new();
+
+        /// <summary>An argument of a call, noted for phi fmt.</summary>
+        void ParseArgument(List<Expr> arguments, List<(int, int, Expr)> places)
+        {
+            int first = pos;
+            Expr argument = ParseListElement();
+            arguments.Add(argument);
+            places.Add((first, pos - 1, argument));
+        }
+
+        void NoteArguments(List<(int, int, Expr)> places)
+        {
+            if (places.Count >= 2) ListedArguments.AddRange(places);
+        }
+
         // ------------------------------------------------------------ token helpers
 
         Token Current => tokens[pos];
@@ -215,7 +235,7 @@ namespace Phi.Compiler.Syntax
 
         // ------------------------------------------------------------ program
 
-        ProgramNode ParseProgram()
+        public ProgramNode ParseProgram()
         {
             var program = new ProgramNode { File = file };
 
@@ -1065,6 +1085,7 @@ namespace Phi.Compiler.Syntax
             }
             else callee = ParseQualifiedName(out calleeSpan);
             var arguments = new List<Expr>();
+            var places = new List<(int, int, Expr)>();
 
             if (Accept(TokenKind.Colon))
             {
@@ -1072,9 +1093,10 @@ namespace Phi.Compiler.Syntax
                 {
                     if (AtEnd || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon) || beforeThrows && (Current.StartsLine || OneLineIfWords.Any(AtWord)))
                         throw Error(new Span(Previous.Span.End, 0), beforeThrows ? "expected 'throws' and a name for the error, like: if call Load: path throws err" : "expected ';' to end the call");
-                    arguments.Add(ParseListElement());
+                    ParseArgument(arguments, places);
                 }
             }
+            NoteArguments(places);
             if (!beforeThrows) ExpectSemicolon();
 
             var call = new CallStmt
@@ -1170,12 +1192,14 @@ namespace Phi.Compiler.Syntax
             Expect(TokenKind.Colon, "':'");
 
             var arguments = new List<Expr>();
+            var places = new List<(int, int, Expr)>();
             while (!At(TokenKind.CloseParen))
             {
                 if (AtEnd || At(TokenKind.Semicolon) || At(TokenKind.CloseBrace) || At(TokenKind.DoubleSemicolon))
                     throw Error(new Span(Previous.Span.End, 0), $"expected ')' to end the call to {callee}");
-                arguments.Add(ParseListElement());
+                ParseArgument(arguments, places);
             }
+            NoteArguments(places);
             Token close = Advance();
 
             var call = new CallExpr { Callee = callee, CalleeSpan = calleeSpan, CalleeTarget = calleeTarget, Span = open.Span.To(close.Span) };
