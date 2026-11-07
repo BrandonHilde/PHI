@@ -125,10 +125,10 @@ phi.Count:Program
 
 <h4>To Build:</h4>
 
-    1. Install the .NET 8 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
+    1. Install the .NET 10 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
        (or set PHI_NASM / PHI_QEMU to their full paths)
     2. dotnet build PHI.sln
-    3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net8.0/phi.exe):
+    3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net10.0/phi.exe):
 
        phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
        phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)

@@ -7,7 +7,7 @@ in an emulator. It takes about ten minutes.
 
 | Tool | What it's for | Get it |
 |---|---|---|
-| .NET 8 SDK | builds and runs the PHI compiler | [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download/dotnet/8.0) |
+| .NET 10 SDK | builds and runs the PHI compiler | [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download/dotnet/10.0) |
 | NASM | turns the assembly PHI generates into machine code | [nasm.us](https://www.nasm.us/) |
 | QEMU | an emulated PC to boot PHI programs on | [qemu.org/download](https://www.qemu.org/download/) |
 | git | to get the code | [git-scm.com](https://git-scm.com/) |
@@ -15,7 +15,7 @@ in an emulator. It takes about ten minutes.
 On Linux, your package manager has all of them, for example on Ubuntu:
 
 ```
-sudo apt install dotnet-sdk-8.0 nasm qemu-system-x86 git
+sudo apt install dotnet-sdk-10.0 nasm qemu-system-x86 git
 ```
 
 On macOS with Homebrew: `brew install --cask dotnet-sdk` and `brew install nasm qemu git`.
@@ -46,7 +46,7 @@ cd PHI
 dotnet build PHI.sln
 ```
 
-This builds the `phi` command into `Compiler/Phi.Cli/bin/Debug/net8.0/` (`phi.exe` on
+This builds the `phi` command into `Compiler/Phi.Cli/bin/Debug/net10.0/` (`phi.exe` on
 Windows). You can run it from there, add that folder to your `PATH`, or run it through
 dotnet from anywhere in the repository:
 

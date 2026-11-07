@@ -5,7 +5,7 @@ do at every level: the compiler, the standard library, drivers, the userland, an
 
 ## Set up
 
-Follow [docs/getting-started.md](docs/getting-started.md) to install the .NET 8 SDK, NASM and
+Follow [docs/getting-started.md](docs/getting-started.md) to install the .NET 10 SDK, NASM and
 QEMU and build the compiler. Then check everything passes before you change anything:
 
 ```
