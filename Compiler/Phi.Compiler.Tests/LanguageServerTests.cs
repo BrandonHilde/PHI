@@ -158,10 +158,16 @@ namespace Phi.Compiler.Tests
                 catch (ObjectDisposedException) { }
             }
 
+            // Each pipe is closed only once nothing is reading it: on Linux, closing a pipe's handle
+            // waits for a read on it to end, so closing the end the server reads first never returns.
+            // Closing the write ends first ends each reader instead.
             public void Dispose()
             {
-                toServer.Dispose();
+                toServer.SafePipeHandle.Dispose();          // the server reads the end of its input and stops
                 server.Join(Patience);
+                toServer.Dispose();
+                fromServer.DisposeLocalCopyOfClientHandle(); // the server's output: the reader thread reads its end
+                reader.Join(Patience);
                 fromServer.Dispose();
             }
         }
