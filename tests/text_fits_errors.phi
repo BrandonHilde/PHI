@@ -1,0 +1,19 @@
+# runs only in 32 and 64 bits: a str without a size grows there, so only one with a size is fixed
+# A literal that can't fit in the str it's going to is known when the program is built.
+
+struct.Named
+{
+	str name: [4];
+}
+
+phi.TextFitsErrors:Library
+{
+	str three: [3];
+	three is 'abc';
+	three is 'abcd';
+	Named n;
+	n.name is 'abcd';
+	n.name is 'abcde';
+	str grows: '';
+	grows is 'abcdefgh';
+}

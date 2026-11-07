@@ -80,10 +80,11 @@ after an operator, and inside `( )` before one too.
 **Math is signed or unsigned by type.** Arithmetic is done in 32 bits. It's unsigned if
 either side is a `u32` or a pointer, which affects `/`, `%`, `>>` and comparisons.
 
-**A `str` grows up to its most, and longer text is silently cut.** The most comes from the
-declaration: `str s: [40];` holds 40 characters, and a `str` with no size given, like
-`str s: 'abc';`, grows up to 65,535. `.max` says what it is. Assigning `'abcdef'` to a
-`str s: [3];` stores `abc`.
+**A `str` grows up to its most, and longer text is an error, not an overflow.** The most comes
+from the declaration: `str s: [40];` holds 40 characters, and a `str` with no size given, like
+`str s: 'abc';`, grows up to 65,535. `.max` says what it is. Text that doesn't fit is
+`ErrorKind.TEXT`, which can be caught, and `call Cut.Into: s long;` (from `user.cut`) keeps what
+fits, as `strncpy` is meant to.
 
 **A method's `str` result lasts only for the statement that called it.** It's copied into
 a temporary in the caller, so `ptr<u8> name: (Name);` would point at memory reused by the

@@ -268,7 +268,10 @@ phi.HostWindow:Linux
 
 	# OS.SetWindowTitle: what the window is called
 	[SetWindowTitle: ptr<u8> text: 0;]
-		title is text;
+		title is '';
+		while int i: 0; i < title.max and text:i is not 0; i++;     # (what fits)
+			title++ text:i as chr;
+		;;
 		if window is not 0
 			call SendTitle;
 		;;

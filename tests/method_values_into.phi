@@ -2,14 +2,14 @@
 # the parameter str target; with no default. Whatever it holds writes the caller's str.
 struct.Account
 {
-	str name: [8];
+	str name: [31];
 	new str bio;
 }
 
 phi.MethodValuesInto:Kernel
 {
 	str grows: '';
-	str small: [6];
+	str small: [31];
 	new Account account;
 	str names[];
 	names++ 'ann' 'bob';
@@ -17,7 +17,7 @@ phi.MethodValuesInto:Kernel
 	method<str into: int> fill: addr Greet;
 	log 'wrote: ' (fill: grows) ', ' grows '\n';
 	call fill: small;
-	log 'cut to fit: ' small '\n';
+	log 'with a size: ' small '\n';
 	call fill: account.name;
 	call fill: account.bio;
 	log 'fields: ' account.name ' / ' account.bio '\n';

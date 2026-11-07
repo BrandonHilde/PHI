@@ -84,8 +84,9 @@ This prints `hello becomes jello (5 letters)`. A `str` copies its text when you 
 `copy:0` is its first character, and a one-character string like `'j'` works as a
 character code. Comparing two strings with `is` compares their text.
 
-A `str` has a fixed amount of room: `'hello'` gives it 5 characters, `str name: [40];` gives
-it 40, and longer text is cut to fit.
+A `str` holds as much text as you give it, up to its most: `str name: [40];` holds 40
+characters, and one without a size grows up to 65,535. In a 16-bit program like this one, `'hello'` gives
+it 5. Text that doesn't fit is an error, which stops the program with the line it's on.
 
 ## Methods
 

@@ -21,6 +21,7 @@
 use gui.app;
 use gui.widgets;
 use fs.fileinfo;
+use user.text;
 
 # a message and up to three buttons: done when one is pressed, or Esc is
 struct.MessageBox
@@ -38,15 +39,15 @@ struct.MessageBox
 	int result;                 # which button, or -1 for Esc
 
 	[Place: int window_w: 0; int window_h: 0; ptr<u8> message: 0; ptr<u8> first: 0; ptr<u8> second: 0; ptr<u8> third: 0;]
-		text is message;
-		labels:0 is first;
+		call Text.Copy: text message 512;
+		call Text.Copy: labels:0 first 32;
 		count is 1;
 		if second is not 0
-			labels:1 is second;
+			call Text.Copy: labels:1 second 32;
 			count is 2;
 		;;
 		if third is not 0
-			labels:2 is third;
+			call Text.Copy: labels:2 third 32;
 			count is 3;
 		;;
 		focus is 0;
@@ -183,8 +184,12 @@ struct.FilePicker
 	bln chosen;
 
 	[Place: int window_w: 0; int window_h: 0; ptr<u8> heading: 0; ptr<u8> start: 0; bln for_saving: false; ptr<u8> suggested: 0;]
-		title is heading;
-		folder is start;
+		call Text.Copy: title heading 32;
+		# (part of a path is somewhere else, so a start that doesn't fit is no start)
+		folder is '';
+		if (Text.Length: start) <= folder.max
+			folder is start;
+		;;
 		saving is for_saving;
 		done is false;
 		chosen is false;
@@ -401,6 +406,10 @@ struct.FilePicker
 
 	# path is the folder and this name, and that's the choice: if it's there, unless saving
 	[Choose: ptr<u8> file: 0;]
+		if folder.len + 1 + (Text.Length: file) > path.max
+			call name.SelectAll;
+			return;
+		;;
 		path is '';
 		if folder.len > 0
 			path is folder;
@@ -435,6 +444,7 @@ struct.FilePicker
 		int length: folder.len;
 		bln dots: length >= 2 and folder:(length - 1) is '.' and folder:(length - 2) is '.' and (length is 2 or folder:(length - 3) is '/');
 		if length is 0 or dots
+			if length + 3 > folder.max return;
 			if length > 0
 				folder++ '/';
 			;;

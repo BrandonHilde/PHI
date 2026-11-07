@@ -1,0 +1,140 @@
+# runs only in 32 and 64 bits: it catches errors, which a 16-bit program can't
+# Text that doesn't fit in the str it's going to is an error (ErrorKind.TEXT), wherever it goes:
+# not text quietly lost. Text that just fits isn't one. Cut.Into cuts it, when that's what's wanted.
+use user.cut;
+
+struct.Named
+{
+	str name: [4];
+	int value;
+}
+
+phi.TextFits:Library
+{
+	str long: 'abcdefgh';
+
+	# exactly what fits
+	str three: [3];
+	three is 'abc';
+	log three ' ' three.len ' ' three.max '\n';
+	three is '';
+	three++ 'ab';
+	three++ 'c';
+	log three '\n';
+
+	# one over, or more, each way text gets in
+	if call Assign throws err
+		log 'assign: ' (err.kind is ErrorKind.TEXT) ' ' err.text '\n';
+	;;
+	if call Append throws err
+		log 'append: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+	if call Built throws err
+		log 'built: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+	if call Number throws err
+		log 'number: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+	if call Field throws err
+		log 'field: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+	if call Element throws err
+		log 'element: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+	if call CallersOwn throws err
+		log 'the caller's: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+	if call Limit: long throws err
+		log 'a parameter: ' (err.kind is ErrorKind.TEXT) '\n';
+	;;
+
+	# what it had when it stopped is still text, ended properly
+	log 'kept: ' (three.len <= 3) '\n';
+
+	# text that grows has its most too: appending past it, and it carries on after
+	str grows: '';
+	if call Grow: grows throws err
+		log 'grows: ' (err.kind is ErrorKind.TEXT) ' ' grows.len ' ' grows.max '\n';
+	;;
+	grows is 'short again';
+	log grows '\n';
+
+	# Cut.Into says losing the rest is meant
+	call Cut.Into: three long;
+	log three ' ' three.len '\n';
+	call Cut.Into: three 'x';
+	log three '\n';
+	str four: [4];
+	call Cut.Into: four ('n=' 12345);
+	log four '\n';
+	str big: '';
+	call Cut.Into: big long;
+	log big '\n';
+
+	# a throw's own long text is cut, not a different error
+	if call LongThrow throws err
+		log 'thrown: ' (err.kind is ErrorKind.THROWN) ' ' err.text.len '\n';
+	;;
+
+	[Assign]
+		three is long;
+	[end]
+
+	[Append]
+		three is 'abc';
+		three++ 'd';
+	[end]
+
+	[Built]
+		three is 'a' 'b' 'c' 'd';
+	[end]
+
+	[Number]
+		three is 12345;
+	[end]
+
+	[Field]
+		Named n;
+		n.name is 'abcd';
+		log n.name '\n';
+		str five: 'abcde';
+		n.name is five;
+	[end]
+
+	[Element]
+		str rows[2]: [3];
+		rows:0 is 'abc';
+		str four: 'abcd';
+		rows:1 is four;
+	[end]
+
+	[CallersOwn]
+		call Write: three 'abcd';
+	[end]
+
+	[Write: str target; ptr<u8> what: 0;]
+		target is what;
+	[end]
+
+	[Limit: str shorter: [4];]
+		log shorter '\n';
+	[end]
+
+	[Grow: str target;]
+		u8 piece[1001];
+		while int i: 0; i < 1000; i++;
+			piece:i is 'x';
+		;;
+		while int i: 0; i < 70; i++;
+			target++ addr piece:0;
+		;;
+	[end]
+
+	[LongThrow]
+		str words: 'word';
+		while int i: 0; i < 100; i++;
+			words++ ' word';
+		;;
+		throw words words;
+	[end]
+}

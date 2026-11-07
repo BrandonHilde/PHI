@@ -37,6 +37,7 @@ use crypto.x25519;
 use crypto.random;
 use crypto.x509;
 use crypto.p256;
+use user.text;
 
 # what a server shows: its certificates and its key
 struct.TlsIdentity
@@ -176,6 +177,7 @@ phi.Tls13:Library
 	# address), with its ClientHello ready to send; false if there's no memory for it
 	[Client: ptr<TlsSession> s: 0; ptr<u8> host: 0;]
 		if not (Tls13.Begin: s false) return false;
+		if (Text.Length: host) > s.host.max return (Tls13.Fail: s 'the host name is too long' ALERT_INTERNAL_ERROR);
 		s.host is host;
 		s.stage is CLIENT_WAITING_FOR_HELLO;
 		s.chain_count is 0;

@@ -26,12 +26,12 @@ phi.TextArrays:Kernel
 
 	# texts kept in place, in a variable and in a struct
 	str codes[atmost 2]: [3];
-	codes++ 'abcdef';
+	codes++ 'abc';
 	log codes:0 ' ' codes:0.len ' ' codes.len ' ' sizeof codes '\n';
 	Note n;
 	n.id is 1;
 	n.after is 99;
-	n.lines++ 'first' 'second line';
+	n.lines++ 'first' 'second';
 	n.lines:0++ '!';
 	log n.lines.len ' ' n.lines:0 ' ' n.lines:1 ' ' n.after ' ' sizeof Note '\n';
 

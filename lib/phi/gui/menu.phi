@@ -29,6 +29,7 @@
 # chooses and Esc closes; an item's own key works when nothing's open.
 
 use gui.widgets;
+use user.text;
 
 struct.MenuItem
 {
@@ -67,16 +68,16 @@ struct.MenuBar
 	# a menu on the bar: its number, for AddItem, or -1 if there's no room for it
 	[AddMenu: ptr<u8> title: 0;]
 		if title_count >= 8 return -1;
-		titles:title_count is title;
+		call Text.Copy: titles:title_count title 16;
 		title_count++;
 	[end: title_count - 1]
 
 	# an item, choosing command; hint and key (the MOD_ bits too) can be left out
 	[AddItem: int menu: 0; ptr<u8> text: 0; int command: 0; ptr<u8> hint: 0; int key: 0;]
 		if item_count >= 64 return;
-		items:item_count.label is text;
+		call Text.Copy: items:item_count.label text 32;
 		if hint is not 0
-			items:item_count.hint is hint;
+			call Text.Copy: items:item_count.hint hint 16;
 		;;
 		items:item_count.command is command;
 		items:item_count.key is key;

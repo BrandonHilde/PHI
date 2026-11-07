@@ -34,7 +34,7 @@ phi.TextBasics:Program
 	log long.len ' ' long '\n';
 
 	log (Greet: 'Bob') '\n';
-	str small: [8];
+	str small: [20];
 	call Fill: small;
 	log 'filled: ' small '\n';
 	str grown: '';

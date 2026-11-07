@@ -2918,7 +2918,10 @@ the f64 on every system (the x87 set to double precision); `[Make: : ptr<Node>]`
 pointer cut to 32 bits now an error; `(F: x).field` and `(F: x):0`; `not` on an object's method;
 an operator can start a line inside parentheses; `(p as u8[n])`, a checked array from a pointer;
 a `.philib` keeps files by their path; `X509.MAX_ROOTS` is 4,096 in a table that grows; and
-`tests/c_programmers.phi` holds that page to what PHI does. Still to do, each for something:
+`tests/c_programmers.phi` holds that page to what PHI does; and text that doesn't fit in a `str`
+is an error (`ErrorKind.TEXT`), with `Cut.Into` for when losing the rest is meant (the user's
+choice, 2026-11-06; a literal is an error when it's built, and `ask` and a `throw`'s own text
+still cut). Still to do, each for something:
 
 - **`phi fuzz` and optimising, to add to the list above:** a jump table for a dense `when`
   (interpreters and parsers; weblib nested `when`s by hand); SSE2 for floating point; register
@@ -2930,10 +2933,6 @@ a `.philib` keeps files by their path; `X509.MAX_ROOTS` is 4,096 in a table that
   closures now, so state goes through class variables, which keeps a library off threads); and a
   checked heap for development (filling what's freed, marking the ends of what's allocated), to
   catch a pointer's use after free or past its end; an array made with `as` covers the second, where it's used.
-- **`str` overflow, decision waiting:** whether text that doesn't fit throws rather than being
-  cut. There are 35 `str`s with a size in `lib/phi` and 156 in PhiOS, each of which can cut,
-  and `Error` itself relies on it (a long `throw` is cut to its 255 characters). An uncaught
-  one would stop a kernel that today only loses some text.
 - **The stack running out, not yet:** a PHI OS program's threads (their stacks are on the heap with
   nothing below them), and a kernel's own stack, which runs down through low memory into the
   kernel with no fault; catching that needs a check at each call, or paging in every kernel.

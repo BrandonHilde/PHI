@@ -16,7 +16,7 @@ phi.StrFields:Program
 	a.id is 7;
 	a.after is 99;
 	a.name is 'Ada';
-	a.name++ ' Lovelace';                    # cut to fit: 8 characters
+	a.name++ ' Love';                        # all 8 characters it holds
 	a.home is 'HOME/' a.id;
 	log a.name '|' a.home '|' a.after '\n';
 	log a.name.len ' ' a.name.max ' ' a.home.len ' ' a.home.max ' ' sizeof a.name ' ' sizeof Account '\n';
@@ -30,7 +30,7 @@ phi.StrFields:Program
 	Account people[3];
 	people:1.name is 'Cy';
 	people:1.home is 'away';
-	people:1.home++ ' from home';
+	people:1.home++ ' from ho';
 	log people:1.name ' ' people:1.name.len ' ' people:1.home ' ' people:1.home:2 '\n';
 	ptr<Account> p: addr people:1;
 	p.name++ 'rus';
@@ -41,8 +41,8 @@ phi.StrFields:Program
 
 	str title: [atmost 5];
 	chr code[6];
-	title is 'abcdefgh';
-	code is title 'xyz';
+	title is 'abcde';
+	code is title 'x';
 	log title ' ' code ' ' code.max '\n';
 	exit 0;
 
@@ -56,6 +56,6 @@ phi.StrFields:Program
 		log '<' text ' ' text.len ' ' text.max '>\n';
 	[end]
 	[Grow: str text;]
-		text is 'Grace Hopper';
+		text is 'Grace Ho';
 	[end]
 }

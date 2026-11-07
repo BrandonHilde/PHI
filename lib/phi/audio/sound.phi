@@ -24,6 +24,7 @@
 
 use audio.wav;
 use audio.synth;
+use user.text;
 
 phi.Sound:Library
 {
@@ -97,7 +98,7 @@ phi.Sound:Library
 		int size: 0;
 		if ok
 			if call size is OS.FileSize: path throws err
-				error is err.text;      # (more than an int can say)
+				call Text.Copy: error err.text 61;      # (more than an int can say)
 				ok is false;
 			;;
 			elif size < 0

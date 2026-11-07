@@ -135,9 +135,9 @@ info is '';
 call Text.AppendSize: info 12800 sizeof info;     # not info.len: that's 0 here
 ```
 
-Text longer than a `str` is cut to fit, without an error. Make it big enough for the
-longest text it will hold (a path, a line of a file), or check `.len` against what you
-expect.
+Text longer than a `str` is an error. Make it big enough for the longest text it will hold (a
+path, a line of a file), or, where losing the rest is fine, say so with `Cut.Into` (from
+`user.cut`).
 
 ## Returning text from a method
 

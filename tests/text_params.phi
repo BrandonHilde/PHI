@@ -1,5 +1,6 @@
 # A str parameter with no default (str target;) is the caller's own text: the method reads it
-# or fills it in. A str that grows grows; one with a size is cut to fit.
+# or fills it in. A str that grows grows; one with a size holds what it holds (text_fits.phi:
+# more than that is an error).
 struct.Account
 {
 	str name: [6];
@@ -8,7 +9,7 @@ struct.Account
 phi.TextParams:Kernel
 {
 	str grows: '';
-	str sized: [5];
+	str sized: [7];
 	str list: 'one' 'two';
 	Account a;
 
@@ -61,7 +62,7 @@ phi.TextParams:Kernel
 	[end]
 
 	[Fill: chr target[];]
-		target is 'abcdefg';
+		target is 'abcd';
 		target:0 is 'X';
 	[end]
 }

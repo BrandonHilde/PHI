@@ -245,9 +245,22 @@ code: a 16-bit program can't have them.
   (`str days: 'Mon' 'Tue'; days:1 is 'Tuesday';`). In a 16-bit program each holds as much
   as the longest initial value.
 
-Text longer than the max is cut to fit, without an error: after
-`str tiny: [3]; tiny is 'abcdef';`, `tiny` is `abc`. A `str` with a size takes one more byte
-than it holds, for the zero that ends the text.
+Text longer than the max is an error (`ErrorKind.TEXT`), which can be caught, and what fitted
+is what the `str` is left with: losing the end of a text quietly is how a path ends up naming
+a different file. A literal that can't fit is an error when it's built. When losing the rest
+is what's wanted, `Cut.Into` says so (in a 32-bit kernel or a program; a 16-bit one has `Text.Copy`):
+
+```phi
+use user.cut;
+str tiny: [3];
+tiny is 'abc';                      # just fits
+tiny is line;                       # an error if line is longer
+call Cut.Into: tiny line;           # as much of line as fits
+```
+
+`ask` is the exception: it reads what fits of a line, as typing has no one to tell. And a
+`throw`'s own long text is cut to the 255 characters an `Error` holds, so that the error is the
+one thrown. A `str` with a size takes one more byte than it holds, for the zero that ends the text.
 
 **How a `str` array is stored.** A `str` array is an array of 4-byte pointers, one per
 element, and each points to that element's text (in 32-bit code each element's room
@@ -588,7 +601,7 @@ x^^ 3;         # to the power 3 (whole numbers of up to 32 bits; a power below 0
 list:2 is 7;   # one element
 task.id is 3;  # one field
 name is 'new text';
-name is line;  # line is a ptr<u8>: copies the text it points to (cut to fit)
+name is line;  # line is a ptr<u8>: copies the text it points to (an error if it doesn't fit)
 name is line + 1;   # the same text from its second character, as name++ line + 1; adds it
 ```
 
@@ -605,7 +618,7 @@ status++ ' (' (Text.Length: name) ' chars)';
 status is status ' more';                        # the str itself can be the first value
 ```
 
-As in any list, `'Total' -3` is two values. The text is cut to fit, like any `str`. The
+As in any list, `'Total' -3` is two values. Text that doesn't fit is an error, as for any `str`. The
 `str` can't appear after the first value (it's being rewritten by then), and `s++ s;` is an
 error: copy it to another `str` first. Only a `str` takes several values: `n is n -1;`
 still subtracts.
@@ -818,9 +831,10 @@ else
   or `Fill32` (a negative number, or a subtraction below 0, which would otherwise run through
   all of memory; the error names the line of the call, and nothing is copied), and a number
   that would come out as a different number (a negative one going to a `u32`, or a `u32` of 2
-  billion or more going to an `int`; `as` says the same bits are meant).
+  billion or more going to an `int`; `as` says the same bits are meant), and text that doesn't
+  fit in the `str` it's going to.
 - **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
-  `MEMORY`, `COUNT`, `CONVERT` or `STACK`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+  `MEMORY`, `COUNT`, `CONVERT`, `STACK` or `TEXT`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
   an uncaught error is written). `log`, `debug` and text built from values write its
   message, so `log err;` and `str note: ('failed: ' err);` say everything.
 - **The methods in between give back what they own**, as if each had returned: their new
@@ -2677,7 +2691,7 @@ if (IsReady: port)
   is a copy of the caller's text. One with no default (`str target;`, or `chr target[];`) is the
   caller's own text, as a struct parameter is the caller's struct (32-bit code). The
   method reads it, or fills it in: what it writes goes into the caller's `str`, which grows
-  if it can or is cut to fit if it has a size. Any text can be passed to one the method only
+  if it can, and what doesn't fit one with a size is an error. Any text can be passed to one the method only
   reads, a literal, a `ptr<u8>` or a number. One the method writes needs a `str` variable,
   field or element to write into, and passing anything else is an error.
 
@@ -3048,6 +3062,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `proc.cores`, `proc.threads` | 32-bit kernels: the other cores (`Cores.Start`, `Run`, `SharePrograms`) and kernel threads (`Threads.Start: method value`, `Wait`, `Done`): see [Several cores](#several-cores-32-bit-kernels) |
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets`, `gui.menu`, `gui.dialogs` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
+| `user.cut` | class `Cut` (32-bit kernels and programs): `Into: target value`, as much of `value` as fits, into a `str` |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 billion or more to any but `Equal` is an error at the call |

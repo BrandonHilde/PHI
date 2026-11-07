@@ -1,0 +1,29 @@
+# Cutting text on purpose. Text that doesn't fit in the str it's going to is an error
+# (ErrorKind.TEXT), as losing the end of it is usually a mistake; this is for when it isn't. It
+# needs a heap, as any method that writes the caller's str does (32-bit kernels and programs).
+#
+#   use user.cut;
+#   str name: [8];
+#   call Cut.Into: name 'a long name';        # as much as fits: a long n
+#                                              # (name is 'a long name' would be an error)
+
+phi.Cut:Library
+{
+	# as much of value as fits in target, in place of what's there
+	[Into: str target; ptr<u8> value: 0;]
+		target is '';
+		u8 piece[256];
+		int done: 0;
+		int room: target.max;
+		while done < room and value:done is not 0
+			int n: 0;
+			while n < 255 and done < room and value:done is not 0
+				piece:n is value:done;
+				n++;
+				done++;
+			;;
+			piece:n is 0;
+			target++ addr piece:0;
+		;;
+	[end]
+}

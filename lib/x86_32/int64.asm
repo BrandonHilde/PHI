@@ -160,5 +160,5 @@ phi_int64_to_str:
     mov edi, [esp + 28]
     mov ecx, [esp + 32]
     call phi_strcpy
-    add esp, 36
+    lea esp, [esp + 36]                 ; (keeping the carry it set if it was cut)
     ret

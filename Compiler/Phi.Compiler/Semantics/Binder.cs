@@ -650,6 +650,16 @@ namespace Phi.Compiler.Semantics
             Check(m.Result, m.Symbol.ReturnType, "handed back");
         }
 
+        /// <summary>Text that doesn't fit is an error when it runs; for a literal, it's known now.</summary>
+        void CheckLiteralFits(StringExpr literal, Expr target)
+        {
+            int holds = target.Type.IsInlineText ? target.Type.Room - 1
+                : target is NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false, Capacity: > 0 } v } ? v.Capacity - 1
+                : -1;
+            if (holds >= 0 && literal.Value.Length > holds)
+                Error(literal.Span, $"this text is {literal.Value.Length} characters, and '{Describe(target)}' holds {holds}; give it more room, or use Cut.Into (use user.cut) if losing the rest is meant");
+        }
+
         /// <summary>An array made from a pointer has no place of its own to live, so it only goes to a method that takes an array.</summary>
         void CheckPointerViews(ProgramNode program)
         {
@@ -3095,6 +3105,7 @@ namespace Phi.Compiler.Semantics
             }
             else
             {
+                if (value is StringExpr literal && target.Type.IsString) CheckLiteralFits(literal, target);
                 CheckNotKeepingResult(value, target.Type, $"'{Describe(target)}'");
                 value = ConvertChecked(value, target.Type, $"'{Describe(target)}'");
             }
@@ -3391,6 +3402,8 @@ namespace Phi.Compiler.Semantics
                 Error(assign.Span, $"'{Describe(target)}' is a str: write what to add to its end, like {Describe(target)}++ ' more';");
                 return assign;
             }
+
+            if (!append && parts.Count == 1 && parts[0] is StringExpr literal) CheckLiteralFits(literal, target);
 
             var build = new StringBuildStmt { Target = target, Append = append, Span = assign.Span };
             for (int i = 0; i < parts.Count; i++)

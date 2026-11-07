@@ -1505,8 +1505,10 @@ namespace Phi.Compiler.CodeGen
                 Emit("push edx");
                 Emit($"mov {R("esi")}, [esp + {Slot}]");
                 Emit("call phi_strcpy");
+                EmitKeepCut(Slot);
                 EmitFreeOld();
-                Emit($"add esp, {Slot}");
+                Emit("pop eax");
+                EmitTextFitsAfterFree();
                 string text = NewLabel("result");
                 Emit($"mov {R("eax")}, {Q} [ebp + {frame.ResultSlot}]");
                 Emit($"mov {R("eax")}, {Q} [eax]");
@@ -1523,6 +1525,7 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov {R("edi")}, [ebp + {frame.ResultSlot}]");
                 Emit($"mov ecx, {m.ResultCapacity}");
                 Emit("call phi_strcpy");
+                EmitTextFits();
                 Emit($"mov {R("eax")}, [ebp + {frame.ResultSlot}]");
             }
 
@@ -2010,6 +2013,7 @@ namespace Phi.Compiler.CodeGen
                 Emit($"lea edi, [{p.Label}]");
                 Emit($"mov ecx, {p.Capacity}");
                 Emit("call phi_strcpy");
+                EmitTextFits();
             }
         }
 
@@ -2461,7 +2465,9 @@ namespace Phi.Compiler.CodeGen
                 case ThrowStmt t:
                     // the runtime copies the text (it may be in this frame) before anything goes
                     Need("phi_throw");
+                    textMayCut = true;
                     EmitTextValue(t.Text!);
+                    textMayCut = false;
                     Emit($"mov {R("edx")}, {R("eax")}            ; the text");
                     Emit($"mov eax, {LineOf(t)}");
                     LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
@@ -4296,6 +4302,52 @@ namespace Phi.Compiler.CodeGen
             Label(ok);
         }
 
+        /// <summary>
+        /// After phi_strcpy or a number written as text, with its carry still there: text that
+        /// didn't fit is an error, unless it's a throw's own text (which is cut, so that the
+        /// error is the one thrown) or the boot sector's (which has no room for the routine).
+        /// </summary>
+        void EmitTextFits()
+        {
+            if (textMayCut || unit.Kind == UnitKind.Boot) return;
+            string ok = NewLabel("textfits");
+            Emit($"jnc {ok}");
+            EmitTextError();
+            Label(ok);
+        }
+
+        /// <summary>The same, for a store with a text that may have moved: eax is 1 if it was cut (the old text is freed by now).</summary>
+        void EmitTextFitsAfterFree()
+        {
+            if (textMayCut) return;
+            string ok = NewLabel("textfits");
+            Emit("test eax, eax");
+            Emit($"jz {ok}");
+            EmitTextError();
+            Label(ok);
+        }
+
+        /// <summary>Keeps the carry phi_strcpy left in a stack slot, across the call that frees the old text.</summary>
+        void EmitKeepCut(int offset)
+        {
+            if (textMayCut) return;
+            Emit("setc al");
+            Emit("movzx eax, al");
+            Emit($"mov [esp + {offset}], {R("eax")}   ; whether it was cut");
+        }
+
+        bool textMayCut;
+
+        void EmitTextError()
+        {
+            Need("phi_text_error");
+            int line = lastComment.Item1 == file ? lastComment.Item2 : 0;
+            Emit($"mov eax, {line}   ; it stops here, so eax is free");
+            if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
+            else Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
+            Emit("jmp phi_text_error");
+        }
+
         /// <summary>Stops with an index error naming the line and file of a node.</summary>
         void EmitIndexError(Node at)
         {
@@ -4472,7 +4524,7 @@ namespace Phi.Compiler.CodeGen
                 bool text = value != null && (IsText(value.Type) || value.Type.IsWide || value.Type.IsFloat || value.Type.IsChar);
                 if (element.IsInlineText)
                 {
-                    // the text goes where the element is, cut to fit
+                    // the text goes where the element is
                     if (value == null) Emit("mov byte [ebx], 0        ; empty");
                     else
                     {
@@ -4491,6 +4543,7 @@ namespace Phi.Compiler.CodeGen
                             Need(convert);
                             Emit($"call {convert}");
                         }
+                        EmitTextFits();
                     }
                 }
                 else if (value == null)
@@ -4775,7 +4828,7 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>
         /// eax holds a string address (sourceIsString) or a number to write out as text;
-        /// put it in a str variable, a str field or a str array element, cut to fit.
+        /// put it in a str variable, a str field or a str array element: it's an error if it doesn't fit.
         /// </summary>
         void EmitStringStore(Expr target, bool sourceIsString, bool append = false, bool unsigned = false)
         {
@@ -4797,7 +4850,7 @@ namespace Phi.Compiler.CodeGen
 
             if (target is NameExpr { Symbol: VariableSymbol { TextRef: true } caller })
             {
-                // into the caller's str: it grows if it can, or is cut to fit
+                // into the caller's str: it grows if it can
                 Emit("push eax                ; the value");
                 Emit($"push dword [{caller.Label}]   ; where {caller.Name}'s text and room are");
                 EmitGrowStoreAt(RoomAt, sourceIsString, append, unsigned);
@@ -4878,6 +4931,7 @@ namespace Phi.Compiler.CodeGen
                 Need(convert);
                 Emit($"call {convert}");
             }
+            EmitTextFits();
         }
 
         // ================================================================ expressions
@@ -6807,6 +6861,7 @@ namespace Phi.Compiler.CodeGen
                         Emit("pop esi");
                         Emit($"mov ecx, {array.Capacity}");
                         Emit("call phi_strcpy");
+                        EmitTextFits();
                     }
                 });
                 return;
@@ -7453,7 +7508,7 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>
         /// In the room passed for a str parameter that's the caller's text: the caller's str has a
-        /// size, so its text never moves and what's written is cut to fit.
+        /// size, so its text never moves, and what doesn't fit is an error.
         /// </summary>
         const string Fixed = "0x40000000";
 
@@ -7586,8 +7641,11 @@ namespace Phi.Compiler.CodeGen
                 Need(convert);
                 Emit($"call {convert}");
             }
+            EmitKeepCut(2 * Slot);
             EmitFreeOld();
+            if (!textMayCut) Emit($"mov eax, [esp + {Slot}]");
             Emit($"add esp, {2 * Slot}");
+            EmitTextFitsAfterFree();
         }
 
         /// <summary>phi_str_room, for strs that grow (see EmitStrRoomCall).</summary>
@@ -7605,7 +7663,7 @@ namespace Phi.Compiler.CodeGen
             Label(".capped");
             Emit("xor edx, edx");
             Emit($"test dword [ebx], {Fixed}");
-            Emit("jnz .fits               ; a caller's str with a size: it stays, and the text is cut to fit");
+            Emit("jnz .fits               ; a caller's str with a size: it stays, and what doesn't fit is an error");
             Emit("mov eax, [ebx]");
             Emit($"and eax, {RoomMask}      ; its room (the top bits: its text isn't on the heap, or never moves)");
             Emit("cmp ecx, eax");

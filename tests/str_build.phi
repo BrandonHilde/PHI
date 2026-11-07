@@ -12,14 +12,12 @@ phi.StrBuild:Library
 	line++ '!' -3;
 	debug line '\n';
 
-	# cut to fit, like any str
+	# up to what it holds, like any str
 	str tiny: [5];
-	tiny is 'abc' 'def' 123;
+	tiny is 'abc' 'd' 1;
 	debug tiny '\n';
 	tiny is 'x';
-	tiny++ 'yz' 'abcdef';
-	debug tiny '\n';
-	tiny++ 'more';
+	tiny++ 'yz' 'ab';
 	debug tiny '\n';
 
 	# u32 values, pointers to text, and the str itself as the first value

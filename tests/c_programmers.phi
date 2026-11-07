@@ -1,6 +1,7 @@
 # runs only in 32 and 64 bits: it uses f64s and text that grows
 # Every example and claim in docs/phi-for-c-programmers.md that can run, so the page can't drift
 # from what PHI does. Change one, and change the other.
+use user.cut;
 
 struct.Point
 {
@@ -78,13 +79,16 @@ phi.CProgrammers:Library
 		+ 3);
 	log broken ' ' inParens '\n';
 
-	# ---- a str grows to its most, and what doesn't fit is cut
+	# ---- a str grows to its most, and what doesn't fit is an error, unless it's cut on purpose
 	str grows: 'abc';
 	grows is 'abcdef';
 	log grows ' ' grows.len '\n';
 	str sized: [3];
-	sized is 'abcdef';
+	call Cut.Into: sized 'abcdef';
 	log sized ' ' sized.len ' ' sized.max '\n';
+	if call Overfill throws err
+		log (err.kind is ErrorKind.TEXT) '\n';
+	;;
 
 	# ---- a str result stays by copying it
 	str kept: '';
@@ -102,6 +106,10 @@ phi.CProgrammers:Library
 	if call Touch: outside throws err
 		log (err.kind is ErrorKind.INDEX) '\n';
 	;;
+
+	[Overfill]
+		sized is grows;
+	[end]
 
 	[Twice: int v: 0;]
 	[end: v * 2]

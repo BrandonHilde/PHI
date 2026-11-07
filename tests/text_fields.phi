@@ -23,7 +23,7 @@ phi.TextFields:Kernel
 	a.id is 7;
 	a.after is 99;
 	a.name is 'Ada';
-	a.name++ ' Lovelace';                    # cut to fit: 8 characters
+	a.name++ ' Love';                        # all 8 characters it holds
 	a.home is 'HOME/' a.id;
 	log a.name '|' a.home '|' a.after '\n';
 	log a.name.len ' ' a.name.max ' ' a.home.len ' ' a.home.max ' ' sizeof a.name ' ' sizeof Account '\n';
@@ -59,8 +59,8 @@ phi.TextFields:Kernel
 	# a str with a size, and chr arrays, as variables
 	str title: [atmost 5];
 	chr code[6];
-	title is 'abcdefgh';
-	code is title 'xyz';
+	title is 'abcde';
+	code is title 'x';
 	log title ' ' code ' ' code.max '\n';
 	exit 0;
 

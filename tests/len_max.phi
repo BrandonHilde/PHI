@@ -16,7 +16,7 @@ phi.LenMax:Library
 	str name: [ROOM];
 	name is 'Ada';
 	log name.len ' ' name.max ' ' sizeof name '\n';
-	name is 'This is far too long to fit';
+	name is 'Exactly twenty chars';
 	log name.len ' ' name.max '\n';
 
 	# (its .max depends on the mode: a str without a size grows in 32-bit code)

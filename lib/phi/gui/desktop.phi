@@ -93,7 +93,7 @@ phi.Desktop:Kernel
 		windows:i.pid is pid;
 		windows:i.x is x;
 		windows:i.y is y;
-		windows:i.title is title;
+		call Text.Copy: windows:i.title title 32;
 		dirty is true;
 	[end: true]
 

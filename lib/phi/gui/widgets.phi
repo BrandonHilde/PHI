@@ -44,7 +44,7 @@ struct.Button
 		y is by;
 		w is bw;
 		h is bh;
-		label is text;
+		call Text.Copy: label text 32;      # (what fits on it)
 	[end]
 
 	[Paint]
@@ -81,7 +81,7 @@ struct.CheckBox
 	[Place: int cx: 0; int cy: 0; ptr<u8> text: 0;]
 		x is cx;
 		y is cy;
-		label is text;
+		call Text.Copy: label text 32;      # (what fits on it)
 	[end]
 
 	[Paint]

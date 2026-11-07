@@ -21,8 +21,8 @@ phi.Strings:Library
 	;;
 	log '\n' copy ' ' copy.len '\n';
 
-	# assignments are cut to fit
-	tiny is 'abcdef';
+	# as much as it holds
+	tiny is 'abc';
 	log tiny ' ' tiny.len '\n';
 
 	# characters

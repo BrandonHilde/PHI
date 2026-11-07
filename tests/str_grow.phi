@@ -34,9 +34,9 @@ phi.StrGrow:Kernel
 	call Results;
 	log 'results back: ' (Heap.used_bytes is before) '\n';
 
-	# a fixed str is still cut to fit
+	# a str with a size doesn't grow
 	str short: [5];
-	short is 'truncated';
+	short is 'trunc';
 	log short ' ' short.max '\n';
 
 	# past its room is an index error

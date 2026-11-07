@@ -35,5 +35,5 @@ phi_int_to_str:
 .copy:
     mov ecx, [esp + 12]
     call phi_strcpy
-    add esp, 16
+    lea esp, [esp + 16]         ; (keeping the carry it set if it was cut)
     ret

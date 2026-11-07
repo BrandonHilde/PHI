@@ -1,0 +1,2 @@
+13:11: error: this text is 4 characters, and 'three' holds 3; give it more room, or use Cut.Into (use user.cut) if losing the rest is meant
+16:12: error: this text is 5 characters, and 'n.name' holds 4; give it more room, or use Cut.Into (use user.cut) if losing the rest is meant

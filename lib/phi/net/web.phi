@@ -184,6 +184,11 @@ phi.Web:Library
 		ptr<WebReply> w: addr replies:r;
 		w.held is new u8[HELD_ROOM];
 		w.headers is new u8[HEADERS_ROOM];
+		if (Text.Length: url) > w.url.max
+			error is 'the URL is too long';
+			call Close: r;
+			return -1;
+		;;
 		w.url is url;
 		bln posting: true;
 		int redirects: 0;
@@ -405,6 +410,8 @@ phi.Web:Library
 			;;
 			next++ location;
 		;;
+		# (location fits, as a whole URL; with this host in front of it, it may not)
+		if next.len > w.url.max return false;
 		w.url is addr next:0;
 	[end: true]
 
