@@ -7,8 +7,8 @@
 # socket (/tmp/.X11-unix/X0, for display :0) with Linux's system calls, and writes requests
 # and reads events as the protocol lays them out, little-endian. The program's pixels go to a
 # pixmap kept by the server, which is copied to the window when they change and whenever the
-# window needs painting. No authentication is tried: a local server that wants a cookie
-# refuses, and the window can't open.
+# window needs painting. A server that wants a cookie (a desktop's usually does: XWayland's
+# always) gets the display's MIT-MAGIC-COOKIE-1 from the Xauthority file (FindCookie).
 #
 # Replies come back on the same socket among the events, and those are queued as they're met.
 # One thread (the one that opens the window) draws and takes the events.
@@ -39,6 +39,9 @@ phi.HostWindow:Linux
 	const int MOST_KEYS: 512;
 	const int IN_ROOM: 65536;             # the most of one reply (a keyboard's map fits)
 	const int OUT_ROOM: 4096;
+	const int AUTH_PATH: 512;             # the longest path to an Xauthority file
+	const int AUTH_ROOM: 16384;           # the most of one that's read (a desktop's is a few entries)
+	const int MOST_COOKIE: 64;            # an MIT-MAGIC-COOKIE-1 is 16 bytes
 
 	# requests
 	const int CREATE_WINDOW: 1;
@@ -394,14 +397,33 @@ phi.HostWindow:Linux
 		;;
 		server is s;
 
-		# who we are: little-endian, X11, with no authentication
+		# who we are: little-endian, X11, and the display's cookie if there is one
+		str scheme: 'MIT-MAGIC-COOKIE-1';
+		u8 cookie[MOST_COOKIE];
+		int cookie_length: (FindCookie: number addr cookie);
+		int method_length: 0;
+		if cookie_length > 0
+			method_length is scheme.len;
+		;;
 		call Put8: 0x6C;
 		call Put8: 0;
 		call Put16: 11;
 		call Put16: 0;
+		call Put16: method_length;
+		call Put16: cookie_length;
 		call Put16: 0;
-		call Put16: 0;
-		call Put16: 0;
+		while int m: 0; m < method_length; m++;
+			call Put8: scheme:m;
+		;;
+		while (filled & 3) is not 0
+			call Put8: 0;
+		;;
+		while int c: 0; c < cookie_length; c++;
+			call Put8: cookie:c;
+		;;
+		while (filled & 3) is not 0
+			call Put8: 0;
+		;;
 		call SendRaw;
 
 		# what it says: 8 bytes, then how many more
@@ -449,6 +471,94 @@ phi.HostWindow:Linux
 			d++;
 		;;
 	[end: number]
+
+	# The display's MIT-MAGIC-COOKIE-1 into cookie: how long it is, or 0 if there's none. It's in
+	# the file XAUTHORITY names (~/.Xauthority if it names none), where each entry is a family,
+	# an address, a display number, a method's name and its data, each but the family a 16-bit
+	# big-endian length and then that many bytes. The entries for this computer (family 256)
+	# or any (65535) count, for the display or for every display (an empty number).
+	[FindCookie: int number: 0; ptr<u8> cookie: 0;]
+		u8 path[AUTH_PATH];
+		int p: 0;
+		ptr<u8> named: (LinuxEnvironment.Find: 'XAUTHORITY');
+		if named is not 0
+			while named:p is not 0 and p < AUTH_PATH - 1
+				path:p is named:p;
+				p++;
+			;;
+		;;
+		else
+			ptr<u8> home: (LinuxEnvironment.Find: 'HOME');
+			if home is 0 return 0;
+			while home:p is not 0 and p < AUTH_PATH - 14
+				path:p is home:p;
+				p++;
+			;;
+			str rest: '/.Xauthority';
+			while int r: 0; r < rest.len; r++;
+				path:p is rest:r;
+				p++;
+			;;
+		;;
+		path:p is 0;
+		if p is 0 return 0;
+
+		ptr<u8> file: new u8[AUTH_ROOM];
+		if file is 0 return 0;
+		int length: (OS.ReadFile: addr path file AUTH_ROOM);
+		str scheme: 'MIT-MAGIC-COOKIE-1';
+		int found: 0;
+		int i: 0;
+		# an entry's four fields: where each starts, and how long it is
+		int starts[4];
+		int lengths[4];
+		while i + 2 <= length and found is 0
+			int family: (file:i << 8) | file:(i + 1);
+			i++ 2;
+			bln whole: true;
+			while int f: 0; f < 4 and whole; f++;
+				if i + 2 > length
+					whole is false;
+				;;
+				else
+					lengths:f is (file:i << 8) | file:(i + 1);
+					starts:f is i + 2;
+					i++ 2 + lengths:f;
+					if i > length
+						whole is false;
+					;;
+				;;
+			;;
+			if not whole break;
+
+			bln ours: (family is 256) or (family is 65535);
+			# its display number: none means every display
+			if ours and lengths:1 > 0
+				int n: 0;
+				while int d: 0; d < lengths:1; d++;
+					n is n * 10 + file:(starts:1 + d) - '0';
+				;;
+				ours is (n is number);
+			;;
+			if ours
+				ours is (lengths:2 is scheme.len);
+			;;
+			if ours
+				while int k: 0; k < scheme.len; k++;
+					if file:(starts:2 + k) is not scheme:k
+						ours is false;
+					;;
+				;;
+			;;
+			if ours and lengths:3 > 0 and lengths:3 <= MOST_COOKIE
+				while int k: 0; k < lengths:3; k++;
+					cookie:k is file:(starts:3 + k);
+				;;
+				found is lengths:3;
+			;;
+		;;
+		free file;
+	[end: found]
 
 	[NewId]
 		u32 id: id_base | next_id;
