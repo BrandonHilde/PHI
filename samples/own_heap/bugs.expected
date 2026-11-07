@@ -1,0 +1,4 @@
+inside: 9 zeroed: 0
+past the end: memory that is not there was used, or the CPU refused an instruction on line 30 in bugs.phi
+after free: memory that is not there was used, or the CPU refused an instruction on line 34 in bugs.phi
+5 text that grows on this heap too

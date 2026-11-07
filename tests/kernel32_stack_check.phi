@@ -1,0 +1,37 @@
+# A kernel watching its own stack. PHI doesn't do this for it, as how much to check and where is
+# the kernel's to decide, but it has what it takes: an asm block that says where the stack is, and
+# throw. The stack ends at 0x90000 in a kernel (docs/memory-map.md), or wherever a kernel put it.
+asm.StackPointer
+{
+	mov eax, esp
+	ret
+}
+
+phi.StackCheck:Kernel
+{
+	const u32 STACK_END: 0x90000;
+	const u32 ROOM: 8192;
+
+	while int round: 0; round < 3; round++;
+		if call Down: 0 throws err
+			log 'caught: ' err.text '\n';
+		;;
+	;;
+	log 'carried on\n';
+	exit 0;
+
+	[Down: int n: 0;]
+		call CheckStack;
+		int x[64];
+		x:0 is n;
+		call Down: n + 1;
+	[end: x:0]
+
+	[CheckStack]
+		u32 sp: 0;
+		call sp is StackPointer;
+		if sp < STACK_END + ROOM
+			throw 'the stack is nearly out';
+		;;
+	[end]
+}

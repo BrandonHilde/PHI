@@ -1,0 +1,36 @@
+# A program on its project's own heap (memory/program_heap.phi, beside it), which catches two bugs
+# PHI doesn't look for in a pointer: running off the end of a block, and using one after free.
+
+struct.Node
+{
+	int value;
+}
+
+phi.Bugs:Program
+{
+	ptr<u8> p: new u8[8];
+	p:7 is 9;
+	log 'inside: ' p:7 ' zeroed: ' p:0 '\n';
+
+	if call Past: p throws err
+		log 'past the end: ' err '\n';
+	;;
+	free p;
+	if call After: p throws err
+		log 'after free: ' err '\n';
+	;;
+
+	new Node object;
+	object.value is 5;
+	str text: 'text that grows';
+	text++ ' on this heap too';
+	log object.value ' ' text '\n';
+
+	[Past: ptr<u8> q: 0;]
+		q:8 is 1;
+	[end]
+
+	[After: ptr<u8> q: 0;]
+		log q:0 '\n';
+	[end]
+}

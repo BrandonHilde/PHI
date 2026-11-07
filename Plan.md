@@ -2929,17 +2929,16 @@ still cut). Still to do, each for something:
   took 92 s with the program heap and 1 s with its own slab allocator: the heap has had size
   lists since S2, so `FindFree` walks only one list, but that's the case to look at (blocks of
   nearly one size). The same sieve took 642 ms in PHI and 353 ms in C#.
-- **A write-up with options first, as generics had:** method values that carry data (no
-  closures now, so state goes through class variables, which keeps a library off threads); and a
-  checked heap for development (filling what's freed, marking the ends of what's allocated), to
-  catch a pointer's use after free or past its end; an array made with `as` covers the second, where it's used.
-- **The stack running out, not yet:** a kernel's own stack, which runs down through low memory
-  into the kernel with no fault; catching that needs a check at each call, or paging in every kernel.
+- **Method values that carry data, waiting for the user's choice from examples:** no closures
+  now, so state goes through class variables, a pointer passed by hand, or an interface.
+- **Left to the developer, by the user's choice (2026-11-06):** watching a kernel's own stack
+  (`tests/kernel32_stack_check.phi`) and a checked heap (`samples/own_heap`). The language has
+  what they take, and adds nothing to every call or every program for them.
 
 H8's formatter is built: `phi fmt`, and in `phi lsp` for an editor. It changes only a file's layout,
 and adds parentheses around an expression in a call with several arguments, rather than the
 language taking commas, which would make two ways to write a call. The library hasn't been run
-through it (about 470 lines would gain parentheses). `FormatterTests` compiles programs both ways
+through it (about 470 lines would gain parentheses): not until the rest is working, the user's choice. `FormatterTests` compiles programs both ways
 and compares the code; `PHI_FMT_ALL=1 dotnet test` does it for every test, after changing it.
 
 Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, and packages. Everything in the list above called "The parts most worth doing next" is done up

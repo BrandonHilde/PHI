@@ -139,6 +139,36 @@ Text longer than a `str` is an error. Make it big enough for the longest text it
 path, a line of a file), or, where losing the rest is fine, say so with `Cut.Into` (from
 `user.cut`).
 
+## A kernel watching its stack
+
+PHI doesn't check a kernel's stack, since how much to check, and where, is the kernel's to
+decide. It has what that takes, as in [tests/kernel32_stack_check.phi](../tests/kernel32_stack_check.phi):
+
+```phi
+asm.StackPointer
+{
+    mov eax, esp
+    ret
+}
+
+[CheckStack]                    # called where the calls can go deep
+    u32 sp: 0;
+    call sp is StackPointer;
+    if sp < STACK_END + ROOM    # 0x90000, or wherever this kernel put its stack
+        throw 'the stack is nearly out';
+    ;;
+[end]
+```
+
+## A heap of your own
+
+`new`, `free`, objects and text that grows all go through a class `Heap` with `Alloc` and `Free`,
+and `use` looks beside the program first. So a program with its own `memory/program_heap.phi`
+beside it runs on that, with no other change. That's how a project chooses what checks it wants on
+its pointers: [samples/own_heap](../samples/own_heap/memory/program_heap.phi) is one for finding
+bugs, where running off the end of a block, or using it after `free`, stops at that line as
+an error that can be caught.
+
 ## Returning text from a method
 
 A method whose `[end: ...]` is a `ptr<u8>` gives back text. That can be a place inside

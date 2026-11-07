@@ -855,8 +855,10 @@ else
 - **The stack running out is caught too** (`ErrorKind.STACK`: `the stack ran out: calls too deep
   on line 12 in parser.phi`), usually a method that never stops calling itself. It works on
   any thread of a program, on Linux, Windows or PHI OS, and it can happen and be caught again
-  and again. Each thread keeps some memory aside, a spare stack, for the error to run on. Not
-  yet: a kernel's own stack, where running past the end writes over what's below it, with no error.
+  and again. Each thread keeps some memory aside, a spare stack, for the error to run on. A
+  kernel's own stack is the kernel's to watch: running past its end writes over what's below it,
+  with no error, and PHI adds nothing to its calls to look. An `asm` block that gives `esp`
+  and a `throw` where it matters do it ([Common patterns](patterns.md#a-kernel-watching-its-stack)).
 - An error in an interrupt handler or a system call isn't caught by the code it
   interrupted. In a kernel each core has its own list of catches, and each task (a
   thread, say) keeps its own as the cores take turns, so threads catch their own errors.
