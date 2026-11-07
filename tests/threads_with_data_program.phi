@@ -1,0 +1,59 @@
+# Threads.StartWith: a thread given a pointer to what it's to work on, here its own struct, so each
+# keeps its data there and not in a class variable. All of the pointer gets there, in 64-bit code too.
+use user.threads;
+
+struct.Job
+{
+	int from;
+	int to;
+	int total;
+}
+
+phi.ThreadsWithDataProgram:Program
+{
+	new Job one;
+	one.from is 1;
+	one.to is 10;
+	new Job two;
+	two.from is 100;
+	two.to is 110;
+
+	int a: (Threads.StartWith: addr Sum addr one);
+	int b: (Threads.StartWith: addr Sum addr two);
+	log (a > 0) ' ' (b > 0) '\n';
+	call Threads.Wait: a;
+	call Threads.Wait: b;
+	log one.total ' ' two.total '\n';
+
+	# a pointer with its top half set, which an int couldn't carry
+	bln whole: false;
+	u64 far: 0x123456789;
+	if sizeof ptr<u8> is 8
+		ptr<u8> place: far as ptr<u8>;
+		int c: (Threads.StartWith: addr Look place);
+		call Threads.Wait: c;
+	;;
+	else
+		whole is true;
+	;;
+	log 'all of it: ' whole '\n';
+
+	# Start still takes a number
+	int d: (Threads.Start: addr Number (-7));
+	call Threads.Wait: d;
+
+	[Sum: ptr<u8> data: 0;]
+		ptr<Job> job: data as ptr<Job>;
+		while int i: job.from; i <= job.to; i++;
+			job.total++ i;
+		;;
+	[end]
+
+	[Look: ptr<u8> data: 0;]
+		whole is (data as u64) is far;
+	[end]
+
+	[Number: int part: 0;]
+		log 'number: ' part '\n';
+	[end]
+}

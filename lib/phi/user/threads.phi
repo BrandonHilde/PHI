@@ -11,6 +11,14 @@
 #       ...
 #   [end]
 #
+#   # StartWith gives it a pointer, for what it's to work on, instead of a number
+#   int t: (Threads.StartWith: addr Fill addr job);
+#
+#   [Fill: ptr<u8> data: 0;]
+#       ptr<Job> job: data as ptr<Job>;
+#       ...
+#   [end]
+#
 # A thread finishes when its method returns (at its end, or a return). exit in any
 # thread ends the whole program, as an error nothing catches does in any of them. A
 # thread shares the class variables with the rest of the program, so what it writes
@@ -27,9 +35,17 @@ phi.Threads:Program
 
 	# run work: value as a thread of its own; its number, or -1 if it can't start
 	[Start: method<int> work: 0; int value: 0;]
+	[end: (Begin: work value as ptr<u8>)]
+
+	# the same with a pointer for it to work on (what it points at has to last until it's done)
+	[StartWith: method<ptr<u8>> work: 0; ptr<u8> data: 0;]
+	[end: (Begin: work as method<int> data)]
+
+	# (either way, what the thread is given takes the same place, the size of a pointer)
+	[Begin: method<int> work: 0; ptr<u8> value: 0;]
 		ptr<u8> stack: new u8[STACK_SIZE];
 		if stack is 0 return -1;
-		int thread: (OS.ThreadStart: work value stack stack + STACK_SIZE);
+		int thread: (OS.ThreadStart: work value stack (stack + STACK_SIZE));
 		if thread <= 0 or thread >= MOST
 			free stack;
 			return -1;

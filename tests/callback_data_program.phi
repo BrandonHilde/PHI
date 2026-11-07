@@ -1,0 +1,32 @@
+# A callback with data of its own, from docs/patterns.md: an interface, whose object is the data.
+# Each object keeps its own, and only what has the method can be passed.
+
+interface.Doer
+{
+	[Do: int times;]
+}
+
+struct.Adder has Doer
+{
+	int total;
+	int step;
+
+	[Do: int times;]
+		total is total + step * times;
+	[end]
+}
+
+phi.CallbackDataProgram:Program
+{
+	new Adder fives: 0 5;
+	new Adder tens: 0 10;
+	call Twice: fives;
+	call Twice: tens;
+	call Twice: tens;
+	log fives.total ' ' tens.total '\n';
+
+	[Twice: Doer d;]
+		call d.Do: 1;
+		call d.Do: 1;
+	[end]
+}

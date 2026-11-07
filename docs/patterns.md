@@ -139,6 +139,41 @@ Text longer than a `str` is an error. Make it big enough for the longest text it
 path, a line of a file), or, where losing the rest is fine, say so with `Cut.Into` (from
 `user.cut`).
 
+## A callback with data of its own
+
+A method value is only a method, so it can't remember which object it's for. An
+[interface](language.md#interfaces) can: the object is the data, and only something that has the
+method can be passed. As in [tests/callback_data_program.phi](../tests/callback_data_program.phi):
+
+```phi
+interface.Doer
+{
+    [Do: int times;]
+}
+
+struct.Adder has Doer
+{
+    int total;
+    int step;
+
+    [Do: int times;]
+        total is total + step * times;
+    [end]
+}
+
+new Adder fives: 0 5;
+new Adder tens: 0 10;
+call Twice: fives;              # each keeps its own total
+call Twice: tens;
+
+[Twice: Doer d;]
+    call d.Do: 1;
+    call d.Do: 1;
+[end]
+```
+
+For a thread, `Threads.StartWith: addr Fill addr job` hands it a pointer to its data.
+
 ## A kernel watching its stack
 
 PHI doesn't check a kernel's stack, since how much to check, and where, is the kernel's to

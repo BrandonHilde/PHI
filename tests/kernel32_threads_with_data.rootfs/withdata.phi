@@ -1,0 +1,25 @@
+use user.threads;
+
+struct.Job
+{
+	int from;
+	int to;
+	int total;
+}
+
+phi.WithData:Program
+{
+	new Job one;
+	one.from is 100;
+	one.to is 110;
+	int a: (Threads.StartWith: addr Sum addr one);
+	call Threads.Wait: a;
+	exit one.total;
+
+	[Sum: ptr<u8> data: 0;]
+		ptr<Job> job: data as ptr<Job>;
+		while int i: job.from; i <= job.to; i++;
+			job.total++ i;
+		;;
+	[end]
+}

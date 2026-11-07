@@ -1602,6 +1602,10 @@ call Threads.Wait: t;                      # back once Count has returned
 log (Threads.Done: t);                     # whether it has finished, without waiting
 ```
 
+- `Threads.StartWith: addr Fill addr job` gives the thread a pointer in place of a number, for
+  what it's to work on: `[Fill: ptr<u8> data: 0;]`, then `ptr<Job> job: data as ptr<Job>;`. So
+  each thread can keep its data in a struct of its own, not in a class variable. What it
+  points at has to last until the thread is done.
 - A thread is a task in ring 0 with a stack of its own, which the timer shares the CPU
   with, like a program. It runs without the kernel lock, so after `Cores.SharePrograms`
   threads run at once on several cores; on one core they take turns with the kernel,
@@ -1623,6 +1627,9 @@ use user.threads;
 
 int t: (Threads.Start: addr Count 3);     # Count: 3, as a thread of this program
 call Threads.Wait: t;
+
+int w: (Threads.StartWith: addr Fill addr job);     # Fill gets a pointer to job, in place of a number
+call Threads.Wait: w;
 ```
 
 - On PHI OS a thread is a task of the program, in its memory, on a stack of its own (about

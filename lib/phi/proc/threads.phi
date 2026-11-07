@@ -10,6 +10,14 @@
 #       ...
 #   [end]
 #
+#   # StartWith gives it a pointer, for what it's to work on, instead of a number
+#   int t: (Threads.StartWith: addr Fill addr job);
+#
+#   [Fill: ptr<u8> data: 0;]
+#       ptr<Job> job: data as ptr<Job>;
+#       ...
+#   [end]
+#
 # A thread is a task of its own (lib/x86_32/tasks.asm), in ring 0 with a stack of
 # STACK_SIZE, which the timer shares the CPU with like a program. It runs without the
 # kernel lock, so threads run at once on several cores once Cores.SharePrograms has run
@@ -49,6 +57,10 @@ phi.Threads:Kernel
 		;;
 		stacks:thread_task is stack;
 	[end: thread_task]
+
+	# the same with a pointer for it to work on (what it points at has to last until it's done)
+	[StartWith: method<ptr<u8>> work: 0; ptr<u8> data: 0;]
+	[end: (Start: work as method<int> data as int)]
 
 	# whether a thread has finished (its method has returned)
 	[Done: int thread: 0;]

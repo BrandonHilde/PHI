@@ -379,7 +379,8 @@ namespace Phi.Compiler.CodeGen
                         Expression(view.Count);
                         return;
                     case CastExpr c when Number(c.Type) && Number(c.Operand.Type)
-                                         || (Pointer(c.Type) || Small(c.Type) || c.Type.IsWide) && (Pointer(c.Operand.Type) || Small(c.Operand.Type) || c.Operand.Type.IsWide):
+                                         || (Pointer(c.Type) || Small(c.Type) || c.Type.IsWide) && (Pointer(c.Operand.Type) || Small(c.Operand.Type) || c.Operand.Type.IsWide)
+                                         || MethodType(c.Type) && MethodType(c.Operand.Type):     // (the same address, called another way)
                         Expression(c.Operand);
                         return;
                     default:

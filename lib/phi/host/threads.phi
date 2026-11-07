@@ -22,7 +22,7 @@ phi.HostThreads:Program
 
 	# OS.ThreadStart: run work: value as a thread of its own, on the stack from bottom to top;
 	# its number (1 to MOST - 1), or -1
-	[ThreadStart: method<int> work: 0; int value: 0; ptr<u8> bottom: 0; ptr<u8> top: 0;]
+	[ThreadStart: method<int> work: 0; ptr<u8> value: 0; ptr<u8> bottom: 0; ptr<u8> top: 0;]
 		int thread: -1;
 		locked numbers
 			int i: 1;
@@ -37,7 +37,7 @@ phi.HostThreads:Program
 		if thread < 0 return -1;
 		ptr<ThreadFrame> frame: top - BLOCK - sizeof ThreadFrame;
 		frame.work is work;
-		frame.value is value as ptr<u8>;
+		frame.value is value;
 		if not (ThreadSystem.Begin: thread frame bottom)
 			call Give: thread;
 			return -1;

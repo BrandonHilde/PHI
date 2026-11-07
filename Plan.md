@@ -2929,8 +2929,10 @@ still cut). Still to do, each for something:
   took 92 s with the program heap and 1 s with its own slab allocator: the heap has had size
   lists since S2, so `FindFree` walks only one list, but that's the case to look at (blocks of
   nearly one size). The same sieve took 642 ms in PHI and 353 ms in C#.
-- **Method values that carry data, waiting for the user's choice from examples:** no closures
-  now, so state goes through class variables, a pointer passed by hand, or an interface.
+- **Method values that carry data: no language change (the user's choice, 2026-11-06, from
+  examples: it reads best).** A callback with data of its own is an interface, which is checked and
+  already there; `Threads.StartWith` gives a thread a pointer to its data, which an int couldn't
+  carry in 64-bit code. No closures: they'd allocate where nothing says so.
 - **Left to the developer, by the user's choice (2026-11-06):** watching a kernel's own stack
   (`tests/kernel32_stack_check.phi`) and a checked heap (`samples/own_heap`). The language has
   what they take, and adds nothing to every call or every program for them.

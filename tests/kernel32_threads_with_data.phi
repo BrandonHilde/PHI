@@ -1,0 +1,31 @@
+# Threads.StartWith in a kernel, and in a PHI OS program (kernel32_threads_with_data.rootfs): a
+# thread given a pointer to what it's to work on, its own struct.
+use proc.threads;
+use proc.process;
+
+struct.Job
+{
+	int from;
+	int to;
+	int total;
+}
+
+phi.KernelThreadsWithData:Kernel
+{
+	Job one;
+	one.from is 1;
+	one.to is 10;
+	int a: (Threads.StartWith: addr Sum addr one);
+	call Threads.Wait: a;
+	log 'kernel: ' one.total '\n';
+
+	log 'program: ' (Process.Wait: (Process.Spawn: 'WITHDATA.BIN')) '\n';
+	exit 0;
+
+	[Sum: ptr<u8> data: 0;]
+		ptr<Job> job: data as ptr<Job>;
+		while int i: job.from; i <= job.to; i++;
+			job.total++ i;
+		;;
+	[end]
+}
