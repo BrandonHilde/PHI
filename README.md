@@ -178,3 +178,9 @@ kernels and user programs, and PHI OS ties them together. Next, roughly in order
 3. A GUI toolkit (windows and widgets) on top of the graphics library
 4. Later: checking TLS certificates, 64-bit, an ARM backend, C compatibility, and
    rewriting the compiler in PHI (see [Plan.md](./Plan.md#later))
+
+<h4>License:</h4>
+
+PHI is licensed under the [Apache License 2.0](./LICENSE). Programs built with PHI contain code from
+its standard library, so if you distribute one, include [LICENSE](./LICENSE) and [NOTICE](./NOTICE)
+with it.
