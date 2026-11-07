@@ -265,15 +265,23 @@ namespace Phi.Cli
             {
                 if (!HostRunner.CanRun(host, out _)) continue;
                 firstHere ??= host;
-                var source = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), text + wrapper);
-                if (!PhiCompiler.Compile(source, generate: false, host: host).Success) continue;
+                if (!BuildsFor(phiFile, text + wrapper, host)) continue;
                 built++;
                 yield return new Mode(host.FlagName(), wrapper, Host: host);
             }
             // a program that builds for none of them runs on none, which would pass by saying
-            // nothing: it runs on the first, where its build fails and says why
-            if (program && built == 0 && Only == null && firstHere is Host first)
+            // nothing: it runs on the first, where its build fails and says why. One that builds
+            // only for systems this computer can't run (a Windows program, on Linux) is a test for
+            // those computers instead
+            if (program && built == 0 && Only == null && firstHere is Host first
+                && !OtherSystems.Any(h => !HostRunner.CanRun(h, out _) && BuildsFor(phiFile, text + wrapper, h)))
                 yield return new Mode(first.FlagName(), wrapper, Host: first);
+        }
+
+        static bool BuildsFor(string phiFile, string text, Host host)
+        {
+            var source = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), text);
+            return PhiCompiler.Compile(source, generate: false, host: host).Success;
         }
 
         static IEnumerable<Mode?> PhiOsModes(string phiFile)
