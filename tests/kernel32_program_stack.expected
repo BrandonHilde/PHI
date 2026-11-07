@@ -9,3 +9,11 @@ the end
 PHI: the stack ran out: calls too deep on line 36 in stack.phi
 exit code: -1
 memory back: 1
+thread 1: 1 the stack ran out: calls too deep
+thread 2: 1 the stack ran out: calls too deep
+the heap: 12345
+thread 3: 1 the stack ran out: calls too deep
+
+PHI: the stack ran out: calls too deep on line 46 in stackthr.phi
+exit code: -1
+memory back: 1

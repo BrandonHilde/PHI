@@ -4,25 +4,26 @@
 # it on another stack, which a PHI method's own frame isn't on. Linux writes the thread's
 # id in its place when it starts and clears it when the thread has gone
 # (CLONE_CHILD_CLEARTID), so a place that's 0 again is a thread that no longer uses its
-# stack. A thread ends with exit (only itself); the program's exit is exit_group. The page
+# stack. A thread ends with exit (only itself); the program's exit is exit_group. The pages
 # at the bottom of its stack can't be touched while it runs, so a stack that runs out is
 # stopped there, not writing over what's under it on the heap.
 
 phi.ThreadSystem:Linux
 {
 	const u32 PAGE: 4096;
+	const u32 GUARD: 8192;                # (more than a method's variables, which can be a page)
 	const int NO_ACCESS: 0;
 	const int READ_WRITE: 3;
 
 	int ids[64];                          # each thread's Linux id while it runs, 0 once it has gone
-	ptr<u8> guards[64];                   # the page at the bottom of its stack
+	ptr<u8> guards[64];                   # the first whole page of its stack
 
 	# start it, with what's in its frame, on the stack that starts at bottom: false if Linux won't
 	[Begin: int thread: 0; ptr<ThreadFrame> frame: 0; ptr<u8> bottom: 0;]
 		ids:thread is -1;
 		u32 past: (bottom as u32) & (PAGE - 1);
 		guards:thread is bottom + (PAGE - past);
-		call sys.MemoryProtect: guards:thread PAGE NO_ACCESS;
+		call sys.MemoryProtect: guards:thread GUARD NO_ACCESS;
 		if (OS.ThreadClone: frame addr ids:thread) < 0
 			ids:thread is 0;
 			call Forget: thread;
@@ -36,6 +37,6 @@ phi.ThreadSystem:Linux
 	# its guard goes, so its stack can go back on the heap (Linux keeps nothing else of a
 	# thread that has gone)
 	[Forget: int thread: 0;]
-		call sys.MemoryProtect: guards:thread PAGE READ_WRITE;
+		call sys.MemoryProtect: guards:thread GUARD READ_WRITE;
 	[end]
 }

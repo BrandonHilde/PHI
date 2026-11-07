@@ -2913,7 +2913,7 @@ Waiting, each for something:
 
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
-any thread of a Linux or Windows program and on a PHI OS program's first; f64 math is exact to
+any thread of a program; f64 math is exact to
 the f64 on every system (the x87 set to double precision); `[Make: : ptr<Node>]`, with a
 pointer cut to 32 bits now an error; `(F: x).field` and `(F: x):0`; `not` on an object's method;
 an operator can start a line inside parentheses; `(p as u8[n])`, a checked array from a pointer;
@@ -2933,9 +2933,8 @@ still cut). Still to do, each for something:
   closures now, so state goes through class variables, which keeps a library off threads); and a
   checked heap for development (filling what's freed, marking the ends of what's allocated), to
   catch a pointer's use after free or past its end; an array made with `as` covers the second, where it's used.
-- **The stack running out, not yet:** a PHI OS program's threads (their stacks are on the heap with
-  nothing below them), and a kernel's own stack, which runs down through low memory into the
-  kernel with no fault; catching that needs a check at each call, or paging in every kernel.
+- **The stack running out, not yet:** a kernel's own stack, which runs down through low memory
+  into the kernel with no fault; catching that needs a check at each call, or paging in every kernel.
 - **Long argument lists:** the formatter (below) adds parentheses around an argument that's an
   expression, rather than the language taking commas, which would make two ways to write a call.
 

@@ -16,11 +16,11 @@
 # thread shares the class variables with the rest of the program, so what it writes
 # should go through locked or atomic (or into data that's only its own, like its element
 # of an array). Each has a stack of STACK_SIZE from the heap, some of which is kept for the
-# error its running out becomes (a thread's stack on PHI OS isn't checked yet).
+# error its running out becomes.
 
 phi.Threads:Program
 {
-	const u32 STACK_SIZE: 90112;            # 64 KB to use, a spare 16 KB and a guard page, wherever they fall
+	const u32 STACK_SIZE: 94208;            # 64 KB to use, a spare 16 KB and a guard of two pages, wherever they fall
 	const int MOST: 64;                     # as many as a program can have at once
 
 	ptr<u8> stacks[64];                     # each thread's stack, by its number

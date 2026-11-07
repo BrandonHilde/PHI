@@ -69,6 +69,8 @@ phi.Process:Kernel
 	const u32 STACK_PAGES: 16;              # 64 KB (tasks.asm's USER_STACK_BOTTOM)
 	const u32 GAP_PAGES: 2;                 # nothing here, so a stack running out is stopped
 	const u32 SPARE_PAGES: 2;               # under the gap: where the error it becomes runs (USER_SPARE_TOP)
+	const u32 THREAD_GUARD_PAGES: 2;        # at the bottom of a thread's stack, not there while it runs
+	const u32 PAGE_PRESENT: 1;
 	const u32 PAGE_USER: 7;                 # present, writable, user mode may use it
 	const u32 KERNEL_STACK_SIZE: 8192;
 	const int MAX_PROCESSES: 64;            # as many tasks as the scheduler has (lib/x86_32/tasks.asm)
@@ -127,6 +129,7 @@ phi.Process:Kernel
 	u8 file_path[64];                       # ... and of a file call's (FileCalls, under Fat's lock)
 	u8 file_path_to[64];                    # where Rename moves file_path to
 	u32 thread_kernel_stack[64];            # each thread's kernel stack, by its task number (0: not a thread)
+	u32 thread_guard[64];                   # where the guard at the bottom of its stack starts (0: it has none)
 
 	# system calls 64 and up: their number and four arguments, and the result to give back
 	method<u32 u32 u32 u32 u32: int> more_calls: 0;
@@ -353,16 +356,38 @@ phi.Process:Kernel
 		call OS.FreeTask: pid;
 	[end]
 
-	# a finished thread's kernel stack and number back
+	# a finished thread's guard off (those pages are the program's heap again), and its kernel
+	# stack and number back
 	[FreeThread: int t: 0;]
+		if thread_guard:t is not 0
+			call SetGuard: process_directory:(OS.TaskProcess: t) thread_guard:t true;
+			thread_guard:t is 0;
+		;;
 		call Frames.Free: thread_kernel_stack:t;
 		call Frames.Free: thread_kernel_stack:t + PAGE_SIZE;
 		thread_kernel_stack:t is 0;
 		call OS.FreeTask: t;
 	[end]
 
+	# the guard's pages at address there, or not, in a program's page tables. They keep their
+	# frames while they aren't, so nothing else needs to remember them.
+	[SetGuard: ptr<u32> directory: 0; u32 address: 0; bln there: false;]
+		while u32 p: 0; p < THREAD_GUARD_PAGES; p++;
+			u32 place: address + p * PAGE_SIZE;
+			ptr<u32> table: directory:(place >> 22) & 0xFFFFF000;
+			u32 entry: (place >> 12) & 1023;
+			if there
+				table:entry is table:entry | PAGE_PRESENT;
+			;;
+			else
+				table:entry is table:entry & ~PAGE_PRESENT;
+			;;
+		;;
+	[end]
+
 	# a thread of the calling program: entry in its code, esp in the stack it gives (bottom
-	# up to top, in its heap); its task number, or -1
+	# up to top, in its heap); its task number, or -1. The first whole pages of the stack are
+	# a guard, so a stack that runs out is stopped there, not writing over the heap under it.
 	[StartThread: u32 entry: 0; u32 esp: 0; u32 bottom: 0; u32 top: 0;]
 		int pid: (OS.CurrentProcess);
 		if pid <= 0 or pid >= MAX_PROCESSES or process_directory:pid is 0 return -1;
@@ -370,13 +395,27 @@ phi.Process:Kernel
 		if bottom < USER_TOP or top > process_heap_end:pid or bottom >= top or esp <= bottom or esp > top return -1;
 		ptr<u8> stack: (Frames.AllocContiguous: 2);
 		if stack is 0 return -1;
-		int t: (OS.CreateUserThread: pid entry esp stack + KERNEL_STACK_SIZE bottom top);
+		u32 guard: (bottom + PAGE_SIZE - 1) & ~(PAGE_SIZE - 1);
+		u32 guard_end: guard + THREAD_GUARD_PAGES * PAGE_SIZE;
+		bln guarded: guard_end < esp;       # (a stack too small for one goes without)
+		int t: -1;
+		if guarded
+			t is (OS.CreateUserThread: pid entry esp stack + KERNEL_STACK_SIZE guard_end top);
+		;;
+		else
+			t is (OS.CreateUserThread: pid entry esp stack + KERNEL_STACK_SIZE bottom top);
+		;;
 		if t < 0
 			call Frames.Free: stack;
 			call Frames.Free: stack + PAGE_SIZE;
 			return -1;
 		;;
 		thread_kernel_stack:t is stack;
+		if guarded
+			thread_guard:t is guard;
+			call SetGuard: process_directory:pid guard false;
+			call FlushTlb;
+		;;
 	[end: t]
 
 	# is t a thread of the calling program?
@@ -444,6 +483,15 @@ phi.Process:Kernel
 		bln inImage: address >= USER_BASE and last >= address and last <= process_image_end:caller;
 		bln inStack: address >= USER_TOP - STACK_PAGES * PAGE_SIZE and last >= address and last <= USER_TOP;
 		bln inHeap: address >= USER_TOP and last >= address and last <= process_heap_end:caller;
+		# (not a thread's guard, which isn't there for the kernel to read either)
+		if inHeap
+			while int t: 1; t < MAX_PROCESSES; t++;
+				u32 guard: thread_guard:t;
+				if guard is not 0 and (OS.TaskProcess: t) is caller
+					if address < guard + THREAD_GUARD_PAGES * PAGE_SIZE and last > guard return false;
+				;;
+			;;
+		;;
 	[end: inImage or inStack or inHeap]
 
 	# copy a zero-terminated string out of the calling program's memory, checking

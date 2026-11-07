@@ -854,10 +854,9 @@ else
   anything anywhere else.
 - **The stack running out is caught too** (`ErrorKind.STACK`: `the stack ran out: calls too deep
   on line 12 in parser.phi`), usually a method that never stops calling itself. It works on
-  any thread of a Linux or Windows program, and on the first thread of a PHI OS program, and
-  it can happen and be caught again and again. Each thread keeps some memory aside, a spare
-  stack, for the error to run on. Not yet: a PHI OS program's other threads, and a kernel's
-  own stack, where running past the end writes over what's below it, with no error.
+  any thread of a program, on Linux, Windows or PHI OS, and it can happen and be caught again
+  and again. Each thread keeps some memory aside, a spare stack, for the error to run on. Not
+  yet: a kernel's own stack, where running past the end writes over what's below it, with no error.
 - An error in an interrupt handler or a system call isn't caught by the code it
   interrupted. In a kernel each core has its own list of catches, and each task (a
   thread, say) keeps its own as the cores take turns, so threads catch their own errors.
@@ -1625,7 +1624,7 @@ call Threads.Wait: t;
 ```
 
 - On PHI OS a thread is a task of the program, in its memory, on a stack of its own (about
-  88 KB, from the heap); once programs share the cores, a program's threads run at once on
+  92 KB, from the heap); once programs share the cores, a program's threads run at once on
   several. On Linux it's a thread made with `clone`, and on Windows with `CreateThread`.
 - A thread finishes when its method returns. `exit` in any thread ends the whole program,
   and so does an error nothing catches (or a fault) in any of them.

@@ -6,13 +6,15 @@
 ; stack is the thread's block (its catches and the error it throws: throw.asm's
 ; PHI_THREAD_...), which the kernel gives a segment of its own (system call 12) that the
 ; thread reaches through gs. It starts at phi_thread_main, which calls its method with its
-; value, and ends the thread when the method returns (system call 11).
+; value, and ends the thread when the method returns (system call 11). Under them is its
+; spare stack, where the kernel sends it when its stack runs out, then the stack it runs on.
 SYS_THREAD_END   equ 11
 SYS_THREAD_BLOCK equ 12
 SYS_THREAD_START equ 44
 SYS_THREAD_DONE  equ 45
 SYS_THREAD_FREE  equ 46
 THREAD_BLOCK     equ 1024               ; throw.asm's PHI_THREAD_SIZE
+THREAD_SPARE     equ 16384
 
 ; args: method value stackBottom stackTop -> the thread's number, or -1
 OS_ThreadStart:
@@ -49,7 +51,10 @@ OS_ThreadFree:
 phi_thread_main:
     lea eax, [esp + 8]
     call phi_thread_setup
-    pop eax
+    mov eax, [esp]
+    mov ebx, [esp + 4]
+    sub esp, THREAD_SPARE
+    push ebx
     call eax
     mov eax, SYS_THREAD_END
     int 0x80

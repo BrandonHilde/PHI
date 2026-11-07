@@ -44,6 +44,7 @@ USER_BASE     equ 0x40000000
 USER_TOP      equ 0x40400000
 USER_STACK_BOTTOM equ USER_TOP - 65536  ; a program's first stack (process.phi's STACK_PAGES)
 USER_SPARE_TOP    equ USER_STACK_BOTTOM - 8192  ; under its gap, the spare stack (SPARE_PAGES, GAP_PAGES)
+USER_THREAD_TOP   equ 1024 + 8          ; what's above a thread's spare stack: its block, its method and value
 
 ; offsets in the saved state
 F_ESI equ 20
@@ -711,9 +712,10 @@ phi_task_fault:
     jae .send
     mov ebx, ERROR_EMPTY
 .send:
-    ; not when the entry itself was stopped, or a thread's stack has run off its end: the
-    ; throw would only be stopped again. The first thread goes on on the spare stack under
-    ; its stack (unless that's where it was), so the throw has room.
+    ; not when the entry itself was stopped: the throw would only be stopped again. A stack
+    ; that has run out goes on on its spare stack, so the throw has room: a program's first
+    ; thread's is under its stack (unless that's where it was), another's is at the top of
+    ; its stack, under its block and what it started with (x86_32_user/threads.asm).
     cmp [ebp + F_EIP], edx
     je .stop
     mov eax, [ebp + F_EIP + 12]               ; its esp (on this thread's own stack)
@@ -722,10 +724,16 @@ phi_task_fault:
     cmp eax, [phi_task_stack_bottom + ecx * 4]
     ja .room
     cmp dword [phi_task_stack_bottom + ecx * 4], USER_STACK_BOTTOM
-    jne .stop
+    je .first_thread
+    mov eax, [phi_task_stack_top + ecx * 4]
+    sub eax, USER_THREAD_TOP
+    jmp .to_spare
+.first_thread:
     cmp eax, USER_SPARE_TOP
     jbe .stop
-    mov dword [ebp + F_EIP + 12], USER_SPARE_TOP
+    mov eax, USER_SPARE_TOP
+.to_spare:
+    mov [ebp + F_EIP + 12], eax
     mov ebx, ERROR_STACK
 .room:
     mov eax, [ebp + F_EIP]

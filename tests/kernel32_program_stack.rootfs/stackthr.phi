@@ -1,0 +1,51 @@
+# A program's own threads' stacks running out on PHI OS: each caught, on the thread's spare stack,
+# and the heap under each stack untouched. Then one that isn't caught, while another thread
+# is still running with its guard on, which ends the whole program.
+use user.threads;
+
+phi.StackThr:Program
+{
+	ptr<u32> under: new u32[64];
+	under:63 is 12345;
+
+	int a: (Threads.Start: addr Runaway 1);
+	call Threads.Wait: a;
+	a is (Threads.Start: addr Runaway 2);
+	call Threads.Wait: a;
+	log 'the heap: ' under:63 '\n';
+
+	# (its stack goes back on the heap, whole, and can be used again)
+	a is (Threads.Start: addr Runaway 3);
+	call Threads.Wait: a;
+
+	int waiting: (Threads.Start: addr Waits 0);
+	a is (Threads.Start: addr Uncaught 0);
+	call Threads.Wait: a;
+	log 'not reached\n';
+
+	[Runaway: int part: 0;]
+		while int round: 0; round < 3; round++;
+			if call Down: 0 throws err
+				if round is 2
+					log 'thread ' part ': ' (err.kind is ErrorKind.STACK) ' ' err.text '\n';
+				;;
+			;;
+		;;
+	[end]
+
+	[Uncaught: int part: 0;]
+		call Down: 0;
+	[end]
+
+	[Waits: int part: 0;]
+		while true
+			call OS.Sleep: 1;
+		;;
+	[end]
+
+	[Down: int n: 0;]
+		int x[64];
+		x:0 is n;
+		call Down: n + 1;
+	[end: x:0]
+}
