@@ -73,3 +73,8 @@ the plan instead.
 - More tutorial exercises, with their solutions as tested examples
 - Running PHI on Linux or macOS, and fixing what breaks
 - The items under "Where things stand" in [Plan.md](Plan.md), for something bigger
+
+## License
+
+PHI is licensed under the [Apache License 2.0](LICENSE), and contributions are accepted under the
+same license.

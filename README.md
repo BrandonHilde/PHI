@@ -187,3 +187,9 @@ ordinary programs for Linux and Windows in 32 or 64 bits. Next, roughly in order
    Linux, a formatter and packages
 3. Later: macOS, 64-bit kernels, an ARM backend, C compatibility, and rewriting the compiler
    in PHI (see [Plan.md](./Plan.md#later))
+
+<h4>License:</h4>
+
+PHI is licensed under the [Apache License 2.0](./LICENSE). Programs built with PHI contain code from
+its standard library, so if you distribute one, include [LICENSE](./LICENSE) and [NOTICE](./NOTICE)
+with it.
