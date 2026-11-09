@@ -108,6 +108,13 @@ namespace Phi.Cli
             {
                 // a user program isn't bootable: it's a file for a kernel's disk
                 byte[]? program = Assemble(compiled.Units.Single(), outDir, Array.Empty<string>(), result);
+                if (program != null && program.Length > ProgramMost)
+                {
+                    result.Errors.Add($"the program is {program.Length:N0} bytes, {program.Length - ProgramMost:N0} more than a PHI OS program can be " +
+                                      $"({ProgramMost:N0}: its code and variables go from 0x40000000 up to its stack, so Process.Spawn couldn't start it). " +
+                                      "Put large arrays on the heap (ptr<u8> buffer: new u8[100000];) or leave out modules it doesn't need");
+                    program = null;
+                }
                 if (program != null) File.WriteAllBytes(result.ProgramPath, program);
                 result.IsProgram = true;
                 return result;
@@ -332,6 +339,13 @@ namespace Phi.Cli
         }
 
         const int SlowAssembly = 30;
+
+        /// <summary>
+        /// The most a PHI OS program (NAME.BIN, code and variables) can be: proc.process maps one
+        /// page table, 1024 pages, and keeps 20 of them for the stack (16), the gap under it (2) and
+        /// the spare its running out becomes an error on (2). See Process.Spawn.
+        /// </summary>
+        public const int ProgramMost = (1024 - 16 - 2 - 2) * 4096;
 
         static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)
         {

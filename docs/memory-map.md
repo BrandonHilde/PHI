@@ -116,7 +116,7 @@ With `proc.process`, the kernel sets up a GDT of its own (kernel code `0x08`, ke
 | Address | Contents |
 |---|---|
 | `0x00000000`–`0x3FFFFFFF` | the kernel's memory, mapped but not reachable from user mode |
-| `0x40000000` … | the program's code, then its variables from the next 4 KB boundary (`NAME.BIN`, loaded as is) |
+| `0x40000000` … | the program's code, then its variables from the next 4 KB boundary (`NAME.BIN`, loaded as is): at most 4,112,384 bytes, the room left below the stack, its gap and its spare pages (`phi build` refuses a bigger program) |
 | `0x403F0000`–`0x403FFFFF` | its 64 KB stack (`esp` starts at `0x40400000`); the first 256 bytes hold its command line (`OS.Arguments`) |
 | `0x40400000` … `0x47FFFFFF` | its heap, mapped a page at a time as it grows (`OS.Grow`, system call 37); a page table is added for each 4 MB it reaches |
 
