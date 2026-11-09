@@ -47,6 +47,18 @@ namespace Phi.Compiler.Tests
             => AssertError(Program("u8 stack[8192];\nint t: (OS.ThreadStart: addr Work 7 addr stack (addr stack) + 8192);\n" + work),
                            "Work can't be a thread: OS.ThreadStart gives its method one value");
 
+        // user.cut takes the caller's str, which needs the heap: in whatever order the uses come,
+        // or with the heap left for the compiler to add
+        [Theory]
+        [InlineData("use memory.program_heap;\nuse user.cut;\n")]
+        [InlineData("use user.cut;\nuse memory.program_heap;\n")]
+        [InlineData("use user.cut;\n")]
+        public void TheHeapCanBeUsedAfterAModuleThatNeedsIt(string uses)
+        {
+            CompileResult result = Compile(uses + Program("str s: [8];\ncall Cut.Into: s 'abcdefghijk';"));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
         [Fact]
         public void OutputIsASystemCallAndWholeLinesAreFlushed()
         {

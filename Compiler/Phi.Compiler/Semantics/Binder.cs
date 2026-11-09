@@ -385,6 +385,12 @@ namespace Phi.Compiler.Semantics
                     foreach (VarDecl p in m.Parameters)
                     {
                         BindVarDecl(p, ms, classLevel: false);
+                        // the caller's own text can grow, on the heap
+                        if (p.Symbol is { TextRef: true })
+                        {
+                            HeapMethod("Heap.Alloc", p.NameSpan, ms, $"str parameter '{p.Name}' (the caller's str can grow)");
+                            HeapMethod("Heap.Free", p.NameSpan, ms, $"str parameter '{p.Name}' (the caller's str can grow)");
+                        }
                         // a default is worked out by the caller, which can't see this method's variables
                         Expr? local = p.Values.SelectMany(SyntaxWalker.Nodes).OfType<NameExpr>()
                             .FirstOrDefault(n => n.Symbol is VariableSymbol { IsLocal: true } or FieldPathSymbol { Root.IsLocal: true } or SelfFieldSymbol or PathSymbol { Root.IsLocal: true });
@@ -2067,8 +2073,8 @@ namespace Phi.Compiler.Semantics
                 v.Type = PhiType.Str;
                 v.TextRef = true;
                 v.Capacity = StrMax + 1;
-                HeapMethod("Heap.Alloc", d.NameSpan, scope, $"str parameter '{d.Name}' (the caller's str can grow)");
-                HeapMethod("Heap.Free", d.NameSpan, scope, $"str parameter '{d.Name}' (the caller's str can grow)");
+                // (it needs the heap, which is checked once every class's methods are declared:
+                // see BindProgram, since the heap's class may come after this one)
                 return;
             }
 
