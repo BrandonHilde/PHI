@@ -28,6 +28,25 @@ namespace Phi.Compiler.Tests
             Assert.DoesNotContain("phi_interrupts_init", unit.Text);
         }
 
+        // OS.ThreadStart gives its method the value, so the method may take it: one number or pointer
+        [Theory]
+        [InlineData("[Work]\n[end]")]
+        [InlineData("[Work: int v: 0;]\n log v;\n[end]")]
+        [InlineData("[Work: u32 v: 0;]\n[end]")]
+        [InlineData("[Work: ptr<u8> data: 0;]\n[end]")]
+        public void AThreadsMethodCanTakeItsValue(string work)
+        {
+            CompileResult result = Compile(Program("u8 stack[8192];\nint t: (OS.ThreadStart: addr Work 7 addr stack (addr stack) + 8192);\n" + work));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+        }
+
+        [Theory]
+        [InlineData("[Work: int a: 0; int b: 0;]\n[end]")]
+        [InlineData("[Work: str s: [8];]\n[end]")]
+        public void AThreadsMethodTakesOneValueAtMost(string work)
+            => AssertError(Program("u8 stack[8192];\nint t: (OS.ThreadStart: addr Work 7 addr stack (addr stack) + 8192);\n" + work),
+                           "Work can't be a thread: OS.ThreadStart gives its method one value");
+
         [Fact]
         public void OutputIsASystemCallAndWholeLinesAreFlushed()
         {

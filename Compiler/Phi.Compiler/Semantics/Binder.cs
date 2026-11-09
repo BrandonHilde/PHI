@@ -3909,9 +3909,15 @@ namespace Phi.Compiler.Semantics
                         PhiType expected = builtin.TextParameters.Contains(i) || builtin.BufferParameters.Contains(i) ? PhiType.PointerTo(PhiType.U8) : PhiType.Int;
                         arguments[i] = Convert(arguments[i], expected, $"'{builtin.Parameters[i]}'");
 
-                        // whoever calls a handler (an IRQ, a system call) gives it no arguments
+                        // whoever calls a handler (an IRQ, a system call) gives it no arguments;
+                        // OS.ThreadStart gives its method one, the value: a number or a pointer
                         if (arguments[i] is AddrExpr { Method: MethodSymbol handler } && handler.Decl.Parameters.Count > 0)
-                            Error(arguments[i].Span, $"{handler.Decl.Name} takes parameters, so {builtin.Name} can't call it");
+                        {
+                            if (builtin.Name != "OS.ThreadStart" || i != 0)
+                                Error(arguments[i].Span, $"{handler.Decl.Name} takes parameters, so {builtin.Name} can't call it");
+                            else if (handler.Parameters.Count != 1 || handler.Parameters[0].Type is var t && (!t.IsNumeric || t.IsWide || t.IsError))
+                                Error(arguments[i].Span, $"{handler.Decl.Name} can't be a thread: OS.ThreadStart gives its method one value, a number or a pointer (like [{handler.Decl.Name}: int value: 0;])");
+                        }
                     }
                     return builtin;
                 }
