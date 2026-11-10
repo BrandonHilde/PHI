@@ -66,8 +66,24 @@ namespace Phi.Compiler
                     // means fewer names are known (its errors would follow from the parsing's anyway)
                     try { partial = Binder.Bind(syntax, new DiagnosticBag(), host); }
                     catch (Exception e) when (e is not OutOfMemoryException) { }
+                    return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host, open), Syntax = syntax, Bound = partial, Uses = uses, Files = files };
                 }
-                return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, host, open), Syntax = syntax, Bound = partial, Uses = uses, Files = files };
+
+                // a build shows the other mistakes too, so one build finds them all: what the
+                // rest of the program gets wrong, where that can't be the syntax errors' doing
+                var all = diagnostics.Items.ToList();
+                bool useFailed = syntax.Uses.Any(u => !uses.ContainsKey(u)) || all.Any(d => d.Message.StartsWith("can't find "));
+                if (!useFailed)
+                {
+                    var later = new DiagnosticBag();
+                    try
+                    {
+                        Binder.Bind(syntax, later, host);
+                        all.AddRange(NotFromSyntaxErrors(all, later.Items));
+                    }
+                    catch (Exception e) when (e is not OutOfMemoryException) { }
+                }
+                return new CompileResult { Diagnostics = AtUses(all, usedBy, syntax, host, open), Syntax = syntax, Uses = uses, Files = files };
             }
 
             BoundProgram? bound = Binder.Bind(syntax, diagnostics, host);
@@ -93,6 +109,148 @@ namespace Phi.Compiler
                 result.BootStages.Add(new AsmUnit { Kind = UnitKind.Boot, Name = "stage2", Text = Library.ReadFile("lib/boot/stage2.asm") });
             }
             return result;
+        }
+
+        static readonly System.Text.RegularExpressions.Regex QuotedName = new(@"'([A-Za-z_][A-Za-z_0-9]*)(?:[.:][^']*)?'");
+        static readonly System.Text.RegularExpressions.Regex Word = new(@"[A-Za-z_][A-Za-z_0-9]*");
+
+        /// <summary>
+        /// Of the errors found in what did parse, those worth showing beside the syntax errors: an
+        /// error that a line the parser gave up on could have caused is left out, since fixing
+        /// that line would make it go away. That's one on such a line; one that names something
+        /// such a line names (the line may have declared it); and an "unknown" one whose name is
+        /// written anywhere else in its file (what declares it may be what was lost). A use that
+        /// didn't parse leaves them all out, as a whole file's names are missing then.
+        /// </summary>
+        static List<Diagnostic> NotFromSyntaxErrors(IReadOnlyList<Diagnostic> syntaxErrors, IReadOnlyList<Diagnostic> later)
+        {
+            var kept = new List<Diagnostic>();
+            var lostLines = new HashSet<(SourceFile, int)>();
+            var lostNames = new HashSet<string>();
+            foreach (Diagnostic d in syntaxErrors)
+            {
+                if (d.File == null) return kept;
+                int line = d.File.GetLocation(d.Span.Start).Line;
+                // (what was lost may run on from the line before, or onto the next)
+                if (!PlainStatement(d.File, line)) return kept;
+                for (int near = line - 1; near <= line + 1; near++)
+                {
+                    lostLines.Add((d.File, near));
+                    string text = LineText(d.File, near);
+                    foreach (string word in NamesOn(text)) lostNames.Add(word);
+                }
+            }
+
+            // an error that follows from what was lost can itself make others: the method it's in
+            // may give back another type now, and what its line declares may be another type. So
+            // what such an error's line names, and its method, are lost too, until nothing more is.
+            var errors = later.Where(d => d.Severity == Severity.Error && d.File != null).ToList();
+            var follows = new HashSet<Diagnostic>();
+            bool FollowsFromLost(Diagnostic d)
+            {
+                var (line, _) = d.File!.GetLocation(d.Span.Start);
+                if (lostLines.Contains((d.File, line))) return true;
+                var names = QuotedName.Matches(d.Message).Select(m => m.Groups[1].Value).ToList();
+                if (names.Any(lostNames.Contains)) return true;
+                // its own line names something lost, or (for an error about a whole method, at its
+                // heading) anything in the method does
+                if (NamesOn(LineText(d.File, line)).Any(lostNames.Contains)) return true;
+                if (LineText(d.File, line).TrimStart().StartsWith('['))
+                    for (int below = line + 1; LineText(d.File, below) is { Length: > 0 } text && !text.TrimStart().StartsWith("}"); below++)
+                    {
+                        if (NamesOn(text).Any(lostNames.Contains)) return true;
+                        if (text.TrimStart().StartsWith("[end")) break;
+                    }
+                if (d.Message.Contains("unknown ") && names.Any(n => WrittenElsewhere(d.File, n, d.Span))) return true;
+                // (a type that couldn't be worked out is something lost, too)
+                return d.Message.Contains(" ?") || d.Message.Contains("a nothing");
+            }
+            for (bool more = true; more;)
+            {
+                more = false;
+                foreach (Diagnostic d in errors)
+                {
+                    if (follows.Contains(d) || !FollowsFromLost(d)) continue;
+                    follows.Add(d);
+                    more = true;
+                    int line = d.File!.GetLocation(d.Span.Start).Line;
+                    foreach (string word in NamesOn(LineText(d.File, line))) lostNames.Add(word);
+                    foreach (System.Text.RegularExpressions.Match name in QuotedName.Matches(d.Message)) lostNames.Add(name.Groups[1].Value);
+                    if (MethodAround(d.File, line) is string method) lostNames.Add(method);
+                }
+            }
+
+            foreach (Diagnostic d in errors)
+            {
+                if (follows.Contains(d)) continue;
+                if (kept.Any(k => k.File == d.File && k.Span == d.Span && k.Message == d.Message)) continue;
+                kept.Add(d);
+            }
+            return kept;
+        }
+
+        static readonly string[] Structure =
+        {
+            "[", "{", "}", ";;", "phi.", "struct.", "enum.", "interface.", "asm.", "x64.", "sys.", "use ", "const ",
+            "if ", "else", "while ", "when ", "is ", "unsafe", "locked ", "new ",
+        };
+
+        /// <summary>
+        /// True when a line is one statement inside a class or a method: not a heading, a block's
+        /// start or end, or a declaration other code is laid out by (a use, a constant, anything
+        /// in a struct, an enum or an interface). Losing such a line loses nothing else.
+        /// </summary>
+        static bool PlainStatement(SourceFile file, int line)
+        {
+            string text = LineText(file, line).Trim();
+            if (text.Length == 0 || Structure.Any(text.StartsWith)) return false;
+            // what it's in: the nearest heading above it at the start of a line
+            for (int above = line - 1; above >= 1; above--)
+            {
+                string heading = LineText(file, above);
+                if (heading.StartsWith("phi.")) return true;
+                if (heading.StartsWith("struct.") || heading.StartsWith("enum.") || heading.StartsWith("interface.")
+                    || heading.StartsWith("asm.") || heading.StartsWith("x64.")) return false;
+            }
+            return false;
+        }
+
+        /// <summary>The names written on a line: its words, but for the language's own and what's in quotes or a comment.</summary>
+        static IEnumerable<string> NamesOn(string line)
+        {
+            string code = System.Text.RegularExpressions.Regex.Replace(line, @"'(\\.|[^'\\])*'|#.*$", " ");
+            foreach (System.Text.RegularExpressions.Match word in Word.Matches(code))
+                if (!Parser.ReservedWords.Contains(word.Value) && !Parser.TypeKeywords.Contains(word.Value))
+                    yield return word.Value;
+        }
+
+        /// <summary>The name of the method a line is in ([Name: ...] above it, before any [end]), or null in a class's own code.</summary>
+        static string? MethodAround(SourceFile file, int line)
+        {
+            for (int above = line; above >= 1; above--)
+            {
+                string text = LineText(file, above).Trim();
+                if (above < line && text.StartsWith("[end")) return null;
+                if (text.StartsWith("phi.") || text.StartsWith("struct.")) return null;
+                if (text.StartsWith('[') && !text.StartsWith("[end") && Word.Match(text) is { Success: true } name) return name.Value;
+            }
+            return null;
+        }
+
+        static string LineText(SourceFile file, int line)
+        {
+            if (line < 1) return "";
+            int start = file.GetOffset(line - 1, 0);
+            if (start >= file.Text.Length) return "";
+            int end = file.Text.IndexOf('\n', start);
+            return file.Text[start..(end < 0 ? file.Text.Length : end)];
+        }
+
+        static bool WrittenElsewhere(SourceFile file, string name, Span at)
+        {
+            foreach (System.Text.RegularExpressions.Match word in Word.Matches(file.Text))
+                if (word.Value == name && (word.Index < at.Start || word.Index >= at.End)) return true;
+            return false;
         }
 
         public static CompileResult Compile(string path) => Compile(SourceFile.Load(path));
