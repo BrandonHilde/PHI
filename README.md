@@ -158,6 +158,8 @@ phi.Count:Program
        phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
                                          300 players in the game world at once, checking that it keeps
                                          its 20 ticks a second
+       phi fuzz code --count 1000        write random programs, each with what it must print, and check
+                                         the compiler's code for them on the systems this computer runs
        phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
 
 The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each

@@ -70,6 +70,13 @@ const string Usage = """
                                            --target linux (or windows) runs a server program (such as
                                            samples/mmo/server.rootfs/world.phi) and the clients as
                                            programs on this computer instead
+      phi fuzz code [--count <n>] [--seed <n>] [--target <system>] [-o <dir>] [--keep]
+                                           write random programs, each with what it must print worked
+                                           out as it's written, build them for the systems this computer
+                                           runs (or only --target's) and compare: a difference is a bug in
+                                           the code generator. 100 programs unless --count says; the same
+                                           --seed makes the same programs. One that comes out wrong is
+                                           kept in fuzz-failures (or -o's folder); --keep keeps them all
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
@@ -390,6 +397,40 @@ static int Execute(string[] args)
 
             case "lsp":
                 return new LanguageServer(Console.OpenStandardInput(), Console.OpenStandardOutput(), Console.Error).Run();
+
+            case "fuzz":
+            {
+                if (rest.Count < 1 || rest[0] != "code") throw new ArgumentException("fuzz takes what to fuzz: code");
+                rest.RemoveAt(0);
+                string? count = Option("--count");
+                string? seed = Option("--seed");
+                string? only = Option("--target");
+                string keep = Option("-o") ?? "fuzz-failures";
+                bool keepAll = Flag("--keep");
+                if (rest.Count != 0) throw new ArgumentException($"fuzz code doesn't take '{rest[0]}'");
+
+                var hosts = new List<Phi.Compiler.Host>();
+                if (only != null)
+                {
+                    Phi.Compiler.Host host = Phi.Compiler.Hosts.Parse(only)
+                        ?? throw new ArgumentException("--target takes the system: " + string.Join(", ", Phi.Compiler.Hosts.Names));
+                    if (!HostRunner.CanRun(host, out string why)) throw new ArgumentException($"this computer can't run {Phi.Compiler.Hosts.Name(host)} programs: {why}");
+                    hosts.Add(host);
+                }
+                else
+                {
+                    foreach (Phi.Compiler.Host host in new[] { Phi.Compiler.Host.Linux, Phi.Compiler.Host.Linux64, Phi.Compiler.Host.Windows, Phi.Compiler.Host.Windows64 })
+                        if (HostRunner.CanRun(host, out _)) hosts.Add(host);
+                }
+                if (hosts.Count == 0) throw new ArgumentException("this computer can't run Linux or Windows programs");
+
+                var options = new CodeFuzzer.Options(
+                    Count: count != null ? int.Parse(count) : 100,
+                    Seed: seed != null ? int.Parse(seed) : Environment.TickCount,
+                    Hosts: hosts, KeepFolder: keep, KeepAll: keepAll);
+                Console.WriteLine($"seed {options.Seed}");
+                return CodeFuzzer.Run(options, Console.Out) == 0 ? 0 : 1;
+            }
 
             case "serve":
             {

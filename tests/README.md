@@ -298,3 +298,29 @@ a report that takes more than 5% longer here than it says fails the run.
 The tick's own work is a benchmark, `samples/mmo/bench_tick.phi`: 500 players' moves,
 the creatures, the grid, and a STATE for each player, without the network, so the count is
 the same on every run.
+
+## Random programs: `phi fuzz code`
+
+`phi fuzz code` checks the code generator with programs nobody wrote. Each is made at random
+from what the optimizer works on (ints and u32s in class variables, parameters and variables,
+arrays by index and through pointers, math and division by every kind of constant, ifs, whens,
+loops in loops, calls), and the fuzzer works out what it prints as it writes it, with 32-bit
+math that wraps as PHI's does. It then builds the program for each system this computer runs
+(32- and 64-bit Linux here) and compares. A difference is a bug in the compiler, or in the
+fuzzer's idea of the language (`Compiler/Phi.Cli/CodeFuzzer.cs`).
+
+```
+phi fuzz code                          # 100 programs, from a seed it prints
+phi fuzz code --count 3000 --seed 5000 # the same 3000 every time (about 15 a second)
+phi fuzz code --target linux64         # one system only
+phi fuzz code --count 5 --keep         # keep every program, to read them
+```
+
+A program that comes out wrong is kept in `fuzz-failures/` (or `-o`'s folder) with its
+`.expected`, and the report says the first line of output that differs. The programs never
+do what PHI stops for (an index out of range, dividing by zero, a number that changes on its
+way to another type), so they don't test those errors: the tests in this folder do.
+
+Run it after any change to the code generator. When adding an optimisation, break it on
+purpose once and see that the fuzzer notices: if it doesn't, its programs don't reach the
+new code yet, and `CodeFuzzer.Maker` needs to make some that do.
