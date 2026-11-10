@@ -14,8 +14,9 @@ phi_float_to_str:
     sub rsp, 16                 ; [rbp - 8] the millionths (a qword), [rbp - 12] the exponent
     push rcx                    ; [rbp - 24] the size
     push rdi                    ; [rbp - 32] the destination
-    mov dword [rbp - 12], 0
-    lea rdi, [rel phi_float_scratch]
+    sub rsp, 48                 ; [rbp - 80] the text, on this call's own stack (another thread
+    mov dword [rbp - 12], 0     ; may be writing a number at the same time)
+    lea rdi, [rbp - 80]
 
     fxam                        ; what kind of number: c3 c2 c0, and c1 its sign
     fnstsw ax
@@ -123,7 +124,7 @@ phi_float_to_str:
     mov byte [rdi], 0
     mov rcx, [rbp - 24]
     mov rdi, [rbp - 32]
-    lea rsi, [rel phi_float_scratch]
+    lea rsi, [rbp - 80]
     call phi_strcpy
     mov rsp, rbp
     pop rbp
@@ -242,5 +243,3 @@ phi_float_one:
     dq 1.0
 phi_float_million:
     dq 1000000.0
-phi_float_scratch:
-    times 48 db 0

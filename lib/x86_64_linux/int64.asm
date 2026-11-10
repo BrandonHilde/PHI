@@ -102,7 +102,8 @@ phi_int64_to_str:
 
 ; rax = the number, r9d = 1 if a '-' goes first
 phi_int64_digits:
-    lea rsi, [rel phi_int64_scratch + 21]   ; digits are built backwards from the end
+    sub rsp, 24             ; the digits, on this call's own stack (another thread may be
+    lea rsi, [rsp + 21]     ; writing a number at the same time), backwards from the end
     mov byte [rsi], 0
     mov r8d, 10
 .digit:
@@ -118,7 +119,6 @@ phi_int64_digits:
     dec rsi
     mov byte [rsi], '-'
 .copy:
-    jmp phi_strcpy
-
-phi_int64_scratch:
-    times 22 db 0
+    call phi_strcpy
+    lea rsp, [rsp + 24]         ; (keeping the carry it set if it was cut)
+    ret

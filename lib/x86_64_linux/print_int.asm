@@ -50,7 +50,8 @@ phi_int_to_str:
     neg eax
     inc ebx
 .start:
-    lea rsi, [rel phi_int_to_str_scratch + 11]   ; digits are built backwards from the end
+    sub rsp, 16             ; the digits, on this call's own stack (another thread may be
+    lea rsi, [rsp + 11]     ; writing a number at the same time), backwards from the end
     mov byte [rsi], 0
     mov ecx, 10
 .digit:
@@ -66,8 +67,10 @@ phi_int_to_str:
     dec rsi
     mov byte [rsi], '-'
 .copy:
-    pop rcx
-    jmp phi_strcpy
+    mov rcx, [rsp + 16]
+    call phi_strcpy
+    lea rsp, [rsp + 24]         ; (keeping the carry it set if it was cut)
+    ret
 
 ; Copy the string at rsi to rdi. ecx is the size of the destination including its
 ; terminator; longer strings are cut short, and then the carry flag is set (the code
@@ -96,4 +99,3 @@ phi_strcpy:
     ret
 
 phi_print_int_text:      times 12 db 0
-phi_int_to_str_scratch:  times 12 db 0
