@@ -87,7 +87,7 @@ unit, in 16-bit or 32-bit code. It is deliberately simple:
 - An expression's value ends up in `eax`; the right side of a binary operation in `ecx`.
 - In 32-bit code, a method keeps up to two of its most used variables in `esi` and `edi`
   (32-bit numbers and pointers that aren't `volatile` and whose address isn't taken; class
-  variables always stay in memory, since interrupt handlers share them). They're chosen
+  variables stay in memory, since interrupt handlers share them, but see the next point). They're chosen
   by [VariablePlanner.cs](../Compiler/Phi.Compiler/CodeGen/VariablePlanner.cs): a use inside
   a loop counts 8 times one outside it. A method that changes `esi` or `edi` saves them
   first, so they're kept across calls to methods. Library routines and `asm.` blocks may
@@ -95,9 +95,25 @@ unit, in 16-bit or 32-bit code. It is deliberately simple:
   floats, 64-bit numbers or objects) is *fenced*: the variables go to their places in the
   frame before it and come back after it. The generator checks its own output for a stray
   `esi` or `edi` outside a fence.
+- In 64-bit code it's up to four, in `r12` to `r15`, by the same rules: a 32-bit number in
+  the low half (`r12d`) and a pointer in the whole register. As an index, a number that
+  can't be negative (unsigned, or just checked) is used as it is, and any other goes
+  through `r11` with its sign (`IndexRegister`).
+- A `while` in a class's own code does the same for the class variables it uses most
+  (`EmitClassStatement`), but only those nothing else can reach while it runs: not one a
+  method or an asm block names (an interrupt handler, another thread or another core may be
+  running it), not a `volatile` one, and not one whose address is taken. They're loaded
+  before the loop and stored after it, so memory is right whenever other code runs.
+- `x / d` and `x % d` with `d` a constant of 2 or more don't use the CPU's divide: a power
+  of two is a shift or a mask, and any other, in 32- and 64-bit code, a multiply by a number
+  near 2^32 / d and a shift (`TryDivideByConstant`, with the numbers from
+  [DivisionMagic.cs](../Compiler/Phi.Compiler/CodeGen/DivisionMagic.cs)). Times a power of
+  two is a shift.
+- A `when` on a number whose values are constants close together jumps through a table
+  of its branches (`DenseWhen`); any other compares its values one at a time, in order.
 - Everything else is read and written in memory every time, which device memory needs.
 - A call to a small method (no loops, everything in it one register) is written out where
-  it's called instead, with its parameters and variables in the caller's frame
+  it's called instead (32-bit code only: in 64-bit code it made programs bigger and no faster), with its parameters and variables in the caller's frame
   (`CanInline` and `EmitInline`).
 - Memory is reached through a **place**: a fixed label, a label plus a computed offset in
   `ebx`, or a computed address in `ebx` (through a pointer). In 16-bit code, a pointer above

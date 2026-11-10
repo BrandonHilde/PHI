@@ -1,0 +1,208 @@
+# A method's most used variables are kept in registers (two in 32-bit code, four in 64-bit
+# code): the answers must be the same as with every variable in memory, which the 16-bit run
+# shows.
+struct.Tally
+{
+	int marks[8];
+	u8 flags[8];
+	int used;
+
+	# fields reached through self, and an element of one picked by a variable
+	[Mark: int place: 0; int amount: 0;]
+		marks:place++ amount;
+		flags:place is 1;
+		used++;
+	[end: marks:place]
+
+	[Total]
+		int total: 0;
+		while int i: 0; i < 8; i++;
+			if flags:i
+				total++ marks:i * (i + 1);
+			;;
+		;;
+	[end: total * 10 + used]
+}
+
+struct.Spot
+{
+	int x;
+	int y;
+}
+
+phi.RegisterVariables:Library
+{
+	int numbers: 10 20 30 40 50 60 70 80;
+	u8 letters: 'a' 'b' 'c' 'd' 'e' 'f' 'g' 'h';
+	int grid[64];
+	Spot spots[3];
+
+	# counters, a total and a limit, all at once
+	debug (Sum: 8) '\n';
+
+	# an int index through a pointer may be negative: it reaches before the pointer
+	debug (Backwards: addr numbers:7 8) '\n';
+
+	# a u32 index, and elements of one, two and four bytes
+	debug (Letters: letters 8) '\n';
+
+	# more variables than there are registers, in three loops inside each other
+	debug (Fill: 4 4 4) ' ' grid:0 ' ' grid:21 ' ' grid:63 '\n';
+
+	# a method that's called keeps the caller's, though it uses its own
+	debug (Outer: 5) '\n';
+
+	# and so does one that calls itself
+	debug (Triangle: 10) '\n';
+
+	# a statement that needs every register (a log) leaves them as they were
+	call Counted: 3;
+
+	# a parameter that's changed, one that isn't, and a result that's a variable
+	debug (Power: 3 4) ' ' (Power: 2 10) '\n';
+
+	# pointers: one that walks, one to a struct, and two at once
+	debug (Walk: letters 8) ' ' (Mirror: numbers 8) ' ' numbers:0 ' ' numbers:7 '\n';
+	call Mirror: numbers 8;
+	spots:0.x is 3;
+	spots:0.y is 4;
+	spots:2.x is 30;
+	spots:2.y is 40;
+	debug (Spots: spots 3) '\n';
+
+	# a struct's method, with self and its variables in registers
+	Tally tally;
+	call tally.Mark: 2 5;
+	call tally.Mark: 7 1;
+	debug (tally.Mark: 2 6) ' ' (tally.Total) '\n';
+
+	# an index that's negative, or too big, is still an error
+	debug (At: 7) ' ';
+	debug (At: -1) '\n';
+	debug 'not reached\n';
+
+	[Sum: int count: 0;]
+		int total: 0;
+		int odd: 0;
+		while int i: 0; i < count; i++;
+			total++ numbers:i;
+			if i % 2 is 1
+				odd++ numbers:i;
+			;;
+		;;
+	[end: total * 1000 + odd]
+
+	[Backwards: ptr<int> last: 0; int count: 0;]
+		int total: 0;
+		int weight: 1;
+		while int i: 0; i > 0 - count; i--;
+			total++ last:i * weight;
+			weight++;
+		;;
+	[end: total]
+
+	[Letters: ptr<u8> text: 0; u32 count: 0;]
+		u32 total: 0;
+		u16 widest: 0;
+		while u32 i: 0; i < count; i++;
+			total++ text:i;
+			if text:i > widest
+				widest is text:i;
+			;;
+		;;
+	[end: total * 1000 + widest]
+
+	[Fill: int a: 0; int b: 0; int c: 0;]
+		int written: 0;
+		int last: 0;
+		while int x: 0; x < a; x++;
+			while int y: 0; y < b; y++;
+				while int z: 0; z < c; z++;
+					last is x * 16 + y * 4 + z;
+					grid:last is x * 100 + y * 10 + z;
+					written++;
+				;;
+			;;
+		;;
+	[end: written * 100 + last]
+
+	[Outer: int rounds: 0;]
+		int total: 0;
+		int step: 7;
+		while int i: 0; i < rounds; i++;
+			total++ (Inner: i step);
+			step++ i;
+		;;
+	[end: total]
+
+	[Inner: int a: 0; int b: 0;]
+		int total: 0;
+		int scale: 3;
+		while int i: 0; i <= a; i++;
+			total++ b * scale - i;
+			scale++;
+		;;
+	[end: total]
+
+	[Triangle: int n: 0;]
+		int under: 0;
+		if n > 0
+			under is (Triangle: n - 1);
+		;;
+	[end: under + n]
+
+	[Counted: int rounds: 0;]
+		int total: 0;
+		while int i: 1; i <= rounds; i++;
+			total++ i * i;
+			debug i ' ' total '\n';
+		;;
+	[end]
+
+	[Power: int base: 0; int times: 0;]
+		int result: 1;
+		while times > 0
+			result is result * base;
+			times--;
+		;;
+	[end: result]
+
+	[Walk: ptr<u8> text: 0; int count: 0;]
+		int total: 0;
+		ptr<u8> stop: text + count;
+		while text < stop
+			total is total * 3 + text:0 - 'a';
+			text is text + 1;
+		;;
+	[end: total]
+
+	# turns the numbers end for end
+	[Mirror: ptr<int> first: 0; int count: 0;]
+		ptr<int> last: first + (count - 1) * 4;
+		int swaps: 0;
+		while first < last
+			int kept: first:0;
+			first:0 is last:0;
+			last:0 is kept;
+			first is first + 4;
+			last is last - 4;
+			swaps++;
+		;;
+	[end: swaps]
+
+	[Spots: ptr<Spot> list: 0; int count: 0;]
+		int total: 0;
+		while int i: 0; i < count; i++;
+			ptr<Spot> s: addr list:i;
+			s:0.x++ i;
+			total++ s:0.x * s:0.y;
+		;;
+	[end: total]
+
+	[At: int place: 0;]
+		int twice: 0;
+		while int i: 0; i < 2; i++;
+			twice++ numbers:place;
+		;;
+	[end: twice]
+}

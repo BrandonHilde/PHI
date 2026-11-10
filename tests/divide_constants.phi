@@ -1,0 +1,51 @@
+# Dividing by a constant is a shift, a mask or a multiply in 32- and 64-bit code, and the
+# CPU's divide in 16-bit code: every answer must be the same, for the numbers where rounding
+# goes wrong first (negative ones, the biggest and smallest, and each side of a multiple).
+phi.DivideConstants:Library
+{
+	int signed_values: 0 1 2 6 7 8 9 10 11 99 100 101 640 641 642 65535 65536 65537 1000000 2147483646 2147483647;
+	u32 unsigned_values: 0 1 2 6 7 8 9 10 11 99 100 101 640 641 642 65535 65536 65537 1000000 2147483647 2147483648 2147483649 4294967289 4294967290 4294967294 4294967295;
+
+	while int i: 0; i < signed_values.len; i++;
+		call Signed: signed_values:i;
+		call Signed: 0 - signed_values:i;
+	;;
+	call Signed: 0 - 2147483647 - 1;
+
+	while int i: 0; i < unsigned_values.len; i++;
+		call Unsigned: unsigned_values:i;
+	;;
+
+	# many in a row: sums that one wrong answer changes
+	debug (SignedSum: -50000 50000) ' ' (UnsignedSum: 4294900000 100000) '\n';
+
+	# times a power of two, a shift, wraps as a multiply does
+	int big: 1500000000;
+	u32 bigger: 3000000000;
+	debug big * 2 ' ' big * 4 ' ' big * 1024 ' ' bigger * 2 ' ' bigger * 65536 ' ' (0 - big) * 8 '\n';
+
+	[Signed: int x: 0;]
+		debug x ': ' (x / 2) ' ' (x / 3) ' ' (x / 4) ' ' (x / 5) ' ' (x / 7) ' ' (x / 10) ' ' (x / 16) ' ' (x / 100) ' ' (x / 641) ' ' (x / 1000) ' ' (x / 65536) ' ' (x / 1000000007) ' ' (x / 1073741824) ' ' (x / 2147483647) '\n';
+		debug '   ' (x % 2) ' ' (x % 3) ' ' (x % 4) ' ' (x % 5) ' ' (x % 7) ' ' (x % 10) ' ' (x % 16) ' ' (x % 100) ' ' (x % 641) ' ' (x % 1000) ' ' (x % 65536) ' ' (x % 1000000007) ' ' (x % 1073741824) ' ' (x % 2147483647) '\n';
+	[end]
+
+	[Unsigned: u32 x: 0;]
+		debug x ': ' (x / 2) ' ' (x / 3) ' ' (x / 4) ' ' (x / 5) ' ' (x / 7) ' ' (x / 10) ' ' (x / 16) ' ' (x / 100) ' ' (x / 641) ' ' (x / 1000) ' ' (x / 65536) ' ' (x / 1000000007) ' ' (x / 2147483648) ' ' (x / 4294967295) '\n';
+		debug '   ' (x % 2) ' ' (x % 3) ' ' (x % 4) ' ' (x % 5) ' ' (x % 7) ' ' (x % 10) ' ' (x % 16) ' ' (x % 100) ' ' (x % 641) ' ' (x % 1000) ' ' (x % 65536) ' ' (x % 1000000007) ' ' (x % 2147483648) ' ' (x % 4294967295) '\n';
+	[end]
+
+	[SignedSum: int first: 0; int last: 0;]
+		int total: 0;
+		while int x: first; x <= last; x++;
+			total++ x / 3 + x / 7 * 5 + x % 10 + x % 641 * 3 + x / 8 + x % 16;
+		;;
+	[end: total]
+
+	[UnsignedSum: u32 first: 0; u32 count: 0;]
+		u32 total: 0;
+		while u32 i: 0; i < count; i++;
+			u32 x: first + i;
+			total++ x / 3 + x / 7 * 5 + x % 10 + x % 641 * 3 + x / 8 + x % 16;
+		;;
+	[end: total]
+}

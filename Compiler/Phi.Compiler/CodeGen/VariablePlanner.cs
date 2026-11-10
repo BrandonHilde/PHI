@@ -39,6 +39,16 @@ namespace Phi.Compiler.CodeGen
                     if (each.Element.Symbol != null) candidates.Remove(each.Element.Symbol);
                 }
             }
+            return Choose(candidates, m.Decl.Body, m.Decl.Result, registers, runsInRegisters);
+        }
+
+        /// <summary>
+        /// The same choice for any run of statements (a loop in a class's own code, say), from
+        /// variables the caller knows can be in registers while it runs.
+        /// </summary>
+        public static List<VariableSymbol> Choose(HashSet<VariableSymbol> candidates, List<Stmt> body, Expr? result,
+            int registers, Func<Stmt, bool> runsInRegisters)
+        {
             if (candidates.Count == 0) return new List<VariableSymbol>();
 
             var uses = new Dictionary<VariableSymbol, long>();
@@ -50,6 +60,16 @@ namespace Phi.Compiler.CodeGen
                 {
                     if (n is NameExpr { Symbol: VariableSymbol v } && candidates.Contains(v))
                         uses[v] = uses.GetValueOrDefault(v) + weight;
+                    // a field reached through a pointer (c.mark), or through the struct a method was
+                    // called on, reads the pointer too
+                    VariableSymbol? through = n switch
+                    {
+                        NameExpr { Symbol: PathSymbol path } => path.Root,
+                        NameExpr { Symbol: SelfFieldSymbol field } => field.Self,
+                        _ => null,
+                    };
+                    if (through != null && candidates.Contains(through))
+                        uses[through] = uses.GetValueOrDefault(through) + weight;
                     // a declaration with a value sets it, which is a use too
                     if (n is VarDecl { Symbol: VariableSymbol declared } d && d.Values.Count > 0 && candidates.Contains(declared))
                         uses[declared] = uses.GetValueOrDefault(declared) + weight;
@@ -105,8 +125,8 @@ namespace Phi.Compiler.CodeGen
                 }
             }
 
-            Walk(m.Decl.Body, 0);
-            if (m.Decl.Result != null) Count(m.Decl.Result, 1);
+            Walk(body, 0);
+            if (result != null) Count(result, 1);
 
             const long setUp = 3;   // push and pop, and loading or zeroing it
             return uses

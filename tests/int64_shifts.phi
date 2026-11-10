@@ -1,0 +1,283 @@
+# Shifting a 64-bit number by a constant has instructions of its own for each count (a part
+# of 32 or more moves one half to the other); by a variable it tests the count as it runs. Both
+# must give the same, for every count, and so must math with a constant on the right.
+# runs only in 32 and 64 bits: 64-bit numbers
+phi.Int64Shifts:Library
+{
+	u64 values: 0 1 0x8000000000000000 0xFFFFFFFFFFFFFFFF 0x0123456789ABCDEF 0xFEDCBA9876543210 0x00000000FFFFFFFF 0xFFFFFFFF00000000;
+	i64 signed: 0 1 -1 -2 0x0123456789ABCDEF -81985529216486896 4294967295 -4294967296;
+	int wrong: 0;
+	int n: 0;
+
+	while int v: 0; v < 8; v++;
+		u64 a: values:v;
+		i64 b: signed:v;
+		n is 0;
+		if (a << 0) is not (a << n) or (a >> 0) is not (a >> n) or (b << 0) is not (b << n) or (b >> 0) is not (b >> n)
+			wrong++;
+		;;
+		n is 1;
+		if (a << 1) is not (a << n) or (a >> 1) is not (a >> n) or (b << 1) is not (b << n) or (b >> 1) is not (b >> n)
+			wrong++;
+		;;
+		n is 2;
+		if (a << 2) is not (a << n) or (a >> 2) is not (a >> n) or (b << 2) is not (b << n) or (b >> 2) is not (b >> n)
+			wrong++;
+		;;
+		n is 3;
+		if (a << 3) is not (a << n) or (a >> 3) is not (a >> n) or (b << 3) is not (b << n) or (b >> 3) is not (b >> n)
+			wrong++;
+		;;
+		n is 4;
+		if (a << 4) is not (a << n) or (a >> 4) is not (a >> n) or (b << 4) is not (b << n) or (b >> 4) is not (b >> n)
+			wrong++;
+		;;
+		n is 5;
+		if (a << 5) is not (a << n) or (a >> 5) is not (a >> n) or (b << 5) is not (b << n) or (b >> 5) is not (b >> n)
+			wrong++;
+		;;
+		n is 6;
+		if (a << 6) is not (a << n) or (a >> 6) is not (a >> n) or (b << 6) is not (b << n) or (b >> 6) is not (b >> n)
+			wrong++;
+		;;
+		n is 7;
+		if (a << 7) is not (a << n) or (a >> 7) is not (a >> n) or (b << 7) is not (b << n) or (b >> 7) is not (b >> n)
+			wrong++;
+		;;
+		n is 8;
+		if (a << 8) is not (a << n) or (a >> 8) is not (a >> n) or (b << 8) is not (b << n) or (b >> 8) is not (b >> n)
+			wrong++;
+		;;
+		n is 9;
+		if (a << 9) is not (a << n) or (a >> 9) is not (a >> n) or (b << 9) is not (b << n) or (b >> 9) is not (b >> n)
+			wrong++;
+		;;
+		n is 10;
+		if (a << 10) is not (a << n) or (a >> 10) is not (a >> n) or (b << 10) is not (b << n) or (b >> 10) is not (b >> n)
+			wrong++;
+		;;
+		n is 11;
+		if (a << 11) is not (a << n) or (a >> 11) is not (a >> n) or (b << 11) is not (b << n) or (b >> 11) is not (b >> n)
+			wrong++;
+		;;
+		n is 12;
+		if (a << 12) is not (a << n) or (a >> 12) is not (a >> n) or (b << 12) is not (b << n) or (b >> 12) is not (b >> n)
+			wrong++;
+		;;
+		n is 13;
+		if (a << 13) is not (a << n) or (a >> 13) is not (a >> n) or (b << 13) is not (b << n) or (b >> 13) is not (b >> n)
+			wrong++;
+		;;
+		n is 14;
+		if (a << 14) is not (a << n) or (a >> 14) is not (a >> n) or (b << 14) is not (b << n) or (b >> 14) is not (b >> n)
+			wrong++;
+		;;
+		n is 15;
+		if (a << 15) is not (a << n) or (a >> 15) is not (a >> n) or (b << 15) is not (b << n) or (b >> 15) is not (b >> n)
+			wrong++;
+		;;
+		n is 16;
+		if (a << 16) is not (a << n) or (a >> 16) is not (a >> n) or (b << 16) is not (b << n) or (b >> 16) is not (b >> n)
+			wrong++;
+		;;
+		n is 17;
+		if (a << 17) is not (a << n) or (a >> 17) is not (a >> n) or (b << 17) is not (b << n) or (b >> 17) is not (b >> n)
+			wrong++;
+		;;
+		n is 18;
+		if (a << 18) is not (a << n) or (a >> 18) is not (a >> n) or (b << 18) is not (b << n) or (b >> 18) is not (b >> n)
+			wrong++;
+		;;
+		n is 19;
+		if (a << 19) is not (a << n) or (a >> 19) is not (a >> n) or (b << 19) is not (b << n) or (b >> 19) is not (b >> n)
+			wrong++;
+		;;
+		n is 20;
+		if (a << 20) is not (a << n) or (a >> 20) is not (a >> n) or (b << 20) is not (b << n) or (b >> 20) is not (b >> n)
+			wrong++;
+		;;
+		n is 21;
+		if (a << 21) is not (a << n) or (a >> 21) is not (a >> n) or (b << 21) is not (b << n) or (b >> 21) is not (b >> n)
+			wrong++;
+		;;
+		n is 22;
+		if (a << 22) is not (a << n) or (a >> 22) is not (a >> n) or (b << 22) is not (b << n) or (b >> 22) is not (b >> n)
+			wrong++;
+		;;
+		n is 23;
+		if (a << 23) is not (a << n) or (a >> 23) is not (a >> n) or (b << 23) is not (b << n) or (b >> 23) is not (b >> n)
+			wrong++;
+		;;
+		n is 24;
+		if (a << 24) is not (a << n) or (a >> 24) is not (a >> n) or (b << 24) is not (b << n) or (b >> 24) is not (b >> n)
+			wrong++;
+		;;
+		n is 25;
+		if (a << 25) is not (a << n) or (a >> 25) is not (a >> n) or (b << 25) is not (b << n) or (b >> 25) is not (b >> n)
+			wrong++;
+		;;
+		n is 26;
+		if (a << 26) is not (a << n) or (a >> 26) is not (a >> n) or (b << 26) is not (b << n) or (b >> 26) is not (b >> n)
+			wrong++;
+		;;
+		n is 27;
+		if (a << 27) is not (a << n) or (a >> 27) is not (a >> n) or (b << 27) is not (b << n) or (b >> 27) is not (b >> n)
+			wrong++;
+		;;
+		n is 28;
+		if (a << 28) is not (a << n) or (a >> 28) is not (a >> n) or (b << 28) is not (b << n) or (b >> 28) is not (b >> n)
+			wrong++;
+		;;
+		n is 29;
+		if (a << 29) is not (a << n) or (a >> 29) is not (a >> n) or (b << 29) is not (b << n) or (b >> 29) is not (b >> n)
+			wrong++;
+		;;
+		n is 30;
+		if (a << 30) is not (a << n) or (a >> 30) is not (a >> n) or (b << 30) is not (b << n) or (b >> 30) is not (b >> n)
+			wrong++;
+		;;
+		n is 31;
+		if (a << 31) is not (a << n) or (a >> 31) is not (a >> n) or (b << 31) is not (b << n) or (b >> 31) is not (b >> n)
+			wrong++;
+		;;
+		n is 32;
+		if (a << 32) is not (a << n) or (a >> 32) is not (a >> n) or (b << 32) is not (b << n) or (b >> 32) is not (b >> n)
+			wrong++;
+		;;
+		n is 33;
+		if (a << 33) is not (a << n) or (a >> 33) is not (a >> n) or (b << 33) is not (b << n) or (b >> 33) is not (b >> n)
+			wrong++;
+		;;
+		n is 34;
+		if (a << 34) is not (a << n) or (a >> 34) is not (a >> n) or (b << 34) is not (b << n) or (b >> 34) is not (b >> n)
+			wrong++;
+		;;
+		n is 35;
+		if (a << 35) is not (a << n) or (a >> 35) is not (a >> n) or (b << 35) is not (b << n) or (b >> 35) is not (b >> n)
+			wrong++;
+		;;
+		n is 36;
+		if (a << 36) is not (a << n) or (a >> 36) is not (a >> n) or (b << 36) is not (b << n) or (b >> 36) is not (b >> n)
+			wrong++;
+		;;
+		n is 37;
+		if (a << 37) is not (a << n) or (a >> 37) is not (a >> n) or (b << 37) is not (b << n) or (b >> 37) is not (b >> n)
+			wrong++;
+		;;
+		n is 38;
+		if (a << 38) is not (a << n) or (a >> 38) is not (a >> n) or (b << 38) is not (b << n) or (b >> 38) is not (b >> n)
+			wrong++;
+		;;
+		n is 39;
+		if (a << 39) is not (a << n) or (a >> 39) is not (a >> n) or (b << 39) is not (b << n) or (b >> 39) is not (b >> n)
+			wrong++;
+		;;
+		n is 40;
+		if (a << 40) is not (a << n) or (a >> 40) is not (a >> n) or (b << 40) is not (b << n) or (b >> 40) is not (b >> n)
+			wrong++;
+		;;
+		n is 41;
+		if (a << 41) is not (a << n) or (a >> 41) is not (a >> n) or (b << 41) is not (b << n) or (b >> 41) is not (b >> n)
+			wrong++;
+		;;
+		n is 42;
+		if (a << 42) is not (a << n) or (a >> 42) is not (a >> n) or (b << 42) is not (b << n) or (b >> 42) is not (b >> n)
+			wrong++;
+		;;
+		n is 43;
+		if (a << 43) is not (a << n) or (a >> 43) is not (a >> n) or (b << 43) is not (b << n) or (b >> 43) is not (b >> n)
+			wrong++;
+		;;
+		n is 44;
+		if (a << 44) is not (a << n) or (a >> 44) is not (a >> n) or (b << 44) is not (b << n) or (b >> 44) is not (b >> n)
+			wrong++;
+		;;
+		n is 45;
+		if (a << 45) is not (a << n) or (a >> 45) is not (a >> n) or (b << 45) is not (b << n) or (b >> 45) is not (b >> n)
+			wrong++;
+		;;
+		n is 46;
+		if (a << 46) is not (a << n) or (a >> 46) is not (a >> n) or (b << 46) is not (b << n) or (b >> 46) is not (b >> n)
+			wrong++;
+		;;
+		n is 47;
+		if (a << 47) is not (a << n) or (a >> 47) is not (a >> n) or (b << 47) is not (b << n) or (b >> 47) is not (b >> n)
+			wrong++;
+		;;
+		n is 48;
+		if (a << 48) is not (a << n) or (a >> 48) is not (a >> n) or (b << 48) is not (b << n) or (b >> 48) is not (b >> n)
+			wrong++;
+		;;
+		n is 49;
+		if (a << 49) is not (a << n) or (a >> 49) is not (a >> n) or (b << 49) is not (b << n) or (b >> 49) is not (b >> n)
+			wrong++;
+		;;
+		n is 50;
+		if (a << 50) is not (a << n) or (a >> 50) is not (a >> n) or (b << 50) is not (b << n) or (b >> 50) is not (b >> n)
+			wrong++;
+		;;
+		n is 51;
+		if (a << 51) is not (a << n) or (a >> 51) is not (a >> n) or (b << 51) is not (b << n) or (b >> 51) is not (b >> n)
+			wrong++;
+		;;
+		n is 52;
+		if (a << 52) is not (a << n) or (a >> 52) is not (a >> n) or (b << 52) is not (b << n) or (b >> 52) is not (b >> n)
+			wrong++;
+		;;
+		n is 53;
+		if (a << 53) is not (a << n) or (a >> 53) is not (a >> n) or (b << 53) is not (b << n) or (b >> 53) is not (b >> n)
+			wrong++;
+		;;
+		n is 54;
+		if (a << 54) is not (a << n) or (a >> 54) is not (a >> n) or (b << 54) is not (b << n) or (b >> 54) is not (b >> n)
+			wrong++;
+		;;
+		n is 55;
+		if (a << 55) is not (a << n) or (a >> 55) is not (a >> n) or (b << 55) is not (b << n) or (b >> 55) is not (b >> n)
+			wrong++;
+		;;
+		n is 56;
+		if (a << 56) is not (a << n) or (a >> 56) is not (a >> n) or (b << 56) is not (b << n) or (b >> 56) is not (b >> n)
+			wrong++;
+		;;
+		n is 57;
+		if (a << 57) is not (a << n) or (a >> 57) is not (a >> n) or (b << 57) is not (b << n) or (b >> 57) is not (b >> n)
+			wrong++;
+		;;
+		n is 58;
+		if (a << 58) is not (a << n) or (a >> 58) is not (a >> n) or (b << 58) is not (b << n) or (b >> 58) is not (b >> n)
+			wrong++;
+		;;
+		n is 59;
+		if (a << 59) is not (a << n) or (a >> 59) is not (a >> n) or (b << 59) is not (b << n) or (b >> 59) is not (b >> n)
+			wrong++;
+		;;
+		n is 60;
+		if (a << 60) is not (a << n) or (a >> 60) is not (a >> n) or (b << 60) is not (b << n) or (b >> 60) is not (b >> n)
+			wrong++;
+		;;
+		n is 61;
+		if (a << 61) is not (a << n) or (a >> 61) is not (a >> n) or (b << 61) is not (b << n) or (b >> 61) is not (b >> n)
+			wrong++;
+		;;
+		n is 62;
+		if (a << 62) is not (a << n) or (a >> 62) is not (a >> n) or (b << 62) is not (b << n) or (b >> 62) is not (b >> n)
+			wrong++;
+		;;
+		n is 63;
+		if (a << 63) is not (a << n) or (a >> 63) is not (a >> n) or (b << 63) is not (b << n) or (b >> 63) is not (b >> n)
+			wrong++;
+		;;
+	;;
+	debug 'wrong: ' wrong '\n';
+
+	# a few written out, to see
+	u64 x: 0x0123456789ABCDEF;
+	i64 y: -81985529216486896;
+	debug (x << 4) ' ' (x << 32) ' ' (x << 36) ' ' (x >> 4) ' ' (x >> 32) ' ' (x >> 48) ' ' (x >> 63) '\n';
+	debug (y << 4) ' ' (y << 32) ' ' (y >> 4) ' ' (y >> 32) ' ' (y >> 48) ' ' (y >> 63) '\n';
+
+	# a constant on the right of the other math
+	debug (x + 0xFFFFFFFF) ' ' (x - 0x100000000) ' ' (x & 0x0000FFFFFFFFFFFF) ' ' (x | 0xF000000000000000) ' ' (x ^ 0xFFFFFFFFFFFFFFFF) ' ' (x * 3) '\n';
+	debug (x > 0x0123456789ABCDEE) (x < 0x0123456789ABCDF0) (x is 0x0123456789ABCDEF) (y < 0) (y > -81985529216486897) '\n';
+}

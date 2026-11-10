@@ -1,0 +1,190 @@
+# A when whose values are numbers close together goes by one jump through a table (32- and
+# 64-bit code) instead of a comparison for each: every value must reach its own branch, a
+# number between two values or outside them all must reach else (or nothing). The 16-bit run
+# compares one at a time, and shows the answers.
+enum.Step
+{
+	WAIT
+	LOAD
+	RUN
+	SAVE
+	STOP
+	LOST
+}
+
+phi.WhenTable:Library
+{
+	# every number from below the lowest to above the highest
+	while int n: -3; n < 20; n++;
+		debug (Kind: n) ' ';
+	;;
+	debug '\n';
+
+	# values that start below zero, and far ones (which are compared, not looked up)
+	while int n: -8; n < 4; n++;
+		debug (Below: n) ' ';
+	;;
+	debug (Far: 1) (Far: 1000) (Far: 1000000) (Far: 7) '\n';
+
+	# a u32 subject past 2 billion, a chr and an enum
+	debug (Unsigned: 3) (Unsigned: 4000000000) (Unsigned: 4294967295) ' ' (Letter: 'c') (Letter: 'g') (Letter: 'z') (Letter: 'A') ' ';
+	debug (Next: Step.WAIT) (Next: Step.RUN) (Next: Step.STOP) (Next: Step.LOST) '\n';
+
+	# without an else, a number that isn't there does nothing; in a loop, with variables in
+	# registers and a break out of a branch
+	int total: 0;
+	while int i: 0; i < 40; i++;
+		when i % 9
+			is 0
+				total++ 1;
+			;;
+			is 1 2
+				total++ 10;
+			;;
+			is 4
+				total++ 100;
+			;;
+			is 6
+				if i > 30 break;
+				total++ 1000;
+			;;
+			is 7
+				total++ 10000;
+			;;
+		;;
+	;;
+	debug total '\n';
+
+	[Kind: int n: 0;]
+		int result: 0;
+		when n
+			is 0
+				result is 100;
+			;;
+			is 1
+				result is 101;
+			;;
+			is 2 3 5
+				result is 235;
+			;;
+			is 7
+				result is 107;
+			;;
+			is 9
+				result is 109;
+			;;
+			is 12
+				result is 112;
+			;;
+			is 15
+				return 115;
+			;;
+			else
+				result is 0 - n;
+			;;
+		;;
+	[end: result]
+
+	[Below: int n: 0;]
+		when n
+			is -5
+				return 1;
+			;;
+			is -4
+				return 2;
+			;;
+			is -2
+				return 3;
+			;;
+			is 0
+				return 4;
+			;;
+			is 1
+				return 5;
+			;;
+			is 2
+				return 6;
+			;;
+		;;
+	[end: 0]
+
+	[Far: int n: 0;]
+		when n
+			is 1
+				return 1;
+			;;
+			is 1000
+				return 2;
+			;;
+			is 1000000
+				return 3;
+			;;
+			is 5
+				return 4;
+			;;
+			is 6
+				return 5;
+			;;
+		;;
+	[end: 9]
+
+	[Unsigned: u32 n: 0;]
+		when n
+			is 1
+				return 1;
+			;;
+			is 2
+				return 2;
+			;;
+			is 3
+				return 3;
+			;;
+			is 4
+				return 4;
+			;;
+			is 5
+				return 5;
+			;;
+		;;
+	[end: 0]
+
+	[Letter: chr c: 'a';]
+		when c
+			is 'a' 'e'
+				return 1;
+			;;
+			is 'b'
+				return 2;
+			;;
+			is 'c' 'd'
+				return 3;
+			;;
+			is 'g'
+				return 4;
+			;;
+			is 'h'
+				return 5;
+			;;
+		;;
+	[end: 0]
+
+	[Next: Step now: Step.WAIT;]
+		when now
+			is Step.WAIT
+				return 1;
+			;;
+			is Step.LOAD
+				return 2;
+			;;
+			is Step.RUN
+				return 3;
+			;;
+			is Step.SAVE
+				return 4;
+			;;
+			is Step.STOP
+				return 5;
+			;;
+		;;
+	[end: 0]
+}

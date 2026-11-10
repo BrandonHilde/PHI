@@ -629,7 +629,7 @@ namespace Phi.Compiler.CodeGen
                     continue;
                 }
                 Comment($"---- class {cls.Name} ({FileName(file)})");
-                foreach (Stmt s in cls.Body) EmitStatement(s);
+                foreach (Stmt s in cls.Body) EmitClassStatement(s);
             }
 
             if (debugInfo != null)
@@ -880,7 +880,7 @@ namespace Phi.Compiler.CodeGen
             {
                 file = cls.File;
                 Comment($"---- class {cls.Name} ({FileName(file)})");
-                foreach (Stmt s in cls.Body) EmitStatement(s);
+                foreach (Stmt s in cls.Body) EmitClassStatement(s);
             }
             Emit("ret");
 
@@ -1261,6 +1261,8 @@ namespace Phi.Compiler.CodeGen
 
         static readonly System.Text.RegularExpressions.Regex StackRegisters = new(@"\be(sp|bp)\b");
         static readonly System.Text.RegularExpressions.Regex PushPop = new(@"^(push|pop)\s+e(ax|bx|cx|dx|si|di|sp|bp)\b");
+        // (a register variable, pushed whole: its top half is zero, and what takes it reads 32 bits)
+        static readonly System.Text.RegularExpressions.Regex PushVariable = new(@"^push\s+(‹r1[2-5])d›");
         static readonly System.Text.RegularExpressions.Regex LeaInto = new(@"^lea\s+e(ax|bx|cx|dx|si|di)\b");
         static readonly System.Text.RegularExpressions.Regex MemoryOperand = new(@"\[[^\]]*\]");
         static readonly System.Text.RegularExpressions.Regex Register32 = new(@"\be(ax|bx|cx|dx|si|di)\b");
@@ -1279,6 +1281,7 @@ namespace Phi.Compiler.CodeGen
             string s = MemoryOperand.Replace(instruction, m => Register32.Replace(m.Value, "r$1"));
             s = StackRegisters.Replace(s, "r$1");
             s = PushPop.Replace(s, "$1 r$2");
+            s = PushVariable.Replace(s, "push $1›");
             s = LeaInto.Replace(s, "lea r$1");
             if (s.StartsWith("push dword ")) s = "push qword " + s["push dword ".Length..];
             else if (s.StartsWith("pushfd")) s = "pushfq" + s[6..];
@@ -1434,7 +1437,7 @@ namespace Phi.Compiler.CodeGen
             addressTaken.Clear();
             foreach (Node n in m.Decl.Body.SelectMany(SyntaxWalker.Nodes))
                 if (n is AddrExpr { Operand: NameExpr { Symbol: VariableSymbol taken } }) addressTaken.Add(taken);
-            List<VariableSymbol> chosen = bits32 && !bits64 && debugInfo == null
+            List<VariableSymbol> chosen = bits32 && debugInfo == null
                 ? VariablePlanner.Choose(m, VariableRegisters.Length, FitsRegister, RunsInRegisters)
                 : new List<VariableSymbol>();
             Frame frame = LayOutFrame(m);
@@ -1445,7 +1448,9 @@ namespace Phi.Compiler.CodeGen
                 debugMethod.Variables.AddRange(m.Parameters.Concat(m.Locals).Select(DebugVariableOf));
                 debugInfo.Methods.Add(debugMethod);
             }
-            for (int i = 0; i < chosen.Count; i++) inRegisters.Add((chosen[i], VariableRegisters[i], chosen[i].Label));
+            // (a pointer, in 64-bit code, is in all of its register)
+            for (int i = 0; i < chosen.Count; i++)
+                inRegisters.Add((chosen[i], WholeVariable(chosen[i]) ? Whole(VariableRegisters[i]) : VariableRegisters[i], chosen[i].Label));
             bool keepsRegisters = inRegisters.Count > 0;
 
             resultSlots.Clear();
@@ -1559,20 +1564,20 @@ namespace Phi.Compiler.CodeGen
                 ? VariableRegisters.Where(r => MayChange(start + bodyText, r)).ToList()
                 : new List<string>();
             if (hasFrame) EmitFrameSetup();
-            foreach (string register in saved) Emit($"push {register}                ; the caller's");
+            foreach (string register in saved) Emit($"push {Whole(register)}                ; the caller's");
             code.Append(start);
             foreach (var (v, register, home) in inRegisters)
                 Emit(v.IsParameter ? $"mov {register}, [{home}]   ; {v.Name}" : $"xor {register}, {register}   ; {v.Name}");
             code.Append(bodyText);
             if (hasFrame)
             {
-                for (int i = 0; i < saved.Count; i++) Emit($"mov {R(saved[i])}, [ebp - {frameSize + Slot * (i + 1)}]");
+                for (int i = 0; i < saved.Count; i++) Emit($"mov {Whole(saved[i])}, [ebp - {frameSize + Slot * (i + 1)}]");
                 Emit("mov esp, ebp");
                 Emit("pop ebp");
             }
             else
             {
-                for (int i = saved.Count - 1; i >= 0; i--) Emit($"pop {saved[i]}");
+                for (int i = saved.Count - 1; i >= 0; i--) Emit($"pop {Whole(saved[i])}");
             }
             inRegisters.Clear();
 
@@ -1702,13 +1707,42 @@ namespace Phi.Compiler.CodeGen
         // ================================================================ variables in registers
 
         /// <summary>
-        /// The registers a method's variables may live in (32-bit code only). A method that uses
+        /// The registers a method's variables may live in (32-bit code's; 64-bit code's are below). A method that uses
         /// them saves them first and puts them back before it returns, so they're kept across calls
         /// to other methods. Everything else (library routines, asm blocks, str copies) may change
         /// them, so a statement that needs one of those runs with the variables in memory: they're
         /// stored to their places in the frame before it, and loaded again after it.
         /// </summary>
-        static readonly string[] VariableRegisters = { "esi", "edi" };
+        string[] VariableRegisters => bits64 ? VariableRegisters64 : VariableRegisters32;
+        static readonly string[] VariableRegisters32 = { "esi", "edi" };
+
+        /// <summary>
+        /// 64-bit code's: the low halves of r12 to r15, which every system's own calls keep too. A
+        /// variable in one is a 32-bit number; writing it clears the register's top half, so the
+        /// whole register is the number when it isn't negative (see <see cref="IndexRegister"/>).
+        /// </summary>
+        static readonly string[] VariableRegisters64 = { "r12d", "r13d", "r14d", "r15d" };
+
+        /// <summary>All of a variable's register, to push, pop and put back: r12 for r12d.</summary>
+        string Whole(string register) => bits64 ? register.TrimEnd('d') : register;
+
+        /// <summary>Holds a register variable's number as 64 bits, sign and all, to be an index (64-bit code).</summary>
+        const string IndexScratch = "r11";
+
+        /// <summary>
+        /// An index held in a register variable, as an address can use it. In 32-bit code that's
+        /// the register. In 64-bit code an address takes whole registers: the variable's own
+        /// when the number can't be negative here (it's unsigned, or was just checked against a
+        /// limit), and otherwise r11, given the number with its sign.
+        /// </summary>
+        string IndexRegister(string held, Expr index, bool knownPositive)
+        {
+            if (!bits64) return held;
+            string whole = held.Replace("d›", "›");
+            if (knownPositive || !index.Type.IsSigned) return whole;
+            Emit($"movsxd {IndexScratch}, {held}");
+            return IndexScratch;
+        }
 
         /// <summary>The method's variables in registers, with their places in the frame.</summary>
         readonly List<(VariableSymbol Variable, string Register, string Home)> inRegisters = new();
@@ -1769,9 +1803,135 @@ namespace Phi.Compiler.CodeGen
             Line(FenceEnd);
         }
 
+        // ---------------------------------------------------------------- a class's own loops
+
+        /// <summary>
+        /// The class variables something other than the classes' own statements can reach: a
+        /// method names it (which an interrupt, another thread or another core may be running),
+        /// an asm block names it, or its address is taken. These stay in memory always.
+        /// </summary>
+        HashSet<VariableSymbol>? sharedVariables;
+
+        HashSet<VariableSymbol> SharedVariables()
+        {
+            if (sharedVariables != null) return sharedVariables;
+            var shared = new HashSet<VariableSymbol>();
+
+            void Reach(Symbol? symbol)
+            {
+                switch (symbol)
+                {
+                    case VariableSymbol v: shared.Add(v); break;
+                    case FieldPathSymbol f: shared.Add(f.Root); break;
+                    case SelfFieldSymbol f: shared.Add(f.Self); break;
+                    case PathSymbol path: shared.Add(path.Root); break;
+                    case LengthSymbol length:
+                        if (length.Open != null) shared.Add(length.Open);
+                        if (length.Str != null) shared.Add(length.Str);
+                        break;
+                }
+            }
+
+            // every variable a method names, in any way
+            foreach (MethodSymbol m in unit.Methods.Concat(unit.ForeignEntries))
+            {
+                if (m.Decl == null) continue;
+                var nodes = m.Decl.Parameters.Cast<Stmt>().Concat(m.Decl.Body).SelectMany(SyntaxWalker.Nodes)
+                    .Concat(m.Decl.Result != null ? SyntaxWalker.Nodes(m.Decl.Result) : Enumerable.Empty<Node>());
+                foreach (Node n in nodes)
+                    if (n is NameExpr name) Reach(name.Symbol);
+            }
+
+            // in the classes' own statements: one whose address is taken, or that an atomic step
+            // or a while each (which reach it by address) works on
+            foreach (Node n in unit.Classes.SelectMany(c => c.Body).SelectMany(SyntaxWalker.Nodes))
+            {
+                if (n is AddrExpr { Operand: NameExpr taken }) Reach(taken.Symbol);
+                if (n is AtomicStmt { Target: NameExpr step }) Reach(step.Symbol);
+                if (n is AtomicExpr { Target: NameExpr swapped }) Reach(swapped.Symbol);
+                if (n is WhileEachStmt each)
+                {
+                    if (each.Index.Symbol != null) shared.Add(each.Index.Symbol);
+                    if (each.Element.Symbol != null) shared.Add(each.Element.Symbol);
+                }
+            }
+
+            // {name} or {name.field} in an asm block (or its label, written out)
+            foreach (RawBlockDecl raw in unit.RawBlocks)
+            {
+                var named = System.Text.RegularExpressions.Regex.Matches(raw.Text, @"\{\s*([A-Za-z_][A-Za-z_0-9]*)")
+                    .Select(m => m.Groups[1].Value).ToHashSet();
+                foreach (VariableSymbol v in unit.Variables)
+                    if (named.Contains(v.Name) || v.Label.Length > 0 && raw.Text.Contains(v.Label))
+                        shared.Add(v);
+            }
+
+            return sharedVariables = shared;
+        }
+
+        /// <summary>
+        /// A statement of a class's own code. A while there keeps the class variables it uses
+        /// most in registers while it runs (32- and 64-bit code), when nothing else can reach
+        /// them meanwhile (<see cref="SharedVariables"/>, and never a volatile one): they're
+        /// loaded before the loop and stored after it, so the memory is right whenever anything
+        /// else runs, and inside it the rules are a method's (fences, and the same check).
+        /// </summary>
+        void EmitClassStatement(Stmt s)
+        {
+            if (s is not WhileStmt loop || !bits32 || debugInfo != null || currentMethod != null || inRegisters.Count > 0)
+            {
+                EmitStatement(s);
+                return;
+            }
+
+            HashSet<VariableSymbol> shared = SharedVariables();
+            var candidates = new HashSet<VariableSymbol>();
+            foreach (Node n in SyntaxWalker.Nodes(loop))
+            {
+                VariableSymbol? v = n switch
+                {
+                    NameExpr { Symbol: VariableSymbol named } => named,
+                    VarDecl { Symbol: VariableSymbol declared } => declared,
+                    _ => null,
+                };
+                if (v != null && !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile
+                    && !shared.Contains(v) && FitsRegister(v))
+                    candidates.Add(v);
+            }
+            List<VariableSymbol> chosen = VariablePlanner.Choose(candidates, new List<Stmt> { loop }, null, VariableRegisters.Length, RunsInRegisters);
+            if (chosen.Count == 0)
+            {
+                EmitStatement(s);
+                return;
+            }
+
+            for (int i = 0; i < chosen.Count; i++)
+                inRegisters.Add((chosen[i], WholeVariable(chosen[i]) ? Whole(VariableRegisters[i]) : VariableRegisters[i], chosen[i].Label));
+            Comment("(in registers for this loop: " + string.Join(", ", inRegisters.Select(r => $"{r.Variable.Name} in {r.Register}")) + ")");
+            LoadRegisters();
+
+            StringBuilder outer = code;
+            code = new StringBuilder();
+            SetRegistersLive(true);
+            EmitStatement(loop);
+            SetRegistersLive(false);
+            string body = CheckRegisterCode("a class's loop", code.ToString());
+            code = outer;
+            code.Append(body);
+
+            StoreRegisters();
+            inRegisters.Clear();
+        }
+
         /// <summary>A variable that can live in a register: a 32-bit number, enum or pointer.</summary>
         bool FitsRegister(VariableSymbol v) =>
-            v.Type.IsNumeric && StorageType(v.Type).ElementSize == 4 && v.Ownership == Ownership.None && v.Decl.AtAddress == null;
+            v.Type.IsNumeric && (StorageType(v.Type).ElementSize == 4 || WholeVariable(v)) && v.Ownership == Ownership.None && v.Decl.AtAddress == null;
+
+        /// <summary>A pointer in 64-bit code: 8 bytes, so in a register it's the whole register (r12, not r12d).</summary>
+        bool WholeVariable(VariableSymbol v) => bits64 && v.Type.IsPointer && StorageType(v.Type).ElementSize == 8;
+
+        /// <summary>True for a whole 64-bit register that a variable is in.</summary>
+        static bool IsWhole(string register) => register.StartsWith("‹r") && !register.EndsWith("d›");
 
         /// <summary>A value that's worked on in eax alone: a number, bln, chr, enum or pointer.</summary>
         static bool OneRegister(PhiType t) => t.IsNumeric;
@@ -1798,7 +1958,8 @@ namespace Phi.Compiler.CodeGen
             ConstDecl or BreakStmt or ContinueStmt => true,
             VarDecl { Symbol.NeedsInitCode: false } => true,
             VarDecl { IsNew: false, Symbol: VariableSymbol v } d => OneRegister(v.Type) && d.Values.Count <= 1 && d.Values.All(SafeValue),
-            AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value),
+            AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value)
+                            || WideCopy(a.Target, a.Value) && SafePlace(a.Target) && SafePlace(a.Value),
             CallStmt c => SafeCall(c.Resolved, c.Arguments)
                           && (c.ResultTarget == null || OneRegister(c.ResultTarget.Type) && SafeValue(c.ResultTarget)),
             ReturnStmt r => r.Value == null || OneRegister(r.Value.Type) && resultType.IsNumeric && SafeValue(r.Value),
@@ -1859,7 +2020,9 @@ namespace Phi.Compiler.CodeGen
         /// Checks a method's code: outside fences, nothing may use esi or edi except as the
         /// variables they hold, and no variable in a register may be read from memory.
         /// </summary>
-        string CheckRegisterCode(MethodSymbol m, string body)
+        string CheckRegisterCode(MethodSymbol m, string body) => CheckRegisterCode(m.Name, body);
+
+        string CheckRegisterCode(string where, string body)
         {
             var kept = new StringBuilder();
             bool fenced = false;
@@ -1869,9 +2032,9 @@ namespace Phi.Compiler.CodeGen
                 if (text == FenceStart) { fenced = true; continue; }
                 if (text == FenceEnd) { fenced = false; continue; }
                 if (!fenced && !text.Contains("it stops here") && System.Text.RegularExpressions.Regex.IsMatch(WithoutComment(text), StrayRegister))
-                    throw new InvalidOperationException($"{m.Name}: generated code changes a variable's register: {text.Trim()}");
+                    throw new InvalidOperationException($"{where}: generated code changes a variable's register: {text.Trim()}");
                 if (text.Contains('«'))
-                    throw new InvalidOperationException($"{m.Name}: generated code reads a variable in a register from memory: {text.Trim()}");
+                    throw new InvalidOperationException($"{where}: generated code reads a variable in a register from memory: {text.Trim()}");
                 kept.Append(text.Replace("‹", "").Replace("›", "")).Append('\n');
             }
             return kept.ToString();
@@ -1886,13 +2049,15 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         static bool MayChange(string code, string register)
         {
-            string itself = register == "esi" ? "movs|lods|cmps" : "movs|stos|cmps|scas";
-            var pattern = new System.Text.RegularExpressions.Regex($@"\b{register}\b|\b({itself})[bwd]\b|\bcall (?!M_)");
+            // (nothing uses r12 to r15 by itself)
+            string itself = register == "esi" ? "movs|lods|cmps" : register == "edi" ? "movs|stos|cmps|scas" : "(?!)";
+            string named = register.StartsWith('r') ? register.TrimEnd('d') + "[dwb]?" : register;
+            var pattern = new System.Text.RegularExpressions.Regex($@"\b{named}\b|\b({itself})[bwd]\b|\bcall (?!M_)");
             return code.Split('\n').Any(line => pattern.IsMatch(WithoutComment(line)));
         }
 
         /// <summary>esi or edi named outside a ‹›, an instruction that uses them itself, or a library routine.</summary>
-        const string StrayRegister = @"(?<!‹)\b(esi|edi)\b|\b(rep|repe|repne|movs[bwd]|stos[bwd]|lods[bwd]|cmps[bwd]|scas[bwd]|pushad|popad)\b|\bcall phi_";
+        const string StrayRegister = @"(?<!‹)\b(esi|edi|r1[2-5][dwb]?)\b|\b(rep|repe|repne|movs[bwd]|stos[bwd]|lods[bwd]|cmps[bwd]|scas[bwd]|pushad|popad)\b|\bcall phi_";
 
         sealed class Frame
         {
@@ -3426,6 +3591,9 @@ namespace Phi.Compiler.CodeGen
         bool CanInline(MethodSymbol m)
         {
             if (m.Decl.IsCompiled) return false;   // its code is in its library
+            // (not in 64-bit code yet. EmitInline can do it, and the tests pass with it on, but
+            // measured on weblib's tests it made the programs 42% bigger and no faster, at this
+            // limit or at 8, 14 or 20 nodes: an inlined method's parameters are still in memory.)
             if (debugInfo != null || !bits32 || bits64 || m == currentMethod || inlining.Contains(m) || inlining.Count >= 2) return false;
             if (!inlinable.TryGetValue(m, out bool can))
             {
@@ -3488,16 +3656,31 @@ namespace Phi.Compiler.CodeGen
                 VariableSymbol p = m.Parameters[i];
                 Expr? value = i < arguments.Count ? arguments[i] : p.Decl.Values.FirstOrDefault();
 
+                // (in 64-bit code a pointer is 8 bytes: its room, and its register, are whole ones)
+                bool whole = WholeVariable(p);
                 if (value is NameExpr { Symbol: VariableSymbol given } && !changed.Contains(p)
-                    && StorageType(given.Type).ElementSize == 4 && StorageType(p.Type).ElementSize == 4
+                    && (whole ? WholeVariable(given) : StorageType(given.Type).ElementSize == 4 && StorageType(p.Type).ElementSize == 4)
                     && inRegisters.FirstOrDefault(r => r.Variable == given) is { Variable: not null } held && registersLive)
                 {
                     places.Add((p, held.Home, held.Register));
                     continue;
                 }
 
-                string slot = AllocTemp(4);
-                if (value == null) Emit($"mov dword [{slot}], 0");
+                string slot = AllocTemp(whole ? 8 : 4);
+                if (whole)
+                {
+                    // (a constant goes in as a pointer's does anywhere: one that fits in 32 bits as
+                    // it is, a bigger one through eax, which clears the top)
+                    if (value == null) Emit($"mov qword [{slot}], 0");
+                    else if (ConstantFolder.Evaluate(value) is long k && k is >= int.MinValue and <= int.MaxValue)
+                        Emit($"mov qword [{slot}], {(int)k}");
+                    else
+                    {
+                        EmitExpr(value);
+                        Emit($"mov qword [{slot}], rax");
+                    }
+                }
+                else if (value == null) Emit($"mov dword [{slot}], 0");
                 else if (DirectOperand(value, constantOnly: false) is string asIs && !asIs.Contains('['))
                     Emit($"mov dword [{slot}], {asIs}");
                 else
@@ -3509,8 +3692,8 @@ namespace Phi.Compiler.CodeGen
             }
             foreach (VariableSymbol v in m.Locals)
             {
-                string slot = AllocTemp(4);
-                if (!v.Decl.Values.Any() && !v.NeedsInitCode) Emit($"mov dword [{slot}], 0");   // starts at zero, as it would
+                string slot = AllocTemp(WholeVariable(v) ? 8 : 4);
+                if (!v.Decl.Values.Any() && !v.NeedsInitCode) Emit($"mov {(WholeVariable(v) ? "qword" : "dword")} [{slot}], 0");   // starts at zero, as it would
                 places.Add((v, slot, null));
             }
 
@@ -3881,6 +4064,8 @@ namespace Phi.Compiler.CodeGen
 
                 case NameExpr { Symbol: SelfFieldSymbol s }:
                     // through the struct the method was called on
+                    if (bits64 && RegisterOf(s.Self) is string self)
+                        return new Place { Computed = true, Linear = true, Base = self, Offset = s.Offset };
                     Emit(bits64 ? $"mov rbx, qword [{s.Self.Label}]" : $"mov ebx, {VariableOperand(s.Self)}");
                     return new Place { Computed = true, Linear = true, Offset = s.Offset };
 
@@ -3893,7 +4078,7 @@ namespace Phi.Compiler.CodeGen
                     if (RegisterOf(path.Root) is string rootRegister && path.BaseOffset == 0)
                     {
                         if (path.Hops.Count == 1) return new Place { Computed = true, Linear = true, Base = rootRegister, Offset = path.Hops[0] };
-                        Emit($"mov ebx, {rootRegister}");
+                        Emit($"mov {R("ebx")}, {rootRegister}");
                     }
                     else Emit($"{loadAddress} {Operand(new Place { Label = path.Root.Label, Offset = path.BaseOffset })}");
                     for (int i = 0; i < path.Hops.Count - 1; i++)
@@ -3940,8 +4125,8 @@ namespace Phi.Compiler.CodeGen
                 if ((proved || unsafeDepth > 0) && size is 1 or 2 or 4 or 8 && HeldIn(ix.Index) is string heldIndex)
                 {
                     // known to be in range, with the index in a register: [elements + i*size]
-                    Emit($"mov ebx, [{open.Label}]");
-                    return new Place { Computed = true, Linear = true, Index = heldIndex, Scale = size };
+                    Emit($"mov {R("ebx")}, {Q} [{open.Label}]");
+                    return new Place { Computed = true, Linear = true, Index = IndexRegister(heldIndex, ix.Index, proved), Scale = size };
                 }
                 EmitExpr(ix.Index);
                 if (unsafeDepth == 0 && !proved) EmitIndexCheck(ix, "jb", $"dword [{open.Label} + {ViewCount}]");
@@ -4047,8 +4232,43 @@ namespace Phi.Compiler.CodeGen
                 // eax keeps the value being stored (as PlaceKeepsEax says)
                 if (PointerElementKeepsEax(ix))
                 {
+                    // (the pointer may be in a register variable, and so may the index: [p + i*size])
+                    string address = HeldIn(ix.Target) ?? "ebx";
+                    if (address == "ebx") TryLoadSimple(ix.Target, "ebx", dryRun: false);
+                    return constant != null
+                        ? new Place { Computed = true, Linear = true, Base = address, Offset = (int)constant.Value * size }
+                        : new Place { Computed = true, Linear = true, Base = address, Index = IndexRegister(HeldIn(ix.Index)!, ix.Index, knownPositive: false), Scale = size };
+                }
+                // the pointer in a register variable, and an index worked out: one lea
+                if (target.IsPointer && constant == null && size is 1 or 2 or 4 or 8 && HeldIn(ix.Target) is string heldPointer)
+                {
+                    EmitExpr(ix.Index);
+                    if (ix.Index.Type.IsSigned) Emit("movsxd rax, eax");
+                    else Emit("mov eax, eax");
+                    Emit($"lea rbx, [{heldPointer} + rax*{size}]");
+                    return new Place { Computed = true, Linear = true };
+                }
+                // a pointer and an index that are each one load: the two, then one lea, with
+                // nothing on the stack
+                if (target.IsPointer && constant == null && size is 1 or 2 or 4 or 8
+                    && TryLoadSimple(ix.Target, "ebx", dryRun: true) && TryLoadSimple(ix.Index, "eax", dryRun: true))
+                {
                     TryLoadSimple(ix.Target, "ebx", dryRun: false);
-                    return new Place { Computed = true, Linear = true, Offset = (int)constant!.Value * size };
+                    TryLoadSimple(ix.Index, "eax", dryRun: false);
+                    if (ix.Index.Type.IsSigned) Emit("movsxd rax, eax");
+                    Emit($"lea rbx, [rbx + rax*{size}]");
+                    return new Place { Computed = true, Linear = true };
+                }
+                // a pointer that's one load, and an index that calls nothing (which could change
+                // it): the index first, then the pointer straight into rbx, and one lea
+                if (target.IsPointer && constant == null && size is 1 or 2 or 4 or 8 && ix.CheckLimit == null
+                    && TryLoadSimple(ix.Target, "ebx", dryRun: true) && !HasCall(ix.Index))
+                {
+                    EmitExpr(ix.Index);
+                    Emit(ix.Index.Type.IsSigned ? "movsxd rax, eax" : "mov eax, eax");
+                    TryLoadSimple(ix.Target, "ebx", dryRun: false);
+                    Emit($"lea rbx, [rbx + rax*{size}]");
+                    return new Place { Computed = true, Linear = true };
                 }
                 EmitExpr(ix.Target);
                 if (constant != null)
@@ -4058,7 +4278,9 @@ namespace Phi.Compiler.CodeGen
                 }
                 Emit("push rax");
                 EmitIndexValue(ix, size);
-                Emit("movsxd rax, eax");
+                // (an int may be negative, and reaches before the pointer; a u32 never is, so one
+                // of 2^31 or more reaches past it, not before)
+                Emit(ix.Index.Type.IsSigned ? "movsxd rax, eax" : "mov eax, eax");
                 Emit("pop rbx");
                 Emit("add rbx, rax");
                 return new Place { Computed = true, Linear = true };
@@ -4150,15 +4372,24 @@ namespace Phi.Compiler.CodeGen
             // the index in a register variable: [array + i*size], once it's checked
             if (!p.Computed && size is 1 or 2 or 4 or 8 && HeldIn(ix.Index) is string index)
             {
-                if (ix.CheckLimit is int checkedLimit && unsafeDepth == 0 && !ProvedInRange(ix)) EmitIndexCheck(ix, "jb", checkedLimit.ToString(), index);
+                bool proved = ProvedInRange(ix);
+                bool check = ix.CheckLimit is int && unsafeDepth == 0 && !proved;
+                if (check) EmitIndexCheck(ix, "jb", ix.CheckLimit!.Value.ToString(), index);
                 p.Computed = true;
-                p.Index = index;
+                p.Index = IndexRegister(index, ix.Index, knownPositive: check || proved);
                 p.Scale = size;
                 return p;
             }
 
             if (p.Computed)
             {
+                // (an address reached through a register variable goes into ebx first, which the
+                // index is then added to)
+                if (p.Linear && (p.Base != "ebx" || p.Index != null))
+                {
+                    Emit($"lea ebx, {Operand(p)}");
+                    p = new Place { Computed = true, Linear = true };
+                }
                 Emit("push ebx");
                 EmitIndexValue(ix, size);
                 Emit("pop ebx");
@@ -4198,7 +4429,31 @@ namespace Phi.Compiler.CodeGen
             string otherwise = when.Else != null ? NewLabel("whenelse") : end;
             var bodies = when.Branches.Select(_ => NewLabel("whenis")).ToList();
 
-            if (t.IsFloat)
+            if (!text && DenseWhen(when) is var (lowest, highest) && highest >= lowest)
+            {
+                // numbers close together (an interpreter's opcodes, a state's enum): one jump
+                // through a table of where each goes, however many there are. A number that's
+                // there twice goes to its first branch, as the comparisons in order would.
+                var targets = new Dictionary<long, string>();
+                for (int i = 0; i < when.Branches.Count; i++)
+                    foreach (Expr value in when.Branches[i].Values)
+                        targets.TryAdd((int)ConstantFolder.Evaluate(value)!.Value, bodies[i]);
+                string table = NewLabel("whentable");
+                EmitExpr(when.Subject);
+                if (lowest != 0) Emit($"sub eax, {lowest}");
+                Emit($"cmp eax, {highest - lowest}");
+                Emit($"ja {otherwise}              ; unsigned, so one below the lowest goes there too");
+                if (bits64)
+                {
+                    Line("    mov eax, eax");
+                    Line($"    jmp qword [{table} + rax*8]");
+                }
+                else Emit($"jmp dword [{table} + eax*4]");
+                Label(table);
+                for (long v = lowest; v <= highest; v++)
+                    Line($"    {(bits64 ? "dq" : "dd")} {targets.GetValueOrDefault(v, otherwise)}");
+            }
+            else if (t.IsFloat)
             {
                 EmitFloat(when.Subject);
                 Emit($"fstp qword [{subject}]");
@@ -4215,6 +4470,7 @@ namespace Phi.Compiler.CodeGen
                 // (text is an address: all of it in 64-bit code)
                 Emit(text && bits64 ? $"mov qword [{subject}], rax" : $"mov dword [{subject}], eax");
             }
+            bool byTable = !text && DenseWhen(when) is var (first, last) && last >= first;
             if (when.Branches.Any(b => b.Struct != null))
             {
                 // which struct the interface value holds, from the type table just before it
@@ -4222,7 +4478,7 @@ namespace Phi.Compiler.CodeGen
                 Emit($"jz {otherwise}              ; empty: it holds nothing");
                 Emit("mov eax, [eax - 4]");
             }
-            for (int i = 0; i < when.Branches.Count; i++)
+            for (int i = 0; i < when.Branches.Count && !byTable; i++)
             {
                 if (when.Branches[i].Struct is StructSymbol type)
                 {
@@ -4276,7 +4532,7 @@ namespace Phi.Compiler.CodeGen
                     }
                 }
             }
-            Emit($"jmp {otherwise}");
+            if (!byTable) Emit($"jmp {otherwise}");
 
             for (int i = 0; i < when.Branches.Count; i++)
             {
@@ -4290,6 +4546,27 @@ namespace Phi.Compiler.CodeGen
                 foreach (Stmt s in when.Else) EmitStatement(s);
             }
             Label(end);
+        }
+
+        /// <summary>
+        /// The lowest and highest value of a when that goes by a jump table: 32- or 64-bit code,
+        /// a subject that's one number, every value a constant, at least 5 of them, and close
+        /// enough together that the table is no more than three entries a value. Otherwise
+        /// (1, 0), and the values are compared one at a time.
+        /// </summary>
+        (long Lowest, long Highest) DenseWhen(WhenStmt when)
+        {
+            PhiType t = when.Subject.Type;
+            if (!bits32 || !t.IsNumeric || t.IsWide || t.IsFloat || t.IsTextPointer || when.Branches.Any(b => b.Struct != null)) return (1, 0);
+            var values = new HashSet<long>();
+            foreach (Expr value in when.Branches.SelectMany(b => b.Values))
+            {
+                if (ConstantFolder.Evaluate(value) is not long k) return (1, 0);
+                values.Add((int)k);
+            }
+            if (values.Count < 5) return (1, 0);
+            long lowest = values.Min(), highest = values.Max();
+            return highest - lowest < 3L * values.Count && highest - lowest < 4096 ? (lowest, highest) : (1, 0);
         }
 
         /// <summary>Stops on an index error unless the index (in eax) passes the unsigned jump against limit.</summary>
@@ -4650,6 +4927,20 @@ namespace Phi.Compiler.CodeGen
             }
             if (target.Type.IsWide)
             {
+                if (WideCopy(target, value))
+                {
+                    // 64-bit code: one 64-bit number from its place to another, in rax whole
+                    Emit($"mov rax, qword {Operand(EmitPlace(value))}");
+                    if (PlaceKeepsEax(target)) Emit($"mov qword {Operand(PlaceKeepingEax(target))}, rax");
+                    else
+                    {
+                        Emit("push rax");
+                        string to = Operand(EmitPlace(target));
+                        Emit("pop rax");
+                        Emit($"mov qword {to}, rax");
+                    }
+                    return;
+                }
                 EmitWide(value);
                 EmitWideStore(target);
                 return;
@@ -4732,6 +5023,30 @@ namespace Phi.Compiler.CodeGen
             if (target.Type.IsString) EmitStringStore(target, sourceIsString: IsText(value.Type));
             else EmitStoreEax(target);
         }
+
+        /// <summary>
+        /// True for x is y in 64-bit code with both 64-bit numbers kept somewhere (a variable, a
+        /// field or an element): the copy is one load and one store of the whole number.
+        /// </summary>
+        bool WideCopy(Expr target, Expr value) =>
+            bits64 && target.Type.IsWide && value.Type.IsWide && KeptSomewhere(target) && KeptSomewhere(value);
+
+        static bool KeptSomewhere(Expr e) => e is
+            NameExpr { Call: null, Symbol: VariableSymbol { TextRef: false, Grows: false } or FieldPathSymbol or SelfFieldSymbol or PathSymbol }
+            or MemberExpr { Call: null, Count: null, FilledLength: false, TextLength: false }
+            or IndexExpr;
+
+        /// <summary>
+        /// A place whose address is worked out with the variables in registers, whatever is kept
+        /// there (SafeValue asks the same of a value that's one register).
+        /// </summary>
+        bool SafePlace(Expr e) => e switch
+        {
+            NameExpr { Call: null, Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol } => true,
+            MemberExpr { Call: null } m => !m.FilledLength && !m.TextLength && SafeRoot(m.Target),
+            IndexExpr ix => !ix.Target.Type.IsString && SafeRoot(ix.Target) && SafeValue(ix.Index),
+            _ => false,
+        };
 
         /// <summary>Stores eax into a number variable, field or element.</summary>
         void EmitStoreEax(Expr target)
@@ -5490,6 +5805,13 @@ namespace Phi.Compiler.CodeGen
         /// all 64 bits, so storing it in a pointer keeps the address whole). Never in 32-bit code,
         /// where an address and a number are the same size.
         /// </summary>
+        /// <summary>A pointer kept in a variable, as an instruction's operand in 64-bit code: its register, or its 8 bytes of memory.</summary>
+        string? PointerOperand(Expr e) =>
+            bits64 && e is NameExpr { Call: null, Symbol: VariableSymbol { Grows: false, TextRef: false } v }
+            && v.Type.IsPointer && !v.Type.IsArray && !v.Type.Open && StorageType(v.Type).ElementSize == 8
+                ? RegisterOf(v) ?? $"qword [{v.Label}]"
+                : null;
+
         bool IsAddress(Expr e) => bits64 && e switch
         {
             _ when e.Type.IsPointer && !e.Type.IsArray => true,
@@ -5503,10 +5825,19 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitAddressOperands(BinaryExpr b)
         {
-            EmitExpr(b.Right);
-            Emit("push rax");
-            EmitExpr(b.Left);
-            Emit("pop rcx");
+            if (TryLoadSimple(b.Right, "ecx", dryRun: true))
+            {
+                // (a right side that's one load goes straight into rcx, with nothing on the stack)
+                EmitExpr(b.Left);
+                TryLoadSimple(b.Right, "ecx", dryRun: false);
+            }
+            else
+            {
+                EmitExpr(b.Right);
+                Emit("push rax");
+                EmitExpr(b.Left);
+                Emit("pop rcx");
+            }
             if (!IsAddress(b.Left)) Emit(b.Left.Type.IsSigned ? "movsxd rax, eax" : "mov eax, eax");
             if (!IsAddress(b.Right)) Emit(b.Right.Type.IsSigned ? "movsxd rcx, ecx" : "mov ecx, ecx");
         }
@@ -5521,6 +5852,7 @@ namespace Phi.Compiler.CodeGen
                 Emit(binary.Op == BinaryOp.Subtract ? "sub rax, rcx" : "add rax, rcx");
                 return;
             }
+            if (TryDivideByConstant(binary, unsigned)) return;
             if (TryDirectArithmetic(binary, unsigned)) return;
             EmitOperands(binary);
 
@@ -5576,6 +5908,90 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>
+        /// x / d and x % d with d a constant of 2 or more, without the CPU's divide (which takes
+        /// many times longer than a multiply). A power of two is a shift or a mask, with the
+        /// rounding toward zero put right for a signed x. Any other d, in 32- and 64-bit code, is
+        /// a multiply by a number near 2^32 / d and a shift (see <see cref="DivisionMagic"/>);
+        /// 16-bit code keeps the divide, which is shorter. The remainder is x - (x / d) * d.
+        /// Uses eax, ecx and edx, as a divide does. A divisor of 0, 1 or less is left to the
+        /// divide, so dividing by zero is still the CPU's error.
+        /// </summary>
+        bool TryDivideByConstant(BinaryExpr binary, bool unsigned)
+        {
+            if (binary.Op is not (BinaryOp.Divide or BinaryOp.Modulo)) return false;
+            if (ConstantFolder.Evaluate(binary.Right) is not long d || d < 2 || d > (unsigned ? uint.MaxValue : int.MaxValue)) return false;
+            bool modulo = binary.Op == BinaryOp.Modulo;
+            bool powerOfTwo = (d & (d - 1)) == 0;
+            int shift = System.Numerics.BitOperations.Log2((ulong)d);
+            if (!powerOfTwo && !bits32) return false;
+
+            EmitExpr(binary.Left);
+            if (powerOfTwo && unsigned)
+            {
+                Emit(modulo ? $"and eax, {(int)(d - 1)}" : $"shr eax, {shift}");
+                return true;
+            }
+            if (powerOfTwo)
+            {
+                // a negative x rounds toward zero: d - 1 is added to it first (edx is -1 then)
+                Emit("cdq");
+                Emit($"and edx, {(int)(d - 1)}");
+                Emit("add eax, edx");
+                if (modulo)
+                {
+                    Emit($"and eax, {(int)(d - 1)}");
+                    Emit("sub eax, edx");
+                }
+                else Emit($"sar eax, {shift}");
+                return true;
+            }
+
+            if (unsigned)
+            {
+                DivisionMagic.Unsigned magic = DivisionMagic.ForUnsigned((uint)d);
+                // (x is kept for the remainder: in ecx, or on the stack when ecx is needed)
+                if (magic.Add && modulo) Emit("push eax");
+                if (magic.Add || modulo) Emit("mov ecx, eax");
+                Emit($"mov edx, {magic.Multiplier}");
+                Emit($"mul edx                  ; edx = the top half of x * (2^{32 + magic.Shift} / {d}, rounded up)");
+                if (magic.Add)
+                {
+                    Emit("sub ecx, edx");
+                    Emit("shr ecx, 1");
+                    Emit("add edx, ecx");
+                    if (magic.Shift > 1) Emit($"shr edx, {magic.Shift - 1}");
+                    if (modulo) Emit("pop ecx");
+                }
+                else if (magic.Shift > 0) Emit($"shr edx, {magic.Shift}");
+                if (modulo)
+                {
+                    Emit($"imul edx, edx, {(int)d}");
+                    Emit("sub ecx, edx");
+                    Emit("mov eax, ecx");
+                }
+                else Emit("mov eax, edx");
+                return true;
+            }
+
+            DivisionMagic.Signed signed = DivisionMagic.ForSigned((int)d);
+            Emit("mov ecx, eax");
+            Emit($"mov edx, {signed.Multiplier}");
+            Emit($"imul edx                 ; edx = the top half of x * (2^{32 + signed.Shift} / {d})");
+            if (signed.AddDividend) Emit("add edx, ecx");
+            if (signed.Shift > 0) Emit($"sar edx, {signed.Shift}");
+            Emit("mov eax, edx");
+            Emit("shr eax, 31              ; 1 if it's negative: toward zero");
+            Emit("add eax, edx");
+            if (modulo)
+            {
+                Emit($"imul eax, eax, {(int)d}");
+                Emit("sub ecx, eax");
+                Emit("mov eax, ecx");
+            }
+            return true;
+        }
+
+        /// <summary>
         /// The operation with one side used as the instruction's operand, as it is: a constant or a
         /// 32-bit variable (add eax, 5 / cmp eax, dword [x]), instead of loading it into ecx first.
         /// When the left side is the simple one, the right is worked out first. False when neither
@@ -5597,7 +6013,10 @@ namespace Phi.Compiler.CodeGen
             if (right != null)
             {
                 EmitExpr(binary.Left);
-                Emit($"{op} eax, {right}");
+                // (times a power of two is a shift, which is quicker than a multiply)
+                if (binary.Op == BinaryOp.Multiply && ConstantFolder.Evaluate(binary.Right) is long times && times >= 2 && (times & (times - 1)) == 0 && times <= 0x40000000)
+                    Emit($"shl eax, {System.Numerics.BitOperations.Log2((ulong)times)}");
+                else Emit($"{op} eax, {right}");
                 return true;
             }
 
@@ -5710,15 +6129,19 @@ namespace Phi.Compiler.CodeGen
         {
             // a label's address: in 64-bit code worked out from where the code is
             string LabelInto(string label) => bits64 ? $"lea {R(register)}, [rel {label}]" : $"mov {register}, {label}";
+            // (a constant into a pointer's whole register, as it's stored into a pointer in memory:
+            // one that fits in 32 bits with its sign, and a bigger one through the low half, which
+            // clears the top as loading it into eax and storing rax would)
+            string low = IsWhole(register) ? register.Replace("›", "d›") : register;
             string? instruction = ConstantFolder.Evaluate(e) is long k
-                ? (k == 0 ? $"xor {register}, {register}" : $"mov {register}, {(int)k}")
+                ? (k == 0 ? $"xor {low}, {low}" : k is >= int.MinValue and <= int.MaxValue ? $"mov {register}, {(int)k}" : $"mov {low}, {(int)k}")
                 : e switch
                 {
                     StringExpr s => LabelInto(StringLabel(s.Value)),
                     NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false, TextRef: false } v } =>
                         InFrame(v.Label) ? $"lea {register}, [{v.Label}]" : LabelInto(v.Label),
                     NameExpr { Symbol: VariableSymbol { Type.IsNumeric: true } v } =>
-                        RegisterOf(v) is string held ? $"mov {register}, {held}" : LoadInstruction(v.Type, register, $"[{v.Label}]"),
+                        RegisterOf(v) is string held ? $"mov {(IsWhole(held) ? R(register) : register)}, {held}" : LoadInstruction(v.Type, register, $"[{v.Label}]"),
                     NameExpr { Call: null, Symbol: VariableSymbol { Type.IsObject: true } v } =>
                         bits64 ? $"mov {R(register)}, qword [{v.Label}]" : $"mov {register}, dword [{v.Label}]",
                     AddrExpr { CodeLabel: string code } => LabelInto(code),
@@ -5837,9 +6260,25 @@ namespace Phi.Compiler.CodeGen
 
                 case BinaryExpr { IsComparison: true } cmp when IsAddress(cmp.Left) || IsAddress(cmp.Right):
                 {
-                    // two addresses (or an address and a number) in 64 bits, as unsigned numbers
-                    EmitAddressOperands(cmp);
-                    Emit("cmp rax, rcx");
+                    // two addresses (or an address and a number) in 64 bits, as unsigned numbers:
+                    // pointers in variables, and a small constant, compared where they are
+                    string? leftPointer = PointerOperand(cmp.Left);
+                    string? rightPointer = PointerOperand(cmp.Right)
+                        ?? (ConstantFolder.Evaluate(cmp.Right) is long small and >= 0 and <= int.MaxValue ? small.ToString() : null);
+                    if (leftPointer != null && rightPointer != null)
+                    {
+                        if (leftPointer.Contains('[') && rightPointer.Contains('['))
+                        {
+                            Emit($"mov rax, {leftPointer}");
+                            leftPointer = "rax";
+                        }
+                        Emit($"cmp {leftPointer}, {rightPointer}");
+                    }
+                    else
+                    {
+                        EmitAddressOperands(cmp);
+                        Emit("cmp rax, rcx");
+                    }
                     BinaryOp op = jumpIf ? cmp.Op : Invert(cmp.Op);
                     string jump = op switch
                     {
@@ -6235,6 +6674,49 @@ namespace Phi.Compiler.CodeGen
                     }
                     return;
 
+                case BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift
+                    when ConstantFolder.Evaluate(shift.Right) is long places and >= 0 and <= 63:
+                {
+                    // by a constant: the instructions for that many places, with nothing to test
+                    EmitWide(shift.Left);
+                    bool left = shift.Op == BinaryOp.ShiftLeft, unsigned = shift.Type.Kind == TypeKind.U64;
+                    if (places == 0) return;
+                    if (places < 32)
+                    {
+                        if (left)
+                        {
+                            Emit($"shld edx, eax, {places}");
+                            Emit($"shl eax, {places}");
+                        }
+                        else
+                        {
+                            Emit($"shrd eax, edx, {places}");
+                            Emit($"{(unsigned ? "shr" : "sar")} edx, {places}");
+                        }
+                        return;
+                    }
+                    // 32 or more: one half goes to the other, and what's left of the shift is its own
+                    if (left)
+                    {
+                        Emit("mov edx, eax");
+                        if (places > 32) Emit($"shl edx, {places - 32}");
+                        Emit("xor eax, eax");
+                    }
+                    else if (unsigned)
+                    {
+                        Emit("mov eax, edx");
+                        if (places > 32) Emit($"shr eax, {places - 32}");
+                        Emit("xor edx, edx");
+                    }
+                    else
+                    {
+                        Emit("mov eax, edx");
+                        Emit("sar edx, 31");
+                        if (places > 32) Emit($"sar eax, {places - 32}");
+                    }
+                    return;
+                }
+
                 case BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift:
                 {
                     EmitExpr(shift.Right);
@@ -6306,6 +6788,14 @@ namespace Phi.Compiler.CodeGen
         /// <summary>edx:eax = the left side, ebx:ecx = the right.</summary>
         void EmitWideOperands(BinaryExpr b)
         {
+            // (a constant on the right goes straight into ebx:ecx, with nothing on the stack)
+            if (ConstantFolder.Evaluate(b.Right) is long constant)
+            {
+                EmitWide(b.Left);
+                LoadConstant("ecx", (int)constant);
+                LoadConstant("ebx", (int)(constant >> 32));
+                return;
+            }
             EmitWide(b.Right);
             Emit("push edx");
             Emit("push eax");

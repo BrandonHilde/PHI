@@ -1,0 +1,121 @@
+# A while in a class's own code keeps the class variables it uses most in registers while it
+# runs (32- and 64-bit code), but only ones nothing else can reach meanwhile: a variable that
+# a method or an asm block names, a volatile one, and one whose address is taken stay in
+# memory, where the others see them. The 16-bit run (everything in memory) shows the answers.
+phi.ClassLoops:Library
+{
+	int numbers: 3 1 4 1 5 9 2 6;
+	u8 seen[10];
+
+	# the loop's own variables: back in memory, right, once it's done
+	int total: 0;
+	int largest: 0;
+	while int i: 0; i < 8; i++;
+		total++ numbers:i;
+		if numbers:i > largest
+			largest is numbers:i;
+		;;
+		seen:(numbers:i) is 1;
+	;;
+	debug total ' ' largest ' ' i ' ' seen:4 seen:7 seen:9 '\n';
+	debug (Twice: total) '\n';
+
+	# a variable a method changes is in memory: the loop sees each change
+	int shared: 0;
+	int rounds: 0;
+	while shared < 20
+		call Bump: 3;
+		rounds++;
+	;;
+	debug shared ' ' rounds '\n';
+
+	# and one a method reads sees what the loop wrote
+	int level: 0;
+	int read: 0;
+	while int j: 1; j <= 5; j++;
+		level is j * 10;
+		read++ (Level);
+	;;
+	debug read '\n';
+
+	# an asm block's variables too
+	int value: 1;
+	int doubled: 0;
+	int sum: 0;
+	while int k: 0; k < 6; k++;
+		call Double;
+		value is doubled + 1;
+		sum++ doubled;
+	;;
+	debug value ' ' sum '\n';
+
+	# volatile, and through a pointer
+	volatile int ticks: 0;
+	int plain: 0;
+	ptr<int> to_plain: addr plain;
+	int steps: 0;
+	while ticks < 5
+		ticks++;
+		to_plain:0 is to_plain:0 + ticks;
+		steps++ plain;
+	;;
+	debug ticks ' ' plain ' ' steps '\n';
+
+	# loops in loops, more variables than registers, a break, and a log in the middle
+	int a: 0;
+	int b: 0;
+	int c: 0;
+	int d: 0;
+	int e: 0;
+	while int x: 0; x < 6; x++;
+		while int y: 0; y < 6; y++;
+			a++ x;
+			b++ y;
+			c++ x * y;
+			if x * y > 20 break;
+			d++;
+		;;
+		e++ a + b;
+		if x is 3
+			debug 'at 3: ' a ' ' b ' ' c ' ' d ' ' e '\n';
+		;;
+	;;
+	debug a ' ' b ' ' c ' ' d ' ' e '\n';
+
+	# a pointer that walks, and an unsigned counter
+	ptr<int> at_number: numbers;
+	u32 left: 8;
+	int weighted: 0;
+	while left > 0
+		weighted++ at_number:0 * left;
+		at_number is at_number + 4;
+		left--;
+	;;
+	debug weighted '\n';
+
+	[Twice: int n: 0;]
+	[end: n * 2 + total]
+
+	[Bump: int by: 0;]
+		shared++ by;
+	[end]
+
+	[Level]
+	[end: level]
+}
+
+asm.Double
+{
+	mov eax, [{value}]
+	add eax, eax
+	mov [{doubled}], eax
+	ret
+}
+
+x64.Double
+{
+	mov eax, [{value}]
+	add eax, eax
+	mov [{doubled}], eax
+	ret
+}
