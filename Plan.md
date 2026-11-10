@@ -1487,6 +1487,46 @@ folding, and (2) the backend interface, which S10 needs first.
   register for the pointer would make it 19; the rest needs temporary values kept in
   registers too, and 32-bit x86 has seven. The 64-bit backend (S10, sixteen registers) is
   where this is likely to be met.
+- [x] Dividing by a constant without the CPU's divide: `x / d` and `x % d` with `d` a
+  constant of 2 or more are a shift or a mask for a power of two (every kind of code), and
+  a multiply by a number near 2^32 / d and a shift for any other (32- and 64-bit code;
+  16-bit code keeps the divide, which is shorter). Times a power of two is a shift. A loop
+  of `(i / 10) + (i % 8) + i * 5`, 200 million times, as a 64-bit Linux program: 0.48 s to
+  0.19 s with the register variables (gcc -O2 0.11 s). The counts in `phi test --bench` go
+  *up* where this is used (pool alloc 6%, pool free 9%, comparing names 5%), since it's more instructions
+  than one `idiv`, each far quicker: the counts treat them alike, so those baselines were
+  saved again. Tests `divide_constants` (against the divide itself, in the 16-bit run) and
+  `DivisionMagicTests`.
+- [x] `phi fuzz code`: random programs, each written with what it must print, built for
+  every system this computer runs and compared (tests/README.md has the details). It's what
+  S8's (5) was waiting to come with, for the compiler rather than for packets: the register
+  variables, the divisions and the class's loops above were each broken on purpose once to
+  see it notice, and 3000 programs then came out right in 32 and 64 bits. `phi fuzz` with
+  packets, for a kernel, is still S8's.
+- [x] What weblib's JavaScript benchmark showed (`release_js_bench run`, as a 64-bit Linux
+  program: 13.7 s for its 17 loops before, 10.9 s after; the plain loop 74 to 102 million
+  rounds a second). Its time was sampled by attaching gdb again and again, since `phi
+  profile` only samples a kernel in QEMU; over half was in the interpreter's loop:
+  - A `when` whose values are constants close together (5 or more, the table no more than
+    three entries a value) is one jump through a table, in 32- and 64-bit code, instead of
+    a comparison for each: the interpreter's `when op`. Test `when_table`.
+  - `x is y` with both 64-bit numbers kept somewhere is one load and one store of the whole
+    number in 64-bit code (it was two halves, by way of the stack), and such a statement
+    runs with the variables in registers. `p:(a >> 8)`, a pointer in a variable with an
+    index worked out, works the index out first and needs nothing on the stack.
+  - A 64-bit number shifted by a constant has that count's own instructions (it tested the
+    count as it ran), and a 64-bit constant on the right of `+ - & | ^` and comparisons goes
+    straight into its registers. Test `int64_shifts` (every count, against a variable's).
+  - The planner counts a field reached through a pointer (`c.mark`) as a use of the
+    pointer; it counted only the pointer by itself, so one used mostly for its fields
+    seldom got a register (the collector's `MarkCell`).
+  - What's left there is the library's: `pc`, `sp` and `bp` are class variables, which
+    every method shares, so each step reads and writes them in memory.
+- Tried and left out: a value that waits while another is worked out kept in `r8` to `r10`
+  in 64-bit code, in place of a push and a pop. It took away 3% of weblib's pushes and made
+  its tests 1% to 2% faster at most, for a rule about what the code in between may call. The
+  pushes that are left are nearly all arguments (22,000 in `test_js`): passing the first few
+  in registers is where that time is, and it's a change to every call.
 - [ ] (4, last part) constant folding beyond what `ConstantFolder` does now
 - [ ] (2) the backend interface
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
@@ -1933,7 +1973,8 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
   when, log, debug and exit. Anything else is an error saying it isn't in 64-bit programs
   yet (`Check64`), which leaves that test to the other systems; 7 tests run as 64-bit
   Linux programs (`bitwise`, `compare_words`, `if_else`, `math`, `numbers`, `while_loop`,
-  `while_many_iterations`). Register variables and inlining are off in 64-bit code for now.
+  `while_many_iterations`). Register variables and inlining are off in 64-bit code for now
+  (register variables came later: see "register variables" below).
 - [x] (a, second part) arrays of numbers kept in place (fixed and `[atmost N]`: indexes,
   their bounds checks and the index error, `.len`, `.max`, `sizeof`, `++`, `.len is`,
   `while each`), and pointers to numbers (`addr`, `p:i`, `p + n`, comparing, casts,
@@ -2062,6 +2103,32 @@ The order: (a) 64-bit Linux programs, (b) 64-bit Windows programs, (c) 64-bit ke
     were `u32`s; they're pointers now) and `test.bench`'s. Tests `mem` (a library test now,
     so on every system) and `draw_surface` (drawing into memory). The blocks left without
     one are kernels' (the heap, paging, cores and drivers), as kernels stay 32-bit.
+- [x] (a, register variables) A 64-bit method keeps up to four of its most used variables
+  in `r12` to `r15`, chosen by the same planner and fenced by the same rules as 32-bit
+  code's `esi` and `edi`: a 32-bit number in the low half (`r12d`), a pointer in the whole
+  register. An index held in one is part of the address as it is when it can't be negative
+  (unsigned, or just checked), and goes through `r11` with its sign otherwise, so a
+  negative `int` index through a pointer still reaches before it. `p:i` with a pointer and
+  an index that are each one load is one `lea`, pointers in variables are compared where
+  they are, and pointer arithmetic with a simple right side no longer uses the stack. As
+  64-bit Linux programs: a sieve of 5 million 0.62 s to 0.35 s (32-bit 0.35, gcc -O2 0.31),
+  blending a million bytes 100 times 0.30 s to 0.13 s (32-bit 0.14, gcc -O2 0.06), and
+  weblib's `test_js`, `test_js_fuzz` and `test_css_fuzz` 8% to 14% faster at the same
+  size. Test `register_variables`.
+  - Inlining stays off in 64-bit code. `EmitInline` can do it (pointers get 8-byte room)
+    and every test passes with it on, but it made weblib's test programs 42% bigger and no
+    faster, at 40 nodes or at 8, 14 or 20: an inlined method's parameters are in memory.
+  - Found on the way: a number written as text went through one buffer that every thread
+    shared (`phi_int_to_str`, and the 64-bit and float ones), so two threads writing
+    numbers at once could get each other's digits. That was `files_threads_program`'s
+    failure once in a while on 64-bit Linux. Each call has the digits on its own stack
+    now, as the 32-bit runtime's do; the test passed 40 times in a row.
+- [x] (a class's own loops) A `while` in a class's own code keeps the class variables it
+  uses most in registers while it runs, in 32- and 64-bit code: only ones nothing else can
+  reach meanwhile (no method or asm block names them, they aren't `volatile`, and their
+  address isn't taken), loaded before the loop and stored after it. A sieve written in the
+  class itself, as a Linux program: 0.59 s to 0.34 s in 64 bits and 0.58 s to 0.34 s in 32,
+  the same as in a method. Test `class_loops`.
 - [x] (b) `--target windows64`: a PE32+ .exe at 0x400000 (no relocations, so the code's
   32-bit addresses of labels hold), the same generated code as a 64-bit Linux program, and
   a runtime of its own (`lib/x86_64_windows/`: kernel32's functions called the x64 way, in
@@ -2827,6 +2894,17 @@ done: played on both, 2026-11-03.) Sound is built too, and the rest of H7, the G
      `samples/code.phi`, which is a real one. What the test tools make when they run is there
      too: a load client's network, Machine and LoadSettings, and the TestWeb of a test with a
      NAME.web folder.
+   - [x] One build shows every mistake: with a syntax error, `phi build` and `phi check` used
+     to stop at the syntax errors, so the type errors and unknown names only showed once those
+     were fixed. Now the rest of the program is checked too, and its errors are shown beside
+     them, but never one a line the parser gave up on could have caused: an error on or next
+     to such a line, one that names something such a line names (and then what that error's
+     own line and method name, and so on), an "unknown" one whose name is written elsewhere
+     in the file, and nothing at all when the line was a heading, a block's start or end, a
+     `use`, a constant or in a struct. Measured by spoiling one line at a time in the tests
+     and samples that build by themselves: 721 spoiled lines, and no error that wasn't
+     there but for one line replaced whole by nonsense. An editor still gets the syntax
+     errors alone while code is half written. Tests `ErrorsTogetherTests`.
    - [ ] In the server too, so other editors get them and they come from the compiler: hover,
      finding every use of a name, renaming (the extension's scanner does these for now), and a
      program's other systems: a program is checked for one system (PHI OS unless what it uses
