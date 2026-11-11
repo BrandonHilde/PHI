@@ -1578,9 +1578,15 @@ and every program wrapped it or wrote its own.
   its programs had no structs at all. Broken on purpose to see it notice: a field's
   element reached through self with the address in the wrong register (41 programs in 100
   wrong), and a template's types given in the wrong order (67 in 100).
-- [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), methods that
-  take types of their own, and templates in a compiled library (its interface is written
-  from the source's text, which a made struct has none of).
+- [x] Templates in a compiled library. Its interface has each of its templates whole, with
+  the methods' code (a method is otherwise only its header there), so a program that uses
+  the library makes its own structs from it, and their code is the program's, as it is from
+  source. The interface also lists every struct the library had made (`struct.MadeFor...`,
+  a pointer field each), its own templates' and the standard library's, so the program
+  makes those too: that's where the library's calls to their methods go. Tests
+  `library_generic_program` and `TemplateTests`.
+- [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), and methods
+  that take types of their own.
 - [ ] The editor: the language server and the VS Code grammar don't know the new syntax.
 
 #### Phase S7: Interfaces

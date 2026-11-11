@@ -3907,9 +3907,13 @@ namespace Phi.Compiler.Semantics
             // value, picked here, where the kind is known. It's what lets a struct that takes
             // types (a Map<Key Value>) hash a key without knowing what a Key is.
             bool hashed = false;
-            if (structMethod == null && calleeName == "Hash.Of" && arguments.Count == 1 && FindCallee("Hash.Of", scope) == null)
+            if (structMethod == null && calleeName == "Hash.Of" && FindCallee("Hash.Of", scope) == null)
             {
-                BindExpr(arguments[0], scope);
+                if (arguments.Count != 1)
+                {
+                    Error(calleeSpan, $"Hash.Of takes one value, and was given {arguments.Count}; for one text built from parts, put them in parentheses: (Hash.Of: (first second))");
+                    return null;
+                }
                 PhiType kind = arguments[0].Type;
                 if (kind.IsError) return null;
                 string? method = kind.IsString || kind.IsTextPointer ? "Hash.OfText"

@@ -1,0 +1,21 @@
+# library: library_src/crates.phi
+# A compiled library can hold a struct that takes types, and use them inside its code. The
+# struct is in the library's interface whole, so this program makes its own structs from it
+# (a Crate<u8> the library never made), and makes the ones the library's code calls too.
+use crates;
+
+phi.LibraryGeneric:Program
+{
+	# the library's own use of them, inside a method
+	log (Crates.Pack: 4) ' ' (Crates.Pack: 9) ' ' Crates.packed '\n';
+
+	# the library's struct, for a type of this program's choosing
+	new Crate<u8> small;
+	call small.Add: 7;
+	call small.Add: 200;
+	log (small.Last) ' ' small.added ' ' (small.Weighed) '\n';
+
+	# and the one the library made too: the same struct, one copy of its code
+	new Crate<int> wide;
+	log (wide.Add: 100000) ' ' (wide.Last) '\n';
+}

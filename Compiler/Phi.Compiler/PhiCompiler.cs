@@ -271,12 +271,6 @@ namespace Phi.Compiler
 
             ProgramNode syntax = ParseWithUses(file, null, diagnostics, usedBy, uses, files, null, platform.Host, false, platform, loaded);
             var own = loaded.Where(f => f.Compiled == null && !f.Path.StartsWith(StandardLibrary)).ToList();
-            // (a compiled library is its files' declarations, written out as they are in the
-            // source; a struct made from a template has no source of its own to write)
-            foreach (StructTemplate template in syntax.Templates.Where(t => own.Contains(t.File)))
-                diagnostics.Error(template.File, template.NameSpan, $"a compiled library can't hold a struct that takes types yet ({template.Name}); a program can use this file's source instead");
-            foreach (TemplateUse use in syntax.TemplateUses.Where(u => own.Contains(u.File)).Take(1))
-                diagnostics.Error(use.File, use.Span, $"a compiled library can't use a struct that takes types yet ({use.FullName})");
             if (diagnostics.HasErrors)
                 return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, platform.Host, null), Syntax = syntax, Uses = uses, Files = files };
 

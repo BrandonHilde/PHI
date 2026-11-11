@@ -1083,9 +1083,11 @@ both.first is 310;
   method nobody uses isn't found until someone does, beyond its syntax.
 - **`data.map`'s `Map<Key Value>` is one**, with `data.hash`'s `Hash.Of: key` to find a
   key's place whatever kind of key it is (see [the library's data modules](#memory-32-bit-kernels)).
-- **Not yet:** methods that take types of their own, a type that must have an interface
-  (`<Item has Ordered>`), and structs that take types in a compiled library (a program
-  uses such a file's source instead).
+- **In a compiled library** a struct that takes types is kept whole, code and all: a
+  program that uses the library makes its own structs from it (`Crate<u8>`, though the
+  library only ever made a `Crate<int>`), and their code is the program's.
+- **Not yet:** methods that take types of their own, and a type that must have an
+  interface (`<Item has Ordered>`).
 
 ### Interfaces
 

@@ -63,7 +63,9 @@ namespace Phi.Compiler.Syntax
                     return;
                 }
                 // (read from a copy of the template's file: see DiagnosticBag.CopyOf)
-                var copy = new SourceFile(template.File.Path, template.File.Text) { Compiled = template.File.Compiled };
+                // (a template from a compiled library's interface is there whole, and the struct
+                // made from it is this program's own code, not the library's)
+                var copy = new SourceFile(template.File.Path, template.File.Text);
                 diagnostics.CopyOf(copy, template.File,
                     $" (in {use.FullName}, which line {use.File.GetLocation(use.Span.Start).Line} of {Path.GetFileName(use.File.Path)} uses)");
                 Parser.Instantiate(template, use.Arguments, use.FullName, program, copy);

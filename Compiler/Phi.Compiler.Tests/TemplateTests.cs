@@ -151,6 +151,12 @@ namespace Phi.Compiler.Tests
             var hash = result.Bound!.Program!.Methods.Where(m => m.Name.StartsWith("Hash.Of")).ToList();
             Assert.All(new[] { "Hash.OfNumber", "Hash.OfText", "Hash.OfWide" }, name => Assert.Contains(hash, m => m.Name == name && (m.UsedOutsideMethods || m.UsedBy.Count > 0)));
 
+            // a value that's wrong is said to be once, and more than one value isn't a hash of anything
+            CompileResult outside = Compile("use data.hash;\n\nphi.T:Program\n{\n\tint n: 1 2 3;\n\tlog (Hash.Of: n:7);\n}\n");
+            Assert.Single(outside.Diagnostics, d => d.Message.Contains("index 7 is outside"));
+            CompileResult two = Compile("use data.hash;\n\nphi.T:Program\n{\n\tlog (Hash.Of: 1 2);\n}\n");
+            Assert.Contains(two.Diagnostics, d => d.Message.Contains("Hash.Of takes one value, and was given 2"));
+
             CompileResult real = Compile("use data.hash;\n\nphi.T:Program\n{\n\tf64 r: 1.5;\n\tlog (Hash.Of: r);\n}\n");
             Assert.Contains(real.Diagnostics, d => d.Message.Contains("Hash.Of has no hash for"));
             CompileResult missing = Compile("phi.T:Program\n{\n\tlog (Hash.Of: 5);\n}\n");
@@ -158,11 +164,21 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
-        public void ACompiledLibraryCantHoldOneYet()
+        public void ACompiledLibrarysInterfaceHasItsTemplatesWholeAndTheStructsItHadMade()
         {
-            var file = new SourceFile(Path.GetFullPath("lib.phi"), Stack + "phi.Lib:Library\n{\n\t[One]\n\t[end: 1]\n}\n");
+            var file = new SourceFile(Path.GetFullPath("lib.phi"),
+                Stack + "phi.Lib:Library\n{\n\t[One]\n\t\tnew Stack<int> s;\n\t[end: (s.Push: 1)]\n}\n");
             CompileResult result = PhiCompiler.CompileLibrary(file, Libraries.LibraryPlatform.All.First(p => p.Host == Host.Linux64), "lib");
-            Assert.Contains(result.Diagnostics, d => d.Message.Contains("a compiled library can't hold a struct that takes types yet (Stack)"));
+            Assert.True(result.Success, Errors(result));
+            string text = result.Units.Single().Library!.Target.Interface.Last().Text;
+            // the template with its methods' code, for a program to make its own structs from
+            Assert.Contains("struct.Stack<Item>", text);
+            Assert.Contains("items++ item;", text);
+            // and what the library's own code calls, which a program must make too
+            Assert.Contains("ptr<Stack<int>> made0;", text);
+            // the library holds none of a made struct's code: it's the program's
+            Assert.DoesNotContain("M_Stack_of_int_Push:", result.Units.Single().Text);
+            Assert.Contains("M_Stack_of_int_Push", result.Units.Single().Text);
         }
 
         [Fact]

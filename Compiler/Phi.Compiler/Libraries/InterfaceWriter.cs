@@ -55,6 +55,25 @@ namespace Phi.Compiler.Libraries
                 if (s.IsInterface) WriteInterface(sb, s);
                 else WriteStruct(sb, s, program);
 
+            // a struct that takes types is written whole, with its methods' code: the structs made
+            // from it are the code of whatever program uses them, as they'd be from its source
+            foreach (StructTemplate t in program.Templates.Where(t => t.File == file))
+                sb.AppendLine(Text(file, t.Text));
+
+            // and with the library's main file, every struct the library had made from a
+            // template, its own or the standard library's: named here, a program makes them
+            // too, which is where the library's calls to their methods go
+            if (file == own[^1])
+            {
+                var made = program.Structs.Select(s => s.Name).Where(n => n.Contains('<')).Distinct().ToList();
+                if (made.Count > 0)
+                {
+                    sb.AppendLine($"struct.{UsesName(file)}\n{{");
+                    for (int i = 0; i < made.Count; i++) sb.AppendLine($"\tptr<{made[i]}> made{i};");
+                    sb.AppendLine("}");
+                }
+            }
+
             foreach (ClassDecl c in program.Classes.Where(c => c.File == file && c.ForStruct == null))
             {
                 sb.AppendLine($"phi.{c.Name}:{c.Base}\n{{");
@@ -71,6 +90,10 @@ namespace Phi.Compiler.Libraries
             }
             return sb.ToString();
         }
+
+        /// <summary>The name of the struct that lists what a library had made from templates (see WriteFile).</summary>
+        static string UsesName(SourceFile main) =>
+            "MadeFor" + CompiledTarget.LabelName(Path.GetFileNameWithoutExtension(main.Path));
 
         static void WriteInterface(StringBuilder sb, StructDecl s)
         {

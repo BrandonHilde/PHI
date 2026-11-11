@@ -1,0 +1,42 @@
+# A library with a struct that takes types of its own, which also uses one of the standard
+# library's (data.map's Map) inside its methods: see library_generic_program.phi.
+use data.map;
+
+struct.Crate<Item>
+{
+	Item items[];
+	int added;
+
+	[Add: Item item;]
+		items++ item;
+		added++;
+	[end: items.len]
+
+	[Last]
+	[end: items:(items.len - 1)]
+
+	# (a method of a template can call the library's own)
+	[Weighed]
+	[end: (Crates.Weigh: items.len)]
+}
+
+phi.Crates:Library
+{
+	const int EACH: 12;
+	int packed: 0;
+
+	# a Crate<int> and a Map<str int> that nothing outside ever sees
+	[Pack: int count: 0;]
+		new Crate<int> crate;
+		new Map<str int> names;
+		while int i: 0; i < count; i++;
+			call crate.Add: i * 10;
+		;;
+		call names.Set: 'first' (crate.Last);
+		call names.Set: 'added' crate.added;
+		packed++;
+	[end: (names.Get: 'first' 0) + (names.Get: 'added' 0) + (names.Count)]
+
+	[Weigh: int things: 0;]
+	[end: things * EACH]
+}

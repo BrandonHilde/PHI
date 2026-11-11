@@ -511,6 +511,13 @@ namespace Phi.Compiler.Syntax
         }
 
         /// <summary>
+        /// True where a method is only its header: in a compiled library's interface. But a
+        /// struct that takes types is there whole, code and all, since each program that uses the
+        /// library makes its own structs from it.
+        /// </summary>
+        bool CompiledHeader => file.Compiled != null && placeholders == null && given == null;
+
+        /// <summary>
         /// struct.Stack&lt;Item&gt; { ... }: read once here for its syntax, with Item a type nothing is
         /// known about, and kept as a template. It becomes a struct for each use (Instantiate).
         /// </summary>
@@ -524,6 +531,7 @@ namespace Phi.Compiler.Syntax
             placeholders = template.Parameters.Select(p => p.Name).ToHashSet();
             try { ParseStruct(start, name, new ProgramNode { File = file }); }
             finally { placeholders = null; }
+            template.Text = Span.FromBounds(start.Span.Start, Previous.Span.End);
         }
 
         /// <summary>&lt;Key Value&gt; after a struct's name: the names its types go by.</summary>
@@ -805,7 +813,7 @@ namespace Phi.Compiler.Syntax
                     // what it returns, after a second ':' (a compiled library's says a little more)
                     if (Accept(TokenKind.Colon))
                     {
-                        if (file.Compiled != null) ParseCompiledResult(method);
+                        if (CompiledHeader) ParseCompiledResult(method);
                         else method.DeclaredResult = ParseType();
                         break;
                     }
@@ -820,7 +828,7 @@ namespace Phi.Compiler.Syntax
             Expect(TokenKind.CloseBracket, "']' to close the method header");
 
             // a compiled library's method is only this header: its code is in the library
-            if (file.Compiled != null)
+            if (CompiledHeader)
             {
                 method.IsCompiled = true;
                 method.End = Previous.Span.End;

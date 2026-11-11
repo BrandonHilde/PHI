@@ -225,6 +225,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Where its `struct` is among the file's tokens.</summary>
         public int StartToken { get; init; }
+
+        /// <summary>All of it in the file, from `struct` to its closing brace: a compiled library's interface has it whole.</summary>
+        public Span Text { get; set; }
     }
 
     /// <summary>Stack&lt;int&gt; where a type goes: the struct's name, the types given, and the whole as a type's name.</summary>
