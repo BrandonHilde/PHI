@@ -151,6 +151,15 @@ namespace Phi.Cli
             public uint[] In(Machine m, uint[] frame) => m.Arrays[Fixed != null ? Fixed.Slot : (int)frame[PointerSlot]];
         }
 
+        /// <summary>A Box&lt;int&gt; or Box&lt;u32&gt; class variable: what it keeps, its eight slots, and how often it was set.</summary>
+        sealed class Box
+        {
+            public string Name = "";
+            public Kind Kind;
+            public int Slot;
+            public const int Kept = 0, Slots = 1, Sets = 9, Size = 10;
+        }
+
         sealed class Method
         {
             public string Name = "";
@@ -169,13 +178,64 @@ namespace Phi.Cli
             public List<ArrayInfo> Arrays = new();
             public List<Method> Methods = new();
             public List<Stmt> Main = new();
+            public List<Box> Boxes = new();
+
+            /// <summary>
+            /// The structs every program has: one that takes a type, with fields, an array and
+            /// methods that work on them through self, and one that takes two and is only fields.
+            /// </summary>
+            const string Structs = """
+                struct.Box<Item>
+                {
+                	Item kept;
+                	Item slots[8];
+                	int sets;
+
+                	[Set: Item value;]
+                		kept is value;
+                		sets++;
+                	[end]
+
+                	[Add: Item value;]
+                		kept++ value;
+                	[end]
+
+                	[Get]
+                	[end: kept]
+
+                	[Store: int place; Item value;]
+                		slots:(place & 7) is value;
+                	[end]
+
+                	[Load: int place;]
+                	[end: slots:(place & 7)]
+
+                	[Sum]
+                		Item total: 0;
+                		while int i: 0; i < 8; i++;
+                			total++ slots:i;
+                		;;
+                	[end: total + kept]
+                }
+
+                struct.Pair<First Second>
+                {
+                	First first;
+                	Second second;
+                }
+
+
+                """;
 
             public string Print()
             {
                 var sb = new StringBuilder();
                 sb.Append("# Made by phi fuzz code: what it prints is worked out as it's written.\n");
+                sb.Append(Structs.Replace("\r\n", "\n"));
                 sb.Append("phi.Fuzz:Program\n{\n");
-                foreach (Variable v in Globals.Where(g => !g.Name.StartsWith("idx")))
+                foreach (Box b in Boxes) sb.Append($"\tBox<{(b.Kind == Kind.Int ? "int" : "u32")}> {b.Name};\n");
+                sb.Append("\tPair<int u32> duo;\n\tPair<u32 int> turned;\n");
+                foreach (Variable v in Globals.Where(g => !g.Name.StartsWith("idx") && !g.Name.Contains('.')))
                     sb.Append($"\t{(v.Kind == Kind.Int ? "int" : "u32")} {v.Name}: {Literal(v.Kind, v.Start, bare: true)};\n");
                 foreach (ArrayInfo a in Arrays) sb.Append($"\t{a.TypeName} {a.Name}[{a.Length}];\n");
                 sb.Append('\n');
@@ -212,6 +272,7 @@ namespace Phi.Cli
         {
             public readonly uint[] Globals;
             public readonly uint[][] Arrays;
+            public readonly uint[][] Boxes;
             public readonly StringBuilder Output = new();
             public int Steps;
 
@@ -220,6 +281,7 @@ namespace Phi.Cli
                 Globals = new uint[tree.Globals.Count];
                 foreach (Variable v in tree.Globals) Globals[v.Slot] = v.Start;
                 Arrays = tree.Arrays.Select(a => new uint[a.Length]).ToArray();
+                Boxes = tree.Boxes.Select(_ => new uint[Box.Size]).ToArray();
             }
 
             public void Step()
@@ -312,6 +374,64 @@ namespace Phi.Cli
                 return Method.Result!.Value(m, callee);
             }
             public override string Print() => $"({Method.Name}{PrintArguments(Arguments, Pointers)})";
+        }
+
+        /// <summary>(box.Get), (box.Sum), (box.Load: place) and box.sets: what a Box holds, read through its methods.</summary>
+        sealed class BoxRead : Expr
+        {
+            public Box Box = null!;
+            public string What = "";        // Get, Sum, Load, sets
+            public Expr? Place;
+            public override uint Value(Machine m, uint[] frame)
+            {
+                m.Step();
+                uint[] box = m.Boxes[Box.Slot];
+                switch (What)
+                {
+                    case "Get": return box[Box.Kept];
+                    case "sets": return box[Box.Sets];
+                    case "Load": return box[Box.Slots + (Place!.Value(m, frame) & 7)];
+                    default:
+                        uint total = 0;
+                        for (int i = 0; i < 8; i++) total = unchecked(total + box[Box.Slots + i]);
+                        return unchecked(total + box[Box.Kept]);
+                }
+            }
+            public override string Print() =>
+                What == "sets" ? $"{Box.Name}.sets" : $"({Box.Name}.{What}{(Place != null ? PrintArguments(new List<Expr> { Place }, new List<ArrayRef>()) : "")})";
+            public override bool Simple => What == "sets";
+        }
+
+        /// <summary>call box.Set: value; call box.Add: value; call box.Store: place value;</summary>
+        sealed class BoxWrite : Stmt
+        {
+            public Box Box = null!;
+            public string What = "";
+            public Expr? Place;
+            public Expr Value = null!;
+            public override void Run(Machine m, uint[] frame)
+            {
+                m.Step();
+                uint[] box = m.Boxes[Box.Slot];
+                uint place = Place?.Value(m, frame) ?? 0;
+                uint value = Value.Value(m, frame);
+                switch (What)
+                {
+                    case "Set":
+                        box[Box.Kept] = value;
+                        box[Box.Sets]++;
+                        break;
+                    case "Add": box[Box.Kept] = unchecked(box[Box.Kept] + value); break;
+                    default: box[Box.Slots + (place & 7)] = value; break;
+                }
+            }
+            public override void Print(StringBuilder sb, int depth)
+            {
+                var arguments = new List<Expr>();
+                if (Place != null) arguments.Add(Place);
+                arguments.Add(Value);
+                sb.Append(Tabs(depth)).Append($"call {Box.Name}.{What}{PrintArguments(arguments, new List<ArrayRef>())};\n");
+            }
         }
 
         static uint[] Enter(Machine m, uint[] frame, Method method, List<Expr> arguments, List<ArrayRef> pointers)
@@ -522,7 +642,7 @@ namespace Phi.Cli
             public override void Print(StringBuilder sb, int depth)
             {
                 sb.Append(Tabs(depth)).Append($"log '{Tag}'");
-                foreach (Expr e in Values) sb.Append(" ' ' ").Append(e.Simple ? e.Print() : e is Binary or Call or As ? e.Print() : $"({e.Print()})");
+                foreach (Expr e in Values) sb.Append(" ' ' ").Append(e.Simple ? e.Print() : e is Binary or Call or As or BoxRead ? e.Print() : $"({e.Print()})");
                 sb.Append(" '\\n';\n");
             }
         }
@@ -571,7 +691,14 @@ namespace Phi.Cli
                 // ones no method names: a loop in the class's own code may keep these in registers
                 for (int i = 0; i < 4; i++) tree.Globals.Add(new Variable { Name = $"own{i}", Kind = Kind.Int, Global = true, Own = true, Start = SomeNumber(Kind.Int) });
                 for (int i = 0; i < 2; i++) tree.Globals.Add(new Variable { Name = $"mine{i}", Kind = Kind.U32, Global = true, Own = true, Start = SomeNumber(Kind.U32) });
+                // the fields of two Pairs, which are variables like any other but for their names
+                tree.Globals.Add(new Variable { Name = "duo.first", Kind = Kind.Int, Global = true });
+                tree.Globals.Add(new Variable { Name = "duo.second", Kind = Kind.U32, Global = true });
+                tree.Globals.Add(new Variable { Name = "turned.first", Kind = Kind.U32, Global = true });
+                tree.Globals.Add(new Variable { Name = "turned.second", Kind = Kind.Int, Global = true });
                 for (int i = 0; i < tree.Globals.Count; i++) tree.Globals[i].Slot = i;
+                tree.Boxes.Add(new Box { Name = "numbers", Kind = Kind.Int, Slot = 0 });
+                tree.Boxes.Add(new Box { Name = "counts", Kind = Kind.U32, Slot = 1 });
                 tree.Arrays.Add(new ArrayInfo { Name = "ints", Kind = ArrayKind.Int, Length = 16, Slot = 0 });
                 tree.Arrays.Add(new ArrayInfo { Name = "words", Kind = ArrayKind.U32, Length = 8, Slot = 1 });
                 tree.Arrays.Add(new ArrayInfo { Name = "bytes", Kind = ArrayKind.U8, Length = 32, Slot = 2 });
@@ -586,6 +713,17 @@ namespace Phi.Cli
 
                 // at the end, everything there is: each class variable, and each array added up
                 tree.Main.Add(new Log { Tag = $"end", Values = tree.Globals.Where(g => !g.Name.StartsWith("idx")).Select(g => (Expr)new Read { Variable = g, Kind = g.Kind }).ToList() });
+                foreach (Box b in tree.Boxes)
+                    tree.Main.Add(new Log
+                    {
+                        Tag = b.Name,
+                        Values =
+                        {
+                            new BoxRead { Box = b, What = "Get", Kind = b.Kind },
+                            new BoxRead { Box = b, What = "Sum", Kind = b.Kind },
+                            new BoxRead { Box = b, What = "sets", Kind = Kind.Int },
+                        },
+                    });
                 foreach (ArrayInfo a in tree.Arrays)
                 {
                     Variable sum = tree.Globals.First(g => g.Kind == a.Element && g.Own);
@@ -694,6 +832,11 @@ namespace Phi.Cli
                 List<Variable> readable = Readable(kind);
                 List<ArrayRef> arrays = ArraysHere().Where(a => a.Element == kind).ToList();
                 if (arrays.Count > 0 && Chance(25)) return ElementOf(Pick(arrays), 1);
+                if (Chance(12) && tree.Boxes.FirstOrDefault(b => b.Kind == kind) is Box box)
+                {
+                    string what = Pick(new[] { "Get", "Sum", "Load" });
+                    return new BoxRead { Box = box, What = what, Kind = kind, Place = what == "Load" ? Expression(Kind.Int, 0) : null };
+                }
                 if (readable.Count > 0) return new Read { Variable = Pick(readable), Kind = kind };
                 if (arrays.Count > 0) return ElementOf(Pick(arrays), 1);
                 // nothing of this kind to read: the other kind's bits
@@ -842,14 +985,20 @@ namespace Phi.Cli
                         return new Store { Array = array, Index = new Read { Variable = Pick(inside).Counter, Kind = Kind.Int }, Value = Expression(array.Element, 2) };
                     return new Store { Array = array, Masked = true, Index = Expression(Kind.Int, 1), Value = Expression(array.Element, 2) };
                 }
-                if (roll < 50 && !function)
+                if (roll < 46 && !function)
+                {
+                    Box box = Pick(tree.Boxes);
+                    string what = Pick(new[] { "Set", "Add", "Store", "Store" });
+                    return new BoxWrite { Box = box, What = what, Place = what == "Store" ? Expression(Kind.Int, 1) : null, Value = Expression(box.Kind, 2) };
+                }
+                if (roll < 54 && !function)
                 {
                     var log = new Log { Tag = $"L{tags++}" };
                     int values = random.Next(1, 4);
                     for (int i = 0; i < values; i++) log.Values.Add(Expression(Chance(70) ? Kind.Int : Kind.U32, 2));
                     return log;
                 }
-                if (roll < 58 && !function && Callable(function: false) is { Count: > 0 } procedures && loops.Count < 2)
+                if (roll < 61 && !function && Callable(function: false) is { Count: > 0 } procedures && loops.Count < 2)
                 {
                     Method callee = Pick(procedures);
                     return new CallStatement { Method = callee, Arguments = Arguments(callee, 2), Pointers = PointersFor(callee) };

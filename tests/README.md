@@ -304,7 +304,8 @@ the same on every run.
 `phi fuzz code` checks the code generator with programs nobody wrote. Each is made at random
 from what the optimizer works on (ints and u32s in class variables, parameters and variables,
 arrays by index and through pointers, math and division by every kind of constant, ifs, whens,
-loops in loops, calls), and the fuzzer works out what it prints as it writes it, with 32-bit
+loops in loops, calls, and structs that take types: a `Box<Item>` with fields, an array and
+methods, used as `Box<int>` and `Box<u32>`), and the fuzzer works out what it prints as it writes it, with 32-bit
 math that wraps as PHI's does. It then builds the program for each system this computer runs
 (32- and 64-bit Linux here) and compares. A difference is a bug in the compiler, or in the
 fuzzer's idea of the language (`Compiler/Phi.Cli/CodeFuzzer.cs`).

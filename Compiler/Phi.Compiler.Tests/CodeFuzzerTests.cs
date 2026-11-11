@@ -39,7 +39,9 @@ namespace Phi.Compiler.Tests
             foreach (CodeFuzzer.Case made in Cases().Take(12))
             {
                 string[] lines = made.Expected.TrimEnd('\n').Split('\n');
-                Assert.StartsWith("end ", lines[^4]);
+                Assert.StartsWith("end ", lines[^6]);
+                Assert.StartsWith("numbers ", lines[^5]);     // the Box<int>
+                Assert.StartsWith("counts ", lines[^4]);      // and the Box<u32>
                 Assert.StartsWith("ints ", lines[^3]);
                 Assert.StartsWith("words ", lines[^2]);
                 Assert.StartsWith("bytes ", lines[^1]);

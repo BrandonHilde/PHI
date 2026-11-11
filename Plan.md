@@ -1572,6 +1572,12 @@ and every program wrapped it or wrote its own.
   a table of places found by the key's hash, as data.keyed's is. `new Map<str int>
   counts;`, `Map<u32 Player>`, `while each k in counts.keys`. Test `generic_map`.
   - A struct or a pointer as a key has no hash yet.
+- [x] `phi fuzz code` makes programs with structs that take types: every program has a
+  `Box<Item>` (fields, an array, methods that work through self and a loop in one) used as
+  `Box<int>` and `Box<u32>`, and a `Pair<First Second>` used both ways round. Until then
+  its programs had no structs at all. Broken on purpose to see it notice: a field's
+  element reached through self with the address in the wrong register (41 programs in 100
+  wrong), and a template's types given in the wrong order (67 in 100).
 - [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), methods that
   take types of their own, and templates in a compiled library (its interface is written
   from the source's text, which a made struct has none of).
