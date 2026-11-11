@@ -1601,7 +1601,11 @@ and every program wrapped it or wrote its own.
   `library_generic_program` and `TemplateTests`.
 - [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), and methods
   that take types of their own.
-- [ ] The editor: the language server and the VS Code grammar don't know the new syntax.
+- [x] The editor. The language server needed nothing: a made struct is a struct, read from
+  a copy of the template's file, so going to a method or a field of a `Stack<int>` lands on
+  its line in `struct.Stack<Item>`, and its members complete (test in
+  `LanguageServerTests`). The VS Code extension (0.3.1) highlights the heading and
+  variables of one, and its scanner reads both.
 
 #### Phase S7: Interfaces
 

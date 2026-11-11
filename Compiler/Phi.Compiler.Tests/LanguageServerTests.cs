@@ -558,6 +558,41 @@ namespace Phi.Compiler.Tests
             Assert.DoesNotContain("kept", labels);
         }
 
+        const string Generic = """
+            struct.Stack<Item>
+            {
+            	Item items[];
+            	int added;
+
+            	[Push: Item item;]
+            		items++ item;
+            	[end: items.len]
+            }
+
+            phi.Main:Kernel
+            {
+            	new Stack<int> undo;
+            	int size: (undo.Push: 4);
+            	int count: undo.added;
+            }
+            """;
+
+        [Fact]
+        public void AStructThatTakesTypesIsGoneToAndCompletedAsAnyStruct()
+        {
+            // its method and its field, from a variable of one use of it
+            var method = GoFrom("a.phi", Generic.Replace("undo.Push", "undo.Pu|sh"));
+            Assert.Equal("Push", method!.Value.Text);
+            Assert.Equal(5, method.Value.Line);
+            var field = GoFrom("b.phi", Generic.Replace("undo.added;", "undo.ad|ded;"));
+            Assert.Equal("added", field!.Value.Text);
+            Assert.Equal(3, field.Value.Line);
+
+            var items = CompleteAt("c.phi", Generic.Replace("int count: undo.added;", "int count: undo.added;\n\tundo.|"));
+            Assert.Contains(items, i => i.Label == "added");
+            Assert.Contains(items, i => i.Label == "Push");
+        }
+
         [Fact]
         public void CompletesAfterADot()
         {
