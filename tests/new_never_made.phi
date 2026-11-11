@@ -1,0 +1,49 @@
+# A class's new object is made when its line is reached. One declared below where the
+# class's own code always ends (an exit, or a while true nothing breaks out of) would never
+# be made, and a method using it would find it empty: the compiler says so. Numbers, text,
+# plain structs and arrays that start with nothing in them are there from the start, so those are fine there, and
+# so is an exit inside an if.
+struct.Point
+{
+	int x;
+}
+
+struct.Stack<Item>
+{
+	Item items[];
+}
+
+phi.NewNeverMade:Kernel
+{
+	new Point early;
+	if early.x is 1
+		exit 1;
+	;;
+	new Point fine;
+	call Use;
+	exit 0;
+
+	int number: 3;
+	Point plain;
+	new Point points[];
+	new Point some[atmost 4];
+	new Point late;
+	new Point four[4];
+	new Stack<int> stack;
+
+	[Use]
+		late.x is number + plain.x + points.len + stack.items.len + fine.x + some.len + four:0.x;
+	[end]
+}
+
+phi.Forever:Library
+{
+	while true
+		call NewNeverMade.Use;
+	;;
+	new Point watcher;
+
+	while true
+		break;
+	;;
+}

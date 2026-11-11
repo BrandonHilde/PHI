@@ -365,6 +365,7 @@ namespace Phi.Compiler.Semantics
                 file = cls.File;
                 // as in a method: a name declared again in a separate block is a variable of its own
                 DeclareLocals(scope, cls.Body);
+                NewObjectsNeverReached(cls);
                 foreach (MethodDecl m in cls.Methods)
                 {
                     int said = diagnostics.Count;
@@ -1374,6 +1375,49 @@ namespace Phi.Compiler.Semantics
             }
         }
 
+        /// <summary>
+        /// A class's new object is made when its line is reached, unlike its numbers, its text
+        /// and its arrays that start with nothing in them, which are there from the start. So one declared below where the class's own code
+        /// always ends (an exit, or a while true that nothing breaks out of) is never made, and
+        /// the methods that use it would find it empty.
+        /// </summary>
+        void NewObjectsNeverReached(ClassDecl cls)
+        {
+            Stmt? ends = null;
+            foreach (Stmt statement in cls.Body)
+            {
+                if (ends == null)
+                {
+                    if (statement is ExitStmt
+                        || statement is WhileStmt { Condition: BoolExpr { Value: true } } forever && !SyntaxWalker.Nodes(forever).Any(n => n is BreakStmt))
+                        ends = statement;
+                    continue;
+                }
+                // (an array of objects with a size is made there too; one that starts with none isn't)
+                if (statement is not VarDecl { IsNew: true, Unsized: false, Filled: false, AtAddress: null } d) continue;
+                if (!structs.TryGetValue(d.Type.Name, out StructSymbol? made) || made.IsInterface) continue;
+                int line = cls.File.GetLocation(ends.Span.Start).Line;
+                Error(d.Span, $"{d.Name} would never be made: a new object is made when its line is reached, and {cls.Name}'s own code always ends at the {(ends is ExitStmt ? "exit" : "while true")} on line {line}. Move this line above that");
+            }
+        }
+
+        /// <summary>
+        /// Whether a struct will own objects, asked while structs are still being laid out
+        /// (OwnedSlots comes after). One whose layout isn't finished is on the way to the
+        /// field that asks, which is an array that grows: it owns that.
+        /// </summary>
+        bool WillOwnObjects(StructSymbol s, HashSet<StructSymbol> inProgress)
+        {
+            if (s.OwnsObjects || inProgress.Contains(s)) return true;
+            if (!s.LayoutDone) Layout(s, inProgress);
+            foreach (FieldSymbol f in s.Fields)
+            {
+                if (f.Type.IsObject || f.Type.IsHeapText || f.Type.Open || f.Type.IsObjectArray) return true;
+                if (f.Type.Kind == TypeKind.Struct && f.Type.Struct != s && WillOwnObjects(f.Type.Struct!, inProgress)) return true;
+            }
+            return false;
+        }
+
         /// <summary>Works out field offsets; fields follow each other with no padding.</summary>
         void Layout(StructSymbol s, HashSet<StructSymbol> inProgress)
         {
@@ -1456,19 +1500,30 @@ namespace Phi.Compiler.Semantics
                     // a size keeps them)
                     if (type.IsError) continue;
                     PhiType element;
-                    if (f.IsNew)
+                    bool owns = type.IsStruct && (type.Struct!.IsInterface || WillOwnObjects(type.Struct, inProgress));
+                    file = s.Decl.File;
+                    if (f.IsNew && !type.IsStruct)
                     {
-                        if (!type.IsStruct)
-                        {
-                            Error(f.Type.Span, $"new is for structs; for numbers, leave out new: {type} {f.Name}[];");
-                            continue;
-                        }
+                        // (the field is there all the same, as numbers: one error, not one for each use of it)
+                        Error(f.Type.Span, f.Type.FromParameter
+                            ? $"new is for structs, and here the type is {type}: leave out new (without it the elements are objects all the same when the type is a struct PHI manages)"
+                            : $"new is for structs; for numbers, leave out new: {type} {f.Name}[];");
+                        element = type.Kind == TypeKind.Str ? PhiType.Str : type;
+                    }
+                    else if (f.IsNew)
+                    {
                         element = PhiType.ObjectOf(type.Struct!);
                     }
-                    else if (type.IsStruct && (type.Struct!.IsInterface || type.Struct.OwnsObjects))
+                    else if (owns)
                     {
-                        Error(f.Type.Span, $"{(type.Struct.IsInterface ? $"a {type} holds an object" : $"{type} owns objects")}, so the elements are new: new {type} {f.Name}[];");
-                        continue;
+                        // One of a struct's own types (Item items[];) is held as what it was given
+                        // needs: a struct PHI manages as objects, as new Item items[]; would say.
+                        if (!f.Type.FromParameter)
+                        {
+                            // (and the field is there as that, so this is the only error for it)
+                            Error(f.Type.Span, $"{(type.Struct!.IsInterface ? $"a {type} holds an object" : $"{type} owns objects (new fields, or arrays without a size)")}, so the elements are new: new {type} {f.Name}[];");
+                        }
+                        element = PhiType.ObjectOf(type.Struct!);
                     }
                     else if (type.IsChar || type.Kind == TypeKind.Str && f.TextSize != null)
                     {

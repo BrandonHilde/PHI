@@ -103,6 +103,21 @@ catch (ToolNotFoundException e)
     return 2;
 }
 
+// The usage's entries for one command: each starts "  phi NAME" and runs to the next that starts so.
+static string UsageOf(string command)
+{
+    var lines = new List<string>();
+    bool inside = false;
+    foreach (string line in Usage.Split('\n'))
+    {
+        string text = line.TrimEnd('\r');
+        if (text.StartsWith("  phi ")) inside = text.Split(' ', StringSplitOptions.RemoveEmptyEntries) is [_, var name, ..] && name == command;
+        else if (!text.StartsWith("   ")) inside = false;
+        if (inside) lines.Add(text);
+    }
+    return string.Join("\n", lines);
+}
+
 static int Execute(string[] args)
 {
     if (args.Length == 0 || args[0] is "-h" or "--help" or "help")
@@ -121,6 +136,14 @@ static int Execute(string[] args)
     {
         programArguments = rest.Skip(dashes + 1).ToList();
         rest = rest.Take(dashes).ToList();
+    }
+
+    // phi test --help: what the usage says of that command (and all of it, if that's nothing)
+    if (rest.Contains("--help") || rest.Contains("-h"))
+    {
+        string about = UsageOf(command);
+        Console.WriteLine(about.Length > 0 ? "usage:\n" + about : Usage);
+        return 0;
     }
 
     string? Option(string name)

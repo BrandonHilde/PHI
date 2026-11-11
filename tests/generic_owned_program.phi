@@ -1,0 +1,149 @@
+# A struct that takes types holds an array of them as each type needs: `Item items[];` is
+# numbers or plain structs in place, and objects (as new Item items[]; would say) when Item
+# is a struct PHI manages, one with text that grows or objects of its own. So one Line<Item>
+# and one Map<Key Value> serve both: what's put in is a copy, text and all, which is still
+# there when the one it came from has gone, and is freed with the struct that holds it.
+use data.map;
+
+struct.Request
+{
+	u32 id;
+	new str address;
+	int parts[];
+}
+
+struct.Point
+{
+	int x;
+	int y;
+}
+
+struct.Line<Item>
+{
+	Item items[];
+	int first;
+
+	[Add: Item item;]
+		items++ item;
+	[end]
+
+	[Count]
+	[end: items.len - first]
+
+	[Take]
+		first++;
+	[end: items:(first - 1)]
+
+	# the one at the front goes, and the rest move along
+	[Drop]
+		while int i: 1; i < items.len; i++;
+			items:(i - 1) is items:i;
+		;;
+		items.len is items.len - 1;
+	[end]
+}
+
+phi.GenericOwnedProgram:Program
+{
+	new Line<int> numbers;
+	new Line<Point> points;
+	new Line<Request> waiting;
+	new Map<int Request> by_id;
+	new Map<str Request> by_address;
+	u32 before: Heap.used_blocks;
+
+	call numbers.Add: 4;
+	call numbers.Add: 5;
+	log (numbers.Take) ' ' (numbers.Take) ' ' (numbers.Count) '\n';
+
+	Point p;
+	p.x is 3;
+	p.y is 4;
+	call points.Add: p;
+	p.x is 30;
+	call points.Add: p;
+	call points.Drop;
+	log points.items:0.x ' ' points.items:0.y ' ' (points.Count) '\n';
+
+	# each one made here is gone when Ask ends: what was added is its own copy
+	while int i: 1; i <= 40; i++;
+		call Ask: i;
+	;;
+	log (waiting.Count) ' waiting, ' (by_id.Count) ' by id, ' (by_address.Count) ' by address\n';
+	log waiting.items:0.address ' ' waiting.items:39.address ' ' waiting.items:39.parts.len '\n';
+
+	new Request r;
+	r is (waiting.Take);
+	log r.id ' ' r.address ' ' r.parts:0 '\n';
+	call waiting.Drop;
+	call waiting.Drop;
+	r is (waiting.Take);
+	log r.id ' ' r.address ' ' r.parts.len ' ' (waiting.Count) '\n';
+
+	new Request none;
+	none.address is 'nowhere';
+	r is (by_id.Get: 7 none);
+	log r.id ' ' r.address '\n';
+	r is (by_id.Get: 700 none);
+	log r.id ' ' r.address '\n';
+	r is (by_address.Get: 'https://example.com/page/12' none);
+	log r.id ' ' r.parts.len '\n';
+
+	# one put where another was, and ones taken out (the last moves into the gap)
+	r.address is 'changed';
+	call by_id.Set: 7 r;
+	r.address is 'changed again';
+	r is (by_id.Get: 7 none);
+	log r.id ' ' r.address '\n';
+	while int i: 1; i <= 30; i++;
+		if (by_id.Remove: i) is false or (by_address.Remove: ('https://example.com/page/' i)) is false
+			log 'not there: ' i '\n';
+		;;
+	;;
+	r is (by_id.Get: 40 none);
+	log (by_id.Count) ' ' (by_address.Count) ' ' r.address ' ' (by_id.Has: 7) '\n';
+	call by_id.Clear;
+	call by_address.Clear;
+	log (by_id.Count) ' ' (by_address.Has: 'https://example.com/page/35') '\n';
+
+	# everything a struct held is freed with it
+	call Fill;
+	log 'left behind: ' Heap.used_blocks - (Settled) '\n';
+	exit 0;
+
+	u32 settled: 0;
+
+	[Ask: int i: 0;]
+		new Request made;
+		made.id is i as u32;
+		made.address is ('https://example.com/page/' i);
+		while int k: 0; k < i; k++;
+			made.parts++ k * i;
+		;;
+		call waiting.Add: made;
+		call by_id.Set: i made;
+		call by_address.Set: made.address made;
+		made.address is 'gone';
+	[end]
+
+	[Settled]
+		if settled is 0
+			settled is Heap.used_blocks;
+			call Fill;
+		;;
+	[end: settled]
+
+	[Fill]
+		new Line<Request> line;
+		new Map<int Request> map;
+		new Request made;
+		made.address is 'a text long enough to need a block of its own on the heap';
+		made.parts++ 1;
+		while int i: 0; i < 20; i++;
+			call line.Add: made;
+			call map.Set: i made;
+		;;
+		call line.Drop;
+		call map.Remove: 3;
+	[end]
+}

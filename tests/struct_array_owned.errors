@@ -1,0 +1,3 @@
+7:2: error: Request owns objects (new fields, or arrays without a size), so the elements are new: new Request items[];
+8:2: error: Other owns objects (new fields, or arrays without a size), so the elements are new: new Other others[];
+28:6: error: new is for structs, and here the type is int: leave out new (without it the elements are objects all the same when the type is a struct PHI manages) (in Strict<int>, which line 38 of struct_array_owned.phi uses)

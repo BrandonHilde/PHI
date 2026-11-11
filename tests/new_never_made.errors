@@ -1,0 +1,4 @@
+30:2: error: late would never be made: a new object is made when its line is reached, and NewNeverMade's own code always ends at the exit on line 24. Move this line above that
+31:2: error: four would never be made: a new object is made when its line is reached, and NewNeverMade's own code always ends at the exit on line 24. Move this line above that
+32:2: error: stack would never be made: a new object is made when its line is reached, and NewNeverMade's own code always ends at the exit on line 24. Move this line above that
+44:2: error: watcher would never be made: a new object is made when its line is reached, and Forever's own code always ends at the while true on line 41. Move this line above that

@@ -244,6 +244,9 @@ namespace Phi.Compiler.Syntax
         public string Name { get; init; } = "";
         public TypeRef? Pointee { get; init; }
 
+        /// <summary>Written as one of a struct's own types (Item), and this is what a use gave it.</summary>
+        public bool FromParameter { get; init; }
+
         /// <summary>method&lt;int int: int&gt;: what it takes, and what it returns (null for nothing).</summary>
         public List<TypeRef> Parameters { get; } = new();
 

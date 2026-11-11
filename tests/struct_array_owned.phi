@@ -1,0 +1,41 @@
+# A struct's array that grows holds structs PHI manages (ones with text that grows, or
+# objects of their own) as objects: written without new it's an error, said once, wherever
+# the struct it holds is declared (here after the one that holds it). And new on one of a
+# struct's own types that's given a number is said once too, not once for each use.
+struct.Box
+{
+	Request items[];
+	Other others[];
+
+	[Add: Request item;]
+		items++ item;
+	[end: items.len + others.len]
+}
+
+struct.Request
+{
+	u32 id;
+	new str address;
+}
+
+struct.Other
+{
+	Request inside;
+}
+
+struct.Strict<Item>
+{
+	new Item items[];
+
+	[Add: Item item;]
+		items++ item;
+	[end: items.len]
+}
+
+phi.StructArrayOwned:Kernel
+{
+	new Box box;
+	new Strict<int> strict;
+	new Strict<Request> fine;
+	log box.items.len (strict.Add: 3) fine.items.len;
+}

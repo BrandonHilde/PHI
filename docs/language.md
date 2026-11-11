@@ -1073,6 +1073,12 @@ both.first is 310;
   (`ptr<Stack<int>>`), `sizeof`, and another struct's types (`Pair<int ptr<Stack<int>>>`).
 - **A type's name is any name that isn't a type already** (`Item`, `Key`, `Value`), given
   with spaces between, as a method's types are in `method<int int: int>`.
+- **An array of one of its types holds them as each type needs.** `Item items[];` is
+  numbers or plain structs in place, and objects when `Item` is a struct PHI manages (one
+  with text that grows, or objects of its own), just as `new Item items[];` written by
+  hand would be. So one `Stack<Item>`, and one `Map<Key Value>`, serve both kinds, and
+  what's put in is a copy of its own, text and all. (Written with a struct's own name,
+  `Request items[];` for such a struct is an error that says to write `new`.)
 - **A struct that takes types can use another, and itself:** `new Stack<Item> kept;` in a
   struct that takes `Item`, or `new Node<Item> next;` in `struct.Node<Item>`.
 - **A method only has to suit the types it's used with.** `Stack<Spot>` (a struct in a
@@ -1347,6 +1353,29 @@ struct can't have `new` fields.
 ```phi
 new Cell corner at 0xB8000;    # the first character of the VGA text screen
 corner.letter is 'P';
+```
+
+### Where a class's object is made
+
+A class's `new` object (and a `new T name[N]` array of them) is made when its line is
+reached in the class's own code, where its numbers, text and arrays that start empty are
+there from the start. So it goes above anything that uses it, and above where that code
+ends: declared below an `exit`, or a `while true` that nothing breaks out of, it would
+never be made, and the compiler says so.
+
+```phi
+phi.Browser:Program
+{
+    new Queue<Request> waiting;     # here, not below the exit
+    call Run;
+    exit 0;
+
+    int loaded: 0;                  # fine: a number is there from the start
+
+    [Run]
+        ...
+    [end]
+}
 ```
 
 ### Arrays of objects

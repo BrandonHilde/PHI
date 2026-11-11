@@ -711,7 +711,7 @@ namespace Phi.Compiler.Syntax
                 // one of a struct's own types (Item): the type this use of the struct gave it
                 if (given != null && given.TryGetValue(name.Text, out TypeRef? stands))
                 {
-                    var same = new TypeRef { Name = stands.Name, Pointee = stands.Pointee, Result = stands.Result, Span = name.Span };
+                    var same = new TypeRef { Name = stands.Name, Pointee = stands.Pointee, Result = stands.Result, Span = name.Span, FromParameter = true };
                     same.Parameters.AddRange(stands.Parameters);
                     same.ParameterInto.AddRange(stands.ParameterInto);
                     return same;

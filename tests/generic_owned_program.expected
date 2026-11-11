@@ -1,0 +1,13 @@
+4 5 0
+30 4 1
+40 waiting, 40 by id, 40 by address
+https://example.com/page/1 https://example.com/page/40 40
+1 https://example.com/page/1 0
+4 https://example.com/page/4 4 36
+7 https://example.com/page/7
+0 nowhere
+12 12
+12 changed
+10 10 https://example.com/page/40 0
+0 0
+left behind: 0

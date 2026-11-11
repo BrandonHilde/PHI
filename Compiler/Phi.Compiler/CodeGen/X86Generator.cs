@@ -1023,6 +1023,15 @@ namespace Phi.Compiler.CodeGen
         {
             byte[] bytes = compiled.Sections[section].Bytes;
             output.AppendLine($"align {compiled.Sections[section].Align}, db 0");
+            // which method this is (each is a section of its own), for a listing's reader and phi profile
+            if (compiled.Exports.FirstOrDefault(e => e.Section == section && e.Offset == 0 && e.Name.StartsWith("M_")) is LibraryExport method)
+            {
+                string name = method.Name[2..];
+                int dot = name.LastIndexOf('_');
+                if (dot > 0) name = name[..dot] + "." + name[(dot + 1)..];
+                string file = compiled.Lines.FirstOrDefault(l => l.Section == section)?.File ?? compiled.Name;
+                output.AppendLine($"; method {name} ({file})");
+            }
             output.AppendLine($"{compiled.SectionLabel(section)}:");
 
             void Raw(int from, int to)

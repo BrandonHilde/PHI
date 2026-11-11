@@ -1561,6 +1561,36 @@ folding, and (2) the backend interface, which S10 needs first.
   that new did not hand out". The objects are freed first now.
   - Not yet: the kernel's heap (memory.heap), which is the same design as this one was.
 
+#### What the browser found in the newest features (test-projects' FINDINGS.md, 2026-11-11)
+
+- [x] **A struct's array of structs that own text shared the text, then freed it.**
+  `Request items[];` in a struct, with `Request` holding `new str`, was accepted (a class
+  refuses it), and an item added had its numbers copied and its text shared. The check
+  was there, but asked what a struct owns before that was worked out, so it never fired.
+  It asks while structs are laid out now (`WillOwnObjects`): written so, it's an error
+  that says to write `new`.
+- [x] **One struct that takes types serves both kinds of item.** `Item items[];` holds a
+  struct PHI manages as objects, as `new Item items[];` would, and numbers and plain
+  structs in place. So `Map<int Request>` and a `Queue<Item>` are right for either, with
+  no `new` to choose (tests/generic_owned_program, on the checking heap too). `new Item
+  items[];` given an `int` is one error that says to leave `new` out, not nine about
+  `items.len`.
+- [x] **A `new` object below where the class's code ends is a compile error.** It's made
+  when its line is reached, so below an `exit` (or a `while true` nothing leaves) it never
+  was, and its first use stopped the program. A `new T name[N]` array is the same.
+- [x] **`phi profile` names a compiled library's methods** (`JsVm.Run  (vm.phi)`, not
+  `phi_lib_weblib_s356`): each method's section is named in the program's assembly. Its
+  lines within a method aren't shown yet.
+- [x] **`--help` after a command** (`phi test --help`, `phi profile --help`) prints that
+  command's usage. It was read as a file name, and `phi test` crashed on it.
+- [x] **`Clock.Count` is safe from several threads.** It passed the counter through a
+  class variable, so two threads reading at once could each get half of the other's. Its
+  halves come back in the caller's own variables now.
+- [ ] `net.web` says `Connection: close` on every request, so each of a page's files is a
+  TCP connection and a TLS handshake: 77% of the browser's CPU time on a Wikipedia article
+  is RSA arithmetic checking certificates. Keeping a connection open, or resuming a TLS
+  session, is what would speed it up most.
+
 #### Looking for memory that's used after it's freed
 
 - [x] samples/own_heap, the heap that stops a program where it runs off the end of a block
