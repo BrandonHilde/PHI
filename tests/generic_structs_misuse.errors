@@ -1,0 +1,4 @@
+23:6: error: Stack takes a type: say which, as in Stack<int> (it's declared struct.Stack<Item>)
+24:21: error: parameter 'item' needs a number, but this is a str
+12:8: error: the left side needs a number, but this is a str (in Stack<str>, which line 22 of generic_structs_misuse.phi uses)
+15:8: error: unknown name 'nothing_here' (in Stack<int>, which line 20 of generic_structs_misuse.phi uses)

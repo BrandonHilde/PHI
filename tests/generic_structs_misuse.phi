@@ -1,0 +1,25 @@
+# What's said when a struct that takes types is used with a type its code doesn't suit: the
+# error is in the struct, and says which use it was for. And when its name is used alone.
+struct.Stack<Item>
+{
+	Item items[];
+
+	[Push: Item item;]
+		items++ item;
+	[end]
+
+	[Top]
+	[end: items:(items.len - 1) + 1]
+
+	[Wrong]
+	[end: nothing_here]
+}
+
+phi.GenericStructsMisuse:Kernel
+{
+	new Stack<int> numbers;
+	new Stack<u8> small;
+	new Stack<str> names;
+	new Stack alone;
+	call numbers.Push: 'text';
+}

@@ -271,6 +271,12 @@ namespace Phi.Compiler
 
             ProgramNode syntax = ParseWithUses(file, null, diagnostics, usedBy, uses, files, null, platform.Host, false, platform, loaded);
             var own = loaded.Where(f => f.Compiled == null && !f.Path.StartsWith(StandardLibrary)).ToList();
+            // (a compiled library is its files' declarations, written out as they are in the
+            // source; a struct made from a template has no source of its own to write)
+            foreach (StructTemplate template in syntax.Templates.Where(t => own.Contains(t.File)))
+                diagnostics.Error(template.File, template.NameSpan, $"a compiled library can't hold a struct that takes types yet ({template.Name}); a program can use this file's source instead");
+            foreach (TemplateUse use in syntax.TemplateUses.Where(u => own.Contains(u.File)).Take(1))
+                diagnostics.Error(use.File, use.Span, $"a compiled library can't use a struct that takes types yet ({use.FullName})");
             if (diagnostics.HasErrors)
                 return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, platform.Host, null), Syntax = syntax, Uses = uses, Files = files };
 
@@ -398,6 +404,8 @@ namespace Phi.Compiler
                 into.Libraries.AddRange(node.Libraries);
                 into.OutsideFunctions.AddRange(node.OutsideFunctions);
                 into.Structs.AddRange(node.Structs);
+                into.Templates.AddRange(node.Templates);
+                into.TemplateUses.AddRange(node.TemplateUses);
                 into.Enums.AddRange(node.Enums);
                 into.Uses.AddRange(node.Uses);
             }
@@ -420,6 +428,10 @@ namespace Phi.Compiler
 
             var program = new ProgramNode { File = main };
             Load(main, program);
+
+            // every file is read: each struct that takes types becomes a struct for each use of it,
+            // before anything asks what the program is made of
+            Templates.Expand(program, diagnostics);
 
             // a program that catches errors gets the Error struct they're caught in
             if (SyntaxWalker.Nodes(program).Any(n => n is ThrowsExpr) && Resolve(ErrorLibrary, main, main, null, open) is SourceFile errors
@@ -496,6 +508,8 @@ namespace Phi.Compiler
             into.Libraries.AddRange(from.Libraries);
             into.OutsideFunctions.AddRange(from.OutsideFunctions);
             into.Structs.AddRange(from.Structs);
+            into.Templates.AddRange(from.Templates);
+            into.TemplateUses.AddRange(from.TemplateUses);
             into.Enums.AddRange(from.Enums);
             into.Uses.AddRange(from.Uses);
             into.CompiledLibraries.AddRange(from.CompiledLibraries);

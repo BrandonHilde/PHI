@@ -1,0 +1,41 @@
+# What's said when a struct that takes types is declared or used wrongly.
+struct.Stack<Item>
+{
+	Item items[];
+
+	[Push: Item item;]
+		items++ item;
+	[end]
+
+	[Top]
+	[end: items:(items.len - 1) + 1]
+}
+
+struct.Pair<First Second>
+{
+	First first;
+	Second second;
+}
+
+struct.Plain
+{
+	int x;
+}
+
+struct.Taken<int Plain Twice Twice>
+{
+	int x;
+}
+
+struct.Empty<>
+{
+	int x;
+}
+
+phi.GenericStructsErrors:Kernel
+{
+	new Stack<int int> two;
+	new Pair<int> one;
+	new Plain<int> not_one;
+	new Stak<int> typo;
+}

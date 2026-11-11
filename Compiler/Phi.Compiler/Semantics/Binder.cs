@@ -180,6 +180,8 @@ namespace Phi.Compiler.Semantics
 
         BoundProgram? BindProgram(ProgramNode program)
         {
+            foreach (StructTemplate template in program.Templates) templates.TryAdd(template.Name, template);
+
             // Kernel classes make a 32-bit kernel, Program classes a user program (and a
             // system's own classes, :Linux or :Windows, are a program's); otherwise it is a
             // 16-bit program. What's for another system is left out first.
@@ -1640,9 +1642,18 @@ namespace Phi.Compiler.Semantics
             if (structs.TryGetValue(t.Name, out StructSymbol? s)) return PhiType.Of(s);
             if (enums.TryGetValue(t.Name, out EnumSymbol? e)) return PhiType.EnumOf(e);
 
+            if (templates.TryGetValue(t.Name, out StructTemplate? template))
+            {
+                string takes = string.Join(" ", template.Parameters.Select(p => p.Name));
+                Error(t.Span, $"{t.Name} takes {(template.Parameters.Count == 1 ? "a type" : $"{template.Parameters.Count} types")}: say which, as in {t.Name}<{string.Join(" ", template.Parameters.Select(_ => "int"))}> (it's declared struct.{t.Name}<{takes}>)");
+                return PhiType.Error;
+            }
             Error(t.Span, $"unknown type '{t.Name}'");
             return PhiType.Error;
         }
+
+        /// <summary>The structs that take types, by name: each use of one is a struct of its own by now (Templates.Expand).</summary>
+        readonly Dictionary<string, StructTemplate> templates = new();
 
         /// <summary>An element count that must be known when the program is built.</summary>
         int? ConstantCount(Expr e, Scope? scope)
@@ -1937,7 +1948,7 @@ namespace Phi.Compiler.Semantics
 
             UnitKind unit = classScope.Unit;
             string fullName = dotted ? name : $"{classScope.Class.Name}.{name}";
-            string label = hook?.Label ?? $"M_{classScope.Class.Name}_{name}";
+            string label = hook?.Label ?? $"M_{Templates.Label(classScope.Class.Name)}_{name}";
 
             var symbol = new MethodSymbol
             {
@@ -2316,7 +2327,7 @@ namespace Phi.Compiler.Semantics
                     {
                         if (symbol is not VariableSymbol v) continue;
                         // by the name it's under: one declared again in a separate block is name#1, ...
-                        v.Label = $"VALUE_{cls.Name}_{key.Replace('#', '_')}";
+                        v.Label = $"VALUE_{Templates.Label(cls.Name)}_{key.Replace('#', '_')}";
                     }
 
                 foreach (var (method, scope) in methodScopes.Where(p => p.Value.Unit == unit.Kind))

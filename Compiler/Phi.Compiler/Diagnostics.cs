@@ -64,10 +64,30 @@ namespace Phi.Compiler
         public IReadOnlyList<Diagnostic> Items => items;
         public bool HasErrors => items.Any(d => d.Severity == Severity.Error);
 
-        public void Error(SourceFile? file, Span span, string message) =>
-            items.Add(new Diagnostic(Severity.Error, file, span, message));
+        /// <summary>
+        /// A struct made from a template is read from a copy of the template's file, so what's
+        /// said about it can be told from what's said about the template's other uses: each is
+        /// reported at the real file, with which use it was, and once if every use has it.
+        /// </summary>
+        readonly Dictionary<SourceFile, (SourceFile Real, string Note)> copies = new();
 
-        public void Warning(SourceFile? file, Span span, string message) =>
-            items.Add(new Diagnostic(Severity.Warning, file, span, message));
+        public void CopyOf(SourceFile copy, SourceFile real, string note) => copies[copy] = (real, note);
+
+        public void Error(SourceFile? file, Span span, string message) => Add(Severity.Error, file, span, message);
+
+        public void Warning(SourceFile? file, Span span, string message) => Add(Severity.Warning, file, span, message);
+
+        void Add(Severity severity, SourceFile? file, Span span, string message)
+        {
+            if (file != null && copies.TryGetValue(file, out var copy))
+            {
+                // (the same thing wrong in another use of the template is the template's, said once)
+                if (items.Any(d => d.File == copy.Real && d.Span == span && d.Severity == severity
+                                   && (d.Message == message || d.Message.StartsWith(message + " (in ")))) return;
+                file = copy.Real;
+                message += copy.Note;
+            }
+            items.Add(new Diagnostic(severity, file, span, message));
+        }
     }
 }

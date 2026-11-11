@@ -75,6 +75,15 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         readonly HashSet<string> keywordNames = new();
 
+        /// <summary>The program being read, which the uses of structs that take types are noted in.</summary>
+        ProgramNode? reading;
+
+        /// <summary>While a struct that takes types is read as itself: its types' names, which stand for no type yet.</summary>
+        HashSet<string>? placeholders;
+
+        /// <summary>While such a struct is read for one use: the type each of its names stands for.</summary>
+        Dictionary<string, TypeRef>? given;
+
         public Parser(SourceFile file, DiagnosticBag diagnostics)
         {
             this.file = file;
@@ -175,7 +184,8 @@ namespace Phi.Compiler.Syntax
         bool AtDeclaration =>
             (Current.Kind == TokenKind.Identifier && TypeKeywords.Contains(Current.Text))
             || (IsName(Current) && IsName(PeekToken(1)) && !PeekToken(1).StartsLine)
-            || (IsName(Current) && AtKeywordAsDeclaredName);
+            || (IsName(Current) && AtKeywordAsDeclaredName)
+            || AtTemplateDeclaration();
 
         /// <summary>
         /// Button free; or Prompt ask: ...: a struct name and a keyword where the variable name goes,
@@ -210,7 +220,7 @@ namespace Phi.Compiler.Syntax
             }
         }
 
-        bool AtNewDeclaration => AtWord("new") && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier;
+        bool AtNewDeclaration => AtWord("new") && (PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Identifier || AtTemplateDeclaration(1));
 
         bool AtTopLevelHeader =>
             Current.StartsLine && (AtWord("phi") || AtWord("asm") || AtWord("x64") || AtWord("arm") || AtWord("struct") || AtWord("enum") || AtWord("interface") || AtWord("sys")) && PeekToken(1).Kind == TokenKind.Dot
@@ -238,6 +248,7 @@ namespace Phi.Compiler.Syntax
         public ProgramNode ParseProgram()
         {
             var program = new ProgramNode { File = file };
+            reading = program;
 
             while (!AtEnd)
             {
@@ -298,7 +309,8 @@ namespace Phi.Compiler.Syntax
                         program.Classes.Add(ParseClass(start, name));
                         return;
                     case "struct":
-                        program.Structs.Add(ParseStruct(start, name, program));
+                        if (At(TokenKind.Less)) ParseStructTemplate(start, name, program);
+                        else program.Structs.Add(ParseStruct(start, name, program));
                         return;
                     case "enum":
                         program.Enums.Add(ParseEnum(start, name));
@@ -498,6 +510,108 @@ namespace Phi.Compiler.Syntax
             return decl;
         }
 
+        /// <summary>
+        /// struct.Stack&lt;Item&gt; { ... }: read once here for its syntax, with Item a type nothing is
+        /// known about, and kept as a template. It becomes a struct for each use (Instantiate).
+        /// </summary>
+        void ParseStructTemplate(Token start, Token name, ProgramNode program)
+        {
+            var template = new StructTemplate { File = file, Name = name.Text, NameSpan = name.Span, StartToken = tokens.IndexOf(start), Span = start.Span.To(name.Span) };
+            foreach (Token parameter in ParseTemplateParameters(name)) template.Parameters.Add((parameter.Text, parameter.Span));
+            program.Templates.Add(template);
+
+            // (its fields and methods go nowhere: they're read again for each use)
+            placeholders = template.Parameters.Select(p => p.Name).ToHashSet();
+            try { ParseStruct(start, name, new ProgramNode { File = file }); }
+            finally { placeholders = null; }
+        }
+
+        /// <summary>&lt;Key Value&gt; after a struct's name: the names its types go by.</summary>
+        List<Token> ParseTemplateParameters(Token name)
+        {
+            Expect(TokenKind.Less, "'<'");
+            var parameters = new List<Token>();
+            while (!At(TokenKind.Greater))
+            {
+                if (AtEnd || Current.StartsLine || !At(TokenKind.Identifier))
+                    throw Error(Current.Span, $"expected a name for a type {name.Text} takes, or '>', as in struct.{name.Text}<Item>, but found {Current}");
+                Token parameter = Advance();
+                if (ReservedWords.Contains(parameter.Text))
+                    Error(parameter.Span, TypeKeywords.Contains(parameter.Text)
+                        ? $"'{parameter.Text}' is a type already; this is a name for whatever type {name.Text} is used with, like Item (the type itself goes where it's used: {name.Text}<{parameter.Text}>)"
+                        : KeywordNameMessage(parameter.Text, "type"));
+                else if (parameters.Any(p => p.Text == parameter.Text))
+                    Error(parameter.Span, $"{name.Text} already takes a type called '{parameter.Text}'");
+                parameters.Add(parameter);
+            }
+            if (parameters.Count == 0) Error(Current.Span, $"struct.{name.Text}<> takes no types; name one, as in struct.{name.Text}<Item>, or leave the <> out");
+            Advance();
+            return parameters;
+        }
+
+        /// <summary>
+        /// The struct a template is for one use: its text read again with each of its types'
+        /// names standing for the type given, under the use's whole name (Stack&lt;int&gt;). Its
+        /// errors of syntax were reported when the template was read, so they aren't again.
+        /// </summary>
+        public static StructDecl Instantiate(StructTemplate template, IReadOnlyList<TypeRef> arguments, string fullName, ProgramNode program, SourceFile copy)
+        {
+            var parser = new Parser(copy, new DiagnosticBag()) { reading = program, pos = template.StartToken };
+            parser.given = new Dictionary<string, TypeRef>();
+            for (int i = 0; i < template.Parameters.Count; i++) parser.given[template.Parameters[i].Name] = arguments[i];
+
+            Token start = parser.Advance();   // struct
+            parser.Advance();                 // .
+            Token name = parser.Advance();
+            parser.ParseTemplateParameters(name);
+            var named = new Token(TokenKind.Identifier, name.Span, fullName, null, name.StartsLine);
+            StructDecl decl = parser.ParseStruct(start, named, program);
+            program.Structs.Add(decl);
+            return decl;
+        }
+
+        /// <summary>
+        /// At a '&lt;' (ahead tokens on): the token after the '&gt;' that closes it, when what's between
+        /// can only be types (names, ptr&lt;...&gt;, method&lt;...: ...&gt;, on one line), or -1. That's how
+        /// Stack&lt;int&gt; names; is told from a &lt; b. Inside another type's brackets the close may be
+        /// the first half of a '&gt;&gt;': then it's that token.
+        /// </summary>
+        int TypesEndAhead(int ahead)
+        {
+            if (PeekToken(ahead).Kind != TokenKind.Less) return -1;
+            int depth = 0;
+            for (int i = ahead; pos + i < tokens.Count; i++)
+            {
+                Token t = PeekToken(i);
+                if (i > ahead && t.StartsLine) return -1;
+                switch (t.Kind)
+                {
+                    case TokenKind.Less: depth++; break;
+                    case TokenKind.Greater: depth--; break;
+                    case TokenKind.GreaterGreater:
+                        if (depth == 1) return i;
+                        depth -= 2;
+                        break;
+                    case TokenKind.Colon: break;
+                    case TokenKind.Identifier:
+                        if (ReservedWords.Contains(t.Text) && !TypeKeywords.Contains(t.Text) && t.Text != "into") return -1;
+                        break;
+                    default: return -1;
+                }
+                if (depth == 0) return i + 1;
+                if (depth < 0) return -1;
+            }
+            return -1;
+        }
+
+        /// <summary>Name&lt;types&gt; then a name: a variable of a struct that takes types (Stack&lt;int&gt; undo;).</summary>
+        bool AtTemplateDeclaration(int ahead = 0)
+        {
+            if (!IsName(PeekToken(ahead))) return false;
+            int after = TypesEndAhead(ahead + 1);
+            return after > 0 && PeekToken(after).Kind == TokenKind.Identifier && !PeekToken(after).StartsLine;
+        }
+
         StructDecl ParseStruct(Token start, Token name, ProgramNode program)
         {
             var decl = new StructDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
@@ -584,7 +698,18 @@ namespace Phi.Compiler.Syntax
         {
             Token name = ExpectIdentifier("a type");
             if (name.Text == "method") return ParseMethodType(name);
-            if (name.Text != "ptr") return new TypeRef { Name = name.Text, Span = name.Span };
+            if (name.Text != "ptr")
+            {
+                // one of a struct's own types (Item): the type this use of the struct gave it
+                if (given != null && given.TryGetValue(name.Text, out TypeRef? stands))
+                {
+                    var same = new TypeRef { Name = stands.Name, Pointee = stands.Pointee, Result = stands.Result, Span = name.Span };
+                    same.Parameters.AddRange(stands.Parameters);
+                    same.ParameterInto.AddRange(stands.ParameterInto);
+                    return same;
+                }
+                return TypesEndAhead(0) > 0 ? ParseTemplateUse(name) : new TypeRef { Name = name.Text, Span = name.Span };
+            }
 
             Expect(TokenKind.Less, "'<' after ptr, as in ptr<u8>");
             TypeRef pointee = ParseType();
@@ -599,6 +724,32 @@ namespace Phi.Compiler.Syntax
 
             Token close = Expect(TokenKind.Greater, "'>' to close ptr<...>");
             return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(close.Span) };
+        }
+
+        /// <summary>
+        /// Stack&lt;int&gt;, Map&lt;str Player&gt;: a struct that takes types, with the types this use gives it.
+        /// As a type its name is the whole of it, which is the struct made for these types.
+        /// </summary>
+        TypeRef ParseTemplateUse(Token name)
+        {
+            Advance();   // <
+            var arguments = new List<TypeRef>();
+            while (!At(TokenKind.Greater) && !At(TokenKind.GreaterGreater))
+            {
+                if (AtEnd || At(TokenKind.Semicolon)) throw Error(Current.Span, $"expected '>' to close {name.Text}<...>");
+                arguments.Add(ParseType());
+            }
+            Token close = Current;
+            // (Map<str ptr<u8>> and ptr<Stack<int>> end in '>>', which the lexer reads as one token)
+            if (At(TokenKind.GreaterGreater))
+                tokens[pos] = new Token(TokenKind.Greater, new Span(close.Span.Start + 1, 1), ">", null, false);
+            else Advance();
+
+            var type = new TypeRef { Name = $"{name.Text}<{string.Join(" ", arguments)}>", Span = name.Span.To(close.Span) };
+            // (inside a template read as itself, Stack<Item> is no use of anything yet)
+            if (placeholders == null)
+                reading?.TemplateUses.Add(new TemplateUse { File = file, Template = name.Text, Arguments = arguments, FullName = type.Name, Span = type.Span });
+            return type;
         }
 
         /// <summary>
@@ -1806,7 +1957,8 @@ namespace Phi.Compiler.Syntax
                 Advance();
                 // a type keyword or ptr<T> is a type; a name may be a struct or a variable,
                 // which the binder decides
-                if (Current.Kind == TokenKind.Identifier && TypeKeywords.Contains(Current.Text))
+                if (Current.Kind == TokenKind.Identifier
+                    && (TypeKeywords.Contains(Current.Text) || given != null && given.ContainsKey(Current.Text) || IsName(Current) && TypesEndAhead(1) > 0))
                 {
                     TypeRef type = ParseType();
                     return new SizeofExpr { TypeName = type, Span = t.Span.To(type.Span) };

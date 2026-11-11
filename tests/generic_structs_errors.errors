@@ -1,0 +1,8 @@
+25:14: error: 'int' is a type already; this is a name for whatever type Taken is used with, like Item
+25:18: error: 'Plain' is a type already (a struct or an enum of this program)
+25:30: error: Taken already takes a type called 'Twice'
+30:14: error: struct.Empty<> takes no types; name one, as in struct.Empty<Item>, or leave the <> out
+37:6: error: Stack takes 1 type (Stack<Item>), but Stack<int int> gives it 2 types
+38:6: error: Pair takes 2 types (Pair<First Second>), but Pair<int> gives it 1 type
+39:6: error: Plain takes no types: it's declared struct.Plain, not struct.Plain<...>
+40:6: error: unknown type 'Stak' (in Stak<int>)

@@ -21,6 +21,12 @@ namespace Phi.Compiler.Syntax
         public List<EnumDecl> Enums { get; } = new();
         public List<UseDecl> Uses { get; } = new();
 
+        /// <summary>Structs that take types (struct.Stack&lt;Item&gt;): each is made into a struct for every set of types it's used with.</summary>
+        public List<StructTemplate> Templates { get; } = new();
+
+        /// <summary>Every place such a struct is named with its types (Stack&lt;int&gt;).</summary>
+        public List<TemplateUse> TemplateUses { get; } = new();
+
         /// <summary>The compiled libraries the program includes, each once.</summary>
         public List<Libraries.CompiledTarget> CompiledLibraries { get; } = new();
     }
@@ -206,6 +212,30 @@ namespace Phi.Compiler.Syntax
     }
 
     /// <summary>A type as written: int, u16, str, Task, ptr&lt;u8&gt;</summary>
+    /// <summary>
+    /// struct.Stack&lt;Item&gt; { ... }: a struct written once for any type. Item stands for the type
+    /// each use gives (Stack&lt;int&gt;), and the struct's text is read again with it in Item's place.
+    /// </summary>
+    public sealed class StructTemplate : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public Span NameSpan { get; init; }
+        public List<(string Name, Span Span)> Parameters { get; } = new();
+
+        /// <summary>Where its `struct` is among the file's tokens.</summary>
+        public int StartToken { get; init; }
+    }
+
+    /// <summary>Stack&lt;int&gt; where a type goes: the struct's name, the types given, and the whole as a type's name.</summary>
+    public sealed class TemplateUse : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Template { get; init; } = "";
+        public List<TypeRef> Arguments { get; init; } = new();
+        public string FullName { get; init; } = "";
+    }
+
     public sealed class TypeRef : Node
     {
         public string Name { get; init; } = "";

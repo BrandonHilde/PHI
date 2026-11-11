@@ -1022,6 +1022,68 @@ method<ptr<Counter> int: int> f: addr Counter.Add;   # as a method value, self c
 - From outside the struct, a method is always called on a value (`c.Add`), never as
   `Counter.Add` on its own.
 
+### Structs that take types
+
+A struct can be written once for any type. The types it takes are named in `<>` after its
+name, and used inside it wherever a type goes:
+
+```phi
+struct.Stack<Item>
+{
+    Item items[];
+
+    [Push: Item item;]
+        items++ item;
+    [end]
+
+    [Pop]
+        Item top: items:(items.len - 1);
+        items.len--;
+    [end: top]
+}
+
+struct.Pair<First Second>
+{
+    First first;
+    Second second;
+}
+```
+
+Where it's used, the types go in the same place:
+
+```phi
+new Stack<int> undo;
+call undo.Push: 5;
+call undo.Push: 8;
+log (undo.Pop) '\n';              # 8
+
+new Stack<ptr<u8>> names;         # the same struct, for another type
+call names.Push: 'ann';
+
+Pair<int u8> both;
+both.first is 310;
+```
+
+- **Each use is a struct of its own.** `Stack<int>` and `Stack<ptr<u8>>` are two structs:
+  the struct's text is read again with the type in `Item`'s place, and what comes out is
+  checked and compiled as if it had been written by hand. So a `Stack<int>` only takes
+  ints, `sizeof Pair<int u8>` is 5, and nothing is slower for it.
+- **The name of the type is the whole of it.** `Stack<int>` goes wherever a type does: a
+  variable, a field, a parameter (`[Depth: Stack<int> stack;]`), a pointer
+  (`ptr<Stack<int>>`), `sizeof`, and another struct's types (`Pair<int ptr<Stack<int>>>`).
+- **A type's name is any name that isn't a type already** (`Item`, `Key`, `Value`), given
+  with spaces between, as a method's types are in `method<int int: int>`.
+- **A struct that takes types can use another, and itself:** `new Stack<Item> kept;` in a
+  struct that takes `Item`, or `new Node<Item> next;` in `struct.Node<Item>`.
+- **It must suit every type it's used with.** All of its methods are compiled for each
+  use, so `Stack<Spot>` (a struct in a stack) is an error at `Pop`, which hands back an
+  `Item` and a method can't hand back a struct. The error is at the line in the struct and
+  says which use it was for: `(in Stack<Spot>, which line 12 of game.phi uses)`. What's
+  wrong in a struct nobody uses isn't found until someone does, beyond its syntax.
+- **Not yet:** methods that take types of their own, a type that must have an interface
+  (`<Item has Ordered>`), and structs that take types in a compiled library (a program
+  uses such a file's source instead).
+
 ### Interfaces
 
 An interface names methods that different structs share. A struct that `has` it must

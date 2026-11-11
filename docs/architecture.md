@@ -50,6 +50,14 @@ precedence, lowest first, is: `or`, `and`, comparison, `|`, `^`, `&`, shifts, `+
 used files' classes come before the classes that use them. A kernel that uses `new` or
 `free` gets `memory.heap` added automatically.
 
+A struct that takes types (`struct.Stack<Item>`) is kept by the parser as a template, and
+each `Stack<int>` where a type goes is noted as a use. Once every file is read,
+[Templates.cs](../Compiler/Phi.Compiler/Syntax/Templates.cs) makes each use its struct: the
+parser reads the template's tokens again with `Item` standing for the type given, and the
+struct that comes out is named `Stack<int>`. Everything after sees ordinary structs. Each
+is read from a copy of the template's file, which is how an error in one says which use it
+was for (`DiagnosticBag.CopyOf`).
+
 ### Binder (`Semantics/`)
 
 [Binder.cs](../Compiler/Phi.Compiler/Semantics/Binder.cs) checks the program and works out

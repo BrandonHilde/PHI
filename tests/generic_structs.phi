@@ -1,0 +1,130 @@
+# runs only in 32 and 64 bits: arrays that grow
+# A struct that takes types is written once: struct.Stack<Item>. Each use with other types
+# (Stack<int>, Stack<Spot>) is a struct of its own, made by reading the struct again with
+# the type in Item's place.
+struct.Stack<Item>
+{
+	Item items[];
+
+	[Push: Item item;]
+		items++ item;
+	[end]
+
+	[Pop]
+		Item top: items:(items.len - 1);
+		items.len--;
+	[end: top]
+
+	[Count]
+	[end: items.len]
+}
+
+struct.Pair<First Second>
+{
+	First first;
+	Second second;
+
+	[Swapped: ptr<Pair<Second First>> other: 0;]
+		other:0.first is second;
+		other:0.second is first;
+	[end]
+}
+
+# a struct that takes a type can hold another that does, of the same type
+struct.Counted<Item>
+{
+	new Stack<Item> kept;
+	int pushes;
+
+	[Add: Item item;]
+		call kept.Push: item;
+		pushes++;
+	[end: kept.items.len]
+
+	[Size]
+	[end: sizeof Item]
+}
+
+# and itself: a list's node
+struct.Node<Item>
+{
+	Item value;
+	new Node<Item> next;
+}
+
+# every method must suit every type the struct is used with: this one only keeps and counts,
+# so it can hold structs too (Stack's Pop gives back an Item, which a method can't do with a struct)
+struct.Bag<Item>
+{
+	Item items[];
+
+	[Add: Item item;]
+		items++ item;
+	[end: items.len]
+}
+
+struct.Spot
+{
+	int x;
+	int y;
+}
+
+phi.GenericStructs:Library
+{
+	# the same struct for two types: each keeps its own
+	new Stack<int> numbers;
+	new Stack<u8> small;
+	call numbers.Push: 5;
+	call numbers.Push: 100000;
+	call small.Push: 200;
+	call small.Push: 7;
+	debug (numbers.Pop) ' ' (numbers.Pop) ' ' (numbers.Count) ' ' (small.Pop) ' ' (small.Count) '\n';
+
+	# two types, and a method that names the struct with them the other way round
+	Pair<int u8> both;
+	both.first is 310;
+	both.second is 7;
+	Pair<u8 int> turned;
+	call both.Swapped: addr turned;
+	debug turned.first ' ' turned.second ' ' sizeof Pair<int u8> ' ' sizeof Pair<u8 int> ' ' sizeof Pair<u8 u8> '\n';
+
+	# a pointer as the type, and a pointer to one
+	new Stack<ptr<u8>> names;
+	call names.Push: 'ann';
+	call names.Push: 'bob';
+	ptr<Stack<ptr<u8>>> same: addr names;
+	debug (same:0.Pop) ' ' (names.Pop) ' ' (Depth: numbers) '\n';
+
+	# one inside another, and a size that depends on the type
+	new Counted<int> wide;
+	new Counted<u8> narrow;
+	new Stack<int> for_wide;
+	new Stack<u8> for_narrow;
+	wide.kept takes for_wide;             # (a new field starts empty)
+	narrow.kept takes for_narrow;
+	call wide.Add: 3;
+	debug (wide.Add: 4) ' ' wide.pushes ' ' (wide.Size) ' ' (narrow.Size) ' ' (narrow.Add: 9) '\n';
+
+	# a list made of nodes of itself
+	new Node<int> head: 1;
+	new Node<int> second: 2;
+	new Node<int> third: 3;
+	second.next takes third;
+	head.next takes second;
+	debug head.value ' ' head.next.value ' ' head.next.next.value ' ' (head.next.next.next is empty) '\n';
+
+	# a struct as the type: the elements are structs
+	new Bag<Spot> spots;
+	Spot here;
+	here.x is 3;
+	here.y is 4;
+	call spots.Add: here;
+	here.x is 30;
+	debug spots.items:0.x ' ' (spots.Add: here) ' ' spots.items:1.x ' ' spots.items:1.y '\n';
+
+	# a method given one
+	[Depth: Stack<int> stack;]
+		call stack.Push: 1;
+		call stack.Push: 2;
+	[end: stack.items.len]
+}

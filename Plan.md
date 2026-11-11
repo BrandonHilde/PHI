@@ -1532,6 +1532,40 @@ folding, and (2) the backend interface, which S10 needs first.
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range
 
+#### Structs that take types (generics, first part)
+
+Goal: a container is written once. Until now `data.map` held `u32` keys and values only,
+and every program wrapped it or wrote its own.
+
+- [x] `struct.Stack<Item> { ... }` and `Stack<int>`: a struct names the types it takes in
+  `<>` after its name, and a use gives them the same way (`Map<Key Value>`, by spaces, as
+  `method<int int: int>`). A type's name is any name that isn't a type already; there's no
+  keyword. Decided with the user, 2026-11-10: `struct.Stack<Item>` over `struct.Stack: Item`,
+  so a struct's heading and its uses line up.
+  - Each use is a struct of its own, made before any name is looked up (`Templates.Expand`):
+    the template's tokens are read again with each type's name standing for the type given
+    (`Parser.Instantiate`), under the use's whole name, `Stack<int>`. The binder and the
+    generator see ordinary structs, and nothing in them changed but the labels
+    (`Stack_of_int`). Uses inside a template are followed (`Stack<Item>` in
+    `Counted<Item>`, `Node<Item>` in itself), up to 2000 structs.
+  - `Stack<int> undo;` is told from `a < b` by what's between the brackets: only types, on
+    one line, then a name.
+  - An error in a template is at its line, says which use it was for, and is said once
+    when every use has it. Using the name alone, the wrong number of types, a name that's
+    a type already and a struct that takes none each have their own message.
+  - Tests `generic_structs`, `generic_structs_errors`, `generic_structs_misuse` and
+    `TemplateTests`.
+- [ ] Every method of a template is compiled for every use, so one that doesn't suit a type
+  (`Pop` handing back a struct) stops the whole use. Compiling only the methods a use
+  calls would lift that.
+- [ ] `Map<Key Value>` in the standard library. It needs a key's hash whatever the key is
+  (a number, a `str`, a struct), which a template can't write in PHI yet: a built-in that
+  hashes by type, or an interface the key has.
+- [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), methods that
+  take types of their own, and templates in a compiled library (its interface is written
+  from the source's text, which a made struct has none of).
+- [ ] The editor: the language server and the VS Code grammar don't know the new syntax.
+
 #### Phase S7: Interfaces
 
 Goal: Scenario 1's second milestone, and the interface design Plan.md has been waiting for.
