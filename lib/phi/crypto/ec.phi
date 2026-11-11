@@ -78,8 +78,6 @@ phi.Ec:Library
 	u8 sign_byte[1];
 
 	# for the point math
-	u32 t_plus[26];                           # (Plus's and Minus's own, as the others hold results meanwhile)
-	u32 t_minus[26];
 	u32 t_a[26];
 	u32 t_b[26];
 	u32 t_c[26];
@@ -334,12 +332,7 @@ phi.Ec:Library
 
 	# r = a + b mod n (both below n)
 	[PlusModN: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
-		call Big.Copy: addr t_plus a ec.limbs;
-		u32 carry: (Big.Add: addr t_plus b ec.limbs);
-		if carry is not 0 or (Big.Compare: addr t_plus addr ec.order.n ec.limbs) >= 0
-			call Big.Subtract: addr t_plus addr ec.order.n ec.limbs;
-		;;
-		call Big.Copy: r addr t_plus ec.limbs;
+		call Big.AddMod: r a b addr ec.order;
 	[end]
 
 	# point = x and y (ec.bytes each), in Montgomery form with z 1; false if it isn't on
@@ -472,21 +465,12 @@ phi.Ec:Library
 
 	# r = a + b mod p (r may be a or b)
 	[Plus: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
-		call Big.Copy: addr t_plus a ec.limbs;
-		u32 carry: (Big.Add: addr t_plus b ec.limbs);
-		if carry is not 0 or (Big.Compare: addr t_plus addr ec.field.n ec.limbs) >= 0
-			call Big.Subtract: addr t_plus addr ec.field.n ec.limbs;
-		;;
-		call Big.Copy: r addr t_plus ec.limbs;
+		call Big.AddMod: r a b addr ec.field;
 	[end]
 
 	# r = a - b mod p (r may be a or b)
 	[Minus: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
-		call Big.Copy: addr t_minus a ec.limbs;
-		if (Big.Subtract: addr t_minus b ec.limbs) is not 0
-			call Big.Add: addr t_minus addr ec.field.n ec.limbs;
-		;;
-		call Big.Copy: r addr t_minus ec.limbs;
+		call Big.SubMod: r a b addr ec.field;
 	[end]
 
 	# r = a b mod n (both plain)

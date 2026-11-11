@@ -14,6 +14,13 @@
 # Multiplying modulo m is Montgomery's way, with no division: Setup works out what that
 # needs once for each modulus, which must be odd (an RSA modulus and a curve's primes
 # are). A number given to MontMul or PowMod has the modulus's limbs, and is below it.
+#
+# MontMul itself works 32 bits at a time, with 64-bit products: it joins the limbs in
+# pairs, multiplies, and parts them again, so each pass of its loops does four times the
+# work. That's why a modulus has an even number of limbs (one more than its bits need, if
+# need be): R is the same number either way, and so is every number in Montgomery form.
+# It's in assembly (BigMontMul), as the CPU's mul gives the 64-bit product of two 32-bit
+# numbers in one instruction, and nearly all of a signature check is spent there.
 
 use crypto.bytes;
 
@@ -22,8 +29,10 @@ struct.Modulus
 {
 	u32 n[258];                 # the modulus, in limbs
 	u32 r2[258];                # R^2 mod n, where R = 2^(16 limbs): it brings a number into Montgomery form
-	u32 limbs;                  # how many limbs n has
+	u32 limbs;                  # how many limbs n has: an even number
 	u32 inverse;                # -1/n mod 2^16
+	u32 wide[129];              # the modulus 32 bits at a time, for MontMul
+	u32 wide_inverse;           # -1/n mod 2^32
 }
 
 phi.Big:Library
@@ -35,6 +44,18 @@ phi.Big:Library
 	u32 big_one[258];
 	u32 big_x[258];
 	u32 big_acc[258];
+	u32 big_a[129];             # MontMul's two numbers, 32 bits at a time,
+	u32 big_b[129];
+	u32 big_w[131];             # and its sum
+	ptr<u32> big_from_a: 0;     # for BigMontMul: the two numbers and where the product goes, in limbs,
+	ptr<u32> big_from_b: 0;
+	ptr<u32> big_to: 0;
+	ptr<u32> big_n: 0;          # the modulus 32 bits at a time,
+	u32 big_h: 0;               # how many of those it has,
+	u32 big_limbs: 0;           # (for BigAddMod and BigSubMod: big_n is the modulus in limbs, this many)
+	u32 big_inverse: 0;         # -1/n mod 2^32,
+	u32 big_bi: 0;              # and its own: the part of b being multiplied by, and q
+	u32 big_q: 0;
 
 	# x (limbs limbs) = count big-endian bytes; false if the number needs more limbs
 	[FromBytes: ptr<u32> x: 0; u32 limbs: 0; ptr<u8> bytes: 0; u32 count: 0;]
@@ -135,8 +156,11 @@ phi.Big:Library
 		;;
 		if count is 0 or count > MOST * 2 return false;
 		if (bytes:(count - 1) & 1) is 0 return false;
-		m.limbs is (count + 1) / 2;
+		m.limbs is ((count + 3) / 4) * 2;
 		call Big.FromBytes: addr m.n m.limbs bytes count;
+		while u32 j: 0; j < m.limbs / 2; j++;
+			m.wide:j is m.n:(j + j) | (m.n:(j + j + 1) << 16);
+		;;
 
 		# -1/n mod 2^16, by Newton's way: each step doubles the bits that are right
 		u32 n0: m.n:0;
@@ -145,65 +169,87 @@ phi.Big:Library
 			inverse is (inverse * (2 - n0 * inverse)) & 0xFFFF;
 		;;
 		m.inverse is (0x10000 - inverse) & 0xFFFF;
+		# and mod 2^32 the same way, in 64 bits so that nothing is lost
+		u64 wide_n0: m.wide:0;
+		u64 wide: 1;
+		while int step: 0; step < 6; step++;
+			u64 twice: (wide_n0 * wide) & 0xFFFFFFFF;
+			wide is (wide * ((0x100000002 - twice) & 0xFFFFFFFF)) & 0xFFFFFFFF;
+		;;
+		m.wide_inverse is ((0x100000000 - wide) & 0xFFFFFFFF) as u32;
 
-		# R^2 mod n: 1, doubled 2 * 16 * limbs times, taking n off whenever it's past n
+		# R mod n: n's top bit alone is below n, and doubling it up to R's bit, taking n off
+		# whenever it's past n, is only as many doublings as n falls short of its limbs
 		ptr<u32> x: addr m.r2;
 		while u32 i: 0; i < m.limbs; i++;
 			x:i is 0;
 		;;
-		x:0 is 1;
-		while u32 k: 0; k < 32 * m.limbs; k++;
-			u32 carry: 0;
-			while u32 i: 0; i < m.limbs; i++;
-				u32 v: (x:i << 1) | carry;
-				x:i is v & 0xFFFF;
-				carry is v >> 16;
+		u32 top: m.limbs * 16 - 1;
+		while ((m.n:(top >> 4) >> (top & 15)) & 1) is 0
+			top--;
+		;;
+		x:(top >> 4) is 1 << (top & 15);
+		while u32 k: top; k < m.limbs * 16; k++;
+			call Big.Double: x m;
+		;;
+		# R^2 mod n from that, which is 1 in Montgomery form: 2^(16 limbs) in Montgomery form
+		# is R * R, and it's reached by squaring and doubling, a bit of 16 limbs at a time
+		u32 power: m.limbs * 16;
+		int bit: 15;
+		while ((power >> bit) & 1) is 0
+			bit--;
+		;;
+		while bit >= 0
+			call Big.MontMul: x x x m;
+			if ((power >> bit) & 1) is 1
+				call Big.Double: x m;
 			;;
-			if carry is not 0 or (Big.Compare: x addr m.n m.limbs) >= 0
-				call Big.Subtract: x addr m.n m.limbs;
-			;;
+			bit--;
 		;;
 	[end: true]
 
+	# x = 2x mod n, for an x below n
+	[Double: ptr<u32> x: 0; ptr<Modulus> m: 0;]
+		u32 carry: 0;
+		while u32 i: 0; i < m.limbs; i++;
+			u32 v: (x:i << 1) | carry;
+			x:i is v & 0xFFFF;
+			carry is v >> 16;
+		;;
+		if carry is not 0 or (Big.Compare: x addr m.n m.limbs) >= 0
+			call Big.Subtract: x addr m.n m.limbs;
+		;;
+	[end]
+
+	# r = a + b mod n, for a and b below n; r may be a or b
+	[AddMod: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0; ptr<Modulus> m: 0;]
+		big_from_a is a;
+		big_from_b is b;
+		big_to is r;
+		big_n is addr m.n;
+		big_limbs is m.limbs;
+		call BigAddMod;
+	[end]
+
+	# r = a - b mod n, for a and b below n; r may be a or b
+	[SubMod: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0; ptr<Modulus> m: 0;]
+		big_from_a is a;
+		big_from_b is b;
+		big_to is r;
+		big_n is addr m.n;
+		big_limbs is m.limbs;
+		call BigSubMod;
+	[end]
+
 	# r = a * b / R mod n (Montgomery's product); r may be a or b
 	[MontMul: ptr<u32> r: 0; ptr<u32> a: 0; ptr<u32> b: 0; ptr<Modulus> m: 0;]
-		u32 n: m.limbs;
-		while u32 j: 0; j < n + 2; j++;
-			big_t:j is 0;
-		;;
-		while u32 i: 0; i < n; i++;
-			# t = t + a * b:i
-			u32 bi: b:i;
-			u32 c: 0;
-			while u32 j: 0; j < n; j++;
-				u32 v: big_t:j + a:j * bi + c;
-				big_t:j is v & 0xFFFF;
-				c is v >> 16;
-			;;
-			u32 top: big_t:n + c;
-			big_t:n is top & 0xFFFF;
-			big_t:(n + 1) is top >> 16;
-
-			# t = (t + q * n) / 2^16, with q making the low limb 0
-			u32 q: (big_t:0 * m.inverse) & 0xFFFF;
-			u32 v: big_t:0 + q * m.n:0;
-			c is v >> 16;
-			while u32 j: 1; j < n; j++;
-				v is big_t:j + q * m.n:j + c;
-				big_t:(j - 1) is v & 0xFFFF;
-				c is v >> 16;
-			;;
-			v is big_t:n + c;
-			big_t:(n - 1) is v & 0xFFFF;
-			big_t:n is big_t:(n + 1) + (v >> 16);
-		;;
-		# it's below 2n: n off once more if it's past
-		if big_t:n is not 0 or (Big.Compare: addr big_t addr m.n n) >= 0
-			call Big.Subtract: addr big_t addr m.n n;
-		;;
-		while u32 j: 0; j < n; j++;
-			r:j is big_t:j;
-		;;
+		big_from_a is a;
+		big_from_b is b;
+		big_to is r;
+		big_n is addr m.wide;
+		big_h is m.limbs >> 1;
+		big_inverse is m.wide_inverse;
+		call BigMontMul;
 	[end]
 
 	# r = base ^ exponent mod n, the exponent as e_count big-endian bytes; false if the
@@ -238,4 +284,416 @@ phi.Big:Library
 		;;
 		call Big.Copy: r addr big_acc n;
 	[end]
+}
+
+# Montgomery's product, for Big.MontMul: the limbs at big_to = those at big_from_a times
+# those at big_from_b / 2^(32 big_h) mod the modulus at big_n. Four steps:
+#  - the limbs joined in pairs into big_a and big_b (a limb is 16 bits in 32, so two make 32)
+#  - for each 32 bits of b in turn: w = w + a * that, then w = (w + q * n) / 2^32, with
+#    q = w's low 32 bits * big_inverse, which makes the low 32 bits of the sum 0
+#  - w is below twice the modulus: the modulus off once if w isn't below it
+#  - w parted into limbs again
+asm.BigMontMul
+{
+	mov esi, [{big_from_a}]
+	mov edi, [{big_from_b}]
+	xor ecx, ecx
+.join:
+	mov eax, [esi + ecx*8 + 4]
+	shl eax, 16
+	or eax, [esi + ecx*8]
+	mov [{big_a} + ecx*4], eax
+	mov eax, [edi + ecx*8 + 4]
+	shl eax, 16
+	or eax, [edi + ecx*8]
+	mov [{big_b} + ecx*4], eax
+	mov dword [{big_w} + ecx*4], 0
+	inc ecx
+	cmp ecx, [{big_h}]
+	jb .join
+	mov dword [{big_w} + ecx*4], 0
+	mov dword [{big_w} + ecx*4 + 4], 0
+
+	mov esi, [{big_n}]
+	xor edi, edi                         ; which part of b
+.each:
+	mov eax, [{big_b} + edi*4]
+	mov [{big_bi}], eax
+	xor ebx, ebx                         ; what's carried
+	xor ecx, ecx
+.multiply:
+	mov eax, [{big_a} + ecx*4]
+	mul dword [{big_bi}]
+	add eax, [{big_w} + ecx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [{big_w} + ecx*4], eax
+	mov ebx, edx
+	inc ecx
+	cmp ecx, [{big_h}]
+	jb .multiply
+	add [{big_w} + ecx*4], ebx
+	mov dword [{big_w} + ecx*4 + 4], 0
+	adc dword [{big_w} + ecx*4 + 4], 0
+
+	mov eax, [{big_w}]
+	mul dword [{big_inverse}]
+	mov [{big_q}], eax
+	mul dword [esi]
+	add eax, [{big_w}]
+	adc edx, 0
+	mov ebx, edx
+	mov ecx, 1
+.reduce:
+	cmp ecx, [{big_h}]
+	jae .reduced
+	mov eax, [esi + ecx*4]
+	mul dword [{big_q}]
+	add eax, [{big_w} + ecx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [{big_w} + ecx*4 - 4], eax
+	mov ebx, edx
+	inc ecx
+	jmp .reduce
+.reduced:
+	mov eax, [{big_w} + ecx*4]
+	add eax, ebx
+	mov [{big_w} + ecx*4 - 4], eax
+	mov eax, [{big_w} + ecx*4 + 4]
+	adc eax, 0
+	mov [{big_w} + ecx*4], eax
+	inc edi
+	cmp edi, [{big_h}]
+	jb .each
+
+	; the modulus comes off if w has gone past 2^(32 h), or isn't below it (from the top down)
+	mov ecx, [{big_h}]
+	cmp dword [{big_w} + ecx*4], 0
+	jne .take
+.compare:
+	dec ecx
+	mov eax, [{big_w} + ecx*4]
+	cmp eax, [esi + ecx*4]
+	ja .take
+	jb .part
+	test ecx, ecx
+	jnz .compare
+.take:
+	mov edx, [{big_h}]
+	xor ecx, ecx                         ; (and no borrow yet; inc and dec leave it be)
+.subtract:
+	mov eax, [{big_w} + ecx*4]
+	sbb eax, [esi + ecx*4]
+	mov [{big_w} + ecx*4], eax
+	inc ecx
+	dec edx
+	jnz .subtract
+.part:
+	mov edi, [{big_to}]
+	xor ecx, ecx
+.split:
+	mov eax, [{big_w} + ecx*4]
+	movzx edx, ax
+	mov [edi + ecx*8], edx
+	shr eax, 16
+	mov [edi + ecx*8 + 4], eax
+	inc ecx
+	cmp ecx, [{big_h}]
+	jb .split
+	ret
+}
+
+x64.BigMontMul
+{
+	mov rsi, [rel {big_from_a}]
+	mov rdi, [rel {big_from_b}]
+	lea r8, [rel {big_a}]
+	lea r9, [rel {big_b}]
+	lea r10, [rel {big_w}]
+	mov r11d, [rel {big_h}]
+	mov r12d, [rel {big_inverse}]
+	xor ecx, ecx
+.join:
+	mov eax, [rsi + rcx*8 + 4]
+	shl eax, 16
+	or eax, [rsi + rcx*8]
+	mov [r8 + rcx*4], eax
+	mov eax, [rdi + rcx*8 + 4]
+	shl eax, 16
+	or eax, [rdi + rcx*8]
+	mov [r9 + rcx*4], eax
+	mov dword [r10 + rcx*4], 0
+	inc ecx
+	cmp ecx, r11d
+	jb .join
+	mov dword [r10 + rcx*4], 0
+	mov dword [r10 + rcx*4 + 4], 0
+
+	mov rsi, [rel {big_n}]
+	xor edi, edi                         ; which part of b
+.each:
+	mov r13d, [r9 + rdi*4]
+	xor ebx, ebx                         ; what's carried
+	xor ecx, ecx
+.multiply:
+	mov eax, [r8 + rcx*4]
+	mul r13d
+	add eax, [r10 + rcx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [r10 + rcx*4], eax
+	mov ebx, edx
+	inc ecx
+	cmp ecx, r11d
+	jb .multiply
+	add [r10 + rcx*4], ebx
+	mov dword [r10 + rcx*4 + 4], 0
+	adc dword [r10 + rcx*4 + 4], 0
+
+	mov eax, [r10]
+	mul r12d
+	mov r14d, eax                        ; q
+	mul dword [rsi]
+	add eax, [r10]
+	adc edx, 0
+	mov ebx, edx
+	mov ecx, 1
+.reduce:
+	cmp ecx, r11d
+	jae .reduced
+	mov eax, [rsi + rcx*4]
+	mul r14d
+	add eax, [r10 + rcx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [r10 + rcx*4 - 4], eax
+	mov ebx, edx
+	inc ecx
+	jmp .reduce
+.reduced:
+	mov eax, [r10 + rcx*4]
+	add eax, ebx
+	mov [r10 + rcx*4 - 4], eax
+	mov eax, [r10 + rcx*4 + 4]
+	adc eax, 0
+	mov [r10 + rcx*4], eax
+	inc edi
+	cmp edi, r11d
+	jb .each
+
+	; the modulus comes off if w has gone past 2^(32 h), or isn't below it (from the top down)
+	mov ecx, r11d
+	cmp dword [r10 + rcx*4], 0
+	jne .take
+.compare:
+	dec ecx
+	mov eax, [r10 + rcx*4]
+	cmp eax, [rsi + rcx*4]
+	ja .take
+	jb .part
+	test ecx, ecx
+	jnz .compare
+.take:
+	mov edx, r11d
+	xor ecx, ecx                         ; (and no borrow yet; inc and dec leave it be)
+.subtract:
+	mov eax, [r10 + rcx*4]
+	sbb eax, [rsi + rcx*4]
+	mov [r10 + rcx*4], eax
+	inc ecx
+	dec edx
+	jnz .subtract
+.part:
+	mov rdi, [rel {big_to}]
+	xor ecx, ecx
+.split:
+	mov eax, [r10 + rcx*4]
+	movzx edx, ax
+	mov [rdi + rcx*8], edx
+	shr eax, 16
+	mov [rdi + rcx*8 + 4], eax
+	inc ecx
+	cmp ecx, r11d
+	jb .split
+	ret
+}
+
+# For Big.AddMod: the limbs at big_to = those at big_from_a plus those at big_from_b, a
+# limb at a time (16 bits in 32, so what's carried is the bit above), then the modulus
+# (big_limbs limbs at big_n) taken off if the sum carried out or isn't below it.
+asm.BigAddMod
+{
+	mov esi, [{big_from_a}]
+	mov edi, [{big_from_b}]
+	mov edx, [{big_to}]
+	xor ebx, ebx
+	xor ecx, ecx
+.add:
+	mov eax, [esi + ecx*4]
+	add eax, [edi + ecx*4]
+	add eax, ebx
+	mov ebx, eax
+	shr ebx, 16
+	and eax, 0xFFFF
+	mov [edx + ecx*4], eax
+	inc ecx
+	cmp ecx, [{big_limbs}]
+	jb .add
+	mov esi, [{big_n}]
+	test ebx, ebx
+	jnz .take
+.compare:                                ; from the top limb down
+	dec ecx
+	mov eax, [edx + ecx*4]
+	cmp eax, [esi + ecx*4]
+	ja .take
+	jb .done
+	test ecx, ecx
+	jnz .compare
+.take:
+	xor ebx, ebx
+	xor ecx, ecx
+.subtract:
+	mov eax, [edx + ecx*4]
+	sub eax, [esi + ecx*4]
+	sub eax, ebx
+	mov ebx, eax
+	shr ebx, 31
+	and eax, 0xFFFF
+	mov [edx + ecx*4], eax
+	inc ecx
+	cmp ecx, [{big_limbs}]
+	jb .subtract
+.done:
+	ret
+}
+
+x64.BigAddMod
+{
+	mov rsi, [rel {big_from_a}]
+	mov rdi, [rel {big_from_b}]
+	mov rdx, [rel {big_to}]
+	xor ebx, ebx
+	xor ecx, ecx
+.add:
+	mov eax, [rsi + rcx*4]
+	add eax, [rdi + rcx*4]
+	add eax, ebx
+	mov ebx, eax
+	shr ebx, 16
+	and eax, 0xFFFF
+	mov [rdx + rcx*4], eax
+	inc ecx
+	cmp ecx, [rel {big_limbs}]
+	jb .add
+	mov rsi, [rel {big_n}]
+	test ebx, ebx
+	jnz .take
+.compare:                                ; from the top limb down
+	dec ecx
+	mov eax, [rdx + rcx*4]
+	cmp eax, [rsi + rcx*4]
+	ja .take
+	jb .done
+	test ecx, ecx
+	jnz .compare
+.take:
+	xor ebx, ebx
+	xor ecx, ecx
+.subtract:
+	mov eax, [rdx + rcx*4]
+	sub eax, [rsi + rcx*4]
+	sub eax, ebx
+	mov ebx, eax
+	shr ebx, 31
+	and eax, 0xFFFF
+	mov [rdx + rcx*4], eax
+	inc ecx
+	cmp ecx, [rel {big_limbs}]
+	jb .subtract
+.done:
+	ret
+}
+
+# For Big.SubMod: the limbs at big_to = those at big_from_a less those at big_from_b (what's
+# borrowed shows as the top bit of the 32), then the modulus put back on if that borrowed.
+asm.BigSubMod
+{
+	mov esi, [{big_from_a}]
+	mov edi, [{big_from_b}]
+	mov edx, [{big_to}]
+	xor ebx, ebx
+	xor ecx, ecx
+.subtract:
+	mov eax, [esi + ecx*4]
+	sub eax, [edi + ecx*4]
+	sub eax, ebx
+	mov ebx, eax
+	shr ebx, 31
+	and eax, 0xFFFF
+	mov [edx + ecx*4], eax
+	inc ecx
+	cmp ecx, [{big_limbs}]
+	jb .subtract
+	test ebx, ebx
+	jz .done
+	mov esi, [{big_n}]
+	xor ebx, ebx
+	xor ecx, ecx
+.add:
+	mov eax, [edx + ecx*4]
+	add eax, [esi + ecx*4]
+	add eax, ebx
+	mov ebx, eax
+	shr ebx, 16
+	and eax, 0xFFFF
+	mov [edx + ecx*4], eax
+	inc ecx
+	cmp ecx, [{big_limbs}]
+	jb .add
+.done:
+	ret
+}
+
+x64.BigSubMod
+{
+	mov rsi, [rel {big_from_a}]
+	mov rdi, [rel {big_from_b}]
+	mov rdx, [rel {big_to}]
+	xor ebx, ebx
+	xor ecx, ecx
+.subtract:
+	mov eax, [rsi + rcx*4]
+	sub eax, [rdi + rcx*4]
+	sub eax, ebx
+	mov ebx, eax
+	shr ebx, 31
+	and eax, 0xFFFF
+	mov [rdx + rcx*4], eax
+	inc ecx
+	cmp ecx, [rel {big_limbs}]
+	jb .subtract
+	test ebx, ebx
+	jz .done
+	mov rsi, [rel {big_n}]
+	xor ebx, ebx
+	xor ecx, ecx
+.add:
+	mov eax, [rdx + rcx*4]
+	add eax, [rsi + rcx*4]
+	add eax, ebx
+	mov ebx, eax
+	shr ebx, 16
+	and eax, 0xFFFF
+	mov [rdx + rcx*4], eax
+	inc ecx
+	cmp ecx, [rel {big_limbs}]
+	jb .add
+.done:
+	ret
 }

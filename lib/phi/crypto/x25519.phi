@@ -1,5 +1,6 @@
 # X25519 (RFC 7748): Diffie-Hellman on Curve25519, how two sides agree on a secret
-# over an open network. TLS 1.3 uses it for its key exchange. Any kind of program.
+# over an open network. TLS 1.3 uses it for its key exchange. 32-bit kernels and
+# programs, and programs on Linux and Windows.
 #
 #   use crypto.x25519;
 #   u8 secret[32];                         # 32 random bytes (crypto.random)
@@ -10,29 +11,41 @@
 #
 # Both sides end up with the same shared value, which nobody watching can work out.
 #
-# Numbers modulo p = 2^255 - 19 are kept as 32 limbs of 8 bits (in ints, so they may
-# go negative between steps). PHI's math is 32-bit, and 8-bit limbs keep every
-# product and sum within that. The steps follow TweetNaCl (public domain), with its
-# 16-bit limbs made 8-bit.
+# A number modulo p = 2^255 - 19 is kept as 8 parts of 32 bits, least significant first:
+# any number below 2^256 that is the right one modulo p, and only Pack brings it below p.
+# 2^256 is 38 modulo p, so whatever goes past the top comes back as 38 times as much at
+# the bottom. Adding, taking away and multiplying are in assembly (X25519Add, X25519Sub
+# and X25519Mul), where a carry is one instruction and mul gives the 64-bit product of
+# two parts; none of them branches on the numbers, so their timing tells nothing. The
+# steps of the ladder follow TweetNaCl (public domain).
 
 use crypto.bytes;
 
 phi.X25519:Library
 {
-	const u32 LIMBS: 32;
+	const u32 PARTS: 8;
 
-	int x25_a[32];
-	int x25_b[32];
-	int x25_c[32];
-	int x25_d[32];
-	int x25_e[32];
-	int x25_f[32];
-	int x25_x[32];
-	int x25_m[32];
-	int x25_t[32];
-	int x25_121665: 0x41 0xDB 0x01 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0;
+	u32 x25_a[8];
+	u32 x25_b[8];
+	u32 x25_c[8];
+	u32 x25_d[8];
+	u32 x25_e[8];
+	u32 x25_f[8];
+	u32 x25_x[8];
+	u32 x25_m[8];
+	u32 x25_t[8];
+	u32 x25_121665: 121665 0 0 0 0 0 0 0;
 	u8 x25_scalar[32];
 	u8 x25_base[32];
+
+	# for the assembly: the two numbers and where the answer goes, and its own
+	ptr<u32> x25_from_a: 0;
+	ptr<u32> x25_from_b: 0;
+	ptr<u32> x25_to: 0;
+	ptr<u32> x25_next_b: 0;
+	u32 x25_wide[17];
+	u32 x25_bi: 0;
+	u32 x25_rows: 0;
 
 	# the public value for a secret: secret times the curve's base point (9)
 	[Base: ptr<u8> output: 0; ptr<u8> secret: 0;]
@@ -49,7 +62,7 @@ phi.X25519:Library
 		x25_scalar:31 is (x25_scalar:31 & 127) | 64;
 
 		call Unpack: addr x25_x point;
-		while u32 i: 0; i < LIMBS; i++;
+		while u32 i: 0; i < PARTS; i++;
 			x25_b:i is x25_x:i;
 			x25_a:i is 0;
 			x25_c:i is 0;
@@ -61,7 +74,7 @@ phi.X25519:Library
 		# the Montgomery ladder, one bit of the scalar at a time from the top
 		int bit: 254;
 		while bit >= 0
-			int r: (x25_scalar:(bit >> 3) >> (bit & 7)) & 1;
+			u32 r: (x25_scalar:(bit >> 3) >> (bit & 7)) & 1;
 			call Swap: addr x25_a addr x25_b r;
 			call Swap: addr x25_c addr x25_d r;
 			call Add: addr x25_e addr x25_a addr x25_c;
@@ -95,72 +108,42 @@ phi.X25519:Library
 		call Bytes.Zero: addr x25_scalar 32;
 	[end]
 
-	# ---- arithmetic modulo 2^255 - 19
+	# ---- arithmetic modulo 2^255 - 19; o may be a or b in each
 
-	[Add: ptr<int> o: 0; ptr<int> a: 0; ptr<int> b: 0;]
-		while u32 i: 0; i < LIMBS; i++;
-			o:i is a:i + b:i;
-		;;
+	[Add: ptr<u32> o: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		x25_from_a is a;
+		x25_from_b is b;
+		x25_to is o;
+		call X25519Add;
 	[end]
 
-	[Sub: ptr<int> o: 0; ptr<int> a: 0; ptr<int> b: 0;]
-		while u32 i: 0; i < LIMBS; i++;
-			o:i is a:i - b:i;
-		;;
+	[Sub: ptr<u32> o: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		x25_from_a is a;
+		x25_from_b is b;
+		x25_to is o;
+		call X25519Sub;
 	[end]
 
-	# o = a * b; o may be a or b
-	[Mul: ptr<int> o: 0; ptr<int> a: 0; ptr<int> b: 0;]
-		int product[63];
-		while u32 i: 0; i < LIMBS; i++;
-			int ai: a:i;
-			ptr<int> row: addr product + i * 4;
-			while u32 j: 0; j < LIMBS; j++;
-				row:j is row:j + ai * b:j;
-			;;
-		;;
-		# 2^256 is 38 modulo p, so the top half folds into the bottom times 38
-		unsafe
-			while u32 i: 0; i < 31; i++;
-				product:i is product:i + 38 * product:(i + 32);
-			;;
-		;;
-		while u32 i: 0; i < LIMBS; i++;
-			o:i is product:i;
-		;;
-		call Carry: o;
-		call Carry: o;
-	[end]
-
-	# bring every limb back to 0-255, carrying into the next (and from the top, times
-	# 38, into the bottom)
-	[Carry: ptr<int> o: 0;]
-		while u32 i: 0; i < LIMBS; i++;
-			o:i is o:i + 256;
-			int c: o:i >> 8;
-			if i < LIMBS - 1
-				o:(i + 1) is o:(i + 1) + c - 1;
-			;;
-			else
-				o:0 is o:0 + 38 * (c - 1);
-			;;
-			o:i is o:i - (c << 8);
-		;;
+	[Mul: ptr<u32> o: 0; ptr<u32> a: 0; ptr<u32> b: 0;]
+		x25_from_a is a;
+		x25_from_b is b;
+		x25_to is o;
+		call X25519Mul;
 	[end]
 
 	# swap p and q if bit is 1, the same way whatever it is (so its timing tells nothing)
-	[Swap: ptr<int> p: 0; ptr<int> q: 0; int bit: 0;]
-		int mask: ~(bit - 1);
-		while u32 i: 0; i < LIMBS; i++;
-			int t: mask & (p:i ^ q:i);
+	[Swap: ptr<u32> p: 0; ptr<u32> q: 0; u32 bit: 0;]
+		u32 mask: bit * 0xFFFFFFFF;
+		while u32 i: 0; i < PARTS; i++;
+			u32 t: mask & (p:i ^ q:i);
 			p:i is p:i ^ t;
 			q:i is q:i ^ t;
 		;;
 	[end]
 
 	# o = 1 / i, as i to the power p - 2
-	[Invert: ptr<int> o: 0; ptr<int> i: 0;]
-		while u32 k: 0; k < LIMBS; k++;
+	[Invert: ptr<u32> o: 0; ptr<u32> i: 0;]
+		while u32 k: 0; k < PARTS; k++;
 			x25_t:k is i:k;
 		;;
 		int power: 253;
@@ -171,40 +154,391 @@ phi.X25519:Library
 			;;
 			power--;
 		;;
-		while u32 k: 0; k < LIMBS; k++;
+		while u32 k: 0; k < PARTS; k++;
 			o:k is x25_t:k;
 		;;
 	[end]
 
-	[Unpack: ptr<int> o: 0; ptr<u8> bytes: 0;]
-		while u32 i: 0; i < LIMBS; i++;
-			o:i is bytes:i;
+	# the number in 32 bytes, least significant first, without its top bit (RFC 7748)
+	[Unpack: ptr<u32> o: 0; ptr<u8> bytes: 0;]
+		while u32 i: 0; i < PARTS; i++;
+			ptr<u8> four: bytes + i * 4;
+			u32 top: four:3;                  # (a u32 before it's moved up, or its top bit would be a sign)
+			o:i is four:0 | (four:1 << 8) | (four:2 << 16) | (top << 24);
 		;;
-		o:31 is o:31 & 0x7F;
+		o:7 is o:7 & 0x7FFFFFFF;
 	[end]
 
 	# the 32 bytes of n, fully reduced (0 <= n < p)
-	[Pack: ptr<u8> output: 0; ptr<int> n: 0;]
-		while u32 i: 0; i < LIMBS; i++;
+	[Pack: ptr<u8> output: 0; ptr<u32> n: 0;]
+		while u32 i: 0; i < PARTS; i++;
 			x25_t:i is n:i;
 		;;
-		call Carry: addr x25_t;
-		call Carry: addr x25_t;
-		call Carry: addr x25_t;
-		# subtract p twice, keeping the result each time it doesn't go below zero
+		# 2^255 is 19 modulo p: the top bit comes off and 19 goes on, twice, as the first
+		# can carry into the top bit again; then it's below 2^255
 		while u32 pass: 0; pass < 2; pass++;
-			x25_m:0 is x25_t:0 - 0xED;
-			while u32 i: 1; i < 31; i++;
-				x25_m:i is x25_t:i - 0xFF - ((x25_m:(i - 1) >> 8) & 1);
-				x25_m:(i - 1) is x25_m:(i - 1) & 0xFF;
+			u64 carry: (x25_t:7 >> 31) * 19;
+			x25_t:7 is x25_t:7 & 0x7FFFFFFF;
+			while u32 i: 0; i < PARTS; i++;
+				carry is carry + x25_t:i;
+				x25_t:i is carry as u32;
+				carry is carry >> 32;
 			;;
-			x25_m:31 is x25_t:31 - 0x7F - ((x25_m:30 >> 8) & 1);
-			int borrow: (x25_m:31 >> 8) & 1;
-			x25_m:30 is x25_m:30 & 0xFF;
-			call Swap: addr x25_t addr x25_m 1 - borrow;
 		;;
-		while u32 i: 0; i < LIMBS; i++;
-			output:i is x25_t:i & 0xFF;
+		# if it's p or more, it's p too many: that's when 19 more reaches 2^255, and what's
+		# over 2^255 then is the answer. Picked the same way whichever it is.
+		u64 more: 19;
+		while u32 i: 0; i < PARTS; i++;
+			more is more + x25_t:i;
+			x25_m:i is more as u32;
+			more is more >> 32;
+		;;
+		u32 mask: (x25_m:7 >> 31) * 0xFFFFFFFF;
+		while u32 i: 0; i < PARTS; i++;
+			x25_t:i is (x25_t:i & ~mask) | (x25_m:i & mask);
+		;;
+		x25_t:7 is x25_t:7 & 0x7FFFFFFF;
+		while u32 i: 0; i < PARTS; i++;
+			ptr<u8> four: output + i * 4;
+			four:0 is x25_t:i & 0xFF;
+			four:1 is (x25_t:i >> 8) & 0xFF;
+			four:2 is (x25_t:i >> 16) & 0xFF;
+			four:3 is x25_t:i >> 24;
 		;;
 	[end]
+}
+
+# x25_to = x25_from_a * x25_from_b modulo 2^256 - 38 (so modulo p too), each 8 parts of 32
+# bits: the 16-part product into x25_wide, a row for each part of b, then its top half
+# folded onto its bottom half.
+asm.X25519Mul
+{
+	mov edi, {x25_wide}
+	xor eax, eax
+	xor ecx, ecx
+.clear:
+	mov [edi + ecx*4], eax
+	inc ecx
+	cmp ecx, 16
+	jb .clear
+	mov esi, [{x25_from_a}]
+	mov ebx, [{x25_from_b}]
+	mov dword [{x25_rows}], 8
+.row:
+	mov eax, [ebx]
+	mov [{x25_bi}], eax
+	add ebx, 4
+	mov [{x25_next_b}], ebx
+	xor ebx, ebx                         ; what's carried
+	xor ecx, ecx
+.column:
+	mov eax, [esi + ecx*4]
+	mul dword [{x25_bi}]
+	add eax, [edi + ecx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [edi + ecx*4], eax
+	mov ebx, edx
+	inc ecx
+	cmp ecx, 8
+	jb .column
+	mov [edi + 32], ebx
+	add edi, 4
+	mov ebx, [{x25_next_b}]
+	dec dword [{x25_rows}]
+	jnz .row
+
+	; 2^256 is 38 modulo p: the top half, times 38, onto the bottom
+	mov esi, {x25_wide}
+	mov edi, [{x25_to}]
+	xor ebx, ebx
+	xor ecx, ecx
+.fold:
+	mov eax, [esi + ecx*4 + 32]
+	mov edx, 38
+	mul edx
+	add eax, [esi + ecx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [edi + ecx*4], eax
+	mov ebx, edx
+	inc ecx
+	cmp ecx, 8
+	jb .fold
+	; what's carried out of that is at most 38: times 38 onto the bottom again
+	imul ebx, ebx, 38
+	add [edi], ebx
+	adc dword [edi + 4], 0
+	adc dword [edi + 8], 0
+	adc dword [edi + 12], 0
+	adc dword [edi + 16], 0
+	adc dword [edi + 20], 0
+	adc dword [edi + 24], 0
+	adc dword [edi + 28], 0
+	; and if that carried, the number is tiny, and 38 more can't carry
+	sbb eax, eax
+	and eax, 38
+	add [edi], eax
+	ret
+}
+
+x64.X25519Mul
+{
+	lea rdi, [rel {x25_wide}]
+	xor eax, eax
+	xor ecx, ecx
+.clear:
+	mov [rdi + rcx*4], eax
+	inc ecx
+	cmp ecx, 16
+	jb .clear
+	mov rsi, [rel {x25_from_a}]
+	mov rbx, [rel {x25_from_b}]
+	mov dword [rel {x25_rows}], 8
+.row:
+	mov eax, [rbx]
+	mov [rel {x25_bi}], eax
+	add rbx, 4
+	mov [rel {x25_next_b}], rbx
+	xor ebx, ebx                         ; what's carried
+	xor ecx, ecx
+.column:
+	mov eax, [rsi + rcx*4]
+	mul dword [rel {x25_bi}]
+	add eax, [rdi + rcx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [rdi + rcx*4], eax
+	mov ebx, edx
+	inc ecx
+	cmp ecx, 8
+	jb .column
+	mov [rdi + 32], ebx
+	add rdi, 4
+	mov rbx, [rel {x25_next_b}]
+	dec dword [rel {x25_rows}]
+	jnz .row
+
+	; 2^256 is 38 modulo p: the top half, times 38, onto the bottom
+	lea rsi, [rel {x25_wide}]
+	mov rdi, [rel {x25_to}]
+	xor ebx, ebx
+	xor ecx, ecx
+.fold:
+	mov eax, [rsi + rcx*4 + 32]
+	mov edx, 38
+	mul edx
+	add eax, [rsi + rcx*4]
+	adc edx, 0
+	add eax, ebx
+	adc edx, 0
+	mov [rdi + rcx*4], eax
+	mov ebx, edx
+	inc ecx
+	cmp ecx, 8
+	jb .fold
+	; what's carried out of that is at most 38: times 38 onto the bottom again
+	imul ebx, ebx, 38
+	add [rdi], ebx
+	adc dword [rdi + 4], 0
+	adc dword [rdi + 8], 0
+	adc dword [rdi + 12], 0
+	adc dword [rdi + 16], 0
+	adc dword [rdi + 20], 0
+	adc dword [rdi + 24], 0
+	adc dword [rdi + 28], 0
+	; and if that carried, the number is tiny, and 38 more can't carry
+	sbb eax, eax
+	and eax, 38
+	add [rdi], eax
+	ret
+}
+
+# x25_to = x25_from_a + x25_from_b, the same way
+asm.X25519Add
+{
+	mov esi, [{x25_from_a}]
+	mov edi, [{x25_from_b}]
+	mov ebx, [{x25_to}]
+	mov eax, [esi]
+	add eax, [edi]
+	mov [ebx], eax
+	mov eax, [esi + 4]
+	adc eax, [edi + 4]
+	mov [ebx + 4], eax
+	mov eax, [esi + 8]
+	adc eax, [edi + 8]
+	mov [ebx + 8], eax
+	mov eax, [esi + 12]
+	adc eax, [edi + 12]
+	mov [ebx + 12], eax
+	mov eax, [esi + 16]
+	adc eax, [edi + 16]
+	mov [ebx + 16], eax
+	mov eax, [esi + 20]
+	adc eax, [edi + 20]
+	mov [ebx + 20], eax
+	mov eax, [esi + 24]
+	adc eax, [edi + 24]
+	mov [ebx + 24], eax
+	mov eax, [esi + 28]
+	adc eax, [edi + 28]
+	mov [ebx + 28], eax
+	; past the top: 2^256 too many is 38 too few, twice if the first goes past again
+	sbb eax, eax
+	and eax, 38
+	add [ebx], eax
+	adc dword [ebx + 4], 0
+	adc dword [ebx + 8], 0
+	adc dword [ebx + 12], 0
+	adc dword [ebx + 16], 0
+	adc dword [ebx + 20], 0
+	adc dword [ebx + 24], 0
+	adc dword [ebx + 28], 0
+	sbb eax, eax
+	and eax, 38
+	add [ebx], eax
+	ret
+}
+
+x64.X25519Add
+{
+	mov rsi, [rel {x25_from_a}]
+	mov rdi, [rel {x25_from_b}]
+	mov rbx, [rel {x25_to}]
+	mov eax, [rsi]
+	add eax, [rdi]
+	mov [rbx], eax
+	mov eax, [rsi + 4]
+	adc eax, [rdi + 4]
+	mov [rbx + 4], eax
+	mov eax, [rsi + 8]
+	adc eax, [rdi + 8]
+	mov [rbx + 8], eax
+	mov eax, [rsi + 12]
+	adc eax, [rdi + 12]
+	mov [rbx + 12], eax
+	mov eax, [rsi + 16]
+	adc eax, [rdi + 16]
+	mov [rbx + 16], eax
+	mov eax, [rsi + 20]
+	adc eax, [rdi + 20]
+	mov [rbx + 20], eax
+	mov eax, [rsi + 24]
+	adc eax, [rdi + 24]
+	mov [rbx + 24], eax
+	mov eax, [rsi + 28]
+	adc eax, [rdi + 28]
+	mov [rbx + 28], eax
+	; past the top: 2^256 too many is 38 too few, twice if the first goes past again
+	sbb eax, eax
+	and eax, 38
+	add [rbx], eax
+	adc dword [rbx + 4], 0
+	adc dword [rbx + 8], 0
+	adc dword [rbx + 12], 0
+	adc dword [rbx + 16], 0
+	adc dword [rbx + 20], 0
+	adc dword [rbx + 24], 0
+	adc dword [rbx + 28], 0
+	sbb eax, eax
+	and eax, 38
+	add [rbx], eax
+	ret
+}
+
+# x25_to = x25_from_a - x25_from_b, the same way
+asm.X25519Sub
+{
+	mov esi, [{x25_from_a}]
+	mov edi, [{x25_from_b}]
+	mov ebx, [{x25_to}]
+	mov eax, [esi]
+	sub eax, [edi]
+	mov [ebx], eax
+	mov eax, [esi + 4]
+	sbb eax, [edi + 4]
+	mov [ebx + 4], eax
+	mov eax, [esi + 8]
+	sbb eax, [edi + 8]
+	mov [ebx + 8], eax
+	mov eax, [esi + 12]
+	sbb eax, [edi + 12]
+	mov [ebx + 12], eax
+	mov eax, [esi + 16]
+	sbb eax, [edi + 16]
+	mov [ebx + 16], eax
+	mov eax, [esi + 20]
+	sbb eax, [edi + 20]
+	mov [ebx + 20], eax
+	mov eax, [esi + 24]
+	sbb eax, [edi + 24]
+	mov [ebx + 24], eax
+	mov eax, [esi + 28]
+	sbb eax, [edi + 28]
+	mov [ebx + 28], eax
+	; past the top: 2^256 was borrowed, which is 38, twice if the first goes past again
+	sbb eax, eax
+	and eax, 38
+	sub [ebx], eax
+	sbb dword [ebx + 4], 0
+	sbb dword [ebx + 8], 0
+	sbb dword [ebx + 12], 0
+	sbb dword [ebx + 16], 0
+	sbb dword [ebx + 20], 0
+	sbb dword [ebx + 24], 0
+	sbb dword [ebx + 28], 0
+	sbb eax, eax
+	and eax, 38
+	sub [ebx], eax
+	ret
+}
+
+x64.X25519Sub
+{
+	mov rsi, [rel {x25_from_a}]
+	mov rdi, [rel {x25_from_b}]
+	mov rbx, [rel {x25_to}]
+	mov eax, [rsi]
+	sub eax, [rdi]
+	mov [rbx], eax
+	mov eax, [rsi + 4]
+	sbb eax, [rdi + 4]
+	mov [rbx + 4], eax
+	mov eax, [rsi + 8]
+	sbb eax, [rdi + 8]
+	mov [rbx + 8], eax
+	mov eax, [rsi + 12]
+	sbb eax, [rdi + 12]
+	mov [rbx + 12], eax
+	mov eax, [rsi + 16]
+	sbb eax, [rdi + 16]
+	mov [rbx + 16], eax
+	mov eax, [rsi + 20]
+	sbb eax, [rdi + 20]
+	mov [rbx + 20], eax
+	mov eax, [rsi + 24]
+	sbb eax, [rdi + 24]
+	mov [rbx + 24], eax
+	mov eax, [rsi + 28]
+	sbb eax, [rdi + 28]
+	mov [rbx + 28], eax
+	; past the top: 2^256 was borrowed, which is 38, twice if the first goes past again
+	sbb eax, eax
+	and eax, 38
+	sub [rbx], eax
+	sbb dword [rbx + 4], 0
+	sbb dword [rbx + 8], 0
+	sbb dword [rbx + 12], 0
+	sbb dword [rbx + 16], 0
+	sbb dword [rbx + 20], 0
+	sbb dword [rbx + 24], 0
+	sbb dword [rbx + 28], 0
+	sbb eax, eax
+	and eax, 38
+	sub [rbx], eax
+	ret
 }

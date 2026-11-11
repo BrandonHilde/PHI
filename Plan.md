@@ -1604,10 +1604,32 @@ folding, and (2) the backend interface, which S10 needs first.
   `Big.MontMul` was P-384 signatures (ECDSA), not RSA; and as a Linux program a fetch was
   mostly waiting for the network (four round trips for each file, about 70 ms each to
   Wikipedia, against 60 ms of CPU), where under QEMU without KVM it was mostly the CPU.
-- [ ] Still slow in `crypto.bignum` and `crypto.ec`, for the first handshake with each
-  server: 16-bit limbs, no squaring routine, one bit of the scalars at a time. And no TLS
-  session resumption, no fetching several files at once, an 8 KB TCP window, and nothing
-  asked for compressed.
+- [x] **The arithmetic under a handshake is in assembly** (2026-11-11), where the CPU's
+  `mul` gives a 64-bit product and a carry is one instruction. In instructions run
+  (`bench_tls`, `bench_crypto`):
+
+  | | before | now |
+  |---|---|---|
+  | P-384 signature checked | 325.7 million | 39.5 million |
+  | P-256 signature checked | 98.9 million | 12.9 million |
+  | RSA-2048 signature checked | 39.7 million | 4.0 million |
+  | X25519, one operation | 34.2 million | 3.3 million |
+  | A Let's Encrypt chain, the first time | 947.8 million | 115.8 million |
+
+  - `Big.MontMul` joins its 16-bit limbs in pairs and multiplies 32 bits at a time
+    (`BigMontMul`); a number's limbs are as they were, so `crypto.ec` and `crypto.rsa`
+    didn't change. `Big.AddMod` and `Big.SubMod` are new, for the curves' sums.
+  - `Big.Setup` reaches R^2 by squaring, not by 2 x 16 x limbs doublings: that was most
+    of an RSA check.
+  - `crypto.x25519` keeps a number as 8 parts of 32 bits modulo 2^256 - 38, with
+    `X25519Mul`, `X25519Add` and `X25519Sub`; it was 32 limbs of 8 bits.
+  - `crypto_bignum` and `crypto_x25519_cases` check all of it against Python's big
+    numbers: every size of modulus, numbers that make every carry happen, and points at
+    and around p, 2^255 and 2^256.
+- [ ] Still to do for the network: `crypto.ec` takes one bit of the scalars at a time (a
+  window of them would save about a fifth) and has no squaring routine; no TLS session
+  resumption, no fetching several files at once, an 8 KB TCP window, and nothing asked
+  for compressed.
 
 #### Looking for memory that's used after it's freed
 
