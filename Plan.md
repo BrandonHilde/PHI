@@ -1532,6 +1532,35 @@ folding, and (2) the backend interface, which S10 needs first.
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range
 
+#### A program's heap, for small blocks
+
+- [x] The profiler said the heap was 46% of filling a map with names, and a program that
+  only takes and gives back memory spent 95% of its time in the heap's lists: every `new`
+  searched lists by size, split a block and filed the rest, and every `free` merged with
+  its neighbors and filed again. A freed block of up to 512 bytes now waits on a list of
+  blocks of exactly its size (`heap_kept`), and the next `new` of that size takes it
+  straight back; it still counts as free. When nothing else fits, every waiting block is
+  given back and merged first (`GiveBackKept`), so the heap doesn't grow for want of
+  memory that's only waiting. Freeing one twice is still caught. As a 64-bit Linux
+  program (C's malloc beside it):
+  - one block taken and given back, 2 million times: 172 ms to 35 (C 12);
+  - 200,000 of 32 bytes, freed in order, 5 times: 93 to 25 (C 14);
+  - 200,000 of 8 to 200 bytes, freed in another order, 5 times: 200 to 104 (C 84);
+  - a list of 200,000 nodes, 5 times: 92 to 41 (C 9);
+  - weblib's `test_css_fuzz` 2.21 s to 1.52, and its JavaScript benchmark 10.9 s to 9.7
+    (objects made 6.0 to 8.6 million a second).
+  What's left against C is mostly each block's header, 32 bytes in 64-bit code where
+  C's is 16: the same blocks fill more of the cache.
+- [x] A method's variables are set to zero on the way in by a store for each word up to
+  16 of them (it was 4): `rep stosd` takes longer to get going than that many stores, and
+  it needs `edi`. Small blocks are zeroed a word at a time for the same reason.
+- [x] Found by it: at a method's end, an array of objects that grows had its storage freed
+  before its objects, which were then found by reading that storage. The old heap left a
+  freed block's first words alone more often than not; this one writes its list's link
+  there at once, and `array_copy_program` stopped on 32-bit Linux with "free of memory
+  that new did not hand out". The objects are freed first now.
+  - Not yet: the kernel's heap (memory.heap), which is the same design as this one was.
+
 #### Profiling a Linux program
 
 - [x] `phi profile x.phi --target linux` (or `linux64`): `phi profile` only sampled a kernel

@@ -1,0 +1,64 @@
+# A program's heap keeps a freed block of up to 512 bytes waiting by its size, and hands it
+# straight back to the next new of that size: zeroed again, and counted as free while it
+# waits. When nothing else fits, what's waiting is given back and merged first, so the heap
+# doesn't grow for want of memory that's only waiting.
+phi.HeapKeptProgram:Program
+{
+	u32 blocks_before: Heap.used_blocks;
+	u32 bytes_before: Heap.used_bytes;
+
+	# the same block comes back for the same size, and it's all zeros again
+	ptr<u8> first: new u8[24];
+	first:0 is 7;
+	first:23 is 9;
+	free first;
+	ptr<u8> again: new u8[24];
+	log (again is first) ' ' again:0 ' ' again:23 ' ' (Heap.used_blocks - blocks_before) '\n';
+
+	# another size doesn't take it, and a bigger block than 512 bytes never waits
+	free again;
+	ptr<u8> other: new u8[40];
+	ptr<u8> big: new u8[2000];
+	log (other is first) ' ' Heap.kept_blocks '\n';
+	free big;
+	log Heap.kept_blocks ' ';
+	free other;
+	log Heap.kept_blocks '\n';
+
+	# many small ones, each still holding what was put in it
+	ptr<ptr<u8>> many: new ptr<u8>[2000];
+	while int i: 0; i < 2000; i++;
+		many:i is new u8[64];
+		many:i:0 is i & 255;
+		many:i:63 is (i >> 8) & 255;
+	;;
+	int wrong: 0;
+	while int i: 0; i < 2000; i++;
+		if many:i:0 is not (i & 255) or many:i:63 is not ((i >> 8) & 255)
+			wrong++;
+		;;
+		free many:i;
+	;;
+	log wrong ' wrong, ' (Heap.kept_blocks >= 2000) '\n';
+
+	# a block bigger than any that's free: the small ones are given back and merged to make
+	# room, and the heap is no bigger for it
+	ptr<u8> end_before: Heap.heap_end;
+	ptr<u8> large: new u8[100000];
+	log (large is not 0) ' ' (Heap.heap_end is end_before) ' ' Heap.kept_blocks '\n';
+	free large;
+
+	# and taken again in another order, they're all there and all zeros
+	while int i: 0; i < 2000; i++;
+		many:i is new u8[64];
+		if many:i:0 is not 0 or many:i:63 is not 0
+			wrong++;
+		;;
+	;;
+	while int i: 1999; i >= 0; i--;
+		free many:i;
+	;;
+	free many;
+	log wrong ' ' ((Heap.LargestFree) >= 190000) ' ' Heap.kept_blocks '\n';
+	log (Heap.used_blocks is blocks_before) ' ' (Heap.used_bytes is bytes_before) '\n';
+}

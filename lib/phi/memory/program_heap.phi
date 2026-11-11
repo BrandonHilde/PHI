@@ -12,6 +12,14 @@
 # Alloc takes the first that fits from them and splits it, as the kernel's heap
 # (memory.heap) does. A program's threads (user.threads) share it, so Alloc, Free and
 # LargestFree take a lock: one thread at a time in them.
+#
+# Most of what a program asks for is small and soon given back: a str's text, a list's
+# node. So a freed block of up to 512 bytes isn't merged and filed, which costs a search
+# and two lists' worth of pointers each way: it waits on a list of blocks of exactly its
+# size (heap_kept), and the next Alloc of that size takes it straight back. A block
+# waiting there still counts as free. When nothing else fits, every block that's waiting
+# is given back properly first (GiveBackKept), merged with its neighbors, so the heap
+# never grows for want of memory that's only waiting.
 
 struct.HeapBlock
 {
@@ -39,6 +47,11 @@ phi.Heap:Program
 	const u32 PAGE_SIZE: 4096;
 	const u32 BINS: 28;                      # 8-15 bytes, 16-31, ... doubling; the last takes the rest
 	const u32 MOST_32: 134217728;            # 128 MB: a 32-bit program's heap, unless it says otherwise
+	const u32 KEPT_MOST: 512;                # a freed block of up to this many bytes waits by its size
+	const u32 KEPT_SIZES: 65;                # one list for each size, in steps of 8 bytes
+	const u32 FREE: 0;                       # what a block's `used` says: free, and on a list by size
+	const u32 USED: 1;                       # handed out
+	const u32 KEPT: 2;                       # freed, and waiting on heap_kept for the next of its size
 
 	# The most the heap grows to, which the program decides: `Heap.most_bytes is 600000000;`
 	# lets it have 600 MB, and a smaller number holds it to less. 0 is the default: 128 MB in a
@@ -53,6 +66,8 @@ phi.Heap:Program
 	u32 used_bytes: 0;          # handed out right now (not counting headers)
 	u32 used_blocks: 0;
 	ptr<HeapBlock> heap_bins[BINS];
+	ptr<HeapBlock> heap_kept[KEPT_SIZES];    # freed blocks of size / 8 * 8 bytes exactly, the last freed first
+	u32 kept_blocks: 0;                      # how many are waiting there
 	ptr<u8> heap_zero_at: 0;    # for HeapZero
 	u32 heap_zero_words: 0;
 	u32 heap_bin_size: 0;       # for HeapBinOf
@@ -67,9 +82,38 @@ phi.Heap:Program
 		;;
 		ptr<u8> result: 0;
 		locked heap_lock
-			result is (Take: wanted);
-			if result is 0 and (More: wanted)
+			# a block of just this size, freed a moment ago: it's taken straight back
+			# (wanted is at most 512 where its list is asked for, so the index needs no check)
+			u32 kind: wanted >> 3;
+			ptr<HeapBlock> b: 0;
+			if wanted <= KEPT_MOST
+				unsafe
+					b is heap_kept:kind;
+				;;
+			;;
+			if b is not 0
+				ptr<HeapFreeLinks> links: b + HEADER;
+				unsafe
+					heap_kept:kind is links:0.next;
+				;;
+				kept_blocks--;
+				b:0.used is USED;
+				used_bytes++ wanted;
+				used_blocks++;
+				result is b + HEADER;
+				heap_zero_at is result;
+				heap_zero_words is wanted / 4;
+				call asm.HeapZero;
+			;;
+			else
 				result is (Take: wanted);
+				# nothing fits: what's waiting by size goes back first, then the kernel is asked
+				if result is 0 and (GiveBackKept)
+					result is (Take: wanted);
+				;;
+				if result is 0 and (More: wanted)
+					result is (Take: wanted);
+				;;
 			;;
 		;;
 	[end: result]
@@ -85,7 +129,7 @@ phi.Heap:Program
 			ptr<HeapBlock> rest: b + HEADER + wanted;
 			rest:0.magic is HEAP_MAGIC;
 			rest:0.size is b:0.size - wanted - HEADER;
-			rest:0.used is 0;
+			rest:0.used is FREE;
 			rest:0.next is b:0.next;
 			rest:0.previous is b;
 			if b:0.next is not 0
@@ -100,7 +144,7 @@ phi.Heap:Program
 			call AddFree: rest;
 		;;
 
-		b:0.used is 1;
+		b:0.used is USED;
 		used_bytes++ b:0.size;
 		used_blocks++;
 		ptr<u8> result: b + HEADER;
@@ -135,7 +179,7 @@ phi.Heap:Program
 		heap_end is start + bytes;
 
 		# the new memory follows the last block: a free one just gets bigger
-		if heap_last is not 0 and heap_last:0.used is 0
+		if heap_last is not 0 and heap_last:0.used is FREE
 			call RemoveFree: heap_last;
 			heap_last:0.size++ bytes;
 			call AddFree: heap_last;
@@ -162,59 +206,91 @@ phi.Heap:Program
 			ptr<HeapBlock> b: address - HEADER;
 			bln valid: address >= heap_start + HEADER and address < heap_end;
 			if valid
-				valid is b:0.magic is HEAP_MAGIC and b:0.used is 1;
+				valid is b:0.magic is HEAP_MAGIC and b:0.used is USED;
 			;;
 			if valid is false
 				log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
 				exit -1;
 			;;
 
-			b:0.used is 0;
 			used_bytes-- b:0.size;
 			used_blocks--;
-
-			# merge with the next block, then the previous one, if they are free
-			ptr<HeapBlock> next: b:0.next;
-			if next is not 0 and next:0.used is 0
-				call RemoveFree: next;
-				b:0.size++ HEADER + next:0.size;
-				b:0.next is next:0.next;
-				next:0.magic is 0;
-				if b:0.next is not 0
-					ptr<HeapBlock> after: b:0.next;
-					after:0.previous is b;
+			if b:0.size <= KEPT_MOST and (b:0.size & 7) is 0
+				# small: it waits for the next Alloc of its size
+				b:0.used is KEPT;
+				u32 kind: b:0.size >> 3;
+				ptr<HeapFreeLinks> links: b + HEADER;
+				unsafe
+					links:0.next is heap_kept:kind;
+					heap_kept:kind is b;
 				;;
-				if heap_last is next
-					heap_last is b;
-				;;
+				kept_blocks++;
 			;;
-			ptr<HeapBlock> merged: b;
-			ptr<HeapBlock> previous: b:0.previous;
-			if previous is not 0 and previous:0.used is 0
-				call RemoveFree: previous;
-				previous:0.size++ HEADER + b:0.size;
-				previous:0.next is b:0.next;
-				b:0.magic is 0;
-				if previous:0.next is not 0
-					ptr<HeapBlock> later: previous:0.next;
-					later:0.previous is previous;
-				;;
-				if heap_last is b
-					heap_last is previous;
-				;;
-				merged is previous;
+			else
+				call GiveBack: b;
 			;;
-			call AddFree: merged;
 		;;
 	[end]
+
+	# a block that's no longer used or waiting, made free: merged with the next block and the
+	# previous one, if they are free, and put on its size's list
+	[GiveBack: ptr<HeapBlock> b: 0;]
+		b:0.used is FREE;
+		ptr<HeapBlock> next: b:0.next;
+		if next is not 0 and next:0.used is FREE
+			call RemoveFree: next;
+			b:0.size++ HEADER + next:0.size;
+			b:0.next is next:0.next;
+			next:0.magic is 0;
+			if b:0.next is not 0
+				ptr<HeapBlock> after: b:0.next;
+				after:0.previous is b;
+			;;
+			if heap_last is next
+				heap_last is b;
+			;;
+		;;
+		ptr<HeapBlock> merged: b;
+		ptr<HeapBlock> previous: b:0.previous;
+		if previous is not 0 and previous:0.used is FREE
+			call RemoveFree: previous;
+			previous:0.size++ HEADER + b:0.size;
+			previous:0.next is b:0.next;
+			b:0.magic is 0;
+			if previous:0.next is not 0
+				ptr<HeapBlock> later: previous:0.next;
+				later:0.previous is previous;
+			;;
+			if heap_last is b
+				heap_last is previous;
+			;;
+			merged is previous;
+		;;
+		call AddFree: merged;
+	[end]
+
+	# every block that's waiting by its size, given back; false if none was
+	[GiveBackKept]
+		if kept_blocks is 0 return false;
+		while u32 size: 1; size < KEPT_SIZES; size++;
+			while heap_kept:size is not 0
+				ptr<HeapBlock> b: heap_kept:size;
+				ptr<HeapFreeLinks> links: b + HEADER;
+				heap_kept:size is links:0.next;
+				call GiveBack: b;
+			;;
+		;;
+		kept_blocks is 0;
+	[end: true]
 
 	# the largest block Alloc could hand out without asking the kernel for more
 	[LargestFree]
 		u32 largest: 0;
 		locked heap_lock
+			bln given: (GiveBackKept);       # (what's waiting by size is free too, once it's merged)
 			ptr<HeapBlock> b: heap_first;
 			while b is not 0
-				if b:0.used is 0 and b:0.size > largest
+				if b:0.used is FREE and b:0.size > largest
 					largest is b:0.size;
 				;;
 				b is b:0.next;
@@ -285,11 +361,24 @@ phi.Heap:Program
 }
 
 # heap_zero_words 32-bit words at heap_zero_at set to 0
+# (a word at a time for a small block: rep stosd takes longer to get going than 16 stores take)
 asm.HeapZero
 {
 	mov edi, [{heap_zero_at}]
 	mov ecx, [{heap_zero_words}]
 	xor eax, eax
+	cmp ecx, 16
+	ja .many
+	test ecx, ecx
+	jz .done
+.next:
+	mov [edi], eax
+	add edi, 4
+	dec ecx
+	jnz .next
+.done:
+	ret
+.many:
 	rep stosd
 	ret
 }
@@ -310,6 +399,18 @@ x64.HeapZero
 	mov rdi, [rel {heap_zero_at}]
 	mov ecx, [rel {heap_zero_words}]
 	xor eax, eax
+	cmp ecx, 16
+	ja .many
+	test ecx, ecx
+	jz .done
+.next:
+	mov [rdi], eax
+	add rdi, 4
+	dec ecx
+	jnz .next
+.done:
+	ret
+.many:
 	rep stosd
 	ret
 }

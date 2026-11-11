@@ -2395,7 +2395,10 @@ up to 124 MB (and only while the kernel has memory to spare). How far it may gro
 program's to say: `Heap.most_bytes is 600000000;` (see below for Linux and Windows). `new`
 gives 0 when there's no more, and an object that can't get memory ends the program with
 `PHI: out of memory for a new object on line N`. Freeing a pointer `new` didn't give out
-ends it with -1. All of it goes back to the kernel when the program ends.
+ends it with -1. All of it goes back to the kernel when the program ends. A freed block
+of up to 512 bytes waits by its size for the next `new` of that size, which makes the
+small, short-lived things most programs are made of (a `str`'s text, a list's node) cheap
+to make and let go; when nothing else fits, what's waiting is merged back first.
 
 ```phi
 phi.Big:Program

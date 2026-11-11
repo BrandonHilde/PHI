@@ -1634,6 +1634,27 @@ namespace Phi.Compiler.CodeGen
             var growing = m.Parameters.Concat(m.Locals).Where(v => v.Grows).ToList();
             var growingArrays = m.Locals.Where(v => v.GrowingElements).ToList();
             bool wideResult = m.ReturnType.IsWide;
+            // the objects first: an array of them that grows is freed element by element, which
+            // reads the array's storage, so that storage must still be there (it goes below)
+            var owned = m.Locals.Where(v => v.Ownership == Ownership.Owned).ToList();
+            if (owned.Count > 0)
+            {
+                if (wideResult) Emit("push edx");
+                Emit("push eax                ; the result");
+                foreach (VariableSymbol v in owned)
+                {
+                    if (v.Type.IsObjectArray)
+                    {
+                        EmitFreeElements(NameOf(v), 0);
+                        continue;
+                    }
+                    Emit($"mov {R("eax")}, {Q} [{v.Label}]   ; {v.Name}");
+                    Emit($"call {ObjectRoutine("free", v.Type.Struct!)}");
+                }
+                Emit("pop eax");
+                if (wideResult) Emit("pop edx");
+            }
+
             if (growing.Count > 0 || resultSlots.Count > 0 || growingArrays.Count > 0 || m.Locals.Any(v => v.GrowingArray))
             {
                 if (wideResult) Emit("push edx");
@@ -1664,25 +1685,6 @@ namespace Phi.Compiler.CodeGen
                         Emit($"add esp, {Slot}");
                         Label(kept);
                     }
-                Emit("pop eax");
-                if (wideResult) Emit("pop edx");
-            }
-
-            var owned = m.Locals.Where(v => v.Ownership == Ownership.Owned).ToList();
-            if (owned.Count > 0)
-            {
-                if (wideResult) Emit("push edx");
-                Emit("push eax                ; the result");
-                foreach (VariableSymbol v in owned)
-                {
-                    if (v.Type.IsObjectArray)
-                    {
-                        EmitFreeElements(NameOf(v), 0);
-                        continue;
-                    }
-                    Emit($"mov {R("eax")}, {Q} [{v.Label}]   ; {v.Name}");
-                    Emit($"call {ObjectRoutine("free", v.Type.Struct!)}");
-                }
                 Emit("pop eax");
                 if (wideResult) Emit("pop edx");
             }
@@ -2138,12 +2140,16 @@ namespace Phi.Compiler.CodeGen
         void EmitFrameStart(Frame frame)
         {
             // variables start at zero each call, as they always have
+            // (a store for each word up to 16 of them: rep stosd takes longer to get going than
+            // that many stores take, and it needs edi, which a caller's variable may be in.
+            // 16-bit code, where room matters more, keeps to 4.)
             int locals = frame.LocalsSize;
-            if (locals is > 0 and <= 16)
+            int each = bits32 ? 64 : 16;
+            if (locals > 0 && locals <= each)
             {
                 for (int k = 4; k <= locals; k += 4) Emit($"mov dword [ebp - {k}], 0");
             }
-            else if (locals > 16)
+            else if (locals > each)
             {
                 Emit($"lea edi, [ebp - {locals}]");
                 Emit($"mov ecx, {locals / 4}");
