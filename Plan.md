@@ -1532,6 +1532,21 @@ folding, and (2) the backend interface, which S10 needs first.
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range
 
+#### A stopwatch
+
+- [x] `user.stopwatch`: `Stopwatch watch;` with `Start`, `Stop`, `Restart`, `Reset`, and
+  `Milliseconds`, `Microseconds`, `Seconds` and `Ticks`, each readable while it runs; any
+  number at once (asked for by the user, 2026-11-10, as C#'s Stopwatch). There was
+  `OS.GetTicks`, in milliseconds, and `test.bench`'s one timer of raw counts. It reads the
+  CPU's timestamp counter, so it's the same code in a kernel, a PHI OS program and a
+  program on Linux or Windows, with nothing new asked of any system; how fast the counter
+  counts is measured against `OS.GetTicks` the first time, from the moment one millisecond
+  turns into the next to the moment another does, 10 later. On this computer a 50 ms sleep
+  reads 50.08 ms, and two runs measured the counter within 0.02% of each other. Test
+  `stopwatch`, which checks what must always be so, since the times differ run to run.
+  - Not yet: a clock that needs no measuring (Linux's and Windows' own, exact to the
+    nanosecond, which would want a call every system answers), and time of day.
+
 #### Structs that take types (generics, first part)
 
 Goal: a container is written once. Until now `data.map` held `u32` keys and values only,

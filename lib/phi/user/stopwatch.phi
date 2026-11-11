@@ -1,0 +1,132 @@
+# Timing code as it runs: how long something took, in real time. Any 32-bit program
+# (kernels and user programs), and programs on Linux and Windows, 32 or 64 bits.
+#
+#   use user.stopwatch;
+#   Stopwatch watch;
+#   call watch.Start;
+#   call Page.Load: url;
+#   call watch.Stop;
+#   log 'loaded in ' (watch.Milliseconds) ' ms\n';
+#
+#   call watch.Start;                       # carries on from where it stopped
+#   log (watch.Microseconds) ' us so far\n';    # read while it runs, too
+#   call watch.Restart;                     # back to nothing, and running
+#   call watch.Reset;                       # back to nothing, and stopped
+#
+# Each Stopwatch is its own: any number run at once, and a struct can keep one as a field.
+# Milliseconds is an int, Microseconds a u64, and Seconds an f64 (0.0032).
+#
+# The time comes from the CPU's timestamp counter (rdtsc), which costs a few instructions
+# to read and counts far finer than OS.GetTicks' milliseconds. How fast it counts is
+# measured against OS.GetTicks the first time a watch is read: that takes about 10 ms,
+# once in a program (call Clock.Measure; when the program starts, to have it over with).
+# The counter is the same for every thread and core. Under phi test --bench it counts
+# instructions, not time, so a test's times are the same on every computer.
+
+struct.Stopwatch
+{
+	u64 began;                  # the counter when it was last started
+	u64 kept;                   # the counter's ticks from before that
+	bln running;
+
+	# starts it, or carries on if it was stopped; nothing if it's running
+	[Start]
+		if running return;
+		began is (Clock.Count);
+		running is true;
+	[end]
+
+	# stops it, keeping the time so far; nothing if it isn't running
+	[Stop]
+		if not running return;
+		kept++ (Clock.Count) - began;
+		running is false;
+	[end]
+
+	# back to nothing, and stopped
+	[Reset]
+		kept is 0;
+		running is false;
+	[end]
+
+	# back to nothing, and running
+	[Restart]
+		kept is 0;
+		began is (Clock.Count);
+		running is true;
+	[end]
+
+	# the counter's ticks so far, running or stopped: what the times are worked out from
+	[Ticks]
+		u64 ticks: kept;
+		if running
+			ticks++ (Clock.Count) - began;
+		;;
+	[end: ticks]
+
+	[Microseconds]
+	[end: (Ticks) * 1000 / (Clock.PerMillisecond)]
+
+	[Milliseconds]
+	[end: ((Ticks) / (Clock.PerMillisecond)) as int]
+
+	[Seconds]
+		f64 ticks: (Ticks);
+		f64 rate: (Clock.PerMillisecond);
+	[end: ticks / rate / 1000.0]
+}
+
+phi.Clock:Library
+{
+	const int MEASURED_OVER: 10;          # milliseconds
+
+	u64 clock_now: 0;
+	u64 per_millisecond: 0;               # the counter's ticks in a millisecond; 0 until measured
+
+	# the timestamp counter now
+	[Count]
+		call ClockReadCounter;
+	[end: clock_now]
+
+	# how many ticks the counter makes in a millisecond, measured the first time it's asked
+	[PerMillisecond]
+		if per_millisecond is 0
+			call Measure;
+		;;
+	[end: per_millisecond]
+
+	# Counts the counter's ticks across 10 of OS.GetTicks' milliseconds, from the moment one
+	# millisecond turns into the next to the moment another does, so the answer is as exact
+	# as those moments are.
+	[Measure]
+		int turned: (OS.GetTicks);
+		while (OS.GetTicks) is turned
+		;;
+		u64 from: (Count);
+		int first: (OS.GetTicks);
+		while (OS.GetTicks) - first < MEASURED_OVER
+		;;
+		u64 ticks: (Count) - from;
+		per_millisecond is ticks / MEASURED_OVER;
+		if per_millisecond is 0
+			per_millisecond is 1;         # (a counter that hardly moves: never divide by nothing)
+		;;
+	[end]
+}
+
+# clock_now = the timestamp counter
+asm.ClockReadCounter
+{
+	rdtsc
+	mov [{clock_now}], eax
+	mov [{clock_now} + 4], edx
+	ret
+}
+
+x64.ClockReadCounter
+{
+	rdtsc
+	mov [rel {clock_now}], eax
+	mov [rel {clock_now} + 4], edx
+	ret
+}

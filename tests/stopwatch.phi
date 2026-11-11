@@ -1,0 +1,52 @@
+# runs only in 32 and 64 bits: 64-bit numbers
+# user.stopwatch: real time from the CPU's counter. The times themselves differ from run to
+# run, so what's checked is what must always be so: a sleep takes about as long as it says,
+# a stopped watch doesn't move, one that's started again carries on, and each watch is its own.
+use user.stopwatch;
+
+phi.StopwatchTest:Library
+{
+	Stopwatch watch;
+	Stopwatch other;
+
+	# nothing yet, started or not
+	debug (watch.Milliseconds) ' ' (watch.Ticks) '\n';
+
+	# 40 ms of sleep is 40 ms, or a little more (never less, and nowhere near a second)
+	call watch.Start;
+	call OS.Sleep: 40;
+	call watch.Stop;
+	int slept: (watch.Milliseconds);
+	u64 micros: (watch.Microseconds);
+	debug (slept >= 39) ' ' (slept < 1000) ' ' (micros >= 39000) ' ' ((micros / 1000) as int - slept) '\n';
+	f64 seconds: (watch.Seconds);
+	debug (seconds > 0.039) ' ' (seconds < 1.0) '\n';
+
+	# stopped: it stays where it was, however long that is
+	call OS.Sleep: 30;
+	debug ((watch.Microseconds) is micros) '\n';
+
+	# started again it carries on from there, and another watch counts only its own time
+	call watch.Start;
+	call other.Start;
+	call OS.Sleep: 20;
+	int both: (watch.Milliseconds);       # read while it runs
+	int alone: (other.Milliseconds);
+	debug (both >= slept + 19) ' ' (alone >= 19) ' ' (alone < slept + 19) '\n';
+	call watch.Start;                     # (already running: nothing happens)
+	debug ((watch.Milliseconds) >= both) '\n';
+
+	# Restart is nothing and running; Reset is nothing and stopped
+	call watch.Restart;
+	debug ((watch.Milliseconds) < slept) ' ';
+	call OS.Sleep: 5;
+	debug ((watch.Ticks) > 0) ' ';
+	call watch.Reset;
+	call OS.Sleep: 5;
+	debug (watch.Ticks) ' ' (watch.Milliseconds) '\n';
+
+	# the counter goes up, and a millisecond of it is a number worth dividing by
+	u64 first: (Clock.Count);
+	u64 second: (Clock.Count);
+	debug (second > first) ' ' ((Clock.PerMillisecond) > 0) '\n';
+}
