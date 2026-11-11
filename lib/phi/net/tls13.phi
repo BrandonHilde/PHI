@@ -38,6 +38,7 @@ use crypto.random;
 use crypto.x509;
 use crypto.p256;
 use user.text;
+use user.stopwatch;
 
 # what a server shows: its certificates and its key
 struct.TlsIdentity
@@ -110,6 +111,8 @@ phi.Tls13:Library
 	const u32 HEADER: 5;
 	const u32 INPUT_MAX: 33290;           # two whole records
 	const u32 OUTPUT_MAX: 33290;
+
+	u32 checking_us: 0;                   # microseconds a client has spent checking servers' chains (X509.Chain): for measuring
 
 	const u32 TYPE_CHANGE_CIPHER_SPEC: 20;
 	const u32 TYPE_ALERT: 21;
@@ -888,7 +891,11 @@ phi.Tls13:Library
 			                        addr tls_scratch body + 4 signature_length);
 		;;
 		if not good return (Tls13.Fail: s 'the server\'s CertificateVerify signature doesn\'t check out' ALERT_DECRYPT_ERROR);
-		if not (X509.Chain: addr s.chain:0 s.chain_count addr s.host)
+		Stopwatch watch;
+		call watch.Start;
+		bln chained: (X509.Chain: addr s.chain:0 s.chain_count addr s.host);
+		checking_us++ (watch.Microseconds) as u32;
+		if not chained
 			return (Tls13.Fail: s ('the server\'s certificate: ' X509.error) ALERT_BAD_CERTIFICATE);
 		;;
 		s.verified is true;

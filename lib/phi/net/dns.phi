@@ -4,7 +4,8 @@
 #   u32 address: 0;
 #   call address is Dns.Resolve: 'example.com';   # 0 if it can't be found
 #
-# Text that already is an address ('10.0.2.2') comes back as one without asking.
+# Text that already is an address ('10.0.2.2') comes back as one without asking, and so does a
+# name asked a little while ago (net.dnsmessage keeps the last answers for as long as they hold).
 
 use net.net;
 use net.dnsmessage;
@@ -22,6 +23,9 @@ phi.Dns:Kernel
 		u32 address: 0;
 		call address is Net.ParseIp: name;
 
+		if address is 0 and name:0 is not 0
+			address is (DnsMessage.Kept: name Net.dns SERVER_PORT);
+		;;
 		u32 length: 0;
 		if address is 0 and name:0 is not 0
 			query_id++;
@@ -40,7 +44,9 @@ phi.Dns:Kernel
 				int got: 0;
 				call got is Net.WaitUdp: WAIT;
 				if got > 0
-					address is (DnsMessage.Answer: addr Net.udp_data got query_id);
+					u32 lasts: 0;
+					address is (DnsMessage.Answer: addr Net.udp_data got query_id addr lasts);
+					call DnsMessage.Keep: name Net.dns SERVER_PORT address lasts;
 				;;
 				tries++;
 			;;

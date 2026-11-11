@@ -1,7 +1,8 @@
 # net.sockets' Dns, on Linux and Windows, 32 and 64 bits, with no real name server needed: a small
 # one on a thread here, over 127.0.0.1, gives each answer a name asks for. An address, one behind
 # another name (a CNAME), one that isn't known, a server that says nothing, an answer to some other
-# question, and names that can't be asked. kernel32_dns_program does it on PHI OS.
+# question, and names that can't be asked. Then answers kept: a name asked again isn't sent for
+# while its answer holds, whatever its case. kernel32_dns_program does it on PHI OS.
 use net.sockets;
 use user.threads;
 use user.math;
@@ -39,6 +40,39 @@ phi.DnsProgram:Program
 	call Ask: 'many.phi.test';
 	call Ask: 'top.phi.test';
 	log 'each asked what it should be: ' (questions > 0) '\n';
+
+	# an answer is kept for as long as it says it holds
+	questions is 0;
+	call Ask: 'one.phi.test';
+	call Ask: 'ONE.Phi.Test';
+	call Ask: 'behind.phi.test';
+	log 'sent for names just asked: ' questions '\n';
+	call Ask: 'brief.phi.test';
+	call Ask: 'brief.phi.test';
+	log 'for one that holds for no time, twice: ' questions '\n';
+	questions is 0;
+	call Ask: 'short.phi.test';
+	call Ask: 'short.phi.test';
+	call OS.Sleep: 1200;
+	call Ask: 'short.phi.test';
+	log 'for one that holds a second, before and after: ' questions '\n';
+	questions is 0;
+	DnsMessage.keeping is false;
+	call Ask: 'one.phi.test';
+	DnsMessage.keeping is true;
+	call Ask: 'one.phi.test';
+	call DnsMessage.Forget;
+	call Ask: 'one.phi.test';
+	log 'not keeping, keeping, and with all forgotten: ' questions '\n';
+	# more names than are kept: the oldest go, and are asked for again
+	questions is 0;
+	while int i: 0; i < 20; i++;
+		str numbered: ('one.n' i '.phi.test');
+		u32 found: (Dns.Resolve: numbered);
+	;;
+	u32 last: (Dns.Resolve: 'one.n19.phi.test');
+	u32 first: (Dns.Resolve: 'one.n0.phi.test');
+	log 'for 20 names, the last again, and the first again: ' questions '\n';
 
 	# nothing to find: the server says so, or says nothing, and each is asked up to three times
 	Dns.tries is 2;
@@ -117,6 +151,10 @@ phi.DnsProgram:Program
 		int pos: question_end;
 		if first is 'one'
 			pos is (A: addr reply pos 1 10 20 30 40);
+		;;
+		elif first is 'brief' or first is 'short'
+			pos is (A: addr reply pos 1 7 7 7 7);
+			call Net.Put32: addr reply + question_end + 6 (first is 'short') as u32;
 		;;
 		elif first is 'top'
 			pos is (A: addr reply pos 1 200 1 2 3);

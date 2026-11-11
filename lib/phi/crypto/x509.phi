@@ -15,6 +15,12 @@
 # subjectAltName DNS names (*.example.com matches one label), or an IPv4 address against
 # its iPAddress names. Each certificate but the root must be within its dates, now
 # (OS.Now), or at X509.now when that's set.
+#
+# A certificate that has chained to a root is remembered (the last 32 of them, by their
+# SHA-256), so the next chain that reaches the same bytes stops there with no signature
+# to check: a server's second handshake costs none, and another server under the same
+# issuer costs one. It's remembered for the dates everything above it holds between, and
+# forgotten when the roots change. The host name is matched every time.
 
 use crypto.der;
 use crypto.rsa;
@@ -76,6 +82,24 @@ phi.X509:Library
 	u8 x509_r[48];
 	u8 x509_s[48];
 	u8 x509_address[4];
+
+	# certificates that have chained to a root: each one's SHA-256, the dates it and all
+	# above it hold between, and how far from the server's own (0) it may stand, which is
+	# what the CAs above it allow
+	const u32 KNOWN: 32;
+	u8 x509_known[1024];
+	u32 x509_known_from[32];
+	u32 x509_known_until[32];
+	u32 x509_known_depth[32];
+	u32 x509_known_count: 0;
+	u32 x509_known_next: 0;
+	u8 x509_seen[256];                      # the SHA-256 of each certificate of the chain being walked
+	u32 x509_from: 0;                       # what stands above where a walk stopped: its dates,
+	u32 x509_until: 0;
+	u32 x509_slack: 0;                      # how much further down it could have been,
+	bln x509_by_root: false;                # and whether a root's key signed the last one
+	u32 x509_checks: 0;                     # signatures checked, and chains that stopped at a
+	u32 x509_remembered: 0;                 # certificate remembered: for measuring
 
 	# the object identifiers this reads
 	u8 oid_rsa_sha256: 0x2A 0x86 0x48 0x86 0xF7 0x0D 0x01 0x01 0x0B;
@@ -278,6 +302,7 @@ phi.X509:Library
 
 	# whether issuer's key signed c
 	[CheckSignature: ptr<Certificate> c: 0; ptr<Certificate> issuer: 0;]
+		x509_checks++;
 		# the digest of what's signed: SHA-256's 32 bytes or SHA-384's 48
 		u32 digest_length: 32;
 		if c.signed_with is RSA_SHA384 or c.signed_with is ECDSA_SHA384
@@ -396,12 +421,20 @@ phi.X509:Library
 		if not (X509.Parse: addr root der length) return false;
 		x509_roots++ root;
 		x509_root_count++;
+		call X509.Forget;
 	[end: true]
 
 	# forget the roots
 	[Untrust]
 		x509_roots.len is 0;
 		x509_root_count is 0;
+		call X509.Forget;
+	[end]
+
+	# forget the certificates remembered as checked
+	[Forget]
+		x509_known_count is 0;
+		x509_known_next is 0;
 	[end]
 
 	# whether certs (count of them: the server's own first, then each one's issuer) are
@@ -410,40 +443,127 @@ phi.X509:Library
 		error is '';
 		if count is 0 return (X509.Fail: 'no certificate');
 		if not (X509.MatchesHost: addr certs:0 host) return (X509.Fail: 'the certificate isn\'t for this host');
-		u32 i: 0;
 		u32 time: now;
 		if time is 0
 			time is (OS.Now);
 		;;
+		int checked: (X509.Walk: certs count time);
+		if checked < 0 return false;
+		call X509.Remember: certs checked;
+	[end: true]
+
+	# Up the chain from the server's own certificate, until one is a trusted root, or is
+	# remembered, or a root's key signed it: how many were checked on the way (which
+	# Remember keeps), or -1 if the chain doesn't hold (error says why). x509_from,
+	# x509_until, x509_slack and x509_by_root say what stands above where it stopped.
+	[Walk: ptr<Certificate> certs: 0; u32 count: 0; u32 time: 0;]
+		x509_from is 0;
+		x509_until is 0xFFFFFFFF;
+		x509_slack is 0xFFFFFFFF;
+		x509_by_root is false;
+		u32 i: 0;
 		while i < count and i < MAX_DEPTH
 			ptr<Certificate> c: addr certs:i;
 			# a trusted root itself (which is trusted whatever its dates)
 			while u32 k: 0; k < x509_root_count; k++;
 				ptr<Certificate> root: addr x509_roots:k;
-				if c.der_length is root.der_length and (Bytes.Equal: c.der root.der c.der_length) return true;
+				if c.der_length is root.der_length and (Bytes.Equal: c.der root.der c.der_length) return i as int;
+			;;
+			# the same bytes as one that chained to a root before, still within the dates
+			# that held for, and no further down than the CAs above it allow
+			ptr<u8> digest: addr x509_seen:(i * 32);
+			call Sha256.Hash: c.der c.der_length digest;
+			int known: (X509.Known: digest);
+			if known >= 0 and time >= x509_known_from:known and time <= x509_known_until:known and i <= x509_known_depth:known
+				x509_from is x509_known_from:known;
+				x509_until is x509_known_until:known;
+				x509_slack is x509_known_depth:known - i;
+				x509_remembered++;
+				return i as int;
 			;;
 			# any other must be within its dates
-			if time < (X509.Time: c.not_before c.not_before_length) return (X509.Fail: 'a certificate isn\'t valid yet');
-			if time > (X509.Time: c.not_after c.not_after_length) return (X509.Fail: 'a certificate has expired');
+			if time < (X509.Time: c.not_before c.not_before_length) return (X509.Stop: 'a certificate isn\'t valid yet');
+			if time > (X509.Time: c.not_after c.not_after_length) return (X509.Stop: 'a certificate has expired');
 			# one a trusted root signed
 			while u32 k: 0; k < x509_root_count; k++;
 				ptr<Certificate> root: addr x509_roots:k;
 				if (X509.SameName: c.issuer c.issuer_length root.subject root.subject_length)
-					if (X509.CheckSignature: c root) return true;
+					if (X509.CheckSignature: c root)
+						x509_by_root is true;
+						return (i + 1) as int;
+					;;
 				;;
 			;;
 			# else the next one signed it
-			if i + 1 >= count return (X509.Fail: 'no trusted root signed the chain');
+			if i + 1 >= count return (X509.Stop: 'no trusted root signed the chain');
 			ptr<Certificate> up: addr certs:(i + 1);
 			if not (X509.SameName: c.issuer c.issuer_length up.subject up.subject_length)
-				return (X509.Fail: 'a certificate\'s issuer isn\'t the next one');
+				return (X509.Stop: 'a certificate\'s issuer isn\'t the next one');
 			;;
-			if not up.ca return (X509.Fail: 'a certificate is signed by one that isn\'t a CA');
-			if up.path_length >= 0 and i > up.path_length return (X509.Fail: 'the chain is longer than a CA allows');
-			if not (X509.CheckSignature: c up) return (X509.Fail: 'a certificate\'s signature doesn\'t check out');
+			if not up.ca return (X509.Stop: 'a certificate is signed by one that isn\'t a CA');
+			if up.path_length >= 0 and i > up.path_length return (X509.Stop: 'the chain is longer than a CA allows');
+			if not (X509.CheckSignature: c up) return (X509.Stop: 'a certificate\'s signature doesn\'t check out');
 			i++;
 		;;
-	[end: (X509.Fail: 'the chain is too long')]
+	[end: (X509.Stop: 'the chain is too long')]
+
+	# Keep the certificates a walk checked (the first checked of certs), from the top one
+	# down: each holds between the latest start and the earliest end of its own dates and
+	# those of everything above it, and may stand as far down a chain as the CAs above it
+	# allow (a CA's path length is how many may come between it and the server's own).
+	[Remember: ptr<Certificate> certs: 0; int checked: 0;]
+		u32 from: x509_from;
+		u32 until: x509_until;
+		u32 slack: x509_slack;
+		int j: checked - 1;
+		while j >= 0
+			ptr<Certificate> c: addr certs:j;
+			# (the top one's signer is a root, not the next one, when a root's key signed it)
+			if j < checked - 1 or not x509_by_root
+				ptr<Certificate> up: addr certs:(j + 1);
+				if up.path_length >= 0 and (up.path_length - j) as u32 < slack
+					slack is (up.path_length - j) as u32;
+				;;
+			;;
+			u32 starts: (X509.Time: c.not_before c.not_before_length);
+			u32 ends: (X509.Time: c.not_after c.not_after_length);
+			if starts > from
+				from is starts;
+			;;
+			if ends < until
+				until is ends;
+			;;
+			u32 depth: 0xFFFFFFFF;
+			if slack < 0x10000
+				depth is j as u32 + slack;
+			;;
+			call X509.Keep: addr x509_seen:(j * 32) from until depth;
+			j--;
+		;;
+	[end]
+
+	# which remembered certificate has this SHA-256, or -1
+	[Known: ptr<u8> digest: 0;]
+		while u32 k: 0; k < x509_known_count; k++;
+			if (Bytes.Equal: addr x509_known:(k * 32) digest 32) return k as int;
+		;;
+	[end: -1]
+
+	# remember one, in place of the oldest once there are KNOWN of them
+	[Keep: ptr<u8> digest: 0; u32 from: 0; u32 until: 0; u32 depth: 0;]
+		int place: (X509.Known: digest);
+		if place < 0
+			place is x509_known_next as int;
+			x509_known_next is (x509_known_next + 1) % KNOWN;
+			if x509_known_count < KNOWN
+				x509_known_count++;
+			;;
+			call Bytes.Copy: addr x509_known:(place * 32) digest 32;
+		;;
+		x509_known_from:place is from;
+		x509_known_until:place is until;
+		x509_known_depth:place is depth;
+	[end]
 
 
 	# a certificate's date (UTCTime YYMMDDHHMMSSZ, its years 1950 to 2049, or
@@ -497,4 +617,9 @@ phi.X509:Library
 	[Fail: ptr<u8> why: 0;]
 		error is why;
 	[end: false]
+
+	# error = why, and -1
+	[Stop: ptr<u8> why: 0;]
+		error is why;
+	[end: -1]
 }

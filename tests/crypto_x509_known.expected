@@ -1,0 +1,20 @@
+read: 1, trust: 1
+the first time: 1, signatures 2, remembered 0
+kept: 2, how far down each may stand: 4294967295 0
+again: 1, signatures 0, remembered 1
+another of its names: 1, signatures 0, remembered 1
+a name that isn't its: 0, signatures 0, remembered 0 (the certificate isn't for this host)
+sent without its issuer: 1
+after its dates: 0, signatures 0, remembered 0 (a certificate has expired)
+before them: 0, signatures 0, remembered 0 (a certificate isn't valid yet)
+within them again: 1, signatures 0, remembered 1
+changed: 0, signatures 1, remembered 0 (a certificate's signature doesn't check out)
+as it was: 1, signatures 0, remembered 1
+the issuer alone: 1, kept: 1
+under a remembered issuer: 1, signatures 1, remembered 1
+and again: 1, signatures 0, remembered 1
+kept without the roots: 0
+no roots: 0, signatures 1, remembered 0 (no trusted root signed the chain)
+the root back: 1, signatures 2, remembered 0
+kept after another root: 0
+kept at most: 32, the first gone: 1 1

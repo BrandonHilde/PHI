@@ -20,6 +20,10 @@ phi.NetWeb:Kernel
 	call Both: addr TestWeb.url;
 	call Both: addr TestWeb.secure_url;
 
+	# what could go out on a connection kept from the request before did: each scheme's first
+	# request, and the three after a seek left an answer unread, made one
+	log 'connections made: ' Web.opened ', requests on a kept one: ' Web.reused '\n';
+
 	log 'a stream too big for a program to keep: ';
 	str big: (addr TestWeb.secure_url '/pattern/200000');
 	int s: (Stream.Open: addr big:0);

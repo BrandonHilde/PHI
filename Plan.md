@@ -1586,10 +1586,28 @@ folding, and (2) the backend interface, which S10 needs first.
 - [x] **`Clock.Count` is safe from several threads.** It passed the counter through a
   class variable, so two threads reading at once could each get half of the other's. Its
   halves come back in the caller's own variables now.
-- [ ] `net.web` says `Connection: close` on every request, so each of a page's files is a
-  TCP connection and a TLS handshake: 77% of the browser's CPU time on a Wikipedia article
-  is RSA arithmetic checking certificates. Keeping a connection open, or resuming a TLS
-  session, is what would speed it up most.
+- [x] **`net.web` keeps connections** (2026-11-11). It said `Connection: close` on every
+  request, so each of a page's files was a name looked up, a TCP connection and a TLS
+  handshake. Three things, each of which stands alone:
+  - A connection whose answer was read to its end is kept (8 of them, 30 s each), and the
+    next `GET` or `HEAD` to that host goes out on it; one the server closed meanwhile is
+    asked again on a new one. `Web.keep`, `Web.HangUp`.
+  - `crypto.x509` remembers the certificates that chained to a root (32, by SHA-256, for
+    the dates they hold between), so a chain seen before costs no signature check, and a
+    new server under a known issuer one. A Let's Encrypt chain was 948 million instructions
+    to check (three P-384 signatures: `x509 chain of 3, p384` in `bench_tls`), and is
+    93 thousand the second time.
+  - `Dns.Resolve` keeps the last 16 answers for as long as they hold, 5 minutes at most.
+
+  `Web.opened`, `Web.reused`, `Web.finding_us`, `Web.connecting_us`, `Web.securing_us` and
+  `Tls13.checking_us` say where fetching time went. What that showed: the time in
+  `Big.MontMul` was P-384 signatures (ECDSA), not RSA; and as a Linux program a fetch was
+  mostly waiting for the network (four round trips for each file, about 70 ms each to
+  Wikipedia, against 60 ms of CPU), where under QEMU without KVM it was mostly the CPU.
+- [ ] Still slow in `crypto.bignum` and `crypto.ec`, for the first handshake with each
+  server: 16-bit limbs, no squaring routine, one bit of the scalars at a time. And no TLS
+  session resumption, no fetching several files at once, an 8 KB TCP window, and nothing
+  asked for compressed.
 
 #### Looking for memory that's used after it's freed
 

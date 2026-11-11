@@ -1592,9 +1592,22 @@ another root fails with `no trusted root`: which roots to trust is up to the pro
 what it needs, as many as it likes up to `X509.MAX_ROOTS` (4,096). Not yet: HTTP/2, IPv6 addresses, and
 uploading a body a piece at a time.
 
+A connection is kept once its answer has been read to the end, and the next `GET` or `HEAD` to the
+same host goes out on it, with no new connection and no new handshake: up to 8 are kept, for up to
+30 seconds each. So read an answer through before closing it when more requests to that host will
+follow. If the server has closed a kept connection meanwhile, the request is asked once more on a
+new one. An answer that ends when the server closes, or that wasn't read through, closes its
+connection. `Web.keep is false;` turns keeping off, and `call Web.HangUp;` closes the ones kept.
+To see where a program's fetching time goes: `Web.opened` and `Web.reused` count connections made
+and requests sent on a kept one, and `Web.finding_us`, `Web.connecting_us` and `Web.securing_us`
+are the microseconds spent finding addresses, connecting, and in TLS handshakes
+(`Tls13.checking_us` of that checking certificates).
+
 **Names.** `Dns.Resolve: name` gives a name's address, 0 if it can't be found, in a program as in a
 kernel. A program tries `localhost`, then the system's hosts file, then its name server
-(`OS.NetNameServer`).
+(`OS.NetNameServer`). The last 16 answers are kept, each for as long as the server said it holds, up
+to 5 minutes, so a name just asked isn't asked again (`DnsMessage.keeping is false;` turns that
+off, and `call DnsMessage.Forget;` drops them).
 
 **Saving as things change.** `fs.savelog` keeps records of one size in a file, each with a
 CRC-32 (`data.crc32`), added with `Fat.Append`. A kernel adds a record whenever something
@@ -1848,6 +1861,13 @@ X509.Trust: der length;` for its own. Keys can be RSA (up to 4096 bits), P-256 o
 with SHA-256 or SHA-384 (so Let's Encrypt's ECDSA chains check out too). Each certificate
 but the root must be within its dates, now (`OS.Now`), or at `X509.now` when a program
 sets it (seconds since 1970: a test whose certificates were made at a given time does).
+A certificate that has chained to a root is remembered by its SHA-256 (the last 32), for
+the dates it and everything above it hold between, so a chain that reaches the same bytes
+again stops there with no signature to check: a second handshake with a server checks
+none, and another server under the same issuer checks one. That also means a certificate
+checked once passes when it's later sent without its issuer. The host name is matched and
+the handshake's own signature checked every time, and `X509.Trust` and `X509.Untrust`
+forget what's remembered (`X509.Forget` alone does too).
 
 The layers, each usable on its own:
 

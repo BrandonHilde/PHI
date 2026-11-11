@@ -2,7 +2,8 @@
 # net.web on Linux and Windows, 32 and 64 bits, against a small web server on a thread
 # (support/web_test_server.phi), over http and https: lengths, chunks, until it closes, redirects, a
 # POST and headers, status codes, and answers that fail in each way. Then net.webstream: Stream on a
-# URL, seeking, and reading ahead. net_web does it on PHI OS, against .NET's TLS.
+# URL, seeking, and reading ahead. Then connections kept for the next request: when one is, when
+# it isn't, and a server that closes one it kept. net_web does it on PHI OS, against .NET's TLS.
 use net.sockets;
 use net.web;
 use net.webstream;
@@ -69,6 +70,35 @@ phi.WebProgram:Program
 	call Ahead: plain;
 	call Ahead: secure;
 
+	log '--- connections kept\n';
+	call Keeping: plain;
+	log '--- connections kept, over https\n';
+	call Keeping: secure;
+
+	# more hosts than connections are kept (every name is this server)
+	while int i: 0; i < 10; i++;
+		str elsewhere: ('http://host' i '.test:' WebTestServer.http_port '/keep/a');
+		int r: (Web.Get: elsewhere);
+		int got: (Web.Read: r addr buffer 1000);
+		got is (Web.Read: r addr buffer 1000);
+		call Web.Close: r;
+	;;
+	int held: 0;
+	while int i: 0; i < 8; i++;
+		if Web.kept:i.used
+			held++;
+		;;
+	;;
+	log 'kept of 10 hosts: ' held;
+	call Web.HangUp;
+	held is 0;
+	while int i: 0; i < 8; i++;
+		if Web.kept:i.used
+			held++;
+		;;
+	;;
+	log ', after hanging up: ' held '\n';
+
 	call WebTestServer.Stop;
 	log 'stopped\n';
 
@@ -112,6 +142,70 @@ phi.WebProgram:Program
 		call Show: (Web.Send: 'POST' other 'X-Custom: gone\r\n' 'gone too' 8) 'a POST sent on as a GET';
 		str moved: (plain '/moved-whole');
 		call Show: (Web.Get: moved) 'moved, to a whole URL';
+	[end]
+
+	# When a connection is kept and used again, and when it isn't. Each line says how many new
+	# connections the server took for it, and how many of its requests went out on a kept one.
+	[Keeping: str base;]
+		call Web.HangUp;
+		str a: (base '/keep/a');
+		call Again: 'the first' a;
+		call Again: 'the next' a;
+		call Again: 'one in chunks' (base '/keep/chunked');
+		call Again: 'after it' a;
+		call Again: 'a redirect, and where it leads' (base '/keep/moved');
+		call Again: 'a redirect with a long answer of its own' (base '/keep/long-moved');
+
+		# a POST isn't sent on a kept connection, as it can't be sent twice
+		int before: WebTestServer.connections;
+		u32 reused: Web.reused;
+		int r: (Web.Send: 'POST' (base '/echo') 0 'the body' 8);
+		int got: (Web.Read: r addr buffer 1000);
+		log 'a POST: ' (Web.Status: r) ' ' got ', new connections ' WebTestServer.connections - before ', on a kept one ' Web.reused - reused '\n';
+		call Web.Close: r;
+		# (the server closed both when it took the POST's: a moment for that to arrive)
+		call OS.Sleep: 100;
+		call Again: 'after it' a;
+
+		# an answer that isn't read to its end leaves nothing to keep
+		r is (Web.Get: a);
+		call Web.Close: r;
+		call Again: 'after one that wasn\'t read' a;
+
+		# the server closes what it kept: seen before asking, or only on asking
+		call Again: 'the server closes after this one' (base '/keep/last');
+		call OS.Sleep: 100;
+		call Again: 'so the next is on a new one' a;
+		call Again: 'the server will close when next asked' (base '/keep/drop-next');
+		call Again: 'so that\'s asked again on a new one' a;
+		call Again: 'the server says it\'s closing' (base '/keep/closing');
+		call Again: 'so the next is on a new one' a;
+
+		call Web.HangUp;
+		call Again: 'after hanging up' a;
+		Web.keep is false;
+		call Again: 'not keeping' a;
+		call Again: 'not keeping' a;
+		Web.keep is true;
+		call Web.HangUp;
+	[end]
+
+	[Again: str what; str url;]
+		int before: WebTestServer.connections;
+		u32 reused: Web.reused;
+		int r: (Web.Get: url);
+		if r < 0
+			log what ': failed: ' Web.error '\n';
+			return;
+		;;
+		int total: 0;
+		int got: (Web.Read: r addr buffer 1000);
+		while got > 0
+			total++ got;
+			got is (Web.Read: r addr buffer 1000);
+		;;
+		log what ': ' (Web.Status: r) ' ' total ', new connections ' WebTestServer.connections - before ', on a kept one ' Web.reused - reused '\n';
+		call Web.Close: r;
 	[end]
 
 	[Fetch: str base; str path;]

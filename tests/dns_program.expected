@@ -8,6 +8,22 @@ behind.phi.test: 5.6.7.8
 many.phi.test: 9.9.9.1
 top.phi.test: 200.1.2.3
 each asked what it should be: 1
+one.phi.test: 10.20.30.40
+ONE.Phi.Test: 10.20.30.40
+behind.phi.test: 5.6.7.8
+sent for names just asked: 0
+brief.phi.test: 7.7.7.7
+brief.phi.test: 7.7.7.7
+for one that holds for no time, twice: 2
+short.phi.test: 7.7.7.7
+short.phi.test: 7.7.7.7
+short.phi.test: 7.7.7.7
+for one that holds a second, before and after: 2
+one.phi.test: 10.20.30.40
+one.phi.test: 10.20.30.40
+one.phi.test: 10.20.30.40
+not keeping, keeping, and with all forgotten: 2
+for 20 names, the last again, and the first again: 21
 nothing.phi.test: 0.0.0.0
 tried: 2
 silent.phi.test: 0.0.0.0

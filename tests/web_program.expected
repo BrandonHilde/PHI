@@ -127,4 +127,43 @@ stopped: 1, closed: 1
 read ahead: 300000 right 1
 seek: 1, 1 right 1
 stopped: 1, closed: 1
+--- connections kept
+the first: 200 5, new connections 1, on a kept one 0
+the next: 200 5, new connections 0, on a kept one 1
+one in chunks: 200 5, new connections 0, on a kept one 1
+after it: 200 5, new connections 0, on a kept one 1
+a redirect, and where it leads: 200 5, new connections 0, on a kept one 2
+a redirect with a long answer of its own: 200 5, new connections 1, on a kept one 1
+a POST: 200 26, new connections 1, on a kept one 0
+after it: 200 5, new connections 1, on a kept one 0
+after one that wasn't read: 200 5, new connections 1, on a kept one 0
+the server closes after this one: 200 5, new connections 0, on a kept one 1
+so the next is on a new one: 200 5, new connections 1, on a kept one 0
+the server will close when next asked: 200 5, new connections 0, on a kept one 1
+so that's asked again on a new one: 200 5, new connections 1, on a kept one 1
+the server says it's closing: 200 5, new connections 0, on a kept one 1
+so the next is on a new one: 200 5, new connections 1, on a kept one 0
+after hanging up: 200 5, new connections 1, on a kept one 0
+not keeping: 200 5, new connections 1, on a kept one 0
+not keeping: 200 5, new connections 1, on a kept one 0
+--- connections kept, over https
+the first: 200 5, new connections 1, on a kept one 0
+the next: 200 5, new connections 0, on a kept one 1
+one in chunks: 200 5, new connections 0, on a kept one 1
+after it: 200 5, new connections 0, on a kept one 1
+a redirect, and where it leads: 200 5, new connections 0, on a kept one 2
+a redirect with a long answer of its own: 200 5, new connections 1, on a kept one 1
+a POST: 200 26, new connections 1, on a kept one 0
+after it: 200 5, new connections 1, on a kept one 0
+after one that wasn't read: 200 5, new connections 1, on a kept one 0
+the server closes after this one: 200 5, new connections 0, on a kept one 1
+so the next is on a new one: 200 5, new connections 1, on a kept one 0
+the server will close when next asked: 200 5, new connections 0, on a kept one 1
+so that's asked again on a new one: 200 5, new connections 1, on a kept one 1
+the server says it's closing: 200 5, new connections 0, on a kept one 1
+so the next is on a new one: 200 5, new connections 1, on a kept one 0
+after hanging up: 200 5, new connections 1, on a kept one 0
+not keeping: 200 5, new connections 1, on a kept one 0
+not keeping: 200 5, new connections 1, on a kept one 0
+kept of 10 hosts: 8, after hanging up: 0
 stopped

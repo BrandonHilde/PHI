@@ -14,6 +14,9 @@ namespace Phi.Cli
     /// server name, so a test's output is the same every time. A Range header gets part of a file.
     /// /pattern/N is N bytes, each its place mod 251, /chunked/FILE is a file in chunks, and
     /// /moved/FILE redirects to it, for what a real server does that a folder can't show.
+    /// A connection whose request says "Connection: keep-alive" (HTTP/1.1) is kept for the next
+    /// request, until the client closes it or sends nothing for 10 seconds; any other is closed
+    /// after its answer, which says so.
     ///
     /// A secure server speaks HTTPS (TLS 1.3 only) with a self-signed certificate made when
     /// phi starts, for 10.0.2.2 and localhost.
@@ -68,65 +71,72 @@ namespace Phi.Cli
                         });
                         stream = tls;
                     }
-                    string request = ReadRequest(stream, out string headers);
-                    string[] words = request.Split(' ', 3);
-                    string path = words.Length >= 2 ? words[1] : "";
-                    string version = words.Length >= 3 ? words[2].Trim() : "HTTP/1.0";
+                    bool keep = true;
+                    while (keep)
+                    {
+                        string request = ReadRequest(stream, out string headers);
+                        string[] words = request.Split(' ', 3);
+                        string path = words.Length >= 2 ? words[1] : "";
+                        string version = words.Length >= 3 ? words[2].Trim() : "HTTP/1.0";
+                        if (request.Length == 0) break;            // the client closed a kept connection
+                        keep = version == "HTTP/1.1" && headers.Contains("Connection: keep-alive", StringComparison.OrdinalIgnoreCase);
+                        string connection = keep ? "" : "Connection: close\r\n";
 
-                    if (path.StartsWith("/moved/", StringComparison.Ordinal))
-                    {
-                        stream.Write(Encoding.ASCII.GetBytes($"{version} 302 Found\r\nLocation: /{path[7..]}\r\nContent-Length: 0\r\n\r\n"));
-                    }
-                    else
-                    {
-                        byte[] body;
-                        string status;
-                        bool chunked = path.StartsWith("/chunked/", StringComparison.Ordinal);
-                        string? file = null;
-                        bool found = true;
-                        if (path.StartsWith("/pattern/", StringComparison.Ordinal) && int.TryParse(path[9..], out int size))
+                        if (path.StartsWith("/moved/", StringComparison.Ordinal))
                         {
-                            body = new byte[size];
-                            for (int i = 0; i < size; i++) body[i] = (byte)(i % 251);
+                            stream.Write(Encoding.ASCII.GetBytes($"{version} 302 Found\r\nLocation: /{path[7..]}\r\nContent-Length: 0\r\n{connection}\r\n"));
                         }
-                        else if (words.Length >= 2 && words[0] == "GET" && (file = Find(chunked ? path[8..] : path)) != null)
-                            body = File.ReadAllBytes(file);
                         else
                         {
-                            found = false;
-                            body = Encoding.ASCII.GetBytes("<html><body>not found</body></html>\n");
-                        }
-                        status = found ? "200 OK" : "404 Not Found";
-                        string type = file == null || file.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ? "text/html" : "text/plain";
-                        string extra = "";
-                        int total = body.Length;
-                        int from = found ? RangeStart(headers) : 0;
-                        if (from > 0 && from < total)
-                        {
-                            status = "206 Partial Content";
-                            extra = $"Content-Range: bytes {from}-{total - 1}/{total}\r\n";
-                            body = body[from..];
-                        }
-                        if (chunked && found)
-                        {
-                            stream.Write(Encoding.ASCII.GetBytes($"{version} {status}\r\nContent-Type: {type}\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n"));
-                            for (int at = 0; at < body.Length;)
+                            byte[] body;
+                            string status;
+                            bool chunked = path.StartsWith("/chunked/", StringComparison.Ordinal);
+                            string? file = null;
+                            bool found = true;
+                            if (path.StartsWith("/pattern/", StringComparison.Ordinal) && int.TryParse(path[9..], out int size))
                             {
-                                int n = Math.Min(7, body.Length - at);
-                                stream.Write(Encoding.ASCII.GetBytes($"{n:x}\r\n"));
-                                stream.Write(body, at, n);
-                                stream.Write(Encoding.ASCII.GetBytes("\r\n"));
-                                at += n;
+                                body = new byte[size];
+                                for (int i = 0; i < size; i++) body[i] = (byte)(i % 251);
                             }
-                            stream.Write(Encoding.ASCII.GetBytes("0\r\n\r\n"));
+                            else if (words.Length >= 2 && words[0] == "GET" && (file = Find(chunked ? path[8..] : path)) != null)
+                                body = File.ReadAllBytes(file);
+                            else
+                            {
+                                found = false;
+                                body = Encoding.ASCII.GetBytes("<html><body>not found</body></html>\n");
+                            }
+                            status = found ? "200 OK" : "404 Not Found";
+                            string type = file == null || file.EndsWith(".html", StringComparison.OrdinalIgnoreCase) ? "text/html" : "text/plain";
+                            string extra = "";
+                            int total = body.Length;
+                            int from = found ? RangeStart(headers) : 0;
+                            if (from > 0 && from < total)
+                            {
+                                status = "206 Partial Content";
+                                extra = $"Content-Range: bytes {from}-{total - 1}/{total}\r\n";
+                                body = body[from..];
+                            }
+                            if (chunked && found)
+                            {
+                                stream.Write(Encoding.ASCII.GetBytes($"{version} {status}\r\nContent-Type: {type}\r\nTransfer-Encoding: chunked\r\n{connection}\r\n"));
+                                for (int at = 0; at < body.Length;)
+                                {
+                                    int n = Math.Min(7, body.Length - at);
+                                    stream.Write(Encoding.ASCII.GetBytes($"{n:x}\r\n"));
+                                    stream.Write(body, at, n);
+                                    stream.Write(Encoding.ASCII.GetBytes("\r\n"));
+                                    at += n;
+                                }
+                                stream.Write(Encoding.ASCII.GetBytes("0\r\n\r\n"));
+                            }
+                            else
+                            {
+                                stream.Write(Encoding.ASCII.GetBytes($"{version} {status}\r\nContent-Type: {type}\r\nContent-Length: {body.Length}\r\n{extra}{connection}\r\n"));
+                                stream.Write(body);
+                            }
                         }
-                        else
-                        {
-                            stream.Write(Encoding.ASCII.GetBytes($"{version} {status}\r\nContent-Type: {type}\r\nContent-Length: {body.Length}\r\n{extra}Connection: close\r\n\r\n"));
-                            stream.Write(body);
-                        }
+                        stream.Flush();
                     }
-                    stream.Flush();
                     tls?.ShutdownAsync().Wait();       // TLS's close_notify
                     client.Client.Shutdown(SocketShutdown.Send);
                     // let the guest read everything before the socket goes away

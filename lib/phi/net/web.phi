@@ -18,11 +18,23 @@
 # program has trusted its own (X509.Trust). Redirects are followed, up to 5 of them; a chunked
 # answer reads the same as any other. net.webstream puts this behind Stream.Open. Threads may each
 # use their own requests at once; Web.error is the last error of any of them.
+#
+# A connection is kept when its answer has been read to the end, and the next request to the same
+# host goes out on it, with no new connection and no new handshake: up to 8 are kept, each for up
+# to 30 seconds. An answer that ends when the server closes, or that wasn't read through, closes
+# its connection as before. Web.keep is false; turns this off, and Web.HangUp closes the ones kept.
+# Only a GET or a HEAD goes out on a kept connection, as it's asked once more on a new one if the
+# server turns out to have closed that one meanwhile.
+#
+# For measuring: Web.opened and Web.reused count connections made and requests sent on a kept one,
+# and Web.finding_us, Web.connecting_us and Web.securing_us are the microseconds spent finding
+# addresses, connecting, and in TLS handshakes (Tls13.checking_us of that checking certificates).
 
 use net.tlslink;
 use crypto.roots;
 use user.text;
 use user.math;
+use user.stopwatch;
 
 struct.WebReply
 {
@@ -46,6 +58,24 @@ struct.WebReply
 	u64 left;                   # what's left of the length, or of this chunk
 	bln ended;
 	bln failed;
+	bln kept;                   # it went out on a connection kept from before
+	bln begun;                  # something of the answer has come
+	bln understood;             # its headers have been read
+	bln timed_out;
+	bln cut;                    # the program stopped reading before the end (Web.MarkEnded)
+	bln closing;                # the server won't take another request on this connection
+}
+
+# a connection kept for the next request to its host
+struct.WebKept
+{
+	bln used;
+	bln secure;
+	int connection;
+	ptr<TlsLink> link;
+	u32 port;
+	str host: [255];
+	int since;                  # OS.GetTicks when it was put by
 }
 
 phi.Web:Library
@@ -54,6 +84,9 @@ phi.Web:Library
 	const int HELD_ROOM: 16384;
 	const int HEADERS_ROOM: 16384;
 	const int MOST_REDIRECTS: 5;
+	const int MOST_KEPT: 8;              # connections kept for the next request
+	const int IDLE: 30000;               # ms one is kept for
+	const int DRAINED: 4096;             # the most of a redirect's body read to keep its connection
 
 	const int NONE: 0;
 	const int LENGTH: 1;
@@ -66,6 +99,15 @@ phi.Web:Library
 	lock slots;
 	lock roots;
 	bln roots_looked_at: false;
+
+	bln keep: true;                      # keep connections for the next request to the same host
+	WebKept kept[8];
+	lock pool;
+	u32 opened: 0;                       # connections made
+	u32 reused: 0;                       # requests sent on a connection kept from before
+	u32 finding_us: 0;                   # microseconds finding addresses,
+	u32 connecting_us: 0;                # connecting,
+	u32 securing_us: 0;                  # and in TLS handshakes
 
 	# ---- what programs call
 
@@ -105,6 +147,9 @@ phi.Web:Library
 	# nothing more will be read: what a seek to the very end is
 	[MarkEnded: int r: -1;]
 		if (Valid: r)
+			if not replies:r.ended
+				replies:r.cut is true;
+			;;
 			replies:r.ended is true;
 			replies:r.left is 0;
 		;;
@@ -161,7 +206,7 @@ phi.Web:Library
 
 	[Close: int r: -1;]
 		if not (Valid: r) return false;
-		call Hang: addr replies:r;
+		call Release: addr replies:r;
 		free replies:r.held;
 		free replies:r.headers;
 		locked slots
@@ -172,6 +217,26 @@ phi.Web:Library
 	[Valid: int r: -1;]
 		if r < 0 or r >= MOST return false;
 	[end: replies:r.used]
+
+	# close the connections kept for later requests
+	[HangUp]
+		while int i: 0; i < MOST_KEPT; i++;
+			int c: -1;
+			ptr<TlsLink> link: 0;
+			bln found: false;
+			locked pool
+				if kept:i.used
+					kept:i.used is false;
+					c is kept:i.connection;
+					link is kept:i.link;
+					found is true;
+				;;
+			;;
+			if found
+				call Shut: c link;
+			;;
+		;;
+	[end]
 
 	# ---- a request
 
@@ -208,7 +273,8 @@ phi.Web:Library
 				return -1;
 			;;
 			redirects++;
-			call Hang: w;
+			call Drain: w;
+			call Release: w;
 			if not (Follow: w addr location)
 				error is 'a redirect to somewhere that can\'t be asked';
 				call Close: r;
@@ -238,29 +304,27 @@ phi.Web:Library
 		if r >= 0
 			replies:r.link is 0;
 			replies:r.connection is -1;
+			replies:r.kept is false;
+			replies:r.understood is false;
+			replies:r.cut is false;
 		;;
 	[end: r]
 
 	# connected to where w.url says, the request sent, and the answer's headers read
 	[Ask: ptr<WebReply> w: 0; ptr<u8> verb: 0; ptr<u8> extra: 0; ptr<u8> data: 0; u32 length: 0; u64 position: 0;]
 		if not (ParseUrl: w) return false;
-		if not (Connect: w) return false;
-		w.held_at is 0;
-		w.held_length is 0;
-		w.headers_length is 0;
-		w.status is 0;
-		w.size is 0;
-		w.size_known is false;
-		w.ended is false;
-		w.failed is false;
-		w.left is 0;
-
 		str request: (verb ' ' w.path ' HTTP/1.1\r\nHost: ' w.host);
 		if w.port is not 80 and w.port is not 443
 			request++ ':';
 			request++ w.port;
 		;;
-		request++ '\r\nUser-Agent: PHI\r\nAccept-Encoding: identity\r\nConnection: close\r\n';
+		request++ '\r\nUser-Agent: PHI\r\nAccept-Encoding: identity\r\n';
+		if keep
+			request++ 'Connection: keep-alive\r\n';
+		;;
+		else
+			request++ 'Connection: close\r\n';
+		;;
 		if position > 0
 			request++ 'Range: bytes=';
 			call AppendWide: request position;
@@ -275,7 +339,38 @@ phi.Web:Library
 			request++ extra;
 		;;
 		request++ '\r\n';
-		if not (Write: w addr request:0 request.len as u32) return false;
+
+		# A server may close a connection it has kept at any moment, and the request then goes
+		# nowhere. So only what's safe to ask twice goes out on one, a GET or a HEAD with nothing
+		# sent along; and when nothing of an answer comes back, it's asked once more on a new one.
+		bln safe: data is 0 and length is 0 and ((Same: verb 'GET') or (Same: verb 'HEAD'));
+		if (Exchange: w verb addr request:0 request.len as u32 data length keep and safe) return true;
+		if not w.kept or w.begun or w.timed_out return false;
+		call Hang: w;
+	[end: (Exchange: w verb addr request:0 request.len as u32 data length false)]
+
+	# the request sent, on a kept connection if one may be used and there is one, and the
+	# answer's headers read
+	[Exchange: ptr<WebReply> w: 0; ptr<u8> verb: 0; ptr<u8> request: 0; u32 request_length: 0; ptr<u8> data: 0; u32 length: 0; bln reuse: false;]
+		w.kept is false;
+		w.begun is false;
+		w.understood is false;
+		w.timed_out is false;
+		w.cut is false;
+		w.closing is false;
+		w.held_at is 0;
+		w.held_length is 0;
+		w.headers_length is 0;
+		w.status is 0;
+		w.size is 0;
+		w.size_known is false;
+		w.ended is false;
+		w.failed is false;
+		w.left is 0;
+		if not (reuse and (Kept: w))
+			if not (Connect: w) return false;
+		;;
+		if not (Write: w request request_length) return false;
 		if data is not 0 and length > 0 and not (Write: w data length) return false;
 
 		# (a 100 Continue goes before the real answer)
@@ -285,11 +380,22 @@ phi.Web:Library
 			more is (w.status is 100);
 		;;
 		call Understand: w verb;
+		w.understood is true;
 	[end: true]
 
 	# what to read, from the headers
 	[Understand: ptr<WebReply> w: 0; ptr<u8> verb: 0;]
 		u8 value[128];
+		# another request may follow on an HTTP/1.1 connection, unless the server says otherwise
+		w.closing is not (StartsWith: w.headers 'HTTP/1.1');
+		if (HeaderOf: w 'Connection' addr value 128) >= 0
+			if (Contains: addr value 'close')
+				w.closing is true;
+			;;
+			elif (Contains: addr value 'keep-alive')
+				w.closing is false;
+			;;
+		;;
 		bln no_body: w.status is 204 or w.status is 304 or (verb:0 is 'H' and verb:1 is 'E');
 		w.body is UNTIL_CLOSE;
 		if no_body
@@ -417,18 +523,31 @@ phi.Web:Library
 
 	# the address found, connected, and for https:// the handshake done
 	[Connect: ptr<WebReply> w: 0;]
+		Stopwatch watch;
+		call watch.Start;
 		u32 address: (Dns.Resolve: addr w.host:0);
+		atomic finding_us++ (watch.Microseconds) as u32;
 		if address is 0
 			error is 'could not find the address of the host';
 			return false;
 		;;
+		call watch.Restart;
 		w.connection is (Tcp.Connect: address w.port);
+		atomic connecting_us++ (watch.Microseconds) as u32;
 		if w.connection < 0
 			error is 'could not connect';
 			return false;
 		;;
+		atomic opened++;
 		if not w.secure return true;
 		call TrustRoots;
+		call watch.Restart;
+		bln secured: (Handshake: w);
+		atomic securing_us++ (watch.Microseconds) as u32;
+	[end: secured]
+
+	# TLS on w's connection, as far as the server's Finished
+	[Handshake: ptr<WebReply> w: 0;]
 		w.link is new TlsLink;
 		if not (Secure.Connect: w.link w.connection addr w.host:0)
 			error is w.link.session.error;
@@ -470,16 +589,129 @@ phi.Web:Library
 
 	# the connection closed, and what TLS had goes back
 	[Hang: ptr<WebReply> w: 0;]
-		if w.link is not 0
-			call Secure.Close: w.link;
-			free w.link;
-			w.link is 0;
-		;;
-		elif w.connection >= 0
-			call Tcp.Close: w.connection;
-		;;
+		call Shut: w.connection w.link;
+		w.link is 0;
 		w.connection is -1;
 	[end]
+
+	[Shut: int connection: -1; ptr<TlsLink> link: 0;]
+		if link is not 0
+			call Secure.Close: link;
+			free link;
+		;;
+		elif connection >= 0
+			call Tcp.Close: connection;
+		;;
+	[end]
+
+	# ---- connections kept for the next request
+
+	# w's connection is done with: kept if another request can go out on it, closed if not
+	[Release: ptr<WebReply> w: 0;]
+		if (Keepable: w)
+			call Put: w;
+		;;
+		else
+			call Hang: w;
+		;;
+	[end]
+
+	# Whether another request can follow on w's connection: the server takes one, and the
+	# answer was read to its very end, an end that didn't take the connection closing to mark.
+	[Keepable: ptr<WebReply> w: 0;]
+		if not keep or w.connection < 0 or not w.understood or w.failed or w.cut or w.closing return false;
+		if w.held_at < w.held_length return false;
+		if w.body is NONE return true;
+		if w.body is LENGTH return w.left is 0;
+	[end: w.body is CHUNKED and w.ended]
+
+	# What's left of a redirect's answer read and dropped, if it's short and its length is
+	# known, so that its connection can be kept for where it leads.
+	[Drain: ptr<WebReply> w: 0;]
+		if not keep or w.body is not LENGTH or w.left > DRAINED return;
+		u8 dropped[256];
+		while w.left > 0 and not w.failed
+			int got: (Sized: w addr dropped 256);
+		;;
+	[end]
+
+	# w's connection into the ones kept, in place of the one kept longest if there's no room
+	[Put: ptr<WebReply> w: 0;]
+		int ticks: (OS.GetTicks);
+		int old_connection: -1;
+		ptr<TlsLink> old_link: 0;
+		bln dropped: false;
+		locked pool
+			int place: -1;
+			int longest: -1;
+			while int i: 0; i < MOST_KEPT; i++;
+				if not kept:i.used
+					if place < 0
+						place is i;
+					;;
+				;;
+				elif longest < 0 or ticks - kept:i.since > ticks - kept:longest.since
+					longest is i;
+				;;
+			;;
+			if place < 0
+				place is longest;
+				old_connection is kept:place.connection;
+				old_link is kept:place.link;
+				dropped is true;
+			;;
+			kept:place.used is true;
+			kept:place.secure is w.secure;
+			kept:place.connection is w.connection;
+			kept:place.link is w.link;
+			kept:place.port is w.port;
+			kept:place.host is w.host;
+			kept:place.since is ticks;
+		;;
+		w.link is 0;
+		w.connection is -1;
+		if dropped
+			call Shut: old_connection old_link;
+		;;
+	[end]
+
+	# w takes a kept connection to its host, if there's one that still stands
+	[Kept: ptr<WebReply> w: 0;]
+		while true
+			int c: -1;
+			ptr<TlsLink> link: 0;
+			int age: 0;
+			bln found: false;
+			locked pool
+				while int i: 0; i < MOST_KEPT and not found; i++;
+					if kept:i.used and kept:i.secure is w.secure and kept:i.port is w.port and (Same: addr kept:i.host:0 addr w.host:0)
+						found is true;
+						kept:i.used is false;
+						c is kept:i.connection;
+						link is kept:i.link;
+						age is (OS.GetTicks) - kept:i.since;
+					;;
+				;;
+			;;
+			if not found return false;
+			if age <= IDLE and (Alive: c link)
+				w.connection is c;
+				w.link is link;
+				w.kept is true;
+				atomic reused++;
+				return true;
+			;;
+			call Shut: c link;
+		;;
+	[end: false]
+
+	# whether a kept connection still stands: the server hasn't closed it, and has sent
+	# nothing that nobody asked for
+	[Alive: int c: -1; ptr<TlsLink> link: 0;]
+		if link is 0 return (Tcp.Waiting: c) is 0;
+		if not (Secure.Pump: link) return false;
+		if link.session.closed or link.session.failed or not link.session.connected return false;
+	[end: link.session.app_left is 0]
 
 	# ---- to and from the server
 
@@ -508,6 +740,7 @@ phi.Web:Library
 				start is (OS.GetTicks);
 			;;
 			elif (OS.GetTicks) - start > timeout
+				w.timed_out is true;
 				error is 'the server stopped taking what\'s sent';
 				return false;
 			;;
@@ -529,12 +762,14 @@ phi.Web:Library
 				got is (Secure.Read: w.link w.held HELD_ROOM);
 				if got > 0
 					w.held_length is got;
+					w.begun is true;
 					return got;
 				;;
 				bln going: (Secure.Pump: w.link);
 				got is (Secure.Read: w.link w.held HELD_ROOM);
 				if got > 0
 					w.held_length is got;
+					w.begun is true;
 					return got;
 				;;
 				if w.link.session.failed
@@ -550,12 +785,14 @@ phi.Web:Library
 					got is (Tcp.Read: w.connection w.held HELD_ROOM);
 					if got > 0
 						w.held_length is got;
+						w.begun is true;
 						return got;
 					;;
 					if got is 0 return 0;
 				;;
 			;;
 			if (OS.GetTicks) - start > timeout
+				w.timed_out is true;
 				error is 'the server stopped answering';
 				return -1;
 			;;
@@ -761,6 +998,14 @@ phi.Web:Library
 			i++;
 		;;
 	[end: false]
+
+	# the same text, whatever the case
+	[Same: ptr<u8> a: 0; ptr<u8> b: 0;]
+		int i: 0;
+		while a:i is not 0 and (Lower: a:i) is (Lower: b:i)
+			i++;
+		;;
+	[end: a:i is 0 and b:i is 0]
 
 	[Lower: int c: 0;]
 		if c >= 'A' and c <= 'Z' return c + 32;

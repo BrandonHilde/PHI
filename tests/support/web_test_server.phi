@@ -5,6 +5,13 @@
 # It handles one connection at a time, and that's enough here, as it gives up on a client that has
 # stopped reading (one that has gone on to a new request for another part, say) after half a second, and
 # goes on to the next; /never leaves its connection open.
+#
+# What's under /keep/ leaves its connection open for the next request, as a real server does, until
+# the client closes it or another connection comes in (it still has one at a time): /keep/last and
+# /keep/closing close theirs after answering (the second saying so first), and after /keep/drop-next
+# the next request on that connection gets no answer, only the connection closed, which is what a
+# client sees when a server closes a kept connection just as it's asked again. connections counts
+# the connections it has taken.
 
 use net.tlslink;
 use user.threads;
@@ -41,6 +48,9 @@ phi.WebTestServer:Program
 	str verb: [15];
 	str path: [255];
 	int asks: 0;                          # how many requests it has had
+	int connections: 0;                   # how many connections it has taken
+	bln kept_open: false;                 # the connection is waiting for its next request
+	bln drop_next: false;                 # ...which gets no answer
 	int hung: -1;
 	bln gave_up: false;                   # the client stopped reading what's being sent
 
@@ -78,6 +88,9 @@ phi.WebTestServer:Program
 	[Stop]
 		atomic stopping is true;
 		call Threads.Wait: thread;
+		if kept_open
+			call Hang;
+		;;
 		call Tcp.StopListening: http_listener;
 		call Tcp.StopListening: https_listener;
 		call Udp.Close: dns_socket;
@@ -95,6 +108,13 @@ phi.WebTestServer:Program
 			if (Udp.Receive: dns_socket addr d)
 				call Name: addr d;
 				did is true;
+			;;
+			if kept_open
+				int waiting: (KeptState);
+				if waiting is not 0
+					call Next: waiting > 0;
+					did is true;
+				;;
 			;;
 			int c: (Tcp.Accept: http_listener);
 			if c >= 0
@@ -138,8 +158,48 @@ phi.WebTestServer:Program
 		bln sent: (Udp.SendTo: dns_socket d.from d.from_port addr reply (pos + 16) as u32);
 	[end]
 
+	# what the kept connection has for us: 1 for a request, -1 if the client closed it, 0 for nothing yet
+	[KeptState]
+		if secure
+			if not (Secure.Pump: addr link) return -1;
+			if link.session.app_left > 0 return 1;
+			if link.session.closed return -1;
+			return 0;
+		;;
+		int ready: (Tcp.Waiting: connection);
+		if ready < 0 return -1;
+		if ready > 0 return 1;
+	[end: 0]
+
+	# the kept connection's next request answered, or the connection closed
+	[Next: bln asked_again: false;]
+		kept_open is false;
+		if asked_again and not drop_next and (ReadRequest)
+			atomic asks++;
+			call Respond;
+			if (Stays)
+				kept_open is true;
+				return;
+			;;
+		;;
+		drop_next is false;
+		call Hang;
+	[end]
+
+	# whether the connection stays open after what was just answered
+	[Stays]
+		if gave_up or (Find: 'Connection: close') >= 0 return false;
+		if path is '/keep/last' or path is '/keep/closing' return false;
+	[end: (Text.StartsWith: addr path:0 '/keep/')]
+
 	# a request on a new connection, answered, and closed
 	[Answer: int c: 0; bln on_tls: false;]
+		if kept_open
+			kept_open is false;
+			drop_next is false;
+			call Hang;
+		;;
+		atomic connections++;
 		connection is c;
 		secure is on_tls;
 		gave_up is false;
@@ -162,6 +222,10 @@ phi.WebTestServer:Program
 		if (ReadRequest)
 			atomic asks++;
 			call Respond;
+			if (Stays)
+				kept_open is true;
+				return;
+			;;
 		;;
 		if path is '/never'
 			return;
@@ -375,8 +439,39 @@ phi.WebTestServer:Program
 			is '/never'
 				hung is connection;
 			;;
+			is '/keep/chunked'
+				call Say: 'HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n';
+				call Say: '4\r\nkept\r\n';
+				call Say: '1\r\n\n\r\n';
+				call Say: '0\r\n\r\n';
+			;;
+			is '/keep/moved'
+				call Say: 'HTTP/1.1 302 Found\r\nLocation: /keep/a\r\nContent-Length: 6\r\n\r\nmoved\n';
+			;;
+			is '/keep/long-moved'
+				call Say: 'HTTP/1.1 302 Found\r\nLocation: /keep/a\r\nContent-Length: 5000\r\n\r\n';
+				u8 filler[1000];
+				while int i: 0; i < 1000; i++;
+					filler:i is '.';
+				;;
+				while int n: 0; n < 5; n++;
+					call Out: addr filler 1000;
+				;;
+			;;
+			is '/keep/closing'
+				call Say: 'HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Length: 5\r\n\r\nkept\n';
+			;;
+			is '/keep/drop-next'
+				drop_next is true;
+				call Say: 'HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nkept\n';
+			;;
 			else
-				call Say: 'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n';
+				if (Text.StartsWith: addr path:0 '/keep/')
+					call Say: 'HTTP/1.1 200 OK\r\nContent-Length: 5\r\n\r\nkept\n';
+				;;
+				else
+					call Say: 'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\n\r\n';
+				;;
 			;;
 		;;
 	[end]
