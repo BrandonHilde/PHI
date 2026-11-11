@@ -210,6 +210,55 @@ namespace Phi.Compiler.Tests
             Assert.Equal(new ulong[] { 0x1000A }, threads[2].Stack);
         }
 
+        [Fact]
+        public void AMethodOfAStructMadeFromATemplateIsNamedInFull()
+        {
+            // (its name has a space in it, which a method's otherwise never does)
+            var listing = new[]
+            {
+                Row(1, null, "", "; Assembled by phi"),
+                Row(2, null, "", "org 0x400000"),
+                Row(3, null, "", "; method Map<str int>.Set (lib/phi/data/map.phi)"),
+                Row(4, null, "", "M_Map_of_str_int_Set:"),
+                Row(5, 0x0, "55", "    push rbp"),
+                Row(6, null, "", "; 103: int i: (FindHashed: key hash);"),
+                Row(7, 0x1, "90", "    nop"),
+            };
+            AddressMap map = AddressMap.Parse(listing);
+            Assert.Equal(new CodePlace("Map<str int>.Set", "lib/phi/data/map.phi", 103, "int i: (FindHashed: key hash);"), map.Find(0x400001));
+        }
+
+        [Fact]
+        public void ALinuxProgramsSamplesAreReadAndCountedByLineAndMethod()
+        {
+            // what the program writes: addresses of 8 bytes (or 4), low byte first
+            Assert.Equal(new ulong[] { 0x400123, 0x1_0000_0002 }, Profiler.ReadSamples(new byte[] { 0x23, 0x01, 0x40, 0, 0, 0, 0, 0, 2, 0, 0, 0, 1, 0, 0, 0 }, 8));
+            Assert.Equal(new ulong[] { 0x8048123, 7 }, Profiler.ReadSamples(new byte[] { 0x23, 0x81, 0x04, 0x08, 7, 0, 0, 0, 9 }, 4));   // (half a sample at the end is dropped)
+
+            File.WriteAllText(Path.Combine(root, "hot.phi"),
+                "phi.Hot:Program\n{\n\tint total: (Work: 9);\n\tlog total;\n\n\t[Work: int n: 0;]\n" +
+                "\t\tint sum: 0;\n\t\twhile int i: 0; i < n; i++;\n\t\t\tsum++ i / 7;\n\t\t;;\n\t[end: sum]\n}\n");
+            BuildResult result = Builder.Build(Path.Combine(root, "hot.phi"), Path.Combine(root, "build"), listing: true, host: Phi.Compiler.Host.Linux64);
+            Assert.True(result.Success, string.Join("\n", result.Errors));
+            string[] lines = File.ReadAllLines(Path.Combine(root, "build", "program.lst"));
+            var maps = new[] { AddressMap.Parse(lines) };
+
+            // three samples in the loop's line, one in the class's own code, one outside the program
+            // (FirstCodeAfter counts from where a kernel starts; a 64-bit Linux program starts at 0x400000)
+            ulong loop = FirstCodeAfter(lines, "; 9: sum++ i / 7;") - 0x10000 + 0x400000;
+            ulong own = FirstCodeAfter(lines, "; 3: int total: (Work: 9);") - 0x10000 + 0x400000;
+            string report = Profiler.HostReport(new ulong[] { loop, loop, own, loop, 0x7FFF_0000_1000 }, maps, top: 5, seconds: 0.0);
+            Assert.Contains("5 samples, one for each millisecond of CPU time", report);
+            Assert.Matches(@"60\.0%\s+\S*hot\.phi:9\s+Hot\.Work: sum\+\+ i / 7;", report);
+            Assert.Matches(@"60\.0%\s+Hot\.Work", report);
+            Assert.Matches(@"20\.0%\s+Hot \(class body\)", report);
+            Assert.Contains("20.0% of the samples were outside the program's code", report);
+
+            Assert.Contains("no samples", Profiler.HostReport(Array.Empty<ulong>(), maps, 5, 2.0));
+            // a program that mostly waited says so
+            Assert.Contains("busy for about 0.0 s", Profiler.HostReport(new ulong[] { loop }, maps, 5, 3.0));
+        }
+
         static (string, int) Place(AddressMap map, uint address)
         {
             CodePlace? p = map.Find(address);

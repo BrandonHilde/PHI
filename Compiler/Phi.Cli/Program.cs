@@ -56,6 +56,10 @@ const string Usage = """
                                            lines and methods that took the most time; with a window
                                            until you close it, or headless with --input (until the
                                            script ends) or --seconds
+      phi profile <file.phi> --target linux|linux64 [--top <n>] [-- <arguments>]
+                                           build it as a Linux program that notes where it is for each
+                                           millisecond of CPU time it uses, run it here, and list the
+                                           lines and methods that took the most when it ends
       phi load <file.phi> [--connections <n>] [--seconds <n>] [--port <n>] [--client <file.phi>] [--root <file.der> --host <name>] [--nic <card>] [--profile] [--target <system>]
                                            boot a server with load-client kernels on one network, which
                                            open n TCP connections to it (default 100, to port 4001), log
@@ -346,6 +350,16 @@ static int Execute(string[] args)
                 string? input = Option("--input");
                 string? seconds = Option("--seconds");
                 string? top = Option("--top");
+                // a program on this computer, not a kernel in QEMU: it runs as phi run --target would
+                if (rest.Contains("--target"))
+                {
+                    Phi.Compiler.Host target = TargetOption();
+                    if (rest.Count != 1) throw new ArgumentException("profile needs exactly one .phi file");
+                    if (input != null || seconds != null) throw new ArgumentException("--input and --seconds are for a kernel in QEMU; a program with --target runs until it ends");
+                    int most = 15;
+                    if (top != null && (!int.TryParse(top, out most) || most < 1)) throw new ArgumentException("--top takes a number of lines");
+                    return Profiler.RunHost(rest[0], target, most, programArguments);
+                }
                 MemoryOption();
                 CoresOption();
                 NicOption();

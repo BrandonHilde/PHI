@@ -1,0 +1,57 @@
+# What phi profile adds to a Linux program (lib/phi/test/profile_linux32.phi and
+# profile_linux64.phi): a handler that writes where the program is, for every millisecond of
+# CPU time it uses, to phi-profile.samples. A program takes the module for its own kind, and
+# on a system that isn't Linux neither, so there it only runs. On Linux the file must hold
+# whole addresses, a fair number of them, and all inside this small program's code.
+use test.profile_linux32;
+use test.profile_linux64;
+
+phi.ProfileProgram:Program
+{
+	const int MOST: 16000;
+	u8 samples[MOST];
+
+	# busy for a good many milliseconds
+	int total: 0;
+	while int round: 0; round < 40; round++;
+		total++ (Work: 2000000);
+	;;
+	log total '\n';
+
+	int size: (OS.ReadFile: 'phi-profile.samples' addr samples MOST);
+	if size >= 0
+		int width: sizeof ptr<u8>;
+		int count: size / width;
+		if size % width is not 0
+			log 'half an address: ' size ' bytes\n';
+		;;
+		if count < 10
+			log 'only ' count ' samples\n';
+		;;
+		# (the low four bytes of each: the program is nowhere near 4 GB)
+		u32 lowest: 0xFFFFFFFF;
+		u32 highest: 0;
+		while int k: 0; k < count; k++;
+			int first: k * width;
+			u32 where: (samples:first | (samples:(first + 1) << 8) | (samples:(first + 2) << 16) | (samples:(first + 3) << 24)) as u32;
+			if where < lowest
+				lowest is where;
+			;;
+			if where > highest
+				highest is where;
+			;;
+		;;
+		if count > 0 and highest - lowest > 0x100000
+			log 'samples outside the program: ' lowest ' to ' highest '\n';
+		;;
+		int gone: (OS.DeleteFile: 'phi-profile.samples');
+	;;
+	log 'done\n';
+
+	[Work: int n: 0;]
+		int sum: 0;
+		while int i: 0; i < n; i++;
+			sum++ i / 7;
+		;;
+	[end: sum]
+}

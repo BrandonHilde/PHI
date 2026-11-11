@@ -1,0 +1,57 @@
+# phi profile's part in a 64-bit Linux program: a note of where the program is, a thousand
+# times in each second it's busy. phi profile adds this file to the program it builds (and
+# profile_linux32.phi, which a 32-bit program takes instead), so nothing in the program
+# says it's being profiled.
+#
+# Linux sends the program a signal (SIGPROF) for every millisecond of CPU time it uses, on
+# whichever thread is running. The handler writes the address that thread was at, 8 bytes,
+# to the file phi-profile.samples where the program runs; phi profile reads them when the
+# program has ended, and says which lines and methods they were in. A program that's
+# waiting (asleep, or for a file or the network) uses no CPU time and gets no signals.
+
+phi.PhiProfile:Linux64
+{
+	const int SIGPROF: 27;
+	const int CPU_TIME: 2;                # the timer that counts while the program is running
+	const int WRITE_APPEND_NEW: 0x641;    # write only, at the end, made if it isn't there, emptied if it is
+	const u32 HANDLER_FLAGS: 0x14000004;  # it's given where the program was, and system calls carry on after
+
+	int profile_fd: (sys.Open: 'phi-profile.samples' WRITE_APPEND_NEW 420);
+	u64 action[4];                        # the handler, the flags, how it returns, and no signals held back
+	i64 every[4];                         # seconds and microseconds between signals, and until the first
+
+	action:0 is addr ProfileSample;
+	action:1 is HANDLER_FLAGS;
+	action:2 is addr ProfileReturn;
+	every:1 is 1000;
+	every:3 is 1000;
+	if profile_fd >= 0
+		if (sys.RtSigAction: SIGPROF addr action 0 8) is 0
+			int started: (sys.SetITimer: CPU_TIME addr every 0);
+		;;
+	;;
+}
+
+sys.Open: 2  ptr<u8> path  int flags  int mode;
+sys.RtSigAction: 13  int sig  ptr<u64> action  ptr<u64> old  u32 size;
+sys.SetITimer: 38  int which  ptr<i64> every  ptr<i64> old;
+
+# the signal's handler: rdx is what the thread was doing, and where it was is 168 bytes in
+x64.ProfileSample
+{
+	push qword [rdx + 168]
+	mov eax, 1                  ; write
+	mov edi, [rel {profile_fd}]
+	mov rsi, rsp
+	mov edx, 8
+	syscall
+	add rsp, 8
+	ret
+}
+
+# where the handler returns to: back to what the thread was doing
+x64.ProfileReturn
+{
+	mov eax, 15                 ; rt_sigreturn
+	syscall
+}

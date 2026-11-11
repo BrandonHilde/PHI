@@ -244,6 +244,37 @@ handler and the keyboard routine. Time in user programs is shown as a total, wit
 breakdown yet. The program runs more slowly while it's sampled (by about a third), but
 each line's share of the time comes out about the same.
 
+**A Linux program** is profiled with `--target`, on Linux, and runs here as `phi run
+--target` would run it, to its end:
+
+```
+phi profile game.phi --target linux64               # or linux, for a 32-bit program
+phi profile bench.phi --target linux64 --top 30 -- run    # what follows -- is the program's own
+```
+
+It's built with one more module (`lib/phi/test/profile_linux64.phi`, or `profile_linux32.phi`),
+which has Linux send the program a signal for every millisecond of CPU time it uses; the
+handler writes where the program was to `phi-profile.samples`, which `phi profile` reads
+and removes when the program ends. Nothing in the program says it's profiled, and it runs
+about 5% slower. The report is the same, saved as `build/NAME.linux64.profile/profile.txt`:
+
+```
+phi profile: 11,420 samples, one for each millisecond of CPU time, in 11.5 s
+
+Busiest lines (share of the 11,420 busy samples)
+     8.2%  js/vm.phi:593                         JsVm.Run: sp:0 is bp:(ins >> 8);
+     4.8%  js/vm.phi:589                         JsVm.Run: op is ins & 0xFF;
+     ...
+Busiest methods and routines
+    49.3%  JsVm.Run  (js/vm.phi)
+     9.6%  JsObjs.Find  (js/jsobject.phi)
+```
+
+Only time the program is busy is sampled: while it sleeps, or waits for a file, the
+network or a key, it uses no CPU time, and the report says how much of the run that was.
+A sample taken inside Linux's own code (on the way into or out of a system call) is
+counted as outside the program. Every thread is sampled. Not yet on Windows.
+
 **Compiler unit tests** (`Compiler/Phi.Compiler.Tests`) check the lexer, parser and error
 messages without QEMU, and that the programs in `samples/` compile. Run them with
 `dotnet test PHI.sln`.

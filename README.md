@@ -152,6 +152,7 @@ phi.Count:Program
        phi test                          boot every test in tests/ headless and check its output
        phi test --bench                  run the benchmarks and compare their counts with the saved ones
        phi profile samples/web.phi       boot it, then list the PHI lines that took the most time
+       phi profile x.phi --target linux64   the same for a Linux program, run here to its end
        phi load samples/mmo/server.phi --connections 500 --seconds 60 --root samples/mmo/certs/root.der --host lobby.mmo.phi.test
                                          boot the game server with load-client kernels that log 500
                                          TLS connections in and keep them talking, checking every answer

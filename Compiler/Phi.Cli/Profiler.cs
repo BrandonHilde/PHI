@@ -2,6 +2,7 @@ using System.Diagnostics;
 using System.Globalization;
 using System.Net.Sockets;
 using System.Text;
+using Phi.Compiler;
 using System.Text.RegularExpressions;
 
 namespace Phi.Cli
@@ -28,12 +29,13 @@ namespace Phi.Cli
         static readonly Regex Org = new(@"^org (0x[0-9A-Fa-f]+|\d+)");
         static readonly Regex SourceLine = new(@"^; (\d+): (.*)$");
         static readonly Regex ClassStart = new(@"^; ---- class (\S+) \((.+)\)$");
-        static readonly Regex MethodStart = new(@"^; (?:method|event|interrupt handler) (\S+) \((.+)\)$");
+        // (a name may have a space in it: Map<str int>.Set, a method of a struct made from a template)
+        static readonly Regex MethodStart = new(@"^; (?:method|event|interrupt handler) (.+?) \(([^()]+)\)$");
         static readonly Regex RawBlock = new(@"^; asm\.(\S+)$");
         static readonly Regex LibraryFile = new(@"^; ---- library: (\S+)");
         // a method written out in its caller (inlined), and where its code ends
-        static readonly Regex InlineStart = new(@"^; (\S+), written out here \((.+)\)$");
-        static readonly Regex InlineEnd = new(@"^; (\S+), written out up to here$");
+        static readonly Regex InlineStart = new(@"^; (.+?), written out here \(([^()]+)\)$");
+        static readonly Regex InlineEnd = new(@"^; (.+?), written out up to here$");
         static readonly Regex GlobalLabel = new(@"^([A-Za-z_]\w*):");
 
         // labels the generator makes for jumps inside a method (phi_while_3, phi_inbounds_12)
@@ -228,6 +230,87 @@ namespace Phi.Cli
             File.WriteAllText(saved, report);
             Console.WriteLine($"(saved to {Path.GetRelativePath(Environment.CurrentDirectory, saved)})");
             return 0;
+        }
+
+        /// <summary>What phi profile adds to a Linux program: the module for its kind (see lib/phi/test/profile_linux64.phi).</summary>
+        const string HostSampler = "\nuse test.profile_linux32;\nuse test.profile_linux64;\n";
+
+        /// <summary>Where a profiled Linux program writes where it was, in the folder it runs in.</summary>
+        public const string SamplesFile = "phi-profile.samples";
+
+        /// <summary>
+        /// phi profile x.phi --target linux (or linux64): the program is built with a handler
+        /// that notes where it is for every millisecond of CPU time it uses, run here as phi
+        /// run would run it, and when it ends the notes are counted by line and by method.
+        /// </summary>
+        public static int RunHost(string phiFile, Host host, int top, IReadOnlyList<string> arguments)
+        {
+            if (host is not (Host.Linux or Host.Linux64) || !OperatingSystem.IsLinux())
+            {
+                Console.Error.WriteLine("error: phi profile --target profiles a Linux program on Linux (linux or linux64); a kernel is profiled without --target");
+                return 1;
+            }
+            string file = Path.GetFullPath(phiFile);
+            string outDir = Path.Combine(Path.GetDirectoryName(file)!, "build", Path.GetFileNameWithoutExtension(file) + "." + host.FlagName() + ".profile");
+            BuildResult build = Builder.Build(file, outDir, HostSampler, listing: true, host: host);
+            foreach (string w in build.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
+            foreach (string e in build.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
+            if (!build.Success) return 1;
+
+            string samples = Path.Combine(Environment.CurrentDirectory, SamplesFile);
+            if (File.Exists(samples)) File.Delete(samples);
+            var clock = Stopwatch.StartNew();
+            int exit = HostRunner.RunInteractive(build.ExecutablePath!, host, arguments);
+            double elapsed = clock.Elapsed.TotalSeconds;
+
+            var addresses = File.Exists(samples) ? ReadSamples(File.ReadAllBytes(samples), host.Is64() ? 8 : 4) : new List<ulong>();
+            if (File.Exists(samples)) File.Delete(samples);
+            var maps = Where.MapsIn(outDir).Select(m => m.Map).ToList();
+
+            string report = HostReport(addresses, maps, top, elapsed, exit);
+            Console.Write(report);
+            string saved = Path.Combine(outDir, "profile.txt");
+            File.WriteAllText(saved, report);
+            Console.WriteLine($"(saved to {Path.GetRelativePath(Environment.CurrentDirectory, saved)})");
+            return 0;
+        }
+
+        /// <summary>The addresses a profiled program wrote, each <paramref name="width"/> bytes, low byte first.</summary>
+        public static List<ulong> ReadSamples(byte[] bytes, int width)
+        {
+            var addresses = new List<ulong>(bytes.Length / width);
+            for (int at = 0; at + width <= bytes.Length; at += width)
+                addresses.Add(width == 8 ? BitConverter.ToUInt64(bytes, at) : BitConverter.ToUInt32(bytes, at));
+            return addresses;
+        }
+
+        public static string HostReport(IReadOnlyList<ulong> addresses, IReadOnlyList<AddressMap> maps, int top, double seconds, int exit = 0)
+        {
+            var text = new StringBuilder();
+            text.AppendLine();
+            if (addresses.Count == 0)
+            {
+                text.AppendLine($"phi profile: no samples in {seconds:0.0} s: the program used under a millisecond of CPU time (waiting uses none)");
+                return text.ToString();
+            }
+
+            string Percent(int n, int of) => $"{100.0 * n / Math.Max(of, 1),6:0.0}%";
+            var places = addresses.Select(a => maps.Select(m => m.Find(a)).FirstOrDefault(p => p != null)).ToList();
+            var mapped = places.Where(p => p != null).Select(p => p!).ToList();
+
+            // a sample for each millisecond of CPU time; the rest of the time it was waiting
+            double busy = addresses.Count / 1000.0;
+            text.AppendLine($"phi profile: {addresses.Count:N0} samples, one for each millisecond of CPU time, in {seconds:0.0} s" +
+                            (exit != 0 ? $" (the program ended with {exit})" : ""));
+            if (seconds > 0.05 && busy < seconds * 0.9)
+                text.AppendLine($"  (busy for about {busy:0.0} s; waiting the rest, for input, files, the network or a sleep)");
+            if (mapped.Count > 0) Breakdown(text, mapped, addresses.Count, top, Percent);
+            if (mapped.Count < addresses.Count)
+            {
+                text.AppendLine();
+                text.AppendLine($"  {Percent(addresses.Count - mapped.Count, addresses.Count)} of the samples were outside the program's code (in Linux's own, on its way into or out of a system call)");
+            }
+            return text.ToString();
         }
 
         /// <summary>Reads the registers through the monitor at port until QEMU closes it or stop is set.</summary>

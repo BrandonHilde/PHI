@@ -1532,6 +1532,31 @@ folding, and (2) the backend interface, which S10 needs first.
 - [ ] (4) folding, inlining small methods, and bounds checks left out where the index is
   proved in range
 
+#### Profiling a Linux program
+
+- [x] `phi profile x.phi --target linux` (or `linux64`): `phi profile` only sampled a kernel
+  in QEMU, through its monitor, and this computer has no `perf`; the 20% found in weblib's
+  JavaScript benchmark was found by attaching gdb to it some thousands of times. The
+  program is built with one more module (`test.profile_linux64`, or `_linux32`), which has
+  Linux send it SIGPROF for every millisecond of CPU time it uses; the handler, a few
+  instructions of assembly, writes where the thread was to `phi-profile.samples`, and the
+  report is the kernel profiler's, by line and by method. Nothing new is asked of the
+  compiler or the runtime: the module is PHI, with its two system calls declared in it.
+  - On weblib's JavaScript benchmark: 11,420 samples in one run of 11.5 s (10.9 s without),
+    half of them in the interpreter's loop and the same lines busiest as gdb had found.
+  - On a `Map<str int>` filled and read: the heap is 46% of it (`Heap.FindFree`, `AddFree`,
+    `RemoveFree`, `Free`, `Take`, `Alloc`), the map's own code 24%, and hashing the text
+    7%. So a name's copy on the heap is what adding costs, as guessed, and the heap is
+    what to look at next there.
+  - A method of a struct made from a template is named in full in a report
+    (`Map<str int>.FindHashed`); its name has a space in it, which the listing's reader
+    didn't expect.
+  - Tests `profile_program` (the samples a program writes are whole addresses, a fair
+    number, all inside it) and `MeasuringTests`.
+  - Not yet: Windows; who called the busy code (a sample is where the program was, not
+    how it got there); and a PHI OS program's time, which the kernel profiler still shows
+    as one total.
+
 #### A stopwatch
 
 - [x] `user.stopwatch`: `Stopwatch watch;` with `Start`, `Stop`, `Restart`, `Reset`, and

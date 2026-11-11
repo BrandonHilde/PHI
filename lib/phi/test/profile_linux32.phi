@@ -1,0 +1,51 @@
+# phi profile's part in a 32-bit Linux program: as profile_linux64.phi, with i386's numbers,
+# and addresses of 4 bytes.
+
+phi.PhiProfile:Linux32
+{
+	const int SIGPROF: 27;
+	const int CPU_TIME: 2;                # the timer that counts while the program is running
+	const int WRITE_APPEND_NEW: 0x641;    # write only, at the end, made if it isn't there, emptied if it is
+	const u32 HANDLER_FLAGS: 0x14000004;  # it's given where the program was, and system calls carry on after
+
+	int profile_fd: (sys.Open: 'phi-profile.samples' WRITE_APPEND_NEW 420);
+	u32 action[5];                        # the handler, the flags, how it returns, and no signals held back (8 bytes)
+	int every[4];                         # seconds and microseconds between signals, and until the first
+
+	action:0 is addr ProfileSample;
+	action:1 is HANDLER_FLAGS;
+	action:2 is addr ProfileReturn;
+	every:1 is 1000;
+	every:3 is 1000;
+	if profile_fd >= 0
+		if (sys.RtSigAction: SIGPROF addr action 0 8) is 0
+			int started: (sys.SetITimer: CPU_TIME addr every 0);
+		;;
+	;;
+}
+
+sys.Open: 5  ptr<u8> path  int flags  int mode;
+sys.RtSigAction: 174  int sig  ptr<u32> action  ptr<u32> old  u32 size;
+sys.SetITimer: 104  int which  ptr<int> every  ptr<int> old;
+
+# the signal's handler: its third argument is what the thread was doing, and where it was
+# is 76 bytes in
+asm.ProfileSample
+{
+	mov eax, [esp + 12]
+	push dword [eax + 76]
+	mov eax, 4                  ; write
+	mov ebx, [{profile_fd}]
+	mov ecx, esp
+	mov edx, 4
+	int 0x80
+	add esp, 4
+	ret
+}
+
+# where the handler returns to: back to what the thread was doing
+asm.ProfileReturn
+{
+	mov eax, 173                ; rt_sigreturn
+	int 0x80
+}
