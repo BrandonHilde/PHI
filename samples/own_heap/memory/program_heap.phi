@@ -1,43 +1,20 @@
 # A project's own heap, in place of the standard one: `use` looks beside the program first, so
 # new, free, objects and text that grows all come here. All it needs is a class Heap with Alloc and
-# Free. This one is for finding bugs, and is only for Windows: each block ends against a page
-# that can't be touched, and freed memory can't be touched or used again, so running off the end
-# of a block, or using it after free, stops at that line as an error that can be caught. It
-# takes at least two pages for each block, and never gets them back, so it's not for everyday use.
-
-use 'kernel32.dll' as Kernel32;
-
-phi.Heap:Windows
-{
-	const u32 PAGE: 4096;
-	const u32 COMMIT_AND_RESERVE: 0x3000;
-	const u32 READ_WRITE: 4;
-	const u32 NO_ACCESS: 1;
-
-	[Alloc: u32 size: 0;]
-		u32 wanted: (size + 8 + 7) & ~7;        # (8 bytes before it say how big it is)
-		u32 pages: (wanted + PAGE - 1) / PAGE + 1;
-		ptr<u8> start: (Kernel32.VirtualAlloc: 0 (pages * PAGE) COMMIT_AND_RESERVE READ_WRITE);
-		if start is 0 return 0;
-		u32 old: 0;
-		call Kernel32.VirtualProtect: (start + (pages - 1) * PAGE) PAGE NO_ACCESS addr old;
-		ptr<u8> block: start + (pages - 1) * PAGE - wanted;
-		ptr<u32> header: block;
-		header:0 is pages;
-		header:1 is wanted;
-	[end: block + 8]
-
-	[Free: ptr<u8> address: 0;]
-		if address is 0 return;
-		ptr<u32> header: address - 8;
-		u32 pages: header:0;
-		u32 wanted: header:1;
-		ptr<u8> block: address - 8;
-		ptr<u8> start: block - ((pages - 1) * PAGE - wanted);
-		u32 old: 0;
-		call Kernel32.VirtualProtect: start (pages * PAGE) NO_ACCESS addr old;
-	[end]
-}
-
-Kernel32.VirtualAlloc: ptr<u8> place  u32 size  u32 how  u32 protection: ptr<u8>;
-Kernel32.VirtualProtect: ptr<u8> place  u32 size  u32 protection  ptr<u32> old;
+# Free. This one is for finding bugs: each block ends against a page that can't be touched, and
+# freed memory can't be touched or used again, so running off the end of a block, or using it
+# after free, stops at that line as an error that can be caught. It takes at least two pages for
+# each block, and never uses their addresses again, so it's not for everyday use.
+#
+# A program takes the one for its system: Windows, or Linux in 32 or 64 bits.
+#
+# To look for such bugs in a project's tests, put this folder beside them for a run:
+#
+#   cp -r samples/own_heap/memory tests/memory
+#   phi test --target linux64          # a test that used to pass and now stops has one
+#   rm -r tests/memory
+#
+# (used_blocks and used_bytes are counted, as the standard heap's are, but not what's only
+# the standard heap's: its limit, and what it keeps waiting.)
+use memory.checking_windows;
+use memory.checking_linux32;
+use memory.checking_linux64;

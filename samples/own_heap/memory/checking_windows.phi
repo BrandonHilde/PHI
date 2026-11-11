@@ -1,0 +1,49 @@
+# The checking heap for a Windows program (see program_heap.phi beside this): every block is
+# pages of its own, ending against a page that can't be touched, and a freed block's pages
+# can't be touched again. It takes at least two pages for each block, and never gets them
+# back, so it's not for everyday use.
+
+use 'kernel32.dll' as Kernel32;
+
+phi.Heap:Windows
+{
+	const u32 PAGE: 4096;
+	const u32 COMMIT_AND_RESERVE: 0x3000;
+	const u32 READ_WRITE: 4;
+	const u32 NO_ACCESS: 1;
+
+	u32 used_blocks: 0;
+	u32 used_bytes: 0;
+	u64 most_bytes: 0;
+
+	[Alloc: u32 size: 0;]
+		u32 wanted: (size + 8 + 7) & ~7;        # (8 bytes before it say how big it is)
+		u32 pages: (wanted + PAGE - 1) / PAGE + 1;
+		ptr<u8> start: (Kernel32.VirtualAlloc: 0 (pages * PAGE) COMMIT_AND_RESERVE READ_WRITE);
+		if start is 0 return 0;
+		u32 old: 0;
+		call Kernel32.VirtualProtect: (start + (pages - 1) * PAGE) PAGE NO_ACCESS addr old;
+		ptr<u8> block: start + (pages - 1) * PAGE - wanted;
+		ptr<u32> header: block;
+		header:0 is pages;
+		header:1 is wanted;
+		used_blocks++;
+		used_bytes++ wanted - 8;
+	[end: block + 8]
+
+	[Free: ptr<u8> address: 0;]
+		if address is 0 return;
+		ptr<u32> header: address - 8;
+		u32 pages: header:0;
+		u32 wanted: header:1;
+		used_blocks--;
+		used_bytes-- wanted - 8;
+		ptr<u8> block: address - 8;
+		ptr<u8> start: block - ((pages - 1) * PAGE - wanted);
+		u32 old: 0;
+		call Kernel32.VirtualProtect: start (pages * PAGE) NO_ACCESS addr old;
+	[end]
+}
+
+Kernel32.VirtualAlloc: ptr<u8> place  u32 size  u32 how  u32 protection: ptr<u8>;
+Kernel32.VirtualProtect: ptr<u8> place  u32 size  u32 protection  ptr<u32> old;

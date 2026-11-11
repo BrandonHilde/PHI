@@ -1,0 +1,50 @@
+# The checking heap for a 64-bit Linux program: every block is pages of its own, ending
+# against a page that can't be touched, and a freed block's pages can't be touched again. So
+# running off the end of a block, or using it after free, stops at that line. It never gives
+# memory back, and takes two pages at least for each block: for finding bugs, not for use.
+
+phi.Heap:Linux64
+{
+	const u32 PAGE: 4096;
+	const int READ_WRITE: 3;
+	const int NO_ACCESS: 0;
+	const int NOT_NEEDED: 4;
+	const int PRIVATE_NEW: 0x22;          # not a file's, and nobody else's
+
+	u32 used_blocks: 0;
+	u32 used_bytes: 0;
+	u64 most_bytes: 0;
+
+	[Alloc: u32 size: 0;]
+		u32 wanted: (size + 8 + 7) & ~7;        # (8 bytes before it say how big it is)
+		u32 pages: (wanted + PAGE - 1) / PAGE + 1;
+		ptr<u8> start: (sys.MapMemory: 0 (pages * PAGE) READ_WRITE PRIVATE_NEW (-1) 0);
+		if (start as u32) > 0xFFFFF000 and sizeof ptr<u8> is 4 return 0;
+		if start is 0 return 0;
+		int done: (sys.MemoryProtect: (start + (pages - 1) * PAGE) PAGE NO_ACCESS);
+		ptr<u8> block: start + (pages - 1) * PAGE - wanted;
+		ptr<u32> header: block;
+		header:0 is pages;
+		header:1 is wanted;
+		used_blocks++;
+		used_bytes++ wanted - 8;
+	[end: block + 8]
+
+	[Free: ptr<u8> address: 0;]
+		if address is 0 return;
+		ptr<u32> header: address - 8;
+		u32 pages: header:0;
+		u32 wanted: header:1;
+		used_blocks--;
+		used_bytes-- wanted - 8;
+		ptr<u8> block: address - 8;
+		ptr<u8> start: block - ((pages - 1) * PAGE - wanted);
+		int done: (sys.MemoryProtect: start (pages * PAGE) NO_ACCESS);
+		# (its pages go back to the system, though nothing may ever be put where they were)
+		done is (sys.MemoryAdvise: start (pages * PAGE) NOT_NEEDED);
+	[end]
+}
+
+sys.MapMemory: 9  ptr<u8> place  u32 size  int protection  int flags  int fd  u32 offset: ptr<u8>;
+sys.MemoryProtect: 10  ptr<u8> start  u32 length  int how;
+sys.MemoryAdvise: 28  ptr<u8> start  u32 length  int advice;

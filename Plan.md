@@ -1561,6 +1561,31 @@ folding, and (2) the backend interface, which S10 needs first.
   that new did not hand out". The objects are freed first now.
   - Not yet: the kernel's heap (memory.heap), which is the same design as this one was.
 
+#### Looking for memory that's used after it's freed
+
+- [x] samples/own_heap, the heap that stops a program where it runs off the end of a block
+  or uses one after `free`, was for Windows only. It's for Linux too now, in 32 and 64 bits
+  (`mmap` and `mprotect` for Windows' VirtualAlloc and VirtualProtect; a freed block's
+  pages go back to the system, and stay untouchable), and counts `used_blocks` and
+  `used_bytes` as the standard heap does, so tests that ask for them build on it.
+- [x] Every test run on it, by putting its folder beside the tests for a run
+  (docs/patterns.md says how):
+  - PHI's own, as Linux programs in 32 and 64 bits: nothing, in 135 programs. (Two differ
+    for reasons of their own: one tests the standard heap's limit, and one counts blocks
+    from four threads at once, which this heap doesn't lock for.)
+  - The Code Library's corelib, imagelib and fontlib: nothing.
+  - weblib: one, in 15 test programs. `@import "x.css" supports(display: grid)` called
+    `CssSupports.Declaration` from the sheet's parser without giving it the sheet's tokens,
+    so it read the tokens of whatever `@supports` condition was read last, freed since.
+    On the standard heap that memory was still there and the wrong answer was put right
+    by what came next; on this one the read stops, weblib catches the error as it does
+    any, and the rule after the `@import` was lost. Fixed in weblib.
+  - weblib's JavaScript objects are in slabs of its own, which this heap sees only whole,
+    so those blocks aren't checked this way.
+  - As 32-bit programs the libraries' fuzz tests run out of addresses on it part way (it
+    never uses one twice, and there are 3 GB of them): what they did before that was right,
+    and the 64-bit run does them whole.
+
 #### Profiling a Linux program
 
 - [x] `phi profile x.phi --target linux` (or `linux64`): `phi profile` only sampled a kernel

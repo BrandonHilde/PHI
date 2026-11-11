@@ -204,6 +204,21 @@ its pointers: [samples/own_heap](../samples/own_heap/memory/program_heap.phi) is
 bugs, where running off the end of a block, or using it after `free`, stops at that line as
 an error that can be caught.
 
+That heap is also how to look for such bugs in code that already has tests, on Linux or
+Windows: put its folder beside them for a run, and a test that passed and now stops (or
+gives another answer, where the code catches its own errors) has one.
+
+```
+cp -r samples/own_heap/memory tests/memory
+phi test --target linux64
+rm -r tests/memory
+```
+
+The standard heap leaves a freed block's memory readable, so reading it after `free` often
+goes unnoticed for a long time. Run this way, PHI's own tests and the Code Library's found
+one such read in each: a method that freed an array of objects' storage before the objects,
+and a stylesheet's `@import ... supports(...)` that read the tokens of an earlier condition.
+
 ## Returning text from a method
 
 A method whose `[end: ...]` is a `ptr<u8>` gives back text. That can be a place inside
