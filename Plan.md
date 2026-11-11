@@ -1555,12 +1555,23 @@ and every program wrapped it or wrote its own.
     a type already and a struct that takes none each have their own message.
   - Tests `generic_structs`, `generic_structs_errors`, `generic_structs_misuse` and
     `TemplateTests`.
-- [ ] Every method of a template is compiled for every use, so one that doesn't suit a type
-  (`Pop` handing back a struct) stops the whole use. Compiling only the methods a use
-  calls would lift that.
-- [ ] `Map<Key Value>` in the standard library. It needs a key's hash whatever the key is
-  (a number, a `str`, a struct), which a template can't write in PHI yet: a built-in that
-  hashes by type, or an interface the key has.
+- [x] A method only has to suit the types it's used with. Every method of a template was
+  compiled for every use, so one that doesn't suit a type (`Pop`'s `Item top: ...;`, which a
+  struct variable can't be) stopped the whole use. The binder
+  notes what uses each method (`NoteUse`), takes what's wrong in a made struct's method
+  back out of the errors, and once every method is checked leaves out the ones nothing
+  uses that had something wrong, with any other unused one that calls them
+  (`LeaveOutUnusedTemplateMethods`). One that is used says its errors as any method does.
+- [x] `Hash.Of: value` (data.hash): the hash of a number, a `chr`, an enum, an `i64` or
+  `u64`, or text. The binder picks `OfNumber`, `OfWide` or `OfText` by the value's type,
+  which is what lets a template hash a key without knowing what a `Key` is. Chosen over an
+  interface a key must have (the user, 2026-11-10: the built-in), which would need a type
+  that must have an interface first, and wouldn't cover plain numbers and text.
+- [x] `Map<Key Value>` in data.map, beside the older `Map` class (u32 to u32, behind a
+  pointer): keys and values in two arrays side by side, in the order they were added, and
+  a table of places found by the key's hash, as data.keyed's is. `new Map<str int>
+  counts;`, `Map<u32 Player>`, `while each k in counts.keys`. Test `generic_map`.
+  - A struct or a pointer as a key has no hash yet.
 - [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), methods that
   take types of their own, and templates in a compiled library (its interface is written
   from the source's text, which a made struct has none of).

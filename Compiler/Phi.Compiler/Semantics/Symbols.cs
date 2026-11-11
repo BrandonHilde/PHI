@@ -478,6 +478,12 @@ namespace Phi.Compiler.Semantics
         /// <summary>The method's own variables (not its parameters), which live in its stack frame.</summary>
         public List<VariableSymbol> Locals { get; } = new();
 
+        /// <summary>The methods whose code names this one (calls it, or takes its address).</summary>
+        public HashSet<MethodSymbol> UsedBy { get; } = new();
+
+        /// <summary>Named by a class's own code, or needed whoever calls it (an interface's method).</summary>
+        public bool UsedOutsideMethods { get; set; }
+
         /// <summary>The values of its return statements, for working out <see cref="ResultCapacity"/>.</summary>
         public List<Expr> ReturnValues { get; } = new();
 

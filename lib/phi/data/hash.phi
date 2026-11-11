@@ -1,0 +1,36 @@
+# A hash: one u32 from a value, the same every time for the same value and seldom the same
+# for two, which a table of keys finds a key's place by (data.map's Map<Key Value> does).
+#
+#   use data.hash;
+#   u32 a: (Hash.Of: 1042);          # of a number, a chr, a bln or an enum
+#   u32 b: (Hash.Of: name);          # of text: a str, or a ptr<u8> to text that ends in a zero
+#   u32 c: (Hash.Of: big);           # of an i64 or a u64
+#
+# Hash.Of takes whichever of those its value is: the compiler picks OfNumber, OfText or
+# OfWide by the value's type, so code written for any type (a struct that takes types) can
+# say Hash.Of: key. Text hashes by what it says, not where it is, so two strs with the same
+# text have the same hash, as `is` says they're equal.
+
+phi.Hash:Library
+{
+	# a number's bits, spread: a table uses the low bits, and numbers that go up by one (or
+	# by 256) would otherwise sit in a row
+	[OfNumber: u32 n: 0;]
+		n is n ^ (n >> 16);
+		n is n * 0x7FEB352D;
+		n is n ^ (n >> 15);
+		n is n * 0x846CA68B;
+	[end: n ^ (n >> 16)]
+
+	[OfWide: u64 n: 0;]
+	[end: (OfNumber: ((n >> 32) as u32) ^ (OfNumber: n as u32))]
+
+	# FNV-1a, a byte at a time, up to the zero that ends the text
+	[OfText: ptr<u8> text: 0;]
+		u32 hash: 2166136261;
+		while text:0 is not 0
+			hash is (hash ^ text:0) * 16777619;
+			text is text + 1;
+		;;
+	[end: hash]
+}

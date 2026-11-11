@@ -13,6 +13,17 @@ struct.Stack<Item>
 
 	[Wrong]
 	[end: nothing_here]
+
+	# what's wrong in a method nothing uses isn't said: this suits no type, and nobody calls it
+	[Unused]
+	[end: also_nothing]
+
+	# but one that's only called by another that is used counts as used
+	[Inner]
+	[end: deep_nothing]
+
+	[Outer]
+	[end: (Inner)]
 }
 
 phi.GenericStructsMisuse:Kernel
@@ -22,4 +33,5 @@ phi.GenericStructsMisuse:Kernel
 	new Stack<str> names;
 	new Stack alone;
 	call numbers.Push: 'text';
+	log (names.Top) (numbers.Wrong) (small.Outer);
 }

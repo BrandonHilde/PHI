@@ -1,0 +1,89 @@
+# runs only in 32 and 64 bits: arrays that grow
+# data.map's Map<Key Value>: one struct for any kind of key and value. A key is found by
+# its hash (data.hash's Hash.Of, which the compiler picks by the key's type), so numbers
+# and text are both keys; a value is a number, text or a struct.
+use data.map;
+
+struct.Player
+{
+	str name: [24];
+	int score;
+}
+
+enum.Suit
+{
+	HEARTS
+	SPADES
+}
+
+phi.GenericMap:Library
+{
+	# the hash itself: the same for the same value, and text by what it says
+	str one: 'ann';
+	str other: 'ann';
+	i64 big: 5000000000;
+	debug (Hash.Of: 1042) ' ' (Hash.Of: -5) ' ' (Hash.Of: 'x') ' ' (Hash.Of: Suit.SPADES) ' ' (Hash.Of: big) ' ' (Hash.Of: one) ' ' ((Hash.Of: one) is (Hash.Of: other)) '\n';
+
+	# an enum and an i64 as keys, and text as the value
+	new Map<Suit int> suits;
+	call suits.Set: Suit.SPADES 4;
+	new Map<i64 u8> far;
+	call far.Set: big 9;
+	call far.Set: big + 1 10;
+	new Map<int str> names;
+	call names.Set: -3 'minus three';
+	call names.Set: 7 'seven';
+	debug (suits.Get: Suit.SPADES 0) ' ' (suits.Has: Suit.HEARTS) ' ' (far.Get: big 0) ' ' (far.Get: big + 1 0) ' ' (far.Count) ' ' names.values:(names.Find: -3) ' ' names.values:(names.Find: 7) '\n';
+
+	new Map<u32 int> ids;
+	call ids.Set: 1042 7;
+	call ids.Set: 5 50;
+	call ids.Set: 1042 8;
+	debug (ids.Get: 1042 0) ' ' (ids.Get: 5 0) ' ' (ids.Get: 9 (-1)) ' ' (ids.Has: 5) ' ' (ids.Count) '\n';
+
+	new Map<str int> counts;
+	call counts.Set: 'the' 1;
+	call counts.Set: 'phi' 2;
+	call counts.Set: 'the' (counts.Get: 'the' 0) + 1;
+	str word: 'phi';
+	debug (counts.Get: 'the' 0) ' ' (counts.Get: word 0) ' ' (counts.Has: 'none') ' ' (counts.Count) '\n';
+	while each k in counts.keys
+		debug k ' ';
+	;;
+	debug '\n';
+
+	new Map<u32 Player> players;
+	Player ann;
+	ann.name is 'ann';
+	ann.score is 3;
+	call players.Set: 1042 ann;
+	int where: (players.Find: 1042);
+	players.values:where.score++ 10;
+	# Get hands back a copy of a struct value, or of what's given for a key that isn't there
+	Player nobody;
+	nobody.name is 'nobody';
+	new Player got: (players.Get: 1042 nobody);
+	new Player missing: (players.Get: 7 nobody);
+	got.score is 99;
+	debug got.name ' ' missing.name ' ';
+	debug players.values:where.name ' ' players.values:where.score ' ' (players.Remove: 1042) ' ' (players.Count) '\n';
+
+	while int i: 0; i < 1000; i++;
+		call ids.Set: i * 7 i;
+	;;
+	int wrong: 0;
+	while int i: 0; i < 1000; i++;
+		if (ids.Get: i * 7 (-1)) is not i
+			wrong++;
+		;;
+	;;
+	while int i: 0; i < 1000; i++ 2;
+		call ids.Remove: i * 7;
+	;;
+	while int i: 0; i < 1000; i++;
+		if (ids.Has: i * 7) is not (i % 2 is 1)
+			wrong++;
+		;;
+	;;
+	debug wrong ' ' (ids.Count) '\n';
+}

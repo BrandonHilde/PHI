@@ -52,8 +52,7 @@ struct.Node<Item>
 	new Node<Item> next;
 }
 
-# every method must suit every type the struct is used with: this one only keeps and counts,
-# so it can hold structs too (Stack's Pop gives back an Item, which a method can't do with a struct)
+# another that only keeps and counts
 struct.Bag<Item>
 {
 	Item items[];
@@ -121,6 +120,14 @@ phi.GenericStructs:Library
 	call spots.Add: here;
 	here.x is 30;
 	debug spots.items:0.x ' ' (spots.Add: here) ' ' spots.items:1.x ' ' spots.items:1.y '\n';
+
+	# a method that doesn't suit a type is left out while nothing uses it: Pop starts an Item
+	# variable with a value, which a struct variable can't, and a Stack<Spot> that's only
+	# pushed to is fine
+	new Stack<Spot> pile;
+	call pile.Push: here;
+	call pile.Push: here;
+	debug (pile.Count) ' ' pile.items:1.x '\n';
 
 	# a method given one
 	[Depth: Stack<int> stack;]

@@ -95,6 +95,68 @@ namespace Phi.Compiler.Tests
             Assert.Equal(5, errors[0].File!.GetLocation(errors[0].Span.Start).Line);
         }
 
+        const string Spots = """
+            struct.Spot
+            {
+            	int x;
+            }
+
+            struct.Pile<Item>
+            {
+            	Item items[];
+
+            	[Push: Item item;]
+            		items++ item;
+            	[end: items.len]
+
+            	[Top]
+            		Item top: items:(items.len - 1);
+            	[end: top]
+
+            	[TopTwice]
+            	[end: (Top)]
+            }
+
+            """;
+
+        [Fact]
+        public void AMethodThatDoesntSuitATypeIsLeftOutWhileNothingUsesIt()
+        {
+            // (Top starts an Item with a value, which a struct variable can't be)
+            CompileResult unused = Compile(Spots + "phi.T:Program\n{\n\tnew Pile<Spot> p;\n\tSpot s;\n\tlog (p.Push: s);\n}\n");
+            Assert.True(unused.Success, Errors(unused));
+            var methods = unused.Bound!.Program!.Methods.Select(m => m.Name).Where(n => n.StartsWith("Pile<Spot>")).ToList();
+            Assert.Equal(new[] { "Pile<Spot>.Push" }, methods);
+
+            // the same struct for a type they do suit keeps them all
+            CompileResult suited = Compile(Spots + "phi.T:Program\n{\n\tnew Pile<int> p;\n\tlog (p.Push: 1);\n}\n");
+            Assert.Equal(3, suited.Bound!.Program!.Methods.Count(m => m.Name.StartsWith("Pile<int>")));
+        }
+
+        [Theory]
+        [InlineData("log (p.Top);")]              // used from the program
+        [InlineData("log (p.TopTwice);")]         // used by a method that's used
+        public void OneThatIsUsedSaysWhatsWrong(string use)
+        {
+            CompileResult result = Compile(Spots + "phi.T:Program\n{\n\tnew Pile<Spot> p;\n\t" + use + "\n}\n");
+            Assert.Contains(result.Diagnostics, d => d.Message.Contains("a Spot starts as all zeros") && d.Message.Contains("(in Pile<Spot>, which line"));
+        }
+
+        [Fact]
+        public void HashOfIsTheHashForTheValuesType()
+        {
+            string program = "use data.hash;\n\nphi.T:Program\n{\n\tstr s: 'a';\n\ti64 w: 5;\n\tlog (Hash.Of: 5) (Hash.Of: s) (Hash.Of: w);\n}\n";
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
+            var hash = result.Bound!.Program!.Methods.Where(m => m.Name.StartsWith("Hash.Of")).ToList();
+            Assert.All(new[] { "Hash.OfNumber", "Hash.OfText", "Hash.OfWide" }, name => Assert.Contains(hash, m => m.Name == name && (m.UsedOutsideMethods || m.UsedBy.Count > 0)));
+
+            CompileResult real = Compile("use data.hash;\n\nphi.T:Program\n{\n\tf64 r: 1.5;\n\tlog (Hash.Of: r);\n}\n");
+            Assert.Contains(real.Diagnostics, d => d.Message.Contains("Hash.Of has no hash for"));
+            CompileResult missing = Compile("phi.T:Program\n{\n\tlog (Hash.Of: 5);\n}\n");
+            Assert.Contains(missing.Diagnostics, d => d.Message.Contains("add use data.hash;"));
+        }
+
         [Fact]
         public void ACompiledLibraryCantHoldOneYet()
         {

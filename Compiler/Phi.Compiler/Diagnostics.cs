@@ -73,6 +73,27 @@ namespace Phi.Compiler
 
         public void CopyOf(SourceFile copy, SourceFile real, string note) => copies[copy] = (real, note);
 
+        /// <summary>The template's file, for a copy a struct made from it is read from; null for any other.</summary>
+        public SourceFile? RealOf(SourceFile file) => copies.TryGetValue(file, out var copy) ? copy.Real : null;
+
+        public int Count => items.Count;
+
+        /// <summary>Takes back out what's been said since there were <paramref name="from"/>, of what <paramref name="which"/> picks.</summary>
+        public List<Diagnostic> Take(int from, Func<Diagnostic, bool> which)
+        {
+            var taken = new List<Diagnostic>();
+            for (int i = items.Count - 1; i >= from; i--)
+                if (which(items[i]))
+                {
+                    taken.Insert(0, items[i]);
+                    items.RemoveAt(i);
+                }
+            return taken;
+        }
+
+        /// <summary>Says again what <see cref="Take"/> took out.</summary>
+        public void Add(Diagnostic diagnostic) => items.Add(diagnostic);
+
         public void Error(SourceFile? file, Span span, string message) => Add(Severity.Error, file, span, message);
 
         public void Warning(SourceFile? file, Span span, string message) => Add(Severity.Warning, file, span, message);

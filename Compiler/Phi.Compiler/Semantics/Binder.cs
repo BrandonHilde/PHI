@@ -365,7 +365,12 @@ namespace Phi.Compiler.Semantics
                 file = cls.File;
                 // as in a method: a name declared again in a separate block is a variable of its own
                 DeclareLocals(scope, cls.Body);
-                foreach (MethodDecl m in cls.Methods) DeclareMethod(scope, m);
+                foreach (MethodDecl m in cls.Methods)
+                {
+                    int said = diagnostics.Count;
+                    DeclareMethod(scope, m);
+                    HoldTemplateMethodErrors(cls, m, said);
+                }
             }
 
             AssignVariableLabels();
@@ -380,10 +385,11 @@ namespace Phi.Compiler.Semantics
                 blockNames.Clear();
                 blockClass = null;
 
-                foreach (MethodDecl m in cls.Methods)
+                foreach (MethodDecl m in cls.Methods.ToList())
                 {
                     if (m.Symbol == null) continue;
                     Scope ms = methodScopes[m];
+                    int said = diagnostics.Count;
                     foreach (VarDecl p in m.Parameters)
                     {
                         BindVarDecl(p, ms, classLevel: false);
@@ -406,8 +412,14 @@ namespace Phi.Compiler.Semantics
                     CheckLocalMemoryKept(m);
                     blockNames.Clear();
                     blockMethod = null;
+
+                    // a method of a struct made from a template: what's wrong in it waits to see
+                    // whether anything uses it (LeaveOutUnusedTemplateMethods)
+                    if (diagnostics.RealOf(cls.File) != null) templateMethods.Add(m.Symbol);
+                    HoldTemplateMethodErrors(cls, m, said);
                 }
             }
+            LeaveOutUnusedTemplateMethods();
 
             if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();
@@ -884,8 +896,12 @@ namespace Phi.Compiler.Semantics
             t.Fields ?? (t.IsPointer && !t.IsArray && t.Pointee!.IsStruct ? t.Pointee.Struct : null);
 
         /// <summary>The method `name` of a struct, if it has one in this unit.</summary>
-        MethodSymbol? FindStructMethod(StructSymbol s, string name, Scope scope) =>
-            methodsByFullName.TryGetValue((scope.Unit, $"{s.Name}.{name}"), out MethodSymbol? m) && m.Decl.Owner.ForStruct?.Symbol == s ? m : null;
+        MethodSymbol? FindStructMethod(StructSymbol s, string name, Scope scope)
+        {
+            if (!methodsByFullName.TryGetValue((scope.Unit, $"{s.Name}.{name}"), out MethodSymbol? m) || m.Decl.Owner.ForStruct?.Symbol != s) return null;
+            NoteUse(m, scope);
+            return m;
+        }
 
         /// <summary>addr receiver, for a struct method's self.</summary>
         Expr SelfArgument(Expr receiver, Scope scope)
@@ -1650,6 +1666,76 @@ namespace Phi.Compiler.Semantics
             }
             Error(t.Span, $"unknown type '{t.Name}'");
             return PhiType.Error;
+        }
+
+        /// <summary>The methods of structs made from templates, and what was found wrong in each (taken back out of the errors).</summary>
+        readonly List<MethodSymbol> templateMethods = new();
+        readonly Dictionary<MethodSymbol, List<Diagnostic>> wrongInTemplateMethod = new();
+
+        /// <summary>
+        /// For a method of a struct made from a template: takes what's been said to be wrong in
+        /// it since there were <paramref name="said"/> errors back out, to wait and see whether
+        /// anything uses the method.
+        /// </summary>
+        void HoldTemplateMethodErrors(ClassDecl cls, MethodDecl m, int said)
+        {
+            if (m.Symbol == null || diagnostics.RealOf(cls.File) is not SourceFile template) return;
+            int last = m.Parameters.Cast<Stmt>().Concat(m.Body).SelectMany(SyntaxWalker.Nodes)
+                .Concat(m.Result != null ? SyntaxWalker.Nodes(m.Result) : Enumerable.Empty<Node>())
+                .Select(n => n.Span.End).DefaultIfEmpty(m.Span.End).Max();
+            var wrong = diagnostics.Take(said, d => d.Severity == Severity.Error && d.File == template && d.Span.Start >= m.Span.Start && d.Span.Start <= last);
+            if (wrong.Count == 0) return;
+            if (!wrongInTemplateMethod.TryGetValue(m.Symbol, out List<Diagnostic>? held)) wrongInTemplateMethod[m.Symbol] = held = new List<Diagnostic>();
+            held.AddRange(wrong);
+        }
+
+        /// <summary>
+        /// A struct that takes types is written for any type, and not every method suits every
+        /// one: Stack&lt;Spot&gt;'s Pop starts an Item variable with a value, which a struct can't. So
+        /// a method of such a struct that nothing uses is left out of the program with whatever
+        /// was wrong in it, and with it any other unused one that calls it. One that is used
+        /// (from a class's own code, another struct's or class's method, through an interface, or
+        /// by a method of the same struct that's used) has its errors said as any method's are.
+        /// </summary>
+        void LeaveOutUnusedTemplateMethods()
+        {
+            if (wrongInTemplateMethod.Count == 0) return;
+            var ofTemplates = templateMethods.ToHashSet();
+
+            var used = new HashSet<MethodSymbol>();
+            for (bool more = true; more;)
+            {
+                more = false;
+                foreach (MethodSymbol m in templateMethods)
+                    if (!used.Contains(m) && (m.UsedOutsideMethods || m.UsedBy.Any(by => !ofTemplates.Contains(by) || used.Contains(by))))
+                    {
+                        used.Add(m);
+                        more = true;
+                    }
+            }
+
+            // out go the unused ones with something wrong, then the unused ones that call those
+            var left = wrongInTemplateMethod.Keys.Where(m => !used.Contains(m)).ToHashSet();
+            for (bool more = true; more;)
+            {
+                more = false;
+                foreach (MethodSymbol m in templateMethods)
+                    if (!used.Contains(m) && !left.Contains(m) && left.Any(gone => gone.UsedBy.Contains(m)))
+                    {
+                        left.Add(m);
+                        more = true;
+                    }
+            }
+            foreach (MethodSymbol m in left)
+            {
+                units[m.Unit].Methods.Remove(m);
+                methodsByFullName.Remove((m.Unit, m.Name));
+                m.Decl.Owner.Methods.Remove(m.Decl);
+                m.Decl.Symbol = null;
+            }
+            foreach (var (m, wrong) in wrongInTemplateMethod)
+                if (used.Contains(m))
+                    foreach (Diagnostic d in wrong) diagnostics.Add(d);
         }
 
         /// <summary>The structs that take types, by name: each use of one is a struct of its own by now (Templates.Expand).</summary>
@@ -3817,6 +3903,33 @@ namespace Phi.Compiler.Semantics
                 return new PointerCall { Target = pointer, Signature = signature };
             }
 
+            // Hash.Of: x is the hash of whatever x is: the method of data.hash for its kind of
+            // value, picked here, where the kind is known. It's what lets a struct that takes
+            // types (a Map<Key Value>) hash a key without knowing what a Key is.
+            bool hashed = false;
+            if (structMethod == null && calleeName == "Hash.Of" && arguments.Count == 1 && FindCallee("Hash.Of", scope) == null)
+            {
+                BindExpr(arguments[0], scope);
+                PhiType kind = arguments[0].Type;
+                if (kind.IsError) return null;
+                string? method = kind.IsString || kind.IsTextPointer ? "Hash.OfText"
+                    : kind.IsWide ? "Hash.OfWide"
+                    : kind.IsNumeric && !kind.IsPointer && !kind.IsFloat ? "Hash.OfNumber"
+                    : null;
+                if (method == null)
+                {
+                    Error(arguments[0].Span, $"Hash.Of has no hash for {A(kind)}: it takes a number, a chr, an enum, an i64 or u64, or text");
+                    return null;
+                }
+                if (FindCallee(method, scope) == null)
+                {
+                    Error(calleeSpan, "Hash.Of is in data.hash; add use data.hash;");
+                    return null;
+                }
+                calleeName = method;
+                hashed = true;
+            }
+
             object? callee = structMethod ?? ResolveCallee(calleeName, scope);
             if (structMethod == null && callee is MethodSymbol { Decl.Owner.ForStruct: StructDecl forStruct } sibling)
             {
@@ -3858,7 +3971,8 @@ namespace Phi.Compiler.Semantics
                         WarnStrLengthAsSize(arguments[i], method.Parameters[i].Name);
                         // (OS.AppendFile: on another system its own module does it, and how that
                         // module takes its numbers isn't something a program should have to answer to)
-                        arguments[i] = Builtins.Find(calleeName) != null
+                        // (and a hash is of a number's bits, whatever its sign)
+                        arguments[i] = Builtins.Find(calleeName) != null || hashed
                             ? Convert(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'")
                             : ConvertChecked(arguments[i], method.Parameters[i].Type, $"parameter '{method.Parameters[i].Name}'");
                     }
@@ -4148,6 +4262,20 @@ namespace Phi.Compiler.Semantics
         }
 
         object? ResolveCallee(string name, Scope scope)
+        {
+            object? callee = FindCallee(name, scope);
+            if (callee is MethodSymbol method) NoteUse(method, scope);
+            return callee;
+        }
+
+        /// <summary>What uses a method: the method whose code is being checked, or a class's own code.</summary>
+        static void NoteUse(MethodSymbol method, Scope scope)
+        {
+            if (scope.Method == null) method.UsedOutsideMethods = true;
+            else if (scope.Method != method) method.UsedBy.Add(scope.Method);
+        }
+
+        object? FindCallee(string name, Scope scope)
         {
             if (methodsByFullName.TryGetValue((scope.Unit, name), out MethodSymbol? m)) return m;
 
