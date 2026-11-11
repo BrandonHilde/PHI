@@ -1977,6 +1977,8 @@ namespace Phi.Compiler.CodeGen
             CallExpr c => SafeCall(c.Resolved, c.Arguments),
             NameExpr { Symbol: ConstantSymbol } => true,
             NameExpr { Symbol: LengthSymbol { Count: int } } => true,
+            // (how many a struct's array without a size has: one load, from where the array is kept)
+            NameExpr { Symbol: LengthSymbol { View: Expr view } } => bits32 && PlaceKeepsEax(view) && SafePlace(view),
             MemberExpr { Count: int } => true,
             NameExpr { Symbol: VariableSymbol or FieldPathSymbol or SelfFieldSymbol or PathSymbol } => OneRegister(e.Type),
             MemberExpr m => OneRegister(m.Type) && !m.FilledLength && !m.TextLength && SafeRoot(m.Target),
@@ -4140,6 +4142,15 @@ namespace Phi.Compiler.CodeGen
             // an element of a struct's array without a size: checked against how many it has
             if (Binder.IsFieldView(ix.Target))
             {
+                // the index in a register variable, and the array kept somewhere reached without
+                // eax (a field of self, say): its elements' address into ebx, and [ebx + i*size]
+                if (bits32 && size is 1 or 2 or 4 or 8 && HeldIn(ix.Index) is string heldAt && PlaceKeepsEax(ix.Target))
+                {
+                    Place view = PlaceKeepingEax(ix.Target);
+                    if (unsafeDepth == 0) EmitIndexCheck(ix, "jb", $"dword {Operand(view.Plus(ViewCount))}", heldAt);
+                    Emit($"mov {R("ebx")}, {Q} {Operand(view)}");
+                    return new Place { Computed = true, Linear = true, Index = IndexRegister(heldAt, ix.Index, knownPositive: unsafeDepth == 0), Scale = size };
+                }
                 EmitExpr(ix.Index);
                 Emit("push eax");
                 EmitViewAddress(ix.Target);
@@ -5361,6 +5372,12 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case NameExpr { Symbol: LengthSymbol { View: Expr view } length }:
+                    // (kept somewhere that's reached without eax: read where it is)
+                    if (bits32 && PlaceKeepsEax(view))
+                    {
+                        Emit($"mov eax, dword {Operand(PlaceKeepingEax(view).Plus(length.Max ? ViewMax : ViewCount))}");
+                        break;
+                    }
                     EmitViewAddress(view);
                     Emit($"mov eax, [eax + {(length.Max ? ViewMax : ViewCount)}]");
                     break;

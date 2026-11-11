@@ -2,6 +2,8 @@
 # phi test --bench --save-bench replaces them with the latest counts.
 hash and add 1000 names             354213
 find 1000 players by name           189068
+add 1000 names to a Map<str int>    1206993
+find 1000 names in a Map<str int>   311961
 build 1000 chat lines               926479
 filter 1000 chat lines for 5 words  7658379
 compare 10000 names ignoring case   2754511

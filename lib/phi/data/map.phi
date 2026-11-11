@@ -23,7 +23,8 @@
 #       players.values:i.score++ 10;            # the one the map holds
 #   ;;
 #
-# The keys and the values are two arrays, side by side: keys:i goes with values:i. places
+# The keys and the values are two arrays, side by side: keys:i goes with values:i (and
+# hashes:i is that key's hash, worked out once when it was added). places
 # is a table whose size is a power of 2, holding 1 + where each key is (0 for a free place);
 # a key's place comes from its hash (Hash.Of, in data.hash), and a taken place sends it to
 # the next one along. The table doubles when it's three-quarters full, so Set, Get, Find,
@@ -69,26 +70,37 @@ struct.Map<Key Value>
 {
 	Key keys[];
 	Value values[];
+	u32 hashes[];               # each key's hash, kept: a key is hashed once, however the table grows
 	u32 places[];               # 1 + where its key is in keys, or 0 while it's free
 	u32 shift;                  # 32 minus the bits in places.len: a key's place is its hash >> shift
 
 	# where key is in keys and values, or -1
 	[Find: Key key;]
+	[end: (FindHashed: key (Hash.Of: key))]
+
+	# the same, for a key whose hash is known (a key with another hash isn't looked at)
+	[FindHashed: Key key; u32 hash;]
 		if places.len is 0 return -1;
-		u32 pos: (Place: key);
-		while places:pos is not 0
-			int i: places:pos - 1;
-			if keys:i is key return i;
-			pos is (pos + 1) & (places.len - 1);
+		u32 mask: (places.len - 1) as u32;
+		u32 pos: (hash * 0x9E3779B1) >> shift;
+		# (a place is always inside the table, and what it holds inside the keys: no index
+		# here needs its check)
+		unsafe
+			while places:pos is not 0
+				int i: places:pos - 1;
+				if hashes:i is hash and keys:i is key return i;
+				pos is (pos + 1) & mask;
+			;;
 		;;
 	[end: -1]
 
 	[Has: Key key;]
-	[end: (Find: key) >= 0]
+	[end: (FindHashed: key (Hash.Of: key)) >= 0]
 
 	# key's value is value now, whether or not key was there
 	[Set: Key key; Value value;]
-		int i: (Find: key);
+		u32 hash: (Hash.Of: key);
+		int i: (FindHashed: key hash);
 		if i >= 0
 			values:i is value;
 			return;
@@ -98,12 +110,13 @@ struct.Map<Key Value>
 		;;
 		keys++ key;
 		values++ value;
+		hashes++ hash;
 		call Index: keys.len - 1;
 	[end]
 
 	# key's value, or otherwise if key isn't there
 	[Get: Key key; Value otherwise;]
-		int i: (Find: key);
+		int i: (FindHashed: key (Hash.Of: key));
 		if i < 0 return otherwise;
 	[end: values:i]
 
@@ -118,10 +131,12 @@ struct.Map<Key Value>
 			call Unplace: last;
 			keys:i is keys:last;
 			values:i is values:last;
+			hashes:i is hashes:last;
 			call Index: i;
 		;;
 		keys.len is last;
 		values.len is last;
+		hashes.len is last;
 	[end: true]
 
 	[Count]
@@ -130,32 +145,37 @@ struct.Map<Key Value>
 	[Clear]
 		keys.len is 0;
 		values.len is 0;
+		hashes.len is 0;
 		places.len is 0;
 	[end]
 
 	# ---- the table
 
-	[Place: Key key;]
-	[end: ((Hash.Of: key) * 0x9E3779B1) >> shift]
+	# where a key with this hash starts looking: the hash, cut to the table's size
+	[Place: u32 hash: 0;]
+	[end: (hash * 0x9E3779B1) >> shift]
 
 	[Index: int i: 0;]
-		u32 pos: (Place: keys:i);
-		while places:pos is not 0
-			pos is (pos + 1) & (places.len - 1);
+		u32 mask: (places.len - 1) as u32;
+		u32 pos: (Place: hashes:i);
+		unsafe
+			while places:pos is not 0
+				pos is (pos + 1) & mask;
+			;;
+			places:pos is i + 1;
 		;;
-		places:pos is i + 1;
 	[end]
 
 	[Unplace: int i: 0;]
 		u32 mask: places.len - 1;
-		u32 pos: (Place: keys:i);
+		u32 pos: (Place: hashes:i);
 		while places:pos is not i + 1
 			pos is (pos + 1) & mask;
 		;;
 		u32 next: (pos + 1) & mask;
 		while places:next is not 0
 			int other: places:next - 1;
-			u32 home: (Place: keys:other);
+			u32 home: (Place: hashes:other);
 			if ((next - home) & mask) >= ((next - pos) & mask)
 				places:pos is places:next;
 				pos is next;

@@ -1572,6 +1572,20 @@ and every program wrapped it or wrote its own.
   a table of places found by the key's hash, as data.keyed's is. `new Map<str int>
   counts;`, `Map<u32 Player>`, `while each k in counts.keys`. Test `generic_map`.
   - A struct or a pointer as a key has no hash yet.
+  - What it costs, in `bench_text` (a 32-bit kernel, instructions run): finding 1000
+    names in a `Map<str int>` is 312,000, against 189,000 for the way it was done before,
+    each name hashed by hand into the u32 map (which finds a hash, not the name); adding
+    them is 1,207,000 against 354,000, about half of it the text itself (its hash, and its
+    own copy in the map). With
+    numbers for keys it's 131 a find and 568 an add, against the older `Map`'s 64 and 196:
+    the older one is all pointers with no checks, and this one is arrays that grow.
+  - Each key's hash is kept beside it, so a key is hashed once however the table grows,
+    and a key with another hash isn't compared (adding 1000 names took 22% less).
+  - Two things in the generator came of it, for any struct with an array that grows: how
+    many it has (`places.len`) is one load where the array is kept, and runs with the
+    variables in registers; and an element picked by a variable in a register
+    (`places:pos`) is the elements' address and `[ebx + i*4]`, with nothing on the stack.
+    A find in the map took 29% less for them.
 - [x] `phi fuzz code` makes programs with structs that take types: every program has a
   `Box<Item>` (fields, an array, methods that work through self and a loop in one) used as
   `Box<int>` and `Box<u32>`, and a `Pair<First Second>` used both ways round. Until then

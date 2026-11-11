@@ -44,6 +44,23 @@ phi.BenchText:Kernel
 	call Bench.Stop: 'find 1000 players by name';
 	log 'names found: ' found ' of ' PLAYERS '\n';
 
+	# the same with the names themselves as keys: a Map<str int> hashes each and keeps a copy
+	new Map<str int> by_text;
+	call Bench.Start;
+	while int i: 0; i < PLAYERS; i++;
+		call by_text.Set: names:i i;
+	;;
+	call Bench.Stop: 'add 1000 names to a Map<str int>';
+	found is 0;
+	call Bench.Start;
+	while int i: 0; i < PLAYERS; i++;
+		if (by_text.Get: names:i -1) is i
+			found++;
+		;;
+	;;
+	call Bench.Stop: 'find 1000 names in a Map<str int>';
+	log 'names found as text: ' found ' of ' (by_text.Count) '\n';
+
 	# chat lines, built from a name and a message
 	u32 characters: 0;
 	call Bench.Start;
