@@ -1,0 +1,112 @@
+# Multiplying and adding 64-bit numbers where one side or both is a 32-bit number takes less than
+# the whole 64 by 64 of it: one mul for two 32-bit numbers, two for a 64-bit one and a u32, and a
+# side that's a variable is read where it is. Each way of writing it must give what the long way
+# does, for numbers at every edge (0, 1, the top bit, all ones, the least int), signed and not,
+# with the numbers in variables, in elements and in registers (the loops' own). And a side that
+# calls a method is still worked out in the order it always was: the right first.
+# runs only in 32 and 64 bits: 64-bit numbers
+phi.Int64Products:Library
+{
+	u32 small: 0 1 2 3 0xFFFF 0x10000 0x7FFFFFFF 0x80000000 0x80000001 0xFFFFFFFE 0xFFFFFFFF 0x9E3779B9;
+	int whole: 0 1 -1 2 -2 65535 -65536 0x7FFFFFFF -2147483648 -2147483647 123456789 -987654321;
+	u64 big: 0 1 0xFFFFFFFF 0x100000000 0x7FFFFFFFFFFFFFFF 0x8000000000000000 0xFFFFFFFFFFFFFFFF 0x0123456789ABCDEF 0xFEDCBA9876543210 0x00000001FFFFFFFF 0xFFFFFFFF00000001 0xDEADBEEFCAFEF00D;
+	u32 step: 3;
+	u64 seen: 0;
+
+	call InAMethod;
+
+	# the same in the class's own code, where the variables are the class's
+	u64 total: 0;
+	i64 signed_total: 0;
+	while int i: 0; i < 12; i++;
+		while int j: 0; j < 12; j++;
+			u32 x: small:i;
+			u32 y: small:j;
+			int p: whole:i;
+			int q: whole:j;
+			u64 wide: big:i;
+			total++ (x as u64) * y;
+			total++ (small:i as u64) * small:j;
+			signed_total++ (p as i64) * q;
+			total++ wide * y;
+			total++ y * wide;
+			total++ big:i * small:j;
+			total is total ^ (wide + y);
+			signed_total++ (p as i64) * y;
+		;;
+	;;
+	log 'in the class: ' total ' ' signed_total '\n';
+
+	# a side that calls something that changes the other side
+	step is 3;
+	seen is 0;
+	u64 first: (Next) * step;
+	u64 second: (Next) + step;
+	u64 third: step * (Next);
+	u64 fourth: (Next) - step;
+	log 'with calls: ' first ' ' second ' ' third ' ' fourth ', step ' step '\n';
+
+	[Next: : u64]
+		step++ 5;
+		seen++ 0x100000007;
+	[end: seen]
+
+	[InAMethod]
+		u64 products: 0;
+		u64 direct: 0;
+		i64 signed_products: 0;
+		i64 signed_direct: 0;
+		i64 mixed: 0;
+		u64 by_wide: 0;
+		u64 by_variable: 0;
+		u64 turned: 0;
+		u64 sums: 0;
+		u64 bits: 0;
+		u64 both_wide: 0;
+		int less: 0;
+		while int i: 0; i < 12; i++;
+			while int j: 0; j < 12; j++;
+				u32 x: small:i;
+				u32 y: small:j;
+				int p: whole:i;
+				int q: whole:j;
+				u64 wide: big:i;
+				u64 other: big:j;
+				# two 32-bit numbers: in elements, and in variables
+				products++ (small:i as u64) * small:j;
+				direct++ (x as u64) * y;
+				signed_products++ (whole:i as i64) * whole:j;
+				signed_direct++ (p as i64) * q;
+				# one signed and one not: the long way
+				mixed++ (p as i64) * y;
+				mixed++ (x as i64) * q;
+				# a 64-bit number and a u32, each way round, in an element and in a variable
+				by_wide++ big:i * small:j;
+				by_variable++ wide * small:j;
+				by_variable++ wide * y;
+				turned++ y * wide;
+				turned++ small:j * big:i;
+				# adding and the rest, with a 32-bit side, signed (its sign goes all the way up) and not
+				sums++ wide + small:j;
+				sums++ wide + y;
+				sums is sums + (wide - q);
+				sums is sums + (wide + whole:j);
+				sums is sums - (other - x);
+				bits is bits ^ (wide & other);
+				bits is bits ^ (wide | y);
+				bits is bits ^ (wide ^ q);
+				bits is (bits << 1) | (bits >> 63);
+				both_wide++ wide * other;
+				if wide < other
+					less++;
+				;;
+				if wide + y > other
+					less++ 2;
+				;;
+			;;
+		;;
+		log 'products: ' products ' ' direct ' ' signed_products ' ' signed_direct ' ' mixed '\n';
+		log 'by a u32: ' by_wide ' ' by_variable ' ' turned '\n';
+		log 'sums: ' sums ', bits: ' bits ', both wide: ' both_wide ', less: ' less '\n';
+	[end]
+}

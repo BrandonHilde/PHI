@@ -183,6 +183,12 @@ log bytes * 4 ' ' scaled;               # printed, compared and built into text 
 int low: bytes as int;                  # to 32 bits only with `as`, which keeps the low half
 ```
 
+In 32-bit code a 64-bit number is two halves, and the compiler does as little as the numbers
+allow. Two 32-bit numbers multiplied as 64 bits (`(a as u64) * b`, both unsigned or both signed)
+are one instruction, where two 64-bit numbers are a call to the library: so in a loop that's run
+often, widen at the multiply (`(x as u64) * y`) and don't keep a 32-bit number in a `u64`
+variable first.
+
 **Floating point numbers.** `f64`, `f32` and `f16` hold fractions and very big or small
 numbers. A number with a point or an exponent (`2.5`, `6.02e23`, `1e-5`) is one, and math
 with one on either side is floating point, in the wider of the two kinds:

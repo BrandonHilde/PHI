@@ -1968,9 +1968,11 @@ namespace Phi.Compiler.CodeGen
         {
             ConstDecl or BreakStmt or ContinueStmt => true,
             VarDecl { Symbol.NeedsInitCode: false } => true,
-            VarDecl { IsNew: false, Symbol: VariableSymbol v } d => OneRegister(v.Type) && d.Values.Count <= 1 && d.Values.All(SafeValue),
+            VarDecl { IsNew: false, Symbol: VariableSymbol v } d => OneRegister(v.Type) && d.Values.Count <= 1 && d.Values.All(SafeValue)
+                                                                    || SafeWideVariable(v) && d.Values.Count <= 1 && d.Values.All(SafeWideValue),
             AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value)
-                            || WideCopy(a.Target, a.Value) && SafePlace(a.Target) && SafePlace(a.Value),
+                            || WideCopy(a.Target, a.Value) && SafePlace(a.Target) && SafePlace(a.Value)
+                            || a.Target is NameExpr { Call: null, Symbol: VariableSymbol wide } && SafeWideVariable(wide) && SafeWideValue(a.Value),
             CallStmt c => SafeCall(c.Resolved, c.Arguments)
                           && (c.ResultTarget == null || OneRegister(c.ResultTarget.Type) && SafeValue(c.ResultTarget)),
             ReturnStmt r => r.Value == null || OneRegister(r.Value.Type) && resultType.IsNumeric && SafeValue(r.Value),
@@ -1995,13 +1997,45 @@ namespace Phi.Compiler.CodeGen
             MemberExpr m => OneRegister(m.Type) && !m.FilledLength && !m.TextLength && SafeRoot(m.Target),
             IndexExpr ix => OneRegister(ix.Type) && !ix.Target.Type.IsString && SafeRoot(ix.Target) && SafeValue(ix.Index),
             AddrExpr a => a.CodeLabel != null || !a.OfObject && !a.Operand.Type.IsHeapText && SafeRoot(a.Operand),
-            CastExpr c => OneRegister(c.Type) && OneRegister(c.Operand.Type) && SafeValue(c.Operand),
+            CastExpr c => OneRegister(c.Type) && (OneRegister(c.Operand.Type) && SafeValue(c.Operand)
+                                                  || bits32 && c.Operand.Type.IsWide && SafeWideValue(c.Operand)),
             CheckedNumberExpr c => SafeValue(c.Operand),
             InExpr i => SafeValue(i.Port),
             AtomicExpr a => SafeValue(a.Target) && SafeValue(a.Value) && SafeValue(a.Expected),
             UnaryExpr u => OneRegister(u.Operand.Type) && SafeValue(u.Operand),
             BinaryExpr b => b.ObjectCompare == null && !b.ArrayCompare && OneRegister(b.Left.Type) && OneRegister(b.Right.Type)
                             && SafeValue(b.Left) && SafeValue(b.Right),
+            _ => false,
+        };
+
+        /// <summary>
+        /// A 64-bit variable of 32-bit code that a statement can set while other variables are in
+        /// registers: its two halves are at a fixed place in memory.
+        /// </summary>
+        bool SafeWideVariable(VariableSymbol v) =>
+            bits32 && v.Type.IsWide && !v.Decl.Volatile && v.Ownership == Ownership.None && v.Decl.AtAddress == null;
+
+        /// <summary>
+        /// A 64-bit value that EmitWide works out in eax, ebx, ecx and edx alone, so the variables in
+        /// registers (esi and edi) stay where they are: 64-bit variables, 32-bit values that are
+        /// safe themselves, and adding, taking away, multiplying, the bit operations and shifts
+        /// of those. (Dividing calls the library, and a comparison is a 32-bit value.)
+        /// </summary>
+        bool SafeWideValue(Expr e) => e switch
+        {
+            _ when !bits32 => false,
+            _ when ConstantFolder.Evaluate(e) != null => true,
+            _ when e.Type.IsFloat => false,
+            _ when !e.Type.IsWide => OneRegister(e.Type) && SafeValue(e),
+            NameExpr { Call: null, Symbol: VariableSymbol v } => SafeWideVariable(v),
+            CastExpr c => !c.Operand.Type.IsFloat && SafeWideValue(c.Operand),
+            UnaryExpr u => SafeWideValue(u.Operand),
+            BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift =>
+                SafeWideValue(shift.Left) && OneRegister(shift.Right.Type) && SafeValue(shift.Right),
+            // (a product only when it's worked out in place: any other calls the library's multiply)
+            BinaryExpr { Op: BinaryOp.Multiply } product => WideMultiplyInPlace(product) && SafeWideValue(product.Left) && SafeWideValue(product.Right),
+            BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor } b =>
+                SafeWideValue(b.Left) && SafeWideValue(b.Right),
             _ => false,
         };
 
@@ -6785,6 +6819,13 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                case BinaryExpr { Op: BinaryOp.Multiply } product when TryWideMultiply(product):
+                    return;
+
+                case BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor } sum
+                    when TryWideInPlace(sum):
+                    return;
+
                 case BinaryExpr binary:
                 {
                     EmitWideOperands(binary);
@@ -6828,6 +6869,57 @@ namespace Phi.Compiler.CodeGen
                 LoadConstant("ebx", (int)(constant >> 32));
                 return;
             }
+            // a 64-bit variable on the right: its halves are read where they are. (Read after
+            // the left is worked out, so not when the left calls something that could change it.)
+            if (b.Right.Type.IsWide && IsStaticPlace(b.Right) && !HasCall(b.Left))
+            {
+                EmitWide(b.Left);
+                Place right = EmitPlace(b.Right);
+                Emit($"mov ecx, dword {Operand(right)}");
+                Emit($"mov ebx, dword {Operand(right.Plus(4))}");
+                return;
+            }
+            // a 32-bit number on the right: only it waits on the stack, and its high half is
+            // made (zeros, or its sign) once the left is worked out
+            if (Narrow(b.Right) is Expr narrow)
+            {
+                if (!HasCall(b.Left) && (DirectOperand(narrow, constantOnly: false) != null || PlaceOperand(narrow)))
+                {
+                    EmitWide(b.Left);
+                    if (ReadWhereItIs(narrow) is string direct) Emit($"mov ecx, {direct}");
+                    else
+                    {
+                        // (reaching it needs more registers than are free: the left waits instead)
+                        Emit("push edx");
+                        Emit("push eax");
+                        EmitExpr(narrow);
+                        Emit("mov ecx, eax");
+                        Emit("pop eax");
+                        Emit("pop edx");
+                    }
+                }
+                else if (b.Left.Type.IsWide && IsStaticPlace(b.Left))
+                {
+                    // the left is a variable: the right goes to ecx, and the left is loaded after
+                    EmitExpr(narrow);
+                    Emit("mov ecx, eax");
+                    EmitWide(b.Left);
+                }
+                else
+                {
+                    EmitExpr(narrow);
+                    Emit("push eax");
+                    EmitWide(b.Left);
+                    Emit("pop ecx");
+                }
+                if (narrow.Type.IsSigned)
+                {
+                    Emit("mov ebx, ecx");
+                    Emit("sar ebx, 31");
+                }
+                else Emit("xor ebx, ebx");
+                return;
+            }
             EmitWide(b.Right);
             Emit("push edx");
             Emit("push eax");
@@ -6836,9 +6928,188 @@ namespace Phi.Compiler.CodeGen
             Emit("pop ebx");
         }
 
+        /// <summary>
+        /// The 32-bit number that a side of a 64-bit operation is made from: the side itself if it
+        /// isn't 64 bits, or what's under a cast to 64 bits (x as u64). Null for a 64-bit value, a
+        /// constant (which EmitWide writes out whole), a float, or an address. EmitWide makes its
+        /// high half zeros if its type is unsigned and its sign if not, and so must whoever uses this.
+        /// </summary>
+        Expr? Narrow(Expr e)
+        {
+            if (ConstantFolder.Evaluate(e) != null) return null;
+            Expr inner = e is CastExpr { Type.IsWide: true } cast ? cast.Operand : e;
+            if (inner.Type.IsWide || inner.Type.IsFloat || IsAddress(inner) || ConstantFolder.Evaluate(inner) != null) return null;
+            return inner;
+        }
+
+        /// <summary>
+        /// edx:eax = the left side, then the right side added to it (or taken away, and so on) from
+        /// where it is, with no register of its own: a 64-bit variable, or an unsigned 32-bit number
+        /// that's an operand as it is, whose high half is nothing. False when the right side isn't
+        /// one of those, or the left calls something (which could change the right before it's read).
+        /// </summary>
+        bool TryWideInPlace(BinaryExpr b)
+        {
+            if (HasCall(b.Left) || ConstantFolder.Evaluate(b.Right) != null) return false;
+            var (low, high) = b.Op switch
+            {
+                BinaryOp.Add => ("add", "adc"), BinaryOp.Subtract => ("sub", "sbb"),
+                BinaryOp.BitAnd => ("and", "and"), BinaryOp.BitOr => ("or", "or"), _ => ("xor", "xor"),
+            };
+            if (b.Right.Type.IsWide && IsStaticPlace(b.Right))
+            {
+                EmitWide(b.Left);
+                Place right = EmitPlace(b.Right);
+                Emit($"{low} eax, dword {Operand(right)}");
+                Emit($"{high} edx, dword {Operand(right.Plus(4))}");
+                return true;
+            }
+            if (Narrow(b.Right) is not Expr narrow || narrow.Type.IsSigned) return false;
+            if (DirectOperand(narrow, constantOnly: false) == null && !PlaceOperand(narrow)) return false;
+            EmitWide(b.Left);
+            if (ReadWhereItIs(narrow) is not string operand)
+            {
+                Emit("push edx");
+                Emit("push eax");
+                EmitExpr(narrow);
+                Emit("mov ecx, eax");
+                Emit("pop eax");
+                Emit("pop edx");
+                operand = "ecx";
+            }
+            Emit($"{low} eax, {operand}");
+            if (b.Op is BinaryOp.Add or BinaryOp.Subtract) Emit($"{high} edx, 0");
+            else if (b.Op == BinaryOp.BitAnd) Emit("xor edx, edx");
+            return true;
+        }
+
+        /// <summary>
+        /// A 32-bit number written as an instruction's operand where it is, for 64-bit math that has
+        /// its other side in edx:eax already: a variable (DirectOperand), or an element or field of
+        /// 32 bits whose address takes no more than ebx to reach. Whatever code reaching it takes is
+        /// emitted here, and must leave eax, ecx and edx alone: if it wouldn't, it's taken back and
+        /// this is null, and the caller works the number out the usual way.
+        /// </summary>
+        string? ReadWhereItIs(Expr narrow)
+        {
+            if (DirectOperand(narrow, constantOnly: false) is string direct) return direct;
+            if (!PlaceOperand(narrow)) return null;
+            int start = code.Length;
+            string operand = $"dword {Operand(EmitPlace(narrow))}";
+            foreach (string line in code.ToString(start, code.Length - start).Split('\n'))
+                if (!line.Contains("it stops here") && System.Text.RegularExpressions.Regex.IsMatch(WithoutComment(line), @"\b(eax|ax|al|ah|ecx|cx|cl|ch|edx|dx|dl|dh|call)\b"))
+                {
+                    code.Length = start;
+                    return null;
+                }
+            return operand;
+        }
+
+        /// <summary>True for a 64-bit product that TryWideMultiply works out itself, with no call.</summary>
+        bool WideMultiplyInPlace(BinaryExpr binary)
+        {
+            Expr? left = Narrow(binary.Left), right = Narrow(binary.Right);
+            if (left != null && right != null) return left.Type.IsSigned == right.Type.IsSigned;
+            if (right != null) return !right.Type.IsSigned && ConstantFolder.Evaluate(binary.Left) == null;
+            if (left != null) return !left.Type.IsSigned && ConstantFolder.Evaluate(binary.Right) == null;
+            return false;
+        }
+
+        /// <summary>
+        /// edx:eax = the product, when it takes less than the library's 64 by 64 multiply:
+        ///  - two 32-bit numbers of the same signedness: one mul (or imul), which gives all 64 bits
+        ///  - a 64-bit number and an unsigned 32-bit one: low * c, and high * c added to its top half
+        /// The right side is worked out first, as EmitWideOperands does. False for anything else.
+        /// </summary>
+        bool TryWideMultiply(BinaryExpr binary)
+        {
+            if (!WideMultiplyInPlace(binary)) return false;
+            Expr? left = Narrow(binary.Left), right = Narrow(binary.Right);
+            if (left != null && right != null && left.Type.IsSigned == right.Type.IsSigned)
+            {
+                string one = left.Type.IsSigned ? "imul" : "mul";
+                if (!HasCall(left) && (DirectOperand(right, constantOnly: false) != null || PlaceOperand(right)))
+                {
+                    EmitExpr(left);
+                    if (ReadWhereItIs(right) is string direct) Emit($"{one} {direct}");
+                    else
+                    {
+                        Emit("push eax");
+                        EmitExpr(right);
+                        Emit("mov ecx, eax");
+                        Emit("pop eax");
+                        Emit($"{one} ecx");
+                    }
+                    return true;
+                }
+                EmitExpr(right);
+                Emit("push eax");
+                EmitExpr(left);
+                Emit("pop ecx");
+                Emit($"{one} ecx");
+                return true;
+            }
+            if (right != null && !right.Type.IsSigned && left == null && ConstantFolder.Evaluate(binary.Left) == null)
+            {
+                // wide * c
+                if (!HasCall(binary.Left) && (DirectOperand(right, constantOnly: false) != null || PlaceOperand(right)))
+                {
+                    EmitWide(binary.Left);
+                    if (ReadWhereItIs(right) is string direct) Emit($"mov ecx, {direct}");
+                    else
+                    {
+                        Emit("push edx");
+                        Emit("push eax");
+                        EmitExpr(right);
+                        Emit("mov ecx, eax");
+                        Emit("pop eax");
+                        Emit("pop edx");
+                    }
+                }
+                else if (IsStaticPlace(binary.Left))
+                {
+                    EmitExpr(right);
+                    Emit("mov ecx, eax");
+                    EmitWide(binary.Left);
+                }
+                else
+                {
+                    EmitExpr(right);
+                    Emit("push eax");
+                    EmitWide(binary.Left);
+                    Emit("pop ecx");
+                }
+            }
+            else if (left != null && !left.Type.IsSigned && right == null && ConstantFolder.Evaluate(binary.Right) == null)
+            {
+                // c * wide
+                EmitWide(binary.Right);
+                Emit("push edx");
+                Emit("push eax");
+                EmitExpr(left);
+                Emit("mov ecx, eax");
+                Emit("pop eax");
+                Emit("pop edx");
+            }
+            else return false;
+            Emit("mov ebx, edx");
+            Emit("mul ecx");                 // low * c, all 64 bits of it
+            Emit("imul ebx, ecx");           // high * c: only its low half is below 2^64
+            Emit("add edx, ebx");
+            return true;
+        }
+
         /// <summary>Stores edx:eax in a 64-bit place.</summary>
         void EmitWideStore(Expr target)
         {
+            // (a place whose address is fixed takes no code to reach, so nothing has to wait)
+            if (IsStaticPlace(target))
+            {
+                Place there = EmitPlace(target);
+                Emit($"mov dword {Operand(there)}, eax");
+                Emit($"mov dword {Operand(there.Plus(4))}, edx");
+                return;
+            }
             Emit("push edx");
             Emit("push eax");
             Place place = EmitPlace(target);

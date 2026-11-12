@@ -1,0 +1,80 @@
+# Benchmarks for 64-bit math in 32-bit code: phi test --bench compares the counts with
+# bench_wide.bench. Montgomery's product of two 384-bit numbers written in PHI, 32 bits at a time
+# with 64-bit products, 200 times over: the same work crypto.bignum's BigMontMul does in assembly
+# (which is timed beside it), so the two counts say how far PHI's own code is from assembly.
+use crypto.bignum;
+use test.bench;
+
+phi.BenchWide:Kernel
+{
+	Modulus m;
+	u8 prime[48];
+	u32 a[26];
+	u32 b[26];
+	u32 r[26];
+	u32 wide_a[12];
+	u32 wide_b[12];
+	u32 w[14];
+
+	call Bytes.FromHex: 'fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffeffffffff0000000000000000ffffffff' addr prime 48;
+	bln ready: (Big.Setup: addr m addr prime 48);
+	while u32 i: 0; i < 24; i++;
+		a:i is (i * 40503 + 12345) & 0xFFFF;
+		b:i is (i * 25173 + 54321) & 0xFFFF;
+	;;
+	a:23 is 0x7FFF;
+	b:23 is 0x7FFF;
+	while u32 i: 0; i < 12; i++;
+		wide_a:i is a:(i + i) | (a:(i + i + 1) << 16);
+		wide_b:i is b:(i + i) | (b:(i + i + 1) << 16);
+	;;
+
+	call Bench.Start;
+	while int n: 0; n < 200; n++;
+		call Product;
+	;;
+	call Bench.Stop: 'montgomery product in PHI, 200';
+	u32 first: w:0;
+	u32 last: w:11;
+
+	call Bench.Start;
+	while int n: 0; n < 200; n++;
+		call Big.MontMul: addr r addr a addr b addr m;
+	;;
+	call Bench.Stop: 'the same in assembly, 200';
+	# (the assembly's is brought below the modulus, which this one may be over by once)
+	log 'ready: ' ready ', PHI: ' first ' ' last ', assembly: ' (r:0 | (r:1 << 16)) ' ' (r:22 | (r:23 << 16)) '\n';
+	exit 0;
+
+	# w = wide_a * wide_b / 2^384 mod m, or that plus m
+	[Product]
+		while u32 j: 0; j < 14; j++;
+			w:j is 0;
+		;;
+		u32 inverse: m.wide_inverse;
+		while u32 i: 0; i < 12; i++;
+			u32 bi: wide_b:i;
+			u64 c: 0;
+			while u32 j: 0; j < 12; j++;
+				u64 v: (bi as u64) * wide_a:j + w:j + c;
+				w:j is v as u32;
+				c is v >> 32;
+			;;
+			u64 top: c + w:12;
+			w:12 is top as u32;
+			w:13 is (top >> 32) as u32;
+
+			u32 q: ((inverse as u64) * w:0) as u32;
+			u64 low: (q as u64) * m.wide:0 + w:0;
+			c is low >> 32;
+			while u32 j: 1; j < 12; j++;
+				u64 v: (q as u64) * m.wide:j + w:j + c;
+				w:(j - 1) is v as u32;
+				c is v >> 32;
+			;;
+			u64 rest: c + w:12;
+			w:11 is rest as u32;
+			w:12 is w:13 + (rest >> 32) as u32;
+		;;
+	[end]
+}

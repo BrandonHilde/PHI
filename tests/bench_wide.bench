@@ -1,0 +1,4 @@
+# Counts from phi test --bench (instructions run, under QEMU's -icount).
+# phi test --bench --save-bench replaces them with the latest counts.
+montgomery product in PHI, 200  1489027
+the same in assembly, 200       755427

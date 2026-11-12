@@ -1497,6 +1497,21 @@ folding, and (2) the backend interface, which S10 needs first.
   than one `idiv`, each far quicker: the counts treat them alike, so those baselines were
   saved again. Tests `divide_constants` (against the divide itself, in the 16-bit run) and
   `DivisionMagicTests`.
+- [x] **64-bit math in 32-bit code without the stack or the library's multiply**
+  (2026-11-11), where the numbers allow it. A Montgomery product written in PHI
+  (`bench_wide`) ran 6.0 times the instructions of `BigMontMul`, the same work in
+  assembly, and runs 1.97 times now; its inner line, `u64 v: (bi as u64) * a:j + w:j + c;`,
+  is `mov`, `mul`, `add`, `adc`, `add`, `adc` and the store.
+  - The product of two 32-bit numbers made 64 bits is one `mul` (`imul` for two signed
+    ones), and a 64-bit number times a `u32` is a `mul` and an `imul`. Anything else is
+    still `phi_mul64`.
+  - Adding, taking away and the bit operations use the right side where it is, a 64-bit
+    variable or a `u32` variable, element or field, and a store to a variable doesn't go by
+    way of the stack.
+  - A statement of such math no longer sends the method's register variables back to
+    memory around it, so a loop's counter stays in its register.
+  - A side that calls a method is still worked out as before, the right side first.
+  `int64_products` holds every form to what the old code gave (and Python, for two of its sums).
 - [x] `phi fuzz code`: random programs, each written with what it must print, built for
   every system this computer runs and compared (tests/README.md has the details). It's what
   S8's (5) was waiting to come with, for the compiler rather than for packets: the register
