@@ -1,0 +1,27 @@
+# How many steps each point of a 1000 by 1000 picture of the Mandelbrot set takes, up to 200:
+# floating point multiplies and adds.
+phi.Mandelbrot:Program
+{
+	log (Run: 1000 200) '\n';
+	exit 0;
+
+	[Run: int size: 0; int most: 0;]
+		int total: 0;
+		while int py: 0; py < size; py++;
+			f64 ci: (py as f64) * 2.0 / (size as f64) - 1.0;
+			while int px: 0; px < size; px++;
+				f64 cr: (px as f64) * 3.0 / (size as f64) - 2.0;
+				f64 zr: 0.0;
+				f64 zi: 0.0;
+				int steps: 0;
+				while steps < most and zr * zr + zi * zi <= 4.0
+					f64 next: zr * zr - zi * zi + cr;
+					zi is 2.0 * zr * zi + ci;
+					zr is next;
+					steps++;
+				;;
+				total++ steps;
+			;;
+		;;
+	[end: total]
+}

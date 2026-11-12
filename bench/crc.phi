@@ -1,0 +1,37 @@
+# The CRC-32 of 16 MB of bytes, 8 times: a table, shifts and exclusive ors.
+phi.Crc:Program
+{
+	u32 table[256];
+
+	log (Run: 16777216 8) '\n';
+	exit 0;
+
+	[Run: int size: 0; int rounds: 0;]
+		while u32 n: 0; n < 256; n++;
+			u32 c: n;
+			while int k: 0; k < 8; k++;
+				if (c & 1) is 1
+					c is (c >> 1) ^ 0xEDB88320;
+				;;
+				else
+					c is c >> 1;
+				;;
+			;;
+			table:n is c;
+		;;
+		ptr<u8> bytes: new u8[size];
+		u32 seed: 1;
+		while int i: 0; i < size; i++;
+			seed is seed * 1103515245 + 12345;
+			bytes:i is (seed >> 16) as u8;
+		;;
+		u32 crc: 0;
+		while int r: 0; r < rounds; r++;
+			crc is crc ^ 0xFFFFFFFF;
+			while int i: 0; i < size; i++;
+				crc is table:((crc ^ bytes:i) & 0xFF) ^ (crc >> 8);
+			;;
+			crc is crc ^ 0xFFFFFFFF;
+		;;
+	[end: crc]
+}

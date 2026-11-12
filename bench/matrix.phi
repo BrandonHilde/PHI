@@ -1,0 +1,33 @@
+# Two 300 by 300 matrices multiplied, 8 times: floating point in arrays, three loops deep.
+phi.Matrix:Program
+{
+	log (Run: 300 8) '\n';
+	exit 0;
+
+	[Run: int n: 0; int rounds: 0;]
+		ptr<f64> a: new f64[n * n];
+		ptr<f64> b: new f64[n * n];
+		ptr<f64> c: new f64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				a:(i * n + j) is ((i + j) % 7) as f64;
+				b:(i * n + j) is ((i * 3 + j) % 5) as f64;
+			;;
+		;;
+		i64 sum: 0;
+		while int r: 0; r < rounds; r++;
+			while int i: 0; i < n; i++;
+				while int j: 0; j < n; j++;
+					f64 cell: 0.0;
+					while int k: 0; k < n; k++;
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+					c:(i * n + j) is cell;
+				;;
+			;;
+			while int d: 0; d < n; d++;
+				sum++ c:(d * n + d) as i64;
+			;;
+		;;
+	[end: sum]
+}

@@ -1,0 +1,10 @@
+# The 40th Fibonacci number the slow way: 331 million calls of a small method.
+phi.Fib:Program
+{
+	log (Fib: 40) '\n';
+	exit 0;
+
+	[Fib: int n: 0;]
+		if n < 2 return n;
+	[end: (Fib: n - 1) + (Fib: n - 2)]
+}

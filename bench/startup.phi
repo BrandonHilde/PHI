@@ -1,0 +1,6 @@
+# Nothing but starting and ending: what every other time here has in it.
+phi.Startup:Program
+{
+	log 0 '\n';
+	exit 0;
+}

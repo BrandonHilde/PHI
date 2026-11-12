@@ -151,6 +151,7 @@ phi.Count:Program
        phi lsp                           the language server, for an editor (PHI-VSCODE is the extension for VS Code)
        phi test                          boot every test in tests/ headless and check its output
        phi test --bench                  run the benchmarks and compare their counts with the saved ones
+       phi compare                       time the programs in bench/ beside the same ones in C and C#
        phi profile samples/web.phi       boot it, then list the PHI lines that took the most time
        phi profile x.phi --target linux64   the same for a Linux program, run here to its end
        phi load samples/mmo/server.phi --connections 500 --seconds 60 --root samples/mmo/certs/root.der --host lobby.mmo.phi.test

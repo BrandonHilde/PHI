@@ -1,0 +1,29 @@
+# The longest Collatz chain that starts below 2 million: 64-bit arithmetic, a multiply, a
+# shift and a branch that can't be guessed.
+phi.Collatz:Program
+{
+	log (Longest: 2000000) '\n';
+	exit 0;
+
+	[Longest: int limit: 0;]
+		int best: 0;
+		int best_start: 0;
+		while int start: 1; start < limit; start++;
+			i64 n: start;
+			int steps: 0;
+			while n is not 1
+				if (n & 1) is 0
+					n is n >> 1;
+				;;
+				else
+					n is n * 3 + 1;
+				;;
+				steps++;
+			;;
+			if steps > best
+				best is steps;
+				best_start is start;
+			;;
+		;;
+	[end: best_start + best]
+}

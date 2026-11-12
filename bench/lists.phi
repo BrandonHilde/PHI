@@ -1,0 +1,31 @@
+# A list of 100,000 nodes made, added up and freed, 200 times: what making and freeing costs.
+struct.Node
+{
+	u32 value;
+	new Node next;
+}
+
+phi.Lists:Program
+{
+	u32 total: 0;
+	while int r: 0; r < 200; r++;
+		total++ (Round: 100000);
+	;;
+	log total '\n';
+	exit 0;
+
+	[Round: int count: 0;]
+		new Node head: empty;
+		while int i: 0; i < count; i++;
+			new Node node: i;
+			node.next takes head;
+			head takes node;
+		;;
+		u32 sum: 0;
+		ptr<Node> walk: addr head;
+		while walk is not 0
+			sum++ walk.value;
+			walk is walk.next;
+		;;
+	[end: sum]
+}

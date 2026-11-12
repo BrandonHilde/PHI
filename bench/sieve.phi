@@ -1,0 +1,25 @@
+# Primes below 5 million by a sieve, 20 times: a loop over bytes in memory.
+phi.Sieve:Program
+{
+	log (Run: 5000000 20) '\n';
+	exit 0;
+
+	[Run: int size: 0; int rounds: 0;]
+		ptr<u8> composite: new u8[size];
+		int count: 0;
+		while int r: 0; r < rounds; r++;
+			count is 0;
+			while int z: 0; z < size; z++;
+				composite:z is 0;
+			;;
+			while int i: 2; i < size; i++;
+				if composite:i is 0
+					count++;
+					while int j: i + i; j < size; j++ i;
+						composite:j is 1;
+					;;
+				;;
+			;;
+		;;
+	[end: count]
+}

@@ -1,0 +1,58 @@
+# Quicksort of 4 million numbers: indexing, swapping and recursion.
+phi.Sort:Program
+{
+	log (Run: 4000000) '\n';
+	exit 0;
+
+	[Run: int count: 0;]
+		ptr<u32> numbers: new u32[count];
+		u32 seed: 12345;
+		while int i: 0; i < count; i++;
+			seed is seed * 1664525 + 1013904223;
+			numbers:i is seed >> 8;
+		;;
+		call Quick: numbers 0 count - 1;
+		# what's in every thousandth place, and that they're in order
+		u32 sum: 0;
+		while int k: 0; k < count; k++ 1000;
+			sum++ numbers:k;
+		;;
+		while int m: 1; m < count; m++;
+			if numbers:(m - 1) > numbers:m
+				sum is 0;
+			;;
+		;;
+	[end: sum]
+
+	[Quick: ptr<u32> a: 0; int low: 0; int high: 0;]
+		while low < high
+			u32 pivot: a:((low + high) / 2);
+			int i: low;
+			int j: high;
+			while i <= j
+				while a:i < pivot
+					i++;
+				;;
+				while a:j > pivot
+					j--;
+				;;
+				if i <= j
+					u32 kept: a:i;
+					a:i is a:j;
+					a:j is kept;
+					i++;
+					j--;
+				;;
+			;;
+			# the smaller side by a call, the bigger by going round again
+			if j - low < high - i
+				call Quick: a low j;
+				low is i;
+			;;
+			else
+				call Quick: a i high;
+				high is j;
+			;;
+		;;
+	[end]
+}
