@@ -18,6 +18,20 @@ build with `dotnet`. A language whose compiler isn't installed is left out. It n
 
 [RESULTS.md](RESULTS.md) is the last run that was saved.
 
+## A real program
+
+The benchmarks here are small loops. A program that's only in PHI can be timed the same way, to
+see what a change to the compiler does to real code: its C and C# columns are left out.
+
+```
+phi compare ../PHI-Code-Library/libs/web -f release_js_bench --varies -- run
+```
+
+What follows `--` is given to each program as its arguments, and `--varies` says its output isn't
+the same from run to run (this one prints its own timings), so it's shown and not compared. That
+line times weblib's JavaScript engine running its own benchmarks, and
+[RESULTS-js.md](RESULTS-js.md) is the last run of it that was saved.
+
 ## What the numbers are
 
 - **A time is the whole program's,** from being started to having ended, as `time` would give it,

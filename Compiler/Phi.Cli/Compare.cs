@@ -15,6 +15,11 @@ namespace Phi.Cli
     /// to having ended, so a benchmark named startup, which does nothing, shows what part of every
     /// other time is the language starting up. A program that prints something else than PHI's
     /// does isn't doing the same work, and the comparison fails.
+    ///
+    /// A real program can be timed the same way though it's only in PHI (its C and C# columns are
+    /// left out): what follows -- is given to each program as its arguments, and --varies says
+    /// its output isn't the same from run to run (it prints its own timings, say), so it's
+    /// shown and not compared.
     /// </summary>
     public static class Compare
     {
@@ -24,7 +29,7 @@ namespace Phi.Cli
         /// <summary>A time under this (in seconds) is the program starting, not its work: no ratio is made of it.</summary>
         const double TooShort = 0.010;
 
-        public static int Run(string dir, string? filter, int runs, string? save)
+        public static int Run(string dir, string? filter, int runs, string? save, IReadOnlyList<string>? arguments = null, bool varies = false)
         {
             if (!Directory.Exists(dir))
             {
@@ -66,12 +71,14 @@ namespace Phi.Cli
 
             var times = new Dictionary<(string, string), double>();
             var different = new List<string>();
+            var printed = new List<string>();
             foreach (string name in names)
             {
                 string? expected = null;
                 foreach (Entry e in entries)
                 {
                     if (!commands.TryGetValue((name, e.Name), out string[]? command)) continue;
+                    if (arguments != null && arguments.Count > 0) command = command.Concat(arguments).ToArray();
                     Console.Error.Write($"\rrunning {name}, {e.Name}...            ");
                     double best = double.MaxValue;
                     string output = "";
@@ -87,6 +94,14 @@ namespace Phi.Cli
                         output = text;
                     }
                     times[(name, e.Name)] = best;
+                    if (varies)
+                    {
+                        // its own words about its last run, for the first way it's built
+                        if (expected == null && output.Length > 0)
+                            printed.Add($"What {name} ({e.Name}) printed, the last time it ran:\n\n" + string.Join("\n", output.Split('\n').Select(l => "  " + l)) + "\n");
+                        expected ??= output;
+                        continue;
+                    }
                     expected ??= output;        // PHI's comes first
                     if (output != expected)
                         different.Add($"{name}: {e.Name} printed '{Short(output)}' where {entries[0].Name} printed '{Short(expected)}'");
@@ -94,7 +109,9 @@ namespace Phi.Cli
             }
             Console.Error.Write("\r                                                  \r");
 
+            if (arguments != null && arguments.Count > 0) notes.Add("Each program was given the arguments: " + string.Join(" ", arguments));
             string report = Report(names, entries.Select(e => e.Name).Where(e => names.Any(n => times.ContainsKey((n, e)))).ToList(), times, runs, notes);
+            if (printed.Count > 0) report += "\n" + string.Join("\n", printed);
             Console.Write(report);
             if (save != null)
             {

@@ -53,7 +53,7 @@ const string Usage = """
                                            and fail one whose counts are more than the tolerance
                                            (default 2%) over the ones saved in NAME.bench;
                                            --save-bench saves the new counts instead
-      phi compare [dir] [-f <name>] [--runs <n>] [--save <file.md>]
+      phi compare [dir] [-f <name>] [--runs <n>] [--save <file.md>] [--varies] [-- <arguments>]
                                            how fast PHI is beside C and C#: each benchmark in dir (default
                                            bench/) is one program written as NAME.phi, NAME.c and NAME.cs;
                                            each is built for this computer (PHI in 64 and 32 bits, C with
@@ -393,11 +393,12 @@ static int Execute(string[] args)
                 string? filter = Option("-f");
                 string? count = Option("--runs");
                 string? save = Option("--save");
+                bool varies = Flag("--varies");
                 int runs = 5;
                 if (count != null && (!int.TryParse(count, out runs) || runs < 1 || runs > 100))
                     throw new ArgumentException("--runs takes how many times each program is run, from 1 to 100");
                 string dir = rest.Count > 0 ? rest[0] : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(FindTestsDir()))!, "bench");
-                return Compare.Run(dir, filter, runs, save);
+                return Compare.Run(dir, filter, runs, save, programArguments, varies);
             }
 
             case "profile":
