@@ -21,7 +21,10 @@ namespace Phi.Cli
         public sealed record Options(int Count, int Seed, IReadOnlyList<Host> Hosts, string KeepFolder, bool KeepAll);
 
         /// <summary>Runs the programs; returns how many came out wrong.</summary>
-        public static int Run(Options options, TextWriter report)
+        public static int Run(Options options, TextWriter report) => Run(options, report, Make);
+
+        /// <summary>Runs the programs a maker writes (this file's, or NumberFuzzer's); returns how many came out wrong.</summary>
+        public static int Run(Options options, TextWriter report, Func<int, Case?> make)
         {
             string work = Path.Combine(Path.GetTempPath(), "phi-fuzz-" + Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(work);
@@ -31,7 +34,7 @@ namespace Phi.Cli
                 for (int i = 0; ran < options.Count; i++)
                 {
                     int seed = unchecked(options.Seed + i);
-                    Case? made = Make(seed);
+                    Case? made = make(seed);
                     if (made == null) { skipped++; continue; }   // it ran too long to be worth building
                     ran++;
 
@@ -64,7 +67,7 @@ namespace Phi.Cli
                 try { Directory.Delete(work, recursive: true); } catch (IOException) { }
             }
             report.WriteLine($"{ran} programs on {string.Join(", ", options.Hosts.Select(h => h.FlagName()))}: {wrong} wrong" +
-                             (skipped > 0 ? $" ({skipped} left out: too long to run)" : ""));
+                             (skipped > 0 ? $" ({skipped} left out: too long to run, or a float past what's compared)" : ""));
             return wrong;
         }
 

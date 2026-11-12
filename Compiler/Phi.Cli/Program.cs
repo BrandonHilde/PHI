@@ -91,6 +91,11 @@ const string Usage = """
                                            the code generator. 100 programs unless --count says; the same
                                            --seed makes the same programs. One that comes out wrong is
                                            kept in fuzz-failures (or -o's folder); --keep keeps them all
+      phi fuzz numbers [--count <n>] [--seed <n>] [--target <system>] [-o <dir>] [--keep]
+                                           the same, with programs of 64-bit and floating point numbers:
+                                           i64s, u64s and f64s in variables, fields and arrays, math among
+                                           them and with ints and u32s, shifts, casts, comparisons and calls;
+                                           an f64 is compared by its 64 bits
       phi serve <dir> [--https] [--port <n>]
                                            serve a folder over HTTP (or HTTPS) on this computer;
                                            a kernel in QEMU reaches it at 10.0.2.2
@@ -464,14 +469,15 @@ static int Execute(string[] args)
 
             case "fuzz":
             {
-                if (rest.Count < 1 || rest[0] != "code") throw new ArgumentException("fuzz takes what to fuzz: code");
+                if (rest.Count < 1 || rest[0] is not ("code" or "numbers")) throw new ArgumentException("fuzz takes what to fuzz: code or numbers");
+                string what = rest[0];
                 rest.RemoveAt(0);
                 string? count = Option("--count");
                 string? seed = Option("--seed");
                 string? only = Option("--target");
                 string keep = Option("-o") ?? "fuzz-failures";
                 bool keepAll = Flag("--keep");
-                if (rest.Count != 0) throw new ArgumentException($"fuzz code doesn't take '{rest[0]}'");
+                if (rest.Count != 0) throw new ArgumentException($"fuzz {what} doesn't take '{rest[0]}'");
 
                 var hosts = new List<Phi.Compiler.Host>();
                 if (only != null)
@@ -493,7 +499,7 @@ static int Execute(string[] args)
                     Seed: seed != null ? int.Parse(seed) : Environment.TickCount,
                     Hosts: hosts, KeepFolder: keep, KeepAll: keepAll);
                 Console.WriteLine($"seed {options.Seed}");
-                return CodeFuzzer.Run(options, Console.Out) == 0 ? 0 : 1;
+                return CodeFuzzer.Run(options, Console.Out, what == "numbers" ? NumberFuzzer.Make : CodeFuzzer.Make) == 0 ? 0 : 1;
             }
 
             case "serve":

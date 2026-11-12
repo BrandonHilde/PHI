@@ -6567,6 +6567,21 @@ namespace Phi.Compiler.CodeGen
                 {
                     EmitWide(e);
                     PushAndLoad("qword", "edx", "eax");
+                    if (e.Type.Kind == TypeKind.U64)
+                    {
+                        // (the FPU read it as signed: one with its top bit set is 2^64 too low)
+                        string positive = NewLabel("positive");
+                        Emit("test edx, edx");
+                        Emit($"jns {positive}");
+                        Emit($"fadd qword [{FloatLabel(18446744073709551616.0)}]");
+                        Label(positive);
+                    }
+                    // The FPU holds all 64 bits of it, which is more than an f64 does: adding
+                    // nothing rounds it to the nearest f64, which is what the value is. Without
+                    // this, (big as f64) + x was the nearest f64 to the whole sum, and not what
+                    // it comes to when the f64 is stored first.
+                    Emit("fldz");
+                    Emit("faddp st1, st0");
                 }
                 else if (e.Type.IsUnsigned32)
                 {

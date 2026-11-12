@@ -162,6 +162,7 @@ phi.Count:Program
                                          its 20 ticks a second
        phi fuzz code --count 1000        write random programs, each with what it must print, and check
                                          the compiler's code for them on the systems this computer runs
+       phi fuzz numbers --count 1000     the same, with programs of 64-bit and floating point numbers
        phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
 
 The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each

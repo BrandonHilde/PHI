@@ -22,6 +22,7 @@ phi.FloatPaths:Library
 	call Branches;
 	call Caught;
 	call Loops;
+	call Wholes;
 
 	[Sides]
 		f64 x: 6.0;
@@ -173,6 +174,19 @@ phi.FloatPaths:Library
 		;;
 		log 'sum: ' sum ' ' list:3 ' ' count '\n';
 		log 'kept: ' (Kept: 5) '\n';
+	[end]
+
+	# A 64-bit number made an f64 is the nearest f64 to it, whether it's used at once or stored
+	# first (the FPU holds all 64 bits, and an f64 53), and a u64 is never negative.
+	[Wholes]
+		i64 big: 9007199254740993;          # 2^53 + 1: halfway between two f64s
+		i64 minus: -9007199254740993;
+		u64 top: 0xFFFFFFFF00000000;
+		u64 odd: 0x8000000000000401;
+		f64 one: 1.0;
+		f64 stored: big as f64;
+		log 'whole: ' (((big as f64) + one) is (stored + one)) ' ' (((minus as f64) - one) is (0.0 - stored - one))
+			' ' ((top as f64) > 18000000000000000000.0) ' ' ((top as f64) / 4294967296.0) ' ' (((odd as f64) + one) is 9223372036854777856.0) '\n';
 	[end]
 
 	# an array of f64s that's the method's own, made while counters are in registers
