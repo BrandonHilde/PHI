@@ -498,9 +498,34 @@ struct.Device
 }
 ```
 
-Today every read goes to memory anyway, so `volatile` changes nothing yet; mark such
-memory now, so code keeps working as the optimizer grows (see Phase S6 in
-[Plan.md](../Plan.md)).
+It matters in a loop. A loop keeps the class variables it changes in the CPU's registers
+while it runs (in a class's own code, and in a method), and writes them back to memory
+before it calls anything, before it returns or raises an error, and when it ends. So
+something that runs in the middle of the loop without being called from it (an interrupt
+handler, another thread) doesn't see what the loop has done since, and what it changes
+itself is lost when the loop writes its own value back:
+
+```phi
+int waiting: 0;                # another thread adds to it: this needs volatile
+
+[Drain]
+    while waiting > 0
+        waiting--;             # in a register here, without volatile
+    ;;
+[end]
+```
+
+A variable the loop only reads is always read from memory (a flag it waits on something
+else to set works without `volatile`), and so is one whose address is taken, one an `asm`
+block names, and one an `[isr]` method names, itself or in the methods it calls: the
+handler above, written as an `[isr]`, needs nothing. What's left to mark is what another
+thread or another core changes, and a handler that isn't an `[isr]` method.
+
+One more case: an error the CPU raises itself inside such a loop (a null pointer used,
+memory that isn't the program's) isn't a call, so if it's caught, the class variables the
+loop was changing hold what they held at its last call, or when it began. A division is
+treated as a call, so dividing by zero isn't one of these. Mark the variable `volatile`
+where what it holds after such an error matters.
 
 ### sizeof
 

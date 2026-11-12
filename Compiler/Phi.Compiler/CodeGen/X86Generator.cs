@@ -1557,7 +1557,8 @@ namespace Phi.Compiler.CodeGen
             }
             string start = code.ToString();
             code = outer;
-            string bodyText = keepsRegisters ? CheckRegisterCode(m, body.ToString()) : body.ToString();
+            string bodyText = keepsRegisters || heldInLoop ? CheckRegisterCode(m.Name, body.ToString(), free: !keepsRegisters) : body.ToString();
+            heldInLoop = false;
 
             // callers keep variables in esi and edi, so a method that changes them (itself, or
             // through anything but a method) saves them first, just below its frame, and gives them
@@ -2092,10 +2093,11 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         string CheckRegisterCode(MethodSymbol m, string body) => CheckRegisterCode(m.Name, body);
 
-        string CheckRegisterCode(string where, string body)
+        /// <summary>free: the code begins as a fence does, with no variable in a register (a method whose loops alone hold any).</summary>
+        string CheckRegisterCode(string where, string body, bool free = false)
         {
             var kept = new StringBuilder();
-            bool fenced = false;
+            bool fenced = free;
             foreach (string line in body.Split('\n'))
             {
                 string text = line.TrimEnd('\r');
@@ -2555,8 +2557,184 @@ namespace Phi.Compiler.CodeGen
 
         void EmitStatement(Stmt stmt)
         {
-            if (registersLive && !RunsInRegisters(stmt)) Fenced(() => EmitStatementCode(stmt));
+            if (stmt is WhileStmt loop && EmitLoopHolding(loop)) return;
+            if (registersLive && (!RunsInRegisters(stmt) || loopHeld.Count > 0 && NeedsMemory(stmt))) Fenced(() => EmitStatementCode(stmt));
             else EmitStatementCode(stmt);
+        }
+
+        // ---------------------------------------------------------------- a method's loops
+        //
+        // A loop in a method keeps the class variables it works on in registers too, in the
+        // registers the method's own variables left free: an interpreter's place in its code
+        // and its stack, a parser's place in its text. Unlike a method's own variables, the rest
+        // of the program reads these, so memory has to be right whenever anything else can run:
+        //
+        //   - a statement that calls anything is fenced (they're stored before it and loaded
+        //     after it, as what it calls may read and change them), and so is a return;
+        //   - an error raised in the loop's own code stores them first (EmitStop);
+        //   - when the loop ends they're stored.
+        //
+        // Only variables the loop itself changes are taken (one it only reads is as likely a flag
+        // it waits on something else to set), never a volatile one, one whose address is taken
+        // anywhere, one an asm block names, or one an [isr] method names (itself or in what it
+        // calls). What another thread changes behind a loop that's changing it too needs
+        // `volatile`, as the language says.
+
+        /// <summary>The class variables the loop being generated has in registers.</summary>
+        readonly HashSet<VariableSymbol> loopHeld = new();
+
+        /// <summary>True once a method's code has held class variables in registers: it's checked as code with variables in registers is.</summary>
+        bool heldInLoop;
+
+        /// <summary>The class variables that are reached other than by name somewhere: by address, by an atomic step, a while each, or an asm block.</summary>
+        HashSet<VariableSymbol>? reachedByAddress;
+
+        HashSet<VariableSymbol> ReachedByAddress()
+        {
+            if (reachedByAddress != null) return reachedByAddress;
+            var reached = new HashSet<VariableSymbol>();
+            void Reach(Symbol? symbol)
+            {
+                switch (symbol)
+                {
+                    case VariableSymbol v: reached.Add(v); break;
+                    case FieldPathSymbol f: reached.Add(f.Root); break;
+                    case SelfFieldSymbol f: reached.Add(f.Self); break;
+                    case PathSymbol path: reached.Add(path.Root); break;
+                }
+            }
+            var nodes = unit.Classes.SelectMany(c => c.Body).SelectMany(SyntaxWalker.Nodes);
+            foreach (MethodSymbol m in unit.Methods.Concat(unit.ForeignEntries))
+            {
+                if (m.Decl == null) continue;
+                nodes = nodes.Concat(m.Decl.Parameters.Cast<Stmt>().Concat(m.Decl.Body).SelectMany(SyntaxWalker.Nodes))
+                    .Concat(m.Decl.Result != null ? SyntaxWalker.Nodes(m.Decl.Result) : Enumerable.Empty<Node>());
+            }
+            foreach (Node n in nodes)
+            {
+                if (n is AddrExpr { Operand: NameExpr taken }) Reach(taken.Symbol);
+                if (n is AtomicStmt { Target: NameExpr step }) Reach(step.Symbol);
+                if (n is AtomicExpr { Target: NameExpr swapped }) Reach(swapped.Symbol);
+                if (n is WhileEachStmt each)
+                {
+                    if (each.Index.Symbol != null) reached.Add(each.Index.Symbol);
+                    if (each.Element.Symbol != null) reached.Add(each.Element.Symbol);
+                }
+            }
+            foreach (RawBlockDecl raw in unit.RawBlocks)
+            {
+                var named = System.Text.RegularExpressions.Regex.Matches(raw.Text, @"\{\s*([A-Za-z_][A-Za-z_0-9]*)")
+                    .Select(m => m.Groups[1].Value).ToHashSet();
+                foreach (VariableSymbol v in unit.Variables)
+                    if (named.Contains(v.Name) || v.Label.Length > 0 && raw.Text.Contains(v.Label))
+                        reached.Add(v);
+            }
+            // and what an interrupt handler names, itself or in the methods it calls: it runs in the
+            // middle of anything, called by nothing
+            var seen = new HashSet<MethodSymbol>();
+            var todo = new Stack<MethodSymbol>(unit.Methods.Where(m => m.IsInterruptHandler));
+            while (todo.Count > 0)
+            {
+                MethodSymbol m = todo.Pop();
+                if (m.Decl == null || !seen.Add(m)) continue;
+                foreach (Node n in m.Decl.Parameters.Cast<Stmt>().Concat(m.Decl.Body).SelectMany(SyntaxWalker.Nodes)
+                             .Concat(m.Decl.Result != null ? SyntaxWalker.Nodes(m.Decl.Result) : Enumerable.Empty<Node>()))
+                {
+                    if (n is NameExpr name) Reach(name.Symbol);
+                    object? callee = n switch { CallStmt c => c.Resolved, CallExpr c => c.Resolved, _ => null };
+                    if (callee is MethodSymbol called) todo.Push(called);
+                }
+            }
+            return reachedByAddress = reached;
+        }
+
+        /// <summary>
+        /// True for a statement that needs the class variables a loop holds to be in memory: it
+        /// calls something (in its own values, or in what it tests), or it leaves the method.
+        /// </summary>
+        static bool NeedsMemory(Stmt s) => s switch
+        {
+            ReturnStmt => true,
+            UnsafeStmt => false,
+            LockedStmt => true,
+            IfStmt i => Leaves(i.Condition),
+            WhileStmt w => w.Init != null && NeedsMemory(w.Init) || Leaves(w.Condition) || w.Step != null && NeedsMemory(w.Step),
+            WhenStmt w => Leaves(w.Subject) || w.Branches.Any(b => b.Values.Any(Leaves)),
+            AssignStmt { Op: AssignOp.Divide or AssignOp.Modulo } => true,
+            _ => SyntaxWalker.Nodes(s).Any(LeavesAt),
+        };
+
+        static bool Leaves(Expr e) => SyntaxWalker.Nodes(e).Any(LeavesAt);
+
+        /// <summary>
+        /// Where control may go somewhere else: a call, or a division, which stops with an error
+        /// when it's by zero (by a constant that isn't zero it can't).
+        /// </summary>
+        static bool LeavesAt(Node n) => n is CallStmt or CallExpr or NewExpr or NameExpr { Call: not null } or MemberExpr { Call: not null }
+            || n is BinaryExpr { Op: BinaryOp.Divide or BinaryOp.Modulo } division && ConstantFolder.Evaluate(division.Right) is not (long and not 0);
+
+        /// <summary>
+        /// A while in a method, with the class variables it changes most in the registers that
+        /// are free. False when it isn't to be done that way, and nothing was emitted.
+        /// </summary>
+        bool EmitLoopHolding(WhileStmt loop)
+        {
+            if (currentMethod == null || !bits32 || debugInfo != null || loopHeld.Count > 0 || currentMethod.IsInterruptHandler) return false;
+            if (inRegisters.Count > 0 && !registersLive) return false;      // inside a fence
+            int free = VariableRegisters.Length - inRegisters.Count;
+            if (free <= 0 || !RunsInRegisters(loop) || NeedsMemory(loop)) return false;
+
+            HashSet<VariableSymbol> reached = ReachedByAddress();
+            var changed = new HashSet<VariableSymbol>();
+            var candidates = new HashSet<VariableSymbol>();
+            foreach (Node n in SyntaxWalker.Nodes(loop))
+            {
+                if (n is AssignStmt { Target: NameExpr { Symbol: VariableSymbol set } }) changed.Add(set);
+                if (n is NameExpr { Symbol: VariableSymbol v } && !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind
+                    && !v.Decl.Volatile && !reached.Contains(v) && FitsRegister(v))
+                    candidates.Add(v);
+            }
+            candidates.IntersectWith(changed);
+            if (candidates.Count == 0) return false;
+            List<VariableSymbol> chosen = VariablePlanner.Choose(candidates, new List<Stmt> { loop }, null, free, s => RunsInRegisters(s) && !NeedsMemory(s));
+            if (chosen.Count == 0) return false;
+
+            int first = inRegisters.Count;
+            bool were = registersLive;
+            for (int i = 0; i < chosen.Count; i++)
+            {
+                string register = VariableRegisters[first + i];
+                inRegisters.Add((chosen[i], WholeVariable(chosen[i]) ? Whole(register) : register, chosen[i].Label));
+                loopHeld.Add(chosen[i]);
+            }
+            heldInLoop = true;
+            Comment("(in registers for this loop: " + string.Join(", ", inRegisters.Skip(first).Select(r => $"{r.Variable.Name} in {r.Register}")) + ")");
+            Line(FenceStart);
+            foreach (var (v, register, home) in inRegisters.Skip(first)) Emit($"mov {register}, [{home}]   ; {v.Name}");
+            Line(FenceEnd);
+            SetRegistersLive(true);
+
+            EmitStatementCode(loop);
+
+            SetRegistersLive(false);
+            Line(FenceStart);
+            foreach (var (v, register, home) in inRegisters.Skip(first)) Emit($"mov [{home}], {register}   ; {v.Name}");
+            // (a method with no variables of its own in registers is free with them outside its loops)
+            if (were) Line(FenceEnd);
+            inRegisters.RemoveRange(first, chosen.Count);
+            loopHeld.Clear();
+            SetRegistersLive(were);
+            return true;
+        }
+
+        /// <summary>Before an error is raised in a loop's own code: the class variables the loop holds, into memory.</summary>
+        void StoreLoopHeld()
+        {
+            if (loopHeld.Count == 0 || !registersLive) return;
+            Line(FenceStart);
+            foreach (var (v, register, home) in inRegisters)
+                if (loopHeld.Contains(v)) Emit($"mov [{home}], {register}   ; {v.Name}");
+            Line(FenceEnd);
         }
 
         void EmitStatementCode(Stmt stmt)
@@ -3075,6 +3253,7 @@ namespace Phi.Compiler.CodeGen
         void EmitStop(string text, Node at, int kind)
         {
             Need("phi_throw");
+            StoreLoopHeld();
             LoadAddress("edx", StringLabel(text));
             Emit($"mov eax, {LineOf(at)}");
             if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
@@ -4705,6 +4884,7 @@ namespace Phi.Compiler.CodeGen
         {
             Need("phi_text_error");
             int line = lastComment.Item1 == file ? lastComment.Item2 : 0;
+            StoreLoopHeld();
             Emit($"mov eax, {line}   ; it stops here, so eax is free");
             if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
             else Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");
@@ -4714,6 +4894,7 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Stops with an index error naming the line and file of a node.</summary>
         void EmitIndexError(Node at)
         {
+            StoreLoopHeld();
             Emit($"mov eax, {LineOf(at)}   ; it stops here, so eax is free");
             if (bits64) LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
             else Emit($"mov {(bits32 ? "esi" : "si")}, {StringLabel(System.IO.Path.GetFileName(file.Path))}   ; it stops here, so esi is free");

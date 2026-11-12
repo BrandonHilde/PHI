@@ -1,0 +1,186 @@
+# runs only in 32 and 64 bits: it catches errors
+# A loop in a method keeps the class variables it changes in registers. The rest of the
+# program reads them from memory, so memory has to be right whenever anything else can run:
+# at a call, a return, an error (one thrown, and one the loop's own code raises), a break,
+# and in a method that calls itself. Each of these prints what the others see.
+
+phi.LoopHolds:Library
+{
+	int total: 0;
+	int steps: 0;
+	int depth: 0;
+	u32 big: 0;
+	int list[4];
+	u8 text[16];
+	ptr<u8> spot: 0;
+
+	call Calls;
+	call Returns;
+	call Thrown;
+	call Checked;
+	call Indexed;
+	call Divided;
+	call Nested;
+	call Itself;
+	call Walks;
+
+	# what a method called from the loop sees, and what it changes
+	[Calls]
+		total is 0;
+		while int i: 0; i < 10; i++;
+			total++ i;
+			if i is 4
+				call Double;
+			;;
+			if (Seen) > 1000
+				break;
+			;;
+		;;
+		log 'calls ' total '\n';
+	[end]
+
+	[Double]
+		total is total * 2;
+	[end]
+
+	[Seen]
+	[end: total]
+
+	# a return from inside the loop
+	[Returns]
+		steps is 0;
+		int found: (Find: 7);
+		log 'returns ' found ' ' steps '\n';
+	[end]
+
+	[Find: int want: 0;]
+		while int i: 0; i < 100; i++;
+			steps++;
+			if i * i > want * want return i;
+		;;
+	[end: -1]
+
+	# an error thrown in the loop: what was counted until then is there for whoever catches it
+	[Thrown]
+		steps is 0;
+		if call Until: 6 throws err
+			log 'thrown ' steps ' ' err.text '\n';
+		;;
+	[end]
+
+	[Until: int stop: 0;]
+		while true
+			steps++;
+			if steps is stop
+				throw 'stop';
+			;;
+		;;
+	[end]
+
+	# an error the loop's own code raises: a u32 too big to be an int
+	[Checked]
+		steps is 0;
+		big is 0x7FFFFFFD;
+		if call Count throws err
+			log 'checked ' steps ' ' (err.kind is ErrorKind.CONVERT) '\n';
+		;;
+	[end]
+
+	[Count]
+		int n: 0;
+		while true
+			steps++;
+			big++;
+			n is big;
+		;;
+	[end]
+
+	# and one past the end of an array
+	[Indexed]
+		steps is 0;
+		if call Fill throws err
+			log 'indexed ' steps ' ' (err.kind is ErrorKind.INDEX) ' ' list:3 '\n';
+		;;
+	[end]
+
+	[Fill]
+		while true
+			list:steps is steps * 3;
+			steps++;
+		;;
+	[end]
+
+	# and a division by zero, which the CPU raises
+	[Divided]
+		steps is 0;
+		if call Shares: 3 throws err
+			log 'divided ' steps ' ' (err.kind is ErrorKind.DIVIDE) '\n';
+		;;
+	[end]
+
+	[Shares: int n: 0;]
+		int part: 0;
+		while true
+			steps++;
+			part is 100 / (n - steps);
+		;;
+	[end]
+
+	# loops inside the loop, with break and continue
+	[Nested]
+		total is 0;
+		steps is 0;
+		while int i: 0; i < 6; i++;
+			if i is 2
+				continue;
+			;;
+			while int k: 0; k < 10; k++;
+				if k > i break;
+				total++ k;
+				steps++;
+			;;
+			if total > 20 break;
+		;;
+		log 'nested ' total ' ' steps '\n';
+	[end]
+
+	# a method that calls itself from its loop: each sees what the others did
+	[Itself]
+		total is 0;
+		depth is 0;
+		call Down: 3;
+		log 'itself ' total ' ' depth '\n';
+	[end]
+
+	[Down: int n: 0;]
+		while int i: 0; i < n; i++;
+			total++;
+			depth++ n;
+			call Down: n - 1;
+			total++ 10;
+		;;
+	[end]
+
+	# a pointer that walks
+	[Walks]
+		while int i: 0; i < 16; i++;
+			text:i is (65 + i) as u8;
+		;;
+		spot is addr text:0;
+		int sum: 0;
+		unsafe
+			while spot:0 is not 80
+				sum++ spot:0;
+				spot++ 1;
+			;;
+		;;
+		log 'walks ' sum ' ' (Here) '\n';
+	[end]
+
+	[Here]
+		int c: 0;
+		unsafe
+			c is spot:0;
+		;;
+	[end: c]
+}

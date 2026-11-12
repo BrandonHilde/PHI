@@ -6,30 +6,30 @@ Measured 2026-11-12 by `phi compare` on the benchmarks in `bench`, on Intel(R) C
 Seconds, the best of 7 runs of each program, from being started to having ended:
 
               PHI 64-bit  PHI 32-bit     gcc -O2     gcc -O0          C#
-startup            0.000       0.000       0.000       0.000       0.016
-collatz            0.552       0.877       0.244       0.544       0.306
-crc                0.306       0.271       0.237       0.269       0.255
-fib                0.423       0.405       0.097       0.536       0.310
-interp             0.732       1.006       0.610       1.103       0.650
-lists              0.466       0.380       0.219       0.263       0.166
-mandelbrot         0.283       0.286       0.096       0.220       0.112
-matrix             0.414       0.422       0.047       0.357       0.148
-sieve              0.374       0.372       0.314       0.609       0.356
-sort               0.283       0.309       0.255       0.405       0.361
+startup            0.000       0.000       0.000       0.000       0.015
+collatz            0.546       0.863       0.241       0.537       0.301
+crc                0.295       0.269       0.233       0.265       0.250
+fib                0.414       0.401       0.096       0.529       0.312
+interp             0.703       0.897       0.599       1.102       0.660
+lists              0.456       0.372       0.218       0.256       0.164
+mandelbrot         0.284       0.285       0.096       0.218       0.112
+matrix             0.408       0.419       0.047       0.353       0.145
+sieve              0.365       0.368       0.303       0.605       0.354
+sort               0.286       0.305       0.251       0.402       0.359
 
 PHI 64-bit's time over each of the others' (1.50: PHI took half as long again; 0.50: half as long):
 
               PHI 32-bit     gcc -O2     gcc -O0          C#
-collatz             0.63        2.26        1.01        1.80
-crc                 1.13        1.29        1.14        1.20
-fib                 1.04        4.37        0.79        1.36
-interp              0.73        1.20        0.66        1.13
-lists               1.23        2.13        1.77        2.80
-mandelbrot          0.99        2.96        1.29        2.52
-matrix              0.98        8.83        1.16        2.79
-sieve               1.01        1.19        0.61        1.05
-sort                0.92        1.11        0.70        0.78
-together            0.94        2.18        0.96        1.56
+collatz             0.63        2.26        1.02        1.81
+crc                 1.10        1.26        1.11        1.18
+fib                 1.03        4.30        0.78        1.33
+interp              0.78        1.17        0.64        1.07
+lists               1.23        2.10        1.78        2.78
+mandelbrot          1.00        2.96        1.30        2.53
+matrix              0.98        8.71        1.16        2.82
+sieve               0.99        1.20        0.60        1.03
+sort                0.94        1.14        0.71        0.80
+together            0.95        2.17        0.95        1.54
 
 (together: the geometric mean of the rows above it)
 (startup: under 10 ms in PHI, which is starting and not work, so not in this table)
