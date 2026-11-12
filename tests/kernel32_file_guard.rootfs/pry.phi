@@ -1,0 +1,34 @@
+use fs.fileinfo;
+
+phi.Pry:Program
+{
+	u8 text[32];
+	FileInfo entries[4];
+
+	int got: (OS.ReadFile: 'DOCS/OPEN.TXT' addr text 31);
+	text:(got) is 0;
+	log 'open: ' addr text '\n';
+
+	log 'read: ' (OS.ReadFile: 'SECRET/KEY.TXT' addr text 31) '\n';
+	log 'small letters: ' (OS.ReadFile: 'secret/key.txt' addr text 31) '\n';
+	log 'a / first: ' (OS.ReadFileAt: '//SECRET/KEY.TXT' 4 addr text 31) '\n';
+	log 'a . after: ' (OS.ReadFile: 'SECRET./KEY.TXT' addr text 31) '\n';
+	log 'a space after: ' (OS.ReadFile: 'SECRET /KEY.TXT' addr text 31) '\n';
+	log 'size: ' (OS.FileSize: 'SECRET/KEY.TXT') '\n';
+	log 'list: ' (OS.ListFolder: 'SECRET' entries entries.len) '\n';
+	log 'write: ' (OS.WriteFile: 'SECRET/NEW.TXT' 'mine' 4) '\n';
+	log 'append: ' (OS.AppendFile: 'SECRET/KEY.TXT' 'more' 4) '\n';
+	log 'delete: ' (OS.DeleteFile: 'SECRET/KEY.TXT') '\n';
+	log 'move out: ' (OS.Rename: 'SECRET/KEY.TXT' 'DOCS/KEY.TXT') '\n';
+	log 'move in: ' (OS.Rename: 'DOCS/OPEN.TXT' 'SECRET/OPEN.TXT') '\n';
+	log 'folder: ' (OS.MakeFolder: 'SECRET/MORE') '\n';
+	log 'start: ' (OS.Spawn: 'SECRET/PRY.BIN') '\n';
+
+	# a name that only starts the same is another folder
+	log 'secrets: ' (OS.MakeFolder: 'SECRETS') '\n';
+
+	got is (OS.ReadFile: 'DOCS/OPEN.TXT' addr text 31);
+	text:(got) is 0;
+	log 'still open: ' addr text '\n';
+	exit 3;
+}

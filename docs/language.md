@@ -2492,6 +2492,27 @@ drivers. Instead:
 Every pointer a program passes is checked against its own memory; a bad one makes the
 call return -1 instead of reaching the kernel.
 
+A kernel can keep part of the disk from its programs. `Process.file_guard` is a method the
+kernel sets, asked before each of a program's file calls goes ahead (and before `OS.Spawn`
+reads a program from the disk) with the path and the call's number; when it returns false
+the program gets -1. A rename asks about both paths. The kernel's own `Fat` calls aren't
+asked about:
+
+```phi
+Process.file_guard is addr Guard;
+
+[Guard: ptr<u8> path: 0; u32 number: 0;]
+    if number is Process.SYS_READ_FILE return true;
+[end: false]                    # programs may read whole files, and that's all
+```
+
+The path is as the program wrote it: any number of `/` before a name, capitals or not, and
+`SYS.` and `SYS ` both name the folder `SYS`. `Fat.PartIs: path 'SYS'` compares a path's
+first part with a name as the file system will read it, and returns how many characters
+that part is (0 if it's another name). The guard is called holding the file system's lock,
+so it can look at the kernel's variables, but `PartIs` is the only one of `Fat`'s methods
+it can call.
+
 The file calls and `OS.TaskName` and `OS.Kill` work in a kernel too: there they are the
 kernel's own versions (`OS.ReadFile` is `Fat.ReadFile`, `OS.ListFolder` is `Fat.Entries`,
 `OS.TaskName` is `Process.TaskName`, `OS.Kill` is `OS.KillTask`), so code shared by a kernel

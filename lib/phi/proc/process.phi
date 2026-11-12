@@ -30,6 +30,21 @@
 # program reading or writing a file holds up only other files, not the rest of the
 # kernel and its programs.
 #
+# A kernel that keeps part of the disk from its programs sets file_guard: it's asked
+# before each file call goes ahead, and before a program starts another from the disk,
+# with the path and the call's number, and false refuses it:
+#
+#   Process.file_guard is addr Mine;
+#   [Mine: ptr<u8> path: 0; u32 number: 0;]      # true: go ahead
+#       if number is Process.SYS_READ_FILE return true;
+#   [end: false]                                 # programs may read whole files, and that's all
+#
+# The path is as the program wrote it: any number of / before a name, capitals or not, and
+# 'SYS.' and 'SYS ' are both the folder SYS. Fat.PartIs compares a path's first part with a
+# name as the file system will read it (fs.fat16 takes no . or .. for a folder, so a name
+# can't climb out of one). The kernel's own reading and writing (Fat's methods) isn't asked
+# about.
+#
 # The timer shares the CPU between programs. The kernel's own code runs until it
 # waits (Wait, WaitAll, OS.Yield) or its main code ends.
 
@@ -138,6 +153,12 @@ phi.Process:Kernel
 	# answers OS.IsKeyDown for programs (1 if the key is held) when the kernel has its own
 	# keyboard driver, as gui.desktop does with drivers.input; 0 uses the built-in one
 	method<u32: int> key_down: 0;
+	# asked before a program's file call goes ahead, and before it starts a program from the
+	# disk: the path (the kernel's copy of it) and the call's number (SYS_READ_FILE and the
+	# rest, or SYS_SPAWN). False refuses it: the program gets -1, as for a bad path. A rename
+	# asks about both paths. 0 lets everything through. For a file call it's called holding
+	# the file system's lock and not the kernel's, so it should only look: of Fat's methods it can use PartIs and no other.
+	method<ptr<u8> u32: bln> file_guard: 0;
 
 	call OS.StartMultitasking;
 	call OS.SetSyscallHandler: addr HandleSyscall;
@@ -561,7 +582,7 @@ phi.Process:Kernel
 			if second is not 0
 				call argumentsOk is CopyFromUser: second addr call_arguments 256;
 			;;
-			if pathOk and argumentsOk
+			if pathOk and argumentsOk and (Allowed: addr call_path number)
 				call result is Spawn: addr call_path addr call_arguments;
 			;;
 		;;
@@ -671,9 +692,18 @@ phi.Process:Kernel
 		call Fat.Unlock;
 	[end: result]
 
+	# whether the kernel's file_guard lets a program's call use this path
+	[Allowed: ptr<u8> path: 0; u32 number: 0;]
+		bln ok: true;
+		if file_guard is not 0
+			call ok is file_guard: path number;
+		;;
+	[end: ok]
+
 	# a file call, holding the file system's lock (file_path is shared by them all)
 	[FileCall: u32 number: 0; u32 first: 0; u32 second: 0; u32 third: 0; u32 fourth: 0;]
 		if not (CopyFromUser: first addr file_path 64) return -1;   # each starts with a path
+		if not (Allowed: addr file_path number) return -1;
 		if number is SYS_READ_FILE
 			if not (UserRange: second third) return -1;
 			return (Fat.ReadFile: addr file_path second third);
@@ -696,6 +726,7 @@ phi.Process:Kernel
 		if number is SYS_MAKE_FOLDER return (Fat.MakeFolder: addr file_path);
 		if number is SYS_RENAME
 			if not (CopyFromUser: second addr file_path_to 64) return -1;
+			if not (Allowed: addr file_path_to number) return -1;
 			return (Fat.Rename: addr file_path addr file_path_to);
 		;;
 		if number is SYS_DELETE_FOLDER return (Fat.DeleteFolder: addr file_path);

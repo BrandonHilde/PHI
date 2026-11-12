@@ -1,0 +1,34 @@
+open: open to all
+refused: 17 SECRET/KEY.TXT
+read: -1
+refused: 17 secret/key.txt
+small letters: -1
+refused: 31 SECRET/KEY.TXT
+a / first: -1
+refused: 17 SECRET./KEY.TXT
+a . after: -1
+refused: 17 SECRET /KEY.TXT
+a space after: -1
+refused: 21 SECRET/KEY.TXT
+size: -1
+refused: 38 SECRET
+list: -1
+refused: 18 SECRET/NEW.TXT
+write: -1
+refused: 42 SECRET/KEY.TXT
+append: -1
+refused: 19 SECRET/KEY.TXT
+delete: -1
+refused: 40 SECRET/KEY.TXT
+move out: -1
+refused: 40 SECRET/OPEN.TXT
+move in: -1
+refused: 39 SECRET/MORE
+folder: -1
+refused: 16 SECRET/PRY.BIN
+start: -1
+secrets: 1
+still open: open to all
+pry exit code: 3
+the kernel reads: the secret
+nothing new in it: -1 -1

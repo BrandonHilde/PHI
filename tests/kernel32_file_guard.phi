@@ -1,0 +1,31 @@
+# A kernel keeps a folder from its programs: Process.file_guard is asked before each of a
+# program's file calls, and what it refuses the program can't read, write, list, move or start.
+use proc.process;
+use fs.fat16;
+
+phi.Test:Kernel
+{
+	u8 mine[16];
+	Process.file_guard is addr Guard;
+
+	int code: (Process.Wait: (Process.Spawn: 'PRY.BIN'));
+	debug 'pry exit code: ' code '\n';
+
+	# the kernel's own reading isn't asked about, and the file is as it was
+	int got: (Fat.ReadFile: 'SECRET/KEY.TXT' addr mine 15);
+	mine:(got) is 0;
+	debug 'the kernel reads: ' addr mine '\n';
+	debug 'nothing new in it: ' (Fat.FileSize: 'SECRET/NEW.TXT') ' ' (Fat.FileSize: 'SECRET/OPEN.TXT') '\n';
+	exit 0;
+
+	# everything in SECRET is the kernel's, however the name is written
+	[Guard: ptr<u8> path: 0; u32 number: 0;]
+		while path:0 is '/'
+			path++;
+		;;
+		bln secret: (Fat.PartIs: path 'SECRET') > 0;
+		if secret
+			debug 'refused: ' number ' ' path '\n';
+		;;
+	[end: not secret]
+}
