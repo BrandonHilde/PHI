@@ -1,0 +1,151 @@
+# runs only in 32 and 64 bits: it uses i64s
+# 64-bit numbers worked out whole in one register, as 64-bit programs do it, and in two
+# halves, as 32-bit code does: every line here has to come out the same either way.
+
+struct.Counts
+{
+	i64 big;
+	u64 huge;
+}
+
+phi.Whole:Library
+{
+	i64 list[4];
+	Counts counts;
+	i64 global: 7;
+
+	call Sums;
+	call Shifts;
+	call Compares;
+	call Places;
+	call Calls;
+
+	[Sums]
+		i64 a: 5000000000;
+		i64 b: -3;
+		u64 c: 0xFFFFFFFF00000000;
+		int small: -7;
+		u32 top: 0xF0000000;
+		i64 r: a + b;
+		log r ' ' (a - b) ' ' (a * b) ' ' (b * b) ' ' (a + small) ' ' (a + top) ' ' (a - top) '\n';
+		# constants that fit an instruction, and those that don't
+		log (a + 1) ' ' (a - 2147483647) ' ' (a + 2147483648) ' ' (a * 1000000007) ' ' (a - 6000000000) ' ' (a & 0xFFFFFFFF) ' ' (a | 0x100000000) '\n';
+		log (a ^ b) ' ' (a & b) ' ' (a | b) ' ' (-a) ' ' (~a) ' ' (-(a + b) * 2) '\n';
+		log (c + 1) ' ' (c - 1) ' ' (c * 3) ' ' (c ^ 0xFFFFFFFFFFFFFFFF) ' ' ((c >> 4) + top) '\n';
+		# small numbers made 64 bits: a signed one keeps its sign, an unsigned one stays positive
+		i64 fromSmall: small;
+		i64 fromTop: top;
+		log fromSmall ' ' fromTop ' ' ((small as i64) * small) ' ' ((top as u64) * top) ' ' ((small as i64) + top) '\n';
+		# in place
+		r++ a;
+		r-- 1;
+		r** 3;
+		log r ' ' ((r * 3 + 1) as int) ' ' (((r >> 33) as int) + small) '\n';
+		# every step of a long sum
+		i64 total: 0;
+		while int i: 0; i < 100; i++;
+			total is total * 31 + i - (total >> 7);
+		;;
+		log total '\n';
+	[end]
+
+	[Shifts]
+		i64 a: -5000000000;
+		u64 c: 0xF000000000000001;
+		log (a << 1) ' ' (a >> 1) ' ' (a >> 31) ' ' (a >> 32) ' ' (a >> 63) ' ' (a << 31) ' ' (a << 40) '\n';
+		log (c << 1) ' ' (c >> 1) ' ' (c >> 31) ' ' (c >> 32) ' ' (c >> 63) ' ' (c << 63) '\n';
+		while int n: 0; n < 64; n++ 21;
+			log (a << n) ' ' (a >> n) ' ' (c >> n) ' ' (c << n) '\n';
+		;;
+	[end]
+
+	[Compares]
+		i64 a: 5000000000;
+		i64 b: -5000000000;
+		u64 c: 0xFFFFFFFFFFFFFFFE;
+		int minus: -1;
+		u32 top: 0xFFFFFFFF;
+		log (Tell: a b) ' ' (Tell: b a) ' ' (Tell: a a) ' ' (Tell: b -5000000000) ' ' (Tell: 4294967296 a) '\n';
+		# against small numbers, constants of each size, and a u64, where the top bit isn't a sign
+		int hits: 0;
+		if a > minus and b < minus and a > top and b < top
+			hits++ 1;
+		;;
+		if a > 4999999999 and a < 5000000001 and a is 5000000000 and b is not 5000000000
+			hits++ 10;
+		;;
+		if c > a and c > 0x8000000000000000 and c >= 0xFFFFFFFFFFFFFFFE
+			hits++ 100;
+		;;
+		if a + b is 0 and a - 1 >= 4999999999 and (a & 1) is 0 and (b >> 63) is -1
+			hits++ 1000;
+		;;
+		if a < b or a is b or c < a
+			hits++ 10000;
+		;;
+		log 'hits: ' hits ' ' (a > b) ' ' (a < b) ' ' (c > a) ' ' ((a + 1) is 5000000001) '\n';
+		i64 n: 27;
+		int steps: 0;
+		while n is not 1
+			if (n & 1) is 0
+				n is n >> 1;
+			;;
+			else
+				n is n * 3 + 1;
+			;;
+			steps++;
+		;;
+		log 'steps: ' steps '\n';
+	[end]
+
+	# a digit for each comparison that holds
+	[Tell: i64 a: 0; i64 b: 0;]
+		int holds: 0;
+		if a < b
+			holds++ 1;
+		;;
+		if a <= b
+			holds++ 10;
+		;;
+		if a > b
+			holds++ 100;
+		;;
+		if a >= b
+			holds++ 1000;
+		;;
+		if a is b
+			holds++ 10000;
+		;;
+		if a is not b
+			holds++ 100000;
+		;;
+	[end: holds]
+
+	[Places]
+		ptr<i64> p: addr list:0;
+		while int i: 0; i < 4; i++;
+			list:i is (i as i64) * 3000000000 - 1;
+		;;
+		counts.big is list:3 + list:1;
+		counts.huge is (counts.big as u64) << 2;
+		p:2 is p:1 * list:2 + global;
+		global is global * counts.big;
+		log list:0 ' ' list:3 ' ' counts.big ' ' counts.huge ' ' p:2 ' ' global '\n';
+		int pos: 1;
+		list:pos is list:(pos + 1) - list:pos;
+		log list:pos ' ' (list:pos > list:0) '\n';
+	[end]
+
+	[Calls]
+		i64 a: 5000000000;
+		# a call on either side reads and changes what it did before
+		log ((Bump) + global) ' ' (global + (Bump)) ' ' ((Twice: a) * 2 - a) ' ' (a / 3) ' ' (a % 7) ' ' ((a * 3) / (a - 4999999997)) '\n';
+	[end]
+
+	[Bump: : i64]
+		global++ 1;
+	[end: 1000000000000]
+
+	[Twice: i64 v: 0; : i64]
+	[end: v * 2]
+}

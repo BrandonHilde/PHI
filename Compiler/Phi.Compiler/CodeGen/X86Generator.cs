@@ -2000,6 +2000,7 @@ namespace Phi.Compiler.CodeGen
             AtomicExpr a => SafeValue(a.Target) && SafeValue(a.Value) && SafeValue(a.Expected),
             UnaryExpr u => OneRegister(u.Operand.Type) && SafeValue(u.Operand),
             BinaryExpr { IsComparison: true } c when c.Left.Type.IsFloat || c.Right.Type.IsFloat => SafeFloatValue(c.Left) && SafeFloatValue(c.Right),
+            BinaryExpr { IsComparison: true } c when c.Left.Type.IsWide || c.Right.Type.IsWide => WholeValue(c.Left) && WholeValue(c.Right),
             BinaryExpr b => b.ObjectCompare == null && !b.ArrayCompare && OneRegister(b.Left.Type) && OneRegister(b.Right.Type)
                             && SafeValue(b.Left) && SafeValue(b.Right),
             _ => false,
@@ -2042,6 +2043,7 @@ namespace Phi.Compiler.CodeGen
         bool SafeWideValue(Expr e) => e switch
         {
             _ when !bits32 => false,
+            _ when WholeValue(e) => true,           // (64-bit code: rax, rcx and rdx alone)
             _ when ConstantFolder.Evaluate(e) != null => true,
             _ when e.Type.IsFloat => false,
             _ when !e.Type.IsWide => OneRegister(e.Type) && SafeValue(e),
@@ -5007,6 +5009,13 @@ namespace Phi.Compiler.CodeGen
             }
             if (target.Type.IsWide)
             {
+                if (value is BinaryExpr or UnaryExpr or CastExpr && WholeValue(value) && KeptSomewhere(target))
+                {
+                    // 64-bit code: worked out in rax whole, and stored whole
+                    EmitWhole(value);
+                    EmitWholeStore(target);
+                    return;
+                }
                 if (WideCopy(target, value))
                 {
                     // 64-bit code: one 64-bit number from its place to another, in rax whole
@@ -6375,6 +6384,14 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                case BinaryExpr { IsComparison: true } cmp when (cmp.Left.Type.IsWide || cmp.Right.Type.IsWide) && WholeValue(cmp.Left) && WholeValue(cmp.Right):
+                {
+                    // 64-bit code: one cmp of the two whole, and the jump
+                    bool asUnsigned = EmitWholeFlags(cmp);
+                    Emit($"j{WholeCondition(cmp.Op, asUnsigned, holds: jumpIf)} {target}");
+                    return;
+                }
+
                 case BinaryExpr { IsComparison: true } cmp when cmp.Left.Type.IsWide || cmp.Right.Type.IsWide:
                     EmitWideCompare(cmp);
                     Emit("test eax, eax");
@@ -6841,6 +6858,15 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov edx, {(int)(k >> 32)}");
                 return;
             }
+            if (e is BinaryExpr or UnaryExpr && WholeValue(e))
+            {
+                // 64-bit code: worked out in rax whole, then as two halves for whoever asked
+                EmitWhole(e);
+                Emit("mov rdx, rax");
+                Emit("shr rdx, 32");
+                Emit("mov eax, eax");
+                return;
+            }
             if (!e.Type.IsWide)
             {
                 EmitExpr(e);
@@ -6998,6 +7024,162 @@ namespace Phi.Compiler.CodeGen
             Emit($"mov eax, dword {Operand(place)}");
             Emit($"mov edx, dword {Operand(place.Plus(4))}");
         }
+
+        // ---- 64-bit code: a 64-bit number whole in one register
+        //
+        // In a 64-bit program an i64 or u64 fits rax, and adding, multiplying, shifting and
+        // comparing are one instruction each. EmitWhole works a value out that way, the other
+        // side of an operation in rcx, for the values WholeValue says it can: nothing with a
+        // call in it (so what's read when can't matter), a division (the library's says what
+        // dividing by zero is) or a float. Everything else is EmitWide's, in edx:eax.
+
+        /// <summary>
+        /// True for a value EmitWhole works out in rax, rcx and rdx alone, in 64-bit code:
+        /// constants, numbers of 32 bits or fewer that are safe with the variables in registers and
+        /// call nothing, 64-bit variables, fields and elements, and casting, negating, adding,
+        /// taking away, multiplying, shifting and the bit operations of those.
+        /// </summary>
+        bool WholeValue(Expr e) => e switch
+        {
+            _ when !bits64 => false,
+            _ when e.Type.IsFloat || IsAddress(e) => false,
+            _ when ConstantFolder.Evaluate(e) != null => true,
+            _ when !e.Type.IsWide => OneRegister(e.Type) && SafeValue(e) && !HasCall(e),
+            NameExpr { Call: null } or MemberExpr { Call: null } or IndexExpr => KeptSomewhere(e) && SafePlace(e),
+            CastExpr c => WholeValue(c.Operand),
+            UnaryExpr u => WholeValue(u.Operand),
+            BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift =>
+                WholeValue(shift.Left) && !shift.Right.Type.IsWide && WholeValue(shift.Right),
+            BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor } b =>
+                WholeValue(b.Left) && WholeValue(b.Right),
+            _ => false,
+        };
+
+        /// <summary>The constant a value is, as EmitWide would make it 64 bits: an unsigned 32-bit number stays positive.</summary>
+        static long? WholeConstant(Expr e)
+        {
+            if (ConstantFolder.Evaluate(e) is not long k) return null;
+            return !e.Type.IsWide && !e.Type.IsSigned ? (uint)k : k;
+        }
+
+        /// <summary>rax = e, made 64 bits if it's a smaller number, for an e that's a WholeValue.</summary>
+        void EmitWhole(Expr e)
+        {
+            if (WholeConstant(e) is long k)
+            {
+                Emit(k == 0 ? "xor eax, eax" : k is > 0 and <= uint.MaxValue ? $"mov eax, {k}" : $"mov rax, {k}");
+                return;
+            }
+            if (!e.Type.IsWide)
+            {
+                EmitExpr(e);
+                Emit(e.Type.IsSigned ? "movsxd rax, eax" : "mov eax, eax");
+                return;
+            }
+            switch (e)
+            {
+                case CastExpr cast:
+                    EmitWhole(cast.Operand);
+                    return;
+
+                case UnaryExpr unary:
+                    EmitWhole(unary.Operand);
+                    Emit(unary.Op == UnaryOp.Negate ? "neg rax" : "not rax");
+                    return;
+
+                case BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift:
+                {
+                    string how = shift.Op == BinaryOp.ShiftLeft ? "shl" : shift.Type.Kind == TypeKind.U64 ? "shr" : "sar";
+                    if (ConstantFolder.Evaluate(shift.Right) is long places and >= 0 and <= 63)
+                    {
+                        EmitWhole(shift.Left);
+                        if (places != 0) Emit($"{how} rax, {places}");
+                        return;
+                    }
+                    // (the CPU takes the count's low six bits, as the two halves' shift does)
+                    EmitExpr(shift.Right);
+                    Emit("push rax");
+                    EmitWhole(shift.Left);
+                    Emit("pop rcx");
+                    Emit($"{how} rax, cl");
+                    return;
+                }
+
+                case BinaryExpr binary:
+                {
+                    string op = binary.Op switch
+                    {
+                        BinaryOp.Add => "add", BinaryOp.Subtract => "sub", BinaryOp.Multiply => "imul",
+                        BinaryOp.BitAnd => "and", BinaryOp.BitOr => "or", _ => "xor",
+                    };
+                    Emit($"{op} rax, {EmitWholeSides(binary.Left, binary.Right)}");
+                    return;
+                }
+            }
+
+            // a variable, field or element
+            Emit($"mov rax, qword {Operand(EmitPlace(e))}");
+        }
+
+        /// <summary>
+        /// rax = the left side, and the right as an instruction's operand: a constant that fits,
+        /// a 64-bit variable where it is, or rcx.
+        /// </summary>
+        string EmitWholeSides(Expr left, Expr right)
+        {
+            if (WholeConstant(right) is long k)
+            {
+                EmitWhole(left);
+                if (k is >= int.MinValue and <= int.MaxValue) return k.ToString();
+                Emit($"mov rcx, {k}");
+                return "rcx";
+            }
+            if (right.Type.IsWide && IsStaticPlace(right))
+            {
+                EmitWhole(left);
+                return $"qword {Operand(EmitPlace(right))}";
+            }
+            EmitWhole(right);
+            Emit("push rax");
+            EmitWhole(left);
+            Emit("pop rcx");
+            return "rcx";
+        }
+
+        /// <summary>Stores rax in a 64-bit place.</summary>
+        void EmitWholeStore(Expr target)
+        {
+            if (IsStaticPlace(target))
+            {
+                Emit($"mov qword {Operand(EmitPlace(target))}, rax");
+                return;
+            }
+            Emit("push rax");
+            string to = Operand(EmitPlace(target));
+            Emit("pop rax");
+            Emit($"mov qword {to}, rax");
+        }
+
+        /// <summary>
+        /// The CPU's flags as cmp leaves them for the left against the right, both 64 bits whole.
+        /// True when they're to be read as unsigned (ja, jb), as either side being a u64 makes them.
+        /// </summary>
+        bool EmitWholeFlags(BinaryExpr cmp)
+        {
+            Emit($"cmp rax, {EmitWholeSides(cmp.Left, cmp.Right)}");
+            return cmp.Left.Type.Kind == TypeKind.U64 || cmp.Right.Type.Kind == TypeKind.U64;
+        }
+
+        /// <summary>The condition (e, ne, l, ge, b, ae ...) a comparison holds on, or doesn't, after EmitWholeFlags.</summary>
+        static string WholeCondition(BinaryOp op, bool unsigned, bool holds) => (op, holds) switch
+        {
+            (BinaryOp.Equal, true) or (BinaryOp.NotEqual, false) => "e",
+            (BinaryOp.NotEqual, true) or (BinaryOp.Equal, false) => "ne",
+            (BinaryOp.Less, true) or (BinaryOp.GreaterEqual, false) => unsigned ? "b" : "l",
+            (BinaryOp.LessEqual, true) or (BinaryOp.Greater, false) => unsigned ? "be" : "le",
+            (BinaryOp.Greater, true) or (BinaryOp.LessEqual, false) => unsigned ? "a" : "g",
+            _ => unsigned ? "ae" : "ge",
+        };
 
         void CallWide(string routine)
         {
@@ -7269,6 +7451,13 @@ namespace Phi.Compiler.CodeGen
         /// <summary>eax = 1 when a comparison of two 64-bit values holds, 0 when it doesn't.</summary>
         void EmitWideCompare(BinaryExpr cmp)
         {
+            if (WholeValue(cmp.Left) && WholeValue(cmp.Right))
+            {
+                bool asUnsigned = EmitWholeFlags(cmp);
+                Emit($"set{WholeCondition(cmp.Op, asUnsigned, holds: true)} al");
+                Emit("movzx eax, al");
+                return;
+            }
             bool unsigned = cmp.Left.Type.Kind == TypeKind.U64 || cmp.Right.Type.Kind == TypeKind.U64;
             EmitWideOperands(cmp);
             // what the comparison gives when the left is less, equal and greater
