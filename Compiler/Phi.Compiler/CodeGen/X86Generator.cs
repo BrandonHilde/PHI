@@ -604,14 +604,7 @@ namespace Phi.Compiler.CodeGen
 
             // the FPU (floating point numbers) starts clean, working in f64s: with its own more exact
             // numbers, a result would be rounded twice, and not always be the nearest f64 to the answer
-            if (bits32)
-            {
-                Emit("fninit");
-                Emit("sub esp, 4");
-                Emit("mov word [esp], 0x27F");
-                Emit("fldcw [esp]");
-                Emit("add esp, 4");
-            }
+            if (bits32) EmitFloatReset();
 
             // the program's own code first: it decides which library routines are needed
             var startedLibraries = new HashSet<CompiledTarget>();
@@ -1969,7 +1962,10 @@ namespace Phi.Compiler.CodeGen
             ConstDecl or BreakStmt or ContinueStmt => true,
             VarDecl { Symbol.NeedsInitCode: false } => true,
             VarDecl { IsNew: false, Symbol: VariableSymbol v } d => OneRegister(v.Type) && d.Values.Count <= 1 && d.Values.All(SafeValue)
-                                                                    || SafeWideVariable(v) && d.Values.Count <= 1 && d.Values.All(SafeWideValue),
+                                                                    || SafeWideVariable(v) && d.Values.Count <= 1 && d.Values.All(SafeWideValue)
+                                                                    || bits32 && v.Type.IsFloat && v.Type.Kind is TypeKind.F64 or TypeKind.F32 && !v.Decl.Volatile && v.Decl.AtAddress == null
+                                                                       && d.Values.Count <= 1 && d.Values.All(SafeFloatValue),
+            AssignStmt a when a.Target.Type.IsFloat => SafeFloatPlace(a.Target) && SafeFloatValue(a.Value),
             AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value)
                             || WideCopy(a.Target, a.Value) && SafePlace(a.Target) && SafePlace(a.Value)
                             || a.Target is NameExpr { Call: null, Symbol: VariableSymbol wide } && SafeWideVariable(wide) && SafeWideValue(a.Value),
@@ -2003,8 +1999,30 @@ namespace Phi.Compiler.CodeGen
             InExpr i => SafeValue(i.Port),
             AtomicExpr a => SafeValue(a.Target) && SafeValue(a.Value) && SafeValue(a.Expected),
             UnaryExpr u => OneRegister(u.Operand.Type) && SafeValue(u.Operand),
+            BinaryExpr { IsComparison: true } c when c.Left.Type.IsFloat || c.Right.Type.IsFloat => SafeFloatValue(c.Left) && SafeFloatValue(c.Right),
             BinaryExpr b => b.ObjectCompare == null && !b.ArrayCompare && OneRegister(b.Left.Type) && OneRegister(b.Right.Type)
                             && SafeValue(b.Left) && SafeValue(b.Right),
+            _ => false,
+        };
+
+        /// <summary>An f64 or f32 in memory at a place that's found with the variables in registers.</summary>
+        bool SafeFloatPlace(Expr e) => bits32 && e.Type.IsFloat && e.Type.Kind is TypeKind.F64 or TypeKind.F32 && SafePlace(e);
+
+        /// <summary>
+        /// A floating point value that EmitFloat works out in the FPU, eax, ebx, ecx and edx alone,
+        /// so the variables in registers stay where they are: constants, f64s and f32s in memory,
+        /// whole numbers that are safe themselves, and adding, taking away, multiplying and
+        /// dividing those. (An f16 and a 64-bit number call the library, and so does a method.)
+        /// </summary>
+        bool SafeFloatValue(Expr e) => e switch
+        {
+            _ when !bits32 => false,
+            DecimalExpr => true,
+            _ when !e.Type.IsFloat => OneRegister(e.Type) && SafeValue(e),
+            NameExpr { Call: null } or MemberExpr { Call: null } or IndexExpr => SafeFloatPlace(e),
+            CastExpr c => SafeFloatValue(c.Operand),
+            UnaryExpr u => SafeFloatValue(u.Operand),
+            BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply or BinaryOp.Divide } b => SafeFloatValue(b.Left) && SafeFloatValue(b.Right),
             _ => false,
         };
 
@@ -3510,8 +3528,10 @@ namespace Phi.Compiler.CodeGen
             EmitBlockField($"mov {Q} [{{0}}], {R("eax")}     ; it came back: this catch is done", "CATCH");
             Emit($"jmp {elseLabel}");
 
-            // the error: err (declared first in Then) gets a copy of it
+            // the error: err (declared first in Then) gets a copy of it. Whatever was being
+            // worked out where it was thrown is gone, the FPU's part of it too.
             Label(caught);
+            if (bits32) EmitFloatReset();
             var decl = (VarDecl)ifs.Then[0];
             EmitStatement(decl);
             if (decl.Symbol is VariableSymbol err)
@@ -6313,10 +6333,47 @@ namespace Phi.Compiler.CodeGen
                 }
 
                 case BinaryExpr { IsComparison: true } cmp when cmp.Left.Type.IsFloat || cmp.Right.Type.IsFloat:
-                    EmitFloatCompare(cmp);
-                    Emit("test eax, eax");
-                    Emit($"{(jumpIf ? "jnz" : "jz")} {target}");
+                {
+                    // The flags are an unsigned comparison's, with all three set when one side is
+                    // not a number: then nothing holds but !=. Above and above-or-equal are false
+                    // by themselves then; the others ask the parity flag first.
+                    EmitFloatFlags(cmp);
+                    string holds = cmp.Op switch
+                    {
+                        BinaryOp.Equal => "je",
+                        BinaryOp.NotEqual => "jne",
+                        BinaryOp.Less => "jb",
+                        BinaryOp.LessEqual => "jbe",
+                        BinaryOp.Greater => "ja",
+                        _ => "jae",
+                    };
+                    string fails = cmp.Op switch
+                    {
+                        BinaryOp.Equal => "jne",
+                        BinaryOp.NotEqual => "je",
+                        BinaryOp.Less => "jae",
+                        BinaryOp.LessEqual => "ja",
+                        BinaryOp.Greater => "jbe",
+                        _ => "jb",
+                    };
+                    bool byItself = cmp.Op is BinaryOp.Greater or BinaryOp.GreaterEqual;
+                    // (with not a number: != holds, the rest fail)
+                    bool nanJumps = (cmp.Op == BinaryOp.NotEqual) == jumpIf;
+                    if (byItself) Emit($"{(jumpIf ? holds : fails)} {target}");
+                    else if (nanJumps)
+                    {
+                        Emit($"jp {target}              ; not a number");
+                        Emit($"{(jumpIf ? holds : fails)} {target}");
+                    }
+                    else
+                    {
+                        string past = NewLabel("nan");
+                        Emit($"jp {past}              ; not a number");
+                        Emit($"{(jumpIf ? holds : fails)} {target}");
+                        Label(past);
+                    }
                     return;
+                }
 
                 case BinaryExpr { IsComparison: true } cmp when cmp.Left.Type.IsWide || cmp.Right.Type.IsWide:
                     EmitWideCompare(cmp);
@@ -6409,10 +6466,61 @@ namespace Phi.Compiler.CodeGen
 
         // ================================================================ floating point
         //
-        // An f16, f32 or f64 is worked on in the FPU: EmitFloat leaves one value in st0 and
-        // nothing else on the FPU's stack. The right side of an operation is worked out first
-        // and kept on the CPU's stack, so a call in the middle (which may use the FPU itself)
-        // never finds more than one value there.
+        // An f16, f32 or f64 is worked on in the FPU: EmitFloat leaves one value in st0, on top
+        // of whatever was there. An operation takes a side that's a variable or a constant
+        // straight from memory (fmul qword [x]), and keeps the left side on the FPU's stack while
+        // the right is worked out. A call may use the FPU itself, all eight places of it over
+        // enough calls, so nothing is kept there across one: when either side has a call, the
+        // right is worked out first and waits on the CPU's stack, as it does when the FPU's own
+        // stack is getting full (floatDepth). An error caught leaves the FPU as it started
+        // (EmitFloatReset), whatever was on it where the error was.
+
+        /// <summary>How many values are waiting on the FPU's stack under the one being worked out.</summary>
+        int floatDepth;
+
+        /// <summary>The most that wait there: the value being worked out and what a step needs for a moment come to three more, and a `when` keeps one.</summary>
+        const int FloatDepthMost = 4;
+
+        /// <summary>The FPU empty and rounding to f64s, as a program starts.</summary>
+        void EmitFloatReset()
+        {
+            Emit("fninit");
+            Emit("sub esp, 4");
+            Emit("mov word [esp], 0x27F");
+            Emit("fldcw [esp]");
+            Emit("add esp, 4");
+        }
+
+        /// <summary>True for a floating point value that's in memory as an f64 or f32 and reached without a call: a constant, a variable, a field or an element.</summary>
+        static bool IsFloatInMemory(Expr e) => e switch
+        {
+            DecimalExpr => true,
+            NameExpr { Call: null } or MemberExpr { Call: null } or IndexExpr => e.Type.IsFloat && e.Type.Kind is TypeKind.F64 or TypeKind.F32 && !HasCall(e),
+            _ => false,
+        };
+
+        /// <summary>st0 = st0 op e, or e op st0 when reversed, for an e that IsFloatInMemory (st0 waits while its place is found).</summary>
+        void EmitFloatWithMemory(BinaryOp op, Expr e, bool reversed)
+        {
+            string instruction = op switch
+            {
+                BinaryOp.Add => "fadd",
+                BinaryOp.Multiply => "fmul",
+                BinaryOp.Subtract => reversed ? "fsubr" : "fsub",
+                _ => reversed ? "fdivr" : "fdiv",
+            };
+            Emit($"{instruction} {FloatMemory(e)}");
+        }
+
+        /// <summary>Where an e that IsFloatInMemory is, as an instruction's operand (qword [x]); st0 waits while the place is found.</summary>
+        string FloatMemory(Expr e)
+        {
+            if (e is DecimalExpr d) return $"qword [{FloatLabel(d.Value)}]";
+            floatDepth++;
+            Place place = EmitPlace(e);
+            floatDepth--;
+            return $"{(e.Type.Kind == TypeKind.F64 ? "qword" : "dword")} {Operand(place)}";
+        }
 
         readonly Dictionary<double, string> floatLabels = new();
 
@@ -6502,6 +6610,19 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                case BinaryExpr binary when IsFloatInMemory(binary.Right) && (binary.Right is DecimalExpr || !HasCall(binary.Left)):
+                    // the right side straight from memory (after a call on the left, only a
+                    // constant: a call could change a variable, which was read before it)
+                    EmitFloat(binary.Left);
+                    EmitFloatWithMemory(binary.Op, binary.Right, reversed: false);
+                    return;
+
+                case BinaryExpr binary when IsFloatInMemory(binary.Left):
+                    // the left side straight from memory, after the right, calls and all
+                    EmitFloat(binary.Right);
+                    EmitFloatWithMemory(binary.Op, binary.Left, reversed: true);
+                    return;
+
                 case BinaryExpr binary:
                     EmitFloatPair(binary.Left, binary.Right);
                     Emit(binary.Op switch
@@ -6551,6 +6672,15 @@ namespace Phi.Compiler.CodeGen
         /// <summary>st0 = right, st1 = left.</summary>
         void EmitFloatPair(Expr left, Expr right)
         {
+            if (floatDepth < FloatDepthMost && !HasCall(left) && !HasCall(right))
+            {
+                // the left waits on the FPU's stack
+                EmitFloat(left);
+                floatDepth++;
+                EmitFloat(right);
+                floatDepth--;
+                return;
+            }
             EmitFloat(right);
             Emit("sub esp, 8");
             Emit("fstp qword [esp]");
@@ -6608,11 +6738,7 @@ namespace Phi.Compiler.CodeGen
         /// <summary>eax = 1 when a comparison of floating point values holds (never, with not-a-number, except !=).</summary>
         void EmitFloatCompare(BinaryExpr cmp)
         {
-            EmitFloatPair(cmp.Left, cmp.Right);
-            Emit("fxch                    ; st0 = the left, st1 = the right");
-            Emit("fcompp");
-            Emit("fnstsw ax");
-            Emit("sahf");
+            EmitFloatFlags(cmp);
             string unordered = NewLabel("nan");
             string done = NewLabel("fcompared");
             Emit($"jp {unordered}");
@@ -6630,6 +6756,27 @@ namespace Phi.Compiler.CodeGen
             Label(unordered);
             Emit($"mov eax, {(cmp.Op == BinaryOp.NotEqual ? 1 : 0)}");
             Label(done);
+        }
+
+        /// <summary>
+        /// The CPU's flags as an unsigned comparison of the left with the right would leave them
+        /// (below, equal, above), and the parity flag set when either is not a number. Changes eax.
+        /// </summary>
+        void EmitFloatFlags(BinaryExpr cmp)
+        {
+            if (IsFloatInMemory(cmp.Right) && (cmp.Right is DecimalExpr || !HasCall(cmp.Left)))
+            {
+                EmitFloat(cmp.Left);
+                Emit($"fcomp {FloatMemory(cmp.Right)}");
+            }
+            else
+            {
+                EmitFloatPair(cmp.Left, cmp.Right);
+                Emit("fxch                    ; st0 = the left, st1 = the right");
+                Emit("fcompp");
+            }
+            Emit("fnstsw ax");
+            Emit("sahf");
         }
 
         /// <summary>st0 = Float.Sqrt and the others, worked out on st0.</summary>

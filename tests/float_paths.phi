@@ -1,0 +1,195 @@
+# runs only in 32 and 64 bits: it uses f64s
+# How a floating point operation takes its two sides: one straight from memory (either side,
+# f64 or f32, a variable, a field or an element), both worked out on the FPU's own stack,
+# deeper than that stack goes, and with calls in between. Then comparisons as branches, with
+# not a number on either side, and an error caught with a value left on the FPU.
+
+struct.Pair
+{
+	f64 first;
+	f32 second;
+}
+
+phi.FloatPaths:Library
+{
+	f64 g: 10.0;
+	f64 list[4];
+	Pair pair;
+
+	call Sides;
+	call Deep;
+	call Calls;
+	call Branches;
+	call Caught;
+	call Loops;
+
+	[Sides]
+		f64 x: 6.0;
+		f64 y: 1.5;
+		f32 small: 0.25;
+		list:2 is 8.0;
+		pair.first is 3.0;
+		pair.second is 0.5;
+		int two: 2;
+		# the right side from memory, then the left (taking away and dividing know which is which)
+		log (x + y) ' ' (x - y) ' ' (x * y) ' ' (x / y) '\n';
+		log (x + 2.0) ' ' (x - 2.0) ' ' (x * 2.0) ' ' (x / 2.0) '\n';
+		log (2.0 + x) ' ' (2.0 - x) ' ' (2.0 * x) ' ' (3.0 / x) '\n';
+		log ((x + 1.0) - y) ' ' (y - (x + 1.0)) ' ' ((x + 1.0) / y) ' ' (y / (x + 2.0)) '\n';
+		# an f32, a field and an element as a side
+		log (x * small) ' ' (small - x) ' ' (x / pair.first) ' ' (pair.second * x) ' ' (x - list:two) ' ' (list:two / x) '\n';
+		# both sides worked out
+		log ((x + y) * (x - y)) ' ' ((x * y) - (x / y)) ' ' ((two as f64) / (x - 2.0)) '\n';
+		# in place
+		x++ y * 2.0;
+		x-- 1.0;
+		x** y;
+		x// 4.0;
+		log x '\n';
+	[end]
+
+	# more waiting at once than the FPU's stack holds: each level's left side waits
+	[Deep]
+		int a: 1;
+		f64 deep: (a as f64) + ((a as f64) * ((a as f64) + ((a as f64) * ((a as f64) + ((a as f64) * ((a as f64) +
+			((a as f64) * ((a as f64) + ((a as f64) * ((a as f64) + ((a as f64) * 2.0)))))))))));
+		log 'deep: ' deep '\n';
+		f64 wide: (((a as f64) + 1.0) * ((a as f64) + 2.0)) + (((a as f64) + 3.0) * ((a as f64) + 4.0)) -
+			(((a as f64) + 5.0) / ((a as f64) + 1.0));
+		log 'wide: ' wide '\n';
+	[end]
+
+	[Calls]
+		f64 y: 3.0;
+		# a call on either side, and on both
+		log ((Half: 8.0) + y) ' ' (y - (Half: 8.0)) ' ' ((Half: 8.0) * (Half: 6.0)) ' ' ((y + 1.0) / (Half: 4.0)) '\n';
+		# a variable is read before a call on the other side changes it
+		log ((Bump) + g) ' ' g '\n';
+		log (g + (Bump)) ' ' g '\n';
+		# calls all the way down, each with a value of its own to add when it's back
+		log 'down: ' (Down: 2000) '\n';
+	[end]
+
+	[Half: f64 v: 0.0;]
+	[end: v / 2.0]
+
+	[Bump]
+		g++ 1.0;
+	[end: 100.0]
+
+	[Down: int n: 0; : f64]
+		if n is 0 return 0.0;
+		f64 mine: n as f64;
+	[end: mine * 1.0 + (Down: n - 1)]
+
+	[Branches]
+		f64 one: 1.0;
+		f64 two: 2.0;
+		f64 zero: 0.0;
+		f64 nan: zero / zero;
+		log 'less: ' (Tell: one two) ' ' (Tell: two one) ' ' (Tell: one one) ' ' (Tell: nan one) ' ' (Tell: one nan) '\n';
+		# with a constant, and with both sides worked out
+		int hits: 0;
+		if one + one <= 2.0
+			hits++ 1;
+		;;
+		if one * 3.0 > two + 0.5 and two / 4.0 < one - 0.25
+			hits++ 10;
+		;;
+		if nan is nan or nan < 1.0 or nan > 1.0
+			hits++ 100;
+		;;
+		if nan is not nan
+			hits++ 1000;
+		;;
+		int rounds: 0;
+		while two > 0.1
+			two is two / 2.0;
+			rounds++;
+		;;
+		log 'hits: ' hits ' rounds: ' rounds '\n';
+	[end]
+
+	# each comparison as a branch one way and the other: a digit for each that holds
+	[Tell: f64 a: 0.0; f64 b: 0.0;]
+		int holds: 0;
+		if a < b
+			holds++ 1;
+		;;
+		if a <= b
+			holds++ 10;
+		;;
+		if a > b
+			holds++ 100;
+		;;
+		if a >= b
+			holds++ 1000;
+		;;
+		if a is b
+			holds++ 10000;
+		;;
+		if a is not b
+			holds++ 100000;
+		;;
+		if not (a < b) and not (a >= b)
+			holds++ 1000000;        # neither: one is not a number
+		;;
+	[end: holds]
+
+	# an index out of range while a value waits on the FPU, twenty times: the FPU's stack has
+	# eight places, and the sums after are still right
+	[Caught]
+		int caught: 0;
+		while int i: 0; i < 20; i++;
+			if call Bad: 4 + i throws err
+				caught++;
+			;;
+		;;
+		f64 a: 1.5;
+		f64 b: 2.5;
+		log 'caught: ' caught ' then: ' ((a + b) * (a - b)) ' ' (a * b + a / b) '\n';
+	[end]
+
+	[Bad: int where: 0;]
+		f64 v: 2.0;
+		list:where is v * 3.0;
+	[end]
+
+	# loops whose counters are in registers, with floating point in them
+	[Loops]
+		f64 sum: 0.0;
+		while int i: 1; i <= 100; i++;
+			sum++ (i as f64) * 0.5;
+			if sum > 2000.0 and i < 0
+				sum is 0.0;
+			;;
+		;;
+		int count: 0;
+		while int j: 0; j < 4; j++;
+			list:j is (j as f64) * 1.5;
+			if list:j >= 3.0
+				count++ j;
+			;;
+		;;
+		log 'sum: ' sum ' ' list:3 ' ' count '\n';
+		log 'kept: ' (Kept: 5) '\n';
+	[end]
+
+	# an array of f64s that's the method's own, made while counters are in registers
+	[Kept: u32 count: 0; : f64]
+		f64 best: 0.0;
+		f64 values[3];
+		while u32 i: 0; i < count; i++;
+			f64 now: (i as f64) * 2.0;
+			if i is 0 or now > best
+				best is now;
+			;;
+			if i < 3
+				values:i is now;
+			;;
+		;;
+		if best > values:2
+			best is best - values:2 + values:1;
+		;;
+	[end: best]
+}

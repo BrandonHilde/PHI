@@ -522,6 +522,11 @@ namespace Phi.Compiler.Semantics
 
             if (m.ReturnTypeAssumed && (m.ReturnType.IsString || m.ReturnType.IsObject))
                 Error(result.Span, $"{m.Decl.Name} returns a {m.ReturnType} and uses its own result in [end: ...]; store that result in a variable first");
+            // (taken for an int where it called itself: an f64's value would be left in the FPU and
+            // an i64's top half or a pointer's dropped, with nothing to say so)
+            else if (m.ReturnTypeAssumed && (m.ReturnType.IsWide || m.ReturnType.IsFloat || m.ReturnType.IsPointer))
+                Error(result.Span, $"{m.Decl.Name} returns {A(m.ReturnType)} and uses its own result in [end: ...], which is worked out before that's known; " +
+                                   $"say what it returns in its header: [{m.Decl.Name}: ... : {m.ReturnType}]");
 
             file = outerFile;
             unsafeDepth = outerUnsafe;

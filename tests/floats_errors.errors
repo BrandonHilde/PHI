@@ -4,3 +4,5 @@
 8:9: error: ~ works on whole numbers
 10:9: error: 'z' needs a number, but this is a str
 14:20: error: the returned value is an int, and this is an f64; write `as int` to keep its whole part
+20:8: error: Down returns an f64 and uses its own result in [end: ...]
+25:8: error: Far returns an i64 and uses its own result in [end: ...]

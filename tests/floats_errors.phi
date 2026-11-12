@@ -13,4 +13,19 @@ phi.FloatsErrors:Kernel
 	[Whole: int n: 0;]
 		if n is 1 return 1.5;
 	[end: 0]
+
+	# a method that uses its own result in [end: ...] has to say what it returns, when it isn't an int
+	[Down: int n: 0;]
+		if n is 0 return 0.0;
+	[end: 1.5 + (Down: n - 1)]
+
+	[Far: int n: 0;]
+		i64 big: 5000000000;
+		if n is 0 return big;
+	[end: big + (Far: n - 1)]
+
+	# said, it's fine
+	[Said: int n: 0; : f64]
+		if n is 0 return 0.0;
+	[end: 1.5 + (Said: n - 1)]
 }
