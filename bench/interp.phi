@@ -1,0 +1,72 @@
+# A small bytecode interpreter adding the numbers below 16,000,000 three times over: fetching an
+# instruction, picking its case and moving a value, 528 million times. Where it is in the code and
+# in its stack (pc, sp, bp) are the class's variables, as an interpreter with more than one method keeps them.
+phi.Interp:Program
+{
+	u32 code[16];
+	u64 stack[64];
+	ptr<u32> pc: 0;
+	ptr<u64> sp: 0;
+	ptr<u64> bp: 0;
+	code:0 is 0 | (0 << 8);         # GETLOC 0
+	code:1 is 0 | (1 << 8);         # GETLOC 1
+	code:2 is 2;                    # ADD
+	code:3 is 1 | (0 << 8);         # SETLOC 0
+	code:4 is 0 | (1 << 8);         # GETLOC 1
+	code:5 is 3 | (1 << 8);         # CONST 1
+	code:6 is 2;                    # ADD
+	code:7 is 1 | (1 << 8);         # SETLOC 1
+	code:8 is 0 | (1 << 8);         # GETLOC 1
+	code:9 is 0xF4240003;  # CONST 16000000
+	code:10 is 4 | (0 << 8);        # JLT 0
+	code:11 is 5;                   # HALT
+	u64 total: 0;
+	while int round: 0; round < 3; round++;
+		stack:0 is 0;
+		stack:1 is 0;
+		total++ (Run);
+	;;
+	log total '\n';
+	exit 0;
+
+	[Run: : u64]
+
+		u32 ins: 0;
+		u32 op: 0;
+		pc is addr code:0;
+		bp is addr stack:0;
+		sp is bp + 16;
+		while true
+			ins is pc:0;
+			pc++ 4;
+			op is ins & 0xFF;
+			when op
+				is 0
+					sp:0 is bp:(ins >> 8);
+					sp++ 8;
+				;;
+				is 1
+					sp-- 8;
+					bp:(ins >> 8) is sp:0;
+				;;
+				is 2
+					sp-- 8;
+					sp:(-1) is sp:(-1) + sp:0;
+				;;
+				is 3
+					sp:0 is ins >> 8;
+					sp++ 8;
+				;;
+				is 4
+					sp-- 16;
+					if sp:0 < sp:1
+						pc is (addr code:0) + (ins >> 8) * 4;
+					;;
+				;;
+				is 5
+					return bp:0;
+				;;
+			;;
+		;;
+	[end: 0]
+}

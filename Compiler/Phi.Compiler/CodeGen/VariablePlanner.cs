@@ -10,14 +10,18 @@ namespace Phi.Compiler.CodeGen
     /// and a load for each register around it).
     ///
     /// A use counts once outside loops and 8 times more for each loop around it, since that's
-    /// roughly how often it runs. A variable gets a register when its uses are worth more than
-    /// what the register costs: saving and restoring it (2), setting it up (1), and the fences
-    /// it has to cross.
+    /// roughly how often it runs; what's inside an if counts half, and each branch of a when
+    /// its share of the when (a branch of sixteen runs a sixteenth of the time, near enough).
+    /// A variable gets a register when its uses are worth more than what the register costs:
+    /// saving and restoring it (2), setting it up (1), and the fences it has to cross, each
+    /// counted the same way.
     /// </summary>
     public static class VariablePlanner
     {
         const int LoopWeight = 8;
         const int DeepestLoop = 5;
+        const long One = 1 << 16;       // what one use outside every loop and branch counts: shares of it are whole numbers
+        const int MostBranches = 64;
 
         public static List<VariableSymbol> Choose(MethodSymbol m, int registers,
             Func<VariableSymbol, bool> fits, Func<Stmt, bool> runsInRegisters)
@@ -76,11 +80,10 @@ namespace Phi.Compiler.CodeGen
                 }
             }
 
-            void Walk(List<Stmt> body, int depth)
+            void Walk(List<Stmt> body, int depth, long weight)
             {
-                long weight = 1;
-                for (int i = 0; i < Math.Min(depth, DeepestLoop); i++) weight *= LoopWeight;
-                long inLoop = weight * LoopWeight;
+                if (weight < 1) weight = 1;
+                long inLoop = depth < DeepestLoop ? weight * LoopWeight : weight;
 
                 foreach (Stmt s in body)
                 {
@@ -92,32 +95,35 @@ namespace Phi.Compiler.CodeGen
                     switch (s)
                     {
                         case UnsafeStmt u:
-                            Walk(u.Body, depth);
+                            Walk(u.Body, depth, weight);
                             break;
                         case LockedStmt l:
                             Count(l.Lock, weight);
-                            Walk(l.Body, depth);
+                            Walk(l.Body, depth, weight);
                             break;
                         case IfStmt i:
                             Count(i.Condition, weight);
-                            Walk(i.Then, depth);
-                            if (i.Else != null) Walk(i.Else, depth);
+                            Walk(i.Then, depth, weight / 2);
+                            if (i.Else != null) Walk(i.Else, depth, weight / 2);
                             break;
                         case WhileStmt w:
                             if (w.Init != null) Count(w.Init, weight);
                             Count(w.Condition, inLoop);
                             if (w.Step != null) Count(w.Step, inLoop);
-                            Walk(w.Body, depth + 1);
+                            Walk(w.Body, depth + 1, inLoop);
                             break;
                         case WhenStmt w:
+                        {
                             Count(w.Subject, weight);
+                            long share = weight / Math.Clamp(w.Branches.Count + (w.Else != null ? 1 : 0), 1, MostBranches);
                             foreach (WhenBranch b in w.Branches)
                             {
-                                foreach (Expr value in b.Values) Count(value, weight);
-                                Walk(b.Body, depth);
+                                foreach (Expr value in b.Values) Count(value, share);
+                                Walk(b.Body, depth, share);
                             }
-                            if (w.Else != null) Walk(w.Else, depth);
+                            if (w.Else != null) Walk(w.Else, depth, share);
                             break;
+                        }
                         default:
                             Count(s, weight);
                             break;
@@ -125,10 +131,10 @@ namespace Phi.Compiler.CodeGen
                 }
             }
 
-            Walk(body, 0);
-            if (result != null) Count(result, 1);
+            Walk(body, 0, One);
+            if (result != null) Count(result, One);
 
-            const long setUp = 3;   // push and pop, and loading or zeroing it
+            const long setUp = 3 * One;   // push and pop, and loading or zeroing it
             return uses
                 .Select(u => (Variable: u.Key, Worth: u.Value - setUp - 2 * fences))
                 .Where(u => u.Worth > 0)

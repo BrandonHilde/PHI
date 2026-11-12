@@ -228,6 +228,7 @@ namespace Phi.Cli
                     <AssemblyName>compare</AssemblyName>
                     <StartupObject>PhiCompareStart</StartupObject>
                     <Nullable>disable</Nullable>
+                    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
                     <ImplicitUsings>disable</ImplicitUsings>
                     <InvariantGlobalization>true</InvariantGlobalization>
                     <GenerateDocumentationFile>false</GenerateDocumentationFile>

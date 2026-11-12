@@ -50,6 +50,7 @@ line times weblib's JavaScript engine running its own benchmarks, and
 | `startup` | Nothing: starting and ending |
 | `sieve` | A loop over bytes in memory |
 | `fib` | Calls of a small method, 331 million of them |
+| `interp` | A bytecode interpreter's loop: fetch, pick a case, move a value, its state in class variables |
 | `collatz` | 64-bit arithmetic and a branch that can't be guessed |
 | `sort` | Indexing, swapping and recursion (quicksort) |
 | `mandelbrot` | Floating point multiplies and adds |

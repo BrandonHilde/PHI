@@ -1968,6 +1968,9 @@ namespace Phi.Compiler.CodeGen
             AssignStmt a when a.Target.Type.IsFloat => SafeFloatPlace(a.Target) && SafeFloatValue(a.Value),
             AssignStmt a => OneRegister(a.Target.Type) && SafeValue(a.Target) && SafeValue(a.Value)
                             || WideCopy(a.Target, a.Value) && SafePlace(a.Target) && SafePlace(a.Value)
+                            // (64-bit code: worked out whole in rax and stored whole, as EmitAssign does it)
+                            || a.Target.Type.IsWide && a.Value is BinaryExpr or UnaryExpr or CastExpr && WholeValue(a.Value)
+                               && KeptSomewhere(a.Target) && SafePlace(a.Target)
                             || a.Target is NameExpr { Call: null, Symbol: VariableSymbol wide } && SafeWideVariable(wide) && SafeWideValue(a.Value),
             CallStmt c => SafeCall(c.Resolved, c.Arguments)
                           && (c.ResultTarget == null || OneRegister(c.ResultTarget.Type) && SafeValue(c.ResultTarget)),
