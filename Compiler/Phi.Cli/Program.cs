@@ -26,7 +26,9 @@ const string Usage = """
                                            with --target, run the executable here (a Linux one under
                                            WSL on Windows), with the arguments after --;
                                            --keep-disk keeps the files a kernel saved for next time
-                                           (programs from the rootfs are updated on it),
+                                           (programs from the rootfs are updated on it; on build
+                                           too, which makes or updates that disk, NAME.kept.img,
+                                           for whoever starts QEMU themselves),
                                            --memory gives the machine more (or less) than 128 MB, up to 1024;
                                            with NAME.machines next to it, it and the machines listed there
                                            boot together on one network, each in a window;
@@ -284,7 +286,9 @@ static int Execute(string[] args)
 
                 Console.WriteLine($"built {Path.GetRelativePath(Environment.CurrentDirectory, build.ImagePath)}");
 
-                if (command != "run") return 0;
+                // (build --keep-disk makes or brings up to date the kept disk too, for whoever starts
+                // QEMU themselves)
+                if (command != "run" && !keepDisk) return 0;
 
                 string image = build.ImagePath;
                 if (keepDisk)
@@ -296,8 +300,11 @@ static int Execute(string[] args)
                     if (diskErrors.Count > 0) return 1;
                     Console.WriteLine(fresh
                         ? $"made a disk that keeps its files between runs: {Path.GetRelativePath(Environment.CurrentDirectory, image)}"
-                        : $"booting the kept disk {Path.GetRelativePath(Environment.CurrentDirectory, image)} with the new kernel (delete it to start again)");
+                        : command == "run"
+                            ? $"booting the kept disk {Path.GetRelativePath(Environment.CurrentDirectory, image)} with the new kernel (delete it to start again)"
+                            : $"the kept disk {Path.GetRelativePath(Environment.CurrentDirectory, image)} has the new kernel (delete it to start again)");
                     if (refreshed.Count > 0) Console.WriteLine("updated programs on it: " + string.Join(" ", refreshed));
+                    if (command != "run") return 0;
                 }
                 else
                 {

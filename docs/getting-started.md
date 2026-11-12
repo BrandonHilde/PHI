@@ -116,6 +116,7 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi run file.phi` | build, then boot it in QEMU; serial output (`log` and `debug`) also prints in your terminal |
 | `phi run file.phi --debug` | start paused, waiting for a debugger (see below) |
 | `phi run file.phi --keep-disk` | boot a disk that keeps what the kernel saved (`build/NAME/NAME.kept.img`): each run puts the new kernel and any changed or new programs (`NAME.BIN`) on it but leaves its other files alone; delete it to start again |
+| `phi build file.phi --keep-disk` | the same disk made or brought up to date without booting it, for a script that starts QEMU itself (with its own display or devices) |
 | `phi run file.phi --memory 512` | give the machine more memory than QEMU's 128 MB (up to 1024); the kernel's heap is about a quarter of it. `phi test` takes it too |
 | `phi check file.phi` | report errors without building |
 | `phi build file.phi --target linux` | build a program (`phi.Name:Program`) as an ordinary Linux executable instead (`--target windows`: a `.exe`); see [Programs on Linux and Windows](language.md#programs-on-linux-and-windows) |
