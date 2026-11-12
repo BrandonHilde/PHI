@@ -7,17 +7,18 @@
 #
 # At startup this reads the BIOS memory map (boot.info) and keeps a bitmap with
 # one bit per frame: 1 = in use. Everything below 1 MB stays reserved (the
-# kernel, its stack, the BIOS and video memory live there). The bitmap itself
-# sits at 1 MB.
+# kernel's stack, the BIOS and video memory live there), and so does the kernel,
+# which the loader put at 1 MB. The bitmap itself sits right after the kernel.
 
 use boot.info;
 
 phi.Frames:Kernel
 {
 	const u32 FRAME_SIZE: 4096;
-	const u32 BITMAP_ADDRESS: 0x100000;
+	const u32 LOW_MEMORY_END: 0x100000;
 
-	ptr<u8> frame_bitmap: BITMAP_ADDRESS;
+	ptr<u8> frame_bitmap: 0;
+	u32 reserved_until: 0;  # the end of the bitmap: no frame below this is ever handed out
 	u32 frame_count: 0;     # frames tracked: up to the end of usable RAM
 	u32 total_frames: 0;    # frames that were free at startup
 	u32 free_frames: 0;
@@ -45,9 +46,17 @@ phi.Frames:Kernel
 			;;
 		;;
 
+		# the bitmap goes on the first frame after the kernel (or at 1 MB, under a loader
+		# that put the kernel below it)
+		u32 bitmap_address: (boot:0.kernel_start + boot:0.kernel_size + FRAME_SIZE - 1) / FRAME_SIZE * FRAME_SIZE;
+		if bitmap_address < LOW_MEMORY_END
+			bitmap_address is LOW_MEMORY_END;
+		;;
+		frame_bitmap is bitmap_address;
+
 		frame_count is memory_top / FRAME_SIZE;
 		u32 bitmap_bytes: (frame_count + 7) / 8;
-		u32 reserved_until: BITMAP_ADDRESS + bitmap_bytes;
+		reserved_until is bitmap_address + bitmap_bytes;
 
 		# everything starts in use; then the usable regions are given back
 		while u32 b: 0; b < bitmap_bytes; b++;
@@ -136,7 +145,7 @@ phi.Frames:Kernel
 		locked frames_lock
 			bln used: false;
 			call used is IsUsed: frame;
-			if frame < frame_count and address >= BITMAP_ADDRESS and used
+			if frame < frame_count and address >= reserved_until and used
 				call MarkFree: frame;
 				free_frames++;
 			;;

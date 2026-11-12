@@ -96,7 +96,7 @@ phi.Rest:OS
 ```
 
 From the next part on, you'll mostly write **32-bit kernels** instead, where PHI supplies
-the boot sector for you and your kernel can be up to 512 KB.
+the boot sector for you and your kernel can be almost 1 MB.
 
 ## Try this
 

@@ -1,0 +1,58 @@
+# A kernel bigger than 512 KB, which is all that fits below the stack in low memory: the
+# loader puts a kernel at 1 MB, piece by piece, so what's between and after its big
+# variables has to be there, and memory's frames have to start after all of it.
+use boot.info;
+use memory.frames;
+
+phi.Big:Kernel
+{
+	u32 mark_a: 0x11111111;
+	u32 a[16384];
+	u32 mark_b: 0x22222222;
+	u32 b[16384];
+	u32 mark_c: 0x33333333;
+	u32 c[16384];
+	u32 mark_d: 0x44444444;
+	u32 d[16384];
+	u32 mark_e: 0x55555555;
+	u32 e[16384];
+	u32 mark_f: 0x66666666;
+	u32 f[16384];
+	u32 mark_g: 0x77777777;
+	u32 g[16384];
+	u32 mark_h: 0x88888888;
+	u32 h[16384];
+	u32 mark_i: 0x99999999;
+	u32 i[16384];
+	u32 mark_j: 0xAAAAAAAA;
+	u32 j[16384];
+	u32 mark_end: 0xBBBBBBBB;
+
+	ptr<BootInfo> boot: Boot.info;
+	u32 kernel_end: boot:0.kernel_start + boot:0.kernel_size;
+
+	debug 'kernel at 1 MB: ' (boot:0.kernel_start is 0x100000) '\n';
+	debug 'bigger than 512 KB: ' (boot:0.kernel_size > 524288) '\n';
+	debug 'marks: ' (mark_a is 0x11111111 and mark_b is 0x22222222 and mark_c is 0x33333333
+		and mark_d is 0x44444444 and mark_e is 0x55555555 and mark_f is 0x66666666
+		and mark_g is 0x77777777 and mark_h is 0x88888888 and mark_i is 0x99999999
+		and mark_j is 0xAAAAAAAA and mark_end is 0xBBBBBBBB) '\n';
+
+	# the last array is the kernel's own, and written to without touching what's after it
+	while int n: 0; n < 16384; n++;
+		j:n is n;
+	;;
+	debug 'last array: ' (j:16383 is 16383 and mark_end is 0xBBBBBBBB) '\n';
+
+	u32 frame: 0;
+	call frame is Frames.Alloc;
+	debug 'frames after the kernel: ' (frame >= kernel_end) '\n';
+
+	# a frame that's written all over leaves the kernel as it was
+	ptr<u32> words: frame;
+	while int w: 0; w < 1024; w++;
+		words:w is 0xFFFFFFFF;
+	;;
+	debug 'kernel untouched: ' (mark_a is 0x11111111 and mark_end is 0xBBBBBBBB and j:16383 is 16383) '\n';
+	exit 0;
+}

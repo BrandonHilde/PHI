@@ -28,7 +28,7 @@ namespace Phi.Cli
     /// phi source -> .asm files -> nasm -> a bootable raw disk image. Two layouts:
     ///
     ///   16-bit program:  sector 0 boot sector | sector 1.. OS classes (loaded at 0x7E00)
-    ///   32-bit kernel:   sector 0 stage 1 | sectors 1-8 stage 2 | sector 9.. kernel (loaded at 0x10000)
+    ///   32-bit kernel:   sector 0 stage 1 | sectors 1-8 stage 2 | sector 9.. kernel (loaded at 0x100000)
     ///                    | sector 2048..: a 16 MB FAT16 partition with NAME.rootfs/ (or rootfs/)
     ///
     /// See docs/memory-map.md.
@@ -51,9 +51,10 @@ namespace Phi.Cli
         // 16-bit OS classes are loaded at 0x7E00 and must end before 0x10000, the edge of segment 0.
         const int MaxOsSectors = (0x10000 - X86Generator.OsAddress) / SectorSize;
 
-        // A 32-bit kernel is loaded at 0x10000 and must end by 0x90000, where the stack area begins.
-        const int MaxKernelSectors = (0x90000 - X86Generator.KernelAddress) / SectorSize;
+        // A 32-bit kernel is loaded at 1 MB, where memory is no limit: what holds it to just
+        // under 1 MB is the disk, where it sits between the loader and the FAT16 partition.
         const int Stage2Sectors = 8;
+        const int MaxKernelSectors = FatImage.PartitionStart - (1 + Stage2Sectors);
 
         // 1.44 MB: bootable as a hard disk, and the size QEMU and other tools expect of small images.
         const int ImageSize = 1_474_560;
@@ -233,7 +234,7 @@ namespace Phi.Cli
             if (osSectors > MaxOsSectors)
             {
                 result.Errors.Add($"the OS classes are {osBin.Length} bytes, but at most {MaxOsSectors * SectorSize} " +
-                                  "can be loaded by a 16-bit program; a 32-bit kernel (phi.Name:Kernel) can be up to 512 KB");
+                                  "can be loaded by a 16-bit program; a 32-bit kernel (phi.Name:Kernel) can be almost 1 MB");
                 return null;
             }
 
@@ -288,7 +289,7 @@ namespace Phi.Cli
             int kernelSectors = Math.Max(Sectors(kernelBin), 1);
             if (kernelSectors > MaxKernelSectors)
             {
-                result.Errors.Add($"the kernel is {kernelBin.Length} bytes, but the loader can load at most {MaxKernelSectors * SectorSize}");
+                result.Errors.Add($"the kernel is {kernelBin.Length} bytes, but at most {MaxKernelSectors * SectorSize} fit on the disk before its file system");
                 return null;
             }
 

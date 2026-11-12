@@ -24,7 +24,7 @@ namespace Phi.Compiler.Tests
             AsmUnit kernel = Assert.Single(result.Units);
             Assert.Equal(UnitKind.Kernel, kernel.Kind);
             Assert.Contains("bits 32", kernel.Text);
-            Assert.Contains("org 0x10000", kernel.Text);
+            Assert.Contains("org 0x100000", kernel.Text);
             Assert.Contains("call phi_console_init", kernel.Text); // the console continues below the BIOS text
 
             Assert.Equal(new[] { "stage1", "stage2" }, result.BootStages.Select(s => s.Name));

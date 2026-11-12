@@ -175,7 +175,7 @@ hello.phi:3:6: error: unknown name 'nmae'
 `PHI_NASM` / `PHI_QEMU`.
 
 **The boot sector is too big**: a `Bootloader` class must fit in 512 bytes. Move code into
-an `OS` class, or write a 32-bit kernel (`phi.Name:Kernel`), which can be 512 KB.
+an `OS` class, or write a 32-bit kernel (`phi.Name:Kernel`), which can be almost 1 MB.
 
 **A red screen that says PHI KERNEL PANIC**: your kernel did something the CPU refused,
 like dividing by zero or using a null pointer. The screen names the exception and shows
@@ -193,10 +193,10 @@ interrupts and CPU resets to `build/file/file.qemu.log` (useful for crashes that
 machine). Connect with:
 
 ```
-gdb -ex "target remote localhost:1234" -ex "set architecture i386" -ex "break *0x10000" -ex continue
+gdb -ex "target remote localhost:1234" -ex "set architecture i386" -ex "break *0x100000" -ex continue
 ```
 
-`0x10000` is where a 32-bit kernel starts. For a 16-bit program, use `set architecture
+`0x100000` is where a 32-bit kernel starts. For a 16-bit program, use `set architecture
 i8086` and `break *0x7c00`.
 
 ### Debugging a Windows program

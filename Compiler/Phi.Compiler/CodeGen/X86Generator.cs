@@ -42,7 +42,7 @@ namespace Phi.Compiler.CodeGen
         public const int OsAddress = 0x7E00;
 
         /// <summary>Where the loader puts a 32-bit kernel (see docs/memory-map.md).</summary>
-        public const int KernelAddress = 0x10000;
+        public const int KernelAddress = 0x100000;
 
         /// <summary>Where a user program runs, in its own address space.</summary>
         public const uint ProgramAddress = 0x40000000;

@@ -64,7 +64,7 @@ was for (`DiagnosticBag.CopyOf`).
 everything the generator needs:
 
 - **Units.** Every class goes into a unit, by its base: `Bootloader` → Boot (512 bytes at
-  `0x7C00`), `OS` → Os (16-bit, `0x7E00`), `Kernel` → Kernel (32-bit, `0x10000`), `Program` →
+  `0x7C00`), `OS` → Os (16-bit, `0x7E00`), `Kernel` → Kernel (32-bit, `0x100000`), `Program` →
   Program (32-bit user mode, `0x40000000`). `Library` classes join whichever unit the program
   has. A program is 16-bit (Boot + Os), a kernel, or a user program; they don't mix.
 - **Names and storage.** Class variables get a fixed label, `VALUE_name` (so `asm.` blocks can

@@ -32,7 +32,7 @@ phi.Shell:OS                # loaded from disk after the boot sector (up to 32 K
 **32-bit kernels** run in protected mode, with no BIOS:
 
 ```phi
-phi.Hello:Kernel            # up to 512 KB, loaded at 0x10000
+phi.Hello:Kernel            # almost 1 MB, loaded at 0x100000
 {
     log 'Hello from 32-bit PHI\n';
 }

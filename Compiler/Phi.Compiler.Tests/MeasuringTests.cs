@@ -245,8 +245,8 @@ namespace Phi.Compiler.Tests
 
             // three samples in the loop's line, one in the class's own code, one outside the program
             // (FirstCodeAfter counts from where a kernel starts; a 64-bit Linux program starts at 0x400000)
-            ulong loop = FirstCodeAfter(lines, "; 9: sum++ i / 7;") - 0x10000 + 0x400000;
-            ulong own = FirstCodeAfter(lines, "; 3: int total: (Work: 9);") - 0x10000 + 0x400000;
+            ulong loop = FirstCodeAfter(lines, "; 9: sum++ i / 7;") - KernelStart + 0x400000;
+            ulong own = FirstCodeAfter(lines, "; 3: int total: (Work: 9);") - KernelStart + 0x400000;
             string report = Profiler.HostReport(new ulong[] { loop, loop, own, loop, 0x7FFF_0000_1000 }, maps, top: 5, seconds: 0.0);
             Assert.Contains("5 samples, one for each millisecond of CPU time", report);
             Assert.Matches(@"60\.0%\s+\S*hot\.phi:9\s+Hot\.Work: sum\+\+ i / 7;", report);
@@ -259,6 +259,8 @@ namespace Phi.Compiler.Tests
             Assert.Contains("busy for about 0.0 s", Profiler.HostReport(new ulong[] { loop }, maps, 5, 3.0));
         }
 
+        const uint KernelStart = Phi.Compiler.CodeGen.X86Generator.KernelAddress;
+
         static (string, int) Place(AddressMap map, uint address)
         {
             CodePlace? p = map.Find(address);
@@ -266,7 +268,7 @@ namespace Phi.Compiler.Tests
             return (p!.Routine, p.Line);
         }
 
-        /// <summary>The address (org 0x10000) of the first instruction after the line that ends with text.</summary>
+        /// <summary>The address (from where a kernel starts) of the first instruction after the line that ends with text.</summary>
         static uint FirstCodeAfter(string[] listing, string text)
         {
             int start = Array.FindIndex(listing, l => l.TrimEnd().EndsWith(text));
@@ -275,7 +277,7 @@ namespace Phi.Compiler.Tests
             for (int i = start + 1; i < listing.Length; i++)
             {
                 Match m = code.Match(listing[i]);
-                if (m.Success) return 0x10000 + uint.Parse(m.Groups[1].Value, NumberStyles.HexNumber);
+                if (m.Success) return KernelStart + uint.Parse(m.Groups[1].Value, NumberStyles.HexNumber);
             }
             throw new InvalidOperationException("no code after " + text);
         }
