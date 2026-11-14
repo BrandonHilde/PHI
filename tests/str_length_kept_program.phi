@@ -1,0 +1,184 @@
+# A method's own str that grows remembers how long it is, so adding to it doesn't read all of
+# it to find its end. That's only right while nothing but the method's statements change it.
+# Each case here does the same to such a str and to the class's (which never remembers), and
+# they have to come out the same; the cases after are strs that must not remember: one that's
+# indexed, one whose address is taken, one a method writes through a pointer.
+use user.text;
+
+phi.StrLengthKeptProgram:Program
+{
+	str shared: '';
+	int wrong: 0;
+	int filled: 0;
+
+	call Plain;
+	call Shortened;
+	call Numbers;
+	call Itself;
+	call InALoop;
+	log (Deep: 6) '\n';
+	call Long;
+	call Indexed;
+	call ThroughAPointer;
+	call CutShort;
+	log 'wrong: ' wrong '\n';
+	exit 0;
+
+	[Check: ptr<u8> mine: 0; ptr<u8> what: 0;]
+		if not (Text.Equal: mine shared)
+			wrong++;
+			log what ': "' mine '" is not "' shared '"\n';
+		;;
+	[end]
+
+	[Plain]
+		str mine: '';
+		shared is '';
+		while int i: 0; i < 200; i++;
+			mine++ 'ab' i;
+			shared++ 'ab' i;
+		;;
+		call Check: mine 'plain';
+		log (Text.Length: mine) '\n';
+	[end]
+
+	# started again with something shorter, then added to: the old end mustn't be used
+	[Shortened]
+		str mine: '';
+		shared is '';
+		while int i: 0; i < 50; i++;
+			mine++ 'long text here ';
+			shared++ 'long text here ';
+			if i % 7 is 3
+				mine is 'x';
+				shared is 'x';
+			;;
+			if i % 11 is 5
+				mine is '';
+				shared is '';
+			;;
+			mine++ i;
+			shared++ i;
+		;;
+		call Check: mine 'shortened';
+		log mine '\n';
+	[end]
+
+	[Numbers]
+		str mine: 'start';
+		shared is 'start';
+		while int i: 0; i < 100; i++;
+			mine++ i * 1000 ' ' -i;
+			shared++ i * 1000 ' ' -i;
+		;;
+		call Check: mine 'numbers';
+		log (Text.Length: mine) '\n';
+	[end]
+
+	[Itself]
+		str mine: 'ab';
+		shared is 'ab';
+		while int i: 0; i < 6; i++;
+			mine++ mine;
+			shared++ shared;
+			mine is '<' mine '>' (Text.Length: mine);
+			shared is '<' shared '>' (Text.Length: shared);
+			mine++ '.';
+			shared++ '.';
+		;;
+		call Check: mine 'itself';
+		log (Text.Length: mine) '\n';
+	[end]
+
+	# declared in a loop: each time round it starts again
+	[InALoop]
+		shared is '';
+		while int i: 0; i < 5; i++;
+			str mine: 'r';
+			while int j: 0; j < i * 20; j++;
+				mine++ j;
+			;;
+			shared is mine;
+			call Check: mine 'in a loop';
+			log (Text.Length: mine) ' ';
+		;;
+		log '\n';
+	[end]
+
+	# each call has its own
+	[Deep: int n: 0;]
+		str mine: 'd';
+		while int i: 0; i < n * 10; i++;
+			mine++ n;
+		;;
+		int deeper: 0;
+		if n > 0
+			deeper is (Deep: n - 1);
+		;;
+		mine++ '!';
+	[end: (Text.Length: mine) + deeper]
+
+	# past where its room has to grow, many times
+	[Long]
+		str mine: '';
+		shared is '';
+		while int i: 0; i < 3000; i++;
+			mine++ 'line ' i ';';
+			shared++ 'line ' i ';';
+		;;
+		call Check: mine 'long';
+		log (Text.Length: mine) '\n';
+	[end]
+
+	# a character put in by its index can end it early: this one's length isn't remembered
+	[Indexed]
+		str mine: '';
+		while int i: 0; i < 20; i++;
+			mine++ 'abcdef';
+			if i is 10
+				mine:3 is 0;
+			;;
+		;;
+		log mine '\n';
+	[end]
+
+	[EndAt: ptr<u8> text: 0; int pos: 0;]
+		text:pos is 0;
+	[end]
+
+	# and so can a method it's given to, through a pointer
+	[ThroughAPointer]
+		str mine: '';
+		while int i: 0; i < 20; i++;
+			mine++ 'abcdef';
+			if i is 10
+				call EndAt: mine 2;
+			;;
+		;;
+		log mine '\n';
+		str other: '';
+		while int i: 0; i < 20; i++;
+			other++ 'abcdef';
+			if i is 10
+				ptr<u8> p: addr other;
+				p:4 is 0;
+			;;
+		;;
+		log other '\n';
+	[end]
+
+	# what doesn't fit is an error, and what fitted is kept and can't be added to
+	[CutShort]
+		if call Fill: 1 throws err
+			log (err.kind is ErrorKind.TEXT) ' ' filled '\n';
+		;;
+	[end]
+
+	[Fill: int n: 0;]
+		str mine: 'x';
+		while int i: 0; i < 20; i++;
+			filled is (Text.Length: mine);
+			mine++ mine '.';
+		;;
+	[end]
+}

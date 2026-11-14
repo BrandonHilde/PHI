@@ -1847,7 +1847,19 @@ and every program wrapped it or wrote its own.
   out another way and the number is the same. Still by hand: a change to how code is
   called, or to what a runtime routine keeps, which no test sees. And a change inside a
   module's method means building again, though the library would often still be right.
-- [ ] A `str` that grows could remember its length, and the rest of that would go. What
+- [x] A method's own str that grows remembers its length (2026-11-13): `bench/strings` 1.5 s
+  to 0.45 in 64-bit code and 5.8 s to 0.47 in 32-bit, where gcc -O2 takes 0.32. The length
+  isn't in the str: the method keeps it beside its variables (plus 1; 0 for not known), an
+  append starts from it when the byte there is still the zero, and measures only what it
+  added. So nothing a str is laid out as has changed, and no library's version. It's only
+  for a str that nothing but the method's statements can change, which the generator works
+  out from every use of it (`RemembersLength`): built, added to, copied, logged, returned,
+  or given to a `ptr<u8>` parameter that's only read through (`OnlyReadPointers`, followed
+  through the calls). An index, `addr`, `ask`, a str parameter or an assembly block, and it's
+  measured as before. Test `str_length_kept_program` does the same to such a str and to
+  the class's, which never remembers, and they have to match.
+- [ ] The other strs that grow could remember their length too: a class's, a field, an
+  element, a parameter. What
   stands in the way: a `str` can be written through a pointer (`addr s`, a `ptr<u8>`
   parameter), and a zero written into the middle that way makes it shorter with nothing
   told. It needs the compiler to know which strs are never reached that way (a parameter

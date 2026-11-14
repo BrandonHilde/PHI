@@ -687,6 +687,13 @@ There's nothing to copy by hand first, and no order of values to keep to.
 > runs and freed when the method ends, like the text of any `('a' b)`. (In a program with no heap,
 > as 16-bit code is, it's a buffer of 255 characters.)
 >
+> Adding to a `str` means finding where it ends, and a text ends at a zero: PHI doesn't keep
+> a length beside it, as C# does. For a method's own `str` that grows, the method remembers
+> how long it is, so adding to a long text costs what's added and not what's there. It does
+> that only when nothing but the method's own statements can change the `str`: one that's
+> indexed (`s:3 is 0;`), has its address taken, is asked into, or is a class's, is measured
+> each time, which is right however it was changed.
+>
 > C# gets the same result another way. Its strings can't be changed, so `s += s` and
 > `s = "x" + s` always make a new string from the old ones and leave the old one for the
 > garbage collector; every such statement allocates. PHI changes the `str` in place and

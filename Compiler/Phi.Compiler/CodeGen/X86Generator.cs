@@ -1456,6 +1456,7 @@ namespace Phi.Compiler.CodeGen
             bool keepsRegisters = inRegisters.Count > 0;
 
             resultSlots.Clear();
+            lengthOf.Clear();
             frameSize = frame.LocalsSize;
             returnLabel = NewLabel("return");
             returnUsed = false;
@@ -2757,6 +2758,12 @@ namespace Phi.Compiler.CodeGen
 
                 case VarDecl decl:
                     if (decl.Symbol is { NeedsInitCode: true } declared) EmitInitialize(declared, decl.Values);
+                    if (decl.Symbol is VariableSymbol own && RemembersLength(own))
+                    {
+                        // how long it is isn't known yet (it's measured the first time it's added to)
+                        if (!lengthOf.ContainsKey(own)) lengthOf[own] = AllocTemp(4);
+                        Emit($"mov dword [{lengthOf[own]}], 0");
+                    }
                     break;
 
                 case ObjectAssignStmt assign:
@@ -9071,7 +9078,150 @@ namespace Phi.Compiler.CodeGen
             Emit("push eax                ; the value");
             LoadAddress("eax", v.Label);
             Emit("push eax                ; where its text is (its room is after it)");
-            EmitGrowStoreAt(RoomAt, sourceIsString, append, unsigned);
+            EmitGrowStoreAt(RoomAt, sourceIsString, append, unsigned, length: lengthOf.GetValueOrDefault(v));
+        }
+
+        // ---------------------------------------------------------------- a str that remembers its length
+        //
+        // A str's text ends at a zero, and adding to it means finding that zero: all of a text
+        // that has grown long is read each time something is added. For a method's own str
+        // that grows, when nothing but the method's own statements can change it, the method
+        // keeps how long it is (plus 1; 0 when it isn't known) beside its other variables, and
+        // an append starts from there.
+        //
+        // "Nothing else can change it" is what makes that right, so it's only done for a str
+        // every one of whose uses is one of these: built or added to (s is a b; s++ c;), a
+        // value of another str's or of a log (other is s; too), the method's result, or given to a method's
+        // ptr<u8> parameter that the method only reads through (Text.Length: s). Anything
+        // else (an index, addr, ask, a str parameter, an assembly block) and its length is
+        // found the old way every time. A class's variable never is: another method, another
+        // thread or a program using a library could change it.
+
+        /// <summary>For the method being compiled: where each of its strs that remember their length keeps it.</summary>
+        readonly Dictionary<VariableSymbol, string> lengthOf = new();
+
+        Dictionary<VariableSymbol, bool>? remembers;
+        HashSet<VariableSymbol>? onlyRead;
+
+        static IEnumerable<Node> NodesOf(MethodSymbol m) =>
+            m.Decl.Body.SelectMany(SyntaxWalker.Nodes).Concat(m.Decl.Result != null ? SyntaxWalker.Nodes(m.Decl.Result) : Enumerable.Empty<Node>());
+
+        static (MethodSymbol? Method, List<Expr> Arguments) CallOf(Node n) => n switch
+        {
+            CallStmt { Resolved: MethodSymbol m } c => (m, c.Arguments),
+            CallExpr { Resolved: MethodSymbol m } c => (m, c.Arguments),
+            _ => (null, new List<Expr>()),
+        };
+
+        /// <summary>
+        /// The ptr&lt;u8&gt; parameters their methods only read through: every use is an element
+        /// read (text:i), a value of a log or of a str, or giving it to another such parameter. A method with an assembly
+        /// block, or one in a compiled library (no code to look at), has none.
+        /// </summary>
+        HashSet<VariableSymbol> OnlyReadPointers()
+        {
+            if (onlyRead != null) return onlyRead;
+            var bodies = unit.Methods.Where(m => !m.Decl.IsCompiled).ToDictionary(m => m, m => NodesOf(m).ToList());
+            onlyRead = bodies.Where(b => !b.Value.Any(n => n is CallStmt { Resolved: RawBlockDecl } or CallExpr { Resolved: RawBlockDecl }))
+                             .SelectMany(b => b.Key.Parameters.Where(p => p.Type.IsTextPointer && !p.Type.IsArray)).ToHashSet();
+            for (bool changed = true; changed;)
+            {
+                changed = false;
+                foreach (var (m, nodes) in bodies)
+                    foreach (VariableSymbol p in m.Parameters.Where(onlyRead.Contains).ToList())
+                    {
+                        // an element that's written, or whose address is taken, isn't a read
+                        var written = new HashSet<Node>();
+                        foreach (Node n in nodes)
+                        {
+                            Expr? target = n switch
+                            {
+                                AssignStmt a => a.Target,
+                                AtomicStmt a => a.Target,
+                                AppendStmt a => a.Target,
+                                StringBuildStmt b => b.Target,
+                                ArrayAssignStmt c => c.Target,
+                                ObjectAssignStmt o => o.Target,
+                                SetLengthStmt l => l.Array,
+                                AskStmt a => a.Target,
+                                CallStmt c => c.ResultTarget,
+                                AddrExpr a => a.Operand,
+                                _ => null,
+                            };
+                            if (target != null) written.Add(target);
+                        }
+                        int uses = nodes.Count(n => n is NameExpr name && name.Symbol == p), reads = 0;
+                        foreach (Node n in nodes)
+                        {
+                            if (n is IndexExpr { Target: NameExpr element } index && element.Symbol == p && !written.Contains(index)) reads++;
+                            // written out as text: a value of a log, or of a str's
+                            bool Is(Expr e) => e is NameExpr name && name.Symbol == p;
+                            reads += n switch
+                            {
+                                LogStmt log => log.Values.Count(Is),
+                                StringBuildStmt build => build.Parts.Count(Is),
+                                TextExpr text => text.Parts.Count(Is),
+                                _ => 0,
+                            };
+                            (MethodSymbol? callee, List<Expr> arguments) = CallOf(n);
+                            if (callee == null) continue;
+                            for (int i = 0; i < Math.Min(arguments.Count, callee.Parameters.Count); i++)
+                                if (arguments[i] is NameExpr given && given.Symbol == p && onlyRead.Contains(callee.Parameters[i])) reads++;
+                        }
+                        if (reads != uses)
+                        {
+                            onlyRead.Remove(p);
+                            changed = true;
+                        }
+                    }
+            }
+            return onlyRead;
+        }
+
+        /// <summary>True for a method's own str that grows and that only the method's statements change (see above).</summary>
+        bool RemembersLength(VariableSymbol v)
+        {
+            if (!bits32 || !v.Grows || !v.IsLocal || v.IsParameter || v.TextRef || !v.Type.IsString || v.Type.IsArray) return false;
+            if (remembers == null)
+            {
+                remembers = new();
+                HashSet<VariableSymbol> pointers = OnlyReadPointers();
+                foreach (MethodSymbol m in unit.Methods.Where(m => !m.Decl.IsCompiled))
+                {
+                    List<Node> nodes = NodesOf(m).ToList();
+                    foreach (VariableSymbol local in m.Locals.Where(l => l.Grows && !l.IsParameter))
+                    {
+                        int uses = nodes.Count(n => n is NameExpr name && name.Symbol == local), known = 0;
+                        bool Is(Expr? e) => e is NameExpr name && name.Symbol == local;
+                        foreach (Node n in nodes)
+                        {
+                            switch (n)
+                            {
+                                case StringBuildStmt build:
+                                    known += (Is(build.Target) ? 1 : 0) + build.Parts.Count(Is);
+                                    break;
+                                case TextExpr text:
+                                    known += text.Parts.Count(Is);
+                                    break;
+                                case LogStmt log:
+                                    known += log.Values.Count(Is);
+                                    break;
+                                // s is value; and other is s; between strs
+                                case AssignStmt { Op: AssignOp.Set, Target.Type: { IsString: true, IsArray: false } } assign:
+                                    known += (Is(assign.Target) ? 1 : 0) + (Is(assign.Value) ? 1 : 0);
+                                    break;
+                            }
+                            (MethodSymbol? callee, List<Expr> arguments) = CallOf(n);
+                            if (callee == null) continue;
+                            for (int i = 0; i < Math.Min(arguments.Count, callee.Parameters.Count); i++)
+                                if (Is(arguments[i]) && pointers.Contains(callee.Parameters[i])) known++;
+                        }
+                        if (Is(m.Decl.Result)) known++;
+                        remembers[local] = known == uses;
+                    }
+                }
+            }
+            return remembers.GetValueOrDefault(v);
         }
 
         /// <summary>
@@ -9079,7 +9229,8 @@ namespace Phi.Compiler.CodeGen
         /// room is roomOffset bytes after the slot. Writes the value in, making room first.
         /// (In 64-bit code the addresses are whole registers, and each pushed value takes 8 bytes.)
         /// </summary>
-        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? rooms = null)
+        /// <param name="length">Where the method keeps this str's length (plus 1, or 0 for not known), for one that remembers it.</param>
+        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? rooms = null, string? length = null)
         {
             string esi = R("esi"), edi = R("edi"), eax = R("eax");
             if (sourceIsString)
@@ -9101,7 +9252,20 @@ namespace Phi.Compiler.CodeGen
                 Emit($"jnz {text}");
                 LoadAddress("esi", StringLabel(""));
                 Label(text);
-                Emit("call phi_strlen");
+                if (length != null)
+                {
+                    // as long as the method last knew it to be, when that's still where it ends
+                    string measure = NewLabel("measure"), known = NewLabel("known");
+                    Emit($"mov eax, [{length}]");
+                    Emit("dec eax");
+                    Emit($"js {measure}");
+                    Emit($"cmp byte [{esi} + {eax}], 0");
+                    Emit($"je {known}");
+                    Label(measure);
+                    Emit("call phi_strlen");
+                    Label(known);
+                }
+                else Emit("call phi_strlen");
                 Emit("pop ecx");
                 Emit("push eax                ; how long it is now: where the value goes");
                 Emit("add eax, ecx            ; after what's there");
@@ -9127,6 +9291,12 @@ namespace Phi.Compiler.CodeGen
                 Emit($"jb {some}");
                 Emit("lea eax, [ecx - 1]");
                 Label(some);
+                if (length != null)
+                {
+                    Emit("inc eax");
+                    Emit($"mov [{length}], eax         ; as long as it was (and 1), until what's added is measured");
+                    Emit("dec eax");
+                }
                 Emit($"add {edi}, {eax}");
                 Emit("sub ecx, eax");
             }
@@ -9146,6 +9316,18 @@ namespace Phi.Compiler.CodeGen
             }
             EmitKeepCut(2 * Slot);
             EmitFreeOld();
+            if (length != null && append)
+            {
+                // longer by what was added: only that part is measured
+                Emit($"mov {esi}, [esp]");
+                Emit($"mov {esi}, {Q} [{esi}]");
+                Emit($"mov eax, [{length}]");
+                Emit("dec eax");
+                Emit($"add {esi}, {eax}");
+                Emit("call phi_strlen");
+                Emit($"add [{length}], eax");
+            }
+            else if (length != null) Emit($"mov dword [{length}], 0   ; started again: measured when it's next added to");
             if (!textMayCut) Emit($"mov eax, [esp + {Slot}]");
             Emit($"add esp, {2 * Slot}");
             EmitTextFitsAfterFree();
