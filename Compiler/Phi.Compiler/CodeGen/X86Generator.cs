@@ -1586,7 +1586,7 @@ namespace Phi.Compiler.CodeGen
             inRegisters.Clear();
 
             if (frameSize > MaxFrame)
-                diagnostics.Error(file, m.Decl.Span, $"{m.Decl.Name} needs {frameSize} bytes of stack for its variables (at most {MaxFrame}); declare large buffers in the class instead");
+                diagnostics.Error(file, m.Decl.Span, $"{m.Decl.Name} needs {frameSize} bytes of stack for its variables (at most {MaxFrame} in {FrameOwner}); declare large buffers in the class, or make them with new");
             currentMethod = null;
 
             if (m.IsInterruptHandler)
@@ -1695,10 +1695,21 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>
-        /// The most stack one method may use for its variables. A program's kernel stack is
-        /// 8 KB, and calls nest.
+        /// The most stack one method may use for its variables. A kernel's stacks are small (a
+        /// program's kernel stack is 8 KB, and calls nest) and have nothing under them to stop a
+        /// method that goes past, and a 16-bit program's is smaller. A program's stack is its
+        /// own: 64 KB on PHI OS, and the system's on Linux and Windows, with a page under it
+        /// that can't be touched, which a big frame reaches a page at a time (see
+        /// <see cref="EmitFrameSetup"/>), so going past it is ErrorKind.STACK there too.
         /// </summary>
-        const int MaxFrame = 4096;
+        int MaxFrame => unit.Kind != UnitKind.Program ? Page : program.Host == Host.PhiOS ? 32 * 1024 : 1024 * 1024;
+
+        /// <summary>Whose limit <see cref="MaxFrame"/> is, for its message.</summary>
+        string FrameOwner => unit.Kind != UnitKind.Program ? (bits32 ? "a kernel" : "a 16-bit program")
+                           : program.Host == Host.PhiOS ? "a program on PHI OS, whose stack is 64 KB" : "a program";
+
+        /// <summary>Bytes in a page of memory: how far apart a frame's first touches may be.</summary>
+        const int Page = 4096;
 
         /// <summary>The method being generated (null for class code), and its frame's size so far.</summary>
         MethodSymbol? currentMethod;
@@ -2203,7 +2214,23 @@ namespace Phi.Compiler.CodeGen
             Emit("push ebp");
             // in 16-bit code only sp is the stack pointer; the top of esp may hold anything
             Emit(bits32 ? "mov ebp, esp" : "movzx ebp, sp");
-            if (frameSize > 0) Emit($"sub esp, {frameSize}");
+            if (frameSize <= Page)
+            {
+                if (frameSize > 0) Emit($"sub esp, {frameSize}");
+                return;
+            }
+            // a frame of more than a page goes down a page at a time, touching each: the page
+            // under a stack that stops it running into other memory is then always the one
+            // that's reached, however big the frame, and the stack running out is found here.
+            // (No register is free yet, so how far it has gone is kept in the page just reached.)
+            string probe = NewLabel("frame");
+            Label(probe);
+            Emit($"sub esp, {Page}");
+            Emit("mov [esp], ebp");
+            Emit("sub [esp], esp");
+            Emit($"cmp dword [esp], {frameSize - Page}");
+            Emit($"jbe {probe}");
+            Emit($"lea esp, [ebp - {frameSize}]");
         }
 
         void EmitFrameStart(Frame frame)

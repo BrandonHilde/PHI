@@ -7,6 +7,36 @@ namespace Phi.Compiler.Tests
 
         static string Program(string body) => "phi.Test:Program\n{\n" + body + "\n}\n";
 
+        // a method's variables: as much as the stack it runs on can take, reached a page at a time
+        // so the page under the stack is always what stops one that goes too far
+        [Theory]
+        [InlineData(Host.Linux, 100000, null)]
+        [InlineData(Host.Linux64, 100000, null)]
+        [InlineData(Host.Windows, 1000000, null)]
+        [InlineData(Host.PhiOS, 30000, null)]
+        [InlineData(Host.PhiOS, 40000, "Big needs 40000 bytes of stack for its variables (at most 32768 in a program on PHI OS, whose stack is 64 KB)")]
+        [InlineData(Host.Linux, 2000000, "Big needs 2000000 bytes of stack for its variables (at most 1048576 in a program)")]
+        public void AMethodsVariablesCanBeBigInAProgram(Host host, int bytes, string? error)
+        {
+            CompileResult result = Compile(Program($"call Big;\nexit 0;\n[Big]\n u8 buffer[{bytes}];\n buffer:0 is 1;\n[end]"), host);
+            if (error != null)
+            {
+                Assert.Contains(result.Diagnostics, d => d.Message.Contains(error));
+                return;
+            }
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            string text = result.Units.Single().Text;
+            Assert.Contains("sub " + (host.Is64() ? "rsp" : "esp") + ", 4096", text);
+            Assert.DoesNotContain($"sub esp, {bytes}", text);
+        }
+
+        [Fact]
+        public void AKernelsMethodKeepsToAPage()
+        {
+            CompileResult result = Compile("phi.Test:Kernel\n{\n[Big]\n u8 buffer[5000];\n[end]\n}\n", Host.PhiOS);
+            Assert.Contains(result.Diagnostics, d => d.Message.Contains("Big needs 5000 bytes of stack for its variables (at most 4096 in a kernel)"));
+        }
+
         static string Errors(CompileResult result) => string.Join("\n", result.Diagnostics.Select(d => d.Message));
 
         [Theory]

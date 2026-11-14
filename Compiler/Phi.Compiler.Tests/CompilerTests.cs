@@ -137,7 +137,7 @@ namespace Phi.Compiler.Tests
         [InlineData("[Echo: str t: [8];]\n[end: t]\n[Name: int n: 0;]\n[end: (Echo: (Name: n))]", "Name returns a str and uses its own result in [end: ...]")]
         [InlineData("call OS.SetInterruptHandler: 9 addr Handler;\n[Handler: int x: 0;]\n[end]", "Handler takes parameters, so OS.SetInterruptHandler can't call it")]
         [InlineData("[Pad: int width: 0; int fill: width;]\n[end]", "a parameter's default can't use the method's own variables or parameters ('width')")]
-        [InlineData("[Big]\n u8 buffer[5000];\n[end]", "Big needs 5000 bytes of stack for its variables (at most 4096); declare large buffers in the class instead")]
+        [InlineData("[Big]\n u8 buffer[5000];\n[end]", "Big needs 5000 bytes of stack for its variables (at most 4096 in a 16-bit program); declare large buffers in the class, or make them with new")]
         public void FrameErrors(string body, string message) => AssertError(Boot(body), message);
 
         [Theory]
@@ -519,7 +519,8 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("struct.A\n{\n str name;\n}\n", "a str field needs a size: str name: [24];")]
         [InlineData("struct.A\n{\n int n: [4];\n}\n", "only text takes a size after ':'")]
-        [InlineData("struct.A\n{\n u8 big[60004];\n}\n", "put a bigger one on the heap, like ptr<u8> buffer: new u8[60004];")]
+        [InlineData("struct.A\n{\n u8 big[20000000];\n}\n", "holds at most 16777216; put a bigger one on the heap, like ptr<u8> buffer: new u8[20000000];")]
+        [InlineData("struct.A\n{\n u64 big[16000000];\n}\nstruct.B\n{\n A all[16];\n}\n", "is 2048000000 bytes, and an array holds at most 1073741824 (1 GB)")]
         public void TextFieldErrors(string structs, string message) => AssertError(structs + Kernel(""), message);
 
         [Theory]

@@ -1,0 +1,52 @@
+# runs only in 32 and 64 bits: a 16-bit program's memory is 64 KB
+# An array or a str kept in place can hold more than 16,384: as a class's variable, in a
+# struct, and (in a program, in tests/big_frame_program.phi) as a method's variable.
+struct.Grid
+{
+	u16 cells[40000];
+	str note: [20000];
+	int last;
+}
+
+phi.BigArrays:Library
+{
+	u32 table[100000];
+	u8 bytes[atmost 50000];
+	str text: [70000];
+	Grid grid;
+
+	# every element is its own: written, read back, and summed
+	while int i: 0; i < table.len; i++;
+		table:i is i * 3;
+	;;
+	u32 sum: 0;
+	while each n in table
+		sum++ n;
+	;;
+	log table.len ' ' table:99999 ' ' sum ' ' (table has 299997) ' ' (table has 299998) '\n';
+
+	# one that fills as it goes
+	while int i: 0; i < 40000; i++;
+		bytes++ i;
+	;;
+	log bytes.len ' ' bytes.max ' ' bytes:39999 '\n';
+
+	# text of more than 65,535 in place
+	while int i: 0; i < 7000; i++;
+		text++ '0123456789';
+	;;
+	log text.len ' ' text.max ' ' text:69999 '\n';
+
+	# in a struct, with what comes after it where it should be
+	grid.last is 77;
+	grid.cells:39999 is 65535;
+	grid.note is 'kept';
+	while int i: 0; i < 1999; i++;
+		grid.note++ '0123456789';
+	;;
+	log (sizeof Grid) ' ' grid.cells:39999 ' ' grid.note.len ' ' grid.last '\n';
+
+	# past the end is still an index error, with its line
+	int n: 100000;
+	log table:n;
+}

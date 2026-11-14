@@ -3350,6 +3350,36 @@ without changing any of this, if `log (Utf8.Of: c)` proves too much to write).
   character). Built for both Windows targets, not run.
 - Tests `utf8` (16-bit, kernel, Linux in 32 and 64 bits), `utf8_program`, `utf8_errors`.
 
+**Fixed limits lifted (2026-11-14).** Three of the sizes that sent large programs to
+workarounds. None changes how anything is laid out, so a library's version stays 1.0.
+
+- **A `str` that grows: while there's memory** (it stopped at 65,535). Its room was always
+  30 bits; the stop was a number. Out of memory, text that doesn't fit is `ErrorKind.TEXT`,
+  as it was at the old stop, and the `str` is what it was.
+- **An array or `str` in place: 16,777,216 elements, 1 GB in all** (16,384; still that in
+  16-bit code). A class's variable is in the program's file, zeros and all, so a big one
+  there makes a big file: zeros kept out of the file is a backend part, on hold.
+- **A method's variables: 1 MB in a program on Linux or Windows, 32 KB on PHI OS** (4,096
+  bytes; still that in kernels and 16-bit code, whose stacks are small and have nothing
+  under them). A frame of more than a page is reached a page at a time, each touched, so
+  the page under a stack is always what stops it. Without that, a 30,000-byte frame near
+  the end of a thread's stack went past the two pages kept under it and wrote over the
+  heap (tests `big_frame_program` and `kernel32_program_frames` fail that way with it off).
+- Tests `big_arrays`, `big_frame_program`, `kernel32_program_frames`; `text_fits`,
+  `str_grow`, `text_new_fields` and `str_length_kept_program` for the `str`.
+
+**The length kept in a `str` itself: measured, and not done.** It would speed up adding to a
+long `str` that's a field, an element or a class's variable (a method's own already
+remembers its length). Three million appends, 64-bit: at 160 bytes 0.15 s against a method's
+own 0.23, at 1,600 bytes 0.24 against 0.20, at 16,000 bytes 0.91 against 0.23. So it only
+matters for text of many thousands of bytes built in a field, and weblib, the heaviest user
+of text, builds its text in a buffer of its own with a length (`WlBuf`): it has four `str`s.
+It would cost a slot in every `str`, every library built again, and care wherever text is
+written through a pointer. To look at again if a program shows up that needs it.
+
+Still fixed: a program's stack size, which a program should be able to state (64 KB on PHI
+OS, the system's elsewhere).
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to

@@ -1,0 +1,117 @@
+# A method's variables can be big in a program: as much as its stack can take. The frame is
+# reached a page at a time, so the page under the stack is always what stops a method that
+# goes too far, however big its frame: the stack running out is still caught, on the first
+# thread and on a thread of its own, and nothing else's memory is written over.
+use user.threads;
+
+phi.BigFrameProgram:Program
+{
+	int depth: 0;
+	int stopped: 0;
+	int fitted: 0;
+	ptr<u32> under: new u32[64];
+	under:63 is 12345;
+
+	log (Sum: 3) ' ' (Wide: 7) '\n';
+	if call Deep throws err
+		log 'caught: ' (err.kind is ErrorKind.STACK) ' ' (depth > 3) '\n';
+	;;
+	log (Sum: 5) '\n';
+
+	int t: (Threads.Start: addr OnAThread 1);
+	call Threads.Wait: t;
+	t is (Threads.Start: addr OnAThread 2);
+	call Threads.Wait: t;
+	log 'the heap: ' under:63 '\n';
+
+	# a big frame from every depth near the end of a thread's stack: stopped each time it
+	# doesn't fit, and what's on the heap beside the stack is as it was
+	ptr<u8> beside: new u8[65536];
+	while int i: 0; i < 65536; i++;
+		beside:i is 0x5A;
+	;;
+	t is (Threads.Start: addr NearTheEnd 0);
+	call Threads.Wait: t;
+	int changed: 0;
+	while int i: 0; i < 65536; i++;
+		if beside:i is not 0x5A
+			changed++;
+		;;
+	;;
+	log 'near the end: ' (stopped > 0) ' ' (fitted > 0) ' ' changed '\n';
+	exit 0;
+
+	[NearTheEnd: int part: 0;]
+		while int steps: 0; steps < 400; steps++;
+			if call Step: steps throws err
+				stopped++;
+			;;
+			else
+				fitted++;
+			;;
+		;;
+	[end]
+
+	# down by about 1,000 bytes a call, then the big frame
+	[Step: int left: 0;]
+		u8 step[1000];
+		step:0 is left;
+		if left > 0
+			call Step: left - 1;
+			return step:0;
+		;;
+		call Block;
+	[end: step:0]
+
+	[Block]
+		u8 block[40000];
+		block:0 is 1;
+		block:(40000 - 1) is 2;
+	[end: block:0 + block:(40000 - 1)]
+
+	# 200,000 bytes of variables: an array bigger than 16,384, filled and read back
+	[Wide: int seed: 0;]
+		u32 numbers[50000];
+		while int i: 0; i < 50000; i++;
+			numbers:i is i * seed;
+		;;
+		u32 total: 0;
+		while int i: 0; i < 50000; i is i + 1000;
+			total++ numbers:i;
+		;;
+	[end: total + numbers:49999]
+
+	# 48,000 bytes, in three
+	[Sum: int seed: 0;]
+		u8 a[16000];
+		u8 b[16000];
+		u8 c[16000];
+		while int i: 0; i < 16000; i++;
+			a:i is i + seed;
+			b:i is i * 3;
+			c:i is 255 - i;
+		;;
+		int total: 0;
+		while int i: 0; i < 16000; i++;
+			total++ a:i + b:i + c:i;
+		;;
+	[end: total]
+
+	[OnAThread: int part: 0;]
+		depth is 0;
+		if call Deep throws err
+			log 'thread ' part ': ' (err.kind is ErrorKind.STACK) ' ' (depth > 0) '\n';
+		;;
+	[end]
+
+	# each call takes 24,000 bytes: past any page that's kept under a stack, in one step
+	[Deep]
+		u8 held[12000];
+		u8 more[12000];
+		held:0 is depth;
+		more:11999 is depth;
+		depth++;
+		call Deep;
+		log held:0 more:11999;
+	[end]
+}

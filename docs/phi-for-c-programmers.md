@@ -82,8 +82,8 @@ after an operator, and inside `( )` before one too.
 either side is a `u32` or a pointer, which affects `/`, `%`, `>>` and comparisons.
 
 **A `str` grows up to its most, and longer text is an error, not an overflow.** The most comes
-from the declaration: `str s: [40];` holds 40 characters, and a `str` with no size given, like
-`str s: 'abc';`, grows up to 65,535. `.max` says what it is. Text that doesn't fit is
+from the declaration: `str s: [40];` holds 40 bytes of text, and a `str` with no size given, like
+`str s: 'abc';`, grows while there's memory. `.max` says what it is. Text that doesn't fit is
 `ErrorKind.TEXT`, which can be caught, and `call Cut.Into: s long;` (from `user.cut`) keeps what
 fits, as `strncpy` is meant to.
 
@@ -114,8 +114,10 @@ pass `(p as u8[n])` to a method that takes `u8 bytes[]`.
 (`'end' is a keyword and can't be a variable name; try 'stop' or 'last'`). The full list is
 in [Reserved words](language.md#reserved-words).
 
-**A fixed-size array holds at most 16384 elements.** Larger buffers in a kernel come from
-`new`, in a kernel or a user program.
+**A method's variables are on the stack, as in C, and start at zero.** A program's method
+can have up to 1 MB of them (32 KB on PHI OS), and a kernel's 4,096 bytes; a class's
+variables are in the program's file. A buffer whose size is only known as it runs comes
+from `new`.
 
 **`is` between objects copies; it never makes two names for one object.** After `b is a;`,
 changing `b.x` leaves `a.x` alone, and copying a list copies every node. To move an object

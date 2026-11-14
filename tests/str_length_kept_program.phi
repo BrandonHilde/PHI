@@ -168,15 +168,19 @@ phi.StrLengthKeptProgram:Program
 	[end]
 
 	# what doesn't fit is an error, and what fitted is kept and can't be added to
+	# a str grows while there's memory; when there's no more, what doesn't fit is an error, and
+	# the str is what it was (the heap is held to 2 MB here, so that comes soon)
 	[CutShort]
+		Heap.most_bytes is 2097152;
 		if call Fill: 1 throws err
-			log (err.kind is ErrorKind.TEXT) ' ' filled '\n';
+			log (err.kind is ErrorKind.TEXT) ' ' (filled > 65535) ' ' (filled < 2097152) '\n';
 		;;
+		Heap.most_bytes is 0;
 	[end]
 
 	[Fill: int n: 0;]
 		str mine: 'x';
-		while int i: 0; i < 20; i++;
+		while int i: 0; i < 30; i++;
 			filled is (Text.Length: mine);
 			mine++ mine '.';
 		;;

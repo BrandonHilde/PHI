@@ -271,7 +271,9 @@ code: a 16-bit program can't have them.
   works as a buffer for methods that write into it (`sizeof s` is 41, with the ending zero).
   `str s: [atmost 40];` and `chr s[40];` are other ways to write it.
 - `str s: 'abc';`, `str s: '';`, `str s: someNumber;` and `str s: otherStr;` (no size) grow
-  up to 65,535 characters in a 32-bit kernel or a user program. The text is on the heap,
+  for as long as there's memory, in a 32-bit kernel or a user program (its `.max` is
+  1,073,741,822, and when there's no more memory, text that doesn't fit is an error like any
+  that doesn't fit). The text is on the heap,
   which PHI adds and frees for you: a method's own `str` gives its text back when the
   method ends. Starting with `''` and adding to it is the usual way to build text:
 
@@ -370,8 +372,17 @@ so they work as array sizes and in constants. Both give way to a struct's own fi
 that name. Passing a `str`'s `.len` where a size goes (`call Text.Append: s 'x' s.len;`)
 is a warning: it's how much text is there now, often 0, so nothing would be written.
 
-An array or `str` kept in place (a variable, a field) holds at most 16,384 elements or
-characters. A bigger buffer goes on the heap: `ptr<u8> text: new u8[60004];` (32-bit code).
+An array or `str` kept in place (a variable, a field) holds at most 16,777,216 elements or
+bytes, and 1 GB in all (16,384 in a 16-bit program, whose memory is 64 KB). Where it's kept
+decides what a big one costs:
+
+- a class's variable is part of the program's file, zeros and all, so `u8 big[1000000];`
+  there makes the file 1 MB bigger (a PHI OS program can be 4 MB);
+- a method's variable is on the stack, as far as a method's variables can go (see
+  [Methods](#methods));
+- in an object (`new`), it's on the heap with the rest of the object.
+
+A buffer of a size that's only known when the program runs is `ptr<u8> text: new u8[n];`.
 
 **Whole arrays.** `b is a;` copies every element of `a` into `b`, and `(a is b)` is true
 when they have the same number of elements and each is equal. Both must hold the same kind
@@ -2982,7 +2993,7 @@ if (IsReady: port)
   ```
 
   `target.len` is its text's length and `target.max` the most it holds: the caller's size, or
-  65,535 for a `str` that grows. Because it may grow, it can't be handed to a method as a
+  1,073,741,822 for a `str` that grows. Because it may grow, it can't be handed to a method as a
   buffer with a size; write it with `is` and `++` instead.
 - A method can return a number, a pointer, a `str` or an object. A result keeps its type
   at the call: a method whose `[end: ...]` is a `ptr<u8>` gives text to `log` and to a
@@ -3070,8 +3081,12 @@ if (IsReady: port)
   method whose `[end: 0]` made it return an `int`) is an error, since it only works until the
   program's memory is above 4 GB. `as int` says the cut is meant; a number going to a pointer
   is a warning, as it may be an address.
-- A method's variables take stack space while it runs, at most 4096 bytes per method; put
-  large buffers in the class.
+- A method's variables take stack space while it runs. In a program on Linux or Windows a
+  method can have up to 1 MB of them, and on PHI OS 32 KB (a program's stack there is
+  64 KB); in a kernel or a 16-bit program, 4,096 bytes, as their stacks are small, so put
+  large buffers in the class. Variables start at zero each call, which takes time for a big
+  array, and calls that go deeper than the stack has room for are `ErrorKind.STACK`, which
+  can be caught.
 - A method called through its address (`addr Handler`, for an IRQ or a system call) gets no
   arguments, so it can't have parameters. A parameter's default can't use the method's
   other parameters.

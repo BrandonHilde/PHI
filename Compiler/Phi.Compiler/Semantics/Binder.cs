@@ -91,8 +91,11 @@ namespace Phi.Compiler.Semantics
         /// <summary>Capacity of a str copied from another str whose size isn't known yet.</summary>
         const int DefaultStrCapacity = 64;
 
-        /// <summary>The most characters a str without a size can grow to (32-bit kernels and programs).</summary>
-        public const int StrMax = 65535;
+        /// <summary>
+        /// The most bytes a str without a size can grow to (32-bit kernels and programs): what
+        /// fits in its room's 30 bits, with the zero. So it grows for as long as there's memory.
+        /// </summary>
+        public const int StrMax = 0x3FFFFFFE;
 
         readonly SourceFile mainFile;
         readonly DiagnosticBag diagnostics;
@@ -1478,7 +1481,7 @@ namespace Phi.Compiler.Semantics
                         // str lines[8]: [40]; eight texts of up to 40, in the struct
                         int? n = ConstantCount(f.Count, null);
                         int? each = ConstantCount(f.TextSize, null);
-                        if (n == null || each == null) continue;
+                        if (n == null || each == null || !FitsMemory(PhiType.TextOf(each.Value), n.Value, f.Count.Span)) continue;
                         PhiType lines = PhiType.TextOf(each.Value).ArrayOf(n.Value) with { Filled = f.Filled };
                         s.Fields.Add(new FieldSymbol { Name = f.Name, Type = lines, Offset = offset });
                         offset += lines.ByteSize;
@@ -1589,7 +1592,7 @@ namespace Phi.Compiler.Semantics
                 if (f.Count != null)
                 {
                     int? count = ConstantCount(f.Count, null);
-                    if (count == null) continue;
+                    if (count == null || !FitsMemory(type, count.Value, f.Count.Span)) continue;
                     type = type.ArrayOf(count.Value) with { Filled = f.Filled };
                 }
 
@@ -1805,9 +1808,29 @@ namespace Phi.Compiler.Semantics
         /// <summary>The structs that take types, by name: each use of one is a struct of its own by now (Templates.Expand).</summary>
         readonly Dictionary<string, StructTemplate> templates = new();
 
+        /// <summary>
+        /// The most elements of an array, or bytes of a str, kept in place: in a 16-bit program,
+        /// whose memory is 64 KB, and elsewhere. (A class's variable is in the program's file,
+        /// zeros and all, so a big one there makes a big file.)
+        /// </summary>
+        const int MaxCount16 = 0x4000, MaxCount = 0x1000000;
+
+        /// <summary>The most bytes one array or struct takes: sizes are worked out in 32 bits.</summary>
+        const long MaxBytes = 0x40000000;
+
+        /// <summary>Is count of these a size that can be? (Each fits; together they may not.)</summary>
+        bool FitsMemory(PhiType element, int count, Span span)
+        {
+            long bytes = (long)element.ElementSize * count;
+            if (bytes <= MaxBytes) return true;
+            Error(span, $"{count} of {A(element)} is {bytes} bytes, and an array holds at most {MaxBytes} (1 GB)");
+            return false;
+        }
+
         /// <summary>An element count that must be known when the program is built.</summary>
         int? ConstantCount(Expr e, Scope? scope)
         {
+            int most = scope?.Unit is UnitKind.Boot or UnitKind.Os ? MaxCount16 : MaxCount;
             if (scope != null) BindExpr(e, scope);
             else if (e is NumberExpr) e.Type = PhiType.Int;
 
@@ -1817,14 +1840,16 @@ namespace Phi.Compiler.Semantics
                 Error(e.Span, "a size must be a number or a const known when the program is built");
                 return null;
             }
-            if (value > 0x4000)
+            if (value > most)
             {
-                Error(e.Span, $"an array or str written in place holds at most 16384; put a bigger one on the heap, like ptr<u8> buffer: new u8[{value}];");
+                Error(e.Span, most == MaxCount16
+                    ? $"an array or str written in place holds at most {most} in a 16-bit program"
+                    : $"an array or str written in place holds at most {most}; put a bigger one on the heap, like ptr<u8> buffer: new u8[{value}];");
                 return null;
             }
             if (value < 1)
             {
-                Error(e.Span, "a size must be between 1 and 16384");
+                Error(e.Span, $"a size must be between 1 and {most}");
                 return null;
             }
             return (int)value;
@@ -2260,7 +2285,7 @@ namespace Phi.Compiler.Semantics
             if (d.BufferSize != null)
             {
                 int? size = ConstantCount(d.BufferSize, scope);
-                if (size == null) return;
+                if (size == null || !FitsMemory(type, size.Value, d.BufferSize.Span)) return;
 
                 if (type.IsString && !d.SizeAfterColon && !v.IsParameter)
                 {
@@ -2268,7 +2293,7 @@ namespace Phi.Compiler.Semantics
                     {
                         // str lines[8]: [40]; eight texts of up to 40, each kept in place
                         int? characters = ConstantCount(d.TextSize, scope);
-                        if (characters == null) return;
+                        if (characters == null || !FitsMemory(PhiType.TextOf(characters.Value), size.Value, d.BufferSize.Span)) return;
                         v.Type = PhiType.TextOf(characters.Value).ArrayOf(size.Value) with { Filled = d.Filled };
                         return;
                     }

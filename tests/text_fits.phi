@@ -51,11 +51,10 @@ phi.TextFits:Library
 	# what it had when it stopped is still text, ended properly
 	log 'kept: ' (three.len <= 3) '\n';
 
-	# text that grows has its most too: appending past it, and it carries on after
+	# text that grows has no most of its own: it grows while there's memory
 	str grows: '';
-	if call Grow: grows throws err
-		log 'grows: ' (err.kind is ErrorKind.TEXT) ' ' grows.len ' ' grows.max '\n';
-	;;
+	call Grow: grows;
+	log 'grows: ' grows.len ' ' (grows.max > 1000000000) '\n';
 	grows is 'short again';
 	log grows '\n';
 
