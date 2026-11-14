@@ -1,0 +1,78 @@
+# A type a method or a struct takes can be one that must have an interface: <Item has Ranked>.
+# Then only a struct that has it is taken, and the error for another is at the line that
+# gives it. And methods that take types with what 16-bit code hasn't: f64s, objects.
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Card has Ranked
+{
+	int value;
+
+	[Rank]
+	[end: value * 2]
+}
+
+struct.Spot
+{
+	int x;
+}
+
+struct.Sorted<Item has Ranked>
+{
+	new Item items[];
+
+	[Add: Item item;]
+		items++ item;
+	[end]
+
+	[Best]
+		int best: 0;
+		while each item in items
+			if (item.Rank) > best
+				best is (item.Rank);
+			;;
+		;;
+	[end: best]
+}
+
+phi.Ranks:Library
+{
+	[Most<Item>: Item items[];]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	[Pick<Item>: Item a; Item b; bln second: false;]
+		if second return b;
+	[end: a]
+
+	[Higher<Item has Ranked>: Item a; Item b;]
+		if (a.Rank) > (b.Rank) return (a.Rank);
+	[end: (b.Rank)]
+}
+
+phi.GenericMethodsProgram:Program
+{
+	new Card low: 3;
+	new Card high: 8;
+	log (Ranks.Higher<Card>: low high) '\n';
+	new Sorted<Card> hand;
+	call hand.Add: low;
+	call hand.Add: high;
+	log (hand.Best) '\n';
+
+	f64 readings: 1.5 0.25 7.75;
+	i64 far: 5000000000 -3 12;
+	log (Ranks.Most<f64>: readings) ' ' (Ranks.Most<i64>: far) '\n';
+
+	# an object handed through one, and back
+	new Card kept: (Ranks.Pick<Card>: low high true);
+	log kept.value '\n';
+	exit 0;
+}

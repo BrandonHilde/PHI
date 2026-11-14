@@ -1223,8 +1223,64 @@ both.first is 310;
 - **In a compiled library** a struct that takes types is kept whole, code and all: a
   program that uses the library makes its own structs from it (`Crate<u8>`, though the
   library only ever made a `Crate<int>`), and their code is the program's.
-- **Not yet:** methods that take types of their own, and a type that must have an
-  interface (`<Item has Ordered>`).
+- **A type can be one that must have an interface:** `struct.Sorted<Item has Ranked>` takes
+  only a struct that has `Ranked`, so its methods can call `Ranked`'s on an `Item`. It adds
+  nothing a `Sorted<Item>` couldn't do; what it changes is where a wrong type is found, and
+  what's said: at the line that says `Sorted<Spot>`, "Sorted takes a type that has Ranked,
+  and Spot doesn't". A number or a pointer has no interfaces, so it's for structs.
+
+### Methods that take types
+
+A class's method can be written once for any type too. Its types are named in `<>` after its
+name, and each call gives them in the same place:
+
+```phi
+phi.Lists:Library
+{
+    [Largest<Item>: Item items[];]
+        Item best: items:0;
+        while each x in items
+            if x > best
+                best is x;
+            ;;
+        ;;
+    [end: best]
+
+    [Swap<Item>: ptr<Item> a: 0; ptr<Item> b: 0;]
+        Item kept: a:0;
+        a:0 is b:0;
+        b:0 is kept;
+    [end]
+}
+```
+
+```phi
+int scores: 3 9 4;
+f64 readings: 1.5 0.25 7.75;
+log (Lists.Largest<int>: scores) ' ' (Lists.Largest<f64>: readings) '\n';   # 9 7.75
+call Lists.Swap<int>: addr first addr second;
+```
+
+- **A call always names its types.** They aren't worked out from what it's given, so a call
+  says what it is where it's read, as `Stack<int>` does, and `Lists.Largest: scores` is an
+  error that says to write `Lists.Largest<int>`.
+- **Each set of types is a method of its own,** made as a struct's is: the method's text read
+  again with the type in `Item`'s place, then checked and compiled as if written by hand. An
+  error in it is at its line in the method and says which call it was for:
+  `(in Largest<Spot>, which line 43 of game.phi calls)`.
+- **Inside its class** it's called without the class's name (`(Largest<Item>: items)`, which
+  is how one calls another, or itself, with its own type), and a struct that takes types can
+  call one with its type (`(Lists.Largest<Item>: items)`).
+- **Its types can be ones that must have an interface,** as a struct's can:
+  `[Higher<Item has Ranked>: Item a; Item b;]`.
+- **Several types, and none in what it takes:** `[Wider<From To>: From value: 0; : To]` is
+  called `(Lists.Wider<u8 u32>: small)`, and `[Zero<Item>: : Item]` is `(Lists.Zero<f64>)`.
+- **In a compiled library** a class has the methods made for the types the library itself
+  calls them with, and a program calls those by the same names (`Picks.Biggest<int>`). For
+  another type it's an error: the library doesn't carry the method's text, as it does a
+  struct's that takes types.
+- **Not yet:** a struct's own method taking types of its own (`stack.Convert<f64>`); give
+  the struct the type, or write the method in a class.
 
 ### Interfaces
 

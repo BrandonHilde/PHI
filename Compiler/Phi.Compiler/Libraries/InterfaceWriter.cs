@@ -136,7 +136,7 @@ namespace Phi.Compiler.Libraries
             if (parameters.Count > 0 || returns || written.Count > 0)
             {
                 sb.Append(':');
-                foreach (VarDecl p in parameters) sb.Append(' ').Append(Parameter(file, p));
+                foreach (VarDecl p in parameters) sb.Append(' ').Append(m.OwnFile != null ? MadeParameter(file, p) : Parameter(file, p));
                 sb.Append(" : ").Append(returns ? TypeName(symbol.ReturnType) : "void");
                 if (symbol.ReturnType.IsString) sb.Append($" room {symbol.ResultCapacity}");
                 if (written.Count > 0) sb.Append(" writes " + string.Join(" ", written));
@@ -147,6 +147,32 @@ namespace Phi.Compiler.Libraries
         static string Parameter(SourceFile file, VarDecl p)
         {
             string text = Text(file, p.Text!.Value).TrimEnd();
+            return text.EndsWith(';') ? text : text + ";";
+        }
+
+        /// <summary>
+        /// A parameter of a method made from one that takes types ([Biggest&lt;int&gt;: Item items[];]
+        /// is written for Item): its text with the type it was made for in each such name's place.
+        /// </summary>
+        static string MadeParameter(SourceFile file, VarDecl p)
+        {
+            var places = new List<(Span Span, string Type)>();
+            void Find(TypeRef? t)
+            {
+                if (t == null) return;
+                if (t.FromParameter) places.Add((t.Span, t.ToString()));
+                else if (t.Name.Contains('<')) places.Add((t.Span, t.Name));   // a struct that takes types, with them
+                else
+                {
+                    Find(t.Pointee);
+                    foreach (TypeRef each in t.Parameters) Find(each);
+                    Find(t.Result);
+                }
+            }
+            Find(p.Type);
+            string text = Text(file, p.Text!.Value).TrimEnd();
+            foreach (var (span, type) in places.OrderByDescending(x => x.Span.Start))
+                text = text[..(span.Start - p.Text.Value.Start)] + type + text[(span.End - p.Text.Value.Start)..];
             return text.EndsWith(';') ? text : text + ";";
         }
 

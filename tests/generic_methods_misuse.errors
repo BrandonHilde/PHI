@@ -1,0 +1,2 @@
+a Spot starts as all zeros; set its fields one at a time, like best.field is 5; (in Largest<Spot>, which line 43 of generic_methods_misuse.phi calls)
+Largest takes a type, which each call gives it: Lists.Largest<Item>, with the type in Item's place, like Lists.Largest<int>

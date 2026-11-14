@@ -27,6 +27,12 @@ namespace Phi.Compiler.Syntax
         /// <summary>Every place such a struct is named with its types (Stack&lt;int&gt;).</summary>
         public List<TemplateUse> TemplateUses { get; } = new();
 
+        /// <summary>A class's methods that take types ([Largest&lt;Item&gt;: Item items[];]): each is made into a method for every set of types it's called with.</summary>
+        public List<MethodTemplate> MethodTemplates { get; } = new();
+
+        /// <summary>Every call of such a method, with its types (Lists.Largest&lt;int&gt;: scores).</summary>
+        public List<MethodTemplateUse> MethodTemplateUses { get; } = new();
+
         /// <summary>The compiled libraries the program includes, each once.</summary>
         public List<Libraries.CompiledTarget> CompiledLibraries { get; } = new();
     }
@@ -207,6 +213,15 @@ namespace Phi.Compiler.Syntax
         public ClassDecl Owner { get; set; } = null!;
         public MethodSymbol? Symbol { get; set; }
 
+        /// <summary>
+        /// Made from a method that takes types, for one call's types: the copy of the file it
+        /// was read from, which its errors say the call for (see DiagnosticBag.CopyOf).
+        /// </summary>
+        public SourceFile? OwnFile { get; set; }
+
+        /// <summary>The file its text is in: its class's, or its own copy of it.</summary>
+        public SourceFile File => OwnFile ?? Owner.File;
+
         /// <summary>Where its [end] ends, for finding the method around a place in the file.</summary>
         public int End { get; set; }
     }
@@ -223,11 +238,49 @@ namespace Phi.Compiler.Syntax
         public Span NameSpan { get; init; }
         public List<(string Name, Span Span)> Parameters { get; } = new();
 
+        /// <summary>For each of its types, the interface it must have (&lt;Item has Ordered&gt;), or null.</summary>
+        public List<(string Name, Span Span)?> MustHave { get; } = new();
+
         /// <summary>Where its `struct` is among the file's tokens.</summary>
         public int StartToken { get; init; }
 
         /// <summary>All of it in the file, from `struct` to its closing brace: a compiled library's interface has it whole.</summary>
         public Span Text { get; set; }
+    }
+
+    /// <summary>
+    /// [Largest&lt;Item&gt;: Item items[];] ... [end: best] in a class: a method written once for any
+    /// type. It becomes a method of its class for each set of types it's called with, its text
+    /// read again with the type in Item's place, under the call's whole name (Largest&lt;int&gt;).
+    /// </summary>
+    public sealed class MethodTemplate : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public ClassDecl Owner { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public Span NameSpan { get; init; }
+        public List<(string Name, Span Span)> Parameters { get; } = new();
+        public List<(string Name, Span Span)?> MustHave { get; } = new();
+
+        /// <summary>Where its `[` is among the file's tokens.</summary>
+        public int StartToken { get; init; }
+    }
+
+    /// <summary>A call of a method that takes types, with the types it gives: Lists.Largest&lt;int&gt;.</summary>
+    public sealed class MethodTemplateUse : Node
+    {
+        public SourceFile File { get; init; } = null!;
+
+        /// <summary>The class it names before the method (Lists), or null for a method of the class the call is in.</summary>
+        public string? Class { get; init; }
+
+        /// <summary>The class (or struct) the call is written in.</summary>
+        public string InClass { get; init; } = "";
+        public string Template { get; init; } = "";
+        public List<TypeRef> Arguments { get; init; } = new();
+
+        /// <summary>The method's whole name, which is the method made for these types: Largest&lt;int&gt;.</summary>
+        public string FullName { get; init; } = "";
     }
 
     /// <summary>Stack&lt;int&gt; where a type goes: the struct's name, the types given, and the whole as a type's name.</summary>

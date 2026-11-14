@@ -1,0 +1,45 @@
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Spot
+{
+	int x;
+
+}
+
+struct.Sorted<Item has Ranked>
+{
+	new Item items[];
+}
+
+
+phi.Lists:Library
+{
+	[Largest<Item>: Item items[];]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	[Higher<Item has Ranked>: Item a; Item b;]
+	[end: (a.Rank)]
+
+	[Plain: int n: 0;]
+	[end: n]
+
+}
+
+phi.GenericMethodsMisuse:Program
+{
+	int scores: 3 9 4;
+	Spot spots[3];
+	new Spot here;
+	log (Lists.Largest: scores);
+	log (Lists.Largest<Spot>: spots);
+	exit 0;
+}

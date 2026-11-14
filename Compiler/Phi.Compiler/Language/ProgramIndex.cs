@@ -214,7 +214,7 @@ namespace Phi.Compiler.Language
         /// The variables of a method, or a class's own code. A name declared twice is in separate
         /// blocks, and code that compiles can only mean the last one before it.
         /// </summary>
-        NameInfo? Local(MethodDecl method, string name, int offset) => Nearest(DeclaredIn(method), name, offset, method.Owner.File);
+        NameInfo? Local(MethodDecl method, string name, int offset) => Nearest(DeclaredIn(method), name, offset, method.File);
 
         NameInfo? ClassVariable(ClassDecl cls, string name, int offset) => Nearest(cls.Body.SelectMany(SyntaxWalker.Nodes).OfType<Stmt>(), name, offset, cls.File);
 

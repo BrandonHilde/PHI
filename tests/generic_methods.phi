@@ -1,0 +1,97 @@
+# A class's method can take types, as a struct can: [Largest<Item>: Item items[];] is written
+# once, and each call names the type it's for, (Lists.Largest<int>: scores). Each set of types
+# a method is called with makes a method of its own, read again with the type in Item's place.
+struct.Stack<Item>
+{
+	Item items[atmost 8];
+
+	[Push: Item item;]
+		items++ item;
+	[end]
+
+	# a struct that takes types calling a method that does, with its own type
+	[Top]
+	[end: (Lists.Largest<Item>: items)]
+}
+
+phi.Lists:Library
+{
+	[Largest<Item>: Item items[];]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	[Swap<Item>: ptr<Item> a: 0; ptr<Item> b: 0;]
+		Item kept: a:0;
+		a:0 is b:0;
+		b:0 is kept;
+	[end]
+
+	# one that calls another with its own type
+	[Top<Item>: Item items[]; Item least: 0;]
+		Item best: (Largest<Item>: items);
+		if best < least return least;
+	[end: best]
+
+	# two types, and what it returns said in its header
+	[Wider<From To>: From value: 0; : To]
+	[end: value]
+
+	# nothing but a type
+	[Zero<Item>: : Item]
+	[end: 0]
+
+	# one that calls itself
+	[Count<Item>: Item from: 0; Item to: 0;]
+		if from >= to return 0;
+	[end: (Count<Item>: from + 1 to) + 1]
+}
+
+phi.GenericMethods:Library
+{
+	int scores: 3 9 4;
+	u8 small: 200 17 250;
+	u16 mid: 300 70 65000;
+	debug (Lists.Largest<int>: scores) ' ' (Lists.Largest<u8>: small) ' ' (Lists.Largest<u16>: mid) '\n';
+
+	int a: 1;
+	int b: 2;
+	call Lists.Swap<int>: addr a addr b;
+	u8 c: 7;
+	u8 d: 9;
+	call Lists.Swap<u8>: addr c addr d;
+	debug a ' ' b ' ' c ' ' d '\n';
+	debug (Lists.Top<int>: scores 50) ' ' (Lists.Top<int>: scores 5) ' ' (Lists.Top<u8>: small 1) '\n';
+
+	u32 wide: (Lists.Wider<u8 u32>: 200);
+	debug wide ' ' (Lists.Zero<u32>) ' ' (Lists.Count<int>: 3 10) '\n';
+
+	# a method of this class, called with no class before it, as a statement and as a value
+	call Show<u8>: 65;
+	call Show<int>: 66000;
+	debug (Twice<int>: 4) ' ' (Twice<u8>: 200) ' ' ((Twice<int>: 2) < 5) '\n';
+
+	# beside a comparison, which looks nearly the same
+	int low: 1;
+	int high: 9;
+	if low < high and high > low
+		debug (low < high) ' ' (high > low) '\n';
+	;;
+
+	Stack<int> stack;
+	call stack.Push: 12;
+	call stack.Push: 40;
+	call stack.Push: 7;
+	debug (stack.Top) '\n';
+
+	[Twice<Item>: Item n: 0;]
+	[end: n + n]
+
+	[Show<Item>: Item n: 0;]
+		debug n '\n';
+	[end]
+}

@@ -435,6 +435,8 @@ namespace Phi.Compiler
                 into.Structs.AddRange(node.Structs);
                 into.Templates.AddRange(node.Templates);
                 into.TemplateUses.AddRange(node.TemplateUses);
+                into.MethodTemplates.AddRange(node.MethodTemplates);
+                into.MethodTemplateUses.AddRange(node.MethodTemplateUses);
                 into.Enums.AddRange(node.Enums);
                 into.Uses.AddRange(node.Uses);
             }
@@ -539,6 +541,8 @@ namespace Phi.Compiler
             into.Structs.AddRange(from.Structs);
             into.Templates.AddRange(from.Templates);
             into.TemplateUses.AddRange(from.TemplateUses);
+            into.MethodTemplates.AddRange(from.MethodTemplates);
+            into.MethodTemplateUses.AddRange(from.MethodTemplateUses);
             into.Enums.AddRange(from.Enums);
             into.Uses.AddRange(from.Uses);
             into.CompiledLibraries.AddRange(from.CompiledLibraries);

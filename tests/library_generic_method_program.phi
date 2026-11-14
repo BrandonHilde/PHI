@@ -1,0 +1,15 @@
+# library: library_src/picks.phi
+# A compiled library's class can have a method that takes types. The library holds its code
+# for the types the library itself calls it with, and a program can call those too, by the
+# same name. (For a type the library never used, it's an error: a library doesn't carry the
+# method's text, as it does a struct's that takes types.)
+use picks;
+
+phi.LibraryGenericMethod:Program
+{
+	u8 bytes: 9 250 31;
+	int numbers: 4 -8 15;
+	log (Picks.BiggestOfThree: 3 12 7) ' ' (Picks.BiggestByte: bytes) '\n';
+	log (Picks.Biggest<int>: numbers) ' ' (Picks.Biggest<u8>: bytes) '\n';
+	exit 0;
+}

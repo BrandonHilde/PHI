@@ -1,0 +1,20 @@
+# A library whose class has a method that takes types, for tests/library_generic_method_program.phi:
+# its code is made for the types the library itself calls it with, here int and u8.
+phi.Picks:Library
+{
+	[Biggest<Item>: Item items[];]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	[BiggestOfThree: int a: 0; int b: 0; int c: 0;]
+		int all: a b c;
+	[end: (Biggest<int>: all)]
+
+	[BiggestByte: u8 bytes[];]
+	[end: (Biggest<u8>: bytes)]
+}

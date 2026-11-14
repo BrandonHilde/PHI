@@ -525,7 +525,7 @@ namespace Phi.Compiler.CodeGen
             }
             foreach (MethodSymbol m in unit.Methods)
             {
-                file = m.Decl.Owner.File;
+                file = m.Decl.File;
                 foreach (VariableSymbol v in m.Parameters.Where(v => !Given(v.Type)).Concat(m.Locals.Where(v => !KeptVar(v))))
                     Not(v.Decl, $"{A(v.Type)} variable");
                 if (m.ReturnType.Kind != TypeKind.Void && !Given(m.ReturnType)) Not(m.Decl, $"a method that gives {A(m.ReturnType)}");
@@ -1389,7 +1389,7 @@ namespace Phi.Compiler.CodeGen
 
         void EmitMethod(MethodSymbol m)
         {
-            file = m.Decl.Owner.File;
+            file = m.Decl.File;
             Line("");
             // the class and file are what phi profile reports a method by
             string kind = m.IsHook ? "event" : m.IsInterruptHandler ? "interrupt handler" : "method";
@@ -3969,7 +3969,7 @@ namespace Phi.Compiler.CodeGen
 
             // the arguments first, all of them, before any parameter's place changes
             var places = new List<(VariableSymbol Variable, string Label, string? Register)>();
-            Comment($"{m.Name}, written out here ({FileName(m.Decl.Owner.File)})");
+            Comment($"{m.Name}, written out here ({FileName(m.Decl.File)})");
             for (int i = 0; i < m.Parameters.Count; i++)
             {
                 VariableSymbol p = m.Parameters[i];
@@ -4031,7 +4031,7 @@ namespace Phi.Compiler.CodeGen
                 aliases++;
             }
             inlining.Add(m);
-            file = m.Decl.Owner.File;
+            file = m.Decl.File;
             returnLabel = NewLabel("inlined");
             returnUsed = false;
             resultType = m.ReturnType;

@@ -181,8 +181,26 @@ namespace Phi.Compiler.Semantics
 
         // ================================================================ declarations
 
+        /// <summary>The program's methods that take types, for saying so where one is called without any.</summary>
+        IReadOnlyList<MethodTemplate> methodTemplates = Array.Empty<MethodTemplate>();
+
+        /// <summary>
+        /// For a call of a method nobody has by that name: it's one that takes types, and the
+        /// call gave none (Lists.Largest: scores for Lists.Largest&lt;int&gt;: scores).
+        /// </summary>
+        string? TakesTypes(string callee, Scope scope)
+        {
+            int dot = callee.LastIndexOf('.');
+            string cls = dot < 0 ? scope.Class.Name : callee[..dot], name = callee[(dot + 1)..];
+            MethodTemplate? t = methodTemplates.FirstOrDefault(m => m.Owner.Name == cls && m.Name == name);
+            if (t == null) return null;
+            string types = string.Join(" ", t.Parameters.Select(p => p.Name));
+            return $"{name} takes {(t.Parameters.Count == 1 ? "a type" : $"{t.Parameters.Count} types")}, which each call gives it: {callee}<{types}>, with {(t.Parameters.Count == 1 ? "the type" : "the types")} in {(t.Parameters.Count == 1 ? $"{types}'s" : "their")} place, like {callee}<{string.Join(" ", t.Parameters.Select(_ => "int"))}>";
+        }
+
         BoundProgram? BindProgram(ProgramNode program)
         {
+            methodTemplates = program.MethodTemplates;
             foreach (StructTemplate template in program.Templates) templates.TryAdd(template.Name, template);
 
             // Kernel classes make a 32-bit kernel, Program classes a user program (and a
@@ -372,7 +390,9 @@ namespace Phi.Compiler.Semantics
                 foreach (MethodDecl m in cls.Methods)
                 {
                     int said = diagnostics.Count;
+                    file = m.File;
                     DeclareMethod(scope, m);
+                    file = cls.File;
                     HoldTemplateMethodErrors(cls, m, said);
                 }
             }
@@ -394,6 +414,7 @@ namespace Phi.Compiler.Semantics
                     if (m.Symbol == null) continue;
                     Scope ms = methodScopes[m];
                     int said = diagnostics.Count;
+                    file = m.File;
                     foreach (VarDecl p in m.Parameters)
                     {
                         BindVarDecl(p, ms, classLevel: false);
@@ -419,6 +440,7 @@ namespace Phi.Compiler.Semantics
 
                     // a method of a struct made from a template: what's wrong in it waits to see
                     // whether anything uses it (LeaveOutUnusedTemplateMethods)
+                    file = cls.File;
                     if (diagnostics.RealOf(cls.File) != null) templateMethods.Add(m.Symbol);
                     HoldTemplateMethodErrors(cls, m, said);
                 }
@@ -487,7 +509,7 @@ namespace Phi.Compiler.Semantics
             m.ResultBinding = true;
             SourceFile outerFile = file;
             int outerUnsafe = unsafeDepth;
-            file = m.Decl.Owner.File;
+            file = m.Decl.File;
             unsafeDepth = 0;
 
             allowObjectTemp = true;
@@ -670,7 +692,7 @@ namespace Phi.Compiler.Semantics
                                   $"declare '{n}' in the class instead (outside the method), or return the text as a str");
             }
 
-            file = m.Owner.File;
+            file = m.File;
             foreach (Node node in nodes)
             {
                 if (node is ReturnStmt r) Check(r.Value, m.Symbol.ReturnType, "handed back");
@@ -777,7 +799,7 @@ namespace Phi.Compiler.Semantics
                         _ => null,
                     };
                     if (target == null || ClassVariableWritten(target) is not string name) continue;
-                    file = m.Decl.Owner.File;
+                    file = m.Decl.File;
                     diagnostics.Warning(file, target.Span,
                         $"{runner} runs {m.Decl.Name} on another thread, which shares '{name}' with the rest of the program: " +
                         "write it in a locked block, or with atomic");
@@ -1240,7 +1262,7 @@ namespace Phi.Compiler.Semantics
                         MethodSignature? expected = iface.Signatures[i];
                         if (expected == null) continue;
                         MethodSignature own = SignatureOf(m);
-                        file = m.Decl.Owner.File;
+                        file = m.Decl.File;
                         if (!own.Parameters.Skip(1).SequenceEqual(expected.Parameters.Skip(1)) || !own.Into.Skip(1).SequenceEqual(expected.Into.Skip(1)))
                             Error(m.Decl.Span, $"{s.Name}.{m.Decl.Name} has to take what {iface.Name} says: [{InterfaceHeader(wanted)}]");
                         // (numbers, characters and pointers are told apart only where the interface says which)
@@ -2123,7 +2145,7 @@ namespace Phi.Compiler.Semantics
 
             UnitKind unit = classScope.Unit;
             string fullName = dotted ? name : $"{classScope.Class.Name}.{name}";
-            string label = hook?.Label ?? $"M_{Templates.Label(classScope.Class.Name)}_{name}";
+            string label = hook?.Label ?? $"M_{Templates.Label(classScope.Class.Name)}_{Templates.Label(name)}";
 
             var symbol = new MethodSymbol
             {
@@ -4478,7 +4500,7 @@ namespace Phi.Compiler.Semantics
                 default:
                     Error(calleeSpan, OnlyElsewhere(calleeName) ?? (calleeName.StartsWith("sys.")
                         ? $"there's no system call {calleeName} for {host.Name()}: declare it as {calleeName}: number  type name ...; in this system's module"
-                        : $"unknown method '{calleeName}'"));
+                        : TakesTypes(calleeName, scope) ?? $"unknown method '{calleeName}'"));
                     return null;
             }
         }

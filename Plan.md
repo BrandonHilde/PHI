@@ -1865,8 +1865,31 @@ and every program wrapped it or wrote its own.
   told. It needs the compiler to know which strs are never reached that way (a parameter
   only read, followed through the calls), and a place for the length in every layout a
   `str` has.
-- [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), and methods
-  that take types of their own.
+- [x] A type that must have an interface (`struct.Sorted<Item has Ranked>`), and a class's
+  methods that take types of their own (2026-11-14).
+  - `[Largest<Item>: Item items[];]` in a class, called `(Lists.Largest<int>: scores)`. **A
+    call always names its types** (the user's choice over working them out from what it's
+    given: it reads as `Stack<int>` does, a call says what it is where it's read, and the
+    other way can be added on top of this one, not the reverse).
+  - Made as a struct that takes types is (`Templates.Expand`): the method's tokens are read
+    again for each set of types it's called with (`Parser.InstantiateMethod`), under the
+    call's whole name, `Largest<int>`, and added to its class before any name is looked up.
+    A method made that way has its own copy of its file (`MethodDecl.OwnFile`), so what's
+    wrong in it says which call it was for. Calls and uses are followed until there are no
+    more: a method's code may use a struct that takes types and call others, and a struct's
+    methods may call one with the struct's type.
+  - A call's `<int>` is told from a comparison by what's between the brackets (only types,
+    on one line) and what's after them (the call's `:`, `;`, `)` or `throws`).
+  - `has` in either `<>` is checked once every struct is made, at the line that gives the
+    type: an interface that isn't one, a type that isn't a struct, a struct without it.
+  - A compiled library's interface has the methods the library made (`[Biggest<int>: int
+    items[]; : int]`), which a program calls by name; the method's text isn't carried.
+  - Tests `generic_methods` (16-bit, kernel, Linux in 32 and 64 bits),
+    `generic_methods_program`, `generic_methods_errors`, `generic_methods_misuse`,
+    `library_generic_method_program`.
+- [ ] A struct's own method taking types of its own (`stack.Convert<f64>`): the struct isn't
+  known where the call is read, which is when its method would have to be made. And a
+  compiled library carrying the text of its classes' methods that take types.
 - [x] The editor. The language server needed nothing: a made struct is a struct, read from
   a copy of the template's file, so going to a method or a field of a `Stack<int>` lands on
   its line in `struct.Stack<Item>`, and its members complete (test in

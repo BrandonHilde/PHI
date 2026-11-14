@@ -1,0 +1,63 @@
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Spot
+{
+	int x;
+
+	[Shift<Item>: Item by: 0;]
+	[end: x]
+}
+
+struct.Sorted<Item has Ranked>
+{
+	new Item items[];
+}
+
+struct.Keyed<Item has Missing>
+{
+	int n;
+}
+
+phi.Lists:Library
+{
+	[Largest<Item>: Item items[];]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	[Higher<Item has Ranked>: Item a; Item b;]
+	[end: (a.Rank)]
+
+	[Plain: int n: 0;]
+	[end: n]
+
+	[Plain<Item>: Item n: 0;]
+	[end: n]
+
+	[Pair<int>: int n: 0;]
+	[end: n]
+}
+
+phi.GenericMethodsErrors:Program
+{
+	int scores: 3 9 4;
+	Spot spots[3];
+	new Spot here;
+	log (Lists.Largest<int f64>: scores);
+	log (Lists.Smallest<int>: scores);
+	log (Lists.Plain<int>: 3);
+	log (Lists.Higher<int>: 1 2);
+	log (Lists.Higher<Spot>: here here);
+	log (here.Shift<int>: 2);
+	log (Mine<int>: 2);
+	new Sorted<Spot> s;
+	new Keyed<Spot> k;
+	exit 0;
+}

@@ -84,6 +84,12 @@ namespace Phi.Compiler.Syntax
         /// <summary>While such a struct is read for one use: the type each of its names stands for.</summary>
         Dictionary<string, TypeRef>? given;
 
+        /// <summary>The class or struct being read, whose own methods a call with no class before it means.</summary>
+        string currentClass = "";
+
+        /// <summary>A method that takes types, being read for one call: the name it's made under (Largest&lt;int&gt;).</summary>
+        string? madeMethod;
+
         public Parser(SourceFile file, DiagnosticBag diagnostics)
         {
             this.file = file;
@@ -443,13 +449,15 @@ namespace Phi.Compiler.Syntax
             Expect(TokenKind.OpenBrace, "'{'");
 
             var cls = new ClassDecl { File = file, Name = name.Text, Base = baseName, BaseSpan = baseSpan, Span = start.Span.To(name.Span) };
+            currentClass = name.Text;
 
             while (!At(TokenKind.CloseBrace) && !AtEnd)
             {
                 int before = pos;
                 try
                 {
-                    if (At(TokenKind.OpenBracket))
+                    if (AtMethodTemplate) ParseMethodTemplate(cls);
+                    else if (At(TokenKind.OpenBracket))
                     {
                         MethodDecl m = ParseMethod();
                         m.Owner = cls;
@@ -524,7 +532,11 @@ namespace Phi.Compiler.Syntax
         void ParseStructTemplate(Token start, Token name, ProgramNode program)
         {
             var template = new StructTemplate { File = file, Name = name.Text, NameSpan = name.Span, StartToken = tokens.IndexOf(start), Span = start.Span.To(name.Span) };
-            foreach (Token parameter in ParseTemplateParameters(name)) template.Parameters.Add((parameter.Text, parameter.Span));
+            foreach (var (parameter, has) in ParseTemplateParameters(name, "struct." + name.Text))
+            {
+                template.Parameters.Add((parameter.Text, parameter.Span));
+                template.MustHave.Add(has is Token h ? (h.Text, h.Span) : null);
+            }
             program.Templates.Add(template);
 
             // (its fields and methods go nowhere: they're read again for each use)
@@ -534,27 +546,141 @@ namespace Phi.Compiler.Syntax
             template.Text = Span.FromBounds(start.Span.Start, Previous.Span.End);
         }
 
-        /// <summary>&lt;Key Value&gt; after a struct's name: the names its types go by.</summary>
-        List<Token> ParseTemplateParameters(Token name)
+        /// <summary>
+        /// &lt;Key Value&gt; after a struct's or a method's name: the names its types go by, and for
+        /// each the interface it must have, if it says one (&lt;Item has Ordered&gt;). `written` is
+        /// how it starts, for a message: struct.Stack, or [Largest.
+        /// </summary>
+        List<(Token Name, Token? Has)> ParseTemplateParameters(Token name, string written)
         {
             Expect(TokenKind.Less, "'<'");
-            var parameters = new List<Token>();
+            var parameters = new List<(Token Name, Token? Has)>();
             while (!At(TokenKind.Greater))
             {
                 if (AtEnd || Current.StartsLine || !At(TokenKind.Identifier))
-                    throw Error(Current.Span, $"expected a name for a type {name.Text} takes, or '>', as in struct.{name.Text}<Item>, but found {Current}");
+                    throw Error(Current.Span, $"expected a name for a type {name.Text} takes, or '>', as in {written}<Item>, but found {Current}");
                 Token parameter = Advance();
                 if (ReservedWords.Contains(parameter.Text))
                     Error(parameter.Span, TypeKeywords.Contains(parameter.Text)
                         ? $"'{parameter.Text}' is a type already; this is a name for whatever type {name.Text} is used with, like Item (the type itself goes where it's used: {name.Text}<{parameter.Text}>)"
                         : KeywordNameMessage(parameter.Text, "type"));
-                else if (parameters.Any(p => p.Text == parameter.Text))
+                else if (parameters.Any(p => p.Name.Text == parameter.Text))
                     Error(parameter.Span, $"{name.Text} already takes a type called '{parameter.Text}'");
-                parameters.Add(parameter);
+                // <Item has Ordered>: only a struct that has the interface is taken for it
+                Token? has = null;
+                if (AcceptWord("has"))
+                {
+                    if (!IsName(Current) || Current.StartsLine)
+                        throw Error(Current.Span, $"expected the interface a {parameter.Text} must have, as in {written}<{parameter.Text} has Ordered>, but found {Current}");
+                    has = Advance();
+                }
+                parameters.Add((parameter, has));
             }
-            if (parameters.Count == 0) Error(Current.Span, $"struct.{name.Text}<> takes no types; name one, as in struct.{name.Text}<Item>, or leave the <> out");
+            if (parameters.Count == 0) Error(Current.Span, $"{written}<> takes no types; name one, as in {written}<Item>, or leave the <> out");
             Advance();
             return parameters;
+        }
+
+        /// <summary>At [Name&lt; : the header of a method that takes types.</summary>
+        bool AtMethodTemplate => At(TokenKind.OpenBracket) && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Less
+                                 && given == null && madeMethod == null && file.Compiled == null;
+
+        /// <summary>
+        /// [Largest&lt;Item&gt;: Item items[];] ... [end: best]: read once here for its syntax, with Item
+        /// a type nothing is known about, and kept as a template. It becomes a method of the
+        /// class for each set of types it's called with (InstantiateMethod).
+        /// </summary>
+        void ParseMethodTemplate(ClassDecl cls)
+        {
+            int start = pos;
+            Token name = PeekToken(1);
+            var template = new MethodTemplate { File = file, Owner = cls, Name = name.Text, NameSpan = name.Span, StartToken = start, Span = Current.Span.To(name.Span) };
+            if (placeholders != null)
+                throw Error(name.Span, $"{name.Text} takes types of its own, which a method of a struct that takes types can't yet; give the struct the type");
+            // (its code goes nowhere: it's read again for each call's types)
+            placeholders = new HashSet<string>();
+            madeMethod = name.Text;
+            readParameters = null;
+            try { ParseMethod(); }
+            finally
+            {
+                placeholders = null;
+                madeMethod = null;
+                // (kept even when its code has an error of syntax, so its calls don't each say there's no such method)
+                if (readParameters != null)
+                {
+                    foreach (var (parameter, has) in readParameters)
+                    {
+                        template.Parameters.Add((parameter.Text, parameter.Span));
+                        template.MustHave.Add(has is Token h ? (h.Text, h.Span) : null);
+                    }
+                    reading?.MethodTemplates.Add(template);
+                }
+            }
+        }
+
+        /// <summary>The types the method template just read takes, from its header.</summary>
+        List<(Token Name, Token? Has)>? readParameters;
+
+        /// <summary>
+        /// The method a template is for one call's types: its text read again with each of its
+        /// types' names standing for the type given, under the call's whole name
+        /// (Largest&lt;int&gt;), and added to its class. Its errors of syntax were reported when the
+        /// template was read, so they aren't again.
+        /// </summary>
+        public static MethodDecl? InstantiateMethod(MethodTemplate template, IReadOnlyList<TypeRef> arguments, string fullName, ProgramNode program, SourceFile copy)
+        {
+            var parser = new Parser(copy, new DiagnosticBag()) { reading = program, pos = template.StartToken, currentClass = template.Owner.Name, madeMethod = fullName };
+            parser.given = new Dictionary<string, TypeRef>();
+            for (int i = 0; i < template.Parameters.Count; i++) parser.given[template.Parameters[i].Name] = arguments[i];
+            MethodDecl method;
+            // (a method whose text can't be read was said so where the template was read; its calls
+            // find no method, which isn't said on top of that)
+            try { method = parser.ParseMethod(); }
+            catch (ParseError) { return null; }
+            method.Owner = template.Owner;
+            method.OwnFile = copy;
+            template.Owner.Methods.Add(method);
+            return method;
+        }
+
+        /// <summary>
+        /// After a call's method name: the types it gives a method that takes them
+        /// (Lists.Largest&lt;int&gt;: scores), which are part of the method's name. Told from a
+        /// comparison by what's between the brackets (only types) and what follows them (the
+        /// call's arguments or its end).
+        /// </summary>
+        string WithTypes(string callee, ref Span span, bool header = false)
+        {
+            int after = TypesEndAhead(0);
+            if (after < 0) return callee;
+            Token next = PeekToken(after);
+            if (!header && next.Kind is not (TokenKind.Colon or TokenKind.Semicolon or TokenKind.CloseParen) && !next.IsWord("throws")) return callee;
+
+            Advance();   // <
+            var arguments = new List<TypeRef>();
+            while (!At(TokenKind.Greater) && !At(TokenKind.GreaterGreater))
+            {
+                if (AtEnd || At(TokenKind.Semicolon)) throw Error(Current.Span, $"expected '>' to close {callee}<...>");
+                arguments.Add(ParseType());
+            }
+            Token close = Current;
+            // (Largest<ptr<u8>> ends in '>>', which the lexer reads as one token)
+            if (At(TokenKind.GreaterGreater))
+                tokens[pos] = new Token(TokenKind.Greater, new Span(close.Span.Start + 1, 1), ">", null, false);
+            else Advance();
+
+            int dot = callee.LastIndexOf('.');
+            string method = callee[(dot + 1)..] + $"<{string.Join(" ", arguments)}>";
+            span = span.To(close.Span);
+            // (inside a template read as itself, Largest<Item> is no call of anything yet)
+            if (placeholders == null && !header)
+                reading?.MethodTemplateUses.Add(new MethodTemplateUse
+                {
+                    File = file, Class = dot < 0 ? null : callee[..dot], InClass = currentClass, Template = callee[(dot + 1)..],
+                    Arguments = arguments, FullName = method, Span = span,
+                });
+            return dot < 0 ? method : callee[..dot] + "." + method;
         }
 
         /// <summary>
@@ -571,7 +697,7 @@ namespace Phi.Compiler.Syntax
             Token start = parser.Advance();   // struct
             parser.Advance();                 // .
             Token name = parser.Advance();
-            parser.ParseTemplateParameters(name);
+            parser.ParseTemplateParameters(name, "struct." + name.Text);
             var named = new Token(TokenKind.Identifier, name.Span, fullName, null, name.StartsLine);
             StructDecl decl = parser.ParseStruct(start, named, program);
             program.Structs.Add(decl);
@@ -623,6 +749,7 @@ namespace Phi.Compiler.Syntax
         StructDecl ParseStruct(Token start, Token name, ProgramNode program)
         {
             var decl = new StructDecl { File = file, Name = name.Text, Span = start.Span.To(name.Span) };
+            currentClass = name.Text;
             // struct.Message foreign { ... }: laid out as C lays a struct out
             decl.IsForeign = AcceptWord("foreign");
             // struct.Circle has Shape { ... }: the interfaces it has, whose methods it must have
@@ -804,6 +931,25 @@ namespace Phi.Compiler.Syntax
             if (isr) Advance();
 
             string name = ParseQualifiedName(out Span nameSpan);
+            if (At(TokenKind.Less))
+            {
+                // a method that takes types, read as a template or for one call's types (whose
+                // name it then goes by); a compiled library's has its types in its name
+                if (CompiledHeader) name = WithTypes(name, ref nameSpan, header: true);
+                else if (madeMethod != null)
+                {
+                    readParameters = ParseTemplateParameters(Previous, "[" + name);
+                    name = madeMethod;
+                }
+                else
+                {
+                    // (said, and read on as if it took none, so the rest of the struct is still checked)
+                    ParseError error = Error(Current.Span, $"{name} takes types of its own, which only a class's method can yet (not a struct's)");
+                    int after = TypesEndAhead(0);
+                    if (after < 0) throw error;
+                    pos += after;
+                }
+            }
             var method = new MethodDecl { Name = name, IsInterruptHandler = isr, Span = open.Span.To(nameSpan) };
 
             if (Accept(TokenKind.Colon))
@@ -1242,7 +1388,7 @@ namespace Phi.Compiler.Syntax
                 callee = file.Text[calleeTarget.Span.Start..calleeTarget.Span.End];
                 calleeSpan = calleeTarget.Span;
             }
-            else callee = ParseQualifiedName(out calleeSpan);
+            else callee = WithTypes(ParseQualifiedName(out calleeSpan), ref calleeSpan);
             var arguments = new List<Expr>();
             var places = new List<(int, int, Expr)>();
 
@@ -1278,6 +1424,13 @@ namespace Phi.Compiler.Syntax
         {
             int i = ScanPostfix(0);
             if (i < 0) return false;
+            // (Lists.Largest<int>: scores), and (Zero<f64>) with nothing to give it
+            int types = TypesEndAhead(i);
+            if (types > 0)
+            {
+                if (PeekToken(types).Kind == TokenKind.CloseParen) return true;
+                i = types;
+            }
             Token colon = PeekToken(i);
             return colon.Kind == TokenKind.Colon && PeekToken(i + 1).Span.Start > colon.Span.End;
         }
@@ -1347,8 +1500,9 @@ namespace Phi.Compiler.Syntax
                 callee = file.Text[calleeTarget.Span.Start..calleeTarget.Span.End];
                 calleeSpan = calleeTarget.Span;
             }
-            else callee = ParseQualifiedName(out calleeSpan);
-            Expect(TokenKind.Colon, "':'");
+            else callee = WithTypes(ParseQualifiedName(out calleeSpan), ref calleeSpan);
+            // (a method that takes types and nothing else: (Zero<f64>))
+            if (!At(TokenKind.CloseParen) || !callee.EndsWith('>')) Expect(TokenKind.Colon, "':'");
 
             var arguments = new List<Expr>();
             var places = new List<(int, int, Expr)>();

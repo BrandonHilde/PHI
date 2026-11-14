@@ -1,0 +1,12 @@
+Shift takes types of its own, which only a class's method can yet (not a struct's)
+'int' is a type already; this is a name for whatever type Pair is used with, like Item
+Lists already has a method Plain; one that takes types needs a name of its own
+Largest takes 1 type (Largest<Item>), but Largest<int f64> gives it 2 types
+Lists has no method Smallest that takes types (declared [Smallest<Item>: ...])
+Plain takes no types: it's declared [Plain], not [Plain<...>]
+there's no class here with a method Shift that takes types; a struct's own methods can't take types yet
+GenericMethodsErrors has no method Mine that takes types (declared [Mine<Item>: ...])
+Sorted takes a type that has Ranked, and Spot doesn't: it's declared struct.Spot
+Keyed takes a type that has Missing, which isn't an interface of this program
+Higher takes a type that has Ranked, and int isn't a struct, so it has no interfaces
+Higher takes a type that has Ranked, and Spot doesn't: it's declared struct.Spot

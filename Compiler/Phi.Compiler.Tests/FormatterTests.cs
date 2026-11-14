@@ -188,6 +188,9 @@ namespace Phi.Compiler.Tests
             Host host = path.EndsWith("_program.phi") ? Host.Linux64 : Host.PhiOS;
             CompileResult before = PhiCompiler.Compile(SourceFile.Load(path), host: host);
             if (!before.Success) return;    // (a test of errors, or of something only a later step adds)
+            // (a compiled library is held to the standard library's modules as they are, and here
+            // they're laid out again, which adds parentheses: it's refused, rightly, for that alone)
+            if (File.ReadAllText(path).Contains("# library:")) return;
 
             string text = File.ReadAllText(path);
             var diagnostics = new DiagnosticBag();
