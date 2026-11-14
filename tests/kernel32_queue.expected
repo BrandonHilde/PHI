@@ -9,5 +9,5 @@ front: 3 count: 4
 pop: 4
 pop: 6
 pop: 7
-empty: 0 pop: 0 front: 0
+empty: 0 pop: 0 no front: 1
 heap blocks: 0

@@ -1762,6 +1762,14 @@ and every program wrapped it or wrote its own.
   It's a struct beside memory.list's `List` class (a kernel's u32 list behind a pointer),
   as `Map<Key Value>` is beside `Map`. Test `generic_list` (kernel, Linux in 32 and 64
   bits).
+- [x] `Queue<Item>` in data.queue (2026-11-14), beside the older `Queue` class: `Add`,
+  `Take`, `Front`, `Count`, `Clear`, over `items` and `first`. It's PHI OS's browser's
+  (`brw/queue.phi`), which now uses this one. The older class stays for what it's for:
+  records of one size in a block that never grows, so a driver's `Push` says when it's
+  full and asks nothing of the heap (rtl8139, virtio_net, tcp, udp and mail use it). Its
+  `Front` kept a pointer in a u32, which kept the whole module out of 64-bit programs:
+  it gives a `ptr<u8>` now, as its callers took it. Test `generic_queue` (kernel, Linux in
+  32 and 64 bits).
   - What it costs, in `bench_text` (a 32-bit kernel, instructions run): finding 1000
     names in a `Map<str int>` is 312,000, against 189,000 for the way it was done before,
     each name hashed by hand into the u32 map (which finds a hash, not the name); adding

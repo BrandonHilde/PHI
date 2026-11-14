@@ -1,0 +1,68 @@
+# runs only in 32 and 64 bits: arrays that grow
+# data.queue's Queue<Item>: first in, first out, for items of any type. Taking doesn't move
+# the others; the room in front is used again when the queue empties or is mostly room.
+use data.queue;
+
+struct.Request
+{
+	int id;
+	new str address;
+}
+
+phi.GenericQueue:Library
+{
+	new Queue<int> waiting;
+	debug (waiting.Count) ' ';
+	call waiting.Add: 7;
+	call waiting.Add: 12;
+	call waiting.Add: -3;
+	debug (waiting.Count) ' ' (waiting.Front) ' ' (waiting.Take) ' ' (waiting.Take) ' ' (waiting.Count) '\n';
+	call waiting.Add: 40;
+	debug (waiting.Take) ' ' (waiting.Take) ' ' (waiting.Count) '\n';
+
+	# emptied: the room in front is used again
+	call waiting.Add: 1;
+	debug waiting.first ' ' waiting.items.len ' ' (waiting.Take) '\n';
+
+	# many through a short queue: the items move back once most of it is room in front
+	int sum: 0;
+	int most: 0;
+	while int i: 0; i < 1000; i++;
+		call waiting.Add: i;
+		call waiting.Add: i * 2;
+		sum is sum + (waiting.Take);
+		if waiting.items.len > most
+			most is waiting.items.len;
+		;;
+	;;
+	debug sum ' ' (waiting.Count) ' ' (most < 2100) ' ' (waiting.Front) '\n';
+	call waiting.Clear;
+	debug (waiting.Count) ' ' waiting.first '\n';
+
+	# text, and a struct with text that grows: each item is a copy of its own
+	new Queue<str> lines;
+	call lines.Add: 'first';
+	call lines.Add: 'second';
+	debug (lines.Take) ' ' (lines.Front) ' ' (lines.Count) '\n';
+
+	new Queue<Request> requests;
+	new Request r;
+	r.id is 1;
+	r.address is 'example.org/a';
+	call requests.Add: r;
+	r.id is 2;
+	r.address++ '/b/c';
+	call requests.Add: r;
+	r.address is 'changed';
+	new Request got;
+	got is (requests.Take);
+	debug got.id ' ' got.address ' ' (requests.Count) '\n';
+	got is (requests.Take);
+	debug got.id ' ' got.address ' ' (requests.Count) '\n';
+
+	# beside the older Queue class, in one program
+	ptr<QueueData> records: (Queue.New: 4 2);
+	int n: 5;
+	debug (Queue.Push: records addr n) ' ' (Queue.Push: records addr n) ' ' (Queue.Push: records addr n) ' ' records:0.count '\n';
+	call Queue.Delete: records;
+}

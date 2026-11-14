@@ -39,7 +39,7 @@ phi.Test:Kernel
 	while (Queue.Pop: events addr e)
 		log 'pop: ' e.kind '\n';
 	;;
-	log 'empty: ' events:0.count ' pop: ' (Queue.Pop: events addr e) ' front: ' (Queue.Front: events) '\n';
+	log 'empty: ' events:0.count ' pop: ' (Queue.Pop: events addr e) ' no front: ' ((Queue.Front: events) is 0) '\n';
 
 	call Queue.Delete: events;
 	log 'heap blocks: ' Heap.used_blocks '\n';

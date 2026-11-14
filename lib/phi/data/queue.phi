@@ -1,4 +1,33 @@
-# Queues: records of one size, taken out in the order they were put in, such as
+# Queues: first in, first out.
+#
+# Queue<Item> is for items of any type, as many as are added (32-bit kernels and programs):
+#
+#   use data.queue;
+#   new Queue<int> waiting;                     # numbers, text, structs
+#   call waiting.Add: 7;                        # a copy is kept, after the newest
+#   call waiting.Add: 12;
+#   while (waiting.Count) > 0
+#       int next: (waiting.Take);               # the oldest, which leaves the queue
+#   ;;
+#   int soon: (waiting.Front);                  # the oldest, which stays
+#   call waiting.Clear;
+#
+#   new Queue<Request> requests;                # a struct: Add keeps a copy, text and all
+#   Request r;
+#   r is (requests.Take);
+#
+# Taking from an empty queue (or its Front) is an error, as an index past an array's end
+# is: ask Count first. The items are the array items, the oldest at items:first, and
+# taking doesn't move the others along: first steps past the one taken, and the room in
+# front is used again once the queue has emptied, or has more room in front than items.
+# A Queue is copied, compared and freed whole, as any struct with an array that grows is.
+#
+# The Queue class below is the older way: records of one size behind a pointer, in a block
+# that never grows, so Push says when it's full. That's what a driver wants for packets
+# (what doesn't fit is dropped, and nothing is asked of the heap while one arrives), and
+# what the network modules use.
+#
+# Queues of records of one size, taken out in the order they were put in, such as
 # packets or events waiting for the next tick (32-bit kernels and programs).
 #
 #   use data.queue;
@@ -17,6 +46,45 @@
 # handler and the rest of the program at the same time.
 
 use memory.mem;
+
+struct.Queue<Item>
+{
+	Item items[];
+	int first;                  # where the oldest is in items
+
+	[Add: Item item;]
+		if first > 0 and first is items.len
+			items.len is 0;
+			first is 0;
+		;;
+		elif first >= 32 and first * 2 > items.len
+			int count: items.len - first;
+			while int i: 0; i < count; i++;
+				items:i is items:(first + i);
+			;;
+			items.len is count;
+			first is 0;
+		;;
+		items++ item;
+	[end]
+
+	[Count]
+	[end: items.len - first]
+
+	# the oldest, which leaves the queue
+	[Take]
+		first++;
+	[end: items:(first - 1)]
+
+	# the oldest, which stays
+	[Front]
+	[end: items:first]
+
+	[Clear]
+		items.len is 0;
+		first is 0;
+	[end]
+}
 
 struct.QueueData
 {
@@ -57,10 +125,11 @@ phi.Queue:Library
 		call Drop: queue;
 	[end: true]
 
-	# the oldest record, where it is in the queue; 0 when it's empty
+	# the oldest record, where it is in the queue (a ptr<u8>, which a ptr<Packet> takes); 0
+	# when it's empty
 	[Front: ptr<QueueData> queue: 0;]
 		if queue:0.count is 0 return 0;
-		u32 front: queue:0.records + queue:0.head * queue:0.size;
+		ptr<u8> front: queue:0.records + queue:0.head * queue:0.size;
 	[end: front]
 
 	# take the oldest record out, without copying it anywhere
