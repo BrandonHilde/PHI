@@ -1,0 +1,17 @@
+phi.EachTextErrors:Kernel
+{
+	str said: 'café';
+	int scores: 3 9 4;
+	while each c in said as f64
+		log c;
+	;;
+	while each s in scores as int
+		log s;
+	;;
+	while each c in 'abc'
+		log c;
+	;;
+	if said has c when c is 'a'
+		log c;
+	;;
+}

@@ -3491,6 +3491,26 @@ zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
 `exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
 enum's values, and an `else` says the others are known.
 
+**`while each c in text`, and `as` (2026-11-14, the user's design).** A str is gone through
+a character at a time, each as text (`c is 'é'`); `while each c in text as [type]` says
+another way: `as int` is each character's number, `as u8` and `as chr` each byte, `as str`
+the same as nothing said (the user: with no `as`, the default). `as` is the word a cast
+has, with its meaning: given as this type. A `chr` stays one byte, as C's is, so `as chr` is
+by byte; the reference says so where it's described.
+- The parser reads `text as int` as the cast it looks like and takes it apart
+  (`VarDecl.EachAs`): no array or text is made another type whole, and none of the 77
+  `while each` loops in PHI, PHI OS and the libraries had one.
+- The binder writes the loop as the statements it stands for (`Binder.BindTextLoop`): the
+  loop's own count of bytes, the character fetched and the count moved on before the loop's
+  statements (so `continue` goes on to the next), UTF-8 read in place with no library
+  module. Bytes that aren't a character come one at a time; nothing reads past the zero at
+  the end. The generator needed nothing.
+- The text is a variable, a field or an element (or a `ptr<u8>`): the loop indexes it more
+  than once, so a call's text is stored first, and so is text written there (indexing
+  that isn't in 64-bit programs).
+- Not for `if text has c when ...`, which still looks through arrays only.
+- Tests `each_text` (kernel, Linux in 32 and 64 bits) and `each_text_errors`.
+
 **`if list has x when ...` (2026-11-14, the user's design).** Is there an element the
 condition holds for, and if so, that element: `if players has p when p.score is 0 ... ;;
 else ... ;;`. `p` is a new name of whatever the list holds, the first such element inside

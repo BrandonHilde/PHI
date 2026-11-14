@@ -952,6 +952,35 @@ while each p in points
 The same name can be used in another `while each` loop, over any array: each loop's is a
 variable of its own.
 
+**Text, a character at a time.** `while each` goes through a `str` (or a `ptr<u8>` to text)
+by character, and each one comes as text, whatever it takes to write: `é` is two bytes and
+`😀` four, and each is one turn of the loop.
+
+```phi
+str said: 'café';
+while each c in said            # c is 'c', 'a', 'f', 'é'
+    if c is 'é'
+        log 'found\n';
+    ;;
+;;
+```
+
+`as` after the text says another way to be given each one:
+
+```phi
+while each code in said as int  # each character's number: 99 97 102 233
+while each b in said as u8      # each byte: 99 97 102 195 169
+while each letter in said as chr    # each byte too, as a chr (a chr is one byte)
+while each c in said as str     # the same as saying nothing
+```
+
+`as chr` is by byte, not by character: a `chr` is one byte, as C's `char` is, so a character
+past ASCII comes as two to four of them. For characters, leave `as` out. The text is one in
+a variable, a field or an element (text a call gives is stored first). Bytes that aren't a
+character (text from a file or the network may have some) come one at a time, and the
+loop never reads past the text's end. `as` is only for text: an array's elements come as
+they are.
+
 ### Ports
 
 ```phi

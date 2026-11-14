@@ -368,6 +368,12 @@ namespace Phi.Compiler.Syntax
         /// <summary>The element of `if list has x when ...`, not of a while each: for what's said when list isn't an array.</summary>
         public bool EachFinds { get; init; }
 
+        /// <summary>while each c in text as int: what each character of a str is given as (str, int, u8 or chr), if it says.</summary>
+        public TypeRef? EachAs { get; init; }
+
+        /// <summary>Set by the binder, for the x of while each x in text (a str): str, int, u8 or chr.</summary>
+        public string? EachOfText { get; set; }
+
         /// <summary>Declared with new: an object.</summary>
         public bool IsNew { get; init; }
 

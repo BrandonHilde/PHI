@@ -2485,6 +2485,38 @@ namespace Phi.Compiler.Semantics
             Expr array = v.Decl.EachOf!;
             BindExpr(array, scope);
             if (array.Type.IsError) return;
+            // text, a character at a time: as text itself (as str, or nothing said), as the
+            // character's number (as int), or a byte at a time (as u8, as chr)
+            bool text = array.Type.IsString && !array.Type.IsArray || array.Type.IsPointer && !array.Type.IsArray && array.Type.Pointee == PhiType.U8;
+            if (text && !v.Decl.EachFinds)
+            {
+                string given = v.Decl.EachAs?.Name ?? "str";
+                if (array is not (NameExpr or MemberExpr or IndexExpr))
+                {
+                    Error(array.Span, "while each goes through text that's in a variable, a field or an element; store this first");
+                    return;
+                }
+                switch (given)
+                {
+                    case "str":
+                        v.Type = PhiType.Str;
+                        v.Capacity = 5;        // a character is 1 to 4 bytes
+                        break;
+                    case "int": v.Type = PhiType.Int; break;
+                    case "u8": v.Type = PhiType.U8; break;
+                    case "chr": v.Type = PhiType.Chr; break;
+                    default:
+                        Error(v.Decl.EachAs!.Span, $"text is gone through as str (each character, the default), as int (each character's number), or as u8 or chr (each byte), not as {given}");
+                        return;
+                }
+                v.Decl.EachOfText = given;
+                return;
+            }
+            if (v.Decl.EachAs != null)
+            {
+                Error(v.Decl.EachAs.Span, $"`as` after while each is for text (while each c in name as int); this is {A(array.Type)}, whose elements come as they are");
+                return;
+            }
             if (!array.Type.IsArray)
             {
                 Error(array.Span, v.Decl.EachFinds ? $"`has ... when` looks through an array for an element, and this is {A(array.Type)}"
@@ -2508,6 +2540,102 @@ namespace Phi.Compiler.Semantics
                 }
                 else v.Capacity = array is NameExpr { Symbol: VariableSymbol { Capacity: > 0 } source } ? source.Capacity : DefaultStrCapacity;
             }
+        }
+
+        /// <summary>
+        /// while each c in text (a str, or a ptr&lt;u8&gt; to one), as the statements it stands for.
+        /// i is the loop's own count of bytes; c is fetched and i moved on before the loop's
+        /// statements, so a continue among them goes on to the next character.
+        ///
+        ///   as u8, as chr (a byte at a time)      as int (each character's number)
+        ///     while text:i is not 0                 while text:i is not 0
+        ///         c is text:i;                          c is text:i;
+        ///         i++;                                  i++;
+        ///         ...                                   if c >= 0xC0
+        ///     ;;                                            c is c &amp; 7, 15 or 31 (by how many bytes follow);
+        ///                                                   while text:i &amp; 0xC0 is 0x80
+        ///   as str (each character, as text)                    c is c &lt;&lt; 6 | text:i &amp; 0x3F;
+        ///     while text:i is not 0                             i++;
+        ///         c is '';                                  ;;
+        ///         c++ text:i as chr;                    ;;
+        ///         i++;                                  ...
+        ///         if text:(i - 1) >= 0xC0           ;;
+        ///             while text:i &amp; 0xC0 is 0x80 and c.len &lt; 4
+        ///                 c++ text:i as chr;
+        ///                 i++;
+        ///             ;;
+        ///         ;;
+        ///         ...
+        ///     ;;
+        ///
+        /// Bytes that aren't a character come one at a time, and nothing reads past the zero
+        /// at the text's end (a zero is no byte that follows another).
+        /// </summary>
+        Stmt BindTextLoop(WhileEachStmt each, string given, Scope scope)
+        {
+            Span at = each.Array.Span;
+            VariableSymbol c = each.Element.Symbol!, count = each.Index.Symbol!;
+            Expr C() => new NameExpr { Name = c.Name, Span = each.Element.NameSpan };
+            Expr I() => new NameExpr { Name = count.Name, Span = at };
+            Expr N(long n) => new NumberExpr { Value = n, Span = at };
+            Expr Op(Expr l, BinaryOp op, Expr r) => new BinaryExpr { Left = l, Op = op, Right = r, Span = at };
+            Expr As(Expr e, string type) => new CastExpr { Operand = e, TargetType = new TypeRef { Name = type, Span = at }, Span = at };
+            Expr Byte(Expr? back = null) => As(new IndexExpr { Target = each.Array, Index = back ?? I(), Span = at }, "int");
+            Stmt Set(Expr target, Expr value, AssignOp op = AssignOp.Set) => new AssignStmt { Target = target, Op = op, Value = value, Span = at };
+            Stmt Next() => Set(I(), N(1), AssignOp.Add);
+            Expr Follows() => Op(Op(Byte(), BinaryOp.BitAnd, N(0xC0)), BinaryOp.Equal, N(0x80));
+
+            var loop = new WhileStmt { Condition = Op(Byte(), BinaryOp.NotEqual, N(0)), Span = each.Span };
+            switch (given)
+            {
+                case "u8" or "chr":
+                    loop.Body.Add(Set(C(), As(Byte(), given)));
+                    loop.Body.Add(Next());
+                    break;
+                case "int":
+                {
+                    loop.Body.Add(Set(C(), Byte()));
+                    loop.Body.Add(Next());
+                    var two = new IfStmt { Condition = Op(C(), BinaryOp.GreaterEqual, N(0xE0)), Span = at };
+                    two.Then.Add(Set(C(), Op(C(), BinaryOp.BitAnd, N(15))));
+                    two.Else = new List<Stmt> { Set(C(), Op(C(), BinaryOp.BitAnd, N(31))) };
+                    var three = new IfStmt { Condition = Op(C(), BinaryOp.GreaterEqual, N(0xF0)), Span = at };
+                    three.Then.Add(Set(C(), Op(C(), BinaryOp.BitAnd, N(7))));
+                    three.Else = new List<Stmt> { two };
+                    var rest = new WhileStmt { Condition = Follows(), Span = at };
+                    rest.Body.Add(Set(C(), Op(Op(C(), BinaryOp.ShiftLeft, N(6)), BinaryOp.BitOr, Op(Byte(), BinaryOp.BitAnd, N(0x3F)))));
+                    rest.Body.Add(Next());
+                    var more = new IfStmt { Condition = Op(C(), BinaryOp.GreaterEqual, N(0xC0)), Span = at };
+                    more.Then.Add(three);
+                    more.Then.Add(rest);
+                    loop.Body.Add(more);
+                    break;
+                }
+                default:
+                {
+                    loop.Body.Add(Set(C(), new StringExpr { Value = "", Span = at }));
+                    loop.Body.Add(Set(C(), As(Byte(), "chr"), AssignOp.Add));
+                    loop.Body.Add(Next());
+                    Expr room = Op(new MemberExpr { Target = C(), Member = "len", MemberSpan = at, Span = at }, BinaryOp.Less, N(4));
+                    var rest = new WhileStmt { Condition = Op(Follows(), BinaryOp.And, room), Span = at };
+                    rest.Body.Add(Set(C(), As(Byte(), "chr"), AssignOp.Add));
+                    rest.Body.Add(Next());
+                    var more = new IfStmt { Condition = Op(Byte(Op(I(), BinaryOp.Subtract, N(1))), BinaryOp.GreaterEqual, N(0xC0)), Span = at };
+                    more.Then.Add(rest);
+                    loop.Body.Add(more);
+                    break;
+                }
+            }
+            loop.Body.AddRange(each.Body);
+
+            // in a block of its own, with the loop's two variables declared in it
+            var block = new IfStmt { Condition = new BoolExpr { Value = true, Span = at }, Span = each.Span };
+            BindCondition(block.Condition, scope);
+            block.Then.Add(each.Index);
+            block.Then.Add(each.Element);
+            block.Then.Add(BindStatement(Set(I(), N(0)), scope, classLevel: false));
+            block.Then.Add(BindStatement(loop, scope, classLevel: false));
+            return block;
         }
 
         /// <summary>The type of x in while each x in list: an element's, or for a struct, the struct itself.</summary>
@@ -2977,6 +3105,12 @@ namespace Phi.Compiler.Semantics
                     ShowInBlock(each.Element);
                     var element = each.Element.Symbol;
                     var index = each.Index.Symbol;
+                    if (element != null && index != null && !element.Type.IsError && each.Element.EachOfText is string given)
+                    {
+                        Stmt textLoop = BindTextLoop(each, given, scope);
+                        blockNames.RemoveAt(blockNames.Count - 1);
+                        return textLoop;
+                    }
                     if (element != null && index != null && !element.Type.IsError)
                     {
                         var current = new IndexExpr

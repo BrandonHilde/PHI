@@ -1793,10 +1793,18 @@ namespace Phi.Compiler.Syntax
                 if (!AcceptWord("in"))
                     throw Error(Current.Span, $"expected 'in' and an array, like while each {name.Text} in list");
                 Expr array = ParseExpression();
+                // while each c in text as int: `as` here is what each of the text's characters
+                // is given as, not the text made another type (which no text or array can be)
+                TypeRef? given = null;
+                if (array is CastExpr asType)
+                {
+                    array = asType.Operand;
+                    given = asType.TargetType;
+                }
                 Accept(TokenKind.Semicolon);
                 var each = new WhileEachStmt
                 {
-                    Element = new VarDecl { Type = new TypeRef { Name = "each", Span = name.Span }, Name = name.Text, NameSpan = name.Span, EachOf = array, Span = name.Span },
+                    Element = new VarDecl { Type = new TypeRef { Name = "each", Span = name.Span }, Name = name.Text, NameSpan = name.Span, EachOf = array, EachAs = given, Span = name.Span },
                     // the count, with a name no program can write
                     Index = new VarDecl { Type = new TypeRef { Name = "int", Span = name.Span }, Name = $"each#{name.Span.Start}", NameSpan = name.Span, Span = name.Span },
                     Array = array,

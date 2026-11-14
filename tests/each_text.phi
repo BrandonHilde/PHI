@@ -1,0 +1,95 @@
+# runs only in 32 and 64 bits: f64s aside, text here is past ASCII
+# while each c in text: a character at a time, as text. `as` says another way: as int is
+# each character's number, and as u8 or as chr each byte.
+struct.Player
+{
+	str name: [24];
+}
+
+phi.EachText:Library
+{
+	str said: 'café 日本 😀!';
+
+	# each character, as text: the default, and said
+	while each c in said
+		debug c '|';
+	;;
+	debug '\n';
+	int count: 0;
+	while each c in said as str
+		count++;
+		if c is 'é' or c is '😀'
+			debug c ' at ' count '  ';
+		;;
+	;;
+	debug count ' characters in ' said.len ' bytes\n';
+
+	# each character's number
+	while each code in said as int
+		debug code ' ';
+	;;
+	debug '\n';
+
+	# a byte at a time, as a number and as a chr
+	int bytes: 0;
+	int sum: 0;
+	while each b in said as u8
+		bytes++;
+		sum is sum + b;
+	;;
+	debug bytes ' ' sum '\n';
+	str plain: 'phi';
+	while each letter in plain as chr
+		debug letter '-';
+	;;
+	debug '\n';
+
+	# continue and break, a field, an element, text through a pointer, and none at all
+	while each c in said
+		if c is ' ' continue;
+		if c is '!' break;
+		debug '[' c ']';
+	;;
+	debug '\n';
+	Player ann;
+	ann.name is 'Ann Ødegård';
+	while each c in ann.name
+		debug c ' ';
+	;;
+	debug '\n';
+	str words: 'né' 'où';
+	while each c in words:1 as int
+		debug c ' ';
+	;;
+	call Spell: 'zoë';
+	str blank: '';
+	while each c in blank
+		debug 'never';
+	;;
+	debug '\n';
+
+	# one inside another, and the text built up again
+	str again: '';
+	str outer: 'xy';
+	str inner: 'é1';
+	while each a in outer
+		while each b in inner
+			again++ a b;
+		;;
+	;;
+	debug again ' ' (again is 'xéx1yéy1') '\n';
+
+	# bytes that aren't a character come one at a time, and nothing reads past the end
+	u8 broken: 0x41 0xC3 0x42 0xE2 0x82 0;
+	ptr<u8> raw: addr broken;
+	while each code in raw as int
+		debug code ' ';
+	;;
+	debug '\n';
+
+	[Spell: ptr<u8> text: 0;]
+		while each c in text
+			debug c '/';
+		;;
+	[end]
+}
