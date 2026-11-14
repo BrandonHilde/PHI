@@ -332,6 +332,13 @@ namespace Phi.Compiler.Semantics
         public PhiType Type { get; init; } = PhiType.Int;
     }
 
+    /// <summary>const f64 HALF: 0.5; : a number with a point, known when the program is built. Where it's used is that number, as if written there.</summary>
+    public sealed class FloatConstantSymbol : Symbol
+    {
+        public double Value { get; init; }
+        public PhiType Type { get; init; } = PhiType.F64;
+    }
+
     /// <summary>x.len: the element count of an array, or the current length of a str; x.max: the most it can hold.</summary>
     public sealed class LengthSymbol : Symbol
     {

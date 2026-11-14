@@ -120,11 +120,13 @@ namespace Phi.Compiler.CodeGen
         // ================================================================ 64-bit code, so far
 
         /// <summary>
-        /// What 64-bit programs can do so far (S10 is teaching the generator the rest): numbers
-        /// of up to 32 bits (and bln, chr, enums), pointers, structs made of those (in place, or
-        /// through a pointer), arrays of them kept in place, the heap (new and free), methods
-        /// that take and give numbers and pointers, calls, if, while, when, log and exit.
-        /// Anything else is an error naming it, rather than code that's wrong.
+        /// What 64-bit programs can do, which by now is nearly all a 32-bit program can: every
+        /// kind of number, text, structs and objects, arrays of each (kept in place, capped or
+        /// growing), method values and tables of them, interfaces, errors caught, threads,
+        /// atomic and locked. This walks the program and lets through what the generator has
+        /// 64-bit code for; anything else is an error naming it, rather than code that's wrong.
+        /// Among what it still stops: ports (in and out), interrupt handlers, a variable at an address,
+        /// printing a pointer that isn't text, and math between an address and a 64-bit number.
         /// </summary>
         void Check64()
         {
@@ -157,7 +159,7 @@ namespace Phi.Compiler.CodeGen
             static bool Kept(PhiType t) =>
                 t.Kind != TypeKind.Str && !t.Open
                 && (Value(t) || t.IsStruct && Plain(t.Struct!)
-                    || t.IsArray && (NumberKind(t) || Pointer(t.Element) || t.Kind == TypeKind.Struct && Plain(t.Struct!)));
+                    || t.IsArray && (NumberKind(t) || Pointer(t.Element) || MethodType(t.Element) || t.Kind == TypeKind.Struct && Plain(t.Struct!)));
             // a str of its own: with a size, one that grows, or the caller's (a str target; parameter)
             static bool Text(PhiType t) => t.IsString && !t.IsInlineText && !t.IsHeapText;
             // text that's set and built where it is: a str of its own, or a str field (in place,
@@ -206,7 +208,8 @@ namespace Phi.Compiler.CodeGen
             // and objects
             static bool Given(PhiType t) => Value(t) || Text(t) || t.Open && (ValueArray(t) && t.Kind != TypeKind.Str || StructArray(t) || t.TextTable || ObjectArray(t)) || Object(t);
             // an array whose elements are numbers or pointers (what ++, .len is and while each work on so far)
-            static bool ValueArray(PhiType t) => t.IsArray && (NumberKind(t) || Pointer(t.Element));
+            // (or method values: a table of methods, method<int: int> steps: addr Up addr Down;)
+            static bool ValueArray(PhiType t) => t.IsArray && (NumberKind(t) || Pointer(t.Element) || MethodType(t.Element));
             // an array of structs of values (fixed, [atmost N], or one that grows)
             static bool StructArray(PhiType t) => t.IsArray && t.Kind == TypeKind.Struct && Plain(t.Struct!);
 
@@ -267,7 +270,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     case NumberExpr or DecimalExpr or BoolExpr or SizeofExpr or StringExpr:
                         return;
-                    case NameExpr { Symbol: ConstantSymbol }:
+                    case NameExpr { Symbol: ConstantSymbol or FloatConstantSymbol }:
                         return;
                     case TextExpr text:
                         foreach (Expr part in text.Parts) Expression(part);
@@ -337,6 +340,11 @@ namespace Phi.Compiler.CodeGen
                     case MemberExpr { Count: int }:
                         return;
                     case MemberExpr { FilledLength: true, Target: var counted } when Place(counted):
+                        return;
+                    // a character of the text a call gives: (Name):0
+                    case IndexExpr { Target: NameExpr { Call: not null } or MemberExpr { Call: not null } or CallExpr } of when of.Target.Type.IsString && Small(of.Index.Type):
+                        Expression(of.Index);
+                        Expression(of.Target);
                         return;
                     case NameExpr { Symbol: VariableSymbol or FieldPathSymbol or PathSymbol or SelfFieldSymbol } or IndexExpr or MemberExpr { Call: null }:
                         if (!Place(e)) Not(e, Number(e.Type) ? Kind(e) : A(e.Type));
@@ -570,7 +578,16 @@ namespace Phi.Compiler.CodeGen
             NewExpr => "new",
             EmptyExpr => "empty",
             IsTypeExpr => "is Struct name",
-            _ => n.GetType().Name,
+            // (said in the program's words, never the compiler's: a declaration is its variable)
+            VarDecl { AtAddress: not null } => "a variable at an address",
+            VarDecl { Symbol: VariableSymbol v } => $"{A(v.Type)} variable like this one",
+            VarDecl => "this variable",
+            WhenStmt => "when on this kind of value",
+            CallStmt or CallExpr => "this call",
+            LogStmt => "log",
+            CastExpr => "this change of type",
+            BinaryExpr or UnaryExpr => "this math",
+            _ => "this",
         };
 
         string Build()
@@ -2038,7 +2055,7 @@ namespace Phi.Compiler.CodeGen
         bool SafeFloatValue(Expr e) => e switch
         {
             _ when !bits32 => false,
-            DecimalExpr => true,
+            DecimalExpr or NameExpr { Symbol: FloatConstantSymbol } => true,
             _ when !e.Type.IsFloat => OneRegister(e.Type) && SafeValue(e),
             NameExpr { Call: null } or MemberExpr { Call: null } or IndexExpr => SafeFloatPlace(e),
             CastExpr c => SafeFloatValue(c.Operand),
@@ -6794,10 +6811,18 @@ namespace Phi.Compiler.CodeGen
             Emit("add esp, 4");
         }
 
+        /// <summary>A number with a point written in the program, or a constant that is one (const f64 HALF: 0.5;): its value, or null.</summary>
+        static double? FloatWritten(Expr e) => e switch
+        {
+            DecimalExpr d => d.Value,
+            NameExpr { Symbol: FloatConstantSymbol k } => k.Value,
+            _ => null,
+        };
+
         /// <summary>True for a floating point value that's in memory as an f64 or f32 and reached without a call: a constant, a variable, a field or an element.</summary>
         static bool IsFloatInMemory(Expr e) => e switch
         {
-            DecimalExpr => true,
+            DecimalExpr or NameExpr { Symbol: FloatConstantSymbol } => true,
             NameExpr { Call: null } or MemberExpr { Call: null } or IndexExpr => e.Type.IsFloat && e.Type.Kind is TypeKind.F64 or TypeKind.F32 && !HasCall(e),
             _ => false,
         };
@@ -6818,7 +6843,7 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Where an e that IsFloatInMemory is, as an instruction's operand (qword [x]); st0 waits while the place is found.</summary>
         string FloatMemory(Expr e)
         {
-            if (e is DecimalExpr d) return $"qword [{FloatLabel(d.Value)}]";
+            if (FloatWritten(e) is double written) return $"qword [{FloatLabel(written)}]";
             floatDepth++;
             Place place = EmitPlace(e);
             floatDepth--;
@@ -6888,6 +6913,10 @@ namespace Phi.Compiler.CodeGen
 
             switch (e)
             {
+                case NameExpr { Symbol: FloatConstantSymbol k }:
+                    EmitFloat(new DecimalExpr { Value = k.Value, Span = e.Span, Type = PhiType.F64 });
+                    return;
+
                 case DecimalExpr d:
                     if (d.Value == 0 && !double.IsNegative(d.Value)) Emit("fldz");
                     else if (d.Value == 1) Emit("fld1");
@@ -6928,7 +6957,7 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
-                case BinaryExpr binary when IsFloatInMemory(binary.Right) && (binary.Right is DecimalExpr || !HasCall(binary.Left)):
+                case BinaryExpr binary when IsFloatInMemory(binary.Right) && (FloatWritten(binary.Right) != null || !HasCall(binary.Left)):
                     // the right side straight from memory (after a call on the left, only a
                     // constant: a call could change a variable, which was read before it)
                     EmitFloat(binary.Left);
@@ -7082,7 +7111,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitFloatFlags(BinaryExpr cmp)
         {
-            if (IsFloatInMemory(cmp.Right) && (cmp.Right is DecimalExpr || !HasCall(cmp.Left)))
+            if (IsFloatInMemory(cmp.Right) && (FloatWritten(cmp.Right) != null || !HasCall(cmp.Left)))
             {
                 EmitFloat(cmp.Left);
                 Emit($"fcomp {FloatMemory(cmp.Right)}");

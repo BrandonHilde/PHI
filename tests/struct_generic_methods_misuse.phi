@@ -27,7 +27,7 @@ struct.Dot
 	[end: y]
 }
 
-phi.StructGenericMethodsMisuse:Program
+phi.StructGenericMethodsMisuse:Kernel
 {
 	new Spot here;
 	new Dot dot;

@@ -531,10 +531,18 @@ declared once, in a block or not, is the class's variable, which its methods can
 const u16 COM1: 0x3F8;
 const u16 COM1_STATUS: COM1 + 5;
 const int BUFFER_SIZE: 512;
+const f64 PI: 3.141592653589793;
+const f64 TAU: PI * 2.0;
 ```
 
 A constant's value must be known when the program is built. Constants take no memory and
 can be used as array sizes and inside `asm.` blocks (`{COM1}`).
+
+A constant can be a number with a point (`const f64`, `const f32`, in 32-bit and 64-bit
+code): where it's used is the number, as if written there. Its value is numbers and other
+constants with `+ - * /` among them, worked out when the program is built; an `f32`
+constant is exactly what an `f32` holds, so `const f32 TENTH: 0.1;` isn't `0.1` as an
+`f64` is. It isn't an array size or in an `asm.` block.
 
 ### volatile
 
@@ -2893,7 +2901,7 @@ code pointers (and objects, and method values) are
 8 bytes, and every number keeps its size (`int` is 32 bits on every system). A 64-bit
 program can use what a 32-bit one can: numbers of every size and floating point, text,
 structs, objects and interfaces, arrays of all of them (fixed, `[atmost N]`, growing, and
-as parameters), method values, catching errors, `ask`, and the system's calls (files,
+as parameters), method values and tables of them, catching errors, `ask`, and the system's calls (files,
 arguments, time, memory), and `atomic` and `locked`. What it can't use yet (assembly
 blocks that have no `x64.Name { }` version) is an error saying it isn't in 64-bit
 programs yet. An address kept as a number is a `ptr<u8>` (the heap's `Heap.Alloc` gives

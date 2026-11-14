@@ -48,6 +48,12 @@ namespace Phi.Compiler
 
     public sealed record Diagnostic(Severity Severity, SourceFile? File, Span Span, string Message)
     {
+        /// <summary>
+        /// In a struct or a method made from one that takes types, for the types one use gave
+        /// it: the message says which use. What's wrong is that use's, whoever wrote the template.
+        /// </summary>
+        public bool ForAUse { get; init; }
+
         public override string ToString()
         {
             string kind = Severity == Severity.Error ? "error" : "warning";
@@ -105,8 +111,8 @@ namespace Phi.Compiler
                 // (the same thing wrong in another use of the template is the template's, said once)
                 if (items.Any(d => d.File == copy.Real && d.Span == span && d.Severity == severity
                                    && (d.Message == message || d.Message.StartsWith(message + " (in ")))) return;
-                file = copy.Real;
-                message += copy.Note;
+                items.Add(new Diagnostic(severity, copy.Real, span, message + copy.Note) { ForAUse = true });
+                return;
             }
             items.Add(new Diagnostic(severity, file, span, message));
         }

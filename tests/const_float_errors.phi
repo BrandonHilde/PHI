@@ -1,0 +1,10 @@
+phi.ConstFloatErrors:Kernel
+{
+	f64 changing: 2.0;
+	const f64 HALF: 0.5;
+	const f64 MOVES: changing * 2.0;
+	const f64 NONE: 1.0 / 0.0;
+	const str NAME: 'phi';
+	HALF is 0.75;
+	exit 0;
+}

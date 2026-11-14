@@ -13,8 +13,8 @@ const string Usage = """
                                            compile to a bootable disk image; with --target linux or
                                            windows, a program (phi.Name:Program) becomes an ordinary
                                            executable for that system instead (NAME, or NAME.exe);
-                                           linux64 and windows64 are 64-bit ones (not yet with atomic
-                                           or locked, or assembly blocks without an x64 version);
+                                           linux64 and windows64 are 64-bit ones (an assembly block
+                                           needs an x64. version of itself there);
                                            with --library, a library (phi.Name:Library): NAME.philib, next
                                            to the file or in -o, for each system it builds for (or only
                                            --target's), which another program includes with use NAME;

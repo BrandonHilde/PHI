@@ -81,6 +81,8 @@ namespace Phi.Compiler.Libraries
                 {
                     if (statement is ConstDecl { KnownValue: long value } k)
                         sb.AppendLine($"\tconst {k.Type} {k.Name}: {value};");
+                    else if (statement is ConstDecl { KnownFloat: double number } f)
+                        sb.AppendLine($"\tconst {f.Type} {f.Name}: {Float(number)};");
                     else if (statement is VarDecl { Symbol: not null, Text: Span text })
                         sb.AppendLine("\t" + Text(file, text));
                 }
@@ -196,6 +198,13 @@ namespace Phi.Compiler.Libraries
             TypeKind.Pointer => $"ptr<{TypeName(t.Pointee!)}>",
             _ => t.ToString(),
         };
+
+        /// <summary>A number with a point as PHI reads it back to the same value: 0.5, 3.0, 1E-05.</summary>
+        static string Float(double value)
+        {
+            string text = value.ToString("R", System.Globalization.CultureInfo.InvariantCulture);
+            return text.Contains('.') || text.Contains('E') ? text : text + ".0";
+        }
 
         static string Text(SourceFile file, Span span) => file.Text.Substring(span.Start, span.Length);
     }

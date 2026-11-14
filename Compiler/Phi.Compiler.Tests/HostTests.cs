@@ -146,5 +146,42 @@ namespace Phi.Compiler.Tests
                 Assert.Contains("phi_str_has:", result.Units.Single().Text);
             }
         }
+
+        // one mistake, one error: a call's new object used before it's stored was said up to
+        // three times, with "addr needs a variable" and (in 64 bits) a warning about self besides
+        [Theory]
+        [InlineData(Host.Linux)]
+        [InlineData(Host.Linux64)]
+        public void ACallsNewObjectUsedUnstoredIsSaidOnce(Host host)
+        {
+            string text = "struct.Point\n{\n\tint x;\n\t[Twice]\n\t[end: x * 2]\n}\n"
+                + Program("log (Make: 4).x '\\n';\nlog ((Make: 4).Twice) '\\n';\nexit 0;\n[Make: int x: 0;]\nnew Point p: x;\n[end: p]");
+            CompileResult result = Compile(text, host);
+            Assert.Equal(2, result.Diagnostics.Count);
+            Assert.All(result.Diagnostics, d => Assert.Contains("store it first", d.Message));
+        }
+
+        // what a program does with a struct of the library's that takes types is the program's:
+        // sorting a List<Player> is an error at its line in the list, saying which use, not
+        // "data.list doesn't work in a Linux program"
+        [Fact]
+        public void AnErrorInALibraryStructMadeForTheProgramsTypeIsNotTheModules()
+        {
+            string text = "use data.list;\nstruct.Player\n{\n\tint score;\n}\n"
+                + Program("new List<Player> team;\ncall team.Sort;\nexit 0;");
+            CompileResult result = Compile(text, Host.Linux);
+            Assert.NotEmpty(result.Diagnostics);
+            Assert.All(result.Diagnostics, d => Assert.DoesNotContain("doesn't work", d.Message));
+            Assert.Contains(result.Diagnostics, d => d.File!.Path.EndsWith("data/list.phi") && d.Message.Contains("(in List<Player>, which line 8 of test.phi uses)"));
+        }
+
+        // what 64-bit code hasn't yet is named in the program's words, never the compiler's
+        [Fact]
+        public void WhatIsntIn64BitYetIsNamedInThePrograms()
+        {
+            CompileResult result = Compile(Program("int here: 5;\nptr<int> p: addr here;\nlog p '\\n';\nexit 0;"), Host.Linux64);
+            Diagnostic error = Assert.Single(result.Diagnostics, d => d.Severity == Severity.Error);
+            Assert.Equal("printing a ptr<int> isn't in 64-bit programs yet", error.Message);
+        }
     }
 }

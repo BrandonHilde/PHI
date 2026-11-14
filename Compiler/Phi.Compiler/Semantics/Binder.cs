@@ -955,6 +955,8 @@ namespace Phi.Compiler.Semantics
         Expr SelfArgument(Expr receiver, Scope scope)
         {
             if (receiver.Type.IsPointer) return receiver; // call p.Add; already has the address
+            // ((Make: 4).Twice: a call's new object has no address until it's stored, which is said already)
+            if (saidStoreFirst.Contains(receiver)) return new NumberExpr { Value = 0, Span = receiver.Span, Type = PhiType.PointerTo(receiver.Type.Struct is StructSymbol s ? PhiType.Of(s) : PhiType.U8) };
             var self = new AddrExpr { Operand = receiver, Span = receiver.Span };
             BindAddr(self, scope);
             return self;
@@ -2122,6 +2124,27 @@ namespace Phi.Compiler.Semantics
             BindExpr(c.Value, scope);
             if (type.IsError || c.Value.Type.IsError) return;
 
+            // const f64 HALF: 0.5; : where it's used is the number, as if written there
+            if (type.IsFloat && !type.IsArray)
+            {
+                if (FloatValue(c.Value) is not double number)
+                {
+                    Error(c.Value.Span, $"the value of constant '{c.Name}' must be known when the program is built: numbers, other constants, and + - * / among them");
+                    return;
+                }
+                if (!double.IsFinite(number))
+                {
+                    Error(c.Value.Span, $"the value of constant '{c.Name}' isn't a number: is it divided by zero?");
+                    return;
+                }
+                // (kept as exactly what its type holds, so it's the same number wherever it's used)
+                if (type.Kind == TypeKind.F32) number = (float)number;
+                else if (type.Kind == TypeKind.F16) number = (double)(Half)number;
+                c.KnownFloat = number;
+                scope.Names[c.Name] = new FloatConstantSymbol { Name = c.Name, Value = number, Type = type };
+                return;
+            }
+
             if (!type.IsNumeric)
             {
                 Error(c.Type.Span, "constants must be numbers");
@@ -2138,6 +2161,24 @@ namespace Phi.Compiler.Semantics
 
             c.KnownValue = known.Value;
             scope.Names[c.Name] = new ConstantSymbol { Name = c.Name, Value = known.Value, Type = type };
+        }
+
+        /// <summary>A number with a point that's known when the program is built, or null: for a float constant's value.</summary>
+        static double? FloatValue(Expr e)
+        {
+            switch (e)
+            {
+                case DecimalExpr d: return d.Value;
+                case NameExpr { Symbol: FloatConstantSymbol k }: return k.Value;
+                case UnaryExpr { Op: UnaryOp.Negate } u: return -FloatValue(u.Operand);
+                case BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract or BinaryOp.Multiply or BinaryOp.Divide } b:
+                {
+                    if (FloatValue(b.Left) is not double l || FloatValue(b.Right) is not double r) return null;
+                    return b.Op switch { BinaryOp.Add => l + r, BinaryOp.Subtract => l - r, BinaryOp.Multiply => l * r, _ => l / r };
+                }
+                default:
+                    return e.Type.IsFloat ? null : ConstantFolder.Evaluate(e);
+            }
         }
 
         static string ScopeName(Scope scope) =>
@@ -3256,6 +3297,7 @@ namespace Phi.Compiler.Semantics
         {
             StringExpr s when e.Type.IsString => s.Value,
             DecimalExpr d => d.Value,
+            NameExpr { Symbol: FloatConstantSymbol k } => k.Value,
             _ => ConstantFolder.Evaluate(e),
         };
 
@@ -4849,9 +4891,13 @@ namespace Phi.Compiler.Semantics
             BindExprKind(expr, scope);
 
             // a call's new object has to go somewhere that takes it over, or nothing would free it
-            if (!allowObject && IsObjectCall(expr))
+            // (said once for a call, however many times what it's part of is looked at)
+            if (!allowObject && IsObjectCall(expr) && saidStoreFirst.Add(expr))
                 Error(expr.Span, $"this call returns a new {expr.Type}; store it first, like call x is ...; or new {expr.Type} x: (...);");
         }
+
+        /// <summary>The calls already said to return a new object that has to be stored first.</summary>
+        readonly HashSet<Expr> saidStoreFirst = new();
 
         void BindExprKind(Expr expr, Scope scope)
         {
@@ -4904,6 +4950,7 @@ namespace Phi.Compiler.Semantics
                     {
                         VariableSymbol v => v.Type,
                         ConstantSymbol k => k.Type,
+                        FloatConstantSymbol k => k.Type,
                         LengthSymbol => PhiType.Int,   // (an array parameter's too)
                         FieldPathSymbol f => f.Type,
                         SelfFieldSymbol s => s.Type,

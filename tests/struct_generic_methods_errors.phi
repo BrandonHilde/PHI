@@ -31,7 +31,7 @@ struct.Dot
 	[end: y]
 }
 
-phi.StructGenericMethodsErrors:Program
+phi.StructGenericMethodsErrors:Kernel
 {
 	new Spot here;
 	new Dot dot;

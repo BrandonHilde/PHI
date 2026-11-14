@@ -1,0 +1,42 @@
+# A constant with a point: const f64 HALF: 0.5;. Where it's used is the number, as if written
+# there: in math, compared, given to a method, kept, cut to a whole number, and as another
+# constant's value. An f32 constant is exactly what an f32 holds.
+phi.Shapes:Library
+{
+	const f64 PI: 3.141592653589793;
+	const f64 TAU: PI * 2.0;
+
+	[Around: f64 radius: 0.0;]
+	[end: TAU * radius]
+}
+
+phi.ConstFloatProgram:Program
+{
+	const f64 HALF: 0.5;
+	const f64 QUARTER: HALF / 2;
+	const f64 BELOW: -HALF - 1.0;
+	const int COUNT: 3;
+	const f64 SHARE: 1.0 / COUNT;
+	const f32 THIRD: 0.1;
+	const f64 TINY: 1e-5;
+
+	log HALF ' ' QUARTER ' ' BELOW ' ' SHARE ' ' TINY '\n';
+	log HALF * 3.0 ' ' 3.0 * HALF ' ' HALF + QUARTER ' ' (Twice: HALF) ' ' (Twice: 2.0) - HALF '\n';
+
+	f64 kept: HALF;
+	f32 small: THIRD;
+	f64 list: HALF QUARTER 1.5;
+	kept++ QUARTER;
+	log kept ' ' small ' ' list:0 + list:1 + list:2 ' ' (HALF * 5.0) as int ' ' COUNT * HALF '\n';
+	log (HALF < QUARTER) ' ' (kept > HALF) ' ' (HALF is 0.5) ' ' (THIRD is 0.1) ' ' (small is THIRD) '\n';
+
+	# another class's, and a method's default
+	log Shapes.PI ' ' (Shapes.Around: HALF) ' ' (Scaled) ' ' (Scaled: 4.0) '\n';
+	exit 0;
+
+	[Twice: f64 n: 0.0;]
+	[end: n + n]
+
+	[Scaled: f64 by: HALF;]
+	[end: by * 10.0]
+}

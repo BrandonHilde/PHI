@@ -42,7 +42,7 @@ phi.Lists:Library
 	[end: n]
 }
 
-phi.GenericMethodsErrors:Program
+phi.GenericMethodsErrors:Kernel
 {
 	int scores: 3 9 4;
 	Spot spots[3];

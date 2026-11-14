@@ -603,7 +603,7 @@ these were added:
   the address, `s++ p + 1` the text); an early `return` of a float or a 64-bit number works;
   `'can''t'` is an error; `Process.CopyBytesFromUser` and `CopyBytesToUser`; `phi check` and
   `phi lsp` find a module's uses from the folder above it when it isn't in a repository, or
-  when nothing uses it yet. Not done from that list: `const f64` (a class variable for now),
+  when nothing uses it yet. Not done from that list: `const f64` (done 2026-11-14, below),
   and `FatImage.cs` stamping files in local time where the kernel uses UTC
 - [x] A number that would come out as a different number is an error when it runs
   (2026-11-04), `ErrorKind.CONVERT`, that `if call ... throws` can catch: a negative number
@@ -1751,6 +1751,20 @@ and every program wrapped it or wrote its own.
   a table of places found by the key's hash, as data.keyed's is. `new Map<str int>
   counts;`, `Map<u32 Player>`, `while each k in counts.keys`. Test `generic_map`.
   - A struct or a pointer as a key has no hash yet.
+  - What it costs, in `bench_text` (a 32-bit kernel, instructions run): finding 1000
+    names in a `Map<str int>` is 312,000, against 189,000 for the way it was done before,
+    each name hashed by hand into the u32 map (which finds a hash, not the name); adding
+    them is 1,207,000 against 354,000, about half of it the text itself (its hash, and its
+    own copy in the map). With
+    numbers for keys it's 131 a find and 568 an add, against the older `Map`'s 64 and 196:
+    the older one is all pointers with no checks, and this one is arrays that grow.
+  - Each key's hash is kept beside it, so a key is hashed once however the table grows,
+    and a key with another hash isn't compared (adding 1000 names took 22% less).
+  - Two things in the generator came of it, for any struct with an array that grows: how
+    many it has (`places.len`) is one load where the array is kept, and runs with the
+    variables in registers; and an element picked by a variable in a register
+    (`places:pos`) is the elements' address and `[ebx + i*4]`, with nothing on the stack.
+    A find in the map took 29% less for them.
 - [x] `List<Item>` in data.list (2026-11-14): an array that grows (`items`, the program's
   to index and walk) with `Add`, `Insert`, `RemoveAt`, `Remove`, `Find`, `Has`, `Count`,
   `Clear`, `Reverse`, `First`, `Last`, `Pop`, `Largest`, `Smallest`, `Sum` and `Sort` (a heap
@@ -1770,20 +1784,36 @@ and every program wrapped it or wrote its own.
   `Front` kept a pointer in a u32, which kept the whole module out of 64-bit programs:
   it gives a `ptr<u8>` now, as its callers took it. Test `generic_queue` (kernel, Linux in
   32 and 64 bits).
-  - What it costs, in `bench_text` (a 32-bit kernel, instructions run): finding 1000
-    names in a `Map<str int>` is 312,000, against 189,000 for the way it was done before,
-    each name hashed by hand into the u32 map (which finds a hash, not the name); adding
-    them is 1,207,000 against 354,000, about half of it the text itself (its hash, and its
-    own copy in the map). With
-    numbers for keys it's 131 a find and 568 an add, against the older `Map`'s 64 and 196:
-    the older one is all pointers with no checks, and this one is arrays that grow.
-  - Each key's hash is kept beside it, so a key is hashed once however the table grows,
-    and a key with another hash isn't compared (adding 1000 names took 22% less).
-  - Two things in the generator came of it, for any struct with an array that grows: how
-    many it has (`places.len`) is one load where the array is kept, and runs with the
-    variables in registers; and an element picked by a variable in a register
-    (`places:pos`) is the elements' address and `[ebx + i*4]`, with nothing on the stack.
-    A find in the map took 29% less for them.
+- [x] Evenness and what's said when something's wrong (2026-11-14), found by probing each
+  thing thought to be missing with a program of its own, in 32 and 64 bits:
+  - **A table of method values in 64-bit programs** (`method<int: int> steps: addr Up addr
+    Down;`), which only the check before 64-bit code (`Check64`) stopped: the generator had
+    it. `method_pointers` runs as a 64-bit Linux program now, which leaves `casts` (a
+    pointer kept in a u32, on purpose) the only test that's 32-bit Linux's alone.
+  - **A character of the text a call gives**, `(Name):0`, in 64-bit programs, likewise.
+    Test `str_result_index_program`.
+  - **`const f64 HALF: 0.5;`** (and `f32`, `f16`): a `FloatConstantSymbol`, whose uses the
+    generator reads as the number written there (`FloatWritten`), so nothing is kept for
+    it. Its value is numbers, constants and `+ - * /` (`Binder.FloatValue`); one that isn't
+    a number (1.0 / 0.0) is an error. A library's interface has it as its number. Tests
+    `const_float_program`, `const_float_errors`, and `Kinds.SCALE` in
+    `library_generic_text_program`.
+  - **An error in a library's struct made for the program's own type is the program's.**
+    Sorting a `List<Player>` said "data.list doesn't work in a Linux program": every error
+    in the standard library was taken for a module used where it can't work
+    (`PhiCompiler.AtUses`). One from a copy of a template (`Diagnostic.ForAUse`) stays at
+    its line and says which use. Test `generic_list_misuse`.
+  - **One mistake, one error.** A call's new object used before it's stored (`(Make:
+    4).x`, `((Make: 4).Twice)`) was said up to three times, with "addr needs a variable"
+    and, in 64 bits, a warning about `self` besides: said once now (`saidStoreFirst`).
+  - **What isn't in 64-bit programs yet is named in the program's words**: "VarDecl isn't
+    in 64-bit programs yet" was a class of the compiler's. `phi`'s help said 64-bit
+    programs had no `atomic` or `locked`, which they've had since S10.
+  - **Tests of errors that never ran.** A test with `NAME.errors` runs only as a PHI OS
+    program, and one whose class is a `:Program` isn't one, so six were never run:
+    `generic_methods_errors` and `_misuse` (2026-11-14), `struct_generic_methods_errors`
+    and `_misuse`, and two of today's. Their classes are `:Kernel` now, as the others' are,
+    and all six pass.
 - [x] `phi fuzz code` makes programs with structs that take types: every program has a
   `Box<Item>` (fields, an array, methods that work through self and a loop in one) used as
   `Box<int>` and `Box<u32>`, and a `Pair<First Second>` used both ways round. Until then

@@ -34,7 +34,7 @@ phi.Lists:Library
 
 }
 
-phi.GenericMethodsMisuse:Program
+phi.GenericMethodsMisuse:Kernel
 {
 	int scores: 3 9 4;
 	Spot spots[3];

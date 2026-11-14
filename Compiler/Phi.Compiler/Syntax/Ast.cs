@@ -402,6 +402,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Its value, once the binder has worked it out.</summary>
         public long? KnownValue { get; set; }
+
+        /// <summary>The same for a constant with a point (const f64 HALF: 0.5;).</summary>
+        public double? KnownFloat { get; set; }
     }
 
     // ---------------------------------------------------------------- statements

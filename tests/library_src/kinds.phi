@@ -28,6 +28,7 @@ struct.Pile<Item>
 
 phi.Kinds:Library
 {
+	const f64 SCALE: 2.5;       # a constant with a point is in the library's interface as its number
 	int bonus: 1;
 	int calls: 0;
 

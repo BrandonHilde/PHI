@@ -324,6 +324,8 @@ namespace Phi.Compiler
         /// The standard library is tested, so an error inside it means a module was used where it
         /// can't work (a driver in a program, a kernel's module on Linux). Its errors become one
         /// at the program's `use` that brought the module in, with the first of them as the reason.
+        /// An error in a struct or method the module has that takes types, for the types the
+        /// program gave it, isn't one of those: it's the program's use, and is said as it is.
         /// (A library file that's open in an editor is being written, so its errors stay its own.)
         /// </summary>
         static IReadOnlyList<Diagnostic> AtUses(IReadOnlyList<Diagnostic> diagnostics, Dictionary<string, (SourceFile From, UseDecl Use)> usedBy,
@@ -336,7 +338,9 @@ namespace Phi.Compiler
 
             foreach (Diagnostic d in diagnostics)
             {
-                if (d.Severity != Severity.Error || d.File == null || !d.File.Path.StartsWith(StandardLibrary)
+                // (one in a struct made from the library's for the program's own type, a List<Player>
+                // that's sorted, is the program's use of it: it stays where it is, saying which use)
+                if (d.Severity != Severity.Error || d.File == null || !d.File.Path.StartsWith(StandardLibrary) || d.ForAUse
                     || open?.ContainsKey(Key(d.File)) == true || !usedBy.TryGetValue(Key(d.File), out var link))
                 {
                     result.Add(d);

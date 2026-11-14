@@ -1,0 +1,31 @@
+# A character of the text a call gives, with no variable between: (Name):0. The same in 32 and
+# 64 bits (64-bit code refused it: "an index isn't in 64-bit programs yet").
+struct.Namer
+{
+	int n;
+
+	[Word]
+		str s: 'struct';
+	[end: s]
+}
+
+phi.StrResultIndexProgram:Program
+{
+	int place: 2;
+	new Namer namer;
+	log (Name):0 (Name):place ' ' (Name):(place - 1) as int ' ' (namer.Word):1 '\n';
+	chr c: (Long: 3):4;
+	log c ' ' ((Long: 2):5 is 'c') '\n';
+	exit 0;
+
+	[Name]
+		str s: 'phi';
+	[end: s]
+
+	[Long: int times: 0;]
+		str s: '';
+		while int i: 0; i < times; i++;
+			s++ 'abc';
+		;;
+	[end: s]
+}

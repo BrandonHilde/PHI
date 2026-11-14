@@ -26,5 +26,6 @@ phi.LibraryGenericText:Program
 
 	# what the second library had made
 	log (More.Farthest: 5000000000 -3) ' ' (More.Half: box) ' ' (More.Total: pile) '\n';
+	log Kinds.SCALE * 2.0 '\n';
 	exit 0;
 }

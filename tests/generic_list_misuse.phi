@@ -1,0 +1,18 @@
+# A List's method that doesn't suit its type is an error only when it's called, at its line in
+# the list and saying which list it was for: not "data.list doesn't work in a program".
+use data.list;
+
+struct.Player
+{
+	int id;
+	int score;
+}
+
+phi.GenericListMisuse:Kernel
+{
+	new List<Player> team;
+	new Player ann;
+	call team.Add: ann;
+	call team.Sort;
+	exit 0;
+}

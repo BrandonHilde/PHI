@@ -1,0 +1,3 @@
+the value of constant 'MOVES' must be known when the program is built: numbers, other constants, and + - * / among them
+the value of constant 'NONE' isn't a number: is it divided by zero?
+8:2: error: only variables, fields and array elements can be assigned
