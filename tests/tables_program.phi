@@ -1,0 +1,28 @@
+# An index of an array of more than one size is checked against its own size: a column
+# past its row's end is an error, not the next row's cell. And f64s in one.
+phi.TablesProgram:Program
+{
+	int table[3][4];
+	f64 grid[2][2];
+	grid:1:0 is 0.5;
+	log grid:1:0 + grid:0:0 '\n';
+	int r: 1;
+	if call At: r 3 throws err
+		log 'never\n';
+	;;
+	if call At: r 4 throws err
+		log 'column: ' err '\n';
+	;;
+	if call At: 3 0 throws err
+		log 'row: ' err '\n';
+	;;
+	if call At: -1 0 throws err
+		log 'row: ' err '\n';
+	;;
+	exit 0;
+
+	[At: int row: 0; int column: 0;]
+		table:row:column is 1;
+		log table:row:column ' ';
+	[end]
+}

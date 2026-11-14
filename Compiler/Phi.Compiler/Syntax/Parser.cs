@@ -862,6 +862,7 @@ namespace Phi.Compiler.Syntax
                     bool unsized = false;
                     if (At(TokenKind.OpenBracket))
                         (count, filled, unsized) = ParseBufferSize();
+                    List<Expr>? moreSizes = ParseMoreSizes(field, count, filled);
 
                     // str name: [24]; (or [atmost 24]) is text of up to 24 characters
                     Expr? textSize = null;
@@ -874,6 +875,7 @@ namespace Phi.Compiler.Syntax
                     ExpectSemicolon();
                     decl.Fields.Add(new FieldDecl { Type = type, Name = field.Text, Count = count, Filled = filled, Unsized = unsized, IsNew = isNew, Volatile = isVolatile,
                                                     TextSize = textSize, Span = type.Span.To(field.Span), Text = Span.FromBounds(fieldStart, Previous.Span.End) });
+                    if (moreSizes != null) decl.Fields[^1].MoreSizes.AddRange(moreSizes);
                 }
                 catch (ParseError)
                 {
@@ -1296,6 +1298,7 @@ namespace Phi.Compiler.Syntax
             bool filled = false;
             bool unsized = false;
             bool afterColon = false;
+            List<Expr>? more = null;
             Expr? textSize = null;
             Expr? at = null;
             var values = new List<Expr>();
@@ -1309,6 +1312,7 @@ namespace Phi.Compiler.Syntax
             else if (At(TokenKind.OpenBracket))
             {
                 (buffer, filled, unsized) = ParseBufferSize();
+                more = ParseMoreSizes(name, buffer, filled);
 
                 // str lines[8]: [40]; each element holds up to 40 characters
                 if (At(TokenKind.Colon) && PeekToken(1).Kind == TokenKind.OpenBracket)
@@ -1359,12 +1363,32 @@ namespace Phi.Compiler.Syntax
                 Span = start.Span.To(Previous.Span),
             };
             decl.Values.AddRange(values);
+            if (more != null) decl.MoreSizes.AddRange(more);
 
             if (!(allowBracketEnd && At(TokenKind.CloseBracket))) ExpectSemicolon();
             return decl;
         }
 
         /// <summary>[N], [atmost N] for an array that's filled as it goes, or [] with no size.</summary>
+        /// <summary>
+        /// int table[3][2]: the sizes after the first, when there are any. Each is a number of
+        /// elements, as the first is then too (not [] or [atmost n]: a row is always whole).
+        /// </summary>
+        List<Expr>? ParseMoreSizes(Token name, Expr? first, bool firstFilled)
+        {
+            if (!At(TokenKind.OpenBracket)) return null;
+            var more = new List<Expr>();
+            while (At(TokenKind.OpenBracket))
+            {
+                Token open = Current;
+                var (size, filled, _) = ParseBufferSize();
+                if (size == null || filled || first == null || firstFilled)
+                    throw Error(open.Span, $"each size of {name.Text} is a number of elements, like {name.Text}[3][2]: an array of more than one size has all of its rows, whole");
+                more.Add(size);
+            }
+            return more;
+        }
+
         (Expr? Size, bool Filled, bool Unsized) ParseBufferSize()
         {
             Expect(TokenKind.OpenBracket, "'['");

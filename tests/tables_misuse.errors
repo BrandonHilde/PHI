@@ -1,0 +1,8 @@
+an array of more than one size holds numbers, pointers or plain structs, kept in place, and this is a str
+error: a size must be between 1 and 16777216
+error: a size must be a number or a const known when the program is built
+index 4 is outside 'a row of table', which has 4 elements
+index 3 is outside 'table', which has 3 elements
+'a row of table' is a int, which can't be indexed
+can't print a int[4]; print one element or field at a time
+an array of more than one size holds numbers, pointers or plain structs, kept in place, and this is a Holder

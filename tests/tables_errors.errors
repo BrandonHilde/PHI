@@ -1,0 +1,4 @@
+each size of open is a number of elements, like open[3][2]: an array of more than one size has all of its rows, whole
+each size of capped is a number of elements, like capped[3][2]
+error: expected ';' but found ':'
+a parameter takes one row of an array like this (int grid[]), or a pointer to it

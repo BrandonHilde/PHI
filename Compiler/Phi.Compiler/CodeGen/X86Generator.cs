@@ -6629,6 +6629,23 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
+                // text in order: a byte at a time, as C's strcmp puts it (phi_strorder: -1, 0 or 1)
+                case BinaryExpr { IsComparison: true, Left.Type.IsString: true, Right.Type.IsString: true, Op: not (BinaryOp.Equal or BinaryOp.NotEqual) } cmp:
+                {
+                    Need("phi_strorder");
+                    EmitExpr(cmp.Right);
+                    Emit("push eax");
+                    EmitExpr(cmp.Left);
+                    Emit($"mov {R("esi")}, {R("eax")}");
+                    Emit("pop edi");
+                    Emit("call phi_strorder        ; eax = -1 when the left one comes first, 1 when the right one does");
+                    Emit("test eax, eax");
+                    string holds = cmp.Op switch { BinaryOp.Less => "jl", BinaryOp.LessEqual => "jle", BinaryOp.Greater => "jg", _ => "jge" };
+                    string fails = cmp.Op switch { BinaryOp.Less => "jge", BinaryOp.LessEqual => "jg", BinaryOp.Greater => "jle", _ => "jl" };
+                    Emit($"{(jumpIf ? holds : fails)} {target}");
+                    return;
+                }
+
                 case BinaryExpr { IsComparison: true, Left.Type.IsString: true, Right.Type.IsString: true } cmp:
                 {
                     Need("phi_strcmp");

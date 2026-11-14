@@ -1,0 +1,18 @@
+struct.Holder
+{
+	new str text;
+}
+
+phi.TablesMisuse:Kernel
+{
+	int table[3][4];
+	str words[2][2];
+	Holder held[2][2];
+	int sized[3][0];
+	int n: 2;
+	int odd[3][n];
+	table:0:4 is 1;
+	table:3:0 is 1;
+	log table:0:0:0;
+	log table:1;
+}

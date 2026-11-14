@@ -3491,6 +3491,26 @@ zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
 `exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
 enum's values, and an `else` says the others are known.
 
+**Arrays of more than one size (2026-11-14, the user's choice).** `int table[3][4];`,
+`table:r:c`, any number of sizes. A row is a struct the binder makes the first time a size
+is used (`Binder.RowsOf`: `int[4]`, one field, its cells), and the table is an array of
+them, so everything is what an array of structs and a struct's array field already were:
+the layout, each index checked against its own size, 64-bit code, a struct's field
+(`u8 squares[3][3];`). Where a row is used as an array (indexed, gone through, measured,
+handed to `int items[]`) the binder reads it as its cells (`Binder.Cells`); copied or
+compared whole, it's the struct. Numbers, pointers and plain structs only; zeros to start
+with; every size a number known when built (a struct's field's a number written there,
+as its one size already had to be). Tests `tables` (kernel, Linux in 32 and 64 bits),
+`tables_program` (the checks, when it runs), `tables_errors`, `tables_misuse`.
+
+**Text in order (2026-11-14, the user's choice).** `<`, `>`, `<=`, `>=` and their words
+between two strs, which were an error ("strings can only be compared with is"): a byte at a
+time, as C's `strcmp`, so it's the bytes' order and no alphabet's. A routine of its own,
+`phi_strorder` (-1, 0 or 1), in each target's library, beside `phi_strcmp`, which is left
+giving 0 or 1 as compiled libraries' code and the object routines expect: no library's
+version changes. Found by trying it: `List<str>.Sort` was said to work and didn't; it does
+now. Test `text_order` (16-bit, kernel, Linux in 32 and 64 bits).
+
 **A character of a call's text is checked (2026-11-14).** `(Name):i` had no check at all:
 an index of any size read whatever was there. It's checked against the room the method's
 result has, as `word:i` is against the variable's (`Binder.CheckResultIndexes`, once every

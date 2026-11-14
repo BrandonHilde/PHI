@@ -402,6 +402,31 @@ int some[atmost 10];
 some is a;                    # some.len is 3
 ```
 
+**Arrays of more than one size.** `int table[3][4];` is three rows of four, and `table:r:c`
+is the cell at row `r`, column `c`. Each index is checked against its own size, so a column
+past the end of its row is an error, not the next row's first cell.
+
+```phi
+const int ROWS: 3;
+const int COLS: 4;
+int table[ROWS][COLS];
+table:1:2 is 7;
+log table:1:2 ' ' table.len ' ' table:0.len '\n';   # 7 3 4
+
+while each x in table:1          # a row is an array: gone through, measured,
+    log x ' ';                   # handed to a method that takes int items[],
+;;                               # copied (table:0 is table:2;) and compared
+while each row in table          # and the rows themselves
+    log row:0 ' ';
+;;
+```
+
+It holds numbers, pointers or plain structs (`cells:1:0.value`), in a variable or a
+struct's field, and starts as zeros. Any number of sizes works the same way (`int
+cube[2][3][4];`, `cube:1:2:3`). Every size is a number of elements known when the program
+is built: all of its rows are there, whole, so there's no `[]` or `[atmost n]` among them,
+and a method takes one row (`int items[]`) or a pointer, not the whole of it.
+
 **Arrays that grow.** An array without a size, `int scores[];`, starts empty and grows as
 `++` adds to it, with no most (in a 32-bit kernel or a user program: its elements are on
 the heap). `.len` is how many it has, and `.max` the room it has right now. Everything
@@ -634,7 +659,12 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
   is a `u32` or a pointer (this affects `/`, `%`, `>>` and comparisons), and signed otherwise.
 - `below`, `above`, `atmost` and `atleast` are word forms of `<`, `>`, `<=` and `>=`, the
   way `is` is a word form of `==`: `if lives above 0 and score atleast best`.
-- Two strings compare as text, but only with `is` / `==` / `is not` / `!=`.
+- Two strings compare as text: `is` and `is not` ask whether they're the same, and `<`, `>`,
+  `<=`, `>=` (or `below`, `above`, `atmost`, `atleast`) put them in order a byte at a time, as
+  C's `strcmp` does. So `'apple' < 'banana'`, a text that's the start of another comes before
+  it (`'app' < 'apple'`), capitals come before small letters (`'Zed' < 'apple'`), and
+  characters past ASCII come after all of ASCII. It's the order of the bytes, not of any
+  language's alphabet.
 - In a condition, any number counts as true unless it is 0.
 - A binary operator must be on the same line as its left side. This is how
   `if ready` followed by a statement on the next line knows where the condition ends. A long

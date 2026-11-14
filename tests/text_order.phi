@@ -1,0 +1,42 @@
+# Text in order: < > <= >= (and below, above, atmost, atleast) between two strs put them in
+# order a byte at a time, as C's strcmp does. A text that's the start of another comes before
+# it, capitals come before small letters, and what's past ASCII comes after all of ASCII.
+phi.TextOrder:Library
+{
+	str a: 'apple';
+	str b: 'banana';
+	debug (a < b) (b < a) (a <= a) (a > b) (b >= a) (a >= b) '\n';
+	debug (a below b) (b above a) (a atmost a) (a atleast b) '\n';
+	debug ('app' < a) (a < 'app') ('' < a) (a < '') ('Zed' < a) ('é' > 'z') '\n';
+
+	# as a value, in a condition with others, and through a method
+	bln first: a < b;
+	int count: 0;
+	if a < b and b > a and not (a > b)
+		count++;
+	;;
+	debug first ' ' count ' ' (Order: 'pear' 'peach') ' ' (Order: 'kiwi' 'kiwi') ' ' (Order: 'fig' 'figs') '\n';
+
+	# putting an array in order with it
+	str names: 'pear' 'apple' 'fig' 'Zed' 'apples';
+	while int i: 1; i < names.len; i++;
+		int k: i;
+		while k > 0 and names:k < names:(k - 1)
+			str moving: names:k;
+			names:k is names:(k - 1);
+			names:(k - 1) is moving;
+			k--;
+		;;
+	;;
+	while each name in names
+		debug name ' ';
+	;;
+	debug '\n';
+
+	[Order: ptr<u8> x: 0; ptr<u8> y: 0;]
+		str left: x;
+		str right: y;
+		if left < right return -1;
+		if left > right return 1;
+	[end: 0]
+}

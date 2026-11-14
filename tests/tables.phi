@@ -1,0 +1,75 @@
+# runs only in 32 and 64 bits: whole rows copied and compared, and i64s
+# Arrays of more than one size: int table[3][2] is three rows of two, table:r:c is the cell
+# at row r and column c, and each index is checked against its own size. A row is a thing of
+# its own too: table:r can be gone through, measured, copied and handed to a method.
+struct.Cell
+{
+	int value;
+	u8 mark;
+}
+
+struct.Board
+{
+	int id;
+	u8 squares[3][3];
+}
+
+phi.Tables:Library
+{
+	const int ROWS: 3;
+	const int COLS: 4;
+	int table[ROWS][COLS];
+
+	# every cell, set and read back
+	while int r: 0; r < ROWS; r++;
+		while int c: 0; c < COLS; c++;
+			table:r:c is r * 10 + c;
+		;;
+	;;
+	debug table:0:0 ' ' table:1:2 ' ' table:2:3 ' ' table.len ' ' table:0.len ' ' sizeof table '\n';
+	table:1:2++ 100;
+	int row: 2;
+	int col: 1;
+	debug table:1:2 ' ' table:row:col ' ' table:(row - 1):(col + 2) '\n';
+
+	# a row: gone through, handed to a method, copied over another
+	int sum: 0;
+	while each x in table:2
+		sum is sum + x;
+	;;
+	debug sum ' ' (Sum: table:1) ' ';
+	table:0 is table:2;
+	debug table:0:3 ' ' (table:0 is table:2) ' ' (table:0 is table:1) '\n';
+	while each line in table
+		debug line:0 ' ';
+	;;
+	debug '\n';
+
+	# other elements: bytes, f-less numbers of each size, structs; and in a struct's field
+	u8 small[2][2];
+	small:1:1 is 250;
+	i64 wide[2][3];
+	wide:1:2 is 5000000000;
+	Cell cells[2][2];
+	cells:1:0.value is 7;
+	cells:1:0.mark is 3;
+	debug small:1:1 ' ' small:0:1 ' ' wide:1:2 ' ' wide:0:0 ' ' cells:1:0.value ' ' cells:1:0.mark ' ' cells:0:1.value '\n';
+	Board board;
+	board.squares:2:1 is 9;
+	ptr<Board> there: addr board;
+	there.squares:0:2 is 4;
+	debug board.squares:2:1 ' ' board.squares:0:2 ' ' there.squares:2:1 ' ' sizeof Board '\n';
+
+	# three sizes
+	int cube[2][3][4];
+	cube:1:2:3 is 123;
+	cube:0:0:0 is 1;
+	debug cube:1:2:3 ' ' cube:0:0:0 ' ' cube:1:2:2 ' ' cube.len ' ' cube:0.len ' ' cube:0:0.len ' ' sizeof cube '\n';
+
+	[Sum: int items[];]
+		int total: 0;
+		while each x in items
+			total is total + x;
+		;;
+	[end: total]
+}

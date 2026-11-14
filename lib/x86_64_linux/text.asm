@@ -1,4 +1,4 @@
-; provides: phi_strlen phi_str_end phi_strcmp phi_str_has phi_str_has_char
+; provides: phi_strlen phi_str_end phi_strcmp phi_strorder phi_str_has phi_str_has_char
 ;
 ; Text routines for 64-bit code, as x86_32's strlen, str_end, strcmp and str_has are,
 ; with the text's addresses in rsi and rdi.
@@ -69,6 +69,29 @@ phi_strcmp:
     xor eax, eax
     ret
 .differ:
+    mov eax, 1
+    ret
+
+; Which of the strings at rsi and rdi comes first, a byte at a time, as C's strcmp says: eax is
+; -1 if rsi's does, 1 if rdi's does, and 0 if they're the same. (A text that's the start of
+; another comes before it.)
+phi_strorder:
+    mov al, [rsi]
+    cmp al, [rdi]
+    jb .before
+    ja .after
+    test al, al
+    jz .same
+    inc rsi
+    inc rdi
+    jmp phi_strorder
+.same:
+    xor eax, eax
+    ret
+.before:
+    mov eax, -1
+    ret
+.after:
     mov eax, 1
     ret
 

@@ -448,7 +448,6 @@ namespace Phi.Compiler.Tests
         [InlineData("int x: 1;\nint x: 2;", "already declared")]
         [InlineData("int log: 1;", "keyword")]
         [InlineData("[OS.Unknown]\n[end]", "isn't an event")]
-        [InlineData("str s: 'a';\nif s > 'b'\n;;", "strings can only be compared")]
         [InlineData("dec pi: 3.14;", "isn't supported yet")]
         [InlineData("str a: 'x';\na ^^ 2;", "only works on numbers")]
         [InlineData("str home: 'HOME';\nstr docs: home '/DOCS';", "for one text built from them, put them in parentheses: str docs: (home '/DOCS')")]

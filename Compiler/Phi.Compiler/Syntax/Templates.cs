@@ -273,10 +273,10 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         public static string Label(string name)
         {
-            if (name.IndexOf('<') < 0) return name;
+            if (name.IndexOfAny(new[] { '<', '[' }) < 0) return name;
             var label = new System.Text.StringBuilder();
             foreach (char c in name)
-                label.Append(c switch { '<' => "_of_", '>' => "", ' ' => "_", ':' => "_to", _ => c.ToString() });
+                label.Append(c switch { '<' => "_of_", '>' => "", ' ' => "_", ':' => "_to", '[' => "_by_", ']' => "", _ => c.ToString() });   // (int[4], a row, is int_by_4)
             return label.ToString();
         }
     }

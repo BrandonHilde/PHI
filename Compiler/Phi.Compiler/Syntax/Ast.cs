@@ -142,6 +142,13 @@ namespace Phi.Compiler.Syntax
         /// <summary>struct.Name foreign { }: laid out as C lays a struct out, for outside functions.</summary>
         public bool IsForeign { get; set; }
 
+        /// <summary>
+        /// Made by the binder for an array of more than one size (int table[3][2]): a row of it,
+        /// int[2], whose one field is its cells. table is three of them, and table:r:c is
+        /// table:r's cells:c, so each index is checked as any struct array's and field's is.
+        /// </summary>
+        public bool IsRow { get; init; }
+
         /// <summary>An interface: no fields, only the headers of the methods it asks for.</summary>
         public bool IsInterface { get; init; }
         public List<MethodDecl> Methods { get; } = new();
@@ -169,6 +176,9 @@ namespace Phi.Compiler.Syntax
         public bool Volatile { get; init; }
         public string Name { get; init; } = "";
         public Expr? Count { get; init; }
+
+        /// <summary>int grid[3][2] in a struct: the sizes after the first.</summary>
+        public List<Expr> MoreSizes { get; } = new();
 
         /// <summary>name[atmost N]: filled as it goes, with a count of its own.</summary>
         public bool Filled { get; init; }
@@ -350,6 +360,9 @@ namespace Phi.Compiler.Syntax
         public List<Expr> Values { get; } = new();
         public Expr? BufferSize { get; init; }
 
+        /// <summary>int table[3][2]: the sizes after the first, [2] here. Each element of the first is a row of them.</summary>
+        public List<Expr> MoreSizes { get; } = new();
+
         /// <summary>type name[atmost N]: an array filled as it goes, which starts empty.</summary>
         public bool Filled { get; init; }
 
@@ -363,7 +376,7 @@ namespace Phi.Compiler.Syntax
         public Expr? TextSize { get; init; }
 
         /// <summary>The element of `while each name in list`: its type is list's elements'.</summary>
-        public Expr? EachOf { get; init; }
+        public Expr? EachOf { get; set; }
 
         /// <summary>The element of `if list has x when ...`, not of a while each: for what's said when list isn't an array.</summary>
         public bool EachFinds { get; init; }
@@ -555,7 +568,7 @@ namespace Phi.Compiler.Syntax
     {
         public VarDecl Element { get; init; } = null!;
         public VarDecl Index { get; init; } = null!;
-        public Expr Array { get; init; } = null!;
+        public Expr Array { get; set; } = null!;
         public List<Stmt> Body { get; } = new();
 
         /// <summary>
@@ -889,7 +902,7 @@ namespace Phi.Compiler.Syntax
     /// <summary>array:index  (also pointer:index and str:index)</summary>
     public sealed class IndexExpr : Expr
     {
-        public Expr Target { get; init; } = null!;
+        public Expr Target { get; set; } = null!;
         public Expr Index { get; set; } = null!;
 
         /// <summary>Set by the binder when the index must be checked against this many elements.</summary>
@@ -899,7 +912,7 @@ namespace Phi.Compiler.Syntax
     /// <summary>tasks:i.id   (a field of an indexed struct)</summary>
     public sealed class MemberExpr : Expr
     {
-        public Expr Target { get; init; } = null!;
+        public Expr Target { get; set; } = null!;
         public string Member { get; init; } = "";
         public Span MemberSpan { get; init; }
 

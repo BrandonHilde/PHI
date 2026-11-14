@@ -1118,8 +1118,9 @@ namespace Phi.Compiler.Semantics
                 }
             }
 
-            foreach (StructSymbol s in structs.Values) Layout(s, new HashSet<StructSymbol>());
-            foreach (StructSymbol s in structs.Values) FindOwnedSlots(s);
+            // (a field with more than one size, int grid[3][2], makes a struct of its own: RowsOf)
+            foreach (StructSymbol s in structs.Values.ToList()) Layout(s, new HashSet<StructSymbol>());
+            foreach (StructSymbol s in structs.Values.ToList()) FindOwnedSlots(s);
         }
 
         /// <summary>
@@ -1469,6 +1470,64 @@ namespace Phi.Compiler.Semantics
             return false;
         }
 
+        /// <summary>
+        /// The type of one element of an array with more than one size: for int table[3][2] a
+        /// row, the struct int[2] with one field, its cells; for [4][3][2] a row of rows. Made
+        /// here the first time a size is used, and the same struct every time after. Null (and
+        /// an error) when a size isn't a number known when the program is built, or the
+        /// elements aren't numbers or plain structs.
+        /// </summary>
+        PhiType? RowsOf(PhiType element, TypeRef written, List<Expr> sizes, Scope? scope)
+        {
+            if (element.IsString || element.IsObject || element.IsArray || element.IsStruct && WillOwnObjects(element.Struct!, new HashSet<StructSymbol>()))
+            {
+                Error(written.Span, $"an array of more than one size holds numbers, pointers or plain structs, kept in place, and this is {A(element)}");
+                return null;
+            }
+            PhiType type = element;
+            TypeRef typeRef = written;
+            SourceFile inFile = file;
+            for (int i = sizes.Count - 1; i >= 0; i--)
+            {
+                int? n = ConstantCount(sizes[i], scope);
+                if (n == null) return null;
+                if (n <= 0 || !FitsMemory(type, n.Value, sizes[i].Span))
+                {
+                    if (n <= 0) Error(sizes[i].Span, "a size is at least 1");
+                    return null;
+                }
+                string name = $"{type}[{n}]";
+                if (!structs.TryGetValue(name, out StructSymbol? row))
+                {
+                    var decl = new StructDecl { File = inFile, Name = name, Span = sizes[i].Span, IsRow = true };
+                    decl.Fields.Add(new FieldDecl { Type = typeRef, Name = RowCells, Count = new NumberExpr { Value = n.Value, Span = sizes[i].Span }, Span = sizes[i].Span, Text = sizes[i].Span });
+                    row = new StructSymbol { Name = name, Decl = decl };
+                    decl.Symbol = row;
+                    structs[name] = row;
+                    Layout(row, new HashSet<StructSymbol>());
+                    FindOwnedSlots(row);
+                    file = inFile;
+                }
+                type = PhiType.Of(row);
+                typeRef = new TypeRef { Name = name, Span = sizes[i].Span };
+            }
+            return type;
+        }
+
+        /// <summary>The one field of a row (see RowsOf): no program can write this name.</summary>
+        const string RowCells = "cells of the row";
+
+        /// <summary>
+        /// A row where an array is wanted (table:r indexed, gone through, measured or handed to
+        /// a method that takes an array): its cells, which is the array it stands for.
+        /// </summary>
+        Expr Cells(Expr e, Scope? scope)
+        {
+            if (e.Type.IsError || e.Type.IsArray || FieldsOf(e.Type) is not { Decl.IsRow: true } row || row.Find(RowCells) is not FieldSymbol cells) return e;
+            // (e is bound already: binding it again would say what's wrong in it twice)
+            return new MemberExpr { Target = e, Member = RowCells, MemberSpan = e.Span, Span = e.Span, Field = cells, Type = cells.Type };
+        }
+
         /// <summary>Works out field offsets; fields follow each other with no padding.</summary>
         void Layout(StructSymbol s, HashSet<StructSymbol> inProgress)
         {
@@ -1493,6 +1552,13 @@ namespace Phi.Compiler.Semantics
                 }
 
                 PhiType type = ResolveType(f.Type, scope: null, allowStr: true);
+                // int grid[3][2]: three rows of two
+                if (f.MoreSizes.Count > 0 && !type.IsError)
+                {
+                    if (f.IsNew || RowsOf(type, f.Type, f.MoreSizes, null) is not PhiType rows) continue;
+                    type = rows;
+                    file = s.Decl.File;
+                }
                 if (s.Decl.IsForeign && (f.IsNew || f.TextSize != null || type.IsString || f.Unsized))
                 {
                     Error(f.Span, $"{f.Name}: a foreign struct holds what C does: numbers, pointers, arrays of them, and other foreign structs");
@@ -2295,6 +2361,25 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            // int table[3][2]: three rows, each a struct of its own with two cells
+            if (d.MoreSizes.Count > 0)
+            {
+                if (d.IsNew || v.IsParameter || d.Values.Count > 0)
+                {
+                    Error(d.MoreSizes[0].Span, v.IsParameter ? $"a parameter takes one row of an array like this (int {d.Name}[]), or a pointer to it"
+                        : d.IsNew ? "an array of more than one size holds numbers or plain structs in place, so it's declared without new"
+                        : $"an array of more than one size starts as zeros; set its cells one at a time, like {d.Name}:0:0 is 5;");
+                    v.Type = PhiType.Error;
+                    return;
+                }
+                if (RowsOf(type, d.Type, d.MoreSizes, scope) is not PhiType rows)
+                {
+                    v.Type = PhiType.Error;
+                    return;
+                }
+                type = rows;
+            }
+
             if (d.IsNew)
             {
                 DetermineObject(v, type, scope);
@@ -2486,6 +2571,8 @@ namespace Phi.Compiler.Semantics
             Expr array = v.Decl.EachOf!;
             BindExpr(array, scope);
             if (array.Type.IsError) return;
+            // (while each x in table:r goes through the row's cells)
+            array = v.Decl.EachOf = Cells(array, scope);
             // text, a character at a time: as text itself (as str, or nothing said), as the
             // character's number (as int), or a byte at a time (as u8, as chr)
             bool text = array.Type.IsString && !array.Type.IsArray || array.Type.IsPointer && !array.Type.IsArray && array.Type.Pointee == PhiType.U8;
@@ -3104,6 +3191,7 @@ namespace Phi.Compiler.Semantics
                     ShowInBlock(each.Index);
                     BindVarDecl(each.Element, scope, classLevel: false);
                     ShowInBlock(each.Element);
+                    if (each.Element.EachOf != null) each.Array = each.Element.EachOf;
                     var element = each.Element.Symbol;
                     var index = each.Index.Symbol;
                     if (element != null && index != null && !element.Type.IsError && each.Element.EachOfText is string given)
@@ -4202,6 +4290,7 @@ namespace Phi.Compiler.Semantics
         {
             NameExpr n => n.Name,
             IndexExpr i => Describe(i.Target),
+            MemberExpr { Member: RowCells } row => "a row of " + Describe(row.Target),
             MemberExpr m => Describe(m.Target) + "." + m.Member,
             _ => "value",
         };
@@ -5116,6 +5205,8 @@ namespace Phi.Compiler.Semantics
                 case MemberExpr member:
                 {
                     BindExpr(member.Target, scope);
+                    // (a row's length is its cells')
+                    if (member.Member != RowCells) member.Target = Cells(member.Target, scope);
                     PhiType t = member.Target.Type;
                     if (t.IsError) { member.Type = PhiType.Error; break; }
 
@@ -5358,6 +5449,7 @@ namespace Phi.Compiler.Semantics
             }
 
             BindExpr(index.Target, scope);
+            index.Target = Cells(index.Target, scope);   // table:r:c is a cell of the row table:r
             BindExpr(index.Index, scope);
             PhiType t = index.Target.Type;
 
@@ -5690,8 +5782,7 @@ namespace Phi.Compiler.Semantics
             // (like greeting:0 is 'h') is its character code instead
             if (b.IsComparison && b.Left.Type.IsString && b.Right.Type.IsString)
             {
-                if (b.Op is not (BinaryOp.Equal or BinaryOp.NotEqual))
-                    Error(b.Span, "strings can only be compared with is / == and is not / !=");
+                // (< and the rest put them in order a byte at a time, as C's strcmp does)
                 b.Type = PhiType.Bool;
                 return;
             }
@@ -5923,6 +6014,8 @@ namespace Phi.Compiler.Semantics
             if (target.Open)
             {
                 if (e is PointerViewExpr pointerView) pointerView.Passed = true;   // (if it's the wrong kind, that's said here)
+                // (a row of an array with more than one size, table:r, is handed over as its cells)
+                e = Cells(e, null);
                 if (e.Type.IsArray && e.Type.Element == target.Element) return e;
                 if (target.TextTable && e.Type.IsArray && e.Type.Element.IsInlineText)
                     Error(e.Span, $"'{Describe(e)}' keeps each text in place, with a size, and {what} takes texts that grow; " +

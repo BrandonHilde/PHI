@@ -83,6 +83,8 @@ phi.GenericList:Library
 		debug name ' ';
 	;;
 	debug (names.Count) '\n';
+	call names.Sort;
+	debug (names.First) ' ' (names.Last) ' ' (names.Largest) ' ' (names.Smallest) '\n';
 
 	# a struct: a copy of each is kept; the methods that hand a value back or compare
 	# aren't for it, and aren't in the program

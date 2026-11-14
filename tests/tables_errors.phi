@@ -1,0 +1,10 @@
+phi.TablesErrors:Kernel
+{
+	int table[3][4];
+	int open[][4];
+	int capped[atmost 3][4];
+	int started[2][2]: 1 2 3 4;
+
+	[Take: int grid[3][4];]
+	[end]
+}
