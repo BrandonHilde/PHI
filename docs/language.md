@@ -1374,7 +1374,9 @@ if head.next is not empty      # does it hold an object?
   (`a.next takes a` is an error), because that object would own itself. Two elements of an
   array are two objects, so `nodes:0.left takes nodes:1;` is fine; with indexes only known
   as it runs (`nodes:a.left takes nodes:b;`) it's an error then if `a` is `b`
-  (`ErrorKind.HIERARCHY`), and nothing is handed over.
+  (`ErrorKind.HIERARCHY`), and nothing is handed over. A call that lends a method an object
+  and something inside it, when the method has one take from the other
+  (`call Hang: x.left.left x;`), is an error at the call for the same reason.
 - **`if a is b` compares values.** Two objects are equal when their fields are, following
   `new` fields to compare the objects they hold (both empty is equal, one empty isn't).
   Fields that are `ptr<T>` compare as addresses.

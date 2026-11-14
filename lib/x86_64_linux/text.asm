@@ -3,15 +3,42 @@
 ; Text routines for 64-bit code, as x86_32's strlen, str_end, strcmp and str_has are,
 ; with the text's addresses in rsi and rdi.
 
-; eax = length of the string at rsi
+; eax = length of the string at rsi. Every other register is left as it was (xmm0 and xmm1
+; aren't: nothing keeps a value in them across a call).
+;
+; Sixteen bytes at a time, from the address at or before rsi that divides by 16: a text that
+; has grown long is measured each time it's added to. pcmpeqb marks the bytes that are zero
+; and pmovmskb gathers the marks into a number, a bit for each byte; the first sixteen's bits
+; for the bytes before rsi are cleared. Reading sixteen from an address that divides by 16
+; never reaches into the next page of memory. (Every 64-bit CPU has these instructions.)
 phi_strlen:
-    xor eax, eax
+    push rcx
+    push rdx
+    mov rax, rsi
+    mov ecx, esi
+    and ecx, 15
+    and rax, -16
+    pxor xmm0, xmm0
+    movdqa xmm1, [rax]
+    pcmpeqb xmm1, xmm0
+    pmovmskb edx, xmm1
+    shr edx, cl
+    shl edx, cl
+    test edx, edx
+    jnz .found
 .next:
-    cmp byte [rsi + rax], 0
-    je .done
-    inc eax
-    jmp .next
-.done:
+    add rax, 16
+    movdqa xmm1, [rax]
+    pcmpeqb xmm1, xmm0
+    pmovmskb edx, xmm1
+    test edx, edx
+    jz .next
+.found:
+    bsf edx, edx
+    add rax, rdx
+    sub rax, rsi
+    pop rdx
+    pop rcx
     ret
 
 ; Move rdi to the zero that ends the string there, and take as many bytes off ecx (the

@@ -1,0 +1,42 @@
+# An object lent to a method together with something inside it, where the method has one
+# take from the other: what's taken would hold what takes it, and own itself. Nothing inside
+# the method says the two are related, so it's found at the call.
+struct.Node
+{
+	int value;
+	new Node left;
+	new Node kids[];
+}
+
+phi.LentTwiceErrors:Kernel
+{
+	new Node list[];
+	new Node x;
+	new Node y;
+	x.left is y;
+	x.left.left is y;
+
+	call Hang: x.left.left x;
+	call Outer: x.left.left x;
+	call Hang: list:0.left list:0;
+	call Deep: x.left x;
+
+	# fine: two objects, another element, the other way round, and the same object twice
+	call Hang: y x;
+	call Hang: list:1 list:0;
+	call Hang: x x.left.left;
+	call Hang: x.left x.left;
+
+	[Hang: Node under; Node from;]
+		under.left takes from.left;
+	[end]
+
+	# passing them on is the same
+	[Outer: Node a; Node b;]
+		call Hang: a b;
+	[end]
+
+	[Deep: Node a; Node b;]
+		a.kids:0.left takes b.left;
+	[end]
+}

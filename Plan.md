@@ -1823,8 +1823,24 @@ and every program wrapped it or wrote its own.
 
   Tests `same_place_program`, `same_place_errors` and `str_build` (every mode, 16-bit too);
   the fuzzer writes all of these now.
-  Still open: an object lent to a method twice (`call M: x.left x;` with `a.left takes b.left`
-  inside) can still be made to own itself, as no name in the method says they're one object.
+  An object lent to a method with something inside it (`call Hang: x.left.left x;`, where
+  Hang has `under.left takes from.left;`) made an object own itself, with no error: two
+  blocks never freed. Nothing in the method says the two are related, so the call is
+  refused (`Binder.CheckLentTwice`, test `lent_twice_errors`), when it's certain: the same
+  names, and indexes that are numbers. A walk through what's handed over as it runs would
+  find the rest, and make every such `takes` cost what the list is long, so there's none.
+  Not found: a method in a compiled library (its code isn't there to read), and indexes
+  that aren't numbers.
+- [x] Text that grows was measured a byte at a time, twice, each time it was added to
+  (2026-11-13; `bench/strings`, new, took 38 s where C took 0.33). `phi_strlen` goes by
+  sixteen bytes in 64-bit code (SSE2) and by four in 32-bit, and an append goes on from
+  the end it measured: 1.5 s and 5.8 s. What's left is the measuring itself.
+- [ ] A `str` that grows could remember its length, and the rest of that would go. What
+  stands in the way: a `str` can be written through a pointer (`addr s`, a `ptr<u8>`
+  parameter), and a zero written into the middle that way makes it shorter with nothing
+  told. It needs the compiler to know which strs are never reached that way (a parameter
+  only read, followed through the calls), and a place for the length in every layout a
+  `str` has.
 - [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), and methods
   that take types of their own.
 - [x] The editor. The language server needed nothing: a made struct is a struct, read from

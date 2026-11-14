@@ -1,0 +1,4 @@
+19:13: error: 'x.left.left.left' is inside 'x.left', and Hang has it take that (line 31): it would own itself
+20:14: error: 'x.left.left.left' is inside 'x.left', and Hang has it take that (line 31)
+21:13: error: 'list:0.left.left' is inside 'list:0.left', and Hang has it take that (line 31)
+22:13: error: 'x.left.kids:0.left' is inside 'x.left', and Deep has it take that (line 40)

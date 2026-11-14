@@ -57,6 +57,7 @@ line times weblib's JavaScript engine running its own benchmarks, and
 | `matrix` | Floating point in arrays, three loops deep |
 | `crc` | A table, shifts and exclusive ors |
 | `lists` | Making and freeing 20 million small objects (C# doesn't free: it collects) |
+| `strings` | Building text: a line from words and numbers, added 3 million times to a text that grows to 30,000 characters. PHI measures a text to find its end; C keeps its length beside it, and C#'s `StringBuilder` does too |
 
 ## Adding one
 

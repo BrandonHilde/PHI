@@ -9103,10 +9103,11 @@ namespace Phi.Compiler.CodeGen
                 Label(text);
                 Emit("call phi_strlen");
                 Emit("pop ecx");
+                Emit("push eax                ; how long it is now: where the value goes");
                 Emit("add eax, ecx            ; after what's there");
             }
             Emit("mov ecx, eax");
-            Emit($"mov {edi}, [esp]");
+            Emit($"mov {edi}, [esp{(append ? $" + {Slot}" : "")}]");
             if (rooms != null)
             {
                 // an element of a str array without a most: its room is .max slots on
@@ -9115,13 +9116,22 @@ namespace Phi.Compiler.CodeGen
             }
             else Emit($"lea ebx, [edi + {roomOffset}]");
             EmitStrRoomCall(roomInEbx: true);
-            Emit("push edx");
-            Emit($"mov {eax}, [esp + {2 * Slot}]      ; the value");
             if (append)
             {
-                Need("phi_str_end");
-                Emit("call phi_str_end");
+                // on from its end, which was measured above (not found again: a long text is
+                // added to many times), with that much less room; all its room when the
+                // heap had no more is the zero's, and the value is cut
+                string some = NewLabel("room");
+                Emit("pop eax");
+                Emit("cmp eax, ecx");
+                Emit($"jb {some}");
+                Emit("lea eax, [ecx - 1]");
+                Label(some);
+                Emit($"add {edi}, {eax}");
+                Emit("sub ecx, eax");
             }
+            Emit("push edx");
+            Emit($"mov {eax}, [esp + {2 * Slot}]      ; the value");
             if (sourceIsString)
             {
                 Need("phi_strcpy");

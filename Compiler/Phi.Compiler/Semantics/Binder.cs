@@ -428,6 +428,7 @@ namespace Phi.Compiler.Semantics
             CheckTextArguments();
             CheckThreadWrites();
             CheckPointerViews(program);
+            CheckLentTwice();
 
             foreach (var (cls, scope) in classScopes)
                 foreach (var (name, symbol) in scope.Names)
@@ -3607,12 +3608,7 @@ namespace Phi.Compiler.Semantics
 
             // a method called for a later value can read the str too, by a class variable or the
             // caller's own name for it, unless the str is this method's own variable
-            Expr root = build.Target;
-            while (root is IndexExpr or MemberExpr) root = root is IndexExpr index ? index.Target : ((MemberExpr)root).Target;
-            VariableSymbol? variable = root is NameExpr name
-                ? name.Symbol switch { VariableSymbol v => v, FieldPathSymbol f => f.Root, PathSymbol path => path.Root, _ => null }
-                : null;
-            bool reachable = variable is not { IsLocal: true, IsParameter: false };
+            bool reachable = RootVariable(build.Target) is not { IsLocal: true, IsParameter: false };
 
             for (int i = 0; i < build.Parts.Count; i++)
             {
@@ -3638,6 +3634,119 @@ namespace Phi.Compiler.Semantics
             }
             else build.AsideWhen.AddRange(when);
         }
+
+        /// <summary>The variable a place starts from: nodes for nodes:i.left.name.</summary>
+        static VariableSymbol? RootVariable(Expr e)
+        {
+            while (e is IndexExpr or MemberExpr) e = e is IndexExpr index ? index.Target : ((MemberExpr)e).Target;
+            return e is NameExpr name
+                ? name.Symbol switch { VariableSymbol v => v, FieldPathSymbol f => f.Root, PathSymbol path => path.Root, _ => null }
+                : null;
+        }
+
+        /// <summary>
+        /// One of a method's parameters taking from another: [Hang: Node under; Node from;] with
+        /// under.left takes from.left; is parameter 0 at .left taking parameter 1 at .left. The
+        /// steps are those after the parameter's name; an index that isn't a number is a step
+        /// that matches nothing, since only what's certain is refused.
+        /// </summary>
+        sealed record LentTake(int Into, List<object> IntoSteps, int From, List<object> FromSteps, TakesStmt Takes, MethodSymbol In, int Line);
+
+        /// <summary>
+        /// call Hang: x.left.left x; lends an object and something inside it to a method that
+        /// has one take from the other: x.left would end up inside itself, owned by nothing and
+        /// never freed. Inside Hang nothing says the two are related, so it's found here, at
+        /// the call, where the two values are written: an error when what's taken certainly
+        /// holds what takes it. A method that passes its parameters on to one that does this
+        /// does it too. (Not found: a method in a compiled library, whose code isn't here, and
+        /// values whose indexes aren't numbers.)
+        /// </summary>
+        void CheckLentTwice()
+        {
+            var methods = classScopes.Keys.SelectMany(c => c.Methods.Where(m => m.Symbol != null).Select(m => (c.File, Method: m))).ToList();
+            var takes = new Dictionary<MethodSymbol, List<LentTake>>();
+
+            static List<object> Certain(IEnumerable<object> steps) =>
+                steps.Select(step => step is Expr e && ConstantFolder.Evaluate(e) == null ? new object() : step).ToList();
+            static (MethodSymbol? Method, List<Expr> Arguments) CallOf(Node n) => n switch
+            {
+                CallStmt { Resolved: MethodSymbol m } c => (m, c.Arguments),
+                CallExpr { Resolved: MethodSymbol m } c => (m, c.Arguments),
+                _ => (null, new List<Expr>()),
+            };
+            // a place that starts at one of the method's parameters: which, and the steps after it
+            static (int Parameter, List<object> Steps)? From(MethodSymbol m, Expr place)
+            {
+                if (RootVariable(place) is not { IsParameter: true } root || Steps(place) is not { } steps) return null;
+                int at = m.Parameters.IndexOf(root);
+                return at < 0 ? null : (at, Certain(steps.Skip(1)));
+            }
+
+            foreach (var (declared, m) in methods)
+            {
+                var found = new List<LentTake>();
+                foreach (TakesStmt t in m.Body.SelectMany(SyntaxWalker.Nodes).OfType<TakesStmt>())
+                    if (From(m.Symbol!, t.Target) is var (into, intoSteps) && From(m.Symbol!, t.Source) is var (from, fromSteps) && into != from)
+                        found.Add(new LentTake(into, intoSteps, from, fromSteps, t, m.Symbol!, declared.GetLocation(t.Span.Start).Line));
+                takes[m.Symbol!] = found;
+            }
+
+            // a method that passes two of its parameters on, to one that takes between them
+            for (int round = 0, added = 1; added > 0 && round < 8; round++)
+            {
+                added = 0;
+                foreach (var (_, m) in methods)
+                    foreach (Node n in m.Body.SelectMany(SyntaxWalker.Nodes))
+                    {
+                        (MethodSymbol? callee, List<Expr> arguments) = CallOf(n);
+                        if (callee == null || callee == m.Symbol || !takes.TryGetValue(callee, out var inside)) continue;
+                        foreach (LentTake t in inside.ToList())
+                        {
+                            if (t.Into >= arguments.Count || t.From >= arguments.Count) continue;
+                            if (From(m.Symbol!, arguments[t.Into]) is not var (into, intoSteps) || From(m.Symbol!, arguments[t.From]) is not var (from, fromSteps) || into == from) continue;
+                            intoSteps.AddRange(t.IntoSteps);
+                            fromSteps.AddRange(t.FromSteps);
+                            if (intoSteps.Count > 12 || takes[m.Symbol!].Any(o => o.Takes == t.Takes && o.Into == into && o.From == from)) continue;
+                            takes[m.Symbol!].Add(new LentTake(into, intoSteps, from, fromSteps, t.Takes, t.In, t.Line));
+                            added++;
+                        }
+                    }
+            }
+
+            var bodies = methods.Select(m => (m.File, m.Method.Body)).Concat(classScopes.Keys.Select(c => (c.File, c.Body)));
+            foreach (var (source, body) in bodies)
+            {
+                file = source;
+                foreach (Node n in body.SelectMany(SyntaxWalker.Nodes))
+                {
+                    (MethodSymbol? callee, List<Expr> arguments) = CallOf(n);
+                    if (callee == null || !takes.TryGetValue(callee, out var inside)) continue;
+                    foreach (LentTake t in inside)
+                    {
+                        if (t.Into >= arguments.Count || t.From >= arguments.Count) continue;
+                        if (Steps(arguments[t.Into]) is not { } into || Steps(arguments[t.From]) is not { } from) continue;
+                        int lent = from.Count;
+                        into.AddRange(t.IntoSteps);
+                        from.AddRange(t.FromSteps);
+                        if (into.Count <= from.Count || SameStart(into, from) != Same.Yes) continue;
+                        string taken = PlaceText(arguments[t.From]) + StepsText(t.FromSteps);
+                        string taker = PlaceText(arguments[t.Into]) + StepsText(t.IntoSteps);
+                        Error(arguments[t.Into].Span,
+                              $"'{taker}' is inside '{taken}', and {t.In.Decl.Name} has it take that (line {t.Line}): it would own itself");
+                        break;
+                    }
+                }
+            }
+        }
+
+        /// <summary>Steps as they'd be written after a name: .left:0.name.</summary>
+        static string StepsText(IEnumerable<object> steps) =>
+            string.Concat(steps.Select(step => step switch
+            {
+                string name => "." + name,
+                Expr e when ConstantFolder.Evaluate(e) is long n => ":" + n,
+                _ => ":?",
+            }));
 
         /// <summary>The variables, fields and elements a value names, each whole: list:i.name, and i, but not list or list:i.</summary>
         static IEnumerable<Expr> Places(Expr e)

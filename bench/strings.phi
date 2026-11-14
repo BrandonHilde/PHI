@@ -1,0 +1,27 @@
+# A line built from words and numbers, wrapped in brackets and added to a text that grows, 3
+# million times: what building text costs. The line names itself among its values once
+# (line is '[' line ']'), which is built on the side first.
+use user.text;
+
+phi.Strings:Program
+{
+	u32 total: 0;
+	while int r: 0; r < 3000; r++;
+		total++ (Round: 1000);
+	;;
+	log total '\n';
+	exit 0;
+
+	[Round: int count: 0;]
+		str line: [80];
+		str all: '';
+		u32 sum: 0;
+		while int i: 0; i < count; i++;
+			line is 'item ' i ', of ' count;
+			line++ ' (' i * 3 ')';
+			line is '[' line ']';
+			all++ line ';';
+			sum++ line:(i % 8);
+		;;
+	[end: sum + (Text.Length: all)]
+}
