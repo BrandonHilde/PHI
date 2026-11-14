@@ -51,6 +51,31 @@ phi.StrBuild:Library
 	debug line
 		'\n';
 
+	# the str itself anywhere among its values is the text it had before the statement
+	str twice: [40];
+	twice is 'ab';
+	twice++ twice;
+	debug twice '\n';
+	twice is '<' twice '>';
+	debug twice '\n';
+	twice is twice '|' twice;
+	debug twice '\n';
+	twice is 'first ' twice:0 ', of ' ('"' twice '"');
+	debug twice '\n';
+
+	# and so are an array's: two elements, the same one, and one only known as it runs
+	str rows[3]: [20];
+	rows:0 is 'r0';
+	rows:1 is 'r1';
+	rows:1++ rows:0;
+	rows:1++ rows:1;
+	int which: 0;
+	int other: 1;
+	rows:which++ rows:other;
+	other is 0;
+	rows:which is '(' rows:other ')';
+	debug rows:0 ' ' rows:1 '\n';
+
 	[Label: int n: 0;]
 		str label: [20];
 		label is '#' n;
@@ -59,4 +84,5 @@ phi.StrBuild:Library
 
 	[Twice: int n: 0;]
 	[end: n * 2]
+
 }

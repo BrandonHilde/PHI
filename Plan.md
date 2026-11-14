@@ -1778,6 +1778,53 @@ and every program wrapped it or wrote its own.
   a pointer field each), its own templates' and the standard library's, so the program
   makes those too: that's where the library's calls to their methods go. Tests
   `library_generic_program` and `TemplateTests`.
+- [x] `phi fuzz objects` (2026-11-13): random programs of what PHI manages, each written with
+  what it must print, run on the standard heap and on the checking heap, and counting what
+  was left behind (tests/README.md has the details). The hole 561cd20 closed, a struct's
+  `Request items[];` sharing its text, was a check that asked what a struct owns before that
+  was worked out, and was told "nothing". Asking early stops the compiler now
+  (`StructSymbol.OwnsObjects`), so no check can pass that way again. What the fuzzer found
+  on its first day, each fixed and in `tests/append_from_itself.phi`:
+  - `spots++ spots:0;`, with structs kept in place, read the element from where it had been
+    before the array moved to make room: freed memory. Only the checking heap showed it
+    (`samples/own_heap/from_itself.phi`).
+  - `tree.kids++ tree;` copied the tree after its kids had the new, empty element. The copy
+    is made first now, for every array of objects; one with a most that's full stops before
+    anything is copied.
+  - `new Line<Spot> rows[];`, an array of objects made from a struct that takes types,
+    didn't assemble: its routines' labels had the `<` and `>` in them.
+  - `call a.b.c.d.e is Make: 1;`: an `is` more than seven tokens after `call` wasn't found.
+
+  1,150 programs then came out right as 32- and 64-bit Linux programs, on both heaps.
+  `tests/owned_everywhere_program.phi` is the same ground by hand, one case of each.
+- [x] What `phi fuzz objects` left alone (2026-11-13). The checks read a name without its
+  indexes, so two elements of an array looked like one place, and one place reached through
+  an index wasn't checked at all. A place is now its names and its indexes (`Binder.Steps`),
+  and two of them are the same, different, or only known as it runs:
+  - A `str` among its own values is the text it had before the statement, everywhere:
+    `s++ s;`, `s is 'x' s;`, `texts:i++ texts:j;` with `i` equal to `j`, and a value that
+    calls a method which reads the `str`. Both refusals are gone ("can't be added to itself",
+    "can only be the first value"): PHI should do what's meant without the programmer
+    knowing how a `str` is written. The statements that need it are built into a text of
+    their own first and then stored (`Binder.ReadAsItWas` wraps the values in a `TextExpr`,
+    whose holder is freed with the method); the rest are written straight in as before.
+    docs/language.md has the table, and how C# gets there.
+  - `list:0.left takes list:1;` builds: different numbers are different objects.
+    `list:0.left takes list:0;` and `list:i.left takes list:i;` are refused, and
+    `nodes:a.left takes nodes:b;` builds with the two addresses compared when it runs: the
+    same one is an error on that line (`ErrorKind.HIERARCHY`), before anything changes. Not
+    checked: an index with a call in it (it would be called twice).
+  - `tree.kids:0.kids is tree.kids;` copies the whole source first (the array's own copy
+    routine into a temporary, then the target frees what it had and takes it). The other way
+    round, `tree.kids is tree.kids:0.kids;`, was worse than the note here said: it freed the
+    source while reading it, and stopped on an empty object. Arrays of a fixed size and with
+    a most had the first fault too (`t.pair:1.pair is t.pair;`): there a copy of each object
+    goes on the stack first.
+
+  Tests `same_place_program`, `same_place_errors` and `str_build` (every mode, 16-bit too);
+  the fuzzer writes all of these now.
+  Still open: an object lent to a method twice (`call M: x.left x;` with `a.left takes b.left`
+  inside) can still be made to own itself, as no name in the method says they're one object.
 - [ ] A type that must have an interface (`struct.Sorted<Item has Ordered>`), and methods
   that take types of their own.
 - [x] The editor. The language server needed nothing: a made struct is a struct, read from

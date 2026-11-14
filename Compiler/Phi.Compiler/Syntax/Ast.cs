@@ -489,6 +489,13 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Set by the binder.</summary>
         public StructSymbol? Struct { get; set; }
+
+        /// <summary>
+        /// Set by the binder when the target is inside the source if their indexes come to the
+        /// same element (nodes:a.left takes nodes:b): the part of the target that's the source's
+        /// place then, and it's an error when it runs if it is.
+        /// </summary>
+        public Expr? Inside { get; set; }
     }
 
     public enum ObjectAssignKind
@@ -549,6 +556,14 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Add to the end of what s holds (s++ ...), instead of starting it again.</summary>
         public bool Append { get; init; }
+
+        /// <summary>
+        /// Set by the binder: places among the values that are the target itself if their indexes
+        /// come to the same element (texts:i++ texts:j). When one is, as it runs, the values are
+        /// built into a text of their own first and that is stored, so each is read as it was.
+        /// (When the binder can tell that one is, Parts is already that one text: a TextExpr.)
+        /// </summary>
+        public List<Expr> AsideWhen { get; } = new();
     }
 
     /// <summary>
@@ -647,6 +662,12 @@ namespace Phi.Compiler.Syntax
     {
         public Expr Target { get; init; } = null!;
         public Expr Source { get; init; } = null!;
+
+        /// <summary>
+        /// Set by the binder when one may be inside the other, or be the other (tree.kids:0.kids is
+        /// tree.kids): the whole copy is made before the target changes.
+        /// </summary>
+        public bool Overlaps { get; init; }
     }
 
     /// <summary>

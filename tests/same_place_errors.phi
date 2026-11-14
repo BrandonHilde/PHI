@@ -1,0 +1,29 @@
+# An object taking the object it's inside of, where indexes say which object is meant. Two
+# elements of one array are two objects: only the same one is refused. (A str named among
+# its own values is no error: str_build.phi.)
+struct.Node
+{
+	int value;
+	new str name;
+	new Node left;
+	new Node kids[];
+}
+
+phi.SamePlaceErrors:Kernel
+{
+	new Node list[];
+	int i: 0;
+	int j: 1;
+	list++;
+	list++;
+
+	# an object taking the object it's inside of
+	list:0.left takes list:0;
+	list:i.left.left takes list:i;
+	list:j.kids:0.left takes list:j.kids:0;
+
+	# none of these is the same place, or it's only known as it runs: no error here
+	list:0.left takes list:1;
+	list:i.left takes list:j;
+	list:0.kids:1.left takes list:0.kids:0;
+}

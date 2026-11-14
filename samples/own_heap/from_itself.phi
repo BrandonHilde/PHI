@@ -1,0 +1,52 @@
+# An array that grows, added to from itself, on the checking heap: `spots++ spots:0` copies
+# the element from where it is after the array has made room. When there was no room, the
+# array has moved and the old elements are freed; a copy from where the element used to be
+# reads freed memory. The standard heap doesn't notice (the old bytes are still there), and
+# this heap stops the program at that line. tests/append_from_itself.phi has the rest.
+
+struct.Spot
+{
+	int x;
+	int y;
+}
+
+struct.Tree
+{
+	int value;
+	new Tree kids[];
+}
+
+struct.Holder
+{
+	Spot spots[];
+}
+
+phi.FromItself:Program
+{
+	Spot kept[];
+	Spot spots[];
+	new Holder holder;
+	Spot s;
+	s.x is 1;
+	s.y is 2;
+	spots++ s;
+	holder.spots++ s;
+	kept++ s;
+	while int i: 0; i < 70; i++;
+		spots:0.x is i;
+		spots++ spots:0;
+		holder.spots:(holder.spots.len - 1).y++ 3;
+		holder.spots++ holder.spots:(holder.spots.len - 1);
+		kept++ kept:(i / 2) kept:0;
+	;;
+	log spots.len ' ' spots:70.x ' ' holder.spots.len ' ' holder.spots:70.y ' ' kept.len ' ' kept:140.y '\n';
+
+	# an object that holds the array it's added to: copied as it was, and nothing of it shared
+	new Tree tree;
+	tree.value is 1;
+	while int i: 0; i < 6; i++;
+		tree.kids++ tree;
+	;;
+	log tree.kids.len ' ' tree.kids:5.kids.len ' ' tree.kids:5.kids:4.kids.len '\n';
+	exit 0;
+}

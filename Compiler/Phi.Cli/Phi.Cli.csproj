@@ -10,6 +10,11 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <!-- the checking heap, which phi fuzz objects puts beside each of its programs -->
+    <EmbeddedResource Include="..\..\samples\own_heap\memory\*.phi" LogicalName="own_heap/%(Filename)%(Extension)" />
+  </ItemGroup>
+
+  <ItemGroup>
     <ProjectReference Include="..\Phi.Compiler\Phi.Compiler.csproj" />
   </ItemGroup>
 

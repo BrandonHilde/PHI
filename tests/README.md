@@ -356,3 +356,49 @@ way to another type), so they don't test those errors: the tests in this folder 
 Run it after any change to the code generator. When adding an optimisation, break it on
 purpose once and see that the fuzzer notices: if it doesn't, its programs don't reach the
 new code yet, and `CodeFuzzer.Maker` needs to make some that do.
+
+## Random programs of objects: `phi fuzz objects`
+
+`phi fuzz objects` does the same for what PHI allocates and frees itself. Its programs are
+made of what owns memory: objects, text that grows, arrays that grow (of numbers, texts,
+structs in place and objects), structs that hold all of those, a struct that holds itself (a
+chain and a tree), a `Line<Item>` written in the program, `data.map`'s `Map<Key Value>`, and
+structs made of those. What they do is what moves ownership: `is`, `takes`, `is empty`,
+comparing, `++` and `.len` on arrays, variables declared in methods, blocks and loops,
+parameters that lend an object to a method, and results that hand one back. Where two names
+in a statement can be the same thing, or one inside the other (`list++ list:0`,
+`tree.kids:0 is tree`), they sometimes are.
+
+A program is written a statement at a time, and the fuzzer does each statement itself as it
+writes it, on values that are copied whole and owned once. So it knows what the program holds
+at every line, never writes what PHI stops for (an empty object's fields, an index out of
+range), and prints what's held every few statements, all the way down. Three checks come out
+of one program:
+
+- **What it prints**, on each system this computer runs: a copy that shares something with
+  what it came from shows as soon as either changes.
+- **The checking heap** (`samples/own_heap`, which comes with the compiler): the program is
+  built and run a second time on it, where memory used after it's freed, or freed twice, stops
+  the program at that line. The standard heap often can't tell: the old bytes are still there.
+- **Nothing left behind:** the program does its work three times, and its last line is how
+  many more blocks the heap has in use after the third than after the second, which is 0.
+
+```
+phi fuzz objects                          # 100 programs, from a seed it prints
+phi fuzz objects --count 1000 --seed 5000 # the same 1000 every time (a few seconds each: four builds)
+phi fuzz objects --seed 34 --count 1 --trace -o kept
+                                          # that program again, printing every variable after every
+                                          # statement: the first line that differs follows the one that went wrong
+```
+
+One thing it leaves alone, because the compiler refuses it: an object taking what it's
+inside of. Another element of the same array isn't, and it writes that
+(`list:0.left takes list:1;`), as it does a text among its own values (`s++ s;`,
+`s is 'x' s 1 s;`) and an array copied into or from an array that one of its own elements
+holds. Its indexes are all numbers; `tests/same_place_program.phi` has the ones only known
+as the program runs.
+
+Run it after any change to how objects, text or arrays are copied, freed or grown
+(`Compiler/Phi.Cli/ObjectFuzzer.cs` is the fuzzer, and its idea of the language).
+`tests/owned_everywhere_program.phi` is the same ground by hand, one case of each, and
+`tests/append_from_itself.phi` holds what the fuzzer found on its first day.

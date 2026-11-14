@@ -1369,17 +1369,18 @@ namespace Phi.Compiler.Syntax
         /// <summary>
         /// Looks ahead for `name is` (or `name:index is`) before the callee. A ':' followed by a
         /// space starts the arguments, so the 'is' in `call Show: a is 1;` is a comparison.
+        /// However long the name is (`call list:0.next.next.next.next is ...`): the statement's
+        /// own end stops the search.
         /// </summary>
         bool FindIsBeforeCallee()
         {
-            for (int i = 1; i < 8; i++)
+            for (int i = 1; ; i++)
             {
                 Token t = PeekToken(i);
                 if (t.IsWord("is")) return true;
                 if (t.Kind is TokenKind.Semicolon or TokenKind.EndOfFile || t.StartsLine) return false;
                 if (t.Kind == TokenKind.Colon && PeekToken(i + 1).Span.Start > t.Span.End) return false;
             }
-            return false;
         }
 
         /// <summary>The struct an if call ... throws err makes err (lib/phi/error.phi).</summary>

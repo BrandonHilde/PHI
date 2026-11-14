@@ -46,6 +46,21 @@ namespace Phi.Cli
                         string? problem = Check(file, made.Expected, host, Path.Combine(work, $"{(uint)seed}.{host.FlagName()}"));
                         if (problem != null) problems.Add($"{host.FlagName()}: {problem}");
                     }
+                    if (made.CheckedHeap)
+                    {
+                        // the same program with the checking heap beside it, which is then its heap
+                        string beside = Path.Combine(work, $"checked_{(uint)seed}");
+                        Directory.CreateDirectory(Path.Combine(beside, "memory"));
+                        foreach (var (name, text) in ObjectFuzzer.CheckingHeap()) File.WriteAllText(Path.Combine(beside, "memory", name), text);
+                        string again = Path.Combine(beside, Path.GetFileName(file));
+                        File.WriteAllText(again, made.Source);
+                        foreach (Host host in options.Hosts)
+                        {
+                            string? problem = Check(again, made.Expected, host, Path.Combine(beside, host.FlagName()));
+                            if (problem != null) problems.Add($"{host.FlagName()}, on the checking heap: {problem}");
+                        }
+                        try { Directory.Delete(beside, recursive: true); } catch (IOException) { }
+                    }
                     if (problems.Count > 0 || options.KeepAll)
                     {
                         Directory.CreateDirectory(options.KeepFolder);
@@ -95,7 +110,8 @@ namespace Phi.Cli
             return $"line {line + 1} of its output: expected '{(line < want.Length ? want[line] : "(the end)")}', got '{(line < got.Length ? got[line] : "(the end)")}'";
         }
 
-        public sealed record Case(string Source, string Expected);
+        /// <summary>A program and what it prints. CheckedHeap: it's run on the checking heap as well (samples/own_heap).</summary>
+        public sealed record Case(string Source, string Expected, bool CheckedHeap = false);
 
         /// <summary>The program for a seed and what it prints, or null if working it out took too many steps.</summary>
         public static Case? Make(int seed)

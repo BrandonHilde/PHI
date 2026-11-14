@@ -418,16 +418,31 @@ namespace Phi.Compiler.Semantics
         /// frees, copies or compares these.
         /// </summary>
         public List<OwnedSlot> OwnedSlots { get; } = new();
-        public bool OwnsObjects => OwnedSlots.Count > 0;
+
+        /// <summary>
+        /// Whether OwnedSlots has been worked out (the binder's FindOwnedSlots, after every
+        /// struct is laid out). Until then the list is empty whatever the struct owns.
+        /// </summary>
+        public bool OwnedSlotsFound { get; set; }
+
+        /// <summary>
+        /// Asked before OwnedSlots is worked out, this stops the compiler: an empty list would
+        /// read as "owns nothing", and a check that relied on it would pass without a word
+        /// (a struct's `Request items[];` did, until 561cd20). While structs are being laid
+        /// out, the binder's WillOwnObjects is what to ask.
+        /// </summary>
+        public bool OwnsObjects => OwnedSlotsFound
+            ? OwnedSlots.Count > 0
+            : throw new InvalidOperationException($"what {Name} owns was asked before it was worked out");
 
         /// <summary>
         /// What an owned slot holds when it's a new str field's text rather than an object:
         /// freed, copied and compared as text.
         /// </summary>
-        public static readonly StructSymbol Text = new() { Name = "_text" };
+        public static readonly StructSymbol Text = new() { Name = "_text", OwnedSlotsFound = true };
 
         /// <summary>What an owned array slot of numbers or structs (not objects) holds.</summary>
-        public static readonly StructSymbol Elements = new() { Name = "_elements" };
+        public static readonly StructSymbol Elements = new() { Name = "_elements", OwnedSlotsFound = true };
 
         public FieldSymbol? Find(string name) => Fields.FirstOrDefault(f => f.Name == name);
 

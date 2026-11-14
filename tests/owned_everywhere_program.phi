@@ -1,0 +1,273 @@
+# What PHI manages, everywhere it can be kept and every way it gets there, in one program.
+#
+# What's owned: text that grows (new str), an array of numbers that grows, an object, arrays
+# of objects that grow and of a fixed size, an array of texts, a struct with all of those
+# stored inside another, a chain of objects (Node), and structs that take types (a Line<Item>
+# here, and data.map's Map).
+# Where it's kept: a method's variable, a variable declared in a loop, the class's, a field,
+# an element, a Line's item and a Map's value.
+# How it gets there: is (a copy), takes, ++ (with a value and without), a declaration with a
+# value, a method's parameter that's changed, a method's result (its own new object, and a
+# copy of a field), and a whole array or Map copied.
+#
+# After each step the program prints what's held, so a copy that shared anything with what
+# it came from shows as soon as either changes. The work is done twice, and the heap has as
+# many blocks in use after the second time as after the first: nothing is left behind.
+use data.map;
+
+struct.Tag
+{
+	int a;
+	int b;
+}
+
+struct.Leaf
+{
+	int id;
+	new str name;
+	int parts[];
+}
+
+struct.Twig
+{
+	int id;
+	Tag tag;
+	Leaf inner;
+	new Leaf one;
+	new Leaf many[];
+	new Leaf pair[2];
+	str names[];
+}
+
+struct.Node
+{
+	int value;
+	new str label;
+	new Node next;
+}
+
+struct.Line<Item>
+{
+	Item items[];
+	int first;
+
+	[Add: Item item;]
+		items++ item;
+	[end]
+
+	[Count]
+	[end: items.len - first]
+
+	[Take]
+		first++;
+	[end: items:(first - 1)]
+
+	[Put: int pos; Item item;]
+		items:pos is item;
+	[end]
+}
+
+phi.OwnedEverywhereProgram:Program
+{
+	new Leaf gleaf;
+	new Twig gtwig;
+	new Leaf glist[];
+	new Line<Leaf> gline;
+	new Map<int Twig> gmap;
+	new Node ghead: empty;
+
+	call Work;
+	u32 before: Heap.used_blocks;
+	call Work;
+	log 'left behind: ' Heap.used_blocks - before '\n';
+	exit 0;
+
+	[ShowLeaf: Leaf l;]
+		log '{' l.id ' "' l.name '" [';
+		while int i: 0; i < l.parts.len; i++;
+			log ' ' l.parts:i;
+		;;
+		log ' ]}';
+	[end]
+
+	[ShowTwig: Twig t;]
+		log '<' t.id ' ' t.tag.a ',' t.tag.b ' inner ';
+		call ShowLeaf: t.inner;
+		log ' one ';
+		if t.one is empty
+			log '-';
+		;;
+		else
+			call ShowLeaf: t.one;
+		;;
+		log ' many';
+		while int i: 0; i < t.many.len; i++;
+			log ' ';
+			if t.many:i is empty
+				log '-';
+			;;
+			else
+				call ShowLeaf: t.many:i;
+			;;
+		;;
+		log ' pair';
+		while int i: 0; i < 2; i++;
+			log ' ';
+			if t.pair:i is empty
+				log '-';
+			;;
+			else
+				call ShowLeaf: t.pair:i;
+			;;
+		;;
+		log ' names';
+		while int i: 0; i < t.names.len; i++;
+			log ' ' t.names:i;
+		;;
+		log '>';
+	[end]
+
+	[MakeLeaf: int id: 0; ptr<u8> name: 0;]
+		new Leaf made;
+		made.id is id;
+		made.name is name;
+		made.parts++ id id + 1;
+	[end: made]
+
+	[Rename: Leaf l; int n: 0;]
+		l.name++ '+' n;
+		l.parts++ n;
+	[end]
+
+	[PickOne: Twig t;]
+	[end: t.one]
+
+	[Work]
+		gleaf.id is 0;
+		gleaf.name is '';
+		gleaf.parts.len is 0;
+		glist.len is 0;
+		ghead is empty;
+		call gmap.Clear;
+		gline.items.len is 0;
+		gline.first is 0;
+
+		new Leaf a;
+		a.id is 1;
+		a.name is 'alpha';
+		a.parts++ 3 4 5;
+		new Leaf b: a;
+		b.name++ ' copy';
+		b.parts:1 is 44;
+		new Leaf c: (MakeLeaf: 7 'seven');
+		new Leaf e: empty;
+		call ShowLeaf: a; log '\n';
+		call ShowLeaf: b; log '\n';
+		call ShowLeaf: c; log '\n';
+		e is c;
+		call Rename: e 9;
+		call ShowLeaf: e; log '\n';
+		e takes a;
+		if a is empty
+			log 'a empty\n';
+		;;
+		call ShowLeaf: e; log '\n';
+		a is b;
+		if a is b
+			log 'a same as b\n';
+		;;
+		a.parts.len is a.parts.len - 1;
+		if a is b
+			log 'still same\n';
+		;;
+		else
+			log 'differs\n';
+		;;
+
+		new Twig t;
+		t.id is 5;
+		t.tag.a is 1;
+		t.inner is b;
+		t.one is c;
+		t.many++;
+		t.many++ a b;
+		t.many:0.name is 'zeroth';
+		t.pair:1 is e;
+		t.pair:0 takes e;
+		t.names++ 'x' 'yy';
+		t.names:0++ 'more';
+		call ShowTwig: t; log '\n';
+		new Twig u: t;
+		u.one is empty;
+		u.many:1 is empty;
+		u.many.len--;
+		u.inner.name is 'changed';
+		u.many:0 takes u.pair:1;
+		call ShowTwig: u; log '\n';
+		call ShowTwig: t; log '\n';
+		c is (PickOne: t);
+		call Rename: t.one 3;
+		call ShowLeaf: c; log '\n';
+		t.one takes t.many:2;
+		call ShowTwig: t; log '\n';
+		t.many is u.many;
+		t.inner.parts is c.parts;
+		t.names is u.names;
+		call ShowTwig: t; log '\n';
+
+		glist++ c;
+		glist++;
+		glist:1 takes c;
+		if c is empty
+			log 'c empty\n';
+		;;
+		c is glist:0;
+		gleaf is glist:1;
+		call gline.Add: gleaf;
+		call gline.Add: b;
+		call gline.Put: 0 b;
+		gleaf is (gline.Take);
+		call ShowLeaf: gleaf; log ' ' (gline.Count) '\n';
+		call gmap.Set: 3 t;
+		call gmap.Set: 4 u;
+		call gmap.Set: 3 u;
+		gtwig is (gmap.Get: 4 t);
+		call gmap.Remove: 3;
+		call ShowTwig: gtwig; log ' ' (gmap.Count) '\n';
+		new Map<int Twig> m2;
+		m2 is gmap;
+		if m2 is gmap
+			log 'maps same\n';
+		;;
+		m2.values:0.one is b;
+		if m2 is gmap
+			log 'maps same\n';
+		;;
+		else
+			log 'maps differ\n';
+		;;
+
+		new Node n;
+		n.value is 1;
+		n.label is 'one';
+		new Node k;
+		k.value is 2;
+		k.next is n;
+		k.next.next is k;
+		ghead takes k;
+		log ghead.value ghead.next.value ghead.next.next.value ghead.next.next.next.value '\n';
+		ghead takes ghead.next;
+		log ghead.value ghead.next.value ghead.next.next.value '\n';
+		ghead.next.next is ghead;
+		log ghead.next.next.next.next.value '\n';
+		ghead is ghead.next;
+		log ghead.value ghead.next.value '\n';
+		while int i: 0; i < 3; i++;
+			new Leaf loopy;
+			loopy.name++ 'L' i;
+			loopy.parts++ i;
+			glist++ loopy;
+		;;
+		call ShowLeaf: glist:(glist.len - 1); log '\n';
+	[end]
+}

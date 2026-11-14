@@ -336,7 +336,9 @@ characters. A bigger buffer goes on the heap: `ptr<u8> text: new u8[60004];` (32
 when they have the same number of elements and each is equal. Both must hold the same kind
 of element. A fixed array takes one of the same length; an `atmost` array takes any that
 can't hold more than it can, and its `.len` becomes the source's. Objects are copied and
-compared by value, and `str` elements by their text.
+compared by value, and `str` elements by their text. The copy is of what `a` held before the
+statement, also when one array is inside the other: `tree.kids:0.kids is tree.kids;` gives
+that kid a copy of the kids as they were, and `tree.kids is tree.kids:0.kids;` the other way.
 
 ```phi
 int a: 1 2 3;
@@ -353,7 +355,9 @@ some is a;                    # some.len is 3
 the heap). `.len` is how many it has, and `.max` the room it has right now. Everything
 else works as for any array: indexes (checked against `.len`), `.len is` and `.len--` to
 shrink it, copying (`scores is other;`, which grows it to fit), comparing, and passing it
-to a method that takes `int numbers[]`. A method's own are let go when it ends.
+to a method that takes `int numbers[]`. A method's own are let go when it ends. What `++`
+adds is read before the array changes, so an array can be added to from itself:
+`spots++ spots:0;`, and `tree.kids++ tree;` adds a copy of the tree as it was.
 
 ```phi
 int scores[];
@@ -646,13 +650,50 @@ written in as text (numbers in decimal), one after another, and `++` adds to the
 str status: [40];
 status is 'Ln ' line + 1 ', Col ' column + 1;   # Ln 5, Col 12
 status++ ' (' (Text.Length: name) ' chars)';
-status is status ' more';                        # the str itself can be the first value
+status is status ' more';                        # the str itself can be among its values
 ```
 
-As in any list, `'Total' -3` is two values. Text that doesn't fit is an error, as for any `str`. The
-`str` can't appear after the first value (it's being rewritten by then), and `s++ s;` is an
-error: copy it to another `str` first. Only a `str` takes several values: `n is n -1;`
-still subtracts.
+As in any list, `'Total' -3` is two values. Text that doesn't fit is an error, as for any `str`.
+
+**The `str` among its own values** is the text it had before the statement, wherever it
+appears and however it's reached:
+
+```phi
+str s: 'ab';
+s++ s;                          # abab
+s is '<' s '>';                 # <abab>
+s is s '|' s;                   # <abab>|<abab>
+s is 'starts with ' s:0 ', ' (Text.Length: s) ' long';
+
+texts:2++ texts:1;              # another element's text on its end
+texts:i++ texts:j;              # the same, or texts:i doubled when i is j
+status is 'now ' (Describe);    # Describe can read status: it reads what it was
+```
+
+There's nothing to copy by hand first, and no order of values to keep to.
+
+> **Under the hood.** PHI writes a `str`'s values straight into it, one after another, with
+> no text made along the way. That's only wrong when a later value reads the `str` being
+> written, so those statements, and only those, are built somewhere else first:
+>
+> | | What happens | What it costs |
+> |---|---|---|
+> | `s is 'Ln ' n;`, `s++ name;` | each value is written into `s` | nothing extra |
+> | `s++ s;`, `s is 'x' s;`, a value that names `s` or a part of it | the values are built into a text of their own, which is then stored in `s` (as if written `s is ('x' s);`) | one more copy of the new text |
+> | `texts:i++ texts:j;` | the two places are compared as it runs: straight in when they differ, the line above when they're one | a comparison |
+> | a later value calls a method, and `s` is a class's variable, a field or a parameter | as the second line, since the method may read `s` | one more copy |
+>
+> The text built on the side belongs to the method: it's reused each time the statement
+> runs and freed when the method ends, like the text of any `('a' b)`. (In a program with no heap,
+> as 16-bit code is, it's a buffer of 255 characters.)
+>
+> C# gets the same result another way. Its strings can't be changed, so `s += s` and
+> `s = "x" + s` always make a new string from the old ones and leave the old one for the
+> garbage collector; every such statement allocates. PHI changes the `str` in place and
+> pays for a second text only in the statements above.
+
+Only a `str` takes several values:
+`n is n -1;` still subtracts.
 
 **Text in parentheses.** Several values in parentheses, `('Hello ' name)`, are one text built
 from them the same way, and it goes anywhere a value goes: a declaration, one element of an
@@ -865,7 +906,7 @@ else
   billion or more going to an `int`; `as` says the same bits are meant), and text that doesn't
   fit in the `str` it's going to.
 - **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
-  `MEMORY`, `COUNT`, `CONVERT`, `STACK` or `TEXT`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+  `MEMORY`, `COUNT`, `CONVERT`, `STACK`, `TEXT` or `HIERARCHY`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
   an uncaught error is written). `log`, `debug` and text built from values write its
   message, so `log err;` and `str note: ('failed: ' err);` say everything.
 - **The methods in between give back what they own**, as if each had returned: their new
@@ -1330,7 +1371,10 @@ if head.next is not empty      # does it hold an object?
 - **`takes` hands an object over** from one owner to another (a `new` variable or field)
   and leaves the giver empty. Building a list with `takes` costs nothing per node; building
   it with `is` would copy the list each time. A field can't take the object it's inside
-  (`a.next takes a` is an error), because that object would own itself.
+  (`a.next takes a` is an error), because that object would own itself. Two elements of an
+  array are two objects, so `nodes:0.left takes nodes:1;` is fine; with indexes only known
+  as it runs (`nodes:a.left takes nodes:b;`) it's an error then if `a` is `b`
+  (`ErrorKind.HIERARCHY`), and nothing is handed over.
 - **`if a is b` compares values.** Two objects are equal when their fields are, following
   `new` fields to compare the objects they hold (both empty is equal, one empty isn't).
   Fields that are `ptr<T>` compare as addresses.

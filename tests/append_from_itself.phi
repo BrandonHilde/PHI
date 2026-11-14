@@ -1,0 +1,154 @@
+# runs only in 32 and 64 bits: arrays that grow
+# An array that grows, added to from itself: what's added is the value as it was before the
+# array changed. Each of these went wrong until 2026-11-13, when phi fuzz objects found them:
+#
+# - A struct kept in place (spots++ spots:0) was copied from where the element had been, which
+#   the array had just left if it had to move to make room: memory already freed. (On the
+#   standard heap the old bytes were still there; samples/own_heap/from_itself.phi is this on
+#   the checking heap, where it stopped the program.)
+# - An object that holds the array (tree.kids++ tree) was copied after the array had its new,
+#   empty element: the copy's kids had one more than the tree's own.
+# - An array of objects made from a struct that takes types (new Line<Spot> rows[]) didn't
+#   build: the routines that copy and free it had the struct's name, < and > and all, in
+#   their labels.
+# - call a.b.c.d.e is ...: an 'is' more than seven tokens after 'call' wasn't found.
+struct.Spot
+{
+	int x;
+	int y;
+}
+
+struct.Tree
+{
+	int value;
+	new Tree left;
+	new Tree kids[];
+}
+
+struct.Holder
+{
+	Spot spots[];
+	new Tree trees[atmost 3];
+}
+
+struct.Line<Item>
+{
+	Item items[];
+
+	[Add: Item item;]
+		items++ item;
+	[end]
+}
+
+struct.Shelf
+{
+	new Line<Spot> rows[];
+}
+
+phi.AppendFromItself:Library
+{
+	Spot kept[];
+	Spot none;
+	kept++ none;                # (its room is the class's from here on, so it isn't counted as left behind)
+	kept.len is 0;
+	Spot first;
+	first.x is 1;
+	first.y is 2;
+	kept++ first;
+
+	u32 before: Heap.used_blocks;
+	call InPlace;
+	call Objects;
+	call Made;
+	call LongName;
+	kept.len is 0;
+	debug 'blocks back: ' (Heap.used_blocks is before) '\n';
+
+	# structs in place: a method's array, a struct's and the class's, each added to until it has moved
+	[InPlace]
+		Spot spots[];
+		new Holder holder;
+		Spot s;
+		s.x is 1;
+		s.y is 2;
+		spots++ s;
+		holder.spots++ s;
+		while int i: 0; i < 70; i++;
+			spots:0.x is i;
+			spots++ spots:0;
+			holder.spots:(holder.spots.len - 1).y++ 3;
+			holder.spots++ holder.spots:(holder.spots.len - 1);
+			kept++ kept:(i / 2) kept:0;
+		;;
+		debug spots.len ' ' spots:1.x ' ' spots:70.x ' ' spots:70.y '\n';
+		debug holder.spots.len ' ' holder.spots:0.y ' ' holder.spots:1.y ' ' holder.spots:70.y '\n';
+		int sum: 0;
+		while each one in kept
+			sum++ one.x + one.y;
+		;;
+		debug kept.len ' ' sum '\n';
+	[end]
+
+	# objects: the copy is of the tree before it got the new kid
+	[Objects]
+		new Tree tree;
+		tree.value is 1;
+		tree.kids++ tree;
+		debug tree.kids.len ' ' tree.kids:0.value ' ' tree.kids:0.kids.len '\n';
+		tree.value is 2;
+		tree.kids++ tree tree.kids:0;
+		debug tree.kids.len ' ' tree.kids:1.value ' ' tree.kids:1.kids.len ' ' tree.kids:1.kids:0.kids.len ' ' tree.kids:2.kids.len '\n';
+
+		# an array with a most, in a struct: the same, and when it's full nothing is copied
+		new Holder holder;
+		holder.trees++;
+		holder.trees:0.value is 7;
+		holder.trees++ holder.trees:0;
+		holder.trees:1.kids++ holder.trees:1;
+		holder.trees++ holder.trees:1;
+		debug holder.trees.len ' ' holder.trees:2.value ' ' holder.trees:2.kids.len ' ' holder.trees:2.kids:0.kids.len '\n';
+		u32 blocks: Heap.used_blocks;
+		if call Fourth: holder throws err
+			debug 'full: ' (Heap.used_blocks is blocks) '\n';
+		;;
+	[end]
+
+	[Fourth: Holder holder;]
+		holder.trees++ holder.trees:2;
+	[end]
+
+	# a struct that takes types, made, as the objects of an array
+	[Made]
+		new Shelf shelf;
+		new Line<Spot> line;
+		Spot s;
+		s.x is 5;
+		call line.Add: s;
+		shelf.rows++ line;
+		shelf.rows++ shelf.rows:0;
+		shelf.rows:1.items:0.x is 6;
+		new Line<Line<Spot>> lines;
+		call lines.Add: line;
+		call lines.Add: lines.items:0;
+		new Shelf copy: shelf;
+		debug shelf.rows.len ' ' copy.rows:0.items:0.x ' ' copy.rows:1.items:0.x ' ' lines.items:1.items:0.x ' ' (copy is shelf) '\n';
+	[end]
+
+	[Leaf: int value: 0;]
+		new Tree made;
+		made.value is value;
+	[end: made]
+
+	# a result's home, however long its name is
+	[LongName]
+		new Tree tree;
+		tree.left is tree;
+		tree.left.left is tree;
+		tree.left.left.left.left is tree;
+		call tree.left.left.left.left.left is Leaf: 9;
+		tree.kids++;
+		tree.kids:0.left is tree.left;
+		call tree.kids:0.left.left.left.left.left is Leaf: 8;
+		debug tree.left.left.left.left.left.value ' ' tree.kids:0.left.left.left.left.left.value '\n';
+	[end]
+}

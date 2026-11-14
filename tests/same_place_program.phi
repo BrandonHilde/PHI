@@ -1,0 +1,196 @@
+# The same array named twice in one statement, where what the indexes come to decides what
+# it means.
+#
+# - A str named among its own values is read as it was before the statement, whichever
+#   element the indexes come to: texts:a++ texts:b; adds texts:b, or doubles it when a is b.
+# - Two elements of one array are two objects: nodes:0.left takes nodes:1; builds and works.
+#   (Until 2026-11-13 it was refused, read without its indexes.) The same one is refused
+#   when it's built if the compiler can tell (same_place_errors.phi); with indexes only
+#   known as it runs it's an error then (ErrorKind.HIERARCHY), and nothing has changed.
+# - A whole array copied into an array that one of its own elements holds, or from one, is a
+#   copy of what the source was before anything changed. (The first copied the element with
+#   its new array half made; the second freed the source while it was read.)
+#
+# The work is done twice, and the heap has as many blocks in use after the second time.
+struct.Node
+{
+	int value;
+	new str name;
+	new Node left;
+	str notes[];
+	new Node kids[];
+	new Node pair[2];
+	new Node few[atmost 3];
+}
+
+phi.SamePlaceProgram:Program
+{
+	new Node nodes[];
+	str texts[];
+
+	call Work;
+	u32 before: Heap.used_blocks;
+	call Work;
+	log 'left behind: ' Heap.used_blocks - before '\n';
+	exit 0;
+
+	[Show: Node n;]
+		log n.value;
+		if n.kids.len > 0
+			log '(';
+			while int i: 0; i < n.kids.len; i++;
+				call Show: n.kids:i;
+			;;
+			log ')';
+		;;
+		if n.few.len > 0
+			log '<';
+			while int i: 0; i < n.few.len; i++;
+				call Show: n.few:i;
+			;;
+			log '>';
+		;;
+		if n.pair:0 is not empty
+			log '[';
+			call Show: n.pair:0;
+			call Show: n.pair:1;
+			log ']';
+		;;
+	[end]
+
+	[Join: int a; int b;]
+		nodes:a.left takes nodes:b;
+	[end]
+
+	[JoinDeep: int a; int b;]
+		nodes:a.left.left takes nodes:b.left;
+	[end]
+
+	[Add: int a; int b;]
+		nodes:a.name++ nodes:b.name;
+		texts:a++ texts:b;
+		nodes:a.notes:0++ nodes:b.notes:0;
+	[end]
+
+	[Rewrite: int a; int b;]
+		texts:a is 'x' texts:b;
+	[end]
+
+	# a tree of 1 with kids 2 and 3, and 2 with kids 4, 5 and 6
+	[Fill: Node t;]
+		t.value is 1;
+		t.kids.len is 0;
+		t.kids++;
+		t.kids++;
+		t.kids:0.value is 2;
+		t.kids:1.value is 3;
+		while int i: 0; i < 3; i++;
+			t.kids:0.kids++;
+			t.kids:0.kids:i.value is 4 + i;
+		;;
+	[end]
+
+	[Work]
+		nodes.len is 0;
+		texts.len is 0;
+		while int i: 0; i < 4; i++;
+			nodes++;
+			nodes:i.value is i;
+			nodes:i.name is ('n' i);
+			nodes:i.notes++ ('note' i);
+			texts++ ('t' i);
+		;;
+
+		# two elements, by number and by variable
+		nodes:0.left takes nodes:1;
+		log nodes:0.left.value ' ' (nodes:1 is empty) '\n';
+		call Join: 2 3;
+		log nodes:2.left.value ' ' (nodes:3 is empty) '\n';
+		call JoinDeep: 0 2;
+		log nodes:0.left.left.value ' ' (nodes:2.left is empty) '\n';
+		nodes:0.name++ nodes:2.name;
+		texts:2++ texts:1;
+		texts:3 is texts:3 texts:0;
+		call Add: 0 2;
+		call Rewrite: 1 0;
+		log nodes:0.name ' ' nodes:0.notes:0 ' ' texts:0 ' ' texts:1 ' ' texts:2 ' ' texts:3 '\n';
+
+		# the same element, found as it runs: taking is an error, and nothing has changed; a
+		# str is read as it was
+		if call Join: 2 2 throws err
+			log err ' ' (err.kind is ErrorKind.HIERARCHY) '\n';
+		;;
+		if call JoinDeep: 0 0 throws err
+			log err '\n';
+		;;
+		call Add: 2 2;
+		call Rewrite: 1 1;
+		log nodes:2.value ' ' (nodes:2.left is empty) ' ' nodes:0.left.left.value ' ' nodes:2.name ' ' nodes:2.notes:0 ' ' texts:1 ' ' texts:2 '\n';
+
+		# arrays that grow: into one that an element holds, from one, onto itself
+		new Node tree;
+		call Fill: tree;
+		tree.kids:0.kids is tree.kids;
+		call Show: tree;
+		log '\n';
+		call Fill: tree;
+		tree.kids is tree.kids:0.kids;
+		call Show: tree;
+		log '\n';
+		call Fill: tree;
+		int one: 1;
+		tree.kids:one.kids is tree.kids;
+		tree.kids is tree.kids;
+		tree.kids:one.kids is tree.kids:one.kids;
+		call Show: tree;
+		log '\n';
+
+		# the class's array, and an element's
+		nodes.len is 0;
+		nodes++ tree tree;
+		nodes:0.value is 7;
+		nodes is nodes:0.kids;
+		nodes:1.kids:0.kids is nodes;
+		while int i: 0; i < nodes.len; i++;
+			call Show: nodes:i;
+			log ' ';
+		;;
+		log '\n';
+
+		# arrays of a fixed size and with a most
+		new Node a;
+		a.value is 1;
+		new Node b;
+		b.value is 2;
+		new Node t;
+		t.pair:0 is a;
+		t.pair:1 is b;
+		t.pair:1.pair is t.pair;
+		call Show: t;
+		log '\n';
+		t.pair is t.pair:1.pair;
+		call Show: t;
+		log '\n';
+		t.few++ a b;
+		t.few:one.few is t.few;
+		call Show: t;
+		log '\n';
+		t.few:0.few is t.few;
+		t.few is t.few:0.few;
+		call Show: t;
+		log '\n';
+		t.few:1.kids is t.few;
+		t.few is t.few:1.kids;
+		call Show: t;
+		log '\n';
+
+		# a struct's texts, onto themselves
+		a.notes++ 'one' 'two';
+		a.notes is a.notes;
+		nodes:0.notes is a.notes;
+		nodes:(one - 1).notes is nodes:0.notes;
+		log nodes:0.notes.len ' ' nodes:0.notes:1 '\n';
+		nodes.len is 0;
+		texts.len is 0;
+	[end]
+}

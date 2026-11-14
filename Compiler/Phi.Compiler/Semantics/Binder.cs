@@ -1337,6 +1337,7 @@ namespace Phi.Compiler.Semantics
         void FindOwnedSlots(StructSymbol s)
         {
             if (!slotsDone.Add(s)) return;
+            s.OwnedSlotsFound = true;   // (from here: a struct that holds itself is an error of its layout, and reads what there is so far)
             file = s.Decl.File;
             foreach (FieldSymbol f in s.Fields)
             {
@@ -1413,7 +1414,7 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         bool WillOwnObjects(StructSymbol s, HashSet<StructSymbol> inProgress)
         {
-            if (s.OwnsObjects || inProgress.Contains(s)) return true;
+            if (s.OwnedSlotsFound && s.OwnsObjects || inProgress.Contains(s)) return true;
             if (!s.LayoutDone) Layout(s, inProgress);
             foreach (FieldSymbol f in s.Fields)
             {
@@ -3382,7 +3383,9 @@ namespace Phi.Compiler.Semantics
             if (CheckArrayPair(target, source, assign.Span, "copied into") is false) return assign;
             if (target.Type.IsObjectArray)
                 HeapMethod("Heap.Alloc", assign.Span, scope, "copying objects");
-            return new ArrayAssignStmt { Target = target, Source = source, Span = assign.Span };
+            // one inside the other, or the same one (as far as can be told here): tree.kids:0.kids is tree.kids
+            bool overlaps = Steps(target) is { } into && Steps(source) is { } from && SameStart(into, from) != Same.No;
+            return new ArrayAssignStmt { Target = target, Source = source, Overlaps = overlaps, Span = assign.Span };
         }
 
         /// <summary>
@@ -3578,14 +3581,75 @@ namespace Phi.Compiler.Semantics
                 else if (!part.Type.IsNumeric && !part.Type.IsWide && !part.Type.IsFloat && !part.Type.IsString)
                     Error(part.Span, $"can't write a {part.Type} into a str; write one element or field at a time");
 
-                // the str is being rewritten, so reading it after that would read the new text
-                else if ((append || i > 0) && part is NameExpr or IndexExpr && Describe(part) == Describe(target))
-                    Error(part.Span, i == 0
-                        ? $"'{Describe(target)}' can't be added to itself; copy it to another str first"
-                        : $"'{Describe(target)}' is being rewritten here, so it can only be the first value; write {Describe(target)}++ ... to add to its end");
                 build.Parts.Add(part);
             }
+            ReadAsItWas(build);
             return build;
+        }
+
+        /// <summary>
+        /// A str's values are read as they were before the statement: s++ s; doubles s, and
+        /// s is 'x' s; puts an x in front. Values are written into the str one after another, so
+        /// one that reads the str after the first has been written would read the new text. When
+        /// a value names the str (or what it's in, or part of it), all of them are built into a
+        /// text of their own first, as ('x' s) is, and that is stored. When only indexes that
+        /// aren't numbers could make it the str (texts:i++ texts:j), that's decided as it runs.
+        ///
+        /// The first value is read before anything is written, so it only counts when it's
+        /// added straight to the str's end (s++ s; reads s while it grows). A method called for
+        /// a later value counts as naming the str when it could read it.
+        /// </summary>
+        void ReadAsItWas(StringBuildStmt build)
+        {
+            if (Steps(build.Target) is not { } target) return;
+            bool aside = false;
+            var when = new List<Expr>();
+
+            // a method called for a later value can read the str too, by a class variable or the
+            // caller's own name for it, unless the str is this method's own variable
+            Expr root = build.Target;
+            while (root is IndexExpr or MemberExpr) root = root is IndexExpr index ? index.Target : ((MemberExpr)root).Target;
+            VariableSymbol? variable = root is NameExpr name
+                ? name.Symbol switch { VariableSymbol v => v, FieldPathSymbol f => f.Root, PathSymbol path => path.Root, _ => null }
+                : null;
+            bool reachable = variable is not { IsLocal: true, IsParameter: false };
+
+            for (int i = 0; i < build.Parts.Count; i++)
+            {
+                Expr part = build.Parts[i];
+                if (i == 0 && !(build.Append && Steps(part) != null)) continue;
+                if (reachable && HasCall(part)) aside = true;
+                foreach (Expr place in Places(part))
+                {
+                    List<object> steps = Steps(place)!;
+                    Same same = SameStart(steps, target);
+                    if (same == Same.No) continue;
+                    if (same == Same.Maybe && steps.Count == target.Count && !HasCall(place) && !HasCall(build.Target)) when.Add(place);
+                    else aside = true;
+                }
+            }
+
+            if (aside)
+            {
+                var text = new TextExpr { Span = build.Span, Type = PhiType.Str };
+                text.Parts.AddRange(build.Parts);
+                build.Parts.Clear();
+                build.Parts.Add(text);
+            }
+            else build.AsideWhen.AddRange(when);
+        }
+
+        /// <summary>The variables, fields and elements a value names, each whole: list:i.name, and i, but not list or list:i.</summary>
+        static IEnumerable<Expr> Places(Expr e)
+        {
+            var nodes = SyntaxWalker.Nodes(e).OfType<Expr>().ToList();
+            var within = new HashSet<Expr>();
+            foreach (Expr n in nodes)
+            {
+                if (n is IndexExpr index) within.Add(index.Target);
+                else if (n is MemberExpr member) within.Add(member.Target);
+            }
+            return nodes.Where(n => !within.Contains(n) && Steps(n) != null);
         }
 
         /// <summary>
@@ -3630,12 +3694,23 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            // a.next takes a would make a own itself
-            string target = Describe(takes.Target), source = Describe(takes.Source);
-            if (target.StartsWith(source + "."))
+            // a.next takes a would make a own itself; nodes:a.left takes nodes:b would when a is b,
+            // which is found when it runs
+            if (Steps(takes.Target) is { } into && Steps(takes.Source) is { } from && into.Count > from.Count)
             {
-                Error(takes.Span, $"'{target}' is inside '{source}', so it can't take it (it would own itself)");
-                return;
+                Same same = SameStart(into, from);
+                if (same == Same.Yes)
+                {
+                    Error(takes.Span, $"'{PlaceText(takes.Target)}' is inside '{PlaceText(takes.Source)}', so it can't take it (it would own itself)");
+                    return;
+                }
+                if (same == Same.Maybe && !HasCall(takes.Target) && !HasCall(takes.Source))
+                {
+                    Expr part = takes.Target;
+                    while (Steps(part)!.Count > from.Count)
+                        part = part is IndexExpr index ? index.Target : ((MemberExpr)part).Target;
+                    takes.Inside = part;
+                }
             }
 
             takes.Struct = takes.Target.Type.Struct;
@@ -3659,6 +3734,100 @@ namespace Phi.Compiler.Semantics
             bool vowelSound = "aeioAEIO".Contains(name[0]) || t.IsFloat;   // an f64 ("eff")
             return (vowelSound ? "an " : "a ") + name;
         }
+
+        /// <summary>Whether two places are one: no, yes, or only known when it runs (their indexes aren't numbers).</summary>
+        internal enum Same { No, Maybe, Yes }
+
+        /// <summary>
+        /// A place as the names and indexes that lead to it, in order: tree.kids:i.value is
+        /// tree, kids, the index i, value. Null for what isn't a variable, field or element.
+        /// </summary>
+        static List<object>? Steps(Expr e)
+        {
+            var steps = new List<object>();
+            return AddSteps(e, steps) ? steps : null;
+        }
+
+        static bool AddSteps(Expr e, List<object> steps)
+        {
+            switch (e)
+            {
+                case NameExpr { Call: null } name:
+                    steps.AddRange(name.Name.Split('.'));
+                    return true;
+                case IndexExpr index when AddSteps(index.Target, steps):
+                    steps.Add(index.Index);
+                    return true;
+                case MemberExpr { Call: null } member when AddSteps(member.Target, steps):
+                    steps.Add(member.Member);
+                    return true;
+                default:
+                    return false;
+            }
+        }
+
+        /// <summary>
+        /// Whether two places start the same way, as far as the shorter one goes: the same names,
+        /// and indexes that are the same number (yes), different numbers (no), written the same
+        /// way (yes), or anything else (maybe). A place that starts as another does is inside it.
+        /// </summary>
+        static Same SameStart(List<object> a, List<object> b)
+        {
+            Same all = Same.Yes;
+            for (int i = 0; i < Math.Min(a.Count, b.Count); i++)
+            {
+                switch (a[i], b[i])
+                {
+                    case (string x, string y) when x == y:
+                        break;
+                    case (Expr x, Expr y):
+                        if (ConstantFolder.Evaluate(x) is long p && ConstantFolder.Evaluate(y) is long q)
+                        {
+                            if (p != q) return Same.No;
+                        }
+                        else if (!SameValue(x, y)) all = Same.Maybe;
+                        break;
+                    default:
+                        return Same.No;
+                }
+            }
+            return all;
+        }
+
+        /// <summary>Whether two places are the same variable, field or element.</summary>
+        static Same SamePlace(Expr a, Expr b) =>
+            Steps(a) is { } x && Steps(b) is { } y && x.Count == y.Count ? SameStart(x, y) : Same.No;
+
+        /// <summary>Two values written the same way, of variables, numbers and arithmetic: the same value, within one statement.</summary>
+        static bool SameValue(Expr a, Expr b) => (a, b) switch
+        {
+            (NameExpr { Call: null } x, NameExpr { Call: null } y) => x.Name == y.Name,
+            (NumberExpr x, NumberExpr y) => x.Value == y.Value,
+            (IndexExpr x, IndexExpr y) => SameValue(x.Target, y.Target) && SameValue(x.Index, y.Index),
+            (MemberExpr { Call: null } x, MemberExpr { Call: null } y) => x.Member == y.Member && SameValue(x.Target, y.Target),
+            (UnaryExpr x, UnaryExpr y) => x.Op == y.Op && SameValue(x.Operand, y.Operand),
+            (BinaryExpr x, BinaryExpr y) => x.Op == y.Op && SameValue(x.Left, y.Left) && SameValue(x.Right, y.Right),
+            _ => false,
+        };
+
+        /// <summary>A place as it's written, indexes and all: list:i.kids:0.name.</summary>
+        string PlaceText(Expr e)
+        {
+            switch (e)
+            {
+                case IndexExpr index:
+                    string text = SourceText(index.Index).Trim();
+                    if (index.Index is not (NameExpr or NumberExpr) && !text.StartsWith('(')) text = "(" + text;
+                    if (text.Count(c => c == '(') > text.Count(c => c == ')')) text += ")";
+                    return PlaceText(index.Target) + ":" + text;
+                case MemberExpr member:
+                    return PlaceText(member.Target) + "." + member.Member;
+                default:
+                    return Describe(e);
+            }
+        }
+
+        static bool HasCall(Expr e) => SyntaxWalker.Nodes(e).Any(n => n is CallExpr or NewExpr or NameExpr { Call: not null } or MemberExpr { Call: not null });
 
         static string Describe(Expr e) => e switch
         {

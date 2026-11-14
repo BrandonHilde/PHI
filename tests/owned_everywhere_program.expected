@@ -1,0 +1,49 @@
+{1 "alpha" [ 3 4 5 ]}
+{1 "alpha copy" [ 3 44 5 ]}
+{7 "seven" [ 7 8 ]}
+{7 "seven+9" [ 7 8 9 ]}
+a empty
+{1 "alpha" [ 3 4 5 ]}
+a same as b
+differs
+<5 1,0 inner {1 "alpha copy" [ 3 44 5 ]} one {7 "seven" [ 7 8 ]} many {0 "zeroth" [ ]} {1 "alpha copy" [ 3 44 ]} {1 "alpha copy" [ 3 44 5 ]} pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+<5 1,0 inner {1 "changed" [ 3 44 5 ]} one - many {1 "alpha" [ 3 4 5 ]} - pair {1 "alpha" [ 3 4 5 ]} - names xmore yy>
+<5 1,0 inner {1 "alpha copy" [ 3 44 5 ]} one {7 "seven" [ 7 8 ]} many {0 "zeroth" [ ]} {1 "alpha copy" [ 3 44 ]} {1 "alpha copy" [ 3 44 5 ]} pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+{7 "seven" [ 7 8 ]}
+<5 1,0 inner {1 "alpha copy" [ 3 44 5 ]} one {1 "alpha copy" [ 3 44 5 ]} many {0 "zeroth" [ ]} {1 "alpha copy" [ 3 44 ]} - pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+<5 1,0 inner {1 "alpha copy" [ 7 8 ]} one {1 "alpha copy" [ 3 44 5 ]} many {1 "alpha" [ 3 4 5 ]} - pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+c empty
+{1 "alpha copy" [ 3 44 5 ]} 1
+<5 1,0 inner {1 "changed" [ 3 44 5 ]} one - many {1 "alpha" [ 3 4 5 ]} - pair {1 "alpha" [ 3 4 5 ]} - names xmore yy> 1
+maps same
+maps differ
+2121
+121
+1
+21
+{0 "L2" [ 2 ]}
+{1 "alpha" [ 3 4 5 ]}
+{1 "alpha copy" [ 3 44 5 ]}
+{7 "seven" [ 7 8 ]}
+{7 "seven+9" [ 7 8 9 ]}
+a empty
+{1 "alpha" [ 3 4 5 ]}
+a same as b
+differs
+<5 1,0 inner {1 "alpha copy" [ 3 44 5 ]} one {7 "seven" [ 7 8 ]} many {0 "zeroth" [ ]} {1 "alpha copy" [ 3 44 ]} {1 "alpha copy" [ 3 44 5 ]} pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+<5 1,0 inner {1 "changed" [ 3 44 5 ]} one - many {1 "alpha" [ 3 4 5 ]} - pair {1 "alpha" [ 3 4 5 ]} - names xmore yy>
+<5 1,0 inner {1 "alpha copy" [ 3 44 5 ]} one {7 "seven" [ 7 8 ]} many {0 "zeroth" [ ]} {1 "alpha copy" [ 3 44 ]} {1 "alpha copy" [ 3 44 5 ]} pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+{7 "seven" [ 7 8 ]}
+<5 1,0 inner {1 "alpha copy" [ 3 44 5 ]} one {1 "alpha copy" [ 3 44 5 ]} many {0 "zeroth" [ ]} {1 "alpha copy" [ 3 44 ]} - pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+<5 1,0 inner {1 "alpha copy" [ 7 8 ]} one {1 "alpha copy" [ 3 44 5 ]} many {1 "alpha" [ 3 4 5 ]} - pair {1 "alpha" [ 3 4 5 ]} {1 "alpha" [ 3 4 5 ]} names xmore yy>
+c empty
+{1 "alpha copy" [ 3 44 5 ]} 1
+<5 1,0 inner {1 "changed" [ 3 44 5 ]} one - many {1 "alpha" [ 3 4 5 ]} - pair {1 "alpha" [ 3 4 5 ]} - names xmore yy> 1
+maps same
+maps differ
+2121
+121
+1
+21
+{0 "L2" [ 2 ]}
+left behind: 0

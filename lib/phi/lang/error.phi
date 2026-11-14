@@ -23,6 +23,7 @@ enum.ErrorKind
 	CONVERT                     # a negative number going to a u32, or a u32 of 2 billion or more to an int
 	STACK                       # the stack ran out: calls too deep, usually a method that never stops calling itself
 	TEXT                        # text that doesn't fit in the str it's going to (Cut.Into, in user.cut, cuts it on purpose)
+	HIERARCHY                   # an object taking the object it's inside of (nodes:a.left takes nodes:b; when a is b)
 }
 
 struct.Error

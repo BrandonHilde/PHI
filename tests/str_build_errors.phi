@@ -6,7 +6,5 @@ phi.StrBuildErrors:Kernel
 
 	count is 1 2;
 	line++;
-	line is 'a' line;
-	line++ line;
 	line is 'text ' bytes;
 }

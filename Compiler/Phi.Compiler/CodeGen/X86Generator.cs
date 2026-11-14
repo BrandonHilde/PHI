@@ -3065,6 +3065,33 @@ namespace Phi.Compiler.CodeGen
                     break;
 
                 case StringBuildStmt build:
+                    if (build.AsideWhen.Count > 0)
+                    {
+                        // texts:i++ texts:j; when i is j as it runs, the values are built into a text
+                        // of their own first, so each is read as it was; otherwise straight into it
+                        string aside = NewLabel("aside"), built = NewLabel("built");
+                        foreach (Expr place in build.AsideWhen)
+                        {
+                            EmitPlaceAddress(place);
+                            Emit("push eax");
+                            EmitPlaceAddress(build.Target);
+                            Emit("pop edx");
+                            Emit($"cmp {R("eax")}, {R("edx")}");
+                            Emit($"je {aside}");
+                        }
+                        var straight = new StringBuildStmt { Target = build.Target, Append = build.Append, Span = build.Span };
+                        straight.Parts.AddRange(build.Parts);
+                        EmitStatementCode(straight);
+                        Emit($"jmp {built}");
+                        Label(aside);
+                        var text = new TextExpr { Span = build.Span, Type = PhiType.Str };
+                        text.Parts.AddRange(build.Parts);
+                        var whole = new StringBuildStmt { Target = build.Target, Append = build.Append, Span = build.Span };
+                        whole.Parts.Add(text);
+                        EmitStatementCode(whole);
+                        Label(built);
+                        break;
+                    }
                     for (int i = 0; i < build.Parts.Count; i++)
                     {
                         Expr part = build.Parts[i];
@@ -3596,6 +3623,9 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>ErrorKind.COUNT, a Mem call's count that can't be right.</summary>
         const int ErrorCount = 6;
+
+        /// <summary>ErrorKind.HIERARCHY, an object taking the object it's inside of, found as it runs.</summary>
+        const int ErrorHierarchy = 10;
 
         /// <summary>ErrorKind.CONVERT, a number that comes out as a different number where it went.</summary>
         const int ErrorConvert = 7;
@@ -4930,13 +4960,31 @@ namespace Phi.Compiler.CodeGen
             PhiType element = t.Element;
             int size = element.ElementSize;
 
+            // an array that grows moves its elements when it's out of room
+            bool grows = Binder.IsFieldView(append.Target) || append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } };
+            // a struct kept in place is copied from where it is, which can be in this array (list++ list:0)
+            bool fromInside = grows && element.IsStruct && !element.IsObject && value != null;
+
             if (element.IsObject)
             {
                 ObjectLine(append);
-                if (value != null)
+                if (value != null && Binder.IsObjectCall(value))
                 {
                     EmitObjectAddress(value);
-                    Emit("push eax                ; what to copy");
+                    Emit("push eax                ; the call's new object");
+                }
+                else if (value != null)
+                {
+                    // The copy is made before the array changes: what's copied can hold this
+                    // array (tree.kids++ tree), and would be copied with the new element in it.
+                    if (!grows)
+                    {
+                        EmitFilledCount(append.Target);
+                        EmitIndexCheck(append, "jb", t.Length.ToString());   // full: stop before anything is copied
+                    }
+                    EmitObjectAddress(value);
+                    Emit($"call {ObjectRoutine("clone", element.Struct!)}");
+                    Emit("push eax                ; the copy");
                 }
             }
             else if (element.IsWide)
@@ -4972,6 +5020,7 @@ namespace Phi.Compiler.CodeGen
                 // room for one more (moving its elements when there isn't), then at its end
                 ObjectLine(append);
                 EmitViewAddress(append.Target);
+                if (fromInside) Emit($"push {Q} [eax]          ; where its elements are now");
                 Emit($"mov edx, [eax + {ViewCount}]");
                 Emit("inc edx");
                 Emit($"mov ecx, {size}");
@@ -4984,12 +5033,14 @@ namespace Phi.Compiler.CodeGen
                 EmitScale(size);
                 Emit($"mov {R("ebx")}, {Q} [edx]");
                 Emit($"add {R("ebx")}, {R("eax")}");
+                if (fromInside) Emit("push eax                ; the bytes of elements before the new one");
             }
             else if (append.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } growing })
             {
                 // room for one more (moving its elements when there isn't), then at its end
                 ObjectLine(append);
                 LoadAddress("eax", growing.Label);
+                if (fromInside) Emit($"push {Q} [eax]          ; where its elements are now");
                 Emit($"mov edx, [eax + {ViewCount}]");
                 Emit("inc edx");
                 Emit($"mov ecx, {size}");
@@ -5000,6 +5051,7 @@ namespace Phi.Compiler.CodeGen
                 EmitScale(size);
                 Emit($"mov {R("ebx")}, {Q} [{growing.Label}]");
                 Emit($"add {R("ebx")}, {R("eax")}");
+                if (fromInside) Emit("push eax                ; the bytes of elements before the new one");
             }
             else
             {
@@ -5021,15 +5073,10 @@ namespace Phi.Compiler.CodeGen
                 // the slot is empty (dropped ones are emptied): a zeroed object, or a copy
                 Emit($"mov {R("eax")}, {R("ebx")}");
                 if (value == null) Emit($"call {ObjectRoutine("renew", element.Struct!)}");
-                else if (Binder.IsObjectCall(value))
-                {
-                    Emit("pop edx");
-                    Emit($"mov {Q} [ebx], {R("edx")}          ; the call's new object, taken over");
-                }
                 else
                 {
                     Emit("pop edx");
-                    Emit($"call {ObjectRoutine("set", element.Struct!)}");
+                    Emit($"mov {Q} [ebx], {R("edx")}          ; the call's new object, or the copy: the array's now");
                 }
             }
             else if (element.IsWide)
@@ -5057,7 +5104,24 @@ namespace Phi.Compiler.CodeGen
             }
             else if (element.IsStruct && value != null)
             {
-                Emit("pop esi");
+                if (fromInside)
+                {
+                    // The struct was found before the array made room, and its elements may have
+                    // moved since. One that was among them is that far into where they are now.
+                    string apart = NewLabel("apart");
+                    Emit("pop edx                 ; the bytes of elements before the new one");
+                    Emit("pop eax                 ; where the elements were");
+                    Emit("pop esi                 ; the struct to copy");
+                    Emit($"mov {R("ecx")}, {R("esi")}");
+                    Emit($"sub {R("ecx")}, {R("eax")}");
+                    Emit($"cmp {R("ecx")}, {R("edx")}");
+                    Emit($"jae {apart}");
+                    Emit($"mov {R("esi")}, {R("ebx")}");
+                    Emit($"sub {R("esi")}, {R("edx")}");
+                    Emit($"add {R("esi")}, {R("ecx")}");
+                    Label(apart);
+                }
+                else Emit("pop esi");
                 Emit($"mov {R("edi")}, {R("ebx")}");
                 Emit($"mov ecx, {size}");
                 Emit("cld");
@@ -7741,7 +7805,7 @@ namespace Phi.Compiler.CodeGen
         string ArrayRoutine(string kind, PhiType element)
         {
             usesObjects = true;
-            string label = $"phi_array_{kind}_{(element.IsObject ? element.Struct!.Name : element.Kind == TypeKind.Str ? "text" : $"b{element.ElementSize}")}";
+            string label = $"phi_array_{kind}_{(element.IsObject ? Templates.Label(element.Struct!.Name) : element.Kind == TypeKind.Str ? "text" : $"b{element.ElementSize}")}";
             arrayRoutines.TryAdd(label, (kind, element));
             return label;
         }
@@ -8098,6 +8162,34 @@ namespace Phi.Compiler.CodeGen
             if (copy.Target is NameExpr { Symbol: VariableSymbol into } && copy.Source is NameExpr { Symbol: VariableSymbol from } && into == from)
                 return;
 
+            if (copy.Overlaps && GrowingView(copy.Target) && GrowingView(copy.Source))
+            {
+                // one may be inside the other (tree.kids:0.kids is tree.kids, or the other way
+                // round): the whole copy is made first, then the target lets go of what it has
+                // and the copy's elements and room are its own
+                ObjectLine(copy);
+                string made = AllocTemp(ViewMax + 4);
+                EmitViewAddress(copy.Source);
+                Emit($"lea {R("edx")}, [{made}]");
+                Emit($"call {ArrayRoutine("clone", element)}");
+                EmitViewAddress(copy.Target);
+                Emit("push eax");
+                Emit($"call {ArrayRoutine("free", element)}");
+                Emit("pop eax");
+                for (int i = 0; i < ViewMax + 4; i += 4)
+                {
+                    Emit($"mov ecx, [{made} + {i}]");
+                    Emit($"mov [eax + {i}], ecx");
+                }
+                return;
+            }
+
+            if (copy.Overlaps && element.IsObject)
+            {
+                EmitOverlappingObjects(copy);
+                return;
+            }
+
             if (element.IsObject)
             {
                 // an atmost target first lets go of the objects past the source's count
@@ -8211,6 +8303,68 @@ namespace Phi.Compiler.CodeGen
             Emit("cld");
             Emit("rep movsb");
         }
+
+        /// <summary>
+        /// b is a; for arrays of objects where one may be inside the other, and they aren't both
+        /// arrays without a size (t.pair:1.pair is t.pair): a copy of each of the source's objects
+        /// is made first, the last one first, onto the stack; then the target takes them in order
+        /// and lets go of what it had.
+        /// </summary>
+        void EmitOverlappingObjects(ArrayAssignStmt copy)
+        {
+            PhiType t = copy.Target.Type;
+            StructSymbol of = t.Element.Struct!;
+            bool grows = copy.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } } || Binder.IsFieldView(copy.Target);
+            string count = AllocTemp(4), which = AllocTemp(4);
+            string next = NewLabel("copying"), made = NewLabel("copied"), put = NewLabel("putting"), done = NewLabel("put");
+
+            ObjectLine(copy);
+            EmitArrayCount(copy.Source);
+            if (!grows) EmitCopyFits(copy);     // (only a check: nothing is copied if they don't fit)
+            Emit($"mov [{count}], eax");
+            Emit($"mov [{which}], eax");
+            Label(next);
+            Emit($"dec dword [{which}]");
+            Emit($"js {made}");
+            EmitPlaceAddress(copy.Source);
+            Emit($"mov ecx, [{which}]");
+            Emit($"mov {R("eax")}, {Q} [eax + ecx * {Word}]");
+            Emit($"call {ObjectRoutine("clone", of)}");
+            Emit("push eax                ; a copy of the source's object (or 0)");
+            Emit($"jmp {next}");
+            Label(made);
+
+            Emit($"mov eax, [{count}]");
+            if (grows) EmitCopyFits(copy);
+            if (t.Filled)
+            {
+                // an atmost target lets go of the objects past the source's count, and has that many
+                Emit("push eax");
+                EmitFreeElements(copy.Target, -1);
+                EmitPlaceAddress(copy.Target);
+                Emit("pop ecx");
+                Emit($"mov [eax + {t.CountOffset}], ecx");
+            }
+            Emit($"mov dword [{which}], 0");
+            Label(put);
+            Emit($"mov ecx, [{which}]");
+            Emit($"cmp ecx, [{count}]");
+            Emit($"jae {done}");
+            EmitPlaceAddress(copy.Target);
+            Emit($"mov ecx, [{which}]");
+            Emit($"lea eax, [eax + ecx * {Word}]");
+            Emit("pop edx");
+            Emit($"xchg {R("edx")}, {Q} [eax]         ; what it had, freed");
+            Emit($"mov {R("eax")}, {R("edx")}");
+            Emit($"call {ObjectRoutine("free", of)}");
+            Emit($"inc dword [{which}]");
+            Emit($"jmp {put}");
+            Label(done);
+        }
+
+        /// <summary>An array without a size that owns its room: a struct's, or a variable's (not a parameter, which is the caller's).</summary>
+        static bool GrowingView(Expr e) =>
+            e.Type.Open && (Binder.IsFieldView(e) || e is NameExpr { Symbol: VariableSymbol { GrowingArray: true, Type.TextTable: false } });
 
         /// <summary>
         /// eax = how many the source has: when either array is a parameter (its length known only
@@ -8718,6 +8872,16 @@ namespace Phi.Compiler.CodeGen
         {
             EmitPlaceAddress(t.Source);
             Emit("push eax");
+            if (bits32 && t.Inside != null)
+            {
+                // nodes:a.left takes nodes:b; when a is b, it would own itself
+                string apart = NewLabel("apart");
+                EmitPlaceAddress(t.Inside);
+                Emit($"cmp {R("eax")}, {Q} [esp]");
+                Emit($"jne {apart}");
+                EmitStop("an object can't take the object it's inside of (it would own itself)", t, ErrorHierarchy);
+                Label(apart);
+            }
             EmitPlaceAddress(t.Target);
             Emit("pop edx");
             Emit($"mov {R("ecx")}, {Q} [edx]          ; the object handed over");
