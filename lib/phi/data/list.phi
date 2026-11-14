@@ -28,8 +28,8 @@
 #
 # The values are the array items, which is the program's to read, index and walk; the
 # methods are for what takes more than a line. Not every method suits every type: Largest,
-# Smallest, Sort and Sum are for what can be compared and added (numbers; text compares
-# too), and First, Last and Pop hand a value back, which a struct is given another way
+# Smallest, Sort and Sum are for what can be compared and added (numbers: text is
+# compared only with is and is not), and First, Last and Pop hand a value back, which a struct is given another way
 # (team.items:0). A method that doesn't suit a list's type is left out of the program
 # unless something calls it, which is then an error at that line of this file, saying which
 # list it was for. A List is copied, compared and freed whole, as any struct with an array
