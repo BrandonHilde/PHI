@@ -1,0 +1,41 @@
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Spot
+{
+	int x;
+
+	[Shift<Item>: Item by: 0;]
+	[end: x + by]
+
+	[Near<Other has Ranked>: Other other;]
+	[end: x]
+
+	# what's wrong in one is said for the call that made it
+	[Start<Item>]
+		Item first: 5;
+	[end: x]
+}
+
+struct.Dot
+{
+	int y;
+
+	[Start<Item>]
+	[end: y]
+}
+
+phi.StructGenericMethodsMisuse:Program
+{
+	new Spot here;
+	new Dot dot;
+	log (here.Near<int>: 1);
+	log (here.Near<Dot>: dot);
+	log (dot.Shift<int>: 2);
+	log (here.Shift: 2);
+	log (dot.Start<Dot>);
+	log (here.Start<Dot>);
+	exit 0;
+}

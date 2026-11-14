@@ -1,0 +1,133 @@
+# A struct's own method can take types, as a class's can: [As<To>] in a struct is written
+# once, and each call on an object names the type it's for, (box.As<u8>). The object's struct
+# isn't known where the call is read, so the method is made in every struct with one of that
+# name; the ones nothing calls are left out when the type doesn't suit them.
+struct.Box
+{
+	int value;
+
+	# nothing but a type
+	[As<To>]
+		To made: value;
+	[end: made]
+
+	[Plus<Item>: Item more: 0;]
+	[end: value + more]
+
+	# two types, and what it returns said in its header
+	[Wider<From To>: From given: 0; : To]
+	[end: given + value]
+
+	# one of its own, called with no object before it, and a class's
+	[Twice<Item>]
+	[end: (As<Item>) + (As<Item>)]
+
+	[Most<Item>: Item others[];]
+		Item best: (Lists.Largest<Item>: others);
+		if best < value return value;
+	[end: best]
+
+	[Show<Item>: Item n: 0;]
+		debug n ' ' value '\n';
+	[end]
+}
+
+# another struct with a method of the same name: each object's call is its own struct's
+struct.Crate
+{
+	int weight;
+
+	[As<To>]
+		To made: weight + 1000;
+	[end: made]
+}
+
+# a struct that takes types, whose method takes one more
+struct.Stack<Item>
+{
+	Item items[atmost 8];
+
+	[Push: Item item;]
+		items++ item;
+	[end]
+
+	[Sum<To>]
+		To total: 0;
+		while each x in items
+			total is total + x;
+		;;
+	[end: total]
+
+	[Over<Limit>: Limit limit: 0;]
+		int n: 0;
+		while each x in items
+			if x > limit
+				n++;
+			;;
+		;;
+	[end: n]
+}
+
+struct.Pair
+{
+	Box first;
+	Box second;
+}
+
+phi.Lists:Library
+{
+	[Largest<Item>: Item items[];]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+}
+
+phi.StructGenericMethods:Library
+{
+	Box box;
+	box.value is 300;
+	u8 small: (box.As<u8>);
+	u16 mid: (box.As<u16>);
+	debug small ' ' mid ' ' (box.As<int>) '\n';
+	debug (box.Plus<int>: 5) ' ' (box.Plus<u8>: 250) ' ' (box.Wider<u8 u32>: 200) '\n';
+	debug (box.Twice<u8>) ' ' (box.Twice<int>) '\n';
+
+	int others: 7 900 12;
+	u8 few: 3 9;
+	debug (box.Most<int>: others) ' ' (box.Most<u8>: few) '\n';
+	call box.Show<u8>: 65;
+	call box.Show<int>: 66000;
+
+	Crate crate;
+	crate.weight is 5;
+	debug (crate.As<int>) ' ' (crate.As<u16>) '\n';
+
+	Stack<u8> bytes;
+	call bytes.Push: 200;
+	call bytes.Push: 100;
+	call bytes.Push: 3;
+	debug (bytes.Sum<int>) ' ' (bytes.Sum<u8>) ' ' (bytes.Over<u8>: 50) '\n';
+	Stack<int> numbers;
+	call numbers.Push: 70000;
+	call numbers.Push: -5;
+	debug (numbers.Sum<int>) ' ' (numbers.Over<int>: 0) '\n';
+
+	# an object in another, and one a method is given
+	Pair pair;
+	pair.first.value is 4;
+	pair.second.value is 9;
+	debug (pair.first.Plus<int>: 1) ' ' (pair.second.As<u8>) ' ' (Through: pair.second) '\n';
+
+	# beside a comparison, which looks nearly the same
+	int low: 1;
+	if low < box.value and box.value > low
+		debug (low < box.value) '\n';
+	;;
+
+	[Through: Box b;]
+	[end: (b.Plus<u16>: 2)]
+}

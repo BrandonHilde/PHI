@@ -65,6 +65,14 @@ namespace Phi.Compiler.Libraries
         /// <summary>The interfaces whose slots its code uses.</summary>
         public List<string> InterfaceSlots { get; } = new();
 
+        /// <summary>
+        /// The methods it had made from ones that take types and left to the program, which
+        /// makes them too (the library's code calls them): another library's class's or struct's,
+        /// or those of a struct made from one that takes types, whose code is the program's as
+        /// well. Each is the class or struct, the method's name and the types, with tabs between.
+        /// </summary>
+        public List<string> MadeMethods { get; } = new();
+
         /// <summary>Its code uses objects, so it sets phi_object_line.</summary>
         public bool UsesObjects { get; set; }
 
@@ -133,7 +141,7 @@ namespace Phi.Compiler.Libraries
         /// Not this version's business: the standard library's modules, which each library
         /// records for itself (CompiledTarget.ModuleMarks), and anything else in the compiler.
         /// </summary>
-        public const string AbiVersion = "1.0";
+        public const string AbiVersion = "1.1";
 
         /// <summary>The file's first value after its name: which <see cref="AbiVersion"/> its code is for.</summary>
         static string Header => $"abi {AbiVersion}";
@@ -154,7 +162,7 @@ namespace Phi.Compiler.Libraries
                 w.Write(key);
                 w.Write(t.Interface.Count);
                 foreach (InterfaceFile f in t.Interface) { w.Write(f.Name); w.Write(f.Text); }
-                foreach (List<string> list in new[] { t.Modules, t.ModuleMarks, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots })
+                foreach (List<string> list in new[] { t.Modules, t.ModuleMarks, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots, t.MadeMethods })
                 {
                     w.Write(list.Count);
                     foreach (string s in list) w.Write(s);
@@ -207,7 +215,7 @@ namespace Phi.Compiler.Libraries
                     var t = new CompiledTarget { Name = CompiledTarget.LabelName(library.Name), Path = path };
                     int files = r.ReadInt32();
                     for (int f = 0; f < files; f++) t.Interface.Add(new InterfaceFile(r.ReadString(), r.ReadString()));
-                    foreach (List<string> list in new[] { t.Modules, t.ModuleMarks, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots })
+                    foreach (List<string> list in new[] { t.Modules, t.ModuleMarks, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots, t.MadeMethods })
                     {
                         int count = r.ReadInt32();
                         for (int s = 0; s < count; s++) list.Add(r.ReadString());

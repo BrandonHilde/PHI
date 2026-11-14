@@ -1,8 +1,8 @@
 # library: library_src/picks.phi
 # A compiled library's class can have a method that takes types. The library holds its code
 # for the types the library itself calls it with, and a program can call those too, by the
-# same name. (For a type the library never used, it's an error: a library doesn't carry the
-# method's text, as it does a struct's that takes types.)
+# same name. (For a type the library never used, the program makes its own from the method's
+# text, which the library carries: library_generic_text_program.)
 use picks;
 
 phi.LibraryGenericMethod:Program

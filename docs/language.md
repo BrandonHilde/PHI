@@ -1321,12 +1321,35 @@ call Lists.Swap<int>: addr first addr second;
   `[Higher<Item has Ranked>: Item a; Item b;]`.
 - **Several types, and none in what it takes:** `[Wider<From To>: From value: 0; : To]` is
   called `(Lists.Wider<u8 u32>: small)`, and `[Zero<Item>: : Item]` is `(Lists.Zero<f64>)`.
-- **In a compiled library** a class has the methods made for the types the library itself
-  calls them with, and a program calls those by the same names (`Picks.Biggest<int>`). For
-  another type it's an error: the library doesn't carry the method's text, as it does a
-  struct's that takes types.
-- **Not yet:** a struct's own method taking types of its own (`stack.Convert<f64>`); give
-  the struct the type, or write the method in a class.
+- **A struct's own method can take types too,** called on an object: `[As<To>]` in
+  `struct.Box` is `(box.As<f64>)`, and in a struct that takes types it has the struct's
+  types and its own (`[Sum<To>]` in `struct.Stack<Item>`, called `(counts.Sum<i64>)`).
+  Among the struct's own methods it's called with no object before it, `(As<Item>)`.
+
+  ```phi
+  struct.Stack<Item>
+  {
+      Item items[];
+
+      [Sum<To>]
+          To total: 0;
+          while each x in items
+              total is total + x;
+          ;;
+      [end: total]
+  }
+  ```
+
+  Two structs can each have a method of the same name that takes types; an object's call is
+  its own struct's. (What the object is isn't known where the call is read, so the method is
+  made for the call's types in each struct that has one of that name, and one that nothing
+  calls is left out with whatever was wrong in it for those types, as an unused method of a
+  struct that takes types is.)
+- **In a compiled library** a method that takes types is carried whole, as a struct that
+  takes types is, so a program calls it with any type: the library has the code for the
+  types it called the method with itself, and the method made for another type is the
+  program's own code. A library that calls another library's with a new type leaves that
+  code to the program as well.
 
 ### Interfaces
 

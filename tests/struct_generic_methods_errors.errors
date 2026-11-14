@@ -1,0 +1,6 @@
+method Shift is already defined in Spot
+Spot already has a method Plain; one that takes types needs a name of its own
+Shift takes 1 type (Shift<Item>), but Shift<int f64> gives it 2 types
+no struct has a method Missing that takes types (declared [Missing<Item>: ...]), and there's no class here
+Plain takes no types: it's declared [Plain], not [Plain<...>]
+Two takes 2 types (Two<A B>), but Two<int> gives it 1 type

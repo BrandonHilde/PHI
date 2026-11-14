@@ -455,6 +455,17 @@ namespace Phi.Compiler
                     if (seen.Add(Key(file))) Load(file, into);
                 }
                 Load(library, into);
+                // what it had made from methods that take types and left to the program
+                foreach (string made in compiled.MadeMethods)
+                {
+                    string[] parts = made.Split('\t');
+                    List<TypeRef> types = Parser.ParseTypes(parts[2], into);
+                    into.MethodTemplateUses.Add(new MethodTemplateUse
+                    {
+                        File = library, Class = parts[0], InClass = parts[0], Exact = true, Template = parts[1], Arguments = types,
+                        FullName = $"{parts[1]}<{string.Join(" ", types)}>",
+                    });
+                }
             }
 
             var program = new ProgramNode { File = main };

@@ -6,9 +6,6 @@ interface.Ranked
 struct.Spot
 {
 	int x;
-
-	[Shift<Item>: Item by: 0;]
-	[end: x]
 }
 
 struct.Sorted<Item has Ranked>
@@ -55,7 +52,6 @@ phi.GenericMethodsErrors:Program
 	log (Lists.Plain<int>: 3);
 	log (Lists.Higher<int>: 1 2);
 	log (Lists.Higher<Spot>: here here);
-	log (here.Shift<int>: 2);
 	log (Mine<int>: 2);
 	new Sorted<Spot> s;
 	new Keyed<Spot> k;

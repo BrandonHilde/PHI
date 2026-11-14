@@ -219,6 +219,13 @@ namespace Phi.Compiler.Syntax
         /// </summary>
         public SourceFile? OwnFile { get; set; }
 
+        /// <summary>
+        /// Made for a call on some object (stack.Convert&lt;f64&gt;), in each struct with such a
+        /// method, as the object's struct isn't known where the call is read: what's wrong with
+        /// its types (one that hasn't the interface it must), said only if the method is used.
+        /// </summary>
+        public List<(SourceFile File, Span Span, string Message)> HeldErrors { get; } = new();
+
         /// <summary>The file its text is in: its class's, or its own copy of it.</summary>
         public SourceFile File => OwnFile ?? Owner.File;
 
@@ -264,6 +271,12 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Where its `[` is among the file's tokens.</summary>
         public int StartToken { get; init; }
+
+        /// <summary>All of it in the file, from its `[` to its [end]'s `]`: a compiled library's interface has it whole.</summary>
+        public Span? Text { get; set; }
+
+        /// <summary>In a struct made from one that takes types: the type each of the struct's own names stands for there.</summary>
+        public Dictionary<string, TypeRef>? Given { get; init; }
     }
 
     /// <summary>A call of a method that takes types, with the types it gives: Lists.Largest&lt;int&gt;.</summary>
@@ -276,6 +289,12 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>The class (or struct) the call is written in.</summary>
         public string InClass { get; init; } = "";
+
+        /// <summary>
+        /// From a compiled library, which had this method made and left its code to the program:
+        /// the class or struct whose method it is, by name (and Class is that too).
+        /// </summary>
+        public bool Exact { get; init; }
         public string Template { get; init; } = "";
         public List<TypeRef> Arguments { get; init; } = new();
 

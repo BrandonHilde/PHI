@@ -584,7 +584,32 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>At [Name&lt; : the header of a method that takes types.</summary>
         bool AtMethodTemplate => At(TokenKind.OpenBracket) && PeekToken(1).Kind == TokenKind.Identifier && PeekToken(2).Kind == TokenKind.Less
-                                 && given == null && madeMethod == null && file.Compiled == null;
+                                 && madeMethod == null && (!CompiledHeader || CodeFollowsHeader);
+
+        /// <summary>
+        /// In a compiled library's interface, at a method's '[': is its code there after its
+        /// header? A method that takes types is, whole, for a program to make its own from; any
+        /// other is its header alone, and the next thing is another's '[' or the '}'.
+        /// </summary>
+        bool CodeFollowsHeader
+        {
+            get
+            {
+                int depth = 0;
+                for (int i = 0; pos + i < tokens.Count; i++)
+                {
+                    Token t = PeekToken(i);
+                    if (t.Kind == TokenKind.OpenBracket) depth++;
+                    else if (t.Kind == TokenKind.CloseBracket && --depth == 0)
+                    {
+                        Token next = PeekToken(i + 1);
+                        if (next.Kind == TokenKind.CloseBrace) return false;
+                        return next.Kind != TokenKind.OpenBracket || PeekToken(i + 2).IsWord("end");
+                    }
+                }
+                return false;
+            }
+        }
 
         /// <summary>
         /// [Largest&lt;Item&gt;: Item items[];] ... [end: best]: read once here for its syntax, with Item
@@ -595,20 +620,30 @@ namespace Phi.Compiler.Syntax
         {
             int start = pos;
             Token name = PeekToken(1);
-            var template = new MethodTemplate { File = file, Owner = cls, Name = name.Text, NameSpan = name.Span, StartToken = start, Span = Current.Span.To(name.Span) };
-            if (placeholders != null)
-                throw Error(name.Span, $"{name.Text} takes types of its own, which a method of a struct that takes types can't yet; give the struct the type");
-            // (its code goes nowhere: it's read again for each call's types)
+            // (in a struct made from one that takes types, the struct's own types are known by now)
+            var template = new MethodTemplate
+            {
+                File = file, Owner = cls, Name = name.Text, NameSpan = name.Span, StartToken = start, Span = Current.Span.To(name.Span),
+                Given = given == null ? null : new Dictionary<string, TypeRef>(given),
+            };
+            // (its code goes nowhere: it's read again for each call's types; and in a struct
+            // that takes types, read as itself, so does the method, until the struct is made)
+            HashSet<string>? outer = placeholders;
+            bool kept = outer == null;
             placeholders = new HashSet<string>();
             madeMethod = name.Text;
             readParameters = null;
-            try { ParseMethod(); }
+            try
+            {
+                ParseMethod();
+                template.Text = Span.FromBounds(tokens[start].Span.Start, Previous.Span.End);
+            }
             finally
             {
-                placeholders = null;
+                placeholders = outer;
                 madeMethod = null;
                 // (kept even when its code has an error of syntax, so its calls don't each say there's no such method)
-                if (readParameters != null)
+                if (readParameters != null && kept)
                 {
                     foreach (var (parameter, has) in readParameters)
                     {
@@ -618,6 +653,16 @@ namespace Phi.Compiler.Syntax
                     reading?.MethodTemplates.Add(template);
                 }
             }
+        }
+
+        /// <summary>Types as written with spaces between (f64 Stack&lt;int&gt;), noting in the program the structs that take types among them.</summary>
+        public static List<TypeRef> ParseTypes(string text, ProgramNode program)
+        {
+            var parser = new Parser(new SourceFile("types", text), new DiagnosticBag()) { reading = program };
+            var types = new List<TypeRef>();
+            try { while (!parser.AtEnd) types.Add(parser.ParseType()); }
+            catch (ParseError) { }
+            return types;
         }
 
         /// <summary>The types the method template just read takes, from its header.</summary>
@@ -632,7 +677,7 @@ namespace Phi.Compiler.Syntax
         public static MethodDecl? InstantiateMethod(MethodTemplate template, IReadOnlyList<TypeRef> arguments, string fullName, ProgramNode program, SourceFile copy)
         {
             var parser = new Parser(copy, new DiagnosticBag()) { reading = program, pos = template.StartToken, currentClass = template.Owner.Name, madeMethod = fullName };
-            parser.given = new Dictionary<string, TypeRef>();
+            parser.given = template.Given == null ? new Dictionary<string, TypeRef>() : new Dictionary<string, TypeRef>(template.Given);
             for (int i = 0; i < template.Parameters.Count; i++) parser.given[template.Parameters[i].Name] = arguments[i];
             MethodDecl method;
             // (a method whose text can't be read was said so where the template was read; its calls
@@ -641,8 +686,23 @@ namespace Phi.Compiler.Syntax
             catch (ParseError) { return null; }
             method.Owner = template.Owner;
             method.OwnFile = copy;
+            if (template.Owner.ForStruct is StructDecl owner) method.Parameters.Insert(0, SelfOf(owner.Name, template.Owner.BaseSpan));
             template.Owner.Methods.Add(method);
             return method;
+        }
+
+        /// <summary>What a struct's method is given before its own parameters: the struct it's called on.</summary>
+        static VarDecl SelfOf(string name, Span span)
+        {
+            var self = new VarDecl
+            {
+                Type = new TypeRef { Name = "ptr", Pointee = new TypeRef { Name = name, Span = span }, Span = span },
+                Name = "self",
+                NameSpan = span,
+                Span = span,
+            };
+            self.Values.Add(new NumberExpr { Value = 0, Span = span });
+            return self;
         }
 
         /// <summary>
@@ -778,17 +838,15 @@ namespace Phi.Compiler.Syntax
                             methods = new ClassDecl { File = file, Name = name.Text, Base = "struct", BaseSpan = name.Span, ForStruct = decl, Span = start.Span.To(name.Span) };
                             program.Classes.Add(methods);
                         }
+                        // (one that takes types of its own is made for each call's, as a class's is)
+                        if (AtMethodTemplate)
+                        {
+                            ParseMethodTemplate(methods);
+                            continue;
+                        }
                         MethodDecl m = ParseMethod();
                         m.Owner = methods;
-                        var self = new VarDecl
-                        {
-                            Type = new TypeRef { Name = "ptr", Pointee = new TypeRef { Name = name.Text, Span = name.Span }, Span = name.Span },
-                            Name = "self",
-                            NameSpan = name.Span,
-                            Span = name.Span,
-                        };
-                        self.Values.Add(new NumberExpr { Value = 0, Span = name.Span });
-                        m.Parameters.Insert(0, self);
+                        m.Parameters.Insert(0, SelfOf(name.Text, name.Span));
                         methods.Methods.Add(m);
                         continue;
                     }
@@ -942,14 +1000,7 @@ namespace Phi.Compiler.Syntax
                     readParameters = ParseTemplateParameters(Previous, "[" + name);
                     name = madeMethod;
                 }
-                else
-                {
-                    // (said, and read on as if it took none, so the rest of the struct is still checked)
-                    ParseError error = Error(Current.Span, $"{name} takes types of its own, which only a class's method can yet (not a struct's)");
-                    int after = TypesEndAhead(0);
-                    if (after < 0) throw error;
-                    pos += after;
-                }
+                else throw Error(Current.Span, $"a method can't be declared inside another, and {name} takes types (missing [end]?)");
             }
             var method = new MethodDecl { Name = name, IsInterruptHandler = isr, Span = open.Span.To(nameSpan) };
 

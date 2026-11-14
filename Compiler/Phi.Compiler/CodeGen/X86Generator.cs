@@ -902,6 +902,10 @@ namespace Phi.Compiler.CodeGen
             t.OutsideFunctions.AddRange(unit.OutsideFunctions.Select(f => $"{f.Library}.{f.Name}"));
             t.TypeTables.AddRange(typeTables.Select(s => s.Name));
             t.InterfaceSlots.AddRange(interfaceSlots.Select(s => s.Name));
+            // (Convert<f64 Stack<int>> is Convert, and f64 Stack<int>)
+            t.MadeMethods.AddRange(unit.Methods.Where(m => m.IsOutside && m.Decl.OwnFile != null && m.Decl.Name.EndsWith('>'))
+                .Select(m => (Owner: m.Decl.Owner.Name, m.Decl.Name, At: m.Decl.Name.IndexOf('<')))
+                .Select(m => $"{m.Owner}\t{m.Name[..m.At]}\t{m.Name[(m.At + 1)..^1]}").Distinct());
             t.UsesObjects = usesObjects;
             var fileNames = stringLabels.ToDictionary(p => p.Value, p => p.Key);
             foreach (var (label, line, name) in lineMarks) result.Lines.Add((label, line, fileNames[name]));

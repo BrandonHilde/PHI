@@ -1,0 +1,17 @@
+# The second library for tests/library_generic_text_program.phi: it uses the first, compiled,
+# and calls its methods that take types with types the first never did. Their code isn't in
+# either library: it's the program's to make, which this library's interface tells it.
+use kinds;
+
+phi.More:Library
+{
+	[Farthest: i64 a: 0; i64 b: 0;]
+		i64 both: a b;
+	[end: (Kinds.Biggest<i64>: both)]
+
+	[Half: Box box;]
+	[end: (box.As<f64>) / 2.0]
+
+	[Total: Pile<u8> pile;]
+	[end: (pile.Sum<u16>)]
+}

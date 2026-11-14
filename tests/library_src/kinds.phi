@@ -1,0 +1,60 @@
+# A library with methods that take types, for tests/library_generic_text_program.phi: a
+# class's, a struct's, and one of a struct that takes types. The compiled library carries each
+# one's text, so a program calls them with types the library never did.
+struct.Box
+{
+	int value;
+
+	[As<To>]
+		To made: value;
+	[end: made + Kinds.bonus]
+}
+
+struct.Pile<Item>
+{
+	Item items[];
+
+	[Add: Item item;]
+		items++ item;
+	[end]
+
+	[Sum<To>]
+		To total: 0;
+		while each x in items
+			total is total + x;
+		;;
+	[end: total]
+}
+
+phi.Kinds:Library
+{
+	int bonus: 1;
+	int calls: 0;
+
+	[Biggest<Item>: Item items[];]
+		Item best: items:0;
+		calls++;
+		while each x in items
+			if (Bigger<Item>: x best)
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	# one that takes types calling another, and a method of the library's that doesn't
+	[Bigger<Item>: Item a: 0; Item b: 0;]
+		call Count;
+	[end: a > b]
+
+	[Count]
+		calls++;
+	[end]
+
+	# the library's own calls: Biggest<int> and Box's As<u8> are in its code
+	[BiggestOfThree: int a: 0; int b: 0; int c: 0;]
+		int all: a b c;
+	[end: (Biggest<int>: all)]
+
+	[Low: Box box;]
+	[end: (box.As<u8>)]
+}

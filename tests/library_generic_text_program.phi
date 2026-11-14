@@ -1,0 +1,30 @@
+# library: library_src/kinds.phi library_src/kinds
+# library: library_src/kinds/more.phi library_src/kinds
+# A compiled library carries the text of its methods that take types, so a program calls one
+# with a type the library never used and makes its own method of it, as it does of the
+# library's struct that takes types. A second library that calls them leaves the code to the
+# program too.
+use library_src.kinds.more;
+use library_src.kinds.kinds;
+
+phi.LibraryGenericText:Program
+{
+	# the library's own, then the program's: f64 and u16 are new to it
+	int numbers: 4 -8 15;
+	f64 readings: 1.5 0.25 7.75;
+	u16 mid: 300 65000 70;
+	log (Kinds.BiggestOfThree: 3 12 7) ' ' (Kinds.Biggest<int>: numbers) ' ' (Kinds.Biggest<f64>: readings) ' ' (Kinds.Biggest<u16>: mid) '\n';
+	log Kinds.calls '\n';
+
+	# a struct's, and one of a struct that takes types
+	new Box box: 300;
+	log (Kinds.Low: box) ' ' (box.As<u8>) ' ' (box.As<u16>) ' ' (box.As<f64>) '\n';
+	new Pile<u8> pile;
+	call pile.Add: 200;
+	call pile.Add: 100;
+	log (pile.Sum<int>) ' ' (pile.Sum<u8>) '\n';
+
+	# what the second library had made
+	log (More.Farthest: 5000000000 -3) ' ' (More.Half: box) ' ' (More.Total: pile) '\n';
+	exit 0;
+}

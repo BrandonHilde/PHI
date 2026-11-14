@@ -68,7 +68,7 @@ phi.Lib:Library
 }
 ";
 
-        const string Saved = @"abi 1.0
+        const string Saved = @"abi 1.1
 Linux Spot: 7 bytes, aligned to 1
      0 x: int
      4 y: i16

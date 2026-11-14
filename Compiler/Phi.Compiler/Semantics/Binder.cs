@@ -193,6 +193,20 @@ namespace Phi.Compiler.Semantics
             int dot = callee.LastIndexOf('.');
             string cls = dot < 0 ? scope.Class.Name : callee[..dot], name = callee[(dot + 1)..];
             MethodTemplate? t = methodTemplates.FirstOrDefault(m => m.Owner.Name == cls && m.Name == name);
+            // on an object (stack.Convert), whose struct has one; or one given types that its struct has no such method for
+            if (t == null && dot >= 0 && !classScopes.Keys.Any(c => c.Name == cls && c.ForStruct == null))
+            {
+                int at = name.IndexOf('<');
+                string plain = at < 0 ? name : name[..at];
+                var have = methodTemplates.Where(m => m.Owner.ForStruct != null && m.Name == plain).ToList();
+                if (have.Count == 0) return null;
+                if (at >= 0)
+                {
+                    string owners = string.Join(", ", have.Select(m => m.Owner.Name).Distinct().Take(3));
+                    return $"'{cls}' has no method {plain} that takes types: it isn't {(owners.Contains(',') ? "one of " : "a ")}{owners}, which {(owners.Contains(',') ? "have" : "has")} [{plain}<{string.Join(" ", have[0].Parameters.Select(p => p.Name))}>]";
+                }
+                t = have[0];
+            }
             if (t == null) return null;
             string types = string.Join(" ", t.Parameters.Select(p => p.Name));
             return $"{name} takes {(t.Parameters.Count == 1 ? "a type" : $"{t.Parameters.Count} types")}, which each call gives it: {callee}<{types}>, with {(t.Parameters.Count == 1 ? "the type" : "the types")} in {(t.Parameters.Count == 1 ? $"{types}'s" : "their")} place, like {callee}<{string.Join(" ", t.Parameters.Select(_ => "int"))}>";
@@ -441,7 +455,7 @@ namespace Phi.Compiler.Semantics
                     // a method of a struct made from a template: what's wrong in it waits to see
                     // whether anything uses it (LeaveOutUnusedTemplateMethods)
                     file = cls.File;
-                    if (diagnostics.RealOf(cls.File) != null) templateMethods.Add(m.Symbol);
+                    if (diagnostics.RealOf(cls.File) != null || OnObject(m)) templateMethods.Add(m.Symbol);
                     HoldTemplateMethodErrors(cls, m, said);
                 }
             }
@@ -1757,6 +1771,13 @@ namespace Phi.Compiler.Semantics
             return PhiType.Error;
         }
 
+        /// <summary>
+        /// A struct's method made from one that takes types of its own. A call on an object
+        /// (stack.Convert&lt;f64&gt;) has it made in every struct with such a method, so the ones
+        /// nothing calls are left out as an unused method of a struct that takes types is.
+        /// </summary>
+        static bool OnObject(MethodDecl m) => m.OwnFile != null && m.Owner.ForStruct != null;
+
         /// <summary>The methods of structs made from templates, and what was found wrong in each (taken back out of the errors).</summary>
         readonly List<MethodSymbol> templateMethods = new();
         readonly Dictionary<MethodSymbol, List<Diagnostic>> wrongInTemplateMethod = new();
@@ -1768,7 +1789,15 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         void HoldTemplateMethodErrors(ClassDecl cls, MethodDecl m, int said)
         {
-            if (m.Symbol == null || diagnostics.RealOf(cls.File) is not SourceFile template) return;
+            if (m.Symbol == null) return;
+            // (what's wrong with the types a call on an object gave: the called struct's method's to say)
+            if (m.HeldErrors.Count > 0)
+            {
+                if (!wrongInTemplateMethod.TryGetValue(m.Symbol, out List<Diagnostic>? types)) wrongInTemplateMethod[m.Symbol] = types = new List<Diagnostic>();
+                foreach (var (inFile, span, message) in m.HeldErrors) types.Add(new Diagnostic(Severity.Error, inFile, span, message));
+                m.HeldErrors.Clear();
+            }
+            if ((diagnostics.RealOf(cls.File) ?? (OnObject(m) ? diagnostics.RealOf(m.File) : null)) is not SourceFile template) return;
             int last = m.Parameters.Cast<Stmt>().Concat(m.Body).SelectMany(SyntaxWalker.Nodes)
                 .Concat(m.Result != null ? SyntaxWalker.Nodes(m.Result) : Enumerable.Empty<Node>())
                 .Select(n => n.Span.End).DefaultIfEmpty(m.Span.End).Max();
@@ -2156,7 +2185,10 @@ namespace Phi.Compiler.Semantics
                 Unit = unit,
                 IsHook = hook != null,
                 IsInterruptHandler = method.IsInterruptHandler,
-                IsOutside = IsOutside(classScope.Class.File),
+                // (one made from a compiled library's method that takes types is the program's own
+                // code, as a struct made from the library's is; a library that has one made leaves
+                // it to the program too: see CompiledTarget.MadeMethods)
+                IsOutside = method.OwnFile != null && classScope.Class.File.Compiled != null ? library != null : IsOutside(classScope.Class.File),
             };
 
             if (method.IsCompiled)

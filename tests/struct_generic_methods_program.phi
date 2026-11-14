@@ -1,0 +1,93 @@
+# A struct's method that takes types, with what 16-bit code hasn't: f64s, i64s and objects;
+# a type that must have an interface; and a method that doesn't suit every struct it's made
+# in, which is left out of the ones nothing calls it on.
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Card has Ranked
+{
+	int value;
+
+	[Rank]
+	[end: value * 2]
+
+	# only a struct that has Ranked is taken
+	[Beats<Other has Ranked>: Other other;]
+	[end: (Rank) > (other.Rank)]
+}
+
+struct.Chip has Ranked
+{
+	int worth;
+
+	[Rank]
+	[end: worth]
+}
+
+struct.Stack<Item>
+{
+	Item items[];
+
+	[Push: Item item;]
+		items++ item;
+	[end]
+
+	# for numbers: a Stack<Card> has this made too, when a Stack<f64> calls it, and it's
+	# left out there, as Card can't be added up
+	[Sum<To>]
+		To total: 0;
+		while each x in items
+			total is total + x;
+		;;
+	[end: total]
+
+	# for a struct that has Ranked
+	[Best<Than has Ranked>: Than than;]
+		int best: (than.Rank);
+		while each x in items
+			if (x.Rank) > best
+				best is (x.Rank);
+			;;
+		;;
+	[end: best]
+
+	# a struct that takes types made with the method's own
+	[Copy<To>]
+		new Stack<To> copy;
+		while each x in items
+			To one: x;
+			call copy.Push: one;
+		;;
+	[end: copy]
+}
+
+phi.StructGenericMethodsProgram:Program
+{
+	new Stack<f64> readings;
+	call readings.Push: 1.5;
+	call readings.Push: 0.25;
+	call readings.Push: 7.75;
+	log (readings.Sum<f64>) '\n';
+
+	new Stack<int> counts;
+	call counts.Push: 2000000000;
+	call counts.Push: 2000000000;
+	log (counts.Sum<i64>) ' ' (counts.Sum<f64>) '\n';
+
+	new Card low: 3;
+	new Card high: 8;
+	new Chip chip: 10;
+	log (high.Beats<Card>: low) ' ' (low.Beats<Chip>: chip) ' ' (high.Beats<Chip>: chip) '\n';
+
+	new Stack<Card> hand;
+	call hand.Push: low;
+	call hand.Push: high;
+	log (hand.Best<Chip>: chip) ' ' (hand.Best<Card>: low) '\n';
+
+	new Stack<f64> halves: (counts.Copy<f64>);
+	call halves.Push: 0.5;
+	log (halves.Sum<f64>) '\n';
+	exit 0;
+}

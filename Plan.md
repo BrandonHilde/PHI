@@ -1887,9 +1887,37 @@ and every program wrapped it or wrote its own.
   - Tests `generic_methods` (16-bit, kernel, Linux in 32 and 64 bits),
     `generic_methods_program`, `generic_methods_errors`, `generic_methods_misuse`,
     `library_generic_method_program`.
-- [ ] A struct's own method taking types of its own (`stack.Convert<f64>`): the struct isn't
-  known where the call is read, which is when its method would have to be made. And a
-  compiled library carrying the text of its classes' methods that take types.
+- [x] A struct's own method taking types of its own (`stack.Convert<f64>`), and a compiled
+  library carrying the text of its methods that take types (2026-11-14).
+  - **On an object, the method is made in every struct that has one of its name.** The
+    struct isn't known where the call is read, which is when its method has to be made (the
+    structs it uses are made then too, before any name is looked up). So `box.As<f64>` makes
+    `As<f64>` in each struct with an `[As<...>]` taking one type, whenever that struct is made
+    (`Templates.MethodTemplates`: a struct made later gets the calls read before it). The
+    binder then finds the object's own. One that nothing calls is left out with whatever was
+    wrong in it for those types, by what already leaves out an unused method of a struct
+    that takes types (`LeaveOutUnusedTemplateMethods`); a type that hasn't the interface it
+    must (`<Other has Ranked>`) is held the same way (`MethodDecl.HeldErrors`), so only the
+    called struct's method says it. Known cost: a method made where it's never called can
+    use a struct that takes types with types nothing else does, and that struct is made.
+  - In a struct that takes types the method has the struct's types and its own
+    (`MethodTemplate.Given`); read as itself, the struct's methods that take types go
+    nowhere, and each struct made from it has its own.
+  - **A compiled library's interface has each such method whole**, after the headers of
+    the ones the library had made, in its class or struct. In an interface a method with
+    code after its header is one that takes types (`Parser.CodeFollowsHeader`); any other is
+    its header alone. A program's call with a type the library used is the library's code;
+    with another, the method is made from the text and is the program's code, in the
+    library's class (`MethodSymbol.IsOutside` is false for it).
+  - **A library that has one made from another library's** (or in a struct made from one
+    that takes types, whose code is the program's) doesn't hold that code, as two libraries
+    would each have it. It lists them (`CompiledTarget.MadeMethods`: owner, method, types),
+    and a program that uses the library makes them. That list is new in the file, so the
+    libraries' version is 1.1 and every `.philib` is built again.
+  - Tests `struct_generic_methods` (16-bit, kernel, Linux in 32 and 64 bits),
+    `struct_generic_methods_program`, `struct_generic_methods_errors`,
+    `struct_generic_methods_misuse`, `library_generic_text_program` (two libraries, the
+    second calling the first's with new types).
 - [x] The editor. The language server needed nothing: a made struct is a struct, read from
   a copy of the template's file, so going to a method or a field of a `Stack<int>` lands on
   its line in `struct.Stack<Item>`, and its members complete (test in

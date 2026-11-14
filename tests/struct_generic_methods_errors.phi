@@ -1,0 +1,43 @@
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Spot
+{
+	int x;
+
+	[Shift<Item>: Item by: 0;]
+	[end: x + by]
+
+	[Shift<Item>: Item by: 0;]
+	[end: x]
+
+	[Plain]
+	[end: x]
+
+	[Plain<Item>]
+	[end: x]
+
+	[Near<Other has Ranked>: Other other;]
+	[end: x]
+}
+
+struct.Dot
+{
+	int y;
+
+	[Two<A B>]
+	[end: y]
+}
+
+phi.StructGenericMethodsErrors:Program
+{
+	new Spot here;
+	new Dot dot;
+	log (here.Shift<int f64>: 2);
+	log (here.Missing<int>: 2);
+	log (here.Plain<int>);
+	log (dot.Two<int>);
+	exit 0;
+}

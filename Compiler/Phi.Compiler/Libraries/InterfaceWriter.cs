@@ -86,6 +86,7 @@ namespace Phi.Compiler.Libraries
                 }
                 foreach (MethodDecl m in c.Methods.Where(m => m.Symbol != null))
                     sb.AppendLine("\t" + MethodHeader(file, m, 0));
+                WriteMethodTemplates(sb, c, program);
                 sb.AppendLine("}");
             }
             return sb.ToString();
@@ -120,7 +121,20 @@ namespace Phi.Compiler.Libraries
             if (methods != null)
                 foreach (MethodDecl m in methods.Methods.Where(m => m.Symbol != null))
                     sb.AppendLine("\t" + MethodHeader(s.File, m, 1));    // (the parser gives each its self again)
+            if (methods != null) WriteMethodTemplates(sb, methods, program);
             sb.AppendLine("}");
+        }
+
+        /// <summary>
+        /// A class's or a struct's methods that take types are written whole, with their code,
+        /// as a struct that takes types is: the methods made from one for types the library
+        /// didn't call it with are the code of whatever program calls them. (The ones the
+        /// library did have made are in it, with their headers among its other methods'.)
+        /// </summary>
+        static void WriteMethodTemplates(StringBuilder sb, ClassDecl c, ProgramNode program)
+        {
+            foreach (MethodTemplate t in program.MethodTemplates.Where(t => t.Owner == c && t.Text != null))
+                sb.AppendLine("\t" + Text(t.File, t.Text!.Value));
         }
 
         static string MethodHeader(SourceFile file, MethodDecl m, int skip)
