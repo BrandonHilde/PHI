@@ -9,13 +9,13 @@ namespace Phi.Compiler.Tests
     /// A compiled library's machine code has where things are written into it: which byte of a
     /// struct a field is at, how big a str's slot is, where an array without a size keeps its
     /// count. A library built before one of those moved goes wrong in a program built after,
-    /// without a word. So libraries carry a number (CompiledLibrary.AbiVersion), and this test
+    /// without a word. So libraries carry a version (CompiledLibrary.AbiVersion: 1.0, 1.1, ...), and this test
     /// fails when the layouts of a struct with one of everything aren't the ones saved here
-    /// under that number.
+    /// under that version.
     ///
     /// When it fails, something has moved. If that was meant, raise CompiledLibrary.AbiVersion
-    /// (every .philib is then built again, and says so) and save the new layouts below with the
-    /// new number. Don't save them under the same number: that's the silence this is here for.
+    /// (1.0 to 1.1: every .philib is then built again, and says so) and save the new layouts below
+    /// with the new version. Don't save them under the same one: that's the silence this is here for.
     ///
     /// It sees layouts only. The other things the number stands for (how code is called, what
     /// a runtime routine keeps) are listed where the number is.
@@ -68,7 +68,7 @@ phi.Lib:Library
 }
 ";
 
-        const string Saved = @"abi 1
+        const string Saved = @"abi 1.0
 Linux Spot: 7 bytes, aligned to 1
      0 x: int
      4 y: i16
@@ -156,11 +156,11 @@ Linux64 Everything: 290 bytes, aligned to 1
             string saved = Saved.Replace("\r\n", "\n").Trim();
             Assert.True(now == saved,
                 "The layout of a struct, a str or an array has changed, so a library built before this would go wrong in a program built now.\n" +
-                "If that was meant: raise CompiledLibrary.AbiVersion, and save these layouts in LibraryLayoutTests.Saved with the new number.\n\n" + now);
+                "If that was meant: raise CompiledLibrary.AbiVersion, and save these layouts in LibraryLayoutTests.Saved with the new version.\n\n" + now);
         }
 
         [Fact]
-        public void ALibraryBuiltForAnotherNumberIsRefused()
+        public void ALibraryBuiltForAnotherVersionIsRefused()
         {
             string path = Path.Combine(Path.GetTempPath(), $"phi_abi_{Guid.NewGuid():N}.philib");
             try
@@ -169,7 +169,7 @@ Linux64 Everything: 290 bytes, aligned to 1
                 library.Write(path);
                 Assert.Equal("lib", CompiledLibrary.Load(path).Name);
 
-                // the same file, as a compiler with the next number would have written it
+                // the same file, as a compiler with the next version would have written it (1.0: 1.1)
                 byte[] bytes = File.ReadAllBytes(path);
                 string header = $"abi {CompiledLibrary.AbiVersion}";
                 int at = bytes.AsSpan().IndexOf(System.Text.Encoding.ASCII.GetBytes(header));

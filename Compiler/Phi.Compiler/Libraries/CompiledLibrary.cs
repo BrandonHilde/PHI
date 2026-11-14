@@ -115,23 +115,25 @@ namespace Phi.Compiler.Libraries
         static readonly byte[] Magic = Encoding.ASCII.GetBytes("PHILIB\n");
 
         /// <summary>
-        /// What a library's machine code takes for granted of the code around it, as a number:
-        /// a library loads with any build of the compiler that has the same one. Raise it with
-        /// any change that would make a library built before go wrong in a program built after:
+        /// What a library's machine code takes for granted of the code around it, as a version:
+        /// a library loads with any build of the compiler that has the same one. The second
+        /// number goes up (1.0, 1.1, 1.2) with any change that would make a library built
+        /// before go wrong in a program built after; the first goes up, and the second back to
+        /// 0, when a release of PHI promises to keep it. What such a change is:
         ///
         /// - how something is laid out: a str and its room, an array without a size (where its
         ///   elements are, how many, its room), an object and its type table, a struct's fields
-        ///   (LibraryLayoutTests fails when one of these moves and this number hasn't);
+        ///   (LibraryLayoutTests fails when one of these moves and this version hasn't);
         /// - how code is called: where a method's arguments and result go, which registers a
         ///   method or a runtime routine (lib/x86_*) keeps, what a routine made once for a whole
         ///   program takes and gives (an object's clone, free, set and equal, an array's);
         /// - a runtime routine a library may call being renamed or taken away;
         /// - what this file holds, or the order it's in.
         ///
-        /// Not this number's business: the standard library's modules, which each library
+        /// Not this version's business: the standard library's modules, which each library
         /// records for itself (CompiledTarget.ModuleMarks), and anything else in the compiler.
         /// </summary>
-        public const int AbiVersion = 1;
+        public const string AbiVersion = "1.0";
 
         /// <summary>The file's first value after its name: which <see cref="AbiVersion"/> its code is for.</summary>
         static string Header => $"abi {AbiVersion}";

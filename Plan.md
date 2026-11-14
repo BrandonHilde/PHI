@@ -1838,7 +1838,8 @@ and every program wrapped it or wrote its own.
 - [x] A compiled library loads with any build of `phi` that lays things out and calls code
   the same way (2026-11-13). It carried the id of the compiler's own build, so every build
   of the compiler, whatever it changed, meant building every library again. It carries a
-  number now, `CompiledLibrary.AbiVersion`, which is raised by hand when a layout or a
+  version now, `CompiledLibrary.AbiVersion` (1.0, then 1.1, 1.2: the first number is for a
+  release that promises to keep it), which is raised by hand when a layout or a
   convention between pieces of code changes (the list is where the number is), and for each
   standard library module its code uses, what the module's words were (`PhiCompiler.
   ModuleMark`: comments and spacing don't count). A module that has changed is an error at
