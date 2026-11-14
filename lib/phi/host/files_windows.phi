@@ -5,6 +5,7 @@
 
 use 'kernel32.dll' as Kernel32;
 use fs.fileinfo;
+use user.utf8;
 
 phi.HostFiles:Windows
 {
@@ -176,14 +177,9 @@ phi.HostFiles:Windows
 		call Widen: to addr wide;
 	[end: (Done: (Kernel32.MoveFileW: from addr wide))]
 
-	# a path's bytes as UTF-16, each as it is, ending with a 0 (at most WIDE - 1 of them)
+	# a path (UTF-8, as all text is) as UTF-16, ending with a 0 (at most WIDE - 1 of them)
 	[Widen: ptr<u8> path: 0; ptr<u16> wide: 0;]
-		int i: 0;
-		while i < WIDE - 1 and path:i is not 0
-			wide:i is path:i;
-			i++;
-		;;
-		wide:i is 0;
+		call Utf8.Widen: path wide WIDE;
 	[end]
 
 	# a function's answer: 1 if it worked (not 0), 0 if Windows said no

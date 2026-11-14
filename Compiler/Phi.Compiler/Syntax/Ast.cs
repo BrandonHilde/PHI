@@ -701,9 +701,50 @@ namespace Phi.Compiler.Syntax
         public double Value { get; init; }
     }
 
+    /// <summary>
+    /// A string literal. <see cref="Value"/> is its bytes, one per char (0 to 255): text past
+    /// ASCII is there as the bytes of its UTF-8, which is what a str holds.
+    /// </summary>
     public sealed class StringExpr : Expr
     {
         public string Value { get; init; } = "";
+
+        /// <summary>
+        /// The literal as one character's number, where a number goes: a single byte's value
+        /// ('a' is 97, '\xED' is 237), or the number of one character past ASCII ('é' is 233,
+        /// though it's two bytes of text). Null when it's no characters, or more than one.
+        /// </summary>
+        public int? Character
+        {
+            get
+            {
+                if (Value.Length == 1) return Value[0];
+                if (Value.Length is < 2 or > 4) return null;
+                int first = Value[0];
+                int size = first >= 0xF0 ? 4 : first >= 0xE0 ? 3 : first >= 0xC0 ? 2 : 0;
+                if (size != Value.Length) return null;
+                int code = first & (0xFF >> (size + 1));
+                for (int i = 1; i < size; i++)
+                {
+                    if ((Value[i] & 0xC0) != 0x80) return null;
+                    code = code << 6 | Value[i] & 0x3F;
+                }
+                // (written the long way round, a surrogate, or past the last character: not one)
+                int least = size == 2 ? 0x80 : size == 3 ? 0x800 : 0x10000;
+                return code < least || code > 0x10FFFF || code is >= 0xD800 and <= 0xDFFF ? null : code;
+            }
+        }
+
+        /// <summary>The text as it was written, for a message: its bytes read as UTF-8.</summary>
+        public string Shown
+        {
+            get
+            {
+                byte[] bytes = Value.Select(c => (byte)c).ToArray();
+                try { return new System.Text.UTF8Encoding(false, true).GetString(bytes); }
+                catch (ArgumentException) { return Value; }   // bytes written with \xNN that aren't text
+            }
+        }
     }
 
     public sealed class BoolExpr : Expr

@@ -25,6 +25,7 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `switch (k) { case 'q': case 27: ...; break; default: ... }` | `when k` / `is 'q' 27` ... `;;` / `else` ... `;;` / `;;` | No fall-through and no `break`; works on text too. |
 | `enum Tool { PENCIL, BRUSH = 5 };` | `enum.Tool { PENCIL  BRUSH: 5 }` (one a line) | A type of its own: only `Tool.` values go into a `Tool`, and comparing it with another enum is an error. |
 | `"\xED"` | `'\xED'` | Strings use single quotes; `\x` takes exactly two hex digits. |
+| `"caf\u00E9"`, `"\U0001F600"` | `'caf\u00E9'`, `'\U0001F600'` | The same escapes, and the same bytes: text is UTF-8, a `chr` is one byte, and `'café'` can be typed as it is. A whole character is an `int` (`'é'` is 233); `user.utf8` walks text by them. |
 | `&x` | `addr x` | |
 | `int (*f)(int, int)` | `method<int int: int> f` | Set with `f is addr Add;`, call with `(f: 1 2)`. |
 | C++ `c.add(3)` | `call c.Add: 3;` | Methods written inside a struct; `self` is the pointer to it. |

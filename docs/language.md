@@ -106,9 +106,9 @@ adding errors of their own.
 |---|---|
 | Numbers | `42`, `-7`, `0x2A`, `101010b` (binary), `1_000` |
 | Booleans | `true`, `false` (stored as 1 and 0) |
-| Strings | `'hello'`; `'hasn't'` works without escaping. ASCII characters only for now: any other is an error, and a byte above 127 is written as `\xNN` |
-| Escapes | `\r` `\n` `\t` `\0` `\\` `\'`, and `\xNN` for any byte by its two hex digits (`'\xED'` is φ in the VGA font) |
-| Characters | a one-character string like `'w'` is its character code wherever a number is expected; where text goes (a `str`, a `ptr<u8>` parameter, `log`) it's still text |
+| Strings | `'hello'`; `'hasn't'` works without escaping. Any character can be typed as it is (`'café'`, `'日本'`): the string holds it in UTF-8, so it's two to four bytes (see [Text past ASCII](#text-past-ascii)) |
+| Escapes | `\r` `\n` `\t` `\0` `\\` `\'`; `\xNN` for any byte by its two hex digits (`'\xED'` is φ in the VGA font); and, as in C, `\uNNNN` for any character by its number in four hex digits (`'\u00E9'` is é) and `\UNNNNNNNN` in eight (`'\U0001F600'` is 😀) |
+| Characters | a one-character string like `'w'` is its character code wherever a number is expected (`'é'` is 233, and goes in an `int`: it's more than a `chr`, one byte, holds); where text goes (a `str`, a `ptr<u8>` parameter, `log`) it's still text |
 | Constants | `Colors.Black` … `Colors.White` (the 16 VGA colors), and your own `const` |
 
 A quote followed directly by a letter or digit doesn't end a string, which is why
@@ -169,6 +169,47 @@ log word:0 ' ' (word:0 + 1) ' ' (word:0 as int);   # h 105 104
 chr c: 'a';
 c is (c + 1) as chr;            # 'b'
 ```
+
+### Text past ASCII
+
+Text is bytes, in UTF-8, as it is in C: a character of ASCII is one byte, and any other is
+two to four. A string can hold any character, typed as it is or written by its number, and
+`log`, building a `str`, copying, comparing and `has` all work on it unchanged, since they
+only move and compare bytes:
+
+```phi
+str name: 'café';                       # the same as 'caf\u00E9', and as 'caf\xC3\xA9'
+log name ' ' name.len '\n';             # café 5: é is two bytes
+if name has 'é' ...                     # looks for its two bytes
+int e: 'é';                             # 233, the character's number
+```
+
+What counts bytes: `.len` and `.max`, a `str`'s size (`str s: [40];` is 40 bytes of room),
+and `name:i`, which is one byte, a `chr`. So `name:3` is the first byte of é, not é, and
+comparing it with `'é'` is an error (it's never equal). A `chr` or `u8` holds one byte, so
+`chr c: 'é';` is an error too; a whole character's number goes in an `int`. Copying text a
+byte at a time (`copy++ name:i;`) still carries all of it across whole.
+
+Where a program needs whole characters (counting them, taking one at a time, moving a cursor
+by one), `user.utf8` has them:
+
+```phi
+use user.utf8;
+
+str name: 'café';
+log (Utf8.Count: name) '\n';            # 4
+int pos: 0;
+while name:pos is not 0
+    int c: (Utf8.At: name pos);         # 99 97 102 233: each character's number
+    pos is pos + (Utf8.Size: name pos); # on by the bytes it takes
+;;
+name++ (Utf8.Of: 0x1F600);              # a character from its number
+```
+
+Bytes that aren't a character (text from a file or the network may have them) are each taken
+as one character, U+FFFD, so a walk always moves on; `Utf8.Valid` says if a text has any. A
+source file with text past ASCII has to be saved as UTF-8. A name (a variable, a method) is
+still ASCII.
 
 **64-bit numbers.** `i64` and `u64` hold what doesn't fit in 32 bits: sizes of big files,
 money in cents, a product before it's divided. Math with one on either side happens in 64
@@ -3307,6 +3348,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `proc.cores`, `proc.threads` | 32-bit kernels: the other cores (`Cores.Start`, `Run`, `SharePrograms`) and kernel threads (`Threads.Start: method value`, `Wait`, `Done`): see [Several cores](#several-cores-32-bit-kernels) |
 | `gui.app`, `gui.surfaces`, `gui.desktop`, `gui.events`, `gui.widgets`, `gui.menu`, `gui.dialogs` | windows for user programs, and a desktop for them: see [Windows for programs](#windows-for-programs) |
 | `user.cut` | class `Cut` (32-bit kernels and programs): `Into: target value`, as much of `value` as fits, into a `str` |
+| `user.utf8` | class `Utf8` (any program): whole characters in UTF-8 text (see [Text past ASCII](#text-past-ascii)). `Count: text` →, `Valid: text` →, `At: text pos` → (the number of the character at byte `pos`; 0 at the end), `Size: text pos` → (the bytes it takes), `Before: text pos` → (where the character before starts), `Write: buffer code` → (the character with that number, into a buffer of 5 bytes; how many it is), `Of: code` → (the same as a `str`; 32-bit and 64-bit code), `Widen: text wide max` → (as UTF-16, for Windows) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
 | `user.stopwatch` | struct `Stopwatch` (32-bit kernels and programs, and programs on Linux and Windows): how long something took, in real time. `Stopwatch watch;` then `Start` (or carry on), `Stop`, `Restart` (nothing, and running), `Reset` (nothing, and stopped); `Milliseconds` → (an int), `Microseconds` → (a u64), `Seconds` → (an f64), each readable while it runs, and `Ticks` →. Any number run at once. It reads the CPU's counter (class `Clock`: `Count` →, `PerMillisecond` →), whose speed is measured against `OS.GetTicks` the first time, which takes 10 ms once (`call Clock.Measure;` at the start gets it over with) |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
@@ -3396,7 +3438,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed
   (see [memory-map.md](memory-map.md))
-- characters beyond ASCII in strings (a byte above 127 can be written as `\xNN`)
+- text past ASCII is kept and passed on whole everywhere, but not all of it shows or changes case yet: PHI OS's screen fonts have 256 characters, a Windows console shows it only when it's set to UTF-8 (`chcp 65001`), and `Text.Upper`, `Text.Lower` and `EqualIgnoreCase` change ASCII letters only
 - RSA-PSS with SHA-384, and network cards other than the RTL8139 and virtio-net
 - NVMe disks with 4096-byte sectors, and disks above 4 GB in memory (where a 32-bit kernel
   can't reach their registers)

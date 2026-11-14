@@ -502,7 +502,7 @@ namespace Phi.Compiler.Semantics
                 m.Decl.Result = Convert(result, m.ReturnType, "the returned value");
             }
             // [end: 'N'] and [end: name:0] are characters, when each of its returns is one too
-            else if ((result is StringExpr { Value.Length: 1 } || result.Type.IsChar) && ReturnsOnlyCharacters(m))
+            else if ((result is StringExpr { Character: not null } || result.Type.IsChar) && ReturnsOnlyCharacters(m))
             {
                 m.ReturnType = PhiType.Chr;
                 if (result is StringExpr) m.Decl.Result = Convert(result, m.ReturnType, "the returned value");
@@ -561,7 +561,7 @@ namespace Phi.Compiler.Semantics
                                               && (t.IsArray ? t.Element.IsChar : t.IsString || t.Pointee == PhiType.Chr);
             return m.Decl.Body.SelectMany(SyntaxWalker.Nodes).OfType<ReturnStmt>().All(r => r.Value switch
             {
-                StringExpr { Value.Length: 1 } => true,
+                StringExpr { Character: not null } => true,
                 NameExpr n => Lookup(n.Name, scope) is VariableSymbol { Type.IsChar: true },
                 CastExpr { TargetType.Name: "chr" } => true,
                 IndexExpr { Target: NameExpr text } => IsCharacters(text.Name),
@@ -683,8 +683,10 @@ namespace Phi.Compiler.Semantics
             int holds = target.Type.IsInlineText ? target.Type.Room - 1
                 : target is NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false, Capacity: > 0 } v } ? v.Capacity - 1
                 : -1;
+            // (a character past ASCII is more than one byte, and room is in bytes)
+            string size = literal.Value.Any(c => c > 127) ? $"{literal.Value.Length} bytes" : $"{literal.Value.Length} characters";
             if (holds >= 0 && literal.Value.Length > holds)
-                Error(literal.Span, $"this text is {literal.Value.Length} characters, and '{Describe(target)}' holds {holds}; give it more room, or use Cut.Into (use user.cut) if losing the rest is meant");
+                Error(literal.Span, $"this text is {size}, and '{Describe(target)}' holds {holds}; give it more room, or use Cut.Into (use user.cut) if losing the rest is meant");
         }
 
         /// <summary>An array made from a pointer has no place of its own to live, so it only goes to a method that takes an array.</summary>
@@ -1105,7 +1107,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>How a value was written, near enough for a message: a literal in quotes, a name as it is.</summary>
         static string DescribeValue(Expr e) => e switch
         {
-            StringExpr s => $"'{s.Value}'",
+            StringExpr s => $"'{s.Shown}'",
             NumberExpr n => n.Value.ToString(),
             NameExpr n => n.Name,
             _ => "...",
@@ -3999,7 +4001,7 @@ namespace Phi.Compiler.Semantics
             }
 
             // a one-character string like '/' is a number here, as anywhere a number goes
-            if (!result.IsString && value is StringExpr { Value.Length: 1 } && !(result.IsTextPointer && method.Decl.DeclaredResult != null))
+            if (!result.IsString && value is StringExpr { Character: not null } && !(result.IsTextPointer && method.Decl.DeclaredResult != null))
                 return Convert(value, PhiType.Int, "the returned value");
             // a string literal lives as long as the program, so its address can be handed back
             if (result.IsTextPointer && value is StringExpr)
@@ -5413,6 +5415,12 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            // 'é' is two bytes of text, so one byte of a str is never it
+            foreach ((Expr literal, Expr other) in new[] { (b.Left, b.Right), (b.Right, b.Left) })
+                if (b.IsComparison && literal is StringExpr { Value.Length: > 1, Character: int code } wide && other.Type is { IsNumeric: true, ElementSize: 1 })
+                    Error(literal.Span, $"'{wide.Shown}' is {wide.Value.Length} bytes of text (it's past ASCII), and this compares it with {A(other.Type)}, one byte, which is never it; " +
+                                        $"compare a whole character's number (Utf8.At gives it, and '{wide.Shown}' is {code}), or look for the text with has");
+
             // (math on a pointer keeps all of it: only where the answer goes can cut it)
             if (!b.Left.Type.IsPointer && !PointerMath(b.Left)) b.Left = Convert(b.Left, PhiType.Int, "the left side");
             if (!b.Right.Type.IsPointer && !PointerMath(b.Right)) b.Right = Convert(b.Right, PhiType.Int, "the right side");
@@ -5609,8 +5617,8 @@ namespace Phi.Compiler.Semantics
             if (target.IsFloat)
             {
                 if (e.Type.IsFloat || e.Type.IsNumeric && !e.Type.IsPointer || e.Type.IsWide) return e;
-                if (e is StringExpr { Value.Length: 1 } floatChar)
-                    return new NumberExpr { Value = floatChar.Value[0], Span = floatChar.Span, Type = PhiType.Int };
+                if (e is StringExpr { Character: not null } floatChar)
+                    return new NumberExpr { Value = floatChar.Character!.Value, Span = floatChar.Span, Type = PhiType.Int };
                 Error(e.Span, $"{what} needs a number, but this is {A(e.Type)}");
                 return e;
             }
@@ -5624,8 +5632,8 @@ namespace Phi.Compiler.Semantics
             if (target.IsWide)
             {
                 if (e.Type.IsWide || e.Type.IsNumeric) return e;
-                if (e is StringExpr { Value.Length: 1 } wideChar)
-                    return new NumberExpr { Value = wideChar.Value[0], Span = wideChar.Span, Type = PhiType.Int };
+                if (e is StringExpr { Character: not null } wideChar)
+                    return new NumberExpr { Value = wideChar.Character!.Value, Span = wideChar.Span, Type = PhiType.Int };
                 Error(e.Span, $"{what} needs a number, but this is a {e.Type}");
                 return e;
             }
@@ -5673,8 +5681,13 @@ namespace Phi.Compiler.Semantics
                 // an array (or array field) passed where a pointer goes is its address
                 if (target.IsPointer && e.Type.IsArray && e.Type.Kind != TypeKind.Str && e is NameExpr or IndexExpr or MemberExpr)
                     return new AddrExpr { Operand = e, Span = e.Span, Type = PhiType.PointerTo(e.Type.Element) };
-                if (e is StringExpr { Value.Length: 1 } ch)
-                    return new NumberExpr { Value = ch.Value[0], Span = ch.Span, Type = PhiType.Int };
+                if (e is StringExpr { Character: not null } ch)
+                {
+                    // (kept as its low byte, it would be another character, with nothing to say so)
+                    if (ch.Value.Length > 1 && target.ElementSize == 1)
+                        Error(e.Span, $"'{ch.Shown}' is {ch.Value.Length} bytes of text (it's past ASCII), and {what} is {A(target)}, one byte; an int holds its number, {ch.Character}, and a str its text");
+                    return new NumberExpr { Value = ch.Character!.Value, Span = ch.Span, Type = PhiType.Int };
+                }
 
                 Error(e.Span, $"{what} needs a number, but this is a {e.Type}");
                 return e;
@@ -5702,7 +5715,7 @@ namespace Phi.Compiler.Semantics
             {
                 case NumberExpr n: return n.Value;
                 case BoolExpr b: return b.Value ? 1 : 0;
-                case StringExpr { Value.Length: 1 } c when e.Type.IsNumeric: return c.Value[0];
+                case StringExpr { Character: int c } when e.Type.IsNumeric: return c;
                 case NameExpr { Symbol: ConstantSymbol k }: return k.Value;
                 case NameExpr { Symbol: LengthSymbol { Count: int count } }: return count;
                 case MemberExpr { Count: int count }: return count;

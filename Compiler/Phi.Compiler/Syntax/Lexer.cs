@@ -271,12 +271,20 @@ namespace Phi.Compiler.Syntax
             return value > long.MaxValue ? Make(TokenKind.Number, start, value) : Make(TokenKind.Number, start, (long)value);
         }
 
+        /// <summary>A character as the bytes of its UTF-8, one per char.</summary>
+        static void AppendUtf8(StringBuilder sb, Rune rune)
+        {
+            Span<byte> bytes = stackalloc byte[4];
+            int count = rune.EncodeToUtf8(bytes);
+            for (int i = 0; i < count; i++) sb.Append((char)bytes[i]);
+        }
+
         Token ReadString()
         {
             int start = pos;
+            bool notText = false;
             pos++; // opening quote
-            var sb = new StringBuilder();
-            bool beyondAscii = false;
+            var sb = new StringBuilder();   // the string's bytes, one per char: text past ASCII as its UTF-8
 
             while (true)
             {
@@ -309,6 +317,24 @@ namespace Phi.Compiler.Syntax
                             else
                                 diagnostics.Error(file, new Span(pos - 2, 2), "\\x needs two hex digits after it, like '\\x41'");
                             break;
+                        case 'u' or 'U':
+                        {
+                            // any character by its number, as C writes it: '\u00E9' (é), '\U0001F600'
+                            int digits = e == 'u' ? 4 : 8;
+                            if (pos + digits <= text.Length && text.AsSpan(pos, digits).ToArray().All(Uri.IsHexDigit))
+                            {
+                                uint code = System.Convert.ToUInt32(text.Substring(pos, digits), 16);
+                                if (code > 0x10FFFF || code is >= 0xD800 and <= 0xDFFF)
+                                    diagnostics.Error(file, new Span(pos - 2, 2 + digits), $"there's no character {code:X}: they run from 0 to 10FFFF, without D800 to DFFF");
+                                else AppendUtf8(sb, new Rune(code));
+                                pos += digits;
+                            }
+                            else
+                                diagnostics.Error(file, new Span(pos - 2, 2), e == 'u'
+                                    ? "\\u needs four hex digits after it, like '\\u00E9'; a character past FFFF is \\U and eight, like '\\U0001F600'"
+                                    : "\\U needs eight hex digits after it, like '\\U0001F600'; \\u takes four, like '\\u00E9'");
+                            break;
+                        }
                         default:
                             diagnostics.Error(file, new Span(pos - 2, 2), $"unknown escape '\\{e}'");
                             break;
@@ -321,12 +347,23 @@ namespace Phi.Compiler.Syntax
 
                 if (c == '\r' && Peek() == '\n') continue; // keep multi-line strings as \n only
 
-                // a character beyond ASCII would be cut to one wrong byte, with nothing to say so
-                if (c > 127 && !beyondAscii)
+                // a character past ASCII is in the string as the bytes of its UTF-8
+                if (c > 127)
                 {
-                    beyondAscii = true;
-                    diagnostics.Error(file, new Span(pos - 1, char.IsHighSurrogate(c) ? 2 : 1),
-                        "a string can only hold ASCII characters for now, and this isn't one; for a byte above 127, write it as \\xNN");
+                    if (Rune.TryGetRuneAt(text, pos - 1, out Rune rune) && rune.Value != 0xFFFD)
+                    {
+                        AppendUtf8(sb, rune);
+                        pos += rune.Utf16SequenceLength - 1;
+                    }
+                    else
+                    {
+                        // (what a file's bytes that aren't UTF-8 are read as)
+                        if (!notText)
+                            diagnostics.Error(file, new Span(pos - 1, 1),
+                                "this isn't a character: the file has to be saved as UTF-8 for text past ASCII (for the character that stands for one that's missing, write \\uFFFD)");
+                        notText = true;
+                    }
+                    continue;
                 }
                 sb.Append(c);
             }

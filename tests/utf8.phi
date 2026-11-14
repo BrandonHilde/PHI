@@ -1,0 +1,82 @@
+# Text past ASCII: a str holds it as the bytes of its UTF-8, whether it's typed as it is or
+# written by its number (\u and four hex digits, \U and eight), and user.utf8 takes it a
+# character at a time. The same in a 16-bit program, a kernel and a program on Linux or Windows.
+use user.utf8;
+
+phi.Utf8Test:Library
+{
+	# typed, and by number: the same bytes
+	str typed: 'café';
+	str numbered: 'caf\u00E9';
+	str bytes: 'caf\xC3\xA9';
+	debug typed.len ' ' numbered.len ' ' (typed is numbered) ' ' (typed is bytes) '\n';
+	debug typed:3 as int ' ' typed:4 as int '\n';
+	str grin: '\U0001F600';
+	debug grin.len ' ' (grin is '😀') ' ' (Utf8.At: grin 0) '\n';
+
+	# one character where a number goes is its number, however many bytes its text is
+	int e: 'é';
+	int sun: '日';
+	int face: '😀';
+	debug e ' ' sun ' ' face ' ' ('\u00E9' + 0) '\n';
+
+	# a character at a time
+	str mixed: 'aé日😀!';
+	debug mixed.len ' ' (Utf8.Count: mixed) ' ' (Utf8.Valid: mixed) '\n';
+	int pos: 0;
+	while mixed:pos is not 0
+		debug (Utf8.At: mixed pos) ':' (Utf8.Size: mixed pos) ' ';
+		pos is pos + (Utf8.Size: mixed pos);
+	;;
+	debug (Utf8.At: mixed pos) ':' (Utf8.Size: mixed pos) '\n';
+
+	# and back
+	while pos > 0
+		pos is (Utf8.Before: mixed pos);
+		debug pos ' ';
+	;;
+	debug (Utf8.Before: mixed 0) '\n';
+
+	# a character from its number
+	str one: [4];
+	debug (Utf8.Write: one 65) one ' ';
+	debug (Utf8.Write: one 233) one ' ';
+	debug (Utf8.Write: one 0x65E5) one ' ';
+	debug (Utf8.Write: one 0x1F600) one ' ';
+	debug (Utf8.Write: one 0xD800) (one is '\uFFFD') ' ';
+	debug (Utf8.Write: one 0x110000) (one is '\uFFFD') ' ';
+	debug (Utf8.Write: one (-1)) (one is '\uFFFD') '\n';
+
+	# as UTF-16, for Windows: a character past 65535 is two, and text that doesn't fit ends
+	# at a whole character
+	u16 wide[8];
+	debug (Utf8.Widen: 'aé日😀!' addr wide 8) ':';
+	while int w: 0; w < 7; w++;
+		debug ' ' wide:w;
+	;;
+	debug '\n';
+	debug (Utf8.Widen: 'ab😀' addr wide 4) ' ' wide:2 ' ' (Utf8.Widen: 'ab😀' addr wide 5) ' ' wide:4 ' ' (Utf8.Widen: 'abc' addr wide 1) ' ' wide:0 '\n';
+
+	# bytes that aren't characters: each is one character, U+FFFD, and the walk goes on
+	call Walk: 'a\xFFb';                  # a byte no character has
+	call Walk: 'a\x80b';                  # one from inside a character, on its own
+	call Walk: 'a\xC0\x80b';              # 0 written in two bytes
+	call Walk: 'a\xE0\x80\x80b';          # and in three
+	call Walk: 'a\xF0\x82\x82\xACb';      # the euro sign in four
+	call Walk: 'a\xED\xA0\x80b';          # half of a UTF-16 pair
+	call Walk: 'a\xF4\x90\x80\x80b';      # past the last character
+	call Walk: 'a\xE2\x82b';              # cut short by a letter
+	call Walk: 'a\xE2\x82';               # and by the end of the text
+	call Walk: 'a\xF4\x8F\xBF\xBFb';      # the last character there is
+	call Walk: '';
+
+	[Walk: ptr<u8> text: 0;]
+		debug (Utf8.Valid: text) ' ' (Utf8.Count: text) ':';
+		int at_byte: 0;
+		while text:at_byte is not 0
+			debug ' ' (Utf8.At: text at_byte);
+			at_byte is at_byte + (Utf8.Size: text at_byte);
+		;;
+		debug '\n';
+	[end]
+}

@@ -41,23 +41,45 @@ namespace Phi.Compiler.Tests
             Assert.Equal("one\ntwo", t.Value);
         }
 
+        /// <summary>A string's value is its bytes, one per char: text past ASCII as its UTF-8.</summary>
+        static string Bytes(string text) => string.Concat(System.Text.Encoding.UTF8.GetBytes(text).Select(b => (char)b));
+
         [Theory]
-        [InlineData("'héllo'", 2)]
-        [InlineData("'日本'", 1)]            // reported once for a string
-        [InlineData("'ok' '\U0001F600'", 6)]
-        public void AStringBeyondAsciiIsAnError(string text, int column)
+        [InlineData("'héllo'", "héllo")]
+        [InlineData("'日本'", "日本")]
+        [InlineData("'ok 😀'", "ok 😀")]
+        [InlineData("'caf\\u00E9'", "café")]            // by its number, as C writes it
+        [InlineData("'\\u00e9\\u65E5'", "é日")]
+        [InlineData("'\\U0001F600!'", "😀!")]
+        [InlineData("'\\u0041\\U00000042'", "AB")]
+        [InlineData("'\\uFFFD'", "\uFFFD")]              // the character for one that's missing, when it's meant
+        public void AStringPastAsciiIsItsUtf8(string text, string expected)
+        {
+            Token t = Lex(text, out var diagnostics)[0];
+            Assert.Empty(diagnostics.Items);
+            Assert.Equal(Bytes(expected), t.Value);
+        }
+
+        [Theory]
+        [InlineData("'\\u12'", "four hex digits")]
+        [InlineData("'\\u00G9'", "four hex digits")]
+        [InlineData("'\\U1F600'", "eight hex digits")]
+        [InlineData("'\\uD800'", "no character D800")]         // half of a UTF-16 pair
+        [InlineData("'\\U00110000'", "no character 110000")]   // past the last one
+        [InlineData("'a\uFFFDb'", "saved as UTF-8", true)]    // what bytes that aren't UTF-8 are read as
+        public void ACharacterThatIsntOneIsAnError(string text, string message, bool typed = false)
         {
             Lex(text, out var diagnostics);
             Diagnostic error = Assert.Single(diagnostics.Items);
             Assert.Equal(Severity.Error, error.Severity);
-            Assert.Contains("ASCII", error.Message);
-            Assert.Equal(column, error.Span.Start);
+            Assert.Contains(message, error.Message);
         }
 
         [Fact]
         public void BytesAboveAsciiAreWrittenAsEscapes()
         {
-            Assert.Equal("í", Lex("'\\xED'")[0].Value);
+            // one byte, as it is: not the character with that number
+            Assert.Equal("\u00ED", Lex("'\\xED'")[0].Value);
             // and a comment can say anything
             Assert.Equal(TokenKind.Number, Lex("# héllo 日本\n1")[0].Kind);
         }

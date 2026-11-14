@@ -1,0 +1,169 @@
+# Whole characters in text (a str, or a ptr<u8>). Text is bytes, in UTF-8: a character of
+# ASCII is one byte and any other is two to four, so `name.len` and `name:i` count bytes.
+# This is for the places that need characters: counting them, taking one at a time, moving a
+# cursor by one, writing one from its number. A character's number is an int ('é' is 233).
+# Works in any kind of program, but for Of (32-bit and 64-bit code: it returns a str).
+#
+#   use user.utf8;
+#   str name: 'café';
+#   log name.len ' ' (Utf8.Count: name) '\n';     # 5 4
+#   int pos: 0;
+#   while name:pos is not 0
+#       log (Utf8.At: name pos) ' ';              # 99 97 102 233
+#       pos is pos + (Utf8.Size: name pos);
+#   ;;
+#   name++ (Utf8.Of: 0x1F600);                    # a character from its number
+#
+# Bytes that aren't a character (a byte on its own that only goes inside one, a character
+# cut short, one written in more bytes than it needs, a number that's no character) are
+# each taken as one character, U+FFFD (65533), so a walk always moves on and never reads
+# past the end of the text.
+
+phi.Utf8:Library
+{
+	const int MISSING: 0xFFFD;      # the character that stands for bytes that aren't one
+
+	# the number of the character that starts at byte pos; 0 at the end of the text
+	[At: ptr<u8> text: 0; int pos: 0;]
+		int code: (Decode: text pos);
+		if code < 0 return MISSING;
+	[end: code]
+
+	# how many bytes the character at byte pos takes: 1 to 4, and 0 at the end of the text
+	[Size: ptr<u8> text: 0; int pos: 0;]
+		int code: (Decode: text pos);
+		if code is 0 return 0;
+		if code < 0x80 return 1;       # (and bytes that aren't a character: one at a time)
+		if code < 0x800 return 2;
+		if code < 0x10000 return 3;
+	[end: 4]
+
+	# how many characters the text is
+	[Count: ptr<u8> text: 0;]
+		int count: 0;
+		int pos: 0;
+		while text:pos is not 0
+			pos is pos + (Size: text pos);
+			count++;
+		;;
+	[end: count]
+
+	# is all of it characters? (text from a file or the network may not be)
+	[Valid: ptr<u8> text: 0;]
+		int pos: 0;
+		while text:pos is not 0
+			if (Decode: text pos) < 0 return false;
+			pos is pos + (Size: text pos);
+		;;
+	[end: true]
+
+	# where the character before byte pos starts (for a cursor moving back, or backspace);
+	# 0 at the start of the text
+	[Before: ptr<u8> text: 0; int pos: 0;]
+		if pos <= 0 return 0;
+		int start: pos - 1;
+		int back: 0;
+		while start > 0 and (text:start & 0xC0) is 0x80 and back < 3
+			start--;
+			back++;
+		;;
+		# (bytes that aren't one character up to pos are stepped over one at a time)
+		if start + (Size: text start) is not pos return pos - 1;
+	[end: start]
+
+	# write the character with this number at `to`, and a zero after it; returns how many
+	# bytes it is (1 to 4), so `to` needs room for 5. A number that's no character is
+	# written as U+FFFD.
+	[Write: ptr<u8> to: 0; int code: 0;]
+		if code < 0 or code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF)
+			code is MISSING;
+		;;
+		int size: 4;
+		if code < 0x80
+			to:0 is code;
+			size is 1;
+		;;
+		elif code < 0x800
+			to:0 is 0xC0 | (code >> 6);
+			to:1 is 0x80 | (code & 0x3F);
+			size is 2;
+		;;
+		elif code < 0x10000
+			to:0 is 0xE0 | (code >> 12);
+			to:1 is 0x80 | ((code >> 6) & 0x3F);
+			to:2 is 0x80 | (code & 0x3F);
+			size is 3;
+		;;
+		else
+			to:0 is 0xF0 | (code >> 18);
+			to:1 is 0x80 | ((code >> 12) & 0x3F);
+			to:2 is 0x80 | ((code >> 6) & 0x3F);
+			to:3 is 0x80 | (code & 0x3F);
+		;;
+		to:size is 0;
+	[end: size]
+
+	# the text as UTF-16, which Windows takes: 16-bit numbers, a character past 65535 as two
+	# of them, and a 0 at the end. `wide` has room for max of them, the 0 counted; returns
+	# how many were written before the 0 (text that doesn't fit ends at a whole character).
+	[Widen: ptr<u8> text: 0; ptr<u16> wide: 0; int max: 0;]
+		int pos: 0;
+		int count: 0;
+		bln fits: max > 0;
+		while fits and text:pos is not 0
+			int code: (At: text pos);
+			if code < 0x10000 and count + 1 < max
+				wide:count is code;
+				count++;
+			;;
+			elif code >= 0x10000 and count + 2 < max
+				wide:count is 0xD800 + ((code - 0x10000) >> 10);
+				wide:(count + 1) is 0xDC00 + ((code - 0x10000) & 0x3FF);
+				count is count + 2;
+			;;
+			else
+				fits is false;
+			;;
+			pos is pos + (Size: text pos);
+		;;
+		if max > 0
+			wide:count is 0;
+		;;
+	[end: count]
+
+	# the character with this number, as text: s++ (Utf8.Of: 233);
+	[Of: int code: 0;]
+		str one: [4];
+		call Write: one code;
+	[end: one]
+
+	# the number of the character at byte pos, 0 at the end of the text, or -1 where the
+	# bytes aren't a character
+	[Decode: ptr<u8> text: 0; int pos: 0;]
+		int first: text:pos;
+		if first < 0x80 return first;
+		int size: 0;
+		if first >= 0xC2 and first < 0xE0
+			size is 2;
+		;;
+		elif first >= 0xE0 and first < 0xF0
+			size is 3;
+		;;
+		elif first >= 0xF0 and first < 0xF5
+			size is 4;
+		;;
+		else
+			return -1;                 # a byte from inside a character, or one no character starts with
+		;;
+		int code: first & (0xFF >> (size + 1));
+		while int i: 1; i < size; i++;
+			int next: text:(pos + i);
+			if (next & 0xC0) is not 0x80 return -1;    # cut short (the text's ending zero stops here too)
+			code is (code << 6) | (next & 0x3F);
+		;;
+		# written in more bytes than it needs, half of a UTF-16 pair, or past the last character
+		if size is 3 and code < 0x800 return -1;
+		if size is 4 and code < 0x10000 return -1;
+		if code > 0x10FFFF or (code >= 0xD800 and code <= 0xDFFF) return -1;
+	[end: code]
+}

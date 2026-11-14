@@ -1,0 +1,7 @@
+'é' is 2 bytes of text (it's past ASCII), and 'c' is a chr, one byte; an int holds its number, 233, and a str its text
+'日' is 3 bytes of text (it's past ASCII), and 'b' is a u8, one byte; an int holds its number, 26085, and a str its text
+'é' is 2 bytes of text (it's past ASCII), and this compares it with a chr, one byte, which is never it
+\u needs four hex digits after it, like '\u00E9'
+there's no character D800: they run from 0 to 10FFFF, without D800 to DFFF
+there's no character 110000
+\U needs eight hex digits after it, like '\U0001F600'

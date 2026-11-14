@@ -1,0 +1,43 @@
+# Text past ASCII in a program: logged as it is, built into a str that grows, and a
+# character made from its number (Utf8.Of).
+use user.utf8;
+use user.text;
+
+phi.Utf8Program:Program
+{
+	log 'naïve café, 日本語, Ελληνικά, 😀\n';
+	str built: '';
+	built++ (Utf8.Of: 233) (Utf8.Of: 0x65E5) (Utf8.Of: 0x1F600) (Utf8.Of: 65);
+	log built ' ' built.len ' ' (Utf8.Count: built) '\n';
+
+	# upper case, a character at a time: what isn't ASCII goes across as it is
+	str shout: '';
+	str said: 'où est le café?';
+	int pos: 0;
+	while said:pos is not 0
+		int c: (Utf8.At: said pos);
+		if c < 128
+			shout++ (Text.Upper: c) as chr;
+		;;
+		else
+			shout++ (Utf8.Of: c);
+		;;
+		pos is pos + (Utf8.Size: said pos);
+	;;
+	log shout '\n';
+
+	# a byte at a time carries any text across whole, as it always has
+	str copy: '';
+	while int i: 0; i < said.len; i++;
+		copy++ said:i;
+	;;
+	log copy ' ' (copy is said) '\n';
+
+	# text as a number, in a table and as a choice
+	int vowels: 'é' 'è' 'ê';
+	log vowels:0 ' ' vowels:1 ' ' vowels:2 ' ' (vowels has (Utf8.At: said 14)) '\n';
+
+	# has looks for the text, bytes and all
+	log (said has 'é') ' ' (said has 'è') ' ' (said has 'fé') '\n';
+	exit 0;
+}

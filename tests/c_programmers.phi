@@ -38,6 +38,9 @@ phi.CProgrammers:Library
 	copied is p;
 	copied.x is 9;
 	log p.x ' ' copied.x '\n';
+	str cafe: 'caf\u00E9';
+	int e: 'é';
+	log cafe.len ' ' (cafe is 'café') ' ' e '\n';
 	new Point moved;
 	moved takes copied;
 	log moved.x ' ' (copied is empty) '\n';

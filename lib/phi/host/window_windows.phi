@@ -10,6 +10,7 @@
 # Present lets them through too).
 
 use gui.events;
+use user.utf8;
 use 'kernel32.dll' as Kernel32;
 use 'user32.dll' as User32;
 use 'gdi32.dll' as Gdi32;
@@ -272,12 +273,7 @@ phi.HostWindow:Windows
 
 	# OS.SetWindowTitle: what the window is called
 	[SetWindowTitle: ptr<u8> text: 0;]
-		int i: 0;
-		while i < 255 and text:i is not 0
-			title:i is text:i;
-			i++;
-		;;
-		title:i is 0;
+		call Utf8.Widen: text addr title 256;
 		if window is not 0
 			call User32.SetWindowTextW: window addr title;
 		;;

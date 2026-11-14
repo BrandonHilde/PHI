@@ -1,0 +1,10 @@
+phi.Utf8Errors:Kernel
+{
+	str name: 'café';
+	chr c: 'é';
+	u8 b: '日';
+	if name:3 is 'é'
+		debug 'never\n';
+	;;
+	debug '\u12' '\uD800' '\U00110000' '\U1F600';
+}

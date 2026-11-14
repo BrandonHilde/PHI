@@ -3324,11 +3324,31 @@ Waiting, each for something:
 - **A real cloud machine, and 64-bit kernels:** no boot on one until there's a release, and
   kernels stay 32-bit until that needs them.
 - **`phi fuzz` and optimising:** in the phase before a release, in an environment of their own.
-- **Characters beyond ASCII:** waiting until the core language is solid (the user's choice,
-  2026-11-05); English text in ASCII for now. Worked out so far: `str` stays bytes, with UTF-8
-  for other text, and `.len` and `s:i` keep counting bytes, so nearly all of it can be PHI code
-  (a `text.utf8` library to walk characters, a larger font loaded from a file). The one compiler
-  part is string literals, where anything beyond ASCII is an error for now.
+- **Showing characters beyond ASCII:** text holds them now (below), but PHI OS's fonts have
+  256 characters (a larger font loaded from a file is the next part), a Windows console shows
+  them only when it's set to UTF-8 (the runtime doesn't set it, and reads its arguments with
+  `GetCommandLineA`), a key typed on Windows past 255 is dropped, and `Text.Upper` and
+  `Text.Lower` change ASCII letters only. None of it has been run on Windows.
+
+**Text past ASCII (2026-11-14).** As C has it, by the user's choice, with C compatibility in
+mind: a `str` is bytes in UTF-8 and a `chr` is one byte, so nothing is laid out differently
+and a library's version stays 1.0. A 4-byte `chr` was looked at and dropped: about 45 loops in
+the libraries, PHI OS and the code library copy text a byte at a time with `out++ p:i as chr`,
+which carries UTF-8 across whole today and would have written each byte above 127 as a
+character of its own. A whole character is an `int`; there's no type for one (one can be added
+without changing any of this, if `log (Utf8.Of: c)` proves too much to write).
+
+- A string literal holds any character, typed as it is or by its number as C writes it
+  (`\u00E9`, `\U0001F600`), as its UTF-8. `\xNN` is still one byte as it is. A file that
+  isn't UTF-8, half of a UTF-16 pair and a number past 10FFFF are errors.
+- One character where a number goes is its number (`int e: 'é';` is 233). Into a `chr` or a
+  `u8`, or compared with one (`name:3 is 'é'`), it's an error: it would be cut to another
+  character, or never equal, with nothing to say so.
+- `user.utf8` (`Utf8.Count`, `Valid`, `At`, `Size`, `Before`, `Write`, `Of`, `Widen`), in PHI,
+  for any kind of program. Bytes that aren't a character are each U+FFFD.
+- Windows paths and window titles are made UTF-16 by `Utf8.Widen` (each byte was taken for a
+  character). Built for both Windows targets, not run.
+- Tests `utf8` (16-bit, kernel, Linux in 32 and 64 bits), `utf8_program`, `utf8_errors`.
 
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
