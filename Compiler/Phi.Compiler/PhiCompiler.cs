@@ -287,8 +287,37 @@ namespace Phi.Compiler
             result.Units.Add(asm);
             CompiledTarget target = asm.Library.Target;
             target.Interface.AddRange(InterfaceWriter.Write(syntax, own, uses));
-            target.Modules.AddRange(loaded.Where(f => f.Path.StartsWith(StandardLibrary)).Select(f => f.Path[StandardLibrary.Length..^".phi".Length].Replace('/', '.')));
+            foreach (SourceFile module in loaded.Where(f => f.Path.StartsWith(StandardLibrary)))
+            {
+                target.Modules.Add(module.Path[StandardLibrary.Length..^".phi".Length].Replace('/', '.'));
+                target.ModuleMarks.Add(ModuleMark(module));
+            }
             return result;
+        }
+
+        /// <summary>
+        /// What a standard library module is, for telling whether it has changed since a library
+        /// was built against it: its words, numbers and signs in order, and which of them start
+        /// a line. Comments and spacing aren't in it, so tidying a module leaves its libraries
+        /// good; any other change to it means they're built again, though a change inside a
+        /// method's code alone would often have done no harm.
+        /// </summary>
+        public static string ModuleMark(SourceFile module)
+        {
+            var text = new System.Text.StringBuilder();
+            foreach (Token token in new Lexer(module, new DiagnosticBag()).Lex())
+                text.Append(token.StartsLine ? '\n' : ' ').Append((int)token.Kind).Append(':').Append(token.Text);
+            byte[] hash = System.Security.Cryptography.SHA256.HashData(System.Text.Encoding.UTF8.GetBytes(text.ToString()));
+            return Convert.ToHexString(hash, 0, 8);
+        }
+
+        /// <summary>The first of a compiled library's modules that isn't as it was when the library was built, or null.</summary>
+        static string? ChangedModule(CompiledTarget compiled, SourceFile main, IReadOnlyDictionary<string, string>? open)
+        {
+            for (int i = 0; i < compiled.Modules.Count && i < compiled.ModuleMarks.Count; i++)
+                if (Resolve(compiled.Modules[i], main, main, null, open) is SourceFile module && ModuleMark(module) != compiled.ModuleMarks[i])
+                    return compiled.Modules[i];
+            return null;
         }
 
         /// <summary>
@@ -386,6 +415,12 @@ namespace Phi.Compiler
                     if (seen.Add(Key(used)))
                     {
                         usedBy[Key(used)] = (file, use);
+                        if (used.Compiled != null && ChangedModule(used.Compiled, main, open) is string changed)
+                        {
+                            diagnostics.Error(file, use.Span, $"{Path.GetFileName(used.Path)} was built with another {changed} (a module of the standard library, which has changed since): " +
+                                                              "build it again from its source (phi build NAME.phi --library)");
+                            continue;
+                        }
                         if (used.Compiled != null) LoadCompiled(used, into);
                         else Load(used, into);
                     }

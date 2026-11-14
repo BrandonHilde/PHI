@@ -1835,6 +1835,17 @@ and every program wrapped it or wrote its own.
   (2026-11-13; `bench/strings`, new, took 38 s where C took 0.33). `phi_strlen` goes by
   sixteen bytes in 64-bit code (SSE2) and by four in 32-bit, and an append goes on from
   the end it measured: 1.5 s and 5.8 s. What's left is the measuring itself.
+- [x] A compiled library loads with any build of `phi` that lays things out and calls code
+  the same way (2026-11-13). It carried the id of the compiler's own build, so every build
+  of the compiler, whatever it changed, meant building every library again. It carries a
+  number now, `CompiledLibrary.AbiVersion`, which is raised by hand when a layout or a
+  convention between pieces of code changes (the list is where the number is), and for each
+  standard library module its code uses, what the module's words were (`PhiCompiler.
+  ModuleMark`: comments and spacing don't count). A module that has changed is an error at
+  the `use`, naming it. `LibraryLayoutTests` fails when a struct, a str or an array is laid
+  out another way and the number is the same. Still by hand: a change to how code is
+  called, or to what a runtime routine keeps, which no test sees. And a change inside a
+  module's method means building again, though the library would often still be right.
 - [ ] A `str` that grows could remember its length, and the rest of that would go. What
   stands in the way: a `str` can be written through a pointer (`addr s`, a `ptr<u8>`
   parameter), and a zero written into the middle that way makes it shorter with nothing

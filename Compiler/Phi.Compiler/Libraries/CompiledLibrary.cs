@@ -43,6 +43,14 @@ namespace Phi.Compiler.Libraries
         /// <summary>The standard library's modules its code uses (the final build compiles one copy of each).</summary>
         public List<string> Modules { get; } = new();
 
+        /// <summary>
+        /// For each of <see cref="Modules"/>, in the same order: what that module's source was
+        /// when the library was built (PhiCompiler.ModuleMark). A program compiles its own copy
+        /// of the module, which the library's code calls and whose structs it reads, so a
+        /// library is only used with the module it was built against.
+        /// </summary>
+        public List<string> ModuleMarks { get; } = new();
+
         public List<string> RuntimeSymbols { get; } = new();
 
         /// <summary>The standard library's assembly blocks its code uses, as asm.Name or x64.Name.</summary>
@@ -107,12 +115,26 @@ namespace Phi.Compiler.Libraries
         static readonly byte[] Magic = Encoding.ASCII.GetBytes("PHILIB\n");
 
         /// <summary>
-        /// Which compiler built it. Until a release the conventions between compiled code can
-        /// change with any build of the compiler or its standard library, whose copy of the
-        /// modules a library uses is the one that's compiled in. Identical builds of the compiler
-        /// get the same value.
+        /// What a library's machine code takes for granted of the code around it, as a number:
+        /// a library loads with any build of the compiler that has the same one. Raise it with
+        /// any change that would make a library built before go wrong in a program built after:
+        ///
+        /// - how something is laid out: a str and its room, an array without a size (where its
+        ///   elements are, how many, its room), an object and its type table, a struct's fields
+        ///   (LibraryLayoutTests fails when one of these moves and this number hasn't);
+        /// - how code is called: where a method's arguments and result go, which registers a
+        ///   method or a runtime routine (lib/x86_*) keeps, what a routine made once for a whole
+        ///   program takes and gives (an object's clone, free, set and equal, an array's);
+        /// - a runtime routine a library may call being renamed or taken away;
+        /// - what this file holds, or the order it's in.
+        ///
+        /// Not this number's business: the standard library's modules, which each library
+        /// records for itself (CompiledTarget.ModuleMarks), and anything else in the compiler.
         /// </summary>
-        public static string CompilerVersion => typeof(CompiledLibrary).Assembly.ManifestModule.ModuleVersionId.ToString();
+        public const int AbiVersion = 1;
+
+        /// <summary>The file's first value after its name: which <see cref="AbiVersion"/> its code is for.</summary>
+        static string Header => $"abi {AbiVersion}";
 
         public string Name { get; init; } = "";
         public Dictionary<string, CompiledTarget> Targets { get; } = new();
@@ -122,7 +144,7 @@ namespace Phi.Compiler.Libraries
             using var stream = new MemoryStream();
             using var w = new BinaryWriter(stream, Encoding.UTF8);
             w.Write(Magic);
-            w.Write(CompilerVersion);
+            w.Write(Header);
             w.Write(Name);
             w.Write(Targets.Count);
             foreach (var (key, t) in Targets)
@@ -130,7 +152,7 @@ namespace Phi.Compiler.Libraries
                 w.Write(key);
                 w.Write(t.Interface.Count);
                 foreach (InterfaceFile f in t.Interface) { w.Write(f.Name); w.Write(f.Text); }
-                foreach (List<string> list in new[] { t.Modules, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots })
+                foreach (List<string> list in new[] { t.Modules, t.ModuleMarks, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots })
                 {
                     w.Write(list.Count);
                     foreach (string s in list) w.Write(s);
@@ -173,8 +195,8 @@ namespace Phi.Compiler.Libraries
             try
             {
                 using var r = new BinaryReader(new MemoryStream(bytes, Magic.Length, bytes.Length - Magic.Length), Encoding.UTF8);
-                if (r.ReadString() != CompilerVersion)
-                    throw new LibraryFileException($"{shown} was built by another version of phi: build it again from its source (phi build NAME.phi --library)");
+                if (r.ReadString() != Header)
+                    throw new LibraryFileException($"{shown} was built by a version of phi whose libraries this one can't use: build it again from its source (phi build NAME.phi --library)");
                 var library = new CompiledLibrary { Name = r.ReadString() };
                 int targets = r.ReadInt32();
                 for (int i = 0; i < targets; i++)
@@ -183,7 +205,7 @@ namespace Phi.Compiler.Libraries
                     var t = new CompiledTarget { Name = CompiledTarget.LabelName(library.Name), Path = path };
                     int files = r.ReadInt32();
                     for (int f = 0; f < files; f++) t.Interface.Add(new InterfaceFile(r.ReadString(), r.ReadString()));
-                    foreach (List<string> list in new[] { t.Modules, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots })
+                    foreach (List<string> list in new[] { t.Modules, t.ModuleMarks, t.RuntimeSymbols, t.RawBlocks, t.OutsideFunctions, t.TypeTables, t.InterfaceSlots })
                     {
                         int count = r.ReadInt32();
                         for (int s = 0; s < count; s++) list.Add(r.ReadString());

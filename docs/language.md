@@ -3261,9 +3261,18 @@ The library's classes run together, after those of what it uses, where its `use`
 **A program only gets what it reaches.** Methods that nothing calls are left out. The library's
 class variables and text always go in, and so does its classes' own code.
 
-**Rebuild it with PHI.** A library has to be built by the same build of `phi` that uses it, so
-keep its source: another one is an error saying to build it again. (The conventions between
-compiled code can change until there's a release.)
+**When it has to be built again.** A library holds finished code, written for how things are
+laid out and called. It says which version of those it was built for, and what each module of
+the standard library it uses was at the time. `phi` uses it while both still hold, and
+otherwise says to build it again and why, so keep its source:
+
+- the version changed: a `str`, an array or an object is laid out another way, or code is
+  called another way (rare, and said in the release's notes);
+- a standard library module it uses has changed, other than in its comments or spacing. The
+  error names the module.
+
+Any other change to `phi` leaves a library good. (Until there's a release the version can
+still change often.)
 
 **Not there:** a program can't call a library's `asm.` blocks directly, only its methods. Two
 libraries, or a library and a program, can't both have a class, struct or enum of the same name:
