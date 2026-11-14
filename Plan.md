@@ -1751,6 +1751,17 @@ and every program wrapped it or wrote its own.
   a table of places found by the key's hash, as data.keyed's is. `new Map<str int>
   counts;`, `Map<u32 Player>`, `while each k in counts.keys`. Test `generic_map`.
   - A struct or a pointer as a key has no hash yet.
+- [x] `List<Item>` in data.list (2026-11-14): an array that grows (`items`, the program's
+  to index and walk) with `Add`, `Insert`, `RemoveAt`, `Remove`, `Find`, `Has`, `Count`,
+  `Clear`, `Reverse`, `First`, `Last`, `Pop`, `Largest`, `Smallest`, `Sum` and `Sort` (a heap
+  sort). It's the answer to a call always naming its types: `(Lists.Largest<int>: scores)`
+  on a plain array is `(scores.Largest)` on a `List<int>`, the type said once where the
+  list is made (the user's choice over calling a class's method on an array, which would be
+  a second way to write one call and wouldn't say which class's). The methods that hand a
+  value back or compare aren't for a `List<Player>`, and are left out of it unless called.
+  It's a struct beside memory.list's `List` class (a kernel's u32 list behind a pointer),
+  as `Map<Key Value>` is beside `Map`. Test `generic_list` (kernel, Linux in 32 and 64
+  bits).
   - What it costs, in `bench_text` (a 32-bit kernel, instructions run): finding 1000
     names in a `Map<str int>` is 312,000, against 189,000 for the way it was done before,
     each name hashed by hand into the u32 map (which finds a hash, not the name); adding

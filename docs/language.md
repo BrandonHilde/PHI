@@ -1266,6 +1266,12 @@ both.first is 310;
   method nobody uses isn't found until someone does, beyond its syntax.
 - **`data.map`'s `Map<Key Value>` is one**, with `data.hash`'s `Hash.Of: key` to find a
   key's place whatever kind of key it is (see [the library's data modules](#memory-32-bit-kernels)).
+- **`data.list`'s `List<Item>` is another:** an array that grows, with the methods a
+  program would otherwise write for it. The type is said once, where the list is made, so
+  a call names none: `new List<int> scores;`, then `(scores.Largest)`, `call scores.Sort;`.
+  A class's method that takes types does the same for a plain array, and each call names
+  the type (`(Lists.Largest<int>: scores)`); values that are kept and worked on are better
+  off in a list.
 - **In a compiled library** a struct that takes types is kept whole, code and all: a
   program that uses the library makes its own structs from it (`Crate<u8>`, though the
   library only ever made a `Crate<int>`), and their code is the program's.
@@ -1708,12 +1714,13 @@ The pieces can also be used directly:
 | `memory.list` | `List` | a growable list of u32 values: `New` →, `Add: list value`, `Get: list index` →, `Set: list index value`, `Delete: list`; the list's `count` and `capacity` |
 | `memory.pool` | `Pool` | many objects of one size, handed out and taken back without searching: `New: size per_chunk` →, `Alloc: pool` → (zeroed), `Free: pool object`, `Delete: pool` (all of them at once); the pool's `used` and `capacity`. Freeing twice, or into the wrong pool, stops the program |
 | `data.map` | `Map<Key Value>` (a struct that takes types) | any key (a number, a `chr`, an enum, an `i64`, text) to any value (a number, text, a struct): `new Map<str int> counts;`, then `Set: key value`, `Get: key otherwise` → (a copy, for a struct value: to change the one the map holds use `Find` and `values`), `Find: key` → (where it is in `keys` and `values`, or -1), `Has: key` →, `Remove: key` →, `Count` →, `Clear`; `while each k in counts.keys` walks the keys in the order they were added |
+| `data.list` | `List<Item>` (a struct that takes types) | values of one type in order (numbers, text, structs): `new List<int> scores;`, then `Add: item`, `Insert: place item`, `RemoveAt: place`, `Remove: item` → (the first equal one; false if none), `Find: item` → (its place, or -1), `Has: item` →, `Count` →, `Clear`, `Reverse`; for values handed back (not structs: `scores.items:0` reaches one) `First` →, `Last` →, `Pop` → (the last, taken off); for what compares and adds `Largest` →, `Smallest` →, `Sum` → (as an Item), `Sort` (smallest first, a heap sort). The values are the array `items`: `while each x in scores.items`, `scores.items:2`. A method that doesn't suit a list's type is left out unless it's called |
 | `data.hash` | `Hash` | `Of: value` →, a u32 from a number, a `chr`, an enum, an `i64` or `u64`, or text (by what it says): the compiler picks `OfNumber`, `OfWide` or `OfText` by the value's type, so a struct that takes types can hash a key of any of them |
 | `data.map` | `Map` | (the older way) u32 keys to u32 values (an ID to an index or a pointer): `New` →, `Set: map key value`, `Get: map key otherwise` →, `Has: map key` →, `Remove: map key` →, `Next: map after` → (walks every key: `KeyAt`, `ValueAt`), `Clear`, `Delete`; the map's `count` |
 | `data.keyed` | `KeyedMap` (a struct) | objects of any struct that has `interface.Keyed` (`[Key]`, a u32), found by key: `Add: thing` → (a copy; false if the key is taken), `Find: key` → (where it is in `items`, or -1), `Has: key` →, `Remove: key` →, `Clear`; `items` holds them, so `if map.items:i is Player p` gets one back |
 | `data.queue` | `Queue` | records of one size, oldest out first: `New: size capacity` →, `Push: queue record` → (false when full), `Pop: queue into` → (false when empty), `Front: queue` → (the oldest, where it is), `Drop: queue`, `Clear`, `Delete`; the queue's `count` |
 
-`memory.pool`, `data.map`, `data.hash`, `data.keyed` and `data.queue` work in user programs too, on the program's
+`memory.pool`, `data.map`, `data.list`, `data.hash`, `data.keyed` and `data.queue` work in user programs too, on the program's
 heap. A server keeps its players like this:
 
 ```phi
@@ -3475,7 +3482,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
 | `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
-| `memory.pool`, `data.map`, `data.hash`, `data.keyed`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
+| `memory.pool`, `data.map`, `data.list`, `data.hash`, `data.keyed`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk, `Present` →, `Sectors` → |
 | `drivers.virtio_blk`, `drivers.nvme` | classes `VirtioBlk` and `Nvme` (32-bit kernels): a virtio-blk disk and an NVMe one (any maker's: found by its PCI class), with `Start` →, the same `Read` and `Write` as `Ata`, and `sectors`; both poll, and their sectors go through the driver's own buffer, so the caller's can be anywhere. An NVMe disk's sectors must be 512 bytes |
 | `drivers.block` | class `Block` (32-bit kernels): whichever disk the machine has (virtio-blk, then NVMe, then IDE), as numbered sectors from the start of the disk: `Start` →, `Read: sector count buffer` →, `Write` →, `Sectors` →, `kind` (`Block.ATA`, `Block.VIRTIO` or `Block.NVME`). `phi run` and `phi test` give a machine an IDE disk, or another kind with `--disk virtio` or `--disk nvme` |

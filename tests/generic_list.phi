@@ -1,0 +1,120 @@
+# runs only in 32 and 64 bits: arrays that grow
+# data.list's List<Item>: an array that grows, with the methods a program would otherwise
+# write for it. The type is said once, where the list is made.
+use data.list;
+
+struct.Player
+{
+	int id;
+	int score;
+}
+
+phi.GenericList:Library
+{
+	new List<int> scores;
+	call scores.Add: 3;
+	call scores.Add: 9;
+	call scores.Add: 4;
+	debug (scores.Largest) ' ' (scores.Smallest) ' ' (scores.Sum) ' ' (scores.Count) '\n';
+	debug (scores.First) ' ' (scores.Last) ' ' (scores.Has: 9) ' ' (scores.Has: 5) ' ' (scores.Find: 4) ' ' (scores.Find: 5) '\n';
+
+	call scores.Sort;
+	call Show: scores;
+	call scores.Insert: 1 7;
+	call scores.Insert: 0 -2;
+	call scores.Insert: (scores.Count) 100;
+	call Show: scores;
+	call scores.RemoveAt: 0;
+	debug (scores.Remove: 4) ' ' (scores.Remove: 4) ' ';
+	call Show: scores;
+	debug (scores.Pop) ' ';
+	call scores.Reverse;
+	call Show: scores;
+	scores.items:0 is 12;
+	call Show: scores;
+	call scores.Clear;
+	debug (scores.Count) '\n';
+
+	# many, in an order that isn't one
+	new List<u32> many;
+	u32 seed: 12345;
+	while int i: 0; i < 2000; i++;
+		seed is seed * 1103515245 + 12345;
+		call many.Add: (seed >> 8) % 1000;
+	;;
+	call many.Sort;
+	int wrong: 0;
+	while int i: 1; i < many.items.len; i++;
+		if many.items:(i - 1) > many.items:i
+			wrong++;
+		;;
+	;;
+	debug (many.Count) ' ' wrong ' ' (many.First) ' ' (many.Last) ' ' ((many.Largest) is (many.Last)) '\n';
+
+	# other numbers
+	new List<u8> bytes;
+	call bytes.Add: 200;
+	call bytes.Add: 17;
+	call bytes.Add: 250;
+	call bytes.Sort;
+	debug (bytes.First) ' ' (bytes.Largest) ' ' (bytes.Sum) '\n';
+
+	new List<f64> readings;
+	call readings.Add: 1.5;
+	call readings.Add: 0.25;
+	call readings.Add: 7.75;
+	call readings.Sort;
+	debug (readings.First) ' ' (readings.Last) ' ' (readings.Sum) ' ' (readings.Has: 0.25) '\n';
+
+	new List<i64> far;
+	call far.Add: 5000000000;
+	call far.Add: -3;
+	debug (far.Largest) ' ' (far.Sum) '\n';
+
+	# text
+	new List<str> names;
+	call names.Add: 'pear';
+	call names.Add: 'apple';
+	call names.Add: 'fig';
+	debug (names.Find: 'apple') ' ' (names.Has: 'plum') ' ' (names.Last) '\n';
+	call names.Insert: 0 'kiwi';
+	call names.Remove: 'pear';
+	while each name in names.items
+		debug name ' ';
+	;;
+	debug (names.Count) '\n';
+
+	# a struct: a copy of each is kept; the methods that hand a value back or compare
+	# aren't for it, and aren't in the program
+	new List<Player> team;
+	new Player ann;
+	ann.id is 1;
+	ann.score is 40;
+	call team.Add: ann;
+	ann.id is 2;
+	ann.score is 55;
+	call team.Add: ann;
+	ann.id is 3;
+	call team.Insert: 0 ann;
+	team.items:1.score++ 10;
+	while each p in team.items
+		debug p.id ':' p.score ' ';
+	;;
+	call team.RemoveAt: 1;
+	debug (team.Count) ' ' (team.Find: ann) ' ' team.items:1.id '\n';
+
+	# a list copied is another list
+	new List<int> first;
+	call first.Add: 1;
+	new List<int> second;
+	second is first;
+	call second.Add: 2;
+	debug (first.Count) ' ' (second.Count) '\n';
+
+	[Show: List<int> list;]
+		while each x in list.items
+			debug x ' ';
+		;;
+		debug '\n';
+	[end]
+}

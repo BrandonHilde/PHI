@@ -1,0 +1,178 @@
+# Lists: values of one type, in order, as many as are added.
+#
+# List<Item> is an array that grows with the methods a program would otherwise write for
+# it (32-bit kernels and programs). The type is said once, where the list is made, and no
+# call says it again:
+#
+#   use data.list;
+#   new List<int> scores;
+#   call scores.Add: 3;
+#   call scores.Add: 9;
+#   call scores.Add: 4;
+#   log (scores.Largest) ' ' (scores.Sum) ' ' (scores.Count) '\n';   # 9 16 3
+#   call scores.Sort;                           # 3 4 9
+#   call scores.Insert: 1 7;                    # 3 7 4 9: at place 1, the rest move along
+#   call scores.RemoveAt: 0;                    # 7 4 9
+#   bln here: (scores.Has: 4);
+#   int place: (scores.Find: 9);                # where it is, or -1
+#   call scores.Remove: 4;                      # the first 4; false if there's none
+#   int last: (scores.Pop);                     # the last one, taken off
+#
+#   while each score in scores.items            # every one, in order
+#       log score '\n';
+#   ;;
+#   scores.items:0 is 12;                       # one by its place, checked as any index is
+#
+#   new List<str> names;                        # text, and anything else an array holds
+#   new List<Player> team;                      # a struct: Add keeps a copy
+#
+# The values are the array items, which is the program's to read, index and walk; the
+# methods are for what takes more than a line. Not every method suits every type: Largest,
+# Smallest, Sort and Sum are for what can be compared and added (numbers; text compares
+# too), and First, Last and Pop hand a value back, which a struct is given another way
+# (team.items:0). A method that doesn't suit a list's type is left out of the program
+# unless something calls it, which is then an error at that line of this file, saying which
+# list it was for. A List is copied, compared and freed whole, as any struct with an array
+# that grows is.
+
+struct.List<Item>
+{
+	Item items[];
+
+	[Add: Item item;]
+		items++ item;
+	[end]
+
+	[Count]
+	[end: items.len]
+
+	[Clear]
+		items.len is 0;
+	[end]
+
+	# item goes in at place, and what was there and after moves along; place is from 0 to
+	# Count (which is Add)
+	[Insert: int place; Item item;]
+		items++ item;
+		int i: items.len - 1;
+		while i > place
+			items:i is items:(i - 1);
+			i--;
+		;;
+		items:place is item;
+	[end]
+
+	# the one at place is taken out, and those after it move back
+	[RemoveAt: int place;]
+		int last: items.len - 1;
+		while int i: place; i < last; i++;
+			items:i is items:(i + 1);
+		;;
+		items.len is last;
+	[end]
+
+	# where the first one equal to item is, or -1
+	[Find: Item item;]
+		while int i: 0; i < items.len; i++;
+			if items:i is item return i;
+		;;
+	[end: -1]
+
+	[Has: Item item;]
+	[end: (Find: item) >= 0]
+
+	# the first one equal to item is taken out; false if there's none
+	[Remove: Item item;]
+		int place: (Find: item);
+		if place < 0 return false;
+		call RemoveAt: place;
+	[end: true]
+
+	# the other way round
+	[Reverse]
+		int low: 0;
+		int high: items.len - 1;
+		while low < high
+			call Swap: low high;
+			low++;
+			high--;
+		;;
+	[end]
+
+	# ---- for a value that's handed back (a number, text): a list with none is an error
+
+	[First]
+	[end: items:0]
+
+	[Last]
+	[end: items:(items.len - 1)]
+
+	# the last one, taken off
+	[Pop]
+		Item last: items:(items.len - 1);
+		items.len is items.len - 1;
+	[end: last]
+
+	# ---- for what can be compared and added
+
+	[Largest]
+		Item best: items:0;
+		while each x in items
+			if x > best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	[Smallest]
+		Item best: items:0;
+		while each x in items
+			if x < best
+				best is x;
+			;;
+		;;
+	[end: best]
+
+	# all of them added up, as an Item (a List<u8>'s sum is a u8: for more room, add them
+	# up in a loop into something wider)
+	[Sum]
+		Item total: 0;
+		while each x in items
+			total is total + x;
+		;;
+	[end: total]
+
+	# smallest first. A heap sort: the time grows as the count times its logarithm whatever
+	# order they start in, and nothing is kept beside the list
+	[Sort]
+		int count: items.len;
+		while int start: count / 2 - 1; start >= 0; start--;
+			call Sift: start count;
+		;;
+		while int end_at: count - 1; end_at > 0; end_at--;
+			call Swap: 0 end_at;
+			call Sift: 0 end_at;
+		;;
+	[end]
+
+	# ---- used by the methods above
+
+	[Swap: int a; int b;]
+		Item kept: items:a;
+		items:a is items:b;
+		items:b is kept;
+	[end]
+
+	# the one at root moves down among the first count until neither below it is larger
+	[Sift: int root; int count;]
+		while root * 2 + 1 < count
+			int child: root * 2 + 1;
+			if child + 1 < count and items:(child + 1) > items:child
+				child++;
+			;;
+			if not (items:child > items:root) return;
+			call Swap: root child;
+			root is child;
+		;;
+	[end]
+}
