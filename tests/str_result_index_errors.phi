@@ -1,0 +1,9 @@
+phi.StrResultIndexErrors:Kernel
+{
+	log (Name):300;
+	log (Name):2;
+
+	[Name]
+		str s: 'phi';
+	[end: s]
+}

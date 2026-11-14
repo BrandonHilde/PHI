@@ -16,7 +16,19 @@ phi.StrResultIndexProgram:Program
 	log (Name):0 (Name):place ' ' (Name):(place - 1) as int ' ' (namer.Word):1 '\n';
 	chr c: (Long: 3):4;
 	log c ' ' ((Long: 2):5 is 'c') '\n';
+
+	# past the room the text has, it's the error an index past a variable's is: the room is
+	# what's checked (256 bytes for text that grows), as it is for a str variable
+	call Past: 2;
+	if call Past: 300 throws err
+		log err '\n';
+	;;
 	exit 0;
+
+	[Past: int place: 0;]
+		chr c: (Name):place;
+		log (c as int) ' ';
+	[end]
 
 	[Name]
 		str s: 'phi';

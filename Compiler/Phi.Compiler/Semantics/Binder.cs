@@ -463,6 +463,7 @@ namespace Phi.Compiler.Semantics
 
             if (units.ContainsKey(structUnit)) CheckInterfaces(new Scope { Unit = structUnit });
             WorkOutResultCapacities();
+            CheckResultIndexes();
             if (units.TryGetValue(structUnit, out BoundUnit? main)) IncludeCompiledLibraries(program, main);
             CheckTextArguments();
             CheckThreadWrites();
@@ -5397,6 +5398,34 @@ namespace Phi.Compiler.Semantics
             }
 
             if (unsafeDepth == 0) index.CheckLimit = limit;
+
+            // a character of the text a call gives, (Name):i: checked against the room its
+            // result has, which isn't known until every method is bound (CheckResultIndexes)
+            if (t.IsString && limit == null && unsafeDepth == 0
+                && (index.Target switch { NameExpr { Call: CallExpr c } => c, MemberExpr { Call: CallExpr c } => c, CallExpr c => c, _ => null })
+                    is CallExpr gives)
+                resultIndexes.Add((index, gives, constant, file));
+        }
+
+        /// <summary>The indexes of a call's text, each with the method called, the index if it's a number known now, and its file.</summary>
+        readonly List<(IndexExpr Index, CallExpr Gives, long? Constant, SourceFile File)> resultIndexes = new();
+
+        /// <summary>
+        /// (Name):i is checked as word:i is, against the room the text has: when the program is
+        /// built for an index that's a number, and when it runs for any other.
+        /// </summary>
+        void CheckResultIndexes()
+        {
+            foreach (var (index, call, constant, inFile) in resultIndexes)
+            {
+                // (what a method gives may not be known until all of them are bound)
+                if (call.Resolved is not MethodSymbol { ReturnType.IsString: true } gives) continue;
+                int room = gives.ResultCapacity;
+                if (room <= 0) continue;
+                if (constant == null) index.CheckLimit = room;
+                else if (constant < 0 || constant >= room)
+                    diagnostics.Error(inFile, index.Index.Span, $"index {constant} is outside what {gives.Decl.Name} gives, which has room for {room} bytes");
+            }
         }
 
         /// <summary>Bytes a str expression has room for, when known.</summary>

@@ -3491,6 +3491,14 @@ zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
 `exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
 enum's values, and an `else` says the others are known.
 
+**A character of a call's text is checked (2026-11-14).** `(Name):i` had no check at all:
+an index of any size read whatever was there. It's checked against the room the method's
+result has, as `word:i` is against the variable's (`Binder.CheckResultIndexes`, once every
+method's result is known): when the program is built for an index that's a number, when it
+runs for any other. The room is what's checked, not the text's length, as for every str:
+256 bytes for text that grows, so `(Name):7` of 'phi' is still in its room. Tests
+`str_result_index_program` and `str_result_index_errors`.
+
 **`while each c in text`, and `as` (2026-11-14, the user's design).** A str is gone through
 a character at a time, each as text (`c is 'é'`); `while each c in text as [type]` says
 another way: `as int` is each character's number, `as u8` and `as chr` each byte, `as str`

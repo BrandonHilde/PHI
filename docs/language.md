@@ -995,7 +995,9 @@ The port and the value are separate values, so `out port -1;` writes -1 to `port
 
 ### Bounds checks
 
-Indexing an array or a `str` is checked when the program runs. An index outside the
+Indexing an array or a `str` is checked when the program runs (a `str` against the room it
+has, which is past its last character; so is a character of the text a call gives,
+`(Name):i`, against the room of what's given). An index outside the
 array stops the program with `PHI: index out of range on line N in FILE.phi`. A constant index is
 checked when the program is built instead (and also when it runs, for an
 [`atmost` array](#variables), against how many are in it). Code inside `unsafe` isn't
