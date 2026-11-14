@@ -1,0 +1,9 @@
+phi.PowerWideErrors:Kernel
+{
+	f64 x: 2.0;
+	i64 big: 2;
+	int n: 3;
+	x^^ n;
+	big^^ 65;
+	x^^ 1.5;
+}

@@ -3578,11 +3578,32 @@ namespace Phi.Compiler.Semantics
                 return assign;
             }
 
-            // x^^ 3: x to that power, in whole numbers of up to 32 bits
+            // x^^ 3 for a 64-bit or a floating point number: x multiplied by itself that many
+            // times, written out, so the power is a number known when the program is built
+            // (a whole number of up to 32 bits takes any power: the generator has a loop for it)
             if (assign.Op == AssignOp.Power && (target.Type.IsWide || target.Type.IsFloat))
             {
-                Error(assign.Span, $"^^ works on whole numbers of up to 32 bits for now, and '{Describe(target)}' is {A(target.Type)}");
-                return assign;
+                BindExpr(assign.Value, scope);
+                if (assign.Value.Type.IsError) return assign;
+                if (ConstantFolder.Evaluate(assign.Value) is not long power || power < -MostPower || power > MostPower)
+                {
+                    Error(assign.Value.Span, $"'{Describe(target)}' is {A(target.Type)}, whose power is a whole number written here, from -{MostPower} to {MostPower} (x^^ 3); for one worked out as the program runs, multiply in a loop");
+                    return assign;
+                }
+                Expr One(long n) => Convert(new NumberExpr { Value = n, Span = assign.Value.Span, Type = PhiType.Int }, target.Type, "the power");
+                Expr Times(long count)
+                {
+                    Expr product = target;
+                    for (long i = 1; i < count; i++)
+                        product = new BinaryExpr { Op = BinaryOp.Multiply, Left = product, Right = target, Span = assign.Span, Type = target.Type };
+                    return product;
+                }
+                // to the power 0 is 1; below 0 it's 1 over that many (and 0 in whole numbers, as an int's is)
+                Expr powered = power == 0 ? One(1)
+                    : power > 0 ? Times(power)
+                    : target.Type.IsFloat ? new BinaryExpr { Op = BinaryOp.Divide, Left = One(1), Right = Times(-power), Span = assign.Span, Type = target.Type }
+                    : One(0);
+                return new AssignStmt { Target = target, Op = AssignOp.Set, Value = powered, Span = assign.Span };
             }
 
             Expr value = assign.Value;
@@ -3625,6 +3646,9 @@ namespace Phi.Compiler.Semantics
 
             return new AssignStmt { Target = target, Op = AssignOp.Set, Value = value, Span = assign.Span };
         }
+
+        /// <summary>The largest power a 64-bit or floating point number is raised to with ^^ (it's written out as that many multiplications).</summary>
+        const int MostPower = 64;
 
         /// <summary>
         /// when x / is a b / else: x is a number, an enum or text, and each value has to be the same

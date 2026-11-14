@@ -1,0 +1,3 @@
+'x' is an f64, whose power is a whole number written here, from -64 to 64 (x^^ 3); for one worked out as the program runs, multiply in a loop
+7:8: error: 'big' is an i64, whose power is a whole number written here
+8:6: error: 'x' is an f64, whose power is a whole number written here

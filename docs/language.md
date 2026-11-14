@@ -665,6 +665,12 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
   it (`'app' < 'apple'`), capitals come before small letters (`'Zed' < 'apple'`), and
   characters past ASCII come after all of ASCII. It's the order of the bytes, not of any
   language's alphabet.
+- **There's no power operator**, as there's none in C: `^` is bitwise exclusive or, as it
+  is there. A power is the statement `x^^ 3;`, the way `x++ 2;` and `x** 4;` add and
+  multiply: a doubled operator changes the variable before it. For a whole number of up to
+  32 bits the power is anything, worked out as the program runs too (`x^^ n;`); for an
+  `i64`, a `u64` or a floating point number it's a whole number written there, from -64 to
+  64, and `x` is multiplied by itself that many times.
 - In a condition, any number counts as true unless it is 0.
 - A binary operator must be on the same line as its left side. This is how
   `if ready` followed by a statement on the next line knows where the condition ends. A long
@@ -722,7 +728,7 @@ x-- y;         # subtract y
 x** 3;         # multiply by 3
 x// 2;         # divide by 2
 x%% 2;         # remainder of dividing by 2
-x^^ 3;         # to the power 3 (whole numbers of up to 32 bits; a power below 0 gives 0)
+x^^ 3;         # to the power 3 (a power below 0 gives 0 in whole numbers, and 1 over it in an f64)
 list:2 is 7;   # one element
 task.id is 3;  # one field
 name is 'new text';
@@ -3649,8 +3655,7 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 
 ## Not supported yet
 
-- `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point),
-  and `^^` on 64-bit and floating point numbers
+- `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point)
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed

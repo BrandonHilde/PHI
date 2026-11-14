@@ -1,0 +1,50 @@
+# x^^ n on 64-bit and floating point numbers: the power is a whole number written there, and
+# x is multiplied by itself that many times. (A whole number of up to 32 bits takes any
+# power, one worked out as the program runs too.)
+struct.Point
+{
+	f64 x;
+	i64 far;
+}
+
+phi.PowerWideProgram:Program
+{
+	const int CUBE: 3;
+	i64 big: 3;
+	big^^ 20;
+	u64 huge: 2;
+	huge^^ 63;
+	f64 half: 0.5;
+	half^^ 3;
+	f64 ten: 10.0;
+	ten^^ -2;
+	f32 small: 1.5;
+	small^^ 2;
+	log big ' ' huge ' ' half ' ' ten ' ' small '\n';
+
+	i64 one: 7;
+	one^^ 0;
+	i64 same: 7;
+	same^^ 1;
+	i64 none: 7;
+	none^^ -1;
+	f64 unit: 9.5;
+	unit^^ 0;
+	i64 neg: -2;
+	neg^^ CUBE;
+	log one ' ' same ' ' none ' ' unit ' ' neg '\n';
+
+	# a field and an element, and a whole number of up to 32 bits beside them
+	new Point p;
+	p.x is 1.5;
+	p.far is 10;
+	p.x^^ 2;
+	p.far^^ 12;
+	f64 list: 2.0 3.0;
+	list:1^^ 4;
+	int n: 2;
+	int by: 10;
+	n^^ by;
+	log p.x ' ' p.far ' ' list:1 ' ' n '\n';
+	exit 0;
+}

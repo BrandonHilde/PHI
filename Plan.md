@@ -3491,6 +3491,18 @@ zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
 `exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
 enum's values, and an `else` says the others are known.
 
+**No power operator in an expression (2026-11-14, the user's choice).** `^` stays bitwise
+exclusive or, as C has it and every `^` in the library means. The other ways were each a
+compromise: a word (`2 power 10`) would be the one arithmetic operation that's a word,
+asking for `add` and `multiply` beside it; `^^` in an expression would compute where
+every other doubled operator assigns; `^` for power with `xor` for the bits would change
+what existing code means without a word, and `xor` would look like one of `and` and `or`,
+which it isn't. The statement is there, `x^^ 3;`, and now takes 64-bit and floating point
+numbers: the binder writes it out as that many multiplications (`Binder.MostPower`, 64), so
+there the power is a whole number known when the program is built; below 0 it's 1 over
+it in a float and 0 in whole numbers, as an int's is. Tests `power_wide_program`,
+`power_wide_errors`.
+
 **Arrays of more than one size (2026-11-14, the user's choice).** `int table[3][4];`,
 `table:r:c`, any number of sizes. A row is a struct the binder makes the first time a size
 is used (`Binder.RowsOf`: `int[4]`, one field, its cells), and the table is an array of
