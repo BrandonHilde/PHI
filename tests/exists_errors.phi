@@ -1,0 +1,16 @@
+enum.Tool
+{
+	PENCIL
+	BRUSH
+}
+
+phi.ExistsErrors:Kernel
+{
+	u32 count: 3;
+	u8 small: 1;
+	bln ready: true;
+	str name: 'ann';
+	Tool tool: Tool.BRUSH;
+	f64 level: 1.5;
+	log (count exists) (small exists) (ready exists) (name exists) (tool exists) (level exists);
+}

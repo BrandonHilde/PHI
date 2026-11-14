@@ -1,0 +1,2 @@
+'ready' is already declared in class HasWhenMisuse; a name can be declared again only in a separate block (another branch or loop)
+`has ... when` looks through an array for an element, and this is an int

@@ -1,0 +1,6 @@
+phi.ExistsName:Kernel
+{
+	int exists: 4;
+	int count: 2;
+	log (count exists is true);
+}

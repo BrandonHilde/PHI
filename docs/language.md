@@ -91,7 +91,7 @@ variable, field, parameter, constant, method or struct:
 | Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
 | Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `foreign` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
-| Comparing and logic | `is` `not` `and` `or` `has` `below` `above` `atmost` `atleast` `true` `false` |
+| Comparing and logic | `is` `not` `and` `or` `has` `exists` `below` `above` `atmost` `atleast` `true` `false` |
 | Memory and ports | `new` `free` `addr` `sizeof` `as` `takes` `empty` `at` `in` `inw` `ind` `out` `outw` `outd` |
 | Input and output | `log` `debug` `ask` |
 
@@ -807,6 +807,25 @@ else
 
 The condition ends at the end of its line (a `;` after it is also allowed).
 
+**`exists`** asks if there is one. A method that looks for something gives where it is, or
+-1 when it isn't there, and `exists` is that question in a word: for a whole number that can
+be negative (an `int`, an `i64`), it's true when the number isn't less than zero.
+
+```phi
+int place: (players.Find: 1042);
+if place exists
+    players.values:place.score++ 10;
+;;
+if not (names.Find: 'ann') exists return;       # `not` is about the whole of it
+```
+
+For an object it's true when the object isn't `empty` (`if node.next exists`), and for a
+pointer when it isn't 0 (`if block exists`). A number that can't be negative (`u32`, `u8`)
+always exists, so asking is an error, as it is for a `bln`, a `str`, an enum and a floating
+point number. It's only a shorter way to say `>= 0`, `is not empty` and `is not 0`: a
+number that's negative for another reason (a temperature, a difference) doesn't "not
+exist", so use it for what a method gives when it finds something.
+
 A guard fits on one line: when `return`, `break`, `continue`, `call` or `exit` follows the
 condition on the same line, that one statement is the whole `if`, with no `;;`. It can't
 have an `elif` or `else`, and anything else after the condition (`if k is 'p' tool is 1;`)
@@ -830,6 +849,33 @@ if scores has 100 ...
 if line has 'GET ' ...
 if not (line has 9 as chr) ...     # no tab in it
 ```
+
+**has ... when.** `list has x` asks about one value. To ask whether a list has an element
+that fits a condition, and to have that element, give it a name and say the condition
+after `when`, as the whole condition of an `if`:
+
+```phi
+if players has p when p.score is 0
+    log p.name ' has not scored\n';       # p is the first such player
+    p.score is 1;                         # and it's the list's own, so this changes the list
+;;
+else
+    log 'everyone has scored\n';          # there was none
+;;
+```
+
+- **`p` is a new name, of whatever the list holds**: nothing says its type, and it's known
+  all the same (a `Player` here, an `int` in `if scores has s when s > 8`). As in `while
+  each`, it's the element itself for a struct or an object and a copy for a number or text.
+- **The first one is found**, looking from the start, and the looking stops there.
+- **The condition is anything a condition can be** (`when p.score is 0 and p.lives > 0`),
+  and can use other names in sight, such as the `p` of an `if` around this one.
+- **The `if`'s statements aren't in a loop of their own**, so `break` and `continue` among
+  them are about the loop the `if` is in, and `return` works as anywhere. It has `elif`
+  and `else` as any `if` does, and fits on one line: `if scores has s when s < 0 return s;`.
+- It's an `if`'s whole condition, not part of one or a value to keep (`bln any: ...` is an
+  error): what it's for is the element. To only ask, `if list has p when ...` with nothing
+  in it but `found is true;` does.
 
 ### when
 

@@ -1,0 +1,13 @@
+phi.HasWhenMisuse:Kernel
+{
+	int scores: 3 9 4;
+	int count: 2;
+	bln ready: true;
+
+	if scores has ready when ready > 8
+		log ready;
+	;;
+	if count has s when s > 8
+		log s;
+	;;
+}

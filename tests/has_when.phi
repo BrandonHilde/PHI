@@ -1,0 +1,114 @@
+# runs only in 32 and 64 bits: it uses objects and arrays that grow
+# `if list has x when ...`: is there an element the condition holds for? Inside the if, x is
+# the first one (the element itself for a struct or an object, so changing x changes the
+# list's), and the else is for when there's none. The if's statements aren't in a loop of
+# its own: a break or continue among them is about the loop the if is in.
+struct.Player
+{
+	int id;
+	int score;
+}
+
+struct.Team
+{
+	new Player members[];
+	int wins;
+}
+
+phi.HasWhen:Library
+{
+	Player players[3];
+	int scores: 3 9 4 9;
+	str names: 'ann' 'bob' 'cy';
+	new Player bench[];
+	new Team team;
+
+	players:0.id is 10;
+	players:0.score is 5;
+	players:1.id is 11;
+	players:2.id is 12;
+
+	# a struct in place: the first one, and it's the list's own
+	if players has p when p.score is 0
+		log 'first with no score: ' p.id '\n';
+		p.score is 7;
+	;;
+	else
+		log 'everyone has scored\n';
+	;;
+	log players:1.score ' ' players:2.score '\n';
+
+	# numbers and text: a copy of the element
+	if scores has s when s > 8
+		log 'a big one: ' s '\n';
+	;;
+	if scores has s when s > 100
+		log 'not this\n';
+	;;
+	else
+		log 'none over 100\n';
+	;;
+	if names has n when n has 'o'
+		log n ' has an o\n';
+	;;
+
+	# objects in an array that grows, and in a struct
+	if bench has b when b.id is 1
+		log 'not this\n';
+	;;
+	else
+		log 'nobody on the bench\n';
+	;;
+	new Player one: 1 20;
+	new Player two: 2 30;
+	bench++ one;
+	bench++ two;
+	team.members++ one;
+	team.members++ two;
+	if bench has b when b.score > 25
+		log 'on the bench: ' b.id '\n';
+		b.score is 0;
+	;;
+	if team.members has m when m.id is 2 and m.score is 30
+		log 'on the team: ' m.id ' ' m.score '\n';
+	;;
+	log bench:1.score ' ' team.members:1.score '\n';
+
+	# break and continue are about the loop the if is in
+	while int round: 0; round < 4; round++;
+		if players has p when p.score is 0 and p.id > 10
+			log 'round ' round ': ' p.id '\n';
+			p.score is 1;
+			continue;
+		;;
+		elif scores has s when s is 4
+			log 'round ' round ': a four, and done\n';
+			break;
+		;;
+		log 'not reached\n';
+	;;
+
+	# one inside another, the inner one using the outer's element
+	if players has p when p.id is 12
+		if scores has s when s > p.score
+			log p.id ' is under ' s '\n';
+		;;
+	;;
+
+	# on one line, and the name used again after
+	log (Lowest: 5) ' ' (Lowest: 1) ' ' (Twice) '\n';
+
+	[Lowest: int over: 0;]
+		if scores has s when s < over return s;
+	[end: -1]
+
+	[Twice]
+		int total: 0;
+		if scores has s when s is 9
+			total++ s;
+		;;
+		if scores has s when s is 4
+			total++ s;
+		;;
+	[end: total]
+}

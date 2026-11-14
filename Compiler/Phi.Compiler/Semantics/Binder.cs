@@ -1967,7 +1967,8 @@ namespace Phi.Compiler.Semantics
                         foreach (var d in CollectBlockDeclarations(w.Body, loop)) yield return d;
                         break;
                     case WhileEachStmt e:
-                        var eachLoop = new Block { Parent = block };
+                        // (one that finds an element for an if keeps it in sight for the if's statements)
+                        var eachLoop = e.Finds ? block : new Block { Parent = block };
                         yield return (e.Index, eachLoop);
                         yield return (e.Element, eachLoop);
                         foreach (var d in CollectBlockDeclarations(e.Body, eachLoop)) yield return d;
@@ -2413,7 +2414,8 @@ namespace Phi.Compiler.Semantics
             if (array.Type.IsError) return;
             if (!array.Type.IsArray)
             {
-                Error(array.Span, $"while each goes through an array, and this is {A(array.Type)}");
+                Error(array.Span, v.Decl.EachFinds ? $"`has ... when` looks through an array for an element, and this is {A(array.Type)}"
+                                                   : $"while each goes through an array, and this is {A(array.Type)}");
                 return;
             }
             PhiType element = array.Type.Element;
@@ -2895,7 +2897,7 @@ namespace Phi.Compiler.Semantics
 
                 case WhileEachStmt each:
                 {
-                    blockNames.Add(new()); // the element is in sight only in the loop
+                    if (!each.Finds) blockNames.Add(new()); // the element is in sight only in the loop
                     BindVarDecl(each.Index, scope, classLevel: false);
                     ShowInBlock(each.Index);
                     BindVarDecl(each.Element, scope, classLevel: false);
@@ -2921,7 +2923,7 @@ namespace Phi.Compiler.Semantics
                     loopDepth++;
                     BindBlock(each.Body, scope);
                     loopDepth--;
-                    blockNames.RemoveAt(blockNames.Count - 1);
+                    if (!each.Finds) blockNames.RemoveAt(blockNames.Count - 1);
                     return each;
                 }
 
@@ -5119,6 +5121,12 @@ namespace Phi.Compiler.Semantics
                     BindBinary(binary, scope);
                     break;
 
+                // (only an if's whole condition, which the parser makes other statements of; one
+                // anywhere else was said there, and is nothing here)
+                case HasWhenExpr:
+                    expr.Type = PhiType.Error;
+                    break;
+
                 default:
                     throw new InvalidOperationException($"unexpected expression {expr.GetType().Name}");
             }
@@ -5394,6 +5402,27 @@ namespace Phi.Compiler.Semantics
             {
                 b.Type = PhiType.Error;
                 return;
+            }
+
+            // x exists: what "there is one" means for what x is
+            if (b.Exists)
+            {
+                PhiType t = b.Left.Type;
+                if (t.IsObject)
+                {
+                    b.Op = BinaryOp.NotEqual;
+                    b.Right = new EmptyExpr { Span = b.Right.Span };
+                    BindExpr(b.Right, scope);
+                }
+                else if (t.IsPointer || t.IsMethod) b.Op = BinaryOp.NotEqual;      // (not 0)
+                else if (!(t.IsWide && t.IsSigned || t.IsNumeric && t.IsSigned && !t.IsEnum))
+                {
+                    Error(b.Span, t.IsNumeric && !t.IsEnum && !t.IsChar && t.Kind != TypeKind.Bool
+                        ? $"exists asks if a number isn't less than zero, and {A(t)} never is, so this is always true; compare it with what stands for none (like `is not 0`)"
+                        : $"exists is for a number that's less than zero when there's none (an int: an index, a count), an object (not empty) or a pointer (not 0), and this is {A(t)}");
+                    b.Type = PhiType.Bool;
+                    return;
+                }
             }
 
             // two whole arrays: their lengths and every element

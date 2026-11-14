@@ -1,0 +1,80 @@
+# runs only in 32 and 64 bits: it uses objects
+# `x exists`: there is one. For a number that's less than zero when there's none (an index, a
+# count: what a method that found nothing gives as -1), it's x >= 0; for an object, it isn't
+# empty; for a pointer, it isn't 0. `not x exists` is the other answer.
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+interface.Shape
+{
+	[Area]
+}
+
+struct.Square has Shape
+{
+	int side;
+
+	[Area]
+	[end: side * side]
+}
+
+phi.Exists:Library
+{
+	int names: 4 8 15;
+
+	# an index: Find gives -1 for none
+	int at_eight: (Find: 8);
+	int at_nine: (Find: 9);
+	log (at_eight exists) ' ' (at_nine exists) ' ' (not at_nine exists) '\n';
+	if at_eight exists
+		log 'eight is at ' at_eight '\n';
+	;;
+	if not at_nine exists
+		log 'no nine\n';
+	;;
+	if (Find: 15) exists and not (Find: 16) exists
+		log 'fifteen and no sixteen\n';
+	;;
+
+	# zero is one too, and other signed numbers
+	int zero: 0;
+	i8 small: -3;
+	i16 mid: 300;
+	i64 far: -5000000000;
+	log (zero exists) ' ' (small exists) ' ' (mid exists) ' ' (far exists) ' ' ((0 - 1) exists) '\n';
+
+	# an object: not empty
+	new Node list: 1;
+	log (list exists) ' ' (list.next exists) '\n';
+	new Node second: 2;
+	list.next takes second;
+	log (list.next exists) ' ' (second exists) ' ' (list.next.next exists) '\n';
+	new Shape shape: empty;
+	log (shape exists);
+	new Square box: 3;
+	shape is box;
+	log ' ' (shape exists) '\n';
+
+	# a pointer: not 0
+	ptr<u8> nothing: 0;
+	ptr<u8> text: 'abc';
+	log (nothing exists) ' ' (text exists) ' ' (not nothing exists) '\n';
+
+	# in a loop's condition, and as a value kept
+	int left: 2;
+	while left exists
+		log left ' ';
+		left--;
+	;;
+	bln found: at_eight exists;
+	log found '\n';
+
+	[Find: int value: 0;]
+		while int i: 0; i < names.len; i++;
+			if names:i is value return i;
+		;;
+	[end: -1]
+}

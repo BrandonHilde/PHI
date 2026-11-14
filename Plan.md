@@ -3403,6 +3403,33 @@ written through a pointer. To look at again if a program shows up that needs it.
 Still fixed: a program's stack size, which a program should be able to state (64 KB on PHI
 OS, the system's elsewhere).
 
+**`exists`, and no type for a value that may not be there (2026-11-14, the user's choice).**
+`maybe int` (a value or nothing, which the compiler makes a caller check) was written up and
+turned down: a find gives a place, a place is never less than zero, so -1 is always free to
+say "not there"; `Map.Get` takes what to give when the key isn't there; an object can be
+`empty`; and what must not be missed can `throw`. What was wanted is the question in a
+word: `if place exists` is `place >= 0` for a whole number that can be negative, `is not
+empty` for an object and `is not 0` for a pointer, and an error for what can't be less than
+zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
+`exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
+enum's values, and an `else` says the others are known.
+
+**`if list has x when ...` (2026-11-14, the user's design).** Is there an element the
+condition holds for, and if so, that element: `if players has p when p.score is 0 ... ;;
+else ... ;;`. `p` is a new name of whatever the list holds, the first such element inside
+the `if`, and the `else` is for none. `when` for "for which" over a new word (`where`): it
+reads as logic is said ("when a condition is met"), where `where` is a place; mid-line
+after `has name` it can't be taken for the statement.
+- The parser writes it as the statements it stands for (`Parser.FindFirst`): a `bln` nobody
+  can name, a `while each` that sets it and breaks at the first element the condition holds
+  for, then the `if` on the `bln` with the statements as written, in a block of their own.
+  The `if`'s statements come after the loop, so a `break` or `continue` among them is
+  about the loop the whole `if` is in. The loop's element stays in sight after it
+  (`WhileEachStmt.Finds`). The binder and the generator needed nothing else.
+- Only an `if`'s (or `elif`'s) whole condition: part of one, in parentheses, a `while`'s
+  or a value to keep are errors, said once, with the rest read on.
+- Tests `has_when` (kernel, Linux in 32 and 64 bits), `has_when_errors`, `has_when_misuse`.
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to

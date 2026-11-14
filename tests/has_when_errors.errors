@@ -1,0 +1,3 @@
+`has ... when` is the whole condition of an if, not part of one; put the rest after the `when`: if players has p when p.score is 0 and p.lives > 0
+`has ... when` is the whole condition of an if (if players has p when p.score is 0): inside the if, p is the one that was found
+before `when` goes a name for the element that's looked for, as in: if players has p when p.score is 0

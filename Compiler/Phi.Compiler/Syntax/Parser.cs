@@ -18,7 +18,7 @@ namespace Phi.Compiler.Syntax
             "log", "debug", "ask", "call", "exit", "if", "elif", "else", "while", "each", "when", "unsafe",
             "break", "continue", "return",
             "out", "outw", "outd", "in", "inw", "ind", "addr", "sizeof", "new", "free",
-            "is", "not", "and", "or", "has", "true", "false", "end", "isr", "as", "takes", "empty",
+            "is", "not", "and", "or", "has", "exists", "true", "false", "end", "isr", "as", "takes", "empty",
             "below", "above", "atmost", "atleast", "at",
             "phi", "asm", "x64", "arm", "struct", "enum", "interface", "use", "const", "volatile", "atomic", "locked", "into",
             "throw", "throws", "sys", "foreign",
@@ -46,6 +46,7 @@ namespace Phi.Compiler.Syntax
             ["return"] = "'result'",
             ["ask"] = "'question' or 'prompt'",
             ["has"] = "'holds' or 'found'",
+            ["exists"] = "'present' or 'found'",
             ["when"] = "'time' or 'moment'",
             ["each"] = "'item' or 'every'",
         };
@@ -1556,13 +1557,32 @@ namespace Phi.Compiler.Syntax
         /// <summary>The statements that can follow an if's condition on the same line.</summary>
         static readonly string[] OneLineIfWords = { "return", "break", "continue", "call", "exit" };
 
+        /// <summary>The `has ... when` just read, which only an if's whole condition can be.</summary>
+        HasWhenExpr? lastHasWhen;
+
+        /// <summary>An if's condition is being read: where `has ... when` can be.</summary>
+        bool inIfCondition;
+
+        /// <summary>Each `has ... when` gets a variable of its own for whether one was found.</summary>
+        int hasWhenCount;
+
         Stmt ParseIf()
         {
             Token keyword = Advance();
-            Expr condition = AtWord("call") ? ParseThrows() : ParseExpression();
+            lastHasWhen = null;
+            inIfCondition = true;
+            Expr condition;
+            try { condition = AtWord("call") ? ParseThrows() : ParseExpression(); }
+            finally { inIfCondition = false; }
             Accept(TokenKind.Semicolon);
+            if (lastHasWhen != null && condition != lastHasWhen)
+                Error(lastHasWhen.Span, "`has ... when` is the whole condition of an if, not part of one; put the rest after the `when`: if players has p when p.score is 0 and p.lives > 0");
+            HasWhenExpr? find = condition as HasWhenExpr;
+            lastHasWhen = null;
+            if (find != null) condition = new NameExpr { Name = $"has#{keyword.Span.Start}_{hasWhenCount++}", Span = find.Span };
 
             var stmt = new IfStmt { Condition = condition, Span = keyword.Span.To(condition.Span) };
+            Stmt whole = find != null ? FindFirst(find, stmt, keyword) : stmt;
 
             // if call Load: path throws err: inside, err is the error
             if (condition is ThrowsExpr throws)
@@ -1587,7 +1607,7 @@ namespace Phi.Compiler.Syntax
                 stmt.Then.Add(ParseStatement());
                 if (AtWord("elif") || AtWord("else"))
                     throw Error(Current.Span, $"an if on one line can't have an {Current.Text}; write the if as a block, ending in ;;");
-                return stmt;
+                return whole;
             }
 
             // if k is 'p' tool is 1; would otherwise read as a block that never closes
@@ -1607,7 +1627,50 @@ namespace Phi.Compiler.Syntax
                 stmt.Else = ParseBlock("else");
             }
 
-            return stmt;
+            return whole;
+        }
+
+        /// <summary>
+        /// if list has x when cond ... ;; else ... ;;  as the statements it stands for:
+        ///
+        ///     bln found: false;
+        ///     while each x in list        (x stays in sight after it)
+        ///         if cond
+        ///             found is true;
+        ///             break;
+        ///         ;;
+        ///     ;;
+        ///     if found ... ;; else ... ;;
+        ///
+        /// in a block of their own. The if's statements come after the loop, not inside it, so
+        /// a break or continue among them is about the loop the whole if is in, as it reads.
+        /// </summary>
+        Stmt FindFirst(HasWhenExpr find, IfStmt then, Token keyword)
+        {
+            string found = ((NameExpr)then.Condition).Name;
+            Span at = find.NameSpan;
+            var flag = new VarDecl { Type = new TypeRef { Name = "bln", Span = at }, Name = found, NameSpan = at, Span = at };
+            flag.Values.Add(new BoolExpr { Value = false, Span = at });
+
+            var stop = new IfStmt { Condition = find.Condition, Span = find.Condition.Span };
+            stop.Then.Add(new AssignStmt { Target = new NameExpr { Name = found, Span = at }, Op = AssignOp.Set, Value = new BoolExpr { Value = true, Span = at }, Span = at });
+            stop.Then.Add(new BreakStmt { Span = at });
+
+            var each = new WhileEachStmt
+            {
+                Element = new VarDecl { Type = new TypeRef { Name = "each", Span = at }, Name = find.Name, NameSpan = at, EachOf = find.Collection, EachFinds = true, Span = at },
+                Index = new VarDecl { Type = new TypeRef { Name = "int", Span = at }, Name = $"each#{at.Start}", NameSpan = at, Span = at },
+                Array = find.Collection,
+                Finds = true,
+                Span = find.Span,
+            };
+            each.Body.Add(stop);
+
+            var block = new IfStmt { Condition = new BoolExpr { Value = true, Span = keyword.Span }, Span = keyword.Span.To(find.Span) };
+            block.Then.Add(flag);
+            block.Then.Add(each);
+            block.Then.Add(then);
+            return block;
         }
 
         /// <summary>The name a type test gives the object it found: new Player p, borrowed from value.</summary>
@@ -1915,6 +1978,23 @@ namespace Phi.Compiler.Syntax
         {
             Expr left = ParseBitOr();
 
+            // index exists: there is one (not less than zero; for an object, not empty). `not`
+            // before it is about the whole of it: not index exists
+            if (AtOperatorWord("exists"))
+            {
+                Token word = Advance();
+                Expr Exists(Expr of) => new BinaryExpr
+                {
+                    Op = BinaryOp.GreaterEqual, Left = of, Right = new NumberExpr { Value = 0, Span = word.Span },
+                    Exists = true, Span = of.Span.To(word.Span),
+                };
+                if (OperatorMayFollow && (AtWord("is") || AtWord("exists") || AtComparisonWord))
+                    throw Error(Current.Span, "exists is the whole question; for the other answer, write `not x exists`");
+                return left is UnaryExpr { Op: UnaryOp.Not } not
+                    ? new UnaryExpr { Op = UnaryOp.Not, Operand = Exists(not.Operand), Span = not.Span.To(word.Span) }
+                    : Exists(left);
+            }
+
             BinaryOp? op = null;
             if (AtOperatorWord("is"))
             {
@@ -1939,6 +2019,28 @@ namespace Phi.Compiler.Syntax
                 // list has x, text has 'abc'
                 Advance();
                 Expr value = ParseBitOr();
+                // list has x when x.score is 0: the first element the condition holds for
+                if (AtOperatorWord("when"))
+                {
+                    // (what's wrong is said, and it's read on as what it would be, so the lines after aren't each an error too)
+                    Token when = Advance();
+                    bool wrong = false;
+                    if (value is not NameExpr named || ReservedWords.Contains(named.Name) || named.Name.Contains('.'))
+                    {
+                        Error(value.Span, "before `when` goes a name for the element that's looked for, as in: if players has p when p.score is 0");
+                        named = new NameExpr { Name = "", Span = value.Span };
+                        wrong = true;
+                    }
+                    if (!inIfCondition || parenDepth > 0)
+                    {
+                        if (!wrong) Error(when.Span, "`has ... when` is the whole condition of an if (if players has p when p.score is 0): inside the if, p is the one that was found");
+                        wrong = true;
+                    }
+                    Expr holds = ParseExpression();
+                    var find = new HasWhenExpr { Collection = left, Name = named.Name, NameSpan = named.Span, Condition = holds, Span = left.Span.To(holds.Span) };
+                    if (wrong) return new BoolExpr { Value = false, Span = find.Span };
+                    return lastHasWhen = find;
+                }
                 return new HasExpr { Collection = left, Value = value, Span = left.Span.To(value.Span) };
             }
             else if (!Current.StartsLine)

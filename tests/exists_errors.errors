@@ -1,0 +1,6 @@
+exists asks if a number isn't less than zero, and a u32 never is, so this is always true; compare it with what stands for none (like `is not 0`)
+exists asks if a number isn't less than zero, and a u8 never is, so this is always true
+exists is for a number that's less than zero when there's none (an int: an index, a count), an object (not empty) or a pointer (not 0), and this is a bln
+and this is a str
+and this is a Tool
+and this is an f64

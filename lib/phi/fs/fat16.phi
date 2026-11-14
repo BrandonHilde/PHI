@@ -190,9 +190,9 @@ phi.Fat:Kernel
 	# ReadAt's work, holding the file system's lock
 	[ReadAtLocked: ptr<u8> path: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
 		int copied: -1;
-		bln exists: false;
-		call exists is Resolve: path;
-		if exists and (found.attributes & ATTR_DIRECTORY) is 0
+		bln present: false;
+		call present is Resolve: path;
+		if present and (found.attributes & ATTR_DIRECTORY) is 0
 			copied is 0;
 			u32 wanted: 0;
 			if offset < found.size
@@ -238,9 +238,9 @@ phi.Fat:Kernel
 	# FileSize's work, holding the file system's lock
 	[FileSizeLocked: ptr<u8> path: 0;]
 		int size: -1;
-		bln exists: false;
-		call exists is Resolve: path;
-		if exists
+		bln present: false;
+		call present is Resolve: path;
+		if present
 			size is found.size as int;
 		;;
 	[end: size]
@@ -328,9 +328,9 @@ phi.Fat:Kernel
 
 	# Exists's work, holding the file system's lock
 	[ExistsLocked: ptr<u8> path: 0;]
-		bln exists: false;
-		call exists is Resolve: path;
-	[end: exists]
+		bln present: false;
+		call present is Resolve: path;
+	[end: present]
 
 	# print a folder ('' is the root); returns how many entries it has, or -1 if
 	# there's no such folder
@@ -396,18 +396,18 @@ phi.Fat:Kernel
 	# WriteFile's work, holding the file system's lock
 	[WriteFileLocked: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
 		bln ok: false;
-		bln exists: false;
-		call exists is Resolve: path;
+		bln present: false;
+		call present is Resolve: path;
 		u32 slotSector: 0;
 		u32 slotIndex: 0;
 
-		if exists and (found.attributes & ATTR_DIRECTORY) is 0
+		if present and (found.attributes & ATTR_DIRECTORY) is 0
 			call FreeChain: found.cluster;
 			slotSector is found_sector;
 			slotIndex is found_index;
 			ok is true;
 		;;
-		elif exists is false and parent_found
+		elif present is false and parent_found
 			call ok is FindFreeSlot: parent_directory;
 			slotSector is found_sector;
 			slotIndex is found_index;
@@ -454,7 +454,7 @@ phi.Fat:Kernel
 		if ok
 			call ok is Disk.Read: slotSector 1 sector_buffer;
 			ptr<DirEntry> e: sector_buffer + slotIndex * 32;
-			if exists is false
+			if present is false
 				while u32 b: 0; b < 32; b++;
 					sector_buffer:(slotIndex * 32 + b) is 0;
 				;;

@@ -1,0 +1,2 @@
+'exists' is a keyword and can't be a variable name; try 'present' or 'found'
+exists is the whole question; for the other answer, write `not x exists`

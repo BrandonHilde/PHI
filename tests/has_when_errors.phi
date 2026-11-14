@@ -1,0 +1,19 @@
+phi.HasWhenErrors:Kernel
+{
+	int scores: 3 9 4;
+	bln ready: true;
+
+	if ready and scores has s when s > 8
+		log s;
+	;;
+	while scores has t when t > 8
+		log t;
+	;;
+	if (scores has u when u > 8)
+		log u;
+	;;
+	if scores has 9 when ready
+		log 'x';
+	;;
+	bln any: scores has v when v > 8;
+}

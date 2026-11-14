@@ -346,6 +346,9 @@ namespace Phi.Compiler.Syntax
         /// <summary>The element of `while each name in list`: its type is list's elements'.</summary>
         public Expr? EachOf { get; init; }
 
+        /// <summary>The element of `if list has x when ...`, not of a while each: for what's said when list isn't an array.</summary>
+        public bool EachFinds { get; init; }
+
         /// <summary>Declared with new: an object.</summary>
         public bool IsNew { get; init; }
 
@@ -527,6 +530,13 @@ namespace Phi.Compiler.Syntax
         public Expr Array { get; init; } = null!;
         public List<Stmt> Body { get; } = new();
 
+        /// <summary>
+        /// Made for `if list has x when ...`: it looks for the first such x and stops there, and
+        /// x is in sight after it too, in the block around it, which is where the if's own
+        /// statements are.
+        /// </summary>
+        public bool Finds { get; init; }
+
         /// <summary>Set by the binder: the element at the index (list:i).</summary>
         public Expr? Current { get; set; }
 
@@ -673,6 +683,19 @@ namespace Phi.Compiler.Syntax
     /// list has x: true when an array holds that value (compared as is compares them);
     /// text has 'abc': true when the text is in it (or a chr, that character).
     /// </summary>
+    /// <summary>
+    /// list has x when x.score is 0: is there an element the condition holds for? Only as the
+    /// whole condition of an if, which the parser makes a search of (Parser.FindFirst): x is
+    /// the first such element inside the if, and the else is for when there's none.
+    /// </summary>
+    public sealed class HasWhenExpr : Expr
+    {
+        public Expr Collection { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public Span NameSpan { get; init; }
+        public Expr Condition { get; init; } = null!;
+    }
+
     public sealed class HasExpr : Expr
     {
         public Expr Collection { get; init; } = null!;
@@ -980,9 +1003,16 @@ namespace Phi.Compiler.Syntax
 
     public sealed class BinaryExpr : Expr
     {
-        public BinaryOp Op { get; init; }
+        public BinaryOp Op { get; set; }
         public Expr Left { get; set; } = null!;
         public Expr Right { get; set; } = null!;
+
+        /// <summary>
+        /// Written `x exists`: there is one. Read as x >= 0, which is what it is for a number
+        /// (an index, a count, a handle: what a method that found nothing gives as -1); the
+        /// binder makes it x is not empty for an object and x is not 0 for a pointer.
+        /// </summary>
+        public bool Exists { get; init; }
 
         /// <summary>Set by the binder when two objects (or an object and empty) are compared.</summary>
         public StructSymbol? ObjectCompare { get; set; }
