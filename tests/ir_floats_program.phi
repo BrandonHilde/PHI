@@ -1,0 +1,134 @@
+# f64s in methods the intermediate form takes (PHI_IR=1: in xmm registers, where the generator
+# uses the x87): arithmetic, comparisons with not a number, negative zero and infinities,
+# whole numbers of each kind made f64s and f64s made whole numbers, f64s through pointers and
+# fields, and f64s given to and back from methods, the generator's and its own. Its expected
+# output is the generator's.
+struct.Point
+{
+	f64 x;
+	f64 y;
+}
+
+phi.IrFloatsProgram:Program
+{
+	f64 scale: 2.5;
+
+	log (Arith: 1.5 0.25) ' ' (Arith: -7.0 3.0) ' ' (Arith: 1.0 0.0) '\n';
+	log (Order: 1.0 2.0) ' ' (Order: 2.0 1.0) ' ' (Order: 3.0 3.0) ' ' (Order: (Zero) (Zero)) '\n';
+	log (Nan: 0.0) ' ' (Infinite: 1.0) ' ' (NegZero: 0.0) '\n';
+	log (FromWhole: -7 4000000000 -5000000000) ' ' (FromBig: 18446744073709551615) ' ' (FromBig: 9007199254740993) '\n';
+	log (ToWhole: 3.99) ' ' (ToWhole: -3.99) ' ' (ToWhole: 3000000000.5) ' ' (ToWide: -12345678901.75) ' ' (ToSmall: 300.7) '\n';
+	log (Points: 5) ' ' (Through: 3.0) ' ' (Chain: 4) ' ' (Mandel: 0.25 0.5) ' ' (Mandel: 2.0 2.0) '\n';
+	log (Conditions: 0.0) (Conditions: 0.5) (Conditions: -0.0) ' ' (Mixed: 7 2.0) '\n';
+	exit 0;
+
+	[Zero: : f64]
+		f64 z: 0.0;
+	[end: z / z]
+
+	[Arith: f64 a: 0.0; f64 b: 0.0; : f64]
+		f64 sum: a + b;
+		f64 product: a * b;
+		f64 ratio: a / b;
+		if ratio > 1000000.0 return -1.0;
+	[end: sum * 1000.0 + product - ratio + (a - b) * scale]
+
+	[Order: f64 a: 0.0; f64 b: 0.0;]
+	[end: (a < b) + (a <= b) * 2 + (a > b) * 4 + (a >= b) * 8 + (a is b) * 16 + (a is not b) * 32]
+
+	[Nan: f64 z: 0.0;]
+		f64 nan: z / z;
+		int got: 0;
+		if nan is nan
+			got++ 1;
+		;;
+		if nan is not nan
+			got++ 2;
+		;;
+		if nan < 1.0 or nan > 1.0 or nan <= 1.0 or nan >= 1.0
+			got++ 4;
+		;;
+		if not (nan < 1.0)
+			got++ 8;
+		;;
+		bln equal: nan is nan;
+		bln different: nan is not nan;
+	[end: got + equal * 100 + different * 1000]
+
+	[Infinite: f64 one: 0.0;]
+		f64 big: one / 0.0;
+		f64 small: -one / 0.0;
+	[end: (big > 1000000000000.0) + (small < -1000000000000.0) * 2 + (big is big) * 4 + (big + small is big) * 8]
+
+	[NegZero: f64 z: 0.0;]
+		f64 negative: -z;
+		f64 one: 1.0;
+	[end: (negative is z) + ((one / negative) < 0.0) * 2]
+
+	[FromWhole: int a: 0; u32 b: 0; i64 c: 0; : f64]
+		f64 x: a;
+		f64 y: b;
+		f64 w: c;
+		u8 small: 250;
+		i16 neg: -300;
+	[end: x + y + w + small + neg]
+
+	[FromBig: u64 a: 0; : f64]
+		f64 x: a;
+	[end: x / 1000000.0]
+
+	[ToWhole: f64 a: 0.0;]
+	[end: a as int]
+
+	[ToWide: f64 a: 0.0; : i64]
+	[end: a as i64]
+
+	[ToSmall: f64 a: 0.0;]
+		u8 b: a as u8;
+	[end: b]
+
+	[Points: int n: 0; : f64]
+		ptr<Point> ps: new Point[n];
+		while int i: 0; i < n; i++;
+			ps:i.x is i * 1.5;
+			ps:i.y is ps:i.x * 2.0;
+		;;
+		f64 sum: 0.0;
+		ptr<f64> values: new f64[n];
+		while int i: 0; i < n; i++;
+			values:i is ps:i.y - 0.5;
+			sum is sum + values:i;
+		;;
+	[end: sum]
+
+	[Through: f64 a: 0.0; : f64]
+		f64 kept: a * 2.0;
+		f64 back: (Half: kept) + (Half: a);
+	[end: back + kept]
+
+	[Half: f64 v: 0.0; : f64]
+	[end: v / 2.0]
+
+	[Chain: int n: 0; : f64]
+		if n is 0 return 1.0;
+	[end: (Chain: n - 1) * 1.5 + n]
+
+	[Mandel: f64 cr: 0.0; f64 ci: 0.0;]
+		f64 zr: 0.0;
+		f64 zi: 0.0;
+		int steps: 0;
+		while steps < 100 and zr * zr + zi * zi <= 4.0
+			f64 next: zr * zr - zi * zi + cr;
+			zi is 2.0 * zr * zi + ci;
+			zr is next;
+			steps++;
+		;;
+	[end: steps]
+
+	[Conditions: f64 a: 0.0;]
+		if a return 1;
+	[end: 0]
+
+	[Mixed: int a: 0; f64 b: 0.0; : f64]
+	[end: a / 2 + a / b + (a as f64) / 2.0]
+}

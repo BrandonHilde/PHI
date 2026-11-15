@@ -6892,14 +6892,20 @@ namespace Phi.Compiler.CodeGen
             return $"{(e.Type.Kind == TypeKind.F64 ? "qword" : "dword")} {Operand(place)}";
         }
 
-        readonly Dictionary<double, string> floatLabels = new();
+        /// <summary>
+        /// The f64 constants the code reads, by their bits: by their value, -0.0 and 0.0 were
+        /// the same key (they're equal), so whichever came first was both, and one / 0.0 was
+        /// -infinity in a program that had written -0.0 earlier in what was compiled.
+        /// </summary>
+        readonly Dictionary<long, string> floatLabels = new();
 
         string FloatLabel(double value)
         {
-            if (!floatLabels.TryGetValue(value, out string? label))
+            long bits = BitConverter.DoubleToInt64Bits(value);
+            if (!floatLabels.TryGetValue(bits, out string? label))
             {
                 label = $"phi_float_{floatLabels.Count}";
-                floatLabels[value] = label;
+                floatLabels[bits] = label;
             }
             return label;
         }
@@ -10121,8 +10127,8 @@ namespace Phi.Compiler.CodeGen
             foreach (var (value, label) in stringLabels)
                 output.AppendLine($"{label}: db {NasmBytes(value)}");
 
-            foreach (var (value, label) in floatLabels)
-                output.AppendLine($"{label}: dq 0x{BitConverter.DoubleToInt64Bits(value):X}   ; {value}");
+            foreach (var (bits, label) in floatLabels)
+                output.AppendLine($"{label}: dq 0x{bits:X}   ; {BitConverter.Int64BitsToDouble(bits)}");
         }
 
         string DataFor(VariableSymbol v)
