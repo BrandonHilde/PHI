@@ -1,0 +1,197 @@
+# An operator works out its left side before its right, whatever the types: seen when a side
+# calls a method that prints, or changes what the other side reads. A method's arguments go
+# first to last, and a store works out its value first, then where it goes. Each kind of value
+# has its own method, so the intermediate form (PHI_IR=1) takes those it can.
+struct.Cell
+{
+	int value;
+}
+
+phi.EvaluationOrderProgram:Program
+{
+	int next: 0;
+	i64 far: 0;
+	f64 level: 0.0;
+	ptr<u8> cursor;
+	int slot: 0;
+	str word: 'abc';
+
+	call Whole;
+	call Wide;
+	call Floats;
+	call Pointers;
+	call Texts;
+	call Stores;
+	exit 0;
+
+	[Say: int n: 0;]
+		log n ' ';
+	[end: n]
+
+	[Bump]
+		next++ 1;
+	[end: next]
+
+	[Grow]
+		far is far * 2;
+	[end: 2]
+
+	[BumpFar: : i64]
+		far++ 1;
+	[end: far]
+
+	[Rise: : f64]
+		level is level + 1.0;
+	[end: level]
+
+	[Step]
+		cursor is cursor + 1;
+	[end: 1]
+
+	[Named: str text: ''; : str]
+		log text ' ';
+	[end: text]
+
+	[Whole]
+		log 'whole: ';
+		int sum: (SumSaid);
+		log '= ' sum ' ';
+		log (W1) ' ' (W2) ' ' (W3) ' ' (W4) ' ' (W5) ' ' (W6) ' ' (Pair: (Say: 3) (Say: 4)) '\n';
+	[end]
+
+	[SumSaid]
+	[end: (Say: 1) + (Say: 2)]
+
+	[W1]
+		next is 0;
+	[end: (Bump) - (Bump)]
+
+	[W2]
+		next is 10;
+	[end: next - (Bump)]
+
+	[W3]
+		next is 10;
+	[end: (Bump) - next]
+
+	[W4]
+		next is 1;
+	[end: next << (Bump)]
+
+	[W5: : bln]
+		next is 5;
+	[end: next < (Bump)]
+
+	[W6]
+		next is 10;
+		next++ (Bump);
+	[end: next]
+
+	[Pair: int x: 0; int y: 0;]
+	[end: x * 10 + y]
+
+	[Wide]
+		log 'wide: ' (L1) ' ' (L2) ' ' (L3) ' ' (L4) ' ' (L5) ' ' (L6) '\n';
+	[end]
+
+	[L1: : i64]
+		far is 5000000000;
+	[end: far - (BumpFar)]
+
+	[L2: : i64]
+		far is 5000000000;
+	[end: (BumpFar) - far]
+
+	[L3: : i64]
+		far is 5;
+	[end: far * (Grow)]
+
+	[L4: : i64]
+		far is 5;
+	[end: far - (Bump)]
+
+	[L5: : i64]
+		far is 1;
+	[end: far << (Grow)]
+
+	[L6: : bln]
+		far is 7;
+	[end: far < (BumpFar)]
+
+	[Floats]
+		log 'floats: ' ((F1) as int) ' ' ((F2) as int) ' ' ((F3) as int) ' ' (F4) ' ' ((F5) as int) '\n';
+	[end]
+
+	[F1: : f64]
+		level is 1.5;
+	[end: level - (Rise)]
+
+	[F2: : f64]
+		level is 1.5;
+	[end: (Rise) - level]
+
+	[F3: : f64]
+		level is 0.0;
+	[end: (Rise) - (Rise)]
+
+	[F4: : bln]
+		level is 4.0;
+	[end: level < (Rise)]
+
+	[F5: : f64]
+		level is 4.0;
+	[end: level * (Rise)]
+
+	[Pointers]
+		ptr<u8> start: new u8[16];
+		log 'pointers: ' (P1: start) ' ' (P2: start) ' ' (P3: start) '\n';
+		free start;
+	[end]
+
+	[P1: ptr<u8> start;]
+		cursor is start;
+		ptr<u8> q: cursor + (Step);
+	[end: (q - cursor) as int]
+
+	[P2: ptr<u8> start; : bln]
+		cursor is start;
+	[end: cursor < start + (Step)]
+
+	[P3: ptr<u8> start;]
+		cursor is start;
+	[end: (cursor - start) as int + (Step)]
+
+	[Texts]
+		log 'texts: ';
+		bln less: (Named: 'a') < (Named: 'b');
+		bln same: (Named: 'c') == (Named: 'd');
+		# a text variable is read where it is, so a call that replaces its text is seen (and
+		# the text it had, freed by the call, isn't read)
+		word is 'abcdefgh';
+		word is 'abc';
+		bln before: word < (Replace);
+		log less ' ' same ' ' before ' ' word '\n';
+	[end]
+
+	[Replace: : str]
+		word is 'zzz, longer than it was, so that it has to move to somewhere else on the heap';
+	[end: 'abd']
+
+	[Move]
+		slot is 1;
+	[end: 7]
+
+	[Stores]
+		ptr<Cell> cells: new Cell[2];
+		cells:0.value is 0;
+		cells:1.value is 0;
+		call Store: cells;
+		log 'stores: ' cells:0.value ' ' cells:1.value '\n';
+		free cells;
+	[end]
+
+	[Store: ptr<Cell> cells;]
+		slot is 0;
+		cells:slot.value is (Move);
+	[end]
+}

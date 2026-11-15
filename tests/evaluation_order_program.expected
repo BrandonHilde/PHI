@@ -1,0 +1,6 @@
+whole: 1 2 = 3 -1 -1 0 4 1 21 3 4 34
+wide: -1 0 10 -17 4 1
+floats: -1 0 -1 1 20
+pointers: 0 1 1
+texts: a b c d 1 0 0 zzz, longer than it was, so that it has to move to somewhere else on the heap
+stores: 0 7

@@ -182,7 +182,8 @@ namespace Phi.Cli
         sealed class Method
         {
             public string Name = "";
-            public bool Function;       // gives a number back and changes nothing outside itself
+            public bool Function;       // gives a number back, and is called inside expressions
+            public bool Changes;        // a function that changes class variables too (so the order sides are worked out in shows)
             public List<Variable> Parameters = new();
             public List<ArrayRef> Pointers = new();
             public List<Variable> Locals = new();
@@ -492,7 +493,7 @@ namespace Phi.Cli
                     _ => signed ? (int)a >= (int)b : a >= b,
                 };
                 if (Next == null) return holds;
-                // (PHI's and and or stop at the first side that decides it; nothing here has an effect, so either way is the same)
+                // (PHI's and and or stop at the first side that decides it)
                 return Joiner == "and" ? holds && Next.Holds(m, frame) : holds || Next.Holds(m, frame);
             }
 
@@ -515,8 +516,10 @@ namespace Phi.Cli
             {
                 m.Step();
                 uint[] where = Target.Global ? m.Globals : frame;
+                // (x++ v is x is x + v: x is read before v is worked out, the left side first)
+                uint old = where[Target.Slot];
                 uint v = Value.Value(m, frame);
-                where[Target.Slot] = Op switch { "++" => unchecked(where[Target.Slot] + v), "--" => unchecked(where[Target.Slot] - v), _ => v };
+                where[Target.Slot] = Op switch { "++" => unchecked(old + v), "--" => unchecked(old - v), _ => v };
             }
             public override void Print(StringBuilder sb, int depth) =>
                 sb.Append(Tabs(depth)).Append(Op == "is" ? $"{Target.Name} is {Value.Print()};\n" : $"{Target.Name}{Op} {Value.Print()};\n");
@@ -531,9 +534,10 @@ namespace Phi.Cli
             public override void Run(Machine m, uint[] frame)
             {
                 m.Step();
+                // (a store works out its value first, then where it goes)
+                uint v = Value.Value(m, frame);
                 uint i = Index.Value(m, frame);
                 if (Masked) i &= (uint)(Array.Length - 1);
-                uint v = Value.Value(m, frame);
                 Array.In(m, frame)[i] = Array.Kind == ArrayKind.U8 ? v & 255 : v;
             }
             public override void Print(StringBuilder sb, int depth)
@@ -780,7 +784,7 @@ namespace Phi.Cli
 
             Method MakeMethod(string name, bool function)
             {
-                var made = new Method { Name = name, Function = function };
+                var made = new Method { Name = name, Function = function, Changes = function && Chance(50) };
                 method = made;
                 int parameters = random.Next(0, 4);
                 for (int i = 0; i < parameters; i++)
@@ -823,11 +827,11 @@ namespace Phi.Cli
                 return all;
             }
 
-            /// <summary>A function changes only its own variables; nothing changes a loop's counter.</summary>
+            /// <summary>Most functions change only their own variables; nothing changes a loop's counter.</summary>
             List<Variable> Writable(Kind kind)
             {
                 var all = new List<Variable>();
-                if (method == null || !method.Function)
+                if (method == null || !method.Function || method.Changes)
                     all.AddRange(tree.Globals.Where(g => g.Kind == kind && !g.Name.StartsWith("idx") && (!g.Own || method == null)));
                 if (method == null && Chance(50) && all.Any(g => g.Own)) all = all.Where(g => g.Own).ToList();
                 if (method != null) all.AddRange(method.Parameters.Concat(method.Locals).Where(v => v.Kind == kind && !v.Name.StartsWith("idx")));

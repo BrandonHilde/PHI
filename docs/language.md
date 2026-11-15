@@ -679,6 +679,16 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
   `i64`, a `u64` or a floating point number it's a whole number written there, from -64 to
   64, and `x` is multiplied by itself that many times.
 - In a condition, any number counts as true unless it is 0.
+- **Left to right**: an operator works out its left side before its right, and a method's
+  arguments go first to last. It shows when a side calls a method that prints something, or
+  changes what the other side reads: with `Bump` adding 1 to `next` and giving it back,
+  `(Bump) - (Bump)` is 1 - 2, and `next - (Bump)` reads `next` before `Bump` changes it.
+  `and` and `or` work out the right side only when it's needed (`ready and (Load)` doesn't
+  call `Load` when `ready` is false). A store is the one that goes the other way: it works out
+  its value first, then where it goes, so `cells:(Pick) is (Make);` calls `Make` and then
+  `Pick`, and `x++ (Bump);` is `x is x + (Bump);`, reading `x` before `Bump` runs. Two
+  texts or two objects compared are read where they are: with a variable on the left and a
+  call on the right that changes it, what's compared is what the variable holds after the call.
 - A binary operator must be on the same line as its left side. This is how
   `if ready` followed by a statement on the next line knows where the condition ends. A long
   expression can break after an operator anywhere, and inside parentheses before one too,

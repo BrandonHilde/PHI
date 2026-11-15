@@ -276,10 +276,11 @@ namespace Phi.Compiler.CodeGen.Ir
                         case NameExpr { Symbol: VariableSymbol g } when Global(g) is string place:
                             Emit(new StoreI { Place = place, Src = Value(a.Value, g.Type), Kind = KindOf(g.Type) });
                             return;
-                        case Expr field when Field(field) is var (fb, fo, ft) && fb != null:
+                        case Expr field when IsField(field):
                         {
-                            // (the value first, then where it goes)
-                            Opnd value = Value(a.Value, ft);
+                            // (the value first, then where it goes: the field's pointer is read after it)
+                            Opnd value = Value(a.Value, field.Type);
+                            var (fb, fo, ft) = Field(field);
                             Emit(new StoreIdxI { Base = fb, Index = Opnd.Const(fo), Scale = 1, Src = Small(value, Is64(ft)), Kind = KindOf(ft) });
                             return;
                         }
@@ -521,6 +522,17 @@ namespace Phi.Compiler.CodeGen.Ir
         /// or a borrowed object; and a path through objects (a.next.value), each address on the
         /// way read from the one before. (null, 0, Error) for anything else.
         /// </summary>
+        /// <summary>True when <see cref="Field"/> takes the expression (asking only, with nothing built).</summary>
+        bool IsField(Expr e) => e switch
+        {
+            NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self) && Supported(f.Type) && !f.Type.IsObject,
+            MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type) && !f.Type.IsObject
+                && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0 => true,
+            MemberExpr { Field: FieldSymbol f, Call: null } m => Supported(f.Type) && !f.Type.IsObject && Is64(Real(m.Target)) && Supported(Real(m.Target)),
+            NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && Ours(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0 && Supported(p.Type) && !p.Type.IsObject,
+            _ => false,
+        };
+
         (VReg? Base, long Offset, PhiType Type) Field(Expr e)
         {
             switch (e)
@@ -692,10 +704,10 @@ namespace Phi.Compiler.CodeGen.Ir
             Need(cmp.ObjectCompare == null && !l.IsObject && !r.IsObject, "a comparison of objects");
             if (IsF(l) || IsF(r))
             {
-                // both made f64s, the right first; the condition is the signed one's, read as IEEE
+                // both made f64s, the left first; the condition is the signed one's, read as IEEE
                 Need(!l.IsPointer && !r.IsPointer, "a pointer compared with a float");
-                VReg fb = (VReg)Convert(Value(cmp.Right), r, PhiType.F64).Reg!;
                 VReg fa = (VReg)Convert(Value(cmp.Left), l, PhiType.F64).Reg!;
+                VReg fb = (VReg)Convert(Value(cmp.Right), r, PhiType.F64).Reg!;
                 Cond fc = cmp.Op switch
                 {
                     BinaryOp.Equal => Cond.Eq,
@@ -712,9 +724,9 @@ namespace Phi.Compiler.CodeGen.Ir
             bool wide = l.IsWide || r.IsWide || pointers;
             bool unsigned = pointers || (wide ? l.Kind == TypeKind.U64 || r.Kind == TypeKind.U64 : l.IsUnsigned32 || r.IsUnsigned32);
             PhiType at = pointers ? (l.IsPointer ? l : r) : wide ? (unsigned ? PhiType.U64 : PhiType.I64) : (unsigned ? PhiType.U32 : PhiType.I32);
-            // (the right side is worked out first, as the generator does: see Arithmetic)
-            Opnd b = Small(Convert(Value(cmp.Right, r), r, at), wide);
+            // (the left side is worked out first: see Arithmetic)
             VReg a = InReg(Convert(Value(cmp.Left, l), l, at), wide);
+            Opnd b = Small(Convert(Value(cmp.Right, r), r, at), wide);
             Cond c = cmp.Op switch
             {
                 BinaryOp.Equal => Cond.Eq,
@@ -929,9 +941,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     BinaryOp.Divide => FOp.Div,
                     _ => throw new NotYet($"the operator {b.Op} on floats"),
                 };
-                // (the right side first, as everywhere)
-                VReg fb = (VReg)Convert(Value(b.Right), Real(b.Right), PhiType.F64).Reg!;
+                // (the left side first, as everywhere)
                 VReg fa = (VReg)Convert(Value(b.Left), Real(b.Left), PhiType.F64).Reg!;
+                VReg fb = (VReg)Convert(Value(b.Right), Real(b.Right), PhiType.F64).Reg!;
                 VReg fd = fn.NewFloat();
                 Emit(new FBinI { Op = fop, Dst = fd, A = fa, B = fb });
                 return fd;
@@ -940,8 +952,9 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 // p - q: how far apart they are, a number (the binder's type), from all 64 bits of each
                 VReg pd = fn.NewValue(true);
+                VReg pl = InReg(Value(b.Left), true);
                 Opnd q = Value(b.Right);
-                Emit(new BinI { Op = BinOp.Sub, Dst = pd, A = InReg(Value(b.Left), true), B = q });
+                Emit(new BinI { Op = BinOp.Sub, Dst = pd, A = pl, B = q });
                 return Convert(pd, PhiType.I64, b.Type);
             }
             Need(!Real(b.Left).IsPointer && !Real(b.Right).IsPointer, "arithmetic on a pointer that isn't moving it");
@@ -962,14 +975,13 @@ namespace Phi.Compiler.CodeGen.Ir
                 BinaryOp.Modulo => unsigned ? BinOp.RemU : BinOp.RemS,
                 _ => throw new NotYet($"the operator {b.Op}"),
             };
-            // the right side is worked out first, then the left, as the generator does (it keeps
-            // the right on the stack while it works out the left): which a program sees when
-            // both call methods that change what the other reads. (A shift's count is a number
-            // of places, at whatever width it's written.)
+            // the left side is worked out first, then the right, as PHI says (which a program
+            // sees when a side calls a method that changes what the other reads; see
+            // EvaluationOrder). A shift's count is a number of places, at whatever width it's written.
+            Opnd left = Convert(Value(b.Left), Real(b.Left), t);
             Opnd right = op is BinOp.Shl or BinOp.Shr or BinOp.Sar
                 ? Convert(Value(b.Right), Real(b.Right), b.Right.Type.IsWide ? b.Right.Type : PhiType.I32)
                 : Convert(Value(b.Right), Real(b.Right), t);
-            Opnd left = Convert(Value(b.Left), Real(b.Left), t);
             if (left.IsImm && right.IsImm && Fold(op, left.Imm, right.Imm, wide, unsigned) is long folded)
                 return Opnd.Const(folded);
             if (op is BinOp.Shl or BinOp.Shr or BinOp.Sar && right.Reg is { Wide: true } wideCount)
@@ -1041,18 +1053,18 @@ namespace Phi.Compiler.CodeGen.Ir
             Expr pointer = leftIsPointer ? b.Left : b.Right, number = leftIsPointer ? b.Right : b.Left;
             Need(Supported(Real(number)), $"a pointer moved by a {Real(number)}");
             Need(leftIsPointer || b.Op == BinaryOp.Add, "a number minus a pointer");
-            // (the right side first, as everywhere)
+            // (the left side first, as everywhere)
             Opnd n = default;
             VReg p = null!;
             if (leftIsPointer)
             {
-                n = Small(Convert(Value(number), Real(number), Real(number).IsSigned ? PhiType.I64 : PhiType.U64), true);
                 p = InReg(Value(pointer), true);
+                n = Small(Convert(Value(number), Real(number), Real(number).IsSigned ? PhiType.I64 : PhiType.U64), true);
             }
             else
             {
-                p = InReg(Value(pointer), true);
                 n = Small(Convert(Value(number), Real(number), Real(number).IsSigned ? PhiType.I64 : PhiType.U64), true);
+                p = InReg(Value(pointer), true);
             }
             VReg d = fn.NewValue(true);
             Emit(new BinI { Op = b.Op == BinaryOp.Add ? BinOp.Add : BinOp.Sub, Dst = d, A = p, B = n });

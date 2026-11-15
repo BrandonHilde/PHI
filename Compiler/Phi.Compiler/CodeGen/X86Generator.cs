@@ -6254,6 +6254,14 @@ namespace Phi.Compiler.CodeGen
                 EmitExpr(b.Left);
                 TryLoadSimple(b.Right, "ecx", dryRun: false);
             }
+            else if (LeftFirst(b))
+            {
+                EmitExpr(b.Left);
+                Emit("push rax");
+                EmitExpr(b.Right);
+                Emit("mov rcx, rax");
+                Emit("pop rax");
+            }
             else
             {
                 EmitExpr(b.Right);
@@ -6445,7 +6453,7 @@ namespace Phi.Compiler.CodeGen
 
             // the left is simple: the right first, then the left goes with it
             string? left = DirectOperand(binary.Left, constantOnly: false);
-            if (left == null || shift) return false;
+            if (left == null || shift || LeftFirst(binary)) return false;
             EmitExpr(binary.Right);
             if (binary.Op is BinaryOp.Add or BinaryOp.Multiply or BinaryOp.BitAnd or BinaryOp.BitOr or BinaryOp.BitXor)
             {
@@ -6486,12 +6494,52 @@ namespace Phi.Compiler.CodeGen
         }
 
         /// <summary>Left operand in eax, right operand in ecx.</summary>
+        /// <summary>True when this operator's right side can't be worked out before its left (see <see cref="EvaluationOrder"/>).</summary>
+        bool LeftFirst(BinaryExpr b) => EvaluationOrder.LeftFirst(b.Left, b.Right, currentMethod);
+
+        /// <summary>
+        /// True when the left side of two texts or objects compared is taken first: only when it
+        /// calls something itself. A variable on the left is read where it is after the right's
+        /// call, since its address taken before it could be of text or an object the call freed.
+        /// </summary>
+        bool LeftAddressFirst(BinaryExpr cmp) => LeftFirst(cmp) && EvaluationOrder.HasEffect(cmp.Left);
+
+        /// <summary>Two texts' addresses: the left's in esi, the right's in edi.</summary>
+        void EmitTextPair(BinaryExpr cmp)
+        {
+            if (LeftAddressFirst(cmp))
+            {
+                EmitExpr(cmp.Left);
+                Emit("push eax");
+                EmitExpr(cmp.Right);
+                Emit($"mov {R("edi")}, {R("eax")}");
+                Emit("pop esi");
+                return;
+            }
+            EmitExpr(cmp.Right);
+            Emit("push eax");
+            EmitExpr(cmp.Left);
+            Emit($"mov {R("esi")}, {R("eax")}");
+            Emit("pop edi");
+        }
+
         void EmitOperands(BinaryExpr b)
         {
             if (TryLoadSimple(b.Right, "ecx", dryRun: true))
             {
                 EmitExpr(b.Left);
                 TryLoadSimple(b.Right, "ecx", dryRun: false);
+                return;
+            }
+
+            if (LeftFirst(b))
+            {
+                // the left first, waiting on the stack while the right calls what it calls
+                EmitExpr(b.Left);
+                Emit("push eax");
+                EmitExpr(b.Right);
+                Emit("mov ecx, eax");
+                Emit("pop eax");
                 return;
             }
 
@@ -6644,10 +6692,21 @@ namespace Phi.Compiler.CodeGen
                         Emit($"{(equalWanted ? "jz" : "jnz")} {target}");
                         return;
                     }
-                    EmitObjectAddress(cmp.Right);
-                    Emit("push eax");
-                    EmitObjectAddress(cmp.Left);
-                    Emit("pop edx");
+                    if (LeftAddressFirst(cmp))
+                    {
+                        EmitObjectAddress(cmp.Left);
+                        Emit("push eax");
+                        EmitObjectAddress(cmp.Right);
+                        Emit("mov edx, eax");
+                        Emit("pop eax");
+                    }
+                    else
+                    {
+                        EmitObjectAddress(cmp.Right);
+                        Emit("push eax");
+                        EmitObjectAddress(cmp.Left);
+                        Emit("pop edx");
+                    }
                     Emit($"call {ObjectRoutine("equal", compared)}   ; eax = 1 when the values match");
                     Emit("test eax, eax");
                     Emit($"{(equalWanted ? "jnz" : "jz")} {target}");
@@ -6658,11 +6717,7 @@ namespace Phi.Compiler.CodeGen
                 case BinaryExpr { IsComparison: true, Left.Type.IsString: true, Right.Type.IsString: true, Op: not (BinaryOp.Equal or BinaryOp.NotEqual) } cmp:
                 {
                     Need("phi_strorder");
-                    EmitExpr(cmp.Right);
-                    Emit("push eax");
-                    EmitExpr(cmp.Left);
-                    Emit($"mov {R("esi")}, {R("eax")}");
-                    Emit("pop edi");
+                    EmitTextPair(cmp);
                     Emit("call phi_strorder        ; eax = -1 when the left one comes first, 1 when the right one does");
                     Emit("test eax, eax");
                     string holds = cmp.Op switch { BinaryOp.Less => "jl", BinaryOp.LessEqual => "jle", BinaryOp.Greater => "jg", _ => "jge" };
@@ -6674,11 +6729,7 @@ namespace Phi.Compiler.CodeGen
                 case BinaryExpr { IsComparison: true, Left.Type.IsString: true, Right.Type.IsString: true } cmp:
                 {
                     Need("phi_strcmp");
-                    EmitExpr(cmp.Right);
-                    Emit("push eax");
-                    EmitExpr(cmp.Left);
-                    Emit($"mov {R("esi")}, {R("eax")}");
-                    Emit("pop edi");
+                    EmitTextPair(cmp);
                     Emit("call phi_strcmp          ; eax = 0 when equal");
                     Emit("test eax, eax");
                     bool equalWanted = (cmp.Op == BinaryOp.Equal) == jumpIf;
@@ -7005,15 +7056,14 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
 
-                case BinaryExpr binary when IsFloatInMemory(binary.Right) && (FloatWritten(binary.Right) != null || !HasCall(binary.Left)):
-                    // the right side straight from memory (after a call on the left, only a
-                    // constant: a call could change a variable, which was read before it)
+                case BinaryExpr binary when IsFloatInMemory(binary.Right):
+                    // the right side straight from memory, read after the left (calls and all)
                     EmitFloat(binary.Left);
                     EmitFloatWithMemory(binary.Op, binary.Right, reversed: false);
                     return;
 
-                case BinaryExpr binary when IsFloatInMemory(binary.Left):
-                    // the left side straight from memory, after the right, calls and all
+                case BinaryExpr binary when IsFloatInMemory(binary.Left) && !LeftFirst(binary):
+                    // the left side straight from memory, after the right (when no one can tell)
                     EmitFloat(binary.Right);
                     EmitFloatWithMemory(binary.Op, binary.Left, reversed: true);
                     return;
@@ -7074,6 +7124,18 @@ namespace Phi.Compiler.CodeGen
                 floatDepth++;
                 EmitFloat(right);
                 floatDepth--;
+                return;
+            }
+            if (EvaluationOrder.LeftFirst(left, right, currentMethod))
+            {
+                // the left first, waiting in memory while the right calls what it calls
+                EmitFloat(left);
+                Emit("sub esp, 8");
+                Emit("fstp qword [esp]");
+                EmitFloat(right);
+                Emit("fld qword [esp]");
+                Emit("fxch                    ; st1 = the left, st0 = the right");
+                Emit("add esp, 8");
                 return;
             }
             EmitFloat(right);
@@ -7159,7 +7221,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitFloatFlags(BinaryExpr cmp)
         {
-            if (IsFloatInMemory(cmp.Right) && (FloatWritten(cmp.Right) != null || !HasCall(cmp.Left)))
+            if (IsFloatInMemory(cmp.Right))
             {
                 EmitFloat(cmp.Left);
                 Emit($"fcomp {FloatMemory(cmp.Right)}");
@@ -7336,10 +7398,23 @@ namespace Phi.Compiler.CodeGen
 
                 case BinaryExpr { Op: BinaryOp.ShiftLeft or BinaryOp.ShiftRight } shift:
                 {
-                    EmitExpr(shift.Right);
-                    Emit("push eax");
-                    EmitWide(shift.Left);
-                    Emit("pop ecx");
+                    if (LeftFirst(shift))
+                    {
+                        EmitWide(shift.Left);
+                        Emit("push edx");
+                        Emit("push eax");
+                        EmitExpr(shift.Right);
+                        Emit("mov ecx, eax");
+                        Emit("pop eax");
+                        Emit("pop edx");
+                    }
+                    else
+                    {
+                        EmitExpr(shift.Right);
+                        Emit("push eax");
+                        EmitWide(shift.Left);
+                        Emit("pop ecx");
+                    }
                     string small = NewLabel("shift");
                     Emit("test cl, 32");
                     Emit($"jz {small}");
@@ -7475,10 +7550,21 @@ namespace Phi.Compiler.CodeGen
                         return;
                     }
                     // (the CPU takes the count's low six bits, as the two halves' shift does)
-                    EmitExpr(shift.Right);
-                    Emit("push rax");
-                    EmitWhole(shift.Left);
-                    Emit("pop rcx");
+                    if (LeftFirst(shift))
+                    {
+                        EmitWhole(shift.Left);
+                        Emit("push rax");
+                        EmitExpr(shift.Right);
+                        Emit("mov ecx, eax");
+                        Emit("pop rax");
+                    }
+                    else
+                    {
+                        EmitExpr(shift.Right);
+                        Emit("push rax");
+                        EmitWhole(shift.Left);
+                        Emit("pop rcx");
+                    }
                     Emit($"{how} rax, cl");
                     return;
                 }
@@ -7516,6 +7602,15 @@ namespace Phi.Compiler.CodeGen
             {
                 EmitWhole(left);
                 return $"qword {Operand(EmitPlace(right))}";
+            }
+            if (EvaluationOrder.LeftFirst(left, right, currentMethod))
+            {
+                EmitWhole(left);
+                Emit("push rax");
+                EmitWhole(right);
+                Emit("mov rcx, rax");
+                Emit("pop rax");
+                return "rcx";
             }
             EmitWhole(right);
             Emit("push rax");
@@ -7576,9 +7671,8 @@ namespace Phi.Compiler.CodeGen
                 LoadConstant("ebx", (int)(constant >> 32));
                 return;
             }
-            // a 64-bit variable on the right: its halves are read where they are. (Read after
-            // the left is worked out, so not when the left calls something that could change it.)
-            if (b.Right.Type.IsWide && IsStaticPlace(b.Right) && !HasCall(b.Left))
+            // a 64-bit variable on the right: its halves are read where they are, after the left
+            if (b.Right.Type.IsWide && IsStaticPlace(b.Right))
             {
                 EmitWide(b.Left);
                 Place right = EmitPlace(b.Right);
@@ -7590,7 +7684,7 @@ namespace Phi.Compiler.CodeGen
             // made (zeros, or its sign) once the left is worked out
             if (Narrow(b.Right) is Expr narrow)
             {
-                if (!HasCall(b.Left) && (DirectOperand(narrow, constantOnly: false) != null || PlaceOperand(narrow)))
+                if (DirectOperand(narrow, constantOnly: false) != null || PlaceOperand(narrow) || LeftFirst(b))
                 {
                     EmitWide(b.Left);
                     if (ReadWhereItIs(narrow) is string direct) Emit($"mov ecx, {direct}");
@@ -7627,6 +7721,18 @@ namespace Phi.Compiler.CodeGen
                 else Emit("xor ebx, ebx");
                 return;
             }
+            if (LeftFirst(b))
+            {
+                EmitWide(b.Left);
+                Emit("push edx");
+                Emit("push eax");
+                EmitWide(b.Right);
+                Emit("mov ecx, eax");
+                Emit("mov ebx, edx");
+                Emit("pop eax");
+                Emit("pop edx");
+                return;
+            }
             EmitWide(b.Right);
             Emit("push edx");
             Emit("push eax");
@@ -7657,7 +7763,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         bool TryWideInPlace(BinaryExpr b)
         {
-            if (HasCall(b.Left) || ConstantFolder.Evaluate(b.Right) != null) return false;
+            if (ConstantFolder.Evaluate(b.Right) != null) return false;
             var (low, high) = b.Op switch
             {
                 BinaryOp.Add => ("add", "adc"), BinaryOp.Subtract => ("sub", "sbb"),
@@ -7730,7 +7836,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         bool TryWideMultiply(BinaryExpr binary)
         {
-            if (!WideMultiplyInPlace(binary)) return false;
+            if (!WideMultiplyInPlace(binary) || LeftFirst(binary)) return false;
             Expr? left = Narrow(binary.Left), right = Narrow(binary.Right);
             if (left != null && right != null && left.Type.IsSigned == right.Type.IsSigned)
             {

@@ -1559,6 +1559,7 @@ folding, and (2) the backend interface, which S10 needs first.
   - A statement of such math no longer sends the method's register variables back to
     memory around it, so a loop's counter stays in its register.
   - A side that calls a method is still worked out as before, the right side first.
+    (The left side first since 2026-11-15: see "Left to right".)
   `int64_products` holds every form to what the old code gave (and Python, for two of its sums).
 - [x] `phi fuzz code`: random programs, each written with what it must print, built for
   every system this computer runs and compared (tests/README.md has the details). It's what
@@ -3635,7 +3636,8 @@ a kind of thing at a time, each proven by the suite run through it.
 - **An operator's right side is worked out before its left**, as the generator does (it
   keeps the right on the stack), which a program sees when both sides call methods that
   change what the other reads; a call's arguments go first to last. The reference doesn't
-  say: found by `ir_pointers_program`, left for the user to decide.
+  say: found by `ir_pointers_program`, left for the user to decide. (Decided 2026-11-15:
+  left first, in both; see "Left to right" below.)
 - 64-bit, best of five: fib 0.41 s to 0.31 (C# 0.33), collatz 0.53 to 0.40 (C# 0.31),
   sieve 0.36 to 0.34 (C# 0.35), sort 0.28 to 0.27 (C# 0.36).
 - Checked: every 64-bit Linux test passes with it (176, 2,500 methods through it), 900
@@ -3736,6 +3738,34 @@ after `has name` it can't be taken for the statement.
 - Only an `if`'s (or `elif`'s) whole condition: part of one, in parentheses, a `while`'s
   or a value to keep are errors, said once, with the rest read on.
 - Tests `has_when` (kernel, Linux in 32 and 64 bits), `has_when_errors`, `has_when_misuse`.
+
+**Left to right (2026-11-15, the user's choice).** An operator works out its left side
+before its right, as C#, Java and Rust do (C doesn't say), and as a method's arguments and
+`and`/`or` already went: `(Bump) - (Bump)` is 1 - 2, and `next - (Bump)` reads `next`
+first. Before, both compilers did the right side first and the reference didn't say. A
+store is the one the other way, also the user's choice: its value first, then where it goes
+(`cells:(Pick) is (Make);` calls `Make` first, as Python does and PHI always did), so
+`x++ (Bump);` reads `x` before `Bump` runs.
+- The generator keeps its quicker right-first code wherever nobody can tell: only when one
+  side calls something (or makes an object, swaps in one step, reads a port) and the other
+  reads something that could change, or can stop the program, does it take the left first
+  (`EvaluationOrder.LeftFirst`; a method's own number it never takes the address of can't
+  change). Several of its shortcuts read the right side after a call on the left on
+  purpose to keep right-first; those read it after now, which is what the rule says.
+- The intermediate form works the left out first always; a field store's pointer was read
+  before its value there, and is after it now, as the generator does.
+- `phi fuzz code`: half its functions change class variables now (they changed only their
+  own before), and its own working out reads `x` first in `x++ v` and a store's value before
+  its index. Put back to right first, it found 4 programs wrong in 100.
+- Four tests had right-first answers and have left-first ones now (`float_paths`,
+  `int64_products`, `int64_whole`, `ir_pointers_program`, each checked by hand). Test
+  `evaluation_order_program`: whole numbers, 64-bit, floats, pointers, text, shifts and a
+  store, each in a method of its own so the intermediate form takes it.
+- Not changed: two texts (or objects) compared, with a variable on the left and a call on
+  the right that changes it, compare what the variable holds after the call: the left's
+  address is taken first only when the left itself calls something
+  (`X86Generator.LeftAddressFirst`). Taking it first anyway read the text after the call had
+  freed it (found by trying it; the test has the case now).
 
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
