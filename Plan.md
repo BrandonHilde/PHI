@@ -53,8 +53,10 @@ would show that, to be made exact as the work goes: the older `Map`, `memory.lis
 `KeyedMap` gone and weblib moved to the containers that take types, with its tests
 passing, and nothing above having blocked it; the benchmarks in `bench/` taking no
 longer than C#'s together, and none more than 1.3 times its own (the user's choice of bar,
-2026-11-14; they're 1.53 times C#'s today, and the plan for getting there, an optimiser
-of PHI's own, is in `PerformanceStrategy.md`, kept beside this repository); and the tests run on Windows and on a Mac.
+2026-11-14, when they were 1.53 times C#'s; the plan for getting there, an optimiser of
+PHI's own, is in `PerformanceStrategy.md`, kept beside this repository: **met 2026-11-15**,
+0.98 times C#'s together and `lists` the most at 1.26, in `bench/RESULTS.md`); and the
+tests run on Windows and on a Mac.
 
 ---
 
@@ -3844,6 +3846,20 @@ three), `phi_clock_lock` and the kernel's ticket lock. A class's variables were 
 - Still open: a struct's fields have no padding, so `atomic` on a field at an odd offset can
   be a split lock in the same way. Rare (an atomic field is usually an int first, or after
   other ints), but nothing stops it; an error, or padding for such a field, is to decide.
+
+**The speed bar met (2026-11-15).** `phi compare --runs 5`, saved as `bench/RESULTS.md`:
+64-bit PHI over C# 0.98 together (1.53 two days before), the most `lists` at 1.26 and
+`collatz` at 1.12, `strings` 0.85, `sort` 0.75; over gcc -O2 1.34 together. Every test
+passes through the form and with `PHI_IR=0`, `phi fuzz` is clean both ways, and building
+takes no longer (`web_program` 4.5 s to 4.3, `dialogs_program` 1.27 to 0.92: less
+assembly). PHI's 32-bit code is about gcc -O0's, as it was.
+- Where code lands moves a tight loop's time a lot on this CPU (Core Ultra 9 185H):
+  `interp` was 0.53 s on 2026-11-14 and is 0.645 now, with `Run`'s code the same but 4
+  bytes further on. Moved by hand so its `when`'s cases start on a 64-byte line it's 0.53
+  again, on a 32-byte one 0.60, a 16-byte one 0.65. No simple rule brings it back
+  (aligning each case to 16 made it 0.72; the method or the loop's head to 64, nothing), so
+  none is in: a rule fitted to one loop on one CPU isn't one. A benchmark's time can move
+  by about a fifth with code it doesn't run.
 
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
