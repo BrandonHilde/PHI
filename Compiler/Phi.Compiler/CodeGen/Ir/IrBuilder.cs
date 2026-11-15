@@ -214,6 +214,19 @@ namespace Phi.Compiler.CodeGen.Ir
             foreach (Stmt s in body) Statement(s);
         }
 
+        /// <summary>The locked blocks the statement being built is in: each lock, what catches errors outside it, and how many loops there were.</summary>
+        readonly List<(string Label, VReg Saved, int Loops)> locks = new();
+
+        /// <summary>
+        /// The locks taken since there were this many loops given back, innermost first: before
+        /// a break or continue (in the loop it's about), or a return (all of them).
+        /// </summary>
+        void Unlock(int loopsBefore)
+        {
+            for (int k = locks.Count - 1; k >= 0 && locks[k].Loops >= loopsBefore; k--)
+                Emit(new UnlockI { Label = locks[k].Label, Saved = locks[k].Saved });
+        }
+
         /// <summary>True while a statement that needs the held class variables in memory is built: they're there.</summary>
         bool heldInMemory;
 
@@ -324,8 +337,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     // (a statement in it that needs them in memory, a call or a return, has them
                     // written back before it and read again after, as the generator does: unless it
                     // has a break or continue, which would leave with them in neither; then none is held)
+                    // (nor in a loop with a locked block: what's under a lock is shared with other
+                    // threads, and a value kept in a register would be written back outside the
+                    // lock, over theirs)
                     bool fenceable = !X86Generator.NeedsMemory(loop)
-                        && !SyntaxWalker.Nodes(loop).Any(n => n is FreeStmt
+                        && !SyntaxWalker.Nodes(loop).Any(n => n is FreeStmt or LockedStmt or AtomicStmt or AtomicExpr
                             || n is Stmt inner && inner != loop && X86Generator.NeedsMemory(inner) && SyntaxWalker.Nodes(inner).Any(j => j is BreakStmt or ContinueStmt));
                     var holding = held.Count == 0 && fenceable ? HoldableIn(loop) : new List<VariableSymbol>();
                     foreach (VariableSymbol g in holding)
@@ -405,24 +421,57 @@ namespace Phi.Compiler.CodeGen.Ir
                 case BreakStmt:
                     Need(loops.Count > 0, "a break outside a loop");
                     Mark(s);
+                    Unlock(loops.Count);
                     if (current.End == null) current.End = new JumpT { Target = loops[^1].Break };
                     return;
 
                 case ContinueStmt:
                     Need(loops.Count > 0, "a continue outside a loop");
                     Mark(s);
+                    Unlock(loops.Count);
                     if (current.End == null) current.End = new JumpT { Target = loops[^1].Continue };
                     return;
 
                 case ReturnStmt ret:
                     Mark(ret);
+                    Need(ret.Value == null || locks.Count == 0 || !SyntaxWalker.Nodes(ret.Value).Any(n => n is CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null }),
+                         "a return from inside a lock whose value calls a method");
                     if (ret.Value != null) Return(ret.Value);
-                    else if (current.End == null) current.End = new RetT();
+                    else
+                    {
+                        Unlock(0);
+                        if (current.End == null) current.End = new RetT();
+                    }
                     return;
+
+                case UnsafeStmt u:
+                    // (unsafe leaves out index checks, which the binder has already left out of what's inside)
+                    Statements(u.Body);
+                    return;
+
+                case LockedStmt lk:
+                {
+                    Need(lk.Lock is NameExpr { Symbol: VariableSymbol { Type.Kind: TypeKind.Lock } lv } && AnyGlobal(lv) != null, "a lock that isn't a class's variable");
+                    string label = AnyGlobal((VariableSymbol)((NameExpr)lk.Lock).Symbol!)!;
+                    Mark(lk);
+                    VReg saved = fn.NewValue(true, "catch");
+                    Emit(new LockI { Label = label, Saved = saved });
+                    locks.Add((label, saved, loops.Count));
+                    Statements(lk.Body);
+                    locks.RemoveAt(locks.Count - 1);
+                    Emit(new UnlockI { Label = label, Saved = saved });
+                    return;
+                }
 
                 case FreeStmt { Owner: null, Releaser: MethodSymbol releaser } free:
                     Mark(free);
                     Call(releaser, new List<Expr> { free.Pointer }, wantResult: false);
+                    return;
+
+                case CallStmt { Resolved: RawBlockDecl raw } rc:
+                    Need(rc.Arguments.Count == 0 && rc.ResultTarget == null && rc.CalleeTarget == null, "an assembly block's result kept");
+                    Mark(rc);
+                    Emit(new RawCallI { Label = raw.Name });
                     return;
 
                 case CallStmt call:
@@ -461,6 +510,7 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             Need(method.ReturnType.Kind != TypeKind.Void, "a return with a value from a method that gives none");
             Opnd v = Value(value, method.ReturnType);
+            Unlock(0);
             if (current.End != null) Enter(fn.NewBlock());
             current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer, Float = IsF(method.ReturnType) };
         }
@@ -479,6 +529,27 @@ namespace Phi.Compiler.CodeGen.Ir
                     return (Variable(f.Self), f.Offset, f.Type);
                 case MemberExpr { Field: FieldSymbol f, Call: null } m when Supported(f.Type) && !f.Type.IsObject && Is64(Real(m.Target)) && Supported(Real(m.Target)):
                     return (InReg(Value(m.Target), true), f.Offset, f.Type);
+                case MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type) && !f.Type.IsObject
+                                                                                && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0:
+                {
+                    // p:i.field: the struct at p + i * its size, and the field in it (the index first, as an element's)
+                    long size = element.Type.Struct!.Size;
+                    PhiType it = Real(element.Index);
+                    Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+                    Opnd index = Convert(Value(element.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+                    VReg p = InReg(Value(element.Target), true);
+                    if (index.IsImm)
+                    {
+                        long offset = index.Imm * size + f.Offset;
+                        if (offset >= int.MinValue && offset <= int.MaxValue) return (p, offset, f.Type);
+                        index = InReg(index, true);
+                    }
+                    VReg scaled = fn.NewValue(true);
+                    Emit(new BinI { Op = BinOp.Mul, Dst = scaled, A = index.Reg!, B = Opnd.Const(size) });
+                    VReg at = fn.NewValue(true);
+                    Emit(new BinI { Op = BinOp.Add, Dst = at, A = p, B = scaled });
+                    return (at, f.Offset, f.Type);
+                }
                 case NameExpr { Symbol: PathSymbol p } when p.BaseOffset == 0 && Ours(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0
                                                              && Supported(p.Type) && !p.Type.IsObject:
                 {
@@ -686,6 +757,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     return CallValue(call);
                 case NameExpr { Symbol: ConstantSymbol k }:
                     return Opnd.Const(k.Value);
+                case SizeofExpr size:
+                    return Opnd.Const(size.Value);
                 case DecimalExpr dec when IsF(e.Type):
                     return FloatConst(dec.Value);
                 case NameExpr { Symbol: FloatConstantSymbol fk } when IsF(e.Type):
@@ -799,7 +872,15 @@ namespace Phi.Compiler.CodeGen.Ir
                 case UnaryExpr u:
                 {
                     Need(!u.Type.IsPointer, "a pointer negated");
-                    VReg a = InReg(Convert(Value(u.Operand), Real(u.Operand), Arith(u.Type)), u.Type.IsWide);
+                    // (the operand worked out once; a number is negated or turned over now, as the
+                    // instruction would at the width of the type)
+                    Opnd operand = Convert(Value(u.Operand), Real(u.Operand), Arith(u.Type));
+                    if (operand.IsImm)
+                    {
+                        long r = u.Op == UnaryOp.Negate ? unchecked(-operand.Imm) : ~operand.Imm;
+                        return Convert(Opnd.Const(u.Type.IsWide ? r : Fit(r, Arith(u.Type))), Arith(u.Type), u.Type);
+                    }
+                    VReg a = InReg(operand, u.Type.IsWide);
                     VReg d = fn.NewValue(u.Type.IsWide);
                     Emit(new UnI { Op = u.Op == UnaryOp.Negate ? UnOp.Neg : UnOp.Not, Dst = d, A = a });
                     return Convert(d, Arith(u.Type), u.Type);
@@ -889,6 +970,8 @@ namespace Phi.Compiler.CodeGen.Ir
                 ? Convert(Value(b.Right), Real(b.Right), b.Right.Type.IsWide ? b.Right.Type : PhiType.I32)
                 : Convert(Value(b.Right), Real(b.Right), t);
             Opnd left = Convert(Value(b.Left), Real(b.Left), t);
+            if (left.IsImm && right.IsImm && Fold(op, left.Imm, right.Imm, wide, unsigned) is long folded)
+                return Opnd.Const(folded);
             if (op is BinOp.Shl or BinOp.Shr or BinOp.Sar && right.Reg is { Wide: true } wideCount)
             {
                 VReg low = fn.NewValue(false);
@@ -898,6 +981,57 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg d = fn.NewValue(wide);
             Emit(new BinI { Op = op, Dst = d, A = InReg(left, wide), B = Small(right, wide) });
             return d;
+        }
+
+        /// <summary>
+        /// a op b with both known when it's built: worked out as the instruction would work it
+        /// out (32 bits wrap, a shift's count is cut to 5 or 6 bits), or null to leave it to the
+        /// program (a division by zero is the CPU's error when it runs, as the generator's is).
+        /// </summary>
+        static long? Fold(BinOp op, long a, long b, bool wide, bool unsigned)
+        {
+            if (wide)
+            {
+                ulong ua = unchecked((ulong)a), ub = unchecked((ulong)b);
+                return op switch
+                {
+                    BinOp.Add => unchecked(a + b),
+                    BinOp.Sub => unchecked(a - b),
+                    BinOp.Mul => unchecked(a * b),
+                    BinOp.And => a & b,
+                    BinOp.Or => a | b,
+                    BinOp.Xor => a ^ b,
+                    BinOp.Shl => a << (int)(b & 63),
+                    BinOp.Shr => unchecked((long)(ua >> (int)(b & 63))),
+                    BinOp.Sar => a >> (int)(b & 63),
+                    BinOp.DivS when b != 0 && !(a == long.MinValue && b == -1) => a / b,
+                    BinOp.RemS when b != 0 && !(a == long.MinValue && b == -1) => a % b,
+                    BinOp.DivU when b != 0 => unchecked((long)(ua / ub)),
+                    BinOp.RemU when b != 0 => unchecked((long)(ua % ub)),
+                    _ => null,
+                };
+            }
+            int x = unchecked((int)a), y = unchecked((int)b);
+            uint ux = unchecked((uint)a), uy = unchecked((uint)b);
+            long? r = op switch
+            {
+                BinOp.Add => unchecked(x + y),
+                BinOp.Sub => unchecked(x - y),
+                BinOp.Mul => unchecked(x * y),
+                BinOp.And => x & y,
+                BinOp.Or => x | y,
+                BinOp.Xor => x ^ y,
+                BinOp.Shl => x << (y & 31),
+                BinOp.Shr => unchecked((int)(ux >> (y & 31))),
+                BinOp.Sar => x >> (y & 31),
+                BinOp.DivS when y != 0 && !(x == int.MinValue && y == -1) => x / y,
+                BinOp.RemS when y != 0 && !(x == int.MinValue && y == -1) => x % y,
+                BinOp.DivU when uy != 0 => unchecked((int)(ux / uy)),
+                BinOp.RemU when uy != 0 => unchecked((int)(ux % uy)),
+                _ => null,
+            };
+            // (kept as the type keeps it: an unsigned 32-bit number is never negative)
+            return r == null ? null : unsigned ? (long)unchecked((uint)r.Value) : r;
         }
 
         /// <summary>p + n or p - n: the pointer moved by n bytes (n with its own sign), all 64 bits.</summary>

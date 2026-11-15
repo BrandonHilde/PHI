@@ -93,6 +93,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case FNegI f: yield return f.A; break;
                 case LeaI l: yield return l.A; break;
+                case UnlockI u: yield return u.Saved; break;
                 case ToFloatI f: yield return f.Src; break;
                 case ToWholeI f: yield return f.Src; break;
             }
@@ -112,6 +113,7 @@ namespace Phi.Compiler.CodeGen.Ir
             LoadIdxI l => l.Dst,
             AddrI a => a.Dst,
             LeaI l => l.Dst,
+            LockI l => l.Saved,
             FConstI f => f.Dst,
             FBinI f => f.Dst,
             FNegI f => f.Dst,
@@ -171,6 +173,8 @@ namespace Phi.Compiler.CodeGen.Ir
             void Weigh(VReg v, int k) => Of(v).Weight += Math.Pow(10, Math.Min(depth[k], 6));
 
             var calls = new List<int>();
+            // (an assembly block may change any register, r12 to r15 and the xmms too)
+            var rawCalls = new List<int>();
             int pos = 0;
             for (int k = 0; k < fn.Blocks.Count; k++)
             {
@@ -191,6 +195,7 @@ namespace Phi.Compiler.CodeGen.Ir
                         Weigh(def, k);
                     }
                     if (i is CallI) calls.Add(pos);
+                    if (i is RawCallI) rawCalls.Add(pos);
                 }
                 pos += 2;
                 foreach (VReg v in Uses(b.End))
@@ -203,13 +208,20 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             foreach (Interval iv in intervals.Values)
                 iv.CrossesCall = calls.Any(c => c > iv.Start && c < iv.End);
+            int slotsForRaw = 0;
+            foreach (Interval iv in intervals.Values.OrderBy(i => i.Value.Id))
+                if (rawCalls.Any(c => c > iv.Start && c < iv.End))
+                {
+                    Slots[iv.Value] = 8 * ++slotsForRaw;
+                    iv.Weight = -1;   // (taken out of the scan below)
+                }
 
             var free = new List<string>(CallerSaved.Concat(CalleeSaved));
             var freeFloat = new List<string>(FloatRegisters);
             var active = new List<Interval>();
             var activeFloat = new List<Interval>();
-            int slots = 0;
-            foreach (Interval iv in intervals.Values.OrderBy(i => i.Start).ThenBy(i => i.Value.Id))
+            int slots = slotsForRaw;
+            foreach (Interval iv in intervals.Values.Where(i => i.Weight >= 0).OrderBy(i => i.Start).ThenBy(i => i.Value.Id))
             {
                 if (iv.Value.Float)
                 {

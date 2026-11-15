@@ -1,0 +1,79 @@
+# locked in methods the intermediate form takes (PHI_IR=1), as the generator has it: a plain
+# store while the program has one thread, xchg once it has two; the lock given back at the
+# block's end and before a return, break or continue out of it; one lock inside another. The
+# heap's own Alloc and Free are such methods. Its expected output is the generator's.
+use user.threads;
+
+phi.IrLockedProgram:Program
+{
+	lock guard;
+	lock other;
+	int count: 0;
+	int calls: 0;
+
+	log (Simple: 5) ' ' (EarlyReturn: 3) ' ' (Breaks: 10) ' ' (Inside: 4) ' ' count '\n';
+	log (Again) '\n';
+	int a: (Threads.Start: addr Work 0);
+	int b: (Threads.Start: addr Work 0);
+	call Threads.Wait: a;
+	call Threads.Wait: b;
+	log count ' ' calls ' ' (Again) '\n';
+	exit 0;
+
+	[Simple: int n: 0;]
+		while int i: 0; i < n; i++;
+			locked guard
+				count++;
+			;;
+		;;
+	[end: count]
+
+	[EarlyReturn: int n: 0;]
+		locked guard
+			count++ n;
+			if count > 5
+				return count;
+			;;
+		;;
+	[end: -1]
+
+	[Breaks: int n: 0;]
+		int got: 0;
+		while int i: 0; i < n; i++;
+			locked guard
+				if i is 2
+					continue;
+				;;
+				got++ i;
+				if i is 6
+					break;
+				;;
+			;;
+		;;
+	[end: got]
+
+	[Inside: int n: 0;]
+		locked guard
+			locked other
+				count++ n;
+			;;
+		;;
+	[end: count]
+
+	# each lock is free again: taken once more, it doesn't wait
+	[Again]
+		locked guard
+			locked other
+				calls++;
+			;;
+		;;
+	[end: calls]
+
+	[Work: int unused: 0;]
+		while int i: 0; i < 100000; i++;
+			locked guard
+				count++;
+			;;
+		;;
+	[end]
+}

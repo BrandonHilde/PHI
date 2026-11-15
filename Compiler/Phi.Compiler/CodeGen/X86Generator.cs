@@ -9004,6 +9004,9 @@ namespace Phi.Compiler.CodeGen
             Emit($"mov {R("ebx")}, {Q} [eax]          ; what the target had");
             Emit($"mov {Q} [eax], {R("ecx")}");
             string kept = NewLabel("taken");
+            // (an empty target, as a list's next one usually is, has nothing to free: no call)
+            Emit($"test {R("ebx")}, {R("ebx")}");
+            Emit($"jz {kept}");
             Emit($"cmp {R("ebx")}, {R("ecx")}");
             Emit($"je {kept}");
             Emit($"mov {R("eax")}, {R("ebx")}");

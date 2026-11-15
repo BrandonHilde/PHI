@@ -169,6 +169,30 @@ namespace Phi.Compiler.CodeGen.Ir
         public MemKind Kind { get; init; }
     }
 
+    /// <summary>A call of an assembly block (call asm.Name;), which may change every register: nothing lives in one across it.</summary>
+    public sealed class RawCallI : Instr
+    {
+        public string Label { get; init; } = "";
+    }
+
+    /// <summary>
+    /// locked: the lock at a class's variable taken, as the generator takes it (a plain store
+    /// while the program has one thread, xchg after); in a program that catches errors, what
+    /// catches them is kept in Saved and none is caught until the lock is given back.
+    /// </summary>
+    public sealed class LockI : Instr
+    {
+        public string Label { get; init; } = "";
+        public VReg Saved { get; init; } = null!;
+    }
+
+    /// <summary>The lock given back (and what catches errors put back): at the block's end, and before a return or break out of it.</summary>
+    public sealed class UnlockI : Instr
+    {
+        public string Label { get; init; } = "";
+        public VReg Saved { get; init; } = null!;
+    }
+
     /// <summary>Dst = A * Factor + Add, with Factor 3, 5 or 9: one lea (A + A * 2, 4 or 8, plus a number), at Dst's width.</summary>
     public sealed class LeaI : Instr
     {
@@ -362,6 +386,9 @@ namespace Phi.Compiler.CodeGen.Ir
             CheckI c => $"check {c.Index} below {c.Limit}",
             AddrI a => $"{a.Dst} = addr {a.Label}",
             LeaI l => $"{l.Dst} = {l.A} * {l.Factor} + {l.Add}",
+            RawCallI r => $"call asm {r.Label}",
+            LockI l => $"{l.Saved} = lock {l.Label}",
+            UnlockI u => $"unlock {u.Label} ({u.Saved})",
             FConstI f => $"{f.Dst} = {f.Value}f",
             FBinI f => $"{f.Dst} = f{f.Op} {f.A}, {f.B}",
             FNegI f => $"{f.Dst} = fneg {f.A}",

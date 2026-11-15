@@ -209,8 +209,7 @@ phi.Heap:Program
 				valid is b:0.magic is HEAP_MAGIC and b:0.used is USED;
 			;;
 			if valid is false
-				log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
-				exit -1;
+				call Corrupt: address;
 			;;
 
 			used_bytes-- b:0.size;
@@ -230,6 +229,13 @@ phi.Heap:Program
 				call GiveBack: b;
 			;;
 		;;
+	[end]
+
+	# what Free was given wasn't from Alloc, or was given back already: the program stops (a
+	# method of its own, so Free is only what it does every time)
+	[Corrupt: ptr<u8> address: 0;]
+		log '\nPHI: free of memory that new did not hand out (or freed twice): ' (address as u32) '\n';
+		exit -1;
 	[end]
 
 	# a block that's no longer used or waiting, made free: merged with the next block and the
@@ -396,22 +402,32 @@ asm.HeapBinOf
 # the same two, for 64-bit code: the address in all of rdi
 x64.HeapZero
 {
+	; 16 bytes at a time (a block is a multiple of 8): an object's fields are read as soon as
+	; it's made, and a field written by two smaller stores can't be read until both reach the
+	; cache (the CPU can forward a value from one store, not from two), which made each new
+	; object wait about 15 cycles
 	mov rdi, [rel {heap_zero_at}]
 	mov ecx, [rel {heap_zero_words}]
-	xor eax, eax
-	cmp ecx, 16
+	shl ecx, 2
+	xorps xmm0, xmm0
+	cmp ecx, 256
 	ja .many
+.sixteen:
+	cmp ecx, 16
+	jb .eight
+	movups [rdi], xmm0
+	add rdi, 16
+	sub ecx, 16
+	jmp .sixteen
+.eight:
 	test ecx, ecx
 	jz .done
-.next:
-	mov [rdi], eax
-	add rdi, 4
-	dec ecx
-	jnz .next
+	mov qword [rdi], 0
 .done:
 	ret
 .many:
-	rep stosd
+	xor eax, eax
+	rep stosb
 	ret
 }
 

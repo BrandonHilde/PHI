@@ -461,6 +461,52 @@ namespace Phi.Compiler.CodeGen
                     case CallI call:
                         Call(call);
                         break;
+                    case RawCallI raw:
+                        // (every value lives in the frame across it: the allocator saw to that)
+                        E($"call {raw.Label}");
+                        break;
+                    case LockI lk:
+                    {
+                        // the generator's EmitLocked, for a program: a plain store while it has one thread
+                        g.Need("phi_threads_many");
+                        string spin = g.NewLabel("lock"), wait = g.NewLabel("lockwait"), heldLabel = g.NewLabel("locked");
+                        E($"lea rax, [rel {lk.Label}]");
+                        E("cmp dword [rel phi_threads_many], 0");
+                        E($"jne {spin}");
+                        E("cmp dword [rax], 0");
+                        E($"jne {spin}");
+                        E("mov dword [rax], 1");
+                        E($"jmp {heldLabel}");
+                        g.Label(spin);
+                        E("mov ecx, 1");
+                        E("xchg [rax], ecx");
+                        E("test ecx, ecx");
+                        E($"jz {heldLabel}");
+                        g.Label(wait);
+                        E("pause");
+                        E("cmp dword [rax], 0");
+                        E($"jne {wait}");
+                        E($"jmp {spin}");
+                        g.Label(heldLabel);
+                        if (g.Catches)
+                        {
+                            // what the lock guards may be half changed when something goes wrong in
+                            // here, so nothing is caught until it's given back: it stops the program
+                            g.EmitBlockField("mov rcx, qword [{0}]", "CATCH");
+                            Store(lk.Saved, "rcx");
+                            g.EmitBlockField("mov qword [{0}], 0", "CATCH");
+                        }
+                        break;
+                    }
+                    case UnlockI ul:
+                        if (g.Catches)
+                        {
+                            Load("rcx", ul.Saved, 64);
+                            g.EmitBlockField("mov qword [{0}], rcx", "CATCH");
+                        }
+                        E($"lea rcx, [rel {ul.Label}]");
+                        E("mov dword [rcx], 0");
+                        break;
                     case LeaI lea:
                     {
                         // (lea works out an address: 32 bits of it is the 32-bit number, wrapped as a multiply would)

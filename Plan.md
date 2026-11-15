@@ -3564,6 +3564,27 @@ checks kept. What stage 0 found by profiling, and fixed where it was small:
   or C#'s is more than N percent (10) over the same ratio in a file `--save` wrote: ratios,
   so it means something on another computer.
 
+**Making PHI faster: cheaper objects (2026-11-14).** The heap's own methods go through
+the intermediate form now, which needed it to take, as the generator has them:
+- **locked**: a plain store while the program has one thread, xchg after; given back at the
+  end and before a return, break or continue out of it; what catches errors kept and none
+  caught inside, as the generator does. A loop with a locked block (or an atomic step)
+  holds no class variable in a register: one written back before the lock would be written
+  outside it, over another thread's (`ir_locked_program`, two threads, found it: 151 of
+  200,000 increments lost).
+- **unsafe** (its checks were already left out); **a call of an assembly block**, which may
+  change any register, so every value lives in the frame across it; **p:i.field**, a field
+  of a struct element through a pointer, as the heap reads its blocks; **sizeof**.
+- Two numbers worked out when it's built, as the instruction would (32 bits wrap, a
+  shift's count cut, a division by 0 left to the CPU): `~7` isn't worked out on every Alloc.
+- `Heap.Free`'s report of memory it wasn't given is a method of its own, `Heap.Corrupt`, so
+  Free is only what it does each time. A small block's zeroing stays the assembly routine:
+  a PHI loop was no faster through the form and slower through the generator.
+- The generator: `takes` into an empty target (a list's next one) calls no free.
+- lists, 64-bit: 0.345 s to 0.33 (generator) and 0.25 (`PHI_IR=1`); gcc -O2 0.21, C# 0.164.
+- Checked: with `PHI_IR=1`, 180 of 180 64-bit Linux tests (4,348 methods through it) and
+  2,400 phi fuzz programs; without, 763 of 763, 620 unit tests and 300 object programs.
+
 **Making PHI faster, stage 1 continued: f64s, arrays, when, class variables in registers.**
 `PHI_IR=1` now takes, as well:
 - **f64s** in xmm registers (`f32` and `f16` stay the generator's), its contract kept: an f64
