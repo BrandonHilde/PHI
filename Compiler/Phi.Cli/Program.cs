@@ -398,6 +398,8 @@ static int Execute(string[] args)
                         throw new ArgumentException(why);
                 }
                 string target = rest.Count > 0 ? rest[0] : FindTestsDir();
+                if (!File.Exists(target) && !Directory.Exists(target))
+                    throw new ArgumentException($"no file or folder {target} (to run one test by name: phi test -f {Path.GetFileNameWithoutExtension(target)})");
                 // with no folder given, the samples that have tests run too
                 List<string>? samples = rest.Count > 0 ? null
                     : TestRunner.SampleTests(Path.Combine(Path.GetDirectoryName(Path.GetFullPath(target))!, "samples"));
