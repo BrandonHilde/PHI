@@ -1,0 +1,210 @@
+# Whole numbers in methods made only of what the intermediate form takes (PHI_IR=1 builds
+# each of them through it; without it, the generator does): every size, signed and not,
+# divided, shifted, mixed with 64 bits, cut to a smaller type, compared, and handed to and
+# from methods. Its expected output is the generator's, so the two are checked against
+# each other.
+enum.Mood
+{
+	CALM
+	CROSS
+}
+
+phi.IrIntegersProgram:Program
+{
+	int counter: 0;
+	u8 small_total: 0;
+	i64 far_total: 0;
+
+	log (Divide: 17 5) ' ' (Divide: -17 5) ' ' (Divide: 17 -5) ' ' (Divide: -17 -5) '\n';
+	log (UDivide: 4000000000 7) ' ' (UDivide: 7 4000000000) ' ' (Halves: -9) ' ' (UHalves: 4294967295) '\n';
+	log (Shifts: 1 31) ' ' (Shifts: -8 2) ' ' (WideShift: 1 40) ' ' (WideShift: -1 63) '\n';
+	log (Mix: 2000000000 2000000000) ' ' (Mix: -3 4000000000) ' ' (MixU: 4000000000 1) '\n';
+	log (Cut: 300) ' ' (Cut: -1) ' ' (CutSigned: 200) ' ' (CutWide: 5000000123) ' ' (Words: 70000) '\n';
+	log (Order: 3 4) (Order: 4 3) (Order: -1 1) (UOrder: 4294967295 1) (WideOrder: -5000000000 1) '\n';
+	log (Logic: 0 5) (Logic: 3 0) (Logic: 3 5) ' ' (NotOf: 0) (NotOf: 7) ' ' (Negate: 5) ' ' (BitNot: 0) '\n';
+	log (Fact: 12) ' ' (WideFact: 20) ' ' (Gcd: 1071 462) ' ' (Collatz: 27) '\n';
+	call Count: 10;
+	call Count: 5;
+	log counter ' ' small_total ' ' far_total '\n';
+	log (Moods: Mood.CROSS) ' ' (Chars: 'a') ' ' (Loops: 100) ' ' (Early: 5) (Early: 50) '\n';
+	log (Many: 1 2 3 4 5 6 7 8 9 10) ' ' (Deep: 0 0) '\n';
+	log (Constants: -1000) ' ' (Constants: 12345) ' ' (Constants: -7) ' ' (Constants: 2147483647) ' ' (Constants: -2147483647) '\n';
+	log (UConstants: 4000000000) ' ' (UConstants: 7) ' ' (UConstants: 4294967295) '\n';
+	exit 0;
+
+	[Divide: int a: 0; int b: 0;]
+	[end: a / b * 1000 + a % b]
+
+	[UDivide: u32 a: 0; u32 b: 0;]
+	[end: a / b + a % b]
+
+	[Halves: int a: 0;]
+	[end: a / 2 + (a >> 1) * 100]
+
+	[UHalves: u32 a: 0;]
+	[end: a >> 1]
+
+	[Shifts: int a: 0; int by: 0;]
+	[end: (a << by) + (a >> 1)]
+
+	[WideShift: i64 a: 0; int by: 0; : i64]
+	[end: (a << by) + (a >> 3)]
+
+	[Mix: int a: 0; i64 b: 0; : i64]
+		i64 sum: a + b;
+		sum is sum * 3;
+	[end: sum - a]
+
+	[MixU: u32 a: 0; u64 b: 0; : u64]
+	[end: a * b + a]
+
+	[Cut: int a: 0;]
+		u8 b: a as u8;
+		b++ 1;
+	[end: b]
+
+	[CutSigned: int a: 0;]
+		i8 b: a as i8;
+	[end: b]
+
+	[CutWide: i64 a: 0;]
+	[end: a as int]
+
+	[Words: int a: 0;]
+		u16 w: a as u16;
+		i16 s: a as i16;
+	[end: w * 100000 + s]
+
+	[Order: int a: 0; int b: 0;]
+	[end: (a < b) + (a <= b) * 2 + (a > b) * 4 + (a >= b) * 8 + (a is b) * 16]
+
+	[UOrder: u32 a: 0; u32 b: 0;]
+	[end: (a < b) + (a > b) * 2]
+
+	[WideOrder: i64 a: 0; i64 b: 0;]
+	[end: (a < b) + (a > b) * 2]
+
+	[Logic: int a: 0; int b: 0;]
+		int got: 0;
+		if a and b
+			got++ 1;
+		;;
+		if a or b
+			got++ 10;
+		;;
+		if not a and b > 1
+			got++ 100;
+		;;
+		bln both: a > 0 and b > 0;
+	[end: got + both * 1000]
+
+	[NotOf: int a: 0;]
+	[end: not a]
+
+	[Negate: int a: 0;]
+	[end: -a * 3]
+
+	[BitNot: int a: 0;]
+	[end: ~a]
+
+	[Fact: int n: 0;]
+		if n <= 1 return 1;
+	[end: n * (Fact: n - 1)]
+
+	[WideFact: i64 n: 0; : i64]
+		if n <= 1 return 1;
+	[end: n * (WideFact: n - 1)]
+
+	[Gcd: int a: 0; int b: 0;]
+		while b is not 0
+			int t: a % b;
+			a is b;
+			b is t;
+		;;
+	[end: a]
+
+	[Collatz: i64 n: 0;]
+		int steps: 0;
+		while n is not 1
+			if (n & 1) is 0
+				n is n >> 1;
+			;;
+			else
+				n is n * 3 + 1;
+			;;
+			steps++;
+		;;
+	[end: steps]
+
+	[Count: int times: 0;]
+		while int i: 0; i < times; i++;
+			counter++;
+			small_total++ 30;
+			far_total++ 1000000000;
+		;;
+	[end]
+
+	[Moods: Mood m: Mood.CALM;]
+		if m is Mood.CROSS return 2;
+	[end: 1]
+
+	[Chars: chr c: 'x';]
+		chr next: (c as int + 1) as chr;
+	[end: next]
+
+	[Loops: int n: 0;]
+		int found: 0;
+		while int i: 0; i < n; i++;
+			if i % 3 is 0 continue;
+			if i > 50 break;
+			found++ i;
+		;;
+	[end: found]
+
+	[Early: int n: 0;]
+		while int i: 0; i < 100; i++;
+			if i * i > n return i;
+		;;
+	[end: -1]
+
+	[Many: int a: 0; int b: 0; int c: 0; int d: 0; int e: 0; int f: 0; int g: 0; int h: 0; int i: 0; int j: 0;]
+		# more values than registers: some live in the frame
+		int x1: a * b + c;
+		int x2: d * e + f;
+		int x3: g * h + i;
+		int x4: j * a + b;
+		int x5: c * d + e;
+		int x6: f * g + h;
+		int x7: i * j + a;
+		int x8: b * c + d;
+		int x9: e * f + g;
+		int x10: h * i + j;
+		int x11: x1 + x2 * 2;
+		int x12: x3 + x4 * 3;
+	[end: x1 + x2 + x3 + x4 + x5 + x6 + x7 + x8 + x9 + x10 + x11 + x12 + (Fact: 5)]
+
+	# division by numbers written in: powers of two and others, signed and not
+	[Constants: int a: 0; : i64]
+		i64 sum: a / 2;
+		sum++ (a % 2) * 10;
+		sum++ (a / 3) * 100;
+		sum++ (a % 7) * 1000;
+		sum++ (a / 16) * 10000;
+		sum++ (a % 16) * 100000;
+		sum++ (a / 1000000007) * 1000000;
+	[end: sum + a % 10]
+
+	[UConstants: u32 a: 0; : u64]
+		u64 sum: a / 10;
+		sum++ a % 10;
+		sum++ (a / 7) * 3;
+		sum++ a % 7;
+		sum++ a / 4096;
+		sum++ a % 4096;
+		sum++ a / 3000000000;
+	[end: sum]
+
+	[Deep: int n: 0; int acc: 0;]
+		if n >= 1000 return acc;
+	[end: (Deep: n + 1 acc + n)]
+}

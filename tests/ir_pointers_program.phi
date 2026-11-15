@@ -1,0 +1,132 @@
+# Pointers, fields and struct methods in methods the intermediate form takes (PHI_IR=1):
+# memory from new, read and written through p:i at each size, moved, compared and freed;
+# a struct's fields through a pointer, by self in its methods, and through borrowed objects;
+# a class's struct variable. Its expected output is the generator's.
+struct.Cell
+{
+	int value;
+	u8 mark;
+	i64 big;
+	ptr<Cell> next;
+
+	[Bump: int by: 0;]
+		value++ by;
+		mark++ 1;
+	[end: value]
+
+	[Sum]
+	[end: big + value]
+}
+
+struct.Holder
+{
+	int id;
+	new Cell inside;
+}
+
+phi.IrPointersProgram:Program
+{
+	Cell shared;
+
+	log (Bytes: 10) ' ' (Words: 6) ' ' (Wides: 5) ' ' (Moved: 8) '\n';
+	log (Chain: 5) ' ' (Through: 7) ' ' (Global: 3) ' ' (Distance: 40) '\n';
+	new Holder h: 9;
+	new Cell made: 4;
+	h.inside takes made;
+	h.inside.value is 4;
+	h.inside.big is 6000000000;
+	log (Borrowed: h) ' ' (Deep: h) ' ' (Methods: h.inside) ' ' h.inside.value ' ' h.inside.mark '\n';
+	exit 0;
+
+	[Bytes: int n: 0;]
+		ptr<u8> p: new u8[n];
+		while int i: 0; i < n; i++;
+			p:i is (i * 37) as u8;
+		;;
+		int sum: 0;
+		while int i: 0; i < n; i++;
+			sum++ p:i;
+		;;
+		free p;
+	[end: sum]
+
+	[Words: int n: 0;]
+		ptr<i16> p: new i16[n];
+		ptr<u32> q: new u32[n];
+		while int i: 0; i < n; i++;
+			p:i is (i * -3000) as i16;
+			q:i is 4000000000 + i;
+		;;
+		i64 sum: 0;
+		while int i: 0; i < n; i++;
+			sum++ p:i;
+			sum++ q:i;
+		;;
+	[end: sum as int]
+
+	[Wides: int n: 0; : i64]
+		ptr<i64> p: new i64[n];
+		p:0 is 1;
+		while int i: 1; i < n; i++;
+			p:i is p:(i - 1) * -100000;
+		;;
+	[end: p:(n - 1) + p:2]
+
+	[Moved: int n: 0;]
+		ptr<u32> p: new u32[n];
+		ptr<u32> q: p + 4;
+		q:0 is 77;
+		q:(-1) is 66;
+		ptr<u32> r: q - 4;
+		if r is p and q is not p and q > p
+			return p:4 + p:3 + (q - p) as int;
+		;;
+	[end: -1]
+
+	[Chain: int n: 0;]
+		ptr<Cell> first: 0;
+		while int i: 0; i < n; i++;
+			ptr<Cell> c: new Cell;
+			c.value is i * 10;
+			c.next is first;
+			first is c;
+		;;
+		int sum: 0;
+		ptr<Cell> walk: first;
+		while walk is not 0
+			sum++ walk.value;
+			walk is walk.next;
+		;;
+	[end: sum]
+
+	[Through: int n: 0;]
+		ptr<Cell> c: new Cell;
+		c.big is 5000000000;
+		call c.Bump: n;
+		call c.Bump: n;
+		int got: (c.Bump: 1);
+	[end: got + c.mark + (c.Sum) as int]
+
+	[Global: int n: 0;]
+		shared.value is n;
+		shared.mark is 200;
+		ptr<Cell> place: addr shared;
+		place.value++ 1;
+	[end: shared.value + shared.mark]
+
+	[Distance: int n: 0;]
+		ptr<u8> p: new u8[n];
+		ptr<u8> stop: p + n;
+	[end: (stop - p) as int]
+
+	[Borrowed: Holder held;]
+	[end: held.id + held.inside.value]
+
+	[Deep: Holder held;]
+		held.inside.mark is 3;
+	[end: held.inside.mark + held.id]
+
+	[Methods: Cell cell;]
+		call cell.Bump: 10;
+	[end: (cell.Bump: 1) + (cell.Sum) as int]
+}

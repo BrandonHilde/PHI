@@ -3564,6 +3564,36 @@ checks kept. What stage 0 found by profiling, and fixed where it was small:
   or C#'s is more than N percent (10) over the same ratio in a file `--save` wrote: ratios,
   so it means something on another computer.
 
+**Making PHI faster, stage 1: an intermediate form, a method at a time (2026-11-14).**
+`PHI_IR=1` builds a 64-bit program's methods through a form of PHI's own (`CodeGen/Ir/`),
+each with its values in registers, where it takes every statement and expression in the
+method; any other method is the generator's, as before. Both keep one contract (arguments
+pushed first to last, 8 bytes each; the frame on rbp; the result in eax, a 64-bit number in
+edx:eax, a pointer in rax; r12 to r15 kept), so either calls the other, and the form grows
+a kind of thing at a time, each proven by the suite run through it.
+- What it takes: whole numbers of every size, bln, chr, enums; pointers, `p:i`, `p + n`,
+  `new` and `free`; fields of self, through a pointer, through a borrowed struct parameter
+  and of a class's struct; struct methods; a class's variables; the int and u32 check; if,
+  while, break, continue, return and calls. Division by a number is the generator's own
+  shift or multiply.
+- How: lowering refuses what it doesn't know exactly (`PHI_IR_TRACE=1` says why), a
+  peephole pass (jumps through empty blocks, dead values, a temporary copied into a
+  variable), liveness, and linear-scan registers weighed by loop depth (a value across a
+  call gets r12 to r15). Loops are tested at the bottom. Each return gives its value where
+  it is. A line's mark waits for its first instruction, so a line whose code was taken out
+  doesn't take the next one's place in an error (found: library_use_program said line 128).
+- **An operator's right side is worked out before its left**, as the generator does (it
+  keeps the right on the stack), which a program sees when both sides call methods that
+  change what the other reads; a call's arguments go first to last. The reference doesn't
+  say: found by `ir_pointers_program`, left for the user to decide.
+- 64-bit, best of five: fib 0.41 s to 0.31 (C# 0.33), collatz 0.53 to 0.40 (C# 0.31),
+  sieve 0.36 to 0.34 (C# 0.35), sort 0.28 to 0.27 (C# 0.36).
+- Checked: every 64-bit Linux test passes with it (176, 2,500 methods through it), 900
+  `phi fuzz` programs with nothing wrong, and `ir_integers_program` and
+  `ir_pointers_program` give the generator's output.
+- Not yet: arrays and their checks, text, objects a method owns, floating point (stage 3),
+  catching, `when`, `log`; 32-bit code and kernels. Off unless `PHI_IR=1`.
+
 **Version 0.1.0 (2026-11-14, the user's choice): the first with a number, a preview.**
 - The number is in `Compiler/Directory.Build.props`; `phi --version` says it with the
   commit it was built from, and which compiled libraries it loads (`PhiCompiler.Version`).

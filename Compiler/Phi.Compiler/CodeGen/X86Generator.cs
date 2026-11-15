@@ -36,7 +36,7 @@ namespace Phi.Compiler.CodeGen
     /// change any general-purpose register except ebp, so they're stored around those. Everything
     /// else is read and written in memory each time (as device memory needs).
     /// </summary>
-    public sealed class X86Generator
+    public sealed partial class X86Generator
     {
         /// <summary>Where the boot sector loads the 16-bit OS classes, right after itself.</summary>
         public const int OsAddress = 0x7E00;
@@ -1430,6 +1430,9 @@ namespace Phi.Compiler.CodeGen
             }
             // (the stack running out stops a method before its first line, setting up its variables)
             MarkLine(LineOf(m.Decl));
+
+            // a method the intermediate form takes is written from it (PHI_IR=1, 64-bit programs)
+            if (TryEmitIr(m)) return;
 
             if (m.IsInterruptHandler)
             {
