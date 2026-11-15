@@ -59,5 +59,8 @@ phi_log_back:
     ret
 
 align 8, db 0
+; (aligned: a locked instruction on a word that crosses a cache line is a split lock, which
+; Linux makes a program wait for, tens of milliseconds each time)
+align 8, db 0
 phi_log_owner: dq 0
 phi_log_depth: dd 0

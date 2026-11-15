@@ -211,4 +211,7 @@ OS_Now:
 .before:
     dd 0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334
 
+; (aligned: a locked instruction on a word that crosses a cache line is a split lock, which
+; Linux makes a program wait for, tens of milliseconds each time)
+align 4, db 0
 phi_clock_lock: dd 0                    ; 1 while a core reads the clock

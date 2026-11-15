@@ -1346,6 +1346,9 @@ phi_own_ranges:        dd 0
 phi_own_table:         times OWN_RANGES * 3 dd 0
 
 ; programs on every core (phi_share_cores)
+; (aligned: a locked instruction on a word that crosses a cache line is a split lock, which
+; Linux makes a program wait for, tens of milliseconds each time)
+align 4, db 0
 phi_kernel_next:       dd 0                    ; the kernel lock: the next ticket
 phi_kernel_serving:    dd 0                    ; and whose turn it is
 phi_core_depth:        times MAX_CORES dd 0    ; how deep each core is in kernel code
