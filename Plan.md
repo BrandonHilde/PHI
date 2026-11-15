@@ -3948,6 +3948,40 @@ bytes for an object with a type table are fine. A layout isn't a keyword, an ope
 statement or a type, so the freeze allows it; before 0.1.0 is when it costs least, with no
 one's data or compiled library made by an older layout yet.
 
+*How it's done (2026-11-15; the principles above unchanged).* What can go wrong is what the
+compiler can't see: code that knows a struct's offsets without asking it (assembly that
+reads a PHI struct at a number, the kernel's hand-over, PHI-OS's own `.asm`) keeps the old
+ones and reads the wrong field, silently. So the layout moves under measurement:
+1. **The rule, with a switch for the old one** (`PHI_LAYOUT=packed`, as `PHI_IR=0` is for
+   the intermediate form), for the move only: the tests and `phi fuzz` run both ways, and
+   any output that differs is something that knew the old offsets. The switch goes when the
+   move is done; one rule is what's released.
+2. **The audit:** the compiler lists every struct whose shape changes, exactly (the count
+   from the source, 42 of 169, left out the 53 with structs or arrays in them), and every
+   assembly file and kernel structure that uses an offset by number is checked against it.
+   `HeapBlock` (by name and `sizeof`) and `BootInfo` (32-bit only, already aligned) are
+   known to be fine.
+3. **`FatBootSector`'s** odd-offset `u16`s as bytes, and the library's helper that reads
+   them (a `u16` and `u32` from any address, little-endian; `audio/wav.phi`'s own `Read16`
+   moves to it).
+4. **A method's variables** on multiples of their size, and **objects with a type table**
+   starting on 8.
+5. **The `.philib` format's version up, and each library's struct shapes kept in it,**
+   checked by the program that loads it: a difference is an error naming the struct, not
+   wrong data. (This can't wait for after the release; the hover and a command to print
+   shapes can.)
+6. **The reference's** layout section, `foreign` as the same as any struct, the memory
+   model's paragraph on aligned fields, and the release notes. **Tests:** each kind of
+   field's place and each struct's size in 32 and 64 bits, and the address of every kind
+   of place `atomic` can be used on checked as the program runs.
+7. **Everything built again:** the code libraries, PHI-OS and its test, the tests and fuzzing
+   both ways, `bench/` (struct sizes and the heap the tests and benchmarks use, before and
+   after).
+8. **The switch removed.**
+
+Still not checked, and said in the reference: `atomic` through a pointer to memory a
+program laid out itself (memory from `new` is aligned).
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to
