@@ -3824,6 +3824,27 @@ part of a few bytes, each a call. Now:
   `text_lengths_program`: every length from 0 to 70 copied, added and built on the side,
   each character checked, and a method's own str that keeps its length.
 
+**The intermediate form on by default, for 64-bit programs (2026-11-15, the user's choice).**
+Linux and Windows both: on Windows its first run is the user's own before 0.1.0 is tagged
+(the user's choice, over keeping Windows on the generator until then). All 74 of the tests
+that are programs for Windows build for 64-bit Windows with it; nothing here runs them.
+`PHI_IR=0` leaves every method to the generator, and both are tested: the 64-bit tests and
+`phi fuzz` run both ways (tests/README.md). 32-bit code, kernels and debug builds are the
+generator's, as before.
+
+**Locked words aligned (2026-11-15).** `phi fuzz objects` found a 32-bit Linux program that
+printed right and took 20 s where it had taken 0.02: its log lock, `phi_log_owner`, was
+declared after the code with no alignment, and a few bytes more code (the text change above)
+put it across a 64-byte cache line. A `lock cmpxchg` there is a split lock, which Linux
+traps and makes the program wait for (`x86/split lock detection: #AC ... took a split_lock
+trap` in the kernel's log): no CPU time, no system time, just wall time, on every log. Each
+word a locked instruction or xchg touches in the library is aligned now: the log lock (all
+three), `phi_clock_lock` and the kernel's ticket lock. A class's variables were already
+(`align 4` before each).
+- Still open: a struct's fields have no padding, so `atomic` on a field at an odd offset can
+  be a split lock in the same way. Rare (an atomic field is usually an int first, or after
+  other ints), but nothing stops it; an error, or padding for such a field, is to decide.
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to

@@ -330,6 +330,20 @@ The tick's own work is a benchmark, `samples/mmo/bench_tick.phi`: 500 players' m
 the creatures, the grid, and a STATE for each player, without the network, so the count is
 the same on every run.
 
+## Two ways to make 64-bit code: `PHI_IR=0`
+
+A 64-bit program's methods are built through the compiler's intermediate form
+(`CodeGen/Ir/`, see `PerformanceStrategy.md`) wherever it takes everything in them, and by
+the code generator otherwise. `PHI_IR=0` leaves every method to the generator, so both stay
+tested: after a change to either, run the 64-bit tests both ways, and fuzz both ways.
+
+```
+phi test --target linux64              # through the form where it can
+PHI_IR=0 phi test --target linux64     # the generator only
+PHI_IR_TRACE=1 phi build x.phi --target linux64   # which methods went through it, and why not the others
+PHI_IR_SKIP=Class.Method phi run x.phi --target linux64   # one method left to the generator
+```
+
 ## Random programs: `phi fuzz code`
 
 `phi fuzz code` checks the code generator with programs nobody wrote. Each is made at random

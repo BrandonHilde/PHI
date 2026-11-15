@@ -12,12 +12,13 @@ namespace Phi.Compiler.CodeGen
     // gives one); r12 to r15 as the caller left them. So a method of either kind calls the
     // other. Its lines are marked as the generator's are, for errors and phi profile.
     //
-    // For now it's for 64-bit programs only, and only when PHI_IR=1: the generator stays
-    // what builds everything else until the form passes every test and fuzz run there.
+    // It's for 64-bit programs (Linux and Windows), where it's what builds every method it
+    // takes; PHI_IR=0 leaves them all to the generator, to compare the two or to find which
+    // one a difference is in. 32-bit code, kernels and debug builds are the generator's.
     public sealed partial class X86Generator
     {
-        /// <summary>PHI_IR=1: methods the intermediate form takes are compiled through it (64-bit programs).</summary>
-        static readonly bool IrWanted = Environment.GetEnvironmentVariable("PHI_IR") is "1" or "on";
+        /// <summary>Methods the intermediate form takes are compiled through it (64-bit programs), unless PHI_IR=0.</summary>
+        static readonly bool IrWanted = Environment.GetEnvironmentVariable("PHI_IR") is not ("0" or "off");
 
         static readonly HashSet<string> IrSkip = (Environment.GetEnvironmentVariable("PHI_IR_SKIP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
 
