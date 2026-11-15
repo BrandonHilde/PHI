@@ -1,5 +1,5 @@
 ; provides: phi_print_int phi_print_uint phi_print_int_serial phi_print_uint_serial phi_int_to_str phi_uint_to_str phi_strcpy
-; requires: phi_print phi_print_serial
+; requires: phi_print phi_print_serial phi_strlen
 ;
 ; Numbers as text, for 64-bit code (x86_32's print_int, print_int_serial, int_to_str and
 ; strcpy, with 64-bit addresses): eax in decimal, signed or unsigned, to the screen and
@@ -53,13 +53,21 @@ phi_int_to_str:
     sub rsp, 16             ; the digits, on this call's own stack (another thread may be
     lea rsi, [rsp + 11]     ; writing a number at the same time), backwards from the end
     mov byte [rsi], 0
-    mov ecx, 10
+    mov eax, eax                ; (all of rax is the number)
 .digit:
-    xor edx, edx
-    div ecx
-    add dl, '0'
+    ; eax / 10 without div (which takes tens of cycles): eax * 0xCCCCCCCD, shifted right 35,
+    ; is exactly it for every 32-bit eax
+    mov ecx, eax
+    mov edx, 0xCCCCCCCD
+    imul rdx, rcx
+    shr rdx, 35                 ; the quotient
+    mov eax, edx
+    lea edx, [rdx + rdx*4]
+    add edx, edx                ; quotient * 10
+    sub ecx, edx                ; the remainder: this digit
+    add cl, '0'
     dec rsi
-    mov [rsi], dl
+    mov [rsi], cl
     test eax, eax
     jnz .digit
     test ebx, ebx
@@ -78,19 +86,54 @@ phi_int_to_str:
 ; is always terminated.
 phi_strcpy:
     jecxz .full
-.next:
-    dec ecx
-    jz .last
-    lodsb
-    test al, al                 ; (which clears the carry)
-    jz .ended
-    stosb
-    jmp .next
-.ended:
+    push rax
+    push rdx
+    call phi_strlen             ; eax = its length (see x86_32's strcpy.asm for what this leaves)
+    lea edx, [rcx - 1]          ; the most characters there's room for
+    cmp eax, edx
+    ja .cut
+    sub ecx, eax
+    dec ecx                     ; the room left after it
+    mov edx, eax
+    call .copy
     mov byte [rdi], 0
+    test ecx, ecx
+    jz .fit                     ; (just fit: rsi stays at its zero)
+    inc rsi                     ; past its zero
+.fit:
+    pop rdx
+    pop rax
+    clc
     ret
-.last:
+.cut:
+    call .copy                  ; edx = size - 1 of them
     mov byte [rdi], 0
+    xor ecx, ecx
+    pop rdx
+    pop rax
+    stc                         ; (there was more: it's longer than the room)
+    ret
+; edx bytes from rsi to rdi, moving both on; keeps rcx
+.copy:
+    cmp edx, 32
+    jb .bytes
+    push rcx
+    mov ecx, edx
+    rep movsb
+    pop rcx
+    ret
+.bytes:
+    test edx, edx
+    jz .copied
+.byte:
+    mov al, [rsi]
+    mov [rdi], al
+    inc rsi
+    inc rdi
+    dec edx
+    jnz .byte
+.copied:
+    ret
 .full:
     cmp byte [rsi], 0           ; (with 0: no carry)
     je .fits

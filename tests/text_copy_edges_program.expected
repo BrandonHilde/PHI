@@ -1,0 +1,7 @@
+33 fitted, 8 refused
+32 abcdefghijklmnopqrstuvwxyzabcdef
+389 taf
+45 one two threeabcdefghijklmnopqrstuvwxyzabcdef
+too long: text doesn't fit in its str on line 67 in text_copy_edges_program.phi
+0 9 10 99 100 4095 65536 999999999 1000000000 2147483647 -1 -10 -2147483647 -2147483648 4294967295 4000000000 4294967294
+1,10,100,1000,10000,100000,1000000,10000000,100000000,

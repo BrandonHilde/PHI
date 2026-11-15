@@ -29,8 +29,24 @@ namespace Phi.Cli
         /// <summary>A time under this (in seconds) is the program starting, not its work: no ratio is made of it.</summary>
         const double TooShort = 0.010;
 
-        public static int Run(string dir, string? filter, int runs, string? save, IReadOnlyList<string>? arguments = null, bool varies = false)
+        public static int Run(string dir, string? filter, int runs, string? save, IReadOnlyList<string>? arguments = null, bool varies = false,
+                              string? check = null, double tolerance = 10)
         {
+            Dictionary<(string, string), double>? saved = null;
+            if (check != null)
+            {
+                if (!File.Exists(check))
+                {
+                    Console.Error.WriteLine($"error: there is no file {check} to check against (phi compare --save writes one)");
+                    return 2;
+                }
+                saved = SavedRatios(File.ReadAllText(check));
+                if (saved.Count == 0)
+                {
+                    Console.Error.WriteLine($"error: {check} has no table of PHI's time over the others' (one phi compare --save wrote)");
+                    return 2;
+                }
+            }
             if (!Directory.Exists(dir))
             {
                 Console.Error.WriteLine($"error: there is no folder {dir} (phi compare takes the folder the benchmarks are in)");
@@ -119,7 +135,77 @@ namespace Phi.Cli
                 Console.WriteLine($"saved to {save}");
             }
             foreach (string line in different) Console.Error.WriteLine("error: " + line);
-            return different.Count > 0 ? 1 : 0;
+            int slower = saved == null ? 0 : CheckRatios(saved, names, entries.Select(e => e.Name).ToList(), times, tolerance, check!);
+            return different.Count > 0 || slower > 0 ? 1 : 0;
+        }
+
+        // ---------------------------------------------------------------- against a saved run
+
+        /// <summary>The columns a saved run is checked against: the ones that don't change with PHI.</summary>
+        static readonly string[] Yardsticks = { "gcc -O2", "C#" };
+
+        /// <summary>
+        /// --check: each benchmark's time in PHI 64-bit over gcc -O2's and C#'s, against the same
+        /// ratio in a saved run. A ratio and not a time, so a run on another computer still says
+        /// whether PHI got slower beside the others. One more than tolerance percent over what
+        /// was saved is said, and fails the run. How many there were.
+        /// </summary>
+        static int CheckRatios(Dictionary<(string, string), double> saved, List<string> names, List<string> columns,
+                               Dictionary<(string, string), double> times, double tolerance, string from)
+        {
+            var c = CultureInfo.InvariantCulture;
+            string phi = columns[0];
+            int slower = 0, checkedCount = 0;
+            var lines = new List<string>();
+            foreach (string name in names)
+            {
+                if (!times.TryGetValue((name, phi), out double mine) || mine < TooShort) continue;
+                foreach (string yardstick in Yardsticks)
+                {
+                    if (!times.TryGetValue((name, yardstick), out double theirs) || theirs <= 0) continue;
+                    if (!saved.TryGetValue((name, yardstick), out double before)) continue;
+                    double now = mine / theirs;
+                    checkedCount++;
+                    if (now > before * (1 + tolerance / 100))
+                    {
+                        slower++;
+                        lines.Add($"error: {name} is slower beside {yardstick}: {now.ToString("0.00", c)} times its time, where {from} has {before.ToString("0.00", c)}");
+                    }
+                    else if (now < before * (1 - tolerance / 100))
+                        lines.Add($"faster: {name} beside {yardstick}: {now.ToString("0.00", c)} times its time, where {from} has {before.ToString("0.00", c)}");
+                }
+            }
+            Console.WriteLine();
+            foreach (string line in lines) Console.WriteLine(line);
+            Console.WriteLine(checkedCount == 0
+                ? $"nothing here was in {from} to check"
+                : slower == 0 ? $"checked against {from}: {checkedCount} ratios, none more than {tolerance.ToString("0.#", c)}% over"
+                              : $"checked against {from}: {slower} of {checkedCount} ratios more than {tolerance.ToString("0.#", c)}% over");
+            return slower;
+        }
+
+        /// <summary>The table of PHI's time over the others' in a run --save wrote: (benchmark, column) to the ratio.</summary>
+        static Dictionary<(string, string), double> SavedRatios(string text)
+        {
+            var ratios = new Dictionary<(string, string), double>();
+            string[] lines = text.Replace("\r", "").Split('\n');
+            int at = Array.FindIndex(lines, l => l.Contains("'s time over each of the others'"));
+            if (at < 0) return ratios;
+            int header = at + 1;
+            while (header < lines.Length && lines[header].Trim().Length == 0) header++;
+            if (header >= lines.Length) return ratios;
+            List<string> columns = Regex.Split(lines[header].Trim(), @"\s{2,}").ToList();
+            for (int i = header + 1; i < lines.Length; i++)
+            {
+                string line = lines[i].Trim();
+                if (line.Length == 0 || line.StartsWith("together") || line.StartsWith("(")) break;
+                string[] parts = Regex.Split(line, @"\s+");
+                if (parts.Length != columns.Count + 1) continue;
+                for (int k = 0; k < columns.Count; k++)
+                    if (double.TryParse(parts[k + 1], NumberStyles.Float, CultureInfo.InvariantCulture, out double ratio))
+                        ratios[(parts[0], columns[k])] = ratio;
+            }
+            return ratios;
         }
 
         // ---------------------------------------------------------------- what's compared

@@ -1416,6 +1416,13 @@ namespace Phi.Compiler.CodeGen
             string kind = m.IsHook ? "event" : m.IsInterruptHandler ? "interrupt handler" : "method";
             Comment($"{kind} {m.Name} ({FileName(file)})");
             Label(m.Label);
+            // a program on Linux or Windows starts a thread here (PHI OS's OS_ThreadStart does
+            // the same): from now on locked takes its lock with xchg (see EmitLocked)
+            if (m.Name == "HostThreads.ThreadStart" && unit.Kind == UnitKind.Program)
+            {
+                Need("phi_threads_many");
+                Emit($"mov dword [{(bits64 ? "rel " : "")}phi_threads_many], 1   ; a second thread is coming");
+            }
             if (debugInfo != null)
             {
                 lastComment = default;
@@ -3638,6 +3645,21 @@ namespace Phi.Compiler.CodeGen
                 Emit("pushfd");
                 Emit($"pop {R("ecx")}");
                 Emit($"mov [{slot} + {Slot}], {R("ecx")}      ; interrupts as they were");
+            }
+            if (!kernel)
+            {
+                // a program with one thread: nothing else can want the lock, so it's taken with a
+                // plain store and no xchg, which is a full barrier (about 20 cycles) each time.
+                // phi_threads_many is set before a second thread exists, so a lock held this way
+                // when one starts is seen as held. (Held already by this thread, it waits, as it
+                // would with others: the same as the xchg.)
+                Need("phi_threads_many");
+                Emit($"cmp dword [{(bits64 ? "rel " : "")}phi_threads_many], 0");
+                Emit($"jne {spin}");
+                Emit("cmp dword [eax], 0");
+                Emit($"jne {spin}");
+                Emit("mov dword [eax], 1        ; one thread: taken");
+                Emit($"jmp {held}");
             }
             Label(spin);
             if (kernel) Emit("cli");

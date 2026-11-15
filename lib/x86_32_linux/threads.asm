@@ -1,4 +1,4 @@
-; provides: phi_thread_setup phi_thread_block phi_main_thread OS_ThreadClone
+; provides: phi_thread_setup phi_thread_block phi_main_thread OS_ThreadClone phi_threads_many
 ; init: phi_threads_init
 ; requires: phi_spare_stack
 ;
@@ -105,3 +105,8 @@ phi_host_thread_main:
     int 0x80
 .never:
     jmp .never
+
+; 1 once a second thread has been started (set by the thread that starts it, before it
+; exists): until then nothing else can want a lock, so locked takes one with a plain store
+align 4
+phi_threads_many: dd 0

@@ -1,0 +1,69 @@
+# The runtime's text copy, measured first and then copied a byte at a time (under 32) or
+# with rep movsb (32 and more): every length from 0 to 40 into room for 32, each fitting or
+# said not to; added to the end of text that's there; and numbers at their limits as text.
+phi.TextCopyEdgesProgram:Program
+{
+	str source: '';
+	int fitted: 0;
+	int refused: 0;
+	while int n: 0; n <= 40; n++;
+		if call Copy: source throws err
+			refused++;
+		;;
+		else
+			fitted++;
+		;;
+		int letter: 97 + n % 26;
+		source++ letter as chr;
+	;;
+	log fitted ' fitted, ' refused ' refused\n';
+
+	# room for exactly what's there, and one short of it
+	str exact: [33];
+	str thirty_two: 'abcdefghijklmnopqrstuvwxyzabcdef';
+	exact is thirty_two;
+	log exact.len ' ' exact '\n';
+	str grow: 'start';
+	while int i: 0; i < 12; i++;
+		grow++ thirty_two;
+	;;
+	log grow.len ' ' grow:4 grow:5 grow:388 '\n';
+
+	# added to the end: the text that's there is found, then the rest copied after it
+	str line: [64];
+	line is 'one';
+	line++ ' two' ' three';
+	line++ thirty_two;
+	log line.len ' ' line '\n';
+	if call Overfill throws err
+		log 'too long: ' err '\n';
+	;;
+
+	# numbers as text: no div, so each digit is checked
+	int ints: 0 9 10 99 100 4095 65536 999999999 1000000000 2147483647 -1 -10 -2147483647;
+	while each n in ints
+		log n ' ';
+	;;
+	int lowest: -2147483647;
+	lowest--;
+	u32 most: 4294967295;
+	u32 big: 4000000000;
+	log lowest ' ' most ' ' big ' ' (most - 1) '\n';
+	str counted: '';
+	while int i: 1; i <= 100000000; i is i * 10;
+		counted++ i ',';
+	;;
+	log counted '\n';
+	exit 0;
+
+	[Copy: ptr<u8> text: 0;]
+		str room: [32];
+		room is text;
+	[end]
+
+	[Overfill]
+		str small: [8];
+		small is 'eight ch';
+		small++ 'x';
+	[end]
+}

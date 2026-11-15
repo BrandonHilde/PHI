@@ -53,14 +53,17 @@ const string Usage = """
                                            and fail one whose counts are more than the tolerance
                                            (default 2%) over the ones saved in NAME.bench;
                                            --save-bench saves the new counts instead
-      phi compare [dir] [-f <name>] [--runs <n>] [--save <file.md>] [--varies] [-- <arguments>]
+      phi compare [dir] [-f <name>] [--runs <n>] [--save <file.md>] [--check <file.md>] [--tolerance <percent>] [--varies] [-- <arguments>]
                                            how fast PHI is beside C and C#: each benchmark in dir (default
                                            bench/) is one program written as NAME.phi, NAME.c and NAME.cs;
                                            each is built for this computer (PHI in 64 and 32 bits, C with
                                            -O2 and -O0, C# as a Release build) and run --runs times
                                            (default 5), and the best times are listed with PHI's over each
                                            of the others'; one that prints something else than PHI's fails;
-                                           --save writes the tables to a Markdown file
+                                           --save writes the tables to a Markdown file; --check FILE fails
+                                           a benchmark whose time over gcc -O2's or C#'s is more than
+                                           --tolerance percent (default 10) over the same ratio in FILE
+                                           (a file --save wrote, such as bench/RESULTS.md)
       phi profile <file.phi> [--input <file>] [--seconds <n>] [--top <n>] [--memory <MB>]
                                            boot it in QEMU, sampling where the CPU is, and list the PHI
                                            lines and methods that took the most time; with a window
@@ -409,12 +412,17 @@ static int Execute(string[] args)
                 string? filter = Option("-f");
                 string? count = Option("--runs");
                 string? save = Option("--save");
+                string? check = Option("--check");
+                string? tolerance = Option("--tolerance");
                 bool varies = Flag("--varies");
                 int runs = 5;
                 if (count != null && (!int.TryParse(count, out runs) || runs < 1 || runs > 100))
                     throw new ArgumentException("--runs takes how many times each program is run, from 1 to 100");
+                double percent = 10;
+                if (tolerance != null && (!double.TryParse(tolerance, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out percent) || percent < 0))
+                    throw new ArgumentException("--tolerance takes a percent, like --tolerance 10");
                 string dir = rest.Count > 0 ? rest[0] : Path.Combine(Path.GetDirectoryName(Path.GetFullPath(FindTestsDir()))!, "bench");
-                return Compare.Run(dir, filter, runs, save, programArguments, varies);
+                return Compare.Run(dir, filter, runs, save, programArguments, varies, check, percent);
             }
 
             case "profile":

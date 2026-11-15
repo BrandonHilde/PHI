@@ -47,11 +47,20 @@ phi_strlen:
 phi_str_end:
     cmp ecx, 1
     jbe .done
-    cmp byte [rdi], 0
-    je .done
-    inc rdi
-    dec ecx
-    jmp phi_str_end
+    push rax
+    push rsi
+    mov rsi, rdi
+    call phi_strlen             ; rax = its length (16 bytes at a time)
+    dec ecx                     ; the most it can move
+    cmp eax, ecx
+    jb .short
+    mov eax, ecx                ; it fills the room: to the last place
+.short:
+    add rdi, rax
+    sub ecx, eax
+    inc ecx                     ; the room after where it stopped
+    pop rsi
+    pop rax
 .done:
     ret
 

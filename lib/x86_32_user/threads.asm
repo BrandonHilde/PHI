@@ -1,4 +1,4 @@
-; provides: OS_ThreadStart OS_ThreadDone OS_ThreadFree phi_thread_setup phi_thread_block phi_main_thread
+; provides: OS_ThreadStart OS_ThreadDone OS_ThreadFree phi_thread_setup phi_thread_block phi_main_thread phi_threads_many
 ; init: phi_threads_init
 ;
 ; A PHI OS program's threads (user.threads): each is a task of the program in the kernel
@@ -18,6 +18,7 @@ THREAD_SPARE     equ 16384
 
 ; args: method value stackBottom stackTop -> the thread's number, or -1
 OS_ThreadStart:
+    mov dword [phi_threads_many], 1     ; from now on locks are taken for real
     mov edx, [esp + 16]                 ; the top of its stack: its block, and below it its
     sub edx, THREAD_BLOCK + 8           ; method and value
     mov eax, [esp + 4]
@@ -91,3 +92,8 @@ phi_threads_init:
 
 align 4, db 0
 phi_main_thread: times 1024 db 0        ; the block of the program's first thread
+
+; 1 once a second thread has been started (set by the thread that starts it, before it
+; exists): until then nothing else can want a lock, so locked takes one with a plain store
+align 4
+phi_threads_many: dd 0

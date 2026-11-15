@@ -9,6 +9,8 @@ phi compare -f sort             only those with "sort" in their names
 phi compare --runs 10           the best of 10 runs of each (5 unless said)
 phi compare --save RESULTS.md   the tables into a file too
 phi compare some/folder         the benchmarks of another folder
+phi compare --check RESULTS.md  fail any benchmark more than 10% slower beside gcc -O2 or C#
+                                than RESULTS.md has it (--tolerance 5 for 5%)
 ```
 
 It builds each as a program for this computer: PHI in 64 and 32 bits, C with `-O2` and with `-O0`

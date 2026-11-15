@@ -19,13 +19,20 @@ phi_int_to_str:
     sub esp, 12             ; the digits, on this call's own stack (another core, or thread,
     lea esi, [esp + 11]     ; may be writing a number at the same time), backwards from the end
     mov byte [esi], 0
-    mov ecx, 10
 .digit:
-    xor edx, edx
-    div ecx
-    add dl, '0'
+    ; eax / 10 without div (which takes tens of cycles): the top of eax * 0xCCCCCCCD, shifted
+    ; right 3 more, is exactly it for every 32-bit eax
+    mov ecx, eax
+    mov edx, 0xCCCCCCCD
+    mul edx
+    shr edx, 3                  ; the quotient
+    mov eax, edx
+    lea edx, [edx + edx*4]
+    add edx, edx                ; quotient * 10
+    sub ecx, edx                ; the remainder: this digit
+    add cl, '0'
     dec esi
-    mov [esi], dl
+    mov [esi], cl
     test eax, eax
     jnz .digit
     test ebx, ebx

@@ -3539,6 +3539,31 @@ zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
 `exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
 enum's values, and an `else` says the others are known.
 
+**Making PHI faster, stage 0 (2026-11-14).** The plan is `PerformanceStrategy.md` beside this
+repository: match C# on `bench/` with an optimiser of PHI's own, 64-bit programs first,
+checks kept. What stage 0 found by profiling, and fixed where it was small:
+- **A lock in a program with one thread** was taken with `xchg`, a full barrier of about 20
+  cycles, twice for each object made and freed (the heap's `locked heap_lock`): 47% of
+  `lists`. Each program's runtime has `phi_threads_many`, set by the thread that starts a
+  second one before it exists (`HostThreads.ThreadStart` on Linux and Windows,
+  `OS_ThreadStart` on PHI OS); until then `locked` takes its lock with a plain store. A
+  lock held that way when a thread starts is seen as held. Kernels keep `xchg` and `cli`.
+  `lists` 0.458 s to 0.345 s in 64-bit code, 0.375 to 0.27 in 32-bit.
+- **Text copied a byte at a time** (`lodsb`/`stosb`) and its end found a byte at a time:
+  `phi_strcpy` and `phi_str_end` measure with `phi_strlen` (16 bytes at a time in 64-bit
+  code, 4 in 32) and copy with `rep movsb` from 32 bytes, leaving every register as the
+  generated code expects. Copying a text of 20,000 characters 20,000 times: 0.23 s to
+  0.025 s. **Numbers as text** divide by 10 with a multiply by its reciprocal, not `div`.
+  Test `text_copy_edges_program` (lengths around the 32-byte switch, an exact fit, cuts, and
+  numbers at their limits). `strings` didn't move: its time is the number of calls, about
+  25 short pieces measured each time round, and a literal's length is known when it's
+  built, which the generator doesn't use yet (stage 2).
+- `lists` is still 2.2 times C#'s: the rest is the heap's own work and `takes`, whose
+  line takes a third of what's left; its fields' alignment was tried and isn't it.
+- `phi compare --check FILE [--tolerance N]` fails a benchmark whose time over gcc -O2's
+  or C#'s is more than N percent (10) over the same ratio in a file `--save` wrote: ratios,
+  so it means something on another computer.
+
 **Version 0.1.0 (2026-11-14, the user's choice): the first with a number, a preview.**
 - The number is in `Compiler/Directory.Build.props`; `phi --version` says it with the
   commit it was built from, and which compiled libraries it loads (`PhiCompiler.Version`).
