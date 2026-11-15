@@ -924,7 +924,7 @@ PHI/
 │  └─ user/               # userland standard library
 ├─ kernel/                # the reference PHI OS that uses lib/
 ├─ rootfs/                # files copied into the disk image
-├─ samples/               # code.phi, arcade.phi, os.phi, ...
+├─ samples/               # arcade.phi, os.phi, ...
 └─ tests/                 # QEMU integration tests (.phi + .expected)
 ```
 
@@ -3490,6 +3490,23 @@ empty` for an object and `is not 0` for a pointer, and an error for what can't b
 zero. `not x exists` is about the whole of it. Tests `exists`, `exists_errors`,
 `exists_name_errors`. A `when` that leaves out a case stays as it was: a warning for an
 enum's values, and an `else` says the others are known.
+
+**Version 0.1.0 (2026-11-14, the user's choice): the first with a number, a preview.**
+- The number is in `Compiler/Directory.Build.props`; `phi --version` says it with the
+  commit it was built from, and which compiled libraries it loads (`PhiCompiler.Version`).
+- `docs/releases/0.1.0.md`: what the language has, what it runs on, how it was checked, what
+  it doesn't do. No built downloads: it's built from its source.
+- **A number written there that its type can't hold is an error** (`u8 small: 300;`, the
+  user's choice over a warning): for a u8, i8, chr, u16 or i16, in a declaration, an
+  assignment or an argument. What fits the bits either way goes in (-1 and 0xFF are both a
+  u8's, as `~0x0F` is), and `as` says a cut is meant. A value worked out as the program
+  runs still keeps its low bytes, as C's does. Test `number_fit_errors`.
+- Two errors of syntax said the wrong thing: a line with no `;` was "expected a value but
+  found the keyword 'int'" at the next line, and is "expected ';' at the end of this line"
+  now; `if count = 5` was the rule about an if on one line, and says to write `is` or `==`
+  (after a `while` too). Tests `no_semicolon_errors`, `equals_compare_errors`.
+- `samples/code.phi`, a sketch of syntax that was never a program, is `Syntax/code.phi`
+  (where the ideas are); the unit test that reads it follows.
 
 **No power operator in an expression (2026-11-14, the user's choice).** `^` stays bitwise
 exclusive or, as C has it and every `^` in the library means. The other ways were each a

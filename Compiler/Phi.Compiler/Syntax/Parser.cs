@@ -1242,6 +1242,8 @@ namespace Phi.Compiler.Syntax
 
             if (Current.Kind == TokenKind.Identifier) return ParseAssignment(requireSemicolon: true);
 
+            if (At(TokenKind.Equals))
+                throw Error(Current.Span, "to compare, write is or ==, as in while count is 5; one = gives a variable its value where it's declared");
             throw Error(Current.Span, $"expected a statement but found {Current}");
         }
 
@@ -1686,6 +1688,8 @@ namespace Phi.Compiler.Syntax
             }
 
             // if k is 'p' tool is 1; would otherwise read as a block that never closes
+            if (At(TokenKind.Equals) && !Current.StartsLine)
+                throw Error(Current.Span, "to compare, write is or ==, as in if count is 5; one = gives a variable its value where it's declared");
             if (!Current.StartsLine && !AtEnd && !At(TokenKind.DoubleSemicolon))
                 throw Error(Current.Span, "an if on one line can only return, break, continue, call or exit; " +
                     "for anything else, put it on the next line and close the if with ;;");
@@ -2468,6 +2472,9 @@ namespace Phi.Compiler.Syntax
                     if (t.Text is "asm" or "x64" or "arm" or "struct" or "enum" or "interface" or "phi" && PeekToken(1).Kind == TokenKind.Dot)
                         throw Error(t.Span, $"{t.Text}. blocks go at the top level of the file, outside any class" +
                                             (t.Text is "asm" or "arm" ? $"; write {t.Text}.Name {{ ... }} there and call Name; from the class" : ""));
+                    // int count: 5 with no ';' reads on into the next line, whose first word is no value
+                    if (ReservedWords.Contains(t.Text) && t.StartsLine && pos > 0)
+                        throw Error(Previous.Span, $"expected ';' at the end of this line: the next line ('{t.Text} ...') was read as more of it");
                     if (ReservedWords.Contains(t.Text))
                         throw Error(t.Span, $"expected a value but found the keyword '{t.Text}'");
 

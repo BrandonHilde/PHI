@@ -1,0 +1,7 @@
+3:12: error: 300 doesn't fit a u8, which holds 0 to 255; for its low 8 bits, write `as u8`
+7:10: error: -129 doesn't fit an i8, which holds -128 to 127; for its low 8 bits, write `as i8`
+8:11: error: 70000 doesn't fit a u16, which holds 0 to 65535; for its low 16 bits, write `as u16`
+9:9: error: 300 doesn't fit a chr, which holds 0 to 255
+11:15: error: 256 doesn't fit a u8
+12:11: error: 999 doesn't fit a u8
+13:13: error: 4000 doesn't fit a u8

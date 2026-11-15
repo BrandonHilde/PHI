@@ -5981,6 +5981,21 @@ namespace Phi.Compiler.Semantics
         {
             if (e.Type.IsError || target.IsError) return e;
 
+            // a number written there that the type can't hold (u8 small: 300;) is a mistake, not
+            // a wrap: what fits its bits either way goes in (-1 and 0xFF are both a u8's), and
+            // `as` says a cut is meant
+            if (e is not CastExpr && !target.IsArray && !e.Type.IsString
+                && (target.Kind is TypeKind.U8 or TypeKind.I8 or TypeKind.Chr or TypeKind.U16 or TypeKind.I16)
+                && ConstantFolder.Evaluate(e) is long written)
+            {
+                int bits = target.Kind is TypeKind.U16 or TypeKind.I16 ? 16 : 8;
+                if (written < -(1L << (bits - 1)) || written >= 1L << bits)
+                {
+                    Error(e.Span, $"{written} doesn't fit {A(target)}, which holds {(target.IsSigned ? $"{-(1L << (bits - 1))} to {(1L << (bits - 1)) - 1}" : $"0 to {(1L << bits) - 1}")}; for its low {bits} bits, write `as {target}`");
+                    return e;
+                }
+            }
+
             // a struct parameter borrows: an object, a struct in place, or a pointer to one
             if (target.IsObject)
             {

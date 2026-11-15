@@ -166,6 +166,7 @@ phi.Count:Program
        phi fuzz objects --count 1000     the same, with programs of objects, text and arrays that grow:
                                          copied, handed over and freed, on a heap that checks every use
        phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
+       phi --version                     which PHI this is
 
 The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each
 PHI source line shown above the code it produced.
@@ -174,6 +175,12 @@ PHI source line shown above the code it produced.
 - [samples/](./samples): example programs
 - [tests/README.md](./tests/README.md): how the tests work
 - [Plan.md](./Plan.md): the roadmap
+
+<h4>Releases:</h4>
+
+PHI is at version 0.1.0, a preview: the language and its library can still change between
+versions. [docs/releases/0.1.0.md](./docs/releases/0.1.0.md) says what it has, what it runs
+on and what it doesn't do yet.
 
 <h4>Goals:</h4>
 
@@ -191,7 +198,7 @@ ordinary programs for Linux and Windows in 32 or 64 bits. Next, roughly in order
 
 1. A core language that's solid throughout, before more is added to it
 2. More tools: hover, finding uses and renaming in the language server, debug information on
-   Linux, a formatter and packages
+   Linux, and packages
 3. Later: macOS, 64-bit kernels, an ARM backend, C compatibility, and rewriting the compiler
    in PHI (see [Plan.md](./Plan.md#later))
 

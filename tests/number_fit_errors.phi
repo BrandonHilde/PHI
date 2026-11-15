@@ -1,0 +1,19 @@
+phi.NumberFitErrors:Kernel
+{
+	u8 small: 300;
+	u8 fits: 255;
+	u8 bits: -1;
+	u8 mask: ~0x0F;
+	i8 low: -129;
+	u16 mid: 70000;
+	chr c: 300;
+	u8 cut: 300 as u8;
+	u8 list: 1 2 256;
+	small is 999;
+	call Take: 4000;
+	int big: 70000;
+	u8 later: big;
+
+	[Take: u8 b: 0;]
+	[end]
+}

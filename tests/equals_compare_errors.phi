@@ -1,0 +1,7 @@
+phi.EqualsCompareErrors:Kernel
+{
+	int count: 5;
+	if count = 5
+		log 'five';
+	;;
+}

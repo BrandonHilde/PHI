@@ -110,6 +110,7 @@ const string Usage = """
       phi lsp                              the language server, for an editor: errors as you type, going
                                            to a definition and completing names, over standard input and
                                            output (PHI-VSCODE is the extension for VS Code)
+      phi --version                        which PHI this is, and which compiled libraries it loads
     """;
 
 // how much over its baseline (in percent) a benchmark's count may be: -icount makes the counts
@@ -147,6 +148,13 @@ static int Execute(string[] args)
     {
         Console.WriteLine(Usage);
         return args.Length == 0 ? 1 : 0;
+    }
+
+    if (args[0] is "--version" or "-v" or "version")
+    {
+        Console.WriteLine($"phi {Phi.Compiler.PhiCompiler.Version}");
+        Console.WriteLine($"compiled libraries (.philib): version {Phi.Compiler.Libraries.CompiledLibrary.AbiVersion}");
+        return 0;
     }
 
     string command = args[0];

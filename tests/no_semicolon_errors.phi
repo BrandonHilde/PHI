@@ -1,0 +1,6 @@
+phi.NoSemicolonErrors:Kernel
+{
+	int count: 5
+	int total: count + 1;
+	log total;
+}

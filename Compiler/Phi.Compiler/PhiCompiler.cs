@@ -33,6 +33,21 @@ namespace Phi.Compiler
     /// <summary>source -> Lexer -> Parser -> Binder -> X86Generator -> NASM source</summary>
     public static class PhiCompiler
     {
+        /// <summary>
+        /// PHI's version, as phi --version says it: the number in Compiler/Directory.Build.props,
+        /// and the commit it was built from when the build knows one.
+        /// </summary>
+        public static string Version
+        {
+            get
+            {
+                string? told = (System.Reflection.CustomAttributeExtensions.GetCustomAttribute<System.Reflection.AssemblyInformationalVersionAttribute>(typeof(PhiCompiler).Assembly))?.InformationalVersion;
+                if (string.IsNullOrEmpty(told)) return "unknown";
+                int plus = told.IndexOf('+');
+                return plus < 0 ? told : $"{told[..plus]} ({told[(plus + 1)..Math.Min(told.Length, plus + 8)]})";
+            }
+        }
+
         /// <summary>Where `use` looks for files that aren't next to the program.</summary>
         const string StandardLibrary = "lib/phi/";
 

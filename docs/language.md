@@ -154,7 +154,9 @@ str copy: line;             # line is a ptr<u8>: the text it points to
 ```
 
 `=` works in place of `:` in declarations. Storing a value in a smaller type keeps the low
-bytes (so `u8` wraps around at 256).
+bytes (so `u8` wraps around at 256). A number written there that the type can't hold is an
+error, though (`u8 small: 300;`): what fits its bits either way goes in, so `-1` and `0xFF` are
+both a `u8`'s, and `300 as u8` says the low bytes are meant.
 
 **Characters.** A `chr` is a byte that's a character: `log` and building a `str` write it
 as its character, where a `u8` (a plain byte) is written as its number. A `str`'s

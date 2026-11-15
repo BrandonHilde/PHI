@@ -652,7 +652,7 @@ namespace Phi.Compiler.Tests
         {
             // code.phi demonstrates syntax ideas rather than being a runnable program
             var diagnostics = new DiagnosticBag();
-            Parser.Parse(SourceFile.Load(Path.Combine(RepoRoot(), "samples", "code.phi")), diagnostics);
+            Parser.Parse(SourceFile.Load(Path.Combine(RepoRoot(), "Syntax", "code.phi")), diagnostics);
             Assert.Empty(diagnostics.Items);
         }
     }
