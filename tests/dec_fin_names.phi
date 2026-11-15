@@ -1,0 +1,8 @@
+# dec and fin were type names kept for exact decimal numbers, which PHI doesn't have (i64 and
+# f64 are its big and fractional numbers): they're names like any other now.
+phi.DecFinNames:Library
+{
+	int dec: 3;
+	int fin: 4;
+	debug dec + fin '\n';
+}

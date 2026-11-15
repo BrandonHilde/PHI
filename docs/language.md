@@ -5,6 +5,11 @@ This describes the language as the compiler in `Compiler/Phi.Compiler` implement
 Linux and Windows, in 32 or 64 bits. Ideas that aren't implemented yet live in [Syntax/](../Syntax)
 and [Plan.md](../Plan.md).
 
+**The core language is frozen** while it's tested and its code is made faster, ahead of the
+first release: no new keywords, operators, statements or kinds of type. What's wrong is
+still fixed, and the libraries still grow. [Plan.md](../Plan.md#the-language-is-frozen-from-2026-11-14-the-users-choice)
+says what is and isn't frozen, and what ends it.
+
 ## Program structure
 
 A program is a list of classes. Each class has a base that says where its code runs.
@@ -88,7 +93,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `dec` `fin` `ptr` `method` `lock` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `method` `lock` |
 | Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `foreign` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `exists` `below` `above` `atmost` `atleast` `true` `false` |
@@ -1007,7 +1012,7 @@ while each c in said            # c is 'c', 'a', 'f', 'é'
 
 ```phi
 while each code in said as int  # each character's number: 99 97 102 233
-while each b in said as u8      # each byte: 99 97 102 195 169
+while each b in said as u8      # each byte: 99 97 102 195 169 (as byt is the same)
 while each letter in said as chr    # each byte too, as a chr (a chr is one byte)
 while each c in said as str     # the same as saying nothing
 ```
@@ -3657,7 +3662,6 @@ controllers are remapped so **IRQ n is vector 32 + n** (the timer is 32, the key
 
 ## Not supported yet
 
-- `dec` / `fin` (exact decimal numbers; `f64` and the others are binary floating point)
 - division by zero isn't caught in 16-bit programs (in a 32-bit kernel it shows the panic screen)
 - strings that grow in 16-bit programs (they have no heap; a `str` there is a fixed buffer)
 - placing code or data at chosen addresses (`@org`, `@section`); the kernel's layout is fixed

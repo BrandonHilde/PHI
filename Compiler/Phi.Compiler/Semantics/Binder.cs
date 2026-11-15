@@ -1777,10 +1777,6 @@ namespace Phi.Compiler.Semantics
                     if (allowStr) return PhiType.Str;
                     Error(t.Span, "str can't be used here; use a u8 array (u8 name[16]) or ptr<u8>");
                     return PhiType.Error;
-                case "dec":
-                case "fin":
-                    Error(t.Span, $"{t.Name} (decimal numbers) isn't supported yet");
-                    return PhiType.Error;
                 case "var":
                     Error(t.Span, "var needs a value to work out its type");
                     return PhiType.Error;
@@ -2591,13 +2587,13 @@ namespace Phi.Compiler.Semantics
                         v.Capacity = 5;        // a character is 1 to 4 bytes
                         break;
                     case "int": v.Type = PhiType.Int; break;
-                    case "u8": v.Type = PhiType.U8; break;
+                    case "u8" or "byt": v.Type = PhiType.U8; break;
                     case "chr": v.Type = PhiType.Chr; break;
                     default:
-                        Error(v.Decl.EachAs!.Span, $"text is gone through as str (each character, the default), as int (each character's number), or as u8 or chr (each byte), not as {given}");
+                        Error(v.Decl.EachAs!.Span, $"text is gone through as str (each character, the default), as int (each character's number), or as u8, byt or chr (each byte), not as {given}");
                         return;
                 }
-                v.Decl.EachOfText = given;
+                v.Decl.EachOfText = given == "byt" ? "u8" : given;   // (byt is u8 by another name)
                 return;
             }
             if (v.Decl.EachAs != null)

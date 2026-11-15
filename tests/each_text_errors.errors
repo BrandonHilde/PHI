@@ -1,4 +1,4 @@
-text is gone through as str (each character, the default), as int (each character's number), or as u8 or chr (each byte), not as f64
+text is gone through as str (each character, the default), as int (each character's number), or as u8, byt or chr (each byte), not as f64
 `as` after while each is for text (while each c in name as int); this is an int array, whose elements come as they are
 while each goes through text that's in a variable, a field or an element; store this first
 `has ... when` looks through an array for an element, and this is a str

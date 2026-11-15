@@ -10,6 +10,52 @@ in PHI and runs in QEMU.
 
 ---
 
+## The language is frozen (from 2026-11-14, the user's choice)
+
+**The pre-release plan.** Before 0.1.0 is released and until PHI is solid and fast enough
+to stand beside the languages it competes with, nothing new is added to the core language.
+The work is to find out whether the language as it is holds up, and to make what's there
+better: testing it to its limits, and making the code it writes faster. The libraries
+aren't frozen.
+
+**Frozen:** new keywords, new operators, new kinds of statement, new kinds of type.
+
+**Not frozen:**
+- anything that's wrong, and what the compiler says when a program is;
+- a feature working somewhere it's refused today, with nothing new to write (`if text has
+  c when ...`, which looks through arrays only; `while each` over text written in place,
+  which 64-bit code can't index);
+- the code the compiler writes: an intermediate form, optimising, the backends;
+- the standard library and the code libraries (`List.SortBy`, putting characters into a
+  `str` and taking them out, and whatever else they need that the language already says).
+
+**Settled before it began, so nothing is half in:**
+- `dec` and `fin` were type names kept for exact decimal numbers. PHI's numbers are its
+  whole ones to `i64` and its floating ones to `f64` (the user: "i remember deciding on
+  i64 and f64 instead"), so they're gone, and are names like any other. Test
+  `dec_fin_names`.
+- A call's new object is stored before it's used (`new Point p: (Make: 4);`, not `(Make:
+  4).x`): every object has a name, and where it lives and is freed can be read. A call's
+  pointer and its text are used where they are (`(Home).x`, `(Name).len`), as before.
+- No power operator, no closures, no type for a value that may not be there, and a call
+  of a method that takes types always names them: each decided, with why, where it's
+  described below.
+
+**For after the freeze** (written down as they come up, not acted on; one that blocks real
+work three times is a finding to bring to the user):
+- a program stating its stack's size (needs something new to write);
+- a method value whose method takes an array (needs a way to write its type);
+- a call's new object used where it is, if storing it first proves a burden;
+- a method's types worked out from what it's given (`Lists.Largest: scores`).
+
+**What ends it:** the user being convinced the language is solid and fast enough. What
+would show that, to be made exact as the work goes: the older `Map`, `memory.list` and
+`KeyedMap` gone and weblib moved to the containers that take types, with its tests
+passing, and nothing above having blocked it; the benchmarks in `bench/` within a stated
+distance of `gcc -O2`; and the tests run on Windows and on a Mac.
+
+---
+
 ## Ground rules
 
 - **QEMU is the only target for now.** We only support the hardware QEMU emulates by

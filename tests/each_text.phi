@@ -37,7 +37,11 @@ phi.EachText:Library
 		bytes++;
 		sum is sum + b;
 	;;
-	debug bytes ' ' sum '\n';
+	int again_sum: 0;
+	while each b in said as byt
+		again_sum is again_sum + b;
+	;;
+	debug bytes ' ' sum ' ' (again_sum is sum) '\n';
 	str plain: 'phi';
 	while each letter in plain as chr
 		debug letter '-';

@@ -3,4 +3,4 @@
 7:10: error: 'list' is an array, so it takes another whole array, and this is an int
 8:5: error: a condition must be a number or a comparison, not a str
 11:2: error: OS.DrawPixel takes 3 arguments (x y color) but was given 2
-12:2: error: dec (decimal numbers) isn't supported yet
+12:2: error: unknown type 'dec'

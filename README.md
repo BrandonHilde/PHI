@@ -196,7 +196,9 @@ PHI compiles boot sectors, 32-bit kernels and their programs, which PHI OS ties 
 ordinary programs for Linux and Windows in 32 or 64 bits. Next, roughly in order (the
 [roadmap](./Plan.md) has the rest):
 
-1. A core language that's solid throughout, before more is added to it
+1. A core language that's solid throughout, before more is added to it: the language is
+   frozen while it's tested to its limits and its code is made faster (the
+   [roadmap](./Plan.md) says what that covers)
 2. More tools: hover, finding uses and renaming in the language server, debug information on
    Linux, and packages
 3. Later: macOS, 64-bit kernels, an ARM backend, C compatibility, and rewriting the compiler
