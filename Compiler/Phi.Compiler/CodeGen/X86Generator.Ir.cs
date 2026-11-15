@@ -33,7 +33,7 @@ namespace Phi.Compiler.CodeGen
             // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
             HashSet<VariableSymbol> reached = ReachedByAddress();
             bool Holdable(VariableSymbol v) => !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile && !reached.Contains(v);
-            IrFunction? fn = IrBuilder.Build(m, Holdable, out string why);
+            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, out string why);
             if (fn == null)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: {why}");
@@ -43,7 +43,7 @@ namespace Phi.Compiler.CodeGen
             RegisterAllocator regs = RegisterAllocator.Allocate(fn);
             if (IrTrace > 0) Console.Error.WriteLine($"ir: {m.Name} ({fn.Values.Count} values, {regs.SlotCount} in the frame)");
             if (IrTrace > 1) Console.Error.WriteLine(fn.Dump());
-            new IrEmitter(this, fn, regs).Emit();
+            new IrEmitter(this, fn, regs, m.Label).Emit();
             return true;
         }
 
@@ -56,11 +56,15 @@ namespace Phi.Compiler.CodeGen
             readonly Dictionary<Block, string> labels = new();
             readonly int frame;
 
-            public IrEmitter(X86Generator generator, IrFunction function, RegisterAllocator allocation)
+            /// <summary>The method's label: a throw going past calls this with _unwind after it, to free its own objects.</summary>
+            readonly string methodLabel;
+
+            public IrEmitter(X86Generator generator, IrFunction function, RegisterAllocator allocation, string label)
             {
                 g = generator;
                 fn = function;
                 regs = allocation;
+                methodLabel = label;
                 foreach (Block b in fn.Blocks) labels[b] = g.NewLabel("ir");
                 // the slots of values with no register, then where r12 to r15 are kept
                 frame = 8 * (regs.SlotCount + regs.UsedCalleeSaved.Count);
@@ -106,6 +110,27 @@ namespace Phi.Compiler.CodeGen
                     g.Label(table);
                     foreach (string target in targets) g.Line($"    dq {target}");
                 }
+                if (fn.UnwindRecord != 0)
+                {
+                    // what a throw on its way past calls with rbp at this method's frame: its
+                    // objects freed, as the end of the method frees them
+                    g.Line("");
+                    g.Label($"{methodLabel}_unwind");
+                    foreach (var (home, s) in fn.Owned)
+                    {
+                        E($"mov rax, qword [{home}]");
+                        E($"call {g.ObjectRoutine("free", s)}");
+                    }
+                    E("ret");
+                }
+            }
+
+            /// <summary>A line's mark that's waiting, written now: before code the generator writes itself.</summary>
+            void MarkNow()
+            {
+                if (pendingLine == null) return;
+                g.SourceComment(pendingLine);
+                pendingLine = null;
             }
 
             // ---------------------------------------------------------------- where values are
@@ -460,6 +485,36 @@ namespace Phi.Compiler.CodeGen
                     }
                     case CallI call:
                         Call(call);
+                        break;
+                    case ObjCallI oc:
+                        if (oc.Arg != null) Load("rax", oc.Arg, 64);
+                        else E($"lea rax, [{oc.Home}]");
+                        E($"call {g.ObjectRoutine(oc.Kind, oc.Struct)}");
+                        break;
+                    case ObjectLineI ol:
+                        g.usesObjects = true;
+                        E($"mov dword [phi_object_line], {g.LineOf(ol.At)}");
+                        break;
+                    case UnwindI { On: true }:
+                    {
+                        // onto the list a throw looks at: the record before, what frees this
+                        // method's objects, and this frame (the generator's own record)
+                        int at = fn.UnwindRecord;
+                        MarkNow();
+                        g.EmitBlockField("mov rax, qword [{0}]", "UNWIND");
+                        E($"mov qword [rbp - {at}], rax");
+                        E($"lea rax, [rel {methodLabel}_unwind]");
+                        E($"mov qword [rbp - {at - 8}], rax");
+                        E($"mov qword [rbp - {at - 16}], rbp");
+                        E($"lea rax, [rbp - {at}]");
+                        g.EmitBlockField("mov qword [{0}], rax", "UNWIND");
+                        break;
+                    }
+                    case UnwindI { On: false }:
+                        // off it: the record before is the one a throw looks at again
+                        E($"mov rcx, qword [rbp - {fn.UnwindRecord}]");
+                        MarkNow();
+                        g.EmitBlockField("mov qword [{0}], rcx", "UNWIND");
                         break;
                     case RawCallI raw:
                         // (every value lives in the frame across it: the allocator saw to that)

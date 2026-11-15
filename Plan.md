@@ -3767,6 +3767,40 @@ store is the one the other way, also the user's choice: its value first, then wh
   (`X86Generator.LeftAddressFirst`). Taking it first anyway read the text after the call had
   freed it (found by trying it; the test has the case now).
 
+**Making PHI faster: a method's own objects in the intermediate form (2026-11-15).** A
+method with `new T x` variables went to the generator ("a variable it doesn't take"), and
+`lists`' `Round` was one. Now the form takes them:
+- Each of the method's own objects has a home at the top of the frame (`IrFunction.Homes`),
+  never a register, zeroed at the start, so the end of the method and a throw going past can
+  always find it. The values with no register come after the homes.
+- `new T x: values` is the generator's `phi_renew_T` with the home's address, then the
+  fields; `new T x: empty` and `x is empty` free what was there; `takes` between homes and
+  fields (of an object, through a pointer, of self, on a path) is the generator's
+  `EmitTakes`. A field that holds an object is read as its address. The routines are calls
+  (`ObjCallI`), so what lives across them is in r12 to r15.
+- Before each return the objects are freed (the generator's `EmitTidyUp`), the result worked
+  out first. In a program that catches errors the method goes on the list a throw looks at
+  (its own record in three homes, and a `_unwind` routine that frees them), and off it before
+  it returns.
+- What's known of its own objects within a block: a home it just stored to holds that, and
+  an object just made has empty object fields until something may write them (a call, or a
+  store through a pointer that isn't one of them). So `node.next takes head` after
+  `new Node node: i` neither reads `node.next` nor checks whether to free it, and
+  `head takes node` after it knows `head` is empty. Reading `node.next` there was the
+  busiest line in `lists` (36% of its samples): 8 bytes at offset 4 of a node just zeroed
+  16 bytes at a time, which the CPU waits for.
+- Not yet: arrays of objects, an object given or returned, a copy (`x is y`), a call's new
+  object kept, `takes` where the target may be inside the source.
+- `lists`, 64-bit, best of seven: 0.230 s to 0.204 (gcc -O2 0.20 to 0.21, C# 0.16): 1.30
+  times C#, at the bar. What's left is the heap's own Alloc and Free.
+- Test `ir_objects_program` (each part checks the heap is back where it was; with the
+  unwind routine broken on purpose it says so). Checked: every 64-bit test through the form
+  (182), all 767 tests without it, 600 `phi fuzz objects` and 500 code and number programs.
+  But little else reaches this yet: of the tests, only `dialogs_program` has another method
+  with objects the form takes (most also log or use text), and `phi fuzz objects`' own
+  methods give objects back or keep text, so it doesn't. Its methods should have some the
+  form takes before this goes further.
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to

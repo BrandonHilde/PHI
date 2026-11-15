@@ -32,9 +32,29 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>The class variables the loop being built keeps in registers, each with its value.</summary>
         readonly Dictionary<VariableSymbol, VReg> held = new();
 
-        IrBuilder(MethodSymbol m, Func<VariableSymbol, bool> holdable)
+        /// <summary>The method's own objects (new T x), each where it's kept in the frame: never in a register.</summary>
+        readonly Dictionary<VariableSymbol, string> owned = new();
+
+        /// <summary>The program catches errors: a throw going past frees the method's own objects.</summary>
+        readonly bool catches;
+
+        // What's known of the method's own objects, from one instruction to the next in a block
+        // (forgotten where blocks meet). Nothing but this method reaches its homes, so only what
+        // it stores there changes them; an object's fields, anything that may write memory.
+
+        /// <summary>What a home holds, when it was stored by this block (0 after takes or empty).</summary>
+        readonly Dictionary<string, Opnd> homeHolds = new();
+
+        /// <summary>Homes whose object was just made (renew zeroes it): its object fields are empty.</summary>
+        readonly HashSet<string> freshObjects = new();
+
+        /// <summary>Values read from a home, with which: the object that home still holds, until it's stored to.</summary>
+        readonly Dictionary<VReg, string> readFrom = new();
+
+        IrBuilder(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches)
         {
             this.holdable = holdable;
+            this.catches = catches;
             method = m;
             fn = new IrFunction { Name = m.Name };
             current = fn.NewBlock();
@@ -43,12 +63,12 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         /// <summary>The method as the intermediate form, or null and why it isn't.</summary>
-        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, out string why)
+        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, out string why)
         {
             why = "";
             try
             {
-                var builder = new IrBuilder(m, holdable);
+                var builder = new IrBuilder(m, holdable, catches);
                 builder.BuildBody();
                 return builder.fn;
             }
@@ -113,8 +133,28 @@ namespace Phi.Compiler.CodeGen.Ir
             Need(m.Parameters.All(p => Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed),
                  "a parameter it doesn't take");
             Need(!m.ReturnType.IsObject, "it gives an object");
-            Need(m.Locals.All(v => Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements),
+            Need(m.Locals.All(v => OwnObject(v)
+                                   || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements),
                  "a variable it doesn't take");
+
+            // its own objects, each in a home of its own, empty to start with (as the generator's
+            // frame starts zeroed), and freed where it ends
+            foreach (VariableSymbol v in m.Locals.Where(OwnObject))
+            {
+                string home = fn.NewHome();
+                owned[v] = home;
+                fn.Owned.Add((home, v.Type.Struct!));
+                StoreObject((home, null, 0), Opnd.Const(0));
+            }
+            if (catches && owned.Count > 0)
+            {
+                // the record a throw looks at, three homes: the lowest is where it starts
+                fn.NewHome();
+                fn.NewHome();
+                fn.NewHome();
+                fn.UnwindRecord = 8 * fn.Homes;
+                Emit(new UnwindI { On = true });
+            }
 
             // the parameters, from their places in the frame: the last at rbp + 16, each 8 bytes
             int count = m.Parameters.Count;
@@ -126,7 +166,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             // (a variable is set where it's declared; one that could be read before that is
             // given 0 at the start, by IrPeephole, which knows which)
-            foreach (VariableSymbol v in m.Locals) Variable(v);
+            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v))) Variable(v);
 
             Statements(m.Decl.Body);
             if (m.Decl.Result is Expr value)
@@ -137,7 +177,11 @@ namespace Phi.Compiler.CodeGen.Ir
             else
             {
                 Need(m.ReturnType.Kind == TypeKind.Void, "a method that can end without its result");
-                if (current.End == null) current.End = new RetT();
+                if (current.End == null)
+                {
+                    TidyUp();
+                    current.End = new RetT();
+                }
             }
             // laid out in the order they were written, which keeps a loop's body together
             var order = layout.Concat(fn.Blocks.Where(b => !layout.Contains(b))).ToList();
@@ -172,8 +216,99 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A new value for one of type t: an f64's, or a whole number's of its width.</summary>
         VReg New(PhiType t, string name = "") => IsF(t) ? fn.NewFloat(name) : fn.NewValue(Is64(t), name);
 
+        /// <summary>A method's own object, new T x: kept in a home of the frame (see <see cref="owned"/>).</summary>
+        static bool OwnObject(VariableSymbol v) =>
+            v.Ownership == Ownership.Owned && v.Type.IsObject && !v.Type.IsArray && v.Type.Struct != null && !v.IsParameter;
+
+        /// <summary>
+        /// Before each return: off the list a throw looks at, and the method's own objects freed
+        /// (the generator's EmitTidyUp: the result is worked out already, and stays).
+        /// </summary>
+        void TidyUp()
+        {
+            if (fn.UnwindRecord != 0) Emit(new UnwindI { On = false });
+            foreach (var (home, s) in fn.Owned)
+            {
+                VReg o = fn.NewValue(true);
+                Emit(new LoadI { Dst = o, Place = home, Kind = MemKind.Q64 });
+                Emit(new ObjCallI { Kind = "free", Struct = s, Arg = o });
+            }
+        }
+
+        /// <summary>Where an object is kept: a method's own one's home, or a field's base and offset.</summary>
+        (string? Home, VReg? Base, long Offset) ObjectPlace(Expr e)
+        {
+            if (e is NameExpr { Symbol: VariableSymbol v } && owned.TryGetValue(v, out string? home)) return (home, null, 0);
+            var (b, offset, t) = Field(e);
+            Need(b != null && t.IsObject, $"an object kept in a {e.GetType().Name} it doesn't take");
+            return (null, b, offset);
+        }
+
+        /// <summary>The object kept there: what's known of it (empty, mostly), or read.</summary>
+        Opnd LoadObject((string? Home, VReg? Base, long Offset) place)
+        {
+            if (place.Home != null && homeHolds.TryGetValue(place.Home, out Opnd known)) return known;
+            // (a field of an object just made is empty)
+            if (place.Base != null && readFrom.TryGetValue(place.Base, out string? of) && freshObjects.Contains(of)) return Opnd.Const(0);
+            VReg d = fn.NewValue(true);
+            if (place.Home != null)
+            {
+                Emit(new LoadI { Dst = d, Place = place.Home, Kind = MemKind.Q64 });
+                readFrom[d] = place.Home;
+            }
+            else Emit(new LoadIdxI { Dst = d, Base = place.Base!, Index = Opnd.Const(place.Offset), Scale = 1, Kind = MemKind.Q64 });
+            return d;
+        }
+
+        void StoreObject((string? Home, VReg? Base, long Offset) place, Opnd value)
+        {
+            if (place.Home != null)
+            {
+                Emit(new StoreI { Place = place.Home, Src = value, Kind = MemKind.Q64 });
+                // another object there now: what was known of the one before goes
+                foreach (VReg was in readFrom.Where(r => r.Value == place.Home).Select(r => r.Key).ToList()) readFrom.Remove(was);
+                freshObjects.Remove(place.Home);
+                homeHolds[place.Home] = value;
+                return;
+            }
+            Emit(new StoreIdxI { Base = place.Base!, Index = Opnd.Const(place.Offset), Scale = 1, Src = value, Kind = MemKind.Q64 });
+            // (one of its object fields isn't empty now)
+            if (readFrom.TryGetValue(place.Base!, out string? of)) freshObjects.Remove(of);
+        }
+
+        /// <summary>What an instruction makes no longer known (see homeHolds).</summary>
+        void Forget(Instr i)
+        {
+            switch (i)
+            {
+                case ObjCallI { Kind: "renew", Home: string made }:
+                    // the object there is new, or the old one emptied: all of it zero
+                    freshObjects.Clear();
+                    homeHolds.Remove(made);
+                    foreach (VReg was in readFrom.Where(r => r.Value == made).Select(r => r.Key).ToList()) readFrom.Remove(was);
+                    freshObjects.Add(made);
+                    break;
+                case CallI or ObjCallI or RawCallI or LockI or UnlockI:
+                    // (a method may write any object's fields; none reaches the homes)
+                    freshObjects.Clear();
+                    break;
+                case StoreIdxI st when !readFrom.ContainsKey(st.Base):
+                    // through a pointer that might be to one of them
+                    freshObjects.Clear();
+                    break;
+            }
+        }
+
         VReg Variable(VariableSymbol v)
         {
+            // (a method's own object is read from its home each time: a call may have changed it)
+            if (owned.TryGetValue(v, out string? home))
+            {
+                VReg loaded = fn.NewValue(true, v.Name);
+                Emit(new LoadI { Dst = loaded, Place = home, Kind = MemKind.Q64 });
+                readFrom[loaded] = home;
+                return loaded;
+            }
             if (!variables.TryGetValue(v, out VReg? r))
             {
                 Need(Supported(v.Type), $"'{v.Name}' is a {v.Type}");
@@ -188,6 +323,7 @@ namespace Phi.Compiler.CodeGen.Ir
             // (code after a return or a break, which nothing reaches, goes in a block of its own)
             if (current.End != null) Enter(fn.NewBlock());
             current.Instrs.Add(i);
+            Forget(i);
         }
 
         void Mark(Node n) => Emit(new LineMark { Node = n });
@@ -203,6 +339,10 @@ namespace Phi.Compiler.CodeGen.Ir
 
         void Enter(Block b)
         {
+            // (where blocks meet, nothing is known of what came before)
+            homeHolds.Clear();
+            freshObjects.Clear();
+            readFrom.Clear();
             current = b;
             if (!layout.Contains(b)) layout.Add(b);
         }
@@ -246,6 +386,61 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             switch (s)
             {
+                case VarDecl { IsNew: true, Symbol: VariableSymbol made } d when owned.ContainsKey(made):
+                {
+                    Need(d.Narrows == null && d.AtAddress == null && d.BufferSize == null && d.MoreSizes.Count == 0, "a new object it doesn't take");
+                    if (d.Source != null)
+                    {
+                        // new T x: empty, or from another object
+                        Statement(d.Source);
+                        return;
+                    }
+                    // a zeroed object (the first time; after that the old one emptied and used
+                    // again), then its fields from the values, in order
+                    Mark(d);
+                    Emit(new ObjectLineI { At = d });
+                    Emit(new ObjCallI { Kind = "renew", Struct = made.Type.Struct!, Home = owned[made] });
+                    Statements(d.FieldValues);
+                    return;
+                }
+
+                case ObjectAssignStmt { Kind: ObjectAssignKind.Clear } clear:
+                {
+                    // x is empty: what it had is freed
+                    Mark(clear);
+                    var place = ObjectPlace(clear.Target);
+                    Opnd had = LoadObject(place);
+                    StoreObject(place, Opnd.Const(0));
+                    if (!(had.IsImm && had.Imm == 0)) Emit(new ObjCallI { Kind = "free", Struct = clear.Struct, Arg = InReg(had, true) });
+                    return;
+                }
+
+                case TakesStmt t:
+                {
+                    // the generator's EmitTakes: the source's place, then the target's; the object
+                    // moves, the source is left empty, and what the target had is freed (unless it
+                    // was nothing, or the same object)
+                    Need(t.Struct != null && t.Inside == null, "a takes it doesn't take");
+                    Mark(t);
+                    var from = ObjectPlace(t.Source);
+                    var to = ObjectPlace(t.Target);
+                    Opnd moved = LoadObject(from);
+                    StoreObject(from, Opnd.Const(0));
+                    Opnd had = LoadObject(to);
+                    StoreObject(to, moved);
+                    // (a target known to be empty, as a list's new node's next one is, frees nothing)
+                    if (had.IsImm && had.Imm == 0) return;
+                    VReg hadReg = InReg(had, true);
+                    Block check = fn.NewBlock(), free = fn.NewBlock(), after = fn.NewBlock();
+                    current.End = new BranchT { A = hadReg, B = Opnd.Const(0), Cond = Cond.Eq, Then = after, Else = check };
+                    Enter(check);
+                    current.End = new BranchT { A = hadReg, B = moved, Cond = Cond.Eq, Then = after, Else = free };
+                    Enter(free);
+                    Emit(new ObjCallI { Kind = "free", Struct = t.Struct!, Arg = hadReg });
+                    StartBlock(after);
+                    return;
+                }
+
                 case VarDecl d:
                 {
                     Need(d.Symbol is VariableSymbol && d.Values.Count <= 1 && !d.IsNew && d.AtAddress == null && d.BufferSize == null
@@ -441,7 +636,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     else
                     {
                         Unlock(0);
-                        if (current.End == null) current.End = new RetT();
+                        if (current.End == null)
+                        {
+                            TidyUp();
+                            current.End = new RetT();
+                        }
                     }
                     return;
 
@@ -485,7 +684,7 @@ namespace Phi.Compiler.CodeGen.Ir
                         Call(callee, call.Arguments, wantResult: false);
                         return;
                     }
-                    Need(call.ResultTarget is NameExpr { Symbol: VariableSymbol }, "a call's result kept somewhere it doesn't take");
+                    Need(call.ResultTarget is NameExpr { Symbol: VariableSymbol { Type.IsObject: false } }, "a call's result kept somewhere it doesn't take");
                     var target = (VariableSymbol)((NameExpr)call.ResultTarget).Symbol!;
                     VReg got = Call(callee, call.Arguments, wantResult: true)!;
                     Opnd converted = Convert(got, callee.ReturnType, target.Type);
@@ -500,6 +699,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         void Assign(VariableSymbol v, Expr? value)
         {
+            Need(!owned.ContainsKey(v), "an object given a value as a number is");
             VReg dst = Variable(v);
             Opnd src = value == null ? Opnd.Const(0) : Value(value, v.Type);
             if (src.IsImm) Emit(new ConstI { Dst = dst, Value = src.Imm });
@@ -513,35 +713,38 @@ namespace Phi.Compiler.CodeGen.Ir
             Opnd v = Value(value, method.ReturnType);
             Unlock(0);
             if (current.End != null) Enter(fn.NewBlock());
+            TidyUp();
             current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer, Float = IsF(method.ReturnType) };
         }
+
+        /// <summary>True when <see cref="Field"/> takes the expression (asking only, with nothing built).</summary>
+        bool IsField(Expr e) => e switch
+        {
+            NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self) && Supported(f.Type),
+            MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type)
+                && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0 => true,
+            MemberExpr { Field: FieldSymbol f, Call: null } m => Supported(f.Type) && Is64(Real(m.Target)) && Supported(Real(m.Target)),
+            NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && Ours(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0 && Supported(p.Type),
+            _ => false,
+        };
 
         /// <summary>
         /// A field this form reads and writes where it is: its base (an address, in a value),
         /// its offset from there and its type. self's field by name; p.field through a pointer
-        /// or a borrowed object; and a path through objects (a.next.value), each address on the
-        /// way read from the one before. (null, 0, Error) for anything else.
+        /// or an object; and a path through objects (a.next.value), each address on the way
+        /// read from the one before. A field that's an object is its address, read as a pointer
+        /// is (what's put there is the object statements' business: an assignment of one isn't
+        /// taken). (null, 0, Error) for anything else.
         /// </summary>
-        /// <summary>True when <see cref="Field"/> takes the expression (asking only, with nothing built).</summary>
-        bool IsField(Expr e) => e switch
-        {
-            NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self) && Supported(f.Type) && !f.Type.IsObject,
-            MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type) && !f.Type.IsObject
-                && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0 => true,
-            MemberExpr { Field: FieldSymbol f, Call: null } m => Supported(f.Type) && !f.Type.IsObject && Is64(Real(m.Target)) && Supported(Real(m.Target)),
-            NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && Ours(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0 && Supported(p.Type) && !p.Type.IsObject,
-            _ => false,
-        };
-
         (VReg? Base, long Offset, PhiType Type) Field(Expr e)
         {
             switch (e)
             {
-                case NameExpr { Symbol: SelfFieldSymbol f } when Ours(f.Self) && Supported(f.Type) && !f.Type.IsObject:
+                case NameExpr { Symbol: SelfFieldSymbol f } when Ours(f.Self) && Supported(f.Type):
                     return (Variable(f.Self), f.Offset, f.Type);
-                case MemberExpr { Field: FieldSymbol f, Call: null } m when Supported(f.Type) && !f.Type.IsObject && Is64(Real(m.Target)) && Supported(Real(m.Target)):
+                case MemberExpr { Field: FieldSymbol f, Call: null } m when Supported(f.Type) && Is64(Real(m.Target)) && Supported(Real(m.Target)):
                     return (InReg(Value(m.Target), true), f.Offset, f.Type);
-                case MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type) && !f.Type.IsObject
+                case MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type)
                                                                                 && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0:
                 {
                     // p:i.field: the struct at p + i * its size, and the field in it (the index first, as an element's)
@@ -563,7 +766,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     return (at, f.Offset, f.Type);
                 }
                 case NameExpr { Symbol: PathSymbol p } when p.BaseOffset == 0 && Ours(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0
-                                                             && Supported(p.Type) && !p.Type.IsObject:
+                                                             && Supported(p.Type):
                 {
                     VReg at = Variable(p.Root);
                     for (int k = 0; k + 1 < p.Hops.Count; k++)
@@ -1223,7 +1426,8 @@ namespace Phi.Compiler.CodeGen.Ir
         VReg? Call(MethodSymbol callee, List<Expr> arguments, bool wantResult)
         {
             Need(!callee.IsHook && !callee.IsInterruptHandler, "a call of an event");
-            Need(callee.Parameters.All(p => Supported(p.Type) && !p.Grows && !p.TextRef), $"a call of {callee.Name}, which takes what this form doesn't");
+            Need(callee.Parameters.All(p => Supported(p.Type) && !p.Grows && !p.TextRef && !(p.Type.IsObject && p.Ownership == Ownership.Owned)),
+                 $"a call of {callee.Name}, which takes what this form doesn't");
             Need(callee.ReturnType.Kind == TypeKind.Void || Supported(callee.ReturnType) && !callee.ReturnType.IsObject, $"a call of {callee.Name}, which gives a {callee.ReturnType}");
             Need(arguments.Count == callee.Parameters.Count, $"a call of {callee.Name} that leaves out some of its arguments");
             var call = new CallI

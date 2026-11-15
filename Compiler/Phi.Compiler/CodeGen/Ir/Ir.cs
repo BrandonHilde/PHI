@@ -169,6 +169,36 @@ namespace Phi.Compiler.CodeGen.Ir
         public MemKind Kind { get; init; }
     }
 
+    /// <summary>
+    /// A call of one of the generator's routines for a struct's objects (phi_free_T with the
+    /// object in rax, phi_renew_T with the address of where it's kept), which changes what a
+    /// call may change, as a method does: what lives across it is in r12 to r15.
+    /// </summary>
+    public sealed class ObjCallI : Instr
+    {
+        public string Kind { get; init; } = "";
+        public Semantics.StructSymbol Struct { get; init; } = null!;
+        /// <summary>The object, for free.</summary>
+        public VReg? Arg { get; init; }
+        /// <summary>Where a method's own object is kept in its frame, for renew.</summary>
+        public string? Home { get; init; }
+    }
+
+    /// <summary>The line an object is made on, for the message if the heap runs out (the generator's ObjectLine).</summary>
+    public sealed class ObjectLineI : Instr
+    {
+        public Syntax.Node At { get; init; } = null!;
+    }
+
+    /// <summary>
+    /// The method onto (On) or off the list a throw looks at as it goes past, in a program that
+    /// catches errors: then a throw frees the method's own objects (see IrFunction.UnwindRecord).
+    /// </summary>
+    public sealed class UnwindI : Instr
+    {
+        public bool On { get; init; }
+    }
+
     /// <summary>A call of an assembly block (call asm.Name;), which may change every register: nothing lives in one across it.</summary>
     public sealed class RawCallI : Instr
     {
@@ -331,6 +361,25 @@ namespace Phi.Compiler.CodeGen.Ir
 
         public string Name { get; init; } = "";
         public List<Block> Blocks { get; } = new();
+
+        /// <summary>
+        /// The 8-byte places at the top of the frame (rbp - 8, - 16, ...) the method keeps
+        /// things in that must be in memory: its own objects, which are freed from there at its
+        /// end and by a throw going past. The values the allocator finds no register for come after.
+        /// </summary>
+        public int Homes { get; private set; }
+
+        public string NewHome() => $"rbp - {8 * ++Homes}";
+
+        /// <summary>The method's own objects: where each is kept, and its struct (freed at the end, in this order).</summary>
+        public List<(string Home, Semantics.StructSymbol Struct)> Owned { get; } = new();
+
+        /// <summary>
+        /// In a program that catches errors, with objects of its own: how far below rbp the
+        /// record the throw looks at is (the record before, the routine that frees the objects,
+        /// and rbp, 8 bytes each), or 0.
+        /// </summary>
+        public int UnwindRecord { get; set; }
         public List<VReg> Values { get; } = new();
 
         public VReg NewValue(bool wide, string name = "")
@@ -387,6 +436,9 @@ namespace Phi.Compiler.CodeGen.Ir
             AddrI a => $"{a.Dst} = addr {a.Label}",
             LeaI l => $"{l.Dst} = {l.A} * {l.Factor} + {l.Add}",
             RawCallI r => $"call asm {r.Label}",
+            ObjCallI o => $"call {o.Kind} {o.Struct.Name} ({(object?)o.Arg ?? o.Home})",
+            ObjectLineI => "object line",
+            UnwindI u => u.On ? "unwind on" : "unwind off",
             LockI l => $"{l.Saved} = lock {l.Label}",
             UnlockI u => $"unlock {u.Label} ({u.Saved})",
             FConstI f => $"{f.Dst} = {f.Value}f",

@@ -1,0 +1,118 @@
+# A method's own objects in methods the intermediate form takes (PHI_IR=1): new with and
+# without values, takes between variables and fields (into an empty field, and into one that
+# has an object, which is freed), is empty, a declaration run again in a loop (its object
+# emptied and used again), returns from inside loops, and errors caught on the way past a
+# method that has objects (which frees them). Each part checks the heap is back where it was.
+# Its expected output is the generator's.
+struct.Node
+{
+	int value;
+	new Node next;
+}
+
+struct.Pair
+{
+	int id;
+	new Node left;
+	new Node right;
+}
+
+phi.IrObjectsProgram:Program
+{
+	int list[5];
+
+	u32 before: Heap.used_blocks;
+	log (Build: 1000) ' ' (Early: 3) ' ' (Early: 50) ' ' (Swap: 7) ' ' (Pairs: 20) ' ' (Again: 30) ' ' (Emptied: 4) '\n';
+	log 'heap back: ' (Heap.used_blocks is before) '\n';
+	int caught: 0;
+	while int i: 0; i < 10; i++;
+		if call Risky: i throws err
+			caught++;
+		;;
+	;;
+	log 'caught: ' caught ' ' list:4 '\n';
+	log 'heap back after throws: ' (Heap.used_blocks is before) '\n';
+	exit 0;
+
+	[Sum: ptr<Node> walk;]
+		int sum: 0;
+		while walk is not 0
+			sum++ walk.value;
+			walk is walk.next;
+		;;
+	[end: sum]
+
+	[Build: int count: 0;]
+		new Node head: empty;
+		while int i: 0; i < count; i++;
+			new Node node: i;
+			node.next takes head;
+			head takes node;
+		;;
+	[end: (Sum: addr head)]
+
+	# a return from inside the loop, with both objects to free
+	[Early: int stop: 0;]
+		new Node head: empty;
+		while int i: 0; i < 10; i++;
+			new Node node: i * 10;
+			node.next takes head;
+			head takes node;
+			if i is stop
+				return (Sum: addr head) + 1000;
+			;;
+		;;
+	[end: (Sum: addr head)]
+
+	# a field as the source and the target, and objects going back and forth
+	[Swap: int n: 0;]
+		new Node a: n;
+		new Node b: n * 2;
+		a.next takes b;
+		b takes a.next;
+		a.next takes b;
+		new Node c: 100;
+		c.next takes a;
+	[end: c.value + c.next.value + c.next.next.value]
+
+	# takes into a field that has an object already: the one it had is freed
+	[Pairs: int n: 0;]
+		new Pair p: n;
+		int total: 0;
+		while int i: 0; i < n; i++;
+			new Node x: i;
+			new Node y: i * 3;
+			p.left takes x;
+			p.right takes y;
+			total++ p.left.value + p.right.value;
+		;;
+	[end: total + p.id]
+
+	# a declaration run again keeps its object, emptied: what it owned is freed
+	[Again: int n: 0;]
+		int total: 0;
+		while int i: 0; i < n; i++;
+			new Node node: i;
+			new Node tail: i + 1;
+			node.next takes tail;
+			total++ node.value + node.next.value;
+		;;
+	[end: total]
+
+	[Emptied: int n: 0;]
+		new Node a: n;
+		new Node b: n + 1;
+		a.next takes b;
+		int had: a.next.value;
+		a is empty;
+		b is empty;
+	[end: had]
+
+	# past the end of list from 5 on: the error is caught by the class's code, and a and b go
+	[Risky: int i: 0;]
+		new Node a: i;
+		new Node b: i + 1;
+		a.next takes b;
+		list:i is a.value + a.next.value;
+	[end]
+}

@@ -94,6 +94,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 case FNegI f: yield return f.A; break;
                 case LeaI l: yield return l.A; break;
                 case UnlockI u: yield return u.Saved; break;
+                case ObjCallI { Arg: VReg o }: yield return o; break;
                 case ToFloatI f: yield return f.Src; break;
                 case ToWholeI f: yield return f.Src; break;
             }
@@ -194,7 +195,7 @@ namespace Phi.Compiler.CodeGen.Ir
                         Touch(def, pos);
                         Weigh(def, k);
                     }
-                    if (i is CallI) calls.Add(pos);
+                    if (i is CallI or ObjCallI) calls.Add(pos);
                     if (i is RawCallI) rawCalls.Add(pos);
                 }
                 pos += 2;
@@ -208,7 +209,8 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             foreach (Interval iv in intervals.Values)
                 iv.CrossesCall = calls.Any(c => c > iv.Start && c < iv.End);
-            int slotsForRaw = 0;
+            // (the method's homes are first, at the top of the frame)
+            int slotsForRaw = fn.Homes;
             foreach (Interval iv in intervals.Values.OrderBy(i => i.Value.Id))
                 if (rawCalls.Any(c => c > iv.Start && c < iv.End))
                 {
@@ -293,7 +295,7 @@ namespace Phi.Compiler.CodeGen.Ir
             SlotCount = slots;
         }
 
-        /// <summary>How many 8-byte slots the values without registers take below rbp.</summary>
+        /// <summary>How many 8-byte slots below rbp the method's homes and the values without registers take.</summary>
         public int SlotCount { get; private set; }
     }
 }
