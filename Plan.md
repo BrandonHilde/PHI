@@ -3861,6 +3861,79 @@ assembly). PHI's 32-bit code is about gcc -O0's, as it was.
   none is in: a rule fitted to one loop on one CPU isn't one. A benchmark's time can move
   by about a fifth with code it doesn't run.
 
+**Atomics and struct layout: the plan (2026-11-15, with the user).** An `atomic` step is a
+locked instruction, and one on a word that crosses a 64-byte cache line is a split lock:
+Linux traps it and makes the program wait (tens of milliseconds a time; a kernel set to
+`split_lock_detect=fatal` kills it), and on PHI OS it holds every core's memory bus while it
+runs. The runtime's own lock words are aligned now (cb6ffb5). Tried with programs, three
+places can still give `atomic` a word that isn't aligned:
+- **A struct's field.** Structs are packed, so in `struct.Counter { u8 kind; int hits; }`
+  `atomic c.hits++;` is `lock add dword [c + 1]`, with no message.
+- **A method's own variable.** The frame is laid out four bytes at a time, so a pointer can
+  be at `[rbp - 12]`: `atomic p is q;` is `xchg qword [rbp - 12]`, aligned to 4, not 8.
+- **An object of a struct that has an interface.** Its type table's word is just before it,
+  so the object starts four bytes into an 8-byte word: `(addr b) % 8` is 4, and its first
+  8-byte field, used with `atomic`, is never aligned, whatever the struct's layout.
+
+The user's principle for the answer: a struct's shape (its fields' places, and any padding)
+comes from its declaration alone, by a rule that's written down, so every party that
+builds or reads it (the compiler, a compiled library, the debugger, a program reading data
+back) works out the same shape. No variable the compiler or the editor adds to the source,
+and nothing elsewhere in the program (an `atomic` line) changes it.
+
+*Before the release (the freeze allows it: nothing new to write).*
+1. **A method's variables:** each on a multiple of its own size in the frame (an 8-byte
+   one on 8), in the generator's `LayOutFrame`. It costs a few bytes of stack.
+2. **Objects:** an object starts on 8 in 64-bit code (4 in 32-bit). For a struct with a
+   type table, the block is allocated 4 bytes bigger and the object put 8 bytes in, with
+   the table's word still just before it, so everything that reads `[object - 4]` stays as
+   it is; only making and freeing such objects change (and the heap's `HEADER` keeps the
+   block itself on 8).
+3. **An error for a field that isn't aligned:** `atomic` on a field whose place in its
+   struct isn't a multiple of its size, or on an element of an array of structs whose size
+   isn't (so not every element's field is), is an error that says how to fix it:
+   `atomic needs 'hits' on a multiple of 4 bytes, and Counter has it at 1 (put it first,
+   or make Counter foreign for C's layout)`. What a pointer points at (`p:i` of numbers)
+   isn't known when it's built and isn't checked: memory from `new` is aligned.
+4. **The reference** says it, in the atomic section, beside the memory model's paragraph on
+   aligned fields.
+5. **Tests:** `atomic_alignment_errors` (each case the error is for, and one each it isn't);
+   `atomic_alignment_program` (the address of each kind of place `atomic` can be used on,
+   checked as the program runs to be a multiple of its size: class variables, a method's
+   variables of each size, fields of objects with and without a type table, elements).
+
+*After the freeze (what a struct means changes).*
+1. **Aligned by default, by C's rule:** each field on a multiple of its alignment, padding
+   before it if it needs some, and the struct's size rounded up to its largest alignment so
+   each element of an array is aligned too. Alignment: a number, `bln`, `chr`, pointer,
+   object or method value its own size; a `str` in place 1; a `str` that grows, a view
+   (`int list[]`) or an array that grows, a pointer's; an array its element's; a struct its
+   own. The binder already does this for `foreign` structs (`Binder.cs`, around
+   `ForeignAlignment`), for C's kinds only.
+2. **A word for a struct that must stay byte for byte as written**, for formats set outside
+   PHI: `FatBootSector` (FAT puts a `u16` at offset 11), the FAT directory entry, any
+   network header or hardware table written as a struct. The word is the user's to choose
+   (one word, one meaning). `foreign` stays: C's layout, and only what C holds. The error
+   of step 3 above stays, for these.
+3. **The shape known to every party:** the rule in the reference; the `.philib` format's
+   version goes up (library structs change shape), and its interface keeps each struct's
+   size and fields' places, which a program checks against its own working-out when it
+   loads one (a difference is an error, not wrong data); `phi lsp`'s hover says a struct's
+   size and each field's place, padding included; and a command to print a file's
+   structs' shapes.
+4. **Moving over:** the compiler lists every struct whose shape changes. Measured from the
+   source (64-bit pointers): of the 222 structs in PHI, PHI-OS and the code libraries that
+   aren't foreign, 169 hold only plain fields; 127 of those keep their shape and 42 change
+   (mostly ones only a program uses: `CssTok`, `JsNode`, `ImgPng`, `HeapBlock`, which is
+   read by name and `sizeof`); the 53 with structs or arrays in them weren't counted. The
+   byte-exact ones are marked first; every library is built again; data a program wrote
+   whole with an older build doesn't read back (said in that version's release notes).
+5. **Measured before and after:** struct sizes and the heap the tests and benchmarks use,
+   and `bench/`.
+
+*To decide:* the word for a byte-exact struct; whether a struct with a type table taking 4
+more bytes for each object is fine (it's what keeps its fields aligned).
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to
