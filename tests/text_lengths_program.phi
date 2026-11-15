@@ -1,0 +1,60 @@
+# Text of every length from 0 to 70 copied, added to the end of other text, and built on the
+# side, with each character checked: the runtime copies 1 to 3 bytes a byte at a time, 4 to
+# 32 as two moves that may overlap, and more with rep movsb, and a text written in the
+# program isn't measured as it runs. A method's own str keeps how long it is (it's built
+# and added to only), and the length after each store comes from where the copy ended.
+phi.TextLengthsProgram:Program
+{
+	str made: '';
+	str kept: '';
+	int wrong: 0;
+	while int n: 0; n <= 70; n++;
+		str copy: '';
+		copy is made;
+		if copy is not made
+			wrong++;
+		;;
+		str joined: 'ab';
+		joined++ made;
+		joined++ '!';
+		if joined.len is not n + 3 or joined:(n + 2) is not '!' or joined:1 is not 'b'
+			wrong++;
+		;;
+		str side: '';
+		side is '<' made '>';
+		if side.len is not n + 2 or side:0 is not '<' or side:(n + 1) is not '>'
+			wrong++;
+		;;
+		while int i: 0; i < n; i++;
+			if side:(i + 1) is not made:i or joined:(i + 2) is not made:i
+				wrong++;
+			;;
+		;;
+		call Built: n;
+		if kept.len is not 2 * n + 5 or kept:0 is not '['
+			wrong++;
+		;;
+		made++ (97 + n % 26) as chr;
+	;;
+	log 'wrong: ' wrong '\n';
+	log made '\n';
+	log kept '\n';
+
+	str numbers: '';
+	numbers is 'x' 0 ' ' -1 ' ' 2147483647 ' ' -2147483648 ' ' 1234567;
+	log numbers ' ' numbers.len '\n';
+	exit 0;
+
+	# its own str, built and added to only: it keeps its length, which the next part starts from
+	[Built: int n: 0;]
+		str s: '[';
+		s++ made;
+		s++ '|' n % 10 ':';
+		s++ made;
+		s++ ']';
+		while int i: 0; i < 2; i++;
+			s++ '';
+		;;
+		kept is s;
+	[end]
+}

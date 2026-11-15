@@ -1,4 +1,4 @@
-; provides: phi_print_int phi_print_uint phi_print_int_serial phi_print_uint_serial phi_int_to_str phi_uint_to_str phi_strcpy
+; provides: phi_print_int phi_print_uint phi_print_int_serial phi_print_uint_serial phi_int_to_str phi_uint_to_str phi_strcpy phi_strcpy_n
 ; requires: phi_print phi_print_serial phi_strlen
 ;
 ; Numbers as text, for 64-bit code (x86_32's print_int, print_int_serial, int_to_str and
@@ -75,8 +75,10 @@ phi_int_to_str:
     dec rsi
     mov byte [rsi], '-'
 .copy:
+    lea rax, [rsp + 11]
+    sub rax, rsi                ; how many characters: where they end, less where they start
     mov rcx, [rsp + 16]
-    call phi_strcpy
+    call phi_strcpy_n
     lea rsp, [rsp + 24]         ; (keeping the carry it set if it was cut)
     ret
 
@@ -85,10 +87,12 @@ phi_int_to_str:
 ; generator turns it into an error where the program didn't ask for a cut). The result
 ; is always terminated.
 phi_strcpy:
-    jecxz .full
+    test ecx, ecx
+    jz .full
     push rax
     push rdx
     call phi_strlen             ; eax = its length (see x86_32's strcpy.asm for what this leaves)
+.measured:
     lea edx, [rcx - 1]          ; the most characters there's room for
     cmp eax, edx
     ja .cut
@@ -113,16 +117,19 @@ phi_strcpy:
     pop rax
     stc                         ; (there was more: it's longer than the room)
     ret
-; edx bytes from rsi to rdi, moving both on; keeps rcx
+; edx bytes from rsi to rdi, moving both on; keeps rcx. Up to 32 of them as two moves that
+; may overlap (the first bytes and the last, of 16, 8, 4 or 1 at a time), which reach no byte
+; outside the edx (a text's are short, and rep movsb takes longer to start); more, rep movsb.
+; xmm0 and xmm1 change, as phi_strlen changes them.
 .copy:
     cmp edx, 32
-    jb .bytes
-    push rcx
-    mov ecx, edx
-    rep movsb
-    pop rcx
-    ret
-.bytes:
+    ja .many
+    cmp edx, 16
+    jae .sixteen
+    cmp edx, 8
+    jae .eight
+    cmp edx, 4
+    jae .four
     test edx, edx
     jz .copied
 .byte:
@@ -134,11 +141,47 @@ phi_strcpy:
     jnz .byte
 .copied:
     ret
+.sixteen:
+    movdqu xmm0, [rsi]
+    movdqu xmm1, [rsi + rdx - 16]
+    movdqu [rdi], xmm0
+    movdqu [rdi + rdx - 16], xmm1
+    jmp .moved
+.eight:
+    movq xmm0, [rsi]
+    movq xmm1, [rsi + rdx - 8]
+    movq [rdi], xmm0
+    movq [rdi + rdx - 8], xmm1
+    jmp .moved
+.four:
+    movd xmm0, [rsi]
+    movd xmm1, [rsi + rdx - 4]
+    movd [rdi], xmm0
+    movd [rdi + rdx - 4], xmm1
+.moved:
+    add rsi, rdx
+    add rdi, rdx
+    ret
+.many:
+    push rcx
+    mov ecx, edx
+    rep movsb
+    pop rcx
+    ret
 .full:
     cmp byte [rsi], 0           ; (with 0: no carry)
     je .fits
     stc
 .fits:
     ret
+
+; phi_strcpy with eax = the source's length already, which it would measure first: the
+; same copy, and the same registers left as they are.
+phi_strcpy_n:
+    test ecx, ecx
+    jz phi_strcpy.full
+    push rax
+    push rdx
+    jmp phi_strcpy.measured
 
 phi_print_int_text:      times 12 db 0

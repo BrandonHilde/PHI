@@ -1,4 +1,4 @@
-; provides: phi_strcpy
+; provides: phi_strcpy phi_strcpy_n
 ; requires: phi_strlen
 ;
 ; Copy the string at esi to edi. ecx is the size of the destination including
@@ -17,6 +17,7 @@ phi_strcpy:
     push eax
     push edx
     call phi_strlen             ; eax = its length
+.measured:
     lea edx, [ecx - 1]          ; the most characters there's room for
     cmp eax, edx
     ja .cut
@@ -68,3 +69,12 @@ phi_strcpy:
     stc
 .fits:
     ret
+
+; phi_strcpy with eax = the source's length already, which it would measure first: the
+; same copy, and the same registers left as they are.
+phi_strcpy_n:
+    test ecx, ecx
+    jz phi_strcpy.full
+    push eax
+    push edx
+    jmp phi_strcpy.measured

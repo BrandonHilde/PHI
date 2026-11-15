@@ -1,5 +1,5 @@
 ; provides: phi_int_to_str phi_uint_to_str
-; requires: phi_strcpy
+; requires: phi_strcpy phi_strcpy_n
 ;
 ; Write eax as decimal text to edi: signed (phi_int_to_str) or unsigned
 ; (phi_uint_to_str). ecx is the size of the destination including its terminator.
@@ -40,7 +40,9 @@ phi_int_to_str:
     dec esi
     mov byte [esi], '-'
 .copy:
+    lea eax, [esp + 11]
+    sub eax, esi                ; how many characters: where they end, less where they start
     mov ecx, [esp + 12]
-    call phi_strcpy
+    call phi_strcpy_n
     lea esp, [esp + 16]         ; (keeping the carry it set if it was cut)
     ret

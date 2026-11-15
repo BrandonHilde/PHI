@@ -3164,7 +3164,7 @@ namespace Phi.Compiler.CodeGen
                         if (part.Type.IsWide || part.Type.IsFloat || part.Type.IsChar) EmitNumberText(part);
                         else if (text && StaticAddress(part) is string label) LoadAddress("eax", label);
                         else EmitExpr(part);
-                        EmitStringStore(build.Target, text, append: build.Append || i > 0, unsigned: part.Type.IsUnsigned32);
+                        EmitStringStore(build.Target, text, append: build.Append || i > 0, unsigned: part.Type.IsUnsigned32, known: text ? KnownLength(part) : null);
                     }
                     break;
 
@@ -5563,11 +5563,11 @@ namespace Phi.Compiler.CodeGen
         /// eax holds a string address (sourceIsString) or a number to write out as text;
         /// put it in a str variable, a str field or a str array element: it's an error if it doesn't fit.
         /// </summary>
-        void EmitStringStore(Expr target, bool sourceIsString, bool append = false, bool unsigned = false)
+        void EmitStringStore(Expr target, bool sourceIsString, bool append = false, bool unsigned = false, int? known = null)
         {
             if (target is NameExpr { Symbol: VariableSymbol { Grows: true } growing })
             {
-                EmitGrowStore(growing, sourceIsString, append, unsigned);
+                EmitGrowStore(growing, sourceIsString, append, unsigned, known);
                 return;
             }
 
@@ -6024,7 +6024,13 @@ namespace Phi.Compiler.CodeGen
                 holder.Label = AllocTemp(TextSlot);
                 holder.Grows = true;
                 holder.Capacity = Binder.StrMax + 1;
-                if (currentMethod != null) resultSlots.Add(holder.Label);
+                if (currentMethod != null)
+                {
+                    resultSlots.Add(holder.Label);
+                    // (only this builds it, so it keeps how long it is, as a method's own str can)
+                    lengthOf[holder] = AllocTemp(4);
+                    Emit($"mov dword [{lengthOf[holder]}], 0");
+                }
             }
             else
             {
@@ -9282,7 +9288,12 @@ namespace Phi.Compiler.CodeGen
         /// <summary>Frees the old text EmitStrRoomCall left, which was pushed after it.</summary>
         void EmitFreeOld()
         {
-            Emit($"call {HeapMethodLabel("Heap.Free")}   ; its old text (freeing 0 does nothing)");
+            // (when the text didn't move there's nothing to free: no call)
+            string kept = NewLabel("stayed");
+            Emit($"cmp {Q} [esp], 0");
+            Emit($"je {kept}");
+            Emit($"call {HeapMethodLabel("Heap.Free")}   ; its old text");
+            Label(kept);
             Emit($"add esp, {Slot}");
         }
 
@@ -9290,13 +9301,18 @@ namespace Phi.Compiler.CodeGen
         /// eax holds a string address (sourceIsString) or a number to write out as text; put it
         /// in a str that grows, making room first, up to its max.
         /// </summary>
-        void EmitGrowStore(VariableSymbol v, bool sourceIsString, bool append, bool unsigned)
+        void EmitGrowStore(VariableSymbol v, bool sourceIsString, bool append, bool unsigned, int? known = null)
         {
             Emit("push eax                ; the value");
             LoadAddress("eax", v.Label);
             Emit("push eax                ; where its text is (its room is after it)");
-            EmitGrowStoreAt(RoomAt, sourceIsString, append, unsigned, length: lengthOf.GetValueOrDefault(v));
+            EmitGrowStoreAt(RoomAt, sourceIsString, append, unsigned, length: lengthOf.GetValueOrDefault(v), known: known);
         }
+
+        /// <summary>How many bytes a text written in the program is (to its first zero), or null for any other value.</summary>
+        static int? KnownLength(Expr e) => e is StringExpr s && s.Type.IsString
+            ? (s.Value.IndexOf('\0') is int zero and >= 0 ? zero : s.Value.Length)
+            : null;
 
         // ---------------------------------------------------------------- a str that remembers its length
         //
@@ -9447,23 +9463,29 @@ namespace Phi.Compiler.CodeGen
         /// (In 64-bit code the addresses are whole registers, and each pushed value takes 8 bytes.)
         /// </summary>
         /// <param name="length">Where the method keeps this str's length (plus 1, or 0 for not known), for one that remembers it.</param>
-        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? rooms = null, string? length = null)
+        /// <param name="known">The value's length, when it's a text written in the program: not measured as it runs.</param>
+        void EmitGrowStoreAt(int roomOffset, bool sourceIsString, bool append, bool unsigned, string? rooms = null, string? length = null, int? known = null)
         {
             string esi = R("esi"), edi = R("edi"), eax = R("eax");
-            if (sourceIsString)
+            // (S is the stack's slot: the value's length, plus 1, waits on it for the copy, which
+            // then doesn't measure the value again)
+            int S = Slot;
+            if (sourceIsString && known is int k) Emit($"mov eax, {k + 1}             ; its length, with its zero");
+            else if (sourceIsString)
             {
                 Need("phi_strlen");
-                Emit($"mov {esi}, [esp + {Slot}]");
+                Emit($"mov {esi}, [esp + {S}]");
                 Emit("call phi_strlen");
                 Emit("inc eax                 ; with its zero");
             }
             else Emit("mov eax, 12             ; the most a number takes, with its zero");
+            Emit("push eax                ; how long the value is (and 1)");
+            // the stack: that, then the slot where the text's address is, then the value
             if (append)
             {
                 Need("phi_strlen");
                 string text = NewLabel("text");
-                Emit("push eax");
-                Emit($"mov {esi}, [esp + {Slot}]");
+                Emit($"mov {esi}, [esp + {S}]");
                 Emit($"mov {esi}, {Q} [{esi}]          ; what's there now");
                 Emit($"test {esi}, {esi}");
                 Emit($"jnz {text}");
@@ -9472,23 +9494,23 @@ namespace Phi.Compiler.CodeGen
                 if (length != null)
                 {
                     // as long as the method last knew it to be, when that's still where it ends
-                    string measure = NewLabel("measure"), known = NewLabel("known");
+                    string measure = NewLabel("measure"), lengthKnown = NewLabel("known");
                     Emit($"mov eax, [{length}]");
                     Emit("dec eax");
                     Emit($"js {measure}");
                     Emit($"cmp byte [{esi} + {eax}], 0");
-                    Emit($"je {known}");
+                    Emit($"je {lengthKnown}");
                     Label(measure);
                     Emit("call phi_strlen");
-                    Label(known);
+                    Label(lengthKnown);
                 }
                 else Emit("call phi_strlen");
-                Emit("pop ecx");
+                Emit("mov ecx, [esp]");
                 Emit("push eax                ; how long it is now: where the value goes");
                 Emit("add eax, ecx            ; after what's there");
             }
             Emit("mov ecx, eax");
-            Emit($"mov {edi}, [esp{(append ? $" + {Slot}" : "")}]");
+            Emit($"mov {edi}, [esp + {(append ? 2 * S : S)}]");
             if (rooms != null)
             {
                 // an element of a str array without a most: its room is .max slots on
@@ -9508,22 +9530,19 @@ namespace Phi.Compiler.CodeGen
                 Emit($"jb {some}");
                 Emit("lea eax, [ecx - 1]");
                 Label(some);
-                if (length != null)
-                {
-                    Emit("inc eax");
-                    Emit($"mov [{length}], eax         ; as long as it was (and 1), until what's added is measured");
-                    Emit("dec eax");
-                }
                 Emit($"add {edi}, {eax}");
                 Emit("sub ecx, eax");
             }
             Emit("push edx");
-            Emit($"mov {eax}, [esp + {2 * Slot}]      ; the value");
+            // the stack: the old text (to free), the value's length, the slot, the value
+            Emit($"mov {eax}, [esp + {3 * S}]      ; the value");
             if (sourceIsString)
             {
-                Need("phi_strcpy");
+                Need("phi_strcpy_n");
                 Emit($"mov {esi}, {eax}");
-                Emit("call phi_strcpy");
+                Emit($"mov eax, [esp + {S}]");
+                Emit("dec eax                 ; its length, measured above");
+                Emit("call phi_strcpy_n");
             }
             else
             {
@@ -9531,22 +9550,21 @@ namespace Phi.Compiler.CodeGen
                 Need(convert);
                 Emit($"call {convert}");
             }
-            EmitKeepCut(2 * Slot);
-            EmitFreeOld();
-            if (length != null && append)
+            EmitKeepCut(3 * S);
+            if (length != null)
             {
-                // longer by what was added: only that part is measured
-                Emit($"mov {esi}, [esp]");
-                Emit($"mov {esi}, {Q} [{esi}]");
-                Emit($"mov eax, [{length}]");
-                Emit("dec eax");
-                Emit($"add {esi}, {eax}");
-                Emit("call phi_strlen");
-                Emit($"add [{length}], eax");
+                // how long it is now: the copy left edi at the zero it wrote (phi_strcpy, which
+                // the numbers' routines end with too), so it's where that is in the text, with
+                // nothing measured again
+                Emit($"mov {eax}, [esp + {2 * S}]");
+                Emit($"mov {eax}, {Q} [{eax}]      ; where the text is now");
+                Emit($"sub {edi}, {eax}");
+                Emit("inc edi");
+                Emit($"mov [{length}], edi         ; how long it is (and 1)");
             }
-            else if (length != null) Emit($"mov dword [{length}], 0   ; started again: measured when it's next added to");
-            if (!textMayCut) Emit($"mov eax, [esp + {Slot}]");
-            Emit($"add esp, {2 * Slot}");
+            EmitFreeOld();
+            if (!textMayCut) Emit($"mov eax, [esp + {2 * S}]");
+            Emit($"add esp, {3 * S}");
             EmitTextFitsAfterFree();
         }
 

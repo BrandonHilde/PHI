@@ -3803,6 +3803,27 @@ method with `new T x` variables went to the generator ("a variable it doesn't ta
   copies or log, which the form takes. 600 programs through it, nothing wrong; with takes
   made to keep what the target had, 23 of 100 came out wrong.
 
+**Making PHI faster: text measured once (2026-11-15).** `strings` spent 57% of its time in
+`phi_strlen` and 22% in `phi_strcpy`: each part added to a text that grows was measured
+before it was copied, again inside the copy, and what was added once more after it, every
+part of a few bytes, each a call. Now:
+- After a store or an append the text's length (for a str that keeps it) is where the copy
+  ended less where the text starts: `phi_strcpy` leaves edi at the zero it wrote, and the
+  numbers' routines end with it.
+- The copy is given the length measured before it (`phi_strcpy_n`, beside `phi_strcpy` in
+  the 32- and 64-bit libraries), and a number's digits are counted where they're written.
+- A text written in the program isn't measured: its length is known when it's built
+  (`KnownLength`, to its first zero).
+- The text a value like `'[' line ']'` is built in on the side keeps its length, as a
+  method's own str does.
+- The old text is freed only when the room moved it (a call to `Heap.Free` with 0 each time
+  before).
+- 64-bit: 4 to 32 bytes are copied as two moves that may overlap (16, 8 or 4 at a time),
+  1 to 3 a byte at a time, more with rep movsb.
+- `strings`, 64-bit: 0.435 s to 0.27 (C# 0.335, gcc -O2 0.317): 0.81 times C#. Test
+  `text_lengths_program`: every length from 0 to 70 copied, added and built on the side,
+  each character checked, and a method's own str that keeps its length.
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to
