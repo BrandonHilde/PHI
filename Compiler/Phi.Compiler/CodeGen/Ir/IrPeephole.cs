@@ -11,10 +11,44 @@ namespace Phi.Compiler.CodeGen.Ir
         public static void Run(IrFunction fn)
         {
             ThreadJumps(fn);
+            Lea(fn);
             RemoveDead(fn);
             ZeroWhatsReadFirst(fn);
             Fold(fn);
             TestBits(fn);
+        }
+
+        /// <summary>
+        /// x * 3, 5 or 9, and with a number added after (n * 3 + 1): one lea, which takes a
+        /// cycle where a multiply takes three. The multiply's value has to be read only by the add.
+        /// </summary>
+        static void Lea(IrFunction fn)
+        {
+            var reads = new Dictionary<VReg, int>();
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs) foreach (VReg v in RegisterAllocator.Uses(i)) reads[v] = reads.GetValueOrDefault(v) + 1;
+                foreach (VReg v in RegisterAllocator.Uses(b.End)) reads[v] = reads.GetValueOrDefault(v) + 1;
+            }
+            foreach (Block b in fn.Blocks)
+            {
+                for (int k = 0; k < b.Instrs.Count; k++)
+                {
+                    if (b.Instrs[k] is not BinI { Op: BinOp.Mul, B.IsImm: true, B.Imm: 3 or 5 or 9, A.Reg: VReg a } mul || a.Float) continue;
+                    if (k + 1 < b.Instrs.Count && b.Instrs[k + 1] is BinI { Op: BinOp.Add or BinOp.Sub, B.IsImm: true, A.Reg: VReg t } add
+                        && t == mul.Dst && reads.GetValueOrDefault(t) == 1 && add.Dst.Wide == mul.Dst.Wide)
+                    {
+                        long c = add.Op == BinOp.Add ? add.B.Imm : -add.B.Imm;
+                        if (c >= int.MinValue && c <= int.MaxValue)
+                        {
+                            b.Instrs[k] = new LeaI { Dst = add.Dst, A = a, Factor = (int)mul.B.Imm, Add = c };
+                            b.Instrs.RemoveAt(k + 1);
+                            continue;
+                        }
+                    }
+                    b.Instrs[k] = new LeaI { Dst = mul.Dst, A = a, Factor = (int)mul.B.Imm, Add = 0 };
+                }
+            }
         }
 
         /// <summary>
@@ -113,7 +147,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         static bool Pure(Instr i) => i switch
         {
-            ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadI or AddrI or FConstI or FBinI or FNegI or ToFloatI or ToWholeI => true,
+            ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadI or AddrI or LeaI or FConstI or FBinI or FNegI or ToFloatI or ToWholeI => true,
             BinI b => b.Op is not (BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU),
             _ => false,
         };
@@ -173,6 +207,7 @@ namespace Phi.Compiler.CodeGen.Ir
             ToFloatI f when f.Dst == temp => new ToFloatI { Dst = dst, Src = f.Src, Signed = f.Signed },
             ToWholeI f when f.Dst == temp => new ToWholeI { Dst = dst, Src = f.Src },
             FConstI f when f.Dst == temp => new FConstI { Dst = dst, Value = f.Value },
+            LeaI l when l.Dst == temp => new LeaI { Dst = dst, A = l.A, Factor = l.Factor, Add = l.Add },
             LoadIdxI l when l.Dst == temp => new LoadIdxI { Dst = dst, Base = l.Base, Index = l.Index, Scale = l.Scale, Kind = l.Kind },
             _ => null,
         };

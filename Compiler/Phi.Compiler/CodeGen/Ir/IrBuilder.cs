@@ -26,8 +26,15 @@ namespace Phi.Compiler.CodeGen.Ir
         readonly List<(Block Continue, Block Break)> loops = new();
         Block current;
 
-        IrBuilder(MethodSymbol m)
+        /// <summary>Whether a class's variable may be kept in a register by a loop (the generator says: see EmitLoopHolding).</summary>
+        readonly Func<VariableSymbol, bool> holdable;
+
+        /// <summary>The class variables the loop being built keeps in registers, each with its value.</summary>
+        readonly Dictionary<VariableSymbol, VReg> held = new();
+
+        IrBuilder(MethodSymbol m, Func<VariableSymbol, bool> holdable)
         {
+            this.holdable = holdable;
             method = m;
             fn = new IrFunction { Name = m.Name };
             current = fn.NewBlock();
@@ -36,12 +43,12 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         /// <summary>The method as the intermediate form, or null and why it isn't.</summary>
-        public static IrFunction? Build(MethodSymbol m, out string why)
+        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, out string why)
         {
             why = "";
             try
             {
-                var builder = new IrBuilder(m);
+                var builder = new IrBuilder(m, holdable);
                 builder.BuildBody();
                 return builder.fn;
             }
@@ -207,8 +214,23 @@ namespace Phi.Compiler.CodeGen.Ir
             foreach (Stmt s in body) Statement(s);
         }
 
+        /// <summary>True while a statement that needs the held class variables in memory is built: they're there.</summary>
+        bool heldInMemory;
+
         void Statement(Stmt s)
         {
+            // a call, a return or a division that may stop, in a loop holding class variables in
+            // registers: they're written back first and read again after (the generator's fence)
+            if (held.Count > 0 && !heldInMemory && X86Generator.NeedsMemory(s))
+            {
+                foreach (var (g, v) in held) Emit(new StoreI { Place = Global(g)!, Src = v, Kind = KindOf(g.Type) });
+                heldInMemory = true;
+                try { Statement(s); }
+                finally { heldInMemory = false; }
+                if (s is not ReturnStmt)
+                    foreach (var (g, v) in held) Emit(new LoadI { Dst = v, Place = Global(g)!, Kind = KindOf(g.Type) });
+                return;
+            }
             switch (s)
             {
                 case VarDecl d:
@@ -231,6 +253,13 @@ namespace Phi.Compiler.CodeGen.Ir
                         case NameExpr { Symbol: VariableSymbol v } when variables.ContainsKey(v) || method.Locals.Contains(v) || method.Parameters.Contains(v):
                             Assign(v, a.Value);
                             return;
+                        case NameExpr { Symbol: VariableSymbol kept } when !heldInMemory && held.TryGetValue(kept, out VReg? inRegister):
+                        {
+                            Opnd v = Value(a.Value, kept.Type);
+                            if (v.IsImm) Emit(new ConstI { Dst = inRegister, Value = v.Imm });
+                            else Emit(new CopyI { Dst = inRegister, Src = v });
+                            return;
+                        }
                         case NameExpr { Symbol: VariableSymbol g } when Global(g) is string place:
                             Emit(new StoreI { Place = place, Src = Value(a.Value, g.Type), Kind = KindOf(g.Type) });
                             return;
@@ -289,6 +318,22 @@ namespace Phi.Compiler.CodeGen.Ir
                     // tested before the first time round, then at the bottom: one jump each time
                     // round, back to the top while it holds (the generator's loops are the same)
                     if (loop.Init != null) Statement(loop.Init);
+                    // the class variables the loop changes, in registers through it, as the
+                    // generator keeps them (read before it, written back after it and before an
+                    // error it stops with), when it calls nothing and nothing else reaches them
+                    // (a statement in it that needs them in memory, a call or a return, has them
+                    // written back before it and read again after, as the generator does: unless it
+                    // has a break or continue, which would leave with them in neither; then none is held)
+                    bool fenceable = !X86Generator.NeedsMemory(loop)
+                        && !SyntaxWalker.Nodes(loop).Any(n => n is FreeStmt
+                            || n is Stmt inner && inner != loop && X86Generator.NeedsMemory(inner) && SyntaxWalker.Nodes(inner).Any(j => j is BreakStmt or ContinueStmt));
+                    var holding = held.Count == 0 && fenceable ? HoldableIn(loop) : new List<VariableSymbol>();
+                    foreach (VariableSymbol g in holding)
+                    {
+                        VReg v = New(g.Type, g.Name);
+                        Emit(new LoadI { Dst = v, Place = Global(g)!, Kind = KindOf(g.Type) });
+                        held[g] = v;
+                    }
                     Block body = fn.NewBlock(), step = fn.NewBlock(), after = fn.NewBlock();
                     Mark(loop);
                     Condition(loop.Condition, body, after);
@@ -301,20 +346,28 @@ namespace Phi.Compiler.CodeGen.Ir
                     Mark(loop);
                     Condition(loop.Condition, body, after);
                     Enter(after);
+                    // (only the loop that holds them writes them back and lets them go: a loop
+                    // inside it holds nothing of its own)
+                    if (holding.Count > 0)
+                    {
+                        foreach (VariableSymbol g in holding)
+                            Emit(new StoreI { Place = Global(g)!, Src = held[g], Kind = KindOf(g.Type) });
+                        held.Clear();
+                    }
                     return;
                 }
 
-                case WhenStmt when:
+                case WhenStmt choice:
                 {
-                    PhiType st = Real(when.Subject);
-                    Need(Supported(st) && !IsF(st) && !st.IsPointer && !st.IsObject && when.Branches.All(br => br.TypeName == null), "a when it doesn't take");
-                    Mark(when);
-                    VReg subject = InReg(Value(when.Subject), Is64(st));
+                    PhiType st = Real(choice.Subject);
+                    Need(Supported(st) && !IsF(st) && !st.IsPointer && !st.IsObject && choice.Branches.All(br => br.TypeName == null), "a when it doesn't take");
+                    Mark(choice);
+                    VReg subject = InReg(Value(choice.Subject), Is64(st));
                     Block after = fn.NewBlock();
-                    Block otherwise = when.Else != null ? fn.NewBlock() : after;
+                    Block otherwise = choice.Else != null ? fn.NewBlock() : after;
                     var sw = new SwitchT { Value = subject, Default = otherwise };
                     var bodies = new List<(Block Block, List<Stmt> Body)>();
-                    foreach (WhenBranch branch in when.Branches)
+                    foreach (WhenBranch branch in choice.Branches)
                     {
                         Block body = fn.NewBlock();
                         foreach (Expr value in branch.Values)
@@ -339,10 +392,10 @@ namespace Phi.Compiler.CodeGen.Ir
                         Statements(body);
                         if (current.End == null) current.End = new JumpT { Target = after };
                     }
-                    if (when.Else != null)
+                    if (choice.Else != null)
                     {
                         Enter(otherwise);
-                        Statements(when.Else);
+                        Statements(choice.Else);
                         if (current.End == null) current.End = new JumpT { Target = after };
                     }
                     Enter(after);
@@ -465,7 +518,7 @@ namespace Phi.Compiler.CodeGen.Ir
             if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
             {
                 VReg checkedIndex = InReg(index, true);
-                Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e });
+                Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
                 index = checkedIndex;
             }
             VReg bas = fn.NewValue(true);
@@ -479,6 +532,19 @@ namespace Phi.Compiler.CodeGen.Ir
             index is BinaryExpr { Op: BinaryOp.BitAnd } and
             && (Semantics.ConstantFolder.Evaluate(and.Right) ?? Semantics.ConstantFolder.Evaluate(and.Left)) is long mask
             && mask >= 0 && mask < limit;
+
+        /// <summary>The class variables a loop assigns, which may be kept in registers through it.</summary>
+        List<VariableSymbol> HoldableIn(WhileStmt loop)
+        {
+            var changed = new HashSet<VariableSymbol>();
+            foreach (Node n in SyntaxWalker.Nodes(loop))
+                if (n is AssignStmt { Target: NameExpr { Symbol: VariableSymbol set } } && !Ours(set) && Global(set) != null && holdable(set))
+                    changed.Add(set);
+            return changed.OrderBy(v => v.Name, StringComparer.Ordinal).ToList();
+        }
+
+        /// <summary>The held class variables written back, for an error that leaves the loop.</summary>
+        List<StoreI> HeldStores() => heldInMemory ? new List<StoreI>() : held.Select(h => new StoreI { Place = Global(h.Key)!, Src = h.Value, Kind = KindOf(h.Key.Type) }).ToList();
 
         /// <summary>A parameter or variable of this method (not a class's).</summary>
         bool Ours(VariableSymbol v) => variables.ContainsKey(v) || method.Locals.Contains(v) || method.Parameters.Contains(v);
@@ -494,8 +560,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>A class's variable this form can read and write where it is, or null.</summary>
         static string? Global(VariableSymbol v) =>
-            !v.IsLocal && !v.IsParameter && Supported(v.Type) && v.Label.Length > 0 && !v.Label.Contains("bp")
-            && v.Label.All(c => char.IsLetterOrDigit(c) || c == '_') ? v.Label : null;
+            !v.IsLocal && !v.IsParameter && Supported(v.Type) && SimpleLabel(v.Label) ? v.Label : null;
 
         // ---------------------------------------------------------------- conditions
 
@@ -627,6 +692,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     return FloatConst(fk.Value);
                 case NameExpr { Symbol: VariableSymbol v } when variables.ContainsKey(v) || method.Locals.Contains(v) || method.Parameters.Contains(v):
                     return Variable(v);
+                case NameExpr { Symbol: VariableSymbol kept } when !heldInMemory && held.TryGetValue(kept, out VReg? inRegister):
+                    return inRegister;
                 case NameExpr { Symbol: VariableSymbol g } when Global(g) is string place:
                 {
                     VReg loaded = New(g.Type, g.Name);
@@ -702,6 +769,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     {
                         Value = v,
                         At = check,
+                        Held = HeldStores(),
                         Text = check.Type == PhiType.U32 ? "a negative number can't be a u32" : "a u32 of 2 billion or more can't be an int",
                     });
                     return v;

@@ -19,6 +19,8 @@ namespace Phi.Compiler.CodeGen
         /// <summary>PHI_IR=1: methods the intermediate form takes are compiled through it (64-bit programs).</summary>
         static readonly bool IrWanted = Environment.GetEnvironmentVariable("PHI_IR") is "1" or "on";
 
+        static readonly HashSet<string> IrSkip = (Environment.GetEnvironmentVariable("PHI_IR_SKIP") ?? "").Split(',', StringSplitOptions.RemoveEmptyEntries).ToHashSet();
+
         /// <summary>PHI_IR_TRACE=1 says which methods went through it and why the others didn't; 2 shows the form too.</summary>
         static readonly int IrTrace = int.TryParse(Environment.GetEnvironmentVariable("PHI_IR_TRACE"), out int trace) ? trace : 0;
 
@@ -26,7 +28,12 @@ namespace Phi.Compiler.CodeGen
         bool TryEmitIr(MethodSymbol m)
         {
             if (!IrWanted || !bits64 || unit.Kind != UnitKind.Program || debugInfo != null) return false;
-            IrFunction? fn = IrBuilder.Build(m, out string why);
+            // (PHI_IR_SKIP=A.B,C.D leaves those methods to the generator: for finding which one a difference is in)
+            if (IrSkip.Contains(m.Name)) return false;
+            // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
+            HashSet<VariableSymbol> reached = ReachedByAddress();
+            bool Holdable(VariableSymbol v) => !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile && !reached.Contains(v);
+            IrFunction? fn = IrBuilder.Build(m, Holdable, out string why);
             if (fn == null)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: {why}");
@@ -454,6 +461,18 @@ namespace Phi.Compiler.CodeGen
                     case CallI call:
                         Call(call);
                         break;
+                    case LeaI lea:
+                    {
+                        // (lea works out an address: 32 bits of it is the 32-bit number, wrapped as a multiply would)
+                        int bits = Bits(lea.Dst);
+                        string t = InRegister(lea.Dst) ? Reg(lea.Dst)! : "rax";
+                        string a = InRegister(lea.A) ? Reg(lea.A)! : "rcx";
+                        if (a == "rcx") E($"mov {Sub("rcx", bits)}, {At(lea.A, bits)}");
+                        string disp = lea.Add == 0 ? "" : lea.Add > 0 ? $" + {lea.Add}" : $" - {-lea.Add}";
+                        E($"lea {Sub(t, bits)}, [{Sub(a, bits)} + {Sub(a, bits)}*{lea.Factor - 1}{disp}]");
+                        Store(lea.Dst, t);
+                        break;
+                    }
                     case AddrI addr:
                     {
                         string t = InRegister(addr.Dst) ? Reg(addr.Dst)! : "rax";
@@ -494,9 +513,11 @@ namespace Phi.Compiler.CodeGen
                     case CheckI ic:
                     {
                         // as the generator's EmitIndexCheck: unsigned, so a negative index fails too
+                        g.Need("phi_index_error");
                         string ok = g.NewLabel("inbounds");
                         E($"cmp {At(ic.Index, 64)}, {ic.Limit}");
                         E($"jb {ok}");
+                        WriteBack(ic.Held);
                         g.EmitIndexError(ic.At);
                         g.Label(ok);
                         break;
@@ -507,6 +528,7 @@ namespace Phi.Compiler.CodeGen
                         string ok = g.NewLabel("numberok");
                         E($"test {At(check.Value, 32)}, {(InRegister(check.Value) ? At(check.Value, 32) : "0x80000000")}");
                         E($"j{(InRegister(check.Value) ? "ns" : "z")} {ok}");
+                        WriteBack(check.Held);
                         g.EmitStop(check.Text, check.At, ErrorConvert);
                         g.Label(ok);
                         break;
@@ -532,6 +554,12 @@ namespace Phi.Compiler.CodeGen
                 string i = InRegister(index.Reg!) ? Reg(index.Reg!)! : "rcx";
                 if (i == "rcx") E($"mov rcx, {At(index.Reg!, 64)}");
                 return scale == 1 ? $"[{b} + {i}]" : $"[{b} + {i}*{scale}]";
+            }
+
+            /// <summary>Before an error leaves the method: the class variables a loop holds, back where they're kept.</summary>
+            void WriteBack(List<StoreI> held)
+            {
+                foreach (StoreI st in held) Instruction(st);
             }
 
             /// <summary>A place an instruction names: a parameter's in the frame, or a class's variable's label.</summary>

@@ -169,6 +169,15 @@ namespace Phi.Compiler.CodeGen.Ir
         public MemKind Kind { get; init; }
     }
 
+    /// <summary>Dst = A * Factor + Add, with Factor 3, 5 or 9: one lea (A + A * 2, 4 or 8, plus a number), at Dst's width.</summary>
+    public sealed class LeaI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public int Factor { get; init; }
+        public long Add { get; init; }
+    }
+
     /// <summary>Dst = the address of a class's variable (addr x).</summary>
     public sealed class AddrI : Instr
     {
@@ -202,6 +211,9 @@ namespace Phi.Compiler.CodeGen.Ir
     /// </summary>
     public sealed class SignCheckI : Instr
     {
+        /// <summary>The class variables a loop holds in registers, written back before the error (as the generator's StoreLoopHeld).</summary>
+        public List<StoreI> Held { get; init; } = new();
+
         public VReg Value { get; init; } = null!;
         public Node At { get; init; } = null!;
         public string Text { get; init; } = "";
@@ -222,6 +234,9 @@ namespace Phi.Compiler.CodeGen.Ir
     /// </summary>
     public sealed class CheckI : Instr
     {
+        /// <summary>The class variables a loop holds in registers, written back before the error (as the generator's StoreLoopHeld).</summary>
+        public List<StoreI> Held { get; init; } = new();
+
         public VReg Index { get; init; } = null!;
         public long Limit { get; init; }
         public Node At { get; init; } = null!;
@@ -346,6 +361,7 @@ namespace Phi.Compiler.CodeGen.Ir
             SignCheckI c => $"check {c.Value}",
             CheckI c => $"check {c.Index} below {c.Limit}",
             AddrI a => $"{a.Dst} = addr {a.Label}",
+            LeaI l => $"{l.Dst} = {l.A} * {l.Factor} + {l.Add}",
             FConstI f => $"{f.Dst} = {f.Value}f",
             FBinI f => $"{f.Dst} = f{f.Op} {f.A}, {f.B}",
             FNegI f => $"{f.Dst} = fneg {f.A}",

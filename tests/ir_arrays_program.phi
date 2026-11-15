@@ -1,0 +1,197 @@
+# A class's arrays, when, and a loop holding class variables in registers, in methods the
+# intermediate form takes (PHI_IR=1). An index out of range stops with its error even while
+# a loop holds class variables in registers: they're written back first, so the caller that
+# catches it sees what the loop had done. Its expected output is the generator's.
+enum.Op
+{
+	PUSH
+	ADD
+	MUL
+	DROP
+	SWAP
+	STOP
+}
+
+phi.IrArraysProgram:Program
+{
+	u32 table[256];
+	i16 small[8];
+	f64 weights[4];
+	int steps: 0;
+	int last: 0;
+	ptr<u32> cursor: 0;
+
+	log (Fill) ' ' (Bits: 1000) ' ' (Smalls) ' ' (Weights) '\n';
+	if call Overrun: 10 throws err
+		log 'caught: ' err '\n';
+	;;
+	log steps ' ' last '\n';
+	if call Overrun: -1 throws err
+		log 'caught: ' err '\n';
+	;;
+	log steps ' ' last ' ' (Walk) '\n';
+	log (Pick: 0) (Pick: 3) (Pick: 5) (Pick: 9) ' ' (Sparse: 7) (Sparse: 1000) (Sparse: -5) (Sparse: 3) ' ' (Run) '\n';
+	exit 0;
+
+	[Fill]
+		while u32 n: 0; n < 256; n++;
+			u32 c: n;
+			while int k: 0; k < 8; k++;
+				if (c & 1) is 1
+					c is (c >> 1) ^ 0xEDB88320;
+				;;
+				else
+					c is c >> 1;
+				;;
+			;;
+			table:n is c;
+		;;
+		u32 crc: 0xFFFFFFFF;
+		while int i: 0; i < 1000; i++;
+			crc is table:((crc ^ i) & 0xFF) ^ (crc >> 8);
+		;;
+	[end: crc ^ 0xFFFFFFFF]
+
+	[Bits: int n: 0;]
+		int odd: 0;
+		while int i: 0; i < n; i++;
+			if (i & 1) is 0
+				continue;
+			;;
+			if (i & 6) is not 0
+				odd++;
+			;;
+		;;
+	[end: odd]
+
+	[Smalls]
+		while int i: 0; i < 8; i++;
+			small:i is (i * -10000) as i16;
+		;;
+		int sum: 0;
+		while int i: 0; i < 8; i++;
+			sum++ small:i;
+		;;
+	[end: sum]
+
+	[Weights: : f64]
+		weights:0 is 0.5;
+		weights:3 is 2.25;
+		f64 total: 0.0;
+		while int i: 0; i < 4; i++;
+			total is total + weights:i;
+		;;
+	[end: total]
+
+	# a loop that keeps steps and last in registers, and goes past the end of small
+	[Overrun: int from: 0;]
+		int i: from;
+		while i < 100
+			steps++;
+			last is i * 3;
+			small:(i - 1) is 1;
+			i++;
+		;;
+	[end]
+
+	[Walk]
+		cursor is addr table:250;
+		u32 sum: 0;
+		while cursor is not addr table:255
+			sum is sum + cursor:0 % 7;
+			cursor is cursor + 4;
+		;;
+	[end: sum]
+
+	[Pick: int op: 0;]
+		int got: 0;
+		when op
+			is 0
+				got is 1;
+			;;
+			is 1 2
+				got is 2;
+			;;
+			is 3
+				got is 3;
+			;;
+			is 4
+				got is 4;
+			;;
+			is 5
+				got is 5;
+			;;
+			else
+				got is 9;
+			;;
+		;;
+	[end: got]
+
+	[Sparse: int n: 0;]
+		when n
+			is 7
+				return 1;
+			;;
+			is 1000
+				return 2;
+			;;
+			is -5
+				return 3;
+			;;
+		;;
+	[end: 0]
+
+	# an enum's values in a when, as an interpreter's opcodes
+	[Run]
+		Op program: Op.PUSH;
+		int acc: 0;
+		int pc: 0;
+		while pc < 6
+			when (Code: pc)
+				is Op.PUSH
+					acc++ 3;
+				;;
+				is Op.ADD
+					acc++ 10;
+				;;
+				is Op.MUL
+					acc is acc * 2;
+				;;
+				is Op.DROP
+					acc--;
+				;;
+				is Op.SWAP
+					acc is -acc;
+				;;
+				is Op.STOP
+					return acc;
+				;;
+			;;
+			pc++;
+		;;
+	[end: -1]
+
+	[Code: int place: 0; : Op]
+		Op ops: Op.PUSH;
+		when place
+			is 0
+				ops is Op.PUSH;
+			;;
+			is 1
+				ops is Op.ADD;
+			;;
+			is 2
+				ops is Op.MUL;
+			;;
+			is 3
+				ops is Op.DROP;
+			;;
+			is 4
+				ops is Op.SWAP;
+			;;
+			else
+				ops is Op.STOP;
+			;;
+		;;
+	[end: ops]
+}

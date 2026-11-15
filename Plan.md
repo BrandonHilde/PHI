@@ -3564,6 +3564,35 @@ checks kept. What stage 0 found by profiling, and fixed where it was small:
   or C#'s is more than N percent (10) over the same ratio in a file `--save` wrote: ratios,
   so it means something on another computer.
 
+**Making PHI faster, stage 1 continued: f64s, arrays, when, class variables in registers.**
+`PHI_IR=1` now takes, as well:
+- **f64s** in xmm registers (`f32` and `f16` stay the generator's), its contract kept: an f64
+  goes to a method as 8 bytes pushed and comes back in st0, taken off it when unused.
+  Comparisons as IEEE has them (not a number fails all but `!=`), conversions as the
+  generator's (`as int` is the 64-bit value toward zero, cut); constants read from the
+  generator's table, made once per method; `movaps` between registers, as `movsd` waits
+  for whatever last wrote the destination (that alone halved mandelbrot).
+- **A class's arrays of a size**, each index checked as the generator checks it (not when
+  it's a mask smaller than the array, `x & 0xFF` of 256), `addr list:i`.
+- **when** on numbers and enums: a table of jumps for four or more values close together,
+  otherwise a compare for each.
+- **The class variables a loop changes, in registers through it**, by the generator's own
+  rule (`EmitLoopHolding`: not volatile, nothing reaching them by address, an atomic step,
+  assembly or an interrupt handler): read before the loop, written back after it, before an
+  error it stops with, and around a statement that needs them in memory (a call, a return,
+  a division that may stop), read again after. Not in a loop where such a statement has a
+  break or continue. phi fuzz found two mistakes on the way: a loop inside one holding them
+  let them go, and a call deep in the loop's body wasn't seen (the generator's NeedsMemory
+  asks of one statement, not what's inside it). Test `ir_held_program`.
+- `n * 3 + 1` as one `lea`; `(n & 1) is 0` as one `test`; if/else laid out then, else,
+  after. `PHI_IR_SKIP=A.B,...` leaves methods to the generator, to find which one differs.
+- 64-bit, best of five, PHI_IR=1 over C#: sort 0.77, interp 0.87 (0.69 s to 0.53), crc 0.92,
+  fib 0.96, matrix 0.97 (0.41 to 0.14), sieve 0.99, mandelbrot 1.05 (0.30 to 0.12), collatz
+  1.11, strings 1.30, lists 2.10: 1.06 together (it was 1.53).
+- Checked: every 64-bit Linux test with it (178, 2,869 methods through it), 2,400 phi fuzz
+  programs with nothing wrong; `ir_floats_program`, `ir_arrays_program` and
+  `ir_held_program` give the generator's output.
+
 **Making PHI faster, stage 1: an intermediate form, a method at a time (2026-11-14).**
 `PHI_IR=1` builds a 64-bit program's methods through a form of PHI's own (`CodeGen/Ir/`),
 each with its values in registers, where it takes every statement and expression in the

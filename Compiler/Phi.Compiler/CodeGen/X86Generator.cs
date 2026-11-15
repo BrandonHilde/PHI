@@ -2711,7 +2711,7 @@ namespace Phi.Compiler.CodeGen
         /// True for a statement that needs the class variables a loop holds to be in memory: it
         /// calls something (in its own values, or in what it tests), or it leaves the method.
         /// </summary>
-        static bool NeedsMemory(Stmt s) => s switch
+        internal static bool NeedsMemory(Stmt s) => s switch
         {
             ReturnStmt => true,
             UnsafeStmt => false,

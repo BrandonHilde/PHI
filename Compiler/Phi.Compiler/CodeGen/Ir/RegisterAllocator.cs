@@ -81,13 +81,18 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case SignCheckI c:
                     yield return c.Value;
+                    foreach (StoreI h in c.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
                     break;
                 case FBinI f:
                     yield return f.A;
                     yield return f.B;
                     break;
-                case CheckI c: yield return c.Index; break;
+                case CheckI c:
+                    yield return c.Index;
+                    foreach (StoreI h in c.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
                 case FNegI f: yield return f.A; break;
+                case LeaI l: yield return l.A; break;
                 case ToFloatI f: yield return f.Src; break;
                 case ToWholeI f: yield return f.Src; break;
             }
@@ -106,6 +111,7 @@ namespace Phi.Compiler.CodeGen.Ir
             CallI c => c.Dst,
             LoadIdxI l => l.Dst,
             AddrI a => a.Dst,
+            LeaI l => l.Dst,
             FConstI f => f.Dst,
             FBinI f => f.Dst,
             FNegI f => f.Dst,
