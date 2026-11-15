@@ -55,8 +55,11 @@ passing, and nothing above having blocked it; the benchmarks in `bench/` taking 
 longer than C#'s together, and none more than 1.3 times its own (the user's choice of bar,
 2026-11-14, when they were 1.53 times C#'s; the plan for getting there, an optimiser of
 PHI's own, is in `PerformanceStrategy.md`, kept beside this repository: **met 2026-11-15**,
-0.98 times C#'s together and `lists` the most at 1.26, in `bench/RESULTS.md`); and the
-tests run on Windows and on a Mac.
+0.98 times C#'s together and `lists` the most at 1.26, in `bench/RESULTS.md`). The tests
+on Windows and on a Mac were part of it until 2026-11-15, when the user took them out of
+the freeze ("lift the feature freeze as soon as we can... I will handle that later"): they
+still come before 0.1.0 is tagged, not before the freeze ends. Also before it ends, by the
+user's choice that day: struct layout by one rule (below, "Atomics and struct layout").
 
 ---
 
@@ -3933,6 +3936,17 @@ and nothing elsewhere in the program (an `atomic` line) changes it.
 
 *To decide:* the word for a byte-exact struct; whether a struct with a type table taking 4
 more bytes for each object is fine (it's what keeps its fields aligned).
+
+*Decided, 2026-11-15 (the user):* all of it before the release, and no word for a
+byte-exact struct. Every struct has the one rule, so every struct's bytes are known from
+its declaration; a field a format puts where the rule wouldn't (only `FatBootSector`'s five
+`u16`s at 11, 14, 17, 19 and 22, in PHI, PHI-OS and the code libraries) is written as bytes
+(`u8 bytes_per_sector[2];`, which nothing pads) and read with a library helper, as portable
+C does (its `packed` is a compiler's extension). `foreign` becomes the same as any struct.
+With every field aligned, the `atomic` error of the first step isn't needed. The 4 more
+bytes for an object with a type table are fine. A layout isn't a keyword, an operator, a
+statement or a type, so the freeze allows it; before 0.1.0 is when it costs least, with no
+one's data or compiled library made by an older layout yet.
 
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
