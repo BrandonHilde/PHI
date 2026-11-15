@@ -15,6 +15,12 @@ namespace Phi.Compiler.CodeGen.Ir
         public static readonly string[] CallerSaved = { "rbx", "rsi", "rdi", "r8", "r9", "r10" };
         public static readonly string[] CalleeSaved = { "r12", "r13", "r14", "r15" };
 
+        /// <summary>
+        /// The f64s' registers. A call may change every one of them (no method keeps them), so
+        /// an f64 needed after a call is kept in the frame; xmm14 and xmm15 are the emitter's own.
+        /// </summary>
+        public static readonly string[] FloatRegisters = Enumerable.Range(0, 14).Select(i => $"xmm{i}").ToArray();
+
         /// <summary>Each value's register (its 64-bit name), or none: then its slot in the frame.</summary>
         public Dictionary<VReg, string> Registers { get; } = new();
 
@@ -76,6 +82,14 @@ namespace Phi.Compiler.CodeGen.Ir
                 case SignCheckI c:
                     yield return c.Value;
                     break;
+                case FBinI f:
+                    yield return f.A;
+                    yield return f.B;
+                    break;
+                case CheckI c: yield return c.Index; break;
+                case FNegI f: yield return f.A; break;
+                case ToFloatI f: yield return f.Src; break;
+                case ToWholeI f: yield return f.Src; break;
             }
         }
 
@@ -92,6 +106,11 @@ namespace Phi.Compiler.CodeGen.Ir
             CallI c => c.Dst,
             LoadIdxI l => l.Dst,
             AddrI a => a.Dst,
+            FConstI f => f.Dst,
+            FBinI f => f.Dst,
+            FNegI f => f.Dst,
+            ToFloatI f => f.Dst,
+            ToWholeI f => f.Dst,
             _ => null,
         };
 
@@ -105,6 +124,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case RetT { Value: Opnd v } when v.Reg != null:
                     yield return v.Reg;
+                    break;
+                case SwitchT sw:
+                    yield return sw.Value;
                     break;
             }
         }
@@ -177,10 +199,39 @@ namespace Phi.Compiler.CodeGen.Ir
                 iv.CrossesCall = calls.Any(c => c > iv.Start && c < iv.End);
 
             var free = new List<string>(CallerSaved.Concat(CalleeSaved));
+            var freeFloat = new List<string>(FloatRegisters);
             var active = new List<Interval>();
+            var activeFloat = new List<Interval>();
             int slots = 0;
             foreach (Interval iv in intervals.Values.OrderBy(i => i.Start).ThenBy(i => i.Value.Id))
             {
+                if (iv.Value.Float)
+                {
+                    foreach (Interval done in activeFloat.Where(a => a.End < iv.Start).ToList())
+                    {
+                        activeFloat.Remove(done);
+                        freeFloat.Add(done.Register!);
+                    }
+                    if (iv.CrossesCall || freeFloat.Count == 0)
+                    {
+                        // (no register keeps an f64 across a call; with none free, whichever costs least goes)
+                        Interval? cheapest = iv.CrossesCall ? null : activeFloat.OrderBy(a => a.Weight).FirstOrDefault();
+                        if (cheapest != null && cheapest.Weight < iv.Weight)
+                        {
+                            iv.Register = cheapest.Register;
+                            cheapest.Register = null;
+                            activeFloat.Remove(cheapest);
+                            Slots[cheapest.Value] = 8 * ++slots;
+                            activeFloat.Add(iv);
+                        }
+                        else Slots[iv.Value] = 8 * ++slots;
+                        continue;
+                    }
+                    iv.Register = freeFloat[0];
+                    freeFloat.RemoveAt(0);
+                    activeFloat.Add(iv);
+                    continue;
+                }
                 // those that ended give their registers back
                 foreach (Interval done in active.Where(a => a.End < iv.Start).ToList())
                 {

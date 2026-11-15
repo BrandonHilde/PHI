@@ -19,6 +19,9 @@ namespace Phi.Compiler.CodeGen.Ir
     {
         public int Id { get; init; }
         public bool Wide { get; init; }
+
+        /// <summary>An f64, in an xmm register (or its slot in the frame).</summary>
+        public bool Float { get; init; }
         public string Name { get; init; } = "";
         public override string ToString() => Name.Length > 0 ? $"v{Id}({Name})" : $"v{Id}";
     }
@@ -44,10 +47,49 @@ namespace Phi.Compiler.CodeGen.Ir
     public enum Cond { Eq, Ne, LtS, LeS, GtS, GeS, LtU, LeU, GtU, GeU }
 
     /// <summary>How a number is kept in memory: its bytes, and whether a smaller one is signed.</summary>
-    public enum MemKind { U8, S8, U16, S16, D32, Q64 }
+    public enum MemKind { U8, S8, U16, S16, D32, Q64, F64 }
 
-    /// <summary>What a call gives back: nothing, 32 bits in eax, 64 in edx:eax (a 64-bit number), or a pointer in rax.</summary>
-    public enum CallResult { None, Eax, EdxEax, Rax }
+    /// <summary>What a call gives back: nothing, 32 bits in eax, 64 in edx:eax (a 64-bit number), a pointer in rax, or an f64 in st0.</summary>
+    public enum CallResult { None, Eax, EdxEax, Rax, St0 }
+
+    public enum FOp { Add, Sub, Mul, Div }
+
+    /// <summary>Dst = an f64 written in the program.</summary>
+    public sealed class FConstI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public double Value { get; init; }
+    }
+
+    /// <summary>Dst = A op B, f64s (each rounded as an f64, as the generator's x87 code, set to double precision, does).</summary>
+    public sealed class FBinI : Instr
+    {
+        public FOp Op { get; init; }
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public VReg B { get; init; } = null!;
+    }
+
+    public sealed class FNegI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+    }
+
+    /// <summary>A whole number made an f64 (the nearest one): Kind is how Src is kept (D32 signed, U32 as Q64 zero-extended...).</summary>
+    public sealed class ToFloatI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Src { get; init; } = null!;
+        public bool Signed { get; init; }
+    }
+
+    /// <summary>An f64 made a whole number toward zero, all 64 bits of it (as the generator's fistp qword), Dst keeping what fits.</summary>
+    public sealed class ToWholeI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Src { get; init; } = null!;
+    }
 
     public abstract class Instr { }
 
@@ -104,6 +146,8 @@ namespace Phi.Compiler.CodeGen.Ir
     /// <summary>Dst = 1 if A cond B, else 0 (A and B at A's width).</summary>
     public sealed class SetCcI : Instr
     {
+        /// <summary>A and B are f64s (B a value): not a number makes every comparison false but !=.</summary>
+        public bool Float { get; init; }
         public Cond Cond { get; init; }
         public VReg Dst { get; init; } = null!;
         public VReg A { get; init; } = null!;
@@ -172,7 +216,26 @@ namespace Phi.Compiler.CodeGen.Ir
         public CallResult Result { get; init; }
     }
 
+    /// <summary>
+    /// An index checked against an array's size (unsigned, so a negative one fails too): out of
+    /// range stops with the generator's error for the line, which if call ... throws catches.
+    /// </summary>
+    public sealed class CheckI : Instr
+    {
+        public VReg Index { get; init; } = null!;
+        public long Limit { get; init; }
+        public Node At { get; init; } = null!;
+    }
+
     public abstract class Terminator { }
+
+    /// <summary>when: the branch for Value's case, or Default (a table of jumps when the cases are close together).</summary>
+    public sealed class SwitchT : Terminator
+    {
+        public VReg Value { get; init; } = null!;
+        public List<(long Value, Block Target)> Cases { get; } = new();
+        public Block Default { get; set; } = null!;
+    }
 
     public sealed class JumpT : Terminator
     {
@@ -181,8 +244,16 @@ namespace Phi.Compiler.CodeGen.Ir
 
     public sealed class BranchT : Terminator
     {
+        /// <summary>
+        /// Set when the branch asks whether A has any of these bits (A &amp; mask is or isn't 0):
+        /// one test instruction, with Cond Eq or Ne and B 0.
+        /// </summary>
+        public long? TestMask { get; set; }
+
+        /// <summary>A and B are f64s (B a value), compared as IEEE has it.</summary>
+        public bool Float { get; init; }
         public Cond Cond { get; init; }
-        public VReg A { get; init; } = null!;
+        public VReg A { get; set; } = null!;
         public Opnd B { get; init; }
         public Block Then { get; set; } = null!;
         public Block Else { get; set; } = null!;
@@ -197,6 +268,9 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>A pointer, given back whole in rax.</summary>
         public bool Pointer { get; init; }
+
+        /// <summary>An f64, given back in st0 (as the generator gives one).</summary>
+        public bool Float { get; init; }
     }
 
     public sealed class Block
@@ -209,6 +283,13 @@ namespace Phi.Compiler.CodeGen.Ir
 
     public sealed class IrFunction
     {
+        public VReg NewFloat(string name = "")
+        {
+            var v = new VReg { Id = Values.Count, Wide = true, Float = true, Name = name };
+            Values.Add(v);
+            return v;
+        }
+
         public string Name { get; init; } = "";
         public List<Block> Blocks { get; } = new();
         public List<VReg> Values { get; } = new();
@@ -240,6 +321,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     JumpT j => $"jump {j.Target}",
                     BranchT br => $"if {br.A} {br.Cond} {br.B} then {br.Then} else {br.Else}",
                     RetT r => $"ret {r.Value}",
+                    SwitchT sw => $"switch {sw.Value} {string.Join(" ", sw.Cases.Select(c => $"{c.Value}:{c.Target}"))} else {sw.Default}",
                     _ => "(no end)",
                 }).Append('\n');
             }
@@ -262,7 +344,13 @@ namespace Phi.Compiler.CodeGen.Ir
             LoadIdxI l => $"{l.Dst} = load {l.Kind} [{l.Base} + {l.Index} * {l.Scale}]",
             StoreIdxI st => $"store {st.Kind} [{st.Base} + {st.Index} * {st.Scale}] = {st.Src}",
             SignCheckI c => $"check {c.Value}",
+            CheckI c => $"check {c.Index} below {c.Limit}",
             AddrI a => $"{a.Dst} = addr {a.Label}",
+            FConstI f => $"{f.Dst} = {f.Value}f",
+            FBinI f => $"{f.Dst} = f{f.Op} {f.A}, {f.B}",
+            FNegI f => $"{f.Dst} = fneg {f.A}",
+            ToFloatI f => $"{f.Dst} = tofloat{(f.Signed ? "s" : "u")} {f.Src}",
+            ToWholeI f => $"{f.Dst} = towhole {f.Src}",
             _ => i.GetType().Name,
         };
     }

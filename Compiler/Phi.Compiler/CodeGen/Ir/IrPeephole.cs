@@ -14,6 +14,30 @@ namespace Phi.Compiler.CodeGen.Ir
             RemoveDead(fn);
             ZeroWhatsReadFirst(fn);
             Fold(fn);
+            TestBits(fn);
+        }
+
+        /// <summary>
+        /// if (n &amp; 1) is 0: the and, whose value nothing else reads, and the comparison with 0
+        /// are one test of the bits (test n, 1), when the mask fits an instruction.
+        /// </summary>
+        static void TestBits(IrFunction fn)
+        {
+            var reads = new Dictionary<VReg, int>();
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs) foreach (VReg v in RegisterAllocator.Uses(i)) reads[v] = reads.GetValueOrDefault(v) + 1;
+                foreach (VReg v in RegisterAllocator.Uses(b.End)) reads[v] = reads.GetValueOrDefault(v) + 1;
+            }
+            foreach (Block b in fn.Blocks)
+            {
+                if (b.End is not BranchT { Float: false, TestMask: null, B.IsImm: true, B.Imm: 0, Cond: Cond.Eq or Cond.Ne } br || b.Instrs.Count == 0) continue;
+                if (b.Instrs[^1] is not BinI { Op: BinOp.And, B.IsImm: true, A.Reg: VReg x } and || and.Dst != br.A) continue;
+                if (reads.GetValueOrDefault(and.Dst) != 1 || and.B.Imm < int.MinValue || and.B.Imm > int.MaxValue) continue;
+                b.Instrs.RemoveAt(b.Instrs.Count - 1);
+                br.A = x;
+                br.TestMask = and.B.Imm;
+            }
         }
 
         /// <summary>
@@ -36,6 +60,10 @@ namespace Phi.Compiler.CodeGen.Ir
                     case BranchT br:
                         br.Then = Final(br.Then);
                         br.Else = Final(br.Else);
+                        break;
+                    case SwitchT sw:
+                        for (int k = 0; k < sw.Cases.Count; k++) sw.Cases[k] = (sw.Cases[k].Value, Final(sw.Cases[k].Target));
+                        sw.Default = Final(sw.Default);
                         break;
                 }
             }
@@ -85,7 +113,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         static bool Pure(Instr i) => i switch
         {
-            ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadI or AddrI => true,
+            ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadI or AddrI or FConstI or FBinI or FNegI or ToFloatI or ToWholeI => true,
             BinI b => b.Op is not (BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU),
             _ => false,
         };
@@ -121,7 +149,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 for (int k = 0; k + 1 < b.Instrs.Count; k++)
                 {
                     if (b.Instrs[k + 1] is not CopyI { Src.Reg: VReg temp } copy) continue;
-                    if (reads.GetValueOrDefault(temp) != 1 || defined.GetValueOrDefault(temp) != 1 || copy.Dst.Wide != temp.Wide) continue;
+                    if (reads.GetValueOrDefault(temp) != 1 || defined.GetValueOrDefault(temp) != 1 || copy.Dst.Wide != temp.Wide || copy.Dst.Float != temp.Float) continue;
                     Instr? into = Retarget(b.Instrs[k], temp, copy.Dst);
                     if (into == null) continue;
                     b.Instrs[k] = into;
@@ -137,9 +165,14 @@ namespace Phi.Compiler.CodeGen.Ir
             UnI u when u.Dst == temp => new UnI { Op = u.Op, Dst = dst, A = u.A },
             ExtendI e when e.Dst == temp => new ExtendI { Dst = dst, Src = e.Src, Signed = e.Signed },
             NarrowI n when n.Dst == temp => new NarrowI { Dst = dst, Src = n.Src, Kind = n.Kind },
-            SetCcI s when s.Dst == temp => new SetCcI { Cond = s.Cond, Dst = dst, A = s.A, B = s.B },
+            SetCcI s when s.Dst == temp => new SetCcI { Float = s.Float, Cond = s.Cond, Dst = dst, A = s.A, B = s.B },
             LoadI l when l.Dst == temp => new LoadI { Dst = dst, Place = l.Place, Kind = l.Kind },
             ConstI c when c.Dst == temp => new ConstI { Dst = dst, Value = c.Value },
+            FBinI f when f.Dst == temp => new FBinI { Op = f.Op, Dst = dst, A = f.A, B = f.B },
+            FNegI f when f.Dst == temp => new FNegI { Dst = dst, A = f.A },
+            ToFloatI f when f.Dst == temp => new ToFloatI { Dst = dst, Src = f.Src, Signed = f.Signed },
+            ToWholeI f when f.Dst == temp => new ToWholeI { Dst = dst, Src = f.Src },
+            FConstI f when f.Dst == temp => new FConstI { Dst = dst, Value = f.Value },
             LoadIdxI l when l.Dst == temp => new LoadIdxI { Dst = dst, Base = l.Base, Index = l.Index, Scale = l.Scale, Kind = l.Kind },
             _ => null,
         };

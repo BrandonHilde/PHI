@@ -93,6 +93,12 @@ namespace Phi.Compiler.CodeGen
                     foreach (Instr i in b.Instrs) Instruction(i);
                     End(b.End!, next);
                 }
+                foreach (var (table, targets) in tables)
+                {
+                    g.Line("align 8");
+                    g.Label(table);
+                    foreach (string target in targets) g.Line($"    dq {target}");
+                }
             }
 
             // ---------------------------------------------------------------- where values are
@@ -187,6 +193,62 @@ namespace Phi.Compiler.CodeGen
                 }
             }
 
+            // ---------------------------------------------------------------- f64s
+
+            /// <summary>Where an f64 is: its xmm register, or its 8 bytes in the frame.</summary>
+            string F(VReg v) => Reg(v) is string r ? r : $"qword [rbp - {regs.Slots[v]}]";
+
+            /// <summary>The xmm register an f64 instruction works in: the destination's own, unless avoid is in it.</summary>
+            string FTarget(VReg dst, VReg? avoid = null) =>
+                InRegister(dst) && !(avoid != null && Reg(avoid) == Reg(dst)) ? Reg(dst)! : "xmm15";
+
+            // (between registers, movaps: movsd keeps the rest of the destination, so it waits
+            // for whatever last wrote it, which ties unrelated work together)
+            void FLoad(string xmm, VReg v)
+            {
+                if (Reg(v) == xmm) return;
+                E(InRegister(v) ? $"movaps {xmm}, {Reg(v)}" : $"movsd {xmm}, {F(v)}");
+            }
+
+            void FStore(VReg v, string xmm)
+            {
+                if (Reg(v) == xmm) return;
+                E(InRegister(v) ? $"movaps {Reg(v)}, {xmm}" : $"movsd {F(v)}, {xmm}");
+            }
+
+            void FMove(VReg dst, VReg src)
+            {
+                if (dst == src || Reg(dst) != null && Reg(dst) == Reg(src)) return;
+                if (InRegister(dst) && InRegister(src)) E($"movaps {Reg(dst)}, {Reg(src)}");
+                else if (InRegister(dst) || InRegister(src)) E($"movsd {F(dst)}, {F(src)}");
+                else
+                {
+                    E($"movsd xmm15, {F(src)}");
+                    E($"movsd {F(dst)}, xmm15");
+                }
+            }
+
+            /// <summary>
+            /// Sets the flags for an f64 comparison (ucomisd: all three set when one side isn't a
+            /// number), returning the jump taken when it holds: &lt; and &lt;= compare the other way
+            /// round, so each of &lt;, &lt;=, &gt; and &gt;= is one jump that not-a-number fails. ==
+            /// and != also ask the parity flag (null here: see FloatHolds).
+            /// </summary>
+            string? FCompare(Cond c, VReg a, VReg b)
+            {
+                bool swap = c is Cond.LtS or Cond.LeS;
+                VReg left = swap ? b : a, right = swap ? a : b;
+                string l = InRegister(left) ? Reg(left)! : "xmm15";
+                if (l == "xmm15") E($"movsd xmm15, {F(left)}");
+                E($"ucomisd {l}, {F(right)}");
+                return c switch
+                {
+                    Cond.GtS or Cond.LtS => "a",
+                    Cond.GeS or Cond.LeS => "ae",
+                    _ => null,
+                };
+            }
+
             // ---------------------------------------------------------------- instructions
 
             void Instruction(Instr i)
@@ -199,9 +261,119 @@ namespace Phi.Compiler.CodeGen
                     case ConstI c:
                         Move(c.Dst, Opnd.Const(c.Value));
                         break;
+                    case CopyI c when c.Dst.Float:
+                        FMove(c.Dst, c.Src.Reg!);
+                        break;
                     case CopyI c:
                         Move(c.Dst, c.Src);
                         break;
+                    case FConstI fc:
+                    {
+                        string t = FTarget(fc.Dst);
+                        long bits = BitConverter.DoubleToInt64Bits(fc.Value);
+                        if (bits == 0) E($"xorps {t}, {t}");
+                        else E($"movsd {t}, qword [rel {g.FloatLabel(fc.Value)}]");
+                        FStore(fc.Dst, t);
+                        break;
+                    }
+                    case FBinI fb:
+                    {
+                        string t = FTarget(fb.Dst, fb.B);
+                        FLoad(t, fb.A);
+                        string op = fb.Op switch { FOp.Add => "addsd", FOp.Sub => "subsd", FOp.Mul => "mulsd", _ => "divsd" };
+                        E($"{op} {t}, {F(fb.B)}");
+                        FStore(fb.Dst, t);
+                        break;
+                    }
+                    case FNegI fneg:
+                    {
+                        string t = FTarget(fneg.Dst);
+                        FLoad(t, fneg.A);
+                        E("mov rax, 0x8000000000000000");
+                        E("movq xmm14, rax");
+                        E($"xorpd {t}, xmm14");
+                        FStore(fneg.Dst, t);
+                        break;
+                    }
+                    case ToFloatI tf:
+                    {
+                        string t = FTarget(tf.Dst);
+                        int bits = tf.Src.Wide ? 64 : 32;
+                        E($"xorps {t}, {t}");
+                        if (tf.Signed) E($"cvtsi2sd {t}, {At(tf.Src, bits)}");
+                        else
+                        {
+                            // a u64 with its top bit set is halved (keeping the bit that rounds), made an f64, and doubled
+                            string big = g.NewLabel("u64big"), done = g.NewLabel("u64done");
+                            E($"mov rax, {At(tf.Src, 64)}");
+                            E("test rax, rax");
+                            E($"js {big}");
+                            E($"cvtsi2sd {t}, rax");
+                            E($"jmp {done}");
+                            g.Label(big);
+                            E("mov rcx, rax");
+                            E("shr rcx, 1");
+                            E("and eax, 1");
+                            E("or rcx, rax");
+                            E($"cvtsi2sd {t}, rcx");
+                            E($"addsd {t}, {t}");
+                            g.Label(done);
+                        }
+                        FStore(tf.Dst, t);
+                        break;
+                    }
+                    case ToWholeI tw:
+                        E($"cvttsd2si rax, {F(tw.Src)}");
+                        Store(tw.Dst, "rax");
+                        break;
+                    case LoadI { Kind: MemKind.F64 } fl:
+                    {
+                        string t = FTarget(fl.Dst);
+                        E($"movsd {t}, qword {Place(fl.Place)}");
+                        FStore(fl.Dst, t);
+                        break;
+                    }
+                    case LoadIdxI { Kind: MemKind.F64 } fli:
+                    {
+                        string t = FTarget(fli.Dst);
+                        E($"movsd {t}, qword {Address(fli.Base, fli.Index, fli.Scale)}");
+                        FStore(fli.Dst, t);
+                        break;
+                    }
+                    case StoreI { Kind: MemKind.F64 } fs:
+                    {
+                        string src = InRegister(fs.Src.Reg!) ? Reg(fs.Src.Reg!)! : "xmm15";
+                        FLoad(src, fs.Src.Reg!);
+                        E($"movsd qword {Place(fs.Place)}, {src}");
+                        break;
+                    }
+                    case StoreIdxI { Kind: MemKind.F64 } fsi:
+                    {
+                        string src = InRegister(fsi.Src.Reg!) ? Reg(fsi.Src.Reg!)! : "xmm15";
+                        FLoad(src, fsi.Src.Reg!);
+                        E($"movsd qword {Address(fsi.Base, fsi.Index, fsi.Scale)}, {src}");
+                        break;
+                    }
+                    case SetCcI { Float: true } fsc:
+                    {
+                        string? holds = FCompare(fsc.Cond, fsc.A, fsc.B.Reg!);
+                        if (holds != null) E($"set{holds} al");
+                        else if (fsc.Cond == Cond.Eq)
+                        {
+                            E("sete al");
+                            E("setnp cl");
+                            E("and al, cl");
+                        }
+                        else
+                        {
+                            E("setne al");
+                            E("setp cl");
+                            E("or al, cl");
+                        }
+                        E("movzx eax, al");
+                        Store(fsc.Dst, "rax");
+                        break;
+                    }
                     case BinI b:
                         Binary(b);
                         break;
@@ -317,6 +489,16 @@ namespace Phi.Compiler.CodeGen
                             if (src == "rax") E($"mov {(bits == 64 ? "rax" : "eax")}, {At(st.Src.Reg!, bits == 64 ? 64 : 32)}");
                             E($"mov {Size(bits)} {place}, {Sub(src, bits)}");
                         }
+                        break;
+                    }
+                    case CheckI ic:
+                    {
+                        // as the generator's EmitIndexCheck: unsigned, so a negative index fails too
+                        string ok = g.NewLabel("inbounds");
+                        E($"cmp {At(ic.Index, 64)}, {ic.Limit}");
+                        E($"jb {ok}");
+                        g.EmitIndexError(ic.At);
+                        g.Label(ok);
                         break;
                     }
                     case SignCheckI check:
@@ -517,6 +699,55 @@ namespace Phi.Compiler.CodeGen
                 E($"cmp {left}, {Operand(b, bits)}");
             }
 
+            /// <summary>The jump tables the method's whens use, written after its code.</summary>
+            readonly List<(string Label, List<string> Targets)> tables = new();
+
+            /// <summary>
+            /// when: with 4 or more cases close together (no more than three places for each case),
+            /// a table of where each value jumps, indexed by the value less the smallest; otherwise
+            /// a compare and jump for each case.
+            /// </summary>
+            void Switch(SwitchT sw, Block? next)
+            {
+                int bits = Bits(sw.Value);
+                string v = At(sw.Value);
+                if (sw.Cases.Count >= 4)
+                {
+                    long low = sw.Cases.Min(c => c.Value), high = sw.Cases.Max(c => c.Value);
+                    long span = high - low + 1;
+                    if (span <= 3 * sw.Cases.Count && span <= 1024 && low >= int.MinValue && low <= int.MaxValue)
+                    {
+                        string table = g.NewLabel("irtable");
+                        var targets = new List<string>();
+                        for (long k = low; k <= high; k++)
+                        {
+                            Block to = sw.Cases.FirstOrDefault(c => c.Value == k).Target ?? sw.Default;
+                            targets.Add(labels[to]);
+                        }
+                        tables.Add((table, targets));
+                        E($"mov {Sub("rax", bits)}, {v}");
+                        if (low != 0) E($"sub {Sub("rax", bits)}, {Number(low, bits)}");
+                        E($"cmp {Sub("rax", bits)}, {span - 1}");
+                        E($"ja {labels[sw.Default]}");
+                        if (bits == 32) E("mov eax, eax");
+                        E($"lea r11, [rel {table}]");
+                        E("jmp [r11 + rax*8]");
+                        return;
+                    }
+                }
+                foreach (var (value, target) in sw.Cases)
+                {
+                    if (bits == 64 && !FitsImm32(value))
+                    {
+                        E($"mov rax, {value}");
+                        E($"cmp {v}, rax");
+                    }
+                    else E($"cmp {v}, {Number(value, bits)}");
+                    E($"je {labels[target]}");
+                }
+                if (sw.Default != next) E($"jmp {labels[sw.Default]}");
+            }
+
             static string Cc(Cond c) => c switch
             {
                 Cond.Eq => "e",
@@ -558,10 +789,32 @@ namespace Phi.Compiler.CodeGen
                             E("push rax");
                         }
                     }
+                    else if (a.Reg!.Float && InRegister(a.Reg))
+                    {
+                        E("sub rsp, 8");
+                        E($"movsd qword [rsp], {Reg(a.Reg)}");
+                    }
                     else E(InRegister(a.Reg!) ? $"push {Reg(a.Reg!)}" : $"push qword [rbp - {regs.Slots[a.Reg!]}]");
                 }
                 E($"call {call.Label}");
                 if (call.Args.Count > 0) E($"add rsp, {8 * call.Args.Count}");
+                if (call.Result == CallResult.St0)
+                {
+                    // an f64 comes back on the x87's stack (as the generator gives one): it's taken
+                    // off it, used or not
+                    if (call.Dst == null)
+                    {
+                        E("fstp st0");
+                        return;
+                    }
+                    E("sub rsp, 8");
+                    E("fstp qword [rsp]");
+                    string t = FTarget(call.Dst);
+                    E($"movsd {t}, qword [rsp]");
+                    E("add rsp, 8");
+                    FStore(call.Dst, t);
+                    return;
+                }
                 if (call.Dst == null) return;
                 if (call.Result == CallResult.EdxEax)
                 {
@@ -580,6 +833,45 @@ namespace Phi.Compiler.CodeGen
                     case JumpT j:
                         if (j.Target != next) E($"jmp {labels[j.Target]}");
                         break;
+                    case BranchT { Float: true } fbr:
+                    {
+                        string? holds = FCompare(fbr.Cond, fbr.A, fbr.B.Reg!);
+                        if (holds != null)
+                        {
+                            // (not a number fails the jump: it goes to Else, as it should)
+                            if (fbr.Then == next) E($"jn{holds} {labels[fbr.Else]}");
+                            else
+                            {
+                                E($"j{holds} {labels[fbr.Then]}");
+                                if (fbr.Else != next) E($"jmp {labels[fbr.Else]}");
+                            }
+                        }
+                        else if (fbr.Cond == Cond.Eq)
+                        {
+                            E($"jne {labels[fbr.Else]}");
+                            E($"jp {labels[fbr.Else]}");
+                            if (fbr.Then != next) E($"jmp {labels[fbr.Then]}");
+                        }
+                        else
+                        {
+                            E($"jne {labels[fbr.Then]}");
+                            E($"jp {labels[fbr.Then]}");
+                            if (fbr.Else != next) E($"jmp {labels[fbr.Else]}");
+                        }
+                        break;
+                    }
+                    case SwitchT sw:
+                        Switch(sw, next);
+                        break;
+                    case BranchT { TestMask: long mask } tb:
+                        E($"test {At(tb.A)}, {Number(mask, Bits(tb.A))}");
+                        if (tb.Then == next) E($"j{Cc(Not(tb.Cond))} {labels[tb.Else]}");
+                        else
+                        {
+                            E($"j{Cc(tb.Cond)} {labels[tb.Then]}");
+                            if (tb.Else != next) E($"jmp {labels[tb.Else]}");
+                        }
+                        break;
                     case BranchT br:
                         Compare(br.A, br.B);
                         if (br.Then == next) E($"j{Cc(Not(br.Cond))} {labels[br.Else]}");
@@ -590,7 +882,19 @@ namespace Phi.Compiler.CodeGen
                         }
                         break;
                     case RetT ret:
-                        if (ret.Value is Opnd v)
+                        if (ret.Value is Opnd fv && ret.Float)
+                        {
+                            // an f64 is given back in st0, as the generator gives one
+                            if (InRegister(fv.Reg!))
+                            {
+                                E("sub rsp, 8");
+                                E($"movsd qword [rsp], {Reg(fv.Reg!)}");
+                                E("fld qword [rsp]");
+                                E("add rsp, 8");
+                            }
+                            else E($"fld {F(fv.Reg!)}");
+                        }
+                        else if (ret.Value is Opnd v)
                         {
                             if (ret.Pointer) Load("rax", v, 64);
                             else if (ret.Wide)

@@ -60,7 +60,11 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>The kinds of value this form keeps: a whole number of any size, bln, chr, an enum, a pointer.</summary>
         public static bool Supported(PhiType t) =>
             !t.IsArray && t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
-                or TypeKind.I64 or TypeKind.U64 or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum or TypeKind.Pointer or TypeKind.Object;
+                or TypeKind.I64 or TypeKind.U64 or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum or TypeKind.Pointer or TypeKind.Object
+                or TypeKind.F64;
+
+        /// <summary>An f64, which this form keeps in an xmm register (f32 and f16 are the generator's).</summary>
+        static bool IsF(PhiType t) => !t.IsArray && t.Kind == TypeKind.F64;
 
         /// <summary>
         /// A value of t takes 64 bits: an i64, a u64, a pointer, or an object, which this form
@@ -76,6 +80,7 @@ namespace Phi.Compiler.CodeGen.Ir
             TypeKind.I16 => MemKind.S16,
             TypeKind.U16 => MemKind.U16,
             TypeKind.I64 or TypeKind.U64 or TypeKind.Pointer or TypeKind.Object => MemKind.Q64,
+            TypeKind.F64 => MemKind.F64,
             _ => MemKind.D32,
         };
 
@@ -153,15 +158,19 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             JumpT j => new[] { j.Target },
             BranchT br => new[] { br.Then, br.Else },
+            SwitchT sw => sw.Cases.Select(c => c.Target).Append(sw.Default).Distinct().ToArray(),
             _ => Array.Empty<Block>(),
         };
+
+        /// <summary>A new value for one of type t: an f64's, or a whole number's of its width.</summary>
+        VReg New(PhiType t, string name = "") => IsF(t) ? fn.NewFloat(name) : fn.NewValue(Is64(t), name);
 
         VReg Variable(VariableSymbol v)
         {
             if (!variables.TryGetValue(v, out VReg? r))
             {
                 Need(Supported(v.Type), $"'{v.Name}' is a {v.Type}");
-                r = fn.NewValue(Is64(v.Type), v.Name);
+                r = New(v.Type, v.Name);
                 variables[v] = r;
             }
             return r;
@@ -235,6 +244,13 @@ namespace Phi.Compiler.CodeGen.Ir
                         case NameExpr { Symbol: FieldPathSymbol gf } when GlobalStruct(gf.Root) is string label && Supported(gf.Type) && !gf.Type.IsObject:
                             Emit(new StoreI { Place = $"{label} + {gf.Offset}", Src = Value(a.Value, gf.Type), Kind = KindOf(gf.Type) });
                             return;
+                        case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when GlobalArray(arr) != null:
+                        {
+                            Opnd value = Value(a.Value, inArray.Type);
+                            var (bas, index, scale) = ArrayElement(inArray, arr);
+                            Emit(new StoreIdxI { Base = bas, Index = index, Scale = scale, Src = Small(value, Is64(inArray.Type)), Kind = KindOf(inArray.Type) });
+                            return;
+                        }
                         case IndexExpr { Target.Type.IsPointer: true } element:
                         {
                             // (the value first, then where it goes, as the generator works them out)
@@ -254,14 +270,15 @@ namespace Phi.Compiler.CodeGen.Ir
                     Block then = fn.NewBlock(), after = fn.NewBlock();
                     Block otherwise = ifs.Else != null ? fn.NewBlock() : after;
                     Condition(ifs.Condition, then, otherwise);
+                    // laid out then, else, after: the else runs on into what follows
                     Enter(then);
                     Statements(ifs.Then);
-                    StartBlock(after);
+                    if (current.End == null) current.End = new JumpT { Target = after };
                     if (ifs.Else != null)
                     {
                         Enter(otherwise);
                         Statements(ifs.Else);
-                        StartBlock(after);
+                        if (current.End == null) current.End = new JumpT { Target = after };
                     }
                     Enter(after);
                     return;
@@ -283,6 +300,51 @@ namespace Phi.Compiler.CodeGen.Ir
                     if (loop.Step != null) Statement(loop.Step);
                     Mark(loop);
                     Condition(loop.Condition, body, after);
+                    Enter(after);
+                    return;
+                }
+
+                case WhenStmt when:
+                {
+                    PhiType st = Real(when.Subject);
+                    Need(Supported(st) && !IsF(st) && !st.IsPointer && !st.IsObject && when.Branches.All(br => br.TypeName == null), "a when it doesn't take");
+                    Mark(when);
+                    VReg subject = InReg(Value(when.Subject), Is64(st));
+                    Block after = fn.NewBlock();
+                    Block otherwise = when.Else != null ? fn.NewBlock() : after;
+                    var sw = new SwitchT { Value = subject, Default = otherwise };
+                    var bodies = new List<(Block Block, List<Stmt> Body)>();
+                    foreach (WhenBranch branch in when.Branches)
+                    {
+                        Block body = fn.NewBlock();
+                        foreach (Expr value in branch.Values)
+                        {
+                            long? k = value switch
+                            {
+                                NumberExpr n => n.Value,
+                                NameExpr { Symbol: ConstantSymbol c } => c.Value,
+                                StringExpr { Character: int ch } => ch,
+                                _ => Semantics.ConstantFolder.Evaluate(value),
+                            };
+                            Need(k != null, "a when whose values aren't numbers known when it's built");
+                            sw.Cases.Add((k!.Value, body));
+                        }
+                        bodies.Add((body, branch.Body));
+                    }
+                    if (current.End != null) Enter(fn.NewBlock());
+                    current.End = sw;
+                    foreach (var (block, body) in bodies)
+                    {
+                        Enter(block);
+                        Statements(body);
+                        if (current.End == null) current.End = new JumpT { Target = after };
+                    }
+                    if (when.Else != null)
+                    {
+                        Enter(otherwise);
+                        Statements(when.Else);
+                        if (current.End == null) current.End = new JumpT { Target = after };
+                    }
                     Enter(after);
                     return;
                 }
@@ -347,7 +409,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Need(method.ReturnType.Kind != TypeKind.Void, "a return with a value from a method that gives none");
             Opnd v = Value(value, method.ReturnType);
             if (current.End != null) Enter(fn.NewBlock());
-            current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer };
+            current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer, Float = IsF(method.ReturnType) };
         }
 
         /// <summary>
@@ -379,6 +441,44 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             return (null, 0, PhiType.Error);
         }
+
+        /// <summary>A class's array of a size, kept where its label is, of numbers or f64s: its label, or null.</summary>
+        static string? GlobalArray(VariableSymbol v) =>
+            !v.IsLocal && !v.IsParameter && v.Type.IsArray && !v.Type.Open && !v.Type.Filled && !v.Type.TextTable && v.Type.Length > 0
+            && !v.GrowingArray && !v.GrowingElements && Supported(v.Type.Element) && !v.Type.Element.IsObject && SimpleLabel(v.Label) ? v.Label : null;
+
+        /// <summary>
+        /// list:i of a class's array: its address, the index made 64 bits, the element's size,
+        /// with the index checked against the array's size as the generator checks it (an index
+        /// written in is checked when it's built; one that's a mask smaller than the size, as
+        /// (x &amp; 0xFF) of 256, can't be out of range).
+        /// </summary>
+        (VReg Base, Opnd Index, int Scale) ArrayElement(IndexExpr e, VariableSymbol array)
+        {
+            PhiType element = e.Type;
+            Need(Supported(element), $"an array of {element}");
+            int scale = element.ElementSize;
+            Need(scale is 1 or 2 or 4 or 8, $"an element of {scale} bytes");
+            PhiType it = Real(e.Index);
+            Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+            Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+            if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
+            {
+                VReg checkedIndex = InReg(index, true);
+                Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e });
+                index = checkedIndex;
+            }
+            VReg bas = fn.NewValue(true);
+            Emit(new AddrI { Dst = bas, Label = GlobalArray(array)! });
+            if (index.IsImm && (index.Imm * scale < int.MinValue || index.Imm * scale > int.MaxValue)) index = InReg(index, true);
+            return (bas, index, scale);
+        }
+
+        /// <summary>x &amp; mask, with mask a number less than limit: never out of an array of limit.</summary>
+        static bool MaskedBelow(Expr index, int limit) =>
+            index is BinaryExpr { Op: BinaryOp.BitAnd } and
+            && (Semantics.ConstantFolder.Evaluate(and.Right) ?? Semantics.ConstantFolder.Evaluate(and.Left)) is long mask
+            && mask >= 0 && mask < limit;
 
         /// <summary>A parameter or variable of this method (not a class's).</summary>
         bool Ours(VariableSymbol v) => variables.ContainsKey(v) || method.Locals.Contains(v) || method.Parameters.Contains(v);
@@ -425,14 +525,22 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 case BinaryExpr cmp when IsComparison(cmp.Op):
                 {
-                    var (a, b, cond) = Compare(cmp);
+                    var (a, b, cond, isFloat) = Compare(cmp);
                     if (current.End != null) Enter(fn.NewBlock());
-                    current.End = new BranchT { Cond = cond, A = a, B = b, Then = yes, Else = no };
+                    current.End = new BranchT { Float = isFloat, Cond = cond, A = a, B = b, Then = yes, Else = no };
                     return;
                 }
             }
             PhiType et = Real(e);
             Need(Supported(et), $"a condition that's a {et}");
+            if (IsF(et))
+            {
+                VReg fv = (VReg)Value(e, et).Reg!;
+                VReg zero = FloatConst(0.0);
+                if (current.End != null) Enter(fn.NewBlock());
+                current.End = new BranchT { Float = true, Cond = Cond.Ne, A = fv, B = zero, Then = yes, Else = no };
+                return;
+            }
             VReg v = InReg(Value(e, et), Is64(et));
             if (current.End != null) Enter(fn.NewBlock());
             current.End = new BranchT { Cond = Cond.Ne, A = v, B = Opnd.Const(0), Then = yes, Else = no };
@@ -441,11 +549,28 @@ namespace Phi.Compiler.CodeGen.Ir
         static bool IsComparison(BinaryOp op) => op is BinaryOp.Equal or BinaryOp.NotEqual or BinaryOp.Less or BinaryOp.LessEqual or BinaryOp.Greater or BinaryOp.GreaterEqual;
 
         /// <summary>A comparison's two sides, made the same width, and how they compare (as the generator does).</summary>
-        (VReg A, Opnd B, Cond Cond) Compare(BinaryExpr cmp)
+        (VReg A, Opnd B, Cond Cond, bool Float) Compare(BinaryExpr cmp)
         {
             PhiType l = Real(cmp.Left), r = Real(cmp.Right);
             Need(Supported(l) && Supported(r), $"a comparison of {l} and {r}");
             Need(cmp.ObjectCompare == null && !l.IsObject && !r.IsObject, "a comparison of objects");
+            if (IsF(l) || IsF(r))
+            {
+                // both made f64s, the right first; the condition is the signed one's, read as IEEE
+                Need(!l.IsPointer && !r.IsPointer, "a pointer compared with a float");
+                VReg fb = (VReg)Convert(Value(cmp.Right), r, PhiType.F64).Reg!;
+                VReg fa = (VReg)Convert(Value(cmp.Left), l, PhiType.F64).Reg!;
+                Cond fc = cmp.Op switch
+                {
+                    BinaryOp.Equal => Cond.Eq,
+                    BinaryOp.NotEqual => Cond.Ne,
+                    BinaryOp.Less => Cond.LtS,
+                    BinaryOp.LessEqual => Cond.LeS,
+                    BinaryOp.Greater => Cond.GtS,
+                    _ => Cond.GeS,
+                };
+                return (fa, fb, fc, true);
+            }
             // (a pointer is compared as an unsigned 64-bit number, with 0 or another pointer)
             bool pointers = l.IsPointer || r.IsPointer;
             bool wide = l.IsWide || r.IsWide || pointers;
@@ -463,7 +588,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 BinaryOp.Greater => unsigned ? Cond.GtU : Cond.GtS,
                 _ => unsigned ? Cond.GeU : Cond.GeS,
             };
-            return (a, b, c);
+            return (a, b, c, false);
         }
 
         // ---------------------------------------------------------------- values
@@ -496,11 +621,15 @@ namespace Phi.Compiler.CodeGen.Ir
                     return CallValue(call);
                 case NameExpr { Symbol: ConstantSymbol k }:
                     return Opnd.Const(k.Value);
+                case DecimalExpr dec when IsF(e.Type):
+                    return FloatConst(dec.Value);
+                case NameExpr { Symbol: FloatConstantSymbol fk } when IsF(e.Type):
+                    return FloatConst(fk.Value);
                 case NameExpr { Symbol: VariableSymbol v } when variables.ContainsKey(v) || method.Locals.Contains(v) || method.Parameters.Contains(v):
                     return Variable(v);
                 case NameExpr { Symbol: VariableSymbol g } when Global(g) is string place:
                 {
-                    VReg loaded = fn.NewValue(Is64(g.Type), g.Name);
+                    VReg loaded = New(g.Type, g.Name);
                     Emit(new LoadI { Dst = loaded, Place = place, Kind = KindOf(g.Type) });
                     return loaded;
                 }
@@ -509,13 +638,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     return Cast(Value(cast.Operand), Real(cast.Operand), cast.Type);
                 case Expr field when Field(field) is var (fb, fo, ft) && fb != null:
                 {
-                    VReg d = fn.NewValue(Is64(ft));
+                    VReg d = New(ft);
                     Emit(new LoadIdxI { Dst = d, Base = fb, Index = Opnd.Const(fo), Scale = 1, Kind = KindOf(ft) });
                     return d;
                 }
                 case NameExpr { Symbol: FieldPathSymbol gf } when GlobalStruct(gf.Root) is string label && Supported(gf.Type) && !gf.Type.IsObject:
                 {
-                    VReg d = fn.NewValue(Is64(gf.Type));
+                    VReg d = New(gf.Type);
                     Emit(new LoadI { Dst = d, Place = $"{label} + {gf.Offset}", Kind = KindOf(gf.Type) });
                     return d;
                 }
@@ -529,10 +658,32 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new AddrI { Dst = d, Label = label });
                     return d;
                 }
+                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when GlobalArray(arr) != null:
+                {
+                    var (bas, index, scale) = ArrayElement(inArray, arr);
+                    VReg d = New(inArray.Type);
+                    Emit(new LoadIdxI { Dst = d, Base = bas, Index = index, Scale = scale, Kind = KindOf(inArray.Type) });
+                    return d;
+                }
+                case AddrExpr { OfObject: false, CodeLabel: null, Operand: IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray }
+                    when GlobalArray(arr) != null:
+                {
+                    // addr list:i: where the element is (checked as reading it would be)
+                    var (bas, index, scale) = ArrayElement(inArray, arr);
+                    VReg d = fn.NewValue(true);
+                    if (index.IsImm) Emit(new BinI { Op = BinOp.Add, Dst = d, A = bas, B = Opnd.Const(index.Imm * scale) });
+                    else
+                    {
+                        VReg moved = fn.NewValue(true);
+                        Emit(new BinI { Op = BinOp.Mul, Dst = moved, A = index.Reg!, B = Opnd.Const(scale) });
+                        Emit(new BinI { Op = BinOp.Add, Dst = d, A = bas, B = moved });
+                    }
+                    return d;
+                }
                 case IndexExpr { Target.Type.IsPointer: true } element:
                 {
                     var (bas, index, scale) = Element(element);
-                    VReg d = fn.NewValue(Is64(element.Type));
+                    VReg d = New(element.Type);
                     Emit(new LoadIdxI { Dst = d, Base = bas, Index = index, Scale = scale, Kind = KindOf(element.Type) });
                     return d;
                 }
@@ -555,6 +706,20 @@ namespace Phi.Compiler.CodeGen.Ir
                     });
                     return v;
                 }
+                case UnaryExpr { Op: UnaryOp.Not } fnot when IsF(Real(fnot.Operand)):
+                {
+                    VReg fd = fn.NewValue(false);
+                    VReg fv = (VReg)Value(fnot.Operand).Reg!;
+                    Emit(new SetCcI { Float = true, Cond = Cond.Eq, Dst = fd, A = fv, B = FloatConst(0.0) });
+                    return fd;
+                }
+                case UnaryExpr { Op: UnaryOp.Negate } fneg when IsF(fneg.Type):
+                {
+                    VReg fa = (VReg)Convert(Value(fneg.Operand), Real(fneg.Operand), PhiType.F64).Reg!;
+                    VReg fd = fn.NewFloat();
+                    Emit(new FNegI { Dst = fd, A = fa });
+                    return fd;
+                }
                 case UnaryExpr { Op: UnaryOp.Not } not:
                 {
                     PhiType t = Real(not.Operand);
@@ -573,9 +738,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 }
                 case BinaryExpr cmp when IsComparison(cmp.Op):
                 {
-                    var (a, b, cond) = Compare(cmp);
+                    var (a, b, cond, isFloat) = Compare(cmp);
                     VReg d = fn.NewValue(false);
-                    Emit(new SetCcI { Cond = cond, Dst = d, A = a, B = b });
+                    Emit(new SetCcI { Float = isFloat, Cond = cond, Dst = d, A = a, B = b });
                     return d;
                 }
                 case BinaryExpr { Op: BinaryOp.And or BinaryOp.Or } logic:
@@ -605,6 +770,23 @@ namespace Phi.Compiler.CodeGen.Ir
         Opnd Arithmetic(BinaryExpr b)
         {
             Need(b.Op != BinaryOp.Power, "a power");
+            if (IsF(b.Type))
+            {
+                FOp fop = b.Op switch
+                {
+                    BinaryOp.Add => FOp.Add,
+                    BinaryOp.Subtract => FOp.Sub,
+                    BinaryOp.Multiply => FOp.Mul,
+                    BinaryOp.Divide => FOp.Div,
+                    _ => throw new NotYet($"the operator {b.Op} on floats"),
+                };
+                // (the right side first, as everywhere)
+                VReg fb = (VReg)Convert(Value(b.Right), Real(b.Right), PhiType.F64).Reg!;
+                VReg fa = (VReg)Convert(Value(b.Left), Real(b.Left), PhiType.F64).Reg!;
+                VReg fd = fn.NewFloat();
+                Emit(new FBinI { Op = fop, Dst = fd, A = fa, B = fb });
+                return fd;
+            }
             if (b.Op == BinaryOp.Subtract && Real(b.Left).IsPointer && Real(b.Right).IsPointer)
             {
                 // p - q: how far apart they are, a number (the binder's type), from all 64 bits of each
@@ -695,6 +877,15 @@ namespace Phi.Compiler.CodeGen.Ir
         Opnd Cast(Opnd v, PhiType from, PhiType to)
         {
             Need(Supported(to), $"a cast to {to}");
+            if (IsF(from) && !IsF(to))
+            {
+                // toward zero, all 64 bits (as the generator's fistp qword), then what fits
+                Need(!to.IsPointer && !to.IsObject && to.Kind != TypeKind.Bool, $"a float made a {to}");
+                VReg whole = fn.NewValue(true);
+                Emit(new ToWholeI { Dst = whole, Src = v.Reg! });
+                return to.IsWide ? whole : Convert(Cast(whole, PhiType.I64, PhiType.I32), PhiType.I32, to);
+            }
+            if (IsF(to)) return Convert(v, from, to);
             Need(to.Kind != TypeKind.Bool || from.Kind == TypeKind.Bool, "a cast to bln");
             if (Is64(from) && !Is64(to))
             {
@@ -712,6 +903,25 @@ namespace Phi.Compiler.CodeGen.Ir
         /// </summary>
         Opnd Convert(Opnd v, PhiType from, PhiType to)
         {
+            if (IsF(to))
+            {
+                if (IsF(from)) return v;
+                Need(!from.IsPointer && !from.IsObject && Supported(from), $"a {from} made a float");
+                if (v.IsImm) return FloatConst(from.Kind == TypeKind.U64 ? (double)unchecked((ulong)v.Imm) : (double)v.Imm);
+                // (a small number is an int already; a u32 is made 64 bits with zeros first)
+                VReg src = v.Reg!;
+                bool signed = from.Kind != TypeKind.U64;
+                if (!from.IsWide && from.IsUnsigned32)
+                {
+                    VReg wide = fn.NewValue(true);
+                    Emit(new ExtendI { Dst = wide, Src = src, Signed = false });
+                    src = wide;
+                }
+                VReg fd = fn.NewFloat();
+                Emit(new ToFloatI { Dst = fd, Src = src, Signed = signed });
+                return fd;
+            }
+            Need(!IsF(from), $"an f64 made a {to} without `as`");
             if (Is64(to))
             {
                 if (Is64(from) || v.IsImm) return v;
@@ -756,6 +966,24 @@ namespace Phi.Compiler.CodeGen.Ir
             _ => value,
         };
 
+        /// <summary>
+        /// An f64 written in the program: made once, where the method starts (so a loop doesn't
+        /// make it each time round), and the same value for each place it's written.
+        /// </summary>
+        VReg FloatConst(double value)
+        {
+            long bits = BitConverter.DoubleToInt64Bits(value);
+            if (!floatConstants.TryGetValue(bits, out VReg? d))
+            {
+                d = fn.NewFloat($"{value}");
+                fn.Blocks[0].Instrs.Insert(0, new FConstI { Dst = d, Value = value });
+                floatConstants[bits] = d;
+            }
+            return d;
+        }
+
+        readonly Dictionary<long, VReg> floatConstants = new();
+
         /// <summary>v in a register: a number written into the instruction is put in one first.</summary>
         VReg InReg(Opnd v, bool wide)
         {
@@ -787,9 +1015,9 @@ namespace Phi.Compiler.CodeGen.Ir
             var call = new CallI
             {
                 Label = callee.Label,
-                Dst = wantResult && callee.ReturnType.Kind != TypeKind.Void ? fn.NewValue(Is64(callee.ReturnType)) : null,
+                Dst = wantResult && callee.ReturnType.Kind != TypeKind.Void ? New(callee.ReturnType) : null,
                 Result = callee.ReturnType.Kind == TypeKind.Void ? CallResult.None : callee.ReturnType.IsWide ? CallResult.EdxEax
-                    : callee.ReturnType.IsPointer ? CallResult.Rax : CallResult.Eax,
+                    : IsF(callee.ReturnType) ? CallResult.St0 : Is64(callee.ReturnType) ? CallResult.Rax : CallResult.Eax,
             };
             for (int i = 0; i < arguments.Count; i++)
                 call.Args.Add(Value(arguments[i], callee.Parameters[i].Type));
