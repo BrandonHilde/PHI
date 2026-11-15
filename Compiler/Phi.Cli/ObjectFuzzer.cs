@@ -218,6 +218,13 @@ namespace Phi.Cli
             public int Indent = 2;
             public List<List<Var>> Blocks = new() { new List<Var>() };
             public int Locals;
+
+            /// <summary>
+            /// A method of objects and numbers only: its own objects made and emptied, takes
+            /// between them and the fields of what it was lent, and numbers, but no text, arrays,
+            /// copies or log, so PHI_IR=1's intermediate form takes it (as a list's code would be).
+            /// </summary>
+            public bool Plain;
         }
 
         // ================================================================ writing a program
@@ -529,9 +536,23 @@ namespace Phi.Cli
                 var list = new List<Place>();
                 foreach (List<Var> block in Now.Blocks)
                     foreach (Var v in block) Walk(list, v, v.Name, v.Ty, v.Storage, new List<Val>(), 0, false);
+                if (Now.Plain) return list.Where(PlainPlace).ToList();
                 foreach (Var g in globals)
                     if (g.Frozen == 0) Walk(list, g, g.Name, g.Ty, g.Storage, new List<Val>(), 0, false);
                 return list;
+            }
+
+            /// <summary>
+            /// What a plain method names: a number or an object, reached from its own variables
+            /// and parameters through objects' fields only (no element, no struct kept in place
+            /// on the way, no map's key or value).
+            /// </summary>
+            static bool PlainPlace(Place p)
+            {
+                if (p.Ty.Kind is not (K.Int or K.Obj) || p.Text.Contains(':')) return false;
+                for (int k = 1; k < p.Chain.Count; k++)
+                    if (p.Chain[k] is StructVal && p.Chain[k - 1] is not ObjVal) return false;
+                return true;
             }
 
             void Walk(List<Place> list, Var root, string text, Ty ty, Val storage, List<Val> above, int depth, bool readOnly)
@@ -587,6 +608,41 @@ namespace Phi.Cli
 
             /// <summary>A struct that's there to be read: one in place, or an object that isn't empty.</summary>
             static bool Holds(Place p, Def d) => p.Ty.IsStructLike && p.Ty.Def == d && !p.IsEmpty;
+
+            /// <summary>A plain method's own object: zeroed, empty, or a Tag with its two numbers.</summary>
+            bool OpDeclarePlain()
+            {
+                if (Now.Locals >= 14) return false;
+                switch (rng.Next(4))
+                {
+                    case 0:
+                    {
+                        int n = SomeInt();
+                        Var v = NewVar(Ty.Int, new IntVal { V = n });
+                        Emit($"int {v.Name}: {n};");
+                        return true;
+                    }
+                    case 1:
+                    {
+                        var (a, av) = IntSource();
+                        var (b, bv) = IntSource();
+                        StructVal made = ZeroStruct(tag);
+                        made.F[0] = new IntVal { V = av };
+                        made.F[1] = new IntVal { V = bv };
+                        Var v = NewVar(tag.AsObj, new ObjVal { Held = made });
+                        Emit($"new Tag {v.Name}: {a} {b};");
+                        return true;
+                    }
+                    default:
+                    {
+                        Def d = SomeDef();
+                        bool empty = Chance(30);
+                        Var v = NewVar(d.AsObj, empty ? new ObjVal() : new ObjVal { Held = ZeroStruct(d) });
+                        Emit(empty ? $"new {d.Name} {v.Name}: empty;" : $"new {d.Name} {v.Name};");
+                        return true;
+                    }
+                }
+            }
 
             (string Text, int Value) IntSource()
             {
@@ -1382,7 +1438,7 @@ namespace Phi.Cli
                 int number = rng.Next(0, 50);
                 foreach (Place a in arguments.Where(a => a.Root.Global)) a.Root.Frozen++;
 
-                var frame = new Frame { Name = $"M{id}" };
+                var frame = new Frame { Name = $"M{id}", Plain = Chance(40) };
                 var header = new StringBuilder($"\t[M{id}:");
                 for (int i = 0; i < arguments.Count; i++)
                 {
@@ -1397,7 +1453,7 @@ namespace Phi.Cli
 
                 frames.Push(frame);
                 Touch();
-                bool gives = Chance(50);
+                bool gives = !frame.Plain && Chance(50);
                 int steps = rng.Next(3, 9);
                 int leaves = gives ? -1 : rng.Next(steps);
                 for (int i = 0; i < steps; i++)
@@ -1406,7 +1462,7 @@ namespace Phi.Cli
                     Ops(1);
                 }
                 foreach (Var v in frame.Blocks[0].Where(v => !v.Param && v != count).ToList())
-                    if (Chance(60)) Dump(v);
+                    if (!frame.Plain && Chance(60)) Dump(v);
 
                 // what it gives back: a variable of its own, handed over, or a copy of anything else
                 StructVal? result = null;
@@ -1456,6 +1512,12 @@ namespace Phi.Cli
                     for (int tries = 0; tries < 30; tries++)
                     {
                         Touch();
+                        if (Now.Plain)
+                        {
+                            int pick = rng.Next(10);
+                            if (pick < 3 ? OpDeclarePlain() : pick < 5 ? OpInt() : pick < 9 ? OpTake() : OpEmpty()) break;
+                            continue;
+                        }
                         int roll = rng.Next(124);
                         bool did =
                             roll < 12 ? OpDeclare()
@@ -1477,6 +1539,7 @@ namespace Phi.Cli
                         if (did) break;
                     }
                     Touch();
+                    if (Now.Plain) continue;
                     if (Chance(30))
                     {
                         List<Place> roots = All().Where(p => p.Depth == 0).ToList();

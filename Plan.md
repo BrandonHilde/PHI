@@ -3796,10 +3796,12 @@ method with `new T x` variables went to the generator ("a variable it doesn't ta
 - Test `ir_objects_program` (each part checks the heap is back where it was; with the
   unwind routine broken on purpose it says so). Checked: every 64-bit test through the form
   (182), all 767 tests without it, 600 `phi fuzz objects` and 500 code and number programs.
-  But little else reaches this yet: of the tests, only `dialogs_program` has another method
-  with objects the form takes (most also log or use text), and `phi fuzz objects`' own
-  methods give objects back or keep text, so it doesn't. Its methods should have some the
-  form takes before this goes further.
+  Little else in the tests reaches it (only `dialogs_program` has another method with
+  objects the form takes; most also log or use text), so `phi fuzz objects` makes some
+  methods plain now (`Frame.Plain`, two in five): their own objects made, emptied and taken
+  between them and the fields of what they were lent, and numbers, with no text, arrays,
+  copies or log, which the form takes. 600 programs through it, nothing wrong; with takes
+  made to keep what the target had, 23 of 100 came out wrong.
 
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
