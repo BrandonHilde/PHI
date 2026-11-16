@@ -50,8 +50,11 @@ work three times is a finding to bring to the user):
 
 **What ends it:** the user being convinced the language is solid and fast enough. What
 would show that, to be made exact as the work goes: the older `Map`, `memory.list` and
-`KeyedMap` gone and weblib moved to the containers that take types, with its tests
-passing, and nothing above having blocked it; the benchmarks in `bench/` taking no
+`KeyedMap` gone, and every hand-made container in weblib either moved to the containers
+that take types or kept on purpose, with why written beside it, its tests passing and
+nothing above having blocked it (reworded 2026-11-15, the user's choice: a library with
+its own arenas, slabs and collector has containers shaped for them, as a browser's do; the
+generic ones are managed, freed with their owner, and fit where PHI owns the memory); the benchmarks in `bench/` taking no
 longer than C#'s together, and none more than 1.3 times its own (the user's choice of bar,
 2026-11-14, when they were 1.53 times C#'s; the plan for getting there, an optimiser of
 PHI's own, is in `PerformanceStrategy.md`, kept beside this repository: **met 2026-11-15**,

@@ -64,7 +64,6 @@ namespace Phi.Compiler.Tests
         [InlineData("memory.frames")]
         [InlineData("memory.paging")]
         [InlineData("memory.heap")]
-        [InlineData("memory.list")]
         public void MemoryLibraryFilesCompile(string file)
         {
             CompileResult result = Compile($"use {file};\nphi.K:Kernel\n{{\n}}\n");

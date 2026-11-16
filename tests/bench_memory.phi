@@ -67,24 +67,27 @@ phi.BenchMemory:Kernel
 	call Pool.Delete: nodes;
 	free objects;
 
-	# a map of 100,000 IDs, then each one found
-	ptr<MapData> ids: (Map.New);
-	call Bench.Start;
-	while u32 i: 0; i < 100000; i++;
-		call Map.Set: ids 1000000 + i * 13 i;
-	;;
-	call Bench.Stop: 'map set 100000 keys';
-	bln all: true;
-	call Bench.Start;
-	while u32 i: 0; i < 100000; i++;
-		if (Map.Get: ids 1000000 + i * 13 0xFFFFFFFF) is not i
-			all is false;
-		;;
-	;;
-	call Bench.Stop: 'map get 100000 keys';
-	log 'map found all: ' all ' places: ' ids:0.capacity '\n';
-	call Map.Delete: ids;
+	call MapIds;
 
 	debug 'blocks in use: ' Heap.used_blocks '\n';
 	exit 0;
+
+	# a map of 100,000 IDs, then each one found (the map is the method's, freed when it ends)
+	[MapIds]
+		new Map<u32 u32> ids;
+		call Bench.Start;
+		while u32 i: 0; i < 100000; i++;
+			call ids.Set: 1000000 + i * 13 i;
+		;;
+		call Bench.Stop: 'map set 100000 keys';
+		bln all: true;
+		call Bench.Start;
+		while u32 i: 0; i < 100000; i++;
+			if (ids.Get: 1000000 + i * 13 0xFFFFFFFF) is not i
+				all is false;
+			;;
+		;;
+		call Bench.Stop: 'map get 100000 keys';
+		log 'map found all: ' all ' places: ' ids.places.len '\n';
+	[end]
 }

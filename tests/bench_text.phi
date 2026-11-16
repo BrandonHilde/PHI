@@ -16,7 +16,7 @@ phi.BenchText:Kernel
 	str shouted[PLAYERS]: [16];           # the same names in capitals
 	str chat[LINES]: [64];
 	str words[WORDS]: [12];
-	ptr<MapData> by_name: (Map.New);
+	new Map<u32 u32> by_name;
 
 	while int i: 0; i < PLAYERS; i++;
 		names:i is 'Player' i;
@@ -31,13 +31,13 @@ phi.BenchText:Kernel
 	# each name's hash as the key of a map, then every name found again
 	call Bench.Start;
 	while int i: 0; i < PLAYERS; i++;
-		call Map.Set: by_name (Hash: names:i) i as u32;
+		call by_name.Set: (Hash: names:i) i as u32;
 	;;
 	call Bench.Stop: 'hash and add 1000 names';
 	int found: 0;
 	call Bench.Start;
 	while int i: 0; i < PLAYERS; i++;
-		if (Map.Get: by_name (Hash: names:i) 0xFFFFFFFF) is i
+		if (by_name.Get: (Hash: names:i) 0xFFFFFFFF) is i
 			found++;
 		;;
 	;;

@@ -131,7 +131,7 @@ phi.Zone:Library
 
 	new Player players[atmost Game.MAX_PLAYERS];
 	new Entity creatures[atmost Game.MAX_CREATURES];
-	ptr<MapData> places: (Map.New);           # player id -> its place in players
+	new Map<u32 u32> places;                  # player id -> its place in players
 	int heads[ACROSS * DOWN];                 # the first thing in each cell, or -1
 	int next[Game.MAX_THINGS];                # the next thing in the same cell, or -1
 
@@ -143,7 +143,7 @@ phi.Zone:Library
 
 	# which of the players has this id, or -1
 	[Find: u32 id: 0;]
-	[end: (Map.Get: places id NOBODY) as int]
+	[end: (places.Get: id NOBODY) as int]
 
 	# a new player at x y: its place in players, or -1 if the world is full
 	[Add: u32 id: 0; int x: 0; int y: 0;]
@@ -152,7 +152,7 @@ phi.Zone:Library
 		p.x is x;
 		p.y is y;
 		players++ p;
-		call Map.Set: places id (players.len - 1) as u32;
+		call places.Set: id (players.len - 1) as u32;
 	[end: players.len - 1]
 
 	# a step for player i, if it stays in the world; true if it moved

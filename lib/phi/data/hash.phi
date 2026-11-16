@@ -13,14 +13,11 @@
 
 phi.Hash:Library
 {
-	# a number's bits, spread: a table uses the low bits, and numbers that go up by one (or
-	# by 256) would otherwise sit in a row
+	# a number is its own hash: Map's place for a hash is its top bits after multiplying by
+	# 2^32 over the golden ratio (Fibonacci hashing), which spreads numbers that go up by one
+	# (or by 256) as well as mixing them here first did, for less work on every key
 	[OfNumber: u32 n: 0;]
-		n is n ^ (n >> 16);
-		n is n * 0x7FEB352D;
-		n is n ^ (n >> 15);
-		n is n * 0x846CA68B;
-	[end: n ^ (n >> 16)]
+	[end: n]
 
 	[OfWide: u64 n: 0;]
 	[end: (OfNumber: ((n >> 32) as u32) ^ (OfNumber: n as u32))]

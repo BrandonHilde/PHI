@@ -421,7 +421,7 @@ namespace Phi.Compiler.Tests
         [Fact]
         public void ModulesThatNeedAProgramHaveNoFalseErrorsInAnEditor()
         {
-            foreach (string file in new[] { "lib/phi/host/net.phi", "lib/phi/net/tlslink.phi", "lib/phi/drivers/vga_text.phi", "lib/phi/data/keyed.phi" })
+            foreach (string file in new[] { "lib/phi/host/net.phi", "lib/phi/net/tlslink.phi", "lib/phi/drivers/vga_text.phi", "lib/phi/data/map.phi" })
             {
                 string path = Path.GetFullPath(Path.Combine(RepoRoot(), file));
                 string uri = AsVsCodeWritesIt(path);
@@ -787,7 +787,6 @@ namespace Phi.Compiler.Tests
         [InlineData("lib/phi/host/net_windows.phi")]    // a system's own
         [InlineData("lib/phi/host/time_linux64.phi")]
         [InlineData("lib/phi/net/tlslink.phi")]         // needs the Tcp its program has
-        [InlineData("lib/phi/data/keyed.phi")]          // needs a struct that has Keyed
         [InlineData("samples/mmo/server.phi")]          // a machine of a network: it has class Machine
         [InlineData("samples/mmo/client.phi")]
         [InlineData("tests/foreign_program.phi")]       // a program for one system
@@ -808,7 +807,7 @@ namespace Phi.Compiler.Tests
         [InlineData("lib/phi/host/net_windows.phi")]
         [InlineData("lib/phi/host/net.phi")]
         [InlineData("lib/phi/net/tlslink.phi")]
-        [InlineData("lib/phi/data/keyed.phi")]
+        [InlineData("lib/phi/data/map.phi")]
         [InlineData("samples/mmo/server.phi")]
         [InlineData("samples/mmo/load_players.phi")]
         public void AMistakeInAFileIsFoundWhereverItsChecked(string file)

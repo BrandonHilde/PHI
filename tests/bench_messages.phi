@@ -64,21 +64,21 @@ phi.BenchMessages:Kernel
 	log 'snapshot: ' bytes ' bytes, checksum ' (Checksum: bytes) '\n';
 
 	# which session a packet is for, by the address and port it came from
-	ptr<MapData> sessions: (Map.New);
+	new Map<u32 u32> sessions;
 	while int c: 0; c < CLIENTS; c++;
 		clients:c is (((Random: 65536) << 16) | (Random: 65536)) as u32;    # address's last 2 bytes, port
-		call Map.Set: sessions clients:c c as u32;
+		call sessions.Set: clients:c c as u32;
 	;;
 	u32 found: 0;
 	call Bench.Start;
 	while int i: 0; i < MESSAGES; i++;
 		int pick: (Random: CLIENTS);
-		if (Map.Get: sessions clients:pick 0xFFFFFFFF) is pick
+		if (sessions.Get: clients:pick 0xFFFFFFFF) is pick
 			found++;
 		;;
 	;;
 	call Bench.Stop: 'find the session for 10000 packets';
-	log 'sessions found: ' found ' of ' MESSAGES ' (' sessions:0.count ' clients)\n';
+	log 'sessions found: ' found ' of ' MESSAGES ' (' (sessions.Count) ' clients)\n';
 
 	# signing each packet with the session's key (HMAC-SHA256)
 	while int i: 0; i < 32; i++;

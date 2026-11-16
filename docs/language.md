@@ -1827,17 +1827,14 @@ The pieces can also be used directly:
 | `memory.frames` | `Frames` | physical memory in 4 KB frames: `Alloc` →, `AllocContiguous: count` →, `Free: address`; `free_frames`, `total_frames`, `memory_top` |
 | `memory.paging` | `Paging` | identity paging with page 0 unmapped; `page_directory`, `mapped_bytes`; `MapDevice: address bytes`; `ReadLowWord: address` → (16 bits from the BIOS's first page, which stays unmapped) |
 | `memory.heap` | `Heap` | `Alloc: size` →, `Free: address`, `LargestFree` →; `used_bytes`, `used_blocks`, `heap_size`. Free blocks are kept on lists by size, so `Alloc` takes about as long with 100,000 blocks in use as with ten |
-| `memory.list` | `List` | a growable list of u32 values: `New` →, `Add: list value`, `Get: list index` →, `Set: list index value`, `Delete: list`; the list's `count` and `capacity` |
 | `memory.pool` | `Pool` | many objects of one size, handed out and taken back without searching: `New: size per_chunk` →, `Alloc: pool` → (zeroed), `Free: pool object`, `Delete: pool` (all of them at once); the pool's `used` and `capacity`. Freeing twice, or into the wrong pool, stops the program |
 | `data.map` | `Map<Key Value>` (a struct that takes types) | any key (a number, a `chr`, an enum, an `i64`, text) to any value (a number, text, a struct): `new Map<str int> counts;`, then `Set: key value`, `Get: key otherwise` → (a copy, for a struct value: to change the one the map holds use `Find` and `values`), `Find: key` → (where it is in `keys` and `values`, or -1), `Has: key` →, `Remove: key` →, `Count` →, `Clear`; `while each k in counts.keys` walks the keys in the order they were added |
 | `data.list` | `List<Item>` (a struct that takes types) | values of one type in order (numbers, text, structs): `new List<int> scores;`, then `Add: item`, `Insert: place item`, `RemoveAt: place`, `Remove: item` → (the first equal one; false if none), `Find: item` → (its place, or -1), `Has: item` →, `Count` →, `Clear`, `Reverse`; for values handed back (not structs: `scores.items:0` reaches one) `First` →, `Last` →, `Pop` → (the last, taken off); for what compares and adds `Largest` →, `Smallest` →, `Sum` → (as an Item), `Sort` (smallest first, a heap sort). The values are the array `items`: `while each x in scores.items`, `scores.items:2`. A method that doesn't suit a list's type is left out unless it's called |
 | `data.hash` | `Hash` | `Of: value` →, a u32 from a number, a `chr`, an enum, an `i64` or `u64`, or text (by what it says): the compiler picks `OfNumber`, `OfWide` or `OfText` by the value's type, so a struct that takes types can hash a key of any of them |
-| `data.map` | `Map` | (the older way) u32 keys to u32 values (an ID to an index or a pointer): `New` →, `Set: map key value`, `Get: map key otherwise` →, `Has: map key` →, `Remove: map key` →, `Next: map after` → (walks every key: `KeyAt`, `ValueAt`), `Clear`, `Delete`; the map's `count` |
-| `data.keyed` | `KeyedMap` (a struct) | objects of any struct that has `interface.Keyed` (`[Key]`, a u32), found by key: `Add: thing` → (a copy; false if the key is taken), `Find: key` → (where it is in `items`, or -1), `Has: key` →, `Remove: key` →, `Clear`; `items` holds them, so `if map.items:i is Player p` gets one back |
 | `data.queue` | `Queue<Item>` (a struct that takes types) | items of any type (numbers, text, structs), oldest out first, as many as are added: `new Queue<int> waiting;`, then `Add: item` (a copy is kept), `Take` → (the oldest, which leaves), `Front` → (the oldest, which stays), `Count` →, `Clear`. Taking from an empty one is an error: ask `Count` first. The items are the array `items`, the oldest at `items:first` |
 | `data.queue` | `Queue` | (the older way, and a driver's: a block that never grows, so `Push` says when it's full) records of one size, oldest out first: `New: size capacity` →, `Push: queue record` → (false when full), `Pop: queue into` → (false when empty), `Front: queue` → (the oldest, where it is), `Drop: queue`, `Clear`, `Delete`; the queue's `count` |
 
-`memory.pool`, `data.map`, `data.list`, `data.hash`, `data.keyed` and `data.queue` work in user programs too, on the program's
+`memory.pool`, `data.map`, `data.list`, `data.hash` and `data.queue` work in user programs too, on the program's
 heap. A server keeps its players like this:
 
 ```phi
@@ -1845,17 +1842,15 @@ use memory.pool;
 use data.map;
 
 ptr<PoolData> players: (Pool.New: sizeof Player 256);
-ptr<MapData> by_id: (Map.New);
+new Map<u32 ptr<Player>> by_id;
 
 ptr<Player> p: (Pool.Alloc: players);
 p.id is 1042;
-call Map.Set: by_id p.id p;
+call by_id.Set: p.id p;
 
-ptr<Player> found: (Map.Get: by_id 1042);       # 0 if there's no player 1042
-int pos: (Map.Next: by_id);                     # every player
-while pos >= 0
-    call Tick: (Map.ValueAt: by_id pos);
-    pos is (Map.Next: by_id pos);
+ptr<Player> found: (by_id.Get: 1042 0);         # 0 if there's no player 1042
+while each player in by_id.values               # every player
+    call Tick: player;
 ;;
 ```
 
@@ -3602,8 +3597,8 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 |---|---|
 | `drivers.vga_text` | class `Vga` (both kinds of program): `Clear`, `SetColor: fg bg`, `SetCursor: row column`, `PutChar: c`, `Print: text`, `PrintNumber: n`, scrolling, the hardware cursor |
 | `boot.info` | 32-bit kernels: `Boot.info`, a `ptr<BootInfo>` to what the loader found (memory map, boot drive, cursor) |
-| `memory.frames`, `memory.paging`, `memory.heap`, `memory.list` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
-| `memory.pool`, `data.map`, `data.list`, `data.hash`, `data.keyed`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
+| `memory.frames`, `memory.paging`, `memory.heap` | 32-bit kernels: see [Memory](#memory-32-bit-kernels) |
+| `memory.pool`, `data.map`, `data.list`, `data.hash`, `data.queue` | 32-bit kernels and programs: see [Memory](#memory-32-bit-kernels) |
 | `drivers.ata` | class `Ata` (both kinds of program): `Read: lba count buffer` →, `Write: lba count buffer` → for the IDE disk, `Present` →, `Sectors` → |
 | `drivers.virtio_blk`, `drivers.nvme` | classes `VirtioBlk` and `Nvme` (32-bit kernels): a virtio-blk disk and an NVMe one (any maker's: found by its PCI class), with `Start` →, the same `Read` and `Write` as `Ata`, and `sectors`; both poll, and their sectors go through the driver's own buffer, so the caller's can be anywhere. An NVMe disk's sectors must be 512 bytes |
 | `drivers.block` | class `Block` (32-bit kernels): whichever disk the machine has (virtio-blk, then NVMe, then IDE), as numbered sectors from the start of the disk: `Start` →, `Read: sector count buffer` →, `Write` →, `Sectors` →, `kind` (`Block.ATA`, `Block.VIRTIO` or `Block.NVME`). `phi run` and `phi test` give a machine an IDE disk, or another kind with `--disk virtio` or `--disk nvme` |

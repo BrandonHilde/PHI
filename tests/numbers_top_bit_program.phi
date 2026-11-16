@@ -1,27 +1,22 @@
 # Values with their top bit set, through the library's calls that carry raw values: a number
 # that would come out as a different number is an error (numbers_checked), so a value that's
-# only bits must never set that off. A map's values and keys, a keyed object's key,
+# only bits must never set that off. A map's values and keys, a struct kept by such a key,
 # a colour with its top bit, an IP address from 128.x up, bytes put together, the most negative
 # int written out, and a thread's value. (Run on Linux and Windows, 32 and 64 bits.)
 use data.map;
-use data.keyed;
 use gfx.draw;
 use net.sockets;
 use user.text;
 use user.threads;
 
-struct.ByBits has Keyed
+struct.ByBits
 {
 	u32 id;
-	[Key]
-	[end: id]
 }
 
-struct.BySigned has Keyed
+struct.BySigned
 {
 	int number;
-	[Key]
-	[end: number]
 }
 
 phi.TopBit:Program
@@ -31,27 +26,29 @@ phi.TopBit:Program
 	int given: 0;
 
 	# a map: keys, values and what isn't there
-	ptr<MapData> map: (Map.New);
-	call Map.Set: map TOP ALL;
-	call Map.Set: map ALL TOP;
-	call Map.Set: map 1 0xC0000000;
-	u32 got: (Map.Get: map TOP);
-	log 'map: ' got ' ' (Map.Get: map ALL) ' ' (Map.Has: map TOP) ' ' (Map.Get: map 2 ALL) '\n';
+	new Map<u32 u32> map;
+	call map.Set: TOP ALL;
+	call map.Set: ALL TOP;
+	call map.Set: 1 0xC0000000;
+	u32 got: (map.Get: TOP 0);
+	log 'map: ' got ' ' (map.Get: ALL 0) ' ' (map.Has: TOP) ' ' (map.Get: 2 ALL) '\n';
 	u32 total: 0;
-	int pos: (Map.Next: map);
-	while pos >= 0
-		total is total ^ (Map.KeyAt: map pos) ^ (Map.ValueAt: map pos);
-		pos is (Map.Next: map pos);
+	while int i: 0; i < (map.Count); i++;
+		total is total ^ map.keys:i ^ map.values:i;
 	;;
-	log 'walked: ' total ', removed: ' (Map.Remove: map TOP) ' ' (Map.Has: map TOP) '\n';
-	call Map.Delete: map;
+	log 'walked: ' total ', removed: ' (map.Remove: TOP) ' ' (map.Has: TOP) '\n';
 
-	# keyed objects, by a key with its top bit and by a negative number
-	new KeyedMap keyed;
-	new ByBits big: 0xF0000001;
-	log 'keyed: ' (keyed.Add: big) ' ' ((keyed.Find: 0xF0000001) >= 0) ' ' (keyed.Remove: 0xF0000001) '\n';
-	new BySigned negative: -5;
-	log 'by a negative key: ' (keyed.Add: negative) ' ' ((keyed.Find: (-5) as u32) >= 0) ' ' (keyed.Remove: (-5) as u32) '\n';
+	# structs kept by a key with its top bit, and by a negative number
+	new Map<u32 ByBits> by_bits;
+	ByBits big;
+	big.id is 0xF0000001;
+	call by_bits.Set: big.id big;
+	log 'keyed: ' (by_bits.Has: 0xF0000001) ' ' ((by_bits.Find: 0xF0000001) >= 0) ' ' (by_bits.Remove: 0xF0000001) '\n';
+	new Map<int BySigned> by_signed;
+	BySigned negative;
+	negative.number is -5;
+	call by_signed.Set: negative.number negative;
+	log 'by a negative key: ' (by_signed.Has: -5) ' ' ((by_signed.Find: -5) >= 0) ' ' (by_signed.Remove: -5) '\n';
 
 	# colours with their top bit
 	u32 pixels[64];

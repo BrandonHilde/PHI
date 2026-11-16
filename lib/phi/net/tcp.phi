@@ -102,7 +102,7 @@ phi.Tcp:Kernel
 
 	u32 table[MAX_CONNECTIONS];           # each connection's TcpConnection, or 0 for a free number
 	TcpListener listeners[MAX_LISTENERS];
-	ptr<MapData> by_key: 0;               # Key of a connection's addresses -> its number
+	new Map<u32 u32> by_key;              # Key of a connection's addresses -> its number
 	int timeout: 10000;                   # how long Read waits for data, in ms
 	u32 next_port: 0;
 	int open_count: 0;
@@ -833,9 +833,6 @@ phi.Tcp:Kernel
 	# a new connection's number, its memory zeroed; -1 if every number is in use or the
 	# heap is full
 	[Open: u32 remote_ip: 0; u32 remote_port: 0; u32 local_port: 0; int listener: -1;]
-		if by_key is 0
-			by_key is (Map.New);
-		;;
 		int handle: -1;
 		while int h: 0; h < MAX_CONNECTIONS and handle < 0; h++;
 			if table:h is 0
@@ -851,7 +848,7 @@ phi.Tcp:Kernel
 		c.listener is listener;
 		c.mss is DEFAULT_MSS;
 		table:handle is c;
-		call Map.Set: by_key (Key: remote_ip remote_port local_port) handle as u32;
+		call by_key.Set: (Key: remote_ip remote_port local_port) handle as u32;
 		open_count++;
 	[end: handle]
 
@@ -860,8 +857,8 @@ phi.Tcp:Kernel
 		ptr<TcpConnection> c: table:handle;
 		if c is 0 return;
 		u32 key: (Key: c.remote_ip c.remote_port c.local_port);
-		if (Map.Get: by_key key 0xFFFFFFFF) is handle
-			call Map.Remove: by_key key;
+		if (by_key.Get: key 0xFFFFFFFF) is handle
+			call by_key.Remove: key;
 		;;
 		table:handle is 0;
 		free c;
@@ -871,8 +868,8 @@ phi.Tcp:Kernel
 	# the connection a segment belongs to, or -1: through the map, or (when two
 	# connections' keys are the same) by looking at every one
 	[Find: u32 remote_ip: 0; u32 remote_port: 0; u32 local_port: 0;]
-		if by_key is 0 return -1;
-		int handle: (Map.Get: by_key (Key: remote_ip remote_port local_port) 0xFFFFFFFF) as int;
+		if (by_key.Count) is 0 return -1;
+		int handle: (by_key.Get: (Key: remote_ip remote_port local_port) 0xFFFFFFFF) as int;
 		if handle >= 0 and (Matches: handle remote_ip remote_port local_port) return handle;
 		while int h: 0; h < MAX_CONNECTIONS; h++;
 			if (Matches: h remote_ip remote_port local_port) return h;

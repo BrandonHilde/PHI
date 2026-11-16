@@ -146,15 +146,15 @@ Uncomment the two lines near the top of the example to try it.
 
 ## Growable lists
 
-`use memory.list;` adds a list of 32-bit values that grows as you add to it:
+`use data.list;` adds a list of values of any one type, that grows as you add to it and
+is freed with the variable, as an object is:
 
 ```phi
-ptr<ListData> numbers: 0;
-call numbers is List.New;
-call List.Add: numbers 42;
-u32 value: 0;
-call value is List.Get: numbers 0;
-call List.Delete: numbers;
+new List<int> numbers;
+call numbers.Add: 42;
+call numbers.Add: 7;
+int first: numbers.items:0;
+log (numbers.Count) ' ' (numbers.Largest) '\n';     # 2 42
 ```
 
 ## Try this

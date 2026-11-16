@@ -34,7 +34,7 @@ phi.World:Program
 	const int CHATTY: 8;                  # with more players than this, joins and saves aren't logged one by one
 	const u32 NOBODY: 0xFFFFFFFF;
 
-	ptr<MapData> saved: (Map.New);        # player id -> where they were: x << 16 | y
+	new Map<u32 u32> saved;               # player id -> where they were: x << 16 | y
 	u8 message[Game.STATE_SIZE];
 	UdpDatagram d;
 	SavedPlayer records[Game.MAX_PLAYERS];
@@ -57,7 +57,7 @@ phi.World:Program
 
 	# where everyone was; then the log is written again with just that, to keep it small
 	call SaveLog.Read: saves sizeof SavedPlayer addr Restore;
-	log prefix 'world started: ' saved:0.count ' saved players\n';
+	log prefix 'world started: ' (saved.Count) ' saved players\n';
 	call Compact;
 
 	int ticks: 0;
@@ -127,7 +127,7 @@ phi.World:Program
 		if i < 0
 			int x: Game.START_X;
 			int y: 20 + id % 4 * 40;
-			u32 where: (Map.Get: saved id NOBODY);
+			u32 where: (saved.Get: id NOBODY);
 			if where is not NOBODY
 				x is where >> 16;
 				y is where & 0xFFFF;
@@ -198,21 +198,19 @@ phi.World:Program
 	# a record from the log: the last one for each player is where they are
 	[Restore: ptr<u8> bytes: 0;]
 		ptr<SavedPlayer> r: bytes as ptr<SavedPlayer>;
-		call Map.Set: saved r.id ((r.x << 16) | r.y) as u32;
+		call saved.Set: r.id ((r.x << 16) | r.y) as u32;
 	[end]
 
 	# the log again, with one record for each player
 	[Compact]
 		call SaveLog.Clear: saves;
 		int n: 0;
-		int pos: (Map.Next: saved);
-		while pos >= 0 and n < Game.MAX_PLAYERS
-			u32 where: (Map.ValueAt: saved pos);
-			records:n.id is (Map.KeyAt: saved pos);
+		while int pos: 0; pos < (saved.Count) and n < Game.MAX_PLAYERS; pos++;
+			u32 where: saved.values:pos;
+			records:n.id is saved.keys:pos;
 			records:n.x is where >> 16;
 			records:n.y is where & 0xFFFF;
 			n++;
-			pos is (Map.Next: saved pos);
 		;;
 		call SaveLog.AddMany: saves addr records sizeof SavedPlayer n;
 	[end]
