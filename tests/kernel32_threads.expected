@@ -1,4 +1,5 @@
 one core: sums 1998000 1999000 2000000 2001000, total 7998000, blocks 800, heap back: 1
 sharing: 1
 shared: total 7998000, blocks 800, heap back: 1
+sized: 1, too small: -1
 on several cores: 1, faster: 1

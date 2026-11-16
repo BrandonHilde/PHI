@@ -45,7 +45,8 @@ aren't frozen.
 
 **For after the freeze** (written down as they come up, not acted on; one that blocks real
 work three times is a finding to bring to the user):
-- a program stating its stack's size (needs something new to write): to discuss;
+- a program stating its stack's size: done 2026-11-15, as C# and Rust do it, with nothing
+  new to write (below, "Stack sizes");
 - vector types (`f32x4` and the like, from `PerformanceStrategy.md`): to discuss;
 - not wanted, the user's choice on 2026-11-15, since PHI, PHI-OS and the code libraries
   were all written without needing them: a method value whose method takes an array; a
@@ -3882,6 +3883,100 @@ or a struct's field. Asked for after `Map`'s table growth had to add its zeros o
 - Tests `append_arrays_program` (numbers, structs, objects, text, atmost, a struct's field,
   from itself, in a class's code and in a method; 32 and 64 bits, through the intermediate
   form and not), `append_arrays_errors`.
+
+**`vec<T>`: the design (2026-11-15, the user's idea; parts to decide).** Several numbers
+worked on by one instruction, without tying code to a width. The user's idea, after the
+three ways other languages do it (types of a fixed width, the optimiser alone, intrinsics):
+the optimiser vectorises simple loops by itself, and one type, `vec<T>`, says it where it
+can't, with `T` the element and the width the build's. C#'s `Vector<T>` (and Java's Vector
+API, Google's Highway, ISPC) do the same; Zig and Rust make the code say the width. It adds
+one word, in the `<...>` form `ptr<T>` and `Map<Key Value>` already have.
+
+*What it is.*
+- `vec<T>` for `T` a whole number (`i8` to `u64`, `int`) or `f32`/`f64`: as many of them as
+  a vector register holds, 128 bits on x86 today (16 `u8`s, 8 `i16`s, 4 `f32`s, 2 `f64`s).
+  A value, copied whole, 16 bytes, on a multiple of 16 by the one layout rule; a variable,
+  field, array element, parameter or result like any number.
+- It's a short array of lanes, so it reads as one: `v:i` is lane `i` (`v:2 is 5.0;`),
+  `v.len` is how many there are (and `vec<f32>.len` without a value), `while each x in v`
+  goes through them. Code steps by `.len`, never by a number, so a wider build runs it
+  unchanged.
+- Made from one value, every lane that (`vec<f32> s: 2.0;`), from as many as it has
+  (`vec<f32> v: 1.0 2.0 3.0 4.0;`, which is an error where it has another number of lanes),
+  or zeros.
+
+*What it does.*
+- `+ - *` lane by lane, and `/` for `f32` and `f64` (whole numbers: the CPU has no divide
+  for them, and it's an error that says so); `& | ^ ~` on whole numbers; `<< >>` by one
+  number for every lane; `-v`. A number with a vector is that number in every lane:
+  `v * 2.0`. Whole numbers wrap, as PHI's do.
+- `a is b` is true when every lane is the same, as two arrays compare.
+- Methods, built in: lane by lane `Min: other`, `Max: other`, `Abs`, `Sqrt` (floats),
+  `AddSat: other` and `SubSat: other` (8- and 16-bit: stopping at the ends, as pixels need),
+  `Average: other` (u8, u16); across the lanes `Sum`, `Smallest`, `Largest`.
+- Comparing lane by lane gives a mask, a `vec` of the same kind with every bit of a lane set
+  where it holds: `Less: other`, `Equal: other`, `Greater: other`. A mask picks
+  (`mask.Pick: then otherwise`), and asks `Any` and `All` (blns).
+- Between kinds: `v as vec<f32>` for the same number of lanes (`vec<i32>` and `vec<f32>`);
+  `Widen` gives the low half's lanes twice as wide and `WidenHigh` the high half's (u8 to
+  u16, for pixel math); `Narrow: other` packs two back, stopping at the ends.
+- Memory: the view PHI has, `(p as vec<u8>[n]):i`, the `i`th of `n` vectors at `p`, checked;
+  and arrays of vectors. A loop over an array does whole vectors, then what's left one at a
+  time.
+- Not in the first: moving lanes about (a shuffle depends on the width); 256-bit vectors
+  (AVX isn't on every x86-64 CPU: a build option later, as `--stack` is).
+
+*Where.* 64-bit code first, through the intermediate form, which keeps f64s in xmm
+registers already; 32-bit code and kernels after, as the optimiser went. Then the optimiser
+vectorising simple loops by itself, with `PHI_IR_TRACE` saying which it did and why not the
+others, built on the same operations.
+
+*An example: brightening pixels, the case kept in assembly today (BlendRect).*
+
+```phi
+[Brighten: ptr<u8> pixels: 0; u32 bytes: 0; u8 amount: 0;]
+    vec<u8> add: amount;
+    u32 whole: bytes / add.len;
+    while u32 i: 0; i < whole; i++;
+        vec<u8> block: (pixels as vec<u8>[whole]):i;
+        (pixels as vec<u8>[whole]):i is (block.AddSat: add);
+    ;;
+    while u32 i: whole * add.len; i < bytes; i++;      # what's left, a byte at a time
+        int sum: pixels:i + amount;
+        if sum > 255
+            sum is 255;
+        ;;
+        pixels:i is sum as u8;
+    ;;
+[end]
+```
+
+*To decide.*
+1. Comparisons as methods giving masks (`a.Less: b`), keeping `<` for bln everywhere, or
+   `<` on vectors giving a mask.
+2. The CPU it needs: SSE2, which every x86-64 has, doing 32-bit multiply, whole-number min
+   and max and `Pick` in several instructions; or x86-64-v2 (SSE4.1 and 4.2, every CPU from
+   2009 on, which Windows 11 and RHEL 9 need), one instruction each.
+3. Where the optimiser doesn't take a method that uses `vec` (its log, its text): an error
+   until the generator has vectors too, or the generator gets them now (both compilers,
+   more work, 32-bit too).
+4. The method names above, and `.len` for the lanes.
+
+**Stack sizes (2026-11-15, the user's choice).** As other languages do it: a thread's size
+where it's made (C#'s `new Thread(work, size)`, Rust's `Builder::stack_size`), and a
+program's first stack by the build (C, Rust, Zig: the linker or the build, never the
+source). With names, the user's idea: `lang.stack`'s `enum.StackSize`, `SMALL` 16 KB,
+`NORMAL` 64 KB, `LARGE` 1 MB, `HUGE` 8 MB, and another size said on purpose with `as`.
+- `Threads.Start` and `StartWith` take it last, in programs (`NORMAL` unless they say, their
+  64 KB before) and kernels (`SMALL`, their 16 KB before); less than 4 KB doesn't start. A
+  program thread's stack is that much and 24 KB more below it for the error running out
+  becomes, which it catches. Tests `threads_stack_program` (400 KB deep: out of room in
+  `NORMAL`, finished in `LARGE` and in 3 MB) and a line of `kernel32_threads`.
+- `phi build --stack normal|large|huge|bytes`: what a Windows program reserves (1 MB unless
+  it says), in its `.exe`'s header. Linux gives a program's first stack the system's (`ulimit
+  -s`), as for C, and says so; `small` is refused for a first stack (Windows commits 64 KB).
+- PHI OS gives a program 64 KB in its kernel (in four places) out of a 4 MB space; left as
+  it is (the user: PHI OS "will change lots before its release"), and `--stack` says so.
 
 **No two results from a method (2026-11-15, the user's choice).** Asked for after the
 freeze, and tried against what PHI has: "a value, or it failed" is `throw` and

@@ -1,0 +1,40 @@
+# A thread's stack is the size it's started with (lang.stack's StackSize): a method that
+# recurses about 400 KB deep runs out of NORMAL's 64 KB, which is an error the thread
+# catches, and finishes in LARGE's 1 MB; a size of its own is said with as, and one of less
+# than 4 KB can't start.
+use user.threads;
+
+phi.ThreadsStackProgram:Program
+{
+	int results[8];
+
+	int a: (Threads.Start: addr Dive 1 StackSize.NORMAL);
+	call Threads.Wait: a;
+	int b: (Threads.Start: addr Dive 2 StackSize.LARGE);
+	call Threads.Wait: b;
+	int c: (Threads.Start: addr Dive 3 (3145728 as StackSize));
+	call Threads.Wait: c;
+	int d: (Threads.Start: addr Dive 4);
+	call Threads.Wait: d;
+	int tiny: (Threads.Start: addr Dive 5 (100 as StackSize));
+	log 'normal: ' results:1 ', large: ' results:2 ', 3 MB: ' results:3 ', default: ' results:4 ', tiny: ' tiny '\n';
+	exit 0;
+
+	# 2,000 calls deep, each with 200 bytes of its own: 1 if it got to the bottom, 0 if the
+	# stack ran out first (caught here)
+	[Dive: int slot: 0;]
+		results:slot is 0;
+		if call Down: 2000 throws err
+			results:slot is 0;
+			return;
+		;;
+		results:slot is 1;
+	[end]
+
+	[Down: int depth: 0;]
+		u8 pad[200];
+		pad:0 is depth as u8;
+		if depth is 0 return 0;
+		int deeper: (Down: depth - 1);
+	[end: deeper + pad:0 - pad:0]
+}

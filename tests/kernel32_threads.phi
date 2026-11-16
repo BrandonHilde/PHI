@@ -34,6 +34,11 @@ phi.ThreadsTest:Kernel
 	call Four: addr Part;
 	log 'shared: total ' total ', blocks ' blocks ', heap back: ' (Heap.used_blocks is used_before) '\n';
 
+	# a stack of the size it's started with (16 KB unless it says), and one too small to start
+	int sized: (Threads.Start: addr Busy 0 StackSize.NORMAL);
+	call Threads.Wait: sized;
+	log 'sized: ' (sized > 0) ', too small: ' (Threads.Start: addr Busy 0 (100 as StackSize)) '\n';
+
 	int start: (OS.GetTicks);
 	call Threads.Wait: (Threads.Start: addr Busy 0);
 	int one: (OS.GetTicks) - start;

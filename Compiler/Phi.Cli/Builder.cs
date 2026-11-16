@@ -67,9 +67,10 @@ namespace Phi.Cli
         /// </param>
         /// <param name="host">The system a program is for: PHI OS, or Linux or Windows (an ordinary executable).</param>
         public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
-                                        bool listing = false, Host host = Host.PhiOS, bool debug = false)
+                                        bool listing = false, Host host = Host.PhiOS, bool debug = false, int stack = 0)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
+            Phi.Compiler.CodeGen.X86Generator.MainStack = stack;
             var result = new BuildResult { ImagePath = Path.Combine(outDir, name + ".img"), Listing = listing };
 
             if (!File.Exists(phiFile))

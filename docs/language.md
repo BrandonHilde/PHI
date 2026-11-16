@@ -2155,10 +2155,21 @@ call Threads.Wait: t;
 
 int w: (Threads.StartWith: addr Fill addr job);     # Fill gets a pointer to job, in place of a number
 call Threads.Wait: w;
+
+int deep: (Threads.Start: addr Search 3 StackSize.LARGE);   # with a stack of 1 MB
 ```
 
-- On PHI OS a thread is a task of the program, in its memory, on a stack of its own (about
-  92 KB, from the heap); once programs share the cores, a program's threads run at once on
+- **A thread's stack** is the size it's started with: `lang.stack`'s `StackSize` as the last
+  value, `SMALL` (16 KB), `NORMAL` (64 KB, a program thread's unless it says), `LARGE`
+  (1 MB) or `HUGE` (8 MB); another size is said on purpose, `(3145728 as StackSize)`. One of
+  less than 4 KB can't start (-1). In a program, a thread that runs out of its stack stops
+  with `ErrorKind.STACK`, which it can catch, and 24 KB more is taken below what it uses for
+  that. A kernel's threads are `SMALL` unless they say, with no guard. A program's own first
+  stack is the system's: a Linux program's is `ulimit -s` (usually 8 MB), a Windows
+  program's what it reserves (1 MB, or `phi build --stack large|huge|bytes`), a PHI OS
+  program's 64 KB.
+- On PHI OS a thread is a task of the program, in its memory, on a stack of its own (from
+  the heap); once programs share the cores, a program's threads run at once on
   several. On Linux it's a thread made with `clone`, and on Windows with `CreateThread`.
 - A thread finishes when its method returns. `exit` in any thread ends the whole program,
   and so does an error nothing catches (or a fault) in any of them.
@@ -3640,6 +3651,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `fs.fat16`, `fs.savelog`, `fs.stream`, `fs.stream_calls` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `user.stream`, `fs.readahead`, `net.web`, `net.webstream` | a program's streams, a stream read ahead on a thread, web requests, and streams on URLs (a kernel's too): see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
+| `lang.stack` | `StackSize` (an enum: `SMALL`, `NORMAL`, `LARGE`, `HUGE`) | how big a thread's stack is (`Threads.Start: work value StackSize.LARGE`), and the names `phi build --stack` takes |
 | `data.bytes` | class `Bytes` (any kernel or program): `U16: place` →, `U32: place` → (a little-endian number from bytes at any address, as a file or disk has it; for a format's field where a struct's layout wouldn't put it) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |

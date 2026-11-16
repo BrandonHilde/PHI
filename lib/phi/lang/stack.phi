@@ -1,0 +1,17 @@
+# How big a stack is: a thread's (Threads.Start's and StartWith's last value), and a
+# program's main one (phi build --stack). A name for each size a program usually wants, so
+# a reader sees what was meant; another size is said on purpose, (3145728 as StackSize).
+#
+#   use user.threads;
+#   int deep: (Threads.Start: addr Search 3 StackSize.LARGE);
+#
+# A thread that runs out of its stack stops with an error (ErrorKind.STACK), as the
+# program's first thread does: catch it, or give the thread more.
+
+enum.StackSize
+{
+	SMALL: 16384            # 16 KB: a kernel's threads, unless they say otherwise
+	NORMAL: 65536           # 64 KB: a program's threads, unless they say otherwise
+	LARGE: 1048576          # 1 MB: a Windows program's main stack, and C#'s threads
+	HUGE: 8388608           # 8 MB: a Linux program's main stack
+}

@@ -120,6 +120,7 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi run file.phi --memory 512` | give the machine more memory than QEMU's 128 MB (up to 1024); the kernel's heap is about a quarter of it. `phi test` takes it too |
 | `phi check file.phi` | report errors without building |
 | `phi build file.phi --target linux` | build a program (`phi.Name:Program`) as an ordinary Linux executable instead (`--target windows`: a `.exe`); see [Programs on Linux and Windows](language.md#programs-on-linux-and-windows) |
+| `phi build file.phi --target windows --stack large` | a Windows program reserving 1 MB for its main stack (`normal`, `large`, `huge`, or bytes; 1 MB unless it says); Linux uses the system's |
 | `phi run file.phi --target linux -- args` | build it and run it here, with `args` as its command line (a Linux program runs under WSL on Windows) |
 | `phi test` | boot every test in `tests/` without a window and check what each one prints; the tests that can also run as Linux and Windows programs do |
 | `phi test --target linux` | run only the tests that can, as Linux programs, without QEMU (much faster); `--target windows` likewise |

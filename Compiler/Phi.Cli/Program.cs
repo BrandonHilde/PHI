@@ -19,6 +19,9 @@ const string Usage = """
                                            to the file or in -o, for each system it builds for (or only
                                            --target's), which another program includes with use NAME;
                                            without this file or any of its source
+                                           --stack small|normal|large|huge (or bytes): the main stack a
+                                           Windows program reserves (1 MB unless it says); Linux uses
+                                           the system's, and a thread's is Threads.Start's StackSize
       phi run  <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
                                            build, then boot it in QEMU (serial output prints here);
                                            --target windows or windows64 with --debug (on build too)
@@ -200,6 +203,35 @@ static int Execute(string[] args)
                ?? throw new ArgumentException("--target takes the system: " + string.Join(", ", Phi.Compiler.Hosts.Names));
     }
 
+    /// <summary>
+    /// --stack: the main stack's size, by one of lang.stack's StackSize names (small, normal,
+    /// large, huge) or in bytes. A Windows program reserves it (rounded up to 64 KB, the most
+    /// Windows hands out at once); Linux gives a program's main stack the system's (ulimit -s),
+    /// as for a C program, and PHI OS its own 64 KB, which says so. 0 when it isn't given.
+    /// </summary>
+    int StackOption(Phi.Compiler.Host host)
+    {
+        string? given = Option("--stack");
+        if (given == null) return 0;
+        long bytes = given.ToLowerInvariant() switch
+        {
+            "small" => 16384,
+            "normal" => 65536,
+            "large" => 1048576,
+            "huge" => 8388608,
+            _ => long.TryParse(given, out long n) ? n : -1,
+        };
+        if (bytes == 16384)
+            throw new ArgumentException("--stack small is 16 KB, less than the 64 KB a Windows program starts with: a main stack is normal (64 KB) or more; small is for threads");
+        if (bytes < 65536 || bytes > 1L << 30)
+            throw new ArgumentException("--stack takes normal, large or huge (lang.stack's StackSize), or bytes from 65536 to 1073741824");
+        if (!Phi.Compiler.Hosts.IsWindows(host))
+            Console.Error.WriteLine(host == Phi.Compiler.Host.PhiOS
+                ? "warning: --stack is for a Windows program: a program on PHI OS has the 64 KB its kernel gives it (for more, start the work as a thread with a bigger StackSize)"
+                : "warning: --stack is for a Windows program: Linux gives a program's main stack the system's (ulimit -s, usually 8 MB), as for a C program");
+        return (int)((bytes + 0xFFFF) / 0x10000 * 0x10000);
+    }
+
     void MemoryOption()
     {
         string? memory = Option("--memory");
@@ -251,6 +283,7 @@ static int Execute(string[] args)
                 bool asLibrary = Flag("--library");
                 bool targetGiven = args.Contains("--target");
                 Phi.Compiler.Host host = TargetOption();
+                int stack = StackOption(host);
                 MemoryOption();
                 CoresOption();
                 NicOption();
@@ -279,7 +312,7 @@ static int Execute(string[] args)
                 if (host != Phi.Compiler.Host.PhiOS)
                 {
                     if (debug && !Phi.Compiler.Hosts.IsWindows(host)) Console.Error.WriteLine("warning: --debug makes a .pdb, for Windows; a Linux program has no debug information yet");
-                    BuildResult hosted = Builder.Build(file, outDir, host: host, debug: debug);
+                    BuildResult hosted = Builder.Build(file, outDir, host: host, debug: debug, stack: stack);
                     foreach (string w in hosted.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
                     foreach (string e in hosted.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
                     if (!hosted.Success) return 1;

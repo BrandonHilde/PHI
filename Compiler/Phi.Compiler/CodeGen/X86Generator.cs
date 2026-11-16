@@ -1171,7 +1171,7 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("    dd 0");
             output.AppendLine("    dw 3                                 ; a console program");
             output.AppendLine("    dw 0x8000                            ; aware of terminal services");
-            output.AppendLine("    dd 0x100000, 0x10000                 ; stack: 1 MB reserved, 64 KB committed");
+            output.AppendLine($"    dd 0x{MainStack:X}, 0x10000                 ; stack: reserved (phi build --stack), 64 KB committed");
             output.AppendLine("    dd 0x100000, 0x1000                  ; the process heap (not used)");
             output.AppendLine("    dd 0, 16                             ; 16 data directories:");
             output.AppendLine("    dd 0, 0");
@@ -1257,7 +1257,7 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("    dd 0");
             output.AppendLine("    dw 3                                 ; a console program");
             output.AppendLine("    dw 0x8000                            ; aware of terminal services");
-            output.AppendLine("    dq 0x100000, 0x10000                 ; stack: 1 MB reserved, 64 KB committed");
+            output.AppendLine($"    dq 0x{MainStack:X}, 0x10000                 ; stack: reserved (phi build --stack), 64 KB committed");
             output.AppendLine("    dq 0x100000, 0x1000                  ; the process heap (not used)");
             output.AppendLine("    dd 0, 16                             ; 16 data directories:");
             output.AppendLine("    dd 0, 0");
@@ -8745,6 +8745,18 @@ namespace Phi.Compiler.CodeGen
         }
 
         bool usesArrayGrow;
+
+        /// <summary>
+        /// The main stack a Windows program reserves, in bytes (phi build --stack: lang.stack's
+        /// StackSize names, or a number): 1 MB unless it says, as a Windows program's usually is.
+        /// Set for the build on this thread, as PhiType.AddressSize is.
+        /// </summary>
+        [ThreadStatic] static int mainStack;
+        public static int MainStack
+        {
+            get => mainStack == 0 ? 0x100000 : mainStack;
+            set => mainStack = value;
+        }
 
         /// <summary>
         /// eax = an array that grows (where its elements are, how many, its room), edx = how many
