@@ -435,6 +435,10 @@ namespace Phi.Compiler.CodeGen
                     case ArrayAssignStmt copy when WholeArray(copy.Target.Type) && Place(copy.Target):
                         if (!Place(copy.Source)) Not(copy.Source, A(copy.Source.Type));
                         return;
+                    case AppendArrayStmt bytes when (ValueArray(bytes.Target.Type) || StructArray(bytes.Target.Type)) && Place(bytes.Target):
+                        if (!Place(bytes.Source)) Not(bytes.Source, A(bytes.Source.Type));
+                        Expression(bytes.Count);
+                        return;
                     case TakesStmt t when t.Struct != null && ObjectStruct(t.Struct):
                         if (!Place(t.Source)) Not(t.Source, A(t.Source.Type));
                         if (!Place(t.Target)) Not(t.Target, A(t.Target.Type));
@@ -3129,6 +3133,10 @@ namespace Phi.Compiler.CodeGen
                     if (shrink.Array.Type.IsObjectArray) EmitFreeElements(shrink.Array, -1);   // the dropped ones
                     break;
                 }
+
+                case AppendArrayStmt bytes:
+                    EmitAppendArray(bytes);
+                    break;
 
                 case ArrayAssignStmt copy:
                     EmitArrayAssign(copy);
@@ -8385,6 +8393,73 @@ namespace Phi.Compiler.CodeGen
             }
             else if (array.Type.Filled) EmitFilledCount(array);
             else Emit($"mov eax, {array.Type.Length}");
+        }
+
+        /// <summary>
+        /// list++ other; for elements that are their bytes: room made once for what list has and
+        /// Count more (an atmost list: an index error unless they fit), then Count of other's
+        /// elements copied to list's end in one go, and list has that many more. The addresses
+        /// are taken after the room is made, which may move list's elements (list++ list; too).
+        /// </summary>
+        void EmitAppendArray(AppendArrayStmt add)
+        {
+            PhiType t = add.Target.Type;
+            int size = t.Element.ElementSize;
+            bool atmost = t.Filled && !t.Open;
+            EmitExpr(add.Count);
+            Emit("push eax                ; how many are added");
+            if (atmost)
+            {
+                string fits = NewLabel("fits");
+                EmitPlaceAddress(add.Target);
+                Emit($"mov ecx, [eax + {t.CountOffset}]");
+                Emit("add ecx, [esp]");
+                Emit($"cmp ecx, {t.Length}");
+                Emit($"jbe {fits}");
+                Need("phi_index_error");
+                EmitIndexError(add);
+                Label(fits);
+            }
+            else
+            {
+                ObjectLine(add);
+                EmitViewAddress(add.Target);
+                Emit($"mov edx, [eax + {ViewCount}]");
+                Emit("add edx, [esp]           ; room for what it has and them");
+                Emit($"mov ecx, {size}");
+                EmitArrayGrowCall();
+            }
+
+            // the place after the elements it has, then the source's elements copied there
+            EmitArrayCount(add.Target);
+            Emit("push eax                ; how many it has");
+            EmitPlaceAddress(add.Source);
+            Emit("push eax");
+            EmitPlaceAddress(add.Target);
+            Emit($"mov {R("edi")}, {R("eax")}");
+            Emit("pop esi");
+            Emit("pop ecx");
+            if (size != 1) Emit($"imul ecx, ecx, {size}");
+            Emit($"add {R("edi")}, {R("ecx")}");
+            Emit("mov ecx, [esp]");
+            if (size != 1) Emit($"imul ecx, ecx, {size}");
+            Emit("cld");
+            Emit("rep movsb");
+
+            // and it has that many more
+            if (atmost)
+            {
+                EmitPlaceAddress(add.Target);
+                Emit("mov ecx, [esp]");
+                Emit($"add [eax + {t.CountOffset}], ecx");
+            }
+            else
+            {
+                EmitViewAddress(add.Target);
+                Emit("mov ecx, [esp]");
+                Emit($"add [eax + {ViewCount}], ecx");
+            }
+            Emit($"add esp, {Slot}");
         }
 
         /// <summary>b is a: every element copied (objects and strs too); an atmost b takes a's count.</summary>

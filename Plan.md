@@ -3867,8 +3867,13 @@ or a struct's field. Asked for after `Map`'s table growth had to add its zeros o
   variables it needs have `#` in their names, which nothing can write, declared and given
   their places while binding (`DeclareHidden`). Only a variable, field or element is taken
   as a whole array; anything else is one element.
-- It's as quick as that loop: one element at a time. Copying a plain array's bytes in one go
-  is for the optimiser, later, with what it means unchanged.
+- Elements that are their bytes (numbers, pointers, method values, structs) are added in one
+  copy (`AppendArrayStmt`, `X86Generator.EmitAppendArray`): room made once (an `atmost`
+  array: an index error unless all of it fits), the addresses taken after that (the elements
+  may move), one `rep movsb` to the end, the count added. Objects and text keep the loop, a
+  copy of each. 400,000 numbers added 200 times: 0.14 s to 0.02, in 32 and 64 bits.
+  `Map`'s table now grows by doubling its zeros onto their own end (`places++ places;`):
+  100,000 sets 55.9M instructions to 46.3M.
 - `++` on an array with a size says so now ("'fixed' always has 3 elements, so ++ can't add
   to it: declare it fixed[atmost 3] ... or fixed[] ..."), not "can't assign a whole array".
 - Tests `append_arrays_program` (numbers, structs, objects, text, atmost, a struct's field,

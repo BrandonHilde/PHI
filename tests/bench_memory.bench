@@ -7,5 +7,5 @@ heap alloc 100000 nodes              44400027
 heap free 100000 nodes               20700013
 pool alloc 100000 nodes              10148457
 pool free 100000 nodes               4900029
-map set 100000 keys                  55900406
+map set 100000 keys                  46276418
 map get 100000 keys                  10427594

@@ -45,6 +45,7 @@ namespace Phi.Compiler.Syntax
                     .Concat((w.Else ?? new()).SelectMany(Nodes)),
                 SetLengthStmt l => Nodes(l.Array).Concat(Nodes(l.Value)),
                 ArrayAssignStmt a => Nodes(a.Target).Concat(Nodes(a.Source)),
+                AppendArrayStmt a => Nodes(a.Target).Concat(Nodes(a.Source)).Concat(Nodes(a.Count)),
                 ReturnStmt r => r.Value != null ? Nodes(r.Value) : Enumerable.Empty<Node>(),
                 _ => Enumerable.Empty<Node>(),
             };

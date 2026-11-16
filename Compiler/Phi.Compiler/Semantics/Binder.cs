@@ -3229,6 +3229,11 @@ namespace Phi.Compiler.Semantics
 
                 case AssignStmt assign:
                     return BindAssign(assign, scope);
+
+                case AppendArrayStmt bytes:
+                    // (made by AppendWholeArrays, its arrays bound already: its count is its own variable)
+                    BindExpr(bytes.Count, scope);
+                    return bytes;
             }
 
             throw new InvalidOperationException($"unexpected statement {stmt.GetType().Name}");
@@ -3968,6 +3973,12 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
                 AddSingles();
+                if (BytesAppend(target, value))
+                {
+                    // its elements are their bytes: one copy, after making room once
+                    block.Then.Add(new AppendArrayStmt { Target = target, Source = value, Count = Name(count), Span = at });
+                    continue;
+                }
                 string k = $"each#{at.Start}#{count}";
                 var loop = new WhileStmt
                 {
@@ -3984,6 +3995,19 @@ namespace Phi.Compiler.Semantics
             foreach (Stmt hidden in block.Then.OfType<VarDecl>().Concat(block.Then.OfType<WhileStmt>().Select(w => (Stmt)w.Init!)))
                 DeclareHidden((VarDecl)hidden, scope);
             return BindStatement(block, scope, statementAtClassLevel);
+        }
+
+        /// <summary>
+        /// Whether list++ other; can copy other's elements as their bytes: numbers, pointers,
+        /// method values and structs (which ++ copies byte for byte anyway), into an array that
+        /// grows or an atmost one. Objects and text are added one at a time, each a copy of its own.
+        /// </summary>
+        static bool BytesAppend(Expr target, Expr source)
+        {
+            PhiType element = target.Type.Element;
+            bool bytes = element.IsNumeric || element.IsWide || element.IsFloat || element.IsMethod || element.IsStruct && !element.IsObject;
+            return bytes && source.Type.Element == element && !target.Type.TextTable
+                   && (IsGrowingArray(target) || target.Type.Filled && !target.Type.Open);
         }
 
         /// <summary>

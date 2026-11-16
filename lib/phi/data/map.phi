@@ -162,10 +162,11 @@ struct.Map<Key Value>
 		else
 			shift--;
 		;;
+		# 16 zeros, then doubled (copied onto their own end in one go) up to the size, a power of 2
 		places.len is 0;
-		# (16 at a time: the size is always a multiple of 16, and one ++ of several makes room once)
+		places++ 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0;
 		while places.len < size
-			places++ 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0;
+			places++ places;
 		;;
 		while int i: 0; i < keys.len; i++;
 			call Index: i;

@@ -47,7 +47,8 @@ phi.AppendArraysProgram:Program
 		corners:1.y is 2;
 		Point points[];
 		points++ corners corners;
-		log 'points: ' points.len ' ' points:2.x ' ' points:3.y '\n';
+		points++ points;
+		log 'points: ' points.len ' ' points:2.x ' ' points:3.y ' ' points:6.x ' ' points:7.y '\n';
 
 		new Box boxes[];
 		boxes++;
@@ -82,6 +83,9 @@ phi.AppendArraysProgram:Program
 		int two: 1 2;
 		room++ two two;
 		log 'atmost: ' room.len ' ' room:3 '\n';
+		int exact[atmost 4];
+		exact++ two two;
+		log 'exactly full: ' exact.len ' ' exact:3 '\n';
 		if call Overfill throws err
 			log 'too many: ' err.text '\n';
 		;;

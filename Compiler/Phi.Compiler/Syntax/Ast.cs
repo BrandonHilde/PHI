@@ -772,6 +772,20 @@ namespace Phi.Compiler.Syntax
     }
 
     /// <summary>
+    /// Made by the binder for `list++ other;` when the elements are copied as their bytes
+    /// (numbers, pointers, method values, structs): Count of Source's elements, from its start,
+    /// added to Target's end in one copy, after making room once (an atmost Target: an index
+    /// error unless they fit). Count is the variable the binder kept Source's count in before
+    /// anything was added, so list++ list; copies what it had.
+    /// </summary>
+    public sealed class AppendArrayStmt : Stmt
+    {
+        public Expr Target { get; init; } = null!;
+        public Expr Source { get; init; } = null!;
+        public Expr Count { get; init; } = null!;
+    }
+
+    /// <summary>
     /// Made by the binder from `b is a;` when both are arrays: every element is copied (objects
     /// and strs too), and an atmost target takes the source's count.
     /// </summary>
