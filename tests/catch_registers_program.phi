@@ -1,0 +1,38 @@
+# A throw caught in a method the optimiser builds (called here through a method value): the
+# method that catches gives its caller r12 to r15 back as they were, though the methods the
+# throw came out of had other values in them (the JS engine's natives, caught in, found it).
+phi.CatchRegistersProgram:Program
+{
+	call Outer;
+	exit 0;
+
+	[Outer:]
+		method<int: int> f: addr Catches;
+		int a: 11;
+		int b: 12;
+		int c: 13;
+		int d: 14;
+		int got: (f: 0);
+		log a ' ' b ' ' c ' ' d ' ' got '\n';
+	[end]
+
+	[Deep: int n: 0;]
+		int w: n + 101;
+		int x: n + 2;
+		int y: n + 3;
+		int z: n + 4;
+		int g: (Deeper: w x y z);
+	[end: g + w + x + y + z]
+
+	[Deeper: int w: 0; int x: 0; int y: 0; int z: 0;]
+		if w is 101
+			throw 'no';
+		;;
+	[end: w + x + y + z]
+
+	[Catches: int n: 0;]
+		if call Deep: n throws err
+			return 99;
+		;;
+	[end: 0]
+}
