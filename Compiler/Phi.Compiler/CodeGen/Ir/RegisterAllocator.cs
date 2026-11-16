@@ -97,7 +97,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 case FNegI f: yield return f.A; break;
                 case LeaI l: yield return l.A; break;
                 case UnlockI u: yield return u.Saved; break;
-                case ObjCallI { Arg: VReg o }: yield return o; break;
+                case ObjCallI oc:
+                    if (oc.Arg != null) yield return oc.Arg;
+                    if (oc.Second != null) yield return oc.Second;
+                    break;
                 case ToFloatI f: yield return f.Src; break;
                 case ToWholeI f: yield return f.Src; break;
                 case RoundF32I r: yield return r.Src; break;
@@ -124,6 +127,23 @@ namespace Phi.Compiler.CodeGen.Ir
                     if (r.B != null) yield return r.B;
                     break;
                 case PrintI p: if (p.Value.Reg != null) yield return p.Value.Reg; break;
+                case AtomicI at:
+                    yield return at.Address;
+                    if (at.Value.Reg != null) yield return at.Value.Reg;
+                    if (at.Expected.Reg != null) yield return at.Expected.Reg;
+                    break;
+                case SysCallI sc:
+                    foreach (Opnd a in sc.Args) if (a.Reg != null) yield return a.Reg;
+                    break;
+                case ArrayGrowI g:
+                    yield return g.View;
+                    yield return g.Count;
+                    break;
+                case TextI t:
+                    if (t.A != null) yield return t.A;
+                    if (t.B != null) yield return t.B;
+                    foreach (StoreI h in t.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
             }
         }
 
@@ -153,11 +173,16 @@ namespace Phi.Compiler.CodeGen.Ir
             VecGetI g => g.Dst,
             VecSetI st => st.Dst,
             VecReduceI r => r.Dst,
+            TextI t => t.Dst,
+            SysCallI sc => sc.Dst,
+            ObjCallI oc => oc.Dst,
+            AtomicI at => at.Dst,
             _ => null,
         };
 
         /// <summary>An instruction that calls something, which may change what a call changes.</summary>
-        public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI or CatchI;
+        public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI or CatchI or ArrayGrowI or SysCallI
+            || i is TextI { Op: not (TextOp.Literal or TextOp.OrEmpty) };
 
         public static IEnumerable<VReg> Uses(Terminator? t)
         {

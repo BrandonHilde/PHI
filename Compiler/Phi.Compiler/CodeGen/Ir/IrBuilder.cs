@@ -60,6 +60,7 @@ namespace Phi.Compiler.CodeGen.Ir
             current = fn.NewBlock();
             layout.Add(current);
             Need(m.ReturnType.Kind == TypeKind.Void || Supported(m.ReturnType), $"it gives {m.ReturnType}");
+            Need(!m.ReturnType.IsObject || m.ReturnType.Struct != null && !m.ReturnType.Struct.IsInterface, "it gives an interface's object");
         }
 
         /// <summary>The method as the intermediate form, or null and why it isn't.</summary>
@@ -104,7 +105,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// A value of t takes 64 bits: an i64, a u64, a pointer, or an object, which this form
         /// keeps only where it's borrowed (a struct parameter): its address, as a pointer is.
         /// </summary>
-        public static bool Is64(PhiType t) => t.IsWide || t.IsPointer || t.IsObject || t.IsMethod;
+        public static bool Is64(PhiType t) => t.IsWide || t.IsPointer || t.IsObject || t.IsMethod || t.IsString;
 
         /// <summary>How a value of type t is kept in memory.</summary>
         public static MemKind KindOf(PhiType t) => t.Kind switch
@@ -139,10 +140,10 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             MethodSymbol m = method;
             Need(!m.IsInterruptHandler && !m.IsHook, "an event or interrupt handler");
-            VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
+            VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !FrameText(p) && !CallersText(p) && !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
             Need(badParameter == null, $"a parameter it doesn't take ('{badParameter?.Name}', {Describe(badParameter)})");
-            Need(!m.ReturnType.IsObject, "it gives an object");
-            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v)
+
+            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v) || FrameText(v)
                                    || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements));
             Need(badLocal == null, $"a variable it doesn't take ('{badLocal?.Name}', {Describe(badLocal)})");
 
@@ -165,6 +166,8 @@ namespace Phi.Compiler.CodeGen.Ir
                 Emit(new UnwindI { On = true });
             }
 
+            PlaceFrameTexts();
+
             // a struct of the method's own (an err, say), in homes of its own
             foreach (VariableSymbol v in m.Locals.Where(FrameStruct))
             {
@@ -179,13 +182,30 @@ namespace Phi.Compiler.CodeGen.Ir
             for (int i = m.Parameters.Count - 1; i >= 0; i--)
             {
                 VariableSymbol p = m.Parameters[i];
+                if (CallersText(p))
+                {
+                    VReg slot = fn.NewValue(true, p.Name);
+                    Emit(new LoadI { Dst = slot, Place = $"rbp + {above}", Kind = MemKind.Q64 });
+                    callersTexts[p] = slot;
+                    above += 8;
+                    continue;
+                }
+                if (frameTexts.ContainsKey(p))
+                {
+                    // a str parameter: the text it's given, copied into its own buffer (too long an error)
+                    VReg given = fn.NewValue(true);
+                    Emit(new LoadI { Dst = given, Place = $"rbp + {above}", Kind = MemKind.Q64 });
+                    Emit(new TextI { Op = TextOp.Copy, A = given, Place = TextPlace(p), Room = p.Capacity });
+                    above += 8;
+                    continue;
+                }
                 VReg v = Variable(p);
                 Emit(new LoadI { Dst = v, Place = $"rbp + {above}", Kind = KindOf(p.Type) });
                 above += p.Type.IsVec ? 16 : 8;
             }
             // (a variable is set where it's declared; one that could be read before that is
             // given 0 at the start, by IrPeephole, which knows which)
-            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v))) Variable(v);
+            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v) && !frameTexts.ContainsKey(v))) Variable(v);
 
             Statements(m.Decl.Body);
             if (m.Decl.Result is Expr value)
@@ -331,6 +351,12 @@ namespace Phi.Compiler.CodeGen.Ir
                     foreach (VReg was in readFrom.Where(r => r.Value == made).Select(r => r.Key).ToList()) readFrom.Remove(was);
                     freshObjects.Add(made);
                     break;
+                case ObjCallI { Kind: "set" or "assign" or "clone" }:
+                    // (what any home holds, or any object's fields, may be other now)
+                    freshObjects.Clear();
+                    homeHolds.Clear();
+                    readFrom.Clear();
+                    break;
                 case CallI or ObjCallI or RawCallI or LockI or UnlockI:
                     // (a method may write any object's fields; none reaches the homes)
                     freshObjects.Clear();
@@ -447,6 +473,17 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case ObjectAssignStmt { Kind: ObjectAssignKind.Copy or ObjectAssignKind.Move } given:
+                {
+                    // the generator's EmitObjectAssign: a copy of the value's object (set into an owner's
+                    // place, assign into a borrowed one), or a call's new object taken over
+                    Mark(given);
+                    Emit(new ObjectLineI { At = given });
+                    VReg source = given.Kind == ObjectAssignKind.Copy ? ObjectAddress(given.Value) : InReg(Value(given.Value), true);
+                    TakeObject(given.Target, given.Struct, source, given.Kind == ObjectAssignKind.Move);
+                    return;
+                }
+
                 case ObjectAssignStmt { Kind: ObjectAssignKind.Clear } clear:
                 {
                     // x is empty: what it had is freed
@@ -481,6 +518,20 @@ namespace Phi.Compiler.CodeGen.Ir
                     Enter(free);
                     Emit(new ObjCallI { Kind = "free", Struct = t.Struct!, Arg = hadReg });
                     StartBlock(after);
+                    return;
+                }
+
+                case VarDecl { Symbol: VariableSymbol text } td when frameTexts.ContainsKey(text):
+                {
+                    Need(td.Values.Count <= 1 && td.TextSize == null, "a str given more than one value where it's declared");
+                    Mark(td);
+                    if (td.Values.Count == 1)
+                    {
+                        Need(SetText(new NameExpr { Name = text.Name, Symbol = text, Type = text.Type }, td.Values[0]), "a str given what isn't text");
+                        return;
+                    }
+                    // (empty: its first byte the zero that ends it)
+                    Emit(new StoreI { Place = TextPlace(text), Src = Opnd.Const(0), Kind = MemKind.U8 });
                     return;
                 }
 
@@ -519,6 +570,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     Assign(v, d.Values.Count == 1 ? d.Values[0] : null);
                     return;
                 }
+
+                case AssignStmt { Op: AssignOp.Set, Values: null, Target.Type.IsString: true } ta when !ta.Target.Type.IsArray:
+                    Mark(ta);
+                    Need(SetText(ta.Target, ta.Value), $"text put in {Unknown(ta.Target)}");
+                    return;
 
                 case AssignStmt a:
                 {
@@ -793,6 +849,31 @@ namespace Phi.Compiler.CodeGen.Ir
                     Log(log);
                     return;
 
+                case AppendStmt append:
+                    Add(append);
+                    return;
+
+                case AtomicStmt atomic:
+                {
+                    // the value, then where (the generator's order), then the one step
+                    Mark(atomic);
+                    PhiType t = atomic.Target.Type;
+                    Need(CanAddress(atomic.Target) && t.ElementSize is 1 or 2 or 4 or 8, $"atomic on {Unknown(atomic.Target)}");
+                    if (atomic.Op == AtomicOp.CompareSwap)
+                    {
+                        Opnd value = Small(Value(atomic.Value, t), Is64(t)), expected = Small(Value(atomic.Expected!, t), Is64(t));
+                        Emit(new AtomicI { Op = AtomicOp.CompareSwap, Address = AddressOf(atomic.Target), Value = value, Expected = expected, Bytes = t.ElementSize, Dst = fn.NewValue(false) });
+                        return;
+                    }
+                    Opnd amount = Small(Value(atomic.Value, atomic.Op == AtomicOp.Swap ? t : Is64(t) ? PhiType.I64 : PhiType.Int), Is64(t));
+                    Emit(new AtomicI { Op = atomic.Op, Address = AddressOf(atomic.Target), Value = amount, Bytes = t.ElementSize });
+                    return;
+                }
+
+                case SetLengthStmt shrink:
+                    SetLength(shrink);
+                    return;
+
                 case FreeStmt { Owner: null, Releaser: MethodSymbol releaser } free:
                     Mark(free);
                     Call(releaser, new List<Expr> { free.Pointer }, wantResult: false);
@@ -803,6 +884,22 @@ namespace Phi.Compiler.CodeGen.Ir
                     Mark(rc);
                     Emit(new RawCallI { Label = raw.Name });
                     return;
+
+                case CallStmt { Resolved: SysCallDecl sys } scall:
+                {
+                    Mark(scall);
+                    if (scall.ResultTarget == null)
+                    {
+                        SystemCall(sys, scall.Arguments, wantResult: false);
+                        return;
+                    }
+                    Need(scall.ResultTarget is NameExpr { Symbol: VariableSymbol { Type.IsObject: false } } && Ours((VariableSymbol)((NameExpr)scall.ResultTarget).Symbol!),
+                         "a call's result kept somewhere it doesn't take");
+                    var keeps = (VariableSymbol)((NameExpr)scall.ResultTarget).Symbol!;
+                    VReg came = SystemCall(sys, scall.Arguments, wantResult: true)!;
+                    SetVariable(Variable(keeps), Convert(came, sys.ResultType ?? PhiType.Int, keeps.Type), keeps.Type);
+                    return;
+                }
 
                 case CallStmt { Resolved: BuiltinFunction builtin, CalleeTarget: null } bcall:
                 {
@@ -846,6 +943,14 @@ namespace Phi.Compiler.CodeGen.Ir
                         Call(callee, call.Arguments, wantResult: false);
                         return;
                     }
+                    if (callee.ReturnType.IsObject)
+                    {
+                        // a call's new object: the target takes it over (the generator's EmitTakeOver)
+                        Emit(new ObjectLineI { At = call });
+                        VReg made = Call(callee, call.Arguments, wantResult: true)!;
+                        TakeObject(call.ResultTarget, callee.ReturnType.Struct!, made, move: true);
+                        return;
+                    }
                     Need(call.ResultTarget is NameExpr { Symbol: VariableSymbol { Type.IsObject: false } }, "a call's result kept somewhere it doesn't take");
                     var target = (VariableSymbol)((NameExpr)call.ResultTarget).Symbol!;
                     VReg got = Call(callee, call.Arguments, wantResult: true)!;
@@ -879,11 +984,12 @@ namespace Phi.Compiler.CodeGen.Ir
         void Return(Expr value)
         {
             Need(method.ReturnType.Kind != TypeKind.Void, "a return with a value from a method that gives none");
-            Opnd v = Value(value, method.ReturnType);
+            Opnd v = method.ReturnType.IsObject ? GiveObject(value) : Value(value, method.ReturnType);
             Unlock(0);
             if (current.End != null) Enter(fn.NewBlock());
             TidyUp();
-            current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer, Float = IsF(method.ReturnType), Vec = method.ReturnType.IsVec };
+            current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer || method.ReturnType.IsObject,
+                                     Float = IsF(method.ReturnType), Vec = method.ReturnType.IsVec };
         }
 
         /// <summary>True when <see cref="Field"/> takes the expression (asking only, with nothing built).</summary>
@@ -1043,6 +1149,13 @@ namespace Phi.Compiler.CodeGen.Ir
                 case UnaryExpr { Op: UnaryOp.Not } not:
                     Condition(not.Operand, no, yes);
                     return;
+                case BinaryExpr texts when TextCompare(texts):
+                {
+                    var (result, cond) = CompareTexts(texts);
+                    if (current.End != null) Enter(fn.NewBlock());
+                    current.End = new BranchT { Cond = cond, A = result, B = Opnd.Const(0), Then = yes, Else = no };
+                    return;
+                }
                 case BinaryExpr cmp when IsComparison(cmp.Op):
                 {
                     var (a, b, cond, isFloat) = Compare(cmp);
@@ -1116,6 +1229,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>e's value made the type it goes into (a variable's, a parameter's, a result's).</summary>
         Opnd Value(Expr e, PhiType into)
         {
+            if (into.IsString && !into.IsArray) return TextValue(e);
             Need(Supported(into), $"a value going into a {into}");
             return Convert(Value(e), Real(e), into);
         }
@@ -1123,9 +1237,56 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>e's value as its own type has it.</summary>
         Opnd Value(Expr e)
         {
+            if (e.Type.IsString && !e.Type.IsArray && e is not (CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null })) return TextValue(e);
+            switch (e)
+            {
+                case BinaryExpr texts when TextCompare(texts):
+                {
+                    var (result, cond) = CompareTexts(texts);
+                    VReg holds = fn.NewValue(false);
+                    Emit(new SetCcI { Cond = cond, Dst = holds, A = result, B = Opnd.Const(0) });
+                    return holds;
+                }
+                case NameExpr { Symbol: LengthSymbol { Str: VariableSymbol measured, Max: false, Count: null } }:
+                    return TextLength(new NameExpr { Name = measured.Name, Symbol = measured, Type = measured.Type });
+                case NameExpr { Symbol: LengthSymbol { Text: Expr text } }:
+                    return TextLength(text);
+                case MemberExpr { TextLength: true, Call: null } measuredField:
+                    return TextLength(measuredField.Target);
+                case IndexExpr { Target.Type.IsString: true, Target.Type.IsArray: false } character
+                    when (character.CheckLimit != null || unsafeDepth > 0
+                          || ConstantFolder.Evaluate(character.Index) != null && !character.Target.Type.IsHeapText
+                             && character.Target is not NameExpr { Symbol: VariableSymbol { Grows: true } }) && CanText(character.Target):
+                {
+                    // one byte of the text, checked against the room it has
+                    PhiType it = Real(character.Index);
+                    Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+                    Opnd index = Convert(Value(character.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+                    if (character.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit))
+                    {
+                        VReg checkedIndex = InReg(index, true);
+                        Emit(new CheckI { Index = checkedIndex, Limit = limit, At = character, Held = HeldStores() });
+                        index = checkedIndex;
+                    }
+                    VReg text = TextAddress(character.Target);
+                    VReg d = New(character.Type);
+                    Emit(new LoadIdxI { Dst = d, Base = text, Index = index, Scale = 1, Kind = MemKind.U8 });
+                    return d;
+                }
+            }
             Need(Supported(Real(e)), $"a value that's a {Real(e)}");
             if (PointerMath(e)) return MovePointer((BinaryExpr)e);
             if (VecValue(e) is Opnd vector) return vector;
+            if (e is AtomicExpr swap)
+            {
+                // atomic x is v when old: 1 if it held old (and holds v now)
+                PhiType t = swap.Target.Type;
+                Need(CanAddress(swap.Target) && t.ElementSize is 1 or 2 or 4 or 8, $"atomic on {Unknown(swap.Target)}");
+                Opnd value = Small(Value(swap.Value, t), Is64(t)), expected = Small(Value(swap.Expected, t), Is64(t));
+                VReg done = fn.NewValue(false);
+                Emit(new AtomicI { Op = AtomicOp.CompareSwap, Address = AddressOf(swap.Target), Value = value, Expected = expected, Bytes = t.ElementSize, Dst = done });
+                return done;
+            }
             switch (e)
             {
                 case NumberExpr n:
@@ -1813,8 +1974,29 @@ namespace Phi.Compiler.CodeGen.Ir
 
         // ---------------------------------------------------------------- calls
 
+        /// <summary>sys.Name: a system call, its arguments worked out first to last.</summary>
+        VReg? SystemCall(SysCallDecl sys, List<Expr> arguments, bool wantResult)
+        {
+            Need(arguments.Count <= 6, "a system call with more than six arguments");
+            var call = new SysCallI
+            {
+                Number = sys.Number,
+                Name = sys.Name,
+                Dst = wantResult ? New(sys.ResultType ?? PhiType.Int) : null,
+            };
+            for (int k = 0; k < arguments.Count; k++)
+            {
+                PhiType t = k < sys.ParameterTypes.Count ? sys.ParameterTypes[k] : Real(arguments[k]);
+                Need(Supported(Real(arguments[k])) && !IsF(t) && !t.IsVec && !t.IsObject || arguments[k].Type.IsString, $"a system call given {A(Real(arguments[k]))}");
+                call.Args.Add(Value(arguments[k], t.IsString ? t : Supported(t) ? t : Real(arguments[k])));
+            }
+            Emit(call);
+            return call.Dst;
+        }
+
         Opnd CallValue(CallExpr call)
         {
+            if (call.Resolved is SysCallDecl sys) return SystemCall(sys, call.Arguments, wantResult: true)!;
             if (call.Resolved is VecMethod vm) return VecCall(call, vm);
             if (call.Resolved is BuiltinFunction builtin) return CallBuiltin(builtin, call.Arguments, wantResult: true)!;
             if (call.Resolved is PointerCall through) return CallThrough(through, call.Arguments, wantResult: true)!;
@@ -1887,9 +2069,10 @@ namespace Phi.Compiler.CodeGen.Ir
         VReg? Call(MethodSymbol callee, List<Expr> arguments, bool wantResult)
         {
             Need(!callee.IsHook && !callee.IsInterruptHandler, "a call of an event");
-            Need(callee.Parameters.All(p => Supported(p.Type) && !p.Grows && !p.TextRef && !(p.Type.IsObject && p.Ownership == Ownership.Owned)),
+            Need(callee.Parameters.All(p => p.Type.IsString && !p.Type.IsArray && !p.TextRef
+                                           || Supported(p.Type) && !p.Grows && !p.TextRef && !(p.Type.IsObject && p.Ownership == Ownership.Owned)),
                  $"a call of {callee.Name}, which takes what this form doesn't");
-            Need(callee.ReturnType.Kind == TypeKind.Void || Supported(callee.ReturnType) && !callee.ReturnType.IsObject, $"a call of {callee.Name}, which gives a {callee.ReturnType}");
+            Need(callee.ReturnType.Kind == TypeKind.Void || Supported(callee.ReturnType), $"a call of {callee.Name}, which gives a {callee.ReturnType}");
             Need(arguments.Count <= callee.Parameters.Count, $"a call of {callee.Name} with more arguments than it takes");
             var call = new CallI
             {
@@ -1904,10 +2087,22 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 PhiType pt = callee.Parameters[i].Type;
                 Expr? given = i < arguments.Count ? arguments[i] : callee.Parameters[i].Decl.Values.FirstOrDefault();
-                call.Args.Add(given != null ? Value(given, pt) : pt.IsVec ? ZeroVec() : IsF(pt) ? FloatConst(0.0) : Opnd.Const(0));
-                call.ArgKinds.Add(KindOf(pt));
+                call.Args.Add(given != null ? Value(given, pt) : pt.IsString ? TextValue(new StringExpr { Value = "", Type = PhiType.Str })
+                              : pt.IsVec ? ZeroVec() : IsF(pt) ? FloatConst(0.0) : Opnd.Const(0));
+                call.ArgKinds.Add(pt.IsString ? MemKind.Q64 : KindOf(pt));
             }
             Need(!wantResult || call.Dst != null, $"{callee.Name} gives nothing to use");
+            if (!wantResult && callee.ReturnType.IsObject)
+            {
+                // a new object nothing takes: it goes back at once
+                VReg made = fn.NewValue(true);
+                var keep = new CallI { Label = call.Label, Dst = made, Result = CallResult.Rax };
+                keep.Args.AddRange(call.Args);
+                keep.ArgKinds.AddRange(call.ArgKinds);
+                Emit(keep);
+                Emit(new ObjCallI { Kind = "free", Struct = callee.ReturnType.Struct!, Arg = made });
+                return null;
+            }
             Emit(call);
             return call.Dst;
         }

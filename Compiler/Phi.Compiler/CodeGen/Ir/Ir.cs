@@ -174,6 +174,66 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg Src { get; init; } = null!;
     }
 
+    // ---------------------------------------------------------------- text
+
+    public enum TextOp { Literal, OrEmpty, Copy, Length, Equal, Order }
+
+    /// <summary>
+    /// Text, as the generator has it (the address of zero-terminated bytes): Dst = where text
+    /// written in the program is (Literal); A, or '' when A is 0 (OrEmpty); the text at A copied
+    /// into Place, which has Room bytes, too long an error (Copy); Dst = how long A is (Length);
+    /// 0 when A and B are the same text, 1 when not (Equal); -1, 0 or 1 as A comes before B, is
+    /// it, or after (Order). Copy, Length, Equal and Order call the library.
+    /// </summary>
+    public sealed class TextI : Instr
+    {
+        public TextOp Op { get; init; }
+        public VReg? Dst { get; init; }
+        public VReg? A { get; init; }
+        public VReg? B { get; init; }
+        public string? Literal { get; init; }
+        public string? Place { get; init; }
+        public int Room { get; init; }
+
+        /// <summary>The class variables a loop holds in registers, written back before the error a Copy may stop with.</summary>
+        public List<StoreI> Held { get; init; } = new();
+    }
+
+    /// <summary>
+    /// An array that grows (or a struct's without a size) given room for Count elements of
+    /// Size bytes, its elements moved when there isn't: the generator's phi_array_grow, with
+    /// the array's place (its elements' address, then how many, then its room) at View.
+    /// </summary>
+    public sealed class ArrayGrowI : Instr
+    {
+        public VReg View { get; init; } = null!;
+        public VReg Count { get; init; } = null!;
+        public int Size { get; init; }
+    }
+
+    /// <summary>A Linux system call (sys.Read: ...): Number in eax, the arguments in rdi, rsi, rdx, r10, r8 and r9, the answer in rax.</summary>
+    public sealed class SysCallI : Instr
+    {
+        public long Number { get; init; }
+        public string Name { get; init; } = "";
+        public List<Opnd> Args { get; } = new();
+        public VReg? Dst { get; init; }
+    }
+
+    /// <summary>
+    /// One step no other core can come between, on the Bytes at Address: Value added, taken
+    /// away, or swapped in; or (CompareSwap) Value put there when it holds Expected, Dst 1 if it was.
+    /// </summary>
+    public sealed class AtomicI : Instr
+    {
+        public Syntax.AtomicOp Op { get; init; }
+        public VReg Address { get; init; } = null!;
+        public Opnd Value { get; init; }
+        public Opnd Expected { get; init; }
+        public int Bytes { get; init; }
+        public VReg? Dst { get; init; }
+    }
+
     // ---------------------------------------------------------------- log
 
     public enum PrintKind { Text, Int, Uint, Int64, Uint64, Float, Char }
@@ -291,6 +351,12 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg? Arg { get; init; }
         /// <summary>Where a method's own object is kept in its frame, for renew.</summary>
         public string? Home { get; init; }
+
+        /// <summary>The object copied from (set, assign), in rdx.</summary>
+        public VReg? Second { get; init; }
+
+        /// <summary>What it gives back (clone: the copy), in rax.</summary>
+        public VReg? Dst { get; init; }
     }
 
     /// <summary>The line an object is made on, for the message if the heap runs out (the generator's ObjectLine).</summary>
@@ -645,7 +711,11 @@ namespace Phi.Compiler.CodeGen.Ir
             RoundF32I r => $"{r.Dst} = roundf32 {r.Src}",
             PrintI p => $"print {p.Kind} {(object?)p.Literal ?? (object?)p.Label ?? p.Value}",
             RoutineI r => $"call {r.Label}",
+            TextI t => $"{t.Dst} = text{t.Op} {(object?)t.Literal ?? t.A}{(t.B != null ? ", " + t.B : "")}{(t.Place != null ? $" into [{t.Place}] {t.Room}" : "")}",
             CatchI c => $"catch [{c.Record}] at {c.Caught}",
+            ArrayGrowI g => $"grow [{g.View}] to {g.Count} of {g.Size}",
+            SysCallI sc => $"{sc.Dst} = sys.{sc.Name}({string.Join(", ", sc.Args)})",
+            AtomicI at => $"{at.Dst} = atomic {at.Op} [{at.Address}] {at.Value}{(at.Op == Syntax.AtomicOp.CompareSwap ? " when " + at.Expected : "")}",
             UncatchI u => $"uncatch [{u.Record}]",
             CaughtI c => $"caught into [{c.Place}]",
             ZeroI z => $"zero [{z.Place}] {z.Size}",

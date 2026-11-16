@@ -406,6 +406,64 @@ namespace Phi.Compiler.CodeGen
                     case VecI or VecMakeI or VecGetI or VecSetI or VecReduceI or RoundF32I or PrintI or RoutineI:
                         Vector(i);
                         break;
+                    case TextI t:
+                        Text(t);
+                        break;
+                    case AtomicI at:
+                    {
+                        string size = Size(8 * at.Bytes);
+                        string address = InRegister(at.Address) ? Reg(at.Address)! : "r11";
+                        if (address == "r11") E($"mov r11, {At(at.Address, 64)}");
+                        if (at.Op == Syntax.AtomicOp.CompareSwap)
+                        {
+                            Load("rcx", at.Value, at.Bytes == 8 ? 64 : 32);
+                            Load("rax", at.Expected, at.Bytes == 8 ? 64 : 32);
+                            E($"lock cmpxchg {size} [{address}], {Sub("rcx", 8 * at.Bytes)}");
+                            E("sete al");
+                            E("movzx eax, al");
+                            Store(at.Dst!, "rax");
+                            break;
+                        }
+                        Load("rax", at.Value, at.Bytes == 8 ? 64 : 32);
+                        E(at.Op switch
+                        {
+                            Syntax.AtomicOp.Add => $"lock add {size} [{address}], {Sub("rax", 8 * at.Bytes)}",
+                            Syntax.AtomicOp.Subtract => $"lock sub {size} [{address}], {Sub("rax", 8 * at.Bytes)}",
+                            _ => $"xchg {size} [{address}], {Sub("rax", 8 * at.Bytes)}",
+                        });
+                        break;
+                    }
+                    case SysCallI sc:
+                    {
+                        // the generator's EmitSystemCall: each argument by way of the stack (a value may
+                        // be in a register another is to go in), then the call
+                        MarkNow();
+                        g.Comment($"sys.{sc.Name}, system call {sc.Number}");
+                        string[] into = { "rdi", "rsi", "rdx", "r10", "r8", "r9" };
+                        foreach (Opnd a in sc.Args)
+                        {
+                            if (a.IsImm && FitsImm32(a.Imm)) E($"push {a.Imm}");
+                            else
+                            {
+                                Load("rax", a, 64);
+                                E("push rax");
+                            }
+                        }
+                        for (int k = sc.Args.Count - 1; k >= 0; k--) E($"pop {into[k]}");
+                        E($"mov eax, {sc.Number}");
+                        E("syscall");
+                        if (sc.Dst != null) Store(sc.Dst, "rax");
+                        break;
+                    }
+                    case ArrayGrowI grow:
+                        // (the generator's EmitArrayGrowCall: rax the array's place, edx the count, ecx the size)
+                        g.usesArrayGrow = true;
+                        g.Need("phi_out_of_memory");
+                        E($"mov edx, {At(grow.Count, 32)}");
+                        Load("rax", grow.View, 64);
+                        E($"mov ecx, {grow.Size}");
+                        E("call phi_array_grow");
+                        break;
                     case CatchI c:
                     {
                         // the generator's EmitIfThrows' record: the catch around it, rsp, rbp, the
@@ -689,9 +747,13 @@ namespace Phi.Compiler.CodeGen
                         Call(call);
                         break;
                     case ObjCallI oc:
+                        // (the object copied from in rdx, by way of the stack: it may be in rax's way)
+                        if (oc.Second != null) E($"push {Operand(oc.Second, 64)}");
                         if (oc.Arg != null) Load("rax", oc.Arg, 64);
                         else E($"lea rax, [{oc.Home}]");
+                        if (oc.Second != null) E("pop rdx");
                         E($"call {g.ObjectRoutine(oc.Kind, oc.Struct)}");
+                        if (oc.Dst != null) Store(oc.Dst, "rax");
                         break;
                     case ObjectLineI ol:
                         g.usesObjects = true;

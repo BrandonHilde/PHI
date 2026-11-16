@@ -264,6 +264,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 case StringExpr s when t.IsString:
                     Emit(new PrintI { Kind = PrintKind.Text, Literal = s.Value, Serial = serial });
                     return;
+                case Expr text when t.IsString && !t.IsArray && CanText(text):
+                    Emit(new PrintI { Kind = PrintKind.Text, Value = TextAddress(text), Serial = serial });
+                    return;
                 case NameExpr { Symbol: VariableSymbol { Type.IsString: true, Grows: false, TextRef: false } text } when !text.IsLocal && !text.IsParameter
                                                                                                                          && SimpleLabel(text.Label) && !text.Type.IsArray:
                     Emit(new PrintI { Kind = PrintKind.Text, Label = text.Label, Serial = serial });

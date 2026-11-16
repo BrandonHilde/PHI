@@ -1,0 +1,8 @@
+hello 5 16 h 1|15
+world, and more 15 16 w 0|15
+field 5 16 f 0|10
+1 0 1 0
+twelve chars 12
+too long: text doesn't fit in its str
+reported: it failed
+reported: mine

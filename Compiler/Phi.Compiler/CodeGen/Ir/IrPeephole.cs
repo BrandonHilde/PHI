@@ -153,6 +153,7 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadI or AddrI or LeaI or FConstI or FBinI or FNegI or ToFloatI or ToWholeI => true,
             VecI or VecMakeI or VecGetI or VecSetI or VecReduceI or RoundF32I => true,
+            TextI { Op: TextOp.Literal or TextOp.OrEmpty or TextOp.Length or TextOp.Equal or TextOp.Order } => true,
             BinI b => b.Op is not (BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU),
             _ => false,
         };

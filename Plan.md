@@ -4021,6 +4021,16 @@ most now: text (str values, parameters, text that grows, building it: about 150 
 then system calls, copying and moving objects, giving an object, ++ on arrays, atomic.
 PHI_IR_TRACE says, for each, what it met (a NameExpr, and which kind).
 
+Then (the same day, "keep working on the one compiler"), to 288: text with a size (a str
+parameter copied into the method's own buffer when it starts, too long an error; a method's
+own str with a size; a class's; a struct's field, in place or on the heap) passed on, put in a
+str with a size, measured, compared and put in order, a character read; a str parameter that's
+the caller's own text (str target;) when the method only reads it; ++ on arrays of numbers,
+[atmost N] ones and those that grow (phi_array_grow), and their length set; system calls;
+atomic steps; objects copied (set, assign), handed over and given back (a method's own handed
+over, any other cloned). Test ir_text_program. What's left most: text that grows (a method's
+own, and building text), str results, a while each, a comparison of objects, ++ of a whole array.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

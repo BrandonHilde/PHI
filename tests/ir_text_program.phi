@@ -1,0 +1,62 @@
+# Text in methods the optimiser builds: a str parameter with a size, copied in when the method
+# starts (too long an error), a str of its own, given text; measured, compared, put in order, a
+# character read; a class's text, one that grows and a struct's field passed to it.
+struct.Label
+{
+	str text: [12];
+	int n;
+}
+
+phi.IrTextProgram:Program
+{
+	str title: [20];
+	str grows: '';
+	title is 'hello';
+	grows is 'world, and more';
+	new Label l;
+	l.text is 'field';
+	log (Describe: title 3) '\n';
+	log (Describe: grows 1) '\n';
+	log (Describe: l.text 2) '\n';
+	log (Same: 'abc' 'abc') ' ' (Same: 'abc' 'abd') ' ' (Before: 'abc' 'abd') ' ' (Before: 'b' 'a') '\n';
+	log (Copy: 'twelve chars') '\n';
+	if call Copy: 'thirteen chars' throws err
+		log 'too long: ' err.text '\n';
+	;;
+	call Catches;
+	exit 0;
+
+	[Describe: str name: [16]; int k: 0;]
+		log name ' ' name.len ' ' name.max ' ' name:0 ' ' (name is 'hello') '|';
+	[end: name.len * k]
+
+	[Same: str a: [8]; str b: [8];]
+	[end: a is b]
+
+	[Before: str a: [8]; str b: [8];]
+	[end: a < b]
+
+	[Copy: str from: [16];]
+		str to: [13];
+		to is from;
+		log to ' ';
+	[end: to.len]
+
+	# text of the method's own (an err's, on the stack, above 4 GB) given where a ptr<u8> goes: all 64 bits of its address
+	[Fails:]
+		throw 'it failed';
+	[end]
+
+	[Report: ptr<u8> text: 0;]
+		log 'reported: ' text '\n';
+	[end]
+
+	[Catches:]
+		if call Fails throws err
+			call Report: err.text;
+		;;
+		str mine: [8];
+		mine is 'mine';
+		call Report: mine;
+	[end]
+}
