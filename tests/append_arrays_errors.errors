@@ -1,0 +1,4 @@
+14:10: error: 'whole' holds an int and 'bytes' a u8; an array added whole has to hold the same kind
+15:10: error: 'whole' holds an int and 'points' a Point; an array added whole has to hold the same kind
+16:10: error: 'names' holds a str and 'other' an int; an array added whole has to hold the same kind
+17:2: error: 'fixed' always has 3 elements, so ++ can't add to it: declare it fixed[atmost 3] to fill it as it goes, or fixed[] to let it grow

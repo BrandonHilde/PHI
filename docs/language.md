@@ -443,6 +443,22 @@ to a method that takes `int numbers[]`. A method's own are let go when it ends. 
 adds is read before the array changes, so an array can be added to from itself:
 `spots++ spots:0;`, and `tree.kids++ tree;` adds a copy of the tree as it was.
 
+`++` also takes a whole array of the same kind of element, and adds each of its elements as
+`++` would add each one (structs, objects and text as copies), in the order the values are
+written:
+
+```phi
+int all[];
+int some: 4 5 6;
+all++ 1 2 3;
+all++ some;                   # 1 2 3 4 5 6
+all++ 0 some 9;               # then 0 4 5 6 9
+all++ all;                    # how many it has is read first: it doubles
+```
+
+An `atmost` array takes one the same way, and stops with an index error if there isn't
+room for all of it, as adding one element too many does.
+
 ```phi
 int scores[];
 scores++ 42;
@@ -505,7 +521,7 @@ empty. `++` adds to its end, `.len` is how many are in it, and an index is check
 ```phi
 int scores[atmost 10];
 scores++ 42;
-scores++ 7 9;                 # several at once
+scores++ 7 9;                 # several at once (or a whole array: scores++ others;)
 log scores.len ' ' scores.max;     # 3 10
 log scores:2;                 # 9
 log scores:5;                 # index out of range: only 3 are in it

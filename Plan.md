@@ -3855,6 +3855,26 @@ three), `phi_clock_lock` and the kernel's ticket lock. A class's variables were 
   be a split lock in the same way. Rare (an atomic field is usually an int first, or after
   other ints), but nothing stops it; an error, or padding for such a field, is to decide.
 
+**`++` takes a whole array (2026-11-15, the user's choice, after the freeze).** `list++ other;`
+adds each element of another array of the same kind (or of itself: how many it has is read
+first, so `list++ list;` doubles it), as `++` adds each one, structs, objects and text as
+copies; mixed with single values in the order they're written (`list++ 0 other 9;`); into an
+array that grows, an `atmost` one (an index error when it hasn't room, as for one element)
+or a struct's field. Asked for after `Map`'s table growth had to add its zeros one at a time.
+- The binder writes it as the statements it stands for (`Binder.AppendWholeArrays`): a block
+  with each array's count kept first, then a loop adding each element, so both compilers
+  build it as they build those, and every kind of element is copied as `++` copies it. The
+  variables it needs have `#` in their names, which nothing can write, declared and given
+  their places while binding (`DeclareHidden`). Only a variable, field or element is taken
+  as a whole array; anything else is one element.
+- It's as quick as that loop: one element at a time. Copying a plain array's bytes in one go
+  is for the optimiser, later, with what it means unchanged.
+- `++` on an array with a size says so now ("'fixed' always has 3 elements, so ++ can't add
+  to it: declare it fixed[atmost 3] ... or fixed[] ..."), not "can't assign a whole array".
+- Tests `append_arrays_program` (numbers, structs, objects, text, atmost, a struct's field,
+  from itself, in a class's code and in a method; 32 and 64 bits, through the intermediate
+  form and not), `append_arrays_errors`.
+
 **No position in `while each` (2026-11-15, the user's choice).** Asked for after the freeze:
 `while each` giving the element's place as well as the element. Tried against the loop with
 a counter, it would only save writing `scores:i` and the bound: the counter loop is checked

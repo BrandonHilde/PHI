@@ -3040,6 +3040,7 @@ namespace Phi.Compiler.Semantics
 
         Stmt BindStatement(Stmt stmt, Scope scope, bool classLevel)
         {
+            statementAtClassLevel = classLevel;
             switch (stmt)
             {
                 case VarDecl decl:
@@ -3560,6 +3561,12 @@ namespace Phi.Compiler.Semantics
                 return assign;
             }
 
+            if (target.Type.IsArray && assign.Op == AssignOp.Add)
+            {
+                string n = Describe(target);
+                Error(target.Span, $"'{n}' always has {target.Type.Length} elements, so ++ can't add to it: declare it {n}[atmost {target.Type.Length}] to fill it as it goes, or {n}[] to let it grow");
+                return assign;
+            }
             if (target.Type.IsArray)
             {
                 Error(target.Span, $"can't assign a whole array; set one element at a time, like {Describe(target)}:0 is 5;");
@@ -3811,6 +3818,9 @@ namespace Phi.Compiler.Semantics
             _ => null,
         };
 
+        /// <summary>Whether the statement being bound is in a class's own code (for one the binder writes in its place).</summary>
+        bool statementAtClassLevel;
+
         /// <summary>list++ a b; adds each value at the end; list++; adds one element of zeros.</summary>
         Stmt BindAppend(AssignStmt assign, Scope scope)
         {
@@ -3821,6 +3831,7 @@ namespace Phi.Compiler.Semantics
                 Error(assign.Span, $"'{name}' is filled as it goes: add to its end with {name}++ value; set one that's in it with {name}:i is value;");
                 return assign;
             }
+            if (!assign.Bare && AppendWholeArrays(assign, scope) is Stmt whole) return whole;
 
             var append = new AppendStmt { Target = target, Span = assign.Span };
             if (target.Type.IsObjectArray || IsGrowingArray(target))
@@ -3891,6 +3902,107 @@ namespace Phi.Compiler.Semantics
                 append.Values.Add(ConvertChecked(value, element, $"an element of '{name}'"));
             }
             return append;
+        }
+
+        /// <summary>
+        /// list++ other; adds every element of another array (or of itself), as list++ would add
+        /// each one, in the order the values are written: list++ 1 other 2; adds 1, other's
+        /// elements, then 2. How many each array has is read before anything is added, as what
+        /// ++ adds always is, so list++ list; doubles it. Written as the statements it stands
+        /// for, which every compiler then builds as it builds those: in a block of its own, each
+        /// array's count kept first, then a loop for each. Null when no value is a whole array.
+        /// </summary>
+        Stmt? AppendWholeArrays(AssignStmt assign, Scope scope)
+        {
+            Expr target = assign.Target;
+            List<Expr> values = assign.Values ?? new List<Expr> { assign.Value };
+            // (only a variable, field or element can be a whole array: anything else is one element)
+            var arrays = new List<Expr>();
+            foreach (Expr value in values)
+            {
+                if (value is not (NameExpr { Call: null } or MemberExpr { Call: null } or IndexExpr)) continue;
+                BindExpr(value, scope);
+                if (value.Type.IsArray) arrays.Add(value);
+            }
+            if (arrays.Count == 0) return null;
+
+            PhiType element = target.Type.Element;
+            foreach (Expr array in arrays)
+            {
+                PhiType other = array.Type.Element;
+                bool same = other == element || other.IsString && element.IsString
+                            || other.IsStruct && element.IsStruct && other.Struct == element.Struct
+                            || (other.IsObject || other.IsStruct) && element.IsObject && other.Struct == element.Struct;
+                if (!same)
+                {
+                    Error(array.Span, $"'{Describe(target)}' holds {A(element)} and '{Describe(array)}' {A(other)}; an array added whole has to hold the same kind");
+                    return assign;
+                }
+            }
+
+            Span at = assign.Span;
+            NameExpr Name(string n) => new() { Name = n, Span = at };
+            var block = new IfStmt { Condition = new BoolExpr { Value = true, Span = at }, Span = at };
+            var counts = new Dictionary<Expr, string>();
+            for (int j = 0; j < arrays.Count; j++)
+            {
+                // (# is in no name a program can write)
+                string count = $"count#{at.Start}#{j}";
+                counts[arrays[j]] = count;
+                var decl = new VarDecl { Type = new TypeRef { Name = "u32", Span = at }, Name = count, NameSpan = at, Span = at };
+                decl.Values.Add(new MemberExpr { Target = arrays[j], Member = "len", MemberSpan = at, Span = at });
+                block.Then.Add(decl);
+            }
+            var single = new List<Expr>();
+            void AddSingles()
+            {
+                if (single.Count == 0) return;
+                block.Then.Add(new AssignStmt { Target = target, Op = AssignOp.Add, Value = single[0], Values = single.Count > 1 ? new List<Expr>(single) : null, ValueIsWhole = single.Count == 1, Span = at });
+                single.Clear();
+            }
+            foreach (Expr value in values)
+            {
+                if (!counts.TryGetValue(value, out string? count))
+                {
+                    single.Add(value);
+                    continue;
+                }
+                AddSingles();
+                string k = $"each#{at.Start}#{count}";
+                var loop = new WhileStmt
+                {
+                    Init = new VarDecl { Type = new TypeRef { Name = "u32", Span = at }, Name = k, NameSpan = at, Span = at },
+                    Condition = new BinaryExpr { Op = BinaryOp.Less, Left = Name(k), Right = Name(count), Span = at },
+                    Step = new AssignStmt { Target = Name(k), Op = AssignOp.Add, Value = new NumberExpr { Value = 1, Span = at }, Bare = true, Span = at },
+                    Span = at,
+                };
+                ((VarDecl)loop.Init).Values.Add(new NumberExpr { Value = 0, Span = at });
+                loop.Body.Add(new AssignStmt { Target = target, Op = AssignOp.Add, Value = new IndexExpr { Target = value, Index = Name(k), Span = at }, Span = at });
+                block.Then.Add(loop);
+            }
+            AddSingles();
+            foreach (Stmt hidden in block.Then.OfType<VarDecl>().Concat(block.Then.OfType<WhileStmt>().Select(w => (Stmt)w.Init!)))
+                DeclareHidden((VarDecl)hidden, scope);
+            return BindStatement(block, scope, statementAtClassLevel);
+        }
+
+        /// <summary>
+        /// A variable the binder writes while it binds (a name with # in it, which no program can
+        /// write): declared, and given its place as AssignVariableLabels gives a written one, which
+        /// ran before any body was bound.
+        /// </summary>
+        void DeclareHidden(VarDecl decl, Scope scope)
+        {
+            DeclareNames(scope, new Stmt[] { decl }, isParameter: false);
+            if (decl.Symbol is not VariableSymbol v) return;
+            string key = decl.Name.Replace('#', '_');
+            if (scope.Method is MethodSymbol method)
+            {
+                v.Label = $"VALUE_{method.Label}_{key}";
+                v.IsLocal = true;
+                method.Locals.Add(v);
+            }
+            else v.Label = $"VALUE_{Templates.Label(scope.Class.Name)}_{key}";
         }
 
         /// <summary>list.len is n; keeps the first n elements (it can only shrink).</summary>

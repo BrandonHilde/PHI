@@ -1,0 +1,95 @@
+# list++ other; adds every element of another array, as list++ would add each one: numbers,
+# structs (copies), objects (copies), and text; into an array that grows, an atmost one, and
+# a struct's array field; from an array of a size, an atmost one and one that grows; mixed
+# with single values (in the order written), and from the array itself (its count read
+# before anything is added, so it doubles). In a class's own code and in a method.
+struct.Point
+{
+	int x;
+	int y;
+}
+
+struct.Box
+{
+	int id;
+	new str label;
+}
+
+struct.Bag
+{
+	int items[];
+}
+
+phi.AppendArraysProgram:Program
+{
+	int all[];
+	int some: 4 5 6;
+	all++ 1 2 3;
+	all++ some;
+	all++ 0 some 9;
+	log all.len ':';
+	while each n in all
+		log ' ' n;
+	;;
+	log '\n';
+
+	# from itself: how many it had is read first
+	all++ all;
+	log all.len ' ' all:0 ' ' all:15 ' ' all:21 '\n';
+
+	call Kinds;
+	call Limits;
+	exit 0;
+
+	[Kinds]
+		Point corners[2];
+		corners:0.x is 1;
+		corners:1.y is 2;
+		Point points[];
+		points++ corners corners;
+		log 'points: ' points.len ' ' points:2.x ' ' points:3.y '\n';
+
+		new Box boxes[];
+		boxes++;
+		boxes:0.id is 7;
+		boxes:0.label is 'first';
+		new Box more[];
+		more++ boxes boxes;
+		boxes:0.label is 'changed';
+		log 'boxes: ' more.len ' ' more:1.id ' ' more:1.label ' ' boxes:0.label '\n';
+
+		str words[];
+		words++ 'a' 'bb';
+		str fixed[2]: [8];
+		fixed:0 is 'ccc';
+		fixed:1 is 'dddd';
+		words++ fixed words;
+		log 'words: ' words.len;
+		while each w in words
+			log ' ' w;
+		;;
+		log '\n';
+
+		new Bag bag;
+		int three: 7 8 9;
+		bag.items++ three three:0;
+		bag.items++ bag.items;
+		log 'bag: ' bag.items.len ' ' bag.items:5 '\n';
+	[end]
+
+	[Limits]
+		int room[atmost 5];
+		int two: 1 2;
+		room++ two two;
+		log 'atmost: ' room.len ' ' room:3 '\n';
+		if call Overfill throws err
+			log 'too many: ' err.text '\n';
+		;;
+	[end]
+
+	[Overfill]
+		int room[atmost 3];
+		int two: 1 2;
+		room++ two two;
+	[end]
+}

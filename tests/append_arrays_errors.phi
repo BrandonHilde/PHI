@@ -1,0 +1,18 @@
+struct.Point
+{
+	int x;
+}
+
+phi.AppendArraysErrors:Kernel
+{
+	int whole[];
+	u8 bytes: 1 2 3;
+	Point points[2];
+	str names[];
+	int fixed[3];
+	int other: 4 5 6;
+	whole++ bytes;
+	whole++ points;
+	names++ other;
+	fixed++ other;
+}
