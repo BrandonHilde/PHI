@@ -1,0 +1,121 @@
+# PHI's one rule for a struct's layout, as the program runs: each field on a multiple of its
+# size (padding before it if it needs some), and a struct's size a multiple of its largest
+# field's, so every element of an array of them is aligned too. Each place an atomic step
+# can be used on is checked to be on a multiple of its size: a class's struct, a method's
+# own variables and struct, an object (with and without a type table, which an interface
+# needs), an element of an array of structs, through a pointer. A misaligned locked word is a
+# split lock, which Linux makes a program wait for. Then numbers read from bytes at odd
+# offsets with data.bytes, as a format like FAT's boot sector needs.
+use data.bytes;
+
+interface.Named
+{
+	[Id: : int]
+}
+
+struct.Mixed
+{
+	u8 kind;
+	int count;
+	u8 flag;
+	ptr<u8> owner;
+	u16 port;
+	i64 big;
+}
+
+struct.Holder has Named
+{
+	ptr<u8> first;
+	int id;
+
+	[Id: : int]
+	[end: id]
+}
+
+struct.Plain
+{
+	u8 tag;
+	ptr<u8> link;
+}
+
+phi.StructLayoutProgram:Program
+{
+	Mixed shared;
+	Mixed many[3];
+	int checked: 0;
+	int wrong: 0;
+
+	log 'sizes: ' (sizeof Mixed) ' ' (sizeof Holder) ' ' (sizeof Plain) '\n';
+	call Check: addr shared.count 4;
+	call Check: addr shared.owner 8;
+	call Check: addr shared.port 2;
+	call Check: addr shared.big 8;
+	while int i: 0; i < 3; i++;
+		call Check: addr many:i.count 4;
+		call Check: addr many:i.owner 8;
+		call Check: addr many:i.big 8;
+	;;
+	call Locals;
+	call Objects;
+	call Atomics;
+	log 'aligned: ' (checked - wrong) ' of ' checked '\n';
+	call Bytes;
+	exit 0;
+
+	# (an address is on a multiple of the size it should be: 8 is 4 in 32-bit code, whose
+	# words are 4 bytes)
+	[Check: ptr<u8> place: 0; int size: 0;]
+		int most: (sizeof ptr<u8>) as int;
+		int need: size;
+		if need > most
+			need is most;
+		;;
+		checked++;
+		if (place as u64) % (need as u64) is not 0
+			wrong++;
+			log 'not aligned: ' (place as u64) ' for ' size '\n';
+		;;
+	[end]
+
+	[Locals]
+		u8 small: 1;
+		ptr<u8> p: 0;
+		u8 other: 2;
+		i64 wide: 3;
+		Mixed mine;
+		call Check: addr p 8;
+		call Check: addr wide 8;
+		call Check: addr mine.owner 8;
+		call Check: addr mine.count 4;
+		atomic p is addr small;
+		atomic mine.count++;
+		log 'locals: ' (p is addr small) ' ' mine.count ' ' other '\n';
+	[end]
+
+	[Objects]
+		new Holder h: 0 7;
+		new Plain plain: 3;
+		call Check: addr h 8;
+		call Check: addr h.first 8;
+		call Check: addr h.id 4;
+		call Check: addr plain.link 8;
+		log 'objects: ' (h.Id) ' ' plain.tag '\n';
+	[end]
+
+	[Atomics]
+		atomic shared.count++ 5;
+		atomic shared.owner is addr checked;
+		bln won: atomic shared.count is 9 when 5;
+		ptr<Mixed> through: addr many:1;
+		atomic through.count++ 2;
+		log 'atomics: ' shared.count ' ' won ' ' many:1.count '\n';
+	[end]
+
+	[Bytes]
+		# little-endian numbers at offsets 1 and 3, where a field couldn't be
+		u8 raw: 0xAA 0x34 0x12 0x78 0x56 0x34 0xF2 0xBB;
+		u32 a: (Bytes.U16: addr raw:1);
+		u32 b: (Bytes.U32: addr raw:3);
+		log 'bytes: ' a ' ' b '\n';
+	[end]
+}

@@ -486,7 +486,7 @@ phi_user_fault:   dd 0
 PHI_CORE_SELF     equ 0                 ; the block's own address
 PHI_CORE_CATCH    equ 4                 ; the innermost catch, or 0
 PHI_CORE_UNWIND   equ 8                 ; the innermost running method with things to give back, or 0
-PHI_CORE_ERROR    equ 12                ; the error being thrown (an Error: 713 bytes)
+PHI_CORE_ERROR    equ 12                ; the error being thrown (an Error: 716 bytes)
 PHI_CORE_FLAGS    equ 728               ; interrupts as they were at the throw, until the catch has the error
 PHI_CORE_BLOCK    equ 1024
 PHI_CORE_SELECTOR equ 0x68              ; core n's data segment is PHI_CORE_SELECTOR + n * 8

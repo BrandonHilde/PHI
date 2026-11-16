@@ -2205,9 +2205,14 @@ namespace Phi.Compiler.CodeGen
             }
 
             int size = 0;
-            string Reserve(int bytes)
+            // each on a multiple of 4, and of its own alignment up to the frame's (rbp is on 8 in
+            // 64-bit code, ebp on 4 in 32-bit), so an 8-byte variable atomic uses is on 8 there
+            int most = bits64 ? 8 : 4;
+            string Reserve(int bytes, int alignment = 4)
             {
                 size += (bytes + 3) & ~3;
+                int a = Math.Clamp(alignment, 4, most);
+                size = (size + a - 1) / a * a;
                 return $"ebp - {size}";
             }
 
@@ -2233,7 +2238,7 @@ namespace Phi.Compiler.CodeGen
                     for (int i = 0; i < v.Count; i++) elements.Add(Reserve(v.Capacity));
                     frame.StrArrays.Add((v, elements));
                 }
-                else v.Label = Reserve(StorageSize(v));
+                else v.Label = Reserve(StorageSize(v), v.Type.Alignment);
             }
 
             frame.LocalsSize = size;
@@ -3711,7 +3716,12 @@ namespace Phi.Compiler.CodeGen
         const int ErrorConvert = 7;
 
         /// <summary>The bytes of an Error, as the runtime (throw.asm) lays it out: kind, line, file, text, message.</summary>
-        const int ErrorSize = 4 + 4 + 65 + 256 + 384;
+        /// <summary>
+        /// An Error's size (lib/phi/lang/error.phi, and throw.asm's ERROR_SIZE): its fields, and
+        /// by the one rule its size a multiple of its largest field's, 4.
+        /// </summary>
+        static int ErrorSize => (ErrorFields + 3) / 4 * 4;
+        const int ErrorFields = 4 + 4 + 65 + 256 + 384;
 
         /// <summary>
         /// True when the program catches errors (an if call ... throws err somewhere): then each
@@ -9648,17 +9658,26 @@ namespace Phi.Compiler.CodeGen
         void EmitObjectAlloc(StructSymbol s)
         {
             Need("phi_out_of_memory");
-            Emit($"push dword {s.Size + (s.Typed ? 4 : 0)}");
+            int header = ObjectHeader(s);
+            Emit($"push dword {s.Size + header}");
             Emit($"call {HeapMethodLabel("Heap.Alloc")}");
             Emit($"add esp, {Slot}");
             Emit($"test {R("eax")}, {R("eax")}");
             Emit("jz phi_out_of_memory");
             if (s.Typed)
             {
-                Emit($"mov dword [eax], {TypeTable(s)}   ; what it is, for an interface that holds it");
-                Emit($"add {R("eax")}, 4");
+                Emit($"mov dword [eax + {header - 4}], {TypeTable(s)}   ; what it is, for an interface that holds it");
+                Emit($"add {R("eax")}, {header}");
             }
         }
+
+        /// <summary>
+        /// The bytes before an object, in the block the heap gave it: none, or for a struct with
+        /// interfaces its type table's word, which is just before the object. In 64-bit code that's
+        /// 8, the word after 4 unused, so the object starts on 8 as the block does and its fields
+        /// are aligned (the one rule's).
+        /// </summary>
+        int ObjectHeader(StructSymbol s) => !s.Typed ? 0 : bits64 ? 8 : 4;
 
         // ---------------------------------------------------------------- interfaces
 
@@ -9938,7 +9957,7 @@ namespace Phi.Compiler.CodeGen
             if (s.Typed)
             {
                 Emit($"mov {R("eax")}, {Pushed(1)}");
-                Emit($"sub {R("eax")}, 4              ; its type table is where its memory starts");
+                Emit($"sub {R("eax")}, {ObjectHeader(s)}              ; its memory starts before its type table");
                 Emit("push eax");
             }
             else Emit($"push {Pushed(1)}");
@@ -10043,7 +10062,7 @@ namespace Phi.Compiler.CodeGen
                 Emit($"mov ecx, {s.Size}");
                 Emit("rep movsb");
                 Emit($"mov {R("eax")}, {Pushed(2)}");
-                if (s.Typed) Emit($"sub {R("eax")}, 4");
+                if (s.Typed) Emit($"sub {R("eax")}, {ObjectHeader(s)}");
                 Emit("push eax");
                 Emit($"call {HeapMethodLabel("Heap.Free")}");
                 Emit($"add esp, {Slot}");

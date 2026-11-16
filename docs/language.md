@@ -1209,8 +1209,32 @@ tasks:i.id is i;
 tasks:i.position.y is 10;
 ```
 
-Fields are laid out in order with no padding, which is what hardware tables (like the GDT
-or a disk's partition table) need. In 32-bit code, `a is b` copies one struct into another
+**How a struct is laid out: one rule for every struct.** Fields are in the order they're
+written, each on a multiple of its alignment, with padding before it if it needs some; and
+the struct's size is a multiple of its largest field's alignment, so each element of an
+array of them is aligned too. A number, `bln`, `chr`, pointer or object field's alignment is
+its own size (a pointer's and an object's 4 in 32-bit code, 8 in 64-bit); text kept in the
+struct is bytes (1); text that grows and an array that grows start with an address; an array
+is its element's, an `atmost` one's at least 4 (its count, after the elements, is on a
+multiple of 4 too); a struct field its own. It's C's rule, so a struct's shape is known from
+its declaration alone, by the compiler, a compiled library, a debugger and a program reading
+its data back, and every word in it is aligned (which `atomic` needs, and makes plain reads
+from several threads whole):
+
+```phi
+struct.Counter
+{
+    u8 kind;        # at 0
+    int hits;       # at 4: three bytes of padding before it
+    ptr<u8> user;   # at 8
+    u8 flag;        # at 16 in 64-bit code (12 in 32-bit)
+}                   # 24 bytes in 64-bit code (16 in 32-bit)
+```
+
+Put larger fields first to waste less. A format that puts a number where the rule wouldn't
+(FAT's boot sector has a `u16` at offset 11) writes it as bytes, `u8 bytes_per_sector[2];`,
+which nothing pads, and reads it with `data.bytes` (`Bytes.U16: addr boot.bytes_per_sector`):
+the struct still matches the format byte for byte. In 32-bit code, `a is b` copies one struct into another
 and `if a is b` compares them, as for [objects](#objects). A struct parameter borrows the
 caller's struct rather than copying it. In 16-bit code, work with the fields one at a time.
 
@@ -2147,7 +2171,11 @@ locked counter_lock
 
 - `atomic` works on a variable, field or element that is a number or `bln` of up to 32
   bits, or a pointer (8 bytes in 64-bit code). A method's variable used with it stays in
-  memory (never in a register).
+  memory (never in a register). Each of those is on a multiple of its size (a struct's
+  [layout](#structs) sees to a field's, the frame to a method's variable's, and an object
+  starts on 8 in 64-bit code), as a locked step needs: one on a word that crosses a cache
+  line is a split lock, which Linux makes a program wait for. What isn't checked is memory a
+  program arranges itself, reached through a pointer: memory from `new` is aligned.
 - A `locked` block turns interrupts off on its own core while it holds the lock, so an
   interrupt handler that wants the same lock can't wait forever for the code it
   interrupted. Keep locked blocks short. A program's `locked` block leaves interrupts alone
@@ -2169,9 +2197,9 @@ Linux and Windows, in kernels and programs, 32 and 64 bits:
 - **Plain reads and writes of class variables** (and fields and elements of them) from
   several threads at once, without either: each read or write of a number of up to 32
   bits, a `bln` or a pointer is whole (never half of one value and half of another) when
-  it's aligned: every class variable starts on a word, and an element or field is
-  aligned when its place in the array or struct is a multiple of its size (structs have
-  no padding: put 32-bit fields before smaller ones). Each thread's writes are seen by
+  it's aligned, which every class variable, method variable, field and element is (a
+  struct's [layout](#structs) puts each field on a multiple of its size), and memory a
+  program arranges itself through a pointer is when the pointer is. Each thread's writes are seen by
   the others in the order it made them. But a thread
   can read a variable before its own earlier write to another one is seen, and nothing
   stops two threads' read-change-write steps (`total++`) from losing one: that's what
@@ -3142,11 +3170,11 @@ catch what can go wrong inside it.
 int done: (User32.EnumWindows: addr foreign OnWindow 0);
 ```
 
-**Structs as C lays them out.** A PHI struct is packed, each field right after the last.
-Outside code expects C's layout: `struct.Name foreign` puts each field on a multiple of its
-own size, with padding before it if it needs some, and rounds the whole up to a multiple of
-its largest field, so it matches in 32 and 64 bits without writing the padding by hand. It
-holds what C does: numbers, pointers, arrays of them, and other foreign structs.
+**Structs as C lays them out.** Every PHI struct is laid out as C lays one out (each field
+on a multiple of its own size, and the whole a multiple of its largest field: see
+[structs](#structs)), so outside code can be given one as it is, in 32 and 64 bits.
+`struct.Name foreign` says it's for outside code: it may hold only what C does (numbers,
+pointers, arrays of them, and other foreign structs), which the compiler checks.
 
 ```phi
 struct.Message foreign          # 28 bytes in 32-bit code, 48 in 64-bit code
@@ -3583,6 +3611,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `fs.fat16`, `fs.savelog`, `fs.stream`, `fs.stream_calls` | 32-bit kernels: see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `user.stream`, `fs.readahead`, `net.web`, `net.webstream` | a program's streams, a stream read ahead on a thread, web requests, and streams on URLs (a kernel's too): see [Files on disk](#files-on-disk-32-bit-kernels) |
 | `data.crc32` | class `Crc32` (32-bit kernels and programs): `Of: data length` →, `Add: crc data length` → (carries on from an earlier CRC) |
+| `data.bytes` | class `Bytes` (any kernel or program): `U16: place` →, `U32: place` → (a little-endian number from bytes at any address, as a file or disk has it; for a format's field where a struct's layout wouldn't put it) |
 | `fs.fileinfo` | `FileInfo`, one entry of a folder: what `Fat.Entries` and a program's `OS.ListFolder` fill in |
 | `proc.process` | 32-bit kernels: `Process.Spawn: path` →, `Wait: pid` →, `WaitAll` (see [Programs](#programs-and-processes)) |
 | `proc.cores`, `proc.threads` | 32-bit kernels: the other cores (`Cores.Start`, `Run`, `SharePrograms`) and kernel threads (`Threads.Start: method value`, `Wait`, `Done`): see [Several cores](#several-cores-32-bit-kernels) |

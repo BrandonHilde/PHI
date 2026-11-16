@@ -1541,7 +1541,20 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
+            // The one rule (Plan.md, "Atomics and struct layout"): each field on a multiple of its
+            // alignment (PhiType.Alignment), padding before it if it needs some, and the struct's
+            // size a multiple of its largest, as C lays a struct out; so every struct's shape is
+            // known from its declaration, and every word in it is aligned.
             int offset = 0;
+            void Place(string name, PhiType type)
+            {
+                int alignment = type.Alignment;
+                offset = (offset + alignment - 1) / alignment * alignment;
+                s.Alignment = Math.Max(s.Alignment, alignment);
+                s.Fields.Add(new FieldSymbol { Name = name, Type = type, Offset = offset });
+                offset += type.ByteSize;
+            }
+
             foreach (FieldDecl f in s.Decl.Fields)
             {
                 file = s.Decl.File;
@@ -1570,8 +1583,7 @@ namespace Phi.Compiler.Semantics
                     int? characters = ConstantCount(f.Count, null);
                     if (characters == null) continue;
                     PhiType chars = PhiType.TextOf(characters.Value);
-                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = chars, Offset = offset });
-                    offset += chars.ByteSize;
+                    Place(f.Name, chars);
                     continue;
                 }
                 if (f.TextSize != null && !type.IsString)
@@ -1588,8 +1600,7 @@ namespace Phi.Compiler.Semantics
                         int? each = ConstantCount(f.TextSize, null);
                         if (n == null || each == null || !FitsMemory(PhiType.TextOf(each.Value), n.Value, f.Count.Span)) continue;
                         PhiType lines = PhiType.TextOf(each.Value).ArrayOf(n.Value) with { Filled = f.Filled };
-                        s.Fields.Add(new FieldSymbol { Name = f.Name, Type = lines, Offset = offset });
-                        offset += lines.ByteSize;
+                        Place(f.Name, lines);
                         continue;
                     }
                     if (f.Count != null || f.Unsized)
@@ -1606,8 +1617,7 @@ namespace Phi.Compiler.Semantics
                     int? characters = ConstantCount(f.TextSize, null);
                     if (characters == null) continue;
                     PhiType text = PhiType.TextOf(characters.Value);
-                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = text, Offset = offset });
-                    offset += text.ByteSize;
+                    Place(f.Name, text);
                     continue;
                 }
                 if (f.Unsized)
@@ -1650,8 +1660,7 @@ namespace Phi.Compiler.Semantics
                     else element = type.Kind == TypeKind.Str ? PhiType.Str : type;   // str names[]: each element grows too
                     if (element.IsStruct && !inProgress.Contains(element.Struct!)) Layout(element.Struct!, inProgress);
                     PhiType growing = element.OpenOf();
-                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = growing, Offset = offset });
-                    offset += growing.ByteSize;
+                    Place(f.Name, growing);
                     continue;
                 }
                 if (f.IsNew && type.IsString)
@@ -1662,8 +1671,7 @@ namespace Phi.Compiler.Semantics
                         Error(f.Span, $"new str {f.Name}; is one text that grows; for an array of texts in a struct write str {f.Name}[8]: [40];");
                         continue;
                     }
-                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = PhiType.HeapText, Offset = offset });
-                    offset += PhiType.HeapText.ByteSize;
+                    Place(f.Name, PhiType.HeapText);
                     continue;
                 }
                 if (f.IsNew)
@@ -1683,8 +1691,7 @@ namespace Phi.Compiler.Semantics
                         if (n == null) continue;
                         objects = objects.ArrayOf(n.Value) with { Filled = f.Filled };
                     }
-                    s.Fields.Add(new FieldSymbol { Name = f.Name, Type = objects, Offset = offset });
-                    offset += objects.ByteSize;
+                    Place(f.Name, objects);
                     continue;
                 }
                 if (type.IsStruct && type.Struct!.IsInterface)
@@ -1701,25 +1708,16 @@ namespace Phi.Compiler.Semantics
                     type = type.ArrayOf(count.Value) with { Filled = f.Filled };
                 }
 
-                int size = type.ByteSize;
-                if (s.Decl.IsForeign)
+                if (s.Decl.IsForeign && ForeignAlignment(type) == null)
                 {
-                    // each field on a multiple of its own size, as C has it
-                    int? alignment = ForeignAlignment(type);
-                    if (alignment == null)
-                    {
-                        Error(f.Type.Span, $"{f.Name} is {A(type)}, but a foreign struct holds what C does: numbers, pointers, arrays of them, and other foreign structs");
-                        continue;
-                    }
-                    offset = (offset + alignment.Value - 1) / alignment.Value * alignment.Value;
-                    s.Alignment = Math.Max(s.Alignment, alignment.Value);
+                    Error(f.Type.Span, $"{f.Name} is {A(type)}, but a foreign struct holds what C does: numbers, pointers, arrays of them, and other foreign structs");
+                    continue;
                 }
-                s.Fields.Add(new FieldSymbol { Name = f.Name, Type = type, Offset = offset });
-                offset += size;
+                Place(f.Name, type);
             }
 
-            // (so that in an array each one starts as C would have it)
-            if (s.Decl.IsForeign) offset = (offset + s.Alignment - 1) / s.Alignment * s.Alignment;
+            // (so that in an array each one starts on a multiple of its alignment too)
+            offset = (offset + s.Alignment - 1) / s.Alignment * s.Alignment;
             s.Size = offset;
             s.LayoutDone = true;
             inProgress.Remove(s);

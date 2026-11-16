@@ -3982,6 +3982,39 @@ ones and reads the wrong field, silently. So the layout moves under measurement:
 Still not checked, and said in the reference: `atomic` through a pointer to memory a
 program laid out itself (memory from `new` is aligned).
 
+*Done, 2026-11-15:*
+- The rule in the binder (`Binder.Layout`'s `Place`, `PhiType.Alignment`): every struct,
+  `foreign` or not, and an `atmost` array's count on a multiple of 4. `PHI_LAYOUT=packed`
+  gives the old layout while the move goes on.
+- What knew the old places, found by running the tests under the rule: the runtime's
+  `Error` (its size 713 to 716, which the compiler's own check caught: "the Error struct is
+  716 bytes, and the runtime's is 713"; `ErrorSize` now follows the rule), and
+  `FatBootSector`, which every PHI OS test that reads its disk failed on. Only three of its
+  `u16`s are at odd offsets (11, 17, 19; the ones at 14 and 22 are where the rule puts them),
+  and they're bytes now, read with `data.bytes` (new: `Bytes.U16`, `Bytes.U32`), which
+  `audio/wav.phi`'s own readers moved to. No assembly in PHI, PHI-OS or the code libraries
+  reads a struct's field by number but `Error`'s (`throw.asm`). The other tests that failed
+  printed sizes the rule changes, each checked against its struct.
+- A method's variables on multiples of their size (up to 8 in 64-bit code), and an object
+  with a type table starting on 8 there (`ObjectHeader`: 8 bytes before it, the table's word
+  last, so `[object - 4]` is still the table).
+- `CompiledLibrary.AbiVersion` 1.2, with `LibraryLayoutTests`' saved layouts. Not done, and
+  not needed: a record of each struct's shape in a `.philib`. A library built by an older
+  rule has an older version and is refused when it's loaded, and the test fails if a layout
+  moves without the version, so the two already agree on every shape.
+- Tests `struct_layout_program` (sizes, and 21 places atomic can use, each checked to be
+  aligned as it runs: all 21 with the rule, 7 with the old layout; and `data.bytes`).
+- The reference: how a struct is laid out, `foreign`, the atomic section and the memory
+  model's paragraph; `data.bytes` in the library table; the release notes.
+- Checked: 771 tests on every system, the 64-bit ones with `PHI_IR=0` too, 750 `phi fuzz`
+  programs both ways, 620 unit tests; the code libraries built again (all 7 of their test
+  runs) and PHI-OS's test.
+- Measured, 64-bit, the old layout against the rule, best of three: every benchmark the same
+  but `lists`, 0.20 s to 0.21 and 4.5 MB to 5.3: its node, a `u32` and a pointer, is 16
+  bytes now (12 packed), as gcc's own version of it is. The rest the same to 0.01 s and
+  within 12 KB.
+- `PHI_LAYOUT=packed` removed: one rule is what's released.
+
 From the assessment written after building weblib (November 2026), done: an uncaught CPU error
 always prints, with its line; the stack running out is an error (`ErrorKind.STACK`), caught on
 any thread of a program; f64 math is exact to

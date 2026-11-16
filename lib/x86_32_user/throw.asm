@@ -37,7 +37,7 @@ ERROR_LINE    equ 4
 ERROR_FILE    equ 8
 ERROR_TEXT    equ 73
 ERROR_MESSAGE equ 329
-ERROR_SIZE    equ 713
+ERROR_SIZE    equ 716
 
 phi_throw:
     cld

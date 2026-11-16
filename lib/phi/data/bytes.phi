@@ -1,0 +1,23 @@
+# Numbers read from bytes as a file or a disk has them, at any address: a 16-bit or 32-bit
+# number, lowest byte first (little-endian, as x86, FAT, WAV and BMP have them). Any kernel
+# or program.
+#
+#   use data.bytes;
+#   u32 bytes_per_sector: (Bytes.U16: addr boot:0.bytes_per_sector);
+#   u32 size: (Bytes.U32: chunk + 4);
+#
+# A struct's fields are each on a multiple of their size (PHI's one rule for a struct's
+# layout), so a format that puts a number where that rule wouldn't (FAT's boot sector has a
+# u16 at offset 11) has that field written as bytes, u8 bytes_per_sector[2];, which nothing
+# pads, and read with these: the struct still matches the format byte for byte.
+
+phi.Bytes:Library
+{
+	[U16: ptr<u8> p: 0; : u32]
+	[end: p:0 | (p:1 << 8)]
+
+	[U32: ptr<u8> p: 0; : u32]
+		# (as u32: with its top byte 128 or more, the int the bytes make is negative)
+		u32 value: (p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24)) as u32;
+	[end: value]
+}

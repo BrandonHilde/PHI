@@ -16,6 +16,8 @@
 # Convert writes up to 4 times as many bytes as it reads (8-bit mono becomes 16-bit
 # stereo), so give it room. Resample interpolates between neighboring frames.
 
+use data.bytes;
+
 phi.Wav:Library
 {
 	const u32 FORMAT_PCM: 1;
@@ -57,15 +59,15 @@ phi.Wav:Library
 			while more and pos + 8 <= length
 				ptr<u8> chunk: header + pos;
 				u32 size: 0;
-				call size is Read32: chunk + 4;
+				call size is Bytes.U32: chunk + 4;
 				if chunk:0 is 'f' and chunk:1 is 'm' and chunk:2 is 't' and chunk:3 is ' ' and pos + 8 + 16 <= length
 					u32 format: 0;
-					call format is Read16: chunk + 8;
-					call channels is Read16: chunk + 10;
-					call rate is Read32: chunk + 12;
-					call bits is Read16: chunk + 22;
+					call format is Bytes.U16: chunk + 8;
+					call channels is Bytes.U16: chunk + 10;
+					call rate is Bytes.U32: chunk + 12;
+					call bits is Bytes.U16: chunk + 22;
 					if format is FORMAT_EXTENSIBLE and size >= 40 and pos + 8 + 26 <= length
-						call format is Read16: chunk + 32;
+						call format is Bytes.U16: chunk + 32;
 					;;
 					if format is not FORMAT_PCM
 						error is 'not PCM (it is compressed)';
@@ -203,11 +205,4 @@ phi.Wav:Library
 	# the most frames Resample can make from this many
 	[ResampleRoom: u32 frames: 0;]
 	[end: (frames << 16) / resample_step + 2]
-
-	[Read16: ptr<u8> p: 0;]
-	[end: p:0 | (p:1 << 8)]
-
-	[Read32: ptr<u8> p: 0;]
-		u32 value: (p:0 | (p:1 << 8) | (p:2 << 16) | (p:3 << 24)) as u32;
-	[end: value]
 }

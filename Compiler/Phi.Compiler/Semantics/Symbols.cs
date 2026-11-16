@@ -157,6 +157,30 @@ namespace Phi.Compiler.Semantics
         /// and objects' places, and the structs they're in, are laid out for where it runs.
         /// </summary>
         [ThreadStatic] static int addressSize;
+
+        /// <summary>
+        /// What a value of this type starts on a multiple of, in a struct (the one rule: each
+        /// field on a multiple of this, and a struct's size one of its largest): a number, bln,
+        /// chr, pointer, object or method value its own size; text kept in place 1 (it's bytes);
+        /// text that grows, an array that grows and an array of texts' table an address's; an
+        /// array its element's, and an atmost one's 4 at least (its count); a struct its own.
+        /// </summary>
+        public int Alignment
+        {
+            get
+            {
+                if (Open) return AddressSize;
+                if (IsHeapText) return AddressSize;
+                int element = Kind switch
+                {
+                    TypeKind.Str => Room > 0 ? 1 : AddressSize,
+                    TypeKind.Struct => Struct!.Alignment,
+                    _ => Math.Max(ElementSize, 1),
+                };
+                return Filled ? Math.Max(element, 4) : element;
+            }
+        }
+
         public static int AddressSize
         {
             get => addressSize == 0 ? 4 : addressSize;
@@ -181,13 +205,15 @@ namespace Phi.Compiler.Semantics
         };
 
         /// <summary>Bytes taken by the whole value: every element, and a filled array's count.</summary>
-        public int ByteSize => Open ? AddressSize + 8 : IsInlineText ? Room : IsHeapText ? 2 * AddressSize : ElementSize * Math.Max(Length, 1) + (Filled ? (TextTable ? AddressSize * Length : 0) + 4 : 0);
+        public int ByteSize => Open ? AddressSize + 8 : IsInlineText ? Room : IsHeapText ? 2 * AddressSize : Filled ? CountOffset + 4 : ElementSize * Math.Max(Length, 1);
 
         /// <summary>
-        /// Where a filled array keeps its count, from the start of the array. A filled array of
-        /// texts that grow has each one's room after the table, then the count.
+        /// Where a filled array keeps its count, from the start of the array: after the elements,
+        /// on a multiple of 4 (u8 buf[atmost 5] has it at 8). A filled array of texts that grow
+        /// has each one's room after the table, then the count.
         /// </summary>
-        public int CountOffset => TextTable ? 2 * AddressSize * Length : ElementSize * Length;
+        public int CountOffset => TextTable ? 2 * AddressSize * Length
+            : (ElementSize * Length + 3) / 4 * 4;
 
         /// <summary>An array of strs that each keep their text elsewhere: a table of their addresses.</summary>
         public bool TextTable => IsArray && Kind == TypeKind.Str && Room == 0;
@@ -416,7 +442,7 @@ namespace Phi.Compiler.Semantics
         public int Size { get; set; }
         public bool LayoutDone { get; set; }
 
-        /// <summary>What its address is a multiple of, in a foreign struct: its largest field's.</summary>
+        /// <summary>What it starts on a multiple of: its largest field's alignment (see PhiType.Alignment).</summary>
         public int Alignment { get; set; } = 1;
 
         /// <summary>

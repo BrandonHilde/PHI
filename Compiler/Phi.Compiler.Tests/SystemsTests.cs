@@ -84,7 +84,8 @@ namespace Phi.Compiler.Tests
             CompileResult result = CompileOk("struct.P\n{\n u8 a;\n u16 b;\n}\nstruct.Q\n{\n u8 pad;\n P inner;\n}\n" + Boot("Q q;\nq.inner.b is 3;"));
             var assign = result.Syntax!.Classes[0].Body.OfType<AssignStmt>().Single();
             var path = Assert.IsType<FieldPathSymbol>(((NameExpr)assign.Target).Symbol);
-            Assert.Equal(2, path.Offset);
+            // (each field on a multiple of its size: P's b at 2, Q's inner, a P, on 2)
+            Assert.Equal(4, path.Offset);
             Assert.Equal(PhiType.U16, path.Type);
         }
 

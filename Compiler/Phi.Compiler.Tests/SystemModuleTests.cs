@@ -291,7 +291,7 @@ namespace Phi.Compiler.Tests
             Assert.Equal(pointerAt, fields[1].Offset);
             Assert.Equal(withPointer, result.Syntax.Structs.Single(s => s.Name == "WithPointer").Symbol!.Size);
             Assert.Equal(padded, result.Syntax.Structs.Single(s => s.Name == "Padded").Symbol!.Size);
-            Assert.Equal(5, result.Syntax.Structs.Single(s => s.Name == "Packed").Symbol!.Size);   // the others stay packed
+            Assert.Equal(8, result.Syntax.Structs.Single(s => s.Name == "Packed").Symbol!.Size);   // every struct is laid out the same way
         }
 
         [Theory]

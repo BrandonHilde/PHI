@@ -33,18 +33,21 @@ use drivers.disk;
 use memory.heap;
 use proc.corelock;
 use fs.fileinfo;                # FileInfo, which programs use too (OS.ListFolder)
+use data.bytes;                 # the boot sector's numbers at odd offsets
 
-# the start of the partition's first sector: the BIOS Parameter Block
+# the start of the partition's first sector: the BIOS Parameter Block, byte for byte as FAT
+# has it. FAT puts three u16s at odd offsets (11, 17 and 19), where a struct's field of that
+# size wouldn't be (each is on a multiple of its size), so they're bytes, read with Bytes.U16
 struct.FatBootSector
 {
 	u8 jump[3];
 	u8 oem[8];
-	u16 bytes_per_sector;
+	u8 bytes_per_sector[2];
 	u8 sectors_per_cluster;
 	u16 reserved_sectors;
 	u8 fat_count;
-	u16 root_entries;
-	u16 total_sectors16;
+	u8 root_entries[2];
+	u8 total_sectors16[2];
 	u8 media;
 	u16 sectors_per_fat;
 	u16 sectors_per_track;
@@ -127,17 +130,17 @@ phi.Fat:Kernel
 			bln ok: false;
 			call ok is Disk.Read: 0 1 sector_buffer;
 			ptr<FatBootSector> boot: sector_buffer;
-			if ok and boot:0.bytes_per_sector is 512 and sector_buffer:510 is 0x55
+			if ok and (Bytes.U16: addr boot:0.bytes_per_sector) is 512 and sector_buffer:510 is 0x55
 				sectors_per_cluster is boot:0.sectors_per_cluster;
 				cluster_bytes is sectors_per_cluster * 512;
 				fat_start is boot:0.reserved_sectors;
 				fat_sectors is boot:0.sectors_per_fat;
 				fat_count is boot:0.fat_count;
 				root_start is fat_start + fat_count * fat_sectors;
-				root_sectors is (boot:0.root_entries * 32 + 511) / 512;
+				root_sectors is ((Bytes.U16: addr boot:0.root_entries) * 32 + 511) / 512;
 				data_start is root_start + root_sectors;
 
-				u32 total: boot:0.total_sectors16;
+				u32 total: (Bytes.U16: addr boot:0.total_sectors16);
 				if total is 0
 					total is boot:0.total_sectors32;
 				;;

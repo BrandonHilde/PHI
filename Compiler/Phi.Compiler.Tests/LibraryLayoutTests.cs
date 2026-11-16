@@ -68,67 +68,67 @@ phi.Lib:Library
 }
 ";
 
-        const string Saved = @"abi 1.1
-Linux Spot: 7 bytes, aligned to 1
+        const string Saved = @"abi 1.2
+Linux Spot: 8 bytes, aligned to 4
      0 x: int
      4 y: i16
      6 z: u8
-Linux Leaf: 45 bytes, aligned to 1
+Linux Leaf: 48 bytes, aligned to 4
      0 id: int
      4 name: str
     12 tag: str
-    33 parts: int array
-Linux Everything: 226 bytes, aligned to 1
+    36 parts: int array
+Linux Everything: 248 bytes, aligned to 8
      0 small: u8
-     1 whole: int
-     5 wide: i64
-    13 real: f64
-    21 flag: bln
-    22 pointer: ptr<u8>
-    26 fixed: str
-    37 grows: str
-    45 inside: Spot
-    52 managed: Leaf
-    97 one: Leaf
-   101 pair: Leaf array
-   109 few: Leaf array (at most 3)
-   125 many: Leaf array
-   137 spots: Spot array
-   149 four: Spot array
-   177 numbers: int array
-   189 some: int array (at most 5)
-   213 texts: str array
-   225 last: u8
-Linux64 Spot: 7 bytes, aligned to 1
+     4 whole: int
+     8 wide: i64
+    16 real: f64
+    24 flag: bln
+    28 pointer: ptr<u8>
+    32 fixed: str
+    44 grows: str
+    52 inside: Spot
+    60 managed: Leaf
+   108 one: Leaf
+   112 pair: Leaf array
+   120 few: Leaf array (at most 3)
+   136 many: Leaf array
+   148 spots: Spot array
+   160 four: Spot array
+   192 numbers: int array
+   204 some: int array (at most 5)
+   228 texts: str array
+   240 last: u8
+Linux64 Spot: 8 bytes, aligned to 4
      0 x: int
      4 y: i16
      6 z: u8
-Linux64 Leaf: 57 bytes, aligned to 1
+Linux64 Leaf: 64 bytes, aligned to 8
      0 id: int
-     4 name: str
-    20 tag: str
-    41 parts: int array
-Linux64 Everything: 290 bytes, aligned to 1
+     8 name: str
+    24 tag: str
+    48 parts: int array
+Linux64 Everything: 328 bytes, aligned to 8
      0 small: u8
-     1 whole: int
-     5 wide: i64
-    13 real: f64
-    21 flag: bln
-    22 pointer: ptr<u8>
-    30 fixed: str
-    41 grows: str
-    57 inside: Spot
-    64 managed: Leaf
-   121 one: Leaf
-   129 pair: Leaf array
-   145 few: Leaf array (at most 3)
-   173 many: Leaf array
-   189 spots: Spot array
-   205 four: Spot array
-   233 numbers: int array
-   249 some: int array (at most 5)
-   273 texts: str array
-   289 last: u8
+     4 whole: int
+     8 wide: i64
+    16 real: f64
+    24 flag: bln
+    32 pointer: ptr<u8>
+    40 fixed: str
+    56 grows: str
+    72 inside: Spot
+    80 managed: Leaf
+   144 one: Leaf
+   152 pair: Leaf array
+   168 few: Leaf array (at most 3)
+   200 many: Leaf array
+   216 spots: Spot array
+   232 four: Spot array
+   264 numbers: int array
+   280 some: int array (at most 5)
+   304 texts: str array
+   320 last: u8
 ";
 
         static string Layouts()
