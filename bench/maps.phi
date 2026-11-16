@@ -1,0 +1,38 @@
+# A map of 100,000 u32 keys to u32 values, 50 times: every key added (spread over all of a
+# u32, as a hash's keys would be), each found, as many that aren't there looked for, every
+# other one removed, and all of them looked for again. What a map costs: Map<u32 u32>.
+use data.map;
+
+phi.Maps:Program
+{
+	u32 total: 0;
+	while int r: 0; r < 50; r++;
+		total++ (Round: 100000);
+	;;
+	log total '\n';
+	exit 0;
+
+	[Round: u32 count: 0; : u32]
+		new Map<u32 u32> map;
+		const u32 SPREAD: 2654435761;
+		while u32 i: 0; i < count; i++;
+			call map.Set: i * SPREAD i;
+		;;
+		u32 sum: 0;
+		while u32 i: 0; i < count; i++;
+			sum++ (map.Get: i * SPREAD 0);
+		;;
+		# keys that aren't there: (count + i) * SPREAD is another key for each i (SPREAD is odd)
+		while u32 i: 0; i < count; i++;
+			if (map.Has: (count + i) * SPREAD)
+				sum++ 1000000;
+			;;
+		;;
+		while u32 i: 0; i < count; i++ 2;
+			call map.Remove: i * SPREAD;
+		;;
+		while u32 i: 0; i < count; i++;
+			sum++ (map.Get: i * SPREAD 0);
+		;;
+	[end: sum + (map.Count)]
+}
