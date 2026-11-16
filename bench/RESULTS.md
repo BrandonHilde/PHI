@@ -1,41 +1,41 @@
 # PHI beside C and C#
 
-Measured 2026-11-15 by `phi compare` on the benchmarks in `.`, on Intel(R) Core(TM) Ultra 9 185H (Fedora Linux 42 (Workstation Edition)).
+Measured 2026-11-16 by `phi compare` on the benchmarks in `.`, on Intel(R) Core(TM) Ultra 9 185H (Fedora Linux 42 (Workstation Edition)).
 
 ```
 Seconds, the best of 5 runs of each program, from being started to having ended:
 
               PHI 64-bit  PHI 32-bit     gcc -O2     gcc -O0          C#
-startup            0.000       0.000       0.000       0.000       0.014
-collatz            0.342       0.865       0.242       0.525       0.297
-crc                0.233       0.265       0.231       0.266       0.254
-fib                0.310       0.475       0.095       0.528       0.324
-interp             0.653       0.883       0.597       1.056       0.630
-lists              0.204       0.257       0.212       0.243       0.157
-mandelbrot         0.115       0.282       0.096       0.217       0.112
-maps               0.264       0.225       0.161       0.271       0.297
-matrix             0.134       0.412       0.045       0.346       0.144
-pixels             0.037           -       0.095       1.183       0.462
-sieve              0.317       0.365       0.302       0.601       0.349
-sort               0.268       0.291       0.248       0.392       0.357
-strings            0.271       0.371       0.319       0.277       0.336
+startup            0.000       0.000       0.000       0.000       0.017
+collatz            0.361       0.916       0.261       0.555       0.318
+crc                0.247       0.283       0.246       0.276       0.269
+fib                0.318       0.499       0.099       0.560       0.340
+interp             0.676       0.909       0.634       1.117       0.681
+lists              0.244       0.267       0.220       0.261       0.189
+mandelbrot         0.121       0.291       0.099       0.230       0.123
+maps               0.261       0.235       0.181       0.300       0.327
+matrix             0.081       0.427       0.048       0.364       0.154
+pixels             0.041           -       0.105       1.237       0.480
+sieve              0.345       0.383       0.324       0.648       0.372
+sort               0.299       0.310       0.261       0.415       0.372
+strings            0.282       0.383       0.330       0.275       0.358
 
 PHI 64-bit's time over each of the others' (1.50: PHI took half as long again; 0.50: half as long):
 
               PHI 32-bit     gcc -O2     gcc -O0          C#
-collatz             0.40        1.42        0.65        1.15
-crc                 0.88        1.01        0.88        0.92
-fib                 0.65        3.27        0.59        0.96
-interp              0.74        1.09        0.62        1.04
-lists               0.79        0.96        0.84        1.30
-mandelbrot          0.41        1.20        0.53        1.03
-maps                1.18        1.64        0.97        0.89
-matrix              0.33        2.96        0.39        0.93
-pixels                 -        0.39        0.03        0.08
-sieve               0.87        1.05        0.53        0.91
-sort                0.92        1.08        0.68        0.75
-strings             0.73        0.85        0.98        0.81
-together            0.67        1.22        0.52        0.78
+collatz             0.39        1.38        0.65        1.14
+crc                 0.87        1.00        0.89        0.91
+fib                 0.64        3.21        0.57        0.93
+interp              0.74        1.07        0.61        0.99
+lists               0.91        1.11        0.94        1.29
+mandelbrot          0.41        1.22        0.53        0.98
+maps                1.11        1.44        0.87        0.80
+matrix              0.19        1.70        0.22        0.53
+pixels                 -        0.39        0.03        0.09
+sieve               0.90        1.07        0.53        0.93
+sort                0.96        1.14        0.72        0.80
+strings             0.74        0.86        1.02        0.79
+together            0.65        1.17        0.50        0.74
 
 (together: the geometric mean of the rows above it)
 (startup: under 10 ms in PHI, which is starting and not work, so not in this table)
