@@ -3880,6 +3880,19 @@ or a struct's field. Asked for after `Map`'s table growth had to add its zeros o
   from itself, in a class's code and in a method; 32 and 64 bits, through the intermediate
   form and not), `append_arrays_errors`.
 
+**No two results from a method (2026-11-15, the user's choice).** Asked for after the
+freeze, and tried against what PHI has: "a value, or it failed" is `throw` and
+`if call ... throws err` (what Go and C use two results for); two real values (a quotient
+and remainder, a smallest and largest) are a struct parameter the method writes into,
+`[DivMod: int a: 0; int b: 0; QR result;]` then `call DivMod: 17 5 got;`, which borrows
+the caller's struct: no copy, no heap, no call in the method. Two results would only spare
+declaring a small struct for a one-off pair, and be a second way to do what struct
+parameters do: left out.
+- Worth doing instead: the reference showing that pattern where it says how a method gives
+  back several values; and returning a struct (`[DivMod: ... : QR]`), which makes a new
+  object on the heap for each call today (`phi_clone_QR`), could go straight into the
+  caller's variable when the struct is small: compiler work, nothing new to write.
+
 **No position in `while each` (2026-11-15, the user's choice).** Asked for after the freeze:
 `while each` giving the element's place as well as the element. Tried against the loop with
 a counter, it would only save writing `scores:i` and the bound: the counter loop is checked

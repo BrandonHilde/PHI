@@ -1254,6 +1254,24 @@ the struct still matches the format byte for byte. In 32-bit code, `a is b` copi
 and `if a is b` compares them, as for [objects](#objects). A struct parameter borrows the
 caller's struct rather than copying it. In 16-bit code, work with the fields one at a time.
 
+**More than one value back from a method.** A method gives back one value. For several, it
+writes them into a struct it's given, which borrows the caller's: nothing is copied and
+nothing goes on the heap (giving back a struct as the result makes a new object each call).
+A method that can fail throws, and the caller catches it with `if call ... throws err`.
+
+```phi
+struct.QR { int q; int r; }
+
+QR got;
+call DivMod: 17 5 got;
+log got.q ' ' got.r;          # 3 2
+
+[DivMod: int a: 0; int b: 0; QR result;]
+    result.q is a / b;
+    result.r is a % b;
+[end]
+```
+
 **Text in a struct.** `str name: [12];` holds text of up to 12 characters in the struct
 itself (13 bytes, with the zero that ends it). It works like any `str`: it's assigned, built,
 added to, compared, printed and passed where a `ptr<u8>` goes, with no `addr` or `sizeof`
