@@ -63,7 +63,7 @@ namespace Phi.Compiler.Semantics
     /// Resolves names, works out types and storage, and checks the program. It also rewrites
     /// compound assignments (x++ 2) into plain ones (x is x + 2) so code generation stays small.
     /// </summary>
-    public sealed class Binder
+    public sealed partial class Binder
     {
         public const string BootBase = "Bootloader";
         public const string KernelBase = "OS";
@@ -551,7 +551,7 @@ namespace Phi.Compiler.Semantics
             else if (result.Type.IsPointer) m.ReturnType = result.Type; // a ptr<u8> result still prints as text
             else if (MovedPointer(result) is PhiType moved) m.ReturnType = moved; // [end: text + n] is still a ptr<u8>
             else if (result.Type.IsNumeric) m.ReturnType = result.Type.IsUnsigned32 ? PhiType.U32 : PhiType.Int;
-            else if (result.Type.IsWide || result.Type.IsFloat) m.ReturnType = result.Type;
+            else if (result.Type.IsWide || result.Type.IsFloat || result.Type.IsVec) m.ReturnType = result.Type;
             else if (result.Type.IsObject || result.Type.IsStruct)
             {
                 // the caller gets an object of its own: a new local is handed over, anything else copied
@@ -1783,6 +1783,23 @@ namespace Phi.Compiler.Semantics
                     PhiType pointee = ResolveType(t.Pointee!, scope, allowStr: false);
                     return pointee.IsError ? PhiType.Error : PhiType.PointerTo(pointee);
                 }
+                case "vec":
+                {
+                    PhiType lane = ResolveType(t.Pointee!, scope, allowStr: false);
+                    if (lane.IsError) return PhiType.Error;
+                    if (!PhiType.CanBeLane(lane))
+                    {
+                        Error(t.Pointee!.Span, $"a vec's lanes are whole numbers (u8 to u64, int) or f32 or f64, and this is {A(lane)}");
+                        return PhiType.Error;
+                    }
+                    // (the intermediate form is what writes vector code: 64-bit programs, for now)
+                    if (PhiType.AddressSize != 8 || scope != null && scope.Unit != UnitKind.Program)
+                    {
+                        Error(t.Span, "vec is in 64-bit programs for now (--target linux64 or windows64)");
+                        return PhiType.Error;
+                    }
+                    return PhiType.VecOf(lane);
+                }
                 case "method":
                 {
                     // a struct parameter is the caller's object
@@ -2552,7 +2569,8 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            v.Type = d.Values.Count > 1 ? type.ArrayOf(d.Values.Count) : type;
+            // (a vec's values are its lanes)
+            v.Type = d.Values.Count > 1 && !type.IsVec ? type.ArrayOf(d.Values.Count) : type;
         }
 
         /// <summary>
@@ -2967,6 +2985,7 @@ namespace Phi.Compiler.Semantics
                     if (type.Filled) return new LengthSymbol { Name = m, Filled = Place() };
                     if (type.IsInlineText || type.IsHeapText) return new LengthSymbol { Name = m, Text = Place() };
                     if (type.IsArray) return new LengthSymbol { Name = m, Count = type.Length };
+                    if (type.IsVec) return new LengthSymbol { Name = m, Count = type.Lanes };
                     if (type.IsString && offset == 0 && hops == null) return new LengthSymbol { Name = m, Str = root };
                     return null;
                 }
@@ -3016,7 +3035,12 @@ namespace Phi.Compiler.Semantics
                 || scope.Method == null && classScopes[scope.Class].Names.ContainsKey(head + "#0"))
                 return $"'{head}' is declared only inside blocks (if, else, while) that have ended here; declare it before them to use it here";
             if (name.Contains('.') && LookupSimple(head, scope) is VariableSymbol v)
+            {
+                if (v.Type.IsVec)
+                    return $"'{head}' is a {v.Type}, which has no method {name[(head.Length + 1)..]}; it has .len (its lanes) and " +
+                           $"{string.Join(", ", VecMethodNames.Order(StringComparer.Ordinal))}";
                 return FieldsOf(v.Type) is StructSymbol fields ? $"{fields.Name} has no field '{name[(head.Length + 1)..]}'" : $"'{head}' is a {v.Type}, which has no '{name[(head.Length + 1)..]}'";
+            }
 
             if (OnlyElsewhere(name) is string elsewhere) return elsewhere;
             if (scope.Unit == UnitKind.Kernel) return $"unknown name '{name}'";
@@ -3035,7 +3059,10 @@ namespace Phi.Compiler.Semantics
         void BindStatements(List<Stmt> body, Scope scope, bool classLevel)
         {
             for (int i = 0; i < body.Count; i++)
+            {
                 body[i] = BindStatement(body[i], scope, classLevel);
+                if (classLevel) CheckNoVecAtClassLevel(body[i]);
+            }
         }
 
         Stmt BindStatement(Stmt stmt, Scope scope, bool classLevel)
@@ -3060,7 +3087,7 @@ namespace Phi.Compiler.Semantics
                         KeepTextPointer(value);
                         if (value.Type.IsArray && value.Type.Element == PhiType.U8 && value is NameExpr or MemberExpr)
                             Error(value.Span, $"can't print a u8 array; to print the text in it (up to a zero byte), write addr {Describe(value)}");
-                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsWide && !value.Type.IsFloat && !value.Type.IsString)
+                        else if (!value.Type.IsError && !value.Type.IsNumeric && !value.Type.IsWide && !value.Type.IsFloat && !value.Type.IsString && !value.Type.IsVec)
                             Error(value.Span, $"can't print a {value.Type}; print one element or field at a time");
                     }
                     return log;
@@ -3284,6 +3311,12 @@ namespace Phi.Compiler.Semantics
             if (decl.IsNew)
             {
                 BindNewDecl(decl, v, scope);
+                return;
+            }
+
+            if (v.Type.IsVec)
+            {
+                BindVecDecl(decl, v, scope, classLevel);
                 return;
             }
 
@@ -3538,6 +3571,15 @@ namespace Phi.Compiler.Semantics
             if (assign.Target.Type.Filled || IsGrowingArray(assign.Target)) return BindAppend(assign, scope);
             if (FilledArrayOf(assign.Target) is Expr counted) return BindSetLength(assign, counted, scope);
             bool toStr = assign.Target.Type.IsString && !assign.Target.Type.IsArray;
+            if (assign.Target.Type.IsVec && assign.Values is { Count: > 1 } lanes && assign.Op == AssignOp.Set)
+            {
+                // v is 1.0 2.0 3.0 4.0;  a lane each
+                foreach (Expr lane in lanes) BindExpr(lane, scope);
+                if (lanes.Any(l => l.Type.IsError)) return assign;
+                assign.Value = MakeVec(assign.Target.Type, lanes, assign.Span, $"'{Describe(assign.Target)}'");
+                assign.Values = null;
+                return assign;
+            }
             if ((assign.Values is { Count: > 1 } && (toStr || !assign.ValueIsWhole)) || (toStr && assign.Op == AssignOp.Add))
                 return BindStringBuild(assign, scope);
 
@@ -4600,6 +4642,10 @@ namespace Phi.Compiler.Semantics
                     call.Type = PhiType.Int; // eax
                     break;
 
+                case VecMethod vm:
+                    call.Type = vm.Result;
+                    break;
+
                 case SysCallDecl sys:
                     call.Type = sys.ResultType ?? PhiType.Int;
                     break;
@@ -4679,6 +4725,8 @@ namespace Phi.Compiler.Semantics
             if (calleeTarget is MemberExpr member)
             {
                 BindExpr(member.Target, scope);
+                if (member.Target.Type.IsVec)
+                    return BindVecCall(member.Target, member.Member, arguments, calleeSpan);
                 if (FieldsOf(member.Target.Type) is { IsInterface: true } iface)
                     return BindInterfaceCall(iface, member.Target, member.Member, calleeName, calleeSpan, arguments, span, scope);
                 if (FieldsOf(member.Target.Type) is StructSymbol fields && FindStructMethod(fields, member.Member, scope) is MethodSymbol found)
@@ -4693,6 +4741,8 @@ namespace Phi.Compiler.Semantics
             {
                 var receiver = new NameExpr { Name = calleeName[..dot], Span = calleeSpan };
                 BindExpr(receiver, scope);
+                if (receiver.Type.IsVec)
+                    return BindVecCall(receiver, calleeName[(dot + 1)..], arguments, calleeSpan);
                 if (FieldsOf(receiver.Type) is { IsInterface: true } iface)
                     return BindInterfaceCall(iface, receiver, calleeName[(dot + 1)..], calleeName, calleeSpan, arguments, span, scope);
                 if (FieldsOf(receiver.Type) is StructSymbol fields && FindStructMethod(fields, calleeName[(dot + 1)..], scope) is MethodSymbol found)
@@ -5316,7 +5366,7 @@ namespace Phi.Compiler.Semantics
                     Symbol? symbol = Lookup(name.Name, scope);
 
                     // (OS.GetTicks) or (c.Area): a call with no arguments, when no variable has the name
-                    if (symbol == null && name.InParens && (ResolveCallee(name.Name, scope) != null || IsStructMethodName(name.Name, scope)))
+                    if (symbol == null && name.InParens && (ResolveCallee(name.Name, scope) != null || IsStructMethodName(name.Name, scope) || IsVecMethodName(name.Name, scope)))
                     {
                         name.Call = new CallExpr { Callee = name.Name, CalleeSpan = name.Span, Span = name.Span };
                         BindCallExpr(name.Call, scope);
@@ -5374,6 +5424,29 @@ namespace Phi.Compiler.Semantics
                         member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = member };
                         BindCallExpr(member.Call, scope);
                         member.Type = member.Call.Type;
+                        break;
+                    }
+
+                    // v.len: its lanes; (v.Sum), (rows:i.Min: b): its own methods
+                    if (t.IsVec)
+                    {
+                        if (member.Member == "len")
+                        {
+                            member.Count = t.Lanes;
+                            member.Type = PhiType.Int;
+                            break;
+                        }
+                        if (member.InParens && VecMethodNames.Contains(member.Member))
+                        {
+                            member.Call = new CallExpr { Callee = member.Member, CalleeSpan = member.MemberSpan, Span = member.Span, CalleeTarget = member };
+                            BindCallExpr(member.Call, scope);
+                            member.Type = member.Call.Type;
+                            break;
+                        }
+                        Error(member.MemberSpan, VecMethodNames.Contains(member.Member)
+                            ? $"{member.Member} is {A(t)}'s method: call it in parentheses, ({Describe(member.Target)}.{member.Member}{(VecMethodTakes(member.Member) > 0 ? ": ..." : "")})"
+                            : $"{A(t)} has .len (its lanes) and its methods ({string.Join(", ", VecMethodNames.Order(StringComparer.Ordinal))}), and no '{member.Member}'");
+                        member.Type = PhiType.Error;
                         break;
                     }
 
@@ -5513,6 +5586,12 @@ namespace Phi.Compiler.Semantics
                     PhiType to = ResolveType(cast.TargetType, scope, allowStr: false);
                     cast.Type = PhiType.Error;
                     if (cast.Operand.Type.IsError || to.IsError) break;
+                    if (cast.Operand.Type.IsVec || to.IsVec)
+                    {
+                        if (VecCastError(cast.Operand.Type, to) is string why) Error(cast.Span, why);
+                        else cast.Type = to;
+                        break;
+                    }
 
                     // numbers, pointers and method addresses become each other; nothing else does
                     // (an i64 or u64 to 32 bits keeps the low half)
@@ -5554,6 +5633,16 @@ namespace Phi.Compiler.Semantics
 
                 case UnaryExpr unary when IsWideOperand(unary.Operand, scope):
                     unary.Type = unary.Op == UnaryOp.Not ? PhiType.Bool : unary.Operand.Type;
+                    break;
+
+                case UnaryExpr unary when unary.Operand.Type.IsVec:
+                    // -v and ~v work on every lane (~ on its bits, as & | ^ do, for masks too)
+                    if (unary.Op == UnaryOp.Not)
+                    {
+                        Error(unary.Span, $"not is for a bln, and this is {A(unary.Operand.Type)}; (v.Equal: 0) gives a mask of the lanes that are 0, and ~ turns every bit over");
+                        unary.Type = PhiType.Error;
+                    }
+                    else unary.Type = unary.Operand.Type;
                     break;
 
                 case UnaryExpr unary when unary.Operand.Type.IsFloat:
@@ -5628,6 +5717,11 @@ namespace Phi.Compiler.Semantics
             {
                 index.Type = t.Pointee!; // no limit: a pointer can point anywhere
             }
+            else if (t.IsVec)
+            {
+                index.Type = t.Lane!;    // one lane, checked as an array's element is
+                limit = t.Lanes;
+            }
             else
             {
                 Error(index.Span, $"'{Describe(index.Target)}' is a {t}, which can't be indexed");
@@ -5639,7 +5733,7 @@ namespace Phi.Compiler.Semantics
             {
                 // a constant index is checked now instead of when the program runs
                 if (constant < 0 || constant >= limit)
-                    Error(index.Index.Span, $"index {constant} is outside '{Describe(index.Target)}', which has {(t.Filled ? "room for " : "")}{limit} {(t.IsString ? "bytes" : "elements")}");
+                    Error(index.Index.Span, $"index {constant} is outside '{Describe(index.Target)}', which has {(t.Filled ? "room for " : "")}{limit} {(t.IsString ? "bytes" : t.IsVec ? "lanes here" : "elements")}");
                 return;
             }
 
@@ -5771,6 +5865,8 @@ namespace Phi.Compiler.Semantics
                         addr.CodeLabel = m.Label;
                         addr.Method = m;
                         name.Type = PhiType.Void;
+                        if (m.Parameters.Any(p => p.Type.IsVec) || m.ReturnType.IsVec)
+                            Error(name.Span, $"{m.Name} takes or gives a vec, so it's called by name, not through a method value (yet)");
                         // an interrupt handler ends with iret, so it can't be called like a method
                         if (!m.IsInterruptHandler) addr.Type = PhiType.MethodOf(SignatureOf(m));
                         return;
@@ -5889,6 +5985,12 @@ namespace Phi.Compiler.Semantics
             if (b.Left.Type.IsError || b.Right.Type.IsError)
             {
                 b.Type = PhiType.Error;
+                return;
+            }
+
+            if (b.Left.Type.IsVec || b.Right.Type.IsVec)
+            {
+                BindVecBinary(b);
                 return;
             }
 
@@ -6110,6 +6212,7 @@ namespace Phi.Compiler.Semantics
         Expr Convert(Expr e, PhiType target, string what)
         {
             if (e.Type.IsError || target.IsError) return e;
+            if (target.IsVec || e.Type.IsVec) return ConvertVec(e, target, what);
 
             // a number written there that the type can't hold (u8 small: 300;) is a mistake, not
             // a wrap: what fits its bits either way goes in (-1 and 0xFF are both a u8's), and

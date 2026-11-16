@@ -640,7 +640,7 @@ namespace Phi.Compiler.Syntax
         /// `line is 'Ln ' n;` two values, and in `s is '!' -3;` also two. Only a str takes more
         /// than one; a number keeps Value (where `n -1` subtracts).
         /// </summary>
-        public List<Expr>? Values { get; init; }
+        public List<Expr>? Values { get; set; }
 
         /// <summary>Value is the whole right side (nothing came after it).</summary>
         public bool ValueIsWhole { get; init; } = true;
@@ -999,6 +999,15 @@ namespace Phi.Compiler.Syntax
         public Expr Count { get; set; } = null!;
         /// <summary>It went to an array parameter, the one place it can go.</summary>
         public bool Passed { get; set; }
+    }
+
+    /// <summary>
+    /// A vec made by the binder from what it's given: no lanes (zeros), one (that value in
+    /// every lane) or one for each lane, in order. Each is a lane's type already.
+    /// </summary>
+    public sealed class VecExpr : Expr
+    {
+        public List<Expr> Lanes { get; } = new();
     }
 
     /// <summary>

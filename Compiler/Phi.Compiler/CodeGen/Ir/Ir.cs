@@ -22,6 +22,9 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>An f64, in an xmm register (or its slot in the frame).</summary>
         public bool Float { get; init; }
+
+        /// <summary>A vec: all 16 bytes of an xmm register (or two slots in the frame).</summary>
+        public bool Vec { get; init; }
         public string Name { get; init; } = "";
         public override string ToString() => Name.Length > 0 ? $"v{Id}({Name})" : $"v{Id}";
     }
@@ -47,10 +50,11 @@ namespace Phi.Compiler.CodeGen.Ir
     public enum Cond { Eq, Ne, LtS, LeS, GtS, GeS, LtU, LeU, GtU, GeU }
 
     /// <summary>How a number is kept in memory: its bytes, and whether a smaller one is signed.</summary>
-    public enum MemKind { U8, S8, U16, S16, D32, Q64, F64 }
+    /// <summary>F32: an f32 in memory, an f64 in a register (read, it's made one; written, rounded). V128: a vec's 16 bytes.</summary>
+    public enum MemKind { U8, S8, U16, S16, D32, Q64, F64, F32, V128 }
 
-    /// <summary>What a call gives back: nothing, 32 bits in eax, 64 in edx:eax (a 64-bit number), a pointer in rax, or an f64 in st0.</summary>
-    public enum CallResult { None, Eax, EdxEax, Rax, St0 }
+    /// <summary>What a call gives back: nothing, 32 bits in eax, 64 in edx:eax (a 64-bit number), a pointer in rax, an f64 in st0, or a vec in xmm0.</summary>
+    public enum CallResult { None, Eax, EdxEax, Rax, St0, Xmm0 }
 
     public enum FOp { Add, Sub, Mul, Div }
 
@@ -92,6 +96,111 @@ namespace Phi.Compiler.CodeGen.Ir
     }
 
     public abstract class Instr { }
+
+    // ---------------------------------------------------------------- vecs
+
+    /// <summary>What a vec instruction does to each lane (or across them).</summary>
+    public enum VOp
+    {
+        Add, Sub, Mul, Div, And, Or, Xor, Neg, Not, Shl, Shr, Min, Max, Abs, Sqrt, AddSat, SubSat, Average,
+        Less, Equal, Greater, Pick, Widen, WidenHigh, Narrow, Convert,
+    }
+
+    /// <summary>
+    /// Dst = Op of A (and B, and C for Pick: A the mask, B where it's set, C where it isn't), lane
+    /// by lane, the lanes Lane's kind; a shift's count is Count; Widen, Narrow and Convert make
+    /// lanes of To's kind.
+    /// </summary>
+    public sealed class VecI : Instr
+    {
+        public VOp Op { get; init; }
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public VReg? B { get; init; }
+        public VReg? C { get; init; }
+        public Opnd Count { get; init; }
+        public Semantics.TypeKind Lane { get; init; }
+        public Semantics.TypeKind To { get; init; }
+    }
+
+    /// <summary>
+    /// Dst = a vec: Bytes when every lane is known when it's built, zeros when there are no
+    /// lanes, one value in every lane, or a value for each (whole numbers in a register or
+    /// written in, floats in an f64 register, rounded for f32 lanes).
+    /// </summary>
+    public sealed class VecMakeI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public byte[]? Bytes { get; init; }
+        public List<Opnd> Lanes { get; } = new();
+        public Semantics.TypeKind Lane { get; init; }
+    }
+
+    /// <summary>Dst = lane Index of A (a whole number, or an f64 for float lanes).</summary>
+    public sealed class VecGetI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public Opnd Index { get; init; }
+        public Semantics.TypeKind Lane { get; init; }
+    }
+
+    /// <summary>Dst = A with lane Index made Value.</summary>
+    public sealed class VecSetI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public Opnd Index { get; init; }
+        public Opnd Value { get; init; }
+        public Semantics.TypeKind Lane { get; init; }
+    }
+
+    public enum VReduce { Sum, Smallest, Largest, Any, All, Same }
+
+    /// <summary>Dst = one value from A's lanes: their sum, the smallest or largest, whether any or all are set (a mask's), or whether A is B lane for lane (Same).</summary>
+    public sealed class VecReduceI : Instr
+    {
+        public VReduce Op { get; init; }
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public VReg? B { get; init; }
+        public Semantics.TypeKind Lane { get; init; }
+    }
+
+    /// <summary>Dst = an f64 rounded to the f32 nearest it (what an f32 variable holds).</summary>
+    public sealed class RoundF32I : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Src { get; init; } = null!;
+    }
+
+    // ---------------------------------------------------------------- log
+
+    public enum PrintKind { Text, Int, Uint, Int64, Uint64, Float, Char }
+
+    /// <summary>
+    /// One value of a log written out, as the generator's EmitLog writes it (to the screen,
+    /// or with Serial to COM1 or standard error): text at a label or an address, a number,
+    /// a character. A call of the library, which may change what any call changes.
+    /// </summary>
+    public sealed class PrintI : Instr
+    {
+        public PrintKind Kind { get; init; }
+        public Opnd Value { get; init; }
+
+        /// <summary>Text written in the program (Kind Text): printed from the generator's label for it.</summary>
+        public string? Literal { get; init; }
+
+        /// <summary>A class's str (Kind Text): its label, where its text is.</summary>
+        public string? Label { get; init; }
+        public bool Serial { get; init; }
+    }
+
+    /// <summary>A call of one of the library's routines that takes nothing (phi_log_take, phi_log_give, phi_flush).</summary>
+    public sealed class RoutineI : Instr
+    {
+        public string Label { get; init; } = "";
+    }
 
     /// <summary>The code of a new line of the source starts here (its label, for errors and the profiler).</summary>
     public sealed class LineMark : Instr
@@ -278,6 +387,9 @@ namespace Phi.Compiler.CodeGen.Ir
     {
         public string Label { get; init; } = "";
         public List<Opnd> Args { get; } = new();
+
+        /// <summary>How each argument is kept: an f32's is rounded into the low half of its 8 bytes, a vec's takes 16.</summary>
+        public List<MemKind> ArgKinds { get; } = new();
         public VReg? Dst { get; init; }
         public CallResult Result { get; init; }
     }
@@ -340,6 +452,9 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>An f64, given back in st0 (as the generator gives one).</summary>
         public bool Float { get; init; }
+
+        /// <summary>A vec, given back in xmm0.</summary>
+        public bool Vec { get; init; }
     }
 
     public sealed class Block
@@ -357,6 +472,29 @@ namespace Phi.Compiler.CodeGen.Ir
             var v = new VReg { Id = Values.Count, Wide = true, Float = true, Name = name };
             Values.Add(v);
             return v;
+        }
+
+        public VReg NewVec(string name = "")
+        {
+            var v = new VReg { Id = Values.Count, Wide = true, Vec = true, Name = name };
+            Values.Add(v);
+            return v;
+        }
+
+        /// <summary>
+        /// 48 bytes in the frame for what's worked out a part at a time (a vec's lanes one by
+        /// one, a number written out as text), within one instruction; null until one needs it.
+        /// </summary>
+        public string? Scratch { get; private set; }
+
+        public string NeedScratch()
+        {
+            if (Scratch == null)
+            {
+                for (int k = 0; k < 6; k++) NewHome();
+                Scratch = $"rbp - {8 * Homes}";
+            }
+            return Scratch;
         }
 
         public string Name { get; init; } = "";
@@ -446,6 +584,14 @@ namespace Phi.Compiler.CodeGen.Ir
             FNegI f => $"{f.Dst} = fneg {f.A}",
             ToFloatI f => $"{f.Dst} = tofloat{(f.Signed ? "s" : "u")} {f.Src}",
             ToWholeI f => $"{f.Dst} = towhole {f.Src}",
+            VecI v => $"{v.Dst} = v{v.Op}.{v.Lane} {v.A}{(v.B != null ? ", " + v.B : "")}{(v.C != null ? ", " + v.C : "")}{(v.Op == VOp.Shl || v.Op == VOp.Shr ? ", " + v.Count : "")}",
+            VecMakeI m => $"{m.Dst} = vmake.{m.Lane} {(m.Bytes != null ? "[" + string.Join(" ", m.Bytes) + "]" : string.Join(" ", m.Lanes))}",
+            VecGetI g => $"{g.Dst} = {g.A}:{g.Index}",
+            VecSetI st => $"{st.Dst} = {st.A} with :{st.Index} = {st.Value}",
+            VecReduceI r => $"{r.Dst} = v{r.Op}.{r.Lane} {r.A}{(r.B != null ? ", " + r.B : "")}",
+            RoundF32I r => $"{r.Dst} = roundf32 {r.Src}",
+            PrintI p => $"print {p.Kind} {(object?)p.Literal ?? (object?)p.Label ?? p.Value}",
+            RoutineI r => $"call {r.Label}",
             _ => i.GetType().Name,
         };
     }

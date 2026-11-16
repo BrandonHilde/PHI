@@ -93,7 +93,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `method` `lock` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `vec` `method` `lock` |
 | Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `foreign` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `exists` `below` `above` `atmost` `atleast` `true` `false` |
@@ -1194,6 +1194,86 @@ t.next.id is 3;                 # through a pointer field too
 - Memory reached through a pointer is read and written every time, and so are class
   variables. A method's own number and pointer variables may be kept in registers; mark a
   variable [`volatile`](#volatile) when something else changes it.
+
+## Vectors: vec&lt;T&gt;
+
+A `vec<T>` is several numbers worked on by one instruction: as many `T`s as a vector
+register holds. You say what the numbers are, and the build says how many fit: 16 bytes
+today, every x86-64 CPU's SSE2, so 16 `u8`s, 8 `i16`s, 4 `f32`s or 2 `f64`s. `T` is any
+whole number (`i8` to `u64`, `int`) or `f32` or `f64`. It's for 64-bit programs
+(`--target linux64` or `windows64`), in methods.
+
+```phi
+vec<f32> a: 1.0 2.0 3.0 4.0;        # a value for each lane
+vec<f32> b: a * 2.0;                # a number goes in every lane: 2 4 6 8
+vec<f32> c: a + b;                  # lane by lane: 3 6 9 12
+log c:2 ' ' c.len ' ' (c.Sum);      # one lane, how many there are, all added: 9 4 30
+vec<u8> zero;                       # zeros
+```
+
+**It reads as a short array.** `v:i` is a lane (checked, as an element is; `v:i is x;` sets
+one), and `v.len` is how many lanes there are. Code that steps by `v.len` rather than by a
+number runs unchanged on a build with wider vectors. `log` writes the lanes with a space
+between. A `vec` is a value: copied whole, given to methods and given back, in a class's
+variables and arrays, in a struct's fields (16 bytes, on a multiple of 16).
+
+**Operators work lane by lane.** `+ - *`, and `/` for `f32` and `f64` (x86's vector
+instructions don't divide whole numbers, so that's an error); `& | ^ ~` on the bits (masks
+too); `<<` and `>>` by one count for every lane (a count of the lane's width or more leaves
+0, or the sign in every bit for a signed `>>`); `-v`. Whole numbers wrap, as PHI's do. A
+number next to a vec is that number in every lane. `a is b` is true when every lane is the
+same. `<` and `>` keep their one meaning, for one number and another: vectors are compared
+with methods.
+
+**Its methods**, each called in parentheses like a struct's:
+
+| Method | Gives | Lanes it's for |
+|---|---|---|
+| `(a.Min: b)`, `(a.Max: b)` | the smaller or larger of each lane | all |
+| `(v.Abs)` | each lane without its sign | signed ones, floats |
+| `(v.Sqrt)` | each lane's square root | `f32`, `f64` |
+| `(a.AddSat: b)`, `(a.SubSat: b)` | + and -, stopping at the ends of the range rather than wrapping (as pixels need) | 8- and 16-bit |
+| `(a.Average: b)` | each pair's average, rounding up | `u8`, `u16` |
+| `(v.Sum)`, `(v.Smallest)`, `(v.Largest)` | one number from all the lanes (the sum wraps as the lanes do: widen first for a total that needs more) | all |
+| `(a.Less: b)`, `(a.Greater: b)`, `(a.Equal: b)` | a mask: a vec of the same kind with every bit of a lane set where it holds | all |
+| `(mask.Pick: x y)` | each lane from `x` where the mask is set, from `y` where it isn't | any mask, two vecs with as many lanes |
+| `(mask.Any)`, `(mask.All)` | a `bln`: whether any or every lane of a mask is set | all |
+| `(v.Widen)`, `(v.WidenHigh)` | the low or high half's lanes, twice as wide (`u8` to `u16`, `f32` to `f64`) | up to 32 bits |
+| `(low.Narrow: high)` | two vecs' lanes half as wide, stopping at the ends (`u16` to `u8`, `f64` to `f32`) | 16 bits up |
+
+**`as`** makes one vec another: between whole numbers it's the same 16 bytes seen as other
+lanes (`(bytes as vec<u32>)`, four bytes at a time); between floats and whole numbers it's
+each lane's value (toward zero), so the lanes stay as many (`vec<f32>` and `vec<int>`).
+
+**Memory**, a block at a time, through a pointer, as PHI reaches memory anywhere:
+
+```phi
+[Brighten: ptr<u8> pixels: 0; u32 bytes: 0; u8 amount: 0;]
+    vec<u8> add: amount;
+    ptr<vec<u8>> blocks: pixels as ptr<vec<u8>>;
+    u32 whole: bytes / add.len;
+    while u32 i: 0; i < whole; i++;
+        blocks:i is (blocks:i.AddSat: add);     # 16 bytes at once, stopping at 255
+    ;;
+    while u32 i: whole * add.len; i < bytes; i++;
+        int sum: pixels:i + amount;             # what's left, a byte at a time
+        if sum > 255
+            sum is 255;
+        ;;
+        pixels:i is sum as u8;
+    ;;
+[end]
+```
+
+That runs about six times as fast as the byte-at-a-time loop alone. A `vec` is any
+alignment in memory (it's read and written with `movdqu`).
+
+**For now:** a class's own statements don't use vecs (a class's `vec` variable starts as
+zeros, and is given its lanes in a method); a method that uses one can't also catch errors
+(`if call ... throws`): put the catching in a method of its own, which can call it; and a
+method that takes or gives one is called by name, not as a method value. Each is an error
+that says so. The code is SSE2's, which every x86-64 CPU has; a build option for newer CPUs
+(`--x86-64-v2`, and wider vectors after) is planned, with the same source.
 
 ## Structs
 

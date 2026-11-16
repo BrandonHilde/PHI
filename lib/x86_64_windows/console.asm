@@ -12,10 +12,12 @@ CONSOLE_BUFFER equ 4096
 ; A call to kernel32's function %1, with the stack 16-byte aligned and its 32 bytes of
 ; shadow space, and any arguments past the fourth (%2, %3, %4: registers other than rsp
 ; and r12, or numbers) on the stack after them. The first four go in rcx, rdx, r8 and r9
-; first. r12 keeps where the stack was (kernel32 keeps r12; PHI's code doesn't use it).
+; first. r12 keeps where the stack was (kernel32 keeps r12), and is put back after: PHI keeps
+; values in r12 to r15 across a call.
 ; (system.asm has the same, for whichever of them comes first.)
 %ifnmacro PHI_CALL 1-4
 %macro PHI_CALL 1-4
+    push r12                ; (kept: PHI's code keeps values in r12 to r15 across a call)
     mov r12, rsp
     and rsp, -16
     sub rsp, 64
@@ -30,6 +32,7 @@ CONSOLE_BUFFER equ 4096
 %endif
     call [rel phi_imp_%1]
     mov rsp, r12
+    pop r12
 %endmacro
 %endif
 
@@ -119,7 +122,7 @@ phi_print_serial:
 
 ; rbx = a handle (a file, or standard output), rsi = data, edx = its length: write all of
 ; it (a pipe can take less at a time) -> eax = 1 if it was, 0 if writing failed. Changes
-; rsi, rdx, rcx, r8 to r12.
+; rsi, rdx, rcx, r8 to r11.
 phi_write_all:
     test edx, edx
     jle .done

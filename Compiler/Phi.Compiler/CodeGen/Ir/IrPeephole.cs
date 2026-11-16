@@ -148,6 +148,7 @@ namespace Phi.Compiler.CodeGen.Ir
         static bool Pure(Instr i) => i switch
         {
             ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadI or AddrI or LeaI or FConstI or FBinI or FNegI or ToFloatI or ToWholeI => true,
+            VecI or VecMakeI or VecGetI or VecSetI or VecReduceI or RoundF32I => true,
             BinI b => b.Op is not (BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU),
             _ => false,
         };
@@ -183,7 +184,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 for (int k = 0; k + 1 < b.Instrs.Count; k++)
                 {
                     if (b.Instrs[k + 1] is not CopyI { Src.Reg: VReg temp } copy) continue;
-                    if (reads.GetValueOrDefault(temp) != 1 || defined.GetValueOrDefault(temp) != 1 || copy.Dst.Wide != temp.Wide || copy.Dst.Float != temp.Float) continue;
+                    if (reads.GetValueOrDefault(temp) != 1 || defined.GetValueOrDefault(temp) != 1 || copy.Dst.Wide != temp.Wide || copy.Dst.Float != temp.Float || copy.Dst.Vec != temp.Vec) continue;
                     Instr? into = Retarget(b.Instrs[k], temp, copy.Dst);
                     if (into == null) continue;
                     b.Instrs[k] = into;
@@ -209,6 +210,9 @@ namespace Phi.Compiler.CodeGen.Ir
             FConstI f when f.Dst == temp => new FConstI { Dst = dst, Value = f.Value },
             LeaI l when l.Dst == temp => new LeaI { Dst = dst, A = l.A, Factor = l.Factor, Add = l.Add },
             LoadIdxI l when l.Dst == temp => new LoadIdxI { Dst = dst, Base = l.Base, Index = l.Index, Scale = l.Scale, Kind = l.Kind },
+            VecI v when v.Dst == temp => new VecI { Op = v.Op, Dst = dst, A = v.A, B = v.B, C = v.C, Count = v.Count, Lane = v.Lane, To = v.To },
+            VecGetI g when g.Dst == temp => new VecGetI { Dst = dst, A = g.A, Index = g.Index, Lane = g.Lane },
+            VecReduceI r when r.Dst == temp => new VecReduceI { Op = r.Op, Dst = dst, A = r.A, B = r.B, Lane = r.Lane },
             _ => null,
         };
     }

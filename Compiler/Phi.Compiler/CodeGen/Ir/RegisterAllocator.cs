@@ -16,10 +16,11 @@ namespace Phi.Compiler.CodeGen.Ir
         public static readonly string[] CalleeSaved = { "r12", "r13", "r14", "r15" };
 
         /// <summary>
-        /// The f64s' registers. A call may change every one of them (no method keeps them), so
-        /// an f64 needed after a call is kept in the frame; xmm14 and xmm15 are the emitter's own.
+        /// The f64s' and vecs' registers. A call may change every one of them (no method keeps
+        /// them), so one needed after a call is kept in the frame; xmm12 to xmm15 are the
+        /// emitter's own (a vec's work takes up to four at once).
         /// </summary>
-        public static readonly string[] FloatRegisters = Enumerable.Range(0, 14).Select(i => $"xmm{i}").ToArray();
+        public static readonly string[] FloatRegisters = Enumerable.Range(0, 12).Select(i => $"xmm{i}").ToArray();
 
         /// <summary>Each value's register (its 64-bit name), or none: then its slot in the frame.</summary>
         public Dictionary<VReg, string> Registers { get; } = new();
@@ -97,6 +98,30 @@ namespace Phi.Compiler.CodeGen.Ir
                 case ObjCallI { Arg: VReg o }: yield return o; break;
                 case ToFloatI f: yield return f.Src; break;
                 case ToWholeI f: yield return f.Src; break;
+                case RoundF32I r: yield return r.Src; break;
+                case VecI v:
+                    yield return v.A;
+                    if (v.B != null) yield return v.B;
+                    if (v.C != null) yield return v.C;
+                    if (v.Count.Reg != null) yield return v.Count.Reg;
+                    break;
+                case VecMakeI m:
+                    foreach (Opnd o in m.Lanes) if (o.Reg != null) yield return o.Reg;
+                    break;
+                case VecGetI g:
+                    yield return g.A;
+                    if (g.Index.Reg != null) yield return g.Index.Reg;
+                    break;
+                case VecSetI st:
+                    yield return st.A;
+                    if (st.Index.Reg != null) yield return st.Index.Reg;
+                    if (st.Value.Reg != null) yield return st.Value.Reg;
+                    break;
+                case VecReduceI r:
+                    yield return r.A;
+                    if (r.B != null) yield return r.B;
+                    break;
+                case PrintI p: if (p.Value.Reg != null) yield return p.Value.Reg; break;
             }
         }
 
@@ -120,8 +145,17 @@ namespace Phi.Compiler.CodeGen.Ir
             FNegI f => f.Dst,
             ToFloatI f => f.Dst,
             ToWholeI f => f.Dst,
+            RoundF32I r => r.Dst,
+            VecI v => v.Dst,
+            VecMakeI m => m.Dst,
+            VecGetI g => g.Dst,
+            VecSetI st => st.Dst,
+            VecReduceI r => r.Dst,
             _ => null,
         };
+
+        /// <summary>An instruction that calls something, which may change what a call changes.</summary>
+        public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI;
 
         public static IEnumerable<VReg> Uses(Terminator? t)
         {
@@ -195,7 +229,7 @@ namespace Phi.Compiler.CodeGen.Ir
                         Touch(def, pos);
                         Weigh(def, k);
                     }
-                    if (i is CallI or ObjCallI) calls.Add(pos);
+                    if (IsCall(i)) calls.Add(pos);
                     if (i is RawCallI) rawCalls.Add(pos);
                 }
                 pos += 2;
@@ -214,7 +248,8 @@ namespace Phi.Compiler.CodeGen.Ir
             foreach (Interval iv in intervals.Values.OrderBy(i => i.Value.Id))
                 if (rawCalls.Any(c => c > iv.Start && c < iv.End))
                 {
-                    Slots[iv.Value] = 8 * ++slotsForRaw;
+                    slotsForRaw += iv.Value.Vec ? 2 : 1;
+                    Slots[iv.Value] = 8 * slotsForRaw;
                     iv.Weight = -1;   // (taken out of the scan below)
                 }
 
@@ -225,7 +260,7 @@ namespace Phi.Compiler.CodeGen.Ir
             int slots = slotsForRaw;
             foreach (Interval iv in intervals.Values.Where(i => i.Weight >= 0).OrderBy(i => i.Start).ThenBy(i => i.Value.Id))
             {
-                if (iv.Value.Float)
+                if (iv.Value.Float || iv.Value.Vec)
                 {
                     foreach (Interval done in activeFloat.Where(a => a.End < iv.Start).ToList())
                     {
@@ -241,10 +276,16 @@ namespace Phi.Compiler.CodeGen.Ir
                             iv.Register = cheapest.Register;
                             cheapest.Register = null;
                             activeFloat.Remove(cheapest);
-                            Slots[cheapest.Value] = 8 * ++slots;
+                            slots += cheapest.Value.Vec ? 2 : 1;
+                            Slots[cheapest.Value] = 8 * slots;
                             activeFloat.Add(iv);
                         }
-                        else Slots[iv.Value] = 8 * ++slots;
+                        else
+                        {
+                            // (a vec's 16 bytes take two slots: its place is the lower one's)
+                            slots += iv.Value.Vec ? 2 : 1;
+                            Slots[iv.Value] = 8 * slots;
+                        }
                         continue;
                     }
                     iv.Register = freeFloat[0];

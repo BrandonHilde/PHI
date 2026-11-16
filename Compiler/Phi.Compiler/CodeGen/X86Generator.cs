@@ -146,7 +146,7 @@ namespace Phi.Compiler.CodeGen
             static bool Small(PhiType t) => Number(t) && !t.IsWide && !t.IsFloat;
             // a pointer to numbers (a ptr<u8> is text too), to a pointer, or to a struct
             static bool Pointer(PhiType t) => t.IsPointer && !t.IsArray && t.Pointee is { IsArray: false } p
-                                              && (NumberKind(p) || p.IsPointer || p.IsStruct);
+                                              && (NumberKind(p) || p.IsPointer || p.IsStruct || p.IsVec);
             static bool Value(PhiType t) => Number(t) || Pointer(t) || MethodType(t);
             // a method value (method<int: str> say: addr Say;) of a method that takes and gives what
             // 64-bit code can
@@ -158,7 +158,7 @@ namespace Phi.Compiler.CodeGen
             // kept in place (not text: that's still to come)
             static bool Kept(PhiType t) =>
                 t.Kind != TypeKind.Str && !t.Open
-                && (Value(t) || t.IsStruct && Plain(t.Struct!)
+                && (Value(t) || t.Kind == TypeKind.Vec || t.IsStruct && Plain(t.Struct!)
                     || t.IsArray && (NumberKind(t) || Pointer(t.Element) || MethodType(t.Element) || t.Kind == TypeKind.Struct && Plain(t.Struct!)));
             // a str of its own: with a size, one that grows, or the caller's (a str target; parameter)
             static bool Text(PhiType t) => t.IsString && !t.IsInlineText && !t.IsHeapText;
@@ -538,6 +538,8 @@ namespace Phi.Compiler.CodeGen
             foreach (MethodSymbol m in unit.Methods)
             {
                 file = m.Decl.File;
+                // (a method that uses a vec is the intermediate form's, which says what it doesn't take)
+                if (UsesVec(m)) continue;
                 foreach (VariableSymbol v in m.Parameters.Where(v => !Given(v.Type)).Concat(m.Locals.Where(v => !KeptVar(v))))
                     Not(v.Decl, $"{A(v.Type)} variable");
                 if (m.ReturnType.Kind != TypeKind.Void && !Given(m.ReturnType)) Not(m.Decl, $"a method that gives {A(m.ReturnType)}");
@@ -10345,6 +10347,8 @@ namespace Phi.Compiler.CodeGen
                 // each starts on a word, so a number or pointer in it is read and written whole by
                 // other threads (and atomic steps on it stay one cache line's)
                 if (bits32) output.AppendLine($"align {Slot}, db 0");
+                // (a vec, or an array or struct holding one, on 16, by the one layout rule)
+                if (v.Type.Alignment >= 16) output.AppendLine("align 16, db 0");
                 output.Append(DataFor(v));
             }
 
@@ -10362,6 +10366,26 @@ namespace Phi.Compiler.CodeGen
 
             foreach (var (bits, label) in floatLabels)
                 output.AppendLine($"{label}: dq 0x{bits:X}   ; {BitConverter.Int64BitsToDouble(bits)}");
+
+            foreach (var (bytes, label) in vecLabels)
+            {
+                output.AppendLine("align 16, db 0");
+                output.AppendLine($"{label}: db {bytes}");
+            }
+        }
+
+        /// <summary>The 16 bytes of each vec known when the program is built (its lanes written in), by their bytes.</summary>
+        readonly Dictionary<string, string> vecLabels = new();
+
+        string VecLabel(byte[] bytes)
+        {
+            string key = string.Join(", ", bytes);
+            if (!vecLabels.TryGetValue(key, out string? label))
+            {
+                label = $"phi_vec_{vecLabels.Count}";
+                vecLabels[key] = label;
+            }
+            return label;
         }
 
         string DataFor(VariableSymbol v)
@@ -10373,6 +10397,13 @@ namespace Phi.Compiler.CodeGen
             if (v.GrowingArray)
             {
                 sb.AppendLine($"{v.Label}: {(bits64 ? "dq 0\n    dd 0, 0" : "dd 0, 0, 0")}   ; an array that grows: its elements (on the heap), how many, its room");
+                return sb.ToString();
+            }
+
+            if (t.Kind == TypeKind.Vec)
+            {
+                // a vec starts as zeros (a class's is given its lanes in a method)
+                sb.AppendLine($"{v.Label}: times {t.ByteSize} db 0   ; {t}");
                 return sb.ToString();
             }
 

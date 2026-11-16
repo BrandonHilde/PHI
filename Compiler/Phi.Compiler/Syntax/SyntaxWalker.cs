@@ -72,6 +72,7 @@ namespace Phi.Compiler.Syntax
                 CastExpr c => new[] { c.Operand },
                 PointerViewExpr v => new[] { v.Pointer, v.Count },
                 CheckedNumberExpr c => new[] { c.Operand },
+                VecExpr v => v.Lanes.ToArray(),
                 SizeofExpr s => s.Operand != null ? new[] { s.Operand } : Array.Empty<Expr>(),
                 InExpr i => new[] { i.Port },
                 AtomicExpr a => new[] { a.Target, a.Value, a.Expected },

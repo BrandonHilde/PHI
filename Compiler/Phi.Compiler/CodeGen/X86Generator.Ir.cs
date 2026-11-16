@@ -28,9 +28,11 @@ namespace Phi.Compiler.CodeGen
         /// <summary>The method written from the intermediate form, if it takes it; false leaves it to the generator.</summary>
         bool TryEmitIr(MethodSymbol m)
         {
-            if (!IrWanted || !bits64 || unit.Kind != UnitKind.Program || debugInfo != null) return false;
+            // a method that uses a vec is always the intermediate form's: the generator has no vectors
+            bool vectors = UsesVec(m);
+            if (!vectors && (!IrWanted || !bits64 || unit.Kind != UnitKind.Program || debugInfo != null)) return false;
             // (PHI_IR_SKIP=A.B,C.D leaves those methods to the generator: for finding which one a difference is in)
-            if (IrSkip.Contains(m.Name)) return false;
+            if (!vectors && IrSkip.Contains(m.Name)) return false;
             // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
             HashSet<VariableSymbol> reached = ReachedByAddress();
             bool Holdable(VariableSymbol v) => !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile && !reached.Contains(v);
@@ -38,7 +40,12 @@ namespace Phi.Compiler.CodeGen
             if (fn == null)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: {why}");
-                return false;
+                if (!vectors) return false;
+                // (the generator has no vectors: the build stops here, with why)
+                diagnostics.Error(m.Decl.File, m.Decl.Span,
+                    $"{m.Decl.Name} uses a vec, and what writes vector code doesn't take {why} yet; put that part in a method of its own and call it");
+                Emit("ud2");
+                return true;
             }
             IrPeephole.Run(fn);
             RegisterAllocator regs = RegisterAllocator.Allocate(fn);
@@ -48,8 +55,29 @@ namespace Phi.Compiler.CodeGen
             return true;
         }
 
+        /// <summary>
+        /// A method that takes or gives a vec, has one, works on one, or calls a method that
+        /// takes one (whose arguments only the intermediate form passes).
+        /// </summary>
+        static bool UsesVec(MethodSymbol m)
+        {
+            if (HasVec(m.ReturnType) || m.Parameters.Any(p => HasVec(p.Type)) || m.Locals.Any(v => HasVec(v.Type))) return true;
+            IEnumerable<Syntax.Node> nodes = m.Decl.Body.SelectMany(Syntax.SyntaxWalker.Nodes);
+            if (m.Decl.Result != null) nodes = nodes.Concat(Syntax.SyntaxWalker.Nodes(m.Decl.Result));
+            foreach (Syntax.Node n in nodes)
+            {
+                if (n is Syntax.Expr e && HasVec(e.Type)) return true;
+                object? callee = n switch { Syntax.CallExpr c => c.Resolved, Syntax.CallStmt c => c.Resolved, _ => null };
+                if (callee is VecMethod || callee is MethodSymbol called && (called.Parameters.Any(p => HasVec(p.Type)) || HasVec(called.ReturnType))) return true;
+            }
+            return false;
+        }
+
+        /// <summary>A vec, an array of them, or a pointer to one.</summary>
+        static bool HasVec(PhiType t) => t.Kind == TypeKind.Vec || t.Kind == TypeKind.Pointer && t.Pointee != null && HasVec(t.Pointee);
+
         /// <summary>Writes one method's form as x64 assembly into the generator's code.</summary>
-        sealed class IrEmitter
+        sealed partial class IrEmitter
         {
             readonly X86Generator g;
             readonly IrFunction fn;
@@ -291,12 +319,80 @@ namespace Phi.Compiler.CodeGen
                     case LineMark mark:
                         pendingLine = mark.Node;
                         break;
+                    case ConstI { Dst.Vec: true } zv:
+                    {
+                        // (a vec that's read before it's set starts as zeros)
+                        string t = VTarget(zv.Dst);
+                        E($"pxor {t}, {t}");
+                        VStore(zv.Dst, t);
+                        break;
+                    }
+                    case ConstI { Dst.Float: true } zf:
+                    {
+                        string t = FTarget(zf.Dst);
+                        E($"xorps {t}, {t}");
+                        FStore(zf.Dst, t);
+                        break;
+                    }
                     case ConstI c:
                         Move(c.Dst, Opnd.Const(c.Value));
+                        break;
+                    case CopyI c when c.Dst.Vec:
+                        VMove(c.Dst, c.Src.Reg!);
                         break;
                     case CopyI c when c.Dst.Float:
                         FMove(c.Dst, c.Src.Reg!);
                         break;
+                    case VecI or VecMakeI or VecGetI or VecSetI or VecReduceI or RoundF32I or PrintI or RoutineI:
+                        Vector(i);
+                        break;
+                    case LoadI { Kind: MemKind.V128 } vl:
+                    {
+                        string t = VTarget(vl.Dst);
+                        E($"movdqu {t}, {Place(vl.Place)}");
+                        VStore(vl.Dst, t);
+                        break;
+                    }
+                    case LoadIdxI { Kind: MemKind.V128 } vli:
+                    {
+                        string t = VTarget(vli.Dst);
+                        E($"movdqu {t}, {Address(vli.Base, vli.Index, vli.Scale)}");
+                        VStore(vli.Dst, t);
+                        break;
+                    }
+                    case StoreI { Kind: MemKind.V128 } vs:
+                        E($"movdqu {Place(vs.Place)}, {VIn(vs.Src.Reg!, "xmm15")}");
+                        break;
+                    case StoreIdxI { Kind: MemKind.V128 } vsi:
+                    {
+                        string x = VIn(vsi.Src.Reg!, "xmm15");
+                        E($"movdqu {Address(vsi.Base, vsi.Index, vsi.Scale)}, {x}");
+                        break;
+                    }
+                    case LoadI { Kind: MemKind.F32 } f32l:
+                    {
+                        string t = FTarget(f32l.Dst);
+                        E($"cvtss2sd {t}, dword {Place(f32l.Place)}");
+                        FStore(f32l.Dst, t);
+                        break;
+                    }
+                    case LoadIdxI { Kind: MemKind.F32 } f32li:
+                    {
+                        string t = FTarget(f32li.Dst);
+                        E($"cvtss2sd {t}, dword {Address(f32li.Base, f32li.Index, f32li.Scale)}");
+                        FStore(f32li.Dst, t);
+                        break;
+                    }
+                    case StoreI { Kind: MemKind.F32 } f32s:
+                        E($"cvtsd2ss xmm15, {F(f32s.Src.Reg!)}");
+                        E($"movss dword {Place(f32s.Place)}, xmm15");
+                        break;
+                    case StoreIdxI { Kind: MemKind.F32 } f32si:
+                    {
+                        E($"cvtsd2ss xmm15, {F(f32si.Src.Reg!)}");
+                        E($"movss dword {Address(f32si.Base, f32si.Index, f32si.Scale)}, xmm15");
+                        break;
+                    }
                     case CopyI c:
                         Move(c.Dst, c.Src);
                         break;
@@ -653,6 +749,13 @@ namespace Phi.Compiler.CodeGen
                     long offset = index.Imm * scale;
                     return offset == 0 ? $"[{b}]" : offset > 0 ? $"[{b} + {offset}]" : $"[{b} - {-offset}]";
                 }
+                if (scale == 16)
+                {
+                    // (an address scales by 8 at most: a vec's index is shifted first)
+                    E($"mov rcx, {At(index.Reg!, 64)}");
+                    E("shl rcx, 4");
+                    return $"[{b} + rcx]";
+                }
                 string i = InRegister(index.Reg!) ? Reg(index.Reg!)! : "rcx";
                 if (i == "rcx") E($"mov rcx, {At(index.Reg!, 64)}");
                 return scale == 1 ? $"[{b} + {i}]" : $"[{b} + {i}*{scale}]";
@@ -908,8 +1011,26 @@ namespace Phi.Compiler.CodeGen
 
             void Call(CallI call)
             {
-                foreach (Opnd a in call.Args)
+                int pushed = 0;
+                for (int k = 0; k < call.Args.Count; k++)
                 {
+                    Opnd a = call.Args[k];
+                    MemKind kind = k < call.ArgKinds.Count ? call.ArgKinds[k] : MemKind.Q64;
+                    pushed += kind == MemKind.V128 ? 16 : 8;
+                    if (kind == MemKind.V128)
+                    {
+                        E("sub rsp, 16");
+                        E($"movdqu [rsp], {VIn(a.Reg!, "xmm15")}");
+                        continue;
+                    }
+                    if (kind == MemKind.F32)
+                    {
+                        // (an f32 is in the low half of its 8 bytes, as the generator pushes one)
+                        E($"cvtsd2ss xmm15, {F(a.Reg!)}");
+                        E("sub rsp, 8");
+                        E("movss dword [rsp], xmm15");
+                        continue;
+                    }
                     if (a.IsImm)
                     {
                         if (FitsImm32(a.Imm)) E($"push {a.Imm}");
@@ -927,7 +1048,12 @@ namespace Phi.Compiler.CodeGen
                     else E(InRegister(a.Reg!) ? $"push {Reg(a.Reg!)}" : $"push qword [rbp - {regs.Slots[a.Reg!]}]");
                 }
                 E($"call {call.Label}");
-                if (call.Args.Count > 0) E($"add rsp, {8 * call.Args.Count}");
+                if (pushed > 0) E($"add rsp, {pushed}");
+                if (call.Result == CallResult.Xmm0)
+                {
+                    if (call.Dst != null) VStore(call.Dst, "xmm0");
+                    return;
+                }
                 if (call.Result == CallResult.St0)
                 {
                     // an f64 comes back on the x87's stack (as the generator gives one): it's taken
@@ -1012,7 +1138,13 @@ namespace Phi.Compiler.CodeGen
                         }
                         break;
                     case RetT ret:
-                        if (ret.Value is Opnd fv && ret.Float)
+                        if (ret.Value is Opnd vv && ret.Vec)
+                        {
+                            // a vec is given back in xmm0
+                            string x = VIn(vv.Reg!, "xmm0");
+                            if (x != "xmm0") E($"movdqa xmm0, {x}");
+                        }
+                        else if (ret.Value is Opnd fv && ret.Float)
                         {
                             // an f64 is given back in st0, as the generator gives one
                             if (InRegister(fv.Reg!))

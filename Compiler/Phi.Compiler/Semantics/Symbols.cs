@@ -2,7 +2,7 @@ using Phi.Compiler.Syntax;
 
 namespace Phi.Compiler.Semantics
 {
-    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64, Chr, Lock }
+    public enum TypeKind { Error, Void, I8, U8, I16, U16, I32, U32, Bool, Str, Pointer, Struct, Method, Object, Enum, I64, U64, F16, F32, F64, Chr, Lock, Vec }
 
     /// <summary>What a method takes and returns, for method&lt;...&gt; types.</summary>
     public sealed class MethodSignature
@@ -49,7 +49,7 @@ namespace Phi.Compiler.Semantics
     /// </summary>
     public sealed record PhiType(TypeKind Kind, int Length = 0, PhiType? Pointee = null, StructSymbol? Struct = null,
                                  MethodSignature? Signature = null, bool Filled = false, EnumSymbol? Enum = null,
-                                 bool Open = false, int Room = 0)
+                                 bool Open = false, int Room = 0, PhiType? Lane = null)
     {
         public static readonly PhiType Error = new(TypeKind.Error);
         public static readonly PhiType Void = new(TypeKind.Void);
@@ -80,6 +80,27 @@ namespace Phi.Compiler.Semantics
         public static PhiType MethodOf(MethodSignature s) => new(TypeKind.Method, Signature: s);
         public static PhiType ObjectOf(StructSymbol s) => new(TypeKind.Object, Struct: s);
         public static PhiType EnumOf(EnumSymbol e) => new(TypeKind.Enum, Enum: e);
+
+        /// <summary>
+        /// vec&lt;T&gt;: as many Ts as a vector register holds, worked on by one instruction each
+        /// (VecBytes: 16, an SSE2 register, so 16 u8s, 8 i16s, 4 f32s, 2 f64s). T is a whole
+        /// number or an f32 or f64. It's a value, copied whole, 16 bytes on a multiple of 16.
+        /// </summary>
+        public static PhiType VecOf(PhiType lane) => new(TypeKind.Vec, Lane: lane);
+
+        /// <summary>How many bytes a vec is: one SSE2 register (a wider build may make it more).</summary>
+        public const int VecBytes = 16;
+
+        /// <summary>A vec&lt;T&gt;: several numbers worked on at once.</summary>
+        public bool IsVec => !IsArray && Kind == TypeKind.Vec;
+
+        /// <summary>A vec's number of lanes (16 / its element's size).</summary>
+        public int Lanes => Kind == TypeKind.Vec ? VecBytes / Lane!.ElementSize : 0;
+
+        /// <summary>The types a vec's lanes can be: whole numbers of any size, f32 and f64.</summary>
+        public static bool CanBeLane(PhiType t) =>
+            !t.IsArray && t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
+                or TypeKind.I64 or TypeKind.U64 or TypeKind.F32 or TypeKind.F64;
 
         /// <summary>Text of up to <paramref name="characters"/> characters, kept in place.</summary>
         public static PhiType TextOf(int characters) => new(TypeKind.Str, Room: characters + 1);
@@ -201,6 +222,7 @@ namespace Phi.Compiler.Semantics
             TypeKind.I64 or TypeKind.U64 or TypeKind.F64 => 8,
             TypeKind.F32 => 4,
             TypeKind.F16 => 2,
+            TypeKind.Vec => VecBytes,
             _ => 0,
         };
 
@@ -240,6 +262,7 @@ namespace Phi.Compiler.Semantics
                 TypeKind.Lock => "lock",
                 TypeKind.F32 => "f32",
                 TypeKind.F64 => "f64",
+                TypeKind.Vec => $"vec<{Lane}>",
                 TypeKind.Method => Signature!.ToString(),
                 TypeKind.Void => "nothing",
                 _ => "?",
@@ -366,6 +389,17 @@ namespace Phi.Compiler.Semantics
     }
 
     /// <summary>x.len: the element count of an array, or the current length of a str; x.max: the most it can hold.</summary>
+    /// <summary>
+    /// One of a vec's own methods, a call's Resolved: (a.Min: b), (v.Sum). The vec it's called
+    /// on is the call's first argument, then what it's given.
+    /// </summary>
+    public sealed class VecMethod
+    {
+        public string Name { get; init; } = "";
+        public PhiType Vec { get; init; } = PhiType.Error;
+        public PhiType Result { get; init; } = PhiType.Error;
+    }
+
     public sealed class LengthSymbol : Symbol
     {
         /// <summary>An array parameter whose .len (or .max, with Max) is read when it runs.</summary>

@@ -12,7 +12,7 @@ namespace Phi.Compiler.CodeGen.Ir
     /// method is the generator's, as it was. What's taken is grown one kind of thing at a time,
     /// each checked by the whole test suite and phi fuzz run through it (PHI_IR=1).
     /// </summary>
-    public sealed class IrBuilder
+    public sealed partial class IrBuilder
     {
         /// <summary>Why a method can't be built: said by PHI_IR_TRACE, and the generator compiles it.</summary>
         sealed class NotYet : Exception
@@ -88,10 +88,14 @@ namespace Phi.Compiler.CodeGen.Ir
         public static bool Supported(PhiType t) =>
             !t.IsArray && t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
                 or TypeKind.I64 or TypeKind.U64 or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum or TypeKind.Pointer or TypeKind.Object
-                or TypeKind.F64;
+                or TypeKind.F64 or TypeKind.F32 or TypeKind.Vec;
 
-        /// <summary>An f64, which this form keeps in an xmm register (f32 and f16 are the generator's).</summary>
-        static bool IsF(PhiType t) => !t.IsArray && t.Kind == TypeKind.F64;
+        /// <summary>
+        /// An f64 or f32, which this form keeps in an xmm register as an f64 (as the generator's
+        /// x87 has an f32 while it works on it): one in memory is read as one and rounded as
+        /// it's written, and an f32 variable is rounded as it's set. (f16 is the generator's.)
+        /// </summary>
+        static bool IsF(PhiType t) => !t.IsArray && t.Kind is TypeKind.F64 or TypeKind.F32;
 
         /// <summary>
         /// A value of t takes 64 bits: an i64, a u64, a pointer, or an object, which this form
@@ -108,6 +112,8 @@ namespace Phi.Compiler.CodeGen.Ir
             TypeKind.U16 => MemKind.U16,
             TypeKind.I64 or TypeKind.U64 or TypeKind.Pointer or TypeKind.Object => MemKind.Q64,
             TypeKind.F64 => MemKind.F64,
+            TypeKind.F32 => MemKind.F32,
+            TypeKind.Vec => MemKind.V128,
             _ => MemKind.D32,
         };
 
@@ -130,12 +136,12 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             MethodSymbol m = method;
             Need(!m.IsInterruptHandler && !m.IsHook, "an event or interrupt handler");
-            Need(m.Parameters.All(p => Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed),
-                 "a parameter it doesn't take");
+            VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
+            Need(badParameter == null, $"a parameter it doesn't take ('{badParameter?.Name}', {Describe(badParameter)})");
             Need(!m.ReturnType.IsObject, "it gives an object");
-            Need(m.Locals.All(v => OwnObject(v)
-                                   || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements),
-                 "a variable it doesn't take");
+            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v)
+                                   || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements));
+            Need(badLocal == null, $"a variable it doesn't take ('{badLocal?.Name}', {Describe(badLocal)})");
 
             // its own objects, each in a home of its own, empty to start with (as the generator's
             // frame starts zeroed), and freed where it ends
@@ -157,12 +163,14 @@ namespace Phi.Compiler.CodeGen.Ir
             }
 
             // the parameters, from their places in the frame: the last at rbp + 16, each 8 bytes
-            int count = m.Parameters.Count;
-            for (int i = 0; i < count; i++)
+            // (a vec's 16)
+            int above = 16;
+            for (int i = m.Parameters.Count - 1; i >= 0; i--)
             {
                 VariableSymbol p = m.Parameters[i];
                 VReg v = Variable(p);
-                Emit(new LoadI { Dst = v, Place = $"rbp + {16 + 8 * (count - 1 - i)}", Kind = KindOf(p.Type) });
+                Emit(new LoadI { Dst = v, Place = $"rbp + {above}", Kind = KindOf(p.Type) });
+                above += p.Type.IsVec ? 16 : 8;
             }
             // (a variable is set where it's declared; one that could be read before that is
             // given 0 at the start, by IrPeephole, which knows which)
@@ -190,6 +198,10 @@ namespace Phi.Compiler.CodeGen.Ir
             RemoveUnreachable();
         }
 
+        /// <summary>What a variable is, for saying why it isn't taken.</summary>
+        static string Describe(VariableSymbol? v) => v == null ? "" :
+            v.Grows ? "a str that grows" : v.GrowingArray ? "an array that grows" : v.Type.IsArray ? $"an array of {v.Type.Element}" : A(v.Type);
+
         /// <summary>Blocks no jump reaches (after a return or a break) are left out.</summary>
         void RemoveUnreachable()
         {
@@ -214,7 +226,7 @@ namespace Phi.Compiler.CodeGen.Ir
         };
 
         /// <summary>A new value for one of type t: an f64's, or a whole number's of its width.</summary>
-        VReg New(PhiType t, string name = "") => IsF(t) ? fn.NewFloat(name) : fn.NewValue(Is64(t), name);
+        VReg New(PhiType t, string name = "") => t.IsVec ? fn.NewVec(name) : IsF(t) ? fn.NewFloat(name) : fn.NewValue(Is64(t), name);
 
         /// <summary>A method's own object, new T x: kept in a home of the frame (see <see cref="owned"/>).</summary>
         static bool OwnObject(VariableSymbol v) =>
@@ -461,6 +473,9 @@ namespace Phi.Compiler.CodeGen.Ir
                         case NameExpr { Symbol: VariableSymbol v } when variables.ContainsKey(v) || method.Locals.Contains(v) || method.Parameters.Contains(v):
                             Assign(v, a.Value);
                             return;
+                        case IndexExpr { Target.Type.IsVec: true } lane:
+                            SetLane(lane, a.Value);
+                            return;
                         case NameExpr { Symbol: VariableSymbol kept } when !heldInMemory && held.TryGetValue(kept, out VReg? inRegister):
                         {
                             Opnd v = Value(a.Value, kept.Type);
@@ -663,6 +678,10 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case LogStmt log:
+                    Log(log);
+                    return;
+
                 case FreeStmt { Owner: null, Releaser: MethodSymbol releaser } free:
                     Mark(free);
                     Call(releaser, new List<Expr> { free.Pointer }, wantResult: false);
@@ -690,7 +709,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     Opnd converted = Convert(got, callee.ReturnType, target.Type);
                     if (Global(target) is string place && !variables.ContainsKey(target) && !method.Locals.Contains(target) && !method.Parameters.Contains(target))
                         Emit(new StoreI { Place = place, Src = converted, Kind = KindOf(target.Type) });
-                    else Emit(new CopyI { Dst = Variable(target), Src = converted });
+                    else SetVariable(Variable(target), converted, target.Type);
                     return;
                 }
             }
@@ -701,8 +720,15 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             Need(!owned.ContainsKey(v), "an object given a value as a number is");
             VReg dst = Variable(v);
-            Opnd src = value == null ? Opnd.Const(0) : Value(value, v.Type);
-            if (src.IsImm) Emit(new ConstI { Dst = dst, Value = src.Imm });
+            Opnd src = value != null ? Value(value, v.Type) : v.Type.IsVec ? ZeroVec() : IsF(v.Type) ? FloatConst(0.0) : Opnd.Const(0);
+            SetVariable(dst, src, v.Type);
+        }
+
+        /// <summary>A variable of type t (in its register) given a value: an f32 is rounded to one.</summary>
+        void SetVariable(VReg dst, Opnd src, PhiType t)
+        {
+            if (t.Kind == TypeKind.F32) Emit(new RoundF32I { Dst = dst, Src = src.Reg! });
+            else if (src.IsImm) Emit(new ConstI { Dst = dst, Value = src.Imm });
             else Emit(new CopyI { Dst = dst, Src = src });
         }
 
@@ -714,7 +740,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Unlock(0);
             if (current.End != null) Enter(fn.NewBlock());
             TidyUp();
-            current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer, Float = IsF(method.ReturnType) };
+            current.End = new RetT { Value = v, Wide = method.ReturnType.IsWide, Pointer = method.ReturnType.IsPointer, Float = IsF(method.ReturnType), Vec = method.ReturnType.IsVec };
         }
 
         /// <summary>True when <see cref="Field"/> takes the expression (asking only, with nothing built).</summary>
@@ -797,7 +823,7 @@ namespace Phi.Compiler.CodeGen.Ir
             PhiType element = e.Type;
             Need(Supported(element), $"an array of {element}");
             int scale = element.ElementSize;
-            Need(scale is 1 or 2 or 4 or 8, $"an element of {scale} bytes");
+            Need(scale is 1 or 2 or 4 or 8 or 16, $"an element of {scale} bytes");
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
             Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
@@ -956,10 +982,15 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             Need(Supported(Real(e)), $"a value that's a {Real(e)}");
             if (PointerMath(e)) return MovePointer((BinaryExpr)e);
+            if (VecValue(e) is Opnd vector) return vector;
             switch (e)
             {
                 case NumberExpr n:
                     return Opnd.Const(n.Value);
+                case NameExpr { Symbol: LengthSymbol { Count: int known } }:
+                    return Opnd.Const(known);
+                case MemberExpr { Count: int counted, Call: null }:
+                    return Opnd.Const(counted);
                 case BoolExpr b:
                     return Opnd.Const(b.Value ? 1 : 0);
                 case StringExpr { Character: int c } when e.Type.IsChar || e.Type.IsNumeric:
@@ -1280,7 +1311,7 @@ namespace Phi.Compiler.CodeGen.Ir
             PhiType element = e.Type;
             Need(Supported(element), $"a pointer to a {element}");
             int scale = element.ElementSize;
-            Need(scale is 1 or 2 or 4 or 8, $"an element of {scale} bytes");
+            Need(scale is 1 or 2 or 4 or 8 or 16, $"an element of {scale} bytes");
             VReg bas = InReg(Value(e.Target), true);
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer, $"an index that's a {it}");
@@ -1417,6 +1448,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         Opnd CallValue(CallExpr call)
         {
+            if (call.Resolved is VecMethod vm) return VecCall(call, vm);
             // (a struct's method has the struct it's called on among its arguments already: self)
             Need(call.Resolved is MethodSymbol m && (call.CalleeTarget == null || m.Decl.Owner.ForStruct != null), "a call of a built-in or a method value");
             var callee = (MethodSymbol)call.Resolved!;
@@ -1429,16 +1461,23 @@ namespace Phi.Compiler.CodeGen.Ir
             Need(callee.Parameters.All(p => Supported(p.Type) && !p.Grows && !p.TextRef && !(p.Type.IsObject && p.Ownership == Ownership.Owned)),
                  $"a call of {callee.Name}, which takes what this form doesn't");
             Need(callee.ReturnType.Kind == TypeKind.Void || Supported(callee.ReturnType) && !callee.ReturnType.IsObject, $"a call of {callee.Name}, which gives a {callee.ReturnType}");
-            Need(arguments.Count == callee.Parameters.Count, $"a call of {callee.Name} that leaves out some of its arguments");
+            Need(arguments.Count <= callee.Parameters.Count, $"a call of {callee.Name} with more arguments than it takes");
             var call = new CallI
             {
                 Label = callee.Label,
                 Dst = wantResult && callee.ReturnType.Kind != TypeKind.Void ? New(callee.ReturnType) : null,
                 Result = callee.ReturnType.Kind == TypeKind.Void ? CallResult.None : callee.ReturnType.IsWide ? CallResult.EdxEax
+                    : callee.ReturnType.IsVec ? CallResult.Xmm0
                     : IsF(callee.ReturnType) ? CallResult.St0 : Is64(callee.ReturnType) ? CallResult.Rax : CallResult.Eax,
             };
-            for (int i = 0; i < arguments.Count; i++)
-                call.Args.Add(Value(arguments[i], callee.Parameters[i].Type));
+            // (one left out is the parameter's default, worked out here, or zero, as the generator does)
+            for (int i = 0; i < callee.Parameters.Count; i++)
+            {
+                PhiType pt = callee.Parameters[i].Type;
+                Expr? given = i < arguments.Count ? arguments[i] : callee.Parameters[i].Decl.Values.FirstOrDefault();
+                call.Args.Add(given != null ? Value(given, pt) : pt.IsVec ? ZeroVec() : IsF(pt) ? FloatConst(0.0) : Opnd.Const(0));
+                call.ArgKinds.Add(KindOf(pt));
+            }
             Need(!wantResult || call.Dst != null, $"{callee.Name} gives nothing to use");
             Emit(call);
             return call.Dst;

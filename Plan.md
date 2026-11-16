@@ -3898,8 +3898,8 @@ one word, in the `<...>` form `ptr<T>` and `Map<Key Value>` already have.
   A value, copied whole, 16 bytes, on a multiple of 16 by the one layout rule; a variable,
   field, array element, parameter or result like any number.
 - It's a short array of lanes, so it reads as one: `v:i` is lane `i` (`v:2 is 5.0;`),
-  `v.len` is how many there are (and `vec<f32>.len` without a value), `while each x in v`
-  goes through them. Code steps by `.len`, never by a number, so a wider build runs it
+  `v.len` is how many there are. (Not built: `vec<f32>.len` without a value, which would need
+  a type where a value goes; `while each x in v`.) Code steps by `.len`, never by a number, so a wider build runs it
   unchanged.
 - Made from one value, every lane that (`vec<f32> s: 2.0;`), from as many as it has
   (`vec<f32> v: 1.0 2.0 3.0 4.0;`, which is an error where it has another number of lanes),
@@ -3920,8 +3920,9 @@ one word, in the `<...>` form `ptr<T>` and `Map<Key Value>` already have.
 - Between kinds: `v as vec<f32>` for the same number of lanes (`vec<i32>` and `vec<f32>`);
   `Widen` gives the low half's lanes twice as wide and `WidenHigh` the high half's (u8 to
   u16, for pixel math); `Narrow: other` packs two back, stopping at the ends.
-- Memory: the view PHI has, `(p as vec<u8>[n]):i`, the `i`th of `n` vectors at `p`, checked;
-  and arrays of vectors. A loop over an array does whole vectors, then what's left one at a
+- Memory: through a pointer, `ptr<vec<u8>> blocks: p as ptr<vec<u8>>; blocks:i`, as PHI
+  reaches memory anywhere (the view `p as u8[n]` is only for passing to a method, so it isn't
+  this); and arrays of vectors. A loop over an array does whole vectors, then what's left one at a
   time.
 - Not in the first: moving lanes about (a shuffle depends on the width); 256-bit vectors
   (AVX isn't on every x86-64 CPU: a build option later, as `--stack` is).
@@ -3951,16 +3952,38 @@ others, built on the same operations.
 [end]
 ```
 
-*To decide.*
-1. Comparisons as methods giving masks (`a.Less: b`), keeping `<` for bln everywhere, or
-   `<` on vectors giving a mask.
-2. The CPU it needs: SSE2, which every x86-64 has, doing 32-bit multiply, whole-number min
-   and max and `Pick` in several instructions; or x86-64-v2 (SSE4.1 and 4.2, every CPU from
-   2009 on, which Windows 11 and RHEL 9 need), one instruction each.
-3. Where the optimiser doesn't take a method that uses `vec` (its log, its text): an error
-   until the generator has vectors too, or the generator gets them now (both compilers,
-   more work, 32-bit too).
-4. The method names above, and `.len` for the lanes.
+*Decided (2026-11-15).*
+1. Comparisons are methods giving masks (`a.Less: b`); `<` keeps its one meaning, a bln (the
+   user's choice).
+2. The CPU: SSE2, which every x86-64 has (the user's choice). PHI used only SSE2 already, in
+   the generator and every .asm, so a PHI program runs on any x86-64 CPU; the cases `vec`
+   is for (pixels, `matrix`) are all SSE2. Later, a build option (`--x86-64-v2`, the user's
+   name) for the one-instruction forms of 32-bit multiply, whole-number min and max, `Abs`
+   and `Pick`, and wider still (AVX2, 256 bits) after: the same source either way.
+3. One compiler (the user: "we really just want one compiler"): `vec` is the intermediate
+   form's alone, not the old generator's; what the intermediate form doesn't take yet in a
+   method using `vec` is an error naming it, and taking it is work towards the old
+   generator going.
+4. The names (left to me): as above, matching `Math.Min`, `Math.Max`, `Math.Abs`,
+   `Math.Sqrt` and an array's `.len`.
+
+*Built (2026-11-15).* In 64-bit programs, through the intermediate form: the type, its lanes,
+operators, methods, `as`, `log`, class variables and arrays, struct fields, pointers, and
+given to methods and back (16 bytes pushed, xmm0 back). SSE2 for all of it; what SSE2 has no
+instruction for (a 64-bit lane's multiply, min, max and comparisons; u32 and 64-bit lanes to
+and from floats) a lane at a time. For it the intermediate form took three things it hadn't:
+`log`, f32 values (an f64 in a register, rounded where an f32 is kept) and calls that leave
+out arguments with defaults. A method that uses a vec is always the intermediate form's
+(PHI_IR=0 too); what it doesn't take there yet is an error naming it. Not yet, each an error
+saying so: a class's own statements (they're the generator's), catching in a method that
+uses one, a method value of one that takes or gives one. Brightening 64 MB 10 times: 217 ms a
+byte at a time, 36 ms a vec at a time. Tests vec_lanes_program (every operation on every
+kind of lane, the expected output worked out by tests/support/vec_lanes.py), vec_program,
+VecTests. Found on the way, and fixed: Windows' PHI_CALL changed r12, which the intermediate
+form keeps values in across calls (a heap that grew, debug, ask).
+
+*Next for it:* the optimiser vectorising simple loops by itself; --x86-64-v2; 32-bit code
+(the generator would need vectors, or the intermediate form 32-bit code).
 
 **Stack sizes (2026-11-15, the user's choice).** As other languages do it: a thread's size
 where it's made (C#'s `new Thread(work, size)`, Rust's `Builder::stack_size`), and a

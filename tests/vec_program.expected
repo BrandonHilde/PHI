@@ -1,0 +1,8 @@
+scaled: 0.5 1 1.5 2, dot: 30
+across calls: 7 7 7 7 6 6 6 6 3
+class: 7 7 7 100 / 0 0 / 0.25 0.25 / 1 1
+particle 7: 1.5 2.5 3.5 0.5
+pixels: 30 37 255 47
+lanes: 100 30
+f32: 0 1
+lane 4: index out of range on line 60 in vec_program.phi

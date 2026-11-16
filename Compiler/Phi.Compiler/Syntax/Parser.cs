@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "chr", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method", "lock",
+            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method", "lock", "vec",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>
@@ -889,12 +889,12 @@ namespace Phi.Compiler.Syntax
             return decl;
         }
 
-        /// <summary>int, u16, Task, ptr&lt;u8&gt;, ptr&lt;ptr&lt;u8&gt;&gt;</summary>
+        /// <summary>int, u16, Task, ptr&lt;u8&gt;, ptr&lt;ptr&lt;u8&gt;&gt;, vec&lt;f32&gt;</summary>
         TypeRef ParseType()
         {
             Token name = ExpectIdentifier("a type");
             if (name.Text == "method") return ParseMethodType(name);
-            if (name.Text != "ptr")
+            if (name.Text != "ptr" && name.Text != "vec")
             {
                 // one of a struct's own types (Item): the type this use of the struct gave it
                 if (given != null && given.TryGetValue(name.Text, out TypeRef? stands))
@@ -907,7 +907,9 @@ namespace Phi.Compiler.Syntax
                 return TypesEndAhead(0) > 0 ? ParseTemplateUse(name) : new TypeRef { Name = name.Text, Span = name.Span };
             }
 
-            Expect(TokenKind.Less, "'<' after ptr, as in ptr<u8>");
+            // (vec<f32>'s element is kept where ptr<u8>'s is)
+            string kind = name.Text;
+            Expect(TokenKind.Less, kind == "ptr" ? "'<' after ptr, as in ptr<u8>" : "'<' after vec, as in vec<f32>");
             TypeRef pointee = ParseType();
 
             // ptr<ptr<u8>> ends in '>>', which the lexer reads as one token
@@ -915,11 +917,11 @@ namespace Phi.Compiler.Syntax
             {
                 Token both = Current;
                 tokens[pos] = new Token(TokenKind.Greater, new Span(both.Span.Start + 1, 1), ">", null, false);
-                return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(both.Span) };
+                return new TypeRef { Name = kind, Pointee = pointee, Span = name.Span.To(both.Span) };
             }
 
-            Token close = Expect(TokenKind.Greater, "'>' to close ptr<...>");
-            return new TypeRef { Name = "ptr", Pointee = pointee, Span = name.Span.To(close.Span) };
+            Token close = Expect(TokenKind.Greater, $"'>' to close {kind}<...>");
+            return new TypeRef { Name = kind, Pointee = pointee, Span = name.Span.To(close.Span) };
         }
 
         /// <summary>

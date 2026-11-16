@@ -16,6 +16,7 @@ THREAD_BLOCK        equ 1024            ; throw.asm's PHI_THREAD_SIZE
 ; (the same as system.asm's: whichever comes first defines it)
 %ifnmacro PHI_CALL 1-4
 %macro PHI_CALL 1-4
+    push r12                ; (kept: PHI's code keeps values in r12 to r15 across a call)
     mov r12, rsp
     and rsp, -16
     sub rsp, 64
@@ -30,6 +31,7 @@ THREAD_BLOCK        equ 1024            ; throw.asm's PHI_THREAD_SIZE
 %endif
     call [rel phi_imp_%1]
     mov rsp, r12
+    pop r12
 %endmacro
 %endif
 
