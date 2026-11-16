@@ -26,6 +26,13 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A vec: all 16 bytes of an xmm register (or two slots in the frame).</summary>
         public bool Vec { get; init; }
         public string Name { get; init; } = "";
+
+        /// <summary>
+        /// Kept in its own slot in the frame the whole method, never a register: a variable whose
+        /// address is taken (addr n), which what it's given to may read and write at any time.
+        /// </summary>
+        public bool Pinned { get; set; }
+
         public override string ToString() => Name.Length > 0 ? $"v{Id}({Name})" : $"v{Id}";
     }
 
@@ -209,6 +216,9 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg View { get; init; } = null!;
         public VReg Count { get; init; } = null!;
         public int Size { get; init; }
+
+        /// <summary>A str array without a most: phi_text_array_grow, which moves the rooms after the texts too.</summary>
+        public bool Texts { get; init; }
     }
 
     /// <summary>A Linux system call (sys.Read: ...): Number in eax, the arguments in rdi, rsi, rdx, r10, r8 and r9, the answer in rax.</summary>
@@ -248,6 +258,12 @@ namespace Phi.Compiler.CodeGen.Ir
         public bool Unsigned { get; init; }
         public int? Known { get; init; }
         public bool MayCut { get; init; }
+
+        /// <summary>Where the room is after the slot (null: a str's own, just after its address).</summary>
+        public int? RoomOffset { get; init; }
+
+        /// <summary>An element of a str array without a most: a frame place holding its .max, its room that many slots on.</summary>
+        public string? Rooms { get; init; }
     }
 
     /// <summary>
@@ -287,6 +303,29 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg Count { get; init; } = null!;
     }
 
+    /// <summary>Dst = where a pinned value's slot is (addr n of a method's own variable).</summary>
+    public sealed class AddrOfI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Of { get; init; } = null!;
+    }
+
+    /// <summary>An interface's method of an object: from its type table, just before it (the generator's).</summary>
+    public sealed class InterfaceMethodI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Receiver { get; init; } = null!;
+        public Semantics.StructSymbol Interface { get; init; } = null!;
+        public int Index { get; init; }
+    }
+
+    /// <summary>exit code; in a program: phi_exit with the code (the generator's), which never comes back.</summary>
+    public sealed class ExitI : Instr
+    {
+        public Opnd Code { get; init; }
+        public List<StoreI> Held { get; init; } = new();
+    }
+
     /// <summary>A number written out as text into the method's scratch bytes (an i64, a u64, a float, a chr): Dst is where.</summary>
     public sealed class NumberTextI : Instr
     {
@@ -299,6 +338,9 @@ namespace Phi.Compiler.CodeGen.Ir
     public sealed class FreeTextI : Instr
     {
         public string Place { get; init; } = "";
+
+        /// <summary>Or the text's address itself, in a value.</summary>
+        public VReg? Value { get; init; }
     }
 
     /// <summary>throw text;: the generator's (phi_throw, with the text, the line and the file), which never comes back.</summary>
@@ -794,7 +836,10 @@ namespace Phi.Compiler.CodeGen.Ir
             ArrayGrowI g => $"grow [{g.View}] to {g.Count} of {g.Size}",
             GrowStoreI gs => $"text [{gs.Slot}] {(gs.Append ? "++" : "is")} {gs.Value}{(gs.SourceIsString ? "" : " as a number")}",
             NumberTextI nt => $"{nt.Dst} = text of {nt.Kind} {nt.Value}",
-            FreeTextI ft => $"free text [{ft.Place}]",
+            ExitI ex => $"exit {ex.Code}",
+            InterfaceMethodI im => $"{im.Dst} = {im.Interface.Name} method {im.Index} of {im.Receiver}",
+            FreeTextI ft => ft.Value != null ? $"free text {ft.Value}" : $"free text [{ft.Place}]",
+            AddrOfI ao => $"{ao.Dst} = addr {ao.Of}",
             CopyBytesI cb => $"copy {cb.Count} bytes from {cb.Src} to {cb.Dst}",
             ResultTextI rt => $"{rt.Dst} = result text {rt.Value}",
             FixedStoreI fs => $"text [{fs.Dst}] ({fs.Room}) {(fs.Append ? "++" : "is")} {fs.Value}{(fs.SourceIsString ? "" : " as a number")}",

@@ -136,7 +136,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     {
                         Instr i = b.Instrs[k];
                         VReg? def = RegisterAllocator.Def(i);
-                        if (def != null && !alive.Contains(def) && Pure(i))
+                        // (a pinned value is read through its address too: what's put in it stays)
+                        if (def != null && !alive.Contains(def) && !def.Pinned && Pure(i))
                         {
                             b.Instrs.RemoveAt(k);
                             removed = true;

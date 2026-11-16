@@ -1,0 +1,84 @@
+# Arrays of str without a size through the intermediate form: a class's table (its texts grow),
+# one that grows, a struct's; their texts read (none is ''), measured, compared, given to a str
+# array parameter; written, added to and built (growing); texts and numbers added to the arrays
+# (one value an element; none, an empty one); shortened (dropped texts freed); vs PHI_IR=0's.
+struct.Names
+{
+	str list[];
+}
+
+phi.IrTextArrays:Program
+{
+	str table[3];
+	str grown[];
+	new Names n;
+	table:0 is 'zero';
+	table:2 is 'two';
+	grown++ 'first';
+	grown++ 'second';
+	n.list++ 'held';
+	call Show;
+	call Write: 4;
+	call More;
+	call Shorten;
+	call Show;
+	if call Past throws err
+		log 'caught: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Join: str rows[];]
+		str all: '';
+		while int i: 0; i < rows.len; i++;
+			all++ '[' rows:i ']';
+		;;
+	[end: all]
+
+	[Show:]
+		log table:0 ' (' table:1 ') ' table:2.len ' ' grown:1 ' ' n.list:0 '\n';
+		if grown:0 is 'first' and table:2 < 'zz'
+			log 'compared\n';
+		;;
+		log (Join: table) ' ' (Join: grown) ' ' (Join: n.list) '\n';
+	[end]
+
+	[Past:]
+		log grown:5;
+	[end]
+
+	[Write: int k: 0;]
+		table:1 is 'one, written later';
+		table:0++ ' and more';
+		grown:0 is 'k is ' k;
+		grown:1++ ', ' k * 2 ', ' (k as f64 / 8.0);
+		n.list:0 is grown:0;
+		n.list:0++ '!';
+		str s: 'from a str';
+		table:2 is s;
+		while int i: 0; i < 30; i++;
+			grown:1++ 'x';
+		;;
+	[end]
+
+	[More:]
+		while int i: 0; i < 40; i++;
+			grown++ 'g' i;
+			n.list++ i * i;
+		;;
+		n.list++;
+		n.list++ 'last ' (n.list.len);
+		log grown.len ' ' grown:41 ' ' n.list.len ' ' n.list:40 ' (' n.list:41 ') ' n.list:42 '\n';
+	[end]
+
+	[Shorten:]
+		u32 before: Heap.used_blocks;
+		grown.len is 3;
+		n.list.len is 2;
+		u32 after: Heap.used_blocks;
+		grown++ 'again';
+		n.list++ 'and';
+		log 'shortened: ' grown.len ' ' grown:2 ' ' grown:3 ' ' n.list.len ' ' n.list:2 ' ' (before - after) '\n';
+		n.list.len is 1;
+		log (Join: n.list) '.\n';
+	[end]
+}

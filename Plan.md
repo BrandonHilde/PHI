@@ -4046,6 +4046,20 @@ ir_text_chars, ir_text_ref and ir_arrays_added (each against PHI_IR=0's output).
 most: arrays of objects and of text (++, their length set, an element read, kept or its address),
 a method's own arrays that grow, array parameters of str.
 
+Then, to 39: structs kept in arrays (their fields, list:i.x and p:i.x, and addresses) and objects
+held in them (read as their addresses); ++ of a struct (copied from where it is, found again when
+it was in the array as it moved) and of an object (cloned, a call's new one taken, none a zeroed
+one); an object array's length set (the dropped ones freed); array parameters (int list[]: a view
+the caller pushes, its count and most together then its elements), text arrays among them; arrays
+of str without a size (a table of where each text is): read, written and grown through their
+rooms .max slots on, ++ (phi_text_array_grow), their length set (dropped texts freed); addr of a
+method's own variable (a pinned value: its own slot of the frame the whole method, which the
+peephole leaves alone); a method's own arrays that grow (a view in its frame, freed at its end
+and by a throw going past); exit in a method; an interface's method; when on text. Tests
+ir_struct_elements, ir_array_params, ir_text_arrays, ir_addr_locals and ir_local_arrays. What's
+left (39) is scattered: a method's own arrays of objects and of text, structs that own things,
+text built from its own elements, takes, an assembly block's result.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

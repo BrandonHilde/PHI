@@ -57,8 +57,12 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>Values read from a home, with which: the object that home still holds, until it's stored to.</summary>
         readonly Dictionary<VReg, string> readFrom = new();
 
-        IrBuilder(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults)
+        /// <summary>A program's method (exit is the program's end).</summary>
+        readonly bool program;
+
+        IrBuilder(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, bool program)
         {
+            this.program = program;
             this.growResults = growResults;
             this.holdable = holdable;
             this.catches = catches;
@@ -72,12 +76,12 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         /// <summary>The method as the intermediate form, or null and why it isn't.</summary>
-        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, out string why)
+        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, bool program, out string why)
         {
             why = "";
             try
             {
-                var builder = new IrBuilder(m, holdable, catches, growResults);
+                var builder = new IrBuilder(m, holdable, catches, growResults, program);
                 builder.BuildBody();
                 return builder.fn;
             }
@@ -148,10 +152,10 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             MethodSymbol m = method;
             Need(!m.IsInterruptHandler && !m.IsHook, "an event or interrupt handler");
-            VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !FrameText(p) && !CallersText(p) && !GrowingText(p) && !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
+            VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !FrameText(p) && !CallersText(p) && !GrowingText(p) && !ArrayParameter(p) && !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
             Need(badParameter == null, $"a parameter it doesn't take ('{badParameter?.Name}', {Describe(badParameter)})");
 
-            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v) || FrameText(v) || GrowingText(v)
+            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v) || FrameText(v) || GrowingText(v) || LocalView(v)
                                    || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements));
             Need(badLocal == null, $"a variable it doesn't take ('{badLocal?.Name}', {Describe(badLocal)})");
 
@@ -165,6 +169,20 @@ namespace Phi.Compiler.CodeGen.Ir
                 StoreObject((home, null, 0), Opnd.Const(0));
             }
             PlaceGrowingTexts();
+            foreach (VariableSymbol v in m.Locals.Where(LocalView))
+            {
+                fn.NewHome();
+                fn.NewHome();
+                string home = $"rbp - {8 * fn.Homes}";
+                localViews[v] = home;
+                fn.OwnedTexts.Add(home);     // (its elements freed as a text is: Heap.Free of what's at its start)
+                Emit(new ZeroI { Place = home, Size = 16 });
+            }
+            addressed = BodyNodes().OfType<AddrExpr>()
+                .Select(a => a is { OfObject: false, CodeLabel: null, Operand: NameExpr { Symbol: VariableSymbol v } } ? v : null)
+                .Where(v => v != null && Ours(v) && Supported(v.Type) && !v.Type.IsVec && !owned.ContainsKey(v) && !frameStructs.ContainsKey(v)
+                            && !FrameText(v) && !GrowingText(v) && !CallersText(v) && !ArrayParameter(v))
+                .Select(v => v!).ToHashSet();
             if (catches && (owned.Count > 0 || fn.OwnedTexts.Count > 0
                             || growResults && BodyNodes().Any(n => n is CallExpr { Resolved: MethodSymbol cm } && GivesText(cm) || n is CallStmt { Resolved: MethodSymbol sm } && GivesText(sm))))
             {
@@ -203,6 +221,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     above += 8;
                     continue;
                 }
+                if (ArrayParameter(p))
+                {
+                    // an array: a view of it where the caller pushed it (its elements, how many, the most)
+                    paramViews[p] = $"rbp + {above}";
+                    above += 16;
+                    continue;
+                }
                 if (CallersText(p))
                 {
                     VReg slot = fn.NewValue(true, p.Name);
@@ -226,7 +251,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             // (a variable is set where it's declared; one that could be read before that is
             // given 0 at the start, by IrPeephole, which knows which)
-            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v) && !frameTexts.ContainsKey(v) && !growingTexts.ContainsKey(v))) Variable(v);
+            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v) && !frameTexts.ContainsKey(v) && !growingTexts.ContainsKey(v) && !localViews.ContainsKey(v))) Variable(v);
 
             Statements(m.Decl.Body);
             if (m.Decl.Result is Expr value)
@@ -404,10 +429,14 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 Need(Supported(v.Type), $"'{v.Name}', {A(v.Type)}");
                 r = New(v.Type, v.Name);
+                r.Pinned = addressed.Contains(v);
                 variables[v] = r;
             }
             return r;
         }
+
+        /// <summary>The method's own variables whose address it takes (addr n): pinned, each in its own slot.</summary>
+        HashSet<VariableSymbol> addressed = new();
 
         void Emit(Instr i)
         {
@@ -543,6 +572,14 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case VarDecl { Symbol: VariableSymbol viewed } vd when localViews.TryGetValue(viewed, out string? viewHome):
+                    // empty again each time it runs: its elements let go, its view zero
+                    Need(vd.Values.Count == 0, "an array that grows given values where it's declared");
+                    Mark(vd);
+                    Emit(new FreeTextI { Place = viewHome });
+                    Emit(new ZeroI { Place = viewHome, Size = 16 });
+                    return;
+
                 case VarDecl { Symbol: VariableSymbol grown } gd when growingTexts.ContainsKey(grown):
                 {
                     // its value (or no text): each time the declaration runs; the room it has stays
@@ -659,7 +696,7 @@ namespace Phi.Compiler.CodeGen.Ir
                             Emit(new StoreIdxI { Base = text, Index = index, Scale = 1, Src = Small(value, false), Kind = MemKind.U8 });
                             return;
                         }
-                        case IndexExpr viewed when InView(viewed):
+                        case IndexExpr viewed when InView(viewed) && !viewed.Type.IsObject:
                         {
                             Opnd value = Value(a.Value, viewed.Type);
                             var (bas, index, scale) = ViewElement(viewed);
@@ -821,6 +858,44 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case WhenStmt textChoice when (Real(textChoice.Subject) is { IsString: true, IsArray: false } || Real(textChoice.Subject).IsTextPointer)
+                                              && textChoice.Branches.All(br => br.TypeName == null):
+                {
+                    // the subject's text once, then each value compared with it in turn (phi_strcmp), the first that's the same taken
+                    Mark(textChoice);
+                    VReg subject = Real(textChoice.Subject).IsTextPointer ? InReg(Value(textChoice.Subject), true) : (VReg)TextValue(textChoice.Subject).Reg!;
+                    Block after = fn.NewBlock();
+                    Block otherwise = textChoice.Else != null ? fn.NewBlock() : after;
+                    var bodies = new List<(Block Block, List<Stmt> Body)>();
+                    foreach (WhenBranch branch in textChoice.Branches) bodies.Add((fn.NewBlock(), branch.Body));
+                    for (int k = 0; k < textChoice.Branches.Count; k++)
+                        foreach (Expr value in textChoice.Branches[k].Values)
+                        {
+                            VReg other = Real(value).IsTextPointer ? InReg(Value(value), true) : (VReg)TextValue(value).Reg!;
+                            VReg differs = fn.NewValue(false);
+                            Emit(new TextI { Op = TextOp.Equal, Dst = differs, A = subject, B = other });
+                            Block next = fn.NewBlock();
+                            if (current.End != null) Enter(fn.NewBlock());
+                            current.End = new BranchT { Cond = Cond.Eq, A = differs, B = Opnd.Const(0), Then = bodies[k].Block, Else = next };
+                            Enter(next);
+                        }
+                    if (current.End == null) current.End = new JumpT { Target = otherwise };
+                    foreach (var (block, body) in bodies)
+                    {
+                        Enter(block);
+                        Statements(body);
+                        if (current.End == null) current.End = new JumpT { Target = after };
+                    }
+                    if (textChoice.Else != null)
+                    {
+                        Enter(otherwise);
+                        Statements(textChoice.Else);
+                        if (current.End == null) current.End = new JumpT { Target = after };
+                    }
+                    Enter(after);
+                    return;
+                }
+
                 case WhenStmt choice:
                 {
                     PhiType st = Real(choice.Subject);
@@ -934,6 +1009,16 @@ namespace Phi.Compiler.CodeGen.Ir
                 case AppendArrayStmt addArray:
                     AddArray(addArray);
                     return;
+
+                case ExitStmt exit:
+                {
+                    Need(program, "an exit outside a program");
+                    Mark(exit);
+                    Opnd code = exit.Code != null ? Value(exit.Code, PhiType.Int) : Opnd.Const(0);
+                    Emit(new ExitI { Code = code, Held = HeldStores() });
+                    current.End = new RetT();
+                    return;
+                }
 
                 case ThrowStmt thrown:
                 {
@@ -1108,7 +1193,8 @@ namespace Phi.Compiler.CodeGen.Ir
             NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self) && Supported(f.Type),
             MemberExpr { Field: FieldSymbol f, Call: null, Target: IndexExpr { Target.Type.IsPointer: true } element } when Supported(f.Type)
                 && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0 => true,
-            MemberExpr { Field: FieldSymbol f, Call: null } m => Supported(f.Type) && Is64(Real(m.Target)) && Supported(Real(m.Target)),
+            MemberExpr { Field: FieldSymbol f, Call: null } m when Supported(f.Type) && Is64(Real(m.Target)) && Supported(Real(m.Target)) => true,
+            MemberExpr { Field: FieldSymbol f, Call: null } placed => Supported(f.Type) && InPlaceStruct(placed.Target.Type) && CanAddress(placed.Target),
             NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0 && Supported(p.Type),
             _ => false,
         };
@@ -1150,6 +1236,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new BinI { Op = BinOp.Add, Dst = at, A = p, B = scaled });
                     return (at, f.Offset, f.Type);
                 }
+                case MemberExpr { Field: FieldSymbol f, Call: null } placed when Supported(f.Type) && InPlaceStruct(placed.Target.Type) && CanAddress(placed.Target):
+                    // list:i.field (an element in place, a struct's struct): where the struct is, and the field in it
+                    return (AddressOf(placed.Target), f.Offset, f.Type);
                 case NameExpr { Symbol: PathSymbol p } when p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0
                                                              && Supported(p.Type):
                 {
@@ -1167,6 +1256,17 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         /// <summary>A class's array of a size, kept where its label is, of numbers or f64s: its label, or null.</summary>
+        /// <summary>A struct kept where it is (in an array, a frame, through a pointer): reached by its address, not a value.</summary>
+        static bool InPlaceStruct(PhiType t) => t.IsStruct && !t.IsArray && !t.IsObject && t.Struct != null && t.Struct.Size > 0;
+
+        /// <summary>An element this form reads as a value or reaches by its address: a number (a vec, an object's address), or a struct in place.</summary>
+        static bool Reachable(PhiType t) => Supported(t) && t.ElementSize is 1 or 2 or 4 or 8 or 16 || InPlaceStruct(t);
+
+        /// <summary>A class's array whose elements are read and reached (objects' addresses and structs in place too), not only those written as numbers.</summary>
+        static string? ClassArray(VariableSymbol v) =>
+            !v.IsLocal && !v.IsParameter && v.Type.IsArray && !v.Type.Open && !v.Type.TextTable && v.Type.Length > 0
+            && !v.GrowingArray && !v.GrowingElements && Reachable(v.Type.Element) && SimpleLabel(v.Label) ? v.Label : null;
+
         static string? GlobalArray(VariableSymbol v) =>
             !v.IsLocal && !v.IsParameter && v.Type.IsArray && !v.Type.Open && !v.Type.TextTable && v.Type.Length > 0     // (an [atmost N] one too: its N in place, its count after them)
             && !v.GrowingArray && !v.GrowingElements && Supported(v.Type.Element) && !v.Type.Element.IsObject && SimpleLabel(v.Label) ? v.Label : null;
@@ -1180,9 +1280,8 @@ namespace Phi.Compiler.CodeGen.Ir
         (VReg Base, Opnd Index, int Scale) ArrayElement(IndexExpr e, VariableSymbol array)
         {
             PhiType element = e.Type;
-            Need(Supported(element), $"an array of {element}");
+            Need(Reachable(element), $"an array of {element}");
             int scale = element.ElementSize;
-            Need(scale is 1 or 2 or 4 or 8 or 16, $"an element of {scale} bytes");
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
             Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
@@ -1193,7 +1292,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 index = checkedIndex;
             }
             VReg bas = fn.NewValue(true);
-            Emit(new AddrI { Dst = bas, Label = GlobalArray(array)! });
+            Emit(new AddrI { Dst = bas, Label = ClassArray(array)! });
             if (index.IsImm && (index.Imm * scale < int.MinValue || index.Imm * scale > int.MaxValue)) index = InReg(index, true);
             return (bas, index, scale);
         }
@@ -1449,14 +1548,20 @@ namespace Phi.Compiler.CodeGen.Ir
                     return LoadAt(AddressOf(view), length.Max ? ViewMax : ViewCount, PhiType.Int);
                 case NameExpr { Symbol: LengthSymbol { Filled: Expr filled } } when CanAddress(filled):
                     return LoadAt(AddressOf(filled), filled.Type.CountOffset, PhiType.Int);
-                case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol { GrowingArray: true } held } length } when !Ours(held) && AnyGlobal(held) != null:
+                case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol viewed } viewLength } when paramViews.TryGetValue(viewed, out string? viewPlace):
                 {
                     VReg view = fn.NewValue(true);
-                    Emit(new AddrI { Dst = view, Label = AnyGlobal(held)! });
+                    Emit(new AddrI { Dst = view, Label = viewPlace });
+                    return LoadAt(view, viewLength.Max ? ViewMax : ViewCount, PhiType.Int);
+                }
+                case NameExpr { Symbol: LengthSymbol { Open: VariableSymbol held } length } when GrowingView(held):
+                {
+                    VReg view = fn.NewValue(true);
+                    Emit(new AddrI { Dst = view, Label = ViewHome(held) });
                     return LoadAt(view, length.Max ? ViewMax : ViewCount, PhiType.Int);
                 }
-                case MemberExpr { FilledLength: true, Call: null, Target: NameExpr { Symbol: VariableSymbol { GrowingArray: true } grown } growing }
-                    when !Ours(grown) && AnyGlobal(grown) != null:
+                case MemberExpr { FilledLength: true, Call: null, Target: NameExpr { Symbol: VariableSymbol grown } growing }
+                    when GrowingView(grown):
                     return LoadAt(ViewOf(growing), ViewCount, PhiType.Int);
                 case MemberExpr { FilledLength: true, Call: null, Target: var counted } when CanAddress(counted):
                     return LoadAt(AddressOf(counted), counted.Type.Open ? ViewCount : counted.Type.CountOffset, PhiType.Int);
@@ -1470,6 +1575,12 @@ namespace Phi.Compiler.CodeGen.Ir
                     return CallValue(call);
                 case CallExpr call:
                     return CallValue(call);
+                case InterfaceMethodExpr method:
+                {
+                    VReg d = fn.NewValue(true);
+                    Emit(new InterfaceMethodI { Dst = d, Receiver = InReg(Value(method.Receiver), true), Interface = method.Interface, Index = method.Index });
+                    return d;
+                }
                 case NameExpr { Symbol: ConstantSymbol k }:
                     return Opnd.Const(k.Value);
                 case SizeofExpr size:
@@ -1510,6 +1621,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new LoadI { Dst = d, Place = FramePlace(ff.Root, ff.Offset), Kind = KindOf(ff.Type) });
                     return d;
                 }
+                case AddrExpr { OfObject: false, CodeLabel: null, Operand: NameExpr { Symbol: VariableSymbol mine } } when addressed.Contains(mine):
+                {
+                    // where the variable's slot is: it lives there the whole method
+                    VReg d = fn.NewValue(true);
+                    Emit(new AddrOfI { Dst = d, Of = Variable(mine) });
+                    return d;
+                }
                 case AddrExpr { OfObject: false, CodeLabel: null, Operand: NameExpr { Symbol: VariableSymbol whole } } when frameStructs.ContainsKey(whole):
                 {
                     VReg d = fn.NewValue(true);
@@ -1543,7 +1661,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new AddrI { Dst = d, Label = label });
                     return d;
                 }
-                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when GlobalArray(arr) != null:
+                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when ClassArray(arr) != null && Supported(inArray.Type):
                 {
                     var (bas, index, scale) = ArrayElement(inArray, arr);
                     VReg d = New(inArray.Type);
@@ -1551,7 +1669,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     return d;
                 }
                 case AddrExpr { OfObject: false, CodeLabel: null, Operand: IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray }
-                    when GlobalArray(arr) != null:
+                    when ClassArray(arr) != null:
                 {
                     // addr list:i: where the element is (checked as reading it would be)
                     var (bas, index, scale) = ArrayElement(inArray, arr);
@@ -1687,17 +1805,19 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>True when <see cref="AddressOf"/> takes the place (asking only, with nothing built).</summary>
         bool CanAddress(Expr e) => e switch
         {
+            NameExpr { Symbol: VariableSymbol pv } when paramViews.ContainsKey(pv) => true,
+            NameExpr { Symbol: VariableSymbol lv } when localViews.ContainsKey(lv) => true,
             NameExpr { Symbol: VariableSymbol v } => frameStructs.ContainsKey(v) || !Ours(v) && !v.Grows && !v.TextRef && !v.Type.Open && AnyGlobal(v) != null,
             NameExpr { Symbol: FieldPathSymbol f } => frameStructs.ContainsKey(f.Root) || GlobalStruct(f.Root) != null
                 || !Ours(f.Root) && !f.Root.Grows && !f.Root.Type.Open && AnyGlobal(f.Root) != null,
             NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0,
             NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self),
-            MemberExpr { Field: FieldSymbol, Call: null } m => Is64(Real(m.Target)) && Supported(Real(m.Target)),
-            IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } when GlobalArray(arr) != null => true,
+            MemberExpr { Field: FieldSymbol, Call: null } m => Is64(Real(m.Target)) && Supported(Real(m.Target)) || InPlaceStruct(m.Target.Type) && CanAddress(m.Target),
+            IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } when ClassArray(arr) != null => true,
             IndexExpr placed when InPlace(placed) => true,
             IndexExpr viewed when InView(viewed) => true,
             IndexExpr { Target.Type.IsString: true, Target.Type.IsArray: false } character => IsCharacter(character),
-            IndexExpr { Target.Type.IsPointer: true } element => Supported(element.Type) && element.Type.ElementSize is 1 or 2 or 4 or 8 or 16,
+            IndexExpr { Target.Type.IsPointer: true } element => Reachable(element.Type),
             _ => false,
         };
 
@@ -1713,6 +1833,12 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 case NameExpr { Symbol: VariableSymbol v } when frameStructs.ContainsKey(v):
                     Emit(new AddrI { Dst = d, Label = FramePlace(v, 0) });
+                    return d;
+                case NameExpr { Symbol: VariableSymbol lv } when localViews.TryGetValue(lv, out string? localAt):
+                    Emit(new AddrI { Dst = d, Label = localAt });
+                    return d;
+                case NameExpr { Symbol: VariableSymbol pv } when paramViews.TryGetValue(pv, out string? viewAt):
+                    Emit(new AddrI { Dst = d, Label = viewAt });
                     return d;
                 case NameExpr { Symbol: VariableSymbol g }:
                     Emit(new AddrI { Dst = d, Label = AnyGlobal(g)! });
@@ -1739,14 +1865,18 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new BinI { Op = BinOp.Add, Dst = d, A = Variable(f.Self), B = Opnd.Const(f.Offset) });
                     return d;
                 case MemberExpr { Field: FieldSymbol f } m:
-                    Emit(new BinI { Op = BinOp.Add, Dst = d, A = InReg(Value(m.Target), true), B = Opnd.Const(f.Offset) });
+                {
+                    // through the object or pointer it is, or where the struct it's in is
+                    VReg holder = Is64(Real(m.Target)) && Supported(Real(m.Target)) ? InReg(Value(m.Target), true) : AddressOf(m.Target);
+                    Emit(new BinI { Op = BinOp.Add, Dst = d, A = holder, B = Opnd.Const(f.Offset) });
                     return d;
+                }
                 case IndexExpr { Target.Type.IsString: true, Target.Type.IsArray: false } character:
                 {
                     var (text, at) = CharacterElement(character);
                     return Offset(text, at, 1, d);
                 }
-                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when GlobalArray(arr) != null:
+                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when ClassArray(arr) != null:
                 {
                     var (bas, index, scale) = ArrayElement(inArray, arr);
                     return Offset(bas, index, scale, d);
@@ -1785,8 +1915,9 @@ namespace Phi.Compiler.CodeGen.Ir
         bool InView(IndexExpr e) =>
             e.Target.Type is { Open: true, TextTable: false } && e.Target.Type.Kind != TypeKind.Str
             && (Binder.IsFieldView(e.Target) && CanAddress(e.Target)
-                || e.Target is NameExpr { Symbol: VariableSymbol { GrowingArray: true } g } && !Ours(g) && AnyGlobal(g) != null)
-            && Supported(e.Type) && !e.Type.IsObject && e.Type.ElementSize is 1 or 2 or 4 or 8 or 16;
+                || e.Target is NameExpr { Symbol: VariableSymbol g } && GrowingView(g)
+                || e.Target is NameExpr { Symbol: VariableSymbol pv } && paramViews.ContainsKey(pv))
+            && Reachable(e.Type);
 
         (VReg Base, Opnd Index, int Scale) ViewElement(IndexExpr e)
         {
@@ -2064,9 +2195,8 @@ namespace Phi.Compiler.CodeGen.Ir
         (VReg Base, Opnd Index, int Scale) Element(IndexExpr e)
         {
             PhiType element = e.Type;
-            Need(Supported(element), $"a pointer to a {element}");
+            Need(Reachable(element), $"a pointer to a {element}");
             int scale = element.ElementSize;
-            Need(scale is 1 or 2 or 4 or 8 or 16, $"an element of {scale} bytes");
             VReg bas = InReg(Value(e.Target), true);
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer, $"an index that's a {it}");
@@ -2296,7 +2426,7 @@ namespace Phi.Compiler.CodeGen.Ir
         VReg? Call(MethodSymbol callee, List<Expr> arguments, bool wantResult)
         {
             Need(!callee.IsHook && !callee.IsInterruptHandler, "a call of an event");
-            Need(callee.Parameters.All(p => p.Type.IsString && !p.Type.IsArray
+            Need(callee.Parameters.All(p => p.Type.IsString && !p.Type.IsArray || ArrayParameter(p)
                                            || Supported(p.Type) && !p.Grows && !p.TextRef && !(p.Type.IsObject && p.Ownership == Ownership.Owned)),
                  $"a call of {callee.Name}, which takes what this form doesn't");
             Need(callee.ReturnType.Kind == TypeKind.Void || Supported(callee.ReturnType) || GivesText(callee), $"a call of {callee.Name}, which gives a {callee.ReturnType}");
@@ -2314,6 +2444,16 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 PhiType pt = callee.Parameters[i].Type;
                 Expr? given = i < arguments.Count ? arguments[i] : callee.Parameters[i].Decl.Values.FirstOrDefault();
+                if (ArrayParameter(callee.Parameters[i]))
+                {
+                    // a view of the array: how many and the most together (pushed first), then its elements
+                    var (both, elements) = ArrayArg(given);
+                    call.Args.Add(both);
+                    call.ArgKinds.Add(MemKind.Q64);
+                    call.Args.Add(elements);
+                    call.ArgKinds.Add(MemKind.Q64);
+                    continue;
+                }
                 if (callee.Parameters[i].TextRef)
                 {
                     // where the caller's str is (it may be written)

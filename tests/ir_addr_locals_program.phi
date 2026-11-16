@@ -1,0 +1,42 @@
+# A method's own variable whose address it takes (addr length), through the intermediate form:
+# kept in its own slot of the frame the whole method, so what it's given to can write it, then
+# or later through a pointer kept; an int, a u64 and a parameter; compared with PHI_IR=0's.
+phi.IrAddrLocals:Program
+{
+	call Pinned: 5;
+	call Finish: 0;
+	log 'not here\n';
+	exit 3;
+
+	[Fill: ptr<int> dest: 0; int v: 0;]
+		dest:0 is v;
+	[end]
+
+	[Wide: ptr<u64> dest: 0;]
+		dest:0 is dest:0 * 2 + 1;
+	[end]
+
+	[Pinned: int n: 0;]
+		int length: 0;
+		u64 size: 3000000000;
+		call Fill: addr length 42;
+		log length '\n';
+		int sum: 0;
+		while int i: 0; i < n; i++;
+			call Fill: addr length i * 10;
+			sum++ length;
+		;;
+		call Wide: addr size;
+		call Fill: addr n 9;
+		log sum ' ' size ' ' n '\n';
+		ptr<int> p: addr length;
+		p:0 is 77;
+		log length '\n';
+	[end]
+
+	# exit in a method: the program ends there, with its code
+	[Finish: int code: 0;]
+		log 'finishing\n';
+		exit code;
+	[end]
+}

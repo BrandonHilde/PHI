@@ -1,0 +1,123 @@
+# Structs kept in arrays and objects held in them, through the intermediate form: their fields
+# (list:i.x, p:i.x, k.cells:i.x), their addresses, ++ of a struct (from inside the array as it
+# moves too) and of an object (cloned, or a zeroed one), a full atmost array; vs PHI_IR=0's.
+struct.Cell
+{
+	int x;
+	u8 tag;
+	i64 big;
+}
+
+struct.Item
+{
+	int value;
+	str name: [8];
+}
+
+struct.Holder
+{
+	Cell cells[];
+	new Item items[];
+}
+
+phi.IrStructElements:Program
+{
+	Cell grid: [5];
+	new Holder h;
+	new Item few[atmost 2];
+	call Fill;
+	call Show: addr grid:2;
+	call Through: addr grid:0 4;
+	call Held;
+	call Inside;
+	call Shrink;
+	if call Full throws err
+		log 'full: ' err.text ' ' few.len '\n';
+	;;
+	if call Past: 9 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Fill:]
+		while int i: 0; i < 5; i++;
+			grid:i.x is i * 10;
+			grid:i.tag is (i + 65) as u8;
+			grid:i.big is i as i64 * 3000000000;
+		;;
+		log grid:3.x ' ' grid:3.big ' ' grid:4.tag '\n';
+	[end]
+
+	[Show: ptr<Cell> c: 0;]
+		log 'shown: ' c.x ' ' c.big '\n';
+	[end]
+
+	[Through: ptr<Cell> p: 0; int n: 0;]
+		int sum: 0;
+		while int i: 0; i < n; i++;
+			sum++ p:i.x;
+			p:i.x is p:i.x + 1;
+		;;
+		log 'through: ' sum ' ' grid:1.x '\n';
+	[end]
+
+	[Held:]
+		Cell one;
+		one.x is 7;
+		h.cells++ one;
+		one.x is 8;
+		h.cells++ one;
+		new Item it;
+		it.value is 42;
+		h.items++ it;
+		log 'held: ' h.cells:1.x ' ' (Sum: h) ' ' h.items:0.value '\n';
+	[end]
+
+	[Sum: ptr<Holder> k: 0;]
+		int s: 0;
+		while int i: 0; i < k.cells.len; i++;
+			s++ k.cells:i.x;
+		;;
+		s++ k.items:0.value;
+	[end: s]
+
+	[Past: int i: 0;]
+		log grid:i.x;
+	[end]
+
+	[Inside:]
+		# from inside the array, while it moves to make room
+		while int i: 0; i < 40; i++;
+			h.cells++ h.cells:(i % 2);
+		;;
+		int sum: 0;
+		while int k: 0; k < h.cells.len; k++;
+			sum++ h.cells:k.x;
+		;;
+		h.items++;
+		h.items:1.value is 5;
+		log 'inside: ' h.cells.len ' ' sum ' ' h.items.len ' ' h.items:1.value ' ' h.items:0.value '\n';
+	[end]
+
+	[Full:]
+		new Item one;
+		one.value is 3;
+		few++ one;
+		few++ one;
+		few++ one;
+	[end]
+
+	# the length set: dropped objects given back (the heap's blocks say), structs just dropped
+	[Shrink:]
+		u32 before: Heap.used_blocks;
+		while int i: 0; i < 5; i++;
+			h.items++;
+		;;
+		u32 grown: Heap.used_blocks;
+		h.items.len is 1;
+		h.cells.len is 3;
+		log 'shrunk: ' h.items.len ' ' h.cells.len ' ' (grown - before) ' ' (Heap.used_blocks - before) '\n';
+		h.items++;
+		log 'again: ' h.items.len ' ' h.items:1.value '\n';
+	[end]
+}

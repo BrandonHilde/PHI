@@ -105,14 +105,14 @@ namespace Phi.Compiler.CodeGen.Ir
         void BuildText(StringBuildStmt build)
         {
             Need(build.AsideWhen.Count == 0, "text built from its own elements");
-            Need(CanSlot(build.Target) || CanFix(build.Target), $"text built in {Unknown(build.Target)}");
+            Need(CanSlot(build.Target) || TableSlot(build.Target) || CanFix(build.Target), $"text built in {Unknown(build.Target)}");
             for (int k = 0; k < build.Parts.Count; k++) PutText(build.Target, build.Parts[k], append: build.Append || k > 0);
         }
 
         /// <summary>One value put in a str that grows (its slot found after the value, as the generator does).</summary>
         void PutText(Expr target, Expr part, bool append)
         {
-            if (!CanSlot(target))
+            if (!CanSlot(target) && !TableSlot(target))
             {
                 PutPart(part, append, null, target);
                 return;
@@ -127,6 +127,30 @@ namespace Phi.Compiler.CodeGen.Ir
         void PutPart(Expr part, bool append, (VReg At, int Room)? fixedAt, Expr? fixedTarget, Expr? slotTarget = null, string? slotHome = null)
         {
             Expr? target = slotTarget;
+            var (value, isText, unsigned, known) = PartValue(part);
+            if (fixedAt == null && fixedTarget != null) fixedAt = FixedPlace(fixedTarget) ?? throw new InvalidOperationException("no place for the text");
+            if (fixedAt is (VReg at, int room))
+            {
+                Emit(new FixedStoreI { Dst = at, Room = room, Value = value, SourceIsString = isText, Append = append, Unsigned = unsigned, MayCut = textMayCut, Held = HeldStores() });
+                return;
+            }
+            VReg slot;
+            int? roomOffset = null;
+            string? rooms = null;
+            if (slotHome != null)
+            {
+                slot = fn.NewValue(true);
+                Emit(new AddrI { Dst = slot, Label = slotHome });
+            }
+            else if (TableSlot(target!)) (slot, roomOffset, rooms) = TableSlotOf((IndexExpr)target!);
+            else slot = SlotOf(target!);
+            Emit(new GrowStoreI { Slot = slot, Value = value, SourceIsString = isText, Append = append, Unsigned = unsigned, Known = known, MayCut = textMayCut,
+                                  RoomOffset = roomOffset, Rooms = rooms });
+        }
+
+        /// <summary>A value put in text, worked out: a text's address, or a number (written out as text, or a whole one the store writes).</summary>
+        (Opnd Value, bool IsText, bool Unsigned, int? Known) PartValue(Expr part)
+        {
             PhiType t = Real(part);
             Opnd value;
             bool isText = true;
@@ -149,21 +173,8 @@ namespace Phi.Compiler.CodeGen.Ir
                 isText = false;
                 unsigned = t.IsUnsigned32;
             }
-            if (fixedAt == null && fixedTarget != null) fixedAt = FixedPlace(fixedTarget) ?? throw new InvalidOperationException("no place for the text");
-            if (fixedAt is (VReg at, int room))
-            {
-                Emit(new FixedStoreI { Dst = at, Room = room, Value = Small(value, true), SourceIsString = isText, Append = append, Unsigned = unsigned, MayCut = textMayCut, Held = HeldStores() });
-                return;
-            }
-            VReg slot;
-            if (slotHome != null)
-            {
-                slot = fn.NewValue(true);
-                Emit(new AddrI { Dst = slot, Label = slotHome });
-            }
-            else slot = SlotOf(target!);
             int? known = part is StringExpr s && s.Type.IsString ? (s.Value.IndexOf('\0') is int zero and >= 0 ? zero : s.Value.Length) : null;
-            Emit(new GrowStoreI { Slot = slot, Value = Small(value, true), SourceIsString = isText, Append = append, Unsigned = unsigned, Known = isText ? known : null, MayCut = textMayCut });
+            return (Small(value, true), isText, unsigned, isText ? known : null);
         }
 
         /// <summary>Each such parameter's value: the address of the caller's slot.</summary>
@@ -187,6 +198,7 @@ namespace Phi.Compiler.CodeGen.Ir
             NameExpr { Symbol: VariableSymbol { TextRef: false } g } when !Ours(g) && !g.Type.IsArray && SimpleLabel(g.Label) => true,
             _ when e.Type.IsInlineText || e.Type.IsHeapText => CanAddress(e),
             TextExpr t => t.Parts.All(CanPart),
+            IndexExpr element when TextTableElement(element) => true,
             CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null } => !e.Type.IsArray,
             _ => false,
         };
@@ -247,6 +259,69 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg d = fn.NewValue(true);
             Emit(new AddrI { Dst = d, Label = slot });
             return d;
+        }
+
+        /// <summary>
+        /// An element of an array of str without a size (a table of where each text is, 0 for
+        /// none): of a view (a struct's, a class's that grows, a parameter), or a class's table.
+        /// </summary>
+        bool TextTableElement(IndexExpr e) => e.Target.Type.TextTable && e.Type.IsString && !e.Type.IsArray
+            && (e.Target.Type.Open
+                    ? Binder.IsFieldView(e.Target) && CanAddress(e.Target)
+                      || e.Target is NameExpr { Symbol: VariableSymbol v } && (paramViews.ContainsKey(v) || v.GrowingArray && !Ours(v) && AnyGlobal(v) != null)
+                    : e.Target is NameExpr { Symbol: VariableSymbol t } && !t.GrowingArray && !Ours(t) && SimpleLabel(t.Label)
+                      && (e.CheckLimit != null || unsafeDepth > 0 || ConstantFolder.Evaluate(e.Index) != null));
+
+        /// <summary>An element of a str array written (its text grows): a struct's or a class's that grows, or a class's table of texts that grow (not a parameter's).</summary>
+        bool TableSlot(Expr target) => target is IndexExpr ix && TextTableElement(ix)
+            && (ix.Target.Type.Open ? ix.Target is not NameExpr { Symbol: VariableSymbol p } || !paramViews.ContainsKey(p)
+                                    : ix.Target is NameExpr { Symbol: VariableSymbol { GrowingElements: true } });
+
+        /// <summary>Its slot, and where its room is: .max slots on (kept in a home for the store), or the table's size on.</summary>
+        (VReg Slot, int RoomOffset, string? Rooms) TableSlotOf(IndexExpr ix)
+        {
+            VReg slot = TextSlotOf(ix);
+            if (!ix.Target.Type.Open) return (slot, PhiType.AddressSize * ((VariableSymbol)((NameExpr)ix.Target).Symbol!).Count, null);
+            VReg most = LoadAt(ViewOf(ix.Target), ViewMax, PhiType.U32);
+            fn.NewHome();
+            string rooms = $"rbp - {8 * fn.Homes}";
+            Emit(new StoreI { Place = rooms, Src = most, Kind = MemKind.D32 });
+            return (slot, 0, rooms);
+        }
+
+        /// <summary>Where an element's text pointer is, the index checked: against how many a view has, or the table's size.</summary>
+        VReg TextSlotOf(IndexExpr e)
+        {
+            PhiType it = Real(e.Index);
+            Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+            Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+            VReg elements;
+            if (e.Target.Type.Open)
+            {
+                VReg view = ViewOf(e.Target);
+                if (unsafeDepth == 0)
+                {
+                    VReg count = LoadAt(view, ViewCount, PhiType.U32);
+                    VReg limit = fn.NewValue(true);
+                    Emit(new ExtendI { Dst = limit, Src = count, Signed = false });
+                    VReg checkedIndex = InReg(index, true);
+                    Emit(new CheckI { Index = checkedIndex, LimitValue = limit, At = e, Held = HeldStores() });
+                    index = checkedIndex;
+                }
+                elements = LoadAt(view, 0, PhiType.PointerTo(PhiType.U8));
+            }
+            else
+            {
+                if (e.CheckLimit is int limit && unsafeDepth == 0 && !(index.IsImm && index.Imm >= 0 && index.Imm < limit))
+                {
+                    VReg checkedIndex = InReg(index, true);
+                    Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
+                    index = checkedIndex;
+                }
+                elements = fn.NewValue(true);
+                Emit(new AddrI { Dst = elements, Label = ((VariableSymbol)((NameExpr)e.Target).Symbol!).Label });
+            }
+            return Offset(elements, InReg(index, true), PhiType.AddressSize, fn.NewValue(true));
         }
 
         /// <summary>A throw's text is being built: cut short, it's kept as far as it goes (as the generator's textMayCut).</summary>
@@ -330,6 +405,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     return d;
                 case TextExpr built:
                     return BuildInline(built);
+                case IndexExpr element when TextTableElement(element):
+                {
+                    VReg at = TextSlotOf(element);
+                    VReg text = LoadAt(at, 0, PhiType.PointerTo(PhiType.U8));
+                    Emit(new TextI { Op = TextOp.OrEmpty, Dst = d, A = text });
+                    return d;
+                }
                 case CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null }:
                     return InReg(Value(e), true);
                 case NameExpr { Symbol: VariableSymbol mine } when growingTexts.TryGetValue(mine, out string? home):
@@ -422,7 +504,13 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A str of the method's own, or a class's with a size, given a text: copied in, too long an error.</summary>
         bool SetText(Expr target, Expr value)
         {
-            if ((CanSlot(target) || CanFix(target)) && Real(value).IsTextPointer)
+            if (TableSlot(target))
+            {
+                if (!(value.Type.IsString && CanText(value) || CanPart(value))) return false;
+                PutText(target, value, append: false);
+                return true;
+            }
+            if ((CanSlot(target) || TableSlot(target) || CanFix(target)) && Real(value).IsTextPointer)
             {
                 PutText(target, value, append: false);
                 return true;

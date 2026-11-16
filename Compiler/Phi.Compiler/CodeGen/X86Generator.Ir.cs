@@ -36,7 +36,7 @@ namespace Phi.Compiler.CodeGen
             // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
             HashSet<VariableSymbol> reached = ReachedByAddress();
             bool Holdable(VariableSymbol v) => !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile && !reached.Contains(v);
-            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, GrowResults, out string why);
+            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, GrowResults, unit.Kind == UnitKind.Program, out string why);
             if (fn == null)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: {why}");
@@ -470,7 +470,8 @@ namespace Phi.Compiler.CodeGen
                         E("push rax");
                         MarkNow();
                         g.textMayCut = gs.MayCut;
-                        g.EmitGrowStoreAt(g.RoomAt, gs.SourceIsString, gs.Append, gs.Unsigned, known: gs.Known);
+                        g.EmitGrowStoreAt(gs.RoomOffset ?? g.RoomAt, gs.SourceIsString, gs.Append, gs.Unsigned,
+                                          rooms: gs.Rooms != null ? $"dword [{gs.Rooms}]" : null, known: gs.Known);
                         g.textMayCut = false;
                         break;
                     }
@@ -484,6 +485,26 @@ namespace Phi.Compiler.CodeGen
                         E($"lea rsi, [rel {g.StringLabel(System.IO.Path.GetFileName(g.file.Path))}]");
                         E($"mov ebx, {ErrorThrown}");
                         E("jmp phi_throw");
+                        break;
+                    }
+                    case InterfaceMethodI im:
+                        Load("rax", im.Receiver, 64);
+                        E("mov eax, [rax - 4]      ; its type table");
+                        E($"mov eax, [rax + {g.InterfaceSlot(im.Interface)} + {4 * im.Index}]");
+                        Store(im.Dst, "rax");
+                        break;
+                    case ExitI ex:
+                        g.Need("phi_exit");
+                        WriteBack(ex.Held);
+                        Load("rax", ex.Code, 32);
+                        E("mov ebx, eax");
+                        E("jmp phi_exit");
+                        break;
+                    case AddrOfI ao:
+                    {
+                        string r = InRegister(ao.Dst) ? Reg(ao.Dst)! : "rax";
+                        E($"lea {r}, [rbp - {regs.Slots[ao.Of]}]");
+                        Store(ao.Dst, r);
                         break;
                     }
                     case CopyBytesI cb:
@@ -569,18 +590,22 @@ namespace Phi.Compiler.CodeGen
                         NumberText(nt);
                         break;
                     case FreeTextI ft:
-                        E($"push qword {Place(ft.Place)}");
+                        E(ft.Value != null ? $"push {Operand(ft.Value, 64)}" : $"push qword {Place(ft.Place)}");
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
                         E("add rsp, 8");
                         break;
                     case ArrayGrowI grow:
                         // (the generator's EmitArrayGrowCall: rax the array's place, edx the count, ecx the size)
-                        g.usesArrayGrow = true;
                         g.Need("phi_out_of_memory");
                         E($"mov edx, {At(grow.Count, 32)}");
                         Load("rax", grow.View, 64);
                         E($"mov ecx, {grow.Size}");
-                        E("call phi_array_grow");
+                        if (grow.Texts) g.EmitTextArrayGrowCall();
+                        else
+                        {
+                            g.usesArrayGrow = true;
+                            E("call phi_array_grow");
+                        }
                         break;
                     case CatchI c:
                     {

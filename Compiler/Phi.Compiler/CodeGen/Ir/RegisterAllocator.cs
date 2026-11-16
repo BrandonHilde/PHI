@@ -140,6 +140,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     if (gs.Value.Reg != null) yield return gs.Value.Reg;
                     break;
                 case NumberTextI nt: if (nt.Value.Reg != null) yield return nt.Value.Reg; break;
+                case AddrOfI ao: yield return ao.Of; break;
+                case InterfaceMethodI im: yield return im.Receiver; break;
+                case ExitI ex:
+                    if (ex.Code.Reg != null) yield return ex.Code.Reg;
+                    foreach (StoreI h in ex.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
+                case FreeTextI { Value: not null } ftv: yield return ftv.Value; break;
                 case CopyBytesI cb:
                     yield return cb.Dst;
                     yield return cb.Src;
@@ -199,6 +206,8 @@ namespace Phi.Compiler.CodeGen.Ir
             TextI t => t.Dst,
             SysCallI sc => sc.Dst,
             NumberTextI nt => nt.Dst,
+            AddrOfI ao => ao.Dst,
+            InterfaceMethodI im => im.Dst,
             ResultTextI rt => rt.Dst,
             ObjCallI oc => oc.Dst,
             AtomicI at => at.Dst,
@@ -301,7 +310,7 @@ namespace Phi.Compiler.CodeGen.Ir
             // where a throw comes back to, nothing is in a register: what's needed there is in the frame
             var caught = new HashSet<VReg>(fn.Blocks.Where(b => b.End is TryT).SelectMany(b => liveIn[((TryT)b.End!).Caught]));
             foreach (Interval iv in intervals.Values.OrderBy(i => i.Value.Id))
-                if (rawCalls.Any(c => c > iv.Start && c < iv.End) || caught.Contains(iv.Value))
+                if (rawCalls.Any(c => c > iv.Start && c < iv.End) || caught.Contains(iv.Value) || iv.Value.Pinned)
                 {
                     slotsForRaw += iv.Value.Vec ? 2 : 1;
                     Slots[iv.Value] = 8 * slotsForRaw;

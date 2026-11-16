@@ -1,0 +1,55 @@
+# A method's own arrays that grow, through the intermediate form: of numbers and of structs, in
+# its frame; empty again each time the declaration runs, given to a parameter, read by while
+# each; their elements freed at the method's end and by a throw going past (the heap says).
+struct.Pt
+{
+	int x;
+	int y;
+}
+
+phi.IrLocalArrays:Program
+{
+	u32 before: Heap.used_blocks;
+	call Build: 30;
+	call Build: 3;
+	call Structs;
+	if call Throws throws err
+		log 'caught: ' err.text '\n';
+	;;
+	log 'blocks back: ' (Heap.used_blocks - before) '\n';
+	exit 0;
+
+	[Sum: int list[];]
+		int s: 0;
+		while each v in list
+			s++ v;
+		;;
+	[end: s]
+
+	[Build: int n: 0;]
+		while int round: 0; round < 2; round++;
+			int mine[];
+			while int i: 0; i < n; i++;
+				mine++ i;
+			;;
+			log mine.len ' ' mine:(n - 1) ' ' (Sum: mine) '\n';
+		;;
+	[end]
+
+	[Structs:]
+		Pt pts[];
+		Pt one;
+		one.x is 4;
+		pts++ one;
+		pts++ pts:0;
+		pts:1.y is 9;
+		log pts.len ' ' pts:1.x ' ' pts:1.y '\n';
+	[end]
+
+	[Throws:]
+		int held[];
+		held++ 1;
+		held++ 2;
+		throw 'with an array';
+	[end]
+}

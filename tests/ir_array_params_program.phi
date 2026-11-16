@@ -1,0 +1,74 @@
+# Array parameters (int list[]) through the intermediate form: given an array of a size, an
+# atmost one, a class's that grows, a struct's field, a method's own, passed on again; their
+# .len, .max, elements (written too), while each, structs in them; compared with PHI_IR=0's.
+struct.Pt
+{
+	int x;
+	int y;
+}
+
+struct.Bag
+{
+	int nums[];
+}
+
+phi.IrArrayParams:Program
+{
+	int fixed: 4 5 6;
+	i64 wides: 3000000000 4000000000;
+	int few[atmost 5];
+	int grown[];
+	Pt pts: [3];
+	new Bag bag;
+	few++ 9;
+	few++ 8;
+	grown++ 11;
+	bag.nums++ 21;
+	bag.nums++ 22;
+	pts:1.x is 7;
+	call Sums;
+	if call Past throws err
+		log 'caught: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Sum: int list[];]
+		int s: 0;
+		while int i: 0; i < list.len; i++;
+			s++ list:i;
+		;;
+		list:0 is 100;
+	[end: s * 1000 + list.max]
+
+	[Wide: i64 list[];]
+		i64 s: 0;
+		while each w in list
+			s++ w;
+		;;
+	[end: s]
+
+	[Xs: Pt list[];]
+		int s: 0;
+		while int i: 0; i < list.len; i++;
+			s++ list:i.x;
+		;;
+	[end: s]
+
+	[Again: int list[];]
+	[end: (Sum: list)]
+
+	[Sums:]
+		log (Sum: fixed) ' ' fixed:0 ' ' (Sum: few) ' ' (Sum: grown) ' ' (Sum: bag.nums) ' ' (Again: fixed) '\n';
+		log (Wide: wides) ' ' (Xs: pts) '\n';
+		int local: 1 2 3 4;
+		log (Sum: local) '\n';
+	[end]
+
+	[Past:]
+		call Over: fixed;
+	[end]
+
+	[Over: int list[];]
+		log list:3;
+	[end]
+}
