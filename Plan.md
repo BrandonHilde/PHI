@@ -3855,6 +3855,14 @@ three), `phi_clock_lock` and the kernel's ticket lock. A class's variables were 
   be a split lock in the same way. Rare (an atomic field is usually an int first, or after
   other ints), but nothing stops it; an error, or padding for such a field, is to decide.
 
+**No position in `while each` (2026-11-15, the user's choice).** Asked for after the freeze:
+`while each` giving the element's place as well as the element. Tried against the loop with
+a counter, it would only save writing `scores:i` and the bound: the counter loop is checked
+already, and the compiler proves its index in range from its own condition, so it has no
+index checks at all (the `while each` loop had one, which is worth a look on its own). A
+second way to write the same loop, and either a new word or two names that read awkwardly,
+for that: left out. A loop that needs the place uses the counter, as now.
+
 **The speed bar met (2026-11-15).** `phi compare --runs 5`, saved as `bench/RESULTS.md`:
 64-bit PHI over C# 0.98 together (1.53 two days before), the most `lists` at 1.26 and
 `collatz` at 1.12, `strings` 0.85, `sort` 0.75; over gcc -O2 1.34 together. Every test
