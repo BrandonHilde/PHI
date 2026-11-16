@@ -45,10 +45,13 @@ aren't frozen.
 
 **For after the freeze** (written down as they come up, not acted on; one that blocks real
 work three times is a finding to bring to the user):
-- a program stating its stack's size (needs something new to write);
-- a method value whose method takes an array (needs a way to write its type);
-- a call's new object used where it is, if storing it first proves a burden;
-- a method's types worked out from what it's given (`Lists.Largest: scores`).
+- a program stating its stack's size (needs something new to write): to discuss;
+- vector types (`f32x4` and the like, from `PerformanceStrategy.md`): to discuss;
+- not wanted, the user's choice on 2026-11-15, since PHI, PHI-OS and the code libraries
+  were all written without needing them: a method value whose method takes an array; a
+  call's new object used where it is (`(Make: 4).x`, against every object having a name);
+  a method's types worked out from what it's given (`Lists.Largest: scores`, against a
+  call naming its types). Brought back only if real code keeps running into them.
 
 **What ends it:** the user being convinced the language is solid and fast enough. What
 would show that, to be made exact as the work goes: the older `Map`, `memory.list` and
