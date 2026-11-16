@@ -42,6 +42,15 @@ i8 shr2 from 0: -1
 i8 shr2 from 3: -1
 i8 shr2 in place: -1
 i8 shr2 overlapping: -1
+i8 matrix 7: -1
+i8 matrix 9: -1
+i8 matrix 19: -1
+i8 sum from 0: 1
+i8 sum from 3: 1
+i8 minus from 0: 1
+i8 minus from 3: 1
+i8 dot from 0: 1
+i8 dot from 3: 1
 u8 add from 0: -1
 u8 add from 3: -1
 u8 add in place: -1
@@ -86,6 +95,15 @@ u8 shr2 from 0: -1
 u8 shr2 from 3: -1
 u8 shr2 in place: -1
 u8 shr2 overlapping: -1
+u8 matrix 7: -1
+u8 matrix 9: -1
+u8 matrix 19: -1
+u8 sum from 0: 1
+u8 sum from 3: 1
+u8 minus from 0: 1
+u8 minus from 3: 1
+u8 dot from 0: 1
+u8 dot from 3: 1
 i16 add from 0: -1
 i16 add from 3: -1
 i16 add in place: -1
@@ -130,6 +148,15 @@ i16 shr2 from 0: -1
 i16 shr2 from 3: -1
 i16 shr2 in place: -1
 i16 shr2 overlapping: -1
+i16 matrix 7: -1
+i16 matrix 9: -1
+i16 matrix 19: -1
+i16 sum from 0: 1
+i16 sum from 3: 1
+i16 minus from 0: 1
+i16 minus from 3: 1
+i16 dot from 0: 1
+i16 dot from 3: 1
 u16 add from 0: -1
 u16 add from 3: -1
 u16 add in place: -1
@@ -174,6 +201,15 @@ u16 shr2 from 0: -1
 u16 shr2 from 3: -1
 u16 shr2 in place: -1
 u16 shr2 overlapping: -1
+u16 matrix 7: -1
+u16 matrix 9: -1
+u16 matrix 19: -1
+u16 sum from 0: 1
+u16 sum from 3: 1
+u16 minus from 0: 1
+u16 minus from 3: 1
+u16 dot from 0: 1
+u16 dot from 3: 1
 int add from 0: -1
 int add from 3: -1
 int add in place: -1
@@ -218,6 +254,15 @@ int shr2 from 0: -1
 int shr2 from 3: -1
 int shr2 in place: -1
 int shr2 overlapping: -1
+int matrix 7: -1
+int matrix 9: -1
+int matrix 19: -1
+int sum from 0: 1
+int sum from 3: 1
+int minus from 0: 1
+int minus from 3: 1
+int dot from 0: 1
+int dot from 3: 1
 u32 add from 0: -1
 u32 add from 3: -1
 u32 add in place: -1
@@ -262,6 +307,15 @@ u32 shr2 from 0: -1
 u32 shr2 from 3: -1
 u32 shr2 in place: -1
 u32 shr2 overlapping: -1
+u32 matrix 7: -1
+u32 matrix 9: -1
+u32 matrix 19: -1
+u32 sum from 0: 1
+u32 sum from 3: 1
+u32 minus from 0: 1
+u32 minus from 3: 1
+u32 dot from 0: 1
+u32 dot from 3: 1
 i64 add from 0: -1
 i64 add from 3: -1
 i64 add in place: -1
@@ -298,6 +352,13 @@ i64 shr2 from 0: -1
 i64 shr2 from 3: -1
 i64 shr2 in place: -1
 i64 shr2 overlapping: -1
+i64 matrix 7: -1
+i64 matrix 9: -1
+i64 matrix 19: -1
+i64 sum from 0: 1
+i64 sum from 3: 1
+i64 minus from 0: 1
+i64 minus from 3: 1
 u64 add from 0: -1
 u64 add from 3: -1
 u64 add in place: -1
@@ -334,6 +395,13 @@ u64 shr2 from 0: -1
 u64 shr2 from 3: -1
 u64 shr2 in place: -1
 u64 shr2 overlapping: -1
+u64 matrix 7: -1
+u64 matrix 9: -1
+u64 matrix 19: -1
+u64 sum from 0: 1
+u64 sum from 3: 1
+u64 minus from 0: 1
+u64 minus from 3: 1
 f32 add from 0: -1
 f32 add from 3: -1
 f32 add in place: -1
@@ -374,6 +442,9 @@ f32 mixed from 0: -1
 f32 mixed from 3: -1
 f32 mixed in place: -1
 f32 mixed overlapping: -1
+f32 matrix 7: -1
+f32 matrix 9: -1
+f32 matrix 19: -1
 f64 add from 0: -1
 f64 add from 3: -1
 f64 add in place: -1
@@ -414,3 +485,6 @@ f64 mixed from 0: -1
 f64 mixed from 3: -1
 f64 mixed in place: -1
 f64 mixed overlapping: -1
+f64 matrix 7: -1
+f64 matrix 9: -1
+f64 matrix 19: -1

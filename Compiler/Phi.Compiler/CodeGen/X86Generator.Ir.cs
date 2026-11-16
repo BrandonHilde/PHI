@@ -50,6 +50,10 @@ namespace Phi.Compiler.CodeGen
             IrPeephole.Run(fn);
             RegisterAllocator regs = RegisterAllocator.Allocate(fn);
             if (IrTrace > 0) Console.Error.WriteLine($"ir: {m.Name} ({fn.Values.Count} values, {regs.SlotCount} in the frame)");
+            // (as the generator's frames: no more than the stack it runs on takes)
+            int frameBytes = 8 * (regs.SlotCount + regs.UsedCalleeSaved.Count);
+            if (frameBytes > MaxFrame)
+                diagnostics.Error(m.Decl.File, m.Decl.Span, $"{m.Decl.Name} needs {frameBytes} bytes of stack for its variables (at most {MaxFrame} in {FrameOwner}); declare large buffers in the class, or make them with new");
             if (IrTrace > 0)
                 foreach (var (at, note) in fn.Notes) Console.Error.WriteLine($"ir: {m.Name}: the loop on line {LineOf(at)} {note}");
             if (IrTrace > 1) Console.Error.WriteLine(fn.Dump());
@@ -165,7 +169,21 @@ namespace Phi.Compiler.CodeGen
             {
                 E("push rbp");
                 E("mov rbp, rsp");
-                if (frame > 0) E($"sub rsp, {frame}");
+                if (frame > Page)
+                {
+                    // a frame of more than a page goes down a page at a time, touching each (the
+                    // generator's EmitFrameSetup): the page under the stack is always the one that's
+                    // reached, however big the frame, so going past it is the stack running out
+                    string probe = g.NewLabel("frame");
+                    g.Label(probe);
+                    E($"sub rsp, {Page}");
+                    E("mov [rsp], rbp");
+                    E("sub [rsp], rsp");
+                    E($"cmp qword [rsp], {frame - Page}");
+                    E($"jbe {probe}");
+                    E($"lea rsp, [rbp - {frame}]");
+                }
+                else if (frame > 0) E($"sub rsp, {frame}");
                 foreach (string r in regs.UsedCalleeSaved) E($"mov [rbp - {SavedAt(r)}], {r}");
                 for (int k = 0; k < fn.Blocks.Count; k++)
                 {
@@ -800,7 +818,12 @@ namespace Phi.Compiler.CodeGen
                         // as the generator's EmitIndexCheck: unsigned, so a negative index fails too
                         g.Need("phi_index_error");
                         string ok = g.NewLabel("inbounds");
-                        E($"cmp {At(ic.Index, 64)}, {ic.Limit}");
+                        if (ic.LimitValue is VReg limit)
+                        {
+                            E($"mov rax, {At(limit, 64)}");
+                            E($"cmp {At(ic.Index, 64)}, rax");
+                        }
+                        else E($"cmp {At(ic.Index, 64)}, {ic.Limit}");
                         E($"jb {ok}");
                         WriteBack(ic.Held);
                         g.EmitIndexError(ic.At);
@@ -1140,7 +1163,11 @@ namespace Phi.Compiler.CodeGen
                     E($"mov r11, {At(call.Target, 64)}");
                     E("call r11");
                 }
-                else E($"call {call.Label}");
+                else
+                {
+                    if (call.Routine) g.Need(call.Label);
+                    E($"call {call.Label}");
+                }
                 if (pushed > 0) E($"add rsp, {pushed}");
                 if (call.Result == CallResult.Xmm0)
                 {

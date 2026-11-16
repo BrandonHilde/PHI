@@ -1,0 +1,37 @@
+# A method the optimiser builds that calls an assembly block gives its caller r12 to r15 back as
+# they were, though the block may change them (this one does; PHI-Code-Library's crypto's
+# BigMontMul found it). A 32-bit program's block changes esi and edi, which its methods keep.
+phi.AsmRegistersProgram:Program
+{
+	call Outer;
+	exit 0;
+
+	[Outer:]
+		int a: 11;
+		int b: 12;
+		int c: 13;
+		int d: 14;
+		int got: (Calls: 5);
+		log a ' ' b ' ' c ' ' d ' ' got '\n';
+	[end]
+
+	[Calls: int n: 0;]
+		call asm.Scramble;
+	[end: n + 1]
+}
+
+asm.Scramble
+{
+	mov esi, 101
+	mov edi, 102
+	ret
+}
+
+x64.Scramble
+{
+	mov r12, 101
+	mov r13, 102
+	mov r14, 103
+	mov r15, 104
+	ret
+}

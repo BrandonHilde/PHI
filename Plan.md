@@ -4006,6 +4006,39 @@ form keeps values in across calls (a heap that grew, debug, ask).
   Test vec_loops_program: 100 loops each against itself written so it isn't (in an if), every
   element, from 0 and 3, in place and overlapping.
 
+**One compiler (2026-11-16, the user's next step: the intermediate form to be PHI's only code
+generator).** Of the 64-bit methods in tests/ and bench/ it refused 515 that morning; then 435.
+What it took that day, each checked by the whole suite: addresses of places (a field through
+objects, self or a pointer, a class's struct, an element), so addr of them and the counts
+kept beside an array (an [atmost N] one's, an unsized field's .len and .max); a method's own
+arrays, kept in its frame as its structs are; elements of arrays kept in a struct and of a
+struct's unsized array (a container's), checked against how many it has when it runs; the
+library's built-in routines (OS.Grow and the rest). And two things it got wrong, each with a
+test: a method calling an assembly block, or catching, keeps all of r12 to r15 for its caller
+(asm_registers_program, catch_registers_program); a frame of more than a page is reached a page
+at a time, and one past the stack's limit is an error, as the generator's are. What it refuses
+most now: text (str values, parameters, text that grows, building it: about 150 methods),
+then system calls, copying and moving objects, giving an object, ++ on arrays, atomic.
+PHI_IR_TRACE says, for each, what it met (a NameExpr, and which kind).
+
+*A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
+generator storing a plain value after working out where it goes, when that called something:
+`marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its
+value first, language.md). Its shortcut for a simple value into a computed place now isn't
+taken when the place calls anything. It was in every 32-bit program, kernel and class's own
+statements since the shortcut was written; the intermediate form had it right. Test
+evaluation_order_program ("element:", a class's statement and a method's).
+
+*Sums (2026-11-16).* gcc -O2's matrix turned out not to be a sum made vector code but two
+neighbouring cells at once, each summed in order, which is exact. So: a whole number's sum in
+the simple loops, a part in each lane added in after (the same, as they wrap); a float's left
+as written (another order is another answer); and a loop whose body is a sum's start, a loop
+adding to it and an element at its counter given it (IrBuilder.Outer.cs), a lane for each of
+its steps, the element written being memory the method made with new and doesn't change (so
+nothing read can overlap it, with no check when it runs). bench/matrix: 0.17 s to 0.085 s
+(gcc -O2 0.045). vec_loops_program: sums and a matrix's product on every kind of lane, at
+sizes 7, 9 and 19, each against itself as written.
+
 *Left (the user may want them):* 32-bit programs (the generator would need vectors, or the
 intermediate form 32-bit code: the user wants one compiler); a loop with an if in it (masks),
 or a sum (a float's sum in another order is another answer); 256-bit vectors (AVX2), a build

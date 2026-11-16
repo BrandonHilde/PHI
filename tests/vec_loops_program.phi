@@ -168,6 +168,82 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_i8_sum: ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0;]
+		i8 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_i8_sum: ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0;]
+		i8 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i8_minus: ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0;]
+		i8 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_i8_minus: ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0;]
+		i8 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i8_dot: ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0;]
+		i8 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i * r:i;
+		;;
+	[end: total]
+
+	[S_i8_dot: ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0;]
+		i8 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i * r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i8_matrix: ptr<i8> a: 0; ptr<i8> b: 0; int n: 0;]
+		ptr<i8> c: new i8[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				i8 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_i8_matrix: ptr<i8> a: 0; ptr<i8> b: 0; int n: 0;]
+		ptr<i8> c: new i8[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				i8 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_i8: ptr<i8> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -186,12 +262,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_i8:]
 		int n: 37;
-		ptr<i8> q: new i8[64];
-		ptr<i8> r: new i8[64];
+		ptr<i8> q: new i8[400];
+		ptr<i8> r: new i8[400];
 		ptr<i8> a: new i8[64];
 		ptr<i8> b: new i8[64];
-		call Fill_i8: q 64 1;
-		call Fill_i8: r 64 2;
+		call Fill_i8: q 400 1;
+		call Fill_i8: r 400 2;
 		call Fill_i8: a 64 3;
 		call Fill_i8: b 64 3;
 		call V_i8_add: a q r 0 n;
@@ -412,6 +488,27 @@ phi.VecLoopsProgram:Program
 		call V_i8_shr2: a + sizeof i8 a r 0 n;
 		call S_i8_shr2: b + sizeof i8 b r 0 n;
 		log 'i8 shr2 overlapping: ' (Same_i8: a b 64) '\n';
+		ptr<i8> mv7: (V_i8_matrix: q r 7);
+		ptr<i8> ms7: (S_i8_matrix: q r 7);
+		log 'i8 matrix 7: ' (Same_i8: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<i8> mv9: (V_i8_matrix: q r 9);
+		ptr<i8> ms9: (S_i8_matrix: q r 9);
+		log 'i8 matrix 9: ' (Same_i8: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<i8> mv19: (V_i8_matrix: q r 19);
+		ptr<i8> ms19: (S_i8_matrix: q r 19);
+		log 'i8 matrix 19: ' (Same_i8: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'i8 sum from 0: ' ((V_i8_sum: q r 0 n) is (S_i8_sum: q r 0 n)) '\n';
+		log 'i8 sum from 3: ' ((V_i8_sum: q r 3 n) is (S_i8_sum: q r 3 n)) '\n';
+		log 'i8 minus from 0: ' ((V_i8_minus: q r 0 n) is (S_i8_minus: q r 0 n)) '\n';
+		log 'i8 minus from 3: ' ((V_i8_minus: q r 3 n) is (S_i8_minus: q r 3 n)) '\n';
+		log 'i8 dot from 0: ' ((V_i8_dot: q r 0 n) is (S_i8_dot: q r 0 n)) '\n';
+		log 'i8 dot from 3: ' ((V_i8_dot: q r 3 n) is (S_i8_dot: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -572,6 +669,82 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_u8_sum: ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0;]
+		u8 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_u8_sum: ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0;]
+		u8 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u8_minus: ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0;]
+		u8 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_u8_minus: ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0;]
+		u8 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u8_dot: ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0;]
+		u8 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i * r:i;
+		;;
+	[end: total]
+
+	[S_u8_dot: ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0;]
+		u8 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i * r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u8_matrix: ptr<u8> a: 0; ptr<u8> b: 0; int n: 0;]
+		ptr<u8> c: new u8[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u8 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_u8_matrix: ptr<u8> a: 0; ptr<u8> b: 0; int n: 0;]
+		ptr<u8> c: new u8[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u8 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_u8: ptr<u8> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -590,12 +763,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_u8:]
 		int n: 37;
-		ptr<u8> q: new u8[64];
-		ptr<u8> r: new u8[64];
+		ptr<u8> q: new u8[400];
+		ptr<u8> r: new u8[400];
 		ptr<u8> a: new u8[64];
 		ptr<u8> b: new u8[64];
-		call Fill_u8: q 64 1;
-		call Fill_u8: r 64 2;
+		call Fill_u8: q 400 1;
+		call Fill_u8: r 400 2;
 		call Fill_u8: a 64 3;
 		call Fill_u8: b 64 3;
 		call V_u8_add: a q r 0 n;
@@ -816,6 +989,27 @@ phi.VecLoopsProgram:Program
 		call V_u8_shr2: a + sizeof u8 a r 0 n;
 		call S_u8_shr2: b + sizeof u8 b r 0 n;
 		log 'u8 shr2 overlapping: ' (Same_u8: a b 64) '\n';
+		ptr<u8> mv7: (V_u8_matrix: q r 7);
+		ptr<u8> ms7: (S_u8_matrix: q r 7);
+		log 'u8 matrix 7: ' (Same_u8: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<u8> mv9: (V_u8_matrix: q r 9);
+		ptr<u8> ms9: (S_u8_matrix: q r 9);
+		log 'u8 matrix 9: ' (Same_u8: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<u8> mv19: (V_u8_matrix: q r 19);
+		ptr<u8> ms19: (S_u8_matrix: q r 19);
+		log 'u8 matrix 19: ' (Same_u8: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'u8 sum from 0: ' ((V_u8_sum: q r 0 n) is (S_u8_sum: q r 0 n)) '\n';
+		log 'u8 sum from 3: ' ((V_u8_sum: q r 3 n) is (S_u8_sum: q r 3 n)) '\n';
+		log 'u8 minus from 0: ' ((V_u8_minus: q r 0 n) is (S_u8_minus: q r 0 n)) '\n';
+		log 'u8 minus from 3: ' ((V_u8_minus: q r 3 n) is (S_u8_minus: q r 3 n)) '\n';
+		log 'u8 dot from 0: ' ((V_u8_dot: q r 0 n) is (S_u8_dot: q r 0 n)) '\n';
+		log 'u8 dot from 3: ' ((V_u8_dot: q r 3 n) is (S_u8_dot: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -976,6 +1170,82 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_i16_sum: ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0;]
+		i16 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_i16_sum: ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0;]
+		i16 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i16_minus: ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0;]
+		i16 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_i16_minus: ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0;]
+		i16 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i16_dot: ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0;]
+		i16 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i * r:i;
+		;;
+	[end: total]
+
+	[S_i16_dot: ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0;]
+		i16 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i * r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i16_matrix: ptr<i16> a: 0; ptr<i16> b: 0; int n: 0;]
+		ptr<i16> c: new i16[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				i16 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_i16_matrix: ptr<i16> a: 0; ptr<i16> b: 0; int n: 0;]
+		ptr<i16> c: new i16[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				i16 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_i16: ptr<i16> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -994,12 +1264,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_i16:]
 		int n: 37;
-		ptr<i16> q: new i16[64];
-		ptr<i16> r: new i16[64];
+		ptr<i16> q: new i16[400];
+		ptr<i16> r: new i16[400];
 		ptr<i16> a: new i16[64];
 		ptr<i16> b: new i16[64];
-		call Fill_i16: q 64 1;
-		call Fill_i16: r 64 2;
+		call Fill_i16: q 400 1;
+		call Fill_i16: r 400 2;
 		call Fill_i16: a 64 3;
 		call Fill_i16: b 64 3;
 		call V_i16_add: a q r 0 n;
@@ -1220,6 +1490,27 @@ phi.VecLoopsProgram:Program
 		call V_i16_shr2: a + sizeof i16 a r 0 n;
 		call S_i16_shr2: b + sizeof i16 b r 0 n;
 		log 'i16 shr2 overlapping: ' (Same_i16: a b 64) '\n';
+		ptr<i16> mv7: (V_i16_matrix: q r 7);
+		ptr<i16> ms7: (S_i16_matrix: q r 7);
+		log 'i16 matrix 7: ' (Same_i16: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<i16> mv9: (V_i16_matrix: q r 9);
+		ptr<i16> ms9: (S_i16_matrix: q r 9);
+		log 'i16 matrix 9: ' (Same_i16: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<i16> mv19: (V_i16_matrix: q r 19);
+		ptr<i16> ms19: (S_i16_matrix: q r 19);
+		log 'i16 matrix 19: ' (Same_i16: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'i16 sum from 0: ' ((V_i16_sum: q r 0 n) is (S_i16_sum: q r 0 n)) '\n';
+		log 'i16 sum from 3: ' ((V_i16_sum: q r 3 n) is (S_i16_sum: q r 3 n)) '\n';
+		log 'i16 minus from 0: ' ((V_i16_minus: q r 0 n) is (S_i16_minus: q r 0 n)) '\n';
+		log 'i16 minus from 3: ' ((V_i16_minus: q r 3 n) is (S_i16_minus: q r 3 n)) '\n';
+		log 'i16 dot from 0: ' ((V_i16_dot: q r 0 n) is (S_i16_dot: q r 0 n)) '\n';
+		log 'i16 dot from 3: ' ((V_i16_dot: q r 3 n) is (S_i16_dot: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -1380,6 +1671,82 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_u16_sum: ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0;]
+		u16 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_u16_sum: ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0;]
+		u16 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u16_minus: ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0;]
+		u16 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_u16_minus: ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0;]
+		u16 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u16_dot: ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0;]
+		u16 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i * r:i;
+		;;
+	[end: total]
+
+	[S_u16_dot: ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0;]
+		u16 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i * r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u16_matrix: ptr<u16> a: 0; ptr<u16> b: 0; int n: 0;]
+		ptr<u16> c: new u16[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u16 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_u16_matrix: ptr<u16> a: 0; ptr<u16> b: 0; int n: 0;]
+		ptr<u16> c: new u16[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u16 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_u16: ptr<u16> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -1398,12 +1765,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_u16:]
 		int n: 37;
-		ptr<u16> q: new u16[64];
-		ptr<u16> r: new u16[64];
+		ptr<u16> q: new u16[400];
+		ptr<u16> r: new u16[400];
 		ptr<u16> a: new u16[64];
 		ptr<u16> b: new u16[64];
-		call Fill_u16: q 64 1;
-		call Fill_u16: r 64 2;
+		call Fill_u16: q 400 1;
+		call Fill_u16: r 400 2;
 		call Fill_u16: a 64 3;
 		call Fill_u16: b 64 3;
 		call V_u16_add: a q r 0 n;
@@ -1624,6 +1991,27 @@ phi.VecLoopsProgram:Program
 		call V_u16_shr2: a + sizeof u16 a r 0 n;
 		call S_u16_shr2: b + sizeof u16 b r 0 n;
 		log 'u16 shr2 overlapping: ' (Same_u16: a b 64) '\n';
+		ptr<u16> mv7: (V_u16_matrix: q r 7);
+		ptr<u16> ms7: (S_u16_matrix: q r 7);
+		log 'u16 matrix 7: ' (Same_u16: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<u16> mv9: (V_u16_matrix: q r 9);
+		ptr<u16> ms9: (S_u16_matrix: q r 9);
+		log 'u16 matrix 9: ' (Same_u16: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<u16> mv19: (V_u16_matrix: q r 19);
+		ptr<u16> ms19: (S_u16_matrix: q r 19);
+		log 'u16 matrix 19: ' (Same_u16: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'u16 sum from 0: ' ((V_u16_sum: q r 0 n) is (S_u16_sum: q r 0 n)) '\n';
+		log 'u16 sum from 3: ' ((V_u16_sum: q r 3 n) is (S_u16_sum: q r 3 n)) '\n';
+		log 'u16 minus from 0: ' ((V_u16_minus: q r 0 n) is (S_u16_minus: q r 0 n)) '\n';
+		log 'u16 minus from 3: ' ((V_u16_minus: q r 3 n) is (S_u16_minus: q r 3 n)) '\n';
+		log 'u16 dot from 0: ' ((V_u16_dot: q r 0 n) is (S_u16_dot: q r 0 n)) '\n';
+		log 'u16 dot from 3: ' ((V_u16_dot: q r 3 n) is (S_u16_dot: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -1784,6 +2172,82 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_int_sum: ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0;]
+		int total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_int_sum: ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0;]
+		int total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_int_minus: ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0;]
+		int total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_int_minus: ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0;]
+		int total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_int_dot: ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0;]
+		int total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i * r:i;
+		;;
+	[end: total]
+
+	[S_int_dot: ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0;]
+		int total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i * r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_int_matrix: ptr<int> a: 0; ptr<int> b: 0; int n: 0;]
+		ptr<int> c: new int[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				int cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_int_matrix: ptr<int> a: 0; ptr<int> b: 0; int n: 0;]
+		ptr<int> c: new int[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				int cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_int: ptr<int> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -1802,12 +2266,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_int:]
 		int n: 37;
-		ptr<int> q: new int[64];
-		ptr<int> r: new int[64];
+		ptr<int> q: new int[400];
+		ptr<int> r: new int[400];
 		ptr<int> a: new int[64];
 		ptr<int> b: new int[64];
-		call Fill_int: q 64 1;
-		call Fill_int: r 64 2;
+		call Fill_int: q 400 1;
+		call Fill_int: r 400 2;
 		call Fill_int: a 64 3;
 		call Fill_int: b 64 3;
 		call V_int_add: a q r 0 n;
@@ -2028,6 +2492,27 @@ phi.VecLoopsProgram:Program
 		call V_int_shr2: a + sizeof int a r 0 n;
 		call S_int_shr2: b + sizeof int b r 0 n;
 		log 'int shr2 overlapping: ' (Same_int: a b 64) '\n';
+		ptr<int> mv7: (V_int_matrix: q r 7);
+		ptr<int> ms7: (S_int_matrix: q r 7);
+		log 'int matrix 7: ' (Same_int: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<int> mv9: (V_int_matrix: q r 9);
+		ptr<int> ms9: (S_int_matrix: q r 9);
+		log 'int matrix 9: ' (Same_int: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<int> mv19: (V_int_matrix: q r 19);
+		ptr<int> ms19: (S_int_matrix: q r 19);
+		log 'int matrix 19: ' (Same_int: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'int sum from 0: ' ((V_int_sum: q r 0 n) is (S_int_sum: q r 0 n)) '\n';
+		log 'int sum from 3: ' ((V_int_sum: q r 3 n) is (S_int_sum: q r 3 n)) '\n';
+		log 'int minus from 0: ' ((V_int_minus: q r 0 n) is (S_int_minus: q r 0 n)) '\n';
+		log 'int minus from 3: ' ((V_int_minus: q r 3 n) is (S_int_minus: q r 3 n)) '\n';
+		log 'int dot from 0: ' ((V_int_dot: q r 0 n) is (S_int_dot: q r 0 n)) '\n';
+		log 'int dot from 3: ' ((V_int_dot: q r 3 n) is (S_int_dot: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -2188,6 +2673,82 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_u32_sum: ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0;]
+		u32 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_u32_sum: ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0;]
+		u32 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u32_minus: ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0;]
+		u32 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_u32_minus: ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0;]
+		u32 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u32_dot: ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0;]
+		u32 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i * r:i;
+		;;
+	[end: total]
+
+	[S_u32_dot: ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0;]
+		u32 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i * r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u32_matrix: ptr<u32> a: 0; ptr<u32> b: 0; int n: 0;]
+		ptr<u32> c: new u32[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u32 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_u32_matrix: ptr<u32> a: 0; ptr<u32> b: 0; int n: 0;]
+		ptr<u32> c: new u32[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u32 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_u32: ptr<u32> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -2206,12 +2767,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_u32:]
 		int n: 37;
-		ptr<u32> q: new u32[64];
-		ptr<u32> r: new u32[64];
+		ptr<u32> q: new u32[400];
+		ptr<u32> r: new u32[400];
 		ptr<u32> a: new u32[64];
 		ptr<u32> b: new u32[64];
-		call Fill_u32: q 64 1;
-		call Fill_u32: r 64 2;
+		call Fill_u32: q 400 1;
+		call Fill_u32: r 400 2;
 		call Fill_u32: a 64 3;
 		call Fill_u32: b 64 3;
 		call V_u32_add: a q r 0 n;
@@ -2432,6 +2993,27 @@ phi.VecLoopsProgram:Program
 		call V_u32_shr2: a + sizeof u32 a r 0 n;
 		call S_u32_shr2: b + sizeof u32 b r 0 n;
 		log 'u32 shr2 overlapping: ' (Same_u32: a b 64) '\n';
+		ptr<u32> mv7: (V_u32_matrix: q r 7);
+		ptr<u32> ms7: (S_u32_matrix: q r 7);
+		log 'u32 matrix 7: ' (Same_u32: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<u32> mv9: (V_u32_matrix: q r 9);
+		ptr<u32> ms9: (S_u32_matrix: q r 9);
+		log 'u32 matrix 9: ' (Same_u32: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<u32> mv19: (V_u32_matrix: q r 19);
+		ptr<u32> ms19: (S_u32_matrix: q r 19);
+		log 'u32 matrix 19: ' (Same_u32: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'u32 sum from 0: ' ((V_u32_sum: q r 0 n) is (S_u32_sum: q r 0 n)) '\n';
+		log 'u32 sum from 3: ' ((V_u32_sum: q r 3 n) is (S_u32_sum: q r 3 n)) '\n';
+		log 'u32 minus from 0: ' ((V_u32_minus: q r 0 n) is (S_u32_minus: q r 0 n)) '\n';
+		log 'u32 minus from 3: ' ((V_u32_minus: q r 3 n) is (S_u32_minus: q r 3 n)) '\n';
+		log 'u32 dot from 0: ' ((V_u32_dot: q r 0 n) is (S_u32_dot: q r 0 n)) '\n';
+		log 'u32 dot from 3: ' ((V_u32_dot: q r 3 n) is (S_u32_dot: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -2564,6 +3146,66 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_i64_sum: ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0;]
+		i64 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_i64_sum: ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0;]
+		i64 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i64_minus: ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0;]
+		i64 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_i64_minus: ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0;]
+		i64 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_i64_matrix: ptr<i64> a: 0; ptr<i64> b: 0; int n: 0;]
+		ptr<i64> c: new i64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				i64 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) + b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_i64_matrix: ptr<i64> a: 0; ptr<i64> b: 0; int n: 0;]
+		ptr<i64> c: new i64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				i64 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) + b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_i64: ptr<i64> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -2582,12 +3224,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_i64:]
 		int n: 37;
-		ptr<i64> q: new i64[64];
-		ptr<i64> r: new i64[64];
+		ptr<i64> q: new i64[400];
+		ptr<i64> r: new i64[400];
 		ptr<i64> a: new i64[64];
 		ptr<i64> b: new i64[64];
-		call Fill_i64: q 64 1;
-		call Fill_i64: r 64 2;
+		call Fill_i64: q 400 1;
+		call Fill_i64: r 400 2;
 		call Fill_i64: a 64 3;
 		call Fill_i64: b 64 3;
 		call V_i64_add: a q r 0 n;
@@ -2768,6 +3410,25 @@ phi.VecLoopsProgram:Program
 		call V_i64_shr2: a + sizeof i64 a r 0 n;
 		call S_i64_shr2: b + sizeof i64 b r 0 n;
 		log 'i64 shr2 overlapping: ' (Same_i64: a b 64) '\n';
+		ptr<i64> mv7: (V_i64_matrix: q r 7);
+		ptr<i64> ms7: (S_i64_matrix: q r 7);
+		log 'i64 matrix 7: ' (Same_i64: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<i64> mv9: (V_i64_matrix: q r 9);
+		ptr<i64> ms9: (S_i64_matrix: q r 9);
+		log 'i64 matrix 9: ' (Same_i64: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<i64> mv19: (V_i64_matrix: q r 19);
+		ptr<i64> ms19: (S_i64_matrix: q r 19);
+		log 'i64 matrix 19: ' (Same_i64: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'i64 sum from 0: ' ((V_i64_sum: q r 0 n) is (S_i64_sum: q r 0 n)) '\n';
+		log 'i64 sum from 3: ' ((V_i64_sum: q r 3 n) is (S_i64_sum: q r 3 n)) '\n';
+		log 'i64 minus from 0: ' ((V_i64_minus: q r 0 n) is (S_i64_minus: q r 0 n)) '\n';
+		log 'i64 minus from 3: ' ((V_i64_minus: q r 3 n) is (S_i64_minus: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -2900,6 +3561,66 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_u64_sum: ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0;]
+		u64 total: 7;
+		while int i: start; i < n; i++;
+			total++ q:i;
+		;;
+	[end: total]
+
+	[S_u64_sum: ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0;]
+		u64 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total++ q:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u64_minus: ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0;]
+		u64 total: 7;
+		while int i: start; i < n; i++;
+			total-- q:i + r:i;
+		;;
+	[end: total]
+
+	[S_u64_minus: ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0;]
+		u64 total: 7;
+		while int i: start; i < n; i++;
+			if true
+				total-- q:i + r:i;
+			;;
+		;;
+	[end: total]
+
+	[V_u64_matrix: ptr<u64> a: 0; ptr<u64> b: 0; int n: 0;]
+		ptr<u64> c: new u64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u64 cell: 1;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) + b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_u64_matrix: ptr<u64> a: 0; ptr<u64> b: 0; int n: 0;]
+		ptr<u64> c: new u64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				u64 cell: 1;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) + b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_u64: ptr<u64> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -2918,12 +3639,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_u64:]
 		int n: 37;
-		ptr<u64> q: new u64[64];
-		ptr<u64> r: new u64[64];
+		ptr<u64> q: new u64[400];
+		ptr<u64> r: new u64[400];
 		ptr<u64> a: new u64[64];
 		ptr<u64> b: new u64[64];
-		call Fill_u64: q 64 1;
-		call Fill_u64: r 64 2;
+		call Fill_u64: q 400 1;
+		call Fill_u64: r 400 2;
 		call Fill_u64: a 64 3;
 		call Fill_u64: b 64 3;
 		call V_u64_add: a q r 0 n;
@@ -3104,6 +3825,25 @@ phi.VecLoopsProgram:Program
 		call V_u64_shr2: a + sizeof u64 a r 0 n;
 		call S_u64_shr2: b + sizeof u64 b r 0 n;
 		log 'u64 shr2 overlapping: ' (Same_u64: a b 64) '\n';
+		ptr<u64> mv7: (V_u64_matrix: q r 7);
+		ptr<u64> ms7: (S_u64_matrix: q r 7);
+		log 'u64 matrix 7: ' (Same_u64: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<u64> mv9: (V_u64_matrix: q r 9);
+		ptr<u64> ms9: (S_u64_matrix: q r 9);
+		log 'u64 matrix 9: ' (Same_u64: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<u64> mv19: (V_u64_matrix: q r 19);
+		ptr<u64> ms19: (S_u64_matrix: q r 19);
+		log 'u64 matrix 19: ' (Same_u64: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
+		log 'u64 sum from 0: ' ((V_u64_sum: q r 0 n) is (S_u64_sum: q r 0 n)) '\n';
+		log 'u64 sum from 3: ' ((V_u64_sum: q r 3 n) is (S_u64_sum: q r 3 n)) '\n';
+		log 'u64 minus from 0: ' ((V_u64_minus: q r 0 n) is (S_u64_minus: q r 0 n)) '\n';
+		log 'u64 minus from 3: ' ((V_u64_minus: q r 3 n) is (S_u64_minus: q r 3 n)) '\n';
 		free q;
 		free r;
 		free a;
@@ -3250,6 +3990,34 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_f32_matrix: ptr<f32> a: 0; ptr<f32> b: 0; int n: 0;]
+		ptr<f32> c: new f32[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				f32 cell: 0.5;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_f32_matrix: ptr<f32> a: 0; ptr<f32> b: 0; int n: 0;]
+		ptr<f32> c: new f32[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				f32 cell: 0.5;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_f32: ptr<f32> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -3268,12 +4036,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_f32:]
 		int n: 37;
-		ptr<f32> q: new f32[64];
-		ptr<f32> r: new f32[64];
+		ptr<f32> q: new f32[400];
+		ptr<f32> r: new f32[400];
 		ptr<f32> a: new f32[64];
 		ptr<f32> b: new f32[64];
-		call Fill_f32: q 64 1;
-		call Fill_f32: r 64 2;
+		call Fill_f32: q 400 1;
+		call Fill_f32: r 400 2;
 		call Fill_f32: a 64 3;
 		call Fill_f32: b 64 3;
 		call V_f32_add: a q r 0 n;
@@ -3474,6 +4242,21 @@ phi.VecLoopsProgram:Program
 		call V_f32_mixed: a + sizeof f32 a r 0 n;
 		call S_f32_mixed: b + sizeof f32 b r 0 n;
 		log 'f32 mixed overlapping: ' (Same_f32: a b 64) '\n';
+		ptr<f32> mv7: (V_f32_matrix: q r 7);
+		ptr<f32> ms7: (S_f32_matrix: q r 7);
+		log 'f32 matrix 7: ' (Same_f32: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<f32> mv9: (V_f32_matrix: q r 9);
+		ptr<f32> ms9: (S_f32_matrix: q r 9);
+		log 'f32 matrix 9: ' (Same_f32: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<f32> mv19: (V_f32_matrix: q r 19);
+		ptr<f32> ms19: (S_f32_matrix: q r 19);
+		log 'f32 matrix 19: ' (Same_f32: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
 		free q;
 		free r;
 		free a;
@@ -3620,6 +4403,34 @@ phi.VecLoopsProgram:Program
 		;;
 	[end]
 
+	[V_f64_matrix: ptr<f64> a: 0; ptr<f64> b: 0; int n: 0;]
+		ptr<f64> c: new f64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				f64 cell: 0.5;
+				while int k: 0; k < n; k++;
+					cell++ a:(i * n + k) * b:(k * n + j);
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
+	[S_f64_matrix: ptr<f64> a: 0; ptr<f64> b: 0; int n: 0;]
+		ptr<f64> c: new f64[n * n];
+		while int i: 0; i < n; i++;
+			while int j: 0; j < n; j++;
+				f64 cell: 0.5;
+				while int k: 0; k < n; k++;
+					if true
+						cell++ a:(i * n + k) * b:(k * n + j);
+					;;
+				;;
+				c:(i * n + j) is cell;
+			;;
+		;;
+	[end: c]
+
 	[Fill_f64: ptr<f64> p: 0; int n: 0; int seed: 0;]
 		u32 x: seed as u32;
 		while int i: 0; i < n; i++;
@@ -3638,12 +4449,12 @@ phi.VecLoopsProgram:Program
 
 	[Kind_f64:]
 		int n: 37;
-		ptr<f64> q: new f64[64];
-		ptr<f64> r: new f64[64];
+		ptr<f64> q: new f64[400];
+		ptr<f64> r: new f64[400];
 		ptr<f64> a: new f64[64];
 		ptr<f64> b: new f64[64];
-		call Fill_f64: q 64 1;
-		call Fill_f64: r 64 2;
+		call Fill_f64: q 400 1;
+		call Fill_f64: r 400 2;
 		call Fill_f64: a 64 3;
 		call Fill_f64: b 64 3;
 		call V_f64_add: a q r 0 n;
@@ -3844,6 +4655,21 @@ phi.VecLoopsProgram:Program
 		call V_f64_mixed: a + sizeof f64 a r 0 n;
 		call S_f64_mixed: b + sizeof f64 b r 0 n;
 		log 'f64 mixed overlapping: ' (Same_f64: a b 64) '\n';
+		ptr<f64> mv7: (V_f64_matrix: q r 7);
+		ptr<f64> ms7: (S_f64_matrix: q r 7);
+		log 'f64 matrix 7: ' (Same_f64: mv7 ms7 49) '\n';
+		free mv7;
+		free ms7;
+		ptr<f64> mv9: (V_f64_matrix: q r 9);
+		ptr<f64> ms9: (S_f64_matrix: q r 9);
+		log 'f64 matrix 9: ' (Same_f64: mv9 ms9 81) '\n';
+		free mv9;
+		free ms9;
+		ptr<f64> mv19: (V_f64_matrix: q r 19);
+		ptr<f64> ms19: (S_f64_matrix: q r 19);
+		log 'f64 matrix 19: ' (Same_f64: mv19 ms19 361) '\n';
+		free mv19;
+		free ms19;
 		free q;
 		free r;
 		free a;

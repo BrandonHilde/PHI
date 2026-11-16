@@ -91,6 +91,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case CheckI c:
                     yield return c.Index;
+                    if (c.LimitValue != null) yield return c.LimitValue;
                     foreach (StoreI h in c.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
                     break;
                 case FNegI f: yield return f.A; break;
@@ -336,8 +337,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 if (CalleeSaved.Contains(iv.Register) && !UsedCalleeSaved.Contains(iv.Register)) UsedCalleeSaved.Add(iv.Register);
             }
             // a method that catches keeps all four for its caller: a throw comes back past methods
-            // that would have put them back, so they hold whatever was in them down there
-            if (fn.Blocks.Any(b => b.End is TryT))
+            // that would have put them back, so they hold whatever was in them down there; and
+            // one that calls an assembly block, which may change any of them
+            if (fn.Blocks.Any(b => b.End is TryT) || rawCalls.Count > 0)
                 foreach (string r in CalleeSaved.Where(r => !UsedCalleeSaved.Contains(r))) UsedCalleeSaved.Add(r);
             UsedCalleeSaved.Sort(string.CompareOrdinal);
             SlotCount = slots;

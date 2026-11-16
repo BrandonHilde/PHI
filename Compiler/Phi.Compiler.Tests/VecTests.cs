@@ -106,6 +106,29 @@ namespace Phi.Compiler.Tests
             Assert.Contains(result.Units, u => u.Text.Contains($"the loop on line 6 {note}"));
         }
 
+        [Theory]
+        [InlineData("int", "total++ q:i * 3;", "is vector code too, 4 ints at a time")]
+        [InlineData("f64", "total++ q:i;", "isn't vector code: it adds up f64s, whose sum in another order (a lane at a time) is another answer")]
+        public void AddsUpWholeNumbersInLanes(string type, string statement, string note)
+        {
+            string program = $"phi.Test:Program\n{{\n\texit 0;\n\n\t[Run: ptr<{type}> q: 0; int n: 0;]\n\t\t{type} total: 0;\n\t\twhile int i: 0; i < n; i++;\n\t\t\t{statement}\n\t\t;;\n\t[end: total]\n}}\n";
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
+            Assert.Contains(result.Units, u => u.Text.Contains($"the loop on line 7 {note}"));
+        }
+
+        [Fact]
+        public void WorksOutSeveralSumsAtOnce()
+        {
+            // a matrix's product: a lane for each of j's steps, each cell summed in the order it's written
+            string program = "phi.Test:Program\n{\n\texit 0;\n\n\t[Run: ptr<f64> a: 0; ptr<f64> b: 0; int n: 0;]\n\t\tptr<f64> c: new f64[n * n];\n" +
+                             "\t\twhile int i: 0; i < n; i++;\n\t\t\twhile int j: 0; j < n; j++;\n\t\t\t\tf64 cell: 0.0;\n\t\t\t\twhile int k: 0; k < n; k++;\n" +
+                             "\t\t\t\t\tcell++ a:(i * n + k) * b:(k * n + j);\n\t\t\t\t;;\n\t\t\t\tc:(i * n + j) is cell;\n\t\t\t;;\n\t\t;;\n\t[end: c]\n}\n";
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
+            Assert.Contains(result.Units, u => u.Text.Contains("the loop on line 8 is vector code too, 2 f64s at a time (each a sum of its own, in order)"));
+        }
+
         [Fact]
         public void BuildsWhereItCan()
         {

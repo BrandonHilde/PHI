@@ -10,6 +10,7 @@ struct.Cell
 phi.EvaluationOrderProgram:Program
 {
 	int next: 0;
+	int marks[4];
 	i64 far: 0;
 	f64 level: 0.0;
 	ptr<u8> cursor;
@@ -22,6 +23,13 @@ phi.EvaluationOrderProgram:Program
 	call Pointers;
 	call Texts;
 	call Stores;
+
+	# a variable stored where a call that changes it says: read before the call, here (the
+	# generator's, a class's own statement) as in a method (the intermediate form's)
+	next is 5;
+	marks:((Bump) & 3) is next;
+	call MarkIn;
+	log 'element: ' marks:2 ' ' marks:3 '\n';
 	exit 0;
 
 	[Say: int n: 0;]
@@ -180,6 +188,11 @@ phi.EvaluationOrderProgram:Program
 	[Move]
 		slot is 1;
 	[end: 7]
+
+	[MarkIn]
+		next is 6;
+		marks:((Bump) & 3) is next;
+	[end]
 
 	[Stores]
 		ptr<Cell> cells: new Cell[2];

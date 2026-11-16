@@ -5469,8 +5469,10 @@ namespace Phi.Compiler.CodeGen
                 }
 
                 // a simple value into a computed place: the address first, then the value,
-                // which needs no registers the address is in
-                if (!IsStaticPlace(target) && TryLoadSimple(value, "eax", dryRun: true))
+                // which needs no registers the address is in (not when working the address out
+                // calls something, which could change what the value reads: a store works out
+                // its value first)
+                if (!IsStaticPlace(target) && !HasCall(target) && TryLoadSimple(value, "eax", dryRun: true))
                 {
                     string operand = Operand(EmitPlace(target));
                     TryLoadSimple(value, "eax", dryRun: false);

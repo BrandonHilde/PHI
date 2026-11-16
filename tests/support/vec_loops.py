@@ -23,6 +23,7 @@ def cases(t):
             c = [x for x in c if x[0] not in ('params', 'mix')]   # (no 64-bit multiply in lanes)
     return c
 
+SUMS = {}
 out = ["# Made by tests/support/vec_loops.py: loops the optimiser makes vector code of, each against",
        "# the same loop written so it can't (in an if), on the same numbers, every element compared.",
        "phi.VecLoopsProgram:Program", "{"]
@@ -51,6 +52,51 @@ for t in KINDS:
             out.append(f"\t\t;;")
             out.append(f"\t[end]")
             out.append("")
+    # sums of whole numbers (in lanes, then added in: the same, as they wrap)
+    if not f:
+        sums = [('sum', '++', 'q:i'), ('minus', '--', 'q:i + r:i')]
+        if BITS[t] < 64:
+            sums.append(('dot', '++', 'q:i * r:i'))
+        for name, op, expr in sums:
+            for vec in (True, False):
+                m = f"{'V' if vec else 'S'}_{t}_{name}"
+                out.append(f"\t[{m}: ptr<{t}> q: 0; ptr<{t}> r: 0; int start: 0; int n: 0;]")
+                out.append(f"\t\t{t} total: 7;")
+                out.append(f"\t\twhile int i: start; i < n; i++;")
+                if vec:
+                    out.append(f"\t\t\ttotal{op} {expr};")
+                else:
+                    out.append(f"\t\t\tif true")
+                    out.append(f"\t\t\t\ttotal{op} {expr};")
+                    out.append(f"\t\t\t;;")
+                out.append(f"\t\t;;")
+                out.append(f"\t[end: total]")
+                out.append("")
+        SUMS[t] = [x[0] for x in sums]
+
+    # a matrix's product: a lane for each of j's steps, each cell summed in order (the same for floats too)
+    times = '+' if (not f and BITS[t] == 64) else '*'
+    for vec in (True, False):
+        m = f"{'V' if vec else 'S'}_{t}_matrix"
+        out.append(f"\t[{m}: ptr<{t}> a: 0; ptr<{t}> b: 0; int n: 0;]")
+        out.append(f"\t\tptr<{t}> c: new {t}[n * n];")
+        out.append(f"\t\twhile int i: 0; i < n; i++;")
+        out.append(f"\t\t\twhile int j: 0; j < n; j++;")
+        out.append(f"\t\t\t\t{t} cell: {'0.5' if f else '1'};")
+        out.append(f"\t\t\t\twhile int k: 0; k < n; k++;")
+        if vec:
+            out.append(f"\t\t\t\t\tcell++ a:(i * n + k) {times} b:(k * n + j);")
+        else:
+            out.append(f"\t\t\t\t\tif true")
+            out.append(f"\t\t\t\t\t\tcell++ a:(i * n + k) {times} b:(k * n + j);")
+            out.append(f"\t\t\t\t\t;;")
+        out.append(f"\t\t\t\t;;")
+        out.append(f"\t\t\t\tc:(i * n + j) is cell;")
+        out.append(f"\t\t\t;;")
+        out.append(f"\t\t;;")
+        out.append(f"\t[end: c]")
+        out.append("")
+
     # numbers to work on: made the same way each time
     out.append(f"\t[Fill_{t}: ptr<{t}> p: 0; int n: 0; int seed: 0;]")
     out.append(f"\t\tu32 x: seed as u32;")
@@ -76,12 +122,12 @@ for t in KINDS:
     # each case: 37 elements (not a whole number of vecs), from 0 and from 3; in place; overlapping
     out.append(f"\t[Kind_{t}:]")
     out.append(f"\t\tint n: 37;")
-    out.append(f"\t\tptr<{t}> q: new {t}[64];")
-    out.append(f"\t\tptr<{t}> r: new {t}[64];")
+    out.append(f"\t\tptr<{t}> q: new {t}[400];")
+    out.append(f"\t\tptr<{t}> r: new {t}[400];")
     out.append(f"\t\tptr<{t}> a: new {t}[64];")
     out.append(f"\t\tptr<{t}> b: new {t}[64];")
-    out.append(f"\t\tcall Fill_{t}: q 64 1;")
-    out.append(f"\t\tcall Fill_{t}: r 64 2;")
+    out.append(f"\t\tcall Fill_{t}: q 400 1;")
+    out.append(f"\t\tcall Fill_{t}: r 400 2;")
     for name, expr in cases(t):
         for start in (0, 3):
             out.append(f"\t\tcall Fill_{t}: a 64 3;")
@@ -103,6 +149,17 @@ for t in KINDS:
         out.append(f"\t\tcall S_{t}_{name}: b + sizeof {t} b r 0 n;")
         out.append(f"\t\tlog '{t} {name} overlapping: ' (Same_{t}: a b 64) '\\n';")
         want.append(f"{t} {name} overlapping: -1")
+    for size in (7, 9, 19):
+        out.append(f"\t\tptr<{t}> mv{size}: (V_{t}_matrix: q r {size});")
+        out.append(f"\t\tptr<{t}> ms{size}: (S_{t}_matrix: q r {size});")
+        out.append(f"\t\tlog '{t} matrix {size}: ' (Same_{t}: mv{size} ms{size} {size * size}) '\\n';")
+        out.append(f"\t\tfree mv{size};")
+        out.append(f"\t\tfree ms{size};")
+        want.append(f"{t} matrix {size}: -1")
+    for name in SUMS.get(t, []):
+        for start in (0, 3):
+            out.append(f"\t\tlog '{t} {name} from {start}: ' ((V_{t}_{name}: q r {start} n) is (S_{t}_{name}: q r {start} n)) '\\n';")
+            want.append(f"{t} {name} from {start}: 1")
     out.append(f"\t\tfree q;")
     out.append(f"\t\tfree r;")
     out.append(f"\t\tfree a;")

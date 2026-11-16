@@ -168,7 +168,7 @@ namespace Phi.Compiler.CodeGen.Ir
             // a struct of the method's own (an err, say), in homes of its own
             foreach (VariableSymbol v in m.Locals.Where(FrameStruct))
             {
-                int size = v.Type.Struct!.Size;
+                int size = FrameBytes(v);
                 for (int k = 0; k < (size + 7) / 8; k++) fn.NewHome();
                 frameStructs[v] = 8 * fn.Homes;
             }
@@ -245,7 +245,16 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>A struct variable of the method's own, with no objects in it: kept in the frame, its fields read and written there.</summary>
         static bool FrameStruct(VariableSymbol v) =>
-            v.Type.IsStruct && !v.Type.IsArray && v.Ownership == Ownership.None && !v.IsParameter && v.Type.Struct!.Size > 0 && !v.Type.Struct.OwnsObjects;
+            !v.IsParameter && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements
+            && (v.Type.IsStruct && !v.Type.IsArray && v.Type.Struct!.Size > 0 && !v.Type.Struct.OwnsObjects || FixedArray(v.Type));
+
+        /// <summary>An array of a size, of numbers (or vecs), kept where it is: what this form reads and writes an element of in place.</summary>
+        static bool FixedArray(PhiType t) =>
+            t.IsArray && !t.Open && !t.Filled && !t.TextTable && t.Length > 0 && t.Kind != TypeKind.Str
+            && Supported(t.Element) && !t.Element.IsObject && t.Element.ElementSize is 1 or 2 or 4 or 8 or 16;
+
+        /// <summary>The bytes a variable kept in the frame takes.</summary>
+        static int FrameBytes(VariableSymbol v) => v.Type.IsArray ? v.Type.ByteSize : v.Type.Struct!.Size;
 
         /// <summary>Where a field of a struct in the frame is, as a place an instruction names.</summary>
         string FramePlace(VariableSymbol v, int offset) => $"rbp - {frameStructs[v] - offset}";
@@ -476,10 +485,18 @@ namespace Phi.Compiler.CodeGen.Ir
                 }
 
                 case VarDecl { Symbol: VariableSymbol framed } fd when frameStructs.ContainsKey(framed):
-                    Need(fd.Values.Count == 0 && fd.FieldValues.Count == 0 && fd.Source == null, "a struct of a method's own given its values where it's declared");
+                {
+                    Need(fd.FieldValues.Count == 0 && fd.Source == null && (fd.Values.Count == 0 || framed.Type.IsArray && fd.Values.Count <= framed.Type.Length),
+                         "a struct of a method's own given its values where it's declared");
                     Mark(fd);
-                    Emit(new ZeroI { Place = FramePlace(framed, 0), Size = framed.Type.Struct!.Size });
+                    // zeros, then an array's values in order (the values first, as they're worked out)
+                    PhiType element = framed.Type.Element;
+                    var values = fd.Values.Select(x => Small(Value(x, element), Is64(element))).ToList();
+                    Emit(new ZeroI { Place = FramePlace(framed, 0), Size = FrameBytes(framed) });
+                    for (int k = 0; k < values.Count; k++)
+                        Emit(new StoreI { Place = FramePlace(framed, k * element.ElementSize), Src = values[k], Kind = KindOf(element) });
                     return;
+                }
 
                 case VarDecl { Symbol: VariableSymbol classVar } cd when !Ours(classVar) && Global(classVar) is string kept:
                 {
@@ -544,6 +561,20 @@ namespace Phi.Compiler.CodeGen.Ir
                             Opnd value = Value(a.Value, inArray.Type);
                             var (bas, index, scale) = ArrayElement(inArray, arr);
                             Emit(new StoreIdxI { Base = bas, Index = index, Scale = scale, Src = Small(value, Is64(inArray.Type)), Kind = KindOf(inArray.Type) });
+                            return;
+                        }
+                        case IndexExpr viewed when InView(viewed):
+                        {
+                            Opnd value = Value(a.Value, viewed.Type);
+                            var (bas, index, scale) = ViewElement(viewed);
+                            Emit(new StoreIdxI { Base = bas, Index = index, Scale = scale, Src = Small(value, Is64(viewed.Type)), Kind = KindOf(viewed.Type) });
+                            return;
+                        }
+                        case IndexExpr placed when InPlace(placed):
+                        {
+                            Opnd value = Value(a.Value, placed.Type);
+                            var (bas, index, scale) = PlacedElement(placed);
+                            Emit(new StoreIdxI { Base = bas, Index = index, Scale = scale, Src = Small(value, Is64(placed.Type)), Kind = KindOf(placed.Type) });
                             return;
                         }
                         case IndexExpr { Target.Type.IsPointer: true } element:
@@ -737,8 +768,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
 
                 case UnsafeStmt u:
-                    // (unsafe leaves out index checks, which the binder has already left out of what's inside)
-                    Statements(u.Body);
+                    // (unsafe leaves out index checks, which the binder has already left out of
+                    // what's inside, and those known only when it runs, here)
+                    unsafeDepth++;
+                    try { Statements(u.Body); }
+                    finally { unsafeDepth--; }
                     return;
 
                 case LockedStmt lk:
@@ -769,6 +803,22 @@ namespace Phi.Compiler.CodeGen.Ir
                     Mark(rc);
                     Emit(new RawCallI { Label = raw.Name });
                     return;
+
+                case CallStmt { Resolved: BuiltinFunction builtin, CalleeTarget: null } bcall:
+                {
+                    Mark(bcall);
+                    if (bcall.ResultTarget == null)
+                    {
+                        CallBuiltin(builtin, bcall.Arguments, wantResult: false);
+                        return;
+                    }
+                    Need(bcall.ResultTarget is NameExpr { Symbol: VariableSymbol { Type.IsObject: false } } && Ours((VariableSymbol)((NameExpr)bcall.ResultTarget).Symbol!),
+                         "a call's result kept somewhere it doesn't take");
+                    var keeps = (VariableSymbol)((NameExpr)bcall.ResultTarget).Symbol!;
+                    VReg gave = CallBuiltin(builtin, bcall.Arguments, wantResult: true)!;
+                    SetVariable(Variable(keeps), Convert(gave, builtin.ResultType, keeps.Type), keeps.Type);
+                    return;
+                }
 
                 case CallStmt { Resolved: PointerCall through } pcall:
                 {
@@ -1084,6 +1134,14 @@ namespace Phi.Compiler.CodeGen.Ir
                     return Opnd.Const(known);
                 case MemberExpr { Count: int counted, Call: null }:
                     return Opnd.Const(counted);
+                // how many an array has, read where it keeps it: an array field without a size
+                // (its count and room after its address), an [atmost N] one (after its elements)
+                case NameExpr { Symbol: LengthSymbol { View: Expr view } length } when CanAddress(view):
+                    return LoadAt(AddressOf(view), length.Max ? ViewMax : ViewCount, PhiType.Int);
+                case NameExpr { Symbol: LengthSymbol { Filled: Expr filled } } when CanAddress(filled):
+                    return LoadAt(AddressOf(filled), filled.Type.CountOffset, PhiType.Int);
+                case MemberExpr { FilledLength: true, Call: null, Target: var counted } when CanAddress(counted):
+                    return LoadAt(AddressOf(counted), counted.Type.Open ? ViewCount : counted.Type.CountOffset, PhiType.Int);
                 case BoolExpr b:
                     return Opnd.Const(b.Value ? 1 : 0);
                 case StringExpr { Character: int c } when e.Type.IsChar || e.Type.IsNumeric:
@@ -1156,6 +1214,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 case AddrExpr { OfObject: true, CodeLabel: null, Operand: var obj } when Is64(Real(obj)) && Supported(Real(obj)):
                     // (an object is at the address it holds: a struct method's self, called on one)
                     return Value(obj);
+                case AddrExpr { OfObject: false, CodeLabel: null, Foreign: false, Operand: var place } anywhere
+                    when anywhere.Type.IsPointer && place is not NameExpr { Symbol: VariableSymbol } && CanAddress(place):
+                    // addr of a field (through objects, a pointer, self, a class's struct) or an element
+                    return AddressOf(place);
                 case AddrExpr { OfObject: false, CodeLabel: null, Operand: NameExpr { Symbol: VariableSymbol g } } addr
                     when addr.Type.IsPointer && !g.Grows && !g.TextRef && !g.Type.Open && AnyGlobal(g) is string label:
                 {
@@ -1183,6 +1245,20 @@ namespace Phi.Compiler.CodeGen.Ir
                         Emit(new BinI { Op = BinOp.Mul, Dst = moved, A = index.Reg!, B = Opnd.Const(scale) });
                         Emit(new BinI { Op = BinOp.Add, Dst = d, A = bas, B = moved });
                     }
+                    return d;
+                }
+                case IndexExpr viewed when InView(viewed):
+                {
+                    var (bas, index, scale) = ViewElement(viewed);
+                    VReg d = New(viewed.Type);
+                    Emit(new LoadIdxI { Dst = d, Base = bas, Index = index, Scale = scale, Kind = KindOf(viewed.Type) });
+                    return d;
+                }
+                case IndexExpr placed when InPlace(placed):
+                {
+                    var (bas, index, scale) = PlacedElement(placed);
+                    VReg d = New(placed.Type);
+                    Emit(new LoadIdxI { Dst = d, Base = bas, Index = index, Scale = scale, Kind = KindOf(placed.Type) });
                     return d;
                 }
                 case IndexExpr { Target.Type.IsPointer: true } element:
@@ -1275,8 +1351,180 @@ namespace Phi.Compiler.CodeGen.Ir
                 case BinaryExpr b:
                     return Arithmetic(b);
             }
-            throw new NotYet($"a {e.GetType().Name}");
+            throw new NotYet(Unknown(e));
         }
+
+        /// <summary>Where an array field without a size keeps its count, and its room, after its elements' address.</summary>
+        static int ViewCount => PhiType.AddressSize;
+        static int ViewMax => PhiType.AddressSize + 4;
+
+        /// <summary>A number of type t at an address plus an offset.</summary>
+        VReg LoadAt(VReg address, int offset, PhiType t)
+        {
+            VReg d = New(t);
+            Emit(new LoadIdxI { Dst = d, Base = address, Index = Opnd.Const(offset), Scale = 1, Kind = KindOf(t) });
+            return d;
+        }
+
+        /// <summary>True when <see cref="AddressOf"/> takes the place (asking only, with nothing built).</summary>
+        bool CanAddress(Expr e) => e switch
+        {
+            NameExpr { Symbol: VariableSymbol v } => frameStructs.ContainsKey(v) || !Ours(v) && !v.Grows && !v.TextRef && !v.Type.Open && AnyGlobal(v) != null,
+            NameExpr { Symbol: FieldPathSymbol f } => frameStructs.ContainsKey(f.Root) || GlobalStruct(f.Root) != null,
+            NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && Ours(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0,
+            NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self),
+            MemberExpr { Field: FieldSymbol, Call: null } m => Is64(Real(m.Target)) && Supported(Real(m.Target)),
+            IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } when GlobalArray(arr) != null => true,
+            IndexExpr placed when InPlace(placed) => true,
+            IndexExpr viewed when InView(viewed) => true,
+            IndexExpr { Target.Type.IsPointer: true } element => Supported(element.Type) && element.Type.ElementSize is 1 or 2 or 4 or 8 or 16,
+            _ => false,
+        };
+
+        /// <summary>
+        /// Where a place is, all 64 bits of it: a class's variable, a struct in the frame or a
+        /// field of one, a field reached through objects, self or a pointer, an element of a
+        /// class's array or through a pointer. Only for what <see cref="CanAddress"/> takes.
+        /// </summary>
+        VReg AddressOf(Expr e)
+        {
+            VReg d = fn.NewValue(true);
+            switch (e)
+            {
+                case NameExpr { Symbol: VariableSymbol v } when frameStructs.ContainsKey(v):
+                    Emit(new AddrI { Dst = d, Label = FramePlace(v, 0) });
+                    return d;
+                case NameExpr { Symbol: VariableSymbol g }:
+                    Emit(new AddrI { Dst = d, Label = AnyGlobal(g)! });
+                    return d;
+                case NameExpr { Symbol: FieldPathSymbol f } when frameStructs.ContainsKey(f.Root):
+                    Emit(new AddrI { Dst = d, Label = FramePlace(f.Root, f.Offset) });
+                    return d;
+                case NameExpr { Symbol: FieldPathSymbol f }:
+                    Emit(new AddrI { Dst = d, Label = $"{GlobalStruct(f.Root)} + {f.Offset}" });
+                    return d;
+                case NameExpr { Symbol: PathSymbol p }:
+                {
+                    VReg at = Variable(p.Root);
+                    for (int k = 0; k + 1 < p.Hops.Count; k++)
+                    {
+                        VReg next = fn.NewValue(true);
+                        Emit(new LoadIdxI { Dst = next, Base = at, Index = Opnd.Const(p.Hops[k]), Scale = 1, Kind = MemKind.Q64 });
+                        at = next;
+                    }
+                    Emit(new BinI { Op = BinOp.Add, Dst = d, A = at, B = Opnd.Const(p.Hops[^1]) });
+                    return d;
+                }
+                case NameExpr { Symbol: SelfFieldSymbol f }:
+                    Emit(new BinI { Op = BinOp.Add, Dst = d, A = Variable(f.Self), B = Opnd.Const(f.Offset) });
+                    return d;
+                case MemberExpr { Field: FieldSymbol f } m:
+                    Emit(new BinI { Op = BinOp.Add, Dst = d, A = InReg(Value(m.Target), true), B = Opnd.Const(f.Offset) });
+                    return d;
+                case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when GlobalArray(arr) != null:
+                {
+                    var (bas, index, scale) = ArrayElement(inArray, arr);
+                    return Offset(bas, index, scale, d);
+                }
+                case IndexExpr placed when InPlace(placed):
+                {
+                    var (bas, index, scale) = PlacedElement(placed);
+                    return Offset(bas, index, scale, d);
+                }
+                case IndexExpr viewed when InView(viewed):
+                {
+                    var (bas, index, scale) = ViewElement(viewed);
+                    return Offset(bas, index, scale, d);
+                }
+                case IndexExpr element:
+                {
+                    var (bas, index, scale) = Element(element);
+                    return Offset(bas, index, scale, d);
+                }
+            }
+            throw new NotYet($"the address of {Unknown(e)}");
+        }
+
+        /// <summary>
+        /// list:i of an array of a size kept somewhere this form reaches (the frame, a field
+        /// through an object, self or a pointer, a class's struct), not a class's own array
+        /// (ArrayElement's): its index checked against its length as any element's is.
+        /// </summary>
+        /// <summary>Inside unsafe: no index checked.</summary>
+        int unsafeDepth;
+
+        /// <summary>
+        /// items:i of a struct's array without a size (a container's elements): its index checked
+        /// against how many it has, when it runs, and the element where its elements' address says.
+        /// </summary>
+        bool InView(IndexExpr e) =>
+            e.Target.Type is { Open: true, TextTable: false } && e.Target.Type.Kind != TypeKind.Str && Binder.IsFieldView(e.Target)
+            && Supported(e.Type) && !e.Type.IsObject && e.Type.ElementSize is 1 or 2 or 4 or 8 or 16 && CanAddress(e.Target);
+
+        (VReg Base, Opnd Index, int Scale) ViewElement(IndexExpr e)
+        {
+            int scale = e.Type.ElementSize;
+            PhiType it = Real(e.Index);
+            Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+            Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+            VReg view = AddressOf(e.Target);
+            if (unsafeDepth == 0)
+            {
+                VReg count = LoadAt(view, ViewCount, PhiType.U32);
+                VReg limit = fn.NewValue(true);
+                Emit(new ExtendI { Dst = limit, Src = count, Signed = false });
+                VReg checkedIndex = InReg(index, true);
+                Emit(new CheckI { Index = checkedIndex, LimitValue = limit, At = e, Held = HeldStores() });
+                index = checkedIndex;
+            }
+            VReg elements = LoadAt(view, 0, PhiType.PointerTo(e.Type));
+            if (index.IsImm && (index.Imm * scale < int.MinValue || index.Imm * scale > int.MaxValue)) index = InReg(index, true);
+            return (elements, index, scale);
+        }
+
+        bool InPlace(IndexExpr e) =>
+            FixedArray(e.Target.Type) && e.Target is not NameExpr { Symbol: VariableSymbol { IsLocal: false, IsParameter: false } } && CanAddress(e.Target);
+
+        (VReg Base, Opnd Index, int Scale) PlacedElement(IndexExpr e)
+        {
+            int scale = e.Type.ElementSize;
+            PhiType it = Real(e.Index);
+            Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+            Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+            if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
+            {
+                VReg checkedIndex = InReg(index, true);
+                Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
+                index = checkedIndex;
+            }
+            VReg bas = AddressOf(e.Target);
+            if (index.IsImm && (index.Imm * scale < int.MinValue || index.Imm * scale > int.MaxValue)) index = InReg(index, true);
+            return (bas, index, scale);
+        }
+
+        /// <summary>d = base + index * scale.</summary>
+        VReg Offset(VReg bas, Opnd index, int scale, VReg d)
+        {
+            if (index.IsImm)
+            {
+                Emit(new BinI { Op = BinOp.Add, Dst = d, A = bas, B = Small(Opnd.Const(index.Imm * scale), true) });
+                return d;
+            }
+            VReg moved = fn.NewValue(true);
+            Emit(new BinI { Op = BinOp.Mul, Dst = moved, A = index.Reg!, B = Opnd.Const(scale) });
+            Emit(new BinI { Op = BinOp.Add, Dst = d, A = bas, B = moved });
+            return d;
+        }
+
+        /// <summary>What a value is, for PHI_IR_TRACE when it isn't taken: its kind, and what it names or reaches.</summary>
+        static string Unknown(Expr e) => e switch
+        {
+            AddrExpr a => $"addr of {Unknown(a.Operand)}",
+            NameExpr { Symbol: Symbol s } n => $"a NameExpr ({s.GetType().Name.Replace("Symbol", "")}{(s is VariableSymbol v ? $", {(v.IsLocal || v.IsParameter ? "the method's" : "a class's")} {v.Type}" : s is LengthSymbol l ? (l.Filled != null ? ", an atmost array's count" : l.Text != null ? ", text's length" : l.Str != null ? ", a str's length" : l.Open != null ? ", an array parameter's" : "") : "")} '{n.Name}')",
+            MemberExpr m => $"a MemberExpr (.{m.Member} of {m.Target.Type}{(m.FilledLength ? ", an atmost array's count" : m.TextLength ? ", text's length" : "")})",
+            IndexExpr i => $"an IndexExpr ({i.Target.Type}:{i.Index.Type}, of a {i.Target.GetType().Name})",
+            _ => $"a {e.GetType().Name}",
+        };
 
         /// <summary>The type arithmetic on t is done in: 32 bits (an int) for what's smaller.</summary>
         static PhiType Arith(PhiType t) => t.IsWide ? t : t.IsUnsigned32 ? PhiType.U32 : t.Kind is TypeKind.U32 ? PhiType.U32 : PhiType.I32;
@@ -1568,6 +1816,7 @@ namespace Phi.Compiler.CodeGen.Ir
         Opnd CallValue(CallExpr call)
         {
             if (call.Resolved is VecMethod vm) return VecCall(call, vm);
+            if (call.Resolved is BuiltinFunction builtin) return CallBuiltin(builtin, call.Arguments, wantResult: true)!;
             if (call.Resolved is PointerCall through) return CallThrough(through, call.Arguments, wantResult: true)!;
             // (a struct's method has the struct it's called on among its arguments already: self)
             Need(call.Resolved is MethodSymbol m && (call.CalleeTarget == null || m.Decl.Owner.ForStruct != null), "a call of a built-in or a method value");
@@ -1599,6 +1848,38 @@ namespace Phi.Compiler.CodeGen.Ir
             call.Args.AddRange(values);
             call.ArgKinds.AddRange(s.Parameters.Select(KindOf));
             Need(!wantResult || call.Dst != null, "a method value that gives nothing, used for a value");
+            Emit(call);
+            return call.Dst;
+        }
+
+        /// <summary>
+        /// A built-in that's one of the library's routines (OS.Grow): as the generator calls one,
+        /// its arguments worked out and pushed from the last to the first, 8 bytes each, and
+        /// what it gives in eax (rax for an address).
+        /// </summary>
+        VReg? CallBuiltin(BuiltinFunction b, List<Expr> arguments, bool wantResult)
+        {
+            Need(b.FloatInstruction == null, $"a call of {b.Name}, which the FPU works out");
+            var values = new Opnd[arguments.Count];
+            for (int k = arguments.Count - 1; k >= 0; k--)
+            {
+                PhiType t = Real(arguments[k]);
+                Need(Supported(t) && !IsF(t) && !t.IsVec && !t.IsObject, $"a call of {b.Name} given {A(t)}");
+                values[k] = Small(Value(arguments[k]), true);
+            }
+            var call = new CallI
+            {
+                Label = b.Label,
+                Routine = true,
+                Dst = wantResult && b.Returns ? New(b.ResultType) : null,
+                Result = !b.Returns ? CallResult.None : Is64(b.ResultType) ? CallResult.Rax : CallResult.Eax,
+            };
+            for (int k = arguments.Count - 1; k >= 0; k--)
+            {
+                call.Args.Add(values[k]);
+                call.ArgKinds.Add(MemKind.Q64);
+            }
+            Need(!wantResult || call.Dst != null, $"{b.Name} gives nothing to use");
             Emit(call);
             return call.Dst;
         }

@@ -1293,8 +1293,27 @@ The answer is the same either way: what's written is checked when it runs not to
 read (unless it's the very same elements), and a class's array to hold the whole range,
 or the loop is done as written (so an index past its end is the error it always was, at the
 same element). f32s are done a vec at a time one operation at a time (PHI works them out in
-f64s, which f32 lanes match only then). `PHI_IR_TRACE=1` says, for each loop, whether it was
-and why not; `PHI_VECTORIZE=0` leaves every loop as written. It's for 64-bit programs.
+f64s, which f32 lanes match only then).
+
+It adds up too. A whole number's sum (`total++ a:i * b:i;`) is kept a part in each lane and
+added in after, which is the same answer, as whole numbers wrap. A float's sum isn't: added in
+another order it's another answer, so it's left as written. But a loop whose body is a sum done
+in a loop of its own, put in an element at its counter, is done a lane for each of its steps,
+each sum in the order it's written, so floats give the same answer too (as a matrix's product
+is, twice as fast):
+
+```phi
+while int j: 0; j < n; j++;
+    f64 cell: 0.0;
+    while int k: 0; k < n; k++;
+        cell++ a:(i * n + k) * b:(k * n + j);    # a lane for each j: b's neighbouring elements
+    ;;
+    c:(i * n + j) is cell;                       # (c made by this method with new)
+;;
+```
+
+`PHI_IR_TRACE=1` says, for each loop, whether it was and why not; `PHI_VECTORIZE=0` leaves
+every loop as written. It's for 64-bit programs.
 
 **Where it works.** In 64-bit programs (`--target linux64` or `windows64`): in methods, a
 class's own statements, method values (`method<vec<int>: int>`), and with errors caught

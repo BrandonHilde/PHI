@@ -26,6 +26,9 @@ namespace Phi.Compiler.CodeGen.Ir
             public PhiType Lane = PhiType.Error;
             public List<(IndexExpr Target, Expr Value)> Stores = new();
 
+            /// <summary>Sums of whole numbers the loop keeps (total is total + ..., or -): each lane keeps its part, added in after.</summary>
+            public List<(VariableSymbol Sum, BinaryOp Op, Expr Value)> Sums = new();
+
             /// <summary>Each array or pointer the loop reaches, by its variable: written (true) or only read.</summary>
             public Dictionary<VariableSymbol, bool> Bases = new();
         }
@@ -39,7 +42,15 @@ namespace Phi.Compiler.CodeGen.Ir
             string? why = PlanVector(loop, out VectorLoop? plan);
             if (plan == null)
             {
-                fn.Notes.Add((loop, $"isn't vector code: {why}"));
+                // a loop whose body sums in a loop of its own, a lane for each of its own steps
+                string? whyOuter = PlanOuter(loop, out OuterLoop? outer);
+                if (outer != null)
+                {
+                    fn.Notes.Add((loop, $"is vector code too, {PhiType.VecBytes / outer.Lane.ElementSize} {outer.Lane}s at a time (each a sum of its own, in order)"));
+                    EmitOuterLoop(outer, loop);
+                    return;
+                }
+                fn.Notes.Add((loop, $"isn't vector code: {(whyOuter != null && loop.Body.Any(st => st is WhileStmt) ? whyOuter : why)}"));
                 return;
             }
             fn.Notes.Add((loop, $"is vector code too, {PhiType.VecBytes / plan.Lane.ElementSize} {plan.Lane}s at a time"));
@@ -66,8 +77,24 @@ namespace Phi.Compiler.CodeGen.Ir
             if (loop.Body.Count == 0) return "it does nothing";
             foreach (Stmt s in loop.Body)
             {
+                // total++ a:i * b:i: a whole number's sum, in lanes (any order, as it wraps, is the same)
+                if (s is AssignStmt { Op: AssignOp.Set, Values: null, Target: NameExpr { Symbol: VariableSymbol sum },
+                                      Value: BinaryExpr { Op: BinaryOp.Add or BinaryOp.Subtract, Left: NameExpr { Symbol: VariableSymbol same } } added }
+                    && sum == same && sum != i && Ours(sum))
+                {
+                    if (sum.Type.IsFloat)
+                        return $"it adds up {sum.Type}s, whose sum in another order (a lane at a time) is another answer";
+                    if (!PhiType.CanBeLane(sum.Type) || owned.ContainsKey(sum) || frameStructs.ContainsKey(sum))
+                        return $"it adds up into {A(sum.Type)}";
+                    if (v.Lane.IsError) v.Lane = sum.Type;
+                    else if (v.Lane.ElementSize != sum.Type.ElementSize || v.Lane.IsFloat) return $"it works on {v.Lane}s and adds up {sum.Type}s";
+                    if (Mentions(added.Right, sum) || v.Sums.Any(x => x.Sum == sum)) return $"'{sum.Name}' is used for more than its sum";
+                    if (Lanes(added.Right, loop, v) is string notSum) return notSum;
+                    v.Sums.Add((sum, added.Op, added.Right));
+                    continue;
+                }
                 if (s is not AssignStmt { Op: AssignOp.Set, Values: null, Target: IndexExpr target } set)
-                    return $"its body does more than set elements at {i.Name} (a {StatementKind(s)})";
+                    return $"its body does more than set elements at {i.Name} and add up whole numbers (a {StatementKind(s)})";
                 if (Element(target, loop, i, v, written: true) is string notElement) return notElement;
                 PhiType t = target.Type;
                 if (v.Lane.IsError) v.Lane = t;
@@ -77,9 +104,15 @@ namespace Phi.Compiler.CodeGen.Ir
                 v.Stores.Add((target, set.Value));
             }
             if (!PhiType.CanBeLane(v.Lane)) return $"its elements are {v.Lane}s";
+            // a sum's variable read anywhere else in the loop would see it part made
+            foreach (var (sum, _, _) in v.Sums)
+                if (v.Stores.Any(st => Mentions(st.Value, sum) || Mentions(st.Target, sum)) || Mentions(loop.Condition, sum))
+                    return $"'{sum.Name}' is read in the loop as well as added to";
             plan = v;
             return null;
         }
+
+        static bool Mentions(Expr e, VariableSymbol v) => SyntaxWalker.Nodes(e).Any(n => n is NameExpr { Symbol: VariableSymbol named } && named == v);
 
         static string StatementKind(Stmt s) => s switch
         {
@@ -238,6 +271,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 return w;
             }
             VReg end = Wide(InReg(Value(v.Bound, i.Type), false), i.Type.IsSigned);
+
+            // each sum's lanes, zeros from the start (so wherever the vec part stops, they're right)
+            var partial = v.Sums.ToDictionary(x => x.Sum, _ => ZeroVec());
             VReg start = Wide(counter, i.Type.IsSigned);
 
             void Unless(Cond cond, VReg a, Opnd b)
@@ -298,6 +334,7 @@ namespace Phi.Compiler.CodeGen.Ir
             var splats = new Dictionary<Expr, VReg>();
             PhiType work = lane;
             foreach (var (_, value) in v.Stores) Hoist(value);
+            foreach (var (_, _, value) in v.Sums) Hoist(value);
             void Hoist(Expr e)
             {
                 if (Invariant(e, loop, i))
@@ -323,9 +360,24 @@ namespace Phi.Compiler.CodeGen.Ir
                 VReg result = Lanes(value);
                 Emit(new StoreIdxI { Base = bases[(VariableSymbol)((NameExpr)target.Target).Symbol!], Index = at64, Scale = size, Src = result, Kind = MemKind.V128 });
             }
+            foreach (var (sum, op, value) in v.Sums)
+            {
+                VReg more = Lanes(value);
+                VReg now = fn.NewVec();
+                Emit(new VecI { Op = op == BinaryOp.Add ? VOp.Add : VOp.Sub, Dst = now, A = partial[sum], B = more, Lane = lane.Kind });
+                Emit(new CopyI { Dst = partial[sum], Src = now });
+            }
             Emit(new BinI { Op = BinOp.Add, Dst = counter, A = counter, B = Opnd.Const(step) });
             current.End = new JumpT { Target = head };
             Enter(scalar);
+            // each sum's lanes added into it, before the loop as written goes on with the rest
+            foreach (var (sum, _, _) in v.Sums)
+            {
+                VReg lanesTotal = New(sum.Type);
+                Emit(new VecReduceI { Op = VReduce.Sum, Dst = lanesTotal, A = partial[sum], Lane = lane.Kind });
+                VReg total = Variable(sum);
+                Emit(new BinI { Op = BinOp.Add, Dst = total, A = total, B = lanesTotal });
+            }
 
             // a value's lanes
             VReg Lanes(Expr e)

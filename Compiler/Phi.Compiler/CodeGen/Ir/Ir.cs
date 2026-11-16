@@ -387,6 +387,9 @@ namespace Phi.Compiler.CodeGen.Ir
     {
         public string Label { get; init; } = "";
 
+        /// <summary>A routine of the library's (a built-in's), which the program must be given: Label is its name.</summary>
+        public bool Routine { get; init; }
+
         /// <summary>A call through a method value: the address it holds (worked out after the arguments, as the generator does), in place of Label.</summary>
         public VReg? Target { get; init; }
         public List<Opnd> Args { get; } = new();
@@ -408,6 +411,9 @@ namespace Phi.Compiler.CodeGen.Ir
 
         public VReg Index { get; init; } = null!;
         public long Limit { get; init; }
+
+        /// <summary>A limit known only when it runs (how many an array has), 64 bits, in place of Limit.</summary>
+        public VReg? LimitValue { get; init; }
         public Node At { get; init; } = null!;
     }
 
@@ -617,7 +623,7 @@ namespace Phi.Compiler.CodeGen.Ir
             LoadIdxI l => $"{l.Dst} = load {l.Kind} [{l.Base} + {l.Index} * {l.Scale}]",
             StoreIdxI st => $"store {st.Kind} [{st.Base} + {st.Index} * {st.Scale}] = {st.Src}",
             SignCheckI c => $"check {c.Value}",
-            CheckI c => $"check {c.Index} below {c.Limit}",
+            CheckI c => $"check {c.Index} below {(object?)c.LimitValue ?? c.Limit}",
             AddrI a => $"{a.Dst} = addr {a.Label}",
             LeaI l => $"{l.Dst} = {l.A} * {l.Factor} + {l.Add}",
             RawCallI r => $"call asm {r.Label}",

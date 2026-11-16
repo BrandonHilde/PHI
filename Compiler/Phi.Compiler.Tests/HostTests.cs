@@ -16,6 +16,7 @@ namespace Phi.Compiler.Tests
         [InlineData(Host.PhiOS, 30000, null)]
         [InlineData(Host.PhiOS, 40000, "Big needs 40000 bytes of stack for its variables (at most 32768 in a program on PHI OS, whose stack is 64 KB)")]
         [InlineData(Host.Linux, 2000000, "Big needs 2000000 bytes of stack for its variables (at most 1048576 in a program)")]
+        [InlineData(Host.Linux64, 2000000, "Big needs 2000000 bytes of stack for its variables (at most 1048576 in a program)")]
         public void AMethodsVariablesCanBeBigInAProgram(Host host, int bytes, string? error)
         {
             CompileResult result = Compile(Program($"call Big;\nexit 0;\n[Big]\n u8 buffer[{bytes}];\n buffer:0 is 1;\n[end]"), host);
