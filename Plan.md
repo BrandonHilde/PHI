@@ -12,6 +12,8 @@ in PHI and runs in QEMU.
 
 ## The language is frozen (from 2026-11-14, the user's choice)
 
+**The freeze was lifted on 2026-11-15, by the user,** with every condition below met (the speed bar, struct layout by one rule, the older containers gone and weblib's hand-made ones ported or kept on purpose). New syntax is open again; what was written down for after it is in "For after the freeze".
+
 **The pre-release plan.** Before 0.1.0 is released and until PHI is solid and fast enough
 to stand beside the languages it competes with, nothing new is added to the core language.
 The work is to find out whether the language as it is holds up, and to make what's there
