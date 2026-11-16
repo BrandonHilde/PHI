@@ -1,0 +1,31 @@
+# Arrays added to arrays through the intermediate form (list++ other;): a class's that grows, from
+# one of a size and from itself, an [atmost N] one (too many, an index error); their .len and
+# elements; compared with PHI_IR=0's output.
+phi.IrArraysAdded:Program
+{
+	int list[];
+	int fixed: 1 2 3 4 5;
+	int few[atmost 6];
+	call Grow;
+	if call Overfill throws err
+		log 'caught: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Grow:]
+		list++ fixed;
+		list++ list;
+		list++ fixed;
+		log list.len ':';
+		while int i: 0; i < list.len; i++;
+			log ' ' list:i;
+		;;
+		log '\n';
+		few++ fixed;
+		log few.len ' ' few:4 '\n';
+	[end]
+
+	[Overfill:]
+		few++ fixed;
+	[end]
+}

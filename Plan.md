@@ -4031,6 +4031,21 @@ atomic steps; objects copied (set, assign), handed over and given back (a method
 over, any other cloned). Test ir_text_program. What's left most: text that grows (a method's
 own, and building text), str results, a while each, a comparison of objects, ++ of a whole array.
 
+Then, to 157: text that grows (a method's own str without a size and such a parameter, each in a
+slot of its frame, freed at its end and by a throw going past); text built from values (s is 'n '
+n;, s++ ...) into a str that grows or one with a size, and where it's used ('a' n, in 256 bytes of
+the frame, or with a heap a slot that grows, as the generator's GrowResults); throw; methods that
+give str (copied where the caller says: a slot that grows with a heap, else a buffer); a str
+parameter with no default (str x;) given any text, as the generator's PushTextRef, and its .max;
+a character's address (addr s:i) and writing one; a ptr<u8> put in text; while each; objects
+compared (the struct's equal routine, or empty); a path from a class's variable (ec.limbs);
+list++ other; for arrays of numbers; a class's arrays that grow and [atmost N] ones. Found on
+the way by str_length_kept_program: text built where it's used, in a program with a heap, must
+grow as the generator's does, not stop at 256 bytes. Tests ir_text_grows, ir_text_results,
+ir_text_chars, ir_text_ref and ir_arrays_added (each against PHI_IR=0's output). What's left
+most: arrays of objects and of text (++, their length set, an element read, kept or its address),
+a method's own arrays that grow, array parameters of str.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

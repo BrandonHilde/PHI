@@ -1,0 +1,15 @@
+n 7, u32 7, i64 7000000000000, half 3.5, chr x (46)
+145 n
+given: a parameter that grows
+given: a parameter that grows, longer now than it was
+filled: start, filled in
+caught: some text3
+kept: the class kept 2 times
+n is 12
+n is 12, twice 24 36000000000 12
+12
+class 12 1.5
+shown: built 5 and 6
+caught: failed at 3
+caught: 255
+cut: text doesn't fit in its str

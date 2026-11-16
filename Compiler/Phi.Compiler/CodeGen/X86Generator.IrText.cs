@@ -8,6 +8,51 @@ namespace Phi.Compiler.CodeGen
     {
         sealed partial class IrEmitter
         {
+            /// <summary>A number written out as text into the scratch bytes, as Print does it.</summary>
+            void NumberText(NumberTextI nt)
+            {
+                switch (nt.Kind)
+                {
+                    case PrintKind.Char:
+                        Load("rax", nt.Value, 32);
+                        E($"mov byte {S(0)}, al");
+                        E($"mov byte {S(1)}, 0");
+                        break;
+                    case PrintKind.Int64 or PrintKind.Uint64:
+                    {
+                        string convert = nt.Kind == PrintKind.Uint64 ? "phi_uint64_to_str" : "phi_int64_to_str";
+                        g.Need(convert);
+                        Load("rax", nt.Value, 64);
+                        E("mov rdx, rax");
+                        E("shr rdx, 32");
+                        E($"lea rdi, {S(0)}");
+                        E("mov ecx, 24");
+                        E($"call {convert}");
+                        break;
+                    }
+                    default:
+                    {
+                        g.Need("phi_float_to_str");
+                        VReg f = nt.Value.Reg!;
+                        if (InRegister(f))
+                        {
+                            E("sub rsp, 8");
+                            E($"movsd qword [rsp], {Reg(f)}");
+                            E("fld qword [rsp]");
+                            E("add rsp, 8");
+                        }
+                        else E($"fld {F(f)}");
+                        E($"lea rdi, {S(0)}");
+                        E("mov ecx, 48");
+                        E("call phi_float_to_str");
+                        break;
+                    }
+                }
+                string r = InRegister(nt.Dst) ? Reg(nt.Dst)! : "rax";
+                E($"lea {r}, {S(0)}");
+                Store(nt.Dst, r);
+            }
+
             void Text(TextI t)
             {
                 switch (t.Op)

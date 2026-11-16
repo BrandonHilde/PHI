@@ -79,6 +79,65 @@ namespace Phi.Compiler.CodeGen.Ir
             }
         }
 
+        /// <summary>Where an array's first element is: in place, or where one that grows keeps them.</summary>
+        bool CanElements(Expr array) => !array.Type.Open ? CanAddress(array)
+            : Binder.IsFieldView(array) && CanAddress(array) || array is NameExpr { Symbol: VariableSymbol { GrowingArray: true } g } && !Ours(g) && AnyGlobal(g) != null;
+
+        VReg ElementsOf(Expr array) => !array.Type.Open ? AddressOf(array) : LoadAt(ViewOf(array), 0, PhiType.PointerTo(array.Type.Element));
+
+        /// <summary>
+        /// list++ other; of numbers: room made once for what list has and Count more (an atmost
+        /// list: an index error unless they fit), then Count of other's elements copied to list's
+        /// end, and list has that many more. Other's address is taken after the room is made,
+        /// which may move list's elements (list++ list; too). The generator's EmitAppendArray.
+        /// </summary>
+        void AddArray(AppendArrayStmt add)
+        {
+            Expr target = add.Target;
+            Need(Resizable(target) && target.Type.Element.ElementSize == add.Source.Type.Element.ElementSize, $"{Unknown(target)} added to");
+            Need(CanElements(add.Source), $"{Unknown(add.Source)} added");
+            Mark(add);
+            int size = target.Type.Element.ElementSize;
+            VReg count = InReg(Value(add.Count, PhiType.U32), false);
+            bool atmost = target.Type.Filled && !target.Type.Open;
+            if (atmost)
+            {
+                VReg place = AddressOf(target);
+                VReg had = LoadAt(place, target.Type.CountOffset, PhiType.U32);
+                VReg total = fn.NewValue(false), wide = fn.NewValue(true);
+                Emit(new BinI { Op = BinOp.Add, Dst = total, A = had, B = count });
+                Emit(new ExtendI { Dst = wide, Src = total, Signed = false });
+                Emit(new CheckI { Index = wide, Limit = target.Type.Length + 1, At = add, Held = HeldStores() });
+            }
+            else
+            {
+                Emit(new ObjectLineI { At = add });
+                VReg view = ViewOf(target);
+                VReg had = LoadAt(view, ViewCount, PhiType.U32);
+                VReg need = fn.NewValue(false);
+                Emit(new BinI { Op = BinOp.Add, Dst = need, A = had, B = count });
+                Emit(new ArrayGrowI { View = view, Count = need, Size = size });
+            }
+            // after the elements it has: the source's copied there
+            VReg has = LoadAt(atmost ? AddressOf(target) : ViewOf(target), atmost ? target.Type.CountOffset : ViewCount, PhiType.U32);
+            VReg from = ElementsOf(add.Source);
+            VReg to = ElementsOf(target);
+            VReg skip = fn.NewValue(true), bytes = fn.NewValue(true), end = fn.NewValue(true);
+            Emit(new ExtendI { Dst = skip, Src = has, Signed = false });
+            if (size != 1) Emit(new BinI { Op = BinOp.Mul, Dst = skip, A = skip, B = Opnd.Const(size) });
+            Emit(new BinI { Op = BinOp.Add, Dst = end, A = to, B = skip });
+            Emit(new ExtendI { Dst = bytes, Src = count, Signed = false });
+            if (size != 1) Emit(new BinI { Op = BinOp.Mul, Dst = bytes, A = bytes, B = Opnd.Const(size) });
+            Emit(new CopyBytesI { Dst = end, Src = from, Count = bytes });
+            // and it has that many more
+            VReg at = atmost ? AddressOf(target) : ViewOf(target);
+            int countAt = atmost ? target.Type.CountOffset : ViewCount;
+            VReg now = LoadAt(at, countAt, PhiType.U32);
+            VReg more = fn.NewValue(false);
+            Emit(new BinI { Op = BinOp.Add, Dst = more, A = now, B = count });
+            Emit(new StoreIdxI { Base = at, Index = Opnd.Const(countAt), Scale = 1, Src = more, Kind = MemKind.D32 });
+        }
+
         /// <summary>list.len is n; for an array that fills or grows: it keeps its first n (no more than it has: an index error).</summary>
         void SetLength(SetLengthStmt shrink)
         {

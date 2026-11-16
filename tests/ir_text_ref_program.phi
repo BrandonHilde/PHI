@@ -1,0 +1,50 @@
+# A str given to a parameter with no default (str target;) through the intermediate form: one
+# that grows (it can grow more), one with a size (the Fixed bit: too long, an error), a class's,
+# text only read (its length), a number written out, passed on again; .max of each; vs PHI_IR=0.
+phi.IrTextRef:Program
+{
+	str shared: '';
+	str sized: [20];
+	call Callers;
+	if call Overfill throws err
+		log 'caught: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Add: str target; int n: 0;]
+		target++ ' +' n;
+	[end]
+
+	[Measure: str text;]
+	[end: text.len * 100 + text.max]
+
+	[Callers:]
+		str grows: 'grows';
+		call Add: grows 1;
+		call Add: grows 2;
+		log grows '\n';
+		str fixed: [24];
+		fixed is 'fixed';
+		call Add: fixed 3;
+		log fixed '\n';
+		shared is 'shared';
+		call Add: shared 4;
+		log shared '\n';
+		sized is 'sized';
+		call Add: sized 5;
+		log sized '\n';
+		log (Measure: 'a literal') ' ' (Measure: fixed) ' ' (Measure: grows) ' ' (Measure: 12345) '\n';
+		call Pass: grows;
+		log grows '\n';
+	[end]
+
+	[Pass: str again;]
+		call Add: again 6;
+	[end]
+
+	[Overfill:]
+		str tiny: [6];
+		tiny is 'ab';
+		call Add: tiny 12345;
+	[end]
+}

@@ -234,6 +234,81 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg? Dst { get; init; }
     }
 
+    /// <summary>
+    /// A text put in a str that grows, through its slot (its text's address, then its room): the
+    /// generator's EmitGrowStoreAt, which makes room and copies it in (Value a text's address,
+    /// or a number written out as text), after what's there (Append) or in its place.
+    /// </summary>
+    public sealed class GrowStoreI : Instr
+    {
+        public VReg Slot { get; init; } = null!;
+        public Opnd Value { get; init; }
+        public bool SourceIsString { get; init; }
+        public bool Append { get; init; }
+        public bool Unsigned { get; init; }
+        public int? Known { get; init; }
+        public bool MayCut { get; init; }
+    }
+
+    /// <summary>
+    /// A text (or a whole number written out) put in a str with a size at Dst, Room bytes: after
+    /// what's there (Append) or in its place; cut short, an error, unless MayCut.
+    /// </summary>
+    public sealed class FixedStoreI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public int Room { get; init; }
+        public Opnd Value { get; init; }
+        public bool SourceIsString { get; init; }
+        public bool Append { get; init; }
+        public bool Unsigned { get; init; }
+        public bool MayCut { get; init; }
+        public List<StoreI> Held { get; init; } = new();
+    }
+
+    /// <summary>
+    /// A method's str result put where its caller said ([rbp + 16]) before its frame goes: a slot
+    /// that grows (Grow), or a buffer of Room bytes (cut short, an error); Dst is the text there.
+    /// </summary>
+    public sealed class ResultTextI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Value { get; init; } = null!;
+        public bool Grow { get; init; }
+        public int Room { get; init; }
+        public List<StoreI> Held { get; init; } = new();
+    }
+
+    /// <summary>Count bytes copied from Src to Dst, the first first (rep movsb).</summary>
+    public sealed class CopyBytesI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Src { get; init; } = null!;
+        public VReg Count { get; init; } = null!;
+    }
+
+    /// <summary>A number written out as text into the method's scratch bytes (an i64, a u64, a float, a chr): Dst is where.</summary>
+    public sealed class NumberTextI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public Opnd Value { get; init; }
+        public PrintKind Kind { get; init; }
+    }
+
+    /// <summary>A text that grows given back to the heap: the one whose address is at Place (a slot in the frame).</summary>
+    public sealed class FreeTextI : Instr
+    {
+        public string Place { get; init; } = "";
+    }
+
+    /// <summary>throw text;: the generator's (phi_throw, with the text, the line and the file), which never comes back.</summary>
+    public sealed class ThrowI : Instr
+    {
+        public VReg Text { get; init; } = null!;
+        public Node At { get; init; } = null!;
+        public List<StoreI> Held { get; init; } = new();
+    }
+
     // ---------------------------------------------------------------- log
 
     public enum PrintKind { Text, Int, Uint, Int64, Uint64, Float, Char }
@@ -627,6 +702,9 @@ namespace Phi.Compiler.CodeGen.Ir
 
         public string NewHome() => $"rbp - {8 * ++Homes}";
 
+        /// <summary>The slots of the method's own strs that grow: each one's text is freed at its end, and by a throw going past.</summary>
+        public List<string> OwnedTexts { get; } = new();
+
         /// <summary>The method's own objects: where each is kept, and its struct (freed at the end, in this order).</summary>
         public List<(string Home, Semantics.StructSymbol Struct)> Owned { get; } = new();
 
@@ -714,6 +792,13 @@ namespace Phi.Compiler.CodeGen.Ir
             TextI t => $"{t.Dst} = text{t.Op} {(object?)t.Literal ?? t.A}{(t.B != null ? ", " + t.B : "")}{(t.Place != null ? $" into [{t.Place}] {t.Room}" : "")}",
             CatchI c => $"catch [{c.Record}] at {c.Caught}",
             ArrayGrowI g => $"grow [{g.View}] to {g.Count} of {g.Size}",
+            GrowStoreI gs => $"text [{gs.Slot}] {(gs.Append ? "++" : "is")} {gs.Value}{(gs.SourceIsString ? "" : " as a number")}",
+            NumberTextI nt => $"{nt.Dst} = text of {nt.Kind} {nt.Value}",
+            FreeTextI ft => $"free text [{ft.Place}]",
+            CopyBytesI cb => $"copy {cb.Count} bytes from {cb.Src} to {cb.Dst}",
+            ResultTextI rt => $"{rt.Dst} = result text {rt.Value}",
+            FixedStoreI fs => $"text [{fs.Dst}] ({fs.Room}) {(fs.Append ? "++" : "is")} {fs.Value}{(fs.SourceIsString ? "" : " as a number")}",
+            ThrowI th => $"throw {th.Text}",
             SysCallI sc => $"{sc.Dst} = sys.{sc.Name}({string.Join(", ", sc.Args)})",
             AtomicI at => $"{at.Dst} = atomic {at.Op} [{at.Address}] {at.Value}{(at.Op == Syntax.AtomicOp.CompareSwap ? " when " + at.Expected : "")}",
             UncatchI u => $"uncatch [{u.Record}]",

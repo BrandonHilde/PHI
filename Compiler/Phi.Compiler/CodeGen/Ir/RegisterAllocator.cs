@@ -135,6 +135,29 @@ namespace Phi.Compiler.CodeGen.Ir
                 case SysCallI sc:
                     foreach (Opnd a in sc.Args) if (a.Reg != null) yield return a.Reg;
                     break;
+                case GrowStoreI gs:
+                    yield return gs.Slot;
+                    if (gs.Value.Reg != null) yield return gs.Value.Reg;
+                    break;
+                case NumberTextI nt: if (nt.Value.Reg != null) yield return nt.Value.Reg; break;
+                case CopyBytesI cb:
+                    yield return cb.Dst;
+                    yield return cb.Src;
+                    yield return cb.Count;
+                    break;
+                case ResultTextI rt:
+                    yield return rt.Value;
+                    foreach (StoreI h in rt.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
+                case FixedStoreI fs:
+                    yield return fs.Dst;
+                    if (fs.Value.Reg != null) yield return fs.Value.Reg;
+                    foreach (StoreI h in fs.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
+                case ThrowI th:
+                    yield return th.Text;
+                    foreach (StoreI h in th.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
                 case ArrayGrowI g:
                     yield return g.View;
                     yield return g.Count;
@@ -175,6 +198,8 @@ namespace Phi.Compiler.CodeGen.Ir
             VecReduceI r => r.Dst,
             TextI t => t.Dst,
             SysCallI sc => sc.Dst,
+            NumberTextI nt => nt.Dst,
+            ResultTextI rt => rt.Dst,
             ObjCallI oc => oc.Dst,
             AtomicI at => at.Dst,
             _ => null,
@@ -182,6 +207,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>An instruction that calls something, which may change what a call changes.</summary>
         public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI or CatchI or ArrayGrowI or SysCallI
+            or GrowStoreI or NumberTextI or FreeTextI or FixedStoreI or ResultTextI or CopyBytesI
             || i is TextI { Op: not (TextOp.Literal or TextOp.OrEmpty) };
 
         public static IEnumerable<VReg> Uses(Terminator? t)

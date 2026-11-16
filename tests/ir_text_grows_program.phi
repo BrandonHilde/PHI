@@ -1,0 +1,100 @@
+# The intermediate form's text that grows (a method's own str without a size, a parameter
+# without one, the caller's, a class's), text built from values, in place and where it's used,
+# and throw: each compared with the generator's (PHI_IR=0) output.
+phi.IrTextGrows:Program
+{
+	str fixed: [40];
+
+	str kept: '';
+	call Build: 7;
+	call Grow: 'a parameter that grows';
+	str mine: 'start';
+	call Fill: mine;
+	log 'filled: ' mine '\n';
+	if call Throws: 3 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	call Keep: 'the class';
+	log 'kept: ' kept '\n';
+
+	call Sized: 12;
+	call Pass: 5;
+	if call ThrowsAt: 3 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	if call Long throws err
+		log 'caught: ' err.text.len '\n';
+	;;
+	if call Cut throws err
+		log 'cut: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Build: int n: 0;]
+		str line: '';
+		line is 'n ' n ', u32 ' (n as u32) ', i64 ' (n as i64 * 1000000000000) ', half ' (n as f64 / 2.0) ', chr ' (120 as chr);
+		log line ' (' line.len ')\n';
+		line++ ' and more';
+		while int i: 0; i < 50; i++;
+			line++ i;
+		;;
+		log line.len ' ' line:0 '\n';
+	[end]
+
+	[Grow: str given: '';]
+		log 'given: ' given '\n';
+		given++ ', longer now than it was';
+		log 'given: ' given '\n';
+	[end]
+
+	[Fill: str target;]
+		target++ ', filled in';
+	[end]
+
+	[Throws: int n: 0;]
+		str held: 'some text';
+		held++ n;
+		throw held;
+	[end]
+
+	[Keep: str what: [20];]
+		kept is what ' kept ' 2 ' times';
+	[end]
+
+	[Sized: int n: 0;]
+		str s: [64];
+		s is 'n is ' n;
+		log s '\n';
+		s++ ', twice ' (n * 2) ' ' (n as i64 * 3000000000) ' ' (n as u32);
+		log s '\n';
+		s is n;
+		log s '\n';
+		fixed is 'class ' n ' ' (n as f64 / 8.0);
+		log fixed '\n';
+	[end]
+
+	[Show: ptr<u8> text: 0;]
+		log 'shown: ' text '\n';
+	[end]
+
+	[Pass: int n: 0;]
+		call Show: ('built ' n ' and ' (n + 1));
+	[end]
+
+	[ThrowsAt: int n: 0;]
+		throw 'failed at ' n;
+	[end]
+
+	[Long:]
+		str big: '';
+		while int i: 0; i < 40; i++;
+			big++ '0123456789';
+		;;
+		throw 'long: ' big;
+	[end]
+
+	[Cut:]
+		str s: [8];
+		s is 'way too long ' 5;
+	[end]
+}

@@ -36,7 +36,7 @@ namespace Phi.Compiler.CodeGen
             // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
             HashSet<VariableSymbol> reached = ReachedByAddress();
             bool Holdable(VariableSymbol v) => !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile && !reached.Contains(v);
-            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, out string why);
+            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, GrowResults, out string why);
             if (fn == null)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: {why}");
@@ -209,6 +209,12 @@ namespace Phi.Compiler.CodeGen
                     {
                         E($"mov rax, qword [{home}]");
                         E($"call {g.ObjectRoutine("free", s)}");
+                    }
+                    foreach (string slot in fn.OwnedTexts)
+                    {
+                        E($"push qword [{slot}]");
+                        E($"call {g.HeapMethodLabel("Heap.Free")}");
+                        E("add rsp, 8");
                     }
                     E("ret");
                 }
@@ -455,6 +461,118 @@ namespace Phi.Compiler.CodeGen
                         if (sc.Dst != null) Store(sc.Dst, "rax");
                         break;
                     }
+                    case GrowStoreI gs:
+                    {
+                        // the generator's own store into a str that grows: the value, then the slot, on the stack
+                        Load("rax", gs.Value, gs.SourceIsString ? 64 : 32);
+                        E("push rax");
+                        Load("rax", gs.Slot, 64);
+                        E("push rax");
+                        MarkNow();
+                        g.textMayCut = gs.MayCut;
+                        g.EmitGrowStoreAt(g.RoomAt, gs.SourceIsString, gs.Append, gs.Unsigned, known: gs.Known);
+                        g.textMayCut = false;
+                        break;
+                    }
+                    case ThrowI th:
+                    {
+                        // the generator's throw: the text in rdx, the line, the file, the kind; phi_throw copies the text first
+                        g.Need("phi_throw");
+                        WriteBack(th.Held);
+                        Load("rdx", th.Text, 64);
+                        E($"mov eax, {g.LineOf(th.At)}");
+                        E($"lea rsi, [rel {g.StringLabel(System.IO.Path.GetFileName(g.file.Path))}]");
+                        E($"mov ebx, {ErrorThrown}");
+                        E("jmp phi_throw");
+                        break;
+                    }
+                    case CopyBytesI cb:
+                        // (by way of the stack: each may be where another goes)
+                        E($"push {Operand(cb.Count, 64)}");
+                        E($"push {Operand(cb.Src, 64)}");
+                        Load("rdi", cb.Dst, 64);
+                        E("pop rsi");
+                        E("pop rcx");
+                        E("cld");
+                        E("rep movsb");
+                        break;
+                    case ResultTextI rt:
+                    {
+                        // as the generator's method end: into the caller's slot (it grows) or buffer
+                        MarkNow();
+                        string place = g.NewLabel("result");
+                        if (rt.Grow)
+                        {
+                            Load("rax", rt.Value, 64);
+                            E("push rax");
+                            E("push qword [rbp + 16]");
+                            g.EmitGrowStoreAt(g.RoomAt, true, false, false);
+                            E("mov rax, [rbp + 16]");
+                            E("mov rax, [rax]");
+                            E("test rax, rax");
+                            E($"jnz {place}");
+                            E($"lea rax, [rel {g.StringLabel("")}]");
+                        }
+                        else
+                        {
+                            g.Need("phi_strcpy");
+                            Load("rsi", rt.Value, 64);
+                            E("mov rdi, [rbp + 16]");
+                            E($"mov ecx, {rt.Room}");
+                            E("call phi_strcpy");
+                            string ok = g.NewLabel("textfits");
+                            E($"jnc {ok}");
+                            WriteBack(rt.Held);
+                            g.EmitTextError();
+                            g.Label(ok);
+                            E("mov rax, [rbp + 16]");
+                        }
+                        g.Label(place);
+                        Store(rt.Dst, "rax");
+                        break;
+                    }
+                    case FixedStoreI fs:
+                    {
+                        // the generator's store into a str with a size (EmitStringStore's last part)
+                        Load("rax", fs.Value, fs.SourceIsString ? 64 : 32);
+                        Load("rdi", fs.Dst, 64);
+                        E($"mov ecx, {fs.Room}");
+                        if (fs.Append)
+                        {
+                            g.Need("phi_str_end");
+                            E("call phi_str_end");
+                        }
+                        if (fs.SourceIsString)
+                        {
+                            g.Need("phi_strcpy");
+                            E("mov rsi, rax");
+                            E("call phi_strcpy");
+                        }
+                        else
+                        {
+                            string convert = fs.Unsigned ? "phi_uint_to_str" : "phi_int_to_str";
+                            g.Need(convert);
+                            E($"call {convert}");
+                        }
+                        if (!fs.MayCut)
+                        {
+                            string ok = g.NewLabel("textfits");
+                            E($"jnc {ok}");
+                            WriteBack(fs.Held);
+                            MarkNow();
+                            g.EmitTextError();
+                            g.Label(ok);
+                        }
+                        break;
+                    }
+                    case NumberTextI nt:
+                        NumberText(nt);
+                        break;
+                    case FreeTextI ft:
+                        E($"push qword {Place(ft.Place)}");
+                        E($"call {g.HeapMethodLabel("Heap.Free")}");
+                        E("add rsp, 8");
+                        break;
                     case ArrayGrowI grow:
                         // (the generator's EmitArrayGrowCall: rax the array's place, edx the count, ecx the size)
                         g.usesArrayGrow = true;

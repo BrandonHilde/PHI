@@ -1,0 +1,53 @@
+# The characters of a str through the intermediate form: their address (addr s:i), checked
+# against the room (one that grows: its room as it is now), and written; compared with PHI_IR=0's.
+phi.IrTextChars:Program
+{
+	str shared: [32];
+	shared is 'class text';
+	call Chars: 2;
+	call Grown: 3;
+	if call Past: 40 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	call Mix: addr shared:0;
+	exit 0;
+
+	[Show: ptr<u8> from: 0;]
+		log 'from: ' from '\n';
+	[end]
+
+	[Chars: int n: 0;]
+		str mine: [16];
+		mine is 'abcdefgh';
+		call Show: addr mine:n;
+		call Show: addr shared:(n + 4);
+		mine:0 is 88;
+		log mine '\n';
+	[end]
+
+	[Grown: int n: 0;]
+		str g: 'growing text here';
+		call Show: addr g:n;
+		g:1 is 89;
+		log g '\n';
+	[end]
+
+	[Past: int n: 0;]
+		str mine: [16];
+		mine is 'short';
+		call Show: addr mine:n;
+	[end]
+
+	# a ptr<u8> put in text: the text it points at
+	[Mix: ptr<u8> p: 0;]
+		str s: '';
+		s is 'at ' p ', ' 3;
+		log s '\n';
+		str f: [40];
+		f is p;
+		f++ ' and ' p;
+		log f '\n';
+		s is p;
+		log s '\n';
+	[end]
+}
