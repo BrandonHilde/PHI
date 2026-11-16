@@ -16,6 +16,9 @@ namespace Phi.Compiler.CodeGen
 
             string VSlot(VReg v) => $"[rbp - {regs.Slots[v]}]";
 
+            /// <summary>Built for x86-64-v2 (SSSE3, SSE4.1, SSE4.2): their one-instruction forms.</summary>
+            static bool V2 => X8664V2;
+
             /// <summary>The register a vec is worked out in: the destination's own, or xmm15.</summary>
             string VTarget(VReg dst) => InRegister(dst) ? Reg(dst)! : "xmm15";
 
@@ -199,6 +202,16 @@ namespace Phi.Compiler.CodeGen
             void Get(VecGetI get)
             {
                 int bytes = LaneBytes(get.Lane);
+                if (get.Index.IsImm && !LaneFloat(get.Lane) && (V2 || bytes == 2))
+                {
+                    // one instruction (pextrw is SSE2's; the others SSE4.1's)
+                    string r = InRegister(get.Dst) ? Reg(get.Dst)! : "rax";
+                    string a = VIn(get.A, "xmm15");
+                    E(bytes == 8 ? $"pextrq {r}, {a}, {get.Index.Imm}" : $"pextr{Suffix(bytes)} {Sub(r, 32)}, {a}, {get.Index.Imm}");
+                    if (LaneSigned(get.Lane) && bytes < 4) E($"movsx {Sub(r, 32)}, {Sub(r, 8 * bytes)}");
+                    Store(get.Dst, r);
+                    return;
+                }
                 E($"movdqu {S(0)}, {VIn(get.A, "xmm15")}");
                 string place = LanePlace(get.Index, bytes);
                 if (LaneFloat(get.Lane))
@@ -218,6 +231,15 @@ namespace Phi.Compiler.CodeGen
             void Set(VecSetI set)
             {
                 int bytes = LaneBytes(set.Lane);
+                if (set.Index.IsImm && !LaneFloat(set.Lane) && (V2 || bytes == 2))
+                {
+                    string x = VTarget(set.Dst);
+                    VLoad(x, set.A);
+                    Load("rax", set.Value, bytes == 8 ? 64 : 32);
+                    E(bytes == 8 ? $"pinsrq {x}, rax, {set.Index.Imm}" : $"pinsr{Suffix(bytes)} {x}, eax, {set.Index.Imm}");
+                    VStore(set.Dst, x);
+                    return;
+                }
                 E($"movdqu {S(0)}, {VIn(set.A, "xmm15")}");
                 string place = LanePlace(set.Index, bytes);
                 if (set.Lane == TypeKind.F64)
@@ -383,6 +405,13 @@ namespace Phi.Compiler.CodeGen
                             _ => "pavg" + sfx,
                         };
                         E($"{op} {t}, {b}");
+                        VStore(v.Dst, t);
+                        return;
+                    }
+                    case VOp.Mul when bytes == 4 && V2:
+                    {
+                        string t = Start(v);
+                        E($"pmulld {t}, {VIn(v.B!, "xmm14")}");
                         VStore(v.Dst, t);
                         return;
                     }
@@ -577,6 +606,14 @@ namespace Phi.Compiler.CodeGen
                     VStore(v.Dst, t);
                     return;
                 }
+                if (V2 && bytes <= 4)
+                {
+                    string t = Start(v);
+                    string op = (min ? "pmin" : "pmax") + (signed ? "s" : "u") + Suffix(bytes);
+                    E($"{op} {t}, {VIn(v.B!, "xmm14")}");
+                    VStore(v.Dst, t);
+                    return;
+                }
                 if (k is TypeKind.I8 or TypeKind.U16)
                 {
                     // the other's instruction, on numbers with their top bits turned over
@@ -591,19 +628,19 @@ namespace Phi.Compiler.CodeGen
                     VStore(v.Dst, t);
                     return;
                 }
-                if (bytes == 4)
+                if (bytes == 4 || V2)
                 {
-                    // a > b as a mask, then each lane picked from a or b by it
+                    // a > b as a mask, then each lane picked from a or b by it (64 bits: SSE4.2's pcmpgtq)
                     string t = Start(v);
                     string b = VIn(v.B!, "xmm14");
                     E($"movdqa xmm13, {t}");
                     E($"movdqa xmm12, {b}");
                     if (!signed)
                     {
-                        E($"pxor xmm13, {SignBits(4)}");
-                        E($"pxor xmm12, {SignBits(4)}");
+                        E($"pxor xmm13, {SignBits(bytes)}");
+                        E($"pxor xmm12, {SignBits(bytes)}");
                     }
-                    E("pcmpgtd xmm13, xmm12");
+                    E($"pcmpgt{Suffix(bytes)} xmm13, xmm12");
                     E($"movdqa xmm12, {(min ? b : t)}");
                     E("pand xmm12, xmm13");
                     E($"pandn xmm13, {(min ? t : b)}");
@@ -641,6 +678,13 @@ namespace Phi.Compiler.CodeGen
                         E("sub rax, rdx");
                         E($"mov qword {S(32 + 8 * n)}, rax");
                     });
+                    return;
+                }
+                if (V2)
+                {
+                    string t = VTarget(v.Dst);
+                    E($"pabs{Suffix(bytes)} {t}, {VIn(v.A, "xmm14")}");
+                    VStore(v.Dst, t);
                     return;
                 }
                 // (a ^ sign) - sign, with sign each lane's top bit spread over it
@@ -683,7 +727,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     string t = Start(v);
                     string b = VIn(v.B!, "xmm14");
-                    if (bytes < 8) E($"pcmpeq{Suffix(bytes)} {t}, {b}");
+                    if (bytes < 8 || V2) E($"pcmpeq{Suffix(bytes)} {t}, {b}");
                     else
                     {
                         // both halves of each 64-bit lane the same
@@ -695,7 +739,7 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
                 bool signed = LaneSigned(k), less = v.Op == VOp.Less;
-                if (bytes == 8)
+                if (bytes == 8 && !V2)
                 {
                     PerLane(v, lanes, n =>
                     {
@@ -747,6 +791,14 @@ namespace Phi.Compiler.CodeGen
                     VStore(v.Dst, t);
                     return;
                 }
+                if (V2 && !high)
+                {
+                    string t = VTarget(v.Dst);
+                    string unpacked = bytes switch { 1 => "bw", 2 => "wd", _ => "dq" };
+                    E($"pmov{(LaneSigned(k) ? "sx" : "zx")}{unpacked} {t}, {VIn(v.A, "xmm14")}");
+                    VStore(v.Dst, t);
+                    return;
+                }
                 // each lane next to what goes above it: zeros, or its sign spread over them
                 string tt = Start(v);
                 E("pxor xmm13, xmm13");
@@ -794,6 +846,18 @@ namespace Phi.Compiler.CodeGen
                         VStore(v.Dst, t);
                         return;
                     }
+                }
+                if (k == TypeKind.U32 && V2)
+                {
+                    // each made no more than 65535, then SSE4.1's packusdw
+                    string t = Start(v);
+                    string most = Splat(0xFFFF, 4);
+                    E($"pminud {t}, {most}");
+                    E($"movdqa xmm12, {VIn(v.B!, "xmm14")}");
+                    E($"pminud xmm12, {most}");
+                    E($"packusdw {t}, xmm12");
+                    VStore(v.Dst, t);
+                    return;
                 }
                 // u32 to u16, and 64 bits to 32: each lane, stopping at the ends
                 int half = PhiType.VecBytes / bytes;

@@ -79,6 +79,9 @@ namespace Phi.Compiler.CodeGen.Ir
             }
         }
 
+        /// <summary>PHI_VECTORIZE=0 leaves loops as they're written (to compare, or find a difference).</summary>
+        static readonly bool VectorizeLoops = Environment.GetEnvironmentVariable("PHI_VECTORIZE") is not ("0" or "off");
+
         static void Need(bool ok, string why)
         {
             if (!ok) throw new NotYet(why);
@@ -88,7 +91,7 @@ namespace Phi.Compiler.CodeGen.Ir
         public static bool Supported(PhiType t) =>
             !t.IsArray && t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
                 or TypeKind.I64 or TypeKind.U64 or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum or TypeKind.Pointer or TypeKind.Object
-                or TypeKind.F64 or TypeKind.F32 or TypeKind.Vec;
+                or TypeKind.F64 or TypeKind.F32 or TypeKind.Vec or TypeKind.Method;
 
         /// <summary>
         /// An f64 or f32, which this form keeps in an xmm register as an f64 (as the generator's
@@ -101,7 +104,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// A value of t takes 64 bits: an i64, a u64, a pointer, or an object, which this form
         /// keeps only where it's borrowed (a struct parameter): its address, as a pointer is.
         /// </summary>
-        public static bool Is64(PhiType t) => t.IsWide || t.IsPointer || t.IsObject;
+        public static bool Is64(PhiType t) => t.IsWide || t.IsPointer || t.IsObject || t.IsMethod;
 
         /// <summary>How a value of type t is kept in memory.</summary>
         public static MemKind KindOf(PhiType t) => t.Kind switch
@@ -110,7 +113,7 @@ namespace Phi.Compiler.CodeGen.Ir
             TypeKind.U8 or TypeKind.Bool or TypeKind.Chr => MemKind.U8,
             TypeKind.I16 => MemKind.S16,
             TypeKind.U16 => MemKind.U16,
-            TypeKind.I64 or TypeKind.U64 or TypeKind.Pointer or TypeKind.Object => MemKind.Q64,
+            TypeKind.I64 or TypeKind.U64 or TypeKind.Pointer or TypeKind.Object or TypeKind.Method => MemKind.Q64,
             TypeKind.F64 => MemKind.F64,
             TypeKind.F32 => MemKind.F32,
             TypeKind.Vec => MemKind.V128,
@@ -139,7 +142,7 @@ namespace Phi.Compiler.CodeGen.Ir
             VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
             Need(badParameter == null, $"a parameter it doesn't take ('{badParameter?.Name}', {Describe(badParameter)})");
             Need(!m.ReturnType.IsObject, "it gives an object");
-            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v)
+            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v)
                                    || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements));
             Need(badLocal == null, $"a variable it doesn't take ('{badLocal?.Name}', {Describe(badLocal)})");
 
@@ -162,6 +165,14 @@ namespace Phi.Compiler.CodeGen.Ir
                 Emit(new UnwindI { On = true });
             }
 
+            // a struct of the method's own (an err, say), in homes of its own
+            foreach (VariableSymbol v in m.Locals.Where(FrameStruct))
+            {
+                int size = v.Type.Struct!.Size;
+                for (int k = 0; k < (size + 7) / 8; k++) fn.NewHome();
+                frameStructs[v] = 8 * fn.Homes;
+            }
+
             // the parameters, from their places in the frame: the last at rbp + 16, each 8 bytes
             // (a vec's 16)
             int above = 16;
@@ -174,7 +185,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             // (a variable is set where it's declared; one that could be read before that is
             // given 0 at the start, by IrPeephole, which knows which)
-            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v))) Variable(v);
+            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v))) Variable(v);
 
             Statements(m.Decl.Body);
             if (m.Decl.Result is Expr value)
@@ -222,11 +233,22 @@ namespace Phi.Compiler.CodeGen.Ir
             JumpT j => new[] { j.Target },
             BranchT br => new[] { br.Then, br.Else },
             SwitchT sw => sw.Cases.Select(c => c.Target).Append(sw.Default).Distinct().ToArray(),
+            TryT t => new[] { t.Body, t.Caught },
             _ => Array.Empty<Block>(),
         };
 
         /// <summary>A new value for one of type t: an f64's, or a whole number's of its width.</summary>
         VReg New(PhiType t, string name = "") => t.IsVec ? fn.NewVec(name) : IsF(t) ? fn.NewFloat(name) : fn.NewValue(Is64(t), name);
+
+        /// <summary>A struct the method keeps in its frame (Error err, say): how far below rbp it starts.</summary>
+        readonly Dictionary<VariableSymbol, int> frameStructs = new();
+
+        /// <summary>A struct variable of the method's own, with no objects in it: kept in the frame, its fields read and written there.</summary>
+        static bool FrameStruct(VariableSymbol v) =>
+            v.Type.IsStruct && !v.Type.IsArray && v.Ownership == Ownership.None && !v.IsParameter && v.Type.Struct!.Size > 0 && !v.Type.Struct.OwnsObjects;
+
+        /// <summary>Where a field of a struct in the frame is, as a place an instruction names.</summary>
+        string FramePlace(VariableSymbol v, int offset) => $"rbp - {frameStructs[v] - offset}";
 
         /// <summary>A method's own object, new T x: kept in a home of the frame (see <see cref="owned"/>).</summary>
         static bool OwnObject(VariableSymbol v) =>
@@ -323,7 +345,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             if (!variables.TryGetValue(v, out VReg? r))
             {
-                Need(Supported(v.Type), $"'{v.Name}' is a {v.Type}");
+                Need(Supported(v.Type), $"'{v.Name}', {A(v.Type)}");
                 r = New(v.Type, v.Name);
                 variables[v] = r;
             }
@@ -453,10 +475,27 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case VarDecl { Symbol: VariableSymbol framed } fd when frameStructs.ContainsKey(framed):
+                    Need(fd.Values.Count == 0 && fd.FieldValues.Count == 0 && fd.Source == null, "a struct of a method's own given its values where it's declared");
+                    Mark(fd);
+                    Emit(new ZeroI { Place = FramePlace(framed, 0), Size = framed.Type.Struct!.Size });
+                    return;
+
+                case VarDecl { Symbol: VariableSymbol classVar } cd when !Ours(classVar) && Global(classVar) is string kept:
+                {
+                    // (a class's own statement, made a method: its variable is the class's, set where it's kept)
+                    Need(cd.Values.Count <= 1 && !cd.IsNew && cd.AtAddress == null && cd.EachOf == null, "a declaration it doesn't take");
+                    Mark(cd);
+                    Opnd value = cd.Values.Count == 1 ? Value(cd.Values[0], classVar.Type)
+                        : classVar.Type.IsVec ? ZeroVec() : IsF(classVar.Type) ? FloatConst(0.0) : Opnd.Const(0);
+                    Emit(new StoreI { Place = kept, Src = Small(value, Is64(classVar.Type)), Kind = KindOf(classVar.Type) });
+                    return;
+                }
+
                 case VarDecl d:
                 {
                     Need(d.Symbol is VariableSymbol && d.Values.Count <= 1 && !d.IsNew && d.AtAddress == null && d.BufferSize == null
-                         && d.MoreSizes.Count == 0 && !d.Unsized && d.TextSize == null && d.EachOf == null && d.Narrows == null,
+                         && d.MoreSizes.Count == 0 && !d.Unsized && d.TextSize == null && (d.EachOf == null || d.Values.Count == 0) && d.Narrows == null,
                          "a declaration it doesn't take");
                     VariableSymbol v = (VariableSymbol)d.Symbol!;
                     Mark(d);
@@ -497,6 +536,9 @@ namespace Phi.Compiler.CodeGen.Ir
                         case NameExpr { Symbol: FieldPathSymbol gf } when GlobalStruct(gf.Root) is string label && Supported(gf.Type) && !gf.Type.IsObject:
                             Emit(new StoreI { Place = $"{label} + {gf.Offset}", Src = Value(a.Value, gf.Type), Kind = KindOf(gf.Type) });
                             return;
+                        case NameExpr { Symbol: FieldPathSymbol ff } when frameStructs.ContainsKey(ff.Root) && Supported(ff.Type) && !ff.Type.IsObject:
+                            Emit(new StoreI { Place = FramePlace(ff.Root, ff.Offset), Src = Value(a.Value, ff.Type), Kind = KindOf(ff.Type) });
+                            return;
                         case IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } inArray when GlobalArray(arr) != null:
                         {
                             Opnd value = Value(a.Value, inArray.Type);
@@ -514,6 +556,39 @@ namespace Phi.Compiler.CodeGen.Ir
                         }
                     }
                     throw new NotYet($"an assignment to {a.Target.GetType().Name}");
+                }
+
+                case IfStmt { Condition: ThrowsExpr throws } tried:
+                {
+                    // the generator's EmitIfThrows: a catch record, the call, the record off again;
+                    // a throw comes to Caught instead, where err is given the error
+                    Need(tried.Then.Count > 0 && tried.Then[0] is VarDecl { Symbol: VariableSymbol err } && frameStructs.ContainsKey(err)
+                         && err.Type.Struct!.Size == X86Generator.ErrorBytes, "a catch whose err isn't an Error");
+                    var errVar = (VariableSymbol)((VarDecl)tried.Then[0]).Symbol!;
+                    Need(locks.Count == 0, "a catch inside a locked block");
+                    Mark(tried);
+                    for (int k = 0; k < 6; k++) fn.NewHome();
+                    string record = $"rbp - {8 * fn.Homes}";
+                    Block body = fn.NewBlock(), caught = fn.NewBlock(), after = fn.NewBlock();
+                    Block otherwise = tried.Else != null ? fn.NewBlock() : after;
+                    Emit(new CatchI { Record = record, Caught = caught });
+                    current.End = new TryT { Body = body, Caught = caught };
+                    Enter(body);
+                    Statement(throws.Call);
+                    Emit(new UncatchI { Record = record });
+                    if (current.End == null) current.End = new JumpT { Target = otherwise };
+                    Enter(caught);
+                    Emit(new CaughtI { Place = FramePlace(errVar, 0) });
+                    Statements(tried.Then.Skip(1).ToList());
+                    if (current.End == null) current.End = new JumpT { Target = after };
+                    if (tried.Else != null)
+                    {
+                        Enter(otherwise);
+                        Statements(tried.Else);
+                        if (current.End == null) current.End = new JumpT { Target = after };
+                    }
+                    Enter(after);
+                    return;
                 }
 
                 case IfStmt ifs:
@@ -542,6 +617,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     // tested before the first time round, then at the bottom: one jump each time
                     // round, back to the top while it holds (the generator's loops are the same)
                     if (loop.Init != null) Statement(loop.Init);
+                    // (a simple loop done a vec at a time first, where it can be)
+                    if (VectorizeLoops) Vectorize(loop);
                     // the class variables the loop changes, in registers through it, as the
                     // generator keeps them (read before it, written back after it and before an
                     // error it stops with), when it calls nothing and nothing else reaches them
@@ -692,6 +769,22 @@ namespace Phi.Compiler.CodeGen.Ir
                     Mark(rc);
                     Emit(new RawCallI { Label = raw.Name });
                     return;
+
+                case CallStmt { Resolved: PointerCall through } pcall:
+                {
+                    Mark(pcall);
+                    if (pcall.ResultTarget == null)
+                    {
+                        CallThrough(through, pcall.Arguments, wantResult: false);
+                        return;
+                    }
+                    Need(pcall.ResultTarget is NameExpr { Symbol: VariableSymbol { Type.IsObject: false } } && Ours((VariableSymbol)((NameExpr)pcall.ResultTarget).Symbol!),
+                         "a call's result kept somewhere it doesn't take");
+                    var kept = (VariableSymbol)((NameExpr)pcall.ResultTarget).Symbol!;
+                    VReg came = CallThrough(through, pcall.Arguments, wantResult: true)!;
+                    SetVariable(Variable(kept), Convert(came, through.Signature.Result, kept.Type), kept.Type);
+                    return;
+                }
 
                 case CallStmt call:
                 {
@@ -948,11 +1041,11 @@ namespace Phi.Compiler.CodeGen.Ir
                 };
                 return (fa, fb, fc, true);
             }
-            // (a pointer is compared as an unsigned 64-bit number, with 0 or another pointer)
-            bool pointers = l.IsPointer || r.IsPointer;
+            // (a pointer, or a method value, is compared as an unsigned 64-bit number, with 0 or another)
+            bool pointers = l.IsPointer || r.IsPointer || l.IsMethod || r.IsMethod;
             bool wide = l.IsWide || r.IsWide || pointers;
             bool unsigned = pointers || (wide ? l.Kind == TypeKind.U64 || r.Kind == TypeKind.U64 : l.IsUnsigned32 || r.IsUnsigned32);
-            PhiType at = pointers ? (l.IsPointer ? l : r) : wide ? (unsigned ? PhiType.U64 : PhiType.I64) : (unsigned ? PhiType.U32 : PhiType.I32);
+            PhiType at = pointers ? (l.IsPointer || l.IsMethod ? l : r) : wide ? (unsigned ? PhiType.U64 : PhiType.I64) : (unsigned ? PhiType.U32 : PhiType.I32);
             // (the left side is worked out first: see Arithmetic)
             VReg a = InReg(Convert(Value(cmp.Left, l), l, at), wide);
             Opnd b = Small(Convert(Value(cmp.Right, r), r, at), wide);
@@ -1028,10 +1121,36 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new LoadIdxI { Dst = d, Base = fb, Index = Opnd.Const(fo), Scale = 1, Kind = KindOf(ft) });
                     return d;
                 }
+                case NameExpr { Symbol: FieldPathSymbol ff } when frameStructs.ContainsKey(ff.Root) && ff.Type.IsInlineText:
+                {
+                    // text kept in place: its value is where it is
+                    VReg d = fn.NewValue(true);
+                    Emit(new AddrI { Dst = d, Label = FramePlace(ff.Root, ff.Offset) });
+                    return d;
+                }
+                case NameExpr { Symbol: FieldPathSymbol ff } when frameStructs.ContainsKey(ff.Root) && Supported(ff.Type) && !ff.Type.IsObject:
+                {
+                    VReg d = New(ff.Type);
+                    Emit(new LoadI { Dst = d, Place = FramePlace(ff.Root, ff.Offset), Kind = KindOf(ff.Type) });
+                    return d;
+                }
+                case AddrExpr { OfObject: false, CodeLabel: null, Operand: NameExpr { Symbol: VariableSymbol whole } } when frameStructs.ContainsKey(whole):
+                {
+                    VReg d = fn.NewValue(true);
+                    Emit(new AddrI { Dst = d, Label = FramePlace(whole, 0) });
+                    return d;
+                }
                 case NameExpr { Symbol: FieldPathSymbol gf } when GlobalStruct(gf.Root) is string label && Supported(gf.Type) && !gf.Type.IsObject:
                 {
                     VReg d = New(gf.Type);
                     Emit(new LoadI { Dst = d, Place = $"{label} + {gf.Offset}", Kind = KindOf(gf.Type) });
+                    return d;
+                }
+                case AddrExpr { CodeLabel: string code, Method: MethodSymbol, Foreign: false } when e.Type.IsMethod:
+                {
+                    // addr Method: where its code is, a method value
+                    VReg d = fn.NewValue(true);
+                    Emit(new AddrI { Dst = d, Label = code });
                     return d;
                 }
                 case AddrExpr { OfObject: true, CodeLabel: null, Operand: var obj } when Is64(Real(obj)) && Supported(Real(obj)):
@@ -1449,10 +1568,39 @@ namespace Phi.Compiler.CodeGen.Ir
         Opnd CallValue(CallExpr call)
         {
             if (call.Resolved is VecMethod vm) return VecCall(call, vm);
+            if (call.Resolved is PointerCall through) return CallThrough(through, call.Arguments, wantResult: true)!;
             // (a struct's method has the struct it's called on among its arguments already: self)
             Need(call.Resolved is MethodSymbol m && (call.CalleeTarget == null || m.Decl.Owner.ForStruct != null), "a call of a built-in or a method value");
             var callee = (MethodSymbol)call.Resolved!;
             return Call(callee, call.Arguments, wantResult: true)!;
+        }
+
+        /// <summary>
+        /// A call through a method value (handler: x;): the arguments pushed as for a call by name,
+        /// then the address the value holds worked out, and called (the generator's order).
+        /// </summary>
+        VReg? CallThrough(PointerCall through, List<Expr> arguments, bool wantResult)
+        {
+            MethodSignature s = through.Signature;
+            Need(s.Parameters.All(p => Supported(p) && !p.IsObject && !p.IsString) && !s.Into.Any(i => i), "a call through a method value that takes what this form doesn't");
+            Need(s.Result.Kind == TypeKind.Void || Supported(s.Result) && !s.Result.IsObject, "a call through a method value that gives what this form doesn't");
+            Need(arguments.Count == s.Parameters.Count, "a call through a method value that leaves out arguments");
+            var values = new List<Opnd>();
+            for (int i = 0; i < arguments.Count; i++) values.Add(Value(arguments[i], s.Parameters[i]));
+            VReg target = InReg(Value(through.Target), true);
+            var call = new CallI
+            {
+                Target = target,
+                Dst = wantResult && s.Result.Kind != TypeKind.Void ? New(s.Result) : null,
+                Result = s.Result.Kind == TypeKind.Void ? CallResult.None : s.Result.IsWide ? CallResult.EdxEax
+                    : s.Result.IsVec ? CallResult.Xmm0
+                    : IsF(s.Result) ? CallResult.St0 : Is64(s.Result) ? CallResult.Rax : CallResult.Eax,
+            };
+            call.Args.AddRange(values);
+            call.ArgKinds.AddRange(s.Parameters.Select(KindOf));
+            Need(!wantResult || call.Dst != null, "a method value that gives nothing, used for a value");
+            Emit(call);
+            return call.Dst;
         }
 
         VReg? Call(MethodSymbol callee, List<Expr> arguments, bool wantResult)

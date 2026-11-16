@@ -1212,8 +1212,9 @@ vec<u8> zero;                       # zeros
 ```
 
 **It reads as a short array.** `v:i` is a lane (checked, as an element is; `v:i is x;` sets
-one), and `v.len` is how many lanes there are. Code that steps by `v.len` rather than by a
-number runs unchanged on a build with wider vectors. `log` writes the lanes with a space
+one), `v.len` is how many lanes there are (`vec<f32>.len` without a value), and `while each x
+in v` goes through them. Code that steps by `.len` rather than by a number runs unchanged on
+a build with wider vectors. `log` writes the lanes with a space
 between. A `vec` is a value: copied whole, given to methods and given back, in a class's
 variables and arrays, in a struct's fields (16 bytes, on a multiple of 16).
 
@@ -1268,12 +1269,37 @@ each lane's value (toward zero), so the lanes stay as many (`vec<f32>` and `vec<
 That runs about six times as fast as the byte-at-a-time loop alone. A `vec` is any
 alignment in memory (it's read and written with `movdqu`).
 
-**For now:** a class's own statements don't use vecs (a class's `vec` variable starts as
-zeros, and is given its lanes in a method); a method that uses one can't also catch errors
-(`if call ... throws`): put the catching in a method of its own, which can call it; and a
-method that takes or gives one is called by name, not as a method value. Each is an error
-that says so. The code is SSE2's, which every x86-64 CPU has; a build option for newer CPUs
-(`--x86-64-v2`, and wider vectors after) is planned, with the same source.
+**The CPU.** The code is SSE2's, which every x86-64 CPU has. `phi build --x86-64-v2` builds
+for CPUs with x86-64-v2 (SSSE3, SSE4.1 and 4.2: every one since about 2009 to 2011, and what
+Windows 11 and RHEL 9 need), where what SSE2 does in several instructions is one (a 32-bit
+multiply, whole numbers' `Min` and `Max`, `Abs`, 64-bit comparisons, a lane read or set);
+the source is the same, and a program built that way on an older CPU says so and stops.
+
+**Loops the optimiser makes vector code itself.** A loop that only sets elements from
+elements at its counter, with arithmetic that gives the same a lane at a time, is done a vec
+at a time without saying so:
+
+```phi
+while int i: 0; i < n; i++;
+    out:i is in:i * 3 + bias;          # 16 u8s at a time, then the rest one by one
+;;
+```
+
+It's `while T i: start; i < n; i++;` (an `int` or `u32` of the method's own, `n` one the loop
+doesn't change), whose body sets `p:i` or `list:i` (a pointer the loop leaves as it is, or a
+class's array) from elements at `i`, numbers that don't change in the loop, `+ - * & | ^ ~`,
+`-`, `<<` by a number, `>>` of an element by a number, `/` of floats, and `as` its own type.
+The answer is the same either way: what's written is checked when it runs not to be anything
+read (unless it's the very same elements), and a class's array to hold the whole range,
+or the loop is done as written (so an index past its end is the error it always was, at the
+same element). f32s are done a vec at a time one operation at a time (PHI works them out in
+f64s, which f32 lanes match only then). `PHI_IR_TRACE=1` says, for each loop, whether it was
+and why not; `PHI_VECTORIZE=0` leaves every loop as written. It's for 64-bit programs.
+
+**Where it works.** In 64-bit programs (`--target linux64` or `windows64`): in methods, a
+class's own statements, method values (`method<vec<int>: int>`), and with errors caught
+around it. A 32-bit program that uses one is an error that says so (32-bit code is the older
+code generator's, which has no vectors).
 
 ## Structs
 

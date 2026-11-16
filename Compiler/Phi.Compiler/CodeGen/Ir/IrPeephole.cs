@@ -99,6 +99,10 @@ namespace Phi.Compiler.CodeGen.Ir
                         for (int k = 0; k < sw.Cases.Count; k++) sw.Cases[k] = (sw.Cases[k].Value, Final(sw.Cases[k].Target));
                         sw.Default = Final(sw.Default);
                         break;
+                    case TryT t:
+                        // (Caught starts with CaughtI, so it's never passed over: CatchI's address for it stays right)
+                        t.Body = Final(t.Body);
+                        break;
                 }
             }
             // the first block stays: it's where the method starts

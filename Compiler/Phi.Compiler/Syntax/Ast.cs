@@ -1029,6 +1029,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Set by the binder.</summary>
         public long Value { get; set; }
+
+        /// <summary>vec&lt;f32&gt;.len: how many lanes the type has, rather than its bytes.</summary>
+        public bool Lanes { get; init; }
     }
 
     /// <summary>new Type   or   new Type[count]   (32-bit kernels: memory from the heap, zeroed)</summary>

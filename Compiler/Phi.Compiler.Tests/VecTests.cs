@@ -58,28 +58,52 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
-        public void IsUsedInMethods()
+        public void IsUsedInAClassesOwnStatements()
         {
-            // a class's own statements are the generator's, which has no vectors
-            string program = "phi.Test:Program\n{\n\tvec<f32> kept;\n\tkept is 1.0;\n\texit 0;\n}\n";
-            Assert.Contains(Compile(program).Diagnostics, d => d.Message.Contains("vec works in methods for now, not in a class's own statements"));
-            string given = "phi.Test:Program\n{\n\tvec<f32> kept: 1.0;\n\texit 0;\n}\n";
-            Assert.Contains(Compile(given).Diagnostics, d => d.Message.Contains("a class's vec starts as zeros; give 'kept' its lanes in a method"));
+            // each such statement is made a method of its own, which the intermediate form writes
+            string program = "phi.Test:Program\n{\n\tvec<f32> kept: 1.0 2.0 3.0 4.0;\n\twhile int i: 0; i < 3; i++;\n\t\tkept is kept * 2.0;\n\t;;\n\tlog kept;\n\texit 0;\n}\n";
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
+        }
+
+        [Fact]
+        public void CatchesInAMethodUsingOne()
+        {
+            string program = "phi.Test:Program\n{\n\tcall Run;\n\texit 0;\n\n\t[Run:]\n\t\tvec<int> v: 1;\n\t\tif call Fails throws err\n\t\t\tlog err.message v;\n\t\t;;\n\t[end]\n\n\t[Fails:]\n\t[end]\n}\n";
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
         }
 
         [Fact]
         public void SaysWhatAMethodUsingOneCantHave()
         {
-            // catching is still the generator's alone: said, naming what to move
-            string program = "phi.Test:Program\n{\n\tcall Run;\n\texit 0;\n\n\t[Run:]\n\t\tvec<int> v: 1;\n\t\tif call Fails throws err\n\t\t\tlog err.message;\n\t\t;;\n\t[end]\n\n\t[Fails:]\n\t[end]\n}\n";
+            // a str that grows isn't the intermediate form's yet: said, naming what to move
+            string program = InMethod("\t\tvec<int> v: 1;\n\t\tstr name: 'x';\n\t\tname++ 'y';\n\t\tlog name v;");
             Assert.Contains(Compile(program).Diagnostics, d => d.Message.Contains("Run uses a vec, and what writes vector code doesn't take") && d.Message.Contains("put that part in a method of its own"));
         }
 
         [Fact]
-        public void IsNotAMethodValue()
+        public void IsAMethodValue()
         {
-            string program = "phi.Test:Program\n{\n\tmethod<vec<int>: int> f: addr First;\n\texit 0;\n\n\t[First: vec<int> v: 0;]\n\t[end: v:0]\n}\n";
-            Assert.Contains(Compile(program).Diagnostics, d => d.Message.Contains("Test.First takes or gives a vec, so it's called by name, not through a method value (yet)"));
+            string program = InMethod("\t\tmethod<vec<int>: int> f: addr First;\n\t\tvec<int> v: 7;\n\t\tlog (f: v);")
+                .Replace("\n}\n", "\n\n\t[First: vec<int> v: 0;]\n\t[end: v:0]\n}\n");
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
+        }
+
+        [Theory]
+        [InlineData("ptr<u8>", "p:i is q:i + 5;", "is vector code too, 16 u8s at a time")]
+        [InlineData("ptr<f32>", "p:i is q:i * 2.0;", "is vector code too, 4 f32s at a time")]
+        [InlineData("ptr<int>", "p:i is (q:i + 1) >> 1;", "isn't vector code: >> is of something worked out")]
+        [InlineData("ptr<f32>", "p:i is q:i * 2.0 + 1.0;", "isn't vector code: its f32s are worked out in f64s")]
+        [InlineData("ptr<u8>", "p:i is q:(i + 1);", "isn't vector code: an element is reached at something other than i itself")]
+        public void MakesSimpleLoopsVectorCode(string pointer, string statement, string note)
+        {
+            // the optimiser's own: no vec in the program, and the listing says what it did with the loop
+            string program = $"phi.Test:Program\n{{\n\texit 0;\n\n\t[Run: {pointer} p: 0; {pointer} q: 0; int n: 0;]\n\t\twhile int i: 0; i < n; i++;\n\t\t\t{statement}\n\t\t;;\n\t[end]\n}}\n";
+            CompileResult result = Compile(program);
+            Assert.True(result.Success, Errors(result));
+            Assert.Contains(result.Units, u => u.Text.Contains($"the loop on line 6 {note}"));
         }
 
         [Fact]

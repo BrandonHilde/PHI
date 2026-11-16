@@ -386,6 +386,9 @@ namespace Phi.Compiler.CodeGen.Ir
     public sealed class CallI : Instr
     {
         public string Label { get; init; } = "";
+
+        /// <summary>A call through a method value: the address it holds (worked out after the arguments, as the generator does), in place of Label.</summary>
+        public VReg? Target { get; init; }
         public List<Opnd> Args { get; } = new();
 
         /// <summary>How each argument is kept: an f32's is rounded into the low half of its 8 bytes, a vec's takes 16.</summary>
@@ -409,6 +412,46 @@ namespace Phi.Compiler.CodeGen.Ir
     }
 
     public abstract class Terminator { }
+
+    /// <summary>
+    /// if call ... throws err: Body (the call, with its catch record set by the CatchI before
+    /// this) runs next; Caught is where a throw comes to, with nothing in a register.
+    /// </summary>
+    public sealed class TryT : Terminator
+    {
+        public Block Body { get; set; } = null!;
+        public Block Caught { get; set; } = null!;
+    }
+
+    /// <summary>
+    /// A catch record put on the list a throw looks at (the generator's EmitIfThrows): the one
+    /// around it, rsp and rbp, the methods' records, where Caught is, and how deep in the log's
+    /// lock. A call of the library (phi_log_held), so it changes what a call does.
+    /// </summary>
+    public sealed class CatchI : Instr
+    {
+        public string Record { get; init; } = "";
+        public Block Caught { get; init; } = null!;
+    }
+
+    /// <summary>The call came back: the catch record comes off the list.</summary>
+    public sealed class UncatchI : Instr
+    {
+        public string Record { get; init; } = "";
+    }
+
+    /// <summary>Where a throw came to: the error copied into err, a struct in the frame at Place.</summary>
+    public sealed class CaughtI : Instr
+    {
+        public string Place { get; init; } = "";
+    }
+
+    /// <summary>A struct kept in the frame at Place, all Size bytes of it made zero.</summary>
+    public sealed class ZeroI : Instr
+    {
+        public string Place { get; init; } = "";
+        public int Size { get; init; }
+    }
 
     /// <summary>when: the branch for Value's case, or Default (a table of jumps when the cases are close together).</summary>
     public sealed class SwitchT : Terminator
@@ -500,6 +543,9 @@ namespace Phi.Compiler.CodeGen.Ir
         public string Name { get; init; } = "";
         public List<Block> Blocks { get; } = new();
 
+        /// <summary>What the optimiser did with each loop, and why not more, for PHI_IR_TRACE.</summary>
+        public List<(Syntax.Node At, string Note)> Notes { get; } = new();
+
         /// <summary>
         /// The 8-byte places at the top of the frame (rbp - 8, - 16, ...) the method keeps
         /// things in that must be in memory: its own objects, which are freed from there at its
@@ -548,6 +594,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     BranchT br => $"if {br.A} {br.Cond} {br.B} then {br.Then} else {br.Else}",
                     RetT r => $"ret {r.Value}",
                     SwitchT sw => $"switch {sw.Value} {string.Join(" ", sw.Cases.Select(c => $"{c.Value}:{c.Target}"))} else {sw.Default}",
+                    TryT t => $"try {t.Body} caught {t.Caught}",
                     _ => "(no end)",
                 }).Append('\n');
             }
@@ -566,7 +613,7 @@ namespace Phi.Compiler.CodeGen.Ir
             SetCcI s => $"{s.Dst} = {s.A} {s.Cond} {s.B}",
             LoadI l => $"{l.Dst} = load {l.Kind} [{l.Place}]",
             StoreI s => $"store {s.Kind} [{s.Place}] = {s.Src}",
-            CallI c => $"{c.Dst} = call {c.Label}({string.Join(", ", c.Args)})",
+            CallI c => $"{c.Dst} = call {(object?)c.Target ?? c.Label}({string.Join(", ", c.Args)})",
             LoadIdxI l => $"{l.Dst} = load {l.Kind} [{l.Base} + {l.Index} * {l.Scale}]",
             StoreIdxI st => $"store {st.Kind} [{st.Base} + {st.Index} * {st.Scale}] = {st.Src}",
             SignCheckI c => $"check {c.Value}",
@@ -592,6 +639,10 @@ namespace Phi.Compiler.CodeGen.Ir
             RoundF32I r => $"{r.Dst} = roundf32 {r.Src}",
             PrintI p => $"print {p.Kind} {(object?)p.Literal ?? (object?)p.Label ?? p.Value}",
             RoutineI r => $"call {r.Label}",
+            CatchI c => $"catch [{c.Record}] at {c.Caught}",
+            UncatchI u => $"uncatch [{u.Record}]",
+            CaughtI c => $"caught into [{c.Place}]",
+            ZeroI z => $"zero [{z.Place}] {z.Size}",
             _ => i.GetType().Name,
         };
     }

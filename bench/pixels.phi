@@ -1,0 +1,31 @@
+# Pixels, a vec at a time: a 4 MB image brightened (stopping at 255) and blended with another
+# (each byte the average of the two, rounding up), 200 times, as graphics code does it.
+# (In 64-bit programs: vec<T> is SSE2's, 16 bytes at once.)
+phi.Pixels:Program
+{
+	log (Run: 4000000 200) '\n';
+	exit 0;
+
+	[Run: int bytes: 0; int rounds: 0;]
+		ptr<u8> image: new u8[bytes];
+		ptr<u8> other: new u8[bytes];
+		while int i: 0; i < bytes; i++;
+			image:i is (i * 7) as u8;
+			other:i is (i * 13 + 5) as u8;
+		;;
+		ptr<vec<u8>> a: image as ptr<vec<u8>>;
+		ptr<vec<u8>> b: other as ptr<vec<u8>>;
+		vec<u8> lift: 3;
+		int blocks: bytes / lift.len;
+		while int r: 0; r < rounds; r++;
+			while int i: 0; i < blocks; i++;
+				vec<u8> brighter: (a:i.AddSat: lift);
+				a:i is (brighter.Average: b:i);
+			;;
+		;;
+		i64 sum: 0;
+		while int i: 0; i < bytes; i++;
+			sum++ image:i;
+		;;
+	[end: sum]
+}

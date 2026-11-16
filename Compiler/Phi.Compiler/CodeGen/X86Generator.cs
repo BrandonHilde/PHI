@@ -215,6 +215,8 @@ namespace Phi.Compiler.CodeGen
 
             bool Callable(object? callee) => callee switch
             {
+                // (one that uses a vec is the intermediate form's, which says what it can't take)
+                MethodSymbol m when UsesVec(m) => true,
                 MethodSymbol m => m.Parameters.All(p => Given(p.Type)) && (m.ReturnType.Kind == TypeKind.Void || Given(m.ReturnType))
                                   && m.Locals.All(KeptVar) && !m.IsInterruptHandler
                                   && (m.Decl.Owner.ForStruct?.Symbol is not StructSymbol s || ObjectStruct(s)),
@@ -533,7 +535,8 @@ namespace Phi.Compiler.CodeGen
             foreach (ClassDecl cls in unit.Classes)
             {
                 file = cls.File;
-                foreach (Stmt s in cls.Body) Statement(s);
+                // (one that uses a vec is the intermediate form's, which says what it can't take)
+                foreach (Stmt s in cls.Body.Where(s => !StatementUsesVec(s))) Statement(s);
             }
             foreach (MethodSymbol m in unit.Methods)
             {
@@ -629,6 +632,9 @@ namespace Phi.Compiler.CodeGen
             // numbers, a result would be rounded twice, and not always be the nearest f64 to the answer
             if (bits32) EmitFloatReset();
 
+            // built for x86-64-v2: an older CPU is told so, rather than stopping at an instruction it doesn't have
+            if (X8664V2 && bits64 && unit.Kind == UnitKind.Program) EmitCpuCheck();
+
             // the program's own code first: it decides which library routines are needed
             var startedLibraries = new HashSet<CompiledTarget>();
             foreach (ClassDecl cls in unit.Classes)
@@ -645,7 +651,9 @@ namespace Phi.Compiler.CodeGen
                     continue;
                 }
                 Comment($"---- class {cls.Name} ({FileName(file)})");
+                currentClass = cls;
                 foreach (Stmt s in cls.Body) EmitClassStatement(s);
+                currentClass = null;
             }
 
             if (debugInfo != null)
@@ -692,6 +700,7 @@ namespace Phi.Compiler.CodeGen
             }
 
             foreach (MethodSymbol m in unit.Methods.Where(m => !m.IsOutside)) EmitMethod(m);
+            EmitVecStatements();
             foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
             // the compiled libraries' code goes here, once it's known what of it the rest reaches
             int librariesAt = code.Length;
@@ -896,7 +905,9 @@ namespace Phi.Compiler.CodeGen
             {
                 file = cls.File;
                 Comment($"---- class {cls.Name} ({FileName(file)})");
+                currentClass = cls;
                 foreach (Stmt s in cls.Body) EmitClassStatement(s);
+                currentClass = null;
             }
             Emit("ret");
 
@@ -908,6 +919,7 @@ namespace Phi.Compiler.CodeGen
                 EmitMethod(m);
             }
             Line("section .text");
+            EmitVecStatements();
             foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
             foreach (RawBlockDecl raw in unit.RawBlocks.Where(r => !program.IsOutside(r.File))) EmitRawBlock(raw);
             EmitObjectRoutines();
@@ -1932,6 +1944,14 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         void EmitClassStatement(Stmt s)
         {
+            // one that uses a vec is the intermediate form's: a method of its own, called here
+            if (bits64 && StatementUsesVec(s))
+            {
+                string label = NewLabel("vecstatement");
+                Emit($"call {label}");
+                vecStatements.Add((label, s, currentClass!));
+                return;
+            }
             if (s is not WhileStmt loop || !bits32 || debugInfo != null || currentMethod != null || inRegisters.Count > 0)
             {
                 EmitStatement(s);
@@ -3731,6 +3751,9 @@ namespace Phi.Compiler.CodeGen
         /// by the one rule its size a multiple of its largest field's, 4.
         /// </summary>
         static int ErrorSize => (ErrorFields + 3) / 4 * 4;
+
+        /// <summary>The bytes of an Error, as the runtime has it (for the intermediate form's catches).</summary>
+        internal static int ErrorBytes => ErrorSize;
         const int ErrorFields = 4 + 4 + 65 + 256 + 384;
 
         /// <summary>
@@ -10372,6 +10395,36 @@ namespace Phi.Compiler.CodeGen
                 output.AppendLine("align 16, db 0");
                 output.AppendLine($"{label}: db {bytes}");
             }
+        }
+
+        /// <summary>
+        /// phi build --x86-64-v2: the program may use what x86-64-v2 adds to x86-64 (SSE3, SSSE3,
+        /// SSE4.1 and 4.2, POPCNT; every CPU since about 2009-2011, and what Windows 11 and RHEL 9
+        /// need), a vec's one-instruction forms of what SSE2 does in several. Set for the build on
+        /// this thread, as MainStack is.
+        /// </summary>
+        [ThreadStatic] public static bool X8664V2;
+
+        /// <summary>The CPU asked, at the start, for what x86-64-v2 has: without it, a message and exit code 1.</summary>
+        void EmitCpuCheck()
+        {
+            const int Needs = (1 << 0) | (1 << 9) | (1 << 19) | (1 << 20) | (1 << 23);   // SSE3, SSSE3, SSE4.1, SSE4.2, POPCNT
+            string ok = NewLabel("cpuok");
+            Comment("built for x86-64-v2 (phi build --x86-64-v2): is this CPU one?");
+            Emit("push rbx");
+            Emit("mov eax, 1");
+            Emit("cpuid");
+            Emit("pop rbx");
+            Emit($"and ecx, {Needs}");
+            Emit($"cmp ecx, {Needs}");
+            Emit($"je {ok}");
+            Need("phi_print_serial");
+            Need("phi_exit");
+            LoadAddress("esi", StringLabel("this program was built for x86-64-v2 CPUs (phi build --x86-64-v2), and this one isn't one; build it without --x86-64-v2 to run it here\n"));
+            Emit("call phi_print_serial");
+            Emit("mov ebx, 1");
+            Emit("jmp phi_exit");
+            Label(ok);
         }
 
         /// <summary>The 16 bytes of each vec known when the program is built (its lanes written in), by their bytes.</summary>

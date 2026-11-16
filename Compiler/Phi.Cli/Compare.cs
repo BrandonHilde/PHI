@@ -255,6 +255,8 @@ namespace Phi.Cli
         {
             if (!HostRunner.CanRun(host, out _)) return null;
             BuildResult result = Builder.Build(Path.Combine(dir, name + ".phi"), Path.Combine(outDir, host.Is64() ? "phi64" : "phi32", name), host: host);
+            // (a program that uses a vec has no 32-bit build: its column is empty)
+            if (!host.Is64() && result.Errors.Any(e => e.Contains("vec is in 64-bit programs"))) return null;
             if (!result.Success || result.ExecutablePath == null)
             {
                 errors.Add($"error: {name}.phi didn't build as a {host.Name()} program:");

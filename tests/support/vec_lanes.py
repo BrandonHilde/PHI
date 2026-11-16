@@ -2,6 +2,8 @@
 # the ends of each kind's range, and tests/vec_lanes_program.expected, what it should print,
 # worked out here on its own (not by PHI). Run it again after changing it:
 #   python3 tests/support/vec_lanes.py tests/vec_lanes_program.phi tests/vec_lanes_program.expected
+#   python3 tests/support/vec_lanes.py tests/vec_lanes_v2_program.phi tests/vec_lanes_v2_program.expected
+# (the second is built with --x86-64-v2, its .build says, for the one-instruction forms)
 import struct, math, sys
 
 KINDS = {
@@ -199,7 +201,9 @@ conv.append("\t\tlog 'u8 as u32: ' words '\\n';")
 want_conv.append("u8 as u32: 67305985 134678021 202050057 269422093")
 conv.append("\t[end]")
 
-main = ["# Made by tests/support/vec_lanes.py: every vec operation on every kind of lane (see there).", "phi.VecLanesProgram:Program", "{"]
+import os
+name = ''.join(w.capitalize() for w in os.path.basename(sys.argv[1])[:-4].split('_'))
+main = ["# Made by tests/support/vec_lanes.py: every vec operation on every kind of lane (see there).", f"phi.{name}:Program", "{"]
 for kind in KINDS:
     if KINDS[kind][2]: main.append(f"\tcall Test_{kind};")
     else:

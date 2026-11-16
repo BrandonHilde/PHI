@@ -4,5 +4,10 @@ class: 7 7 7 100 / 0 0 / 0.25 0.25 / 1 1
 particle 7: 1.5 2.5 3.5 0.5
 pixels: 30 37 255 47
 lanes: 100 30
+through a method value: 20 40 60 80
+lane 4: index out of range on line 75 in vec_program.phi (line 75)
+lane 1: no error, and kept is 5 6 7 8
+each: 80, lanes: 16 2
+fill past: index out of range on line 69 in vec_program.phi, set: 7 7
 f32: 0 1
-lane 4: index out of range on line 60 in vec_program.phi
+class statements: 2 4 6 8 20

@@ -25,6 +25,9 @@ namespace Phi.Cli
     /// it can't be built for the other system (it uses a driver, say), or needs what only QEMU
     /// gives a test: an input script, a web server, recorded sound, other machines.
     ///
+    /// NAME.build lists options for building it as a Linux or Windows program, a line each; for
+    /// now --x86-64-v2 (vec_lanes_v2_program runs every vec operation built that way).
+    ///
     /// A test named bench_NAME is a benchmark: its "bench WHAT COUNT" lines are left out when the
     /// output is compared, and with --bench only benchmarks run, each also checked against the
     /// counts in NAME.bench (see BenchCheck).
@@ -488,7 +491,10 @@ namespace Phi.Cli
             if (File.Exists(actualFile)) File.Delete(actualFile);
 
             string outDir = Path.Combine(dir, "build", variant);
-            BuildResult build = Builder.Build(phiFile, outDir, mode.Wrapper, listing: true, host: mode.Host, debug: DebugBuilds);
+            string optionsFile = Path.Combine(dir, name + ".build");
+            var options = File.Exists(optionsFile) ? File.ReadAllLines(optionsFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToList() : new List<string>();
+            if (options.FirstOrDefault(o => o != "--x86-64-v2") is string unknown) return $"{name}.build has {unknown}, which isn't an option it knows (--x86-64-v2)";
+            BuildResult build = Builder.Build(phiFile, outDir, mode.Wrapper, listing: true, host: mode.Host, debug: DebugBuilds, v2: options.Contains("--x86-64-v2"));
             if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
 
             HostRunner.Result run = HostRunner.Run(build.ExecutablePath!, mode.Host, timeout);

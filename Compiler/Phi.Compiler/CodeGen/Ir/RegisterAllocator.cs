@@ -70,6 +70,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 case StoreI st: if (st.Src.Reg != null) yield return st.Src.Reg; break;
                 case CallI call:
                     foreach (Opnd a in call.Args) if (a.Reg != null) yield return a.Reg;
+                    if (call.Target != null) yield return call.Target;
                     break;
                 case LoadIdxI l:
                     yield return l.Base;
@@ -155,7 +156,7 @@ namespace Phi.Compiler.CodeGen.Ir
         };
 
         /// <summary>An instruction that calls something, which may change what a call changes.</summary>
-        public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI;
+        public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI or CatchI;
 
         public static IEnumerable<VReg> Uses(Terminator? t)
         {
@@ -245,8 +246,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 iv.CrossesCall = calls.Any(c => c > iv.Start && c < iv.End);
             // (the method's homes are first, at the top of the frame)
             int slotsForRaw = fn.Homes;
+            // where a throw comes back to, nothing is in a register: what's needed there is in the frame
+            var caught = new HashSet<VReg>(fn.Blocks.Where(b => b.End is TryT).SelectMany(b => liveIn[((TryT)b.End!).Caught]));
             foreach (Interval iv in intervals.Values.OrderBy(i => i.Value.Id))
-                if (rawCalls.Any(c => c > iv.Start && c < iv.End))
+                if (rawCalls.Any(c => c > iv.Start && c < iv.End) || caught.Contains(iv.Value))
                 {
                     slotsForRaw += iv.Value.Vec ? 2 : 1;
                     Slots[iv.Value] = 8 * slotsForRaw;

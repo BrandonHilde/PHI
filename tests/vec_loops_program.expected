@@ -1,0 +1,416 @@
+i8 add from 0: -1
+i8 add from 3: -1
+i8 add in place: -1
+i8 add overlapping: -1
+i8 sub from 0: -1
+i8 sub from 3: -1
+i8 sub in place: -1
+i8 sub overlapping: -1
+i8 neg from 0: -1
+i8 neg from 3: -1
+i8 neg in place: -1
+i8 neg overlapping: -1
+i8 params from 0: -1
+i8 params from 3: -1
+i8 params in place: -1
+i8 params overlapping: -1
+i8 constant from 0: -1
+i8 constant from 3: -1
+i8 constant in place: -1
+i8 constant overlapping: -1
+i8 mix from 0: -1
+i8 mix from 3: -1
+i8 mix in place: -1
+i8 mix overlapping: -1
+i8 logic from 0: -1
+i8 logic from 3: -1
+i8 logic in place: -1
+i8 logic overlapping: -1
+i8 not from 0: -1
+i8 not from 3: -1
+i8 not in place: -1
+i8 not overlapping: -1
+i8 shl from 0: -1
+i8 shl from 3: -1
+i8 shl in place: -1
+i8 shl overlapping: -1
+i8 shr from 0: -1
+i8 shr from 3: -1
+i8 shr in place: -1
+i8 shr overlapping: -1
+i8 shr2 from 0: -1
+i8 shr2 from 3: -1
+i8 shr2 in place: -1
+i8 shr2 overlapping: -1
+u8 add from 0: -1
+u8 add from 3: -1
+u8 add in place: -1
+u8 add overlapping: -1
+u8 sub from 0: -1
+u8 sub from 3: -1
+u8 sub in place: -1
+u8 sub overlapping: -1
+u8 neg from 0: -1
+u8 neg from 3: -1
+u8 neg in place: -1
+u8 neg overlapping: -1
+u8 params from 0: -1
+u8 params from 3: -1
+u8 params in place: -1
+u8 params overlapping: -1
+u8 constant from 0: -1
+u8 constant from 3: -1
+u8 constant in place: -1
+u8 constant overlapping: -1
+u8 mix from 0: -1
+u8 mix from 3: -1
+u8 mix in place: -1
+u8 mix overlapping: -1
+u8 logic from 0: -1
+u8 logic from 3: -1
+u8 logic in place: -1
+u8 logic overlapping: -1
+u8 not from 0: -1
+u8 not from 3: -1
+u8 not in place: -1
+u8 not overlapping: -1
+u8 shl from 0: -1
+u8 shl from 3: -1
+u8 shl in place: -1
+u8 shl overlapping: -1
+u8 shr from 0: -1
+u8 shr from 3: -1
+u8 shr in place: -1
+u8 shr overlapping: -1
+u8 shr2 from 0: -1
+u8 shr2 from 3: -1
+u8 shr2 in place: -1
+u8 shr2 overlapping: -1
+i16 add from 0: -1
+i16 add from 3: -1
+i16 add in place: -1
+i16 add overlapping: -1
+i16 sub from 0: -1
+i16 sub from 3: -1
+i16 sub in place: -1
+i16 sub overlapping: -1
+i16 neg from 0: -1
+i16 neg from 3: -1
+i16 neg in place: -1
+i16 neg overlapping: -1
+i16 params from 0: -1
+i16 params from 3: -1
+i16 params in place: -1
+i16 params overlapping: -1
+i16 constant from 0: -1
+i16 constant from 3: -1
+i16 constant in place: -1
+i16 constant overlapping: -1
+i16 mix from 0: -1
+i16 mix from 3: -1
+i16 mix in place: -1
+i16 mix overlapping: -1
+i16 logic from 0: -1
+i16 logic from 3: -1
+i16 logic in place: -1
+i16 logic overlapping: -1
+i16 not from 0: -1
+i16 not from 3: -1
+i16 not in place: -1
+i16 not overlapping: -1
+i16 shl from 0: -1
+i16 shl from 3: -1
+i16 shl in place: -1
+i16 shl overlapping: -1
+i16 shr from 0: -1
+i16 shr from 3: -1
+i16 shr in place: -1
+i16 shr overlapping: -1
+i16 shr2 from 0: -1
+i16 shr2 from 3: -1
+i16 shr2 in place: -1
+i16 shr2 overlapping: -1
+u16 add from 0: -1
+u16 add from 3: -1
+u16 add in place: -1
+u16 add overlapping: -1
+u16 sub from 0: -1
+u16 sub from 3: -1
+u16 sub in place: -1
+u16 sub overlapping: -1
+u16 neg from 0: -1
+u16 neg from 3: -1
+u16 neg in place: -1
+u16 neg overlapping: -1
+u16 params from 0: -1
+u16 params from 3: -1
+u16 params in place: -1
+u16 params overlapping: -1
+u16 constant from 0: -1
+u16 constant from 3: -1
+u16 constant in place: -1
+u16 constant overlapping: -1
+u16 mix from 0: -1
+u16 mix from 3: -1
+u16 mix in place: -1
+u16 mix overlapping: -1
+u16 logic from 0: -1
+u16 logic from 3: -1
+u16 logic in place: -1
+u16 logic overlapping: -1
+u16 not from 0: -1
+u16 not from 3: -1
+u16 not in place: -1
+u16 not overlapping: -1
+u16 shl from 0: -1
+u16 shl from 3: -1
+u16 shl in place: -1
+u16 shl overlapping: -1
+u16 shr from 0: -1
+u16 shr from 3: -1
+u16 shr in place: -1
+u16 shr overlapping: -1
+u16 shr2 from 0: -1
+u16 shr2 from 3: -1
+u16 shr2 in place: -1
+u16 shr2 overlapping: -1
+int add from 0: -1
+int add from 3: -1
+int add in place: -1
+int add overlapping: -1
+int sub from 0: -1
+int sub from 3: -1
+int sub in place: -1
+int sub overlapping: -1
+int neg from 0: -1
+int neg from 3: -1
+int neg in place: -1
+int neg overlapping: -1
+int params from 0: -1
+int params from 3: -1
+int params in place: -1
+int params overlapping: -1
+int constant from 0: -1
+int constant from 3: -1
+int constant in place: -1
+int constant overlapping: -1
+int mix from 0: -1
+int mix from 3: -1
+int mix in place: -1
+int mix overlapping: -1
+int logic from 0: -1
+int logic from 3: -1
+int logic in place: -1
+int logic overlapping: -1
+int not from 0: -1
+int not from 3: -1
+int not in place: -1
+int not overlapping: -1
+int shl from 0: -1
+int shl from 3: -1
+int shl in place: -1
+int shl overlapping: -1
+int shr from 0: -1
+int shr from 3: -1
+int shr in place: -1
+int shr overlapping: -1
+int shr2 from 0: -1
+int shr2 from 3: -1
+int shr2 in place: -1
+int shr2 overlapping: -1
+u32 add from 0: -1
+u32 add from 3: -1
+u32 add in place: -1
+u32 add overlapping: -1
+u32 sub from 0: -1
+u32 sub from 3: -1
+u32 sub in place: -1
+u32 sub overlapping: -1
+u32 neg from 0: -1
+u32 neg from 3: -1
+u32 neg in place: -1
+u32 neg overlapping: -1
+u32 params from 0: -1
+u32 params from 3: -1
+u32 params in place: -1
+u32 params overlapping: -1
+u32 constant from 0: -1
+u32 constant from 3: -1
+u32 constant in place: -1
+u32 constant overlapping: -1
+u32 mix from 0: -1
+u32 mix from 3: -1
+u32 mix in place: -1
+u32 mix overlapping: -1
+u32 logic from 0: -1
+u32 logic from 3: -1
+u32 logic in place: -1
+u32 logic overlapping: -1
+u32 not from 0: -1
+u32 not from 3: -1
+u32 not in place: -1
+u32 not overlapping: -1
+u32 shl from 0: -1
+u32 shl from 3: -1
+u32 shl in place: -1
+u32 shl overlapping: -1
+u32 shr from 0: -1
+u32 shr from 3: -1
+u32 shr in place: -1
+u32 shr overlapping: -1
+u32 shr2 from 0: -1
+u32 shr2 from 3: -1
+u32 shr2 in place: -1
+u32 shr2 overlapping: -1
+i64 add from 0: -1
+i64 add from 3: -1
+i64 add in place: -1
+i64 add overlapping: -1
+i64 sub from 0: -1
+i64 sub from 3: -1
+i64 sub in place: -1
+i64 sub overlapping: -1
+i64 neg from 0: -1
+i64 neg from 3: -1
+i64 neg in place: -1
+i64 neg overlapping: -1
+i64 constant from 0: -1
+i64 constant from 3: -1
+i64 constant in place: -1
+i64 constant overlapping: -1
+i64 logic from 0: -1
+i64 logic from 3: -1
+i64 logic in place: -1
+i64 logic overlapping: -1
+i64 not from 0: -1
+i64 not from 3: -1
+i64 not in place: -1
+i64 not overlapping: -1
+i64 shl from 0: -1
+i64 shl from 3: -1
+i64 shl in place: -1
+i64 shl overlapping: -1
+i64 shr from 0: -1
+i64 shr from 3: -1
+i64 shr in place: -1
+i64 shr overlapping: -1
+i64 shr2 from 0: -1
+i64 shr2 from 3: -1
+i64 shr2 in place: -1
+i64 shr2 overlapping: -1
+u64 add from 0: -1
+u64 add from 3: -1
+u64 add in place: -1
+u64 add overlapping: -1
+u64 sub from 0: -1
+u64 sub from 3: -1
+u64 sub in place: -1
+u64 sub overlapping: -1
+u64 neg from 0: -1
+u64 neg from 3: -1
+u64 neg in place: -1
+u64 neg overlapping: -1
+u64 constant from 0: -1
+u64 constant from 3: -1
+u64 constant in place: -1
+u64 constant overlapping: -1
+u64 logic from 0: -1
+u64 logic from 3: -1
+u64 logic in place: -1
+u64 logic overlapping: -1
+u64 not from 0: -1
+u64 not from 3: -1
+u64 not in place: -1
+u64 not overlapping: -1
+u64 shl from 0: -1
+u64 shl from 3: -1
+u64 shl in place: -1
+u64 shl overlapping: -1
+u64 shr from 0: -1
+u64 shr from 3: -1
+u64 shr in place: -1
+u64 shr overlapping: -1
+u64 shr2 from 0: -1
+u64 shr2 from 3: -1
+u64 shr2 in place: -1
+u64 shr2 overlapping: -1
+f32 add from 0: -1
+f32 add from 3: -1
+f32 add in place: -1
+f32 add overlapping: -1
+f32 sub from 0: -1
+f32 sub from 3: -1
+f32 sub in place: -1
+f32 sub overlapping: -1
+f32 neg from 0: -1
+f32 neg from 3: -1
+f32 neg in place: -1
+f32 neg overlapping: -1
+f32 params from 0: -1
+f32 params from 3: -1
+f32 params in place: -1
+f32 params overlapping: -1
+f32 constant from 0: -1
+f32 constant from 3: -1
+f32 constant in place: -1
+f32 constant overlapping: -1
+f32 mix from 0: -1
+f32 mix from 3: -1
+f32 mix in place: -1
+f32 mix overlapping: -1
+f32 div from 0: -1
+f32 div from 3: -1
+f32 div in place: -1
+f32 div overlapping: -1
+f32 scale from 0: -1
+f32 scale from 3: -1
+f32 scale in place: -1
+f32 scale overlapping: -1
+f32 half from 0: -1
+f32 half from 3: -1
+f32 half in place: -1
+f32 half overlapping: -1
+f32 mixed from 0: -1
+f32 mixed from 3: -1
+f32 mixed in place: -1
+f32 mixed overlapping: -1
+f64 add from 0: -1
+f64 add from 3: -1
+f64 add in place: -1
+f64 add overlapping: -1
+f64 sub from 0: -1
+f64 sub from 3: -1
+f64 sub in place: -1
+f64 sub overlapping: -1
+f64 neg from 0: -1
+f64 neg from 3: -1
+f64 neg in place: -1
+f64 neg overlapping: -1
+f64 params from 0: -1
+f64 params from 3: -1
+f64 params in place: -1
+f64 params overlapping: -1
+f64 constant from 0: -1
+f64 constant from 3: -1
+f64 constant in place: -1
+f64 constant overlapping: -1
+f64 mix from 0: -1
+f64 mix from 3: -1
+f64 mix in place: -1
+f64 mix overlapping: -1
+f64 div from 0: -1
+f64 div from 3: -1
+f64 div in place: -1
+f64 div overlapping: -1
+f64 scale from 0: -1
+f64 scale from 3: -1
+f64 scale in place: -1
+f64 scale overlapping: -1
+f64 half from 0: -1
+f64 half from 3: -1
+f64 half in place: -1
+f64 half overlapping: -1
+f64 mixed from 0: -1
+f64 mixed from 3: -1
+f64 mixed in place: -1
+f64 mixed overlapping: -1

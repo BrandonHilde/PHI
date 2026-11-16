@@ -268,6 +268,14 @@ namespace Phi.Compiler.CodeGen.Ir
                                                                                                                          && SimpleLabel(text.Label) && !text.Type.IsArray:
                     Emit(new PrintI { Kind = PrintKind.Text, Label = text.Label, Serial = serial });
                     return;
+                case NameExpr { Symbol: FieldPathSymbol inPlace } when inPlace.Type.IsInlineText && frameStructs.ContainsKey(inPlace.Root):
+                    // (err.message: text kept in a struct in the frame)
+                {
+                    VReg where = fn.NewValue(true);
+                    Emit(new AddrI { Dst = where, Label = FramePlace(inPlace.Root, inPlace.Offset) });
+                    Emit(new PrintI { Kind = PrintKind.Text, Value = where, Serial = serial });
+                    return;
+                }
             }
             Need(Supported(t) && !t.IsObject, $"a log of {A(t)}");
             if (t.IsVec)

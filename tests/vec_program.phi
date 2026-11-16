@@ -13,12 +13,17 @@ phi.VecProgram:Program
 {
 	vec<int> total;
 	vec<f64> steps[3];
+	int table[20];
 
 	call Run;
-	# (catching is the generator's: a vec method's error, caught by a method without one)
-	if call LaneOf: 4 throws err
-		log 'lane 4: ' err.message '\n';
+
+	# the class's own statements: each that uses a vec is made a method of its own
+	vec<f32> speed: 0.5 1.0 1.5 2.0;
+	vec<f32> place;
+	while int step: 0; step < 4; step++;
+		place is place + speed;
 	;;
+	log 'class statements: ' place ' ' (place.Sum) '\n';
 	exit 0;
 
 	# a vec given, a vec given back
@@ -54,6 +59,16 @@ phi.VecProgram:Program
 
 	[Lane: vec<int> v: 0; int i: 0;]
 	[end: v:i]
+
+	# called through a method value too
+	[Doubled: vec<int> v: 0;]
+	[end: v + v]
+
+	[FillPast: int n: 0;]
+		while int i: 0; i < n; i++;
+			table:i is 7;
+		;;
+	[end]
 
 	[LaneOf: int i: 0;]
 		vec<int> v: 10 20 30 40;
@@ -104,6 +119,37 @@ phi.VecProgram:Program
 			sum is sum + lanes:i;
 		;;
 		log 'lanes: ' sum ' ' (Lane: lanes 2) '\n';
+		method<vec<int>: vec<int>> twice: addr Doubled;
+		vec<int> doubled: (twice: lanes);
+		log 'through a method value: ' doubled '\n';
+
+		# an error, caught where a vec is used, with what was being worked out still there
+		vec<int> kept: 5 6 7 8;
+		if call LaneOf: 4 throws err
+			log 'lane 4: ' err.message ' (line ' err.line ')\n';
+		;;
+		if call Lane: kept 1 throws err
+			log 'not caught\n';
+		;;
+		else
+			log 'lane 1: no error, and kept is ' kept '\n';
+		;;
+
+		# each lane in turn, and how many lanes a kind has without a value
+		int odd: 0;
+		while each n in lanes
+			if n is 20
+				continue;
+			;;
+			odd is odd + n;
+		;;
+		log 'each: ' odd ', lanes: ' vec<u8>.len ' ' vec<f64>.len '\n';
+
+		# a loop the optimiser makes vector code of, running past a class array's end: it's
+		# done as written instead, so the error comes where it always did, with what's before it set
+		if call FillPast: 22 throws err
+			log 'fill past: ' err.message ', set: ' table:0 ' ' table:19 '\n';
+		;;
 
 		# f32s on their own: rounded as they're kept
 		f32 third: 1.0 / 3.0;

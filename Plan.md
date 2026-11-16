@@ -3898,8 +3898,8 @@ one word, in the `<...>` form `ptr<T>` and `Map<Key Value>` already have.
   A value, copied whole, 16 bytes, on a multiple of 16 by the one layout rule; a variable,
   field, array element, parameter or result like any number.
 - It's a short array of lanes, so it reads as one: `v:i` is lane `i` (`v:2 is 5.0;`),
-  `v.len` is how many there are. (Not built: `vec<f32>.len` without a value, which would need
-  a type where a value goes; `while each x in v`.) Code steps by `.len`, never by a number, so a wider build runs it
+  `v.len` is how many there are (and `vec<f32>.len` without a value), `while each x in v`
+  goes through them.
   unchanged.
 - Made from one value, every lane that (`vec<f32> s: 2.0;`), from as many as it has
   (`vec<f32> v: 1.0 2.0 3.0 4.0;`, which is an error where it has another number of lanes),
@@ -3982,8 +3982,34 @@ kind of lane, the expected output worked out by tests/support/vec_lanes.py), vec
 VecTests. Found on the way, and fixed: Windows' PHI_CALL changed r12, which the intermediate
 form keeps values in across calls (a heap that grew, debug, ask).
 
-*Next for it:* the optimiser vectorising simple loops by itself; --x86-64-v2; 32-bit code
-(the generator would need vectors, or the intermediate form 32-bit code).
+*Finished (2026-11-15, the user: "lets finish up whats left for vec").*
+- `--x86-64-v2`: pmulld, pmin/pmax of every width, pabs, pcmpgtq and pcmpeqq, packusdw,
+  pmovsx/zx, pextr/pinsr for a lane known when built (pextrw and pinsrw are SSE2's, used
+  always); a CPU without it is told so at the start (cpuid), exit code 1. Not Pick's
+  pblendvb, whose mask is xmm0 in its SSE form (it would take a register from the allocator).
+  Test vec_lanes_v2_program (vec_lanes_program built with it; NAME.build gives a test options).
+- Catching in the intermediate form, for any method: a catch record in the frame (CatchI),
+  the call, the record off again; a throw comes to a block (TryT's Caught) where nothing is in
+  a register (the allocator keeps what's needed there in the frame), and err is a struct in
+  the frame. Method values: called through (call r11 after the arguments, as the generator
+  does), and addr Method.
+- A class's own statements that use a vec: each one made a method of its own, written by the
+  intermediate form, and called where it was.
+- `vec<f32>.len` (parsed as sizeof is, with Lanes), `while each x in v` (made a while, as text's is).
+- Loops made vector code by the optimiser (IrBuilder.Loops.cs), for any 64-bit program: the
+  simple loops of elements at the counter, the same answers (what lanes can't do the same is
+  left as written: >> after +, a shift by a variable, f32s of more than one operation, a
+  64-bit multiply). Checked when it runs: nothing written overlaps anything read but itself,
+  and a class's array holds the range; otherwise the loop as written. PHI_IR_TRACE says what
+  it did with each loop and why not; PHI_VECTORIZE=0 leaves them. 4 million bytes, 20 times
+  (p:i is q:i * 3 + k): 36 ms as written, 5 ms; brightening (vec<u8>, by hand): 217 to 36 ms.
+  Test vec_loops_program: 100 loops each against itself written so it isn't (in an if), every
+  element, from 0 and 3, in place and overlapping.
+
+*Left (the user may want them):* 32-bit programs (the generator would need vectors, or the
+intermediate form 32-bit code: the user wants one compiler); a loop with an if in it (masks),
+or a sum (a float's sum in another order is another answer); 256-bit vectors (AVX2), a build
+option after --x86-64-v2.
 
 **Stack sizes (2026-11-15, the user's choice).** As other languages do it: a thread's size
 where it's made (C#'s `new Thread(work, size)`, Rust's `Builder::stack_size`), and a

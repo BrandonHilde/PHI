@@ -60,6 +60,7 @@ line times weblib's JavaScript engine running its own benchmarks, and
 | `crc` | A table, shifts and exclusive ors |
 | `lists` | Making and freeing 20 million small objects (C# doesn't free: it collects) |
 | `strings` | Building text: a line from words and numbers, added 3 million times to a text that grows to 30,000 characters. C keeps its length beside it and C#'s `StringBuilder` does too; PHI's method remembers it for a `str` of its own |
+| `pixels` | Bytes 16 at a time: an image brightened (stopping at 255) and blended with another, 200 times. PHI says it with `vec<u8>` (`AddSat`, `Average`: SSE2's `paddusb` and `pavgb`); C and C# are plain loops, which gcc makes vector code of as best it can and C# doesn't. 64-bit only, so its PHI 32-bit column is empty |
 
 ## Adding one
 

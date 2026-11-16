@@ -1829,7 +1829,7 @@ namespace Phi.Compiler.Semantics
                         Error(t.Result!.Span, "a method called through a variable returns a str only in 32-bit code (a Kernel or a Program); return a number");
                         return PhiType.Error;
                     }
-                    if (!result.IsNumeric && !result.IsWide && !result.IsFloat && !result.IsString && !result.IsObject && result.Kind != TypeKind.Void)
+                    if (!result.IsNumeric && !result.IsWide && !result.IsFloat && !result.IsString && !result.IsObject && !result.IsVec && result.Kind != TypeKind.Void)
                     {
                         Error(t.Result!.Span, $"a method returns a number, a str or an object, not {A(result)}");
                         return PhiType.Error;
@@ -2617,6 +2617,12 @@ namespace Phi.Compiler.Semantics
                 Error(v.Decl.EachAs.Span, $"`as` after while each is for text (while each c in name as int); this is {A(array.Type)}, whose elements come as they are");
                 return;
             }
+            // a vec's lanes, one at a time
+            if (array.Type.IsVec && !v.Decl.EachFinds)
+            {
+                v.Type = array.Type.Lane!;
+                return;
+            }
             if (!array.Type.IsArray)
             {
                 Error(array.Span, v.Decl.EachFinds ? $"`has ... when` looks through an array for an element, and this is {A(array.Type)}"
@@ -3061,7 +3067,6 @@ namespace Phi.Compiler.Semantics
             for (int i = 0; i < body.Count; i++)
             {
                 body[i] = BindStatement(body[i], scope, classLevel);
-                if (classLevel) CheckNoVecAtClassLevel(body[i]);
             }
         }
 
@@ -3216,6 +3221,12 @@ namespace Phi.Compiler.Semantics
                     if (each.Element.EachOf != null) each.Array = each.Element.EachOf;
                     var element = each.Element.Symbol;
                     var index = each.Index.Symbol;
+                    if (element != null && index != null && !element.Type.IsError && each.Array.Type.IsVec)
+                    {
+                        Stmt vecLoop = BindVecLoop(each, scope);
+                        blockNames.RemoveAt(blockNames.Count - 1);
+                        return vecLoop;
+                    }
                     if (element != null && index != null && !element.Type.IsError && each.Element.EachOfText is string given)
                     {
                         Stmt textLoop = BindTextLoop(each, given, scope);
@@ -5865,8 +5876,6 @@ namespace Phi.Compiler.Semantics
                         addr.CodeLabel = m.Label;
                         addr.Method = m;
                         name.Type = PhiType.Void;
-                        if (m.Parameters.Any(p => p.Type.IsVec) || m.ReturnType.IsVec)
-                            Error(name.Span, $"{m.Name} takes or gives a vec, so it's called by name, not through a method value (yet)");
                         // an interrupt handler ends with iret, so it can't be called like a method
                         if (!m.IsInterruptHandler) addr.Type = PhiType.MethodOf(SignatureOf(m));
                         return;
@@ -5921,6 +5930,11 @@ namespace Phi.Compiler.Semantics
             if (size.TypeName != null)
             {
                 t = ResolveType(size.TypeName, scope, allowStr: true);
+                if (size.Lanes)
+                {
+                    size.Value = t.IsVec ? t.Lanes : 0;
+                    return;
+                }
             }
             else if (size.Operand is NameExpr name && Lookup(name.Name, scope) == null
                      && structs.TryGetValue(name.Name, out StructSymbol? s))

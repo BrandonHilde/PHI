@@ -1,0 +1,3853 @@
+# Made by tests/support/vec_loops.py: loops the optimiser makes vector code of, each against
+# the same loop written so it can't (in an if), on the same numbers, every element compared.
+phi.VecLoopsProgram:Program
+{
+	call Kind_i8;
+	call Kind_u8;
+	call Kind_i16;
+	call Kind_u16;
+	call Kind_int;
+	call Kind_u32;
+	call Kind_i64;
+	call Kind_u64;
+	call Kind_f32;
+	call Kind_f64;
+	exit 0;
+
+	[V_i8_add: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_i8_add: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_i8_sub: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_i8_sub: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_i8_neg: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_i8_neg: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_i8_params: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_i8_params: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_i8_constant: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_i8_constant: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_i8_mix: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_i8_mix: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_i8_logic: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_i8_logic: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_i8_not: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_i8_not: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_i8_shl: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_i8_shl: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_i8_shr: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_i8_shr: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_i8_shr2: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_i8_shr2: ptr<i8> p: 0; ptr<i8> q: 0; ptr<i8> r: 0; int start: 0; int n: 0; i8 k: 3; i8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_i8: ptr<i8> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is (x >> 7) as i8;
+		;;
+	[end]
+
+	[Same_i8: ptr<i8> a: 0; ptr<i8> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_i8:]
+		int n: 37;
+		ptr<i8> q: new i8[64];
+		ptr<i8> r: new i8[64];
+		ptr<i8> a: new i8[64];
+		ptr<i8> b: new i8[64];
+		call Fill_i8: q 64 1;
+		call Fill_i8: r 64 2;
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_add: a q r 0 n;
+		call S_i8_add: b q r 0 n;
+		log 'i8 add from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_add: a q r 3 n;
+		call S_i8_add: b q r 3 n;
+		log 'i8 add from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_add: a a r 0 n;
+		call S_i8_add: b b r 0 n;
+		log 'i8 add in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_add: a + sizeof i8 a r 0 n;
+		call S_i8_add: b + sizeof i8 b r 0 n;
+		log 'i8 add overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_sub: a q r 0 n;
+		call S_i8_sub: b q r 0 n;
+		log 'i8 sub from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_sub: a q r 3 n;
+		call S_i8_sub: b q r 3 n;
+		log 'i8 sub from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_sub: a a r 0 n;
+		call S_i8_sub: b b r 0 n;
+		log 'i8 sub in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_sub: a + sizeof i8 a r 0 n;
+		call S_i8_sub: b + sizeof i8 b r 0 n;
+		log 'i8 sub overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_neg: a q r 0 n;
+		call S_i8_neg: b q r 0 n;
+		log 'i8 neg from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_neg: a q r 3 n;
+		call S_i8_neg: b q r 3 n;
+		log 'i8 neg from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_neg: a a r 0 n;
+		call S_i8_neg: b b r 0 n;
+		log 'i8 neg in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_neg: a + sizeof i8 a r 0 n;
+		call S_i8_neg: b + sizeof i8 b r 0 n;
+		log 'i8 neg overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_params: a q r 0 n;
+		call S_i8_params: b q r 0 n;
+		log 'i8 params from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_params: a q r 3 n;
+		call S_i8_params: b q r 3 n;
+		log 'i8 params from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_params: a a r 0 n;
+		call S_i8_params: b b r 0 n;
+		log 'i8 params in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_params: a + sizeof i8 a r 0 n;
+		call S_i8_params: b + sizeof i8 b r 0 n;
+		log 'i8 params overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_constant: a q r 0 n;
+		call S_i8_constant: b q r 0 n;
+		log 'i8 constant from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_constant: a q r 3 n;
+		call S_i8_constant: b q r 3 n;
+		log 'i8 constant from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_constant: a a r 0 n;
+		call S_i8_constant: b b r 0 n;
+		log 'i8 constant in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_constant: a + sizeof i8 a r 0 n;
+		call S_i8_constant: b + sizeof i8 b r 0 n;
+		log 'i8 constant overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_mix: a q r 0 n;
+		call S_i8_mix: b q r 0 n;
+		log 'i8 mix from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_mix: a q r 3 n;
+		call S_i8_mix: b q r 3 n;
+		log 'i8 mix from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_mix: a a r 0 n;
+		call S_i8_mix: b b r 0 n;
+		log 'i8 mix in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_mix: a + sizeof i8 a r 0 n;
+		call S_i8_mix: b + sizeof i8 b r 0 n;
+		log 'i8 mix overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_logic: a q r 0 n;
+		call S_i8_logic: b q r 0 n;
+		log 'i8 logic from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_logic: a q r 3 n;
+		call S_i8_logic: b q r 3 n;
+		log 'i8 logic from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_logic: a a r 0 n;
+		call S_i8_logic: b b r 0 n;
+		log 'i8 logic in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_logic: a + sizeof i8 a r 0 n;
+		call S_i8_logic: b + sizeof i8 b r 0 n;
+		log 'i8 logic overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_not: a q r 0 n;
+		call S_i8_not: b q r 0 n;
+		log 'i8 not from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_not: a q r 3 n;
+		call S_i8_not: b q r 3 n;
+		log 'i8 not from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_not: a a r 0 n;
+		call S_i8_not: b b r 0 n;
+		log 'i8 not in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_not: a + sizeof i8 a r 0 n;
+		call S_i8_not: b + sizeof i8 b r 0 n;
+		log 'i8 not overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_shl: a q r 0 n;
+		call S_i8_shl: b q r 0 n;
+		log 'i8 shl from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_shl: a q r 3 n;
+		call S_i8_shl: b q r 3 n;
+		log 'i8 shl from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_shl: a a r 0 n;
+		call S_i8_shl: b b r 0 n;
+		log 'i8 shl in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_shl: a + sizeof i8 a r 0 n;
+		call S_i8_shl: b + sizeof i8 b r 0 n;
+		log 'i8 shl overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_shr: a q r 0 n;
+		call S_i8_shr: b q r 0 n;
+		log 'i8 shr from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_shr: a q r 3 n;
+		call S_i8_shr: b q r 3 n;
+		log 'i8 shr from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_shr: a a r 0 n;
+		call S_i8_shr: b b r 0 n;
+		log 'i8 shr in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_shr: a + sizeof i8 a r 0 n;
+		call S_i8_shr: b + sizeof i8 b r 0 n;
+		log 'i8 shr overlapping: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_shr2: a q r 0 n;
+		call S_i8_shr2: b q r 0 n;
+		log 'i8 shr2 from 0: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 3;
+		call Fill_i8: b 64 3;
+		call V_i8_shr2: a q r 3 n;
+		call S_i8_shr2: b q r 3 n;
+		log 'i8 shr2 from 3: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 4;
+		call Fill_i8: b 64 4;
+		call V_i8_shr2: a a r 0 n;
+		call S_i8_shr2: b b r 0 n;
+		log 'i8 shr2 in place: ' (Same_i8: a b 64) '\n';
+		call Fill_i8: a 64 5;
+		call Fill_i8: b 64 5;
+		call V_i8_shr2: a + sizeof i8 a r 0 n;
+		call S_i8_shr2: b + sizeof i8 b r 0 n;
+		log 'i8 shr2 overlapping: ' (Same_i8: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_u8_add: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_u8_add: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u8_sub: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_u8_sub: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_u8_neg: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_u8_neg: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u8_params: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_u8_params: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_u8_constant: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_u8_constant: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_u8_mix: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_u8_mix: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_u8_logic: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_u8_logic: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_u8_not: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_u8_not: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_u8_shl: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_u8_shl: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_u8_shr: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_u8_shr: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_u8_shr2: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_u8_shr2: ptr<u8> p: 0; ptr<u8> q: 0; ptr<u8> r: 0; int start: 0; int n: 0; u8 k: 3; u8 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_u8: ptr<u8> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is (x >> 7) as u8;
+		;;
+	[end]
+
+	[Same_u8: ptr<u8> a: 0; ptr<u8> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_u8:]
+		int n: 37;
+		ptr<u8> q: new u8[64];
+		ptr<u8> r: new u8[64];
+		ptr<u8> a: new u8[64];
+		ptr<u8> b: new u8[64];
+		call Fill_u8: q 64 1;
+		call Fill_u8: r 64 2;
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_add: a q r 0 n;
+		call S_u8_add: b q r 0 n;
+		log 'u8 add from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_add: a q r 3 n;
+		call S_u8_add: b q r 3 n;
+		log 'u8 add from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_add: a a r 0 n;
+		call S_u8_add: b b r 0 n;
+		log 'u8 add in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_add: a + sizeof u8 a r 0 n;
+		call S_u8_add: b + sizeof u8 b r 0 n;
+		log 'u8 add overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_sub: a q r 0 n;
+		call S_u8_sub: b q r 0 n;
+		log 'u8 sub from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_sub: a q r 3 n;
+		call S_u8_sub: b q r 3 n;
+		log 'u8 sub from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_sub: a a r 0 n;
+		call S_u8_sub: b b r 0 n;
+		log 'u8 sub in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_sub: a + sizeof u8 a r 0 n;
+		call S_u8_sub: b + sizeof u8 b r 0 n;
+		log 'u8 sub overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_neg: a q r 0 n;
+		call S_u8_neg: b q r 0 n;
+		log 'u8 neg from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_neg: a q r 3 n;
+		call S_u8_neg: b q r 3 n;
+		log 'u8 neg from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_neg: a a r 0 n;
+		call S_u8_neg: b b r 0 n;
+		log 'u8 neg in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_neg: a + sizeof u8 a r 0 n;
+		call S_u8_neg: b + sizeof u8 b r 0 n;
+		log 'u8 neg overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_params: a q r 0 n;
+		call S_u8_params: b q r 0 n;
+		log 'u8 params from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_params: a q r 3 n;
+		call S_u8_params: b q r 3 n;
+		log 'u8 params from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_params: a a r 0 n;
+		call S_u8_params: b b r 0 n;
+		log 'u8 params in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_params: a + sizeof u8 a r 0 n;
+		call S_u8_params: b + sizeof u8 b r 0 n;
+		log 'u8 params overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_constant: a q r 0 n;
+		call S_u8_constant: b q r 0 n;
+		log 'u8 constant from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_constant: a q r 3 n;
+		call S_u8_constant: b q r 3 n;
+		log 'u8 constant from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_constant: a a r 0 n;
+		call S_u8_constant: b b r 0 n;
+		log 'u8 constant in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_constant: a + sizeof u8 a r 0 n;
+		call S_u8_constant: b + sizeof u8 b r 0 n;
+		log 'u8 constant overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_mix: a q r 0 n;
+		call S_u8_mix: b q r 0 n;
+		log 'u8 mix from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_mix: a q r 3 n;
+		call S_u8_mix: b q r 3 n;
+		log 'u8 mix from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_mix: a a r 0 n;
+		call S_u8_mix: b b r 0 n;
+		log 'u8 mix in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_mix: a + sizeof u8 a r 0 n;
+		call S_u8_mix: b + sizeof u8 b r 0 n;
+		log 'u8 mix overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_logic: a q r 0 n;
+		call S_u8_logic: b q r 0 n;
+		log 'u8 logic from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_logic: a q r 3 n;
+		call S_u8_logic: b q r 3 n;
+		log 'u8 logic from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_logic: a a r 0 n;
+		call S_u8_logic: b b r 0 n;
+		log 'u8 logic in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_logic: a + sizeof u8 a r 0 n;
+		call S_u8_logic: b + sizeof u8 b r 0 n;
+		log 'u8 logic overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_not: a q r 0 n;
+		call S_u8_not: b q r 0 n;
+		log 'u8 not from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_not: a q r 3 n;
+		call S_u8_not: b q r 3 n;
+		log 'u8 not from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_not: a a r 0 n;
+		call S_u8_not: b b r 0 n;
+		log 'u8 not in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_not: a + sizeof u8 a r 0 n;
+		call S_u8_not: b + sizeof u8 b r 0 n;
+		log 'u8 not overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_shl: a q r 0 n;
+		call S_u8_shl: b q r 0 n;
+		log 'u8 shl from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_shl: a q r 3 n;
+		call S_u8_shl: b q r 3 n;
+		log 'u8 shl from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_shl: a a r 0 n;
+		call S_u8_shl: b b r 0 n;
+		log 'u8 shl in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_shl: a + sizeof u8 a r 0 n;
+		call S_u8_shl: b + sizeof u8 b r 0 n;
+		log 'u8 shl overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_shr: a q r 0 n;
+		call S_u8_shr: b q r 0 n;
+		log 'u8 shr from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_shr: a q r 3 n;
+		call S_u8_shr: b q r 3 n;
+		log 'u8 shr from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_shr: a a r 0 n;
+		call S_u8_shr: b b r 0 n;
+		log 'u8 shr in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_shr: a + sizeof u8 a r 0 n;
+		call S_u8_shr: b + sizeof u8 b r 0 n;
+		log 'u8 shr overlapping: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_shr2: a q r 0 n;
+		call S_u8_shr2: b q r 0 n;
+		log 'u8 shr2 from 0: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 3;
+		call Fill_u8: b 64 3;
+		call V_u8_shr2: a q r 3 n;
+		call S_u8_shr2: b q r 3 n;
+		log 'u8 shr2 from 3: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 4;
+		call Fill_u8: b 64 4;
+		call V_u8_shr2: a a r 0 n;
+		call S_u8_shr2: b b r 0 n;
+		log 'u8 shr2 in place: ' (Same_u8: a b 64) '\n';
+		call Fill_u8: a 64 5;
+		call Fill_u8: b 64 5;
+		call V_u8_shr2: a + sizeof u8 a r 0 n;
+		call S_u8_shr2: b + sizeof u8 b r 0 n;
+		log 'u8 shr2 overlapping: ' (Same_u8: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_i16_add: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_i16_add: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_i16_sub: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_i16_sub: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_i16_neg: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_i16_neg: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_i16_params: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_i16_params: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_i16_constant: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_i16_constant: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_i16_mix: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_i16_mix: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_i16_logic: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_i16_logic: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_i16_not: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_i16_not: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_i16_shl: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_i16_shl: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_i16_shr: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_i16_shr: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_i16_shr2: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_i16_shr2: ptr<i16> p: 0; ptr<i16> q: 0; ptr<i16> r: 0; int start: 0; int n: 0; i16 k: 3; i16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_i16: ptr<i16> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is (x >> 7) as i16;
+		;;
+	[end]
+
+	[Same_i16: ptr<i16> a: 0; ptr<i16> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_i16:]
+		int n: 37;
+		ptr<i16> q: new i16[64];
+		ptr<i16> r: new i16[64];
+		ptr<i16> a: new i16[64];
+		ptr<i16> b: new i16[64];
+		call Fill_i16: q 64 1;
+		call Fill_i16: r 64 2;
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_add: a q r 0 n;
+		call S_i16_add: b q r 0 n;
+		log 'i16 add from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_add: a q r 3 n;
+		call S_i16_add: b q r 3 n;
+		log 'i16 add from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_add: a a r 0 n;
+		call S_i16_add: b b r 0 n;
+		log 'i16 add in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_add: a + sizeof i16 a r 0 n;
+		call S_i16_add: b + sizeof i16 b r 0 n;
+		log 'i16 add overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_sub: a q r 0 n;
+		call S_i16_sub: b q r 0 n;
+		log 'i16 sub from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_sub: a q r 3 n;
+		call S_i16_sub: b q r 3 n;
+		log 'i16 sub from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_sub: a a r 0 n;
+		call S_i16_sub: b b r 0 n;
+		log 'i16 sub in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_sub: a + sizeof i16 a r 0 n;
+		call S_i16_sub: b + sizeof i16 b r 0 n;
+		log 'i16 sub overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_neg: a q r 0 n;
+		call S_i16_neg: b q r 0 n;
+		log 'i16 neg from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_neg: a q r 3 n;
+		call S_i16_neg: b q r 3 n;
+		log 'i16 neg from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_neg: a a r 0 n;
+		call S_i16_neg: b b r 0 n;
+		log 'i16 neg in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_neg: a + sizeof i16 a r 0 n;
+		call S_i16_neg: b + sizeof i16 b r 0 n;
+		log 'i16 neg overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_params: a q r 0 n;
+		call S_i16_params: b q r 0 n;
+		log 'i16 params from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_params: a q r 3 n;
+		call S_i16_params: b q r 3 n;
+		log 'i16 params from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_params: a a r 0 n;
+		call S_i16_params: b b r 0 n;
+		log 'i16 params in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_params: a + sizeof i16 a r 0 n;
+		call S_i16_params: b + sizeof i16 b r 0 n;
+		log 'i16 params overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_constant: a q r 0 n;
+		call S_i16_constant: b q r 0 n;
+		log 'i16 constant from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_constant: a q r 3 n;
+		call S_i16_constant: b q r 3 n;
+		log 'i16 constant from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_constant: a a r 0 n;
+		call S_i16_constant: b b r 0 n;
+		log 'i16 constant in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_constant: a + sizeof i16 a r 0 n;
+		call S_i16_constant: b + sizeof i16 b r 0 n;
+		log 'i16 constant overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_mix: a q r 0 n;
+		call S_i16_mix: b q r 0 n;
+		log 'i16 mix from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_mix: a q r 3 n;
+		call S_i16_mix: b q r 3 n;
+		log 'i16 mix from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_mix: a a r 0 n;
+		call S_i16_mix: b b r 0 n;
+		log 'i16 mix in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_mix: a + sizeof i16 a r 0 n;
+		call S_i16_mix: b + sizeof i16 b r 0 n;
+		log 'i16 mix overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_logic: a q r 0 n;
+		call S_i16_logic: b q r 0 n;
+		log 'i16 logic from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_logic: a q r 3 n;
+		call S_i16_logic: b q r 3 n;
+		log 'i16 logic from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_logic: a a r 0 n;
+		call S_i16_logic: b b r 0 n;
+		log 'i16 logic in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_logic: a + sizeof i16 a r 0 n;
+		call S_i16_logic: b + sizeof i16 b r 0 n;
+		log 'i16 logic overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_not: a q r 0 n;
+		call S_i16_not: b q r 0 n;
+		log 'i16 not from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_not: a q r 3 n;
+		call S_i16_not: b q r 3 n;
+		log 'i16 not from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_not: a a r 0 n;
+		call S_i16_not: b b r 0 n;
+		log 'i16 not in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_not: a + sizeof i16 a r 0 n;
+		call S_i16_not: b + sizeof i16 b r 0 n;
+		log 'i16 not overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_shl: a q r 0 n;
+		call S_i16_shl: b q r 0 n;
+		log 'i16 shl from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_shl: a q r 3 n;
+		call S_i16_shl: b q r 3 n;
+		log 'i16 shl from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_shl: a a r 0 n;
+		call S_i16_shl: b b r 0 n;
+		log 'i16 shl in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_shl: a + sizeof i16 a r 0 n;
+		call S_i16_shl: b + sizeof i16 b r 0 n;
+		log 'i16 shl overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_shr: a q r 0 n;
+		call S_i16_shr: b q r 0 n;
+		log 'i16 shr from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_shr: a q r 3 n;
+		call S_i16_shr: b q r 3 n;
+		log 'i16 shr from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_shr: a a r 0 n;
+		call S_i16_shr: b b r 0 n;
+		log 'i16 shr in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_shr: a + sizeof i16 a r 0 n;
+		call S_i16_shr: b + sizeof i16 b r 0 n;
+		log 'i16 shr overlapping: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_shr2: a q r 0 n;
+		call S_i16_shr2: b q r 0 n;
+		log 'i16 shr2 from 0: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 3;
+		call Fill_i16: b 64 3;
+		call V_i16_shr2: a q r 3 n;
+		call S_i16_shr2: b q r 3 n;
+		log 'i16 shr2 from 3: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 4;
+		call Fill_i16: b 64 4;
+		call V_i16_shr2: a a r 0 n;
+		call S_i16_shr2: b b r 0 n;
+		log 'i16 shr2 in place: ' (Same_i16: a b 64) '\n';
+		call Fill_i16: a 64 5;
+		call Fill_i16: b 64 5;
+		call V_i16_shr2: a + sizeof i16 a r 0 n;
+		call S_i16_shr2: b + sizeof i16 b r 0 n;
+		log 'i16 shr2 overlapping: ' (Same_i16: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_u16_add: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_u16_add: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u16_sub: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_u16_sub: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_u16_neg: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_u16_neg: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u16_params: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_u16_params: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_u16_constant: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_u16_constant: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_u16_mix: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_u16_mix: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_u16_logic: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_u16_logic: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_u16_not: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_u16_not: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_u16_shl: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_u16_shl: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_u16_shr: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_u16_shr: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_u16_shr2: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_u16_shr2: ptr<u16> p: 0; ptr<u16> q: 0; ptr<u16> r: 0; int start: 0; int n: 0; u16 k: 3; u16 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_u16: ptr<u16> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is (x >> 7) as u16;
+		;;
+	[end]
+
+	[Same_u16: ptr<u16> a: 0; ptr<u16> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_u16:]
+		int n: 37;
+		ptr<u16> q: new u16[64];
+		ptr<u16> r: new u16[64];
+		ptr<u16> a: new u16[64];
+		ptr<u16> b: new u16[64];
+		call Fill_u16: q 64 1;
+		call Fill_u16: r 64 2;
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_add: a q r 0 n;
+		call S_u16_add: b q r 0 n;
+		log 'u16 add from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_add: a q r 3 n;
+		call S_u16_add: b q r 3 n;
+		log 'u16 add from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_add: a a r 0 n;
+		call S_u16_add: b b r 0 n;
+		log 'u16 add in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_add: a + sizeof u16 a r 0 n;
+		call S_u16_add: b + sizeof u16 b r 0 n;
+		log 'u16 add overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_sub: a q r 0 n;
+		call S_u16_sub: b q r 0 n;
+		log 'u16 sub from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_sub: a q r 3 n;
+		call S_u16_sub: b q r 3 n;
+		log 'u16 sub from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_sub: a a r 0 n;
+		call S_u16_sub: b b r 0 n;
+		log 'u16 sub in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_sub: a + sizeof u16 a r 0 n;
+		call S_u16_sub: b + sizeof u16 b r 0 n;
+		log 'u16 sub overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_neg: a q r 0 n;
+		call S_u16_neg: b q r 0 n;
+		log 'u16 neg from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_neg: a q r 3 n;
+		call S_u16_neg: b q r 3 n;
+		log 'u16 neg from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_neg: a a r 0 n;
+		call S_u16_neg: b b r 0 n;
+		log 'u16 neg in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_neg: a + sizeof u16 a r 0 n;
+		call S_u16_neg: b + sizeof u16 b r 0 n;
+		log 'u16 neg overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_params: a q r 0 n;
+		call S_u16_params: b q r 0 n;
+		log 'u16 params from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_params: a q r 3 n;
+		call S_u16_params: b q r 3 n;
+		log 'u16 params from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_params: a a r 0 n;
+		call S_u16_params: b b r 0 n;
+		log 'u16 params in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_params: a + sizeof u16 a r 0 n;
+		call S_u16_params: b + sizeof u16 b r 0 n;
+		log 'u16 params overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_constant: a q r 0 n;
+		call S_u16_constant: b q r 0 n;
+		log 'u16 constant from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_constant: a q r 3 n;
+		call S_u16_constant: b q r 3 n;
+		log 'u16 constant from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_constant: a a r 0 n;
+		call S_u16_constant: b b r 0 n;
+		log 'u16 constant in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_constant: a + sizeof u16 a r 0 n;
+		call S_u16_constant: b + sizeof u16 b r 0 n;
+		log 'u16 constant overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_mix: a q r 0 n;
+		call S_u16_mix: b q r 0 n;
+		log 'u16 mix from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_mix: a q r 3 n;
+		call S_u16_mix: b q r 3 n;
+		log 'u16 mix from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_mix: a a r 0 n;
+		call S_u16_mix: b b r 0 n;
+		log 'u16 mix in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_mix: a + sizeof u16 a r 0 n;
+		call S_u16_mix: b + sizeof u16 b r 0 n;
+		log 'u16 mix overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_logic: a q r 0 n;
+		call S_u16_logic: b q r 0 n;
+		log 'u16 logic from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_logic: a q r 3 n;
+		call S_u16_logic: b q r 3 n;
+		log 'u16 logic from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_logic: a a r 0 n;
+		call S_u16_logic: b b r 0 n;
+		log 'u16 logic in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_logic: a + sizeof u16 a r 0 n;
+		call S_u16_logic: b + sizeof u16 b r 0 n;
+		log 'u16 logic overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_not: a q r 0 n;
+		call S_u16_not: b q r 0 n;
+		log 'u16 not from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_not: a q r 3 n;
+		call S_u16_not: b q r 3 n;
+		log 'u16 not from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_not: a a r 0 n;
+		call S_u16_not: b b r 0 n;
+		log 'u16 not in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_not: a + sizeof u16 a r 0 n;
+		call S_u16_not: b + sizeof u16 b r 0 n;
+		log 'u16 not overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_shl: a q r 0 n;
+		call S_u16_shl: b q r 0 n;
+		log 'u16 shl from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_shl: a q r 3 n;
+		call S_u16_shl: b q r 3 n;
+		log 'u16 shl from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_shl: a a r 0 n;
+		call S_u16_shl: b b r 0 n;
+		log 'u16 shl in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_shl: a + sizeof u16 a r 0 n;
+		call S_u16_shl: b + sizeof u16 b r 0 n;
+		log 'u16 shl overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_shr: a q r 0 n;
+		call S_u16_shr: b q r 0 n;
+		log 'u16 shr from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_shr: a q r 3 n;
+		call S_u16_shr: b q r 3 n;
+		log 'u16 shr from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_shr: a a r 0 n;
+		call S_u16_shr: b b r 0 n;
+		log 'u16 shr in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_shr: a + sizeof u16 a r 0 n;
+		call S_u16_shr: b + sizeof u16 b r 0 n;
+		log 'u16 shr overlapping: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_shr2: a q r 0 n;
+		call S_u16_shr2: b q r 0 n;
+		log 'u16 shr2 from 0: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 3;
+		call Fill_u16: b 64 3;
+		call V_u16_shr2: a q r 3 n;
+		call S_u16_shr2: b q r 3 n;
+		log 'u16 shr2 from 3: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 4;
+		call Fill_u16: b 64 4;
+		call V_u16_shr2: a a r 0 n;
+		call S_u16_shr2: b b r 0 n;
+		log 'u16 shr2 in place: ' (Same_u16: a b 64) '\n';
+		call Fill_u16: a 64 5;
+		call Fill_u16: b 64 5;
+		call V_u16_shr2: a + sizeof u16 a r 0 n;
+		call S_u16_shr2: b + sizeof u16 b r 0 n;
+		log 'u16 shr2 overlapping: ' (Same_u16: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_int_add: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_int_add: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_int_sub: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_int_sub: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_int_neg: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_int_neg: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_int_params: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_int_params: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_int_constant: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_int_constant: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_int_mix: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_int_mix: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_int_logic: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_int_logic: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_int_not: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_int_not: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_int_shl: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_int_shl: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_int_shr: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_int_shr: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_int_shr2: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_int_shr2: ptr<int> p: 0; ptr<int> q: 0; ptr<int> r: 0; int start: 0; int n: 0; int k: 3; int c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_int: ptr<int> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is (x >> 7) as int;
+		;;
+	[end]
+
+	[Same_int: ptr<int> a: 0; ptr<int> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_int:]
+		int n: 37;
+		ptr<int> q: new int[64];
+		ptr<int> r: new int[64];
+		ptr<int> a: new int[64];
+		ptr<int> b: new int[64];
+		call Fill_int: q 64 1;
+		call Fill_int: r 64 2;
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_add: a q r 0 n;
+		call S_int_add: b q r 0 n;
+		log 'int add from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_add: a q r 3 n;
+		call S_int_add: b q r 3 n;
+		log 'int add from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_add: a a r 0 n;
+		call S_int_add: b b r 0 n;
+		log 'int add in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_add: a + sizeof int a r 0 n;
+		call S_int_add: b + sizeof int b r 0 n;
+		log 'int add overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_sub: a q r 0 n;
+		call S_int_sub: b q r 0 n;
+		log 'int sub from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_sub: a q r 3 n;
+		call S_int_sub: b q r 3 n;
+		log 'int sub from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_sub: a a r 0 n;
+		call S_int_sub: b b r 0 n;
+		log 'int sub in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_sub: a + sizeof int a r 0 n;
+		call S_int_sub: b + sizeof int b r 0 n;
+		log 'int sub overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_neg: a q r 0 n;
+		call S_int_neg: b q r 0 n;
+		log 'int neg from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_neg: a q r 3 n;
+		call S_int_neg: b q r 3 n;
+		log 'int neg from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_neg: a a r 0 n;
+		call S_int_neg: b b r 0 n;
+		log 'int neg in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_neg: a + sizeof int a r 0 n;
+		call S_int_neg: b + sizeof int b r 0 n;
+		log 'int neg overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_params: a q r 0 n;
+		call S_int_params: b q r 0 n;
+		log 'int params from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_params: a q r 3 n;
+		call S_int_params: b q r 3 n;
+		log 'int params from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_params: a a r 0 n;
+		call S_int_params: b b r 0 n;
+		log 'int params in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_params: a + sizeof int a r 0 n;
+		call S_int_params: b + sizeof int b r 0 n;
+		log 'int params overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_constant: a q r 0 n;
+		call S_int_constant: b q r 0 n;
+		log 'int constant from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_constant: a q r 3 n;
+		call S_int_constant: b q r 3 n;
+		log 'int constant from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_constant: a a r 0 n;
+		call S_int_constant: b b r 0 n;
+		log 'int constant in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_constant: a + sizeof int a r 0 n;
+		call S_int_constant: b + sizeof int b r 0 n;
+		log 'int constant overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_mix: a q r 0 n;
+		call S_int_mix: b q r 0 n;
+		log 'int mix from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_mix: a q r 3 n;
+		call S_int_mix: b q r 3 n;
+		log 'int mix from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_mix: a a r 0 n;
+		call S_int_mix: b b r 0 n;
+		log 'int mix in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_mix: a + sizeof int a r 0 n;
+		call S_int_mix: b + sizeof int b r 0 n;
+		log 'int mix overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_logic: a q r 0 n;
+		call S_int_logic: b q r 0 n;
+		log 'int logic from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_logic: a q r 3 n;
+		call S_int_logic: b q r 3 n;
+		log 'int logic from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_logic: a a r 0 n;
+		call S_int_logic: b b r 0 n;
+		log 'int logic in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_logic: a + sizeof int a r 0 n;
+		call S_int_logic: b + sizeof int b r 0 n;
+		log 'int logic overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_not: a q r 0 n;
+		call S_int_not: b q r 0 n;
+		log 'int not from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_not: a q r 3 n;
+		call S_int_not: b q r 3 n;
+		log 'int not from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_not: a a r 0 n;
+		call S_int_not: b b r 0 n;
+		log 'int not in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_not: a + sizeof int a r 0 n;
+		call S_int_not: b + sizeof int b r 0 n;
+		log 'int not overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_shl: a q r 0 n;
+		call S_int_shl: b q r 0 n;
+		log 'int shl from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_shl: a q r 3 n;
+		call S_int_shl: b q r 3 n;
+		log 'int shl from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_shl: a a r 0 n;
+		call S_int_shl: b b r 0 n;
+		log 'int shl in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_shl: a + sizeof int a r 0 n;
+		call S_int_shl: b + sizeof int b r 0 n;
+		log 'int shl overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_shr: a q r 0 n;
+		call S_int_shr: b q r 0 n;
+		log 'int shr from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_shr: a q r 3 n;
+		call S_int_shr: b q r 3 n;
+		log 'int shr from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_shr: a a r 0 n;
+		call S_int_shr: b b r 0 n;
+		log 'int shr in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_shr: a + sizeof int a r 0 n;
+		call S_int_shr: b + sizeof int b r 0 n;
+		log 'int shr overlapping: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_shr2: a q r 0 n;
+		call S_int_shr2: b q r 0 n;
+		log 'int shr2 from 0: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 3;
+		call Fill_int: b 64 3;
+		call V_int_shr2: a q r 3 n;
+		call S_int_shr2: b q r 3 n;
+		log 'int shr2 from 3: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 4;
+		call Fill_int: b 64 4;
+		call V_int_shr2: a a r 0 n;
+		call S_int_shr2: b b r 0 n;
+		log 'int shr2 in place: ' (Same_int: a b 64) '\n';
+		call Fill_int: a 64 5;
+		call Fill_int: b 64 5;
+		call V_int_shr2: a + sizeof int a r 0 n;
+		call S_int_shr2: b + sizeof int b r 0 n;
+		log 'int shr2 overlapping: ' (Same_int: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_u32_add: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_u32_add: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u32_sub: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_u32_sub: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_u32_neg: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_u32_neg: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u32_params: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_u32_params: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_u32_constant: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_u32_constant: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_u32_mix: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_u32_mix: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_u32_logic: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_u32_logic: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_u32_not: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_u32_not: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_u32_shl: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_u32_shl: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_u32_shr: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_u32_shr: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_u32_shr2: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_u32_shr2: ptr<u32> p: 0; ptr<u32> q: 0; ptr<u32> r: 0; int start: 0; int n: 0; u32 k: 3; u32 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_u32: ptr<u32> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is (x >> 7) as u32;
+		;;
+	[end]
+
+	[Same_u32: ptr<u32> a: 0; ptr<u32> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_u32:]
+		int n: 37;
+		ptr<u32> q: new u32[64];
+		ptr<u32> r: new u32[64];
+		ptr<u32> a: new u32[64];
+		ptr<u32> b: new u32[64];
+		call Fill_u32: q 64 1;
+		call Fill_u32: r 64 2;
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_add: a q r 0 n;
+		call S_u32_add: b q r 0 n;
+		log 'u32 add from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_add: a q r 3 n;
+		call S_u32_add: b q r 3 n;
+		log 'u32 add from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_add: a a r 0 n;
+		call S_u32_add: b b r 0 n;
+		log 'u32 add in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_add: a + sizeof u32 a r 0 n;
+		call S_u32_add: b + sizeof u32 b r 0 n;
+		log 'u32 add overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_sub: a q r 0 n;
+		call S_u32_sub: b q r 0 n;
+		log 'u32 sub from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_sub: a q r 3 n;
+		call S_u32_sub: b q r 3 n;
+		log 'u32 sub from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_sub: a a r 0 n;
+		call S_u32_sub: b b r 0 n;
+		log 'u32 sub in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_sub: a + sizeof u32 a r 0 n;
+		call S_u32_sub: b + sizeof u32 b r 0 n;
+		log 'u32 sub overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_neg: a q r 0 n;
+		call S_u32_neg: b q r 0 n;
+		log 'u32 neg from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_neg: a q r 3 n;
+		call S_u32_neg: b q r 3 n;
+		log 'u32 neg from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_neg: a a r 0 n;
+		call S_u32_neg: b b r 0 n;
+		log 'u32 neg in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_neg: a + sizeof u32 a r 0 n;
+		call S_u32_neg: b + sizeof u32 b r 0 n;
+		log 'u32 neg overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_params: a q r 0 n;
+		call S_u32_params: b q r 0 n;
+		log 'u32 params from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_params: a q r 3 n;
+		call S_u32_params: b q r 3 n;
+		log 'u32 params from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_params: a a r 0 n;
+		call S_u32_params: b b r 0 n;
+		log 'u32 params in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_params: a + sizeof u32 a r 0 n;
+		call S_u32_params: b + sizeof u32 b r 0 n;
+		log 'u32 params overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_constant: a q r 0 n;
+		call S_u32_constant: b q r 0 n;
+		log 'u32 constant from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_constant: a q r 3 n;
+		call S_u32_constant: b q r 3 n;
+		log 'u32 constant from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_constant: a a r 0 n;
+		call S_u32_constant: b b r 0 n;
+		log 'u32 constant in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_constant: a + sizeof u32 a r 0 n;
+		call S_u32_constant: b + sizeof u32 b r 0 n;
+		log 'u32 constant overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_mix: a q r 0 n;
+		call S_u32_mix: b q r 0 n;
+		log 'u32 mix from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_mix: a q r 3 n;
+		call S_u32_mix: b q r 3 n;
+		log 'u32 mix from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_mix: a a r 0 n;
+		call S_u32_mix: b b r 0 n;
+		log 'u32 mix in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_mix: a + sizeof u32 a r 0 n;
+		call S_u32_mix: b + sizeof u32 b r 0 n;
+		log 'u32 mix overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_logic: a q r 0 n;
+		call S_u32_logic: b q r 0 n;
+		log 'u32 logic from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_logic: a q r 3 n;
+		call S_u32_logic: b q r 3 n;
+		log 'u32 logic from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_logic: a a r 0 n;
+		call S_u32_logic: b b r 0 n;
+		log 'u32 logic in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_logic: a + sizeof u32 a r 0 n;
+		call S_u32_logic: b + sizeof u32 b r 0 n;
+		log 'u32 logic overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_not: a q r 0 n;
+		call S_u32_not: b q r 0 n;
+		log 'u32 not from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_not: a q r 3 n;
+		call S_u32_not: b q r 3 n;
+		log 'u32 not from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_not: a a r 0 n;
+		call S_u32_not: b b r 0 n;
+		log 'u32 not in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_not: a + sizeof u32 a r 0 n;
+		call S_u32_not: b + sizeof u32 b r 0 n;
+		log 'u32 not overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_shl: a q r 0 n;
+		call S_u32_shl: b q r 0 n;
+		log 'u32 shl from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_shl: a q r 3 n;
+		call S_u32_shl: b q r 3 n;
+		log 'u32 shl from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_shl: a a r 0 n;
+		call S_u32_shl: b b r 0 n;
+		log 'u32 shl in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_shl: a + sizeof u32 a r 0 n;
+		call S_u32_shl: b + sizeof u32 b r 0 n;
+		log 'u32 shl overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_shr: a q r 0 n;
+		call S_u32_shr: b q r 0 n;
+		log 'u32 shr from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_shr: a q r 3 n;
+		call S_u32_shr: b q r 3 n;
+		log 'u32 shr from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_shr: a a r 0 n;
+		call S_u32_shr: b b r 0 n;
+		log 'u32 shr in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_shr: a + sizeof u32 a r 0 n;
+		call S_u32_shr: b + sizeof u32 b r 0 n;
+		log 'u32 shr overlapping: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_shr2: a q r 0 n;
+		call S_u32_shr2: b q r 0 n;
+		log 'u32 shr2 from 0: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 3;
+		call Fill_u32: b 64 3;
+		call V_u32_shr2: a q r 3 n;
+		call S_u32_shr2: b q r 3 n;
+		log 'u32 shr2 from 3: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 4;
+		call Fill_u32: b 64 4;
+		call V_u32_shr2: a a r 0 n;
+		call S_u32_shr2: b b r 0 n;
+		log 'u32 shr2 in place: ' (Same_u32: a b 64) '\n';
+		call Fill_u32: a 64 5;
+		call Fill_u32: b 64 5;
+		call V_u32_shr2: a + sizeof u32 a r 0 n;
+		call S_u32_shr2: b + sizeof u32 b r 0 n;
+		log 'u32 shr2 overlapping: ' (Same_u32: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_i64_add: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_i64_add: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_i64_sub: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_i64_sub: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_i64_neg: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_i64_neg: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_i64_constant: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_i64_constant: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_i64_logic: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_i64_logic: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_i64_not: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_i64_not: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_i64_shl: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_i64_shl: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_i64_shr: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_i64_shr: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_i64_shr2: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_i64_shr2: ptr<i64> p: 0; ptr<i64> q: 0; ptr<i64> r: 0; int start: 0; int n: 0; i64 k: 3; i64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_i64: ptr<i64> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is ((x as i64) << 32) | ((x * 7) as i64);
+		;;
+	[end]
+
+	[Same_i64: ptr<i64> a: 0; ptr<i64> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_i64:]
+		int n: 37;
+		ptr<i64> q: new i64[64];
+		ptr<i64> r: new i64[64];
+		ptr<i64> a: new i64[64];
+		ptr<i64> b: new i64[64];
+		call Fill_i64: q 64 1;
+		call Fill_i64: r 64 2;
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_add: a q r 0 n;
+		call S_i64_add: b q r 0 n;
+		log 'i64 add from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_add: a q r 3 n;
+		call S_i64_add: b q r 3 n;
+		log 'i64 add from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_add: a a r 0 n;
+		call S_i64_add: b b r 0 n;
+		log 'i64 add in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_add: a + sizeof i64 a r 0 n;
+		call S_i64_add: b + sizeof i64 b r 0 n;
+		log 'i64 add overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_sub: a q r 0 n;
+		call S_i64_sub: b q r 0 n;
+		log 'i64 sub from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_sub: a q r 3 n;
+		call S_i64_sub: b q r 3 n;
+		log 'i64 sub from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_sub: a a r 0 n;
+		call S_i64_sub: b b r 0 n;
+		log 'i64 sub in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_sub: a + sizeof i64 a r 0 n;
+		call S_i64_sub: b + sizeof i64 b r 0 n;
+		log 'i64 sub overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_neg: a q r 0 n;
+		call S_i64_neg: b q r 0 n;
+		log 'i64 neg from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_neg: a q r 3 n;
+		call S_i64_neg: b q r 3 n;
+		log 'i64 neg from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_neg: a a r 0 n;
+		call S_i64_neg: b b r 0 n;
+		log 'i64 neg in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_neg: a + sizeof i64 a r 0 n;
+		call S_i64_neg: b + sizeof i64 b r 0 n;
+		log 'i64 neg overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_constant: a q r 0 n;
+		call S_i64_constant: b q r 0 n;
+		log 'i64 constant from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_constant: a q r 3 n;
+		call S_i64_constant: b q r 3 n;
+		log 'i64 constant from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_constant: a a r 0 n;
+		call S_i64_constant: b b r 0 n;
+		log 'i64 constant in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_constant: a + sizeof i64 a r 0 n;
+		call S_i64_constant: b + sizeof i64 b r 0 n;
+		log 'i64 constant overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_logic: a q r 0 n;
+		call S_i64_logic: b q r 0 n;
+		log 'i64 logic from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_logic: a q r 3 n;
+		call S_i64_logic: b q r 3 n;
+		log 'i64 logic from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_logic: a a r 0 n;
+		call S_i64_logic: b b r 0 n;
+		log 'i64 logic in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_logic: a + sizeof i64 a r 0 n;
+		call S_i64_logic: b + sizeof i64 b r 0 n;
+		log 'i64 logic overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_not: a q r 0 n;
+		call S_i64_not: b q r 0 n;
+		log 'i64 not from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_not: a q r 3 n;
+		call S_i64_not: b q r 3 n;
+		log 'i64 not from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_not: a a r 0 n;
+		call S_i64_not: b b r 0 n;
+		log 'i64 not in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_not: a + sizeof i64 a r 0 n;
+		call S_i64_not: b + sizeof i64 b r 0 n;
+		log 'i64 not overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_shl: a q r 0 n;
+		call S_i64_shl: b q r 0 n;
+		log 'i64 shl from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_shl: a q r 3 n;
+		call S_i64_shl: b q r 3 n;
+		log 'i64 shl from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_shl: a a r 0 n;
+		call S_i64_shl: b b r 0 n;
+		log 'i64 shl in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_shl: a + sizeof i64 a r 0 n;
+		call S_i64_shl: b + sizeof i64 b r 0 n;
+		log 'i64 shl overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_shr: a q r 0 n;
+		call S_i64_shr: b q r 0 n;
+		log 'i64 shr from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_shr: a q r 3 n;
+		call S_i64_shr: b q r 3 n;
+		log 'i64 shr from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_shr: a a r 0 n;
+		call S_i64_shr: b b r 0 n;
+		log 'i64 shr in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_shr: a + sizeof i64 a r 0 n;
+		call S_i64_shr: b + sizeof i64 b r 0 n;
+		log 'i64 shr overlapping: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_shr2: a q r 0 n;
+		call S_i64_shr2: b q r 0 n;
+		log 'i64 shr2 from 0: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 3;
+		call Fill_i64: b 64 3;
+		call V_i64_shr2: a q r 3 n;
+		call S_i64_shr2: b q r 3 n;
+		log 'i64 shr2 from 3: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 4;
+		call Fill_i64: b 64 4;
+		call V_i64_shr2: a a r 0 n;
+		call S_i64_shr2: b b r 0 n;
+		log 'i64 shr2 in place: ' (Same_i64: a b 64) '\n';
+		call Fill_i64: a 64 5;
+		call Fill_i64: b 64 5;
+		call V_i64_shr2: a + sizeof i64 a r 0 n;
+		call S_i64_shr2: b + sizeof i64 b r 0 n;
+		log 'i64 shr2 overlapping: ' (Same_i64: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_u64_add: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_u64_add: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u64_sub: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_u64_sub: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_u64_neg: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_u64_neg: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_u64_constant: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_u64_constant: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_u64_logic: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i & r:i) ^ (r:i | 5);
+		;;
+	[end]
+
+	[S_u64_logic: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i & r:i) ^ (r:i | 5);
+			;;
+		;;
+	[end]
+
+	[V_u64_not: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is ~q:i + 1;
+		;;
+	[end]
+
+	[S_u64_not: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is ~q:i + 1;
+			;;
+		;;
+	[end]
+
+	[V_u64_shl: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is q:i << 3;
+		;;
+	[end]
+
+	[S_u64_shl: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i << 3;
+			;;
+		;;
+	[end]
+
+	[V_u64_shr: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is r:i >> 2;
+		;;
+	[end]
+
+	[S_u64_shr: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is r:i >> 2;
+			;;
+		;;
+	[end]
+
+	[V_u64_shr2: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			p:i is (q:i >> 1) + (r:i << 1);
+		;;
+	[end]
+
+	[S_u64_shr2: ptr<u64> p: 0; ptr<u64> q: 0; ptr<u64> r: 0; int start: 0; int n: 0; u64 k: 3; u64 c: 2;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i >> 1) + (r:i << 1);
+			;;
+		;;
+	[end]
+
+	[Fill_u64: ptr<u64> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is ((x as u64) << 32) | ((x * 7) as u64);
+		;;
+	[end]
+
+	[Same_u64: ptr<u64> a: 0; ptr<u64> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_u64:]
+		int n: 37;
+		ptr<u64> q: new u64[64];
+		ptr<u64> r: new u64[64];
+		ptr<u64> a: new u64[64];
+		ptr<u64> b: new u64[64];
+		call Fill_u64: q 64 1;
+		call Fill_u64: r 64 2;
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_add: a q r 0 n;
+		call S_u64_add: b q r 0 n;
+		log 'u64 add from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_add: a q r 3 n;
+		call S_u64_add: b q r 3 n;
+		log 'u64 add from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_add: a a r 0 n;
+		call S_u64_add: b b r 0 n;
+		log 'u64 add in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_add: a + sizeof u64 a r 0 n;
+		call S_u64_add: b + sizeof u64 b r 0 n;
+		log 'u64 add overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_sub: a q r 0 n;
+		call S_u64_sub: b q r 0 n;
+		log 'u64 sub from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_sub: a q r 3 n;
+		call S_u64_sub: b q r 3 n;
+		log 'u64 sub from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_sub: a a r 0 n;
+		call S_u64_sub: b b r 0 n;
+		log 'u64 sub in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_sub: a + sizeof u64 a r 0 n;
+		call S_u64_sub: b + sizeof u64 b r 0 n;
+		log 'u64 sub overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_neg: a q r 0 n;
+		call S_u64_neg: b q r 0 n;
+		log 'u64 neg from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_neg: a q r 3 n;
+		call S_u64_neg: b q r 3 n;
+		log 'u64 neg from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_neg: a a r 0 n;
+		call S_u64_neg: b b r 0 n;
+		log 'u64 neg in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_neg: a + sizeof u64 a r 0 n;
+		call S_u64_neg: b + sizeof u64 b r 0 n;
+		log 'u64 neg overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_constant: a q r 0 n;
+		call S_u64_constant: b q r 0 n;
+		log 'u64 constant from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_constant: a q r 3 n;
+		call S_u64_constant: b q r 3 n;
+		log 'u64 constant from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_constant: a a r 0 n;
+		call S_u64_constant: b b r 0 n;
+		log 'u64 constant in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_constant: a + sizeof u64 a r 0 n;
+		call S_u64_constant: b + sizeof u64 b r 0 n;
+		log 'u64 constant overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_logic: a q r 0 n;
+		call S_u64_logic: b q r 0 n;
+		log 'u64 logic from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_logic: a q r 3 n;
+		call S_u64_logic: b q r 3 n;
+		log 'u64 logic from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_logic: a a r 0 n;
+		call S_u64_logic: b b r 0 n;
+		log 'u64 logic in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_logic: a + sizeof u64 a r 0 n;
+		call S_u64_logic: b + sizeof u64 b r 0 n;
+		log 'u64 logic overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_not: a q r 0 n;
+		call S_u64_not: b q r 0 n;
+		log 'u64 not from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_not: a q r 3 n;
+		call S_u64_not: b q r 3 n;
+		log 'u64 not from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_not: a a r 0 n;
+		call S_u64_not: b b r 0 n;
+		log 'u64 not in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_not: a + sizeof u64 a r 0 n;
+		call S_u64_not: b + sizeof u64 b r 0 n;
+		log 'u64 not overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_shl: a q r 0 n;
+		call S_u64_shl: b q r 0 n;
+		log 'u64 shl from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_shl: a q r 3 n;
+		call S_u64_shl: b q r 3 n;
+		log 'u64 shl from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_shl: a a r 0 n;
+		call S_u64_shl: b b r 0 n;
+		log 'u64 shl in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_shl: a + sizeof u64 a r 0 n;
+		call S_u64_shl: b + sizeof u64 b r 0 n;
+		log 'u64 shl overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_shr: a q r 0 n;
+		call S_u64_shr: b q r 0 n;
+		log 'u64 shr from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_shr: a q r 3 n;
+		call S_u64_shr: b q r 3 n;
+		log 'u64 shr from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_shr: a a r 0 n;
+		call S_u64_shr: b b r 0 n;
+		log 'u64 shr in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_shr: a + sizeof u64 a r 0 n;
+		call S_u64_shr: b + sizeof u64 b r 0 n;
+		log 'u64 shr overlapping: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_shr2: a q r 0 n;
+		call S_u64_shr2: b q r 0 n;
+		log 'u64 shr2 from 0: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 3;
+		call Fill_u64: b 64 3;
+		call V_u64_shr2: a q r 3 n;
+		call S_u64_shr2: b q r 3 n;
+		log 'u64 shr2 from 3: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 4;
+		call Fill_u64: b 64 4;
+		call V_u64_shr2: a a r 0 n;
+		call S_u64_shr2: b b r 0 n;
+		log 'u64 shr2 in place: ' (Same_u64: a b 64) '\n';
+		call Fill_u64: a 64 5;
+		call Fill_u64: b 64 5;
+		call V_u64_shr2: a + sizeof u64 a r 0 n;
+		call S_u64_shr2: b + sizeof u64 b r 0 n;
+		log 'u64 shr2 overlapping: ' (Same_u64: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_f32_add: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_f32_add: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_f32_sub: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_f32_sub: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_f32_neg: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_f32_neg: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_f32_params: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_f32_params: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_f32_constant: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_f32_constant: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_f32_mix: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_f32_mix: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_f32_div: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i / r:i;
+		;;
+	[end]
+
+	[S_f32_div: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i / r:i;
+			;;
+		;;
+	[end]
+
+	[V_f32_scale: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k;
+		;;
+	[end]
+
+	[S_f32_scale: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k;
+			;;
+		;;
+	[end]
+
+	[V_f32_half: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is -q:i * 0.5;
+		;;
+	[end]
+
+	[S_f32_half: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i * 0.5;
+			;;
+		;;
+	[end]
+
+	[V_f32_mixed: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i * 0.5 + r:i / 3.0;
+		;;
+	[end]
+
+	[S_f32_mixed: ptr<f32> p: 0; ptr<f32> q: 0; ptr<f32> r: 0; int start: 0; int n: 0; f32 k: 1.5; f32 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * 0.5 + r:i / 3.0;
+			;;
+		;;
+	[end]
+
+	[Fill_f32: ptr<f32> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is ((x >> 16) % 61) as f64 * 0.25 + 0.5;
+		;;
+	[end]
+
+	[Same_f32: ptr<f32> a: 0; ptr<f32> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_f32:]
+		int n: 37;
+		ptr<f32> q: new f32[64];
+		ptr<f32> r: new f32[64];
+		ptr<f32> a: new f32[64];
+		ptr<f32> b: new f32[64];
+		call Fill_f32: q 64 1;
+		call Fill_f32: r 64 2;
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_add: a q r 0 n;
+		call S_f32_add: b q r 0 n;
+		log 'f32 add from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_add: a q r 3 n;
+		call S_f32_add: b q r 3 n;
+		log 'f32 add from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_add: a a r 0 n;
+		call S_f32_add: b b r 0 n;
+		log 'f32 add in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_add: a + sizeof f32 a r 0 n;
+		call S_f32_add: b + sizeof f32 b r 0 n;
+		log 'f32 add overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_sub: a q r 0 n;
+		call S_f32_sub: b q r 0 n;
+		log 'f32 sub from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_sub: a q r 3 n;
+		call S_f32_sub: b q r 3 n;
+		log 'f32 sub from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_sub: a a r 0 n;
+		call S_f32_sub: b b r 0 n;
+		log 'f32 sub in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_sub: a + sizeof f32 a r 0 n;
+		call S_f32_sub: b + sizeof f32 b r 0 n;
+		log 'f32 sub overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_neg: a q r 0 n;
+		call S_f32_neg: b q r 0 n;
+		log 'f32 neg from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_neg: a q r 3 n;
+		call S_f32_neg: b q r 3 n;
+		log 'f32 neg from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_neg: a a r 0 n;
+		call S_f32_neg: b b r 0 n;
+		log 'f32 neg in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_neg: a + sizeof f32 a r 0 n;
+		call S_f32_neg: b + sizeof f32 b r 0 n;
+		log 'f32 neg overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_params: a q r 0 n;
+		call S_f32_params: b q r 0 n;
+		log 'f32 params from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_params: a q r 3 n;
+		call S_f32_params: b q r 3 n;
+		log 'f32 params from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_params: a a r 0 n;
+		call S_f32_params: b b r 0 n;
+		log 'f32 params in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_params: a + sizeof f32 a r 0 n;
+		call S_f32_params: b + sizeof f32 b r 0 n;
+		log 'f32 params overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_constant: a q r 0 n;
+		call S_f32_constant: b q r 0 n;
+		log 'f32 constant from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_constant: a q r 3 n;
+		call S_f32_constant: b q r 3 n;
+		log 'f32 constant from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_constant: a a r 0 n;
+		call S_f32_constant: b b r 0 n;
+		log 'f32 constant in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_constant: a + sizeof f32 a r 0 n;
+		call S_f32_constant: b + sizeof f32 b r 0 n;
+		log 'f32 constant overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_mix: a q r 0 n;
+		call S_f32_mix: b q r 0 n;
+		log 'f32 mix from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_mix: a q r 3 n;
+		call S_f32_mix: b q r 3 n;
+		log 'f32 mix from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_mix: a a r 0 n;
+		call S_f32_mix: b b r 0 n;
+		log 'f32 mix in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_mix: a + sizeof f32 a r 0 n;
+		call S_f32_mix: b + sizeof f32 b r 0 n;
+		log 'f32 mix overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_div: a q r 0 n;
+		call S_f32_div: b q r 0 n;
+		log 'f32 div from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_div: a q r 3 n;
+		call S_f32_div: b q r 3 n;
+		log 'f32 div from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_div: a a r 0 n;
+		call S_f32_div: b b r 0 n;
+		log 'f32 div in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_div: a + sizeof f32 a r 0 n;
+		call S_f32_div: b + sizeof f32 b r 0 n;
+		log 'f32 div overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_scale: a q r 0 n;
+		call S_f32_scale: b q r 0 n;
+		log 'f32 scale from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_scale: a q r 3 n;
+		call S_f32_scale: b q r 3 n;
+		log 'f32 scale from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_scale: a a r 0 n;
+		call S_f32_scale: b b r 0 n;
+		log 'f32 scale in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_scale: a + sizeof f32 a r 0 n;
+		call S_f32_scale: b + sizeof f32 b r 0 n;
+		log 'f32 scale overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_half: a q r 0 n;
+		call S_f32_half: b q r 0 n;
+		log 'f32 half from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_half: a q r 3 n;
+		call S_f32_half: b q r 3 n;
+		log 'f32 half from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_half: a a r 0 n;
+		call S_f32_half: b b r 0 n;
+		log 'f32 half in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_half: a + sizeof f32 a r 0 n;
+		call S_f32_half: b + sizeof f32 b r 0 n;
+		log 'f32 half overlapping: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_mixed: a q r 0 n;
+		call S_f32_mixed: b q r 0 n;
+		log 'f32 mixed from 0: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 3;
+		call Fill_f32: b 64 3;
+		call V_f32_mixed: a q r 3 n;
+		call S_f32_mixed: b q r 3 n;
+		log 'f32 mixed from 3: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 4;
+		call Fill_f32: b 64 4;
+		call V_f32_mixed: a a r 0 n;
+		call S_f32_mixed: b b r 0 n;
+		log 'f32 mixed in place: ' (Same_f32: a b 64) '\n';
+		call Fill_f32: a 64 5;
+		call Fill_f32: b 64 5;
+		call V_f32_mixed: a + sizeof f32 a r 0 n;
+		call S_f32_mixed: b + sizeof f32 b r 0 n;
+		log 'f32 mixed overlapping: ' (Same_f32: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+	[V_f64_add: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i + r:i;
+		;;
+	[end]
+
+	[S_f64_add: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_f64_sub: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i - r:i;
+		;;
+	[end]
+
+	[S_f64_sub: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i - r:i;
+			;;
+		;;
+	[end]
+
+	[V_f64_neg: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is -q:i + r:i;
+		;;
+	[end]
+
+	[S_f64_neg: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i + r:i;
+			;;
+		;;
+	[end]
+
+	[V_f64_params: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k + c;
+		;;
+	[end]
+
+	[S_f64_params: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k + c;
+			;;
+		;;
+	[end]
+
+	[V_f64_constant: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is 7;
+		;;
+	[end]
+
+	[S_f64_constant: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is 7;
+			;;
+		;;
+	[end]
+
+	[V_f64_mix: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is (q:i + k) * r:i - q:i;
+		;;
+	[end]
+
+	[S_f64_mix: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is (q:i + k) * r:i - q:i;
+			;;
+		;;
+	[end]
+
+	[V_f64_div: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i / r:i;
+		;;
+	[end]
+
+	[S_f64_div: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i / r:i;
+			;;
+		;;
+	[end]
+
+	[V_f64_scale: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i * k;
+		;;
+	[end]
+
+	[S_f64_scale: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * k;
+			;;
+		;;
+	[end]
+
+	[V_f64_half: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is -q:i * 0.5;
+		;;
+	[end]
+
+	[S_f64_half: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is -q:i * 0.5;
+			;;
+		;;
+	[end]
+
+	[V_f64_mixed: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			p:i is q:i * 0.5 + r:i / 3.0;
+		;;
+	[end]
+
+	[S_f64_mixed: ptr<f64> p: 0; ptr<f64> q: 0; ptr<f64> r: 0; int start: 0; int n: 0; f64 k: 1.5; f64 c: 0.25;]
+		while int i: start; i < n; i++;
+			if true
+				p:i is q:i * 0.5 + r:i / 3.0;
+			;;
+		;;
+	[end]
+
+	[Fill_f64: ptr<f64> p: 0; int n: 0; int seed: 0;]
+		u32 x: seed as u32;
+		while int i: 0; i < n; i++;
+			x is x * 1103515245 + 12345;
+			p:i is ((x >> 16) % 61) as f64 * 0.25 + 0.5;
+		;;
+	[end]
+
+	[Same_f64: ptr<f64> a: 0; ptr<f64> b: 0; int n: 0;]
+		while int i: 0; i < n; i++;
+			if a:i is not b:i
+				return i;
+			;;
+		;;
+	[end: -1]
+
+	[Kind_f64:]
+		int n: 37;
+		ptr<f64> q: new f64[64];
+		ptr<f64> r: new f64[64];
+		ptr<f64> a: new f64[64];
+		ptr<f64> b: new f64[64];
+		call Fill_f64: q 64 1;
+		call Fill_f64: r 64 2;
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_add: a q r 0 n;
+		call S_f64_add: b q r 0 n;
+		log 'f64 add from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_add: a q r 3 n;
+		call S_f64_add: b q r 3 n;
+		log 'f64 add from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_add: a a r 0 n;
+		call S_f64_add: b b r 0 n;
+		log 'f64 add in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_add: a + sizeof f64 a r 0 n;
+		call S_f64_add: b + sizeof f64 b r 0 n;
+		log 'f64 add overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_sub: a q r 0 n;
+		call S_f64_sub: b q r 0 n;
+		log 'f64 sub from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_sub: a q r 3 n;
+		call S_f64_sub: b q r 3 n;
+		log 'f64 sub from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_sub: a a r 0 n;
+		call S_f64_sub: b b r 0 n;
+		log 'f64 sub in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_sub: a + sizeof f64 a r 0 n;
+		call S_f64_sub: b + sizeof f64 b r 0 n;
+		log 'f64 sub overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_neg: a q r 0 n;
+		call S_f64_neg: b q r 0 n;
+		log 'f64 neg from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_neg: a q r 3 n;
+		call S_f64_neg: b q r 3 n;
+		log 'f64 neg from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_neg: a a r 0 n;
+		call S_f64_neg: b b r 0 n;
+		log 'f64 neg in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_neg: a + sizeof f64 a r 0 n;
+		call S_f64_neg: b + sizeof f64 b r 0 n;
+		log 'f64 neg overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_params: a q r 0 n;
+		call S_f64_params: b q r 0 n;
+		log 'f64 params from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_params: a q r 3 n;
+		call S_f64_params: b q r 3 n;
+		log 'f64 params from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_params: a a r 0 n;
+		call S_f64_params: b b r 0 n;
+		log 'f64 params in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_params: a + sizeof f64 a r 0 n;
+		call S_f64_params: b + sizeof f64 b r 0 n;
+		log 'f64 params overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_constant: a q r 0 n;
+		call S_f64_constant: b q r 0 n;
+		log 'f64 constant from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_constant: a q r 3 n;
+		call S_f64_constant: b q r 3 n;
+		log 'f64 constant from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_constant: a a r 0 n;
+		call S_f64_constant: b b r 0 n;
+		log 'f64 constant in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_constant: a + sizeof f64 a r 0 n;
+		call S_f64_constant: b + sizeof f64 b r 0 n;
+		log 'f64 constant overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_mix: a q r 0 n;
+		call S_f64_mix: b q r 0 n;
+		log 'f64 mix from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_mix: a q r 3 n;
+		call S_f64_mix: b q r 3 n;
+		log 'f64 mix from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_mix: a a r 0 n;
+		call S_f64_mix: b b r 0 n;
+		log 'f64 mix in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_mix: a + sizeof f64 a r 0 n;
+		call S_f64_mix: b + sizeof f64 b r 0 n;
+		log 'f64 mix overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_div: a q r 0 n;
+		call S_f64_div: b q r 0 n;
+		log 'f64 div from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_div: a q r 3 n;
+		call S_f64_div: b q r 3 n;
+		log 'f64 div from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_div: a a r 0 n;
+		call S_f64_div: b b r 0 n;
+		log 'f64 div in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_div: a + sizeof f64 a r 0 n;
+		call S_f64_div: b + sizeof f64 b r 0 n;
+		log 'f64 div overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_scale: a q r 0 n;
+		call S_f64_scale: b q r 0 n;
+		log 'f64 scale from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_scale: a q r 3 n;
+		call S_f64_scale: b q r 3 n;
+		log 'f64 scale from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_scale: a a r 0 n;
+		call S_f64_scale: b b r 0 n;
+		log 'f64 scale in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_scale: a + sizeof f64 a r 0 n;
+		call S_f64_scale: b + sizeof f64 b r 0 n;
+		log 'f64 scale overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_half: a q r 0 n;
+		call S_f64_half: b q r 0 n;
+		log 'f64 half from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_half: a q r 3 n;
+		call S_f64_half: b q r 3 n;
+		log 'f64 half from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_half: a a r 0 n;
+		call S_f64_half: b b r 0 n;
+		log 'f64 half in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_half: a + sizeof f64 a r 0 n;
+		call S_f64_half: b + sizeof f64 b r 0 n;
+		log 'f64 half overlapping: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_mixed: a q r 0 n;
+		call S_f64_mixed: b q r 0 n;
+		log 'f64 mixed from 0: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 3;
+		call Fill_f64: b 64 3;
+		call V_f64_mixed: a q r 3 n;
+		call S_f64_mixed: b q r 3 n;
+		log 'f64 mixed from 3: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 4;
+		call Fill_f64: b 64 4;
+		call V_f64_mixed: a a r 0 n;
+		call S_f64_mixed: b b r 0 n;
+		log 'f64 mixed in place: ' (Same_f64: a b 64) '\n';
+		call Fill_f64: a 64 5;
+		call Fill_f64: b 64 5;
+		call V_f64_mixed: a + sizeof f64 a r 0 n;
+		call S_f64_mixed: b + sizeof f64 b r 0 n;
+		log 'f64 mixed overlapping: ' (Same_f64: a b 64) '\n';
+		free q;
+		free r;
+		free a;
+		free b;
+	[end]
+
+}

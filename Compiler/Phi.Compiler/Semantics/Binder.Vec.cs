@@ -47,11 +47,8 @@ namespace Phi.Compiler.Semantics
             foreach (Expr value in decl.Values) BindExpr(value, scope);
             if (!classLevel || v.IsParameter) v.NeedsInitCode = true;
             if (decl.Values.Count == 0 || decl.Values.Any(x => x.Type.IsError)) return;
-            if (classLevel && !v.IsParameter)
-            {
-                Error(decl.Values[0].Span, $"a class's vec starts as zeros; give '{decl.Name}' its lanes in a method ({decl.Name} is ...;)");
-                return;
-            }
+            // (a class's, given its lanes when its statement runs)
+            if (classLevel) v.NeedsInitCode = true;
             Expr made = MakeVec(v.Type, decl.Values, decl.NameSpan, $"'{decl.Name}'");
             decl.Values.Clear();
             decl.Values.Add(made);
@@ -229,6 +226,40 @@ namespace Phi.Compiler.Semantics
             return new VecMethod { Name = name, Vec = v, Result = result };
         }
 
+        /// <summary>
+        /// while each x in v: a vec's lanes, made the loop it means (as BindTextLoop does text's):
+        ///
+        ///     while i &lt; v.len; i++;       (i is the loop's own index, from 0)
+        ///         x is v:i;
+        ///         ...
+        ///     ;;
+        /// </summary>
+        Stmt BindVecLoop(WhileEachStmt each, Scope scope)
+        {
+            Span at = each.Array.Span;
+            VariableSymbol x = each.Element.Symbol!, i = each.Index.Symbol!;
+            Expr I() => new NameExpr { Name = i.Name, Span = at };
+            Expr N(long n) => new NumberExpr { Value = n, Span = at };
+            var loop = new WhileStmt
+            {
+                Condition = new BinaryExpr { Left = I(), Op = BinaryOp.Less, Right = N(each.Array.Type.Lanes), Span = at },
+                Step = new AssignStmt { Target = I(), Op = AssignOp.Add, Value = N(1), Span = at },
+                Span = each.Span,
+            };
+            loop.Body.Add(new AssignStmt { Target = new NameExpr { Name = x.Name, Span = each.Element.NameSpan }, Op = AssignOp.Set,
+                                           Value = new IndexExpr { Target = each.Array, Index = I(), Span = at }, Span = at });
+            loop.Body.AddRange(each.Body);
+
+            // in a block of its own, with the loop's two variables declared in it
+            var block = new IfStmt { Condition = new BoolExpr { Value = true, Span = at }, Span = each.Span };
+            BindCondition(block.Condition, scope);
+            block.Then.Add(each.Index);
+            block.Then.Add(each.Element);
+            block.Then.Add(BindStatement(new AssignStmt { Target = I(), Op = AssignOp.Set, Value = N(0), Span = at }, scope, classLevel: false));
+            block.Then.Add(BindStatement(loop, scope, classLevel: false));
+            return block;
+        }
+
         static PhiType Wider(PhiType lane) => lane.Kind switch
         {
             TypeKind.I8 => PhiType.I16,
@@ -269,17 +300,6 @@ namespace Phi.Compiler.Semantics
             if (from.Lanes != to.Lanes)
                 return $"as between floats and whole numbers keeps each lane's value, so the lanes stay as many: {A(from)} has {from.Lanes}, and {A(to)} {to.Lanes}";
             return null;
-        }
-
-        /// <summary>
-        /// A class's own statements are the generator's, which has no vectors: a vec is used in
-        /// methods (its class variables are kept there, as zeros, for them).
-        /// </summary>
-        void CheckNoVecAtClassLevel(Stmt s)
-        {
-            if (s is VarDecl { Symbol.Type.IsVec: true }) return;
-            if (SyntaxWalker.Nodes(s).OfType<Expr>().FirstOrDefault(e => e.Type.IsVec) is Expr used)
-                Error(used.Span, "vec works in methods for now, not in a class's own statements; put this in a method and call it");
         }
     }
 }

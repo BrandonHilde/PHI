@@ -2306,6 +2306,16 @@ namespace Phi.Compiler.Syntax
                 return new AddrExpr { Operand = operand, Foreign = foreign, Span = t.Span.To(operand.Span) };
             }
 
+            // vec<f32>.len: how many lanes it has, as v.len is for a value
+            if (AtWord("vec") && PeekToken(1).Kind == TokenKind.Less)
+            {
+                TypeRef vec = ParseType();
+                Expect(TokenKind.Dot, "'.len' after vec<...>, for how many lanes it has (vec<f32>.len)");
+                Token len = ExpectIdentifier("len, for how many lanes it has");
+                if (len.Text != "len") Error(len.Span, "a vec's type has .len, how many lanes it has; its methods are called on a value");
+                return new SizeofExpr { TypeName = vec, Lanes = true, Span = t.Span.To(len.Span) };
+            }
+
             if (AtWord("sizeof"))
             {
                 Advance();

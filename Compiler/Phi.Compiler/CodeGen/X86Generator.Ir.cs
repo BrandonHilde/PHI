@@ -50,7 +50,11 @@ namespace Phi.Compiler.CodeGen
             IrPeephole.Run(fn);
             RegisterAllocator regs = RegisterAllocator.Allocate(fn);
             if (IrTrace > 0) Console.Error.WriteLine($"ir: {m.Name} ({fn.Values.Count} values, {regs.SlotCount} in the frame)");
+            if (IrTrace > 0)
+                foreach (var (at, note) in fn.Notes) Console.Error.WriteLine($"ir: {m.Name}: the loop on line {LineOf(at)} {note}");
             if (IrTrace > 1) Console.Error.WriteLine(fn.Dump());
+            // (what was done with each loop, in the listing too)
+            foreach (var (at, note) in fn.Notes) Comment($"the loop on line {LineOf(at)} {note}");
             new IrEmitter(this, fn, regs, m.Label).Emit();
             return true;
         }
@@ -73,8 +77,46 @@ namespace Phi.Compiler.CodeGen
             return false;
         }
 
+        /// <summary>A class's own statement that uses a vec (a declaration only when it gives one a value).</summary>
+        static bool StatementUsesVec(Syntax.Stmt s)
+        {
+            if (s is Syntax.VarDecl d) return d.Values.Count > 0 && (d.Symbol is VariableSymbol v && HasVec(v.Type) || d.Values.SelectMany(Syntax.SyntaxWalker.Nodes).Any(VecNode));
+            return Syntax.SyntaxWalker.Nodes(s).Any(VecNode);
+        }
+
+        static bool VecNode(Syntax.Node n)
+        {
+            if (n is Syntax.Expr e && HasVec(e.Type)) return true;
+            if (n is Syntax.VarDecl { Values.Count: > 0, Symbol: VariableSymbol v } && HasVec(v.Type)) return true;
+            object? callee = n switch { Syntax.CallExpr c => c.Resolved, Syntax.CallStmt c => c.Resolved, _ => null };
+            return callee is VecMethod || callee is MethodSymbol called && (called.Parameters.Any(p => HasVec(p.Type)) || HasVec(called.ReturnType));
+        }
+
+        /// <summary>The class whose statements are being written (for a statement made a method of its own).</summary>
+        Syntax.ClassDecl? currentClass;
+
+        /// <summary>A class's statements that use a vec, each written as a method of its own after the methods.</summary>
+        readonly List<(string Label, Syntax.Stmt Statement, Syntax.ClassDecl Class)> vecStatements = new();
+
+        void EmitVecStatements()
+        {
+            foreach (var (label, statement, cls) in vecStatements)
+            {
+                file = cls.File;
+                var decl = new Syntax.MethodDecl { Name = $"line {LineOf(statement)}", Owner = cls, Span = statement.Span };
+                decl.Body.Add(statement);
+                var m = new MethodSymbol { Name = $"{cls.Name} (its statement on line {LineOf(statement)})", Label = label, Decl = decl, Unit = unit.Kind };
+                Line("");
+                Comment($"{cls.Name}'s statement on line {LineOf(statement)} ({FileName(file)}), which uses a vec");
+                Label(label);
+                if (!TryEmitIr(m)) Emit("ud2");
+            }
+            vecStatements.Clear();
+        }
+
         /// <summary>A vec, an array of them, or a pointer to one.</summary>
-        static bool HasVec(PhiType t) => t.Kind == TypeKind.Vec || t.Kind == TypeKind.Pointer && t.Pointee != null && HasVec(t.Pointee);
+        static bool HasVec(PhiType t) => t.Kind == TypeKind.Vec || t.Kind == TypeKind.Pointer && t.Pointee != null && HasVec(t.Pointee)
+            || t.Kind == TypeKind.Method && t.Signature is MethodSignature s && (s.Parameters.Any(HasVec) || HasVec(s.Result));
 
         /// <summary>Writes one method's form as x64 assembly into the generator's code.</summary>
         sealed partial class IrEmitter
@@ -345,6 +387,51 @@ namespace Phi.Compiler.CodeGen
                         break;
                     case VecI or VecMakeI or VecGetI or VecSetI or VecReduceI or RoundF32I or PrintI or RoutineI:
                         Vector(i);
+                        break;
+                    case CatchI c:
+                    {
+                        // the generator's EmitIfThrows' record: the catch around it, rsp, rbp, the
+                        // methods' records, where a throw goes, how deep in the log's lock
+                        MarkNow();
+                        g.Need("phi_throw");
+                        g.Need("phi_log_held");
+                        g.EmitBlockField("mov rax, qword [{0}]", "CATCH");
+                        E($"mov qword [{c.Record}], rax");
+                        E($"mov qword [{c.Record} + 8], rsp");
+                        E($"mov qword [{c.Record} + 16], rbp");
+                        g.EmitBlockField("mov rax, qword [{0}]", "UNWIND");
+                        E($"mov qword [{c.Record} + 24], rax");
+                        E($"lea rax, [rel {labels[c.Caught]}]");
+                        E($"mov qword [{c.Record} + 32], rax");
+                        E("call phi_log_held");
+                        E($"mov qword [{c.Record} + 40], rax");
+                        E($"lea rax, [{c.Record}]");
+                        g.EmitBlockField("mov qword [{0}], rax", "CATCH");
+                        break;
+                    }
+                    case UncatchI u:
+                        E($"mov rax, qword [{u.Record}]");
+                        MarkNow();
+                        g.EmitBlockField("mov qword [{0}], rax", "CATCH");
+                        break;
+                    case CaughtI caughtHere:
+                    {
+                        // the thread's error, copied into err (nothing else is in a register here)
+                        E($"lea rdi, [{caughtHere.Place}]");
+                        MarkNow();
+                        g.EmitLoadBlock("esi");
+                        E($"add rsi, {g.BlockField("ERROR")}");
+                        E($"mov ecx, {ErrorBytes}");
+                        E("rep movsb");
+                        break;
+                    }
+                    case ZeroI z:
+                        E("push rdi");
+                        E($"lea rdi, [{z.Place}]");
+                        E("xor eax, eax");
+                        E($"mov ecx, {z.Size}");
+                        E("rep stosb");
+                        E("pop rdi");
                         break;
                     case LoadI { Kind: MemKind.V128 } vl:
                     {
@@ -674,7 +761,7 @@ namespace Phi.Compiler.CodeGen
                     case AddrI addr:
                     {
                         string t = InRegister(addr.Dst) ? Reg(addr.Dst)! : "rax";
-                        E($"lea {t}, [rel {addr.Label}]");
+                        E($"lea {t}, {Place(addr.Label)}");
                         Store(addr.Dst, t);
                         break;
                     }
@@ -1047,7 +1134,13 @@ namespace Phi.Compiler.CodeGen
                     }
                     else E(InRegister(a.Reg!) ? $"push {Reg(a.Reg!)}" : $"push qword [rbp - {regs.Slots[a.Reg!]}]");
                 }
-                E($"call {call.Label}");
+                if (call.Target != null)
+                {
+                    // through a method value: the address it holds
+                    E($"mov r11, {At(call.Target, 64)}");
+                    E("call r11");
+                }
+                else E($"call {call.Label}");
                 if (pushed > 0) E($"add rsp, {pushed}");
                 if (call.Result == CallResult.Xmm0)
                 {
@@ -1118,6 +1211,9 @@ namespace Phi.Compiler.CodeGen
                     }
                     case SwitchT sw:
                         Switch(sw, next);
+                        break;
+                    case TryT tr:
+                        if (tr.Body != next) E($"jmp {labels[tr.Body]}");
                         break;
                     case BranchT { TestMask: long mask } tb:
                         E($"test {At(tb.A)}, {Number(mask, Bits(tb.A))}");
