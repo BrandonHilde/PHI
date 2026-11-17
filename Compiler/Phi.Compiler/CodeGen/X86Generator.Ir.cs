@@ -70,6 +70,8 @@ namespace Phi.Compiler.CodeGen
             return true;
         }
 
+        static bool Lane64(TypeKind k) => k is TypeKind.I64 or TypeKind.U64;
+
         /// <summary>PHI_IR32=1: 32-bit programs' methods through the intermediate form, where it writes them (see Fits32).</summary>
         static readonly bool Ir32Wanted = Environment.GetEnvironmentVariable("PHI_IR32") == "1";
 
@@ -80,7 +82,6 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         static string? Fits32(IrFunction fn)
         {
-            if (fn.Values.Any(v => v.Vec)) return "a vec";
             foreach (Block b in fn.Blocks)
             {
                 foreach (Instr i in b.Instrs)
@@ -94,14 +95,21 @@ namespace Phi.Compiler.CodeGen
                         CatchI or UncatchI or CaughtI or UnwindI or LockI or UnlockI => true,
                         SysCallI => true,
                         FConstI or FBinI or FNegI or RoundF32I or X87I => true,
+                        // (lanes of i64s are worked in 64-bit registers: not in 32-bit code)
+                        // (and a u32 made a float, or back, takes 64 bits to hold one of 2^31 or more)
+                        VecI vi => !Lane64(vi.Lane) && !Lane64(vi.To)
+                                   && !(vi.Lane == TypeKind.U32 && vi.To is TypeKind.F32 or TypeKind.F64 || vi.To == TypeKind.U32 && vi.Lane is TypeKind.F32 or TypeKind.F64),
+                        VecMakeI vm => !Lane64(vm.Lane),
+                        VecGetI vg => !Lane64(vg.Lane),
+                        VecSetI vs => !Lane64(vs.Lane),
+                        VecReduceI vr => !Lane64(vr.Lane),
                         ToFloatI tf => tf.Signed,
                         PrintI => true,
                         NumberTextI => true,
                         AtomicI at => at.Bytes <= 4,
-                        LoadI l => l.Kind is not MemKind.V128,
-                        StoreI st => st.Kind is not MemKind.V128,
-                        LoadIdxI li => li.Kind is not MemKind.V128 && li.Scale <= 8,
-                        StoreIdxI si => si.Kind is not MemKind.V128 && si.Scale <= 8,
+                        LoadI or StoreI => true,
+                        LoadIdxI li => li.Scale <= 8 || li.Kind == MemKind.V128,
+                        StoreIdxI si => si.Scale <= 8 || si.Kind == MemKind.V128,
                         CallI c => !c.Routine && c.Result is CallResult.None or CallResult.Eax or CallResult.Rax or CallResult.St0 or CallResult.EdxEax
                                    && c.ArgKinds.All(k => k is not MemKind.V128),
                         ToWholeI => true,

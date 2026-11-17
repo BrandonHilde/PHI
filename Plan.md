@@ -4127,6 +4127,10 @@ EmitBlockField given 32-bit text, records a word to a field), system calls (int 
 way: a few values the builder made address-wide had to stay 64 bits (an i64 widened from an int,
 a u32 made a float, a big constant), and the emitter's xmm12 to xmm15 are xmm4 to xmm7. Test
 ir_wide_program.
+Then to 1654 (38 left): loops made vector code, as in 64-bit code (SSE2 is 32-bit code's too), but
+for lanes of i64s and a u32 made a float or back, which 64-bit code works in 64-bit registers
+(the translation would make those 32 bits without a word: refused instead). The code libraries'
+7 test runs pass with PHI_IR32=1 too.
 
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:

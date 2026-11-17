@@ -87,7 +87,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     1 => signed ? $"movsx {r64}, byte {place}" : $"movzx {Sub(r64, 32)}, byte {place}",
                     2 => signed ? $"movsx {r64}, word {place}" : $"movzx {Sub(r64, 32)}, word {place}",
-                    4 => signed ? $"movsxd {r64}, dword {place}" : $"mov {Sub(r64, 32)}, dword {place}",
+                    4 => signed && !x32 ? $"movsxd {r64}, dword {place}" : $"mov {Sub(r64, 32)}, dword {place}",     // (32-bit code's registers are the lane's 32 bits)
                     _ => $"mov {r64}, qword {place}",
                 });
             }
