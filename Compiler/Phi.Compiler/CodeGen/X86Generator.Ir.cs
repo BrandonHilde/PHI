@@ -80,9 +80,10 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         static string? Fits32(IrFunction fn)
         {
-            if (fn.Values.Any(v => v.Wide || v.Float || v.Vec)) return "a value of 64 bits, a float or a vec";
-            if (fn.UnwindRecord != 0 || fn.Owned.Count > 0 || fn.OwnedTexts.Count > 0 || fn.OwnedViews.Count > 0 || fn.OwnedTableTexts.Count > 0)
-                return "something to give back when it ends";
+            if (fn.Values.Any(v => v.Wide)) return "a value of 64 bits";
+            if (fn.Values.Any(v => v.Vec)) return "a vec";
+            // (the record a throw going past looks at is written by the generator's EmitBlockField, in 64-bit terms)
+            if (fn.UnwindRecord != 0) return "something to give back when a throw goes past";
             foreach (Block b in fn.Blocks)
             {
                 foreach (Instr i in b.Instrs)
@@ -90,12 +91,20 @@ namespace Phi.Compiler.CodeGen
                     bool fits = i switch
                     {
                         LineMark or ConstI or CopyI or BinI or UnI or NarrowI or ExtendI or SetCcI or AddrI or LeaI or CheckI or ObjectLineI => true,
-                        LoadI l => l.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32,
-                        StoreI st => st.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32,
-                        LoadIdxI li => li.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32 && li.Scale <= 8,
-                        StoreIdxI si => si.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32 && si.Scale <= 8,
-                        CallI c => !c.Routine && c.Result is CallResult.None or CallResult.Eax or CallResult.Rax
-                                   && c.ArgKinds.All(k => k is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32),
+                        TextI or ZeroI or SignCheckI or AddrOfI or RawCallI or ObjCallI or ArrayGrowI or FixedStoreI or RoutineI => true,
+                        CopyBytesI or CompareBytesI or HasTextI or GrowStoreI or StopI or ExitI or ThrowI or InterfaceMethodI => true,
+                        ResultTextI or FreeTextI or ArrayRoutineI => true,
+                        FConstI or FBinI or FNegI or RoundF32I or X87I => true,
+                        ToFloatI tf => tf.Signed && !tf.Src.Wide,
+                        PrintI pr => pr.Kind is PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char or PrintKind.Float,
+                        NumberTextI nt => nt.Kind is PrintKind.Char or PrintKind.Float,
+                        AtomicI at => at.Bytes <= 4,
+                        LoadI l => l.Kind is not (MemKind.Q64 or MemKind.V128),
+                        StoreI st => st.Kind is not (MemKind.Q64 or MemKind.V128),
+                        LoadIdxI li => li.Kind is not (MemKind.Q64 or MemKind.V128) && li.Scale <= 8,
+                        StoreIdxI si => si.Kind is not (MemKind.Q64 or MemKind.V128) && si.Scale <= 8,
+                        CallI c => !c.Routine && c.Result is CallResult.None or CallResult.Eax or CallResult.Rax or CallResult.St0
+                                   && c.ArgKinds.All(k => k is not (MemKind.Q64 or MemKind.V128)),
                         _ => false,
                     };
                     if (!fits) return $"a {i.GetType().Name}";
@@ -103,8 +112,9 @@ namespace Phi.Compiler.CodeGen
                 bool ends = b.End switch
                 {
                     JumpT => true,
-                    BranchT br => !br.Float,
-                    RetT r => !r.Float && !r.Vec && !r.Wide,
+                    BranchT => true,
+                    SwitchT => true,
+                    RetT r => !r.Vec && !r.Wide,
                     _ => false,
                 };
                 if (!ends) return $"a {b.End?.GetType().Name}";
@@ -218,7 +228,9 @@ namespace Phi.Compiler.CodeGen
             }
 
             static readonly System.Text.RegularExpressions.Regex Names64 = new(@"\b(rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r11d|r11|qword)\b");
-            static readonly System.Text.RegularExpressions.Regex Not32 = new(@"\b(r(8|9|1[0-5])[dwb]?|sil|dil|cqo|cdqe|movsxd|movq|xmm\d+)\b|\[rel ");
+            static readonly System.Text.RegularExpressions.Regex Not32 = new(@"\b(r(8|9|1[0-5])[dwb]?|sil|dil|cqo|cdqe|movsxd|movq|xmm(8|9|1[0-5]))\b|\[rel ");
+            static readonly System.Text.RegularExpressions.Regex FloatLine = new(@"xmm|^f[a-z]+\b");
+            static readonly System.Text.RegularExpressions.Regex HighXmm = new(@"\bxmm1([2-5])\b");
 
             /// <summary>
             /// An instruction written for 64-bit code, made 32-bit: each 64-bit register its 32-bit one
@@ -228,11 +240,14 @@ namespace Phi.Compiler.CodeGen
             /// </summary>
             static string To32(string instruction)
             {
+                // (an f64's qword is its 8 bytes in 32-bit code too: kept where the line works on floats)
+                bool floats = FloatLine.IsMatch(instruction);
                 string made = Names64.Replace(instruction.Replace("[rel ", "["), m => m.Value switch
                 {
                     "rax" => "eax", "rbx" => "ebx", "rcx" => "ecx", "rdx" => "edx", "rsi" => "esi", "rdi" => "edi",
-                    "rbp" => "ebp", "rsp" => "esp", "r11" or "r11d" => "edx", _ => "dword",
+                    "rbp" => "ebp", "rsp" => "esp", "r11" or "r11d" => "edx", _ => floats ? "qword" : "dword",
                 });
+                made = HighXmm.Replace(made, m => $"xmm{int.Parse(m.Groups[1].Value) - 8}");
                 if (Not32.IsMatch(made)) throw new InvalidOperationException($"32-bit code with what only 64-bit code has: {made}");
                 return made;
             }
@@ -271,7 +286,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     g.Line("align 8");
                     g.Label(table);
-                    foreach (string target in targets) g.Line($"    dq {target}");
+                    foreach (string target in targets) g.Line($"    {(x32 ? "dd" : "dq")} {target}");
                 }
                 if (fn.UnwindRecord != 0)
                 {
@@ -288,7 +303,7 @@ namespace Phi.Compiler.CodeGen
                     {
                         E($"push qword [{slot}]");
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
-                        E("add rsp, 8");
+                        E($"add rsp, {Word}");
                     }
                     foreach (var (slot, room) in fn.OwnedTableTexts)
                     {
@@ -298,7 +313,7 @@ namespace Phi.Compiler.CodeGen
                         E($"jnz {own}");
                         E($"push qword [{slot}]");
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
-                        E("add rsp, 8");
+                        E($"add rsp, {Word}");
                         g.Label(own);
                     }
                     foreach (var (view, objects) in fn.OwnedViews)
@@ -313,7 +328,7 @@ namespace Phi.Compiler.CodeGen
                         E($"mov rcx, [{view}]");
                         if (objects != null)
                         {
-                            E("lea rdx, [rcx + rax * 8]");
+                            E($"lea rdx, [rcx + rax * {Word}]");
                             E("mov rax, [rdx]");
                             E("mov qword [rdx], 0");
                             E($"call {g.ObjectRoutine("free", objects)}");
@@ -321,21 +336,21 @@ namespace Phi.Compiler.CodeGen
                         else
                         {
                             E($"mov edx, [{view} + {g.ViewMax}]");
-                            E("lea rdx, [rcx + rdx * 8]");
-                            E($"test dword [rdx + rax * 8], {0x80000000}");
+                            E($"lea rdx, [rcx + rdx * {Word}]");
+                            E($"test dword [rdx + rax * {Word}], {0x80000000}");
                             E($"jnz {kept}");
-                            E("push qword [rcx + rax * 8]");
+                            E($"push qword [rcx + rax * {Word}]");
                             E($"call {g.HeapMethodLabel("Heap.Free")}");
-                            E("add rsp, 8");
+                            E($"add rsp, {Word}");
                             g.Label(kept);
                         }
                         E("inc dword [rsp]");
                         E($"jmp {next}");
                         g.Label(done);
-                        E("add rsp, 8");
+                        E($"add rsp, {Word}");
                         E($"push qword [{view}]");
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
-                        E("add rsp, 8");
+                        E($"add rsp, {Word}");
                     }
                     E("ret");
                 }
@@ -372,6 +387,12 @@ namespace Phi.Compiler.CodeGen
             static string Size(int bits) => bits switch { 64 => "qword", 32 => "dword", 16 => "word", _ => "byte" };
 
             static int Bits(VReg v) => v.Wide ? 64 : 32;
+
+            /// <summary>An address's bytes (what a push of one takes): 8, or 4 in 32-bit code.</summary>
+            int Word => x32 ? 4 : 8;
+
+            /// <summary>Where a str result's place is, above rbp: past the return address and the caller's rbp.</summary>
+            int ResultAt => 2 * Word;
 
             /// <summary>In 32-bit code esi and edi have no low byte (sil and dil are 64-bit code's).</summary>
             static bool NoLowByte(string r64) => r64 is "rsi" or "rdi";
@@ -595,7 +616,7 @@ namespace Phi.Compiler.CodeGen
                         MarkNow();
                         g.textMayCut = gs.MayCut;
                         g.EmitGrowStoreAt(gs.RoomOffset ?? g.RoomAt, gs.SourceIsString, gs.Append, gs.Unsigned,
-                                          rooms: gs.Rooms != null ? $"dword [{gs.Rooms}]" : null, known: gs.Known);
+                                          rooms: gs.Rooms != null ? $"dword [{(x32 ? To32(gs.Rooms) : gs.Rooms)}]" : null, known: gs.Known);
                         g.textMayCut = false;
                         break;
                     }
@@ -685,9 +706,9 @@ namespace Phi.Compiler.CodeGen
                         {
                             Load("rax", rt.Value, 64);
                             E("push rax");
-                            E("push qword [rbp + 16]");
+                            E($"push qword [rbp + {ResultAt}]");
                             g.EmitGrowStoreAt(g.RoomAt, true, false, false);
-                            E("mov rax, [rbp + 16]");
+                            E($"mov rax, [rbp + {ResultAt}]");
                             E("mov rax, [rax]");
                             E("test rax, rax");
                             E($"jnz {place}");
@@ -697,7 +718,7 @@ namespace Phi.Compiler.CodeGen
                         {
                             g.Need("phi_strcpy");
                             Load("rsi", rt.Value, 64);
-                            E("mov rdi, [rbp + 16]");
+                            E($"mov rdi, [rbp + {ResultAt}]");
                             E($"mov ecx, {rt.Room}");
                             E("call phi_strcpy");
                             string ok = g.NewLabel("textfits");
@@ -705,7 +726,7 @@ namespace Phi.Compiler.CodeGen
                             WriteBack(rt.Held);
                             g.EmitTextError();
                             g.Label(ok);
-                            E("mov rax, [rbp + 16]");
+                            E($"mov rax, [rbp + {ResultAt}]");
                         }
                         g.Label(place);
                         Store(rt.Dst, "rax");
@@ -751,7 +772,7 @@ namespace Phi.Compiler.CodeGen
                     case FreeTextI ft:
                         E(ft.Value != null ? $"push {Operand(ft.Value, 64)}" : $"push qword {Place(ft.Place)}");
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
-                        E("add rsp, 8");
+                        E($"add rsp, {Word}");
                         break;
                     case ArrayGrowI grow:
                         // (the generator's EmitArrayGrowCall: rax the array's place, edx the count, ecx the size)
@@ -925,8 +946,12 @@ namespace Phi.Compiler.CodeGen
                     {
                         string t = FTarget(fneg.Dst);
                         FLoad(t, fneg.A);
-                        E("mov rax, 0x8000000000000000");
-                        E("movq xmm14, rax");
+                        if (x32) E($"movsd xmm14, qword [rel {g.FloatLabel(-0.0)}]");     // (its sign bit alone)
+                        else
+                        {
+                            E("mov rax, 0x8000000000000000");
+                            E("movq xmm14, rax");
+                        }
                         E($"xorpd {t}, xmm14");
                         FStore(fneg.Dst, t);
                         break;
@@ -1493,7 +1518,7 @@ namespace Phi.Compiler.CodeGen
                         E($"ja {labels[sw.Default]}");
                         if (bits == 32) E("mov eax, eax");
                         E($"lea r11, [rel {table}]");
-                        E("jmp [r11 + rax*8]");
+                        E($"jmp [r11 + rax*{Word}]");
                         return;
                     }
                 }
@@ -1550,6 +1575,17 @@ namespace Phi.Compiler.CodeGen
                     {
                         E("sub rsp, 16");
                         E($"movdqu [rsp], {VIn(a.Reg!, "xmm15")}");
+                        continue;
+                    }
+                    if (x32 && (kind == MemKind.F64 || kind == MemKind.F32 || !a.IsImm && a.Reg!.Float))
+                    {
+                        // (an f64 takes 8 bytes of the stack in 32-bit code, an f32 4, as the generator pushes them)
+                        bool f32 = kind == MemKind.F32;
+                        pushed += f32 ? 0 : 4;      // (4 counted above)
+                        if (f32) E($"cvtsd2ss xmm15, {F(a.Reg!)}");
+                        else FLoad("xmm15", a.Reg!);
+                        E($"sub rsp, {(f32 ? 4 : 8)}");
+                        E(f32 ? "movss dword [rsp], xmm15" : "movsd qword [rsp], xmm15");
                         continue;
                     }
                     if (kind == MemKind.F32)

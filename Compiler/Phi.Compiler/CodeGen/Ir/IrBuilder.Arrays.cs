@@ -500,6 +500,36 @@ namespace Phi.Compiler.CodeGen.Ir
             return (most, AddressOf(array));
         }
 
+        /// <summary>An array given for an array parameter in 32-bit code (PushArrayView's): the most it holds, how many it has, its elements.</summary>
+        (Opnd Most, Opnd Count, Opnd Elements) ArrayArg32(Expr? array)
+        {
+            if (array == null) return (Opnd.Const(0), Opnd.Const(0), Opnd.Const(0));
+            if (array is PointerViewExpr pv)
+            {
+                VReg n = InReg(Value(pv.Count, PhiType.U32), false);
+                return (n, n, InReg(Value(pv.Pointer), Addr));
+            }
+            if (array.Type.Open)
+            {
+                Need(Binder.IsFieldView(array) && CanAddress(array) || CanAddress(array) && array is NameExpr { Symbol: VariableSymbol p } && paramViews.ContainsKey(p)
+                     || array is NameExpr { Symbol: VariableSymbol g } && GrowingView(g), $"{Unknown(array)} given as an array");
+                VReg view = ViewOf(array);
+                return (LoadAt(view, ViewMax, PhiType.U32), LoadAt(view, ViewCount, PhiType.U32), LoadAt(view, 0, PhiType.PointerTo(array.Type.Element)));
+            }
+            Need(!array.Type.TextTable || array is NameExpr { Symbol: VariableSymbol { GrowingArray: false } t } && (!Ours(t) && SimpleLabel(t.Label) || localTables.ContainsKey(t)),
+                 $"{Unknown(array)} given as an array of text");
+            if (array.Type.TextTable)
+            {
+                var table = (VariableSymbol)((NameExpr)array).Symbol!;
+                VReg at = fn.NewAddress();
+                Emit(new AddrI { Dst = at, Label = localTables.TryGetValue(table, out string? mine) ? mine : table.Label });
+                return (Opnd.Const(array.Type.Length), Opnd.Const(array.Type.Length), at);
+            }
+            Need(CanCount(array) && CanAddress(array), $"{Unknown(array)} given as an array");
+            Opnd count = ArrayCount(array);
+            return (Opnd.Const(array.Type.Length), count, AddressOf(array));
+        }
+
         /// <summary>Where an array that grows keeps its elements' address, count and room.</summary>
         VReg ViewOf(Expr array)
         {

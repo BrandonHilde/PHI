@@ -4109,6 +4109,16 @@ for methods whose values are all 32 bits and whose instructions are among the fi
 it learns: then 660 of the tests' and bench's 32-bit methods go through it, and the 208 32-bit Linux
 tests and the three fuzzers pass so; 64-bit code is unchanged (every test program's assembly). Most
 of the rest have an i64, a float or a vec (358), then text (81).
+Then, to 1148 of them (541 left): text, objects, arrays that grow, the library's routines, prints,
+throws, a str result, atomic steps, the switch's table (dd and *4 there), floats (SSE2: xmm0 to xmm3
+the allocator's, the emitter's xmm12 to xmm15 its xmm4 to xmm7; an f64 pushed as 8 bytes, given back
+in st0 as the generator's; an f64's qword left as it is), array arguments as the generator's 32-bit
+code pushes them (the most, how many, the elements). One thing 32-bit code has that 64-bit doesn't:
+a library routine takes its arguments in esi and edi, the registers values are kept in across calls,
+so anything other than a method's call is as an assembly block for the allocator (what's needed
+after it is in the frame). Left: an i64 (363), a method a throw goes past with things to give back
+(72: its record is the generator's EmitBlockField, in 64-bit terms), system calls (48: int 0x80
+there), locks (39), catching (12).
 
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:

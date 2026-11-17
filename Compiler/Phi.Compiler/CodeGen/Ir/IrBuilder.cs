@@ -2436,7 +2436,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 // toward zero, all 64 bits (as the generator's fistp qword), then what fits
                 Need(!to.IsPointer && !to.IsObject && to.Kind != TypeKind.Bool, $"a float made a {to}");
-                VReg whole = fn.NewAddress();
+                VReg whole = fn.NewValue(true);     // (all 64 bits, as fistp qword gives them)
                 Emit(new ToWholeI { Dst = whole, Src = v.Reg! });
                 return to.IsWide ? whole : Convert(Cast(whole, PhiType.I64, PhiType.I32), PhiType.I32, to);
             }
@@ -2692,6 +2692,18 @@ namespace Phi.Compiler.CodeGen.Ir
                 Expr? given = i < arguments.Count ? arguments[i] : callee.Parameters[i].Decl.Values.FirstOrDefault();
                 if (ArrayParameter(callee.Parameters[i]))
                 {
+                    if (!Addr)
+                    {
+                        // 32-bit code's view, as the generator pushes it: the most, how many, its elements
+                        var (most32, count32, elements32) = ArrayArg32(given);
+                        call.Args.Add(most32);
+                        call.ArgKinds.Add(MemKind.D32);
+                        call.Args.Add(count32);
+                        call.ArgKinds.Add(MemKind.D32);
+                        call.Args.Add(elements32);
+                        call.ArgKinds.Add(MemKind.D32);
+                        continue;
+                    }
                     // a view of the array: how many and the most together (pushed first), then its elements
                     var (both, elements) = ArrayArg(given);
                     call.Args.Add(both);
