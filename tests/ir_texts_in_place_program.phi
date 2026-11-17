@@ -1,0 +1,80 @@
+# Through the intermediate form: arrays of texts kept in place (a struct's, a class's, a method's
+# own), written, built and read; atomic steps on a method's own variable (kept in its own slot);
+# a struct added with no value (zero); a call's result kept in an element; vs PHI_IR=0's.
+struct.Pt
+{
+	int x;
+	int y;
+}
+
+struct.Box
+{
+	str labels[3]: [12];
+
+	[Fill:]
+		labels:0 is 'zero';
+		labels:1 is 'one ' 1;
+		labels:2 is labels:0;
+		labels:2++ '+';
+	[end]
+
+	[Show:]
+		log labels:0 ' ' labels:1 ' ' labels:2 ' ' labels:1.len '\n';
+	[end]
+}
+
+phi.IrTextsInPlace:Program
+{
+	str names[2]: [10];
+	Pt pts[];
+	int kept: [4];
+	new Box b;
+	call b.Fill;
+	call b.Show;
+	call Mine;
+	call Atomics;
+	call Structs;
+	call Keep;
+	if call Over throws err
+		log 'caught: ' err.text '\n';
+	;;
+	exit 0;
+
+	[Mine:]
+		str own[3]: [8];
+		own:1 is 'mine';
+		names:0 is own:1 ' and';
+		names:1 is (Twice: 3);
+		log '[' own:0 '] ' own:1 ' ' names:0 ' ' names:1 '\n';
+	[end]
+
+	[Twice: int n: 0;]
+	[end: n * 2]
+
+	[Atomics:]
+		int count: 5;
+		atomic count++;
+		atomic count++;
+		atomic count--;
+		atomic count is 40 when 6;
+		bln swapped: (atomic count is 50 when 40);
+		log count ' ' swapped '\n';
+	[end]
+
+	[Structs:]
+		pts++;
+		pts:0.x is 3;
+		pts++;
+		log pts.len ' ' pts:0.x ' ' pts:1.x ' ' pts:1.y '\n';
+	[end]
+
+	[Keep:]
+		call kept:2 is Twice: 21;
+		log kept:2 '\n';
+	[end]
+
+	[Over:]
+		str long: 'much too long for it';
+		names:0 is long;
+	[end]
+}

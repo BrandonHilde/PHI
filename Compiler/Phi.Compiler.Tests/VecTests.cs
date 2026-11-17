@@ -77,8 +77,8 @@ namespace Phi.Compiler.Tests
         [Fact]
         public void SaysWhatAMethodUsingOneCantHave()
         {
-            // an array of text of its own that grows isn't the intermediate form's yet: said, naming what to move
-            string program = InMethod("\t\tvec<int> v: 1;\n\t\tstr words[];\n\t\twords++ 'a';\n\t\tlog words:0 v;");
+            // has on an array of floats isn't the intermediate form's yet: said, naming what to move
+            string program = InMethod("\t\tvec<int> v: 1;\n\t\tf64 a[3];\n\t\tlog (a has 1.5) v;");
             Assert.Contains(Compile(program).Diagnostics, d => d.Message.Contains("Run uses a vec, and what writes vector code doesn't take") && d.Message.Contains("put that part in a method of its own"));
         }
 

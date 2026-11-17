@@ -4060,6 +4060,21 @@ ir_struct_elements, ir_array_params, ir_text_arrays, ir_addr_locals and ir_local
 left (39) is scattered: a method's own arrays of objects and of text, structs that own things,
 text built from its own elements, takes, an assembly block's result.
 
+Then, to almost none (the same day): arrays of texts kept in place; atomic steps on a method's own
+variable (pinned, as addr makes it); a struct added with no value (zeros); a call's result kept
+anywhere an assignment puts one; a while each over structs (the element is the struct where it is,
+a borrowed object: what's written to it is the array's); a method's own arrays of objects (in its
+frame, each object one of the method's own) and its arrays that grow holding objects or texts (those
+freed, then the room, at its end; the unwind routine does the same, in loops of its own); has; an
+assembly block's result; str through method values and interfaces, objects given to them; objects
+kept in a class's variable or an element (by address, read each time: a call may change a class's);
+arrays copied (b is a: bytes, objects set one by one, texts grown into; when one may be inside the
+other, the copies made first, by the generator's array routines or into the frame) and compared;
+interfaces' arrays (their routines go to each object's own); text built from its own elements (built
+aside when they're the same element, in a slot that grows when there's a heap); takes where the
+target may be inside the source (an error then, StopI). Tests ir_texts_in_place, ir_each_structs,
+ir_own_object_arrays, ir_own_views, ir_array_copies.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

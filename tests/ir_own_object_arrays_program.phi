@@ -1,0 +1,55 @@
+# A method's own arrays of objects through the intermediate form: new T list[3] (a zeroed object
+# in each, again each time it's declared), an [atmost N] one (++, none in it at first), given to
+# a parameter; every object freed at the method's end and by a throw going past (the heap says).
+struct.Node
+{
+	int value;
+	new str label;
+}
+
+phi.IrOwnObjectArrays:Program
+{
+	u32 before: Heap.used_blocks;
+	call Fixed: 2;
+	call Some;
+	if call Throws throws err
+		log 'caught: ' err.text '\n';
+	;;
+	log 'blocks back: ' (Heap.used_blocks - before) '\n';
+	exit 0;
+
+	[Total: new Node list[];]
+		int s: 0;
+		while each n in list
+			s++ n.value;
+		;;
+	[end: s]
+
+	[Fixed: int rounds: 0;]
+		while int r: 0; r < rounds; r++;
+			new Node three[3];
+			three:0.value is 1;
+			three:2.value is 5 + r;
+			three:1.label is 'one';
+			log three:2.value ' ' three:1.label ' ' (Total: three) '\n';
+		;;
+	[end]
+
+	[Some:]
+		new Node few[atmost 4];
+		new Node a;
+		a.value is 7;
+		few++ a;
+		few++ a;
+		few++;
+		log few.len ' ' (Total: few) '\n';
+		new Node few2[atmost 2];
+		few2++ a;
+	[end]
+
+	[Throws:]
+		new Node held[2];
+		held:0.label is 'held';
+		throw 'with objects';
+	[end]
+}

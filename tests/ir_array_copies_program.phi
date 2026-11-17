@@ -1,0 +1,127 @@
+# Whole arrays copied (b is a) through the intermediate form: numbers and structs (their bytes),
+# objects (each set from the source's); into one of a size (the same count, or an index error),
+# an atmost one (no more than it holds), one that grows (it grows to fit); vs PHI_IR=0's.
+struct.Pt
+{
+	int x;
+	int y;
+}
+
+struct.Node
+{
+	int value;
+	new str label;
+}
+
+struct.Holder
+{
+	int nums[];
+	new Node nodes[];
+}
+
+phi.IrArrayCopies:Program
+{
+	int three: 1 2 3;
+	int other: [3];
+	int grown[];
+	int few[atmost 5];
+	Pt pts: [2];
+	new Holder h;
+	str table[3];
+	str words[];
+	u32 before: Heap.used_blocks;
+	call Numbers;
+	call Objects;
+	call Compare;
+	call Texts;
+	if call Mismatch throws err
+		log 'caught: ' err.text '\n';
+	;;
+	if call TooMany throws err
+		log 'caught: ' err.text '\n';
+	;;
+	h.nodes.len is 0;
+	log 'blocks back: ' (Heap.used_blocks - before) '\n';
+	exit 0;
+
+	[Numbers:]
+		other is three;
+		grown is three;
+		few is three;
+		h.nums is grown;
+		Pt mine: [2];
+		pts:1.y is 9;
+		mine is pts;
+		log other:2 ' ' grown.len ' ' grown:1 ' ' few.len ' ' few:0 ' ' h.nums.len ' ' mine:1.y '\n';
+		few is h.nums;
+		grown is few;
+		log grown.len '\n';
+	[end]
+
+	[Objects:]
+		new Node mine[3];
+		mine:0.value is 4;
+		mine:1.label is 'one';
+		h.nodes is mine;
+		mine:0.value is 5;
+		log h.nodes.len ' ' h.nodes:0.value ' ' h.nodes:1.label ' ' mine:0.value '\n';
+		new Node two[2];
+		two:1.value is 8;
+		h.nodes is two;
+		log h.nodes.len ' ' h.nodes:1.value '\n';
+	[end]
+
+	[Mismatch:]
+		int two: [2];
+		two is grown;
+	[end]
+
+	[TooMany:]
+		int more: 1 2 3 4 5 6;
+		h.nums is more;
+		few is h.nums;
+	[end]
+
+	# arrays compared: as many, and each the same (numbers and structs by their bytes,
+	# objects by their struct's equal, texts as is compares them)
+	[Compare:]
+		int a: 1 2 3;
+		int b: 1 2 3;
+		int c[];
+		c is a;
+		log (a is b) ' ' (a is c) ' ' (a is not c) ' ';
+		c:2 is 9;
+		log (a is c) ' ';
+		c.len is 2;
+		log (a is c) ' ';
+		new Node x[2];
+		new Node y[2];
+		x:1.label is 'same';
+		y:1.label is 'same';
+		log (x is y) ' ';
+		y:1.label is 'other';
+		log (x is y) ' ';
+		str s[];
+		str t[];
+		s++ 'a' 'b';
+		t++ 'a' 'b';
+		log (s is t) ' ';
+		t:1 is 'c';
+		log (s is t) '\n';
+	[end]
+
+	# arrays of text copied: each text put in its element (growing it); one that grows first
+	# gives back the texts past the source's count, then grows to it
+	[Texts:]
+		words++ 'one' 'two' 'three';
+		table is words;
+		log table:0 ' ' table:2 ' ';
+		str fewer[];
+		fewer++ 'x, longer than before' 'y';
+		words is fewer;
+		log words.len ' ' words:0 ' ' words:1 ' ';
+		table:1 is 'b';
+		words is table;
+		log words.len ' ' words:1 ' ' table:2 '\n';
+	[end]
+}

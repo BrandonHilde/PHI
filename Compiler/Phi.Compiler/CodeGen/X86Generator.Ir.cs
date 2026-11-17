@@ -216,6 +216,42 @@ namespace Phi.Compiler.CodeGen
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
                         E("add rsp, 8");
                     }
+                    foreach (var (view, objects) in fn.OwnedViews)
+                    {
+                        // each element's object (up to its room) or heap text (up to how many), then the room
+                        string next = g.NewLabel("unwindview"), done = g.NewLabel("unwoundview"), kept = g.NewLabel("unwindkept");
+                        E("push qword 0");
+                        g.Label(next);
+                        E("mov eax, [rsp]");
+                        E(objects != null ? $"cmp eax, [{view} + {g.ViewMax}]" : $"cmp eax, [{view} + {g.ViewCount}]");
+                        E($"jae {done}");
+                        E($"mov rcx, [{view}]");
+                        if (objects != null)
+                        {
+                            E("lea rdx, [rcx + rax * 8]");
+                            E("mov rax, [rdx]");
+                            E("mov qword [rdx], 0");
+                            E($"call {g.ObjectRoutine("free", objects)}");
+                        }
+                        else
+                        {
+                            E($"mov edx, [{view} + {g.ViewMax}]");
+                            E("lea rdx, [rcx + rdx * 8]");
+                            E($"test dword [rdx + rax * 8], {0x80000000}");
+                            E($"jnz {kept}");
+                            E("push qword [rcx + rax * 8]");
+                            E($"call {g.HeapMethodLabel("Heap.Free")}");
+                            E("add rsp, 8");
+                            g.Label(kept);
+                        }
+                        E("inc dword [rsp]");
+                        E($"jmp {next}");
+                        g.Label(done);
+                        E("add rsp, 8");
+                        E($"push qword [{view}]");
+                        E($"call {g.HeapMethodLabel("Heap.Free")}");
+                        E("add rsp, 8");
+                    }
                     E("ret");
                 }
             }
@@ -493,6 +529,29 @@ namespace Phi.Compiler.CodeGen
                         E($"mov eax, [rax + {g.InterfaceSlot(im.Interface)} + {4 * im.Index}]");
                         Store(im.Dst, "rax");
                         break;
+                    case HasTextI ht:
+                    {
+                        string routine = ht.Character ? "phi_str_has_char" : "phi_str_has";
+                        g.Need(routine);
+                        // (through the stack: each may be where the other goes)
+                        E($"push {Operand(ht.Value, 64)}");
+                        Load("rsi", ht.Text, 64);
+                        E(ht.Character ? "pop rax" : "pop rdi");
+                        E($"call {routine}");
+                        Store(ht.Dst, "rax");
+                        break;
+                    }
+                    case StopI st:
+                        WriteBack(st.Held);
+                        MarkNow();
+                        g.EmitStop(st.Text, st.At, st.Kind);
+                        break;
+                    case ArrayRoutineI ar:
+                        if (ar.Made != null) E($"push {Operand(ar.Made, 64)}");
+                        Load("rax", ar.View, 64);
+                        if (ar.Made != null) E("pop rdx");
+                        E($"call {g.ArrayRoutine(ar.Kind, ar.Element)}");
+                        break;
                     case ExitI ex:
                         g.Need("phi_exit");
                         WriteBack(ex.Held);
@@ -507,6 +566,18 @@ namespace Phi.Compiler.CodeGen
                         Store(ao.Dst, r);
                         break;
                     }
+                    case CompareBytesI cmb:
+                        E($"push {Operand(cmb.Count, 64)}");
+                        E($"push {Operand(cmb.B, 64)}");
+                        Load("rsi", cmb.A, 64);
+                        E("pop rdi");
+                        E("pop rcx");
+                        E("cld");
+                        E("xor eax, eax            ; the same so far (ZF set), even for none");
+                        E("repe cmpsb");
+                        E("sete al");
+                        Store(cmb.Dst, "rax");
+                        break;
                     case CopyBytesI cb:
                         // (by way of the stack: each may be where another goes)
                         E($"push {Operand(cb.Count, 64)}");
@@ -926,6 +997,7 @@ namespace Phi.Compiler.CodeGen
                     case RawCallI raw:
                         // (every value lives in the frame across it: the allocator saw to that)
                         E($"call {raw.Label}");
+                        if (raw.Dst != null) Store(raw.Dst, "rax");
                         break;
                     case LockI lk:
                     {

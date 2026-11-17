@@ -141,12 +141,28 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case NumberTextI nt: if (nt.Value.Reg != null) yield return nt.Value.Reg; break;
                 case AddrOfI ao: yield return ao.Of; break;
+                case ArrayRoutineI ar:
+                    yield return ar.View;
+                    if (ar.Made != null) yield return ar.Made;
+                    break;
+                case StopI st:
+                    foreach (StoreI h in st.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
+                    break;
+                case HasTextI ht:
+                    yield return ht.Text;
+                    if (ht.Value.Reg != null) yield return ht.Value.Reg;
+                    break;
                 case InterfaceMethodI im: yield return im.Receiver; break;
                 case ExitI ex:
                     if (ex.Code.Reg != null) yield return ex.Code.Reg;
                     foreach (StoreI h in ex.Held) if (h.Src.Reg != null) yield return h.Src.Reg;
                     break;
                 case FreeTextI { Value: not null } ftv: yield return ftv.Value; break;
+                case CompareBytesI cmb:
+                    yield return cmb.A;
+                    yield return cmb.B;
+                    yield return cmb.Count;
+                    break;
                 case CopyBytesI cb:
                     yield return cb.Dst;
                     yield return cb.Src;
@@ -207,6 +223,9 @@ namespace Phi.Compiler.CodeGen.Ir
             SysCallI sc => sc.Dst,
             NumberTextI nt => nt.Dst,
             AddrOfI ao => ao.Dst,
+            CompareBytesI cmb => cmb.Dst,
+            RawCallI { Dst: not null } rc => rc.Dst,
+            HasTextI ht => ht.Dst,
             InterfaceMethodI im => im.Dst,
             ResultTextI rt => rt.Dst,
             ObjCallI oc => oc.Dst,
@@ -216,7 +235,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>An instruction that calls something, which may change what a call changes.</summary>
         public static bool IsCall(Instr i) => i is CallI or ObjCallI or PrintI or RoutineI or CatchI or ArrayGrowI or SysCallI
-            or GrowStoreI or NumberTextI or FreeTextI or FixedStoreI or ResultTextI or CopyBytesI
+            or GrowStoreI or NumberTextI or FreeTextI or FixedStoreI or ResultTextI or CopyBytesI or HasTextI or CompareBytesI or ArrayRoutineI
             || i is TextI { Op: not (TextOp.Literal or TextOp.OrEmpty) };
 
         public static IEnumerable<VReg> Uses(Terminator? t)

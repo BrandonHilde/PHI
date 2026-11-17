@@ -1,0 +1,52 @@
+# while each over structs kept in an array, through the intermediate form: the element is the
+# struct where it is (its address: what's written to it is the array's), a method called on it.
+interface.Ranked
+{
+	[Rank]
+}
+
+struct.Card has Ranked
+{
+	int value;
+
+	[Rank]
+	[end: value * 2]
+}
+
+struct.Plain
+{
+	int value;
+}
+
+phi.IrEachStructs:Program
+{
+	Card cards: [3];
+	Plain plains: [3];
+	cards:1.value is 7;
+	plains:2.value is 5;
+	plains:0.value is 4;
+	call A;
+	call B;
+	exit 0;
+
+	[A:]
+		int best: 0;
+		while each x in cards
+			if (x.Rank) > best
+				best is (x.Rank);
+			;;
+		;;
+		log best '\n';
+	[end]
+
+	[B:]
+		int s: 0;
+		while each p in plains
+			s++ p.value;
+		;;
+		while each q in plains
+			q.value is q.value * 10;
+		;;
+		log s ' ' plains:0.value ' ' plains:2.value '\n';
+	[end]
+}

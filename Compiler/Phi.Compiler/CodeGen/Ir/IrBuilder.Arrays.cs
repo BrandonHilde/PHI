@@ -17,6 +17,400 @@ namespace Phi.Compiler.CodeGen.Ir
                 || array.Type.Open && Binder.IsFieldView(array) && CanAddress(array)
                 || array is NameExpr { Symbol: VariableSymbol g } && GrowingView(g));
 
+        /// <summary>
+        /// list has x: 1 when an element is x, compared as the generator's EmitHas does: x worked out
+        /// first, then each element in turn while the index is under how many it has now (numbers
+        /// in 32 bits, each widened by its own sign, or all 64 of an 8-byte one; texts as is does;
+        /// objects and structs by their struct's equal); text has x or a character, by the library.
+        /// </summary>
+        VReg Has(HasExpr has)
+        {
+            if (has.Kind is HasKind.Text or HasKind.Character)
+            {
+                Opnd sought = has.Kind == HasKind.Text ? TextValue(has.Value) : InReg(Value(has.Value), false);
+                VReg within = (VReg)TextValue(has.Collection).Reg!;
+                VReg found = fn.NewValue(false);
+                Emit(new HasTextI { Dst = found, Text = within, Value = sought, Character = has.Kind == HasKind.Character });
+                return found;
+            }
+            Expr list = has.Collection;
+            PhiType element = list.Type.Element;
+            int size = element.ElementSize;
+            Need(!(has.Kind == HasKind.Numbers && (IsF(element) || element.Kind == TypeKind.F16)), "has on floats");
+            Need(CanCount(list) && CanElements(list), $"has on {Unknown(list)}");
+            Opnd value = has.Kind switch
+            {
+                HasKind.Texts => TextValue(has.Value),
+                HasKind.Objects or HasKind.Structs => ObjectAddress(has.Value),
+                _ => size == 8 ? InReg(Value(has.Value, PhiType.I64), true) : InReg(Value(has.Value, PhiType.Int), false),
+            };
+            VReg d = fn.NewValue(false);
+            Emit(new ConstI { Dst = d, Value = 0 });
+            VReg i = fn.NewValue(true);
+            Emit(new ConstI { Dst = i, Value = 0 });
+            Block test = fn.NewBlock(), body = fn.NewBlock(), next = fn.NewBlock(), yes = fn.NewBlock(), done = fn.NewBlock();
+            StartBlock(test);
+            VReg count = InReg(ArrayCount(list), false), wideCount = fn.NewValue(true);
+            Emit(new ExtendI { Dst = wideCount, Src = count, Signed = false });
+            current.End = new BranchT { Cond = Cond.LtU, A = i, B = wideCount, Then = body, Else = done };
+            Enter(body);
+            VReg at = Offset(ElementsOf(list), i, size, fn.NewValue(true));
+            VReg same;
+            switch (has.Kind)
+            {
+                case HasKind.Numbers:
+                {
+                    MemKind kind = size switch { 1 => element.IsSigned ? MemKind.S8 : MemKind.U8, 2 => element.IsSigned ? MemKind.S16 : MemKind.U16, 8 => MemKind.Q64, _ => MemKind.D32 };
+                    VReg e = fn.NewValue(size == 8);
+                    Emit(new LoadIdxI { Dst = e, Base = at, Index = Opnd.Const(0), Scale = 1, Kind = kind });
+                    current.End = new BranchT { Cond = Cond.Eq, A = e, B = value, Then = yes, Else = next };
+                    break;
+                }
+                case HasKind.Texts:
+                {
+                    VReg text;
+                    if (element.IsInlineText) text = at;
+                    else
+                    {
+                        VReg slot = LoadAt(at, 0, PhiType.PointerTo(PhiType.U8));
+                        text = fn.NewValue(true);
+                        Emit(new TextI { Op = TextOp.OrEmpty, Dst = text, A = slot });
+                    }
+                    same = fn.NewValue(false);
+                    Emit(new TextI { Op = TextOp.Equal, Dst = same, A = text, B = (VReg)value.Reg! });
+                    current.End = new BranchT { Cond = Cond.Eq, A = same, B = Opnd.Const(0), Then = yes, Else = next };
+                    break;
+                }
+                default:
+                {
+                    VReg obj = has.Kind == HasKind.Objects ? LoadAt(at, 0, element) : at;
+                    same = fn.NewValue(false);
+                    Emit(new ObjCallI { Kind = "equal", Struct = element.Struct!, Arg = obj, Second = (VReg)value.Reg!, Dst = same });
+                    current.End = new BranchT { Cond = Cond.Ne, A = same, B = Opnd.Const(0), Then = yes, Else = next };
+                    break;
+                }
+            }
+            Enter(next);
+            Emit(new BinI { Op = BinOp.Add, Dst = i, A = i, B = Opnd.Const(1) });
+            current.End = new JumpT { Target = test };
+            Enter(yes);
+            Emit(new ConstI { Dst = d, Value = 1 });
+            current.End = new JumpT { Target = done };
+            Enter(done);
+            return d;
+        }
+
+        /// <summary>
+        /// b is a; for arrays: of numbers or structs that own nothing, its bytes; of objects (one not
+        /// inside the other), each element set from the source's. The target fits the source's count
+        /// first: one that grows grows to it (letting go of objects past it), an atmost one takes it
+        /// (more than it holds an index error), any other must have that many (the generator's).
+        /// </summary>
+        void AssignArrays(ArrayAssignStmt copy)
+        {
+            Expr target = copy.Target, source = copy.Source;
+            PhiType t = target.Type, element = t.Element;
+            Mark(copy);
+            if (target is NameExpr { Symbol: VariableSymbol into } && source is NameExpr { Symbol: VariableSymbol from } && into == from) return;
+            bool objects = element.IsObject;
+            if (copy.Overlaps)
+            {
+                CopyOverlapping(copy);
+                return;
+            }
+            if (t.TextTable && !copy.Overlaps)
+            {
+                AssignTexts(copy);
+                return;
+            }
+            Need(t.Kind != TypeKind.Str, "an array of texts in place copied");
+            Need(objects ? element.Struct != null : Reachable(element) && !(InPlaceStruct(element) && element.Struct!.OwnsObjects),
+                 $"an array of {element} copied");
+            Need(CanCount(source) && CanElements(source) && CanElements(target), $"{Unknown(target)} given {Unknown(source)}");
+            bool grows = target.Type.Open && (target is NameExpr { Symbol: VariableSymbol g } && GrowingView(g) || Binder.IsFieldView(target) && CanAddress(target));
+            Need(grows || !t.Open || target is NameExpr { Symbol: VariableSymbol pv } && paramViews.ContainsKey(pv), $"{Unknown(target)} given an array");
+            int size = element.ElementSize;
+            VReg count = InReg(ArrayCount(source), false);
+            VReg wide = fn.NewValue(true);
+            Emit(new ExtendI { Dst = wide, Src = count, Signed = false });
+            if (grows)
+            {
+                Emit(new ObjectLineI { At = copy });
+                VReg view = ViewOf(target);
+                Emit(new ArrayGrowI { View = view, Count = count, Size = size });
+                if (objects) FreeFrom(target, count);
+                Emit(new StoreIdxI { Base = ViewOf(target), Index = Opnd.Const(ViewCount), Scale = 1, Src = count, Kind = MemKind.D32 });
+            }
+            else if (t.Filled && !t.Open)
+            {
+                Emit(new CheckI { Index = wide, Limit = t.Length + 1, At = copy, Held = HeldStores() });
+                if (objects) FreeFrom(target, count);
+                Emit(new StoreIdxI { Base = AddressOf(target), Index = Opnd.Const(t.CountOffset), Scale = 1, Src = count, Kind = MemKind.D32 });
+            }
+            else if (t.Open || source.Type.Open)
+            {
+                // the same number of elements: no more (count below its own + 1) and no fewer
+                VReg have = fn.NewValue(true);
+                if (t.Open)
+                {
+                    VReg its = LoadAt(ViewOf(target), ViewCount, PhiType.U32);
+                    Emit(new ExtendI { Dst = have, Src = its, Signed = false });
+                }
+                else Emit(new ConstI { Dst = have, Value = t.Length });
+                VReg haveMore = fn.NewValue(true), countMore = fn.NewValue(true);
+                Emit(new BinI { Op = BinOp.Add, Dst = haveMore, A = have, B = Opnd.Const(1) });
+                Emit(new BinI { Op = BinOp.Add, Dst = countMore, A = wide, B = Opnd.Const(1) });
+                Emit(new CheckI { Index = wide, LimitValue = haveMore, At = copy, Held = HeldStores() });
+                Emit(new CheckI { Index = have, LimitValue = countMore, At = copy, Held = HeldStores() });
+            }
+            if (!objects)
+            {
+                VReg fromElements = ElementsOf(source), toElements = ElementsOf(target), bytes = fn.NewValue(true);
+                Emit(new BinI { Op = BinOp.Mul, Dst = bytes, A = wide, B = Opnd.Const(size) });
+                Emit(new CopyBytesI { Dst = toElements, Src = fromElements, Count = bytes });
+                return;
+            }
+            // each one: the target's object set from the source's (or emptied when that's empty)
+            VReg k = fn.NewValue(true);
+            Emit(new ConstI { Dst = k, Value = 0 });
+            Block test = fn.NewBlock(), body = fn.NewBlock(), after = fn.NewBlock();
+            StartBlock(test);
+            current.End = new BranchT { Cond = Cond.LtU, A = k, B = wide, Then = body, Else = after };
+            Enter(body);
+            VReg theirs = LoadAt(Offset(ElementsOf(source), k, size, fn.NewValue(true)), 0, element);
+            VReg slot = Offset(ElementsOf(target), k, size, fn.NewValue(true));
+            Emit(new ObjCallI { Kind = "set", Struct = element.Struct!, Arg = slot, Second = theirs });
+            Emit(new BinI { Op = BinOp.Add, Dst = k, A = k, B = Opnd.Const(1) });
+            current.End = new JumpT { Target = test };
+            Enter(after);
+        }
+
+        /// <summary>
+        /// b is a; when one may be inside the other (tree.kids:0.kids is tree.kids), as the
+        /// generator: both arrays that grow, the whole copy made first (phi_array_clone into a view
+        /// of its own), the target's let go, and the copy's its view; a target of objects of a
+        /// size or atmost, a copy of each of the source's objects made first, the last first, then
+        /// each slot given its copy and what it had freed.
+        /// </summary>
+        void CopyOverlapping(ArrayAssignStmt copy)
+        {
+            Expr target = copy.Target, source = copy.Source;
+            PhiType t = target.Type, element = t.Element;
+            // (a struct's str array too, as the generator's GrowingView: the routines copy and free its texts)
+            bool GrowsView(Expr e) => e.Type.Open
+                && (Binder.IsFieldView(e) && CanAddress(e) || e is NameExpr { Symbol: VariableSymbol g } && GrowingView(g) && !e.Type.TextTable);
+            if (GrowsView(target) && GrowsView(source))
+            {
+                Emit(new ObjectLineI { At = copy });
+                fn.NewHome();
+                fn.NewHome();
+                string made = $"rbp - {8 * fn.Homes}";
+                VReg madeAt = fn.NewValue(true);
+                Emit(new AddrI { Dst = madeAt, Label = made });
+                Emit(new ArrayRoutineI { Kind = "clone", Element = element, View = ViewOf(source), Made = madeAt });
+                VReg into = ViewOf(target);
+                Emit(new ArrayRoutineI { Kind = "free", Element = element, View = into });
+                VReg first = fn.NewValue(true), second = fn.NewValue(true);
+                Emit(new LoadI { Dst = first, Place = made, Kind = MemKind.Q64 });
+                Emit(new LoadI { Dst = second, Place = $"{made} + 8", Kind = MemKind.Q64 });
+                VReg again = ViewOf(target);
+                Emit(new StoreIdxI { Base = again, Index = Opnd.Const(0), Scale = 1, Src = first, Kind = MemKind.Q64 });
+                Emit(new StoreIdxI { Base = again, Index = Opnd.Const(8), Scale = 1, Src = second, Kind = MemKind.Q64 });
+                return;
+            }
+            // (one that grows grows to fit after the copies are made; otherwise how many there can be is the target's size, or the source's)
+            bool grows = GrowsView(target);
+            int most = grows ? source.Type.Length : t.Length;
+            Need(element.IsObject && element.Struct != null && (grows ? !source.Type.Open : !t.Open) && most is > 0 and <= 64,
+                 $"{Unknown(target)} given {Unknown(source)}, which may be inside it");
+            Need(CanCount(source) && CanElements(source) && CanElements(target), $"{Unknown(target)} given {Unknown(source)}");
+            Emit(new ObjectLineI { At = copy });
+            VReg count = InReg(ArrayCount(source), false), wide = fn.NewValue(true);
+            Emit(new ExtendI { Dst = wide, Src = count, Signed = false });
+            // (only a check: nothing is copied if they don't fit)
+            if (grows) { }
+            else if (t.Filled) Emit(new CheckI { Index = wide, Limit = t.Length + 1, At = copy, Held = HeldStores() });
+            else
+            {
+                VReg have = fn.NewValue(true), haveMore = fn.NewValue(true), countMore = fn.NewValue(true);
+                Emit(new ConstI { Dst = have, Value = t.Length });
+                Emit(new BinI { Op = BinOp.Add, Dst = haveMore, A = have, B = Opnd.Const(1) });
+                Emit(new BinI { Op = BinOp.Add, Dst = countMore, A = wide, B = Opnd.Const(1) });
+                Emit(new CheckI { Index = wide, LimitValue = haveMore, At = copy, Held = HeldStores() });
+                Emit(new CheckI { Index = have, LimitValue = countMore, At = copy, Held = HeldStores() });
+            }
+            // the copies, the last first, into homes of their own
+            for (int h = 0; h < most; h++) fn.NewHome();
+            string copies = $"rbp - {8 * fn.Homes}";
+            VReg k = fn.NewValue(true);
+            Emit(new CopyI { Dst = k, Src = wide });
+            Block test = fn.NewBlock(), body = fn.NewBlock(), made2 = fn.NewBlock();
+            StartBlock(test);
+            current.End = new BranchT { Cond = Cond.Ne, A = k, B = Opnd.Const(0), Then = body, Else = made2 };
+            Enter(body);
+            Emit(new BinI { Op = BinOp.Sub, Dst = k, A = k, B = Opnd.Const(1) });
+            VReg theirs = LoadAt(Offset(ElementsOf(source), k, PhiType.AddressSize, fn.NewValue(true)), 0, element);
+            VReg cloned = fn.NewValue(true);
+            Emit(new ObjCallI { Kind = "clone", Struct = element.Struct!, Arg = theirs, Dst = cloned });
+            VReg buffer = fn.NewValue(true);
+            Emit(new AddrI { Dst = buffer, Label = copies });
+            Emit(new StoreIdxI { Base = buffer, Index = k, Scale = PhiType.AddressSize, Src = cloned, Kind = MemKind.Q64 });
+            current.End = new JumpT { Target = test };
+            Enter(made2);
+            if (grows)
+            {
+                // it grows to fit, and has that many (letting go of objects past them)
+                Emit(new ArrayGrowI { View = ViewOf(target), Count = count, Size = PhiType.AddressSize });
+                FreeFrom(target, count);
+                Emit(new StoreIdxI { Base = ViewOf(target), Index = Opnd.Const(ViewCount), Scale = 1, Src = count, Kind = MemKind.D32 });
+            }
+            else if (t.Filled)
+            {
+                FreeFrom(target, count);
+                Emit(new StoreIdxI { Base = AddressOf(target), Index = Opnd.Const(t.CountOffset), Scale = 1, Src = count, Kind = MemKind.D32 });
+            }
+            // each slot given its copy, and what it had freed
+            VReg j = fn.NewValue(true);
+            Emit(new ConstI { Dst = j, Value = 0 });
+            Block put = fn.NewBlock(), putBody = fn.NewBlock(), done = fn.NewBlock();
+            StartBlock(put);
+            current.End = new BranchT { Cond = Cond.LtU, A = j, B = wide, Then = putBody, Else = done };
+            Enter(putBody);
+            VReg slot = Offset(ElementsOf(target), j, PhiType.AddressSize, fn.NewValue(true));
+            VReg had = LoadAt(slot, 0, element);
+            VReg buffer2 = fn.NewValue(true), mine = fn.NewValue(true);
+            Emit(new AddrI { Dst = buffer2, Label = copies });
+            Emit(new LoadIdxI { Dst = mine, Base = buffer2, Index = j, Scale = PhiType.AddressSize, Kind = MemKind.Q64 });
+            Emit(new StoreIdxI { Base = slot, Index = Opnd.Const(0), Scale = 1, Src = mine, Kind = MemKind.Q64 });
+            Emit(new ObjCallI { Kind = "free", Struct = element.Struct!, Arg = had });
+            Emit(new BinI { Op = BinOp.Add, Dst = j, A = j, B = Opnd.Const(1) });
+            current.End = new JumpT { Target = put };
+            Enter(done);
+        }
+
+        /// <summary>
+        /// b is a; for str arrays without a size: the target fits the source's count (one that grows
+        /// gives back the texts past it, then grows to it; an atmost one takes it; any other must have
+        /// as many), then each text is put in its element, growing it (the generator's).
+        /// </summary>
+        void AssignTexts(ArrayAssignStmt copy)
+        {
+            Expr target = copy.Target, source = copy.Source;
+            PhiType t = target.Type;
+            Need(!copy.Overlaps && source.Type.TextTable, "an array of text copied from texts in place");
+            Need(CanCount(source) && CanElements(source), $"{Unknown(target)} given {Unknown(source)}");
+            bool grows = t.Open && (target is NameExpr { Symbol: VariableSymbol g } && GrowingView(g) || Binder.IsFieldView(target) && CanAddress(target));
+            bool table = !t.Open && target is NameExpr { Symbol: VariableSymbol { GrowingElements: true } tv } && !Ours(tv) && SimpleLabel(tv.Label);
+            Need(grows || table, $"{Unknown(target)} given an array of text");
+            VReg count = InReg(ArrayCount(source), false);
+            VReg wide = fn.NewValue(true);
+            Emit(new ExtendI { Dst = wide, Src = count, Signed = false });
+            if (grows)
+            {
+                Emit(new ObjectLineI { At = copy });
+                FreeTextsFrom(target, wide);
+                Emit(new ArrayGrowI { View = ViewOf(target), Count = count, Size = PhiType.AddressSize, Texts = true });
+                Emit(new StoreIdxI { Base = ViewOf(target), Index = Opnd.Const(ViewCount), Scale = 1, Src = count, Kind = MemKind.D32 });
+            }
+            else if (t.Filled)
+            {
+                Emit(new CheckI { Index = wide, Limit = t.Length + 1, At = copy, Held = HeldStores() });
+                Emit(new StoreIdxI { Base = AddressOf(target), Index = Opnd.Const(t.CountOffset), Scale = 1, Src = count, Kind = MemKind.D32 });
+            }
+            else if (source.Type.Open)
+            {
+                VReg have = fn.NewValue(true), haveMore = fn.NewValue(true), countMore = fn.NewValue(true);
+                Emit(new ConstI { Dst = have, Value = t.Length });
+                Emit(new BinI { Op = BinOp.Add, Dst = haveMore, A = have, B = Opnd.Const(1) });
+                Emit(new BinI { Op = BinOp.Add, Dst = countMore, A = wide, B = Opnd.Const(1) });
+                Emit(new CheckI { Index = wide, LimitValue = haveMore, At = copy, Held = HeldStores() });
+                Emit(new CheckI { Index = have, LimitValue = countMore, At = copy, Held = HeldStores() });
+            }
+            VReg k = fn.NewValue(true);
+            Emit(new ConstI { Dst = k, Value = 0 });
+            Block test = fn.NewBlock(), body = fn.NewBlock(), after = fn.NewBlock();
+            StartBlock(test);
+            current.End = new BranchT { Cond = Cond.LtU, A = k, B = wide, Then = body, Else = after };
+            Enter(body);
+            VReg raw = LoadAt(Offset(ElementsOf(source), k, PhiType.AddressSize, fn.NewValue(true)), 0, PhiType.PointerTo(PhiType.U8));
+            VReg text = fn.NewValue(true);
+            Emit(new TextI { Op = TextOp.OrEmpty, Dst = text, A = raw });
+            VReg slot = Offset(grows ? LoadAt(ViewOf(target), 0, PhiType.PointerTo(PhiType.U8)) : AddressOf(target), k, PhiType.AddressSize, fn.NewValue(true));
+            if (grows)
+            {
+                VReg most = LoadAt(ViewOf(target), ViewMax, PhiType.U32);
+                fn.NewHome();
+                string rooms = $"rbp - {8 * fn.Homes}";
+                Emit(new StoreI { Place = rooms, Src = most, Kind = MemKind.D32 });
+                Emit(new GrowStoreI { Slot = slot, Value = text, SourceIsString = true, RoomOffset = 0, Rooms = rooms });
+            }
+            else Emit(new GrowStoreI { Slot = slot, Value = text, SourceIsString = true, RoomOffset = PhiType.AddressSize * ((VariableSymbol)((NameExpr)target).Symbol!).Count });
+            Emit(new BinI { Op = BinOp.Add, Dst = k, A = k, B = Opnd.Const(1) });
+            current.End = new JumpT { Target = test };
+            Enter(after);
+        }
+
+        /// <summary>
+        /// a is b for arrays: 1 when they have as many and each element is the same (objects by
+        /// their equal, texts as is compares them, anything else its bytes), as the generator's.
+        /// </summary>
+        VReg ArraysEqual(BinaryExpr cmp)
+        {
+            Expr left = cmp.Left, right = cmp.Right;
+            PhiType element = left.Type.Element;
+            Need(CanCount(left) && CanCount(right) && CanElements(left) && CanElements(right), $"{Unknown(left)} compared with {Unknown(right)}");
+            Need(element.Kind != TypeKind.Str || left.Type.TextTable && right.Type.TextTable, "arrays of texts in place compared");
+            VReg d = fn.NewValue(false);
+            Emit(new ConstI { Dst = d, Value = 0 });
+            VReg n = InReg(ArrayCount(left), false), m = InReg(ArrayCount(right), false);
+            Block same = fn.NewBlock(), done = fn.NewBlock();
+            if (current.End != null) Enter(fn.NewBlock());
+            current.End = new BranchT { Cond = Cond.Eq, A = n, B = m, Then = same, Else = done };
+            Enter(same);
+            VReg count = fn.NewValue(true);
+            Emit(new ExtendI { Dst = count, Src = n, Signed = false });
+            if (!element.IsObject && element.Kind != TypeKind.Str)
+            {
+                VReg bytes = fn.NewValue(true);
+                Emit(new BinI { Op = BinOp.Mul, Dst = bytes, A = count, B = Opnd.Const(element.ElementSize) });
+                VReg rightAt = ElementsOf(right), leftAt = ElementsOf(left);
+                Emit(new CompareBytesI { Dst = d, A = leftAt, B = rightAt, Count = bytes });
+                current.End = new JumpT { Target = done };
+                Enter(done);
+                return d;
+            }
+            VReg k = fn.NewValue(true);
+            Emit(new ConstI { Dst = k, Value = 0 });
+            Block test = fn.NewBlock(), body = fn.NewBlock(), next = fn.NewBlock(), all = fn.NewBlock();
+            StartBlock(test);
+            current.End = new BranchT { Cond = Cond.LtU, A = k, B = count, Then = body, Else = all };
+            Enter(body);
+            VReg theirs = LoadAt(Offset(ElementsOf(right), k, PhiType.AddressSize, fn.NewValue(true)), 0, PhiType.PointerTo(PhiType.U8));
+            VReg ours = LoadAt(Offset(ElementsOf(left), k, PhiType.AddressSize, fn.NewValue(true)), 0, PhiType.PointerTo(PhiType.U8));
+            VReg r = fn.NewValue(false);
+            if (element.IsObject)
+            {
+                Emit(new ObjCallI { Kind = "equal", Struct = element.Struct!, Arg = ours, Second = theirs, Dst = r });
+                current.End = new BranchT { Cond = Cond.Ne, A = r, B = Opnd.Const(0), Then = next, Else = done };
+            }
+            else
+            {
+                VReg a = fn.NewValue(true), b = fn.NewValue(true);
+                Emit(new TextI { Op = TextOp.OrEmpty, Dst = a, A = ours });
+                Emit(new TextI { Op = TextOp.OrEmpty, Dst = b, A = theirs });
+                Emit(new TextI { Op = TextOp.Equal, Dst = r, A = a, B = b });
+                current.End = new BranchT { Cond = Cond.Eq, A = r, B = Opnd.Const(0), Then = next, Else = done };
+            }
+            Enter(next);
+            Emit(new BinI { Op = BinOp.Add, Dst = k, A = k, B = Opnd.Const(1) });
+            current.End = new JumpT { Target = test };
+            Enter(all);
+            Emit(new ConstI { Dst = d, Value = 1 });
+            current.End = new JumpT { Target = done };
+            Enter(done);
+            return d;
+        }
+
         /// <summary>An array that grows kept by name: a class's, or the method's own (of numbers or structs, in its frame).</summary>
         bool GrowingView(VariableSymbol g) => g.GrowingArray && (!Ours(g) && AnyGlobal(g) != null || localViews.ContainsKey(g));
 
@@ -26,8 +420,25 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>The method's own arrays that grow: each one's view in its frame (empty to start; its elements freed at its end and by a throw going past).</summary>
         readonly Dictionary<VariableSymbol, string> localViews = new();
 
-        static bool LocalView(VariableSymbol v) => v.GrowingArray && v.IsLocal && !v.Type.TextTable && v.Type.Kind != TypeKind.Str
-            && (Supported(v.Type.Element) && v.Type.Element.ElementSize is 1 or 2 or 4 or 8 or 16 && !v.Type.Element.IsObject || InPlaceStruct(v.Type.Element));
+        static bool LocalView(VariableSymbol v) => v.GrowingArray && v.IsLocal
+            && (v.Type.TextTable
+                || v.Type.Kind != TypeKind.Str && (Supported(v.Type.Element) && v.Type.Element.ElementSize is 1 or 2 or 4 or 8 or 16 && !v.Type.Element.IsObject
+                                                   || InPlaceStruct(v.Type.Element)
+                                                   || v.Type.Element.IsObject && v.Type.Element.Struct != null));
+
+        /// <summary>A method's own array that grows whose elements have something to give back: objects, or texts.</summary>
+        static bool OwnsElements(VariableSymbol v) => v.Type.TextTable || v.Type.Element.IsObject;
+
+        /// <summary>Its objects or texts given back, then its elements' room (what the generator's EmitGrowingArrayFree does).</summary>
+        void FreeView(VariableSymbol v)
+        {
+            var list = new NameExpr { Name = v.Name, Symbol = v, Type = v.Type };
+            VReg zero = fn.NewValue(true);
+            Emit(new ConstI { Dst = zero, Value = 0 });
+            if (v.Type.TextTable) FreeTextsFrom(list, zero);
+            else if (v.Type.Element.IsObject) FreeFrom(list, zero);
+            Emit(new FreeTextI { Place = localViews[v] });
+        }
 
         /// <summary>An array parameter (int list[]) of numbers, structs or objects: a view the caller pushes (text arrays are the generator's).</summary>
         static bool ArrayParameter(VariableSymbol p) => p.Type.Open && (p.Type.TextTable || p.Type.Kind != TypeKind.Str && Reachable(p.Type.Element));
@@ -138,7 +549,7 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         bool Addable(Expr array) =>
-            array.Type.Element is var e && (InPlaceStruct(e) || e.IsObject && e.Struct != null && !e.Struct.IsInterface)
+            array.Type.Element is var e && (InPlaceStruct(e) || e.IsObject && e.Struct != null)
             && (array.Type.Filled && !array.Type.Open && CanAddress(array)
                 || array.Type.Open && Binder.IsFieldView(array) && CanAddress(array)
                 || array is NameExpr { Symbol: VariableSymbol g } && GrowingView(g))
@@ -190,8 +601,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 }
                 else if (InPlaceStruct(element))
                 {
-                    Need(value != null, "a struct added with no value");
-                    from = ObjectAddress(value!);
+                    if (value != null) from = ObjectAddress(value);
                 }
                 else
                 {
@@ -243,6 +653,15 @@ namespace Phi.Compiler.CodeGen.Ir
                         Emit(new ObjCallI { Kind = "renew", Struct = element.Struct!, Arg = slot });
                     }
                 }
+                else if (InPlaceStruct(element) && from == null)
+                {
+                    // none given: every byte of it zero (one dropped earlier may have been here)
+                    VReg slot = Offset(elements, count, size, fn.NewValue(true));
+                    int k = 0;
+                    for (; k + 8 <= size; k += 8) Emit(new StoreIdxI { Base = slot, Index = Opnd.Const(k), Scale = 1, Src = Opnd.Const(0), Kind = MemKind.Q64 });
+                    for (; k + 4 <= size; k += 4) Emit(new StoreIdxI { Base = slot, Index = Opnd.Const(k), Scale = 1, Src = Opnd.Const(0), Kind = MemKind.D32 });
+                    for (; k < size; k++) Emit(new StoreIdxI { Base = slot, Index = Opnd.Const(k), Scale = 1, Src = Opnd.Const(0), Kind = MemKind.U8 });
+                }
                 else if (InPlaceStruct(element))
                 {
                     VReg slot = Offset(elements, count, size, fn.NewValue(true));
@@ -286,7 +705,8 @@ namespace Phi.Compiler.CodeGen.Ir
         void AddArray(AppendArrayStmt add)
         {
             Expr target = add.Target;
-            Need(Resizable(target) && target.Type.Element.ElementSize == add.Source.Type.Element.ElementSize, $"{Unknown(target)} added to");
+            Need((Resizable(target) || Addable(target) && InPlaceStruct(target.Type.Element) && !target.Type.Element.Struct!.OwnsObjects)
+                 && target.Type.Element.ElementSize == add.Source.Type.Element.ElementSize, $"{Unknown(target)} added to");
             Need(CanElements(add.Source), $"{Unknown(add.Source)} added");
             Mark(add);
             int size = target.Type.Element.ElementSize;
@@ -374,6 +794,14 @@ namespace Phi.Compiler.CodeGen.Ir
             Emit(new BinI { Op = BinOp.Add, Dst = limit, A = limit, B = Opnd.Const(1) });
             Emit(new ExtendI { Dst = wideN, Src = n, Signed = false });
             Emit(new CheckI { Index = wideN, LimitValue = limit, At = shrink, Held = HeldStores() });
+            FreeTextsFrom(array, wideN);
+            VReg viewLast = ViewOf(array);
+            Emit(new StoreIdxI { Base = viewLast, Index = Opnd.Const(ViewCount), Scale = 1, Src = n, Kind = MemKind.D32 });
+        }
+
+        /// <summary>The texts of a str array that grows from element from on given back (one in the program's data stays), each slot empty again.</summary>
+        void FreeTextsFrom(Expr array, VReg wideN)
+        {
             VReg k = fn.NewValue(true);
             Emit(new CopyI { Dst = k, Src = wideN });
             Block test = fn.NewBlock(), body = fn.NewBlock(), free = fn.NewBlock(), next = fn.NewBlock(), after = fn.NewBlock();
@@ -416,8 +844,6 @@ namespace Phi.Compiler.CodeGen.Ir
             Emit(new BinI { Op = BinOp.Add, Dst = k, A = k, B = Opnd.Const(1) });
             current.End = new JumpT { Target = test };
             Enter(after);
-            VReg viewLast = ViewOf(array);
-            Emit(new StoreIdxI { Base = viewLast, Index = Opnd.Const(ViewCount), Scale = 1, Src = n, Kind = MemKind.D32 });
         }
 
         /// <summary>

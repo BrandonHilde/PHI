@@ -295,6 +295,15 @@ namespace Phi.Compiler.CodeGen.Ir
         public List<StoreI> Held { get; init; } = new();
     }
 
+    /// <summary>Dst = 1 when Count bytes at A and B are the same (repe cmpsb; none are the same).</summary>
+    public sealed class CompareBytesI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public VReg B { get; init; } = null!;
+        public VReg Count { get; init; } = null!;
+    }
+
     /// <summary>Count bytes copied from Src to Dst, the first first (rep movsb).</summary>
     public sealed class CopyBytesI : Instr
     {
@@ -317,6 +326,33 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg Receiver { get; init; } = null!;
         public Semantics.StructSymbol Interface { get; init; } = null!;
         public int Index { get; init; }
+    }
+
+    /// <summary>text has x (or a character): phi_str_has, or phi_str_has_char; Dst is 1 when it does.</summary>
+    public sealed class HasTextI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg Text { get; init; } = null!;
+        public Opnd Value { get; init; }
+        public bool Character { get; init; }
+    }
+
+    /// <summary>An error the program stops with here (the generator's EmitStop): its text and kind; never comes back.</summary>
+    public sealed class StopI : Instr
+    {
+        public string Text { get; init; } = "";
+        public int Kind { get; init; }
+        public Node At { get; init; } = null!;
+        public List<StoreI> Held { get; init; } = new();
+    }
+
+    /// <summary>The generator's routine for an array's elements (phi_array_clone_..., phi_array_free_...): rax the view, rdx where a clone goes.</summary>
+    public sealed class ArrayRoutineI : Instr
+    {
+        public string Kind { get; init; } = "";
+        public Semantics.PhiType Element { get; init; } = null!;
+        public VReg View { get; init; } = null!;
+        public VReg? Made { get; init; }
     }
 
     /// <summary>exit code; in a program: phi_exit with the code (the generator's), which never comes back.</summary>
@@ -495,6 +531,9 @@ namespace Phi.Compiler.CodeGen.Ir
     public sealed class RawCallI : Instr
     {
         public string Label { get; init; } = "";
+
+        /// <summary>Where its result goes (what it leaves in eax), when it's kept.</summary>
+        public VReg? Dst { get; init; }
     }
 
     /// <summary>
@@ -747,6 +786,12 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>The slots of the method's own strs that grow: each one's text is freed at its end, and by a throw going past.</summary>
         public List<string> OwnedTexts { get; } = new();
 
+        /// <summary>
+        /// The views of the method's own arrays that grow and hold objects (the struct) or texts
+        /// (null): those freed, then the elements' room, at its end and by a throw going past.
+        /// </summary>
+        public List<(string Home, Semantics.StructSymbol? Objects)> OwnedViews { get; } = new();
+
         /// <summary>The method's own objects: where each is kept, and its struct (freed at the end, in this order).</summary>
         public List<(string Home, Semantics.StructSymbol Struct)> Owned { get; } = new();
 
@@ -837,10 +882,14 @@ namespace Phi.Compiler.CodeGen.Ir
             GrowStoreI gs => $"text [{gs.Slot}] {(gs.Append ? "++" : "is")} {gs.Value}{(gs.SourceIsString ? "" : " as a number")}",
             NumberTextI nt => $"{nt.Dst} = text of {nt.Kind} {nt.Value}",
             ExitI ex => $"exit {ex.Code}",
+            ArrayRoutineI ar => $"array {ar.Kind} [{ar.View}]{(ar.Made != null ? $" into [{ar.Made}]" : "")}",
+            StopI st => $"stop: {st.Text}",
+            HasTextI ht => $"{ht.Dst} = {ht.Text} has {ht.Value}",
             InterfaceMethodI im => $"{im.Dst} = {im.Interface.Name} method {im.Index} of {im.Receiver}",
             FreeTextI ft => ft.Value != null ? $"free text {ft.Value}" : $"free text [{ft.Place}]",
             AddrOfI ao => $"{ao.Dst} = addr {ao.Of}",
             CopyBytesI cb => $"copy {cb.Count} bytes from {cb.Src} to {cb.Dst}",
+            CompareBytesI cmb => $"{cmb.Dst} = {cmb.Count} bytes at {cmb.A} and {cmb.B} the same",
             ResultTextI rt => $"{rt.Dst} = result text {rt.Value}",
             FixedStoreI fs => $"text [{fs.Dst}] ({fs.Room}) {(fs.Append ? "++" : "is")} {fs.Value}{(fs.SourceIsString ? "" : " as a number")}",
             ThrowI th => $"throw {th.Text}",

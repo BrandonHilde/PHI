@@ -47,8 +47,15 @@ namespace Phi.Compiler.CodeGen.Ir
 
         void PlaceGrowingTexts()
         {
+            // (text built from its own elements is built aside first when they're the same: that text too)
+            foreach (StringBuildStmt build in BodyNodes().OfType<StringBuildStmt>().Where(b => b.AsideWhen.Count > 0))
+            {
+                var whole = new TextExpr { Span = build.Span, Type = PhiType.Str };
+                whole.Parts.AddRange(build.Parts);
+                asides[build] = whole;
+            }
             if (growResults)
-                foreach (TextExpr built in BodyNodes().OfType<TextExpr>().Distinct())
+                foreach (TextExpr built in BodyNodes().OfType<TextExpr>().Concat(asides.Values).Distinct())
                 {
                     fn.NewHome();
                     fn.NewHome();
@@ -102,9 +109,42 @@ namespace Phi.Compiler.CodeGen.Ir
         /// s is a b c; (or s++ ...): each value in turn, a text or a number written out, into a
         /// str that grows, the first in place of what it had unless it's added to.
         /// </summary>
+        /// <summary>Each build from its own elements: all of its values as one text, built aside when they're the same element.</summary>
+        readonly Dictionary<StringBuildStmt, TextExpr> asides = new();
+
+        /// <summary>Where a text is kept, as the generator's EmitPlaceAddress has it: an element's slot, or where it is.</summary>
+        VReg TextPlaceAddress(Expr e) => e is IndexExpr ix && TextTableElement(ix) ? TextSlotOf(ix) : AddressOf(e);
+
+        bool CanTextPlace(Expr e) => e is IndexExpr ix && TextTableElement(ix) || CanAddress(e);
+
         void BuildText(StringBuildStmt build)
         {
-            Need(build.AsideWhen.Count == 0, "text built from its own elements");
+            if (build.AsideWhen.Count > 0)
+            {
+                // texts:i++ texts:j; when i is j as it runs, the values are built into a text of
+                // their own first, so each is read as it was; otherwise straight into it (the generator's)
+                Need(CanTextPlace(build.Target) && build.AsideWhen.All(CanTextPlace), "text built from its own elements");
+                Block aside = fn.NewBlock(), done = fn.NewBlock();
+                foreach (Expr place in build.AsideWhen)
+                {
+                    VReg one = TextPlaceAddress(place), into = TextPlaceAddress(build.Target);
+                    Block next = fn.NewBlock();
+                    if (current.End != null) Enter(fn.NewBlock());
+                    current.End = new BranchT { Cond = Cond.Eq, A = one, B = into, Then = aside, Else = next };
+                    Enter(next);
+                }
+                var straight = new StringBuildStmt { Target = build.Target, Append = build.Append, Span = build.Span };
+                straight.Parts.AddRange(build.Parts);
+                BuildText(straight);
+                if (current.End == null) current.End = new JumpT { Target = done };
+                Enter(aside);
+                var whole = new StringBuildStmt { Target = build.Target, Append = build.Append, Span = build.Span };
+                whole.Parts.Add(asides[build]);
+                BuildText(whole);
+                if (current.End == null) current.End = new JumpT { Target = done };
+                Enter(done);
+                return;
+            }
             Need(CanSlot(build.Target) || TableSlot(build.Target) || CanFix(build.Target), $"text built in {Unknown(build.Target)}");
             for (int k = 0; k < build.Parts.Count; k++) PutText(build.Target, build.Parts[k], append: build.Append || k > 0);
         }
@@ -268,14 +308,13 @@ namespace Phi.Compiler.CodeGen.Ir
         bool TextTableElement(IndexExpr e) => e.Target.Type.TextTable && e.Type.IsString && !e.Type.IsArray
             && (e.Target.Type.Open
                     ? Binder.IsFieldView(e.Target) && CanAddress(e.Target)
-                      || e.Target is NameExpr { Symbol: VariableSymbol v } && (paramViews.ContainsKey(v) || v.GrowingArray && !Ours(v) && AnyGlobal(v) != null)
+                      || e.Target is NameExpr { Symbol: VariableSymbol v } && (paramViews.ContainsKey(v) || GrowingView(v))
                     : e.Target is NameExpr { Symbol: VariableSymbol t } && !t.GrowingArray && !Ours(t) && SimpleLabel(t.Label)
                       && (e.CheckLimit != null || unsafeDepth > 0 || ConstantFolder.Evaluate(e.Index) != null));
 
         /// <summary>An element of a str array written (its text grows): a struct's or a class's that grows, or a class's table of texts that grow (not a parameter's).</summary>
         bool TableSlot(Expr target) => target is IndexExpr ix && TextTableElement(ix)
-            && (ix.Target.Type.Open ? ix.Target is not NameExpr { Symbol: VariableSymbol p } || !paramViews.ContainsKey(p)
-                                    : ix.Target is NameExpr { Symbol: VariableSymbol { GrowingElements: true } });
+            && (ix.Target.Type.Open || ix.Target is NameExpr { Symbol: VariableSymbol { GrowingElements: true } });
 
         /// <summary>Its slot, and where its room is: .max slots on (kept in a home for the store), or the table's size on.</summary>
         (VReg Slot, int RoomOffset, string? Rooms) TableSlotOf(IndexExpr ix)

@@ -1,0 +1,64 @@
+# A method's own arrays that grow and hold objects or texts, through the intermediate form:
+# added to, written, shortened, empty again each time they're declared; their objects and texts
+# and then their room given back at the method's end and by a throw going past (the heap says).
+struct.Node
+{
+	int value;
+	new str label;
+}
+
+phi.IrOwnViews:Program
+{
+	u32 before: Heap.used_blocks;
+	call Objects: 3;
+	call Texts: 4;
+	if call ThrowsObjects throws err
+		log 'caught: ' err.text '\n';
+	;;
+	if call ThrowsTexts throws err
+		log 'caught: ' err.text '\n';
+	;;
+	log 'blocks back: ' (Heap.used_blocks - before) '\n';
+	exit 0;
+
+	[Objects: int rounds: 0;]
+		while int r: 0; r < rounds; r++;
+			new Node many[];
+			new Node a;
+			a.label is 'a label';
+			while int i: 0; i < 20 + r; i++;
+				a.value is i;
+				many++ a;
+			;;
+			many++;
+			log many.len ' ' many:5.value ' ' many:6.label ' ' many:(20 + r).value '\n';
+		;;
+	[end]
+
+	[Texts: int rounds: 0;]
+		while int r: 0; r < rounds; r++;
+			str words[];
+			while int i: 0; i < 10; i++;
+				words++ 'word ' i;
+			;;
+			words++;
+			words:3 is 'three, made longer than it was';
+			words.len is 6;
+			log words.len ' ' words:3 ' (' words:5 ')\n';
+		;;
+	[end]
+
+	[ThrowsObjects:]
+		new Node held[];
+		held++;
+		held:0.label is 'held';
+		throw 'with objects';
+	[end]
+
+	[ThrowsTexts:]
+		str held[];
+		held++ 'one';
+		held++ 'two';
+		throw 'with texts';
+	[end]
+}

@@ -3742,6 +3742,9 @@ namespace Phi.Compiler.CodeGen
         /// <summary>ErrorKind.HIERARCHY, an object taking the object it's inside of, found as it runs.</summary>
         const int ErrorHierarchy = 10;
 
+        /// <summary>(The intermediate form's name for it.)</summary>
+        internal const int ErrorHierarchyKind = ErrorHierarchy;
+
         /// <summary>ErrorKind.CONVERT, a number that comes out as a different number where it went.</summary>
         const int ErrorConvert = 7;
 
