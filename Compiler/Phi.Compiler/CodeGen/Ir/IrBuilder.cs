@@ -2468,7 +2468,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 bool signed = from.Kind != TypeKind.U64;
                 if (!from.IsWide && from.IsUnsigned32)
                 {
-                    VReg wide = fn.NewAddress();
+                    VReg wide = fn.NewValue(true);     // (all 64 bits: the f64 is of the u32's value)
                     Emit(new ExtendI { Dst = wide, Src = src, Signed = false });
                     src = wide;
                 }
@@ -2482,7 +2482,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 if (Is64(from) || v.IsImm) return v;
                 // (a number put in a pointer keeps its 32 bits as they are, as the generator's
                 // does; one made 64 bits keeps its sign)
-                VReg d = fn.NewAddress();
+                VReg d = to.IsWide ? fn.NewValue(true) : fn.NewAddress();     // (an i64 all 64 bits; a pointer as wide as one)
                 Emit(new ExtendI { Dst = d, Src = v.Reg!, Signed = from.IsSigned && !to.IsPointer });
                 return d;
             }
@@ -2549,7 +2549,7 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         /// <summary>v as an operand an instruction can have: a 64-bit number only if it fits 32 bits with its sign.</summary>
-        Opnd Small(Opnd v, bool wide) => v.IsImm && wide && (v.Imm < int.MinValue || v.Imm > int.MaxValue) ? InReg(v, Addr) : v;
+        Opnd Small(Opnd v, bool wide) => v.IsImm && wide && (v.Imm < int.MinValue || v.Imm > int.MaxValue) ? InReg(v, true) : v;
 
         // ---------------------------------------------------------------- calls
 

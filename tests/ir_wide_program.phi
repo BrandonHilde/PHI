@@ -1,0 +1,37 @@
+# i64s and u64s worked out (add, take away, multiply, divide, remainder, negate, shifts, bit
+# operations, comparisons, made floats and back, made 32 bits), passed and given back: in 32-bit
+# code each is two halves, as the generator's EmitWide has them; compared with its output.
+phi.IrWide:Program
+{
+	i64 big: 3000000000;
+	call Wide: 5;
+	exit 0;
+
+	[Twice: i64 v: 0;]
+	[end: v * 2]
+
+	[Wide: int n: 0;]
+		i64 a: big * n;
+		u64 b: 18000000000000000000;
+		i64 c: a - 7 + (Twice: a);
+		log a ' ' b ' ' c ' ' (a / 7) ' ' (a % 7) ' ' (b / 3) ' ' (-a) ' ' (a << 3) ' ' (a >> 2) ' ' (b >> 60) '\n';
+		if a > c
+			log 'gt\n';
+		;;
+		else
+			log 'le\n';
+		;;
+		if c > 0 and a is not c
+			log 'yes\n';
+		;;
+		f64 f: a as f64 / 3.0;
+		i64 back: f as i64;
+		int low: a as int;
+		log f ' ' back ' ' low ' ' (a & 0xFFFF) ' ' (a | 1) ' ' (a ^ b as i64) '\n';
+		i64 k: -1;
+		while int i: 0; i < 3; i++;
+			k is k * 10 - i;
+		;;
+		log k '\n';
+	[end]
+}

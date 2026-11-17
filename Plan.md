@@ -4119,6 +4119,14 @@ so anything other than a method's call is as an assembly block for the allocator
 after it is in the frame). Left: an i64 (363), a method a throw goes past with things to give back
 (72: its record is the generator's EmitBlockField, in 64-bit terms), system calls (48: int 0x80
 there), locks (39), catching (12).
+Then, to 1519 (173 left, 159 of them a vec): i64s and u64s as two halves in the frame (the
+allocator gives them no register; the emitter's Wide32 works each as the generator's EmitWide does,
+the library's phi_mul64, phi_div64 and the rest for multiplying and dividing, compared high half
+first), catching, a throw going past with things to give back, locks (the generator's
+EmitBlockField given 32-bit text, records a word to a field), system calls (int 0x80). Found on the
+way: a few values the builder made address-wide had to stay 64 bits (an i64 widened from an int,
+a u32 made a float, a big constant), and the emitter's xmm12 to xmm15 are xmm4 to xmm7. Test
+ir_wide_program.
 
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:

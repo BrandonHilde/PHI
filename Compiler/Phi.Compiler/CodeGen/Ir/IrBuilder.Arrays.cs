@@ -42,7 +42,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 HasKind.Texts => TextValue(has.Value),
                 HasKind.Objects or HasKind.Structs => ObjectAddress(has.Value),
-                _ => size == 8 ? InReg(Value(has.Value, PhiType.I64), Addr) : InReg(Value(has.Value, PhiType.Int), false),
+                _ => size == 8 ? InReg(Value(has.Value, PhiType.I64), true) : InReg(Value(has.Value, PhiType.Int), false),
             };
             VReg d = fn.NewValue(false);
             Emit(new ConstI { Dst = d, Value = 0 });

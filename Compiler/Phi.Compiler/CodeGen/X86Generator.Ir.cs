@@ -80,10 +80,7 @@ namespace Phi.Compiler.CodeGen
         /// </summary>
         static string? Fits32(IrFunction fn)
         {
-            if (fn.Values.Any(v => v.Wide)) return "a value of 64 bits";
             if (fn.Values.Any(v => v.Vec)) return "a vec";
-            // (the record a throw going past looks at is written by the generator's EmitBlockField, in 64-bit terms)
-            if (fn.UnwindRecord != 0) return "something to give back when a throw goes past";
             foreach (Block b in fn.Blocks)
             {
                 foreach (Instr i in b.Instrs)
@@ -94,27 +91,35 @@ namespace Phi.Compiler.CodeGen
                         TextI or ZeroI or SignCheckI or AddrOfI or RawCallI or ObjCallI or ArrayGrowI or FixedStoreI or RoutineI => true,
                         CopyBytesI or CompareBytesI or HasTextI or GrowStoreI or StopI or ExitI or ThrowI or InterfaceMethodI => true,
                         ResultTextI or FreeTextI or ArrayRoutineI => true,
+                        CatchI or UncatchI or CaughtI or UnwindI or LockI or UnlockI => true,
+                        SysCallI => true,
                         FConstI or FBinI or FNegI or RoundF32I or X87I => true,
-                        ToFloatI tf => tf.Signed && !tf.Src.Wide,
-                        PrintI pr => pr.Kind is PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char or PrintKind.Float,
-                        NumberTextI nt => nt.Kind is PrintKind.Char or PrintKind.Float,
+                        ToFloatI tf => tf.Signed,
+                        PrintI => true,
+                        NumberTextI => true,
                         AtomicI at => at.Bytes <= 4,
-                        LoadI l => l.Kind is not (MemKind.Q64 or MemKind.V128),
-                        StoreI st => st.Kind is not (MemKind.Q64 or MemKind.V128),
-                        LoadIdxI li => li.Kind is not (MemKind.Q64 or MemKind.V128) && li.Scale <= 8,
-                        StoreIdxI si => si.Kind is not (MemKind.Q64 or MemKind.V128) && si.Scale <= 8,
-                        CallI c => !c.Routine && c.Result is CallResult.None or CallResult.Eax or CallResult.Rax or CallResult.St0
-                                   && c.ArgKinds.All(k => k is not (MemKind.Q64 or MemKind.V128)),
+                        LoadI l => l.Kind is not MemKind.V128,
+                        StoreI st => st.Kind is not MemKind.V128,
+                        LoadIdxI li => li.Kind is not MemKind.V128 && li.Scale <= 8,
+                        StoreIdxI si => si.Kind is not MemKind.V128 && si.Scale <= 8,
+                        CallI c => !c.Routine && c.Result is CallResult.None or CallResult.Eax or CallResult.Rax or CallResult.St0 or CallResult.EdxEax
+                                   && c.ArgKinds.All(k => k is not MemKind.V128),
+                        ToWholeI => true,
                         _ => false,
                     };
                     if (!fits) return $"a {i.GetType().Name}";
+                    // (an i64 is two halves there: only what Wide32 and the calls work on with them)
+                    bool wide = RegisterAllocator.Uses(i).Any(v => v.Int64) || RegisterAllocator.Def(i) is { Int64: true };
+                    if (wide && i is not (ConstI or CopyI or LoadI or StoreI or LoadIdxI or StoreIdxI or BinI or UnI or ExtendI or NarrowI
+                                          or SetCcI or ToFloatI { Signed: true } or ToWholeI or PrintI or NumberTextI or CallI or SysCallI or LineMark))
+                        return $"an i64 in a {i.GetType().Name}";
                 }
                 bool ends = b.End switch
                 {
                     JumpT => true,
                     BranchT => true,
-                    SwitchT => true,
-                    RetT r => !r.Vec && !r.Wide,
+                    SwitchT or TryT => true,
+                    RetT r => !r.Vec,
                     _ => false,
                 };
                 if (!ends) return $"a {b.End?.GetType().Name}";
@@ -247,7 +252,7 @@ namespace Phi.Compiler.CodeGen
                     "rax" => "eax", "rbx" => "ebx", "rcx" => "ecx", "rdx" => "edx", "rsi" => "esi", "rdi" => "edi",
                     "rbp" => "ebp", "rsp" => "esp", "r11" or "r11d" => "edx", _ => floats ? "qword" : "dword",
                 });
-                made = HighXmm.Replace(made, m => $"xmm{int.Parse(m.Groups[1].Value) - 8}");
+                made = HighXmm.Replace(made, m => $"xmm{int.Parse(m.Groups[1].Value) + 2}");     // (xmm12 to xmm15: xmm4 to xmm7)
                 if (Not32.IsMatch(made)) throw new InvalidOperationException($"32-bit code with what only 64-bit code has: {made}");
                 return made;
             }
@@ -279,7 +284,12 @@ namespace Phi.Compiler.CodeGen
                     Block b = fn.Blocks[k];
                     Block? next = k + 1 < fn.Blocks.Count ? fn.Blocks[k + 1] : null;
                     g.Label(labels[b]);
-                    foreach (Instr i in b.Instrs) Instruction(i);
+                    foreach (Instr i in b.Instrs)
+                    {
+                        // (32-bit code's mistakes name the method and the instruction)
+                        try { Instruction(i); }
+                        catch (InvalidOperationException e) when (x32) { throw new InvalidOperationException($"{methodLabel}: {IrFunction.Text(i)}: {e.Message}", e); }
+                    }
                     End(b.End!, next);
                 }
                 foreach (var (table, targets) in tables)
@@ -388,6 +398,9 @@ namespace Phi.Compiler.CodeGen
 
             static int Bits(VReg v) => v.Wide ? 64 : 32;
 
+            /// <summary>The generator's EmitBlockField (this thread's block's field), with its instruction made 32-bit in 32-bit code.</summary>
+            void BlockField(string instruction, string field) => g.EmitBlockField(x32 ? To32(instruction) : instruction, field);
+
             /// <summary>An address's bytes (what a push of one takes): 8, or 4 in 32-bit code.</summary>
             int Word => x32 ? 4 : 8;
 
@@ -402,6 +415,8 @@ namespace Phi.Compiler.CodeGen
             /// <summary>Where v is, as an operand at a width: its register, or its slot in the frame.</summary>
             string At(VReg v, int bits)
             {
+                // (an i64 in 32-bit code is two halves: Lo and Hi, never one operand)
+                if (x32 && v.Int64) throw new InvalidOperationException($"32-bit code with an i64 as one operand ({v})");
                 if (Reg(v) is string r) return Sub(r, bits);
                 return $"{Size(bits)} [rbp - {regs.Slots[v]}]";
             }
@@ -521,10 +536,299 @@ namespace Phi.Compiler.CodeGen
                 };
             }
 
+            // ---------------------------------------------------------------- i64s in 32-bit code
+            //
+            // An i64 or u64 is two halves in the frame (the allocator gives it no register there):
+            // the low at its slot, the high 4 bytes on. Each instruction on one works them as the
+            // generator's EmitWide does, in edx:eax (and ebx:ecx for the library's routines).
+
+            string Lo(VReg v) => $"dword [rbp - {regs.Slots[v]}]";
+            string Hi(VReg v) => $"dword [rbp - {regs.Slots[v] - 4}]";
+
+            /// <summary>o's two halves into lo and hi (a 32-bit value widened by its sign: shouldn't happen, an i64's operands are i64s).</summary>
+            void LoadPair(Opnd o, string lo, string hi)
+            {
+                if (o.IsImm)
+                {
+                    E($"mov {lo}, {unchecked((uint)o.Imm)}");
+                    E($"mov {hi}, {unchecked((uint)(o.Imm >> 32))}");
+                    return;
+                }
+                if (!o.Reg!.Wide) throw new InvalidOperationException("a 32-bit value where an i64 goes");
+                E($"mov {lo}, {Lo(o.Reg)}");
+                E($"mov {hi}, {Hi(o.Reg)}");
+            }
+
+            void StorePair(VReg v, string lo, string hi)
+            {
+                E($"mov {Lo(v)}, {lo}");
+                E($"mov {Hi(v)}, {hi}");
+            }
+
+            string LoOf(Opnd o) => o.IsImm ? unchecked((uint)o.Imm).ToString() : Lo(o.Reg!);
+            string HiOf(Opnd o) => o.IsImm ? unchecked((uint)(o.Imm >> 32)).ToString() : Hi(o.Reg!);
+
+            /// <summary>A place's operand 4 bytes on: [x] made [x + 4].</summary>
+            static string Plus4(string place) => place[..^1] + " + 4]";
+
+            /// <summary>An instruction with an i64 in it, in 32-bit code: true when it's done here.</summary>
+            bool Wide32(Instr i)
+            {
+                switch (i)
+                {
+                    case ConstI { Dst.Int64: true } c:
+                        E($"mov {Lo(c.Dst)}, {unchecked((uint)c.Value)}");
+                        E($"mov {Hi(c.Dst)}, {unchecked((uint)(c.Value >> 32))}");
+                        return true;
+                    case CopyI { Dst.Int64: true } c:
+                        LoadPair(c.Src, "eax", "edx");
+                        StorePair(c.Dst, "eax", "edx");
+                        return true;
+                    case LoadI { Kind: MemKind.Q64 } l:
+                    {
+                        string place = Place(l.Place);
+                        E($"mov eax, dword {place}");
+                        E($"mov edx, dword {Plus4(place)}");
+                        StorePair(l.Dst, "eax", "edx");
+                        return true;
+                    }
+                    case StoreI { Kind: MemKind.Q64 } s:
+                    {
+                        string place = Place(s.Place);
+                        LoadPair(s.Src, "eax", "edx");
+                        E($"mov dword {place}, eax");
+                        E($"mov dword {Plus4(place)}, edx");
+                        return true;
+                    }
+                    case LoadIdxI { Kind: MemKind.Q64 } l:
+                        E($"lea eax, {Address(l.Base, l.Index, l.Scale)}");
+                        E("mov ecx, [eax]");
+                        E("mov edx, [eax + 4]");
+                        StorePair(l.Dst, "ecx", "edx");
+                        return true;
+                    case StoreIdxI { Kind: MemKind.Q64 } st:
+                        E($"lea eax, {Address(st.Base, st.Index, st.Scale)}");
+                        LoadPair(st.Src, "ecx", "edx");
+                        E("mov [eax], ecx");
+                        E("mov [eax + 4], edx");
+                        return true;
+                    case BinI { Dst.Wide: true } b:
+                        WideBinary(b);
+                        return true;
+                    case UnI { Dst.Wide: true } u:
+                        LoadPair(u.A, "eax", "edx");
+                        if (u.Op == UnOp.Neg)
+                        {
+                            E("neg eax");
+                            E("adc edx, 0");
+                            E("neg edx");
+                        }
+                        else
+                        {
+                            E("not eax");
+                            E("not edx");
+                        }
+                        StorePair(u.Dst, "eax", "edx");
+                        return true;
+                    case ExtendI { Dst.Wide: true } x:
+                        E($"mov eax, {At(x.Src, 32)}");
+                        if (x.Signed) E("cdq");
+                        else E("xor edx, edx");
+                        StorePair(x.Dst, "eax", "edx");
+                        return true;
+                    case NarrowI { Src.Wide: true } n:
+                    {
+                        // (its low half, then as narrow as it's made)
+                        string t = InRegister(n.Dst) ? Reg(n.Dst)! : "rax";
+                        E($"mov eax, {Lo(n.Src)}");
+                        string op = n.Kind switch { MemKind.U8 or MemKind.U16 => "movzx", MemKind.S8 or MemKind.S16 => "movsx", _ => "mov" };
+                        string from = n.Kind switch { MemKind.U8 or MemKind.S8 => "al", MemKind.U16 or MemKind.S16 => "ax", _ => "eax" };
+                        if (op != "mov" || Sub(t, 32) != "eax") E($"{op} {Sub(t, 32)}, {from}");
+                        Store(n.Dst, t);
+                        return true;
+                    }
+                    case SetCcI { Float: false } s when s.A.Int64 || s.B.Reg is { Int64: true }:
+                    {
+                        string yes = g.NewLabel("wideyes"), done = g.NewLabel("widedone");
+                        WideCompare(s.A, s.B, s.Cond, yes, null);
+                        E("xor eax, eax");
+                        E($"jmp {done}");
+                        g.Label(yes);
+                        E("mov eax, 1");
+                        g.Label(done);
+                        Store(s.Dst, "rax");
+                        return true;
+                    }
+                    case ToFloatI { Src.Wide: true } tf:
+                    {
+                        // (the FPU's fild: all 64 bits, then the f64 it's nearest)
+                        string t = FTarget(tf.Dst);
+                        E($"fild qword [rbp - {regs.Slots[tf.Src]}]");
+                        E("sub rsp, 8");
+                        E("fstp qword [rsp]");
+                        E($"movsd {t}, qword [rsp]");
+                        E("add rsp, 8");
+                        FStore(tf.Dst, t);
+                        return true;
+                    }
+                    case ToWholeI tw:
+                        // toward zero, all 64 bits (cvttsd2si's: fistp with the FPU rounding toward zero)
+                        E("sub rsp, 16");
+                        E($"movsd xmm14, {F(tw.Src)}");
+                        E("movsd qword [rsp], xmm14");
+                        E("fld qword [rsp]");
+                        E("fnstcw [rsp + 8]");
+                        E("mov ax, [rsp + 8]");
+                        E("or ax, 0x0C00");
+                        E("mov [rsp + 10], ax");
+                        E("fldcw [rsp + 10]");
+                        E($"fistp qword [rbp - {regs.Slots[tw.Dst]}]");
+                        E("fldcw [rsp + 8]");
+                        E("add rsp, 16");
+                        return true;
+                    case PrintI { Kind: PrintKind.Int64 or PrintKind.Uint64 } p:
+                    {
+                        string convert = p.Kind == PrintKind.Uint64 ? "phi_uint64_to_str" : "phi_int64_to_str";
+                        g.Need(convert);
+                        string print = "phi_print" + (p.Serial ? "_serial" : "");
+                        g.Need(print);
+                        LoadPair(p.Value, "eax", "edx");
+                        E($"lea rdi, {S(0)}");
+                        E("mov ecx, 24");
+                        E($"call {convert}");
+                        E($"lea rsi, {S(0)}");
+                        E($"call {print}");
+                        return true;
+                    }
+                    case NumberTextI { Kind: PrintKind.Int64 or PrintKind.Uint64 } nt:
+                    {
+                        string convert = nt.Kind == PrintKind.Uint64 ? "phi_uint64_to_str" : "phi_int64_to_str";
+                        g.Need(convert);
+                        LoadPair(nt.Value, "eax", "edx");
+                        E($"lea rdi, {S(0)}");
+                        E("mov ecx, 24");
+                        E($"call {convert}");
+                        string r = InRegister(nt.Dst) ? Reg(nt.Dst)! : "rax";
+                        E($"lea {r}, {S(0)}");
+                        Store(nt.Dst, r);
+                        return true;
+                    }
+                }
+                return false;
+            }
+
+            /// <summary>An i64's add, take away, bit operations (half by half), shift, or the library's multiply, divide and remainder.</summary>
+            void WideBinary(BinI b)
+            {
+                switch (b.Op)
+                {
+                    case BinOp.Add or BinOp.Sub or BinOp.And or BinOp.Or or BinOp.Xor:
+                    {
+                        LoadPair(b.A, "eax", "edx");
+                        (string lo, string hi) = b.Op switch
+                        {
+                            BinOp.Add => ("add", "adc"),
+                            BinOp.Sub => ("sub", "sbb"),
+                            BinOp.And => ("and", "and"),
+                            BinOp.Or => ("or", "or"),
+                            _ => ("xor", "xor"),
+                        };
+                        E($"{lo} eax, {LoOf(b.B)}");
+                        E($"{hi} edx, {HiOf(b.B)}");
+                        StorePair(b.Dst, "eax", "edx");
+                        return;
+                    }
+                    case BinOp.Shl or BinOp.Shr or BinOp.Sar:
+                    {
+                        // the count in cl (32 or more: a half moved over first), as the generator's
+                        if (b.B.IsImm) E($"mov ecx, {b.B.Imm & 63}");
+                        else E($"mov ecx, {At(b.B.Reg!, 32)}");
+                        LoadPair(b.A, "eax", "edx");
+                        string small = g.NewLabel("shift");
+                        E("test cl, 32");
+                        E($"jz {small}");
+                        if (b.Op == BinOp.Shl)
+                        {
+                            E("mov edx, eax");
+                            E("xor eax, eax");
+                            g.Label(small);
+                            E("shld edx, eax, cl");
+                            E("shl eax, cl");
+                        }
+                        else if (b.Op == BinOp.Shr)
+                        {
+                            E("mov eax, edx");
+                            E("xor edx, edx");
+                            g.Label(small);
+                            E("shrd eax, edx, cl");
+                            E("shr edx, cl");
+                        }
+                        else
+                        {
+                            E("mov eax, edx");
+                            E("sar edx, 31");
+                            g.Label(small);
+                            E("shrd eax, edx, cl");
+                            E("sar edx, cl");
+                        }
+                        StorePair(b.Dst, "eax", "edx");
+                        return;
+                    }
+                    default:
+                    {
+                        string routine = b.Op switch
+                        {
+                            BinOp.Mul => "phi_mul64",
+                            BinOp.DivS => "phi_div64",
+                            BinOp.DivU => "phi_udiv64",
+                            BinOp.RemS => "phi_mod64",
+                            _ => "phi_umod64",
+                        };
+                        g.Need(routine);
+                        LoadPair(b.B, "ecx", "ebx");
+                        LoadPair(b.A, "eax", "edx");
+                        E($"call {routine}");
+                        StorePair(b.Dst, "eax", "edx");
+                        return;
+                    }
+                }
+            }
+
+            /// <summary>
+            /// Two i64s compared: the high halves (with the sign, or without), then on the same high
+            /// half the low ones, without; to yes when it holds, else on (or to no).
+            /// </summary>
+            void WideCompare(Opnd a, Opnd b, Cond c, string yes, string? no)
+            {
+                string other = g.NewLabel("wideno");
+                LoadPair(a, "eax", "edx");
+                E($"cmp edx, {HiOf(b)}");
+                (string high, string highNot, string low) = c switch
+                {
+                    Cond.Eq => ("", "jne", "je"),
+                    Cond.Ne => ("jne", "", "jne"),
+                    Cond.LtS => ("jl", "jg", "jb"),
+                    Cond.LeS => ("jl", "jg", "jbe"),
+                    Cond.GtS => ("jg", "jl", "ja"),
+                    Cond.GeS => ("jg", "jl", "jae"),
+                    Cond.LtU => ("jb", "ja", "jb"),
+                    Cond.LeU => ("jb", "ja", "jbe"),
+                    Cond.GtU => ("ja", "jb", "ja"),
+                    _ => ("ja", "jb", "jae"),
+                };
+                if (high != "") E($"{high} {yes}");
+                if (highNot != "") E($"{highNot} {no ?? other}");
+                E($"cmp eax, {LoOf(b)}");
+                E($"{low} {yes}");
+                if (no != null) E($"jmp {no}");
+                g.Label(other);
+            }
+
             // ---------------------------------------------------------------- instructions
 
             void Instruction(Instr i)
             {
+                if (x32 && Wide32(i)) return;
                 switch (i)
                 {
                     case LineMark mark:
@@ -590,6 +894,38 @@ namespace Phi.Compiler.CodeGen
                         // be in a register another is to go in), then the call
                         MarkNow();
                         g.Comment($"sys.{sc.Name}, system call {sc.Number}");
+                        if (x32)
+                        {
+                            // 32-bit Linux's: int 0x80, the arguments in ebx, ecx, edx, esi, edi and ebp,
+                            // the four kept around it (the generator's EmitSystemCall; an i64 gives its low half)
+                            string[] kept = { "ebp", "edi", "esi", "ebx" };
+                            string[] into32 = { "ebx", "ecx", "edx", "esi", "edi", "ebp" };
+                            foreach (string r in kept) g.Emit($"push {r}");
+                            foreach (Opnd a in sc.Args)
+                            {
+                                if (a.IsImm) E($"push {unchecked((int)a.Imm)}");
+                                else if (a.Reg!.Int64) E($"push {Lo(a.Reg)}");
+                                else
+                                {
+                                    Load("rax", a, 32);
+                                    E("push rax");
+                                }
+                            }
+                            for (int k = sc.Args.Count - 1; k >= 0; k--) g.Emit($"pop {into32[k]}");
+                            E($"mov eax, {sc.Number}");
+                            g.Emit("int 0x80");
+                            foreach (string r in kept.Reverse()) g.Emit($"pop {r}");
+                            if (sc.Dst != null)
+                            {
+                                if (sc.Dst.Int64)
+                                {
+                                    E("cdq");
+                                    StorePair(sc.Dst, "eax", "edx");
+                                }
+                                else Store(sc.Dst, "rax");
+                            }
+                            break;
+                        }
                         string[] into = { "rdi", "rsi", "rdx", "r10", "r8", "r9" };
                         foreach (Opnd a in sc.Args)
                         {
@@ -794,24 +1130,24 @@ namespace Phi.Compiler.CodeGen
                         MarkNow();
                         g.Need("phi_throw");
                         g.Need("phi_log_held");
-                        g.EmitBlockField("mov rax, qword [{0}]", "CATCH");
+                        BlockField("mov rax, qword [{0}]", "CATCH");
                         E($"mov qword [{c.Record}], rax");
-                        E($"mov qword [{c.Record} + 8], rsp");
-                        E($"mov qword [{c.Record} + 16], rbp");
-                        g.EmitBlockField("mov rax, qword [{0}]", "UNWIND");
-                        E($"mov qword [{c.Record} + 24], rax");
+                        E($"mov qword [{c.Record} + {Word}], rsp");
+                        E($"mov qword [{c.Record} + {2 * Word}], rbp");
+                        BlockField("mov rax, qword [{0}]", "UNWIND");
+                        E($"mov qword [{c.Record} + {3 * Word}], rax");
                         E($"lea rax, [rel {labels[c.Caught]}]");
-                        E($"mov qword [{c.Record} + 32], rax");
+                        E($"mov qword [{c.Record} + {4 * Word}], rax");
                         E("call phi_log_held");
-                        E($"mov qword [{c.Record} + 40], rax");
+                        E($"mov qword [{c.Record} + {5 * Word}], rax");
                         E($"lea rax, [{c.Record}]");
-                        g.EmitBlockField("mov qword [{0}], rax", "CATCH");
+                        BlockField("mov qword [{0}], rax", "CATCH");
                         break;
                     }
                     case UncatchI u:
                         E($"mov rax, qword [{u.Record}]");
                         MarkNow();
-                        g.EmitBlockField("mov qword [{0}], rax", "CATCH");
+                        BlockField("mov qword [{0}], rax", "CATCH");
                         break;
                     case CaughtI caughtHere:
                     {
@@ -1146,20 +1482,20 @@ namespace Phi.Compiler.CodeGen
                         // method's objects, and this frame (the generator's own record)
                         int at = fn.UnwindRecord;
                         MarkNow();
-                        g.EmitBlockField("mov rax, qword [{0}]", "UNWIND");
+                        BlockField("mov rax, qword [{0}]", "UNWIND");
                         E($"mov qword [rbp - {at}], rax");
                         E($"lea rax, [rel {methodLabel}_unwind]");
-                        E($"mov qword [rbp - {at - 8}], rax");
-                        E($"mov qword [rbp - {at - 16}], rbp");
+                        E($"mov qword [rbp - {at - Word}], rax");
+                        E($"mov qword [rbp - {at - 2 * Word}], rbp");
                         E($"lea rax, [rbp - {at}]");
-                        g.EmitBlockField("mov qword [{0}], rax", "UNWIND");
+                        BlockField("mov qword [{0}], rax", "UNWIND");
                         break;
                     }
                     case UnwindI { On: false }:
                         // off it: the record before is the one a throw looks at again
                         E($"mov rcx, qword [rbp - {fn.UnwindRecord}]");
                         MarkNow();
-                        g.EmitBlockField("mov qword [{0}], rcx", "UNWIND");
+                        BlockField("mov qword [{0}], rcx", "UNWIND");
                         break;
                     case RawCallI raw:
                         // (every value lives in the frame across it: the allocator saw to that)
@@ -1193,9 +1529,9 @@ namespace Phi.Compiler.CodeGen
                         {
                             // what the lock guards may be half changed when something goes wrong in
                             // here, so nothing is caught until it's given back: it stops the program
-                            g.EmitBlockField("mov rcx, qword [{0}]", "CATCH");
+                            BlockField("mov rcx, qword [{0}]", "CATCH");
                             Store(lk.Saved, "rcx");
-                            g.EmitBlockField("mov qword [{0}], 0", "CATCH");
+                            BlockField("mov qword [{0}], 0", "CATCH");
                         }
                         break;
                     }
@@ -1203,7 +1539,7 @@ namespace Phi.Compiler.CodeGen
                         if (g.Catches)
                         {
                             Load("rcx", ul.Saved, 64);
-                            g.EmitBlockField("mov qword [{0}], rcx", "CATCH");
+                            BlockField("mov qword [{0}], rcx", "CATCH");
                         }
                         E($"lea rcx, [rel {ul.Label}]");
                         E("mov dword [rcx], 0");
@@ -1577,6 +1913,14 @@ namespace Phi.Compiler.CodeGen
                         E($"movdqu [rsp], {VIn(a.Reg!, "xmm15")}");
                         continue;
                     }
+                    if (x32 && kind == MemKind.Q64)
+                    {
+                        // (an i64: its high half, then its low, 8 bytes as the generator pushes one)
+                        pushed += 4;
+                        E($"push {HiOf(a)}");
+                        E($"push {LoOf(a)}");
+                        continue;
+                    }
                     if (x32 && (kind == MemKind.F64 || kind == MemKind.F32 || !a.IsImm && a.Reg!.Float))
                     {
                         // (an f64 takes 8 bytes of the stack in 32-bit code, an f32 4, as the generator pushes them)
@@ -1647,6 +1991,11 @@ namespace Phi.Compiler.CodeGen
                     return;
                 }
                 if (call.Dst == null) return;
+                if (call.Result == CallResult.EdxEax && x32)
+                {
+                    StorePair(call.Dst, "eax", "edx");
+                    return;
+                }
                 if (call.Result == CallResult.EdxEax)
                 {
                     // (a 64-bit result comes back in edx:eax, as the generator gives one)
@@ -1706,6 +2055,9 @@ namespace Phi.Compiler.CodeGen
                             if (tb.Else != next) E($"jmp {labels[tb.Else]}");
                         }
                         break;
+                    case BranchT wbr when x32 && (wbr.A.Int64 || wbr.B.Reg is { Int64: true }):
+                        WideCompare(wbr.A, wbr.B, wbr.Cond, labels[wbr.Then], labels[wbr.Else]);
+                        break;
                     case BranchT br:
                         Compare(br.A, br.B);
                         if (br.Then == next) E($"j{Cc(Not(br.Cond))} {labels[br.Else]}");
@@ -1737,6 +2089,7 @@ namespace Phi.Compiler.CodeGen
                         else if (ret.Value is Opnd v)
                         {
                             if (ret.Pointer) Load("rax", v, 64);
+                            else if (ret.Wide && x32) LoadPair(v, "eax", "edx");
                             else if (ret.Wide)
                             {
                                 Load("rax", v, 64);

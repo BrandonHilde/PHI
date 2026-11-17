@@ -337,6 +337,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     // registers values are kept in across calls, and may change them: it's as an
                     // assembly block is, and so is anything else that isn't a method's call)
                     if (i is RawCallI || x32 && IsCall(i) && i is not CallI { Routine: false }) rawCalls.Add(pos);
+                    // (and a 64-bit multiply, divide or remainder is the library's, in edx:eax and ebx:ecx)
+                    else if (x32 && i is BinI { Dst.Wide: true, Op: BinOp.Mul or BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU }) rawCalls.Add(pos);
                 }
                 pos += 2;
                 foreach (VReg v in Uses(b.End))
@@ -354,7 +356,8 @@ namespace Phi.Compiler.CodeGen.Ir
             // where a throw comes back to, nothing is in a register: what's needed there is in the frame
             var caught = new HashSet<VReg>(fn.Blocks.Where(b => b.End is TryT).SelectMany(b => liveIn[((TryT)b.End!).Caught]));
             foreach (Interval iv in intervals.Values.OrderBy(i => i.Value.Id))
-                if (rawCalls.Any(c => c > iv.Start && c < iv.End) || caught.Contains(iv.Value) || iv.Value.Pinned)
+                // (in 32-bit code an i64 is two halves: the emitter works on them where they are in the frame)
+                if (rawCalls.Any(c => c > iv.Start && c < iv.End) || caught.Contains(iv.Value) || iv.Value.Pinned || x32 && iv.Value.Int64)
                 {
                     slotsForRaw += iv.Value.Vec ? 2 : 1;
                     Slots[iv.Value] = 8 * slotsForRaw;

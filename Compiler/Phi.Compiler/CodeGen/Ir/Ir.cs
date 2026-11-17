@@ -20,6 +20,9 @@ namespace Phi.Compiler.CodeGen.Ir
         public int Id { get; init; }
         public bool Wide { get; init; }
 
+        /// <summary>An i64 or u64 (Wide, and not a float's or vec's register).</summary>
+        public bool Int64 => Wide && !Float && !Vec;
+
         /// <summary>An f64, in an xmm register (or its slot in the frame).</summary>
         public bool Float { get; init; }
 
@@ -858,7 +861,7 @@ namespace Phi.Compiler.CodeGen.Ir
             return sb.ToString();
         }
 
-        static string Text(Instr i) => i switch
+        public static string Text(Instr i) => i switch
         {
             LineMark => "line",
             ConstI c => $"{c.Dst} = {c.Value}",
