@@ -81,6 +81,20 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg B { get; init; } = null!;
     }
 
+    /// <summary>
+    /// The FPU's own, as the generator works it out: an instruction on A (fsqrt, fabs, fsin, fcos),
+    /// frndint with a rounding (0 nearest, 1 down, 2 up, 3 toward zero), or (B given) what's left
+    /// of A over B with A's sign, fprem until it's done. Dst is the f64 it comes to.
+    /// </summary>
+    public sealed class X87I : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public VReg A { get; init; } = null!;
+        public VReg? B { get; init; }
+        public string Instruction { get; init; } = "";
+        public int Rounding { get; init; } = -1;
+    }
+
     public sealed class FNegI : Instr
     {
         public VReg Dst { get; init; } = null!;
@@ -792,6 +806,9 @@ namespace Phi.Compiler.CodeGen.Ir
         /// </summary>
         public List<(string Home, Semantics.StructSymbol? Objects)> OwnedViews { get; } = new();
 
+        /// <summary>The elements of the method's own str tables whose texts grow: each slot and its room; freed when not in their own buffer.</summary>
+        public List<(string Slot, string Room)> OwnedTableTexts { get; } = new();
+
         /// <summary>The method's own objects: where each is kept, and its struct (freed at the end, in this order).</summary>
         public List<(string Home, Semantics.StructSymbol Struct)> Owned { get; } = new();
 
@@ -882,6 +899,7 @@ namespace Phi.Compiler.CodeGen.Ir
             GrowStoreI gs => $"text [{gs.Slot}] {(gs.Append ? "++" : "is")} {gs.Value}{(gs.SourceIsString ? "" : " as a number")}",
             NumberTextI nt => $"{nt.Dst} = text of {nt.Kind} {nt.Value}",
             ExitI ex => $"exit {ex.Code}",
+            X87I x => x.B != null ? $"{x.Dst} = {x.A} fprem {x.B}" : $"{x.Dst} = {x.Instruction}{(x.Rounding >= 0 ? $" ({x.Rounding})" : "")} {x.A}",
             ArrayRoutineI ar => $"array {ar.Kind} [{ar.View}]{(ar.Made != null ? $" into [{ar.Made}]" : "")}",
             StopI st => $"stop: {st.Text}",
             HasTextI ht => $"{ht.Dst} = {ht.Text} has {ht.Value}",

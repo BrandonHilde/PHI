@@ -155,7 +155,7 @@ namespace Phi.Compiler.CodeGen.Ir
             VariableSymbol? badParameter = m.Parameters.FirstOrDefault(p => !FrameText(p) && !CallersText(p) && !GrowingText(p) && !ArrayParameter(p) && !(Supported(p.Type) && !p.Grows && !p.TextRef && p.Ownership is Ownership.None or Ownership.Borrowed));
             Need(badParameter == null, $"a parameter it doesn't take ('{badParameter?.Name}', {Describe(badParameter)})");
 
-            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v) || FrameText(v) || GrowingText(v) || LocalView(v)
+            VariableSymbol? badLocal = m.Locals.FirstOrDefault(v => !(OwnObject(v) || FrameStruct(v) || FrameText(v) || GrowingText(v) || LocalView(v) || LocalTable(v)
                                    || Supported(v.Type) && !v.Type.IsObject && v.Ownership == Ownership.None && !v.Grows && !v.GrowingArray && !v.GrowingElements
                                    // (one that borrows an object: its address, nothing to give back)
                                    || v.Type.IsObject && !v.Type.IsArray && v.Ownership == Ownership.Borrowed && !v.Grows));
@@ -171,6 +171,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 StoreObject((home, null, 0), Opnd.Const(0));
             }
             PlaceGrowingTexts();
+            PlaceLocalTables();
             foreach (VariableSymbol v in m.Locals.Where(LocalView))
             {
                 fn.NewHome();
@@ -193,7 +194,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 .Where(v => v != null && Ours(v) && Supported(v.Type) && !v.Type.IsVec && !owned.ContainsKey(v) && !frameStructs.ContainsKey(v)
                             && !FrameText(v) && !GrowingText(v) && !CallersText(v) && !ArrayParameter(v))
                 .Select(v => v!).ToHashSet();
-            if (catches && (owned.Count > 0 || fn.OwnedTexts.Count > 0 || fn.OwnedViews.Count > 0 || m.Locals.Any(OwnObjectArray)
+            if (catches && (owned.Count > 0 || fn.OwnedTexts.Count > 0 || fn.OwnedViews.Count > 0 || fn.OwnedTableTexts.Count > 0 || m.Locals.Any(OwnObjectArray)
                             || growResults && BodyNodes().Any(n => n is CallExpr { Resolved: MethodSymbol cm } && GivesText(cm) || n is CallStmt { Resolved: MethodSymbol sm } && GivesText(sm))
                             || BodyNodes().Any(n => n is CallExpr { Resolved: PointerCall { Signature.Result: { IsString: true, IsArray: false } } }
                                                     || n is CallStmt { Resolved: PointerCall { Signature.Result: { IsString: true, IsArray: false } } })))
@@ -269,7 +270,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             // (a variable is set where it's declared; one that could be read before that is
             // given 0 at the start, by IrPeephole, which knows which)
-            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v) && !frameTexts.ContainsKey(v) && !growingTexts.ContainsKey(v) && !localViews.ContainsKey(v))) Variable(v);
+            foreach (VariableSymbol v in m.Locals.Where(v => !owned.ContainsKey(v) && !frameStructs.ContainsKey(v) && !frameTexts.ContainsKey(v) && !growingTexts.ContainsKey(v) && !localViews.ContainsKey(v) && !localTables.ContainsKey(v))) Variable(v);
 
             Statements(m.Decl.Body);
             if (m.Decl.Result is Expr value)
@@ -367,6 +368,19 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             if (fn.UnwindRecord != 0) Emit(new UnwindI { On = false });
             foreach (VariableSymbol v in localViews.Keys.Where(OwnsElements)) FreeView(v);
+            foreach (var (slot, room) in fn.OwnedTableTexts)
+            {
+                // an element that moved to the heap (one still in its own buffer stays)
+                VReg roomWord = fn.NewValue(false);
+                Emit(new LoadI { Dst = roomWord, Place = room, Kind = MemKind.D32 });
+                Block free = fn.NewBlock(), kept = fn.NewBlock();
+                if (current.End != null) Enter(fn.NewBlock());
+                current.End = new BranchT { Cond = Cond.Eq, A = roomWord, B = Opnd.Const(0), TestMask = 0x80000000, Then = free, Else = kept };
+                Enter(free);
+                Emit(new FreeTextI { Place = slot });
+                current.End = new JumpT { Target = kept };
+                Enter(kept);
+            }
             foreach (string slot in fn.OwnedTexts) Emit(new FreeTextI { Place = slot });
             foreach (var (home, s) in fn.Owned)
             {
@@ -631,6 +645,29 @@ namespace Phi.Compiler.CodeGen.Ir
                     Enter(free);
                     Emit(new ObjCallI { Kind = "free", Struct = t.Struct!, Arg = hadReg });
                     StartBlock(after);
+                    return;
+                }
+
+                case VarDecl { Symbol: VariableSymbol tabled } tdecl when localTables.ContainsKey(tabled):
+                {
+                    // its values put in, one an element (as list:i is v); none: each text empty, where its slot says
+                    Mark(tdecl);
+                    var tableName = new NameExpr { Name = tabled.Name, Symbol = tabled, Type = tabled.Type };
+                    if (tdecl.Values.Count == 0)
+                    {
+                        for (int k = 0; k < tabled.Type.Length; k++)
+                        {
+                            VReg text = fn.NewValue(true);
+                            Emit(new LoadI { Dst = text, Place = $"{localTables[tabled]} + {PhiType.AddressSize * k}", Kind = MemKind.Q64 });
+                            Emit(new StoreIdxI { Base = text, Index = Opnd.Const(0), Scale = 1, Src = Opnd.Const(0), Kind = MemKind.U8 });
+                        }
+                        return;
+                    }
+                    for (int k = 0; k < tdecl.Values.Count; k++)
+                    {
+                        var element = new IndexExpr { Target = tableName, Index = new NumberExpr { Value = k, Type = PhiType.Int }, Type = tabled.Type.Element, Span = tdecl.Span };
+                        Need(SetText(element, tdecl.Values[k]), "a str table given what isn't text");
+                    }
                     return;
                 }
 
@@ -1314,7 +1351,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 && element.Type.IsStruct && !element.Type.IsArray && element.Type.Struct!.Size > 0 => true,
             MemberExpr { Field: FieldSymbol f, Call: null } m when Supported(f.Type) && Is64(Real(m.Target)) && Supported(Real(m.Target)) => true,
             MemberExpr { Field: FieldSymbol f, Call: null } placed => Supported(f.Type) && InPlaceStruct(placed.Target.Type) && CanAddress(placed.Target),
-            NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0 && Supported(p.Type),
+            NameExpr { Symbol: PathSymbol p } => PathRoot(p) && p.Hops.Count > 0 && Supported(p.Type),
             _ => false,
         };
 
@@ -1358,10 +1395,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 case MemberExpr { Field: FieldSymbol f, Call: null } placed when Supported(f.Type) && InPlaceStruct(placed.Target.Type) && CanAddress(placed.Target):
                     // list:i.field (an element in place, a struct's struct): where the struct is, and the field in it
                     return (AddressOf(placed.Target), f.Offset, f.Type);
-                case NameExpr { Symbol: PathSymbol p } when p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0
+                case NameExpr { Symbol: PathSymbol p } when PathRoot(p) && p.Hops.Count > 0
                                                              && Supported(p.Type):
                 {
-                    VReg at = RootValue(p.Root);
+                    VReg at = PathStart(p);
                     for (int k = 0; k + 1 < p.Hops.Count; k++)
                     {
                         VReg next = fn.NewValue(true);
@@ -1944,7 +1981,7 @@ namespace Phi.Compiler.CodeGen.Ir
             NameExpr { Symbol: VariableSymbol v } => frameStructs.ContainsKey(v) || !Ours(v) && !v.Grows && !v.TextRef && !v.Type.Open && AnyGlobal(v) != null,
             NameExpr { Symbol: FieldPathSymbol f } => frameStructs.ContainsKey(f.Root) || GlobalStruct(f.Root) != null
                 || !Ours(f.Root) && !f.Root.Grows && !f.Root.Type.Open && AnyGlobal(f.Root) != null,
-            NameExpr { Symbol: PathSymbol p } => p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type) && p.Hops.Count > 0,
+            NameExpr { Symbol: PathSymbol p } => PathRoot(p) && p.Hops.Count > 0,
             NameExpr { Symbol: SelfFieldSymbol f } => Ours(f.Self),
             MemberExpr { Field: FieldSymbol, Call: null } m => Is64(Real(m.Target)) && Supported(Real(m.Target)) || InPlaceStruct(m.Target.Type) && CanAddress(m.Target),
             IndexExpr { Target: NameExpr { Symbol: VariableSymbol arr } } when ClassArray(arr) != null => true,
@@ -1988,7 +2025,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     return d;
                 case NameExpr { Symbol: PathSymbol p }:
                 {
-                    VReg at = RootValue(p.Root);
+                    VReg at = PathStart(p);
                     for (int k = 0; k + 1 < p.Hops.Count; k++)
                     {
                         VReg next = fn.NewValue(true);
@@ -2120,6 +2157,22 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A path's start (a.b.c's a): the method's own, or a class's variable (read where it is, or where a loop holds it).</summary>
         bool RootReachable(VariableSymbol root) => Ours(root) || Global(root) != null;
 
+        /// <summary>
+        /// A path (a.b.c) this form follows: from a pointer or object (the method's own, or a class's),
+        /// or from a struct kept in memory (a class's, or in the frame) whose field at BaseOffset is the first address.
+        /// </summary>
+        bool PathRoot(PathSymbol p) => p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type)
+            || p.BaseOffset != 0 && (frameStructs.ContainsKey(p.Root) || !Ours(p.Root) && AnyGlobal(p.Root) != null);
+
+        /// <summary>The path's first address: the root's value, or what's at the root's place + BaseOffset (the generator's).</summary>
+        VReg PathStart(PathSymbol p)
+        {
+            if (p.BaseOffset == 0 && RootReachable(p.Root) && Is64(p.Root.Type)) return RootValue(p.Root);
+            VReg place = fn.NewValue(true);
+            Emit(new AddrI { Dst = place, Label = frameStructs.ContainsKey(p.Root) ? FramePlace(p.Root, 0) : AnyGlobal(p.Root)! });
+            return LoadAt(place, p.BaseOffset, PhiType.PointerTo(PhiType.U8));
+        }
+
         VReg RootValue(VariableSymbol root) => Ours(root) ? Variable(root) : InReg(Value(new NameExpr { Name = root.Name, Symbol = root, Type = root.Type }), true);
 
         /// <summary>A character of a str this form reads (and whose address it works out): one that grows, or with a room it's checked against.</summary>
@@ -2198,8 +2251,18 @@ namespace Phi.Compiler.CodeGen.Ir
                     BinaryOp.Subtract => FOp.Sub,
                     BinaryOp.Multiply => FOp.Mul,
                     BinaryOp.Divide => FOp.Div,
+                    BinaryOp.Modulo => FOp.Add,     // (worked out below, by the FPU)
                     _ => throw new NotYet($"the operator {b.Op} on floats"),
                 };
+                if (b.Op == BinaryOp.Modulo)
+                {
+                    // what's left over, with the left's sign (like C's fmod), as the generator: fprem
+                    VReg dividend = (VReg)Convert(Value(b.Left), Real(b.Left), PhiType.F64).Reg!;
+                    VReg divisor = (VReg)Convert(Value(b.Right), Real(b.Right), PhiType.F64).Reg!;
+                    VReg rem = fn.NewFloat();
+                    Emit(new X87I { Dst = rem, A = dividend, B = divisor });
+                    return rem;
+                }
                 // (the left side first, as everywhere)
                 VReg fa = (VReg)Convert(Value(b.Left), Real(b.Left), PhiType.F64).Reg!;
                 VReg fb = (VReg)Convert(Value(b.Right), Real(b.Right), PhiType.F64).Reg!;
@@ -2553,7 +2616,15 @@ namespace Phi.Compiler.CodeGen.Ir
         /// </summary>
         VReg? CallBuiltin(BuiltinFunction b, List<Expr> arguments, bool wantResult)
         {
-            Need(b.FloatInstruction == null, $"a call of {b.Name}, which the FPU works out");
+            if (b.FloatInstruction != null)
+            {
+                // Float.Sqrt and the rest: the FPU's own instruction, as the generator has it
+                Need(arguments.Count == 1, $"a call of {b.Name} without its value");
+                VReg x = (VReg)Convert(Value(arguments[0]), Real(arguments[0]), PhiType.F64).Reg!;
+                VReg r = fn.NewFloat();
+                Emit(new X87I { Dst = r, A = x, Instruction = b.FloatInstruction, Rounding = b.FloatRounding });
+                return wantResult ? r : null;
+            }
             var values = new Opnd[arguments.Count];
             for (int k = arguments.Count - 1; k >= 0; k--)
             {

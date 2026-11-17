@@ -216,6 +216,17 @@ namespace Phi.Compiler.CodeGen
                         E($"call {g.HeapMethodLabel("Heap.Free")}");
                         E("add rsp, 8");
                     }
+                    foreach (var (slot, room) in fn.OwnedTableTexts)
+                    {
+                        // an element that moved to the heap (one still in its own buffer stays)
+                        string own = g.NewLabel("unwindown");
+                        E($"test dword [{room}], {0x80000000}");
+                        E($"jnz {own}");
+                        E($"push qword [{slot}]");
+                        E($"call {g.HeapMethodLabel("Heap.Free")}");
+                        E("add rsp, 8");
+                        g.Label(own);
+                    }
                     foreach (var (view, objects) in fn.OwnedViews)
                     {
                         // each element's object (up to its room) or heap text (up to how many), then the room
@@ -789,6 +800,48 @@ namespace Phi.Compiler.CodeGen
                         string op = fb.Op switch { FOp.Add => "addsd", FOp.Sub => "subsd", FOp.Mul => "mulsd", _ => "divsd" };
                         E($"{op} {t}, {F(fb.B)}");
                         FStore(fb.Dst, t);
+                        break;
+                    }
+                    case X87I x87:
+                    {
+                        // through the stack to the FPU and back, as the generator works it out
+                        E("sub rsp, 16");
+                        E($"movsd xmm14, {F(x87.A)}");
+                        E("movsd qword [rsp], xmm14");
+                        if (x87.B != null)
+                        {
+                            E($"movsd xmm14, {F(x87.B)}");
+                            E("movsd qword [rsp + 8], xmm14");
+                            E("fld qword [rsp + 8]");
+                            E("fld qword [rsp]          ; st0 = the left, st1 = the right");
+                            string again = g.NewLabel("fprem");
+                            g.Label(again);
+                            E("fprem");
+                            E("fnstsw ax");
+                            E("test ah, 4");
+                            E($"jnz {again}              ; c2: not finished");
+                            E("fstp st1");
+                        }
+                        else
+                        {
+                            E("fld qword [rsp]");
+                            if (x87.Rounding < 0) E(x87.Instruction);
+                            else
+                            {
+                                E("fnstcw [rsp + 8]");
+                                E("mov ax, [rsp + 8]");
+                                E("and ax, 0xF3FF");
+                                E($"or ax, {x87.Rounding << 10}         ; how frndint rounds");
+                                E("mov [rsp + 10], ax");
+                                E("fldcw [rsp + 10]");
+                                E("frndint");
+                                E("fldcw [rsp + 8]");
+                            }
+                        }
+                        E("fstp qword [rsp]");
+                        E("movsd xmm14, qword [rsp]");
+                        E("add rsp, 16");
+                        FStore(x87.Dst, "xmm14");
                         break;
                     }
                     case FNegI fneg:

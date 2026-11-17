@@ -1,0 +1,38 @@
+# A method's own tables of texts through the intermediate form (str names: 'one' 'two';, str
+# blank[2];): each element in its own buffer in the frame, growing onto the heap when it must;
+# given to a parameter; those freed at its end and by a throw going past (the heap says).
+phi.IrLocalTables:Program
+{
+	u32 before: Heap.used_blocks;
+	call Tables: 2;
+	if call Throws throws err
+		log 'caught: ' err.text '\n';
+	;;
+	log 'blocks back: ' (Heap.used_blocks - before) '\n';
+	exit 0;
+
+	[Join: str rows[];]
+		str all: '';
+		while each r in rows
+			all++ '[' r ']';
+		;;
+	[end: all]
+
+	[Tables: int rounds: 0;]
+		while int k: 0; k < rounds; k++;
+			str names: 'one' 'two' 'three';
+			str blank[2];
+			log names:1 ' (' blank:0 ') ' (Join: names) '\n';
+			names:0 is 'a much longer text than it had';
+			blank:1 is 'filled ' k;
+			names:2++ ', and more';
+			log (Join: names) ' ' (Join: blank) ' ' names:0.len '\n';
+		;;
+	[end]
+
+	[Throws:]
+		str held: 'x' 'y';
+		held:1 is 'grown past its own room, onto the heap';
+		throw 'with a table';
+	[end]
+}

@@ -4075,6 +4075,14 @@ aside when they're the same element, in a slot that grows when there's a heap); 
 target may be inside the source (an error then, StopI). Tests ir_texts_in_place, ir_each_structs,
 ir_own_object_arrays, ir_own_views, ir_array_copies.
 
+Every 64-bit method in tests/ and bench/ then went through it (commit 7776ad7). Then the code
+libraries' 64-bit programs, which it refused 39 of: the FPU's own functions (Float.Floor, Ceil,
+Round, Trunc, Abs, Sqrt, Sin, Cos) and % on floats, by the same x87 instructions the generator
+uses (so the same answers, edges and all); a method's own tables of texts (each element in its own
+buffer in the frame, growing onto the heap, freed at the end when it did); a path from a struct
+kept in memory (JsLex.tok.text.bytes: the first address at the root's place + BaseOffset). Tests
+ir_fpu and ir_local_tables.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

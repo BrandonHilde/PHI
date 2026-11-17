@@ -309,7 +309,7 @@ namespace Phi.Compiler.CodeGen.Ir
             && (e.Target.Type.Open
                     ? Binder.IsFieldView(e.Target) && CanAddress(e.Target)
                       || e.Target is NameExpr { Symbol: VariableSymbol v } && (paramViews.ContainsKey(v) || GrowingView(v))
-                    : e.Target is NameExpr { Symbol: VariableSymbol t } && !t.GrowingArray && !Ours(t) && SimpleLabel(t.Label)
+                    : e.Target is NameExpr { Symbol: VariableSymbol t } && !t.GrowingArray && (!Ours(t) && SimpleLabel(t.Label) || localTables.ContainsKey(t))
                       && (e.CheckLimit != null || unsafeDepth > 0 || ConstantFolder.Evaluate(e.Index) != null));
 
         /// <summary>An element of a str array written (its text grows): a struct's or a class's that grows, or a class's table of texts that grow (not a parameter's).</summary>
@@ -358,9 +358,46 @@ namespace Phi.Compiler.CodeGen.Ir
                     index = checkedIndex;
                 }
                 elements = fn.NewValue(true);
-                Emit(new AddrI { Dst = elements, Label = ((VariableSymbol)((NameExpr)e.Target).Symbol!).Label });
+                var table = (VariableSymbol)((NameExpr)e.Target).Symbol!;
+                Emit(new AddrI { Dst = elements, Label = localTables.TryGetValue(table, out string? mine) ? mine : table.Label });
             }
             return Offset(elements, InReg(index, true), PhiType.AddressSize, fn.NewValue(true));
+        }
+
+        /// <summary>A method's own table of texts (str names: 'a' 'b';, str list[3];): each element its own buffer in the frame, its text growing out of it when it must.</summary>
+        static bool LocalTable(VariableSymbol v) => v.IsLocal && v.Type.TextTable && !v.Type.Open && !v.GrowingArray && v.Type.Length is > 0 and <= 64 && v.Capacity > 0;
+
+        /// <summary>Each one's table: where its slots are (then its rooms, when its texts grow).</summary>
+        readonly Dictionary<VariableSymbol, string> localTables = new();
+
+        /// <summary>The frame for each: the table, then each element's buffer; each slot set to its buffer (its room, its size, in data), as the generator's frame start.</summary>
+        void PlaceLocalTables()
+        {
+            foreach (VariableSymbol v in method.Locals.Where(LocalTable))
+            {
+                int count = v.Type.Length, room = (v.Capacity + 7) / 8 * 8;
+                int tableBytes = PhiType.AddressSize * count * (v.GrowingElements ? 2 : 1);
+                for (int k = 0; k < (tableBytes + count * room) / 8; k++) fn.NewHome();
+                int top = 8 * fn.Homes;
+                string table = $"rbp - {top}";
+                localTables[v] = table;
+                Emit(new ZeroI { Place = table, Size = tableBytes + count * room });
+                for (int k = 0; k < count; k++)
+                {
+                    string slot = $"rbp - {top - PhiType.AddressSize * k}", buffer = $"rbp - {top - tableBytes - room * k}";
+                    VReg at = fn.NewValue(true);
+                    Emit(new AddrI { Dst = at, Label = buffer });
+                    Emit(new StoreI { Place = slot, Src = at, Kind = MemKind.Q64 });
+                    if (v.GrowingElements)
+                    {
+                        string roomPlace = $"rbp - {top - PhiType.AddressSize * (count + k)}";
+                        VReg mark = fn.NewValue(false);
+                        Emit(new ConstI { Dst = mark, Value = unchecked((int)(0x80000000u | (uint)v.Capacity)) });
+                        Emit(new StoreI { Place = roomPlace, Src = mark, Kind = MemKind.D32 });
+                        fn.OwnedTableTexts.Add((slot, roomPlace));
+                    }
+                }
+            }
         }
 
         /// <summary>A throw's text is being built: cut short, it's kept as far as it goes (as the generator's textMayCut).</summary>
@@ -385,6 +422,8 @@ namespace Phi.Compiler.CodeGen.Ir
                 }
             }
             if (target.Type.IsInlineText && target.Type.Room > 0 && CanAddress(target)) return (AddressOf(target), target.Type.Room);
+            if (target is IndexExpr fixedText && TextTableElement(fixedText) && fixedText.Target is NameExpr { Symbol: VariableSymbol { GrowingElements: false, Capacity: > 0 } sized })
+                return (LoadAt(TextSlotOf(fixedText), 0, PhiType.PointerTo(PhiType.U8)), sized.Capacity);
             return null;
         }
 
@@ -392,6 +431,7 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             NameExpr { Symbol: VariableSymbol v } when frameTexts.ContainsKey(v) => true,
             NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false } g } when !Ours(g) && !g.Type.IsArray && g.Capacity > 0 && SimpleLabel(g.Label) => true,
+            IndexExpr fixedText when TextTableElement(fixedText) && fixedText.Target is NameExpr { Symbol: VariableSymbol { GrowingElements: false, Capacity: > 0 } } => true,
             _ => target.Type.IsInlineText && target.Type.Room > 0 && CanAddress(target),
         };
 

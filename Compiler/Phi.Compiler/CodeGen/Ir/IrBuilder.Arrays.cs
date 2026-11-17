@@ -469,14 +469,14 @@ namespace Phi.Compiler.CodeGen.Ir
                 VReg view = ViewOf(array);
                 return (LoadAt(view, ViewCount, PhiType.U64), LoadAt(view, 0, PhiType.PointerTo(array.Type.Element)));
             }
-            Need(!array.Type.TextTable || array is NameExpr { Symbol: VariableSymbol { GrowingArray: false } t } && !Ours(t) && SimpleLabel(t.Label),
+            Need(!array.Type.TextTable || array is NameExpr { Symbol: VariableSymbol { GrowingArray: false } t } && (!Ours(t) && SimpleLabel(t.Label) || localTables.ContainsKey(t)),
                  $"{Unknown(array)} given as an array of text");
             if (array.Type.TextTable)
             {
-                // a class's str array: its table of where each text is
+                // a class's str array, or the method's own: its table of where each text is
                 var table = (VariableSymbol)((NameExpr)array).Symbol!;
                 VReg at = fn.NewValue(true), full = fn.NewValue(true);
-                Emit(new AddrI { Dst = at, Label = table.Label });
+                Emit(new AddrI { Dst = at, Label = localTables.TryGetValue(table, out string? mine) ? mine : table.Label });
                 Emit(new ConstI { Dst = full, Value = ((long)array.Type.Length << 32) | (uint)array.Type.Length });
                 return (full, at);
             }

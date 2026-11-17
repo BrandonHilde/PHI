@@ -141,6 +141,10 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case NumberTextI nt: if (nt.Value.Reg != null) yield return nt.Value.Reg; break;
                 case AddrOfI ao: yield return ao.Of; break;
+                case X87I x87:
+                    yield return x87.A;
+                    if (x87.B != null) yield return x87.B;
+                    break;
                 case ArrayRoutineI ar:
                     yield return ar.View;
                     if (ar.Made != null) yield return ar.Made;
@@ -223,6 +227,7 @@ namespace Phi.Compiler.CodeGen.Ir
             SysCallI sc => sc.Dst,
             NumberTextI nt => nt.Dst,
             AddrOfI ao => ao.Dst,
+            X87I x87 => x87.Dst,
             CompareBytesI cmb => cmb.Dst,
             RawCallI { Dst: not null } rc => rc.Dst,
             HasTextI ht => ht.Dst,

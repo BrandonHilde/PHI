@@ -1,0 +1,28 @@
+# The FPU's functions through the intermediate form (Float.Floor, Ceil, Round, Trunc, Abs, Sqrt,
+# Cos, Sin) and % on floats (fprem, with the left's sign): the same x87 instructions the
+# generator uses, so the same answers, edges included; compared with PHI_IR=0's output.
+phi.IrFpu:Program
+{
+	call Show: 2.5;
+	call Show: -2.5;
+	call Show: 3.7;
+	call Show: -0.0;
+	call Show: 1e300;
+	call Mod: 7.5 2.0;
+	call Mod: -7.5 2.0;
+	call Mod: 7.5 -2.0;
+	call Mod: 1e20 3.0;
+	call Mod: 5.0 0.0;
+	f32 small: 2.75;
+	log (Float.Floor: small) ' ' (Float.Sqrt: small) '\n';
+	exit 0;
+
+	[Show: f64 x: 0.0;]
+		log (Float.Floor: x) ' ' (Float.Ceil: x) ' ' (Float.Round: x) ' ' (Float.Trunc: x) ' ' (Float.Abs: x) ' ' (Float.Sqrt: (Float.Abs: x)) ' ' (Float.Cos: x) ' ' (Float.Sin: x) '\n';
+	[end]
+
+	[Mod: f64 a: 0.0; f64 b: 0.0;]
+		f64 r: a % b;
+		log r ' ' (a % b * 2.0) '\n';
+	[end]
+}
