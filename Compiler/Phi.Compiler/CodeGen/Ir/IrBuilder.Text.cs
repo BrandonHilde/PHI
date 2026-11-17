@@ -28,6 +28,13 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A method's own str that grows (a variable, or a parameter without a size): its slot in the frame.</summary>
         static bool GrowingText(VariableSymbol v) => v.Grows && !v.TextRef && v.Type.IsString && !v.Type.IsArray;
 
+        /// <summary>The generator's RemembersLength: a method's own str whose length is kept beside it (every use of it only reads it, or stores into it).</summary>
+        Func<VariableSymbol, bool> remembersLength = _ => false;
+
+        /// <summary>Where each such str's length is kept (plus 1; 0 for not known), as the generator's lengthOf; and a text built where it's used's.</summary>
+        readonly Dictionary<VariableSymbol, string> textLengths = new();
+        readonly Dictionary<TextExpr, string> inlineLengths = new();
+
         /// <summary>Each such str's slot: where its text's address is (0 while it has none), then its room.</summary>
         readonly Dictionary<VariableSymbol, string> growingTexts = new();
 
@@ -63,6 +70,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     inlineSlots[built] = slot;
                     fn.OwnedTexts.Add(slot);
                     Emit(new ZeroI { Place = slot, Size = 16 });
+                    // (only it builds it, so it keeps how long it is, as a method's own str can)
+                    fn.NewHome();
+                    inlineLengths[built] = $"rbp - {8 * fn.Homes}";
                 }
             foreach (VariableSymbol v in method.Parameters.Concat(method.Locals).Where(GrowingText))
             {
@@ -72,6 +82,12 @@ namespace Phi.Compiler.CodeGen.Ir
                 growingTexts[v] = slot;
                 fn.OwnedTexts.Add(slot);
                 Emit(new ZeroI { Place = slot, Size = 16 });
+                if (!v.IsParameter && remembersLength(v))
+                {
+                    fn.NewHome();
+                    textLengths[v] = $"rbp - {8 * fn.Homes}";
+                    Emit(new StoreI { Place = textLengths[v], Src = Opnd.Const(0), Kind = MemKind.D32 });
+                }
             }
         }
 
@@ -164,7 +180,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// One value into a str: one with a size at fixedAt (or found from fixedTarget, after the
         /// value), or else the slot of slotTarget, a str that grows.
         /// </summary>
-        void PutPart(Expr part, bool append, (VReg At, int Room)? fixedAt, Expr? fixedTarget, Expr? slotTarget = null, string? slotHome = null)
+        void PutPart(Expr part, bool append, (VReg At, int Room)? fixedAt, Expr? fixedTarget, Expr? slotTarget = null, string? slotHome = null, string? length = null)
         {
             Expr? target = slotTarget;
             var (value, isText, unsigned, known) = PartValue(part);
@@ -184,8 +200,10 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             else if (TableSlot(target!)) (slot, roomOffset, rooms) = TableSlotOf((IndexExpr)target!);
             else slot = SlotOf(target!);
+            // (a method's own str that keeps how long it is: the store uses it and keeps it)
+            if (length == null && target is NameExpr { Symbol: VariableSymbol kept } && textLengths.TryGetValue(kept, out string? keptLength)) length = keptLength;
             Emit(new GrowStoreI { Slot = slot, Value = value, SourceIsString = isText, Append = append, Unsigned = unsigned, Known = known, MayCut = textMayCut,
-                                  RoomOffset = roomOffset, Rooms = rooms });
+                                  RoomOffset = roomOffset, Rooms = rooms, Length = length });
         }
 
         /// <summary>A value put in text, worked out: a text's address, or a number (written out as text, or a whole one the store writes).</summary>
@@ -440,8 +458,9 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             if (inlineSlots.TryGetValue(text, out string? slot))
             {
+                Emit(new StoreI { Place = inlineLengths[text], Src = Opnd.Const(0), Kind = MemKind.D32 });
                 // into its own slot, which grows; its value is the text there ('' for none)
-                for (int k = 0; k < text.Parts.Count; k++) PutPart(text.Parts[k], k > 0, null, null, slotTarget: null, slotHome: slot);
+                for (int k = 0; k < text.Parts.Count; k++) PutPart(text.Parts[k], k > 0, null, null, slotTarget: null, slotHome: slot, length: inlineLengths[text]);
                 if (text.Parts.Count == 0)
                 {
                     VReg home = fn.NewAddress();

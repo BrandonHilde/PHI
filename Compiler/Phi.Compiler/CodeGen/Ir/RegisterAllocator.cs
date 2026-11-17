@@ -329,7 +329,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     }
                     if (Def(i) is VReg def)
                     {
-                        Touch(def, pos);
+                        // (in 32-bit code, with three registers, an operand read here for the last
+                        // time gives its register to what's made here: the result starts after it)
+                        Touch(def, x32 ? pos + 1 : pos);
                         Weigh(def, k);
                     }
                     if (IsCall(i)) calls.Add(pos);
@@ -438,6 +440,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 iv.Register = register;
                 active.Add(iv);
             }
+            // (PHI_IR_REGS=1: each value's interval and where it went, for finding why one wasn't in a register)
+            if (Environment.GetEnvironmentVariable("PHI_IR_REGS") == "1")
+                foreach (Interval iv in intervals.Values.OrderBy(i => i.Start))
+                    Console.Error.WriteLine($"  {iv.Value}: {iv.Start}..{iv.End} weight {iv.Weight} {(iv.CrossesCall ? "crosses a call " : "")}{iv.Register ?? (Slots.TryGetValue(iv.Value, out int at) ? $"[{at}]" : "-")}");
             foreach (Interval iv in intervals.Values)
             {
                 if (iv.Register == null) continue;

@@ -38,7 +38,7 @@ namespace Phi.Compiler.CodeGen
             // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
             HashSet<VariableSymbol> reached = ReachedByAddress();
             bool Holdable(VariableSymbol v) => !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile && !reached.Contains(v);
-            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, GrowResults, unit.Kind == UnitKind.Program, out string why);
+            IrFunction? fn = IrBuilder.Build(m, Holdable, Catches && !m.IsInterruptHandler, GrowResults, unit.Kind == UnitKind.Program, RemembersLength, out string why);
             if (fn == null)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: {why}");
@@ -49,7 +49,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("ud2");
                 return true;
             }
-            IrPeephole.Run(fn);
+            IrPeephole.Run(fn, x32);
             if (x32 && Fits32(fn, sse: Host.IsLinux() || Host.IsWindows()) is string not32)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: in 32-bit code, {not32}");
@@ -965,7 +965,8 @@ namespace Phi.Compiler.CodeGen
                         MarkNow();
                         g.textMayCut = gs.MayCut;
                         g.EmitGrowStoreAt(gs.RoomOffset ?? g.RoomAt, gs.SourceIsString, gs.Append, gs.Unsigned,
-                                          rooms: gs.Rooms != null ? $"dword [{(x32 ? To32(gs.Rooms) : gs.Rooms)}]" : null, known: gs.Known);
+                                          rooms: gs.Rooms != null ? $"dword [{(x32 ? To32(gs.Rooms) : gs.Rooms)}]" : null,
+                                          length: gs.Length != null ? (x32 ? To32(gs.Length) : gs.Length) : null, known: gs.Known);
                         g.textMayCut = false;
                         break;
                     }

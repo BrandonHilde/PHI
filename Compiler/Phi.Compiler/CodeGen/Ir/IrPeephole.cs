@@ -8,7 +8,7 @@ namespace Phi.Compiler.CodeGen.Ir
     /// </summary>
     public static class IrPeephole
     {
-        public static void Run(IrFunction fn)
+        public static void Run(IrFunction fn, bool x32 = false)
         {
             ThreadJumps(fn);
             Lea(fn);
@@ -16,6 +16,55 @@ namespace Phi.Compiler.CodeGen.Ir
             ZeroWhatsReadFirst(fn);
             Fold(fn);
             TestBits(fn);
+            if (x32) FoldOffsets(fn);
+        }
+
+        /// <summary>
+        /// base + n read once, as where a load or store with a number for its index is: n goes
+        /// into the instruction's offset, and the add and its value go ([self + 36 + 4], not
+        /// self + 36 kept somewhere first). In 32-bit code, where three registers hold values, a
+        /// value that isn't made isn't one that waits in the frame for want of one.
+        /// </summary>
+        static void FoldOffsets(IrFunction fn)
+        {
+            var uses = new Dictionary<VReg, int>();
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs)
+                    foreach (VReg v in RegisterAllocator.Uses(i)) uses[v] = uses.GetValueOrDefault(v) + 1;
+                foreach (VReg v in RegisterAllocator.Uses(b.End)) uses[v] = uses.GetValueOrDefault(v) + 1;
+            }
+            foreach (Block b in fn.Blocks)
+                for (int k = 0; k < b.Instrs.Count; k++)
+                {
+                    if (b.Instrs[k] is not BinI { Op: BinOp.Add, A.Reg: VReg bas, B.IsImm: true } add || uses.GetValueOrDefault(add.Dst) != 1
+                        || add.Dst.Wide != bas.Wide || add.B.Imm < int.MinValue || add.B.Imm > int.MaxValue) continue;
+                    // the one that reads it, later in the block, with base not made again before it
+                    for (int j = k + 1; j < b.Instrs.Count; j++)
+                    {
+                        Instr i = b.Instrs[j];
+                        Instr? folded = i switch
+                        {
+                            LoadIdxI { Index.IsImm: true } l when l.Base == add.Dst
+                                => new LoadIdxI { Dst = l.Dst, Base = bas, Index = Opnd.Const(l.Index.Imm * l.Scale + add.B.Imm), Scale = 1, Kind = l.Kind },
+                            StoreIdxI { Index.IsImm: true } st when st.Base == add.Dst && st.Src.Reg != add.Dst
+                                => new StoreIdxI { Base = bas, Index = Opnd.Const(st.Index.Imm * st.Scale + add.B.Imm), Scale = 1, Src = st.Src, Kind = st.Kind },
+                            _ => null,
+                        };
+                        if (folded != null)
+                        {
+                            long offset = ((Opnd)(folded is LoadIdxI fl ? fl.Index : ((StoreIdxI)folded).Index)).Imm;
+                            if (offset >= int.MinValue && offset <= int.MaxValue)
+                            {
+                                b.Instrs[j] = folded;
+                                b.Instrs.RemoveAt(k);
+                                k--;
+                            }
+                            break;
+                        }
+                        if (RegisterAllocator.Uses(i).Contains(add.Dst) || RegisterAllocator.Def(i) == bas) break;
+                    }
+                }
         }
 
         /// <summary>

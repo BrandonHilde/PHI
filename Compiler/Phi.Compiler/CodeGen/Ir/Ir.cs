@@ -276,6 +276,9 @@ namespace Phi.Compiler.CodeGen.Ir
         public int? Known { get; init; }
         public bool MayCut { get; init; }
 
+        /// <summary>Where the method keeps this str's length (plus 1, 0 for not known), for one that remembers it (the generator's lengthOf).</summary>
+        public string? Length { get; init; }
+
         /// <summary>Where the room is after the slot (null: a str's own, just after its address).</summary>
         public int? RoomOffset { get; init; }
 

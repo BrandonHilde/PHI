@@ -4142,6 +4142,17 @@ stay the generator's. Checked: the 820 tests, the 209 32-bit ones with PHI_IR32=
 64-bit ones with PHI_IR=0, phi fuzz code, numbers and objects, the code libraries' 7 test runs
 and PHI-OS's. tests/README.md says how to run both ways.
 
+*A text that grows remembers its length again (2026-11-16, found by `phi compare`).* Once the
+intermediate form took text that grows, `strings` took 4.8 times as long in 64-bit code (1.35 s
+from 0.28) and 15 in 32-bit: each `s++` measured the whole text, where the generator keeps a method's
+own str's length beside it (RemembersLength, lengthOf) and a text built where it's used's. The form
+keeps it too now (GrowStoreI.Length, the same rule for which strs). No test could see it: every one
+passed. In 32-bit code, too: a value made by an instruction may have the register of one it reads
+for the last time (three registers there), and base + n read once as where a load or store is goes
+into its offset (FoldOffsets). bench/RESULTS.md: 64-bit together 0.75 times C#'s time; 32-bit faster
+than the generator's everywhere but `maps` (0.26 s from 0.24) and `sort` (0.34 from 0.31), where its
+three registers hold the loop's variables and what's worked out in between waits in the frame.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

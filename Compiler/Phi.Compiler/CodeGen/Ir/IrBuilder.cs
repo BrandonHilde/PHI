@@ -76,12 +76,13 @@ namespace Phi.Compiler.CodeGen.Ir
         }
 
         /// <summary>The method as the intermediate form, or null and why it isn't.</summary>
-        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, bool program, out string why)
+        public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, bool program,
+                                        Func<VariableSymbol, bool> remembersLength, out string why)
         {
             why = "";
             try
             {
-                var builder = new IrBuilder(m, holdable, catches, growResults, program);
+                var builder = new IrBuilder(m, holdable, catches, growResults, program) { remembersLength = remembersLength };
                 builder.BuildBody();
                 return builder.fn;
             }
@@ -707,6 +708,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     Mark(gd);
                     PutText(new NameExpr { Name = grown.Name, Symbol = grown, Type = grown.Type },
                             gd.Values.Count == 1 ? gd.Values[0] : new StringExpr { Value = "", Type = PhiType.Str, Span = gd.Span }, append: false);
+                    // (how long it is isn't known yet: it's measured the first time it's added to)
+                    if (textLengths.TryGetValue(grown, out string? lengthHome)) Emit(new StoreI { Place = lengthHome, Src = Opnd.Const(0), Kind = MemKind.D32 });
                     return;
                 }
 
