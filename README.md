@@ -119,8 +119,9 @@ phi.Count:Program
 - **[Getting started](docs/getting-started.md):** install the tools and boot PHI OS in ten minutes
 - **[The tutorial](docs/README.md#learn-phi):** eight parts, from a boot sector to adding a
   command to PHI OS, each with a tested example
-- **[Language reference](docs/language.md)**, **[memory map](docs/memory-map.md)** and
-  **[architecture](docs/architecture.md)**
+- **[Language reference](docs/language.md)**, **[memory map](docs/memory-map.md)**,
+  **[architecture](docs/architecture.md)** and the **[codebase map](docs/codebase-map.html)**
+  (a clickable diagram of the code, with where to look for each kind of error)
 - **[Contributing](CONTRIBUTING.md)**
 
 <h4>To Build:</h4>

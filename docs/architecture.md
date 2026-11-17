@@ -3,6 +3,11 @@
 This is a map of how PHI works inside, for anyone changing the compiler, the standard
 library or the build. For the language itself, see [language.md](language.md).
 
+For a picture of the same thing, open [codebase-map.html](codebase-map.html) in a browser: every
+part as a box, with arrows for what passes between them. Click a box for its files and when to
+suspect it, or pick a symptom ("nasm failed", "wrong output only with the new path", "stopped
+by exception 6") to see where to look first, in order.
+
 ## The repository
 
 | Folder | What's in it |
@@ -16,6 +21,7 @@ library or the build. For the language itself, see [language.md](language.md).
 | `lib/x86_32_user/` | assembly library for user programs: system calls |
 | `lib/x86_32_linux/` | assembly library for programs built with `--target linux`: Linux system calls |
 | `lib/x86_32_windows/` | assembly library for programs built with `--target windows`: the `kernel32.dll` import table and calls |
+| `lib/x86_64_linux/`, `lib/x86_64_windows/` | the same for 64-bit programs (`--target linux64`, `windows64`) |
 | `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, cryptography, sound, text |
 | `tests/` | programs that boot in QEMU, with the output they must produce |
 | `samples/` | example programs, including PHI OS |
@@ -27,8 +33,12 @@ next to it at run time.
 ## From source to disk image
 
 ```
-file.phi ─▶ Lexer ─▶ Parser ─▶ (use: more files) ─▶ Binder ─▶ X86Generator ─▶ .asm ─▶ NASM ─▶ Builder ─▶ .img
+file.phi ─▶ Lexer ─▶ Parser ─▶ (use: more files) ─▶ Binder ─┬▶ new path: IrBuilder ─▶ IrPeephole ─▶ RegisterAllocator ─▶ IR emitter ─┬▶ .asm ─▶ NASM ─▶ Builder ─▶ .img, ELF, .exe
+                                                            └▶ X86Generator (everything else) ─────────────────────────────────────┘
 ```
+
+Each method goes one of two ways (see [The new path](#the-new-path-codegenir) below); both
+read the binder's checked program and write into the same .asm file.
 
 [PhiCompiler.cs](../Compiler/Phi.Compiler/PhiCompiler.cs) runs the stages; the `phi` command's
 [Builder.cs](../Compiler/Phi.Cli/Builder.cs) runs NASM and assembles the image.
@@ -90,7 +100,12 @@ everything the generator needs:
 ### Code generator (`CodeGen/`)
 
 [X86Generator.cs](../Compiler/Phi.Compiler/CodeGen/X86Generator.cs) writes one NASM file per
-unit, in 16-bit or 32-bit code. It is deliberately simple:
+unit, in 16-, 32- or 64-bit code. In a 32- or 64-bit program, most methods now come from the
+new path (next section); the generator writes everything else: 16-bit code, kernels, debug
+builds, a class's own statements, calls into Windows libraries, any method the new path
+refuses, and everything around methods (variables, tables, executable headers, compiled
+libraries' code, and the runtime routines the new path calls). Its own method code is
+deliberately simple:
 
 - An expression's value ends up in `eax`; the right side of a binary operation in `ecx`.
 - In 32-bit code, a method keeps up to two of its most used variables in `esi` and `edi`
@@ -134,6 +149,46 @@ unit, in 16-bit or 32-bit code. It is deliberately simple:
 Built-in functions use a C-like convention: arguments pushed right to left as 32-bit values,
 the caller removes them, the result comes back in `eax`. PHI methods instead take their
 parameters in their fixed variables.
+
+### The new path (`CodeGen/Ir/`)
+
+The optimiser: a method's checked tree becomes a small intermediate form, which is tidied,
+given registers and written out as x86. It is on by default for 64-bit and 32-bit programs,
+and is meant to become PHI's only code generator.
+
+1. [IrBuilder](../Compiler/Phi.Compiler/CodeGen/Ir/IrBuilder.cs) (with `.Arrays`, `.Text`,
+   `.Loops`, `.Vec`, `.Outer` and `.Objects`) turns a method into the form defined in
+   [Ir.cs](../Compiler/Phi.Compiler/CodeGen/Ir/Ir.cs): simple instructions over numbered values,
+   in blocks. It takes only what it knows exactly; anything else refuses the method with a
+   reason, and the generator writes that method instead. Loops that sum or work on arrays
+   can become vector code here.
+2. [IrPeephole](../Compiler/Phi.Compiler/CodeGen/Ir/IrPeephole.cs) makes small rewrites: jumps to
+   jumps, `x * 3, 5 or 9` as one `lea`, dead values, folded constants, bit tests and, in 32-bit
+   code, constant offsets folded into addresses.
+3. [RegisterAllocator](../Compiler/Phi.Compiler/CodeGen/Ir/RegisterAllocator.cs) gives out
+   registers by linear scan, with [Liveness](../Compiler/Phi.Compiler/CodeGen/Ir/Liveness.cs).
+   What doesn't get one gets a slot in the frame. 32-bit code has three registers for values
+   (ebx, esi, edi) and keeps every 64-bit number in the frame, as a pair of halves.
+4. The emitter, [X86Generator.Ir.cs](../Compiler/Phi.Compiler/CodeGen/X86Generator.Ir.cs) with
+   `IrVec.cs` (vector code) and `IrText.cs` (numbers as text), writes each instruction. 32-bit
+   code is written as 64-bit text and translated as it goes out (`To32`); `Not32` throws on
+   anything 32-bit code doesn't have. `Fits32` refuses a 32-bit method this back end can't do
+   yet, and on PHI OS any method with floats or `vec`, since PHI OS doesn't turn SSE on.
+
+To find which path is at fault, and where:
+
+| Setting | What it does |
+|---|---|
+| `PHI_IR=0` | every method goes to the generator |
+| `PHI_IR32=0` | the same, for 32-bit programs only |
+| `PHI_IR_SKIP=Class.Method` | one method goes to the generator |
+| `PHI_IR_TRACE=1` | which methods took the new path, and why the others didn't; `2` also prints each method's form |
+| `PHI_IR_REGS=1` | each value's live range, and whether it got a register or a frame slot |
+
+A wrong form is the builder's; a right form with wrong registers the allocator's; right
+registers with wrong instructions the emitter's. Every change here is checked against the
+generator: the tests run both ways ([tests/README.md](../tests/README.md)), and `phi fuzz`
+compares random programs' output with what they must print.
 
 ### The assembly library
 
@@ -261,6 +316,9 @@ class variables.
 | compiler unit tests | `Compiler/Phi.Compiler.Tests/` | `dotnet test PHI.sln` |
 | programs in QEMU | `tests/*.phi` | `phi test` |
 | the tutorial's examples | `docs/examples/*.phi` | `phi test docs/examples` |
+| random programs with known output | written as it runs; wrong ones kept in `fuzz-failures/` | `phi fuzz code`, `numbers`, `objects` |
+| speed against gcc and C# | `bench/` (results in `bench/RESULTS.md`) | `phi compare` |
+| the code libraries, PHI OS | `../PHI-Code-Library`, `../PHI-OS` | `pwsh ./build.ps1 -Test`, `./test.sh` |
 
 A QEMU test is `NAME.phi` plus one of:
 

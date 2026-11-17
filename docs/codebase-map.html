@@ -1,0 +1,863 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PHI Codebase Map</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=Space+Grotesk:wght@500;600;700&display=swap">
+<style>
+/* Layout: a schematic sheet. The map fills the left; a sticky panel on the right explains whatever is picked; symptoms and switches follow below. */
+:root {
+  --bg: #f2f4f7;
+  --surface: #ffffff;
+  --ink: #16202c;
+  --muted: #5b6676;
+  --line: #c8d0db;
+  --grid: #e4e8ee;
+  --region: #e9edf3;
+  --c-source: #7b4fc4;
+  --c-front: #2563c9;
+  --c-ir: #0b8579;
+  --c-gen: #a86400;
+  --c-runtime: #367f2b;
+  --c-build: #4a55b8;
+  --c-tools: #bd3564;
+  --c-repos: #66707f;
+  --font-display: "Space Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "Cascadia Mono", Menlo, Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e131a; --surface: #161e29; --ink: #e5eaf1; --muted: #98a3b4; --line: #344152;
+    --grid: #1a2330; --region: #131a24;
+    --c-source: #b496f2; --c-front: #79a6ff; --c-ir: #4fd0bf; --c-gen: #f0b04e;
+    --c-runtime: #8fd27c; --c-build: #a3a9f6; --c-tools: #f28db1; --c-repos: #a6aebb;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e131a; --surface: #161e29; --ink: #e5eaf1; --muted: #98a3b4; --line: #344152;
+  --grid: #1a2330; --region: #131a24;
+  --c-source: #b496f2; --c-front: #79a6ff; --c-ir: #4fd0bf; --c-gen: #f0b04e;
+  --c-runtime: #8fd27c; --c-build: #a3a9f6; --c-tools: #f28db1; --c-repos: #a6aebb;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html, body { margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--ink);
+  font: 15px/1.55 var(--font-body);
+}
+.page {
+  max-width: 1680px;
+  margin: 0 auto;
+  padding-block: 28px 56px;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  display: grid;
+  gap: 28px;
+}
+code, .mono { font-family: var(--font-mono); font-size: 0.88em; }
+code { background: color-mix(in srgb, var(--ink) 7%, transparent); padding: 0.05em 0.35em; border-radius: 4px; overflow-wrap: anywhere; }
+h1, h2, h3 { font-family: var(--font-display); text-wrap: balance; margin: 0; letter-spacing: -0.01em; }
+h1 { font-size: clamp(1.7rem, 3vw, 2.3rem); font-weight: 700; }
+h2 { font-size: 1.3rem; font-weight: 600; }
+h3 { font-size: 1.05rem; font-weight: 600; }
+.eyebrow { font: 500 0.72rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); }
+p { margin: 0; }
+
+/* header */
+header { display: grid; gap: 10px; }
+header .lede { color: var(--muted); max-width: 72ch; }
+.stats { display: flex; flex-wrap: wrap; gap: 8px 18px; margin-top: 4px; font: 0.82rem/1.3 var(--font-mono); color: var(--muted); }
+.stats b { color: var(--ink); font-weight: 500; }
+
+/* toolbar */
+.toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.search { flex: 1 1 260px; min-width: 0; display: flex; align-items: center; gap: 8px; background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; }
+.search input { flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: var(--ink); font: inherit; padding: 9px 0; }
+.search:focus-within { border-color: var(--ink); }
+.btn { font: 500 0.85rem/1 var(--font-body); color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+.btn:hover { border-color: var(--muted); }
+.btn:focus-visible, .node:focus-visible, .symptom:focus-visible, .linkish:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 0.8rem; color: var(--muted); }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend i { width: 12px; height: 12px; border-radius: 3px; border: 1.5px solid var(--c); background: color-mix(in srgb, var(--c) 18%, var(--surface)); }
+.legend .dash { width: 22px; height: 0; border: 0; border-top: 2px dashed var(--muted); border-radius: 0; background: none; }
+
+/* main */
+.main { display: grid; grid-template-columns: minmax(0, 1fr) 380px; gap: 20px; align-items: start; }
+.mapwrap { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; overflow: hidden; position: relative; }
+.mapwrap:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+#map { display: block; width: 100%; height: auto; aspect-ratio: 1570 / 1115; max-height: calc(100vh - 40px); user-select: none; -webkit-user-select: none; cursor: grab; touch-action: none; }
+.mapwrap:fullscreen { border-radius: 0; border: 0; display: grid; }
+.mapwrap:fullscreen #map { width: 100vw; height: 100vh; max-height: none; aspect-ratio: auto; }
+.zoombar { position: absolute; top: 10px; right: 10px; z-index: 2; display: flex; align-items: center; gap: 4px; padding: 4px; background: color-mix(in srgb, var(--surface) 88%, transparent); border: 1px solid var(--line); border-radius: 10px; backdrop-filter: blur(4px); }
+.zoombar .btn { padding: 7px 10px; min-width: 34px; }
+.zpct { font: 500 0.8rem/1 var(--font-mono); font-variant-numeric: tabular-nums; min-width: 46px; text-align: center; color: var(--muted); }
+#map.panning { cursor: grabbing; }
+.hint { position: absolute; left: 12px; bottom: 8px; background: color-mix(in srgb, var(--surface) 85%, transparent); padding: 2px 6px; border-radius: 4px; font: 0.74rem/1.2 var(--font-mono); color: var(--muted); pointer-events: none; }
+
+.panel { position: sticky; top: calc(env(safe-area-inset-top, 0px) + 12px); background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 14px; max-height: calc(100vh - 24px); overflow: auto; min-width: 0; }
+.panel .kind { display: inline-flex; align-items: center; gap: 7px; }
+.panel .kind i { width: 10px; height: 10px; border-radius: 50%; background: var(--c); }
+.panel ul, .panel ol { margin: 0; padding-left: 1.2em; display: grid; gap: 6px; }
+.panel li::marker { color: var(--muted); }
+.files { display: grid; gap: 2px; font: 0.8rem/1.45 var(--font-mono); }
+.files div { display: flex; justify-content: space-between; gap: 12px; border-bottom: 1px dashed var(--grid); padding: 2px 0; }
+.files span:first-child { overflow-wrap: anywhere; }
+.files span:last-child { color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.section-label { font: 600 0.72rem/1 var(--font-mono); text-transform: uppercase; letter-spacing: 0.09em; color: var(--muted); margin-bottom: 6px; }
+.links { display: flex; flex-wrap: wrap; gap: 6px; }
+.linkish { font: 0.8rem/1.2 var(--font-body); color: var(--ink); background: color-mix(in srgb, var(--c, var(--muted)) 12%, var(--surface)); border: 1px solid color-mix(in srgb, var(--c, var(--muted)) 45%, var(--surface)); border-radius: 999px; padding: 4px 10px; cursor: pointer; text-align: left; }
+.linkish small { color: var(--muted); }
+.steps { counter-reset: s; list-style: none; padding: 0 !important; }
+.steps li { counter-increment: s; display: grid; grid-template-columns: 26px minmax(0, 1fr); gap: 10px; align-items: start; }
+.steps li::before { content: counter(s); width: 22px; height: 22px; border-radius: 50%; background: var(--ink); color: var(--bg); font: 600 0.75rem/22px var(--font-mono); text-align: center; }
+.callout { border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; background: var(--bg); font-size: 0.9rem; }
+
+/* svg */
+.region rect { fill: var(--region); stroke: var(--grid); stroke-width: 1; }
+.rlabel text { font: 600 11px var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; fill: var(--muted); }
+.rlabel rect { fill: var(--region); }
+.edge path { fill: none; stroke: color-mix(in srgb, var(--muted) 70%, var(--surface)); stroke-width: 1.6; }
+.edge.dash path { stroke-dasharray: 5 4; }
+.edge .lbl rect { fill: var(--surface); }
+.edge .lbl text { font: 11px var(--font-body); fill: var(--muted); }
+.edge.hi path { stroke: var(--ink); stroke-width: 2.4; }
+.edge.hi .lbl text { fill: var(--ink); font-weight: 600; }
+#arrow path { fill: color-mix(in srgb, var(--muted) 70%, var(--surface)); }
+#arrow-hi path { fill: var(--ink); }
+.node { cursor: pointer; outline: none; }
+.node rect.box { fill: color-mix(in srgb, var(--c) 10%, var(--surface)); stroke: color-mix(in srgb, var(--c) 60%, var(--surface)); stroke-width: 1.4; transition: stroke-width .15s; }
+.node:hover rect.box { stroke: var(--c); }
+.node .t { font: 600 14px var(--font-body); fill: var(--ink); }
+.node .s { font: 10.5px var(--font-mono); fill: var(--muted); }
+.node .tick { fill: var(--c); }
+.node.sel rect.box { stroke: var(--c); stroke-width: 3; }
+.node.match rect.box { stroke: var(--ink); stroke-width: 2.4; }
+.badge circle { fill: var(--ink); }
+.badge text { font: 600 12px var(--font-mono); fill: var(--bg); }
+.dim { opacity: 0.18; transition: opacity .15s; }
+.node, .edge { transition: opacity .15s; }
+
+/* symptoms */
+.symptoms { display: grid; gap: 14px; }
+.symptoms .intro { color: var(--muted); max-width: 75ch; }
+.cards { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: 10px; }
+.symptom { text-align: left; font: inherit; color: var(--ink); background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 12px 14px; cursor: pointer; display: grid; gap: 6px; align-content: start; }
+.symptom:hover { border-color: var(--muted); }
+.symptom.sel { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); }
+.symptom b { font-weight: 600; }
+.symptom .ex { font: 0.76rem/1.4 var(--font-mono); color: var(--muted); overflow-wrap: anywhere; }
+.symptom .path { display: flex; flex-wrap: wrap; gap: 4px; font: 0.72rem/1.2 var(--font-mono); color: var(--muted); }
+
+/* reference tables */
+.ref { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 460px), 1fr)); gap: 20px; }
+.ref > div { min-width: 0; display: grid; gap: 10px; align-content: start; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 10px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.88rem; }
+th, td { text-align: left; padding: 8px 12px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font: 600 0.72rem/1.2 var(--font-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); }
+tr:last-child td { border-bottom: 0; }
+td:first-child { white-space: nowrap; }
+footer { color: var(--muted); font-size: 0.82rem; }
+
+@media (max-width: 1100px) {
+  .main { grid-template-columns: minmax(0, 1fr); }
+  .panel { position: static; max-height: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; scroll-behavior: auto !important; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<header>
+  <span class="eyebrow">PHI · repository map · commit 111a5cc</span>
+  <h1>PHI Codebase Map</h1>
+  <p class="lede">How a <code>.phi</code> file becomes a program, which code does each step, and where to look when something goes wrong. Click a box for what it does and when to suspect it, or pick a symptom below the map to see where to look first.</p>
+  <div class="stats">
+    <span><b>36k</b> lines of C# in the compiler</span>
+    <span><b>11k</b> in the <code>phi</code> command</span>
+    <span><b>9.6k</b> lines of assembly runtime</span>
+    <span><b>30k</b> lines of PHI standard library</span>
+    <span><b>436</b> test programs · <b>657</b> unit tests</span>
+  </div>
+</header>
+
+<div class="toolbar">
+  <label class="search" for="q">
+    <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11l3.5 3.5" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>
+    <input id="q" type="search" placeholder="Find a file, class or idea: Parser.cs, registers, philib, QEMU…" autocomplete="off">
+  </label>
+  <button class="btn" id="reset" type="button">Show everything</button>
+</div>
+<div class="legend" id="legend"></div>
+
+<div class="main">
+  <div class="mapwrap" id="mapwrap" tabindex="0" aria-label="Map: scroll or pinch to zoom, drag to move; keys + - 0 and arrows">
+    <div class="zoombar" role="toolbar" aria-label="Zoom">
+      <button class="btn" id="zout" type="button" aria-label="Zoom out">−</button>
+      <span id="zpct" class="zpct" aria-live="polite">100%</span>
+      <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
+      <button class="btn" id="zfit" type="button">Fit</button>
+      <button class="btn" id="zfull" type="button">Full screen</button>
+    </div>
+    <svg id="map" viewBox="0 0 1570 1115" role="img" aria-label="Diagram of the PHI compiler and the tools around it">
+      <defs>
+        <marker id="arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+        <marker id="arrow-hi" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0 0L10 5L0 10z"/></marker>
+      </defs>
+      <g id="regions"></g><g id="edges"></g><g id="rlabels"></g><g id="nodes"></g>
+    </svg>
+    <div class="hint">Scroll or pinch to zoom · drag to move · double-click to zoom in</div>
+  </div>
+  <aside class="panel" id="panel" aria-live="polite"></aside>
+</div>
+
+<section class="symptoms" id="symptoms">
+  <h2>Find by symptom</h2>
+  <p class="intro">Pick what you're seeing. The map numbers the places to check, in the order that usually finds it fastest, and the panel says how to tell them apart.</p>
+  <div class="cards" id="cards"></div>
+</section>
+
+<section class="ref">
+  <div>
+    <h2>Switches that split a problem</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
+      <tbody>
+        <tr><td><code>PHI_IR=0</code></td><td>Every method goes to the generator. If a problem goes away, the new path caused it.</td></tr>
+        <tr><td><code>PHI_IR32=0</code></td><td>The same, for 32-bit programs only.</td></tr>
+        <tr><td><code>PHI_IR_SKIP=Class.Method</code></td><td>One method goes to the generator. Use it to find which method is wrong.</td></tr>
+        <tr><td><code>PHI_IR_TRACE=1</code></td><td>Says which methods went through the new path, and why the others didn't. <code>2</code> also prints each method's intermediate form.</td></tr>
+        <tr><td><code>PHI_IR_REGS=1</code></td><td>Prints each value's live range and whether it got a register or a frame slot.</td></tr>
+        <tr><td><code>PHI_NASM</code>, <code>PHI_QEMU</code></td><td>Paths to the assembler and the emulator, when they aren't on the <code>PATH</code>.</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+  <div>
+    <h2>The <code>phi</code> command</h2>
+    <div class="tablewrap"><table>
+      <thead><tr><th>Command</th><th>Runs</th></tr></thead>
+      <tbody>
+        <tr><td><code>phi build</code>, <code>run</code></td><td>The whole pipeline, then the program (Builder.cs, HostRunner.cs, Qemu.cs)</td></tr>
+        <tr><td><code>phi test [-f NAME]</code></td><td>tests/: build, run, compare with <code>NAME.expected</code> (TestRunner.cs)</td></tr>
+        <tr><td><code>phi check</code>, <code>fmt</code>, <code>lsp</code></td><td>Checks or formats without building; the editor's server (SourceCheck.cs, Formatter.cs, LanguageServer.cs)</td></tr>
+        <tr><td><code>phi fuzz code|numbers|objects</code></td><td>Random programs with known output (the three *Fuzzer.cs files)</td></tr>
+        <tr><td><code>phi compare</code></td><td>bench/ against gcc and C# (Compare.cs)</td></tr>
+        <tr><td><code>phi profile</code>, <code>load</code>, <code>serve</code></td><td>Where time goes; many networked machines; a test web server</td></tr>
+        <tr><td><code>dotnet test</code></td><td>The compiler's 657 unit tests, about 25 seconds</td></tr>
+      </tbody>
+    </table></div>
+  </div>
+</section>
+
+<footer>A snapshot of the PHI repository at commit 111a5cc (16 November 2026), with its neighbours PHI-Code-Library, PHI-OS and test-projects. Line counts are rounded and change as the code does. For more depth, read docs/architecture.md and tests/README.md.</footer>
+</div>
+
+<script>
+const GROUPS = {
+  source:  { name: "Inputs",               c: "--c-source" },
+  front:   { name: "Front end",            c: "--c-front" },
+  ir:      { name: "New path (IR)",        c: "--c-ir" },
+  gen:     { name: "Generator",            c: "--c-gen" },
+  runtime: { name: "Assembly runtime",     c: "--c-runtime" },
+  build:   { name: "Assemble and build",   c: "--c-build" },
+  tools:   { name: "Run, test, edit",      c: "--c-tools" },
+  repos:   { name: "Other repositories",   c: "--c-repos" },
+};
+
+const REGIONS = [
+  { x: 15,   y: 55,  w: 220, h: 345, label: "Inputs" },
+  { x: 15,   y: 495, w: 220, h: 345, label: "Beside PHI (../)" },
+  { x: 285,  y: 55,  w: 470, h: 495, label: "Front end · Phi.Compiler" },
+  { x: 815,  y: 55,  w: 740, h: 560, label: "Code generation · Phi.Compiler/CodeGen" },
+  { x: 815,  y: 625, w: 220, h: 95,  label: "lib/ (in the compiler)" },
+  { x: 1085, y: 625, w: 470, h: 350, label: "Assemble and build · Phi.Cli" },
+  { x: 15,   y: 990, w: 1540, h: 110, label: "Run, test, edit · the phi command and unit tests" },
+];
+
+// t: title, s: line under it, files: [path, lines], what: description, when: reasons to look here
+const NODES = [
+  { id: "src", g: "source", x: 30, y: 80, t: "Your program", s: "NAME.phi",
+    files: [["NAME.phi", ""], ["NAME.rootfs/ (a kernel's disk)", ""]],
+    what: "Where a build starts. A class's base decides what the build makes: `Program` an executable or PHI OS program, `Kernel` a 32-bit kernel, `Bootloader` with `OS` a 16-bit program.",
+    when: ["A compile error names a line here. Read the message before suspecting the compiler.", "An `asm.` block is copied into the output as written, so a NASM error inside one is the program's."] },
+  { id: "stdlib", g: "source", x: 30, y: 190, t: "Standard library", s: "lib/phi · 29.8k lines",
+    files: [["lib/phi/", "126 files"], ["data, net, crypto, drivers, fs, gui, memory, proc, host, …", ""]],
+    what: "PHI code a program brings in with `use` (`use data.map;`). It is embedded in the compiler when the compiler is built, so an edit here only takes effect after `dotnet build`.",
+    when: ["Wrong results from Map, List, text helpers, the network or cryptography. The bug may be in the library, not the program.", "An edit to lib/ seems to change nothing: rebuild the compiler."] },
+  { id: "philib", g: "source", x: 30, y: 320, t: "Compiled libraries", s: "NAME.philib",
+    files: [["Libraries/CompiledLibrary.cs", "393"], ["Libraries/InterfaceWriter.cs", "211"]],
+    what: "A library built once with `phi build --library`. It holds its declarations as PHI text, which the parser reads like source, and its machine code for each system, which the generator places in the program. It records an ABI version (now 1.2), and a file from an older compiler is refused.",
+    when: ["`use corelib;` fails, or a library method has the wrong signature in a program: the interface InterfaceWriter wrote.", "A crash inside library code: rebuild the .philib with the current compiler, then debug the library as source."] },
+
+  { id: "codelib", g: "repos", x: 30, y: 520, t: "Code Library", s: "PHI-Code-Library · 84k",
+    files: [["libs/core (corelib)", "1.8k"], ["libs/web (weblib: HTML, CSS, JavaScript)", "70.6k"], ["libs/image (imagelib)", "6.6k"], ["libs/font (fontlib)", "5.2k"], ["build.ps1, libraries.psd1", ""]],
+    what: "The biggest body of PHI outside the compiler. `pwsh ./build.ps1` builds dist/*.philib, and `build.ps1 -Test` runs its 7 test runs.",
+    when: ["After any compiler change. Its tests find what PHI's own tests don't: a text address cut to 32 bits and a register an asm block must keep were both found here."] },
+  { id: "phios", g: "repos", x: 30, y: 640, t: "PHI OS", s: "PHI-OS · 14.4k lines",
+    files: [["os.phi, sys/, ui/, brw/", ""], ["corelib, weblib, imagelib, fontlib .philib copies", ""], ["test.sh", ""]],
+    what: "An operating system written in PHI, built by `phi` as a kernel with programs on its disk. It uses copies of the code library's .philib files.",
+    when: ["Kernel or PHI OS program trouble that PHI's own tests don't show.", "After the libraries are rebuilt: copy dist/*.philib into PHI-OS, PHI-OS/tools and test-projects/phi-browser-os, then run ./test.sh."] },
+  { id: "testprojects", g: "repos", x: 30, y: 760, t: "Test projects", s: "test-projects",
+    files: [["01-weblib-smoke … 04-generic-struct-copy", ""], ["phi-browser-os", ""]],
+    what: "Small projects that use the libraries the way someone outside would: the web library, the network, fonts, generic structs.",
+    when: ["A library passes its own tests but fails in a real project."] },
+
+  { id: "uses", g: "front", x: 300, y: 80, t: "Compile driver", s: "PhiCompiler.cs · 680",
+    files: [["PhiCompiler.cs", "680"], ["Host.cs", "54"]],
+    what: "Runs the stages of one build in order. It reads the program, follows its `use` lines (each file parsed once, used files' classes first), expands templates, binds, and asks the generator for each unit's assembly. A kernel that uses `new` or `free` gets memory.heap added, and a kernel gets its boot stages from lib/boot. `CompileLibrary` does the same for `phi build --library`.",
+    when: ["A module isn't found, or a file is read twice (ParseWithUses).", "A build is treated as the wrong kind, a kernel instead of a program."] },
+  { id: "lexer", g: "front", x: 300, y: 190, t: "Lexer", s: "Syntax/Lexer.cs · 439",
+    files: [["Syntax/Lexer.cs", "380"], ["Syntax/Token.cs", "59"]],
+    what: "Turns text into tokens, each remembering whether it starts a line, which is how the parser knows where an `if` condition ends. Two PHI details: a quote followed by a letter doesn't end a string (`'hasn't'`), and a `#` alone on a line starts a block comment.",
+    when: ["A string or comment swallows the rest of the file.", "A number literal is read as the wrong value."] },
+  { id: "parser", g: "front", x: 300, y: 300, t: "Parser", s: "Syntax/Parser.cs · 3.7k",
+    files: [["Syntax/Parser.cs", "2,500"], ["Syntax/Ast.cs (the syntax tree)", "1,093"], ["Syntax/SyntaxWalker.cs", "93"]],
+    what: "A recursive-descent parser that builds the syntax tree in Ast.cs. It recovers after an error so one mistake doesn't hide the rest. Struct templates (`Stack<Item>`) are kept as tokens to be made later, and each use of one is noted.",
+    when: ["A syntax error where the code looks right. The grammar is in docs/language.md; this file is the rule.", "One error followed by many unrelated ones: error recovery.", "Operator precedence surprises. Lowest first: `or`, `and`, comparisons, `|`, `^`, `&`, shifts, `+ -`, `* / %`, unary, postfix."] },
+  { id: "templates", g: "front", x: 300, y: 410, t: "Templates", s: "Syntax/Templates.cs · 283",
+    files: [["Syntax/Templates.cs", "283"]],
+    what: "Makes a struct for each use of a template. `Stack<int>` and `Stack<Player>` are each parsed again from the template's tokens with `Item` standing for the type, so everything after sees ordinary structs.",
+    when: ["An error inside a template. The message says which use it came from (DiagnosticBag.CopyOf).", "Two uses of one template behave differently."] },
+  { id: "binder", g: "front", x: 560, y: 280, h: 110, t: "Binder", s: "Semantics/ · 7.7k lines",
+    files: [["Semantics/Binder.cs", "6,511"], ["Semantics/Symbols.cs (types, symbols)", "594"], ["Semantics/Builtins.cs", "324"], ["Semantics/Binder.Vec.cs (vec)", "305"]],
+    what: "Checks the program and works out everything code generation needs: which unit each class goes in, names and where each lives, types and sizes, built-in functions, index checks, and rewrites that keep the generators small (`x++ 2` becomes `x is x + 2`, `new T[n]` an allocation). Both code generators read what it produces.",
+    when: ["A type or name error, or \"can't use this here\".", "Wrong output with both code generators. The program's meaning was settled here.", "A built-in missing for one kind of program: Builtins.cs and the runtime's `provides:` lines."] },
+  { id: "diag", g: "front", x: 560, y: 470, t: "Errors and warnings", s: "Diagnostics.cs · 120",
+    files: [["Diagnostics.cs", "120"]],
+    what: "Every error and warning goes into a DiagnosticBag with its file, line and column, from the parser, the templates, the binder and the generator's own checks. `phi build` prints them; `phi check` and editors show them.",
+    when: ["To find where a message is raised, search its words: `grep -rn \"words\" Compiler/Phi.Compiler`."] },
+
+  { id: "split", g: "gen", x: 830, y: 300, t: "Which generator?", s: "X86Generator.Ir.cs",
+    files: [["X86Generator.Ir.cs (IrWanted, Fits32)", ""]],
+    what: "Each method goes to one of two code generators. The new path takes the methods of 64-bit and 32-bit programs. The generator keeps 16-bit code, kernels, debug builds, a class's own statements, calls into Windows libraries, and any method the new path refuses. In 32-bit code, Fits32 also refuses what that back end can't do yet (vector code on i64 lanes) and floats and vec on PHI OS, which has no SSE.",
+    when: ["Any wrong output or crash. Build again with `PHI_IR=0` (64-bit) or `PHI_IR32=0` (32-bit). If the problem goes away, the new path is at fault.", "`PHI_IR_TRACE=1` lists which path each method took, and why."] },
+  { id: "generator", g: "gen", x: 830, y: 430, h: 100, t: "Generator", s: "X86Generator.cs · 11k",
+    files: [["CodeGen/X86Generator.cs", "10,601"], ["CodeGen/VariablePlanner.cs", "148"], ["CodeGen/DivisionMagic.cs", "82"], ["CodeGen/EvaluationOrder.cs", "74"], ["CodeGen/DebugInfo.cs", "47"]],
+    what: "PHI's original code generator: one NASM file per unit, in 16-, 32- or 64-bit code. Besides the methods the new path doesn't take, it writes everything around them: class-level code, variables and tables, ELF and PE headers, a compiled library's code, and the runtime routines the new path calls (copying text, growing arrays, freeing and cloning objects, 64-bit math in 32-bit code). VariablePlanner picks variables to keep in registers; DivisionMagic divides by a constant without `div`; EvaluationOrder keeps left before right.",
+    when: ["Wrong output that stays with `PHI_IR=0`.", "Kernels and 16-bit programs, which always come here.", "A crash inside a runtime routine called from new-path code: what the routine expects against what the emitter gave it.", "The executable's headers, or a debug build's line tables."] },
+  { id: "asmlib", g: "runtime", x: 830, y: 640, t: "Assembly runtime", s: "lib/x86_* · 9.6k lines",
+    files: [["CodeGen/Library.cs", "124"], ["lib/x86_16 (BIOS)", ""], ["lib/x86_32 (kernels: console, interrupts, panic, …)", ""], ["lib/x86_32_user (PHI OS programs)", ""], ["lib/x86_32_linux, x86_32_windows", ""], ["lib/x86_64_linux, x86_64_windows", ""], ["lib/boot (stage1, stage2)", ""]],
+    what: "Hand-written assembly each program needs, one folder per target. Each file's header says what it `provides:`, `requires:` and `inherit:`s, and Library.cs adds only the files whose labels the program uses.",
+    when: ["Console output, reading lines, threads or system calls fail on one system only.", "Run-time stops: index_error.asm, out_of_memory.asm, throw.asm, panic.asm.", "\"undefined symbol\" from NASM: a `provides:` or `requires:` header."] },
+
+  { id: "irbuilder", g: "ir", x: 1100, y: 80, t: "IR builder", s: "Ir/IrBuilder*.cs · 6.4k",
+    files: [["Ir/IrBuilder.cs", "2,769"], ["Ir/IrBuilder.Arrays.cs", "922"], ["Ir/IrBuilder.Text.cs", "646"], ["Ir/IrBuilder.Loops.cs (and vector sums)", "438"], ["Ir/IrBuilder.Vec.cs", "323"], ["Ir/IrBuilder.Outer.cs", "271"], ["Ir/IrBuilder.Objects.cs", "86"], ["Ir/Ir.cs (the form itself)", "931"]],
+    what: "Turns a method's checked tree into the intermediate form defined in Ir.cs: simple instructions over numbered values, in blocks. It takes only what it knows exactly. For anything else it refuses the method with a reason (NotYet), and the generator writes that method instead.",
+    when: ["A method's form is wrong. `PHI_IR_TRACE=2` prints it.", "A method you expected on the new path was refused. `PHI_IR_TRACE=1` gives the reason."] },
+  { id: "peephole", g: "ir", x: 1100, y: 190, t: "Peephole", s: "Ir/IrPeephole.cs · 274",
+    files: [["Ir/IrPeephole.cs", "274"]],
+    what: "Small rewrites of the form before registers are given out: jumps to jumps, `x * 3, 5 or 9` as one `lea`, dead values, constants folded, bit tests and, in 32-bit code, constant offsets folded into an address.",
+    when: ["Wrong output that goes away when one rewrite is turned off. Comment out its line in Run to find which."] },
+  { id: "regalloc", g: "ir", x: 1100, y: 300, t: "Register allocator", s: "Ir/RegisterAllocator · 509",
+    files: [["Ir/RegisterAllocator.cs", "465"], ["Ir/Liveness.cs", "44"]],
+    what: "Linear-scan allocation. Each value lives from where it's made to where it's last needed, the busiest get registers, and the rest a slot in the frame. 64-bit code has many registers. 32-bit code has three (ebx, esi, edi) and keeps every i64 in the frame. Liveness.cs says what is live where each block starts.",
+    when: ["A value overwritten across a call, or two values sharing a register.", "Slow loops: values waiting in the frame, which show as `[rbp - n]` or `[ebp - n]` in a hot loop. `PHI_IR_REGS=1` prints each value's range and home."] },
+  { id: "iremit", g: "ir", x: 1100, y: 410, t: "IR emitter", s: "X86Generator.Ir*.cs · 3.3k",
+    files: [["CodeGen/X86Generator.Ir.cs", "2,125"], ["CodeGen/X86Generator.IrVec.cs (SSE)", "1,022"], ["CodeGen/X86Generator.IrText.cs", "118"]],
+    what: "Writes x86 for each instruction of the form. 32-bit code is written as 64-bit text and translated as it goes out (To32: rax to eax, qword to dword, …), and Not32 throws on anything 32-bit code doesn't have. IrVec writes vector code; IrText writes numbers as text.",
+    when: ["NASM rejects an instruction in a new-path method.", "The form and the registers are right, but the instructions are wrong.", "32-bit only: the To32 translation."] },
+  { id: "asm", g: "build", x: 1350, y: 530, t: "Assembly text", s: "NAME/*.asm",
+    files: [["program.asm and one file per unit, in the build folder", ""]],
+    what: "One assembly file per unit, written into the build folder. Each PHI line is a comment above its instructions, and each method starts at a label like `M_Class_Method`.",
+    when: ["Any question about generated code: read the .asm first. Search for the PHI line's comment or the method's label.", "Before and after a compiler change: diff the .asm."] },
+  { id: "nasm", g: "build", x: 1350, y: 650, t: "NASM", s: "Toolchain.cs · external",
+    files: [["Phi.Cli/Toolchain.cs", "72"]],
+    what: "The external assembler (set `PHI_NASM` to use another). It turns the .asm into machine code: a flat binary for programs and images, an ELF object for a library.",
+    when: ["\"nasm failed on …\": the compiler, or an `asm.` block, wrote something NASM refuses. The message gives the .asm line."] },
+  { id: "libbuild", g: "build", x: 1100, y: 710, t: "Library writer", s: "Libraries/ · 604",
+    files: [["Libraries/CompiledLibrary.cs (ElfObject)", "393"], ["Libraries/InterfaceWriter.cs", "211"]],
+    what: "`phi build --library`: NASM's ELF object is read apart into sections and the addresses still to fill in, and InterfaceWriter writes the library's declarations as PHI. Both go into NAME.philib, which programs then read as an input.",
+    when: ["A .philib is refused (ABI version), or its methods have the wrong signatures in programs.", "Library code behaves differently from the same code built as source: the relocations here."] },
+  { id: "builder", g: "build", x: 1350, y: 770, t: "Builder", s: "Phi.Cli/Builder.cs · 1.9k",
+    files: [["Phi.Cli/Builder.cs", "422"], ["Phi.Cli/FatImage.cs", "386"], ["Phi.Cli/Pdb.cs", "998"]],
+    what: "Puts the build together, with no linker. For a kernel: the boot sector and loader, the kernel, and a FAT16 partition made from NAME.rootfs/ (FatImage.cs). For a Linux or Windows program: the executable NASM wrote, headers included. For a PHI OS program: NAME.BIN. A Windows debug build also gets a .pdb (Pdb.cs).",
+    when: ["An image doesn't boot, a kernel is too big, or a rootfs file is missing or misnamed (8.3 names).", "A Windows debugger shows the wrong lines: Pdb.cs."] },
+  { id: "outputs", g: "build", x: 1350, y: 890, t: "Programs and images", s: "ELF · .exe · .img · .BIN",
+    files: [["NAME (Linux, 32 or 64-bit)", ""], ["NAME.exe (Windows, 32 or 64-bit)", ""], ["NAME.img (kernel or 16-bit program)", ""], ["NAME.BIN (PHI OS program)", ""]],
+    what: "What a build makes. Linux and Windows programs run directly on the computer; kernels and PHI OS programs run in QEMU.",
+    when: ["A program stops with \"PHI: …\" or \"stopped by exception N\": see the symptoms below."] },
+
+  { id: "unittests", g: "tools", x: 30, y: 1025, t: "Unit tests", s: "Phi.Compiler.Tests · 4.9k",
+    files: [["Compiler/Phi.Compiler.Tests/", "25 files"]],
+    what: "657 xUnit tests of the compiler itself: the lexer, templates, layout, division, the fuzzers, the language server, formatting and more. They call the compiler directly and need no QEMU. Run them with `dotnet test`.",
+    when: ["Any compiler change. Run these first: they take about 25 seconds."] },
+  { id: "editor", g: "tools", x: 250, y: 1025, t: "Editor support", s: "LanguageServer.cs · 1.7k",
+    files: [["Phi.Cli/LanguageServer.cs", "535"], ["Language/ProgramIndex.cs", "482"], ["Phi.Cli/SourceCheck.cs", "422"], ["Language/Formatter.cs", "239"], ["Phi.Cli/Formatting.cs", "59"]],
+    what: "`phi lsp` (the Language Server Protocol for editors), `phi check` and `phi fmt`. SourceCheck checks one file as what it is, without building it. ProgramIndex finds definitions and completions. Formatter lays out a file without changing its meaning.",
+    when: ["The editor and `phi build` disagree about an error.", "Go to definition or completion is wrong or missing.", "`phi fmt` changes something it shouldn't."] },
+  { id: "cli", g: "tools", x: 470, y: 1025, t: "phi command", s: "Phi.Cli/Program.cs · 640",
+    files: [["Phi.Cli/Program.cs", "640"]],
+    what: "The `phi` command: build, run, check, fmt, test, compare, profile, load, lsp, fuzz and serve. Program.cs reads the options and hands each command to its own file.",
+    when: ["An option is ignored or misread."] },
+  { id: "profile", g: "tools", x: 690, y: 1025, t: "Profiler, crash report", s: "Profiler.cs · Where.cs",
+    files: [["Phi.Cli/Profiler.cs", "414"], ["Phi.Cli/Where.cs", "340"]],
+    what: "`phi profile` samples a running program and says which routines its time goes to: methods, class code, asm blocks and library routines. Where.cs reports where each CPU and thread was when a machine stopped.",
+    when: ["A hang or crash in QEMU: where each CPU and thread was.", "A slow program: which method to look at first."] },
+  { id: "fuzz", g: "tools", x: 910, y: 1025, t: "Fuzzers", s: "*Fuzzer.cs · 3.5k",
+    files: [["Phi.Cli/ObjectFuzzer.cs", "1,626"], ["Phi.Cli/CodeFuzzer.cs", "1,046"], ["Phi.Cli/NumberFuzzer.cs", "830"]],
+    what: "`phi fuzz code`, `numbers` and `objects`: random programs, each written with the output it must print, built and run for linux and linux64. A wrong one is kept in fuzz-failures/.",
+    when: ["After any change to code generation. They find what hand-written tests don't: a long-standing store-order bug in the generator was found this way."] },
+  { id: "compare", g: "tools", x: 1130, y: 1025, t: "Benchmarks", s: "Compare.cs · bench/",
+    files: [["Phi.Cli/Compare.cs", "495"], ["Phi.Cli/BenchCheck.cs", "127"], ["bench/ (13 benchmarks, each in PHI, C and C#)", ""], ["bench/RESULTS.md", ""]],
+    what: "`phi compare` builds and times each benchmark as PHI 64- and 32-bit, gcc -O2 and -O0, and C#. bench/RESULTS.md holds the last saved run. BenchCheck compares counts with a baseline in `phi test --bench`.",
+    when: ["After a change to code generation. A slowdown passes every test: a text slowdown of 4.8 times was found only here."] },
+  { id: "testrunner", g: "tools", x: 1350, y: 1025, t: "Test runner", s: "TestRunner.cs · tests/",
+    files: [["Phi.Cli/TestRunner.cs", "652"], ["Phi.Cli/LoadTester.cs", "390"], ["Phi.Cli/InputScript.cs", "384"], ["Phi.Cli/VirtualNetwork.cs", "380"], ["Phi.Cli/Qemu.cs", "319"], ["Phi.Cli/HostRunner.cs", "237"], ["Phi.Cli/WebServer.cs", "212"], ["Phi.Cli/SoundCheck.cs", "183"], ["Phi.Cli/Screenshot.cs", "113"], ["Phi.Cli/DebuggerRunner.cs", "80"], ["tests/", "436 programs"]],
+    what: "`phi test`: each tests/NAME.phi is built and run, and its output compared with NAME.expected. Kernels and PHI OS programs boot headless in QEMU; Linux and Windows programs run directly. A test can type and click (NAME.input), check the screen and the sound, run several networked machines (NAME.machines) or talk to a web server.",
+    when: ["\"output did not match\": diff NAME.expected and NAME.actual.", "A timeout: an input script waiting for text that never came, or a hang."] },
+];
+
+// from, side, offset → to, side, offset; label; options
+const EDGES = [
+  { f: "src", fs: "r", t: "uses", ts: "l", to: -16, label: "file.phi" },
+  { f: "stdlib", fs: "r", t: "uses", ts: "l", to: 2 },
+  { f: "philib", fs: "r", fo: -14, t: "uses", ts: "l", to: 18 },
+  { f: "uses", fs: "b", t: "lexer", ts: "t", label: "each file" },
+  { f: "lexer", fs: "b", t: "parser", ts: "t", label: "tokens" },
+  { f: "parser", fs: "b", t: "templates", ts: "t", label: "syntax tree" },
+  { f: "parser", fs: "r", fo: -16, t: "uses", ts: "r", label: "use lines: more files", d: 60, ldx: 34 },
+  { f: "templates", fs: "r", t: "binder", ts: "l", to: 38 },
+  { f: "parser", fs: "r", fo: 18, t: "diag", ts: "t", to: -60, dash: true },
+  { f: "binder", fs: "b", t: "diag", ts: "t", to: 20, dash: true, label: "errors" },
+  { f: "binder", fs: "r", t: "split", ts: "l", label: "checked" },
+  { f: "split", fs: "t", t: "irbuilder", ts: "l", to: -14, label: "64- and 32-bit programs", lt: 0.42 },
+  { f: "irbuilder", fs: "l", fo: 16, t: "generator", ts: "r", to: -32, dash: true, label: "refused", lt: 0.62, d: 40 },
+  { f: "split", fs: "b", t: "generator", ts: "t", label: "kernels, 16-bit, debug" },
+  { f: "irbuilder", fs: "b", t: "peephole", ts: "t", label: "the form" },
+  { f: "peephole", fs: "b", t: "regalloc", ts: "t", label: "tidied" },
+  { f: "regalloc", fs: "b", t: "iremit", ts: "t", label: "registers" },
+  { f: "iremit", fs: "r", t: "asm", ts: "t", to: -40, label: "method code", lt: 0.55 },
+  { f: "generator", fs: "r", fo: 0, t: "asm", ts: "l", to: -12, label: "everything else", lt: 0.45 },
+  { f: "asmlib", fs: "r", t: "asm", ts: "l", to: 16, label: "routines it uses", lt: 0.5 },
+  { f: "generator", fs: "b", fo: 75, t: "asmlib", ts: "t", to: 75, dash: true, label: "labels used" },
+  { f: "generator", fs: "l", fo: 10, t: "diag", ts: "r", dash: true },
+  { f: "asm", fs: "b", t: "nasm", ts: "t", label: ".asm" },
+  { f: "nasm", fs: "b", t: "builder", ts: "t", label: "machine code" },
+  { f: "nasm", fs: "l", t: "libbuild", ts: "r", label: "ELF object", lt: 0.5, ldy: -12 },
+  { f: "builder", fs: "b", t: "outputs", ts: "t" },
+  { f: "codelib", fs: "t", t: "philib", ts: "b", label: "build.ps1" },
+  { f: "phios", fs: "r", t: "philib", ts: "r", to: 12, dash: true, label: "uses", d: 55, ldx: 4 },
+  { f: "testprojects", fs: "r", t: "philib", ts: "r", to: 24, dash: true, d: 80 },
+  { f: "diag", fs: "b", t: "editor", ts: "t", dash: true, label: "shown while editing", lt: 0.5 },
+  { f: "cli", fs: "t", t: "builder", ts: "l", to: 14, label: "phi build, run", lt: 0.5 },
+  { f: "profile", fs: "t", t: "outputs", ts: "l", to: -14, lt: 0.45 },
+  { f: "fuzz", fs: "t", t: "outputs", ts: "l", to: 14, label: "random programs", lt: 0.35 },
+  { f: "compare", fs: "t", t: "outputs", ts: "b", to: -50, label: "timed", lt: 0.5 },
+  { f: "testrunner", fs: "t", t: "outputs", ts: "b", to: 40, label: "runs, compares" },
+];
+
+const SYMPTOMS = [
+  { id: "compile-error", t: "The build stops with an error on a line", ex: "NAME.phi(12,5): error …", nodes: ["src", "diag", "parser", "binder", "templates"],
+    how: ["Most errors are about the program, so read the message first.",
+          "If the program looks right, find where the message comes from: search its words in Compiler/Phi.Compiler.",
+          "Grammar errors come from Parser.cs, names and types from Binder.cs. An error inside a struct template comes through Templates.cs and names the use it was made for."] },
+  { id: "nasm-failed", t: "nasm failed on NAME.asm", ex: "nasm failed on … (this is a bug in phi, or in an asm. block)", nodes: ["asm", "split", "iremit", "generator", "asmlib"],
+    how: ["The compiler wrote assembly NASM refuses. Open the .asm in the build folder at the line NASM names: the PHI line it came from is the comment above it.",
+          "Build again with PHI_IR=0 (64-bit) or PHI_IR32=0 (32-bit). If the error goes away, the new path's emitter wrote it (in 32-bit code, check To32's translation).",
+          "If it stays, look at the generator, a runtime .asm file, or the program's own asm. block."] },
+  { id: "ir-only", t: "Wrong output, but right with PHI_IR=0", ex: "PHI_IR=0 phi run x.phi  → right", nodes: ["split", "irbuilder", "peephole", "regalloc", "iremit"],
+    how: ["The new path is at fault. Find the method: PHI_IR_SKIP=Class.Method sends one method to the generator.",
+          "PHI_IR_TRACE=2 prints that method's form. A wrong form is the IR builder; a right form with a bad rewrite is the peephole.",
+          "PHI_IR_REGS=1 prints where each value went. Two values live at once in one register is the allocator; right registers with wrong instructions is the emitter.",
+          "Add the smallest program that shows it to tests/ before fixing."] },
+  { id: "both-wrong", t: "Wrong output either way", ex: "PHI_IR=0 gives the same wrong answer", nodes: ["src", "binder", "stdlib", "asmlib", "generator"],
+    how: ["Both code generators agree, so the meaning was settled before them.",
+          "Check the program against docs/language.md, then the binder's rewrites and types, then library code it calls: lib/phi for PHI code, lib/x86_* for assembly routines.",
+          "The generator is last on the list: it's possible, but the two generators rarely share a mistake."] },
+  { id: "runtime-check", t: "PHI: index out of range, text doesn't fit, out of memory", ex: "PHI: text doesn't fit in its str on line 42", nodes: ["src", "binder", "asmlib"],
+    how: ["These are PHI's run-time checks working: the line printed is the line in the program that broke the rule.",
+          "If a check fires where it shouldn't, the checks are planned in the binder and written by both generators. The message and the stop are in lib/x86_*/index_error.asm and out_of_memory.asm."] },
+  { id: "cpu-fault", t: "Stopped by exception N at 0x…", ex: "PHI: program 2 stopped by exception 6 at 0x40008670", nodes: ["outputs", "profile", "split", "iremit", "generator"],
+    how: ["A CPU fault. 6: an instruction this machine doesn't have (on PHI OS often SSE, which it doesn't turn on). 13: a protection fault. 14: a bad address.",
+          "Look the address up in the build's assembly to find the method. Where.cs's report shows where each CPU and thread was.",
+          "Then split it with PHI_IR=0 or PHI_IR32=0, as for wrong output."] },
+  { id: "test-mismatch", t: "phi test: output did not match", ex: "FAIL net_web · output did not match", nodes: ["testrunner", "outputs", "split"],
+    how: ["phi test -f NAME runs that test alone. NAME.actual is kept next to NAME.expected: diff them.",
+          "A new test's NAME.actual becomes NAME.expected once it's been checked by eye.",
+          "Run it again with PHI_IR=0 or PHI_IR32=0 to see which code generator it is."] },
+  { id: "timeout", t: "A test times out in QEMU", ex: "timed out after 10s (input script: never saw \"…\")", nodes: ["testrunner", "profile", "outputs", "asmlib"],
+    how: ["The machine never printed what the test waits for. With an input script (NAME.input), compare the line it waits for with NAME.actual.",
+          "Otherwise the program hung or stopped early: look at the end of NAME.actual for a panic screen or a PHI: message, and use --timeout to give it longer.",
+          "Where.cs's report says where each CPU and thread was."] },
+  { id: "library", t: "A .philib won't load, or misbehaves", ex: "abi 1.1 … refused  ·  use corelib; fails", nodes: ["codelib", "philib", "libbuild", "uses"],
+    how: ["Libraries are built by the compiler that reads them. After a compiler change that touches them, rebuild: in PHI-Code-Library run pwsh ./build.ps1, then build.ps1 -Test.",
+          "Copy dist/*.philib into PHI-OS, PHI-OS/tools and test-projects/phi-browser-os.",
+          "A refused file names its ABI version (CompiledLibrary.AbiVersion). Wrong signatures come from InterfaceWriter."] },
+  { id: "slow", t: "A benchmark got slower", ex: "strings 1.35 s, was 0.27", nodes: ["compare", "split", "irbuilder", "regalloc", "iremit"],
+    how: ["phi compare times bench/ against gcc and C#; bench/RESULTS.md is the last saved run.",
+          "PHI_IR_TRACE=1 lists the methods the new path refused, whose code from the generator is slower.",
+          "Diff the hot method's .asm before and after. Values kept in the frame show as [rbp - n] or [ebp - n] inside the loop; PHI_IR_REGS=1 says why."] },
+  { id: "editor", t: "The editor shows wrong errors or no completions", ex: "phi check passes, the editor complains", nodes: ["editor", "diag", "binder"],
+    how: ["phi lsp and phi check check a file without building it (SourceCheck.cs). Definitions and completions come from ProgramIndex.cs.",
+          "If phi build and phi check disagree, the difference is in SourceCheck, which checks a module as a module rather than as a program."] },
+  { id: "boot", t: "A kernel won't boot, or a file is missing from its disk", ex: "QEMU shows nothing  ·  OPEN fails on a rootfs file", nodes: ["builder", "asmlib", "nasm", "outputs"],
+    how: ["Builder.cs lays out the disk: lib/boot's stages, the kernel, then a FAT16 partition made from NAME.rootfs/ by FatImage.cs.",
+          "Files there need 8.3 names; .phi files there are built into .BIN programs. A kernel that has outgrown its room is reported by the builder."] },
+  { id: "fuzz", t: "phi fuzz reports a wrong program", ex: "100 programs on linux, linux64: 1 wrong", nodes: ["fuzz", "split", "irbuilder", "generator"],
+    how: ["Each wrong program is kept in fuzz-failures/ with the output it should print. Run it yourself, shrink it, then split it with PHI_IR=0 or PHI_IR32=0 like any wrong output.",
+          "The fuzzer works out the expected output itself, so check that by hand too: the fuzzer can be the one that's wrong."] },
+];
+
+/* ---------- drawing ---------- */
+const NS = "http://www.w3.org/2000/svg";
+const W = 190, H = 64;
+const byId = Object.fromEntries(NODES.map(n => [n.id, n]));
+const svg = document.getElementById("map");
+const el = (tag, attrs = {}, parent) => {
+  const e = document.createElementNS(NS, tag);
+  for (const [k, v] of Object.entries(attrs)) e.setAttribute(k, v);
+  if (parent) parent.appendChild(e);
+  return e;
+};
+const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const rich = s => esc(s).replace(/`([^`]+)`/g, "<code>$1</code>");
+const plain = s => String(s).replace(/`/g, "");
+const color = n => `var(${GROUPS[n.g].c})`;
+
+for (const r of REGIONS) {
+  const g = el("g", { class: "region" }, document.getElementById("regions"));
+  el("rect", { x: r.x, y: r.y, width: r.w, height: r.h, rx: 12 }, g);
+  const lg = el("g", { class: "rlabel" }, document.getElementById("rlabels"));
+  r._bg = el("rect", { rx: 3 }, lg);
+  r._tx = el("text", { x: r.x + 14, y: r.y + 18 }, lg);
+  r._tx.textContent = r.label;
+}
+
+function anchor(n, side, off = 0) {
+  const w = n.w || W, h = n.h || H;
+  switch (side) {
+    case "l": return { p: [n.x, n.y + h / 2 + off], v: [-1, 0] };
+    case "r": return { p: [n.x + w, n.y + h / 2 + off], v: [1, 0] };
+    case "t": return { p: [n.x + w / 2 + off, n.y], v: [0, -1] };
+    default:  return { p: [n.x + w / 2 + off, n.y + h], v: [0, 1] };
+  }
+}
+const bez = (a, b, c, d, t) => { const u = 1 - t; return u*u*u*a + 3*u*u*t*b + 3*u*t*t*c + t*t*t*d; };
+
+const edgeEls = [];
+for (const e of EDGES) {
+  const A = anchor(byId[e.f], e.fs, e.fo), B = anchor(byId[e.t], e.ts, e.to);
+  const dist = Math.hypot(B.p[0] - A.p[0], B.p[1] - A.p[1]);
+  const d = e.d ?? Math.max(24, Math.min(140, dist * 0.45));
+  const c1 = [A.p[0] + A.v[0] * d, A.p[1] + A.v[1] * d];
+  const c2 = [B.p[0] + B.v[0] * d, B.p[1] + B.v[1] * d];
+  const g = el("g", { class: "edge" + (e.dash ? " dash" : "") }, document.getElementById("edges"));
+  el("path", { d: `M${A.p} C${c1} ${c2} ${B.p}`, "marker-end": "url(#arrow)" }, g);
+  if (e.label) {
+    const t = e.lt ?? 0.5;
+    const x = bez(A.p[0], c1[0], c2[0], B.p[0], t) + (e.ldx || 0);
+    const y = bez(A.p[1], c1[1], c2[1], B.p[1], t) + (e.ldy || 0);
+    const lg = el("g", { class: "lbl" }, g);
+    const bg = el("rect", { rx: 4 }, lg);
+    const tx = el("text", { x, y: y + 4, "text-anchor": "middle" }, lg);
+    tx.textContent = e.label;
+    e._bg = bg; e._tx = tx;
+  }
+  edgeEls.push({ e, g });
+}
+function sizeLabels() {
+  for (const r of REGIONS) {
+    let b; try { b = r._tx.getBBox(); } catch { continue; }
+    if (!b.width) continue;
+    r._bg.setAttribute("x", b.x - 4); r._bg.setAttribute("y", b.y - 2);
+    r._bg.setAttribute("width", b.width + 8); r._bg.setAttribute("height", b.height + 4);
+  }
+  for (const { e } of edgeEls) {
+    if (!e._tx) continue;
+    let b; try { b = e._tx.getBBox(); } catch { continue; }
+    if (!b.width) continue;
+    e._bg.setAttribute("x", b.x - 5); e._bg.setAttribute("y", b.y - 2);
+    e._bg.setAttribute("width", b.width + 10); e._bg.setAttribute("height", b.height + 4);
+  }
+}
+
+const nodeEls = {};
+for (const n of NODES) {
+  const w = n.w || W, h = n.h || H;
+  const g = el("g", { class: "node", transform: `translate(${n.x},${n.y})`, tabindex: 0, role: "button", "aria-label": `${n.t}: ${n.s}` }, document.getElementById("nodes"));
+  g.style.setProperty("--c", color(n));
+  el("rect", { class: "box", width: w, height: h, rx: 9 }, g);
+  el("rect", { class: "tick", x: 14, y: 16, width: 8, height: 8, rx: 2 }, g);
+  el("text", { class: "t", x: 30, y: 25 }, g).textContent = n.t;
+  el("text", { class: "s", x: 14, y: 46 }, g).textContent = n.s;
+  if (h > H) el("text", { class: "s", x: 14, y: 62 }, g).textContent = `${n.files.length} files`;
+  const badge = el("g", { class: "badge", transform: `translate(${w - 4},4)` }, g);
+  el("circle", { r: 12 }, badge);
+  el("text", { "text-anchor": "middle", y: 4 }, badge);
+  badge.style.display = "none";
+  nodeEls[n.id] = { g, badge };
+  g.addEventListener("click", () => { if (!panned) selectNode(n.id); });
+  g.addEventListener("keydown", ev => { if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); selectNode(n.id); } });
+}
+
+/* ---------- legend ---------- */
+document.getElementById("legend").innerHTML =
+  Object.values(GROUPS).map(g => `<span style="--c:var(${g.c})"><i></i>${esc(g.name)}</span>`).join("") +
+  `<span><i class="dash"></i>errors, fallbacks, uses</span>`;
+
+/* ---------- panel ---------- */
+const panel = document.getElementById("panel");
+function intro() {
+  panel.innerHTML = `
+    <span class="eyebrow">Start here</span>
+    <h2>One build, left to right</h2>
+    <ol class="steps">
+      <li><span><b>Read.</b> The compile driver follows <code>use</code> lines; the lexer and parser turn each file into a syntax tree.</span></li>
+      <li><span><b>Check.</b> The binder works out names, types and storage, or reports errors.</span></li>
+      <li><span><b>Generate.</b> Each method goes through the new path (the intermediate form) or the generator, which also writes everything around methods.</span></li>
+      <li><span><b>Assemble.</b> NASM turns the .asm text into machine code.</span></li>
+      <li><span><b>Build.</b> The builder makes the executable, disk image or .philib, which the test tools run.</span></li>
+    </ol>
+    <div class="callout">The quickest split for any wrong program: build it again with <code>PHI_IR=0</code> (64-bit) or <code>PHI_IR32=0</code> (32-bit). If the problem goes away, look in the teal boxes. If it stays, look before them.</div>
+    <p style="color:var(--muted);font-size:.9rem">Click a box for its files and when to suspect it. Arrows point the way data flows; dashed ones are errors, fallbacks and uses. Scroll or pinch over the map to zoom, drag to move it, and use Full screen for a bigger view.</p>`;
+}
+function linkBtn(id, extra = "") {
+  const n = byId[id];
+  return `<button class="linkish" type="button" data-node="${id}" style="--c:${color(n)}">${esc(n.t)}${extra ? ` <small>${esc(extra)}</small>` : ""}</button>`;
+}
+panel.addEventListener("click", ev => {
+  const b = ev.target.closest("[data-node]");
+  if (b) selectNode(b.dataset.node);
+  if (ev.target.closest("[data-clear]")) clearAll();
+});
+
+function nodePanel(n) {
+  const ins = EDGES.filter(e => e.t === n.id), outs = EDGES.filter(e => e.f === n.id);
+  const used = SYMPTOMS.filter(s => s.nodes.includes(n.id));
+  panel.innerHTML = `
+    <span class="eyebrow kind" style="--c:${color(n)}"><i></i>${esc(GROUPS[n.g].name)}</span>
+    <h2>${esc(n.t)}</h2>
+    <p>${rich(n.what)}</p>
+    <div><div class="section-label">Files</div><div class="files">${n.files.map(([p, l]) => `<div><span>${esc(p)}</span><span>${esc(l)}</span></div>`).join("")}</div></div>
+    <div><div class="section-label">Look here when</div><ul>${n.when.map(w => `<li>${rich(w)}</li>`).join("")}</ul></div>
+    ${ins.length ? `<div><div class="section-label">Comes from</div><div class="links">${ins.map(e => linkBtn(e.f, e.label || "")).join("")}</div></div>` : ""}
+    ${outs.length ? `<div><div class="section-label">Goes to</div><div class="links">${outs.map(e => linkBtn(e.t, e.label || "")).join("")}</div></div>` : ""}
+    ${used.length ? `<div><div class="section-label">Symptoms that lead here</div><div class="links">${used.map(s => `<button class="linkish" type="button" data-symptom="${s.id}">${esc(s.t)}</button>`).join("")}</div></div>` : ""}
+    <div><button class="btn" type="button" data-clear>Back to the overview</button></div>`;
+}
+panel.addEventListener("click", ev => { const b = ev.target.closest("[data-symptom]"); if (b) selectSymptom(b.dataset.symptom, true); });
+
+function symptomPanel(s) {
+  panel.innerHTML = `
+    <span class="eyebrow">Symptom</span>
+    <h2>${esc(s.t)}</h2>
+    <p class="mono" style="color:var(--muted);font-size:.8rem">${esc(s.ex)}</p>
+    <div><div class="section-label">What to do</div><ul>${s.how.map(h => `<li>${esc(h)}</li>`).join("")}</ul></div>
+    <div><div class="section-label">Where to look, in order</div><ol class="steps">${s.nodes.map(id => `<li><span>${linkBtn(id, byId[id].s)}</span></li>`).join("")}</ol></div>
+    <div><button class="btn" type="button" data-clear>Back to the overview</button></div>`;
+}
+
+/* ---------- highlighting ---------- */
+function paint(nodeSet, edgeTest, sel, order) {
+  for (const n of NODES) {
+    const { g, badge } = nodeEls[n.id];
+    g.classList.toggle("dim", !!nodeSet && !nodeSet.has(n.id));
+    g.classList.toggle("sel", n.id === sel);
+    g.classList.remove("match");
+    const k = order ? order.indexOf(n.id) : -1;
+    badge.style.display = k >= 0 ? "" : "none";
+    if (k >= 0) badge.querySelector("text").textContent = k + 1;
+  }
+  for (const { e, g } of edgeEls) {
+    const on = edgeTest ? edgeTest(e) : false;
+    g.classList.toggle("hi", on);
+    g.classList.toggle("dim", !!nodeSet && !on);
+    g.querySelector("path").setAttribute("marker-end", on ? "url(#arrow-hi)" : "url(#arrow)");
+  }
+}
+let current = null;
+function selectNode(id) {
+  const near = new Set([id]);
+  for (const e of EDGES) { if (e.f === id) near.add(e.t); if (e.t === id) near.add(e.f); }
+  paint(near, e => e.f === id || e.t === id, id, null);
+  markCards(null);
+  nodePanel(byId[id]);
+  current = id; setHash(id);
+}
+function selectSymptom(id, scroll) {
+  const s = SYMPTOMS.find(x => x.id === id);
+  const set = new Set(s.nodes);
+  paint(set, e => set.has(e.f) && set.has(e.t), null, s.nodes);
+  markCards(id);
+  symptomPanel(s);
+  zoomTo(s.nodes);
+  current = id; setHash(id);
+  if (scroll) document.getElementById("mapwrap").scrollIntoView({ behavior: "smooth", block: "start" });
+}
+function clearAll() {
+  if (current && !byId[current]) fit();
+  paint(null, null, null, null); markCards(null); intro(); current = null; setHash("");
+  document.getElementById("q").value = "";
+}
+function setHash(h) { try { history.replaceState(null, "", h ? "#" + h : location.pathname + location.search); } catch {} }
+
+/* ---------- symptom cards ---------- */
+const cards = document.getElementById("cards");
+cards.innerHTML = SYMPTOMS.map(s => `
+  <button class="symptom" type="button" data-id="${s.id}">
+    <b>${esc(s.t)}</b>
+    <span class="ex">${esc(s.ex)}</span>
+    <span class="path">${s.nodes.map((id, i) => `${i ? "→ " : ""}${esc(byId[id].t)}`).join(" ")}</span>
+  </button>`).join("");
+cards.addEventListener("click", ev => { const b = ev.target.closest(".symptom"); if (b) selectSymptom(b.dataset.id, true); });
+function markCards(id) { for (const c of cards.children) c.classList.toggle("sel", c.dataset.id === id); }
+
+/* ---------- search ---------- */
+const q = document.getElementById("q");
+q.addEventListener("input", () => {
+  const s = q.value.trim().toLowerCase();
+  if (!s) { if (current && byId[current]) selectNode(current); else if (current) selectSymptom(current); else clearAll(); return; }
+  const hits = new Set(NODES.filter(n => [n.t, n.s, plain(n.what), ...n.files.flat(), ...n.when.map(plain)].join(" ").toLowerCase().includes(s)).map(n => n.id));
+  paint(hits, () => false, null, null);
+  for (const id of hits) nodeEls[id].g.classList.add("match");
+});
+q.addEventListener("keydown", ev => { if (ev.key === "Escape") clearAll(); });
+
+/* ---------- pan and zoom ---------- */
+// Scroll or pinch over the map to zoom where the pointer is; drag (one finger on a phone) to move;
+// double-click to zoom in. The viewBox is the camera.
+const FULL = { x: 0, y: 0, w: 1570, h: 1115 };
+const MIN_W = 220, MAX_W = FULL.w * 1.6;
+let vb = { ...FULL }, panned = false;
+const zoomLabel = document.getElementById("zpct");
+function setVB() {
+  svg.setAttribute("viewBox", `${vb.x} ${vb.y} ${vb.w} ${vb.h}`);
+  zoomLabel.textContent = Math.round(FULL.w / vb.w * 100) + "%";
+}
+// screen pixels to map units (the viewBox is fitted into the svg, centred, keeping its shape)
+function frame() {
+  const r = svg.getBoundingClientRect();
+  const s = Math.min(r.width / vb.w, r.height / vb.h);
+  return { s, ox: r.left + (r.width - vb.w * s) / 2, oy: r.top + (r.height - vb.h * s) / 2 };
+}
+function toSvg(cx, cy) { const f = frame(); return [vb.x + (cx - f.ox) / f.s, vb.y + (cy - f.oy) / f.s]; }
+function zoomAt(k, x, y) {
+  const w = Math.min(MAX_W, Math.max(MIN_W, vb.w * k)); k = w / vb.w;
+  vb = { x: x - (x - vb.x) * k, y: y - (y - vb.y) * k, w, h: vb.h * k };
+  setVB();
+}
+const zoomMid = k => zoomAt(k, vb.x + vb.w / 2, vb.y + vb.h / 2);
+function fit() { vb = { ...FULL }; setVB(); }
+function zoomTo(ids) {
+  const ns = ids.map(id => byId[id]);
+  const x0 = Math.min(...ns.map(n => n.x)) - 40, y0 = Math.min(...ns.map(n => n.y)) - 50;
+  const x1 = Math.max(...ns.map(n => n.x + (n.w || W))) + 40, y1 = Math.max(...ns.map(n => n.y + (n.h || H))) + 40;
+  let w = Math.max((x1 - x0) * 1.15, MIN_W * 2), h = w * FULL.h / FULL.w;
+  if (h < (y1 - y0) * 1.15) { h = (y1 - y0) * 1.15; w = h * FULL.w / FULL.h; }
+  vb = { x: (x0 + x1) / 2 - w / 2, y: (y0 + y1) / 2 - h / 2, w, h }; setVB();
+}
+
+document.getElementById("zin").onclick = () => zoomMid(0.75);
+document.getElementById("zout").onclick = () => zoomMid(1 / 0.75);
+document.getElementById("zfit").onclick = fit;
+document.getElementById("reset").onclick = () => { fit(); clearAll(); };
+
+svg.addEventListener("wheel", ev => {
+  ev.preventDefault();
+  const [x, y] = toSvg(ev.clientX, ev.clientY);
+  // a trackpad pinch arrives as a wheel with ctrlKey and small steps
+  const step = ev.deltaMode === 1 ? ev.deltaY * 16 : ev.deltaY;
+  zoomAt(Math.exp(step * (ev.ctrlKey ? 0.01 : 0.0015)), x, y);
+}, { passive: false });
+svg.addEventListener("dblclick", ev => {
+  if (ev.target.closest(".node")) return;
+  const [x, y] = toSvg(ev.clientX, ev.clientY);
+  zoomAt(ev.shiftKey ? 1.6 : 0.6, x, y);
+});
+
+// pointers: one drags, two pinch
+const pts = new Map();
+let gesture = null;
+function startGesture() {
+  const p = [...pts.values()];
+  if (p.length === 1) gesture = { kind: "drag", x: p[0].x, y: p[0].y, vb: { ...vb }, s: frame().s };
+  else if (p.length >= 2) {
+    const mx = (p[0].x + p[1].x) / 2, my = (p[0].y + p[1].y) / 2;
+    gesture = { kind: "pinch", d: Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y), at: toSvg(mx, my), vb: { ...vb } };
+    panned = true;
+  } else gesture = null;
+}
+svg.addEventListener("pointerdown", ev => {
+  if (ev.pointerType === "mouse" && ev.button !== 0) return;
+  pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  if (pts.size === 1) panned = false;
+  startGesture();
+});
+window.addEventListener("pointermove", ev => {
+  if (!pts.has(ev.pointerId) || !gesture) return;
+  pts.set(ev.pointerId, { x: ev.clientX, y: ev.clientY });
+  const p = [...pts.values()];
+  if (gesture.kind === "drag") {
+    const dx = p[0].x - gesture.x, dy = p[0].y - gesture.y;
+    if (!panned && Math.hypot(dx, dy) < 5) return;
+    panned = true; svg.classList.add("panning");
+    vb = { ...gesture.vb, x: gesture.vb.x - dx / gesture.s, y: gesture.vb.y - dy / gesture.s }; setVB();
+  } else if (p.length >= 2) {
+    const d = Math.hypot(p[0].x - p[1].x, p[0].y - p[1].y);
+    if (!d) return;
+    const k = Math.min(MAX_W, Math.max(MIN_W, gesture.vb.w * gesture.d / d)) / gesture.vb.w;
+    const [ax, ay] = gesture.at;
+    const w = gesture.vb.w * k, h = gesture.vb.h * k;
+    // keep the map point that was under the fingers' midpoint under it now
+    const r = svg.getBoundingClientRect(), s = Math.min(r.width / w, r.height / h);
+    const ox = r.left + (r.width - w * s) / 2, oy = r.top + (r.height - h * s) / 2;
+    const mx = (p[0].x + p[1].x) / 2, my = (p[0].y + p[1].y) / 2;
+    vb = { x: ax - (mx - ox) / s, y: ay - (my - oy) / s, w, h }; setVB();
+  }
+});
+function endPointer(ev) {
+  if (!pts.delete(ev.pointerId)) return;
+  svg.classList.remove("panning");
+  startGesture();
+  if (!pts.size) setTimeout(() => { panned = false; }, 0);
+}
+window.addEventListener("pointerup", endPointer);
+window.addEventListener("pointercancel", endPointer);
+svg.addEventListener("click", ev => { if (!panned && !ev.target.closest(".node") && current) clearAll(); });
+
+// keys, when the map has focus: + and - zoom, 0 fits, arrows move
+const wrap = document.getElementById("mapwrap");
+wrap.addEventListener("keydown", ev => {
+  if (ev.target.closest(".node") && (ev.key === "Enter" || ev.key === " ")) return;
+  const step = vb.w * 0.08;
+  const keys = { "+": () => zoomMid(0.8), "=": () => zoomMid(0.8), "-": () => zoomMid(1.25), "_": () => zoomMid(1.25), "0": fit,
+    ArrowLeft: () => { vb.x -= step; setVB(); }, ArrowRight: () => { vb.x += step; setVB(); },
+    ArrowUp: () => { vb.y -= step; setVB(); }, ArrowDown: () => { vb.y += step; setVB(); } };
+  if (keys[ev.key]) { ev.preventDefault(); keys[ev.key](); }
+});
+
+// full screen, where the browser allows it
+const fsBtn = document.getElementById("zfull");
+const canFull = !!(wrap.requestFullscreen || wrap.webkitRequestFullscreen);
+if (!canFull) fsBtn.hidden = true;
+fsBtn.onclick = async () => {
+  try {
+    if (document.fullscreenElement || document.webkitFullscreenElement) await (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+    else await (wrap.requestFullscreen || wrap.webkitRequestFullscreen).call(wrap);
+  } catch { fsBtn.hidden = true; }
+};
+document.addEventListener("fullscreenchange", () => { fsBtn.textContent = document.fullscreenElement ? "Exit full screen" : "Full screen"; });
+setVB();
+
+/* ---------- start ---------- */
+intro();
+sizeLabels();
+if (document.fonts && document.fonts.ready) document.fonts.ready.then(sizeLabels);
+const start = decodeURIComponent(location.hash.slice(1));
+if (byId[start]) selectNode(start); else if (SYMPTOMS.some(s => s.id === start)) selectSymptom(start, false);
+</script>
+</body>
+</html>

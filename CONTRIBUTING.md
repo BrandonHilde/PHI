@@ -21,7 +21,8 @@ contains `NAME`.
 ## Find your way around
 
 [docs/architecture.md](docs/architecture.md) explains how the compiler, library and build fit
-together. Some common changes:
+together, and [docs/codebase-map.html](docs/codebase-map.html) draws it: open it in a browser,
+click a box for its files, or pick a symptom to see where to look first. Some common changes:
 
 | To... | Change |
 |---|---|
