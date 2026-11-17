@@ -4083,6 +4083,23 @@ buffer in the frame, growing onto the heap, freed at the end when it did); a pat
 kept in memory (JsLex.tok.text.bytes: the first address at the root's place + BaseOffset). Tests
 ir_fpu and ir_local_tables.
 
+*32-bit through the intermediate form (the user's choice, 2026-11-16: "teach it 32-bit").* So that
+32-bit programs and kernels have one compiler too (16-bit, the OS stage, stays the generator's for
+now). It goes as 64-bit did, a method at a time: what the form can't take yet stays the
+generator's, so each step is checked by the whole suite. The generator's 32-bit convention, which
+the form's methods must keep to be called by and call the generator's: the arguments at ebp + 8, 4
+bytes each (8 for an i64 or f64, 12 for an array: the most, how many, the elements); the result in
+eax, edx:eax or st0; esi and edi the caller's (a method that uses them for its variables keeps
+them: push esi, push edi), the rest anyone's. The steps:
+1. The builder made target-neutral: pointer-sized loads and stores (MemKind.Q64 for an address is
+   4 bytes there), the arguments' places, a view's layout (count at 4, most at 8), 64-bit values
+   (i64, u64) in pairs. With 64-bit's output unchanged.
+2. A 32-bit register allocator: ebx anyone's, esi and edi the caller's (eax, ecx, edx the emitter's
+   own); an i64 in the frame; floats in xmm registers (SSE2, as vec has it) or the FPU's.
+3. A 32-bit emitter: numbers, control flow and calls first (everything else refused), then text,
+   objects, arrays, floats, each checked by the suite and the code libraries.
+4. Kernels: after 32-bit programs, with interrupts and the FPU's state to look after.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its
