@@ -153,7 +153,7 @@ namespace Phi.Compiler.CodeGen.Ir
             fn.NeedScratch();
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
-            Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+            Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
             if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
             {
                 VReg checkedIndex = InReg(index, true);
@@ -274,7 +274,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 case NameExpr { Symbol: FieldPathSymbol inPlace } when inPlace.Type.IsInlineText && frameStructs.ContainsKey(inPlace.Root):
                     // (err.message: text kept in a struct in the frame)
                 {
-                    VReg where = fn.NewValue(true);
+                    VReg where = fn.NewAddress();
                     Emit(new AddrI { Dst = where, Label = FramePlace(inPlace.Root, inPlace.Offset) });
                     Emit(new PrintI { Kind = PrintKind.Text, Value = where, Serial = serial });
                     return;

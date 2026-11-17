@@ -266,7 +266,7 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg counter = Variable(i);
             VReg Wide(VReg x, bool signed)
             {
-                VReg w = fn.NewValue(true);
+                VReg w = fn.NewAddress();
                 Emit(new ExtendI { Dst = w, Src = x, Signed = signed });
                 return w;
             }
@@ -286,7 +286,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
 
             // nothing to do a vec at a time
-            VReg firstEnd = fn.NewValue(true);
+            VReg firstEnd = fn.NewAddress();
             Emit(new BinI { Op = BinOp.Add, Dst = firstEnd, A = start, B = Opnd.Const(step) });
             Unless(Cond.LeS, firstEnd, end);
 
@@ -299,7 +299,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     bases[b] = InReg(Value(new NameExpr { Name = b.Name, Symbol = b, Type = b.Type }), true);
                     continue;
                 }
-                VReg at = fn.NewValue(true);
+                VReg at = fn.NewAddress();
                 Emit(new AddrI { Dst = at, Label = GlobalArray(b)! });
                 bases[b] = at;
                 Unless(Cond.GeS, start, Opnd.Const(0));
@@ -307,7 +307,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
 
             // what's written is nothing else that's reached, unless it's the very same elements
-            VReg bytes = fn.NewValue(true);
+            VReg bytes = fn.NewAddress();
             Emit(new BinI { Op = BinOp.Sub, Dst = bytes, A = end, B = start });
             Emit(new BinI { Op = BinOp.Mul, Dst = bytes, A = bytes, B = Opnd.Const(size) });
             var written = v.Bases.Where(b => b.Value).Select(b => b.Key).ToList();
@@ -321,7 +321,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     if (current.End != null) Enter(fn.NewBlock());
                     current.End = new BranchT { Cond = Cond.Eq, A = a, B = o, Then = apart, Else = check };
                     Enter(check);
-                    VReg aEnd = fn.NewValue(true), oEnd = fn.NewValue(true);
+                    VReg aEnd = fn.NewAddress(), oEnd = fn.NewAddress();
                     Emit(new BinI { Op = BinOp.Add, Dst = aEnd, A = a, B = bytes });
                     current.End = new BranchT { Cond = Cond.LeU, A = aEnd, B = o, Then = apart, Else = second };
                     Enter(second);
@@ -348,7 +348,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
 
             // the loop: while i + step <= end
-            VReg last = fn.NewValue(true);
+            VReg last = fn.NewAddress();
             Emit(new BinI { Op = BinOp.Sub, Dst = last, A = end, B = Opnd.Const(step) });
             Block head = fn.NewBlock(), body = fn.NewBlock();
             StartBlock(head);

@@ -20,7 +20,7 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             if (target is NameExpr { Symbol: VariableSymbol v } && owned.TryGetValue(v, out string? home))
             {
-                VReg d = fn.NewValue(true);
+                VReg d = fn.NewAddress();
                 Emit(new AddrI { Dst = d, Label = home });
                 return d;
             }
@@ -52,7 +52,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
                 VReg had = LoadAt(place, 0, PhiType.ObjectOf(s));
-                Emit(new StoreIdxI { Base = place, Index = Opnd.Const(0), Scale = 1, Src = source, Kind = MemKind.Q64 });
+                Emit(new StoreIdxI { Base = place, Index = Opnd.Const(0), Scale = 1, Src = source, Kind = Ptr });
                 Emit(new ObjCallI { Kind = "free", Struct = s, Arg = had });
                 return;
             }
@@ -77,7 +77,7 @@ namespace Phi.Compiler.CodeGen.Ir
             // a call's new object is the caller's as it is
             if (Binder.IsObjectCall(value)) return InReg(Value(value), true);
             VReg from = ObjectAddress(value);
-            VReg copy = fn.NewValue(true);
+            VReg copy = fn.NewAddress();
             Emit(new ObjectLineI { At = value });
             Emit(new ObjCallI { Kind = "clone", Struct = method.ReturnType.Struct!, Arg = from, Dst = copy });
             return copy;

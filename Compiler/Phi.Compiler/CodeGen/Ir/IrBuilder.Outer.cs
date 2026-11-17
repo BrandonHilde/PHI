@@ -166,12 +166,12 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg counter = Variable(j);
             VReg Wide(VReg x, bool signed)
             {
-                VReg w = fn.NewValue(true);
+                VReg w = fn.NewAddress();
                 Emit(new ExtendI { Dst = w, Src = x, Signed = signed });
                 return w;
             }
             VReg end = Wide(InReg(Value(v.Bound, j.Type), false), j.Type.IsSigned);
-            VReg last = fn.NewValue(true);
+            VReg last = fn.NewAddress();
             Emit(new BinI { Op = BinOp.Sub, Dst = last, A = end, B = Opnd.Const(step) });
 
             // while j + step <= end
@@ -220,7 +220,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 VReg b = InReg(Value(element.Target), true);
                 PhiType it = Real(element.Index);
-                VReg index64 = InReg(Convert(Value(element.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64), true);
+                VReg index64 = InReg(Convert(Value(element.Index), it, IndexType(it.IsSigned)), true);
                 return (b, index64);
             }
 

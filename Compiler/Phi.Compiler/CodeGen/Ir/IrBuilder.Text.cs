@@ -82,7 +82,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 case NameExpr { Symbol: VariableSymbol v } when growingTexts.TryGetValue(v, out string? home):
                 {
-                    VReg d = fn.NewValue(true);
+                    VReg d = fn.NewAddress();
                     Emit(new AddrI { Dst = d, Label = home });
                     return d;
                 }
@@ -90,7 +90,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     return given;
                 case NameExpr { Symbol: VariableSymbol { Grows: true } g } when !Ours(g) && SimpleLabel(g.Label):
                 {
-                    VReg d = fn.NewValue(true);
+                    VReg d = fn.NewAddress();
                     Emit(new AddrI { Dst = d, Label = g.Label });
                     return d;
                 }
@@ -179,7 +179,7 @@ namespace Phi.Compiler.CodeGen.Ir
             string? rooms = null;
             if (slotHome != null)
             {
-                slot = fn.NewValue(true);
+                slot = fn.NewAddress();
                 Emit(new AddrI { Dst = slot, Label = slotHome });
             }
             else if (TableSlot(target!)) (slot, roomOffset, rooms) = TableSlotOf((IndexExpr)target!);
@@ -200,7 +200,7 @@ namespace Phi.Compiler.CodeGen.Ir
             else if (t.IsWide || IsF(t) || t.IsChar)
             {
                 Need(Supported(t), $"{A(t)} written out as text");
-                VReg written = fn.NewValue(true);
+                VReg written = fn.NewAddress();
                 fn.NeedScratch();
                 PrintKind kind = t.IsChar ? PrintKind.Char : IsF(t) ? PrintKind.Float : t.Kind == TypeKind.U64 ? PrintKind.Uint64 : PrintKind.Int64;
                 Emit(new NumberTextI { Dst = written, Value = Value(part), Kind = kind });
@@ -279,14 +279,14 @@ namespace Phi.Compiler.CodeGen.Ir
                 fn.NewHome();
                 fn.NewHome();
                 string written = $"rbp - {8 * fn.Homes}";
-                VReg at = fn.NewValue(true);
+                VReg at = fn.NewAddress();
                 Emit(new AddrI { Dst = at, Label = written });
                 PutPart(value, false, (at, 12), null);
-                text = fn.NewValue(true);
+                text = fn.NewAddress();
                 Emit(new AddrI { Dst = text, Label = written });
             }
-            Emit(new StoreI { Place = slot, Src = text, Kind = MemKind.Q64 });
-            if (room > 0) Emit(new StoreI { Place = $"{slot} + 8", Src = Opnd.Const(room | 0x40000000), Kind = MemKind.D32 });
+            Emit(new StoreI { Place = slot, Src = text, Kind = Ptr });
+            if (room > 0) Emit(new StoreI { Place = $"{slot} + {PhiType.AddressSize}", Src = Opnd.Const(room | 0x40000000), Kind = MemKind.D32 });
             else
             {
                 // read only: its room is what it has, so .max is its length
@@ -294,9 +294,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 Emit(new TextI { Op = TextOp.Length, Dst = length, A = text });
                 Emit(new BinI { Op = BinOp.Add, Dst = roomed, A = length, B = Opnd.Const(1) });
                 Emit(new BinI { Op = BinOp.Or, Dst = marked, A = roomed, B = Opnd.Const(0x40000000) });
-                Emit(new StoreI { Place = $"{slot} + 8", Src = marked, Kind = MemKind.D32 });
+                Emit(new StoreI { Place = $"{slot} + {PhiType.AddressSize}", Src = marked, Kind = MemKind.D32 });
             }
-            VReg d = fn.NewValue(true);
+            VReg d = fn.NewAddress();
             Emit(new AddrI { Dst = d, Label = slot });
             return d;
         }
@@ -333,7 +333,7 @@ namespace Phi.Compiler.CodeGen.Ir
         {
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
-            Opnd index = Convert(Value(e.Index), it, it.IsSigned ? PhiType.I64 : PhiType.U64);
+            Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
             VReg elements;
             if (e.Target.Type.Open)
             {
@@ -341,7 +341,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 if (unsafeDepth == 0)
                 {
                     VReg count = LoadAt(view, ViewCount, PhiType.U32);
-                    VReg limit = fn.NewValue(true);
+                    VReg limit = fn.NewAddress();
                     Emit(new ExtendI { Dst = limit, Src = count, Signed = false });
                     VReg checkedIndex = InReg(index, true);
                     Emit(new CheckI { Index = checkedIndex, LimitValue = limit, At = e, Held = HeldStores() });
@@ -357,11 +357,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
                     index = checkedIndex;
                 }
-                elements = fn.NewValue(true);
+                elements = fn.NewAddress();
                 var table = (VariableSymbol)((NameExpr)e.Target).Symbol!;
                 Emit(new AddrI { Dst = elements, Label = localTables.TryGetValue(table, out string? mine) ? mine : table.Label });
             }
-            return Offset(elements, InReg(index, true), PhiType.AddressSize, fn.NewValue(true));
+            return Offset(elements, InReg(index, true), PhiType.AddressSize, fn.NewAddress());
         }
 
         /// <summary>A method's own table of texts (str names: 'a' 'b';, str list[3];): each element its own buffer in the frame, its text growing out of it when it must.</summary>
@@ -385,9 +385,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 for (int k = 0; k < count; k++)
                 {
                     string slot = $"rbp - {top - PhiType.AddressSize * k}", buffer = $"rbp - {top - tableBytes - room * k}";
-                    VReg at = fn.NewValue(true);
+                    VReg at = fn.NewAddress();
                     Emit(new AddrI { Dst = at, Label = buffer });
-                    Emit(new StoreI { Place = slot, Src = at, Kind = MemKind.Q64 });
+                    Emit(new StoreI { Place = slot, Src = at, Kind = Ptr });
                     if (v.GrowingElements)
                     {
                         string roomPlace = $"rbp - {top - PhiType.AddressSize * (count + k)}";
@@ -410,13 +410,13 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 case NameExpr { Symbol: VariableSymbol v } when frameTexts.ContainsKey(v):
                 {
-                    VReg d = fn.NewValue(true);
+                    VReg d = fn.NewAddress();
                     Emit(new AddrI { Dst = d, Label = TextPlace(v) });
                     return (d, v.Capacity);
                 }
                 case NameExpr { Symbol: VariableSymbol { Grows: false, TextRef: false } g } when !Ours(g) && !g.Type.IsArray && g.Capacity > 0 && SimpleLabel(g.Label):
                 {
-                    VReg d = fn.NewValue(true);
+                    VReg d = fn.NewAddress();
                     Emit(new AddrI { Dst = d, Label = g.Label });
                     return (d, g.Capacity);
                 }
@@ -444,12 +444,12 @@ namespace Phi.Compiler.CodeGen.Ir
                 for (int k = 0; k < text.Parts.Count; k++) PutPart(text.Parts[k], k > 0, null, null, slotTarget: null, slotHome: slot);
                 if (text.Parts.Count == 0)
                 {
-                    VReg home = fn.NewValue(true);
+                    VReg home = fn.NewAddress();
                     Emit(new AddrI { Dst = home, Label = slot });
                     Emit(new GrowStoreI { Slot = home, Value = TextAddress(new StringExpr { Value = "", Type = PhiType.Str }), SourceIsString = true, MayCut = textMayCut });
                 }
-                VReg at = fn.NewValue(true), value = fn.NewValue(true);
-                Emit(new LoadI { Dst = at, Place = slot, Kind = MemKind.Q64 });
+                VReg at = fn.NewAddress(), value = fn.NewAddress();
+                Emit(new LoadI { Dst = at, Place = slot, Kind = Ptr });
                 Emit(new TextI { Op = TextOp.OrEmpty, Dst = value, A = at });
                 return value;
             }
@@ -457,7 +457,7 @@ namespace Phi.Compiler.CodeGen.Ir
             string place = $"rbp - {8 * fn.Homes}";
             for (int k = 0; k < text.Parts.Count; k++)
             {
-                VReg at = fn.NewValue(true);
+                VReg at = fn.NewAddress();
                 Emit(new AddrI { Dst = at, Label = place });
                 PutPart(text.Parts[k], k > 0, (at, 256), null);
             }
@@ -465,7 +465,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 Emit(new StoreI { Place = place, Src = Opnd.Const(0), Kind = MemKind.U8 });
             }
-            VReg d = fn.NewValue(true);
+            VReg d = fn.NewAddress();
             Emit(new AddrI { Dst = d, Label = place });
             return d;
         }
@@ -473,7 +473,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>Where a text is: written in the program, a method's own, a class's, a struct's field ('' for one that grows and has none yet).</summary>
         VReg TextAddress(Expr e)
         {
-            VReg d = fn.NewValue(true);
+            VReg d = fn.NewAddress();
             switch (e)
             {
                 case StringExpr s:
@@ -495,8 +495,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     return InReg(Value(e), true);
                 case NameExpr { Symbol: VariableSymbol mine } when growingTexts.TryGetValue(mine, out string? home):
                 {
-                    VReg at = fn.NewValue(true);
-                    Emit(new LoadI { Dst = at, Place = home, Kind = MemKind.Q64 });
+                    VReg at = fn.NewAddress();
+                    Emit(new LoadI { Dst = at, Place = home, Kind = Ptr });
                     Emit(new TextI { Op = TextOp.OrEmpty, Dst = d, A = at });
                     return d;
                 }
@@ -509,8 +509,8 @@ namespace Phi.Compiler.CodeGen.Ir
                 }
                 case NameExpr { Symbol: VariableSymbol g } when g.Grows:
                 {
-                    VReg at = fn.NewValue(true);
-                    Emit(new LoadI { Dst = at, Place = g.Label, Kind = MemKind.Q64 });
+                    VReg at = fn.NewAddress();
+                    Emit(new LoadI { Dst = at, Place = g.Label, Kind = Ptr });
                     Emit(new TextI { Op = TextOp.OrEmpty, Dst = d, A = at });
                     return d;
                 }

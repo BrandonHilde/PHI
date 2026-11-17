@@ -820,6 +820,9 @@ namespace Phi.Compiler.CodeGen.Ir
         public int UnwindRecord { get; set; }
         public List<VReg> Values { get; } = new();
 
+        /// <summary>A value as wide as an address: 64 bits in 64-bit code, 32 in 32-bit.</summary>
+        public VReg NewAddress(string name = "") => NewValue(Semantics.PhiType.AddressSize == 8, name);
+
         public VReg NewValue(bool wide, string name = "")
         {
             var v = new VReg { Id = Values.Count, Wide = wide, Name = name };
