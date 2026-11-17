@@ -296,7 +296,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 if (b.Type.IsPointer)
                 {
-                    bases[b] = InReg(Value(new NameExpr { Name = b.Name, Symbol = b, Type = b.Type }), true);
+                    bases[b] = InReg(Value(new NameExpr { Name = b.Name, Symbol = b, Type = b.Type }), Addr);
                     continue;
                 }
                 VReg at = fn.NewAddress();

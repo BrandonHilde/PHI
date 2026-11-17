@@ -156,7 +156,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
             if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
             {
-                VReg checkedIndex = InReg(index, true);
+                VReg checkedIndex = InReg(index, Addr);
                 Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
                 index = checkedIndex;
             }
@@ -298,7 +298,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Need(!t.IsPointer || t.IsTextPointer, "a log of a pointer that isn't text");
             if (t.IsTextPointer)
             {
-                Emit(new PrintI { Kind = PrintKind.Text, Value = InReg(Value(value), true), Serial = serial });
+                Emit(new PrintI { Kind = PrintKind.Text, Value = InReg(Value(value), Addr), Serial = serial });
                 return;
             }
             PrintNumber(Value(value), t, serial);

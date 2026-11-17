@@ -196,7 +196,7 @@ namespace Phi.Compiler.CodeGen.Ir
             bool isText = true;
             bool unsigned = false;
             if (t.IsString && !t.IsArray) value = TextValue(part);
-            else if (t.IsTextPointer) value = InReg(Value(part), true);     // (a ptr<u8>: the text it points at)
+            else if (t.IsTextPointer) value = InReg(Value(part), Addr);     // (a ptr<u8>: the text it points at)
             else if (t.IsWide || IsF(t) || t.IsChar)
             {
                 Need(Supported(t), $"{A(t)} written out as text");
@@ -271,7 +271,7 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg text;
             PhiType t = Real(value);
             if (t.IsString && !t.IsArray) text = (VReg)TextValue(value).Reg!;
-            else if (t.IsTextPointer) text = InReg(Value(value), true);
+            else if (t.IsTextPointer) text = InReg(Value(value), Addr);
             else
             {
                 // a number, written out as text first (in 16 bytes of its own)
@@ -343,7 +343,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     VReg count = LoadAt(view, ViewCount, PhiType.U32);
                     VReg limit = fn.NewAddress();
                     Emit(new ExtendI { Dst = limit, Src = count, Signed = false });
-                    VReg checkedIndex = InReg(index, true);
+                    VReg checkedIndex = InReg(index, Addr);
                     Emit(new CheckI { Index = checkedIndex, LimitValue = limit, At = e, Held = HeldStores() });
                     index = checkedIndex;
                 }
@@ -353,7 +353,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 if (e.CheckLimit is int limit && unsafeDepth == 0 && !(index.IsImm && index.Imm >= 0 && index.Imm < limit))
                 {
-                    VReg checkedIndex = InReg(index, true);
+                    VReg checkedIndex = InReg(index, Addr);
                     Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
                     index = checkedIndex;
                 }
@@ -361,7 +361,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 var table = (VariableSymbol)((NameExpr)e.Target).Symbol!;
                 Emit(new AddrI { Dst = elements, Label = localTables.TryGetValue(table, out string? mine) ? mine : table.Label });
             }
-            return Offset(elements, InReg(index, true), PhiType.AddressSize, fn.NewAddress());
+            return Offset(elements, InReg(index, Addr), PhiType.AddressSize, fn.NewAddress());
         }
 
         /// <summary>A method's own table of texts (str names: 'a' 'b';, str list[3];): each element its own buffer in the frame, its text growing out of it when it must.</summary>
@@ -492,7 +492,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     return d;
                 }
                 case CallExpr or NameExpr { Call: not null } or MemberExpr { Call: not null }:
-                    return InReg(Value(e), true);
+                    return InReg(Value(e), Addr);
                 case NameExpr { Symbol: VariableSymbol mine } when growingTexts.TryGetValue(mine, out string? home):
                 {
                     VReg at = fn.NewAddress();

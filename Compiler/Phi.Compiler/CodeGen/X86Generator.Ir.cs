@@ -30,7 +30,9 @@ namespace Phi.Compiler.CodeGen
         {
             // a method that uses a vec is always the intermediate form's: the generator has no vectors
             bool vectors = UsesVec(m);
-            if (!vectors && (!IrWanted || !bits64 || unit.Kind != UnitKind.Program || debugInfo != null)) return false;
+            // (32-bit programs through it too, while it learns them: PHI_IR32=1, and only what Fits32 says it writes)
+            bool x32 = !bits64 && !vectors && Ir32Wanted && IrWanted && unit.Kind == UnitKind.Program && debugInfo == null;
+            if (!vectors && !x32 && (!IrWanted || !bits64 || unit.Kind != UnitKind.Program || debugInfo != null)) return false;
             // (PHI_IR_SKIP=A.B,C.D leaves those methods to the generator: for finding which one a difference is in)
             if (!vectors && IrSkip.Contains(m.Name)) return false;
             // (a class's variable a loop may keep in a register: the generator's own rule, see EmitLoopHolding)
@@ -48,7 +50,12 @@ namespace Phi.Compiler.CodeGen
                 return true;
             }
             IrPeephole.Run(fn);
-            RegisterAllocator regs = RegisterAllocator.Allocate(fn);
+            if (x32 && Fits32(fn) is string not32)
+            {
+                if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: in 32-bit code, {not32}");
+                return false;
+            }
+            RegisterAllocator regs = RegisterAllocator.Allocate(fn, x32);
             if (IrTrace > 0) Console.Error.WriteLine($"ir: {m.Name} ({fn.Values.Count} values, {regs.SlotCount} in the frame)");
             // (as the generator's frames: no more than the stack it runs on takes)
             int frameBytes = 8 * (regs.SlotCount + regs.UsedCalleeSaved.Count);
@@ -59,8 +66,50 @@ namespace Phi.Compiler.CodeGen
             if (IrTrace > 1) Console.Error.WriteLine(fn.Dump());
             // (what was done with each loop, in the listing too)
             foreach (var (at, note) in fn.Notes) Comment($"the loop on line {LineOf(at)} {note}");
-            new IrEmitter(this, fn, regs, m.Label).Emit();
+            new IrEmitter(this, fn, regs, m.Label, x32).Emit();
             return true;
+        }
+
+        /// <summary>PHI_IR32=1: 32-bit programs' methods through the intermediate form, where it writes them (see Fits32).</summary>
+        static readonly bool Ir32Wanted = Environment.GetEnvironmentVariable("PHI_IR32") == "1";
+
+        /// <summary>
+        /// What the emitter writes in 32-bit code so far, or null when it writes all of a method: values
+        /// of 32 bits (no i64, f64 or vec), numbers worked out, read and written, calls of methods,
+        /// index checks, and the control flow; why not, for PHI_IR_TRACE.
+        /// </summary>
+        static string? Fits32(IrFunction fn)
+        {
+            if (fn.Values.Any(v => v.Wide || v.Float || v.Vec)) return "a value of 64 bits, a float or a vec";
+            if (fn.UnwindRecord != 0 || fn.Owned.Count > 0 || fn.OwnedTexts.Count > 0 || fn.OwnedViews.Count > 0 || fn.OwnedTableTexts.Count > 0)
+                return "something to give back when it ends";
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs)
+                {
+                    bool fits = i switch
+                    {
+                        LineMark or ConstI or CopyI or BinI or UnI or NarrowI or ExtendI or SetCcI or AddrI or LeaI or CheckI or ObjectLineI => true,
+                        LoadI l => l.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32,
+                        StoreI st => st.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32,
+                        LoadIdxI li => li.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32 && li.Scale <= 8,
+                        StoreIdxI si => si.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32 && si.Scale <= 8,
+                        CallI c => !c.Routine && c.Result is CallResult.None or CallResult.Eax or CallResult.Rax
+                                   && c.ArgKinds.All(k => k is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32),
+                        _ => false,
+                    };
+                    if (!fits) return $"a {i.GetType().Name}";
+                }
+                bool ends = b.End switch
+                {
+                    JumpT => true,
+                    BranchT br => !br.Float,
+                    RetT r => !r.Float && !r.Vec && !r.Wide,
+                    _ => false,
+                };
+                if (!ends) return $"a {b.End?.GetType().Name}";
+            }
+            return null;
         }
 
         /// <summary>
@@ -134,8 +183,12 @@ namespace Phi.Compiler.CodeGen
             /// <summary>The method's label: a throw going past calls this with _unwind after it, to free its own objects.</summary>
             readonly string methodLabel;
 
-            public IrEmitter(X86Generator generator, IrFunction function, RegisterAllocator allocation, string label)
+            /// <summary>32-bit code: what's written with 64-bit names is made 32-bit as it's written (see E).</summary>
+            readonly bool x32;
+
+            public IrEmitter(X86Generator generator, IrFunction function, RegisterAllocator allocation, string label, bool x32 = false)
             {
+                this.x32 = x32;
                 g = generator;
                 fn = function;
                 regs = allocation;
@@ -160,7 +213,28 @@ namespace Phi.Compiler.CodeGen
                     g.SourceComment(pendingLine);
                     pendingLine = null;
                 }
+                if (x32) instruction = To32(instruction);
                 g.code.Append("    ").AppendLine(instruction);
+            }
+
+            static readonly System.Text.RegularExpressions.Regex Names64 = new(@"\b(rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r11d|r11|qword)\b");
+            static readonly System.Text.RegularExpressions.Regex Not32 = new(@"\b(r(8|9|1[0-5])[dwb]?|sil|dil|cqo|cdqe|movsxd|movq|xmm\d+)\b|\[rel ");
+
+            /// <summary>
+            /// An instruction written for 64-bit code, made 32-bit: each 64-bit register its 32-bit one
+            /// (r11, the emitter's own, edx), a qword a dword, [rel x] [x]. Only for the instructions
+            /// Fits32 lets through, whose values are all 32 bits: anything left that 32-bit code hasn't
+            /// is the emitter's mistake, and stops the build.
+            /// </summary>
+            static string To32(string instruction)
+            {
+                string made = Names64.Replace(instruction.Replace("[rel ", "["), m => m.Value switch
+                {
+                    "rax" => "eax", "rbx" => "ebx", "rcx" => "ecx", "rdx" => "edx", "rsi" => "esi", "rdi" => "edi",
+                    "rbp" => "ebp", "rsp" => "esp", "r11" or "r11d" => "edx", _ => "dword",
+                });
+                if (Not32.IsMatch(made)) throw new InvalidOperationException($"32-bit code with what only 64-bit code has: {made}");
+                return made;
             }
 
             int SavedAt(string register) => 8 * (regs.SlotCount + 1 + regs.UsedCalleeSaved.IndexOf(register));
@@ -298,6 +372,9 @@ namespace Phi.Compiler.CodeGen
             static string Size(int bits) => bits switch { 64 => "qword", 32 => "dword", 16 => "word", _ => "byte" };
 
             static int Bits(VReg v) => v.Wide ? 64 : 32;
+
+            /// <summary>In 32-bit code esi and edi have no low byte (sil and dil are 64-bit code's).</summary>
+            static bool NoLowByte(string r64) => r64 is "rsi" or "rdi";
 
             string? Reg(VReg v) => regs.Registers.TryGetValue(v, out string? r) ? r : null;
 
@@ -944,6 +1021,10 @@ namespace Phi.Compiler.CodeGen
                         Store(u.Dst, t);
                         break;
                     }
+                    case ExtendI x32x when x32:
+                        // (in 32-bit code an address is 32 bits: widening one to it is a copy)
+                        Move(x32x.Dst, x32x.Src);
+                        break;
                     case ExtendI x:
                     {
                         string t = InRegister(x.Dst) ? Reg(x.Dst)! : "rax";
@@ -956,6 +1037,14 @@ namespace Phi.Compiler.CodeGen
                     case NarrowI n:
                     {
                         string t = InRegister(n.Dst) ? Reg(n.Dst)! : "rax";
+                        if (x32 && n.Kind is MemKind.U8 or MemKind.S8 && InRegister(n.Src) && NoLowByte(Reg(n.Src)!))
+                        {
+                            // (32-bit code has no low byte of esi or edi: by way of eax)
+                            E($"mov eax, {At(n.Src, 32)}");
+                            E($"{(n.Kind == MemKind.U8 ? "movzx" : "movsx")} {Sub(t, 32)}, al");
+                            Store(n.Dst, t);
+                            break;
+                        }
                         string from = n.Kind switch
                         {
                             MemKind.U8 or MemKind.S8 => At(n.Src, 8),
@@ -1004,7 +1093,7 @@ namespace Phi.Compiler.CodeGen
                             E($"mov {Size(bits)} {place}, {(bits == 64 ? s.Src.Imm : unchecked((uint)s.Src.Imm) & (bits == 32 ? 0xFFFFFFFF : (1L << bits) - 1))}");
                         else
                         {
-                            string src = s.Src.IsImm || !InRegister(s.Src.Reg!) ? "rax" : Reg(s.Src.Reg!)!;
+                            string src = s.Src.IsImm || !InRegister(s.Src.Reg!) || x32 && bits == 8 && NoLowByte(Reg(s.Src.Reg!)!) ? "rax" : Reg(s.Src.Reg!)!;
                             if (src == "rax") Load("rax", s.Src, bits == 64 ? 64 : 32);
                             E($"mov {Size(bits)} {place}, {Sub(src, bits)}");
                         }
@@ -1137,7 +1226,7 @@ namespace Phi.Compiler.CodeGen
                             E($"mov {Size(bits)} {place}, {(bits == 64 ? st.Src.Imm.ToString() : (unchecked((ulong)st.Src.Imm) & (bits == 32 ? 0xFFFFFFFFUL : (1UL << bits) - 1)).ToString())}");
                         else
                         {
-                            string src = InRegister(st.Src.Reg!) ? Reg(st.Src.Reg!)! : "rax";
+                            string src = InRegister(st.Src.Reg!) && !(x32 && bits == 8 && NoLowByte(Reg(st.Src.Reg!)!)) ? Reg(st.Src.Reg!)! : "rax";
                             if (src == "rax") E($"mov {(bits == 64 ? "rax" : "eax")}, {At(st.Src.Reg!, bits == 64 ? 64 : 32)}");
                             E($"mov {Size(bits)} {place}, {Sub(src, bits)}");
                         }
@@ -1215,7 +1304,7 @@ namespace Phi.Compiler.CodeGen
                 int bits = Bits(b.Dst);
                 switch (b.Op)
                 {
-                    case BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU when bits == 32 && b.B.IsImm && DivideByConstant(b):
+                    case BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU when bits == 32 && !x32 && b.B.IsImm && DivideByConstant(b):
                         return;
                     case BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU:
                     {
@@ -1456,7 +1545,7 @@ namespace Phi.Compiler.CodeGen
                 {
                     Opnd a = call.Args[k];
                     MemKind kind = k < call.ArgKinds.Count ? call.ArgKinds[k] : MemKind.Q64;
-                    pushed += kind == MemKind.V128 ? 16 : 8;
+                    pushed += kind == MemKind.V128 ? 16 : x32 ? 4 : 8;
                     if (kind == MemKind.V128)
                     {
                         E("sub rsp, 16");

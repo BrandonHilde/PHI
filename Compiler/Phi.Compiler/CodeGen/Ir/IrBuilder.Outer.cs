@@ -218,9 +218,9 @@ namespace Phi.Compiler.CodeGen.Ir
             // an element's base, and the index lane 0's is at (the lanes' are the ones after it)
             (VReg Base, VReg Index) LaneZero(IndexExpr element)
             {
-                VReg b = InReg(Value(element.Target), true);
+                VReg b = InReg(Value(element.Target), Addr);
                 PhiType it = Real(element.Index);
-                VReg index64 = InReg(Convert(Value(element.Index), it, IndexType(it.IsSigned)), true);
+                VReg index64 = InReg(Convert(Value(element.Index), it, IndexType(it.IsSigned)), Addr);
                 return (b, index64);
             }
 

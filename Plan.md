@@ -4100,6 +4100,16 @@ them: push esi, push edi), the rest anyone's. The steps:
    objects, arrays, floats, each checked by the suite and the code libraries.
 4. Kernels: after 32-bit programs, with interrupts and the FPU's state to look after.
 
+Steps 1 to 3 begun (2026-11-16). The builder's values as wide as an address (NewAddress, IndexType,
+Ptr, IsAddress where "an address" was meant by Is64); the allocator's 32-bit registers (ebx, and esi
+and edi kept for the caller); the emitter writing 32-bit code from what it writes for 64-bit (each
+64-bit register its 32-bit one, r11 edx, a qword a dword; anything else 64-bit-only stops the build),
+for methods whose values are all 32 bits and whose instructions are among the first it knows
+(numbers, reads and writes, calls of methods, index checks, control flow). On with PHI_IR32=1 while
+it learns: then 660 of the tests' and bench's 32-bit methods go through it, and the 208 32-bit Linux
+tests and the three fuzzers pass so; 64-bit code is unchanged (every test program's assembly). Most
+of the rest have an i64, a float or a vec (358), then text (81).
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

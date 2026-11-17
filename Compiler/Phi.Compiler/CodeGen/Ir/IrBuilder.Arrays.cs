@@ -42,7 +42,7 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 HasKind.Texts => TextValue(has.Value),
                 HasKind.Objects or HasKind.Structs => ObjectAddress(has.Value),
-                _ => size == 8 ? InReg(Value(has.Value, PhiType.I64), true) : InReg(Value(has.Value, PhiType.Int), false),
+                _ => size == 8 ? InReg(Value(has.Value, PhiType.I64), Addr) : InReg(Value(has.Value, PhiType.Int), false),
             };
             VReg d = fn.NewValue(false);
             Emit(new ConstI { Dst = d, Value = 0 });
@@ -471,7 +471,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 Emit(new ExtendI { Dst = wide, Src = n, Signed = false });
                 Emit(new BinI { Op = BinOp.Shl, Dst = high, A = wide, B = Opnd.Const(32) });
                 Emit(new BinI { Op = BinOp.Or, Dst = both, A = wide, B = high });
-                return (both, InReg(Value(pv.Pointer), true));
+                return (both, InReg(Value(pv.Pointer), Addr));
             }
             if (array.Type.Open)
             {
@@ -594,7 +594,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 if (element.IsObject)
                 {
                     Emit(new ObjectLineI { At = append });
-                    if (value != null && Binder.IsObjectCall(value)) from = InReg(Value(value), true);
+                    if (value != null && Binder.IsObjectCall(value)) from = InReg(Value(value), Addr);
                     else if (value != null)
                     {
                         if (!grows)

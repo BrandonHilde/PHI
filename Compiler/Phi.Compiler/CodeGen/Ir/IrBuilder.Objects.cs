@@ -10,7 +10,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>Where an object is: what an object variable or field holds, or where a struct kept in place is.</summary>
         VReg ObjectAddress(Expr e)
         {
-            if (e.Type.IsObject) return InReg(Value(e), true);
+            if (e.Type.IsObject) return InReg(Value(e), Addr);
             Need(e.Type.IsStruct && CanAddress(e), $"the object {Unknown(e)}");
             return AddressOf(e);
         }
@@ -40,7 +40,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 // (a method's own object: through what's known of its home)
                 Opnd was = LoadObject((home, null, 0));
                 StoreObject((home, null, 0), source);
-                if (!(was.IsImm && was.Imm == 0)) Emit(new ObjCallI { Kind = "free", Struct = s, Arg = InReg(was, true) });
+                if (!(was.IsImm && was.Imm == 0)) Emit(new ObjCallI { Kind = "free", Struct = s, Arg = InReg(was, Addr) });
                 return;
             }
             if (Binder.IsOwnedPlace(target))
@@ -75,7 +75,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             if (value is EmptyExpr || ConstantFolder.Evaluate(value) == 0) return Opnd.Const(0);
             // a call's new object is the caller's as it is
-            if (Binder.IsObjectCall(value)) return InReg(Value(value), true);
+            if (Binder.IsObjectCall(value)) return InReg(Value(value), Addr);
             VReg from = ObjectAddress(value);
             VReg copy = fn.NewAddress();
             Emit(new ObjectLineI { At = value });

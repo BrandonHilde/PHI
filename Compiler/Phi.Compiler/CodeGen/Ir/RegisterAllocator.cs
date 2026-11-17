@@ -42,9 +42,24 @@ namespace Phi.Compiler.CodeGen.Ir
             public double Weight;
         }
 
-        public static RegisterAllocator Allocate(IrFunction fn)
+        /// <summary>
+        /// 32-bit code's (named as their 64-bit registers, as the emitter writes them): ebx anyone's;
+        /// esi and edi the caller's, as the generator keeps its variables in them; eax, ecx and edx
+        /// the emitter's own.
+        /// </summary>
+        public static readonly string[] CallerSaved32 = { "rbx" };
+        public static readonly string[] CalleeSaved32 = { "rsi", "rdi" };
+
+        string[] callerSaved = CallerSaved, calleeSaved = CalleeSaved;
+
+        public static RegisterAllocator Allocate(IrFunction fn, bool x32 = false)
         {
             var allocator = new RegisterAllocator();
+            if (x32)
+            {
+                allocator.callerSaved = CallerSaved32;
+                allocator.calleeSaved = CalleeSaved32;
+            }
             allocator.Run(fn);
             return allocator;
         }
@@ -341,7 +356,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     iv.Weight = -1;   // (taken out of the scan below)
                 }
 
-            var free = new List<string>(CallerSaved.Concat(CalleeSaved));
+            var free = new List<string>(callerSaved.Concat(calleeSaved));
             var freeFloat = new List<string>(FloatRegisters);
             var active = new List<Interval>();
             var activeFloat = new List<Interval>();
@@ -388,14 +403,14 @@ namespace Phi.Compiler.CodeGen.Ir
                     free.Add(done.Register!);
                 }
                 string? register = iv.CrossesCall
-                    ? free.FirstOrDefault(r => CalleeSaved.Contains(r))
-                    : free.FirstOrDefault(r => CallerSaved.Contains(r)) ?? free.FirstOrDefault();
+                    ? free.FirstOrDefault(r => calleeSaved.Contains(r))
+                    : free.FirstOrDefault(r => callerSaved.Contains(r)) ?? free.FirstOrDefault();
                 if (register == null)
                 {
                     // none free: whichever costs least in memory (of those whose register this
                     // one can have, and this one) goes to the frame
                     Interval? furthest = active
-                        .Where(a => !iv.CrossesCall || CalleeSaved.Contains(a.Register!))
+                        .Where(a => !iv.CrossesCall || calleeSaved.Contains(a.Register!))
                         .OrderBy(a => a.Weight).ThenByDescending(a => a.End).FirstOrDefault();
                     if (furthest != null && furthest.Weight < iv.Weight)
                     {
@@ -418,13 +433,13 @@ namespace Phi.Compiler.CodeGen.Ir
             {
                 if (iv.Register == null) continue;
                 Registers[iv.Value] = iv.Register;
-                if (CalleeSaved.Contains(iv.Register) && !UsedCalleeSaved.Contains(iv.Register)) UsedCalleeSaved.Add(iv.Register);
+                if (calleeSaved.Contains(iv.Register) && !UsedCalleeSaved.Contains(iv.Register)) UsedCalleeSaved.Add(iv.Register);
             }
             // a method that catches keeps all four for its caller: a throw comes back past methods
             // that would have put them back, so they hold whatever was in them down there; and
             // one that calls an assembly block, which may change any of them
             if (fn.Blocks.Any(b => b.End is TryT) || rawCalls.Count > 0)
-                foreach (string r in CalleeSaved.Where(r => !UsedCalleeSaved.Contains(r))) UsedCalleeSaved.Add(r);
+                foreach (string r in calleeSaved.Where(r => !UsedCalleeSaved.Contains(r))) UsedCalleeSaved.Add(r);
             UsedCalleeSaved.Sort(string.CompareOrdinal);
             SlotCount = slots;
         }
