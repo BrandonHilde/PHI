@@ -4135,6 +4135,13 @@ A PHI OS program has no SSE (its kernel doesn't turn it on: exception 6, found b
 with PHI_IR32=1), so there a method with a float or a vec stays the generator's, whose floats are
 the FPU's. With that, all 820 tests pass with PHI_IR32=1 and without it, and PHI-OS's.
 
+**On by default for 32-bit programs too (2026-11-16, the user's choice: "on now", before 0.1.0,
+so their Windows run tests 32-bit Windows through it as it does 64-bit).** PHI_IR32=0 leaves
+32-bit programs to the generator (PHI_IR=0, every program). Kernels, 16-bit code and debug builds
+stay the generator's. Checked: the 820 tests, the 209 32-bit ones with PHI_IR32=0 and the 211
+64-bit ones with PHI_IR=0, phi fuzz code, numbers and objects, the code libraries' 7 test runs
+and PHI-OS's. tests/README.md says how to run both ways.
+
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:
 `marks:((Bump) & 3) is next;` stored next as Bump left it, not as it was (a store works out its

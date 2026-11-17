@@ -30,7 +30,7 @@ namespace Phi.Compiler.CodeGen
         {
             // a method that uses a vec is always the intermediate form's: the generator has no vectors
             bool vectors = UsesVec(m);
-            // (32-bit programs through it too, while it learns them: PHI_IR32=1, and only what Fits32 says it writes)
+            // (32-bit programs through it too, only what Fits32 says it writes; PHI_IR32=0 leaves them to the generator)
             bool x32 = !bits64 && !vectors && Ir32Wanted && IrWanted && unit.Kind == UnitKind.Program && debugInfo == null;
             if (!vectors && !x32 && (!IrWanted || !bits64 || unit.Kind != UnitKind.Program || debugInfo != null)) return false;
             // (PHI_IR_SKIP=A.B,C.D leaves those methods to the generator: for finding which one a difference is in)
@@ -72,8 +72,11 @@ namespace Phi.Compiler.CodeGen
 
         static bool Lane64(TypeKind k) => k is TypeKind.I64 or TypeKind.U64;
 
-        /// <summary>PHI_IR32=1: 32-bit programs' methods through the intermediate form, where it writes them (see Fits32).</summary>
-        static readonly bool Ir32Wanted = Environment.GetEnvironmentVariable("PHI_IR32") == "1";
+        /// <summary>
+        /// 32-bit programs' methods through the intermediate form too, where it writes them (see
+        /// Fits32): on by default (2026-11-16, the user's choice), PHI_IR32=0 leaves them to the generator.
+        /// </summary>
+        static readonly bool Ir32Wanted = Environment.GetEnvironmentVariable("PHI_IR32") is not ("0" or "off");
 
         /// <summary>
         /// What the emitter writes in 32-bit code so far, or null when it writes all of a method: values
