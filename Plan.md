@@ -4131,6 +4131,9 @@ Then to 1654 (38 left): loops made vector code, as in 64-bit code (SSE2 is 32-bi
 for lanes of i64s and a u32 made a float or back, which 64-bit code works in 64-bit registers
 (the translation would make those 32 bits without a word: refused instead). The code libraries'
 7 test runs pass with PHI_IR32=1 too.
+A PHI OS program has no SSE (its kernel doesn't turn it on: exception 6, found by the whole suite
+with PHI_IR32=1), so there a method with a float or a vec stays the generator's, whose floats are
+the FPU's. With that, all 820 tests pass with PHI_IR32=1 and without it, and PHI-OS's.
 
 *A store's order, in the generator (2026-11-16).* `phi fuzz code` (seed 3625713) found the
 generator storing a plain value after working out where it goes, when that called something:

@@ -50,7 +50,7 @@ namespace Phi.Compiler.CodeGen
                 return true;
             }
             IrPeephole.Run(fn);
-            if (x32 && Fits32(fn) is string not32)
+            if (x32 && Fits32(fn, sse: Host.IsLinux() || Host.IsWindows()) is string not32)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: in 32-bit code, {not32}");
                 return false;
@@ -80,8 +80,10 @@ namespace Phi.Compiler.CodeGen
         /// of 32 bits (no i64, f64 or vec), numbers worked out, read and written, calls of methods,
         /// index checks, and the control flow; why not, for PHI_IR_TRACE.
         /// </summary>
-        static string? Fits32(IrFunction fn)
+        static string? Fits32(IrFunction fn, bool sse)
         {
+            // (a PHI OS program has no SSE: its kernel doesn't turn it on, and the generator's floats are the FPU's)
+            if (!sse && fn.Values.Any(v => v.Float || v.Vec)) return "a float or a vec, on a system without SSE";
             foreach (Block b in fn.Blocks)
             {
                 foreach (Instr i in b.Instrs)
