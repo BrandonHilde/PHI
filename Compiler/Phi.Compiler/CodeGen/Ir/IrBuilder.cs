@@ -919,6 +919,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     Mark(cd);
                     Opnd value = cd.Values.Count == 1 ? Value(cd.Values[0], classVar.Type)
                         : classVar.Type.IsVec ? ZeroVec() : IsF(classVar.Type) ? FloatConst(0.0) : Opnd.Const(0);
+                    // (one a loop round this holds in a register is set there, as an assignment sets it)
+                    if (!heldInMemory && held.TryGetValue(classVar, out VReg? holds))
+                    {
+                        if (value.IsImm) Emit(new ConstI { Dst = holds, Value = value.Imm });
+                        else Emit(new CopyI { Dst = holds, Src = value });
+                        return;
+                    }
                     Emit(new StoreI { Place = kept, Src = Small(value, Is64(classVar.Type)), Kind = KindOf(classVar.Type) });
                     return;
                 }
