@@ -1,7 +1,15 @@
 # Moving PHI's development to a Mac
 
-Written 2026-11-17 on the Linux machine, from reading the code. **None of it has been run on
-a Mac.** Each step says how to check it; where a step turns out wrong, fix this file.
+Written 2026-11-17 on the Linux machine, from reading the code, and then carried out on the
+Mac. **Where it stands (2026-11-18):** stages 1 to 3 are done (development is on the Mac,
+with Linux programs run in a Lima machine by `PHI_LINUX_RUN=lima`), and the ARM target
+further down exists as native macOS programs and apps (`--target macos`), merged into `main`
+at 7ff7c04: 218 of the 446 tests run as macOS programs and pass, `phi test` is 1052 runs,
+and over the benchmarks a macOS program takes 1.13 times clang 21 `-O2`'s time. Stage 4
+(real x86 from GitHub's machines) is on hold with the release work: the Linux machine is
+still where x86 is timed, and Windows where its programs are run. The stages below are as
+they were written, with what was found added; "macOS programs: where they are" is the
+running account of the target.
 
 ## The short of it
 
@@ -347,6 +355,9 @@ but makes Mach-O objects: for macOS programs, not Linux ones.)
 
 macOS programs are a further step: another file format, a
 signature every program must carry, and Apple's system library in place of system calls.
+(That step was taken first, since the Mac runs them itself: the next section. ARM Linux
+programs, and PHI-Assembler, wait; the user's reason for PHI-Assembler is self-hosting on
+PHI OS, on hold until a release is out.)
 
 ### macOS programs: where they are (`phi build --target macos`)
 

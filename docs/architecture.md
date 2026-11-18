@@ -36,13 +36,16 @@ next to it at run time.
 ```
 file.phi ─▶ Lexer ─▶ Parser ─▶ (use: more files) ─▶ Binder ─┬▶ new path: IrBuilder ─▶ IrPeephole ─▶ RegisterAllocator ─▶ IR emitter ─┬▶ .asm ─▶ NASM ─▶ Builder ─▶ .img, ELF, .exe
                                                             └▶ X86Generator (everything else) ─────────────────────────────────────┘
+
+a macOS program:                                    Binder ─▶ IrBuilder ─▶ (methods put in) ─▶ IrPeephole ─▶ RegisterAllocator ─▶ ARM back end ─▶ program.s ─▶ clang ─▶ NAME, NAME.app
 ```
 
-Each method goes one of two ways (see [The new path](#the-new-path-codegenir) below); both
-read the binder's checked program and write into the same .asm file.
+On x86 each method goes one of two ways (see [The new path](#the-new-path-codegenir) below);
+both read the binder's checked program and write into the same .asm file. A macOS program
+goes through the new path whole, to [the ARM back end](#the-arm-back-end-codegena64).
 
 [PhiCompiler.cs](../Compiler/Phi.Compiler/PhiCompiler.cs) runs the stages; the `phi` command's
-[Builder.cs](../Compiler/Phi.Cli/Builder.cs) runs NASM and assembles the image.
+[Builder.cs](../Compiler/Phi.Cli/Builder.cs) runs NASM (or clang) and assembles the image.
 
 ### Lexer and parser (`Syntax/`)
 
@@ -154,8 +157,9 @@ parameters in their fixed variables.
 ### The new path (`CodeGen/Ir/`)
 
 The optimiser: a method's checked tree becomes a small intermediate form, which is tidied,
-given registers and written out as x86. It is on by default for 64-bit and 32-bit programs,
-and is meant to become PHI's only code generator.
+given registers and written out as x86, or as ARM for a macOS program. It is on by default
+for 64-bit and 32-bit programs, it is all a macOS program has, and it is meant to become
+PHI's only code generator.
 
 1. [IrBuilder](../Compiler/Phi.Compiler/CodeGen/Ir/IrBuilder.cs) (with `.Arrays`, `.Text`,
    `.Loops`, `.Vec`, `.Outer` and `.Objects`) turns a method into the form defined in
@@ -185,16 +189,58 @@ To find which path is at fault, and where:
 | `PHI_IR_SKIP=Class.Method` | one method goes to the generator |
 | `PHI_IR_TRACE=1` | which methods took the new path, and why the others didn't; `2` also prints each method's form |
 | `PHI_IR_REGS=1` | each value's live range, and whether it got a register or a frame slot |
+| `PHI_IR_VERIFY=1` | where a value is made in a register another live value has (the allocator checking itself) |
+| `PHI_INLINE_TRACE=1` | macOS programs: each method put in where it's called, with its form |
 
 A wrong form is the builder's; a right form with wrong registers the allocator's; right
 registers with wrong instructions the emitter's. Every change here is checked against the
 generator: the tests run both ways ([tests/README.md](../tests/README.md)), and `phi fuzz`
 compares random programs' output with what they must print.
 
+### The ARM back end (`CodeGen/A64/`)
+
+A macOS program (`--target macos`) is ARM code for Apple Silicon, and all of it comes from
+the form: [A64Generator](../Compiler/Phi.Compiler/CodeGen/A64/A64Generator.cs) has no
+generator behind it. A class's own statements are built as a method, the routines a struct
+or an array needs (free, clone, compare, assign) are built as the form too
+(`A64Generator.Objects.cs`), and what the form doesn't take is an error when the program is
+built ("… which macOS programs can't do yet"), so `phi test --target macos` runs exactly the
+tests that build.
+
+- **One form, two back ends.** The IR builder is shared. What only ARM's builds do is behind
+  its `arm` switch, so x86's code stays as it was: a test, `AsmSnapshotTests`, hashes the
+  x86 code of every test and sample on every system (asked for with `PHI_ASM_SNAPSHOT`), and
+  a change meant for ARM shows there as no difference at all.
+- **The same answers.** What x86's instructions do and ARM's don't is made the same, so the
+  tests' expected output is shared: dividing by zero (and the smallest number by -1) is the
+  same error with its line, a float turned into a whole number out of range gives x86's
+  answer, `sin` and `cos` of a huge number, an `f16`'s rounding, and what a `vec` does lane
+  for lane (NEON for SSE2).
+- **Calls** are PHI's own between PHI methods, as on x86 (arguments in the frame, the first
+  highest; the result in `x0`, `d0` or `q0`), and C's for the runtime's routines and outside
+  libraries. Values are in `x10` to `x15` and `x19` to `x27` (and `v16` to `v27`); `x0` to
+  `x9`, `x16` and `x17` are the emitter's own, and `x28` is the thread's block.
+- **What it does for speed**, each before or after registers are given out
+  (`A64Generator.Inline.cs`, `A64Generator.cs`): a small method is put in where it's called,
+  up to three deep, its lines still its own file's; a short if and else that set one variable
+  become a choice with no jump (`csel`, `csinc`); a loop keeps the class variables it changes
+  in registers, by the generator's rules; an index made 64 bits goes into the read itself
+  (`[x1, w2, uxtw #2]`); a value made and read at once is made in `x0`; and a method that
+  may return at once saves its kept registers only on the way that goes on.
+- **Assembly for clang.** Its text is `program.s`, with the runtime from `lib/arm64_macos/`
+  pasted in as NASM's is. [Builder.cs](../Compiler/Phi.Cli/Builder.cs) (`AssembleMacOS`) has
+  Apple's clang assemble it and link it with `libSystem` (and `libobjc` and frameworks when
+  the program names them with `use '…'`), and the linker signs it. Faults (a bad address, a
+  stack run out) arrive as signals, and `faults.s` turns each into PHI's error with its line,
+  found in a table of line marks the program carries.
+
+When a macOS program is wrong and the same program for `linux64` is right, the fault is
+here or behind `arm` in the builder; when both are wrong, it's before them.
+
 ### The assembly library
 
-[Library.cs](../Compiler/Phi.Compiler/CodeGen/Library.cs) loads `lib/<target>/*.asm`. Each
-file starts with a header:
+[Library.cs](../Compiler/Phi.Compiler/CodeGen/Library.cs) loads `lib/<target>/*.asm` (for a
+macOS program, `lib/arm64_macos/*.s`, with the same headers). Each file starts with a header:
 
 ```nasm
 ; provides: OS_SetupKeyboardInterupt OS_GetKey OS_IsKeyDown ...
@@ -233,6 +279,12 @@ in front of the code ([X86Generator.cs](../Compiler/Phi.Compiler/CodeGen/X86Gene
 library is `lib/x86_32_linux/` or `lib/x86_32_windows/` instead of `lib/x86_32_user/`: the
 same labels (`OS_ReadFile`, `phi_exit` ...), answered by that system.
 
+A macOS program is the one that is linked: Apple requires its programs to be signed and to
+reach the system through its libraries, so the builder hands `program.s` to clang
+(`PHI_CLANG`, or `/usr/bin/clang` from Xcode's Command Line Tools), which assembles it,
+links it and signs it. `--app` then makes `NAME.app` round it (an `Info.plist`, the program
+in `Contents/MacOS`, signed again as a bundle), and `--debug` a `NAME.dSYM` for lldb.
+
 ### Compiled libraries
 
 `phi build NAME.phi --library` ([Builder.cs](../Compiler/Phi.Cli/Builder.cs), `BuildLibrary`)
@@ -263,7 +315,8 @@ lines, with `dd label + n` at each address, or `dd label + n - $` where it's rel
 fills in every address and the ELF and PE headers stay where they are. Only the final build
 knows the whole program, so what depends on that is a label in the library's code and is written
 then: each interface's place in a type table (`phi_slot_Shape`), the type tables, and an outside
-function's import slot. A class variable's label is always `VALUE_Class_name` so nothing else can
+function's import slot. (For macOS, built on a Mac, the library's code is clang's object file,
+kept whole in the `.philib` and handed to the program's link: `A64Generator.Library.cs`.) A class variable's label is always `VALUE_Class_name` so nothing else can
 change it, and the library's list of lines joins the program's. Any compiled library makes the
 program one that catches errors (`Catches`), since its code was compiled to allow for that.
 
@@ -316,10 +369,11 @@ class variables.
 | Kind | Where | Runs with |
 |---|---|---|
 | compiler unit tests | `Compiler/Phi.Compiler.Tests/` | `dotnet test PHI.sln` |
-| programs in QEMU | `tests/*.phi` | `phi test` |
+| programs in QEMU, and as Linux, Windows and macOS programs | `tests/*.phi` | `phi test` (`--target linux`, `windows` or `macos` for those alone) |
 | the tutorial's examples | `docs/examples/*.phi` | `phi test docs/examples` |
 | random programs with known output | written as it runs; wrong ones kept in `fuzz-failures/` | `phi fuzz code`, `numbers`, `objects` |
-| speed against gcc and C# | `bench/` (results in `bench/RESULTS.md`) | `phi compare` |
+| speed against C and C# | `bench/` (results in `bench/RESULTS.md`, from x86 Linux) | `phi compare` |
+| x86's code, unchanged by a change meant for something else | every test and sample, hashed | `PHI_ASM_SNAPSHOT=FILE dotnet test --filter AsmSnapshot` |
 | the code libraries, PHI OS | `../PHI-Code-Library`, `../PHI-OS` | `pwsh ./build.ps1 -Test`, `./test.sh` |
 
 A QEMU test is `NAME.phi` plus one of:

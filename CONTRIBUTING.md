@@ -15,8 +15,10 @@ phi test
 phi test docs/examples
 ```
 
-The QEMU tests take a couple of minutes; `phi test -f NAME` runs only the tests whose name
-contains `NAME`.
+The QEMU tests take a few minutes; `phi test -f NAME` runs only the tests whose name
+contains `NAME`, and `phi test --target linux` (or `windows`, or `macos` on a Mac) only the
+tests that run as that system's programs, without QEMU. On a Mac, Linux programs are x86 and
+run in a Linux machine: see [getting started](docs/getting-started.md) for `PHI_LINUX_RUN`.
 
 ## Find your way around
 
@@ -26,7 +28,8 @@ click a box for its files, or pick a symptom to see where to look first. Some co
 
 | To... | Change |
 |---|---|
-| add a statement or operator | `Syntax/Parser.cs` (and `Ast.cs`), `Semantics/Binder.cs`, `CodeGen/X86Generator.cs` |
+| add a statement or operator | `Syntax/Parser.cs` (and `Ast.cs`), `Semantics/Binder.cs`, `CodeGen/X86Generator.cs`, and `CodeGen/Ir/IrBuilder.cs` for the intermediate form, which is all a macOS program is built from |
+| change the code a macOS program gets | `CodeGen/A64/` (the ARM back end) and `lib/arm64_macos/` (its runtime, assembly for clang) |
 | add a built-in function | an entry in `Semantics/Builtins.cs`, and a routine with that label in the right `lib/<target>/` file |
 | add a driver or library | a `.phi` file in `lib/phi/`, used with `use folder.name;` |
 | add a system call | `lib/phi/proc/process.phi` (kernel side, numbers 16+) and `lib/x86_32_user/system.asm` (program side) |
@@ -39,7 +42,12 @@ click a box for its files, or pick a symptom to see where to look first. Some co
   program, run `phi test -f NAME`, check `NAME.actual`, and rename it to `NAME.expected`. If it
   works in both 16-bit and 32-bit mode, make its classes `:Library` so it runs in both. For
   compiler errors, a `NAME.errors` test or a unit test.
-- **Run everything** (the four commands above) and make sure it all passes.
+- **Run everything** (the four commands above) and make sure it all passes. After a change to
+  code generation, run `phi fuzz code`, `numbers` and `objects` too, with a `--count` of a
+  few hundred: each run writes new programs, and they find what the fixed tests don't.
+- **A change meant for one back end shouldn't move the other.** Record x86's code before it
+  and check it after: `PHI_ASM_SNAPSHOT=FILE PHI_ASM_SNAPSHOT_MODE=record dotnet test --filter
+  AsmSnapshot`, then the same without the mode.
 - **Update the docs** if you changed what PHI accepts or does: [docs/language.md](docs/language.md)
   for the language, the tutorial if an example changes, and [Plan.md](Plan.md) if you finished
   part of the roadmap.
@@ -61,8 +69,11 @@ click a box for its files, or pick a symptom to see where to look first. Some co
 [Plan.md](Plan.md) lists what's next. Two big goals are **on hold until every other feature
 in it is implemented**:
 
-- **C compatibility:** calling C functions and linking C object files
-- **Self-hosting:** rewriting the PHI compiler in PHI
+- **C compatibility:** linking C object files, and calling C functions everywhere (a Windows
+  program calls a DLL's functions and a macOS program any library's today; Linux and PHI OS
+  programs can't yet)
+- **Self-hosting:** rewriting the PHI compiler in PHI (with an assembler of PHI's own, which
+  it needs on PHI OS)
 
 Both build on the language and library as a whole, so they're best started once the rest is
 finished and settled. Please don't start on them yet; pick something from the rest of
@@ -72,7 +83,9 @@ the plan instead.
 
 - New shell commands (`rm`, `write`, `sleep`, `top`)
 - More tutorial exercises, with their solutions as tested examples
-- Running PHI on Linux or macOS, and fixing what breaks
+- Running PHI on Windows, and fixing what breaks (it's developed on Linux and a Mac)
+- What a macOS program can't do yet: build a program with `--target macos`, and an error
+  ending "which macOS programs can't do yet" names the gap
 - The items under "Where things stand" in [Plan.md](Plan.md), for something bigger
 
 ## License

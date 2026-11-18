@@ -33,7 +33,7 @@ output, which is usually a triple fault (`phi run --debug` logs interrupts and r
 
 A test that times out also says where it was: each CPU (in QEMU) or each thread (a Linux
 or Windows program), as the PHI line or library routine it was in and the calls that led
-there, found on its stack:
+there, found on its stack (a macOS program's isn't reported yet):
 
 ```
 FAIL hang_threads (linux)
@@ -106,7 +106,17 @@ them (it uses a driver, say) or has an `.input`, `.web`, `.sound`, `.machines` o
 file. One that builds but needs a PHI OS machine (it writes to the screen's memory) says
 so with a comment line, `# runs only on PHI OS: why`. A test that is a `phi.Name:Program`
 runs only on the other systems (see `host_program.phi`). `phi test --target linux` (or
-`windows`) runs just those, without QEMU, in a few seconds.
+`windows`, or `macos`) runs just those, without QEMU, in a few seconds.
+
+On a Mac with Apple Silicon, such a test runs as a native macOS program too (`numbers
+(macos)`), wherever a macOS program can be built from it: everything in one goes through the
+intermediate form, and a test that uses what the form doesn't take yet is left to the other
+systems, so `phi test --target macos` says how many it ran (`218 of 446 tests run as macOS
+programs`). Linux programs are x86, which a Mac runs in a Linux machine: with
+`PHI_LINUX_RUN=lima` (or another command that runs a program there) they're run too, and
+without it they're set aside and named. What's meant to differ on macOS goes in
+`NAME.macos.expected`. Tests of what only macOS has start with `macos_` (see
+`macos_outside_program.phi`: its own libraries' functions called as C calls them).
 
 A test with `NAME.cdb` is about a `--debug` build's `.pdb`: it runs in Microsoft's debugger, as
 a 32-bit and a 64-bit Windows program, where `cdb` is installed. `NAME.cdb` is the commands, and
@@ -340,6 +350,10 @@ both stay tested: after a change to either, run the tests both ways, and fuzz bo
 32-bit code the form writes what it writes for 64-bit with each register its 32-bit one; a
 change to the emitter must leave 64-bit code as it was.
 
+A macOS program has only the form (there's no generator behind it), so its other way is
+the other CPU: the same program with `--target linux64`. Right there and wrong on the Mac
+is ARM's back end (`CodeGen/A64/`).
+
 ```
 phi test --target linux64              # through the form where it can
 PHI_IR=0 phi test --target linux64     # the generator only
@@ -347,7 +361,24 @@ phi test --target linux                # 32-bit, through the form where it can
 PHI_IR32=0 phi test --target linux     # 32-bit, the generator only
 PHI_IR_TRACE=1 phi build x.phi --target linux64   # which methods went through it, and why not the others
 PHI_IR_SKIP=Class.Method phi run x.phi --target linux64   # one method left to the generator
+PHI_IR_VERIFY=1 phi build x.phi --target macos    # says if two live values were given one register
+PHI_INLINE_TRACE=1 phi build x.phi --target macos # each method put in where it's called
 ```
+
+## x86's code kept still: `PHI_ASM_SNAPSHOT`
+
+A change meant for one back end shouldn't move the other. `AsmSnapshotTests` (in the
+compiler's unit tests, only when asked for) builds every test and sample for every x86 system
+and hashes the assembly, so a difference of one instruction anywhere shows:
+
+```
+PHI_ASM_SNAPSHOT=snap.txt PHI_ASM_SNAPSHOT_MODE=record dotnet test --filter AsmSnapshot   # before the change
+PHI_ASM_SNAPSHOT=snap.txt dotnet test --filter AsmSnapshot                               # after: fails on any build that differs
+```
+
+`PHI_IR=0` and `PHI_IR32=0` are read once, so each needs a run and a file of its own. A
+change that's meant to move x86's code is recorded again after it, with what changed
+(which builds, and why) said in the commit.
 
 ## Random programs: `phi fuzz code`
 
@@ -357,7 +388,7 @@ arrays by index and through pointers, math and division by every kind of constan
 loops in loops, calls, and structs that take types: a `Box<Item>` with fields, an array and
 methods, used as `Box<int>` and `Box<u32>`), and the fuzzer works out what it prints as it writes it, with 32-bit
 math that wraps as PHI's does. It then builds the program for each system this computer runs
-(32- and 64-bit Linux here) and compares. A difference is a bug in the compiler, or in the
+(32- and 64-bit Linux; macOS on a Mac) and compares. A difference is a bug in the compiler, or in the
 fuzzer's idea of the language (`Compiler/Phi.Cli/CodeFuzzer.cs`).
 
 ```
@@ -372,7 +403,9 @@ A program that comes out wrong is kept in `fuzz-failures/` (or `-o`'s folder) wi
 do what PHI stops for (an index out of range, dividing by zero, a number that changes on its
 way to another type), so they don't test those errors: the tests in this folder do.
 
-Run it after any change to the code generator. When adding an optimisation, break it on
+Run it after any change to the code generator, with a `--count` of a few hundred or more:
+without `--seed` each run writes new programs, and one bug in ARM's code was in a single
+program of some thousands (kept as `far_slots_program.phi`). When adding an optimisation, break it on
 purpose once and see that the fuzzer notices: if it doesn't, its programs don't reach the
 new code yet, and `CodeFuzzer.Maker` needs to make some that do.
 

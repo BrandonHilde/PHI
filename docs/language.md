@@ -1,8 +1,8 @@
 # PHI language reference
 
 This describes the language as the compiler in `Compiler/Phi.Compiler` implements it today:
-16-bit programs and 32-bit kernels and their programs on PHI OS (run in QEMU), and programs for
-Linux and Windows, in 32 or 64 bits. Ideas that aren't implemented yet live in [Syntax/](../Syntax)
+16-bit programs and 32-bit kernels and their programs on PHI OS (run in QEMU), programs for
+Linux and Windows, in 32 or 64 bits, and programs for macOS on Apple Silicon. Ideas that aren't implemented yet live in [Syntax/](../Syntax)
 and [Plan.md](../Plan.md).
 
 **The core language is frozen** while it's tested and its code is made faster, ahead of the
@@ -1132,7 +1132,7 @@ else
 - **The CPU's errors are caught too**: dividing a whole number by zero
   (`ErrorKind.DIVIDE`), using an empty object or a null pointer (`ErrorKind.EMPTY`), and
   memory that isn't there or an instruction the CPU refuses (`ErrorKind.ACCESS`), in a
-  kernel, in a PHI OS program, and in a Linux or Windows program (32 or 64 bits) alike,
+  kernel, in a PHI OS program, and in a Linux, Windows or macOS program alike,
   with the line they happened on (`division by zero on line 42 in world.phi`; inside an
   asm block or the runtime there's none, and the message is the text alone). Uncaught, a
   program prints the error and ends with -1, as for any error, whether or not it catches
@@ -1314,9 +1314,10 @@ t.next.id is 3;                 # through a pointer field too
 
 A `vec<T>` is several numbers worked on by one instruction: as many `T`s as a vector
 register holds. You say what the numbers are, and the build says how many fit: 16 bytes
-today, every x86-64 CPU's SSE2, so 16 `u8`s, 8 `i16`s, 4 `f32`s or 2 `f64`s. `T` is any
-whole number (`i8` to `u64`, `int`) or `f32` or `f64`. It's for 64-bit programs
-(`--target linux64` or `windows64`), in methods.
+today, every x86-64 CPU's SSE2 (and ARM's NEON in a macOS program, with the same answers),
+so 16 `u8`s, 8 `i16`s, 4 `f32`s or 2 `f64`s. `T` is any whole number (`i8` to `u64`, `int`)
+or `f32` or `f64`. It's for 64-bit programs (`--target linux64`, `windows64` or `macos`), in
+methods.
 
 ```phi
 vec<f32> a: 1.0 2.0 3.0 4.0;        # a value for each lane
@@ -1430,7 +1431,7 @@ while int j: 0; j < n; j++;
 `PHI_IR_TRACE=1` says, for each loop, whether it was and why not; `PHI_VECTORIZE=0` leaves
 every loop as written. It's for 64-bit programs.
 
-**Where it works.** In 64-bit programs (`--target linux64` or `windows64`): in methods, a
+**Where it works.** In 64-bit programs (`--target linux64`, `windows64` or `macos`): in methods, a
 class's own statements, method values (`method<vec<int>: int>`), and with errors caught
 around it. A 32-bit program that uses one is an error that says so (32-bit code is the older
 code generator's, which has no vectors).
@@ -2177,7 +2178,7 @@ are written to the disk image, so a kernel sees them the next time it boots the 
 
 **Reading a big file a piece at a time.** `fs.stream` keeps a file open and remembers its
 place, so reading on doesn't look the path up or walk its clusters again. A program's
-`user.stream` has the same calls, on Linux and Windows past 4 GB, and on PHI OS with
+`user.stream` has the same calls, on Linux, Windows and macOS past 4 GB, and on PHI OS with
 `use fs.stream_calls` in its kernel:
 
 ```phi
@@ -2385,7 +2386,7 @@ log (Threads.Done: t);                     # whether it has finished, without wa
   (`sums:part is sum;`).
 
 **Threads in programs** (in progress, H5 in [Plan.md](../Plan.md)). A program has the
-same calls, from `user.threads`, on PHI OS, Linux and Windows:
+same calls, from `user.threads`, on PHI OS, Linux, Windows and macOS:
 
 ```phi
 use user.threads;
@@ -2464,7 +2465,8 @@ locked counter_lock
 - Both need 32-bit or 64-bit code: 16-bit code runs on one core.
 
 **What threads see of each other's writes** (PHI's memory model). The same on PHI OS,
-Linux and Windows, in kernels and programs, 32 and 64 bits:
+Linux, Windows and macOS, in kernels and programs, 32 and 64 bits, on x86 and on ARM (whose
+CPU orders less by itself: there `locked`, `atomic` and `volatile` are what make it so):
 
 - **A `locked` block sees everything the last thread to hold its lock wrote** before it
   gave the lock back, in that block or before it. Data that's only ever changed inside
@@ -2798,6 +2800,10 @@ says which, `:0` if it isn't set; a server that wants authentication refuses, an
 can't open). On both, `App.OpenWindow` gives -1 (starting a program by a path on its disk
 is PHI OS's way), and the thread that opened the window draws and takes the events. The
 font is Windows' Consolas in the same 8x16 cells, or the X server's own (ASCII only).
+
+**On macOS** it's the same (`--target macos`, and `--app` for one the Finder opens):
+`window_macos.phi` answers the calls with AppKit, through the Objective-C runtime, and draws
+the program's pixels with CoreGraphics. See [Programs on macOS](#programs-on-macos).
 `samples/desktop.rootfs/paddles.phi` is a small game that runs on all of them.
 
 **What a program with a window can ask for.** On top of everything a
@@ -2857,7 +2863,7 @@ does; the wheel scrolls it; and `notes.text` is all of it, each line ending with
 doesn't wrap: a long line scrolls sideways as the caret goes along it.
 
 **Several windows.** A program's window is number 0, which is App's, and it can open more, each
-with a number of its own, on PHI OS's desktop, Windows and Linux alike:
+with a number of its own, on PHI OS's desktop, Windows, Linux and macOS alike:
 
 ```phi
 int tools: (Windows.Open: 200 300);             # another window; -1 if it can't (7 at most)
@@ -2950,11 +2956,12 @@ same for a string.
 ## Sound
 
 `audio.sound` plays music: songs written as text, and WAV files. It's the same in a program
-on PHI OS, Windows and Linux, and in a 32-bit kernel, which also says what it plays them on
+on PHI OS, Windows, Linux and macOS, and in a 32-bit kernel, which also says what it plays them on
 and reads them from (`use drivers.ac97; use fs.fat16;`). `phi run` and `phi test` give every
 machine an AC'97 sound card, which `drivers.ac97` drives; **on Windows** a program's sound
-goes through winmm's `waveOut`, and **on Linux** to PulseAudio over its socket, with no library
-needed, as a window speaks to X. PHI OS's programs and those two answer the same `OS.Sound`
+goes through winmm's `waveOut`, **on Linux** to PulseAudio over its socket, with no library
+needed, as a window speaks to X, and **on macOS** to an audio queue of AudioToolbox's. PHI
+OS's programs and those three answer the same `OS.Sound`
 calls, 16-bit stereo at 8000 to 48000 frames a second, and a machine with no sound gets
 `-1` from them and `there is no sound card` from `Sound.error`.
 
@@ -3110,7 +3117,7 @@ once.
 ([memory.program_heap](../lib/phi/memory/program_heap.phi), added automatically) starts
 empty and grows when nothing in it fits, asking the kernel for at least 64 KB at a time,
 up to 124 MB (and only while the kernel has memory to spare). How far it may grow is the
-program's to say: `Heap.most_bytes is 600000000;` (see below for Linux and Windows). `new`
+program's to say: `Heap.most_bytes is 600000000;` (see below for Linux, Windows and macOS). `new`
 gives 0 when there's no more, and an object that can't get memory ends the program with
 `PHI: out of memory for a new object on line N`. Freeing a pointer `new` didn't give out
 ends it with -1. All of it goes back to the kernel when the program ends. A freed block
@@ -3305,7 +3312,7 @@ library for that system asks Linux (its system calls) or Windows (`kernel32.dll`
 instead. Only `Program` and `Library` classes build for another system; kernels and
 16-bit programs are PHI OS's own.
 
-| In a program | On Linux and Windows |
+| In a program | On Linux and Windows (and macOS, with its own calls behind each) |
 |---|---|
 | `log` | standard output, a whole statement at a time |
 | `debug` | standard error (what the serial port is on PHI OS) |
@@ -3435,7 +3442,7 @@ code that is one system's alone stays in the files marked for it.
 Up to six values; the number goes in `eax`, and the answer comes back there. Windows has
 no system calls a program makes itself: its programs call DLLs' functions.
 
-The standard library does this itself: in a Linux or Windows program, time (`OS.Sleep`,
+The standard library does this itself: in a Linux, Windows or macOS program, time (`OS.Sleep`,
 `OS.GetTicks`, `OS.Now`, `OS.Yield`), files (`OS.ReadFile` to `OS.Rename`), the network
 (`net.sockets`' calls), threads (`user.threads`' calls) and a window (`gui.app`'s calls) are
 done by modules in `lib/phi/host/` (`time_*.phi`, `files_*.phi`, `net*.phi`, `threads*.phi`,
@@ -3445,7 +3452,8 @@ the parts it uses, as it gets the heap only if it uses `new`. Two modules may de
 outside function if they declare it the same way (a program's own module and these);
 declaring it differently is an error.
 
-**Outside functions.** A library outside PHI (on Windows, a DLL) is brought in with `use`
+**Outside functions.** A library outside PHI (on Windows, a DLL; on macOS, a `.dylib` or a
+framework) is brought in with `use`
 and its file's name, quoted, under a name that reads as a class's; each of its functions
 the module calls is declared once, as a system call is but without a number, and called by
 that name:
@@ -3473,9 +3481,30 @@ by one) and calls it as Windows' functions are called: in 32-bit code (stdcall) 
 are pushed last first and the function takes them off; in 64-bit code the first four go in
 `rcx`, `rdx`, `r8` and `r9` and the rest on the stack, above 32 bytes the function may
 write, with the stack 16 bytes aligned. A function takes and gives numbers, `bln`, `chr`,
-enums and pointers; floats, and 64-bit numbers in a 32-bit program, aren't there yet. For
-now outside libraries are only in `:Windows` modules, whose classes alone may call them;
-Linux's and macOS's (a library loaded with the program) come with H7.
+enums and pointers; floats, and 64-bit numbers in a 32-bit program, aren't there yet on
+Windows. Outside libraries are in `:Windows` and `:MacOS` modules, whose classes alone may
+call them; Linux's (a library loaded with the program) come with H7.
+
+On macOS a module's classes are `:MacOS`, and the functions are called as C calls them on
+Apple's ARM (the first eight whole values in `x0` to `x7`, floats in `d0` to `d7`), with
+floats (`f64`, `f32`) and 64-bit numbers as well as the rest. Two things C has are written
+out: `...` where a function takes any number of values, before the ones that go there
+(Apple passes those on the stack), and `Name = 'symbol':` for a C function known by more
+than one PHI name, each with the values that use of it takes (`objc_msgSend`, which is
+called with whatever the message takes):
+
+```phi
+use 'libSystem.B.dylib' as LibC;
+use 'libobjc.A.dylib' as ObjC;
+
+LibC.open: ptr<u8> path int flags ... int mode;
+LibC.write: int fd ptr<u8> data u64 count: i64;
+ObjC.Send = 'objc_msgSend': ptr<u8> object ptr<u8> selector: ptr<u8>;
+ObjC.SendF64 = 'objc_msgSend': ptr<u8> object ptr<u8> selector: f64;
+```
+
+A framework is named by its path (`use '/System/Library/Frameworks/AppKit.framework/AppKit'
+as AppKit;`), and the program is linked with each library it names.
 
 **Being called from outside.** `addr foreign Name` is where outside code can call a method:
 a window system's window procedure, say, or anything else that takes a function. The
@@ -3819,8 +3848,7 @@ asm.Double
 ```
 
 Call them with `call Double;` (or `call asm.Double;`). `call x is Double;` stores what the
-block leaves in `eax`. Blocks are only included in a unit that calls them. `arm.` blocks
-are parsed but can't be called yet.
+block leaves in `eax`. Blocks are only included in a unit that calls them.
 
 In a 16-bit program the code runs in real mode with `ds = es = ss = 0`; you may change
 any general-purpose register and `fs`, but you must keep `sp`, `bp` and the other segment
@@ -3850,6 +3878,29 @@ x64.Zero                   # 64-bit code: the same, with the address in all of r
     xor eax, eax
     rep stosd
     ret
+}
+```
+
+**ARM code** (a macOS program) takes a block's `arm.Name` version, written beside the others
+the same way, in the assembly Apple's clang reads. `{name}` is a class variable's label,
+whose address takes two instructions (its page, then where in it), or a constant's value;
+what the block leaves in `w0` is its result. It may change any register but `x28`, `x29`,
+`x30` (where it returns to) and `sp`. In a method's block the method's arguments are at
+`x29 + 16` up, the last first, as an `x64.` block has them at `rbp + 16`. A block with no
+`arm.` version is an error naming it when a macOS program uses it.
+
+```phi
+arm.Zero                   # a macOS program
+{
+    adrp x9, {at}@PAGE
+    ldr x0, [x9, {at}@PAGEOFF]
+    adrp x9, {words}@PAGE
+    ldr w1, [x9, {words}@PAGEOFF]
+1:  cbz w1, 2f
+    str wzr, [x0], #4
+    sub w1, w1, #1
+    b 1b
+2:  ret
 }
 ```
 
@@ -3891,7 +3942,8 @@ when it runs. PHI OS needs no library system for this: a program is still one `N
 `.philib` in a rootfs folder isn't put on the disk.
 
 **One file for every system.** It has a version for each one the library builds for: PHI OS
-programs, PHI OS kernels, and 32 and 64-bit Linux and Windows (`--target` builds only that one).
+programs, PHI OS kernels, 32 and 64-bit Linux and Windows, and macOS when it's built on a Mac
+(`--target` builds only that one).
 One that doesn't build, like a driver on Linux, is left out and the build says why; using the library there is
 an error that says which systems it has. If none builds, those are the build's errors. 16-bit
 programs can't use one.
@@ -3947,7 +3999,7 @@ DLLs and `.so` files, and C calling PHI, are [C compatibility](../Plan.md#later)
 | `user.cut` | class `Cut` (32-bit kernels and programs): `Into: target value`, as much of `value` as fits, into a `str` |
 | `user.utf8` | class `Utf8` (any program): whole characters in UTF-8 text (see [Text past ASCII](#text-past-ascii)). `Count: text` →, `Valid: text` →, `At: text pos` → (the number of the character at byte `pos`; 0 at the end), `Size: text pos` → (the bytes it takes), `Before: text pos` → (where the character before starts), `Write: buffer code` → (the character with that number, into a buffer of 5 bytes; how many it is), `Of: code` → (the same as a `str`; 32-bit and 64-bit code), `Widen: text wide max` → (as UTF-16, for Windows) |
 | `user.text` | class `Text` (any program): `Length`, `Equal`, `EqualIgnoreCase`, `StartsWith`, `EndsWith`, `Lower: c`, `Upper: c`, `SkipSpaces`, `CopyWord: text buffer max`, `AfterWord`, `Copy: buffer text size` →, `Append: buffer text size` →, `AppendNumber: buffer n size` →, `AppendPadded: buffer n width size` → (zeros in front), `AppendSize: buffer bytes size` → (`512 bytes`, `13 KB`, `4 MB`), `TrimEnd`, `ToNumber`; the `Copy` and `Append` methods cut to fit the buffer and return the new length |
-| `user.stopwatch` | struct `Stopwatch` (32-bit kernels and programs, and programs on Linux and Windows): how long something took, in real time. `Stopwatch watch;` then `Start` (or carry on), `Stop`, `Restart` (nothing, and running), `Reset` (nothing, and stopped); `Milliseconds` → (an int), `Microseconds` → (a u64), `Seconds` → (an f64), each readable while it runs, and `Ticks` →. Any number run at once. It reads the CPU's counter (class `Clock`: `Count` →, `PerMillisecond` →), whose speed is measured against `OS.GetTicks` the first time, which takes 10 ms once (`call Clock.Measure;` at the start gets it over with) |
+| `user.stopwatch` | struct `Stopwatch` (32-bit kernels and programs, and programs on Linux, Windows and macOS): how long something took, in real time. `Stopwatch watch;` then `Start` (or carry on), `Stop`, `Restart` (nothing, and running), `Reset` (nothing, and stopped); `Milliseconds` → (an int), `Microseconds` → (a u64), `Seconds` → (an f64), each readable while it runs, and `Ticks` →. Any number run at once. It reads the CPU's counter (class `Clock`: `Count` →, `PerMillisecond` →), whose speed is measured against `OS.GetTicks` the first time, which takes 10 ms once (`call Clock.Measure;` at the start gets it over with) |
 | `user.math` | class `Math` (any program): `Abs`, `Min`, `Max`, `Clamp: value low high`, `Sign`, `Sqrt` (whole-number square root, rounded down) |
 | `memory.mem` | class `Mem` (32-bit kernels and programs): `Copy: to from count`, `Move: to from count` (the areas may overlap), `Fill: to byte count`, `Fill32: to value count`, `Equal: a b count` →, using the CPU's `rep movs` and `rep stos`. A count of 2 billion or more to any but `Equal` is an error at the call |
 | `drivers.rtc` | class `Rtc` (both kinds of program): `Read` fills in `year month day hour minute second` from the CMOS clock (UTC on QEMU); `ReadLocal` gives the time in the host's time zone (which `phi run` and `phi test` pass to QEMU; `HostZone` → reads it), or in the one `SetZone: minutes` sets, and `AddMinutes: n` moves the fields, carrying into the day, month and year |

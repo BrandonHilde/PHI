@@ -18,7 +18,16 @@ It builds each as a program for this computer: PHI in 64 and 32 bits, C with `-O
 build with `dotnet`. A language whose compiler isn't installed is left out. It needs what
 `phi build --target linux` needs (NASM), and nothing else.
 
-[RESULTS.md](RESULTS.md) is the last run that was saved.
+On a Mac with Apple Silicon it times PHI as a native macOS program (`--target macos`) beside
+Apple's clang, with no 32-bit column, and builds the C with `-ffp-contract=off`: clang on ARM
+otherwise joins a multiply and an add into one instruction that rounds once, and `mandelbrot`
+prints a different last digit than PHI's.
+
+[RESULTS.md](RESULTS.md) is the last run that was saved, on x86 Linux. Times from another
+machine or beside another C compiler aren't comparable with it (`gcc` and `clang` optimise
+some of these differently, `fib` most of all): to see whether a change made PHI slower,
+compare two runs on the same machine, and save a new file there only on purpose. On an M1
+Mac beside clang 21 `-O2`, PHI took 1.13 times its time over these (November 2026).
 
 ## A real program
 
@@ -60,7 +69,7 @@ line times weblib's JavaScript engine running its own benchmarks, and
 | `crc` | A table, shifts and exclusive ors |
 | `lists` | Making and freeing 20 million small objects (C# doesn't free: it collects) |
 | `strings` | Building text: a line from words and numbers, added 3 million times to a text that grows to 30,000 characters. C keeps its length beside it and C#'s `StringBuilder` does too; PHI's method remembers it for a `str` of its own |
-| `pixels` | Bytes 16 at a time: an image brightened (stopping at 255) and blended with another, 200 times. PHI says it with `vec<u8>` (`AddSat`, `Average`: SSE2's `paddusb` and `pavgb`); C and C# are plain loops, which gcc makes vector code of as best it can and C# doesn't. 64-bit only, so its PHI 32-bit column is empty |
+| `pixels` | Bytes 16 at a time: an image brightened (stopping at 255) and blended with another, 200 times. PHI says it with `vec<u8>` (`AddSat`, `Average`: SSE2's `paddusb` and `pavgb`, NEON's `uqadd` and `urhadd` on ARM); C and C# are plain loops, which gcc makes vector code of as best it can and C# doesn't. 64-bit only, so its PHI 32-bit column is empty |
 
 ## Adding one
 

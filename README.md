@@ -127,9 +127,10 @@ phi.Count:Program
 <h4>To Build:</h4>
 
     1. Install the .NET 10 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
-       (or set PHI_NASM / PHI_QEMU to their full paths)
+       (or set PHI_NASM / PHI_QEMU to their full paths); on a Mac, Xcode's Command Line
+       Tools as well, for native macOS programs
     2. dotnet build PHI.sln
-    3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net10.0/phi.exe):
+    3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net10.0/phi, phi.exe on Windows):
 
        phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
        phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)
@@ -199,9 +200,8 @@ ordinary programs for Linux and Windows in 32 or 64 bits, and native programs an
 macOS on Apple Silicon (`--target macos`). Next, roughly in order (the
 [roadmap](./Plan.md) has the rest):
 
-1. A core language that's solid throughout, before more is added to it: the language is
-   frozen while it's tested to its limits and its code is made faster (the
-   [roadmap](./Plan.md) says what that covers)
+1. A first release: one download with the `phi` command and these docs in it, needing only
+   the outside tools (NASM, QEMU, and clang on a Mac)
 2. More tools: hover, finding uses and renaming in the language server, debug information on
    Linux, and packages
 3. Later: 64-bit kernels, ARM beyond macOS, C compatibility, and rewriting the compiler

@@ -1001,8 +1001,9 @@ These come after the basics work:
   interrupts (`drivers.input`), and windows for programs with a desktop and widgets
   (`gui.*`). Still to do: other fonts (and text bigger than 8x16 that isn't blocky)
 - **64-bit long mode:** done for Linux and Windows programs; kernels stay 32-bit until a
-  real cloud machine needs them. Then an **ARM** backend (QEMU `virt` machine). The README's
-  planned x86→ARM translator becomes a second compiler backend.
+  real cloud machine needs them. An **ARM** back end is done for macOS programs
+  (2026-11-18: `CodeGen/A64/`, from the intermediate form, assembled by Apple's clang);
+  still to do on ARM: Linux programs, and kernels (QEMU's `virt` machine).
 - **Networking:** done: PCI, an RTL8139 driver, ARP, IPv4, ICMP, UDP, DHCP, DNS, a TCP
   client, HTTP/1.0, and a TLS 1.3 client for https (`lib/phi/net/`, `samples/web.phi`) with
   its cryptography (`lib/phi/crypto/`: SHA-256, HMAC, HKDF, AES-128-GCM, ChaCha20-Poly1305,
@@ -1017,11 +1018,17 @@ These come after the basics work:
 - **More hardware:** AHCI, PS/2 → USB, ACPI shutdown (PCI enumeration is done: `drivers.pci`)
 - **C compatibility:** call C functions and link C object files (a README goal). **On hold**
   until every other feature in this plan is implemented.
-- **Self-hosting:** rewrite the PHI compiler in PHI. **On hold** until every other feature in
-  this plan is implemented.
+- **Self-hosting:** rewrite the PHI compiler in PHI, so development can go on on PHI OS.
+  **On hold** until a release is out (the user, 2026-11-18). What it needs was looked at
+  then: an assembler of PHI's own (NASM doesn't run on PHI OS; this is what PHI-Assembler is
+  for), long file names on PHI OS, maps keyed by an object, starting other programs from a
+  Linux or macOS program, and most usefully methods that can see the variables of the method
+  they're written in (the C# compiler has some 2,300 of them).
+- **A first release:** one `.zip` with the `phi` command and the docs in it, needing only the
+  outside tools (NASM, QEMU, clang on a Mac). Next (the user, 2026-11-18).
 - **Real hardware and UEFI boot**
-- **Running on Linux, Windows and macOS** as ordinary programs: 32-bit console programs on
-  Linux and Windows are done (H1-H3); see [Running on other systems](#running-on-other-systems)
+- **Running on Linux, Windows and macOS** as ordinary programs: done on all three (Linux and
+  Windows in 32 and 64 bits, macOS on Apple Silicon); see [Running on other systems](#running-on-other-systems)
 
 ---
 
@@ -2836,7 +2843,7 @@ systems), and it's most of the distance between PHI and a language a studio coul
 | H1 | Linux, 32-bit, console | Small | `phi build hello.phi --target linux` makes a program that runs on Linux |
 | H2 | Tests on the host | Small | `phi test --target linux` runs the program tests without QEMU |
 | H3 | Windows, 32-bit, console | Medium | the same program as a Windows `.exe` |
-| H4 | 64-bit on the hosts | Large | Linux and Windows 64-bit programs (with S10), and macOS |
+| H4 | 64-bit on the hosts | Large | Linux and Windows 64-bit programs (with S10), and macOS (done, as ARM programs) |
 | H5 | The network and threads | Medium | the mmo server's world and lobby running as Linux programs |
 | H6 | The runtime in PHI | Medium | the hosts' sockets and threads written once, in PHI, with a little assembly per system |
 | H7 | Windows and graphics | Large | a PHI game window on Windows and Linux |
@@ -2928,7 +2935,10 @@ distributions don't install 32-bit support any more, and Windows on ARM emulates
 **Status: in progress.** 64-bit Linux and Windows programs (`--target linux64`,
 `--target windows64`) are done with S10's (a) and (b): ELF64 and PE32+, the System V
 system calls and the Microsoft x64 calling convention, and every program test passing on
-both. macOS is next after the 64-bit kernels; the user will test it on their Mac.
+both. **macOS is done (2026-11-18), as native ARM code for Apple Silicon** rather than
+x86-64 (`--target macos`, `lib/arm64_macos/`, `CodeGen/A64/`; no Intel Macs): Mach-O programs
+and `.app`s, assembled, linked and signed by Apple's clang. [MacPlan.md](MacPlan.md) has how
+it was done and where it stands; 218 of the tests run as macOS programs.
 
 #### Phase H5: The network and threads
 
@@ -3304,6 +3314,9 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
 - [x] `struct.Name foreign`: C's layout, in 32 and 64 bits (a real `MSG` and `SYSTEM_INFO`
   read back from Windows). PHI's own structs stay packed.
 - [ ] Floats to and from outside functions (the GPU's); libraries on Linux and macOS.
+  (macOS: done 2026-11-18, floats and all, in `:MacOS` modules, with `...` for a function
+  that takes any number of values and `Name = 'symbol':` for one C function under several
+  names. Windows' floats and Linux's libraries are what's left.)
 
 1. **A window, drawing and input** behind the calls `gui.*` and `gfx.*` already use: Win32 on
    Windows, Wayland or X11 on Linux, Cocoa on macOS, or one library that covers all three
@@ -3338,7 +3351,10 @@ because `from` is a name on 168 lines today and reserved words stay reserved):
      what the hidden test couldn't: making a window fixed-size hid it on Windows, as its
      style and whether it's showing are one word. `window_program` now shows its window off
      the screen to check. Not played yet: the 32-bit builds, and PHI OS's desktop.
-   - [ ] macOS, with H4's.
+   - [x] macOS (2026-11-18): `window_macos.phi`, AppKit through the Objective-C runtime,
+     the program's pixels drawn with CoreGraphics; several windows, dialogs, menus; sound
+     through an audio queue (`sound_macos.phi`); `--app` makes a `.app`. Seen on screen by
+     the user (sketch.app).
 2. **Sound** behind `audio.*`'s calls: done (2026-11-03), with nothing new to learn: programs
    already had `OS.SoundWrite`, `SoundRate`, `SoundQueued`, `SoundStop` and `SoundVolume`.
    - [x] `Sound` is a library on those calls, so it works in any program, not only a kernel.
@@ -3480,7 +3496,9 @@ and language server are built. H9's compiled libraries are done.
 
 Waiting, each for something:
 
-- **macOS** (H4, H7, H8's parts of it): not started; nothing has needed it yet.
+- **macOS** (H4, H7, H8's parts of it): done 2026-11-18 as native ARM programs
+  ([MacPlan.md](MacPlan.md)); of H8, lldb stops on PHI's lines and shows the calls, not
+  variables by name yet.
 - **The GPU** (H7): on hold until everything else is done, then to be asked about again.
 - **C compatibility and self-hosting:** on hold until the other features are done. H6's
   outside functions are the first half of C compatibility.
@@ -4262,7 +4280,8 @@ the answer as before, so nothing that calls the library changes; a failing answe
   variables; a system call a kernel declares itself (`sys.Name: 200;`) can't say which of
   its answers fail yet.
 
-**Moving development to a Mac (2026-11-17, a plan, nothing done).** [MacPlan.md](MacPlan.md):
+**Moving development to a Mac (2026-11-17 the plan; done 2026-11-18, and a native macOS
+target with it, merged into `main` at 7ff7c04).** [MacPlan.md](MacPlan.md):
 what a Mac runs as the code is (the compiler, and the 618 of 830 test runs that are QEMU's),
 what it can't (the 212 that are Linux programs, so all 64-bit code, the fuzzers, the code
 library's tests), and the four stages that get there: the tools; a Linux machine on the Mac

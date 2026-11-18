@@ -11,6 +11,7 @@ in an emulator. It takes about ten minutes.
 | NASM | turns the assembly PHI generates into machine code | [nasm.us](https://www.nasm.us/) |
 | QEMU | an emulated PC to boot PHI programs on | [qemu.org/download](https://www.qemu.org/download/) |
 | git | to get the code | [git-scm.com](https://git-scm.com/) |
+| Xcode's Command Line Tools | only on a Mac, and only for native macOS programs (`--target macos`): Apple's clang assembles and links them | `xcode-select --install` |
 
 On Linux, your package manager has all of them, for example on Ubuntu:
 
@@ -35,8 +36,15 @@ developing one, set the environment variable `NASMENV=-O1`: NASM reads it itself
 many times faster for a program a few percent larger. (`phi build` suggests it when NASM takes
 more than 30 seconds.) Leave it off for a kernel's boot code, which has to fit its sector.
 
-> PHI is developed and tested on Windows. The compiler is plain .NET and should work on
-> Linux and macOS too; if something doesn't, please open an issue.
+> PHI is developed and tested on Linux and on a Mac with Apple Silicon; on Windows it's
+> checked by hand, less often. The compiler is plain .NET and runs on all three; if
+> something doesn't work, please open an issue.
+
+On a Mac, everything for PHI OS runs as it does elsewhere (QEMU emulates the PC), and a
+program built with `--target macos` runs natively. A Linux program (`--target linux` or
+`linux64`) is x86 code, which a Mac runs in a Linux machine: set `PHI_LINUX_RUN` to the
+command that runs one there (`lima`, say, with [Lima](https://lima-vm.io/) installed), and
+`phi run` and `phi test` use it. Without it those runs are set aside and named.
 
 ## Build PHI
 

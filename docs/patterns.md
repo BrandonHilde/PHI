@@ -204,7 +204,7 @@ its pointers: [samples/own_heap](../samples/own_heap/memory/program_heap.phi) is
 bugs, where running off the end of a block, or using it after `free`, stops at that line as
 an error that can be caught.
 
-That heap is also how to look for such bugs in code that already has tests, on Linux or
+That heap is also how to look for such bugs in code that already has tests, on Linux, macOS or
 Windows: put its folder beside them for a run, and a test that passed and now stops (or
 gives another answer, where the code catches its own errors) has one.
 

@@ -3,7 +3,10 @@
 PHI is a programming language for writing operating systems. Instead of compiling to an
 app that runs on Windows or Linux, a PHI program compiles to a disk image that a computer
 boots from directly. The language and its standard library supply what an operating system
-needs: booting, drivers, interrupts, memory management, files, and running programs.
+needs: booting, drivers, interrupts, memory management, files, and running programs. The
+same language also builds ordinary programs for Linux, Windows and macOS
+([Programs on Linux and Windows](language.md#programs-on-linux-and-windows),
+[Programs on macOS](language.md#programs-on-macos)).
 
 ![The PHI OS shell](images/phi-os-shell.png)
 

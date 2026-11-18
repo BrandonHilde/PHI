@@ -182,15 +182,15 @@ footer { color: var(--muted); font-size: 0.82rem; }
 <div class="page">
 
 <header>
-  <span class="eyebrow">PHI · repository map · commit 111a5cc</span>
+  <span class="eyebrow">PHI · repository map · commit 7ff7c04</span>
   <h1>PHI Codebase Map</h1>
   <p class="lede">How a <code>.phi</code> file becomes a program, which code does each step, and where to look when something goes wrong. Click a box for what it does and when to suspect it, or pick a symptom below the map to see where to look first.</p>
   <div class="stats">
-    <span><b>36k</b> lines of C# in the compiler</span>
-    <span><b>11k</b> in the <code>phi</code> command</span>
-    <span><b>9.6k</b> lines of assembly runtime</span>
-    <span><b>30k</b> lines of PHI standard library</span>
-    <span><b>436</b> test programs · <b>657</b> unit tests</span>
+    <span><b>42k</b> lines of C# in the compiler</span>
+    <span><b>12k</b> in the <code>phi</code> command</span>
+    <span><b>11.6k</b> lines of assembly runtime</span>
+    <span><b>32k</b> lines of PHI standard library</span>
+    <span><b>446</b> test programs · <b>659</b> unit tests</span>
   </div>
 </header>
 
@@ -236,12 +236,16 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <div class="tablewrap"><table>
       <thead><tr><th>Setting</th><th>What it does</th></tr></thead>
       <tbody>
-        <tr><td><code>PHI_IR=0</code></td><td>Every method goes to the generator. If a problem goes away, the new path caused it.</td></tr>
+        <tr><td><code>PHI_IR=0</code></td><td>Every method goes to the generator. If a problem goes away, the new path caused it. (x86 only: a macOS program has no generator behind it.)</td></tr>
         <tr><td><code>PHI_IR32=0</code></td><td>The same, for 32-bit programs only.</td></tr>
         <tr><td><code>PHI_IR_SKIP=Class.Method</code></td><td>One method goes to the generator. Use it to find which method is wrong.</td></tr>
         <tr><td><code>PHI_IR_TRACE=1</code></td><td>Says which methods went through the new path, and why the others didn't. <code>2</code> also prints each method's intermediate form.</td></tr>
         <tr><td><code>PHI_IR_REGS=1</code></td><td>Prints each value's live range and whether it got a register or a frame slot.</td></tr>
-        <tr><td><code>PHI_NASM</code>, <code>PHI_QEMU</code></td><td>Paths to the assembler and the emulator, when they aren't on the <code>PATH</code>.</td></tr>
+        <tr><td><code>PHI_IR_VERIFY=1</code></td><td>Says where a value is made in a register another live value has: the allocator's own mistakes.</td></tr>
+        <tr><td><code>PHI_INLINE_TRACE=1</code></td><td>macOS programs: lists each method put in where it's called, with its form.</td></tr>
+        <tr><td><code>--target linux64</code> beside <code>--target macos</code></td><td>The same program on the other CPU. Right on one and wrong on the other points at that back end, not at the form.</td></tr>
+        <tr><td><code>PHI_NASM</code>, <code>PHI_QEMU</code>, <code>PHI_CLANG</code></td><td>Paths to the assemblers and the emulator, when they aren't on the <code>PATH</code>.</td></tr>
+        <tr><td><code>PHI_LINUX_RUN</code></td><td>On a Mac: the command that runs a Linux program in a Linux machine (<code>lima</code>, say), so <code>phi test</code> and <code>phi fuzz</code> run the x86 Linux builds too.</td></tr>
       </tbody>
     </table></div>
   </div>
@@ -254,15 +258,15 @@ footer { color: var(--muted); font-size: 0.82rem; }
         <tr><td><code>phi test [-f NAME]</code></td><td>tests/: build, run, compare with <code>NAME.expected</code> (TestRunner.cs)</td></tr>
         <tr><td><code>phi check</code>, <code>fmt</code>, <code>lsp</code></td><td>Checks or formats without building; the editor's server (SourceCheck.cs, Formatter.cs, LanguageServer.cs)</td></tr>
         <tr><td><code>phi fuzz code|numbers|objects</code></td><td>Random programs with known output (the three *Fuzzer.cs files)</td></tr>
-        <tr><td><code>phi compare</code></td><td>bench/ against gcc and C# (Compare.cs)</td></tr>
+        <tr><td><code>phi compare</code></td><td>bench/ against C (gcc, or clang on a Mac) and C# (Compare.cs)</td></tr>
         <tr><td><code>phi profile</code>, <code>load</code>, <code>serve</code></td><td>Where time goes; many networked machines; a test web server</td></tr>
-        <tr><td><code>dotnet test</code></td><td>The compiler's 657 unit tests, about 25 seconds</td></tr>
+        <tr><td><code>dotnet test</code></td><td>The compiler's 659 unit tests, about 30 seconds</td></tr>
       </tbody>
     </table></div>
   </div>
 </section>
 
-<footer>A snapshot of the PHI repository at commit 111a5cc (16 November 2026), with its neighbours PHI-Code-Library, PHI-OS and test-projects. Line counts are rounded and change as the code does. For more depth, read docs/architecture.md and tests/README.md.</footer>
+<footer>A snapshot of the PHI repository at commit 7ff7c04 (18 November 2026), with its neighbours PHI-Code-Library, PHI-OS and test-projects. Line counts are rounded and change as the code does. For more depth, read docs/architecture.md and tests/README.md.</footer>
 </div>
 
 <script>
@@ -291,15 +295,15 @@ const REGIONS = [
 const NODES = [
   { id: "src", g: "source", x: 30, y: 80, t: "Your program", s: "NAME.phi",
     files: [["NAME.phi", ""], ["NAME.rootfs/ (a kernel's disk)", ""]],
-    what: "Where a build starts. A class's base decides what the build makes: `Program` an executable or PHI OS program, `Kernel` a 32-bit kernel, `Bootloader` with `OS` a 16-bit program.",
-    when: ["A compile error names a line here. Read the message before suspecting the compiler.", "An `asm.` block is copied into the output as written, so a NASM error inside one is the program's."] },
-  { id: "stdlib", g: "source", x: 30, y: 190, t: "Standard library", s: "lib/phi · 29.8k lines",
-    files: [["lib/phi/", "126 files"], ["data, net, crypto, drivers, fs, gui, memory, proc, host, …", ""]],
+    what: "Where a build starts. A class's base decides what the build makes: `Program` an executable (for Linux, Windows or macOS, by `--target`) or a PHI OS program, `Kernel` a 32-bit kernel, `Bootloader` with `OS` a 16-bit program.",
+    when: ["A compile error names a line here. Read the message before suspecting the compiler.", "An `asm.` block is copied into the output as written (`x64.` in 64-bit code, `arm.` in a macOS program), so an assembler's error inside one is the program's."] },
+  { id: "stdlib", g: "source", x: 30, y: 190, t: "Standard library", s: "lib/phi · 32k lines",
+    files: [["lib/phi/", "135 files"], ["data, net, crypto, drivers, fs, gui, memory, proc, host, …", ""]],
     what: "PHI code a program brings in with `use` (`use data.map;`). It is embedded in the compiler when the compiler is built, so an edit here only takes effect after `dotnet build`.",
     when: ["Wrong results from Map, List, text helpers, the network or cryptography. The bug may be in the library, not the program.", "An edit to lib/ seems to change nothing: rebuild the compiler."] },
   { id: "philib", g: "source", x: 30, y: 320, t: "Compiled libraries", s: "NAME.philib",
-    files: [["Libraries/CompiledLibrary.cs", "393"], ["Libraries/InterfaceWriter.cs", "211"]],
-    what: "A library built once with `phi build --library`. It holds its declarations as PHI text, which the parser reads like source, and its machine code for each system, which the generator places in the program. It records an ABI version (now 1.2), and a file from an older compiler is refused.",
+    files: [["Libraries/CompiledLibrary.cs", "395"], ["Libraries/InterfaceWriter.cs", "224"]],
+    what: "A library built once with `phi build --library`. It holds its declarations as PHI text, which the parser reads like source, and its machine code for each system: x86 code the generator places in the program, and for macOS (when it's built on a Mac) an object file of clang's, which the program's link takes whole. It records an ABI version (now 1.2), and a file from an older compiler is refused.",
     when: ["`use corelib;` fails, or a library method has the wrong signature in a program: the interface InterfaceWriter wrote.", "A crash inside library code: rebuild the .philib with the current compiler, then debug the library as source."] },
 
   { id: "codelib", g: "repos", x: 30, y: 520, t: "Code Library", s: "PHI-Code-Library · 84k",
@@ -315,24 +319,24 @@ const NODES = [
     what: "Small projects that use the libraries the way someone outside would: the web library, the network, fonts, generic structs.",
     when: ["A library passes its own tests but fails in a real project."] },
 
-  { id: "uses", g: "front", x: 300, y: 80, t: "Compile driver", s: "PhiCompiler.cs · 680",
-    files: [["PhiCompiler.cs", "680"], ["Host.cs", "54"]],
-    what: "Runs the stages of one build in order. It reads the program, follows its `use` lines (each file parsed once, used files' classes first), expands templates, binds, and asks the generator for each unit's assembly. A kernel that uses `new` or `free` gets memory.heap added, and a kernel gets its boot stages from lib/boot. `CompileLibrary` does the same for `phi build --library`.",
+  { id: "uses", g: "front", x: 300, y: 80, t: "Compile driver", s: "PhiCompiler.cs · 753",
+    files: [["PhiCompiler.cs", "688"], ["Host.cs", "65"]],
+    what: "Runs the stages of one build in order. It reads the program, follows its `use` lines (each file parsed once, used files' classes first), expands templates, binds, and asks the generator for each unit's assembly (the ARM back end, for a macOS program). A kernel that uses `new` or `free` gets memory.heap added, and a kernel gets its boot stages from lib/boot. `CompileLibrary` does the same for `phi build --library`.",
     when: ["A module isn't found, or a file is read twice (ParseWithUses).", "A build is treated as the wrong kind, a kernel instead of a program."] },
   { id: "lexer", g: "front", x: 300, y: 190, t: "Lexer", s: "Syntax/Lexer.cs · 439",
     files: [["Syntax/Lexer.cs", "380"], ["Syntax/Token.cs", "59"]],
     what: "Turns text into tokens, each remembering whether it starts a line, which is how the parser knows where an `if` condition ends. Two PHI details: a quote followed by a letter doesn't end a string (`'hasn't'`), and a `#` alone on a line starts a block comment.",
     when: ["A string or comment swallows the rest of the file.", "A number literal is read as the wrong value."] },
-  { id: "parser", g: "front", x: 300, y: 300, t: "Parser", s: "Syntax/Parser.cs · 3.7k",
-    files: [["Syntax/Parser.cs", "2,500"], ["Syntax/Ast.cs (the syntax tree)", "1,093"], ["Syntax/SyntaxWalker.cs", "93"]],
+  { id: "parser", g: "front", x: 300, y: 300, t: "Parser", s: "Syntax/Parser.cs · 3.8k",
+    files: [["Syntax/Parser.cs", "2,583"], ["Syntax/Ast.cs (the syntax tree)", "1,158"], ["Syntax/SyntaxWalker.cs", "96"]],
     what: "A recursive-descent parser that builds the syntax tree in Ast.cs. It recovers after an error so one mistake doesn't hide the rest. Struct templates (`Stack<Item>`) are kept as tokens to be made later, and each use of one is noted.",
     when: ["A syntax error where the code looks right. The grammar is in docs/language.md; this file is the rule.", "One error followed by many unrelated ones: error recovery.", "Operator precedence surprises. Lowest first: `or`, `and`, comparisons, `|`, `^`, `&`, shifts, `+ -`, `* / %`, unary, postfix."] },
-  { id: "templates", g: "front", x: 300, y: 410, t: "Templates", s: "Syntax/Templates.cs · 283",
-    files: [["Syntax/Templates.cs", "283"]],
+  { id: "templates", g: "front", x: 300, y: 410, t: "Templates", s: "Syntax/Templates.cs · 285",
+    files: [["Syntax/Templates.cs", "285"]],
     what: "Makes a struct for each use of a template. `Stack<int>` and `Stack<Player>` are each parsed again from the template's tokens with `Item` standing for the type, so everything after sees ordinary structs.",
     when: ["An error inside a template. The message says which use it came from (DiagnosticBag.CopyOf).", "Two uses of one template behave differently."] },
-  { id: "binder", g: "front", x: 560, y: 280, h: 110, t: "Binder", s: "Semantics/ · 7.7k lines",
-    files: [["Semantics/Binder.cs", "6,511"], ["Semantics/Symbols.cs (types, symbols)", "594"], ["Semantics/Builtins.cs", "324"], ["Semantics/Binder.Vec.cs (vec)", "305"]],
+  { id: "binder", g: "front", x: 560, y: 280, h: 110, t: "Binder", s: "Semantics/ · 8k lines",
+    files: [["Semantics/Binder.cs", "6,724"], ["Semantics/Symbols.cs (types, symbols)", "594"], ["Semantics/Builtins.cs", "351"], ["Semantics/Binder.Vec.cs (vec)", "305"]],
     what: "Checks the program and works out everything code generation needs: which unit each class goes in, names and where each lives, types and sizes, built-in functions, index checks, and rewrites that keep the generators small (`x++ 2` becomes `x is x + 2`, `new T[n]` an allocation). Both code generators read what it produces.",
     when: ["A type or name error, or \"can't use this here\".", "Wrong output with both code generators. The program's meaning was settled here.", "A built-in missing for one kind of program: Builtins.cs and the runtime's `provides:` lines."] },
   { id: "diag", g: "front", x: 560, y: 470, t: "Errors and warnings", s: "Diagnostics.cs · 120",
@@ -342,64 +346,72 @@ const NODES = [
 
   { id: "split", g: "gen", x: 830, y: 300, t: "Which generator?", s: "X86Generator.Ir.cs",
     files: [["X86Generator.Ir.cs (IrWanted, Fits32)", ""]],
-    what: "Each method goes to one of two code generators. The new path takes the methods of 64-bit and 32-bit programs. The generator keeps 16-bit code, kernels, debug builds, a class's own statements, calls into Windows libraries, and any method the new path refuses. In 32-bit code, Fits32 also refuses what that back end can't do yet (vector code on i64 lanes) and floats and vec on PHI OS, which has no SSE.",
-    when: ["Any wrong output or crash. Build again with `PHI_IR=0` (64-bit) or `PHI_IR32=0` (32-bit). If the problem goes away, the new path is at fault.", "`PHI_IR_TRACE=1` lists which path each method took, and why."] },
-  { id: "generator", g: "gen", x: 830, y: 430, h: 100, t: "Generator", s: "X86Generator.cs · 11k",
-    files: [["CodeGen/X86Generator.cs", "10,601"], ["CodeGen/VariablePlanner.cs", "148"], ["CodeGen/DivisionMagic.cs", "82"], ["CodeGen/EvaluationOrder.cs", "74"], ["CodeGen/DebugInfo.cs", "47"]],
-    what: "PHI's original code generator: one NASM file per unit, in 16-, 32- or 64-bit code. Besides the methods the new path doesn't take, it writes everything around them: class-level code, variables and tables, ELF and PE headers, a compiled library's code, and the runtime routines the new path calls (copying text, growing arrays, freeing and cloning objects, 64-bit math in 32-bit code). VariablePlanner picks variables to keep in registers; DivisionMagic divides by a constant without `div`; EvaluationOrder keeps left before right.",
+    what: "Each method goes to one of two code generators. The new path takes the methods of 64-bit and 32-bit programs. The generator keeps 16-bit code, kernels, debug builds, a class's own statements, calls into Windows libraries, and any method the new path refuses. In 32-bit code, Fits32 also refuses what that back end can't do yet (vector code on i64 lanes) and floats and vec on PHI OS, which has no SSE. A macOS program doesn't come here at all: PhiCompiler hands it to the ARM back end, where everything, a class's own statements too, goes through the new path, and what the form can't take is an error when it's built (\"… which macOS programs can't do yet\").",
+    when: ["Any wrong output or crash on x86. Build again with `PHI_IR=0` (64-bit) or `PHI_IR32=0` (32-bit). If the problem goes away, the new path is at fault.", "`PHI_IR_TRACE=1` lists which path each method took, and why."] },
+  { id: "generator", g: "gen", x: 830, y: 430, h: 100, t: "Generator", s: "X86Generator.cs · 10.8k",
+    files: [["CodeGen/X86Generator.cs", "10,494"], ["CodeGen/VariablePlanner.cs", "148"], ["CodeGen/DivisionMagic.cs", "82"], ["CodeGen/EvaluationOrder.cs", "74"], ["CodeGen/DebugInfo.cs", "47"]],
+    what: "PHI's original code generator, for x86: one NASM file per unit, in 16-, 32- or 64-bit code. Besides the methods the new path doesn't take, it writes everything around them: class-level code, variables and tables, ELF and PE headers, a compiled library's code, and the runtime routines the new path calls (copying text, growing arrays, freeing and cloning objects, 64-bit math in 32-bit code). VariablePlanner picks variables to keep in registers; DivisionMagic divides by a constant without `div`; EvaluationOrder keeps left before right.",
     when: ["Wrong output that stays with `PHI_IR=0`.", "Kernels and 16-bit programs, which always come here.", "A crash inside a runtime routine called from new-path code: what the routine expects against what the emitter gave it.", "The executable's headers, or a debug build's line tables."] },
-  { id: "asmlib", g: "runtime", x: 830, y: 640, t: "Assembly runtime", s: "lib/x86_* · 9.6k lines",
-    files: [["CodeGen/Library.cs", "124"], ["lib/x86_16 (BIOS)", ""], ["lib/x86_32 (kernels: console, interrupts, panic, …)", ""], ["lib/x86_32_user (PHI OS programs)", ""], ["lib/x86_32_linux, x86_32_windows", ""], ["lib/x86_64_linux, x86_64_windows", ""], ["lib/boot (stage1, stage2)", ""]],
+  { id: "asmlib", g: "runtime", x: 830, y: 640, t: "Assembly runtime", s: "lib/x86_*, arm64 · 11.6k",
+    files: [["CodeGen/Library.cs", "124"], ["lib/x86_16 (BIOS)", ""], ["lib/x86_32 (kernels: console, interrupts, panic, …)", ""], ["lib/x86_32_user (PHI OS programs)", ""], ["lib/x86_32_linux, x86_32_windows", ""], ["lib/x86_64_linux, x86_64_windows", ""], ["lib/arm64_macos (ARM, for clang: console, faults, threads, AppKit, audio)", "2,014"], ["lib/boot (stage1, stage2)", ""]],
     what: "Hand-written assembly each program needs, one folder per target. Each file's header says what it `provides:`, `requires:` and `inherit:`s, and Library.cs adds only the files whose labels the program uses.",
-    when: ["Console output, reading lines, threads or system calls fail on one system only.", "Run-time stops: index_error.asm, out_of_memory.asm, throw.asm, panic.asm.", "\"undefined symbol\" from NASM: a `provides:` or `requires:` header."] },
+    when: ["Console output, reading lines, threads or system calls fail on one system only.", "Run-time stops: index_error.asm, out_of_memory.asm, throw.asm, panic.asm.", "\"undefined symbol\" from NASM, or from the linker on a Mac: a `provides:` or `requires:` header."] },
 
-  { id: "irbuilder", g: "ir", x: 1100, y: 80, t: "IR builder", s: "Ir/IrBuilder*.cs · 6.4k",
-    files: [["Ir/IrBuilder.cs", "2,769"], ["Ir/IrBuilder.Arrays.cs", "922"], ["Ir/IrBuilder.Text.cs", "646"], ["Ir/IrBuilder.Loops.cs (and vector sums)", "438"], ["Ir/IrBuilder.Vec.cs", "323"], ["Ir/IrBuilder.Outer.cs", "271"], ["Ir/IrBuilder.Objects.cs", "86"], ["Ir/Ir.cs (the form itself)", "931"]],
-    what: "Turns a method's checked tree into the intermediate form defined in Ir.cs: simple instructions over numbered values, in blocks. It takes only what it knows exactly. For anything else it refuses the method with a reason (NotYet), and the generator writes that method instead.",
+  { id: "irbuilder", g: "ir", x: 1100, y: 80, t: "IR builder", s: "Ir/IrBuilder*.cs · 6.9k",
+    files: [["Ir/IrBuilder.cs", "3,190"], ["Ir/IrBuilder.Arrays.cs", "981"], ["Ir/IrBuilder.Text.cs", "673"], ["Ir/IrBuilder.Loops.cs (and vector sums)", "438"], ["Ir/IrBuilder.Vec.cs", "323"], ["Ir/IrBuilder.Outer.cs", "271"], ["Ir/IrBuilder.Objects.cs", "86"], ["Ir/Ir.cs (the form itself)", "985"]],
+    what: "Turns a method's checked tree into the intermediate form defined in Ir.cs: simple instructions over numbered values, in blocks. It takes only what it knows exactly. For anything else it refuses the method with a reason (NotYet), and the generator writes that method instead; for a macOS program, which has no generator, the reason is the error. What only ARM's builds do is behind its `arm` switch, so x86's code stays as it was.",
     when: ["A method's form is wrong. `PHI_IR_TRACE=2` prints it.", "A method you expected on the new path was refused. `PHI_IR_TRACE=1` gives the reason."] },
-  { id: "peephole", g: "ir", x: 1100, y: 190, t: "Peephole", s: "Ir/IrPeephole.cs · 274",
-    files: [["Ir/IrPeephole.cs", "274"]],
-    what: "Small rewrites of the form before registers are given out: jumps to jumps, `x * 3, 5 or 9` as one `lea`, dead values, constants folded, bit tests and, in 32-bit code, constant offsets folded into an address.",
+  { id: "peephole", g: "ir", x: 1100, y: 190, t: "Peephole", s: "Ir/IrPeephole.cs · 275",
+    files: [["Ir/IrPeephole.cs", "275"]],
+    what: "Small rewrites of the form before registers are given out: jumps to jumps, `x * 3, 5 or 9` as one `lea`, dead values, constants folded, bit tests and, in 32-bit code and ARM's, constant offsets folded into an address.",
     when: ["Wrong output that goes away when one rewrite is turned off. Comment out its line in Run to find which."] },
-  { id: "regalloc", g: "ir", x: 1100, y: 300, t: "Register allocator", s: "Ir/RegisterAllocator · 509",
-    files: [["Ir/RegisterAllocator.cs", "465"], ["Ir/Liveness.cs", "44"]],
-    what: "Linear-scan allocation. Each value lives from where it's made to where it's last needed, the busiest get registers, and the rest a slot in the frame. 64-bit code has many registers. 32-bit code has three (ebx, esi, edi) and keeps every i64 in the frame. Liveness.cs says what is live where each block starts.",
-    when: ["A value overwritten across a call, or two values sharing a register.", "Slow loops: values waiting in the frame, which show as `[rbp - n]` or `[ebp - n]` in a hot loop. `PHI_IR_REGS=1` prints each value's range and home."] },
-  { id: "iremit", g: "ir", x: 1100, y: 410, t: "IR emitter", s: "X86Generator.Ir*.cs · 3.3k",
+  { id: "regalloc", g: "ir", x: 1100, y: 300, t: "Register allocator", s: "Ir/RegisterAllocator · 569",
+    files: [["Ir/RegisterAllocator.cs", "525"], ["Ir/Liveness.cs", "44"]],
+    what: "Linear-scan allocation. Each value lives from where it's made to where it's last needed, the busiest get registers, and the rest a slot in the frame. 64-bit code has many registers. 32-bit code has three (ebx, esi, edi) and keeps every i64 in the frame. ARM gives it its own registers (`RegisterAllocator.Target`: x10 to x15 and x19 to x27), reuses a kept register it already saves before taking another, and lets a result have the register of an operand read for the last time. Liveness.cs says what is live where each block starts.",
+    when: ["A value overwritten across a call, or two values sharing a register.", "Slow loops: values waiting in the frame, which show as `[rbp - n]` or `[ebp - n]` in a hot loop. `PHI_IR_REGS=1` prints each value's range and home; `PHI_IR_VERIFY=1` says where two live values share a register."] },
+  { id: "iremit", g: "ir", x: 1100, y: 410, t: "x86 emitter", s: "X86Generator.Ir*.cs · 3.3k",
     files: [["CodeGen/X86Generator.Ir.cs", "2,125"], ["CodeGen/X86Generator.IrVec.cs (SSE)", "1,022"], ["CodeGen/X86Generator.IrText.cs", "118"]],
     what: "Writes x86 for each instruction of the form. 32-bit code is written as 64-bit text and translated as it goes out (To32: rax to eax, qword to dword, …), and Not32 throws on anything 32-bit code doesn't have. IrVec writes vector code; IrText writes numbers as text.",
     when: ["NASM rejects an instruction in a new-path method.", "The form and the registers are right, but the instructions are wrong.", "32-bit only: the To32 translation."] },
-  { id: "asm", g: "build", x: 1350, y: 530, t: "Assembly text", s: "NAME/*.asm",
-    files: [["program.asm and one file per unit, in the build folder", ""]],
+  { id: "a64", g: "ir", x: 1350, y: 285, h: 100, t: "ARM back end", s: "CodeGen/A64/ · 4.7k",
+    files: [["CodeGen/A64/A64Generator.cs (a program's code and data; index extends, results through x0)", "758"], ["CodeGen/A64/A64Generator.Emit.cs (each instruction as ARM)", "1,606"], ["CodeGen/A64/A64Generator.Objects.cs (routines per struct and array)", "833"], ["CodeGen/A64/A64Generator.Vec.cs (NEON)", "600"], ["CodeGen/A64/A64Generator.More.cs (text, outside calls)", "448"], ["CodeGen/A64/A64Generator.Inline.cs (methods put in, csel, early returns)", "369"], ["CodeGen/A64/A64Generator.Library.cs (a .philib's object)", "108"]],
+    what: "A macOS program's code generator, all of it from the form: methods, each class's own statements (made a method), and the routines a struct or an array needs (free, clone, compare), written as ARM assembly for Apple's clang. Before registers are given out it puts small methods in where they're called, makes a short if and else a choice with no jump, and keeps a loop's class variables in registers; after, it saves kept registers only on the way that needs them. Errors and faults name the same line and file as x86's, so the tests' expected output is shared.",
+    when: ["Wrong output on macOS and right with `--target linux64`: here, or what the IR builder does behind its `arm` switch.", "\"clang failed to assemble program.s\": an instruction written wrong (an offset or a jump out of reach, a number an instruction can't hold).", "A fuzz program wrong only on macOS. `PHI_INLINE_TRACE=1` and `PHI_IR_VERIFY=1` narrow it down."] },
+  { id: "asm", g: "build", x: 1350, y: 530, t: "Assembly text", s: "NAME/*.asm · program.s",
+    files: [["program.asm and one file per unit, in the build folder (x86, for NASM)", ""], ["program.s (a macOS program, for clang)", ""]],
     what: "One assembly file per unit, written into the build folder. Each PHI line is a comment above its instructions, and each method starts at a label like `M_Class_Method`.",
-    when: ["Any question about generated code: read the .asm first. Search for the PHI line's comment or the method's label.", "Before and after a compiler change: diff the .asm."] },
+    when: ["Any question about generated code: read the .asm (or program.s) first. Search for the PHI line's comment or the method's label.", "Before and after a compiler change: diff it."] },
   { id: "nasm", g: "build", x: 1350, y: 650, t: "NASM", s: "Toolchain.cs · external",
-    files: [["Phi.Cli/Toolchain.cs", "72"]],
-    what: "The external assembler (set `PHI_NASM` to use another). It turns the .asm into machine code: a flat binary for programs and images, an ELF object for a library.",
+    files: [["Phi.Cli/Toolchain.cs", "85"]],
+    what: "The external assembler for x86 (set `PHI_NASM` to use another). It turns the .asm into machine code: a flat binary for programs and images, an ELF object for a library.",
     when: ["\"nasm failed on …\": the compiler, or an `asm.` block, wrote something NASM refuses. The message gives the .asm line."] },
-  { id: "libbuild", g: "build", x: 1100, y: 710, t: "Library writer", s: "Libraries/ · 604",
-    files: [["Libraries/CompiledLibrary.cs (ElfObject)", "393"], ["Libraries/InterfaceWriter.cs", "211"]],
-    what: "`phi build --library`: NASM's ELF object is read apart into sections and the addresses still to fill in, and InterfaceWriter writes the library's declarations as PHI. Both go into NAME.philib, which programs then read as an input.",
+  { id: "clang", g: "build", x: 1100, y: 850, t: "clang", s: "Toolchain.cs · external",
+    files: [["Phi.Cli/Toolchain.cs", "85"], ["Phi.Cli/Builder.cs (AssembleMacOS)", ""]],
+    what: "Apple's clang, from Xcode's Command Line Tools (set `PHI_CLANG` to use another), for a macOS program: it assembles program.s and links it with the system's libraries (and frameworks, for a window or sound), and the linker signs the result for this Mac. A library's code is assembled the same way and its object file kept whole in the .philib.",
+    when: ["\"clang failed to assemble …\": the ARM back end, or an `arm.` block, wrote something it refuses. The message gives program.s's line.", "\"Undefined symbols\" when linking: a runtime file's `provides:` header, or an outside library the program didn't name with `use '…'`."] },
+  { id: "libbuild", g: "build", x: 1100, y: 710, t: "Library writer", s: "Libraries/ · 619",
+    files: [["Libraries/CompiledLibrary.cs (ElfObject)", "395"], ["Libraries/InterfaceWriter.cs", "224"]],
+    what: "`phi build --library`: NASM's ELF object is read apart into sections and the addresses still to fill in, and InterfaceWriter writes the library's declarations as PHI. Both go into NAME.philib, which programs then read as an input. Built on a Mac, it also holds clang's object file for macOS programs.",
     when: ["A .philib is refused (ABI version), or its methods have the wrong signatures in programs.", "Library code behaves differently from the same code built as source: the relocations here."] },
-  { id: "builder", g: "build", x: 1350, y: 770, t: "Builder", s: "Phi.Cli/Builder.cs · 1.9k",
-    files: [["Phi.Cli/Builder.cs", "422"], ["Phi.Cli/FatImage.cs", "386"], ["Phi.Cli/Pdb.cs", "998"]],
-    what: "Puts the build together, with no linker. For a kernel: the boot sector and loader, the kernel, and a FAT16 partition made from NAME.rootfs/ (FatImage.cs). For a Linux or Windows program: the executable NASM wrote, headers included. For a PHI OS program: NAME.BIN. A Windows debug build also gets a .pdb (Pdb.cs).",
+  { id: "builder", g: "build", x: 1350, y: 770, t: "Builder", s: "Phi.Cli/Builder.cs · 2k",
+    files: [["Phi.Cli/Builder.cs", "598"], ["Phi.Cli/FatImage.cs", "386"], ["Phi.Cli/Pdb.cs", "998"]],
+    what: "Puts the build together, with no linker. For a kernel: the boot sector and loader, the kernel, and a FAT16 partition made from NAME.rootfs/ (FatImage.cs). For a Linux or Windows program: the executable NASM wrote, headers included. For a macOS program: what clang linked, and with `--app` a NAME.app round it (Info.plist, signed), with `--debug` a NAME.dSYM. For a PHI OS program: NAME.BIN. A Windows debug build also gets a .pdb (Pdb.cs).",
     when: ["An image doesn't boot, a kernel is too big, or a rootfs file is missing or misnamed (8.3 names).", "A Windows debugger shows the wrong lines: Pdb.cs."] },
-  { id: "outputs", g: "build", x: 1350, y: 890, t: "Programs and images", s: "ELF · .exe · .img · .BIN",
-    files: [["NAME (Linux, 32 or 64-bit)", ""], ["NAME.exe (Windows, 32 or 64-bit)", ""], ["NAME.img (kernel or 16-bit program)", ""], ["NAME.BIN (PHI OS program)", ""]],
-    what: "What a build makes. Linux and Windows programs run directly on the computer; kernels and PHI OS programs run in QEMU.",
+  { id: "outputs", g: "build", x: 1350, y: 890, t: "Programs and images", s: "ELF · .exe · Mach-O · .img",
+    files: [["NAME (Linux, 32 or 64-bit)", ""], ["NAME.exe (Windows, 32 or 64-bit)", ""], ["NAME, NAME.app (macOS, arm64)", ""], ["NAME.img (kernel or 16-bit program)", ""], ["NAME.BIN (PHI OS program)", ""]],
+    what: "What a build makes. Linux, Windows and macOS programs run directly on a computer of their kind; kernels and PHI OS programs run in QEMU.",
     when: ["A program stops with \"PHI: …\" or \"stopped by exception N\": see the symptoms below."] },
 
-  { id: "unittests", g: "tools", x: 30, y: 1025, t: "Unit tests", s: "Phi.Compiler.Tests · 4.9k",
-    files: [["Compiler/Phi.Compiler.Tests/", "25 files"]],
-    what: "657 xUnit tests of the compiler itself: the lexer, templates, layout, division, the fuzzers, the language server, formatting and more. They call the compiler directly and need no QEMU. Run them with `dotnet test`.",
-    when: ["Any compiler change. Run these first: they take about 25 seconds."] },
+  { id: "unittests", g: "tools", x: 30, y: 1025, t: "Unit tests", s: "Phi.Compiler.Tests · 5.1k",
+    files: [["Compiler/Phi.Compiler.Tests/", "26 files"]],
+    what: "659 xUnit tests of the compiler itself: the lexer, templates, layout, division, the fuzzers, the language server, formatting and more. They call the compiler directly and need no QEMU. Run them with `dotnet test`. One of them, asked for with `PHI_ASM_SNAPSHOT`, hashes the x86 code of every test and sample on every system: a change meant for another back end shows there as no difference at all.",
+    when: ["Any compiler change. Run these first: they take about 30 seconds.", "A change that shouldn't touch x86's code: record the snapshot before it and check it after (AsmSnapshotTests.cs)."] },
   { id: "editor", g: "tools", x: 250, y: 1025, t: "Editor support", s: "LanguageServer.cs · 1.7k",
     files: [["Phi.Cli/LanguageServer.cs", "535"], ["Language/ProgramIndex.cs", "482"], ["Phi.Cli/SourceCheck.cs", "422"], ["Language/Formatter.cs", "239"], ["Phi.Cli/Formatting.cs", "59"]],
     what: "`phi lsp` (the Language Server Protocol for editors), `phi check` and `phi fmt`. SourceCheck checks one file as what it is, without building it. ProgramIndex finds definitions and completions. Formatter lays out a file without changing its meaning.",
     when: ["The editor and `phi build` disagree about an error.", "Go to definition or completion is wrong or missing.", "`phi fmt` changes something it shouldn't."] },
-  { id: "cli", g: "tools", x: 470, y: 1025, t: "phi command", s: "Phi.Cli/Program.cs · 640",
-    files: [["Phi.Cli/Program.cs", "640"]],
+  { id: "cli", g: "tools", x: 470, y: 1025, t: "phi command", s: "Phi.Cli/Program.cs · 647",
+    files: [["Phi.Cli/Program.cs", "647"]],
     what: "The `phi` command: build, run, check, fmt, test, compare, profile, load, lsp, fuzz and serve. Program.cs reads the options and hands each command to its own file.",
     when: ["An option is ignored or misread."] },
   { id: "profile", g: "tools", x: 690, y: 1025, t: "Profiler, crash report", s: "Profiler.cs · Where.cs",
@@ -408,15 +420,15 @@ const NODES = [
     when: ["A hang or crash in QEMU: where each CPU and thread was.", "A slow program: which method to look at first."] },
   { id: "fuzz", g: "tools", x: 910, y: 1025, t: "Fuzzers", s: "*Fuzzer.cs · 3.5k",
     files: [["Phi.Cli/ObjectFuzzer.cs", "1,626"], ["Phi.Cli/CodeFuzzer.cs", "1,046"], ["Phi.Cli/NumberFuzzer.cs", "830"]],
-    what: "`phi fuzz code`, `numbers` and `objects`: random programs, each written with the output it must print, built and run for linux and linux64. A wrong one is kept in fuzz-failures/.",
-    when: ["After any change to code generation. They find what hand-written tests don't: a long-standing store-order bug in the generator was found this way."] },
+    what: "`phi fuzz code`, `numbers` and `objects`: random programs, each written with the output it must print, built and run for the systems this computer runs (linux and linux64; macos on a Mac). A wrong one is kept in fuzz-failures/. Each run writes new programs unless `--seed` says, so a bigger `--count` finds more.",
+    when: ["After any change to code generation. They find what hand-written tests don't: a long-standing store-order bug in the generator was found this way, and a register written over in ARM's code for a big method."] },
   { id: "compare", g: "tools", x: 1130, y: 1025, t: "Benchmarks", s: "Compare.cs · bench/",
-    files: [["Phi.Cli/Compare.cs", "495"], ["Phi.Cli/BenchCheck.cs", "127"], ["bench/ (13 benchmarks, each in PHI, C and C#)", ""], ["bench/RESULTS.md", ""]],
-    what: "`phi compare` builds and times each benchmark as PHI 64- and 32-bit, gcc -O2 and -O0, and C#. bench/RESULTS.md holds the last saved run. BenchCheck compares counts with a baseline in `phi test --bench`.",
+    files: [["Phi.Cli/Compare.cs", "505"], ["Phi.Cli/BenchCheck.cs", "127"], ["bench/ (13 benchmarks, each in PHI, C and C#)", ""], ["bench/RESULTS.md", ""]],
+    what: "`phi compare` builds and times each benchmark as PHI 64- and 32-bit, gcc -O2 and -O0, and C# (on a Mac: PHI as a macOS program, beside clang). bench/RESULTS.md holds the last saved run, made on x86 Linux; times from another machine aren't comparable with it. BenchCheck compares counts with a baseline in `phi test --bench`.",
     when: ["After a change to code generation. A slowdown passes every test: a text slowdown of 4.8 times was found only here."] },
   { id: "testrunner", g: "tools", x: 1350, y: 1025, t: "Test runner", s: "TestRunner.cs · tests/",
-    files: [["Phi.Cli/TestRunner.cs", "652"], ["Phi.Cli/LoadTester.cs", "390"], ["Phi.Cli/InputScript.cs", "384"], ["Phi.Cli/VirtualNetwork.cs", "380"], ["Phi.Cli/Qemu.cs", "319"], ["Phi.Cli/HostRunner.cs", "237"], ["Phi.Cli/WebServer.cs", "212"], ["Phi.Cli/SoundCheck.cs", "183"], ["Phi.Cli/Screenshot.cs", "113"], ["Phi.Cli/DebuggerRunner.cs", "80"], ["tests/", "436 programs"]],
-    what: "`phi test`: each tests/NAME.phi is built and run, and its output compared with NAME.expected. Kernels and PHI OS programs boot headless in QEMU; Linux and Windows programs run directly. A test can type and click (NAME.input), check the screen and the sound, run several networked machines (NAME.machines) or talk to a web server.",
+    files: [["Phi.Cli/TestRunner.cs", "698"], ["Phi.Cli/LoadTester.cs", "390"], ["Phi.Cli/InputScript.cs", "384"], ["Phi.Cli/VirtualNetwork.cs", "380"], ["Phi.Cli/Qemu.cs", "319"], ["Phi.Cli/HostRunner.cs", "330"], ["Phi.Cli/WebServer.cs", "212"], ["Phi.Cli/SoundCheck.cs", "183"], ["Phi.Cli/Screenshot.cs", "113"], ["Phi.Cli/DebuggerRunner.cs", "80"], ["tests/", "446 programs"]],
+    what: "`phi test`: each tests/NAME.phi is built and run, and its output compared with NAME.expected. Kernels and PHI OS programs boot headless in QEMU; Linux, Windows and macOS programs run directly where the computer can run them (`--target macos` runs only those). A test can type and click (NAME.input), check the screen and the sound, run several networked machines (NAME.machines) or talk to a web server.",
     when: ["\"output did not match\": diff NAME.expected and NAME.actual.", "A timeout: an input script waiting for text that never came, or a hang."] },
 ];
 
@@ -433,13 +445,19 @@ const EDGES = [
   { f: "parser", fs: "r", fo: 18, t: "diag", ts: "t", to: -60, dash: true },
   { f: "binder", fs: "b", t: "diag", ts: "t", to: 20, dash: true, label: "errors" },
   { f: "binder", fs: "r", t: "split", ts: "l", label: "checked" },
-  { f: "split", fs: "t", t: "irbuilder", ts: "l", to: -14, label: "64- and 32-bit programs", lt: 0.42 },
+  { f: "split", fs: "t", t: "irbuilder", ts: "l", to: -14, label: "programs (all of a macOS one)", lt: 0.42 },
   { f: "irbuilder", fs: "l", fo: 16, t: "generator", ts: "r", to: -32, dash: true, label: "refused", lt: 0.62, d: 40 },
   { f: "split", fs: "b", t: "generator", ts: "t", label: "kernels, 16-bit, debug" },
   { f: "irbuilder", fs: "b", t: "peephole", ts: "t", label: "the form" },
   { f: "peephole", fs: "b", t: "regalloc", ts: "t", label: "tidied" },
   { f: "regalloc", fs: "b", t: "iremit", ts: "t", label: "registers" },
   { f: "iremit", fs: "r", t: "asm", ts: "t", to: -40, label: "method code", lt: 0.55 },
+  { f: "regalloc", fs: "r", t: "a64", ts: "l", label: "macOS" },
+  { f: "a64", fs: "b", t: "asm", ts: "t", to: 30, label: "program.s" },
+  { f: "asm", fs: "l", fo: 14, t: "clang", ts: "r", to: -14, label: "program.s", d: 40, lt: 0.6 },
+  { f: "clang", fs: "r", fo: 14, t: "builder", ts: "l", to: -14, label: "linked, signed", lt: 0.5 },
+  { f: "clang", fs: "t", t: "libbuild", ts: "b", label: "object" },
+  { f: "asmlib", fs: "b", fo: 60, t: "clang", ts: "l", dash: true, label: "arm64 routines", d: 60 },
   { f: "generator", fs: "r", fo: 0, t: "asm", ts: "l", to: -12, label: "everything else", lt: 0.45 },
   { f: "asmlib", fs: "r", t: "asm", ts: "l", to: 16, label: "routines it uses", lt: 0.5 },
   { f: "generator", fs: "b", fo: 75, t: "asmlib", ts: "t", to: 75, dash: true, label: "labels used" },
@@ -468,6 +486,18 @@ const SYMPTOMS = [
     how: ["The compiler wrote assembly NASM refuses. Open the .asm in the build folder at the line NASM names: the PHI line it came from is the comment above it.",
           "Build again with PHI_IR=0 (64-bit) or PHI_IR32=0 (32-bit). If the error goes away, the new path's emitter wrote it (in 32-bit code, check To32's translation).",
           "If it stays, look at the generator, a runtime .asm file, or the program's own asm. block."] },
+  { id: "clang-failed", t: "clang failed to assemble program.s", ex: "clang failed to assemble … (this is a bug in phi's ARM code, or in an arm. block)", nodes: ["asm", "a64", "clang", "asmlib"],
+    how: ["A macOS build: the ARM back end wrote assembly clang refuses. Open program.s in the build folder at the line clang names; the PHI line it came from is the comment above it.",
+          "\"fixup value out of range\" is a jump or an address past what the instruction reaches (a very long method); \"expected …\" an instruction written wrong.",
+          "If the line is in a runtime routine, look in lib/arm64_macos; if it's in the program's own arm. block, it's the program's."] },
+  { id: "macos-only", t: "Wrong on macOS, right on Linux", ex: "phi run x.phi --target macos  ≠  --target linux64", nodes: ["a64", "regalloc", "irbuilder", "asmlib"],
+    how: ["The form is shared, so look at what only ARM does: its back end, the allocator's ARM options, and what the IR builder does behind its `arm` switch.",
+          "PHI_INLINE_TRACE=1 lists the methods put in where they're called; PHI_IR_VERIFY=1 says if two live values share a register.",
+          "Read program.s for the method: each PHI line is a comment above its instructions. Add the smallest program that shows it to tests/ before fixing."] },
+  { id: "cant-yet", t: "… which macOS programs can't do yet", ex: "Draw uses a while each over …, which macOS programs can't do yet", nodes: ["src", "irbuilder", "a64"],
+    how: ["Not a mistake in the program: the form doesn't take that statement yet, and a macOS program has no generator to fall back on.",
+          "The message names the method and what it is. The IR builder's Need(…) with those words is where it's refused; teach it there (behind `arm` if x86's code would change).",
+          "phi test --target macos runs only the tests that build, so a gap doesn't fail the run: the count it prints is what's covered."] },
   { id: "ir-only", t: "Wrong output, but right with PHI_IR=0", ex: "PHI_IR=0 phi run x.phi  → right", nodes: ["split", "irbuilder", "peephole", "regalloc", "iremit"],
     how: ["The new path is at fault. Find the method: PHI_IR_SKIP=Class.Method sends one method to the generator.",
           "PHI_IR_TRACE=2 prints that method's form. A wrong form is the IR builder; a right form with a bad rewrite is the peephole.",
@@ -475,11 +505,11 @@ const SYMPTOMS = [
           "Add the smallest program that shows it to tests/ before fixing."] },
   { id: "both-wrong", t: "Wrong output either way", ex: "PHI_IR=0 gives the same wrong answer", nodes: ["src", "binder", "stdlib", "asmlib", "generator"],
     how: ["Both code generators agree, so the meaning was settled before them.",
-          "Check the program against docs/language.md, then the binder's rewrites and types, then library code it calls: lib/phi for PHI code, lib/x86_* for assembly routines.",
+          "Check the program against docs/language.md, then the binder's rewrites and types, then library code it calls: lib/phi for PHI code, lib/x86_* (or lib/arm64_macos) for assembly routines.",
           "The generator is last on the list: it's possible, but the two generators rarely share a mistake."] },
   { id: "runtime-check", t: "PHI: index out of range, text doesn't fit, out of memory", ex: "PHI: text doesn't fit in its str on line 42", nodes: ["src", "binder", "asmlib"],
     how: ["These are PHI's run-time checks working: the line printed is the line in the program that broke the rule.",
-          "If a check fires where it shouldn't, the checks are planned in the binder and written by both generators. The message and the stop are in lib/x86_*/index_error.asm and out_of_memory.asm."] },
+          "If a check fires where it shouldn't, the checks are planned in the binder and written by both generators. The message and the stop are in lib/x86_*/index_error.asm and out_of_memory.asm (macOS: lib/arm64_macos/system.s, faults.s and out_of_memory.s)."] },
   { id: "cpu-fault", t: "Stopped by exception N at 0x…", ex: "PHI: program 2 stopped by exception 6 at 0x40008670", nodes: ["outputs", "profile", "split", "iremit", "generator"],
     how: ["A CPU fault. 6: an instruction this machine doesn't have (on PHI OS often SSE, which it doesn't turn on). 13: a protection fault. 14: a bad address.",
           "Look the address up in the build's assembly to find the method. Where.cs's report shows where each CPU and thread was.",
@@ -497,7 +527,7 @@ const SYMPTOMS = [
           "Copy dist/*.philib into PHI-OS, PHI-OS/tools and test-projects/phi-browser-os.",
           "A refused file names its ABI version (CompiledLibrary.AbiVersion). Wrong signatures come from InterfaceWriter."] },
   { id: "slow", t: "A benchmark got slower", ex: "strings 1.35 s, was 0.27", nodes: ["compare", "split", "irbuilder", "regalloc", "iremit"],
-    how: ["phi compare times bench/ against gcc and C#; bench/RESULTS.md is the last saved run.",
+    how: ["phi compare times bench/ against C and C#; bench/RESULTS.md is the last saved run (x86 Linux: compare like with like).",
           "PHI_IR_TRACE=1 lists the methods the new path refused, whose code from the generator is slower.",
           "Diff the hot method's .asm before and after. Values kept in the frame show as [rbp - n] or [ebp - n] inside the loop; PHI_IR_REGS=1 says why."] },
   { id: "editor", t: "The editor shows wrong errors or no completions", ex: "phi check passes, the editor complains", nodes: ["editor", "diag", "binder"],
@@ -506,8 +536,8 @@ const SYMPTOMS = [
   { id: "boot", t: "A kernel won't boot, or a file is missing from its disk", ex: "QEMU shows nothing  ·  OPEN fails on a rootfs file", nodes: ["builder", "asmlib", "nasm", "outputs"],
     how: ["Builder.cs lays out the disk: lib/boot's stages, the kernel, then a FAT16 partition made from NAME.rootfs/ by FatImage.cs.",
           "Files there need 8.3 names; .phi files there are built into .BIN programs. A kernel that has outgrown its room is reported by the builder."] },
-  { id: "fuzz", t: "phi fuzz reports a wrong program", ex: "100 programs on linux, linux64: 1 wrong", nodes: ["fuzz", "split", "irbuilder", "generator"],
-    how: ["Each wrong program is kept in fuzz-failures/ with the output it should print. Run it yourself, shrink it, then split it with PHI_IR=0 or PHI_IR32=0 like any wrong output.",
+  { id: "fuzz", t: "phi fuzz reports a wrong program", ex: "100 programs on linux, linux64: 1 wrong", nodes: ["fuzz", "split", "irbuilder", "generator", "a64"],
+    how: ["Each wrong program is kept in fuzz-failures/ with the output it should print. Run it yourself, shrink it, then split it with PHI_IR=0 or PHI_IR32=0 like any wrong output (on macOS, against --target linux64).",
           "The fuzzer works out the expected output itself, so check that by hand too: the fuzzer can be the one that's wrong."] },
 ];
 
@@ -617,11 +647,11 @@ function intro() {
     <ol class="steps">
       <li><span><b>Read.</b> The compile driver follows <code>use</code> lines; the lexer and parser turn each file into a syntax tree.</span></li>
       <li><span><b>Check.</b> The binder works out names, types and storage, or reports errors.</span></li>
-      <li><span><b>Generate.</b> Each method goes through the new path (the intermediate form) or the generator, which also writes everything around methods.</span></li>
-      <li><span><b>Assemble.</b> NASM turns the .asm text into machine code.</span></li>
+      <li><span><b>Generate.</b> Each method goes through the new path (the intermediate form) or the generator, which also writes everything around methods. A macOS program goes through the new path whole, to the ARM back end.</span></li>
+      <li><span><b>Assemble.</b> NASM turns the .asm text into machine code; for macOS, clang assembles program.s and links it.</span></li>
       <li><span><b>Build.</b> The builder makes the executable, disk image or .philib, which the test tools run.</span></li>
     </ol>
-    <div class="callout">The quickest split for any wrong program: build it again with <code>PHI_IR=0</code> (64-bit) or <code>PHI_IR32=0</code> (32-bit). If the problem goes away, look in the teal boxes. If it stays, look before them.</div>
+    <div class="callout">The quickest split for any wrong program: build it again with <code>PHI_IR=0</code> (64-bit) or <code>PHI_IR32=0</code> (32-bit). If the problem goes away, look in the teal boxes. If it stays, look before them. For a macOS program, build it with <code>--target linux64</code> too: right there and wrong on the Mac is the ARM back end.</div>
     <p style="color:var(--muted);font-size:.9rem">Click a box for its files and when to suspect it. Arrows point the way data flows; dashed ones are errors, fallbacks and uses. Scroll or pinch over the map to zoom, drag to move it, and use Full screen for a bigger view.</p>`;
 }
 function linkBtn(id, extra = "") {
