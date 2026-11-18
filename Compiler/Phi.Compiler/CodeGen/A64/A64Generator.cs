@@ -62,7 +62,9 @@ namespace Phi.Compiler.CodeGen.A64
         internal static readonly RegisterAllocator.Target Registers = new(
             new[] { "x10", "x11", "x12", "x13", "x14", "x15" },
             new[] { "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27" },
-            Enumerable.Range(16, 12).Select(i => $"v{i}").ToArray());
+            Enumerable.Range(16, 12).Select(i => $"v{i}").ToArray(),
+            // (libm's sin, cos and fmod: a call, which may change what a call changes)
+            i => i is X87I { Instruction: "fsin" or "fcos" } or X87I { B: not null });
 
         // ---------------------------------------------------------------- the program
 
@@ -71,11 +73,10 @@ namespace Phi.Compiler.CodeGen.A64
             if (unit.Kind != UnitKind.Program) return NotYet(program.File, default, "a kernel or a boot sector");
             if (program.Library != null) return NotYet(program.File, default, "a compiled library's build (phi build --library)");
             if (unit.CompiledLibraries.Count > 0) return NotYet(program.File, default, $"a compiled library ({unit.CompiledLibraries[0].Name}.philib)");
-            if (unit.RawBlocks.FirstOrDefault(r => r.File.Compiled == null) is RawBlockDecl raw)
-                return NotYet(raw.File, raw.Span, "an assembly block (an arm. block, for ARM, isn't taken yet either)");
+            if (unit.RawBlocks.FirstOrDefault(r => r.Language != "arm") is RawBlockDecl raw)
+                return NotYet(raw.File, raw.Span, $"an x86 assembly block ({raw.Language}.{raw.Name}; ARM's is arm.{raw.Name})");
             if (unit.ForeignEntries.FirstOrDefault() is MethodSymbol foreign)
                 return NotYet(foreign.Decl.File, foreign.Decl.Span, "addr foreign (a method other code calls)");
-            if (Catches) return NotYet(program.File, default, "catching errors (if call ... throws)");
 
             // each class's own statements, a method of their own, called in order from _main
             var starts = new List<string>();
@@ -94,6 +95,7 @@ namespace Phi.Compiler.CodeGen.A64
                 file = m.Decl.File;
                 EmitMethod(m, $"{m.Name} ({Path.GetFileName(m.Decl.File.Path)})");
             }
+            foreach (RawBlockDecl block in unit.RawBlocks) EmitRawBlock(block);
             if (failed) return "";
             // what follows isn't PHI code: a fault in it has no line
             code.AppendLine("phi_line_end:");
@@ -101,6 +103,7 @@ namespace Phi.Compiler.CodeGen.A64
 
             needed.Add("phi_exit");
             needed.Add("phi_fault_register");
+            needed.Add("phi_main_thread");
             foreach (string symbol in needed)
                 if (!Library.Provides(Target, symbol))
                     return NotYet(program.File, default, $"the library's {symbol}");
@@ -122,6 +125,9 @@ namespace Phi.Compiler.CodeGen.A64
             output.AppendLine("\tstp x19, x20, [sp, #16]");
             output.AppendLine("\tmov x19, x0                 ; argc");
             output.AppendLine("\tmov x20, x1                 ; argv");
+            output.AppendLine("\tadrp x28, phi_main_thread@PAGE");
+            output.AppendLine("\tadd x28, x28, phi_main_thread@PAGEOFF   ; this thread's block");
+            output.AppendLine("\tstr x28, [x28]");
             foreach (string init in library.SelectMany(f => f.Init))
             {
                 output.AppendLine("\tmov x0, x19");
@@ -146,8 +152,9 @@ namespace Phi.Compiler.CodeGen.A64
         }
 
         /// <summary>A program that catches errors (if call ... throws): what it means is the library's catch records.</summary>
-        bool Catches => unit.Classes.SelectMany(c => c.Body).Concat(unit.Methods.SelectMany(m => m.Decl.Body))
+        bool Catches => catches ??= unit.Classes.SelectMany(c => c.Body).Concat(unit.Methods.SelectMany(m => m.Decl.Body))
             .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
+        bool? catches;
 
         /// <summary>The heap's Alloc is the program's: a method's str result grows to fit (the generator's GrowResults).</summary>
         bool GrowResults => unit.Methods.Any(m => m.Name == "Heap.Alloc");
@@ -155,7 +162,7 @@ namespace Phi.Compiler.CodeGen.A64
         /// <summary>One method, from the intermediate form; false (and an error) when it can't be.</summary>
         bool EmitMethod(MethodSymbol m, string what)
         {
-            IrFunction? fn = IrBuilder.Build(m, _ => false, false, GrowResults, true, _ => false, out string why);
+            IrFunction? fn = IrBuilder.Build(m, _ => false, Catches, GrowResults, true, _ => false, out string why, arm: true);
             if (fn == null)
             {
                 NotYet(m.Decl.File, m.Decl.Span, why, m);
@@ -189,7 +196,6 @@ namespace Phi.Compiler.CodeGen.A64
         /// <summary>The first thing in the method the emitter doesn't write yet, or null.</summary>
         static string? Unsupported(IrFunction fn)
         {
-            if (fn.Values.Any(v => v.Float)) return "a float";
             if (fn.Values.Any(v => v.Vec)) return "a vec";
             if (fn.UnwindRecord != 0 || fn.Owned.Count > 0 || fn.OwnedTexts.Count > 0 || fn.OwnedViews.Count > 0 || fn.OwnedTableTexts.Count > 0)
                 return "objects or texts of its own that it frees";
@@ -199,31 +205,24 @@ namespace Phi.Compiler.CodeGen.A64
                 {
                     string? not = i switch
                     {
-                        LineMark or ConstI or CopyI or UnI or ExtendI or SetCcI or AddrI or LeaI or ExitI or RoutineI => null,
-                        BinI { Op: BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU, B.IsImm: false } => "a division by a number not known when it's built",
-                        BinI { Op: BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU, B.Imm: 0 or -1 } => "a division by 0 or -1",
-                        BinI => null,
-                        NarrowI n => n.Kind is MemKind.U8 or MemKind.S8 or MemKind.U16 or MemKind.S16 or MemKind.D32 or MemKind.Q64 ? null : $"a {n.Kind} narrowed",
-                        LoadI l => IntKind(l.Kind) ? null : $"a {l.Kind} read",
-                        StoreI s => IntKind(s.Kind) ? null : $"a {s.Kind} written",
-                        LoadIdxI l => IntKind(l.Kind) ? null : $"a {l.Kind} read from an array",
-                        StoreIdxI s => IntKind(s.Kind) ? null : $"a {s.Kind} written into an array",
-                        CallI c => c.Routine ? $"the library's {c.Label}"
-                                 : c.Result is not (CallResult.None or CallResult.Eax or CallResult.EdxEax or CallResult.Rax) ? "a call that gives back a float or a vec"
-                                 : c.ArgKinds.Any(k => !IntKind(k)) ? "a call given a float or a vec"
-                                 : null,
-                        PrintI p => p.Kind is PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char ? null : $"a log of a {p.Kind}",
-                        TextI t => t.Op is TextOp.Literal or TextOp.OrEmpty ? null : $"text: {t.Op}",
+                        LoadI { Kind: MemKind.V128 } or StoreI { Kind: MemKind.V128 } or LoadIdxI { Kind: MemKind.V128 } or StoreIdxI { Kind: MemKind.V128 } => "a vec",
+                        CallI c when c.Result == CallResult.Xmm0 || c.ArgKinds.Contains(MemKind.V128) => "a vec given to a call or given back",
+                        PrintI p when p.Kind is not (PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char or PrintKind.Int64 or PrintKind.Uint64 or PrintKind.Float) => $"a log of a {p.Kind}",
+                        ResultTextI { Grow: true } => "a str result that grows",
+                        X87I x when x.B == null && x.Instruction is not ("fsqrt" or "fabs" or "frndint" or "fsin" or "fcos") => $"the FPU's {x.Instruction}",
+                        LineMark or ConstI or CopyI or UnI or ExtendI or SetCcI or AddrI or LeaI or ExitI or RoutineI or BinI or NarrowI
+                            or LoadI or StoreI or LoadIdxI or StoreIdxI or CallI or PrintI or TextI or CheckI or SignCheckI or StopI or ThrowI
+                            or HasTextI or FixedStoreI or ResultTextI or NumberTextI or ZeroI or CopyBytesI or CompareBytesI or AddrOfI
+                            or FConstI or FBinI or FNegI or X87I or RoundF32I or ToFloatI or ToWholeI or LockI or UnlockI or AtomicI or RawCallI
+                            or CatchI or UncatchI or CaughtI => null,
                         _ => KindName(i),
                     };
                     if (not != null) return not;
                 }
                 string? end = b.End switch
                 {
-                    JumpT or SwitchT => null,
-                    BranchT br => br.Float ? "a comparison of floats" : null,
-                    RetT r => r.Float || r.Vec ? "a float or a vec given back" : null,
-                    TryT => "catching errors",
+                    JumpT or SwitchT or BranchT or TryT => null,
+                    RetT r => r.Vec ? "a vec given back" : null,
                     _ => KindName(b.End),
                 };
                 if (end != null) return end;
@@ -239,6 +238,63 @@ namespace Phi.Compiler.CodeGen.A64
             string name = i?.GetType().Name ?? "nothing";
             if (name.EndsWith('I') || name.EndsWith('T')) name = name[..^1];
             return $"what the intermediate form calls {name}";
+        }
+
+        // ---------------------------------------------------------------- assembly blocks
+
+        /// <summary>
+        /// An arm. block, as it's written: called (bl) from a method, with x29 that method's
+        /// frame (its arguments at x29 + 16 up, as x64. blocks have them at rbp + 16), it may change
+        /// any register but x19-x29 and sp, and gives back what's in w0. {name} is a class
+        /// variable's label (adrp x0, {name}@PAGE...) or a constant's value.
+        /// </summary>
+        void EmitRawBlock(RawBlockDecl raw)
+        {
+            file = raw.File;
+            code.AppendLine();
+            code.AppendLine($"; ---- arm.{raw.Name}");
+            code.AppendLine("\t.p2align 2");
+            code.AppendLine($"{Sym(raw.Name)}:");
+            var text = new StringBuilder();
+            int i = 0;
+            while (i < raw.Text.Length)
+            {
+                int open = raw.Text.IndexOf('{', i);
+                int close = open < 0 ? -1 : raw.Text.IndexOf('}', open);
+                if (close < 0) { text.Append(raw.Text, i, raw.Text.Length - i); break; }
+                text.Append(raw.Text, i, open - i);
+                string name = raw.Text[(open + 1)..close].Trim();
+                if (AsmName(name) is string replacement) text.Append(replacement);
+                else
+                {
+                    failed = true;
+                    diagnostics.Error(raw.File, new Span(raw.TextSpan.Start + open, close - open + 1),
+                        $"arm.{raw.Name} uses {{{name}}}, but there is no class variable or constant named '{name}'");
+                }
+                i = close + 1;
+            }
+            foreach (string line in text.ToString().Replace("\r\n", "\n").Split('\n'))
+                code.AppendLine(line.TrimEnd());
+        }
+
+        /// <summary>{name} in an arm. block: a class variable's label (a field's: label + offset), or a constant's value.</summary>
+        string? AsmName(string name)
+        {
+            string[] parts = name.Split('.');
+            if (!unit.ClassNames.TryGetValue(parts[0], out Symbol? symbol))
+                return Builtins.Constants.TryGetValue(name, out long builtin) ? builtin.ToString() : null;
+            if (symbol is ConstantSymbol k) return parts.Length == 1 ? k.Value.ToString() : null;
+            if (symbol is not VariableSymbol v) return null;
+            int offset = 0;
+            PhiType type = v.Type;
+            foreach (string member in parts.Skip(1))
+            {
+                FieldSymbol? f = type.IsStruct ? type.Struct!.Find(member) : null;
+                if (f == null) return null;
+                offset += f.Offset;
+                type = f.Type;
+            }
+            return offset == 0 ? Sym(v.Label) : $"{Sym(v.Label)}+{offset}";
         }
 
         // ---------------------------------------------------------------- labels

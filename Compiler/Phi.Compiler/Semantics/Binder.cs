@@ -119,6 +119,7 @@ namespace Phi.Compiler.Semantics
         readonly Dictionary<(UnitKind, string), MethodSymbol> methodsByFullName = new();
         readonly Dictionary<string, RawBlockDecl> rawBlocks = new();
         readonly Dictionary<string, RawBlockDecl> x64Blocks = new();
+        readonly Dictionary<string, RawBlockDecl> armBlocks = new();
 
         /// <summary>The system calls declared for this build (sys.Name), and the types of what each takes.</summary>
         readonly Dictionary<string, SysCallDecl> sysCalls = new();
@@ -342,8 +343,9 @@ namespace Phi.Compiler.Semantics
             foreach (RawBlockDecl raw in program.RawBlocks)
             {
                 file = raw.File;
-                // asm.Name for 16-bit and 32-bit code, and x64.Name beside it for 64-bit code
-                var blocks = raw.Language == "x64" ? x64Blocks : rawBlocks;
+                // asm.Name for 16-bit and 32-bit code, x64.Name beside it for 64-bit code, and
+                // arm.Name for ARM (a macOS program)
+                var blocks = raw.Language switch { "x64" => x64Blocks, "arm" => armBlocks, _ => rawBlocks };
                 if (!blocks.TryAdd(raw.Name, raw))
                     Error(raw.Span, $"an assembly block named {raw.Language}.{raw.Name} already exists");
             }
@@ -492,7 +494,7 @@ namespace Phi.Compiler.Semantics
                 unit.CompiledLibraries.Add(compiled);
                 foreach (string name in compiled.RawBlocks)
                 {
-                    var blocks = name.StartsWith("x64.") ? x64Blocks : rawBlocks;
+                    var blocks = name.StartsWith("x64.") ? x64Blocks : name.StartsWith("arm.") ? armBlocks : rawBlocks;
                     if (blocks.TryGetValue(name[4..], out RawBlockDecl? raw) && !unit.RawBlocks.Contains(raw)) unit.RawBlocks.Add(raw);
                 }
                 foreach (string name in compiled.OutsideFunctions)
@@ -5184,9 +5186,10 @@ namespace Phi.Compiler.Semantics
 
                 case RawBlockDecl raw:
                 {
-                    if (raw.Language is not ("asm" or "x64"))
+                    if (raw.Language is not ("asm" or "x64" or "arm") || (raw.Language == "arm") != (scope.Unit == UnitKind.Program && host.IsArm()))
                     {
-                        Error(calleeSpan, $"{raw.Language}.{raw.Name} can't run on x86; only asm. and x64. blocks can be called");
+                        Error(calleeSpan, raw.Language == "arm" ? $"arm.{raw.Name} runs only on ARM (a macOS program); x86 code needs asm.{raw.Name} or x64.{raw.Name}"
+                                                                : $"{raw.Language}.{raw.Name} can't run here; only asm., x64. and arm. blocks can be called");
                         return null;
                     }
                     if (arguments.Count > 0)
@@ -5395,8 +5398,15 @@ namespace Phi.Compiler.Semantics
             if (name.StartsWith("sys.") && sysCalls.TryGetValue(name[4..], out SysCallDecl? sys)) return sys;
             if (outsideFunctions.TryGetValue(name, out OutsideFunctionDecl? outside)) return outside;
 
-            // an assembly block: the version for the code this is, 64-bit (x64.Name) or not (asm.Name)
-            string rawName = name.StartsWith("asm.") || name.StartsWith("x64.") ? name[4..] : name;
+            // an assembly block: the version for the code this is, 64-bit (x64.Name) or not (asm.Name),
+            // or ARM's (arm.Name)
+            string rawName = name.StartsWith("asm.") || name.StartsWith("x64.") || name.StartsWith("arm.") ? name[4..] : name;
+            if (scope.Unit == UnitKind.Program && host.IsArm())
+            {
+                if (armBlocks.TryGetValue(rawName, out RawBlockDecl? arm)) return arm;
+                if ((x64Blocks.TryGetValue(rawName, out RawBlockDecl? x86) || rawBlocks.TryGetValue(rawName, out x86)))
+                    return new MissingBlock(x86, $"{x86.Language}.{rawName} has no ARM version (a macOS program's): write arm.{rawName} beside it");
+            }
             bool is64 = scope.Unit == UnitKind.Program && host.Is64();
             if ((is64 ? x64Blocks : rawBlocks).TryGetValue(rawName, out RawBlockDecl? raw)) return raw;
             if ((is64 ? rawBlocks : x64Blocks).TryGetValue(rawName, out RawBlockDecl? otherVersion))
@@ -6078,7 +6088,7 @@ namespace Phi.Compiler.Semantics
                         // an interrupt handler ends with iret, so it can't be called like a method
                         if (!m.IsInterruptHandler) addr.Type = PhiType.MethodOf(SignatureOf(m));
                         return;
-                    case RawBlockDecl { Language: "asm" or "x64" } raw:
+                    case RawBlockDecl { Language: "asm" or "x64" or "arm" } raw:
                         UseRawBlock(units[scope.Unit], raw);
                         addr.CodeLabel = raw.Name;
                         name.Type = PhiType.Void;

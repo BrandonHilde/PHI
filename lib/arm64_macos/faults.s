@@ -1,12 +1,11 @@
-; provides: phi_fault_register phi_line_at
-; requires: phi_print phi_print_int phi_exit
+; provides: phi_fault_register
+; requires: phi_fault_entry
 ; init: phi_fault_register
 ;
 ; A program the CPU stops (an empty object or a null pointer used, memory that isn't there,
-; the stack run out) prints why, with its line, and ends, as x86_64_linux's throw.asm does
-; for one that isn't caught: CR LF, "PHI: ", the message, " on line N in FILE", and exit
-; code -1. Its signals come to a handler on a spare stack of its own (a stack that has run
-; out has no room for one). Catching them (if call ... throws) is to come.
+; the stack run out, an instruction refused) throws an error, as x86_64_linux's
+; system.asm and throw.asm have it: its signals come to a handler on a spare stack of its
+; own (a stack that has run out has no room for one), which sends it to phi_fault_entry.
 	.section __TEXT,__text,regular,pure_instructions
 	.p2align 2
 
@@ -53,104 +52,54 @@ phi_fault_register:
 	ldp x29, x30, [sp], #48
 	ret
 
-; w0 = the signal, x1 = its siginfo, x2 = the ucontext (uc_mcontext at 48: its pc at 272,
-; its sp at 264). It never comes back, so it uses x19 up as it likes.
+; w0 = the signal, x1 = its siginfo (si_addr at 24), x2 = the ucontext (uc_mcontext at 48:
+; in it x0 at 16, x1 at 24, sp at 264, pc at 272). The stopped code carries on at
+; throw.s's phi_fault_entry, with w0 the kind of error and x1 where it happened, when the
+; handler returns; a stack that has run out carries on at the top of the spare stack.
 Lfault_handler:
-	mov w19, w0
-	ldr x20, [x1, #24]          ; si_addr: the memory it used
-	ldr x21, [x2, #48]
-	ldr x22, [x21, #272]        ; where it was
-	ldr x23, [x21, #264]        ; and its stack pointer
-	adrp x24, Lfault_refused@PAGE
-	add x24, x24, Lfault_refused@PAGEOFF
-	cmp w19, #11
+	ldr x9, [x1, #24]           ; the memory it used
+	ldr x10, [x2, #48]
+	ldr x11, [x10, #272]        ; where it was
+	ldr x12, [x10, #264]        ; and its stack pointer
+	mov w13, #5                 ; ErrorKind.ACCESS
+	cmp w0, #11                 ; SIGSEGV
 	b.eq Lfault_memory
-	cmp w19, #10
-	b.ne Lfault_say
+	cmp w0, #10                 ; SIGBUS
+	b.ne Lfault_send
 Lfault_memory:
-	cmp x20, #4096
+	cmp x9, #4096
 	b.hs Lfault_stack
-	adrp x24, Lfault_empty@PAGE
-	add x24, x24, Lfault_empty@PAGEOFF
-	b Lfault_say
+	mov w13, #4                 ; ErrorKind.EMPTY
+	b Lfault_send
 Lfault_stack:
 	; just by the stack pointer (64 KB below it to 16 KB above): the stack has run out
-	sub x9, x23, #16, lsl #12
-	cmp x20, x9
-	b.lo Lfault_say
-	add x9, x23, #4, lsl #12
-	cmp x20, x9
-	b.hs Lfault_say
-	adrp x24, Lfault_stack_out@PAGE
-	add x24, x24, Lfault_stack_out@PAGEOFF
-Lfault_say:
-	adrp x0, Lfault_prefix@PAGE
-	add x0, x0, Lfault_prefix@PAGEOFF
-	bl phi_print
-	mov x0, x24
-	bl phi_print
-	mov x0, x22
-	bl phi_line_at
-	cbz w0, Lfault_end
-	mov w25, w0
-	mov x26, x1
-	adrp x0, Lfault_on_line@PAGE
-	add x0, x0, Lfault_on_line@PAGEOFF
-	bl phi_print
-	mov w0, w25
-	bl phi_print_int
-	adrp x0, Lfault_in@PAGE
-	add x0, x0, Lfault_in@PAGEOFF
-	bl phi_print
-	mov x0, x26
-	bl phi_print
-Lfault_end:
-	adrp x0, Lfault_newline@PAGE
-	add x0, x0, Lfault_newline@PAGEOFF
-	bl phi_print
-	movn w0, #0
-	b phi_exit
-
-; x0 = an address in the program's code -> w0 = the line it's on, x1 = its file's name; 0 and
-; 0 when it isn't PHI code (the runtime) or isn't known (the program's phi_lines: a count,
-; then each line's address, line and file, 8 bytes each)
-phi_line_at:
-	adrp x9, phi_lines@PAGE
-	add x9, x9, phi_lines@PAGEOFF
-	ldr x10, [x9], #8
-	mov x11, #0                 ; the last mark at or before the address
-Lfault_line_next:
-	cbz x10, Lfault_line_found
-	ldr x12, [x9]
-	cmp x12, x0
-	b.hi Lfault_line_found
-	mov x11, x9
-	add x9, x9, #24
-	sub x10, x10, #1
-	b Lfault_line_next
-Lfault_line_found:
-	mov w0, #0
-	mov x1, #0
-	cbz x11, Lfault_line_done
-	ldr w0, [x11, #8]
-	cbz w0, Lfault_line_done
-	ldr x1, [x11, #16]
-Lfault_line_done:
+	sub x14, x12, #16, lsl #12
+	cmp x9, x14
+	b.lo Lfault_send
+	add x14, x12, #4, lsl #12
+	cmp x9, x14
+	b.hs Lfault_send
+	adrp x14, phi_fault_spare@PAGE
+	add x14, x14, phi_fault_spare@PAGEOFF
+	add x15, x14, #16, lsl #12
+	cmp x12, x14
+	b.lo Lfault_to_spare
+	cmp x12, x15
+	b.ls Lfault_again           ; on the spare stack itself: there's nowhere further to go
+Lfault_to_spare:
+	str x15, [x10, #264]
+	mov w13, #8                 ; ErrorKind.STACK
+Lfault_send:
+	adrp x14, phi_fault_entry@PAGE
+	add x14, x14, phi_fault_entry@PAGEOFF
+	cmp x11, x14
+	b.eq Lfault_again           ; the entry itself was stopped: it would only be again
+	str x13, [x10, #16]
+	str x11, [x10, #24]
+	str x14, [x10, #272]
 	ret
+Lfault_again:
+	movn w0, #0
+	bl __exit
 
-	.section __TEXT,__const
-Lfault_prefix:
-	.byte 13, 10, 80, 72, 73, 58, 32, 0          ; CR LF "PHI: "
-Lfault_empty:
-	.asciz "an empty object or a null pointer was used"
-Lfault_stack_out:
-	.asciz "the stack ran out: calls too deep"
-Lfault_refused:
-	.asciz "memory that is not there was used, or the CPU refused an instruction"
-Lfault_on_line:
-	.asciz " on line "
-Lfault_in:
-	.asciz " in "
-Lfault_newline:
-	.byte 10, 0
 	.zerofill __DATA,__bss,phi_fault_spare,65536,4

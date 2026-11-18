@@ -439,3 +439,38 @@ x64.HeapBinOf
 	mov [rel {heap_bin}], eax
 	ret
 }
+
+# the same two, for ARM (a macOS program)
+arm.HeapZero
+{
+	adrp x9, {heap_zero_at}@PAGE
+	add x9, x9, {heap_zero_at}@PAGEOFF
+	ldr x0, [x9]
+	adrp x9, {heap_zero_words}@PAGE
+	add x9, x9, {heap_zero_words}@PAGEOFF
+	ldr w1, [x9]
+	lsl w1, w1, #2				; bytes: a multiple of 8, 16 at a time
+1:	cmp w1, #16
+	b.lo 2f
+	stp xzr, xzr, [x0], #16
+	sub w1, w1, #16
+	b 1b
+2:	cbz w1, 3f
+	str xzr, [x0]
+3:	ret
+}
+
+arm.HeapBinOf
+{
+	adrp x9, {heap_bin_size}@PAGE
+	add x9, x9, {heap_bin_size}@PAGEOFF
+	ldr w0, [x9]
+	lsr w0, w0, #3
+	clz w0, w0
+	mov w1, #31
+	sub w0, w1, w0				; the highest bit set
+	adrp x9, {heap_bin}@PAGE
+	add x9, x9, {heap_bin}@PAGEOFF
+	str w0, [x9]
+	ret
+}

@@ -348,6 +348,29 @@ but makes Mach-O objects: for macOS programs, not Linux ones.)
 macOS programs are a further step: another file format, a
 signature every program must carry, and Apple's system library in place of system calls.
 
+### macOS programs: where they are (`phi build --target macos`)
+
+Native arm64 Mach-O programs, assembled and linked by Apple's clang (`CodeGen/A64/`, the
+runtime in `lib/arm64_macos/`). Every method and every class's statements go through the
+intermediate form; what it or the ARM emitter doesn't do yet is the error "... which macOS
+programs can't do yet", so `phi test --target macos` runs exactly what builds
+(`PHI_TEST_WHY=1` says why each other test doesn't).
+
+- **M1** (e94e711): ints, branches, calls, log, exit, line marks, uncaught faults: 11 tests.
+- **M2**: i64s, f64s and f32s (sin, cos and fmod from libm; x86's results kept: a too-big
+  float made a whole number is the smallest i64, fsin of 2^63 or more is x), index checks,
+  division by a number known only when it runs (by zero, or the smallest number by -1, is
+  "division by zero", as x86's CPU says), text routines, `when` tables, the heap (OS.Grow
+  reserves 16 GB of address space and makes 16 KB pages memory as the heap grows by 4 KB
+  ones), the log's lock, atomics (ARMv8.1's), `arm.` assembly blocks (the binder picks them
+  for macOS; `mem.phi` and `program_heap.phi` have theirs), and `if call ... throws`:
+  64 tests, all passing. A macOS program without its own `NAME.macos.expected` is held to
+  `NAME.linux64.expected`.
+- Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
+  intermediate form builds is checked against N, not how many it holds; and such a method's
+  `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the
+  generator checks them (`IrBuilder.arm`).
+
 ## Order, and where to stop
 
 | After | You can |

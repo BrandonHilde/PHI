@@ -182,3 +182,83 @@ x64.MemFillWords
 	rep stosd
 	ret
 }
+
+# ARM (a macOS program): the arguments as x64.'s, at x29 + 16 up
+arm.MemCopyForward
+{
+	ldr x0, [x29, #32]
+	ldr x1, [x29, #24]
+	ldr w2, [x29, #16]
+	sub x9, x0, x1
+	cmp x9, #8
+	b.lo 2f					; (closer than 8 ahead: a byte at a time, as a forward copy repeats)
+1:	cmp x2, #8
+	b.lo 2f
+	ldr x10, [x1], #8
+	str x10, [x0], #8
+	sub x2, x2, #8
+	b 1b
+2:	cbz x2, 3f
+	ldrb w10, [x1], #1
+	strb w10, [x0], #1
+	sub x2, x2, #1
+	b 2b
+3:	ret
+}
+arm.MemMove
+{
+	ldr x0, [x29, #32]
+	ldr x1, [x29, #24]
+	ldr w2, [x29, #16]
+	sub x9, x0, x1
+	cmp x9, x2
+	b.hs 1f					; not into the bytes ahead of it: forward
+	add x0, x0, x2
+	add x1, x1, x2
+4:	cbz x2, 3f				; backward, the last first
+	ldrb w10, [x1, #-1]!
+	strb w10, [x0, #-1]!
+	sub x2, x2, #1
+	b 4b
+1:	cmp x2, #8
+	b.lo 2f
+	ldr x10, [x1], #8
+	str x10, [x0], #8
+	sub x2, x2, #8
+	b 1b
+2:	cbz x2, 3f
+	ldrb w10, [x1], #1
+	strb w10, [x0], #1
+	sub x2, x2, #1
+	b 2b
+3:	ret
+}
+arm.MemFillBytes
+{
+	ldr x0, [x29, #32]
+	ldrb w1, [x29, #24]
+	ldr w2, [x29, #16]
+	mov x9, #0x0101010101010101
+	mul x1, x1, x9
+1:	cmp x2, #8
+	b.lo 2f
+	str x1, [x0], #8
+	sub x2, x2, #8
+	b 1b
+2:	cbz x2, 3f
+	strb w1, [x0], #1
+	sub x2, x2, #1
+	b 2b
+3:	ret
+}
+arm.MemFillWords
+{
+	ldr x0, [x29, #32]
+	ldr w1, [x29, #24]
+	ldr w2, [x29, #16]
+1:	cbz x2, 2f
+	str w1, [x0], #4
+	sub x2, x2, #1
+	b 1b
+2:	ret
+}

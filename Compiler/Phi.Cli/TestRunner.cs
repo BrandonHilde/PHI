@@ -297,10 +297,30 @@ namespace Phi.Cli
                 yield return new Mode(first.FlagName(), wrapper, Host: first);
         }
 
+        /// <summary>
+        /// NAME.MODE.expected for what's meant to differ on that system (the size of a pointer, in
+        /// 64-bit code), else NAME.expected. A macOS program is a 64-bit Unix program as a 64-bit
+        /// Linux one is: without its own, it's held to NAME.linux64.expected.
+        /// </summary>
+        static string ExpectedFile(string dir, string name, string variant, Host? host)
+        {
+            string own = Path.Combine(dir, variant + ".expected");
+            if (File.Exists(own)) return own;
+            string linux64 = Path.Combine(dir, $"{name}.{Host.Linux64.FlagName()}.expected");
+            if (host == Host.MacOS && File.Exists(linux64)) return linux64;
+            return Path.Combine(dir, name + ".expected");
+        }
+
         static bool BuildsFor(string phiFile, string text, Host host)
         {
             var source = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), text);
-            return PhiCompiler.Compile(source, generate: false, host: host).Success;
+            CompileResult result = PhiCompiler.Compile(source, generate: false, host: host);
+            // PHI_TEST_WHY=1: why each test doesn't build for a system (a census of what a new
+            // system's generator doesn't do yet), on standard error
+            if (!result.Success && Environment.GetEnvironmentVariable("PHI_TEST_WHY") == "1"
+                && result.Diagnostics.FirstOrDefault(d => d.Severity == Severity.Error) is Diagnostic why)
+                Console.Error.WriteLine($"why {host.FlagName()} {Path.GetFileName(phiFile)}: {why.Message}");
+            return result.Success;
         }
 
         static IEnumerable<Mode?> PhiOsModes(string phiFile)
@@ -493,9 +513,7 @@ namespace Phi.Cli
 
             string actual = Normalize(DebuggerRunner.Run(build.ExecutablePath!, mode.Host, Path.Combine(dir, name + ".cdb"), timeout));
             if (keepOutput) File.WriteAllText(actualFile, actual);
-            string expectedFile = File.Exists(Path.Combine(dir, variant + ".expected"))
-                ? Path.Combine(dir, variant + ".expected")
-                : Path.Combine(dir, name + ".expected");
+            string expectedFile = ExpectedFile(dir, name, variant, mode.Host);
             if (!File.Exists(expectedFile))
             {
                 File.WriteAllText(actualFile, actual);
@@ -548,9 +566,7 @@ namespace Phi.Cli
 
             // NAME.MODE.expected for what's meant to differ on that system (the size of a
             // pointer, in 64-bit code), else NAME.expected
-            string expectedFile = File.Exists(Path.Combine(dir, variant + ".expected"))
-                ? Path.Combine(dir, variant + ".expected")
-                : Path.Combine(dir, name + ".expected");
+            string expectedFile = ExpectedFile(dir, name, variant, mode.Host);
             if (!File.Exists(expectedFile))
             {
                 File.WriteAllText(actualFile, actual);

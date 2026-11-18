@@ -60,6 +60,13 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A program's method (exit is the program's end).</summary>
         readonly bool program;
 
+        /// <summary>
+        /// For ARM (a macOS program, CodeGen/A64), where every method and class's statements are
+        /// this form's, with nothing else to fall back on: what only it needs is done when this is set,
+        /// so x86's code stays as it is.
+        /// </summary>
+        bool arm;
+
         IrBuilder(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, bool program)
         {
             this.program = program;
@@ -77,12 +84,12 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>The method as the intermediate form, or null and why it isn't.</summary>
         public static IrFunction? Build(MethodSymbol m, Func<VariableSymbol, bool> holdable, bool catches, bool growResults, bool program,
-                                        Func<VariableSymbol, bool> remembersLength, out string why)
+                                        Func<VariableSymbol, bool> remembersLength, out string why, bool arm = false)
         {
             why = "";
             try
             {
-                var builder = new IrBuilder(m, holdable, catches, growResults, program) { remembersLength = remembersLength };
+                var builder = new IrBuilder(m, holdable, catches, growResults, program) { remembersLength = remembersLength, arm = arm };
                 builder.BuildBody();
                 return builder.fn;
             }
@@ -767,10 +774,14 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: false } constant } when arm && !Ours(constant):
+                    // (a class's variable with constant values: they're in the program's data already, as x86's generator has it)
+                    return;
+
                 case VarDecl { Symbol: VariableSymbol classVar } cd when !Ours(classVar) && Global(classVar) is string kept:
                 {
                     // (a class's own statement, made a method: its variable is the class's, set where it's kept)
-                    Need(cd.Values.Count <= 1 && !cd.IsNew && cd.AtAddress == null && cd.EachOf == null, "a declaration it doesn't take");
+                    Need(cd.Values.Count <= 1 && !cd.IsNew && cd.AtAddress == null && cd.EachOf == null, $"a declaration it doesn't take ({DeclarationShape(cd)})");
                     Mark(cd);
                     Opnd value = cd.Values.Count == 1 ? Value(cd.Values[0], classVar.Type)
                         : classVar.Type.IsVec ? ZeroVec() : IsF(classVar.Type) ? FloatConst(0.0) : Opnd.Const(0);
@@ -782,7 +793,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 {
                     Need(d.Symbol is VariableSymbol && d.Values.Count <= 1 && !d.IsNew && d.AtAddress == null && d.BufferSize == null
                          && d.MoreSizes.Count == 0 && !d.Unsized && d.TextSize == null && (d.EachOf == null || d.Values.Count == 0) && d.Narrows == null,
-                         "a declaration it doesn't take");
+                         $"a declaration it doesn't take ({DeclarationShape(d)})");
                     VariableSymbol v = (VariableSymbol)d.Symbol!;
                     Mark(d);
                     Assign(v, d.Values.Count == 1 ? d.Values[0] : null);
@@ -875,9 +886,11 @@ namespace Phi.Compiler.CodeGen.Ir
                 {
                     // the generator's EmitIfThrows: a catch record, the call, the record off again;
                     // a throw comes to Caught instead, where err is given the error
-                    Need(tried.Then.Count > 0 && tried.Then[0] is VarDecl { Symbol: VariableSymbol err } && frameStructs.ContainsKey(err)
+                    // (err: a struct of the method's own; or, for ARM, where a class's own statements are a method too, the class's)
+                    Need(tried.Then.Count > 0 && tried.Then[0] is VarDecl { Symbol: VariableSymbol err } && (frameStructs.ContainsKey(err) || arm && GlobalStruct(err) != null)
                          && err.Type.Struct!.Size == X86Generator.ErrorBytes, "a catch whose err isn't an Error");
                     var errVar = (VariableSymbol)((VarDecl)tried.Then[0]).Symbol!;
+                    string errPlace = frameStructs.ContainsKey(errVar) ? FramePlace(errVar, 0) : GlobalStruct(errVar)!;
                     Need(locks.Count == 0, "a catch inside a locked block");
                     Mark(tried);
                     for (int k = 0; k < 6; k++) fn.NewHome();
@@ -894,7 +907,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new UncatchI { Record = record });
                     if (current.End == null) current.End = new JumpT { Target = otherwise };
                     Enter(caught);
-                    Emit(new CaughtI { Place = FramePlace(errVar, 0) });
+                    Emit(new CaughtI { Place = errPlace });
                     Statements(tried.Then.Skip(1).ToList());
                     if (current.End == null) current.End = new JumpT { Target = after };
                     if (tried.Else != null)
@@ -934,7 +947,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     // round, back to the top while it holds (the generator's loops are the same)
                     if (loop.Init != null) Statement(loop.Init);
                     // (a simple loop done a vec at a time first, where it can be)
-                    if (VectorizeLoops) Vectorize(loop);
+                    if (VectorizeLoops && !arm) Vectorize(loop);
                     // the class variables the loop changes, in registers through it, as the
                     // generator keeps them (read before it, written back after it and before an
                     // error it stops with), when it calls nothing and nothing else reaches them
@@ -1467,17 +1480,58 @@ namespace Phi.Compiler.CodeGen.Ir
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
             Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
-            if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
-            {
-                VReg checkedIndex = InReg(index, Addr);
-                Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
-                index = checkedIndex;
-            }
             VReg bas = fn.NewAddress();
-            Emit(new AddrI { Dst = bas, Label = ClassArray(array)! });
+            if (arm && e.Target.Type.Filled && unsafeDepth == 0)
+            {
+                Emit(new AddrI { Dst = bas, Label = ClassArray(array)! });
+                index = CheckFilled(e, bas, index);
+            }
+            else
+            {
+                if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
+                {
+                    VReg checkedIndex = InReg(index, Addr);
+                    Emit(new CheckI { Index = checkedIndex, Limit = limit, At = e, Held = HeldStores() });
+                    index = checkedIndex;
+                }
+                Emit(new AddrI { Dst = bas, Label = ClassArray(array)! });
+            }
             if (index.IsImm && (index.Imm * scale < int.MinValue || index.Imm * scale > int.MaxValue)) index = InReg(index, Addr);
             return (bas, index, scale);
         }
+
+        /// <summary>
+        /// An [atmost N] array's index, checked against how many are in it (its count, after its
+        /// elements), as the generator's EmitFilledCount and EmitIndexCheck check it: for ARM, where
+        /// this form is all there is (x86's methods check it against N, its room).
+        /// </summary>
+        Opnd CheckFilled(IndexExpr e, VReg array, Opnd index)
+        {
+            VReg count = LoadAt(array, e.Target.Type.CountOffset, PhiType.U32);
+            VReg limit = fn.NewAddress();
+            Emit(new ExtendI { Dst = limit, Src = count, Signed = false });
+            VReg checkedIndex = InReg(index, Addr);
+            Emit(new CheckI { Index = checkedIndex, LimitValue = limit, At = e, Held = HeldStores() });
+            return checkedIndex;
+        }
+
+        /// <summary>Mem's calls that copy or fill a count of bytes (X86Generator's TakesAMemCount): their last parameter.</summary>
+        static bool TakesAMemCount(MethodSymbol m) =>
+            m.Decl.Name is "Copy" or "Move" or "Fill" or "Fill32" && m.Decl.Owner.File.Path == "lib/phi/memory/mem.phi";
+
+        /// <summary>What a declaration is that this form doesn't take, in words (for PHI_IR_TRACE, and ARM's error).</summary>
+        static string DeclarationShape(VarDecl d) =>
+            d.Symbol is not VariableSymbol v ? "not a variable"
+            : d.IsNew ? $"new {v.Type}"
+            : d.AtAddress != null ? "at an address"
+            : d.BufferSize != null ? "a buffer's size"
+            : d.MoreSizes.Count > 0 ? "an array of arrays"
+            : d.Unsized ? "an array without a size"
+            : d.TextSize != null ? "a str's size"
+            : d.EachOf != null ? "each of"
+            : d.Narrows != null ? "a narrowing"
+            : d.Values.Count > 1 ? $"{d.Values.Count} values for a {v.Type}"
+            : $"a {v.Type}, {(v.IsLocal ? "the method's" : "a class's")}";
 
         /// <summary>x &amp; mask, with mask a number less than limit: never out of an array of limit.</summary>
         static bool MaskedBelow(Expr index, int limit) =>
@@ -2149,6 +2203,13 @@ namespace Phi.Compiler.CodeGen.Ir
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
             Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
+            if (arm && e.Target.Type.Filled && unsafeDepth == 0)
+            {
+                VReg filled = AddressOf(e.Target);
+                index = CheckFilled(e, filled, index);
+                if (index.IsImm && (index.Imm * scale < int.MinValue || index.Imm * scale > int.MaxValue)) index = InReg(index, Addr);
+                return (filled, index, scale);
+            }
             if (e.CheckLimit is int limit && !(index.IsImm && index.Imm >= 0 && index.Imm < limit) && !MaskedBelow(e.Index, limit))
             {
                 VReg checkedIndex = InReg(index, Addr);
@@ -2729,6 +2790,21 @@ namespace Phi.Compiler.CodeGen.Ir
                 call.Args.Add(given != null ? Value(given, pt) : pt.IsString ? TextValue(new StringExpr { Value = "", Type = PhiType.Str })
                               : pt.IsVec ? ZeroVec() : IsF(pt) ? FloatConst(0.0) : Opnd.Const(0));
                 call.ArgKinds.Add(pt.IsString ? Ptr : KindOf(pt));
+            }
+            if (arm && arguments.Count == callee.Parameters.Count && TakesAMemCount(callee)
+                && !(call.Args[^1].IsImm && call.Args[^1].Imm >= 0 && call.Args[^1].Imm <= int.MaxValue))
+            {
+                // the generator's EmitMemCountCheck: a count of 2 billion or more (a negative number,
+                // or a subtraction below 0) stops with its error, which names the call's line
+                VReg count = InReg(call.Args[^1], false);
+                call.Args[^1] = count;
+                Block stop = fn.NewBlock(), go = fn.NewBlock();
+                current.End = new BranchT { Cond = Cond.LtS, A = count, B = Opnd.Const(0), Then = stop, Else = go };
+                Enter(stop);
+                Emit(new StopI { Text = $"a count of 2 billion or more for Mem.{callee.Decl.Name} (a negative number, or a subtraction below 0)",
+                                 Kind = 6, At = arguments[^1], Held = HeldStores() });
+                current.End = new JumpT { Target = go };
+                Enter(go);
             }
             if (GivesText(callee))
             {
