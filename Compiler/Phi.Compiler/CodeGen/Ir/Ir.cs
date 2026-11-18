@@ -505,6 +505,25 @@ namespace Phi.Compiler.CodeGen.Ir
         public Opnd B { get; init; }
     }
 
+    /// <summary>
+    /// Dst = A Cond B (or A has any of TestMask's bits, as BranchT's) ? IfTrue : IfFalse, with no
+    /// jump (for ARM, its csel: CodeGen/A64's Selects makes these of a short if).
+    /// </summary>
+    public sealed class SelectI : Instr
+    {
+        public VReg Dst { get; init; } = null!;
+        public Cond Cond { get; init; }
+        public VReg A { get; init; } = null!;
+        public Opnd B { get; init; }
+        public long? TestMask { get; init; }
+        public Opnd IfTrue { get; init; }
+        public Opnd IfFalse { get; init; }
+
+        /// <summary>1 when the choice is IfTrue + 1 (or IfFalse + 1): the choice adds it itself (csinc). Only one of them.</summary>
+        public int PlusTrue { get; init; }
+        public int PlusFalse { get; init; }
+    }
+
     /// <summary>A class's variable (or a parameter, at its place in the frame) read into a value.</summary>
     public sealed class LoadI : Instr
     {

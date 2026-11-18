@@ -108,6 +108,12 @@ namespace Phi.Compiler.CodeGen.Ir
                     yield return s.A;
                     if (s.B.Reg != null) yield return s.B.Reg;
                     break;
+                case SelectI s:
+                    yield return s.A;
+                    if (s.B.Reg != null) yield return s.B.Reg;
+                    if (s.IfTrue.Reg != null) yield return s.IfTrue.Reg;
+                    if (s.IfFalse.Reg != null) yield return s.IfFalse.Reg;
+                    break;
                 case StoreI st: if (st.Src.Reg != null) yield return st.Src.Reg; break;
                 case CallI call:
                     foreach (Opnd a in call.Args) if (a.Reg != null) yield return a.Reg;
@@ -251,6 +257,7 @@ namespace Phi.Compiler.CodeGen.Ir
             ExtendI e => e.Dst,
             NarrowI n => n.Dst,
             SetCcI s => s.Dst,
+            SelectI s => s.Dst,
             LoadI l => l.Dst,
             CallI c => c.Dst,
             LoadIdxI l => l.Dst,

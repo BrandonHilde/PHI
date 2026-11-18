@@ -339,6 +339,8 @@ namespace Phi.Compiler.CodeGen.A64
             }
             Inline(fn, m);
             IrPeephole.Run(fn, foldOffsets: true);
+            // (after the peephole, which makes a test of x & mask one instruction)
+            Selects(fn);
             FoldIndexExtends(fn);
             foreach (StructSymbol tested in fn.TypeTables) TypeTable(tested);
             if (Unsupported(fn) is string not)
@@ -347,6 +349,12 @@ namespace Phi.Compiler.CodeGen.A64
                 return false;
             }
             RegisterAllocator regs = RegisterAllocator.Allocate(fn, target: Registers);
+            if (regs.UsedCalleeSaved.Count > 0 && EarlyReturn(fn) != null)
+            {
+                // (kept registers to save, and a way that returns at once: that way on values of its own)
+                SplitEntry(fn);
+                regs = RegisterAllocator.Allocate(fn, target: Registers);
+            }
             ThroughX0(fn, regs);
             code.AppendLine();
             code.AppendLine($"; ---- {what}");
@@ -383,7 +391,7 @@ namespace Phi.Compiler.CodeGen.A64
                     {
                         PrintI p when p.Kind is not (PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char or PrintKind.Int64 or PrintKind.Uint64 or PrintKind.Float) => $"a log of a {p.Kind}",
                         X87I x when x.B == null && x.Instruction is not ("fsqrt" or "fabs" or "frndint" or "fsin" or "fcos") => $"the FPU's {x.Instruction}",
-                        LineMark or ConstI or CopyI or UnI or ExtendI or SetCcI or AddrI or LeaI or ExitI or RoutineI or BinI or NarrowI
+                        LineMark or ConstI or CopyI or UnI or ExtendI or SetCcI or SelectI or AddrI or LeaI or ExitI or RoutineI or BinI or NarrowI
                             or LoadI or StoreI or LoadIdxI or StoreIdxI or CallI or PrintI or TextI or CheckI or SignCheckI or StopI or ThrowI
                             or HasTextI or FixedStoreI or ResultTextI or NumberTextI or ZeroI or CopyBytesI or CompareBytesI or AddrOfI
                             or FConstI or FBinI or FNegI or X87I or RoundF32I or ToFloatI or ToWholeI or LockI or UnlockI or AtomicI or RawCallI

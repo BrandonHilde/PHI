@@ -28,6 +28,9 @@ namespace Phi.Compiler.CodeGen.A64
             /// <summary>What's written after the method: the ways out to an error, and jump tables.</summary>
             readonly List<Action> after = new();
 
+            /// <summary>True while the block that returns at once is written: the kept registers weren't saved on the way to it.</summary>
+            bool unsaved;
+
             Syntax.Node? pendingLine;
 
             /// <summary>The file of the method being written (the generator's file is a put-in method's while its lines are written).</summary>
@@ -104,12 +107,21 @@ namespace Phi.Compiler.CodeGen.A64
                     SubImm("sp", "x29", frame);
                 }
                 else if (frame > 0) SubImm("sp", "sp", frame);
-                SaveKept("str");
+                // a method that may return at once, with neither its first block nor the one that
+                // returns touching a kept register: they're saved where the rest begins, and
+                // the block that returns has none to put back
+                var early = regs.UsedCalleeSaved.Count > 0 ? EarlyReturn(fn) : null;
+                bool Kept(Block b) => b.Instrs.SelectMany(i => RegisterAllocator.Uses(i).Concat(RegisterAllocator.Def(i) is VReg d ? new[] { d } : Array.Empty<VReg>()))
+                    .Concat(RegisterAllocator.Uses(b.End)).Any(v => Reg(v) is string r && regs.UsedCalleeSaved.Contains(r));
+                if (early is var (first, back, _) && (Kept(first) || Kept(back))) early = null;
+                if (early == null) SaveKept("str");
                 for (int k = 0; k < fn.Blocks.Count; k++)
                 {
                     Block b = fn.Blocks[k];
                     Block? next = k + 1 < fn.Blocks.Count ? fn.Blocks[k + 1] : null;
                     Label(blockLabels[b]);
+                    if (b == early?.Later) SaveKept("str");
+                    unsaved = b == early?.Return;
                     foreach (Instr i in b.Instrs) Instruction(i);
                     End(b.End!, next);
                 }
@@ -133,7 +145,7 @@ namespace Phi.Compiler.CodeGen.A64
 
             void Epilogue()
             {
-                SaveKept("ldr");
+                if (!unsaved) SaveKept("ldr");
                 E("mov sp, x29");
                 E("ldp x29, x30, [sp], #16");
                 E("ret");
@@ -586,6 +598,30 @@ namespace Phi.Compiler.CodeGen.A64
                         string t = Target(s.Dst, "x9");
                         E($"cset {W(t, false)}, {CondName(s.Cond)}");
                         Put(s.Dst, t);
+                        break;
+                    }
+
+                    case SelectI sel:
+                    {
+                        // the test as a branch makes it, then one or the other with no jump
+                        // (a number made in x16 or x17, and a value read from the frame, leave the flags as they are)
+                        string a = Get(sel.A, "x9");
+                        if (sel.TestMask is long bits && LogicalImm(bits, sel.A.Wide)) E($"tst {a}, #{LogicalText(bits, sel.A.Wide)}");
+                        else if (sel.TestMask is long mask)
+                        {
+                            MovImm("x17", mask, sel.A.Wide);
+                            E($"tst {a}, {W("x17", sel.A.Wide)}");
+                        }
+                        else Compare(a, sel.B, sel.A.Wide);
+                        bool wide = sel.Dst.Wide;
+                        string yes = GetOp(sel.IfTrue, "x16", wide);
+                        string no = GetOp(sel.IfFalse, "x17", wide);
+                        string t = Target(sel.Dst, "x9");
+                        // (csinc adds 1 to its second value: the first of them is the one kept when the condition holds)
+                        if (sel.PlusFalse == 1) E($"csinc {t}, {yes}, {no}, {CondName(sel.Cond)}");
+                        else if (sel.PlusTrue == 1) E($"csinc {t}, {no}, {yes}, {Invert(CondName(sel.Cond))}");
+                        else E($"csel {t}, {yes}, {no}, {CondName(sel.Cond)}");
+                        Put(sel.Dst, t);
                         break;
                     }
 

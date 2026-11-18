@@ -473,7 +473,15 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   nothing in its frame and can't stop with an error naming a line, up to three deep, never a
   compiled library's in the program using it; its lines stay its own file's, so a fault in
   it names the line it's on. maps 2.94 -> 2.46. ARM only; x86's code is the same.
-  Furthest behind now: maps (2.6; the C one keeps key, value and used in one 12-byte slot and
+- **Speed, fourth pass (beside clang 21): 1.13 times.** A method that may stop with an error
+  is put in where it's called too (the emitter names the file of the line it's writing, so
+  the error names its own line and file: tests/inline_errors_program): maps 2.46 -> 2.0. A
+  short if and else that set one variable is a choice with no jump (`SelectI`, csel and
+  csinc; `Selects`): collatz 1.30 -> 1.00. Tried and left out: an if alone as a choice (a
+  new best found now and then is a branch the CPU guesses; collatz was a tenth slower with
+  it). A method that returns at once one way saves its kept registers only on the other
+  (`SplitEntry`): fib 1.43 -> 1.42, hardly anything, kept since it costs a copy.
+  Furthest behind now: maps (2.0; the C one keeps key, value and used in one 12-byte slot and
   is all in one function, PHI's Map is three arrays and four calls a lookup), fib (1.4),
   collatz and lists (1.3). What would take them further: a choice without a branch (csel)
   for collatz, the kept registers not saved on a path that returns at once for fib, small
