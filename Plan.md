@@ -4262,6 +4262,13 @@ the answer as before, so nothing that calls the library changes; a failing answe
   variables; a system call a kernel declares itself (`sys.Name: 200;`) can't say which of
   its answers fail yet.
 
+**Moving development to a Mac (2026-11-17, a plan, nothing done).** [MacPlan.md](MacPlan.md):
+what a Mac runs as the code is (the compiler, and the 618 of 830 test runs that are QEMU's),
+what it can't (the 212 that are Linux programs, so all 64-bit code, the fuzzers, the code
+library's tests), and the four stages that get there: the tools; a Linux machine on the Mac
+with `qemu-user`, and `HostRunner.cs` taught to use it as it uses WSL; PHI OS's scripts;
+real x86 from GitHub's machines on each push.
+
 **The speed bar met (2026-11-15).** `phi compare --runs 5`, saved as `bench/RESULTS.md`:
 64-bit PHI over C# 0.98 together (1.53 two days before), the most `lists` at 1.26 and
 `collatz` at 1.12, `strings` 0.85, `sort` 0.75; over gcc -O2 1.34 together. Every test
