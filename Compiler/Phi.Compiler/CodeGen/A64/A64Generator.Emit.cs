@@ -29,7 +29,9 @@ namespace Phi.Compiler.CodeGen.A64
             readonly List<Action> after = new();
 
             Syntax.Node? pendingLine;
-            SourceFile? pendingFile;
+
+            /// <summary>The file of the method being written (the generator's file is a put-in method's while its lines are written).</summary>
+            readonly SourceFile methodFile;
 
             /// <summary>The line the code being written is for (a text error names it).</summary>
             Syntax.Node? currentLine;
@@ -40,6 +42,7 @@ namespace Phi.Compiler.CodeGen.A64
                 fn = function;
                 regs = allocation;
                 methodLabel = label;
+                methodFile = g.file;
                 foreach (Block b in fn.Blocks) blockLabels[b] = g.NewLabel("b");
                 int most = fn.Blocks.SelectMany(b => b.Instrs).Select(i => i switch
                 {
@@ -62,12 +65,8 @@ namespace Phi.Compiler.CodeGen.A64
             {
                 if (pendingLine != null)
                 {
-                    // (a line of a method put in here is in that method's file)
-                    SourceFile own = g.file;
-                    if (pendingFile != null) g.file = pendingFile;
                     g.Line($"\t; {Line(pendingLine)}");
                     g.MarkLine(pendingLine);
-                    g.file = own;
                     pendingLine = null;
                 }
                 g.Line("\t" + instruction);
@@ -115,7 +114,9 @@ namespace Phi.Compiler.CodeGen.A64
                     End(b.End!, next);
                 }
                 pendingLine = null;
+                g.file = methodFile;
                 for (int k = 0; k < after.Count; k++) after[k]();
+                g.file = methodFile;
                 EmitUnwind();
             }
 
@@ -423,8 +424,11 @@ namespace Phi.Compiler.CodeGen.A64
             string Stop(List<StoreI> held, Action stop)
             {
                 string label = g.NewLabel("stop");
+                // (the error names the file its line is in: a put-in method's, where it's one's)
+                SourceFile from = g.file;
                 after.Add(() =>
                 {
+                    g.file = from;
                     Label(label);
                     WriteBack(held);
                     stop();
@@ -486,8 +490,10 @@ namespace Phi.Compiler.CodeGen.A64
                 {
                     case LineMark mark:
                         pendingLine = mark.Node;
-                        pendingFile = mark.File;
                         currentLine = mark.Node;
+                        // (a line of a method put in here is in that method's file: what's written
+                        // from here names it, an error's line and file among it)
+                        g.file = mark.File ?? methodFile;
                         break;
 
                     case ConstI { Dst.Float: true } zf:
@@ -714,7 +720,9 @@ namespace Phi.Compiler.CodeGen.A64
                         // as the generator's EmitNumberCheck: the top bit set stops with its error
                         string v = Get(check.Value, "x9", false);
                         int line = LineOf(check.At);
-                        E($"tbnz {v}, #31, {Stop(check.Held, () => Throw(check.Text, line, ErrorConvert))}");
+                        // (not tbnz, which reaches 32 KB: the way out is after the method, which may be longer)
+                        E($"cmp {v}, #0");
+                        E($"b.lt {Stop(check.Held, () => Throw(check.Text, line, ErrorConvert))}");
                         break;
                     }
 

@@ -9,11 +9,10 @@ namespace Phi.Compiler.CodeGen.A64
     // and its return a jump on. A call costs a frame, the registers kept and the arguments
     // through memory; Map's Get was four of them (Get, Hash.Of, FindHashed, and what called it).
     //
-    // Only a method that's simple all through: nothing kept in its frame (no objects, strs or
-    // arrays of its own, nothing whose address is taken), and nothing that stops with an error
-    // naming a line (an index check, a division that may be by zero, a throw): those name the
-    // file of the method being written. Its lines are marked as its own file's, so a fault in it
-    // (memory that isn't there) names the line it's on, as when it's called.
+    // Only a method that keeps nothing in its frame: no objects, strs or arrays of its own,
+    // nothing whose address is taken. Its lines are marked as its own file's (LineMark.File),
+    // and the emitter names that file while it writes them, so an error or a fault in it names
+    // the line and file it's on, as when it's called.
     //
     // Never a compiled library's method in the program that uses it (the program has the text
     // of some, for the ones that take types): its code is the library's, and so are the class
@@ -158,11 +157,11 @@ namespace Phi.Compiler.CodeGen.A64
             }
         }
 
-        /// <summary>An instruction a method put in where it's called may have: nothing in its frame but its parameters, read; nothing that stops naming a line.</summary>
+        /// <summary>An instruction a method put in where it's called may have: nothing in its frame but its parameters, read.</summary>
         static bool Simple(Instr i) => i switch
         {
             LineMark or ConstI or CopyI or UnI or ExtendI or NarrowI or SetCcI or LoadIdxI or StoreIdxI or LeaI or FConstI or FBinI or FNegI or ToFloatI => true,
-            BinI b => b.Op is not (BinOp.DivS or BinOp.DivU or BinOp.RemS or BinOp.RemU) || b.B.IsImm && b.B.Imm is not (0 or -1),
+            BinI or CheckI or SignCheckI or StopI or ThrowI => true,
             LoadI => true,   // (a parameter's, or a class's variable's: Inlined looks at which)
             StoreI s => !s.Place.TrimStart().StartsWith("rbp", StringComparison.Ordinal),
             AddrI a => !a.Label.TrimStart().StartsWith("rbp", StringComparison.Ordinal),

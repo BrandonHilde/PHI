@@ -1,0 +1,10 @@
+phi.Shelf:Library
+{
+	int items[4];
+
+	[At: int i;]
+	[end: items:i]
+
+	[Half: int a; int b;]
+	[end: a / b]
+}

@@ -1,0 +1,24 @@
+# A small method of another file is put in where it's called (macOS programs): an error in it
+# still names its own line and file, caught or not, as when it's called (x86).
+use inline_src.shelf;
+
+phi.InlineErrorsProgram:Program
+{
+	int n: 9;
+	int got: 0;
+	if call got is Shelf.At: n throws err
+		log err '\n';
+	;;
+	int zero: 0;
+	if call got is Shelf.Half: n zero throws err
+		log err '\n';
+	;;
+	log (Shelf.At: 2) ' ' (Shelf.Half: 8 2) '\n';
+	call Run;
+	exit 0;
+
+	[Run]
+		int k: 7;
+		log (Shelf.At: k) '\n';
+	[end]
+}
