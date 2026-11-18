@@ -57,3 +57,13 @@ x64.BenchReadCounter
 	mov [rel {bench_now} + 4], edx
 	ret
 }
+
+# ARM (a macOS program): the CPU's virtual counter
+arm.BenchReadCounter
+{
+	mrs x10, cntvct_el0
+	adrp x9, {bench_now}@PAGE
+	add x9, x9, {bench_now}@PAGEOFF
+	str x10, [x9]
+	ret
+}

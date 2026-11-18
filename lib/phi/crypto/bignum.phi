@@ -523,6 +523,130 @@ x64.BigMontMul
 	ret
 }
 
+# ARM (a macOS program): the same three, a 32-bit word at a time, products in 64 bits
+arm.BigMontMul
+{
+	adrp x9, {big_from_a}@PAGE
+	add x9, x9, {big_from_a}@PAGEOFF
+	ldr x1, [x9]
+	adrp x9, {big_from_b}@PAGE
+	add x9, x9, {big_from_b}@PAGEOFF
+	ldr x2, [x9]
+	adrp x8, {big_a}@PAGE
+	add x8, x8, {big_a}@PAGEOFF
+	adrp x3, {big_b}@PAGE
+	add x3, x3, {big_b}@PAGEOFF
+	adrp x11, {big_w}@PAGE
+	add x11, x11, {big_w}@PAGEOFF
+	adrp x9, {big_h}@PAGE
+	add x9, x9, {big_h}@PAGEOFF
+	ldr w12, [x9]
+	adrp x9, {big_inverse}@PAGE
+	add x9, x9, {big_inverse}@PAGEOFF
+	ldr w13, [x9]
+	mov x4, #0
+1:	add x6, x1, x4, lsl #3				; two 16-bit limbs joined into each word
+	ldp w5, w7, [x6]
+	orr w5, w5, w7, lsl #16
+	str w5, [x8, x4, lsl #2]
+	add x6, x2, x4, lsl #3
+	ldp w5, w7, [x6]
+	orr w5, w5, w7, lsl #16
+	str w5, [x3, x4, lsl #2]
+	str wzr, [x11, x4, lsl #2]
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 1b
+	add x6, x11, x4, lsl #2
+	str wzr, [x6]
+	str wzr, [x6, #4]
+	adrp x9, {big_n}@PAGE
+	add x9, x9, {big_n}@PAGEOFF
+	ldr x1, [x9]
+	mov x14, #0					; which part of b
+2:	ldr w15, [x3, x14, lsl #2]
+	mov x16, #0					; what's carried
+	mov x4, #0
+3:	ldr w5, [x8, x4, lsl #2]
+	ldr w6, [x11, x4, lsl #2]
+	umaddl x5, w5, w15, x6
+	add x5, x5, x16
+	str w5, [x11, x4, lsl #2]
+	lsr x16, x5, #32
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 3b
+	add x6, x11, x4, lsl #2
+	ldr w5, [x6]
+	adds w5, w5, w16
+	str w5, [x6]
+	cset w5, hs
+	str w5, [x6, #4]
+	ldr w5, [x11]
+	mul w17, w5, w13				; q
+	ldr w6, [x1]
+	umaddl x5, w17, w6, x5
+	lsr x16, x5, #32
+	mov x4, #1
+4:	cmp w4, w12
+	b.hs 5f
+	ldr w6, [x1, x4, lsl #2]
+	ldr w7, [x11, x4, lsl #2]
+	umaddl x6, w6, w17, x7
+	add x6, x6, x16
+	sub x7, x4, #1
+	str w6, [x11, x7, lsl #2]
+	lsr x16, x6, #32
+	add x4, x4, #1
+	b 4b
+5:	ldr w6, [x11, x4, lsl #2]
+	adds w6, w6, w16
+	sub x7, x4, #1
+	str w6, [x11, x7, lsl #2]
+	add x7, x4, #1
+	ldr w6, [x11, x7, lsl #2]
+	adc w6, w6, wzr
+	str w6, [x11, x4, lsl #2]
+	add x14, x14, #1
+	cmp w14, w12
+	b.lo 2b
+	; the modulus comes off if w has gone past 2^(32 h), or isn't below it (from the top down)
+	mov w4, w12
+	ldr w5, [x11, x4, lsl #2]
+	cbnz w5, 7f
+6:	sub x4, x4, #1
+	ldr w5, [x11, x4, lsl #2]
+	ldr w6, [x1, x4, lsl #2]
+	cmp w5, w6
+	b.hi 7f
+	b.lo 9f
+	cbnz x4, 6b
+7:	mov x4, #0
+	mov w7, w12
+	cmp xzr, xzr					; (no borrow yet)
+8:	ldr w5, [x11, x4, lsl #2]
+	ldr w6, [x1, x4, lsl #2]
+	sbcs w5, w5, w6
+	str w5, [x11, x4, lsl #2]
+	add x4, x4, #1
+	sub x7, x7, #1
+	cbnz x7, 8b
+9:
+	adrp x9, {big_to}@PAGE
+	add x9, x9, {big_to}@PAGEOFF
+	ldr x2, [x9]
+	mov x4, #0
+1:	ldr w5, [x11, x4, lsl #2]
+	and w6, w5, #0xFFFF
+	lsr w7, w5, #16
+	add x9, x2, x4, lsl #3
+	stp w6, w7, [x9]
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 1b
+	ret
+}
+
 # For Big.AddMod: the limbs at big_to = those at big_from_a plus those at big_from_b, a
 # limb at a time (16 bits in 32, so what's carried is the bit above), then the modulus
 # (big_limbs limbs at big_n) taken off if the sum carried out or isn't below it.
@@ -619,6 +743,57 @@ x64.BigAddMod
 .done:
 	ret
 }
+arm.BigAddMod
+{
+	adrp x9, {big_from_a}@PAGE
+	add x9, x9, {big_from_a}@PAGEOFF
+	ldr x1, [x9]
+	adrp x9, {big_from_b}@PAGE
+	add x9, x9, {big_from_b}@PAGEOFF
+	ldr x2, [x9]
+	adrp x9, {big_to}@PAGE
+	add x9, x9, {big_to}@PAGEOFF
+	ldr x3, [x9]
+	adrp x9, {big_limbs}@PAGE
+	add x9, x9, {big_limbs}@PAGEOFF
+	ldr w12, [x9]
+	mov w16, #0
+	mov x4, #0
+1:	ldr w5, [x1, x4, lsl #2]
+	ldr w6, [x2, x4, lsl #2]
+	add w5, w5, w6
+	add w5, w5, w16
+	lsr w16, w5, #16
+	and w5, w5, #0xFFFF
+	str w5, [x3, x4, lsl #2]
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 1b
+	adrp x9, {big_n}@PAGE
+	add x9, x9, {big_n}@PAGEOFF
+	ldr x1, [x9]
+	cbnz w16, 3f
+2:	sub x4, x4, #1					; from the top limb down
+	ldr w5, [x3, x4, lsl #2]
+	ldr w6, [x1, x4, lsl #2]
+	cmp w5, w6
+	b.hi 3f
+	b.lo 5f
+	cbnz x4, 2b
+3:	mov w16, #0
+	mov x4, #0
+4:	ldr w5, [x3, x4, lsl #2]
+	ldr w6, [x1, x4, lsl #2]
+	sub w5, w5, w6
+	sub w5, w5, w16
+	lsr w16, w5, #31
+	and w5, w5, #0xFFFF
+	str w5, [x3, x4, lsl #2]
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 4b
+5:	ret
+}
 
 # For Big.SubMod: the limbs at big_to = those at big_from_a less those at big_from_b (what's
 # borrowed shows as the top bit of the 32), then the modulus put back on if that borrowed.
@@ -696,4 +871,48 @@ x64.BigSubMod
 	jb .add
 .done:
 	ret
+}
+arm.BigSubMod
+{
+	adrp x9, {big_from_a}@PAGE
+	add x9, x9, {big_from_a}@PAGEOFF
+	ldr x1, [x9]
+	adrp x9, {big_from_b}@PAGE
+	add x9, x9, {big_from_b}@PAGEOFF
+	ldr x2, [x9]
+	adrp x9, {big_to}@PAGE
+	add x9, x9, {big_to}@PAGEOFF
+	ldr x3, [x9]
+	adrp x9, {big_limbs}@PAGE
+	add x9, x9, {big_limbs}@PAGEOFF
+	ldr w12, [x9]
+	mov w16, #0
+	mov x4, #0
+1:	ldr w5, [x1, x4, lsl #2]
+	ldr w6, [x2, x4, lsl #2]
+	sub w5, w5, w6
+	sub w5, w5, w16
+	lsr w16, w5, #31
+	and w5, w5, #0xFFFF
+	str w5, [x3, x4, lsl #2]
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 1b
+	cbz w16, 3f
+	adrp x9, {big_n}@PAGE
+	add x9, x9, {big_n}@PAGEOFF
+	ldr x1, [x9]
+	mov w16, #0
+	mov x4, #0
+2:	ldr w5, [x3, x4, lsl #2]
+	ldr w6, [x1, x4, lsl #2]
+	add w5, w5, w6
+	add w5, w5, w16
+	lsr w16, w5, #16
+	and w5, w5, #0xFFFF
+	str w5, [x3, x4, lsl #2]
+	add x4, x4, #1
+	cmp w4, w12
+	b.lo 2b
+3:	ret
 }

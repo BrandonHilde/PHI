@@ -672,3 +672,76 @@ x64.DrawBlendRow
 	jnz .pixel
 	ret
 }
+
+# ARM (a macOS program): the same three
+arm.DrawFillRow
+{
+	adrp x9, {draw_fill_to}@PAGE
+	add x9, x9, {draw_fill_to}@PAGEOFF
+	ldr x0, [x9]
+	adrp x9, {draw_fill_count}@PAGE
+	add x9, x9, {draw_fill_count}@PAGEOFF
+	ldr w1, [x9]
+	adrp x9, {draw_fill_color}@PAGE
+	add x9, x9, {draw_fill_color}@PAGEOFF
+	ldr w2, [x9]
+	cbz w1, 2f
+1:	str w2, [x0], #4
+	subs w1, w1, #1
+	b.ne 1b
+2:	ret
+}
+arm.DrawCopyRow
+{
+	adrp x9, {draw_copy_from}@PAGE
+	add x9, x9, {draw_copy_from}@PAGEOFF
+	ldr x1, [x9]
+	adrp x9, {draw_copy_to}@PAGE
+	add x9, x9, {draw_copy_to}@PAGEOFF
+	ldr x0, [x9]
+	adrp x9, {draw_copy_count}@PAGE
+	add x9, x9, {draw_copy_count}@PAGEOFF
+	ldr w2, [x9]
+	cbz w2, 2f
+1:	ldr w3, [x1], #4
+	str w3, [x0], #4
+	subs w2, w2, #1
+	b.ne 1b
+2:	ret
+}
+arm.DrawBlendRow
+{
+	adrp x9, {draw_fill_to}@PAGE
+	add x9, x9, {draw_fill_to}@PAGEOFF
+	ldr x0, [x9]
+	adrp x9, {draw_fill_count}@PAGE
+	add x9, x9, {draw_fill_count}@PAGEOFF
+	ldr w1, [x9]
+	adrp x9, {draw_blend_keep}@PAGE
+	add x9, x9, {draw_blend_keep}@PAGEOFF
+	ldr w2, [x9]
+	adrp x9, {draw_blend_rb}@PAGE
+	add x9, x9, {draw_blend_rb}@PAGEOFF
+	ldr w3, [x9]
+	adrp x9, {draw_blend_g}@PAGE
+	add x9, x9, {draw_blend_g}@PAGEOFF
+	ldr w4, [x9]
+	cbz w1, 2f
+	mov w10, #0xFF00FF
+1:	ldr w5, [x0]
+	and w6, w5, w10
+	mul w6, w6, w2
+	add w6, w6, w3
+	lsr w6, w6, #8
+	and w6, w6, w10
+	and w7, w5, #0xFF00
+	mul w7, w7, w2
+	add w7, w7, w4
+	lsr w7, w7, #8
+	and w7, w7, #0xFF00
+	orr w6, w6, w7
+	str w6, [x0], #4
+	subs w1, w1, #1
+	b.ne 1b
+2:	ret
+}

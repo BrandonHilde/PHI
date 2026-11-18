@@ -559,7 +559,7 @@ namespace Phi.Compiler
         {
             ("HostTime", new[] { "host.time_linux32", "host.time_linux64", "host.time_windows", "host.time_macos" }),
             ("HostFiles", new[] { "host.files_linux", "host.files_windows", "host.files_macos" }),
-            ("HostNet", new[] { "host.net", "host.net_linux", "host.net_windows" }),
+            ("HostNet", new[] { "host.net", "host.net_linux", "host.net_windows", "host.net_macos" }),
             ("HostThreads", new[] { "host.threads", "host.threads_linux", "host.threads_windows", "host.threads_macos" }),
             ("HostWindow", new[] { "host.files_linux", "host.files_windows", "host.environment_linux", "host.window_windows", "host.window_linux" }),
             ("HostSound", new[] { "host.time_linux32", "host.time_linux64", "host.time_windows", "host.files_linux", "host.files_windows",

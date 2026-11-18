@@ -173,3 +173,32 @@ x64.RandomTimestamp
 	mov [{random_word}], eax
 	ret
 }
+
+# ARM (a macOS program): there's no RDRAND, but the system's own generator (arc4random,
+# from the kernel's entropy) takes its place; the CPU's counter is the timestamp's
+arm.RandomDetect
+{
+	adrp x9, {random_ok}@PAGE
+	add x9, x9, {random_ok}@PAGEOFF
+	mov w10, #1
+	str w10, [x9]
+	ret
+}
+arm.RandomHardwareWord
+{
+	stp x29, x30, [sp, #-16]!
+	bl _arc4random
+	adrp x9, {random_word}@PAGE
+	add x9, x9, {random_word}@PAGEOFF
+	str w0, [x9]
+	ldp x29, x30, [sp], #16
+	ret
+}
+arm.RandomTimestamp
+{
+	mrs x10, cntvct_el0
+	adrp x9, {random_word}@PAGE
+	add x9, x9, {random_word}@PAGEOFF
+	str w10, [x9]
+	ret
+}

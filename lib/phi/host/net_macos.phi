@@ -1,0 +1,249 @@
+# The network's calls that are macOS's own, for net.phi: BSD sockets, non-blocking, through
+# libSystem. Each answer is as net_linux.phi gives Linux's: negative (-errno) when it says no.
+# What differs from Linux's: a sockaddr_in starts with its length (sin_len), then its family
+# in one byte; there's no accept4 or SOCK_NONBLOCK (fcntl sets it), and no MSG_NOSIGNAL (a
+# socket's SO_NOSIGPIPE keeps a broken connection from being a SIGPIPE).
+
+use net.datagram;
+use 'libSystem.B.dylib' as LibC;
+
+phi.NetSystem:MacOS
+{
+	const int INET: 2;                    # AF_INET
+	const int STREAM: 1;
+	const int DATAGRAM: 2;
+	const int SOCKET_LEVEL: 0xFFFF;       # SOL_SOCKET
+	const int REUSE_ADDRESS: 4;           # SO_REUSEADDR
+	const int ERROR: 0x1007;              # SO_ERROR
+	const int RECEIVE_ROOM: 0x1002;       # SO_RCVBUF
+	const int NO_SIGPIPE: 0x1022;         # SO_NOSIGPIPE
+	const int PEEK: 2;                    # MSG_PEEK
+	const int DONT_WAIT: 0x80;            # MSG_DONTWAIT
+	const int READABLE: 0x4004667F;       # FIONREAD
+	const int GET_FLAGS: 3;               # F_GETFL
+	const int SET_FLAGS: 4;               # F_SETFL
+	const int SET_FD_FLAGS: 2;            # F_SETFD
+	const int NON_BLOCKING: 4;            # O_NONBLOCK
+	const int CLOSED_ON_EXEC: 1;          # FD_CLOEXEC
+	const int AGAIN: -35;                 # EAGAIN: not yet
+	const int INTERRUPTED: -4;            # EINTR: stopped by a signal, so not yet either
+	const int IN_PROGRESS: -36;           # EINPROGRESS
+	const int DATAGRAM_MOST: 1472;        # what a UdpDatagram holds
+
+	# a new non-blocking socket (a stream for TCP, else datagrams), or 0
+	[Open: bln stream: false;]
+		int type: DATAGRAM;
+		if stream
+			type is STREAM;
+		;;
+	[end: (Kept: (LibC.socket: INET type 0))]
+
+	# a file descriptor as a socket here, non-blocking, closed on exec, with no SIGPIPE; 0 when
+	# there's none (or 0, which is standard input's, closed: here 0 is no socket)
+	[Kept: int fd: -1;]
+		if fd is 0
+			call LibC.close: fd;
+		;;
+		if fd <= 0 return 0;
+		int flags: (LibC.fcntl: fd GET_FLAGS 0);
+		int set: (LibC.fcntl: fd SET_FLAGS flags | NON_BLOCKING);
+		set is (LibC.fcntl: fd SET_FD_FLAGS CLOSED_ON_EXEC);
+		int yes: 1;
+		set is (LibC.setsockopt: fd SOCKET_LEVEL NO_SIGPIPE addr yes 4);
+		ptr<u8> s: fd as ptr<u8>;
+	[end: s]
+
+	# -errno after a call said no (-1), as Linux's calls answer
+	[Failed]
+		ptr<int> number: (LibC.__error);
+	[end: -(number:0)]
+
+	# HostNet.Address's sockaddr_in, as macOS has one: its length, then its family
+	[Place: ptr<u8> place: 0; u32 address: 0; u32 port: 0;]
+		call HostNet.Address: place address port;
+		place:0 is 16;
+		place:1 is INET;
+	[end]
+
+	[Close: ptr<u8> s: 0;]
+		call LibC.close: (s as int);
+	[end]
+
+	# s on port, at every address the machine has
+	[Bind: ptr<u8> s: 0; u32 port: 0;]
+		u8 place[16];
+		call Place: addr place 0 port;
+	[end: (LibC.bind: (s as int) addr place 16) is 0]
+
+	[ReceiveRoom: ptr<u8> s: 0; u32 bytes: 0;]
+		int room: bytes;
+		call LibC.setsockopt: (s as int) SOCKET_LEVEL RECEIVE_ROOM addr room 4;
+	[end]
+
+	# the first nameserver in /etc/resolv.conf that's an IPv4 address, or 0
+	[NameServer]
+		u8 text[2048];
+		int fd: (LibC.open: '/etc/resolv.conf' 0 0);
+		if fd < 0 return 0 as u32;
+		int size: (LibC.read: fd addr text 2047) as int;
+		int closed: (LibC.close: fd);
+		if size < 0 return 0 as u32;
+		ptr<u8> word: 'nameserver';
+		int pos: 0;
+		while pos < size
+			# nameserver, a space or two, and an address
+			int k: 0;
+			while k < 10 and pos + k < size and text:(pos + k) is word:k
+				k++;
+			;;
+			int after: pos + k;
+			if k is 10 and after < size and (text:after is ' ' or text:after is 9)
+				while after < size and (text:after is ' ' or text:after is 9)
+					after++;
+				;;
+				int stop: after;
+				while stop < size and text:stop is not 10 and text:stop is not 13 and text:stop is not ' ' and text:stop is not 9
+					stop++;
+				;;
+				u8 ended: text:stop;
+				text:stop is 0;
+				u32 address: (HostNet.ParseAddress: addr text:after);
+				text:stop is ended;
+				if address is not 0 return address;
+			;;
+			while pos < size and text:pos is not 10
+				pos++;
+			;;
+			pos++;
+		;;
+	[end: 0 as u32]
+
+	# the oldest datagram waiting into datagram: 1, or 0 if none is
+	[ReceiveFrom: ptr<u8> s: 0; ptr<UdpDatagram> datagram: 0;]
+		u8 place[16];
+		int length: 16;
+		int n: (LibC.recvfrom: (s as int) addr datagram.data DATAGRAM_MOST DONT_WAIT addr place addr length) as int;
+		if n < 0 return 0;
+		datagram.length is n;
+		datagram.from is (HostNet.AddressOf: addr place);
+		datagram.from_port is (HostNet.PortOf: addr place);
+	[end: 1]
+
+	# data to port at address to: 1 if it went
+	[SendTo: ptr<u8> s: 0; u32 to: 0; u32 port: 0; ptr<u8> data: 0; u32 length: 0;]
+		u8 place[16];
+		call Place: addr place to port;
+		if (LibC.sendto: (s as int) data length DONT_WAIT addr place 16) < 0 return 0;
+	[end: 1]
+
+	# connecting to port at address to: 1 connected already, 0 connecting, -1 it can't
+	[Connect: ptr<u8> s: 0; u32 to: 0; u32 port: 0;]
+		u8 place[16];
+		call Place: addr place to port;
+		if (LibC.connect: (s as int) addr place 16) is 0 return 1;
+		if (Failed) is IN_PROGRESS return 0;
+	[end: -1]
+
+	# a connecting socket: 1 now it's open, 0 still connecting, -1 it couldn't
+	[Connected: ptr<u8> s: 0;]
+		if (Broken: s) return -1;
+		u8 place[16];
+		int length: 16;
+		if (LibC.getpeername: (s as int) addr place addr length) is 0 return 1;
+	[end: 0]
+
+	# true if an error waits on s (a refused connection, a reset): it's broken for good
+	[Broken: ptr<u8> s: 0;]
+		int error: 0;
+		int length: 4;
+		if (LibC.getsockopt: (s as int) SOCKET_LEVEL ERROR addr error addr length) is not 0 return true;
+	[end: error is not 0]
+
+	# the bytes macOS took (0 while it has no room), or -1 if the connection is broken
+	[Send: ptr<u8> s: 0; ptr<u8> data: 0; u32 length: 0;]
+		int n: (LibC.sendto: (s as int) data length DONT_WAIT 0 0) as int;
+		if n >= 0 return n;
+		int why: (Failed);
+		if why is AGAIN or why is INTERRUPTED return 0;
+	[end: -1]
+
+	# the bytes read, 0 if none have come, -2 once the other end has closed and all is read,
+	# -1 if it's broken
+	[Receive: ptr<u8> s: 0; ptr<u8> buffer: 0; u32 max: 0;]
+		int n: (LibC.recvfrom: (s as int) buffer max DONT_WAIT 0 0) as int;
+		if n > 0 return n;
+		if n is 0 return -2;
+		int why: (Failed);
+		if why is AGAIN or why is INTERRUPTED return 0;
+	[end: -1]
+
+	# s listening on port; a port a program listened on just before can be listened on again at once
+	[Listen: ptr<u8> s: 0; u32 port: 0; u32 backlog: 0;]
+		int yes: 1;
+		call LibC.setsockopt: (s as int) SOCKET_LEVEL REUSE_ADDRESS addr yes 4;
+		if not (Bind: s port) return false;
+	[end: (LibC.listen: (s as int) backlog) is 0]
+
+	# a connection waiting on listener s, non-blocking too, or 0
+	[Accept: ptr<u8> s: 0;]
+	[end: (Kept: (LibC.accept: (s as int) 0 0))]
+
+	# the bytes that can be read now, or -1 once the other end has closed (and all is read)
+	# or it's broken
+	[Waiting: ptr<u8> s: 0;]
+		int count: 0;
+		if (LibC.ioctl: (s as int) READABLE addr count) is not 0 return -1;
+		if count > 0 return count;
+		# nothing: closed, or not yet? A peek says (0 bytes once it's closed); something that
+		# came just after the count was taken is there to read, not a close
+		u8 one[1];
+		int n: (LibC.recvfrom: (s as int) addr one 1 PEEK | DONT_WAIT 0 0) as int;
+		if n > 0 return n;
+		if n is 0 return -1;
+		int why: (Failed);
+		if why is AGAIN or why is INTERRUPTED return 0;
+	[end: -1]
+
+	# the other end's address, or 0
+	[PeerAddress: ptr<u8> s: 0;]
+		u8 place[16];
+		int length: 16;
+		if (LibC.getpeername: (s as int) addr place addr length) is not 0 return 0;
+	[end: (HostNet.AddressOf: addr place)]
+
+	# the address the machine would reach the internet from: a datagram socket "connected"
+	# to 8.8.8.8 sends nothing, but macOS picks it; 127.0.0.1 if there's none
+	[Address]
+		u32 found: 0x7F000001;
+		int fd: (LibC.socket: INET DATAGRAM 0);
+		if fd < 0 return found;
+		u8 place[16];
+		call Place: addr place 0x08080808 53;
+		int length: 16;
+		if (LibC.connect: fd addr place 16) is 0 and (LibC.getsockname: fd addr place addr length) is 0
+			u32 mine: (HostNet.AddressOf: addr place);
+			if mine is not 0
+				found is mine;
+			;;
+		;;
+		call LibC.close: fd;
+	[end: found]
+}
+
+LibC.socket: int family int type int protocol;
+LibC.close: int fd;
+LibC.fcntl: int fd int command ... int value;
+LibC.ioctl: int fd u64 request ... ptr<int> value;
+LibC.setsockopt: int fd int level int name ptr<int> value int length;
+LibC.getsockopt: int fd int level int name ptr<int> value ptr<int> length;
+LibC.bind: int fd ptr<u8> address int length;
+LibC.connect: int fd ptr<u8> address int length;
+LibC.listen: int fd int backlog;
+LibC.accept: int fd ptr<u8> address ptr<int> length;
+LibC.getpeername: int fd ptr<u8> address ptr<int> length;
+LibC.getsockname: int fd ptr<u8> address ptr<int> length;
+LibC.sendto: int fd ptr<u8> data u64 length int flags ptr<u8> to int tolength: i64;
+LibC.recvfrom: int fd ptr<u8> buffer u64 length int flags ptr<u8> from ptr<int> fromlength: i64;
+LibC.open: ptr<u8> path int flags ... int mode;
+LibC.read: int fd ptr<u8> buffer u64 count: i64;
+LibC.__error: : ptr<int>;

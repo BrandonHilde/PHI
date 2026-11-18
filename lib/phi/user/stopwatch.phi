@@ -149,3 +149,17 @@ x64.ClockHighHalf
 	mov eax, edx
 	ret
 }
+
+# ARM (a macOS program): the CPU's virtual counter (24 MHz on Apple's)
+arm.ClockLowHalf
+{
+	mrs x0, cntvct_el0
+	ret
+}
+
+arm.ClockHighHalf
+{
+	mrs x0, cntvct_el0
+	lsr x0, x0, #32
+	ret
+}

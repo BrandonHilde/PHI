@@ -390,6 +390,13 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   variables written by one thread and read by another without those aren't promised to
   be seen in order (a finished thread's work is: `Finished` reads with an atomic step).
   Each thread test passes 20 times running, without a retry. 163 tests, all passing.
+- **M8**: the network (`host/net_macos.phi`): BSD sockets through libSystem, with what
+  differs from Linux's (sin_len, fcntl for non-blocking, SO_NOSIGPIPE, errno through
+  `__error`); DNS, sockets and network errors pass.
+- **M9, first part**: `arm.` versions of the library's other assembly blocks: crypto's
+  bignum and x25519 (so TLS 1.3 works), random (the system's arc4random in place of RDRAND,
+  the CPU's counter as the timestamp), the stopwatch's and bench's counter (cntvct_el0),
+  and drawing's rows. 184 tests, all passing. NEON for vecs comes after M10.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the
