@@ -168,7 +168,7 @@ namespace Phi.Cli
         /// <summary>phi test --target: run only on that system (PHI OS, or as Linux or Windows programs).</summary>
         public static Host? Only { get; set; }
 
-        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows, Host.Linux64, Host.Windows64 };
+        static readonly Host[] OtherSystems = { Host.Linux, Host.Windows, Host.Linux64, Host.Windows64, Host.MacOS };
         const string ProgramWrapper = "\nphi.PhiTestProgram:Program\n{\n}\n";
 
         /// <summary>What only a test in QEMU can have: input typed into it, a web server, a sound card, other machines.</summary>
@@ -281,7 +281,9 @@ namespace Phi.Cli
             foreach (Host host in OtherSystems.Where(h => Only == null || Only == h))
             {
                 if (!HostRunner.CanRun(host, out _)) continue;
-                firstHere ??= host;
+                // (not a macOS program: while its generator is being written, most programs don't
+                // build as one yet, and that's not a failure of theirs)
+                if (!host.IsArm()) firstHere ??= host;
                 if (!BuildsFor(phiFile, text + wrapper, host)) continue;
                 built++;
                 yield return new Mode(host.FlagName(), wrapper, Host: host);

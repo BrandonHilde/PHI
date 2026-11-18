@@ -154,7 +154,13 @@ namespace Phi.Cli
             try
             {
                 var source = SourceFile.Load(phiFile);
-                foreach (LibraryPlatform platform in LibraryPlatform.All.Where(p => only == null || p.Host == only))
+                if (only is Host arm && arm.IsArm())
+                {
+                    result.Errors.Add($"error: compiled libraries for {arm.Name()} programs aren't there yet: build the program from the library's source");
+                    return result;
+                }
+                // (macOS programs' code is ARM, and a library's is an x86 ELF object: not yet)
+                foreach (LibraryPlatform platform in LibraryPlatform.All.Where(p => !p.Host.IsArm() && (only == null || p.Host == only)))
                 {
                     var file = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text);
                     CompileResult compiled = PhiCompiler.CompileLibrary(file, platform, name);

@@ -81,6 +81,7 @@ namespace Phi.Compiler.Semantics
             UnitKind.Program when host == Host.Linux64 => "x86_64_linux",
             UnitKind.Program when host == Host.Windows => "x86_32_windows",
             UnitKind.Program when host == Host.Windows64 => "x86_64_windows",
+            UnitKind.Program when host == Host.MacOS => "arm64_macos",
             UnitKind.Program => "x86_32_user",
             _ => "x86_16",
         };
@@ -5212,6 +5213,7 @@ namespace Phi.Compiler.Semantics
             ["Linux32"] = new[] { Host.Linux },
             ["Linux64"] = new[] { Host.Linux64 },
             ["Windows"] = new[] { Host.Windows, Host.Windows64 },
+            ["MacOS"] = new[] { Host.MacOS },
             ["PhiOS"] = new[] { Host.PhiOS },
         };
 

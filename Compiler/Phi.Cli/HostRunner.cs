@@ -54,6 +54,12 @@ namespace Phi.Cli
                     if (machineCpu.Length > 0) return true;
                     why = $"PHI_LINUX_RUN is '{string.Join(" ", LinuxMachine)}', but 'uname -m' didn't run with it: is the Linux machine started?";
                     return false;
+                case Host.MacOS when OperatingSystem.IsMacOS()
+                                     && System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64:
+                    return true;
+                case Host.MacOS:
+                    why = "macOS programs run on a Mac with Apple Silicon";
+                    return false;
                 default:
                     why = $"{host.Name()} programs can't run on this computer";
                     return false;
@@ -102,7 +108,7 @@ namespace Phi.Cli
         /// (The quiet tries are in braces with their 2>/dev/null outside: a redirection that fails is
         /// reported before one after it on the same command takes effect. The last try speaks,
         /// and the whole is its status.)
-        static string Retried(string command) => LinuxMachine == null ? command
+        static string Retried(string command, Host host) => LinuxMachine == null || !host.IsLinux() ? command
             : $"{{ n=0; until {{ {command}; }} 2>/dev/null; do n=$((n+1)); [ $n -ge 30 ] && break; sleep 0.1; done; [ $n -lt 30 ] || {command}; }}";
 
         /// <summary>
@@ -165,12 +171,13 @@ namespace Phi.Cli
                 return windows;
             }
 
-            var (command, before, pathOf) = LinuxShell();
+            // (a macOS program runs here, as itself: only a Linux one goes to WSL or a Linux machine)
+            var (command, before, pathOf) = host.IsLinux() ? LinuxShell() : ("/bin/sh", Array.Empty<string>(), (Func<string, string>)Path.GetFullPath);
             var psi = new ProcessStartInfo(command);
             foreach (string b in before) psi.ArgumentList.Add(b);
             psi.ArgumentList.Add("-c");
-            string own = pidFile != null ? Retried($"echo $$ > '{pathOf(pidFile)}'") + "; " : "";
-            if (folder != null) own = Retried($"cd '{pathOf(folder)}'") + " || exit 1; " + own;
+            string own = pidFile != null ? Retried($"echo $$ > '{pathOf(pidFile)}'", host) + "; " : "";
+            if (folder != null) own = Retried($"cd '{pathOf(folder)}'", host) + " || exit 1; " + own;
             psi.ArgumentList.Add(own + (merge ? "exec \"$0\" \"$@\" 2>&1" : "exec \"$0\" \"$@\""));
             psi.ArgumentList.Add(pathOf(program));
             foreach (string a in args) psi.ArgumentList.Add(a);

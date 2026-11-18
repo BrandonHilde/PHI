@@ -109,12 +109,16 @@ namespace Phi.Compiler
             if (bound == null || !generate)
             {
                 // what 64-bit code can't do yet is found by the generator: a check needs it too
-                if (bound != null && host.Is64())
+                // (and a macOS program's is ARM code, whose generator takes only what it can write)
+                if (bound != null && host.IsArm())
+                    foreach (BoundUnit u in bound.Units) CodeGen.A64.A64Generator.Check(bound, u, diagnostics);
+                else if (bound != null && host.Is64())
                     foreach (BoundUnit u in bound.Units) X86Generator.Check(bound, u, diagnostics);
                 return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             }
 
-            var units = bound.Units.Select(u => X86Generator.Generate(bound, u, diagnostics, debug)).ToList();
+            var units = bound.Units.Select(u => host.IsArm() ? CodeGen.A64.A64Generator.Generate(bound, u, diagnostics)
+                                                             : X86Generator.Generate(bound, u, diagnostics, debug)).ToList();
 
             var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             if (!result.Success) return result;

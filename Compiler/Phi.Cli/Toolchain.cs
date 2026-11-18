@@ -22,10 +22,23 @@ namespace Phi.Cli
         public static string Nasm => Find("PHI_NASM", "nasm", NasmFallbacks);
         public static string Qemu => Find("PHI_QEMU", "qemu-system-i386", QemuFallbacks);
 
-        static string Find(string envVar, string name, string[] fallbacks)
+        /// <summary>
+        /// Apple's clang, which assembles a macOS program's ARM code and links it with libSystem
+        /// (and signs it, as Apple Silicon needs). /usr/bin/clang first: it finds the SDK itself,
+        /// where another clang on the PATH (Homebrew's LLVM) may not.
+        /// </summary>
+        public static string Clang => Find("PHI_CLANG", "clang", ClangFallbacks, preferFallbacks: true);
+
+        static readonly string[] ClangFallbacks = { "/usr/bin/clang", "/Library/Developer/CommandLineTools/usr/bin/clang" };
+
+        static string Find(string envVar, string name, string[] fallbacks, bool preferFallbacks = false)
         {
             string? env = Environment.GetEnvironmentVariable(envVar);
             if (!string.IsNullOrWhiteSpace(env)) return env;
+
+            if (preferFallbacks)
+                foreach (string candidate in fallbacks)
+                    if (File.Exists(candidate)) return candidate;
 
             string exe = OperatingSystem.IsWindows() ? name + ".exe" : name;
             string[] dirs = (Environment.GetEnvironmentVariable("PATH") ?? "").Split(Path.PathSeparator);
