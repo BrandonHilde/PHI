@@ -61,7 +61,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
     /// <summary>How a number is kept in memory: its bytes, and whether a smaller one is signed.</summary>
     /// <summary>F32: an f32 in memory, an f64 in a register (read, it's made one; written, rounded). V128: a vec's 16 bytes.</summary>
-    public enum MemKind { U8, S8, U16, S16, D32, Q64, F64, F32, V128 }
+    public enum MemKind { U8, S8, U16, S16, D32, Q64, F64, F32, V128, F16 }
 
     /// <summary>What a call gives back: nothing, 32 bits in eax, 64 in edx:eax (a 64-bit number), a pointer in rax, an f64 in st0, or a vec in xmm0.</summary>
     public enum CallResult { None, Eax, EdxEax, Rax, St0, Xmm0 }
@@ -196,6 +196,9 @@ namespace Phi.Compiler.CodeGen.Ir
     {
         public VReg Dst { get; init; } = null!;
         public VReg Src { get; init; } = null!;
+
+        /// <summary>To an f16 (ARM's): rounded to an f32, then to an f16 as x86 rounds one.</summary>
+        public bool Half { get; init; }
     }
 
     // ---------------------------------------------------------------- text

@@ -36,7 +36,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Expr list = has.Collection;
             PhiType element = list.Type.Element;
             int size = element.ElementSize;
-            bool floats = arm && has.Kind == HasKind.Numbers && element.Kind is TypeKind.F64 or TypeKind.F32;
+            bool floats = arm && has.Kind == HasKind.Numbers && element.Kind is TypeKind.F64 or TypeKind.F32 or TypeKind.F16;
             Need(floats || !(has.Kind == HasKind.Numbers && (IsF(element) || element.Kind == TypeKind.F16)), "has on floats");
             Need(CanCount(list) && CanElements(list), $"has on {Unknown(list)}");
             Opnd value = has.Kind switch
@@ -63,7 +63,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 case HasKind.Numbers when floats:
                 {
                     VReg e = fn.NewFloat();
-                    Emit(new LoadIdxI { Dst = e, Base = at, Index = Opnd.Const(0), Scale = 1, Kind = element.Kind == TypeKind.F64 ? MemKind.F64 : MemKind.F32 });
+                    Emit(new LoadIdxI { Dst = e, Base = at, Index = Opnd.Const(0), Scale = 1, Kind = KindOf(element) });
                     current.End = new BranchT { Float = true, Cond = Cond.Eq, A = e, B = value, Then = yes, Else = next };
                     break;
                 }
@@ -598,6 +598,49 @@ namespace Phi.Compiler.CodeGen.Ir
             }
         }
 
+        /// <summary>
+        /// For ARM: list++ text; on a str array [atmost N]: the value worked out, an index error
+        /// when it's full, then one more, the value put in the new element (its room N slots on,
+        /// or a str with a size, in place), or none given, its text emptied: the generator's EmitAppend.
+        /// </summary>
+        void AddTextsAtMost(AppendStmt append)
+        {
+            Expr array = append.Target;
+            PhiType t = array.Type;
+            Mark(append);
+            var values = append.Values.Count == 0 ? new List<Expr?> { null } : append.Values.Cast<Expr?>().ToList();
+            foreach (Expr? value in values)
+            {
+                var part = value != null ? PartValue(value) : default;
+                VReg place = AddressOf(array);
+                VReg had = LoadAt(place, t.CountOffset, PhiType.U32);
+                VReg at = fn.NewAddress();
+                Emit(new ExtendI { Dst = at, Src = had, Signed = false });
+                Emit(new CheckI { Index = at, Limit = t.Length, At = append, Held = HeldStores() });
+                VReg more = fn.NewValue(false);
+                Emit(new BinI { Op = BinOp.Add, Dst = more, A = had, B = Opnd.Const(1) });
+                Emit(new StoreIdxI { Base = place, Index = Opnd.Const(t.CountOffset), Scale = 1, Src = more, Kind = MemKind.D32 });
+                PhiType element = t.Element;
+                if (!t.TextTable)
+                {
+                    // (a str with a size, in place: the text where the element is; too long, an error)
+                    VReg inPlace = Offset(place, at, element.ElementSize, fn.NewAddress());
+                    if (value == null) Emit(new StoreIdxI { Base = inPlace, Index = Opnd.Const(0), Scale = 1, Src = Opnd.Const(0), Kind = MemKind.U8 });
+                    else Emit(new FixedStoreI { Dst = inPlace, Room = element.Room, Value = part.Value, SourceIsString = part.IsText, Unsigned = part.Unsigned, Held = HeldStores() });
+                    continue;
+                }
+                VReg slot = Offset(place, at, PhiType.AddressSize, fn.NewAddress());
+                if (value == null)
+                {
+                    VReg text = LoadAt(slot, 0, PhiType.PointerTo(PhiType.U8));
+                    Emit(new StoreIdxI { Base = text, Index = Opnd.Const(0), Scale = 1, Src = Opnd.Const(0), Kind = MemKind.U8 });
+                    continue;
+                }
+                Emit(new GrowStoreI { Slot = slot, Value = part.Value, SourceIsString = part.IsText, Unsigned = part.Unsigned, Known = part.Known,
+                                      RoomOffset = PhiType.AddressSize * t.Length });
+            }
+        }
+
         bool Addable(Expr array) =>
             array.Type.Element is var e && (InPlaceStruct(e) || e.IsObject && e.Struct != null)
             && (array.Type.Filled && !array.Type.Open && CanAddress(array)
@@ -617,6 +660,11 @@ namespace Phi.Compiler.CodeGen.Ir
             if (TextsAddable(array))
             {
                 AddTexts(append);
+                return;
+            }
+            if (arm && (array.Type.TextTable || array.Type.Element.IsInlineText) && array.Type.Filled && !array.Type.Open && CanAddress(array))
+            {
+                AddTextsAtMost(append);
                 return;
             }
             Need(Addable(array), $"++ on {Unknown(array)}");
@@ -742,7 +790,9 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>Where an array's first element is: in place, or where one that grows keeps them.</summary>
         bool CanElements(Expr array) => !array.Type.Open ? CanAddress(array)
-            : Binder.IsFieldView(array) && CanAddress(array) || array is NameExpr { Symbol: VariableSymbol g } && GrowingView(g);
+            : Binder.IsFieldView(array) && CanAddress(array) || array is NameExpr { Symbol: VariableSymbol g } && GrowingView(g)
+              // (for ARM: an array parameter's view too, its elements' address first, as a field's)
+              || arm && array is NameExpr { Symbol: VariableSymbol pv } && paramViews.ContainsKey(pv);
 
         VReg ElementsOf(Expr array) => !array.Type.Open ? AddressOf(array) : LoadAt(ViewOf(array), 0, PhiType.PointerTo(array.Type.Element));
 

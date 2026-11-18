@@ -430,6 +430,14 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   type tables) the program gives, its labels all global when it has libraries. An error in a
   library's code has its line, from the library's marks put after the program's. `if x is
   Struct name` for ARM too. The 7 library tests pass. 208 tests.
+- **The long tail**: f16 (kept as an f64 and rounded as it's set or written, to an f32 and
+  then to an f16 half up as x86's float.asm rounds, `lib/arm64_macos/half.s`); has on an
+  array parameter, and one array parameter given another; `++` on an `[atmost N]` str array
+  (a table of texts, or strs with a size in place); a class's str array given texts worked
+  out as it runs; while each over a str in a class's own statements, and over a str array's
+  element; a class's `[atmost N]` array of objects of any size. Every test and sample that is
+  a program now builds for macOS but PHI OS's own (the rootfs programs, which make PHI OS's
+  system calls). `phi compare` on a Mac times PHI as a macOS program. 215 tests.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. A method's object result kept in

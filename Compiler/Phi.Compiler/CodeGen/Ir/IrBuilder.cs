@@ -90,6 +90,7 @@ namespace Phi.Compiler.CodeGen.Ir
             IrBuilder? builder = null;
             try
             {
+                halves = arm;
                 builder = new IrBuilder(m, holdable, catches, growResults, program) { remembersLength = remembersLength, arm = arm };
                 builder.BuildBody();
                 return builder.fn;
@@ -101,6 +102,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 if (arm && builder?.marked is Node at && m.Decl.File is SourceFile file)
                     why += $" (line {file.GetLocation(at.Span.Start).Line})";
                 return null;
+            }
+            finally
+            {
+                halves = false;
             }
         }
 
@@ -114,6 +119,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>The kinds of value this form keeps: a whole number of any size, bln, chr, an enum, a pointer.</summary>
         public static bool Supported(PhiType t) =>
+            !t.IsArray && halves && t.Kind == TypeKind.F16 ||
             !t.IsArray && t.Kind is TypeKind.I8 or TypeKind.U8 or TypeKind.I16 or TypeKind.U16 or TypeKind.I32 or TypeKind.U32
                 or TypeKind.I64 or TypeKind.U64 or TypeKind.Bool or TypeKind.Chr or TypeKind.Enum or TypeKind.Pointer or TypeKind.Object
                 or TypeKind.F64 or TypeKind.F32 or TypeKind.Vec or TypeKind.Method;
@@ -123,7 +129,13 @@ namespace Phi.Compiler.CodeGen.Ir
         /// x87 has an f32 while it works on it): one in memory is read as one and rounded as
         /// it's written, and an f32 variable is rounded as it's set. (f16 is the generator's.)
         /// </summary>
-        static bool IsF(PhiType t) => !t.IsArray && t.Kind is TypeKind.F64 or TypeKind.F32;
+        static bool IsF(PhiType t) => !t.IsArray && (t.Kind is TypeKind.F64 or TypeKind.F32 || halves && t.Kind == TypeKind.F16);
+
+        /// <summary>
+        /// For ARM, f16 is this form's too (x86's is the generator's): kept as an f64 as an f32
+        /// is, and rounded to one as it's set or written. Set while a method for ARM is built.
+        /// </summary>
+        [ThreadStatic] static bool halves;
 
         /// <summary>
         /// A value of t takes 64 bits: an i64, a u64, a pointer, or an object, which this form
@@ -158,6 +170,7 @@ namespace Phi.Compiler.CodeGen.Ir
             TypeKind.Pointer or TypeKind.Object or TypeKind.Method => Ptr,
             TypeKind.F64 => MemKind.F64,
             TypeKind.F32 => MemKind.F32,
+            TypeKind.F16 when halves => MemKind.F16,
             TypeKind.Vec => MemKind.V128,
             _ => MemKind.D32,
         };
@@ -807,7 +820,10 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
 
                 case VarDecl { IsNew: true, Symbol: VariableSymbol classNew } cn when arm && !Ours(classNew) && AnyGlobal(classNew) != null
-                                                                                 && (!classNew.Type.IsArray || OwnObjectArray(classNew)):
+                                                                                 && (!classNew.Type.IsArray || OwnObjectArray(classNew)
+                                                                                     // (an [atmost N] one of any size: what it has freed, its count 0)
+                                                                                     || classNew.Type.Filled && !classNew.Type.Open && !classNew.GrowingArray && classNew.Ownership == Ownership.Owned
+                                                                                        && classNew.Type.Element.IsObject && classNew.Type.Element.Struct != null):
                 {
                     // (for ARM, where a class's own statements are a method: a class's object, as the
                     // generator's EmitNewDecl makes it, by where it's kept)
@@ -847,6 +863,20 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true, Type.TextTable: true } classTable } td
+                    when arm && !Ours(classTable) && td.Values.Count > 0 && !td.IsNew && td.EachOf == null:
+                {
+                    // (for ARM: a class's str array given texts worked out as it runs: each put in, as list:i is v)
+                    Mark(td);
+                    var tableName = new NameExpr { Name = classTable.Name, Symbol = classTable, Type = classTable.Type };
+                    for (int k = 0; k < td.Values.Count; k++)
+                    {
+                        var element = new IndexExpr { Target = tableName, Index = new NumberExpr { Value = k, Type = PhiType.Int }, Type = classTable.Type.Element, Span = td.Span };
+                        Need(SetText(element, td.Values[k]), "a str table given what isn't text");
+                    }
+                    return;
+                }
+
                 case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true, Type.IsArray: true } listed } ld
                     when arm && !Ours(listed) && ld.Values.Count > 1 && GlobalArray(listed) is string listLabel && !ld.IsNew && ld.EachOf == null:
                 {
@@ -857,6 +887,16 @@ namespace Phi.Compiler.CodeGen.Ir
                     for (int k = 0; k < listed.Type.Length; k++)
                         Emit(new StoreI { Place = k == 0 ? listLabel : $"{listLabel} + {k * element.ElementSize}",
                                           Src = k < values.Count ? values[k] : Opnd.Const(0), Kind = KindOf(element) });
+                    return;
+                }
+
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true } emptied } et when arm && !Ours(emptied) && emptied.Type.IsString
+                                                                                             && !emptied.Type.IsArray && et.Values.Count == 0 && !et.IsNew && et.AtAddress == null:
+                {
+                    // (for ARM: a class's str declared without a value, a while each's character too: empty, as is '' gives it)
+                    Mark(et);
+                    var name = new NameExpr { Name = emptied.Name, Symbol = emptied, Type = emptied.Type, Span = et.Span };
+                    Need(SetText(name, new StringExpr { Value = "", Type = PhiType.Str, Span = et.Span }), $"text put in {Unknown(name)}");
                     return;
                 }
 
@@ -875,7 +915,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 case VarDecl { Symbol: VariableSymbol classVar } cd when !Ours(classVar) && Global(classVar) is string kept:
                 {
                     // (a class's own statement, made a method: its variable is the class's, set where it's kept)
-                    Need(cd.Values.Count <= 1 && !cd.IsNew && cd.AtAddress == null && cd.EachOf == null, $"a declaration it doesn't take ({DeclarationShape(cd)})");
+                    Need(cd.Values.Count <= 1 && !cd.IsNew && cd.AtAddress == null && (cd.EachOf == null || arm && cd.Values.Count == 0), $"a declaration it doesn't take ({DeclarationShape(cd)})");
                     Mark(cd);
                     Opnd value = cd.Values.Count == 1 ? Value(cd.Values[0], classVar.Type)
                         : classVar.Type.IsVec ? ZeroVec() : IsF(classVar.Type) ? FloatConst(0.0) : Opnd.Const(0);
@@ -1513,6 +1553,7 @@ namespace Phi.Compiler.CodeGen.Ir
         void SetVariable(VReg dst, Opnd src, PhiType t)
         {
             if (t.Kind == TypeKind.F32) Emit(new RoundF32I { Dst = dst, Src = src.Reg! });
+            else if (t.Kind == TypeKind.F16 && halves) Emit(new RoundF32I { Dst = dst, Src = src.Reg!, Half = true });
             else if (src.IsImm) Emit(new ConstI { Dst = dst, Value = src.Imm });
             else Emit(new CopyI { Dst = dst, Src = src });
         }
@@ -2451,7 +2492,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>A character of a str this form reads (and whose address it works out): one that grows, or with a room it's checked against.</summary>
         bool IsCharacter(IndexExpr c) => c.Target.Type.IsString && !c.Target.Type.IsArray
-            && (CanSlot(c.Target)
+            && (CanSlot(c.Target) || TableCharacter(c)
                 || (c.CheckLimit != null || unsafeDepth > 0
                     || ConstantFolder.Evaluate(c.Index) != null && !c.Target.Type.IsHeapText && c.Target is not NameExpr { Symbol: VariableSymbol { Grows: true } })
                    && CanText(c.Target));
@@ -2460,10 +2501,27 @@ namespace Phi.Compiler.CodeGen.Ir
         /// A character's text and index, the index checked: against the room of a str that grows
         /// (which changes, so read from its slot), or the room a str with a size has.
         /// </summary>
+        /// <summary>For ARM: a character of a str table's element (words:1:i), checked against the element's room, the table's size of slots on.</summary>
+        bool TableCharacter(IndexExpr c) => arm && c.Target is IndexExpr te && TextTableElement(te) && !te.Target.Type.Open;
+
         (VReg Text, Opnd Index) CharacterElement(IndexExpr c)
         {
             PhiType it = Real(c.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
+            if (TableCharacter(c))
+            {
+                var (tableSlot, roomOffset, _) = TableSlotOf((IndexExpr)c.Target);
+                Opnd tableIndex = InReg(Convert(Value(c.Index), it, IndexType(it.IsSigned)), Addr);
+                if (unsafeDepth == 0)
+                {
+                    VReg room = LoadAt(tableSlot, roomOffset, PhiType.U32);
+                    VReg masked = fn.NewValue(false), limit = fn.NewAddress();
+                    Emit(new BinI { Op = BinOp.And, Dst = masked, A = room, B = Opnd.Const(0x3FFFFFFF) });
+                    Emit(new ExtendI { Dst = limit, Src = masked, Signed = false });
+                    Emit(new CheckI { Index = tableIndex.Reg!, LimitValue = limit, At = c, Held = HeldStores() });
+                }
+                return (LoadAt(tableSlot, 0, PhiType.PointerTo(PhiType.U8)), tableIndex);
+            }
             if (CanSlot(c.Target))
             {
                 Opnd grownIndex = InReg(Convert(Value(c.Index), it, IndexType(it.IsSigned)), Addr);

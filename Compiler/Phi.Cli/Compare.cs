@@ -221,8 +221,10 @@ namespace Phi.Cli
             var entries = new List<Entry>();
             bool windows = OperatingSystem.IsWindows();
 
-            entries.Add(new Entry("PHI 64-bit", (name, _, errors) => BuildPhi(name, dir, outDir, windows ? Host.Windows64 : Host.Linux64, errors)));
-            entries.Add(new Entry("PHI 32-bit", (name, _, errors) => BuildPhi(name, dir, outDir, windows ? Host.Windows : Host.Linux, errors)));
+            // (on a Mac, PHI's own: a macOS program, which has no 32-bit build)
+            bool mac = OperatingSystem.IsMacOS();
+            entries.Add(new Entry("PHI 64-bit", (name, _, errors) => BuildPhi(name, dir, outDir, windows ? Host.Windows64 : mac ? Host.MacOS : Host.Linux64, errors)));
+            if (!mac) entries.Add(new Entry("PHI 32-bit", (name, _, errors) => BuildPhi(name, dir, outDir, windows ? Host.Windows : Host.Linux, errors)));
 
             string? cc = FindC();
             if (cc == null) notes.Add("No C compiler was found (gcc, clang or cc on the PATH, or PHI_CC), so C isn't here.");

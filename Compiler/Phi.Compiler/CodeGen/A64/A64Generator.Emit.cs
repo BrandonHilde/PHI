@@ -318,6 +318,7 @@ namespace Phi.Compiler.CodeGen.A64
                 MemKind.Q64 => ("ldr", "str", 8),
                 MemKind.F64 => ("ldr", "str", 8),
                 MemKind.F32 => ("ldr", "str", 4),
+                MemKind.F16 => ("ldr", "str", 2),
                 _ => ("ldr", "str", 16),
             };
 
@@ -533,11 +534,11 @@ namespace Phi.Compiler.CodeGen.A64
 
                     case StoreI st:
                     {
-                        if (st.Kind is MemKind.F64 or MemKind.F32)
+                        if (st.Kind is MemKind.F64 or MemKind.F32 or MemKind.F16)
                         {
                             string d = StoreFloat(st.Src, st.Kind);
                             var (fb, fo) = Place(st.Place);
-                            Mem("str", d, fb, fo, st.Kind == MemKind.F32 ? 4 : 8);
+                            Mem("str", d, fb, fo, FloatSize(st.Kind));
                             break;
                         }
                         var (_, op, size) = Ops(st.Kind);
@@ -556,11 +557,11 @@ namespace Phi.Compiler.CodeGen.A64
 
                     case StoreIdxI st:
                     {
-                        if (st.Kind is MemKind.F64 or MemKind.F32)
+                        if (st.Kind is MemKind.F64 or MemKind.F32 or MemKind.F16)
                         {
                             string d = StoreFloat(st.Src, st.Kind);
                             var (fb, fo) = Element(st.Base, st.Index, st.Scale);
-                            Mem("str", d, fb, fo, st.Kind == MemKind.F32 ? 4 : 8);
+                            Mem("str", d, fb, fo, FloatSize(st.Kind));
                             break;
                         }
                         var (_, op, size) = Ops(st.Kind);
@@ -782,7 +783,12 @@ namespace Phi.Compiler.CodeGen.A64
                         string a = FGet(r.Src, "d30");
                         string t = FTarget(r.Dst);
                         E($"fcvt s31, {a}");
-                        E($"fcvt {t}, s31");
+                        if (r.Half)
+                        {
+                            Half();
+                            E($"fcvt {t}, h31");
+                        }
+                        else E($"fcvt {t}, s31");
                         FPut(r.Dst, t);
                         break;
                     }
@@ -883,6 +889,15 @@ namespace Phi.Compiler.CodeGen.A64
                     FPut(dst, t);
                     return;
                 }
+                if (kind == MemKind.F16)
+                {
+                    // (any f16 is an f64, exactly)
+                    string t = FTarget(dst);
+                    Mem("ldr", "h31", b, off, 2);
+                    E($"fcvt {t}, h31");
+                    FPut(dst, t);
+                    return;
+                }
                 var (op, _, size) = Ops(kind);
                 string r = Target(dst, "x9");
                 // (a signed byte or half into 64 bits: its sign fills the whole register)
@@ -897,8 +912,21 @@ namespace Phi.Compiler.CodeGen.A64
                 string d = FGet(src.Reg!, "d31");
                 if (kind == MemKind.F64) return d;
                 E($"fcvt s31, {d}");
-                return "s31";
+                if (kind != MemKind.F16) return "s31";
+                Half();
+                return "h31";
             }
+
+            /// <summary>The f32 in s31 made an f16, in h31, as x86 rounds one (lib/arm64_macos/half.s; w0-w3 changed).</summary>
+            void Half()
+            {
+                g.Need("phi_f32_to_f16");
+                E("fmov w0, s31");
+                E("bl phi_f32_to_f16");
+                E("fmov s31, w0");
+            }
+
+            static int FloatSize(MemKind kind) => kind switch { MemKind.F64 => 8, MemKind.F32 => 4, _ => 2 };
 
             /// <summary>The result of a routine (in w0 or x0) into a value.</summary>
             void Result(VReg dst)
@@ -1131,10 +1159,11 @@ namespace Phi.Compiler.CodeGen.A64
                         VecArgument(a, at);
                         continue;
                     }
-                    if (kind is MemKind.F64 or MemKind.F32 || !a.IsImm && a.Reg!.Float)
+                    if (kind is MemKind.F64 or MemKind.F32 or MemKind.F16 || !a.IsImm && a.Reg!.Float)
                     {
-                        string d = StoreFloat(a, kind == MemKind.F32 ? MemKind.F32 : MemKind.F64);
-                        Mem("str", d, "sp", at, kind == MemKind.F32 ? 4 : 8);
+                        MemKind fk = kind is MemKind.F32 or MemKind.F16 ? kind : MemKind.F64;
+                        string d = StoreFloat(a, fk);
+                        Mem("str", d, "sp", at, FloatSize(fk));
                         continue;
                     }
                     string r = GetOp(a, "x9", true);
