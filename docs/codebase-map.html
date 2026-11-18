@@ -190,7 +190,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
     <span><b>12k</b> in the <code>phi</code> command</span>
     <span><b>11.6k</b> lines of assembly runtime</span>
     <span><b>32k</b> lines of PHI standard library</span>
-    <span><b>446</b> test programs · <b>659</b> unit tests</span>
+    <span><b>450</b> test programs · <b>659</b> unit tests</span>
   </div>
 </header>
 
@@ -427,7 +427,7 @@ const NODES = [
     what: "`phi compare` builds and times each benchmark as PHI 64- and 32-bit, gcc -O2 and -O0, and C# (on a Mac: PHI as a macOS program, beside clang). bench/RESULTS.md holds the last saved run, made on x86 Linux; times from another machine aren't comparable with it. BenchCheck compares counts with a baseline in `phi test --bench`.",
     when: ["After a change to code generation. A slowdown passes every test: a text slowdown of 4.8 times was found only here."] },
   { id: "testrunner", g: "tools", x: 1350, y: 1025, t: "Test runner", s: "TestRunner.cs · tests/",
-    files: [["Phi.Cli/TestRunner.cs", "698"], ["Phi.Cli/LoadTester.cs", "390"], ["Phi.Cli/InputScript.cs", "384"], ["Phi.Cli/VirtualNetwork.cs", "380"], ["Phi.Cli/Qemu.cs", "319"], ["Phi.Cli/HostRunner.cs", "330"], ["Phi.Cli/WebServer.cs", "212"], ["Phi.Cli/SoundCheck.cs", "183"], ["Phi.Cli/Screenshot.cs", "113"], ["Phi.Cli/DebuggerRunner.cs", "80"], ["tests/", "446 programs"]],
+    files: [["Phi.Cli/TestRunner.cs", "698"], ["Phi.Cli/LoadTester.cs", "390"], ["Phi.Cli/InputScript.cs", "384"], ["Phi.Cli/VirtualNetwork.cs", "380"], ["Phi.Cli/Qemu.cs", "319"], ["Phi.Cli/HostRunner.cs", "330"], ["Phi.Cli/WebServer.cs", "212"], ["Phi.Cli/SoundCheck.cs", "183"], ["Phi.Cli/Screenshot.cs", "113"], ["Phi.Cli/DebuggerRunner.cs", "80"], ["tests/", "450 programs"]],
     what: "`phi test`: each tests/NAME.phi is built and run, and its output compared with NAME.expected. Kernels and PHI OS programs boot headless in QEMU; Linux, Windows and macOS programs run directly where the computer can run them (`--target macos` runs only those). A test can type and click (NAME.input), check the screen and the sound, run several networked machines (NAME.machines) or talk to a web server.",
     when: ["\"output did not match\": diff NAME.expected and NAME.actual.", "A timeout: an input script waiting for text that never came, or a hang."] },
 ];

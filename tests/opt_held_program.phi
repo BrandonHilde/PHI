@@ -1,0 +1,133 @@
+# A loop keeps the class variables it changes in registers while it runs (x86's loops, and
+# a macOS program's in methods and in a class's own statements), and memory is right
+# whenever anything else can see it: after the loop, before a call and after it (the method
+# called reads them and changes them), at a return from inside, at a break, and at an error
+# that stops the loop, caught or not. A variable narrower than a register wraps as it does
+# in memory; one declared inside the loop starts again each time round. (A program: Linux,
+# Windows and macOS give one answer.)
+phi.OptHeldProgram:Program
+{
+	int total: 0;
+	int rounds: 0;
+	u8 small: 250;
+	u16 mid: 65530;
+	i64 wide: 4000000000;
+	f64 part: 0.5;
+	int table[8];
+	int seen: 0;
+
+	# a class's own loops: one in another, each with a counter of its own
+	while int i: 0; i < 5; i++;
+		total++ i;
+		while int j: 0; j < 3; j++;
+			rounds++ j;
+			int twice: j * 2;
+			total++ twice;
+		;;
+	;;
+	log total ' ' rounds ' ' i ' ' j ' ' twice '\n';
+
+	# narrower and wider ones, and a float
+	while int k: 0; k < 4; k++;
+		small++ 3;
+		mid++ 3;
+		wide++ 1000000000;
+		part is part * 1.5;
+	;;
+	log small ' ' mid ' ' wide ' ' part '\n';
+
+	# a method called in the loop sees each change, and the loop sees the method's
+	total is 0;
+	while int m: 0; m < 4; m++;
+		total++ 10;
+		call Note;
+		rounds is seen;
+	;;
+	log total ' ' seen ' ' rounds '\n';
+
+	call Run;
+	log 'after: ' total ' ' rounds '\n';
+
+	# not caught: what the loop had is in memory when the program stops
+	call Fill: 12;
+	log 'not here\n';
+
+	[Note]
+		seen++ total;
+		total++ 1;
+	[end]
+
+	[Run]
+		# in a method, the same
+		total is 0;
+		rounds is 0;
+		while int i: 0; i < 6; i++;
+			total++ i * i;
+			rounds++;
+		;;
+		log total ' ' rounds '\n';
+
+		# a call each time round, as a statement and inside a value
+		while int i: 0; i < 3; i++;
+			total++ 100;
+			call Note;
+			rounds++ (Peek);
+		;;
+		log total ' ' seen ' ' rounds '\n';
+
+		# a return and a break from inside
+		log (Until: 50) ' ' total ' ' (Broken: 4) ' ' rounds '\n';
+
+		# an error that stops the loop: what it held is written back first
+		total is 0;
+		if call Fill: 12 throws err
+			log err '\n';
+		;;
+		log total ' ' table:7 '\n';
+		rounds is 0;
+		if call Divide: 3 throws err
+			log err '\n';
+		;;
+		log rounds '\n';
+		total is 0;
+	[end]
+
+	[Peek]
+	[end: total & 7]
+
+	[Until: int limit: 0;]
+		total is 0;
+		while int i: 1; i < 100; i++;
+			total++ i;
+			if total > limit return i;
+		;;
+	[end: -1]
+
+	[Broken: int stop: 0;]
+		rounds is 0;
+		while int i: 0; i < 10; i++;
+			if i is stop
+				break;
+			;;
+			rounds++ 2;
+			if (i & 1) is 0
+				continue;
+			;;
+			rounds++ 100;
+		;;
+	[end: rounds]
+
+	[Fill: int n: 0;]
+		while int i: 0; i < n; i++;
+			total++ i;
+			table:i is total;
+		;;
+	[end]
+
+	[Divide: int n: 0;]
+		while int i: n; i >= 0; i--;
+			rounds++ 5;
+			rounds++ 60 / i;
+		;;
+	[end]
+}

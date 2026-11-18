@@ -4,7 +4,7 @@ Written 2026-11-17 on the Linux machine, from reading the code, and then carried
 Mac. **Where it stands (2026-11-18):** stages 1 to 3 are done (development is on the Mac,
 with Linux programs run in a Lima machine by `PHI_LINUX_RUN=lima`), and the ARM target
 further down exists as native macOS programs and apps (`--target macos`), merged into `main`
-at 7ff7c04: 218 of the 446 tests run as macOS programs and pass, `phi test` is 1052 runs,
+at 7ff7c04: 222 of the tests run as macOS programs and pass, `phi test` is 1064 runs,
 and over the benchmarks a macOS program takes 1.13 times clang 21 `-O2`'s time. Stage 4
 (real x86 from GitHub's machines) is on hold with the release work: the Linux machine is
 still where x86 is timed, and Windows where its programs are run. The stages below are as

@@ -111,7 +111,7 @@ runs only on the other systems (see `host_program.phi`). `phi test --target linu
 On a Mac with Apple Silicon, such a test runs as a native macOS program too (`numbers
 (macos)`), wherever a macOS program can be built from it: everything in one goes through the
 intermediate form, and a test that uses what the form doesn't take yet is left to the other
-systems, so `phi test --target macos` says how many it ran (`218 of 446 tests run as macOS
+systems, so `phi test --target macos` says how many it ran (`222 of 448 tests run as macOS
 programs`). Linux programs are x86, which a Mac runs in a Linux machine: with
 `PHI_LINUX_RUN=lima` (or another command that runs a program there) they're run too, and
 without it they're set aside and named. What's meant to differ on macOS goes in
@@ -405,7 +405,10 @@ way to another type), so they don't test those errors: the tests in this folder 
 
 Run it after any change to the code generator, with a `--count` of a few hundred or more:
 without `--seed` each run writes new programs, and one bug in ARM's code was in a single
-program of some thousands (kept as `far_slots_program.phi`). When adding an optimisation, break it on
+program of some thousands (kept as `far_slots_program.phi`). The `opt_*_program.phi` tests
+are the optimisations by hand, one case of each (methods put in where they're called,
+choices with no jump, a loop's class variables in registers, early returns, indexes and
+masks), each shown to fail when its optimisation is broken. When adding an optimisation, break it on
 purpose once and see that the fuzzer notices: if it doesn't, its programs don't reach the
 new code yet, and `CodeFuzzer.Maker` needs to make some that do.
 

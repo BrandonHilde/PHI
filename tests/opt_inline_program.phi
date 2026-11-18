@@ -1,0 +1,168 @@
+# Small methods, which a macOS program's code has put in where they're called (CodeGen/A64's
+# Inline), give what they give when they're called: parameters of every size, a parameter
+# changed inside (the caller's own value isn't), ones left out, a loop, a return part way,
+# a struct's method, one in another three deep, an error in one with its own line, and a
+# class variable both the method and the loop that calls it change. Methods that call
+# themselves or each other stay calls. (A program: Linux, Windows and macOS give one answer.)
+struct.Pair
+{
+	int a;
+	int b;
+
+	[Sum]
+	[end: a + b]
+
+	[Set: int x: 0; int y: 0;]
+		a is x;
+		b is y;
+	[end]
+
+	[Bigger]
+		if a > b return a;
+	[end: b]
+}
+
+phi.OptInlineProgram:Program
+{
+	int calls: 0;
+	int table[8];
+	Pair pair;
+
+	while int i: 0; i < 8; i++;
+		table:i is i * i + 1;
+	;;
+	call Run;
+	exit 0;
+
+	[Run]
+		log (Twice: 21) ' ' (Twice: (Twice: 5)) ' ' (Deep: 3) '\n';
+
+		# every size of parameter, cut to it as it's given
+		int big: 300;
+		int far: 70000;
+		i64 huge: 5000000000;
+		log (Low: big as u8) ' ' (Short: far as i16) ' ' (Short: (0 - far) as i16) ' ' (Wide: huge 7) ' ' (Mix: 3 2.5) '\n';
+
+		# a parameter changed inside is the method's own
+		int keep: 4;
+		log (Bump: keep) ' ' keep ' ' (Bump: keep + 1) ' ' keep '\n';
+
+		# one left out is what the method says
+		log (Add: 5) ' ' (Add: 5 6) ' ' (Add) '\n';
+
+		# a return part way, a loop, a when
+		log (Sign: 5) ' ' (Sign: -5) ' ' (Sign: 0) ' ' (Clamp: 50 0 10) ' ' (Clamp: -3 0 10) ' ' (Clamp: 4 0 10) '\n';
+		log (SumTo: 8) ' ' (SumTo: 0) ' ' (Kind: 0) (Kind: 1) (Kind: 2) (Kind: 9) '\n';
+
+		# a struct's
+		call pair.Set: 3 9;
+		log (pair.Sum) ' ' (pair.Bigger) '\n';
+		call pair.Set: (pair.Sum) (Twice: (pair.Bigger));
+		log pair.a ' ' pair.b ' ' (pair.Bigger) '\n';
+
+		# those that call themselves, or each other
+		log (Fact: 10) ' ' (Even: 10) ' ' (Even: 7) '\n';
+
+		# a class variable the method changes, in a loop that changes it too
+		log (Loop: 5) ' ' calls ' ' (Count) ' ' calls '\n';
+
+		# an error in one names its own line, caught or not
+		int got: 0;
+		if call got is At: 9 throws err
+			log err '\n';
+		;;
+		if call got is Share: 7 (got - got) throws err
+			log err '\n';
+		;;
+		log (At: 3) ' ' (Share: 7 2) '\n';
+		log (At: (Twice: 6)) '\n';
+	[end]
+
+	[Twice: int x: 0;]
+	[end: x + x]
+
+	[Deep: int x: 0;]
+	[end: (Twice: (Add: x (Twice: x))) + (Sign: x)]
+
+	[Low: u8 b: 0;]
+	[end: b + 1]
+
+	[Short: i16 s: 0;]
+	[end: s * 2]
+
+	[Wide: i64 a: 0; int b: 0; : i64]
+	[end: a * b + 1]
+
+	[Mix: int a: 0; f64 b: 0.0; : f64]
+	[end: b * 2.0 + 0.25]
+
+	[Bump: int x: 0;]
+		x++ 5;
+		x is x * 2;
+	[end: x]
+
+	[Add: int a: 1; int b: 10;]
+	[end: a + b]
+
+	[Sign: int x: 0;]
+		if x > 0 return 1;
+		if x < 0 return -1;
+	[end: 0]
+
+	[Clamp: int x: 0; int low: 0; int high: 0;]
+		if x < low
+			x is low;
+		;;
+		if x > high
+			x is high;
+		;;
+	[end: x]
+
+	[SumTo: int n: 0;]
+		int total: 0;
+		while int i: 0; i < n; i++;
+			total++ table:(i & 7);
+		;;
+	[end: total]
+
+	[Kind: int x: 0;]
+		int kind: 7;
+		when x
+			is 0
+				kind is 3;
+			;;
+			is 1 2
+				kind is 5;
+			;;
+		;;
+	[end: kind]
+
+	[Fact: int n: 0;]
+		if n < 2 return 1;
+	[end: n * (Fact: n - 1)]
+
+	[Even: int n: 0;]
+		if n is 0 return true;
+	[end: (Odd: n - 1)]
+
+	[Odd: int n: 0;]
+		if n is 0 return false;
+	[end: (Even: n - 1)]
+
+	[Count]
+		calls++;
+	[end: calls]
+
+	[Loop: int n: 0;]
+		while int i: 0; i < n; i++;
+			calls++ 2;
+			call Count;
+		;;
+	[end: calls]
+
+	[At: int i: 0;]
+	[end: table:i]
+
+	[Share: int a: 0; int b: 0;]
+	[end: a / b]
+}

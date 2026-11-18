@@ -92,7 +92,8 @@ namespace Phi.Compiler.CodeGen.A64
         {
             if (call.Outside || call.Routine || call.Target != null || inside.Count > InlineDepth || inside.Contains(call.Label)) return null;
             if (neverInline.Contains(call.Label) || !methodsByLabel!.TryGetValue(call.Label, out MethodSymbol? m)) return null;
-            if (call.Result is CallResult.Xmm0 or CallResult.EdxEax) return null;
+            // (a vec's result is a call's still; a 64-bit number's is whole in x0 here, as any other)
+            if (call.Result == CallResult.Xmm0) return null;
             if (call.ArgKinds.Any(a => a is MemKind.F32 or MemKind.F16 or MemKind.V128)) return null;
             IrFunction? body = IrBuilder.Build(m, Holdable, Catches, GrowResults, true, (lengths ??= new RememberedLengths(unit)).Remembers, out _, arm: true);
             // (what's wrong with the method itself is wrong at every call of it)

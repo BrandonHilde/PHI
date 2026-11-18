@@ -1,0 +1,125 @@
+# Code a macOS program's back end writes its own way (CodeGen/A64), checked against x86's:
+# a method that returns at once one way and goes on the other (its kept registers saved only
+# on the way that goes on), a call's result used at once and given straight back, an index
+# of every kind into elements of every size, masks that fit an instruction and ones that
+# don't, and a class's variables and a struct's fields of every size read and written where
+# they are. (A program: Linux, Windows and macOS give one answer.)
+struct.Mixed
+{
+	u8 flag;
+	u16 half;
+	int whole;
+	i64 wide;
+	u8 last;
+}
+
+phi.OptCodeProgram:Program
+{
+	u8 bytes[16];
+	u16 halves[16];
+	int wholes[16];
+	i64 wides[16];
+	Mixed mixed;
+	u8 one: 200;
+	u16 two: 60000;
+	int four: -5;
+	i64 eight: -6000000000;
+	int depth: 0;
+
+	while int i: 0; i < 16; i++;
+		bytes:i is (i * 17) as u8;
+		halves:i is (i * 4097) as u16;
+		wholes:i is i * 100003 - 700000;
+		wides:i is (i as i64) * 3000000007 - 20000000000;
+	;;
+	call Run;
+	exit 0;
+
+	[Run]
+		# a return at once one way, calls on the other
+		log (Fib: 20) ' ' (Fib: 1) ' ' (Fib: 0) ' ' (Walk: 6 3 100) ' ' (Walk: 0 3 100) ' ' depth '\n';
+		log (Gate: -1 5) ' ' (Gate: 4 5) ' ' (Far: 0) ' ' (Far: 3) ' ' (Root: -4.0) ' ' (Root: 2.5) '\n';
+
+		# a call's result used at once, stored, and given straight back
+		int kept: (Next: 4) + (Next: (Next: 5));
+		wholes:15 is (Next: kept);
+		log kept ' ' wholes:15 ' ' (Pass: 9) ' ' (Pass: (Pass: 2)) '\n';
+
+		# indexes: a u32, an int below 0 through a pointer, a u8's value, each size of element
+		ptr<int> middle: addr wholes:8;
+		ptr<u8> text: addr bytes:8;
+		u32 start: 3;
+		int back: -3;
+		u8 tiny: 5;
+		i64 sum: 0;
+		while int i: 0; i < 8; i++;
+			sum++ bytes:(start + (i as u32)) + halves:(tiny + i) + middle:(back + i) + wides:i;
+			sum++ text:(back - i + 3) + wholes:(bytes:i & 15) + halves:(i << 1);
+			bytes:(i + 8) is (sum & 255) as u8;
+			wides:(15 - i) is sum;
+		;;
+		log sum ' ' bytes:15 ' ' wides:8 ' ' middle:(0 - 8) ' ' text:(0 - 8) '\n';
+
+		# masks
+		u32 x: 0xDEADBEEF;
+		i64 y: 0x123456789ABCDEF;
+		log (x & 0xFF) ' ' (x & 0xFF00) ' ' (x & 0x55555555) ' ' (x | 0x80000001) ' ' (x ^ 0x0F0F0F0F) ' ' (x & 0x12345678) '\n';
+		log (y & 0xFFFFFFFF00000000) ' ' (y | 0x7000000000000007) ' ' (y ^ 0xFFFF0000FFFF) ' ' (y & 5) '\n';
+		log (Has: x 0x80) (Has: x 0x10) (Has: x 0x80000000) (Has: x 0x110) '\n';
+
+		# a class's variables and a struct's fields, each size where it is
+		one++ 100;
+		two++ 6000;
+		four is four * 7;
+		eight-- 1;
+		mixed.flag is 255;
+		mixed.half is 65535;
+		mixed.whole is -2;
+		mixed.wide is eight * 2;
+		mixed.last is 7;
+		mixed.flag++;
+		mixed.half++ 2;
+		log one ' ' two ' ' four ' ' eight ' ' mixed.flag ' ' mixed.half ' ' mixed.whole ' ' mixed.wide ' ' mixed.last '\n';
+	[end]
+
+	[Fib: int n: 0;]
+		if n < 2 return n;
+	[end: (Fib: n - 1) + (Fib: n - 2)]
+
+	[Walk: int n: 0; int step: 0; int from: 0;]
+		if n is 0 return from;
+		depth++;
+		int there: (Walk: n - 1 step from + step);
+	[end: there + n * step]
+
+	[Gate: int key: 0; int value: 0;]
+		if key < 0 return -1;
+		int a: (Next: value);
+		int b: (Next: key);
+	[end: a * b + key + value]
+
+	[Far: i64 n: 0; : i64]
+		if n is 0 return 9000000000;
+		i64 more: (Far: n - 1);
+	[end: more + n]
+
+	[Root: f64 x: 0.0; : f64]
+		if x < 0.0 return 0.0;
+		f64 y: (Scale: x);
+	[end: y + x]
+
+	[Scale: f64 x: 0.0; : f64]
+		depth++;
+	[end: x * 4.0]
+
+	[Next: int x: 0;]
+		depth++;
+	[end: x + 1]
+
+	[Pass: int x: 0;]
+	[end: (Next: x)]
+
+	[Has: u32 x: 0; u32 bits: 0;]
+		if (x & bits) is not 0 return 1;
+	[end: 0]
+}

@@ -1,0 +1,13 @@
+40 15 5 3 4
+6 6 8000000000 2.53125
+44 106 106
+55 6
+358 874 17
+10 55 208 208
+index out of range on line 123 in opt_held_program.phi
+36 28
+division by zero on line 130 in opt_held_program.phi
+130
+after: 0 130
+
+PHI: index out of range on line 123 in opt_held_program.phi

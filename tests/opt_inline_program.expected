@@ -1,0 +1,15 @@
+42 20 19
+45 8928 -8928 35000000001 5.25
+18 4 20 4
+15 11 11
+1 -1 0 10 0 4
+148 0 3557
+12 9
+12 18 18
+3628800 1 0
+15 15 16 16
+index out of range on line 164 in opt_inline_program.phi
+division by zero on line 167 in opt_inline_program.phi
+10 3
+
+PHI: index out of range on line 164 in opt_inline_program.phi

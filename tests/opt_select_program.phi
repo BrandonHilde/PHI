@@ -1,0 +1,231 @@
+# A short if and else that set one variable, which a macOS program's code makes a choice
+# with no jump (CodeGen/A64's Selects: csel, csinc), give what the jumps give: 32- and
+# 64-bit values, signed and unsigned tests, a test of bits, the variable tested being the
+# one set, x + 1 on either side, constants, three steps a side, one inside another. And
+# what isn't made one stays right beside it: an if alone, two variables set, a call, a
+# division, a read from memory. (A program: Linux, Windows and macOS give one answer.)
+phi.OptSelectProgram:Program
+{
+	int data[16];
+	u32 seen: 0;
+
+	while int i: 0; i < 16; i++;
+		data:i is (i * 37 + 11) % 23 - 9;
+	;;
+	call Run;
+	exit 0;
+
+	[Run]
+		# is n odd: the tested one is the one set, and 3n + 1 has its + 1 in the choice
+		i64 n: 27;
+		int steps: 0;
+		while n is not 1
+			n is (Step: n);
+			steps++;
+		;;
+		log steps ' ' (Step: 6) ' ' (Step: 7) ' ' (Step: 5000000001) '\n';
+
+		# over a table of numbers, each kind once
+		int a: 0;
+		int b: 0;
+		i64 wide: 0;
+		u32 big: 0;
+		while int i: 0; i < 16; i++;
+			a++ (Pick: data:i i);
+			b++ (Near: data:i);
+			wide++ (Far: data:i);
+			big++ (Above: (data:i as u32) 4000000000);
+			a++ (Bits: i);
+			b++ (Steps3: data:i i);
+			a++ (Inner: data:i i);
+		;;
+		log a ' ' b ' ' wide ' ' big '\n';
+
+		# the + 1 on the side taken when the test holds, and on the other
+		log (UpIf: 4 9) ' ' (UpIf: 9 4) ' ' (UpElse: 4 9) ' ' (UpElse: 9 4) ' ' (Ones: 0) (Ones: 5) '\n';
+
+		# the ends: the smallest and largest numbers, and equal ones
+		log (Pick: -2147483648 2147483647) ' ' (Pick: 2147483647 -2147483648) ' ' (Pick: 3 3) ' ' (Above: 0 0) ' ' (Above: 4294967295 0) '\n';
+
+		# what stays as jumps
+		int c: 0;
+		while int i: 0; i < 16; i++;
+			c++ (Alone: data:i c);
+			c++ (Two: data:i);
+			c++ (Called: data:i);
+			c++ (Shared: data:i (i & 3) + 1);
+			c++ (Read: i);
+		;;
+		log c ' ' seen '\n';
+	[end]
+
+	[Step: i64 n: 0; : i64]
+		if (n & 1) is 0
+			n is n >> 1;
+		;;
+		else
+			n is n * 3 + 1;
+		;;
+	[end: n]
+
+	[Pick: int x: 0; int y: 0;]
+		int r: 0;
+		if x < y
+			r is x;
+		;;
+		else
+			r is y;
+		;;
+	[end: r]
+
+	[Near: int x: 0;]
+		if x >= 0
+			x is x + 100;
+		;;
+		else
+			x is 0 - x;
+		;;
+	[end: x]
+
+	[Far: int x: 0; : i64]
+		i64 r: 0;
+		if x > 3
+			r is 10000000000;
+		;;
+		else
+			r is -3;
+		;;
+	[end: r]
+
+	[Above: u32 x: 0; u32 limit: 0; : u32]
+		u32 r: 0;
+		if x > limit
+			r is x - limit;
+		;;
+		else
+			r is 1;
+		;;
+	[end: r]
+
+	[Bits: int x: 0;]
+		int r: 0;
+		if (x & 6) is not 0
+			r is x << 2;
+		;;
+		else
+			r is x | 0x100;
+		;;
+	[end: r]
+
+	[Steps3: int x: 0; int y: 0;]
+		int r: 0;
+		if x > y
+			r is x * 5;
+			r is r - y;
+			r is r ^ 21;
+		;;
+		else
+			r is y - x;
+			r is r << 1;
+			r is r + 7;
+		;;
+	[end: r]
+
+	[Inner: int x: 0; int y: 0;]
+		int r: 0;
+		if x < 0
+			if y > 7
+				r is y;
+			;;
+			else
+				r is 0 - y;
+			;;
+		;;
+		else
+			r is x;
+		;;
+	[end: r]
+
+	[UpIf: int x: 0; int y: 0;]
+		int r: 0;
+		if x < y
+			r is x + 1;
+		;;
+		else
+			r is y;
+		;;
+	[end: r]
+
+	[UpElse: int x: 0; int y: 0;]
+		int r: 0;
+		if x < y
+			r is x;
+		;;
+		else
+			r is y + 1;
+		;;
+	[end: r]
+
+	[Ones: int x: 0;]
+		int r: 0;
+		if x is 0
+			r is 1;
+		;;
+		else
+			r is 0;
+		;;
+	[end: r]
+
+	[Alone: int x: 0; int best: 0;]
+		if x > best
+			best is x;
+		;;
+	[end: best & 7]
+
+	[Two: int x: 0;]
+		int p: 0;
+		int q: 0;
+		if x > 0
+			p is x;
+			q is 1;
+		;;
+		else
+			p is 0 - x;
+			q is 2;
+		;;
+	[end: p + q]
+
+	[Called: int x: 0;]
+		int r: 0;
+		if x > 0
+			r is (Mark: x);
+		;;
+		else
+			r is 3;
+		;;
+	[end: r]
+
+	[Mark: int x: 0;]
+		seen++;
+	[end: x & 3]
+
+	[Shared: int x: 0; int by: 0;]
+		int r: 0;
+		if x > 0
+			r is x / by;
+		;;
+		else
+			r is x % by;
+		;;
+	[end: r]
+
+	[Read: int i: 0;]
+		int r: 0;
+		if i < 8
+			r is data:i;
+		;;
+		else
+			r is data:(i - 8);
+		;;
+	[end: r]
+}
