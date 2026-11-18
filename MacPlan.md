@@ -462,6 +462,10 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
     x0 (`ThroughX0`): fib 1.47 -> 1.41;
   - and, orr, eor and tst take a mask as it is; an index made 64 bits goes into the read
     itself (`[x1, w2, uxtw #2]`).
+  (Against clang 21, Command Line Tools 27.2, installed 2026-11-18, the same PHI code is
+  1.17 times: the newer clang made the C faster in interp, mandelbrot and maps. The figures
+  here were measured with clang 14. lldb from the same tools steps through a `--debug`
+  program's PHI lines; lldb 14 crashed on any program.)
   Furthest behind now: maps (2.6; the C one keeps key, value and used in one 12-byte slot and
   is all in one function, PHI's Map is three arrays and four calls a lookup), fib (1.4),
   collatz and lists (1.3). What would take them further: a choice without a branch (csel)
