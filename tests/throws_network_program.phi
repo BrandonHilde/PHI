@@ -1,0 +1,92 @@
+# The network's calls say which answers mean they failed, so one guard catches them as it
+# catches a throw: a port that's taken, a connection nobody answers, a read from a connection
+# that isn't one. A call that works is as it was, and so is one that isn't guarded. The ports
+# are picked from the process number, as sockets_program's are.
+use net.sockets;
+
+phi.ThrowsNetworkProgram:Program
+{
+	u32 port: 40000 + (OS.CurrentTask) % 20000;
+	u32 home: (Net.ParseIp: '127.0.0.1');
+	u8 got[64];
+
+	# a port that can be had, and one nobody listens on (the one after it)
+	int listener: -1;
+	int tries: 0;
+	while listener < 0 and tries < 100
+		listener is (Tcp.Listen: port);
+		if listener < 0
+			port is port + 7;
+		;;
+		tries++;
+	;;
+	log 'a port to listen on: ' (listener >= 0) '\n';
+
+	# the same port again: taken
+	int second: 0;
+	if call second is Tcp.Listen: port throws err
+		log 'caught: ' (Said: err.text) ', kind ANSWER ' (err.kind is ErrorKind.ANSWER) ', the answer ' second '\n';
+	;;
+	else
+		log 'a taken port was given again\n';
+	;;
+
+	# a connection that's answered: nothing to catch
+	int c: -1;
+	if call c is Tcp.Connect: home port throws err
+		log 'the connection failed: ' err.text '\n';
+	;;
+	else
+		log 'connected: ' (c >= 0) '\n';
+	;;
+	int sent: 0;
+	if call sent is Tcp.Write: c 'hello' 5 throws err
+		log 'the write failed: ' err.text '\n';
+	;;
+	else
+		log 'wrote ' sent '\n';
+	;;
+	call Tcp.Close: c;
+	call Tcp.StopListening: listener;
+
+	# nobody listens now: refused
+	int refused: 0;
+	if call refused is Tcp.Connect: home port throws err
+		log 'caught: ' (Said: err.text) ', the answer ' refused '\n';
+	;;
+	else
+		log 'connected to nobody\n';
+	;;
+
+	# a connection that isn't one
+	int taken: 0;
+	if call taken is Tcp.Read: 9999 addr got 64 throws err
+		log 'caught: ' (Said: err.text) ', the answer ' taken '\n';
+	;;
+	else
+		log 'read from nothing\n';
+	;;
+
+	# not guarded: the answer, as ever
+	log 'not guarded: ' (Tcp.Connect: home port) '\n';
+
+	# and text that isn't a name or an address has no address
+	u32 address: 1;
+	if call address is Dns.Resolve: '' throws err
+		log 'caught: ' (Said: err.text) ', the answer ' address '\n';
+	;;
+	else
+		log 'nothing has an address\n';
+	;;
+	log 'done\n';
+	exit 0;
+
+	# an error's text up to where it says the line (which moves as this file is edited)
+	[Said: ptr<u8> text: 0;]
+		while int i: 0; text:i is not 0; i++;
+			if text:i is ' ' and text:(i + 1) is 'o' and text:(i + 2) is 'n' and text:(i + 3) is ' '
+				text:i is 0;
+			;;
+		;;
+	[end: text]
+}

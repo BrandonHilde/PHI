@@ -91,7 +91,7 @@ phi.SocketsProgram:Program
 	log 'read back ' total ', the same: ' same '\n';
 
 	# closing: the other side reads what's left, then 0
-	call Tcp.Write: c 'bye' 3;
+	n is (Tcp.Write: c 'bye' 3);
 	call Tcp.Close: c;
 	n is (Tcp.Read: s got 100);
 	log 'after the close: ' n ', then ' (Tcp.Read: s got 100) ', waiting: ' (Tcp.Waiting: s) '\n';

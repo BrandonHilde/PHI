@@ -172,8 +172,9 @@ phi.LoadClient:Library
 			taken is (Secure.Write: addr links:c '\n' 1);
 			return;
 		;;
-		call Tcp.Send: handles:c text text.len;
-		call Tcp.Send: handles:c '\n' 1;
+		# (a connection that's broken is found when its answer doesn't come)
+		int sent: (Tcp.Send: handles:c text text.len);
+		sent is (Tcp.Send: handles:c '\n' 1);
 	[end]
 
 	# what has come in on every connection, a line at a time

@@ -4236,7 +4236,12 @@ the answer as before, so nothing that calls the library changes; a failing answe
   one comparison. A failing answer caught is a throw (about 60 ns), so an answer tested by
   hand is still the way in a loop that expects it.
 - Says theirs so far: the file calls (`Fat`'s, a PHI OS program's `OS.` ones, Linux's and
-  Windows'). Tests `throws_answers_program`, `throws_answers_errors`,
+  Windows'); the network's, a kernel's and a program's alike (`Net.Start`, `Dns.Resolve`,
+  `Udp.Open`, `Tcp.Connect`, `Listen`, `Read`, `Write`, `Send`); `Sound`'s four plays;
+  `Threads.Start` and `StartWith`; `OS.Spawn` and `OS.Run`. Not the answers that mean
+  nothing's there yet and aren't failures (`Tcp.Accept`'s -1, `Udp.Receive`'s false), and
+  not `Udp.SendTo`, whose false most callers have no use for (17 of them drop it, and would
+  each be warned). Tests `throws_answers_program`, `throws_answers_errors`,
   `throws_answers_library_program` (a compiled library's interface carries it) and
   `kernel32_throws_files` (a kernel and a program on its disk).
 - What it changed that was there: a guard already around a call that now says which answers
@@ -4245,8 +4250,11 @@ the answer as before, so nothing that calls the library changes; a failing answe
   `Dialogs.Exists` took every file that isn't there to be there, and the full test run said
   so (`dialogs_program`). They ask `err.kind is ErrorKind.ANSWER` now. A program's own guards
   around the file calls change the same way: the release's notes say it.
-- *Left:* the rest of the library saying theirs (the network, sound, pictures), which is
-  each module's `error` text's turn to go; an answer kept in a variable nothing reads
+  `throws_network_program` catches a taken port, a refused connection and a read from no
+  connection.
+- *Left:* the rest of the library saying theirs (`Web`, `Secure`, pictures, the savelog and
+  streams); the caught error saying why where a module knows (`Sound.error` has it, and the
+  error's text is only `Sound.PlayFile answered false`); an answer kept in a variable nothing reads
   (`bln made: (Fat.MakeFolder: 'SYS');`) says nothing, as there are no warnings for unread
   variables; a system call a kernel declares itself (`sys.Name: 200;`) can't say which of
   its answers fail yet.

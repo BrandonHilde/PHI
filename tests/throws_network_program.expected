@@ -1,0 +1,9 @@
+a port to listen on: 1
+caught: Tcp.Listen answered -1, kind ANSWER 1, the answer -1
+connected: 1
+wrote 5
+caught: Tcp.Connect answered -1, the answer -1
+caught: Tcp.Read answered -1, the answer -1
+not guarded: -1
+caught: Dns.Resolve answered 0, the answer 0
+done

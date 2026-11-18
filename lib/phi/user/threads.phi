@@ -39,11 +39,11 @@ phi.Threads:Program
 
 	# run work: value as a thread of its own, with a stack of size; its number, or -1 if it can't start
 	[Start: method<int> work: 0; int value: 0; StackSize size: StackSize.NORMAL;]
-	[end: (Begin: work value as ptr<u8> size)]
+	[end: (Begin: work value as ptr<u8> size) throws below 0]
 
 	# the same with a pointer for it to work on (what it points at has to last until it's done)
 	[StartWith: method<ptr<u8>> work: 0; ptr<u8> data: 0; StackSize size: StackSize.NORMAL;]
-	[end: (Begin: work as method<int> data size)]
+	[end: (Begin: work as method<int> data size) throws below 0]
 
 	# (either way, what the thread is given takes the same place, the size of a pointer)
 	[Begin: method<int> work: 0; ptr<u8> value: 0; StackSize size: StackSize.NORMAL;]

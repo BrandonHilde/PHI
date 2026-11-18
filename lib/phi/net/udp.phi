@@ -47,7 +47,7 @@ phi.Udp:Kernel
 		call Net.Lock;
 		int result: (OpenLocked: port queue);
 		call Net.Unlock;
-	[end: result]
+	[end: result throws below 0]
 
 	# Open's work, holding the network's lock
 	[OpenLocked: u32 port: 0; u32 queue: 64;]

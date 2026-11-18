@@ -59,11 +59,11 @@ phi.Threads:Kernel
 			return -1;
 		;;
 		stacks:thread_task is stack;
-	[end: thread_task]
+	[end: thread_task throws below 0]
 
 	# the same with a pointer for it to work on (what it points at has to last until it's done)
 	[StartWith: method<ptr<u8>> work: 0; ptr<u8> data: 0; StackSize size: StackSize.SMALL;]
-	[end: (Start: work as method<int> data as int size)]
+	[end: (Start: work as method<int> data as int size) throws below 0]
 
 	# whether a thread has finished (its method has returned)
 	[Done: int thread: 0;]

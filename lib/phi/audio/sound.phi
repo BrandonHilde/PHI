@@ -62,14 +62,14 @@ phi.Sound:Library
 		bln ok: false;
 		call ok is StartFile: path;
 		call Finish;
-	[end: ok]
+	[end: ok throws false]
 
 	# play a song written as text, waiting until it ends
 	[PlaySong: ptr<u8> song: 0;]
 		bln ok: false;
 		call ok is StartSong: song;
 		call Finish;
-	[end: ok]
+	[end: ok throws false]
 
 	# start playing a song; keep calling Pump while playing is true
 	[StartSong: ptr<u8> song: 0;]
@@ -88,7 +88,7 @@ phi.Sound:Library
 			source is 1;
 			call Begin;
 		;;
-	[end: ok]
+	[end: ok throws false]
 
 	# start playing a song or WAV file from the disk
 	[StartFile: ptr<u8> path: 0;]
@@ -161,7 +161,7 @@ phi.Sound:Library
 				call ok is StartSong: song_text;
 			;;
 		;;
-	[end: ok]
+	[end: ok throws false]
 
 	# give the sound card as much as it has room for; sets playing to false once
 	# everything has played

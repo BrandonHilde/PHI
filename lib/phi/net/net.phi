@@ -101,7 +101,7 @@ phi.Net:Kernel
 		call Lock;
 		bln result: (StartLocked: address mask router);
 		call Unlock;
-	[end: result]
+	[end: result throws false]
 
 	# Start's work, holding the network's lock
 	[StartLocked: u32 address: 0; u32 mask: 0xFFFFFF00; u32 router: 0;]

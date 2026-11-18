@@ -1245,6 +1245,21 @@ int size: (Read: 'A.TXT');          # not guarded: -1, as it always was
   answer of the call it guards: a method that calls one that fails, and carries on, hasn't
   failed.
 - **A compiled library's methods say it too**: the library's interface carries it.
+- **What the library says of its own calls so far:**
+
+  | The calls | Failed when the answer is |
+  |---|---|
+  | `OS.ReadFile`, `OS.ReadFileAt`, `OS.FileSize`, `OS.ListFolder` (and `Fat`'s) | `below 0` |
+  | `OS.WriteFile`, `OS.AppendFile`, `OS.DeleteFile`, `OS.MakeFolder`, `OS.DeleteFolder`, `OS.Rename` | `atmost 0` (`false` for `Fat`'s) |
+  | `Tcp.Connect`, `Tcp.Listen`, `Tcp.Read`, `Tcp.Write`, `Tcp.Send`, `Udp.Open` | `below 0` |
+  | `Net.Start` | `false` |
+  | `Dns.Resolve` | `0` |
+  | `Sound.PlayFile`, `Sound.PlaySong`, `Sound.StartFile`, `Sound.StartSong` | `false` |
+  | `Threads.Start`, `Threads.StartWith` | `below 0` |
+  | `OS.Spawn`, `OS.Run` | `below 0` |
+
+  An answer that means nothing's there yet isn't a failure and isn't caught: `Tcp.Accept`'s
+  -1 with no connection waiting, `Udp.Receive`'s false, `Tcp.Read`'s 0 at the end.
 - An answer is cheaper than a `throw` (it's a number coming back; a throw unwinds the
   methods in between), so it's still the way for a failure that's ordinary, like a file
   that isn't there yet. `throw` is for the ones that shouldn't happen, and for methods with

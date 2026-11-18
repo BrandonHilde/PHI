@@ -52,5 +52,5 @@ phi.Dns:Kernel
 			;;
 			call Net.Listen: 0;
 		;;
-	[end: address]
+	[end: address throws 0]
 }

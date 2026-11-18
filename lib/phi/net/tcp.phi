@@ -133,7 +133,7 @@ phi.Tcp:Kernel
 		call Net.Lock;
 		int result: (ConnectLocked: to port);
 		call Net.Unlock;
-	[end: result]
+	[end: result throws below 0]
 
 	# Connect's work, holding the network's lock
 	[ConnectLocked: u32 to: 0; u32 port: 0;]
@@ -197,7 +197,7 @@ phi.Tcp:Kernel
 		call Net.Lock;
 		int result: (WriteLocked: handle data length);
 		call Net.Unlock;
-	[end: result]
+	[end: result throws below 0]
 
 	# Write's work, holding the network's lock
 	[WriteLocked: int handle: 0; ptr<u8> data: 0; u32 length: 0;]
@@ -226,7 +226,7 @@ phi.Tcp:Kernel
 		call Net.Lock;
 		int result: (ReadLocked: handle to max);
 		call Net.Unlock;
-	[end: result]
+	[end: result throws below 0]
 
 	# Read's work, holding the network's lock
 	[ReadLocked: int handle: 0; ptr<u8> to: 0; u32 max: 0;]
@@ -314,7 +314,7 @@ phi.Tcp:Kernel
 		call Net.Lock;
 		int result: (ListenLocked: port backlog);
 		call Net.Unlock;
-	[end: result]
+	[end: result throws below 0]
 
 	# Listen's work, holding the network's lock
 	[ListenLocked: u32 port: 0; u32 backlog: 64;]
@@ -399,7 +399,7 @@ phi.Tcp:Kernel
 		call Net.Lock;
 		int result: (SendLocked: handle data length);
 		call Net.Unlock;
-	[end: result]
+	[end: result throws below 0]
 
 	# Send's work, holding the network's lock
 	[SendLocked: int handle: 0; ptr<u8> data: 0; u32 length: 0;]

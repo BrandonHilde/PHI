@@ -504,7 +504,7 @@ namespace Phi.Compiler.Tests
         }
 
         [Theory]
-        [InlineData("call Threads.Start: addr Work 0;\n[Work: int n: 0;]\n atomic total++ n;\n locked guard\n  total is total + 1;\n ;;\n sums:n is n;\n int mine: n;\n mine++;\n[end]")]
+        [InlineData("int t: (Threads.Start: addr Work 0);\n[Work: int n: 0;]\n atomic total++ n;\n locked guard\n  total is total + 1;\n ;;\n sums:n is n;\n int mine: n;\n mine++;\n[end]")]
         [InlineData("total++;\ncall Work: 1;\n[Work: int n: 0;]\n total++;\n[end]")]      // no thread runs it
         public void AThreadsGuardedOrOwnWritesDontWarn(string body)
         {
