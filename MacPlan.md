@@ -456,12 +456,12 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   it would change every routine the runtime and the generator make, and every compiled
   library's ABI. What's worth doing first: values kept in registers across a block (not read
   again from memory), and x0-x7 for values in a method that calls nothing.
-- Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
-  intermediate form builds is checked against N, not how many it holds; and such a method's
-  `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. A method's object result kept in
-  an interface (`call shape is Make: 3`) frees what the interface had with the result's
-  struct's free, not the interface's. ARM's are done as the generator does them
-  (`IrBuilder.arm`).
+- Found on the way in x86's methods the intermediate form builds, and fixed there too
+  (tests/ir_checks_program): an `[atmost N]` array's index was checked against N, not how many
+  it holds; `Mem.Copy` (Move, Fill, Fill32) didn't check its count;
+  and a method's object result kept in an interface (`call shape is Make: 3`) freed what the
+  interface had with the result's struct's free, not the interface's. This changed x86's code
+  on purpose (237 of the snapshot's 5403 builds, 31 files); the snapshot was recorded again.
 
 ### PHI-Assembler for ARM: what it would take
 

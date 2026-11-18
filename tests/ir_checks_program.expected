@@ -1,0 +1,9 @@
+in: 5
+index out of range on line 59 in ir_checks_program.phi
+index out of range on line 64 in ir_checks_program.phi
+a count of 2 billion or more for Mem.Copy (a negative number, or a subtraction below 0) on line 68 in ir_checks_program.phi
+a count of 2 billion or more for Mem.Fill (a negative number, or a subtraction below 0) on line 71 in ir_checks_program.phi
+filled: 7 0
+kept area 12
+kept again 27
+blocks back: 1

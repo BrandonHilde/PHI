@@ -1507,8 +1507,8 @@ namespace Phi.Compiler.CodeGen.Ir
                         // a call's new object: the target takes it over (the generator's EmitTakeOver)
                         Emit(new ObjectLineI { At = call });
                         VReg made = Call(callee, call.Arguments, wantResult: true)!;
-                        // (for ARM: the target's struct, which may be an interface the result's struct has)
-                        TakeObject(call.ResultTarget, arm ? call.ResultTarget.Type.Struct ?? callee.ReturnType.Struct! : callee.ReturnType.Struct!, made, move: true);
+                        // (the target's struct, which may be an interface the result's struct has)
+                        TakeObject(call.ResultTarget, call.ResultTarget.Type.Struct ?? callee.ReturnType.Struct!, made, move: true);
                         return;
                     }
                     if (GivesText(callee))
@@ -1676,7 +1676,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
             Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
             VReg bas = fn.NewAddress();
-            if (arm && e.Target.Type.Filled && unsafeDepth == 0)
+            if (e.Target.Type.Filled && unsafeDepth == 0)
             {
                 Emit(new AddrI { Dst = bas, Label = ClassArray(array)! });
                 index = CheckFilled(e, bas, index);
@@ -1697,8 +1697,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         /// <summary>
         /// An [atmost N] array's index, checked against how many are in it (its count, after its
-        /// elements), as the generator's EmitFilledCount and EmitIndexCheck check it: for ARM, where
-        /// this form is all there is (x86's methods check it against N, its room).
+        /// elements), as the generator's EmitFilledCount and EmitIndexCheck check it.
         /// </summary>
         Opnd CheckFilled(IndexExpr e, VReg array, Opnd index)
         {
@@ -2431,7 +2430,7 @@ namespace Phi.Compiler.CodeGen.Ir
             PhiType it = Real(e.Index);
             Need(Supported(it) && !it.IsPointer && !IsF(it), $"an index that's a {it}");
             Opnd index = Convert(Value(e.Index), it, IndexType(it.IsSigned));
-            if (arm && e.Target.Type.Filled && unsafeDepth == 0)
+            if (e.Target.Type.Filled && unsafeDepth == 0)
             {
                 VReg filled = AddressOf(e.Target);
                 index = CheckFilled(e, filled, index);
@@ -3103,7 +3102,7 @@ namespace Phi.Compiler.CodeGen.Ir
                               : pt.IsVec ? ZeroVec() : IsF(pt) ? FloatConst(0.0) : Opnd.Const(0));
                 call.ArgKinds.Add(pt.IsString ? Ptr : KindOf(pt));
             }
-            if (arm && arguments.Count == callee.Parameters.Count && TakesAMemCount(callee)
+            if (arguments.Count == callee.Parameters.Count && TakesAMemCount(callee)
                 && !(call.Args[^1].IsImm && call.Args[^1].Imm >= 0 && call.Args[^1].Imm <= int.MaxValue))
             {
                 // the generator's EmitMemCountCheck: a count of 2 billion or more (a negative number,
