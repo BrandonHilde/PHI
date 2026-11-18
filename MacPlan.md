@@ -251,6 +251,18 @@ threads were (`Where.FromLinux`) isn't read on an ARM machine: that `/proc` is t
 **PHI Code Library** (`pwsh ./build.ps1`, `-Test`): building needs nothing new. Its tests
 are Linux programs, so they wait for stage 2. Check: `All 7 test runs passed.`
 
+**Seen:** with `PHI_LINUX_RUN=lima`, 5 of 7 in 21 minutes. The fuzzers (`test_jpeg_fuzz`,
+`test_ttf_fuzz`, and `test_png_fuzz` on a second try) ran out of the 60 s `build.ps1` gives a
+test: they decode tens of thousands of files, and emulated that's slower. With
+`-Timeout 600` all of them pass (image's three fuzzers 3.6 min, font's 2.4, builds included),
+so on a Mac: `pwsh ./build.ps1 -Test -Timeout 300`.
+
+They also found a race: Lima's virtiofs remembers for a moment that a name wasn't there, so a
+build folder made here a moment before was "Directory nonexistent" to the machine, its pid file
+wasn't written (a program out of time couldn't have been killed there) and the shell's
+complaint was in the output. `HostRunner` now tries the pid file and the `cd` again, quietly,
+for up to 3 s in a Linux machine.
+
 **PHI OS**: its scripts were written on Linux. What to change, by file:
 
 - [ ] `run.sh`, the window: it asks QEMU for `-display gtk` (or `sdl`), and Homebrew's QEMU

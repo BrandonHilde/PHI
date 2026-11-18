@@ -94,6 +94,18 @@ namespace Phi.Cli
         static bool LinuxProcIsTheProgram => LinuxMachine == null || machineCpu is "x86_64" or "i686" or "i386";
 
         /// <summary>
+        /// A shell command that uses a folder just made here, as the Linux machine runs it. Its
+        /// shared folders (Lima's virtiofs) remember for a moment that a name wasn't there, so a
+        /// build folder made a moment ago can be "Directory nonexistent" to the machine: tried
+        /// again for up to 3 s, quietly, before it's let fail. Elsewhere, as it is.
+        /// </summary>
+        /// (The quiet tries are in braces with their 2>/dev/null outside: a redirection that fails is
+        /// reported before one after it on the same command takes effect. The last try speaks,
+        /// and the whole is its status.)
+        static string Retried(string command) => LinuxMachine == null ? command
+            : $"{{ n=0; until {{ {command}; }} 2>/dev/null; do n=$((n+1)); [ $n -ge 30 ] && break; sleep 0.1; done; [ $n -lt 30 ] || {command}; }}";
+
+        /// <summary>
         /// How a Linux shell is started here: the command, the arguments that come before the
         /// shell's own (-c SCRIPT ...), and a path on this computer as that shell sees it.
         /// </summary>
@@ -157,8 +169,8 @@ namespace Phi.Cli
             var psi = new ProcessStartInfo(command);
             foreach (string b in before) psi.ArgumentList.Add(b);
             psi.ArgumentList.Add("-c");
-            string own = pidFile != null ? $"echo $$ > '{pathOf(pidFile)}'; " : "";
-            if (folder != null) own = $"cd '{pathOf(folder)}' || exit 1; " + own;
+            string own = pidFile != null ? Retried($"echo $$ > '{pathOf(pidFile)}'") + "; " : "";
+            if (folder != null) own = Retried($"cd '{pathOf(folder)}'") + " || exit 1; " + own;
             psi.ArgumentList.Add(own + (merge ? "exec \"$0\" \"$@\" 2>&1" : "exec \"$0\" \"$@\""));
             psi.ArgumentList.Add(pathOf(program));
             foreach (string a in args) psi.ArgumentList.Add(a);
