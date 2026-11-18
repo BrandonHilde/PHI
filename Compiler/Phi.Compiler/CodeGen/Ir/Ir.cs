@@ -445,6 +445,9 @@ namespace Phi.Compiler.CodeGen.Ir
     public sealed class LineMark : Instr
     {
         public Node Node { get; init; } = null!;
+
+        /// <summary>The file the line is in, when it isn't the method's own (a method put in where it's called: CodeGen/A64's Inline).</summary>
+        public SourceFile? File { get; init; }
     }
 
     public sealed class ConstI : Instr

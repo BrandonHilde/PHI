@@ -29,6 +29,7 @@ namespace Phi.Compiler.CodeGen.A64
             readonly List<Action> after = new();
 
             Syntax.Node? pendingLine;
+            SourceFile? pendingFile;
 
             /// <summary>The line the code being written is for (a text error names it).</summary>
             Syntax.Node? currentLine;
@@ -61,8 +62,12 @@ namespace Phi.Compiler.CodeGen.A64
             {
                 if (pendingLine != null)
                 {
+                    // (a line of a method put in here is in that method's file)
+                    SourceFile own = g.file;
+                    if (pendingFile != null) g.file = pendingFile;
                     g.Line($"\t; {Line(pendingLine)}");
                     g.MarkLine(pendingLine);
+                    g.file = own;
                     pendingLine = null;
                 }
                 g.Line("\t" + instruction);
@@ -481,6 +486,7 @@ namespace Phi.Compiler.CodeGen.A64
                 {
                     case LineMark mark:
                         pendingLine = mark.Node;
+                        pendingFile = mark.File;
                         currentLine = mark.Node;
                         break;
 

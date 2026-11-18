@@ -337,6 +337,7 @@ namespace Phi.Compiler.CodeGen.A64
                 NotYet(m.Decl.File, m.Decl.Span, why, m);
                 return false;
             }
+            Inline(fn, m);
             IrPeephole.Run(fn, foldOffsets: true);
             FoldIndexExtends(fn);
             foreach (StructSymbol tested in fn.TypeTables) TypeTable(tested);

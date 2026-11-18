@@ -466,6 +466,13 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   1.17 times: the newer clang made the C faster in interp, mandelbrot and maps. The figures
   here were measured with clang 14. lldb from the same tools steps through a `--debug`
   program's PHI lines; lldb 14 crashed on any program.)
+- **Speed, third pass (beside clang 21): 1.15 times, from 1.17.** A class's own statements'
+  loops keep class variables in registers too (a variable declared in such a loop was set in
+  memory while its register was the one read: the 7 failures). And a small method is put in
+  where it's called (`A64Generator.Inline.cs`): one of at most 48 instructions that keeps
+  nothing in its frame and can't stop with an error naming a line, up to three deep, never a
+  compiled library's in the program using it; its lines stay its own file's, so a fault in
+  it names the line it's on. maps 2.94 -> 2.46. ARM only; x86's code is the same.
   Furthest behind now: maps (2.6; the C one keeps key, value and used in one 12-byte slot and
   is all in one function, PHI's Map is three arrays and four calls a lookup), fib (1.4),
   collatz and lists (1.3). What would take them further: a choice without a branch (csel)
