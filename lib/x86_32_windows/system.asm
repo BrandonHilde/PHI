@@ -289,20 +289,40 @@ phi_fault_register:
     ret
 
 ; keeps room at the stack's end for Windows to call the handler when this thread's stack
-; runs out
+; runs out (given from a copy: Windows writes the size it had before over it, which left
+; 0 for every thread after the first)
 phi_stack_guarantee:
-    push phi_stack_room
+    push STACK_ROOM
+    push esp
     call [phi_imp_SetThreadStackGuarantee]
+    add esp, 4
     ret
 
-; after a throw of the stack running out, on its way back to the catch: Windows took its
-; guard off the end of the stack when it ran out, and it goes back on, or the next time
-; would be past the end with no warning
+; after a throw of the stack running out, on its way back to the catch (on the spare
+; stack): Windows took its guard off the end of the stack when it ran out, and it goes back
+; on, or the next time would be past the end with no warning. It goes above the room kept
+; for the handler, not at the lowest the stack has been (inside that room), where the next
+; time left the handler no room at all and Windows ended the program
 phi_stack_restore:
+    mov eax, [fs:0xE0C]                 ; the TEB's DeallocationStack: where the stack's memory starts
+    add eax, STACK_ROOM + 3 * 4096      ; the room kept, and pages to spare under it
+    mov ecx, [fs:8]                     ; the TEB's StackLimit: the lowest it has used
+    sub ecx, eax
+    jae .commit
+    xor ecx, ecx                        ; (all of it in use already)
+.commit:
+    add ecx, STACK_GUARD                ; from the guard up to what's in use
+    push eax
+    push 4                              ; PAGE_READWRITE
+    push 0x1000                         ; MEM_COMMIT
+    push ecx
+    push eax
+    call [phi_imp_VirtualAlloc]
+    pop eax
     push phi_stack_room_old
     push 0x104                          ; PAGE_READWRITE | PAGE_GUARD
     push STACK_GUARD
-    push dword [fs:8]                   ; the TEB's StackLimit: the lowest it has used
+    push eax
     call [phi_imp_VirtualProtect]
     ret
 
@@ -371,5 +391,5 @@ CONTEXT_EBX   equ 0xA4                  ; in an x86 CONTEXT
 CONTEXT_ECX   equ 0xAC
 CONTEXT_EIP   equ 0xB8
 phi_fault_to: dd 0
-phi_stack_room: dd 32768                ; what's kept for the handler
+STACK_ROOM    equ 32768                 ; what's kept for the handler
 phi_stack_room_old: dd 0

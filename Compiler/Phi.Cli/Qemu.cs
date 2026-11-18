@@ -224,6 +224,7 @@ namespace Phi.Cli
                 RedirectStandardError = true,
                 RedirectStandardInput = true,
             };
+            HostRunner.ReadsUtf8(psi);
             foreach (string a in args) psi.ArgumentList.Add(a);
 
             var serial = new StringBuilder();

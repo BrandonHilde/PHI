@@ -307,21 +307,40 @@ phi_fault_register:
     ret
 
 ; keeps room at the stack's end for Windows to call the handler when this thread's stack
-; runs out
+; runs out (given from a copy: Windows writes the size it had before over it, which left
+; 0 for every thread after the first)
 phi_stack_guarantee:
-    lea rcx, [rel phi_stack_room]
+    push STACK_ROOM
+    mov rcx, rsp
     PHI_CALL SetThreadStackGuarantee
+    add rsp, 8
     ret
 
-; after a throw of the stack running out, on its way back to the catch: Windows took its
-; guard off the end of the stack when it ran out, and it goes back on, or the next time
-; would be past the end with no warning
+; after a throw of the stack running out, on its way back to the catch (on the spare
+; stack): Windows took its guard off the end of the stack when it ran out, and it goes back
+; on, or the next time would be past the end with no warning. It goes above the room kept
+; for the handler, not at the lowest the stack has been (inside that room), where the next
+; time left the handler no room at all and Windows ended the program
 phi_stack_restore:
-    mov rcx, [gs:0x10]                  ; the TEB's StackLimit: the lowest it has used
+    push rbx
+    mov rbx, [gs:0x1478]                ; the TEB's DeallocationStack: where the stack's memory starts
+    add rbx, STACK_ROOM + 3 * 4096      ; the room kept, and pages to spare under it
+    mov rdx, [gs:0x10]                  ; the TEB's StackLimit: the lowest it has used
+    sub rdx, rbx
+    jae .commit
+    xor edx, edx                        ; (all of it in use already)
+.commit:
+    add rdx, STACK_GUARD                ; from the guard up to what's in use
+    mov rcx, rbx
+    mov r8d, 0x1000                     ; MEM_COMMIT
+    mov r9d, 4                          ; PAGE_READWRITE
+    PHI_CALL VirtualAlloc
+    mov rcx, rbx
     mov edx, STACK_GUARD
     mov r8d, 0x104                      ; PAGE_READWRITE | PAGE_GUARD
     lea r9, [rel phi_stack_room_old]
     PHI_CALL VirtualProtect
+    pop rbx
     ret
 
 ; Windows' call (rcx = its EXCEPTION_POINTERS) -> eax = -1 to carry on in the changed
@@ -396,5 +415,5 @@ CONTEXT_RSP   equ 0x98
 CONTEXT_RIP   equ 0xF8
 align 8
 phi_fault_to: dq 0
-phi_stack_room: dd 32768                ; what's kept for the handler
+STACK_ROOM    equ 32768                 ; what's kept for the handler
 phi_stack_room_old: dd 0

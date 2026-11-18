@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Text;
 using Phi.Compiler;
 
 namespace Phi.Cli
@@ -184,6 +185,16 @@ namespace Phi.Cli
             return psi;
         }
 
+        /// <summary>
+        /// Reads what a program writes as UTF-8, as PHI writes text. Without this, Windows reads
+        /// it in the console's code page (437, say), so é came back as two other characters.
+        /// </summary>
+        internal static void ReadsUtf8(ProcessStartInfo psi)
+        {
+            psi.StandardOutputEncoding = new UTF8Encoding(false);
+            psi.StandardErrorEncoding = new UTF8Encoding(false);
+        }
+
         /// <summary>Runs the program in this console, and gives its exit code.</summary>
         public static int RunInteractive(string program, Host host, IEnumerable<string> arguments)
         {
@@ -208,6 +219,7 @@ namespace Phi.Cli
             psi.RedirectStandardError = true;
             psi.RedirectStandardInput = true;
             psi.UseShellExecute = false;
+            ReadsUtf8(psi);
 
             using Process p = Process.Start(psi)!;
             p.StandardInput.Close();
@@ -254,6 +266,7 @@ namespace Phi.Cli
                 psi.RedirectStandardError = true;
                 psi.RedirectStandardInput = true;
                 psi.UseShellExecute = false;
+                ReadsUtf8(psi);
                 process = Process.Start(psi)!;
                 process.StandardInput.Close();
                 process.OutputDataReceived += (_, e) => { if (e.Data != null) lock (gate) output.Append(e.Data).Append('\n'); };
@@ -315,6 +328,7 @@ namespace Phi.Cli
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };
+            ReadsUtf8(psi);
             foreach (string b in before) psi.ArgumentList.Add(b);
             psi.ArgumentList.Add("-c");
             psi.ArgumentList.Add(script.Replace("\r", ""));

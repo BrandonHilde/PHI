@@ -10,9 +10,15 @@ phi.ThreadSystem:Windows
 {
 	ptr<u8> handles[64];                  # each thread's handle
 
-	# start it, with what's in its frame: false if Windows won't (its stack is Windows' own, not bottom)
+	const u32 RESERVATION: 0x10000;       # STACK_SIZE_PARAM_IS_A_RESERVATION: the size is all it gets
+	const u32 KEPT: 32768;                # system.asm's STACK_ROOM, kept at the end for the handler
+
+	# start it, with what's in its frame: false if Windows won't. Its stack is Windows' own, not
+	# bottom, but as big as the one it was given (and the room Windows keeps for the error its
+	# running out becomes), so it runs out where it would on Linux or a Mac, not after 1 MB
 	[Begin: int thread: 0; ptr<ThreadFrame> frame: 0; ptr<u8> bottom: 0;]
-		ptr<u8> handle: (Kernel32.CreateThread: 0 0 (OS.ThreadEntry) as ptr<u8> frame 0 0);
+		u32 size: (frame as u32) - (bottom as u32) + KEPT;
+		ptr<u8> handle: (Kernel32.CreateThread: 0 size (OS.ThreadEntry) as ptr<u8> frame RESERVATION 0);
 		if handle is 0 return false;
 		handles:thread is handle;
 	[end: true]
