@@ -67,12 +67,31 @@ stage 2's Linux machine is an ordinary x86 one.
 - [ ] Install [Homebrew](https://brew.sh), then:
 
       ```
-      brew install nasm qemu git mtools imagemagick coreutils bash
+      brew install nasm qemu git mtools imagemagick coreutils bash lima node
       brew install --cask powershell
       ```
 - [ ] **.NET 10 SDK.** The projects are for `net10.0`. `brew install --cask dotnet-sdk` gives
       the newest SDK, which by now may be 11: check `dotnet --list-sdks`, and if there's no
       10.x, get 10 from [dotnet.microsoft.com](https://dotnet.microsoft.com/download/dotnet/10.0).
+
+**As done on 2026-11-17 (macOS 27.2, Apple Silicon, 8 cores, 8 GB), without sudo.** The casks
+install `.pkg`s, which want an administrator's password, so instead:
+
+- .NET 10 into `~/.dotnet` with Microsoft's script (`curl -sSfL https://dot.net/v1/dotnet-install.sh
+  | bash -s -- --channel 10.0`, 10.0.404). An older .NET in `/usr/local/share/dotnet` (6 and 7
+  were there) is where `phi` looks unless told: without `DOTNET_ROOT` it says "You must install
+  or update .NET". VS Code needs `DOTNET_ROOT` too, or it can't start the language server.
+- PowerShell as a .NET tool: `dotnet tool install --global PowerShell --version 7.6.10` (7.7.0
+  has no `osx-arm64` package on NuGet yet).
+- Homebrew's folder was last on the `PATH` (after `/bin`), so `#!/usr/bin/env bash` found
+  macOS's bash 3.2. In `~/.zshrc`:
+
+      ```
+      eval "$(/opt/homebrew/bin/brew shellenv)"
+      export DOTNET_ROOT="$HOME/.dotnet"
+      export PATH="$DOTNET_ROOT:$DOTNET_ROOT/tools:$PATH"
+      ```
+- The four folders are in `~/Documents/prj`, not `~/prj`: anywhere works, side by side.
 - [ ] Get the code, all four side by side (the scripts look for `../PHI` and
       `../PHI-Code-Library`):
 
@@ -108,6 +127,18 @@ About 618 runs should be tried. Things that might differ, each worth a line here
   repositories); stage 4 is what catches a new one.
 - `dotnet test` should pass all 658. One that doesn't is a real finding about the compiler
   on macOS (a path, a line ending), not about emulation.
+
+  **Seen, and fixed:** two, neither a path nor a line ending.
+  - `TemplateTests.OneThatUsesItselfWithABiggerTypeEachTimeIsStopped` overflowed the stack and
+    took the test run down with it (so the totals changed from run to run: 369, 425). After
+    `Templates.Expand` gives up at 2000 structs, `Compile` still bound the program for its other
+    errors, and laying out a struct in a struct ~2000 deep is a call each: Linux's 8 MB stacks
+    hold it, a Mac's thread-pool threads don't. Now nothing binds after the templates give up
+    (`ProgramNode.TemplatesGaveUp`). The language server's `bindAnyway` would have crashed too.
+  - `InputScriptTests.AMachineThatEndsWithLinesLeftSaysWhichOneItDidntGetTo` passed alone and
+    failed in the whole run: the test's pretend QEMU accepted on a pool thread, which, with 8
+    cores busy, started after the script had sent every line into the socket's buffer. 22 cores
+    hid it. It accepts on a thread of its own now.
 
 ## Stage 2: Linux programs on the Mac
 

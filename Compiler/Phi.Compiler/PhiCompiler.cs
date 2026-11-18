@@ -75,7 +75,9 @@ namespace Phi.Compiler
             if (diagnostics.HasErrors)
             {
                 BoundProgram? partial = null;
-                if (bindAnyway)
+                // (not after templates gave up: binding what they made can go deeper than a
+                // thread's stack, and a stack overflow is the one failure nothing can catch)
+                if (bindAnyway && !syntax.TemplatesGaveUp)
                 {
                     // half-written code can be what no finished program is, so a failure here only
                     // means fewer names are known (its errors would follow from the parsing's anyway)
@@ -88,7 +90,7 @@ namespace Phi.Compiler
                 // rest of the program gets wrong, where that can't be the syntax errors' doing
                 var all = diagnostics.Items.ToList();
                 bool useFailed = syntax.Uses.Any(u => !uses.ContainsKey(u)) || all.Any(d => d.Message.StartsWith("can't find "));
-                if (!useFailed)
+                if (!useFailed && !syntax.TemplatesGaveUp)
                 {
                     var later = new DiagnosticBag();
                     try
@@ -576,6 +578,7 @@ namespace Phi.Compiler
             into.Enums.AddRange(from.Enums);
             into.Uses.AddRange(from.Uses);
             into.CompiledLibraries.AddRange(from.CompiledLibraries);
+            into.TemplatesGaveUp |= from.TemplatesGaveUp;
         }
 
         static string Key(SourceFile f) => FileKey(f.Path);

@@ -35,6 +35,13 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>The compiled libraries the program includes, each once.</summary>
         public List<Libraries.CompiledTarget> CompiledLibraries { get; } = new();
+
+        /// <summary>
+        /// Templates.Expand stopped at its most (a template that uses or calls itself with a bigger
+        /// type each time): what it made by then can be a struct in a struct ~2000 deep, which the
+        /// binder's layout goes down one call at a time, so nothing should try to bind it.
+        /// </summary>
+        public bool TemplatesGaveUp { get; set; }
     }
 
     /// <summary>use drivers.vga_text;   (loads drivers/vga_text.phi)</summary>

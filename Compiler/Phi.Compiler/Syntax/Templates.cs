@@ -75,6 +75,7 @@ namespace Phi.Compiler.Syntax
                 if (made.Count > Most)
                 {
                     diagnostics.Error(use.File, use.Span, $"{use.Template} is used with more than {Most} sets of types, the last {use.FullName}: does it use itself with a bigger type each time?");
+                    program.TemplatesGaveUp = true;
                     return;
                 }
                 // (read from a copy of the template's file: see DiagnosticBag.CopyOf)
@@ -248,6 +249,7 @@ namespace Phi.Compiler.Syntax
             if (made.Count > Most)
             {
                 diagnostics.Error(use.File, use.Span, $"{use.Template} is called with more than {Most} sets of types, the last {use.FullName}: does it call itself with a bigger type each time?");
+                program.TemplatesGaveUp = true;
                 return false;
             }
             // (a struct made from a template is itself read from a copy of its file)

@@ -31,11 +31,13 @@ namespace Phi.Compiler.Tests
             var listener = new System.Net.Sockets.TcpListener(System.Net.IPAddress.Loopback, 0);
             listener.Start();
             int port = ((System.Net.IPEndPoint)listener.LocalEndpoint).Port;
-            Task closing = Task.Run(() =>
+            // (on a thread of its own: with every core busy running the other tests, a pool thread
+            // could start only after the script had sent every line into the socket's buffer)
+            Task closing = Task.Factory.StartNew(() =>
             {
                 using System.Net.Sockets.TcpClient accepted = listener.AcceptTcpClient();
                 accepted.Client.LingerState = new System.Net.Sockets.LingerOption(true, 0);    // it's gone at once
-            });
+            }, TaskCreationOptions.LongRunning);
             try { return InputScript.Run(port, lines, () => "", CancellationToken.None); }
             finally
             {
