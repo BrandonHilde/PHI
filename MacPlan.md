@@ -411,6 +411,11 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   Windows module has, the queue's thread marking a played buffer through `audio.s`.
   `sound_program` passes, and the desktop's paddles game builds as an app. Also: gui.dialogs,
   several windows, locks in structs, and more of a class's own statements. 197 tests.
+- **M11, debugging**: `phi build --target macos --debug` writes NAME.dSYM: each line's
+  code has a `.loc`, and a DWARF compile unit with a subprogram for each method (dsymutil
+  keeps only what it can match to the program's symbols). `atos` gives a PHI line for an
+  address. This Mac's lldb (Command Line Tools 14 on a newer macOS) crashes on any program,
+  a C one too, so stepping through PHI lines waits for a newer Xcode or CLT.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the

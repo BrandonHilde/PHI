@@ -117,7 +117,7 @@ namespace Phi.Compiler
                 return new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             }
 
-            var units = bound.Units.Select(u => host.IsArm() ? CodeGen.A64.A64Generator.Generate(bound, u, diagnostics)
+            var units = bound.Units.Select(u => host.IsArm() ? CodeGen.A64.A64Generator.Generate(bound, u, diagnostics, debug)
                                                              : X86Generator.Generate(bound, u, diagnostics, debug)).ToList();
 
             var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };

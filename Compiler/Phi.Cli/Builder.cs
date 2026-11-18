@@ -87,7 +87,7 @@ namespace Phi.Cli
 
             var source = SourceFile.Load(phiFile);
             CompileResult compiled = PhiCompiler.Compile(new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text + appendSource),
-                                                         kernel: kernel, host: host, debug: debug && host.IsWindows());
+                                                         kernel: kernel, host: host, debug: debug && (host.IsWindows() || host.IsMacOS()));
 
             foreach (Diagnostic d in compiled.Diagnostics)
                 (d.Severity == Severity.Error ? result.Errors : result.Warnings).Add(d.ToString());
@@ -100,6 +100,7 @@ namespace Phi.Cli
                 // (and signs it, which Apple Silicon needs to run it)
                 result.ExecutablePath = Path.Combine(outDir, name);
                 if (!AssembleMacOS(compiled.Units.Single(), outDir, result.ExecutablePath, result)) return result;
+                if (debug && !DebugSymbols(result.ExecutablePath, result)) return result;
                 if (app && !MakeApp(name, outDir, result)) return result;
                 result.IsProgram = true;
                 return result;
@@ -440,6 +441,23 @@ namespace Phi.Cli
             }
             result.ExecutablePath = inside;
             result.AppPath = bundle;
+            return true;
+        }
+
+        /// <summary>
+        /// phi build --target macos --debug: the program's lines, for a debugger: the assembly's
+        /// .loc lines went into its object file's DWARF, which dsymutil gathers into NAME.dSYM
+        /// beside it (the linker leaves debug information in the object files), where lldb and
+        /// atos find it.
+        /// </summary>
+        static bool DebugSymbols(string executable, BuildResult result)
+        {
+            var (code, output) = Toolchain.Run("/usr/bin/dsymutil", new[] { executable, "-o", executable + ".dSYM" });
+            if (code != 0)
+            {
+                result.Errors.Add($"dsymutil couldn't gather the program's debug information:\n{output}");
+                return false;
+            }
             return true;
         }
 

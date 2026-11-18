@@ -321,7 +321,7 @@ static int Execute(string[] args)
 
                 if (host != Phi.Compiler.Host.PhiOS)
                 {
-                    if (debug && !Phi.Compiler.Hosts.IsWindows(host)) Console.Error.WriteLine("warning: --debug makes a .pdb, for Windows; a Linux program has no debug information yet");
+                    if (debug && !Phi.Compiler.Hosts.IsWindows(host) && host != Phi.Compiler.Host.MacOS) Console.Error.WriteLine("warning: --debug makes a .pdb, for Windows, or a .dSYM, for macOS; a Linux program has no debug information yet");
                     BuildResult hosted = Builder.Build(file, outDir, host: host, debug: debug, stack: stack, v2: v2, app: app);
                     foreach (string w in hosted.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
                     foreach (string e in hosted.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);

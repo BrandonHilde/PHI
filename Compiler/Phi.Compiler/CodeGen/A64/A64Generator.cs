@@ -30,6 +30,15 @@ namespace Phi.Compiler.CodeGen.A64
         readonly BoundProgram program;
         readonly BoundUnit unit;
         readonly DiagnosticBag diagnostics;
+
+        /// <summary>--debug: each line's code says which line it is (.loc), for a debugger's DWARF.</summary>
+        bool debug;
+
+        /// <summary>Each method's name, and where its code starts and ends, for --debug's DWARF.</summary>
+        readonly List<(string Name, string Start, string End)> debugMethods = new();
+
+        /// <summary>Each source file's number in the DWARF line table (.file), with --debug.</summary>
+        readonly Dictionary<string, int> debugFiles = new();
         readonly StringBuilder code = new();
         readonly SortedSet<string> needed = new(StringComparer.Ordinal);
         readonly Dictionary<string, string> strings = new(StringComparer.Ordinal);
@@ -52,9 +61,9 @@ namespace Phi.Compiler.CodeGen.A64
         public static void Check(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics) =>
             new A64Generator(program, unit, diagnostics).Build();
 
-        public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
+        public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics, bool debug = false)
         {
-            var generator = new A64Generator(program, unit, diagnostics);
+            var generator = new A64Generator(program, unit, diagnostics) { debug = debug };
             string text = generator.Build();
             return new AsmUnit { Kind = unit.Kind, Name = "program", Text = text, Links = generator.Links() };
         }
@@ -176,6 +185,7 @@ namespace Phi.Compiler.CodeGen.A64
             }
             output.AppendLine();
             output.Append(data);
+            if (debug) DebugUnit(output);
             return output.ToString();
         }
 
@@ -208,6 +218,12 @@ namespace Phi.Compiler.CodeGen.A64
             code.AppendLine("\t.p2align 2");
             code.AppendLine($"{Sym(m.Label)}:");
             new Emitter(this, fn, regs, m.Label).Emit();
+            if (debug)
+            {
+                string end = NewLabel("end");
+                code.AppendLine($"{end}:");
+                debugMethods.Add((m.Name, Sym(m.Label), end));
+            }
             return true;
         }
 
@@ -264,6 +280,59 @@ namespace Phi.Compiler.CodeGen.A64
             string name = i?.GetType().Name ?? "nothing";
             if (name.EndsWith('I') || name.EndsWith('T')) name = name[..^1];
             return $"what the intermediate form calls {name}";
+        }
+
+        /// <summary>
+        /// --debug: a DWARF compile unit for the program's code, from phi_image_base to
+        /// phi_line_end, whose lines are the table the .loc lines make (the only one in
+        /// __debug_line, so at 0). The assembler makes the table; a debugger finds it through a
+        /// unit, which only this says (the assembler's own, with -g, is for assembly's lines).
+        /// </summary>
+        void DebugUnit(StringBuilder output)
+        {
+            string name = Path.GetFullPath(program.File.Path).Replace('\\', '/');
+            output.AppendLine("; ---- debug information (--debug)");
+            output.AppendLine("\t.section __DWARF,__debug_abbrev,regular,debug");
+            output.AppendLine("Lphi_debug_abbrev:");
+            output.AppendLine("\t.byte 1, 0x11, 1            ; 1: a compile unit, with children");
+            output.AppendLine("\t.byte 0x25, 0x08            ; producer, a string");
+            output.AppendLine("\t.byte 0x13, 0x05            ; language, 2 bytes");
+            output.AppendLine("\t.byte 0x03, 0x08            ; name, a string");
+            output.AppendLine("\t.byte 0x10, 0x17            ; its lines, an offset in __debug_line");
+            output.AppendLine("\t.byte 0x1B, 0x08            ; the folder, a string");
+            output.AppendLine("\t.byte 0x11, 0x01            ; where its code starts, an address");
+            output.AppendLine("\t.byte 0x12, 0x01            ; where it ends, an address");
+            output.AppendLine("\t.byte 0, 0");
+            output.AppendLine("\t.byte 2, 0x2E, 0            ; 2: a method (a subprogram), without children");
+            output.AppendLine("\t.byte 0x03, 0x08            ; name, a string");
+            output.AppendLine("\t.byte 0x11, 0x01            ; where its code starts");
+            output.AppendLine("\t.byte 0x12, 0x01            ; where it ends");
+            output.AppendLine("\t.byte 0, 0");
+            output.AppendLine("\t.byte 0");
+            output.AppendLine("\t.section __DWARF,__debug_info,regular,debug");
+            output.AppendLine("Lphi_debug_info:");
+            output.AppendLine("\t.long Lphi_debug_info_end - Lphi_debug_info_start");
+            output.AppendLine("Lphi_debug_info_start:");
+            output.AppendLine("\t.short 4                    ; DWARF 4");
+            output.AppendLine("\t.long 0                     ; its abbreviations: the first");
+            output.AppendLine("\t.byte 8                     ; addresses are 8 bytes");
+            output.AppendLine("\t.byte 1");
+            output.AppendLine("\t.asciz \"phi\"");
+            output.AppendLine("\t.short 0x0C                 ; (C's, the nearest a debugger knows)");
+            output.AppendLine($"\t.asciz \"{name.Replace("\"", "\\\"")}\"");
+            output.AppendLine("\t.long 0");
+            output.AppendLine($"\t.asciz \"{Path.GetDirectoryName(name)!.Replace('\\', '/').Replace("\"", "\\\"")}\"");
+            output.AppendLine("\t.quad phi_image_base");
+            output.AppendLine("\t.quad phi_line_end");
+            foreach (var (method, start, end) in debugMethods)
+            {
+                output.AppendLine("\t.byte 2");
+                output.AppendLine($"\t.asciz \"{method.Replace("\"", "\\\"")}\"");
+                output.AppendLine($"\t.quad {start}");
+                output.AppendLine($"\t.quad {end}");
+            }
+            output.AppendLine("\t.byte 0                     ; (the unit's children end)");
+            output.AppendLine("Lphi_debug_info_end:");
         }
 
         // ---------------------------------------------------------------- assembly blocks
@@ -356,7 +425,19 @@ namespace Phi.Compiler.CodeGen.A64
         {
             string label = $"phi_line_{lineMarks.Count}";
             code.AppendLine($"{label}:");
-            lineMarks.Add((label, file.GetLocation(node.Span.Start).Line, StringLabel(Path.GetFileName(file.Path))));
+            int line = file.GetLocation(node.Span.Start).Line;
+            lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
+            if (debug)
+            {
+                string path = Path.GetFullPath(file.Path);
+                if (!debugFiles.TryGetValue(path, out int number))
+                {
+                    number = debugFiles.Count + 1;
+                    debugFiles[path] = number;
+                    code.AppendLine($"\t.file {number} \"{path.Replace("\\", "/").Replace("\"", "\\\"")}\"");
+                }
+                code.AppendLine($"\t.loc {number} {line} 0");
+            }
         }
 
         internal SourceFile File => file;
