@@ -22,7 +22,7 @@ phi.HostFiles:Windows
 
 	# OS.ReadFile: up to max bytes of the file into buffer: how many, or -1
 	[ReadFile: ptr<u8> path: 0; ptr<u8> buffer: 0; int max: 0;]
-	[end: (ReadFileAt: path 0 buffer max)]
+	[end: (ReadFileAt: path 0 buffer max) throws below 0]
 
 	# OS.ReadFileAt: the same, from offset bytes in
 	[ReadFileAt: ptr<u8> path: 0; int offset: 0; ptr<u8> buffer: 0; int max: 0;]
@@ -45,15 +45,15 @@ phi.HostFiles:Windows
 			got++ count;
 		;;
 		call Kernel32.CloseHandle: file;
-	[end: got]
+	[end: got throws below 0]
 
 	# OS.WriteFile: the file is data now (a new one if there's none): 1 if written
 	[WriteFile: ptr<u8> path: 0; ptr<u8> data: 0; int length: 0;]
-	[end: (Write: path WRITE CREATE_ALWAYS data length)]
+	[end: (Write: path WRITE CREATE_ALWAYS data length) throws atmost 0]
 
 	# OS.AppendFile: data added to the end of the file (a new one if there's none)
 	[AppendFile: ptr<u8> path: 0; ptr<u8> data: 0; int length: 0;]
-	[end: (Write: path APPEND_DATA OPEN_ALWAYS data length)]
+	[end: (Write: path APPEND_DATA OPEN_ALWAYS data length) throws atmost 0]
 
 	[Write: ptr<u8> path: 0; u32 access: 0; u32 how: 0; ptr<u8> data: 0; int length: 0;]
 		u16 wide[1024];
@@ -103,7 +103,7 @@ phi.HostFiles:Windows
 			more is ((Kernel32.FindNextFileW: search addr found) is not 0);
 		;;
 		int closed: (Kernel32.FindClose: search);
-	[end: count]
+	[end: count throws below 0]
 
 	# . or .., as UTF-16
 	[Dots: ptr<u8> name: 0;]
@@ -148,29 +148,29 @@ phi.HostFiles:Windows
 		if info:7 is not 0 or info:8 >= 0x80000000
 			throw 'a file of 2 GB or more is more than OS.FileSize can say: ' path;
 		;;
-	[end: info:8 as int]
+	[end: info:8 as int throws below 0]
 
 	# OS.DeleteFile, MakeFolder, DeleteFolder (only an empty one) and Rename: 1 if done
 	[DeleteFile: ptr<u8> path: 0;]
 		u16 wide[1024];
 		call Widen: path addr wide;
-	[end: (Done: (Kernel32.DeleteFileW: addr wide))]
+	[end: (Done: (Kernel32.DeleteFileW: addr wide)) throws atmost 0]
 
 	[MakeFolder: ptr<u8> path: 0;]
 		u16 wide[1024];
 		call Widen: path addr wide;
-	[end: (Done: (Kernel32.CreateDirectoryW: addr wide 0))]
+	[end: (Done: (Kernel32.CreateDirectoryW: addr wide 0)) throws atmost 0]
 
 	[DeleteFolder: ptr<u8> path: 0;]
 		u16 wide[1024];
 		call Widen: path addr wide;
-	[end: (Done: (Kernel32.RemoveDirectoryW: addr wide))]
+	[end: (Done: (Kernel32.RemoveDirectoryW: addr wide)) throws atmost 0]
 
 	# (two paths: each in a method of its own, as a method's own room is at most 4 KB)
 	[Rename: ptr<u8> from: 0; ptr<u8> to: 0;]
 		u16 wide[1024];
 		call Widen: from addr wide;
-	[end: (RenameTo: addr wide to)]
+	[end: (RenameTo: addr wide to) throws atmost 0]
 
 	[RenameTo: ptr<u16> from: 0; ptr<u8> to: 0;]
 		u16 wide[1024];

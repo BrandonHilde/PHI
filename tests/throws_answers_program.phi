@@ -1,0 +1,236 @@
+# A method can say which of its answers mean it failed, [end: value throws below 0], and then
+# if call ... throws err catches such an answer as it catches a throw: an answer below 0, false,
+# 0 or less, a pointer of 0, an enum's value. The error's kind is ErrorKind.ANSWER, its text
+# says what answered what, and the call's target has the answer. A throw from inside is still a
+# throw; a call that isn't guarded gets the answer as it always did; an inner guard's catch
+# leaves the outer call working; and it's the same in a struct's method and a class's own code.
+# An answer that's an enum's is said by its label (Written.REFUSED), or by its number where the
+# enum has no name for it.
+enum.Saved
+{
+	DONE
+	NO_ROOM
+	REFUSED
+}
+
+# (what a bare -2 wouldn't say)
+enum.Written
+{
+	NO_ROOM: -3
+	REFUSED: -2
+	NO_FOLDER: -1
+	WROTE: 0
+}
+
+struct.Shelf
+{
+	int room;
+
+	[Put: int n: 0;]
+		if n > room return -1;
+		room-- n;
+	[end: room throws below 0]
+}
+
+phi.ThrowsAnswersProgram:Program
+{
+	int size: 0;
+	log '--- an answer below 0\n';
+	if call size is Size: 'A.TXT' throws err
+		log 'caught: ' err.text ', ANSWER ' (err.kind is ErrorKind.ANSWER) ', size ' size '\n';
+		log 'whole: ' err '\n';
+	;;
+	else
+		log 'not reached\n';
+	;;
+	if call size is Size: 'HERE.TXT' throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'worked: size ' size '\n';
+	;;
+
+	log '--- with no target\n';
+	if call Size: 'B.TXT' throws err
+		log 'caught: ' err.text '\n';
+	;;
+
+	log '--- false\n';
+	if call Save: 0 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	if call Save: 1 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'saved\n';
+	;;
+
+	log '--- atmost 0, and the answer kept\n';
+	int made: 7;
+	if call made is Make: -1 throws err
+		log 'caught: ' err.text ', made ' made '\n';
+	;;
+	if call made is Make: 0 throws err
+		log 'caught: ' err.text ', made ' made '\n';
+	;;
+	if call made is Make: 1 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'made ' made '\n';
+	;;
+
+	log '--- a narrower target still has its answer tested whole\n';
+	u8 small: 9;
+	if call small is Size: 'C.TXT' throws err
+		log 'caught: ' err.text ', small ' small '\n';
+	;;
+
+	log '--- a pointer of 0\n';
+	ptr<u8> found: 'x';
+	if call found is Find: 0 throws err
+		log 'caught: ' err.text ', found is 0 ' (found is 0) '\n';
+	;;
+	if call found is Find: 1 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'found ' found '\n';
+	;;
+
+	log '--- an enum\n';
+	Saved how: Saved.DONE;
+	if call how is Store: 2 throws err
+		log 'caught: ' err.text ', REFUSED ' (how is Saved.REFUSED) '\n';
+	;;
+	if call how is Store: 0 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'stored\n';
+	;;
+
+	log '--- an enum's labels for answers a number wouldn't explain\n';
+	Written wrote: Written.WROTE;
+	while int n: 0; n < 5; n++;
+		if call wrote is Write: n throws err
+			log 'caught: ' err.text ', REFUSED ' (wrote is Written.REFUSED) '\n';
+		;;
+		else
+			log 'wrote\n';
+		;;
+	;;
+	if call Count: 2 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	if call Count: 9 throws err
+		log 'caught: ' err.text '\n';
+	;;
+
+	log '--- a throw from inside is a throw\n';
+	if call size is Throwing: 1 throws err
+		log 'caught: ' err.text ', THROWN ' (err.kind is ErrorKind.THROWN) '\n';
+	;;
+
+	log '--- unguarded, the answer as it always was\n';
+	log 'Size ' (Size: 'D.TXT') ', Save ' (Save: 0) ', Make ' (Make: 0) '\n';
+	size is (Size: 'E.TXT');
+	if size < 0
+		log 'tested by hand: ' size '\n';
+	;;
+
+	log '--- one guard inside another\n';
+	if call Outer throws err
+		log 'not reached: ' err.text '\n';
+	;;
+	else
+		log 'the outer call worked\n';
+	;;
+	if call Passes throws err
+		log 'the outer guard caught what the inner call answered: ' err.text '\n';
+	;;
+
+	log '--- a struct\'s method\n';
+	Shelf shelf;
+	shelf.room is 5;
+	if call shelf.Put: 3 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'put: room ' shelf.room '\n';
+	;;
+	if call shelf.Put: 3 throws err
+		log 'caught: ' err.text ', room ' shelf.room '\n';
+	;;
+
+	log '--- in a loop, and after it\n';
+	int caught: 0;
+	while int i: 0; i < 5; i++;
+		if call Make: i - 2 throws err
+			caught++;
+		;;
+	;;
+	log caught ' of 5 caught\n';
+	exit 0;
+
+	[Size: str path;]
+		if path:0 is 'H' return 120;
+	[end: -1 throws below 0]
+
+	[Save: int which: 0;]
+	[end: which is 1 throws false]
+
+	[Make: int n: 0;]
+	[end: n throws atmost 0]
+
+	[Find: int n: 0; : ptr<u8>]
+		ptr<u8> text: 0;
+		if n is 1
+			text is 'it';
+		;;
+	[end: text throws 0]
+
+	[Store: int n: 0; : Saved]
+	[end: n as Saved throws is not Saved.DONE]
+
+	[Write: int n: 0; : Written]
+		Written how: Written.WROTE;
+		when n
+			is 1
+				how is Written.NO_FOLDER;
+			;;
+			is 2
+				how is Written.REFUSED;
+			;;
+			is 3
+				how is Written.NO_ROOM;
+			;;
+			is 4
+				how is -7 as Written;       # (a number the enum has no name for)
+			;;
+		;;
+	[end: how throws below Written.WROTE]
+
+	# (a number for its answer, and an enum's value for which of them fail)
+	[Count: int n: 0;]
+		if n is 2 return Written.REFUSED as int;
+		if n is 9 return -9;
+	[end: n throws below Written.WROTE]
+
+	[Throwing: int n: 0;]
+		throw 'thrown outright';
+	[end: n throws below 0]
+
+	# (the inner failure is handled here, and Outer itself works)
+	[Outer]
+		if call Size: 'INNER.TXT' throws err
+			log 'the inner guard caught: ' err.text '\n';
+		;;
+	[end: 1 throws below 0]
+
+	# (and this one passes its inner call's answer on as its own)
+	[Passes]
+		int got: (Size: 'PASSED.TXT');
+	[end: got throws below 0]
+}

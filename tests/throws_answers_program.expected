@@ -1,0 +1,43 @@
+--- an answer below 0
+caught: ThrowsAnswersProgram.Size answered -1, ANSWER 1, size -1
+whole: ThrowsAnswersProgram.Size answered -1 on line 39 in throws_answers_program.phi
+worked: size 120
+--- with no target
+caught: ThrowsAnswersProgram.Size answered -1
+--- false
+caught: ThrowsAnswersProgram.Save answered false
+saved
+--- atmost 0, and the answer kept
+caught: ThrowsAnswersProgram.Make answered -1, made -1
+caught: ThrowsAnswersProgram.Make answered 0, made 0
+made 1
+--- a narrower target still has its answer tested whole
+caught: ThrowsAnswersProgram.Size answered -1, small 255
+--- a pointer of 0
+caught: ThrowsAnswersProgram.Find answered 0, found is 0 1
+found it
+--- an enum
+caught: ThrowsAnswersProgram.Store answered Saved.REFUSED, REFUSED 1
+stored
+--- an enum's labels for answers a number wouldn't explain
+wrote
+caught: ThrowsAnswersProgram.Write answered Written.NO_FOLDER, REFUSED 0
+caught: ThrowsAnswersProgram.Write answered Written.REFUSED, REFUSED 1
+caught: ThrowsAnswersProgram.Write answered Written.NO_ROOM, REFUSED 0
+caught: ThrowsAnswersProgram.Write answered -7, REFUSED 0
+caught: ThrowsAnswersProgram.Count answered Written.REFUSED
+caught: ThrowsAnswersProgram.Count answered -9
+--- a throw from inside is a throw
+caught: thrown outright, THROWN 1
+--- unguarded, the answer as it always was
+Size -1, Save 0, Make 0
+tested by hand: -1
+--- one guard inside another
+the inner guard caught: ThrowsAnswersProgram.Size answered -1
+the outer call worked
+the outer guard caught what the inner call answered: ThrowsAnswersProgram.Passes answered -1
+--- a struct's method
+put: room 2
+caught: Shelf.Put answered -1, room 2
+--- in a loop, and after it
+3 of 5 caught

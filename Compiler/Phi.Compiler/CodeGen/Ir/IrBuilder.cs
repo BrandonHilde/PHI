@@ -888,6 +888,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     current.End = new TryT { Body = body, Caught = caught };
                     Enter(body);
                     Statement(throws.Call);
+                    // (and the look at an answer that can say it failed, inside the guard)
+                    Statements(throws.After);
+                    Need(current.End == null, "a guard whose call's answer always fails");
                     Emit(new UncatchI { Record = record });
                     if (current.End == null) current.End = new JumpT { Target = otherwise };
                     Enter(caught);
@@ -1184,7 +1187,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     textMayCut = true;
                     VReg text = (VReg)TextValue(thrown.Text!).Reg!;
                     textMayCut = false;
-                    Emit(new ThrowI { Text = text, At = thrown, Held = HeldStores() });
+                    Emit(new ThrowI { Text = text, At = thrown, Held = HeldStores(), Kind = thrown.Kind });
                     // (it never comes back: what follows is reached by nothing)
                     current.End = new RetT();
                     return;

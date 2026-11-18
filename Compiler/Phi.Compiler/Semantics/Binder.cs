@@ -573,7 +573,164 @@ namespace Phi.Compiler.Semantics
             unsafeDepth = outerUnsafe;
             m.ResultBinding = false;
             m.ResultBound = true;
+            BindFails(m);
             return m.ReturnType;
+        }
+
+        /// <summary>
+        /// [end: value throws below 0]: the value that a method's failing answers are compared
+        /// with, worked out, and checked against what the method returns. The answer has to be
+        /// one a comparison with a number says something about: a whole number of up to 32
+        /// bits, a bln, a chr, an enum or a pointer.
+        /// </summary>
+        void BindFails(MethodSymbol m)
+        {
+            FailTest? fails = m.Decl.Fails;
+            if (fails == null || fails.Bound) return;
+            fails.Bound = true;
+            SourceFile outerFile = file;
+            file = m.Decl.File;
+            PhiType result = m.ReturnType;
+            BindExpr(fails.Value, methodScopes[m.Decl]);
+            long? value = fails.Value.Type.IsError ? null : ConstantFolder.Evaluate(fails.Value);
+            if (fails.Value.Type.IsError || result.IsError)
+            {
+                // (said already)
+            }
+            else if (result.Kind == TypeKind.Void)
+                Error(fails.Span, $"{m.Decl.Name} gives no answer, so there's none to say it failed; a method with no answer fails with throw");
+            else if (!result.IsNumeric || result.IsWide)
+                Error(fails.Span, $"{m.Decl.Name} returns {A(result)}, and an answer that says it failed is a whole number, a bln, a chr, an enum or a pointer; " +
+                                  "a method that returns anything else fails with throw");
+            else if (value == null)
+                Error(fails.Value.Span, "the answer that means it failed has to be known when the program is built: a number, true or false, a constant or an enum's value");
+            else if (result.IsPointer && (value != 0 || fails.Op is not (BinaryOp.Equal or BinaryOp.NotEqual)))
+                Error(fails.Span, $"{m.Decl.Name} returns {A(result)}: the answer that says it failed is 0 (throws 0), as nothing else about an address does");
+            else if (result.IsUnsigned32 && (fails.Op == BinaryOp.Less && value <= 0 || fails.Op == BinaryOp.LessEqual && value < 0 || value < 0))
+                Error(fails.Span, $"{m.Decl.Name} returns {A(result)}, which is never less than 0, so `throws {fails.Words}` would never say it failed");
+            else
+                fails.Constant = value;
+            file = outerFile;
+        }
+
+        /// <summary>
+        /// The answers that say a callee failed, if it says which ([end: value throws below 0],
+        /// or a built-in function's own), with the value worked out. Null if it doesn't say, or
+        /// said it wrongly (which its own error has reported).
+        /// </summary>
+        FailTest? FailsOf(object? callee)
+        {
+            switch (callee)
+            {
+                case MethodSymbol { Decl.Fails: FailTest fails } m:
+                    if (!m.ResultBound) ReturnTypeOf(m);
+                    BindFails(m);
+                    return fails.Constant != null ? fails : null;
+                case BuiltinFunction { Fails: FailTest known }:
+                    return known;
+            }
+            return null;
+        }
+
+        /// <summary>What a callee's answer is, for the variable a guard keeps it in.</summary>
+        PhiType AnswerTypeOf(object? callee) => callee switch
+        {
+            MethodSymbol m => ReturnTypeOf(m),
+            BuiltinFunction b => b.ResultType,
+            _ => PhiType.Int,
+        };
+
+        /// <summary>A callee's name as an error says it: Fat.ReadFile, OS.WriteFile.</summary>
+        static string CalleeName(object? callee, CallStmt call) => callee switch
+        {
+            // (a call the system answers is known by the name it's called by, OS.ReadFile,
+            // whichever of the system's own modules does it here)
+            _ when Builtins.Find(call.Callee) is BuiltinFunction known => known.Name,
+            MethodSymbol m when m.Decl.Owner != null => $"{m.Decl.Owner.Name}.{m.Decl.Name}",
+            BuiltinFunction b => b.Name,
+            _ => call.Callee,
+        };
+
+        /// <summary>The answers that say a method failed, in a sentence: an answer below 0, an answer of false.</summary>
+        static string FailingAnswer(FailTest fails) => fails.Op == BinaryOp.Equal ? $"an answer of {fails.Words}" : $"an answer {fails.Words}";
+
+        /// <summary>
+        /// if call got is Read: path throws err, where Read says which answers mean it failed.
+        /// The call's answer goes to the guard's own variable (of the answer's type, so nothing
+        /// of it is lost in a narrower target), and after it, still inside the guard:
+        ///
+        ///     got is answer;                          (if the call names a target)
+        ///     if answer below 0
+        ///         throw 'Fat.Read answered ' answer;  (an error of kind ANSWER)
+        ///     ;;
+        ///
+        /// which the guard catches as any error: so its else is for a call that worked.
+        /// </summary>
+        void GuardAnswer(ThrowsExpr throws, Expr? target, FailTest fails, VariableSymbol answer, Scope scope)
+        {
+            CallStmt call = throws.Call;
+            object? callee = call.Resolved;
+            Span at = call.Span;
+            PhiType result = AnswerTypeOf(callee);
+            answer.Type = result;
+            NameExpr Answer() => new() { Name = answer.Name, Span = at };
+
+            call.ResultTarget = Answer();
+            BindExpr(call.ResultTarget, scope);
+            CheckCallResult(call, callee);
+
+            if (target != null)
+                throws.After.Add(new AssignStmt { Target = target, Op = AssignOp.Set, Value = Answer(), Span = at });
+
+            // (an enum is only compared with its own values: its number is what's tested)
+            Expr Number() => result.IsEnum || result.IsChar
+                ? new CastExpr { Operand = Answer(), TargetType = new TypeRef { Name = "int", Span = at }, Span = at }
+                : Answer();
+            long k = fails.Constant!.Value;
+            Expr Literal(long n) => n < 0
+                ? new UnaryExpr { Op = UnaryOp.Negate, Operand = new NumberExpr { Value = -n, Span = at }, Span = at }
+                : new NumberExpr { Value = n, Span = at };
+            var failed = new IfStmt { Condition = new BinaryExpr { Op = fails.Op, Left = Number(), Right = Literal(k), Span = at }, Span = at };
+            string name = CalleeName(callee, call);
+
+            // An answer with a label is said by its label: where the answers are an enum's (the
+            // method returns one, or says which fail with one's value), each of its values that
+            // means it failed gets its own text, Disk.Write answered Written.NO_ROOM, since
+            // what a bare -3 means is exactly what the enum was written to say.
+            EnumSymbol? labels = result.Enum ?? fails.Value?.Type.Enum;
+            if (labels != null && labels.Members.Count <= 32)
+                foreach (var (label, number) in labels.Members.DistinctBy(m => m.Value))
+                {
+                    bool fail = fails.Op switch
+                    {
+                        BinaryOp.Equal => number == k,
+                        BinaryOp.NotEqual => number != k,
+                        BinaryOp.Less => number < k,
+                        BinaryOp.LessEqual => number <= k,
+                        BinaryOp.Greater => number > k,
+                        _ => number >= k,
+                    };
+                    if (!fail) continue;
+                    var one = new IfStmt { Condition = new BinaryExpr { Op = BinaryOp.Equal, Left = Number(), Right = Literal(number), Span = at }, Span = at };
+                    var named = new ThrowStmt { Kind = ThrowStmt.AnswerKind, Span = at };
+                    named.Values.Add(new StringExpr { Value = $"{name} answered {labels.Name}.{label}", Span = at });
+                    one.Then.Add(named);
+                    failed.Then.Add(one);
+                }
+
+            var thrown = new ThrowStmt { Kind = ThrowStmt.AnswerKind, Span = at };
+            if (fails.Op == BinaryOp.Equal || result.IsPointer)
+                // (the one answer it can be: true or false as the method says it, a number as it is)
+                thrown.Values.Add(new StringExpr { Value = $"{name} answered {(fails.Value is BoolExpr ? fails.Words : k.ToString())}", Span = at });
+            else
+            {
+                thrown.Values.Add(new StringExpr { Value = $"{name} answered ", Span = at });
+                thrown.Values.Add(Number());
+            }
+            failed.Then.Add(thrown);
+            throws.After.Add(failed);
+            for (int i = 0; i < throws.After.Count; i++)
+                throws.After[i] = BindStatement(throws.After[i], scope, classLevel: false);
         }
 
         /// <summary>
@@ -1999,6 +2156,8 @@ namespace Phi.Compiler.Semantics
                         yield return s;
                         break;
                     case IfStmt i:
+                        // (if call ... throws err has a variable of its own for the call's answer)
+                        if (i.Condition is ThrowsExpr { Answer: VarDecl answered }) yield return answered;
                         foreach (Stmt v in CollectDeclarations(i.Then)) yield return v;
                         if (i.Else != null)
                             foreach (Stmt v in CollectDeclarations(i.Else)) yield return v;
@@ -2050,6 +2209,7 @@ namespace Phi.Compiler.Semantics
                         yield return (s, block);
                         break;
                     case IfStmt i:
+                        if (i.Condition is ThrowsExpr { Answer: VarDecl answered }) yield return (answered, block);
                         foreach (var d in CollectBlockDeclarations(i.Then, new Block { Parent = block })) yield return d;
                         if (i.Else != null)
                             foreach (var d in CollectBlockDeclarations(i.Else, new Block { Parent = block })) yield return d;
@@ -3167,6 +3327,10 @@ namespace Phi.Compiler.Semantics
 
                 case CallStmt call:
                     BindCall(call, scope);
+                    // an answer that could say it failed, and nothing to hear it
+                    if (call.ResultTarget == null && FailsOf(call.Resolved) is FailTest dropped)
+                        diagnostics.Warning(file, call.CalleeSpan, $"{CalleeName(call.Resolved, call)} can fail ({FailingAnswer(dropped)} says it did), and its answer is dropped here; " +
+                            $"guard it (if call {call.Callee} ... throws err), or keep its answer and test it");
                     return call;
 
                 case ThrowStmt t:
@@ -4576,7 +4740,12 @@ namespace Phi.Compiler.Semantics
             if (call.ResultTarget != null) BindExpr(call.ResultTarget, scope);
             object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope, call.CalleeTarget);
             call.Resolved = callee;
+            CheckCallResult(call, callee);
+        }
 
+        /// <summary>call target is Name: ...; whether what the callee returns can go to the target.</summary>
+        void CheckCallResult(CallStmt call, object? callee)
+        {
             if (call.ResultTarget == null) return;
             switch (callee)
             {
@@ -5555,11 +5724,26 @@ namespace Phi.Compiler.Semantics
                     break;
 
                 case ThrowsExpr throws:
+                {
                     throws.Type = PhiType.Bool;
                     if (scope.Unit is UnitKind.Boot or UnitKind.Os)
                         Error(throws.Span, "catching errors needs 32-bit code (a Kernel or a Program)");
-                    BindCall(throws.Call, scope);
+                    // the callee first, without the call's target: a method that says which
+                    // answers mean it failed gets its answer looked at inside the guard
+                    CallStmt guarded = throws.Call;
+                    Expr? target = guarded.ResultTarget;
+                    guarded.ResultTarget = null;
+                    BindCall(guarded, scope);
+                    if (FailsOf(guarded.Resolved) is FailTest fails && throws.Answer?.Symbol is VariableSymbol answer)
+                        GuardAnswer(throws, target, fails, answer, scope);
+                    else if (target != null)
+                    {
+                        guarded.ResultTarget = target;
+                        BindExpr(target, scope);
+                        CheckCallResult(guarded, guarded.Resolved);
+                    }
                     break;
+                }
 
                 case IsTypeExpr test:
                 {

@@ -1,0 +1,21 @@
+# [end: value throws ...] said wrongly: an answer that isn't one a comparison with a number says
+# anything about, a value not known when it's built, a test that can never hold.
+phi.ThrowsAnswersErrors:Kernel
+{
+	int n: 3;
+
+	[Text]
+	[end: 'abc' throws 0]
+
+	[NotKnown]
+	[end: n throws below n]
+
+	[Unsigned: : u32]
+	[end: 4 throws below 0]
+
+	[Pointer: : ptr<u8>]
+	[end: 0 as ptr<u8> throws below 5]
+
+	[Wide: : i64]
+	[end: 5 throws below 0]
+}

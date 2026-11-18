@@ -1,0 +1,48 @@
+# The file system's calls say which of their answers mean they failed (Fat.ReadFile: below 0;
+# Fat.WriteFile: false), so one guard catches a failure from any of them, in a kernel and in a
+# program (whose calls are system calls: kernel32_throws_files.rootfs/asker.phi). Unguarded,
+# each answers as it always did.
+use fs.fat16;
+use proc.process;
+
+phi.ThrowsFiles:Kernel
+{
+	u8 buffer[64];
+	int got: 0;
+	if call got is Fat.ReadFile: 'NONE.TXT' addr buffer 64 throws err
+		log 'read: ' err.text ', got ' got ', ANSWER ' (err.kind is ErrorKind.ANSWER) '\n';
+	;;
+	if call Fat.FileSize: 'NONE.TXT' throws err
+		log 'size: ' err.text '\n';
+	;;
+	if call Fat.WriteFile: 'NOFOLDER/A.TXT' 'x' 1 throws err
+		log 'write: ' err.text '\n';
+	;;
+	if call Fat.Delete: 'NONE.TXT' throws err
+		log 'delete: ' err.text '\n';
+	;;
+	if call Fat.MakeFolder: 'README.TXT' throws err
+		log 'folder: ' err.text '\n';
+	;;
+	if call got is Fat.ReadFile: 'README.TXT' addr buffer 64 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'read ' got ' bytes\n';
+	;;
+	if call Fat.WriteFile: 'NEW.TXT' 'kernel' 6 throws err
+		log 'not reached: ' err.text '\n';
+	;;
+	else
+		log 'wrote, and its size is ' (Fat.FileSize: 'NEW.TXT') '\n';
+	;;
+	# the same through the names a program uses, which in a kernel are the file system's
+	if call OS.FileSize: 'NONE.TXT' throws err
+		log 'by its OS name: ' err.text '\n';
+	;;
+	log 'unguarded: ' (Fat.FileSize: 'NONE.TXT') ' ' (Fat.Delete: 'NONE.TXT') '\n';
+
+	int code: (Process.Wait: (Process.Spawn: 'ASKER.BIN'));
+	log 'the program ended with ' code '\n';
+	exit 0;
+}

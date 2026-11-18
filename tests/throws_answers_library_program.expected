@@ -1,0 +1,4 @@
+caught: Shelf.Take answered -1, got -1
+took 20
+caught: Shelf.Put answered false
+unguarded: -1

@@ -98,11 +98,14 @@ phi.Sound:Library
 		int size: 0;
 		if ok
 			if call size is OS.FileSize: path throws err
-				call Text.Copy: error err.text 61;      # (more than an int can say)
-				ok is false;
-			;;
-			elif size < 0
-				error is 'no such file';
+				# (its answer says there's no such file; any other error, that it's more than
+				# an int can say)
+				if err.kind is ErrorKind.ANSWER
+					error is 'no such file';
+				;;
+				else
+					call Text.Copy: error err.text 61;
+				;;
 				ok is false;
 			;;
 		;;

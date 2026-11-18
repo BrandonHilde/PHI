@@ -4213,6 +4213,44 @@ index checks at all (the `while each` loop had one, which is worth a look on its
 second way to write the same loop, and either a new word or two names that read awkwardly,
 for that: left out. A loop that needs the place uses the counter, as now.
 
+**One way to handle a failure: `throws` on a method's answer (2026-11-17, the user's choice).**
+A call that failed answered 0, -1 or `false`, or threw, by the part of the library it was in,
+and a failing answer could be dropped with nothing said. Asked: "can we have throws work with
+all of them so that can be the universal way to handle errors?" It can, by a method saying
+which of its answers mean it failed, on its end line (the user's choice of where):
+`[end: count throws below 0]`, `[end: done throws false]`. Then `if call ... throws err`
+catches such an answer as it catches a throw: the error's kind is `ErrorKind.ANSWER`, its
+text what answered what, the call's target has the answer. A call that isn't guarded gets
+the answer as before, so nothing that calls the library changes; a failing answer dropped
+(`call Fat.MakeFolder: 'SYS';`) is a warning (also the user's choice).
+- Tried first and left: a flag a failing method sets for the guard to find. A method that
+  handles what it calls (reads a file that isn't there yet, and carries on) would trip the
+  guard around it. The guard has to know which answer of the one call it guards fails.
+- How it's built: nothing new in either code generator but one line each. The binder puts
+  the call's answer in a variable of the guard's own and, after the call and inside the
+  guard, an ordinary `if answer below 0` with an ordinary `throw` (of kind ANSWER).
+- Numbers that read as what they are stay numbers (`below 0`, the user: "reads fine"); an
+  answer that's opaque gets a label, an enum (the user: "would need labels"): where the
+  answers are an enum's, the error says the label, `Disk.Write answered Written.REFUSED`.
+- What it costs when nothing's wrong: the guard, as for any guarded call (1 to 2 ns), and
+  one comparison. A failing answer caught is a throw (about 60 ns), so an answer tested by
+  hand is still the way in a loop that expects it.
+- Says theirs so far: the file calls (`Fat`'s, a PHI OS program's `OS.` ones, Linux's and
+  Windows'). Tests `throws_answers_program`, `throws_answers_errors`,
+  `throws_answers_library_program` (a compiled library's interface carries it) and
+  `kernel32_throws_files` (a kernel and a program on its disk).
+- What it changed that was there: a guard already around a call that now says which answers
+  fail catches the answer as well as the throw it was written for. The library had two, both
+  around `OS.FileSize` (which throws for a file of 2 GB or more and answers -1 for none):
+  `Dialogs.Exists` took every file that isn't there to be there, and the full test run said
+  so (`dialogs_program`). They ask `err.kind is ErrorKind.ANSWER` now. A program's own guards
+  around the file calls change the same way: the release's notes say it.
+- *Left:* the rest of the library saying theirs (the network, sound, pictures), which is
+  each module's `error` text's turn to go; an answer kept in a variable nothing reads
+  (`bln made: (Fat.MakeFolder: 'SYS');`) says nothing, as there are no warnings for unread
+  variables; a system call a kernel declares itself (`sys.Name: 200;`) can't say which of
+  its answers fail yet.
+
 **The speed bar met (2026-11-15).** `phi compare --runs 5`, saved as `bench/RESULTS.md`:
 64-bit PHI over C# 0.98 together (1.53 two days before), the most `lists` at 1.26 and
 `collatz` at 1.12, `strings` 0.85, `sort` 0.75; over gcc -O2 1.34 together. Every test

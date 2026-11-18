@@ -1,0 +1,10 @@
+# A library whose methods say which answers mean they failed.
+phi.Shelf:Library
+{
+	[Take: int which: 0;]
+		if which > 3 return -1;
+	[end: which * 10 throws below 0]
+
+	[Put: int which: 0;]
+	[end: which < 4 throws false]
+}

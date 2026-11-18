@@ -175,7 +175,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		int result: (ReadFileLocked: path buffer max);
 		call guard.Give;
-	[end: result]
+	[end: result throws below 0]
 
 	# ReadFile's work, holding the file system's lock
 	[ReadFileLocked: ptr<u8> path: 0; ptr<u8> buffer: 0; u32 max: 0;]
@@ -188,7 +188,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		int result: (ReadAtLocked: path offset buffer max);
 		call guard.Give;
-	[end: result]
+	[end: result throws below 0]
 
 	# ReadAt's work, holding the file system's lock
 	[ReadAtLocked: ptr<u8> path: 0; u32 offset: 0; ptr<u8> buffer: 0; u32 max: 0;]
@@ -236,7 +236,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		int result: (FileSizeLocked: path);
 		call guard.Give;
-	[end: result]
+	[end: result throws below 0]
 
 	# FileSize's work, holding the file system's lock
 	[FileSizeLocked: ptr<u8> path: 0;]
@@ -394,7 +394,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		bln result: (WriteFileLocked: path data length);
 		call guard.Give;
-	[end: result]
+	[end: result throws false]
 
 	# WriteFile's work, holding the file system's lock
 	[WriteFileLocked: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
@@ -486,7 +486,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		bln result: (AppendLocked: path data length);
 		call guard.Give;
-	[end: result]
+	[end: result throws false]
 
 	# Append's work, holding the file system's lock
 	[AppendLocked: ptr<u8> path: 0; ptr<u8> data: 0; u32 length: 0;]
@@ -600,7 +600,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		bln result: (DeleteLocked: path);
 		call guard.Give;
-	[end: result]
+	[end: result throws false]
 
 	# Delete's work, holding the file system's lock
 	[DeleteLocked: ptr<u8> path: 0;]
@@ -626,7 +626,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		int result: (EntriesLocked: path target max);
 		call guard.Give;
-	[end: result]
+	[end: result throws below 0]
 
 	# Entries's work, holding the file system's lock
 	[EntriesLocked: ptr<u8> path: 0; ptr<FileInfo> target: 0; int max: 0;]
@@ -674,7 +674,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		bln result: (MakeFolderLocked: path);
 		call guard.Give;
-	[end: result]
+	[end: result throws false]
 
 	# MakeFolder's work, holding the file system's lock
 	[MakeFolderLocked: ptr<u8> path: 0;]
@@ -719,7 +719,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		bln result: (DeleteFolderLocked: path);
 		call guard.Give;
-	[end: result]
+	[end: result throws false]
 
 	# DeleteFolder's work, holding the file system's lock
 	[DeleteFolderLocked: ptr<u8> path: 0;]
@@ -748,7 +748,7 @@ phi.Fat:Kernel
 		call guard.Take;
 		bln result: (RenameLocked: from to);
 		call guard.Give;
-	[end: result]
+	[end: result throws false]
 
 	# Rename's work, holding the file system's lock
 	[RenameLocked: ptr<u8> from: 0; ptr<u8> to: 0;]

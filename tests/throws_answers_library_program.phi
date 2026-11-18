@@ -1,0 +1,23 @@
+# library: library_src/shelf.phi
+# A compiled library's methods say which answers mean they failed too: the library's interface
+# carries it, so a program that has only the .philib catches them the same way.
+use shelf;
+
+phi.ThrowsAnswersLibraryProgram:Program
+{
+	int got: 0;
+	if call got is Shelf.Take: 9 throws err
+		log 'caught: ' err.text ', got ' got '\n';
+	;;
+	if call got is Shelf.Take: 2 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'took ' got '\n';
+	;;
+	if call Shelf.Put: 7 throws err
+		log 'caught: ' err.text '\n';
+	;;
+	log 'unguarded: ' (Shelf.Take: 9) '\n';
+	exit 0;
+}

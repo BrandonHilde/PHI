@@ -1119,7 +1119,7 @@ else
   billion or more going to an `int`; `as` says the same bits are meant), and text that doesn't
   fit in the `str` it's going to.
 - **`err` is an `Error`**, a struct with the error's `kind` (`ErrorKind.THROWN`, `INDEX`,
-  `MEMORY`, `COUNT`, `CONVERT`, `STACK`, `TEXT` or `HIERARCHY`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
+  `MEMORY`, `COUNT`, `CONVERT`, `STACK`, `TEXT`, `HIERARCHY` or `ANSWER`, among others), `line`, `file`, `text`, and `message` (the text, then where it happened, as
   an uncaught error is written). `log`, `debug` and text built from values write its
   message, so `log err;` and `str note: ('failed: ' err);` say everything.
 - **The methods in between give back what they own**, as if each had returned: their new
@@ -1151,6 +1151,104 @@ else
   written, a list half updated), so it suits work that stands alone, like one request or
   one command. For a whole part of a system that may go wrong, a user program, which a
   supervisor can start again, is still the way (see `proc.supervisor`).
+
+### An answer that means it failed
+
+Many methods say they failed by what they answer: -1 for a file that isn't there, `false`
+for something not done, 0 for nothing found. A method can say which of its answers those
+are, on its `[end: ...]` line, and then `if call ... throws err` catches such an answer
+exactly as it catches a `throw`, so one guard handles a failure however the method reports
+it:
+
+```phi
+[Read: str path;]
+    if (OS.FileSize: path) < 0 return -1;
+    ...
+[end: count throws below 0]         # an answer below 0 is a failure
+
+[Save]
+    ...
+[end: done throws false]            # and so is false
+
+int got: 0;
+if call got is Read: 'A.TXT' throws err
+    log err '\n';                   # Files.Read answered -1 on line 14 in notes.phi
+    log got '\n';                   # -1: the call's target has the answer
+;;
+else
+    log got ' bytes\n';             # the else is for a call that worked
+;;
+
+int size: (Read: 'A.TXT');          # not guarded: -1, as it always was
+```
+
+- **After `throws` goes one comparison with one value**: `throws below 0`, `throws atmost 0`,
+  `throws is not Saved.DONE`, or a value alone (`throws false`, `throws 0`, `throws -1`),
+  which is `is` that value. `<`, `<=`, `>`, `>=`, `==` and `!=` are read too. The value is one
+  known when the program is built: a number, `true` or `false`, a constant, an enum's value.
+- **The answer is a whole number of up to 32 bits, a `bln`, a `chr`, an enum or a pointer**
+  (whose failing answer is 0). A method that returns anything else fails with `throw`.
+- **The error's `kind` is `ErrorKind.ANSWER`**, and its text is the method and what it
+  answered (`Shelf.Take answered -1`, `Users.Save answered false`; a call the system answers by
+  the name it's called by, `OS.ReadFile answered -1`), with the line of the
+  call. An error thrown from inside the method is caught by the same guard and keeps its
+  own kind and text.
+- **The call's target gets the answer either way** (`got` above), tested whole before it
+  goes there: an answer of -1 into a `u8` is still caught.
+- **A guard that was there already catches the answer too.** Code written to catch what a
+  method throws, and to test its answer after, finds the answer in the guard once the method
+  says which answers fail. `err.kind` tells the two apart:
+
+  ```phi
+  if call size is OS.FileSize: path throws err
+      if err.kind is ErrorKind.ANSWER return false;   # its answer: there's no such file
+      return true;                                    # thrown: 2 GB or more, so it's there
+  ;;
+  ```
+- **A call that isn't guarded is as it was**: it gets the answer, and tests it or not. So
+  saying which answers fail changes nothing for the code that already calls the method. One
+  thing is new: **a failing answer that's dropped is a warning**, as a method that can fail
+  and isn't heard is how a failure goes by unseen:
+
+  ```
+  notes.phi:9:7: warning: Users.Save can fail (an answer of false says it did), and its answer is dropped here; guard it (if call Save ... throws err), or keep its answer and test it
+  ```
+
+  `call Type.Draw: ...;`, whose answer (how wide the text came out) isn't about failing,
+  says nothing.
+- **An answer that's opaque gets a label: an enum.** `below 0` and `false` read as what they
+  are; a -3 doesn't. When a method's answers are an enum's (it returns one, or says which fail
+  with one's value), the error names the label, and the code that catches it tests the label:
+
+  ```phi
+  enum.Written
+  {
+      NO_ROOM: -3
+      REFUSED: -2
+      NO_FOLDER: -1
+      DONE: 0
+  }
+
+  [Write: str path; : Written]
+      ...
+  [end: how throws below Written.DONE]
+
+  Written how: Written.DONE;
+  if call how is Write: 'A.TXT' throws err
+      log err '\n';               # Disk.Write answered Written.REFUSED on line 31 in notes.phi
+      if how is Written.NO_ROOM ...
+  ;;
+  ```
+
+  An answer the enum has no name for is said as its number.
+- **A method that handles what it calls is its own answer.** A guard looks only at the
+  answer of the call it guards: a method that calls one that fails, and carries on, hasn't
+  failed.
+- **A compiled library's methods say it too**: the library's interface carries it.
+- An answer is cheaper than a `throw` (it's a number coming back; a throw unwinds the
+  methods in between), so it's still the way for a failure that's ordinary, like a file
+  that isn't there yet. `throw` is for the ones that shouldn't happen, and for methods with
+  no answer to give.
 
 ## Pointers
 
@@ -3413,6 +3511,8 @@ if (IsReady: port)
   `target.len` is its text's length and `target.max` the most it holds: the caller's size, or
   1,073,741,822 for a `str` that grows. Because it may grow, it can't be handed to a method as a
   buffer with a size; write it with `is` and `++` instead.
+- A method whose answer can say it failed says which answers do, `[end: count throws below 0]`,
+  and then a guard catches it: see [An answer that means it failed](#an-answer-that-means-it-failed).
 - A method can return a number, a pointer, a `str` or an object. A result keeps its type
   at the call: a method whose `[end: ...]` is a `ptr<u8>` gives text to `log` and to a
   `str`, and a `ptr<T>` result can be indexed. Moving a pointer keeps its type there too:

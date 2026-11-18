@@ -978,7 +978,7 @@ namespace Phi.Compiler.CodeGen
                         Load("rdx", th.Text, 64);
                         E($"mov eax, {g.LineOf(th.At)}");
                         E($"lea rsi, [rel {g.StringLabel(System.IO.Path.GetFileName(g.file.Path))}]");
-                        E($"mov ebx, {ErrorThrown}");
+                        E($"mov ebx, {(th.Kind != 0 ? th.Kind : ErrorThrown)}");
                         E("jmp phi_throw");
                         break;
                     }

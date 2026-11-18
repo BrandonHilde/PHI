@@ -2985,7 +2985,7 @@ namespace Phi.Compiler.CodeGen
                     Emit($"mov {R("edx")}, {R("eax")}            ; the text");
                     Emit($"mov eax, {LineOf(t)}");
                     LoadAddress("esi", StringLabel(System.IO.Path.GetFileName(file.Path)));
-                    Emit($"mov ebx, {ErrorThrown}");
+                    Emit($"mov ebx, {(t.Kind != 0 ? t.Kind : ErrorThrown)}");
                     Emit("jmp phi_throw");
                     break;
 
@@ -3864,6 +3864,9 @@ namespace Phi.Compiler.CodeGen
             LoadAddress("eax", record);
             EmitBlockField($"mov {Q} [{{0}}], {R("eax")}", "CATCH");
             EmitStatement(throws.Call);
+            // (a method whose answer can say it failed: the answer is looked at here, where a
+            // throw of it is this guard's to catch)
+            foreach (Stmt s in throws.After) EmitStatement(s);
             Emit($"mov {R("eax")}, {Q} [{record}]");
             EmitBlockField($"mov {Q} [{{0}}], {R("eax")}     ; it came back: this catch is done", "CATCH");
             Emit($"jmp {elseLabel}");

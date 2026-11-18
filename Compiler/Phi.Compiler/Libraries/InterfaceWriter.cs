@@ -139,6 +139,16 @@ namespace Phi.Compiler.Libraries
                 sb.AppendLine("\t" + Text(t.File, t.Text!.Value));
         }
 
+        static string FailWord(BinaryOp op) => op switch
+        {
+            BinaryOp.NotEqual => "is not ",
+            BinaryOp.Less => "below ",
+            BinaryOp.LessEqual => "atmost ",
+            BinaryOp.Greater => "above ",
+            BinaryOp.GreaterEqual => "atleast ",
+            _ => "",
+        };
+
         static string MethodHeader(SourceFile file, MethodDecl m, int skip)
         {
             MethodSymbol symbol = m.Symbol!;
@@ -155,6 +165,9 @@ namespace Phi.Compiler.Libraries
                 foreach (VarDecl p in parameters) sb.Append(' ').Append(m.OwnFile != null ? MadeParameter(file, p) : Parameter(file, p));
                 sb.Append(" : ").Append(returns ? TypeName(symbol.ReturnType) : "void");
                 if (symbol.ReturnType.IsString) sb.Append($" room {symbol.ResultCapacity}");
+                // (the answers that say it failed, with the value as the number it came to)
+                if (m.Fails is { Constant: long failing } fails)
+                    sb.Append($" throws {FailWord(fails.Op)}{(fails.Value is BoolExpr said ? (said.Value ? "true" : "false") : failing.ToString())}");
                 if (written.Count > 0) sb.Append(" writes " + string.Join(" ", written));
             }
             return sb.Append(']').ToString();

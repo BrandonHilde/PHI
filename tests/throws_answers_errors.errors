@@ -1,0 +1,5 @@
+8:14: error: Text returns a str, and an answer that says it failed is a whole number, a bln, a chr, an enum or a pointer; a method that returns anything else fails with throw
+11:23: error: the answer that means it failed has to be known when the program is built: a number, true or false, a constant or an enum's value
+14:10: error: Unsigned returns a u32, which is never less than 0, so `throws below 0` would never say it failed
+17:21: error: Pointer returns a ptr<u8>: the answer that says it failed is 0 (throws 0), as nothing else about an address does
+20:10: error: Wide returns an i64, and an answer that says it failed is a whole number, a bln, a chr, an enum or a pointer; a method that returns anything else fails with throw

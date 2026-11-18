@@ -61,6 +61,9 @@ namespace Phi.Compiler.Syntax
             if (expr is ThrowsExpr throws)
             {
                 foreach (Node n in Nodes(throws.Call)) yield return n;
+                // (and what the binder put after it for a method whose answer can say it failed)
+                foreach (Stmt s in throws.After)
+                    foreach (Node n in Nodes(s)) yield return n;
                 yield break;
             }
 

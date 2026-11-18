@@ -523,11 +523,12 @@ phi.Dialogs:Program
 	[Save: ptr<u8> folder: 0; ptr<u8> suggested: 0;]
 	[end: (Pick: 'Save as' folder true suggested)]
 
-	# is there something at path? (a file too big for its size to be said is still there)
+	# is there something at path? (a file too big for its size to be said is still there: that's
+	# an error of another kind than the answer that says there's none)
 	[Exists: ptr<u8> at_path: 0;]
 		int size: -1;
 		if call size is OS.FileSize: at_path throws err
-			return true;
+			return err.kind is not ErrorKind.ANSWER;
 		;;
 	[end: size >= 0]
 

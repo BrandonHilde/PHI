@@ -205,6 +205,9 @@ namespace Phi.Compiler.Syntax
         public List<Stmt> Body { get; } = new();
         public Expr? Result { get; set; }
 
+        /// <summary>[end: value throws below 0]: which of its answers say it failed, if it says.</summary>
+        public FailTest? Fails { get; set; }
+
         /// <summary>What it returns, where its header says so: [Make: : ptr&lt;Node&gt;], an interface's [Area: : int].</summary>
         public TypeRef? DeclaredResult { get; set; }
 
@@ -457,7 +460,13 @@ namespace Phi.Compiler.Syntax
     /// </summary>
     public sealed class ThrowStmt : Stmt
     {
+        /// <summary>ErrorKind.ANSWER (lib/phi/lang/error.phi): a call's answer said it failed.</summary>
+        public const int AnswerKind = 11;
+
         public List<Expr> Values { get; } = new();
+
+        /// <summary>The ErrorKind the error has: THROWN (0), but for the throw a guard makes of a failing answer.</summary>
+        public int Kind { get; init; }
 
         /// <summary>The values as one text (the binder makes it).</summary>
         public Expr? Text { get; set; }
@@ -516,7 +525,7 @@ namespace Phi.Compiler.Syntax
     /// <summary>call [target is] Name[: args];</summary>
     public sealed class CallStmt : Stmt
     {
-        public Expr? ResultTarget { get; init; }
+        public Expr? ResultTarget { get; set; }
         public string Callee { get; init; } = "";
         public Span CalleeSpan { get; init; }
 
@@ -715,6 +724,40 @@ namespace Phi.Compiler.Syntax
         public CallStmt Call { get; init; } = null!;
         public string Name { get; init; } = "";
         public Span NameSpan { get; init; }
+
+        /// <summary>
+        /// A variable of the statement's own for the call's answer, when the method called says
+        /// which answers mean it failed ([end: value throws below 0]): the parser declares it,
+        /// and the binder gives it the answer's type and makes it the call's target.
+        /// </summary>
+        public VarDecl? Answer { get; init; }
+
+        /// <summary>
+        /// What runs after the call, still inside the guard, for such a method (the binder
+        /// makes it): the answer goes where the call said, and one that means it failed is
+        /// thrown, which this guard catches as it does any error.
+        /// </summary>
+        public List<Stmt> After { get; } = new();
+    }
+
+    /// <summary>
+    /// [end: value throws below 0]: the answers of a method that say it failed. An answer is
+    /// compared with one value known when it's built: below 0, atmost 0, is not Saved.OK, or
+    /// just the value (false, 0, -1), which is `is` that value. A guard (if call ... throws
+    /// err) catches such an answer as it catches a throw; a call that isn't guarded gets the
+    /// answer as it always did.
+    /// </summary>
+    public sealed class FailTest : Node
+    {
+        public BinaryOp Op { get; init; }
+        public Expr Value { get; init; } = null!;
+
+        /// <summary>As it's written after throws: below 0, false, is not Saved.OK.</summary>
+        public string Words { get; init; } = "";
+
+        /// <summary>The value, once the binder has worked it out.</summary>
+        public long? Constant { get; set; }
+        public bool Bound { get; set; }
     }
 
     /// <summary>What a has test compares: see <see cref="HasExpr"/>.</summary>

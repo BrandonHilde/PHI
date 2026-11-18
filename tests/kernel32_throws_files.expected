@@ -1,0 +1,16 @@
+read: Fat.ReadFile answered -1, got -1, ANSWER 1
+size: Fat.FileSize answered -1
+write: Fat.WriteFile answered false
+delete: Fat.Delete answered false
+folder: Fat.MakeFolder answered false
+read 20 bytes
+wrote, and its size is 6
+by its OS name: OS.FileSize answered -1
+unguarded: -1 0
+a program, read: OS.ReadFile answered -1, got -1
+a program, size: OS.FileSize answered -1
+a program, delete: OS.DeleteFile answered 0
+a program read 20 bytes
+a program wrote
+a program, unguarded: -1
+the program ended with 0

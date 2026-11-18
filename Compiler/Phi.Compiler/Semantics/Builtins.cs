@@ -18,6 +18,31 @@ namespace Phi.Compiler.Semantics
         public int[] BufferParameters { get; init; } = Array.Empty<int>();
         public bool Returns { get; init; }
 
+        /// <summary>
+        /// Which of its answers say it failed, as a method's [end: value throws below 0] does:
+        /// "below 0", "atmost 0", "0". A guard (if call ... throws err) catches such an answer.
+        /// </summary>
+        public string? FailsWhen { get; init; }
+
+        /// <summary>FailsWhen, as the binder reads a method's.</summary>
+        public Syntax.FailTest? Fails => FailsWhen == null ? null : fails ??= ReadFails(FailsWhen);
+        Syntax.FailTest? fails;
+
+        static Syntax.FailTest ReadFails(string words)
+        {
+            string[] parts = words.Split(' ');
+            long value = long.Parse(parts[^1]);
+            Syntax.BinaryOp op = parts.Length == 1 ? Syntax.BinaryOp.Equal : parts[0] switch
+            {
+                "below" => Syntax.BinaryOp.Less,
+                "atmost" => Syntax.BinaryOp.LessEqual,
+                "above" => Syntax.BinaryOp.Greater,
+                "atleast" => Syntax.BinaryOp.GreaterEqual,
+                _ => throw new ArgumentException($"a built-in's failing answers: {words}"),
+            };
+            return new Syntax.FailTest { Op = op, Words = words, Constant = value, Bound = true };
+        }
+
         /// <summary>The result is text (a ptr&lt;u8&gt;), so it prints as text, rather than a number.</summary>
         public bool ReturnsText { get; init; }
 
@@ -236,27 +261,27 @@ namespace Phi.Compiler.Semantics
                     Description = "program: start a program with a command line; its process number, or -1" },
             new() { Name = "OS.Arguments", Label = "OS_Arguments", Returns = true, ReturnsText = true,
                     Description = "program: its command line, as a ptr<u8>" },
-            new() { Name = "OS.ReadFile", Label = "OS_ReadFile", OnHost = "HostFiles.ReadFile", InKernel = "Fat.ReadFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.ReadFile", FailsWhen = "below 0", Label = "OS_ReadFile", OnHost = "HostFiles.ReadFile", InKernel = "Fat.ReadFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: read a file into buffer; bytes read, or -1" },
-            new() { Name = "OS.WriteFile", Label = "OS_WriteFile", OnHost = "HostFiles.WriteFile", InKernel = "Fat.WriteFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0, 1 }, Returns = true,
+            new() { Name = "OS.WriteFile", FailsWhen = "atmost 0", Label = "OS_WriteFile", OnHost = "HostFiles.WriteFile", InKernel = "Fat.WriteFile", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: create or replace a file; 1 if written" },
-            new() { Name = "OS.AppendFile", Label = "OS_AppendFile", OnHost = "HostFiles.AppendFile", InKernel = "Fat.Append", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.AppendFile", FailsWhen = "atmost 0", Label = "OS_AppendFile", OnHost = "HostFiles.AppendFile", InKernel = "Fat.Append", InKernelUse = "fs.fat16", Parameters = new[] { "path", "data", "length" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: add to the end of a file (creating it); 1 if written" },
-            new() { Name = "OS.DeleteFile", Label = "OS_DeleteFile", OnHost = "HostFiles.DeleteFile", InKernel = "Fat.Delete", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.DeleteFile", FailsWhen = "atmost 0", Label = "OS_DeleteFile", OnHost = "HostFiles.DeleteFile", InKernel = "Fat.Delete", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: delete a file; 1 if deleted" },
             new() { Name = "OS.ListFiles", Label = "OS_ListFiles", InKernel = "Fat.List", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: print a folder; how many entries it has" },
-            new() { Name = "OS.FileSize", Label = "OS_FileSize", OnHost = "HostFiles.FileSize", InKernel = "Fat.FileSize", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.FileSize", FailsWhen = "below 0", Label = "OS_FileSize", OnHost = "HostFiles.FileSize", InKernel = "Fat.FileSize", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: a file's size, or -1" },
-            new() { Name = "OS.ListFolder", Label = "OS_ListFolder", OnHost = "HostFiles.ListFolder", InKernel = "Fat.Entries", InKernelUse = "fs.fat16", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
+            new() { Name = "OS.ListFolder", FailsWhen = "below 0", Label = "OS_ListFolder", OnHost = "HostFiles.ListFolder", InKernel = "Fat.Entries", InKernelUse = "fs.fat16", Parameters = new[] { "path", "into", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 1 }, Returns = true,
                     Description = "program: a folder's entries, as FileInfo (use fs.fileinfo), into up to max of them; how many, or -1" },
-            new() { Name = "OS.MakeFolder", Label = "OS_MakeFolder", OnHost = "HostFiles.MakeFolder", InKernel = "Fat.MakeFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.MakeFolder", FailsWhen = "atmost 0", Label = "OS_MakeFolder", OnHost = "HostFiles.MakeFolder", InKernel = "Fat.MakeFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: make a folder; 1 if made" },
-            new() { Name = "OS.Rename", Label = "OS_Rename", OnHost = "HostFiles.Rename", InKernel = "Fat.Rename", InKernelUse = "fs.fat16", Parameters = new[] { "from", "to" }, TextParameters = new[] { 0, 1 }, Returns = true,
+            new() { Name = "OS.Rename", FailsWhen = "atmost 0", Label = "OS_Rename", OnHost = "HostFiles.Rename", InKernel = "Fat.Rename", InKernelUse = "fs.fat16", Parameters = new[] { "from", "to" }, TextParameters = new[] { 0, 1 }, Returns = true,
                     Description = "program: rename a file or folder, or move it to another folder; 1 if done" },
-            new() { Name = "OS.DeleteFolder", Label = "OS_DeleteFolder", OnHost = "HostFiles.DeleteFolder", InKernel = "Fat.DeleteFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
+            new() { Name = "OS.DeleteFolder", FailsWhen = "atmost 0", Label = "OS_DeleteFolder", OnHost = "HostFiles.DeleteFolder", InKernel = "Fat.DeleteFolder", InKernelUse = "fs.fat16", Parameters = new[] { "path" }, TextParameters = new[] { 0 }, Returns = true,
                     Description = "program: delete an empty folder; 1 if deleted" },
-            new() { Name = "OS.ReadFileAt", Label = "OS_ReadFileAt", OnHost = "HostFiles.ReadFileAt", InKernel = "Fat.ReadAt", InKernelUse = "fs.fat16", Parameters = new[] { "path", "offset", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 2 }, Returns = true,
+            new() { Name = "OS.ReadFileAt", FailsWhen = "below 0", Label = "OS_ReadFileAt", OnHost = "HostFiles.ReadFileAt", InKernel = "Fat.ReadAt", InKernelUse = "fs.fat16", Parameters = new[] { "path", "offset", "buffer", "max" }, TextParameters = new[] { 0 }, BufferParameters = new[] { 2 }, Returns = true,
                     Description = "program: read part of a file, from offset on, into buffer; bytes read, or -1" },
             new() { Name = "OS.SoundWrite", Label = "OS_SoundWrite", OnHost = "HostSound.Write", InKernel = "Ac97.Write", InKernelUse = "drivers.ac97", Parameters = new[] { "data", "length" }, BufferParameters = new[] { 0 }, Returns = true,
                     Description = "program: give the sound card 16-bit stereo sound; the bytes it took (0 while it's full), or -1 if there's no card" },

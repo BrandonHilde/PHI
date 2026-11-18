@@ -405,6 +405,9 @@ namespace Phi.Compiler.CodeGen.Ir
         public VReg Text { get; init; } = null!;
         public Node At { get; init; } = null!;
         public List<StoreI> Held { get; init; } = new();
+
+        /// <summary>The error's ErrorKind: THROWN (0), or what a guard's throw of a failing answer says.</summary>
+        public int Kind { get; init; }
     }
 
     // ---------------------------------------------------------------- log

@@ -262,6 +262,23 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AFailingAnswerDroppedWarnsAndOneKeptTestedOrGuardedDoesNot()
+        {
+            const string methods = "[Save: int n: 0;]\n[end: n is 1 throws false]\n[Draw: int n: 0;]\n[end: n * 8]\n}\n";
+            CompileResult dropped = Compile("phi.Main:Kernel\n{\ncall Save: 1;\n" + methods);
+            Assert.True(dropped.Success, string.Join("\n", dropped.Diagnostics));
+            Diagnostic warning = Assert.Single(dropped.Diagnostics);
+            Assert.Equal(Severity.Warning, warning.Severity);
+            Assert.Contains("Main.Save can fail (an answer of false says it did), and its answer is dropped here", warning.Message);
+
+            // kept, tested, guarded; and an answer that isn't about failing, dropped
+            CompileResult heard = Compile("phi.Main:Kernel\n{\nbln kept: (Save: 1);\nif (Save: 2)\nlog 'saved';\n;;\n" +
+                "if call Save: 3 throws err\nlog err;\n;;\ncall Draw: 4;\n" + methods);
+            Assert.True(heard.Success, string.Join("\n", heard.Diagnostics));
+            Assert.Empty(heard.Diagnostics);
+        }
+
+        [Fact]
         public void ANameFromAnotherFilesClassWarnsUntilItsClassIsWritten()
         {
             string dir = Path.Combine(Path.GetTempPath(), "phi-names-" + Guid.NewGuid().ToString("N"));

@@ -1058,13 +1058,65 @@ namespace Phi.Compiler.Syntax
 
             Advance(); // [
             Advance(); // end
-            if (Accept(TokenKind.Colon)) method.Result = ParseExpression();
+            if (Accept(TokenKind.Colon))
+            {
+                method.Result = ParseExpression();
+                // [end: count throws below 0]: the answers that say it failed
+                if (AtWord("throws")) method.Fails = ParseFailTest();
+            }
             if (method.DeclaredResult != null && method.Result == null)
                 throw Error(Previous.Span, $"{name}'s header says what it returns, so it ends with [end: value]");
             Expect(TokenKind.CloseBracket, "']' after [end");
             method.End = Previous.Span.End;
 
             return method;
+        }
+
+        /// <summary>
+        /// After a method's answer, or a compiled method's type: throws, and which answers mean
+        /// it failed. One comparison with one value: throws below 0, throws atmost 0,
+        /// throws is not Saved.OK; a value alone (throws false, throws -1) is `is` that value.
+        /// </summary>
+        FailTest ParseFailTest()
+        {
+            Token keyword = Advance();
+            int start = Current.Span.Start;
+            BinaryOp op = BinaryOp.Equal;
+            if (AtWord("is"))
+            {
+                Advance();
+                op = AcceptWord("not") ? BinaryOp.NotEqual : BinaryOp.Equal;
+            }
+            else if (Current.Kind == TokenKind.Identifier && ComparisonWords.TryGetValue(Current.Text, out BinaryOp word))
+            {
+                Advance();
+                op = word;
+            }
+            else
+            {
+                BinaryOp? sign = Current.Kind switch
+                {
+                    TokenKind.EqualsEquals => BinaryOp.Equal,
+                    TokenKind.BangEquals => BinaryOp.NotEqual,
+                    TokenKind.Less => BinaryOp.Less,
+                    TokenKind.Greater => BinaryOp.Greater,
+                    TokenKind.LessEquals => BinaryOp.LessEqual,
+                    TokenKind.GreaterEquals => BinaryOp.GreaterEqual,
+                    _ => null,
+                };
+                if (sign != null)
+                {
+                    Advance();
+                    op = sign.Value;
+                }
+            }
+            if (At(TokenKind.CloseBracket) || AtEnd || Current.StartsLine)
+                throw Error(keyword.Span, "after throws goes which answers mean it failed, like: [end: count throws below 0] or [end: saved throws false]");
+            Expr value = ParseBitOr();
+            if (!At(TokenKind.CloseBracket) && !AtWord("writes"))
+                throw Error(Current.Span, "the answers that mean it failed are one comparison with one value, like: throws below 0, throws atmost 0, throws false");
+            string words = file.Text[start..Previous.Span.End];
+            return new FailTest { Op = op, Value = value, Words = string.Join(' ', words.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries)), Span = keyword.Span.To(Previous.Span) };
         }
 
         /// <summary>A parameter, keeping its text for a library's interface.</summary>
@@ -1078,8 +1130,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>
         /// In a compiled library's interface, what a method's header says after a second ':':
-        /// what it returns (void for nothing), the room for a str result, and the str parameters
-        /// it writes into. [Name: : str room 64]  [Fill: str target; : void writes target]
+        /// what it returns (void for nothing), the room for a str result, the answers that say it
+        /// failed, and the str parameters it writes into.
+        /// [Name: : str room 64]  [Read: : int throws below 0]  [Fill: str target; : void writes target]
         /// </summary>
         void ParseCompiledResult(MethodDecl method)
         {
@@ -1089,6 +1142,7 @@ namespace Phi.Compiler.Syntax
                 Token room = Advance();
                 method.DeclaredRoom = room.Value is ulong huge ? (int)huge : (int)(long)room.Value!;
             }
+            if (AtWord("throws")) method.Fails = ParseFailTest();
             if (AcceptWord("writes"))
                 while (At(TokenKind.Identifier)) method.Writes.Add(Advance().Text);
         }
@@ -1630,7 +1684,17 @@ namespace Phi.Compiler.Syntax
                 throw Error(Current.Span, "expected a name for the error after throws, like: if call Load: path throws err");
             Token name = Advance();
             CheckNotKeyword(name, "variable");
-            return new ThrowsExpr { Call = call, Name = name.Text, NameSpan = name.Span, Span = call.Span.To(name.Span) };
+            // (a variable for the call's answer, used if the method says which answers mean it failed)
+            var answer = new VarDecl
+            {
+                Type = new TypeRef { Name = "int", Span = call.Span },
+                // (numbered in the order they're written, not by where: laying the file out
+                // again leaves a class's own variable, and so the code, as it was)
+                Name = $"answer#{answerCount++}",
+                NameSpan = call.Span,
+                Span = call.Span,
+            };
+            return new ThrowsExpr { Call = call, Answer = answer, Name = name.Text, NameSpan = name.Span, Span = call.Span.To(name.Span) };
         }
 
         /// <summary>The statements that can follow an if's condition on the same line.</summary>
@@ -1644,6 +1708,9 @@ namespace Phi.Compiler.Syntax
 
         /// <summary>Each `has ... when` gets a variable of its own for whether one was found.</summary>
         int hasWhenCount;
+
+        /// <summary>Each if call ... throws gets a variable of its own for the call's answer.</summary>
+        int answerCount;
 
         Stmt ParseIf()
         {

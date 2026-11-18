@@ -1,0 +1,30 @@
+# A PHI OS program's file calls, guarded: they go to the kernel as system calls, and their
+# answers are caught as a method's are.
+phi.Asker:Program
+{
+	u8 buffer[64];
+	int got: 0;
+	if call got is OS.ReadFile: 'NONE.TXT' addr buffer 64 throws err
+		log 'a program, read: ' err.text ', got ' got '\n';
+	;;
+	if call OS.FileSize: 'NONE.TXT' throws err
+		log 'a program, size: ' err.text '\n';
+	;;
+	if call OS.DeleteFile: 'NONE.TXT' throws err
+		log 'a program, delete: ' err.text '\n';
+	;;
+	if call got is OS.ReadFile: 'README.TXT' addr buffer 64 throws err
+		log 'not reached\n';
+	;;
+	else
+		log 'a program read ' got ' bytes\n';
+	;;
+	if call OS.WriteFile: 'BY.TXT' 'program' 7 throws err
+		log 'not reached: ' err.text '\n';
+	;;
+	else
+		log 'a program wrote\n';
+	;;
+	log 'a program, unguarded: ' (OS.FileSize: 'NONE.TXT') '\n';
+	exit 0;
+}

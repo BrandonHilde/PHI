@@ -24,6 +24,7 @@ enum.ErrorKind
 	STACK                       # the stack ran out: calls too deep, usually a method that never stops calling itself
 	TEXT                        # text that doesn't fit in the str it's going to (Cut.Into, in user.cut, cuts it on purpose)
 	HIERARCHY                   # an object taking the object it's inside of (nodes:a.left takes nodes:b; when a is b)
+	ANSWER                      # a guarded call's answer said it failed: the method's [end: value throws below 0]
 }
 
 struct.Error
