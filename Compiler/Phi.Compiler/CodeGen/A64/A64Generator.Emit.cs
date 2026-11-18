@@ -300,6 +300,21 @@ namespace Phi.Compiler.CodeGen.A64
                 throw new InvalidOperationException($"{methodLabel}: a place the ARM code can't read: '{place}'");
             }
 
+            /// <summary>
+            /// A class's variable (or a place in one) read or written in two instructions, its
+            /// page and then [x16, label@PAGEOFF]: what goes after @PAGE and @PAGEOFF, or null.
+            /// The linker needs the place to be a multiple of the size, which it is where the
+            /// variable is (each starts at a multiple of 8) and the offset is one too.
+            /// </summary>
+            string? Direct(string place, int size)
+            {
+                if (size > 8 || GlobalPlace.Match(place.Trim()) is not { Success: true } gl) return null;
+                string label = gl.Groups[1].Value;
+                long off = Sum(gl.Groups[2].Value);
+                if (!label.StartsWith("VALUE_", StringComparison.Ordinal) || off % size != 0) return null;
+                return off == 0 ? Sym(label) : $"{Sym(label)}+{off}";
+            }
+
             /// <summary>A place's address into a register.</summary>
             void PlaceAddress(string reg, string place)
             {
@@ -358,6 +373,30 @@ namespace Phi.Compiler.CodeGen.A64
                 else if (b.IsImm && b.Imm < 0 && b.Imm > -4096) E($"cmn {a}, #{-b.Imm}");
                 else E($"cmp {a}, {GetOp(b, "x17", wide)}");
             }
+
+            /// <summary>
+            /// A number and, orr, eor and tst take as it is: a run of 1 bits, turned round any
+            /// way, in an element of 2 to 64 bits that fills the register (never 0 or all 1s).
+            /// </summary>
+            static bool LogicalImm(long value, bool wide)
+            {
+                ulong v = unchecked((ulong)value);
+                if (!wide) v = (v & 0xFFFFFFFF) | (v << 32);
+                if (v == 0 || v == ulong.MaxValue) return false;
+                for (int size = 2; size <= 64; size *= 2)
+                {
+                    ulong mask = size == 64 ? ulong.MaxValue : (1UL << size) - 1, element = v & mask;
+                    bool repeats = true;
+                    for (int at = size; at < 64 && repeats; at += size) repeats = ((v >> at) & mask) == element;
+                    if (!repeats) continue;
+                    // (one run: turned by one bit, it differs in two places, its two ends)
+                    ulong turned = ((element >> 1) | ((element & 1) << (size - 1))) & mask;
+                    return System.Numerics.BitOperations.PopCount(element ^ turned) == 2;
+                }
+                return false;
+            }
+
+            static string LogicalText(long value, bool wide) => wide ? $"0x{unchecked((ulong)value):x}" : $"0x{unchecked((ulong)value) & 0xFFFFFFFF:x}";
 
             void WriteBack(List<StoreI> held)
             {
@@ -538,6 +577,12 @@ namespace Phi.Compiler.CodeGen.A64
 
                     case LoadI l:
                     {
+                        if (Direct(l.Place, Ops(l.Kind).Size) is string at)
+                        {
+                            E($"adrp x16, {at}@PAGE");
+                            Load(l.Dst, l.Kind, (op, r, _) => E($"{op} {r}, [x16, {at}@PAGEOFF]"));
+                            break;
+                        }
                         var (b, off) = Place(l.Place);
                         Load(l.Dst, l.Kind, b, off);
                         break;
@@ -548,19 +593,31 @@ namespace Phi.Compiler.CodeGen.A64
                         if (st.Kind is MemKind.F64 or MemKind.F32 or MemKind.F16)
                         {
                             string d = StoreFloat(st.Src, st.Kind);
+                            if (Direct(st.Place, FloatSize(st.Kind)) is string fat)
+                            {
+                                E($"adrp x16, {fat}@PAGE");
+                                E($"str {d}, [x16, {fat}@PAGEOFF]");
+                                break;
+                            }
                             var (fb, fo) = Place(st.Place);
                             Mem("str", d, fb, fo, FloatSize(st.Kind));
                             break;
                         }
                         var (_, op, size) = Ops(st.Kind);
                         string s = GetOp(st.Src, "x9", size == 8);
+                        if (Direct(st.Place, size) is string at)
+                        {
+                            E($"adrp x16, {at}@PAGE");
+                            E($"{op} {s}, [x16, {at}@PAGEOFF]");
+                            break;
+                        }
                         var (b, off) = Place(st.Place);
                         Mem(op, s, b, off, size);
                         break;
                     }
 
                     case LoadIdxI l:
-                        Load(l.Dst, l.Kind, (op, r, size) => Access(op, r, l.Base, l.Index, l.Scale, size));
+                        Load(l.Dst, l.Kind, (op, r, size) => Access(op, r, l.Base, l.Index, l.Scale, size, l.IndexSigned));
                         break;
 
                     case StoreIdxI st:
@@ -568,12 +625,12 @@ namespace Phi.Compiler.CodeGen.A64
                         if (st.Kind is MemKind.F64 or MemKind.F32 or MemKind.F16)
                         {
                             string d = StoreFloat(st.Src, st.Kind);
-                            Access("str", d, st.Base, st.Index, st.Scale, FloatSize(st.Kind));
+                            Access("str", d, st.Base, st.Index, st.Scale, FloatSize(st.Kind), st.IndexSigned);
                             break;
                         }
                         var (_, op, size) = Ops(st.Kind);
                         string s = GetOp(st.Src, "x8", size == 8);
-                        Access(op, s, st.Base, st.Index, st.Scale, size);
+                        Access(op, s, st.Base, st.Index, st.Scale, size, st.IndexSigned);
                         break;
                     }
 
@@ -884,8 +941,18 @@ namespace Phi.Compiler.CodeGen.A64
             /// op reg at base + index * scale, size bytes: [base, index, lsl #n] when the scale is 1
             /// or the size (an element of an array), else the address made first (Element).
             /// </summary>
-            void Access(string op, string reg, VReg baseValue, Opnd index, int scale, int size)
+            void Access(string op, string reg, VReg baseValue, Opnd index, int scale, int size, bool? extend = null)
             {
+                if (extend is bool signed)
+                {
+                    // (FoldIndexExtends leaves these only where the scale is 1 or the size)
+                    string xb = Get(baseValue, "x16", true);
+                    string ew = Get(index.Reg!, "x17", false);
+                    int by = scale == 1 ? 0 : size switch { 1 => 0, 2 => 1, 4 => 2, 8 => 3, _ => 4 };
+                    string how = signed ? "sxtw" : "uxtw";
+                    E(by == 0 ? $"{op} {reg}, [{xb}, {ew}, {how}]" : $"{op} {reg}, [{xb}, {ew}, {how} #{by}]");
+                    return;
+                }
                 if (!index.IsImm && (scale == 1 || scale == size) && size is 1 or 2 or 4 or 8 or 16)
                 {
                     string b = Get(baseValue, "x16", true);
@@ -1148,6 +1215,9 @@ namespace Phi.Compiler.CodeGen.A64
                         }
                         break;
                     }
+                    case BinOp.And or BinOp.Or or BinOp.Xor when b.B.IsImm && LogicalImm(b.B.Imm, wide):
+                        E($"{(b.Op == BinOp.And ? "and" : b.Op == BinOp.Or ? "orr" : "eor")} {t}, {a}, #{LogicalText(b.B.Imm, wide)}");
+                        break;
                     default:
                     {
                         string bb = GetOp(b.B, "x8", wide);
@@ -1381,7 +1451,8 @@ namespace Phi.Compiler.CodeGen.A64
                     case BranchT br:
                     {
                         string a = Get(br.A, "x9");
-                        if (br.TestMask is long mask)
+                        if (br.TestMask is long bits && LogicalImm(bits, br.A.Wide)) E($"tst {a}, #{LogicalText(bits, br.A.Wide)}");
+                        else if (br.TestMask is long mask)
                         {
                             MovImm("x17", mask, br.A.Wide);
                             E($"tst {a}, {W("x17", br.A.Wide)}");

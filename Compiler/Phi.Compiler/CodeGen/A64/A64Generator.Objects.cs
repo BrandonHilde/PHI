@@ -128,7 +128,9 @@ namespace Phi.Compiler.CodeGen.A64
         void EmitRoutine(string label, string what, IrFunction fn)
         {
             IrPeephole.Run(fn, foldOffsets: true);
+            FoldIndexExtends(fn);
             RegisterAllocator regs = RegisterAllocator.Allocate(fn, target: Registers);
+            ThroughX0(fn, regs);
             code.AppendLine();
             code.AppendLine($"; ---- {what}");
             code.AppendLine("\t.p2align 2");

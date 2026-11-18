@@ -446,16 +446,33 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   0.6 s: each append had measured the whole text), an element read and written in one
   instruction (`[base, index, lsl #n]`), and a field's offset folded into its load. (Kept
   registers saved and read back two at a time, stp and ldp, made fib a quarter slower and
-  nothing faster: they're one at a time.) Furthest behind: maps (3 times clang's), interp (1.7) and
-  pixels (1.6), from values read again from memory each time they're used (as the
-  intermediate form has it for x86 too) and kept registers used where scratch ones would do.
+  nothing faster: they're one at a time.)
+- **Speed, second pass: 1.13 times clang -O2's** (from 1.21). What it took, each for ARM only
+  (x86's code is the same, by the snapshot):
+  - a method's loop keeps the class variables it changes in registers, by x86's rules
+    (`X86Generator.ReachedByAddress`, shared): interp 1.68 -> 1.23. Not a class's own
+    statements' loops, which x86 does another way with more rules (7 tests failed with it);
+  - a class's variable read or written in two instructions, not three
+    (`adrp x16, v@PAGE` then `ldr w0, [x16, v@PAGEOFF]`; every variable starts at a multiple
+    of 8, which the linker needs): crc 1.01 -> 0.90, sort 1.10 -> 1.00;
+  - of the registers every method keeps, one already saved is taken before another (the
+    free list gave each short value a new one: Map's FindHashed saved 8, now 2), and a
+    result may have the register of an operand read there for the last time;
+  - a value made by one instruction and read only by the next, or by the return, is made in
+    x0 (`ThroughX0`): fib 1.47 -> 1.41;
+  - and, orr, eor and tst take a mask as it is; an index made 64 bits goes into the read
+    itself (`[x1, w2, uxtw #2]`).
+  Furthest behind now: maps (2.6; the C one keeps key, value and used in one 12-byte slot and
+  is all in one function, PHI's Map is three arrays and four calls a lookup), fib (1.4),
+  collatz and lists (1.3). What would take them further: a choice without a branch (csel)
+  for collatz, the kept registers not saved on a path that returns at once for fib, small
+  methods put in where they're called for maps.
 - **ABI v2 (a method's arguments in registers): not now.** Measured, calls aren't where ARM
   is slow: fib, nearly all calls, is 1.5 times clang's (x86: 3.2 times gcc's, which turns its
   recursion into a loop), and the benchmarks furthest behind are slow inside their methods.
   An argument in a register would save a store and a load a call, which the M1 forwards; and
   it would change every routine the runtime and the generator make, and every compiled
-  library's ABI. What's worth doing first: values kept in registers across a block (not read
-  again from memory), and x0-x7 for values in a method that calls nothing.
+  library's ABI. (After the second pass above fib is 1.4 times clang's.)
 - Found on the way in x86's methods the intermediate form builds, and fixed there too
   (tests/ir_checks_program): an `[atmost N]` array's index was checked against N, not how many
   it holds; `Mem.Copy` (Move, Fill, Fill32) didn't check its count;

@@ -224,6 +224,97 @@ namespace Phi.Compiler.CodeGen.A64
         /// <summary>The heap's Alloc is the program's: a method's str result grows to fit (the generator's GrowResults).</summary>
         bool GrowResults => unit.Methods.Any(m => m.Name == "Heap.Alloc");
 
+        /// <summary>
+        /// An index made 64 bits only to be an element's index goes into the read or write itself
+        /// ([base, w1, uxtw #2]), where the element's size is the scale (or the scale is 1).
+        /// </summary>
+        static void FoldIndexExtends(IrFunction fn)
+        {
+            var uses = new Dictionary<VReg, int>();
+            var defs = new Dictionary<VReg, int>();
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs)
+                {
+                    foreach (VReg v in RegisterAllocator.Uses(i)) uses[v] = uses.GetValueOrDefault(v) + 1;
+                    if (RegisterAllocator.Def(i) is VReg d) defs[d] = defs.GetValueOrDefault(d) + 1;
+                }
+                foreach (VReg v in RegisterAllocator.Uses(b.End)) uses[v] = uses.GetValueOrDefault(v) + 1;
+            }
+            static int Size(MemKind k) => k switch
+            {
+                MemKind.U8 or MemKind.S8 => 1, MemKind.U16 or MemKind.S16 or MemKind.F16 => 2,
+                MemKind.D32 or MemKind.F32 => 4, MemKind.Q64 or MemKind.F64 => 8, _ => 16,
+            };
+            foreach (Block b in fn.Blocks)
+                for (int k = 0; k < b.Instrs.Count; k++)
+                {
+                    if (b.Instrs[k] is not ExtendI e || e.Dst.Pinned || uses.GetValueOrDefault(e.Dst) != 1 || defs.GetValueOrDefault(e.Dst) != 1) continue;
+                    for (int j = k + 1; j < b.Instrs.Count; j++)
+                    {
+                        Instr at = b.Instrs[j];
+                        bool takes = at switch
+                        {
+                            LoadIdxI l => l.Index.Reg == e.Dst && l.Base != e.Dst && l.IndexSigned == null && (l.Scale == 1 || l.Scale == Size(l.Kind)),
+                            StoreIdxI st => st.Index.Reg == e.Dst && st.Base != e.Dst && st.Src.Reg != e.Dst && st.IndexSigned == null
+                                            && (st.Scale == 1 || st.Scale == Size(st.Kind)),
+                            _ => false,
+                        };
+                        if (takes)
+                        {
+                            if (at is LoadIdxI load) { load.Index = e.Src; load.IndexSigned = e.Signed; }
+                            else if (at is StoreIdxI store) { store.Index = e.Src; store.IndexSigned = e.Signed; }
+                            b.Instrs.RemoveAt(k--);
+                            break;
+                        }
+                        // (its one use is somewhere else, or what it's made from changes first)
+                        if (RegisterAllocator.Uses(at).Contains(e.Dst) || RegisterAllocator.Def(at) == e.Src) break;
+                    }
+                }
+        }
+
+        /// <summary>
+        /// A value made by one instruction and read only by the next (or by the return after it)
+        /// is made in x0: a call's result is there already and a method's result goes there, so
+        /// (F: n - 1) + (F: n - 2) given back is one add, with no copies round it. Only where
+        /// neither instruction uses x0 for anything else.
+        /// </summary>
+        static void ThroughX0(IrFunction fn, RegisterAllocator regs)
+        {
+            var uses = new Dictionary<VReg, int>();
+            var defs = new Dictionary<VReg, int>();
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs)
+                {
+                    foreach (VReg v in RegisterAllocator.Uses(i)) uses[v] = uses.GetValueOrDefault(v) + 1;
+                    if (RegisterAllocator.Def(i) is VReg d) defs[d] = defs.GetValueOrDefault(d) + 1;
+                }
+                foreach (VReg v in RegisterAllocator.Uses(b.End)) uses[v] = uses.GetValueOrDefault(v) + 1;
+            }
+            static bool Whole(MemKind k) => k is not (MemKind.F64 or MemKind.F32 or MemKind.F16 or MemKind.V128);
+            static bool Simple(Instr i) => i is BinI or UnI or ExtendI or NarrowI or LeaI or CopyI { Dst: { Float: false, Vec: false } }
+                or SetCcI { Float: false } || i is LoadIdxI l && Whole(l.Kind) || i is LoadI ld && Whole(ld.Kind);
+            foreach (Block b in fn.Blocks)
+            {
+                var code = b.Instrs.Where(i => i is not LineMark).ToList();
+                for (int k = 0; k < code.Count; k++)
+                {
+                    Instr made = code[k];
+                    if (RegisterAllocator.Def(made) is not VReg d || d.Float || d.Vec || d.Pinned) continue;
+                    if (uses.GetValueOrDefault(d) != 1 || defs.GetValueOrDefault(d) != 1) continue;
+                    if (!(Simple(made) || made is CallI { Outside: false, Result: not (CallResult.St0 or CallResult.Xmm0) })) continue;
+                    bool read = k + 1 < code.Count
+                        ? RegisterAllocator.Uses(code[k + 1]).Contains(d)
+                          && (Simple(code[k + 1]) || code[k + 1] is StoreI st && Whole(st.Kind) || code[k + 1] is StoreIdxI sx && Whole(sx.Kind))
+                        : b.End is RetT { Float: false, Vec: false, Value: Opnd given } && given.Reg == d;
+                    if (!read) continue;
+                    regs.Registers[d] = "x0";
+                    regs.Slots.Remove(d);
+                }
+            }
+        }
+
         HashSet<VariableSymbol>? reachedByAddress;
 
         /// <summary>
@@ -247,6 +338,7 @@ namespace Phi.Compiler.CodeGen.A64
                 return false;
             }
             IrPeephole.Run(fn, foldOffsets: true);
+            FoldIndexExtends(fn);
             foreach (StructSymbol tested in fn.TypeTables) TypeTable(tested);
             if (Unsupported(fn) is string not)
             {
@@ -254,6 +346,7 @@ namespace Phi.Compiler.CodeGen.A64
                 return false;
             }
             RegisterAllocator regs = RegisterAllocator.Allocate(fn, target: Registers);
+            ThroughX0(fn, regs);
             code.AppendLine();
             code.AppendLine($"; ---- {what}");
             code.AppendLine("\t.p2align 2");

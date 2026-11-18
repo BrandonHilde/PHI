@@ -121,14 +121,14 @@ namespace Phi.Compiler.CodeGen.A64
                     case LoadIdxI { Kind: MemKind.V128 } load:
                     {
                         string t = VTarget(load.Dst);
-                        Access("ldr", "q" + t[1..], load.Base, load.Index, load.Scale, 16);
+                        Access("ldr", "q" + t[1..], load.Base, load.Index, load.Scale, 16, load.IndexSigned);
                         VPut(load.Dst, t);
                         return true;
                     }
                     case StoreIdxI { Kind: MemKind.V128 } store:
                     {
                         string s = VIn(store.Src.Reg!);
-                        Access("str", "q" + s[1..], store.Base, store.Index, store.Scale, 16);
+                        Access("str", "q" + s[1..], store.Base, store.Index, store.Scale, 16, store.IndexSigned);
                         return true;
                     }
                     case VecMakeI m: Make(m); return true;

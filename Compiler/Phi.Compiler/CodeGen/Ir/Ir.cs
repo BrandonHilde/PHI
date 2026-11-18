@@ -605,19 +605,28 @@ namespace Phi.Compiler.CodeGen.Ir
     {
         public VReg Dst { get; init; } = null!;
         public VReg Base { get; init; } = null!;
-        public Opnd Index { get; init; }
+        public Opnd Index { get; set; }
         public int Scale { get; init; }
         public MemKind Kind { get; init; }
+
+        /// <summary>
+        /// Set when Index is a 32-bit value made 64 bits here, with its sign or without (for ARM,
+        /// whose [base, w1, uxtw #2] does it as it reads: CodeGen/A64's FoldIndexExtends).
+        /// </summary>
+        public bool? IndexSigned { get; set; }
     }
 
     /// <summary>The element at Base + Index * Scale = Src.</summary>
     public sealed class StoreIdxI : Instr
     {
         public VReg Base { get; init; } = null!;
-        public Opnd Index { get; init; }
+        public Opnd Index { get; set; }
         public int Scale { get; init; }
         public Opnd Src { get; init; }
         public MemKind Kind { get; init; }
+
+        /// <summary>As LoadIdxI's.</summary>
+        public bool? IndexSigned { get; set; }
     }
 
     /// <summary>
