@@ -448,7 +448,7 @@ namespace Phi.Compiler.CodeGen.Ir
             Emit(new ConstI { Dst = zero, Value = 0 });
             if (v.Type.TextTable) FreeTextsFrom(list, zero);
             else if (v.Type.Element.IsObject) FreeFrom(list, zero);
-            Emit(new FreeTextI { Place = localViews[v] });
+            Emit(new FreeTextI { Place = ViewHome(v) });
         }
 
         /// <summary>An array parameter (int list[]) of numbers, structs or objects: a view the caller pushes (text arrays are the generator's).</summary>

@@ -100,10 +100,15 @@ namespace Phi.Compiler.CodeGen.A64
             // what follows isn't PHI code: a fault in it has no line
             code.AppendLine("phi_line_end:");
             lineMarks.Add(("phi_line_end", 0, "0"));
+            EmitObjectRoutines();
+            EmitHeapEntries(code);
+            if (failed) return "";
 
             needed.Add("phi_exit");
             needed.Add("phi_fault_register");
             needed.Add("phi_main_thread");
+            // (the program's own Heap, which the runtime calls by these names: EmitHeapEntries)
+            needed.ExceptWith(new[] { "phi_heap_alloc", "phi_heap_free" });
             foreach (string symbol in needed)
                 if (!Library.Provides(Target, symbol))
                     return NotYet(program.File, default, $"the library's {symbol}");
@@ -197,8 +202,6 @@ namespace Phi.Compiler.CodeGen.A64
         static string? Unsupported(IrFunction fn)
         {
             if (fn.Values.Any(v => v.Vec)) return "a vec";
-            if (fn.UnwindRecord != 0 || fn.Owned.Count > 0 || fn.OwnedTexts.Count > 0 || fn.OwnedViews.Count > 0 || fn.OwnedTableTexts.Count > 0)
-                return "objects or texts of its own that it frees";
             foreach (Block b in fn.Blocks)
             {
                 foreach (Instr i in b.Instrs)
@@ -208,13 +211,13 @@ namespace Phi.Compiler.CodeGen.A64
                         LoadI { Kind: MemKind.V128 } or StoreI { Kind: MemKind.V128 } or LoadIdxI { Kind: MemKind.V128 } or StoreIdxI { Kind: MemKind.V128 } => "a vec",
                         CallI c when c.Result == CallResult.Xmm0 || c.ArgKinds.Contains(MemKind.V128) => "a vec given to a call or given back",
                         PrintI p when p.Kind is not (PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char or PrintKind.Int64 or PrintKind.Uint64 or PrintKind.Float) => $"a log of a {p.Kind}",
-                        ResultTextI { Grow: true } => "a str result that grows",
                         X87I x when x.B == null && x.Instruction is not ("fsqrt" or "fabs" or "frndint" or "fsin" or "fcos") => $"the FPU's {x.Instruction}",
                         LineMark or ConstI or CopyI or UnI or ExtendI or SetCcI or AddrI or LeaI or ExitI or RoutineI or BinI or NarrowI
                             or LoadI or StoreI or LoadIdxI or StoreIdxI or CallI or PrintI or TextI or CheckI or SignCheckI or StopI or ThrowI
                             or HasTextI or FixedStoreI or ResultTextI or NumberTextI or ZeroI or CopyBytesI or CompareBytesI or AddrOfI
                             or FConstI or FBinI or FNegI or X87I or RoundF32I or ToFloatI or ToWholeI or LockI or UnlockI or AtomicI or RawCallI
-                            or CatchI or UncatchI or CaughtI => null,
+                            or CatchI or UncatchI or CaughtI or ObjCallI or ArrayRoutineI or ObjectLineI or FreeTextI or ArrayGrowI
+                            or GrowStoreI or InterfaceMethodI or UnwindI => null,
                         _ => KindName(i),
                     };
                     if (not != null) return not;
@@ -338,6 +341,7 @@ namespace Phi.Compiler.CodeGen.A64
         void EmitData(StringBuilder output)
         {
             output.AppendLine("; ---- data");
+            EmitTypeTables(output);
             // each line's code: a count, then its address, its line and its file's name, 8 bytes each
             // (absolute addresses: in __DATA, which the loader moves with the program)
             output.AppendLine("\t.section __DATA,__const");
@@ -345,7 +349,8 @@ namespace Phi.Compiler.CodeGen.A64
             output.AppendLine("phi_lines:");
             output.AppendLine($"\t.quad {lineMarks.Count}");
             foreach (var (label, line, name) in lineMarks) output.AppendLine($"\t.quad {label}, {line}, {name}");
-            output.AppendLine("\t.section __TEXT,__const");
+            // (the texts written in the program are writable, as x86's are: code may write through a ptr<u8> to one)
+            output.AppendLine("\t.section __DATA,__data");
             foreach (var (text, label) in strings)
             {
                 output.AppendLine($"{label}:");
@@ -361,29 +366,24 @@ namespace Phi.Compiler.CodeGen.A64
             }
         }
 
+        /// <summary>A class's variable in the program's data, laid out as x86's generator lays it out (its DataFor).</summary>
         string? DataFor(VariableSymbol v)
         {
             var sb = new StringBuilder();
             List<object>? values = v.StaticValues;
             PhiType t = v.Type;
             string label = Sym(v.Label);
-            if (v.GrowingArray || v.Grows || t.Kind == TypeKind.Vec) return null;
-            if (t.IsString)
+            if (t.Kind == TypeKind.Vec) return null;
+
+            if (v.GrowingArray)
             {
-                string text = values is [var first] ? AsText(first) : "";
-                if (text.Length + 1 > v.Capacity) text = text[..Math.Max(v.Capacity - 1, 0)];
+                // an array that grows: its elements (on the heap), how many, its room
                 sb.AppendLine($"{label}:");
-                sb.AppendLine($"\t.byte {Bytes(text)}");
-                if (v.Capacity - text.Length - 1 > 0) sb.AppendLine($"\t.space {v.Capacity - text.Length - 1}");
+                sb.AppendLine("\t.quad 0");
+                sb.AppendLine("\t.long 0, 0");
                 return sb.ToString();
             }
-            if (t.Kind == TypeKind.Str) return null;
-            if (t.Kind == TypeKind.Struct)
-            {
-                sb.AppendLine($"{label}:");
-                sb.AppendLine($"\t.space {Math.Max(t.ByteSize, 1)}");
-                return sb.ToString();
-            }
+
             if (t.Kind is TypeKind.F16 or TypeKind.F32 or TypeKind.F64)
             {
                 var bits = (values ?? new List<object>()).Select(x => x is double d ? d : (double)(long)x).Select(d => t.Kind switch
@@ -397,8 +397,73 @@ namespace Phi.Compiler.CodeGen.A64
                 sb.AppendLine($"{label}:");
                 if (bits.Count > 0) sb.AppendLine($"\t{kind} {string.Join(", ", bits)}");
                 if (v.Count - bits.Count > 0) sb.AppendLine($"\t.space {size * (v.Count - bits.Count)}");
+                if (t.Filled) sb.AppendLine("\t.long 0                     ; how many are in it");
                 return sb.ToString();
             }
+
+            if (v.Grows)
+            {
+                // a str that grows: its text, its room (its first text here, in the data, until it
+                // needs more room than that: the room's top bit says so)
+                if (values is [var first])
+                {
+                    string text = AsText(first);
+                    Text(sb, $"{label}__text", text, text.Length + 1);
+                    sb.AppendLine("\t.p2align 3");
+                    sb.AppendLine($"{label}:");
+                    sb.AppendLine($"\t.quad {label}__text");
+                    sb.AppendLine($"\t.long {(text.Length + 1) | unchecked((int)0x80000000)}, 0");
+                }
+                else
+                {
+                    sb.AppendLine($"{label}:");
+                    sb.AppendLine("\t.quad 0");
+                    sb.AppendLine("\t.long 0, 0");
+                }
+                return sb.ToString();
+            }
+
+            if (t.IsString)
+            {
+                Text(sb, label, values is [var first] ? AsText(first) : "", v.Capacity);
+                return sb.ToString();
+            }
+
+            if (t.Kind == TypeKind.Str && t.Room > 0)
+            {
+                // texts of up to Room - 1 each, in place
+                sb.AppendLine($"{label}:");
+                sb.AppendLine($"\t.space {Math.Max(t.ByteSize, 1)}");
+                return sb.ToString();
+            }
+
+            if (t.Kind == TypeKind.Str)
+            {
+                // each element's text in a buffer of its own; then each one's address, then (when
+                // they grow) each one's room, 8 bytes each
+                var pointers = new List<string>();
+                for (int i = 0; i < v.Count; i++)
+                {
+                    string element = $"{label}__{i}";
+                    pointers.Add(element);
+                    Text(sb, element, values != null && i < values.Count ? AsText(values[i]) : "", v.Capacity);
+                }
+                sb.AppendLine("\t.p2align 3");
+                sb.AppendLine($"{label}:");
+                if (pointers.Count > 0) sb.AppendLine($"\t.quad {string.Join(", ", pointers)}");
+                if (v.GrowingElements)
+                    foreach (string _ in pointers) sb.AppendLine($"\t.long {v.Capacity | unchecked((int)0x80000000)}, 0");
+                if (t.Filled) sb.AppendLine("\t.long 0                     ; how many are in it");
+                return sb.ToString();
+            }
+
+            if (t.Kind == TypeKind.Struct)
+            {
+                sb.AppendLine($"{label}:");
+                sb.AppendLine($"\t.space {Math.Max(t.ByteSize, 1)}");
+                return sb.ToString();
+            }
+
             string directive = t.ElementSize switch { 1 => ".byte", 2 => ".short", 8 => ".quad", _ => ".long" };
             long mask = t.ElementSize switch { 1 => 0xFF, 2 => 0xFFFF, 8 => -1, _ => 0xFFFFFFFF };
             sb.AppendLine($"{label}:");
@@ -407,6 +472,16 @@ namespace Phi.Compiler.CodeGen.A64
             if (v.Count - numbers.Count > 0) sb.AppendLine($"\t.space {t.ElementSize * (v.Count - numbers.Count)}");
             if (t.Filled) sb.AppendLine("\t.long 0                     ; how many are in it");
             return sb.ToString();
+        }
+
+        /// <summary>A text's bytes and zero, in capacity bytes (cut to fit), as x86's AppendString.</summary>
+        static void Text(StringBuilder sb, string label, string text, int capacity)
+        {
+            if (text.Length + 1 > capacity) text = text[..Math.Max(capacity - 1, 0)];
+            sb.AppendLine($"{label}:");
+            sb.AppendLine($"\t.byte {Bytes(text)}");
+            int padding = capacity - text.Length - 1;
+            if (padding > 0) sb.AppendLine($"\t.space {padding}");
         }
 
         static string AsText(object value) => value switch

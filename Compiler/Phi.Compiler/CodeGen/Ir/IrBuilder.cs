@@ -774,6 +774,80 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case VarDecl { Symbol: VariableSymbol { GrowingArray: true } classView } cv when arm && !Ours(classView) && AnyGlobal(classView) != null:
+                {
+                    // (for ARM: a class's array that grows, empty again each time its declaration
+                    // runs, as the generator's EmitGrowingArrayEmpty: its elements let go, its view zero)
+                    Need(cv.Values.Count == 0, "an array that grows given values where it's declared");
+                    Mark(cv);
+                    if (OwnsElements(classView)) FreeView(classView);
+                    else Emit(new FreeTextI { Place = AnyGlobal(classView)! });
+                    Emit(new ZeroI { Place = AnyGlobal(classView)!, Size = 16 });
+                    return;
+                }
+
+                case VarDecl { IsNew: true, Symbol: VariableSymbol classNew } cn when arm && !Ours(classNew) && AnyGlobal(classNew) != null
+                                                                                 && (!classNew.Type.IsArray || OwnObjectArray(classNew)):
+                {
+                    // (for ARM, where a class's own statements are a method: a class's object, as the
+                    // generator's EmitNewDecl makes it, by where it's kept)
+                    Need(cn.Narrows == null && cn.AtAddress == null && cn.BufferSize == null && cn.MoreSizes.Count == 0, "a new object it doesn't take");
+                    if (cn.Source != null)
+                    {
+                        Statement(cn.Source);
+                        return;
+                    }
+                    Mark(cn);
+                    Emit(new ObjectLineI { At = cn });
+                    string label = AnyGlobal(classNew)!;
+                    if (classNew.Type.IsArray)
+                    {
+                        Need(cn.Values.Count == 0 && cn.FieldValues.Count == 0, "an array of objects given values where it's declared");
+                        var list = new NameExpr { Name = classNew.Name, Symbol = classNew, Type = classNew.Type };
+                        if (classNew.Type.Filled)
+                        {
+                            VReg none = fn.NewValue(false);
+                            Emit(new ConstI { Dst = none, Value = 0 });
+                            FreeFrom(list, none);
+                            Emit(new StoreI { Place = $"{label} + {classNew.Type.CountOffset}", Src = Opnd.Const(0), Kind = MemKind.D32 });
+                            return;
+                        }
+                        for (int k = 0; k < classNew.Type.Length; k++)
+                        {
+                            VReg element = fn.NewAddress();
+                            Emit(new AddrI { Dst = element, Label = k == 0 ? label : $"{label} + {PhiType.AddressSize * k}" });
+                            Emit(new ObjCallI { Kind = "renew", Struct = classNew.Type.Element.Struct!, Arg = element });
+                        }
+                        return;
+                    }
+                    VReg slot = fn.NewAddress();
+                    Emit(new AddrI { Dst = slot, Label = label });
+                    Emit(new ObjCallI { Kind = "renew", Struct = classNew.Type.Struct!, Arg = slot });
+                    Statements(cn.FieldValues);
+                    return;
+                }
+
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true, Type.IsArray: true } listed } ld
+                    when arm && !Ours(listed) && ld.Values.Count > 1 && GlobalArray(listed) is string listLabel && !ld.IsNew && ld.EachOf == null:
+                {
+                    // a class's array given values worked out as it runs: each in its place, zeros after
+                    Mark(ld);
+                    PhiType element = listed.Type.Element;
+                    var values = ld.Values.Select(x => Small(Value(x, element), Is64(element))).ToList();
+                    for (int k = 0; k < listed.Type.Length; k++)
+                        Emit(new StoreI { Place = k == 0 ? listLabel : $"{listLabel} + {k * element.ElementSize}",
+                                          Src = k < values.Count ? values[k] : Opnd.Const(0), Kind = KindOf(element) });
+                    return;
+                }
+
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true } classText } ct when arm && !Ours(classText) && classText.Type.IsString
+                                                                                               && !classText.Type.IsArray && ct.Values.Count == 1 && !ct.IsNew:
+                    // (a class's str given text worked out as it runs, as an assignment would give it)
+                    Mark(ct);
+                    Need(SetText(new NameExpr { Name = classText.Name, Symbol = classText, Type = classText.Type, Span = ct.Span }, ct.Values[0]),
+                         $"text put in {Unknown(new NameExpr { Name = classText.Name, Symbol = classText, Type = classText.Type })}");
+                    return;
+
                 case VarDecl { Symbol: VariableSymbol { NeedsInitCode: false } constant } when arm && !Ours(constant):
                     // (a class's variable with constant values: they're in the program's data already, as x86's generator has it)
                     return;
@@ -2329,6 +2403,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         Opnd Arithmetic(BinaryExpr b)
         {
+            if (arm && b.Op == BinaryOp.Power && !IsF(b.Type) && !b.Type.IsWide) return Power(b);
             Need(b.Op != BinaryOp.Power, "a power");
             if (IsF(b.Type))
             {
@@ -2402,6 +2477,38 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg d = fn.NewValue(wide);
             Emit(new BinI { Op = op, Dst = d, A = InReg(left, wide), B = Small(right, wide) });
             return d;
+        }
+
+        /// <summary>
+        /// x ^ y of 32-bit whole numbers, as the generator works it out: the base squared again and
+        /// again, multiplied in for each bit of the power; a power below 0 is 0.
+        /// </summary>
+        Opnd Power(BinaryExpr b)
+        {
+            Opnd left = Convert(Value(b.Left), Real(b.Left), PhiType.I32);
+            Opnd right = Convert(Value(b.Right), Real(b.Right), PhiType.I32);
+            VReg bas = fn.NewValue(false), power = fn.NewValue(false), result = fn.NewValue(false);
+            Emit(left.IsImm ? new ConstI { Dst = bas, Value = left.Imm } : new CopyI { Dst = bas, Src = left });
+            Emit(right.IsImm ? new ConstI { Dst = power, Value = right.Imm } : new CopyI { Dst = power, Src = right });
+            Emit(new ConstI { Dst = result, Value = 1 });
+            Block negative = fn.NewBlock(), next = fn.NewBlock(), bit = fn.NewBlock(), multiply = fn.NewBlock(), square = fn.NewBlock(), done = fn.NewBlock();
+            current.End = new BranchT { A = power, Cond = Cond.LtS, B = Opnd.Const(0), Then = negative, Else = next };
+            Enter(negative);
+            Emit(new ConstI { Dst = result, Value = 0 });
+            current.End = new JumpT { Target = done };
+            Enter(next);
+            current.End = new BranchT { A = power, Cond = Cond.Eq, B = Opnd.Const(0), Then = done, Else = bit };
+            Enter(bit);
+            current.End = new BranchT { A = power, Cond = Cond.Eq, B = Opnd.Const(0), TestMask = 1, Then = square, Else = multiply };
+            Enter(multiply);
+            Emit(new BinI { Op = BinOp.Mul, Dst = result, A = result, B = bas });
+            current.End = new JumpT { Target = square };
+            Enter(square);
+            Emit(new BinI { Op = BinOp.Mul, Dst = bas, A = bas, B = bas });
+            Emit(new BinI { Op = BinOp.Shr, Dst = power, A = power, B = Opnd.Const(1) });
+            current.End = new JumpT { Target = next };
+            Enter(done);
+            return result;
         }
 
         /// <summary>

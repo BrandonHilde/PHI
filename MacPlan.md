@@ -366,6 +366,14 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   for macOS; `mem.phi` and `program_heap.phi` have theirs), and `if call ... throws`:
   64 tests, all passing. A macOS program without its own `NAME.macos.expected` is held to
   `NAME.linux64.expected`.
+- **M3**: objects, interfaces, text and arrays that grow, and the frees a throw does on its
+  way past. Each struct's routines (free, clone, assign, set, renew, equal, and an array's)
+  are functions in the intermediate form (`A64Generator.Objects.cs`), compiled like the
+  program's methods; a struct with interfaces keeps its type table's 8-byte address before
+  each object. `objects.s` has room in a growing str, a store into one, and arrays' growth.
+  The program's texts are in writable data, as x86's are. 143 tests, all passing;
+  `phi fuzz objects` passes on the standard heap (the checking heap waits for M6's outside
+  calls: it maps its own pages).
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the

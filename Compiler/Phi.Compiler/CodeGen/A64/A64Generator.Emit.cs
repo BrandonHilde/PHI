@@ -43,6 +43,8 @@ namespace Phi.Compiler.CodeGen.A64
                 int most = fn.Blocks.SelectMany(b => b.Instrs).Select(i => i switch
                 {
                     CallI c => c.Args.Count + c.ArgKinds.Count(k => k == MemKind.V128),
+                    ObjCallI or ArrayRoutineI => 2,
+                    FreeTextI => 1,
                     _ => 0,
                 }).DefaultIfEmpty(0).Max();
                 int outgoing = Align16(8 * most);
@@ -108,6 +110,7 @@ namespace Phi.Compiler.CodeGen.A64
                 }
                 pendingLine = null;
                 for (int k = 0; k < after.Count; k++) after[k]();
+                EmitUnwind();
             }
 
             void Epilogue()
@@ -668,7 +671,10 @@ namespace Phi.Compiler.CodeGen.A64
 
                     case FixedStoreI fs:
                     {
-                        // the generator's store into a str with a size (EmitStringStore's last part)
+                        // the generator's store into a str with a size (EmitStringStore's last part); the
+                        // value first, in x1, which phi_str_end keeps (a routine may change x9-x17,
+                        // where the value may be)
+                        Into("x1", fs.Value, fs.SourceIsString);
                         Into("x0", fs.Dst, true);
                         MovImm("x2", fs.Room, false);
                         if (fs.Append)
@@ -678,7 +684,6 @@ namespace Phi.Compiler.CodeGen.A64
                         }
                         string convert = fs.SourceIsString ? "phi_strcpy" : fs.Unsigned ? "phi_uint_to_str" : "phi_int_to_str";
                         g.Need(convert);
-                        Into("x1", fs.Value, fs.SourceIsString);
                         E($"bl {convert}");
                         if (!fs.MayCut) E($"cbnz w3, {TextError(fs.Held)}");
                         break;
