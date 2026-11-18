@@ -21,7 +21,9 @@ const string Usage = """
                                            without this file or any of its source
                                            --x86-64-v2: for CPUs with x86-64-v2 (since about 2009-2011),
                                            whose vec code is shorter; an older one says so and stops
-                                           --stack small|normal|large|huge (or bytes): the main stack a
+                                           --app (with --target macos): a Mac app, NAME.app, that the
+                                       Finder opens with a double click (its id org.phi.NAME)
+                                       --stack small|normal|large|huge (or bytes): the main stack a
                                            Windows program reserves (1 MB unless it says); Linux uses
                                            the system's, and a thread's is Threads.Start's StackSize
       phi run  <file.phi> [--debug] [--keep-disk] [--memory <MB>] [--cores <n>] [--target <system>] [-- <arguments>]
@@ -287,6 +289,9 @@ static int Execute(string[] args)
                 Phi.Compiler.Host host = TargetOption();
                 int stack = StackOption(host);
                 bool v2 = Flag("--x86-64-v2");
+                bool app = Flag("--app");
+                if (app && host != Phi.Compiler.Host.MacOS)
+                    throw new ArgumentException("--app makes a Mac app (NAME.app): it's for a macOS program (--target macos)");
                 if (v2 && !(host == Phi.Compiler.Host.Linux64 || host == Phi.Compiler.Host.Windows64))
                     throw new ArgumentException("--x86-64-v2 is for a 64-bit program (--target linux64 or windows64)");
                 MemoryOption();
@@ -317,13 +322,15 @@ static int Execute(string[] args)
                 if (host != Phi.Compiler.Host.PhiOS)
                 {
                     if (debug && !Phi.Compiler.Hosts.IsWindows(host)) Console.Error.WriteLine("warning: --debug makes a .pdb, for Windows; a Linux program has no debug information yet");
-                    BuildResult hosted = Builder.Build(file, outDir, host: host, debug: debug, stack: stack, v2: v2);
+                    BuildResult hosted = Builder.Build(file, outDir, host: host, debug: debug, stack: stack, v2: v2, app: app);
                     foreach (string w in hosted.Warnings) Console.Error.WriteLine(w.Contains(": warning:") ? w : "warning: " + w);
                     foreach (string e in hosted.Errors) Console.Error.WriteLine(e.Contains(": error:") ? e : "error: " + e);
                     if (!hosted.Success) return 1;
                     if (command != "run")
                     {
-                        Console.WriteLine($"built the {Phi.Compiler.Hosts.Name(host)} program {Path.GetRelativePath(Environment.CurrentDirectory, hosted.ExecutablePath!)}");
+                        Console.WriteLine(hosted.AppPath != null
+                            ? $"built the Mac app {Path.GetRelativePath(Environment.CurrentDirectory, hosted.AppPath)} (open it, or double-click it in the Finder)"
+                            : $"built the {Phi.Compiler.Hosts.Name(host)} program {Path.GetRelativePath(Environment.CurrentDirectory, hosted.ExecutablePath!)}");
                         return 0;
                     }
                     if (!HostRunner.CanRun(host, out string why)) throw new ArgumentException(why);

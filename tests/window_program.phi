@@ -6,7 +6,7 @@
 # an X server (WSLg has one).
 use gui.app;
 use support.win_window;
-use support.x11_window;
+use support.x11_window; use support.mac_window;
 
 phi.WindowProgram:Program
 {

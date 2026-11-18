@@ -18,6 +18,9 @@ namespace Phi.Cli
         /// <summary>For a program built for another system: the executable (NAME on Linux, NAME.exe on Windows).</summary>
         public string? ExecutablePath { get; set; }
 
+        /// <summary>A macOS program built with --app: its NAME.app.</summary>
+        public string? AppPath { get; set; }
+
         /// <summary>NASM's listing of each unit is saved next to its .asm (as NAME.lst).</summary>
         public bool Listing { get; init; }
         public List<string> Errors { get; } = new();
@@ -67,7 +70,7 @@ namespace Phi.Cli
         /// </param>
         /// <param name="host">The system a program is for: PHI OS, or Linux or Windows (an ordinary executable).</param>
         public static BuildResult Build(string phiFile, string outDir, string appendSource = "", string? kernel = null,
-                                        bool listing = false, Host host = Host.PhiOS, bool debug = false, int stack = 0, bool v2 = false)
+                                        bool listing = false, Host host = Host.PhiOS, bool debug = false, int stack = 0, bool v2 = false, bool app = false)
         {
             string name = Path.GetFileNameWithoutExtension(phiFile);
             Phi.Compiler.CodeGen.X86Generator.MainStack = stack;
@@ -97,6 +100,7 @@ namespace Phi.Cli
                 // (and signs it, which Apple Silicon needs to run it)
                 result.ExecutablePath = Path.Combine(outDir, name);
                 if (!AssembleMacOS(compiled.Units.Single(), outDir, result.ExecutablePath, result)) return result;
+                if (app && !MakeApp(name, outDir, result)) return result;
                 result.IsProgram = true;
                 return result;
             }
@@ -371,6 +375,74 @@ namespace Phi.Cli
         /// link it (libSystem, and the linker's ad-hoc signature). Two steps, so an assembler's
         /// complaint (phi's mistake) and a linker's (a function that isn't anywhere) are told apart.
         /// </summary>
+        /// <summary>
+        /// phi build --target macos --app: the program as a Mac app, NAME.app, which the Finder
+        /// opens with a double click and the Dock shows: NAME.app/Contents/MacOS/NAME (the
+        /// program), Info.plist (what macOS asks of an app: its name, its identifier,
+        /// org.phi.NAME, the program to start), and Resources/; signed as a whole (ad hoc, as the
+        /// linker signs the program alone). result.ExecutablePath is the program inside it.
+        /// </summary>
+        static bool MakeApp(string name, string outDir, BuildResult result)
+        {
+            string bundle = Path.GetFullPath(Path.Combine(outDir, name + ".app"));
+            if (Directory.Exists(bundle)) Directory.Delete(bundle, recursive: true);
+            string contents = Path.Combine(bundle, "Contents");
+            Directory.CreateDirectory(Path.Combine(contents, "MacOS"));
+            Directory.CreateDirectory(Path.Combine(contents, "Resources"));
+            string inside = Path.Combine(contents, "MacOS", name);
+            File.Copy(result.ExecutablePath!, inside);
+            File.SetUnixFileMode(inside, File.GetUnixFileMode(result.ExecutablePath!));
+            string identifier = "org.phi." + new string(name.Select(c => char.IsAsciiLetterOrDigit(c) || c == '-' ? c : '-').ToArray());
+            string Escape(string text) => System.Security.SecurityElement.Escape(text);
+            File.WriteAllText(Path.Combine(contents, "Info.plist"), $"""
+                <?xml version="1.0" encoding="UTF-8"?>
+                <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+                <plist version="1.0">
+                <dict>
+                	<key>CFBundleDevelopmentRegion</key>
+                	<string>en</string>
+                	<key>CFBundleExecutable</key>
+                	<string>{Escape(name)}</string>
+                	<key>CFBundleIdentifier</key>
+                	<string>{Escape(identifier)}</string>
+                	<key>CFBundleInfoDictionaryVersion</key>
+                	<string>6.0</string>
+                	<key>CFBundleName</key>
+                	<string>{Escape(name)}</string>
+                	<key>CFBundlePackageType</key>
+                	<string>APPL</string>
+                	<key>CFBundleShortVersionString</key>
+                	<string>1.0</string>
+                	<key>CFBundleVersion</key>
+                	<string>1</string>
+                	<key>LSMinimumSystemVersion</key>
+                	<string>11.0</string>
+                	<key>NSHighResolutionCapable</key>
+                	<true/>
+                	<key>NSPrincipalClass</key>
+                	<string>NSApplication</string>
+                </dict>
+                </plist>
+
+                """);
+            File.WriteAllText(Path.Combine(contents, "PkgInfo"), "APPL????");
+            var (code, output) = Toolchain.Run("/usr/bin/plutil", new[] { "-lint", Path.Combine(contents, "Info.plist") });
+            if (code != 0)
+            {
+                result.Errors.Add($"the app's Info.plist isn't right (a bug in phi):\n{output}");
+                return false;
+            }
+            (code, output) = Toolchain.Run("/usr/bin/codesign", new[] { "--force", "--sign", "-", bundle });
+            if (code != 0)
+            {
+                result.Errors.Add($"codesign couldn't sign {bundle}:\n{output}");
+                return false;
+            }
+            result.ExecutablePath = inside;
+            result.AppPath = bundle;
+            return true;
+        }
+
         static bool AssembleMacOS(AsmUnit unit, string outDir, string executable, BuildResult result)
         {
             string asmPath = Path.GetFullPath(Path.Combine(outDir, unit.Name + ".s"));

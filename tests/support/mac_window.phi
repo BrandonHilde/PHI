@@ -1,0 +1,179 @@
+# What window_program.phi asks of macOS, to play the part of the user and look at what's
+# shown: events made as AppKit makes them (NSEvent's), put on the program's own queue
+# (postEvent:atStart:), and the pixels its window's view shows (its layer's image). The
+# window stays hidden (HostWindow.visible), so nothing pops up and nothing takes the keys
+# from whoever's at the computer. win_window.phi is the same for Windows.
+
+use 'libobjc.A.dylib' as ObjC;
+use '/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics' as CG;
+use '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation' as CF;
+
+phi.WindowTest:MacOS
+{
+	[Sel: ptr<u8> name: 0;]
+	[end: (ObjC.sel_registerName: name)]
+
+	[Class: ptr<u8> name: 0;]
+	[end: (ObjC.objc_getClass: name)]
+
+	[Text: ptr<u8> text: 0;]
+	[end: (ObjC.Send1: (Class: 'NSString') (Sel: 'stringWithUTF8String:') text)]
+
+	[WindowNumber]
+	[end: (ObjC.SendInt: HostWindow.window (Sel: 'windowNumber') 0)]
+
+	# an event onto the program's queue, as AppKit would put it there
+	[Post: ptr<u8> event: 0;]
+		ptr<u8> app: (ObjC.Send: (Class: 'NSApplication') (Sel: 'sharedApplication'));
+		call ObjC.SendPost: app (Sel: 'postEvent:atStart:') event 0;
+	[end]
+
+	# the Mac's number for a key, and what it types, by Input's (only those the test uses)
+	[KeyCode: int key: 0;]
+		if key is Events.KEY_UP return 126;
+		if key is Events.KEY_DOWN return 125;
+		if key is Events.KEY_LEFT return 123;
+		if key is Events.KEY_RIGHT return 124;
+		if key is Events.KEY_ENTER return 36;
+		if key is Events.KEY_ESCAPE return 53;
+		if key is 'w' return 13;
+		if key is 'a' return 0;
+	[end: 0]
+
+	[Key: int kind: 0; int key: 0;]
+		ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+		u8 typed[2];
+		typed:0 is 0;
+		typed:1 is 0;
+		if key < 128
+			typed:0 is key;
+		;;
+		ptr<u8> text: (Text: addr typed);
+		ptr<u8> event: (ObjC.KeyEvent: (Class: 'NSEvent') (Sel: 'keyEventWithType:location:modifierFlags:timestamp:windowNumber:context:characters:charactersIgnoringModifiers:isARepeat:keyCode:')
+		                 kind 0.0 0.0 0 0.0 (WindowNumber) 0 text text 0 (KeyCode: key));
+		call Post: event;
+		call ObjC.objc_autoreleasePoolPop: pool;
+	[end]
+
+	[TypeChar: int c: 0;]
+		call Key: 10 c;
+	[end]
+
+	[KeyDown: int key: 0;]
+		call Key: 10 key;
+	[end]
+
+	[KeyUp: int key: 0;]
+		call Key: 11 key;
+	[end]
+
+	# a mouse event at x, y in the window's inside (from its top left; AppKit's from the bottom)
+	[Mouse: int kind: 0; int x: 0; int y: 0; int clicks: 0;]
+		ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+		ptr<u8> event: (ObjC.MouseEvent: (Class: 'NSEvent') (Sel: 'mouseEventWithType:location:modifierFlags:timestamp:windowNumber:context:eventNumber:clickCount:pressure:')
+		                 kind x as f64 (HostWindow.client_height - y) as f64 0 0.0 (WindowNumber) 0 0 clicks 1.0);
+		call Post: event;
+		call ObjC.objc_autoreleasePoolPop: pool;
+	[end]
+
+	[MoveTo: int x: 0; int y: 0;]
+		call Mouse: 5 x y 0;
+	[end]
+
+	[LeftDown: int x: 0; int y: 0;]
+		call Mouse: 1 x y 1;
+	[end]
+
+	[LeftUp: int x: 0; int y: 0;]
+		call Mouse: 2 x y 1;
+	[end]
+
+	[LeftDouble: int x: 0; int y: 0;]
+		call Mouse: 1 x y 2;
+	[end]
+
+	[RightDown: int x: 0; int y: 0;]
+		call Mouse: 3 x y 1;
+	[end]
+
+	[RightUp: int x: 0; int y: 0;]
+		call Mouse: 4 x y 1;
+	[end]
+
+	# a notch towards the user: Core Graphics makes the wheel's event, AppKit's is made from it
+	[WheelDown: int x: 0; int y: 0;]
+		ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+		ptr<u8> wheel: (CG.CGEventCreateScrollWheelEvent: 0 1 1 (-1));   # a line, one wheel, down
+		ptr<u8> event: (ObjC.Send1: (Class: 'NSEvent') (Sel: 'eventWithCGEvent:') wheel);
+		call Post: event;
+		call CF.CFRelease: wheel;
+		call ObjC.objc_autoreleasePoolPop: pool;
+	[end]
+
+	# as the close button does: the window's delegate is asked
+	[CloseIt]
+		call ObjC.Send1: HostWindow.window (Sel: 'performClose:') 0;
+	[end]
+
+	# the window's inside, across and down
+	[ClientWidth]
+		f64 frame[4];
+		call ObjC.phi_msg_rect: (ObjC.Send: HostWindow.window (Sel: 'contentView')) (Sel: 'frame') addr frame;
+	[end: frame:2 as int]
+
+	[ClientHeight]
+		f64 frame[4];
+		call ObjC.phi_msg_rect: (ObjC.Send: HostWindow.window (Sel: 'contentView')) (Sel: 'frame') addr frame;
+	[end: frame:3 as int]
+
+	[TitleLength]
+	[end: (ObjC.SendInt: (ObjC.Send: HostWindow.window (Sel: 'title')) (Sel: 'length') 0)]
+
+	# whether the user can change its size
+	[CanResize]
+	[end: ((ObjC.SendInt: HostWindow.window (Sel: 'styleMask') 0) & 8) is not 0]
+
+	# whether a window that's showing still is once it can't be resized (shown see-through and
+	# without taking the keys, and hidden again)
+	[ShownWhenMadeFixed]
+		call ObjC.SendF64Set: HostWindow.window (Sel: 'setAlphaValue:') 0.0;
+		call ObjC.Send: HostWindow.window (Sel: 'orderFrontRegardless');
+		call HostWindow.SetResizable: 0;
+		int shown: (ObjC.SendBool: HostWindow.window (Sel: 'isVisible'));
+		call ObjC.Send1: HostWindow.window (Sel: 'orderOut:') 0;
+		call ObjC.SendF64Set: HostWindow.window (Sel: 'setAlphaValue:') 1.0;
+	[end: shown is not 0]
+
+	# the color shown at x, y (0x00RRGGBB), from the image the window's view shows
+	[PixelAt: int x: 0; int y: 0;]
+		ptr<u8> layer: (ObjC.Send: (ObjC.Send: HostWindow.window (Sel: 'contentView')) (Sel: 'layer'));
+		ptr<u8> image: (ObjC.Send: layer (Sel: 'contents'));
+		if image is 0 return 0xFFFFFFFF as u32;
+		ptr<u8> data: (CG.CGDataProviderCopyData: (CG.CGImageGetDataProvider: image));
+		ptr<u8> bytes: (CF.CFDataGetBytePtr: data);
+		u64 row: (CG.CGImageGetBytesPerRow: image);
+		ptr<u32> pixel: (bytes + (y as u64) * row + (x as u64) * 4) as ptr<u32>;
+		u32 color: pixel:0 & 0xFFFFFF;
+		call CF.CFRelease: data;
+	[end: color]
+}
+
+ObjC.objc_getClass: ptr<u8> name: ptr<u8>;
+ObjC.sel_registerName: ptr<u8> name: ptr<u8>;
+ObjC.objc_autoreleasePoolPush: : ptr<u8>;
+ObjC.objc_autoreleasePoolPop: ptr<u8> pool;
+ObjC.Send = 'objc_msgSend': ptr<u8> object ptr<u8> selector: ptr<u8>;
+ObjC.Send1 = 'objc_msgSend': ptr<u8> object ptr<u8> selector ptr<u8> value: ptr<u8>;
+ObjC.SendInt = 'objc_msgSend': ptr<u8> object ptr<u8> selector i64 value;
+ObjC.SendBool = 'objc_msgSend': ptr<u8> object ptr<u8> selector: u8;
+ObjC.SendF64Set = 'objc_msgSend': ptr<u8> object ptr<u8> selector f64 value;
+ObjC.SendPost = 'objc_msgSend': ptr<u8> object ptr<u8> selector ptr<u8> event i64 first;
+ObjC.KeyEvent = 'objc_msgSend': ptr<u8> object ptr<u8> selector u64 kind f64 x f64 y u64 flags f64 time i64 window ptr<u8> context ptr<u8> characters ptr<u8> plain u8 repeat u16 code: ptr<u8>;
+ObjC.MouseEvent = 'objc_msgSend': ptr<u8> object ptr<u8> selector u64 kind f64 x f64 y u64 flags f64 time i64 window ptr<u8> context i64 number i64 clicks f32 pressure: ptr<u8>;
+ObjC.phi_msg_rect: ptr<u8> object ptr<u8> selector ptr<f64> rect;
+CG.CGEventCreateScrollWheelEvent: ptr<u8> source u32 units u32 count i32 wheel: ptr<u8>;
+CG.CGImageGetDataProvider: ptr<u8> image: ptr<u8>;
+CG.CGDataProviderCopyData: ptr<u8> provider: ptr<u8>;
+CG.CGImageGetBytesPerRow: ptr<u8> image: u64;
+CF.CFDataGetBytePtr: ptr<u8> data: ptr<u8>;
+CF.CFRelease: ptr<u8> object;

@@ -1,0 +1,753 @@
+# A window in a macOS program, in PHI: the calls gui.app makes (OS.SurfaceOpen,
+# SurfacePresent, NextEvent, CopyFont, SetWindowTitle, SetResizable, WindowFocused,
+# IsKeyDown, and the several windows' WindowNew, WindowSelect, WindowClose), answered by
+# AppKit. So a program with a window on PHI OS is a program with a window on macOS,
+# unchanged, as window_windows.phi makes it one on Windows.
+#
+# AppKit is Objective-C: each of its calls is objc_msgSend, given the object, the selector
+# (its method's name) and what the method takes, as C takes them. ObjC.Send and its kin
+# below are that one function, declared once for each shape of call this makes. The
+# program's pixels (Draw's: 0x00RRGGBB, a row at a time from the top) are copied into a
+# CGImage, which becomes what the window's view shows (its layer's contents), stretched to
+# fill it while its size changes. The program takes the window's events itself (NextEvent
+# and Present ask NSApp for what's come), as AppKit's own run loop would, and queues them as
+# gui.surfaces does on PHI OS. Closing a window asks the program (a CLOSE event, from the
+# window's delegate: lib/arm64_macos/appkit.s); Command-Q is one too.
+
+use gui.events;
+use 'libobjc.A.dylib' as ObjC;
+use '/System/Library/Frameworks/AppKit.framework/AppKit' as AppKit;
+use '/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics' as CG;
+use '/System/Library/Frameworks/CoreFoundation.framework/CoreFoundation' as CF;
+use '/System/Library/Frameworks/CoreText.framework/CoreText' as CT;
+
+# what's kept of a window while another's selected
+struct.MacPane
+{
+	bln used;
+	ptr<u8> window;
+	ptr<u32> pixels;
+	int width;
+	int height;
+	int client_width;
+	int client_height;
+	bln sizing;
+	bln resizable;
+	u8 title[256];
+}
+
+phi.HostWindow:MacOS
+{
+	const int MOST_WINDOWS: 8;
+	const int MOST_EVENTS: 256;
+	const int MOST_KEYS: 512;
+
+	const int TITLED: 1;                  # NSWindowStyleMask...
+	const int CLOSABLE: 2;
+	const int MINIATURIZABLE: 4;
+	const int RESIZABLE: 8;
+	const int BUFFERED: 2;                # NSBackingStoreBuffered
+	const int SHIFT: 0x20000;             # NSEventModifierFlag...
+	const int CONTROL: 0x40000;
+	const int OPTION: 0x80000;
+	const int COMMAND: 0x100000;
+	const int BIT_LEFT: 1;
+	const int BIT_RIGHT: 2;
+	const int BIT_MIDDLE: 4;
+
+	MacPane panes[8];                     # each window's, but for the one selected, whose are below
+	int selected: 0;                      # the window whose things the variables below hold
+	bln started: false;                   # NSApp is made, and has finished launching
+	bln shown: false;                     # a window has been shown: the program is an app in the Dock
+
+	ptr<u8> window: 0;
+	ptr<u32> pixels: 0;                   # the program's, once it has shown them
+	int width: 0;                         # how many there are
+	int height: 0;
+	int client_width: 0;                  # the window's inside, as it last was (in points)
+	int client_height: 0;
+	bln sizing: false;                    # the user is dragging its edge
+	bln resizable: true;
+	bln visible: true;                    # (a test's stays hidden: nothing pops up, nothing takes the keys)
+	u8 title[256];
+
+	GuiEvent queue[256];
+	int first: 0;
+	int waiting: 0;
+	bln held[512];                        # the keys held, by Input's numbers
+	int buttons: 0;                       # the mouse's buttons held
+
+	# OS.WindowNew: another window, with nothing in it until it's selected and SurfaceOpen is
+	# called: its number, or -1 if there's no room for one
+	[WindowNew]
+		panes:0.used is true;
+		while int n: 1; n < MOST_WINDOWS; n++;
+			if not panes:n.used
+				panes:n.used is true;
+				panes:n.resizable is true;
+				return n;
+			;;
+		;;
+	[end: -1]
+
+	# OS.WindowSelect: the window the calls for one act on: 1, or 0 if there's no such window
+	[WindowSelect: int n: 0;]
+		if n is not 0 and (n < 0 or n >= MOST_WINDOWS or not panes:n.used) return 0;
+		call Select: n;
+	[end: 1]
+
+	# OS.WindowClose: a window WindowNew made is gone (the first ends with the program)
+	[WindowClose: int n: 0;]
+		if n <= 0 or n >= MOST_WINDOWS or not panes:n.used return 0;
+		int was: selected;
+		if was is n
+			was is 0;
+		;;
+		call Select: n;
+		if window is not 0
+			call ObjC.Send1: window (Sel: 'setDelegate:') 0;
+			call ObjC.Send1: window (Sel: 'orderOut:') 0;
+			call ObjC.Send: window (Sel: 'close');
+			call ObjC.Send: window (Sel: 'release');
+		;;
+		window is 0;
+		pixels is 0;
+		width is 0;
+		height is 0;
+		client_width is 0;
+		client_height is 0;
+		sizing is false;
+		resizable is true;
+		title:0 is 0;
+		panes:n.used is false;
+		call Select: was;
+	[end: 1]
+
+	# the variables hold window n's things from here on, and the last one's are kept
+	[Select: int n: 0;]
+		if n is selected return;
+		call Keep: addr panes:selected;
+		ptr<MacPane> pane: addr panes:n;
+		window is pane.window;
+		pixels is pane.pixels;
+		width is pane.width;
+		height is pane.height;
+		client_width is pane.client_width;
+		client_height is pane.client_height;
+		sizing is pane.sizing;
+		resizable is pane.resizable;
+		while int i: 0; i < 256; i++;
+			title:i is pane.title:i;
+		;;
+		selected is n;
+	[end]
+
+	[Keep: ptr<MacPane> pane: 0;]
+		pane.window is window;
+		pane.pixels is pixels;
+		pane.width is width;
+		pane.height is height;
+		pane.client_width is client_width;
+		pane.client_height is client_height;
+		pane.sizing is sizing;
+		pane.resizable is resizable;
+		while int i: 0; i < 256; i++;
+			pane.title:i is title:i;
+		;;
+	[end]
+
+	# the number of the window AppKit knows by this; what's selected if it's none of them
+	[NumberOf: ptr<u8> from_window: 0;]
+		if from_window is window return selected;
+		while int n: 0; n < MOST_WINDOWS; n++;
+			if panes:n.used and panes:n.window is from_window and n is not selected return n;
+		;;
+	[end: selected]
+
+	# OS.SurfaceOpen: a window showing w x h pixels (or the program's window, at that size):
+	# 1, or 0 if AppKit won't make it
+	[SurfaceOpen: int w: 0; int h: 0;]
+		if w <= 0 or h <= 0 return 0;
+		pixels is 0;                      # (the program frees the ones it had)
+		width is w;
+		height is h;
+		if window is 0 return (Create: w h);
+		if w is not client_width or h is not client_height
+			call Fit: w h;
+		;;
+	[end: 1]
+
+	# OS.SurfacePresent: show pixels now
+	[SurfacePresent: ptr<u8> drawn: 0;]
+		pixels is drawn as ptr<u32>;
+		ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+		call Show;
+		call ObjC.objc_autoreleasePoolPop: pool;
+		call Pump;
+	[end: 1]
+
+	# OS.NextEvent: the next event into event: 1, or 0 if there's none yet
+	[NextEvent: ptr<GuiEvent> event: 0;]
+		call Pump;
+		if waiting is 0 return 0;
+		event:0 is queue:first;
+		first is (first + 1) % MOST_EVENTS;
+		waiting--;
+	[end: 1]
+
+	# OS.SetWindowTitle: what the window is called
+	[SetWindowTitle: ptr<u8> text: 0;]
+		int n: 0;
+		while n < 255 and text:n is not 0
+			title:n is text:n;
+			n++;
+		;;
+		title:n is 0;
+		if window is not 0
+			ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+			call ObjC.Send1: window (Sel: 'setTitle:') (Text: addr title);
+			call ObjC.objc_autoreleasePoolPop: pool;
+		;;
+	[end: 1]
+
+	# OS.SetResizable: whether the user can change the window's size
+	[SetResizable: int yes: 1;]
+		resizable is (yes is not 0);
+		if window is not 0
+			call ObjC.SendInt: window (Sel: 'setStyleMask:') (Style);
+		;;
+	[end: 1]
+
+	# OS.WindowFocused: 1 while the window is in front, getting the keys
+	[WindowFocused]
+		if window is not 0 and (ObjC.SendBool: window (Sel: 'isKeyWindow')) is not 0 return 1;
+	[end: 0]
+
+	# OS.OpenWindow: a program in a window of its own. (Not yet here: it's PHI OS's way of
+	# starting a program, by a path on its disk.)
+	[OpenWindow: ptr<u8> path: 0; ptr<u8> arguments: 0;]
+	[end: -1]
+
+	# OS.IsKeyDown: whether a key is held, for games, by Input's numbers ('w', Events.KEY_UP ...)
+	[IsKeyDown: int key: 0;]
+		call Pump;
+		if key < 0 or key >= MOST_KEYS or not held:key return 0;
+	[end: 1]
+
+	# OS.CopyFont: the font's shapes, 16 rows of 8 pixels each, leftmost in bit 7, for the
+	# characters ASCII prints (the others stay blank): Menlo, the Mac's fixed font, drawn by
+	# Core Text into 8 x 16 pixels without smoothing
+	[CopyFont: ptr<u8> glyphs: 0;]
+		u8 cell[128];                     # a pixel a byte, the top row first
+		ptr<u8> gray: (CG.CGColorSpaceCreateDeviceGray);
+		ptr<u8> context: (CG.CGBitmapContextCreate: addr cell 8 16 8 8 gray 0);
+		ptr<u8> name: (CF.CFStringCreateWithCString: 0 'Menlo-Regular' 0x08000100);   # UTF-8
+		ptr<u8> font: (CT.CTFontCreateWithName: name 13.0 0);
+		if context is 0 or font is 0 return 0;
+		call CG.CGContextSetShouldAntialias: context 0;
+		call CG.CGContextSetGrayFillColor: context 1.0 1.0;
+		while int c: 0; c < 4096; c++;
+			glyphs:c is 0;
+		;;
+		while int c: 33; c < 127; c++;
+			while int i: 0; i < 128; i++;
+				cell:i is 0;
+			;;
+			u16 character: c;
+			u16 glyph: 0;
+			if (CT.CTFontGetGlyphsForCharacters: font addr character addr glyph 1) is not 0
+				f64 origin[2];            # where the glyph's baseline starts, from the bottom left
+				origin:0 is 0.0;
+				origin:1 is 4.0;
+				call CT.CTFontDrawGlyphs: font addr glyph addr origin 1 context;
+				while int r: 0; r < 16; r++;
+					u8 row: 0;
+					while int x: 0; x < 8; x++;
+						if cell:(r * 8 + x) > 127
+							row is row | (0x80 >> x);
+						;;
+					;;
+					glyphs:(c * 16 + r) is row;
+				;;
+			;;
+		;;
+		call CF.CFRelease: font;
+		call CF.CFRelease: name;
+		call CG.CGContextRelease: context;
+		call CG.CGColorSpaceRelease: gray;
+	[end: 1]
+
+	# ---- the window
+
+	[Style]
+		int style: TITLED | CLOSABLE | MINIATURIZABLE;
+		if resizable
+			style is style | RESIZABLE;
+		;;
+	[end: style]
+
+	# NSApp, made and launched the first time
+	[Start]
+		if started return;
+		started is true;
+		int loaded: (AppKit.NSApplicationLoad);
+		call ObjC.Send: (App) (Sel: 'finishLaunching');
+	[end]
+
+	[App]
+	[end: (ObjC.Send: (ObjC.objc_getClass: 'NSApplication') (Sel: 'sharedApplication'))]
+
+	[Sel: ptr<u8> name: 0;]
+	[end: (ObjC.sel_registerName: name)]
+
+	# an NSString of text (autoreleased: inside a pool)
+	[Text: ptr<u8> text: 0;]
+	[end: (ObjC.Send1: (ObjC.objc_getClass: 'NSString') (Sel: 'stringWithUTF8String:') text)]
+
+	[View]
+	[end: (ObjC.Send: window (Sel: 'contentView'))]
+
+	[Create: int w: 0; int h: 0;]
+		call Start;
+		if title:0 is 0
+			call SetWindowTitle: 'PHI';
+		;;
+		ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+		ptr<u8> made: (ObjC.Send: (ObjC.objc_getClass: 'NSWindow') (Sel: 'alloc'));
+		window is (ObjC.InitWindow: made (Sel: 'initWithContentRect:styleMask:backing:defer:') 0.0 0.0 w as f64 h as f64 (Style) BUFFERED 0);
+		if window is 0
+			call ObjC.objc_autoreleasePoolPop: pool;
+			return 0;
+		;;
+		call ObjC.SendInt: window (Sel: 'setReleasedWhenClosed:') 0;
+		call ObjC.Send1: window (Sel: 'setDelegate:') (ObjC.phi_window_delegate);
+		call ObjC.Send1: window (Sel: 'setTitle:') (Text: addr title);
+		call ObjC.SendInt: (View) (Sel: 'setWantsLayer:') 1;
+		client_width is w;
+		client_height is h;
+		if visible
+			if not shown
+				# an app now, in the Dock and the menu bar, in front
+				shown is true;
+				call ObjC.SendInt: (App) (Sel: 'setActivationPolicy:') 0;
+				call ObjC.SendInt: (App) (Sel: 'activateIgnoringOtherApps:') 1;
+			;;
+			call ObjC.Send: window (Sel: 'center');
+			call ObjC.Send1: window (Sel: 'makeKeyAndOrderFront:') 0;
+		;;
+		call ObjC.objc_autoreleasePoolPop: pool;
+		call Pump;
+	[end: 1]
+
+	# the window's inside made w x h (the next Pump sees it, and says so if the program
+	# isn't drawing at that size)
+	[Fit: int w: 0; int h: 0;]
+		call ObjC.SendSize: window (Sel: 'setContentSize:') w as f64 h as f64;
+	[end]
+
+	# the program's pixels, a copy of them, as what the window's view shows
+	[Show]
+		if pixels is 0 or window is 0 return;
+		ptr<u8> data: (CF.CFDataCreate: 0 pixels as ptr<u8> (width * height * 4) as i64);
+		ptr<u8> provider: (CG.CGDataProviderCreateWithCFData: data);
+		ptr<u8> space: (CG.CGColorSpaceCreateDeviceRGB);
+		# 32 bits a pixel, in memory B G R and one unused: little-endian, the unused first
+		ptr<u8> image: (CG.CGImageCreate: width height 8 32 width * 4 space 0x2006 provider 0 0 0);
+		ptr<u8> layer: (ObjC.Send: (View) (Sel: 'layer'));
+		ptr<u8> transaction: (ObjC.objc_getClass: 'CATransaction');
+		call ObjC.Send: transaction (Sel: 'begin');
+		call ObjC.SendInt: transaction (Sel: 'setDisableActions:') 1;
+		call ObjC.Send1: layer (Sel: 'setContents:') image;
+		call ObjC.Send: transaction (Sel: 'commit');
+		call CG.CGImageRelease: image;
+		call CG.CGColorSpaceRelease: space;
+		call CG.CGDataProviderRelease: provider;
+		call CF.CFRelease: data;
+	[end]
+
+	# what AppKit has for the program's windows: each event taken here (and those it should
+	# also see given it), then whether a window was asked to close or changed its size
+	[Pump]
+		if not started return;
+		ptr<u8> pool: (ObjC.objc_autoreleasePoolPush);
+		ptr<u8> app: (App);
+		ptr<u8> mode: (Text: 'kCFRunLoopDefaultMode');
+		ptr<u8> past: (ObjC.Send: (ObjC.objc_getClass: 'NSDate') (Sel: 'distantPast'));
+		u64 all: 0;
+		all is ~all;
+		ptr<u8> event: (ObjC.NextEvent: app (Sel: 'nextEventMatchingMask:untilDate:inMode:dequeue:') all past mode 1);
+		while event is not 0
+			if (Handle: event)
+				call ObjC.Send1: app (Sel: 'sendEvent:') event;
+			;;
+			event is (ObjC.NextEvent: app (Sel: 'nextEventMatchingMask:untilDate:inMode:dequeue:') all past mode 1);
+		;;
+		call ObjC.Send: app (Sel: 'updateWindows');
+		ptr<u8> asked: (ObjC.phi_close_asked);
+		if asked is not 0
+			int was: selected;
+			call Select: (NumberOf: asked);
+			call Add: Events.CLOSE 0 0 0 0 0 0;   # the program ends itself
+			call Select: was;
+		;;
+		int now: selected;
+		while int n: 0; n < MOST_WINDOWS; n++;
+			if n is now or panes:n.used
+				call Select: n;
+				call Measure;
+			;;
+		;;
+		call Select: now;
+		call ObjC.objc_autoreleasePoolPop: pool;
+	[end]
+
+	# the selected window's inside, as it is now: a new size is told the program once the
+	# user has stopped dragging its edge
+	[Measure]
+		if window is 0 return;
+		f64 frame[4];                     # x, y, width, height
+		call ObjC.phi_msg_rect: (View) (Sel: 'frame') addr frame;
+		int w: frame:2 as int;
+		int h: frame:3 as int;
+		bln dragging: (ObjC.SendBool: window (Sel: 'inLiveResize')) is not 0;
+		if w is not client_width or h is not client_height
+			client_width is w;
+			client_height is h;
+			sizing is dragging;
+			if not dragging
+				call Resized;
+			;;
+		;;
+		elif sizing and not dragging
+			sizing is false;
+			call Resized;
+		;;
+	[end]
+
+	# the window's size changed: tell the program, if it isn't already drawing at that size
+	[Resized]
+		if client_width is 0 or client_height is 0 return;
+		if client_width is width and client_height is height return;
+		call Add: Events.RESIZE client_width client_height 0 0 0 0;
+	[end]
+
+	# ---- events
+
+	# an event of AppKit's: true if AppKit should have it too (sendEvent:)
+	[Handle: ptr<u8> event: 0;]
+		int kind: (ObjC.SendInt: event (Sel: 'type') 0);
+		ptr<u8> from: (ObjC.Send: event (Sel: 'window'));
+		int was: selected;
+		if from is not 0
+			call Select: (NumberOf: from);
+		;;
+		bln pass: true;
+		when kind
+			is 10                         # key down
+				pass is (KeyDown: event);
+			;;
+			is 11                         # key up
+				call KeyUp: event;
+				pass is false;
+			;;
+			is 1                          # left button down
+				call Press: event BIT_LEFT;
+			;;
+			is 3                          # right button down
+				call Press: event BIT_RIGHT;
+			;;
+			is 25                         # middle button down
+				call Press: event BIT_MIDDLE;
+			;;
+			is 2
+				call Release: event BIT_LEFT;
+			;;
+			is 4
+				call Release: event BIT_RIGHT;
+			;;
+			is 26
+				call Release: event BIT_MIDDLE;
+			;;
+			is 5 6 7 27                   # moved, or dragged with a button down
+				call Mouse: event 0 0;
+			;;
+			is 22                         # the wheel
+				call Wheel: event;
+			;;
+		;;
+		call Select: was;
+	[end: pass]
+
+	[Add: int kind: 0; int x: 0; int y: 0; int value: 0; int clicks: 0; int wheel: 0; int pressed: 0;]
+		if waiting >= MOST_EVENTS return;     # nobody's taking them: the newest are lost
+		int place: (first + waiting) % MOST_EVENTS;
+		queue:place.kind is kind;
+		queue:place.x is x;
+		queue:place.y is y;
+		queue:place.value is value;
+		queue:place.clicks is clicks;
+		queue:place.wheel is wheel;
+		queue:place.pressed is pressed;
+		queue:place.window is selected;
+		waiting++;
+	[end]
+
+	# the modifiers an event has, as Events' MOD_ bits
+	[Modifiers: ptr<u8> event: 0;]
+		int flags: (ObjC.SendInt: event (Sel: 'modifierFlags') 0);
+		int bits: 0;
+		if (flags & SHIFT) is not 0
+			bits is bits | Events.MOD_SHIFT;
+		;;
+		if (flags & CONTROL) is not 0
+			bits is bits | Events.MOD_CTRL;
+		;;
+		if (flags & OPTION) is not 0
+			bits is bits | Events.MOD_ALT;
+		;;
+	[end: bits]
+
+	# the first character of an NSString (an event's characters), or 0
+	[FirstCharacter: ptr<u8> text: 0;]
+		if text is 0 return 0;
+		ptr<u8> bytes: (ObjC.Send: text (Sel: 'UTF8String'));
+		if bytes is 0 return 0;
+	[end: bytes:0 as int]
+
+	# a key the Mac numbers (an event's keyCode) as Input numbers it: its own number for keys
+	# that type nothing, else the character it types without its modifiers, in lower case; 0
+	# if it has neither
+	[KeyNumber: ptr<u8> event: 0;]
+		int code: (ObjC.SendU16: event (Sel: 'keyCode')) as int;
+		when code
+			is 126
+				return Events.KEY_UP;
+			;;
+			is 125
+				return Events.KEY_DOWN;
+			;;
+			is 123
+				return Events.KEY_LEFT;
+			;;
+			is 124
+				return Events.KEY_RIGHT;
+			;;
+			is 115
+				return Events.KEY_HOME;
+			;;
+			is 119
+				return Events.KEY_END;
+			;;
+			is 117
+				return Events.KEY_DELETE;
+			;;
+			is 116
+				return Events.KEY_PAGEUP;
+			;;
+			is 121
+				return Events.KEY_PAGEDOWN;
+			;;
+			is 114
+				return Events.KEY_INSERT;
+			;;
+			is 51
+				return Events.KEY_BACKSPACE;
+			;;
+			is 48
+				return Events.KEY_TAB;
+			;;
+			is 36 76
+				return Events.KEY_ENTER;
+			;;
+			is 53
+				return Events.KEY_ESCAPE;
+			;;
+			is 122
+				return Events.KEY_F1;
+			;;
+			is 120
+				return Events.KEY_F2;
+			;;
+			is 99
+				return Events.KEY_F3;
+			;;
+			is 118
+				return Events.KEY_F4;
+			;;
+			is 96
+				return Events.KEY_F5;
+			;;
+			is 97
+				return Events.KEY_F6;
+			;;
+			is 98
+				return Events.KEY_F7;
+			;;
+			is 100
+				return Events.KEY_F8;
+			;;
+			is 101
+				return Events.KEY_F9;
+			;;
+			is 109
+				return Events.KEY_F10;
+			;;
+			is 103
+				return Events.KEY_F11;
+			;;
+			is 111
+				return Events.KEY_F12;
+			;;
+		;;
+		int c: (FirstCharacter: (ObjC.Send: event (Sel: 'charactersIgnoringModifiers')));
+		if c >= 65 and c <= 90
+			c is c + 32;
+		;;
+		if c < 32 or c >= 127
+			c is 0;
+		;;
+	[end: c]
+
+	# a key went down: it's held; keys that type nothing are events here, as are Ctrl's and
+	# Option's, and what it types is one too. True only for Command's (AppKit's menus have them),
+	# but Command-Q, which is a CLOSE.
+	[KeyDown: ptr<u8> event: 0;]
+		int key: (KeyNumber: event);
+		int flags: (ObjC.SendInt: event (Sel: 'modifierFlags') 0);
+		if (flags & COMMAND) is not 0
+			if key is 'q'
+				call Add: Events.CLOSE 0 0 0 0 0 0;
+				return false;
+			;;
+			return true;
+		;;
+		if key is 0 return false;
+		if key < MOST_KEYS
+			held:key is true;
+		;;
+		int mods: (Modifiers: event);
+		if key >= 256 or key is 8 or key is 9 or key is 13 or key is 27
+			call Add: Events.KEY 0 0 key | mods 0 0 0;
+			return false;
+		;;
+		if (mods & (Events.MOD_CTRL | Events.MOD_ALT)) is not 0
+			call Add: Events.KEY 0 0 key | mods 0 0 0;
+			return false;
+		;;
+		# what it types (Shift's capital, say)
+		int c: (FirstCharacter: (ObjC.Send: event (Sel: 'characters')));
+		if c >= 32 and c < 127
+			call Add: Events.KEY 0 0 c | (mods & Events.MOD_SHIFT) 0 0 0;
+		;;
+	[end: false]
+
+	[KeyUp: ptr<u8> event: 0;]
+		int key: (KeyNumber: event);
+		if key > 0 and key < MOST_KEYS
+			held:key is false;
+		;;
+	[end]
+
+	# where an event happened, in the window's inside from its top left (AppKit's is from the
+	# bottom left)
+	[Place: ptr<u8> event: 0; ptr<int> x: 0; ptr<int> y: 0;]
+		f64 point[2];
+		call ObjC.phi_msg_point: event (Sel: 'locationInWindow') addr point;
+		x:0 is point:0 as int;
+		y:0 is client_height - (point:1 as int);
+	[end]
+
+	# a button went down (clicks: 1, or 2 for a double click, for the left one)
+	[Press: ptr<u8> event: 0; int button: 0;]
+		buttons is buttons | button;
+		int clicks: 0;
+		if button is BIT_LEFT
+			clicks is (ObjC.SendInt: event (Sel: 'clickCount') 0);
+			if clicks > 2
+				clicks is 2;
+			;;
+		;;
+		call Mouse: event clicks button;
+	[end]
+
+	[Release: ptr<u8> event: 0; int button: 0;]
+		buttons is buttons & ~button;
+		int x: 0;
+		int y: 0;
+		call Place: event addr x addr y;
+		call Add: Events.MOUSE x y buttons 0 0 0;
+	[end]
+
+	# the mouse moved, or a button went down
+	[Mouse: ptr<u8> event: 0; int clicks: 0; int pressed: 0;]
+		int x: 0;
+		int y: 0;
+		call Place: event addr x addr y;
+		# moves come fast: one still waiting is brought up to date, not added to
+		if clicks is 0 and pressed is 0 and waiting > 0
+			int last: (first + waiting - 1) % MOST_EVENTS;
+			if queue:last.kind is Events.MOUSE and queue:last.clicks is 0 and queue:last.pressed is 0 and queue:last.wheel is 0 and queue:last.value is buttons
+				queue:last.x is x;
+				queue:last.y is y;
+				return;
+			;;
+		;;
+		call Add: Events.MOUSE x y buttons clicks 0 pressed;
+	[end]
+
+	# the wheel: a notch down (towards the user) is positive here
+	[Wheel: ptr<u8> event: 0;]
+		f64 turned: (ObjC.SendF64: event (Sel: 'scrollingDeltaY'));
+		int notch: 0;
+		if turned > 0.0
+			notch is -1;
+		;;
+		elif turned < 0.0
+			notch is 1;
+		;;
+		if notch is 0 return;
+		int x: 0;
+		int y: 0;
+		call Place: event addr x addr y;
+		call Add: Events.MOUSE x y buttons 0 notch 0;
+	[end]
+}
+
+# objc_msgSend, for each shape of call (AppKit's methods take what C takes, after the
+# object and the selector: its NSRects, NSSizes and NSPoints as doubles, one after another)
+ObjC.objc_getClass: ptr<u8> name: ptr<u8>;
+ObjC.sel_registerName: ptr<u8> name: ptr<u8>;
+ObjC.objc_autoreleasePoolPush: : ptr<u8>;
+ObjC.objc_autoreleasePoolPop: ptr<u8> pool;
+ObjC.Send = 'objc_msgSend': ptr<u8> object ptr<u8> selector: ptr<u8>;
+ObjC.Send1 = 'objc_msgSend': ptr<u8> object ptr<u8> selector ptr<u8> value: ptr<u8>;
+ObjC.SendInt = 'objc_msgSend': ptr<u8> object ptr<u8> selector i64 value;
+ObjC.SendBool = 'objc_msgSend': ptr<u8> object ptr<u8> selector: u8;
+ObjC.SendU16 = 'objc_msgSend': ptr<u8> object ptr<u8> selector: u16;
+ObjC.SendF64 = 'objc_msgSend': ptr<u8> object ptr<u8> selector: f64;
+ObjC.SendSize = 'objc_msgSend': ptr<u8> object ptr<u8> selector f64 width f64 height;
+ObjC.InitWindow = 'objc_msgSend': ptr<u8> object ptr<u8> selector f64 x f64 y f64 width f64 height i64 style i64 backing i64 defer: ptr<u8>;
+ObjC.NextEvent = 'objc_msgSend': ptr<u8> object ptr<u8> selector u64 mask ptr<u8> until ptr<u8> mode i64 dequeue: ptr<u8>;
+# (lib/arm64_macos/appkit.s's)
+ObjC.phi_msg_point: ptr<u8> object ptr<u8> selector ptr<f64> point;
+ObjC.phi_msg_rect: ptr<u8> object ptr<u8> selector ptr<f64> rect;
+ObjC.phi_window_delegate: : ptr<u8>;
+ObjC.phi_close_asked: : ptr<u8>;
+AppKit.NSApplicationLoad;
+CG.CGColorSpaceCreateDeviceRGB: : ptr<u8>;
+CG.CGColorSpaceCreateDeviceGray: : ptr<u8>;
+CG.CGColorSpaceRelease: ptr<u8> space;
+CG.CGDataProviderCreateWithCFData: ptr<u8> data: ptr<u8>;
+CG.CGDataProviderRelease: ptr<u8> provider;
+CG.CGImageCreate: u64 width u64 height u64 component u64 pixel u64 row ptr<u8> space u32 info ptr<u8> provider ptr<f64> decode u8 interpolate i32 intent: ptr<u8>;
+CG.CGImageRelease: ptr<u8> image;
+CG.CGBitmapContextCreate: ptr<u8> data u64 width u64 height u64 component u64 row ptr<u8> space u32 info: ptr<u8>;
+CG.CGContextRelease: ptr<u8> context;
+CG.CGContextSetShouldAntialias: ptr<u8> context u8 yes;
+CG.CGContextSetGrayFillColor: ptr<u8> context f64 gray f64 alpha;
+CF.CFDataCreate: ptr<u8> allocator ptr<u8> bytes i64 length: ptr<u8>;
+CF.CFRelease: ptr<u8> object;
+CF.CFStringCreateWithCString: ptr<u8> allocator ptr<u8> text u32 encoding: ptr<u8>;
+CT.CTFontCreateWithName: ptr<u8> name f64 size ptr<f64> matrix: ptr<u8>;
+CT.CTFontGetGlyphsForCharacters: ptr<u8> font ptr<u16> characters ptr<u16> glyphs i64 count: u8;
+CT.CTFontDrawGlyphs: ptr<u8> font ptr<u16> glyphs ptr<f64> positions u64 count ptr<u8> context;

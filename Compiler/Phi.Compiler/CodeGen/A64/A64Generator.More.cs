@@ -318,9 +318,10 @@ namespace Phi.Compiler.CodeGen.A64
 
             /// <summary>
             /// Where each of an outside call's values goes, as Apple's arm64 convention has it: whole
-            /// numbers and addresses in x0-x7, floats in d0-d7 (s for an f32), in order; past those,
-            /// and every value of C's variadic part, on the stack at sp, 8 bytes each. The register's
-            /// number, or -1 - the stack slot.
+            /// numbers and addresses in x0-x7, floats in d0-d7 (s for an f32), in order; past those
+            /// on the stack, each at the next place its size divides (a byte, then a half on 2: not
+            /// 8 each, as other AAPCS64 systems have it); and every value of C's variadic part on
+            /// the stack, 8 bytes each. The register's number, or -1 - the byte on the stack.
             /// </summary>
             static List<int> OutsidePlaces(CallI call)
             {
@@ -332,12 +333,35 @@ namespace Phi.Compiler.CodeGen.A64
                     bool f = IsFloatArg(call, k);
                     if (!variadic && f && floats < 8) places.Add(floats++);
                     else if (!variadic && !f && ints < 8) places.Add(ints++);
-                    else places.Add(-1 - stack++);
+                    else
+                    {
+                        int size = variadic ? 8 : StackSize(call, k);
+                        stack = (stack + size - 1) / size * size;
+                        places.Add(-1 - stack);
+                        stack += size;
+                    }
                 }
                 return places;
             }
 
-            static int OutsideStack(CallI call) => OutsidePlaces(call).Count(p => p < 0);
+            /// <summary>The bytes a value takes on the stack, as its kind is kept.</summary>
+            static int StackSize(CallI call, int k) => (k < call.ArgKinds.Count ? call.ArgKinds[k] : MemKind.Q64) switch
+            {
+                MemKind.U8 or MemKind.S8 => 1,
+                MemKind.U16 or MemKind.S16 => 2,
+                MemKind.D32 or MemKind.F32 => 4,
+                _ => 8,
+            };
+
+            /// <summary>The 8-byte slots an outside call's stack values take.</summary>
+            static int OutsideStack(CallI call)
+            {
+                int most = 0;
+                List<int> places = OutsidePlaces(call);
+                for (int k = 0; k < places.Count; k++)
+                    if (places[k] < 0) most = Math.Max(most, -1 - places[k] + 8);
+                return (most + 7) / 8;
+            }
 
             void OutsideCall(CallI call)
             {
@@ -346,11 +370,11 @@ namespace Phi.Compiler.CodeGen.A64
                 for (int k = 0; k < call.Args.Count; k++)
                 {
                     if (places[k] >= 0) continue;
-                    int at = 8 * (-1 - places[k]);
+                    int at = -1 - places[k];
+                    bool variadic = call.VariadicFrom is int from && k >= from;
                     if (IsFloatArg(call, k))
                     {
                         string d = FGet(call.Args[k].Reg!, "d31");
-                        bool variadic = call.VariadicFrom is int from && k >= from;
                         if (call.ArgKinds[k] == MemKind.F32 && !variadic)
                         {
                             E($"fcvt s31, {d}");
@@ -359,7 +383,9 @@ namespace Phi.Compiler.CodeGen.A64
                         else Mem("str", d, "sp", at, 8);     // (a variadic float is a double, as C promotes it)
                         continue;
                     }
-                    Mem("str", GetOp(call.Args[k], "x9", true), "sp", at, 8);
+                    int size = variadic ? 8 : StackSize(call, k);
+                    string r = GetOp(call.Args[k], "x9", size == 8);
+                    Mem(size switch { 1 => "strb", 2 => "strh", _ => "str" }, size == 8 ? r : W(r, false), "sp", at, size);
                 }
                 for (int k = 0; k < call.Args.Count; k++)
                 {
@@ -378,6 +404,8 @@ namespace Phi.Compiler.CodeGen.A64
                     if (kind == MemKind.S8) E($"sxtb w{places[k]}, w{places[k]}");
                     else if (kind == MemKind.S16) E($"sxth w{places[k]}, w{places[k]}");
                 }
+                // (one of the runtime's own, called as C calls it: the program needs its file)
+                if (Library.Provides(A64Generator.Target, call.Label)) g.Need(call.Label);
                 E($"bl {call.Label}");
                 if (call.Dst == null) return;
                 if (call.Result == CallResult.St0)

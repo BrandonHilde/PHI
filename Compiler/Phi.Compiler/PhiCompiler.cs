@@ -561,7 +561,8 @@ namespace Phi.Compiler
             ("HostFiles", new[] { "host.files_linux", "host.files_windows", "host.files_macos" }),
             ("HostNet", new[] { "host.net", "host.net_linux", "host.net_windows", "host.net_macos" }),
             ("HostThreads", new[] { "host.threads", "host.threads_linux", "host.threads_windows", "host.threads_macos" }),
-            ("HostWindow", new[] { "host.files_linux", "host.files_windows", "host.environment_linux", "host.window_windows", "host.window_linux" }),
+            ("HostWindow", new[] { "host.files_linux", "host.files_windows", "host.environment_linux", "host.window_windows", "host.window_linux",
+                                   "host.files_macos", "host.window_macos" }),
             ("HostSound", new[] { "host.time_linux32", "host.time_linux64", "host.time_windows", "host.files_linux", "host.files_windows",
                                   "host.environment_linux", "host.sound", "host.sound_windows", "host.sound_linux" }),
         };
