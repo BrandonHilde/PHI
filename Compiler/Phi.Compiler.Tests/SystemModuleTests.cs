@@ -173,7 +173,7 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         // in a module for another system, or none
-        [InlineData("use 'user32.dll' as User32;\nphi.Raw:Linux\n{\n}\n", Host.Linux, "'user32.dll' is an outside library, used only in a :Windows module for now")]
+        [InlineData("use 'user32.dll' as User32;\nphi.Raw:Linux\n{\n}\n", Host.Linux, "'user32.dll' is an outside library, used only in a :Windows or :MacOS module for now")]
         [InlineData("phi.Win:Windows\n{\n [Beep]\n [end: (User32.MessageBeep: 0)]\n}\n", Host.Windows, "unknown method 'User32.MessageBeep'")]
         // a name that reads as a class's
         [InlineData("use 'user32.dll' as user32;\nphi.Win:Windows\n{\n}\n", Host.Windows, "a library's name reads as a class's does, so it starts with a capital: as User32")]
@@ -192,7 +192,7 @@ namespace Phi.Compiler.Tests
         public void AnOutsideFunctionIsCalledOnlyFromItsModule()
         {
             CompileResult result = Build(Host.Windows, ("main.phi", "use win;\nphi.Test:Program\n{\n log (User32.MessageBeep: 0);\n}\n"), ("win.phi", User32));
-            Assert.Contains("User32.MessageBeep is a function of 'user32.dll', used only from a :Windows module (for now), not from Test (:Program)", Errors(result));
+            Assert.Contains("User32.MessageBeep is a function of 'user32.dll', used only from a :Windows or :MacOS module (for now), not from Test (:Program)", Errors(result));
         }
 
         [Fact]

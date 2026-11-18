@@ -311,6 +311,94 @@ namespace Phi.Compiler.CodeGen.A64
                 E("ret");
             }
 
+            // ---------------------------------------------------------------- outside functions
+
+            static bool IsFloatArg(CallI call, int k) =>
+                k < call.ArgKinds.Count && call.ArgKinds[k] is MemKind.F64 or MemKind.F32 || !call.Args[k].IsImm && call.Args[k].Reg!.Float;
+
+            /// <summary>
+            /// Where each of an outside call's values goes, as Apple's arm64 convention has it: whole
+            /// numbers and addresses in x0-x7, floats in d0-d7 (s for an f32), in order; past those,
+            /// and every value of C's variadic part, on the stack at sp, 8 bytes each. The register's
+            /// number, or -1 - the stack slot.
+            /// </summary>
+            static List<int> OutsidePlaces(CallI call)
+            {
+                var places = new List<int>();
+                int ints = 0, floats = 0, stack = 0;
+                for (int k = 0; k < call.Args.Count; k++)
+                {
+                    bool variadic = call.VariadicFrom is int from && k >= from;
+                    bool f = IsFloatArg(call, k);
+                    if (!variadic && f && floats < 8) places.Add(floats++);
+                    else if (!variadic && !f && ints < 8) places.Add(ints++);
+                    else places.Add(-1 - stack++);
+                }
+                return places;
+            }
+
+            static int OutsideStack(CallI call) => OutsidePlaces(call).Count(p => p < 0);
+
+            void OutsideCall(CallI call)
+            {
+                List<int> places = OutsidePlaces(call);
+                // the stack's first (the registers' values may be in x9-x17, which those use)
+                for (int k = 0; k < call.Args.Count; k++)
+                {
+                    if (places[k] >= 0) continue;
+                    int at = 8 * (-1 - places[k]);
+                    if (IsFloatArg(call, k))
+                    {
+                        string d = FGet(call.Args[k].Reg!, "d31");
+                        bool variadic = call.VariadicFrom is int from && k >= from;
+                        if (call.ArgKinds[k] == MemKind.F32 && !variadic)
+                        {
+                            E($"fcvt s31, {d}");
+                            Mem("str", "s31", "sp", at, 4);
+                        }
+                        else Mem("str", d, "sp", at, 8);     // (a variadic float is a double, as C promotes it)
+                        continue;
+                    }
+                    Mem("str", GetOp(call.Args[k], "x9", true), "sp", at, 8);
+                }
+                for (int k = 0; k < call.Args.Count; k++)
+                {
+                    if (places[k] < 0) continue;
+                    if (IsFloatArg(call, k))
+                    {
+                        string d = FGet(call.Args[k].Reg!, "d31");
+                        if (call.ArgKinds[k] == MemKind.F32) E($"fcvt s{places[k]}, {d}");
+                        else if (d != $"d{places[k]}") E($"fmov d{places[k]}, {d}");
+                        continue;
+                    }
+                    MemKind kind = k < call.ArgKinds.Count ? call.ArgKinds[k] : MemKind.Q64;
+                    bool wide = kind is MemKind.Q64 || !call.Args[k].IsImm && call.Args[k].Reg!.Wide;
+                    Into($"x{places[k]}", call.Args[k], wide);
+                    // (a signed byte or half: C's callee reads it as its 32 bits)
+                    if (kind == MemKind.S8) E($"sxtb w{places[k]}, w{places[k]}");
+                    else if (kind == MemKind.S16) E($"sxth w{places[k]}, w{places[k]}");
+                }
+                E($"bl {call.Label}");
+                if (call.Dst == null) return;
+                if (call.Result == CallResult.St0)
+                {
+                    string ft = FTarget(call.Dst);
+                    if (call.ResultKind == MemKind.F32) E($"fcvt {ft}, s0");
+                    else if (ft != "d0") E($"fmov {ft}, d0");
+                    FPut(call.Dst, ft);
+                    return;
+                }
+                // what a byte or a half gives is its low bits alone
+                switch (call.ResultKind)
+                {
+                    case MemKind.U8: E("uxtb w0, w0"); break;
+                    case MemKind.S8: E("sxtb w0, w0"); break;
+                    case MemKind.U16: E("uxth w0, w0"); break;
+                    case MemKind.S16: E("sxth w0, w0"); break;
+                }
+                Result(call.Dst);
+            }
+
             void VecArgument(Opnd a, int at) =>
                 throw new InvalidOperationException($"{methodLabel}: a vec given to a call, which the ARM code doesn't write yet");
 

@@ -178,6 +178,8 @@ namespace Phi.Compiler.Semantics
                     Description = "program: 1 once a thread of this program has finished, 0 while it runs, -1 if it isn't one" },
             new() { Name = "OS.ThreadClone", Label = "OS_ThreadClone", Parameters = new[] { "frame", "id" }, BufferParameters = new[] { 0, 1 }, Returns = true,
                     Description = "a Linux program: clone, which lib/phi/host/threads_linux.phi can't make itself (the new thread comes back on another stack)" },
+            new() { Name = "OS.ThreadCreate", Label = "OS_ThreadCreate", Parameters = new[] { "frame", "size", "id" }, BufferParameters = new[] { 0, 2 }, Returns = true,
+                    Description = "a macOS program: pthread_create, on a stack of size bytes, starting at its first instructions (lib/phi/host/threads_macos.phi); 0 if it started" },
             new() { Name = "OS.ThreadEntry", Label = "OS_ThreadEntry", Returns = true,
                     Description = "a Windows program: where a new thread starts, for CreateThread (lib/phi/host/threads_windows.phi)" },
             new() { Name = "OS.ThreadFree", Label = "OS_ThreadFree", OnHost = "HostThreads.ThreadFree", Parameters = new[] { "thread" }, Returns = true,

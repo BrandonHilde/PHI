@@ -127,6 +127,21 @@ namespace Phi.Compiler.Syntax
         public List<SysCallParameter> Parameters { get; } = new();
         public TypeRef? Result { get; set; }
 
+        /// <summary>Its name in its library, when that isn't Name (LibC.Write = 'write': ...).</summary>
+        public string? Symbol { get; set; }
+
+        /// <summary>
+        /// The first parameter of C's variadic part (after ... in the declaration: printf's values),
+        /// or null: an ARM program passes those on the stack, as Apple's convention has them.
+        /// </summary>
+        public int? VariadicFrom { get; set; }
+
+        /// <summary>The function's name in its library.</summary>
+        public string CName => Symbol ?? Name;
+
+        /// <summary>What each value is, as the binder resolved them.</summary>
+        public List<Semantics.PhiType> ParameterTypes { get; set; } = new();
+
         /// <summary>As the binder resolved them: the library's file, and what the function gives.</summary>
         public string LibraryPath { get; set; } = "";
         public PhiType? ResultType { get; set; }

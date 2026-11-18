@@ -1,0 +1,11 @@
+# A macOS program's environment, for the host modules that look something up in it: libSystem's
+# getenv, as environment_linux.phi's LinuxEnvironment.Find.
+
+use host.macos;
+
+phi.MacEnvironment:MacOS
+{
+	# what name is set to, or 0 if it isn't
+	[Find: ptr<u8> name: 0;]
+	[end: (LibC.getenv: name)]
+}

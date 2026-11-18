@@ -17,6 +17,9 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>A library's build: the lists its code comes with, which the object file doesn't say.</summary>
         public LibraryUnit? Library { get; init; }
+
+        /// <summary>What the linker is given besides (a macOS program's outside libraries: -lobjc, -framework AppKit).</summary>
+        public List<string> Links { get; init; } = new();
     }
 
     /// <summary>What generating a library leaves besides its assembly (which NASM makes an object file of).</summary>

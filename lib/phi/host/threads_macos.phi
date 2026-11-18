@@ -1,0 +1,35 @@
+# Threads' calls that are macOS's own, for threads.phi: a pthread (pthread_create), on a
+# stack pthread makes it as big as the program's (it has a guard page under it, so a stack
+# that runs out is stopped there); of the memory the program gives it, the top holds its
+# block and what it's to run. OS.ThreadCreate (threads.s) starts it at its first
+# instructions, which make its method 0 in its frame when it has finished.
+
+use 'libSystem.B.dylib' as LibC;
+
+phi.ThreadSystem:MacOS
+{
+	ptr<u8> ids[64];                      # each thread's pthread
+	ptr<ThreadFrame> frames[64];
+
+	# start it, with what's in its frame: false if macOS won't
+	[Begin: int thread: 0; ptr<ThreadFrame> frame: 0; ptr<u8> bottom: 0;]
+		frames:thread is frame;
+		int size: ((frame as u64) - (bottom as u64)) as int;
+		if (OS.ThreadCreate: frame size addr ids:thread) is not 0 return false;
+	[end: true]
+
+	# (read as an atomic step: what the thread did before it finished is seen after it, on an
+	# ARM CPU too, whose plain reads may come early)
+	[Finished: int thread: 0;]
+		ptr<ptr<u8>> work: frames:thread as ptr<ptr<u8>>;
+		bln gone: atomic work:0 is 0 when 0;
+	[end: gone]
+
+	# (it has finished: pthread's own of it goes)
+	[Forget: int thread: 0;]
+		int joined: (LibC.pthread_join: ids:thread 0);
+		ids:thread is 0;
+	[end]
+}
+
+LibC.pthread_join: ptr<u8> thread ptr<u8> result;

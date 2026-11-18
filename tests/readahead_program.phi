@@ -6,7 +6,7 @@ use user.threads;
 use fs.readahead;
 use support.big_file_linux32;
 use support.big_file_linux64;
-use support.big_file_windows;
+use support.big_file_windows; use support.big_file_macos;
 
 phi.ReadAheadProgram:Program
 {

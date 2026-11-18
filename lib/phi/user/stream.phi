@@ -19,11 +19,11 @@
 # A stream is a number here, as a socket is: one that isn't open is refused (-1, false, or 0
 # for a position or a size). Threads may each read their own stream at once; two reading one
 # stream need a lock, as they'd get each other's bytes. What's different on each system is
-# StreamSystem's (lib/phi/host/stream_linux.phi, stream_windows.phi, and stream_phios.phi
+# StreamSystem's (lib/phi/host/stream_linux.phi, stream_windows.phi, stream_macos.phi, and stream_phios.phi
 # here, whose kernel needs use fs.stream_calls, and whose FAT16 files stop at 2 GB).
 
 use host.stream_linux;
-use host.stream_windows;
+use host.stream_windows; use host.stream_macos;
 use user.stream_phios;
 
 phi.Stream:Program

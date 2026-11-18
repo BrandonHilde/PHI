@@ -374,6 +374,22 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   The program's texts are in writable data, as x86's are. 143 tests, all passing;
   `phi fuzz objects` passes on the standard heap (the checking heap waits for M6's outside
   calls: it maps its own pages).
+- **M6**: outside calls. A `:MacOS` module calls libSystem's (or a framework's) functions as
+  a `:Windows` module calls kernel32's: `use 'libSystem.B.dylib' as LibC;` and
+  `LibC.read: int fd ptr<u8> buffer u64 count: i64;`, as C calls them (x0-x7, d0-d7, the
+  rest on the stack); `LibC.Absolute = 'labs': ...;` gives one a PHI name of its own, and
+  `...` starts C's variadic part (on the stack, as Apple's convention has it). i64s, u64s,
+  f64s and f32s go to and from them. Frameworks and other libraries are linked by their
+  names (-framework AppKit, -lobjc). The host modules: `host/macos.phi` (libSystem's
+  functions, stat's and dirent's layouts, measured with clang), `time_macos`, `files_macos`,
+  `environment_macos`, `stream_macos`; `ask`; the checking heap's macOS version.
+- **M7**: threads are pthreads, on a stack of the size asked for, each with a 64 KB spare
+  stack for its faults (`threads.s`; the new built-in OS.ThreadCreate starts one). The
+  memory model: what a program shares between threads it shares through locks, atomic
+  steps and a thread's start and end, which are acquire and release on ARM; plain
+  variables written by one thread and read by another without those aren't promised to
+  be seen in order (a finished thread's work is: `Finished` reads with an atomic step).
+  Each thread test passes 20 times running, without a retry. 163 tests, all passing.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the

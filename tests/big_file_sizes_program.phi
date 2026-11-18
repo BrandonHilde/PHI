@@ -4,7 +4,7 @@
 # BigFile makes each one at once, with no room taken for it.
 use support.big_file_linux32;
 use support.big_file_linux64;
-use support.big_file_windows;
+use support.big_file_windows; use support.big_file_macos;
 
 phi.BigFileSizes:Program
 {

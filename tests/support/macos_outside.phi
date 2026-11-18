@@ -1,0 +1,28 @@
+# The macOS side of macos_outside_program.phi: libSystem's functions, called from a :MacOS module.
+
+use 'libSystem.B.dylib' as LibC;
+
+phi.Mac:MacOS
+{
+	[Show]
+		log 'strlen: ' (LibC.strlen: 'hello, world') '\n';
+		log 'abs: ' (LibC.abs: -42) ' ' (LibC.Absolute: -7) '\n';
+		u8 text[64];
+		int n: (LibC.snprintf: addr text 64 '%d + %d = %ld, %s, %.3f' 2 3 5000000000 'four' 2.5);
+		log 'snprintf: ' n ' ' (addr text as ptr<u8>) '\n';
+		log 'sqrt: ' (LibC.sqrt: 2.0) '\n';
+		log 'floorf: ' (LibC.floorf: 2.75) '\n';
+		log 'atan2: ' (LibC.atan2: 1.0 1.0) '\n';
+		ptr<u8> home: (LibC.getenv: 'PHI_NOT_SET_ANYWHERE');
+		log 'getenv: ' (home is 0) '\n';
+	[end]
+}
+
+LibC.strlen: ptr<u8> text: u64;
+LibC.abs: int n;
+LibC.Absolute = 'labs': i64 n: i64;
+LibC.snprintf: ptr<u8> target u64 room ptr<u8> format ... int a int b i64 c ptr<u8> d f64 e;
+LibC.sqrt: f64 x: f64;
+LibC.floorf: f32 x: f32;
+LibC.atan2: f64 y f64 x: f64;
+LibC.getenv: ptr<u8> name: ptr<u8>;

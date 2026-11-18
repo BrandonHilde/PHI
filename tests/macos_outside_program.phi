@@ -1,0 +1,13 @@
+# A macOS program calling libSystem's functions itself (use '...' as Name; and Name.function: ...;
+# in a :MacOS module): numbers and text to and from C, a function known by another name in PHI
+# (= 'name'), C's variadic part (...) passed as Apple's arm64 convention passes it (on the
+# stack), and floats, f64 and f32. Mac is support/macos_outside.phi's: a :MacOS module is a
+# file of its own.
+
+use support.macos_outside;
+
+phi.MacOutsideProgram:Program
+{
+	call Mac.Show;
+	exit 0;
+}

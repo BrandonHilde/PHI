@@ -62,7 +62,7 @@ namespace Phi.Compiler.CodeGen.A64
         void EmitHeapEntries(System.Text.StringBuilder output)
         {
             // (objects.s calls both, whichever of its routines the program has)
-            if (needed.Overlaps(new[] { "phi_str_room", "phi_grow_store", "phi_array_grow", "phi_text_array_grow" }))
+            if (needed.Overlaps(new[] { "phi_str_room", "phi_grow_store", "phi_array_grow", "phi_text_array_grow", "phi_ask_grows" }))
             {
                 needed.Add("phi_heap_alloc");
                 needed.Add("phi_heap_free");

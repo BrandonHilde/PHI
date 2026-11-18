@@ -1,0 +1,39 @@
+# Time in a macOS program, in PHI: OS.Sleep, OS.GetTicks, OS.Now and OS.Yield are answered
+# here, by libSystem's functions (host/macos.phi), as time_linux64.phi's are by Linux's calls.
+
+use host.macos;
+
+phi.HostTime:MacOS
+{
+	const int MONOTONIC: 6;               # CLOCK_MONOTONIC: a clock that only goes forward
+	int started: (Clock);                 # OS.GetTicks counts from here
+
+	# OS.Sleep: wait this many milliseconds (its time on the stack, so threads sleep at once)
+	[Sleep: int ms: 0;]
+		if ms <= 0 return;
+		i64 wanted[2];                    # seconds, nanoseconds
+		wanted:0 is ms / 1000;
+		wanted:1 is (ms % 1000) * 1000000;
+		int done: (LibC.nanosleep: addr wanted 0);
+	[end]
+
+	# OS.GetTicks: milliseconds since the program started
+	[GetTicks]
+	[end: (Clock) - started]
+
+	# OS.Now: seconds since the start of 1970 (UTC)
+	[Now]
+	[end: (LibC.time: 0) as u32]
+
+	# OS.Yield: let another thread or program have the CPU
+	[Yield]
+		int done: (LibC.sched_yield);
+	[end]
+
+	# the monotonic clock, in milliseconds
+	[Clock]
+		i64 now[2];                       # seconds, nanoseconds
+		int done: (LibC.clock_gettime: MONOTONIC addr now);
+		int ms: (now:0 * 1000 + now:1 / 1000000) as int;
+	[end: ms]
+}

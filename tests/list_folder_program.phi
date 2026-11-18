@@ -5,7 +5,7 @@
 use fs.fileinfo;
 use support.big_file_linux32;
 use support.big_file_linux64;
-use support.big_file_windows;
+use support.big_file_windows; use support.big_file_macos;
 
 phi.ListFolderProgram:Program
 {

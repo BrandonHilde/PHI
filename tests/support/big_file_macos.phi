@@ -1,0 +1,36 @@
+# A file made any size at once, with no room taken for it, for big_file_sizes_program.phi: in a
+# macOS program, in /tmp (APFS holds the gap as nothing), through libSystem. The same BigFile as
+# the other systems'.
+
+use 'libSystem.B.dylib' as LibC;
+
+phi.BigFile:MacOS
+{
+	[Folder]
+	[end: '/tmp/']
+
+	[Pid]
+	[end: (LibC.getpid)]
+
+	# the file at path made (high * 4 GB + low) bytes long
+	[Resize: ptr<u8> path: 0; u32 high: 0; u32 low: 0;]
+		u64 size: high;
+		size is (size << 32) | low;
+	[end: (LibC.truncate: path size as i64) is 0]
+
+	# length bytes of text written (high * 4 GB + low) bytes in
+	[Mark: ptr<u8> path: 0; u32 high: 0; u32 low: 0; ptr<u8> text: 0; u32 length: 0;]
+		u64 where: high;
+		where is (where << 32) | low;
+		int fd: (LibC.open: path 1 0);
+		if fd < 0 return false;
+		i64 wrote: (LibC.pwrite: fd text length where as i64);
+		int closed: (LibC.close: fd);
+	[end: wrote is length]
+}
+
+LibC.getpid;
+LibC.truncate: ptr<u8> path i64 length;
+LibC.open: ptr<u8> path int flags ... int mode;
+LibC.pwrite: int fd ptr<u8> data u64 count i64 where: i64;
+LibC.close: int fd;

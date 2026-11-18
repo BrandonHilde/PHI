@@ -390,7 +390,7 @@ namespace Phi.Cli
                 result.Errors.Add($"clang failed to assemble {asmPath} (this is a bug in phi's ARM code, or in an arm. block):\n{output}");
                 return false;
             }
-            (code, output) = Toolchain.Run(clang, arch.Concat(new[] { objPath, "-o", Path.GetFullPath(executable) }));
+            (code, output) = Toolchain.Run(clang, arch.Concat(new[] { objPath, "-o", Path.GetFullPath(executable) }).Concat(unit.Links));
             if (code != 0)
             {
                 result.Errors.Add($"clang failed to link {objPath}:\n{output}");

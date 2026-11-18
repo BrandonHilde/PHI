@@ -364,13 +364,23 @@ namespace Phi.Compiler.Syntax
         /// What a system call or outside function takes, up to its ';': type name pairs, then
         /// ': type' for what it gives (null when it doesn't say), as a method type's result is.
         /// </summary>
-        TypeRef? ParseOutsideParameters(string what, List<SysCallParameter> parameters)
+        TypeRef? ParseOutsideParameters(string what, List<SysCallParameter> parameters, OutsideFunctionDecl? outside = null)
         {
             TypeRef? result = null;
             while (!At(TokenKind.Semicolon))
             {
                 if (AtEnd || Current.StartsLine)
                     throw Error(new Span(Previous.Span.End, 0), $"expected ';' to end {what}");
+                // ... : what follows is C's variadic part (printf's values), passed as C passes those
+                if (outside != null && At(TokenKind.Dot) && PeekToken(1).Kind == TokenKind.Dot && PeekToken(2).Kind == TokenKind.Dot)
+                {
+                    Advance();
+                    Advance();
+                    Advance();
+                    if (outside.VariadicFrom != null) throw Error(Previous.Span, $"{what} has '...' once, before its variadic part");
+                    outside.VariadicFrom = parameters.Count;
+                    continue;
+                }
                 if (Accept(TokenKind.Colon))
                 {
                     result = ParseType();
@@ -410,10 +420,16 @@ namespace Phi.Compiler.Syntax
             Advance(); // .
             Token name = ExpectIdentifier($"the name of a function in {library.Text}");
             var decl = new OutsideFunctionDecl { File = file, Library = library.Text, Name = name.Text, Span = start.Span.To(name.Span) };
+            // LibC.Write = 'write': ...;  the function's own name in its library, when PHI's is another
+            if (Accept(TokenKind.Equals))
+            {
+                if (!At(TokenKind.String)) throw Error(Current.Span, $"expected the function's name in {library.Text}, in quotes: {library.Text}.{name.Text} = 'name': ...;");
+                decl.Symbol = (string)Advance().Value!;
+            }
             // with nothing to take or give, just its name and ';'
             if (Accept(TokenKind.Semicolon)) return decl;
             Expect(TokenKind.Colon, $"':' and what {library.Text}.{name.Text} takes, or ';'");
-            decl.Result = ParseOutsideParameters($"{library.Text}.{name.Text}", decl.Parameters);
+            decl.Result = ParseOutsideParameters($"{library.Text}.{name.Text}", decl.Parameters, decl);
             return decl;
         }
 

@@ -1357,6 +1357,44 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case AskStmt ask when arm && ask.Target.Symbol is VariableSymbol { TextRef: false } asked:
+                {
+                    // a line of input into a str (the runtime's phi_ask: up to its room; one that
+                    // grows, phi_ask_grows: up to 255 characters), as the generator's AskStmt
+                    Mark(ask);
+                    string? place = growingTexts.TryGetValue(asked, out string? slot) ? slot
+                        : frameTexts.ContainsKey(asked) ? TextPlace(asked)
+                        : !Ours(asked) ? AnyGlobal(asked) : null;
+                    Need(place != null && asked.Type.IsString && !asked.Type.IsArray, "ask into what it doesn't take");
+                    VReg where = fn.NewAddress();
+                    Emit(new AddrI { Dst = where, Label = place! });
+                    var read = new CallI { Label = asked.Grows ? "phi_ask_grows" : "phi_ask", Routine = true, Result = CallResult.None };
+                    read.Args.Add(where);
+                    read.ArgKinds.Add(Ptr);
+                    if (!asked.Grows)
+                    {
+                        read.Args.Add(Opnd.Const(asked.Capacity - 1));
+                        read.ArgKinds.Add(Ptr);
+                    }
+                    Emit(read);
+                    return;
+                }
+
+                case CallStmt { Resolved: OutsideFunctionDecl outside } ocall when arm:
+                {
+                    Mark(ocall);
+                    if (ocall.ResultTarget == null)
+                    {
+                        OutsideCall(outside, ocall.Arguments, wantResult: false);
+                        return;
+                    }
+                    // (call x is Lib.F: ...;  as x is (Lib.F: ...); is)
+                    var given = new CallExpr { Callee = ocall.Callee, Resolved = outside, Type = outside.ResultType ?? PhiType.Int, Span = ocall.Span };
+                    given.Arguments.AddRange(ocall.Arguments);
+                    Statement(new AssignStmt { Target = ocall.ResultTarget, Op = AssignOp.Set, Value = given, Span = ocall.Span });
+                    return;
+                }
+
                 case CallStmt { Resolved: PointerCall through } pcall:
                 {
                     Mark(pcall);
@@ -2747,11 +2785,42 @@ namespace Phi.Compiler.CodeGen.Ir
             return call.Dst;
         }
 
+        /// <summary>
+        /// A function of an outside library, for ARM (CodeGen/A64 calls it as C does): each value as
+        /// the binder made it the parameter's type, worked out first to last.
+        /// </summary>
+        VReg? OutsideCall(OutsideFunctionDecl f, List<Expr> arguments, bool wantResult)
+        {
+            PhiType result = f.ResultType ?? PhiType.Int;
+            var call = new CallI
+            {
+                Label = "_" + f.CName,
+                Outside = true,
+                VariadicFrom = f.VariadicFrom,
+                Dst = wantResult ? New(result) : null,
+                Result = IsF(result) ? CallResult.St0 : Is64(result) ? CallResult.Rax : CallResult.Eax,
+                ResultKind = KindOf(result),
+            };
+            for (int i = 0; i < arguments.Count; i++)
+            {
+                Expr a = arguments[i];
+                PhiType t = Real(a);
+                Need(Supported(t) && !t.IsVec && !t.IsObject || a.Type.IsString, $"{f.Library}.{f.Name} given {A(t)}");
+                // (as the declaration says: an f32's value goes as an f32, a number to an i64 whole)
+                PhiType to = a.Type.IsString ? PhiType.PointerTo(PhiType.U8) : i < f.ParameterTypes.Count ? f.ParameterTypes[i] : a.Type;
+                call.Args.Add(a.Type.IsString ? TextValue(a) : Small(Value(a, to), Is64(to)));
+                call.ArgKinds.Add(a.Type.IsString ? Ptr : KindOf(to));
+            }
+            Emit(call);
+            return call.Dst;
+        }
+
         Opnd CallValue(CallExpr call)
         {
             if (call.Resolved is SysCallDecl sys) return SystemCall(sys, call.Arguments, wantResult: true)!;
             if (call.Resolved is VecMethod vm) return VecCall(call, vm);
             if (call.Resolved is BuiltinFunction builtin) return CallBuiltin(builtin, call.Arguments, wantResult: true)!;
+            if (arm && call.Resolved is OutsideFunctionDecl outside) return OutsideCall(outside, call.Arguments, wantResult: true)!;
             if (call.Resolved is PointerCall through) return CallThrough(through, call.Arguments, wantResult: true)!;
             // (a struct's method has the struct it's called on among its arguments already: self)
             Need(call.Resolved is MethodSymbol m && (call.CalleeTarget == null || m.Decl.Owner.ForStruct != null), "a call of a built-in or a method value");

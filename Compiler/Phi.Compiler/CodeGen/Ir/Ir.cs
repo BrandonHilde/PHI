@@ -635,6 +635,16 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>A routine of the library's (a built-in's), which the program must be given: Label is its name.</summary>
         public bool Routine { get; init; }
 
+        /// <summary>
+        /// A function of an outside library (ARM's: libSystem's, a framework's), called as C calls
+        /// it, in place of PHI's way: Label is its symbol; the values from VariadicFrom on are
+        /// C's variadic part; ResultKind is how what it gives is kept (a byte's or a half's upper bits
+        /// aren't its own).
+        /// </summary>
+        public bool Outside { get; init; }
+        public int? VariadicFrom { get; init; }
+        public MemKind ResultKind { get; init; } = MemKind.D32;
+
         /// <summary>A call through a method value: the address it holds (worked out after the arguments, as the generator does), in place of Label.</summary>
         public VReg? Target { get; init; }
         public List<Opnd> Args { get; } = new();

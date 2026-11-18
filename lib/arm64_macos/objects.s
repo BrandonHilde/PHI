@@ -1,5 +1,5 @@
-; provides: phi_str_room phi_grow_store phi_array_grow phi_text_array_grow
-; requires: phi_out_of_memory phi_strlen phi_strcpy phi_strcpy_n phi_int_to_str phi_uint_to_str phi_copy_bytes
+; provides: phi_str_room phi_grow_store phi_array_grow phi_text_array_grow phi_ask_grows
+; requires: phi_out_of_memory phi_strlen phi_read_line phi_strcpy phi_strcpy_n phi_int_to_str phi_uint_to_str phi_copy_bytes
 ;
 ; What PHI allocates itself, for macOS programs, as the x86 generator's routines have it
 ; (X86Generator: EmitStrRoomRoutine, EmitGrowStoreAt, EmitArrayGrowRoutine,
@@ -279,6 +279,28 @@ Lobj_text_moved:
 	ldp x19, x20, [sp, #16]
 	ldp x21, x22, [sp, #32]
 	ldp x29, x30, [sp], #48
+	ret
+
+; ask into a str that grows ([sp] = its slot): room for a line of up to 255 characters first
+phi_ask_grows:
+	ldr x9, [sp]
+	stp x29, x30, [sp, #-32]!
+	mov x29, sp
+	str x19, [sp, #16]
+	mov x0, x9
+	add x1, x9, #8
+	mov w2, #256
+	bl phi_str_room
+	mov x19, x2                 ; its old text, freed after
+	sub w1, w1, #1
+	bl phi_read_line
+	cbz x19, 1f
+	sub sp, sp, #16
+	str x19, [sp]
+	bl phi_heap_free
+	add sp, sp, #16
+1:	ldr x19, [sp, #16]
+	ldp x29, x30, [sp], #32
 	ret
 
 	.section __DATA,__data

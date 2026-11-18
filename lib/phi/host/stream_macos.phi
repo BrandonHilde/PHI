@@ -1,0 +1,31 @@
+# Streams' calls that are macOS's own, for user.stream: a file descriptor, through libSystem
+# (host/macos.phi), as stream_linux.phi's are through Linux's system calls.
+
+use host.macos;
+
+phi.StreamSystem:MacOS
+{
+	const int READ_ONLY: 0;
+
+	# the file to read, or -1
+	[Open: ptr<u8> path: 0;]
+		int fd: (LibC.open: path READ_ONLY 0);
+		if fd < 0 return (-1) as ptr<u8>;
+	[end: fd as ptr<u8>]
+
+	# its size, into size; false if it isn't a regular file
+	[SizeOf: ptr<u8> file: 0; ptr<u64> size: 0;]
+	[end: (MacLayout.SizeOf: file as int size)]
+
+	[Read: ptr<u8> file: 0; ptr<u8> to: 0; u32 max: 0;]
+		i64 got: (LibC.read: file as int to max);
+		if got < 0 return -1;
+	[end: got as int]
+
+	[Seek: ptr<u8> file: 0; u64 position: 0;]
+	[end: (LibC.lseek: file as int position as i64 0) is position as i64]
+
+	[Close: ptr<u8> file: 0;]
+		int closed: (LibC.close: file as int);
+	[end]
+}

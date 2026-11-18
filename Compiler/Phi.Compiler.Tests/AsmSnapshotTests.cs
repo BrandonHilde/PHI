@@ -62,14 +62,20 @@ namespace Phi.Compiler.Tests
                 }
             }
 
+            // PHI_ASM_SNAPSHOT_DUMP=DIR (with PHI_ASM_SNAPSHOT_ONLY=TEXT, the builds whose names have it):
+            // each build's text in DIR, to see what a difference is
+            string? dump = Environment.GetEnvironmentVariable("PHI_ASM_SNAPSHOT_DUMP");
+            string? only = Environment.GetEnvironmentVariable("PHI_ASM_SNAPSHOT_ONLY");
+            if (!string.IsNullOrEmpty(only)) builds = builds.Where(b => b.Name.Contains(only)).ToList();
             var hashes = new ConcurrentDictionary<string, string>();
             Parallel.ForEach(builds, new ParallelOptions { MaxDegreeOfParallelism = Environment.ProcessorCount }, b =>
             {
                 // (the settings a build reads are per thread: set each for this one)
                 X86Generator.X8664V2 = b.V2;
                 X86Generator.MainStack = 0;
-                hashes[b.Name] = Hash(b.Source, b.Wrapper, b.Host, root);
+                hashes[b.Name] = Hash(b.Source, b.Wrapper, b.Host, root, dump == null ? null : Path.Combine(dump, b.Name.Replace('/', '_').Replace(' ', '.') + ".txt"));
             });
+            if (!string.IsNullOrEmpty(only)) return;
 
             var lines = hashes.OrderBy(h => h.Key, StringComparer.Ordinal).Select(h => $"{h.Key}\t{h.Value}").ToList();
             if (record)
@@ -87,7 +93,7 @@ namespace Phi.Compiler.Tests
         }
 
         /// <summary>A build's NASM text, or its errors, hashed.</summary>
-        static string Hash(string source, string wrapper, Host host, string root)
+        static string Hash(string source, string wrapper, Host host, string root, string? dumpTo = null)
         {
             string text, kind = "built";
             try
@@ -111,6 +117,11 @@ namespace Phi.Compiler.Tests
             // (a file reached from another folder is named by its whole path, in a comment: the
             // checkout's own folder is taken out, so two checkouts' code compares)
             text = text.Replace(root, "<root>");
+            if (dumpTo != null)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(dumpTo)!);
+                File.WriteAllText(dumpTo, text);
+            }
             return kind + " " + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
         }
 

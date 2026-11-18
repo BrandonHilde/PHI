@@ -1,0 +1,59 @@
+# macOS's own, for the host modules that are macOS's (time_macos.phi, files_macos.phi, ...):
+# the functions of libSystem they call (macOS has no system calls a program may make itself:
+# their numbers change from release to release), and what macOS lays out its own way.
+# Measured with clang's offsetof on macOS 13 (arm64); Apple keeps them for 64-bit programs.
+
+use 'libSystem.B.dylib' as LibC;
+
+phi.MacLayout:MacOS
+{
+	const int STAT_SIZE: 144;             # a struct stat: its mode (u16) at 4, its size at 96,
+	const int STAT_MODE: 4;               # when it was last written (seconds) at 48
+	const int STAT_FILE_SIZE: 96;
+	const int STAT_WRITTEN: 48;
+
+	# what's at path: its mode, or -1 if there's nothing; its size and when it was last written
+	# (seconds since 1970) into what's given
+	[StatOf: ptr<u8> path: 0; ptr<u64> size: 0; ptr<u32> seconds: 0;]
+		u8 info[144];
+		if (LibC.stat: path addr info) is not 0 return -1;
+		ptr<u64> wide: addr info;
+		size:0 is wide:12;
+		seconds:0 is wide:6 as u32;
+		ptr<u16> half: addr info;
+	[end: half:2 as int]
+
+	# an open file's size, into size; false if it isn't a regular file
+	[SizeOf: int fd: 0; ptr<u64> size: 0;]
+		u8 info[144];
+		if (LibC.fstat: fd addr info) is not 0 return false;
+		ptr<u16> half: addr info;
+		if (half:2 & 0xF000) is not 0x8000 return false;
+		ptr<u64> wide: addr info;
+		size:0 is wide:12;
+	[end: true]
+}
+
+LibC.open: ptr<u8> path int flags ... int mode;
+LibC.read: int fd ptr<u8> buffer u64 count: i64;
+LibC.write: int fd ptr<u8> data u64 count: i64;
+LibC.close: int fd;
+LibC.lseek: int fd i64 offset int whence: i64;
+LibC.stat: ptr<u8> path ptr<u8> info;
+LibC.fstat: int fd ptr<u8> info;
+LibC.unlink: ptr<u8> path;
+LibC.mkdir: ptr<u8> path u32 mode;
+LibC.rmdir: ptr<u8> path;
+LibC.rename: ptr<u8> from ptr<u8> to;
+LibC.opendir: ptr<u8> path: ptr<u8>;
+LibC.readdir: ptr<u8> folder: ptr<u8>;
+LibC.closedir: ptr<u8> folder;
+LibC.getenv: ptr<u8> name: ptr<u8>;
+LibC.nanosleep: ptr<i64> wanted ptr<i64> left;
+LibC.clock_gettime: int clock ptr<i64> now;
+LibC.time: ptr<u64> seconds: i64;
+LibC.sched_yield;
+LibC.getpid;
+LibC.mmap: ptr<u8> place u64 size int protection int flags int fd i64 offset: ptr<u8>;
+LibC.mprotect: ptr<u8> start u64 length int how;
+LibC.madvise: ptr<u8> start u64 length int advice;

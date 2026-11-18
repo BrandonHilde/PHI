@@ -1,4 +1,4 @@
-; provides: phi_exit phi_argc phi_argv phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen phi_read_line
+; provides: phi_exit phi_argc phi_argv phi_read_byte OS_ReadKey Bootloader_WaitForKeyPress phi_read_char OS_KeyAvailable OS_CurrentTask OS_Arguments OS_Grow OS_FreeMemory OS_TotalMemory OS_ClearScreen phi_read_line phi_ask
 ; requires: phi_flush phi_write_all
 ; init: phi_macos_start
 ;
@@ -6,9 +6,9 @@
 ; it: answered by libSystem (macOS has no system calls a program may make itself; their
 ; numbers change from release to release).
 ;
-; The OS_ routines are built-ins a PHI method calls: their arguments are on the stack as
-; PHI's methods give them, the last at [sp], 8 bytes each, and what they give back is in
-; x0. Like every routine here they keep x19-x29 (and x28, the thread's block, never changes).
+; The OS_ routines are built-ins a PHI method calls: their arguments are on the stack, 8
+; bytes each, the first at [sp] (the other way round from a method's), and what they give
+; back is in x0. Like every routine here they keep x19-x29 (and x28, the thread's block, never changes).
 	.section __TEXT,__text,regular,pure_instructions
 	.p2align 2
 
@@ -243,6 +243,13 @@ OS_ClearScreen:
 	bl phi_write_all
 	ldp x29, x30, [sp], #16
 	ret
+
+; ask: a line of input into a str (PHI's call: [sp + 8] = where its text goes, [sp] = the most
+; characters it keeps)
+phi_ask:
+	ldr x0, [sp, #8]
+	ldr w1, [sp]
+	b phi_read_line
 
 ; x0 = where a line of standard input goes (the `ask` statement), w1 = the most characters to
 ; keep; the rest of a longer line is skipped. A line ends at a newline (a carriage return

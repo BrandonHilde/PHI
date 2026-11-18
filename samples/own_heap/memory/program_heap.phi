@@ -5,7 +5,7 @@
 # after free, stops at that line as an error that can be caught. It takes at least two pages for
 # each block, and never uses their addresses again, so it's not for everyday use.
 #
-# A program takes the one for its system: Windows, or Linux in 32 or 64 bits.
+# A program takes the one for its system: Windows, Linux in 32 or 64 bits, or macOS.
 #
 # To look for such bugs in a project's tests, put this folder beside them for a run:
 #
@@ -17,4 +17,4 @@
 # the standard heap's: its limit, and what it keeps waiting.)
 use memory.checking_windows;
 use memory.checking_linux32;
-use memory.checking_linux64;
+use memory.checking_linux64; use memory.checking_macos;

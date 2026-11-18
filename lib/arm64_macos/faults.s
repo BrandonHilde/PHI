@@ -1,5 +1,5 @@
 ; provides: phi_fault_register
-; requires: phi_fault_entry
+; requires: phi_fault_entry phi_main_thread
 ; init: phi_fault_register
 ;
 ; A program the CPU stops (an empty object or a null pointer used, memory that isn't there,
@@ -22,6 +22,13 @@ phi_fault_register:
 	add x0, sp, #16
 	mov x1, #0
 	bl _sigaltstack
+	; (the first thread's block says where its spare stack's top is, as each thread's does)
+	adrp x9, phi_main_thread@PAGE
+	add x9, x9, phi_main_thread@PAGEOFF
+	adrp x10, phi_fault_spare@PAGE
+	add x10, x10, phi_fault_spare@PAGEOFF
+	add x10, x10, #16, lsl #12
+	str x10, [x9, #1016]
 	; sigaction(signal, &{ handler, mask 0, SA_SIGINFO | SA_ONSTACK }, 0) for each
 	adrp x9, Lfault_handler@PAGE
 	add x9, x9, Lfault_handler@PAGEOFF
@@ -79,9 +86,12 @@ Lfault_stack:
 	add x14, x12, #4, lsl #12
 	cmp x9, x14
 	b.hs Lfault_send
-	adrp x14, phi_fault_spare@PAGE
-	add x14, x14, phi_fault_spare@PAGEOFF
-	add x15, x14, #16, lsl #12
+	; the thread's spare stack: its block (the stopped code's x28, at 240 in the context) says
+	; where its top is (+1016), 64 KB above its bottom
+	ldr x15, [x10, #240]
+	ldr x15, [x15, #1016]
+	cbz x15, Lfault_again
+	sub x14, x15, #16, lsl #12
 	cmp x12, x14
 	b.lo Lfault_to_spare
 	cmp x12, x15

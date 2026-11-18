@@ -392,6 +392,7 @@ namespace Phi.Compiler.Semantics
                 f.LibraryPath = library.Path;
                 var types = f.Parameters.Select(p => ResolveType(p.Type, null, allowStr: false)).ToList();
                 outsideTypes[f] = types;
+                f.ParameterTypes = types;
                 f.ResultType = f.Result != null ? ResolveType(f.Result, null, allowStr: false) : PhiType.Int;
                 for (int i = 0; i < types.Count; i++)
                     if (OutsideTypeProblem(types[i]) is string problem) Error(f.Parameters[i].Span, $"{full}'s '{f.Parameters[i].Name}' is {problem}");
@@ -5151,9 +5152,9 @@ namespace Phi.Compiler.Semantics
                 case OutsideFunctionDecl f:
                 {
                     string full = $"{f.Library}.{f.Name}";
-                    if (scope.Class.Base != "Windows")
+                    if (!OutsideSystems.Contains(scope.Class.Base))
                     {
-                        Error(calleeSpan, $"{full} is a function of '{f.LibraryPath}', used only from a :Windows module (for now), " +
+                        Error(calleeSpan, $"{full} is a function of '{f.LibraryPath}', used only from a :Windows or :MacOS module (for now), " +
                                           $"not from {scope.Class.Name} (:{scope.Class.Base})");
                         return null;
                     }
@@ -5271,21 +5272,24 @@ namespace Phi.Compiler.Semantics
                     Error(sys.Span, $"{system} has no system calls a program makes itself, so sys.{sys.Name} can't be in a :{system} module");
             }
 
-            foreach (LibraryUseDecl library in program.Libraries.Where(l => !systemOf.TryGetValue(l.File, out string? s) || s != "Windows"))
+            foreach (LibraryUseDecl library in program.Libraries.Where(l => !systemOf.TryGetValue(l.File, out string? s) || !OutsideSystems.Contains(s)))
             {
                 file = library.File;
-                Error(library.Span, $"'{library.Path}' is an outside library, used only in a :Windows module for now " +
-                                    "(phi.Name:Windows; Linux's and macOS's libraries come with H7)");
+                Error(library.Span, $"'{library.Path}' is an outside library, used only in a :Windows or :MacOS module for now " +
+                                    "(phi.Name:Windows, phi.Name:MacOS; Linux's libraries come with H7)");
             }
 
             program.Classes.RemoveAll(c => !Kept(c.File));
             program.Structs.RemoveAll(s => !Kept(s.File));
             program.Enums.RemoveAll(e => !Kept(e.File));
-            program.Libraries.RemoveAll(l => !Kept(l.File) || !systemOf.TryGetValue(l.File, out string? s) || s != "Windows");
-            program.OutsideFunctions.RemoveAll(f => !Kept(f.File) || !systemOf.TryGetValue(f.File, out string? s) || s != "Windows");
+            program.Libraries.RemoveAll(l => !Kept(l.File) || !systemOf.TryGetValue(l.File, out string? s) || !OutsideSystems.Contains(s));
+            program.OutsideFunctions.RemoveAll(f => !Kept(f.File) || !systemOf.TryGetValue(f.File, out string? s) || !OutsideSystems.Contains(s));
             program.RawBlocks.RemoveAll(r => !Kept(r.File));
             program.SysCalls.RemoveAll(s => !Kept(s.File) || !systemOf.TryGetValue(s.File, out string? system) || !CallingSystems.Contains(system));
         }
+
+        /// <summary>The systems whose modules call outside libraries' functions (use '...' as Name;).</summary>
+        static readonly string[] OutsideSystems = { "Windows", "MacOS" };
 
         /// <summary>What a system call or outside function takes and gives, by type alone: 'int ptr<u8> u32: ptr<u8>'.</summary>
         static string Shape(List<SysCallParameter> parameters, TypeRef? result) =>
@@ -5297,8 +5301,8 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         string? OutsideTypeProblem(PhiType t)
         {
-            if (t.IsFloat) return $"a {t}, and floats to and from outside functions aren't there yet";
-            if (!t.IsNumeric || t.IsArray) return $"a {t}, but an outside function takes and gives only numbers, bln, chr, enums and pointers";
+            if (t.IsFloat && !(host.IsArm() && t.Kind is TypeKind.F64 or TypeKind.F32)) return $"a {t}, and floats to and from outside functions aren't there yet";
+            if (!(t.IsNumeric || host.IsArm() && (t.IsWide || t.IsFloat)) || t.IsArray) return $"a {t}, but an outside function takes and gives only numbers, bln, chr, enums and pointers";
             if (!host.Is64() && !t.IsPointer && t.ElementSize == 8) return $"a {t}, and 64-bit numbers to and from a 32-bit program's outside functions aren't there yet";
             return null;
         }

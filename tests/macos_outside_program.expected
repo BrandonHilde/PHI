@@ -1,0 +1,7 @@
+strlen: 12
+abs: 42 7
+snprintf: 31 2 + 3 = 5000000000, four, 2.500
+sqrt: 1.414214
+floorf: 2
+atan2: 0.785398
+getenv: 1

@@ -54,8 +54,31 @@ namespace Phi.Compiler.CodeGen.A64
 
         public static AsmUnit Generate(BoundProgram program, BoundUnit unit, DiagnosticBag diagnostics)
         {
-            string text = new A64Generator(program, unit, diagnostics).Build();
-            return new AsmUnit { Kind = unit.Kind, Name = "program", Text = text };
+            var generator = new A64Generator(program, unit, diagnostics);
+            string text = generator.Build();
+            return new AsmUnit { Kind = unit.Kind, Name = "program", Text = text, Links = generator.Links() };
+        }
+
+        /// <summary>
+        /// The linker's arguments for the outside libraries the program calls: a framework
+        /// ('AppKit.framework', or its path) is -framework, a library ('libobjc.A.dylib') -l;
+        /// libSystem is every program's already.
+        /// </summary>
+        List<string> Links()
+        {
+            var links = new List<string>();
+            foreach (string path in unit.OutsideFunctions.Select(f => f.LibraryPath).Distinct())
+            {
+                string name = Path.GetFileName(path);
+                var framework = Regex.Match(path, @"([^/]+)\.framework");
+                if (framework.Success) links.AddRange(new[] { "-framework", framework.Groups[1].Value });
+                else if (Regex.Match(name, @"^lib([^.]+)") is { Success: true } lib)
+                {
+                    if (lib.Groups[1].Value != "System") links.Add("-l" + lib.Groups[1].Value);
+                }
+                else links.Add(path);
+            }
+            return links;
         }
 
         /// <summary>Registers for values: see the class's summary.</summary>

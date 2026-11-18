@@ -42,6 +42,7 @@ namespace Phi.Compiler.CodeGen.A64
                 foreach (Block b in fn.Blocks) blockLabels[b] = g.NewLabel("b");
                 int most = fn.Blocks.SelectMany(b => b.Instrs).Select(i => i switch
                 {
+                    CallI { Outside: true } oc => OutsideStack(oc),
                     CallI c => c.Args.Count + c.ArgKinds.Count(k => k == MemKind.V128),
                     ObjCallI or ArrayRoutineI => 2,
                     FreeTextI => 1,
@@ -1102,6 +1103,11 @@ namespace Phi.Compiler.CodeGen.A64
 
             void Call(CallI call)
             {
+                if (call.Outside)
+                {
+                    OutsideCall(call);
+                    return;
+                }
                 // the arguments into the bottom of the frame, the last at sp (as x86's pushes
                 // leave them): 8 bytes each, a vec's 16; an f32 in the low half of its 8
                 int n = call.Args.Count;
