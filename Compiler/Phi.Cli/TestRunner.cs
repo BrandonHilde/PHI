@@ -73,6 +73,20 @@ namespace Phi.Cli
             }
 
             var runs = tests.SelectMany(t => Modes(t, bench != null).Select(m => (File: t, Mode: m))).ToList();
+
+            // the host's side of a TLS test is .NET's, which on macOS has no TLS 1.3 at all
+            if (OperatingSystem.IsMacOS())
+            {
+                var noTls = runs.Where(r => (r.Mode == null || r.Mode.Host == Host.PhiOS) && NeedsHostTls13(r.File, input)).ToList();
+                if (noTls.Count > 0)
+                {
+                    Write(ConsoleColor.Yellow, $"not run here: {string.Join(", ", noTls.Select(r => TestName(r.File) + (r.Mode == null ? "" : $" ({r.Mode.Name})")).Distinct())}");
+                    Console.WriteLine();
+                    Console.WriteLine("     (their other side is this computer's TLS 1.3, which .NET on macOS doesn't have; they run on Linux and Windows)");
+                    runs = runs.Except(noTls).ToList();
+                }
+            }
+
             if (Only is Host only && only != Host.PhiOS)
             {
                 int left = tests.Count - runs.Select(r => r.File).Distinct().Count();
@@ -325,6 +339,20 @@ namespace Phi.Cli
         {
             try { return RunOne(phiFile, timeout, mode, inputOverride, keepOutput, containsOverride, bench, report); }
             catch (IOException e) { return $"couldn't run: {e.Message}"; }
+        }
+
+        /// <summary>
+        /// Whether a test's other side is this computer's own TLS 1.3 (.NET's SslStream): its
+        /// NAME.web served over https (TestWeb.secure_url), or an input script's tls line. .NET
+        /// on macOS has neither a TLS 1.3 server nor client ("The requested security protocol is
+        /// not supported"; its Network.framework switch gives a client that fails the handshake).
+        /// </summary>
+        static bool NeedsHostTls13(string phiFile, string? inputOverride)
+        {
+            string own = Path.Combine(Path.GetDirectoryName(Path.GetFullPath(phiFile))!, Path.GetFileNameWithoutExtension(phiFile));
+            if (Directory.Exists(own + ".web") && File.ReadAllText(phiFile).Contains("TestWeb.secure_url")) return true;
+            string input = inputOverride ?? own + ".input";
+            return File.Exists(input) && File.ReadLines(input).Any(l => InputScript.TlsPort(l) != null);
         }
 
         /// <summary>The class TestWeb a test with a NAME.web folder is built with.</summary>

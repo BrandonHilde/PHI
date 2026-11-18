@@ -32,6 +32,12 @@ namespace Phi.Cli
         public static int Run(string dir, string? filter, int runs, string? save, IReadOnlyList<string>? arguments = null, bool varies = false,
                               string? check = null, double tolerance = 10)
         {
+            if (HostRunner.InAnotherMachine)
+            {
+                Console.Error.WriteLine("error: phi compare times programs, and here a Linux program runs in another machine (PHI_LINUX_RUN), " +
+                                        "where an emulator's time isn't PHI's: run it on an x86 computer (see MacPlan.md)");
+                return 2;
+            }
             Dictionary<(string, string), double>? saved = null;
             if (check != null)
             {

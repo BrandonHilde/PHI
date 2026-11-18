@@ -120,6 +120,14 @@ About 618 runs should be tried. Things that might differ, each worth a line here
 
 - Tests that depend on time (the ones that have needed a second try on Linux: `net_dns` on a
   virtio card). `phi test --timeout 120` if a slower machine runs out of time.
+
+  **Seen:** 404 runs, not 618 (`:Program` tests run only as Linux or Windows programs, which
+  here wait for stage 2), in 12 minutes, one at a time. 400 passed. The 4 that failed have this
+  computer's TLS 1.3 as their other side (`net_http` and `net_web` through `TestWeb.secure_url`,
+  `tls_host_client` and `tls_host_p384` through an input script's `tls`), and .NET on macOS has
+  none: `SslProtocols.Tls13` is "not supported" for a server or a client, and the Network.framework
+  switch (`DOTNET_SYSTEM_NET_SECURITY_USENETWORKFRAMEWORK=1`) gives a client that fails the
+  handshake. `phi test` now sets them aside on a Mac and names them; Linux and Windows run them.
 - Sound: with a window QEMU is given `coreaudio` (`Qemu.cs` picks it); `PHI_AUDIO=none` if
   it complains.
 - The disk doesn't tell `Net.phi` from `net.phi`. A `use` or a file name in the wrong case
@@ -203,6 +211,40 @@ causes, PHI or the emulator, and the ones most likely to be the emulator's:
 
 For speed on Apple Silicon, Rosetta can run the 64-bit programs instead of `qemu-user`
 (Lima's `--rosetta`); it doesn't run 32-bit ones. Only worth it if 212 runs are slow.
+
+**As done on 2026-11-17** (Lima 2.3, Ubuntu 26.10 arm64):
+
+```
+limactl start --name=default --tty=false --cpus 4 --memory 2 --disk 20 \
+    --mount-only ~/Documents/prj:w template:ubuntu
+lima sudo apt-get install -y qemu-user-binfmt          # 26.10 has no qemu-user-static
+lima sudo apt-get install -y --no-install-recommends xvfb pipewire pipewire-pulse wireplumber
+```
+
+Only the project's folder is shared, writable, at the same path; `lima` runs a command in the
+folder it was started from. The window and sound tests failed as predicted, and don't need a
+skip: PHI speaks X11 and PulseAudio's protocol itself, so an X server with no screen and a sound
+server with no card are enough. In the machine (`lima`):
+
+```
+mkdir -p ~/.config/systemd/user
+printf '[Service]\nExecStart=/usr/bin/Xvfb :99 -screen 0 1280x800x24 -nolisten tcp\nRestart=on-failure\n[Install]\nWantedBy=default.target\n' \
+    > ~/.config/systemd/user/xvfb.service
+sudo loginctl enable-linger $USER
+systemctl --user enable --now xvfb pipewire.socket pipewire-pulse.socket wireplumber
+echo DISPLAY=:99 | sudo tee -a /etc/environment        # then limactl stop default; limactl start default
+```
+
+**PipeWire, not PulseAudio.** With PulseAudio itself (17) `sound_program` fails one line: its
+stream never fills (`it fills up: 0`: 4 MB taken, ~45 s of sound). With PipeWire's stand-in,
+which Ubuntu's desktop runs, it passes. So PHI's sound against a real PulseAudio server is worth
+a look one day; it isn't the emulator.
+
+`HostRunner` as written: `PHI_LINUX_RUN` is split at spaces (`lima`, `orb`, or a `docker run`
+line); `CanRun` asks the machine `uname -m` once. A program that runs out of time is killed in
+the machine too (by its pid file), since ending `lima` here needn't end it there. Where its
+threads were (`Where.FromLinux`) isn't read on an ARM machine: that `/proc` is the emulator's.
+`phi compare` refuses to run with `PHI_LINUX_RUN` set.
 
 ## Stage 3: PHI OS and the code library
 

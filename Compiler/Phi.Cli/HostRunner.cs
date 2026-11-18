@@ -5,12 +5,30 @@ namespace Phi.Cli
 {
     /// <summary>
     /// Runs a program built for another system (phi build --target linux or windows) on this
-    /// computer: a Windows program directly on Windows, a Linux program directly on Linux, or under
-    /// WSL on Windows.
+    /// computer: a Windows program directly on Windows, a Linux program directly on Linux, under
+    /// WSL on Windows, or on a Mac in a Linux machine named by PHI_LINUX_RUN.
     /// </summary>
     public static class HostRunner
     {
         static bool? wsl;
+
+        /// <summary>
+        /// On a Mac, the command that runs one command in a Linux machine which sees this Mac's
+        /// files at the same paths, from PHI_LINUX_RUN split at its spaces: "lima" (Lima),
+        /// "orb" (OrbStack), or "docker run --rm -i -v /Users:/Users -w /Users ubuntu". Its
+        /// arguments are the command's, as given. On Apple Silicon the machine is ARM, and a PHI
+        /// program in it is run by qemu-user (or Rosetta) through binfmt_misc. Null when unset.
+        /// </summary>
+        static readonly string[]? LinuxMachine =
+            OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("PHI_LINUX_RUN") is string run && run.Trim().Length > 0
+                ? run.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                : null;
+
+        /// <summary>Whether a Linux program runs here in another machine (PHI_LINUX_RUN), where its time isn't one to compare.</summary>
+        public static bool InAnotherMachine => LinuxMachine != null;
+
+        /// <summary>The Linux machine's processor (uname -m) once it has answered, "" when it didn't.</summary>
+        static string? machineCpu;
 
         /// <summary>Whether this computer can run a program built for the host; if not, why not.</summary>
         public static bool CanRun(Host host, out string why)
@@ -26,10 +44,64 @@ namespace Phi.Cli
                     if (wsl == true) return true;
                     why = "Linux programs run here under WSL, which isn't installed (wsl --install)";
                     return false;
+                case Host.Linux or Host.Linux64 when OperatingSystem.IsMacOS():
+                    if (LinuxMachine == null)
+                    {
+                        why = "Linux programs run here in a Linux machine: set PHI_LINUX_RUN to the command that runs one in it (lima, say; see MacPlan.md)";
+                        return false;
+                    }
+                    machineCpu ??= MachineCpu();
+                    if (machineCpu.Length > 0) return true;
+                    why = $"PHI_LINUX_RUN is '{string.Join(" ", LinuxMachine)}', but 'uname -m' didn't run with it: is the Linux machine started?";
+                    return false;
                 default:
                     why = $"{host.Name()} programs can't run on this computer";
                     return false;
             }
+        }
+
+        static string MachineCpu()
+        {
+            // (its standard output alone: the machine's own warnings go to its standard error)
+            var psi = new ProcessStartInfo(LinuxMachine![0])
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, UseShellExecute = false,
+            };
+            foreach (string a in LinuxMachine[1..].Append("uname").Append("-m")) psi.ArgumentList.Add(a);
+            try
+            {
+                using Process p = Process.Start(psi)!;
+                p.StandardInput.Close();
+                Task<string> output = p.StandardOutput.ReadToEndAsync();
+                _ = p.StandardError.ReadToEndAsync();
+                if (!p.WaitForExit(60000))
+                {
+                    try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                    return "";
+                }
+                return p.ExitCode == 0 && output.Wait(2000) ? output.Result.Trim() : "";
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return "";
+            }
+        }
+
+        /// <summary>
+        /// Whether a stopped Linux program's /proc says where it was: not when an emulator runs it
+        /// (an ARM machine's qemu-user or Rosetta), whose system call and registers are its own.
+        /// </summary>
+        static bool LinuxProcIsTheProgram => LinuxMachine == null || machineCpu is "x86_64" or "i686" or "i386";
+
+        /// <summary>
+        /// How a Linux shell is started here: the command, the arguments that come before the
+        /// shell's own (-c SCRIPT ...), and a path on this computer as that shell sees it.
+        /// </summary>
+        static (string Command, string[] Before, Func<string, string> PathOf) LinuxShell()
+        {
+            if (OperatingSystem.IsWindows()) return ("wsl.exe", new[] { "-e", "/bin/sh" }, WslPath);
+            if (LinuxMachine != null) return (LinuxMachine[0], LinuxMachine[1..].Append("/bin/sh").ToArray(), Path.GetFullPath);
+            return ("/bin/sh", Array.Empty<string>(), Path.GetFullPath);
         }
 
         static bool HasWsl()
@@ -81,15 +153,14 @@ namespace Phi.Cli
                 return windows;
             }
 
-            bool viaWsl = OperatingSystem.IsWindows();
-            var psi = new ProcessStartInfo(viaWsl ? "wsl.exe" : "/bin/sh");
-            if (viaWsl) psi.ArgumentList.Add("-e");
-            if (viaWsl) psi.ArgumentList.Add("/bin/sh");
+            var (command, before, pathOf) = LinuxShell();
+            var psi = new ProcessStartInfo(command);
+            foreach (string b in before) psi.ArgumentList.Add(b);
             psi.ArgumentList.Add("-c");
-            string own = pidFile != null ? $"echo $$ > '{(viaWsl ? WslPath(pidFile) : pidFile)}'; " : "";
-            if (folder != null) own = $"cd '{(viaWsl ? WslPath(folder) : Path.GetFullPath(folder))}' || exit 1; " + own;
+            string own = pidFile != null ? $"echo $$ > '{pathOf(pidFile)}'; " : "";
+            if (folder != null) own = $"cd '{pathOf(folder)}' || exit 1; " + own;
             psi.ArgumentList.Add(own + (merge ? "exec \"$0\" \"$@\" 2>&1" : "exec \"$0\" \"$@\""));
-            psi.ArgumentList.Add(viaWsl ? WslPath(program) : Path.GetFullPath(program));
+            psi.ArgumentList.Add(pathOf(program));
             foreach (string a in args) psi.ArgumentList.Add(a);
             return psi;
         }
@@ -128,7 +199,10 @@ namespace Phi.Cli
             if (!finished)
             {
                 stopped = host.IsWindows() ? Where.FromWindows(program, host.Is64())
-                        : pidFile != null && File.Exists(pidFile) ? Where.FromLinux(pidFile, host.Is64(), RunLinuxScript) : stopped;
+                        : pidFile != null && File.Exists(pidFile) && LinuxProcIsTheProgram ? Where.FromLinux(pidFile, host.Is64(), RunLinuxScript) : stopped;
+                // (in a Linux machine, ending the command that started it here needn't end it there)
+                if (LinuxMachine != null && pidFile != null && File.Exists(pidFile))
+                    RunLinuxScript("kill -KILL $(cat \"$1\") 2>/dev/null", pidFile);
                 try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
                 p.WaitForExit();
                 if (host.IsWindows()) EndLeftOver(program);
@@ -214,19 +288,19 @@ namespace Phi.Cli
             }
         }
 
-        /// <summary>Runs a shell script on Linux (under WSL on Windows) with one argument, a file's path, and gives what it printed.</summary>
+        /// <summary>Runs a shell script on Linux (under WSL on Windows, in PHI_LINUX_RUN's machine on a Mac) with one argument, a file's path, and gives what it printed.</summary>
         static string RunLinuxScript(string script, string file)
         {
-            bool viaWsl = OperatingSystem.IsWindows();
-            var psi = new ProcessStartInfo(viaWsl ? "wsl.exe" : "/bin/sh")
+            var (command, before, pathOf) = LinuxShell();
+            var psi = new ProcessStartInfo(command)
             {
                 RedirectStandardOutput = true, RedirectStandardError = true, UseShellExecute = false,
             };
-            if (viaWsl) { psi.ArgumentList.Add("-e"); psi.ArgumentList.Add("/bin/sh"); }
+            foreach (string b in before) psi.ArgumentList.Add(b);
             psi.ArgumentList.Add("-c");
             psi.ArgumentList.Add(script.Replace("\r", ""));
             psi.ArgumentList.Add("where");
-            psi.ArgumentList.Add(viaWsl ? WslPath(file) : file);
+            psi.ArgumentList.Add(pathOf(file));
             using Process p = Process.Start(psi)!;
             Task<string> output = p.StandardOutput.ReadToEndAsync();
             _ = p.StandardError.ReadToEndAsync();
