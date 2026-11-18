@@ -15,7 +15,7 @@ phi.Notes:Library
 			length++;
 		;;
 		call Mem.Copy: addr note_buffer + 6 text length;
-		call OS.WriteFile: path addr note_buffer length + 6;
+		int kept: (OS.WriteFile: path addr note_buffer length + 6);
 	[end]
 
 	[Show: ptr<u8> path: 0;]

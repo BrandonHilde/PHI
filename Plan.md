@@ -4237,11 +4237,14 @@ the answer as before, so nothing that calls the library changes; a failing answe
   hand is still the way in a loop that expects it.
 - Says theirs so far: the file calls (`Fat`'s, a PHI OS program's `OS.` ones, Linux's and
   Windows'); the network's, a kernel's and a program's alike (`Net.Start`, `Dns.Resolve`,
-  `Udp.Open`, `Tcp.Connect`, `Listen`, `Read`, `Write`, `Send`); `Sound`'s four plays;
+  `Udp.Open`, `Tcp.Connect`, `Listen`, `Read`, `Write`, `Send`); `Sound.PlayFile` and
+  `StartFile`;
   `Threads.Start` and `StartWith`; `OS.Spawn` and `OS.Run`. Not the answers that mean
   nothing's there yet and aren't failures (`Tcp.Accept`'s -1, `Udp.Receive`'s false), and
   not `Udp.SendTo`, whose false most callers have no use for (17 of them drop it, and would
-  each be warned). Tests `throws_answers_program`, `throws_answers_errors`,
+  each be warned), nor `Sound.StartSong` and `PlaySong` for the same reason (said at first:
+  `samples/desktop.rootfs/paddles.phi` got five warnings for its blips, and a game with no
+  sound card should just be quiet). Tests `throws_answers_program`, `throws_answers_errors`,
   `throws_answers_library_program` (a compiled library's interface carries it) and
   `kernel32_throws_files` (a kernel and a program on its disk).
 - What it changed that was there: a guard already around a call that now says which answers

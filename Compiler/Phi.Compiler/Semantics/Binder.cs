@@ -652,7 +652,20 @@ namespace Phi.Compiler.Semantics
         };
 
         /// <summary>The answers that say a method failed, in a sentence: an answer below 0, an answer of false.</summary>
-        static string FailingAnswer(FailTest fails) => fails.Op == BinaryOp.Equal ? $"an answer of {fails.Words}" : $"an answer {fails.Words}";
+        static string FailingAnswer(FailTest fails)
+        {
+            // (said as it reads aloud: "an answer of 0 or less", not "an answer atmost 0")
+            string words = fails.Words.Trim();
+            int space = words.IndexOf(' ');
+            string value = space > 0 ? words[(space + 1)..].Trim() : words;
+            return fails.Op switch
+            {
+                BinaryOp.Equal => $"an answer of {words}",
+                BinaryOp.LessEqual when space > 0 && !value.Contains(' ') => $"an answer of {value} or less",
+                BinaryOp.GreaterEqual when space > 0 && !value.Contains(' ') => $"an answer of {value} or more",
+                _ => $"an answer {words}",
+            };
+        }
 
         /// <summary>
         /// if call got is Read: path throws err, where Read says which answers mean it failed.

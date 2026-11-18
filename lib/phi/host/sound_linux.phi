@@ -345,7 +345,7 @@ phi.SoundSystem:Linux
 		call Join: home '/.config/pulse/cookie';
 		if (OS.ReadFile: addr path cookie 256) is 256 return;
 		call Join: home '/.pulse-cookie';
-		call OS.ReadFile: addr path cookie 256;
+		int got: (OS.ReadFile: addr path cookie 256);
 	[end]
 
 	# path is the two together

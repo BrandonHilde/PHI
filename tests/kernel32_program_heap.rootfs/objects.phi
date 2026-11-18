@@ -25,7 +25,7 @@ phi.Objects:Program
 	name:0 is 'h';
 	name:1 is 'i';
 	log 'heap text: ' name '\n';
-	call OS.WriteFile: 'HEAP.TXT' name 2;
+	int kept: (OS.WriteFile: 'HEAP.TXT' name 2);
 	log 'file size: ' (OS.FileSize: 'HEAP.TXT') '\n';
 
 	# freed memory is used again (the same size: nothing else free is that big), zeroed

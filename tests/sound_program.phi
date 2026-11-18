@@ -63,9 +63,9 @@ phi.SoundProgram:Program
 
 	# a song from a file
 	str song: 't240 l16 cd';
-	call OS.WriteFile: 'PHISOUND.SNG' addr song song.len;
+	int kept: (OS.WriteFile: 'PHISOUND.SNG' addr song song.len);
 	log 'song from a file: ' (Sound.PlayFile: 'PHISOUND.SNG') ', ' Sound.milliseconds ' ms\n';
-	call OS.DeleteFile: 'PHISOUND.SNG';
+	kept is (OS.DeleteFile: 'PHISOUND.SNG');
 
 	# a WAV file at a rate of its own, resampled: a tenth of a second at 11025, 8 bits, mono
 	ptr<u8> wav: new u8[44 + 1102];
@@ -83,9 +83,9 @@ phi.SoundProgram:Program
 	while int i: 0; i < 1102; i++;
 		wav:(44 + i) is 128;
 	;;
-	call OS.WriteFile: 'PHISOUND.WAV' wav 44 + 1102;
+	kept is (OS.WriteFile: 'PHISOUND.WAV' wav 44 + 1102);
 	log 'a WAV file: ' (Sound.PlayFile: 'PHISOUND.WAV') ', ' Sound.milliseconds ' ms, error: ' Sound.error '\n';
-	call OS.DeleteFile: 'PHISOUND.WAV';
+	kept is (OS.DeleteFile: 'PHISOUND.WAV');
 	exit 0;
 
 	[WaitForEnd]

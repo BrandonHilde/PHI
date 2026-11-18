@@ -34,8 +34,8 @@ phi.NetWeb:Kernel
 	log 'for the program: ' (Fat.WriteFile: 'ROOT.DER' addr TestWeb.root TestWeb.root.len) ' ' (Fat.WriteFile: 'PLAIN.TXT' addr TestWeb.url 0) ' ' (Fat.WriteFile: 'SECURE.TXT' addr TestWeb.secure_url 0) '\n';
 	str plain_url: (addr TestWeb.url:0);
 	str secure_url: (addr TestWeb.secure_url:0);
-	call Fat.WriteFile: 'PLAIN.TXT' addr plain_url:0 plain_url.len;
-	call Fat.WriteFile: 'SECURE.TXT' addr secure_url:0 secure_url.len;
+	bln kept: (Fat.WriteFile: 'PLAIN.TXT' addr plain_url:0 plain_url.len);
+	kept is (Fat.WriteFile: 'SECURE.TXT' addr secure_url:0 secure_url.len);
 	int code: (Process.Wait: (Process.Spawn: 'FETCH.BIN'));
 	log 'the program ended with ' code '\n';
 	exit 0;

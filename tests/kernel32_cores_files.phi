@@ -16,7 +16,7 @@ phi.CoresFiles:Kernel
 	str number: [4];
 
 	log 'sharing: ' (Cores.SharePrograms) '\n';
-	call Fat.WriteFile: 'ALL.LOG' addr all 0;
+	bln kept: (Fat.WriteFile: 'ALL.LOG' addr all 0);
 	while int i: 0; i < 4; i++;
 		number is i + 1;
 		pids:i is (Process.Spawn: 'WRITER.BIN' number);

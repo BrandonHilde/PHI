@@ -69,7 +69,7 @@ phi.Sound:Library
 		bln ok: false;
 		call ok is StartSong: song;
 		call Finish;
-	[end: ok throws false]
+	[end: ok]
 
 	# start playing a song; keep calling Pump while playing is true
 	[StartSong: ptr<u8> song: 0;]
@@ -88,7 +88,7 @@ phi.Sound:Library
 			source is 1;
 			call Begin;
 		;;
-	[end: ok throws false]
+	[end: ok]
 
 	# start playing a song or WAV file from the disk
 	[StartFile: ptr<u8> path: 0;]

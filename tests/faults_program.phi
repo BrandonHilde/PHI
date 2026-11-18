@@ -51,7 +51,10 @@ phi.FaultsProgram:Program
 				u32 w: nothing:0;
 			;;
 			else
-				ptr<u32> far: 0xFFFF0000;     # not the program's on any system
+				# the last page there is, which no system gives a program. (Not 0xFFFF0000: a
+				# 32-bit Linux program's stack is put somewhere new each run, and one run in a
+				# hundred it was there, so nothing was wrong with reading it.)
+				ptr<u32> far: 0xFFFFF000;
 				u32 w: far:0;
 			;;
 		;;

@@ -33,7 +33,7 @@ phi.Test:Kernel
 				log 'add failed at ' i '\n';
 			;;
 		;;
-		call Fat.Append: 'SAVES.LOG' 'cut off' 7;     # a record the machine stopped writing
+		bln cut: (Fat.Append: 'SAVES.LOG' 'cut off' 7);     # a record the machine stopped writing
 		log 'first boot: ' (Fat.FileSize: 'SAVES.LOG') ' bytes in ' free_before - (Fat.FreeClusters) ' clusters\n';
 		while true
 			call OS.Sleep: 100;                        # the input script restarts it
@@ -68,8 +68,8 @@ phi.Test:Kernel
 	while int k: 0; k < 2048; k++;
 		block:k is k % 251;
 	;;
-	call Fat.Append: 'EXACT.DAT' addr block 2048;      # creates it
-	call Fat.Append: 'EXACT.DAT' 'ten bytes!' 10;
+	bln kept: (Fat.Append: 'EXACT.DAT' addr block 2048);      # creates it
+	kept is (Fat.Append: 'EXACT.DAT' 'ten bytes!' 10);
 	u8 tail[16];
 	int got: (Fat.ReadAt: 'EXACT.DAT' 2046 addr tail 16);
 	tail:got is 0;

@@ -24,7 +24,7 @@ phi.Music:Program
 	log 'no file: ' (Sound.PlayFile: 'NONE.SNG') ', ' Sound.error '\n';
 
 	str song: 't240 l16 cd';
-	call OS.WriteFile: 'TUNE.SNG' addr song song.len;
+	int kept: (OS.WriteFile: 'TUNE.SNG' addr song song.len);
 	log 'song from a file: ' (Sound.PlayFile: 'TUNE.SNG') ', ' Sound.milliseconds ' ms\n';
-	call OS.DeleteFile: 'TUNE.SNG';
+	kept is (OS.DeleteFile: 'TUNE.SNG');
 }

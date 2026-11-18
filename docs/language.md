@@ -1254,12 +1254,14 @@ int size: (Read: 'A.TXT');          # not guarded: -1, as it always was
   | `Tcp.Connect`, `Tcp.Listen`, `Tcp.Read`, `Tcp.Write`, `Tcp.Send`, `Udp.Open` | `below 0` |
   | `Net.Start` | `false` |
   | `Dns.Resolve` | `0` |
-  | `Sound.PlayFile`, `Sound.PlaySong`, `Sound.StartFile`, `Sound.StartSong` | `false` |
+  | `Sound.PlayFile`, `Sound.StartFile` | `false` |
   | `Threads.Start`, `Threads.StartWith` | `below 0` |
   | `OS.Spawn`, `OS.Run` | `below 0` |
 
   An answer that means nothing's there yet isn't a failure and isn't caught: `Tcp.Accept`'s
-  -1 with no connection waiting, `Udp.Receive`'s false, `Tcp.Read`'s 0 at the end.
+  -1 with no connection waiting, `Udp.Receive`'s false, `Tcp.Read`'s 0 at the end. Nor is
+  the answer of a call that's made in passing, whose callers mostly have no use for it:
+  `Udp.SendTo`, and `Sound.StartSong` and `PlaySong` (a game's blip plays or it doesn't).
 - An answer is cheaper than a `throw` (it's a number coming back; a throw unwinds the
   methods in between), so it's still the way for a failure that's ordinary, like a file
   that isn't there yet. `throw` is for the ones that shouldn't happen, and for methods with
@@ -2903,7 +2905,7 @@ if (Dialogs.Open: 'DOCS')                       # in that folder; '' is where it
     int got: (OS.ReadFile: Dialogs.path buffer size);
 ;;
 if (Dialogs.Save: 'DOCS' 'NOTES.TXT')           # asks before replacing a file
-    call OS.WriteFile: Dialogs.path data length;
+    int wrote: (OS.WriteFile: Dialogs.path data length);   # 1, or 0 if it couldn't
 ;;
 ```
 
