@@ -240,15 +240,12 @@ namespace Phi.Compiler.CodeGen.A64
         /// <summary>The first thing in the method the emitter doesn't write yet, or null.</summary>
         static string? Unsupported(IrFunction fn)
         {
-            if (fn.Values.Any(v => v.Vec)) return "a vec";
             foreach (Block b in fn.Blocks)
             {
                 foreach (Instr i in b.Instrs)
                 {
                     string? not = i switch
                     {
-                        LoadI { Kind: MemKind.V128 } or StoreI { Kind: MemKind.V128 } or LoadIdxI { Kind: MemKind.V128 } or StoreIdxI { Kind: MemKind.V128 } => "a vec",
-                        CallI c when c.Result == CallResult.Xmm0 || c.ArgKinds.Contains(MemKind.V128) => "a vec given to a call or given back",
                         PrintI p when p.Kind is not (PrintKind.Text or PrintKind.Int or PrintKind.Uint or PrintKind.Char or PrintKind.Int64 or PrintKind.Uint64 or PrintKind.Float) => $"a log of a {p.Kind}",
                         X87I x when x.B == null && x.Instruction is not ("fsqrt" or "fabs" or "frndint" or "fsin" or "fcos") => $"the FPU's {x.Instruction}",
                         LineMark or ConstI or CopyI or UnI or ExtendI or SetCcI or AddrI or LeaI or ExitI or RoutineI or BinI or NarrowI
@@ -256,7 +253,7 @@ namespace Phi.Compiler.CodeGen.A64
                             or HasTextI or FixedStoreI or ResultTextI or NumberTextI or ZeroI or CopyBytesI or CompareBytesI or AddrOfI
                             or FConstI or FBinI or FNegI or X87I or RoundF32I or ToFloatI or ToWholeI or LockI or UnlockI or AtomicI or RawCallI
                             or CatchI or UncatchI or CaughtI or ObjCallI or ArrayRoutineI or ObjectLineI or FreeTextI or ArrayGrowI
-                            or GrowStoreI or InterfaceMethodI or UnwindI => null,
+                            or GrowStoreI or InterfaceMethodI or UnwindI or VecI or VecMakeI or VecGetI or VecSetI or VecReduceI => null,
                         _ => KindName(i),
                     };
                     if (not != null) return not;
@@ -264,7 +261,7 @@ namespace Phi.Compiler.CodeGen.A64
                 string? end = b.End switch
                 {
                     JumpT or SwitchT or BranchT or TryT => null,
-                    RetT r => r.Vec ? "a vec given back" : null,
+                    RetT => null,
                     _ => KindName(b.End),
                 };
                 if (end != null) return end;
@@ -448,6 +445,7 @@ namespace Phi.Compiler.CodeGen.A64
         {
             output.AppendLine("; ---- data");
             EmitTypeTables(output);
+            EmitVecConstants(output);
             // each line's code: a count, then its address, its line and its file's name, 8 bytes each
             // (absolute addresses: in __DATA, which the loader moves with the program)
             output.AppendLine("\t.section __DATA,__const");
@@ -479,7 +477,13 @@ namespace Phi.Compiler.CodeGen.A64
             List<object>? values = v.StaticValues;
             PhiType t = v.Type;
             string label = Sym(v.Label);
-            if (t.Kind == TypeKind.Vec) return null;
+            if (t.Kind == TypeKind.Vec)
+            {
+                // a vec starts as zeros (a class's is given its lanes in a method)
+                sb.AppendLine($"{label}:");
+                sb.AppendLine($"\t.space {t.ByteSize}");
+                return sb.ToString();
+            }
 
             if (v.GrowingArray)
             {

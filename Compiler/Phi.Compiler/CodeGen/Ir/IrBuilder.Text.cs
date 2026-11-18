@@ -280,6 +280,33 @@ namespace Phi.Compiler.CodeGen.Ir
         VReg TextRefArg(Expr value)
         {
             if (CanSlot(value)) return SlotOf(value);
+            if (arm && value is IndexExpr element && TableSlot(element))
+            {
+                // (for ARM, as the generator's PushTextRef: the element's text and room in a slot of
+                // this call's, put back after it: WriteBackTexts)
+                var (elementSlot, roomOffset, rooms) = TableSlotOf(element);
+                VReg roomAt = fn.NewAddress();
+                if (rooms == null) Emit(new BinI { Op = BinOp.Add, Dst = roomAt, A = elementSlot, B = Opnd.Const(roomOffset) });
+                else
+                {
+                    VReg most = fn.NewValue(false), mostWide = fn.NewAddress(), across = fn.NewAddress();
+                    Emit(new LoadI { Dst = most, Place = rooms, Kind = MemKind.D32 });
+                    Emit(new ExtendI { Dst = mostWide, Src = most, Signed = false });
+                    Emit(new BinI { Op = BinOp.Shl, Dst = across, A = mostWide, B = Opnd.Const(3) });
+                    Emit(new BinI { Op = BinOp.Add, Dst = roomAt, A = elementSlot, B = across });
+                }
+                fn.NewHome();
+                fn.NewHome();
+                string temp = $"rbp - {8 * fn.Homes}";
+                VReg itsText = LoadAt(elementSlot, 0, PhiType.PointerTo(PhiType.U8));
+                Emit(new StoreI { Place = temp, Src = itsText, Kind = Ptr });
+                VReg itsRoom = LoadAt(roomAt, 0, PhiType.U32);
+                Emit(new StoreI { Place = $"{temp} + {PhiType.AddressSize}", Src = itsRoom, Kind = MemKind.D32 });
+                textWriteBacks.Add((temp, elementSlot, roomAt));
+                VReg given = fn.NewAddress();
+                Emit(new AddrI { Dst = given, Label = temp });
+                return given;
+            }
             Need(value is not IndexExpr { Type.IsString: true }, "an element of a str array given for a str to write");
             int room = value.Type.IsInlineText ? value.Type.Room
                 : value is NameExpr { Symbol: VariableSymbol { Type.IsString: true, Type.IsArray: false } sized } ? sized.Capacity : 0;

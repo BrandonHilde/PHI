@@ -418,6 +418,12 @@ namespace Phi.Compiler.CodeGen.A64
 
             void Instruction(Instr i)
             {
+                if (i is VecI or VecMakeI or VecGetI or VecSetI or VecReduceI or ConstI { Dst.Vec: true } or CopyI { Dst.Vec: true }
+                    or LoadI { Kind: MemKind.V128 } or StoreI { Kind: MemKind.V128 } or LoadIdxI { Kind: MemKind.V128 } or StoreIdxI { Kind: MemKind.V128 })
+                {
+                    Vector(i);
+                    return;
+                }
                 switch (i)
                 {
                     case LineMark mark:

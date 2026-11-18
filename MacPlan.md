@@ -416,6 +416,13 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   keeps only what it can match to the program's symbols). `atos` gives a PHI line for an
   address. This Mac's lldb (Command Line Tools 14 on a newer macOS) crashes on any program,
   a C one too, so stepping through PHI lines waits for a newer Xcode or CLT.
+- **M9, NEON**: vecs in q registers (`A64Generator.Vec.cs`), giving x86's results where SSE2
+  and NEON differ (min and max with not-a-number, float-to-int conversions out of range,
+  sums lane by lane in order, shifts of a lane's width or more), and the loop vectoriser on
+  for ARM. The vec tests (the generated lane-by-lane ones too) and the three fuzzers pass.
+  Found with it: some emitter code used x10-x15 (registers the allocator hands out) as
+  temporaries; it uses x0-x9 and x16-x17 now. A str array's element given to a writable str
+  parameter (a slot of the call's, put back after). 201 tests.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the

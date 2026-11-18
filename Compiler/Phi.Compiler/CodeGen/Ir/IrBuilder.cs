@@ -1035,7 +1035,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     // round, back to the top while it holds (the generator's loops are the same)
                     if (loop.Init != null) Statement(loop.Init);
                     // (a simple loop done a vec at a time first, where it can be)
-                    if (VectorizeLoops && !arm) Vectorize(loop);
+                    if (VectorizeLoops) Vectorize(loop);
                     // the class variables the loop changes, in registers through it, as the
                     // generator keeps them (read before it, written back after it and before an
                     // error it stops with), when it calls nothing and nothing else reaches them
@@ -2888,6 +2888,7 @@ namespace Phi.Compiler.CodeGen.Ir
         /// </summary>
         VReg? CallThrough(PointerCall through, List<Expr> arguments, bool wantResult)
         {
+            int pendingBefore = textWriteBacks.Count;
             MethodSignature s = through.Signature;
             // (an object is given as its address, as the generator pushes it)
             Need(s.Parameters.All(p => Supported(p) || p.IsString && !p.IsArray), "a call through a method value that takes what this form doesn't");
@@ -2923,6 +2924,7 @@ namespace Phi.Compiler.CodeGen.Ir
             }
             Need(!wantResult || call.Dst != null, "a method value that gives nothing, used for a value");
             Emit(call);
+            WriteBackTexts(pendingBefore);
             return call.Dst;
         }
 
@@ -2968,6 +2970,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
         VReg? Call(MethodSymbol callee, List<Expr> arguments, bool wantResult)
         {
+            int pendingBefore = textWriteBacks.Count;
             Need(!callee.IsHook && !callee.IsInterruptHandler, "a call of an event");
             Need(callee.Parameters.All(p => p.Type.IsString && !p.Type.IsArray || ArrayParameter(p)
                                            || Supported(p.Type) && !p.Grows && !p.TextRef && !(p.Type.IsObject && p.Ownership == Ownership.Owned)),
@@ -3068,11 +3071,35 @@ namespace Phi.Compiler.CodeGen.Ir
                 keep.Args.AddRange(call.Args);
                 keep.ArgKinds.AddRange(call.ArgKinds);
                 Emit(keep);
+                WriteBackTexts(pendingBefore);
                 Emit(new ObjCallI { Kind = "free", Struct = callee.ReturnType.Struct!, Arg = made });
                 return null;
             }
             Emit(call);
+            WriteBackTexts(pendingBefore);
             return call.Dst;
+        }
+
+        /// <summary>
+        /// For ARM: the str array elements given to a call's writable strs (TextRefArg), each a slot
+        /// of this method's for the call (the element's text and room together, as the callee
+        /// wants them), with where the element's text and room are, to put back after it.
+        /// </summary>
+        readonly List<(string Temp, VReg Slot, VReg Room)> textWriteBacks = new();
+
+        /// <summary>After a call: each element given since count, its text and room as the call left them.</summary>
+        void WriteBackTexts(int count)
+        {
+            while (textWriteBacks.Count > count)
+            {
+                var (temp, slot, room) = textWriteBacks[^1];
+                textWriteBacks.RemoveAt(textWriteBacks.Count - 1);
+                VReg text = fn.NewAddress(), roomNow = fn.NewValue(false);
+                Emit(new LoadI { Dst = text, Place = temp, Kind = Ptr });
+                Emit(new StoreIdxI { Base = slot, Index = Opnd.Const(0), Scale = 1, Src = text, Kind = Ptr });
+                Emit(new LoadI { Dst = roomNow, Place = $"{temp} + {PhiType.AddressSize}", Kind = MemKind.D32 });
+                Emit(new StoreIdxI { Base = room, Index = Opnd.Const(0), Scale = 1, Src = roomNow, Kind = MemKind.D32 });
+            }
         }
     }
 }

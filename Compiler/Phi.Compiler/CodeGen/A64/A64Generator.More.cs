@@ -26,15 +26,15 @@ namespace Phi.Compiler.CodeGen.A64
                         g.Need("phi_throw");
                         g.Need("phi_log_held");
                         PlaceAddress("x9", c.Record);
-                        E("ldr x10, [x28, #8]");
-                        E("str x10, [x9]");
-                        E("mov x10, sp");
-                        E("str x10, [x9, #8]");
+                        E("ldr x8, [x28, #8]");
+                        E("str x8, [x9]");
+                        E("mov x8, sp");
+                        E("str x8, [x9, #8]");
                         E("str x29, [x9, #16]");
-                        E("ldr x10, [x28, #16]");
-                        E("str x10, [x9, #24]");
-                        E($"adr x10, {blockLabels[c.Caught]}");
-                        E("str x10, [x9, #32]");
+                        E("ldr x8, [x28, #16]");
+                        E("str x8, [x9, #24]");
+                        E($"adr x8, {blockLabels[c.Caught]}");
+                        E("str x8, [x9, #32]");
                         E("bl phi_log_held");
                         PlaceAddress("x9", c.Record);
                         E("str x0, [x9, #40]");
@@ -44,8 +44,8 @@ namespace Phi.Compiler.CodeGen.A64
                     case UncatchI u:
                         // the call came back: the catch around this one is the innermost again
                         PlaceAddress("x9", u.Record);
-                        E("ldr x10, [x9]");
-                        E("str x10, [x28, #8]");
+                        E("ldr x8, [x9]");
+                        E("str x8, [x28, #8]");
                         return true;
                     case ObjCallI oc:
                     {
@@ -167,10 +167,10 @@ namespace Phi.Compiler.CodeGen.A64
                         // objects (called with x29 this frame), and this frame
                         int at = fn.UnwindRecord;
                         SubImm("x9", "x29", at);
-                        E("ldr x10, [x28, #16]");
-                        E("str x10, [x9]");
-                        Address("x10", $"{methodLabel}_unwind");
-                        E("str x10, [x9, #8]");
+                        E("ldr x8, [x28, #16]");
+                        E("str x8, [x9]");
+                        Address("x8", $"{methodLabel}_unwind");
+                        E("str x8, [x9, #8]");
                         E("str x29, [x9, #16]");
                         E("str x9, [x28, #16]");
                         unwinds = true;
@@ -178,20 +178,20 @@ namespace Phi.Compiler.CodeGen.A64
                     }
                     case UnwindI { On: false }:
                         // off it: the record before is the one a throw looks at again
-                        Mem("ldr", "x10", "x29", -fn.UnwindRecord, 8);
-                        E("str x10, [x28, #16]");
+                        Mem("ldr", "x8", "x29", -fn.UnwindRecord, 8);
+                        E("str x8, [x28, #16]");
                         return true;
                     case CaughtI caught:
                     {
                         // the thread's error, copied into err (nothing is in a register here)
                         PlaceAddress("x9", caught.Place);
-                        E("add x10, x28, #24");
-                        E($"mov x11, #{ErrorBytes}");
+                        E("add x8, x28, #24");
+                        E($"mov x7, #{ErrorBytes}");
                         string copy = g.NewLabel("caught");
                         Label(copy);
-                        E("ldrb w12, [x10], #1");
-                        E("strb w12, [x9], #1");
-                        E("subs x11, x11, #1");
+                        E("ldrb w6, [x8], #1");
+                        E("strb w6, [x9], #1");
+                        E("subs x7, x7, #1");
                         E($"b.ne {copy}");
                         return true;
                     }
@@ -211,7 +211,7 @@ namespace Phi.Compiler.CodeGen.A64
                 for (int k = 0; k < args.Count; k++)
                 {
                     Opnd a = args[k];
-                    string r = a.IsImm && a.Imm == long.MinValue ? "x9" : GetOp(a, "x10", true);
+                    string r = a.IsImm && a.Imm == long.MinValue ? "x9" : GetOp(a, "x8", true);
                     Mem("str", r, "sp", 8 * (args.Count - 1 - k), 8);
                 }
             }
@@ -427,14 +427,22 @@ namespace Phi.Compiler.CodeGen.A64
                 Result(call.Dst);
             }
 
-            void VecArgument(Opnd a, int at) =>
-                throw new InvalidOperationException($"{methodLabel}: a vec given to a call, which the ARM code doesn't write yet");
+            /// <summary>A vec given to a call: its 16 bytes at sp + at (as x86 pushes one).</summary>
+            void VecArgument(Opnd a, int at) => Mem("str", "q" + VIn(a.Reg!, "v31")[1..], "sp", at, 16);
 
-            void VecResult(VReg dst) =>
-                throw new InvalidOperationException($"{methodLabel}: a vec given back, which the ARM code doesn't write yet");
+            /// <summary>A vec given back, in q0.</summary>
+            void VecResult(VReg dst)
+            {
+                string t = VTarget(dst);
+                if (t != "v0") E($"mov {t}.16b, v0.16b");
+                VPut(dst, t);
+            }
 
-            void VecReturn(Opnd v) =>
-                throw new InvalidOperationException($"{methodLabel}: a vec given back, which the ARM code doesn't write yet");
+            void VecReturn(Opnd v)
+            {
+                string s = VIn(v.Reg!, "v0");
+                if (s != "v0") E($"mov v0.16b, {s}.16b");
+            }
         }
     }
 }
