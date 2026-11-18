@@ -1,0 +1,739 @@
+# Made by phi fuzz code: what it prints is worked out as it's written.
+struct.Box<Item>
+{
+	Item kept;
+	Item slots[8];
+	int sets;
+
+	[Set: Item value;]
+		kept is value;
+		sets++;
+	[end]
+
+	[Add: Item value;]
+		kept++ value;
+	[end]
+
+	[Get]
+	[end: kept]
+
+	[Store: int place; Item value;]
+		slots:(place & 7) is value;
+	[end]
+
+	[Load: int place;]
+	[end: slots:(place & 7)]
+
+	[Sum]
+		Item total: 0;
+		while int i: 0; i < 8; i++;
+			total++ slots:i;
+		;;
+	[end: total + kept]
+}
+
+struct.Pair<First Second>
+{
+	First first;
+	Second second;
+}
+
+phi.Fuzz:Program
+{
+	Box<int> numbers;
+	Box<u32> counts;
+	Pair<int u32> duo;
+	Pair<u32 int> turned;
+	int gv0: 15;
+	int gv1: 14;
+	int gv2: 1907513336;
+	int gv3: 1;
+	int gv4: 19;
+	u32 hv0: 4;
+	u32 hv1: 11;
+	u32 hv2: 3;
+	int own0: 228819012;
+	int own1: 9;
+	int own2: 32;
+	int own3: 65535;
+	u32 mine0: 2265136229;
+	u32 mine1: 2;
+	int ints[16];
+	u32 words[8];
+	u8 bytes[32];
+
+	when ((gv3 / 52) & 15)
+		is 8 2 11
+			duo.first is (((own2 / 37) % 18) & ((gv0 & 2) ^ (ints:(bytes:(duo.first & 31) & 15) % 16)));
+		;;
+		is 5
+			while int idx22: 0; idx22 < 1; idx22++;
+				call Do0: (words:(idx22 & 7) - words:((numbers.Sum) & 7)) (ints:idx22 << 15) (own0 * 4) ints;
+				when ((own2 & 15) - 6)
+					is 3
+						own3 is (((mine0 + 3821864069) - 9) as int);
+					;;
+					is 6
+						mine0 is ((mine1 / 5) % 38);
+						mine1 is words:(bytes:idx22 & 7);
+					;;
+					is 7
+						call numbers.Store: (own1 + 19) ((own3 - own1) + (ints:idx22 & own1));
+					;;
+					is 1
+						bytes:((duo.first / 11) & 31) is (((mine0 as int) ^ 1000) & 255);
+					;;
+					is 8
+						hv1 is (((own3 as u32) * (mine0 + turned.first)) / ((((gv1 as u32) - 415524567) & 255) + 1));
+						bytes:((Fn3) & 31) is (((own0 + own2) + 14) & 255);
+					;;
+					is -5
+						bytes:((own1 % (((numbers.Sum) & 255) + 1)) & 31) is (((own1 - bytes:idx22) / 46) & 255);
+					;;
+					else
+						mine1 is (words:(own1 & 7) - 100);
+						call counts.Store: (duo.first << 3) (((counts.Get) * 17) % 2);
+					;;
+				;;
+				bytes:idx22 is (((own0 * own0) * ints:idx22) & 255);
+				if (Fn1: (ints:(duo.first & 15)) (ints:(own1 & 15))) is not own0 break;
+				if (own3 / 13) is 2147483646 or (gv3 << 1) is (Fn2: (ints:(own2 & 15)))
+					words:((own2 + 18) & 7) is ((words:idx22 + 16) + (turned.first * words:idx22));
+				;;
+				else
+					mine0 is (((words:(ints:(own1 & 15) & 7) + 1) << 10) / ((((mine0 * words:(ints:(ints:(gv0 & 15) & 15) & 7)) * (words:idx22 & words:idx22)) & 255) + 1));
+				;;
+			;;
+			bytes:((ints:(own1 & 15) << 2) & 31) is (own3 & 255);
+		;;
+		is 12
+			gv3 is own1;
+			bytes:((words:(own0 & 7) as int) & 31) is (((ints:(own0 & 15) + 5) - own3) & 255);
+		;;
+		is 7
+			own1 is (own1 % 67);
+			mine0 is (mine1 - ((words:(ints:(bytes:((numbers.Get) & 31) & 15) & 7) / 3008977461) % ((hv2 & 255) + 1)));
+		;;
+		is 10 32886
+			words:(own2 & 7) is ((counts.Get) & (hv2 + 3));
+		;;
+	;;
+	call counts.Add: mine1;
+	call numbers.Set: ((own1 % ((own0 & 255) + 1)) + (bytes:(own1 & 31) / 2));
+	own2 is (Fn2: (own1 + (0 - 256)));
+	while int idx23: 0; idx23 < 8; idx23++;
+		gv1 is own0;
+		ints:idx23 is (own3 - (0 - 1667636489));
+		call Do0: (words:(own1 & 7) * words:idx23) (gv3 * gv2) (own1 | 2) ints;
+	;;
+	ints:((ints:((numbers.Sum) & 15) + own1) & 15) is ((gv3 + own2) << 27);
+	while int idx24: 0; idx24 < 8; idx24++;
+		while int idx25: 0; idx25 < 4; idx25++;
+			words:((bytes:idx25 + gv4) & 7) is ((hv2 / 53356014) % 7);
+			if (gv0 - gv2) is not 835610782
+				words:idx24 is ((mine0 * turned.first) >> 23);
+				ints:(bytes:idx25 & 15) is ((bytes:(own1 & 31) + 13) >> 26);
+			;;
+			else
+				words:((bytes:(own1 & 31) << 25) & 7) is hv2;
+			;;
+		;;
+		turned.first is mine1;
+		words:idx24 is ((ints:(ints:(own3 & 15) & 15) >> 14) as u32);
+		own2 is ((((numbers.Get) & ints:(own2 & 15)) * (bytes:(idx24 & 31) >> 30)) - 1);
+	;;
+	when ((own2 * own3) & 15)
+		is 13
+			while int idx26: 0; idx26 < 2; idx26++;
+				mine1++ (((mine0 % (((counts.Load: own0) & 255) + 1)) % 1) % 7);
+				if (own0 + turned.second) < (own0 - gv0) break;
+				own0-- (((own1 / ((bytes:(bytes:(duo.first & 31) & 31) & 255) + 1)) + (turned.second % 12)) * 256);
+				gv3-- own2;
+			;;
+			if hv1 >= (mine0 + (counts.Sum))
+				call numbers.Store: (own1 * own2) ((own2 << 26) >> 23);
+			;;
+			else
+				while int idx27: 0; idx27 < (((turned.second * 32) & 7) + 1); idx27++;
+					words:((Fn0: words bytes) & 7) is ((mine0 * hv2) * (mine0 * mine0));
+					own1-- (((bytes:(gv0 & 31) - (0 - 1434639047)) - (gv3 + 2)) * (Fn0: words bytes));
+					gv0 is ((Fn3) ^ 4);
+					mine1-- words:(own1 & 7);
+				;;
+			;;
+		;;
+		is 8
+			bytes:((ints:(own3 & 15) + (numbers.Get)) & 31) is (((words:(own2 & 7) as int) << 12) & 255);
+			call Do1: (own0 | own2) (words:(own0 & 7) as int) (gv0 * (0 - 2));
+		;;
+		is 2 4
+			if (mine0 + mine1) >= 10 and (mine1 ^ mine1) is 11
+				bytes:((own3 << 11) & 31) is (((ints:(ints:(ints:(own2 & 15) & 15) & 15) / ((own1 & 255) + 1)) + 19) & 255);
+			;;
+		;;
+		is 9
+			call numbers.Store: (hv0 as int) (own0 >> 11);
+			own2-- (own1 + (((numbers.Load: own3) * ints:(duo.first & 15)) | (bytes:(bytes:(own2 & 31) & 31) / ((gv3 & 255) + 1))));
+		;;
+		is 15 11 7
+			hv0-- (((own0 as u32) | 16) * ((hv0 * 2060587521) - 1));
+			log 'L7' ' ' ((hv0 - 14) ^ ((counts.Get) | 5)) ' ' ((own1 as u32) as int) '\n';
+		;;
+		is 10
+			when (((bytes:(bytes:(own2 & 31) & 31) - 1289774654) & 15) - 6)
+				is -2
+					while int idx28: 0; idx28 < 2; idx28++;
+						words:idx28 is ((mine1 % 4294967295) | 4);
+					;;
+				;;
+				is 9
+					gv0 is ((own1 - 5) >> 2);
+				;;
+				is 0
+					turned.second is (((own3 % 31) * (gv3 % 7)) ^ (own0 + (Fn3)));
+				;;
+				is 5
+					call numbers.Add: ((own3 * gv2) / 10);
+					own3 is own0;
+				;;
+				is -4 4
+					gv2 is (((own3 - 1208491664) - own1) ^ 31);
+				;;
+				is -3
+					log 'L8' ' ' (bytes:(own3 & 31)) ' ' ((words:(bytes:(ints:(own3 & 15) & 31) & 7) >> 16) - (hv2 / 15)) '\n';
+					while int idx29: 0; idx29 < 6; idx29++;
+						bytes:idx29 is (((mine1 / 17) as int) & 255);
+						call counts.Store: (own3 & gv1) ((gv1 as u32) - 5);
+						call Do2;
+						call Do2;
+					;;
+				;;
+				else
+					call Do0: (duo.second * hv2) (mine0 as int) (Fn2: (ints:(gv3 & 15))) ints;
+				;;
+			;;
+			mine1-- (((hv2 * (counts.Get)) + (words:(own3 & 7) + duo.second)) % 1);
+		;;
+		is 3
+			if gv2 > (Fn2: own0)
+				own1 is (((mine1 - 2374688917) % (((mine1 / 641) & 255) + 1)) as int);
+				call counts.Store: (words:(own0 & 7) as int) ((mine0 | mine0) | 2173102311);
+			;;
+		;;
+		is 0 1
+			words:((own2 * gv2) & 7) is ((words:(gv0 & 7) % 61) + 3);
+		;;
+		else
+			log 'L9' ' ' hv1 '\n';
+		;;
+	;;
+	mine0 is (((hv1 * mine0) - (mine1 + mine1)) & ((mine1 % ((mine1 & 255) + 1)) | 19));
+	own1 is (gv1 / (0 - 1159098158));
+	while int idx30: 0; idx30 < (((mine1 as int) & 7) + 1); idx30++;
+		call numbers.Store: gv0 gv2;
+	;;
+	if (bytes:(own3 & 31) % (0 - 27132817)) > (0 - 1) and (own1 ^ own2) <= (gv1 + ints:(ints:(own3 & 15) & 15))
+		call Do1: ((numbers.Sum) >> 27) (ints:(gv4 & 15) ^ bytes:(own2 & 31)) own0;
+		while int idx31: 0; idx31 < 4; idx31++;
+			while int idx32: 0; idx32 < 3; idx32++;
+				log 'L10' ' ' ((own1 * 127) - (own0 | 19)) ' ' ((own2 + bytes:(gv4 & 31)) * (bytes:idx32 << 17)) '\n';
+				ints:(((numbers.Get) + 19) & 15) is ints:(own2 & 15);
+				mine1-- (((words:idx32 % 13) - (hv0 - 127)) * (mine0 % (((idx32 as u32) & 255) + 1)));
+			;;
+			while int idx33: 0; idx33 < (((gv1 & 16) & 7) + 1); idx33++;
+				call counts.Store: (bytes:(ints:idx31 & 31) % 3) ((gv0 as u32) + (mine1 + words:(turned.second & 7)));
+				if (own0 % 28) is not (0 - 581019300) or (own3 / 2147483647) < 4 break;
+				duo.second is (((duo.first + 0) % (((Fn3) & 255) + 1)) as u32);
+			;;
+			ints:idx31 is ((own0 + 1655740575) >> 14);
+			while int idx34: 0; idx34 < 7; idx34++;
+				own0 is (((mine0 / 67) + (mine0 ^ words:idx34)) as int);
+			;;
+		;;
+		log 'L11' ' ' ((mine0 / 17) * (mine0 + hv0)) '\n';
+	;;
+	while int idx35: 0; idx35 < (((gv2 % 13) & 7) + 1); idx35++;
+		gv3 is ((numbers.Get) - ((words:(own1 & 7) * 1544454658) as int));
+		log 'L12' ' ' ((hv2 & 60) as int) '\n';
+	;;
+	hv1 is (((words:(bytes:(gv1 & 31) & 7) % 26) % 4) << 4);
+	hv1 is (((words:(own0 & 7) << 10) * 3348584596) & ((duo.second * mine1) / 65536));
+	log 'end' ' ' gv0 ' ' gv1 ' ' gv2 ' ' gv3 ' ' gv4 ' ' hv0 ' ' hv1 ' ' hv2 ' ' own0 ' ' own1 ' ' own2 ' ' own3 ' ' mine0 ' ' mine1 ' ' duo.first ' ' duo.second ' ' turned.first ' ' turned.second '\n';
+	log 'numbers' ' ' (numbers.Get) ' ' (numbers.Sum) ' ' numbers.sets '\n';
+	log 'counts' ' ' (counts.Get) ' ' (counts.Sum) ' ' counts.sets '\n';
+	while int idx36: 0; idx36 < 16; idx36++;
+		own0 is ((own0 * 31) + ints:idx36);
+	;;
+	log 'ints' ' ' own0 '\n';
+	while int idx37: 0; idx37 < 8; idx37++;
+		mine0 is ((mine0 * 31) + words:idx37);
+	;;
+	log 'words' ' ' mine0 '\n';
+	while int idx38: 0; idx38 < 32; idx38++;
+		own0 is ((own0 * 31) + bytes:idx38);
+	;;
+	log 'bytes' ' ' own0 '\n';
+
+	[Fn0: ptr<u32> ptr0: 0; ptr<u8> ptr1: 0;]
+		int loc0: 2147483646;
+		u32 loc1: 1;
+		int loc2: 4;
+		int loc3: 9;
+		while int idx0: 0; idx0 < 4; idx0++;
+			loc0-- (((hv0 as int) & 255) * ((loc3 ^ gv4) / 33));
+			while int idx1: 0; idx1 < 5; idx1++;
+				if ptr0:idx0 is 2132122214
+					gv2-- loc0;
+					turned.first is (((hv1 | duo.second) | hv2) | ((words:idx0 / 63) / 2));
+				;;
+			;;
+			hv0 is (((hv0 & (counts.Sum)) & 7) * ((duo.second + duo.second) ^ (turned.first ^ (counts.Sum))));
+			if ((numbers.Sum) ^ gv4) is (bytes:idx0 % 30)
+				duo.first++ (((duo.first | 618181535) ^ gv4) >> 12);
+				loc3++ (((loc3 + gv2) + (ptr1:idx0 / 128)) + ((gv0 % 44) ^ 4));
+			;;
+			else
+				if (numbers.Load: gv3) >= 100
+					gv3 is (((turned.second / 19) - 16) + 31);
+					hv0-- ((counts.Load: (bytes:(loc3 & 31))) >> 4);
+				;;
+				loc3 is (((hv2 as int) + 876991038) >> 18);
+			;;
+		;;
+		gv1 is (((bytes:(ints:(turned.second & 15) & 31) & turned.second) >> 26) | 4095);
+		loc1 is (((words:(ints:(loc0 & 15) & 7) * hv2) / (((gv2 as u32) & 255) + 1)) % 2147483646);
+		while int idx2: 0; idx2 < 1; idx2++;
+			gv0-- (((idx2 + ints:idx2) * (ptr1:idx2 >> 23)) - 693638929);
+		;;
+		hv1 is (hv2 / ((((hv2 | ptr0:(turned.second & 7)) * 1000000) & 255) + 1));
+		gv4 is (((loc0 | gv4) / (((duo.first * (numbers.Load: (numbers.Get))) & 255) + 1)) >> 7);
+		when ((loc0 % 5) & 15)
+			is 8
+				while int idx3: 0; idx3 < 6; idx3++;
+					if (gv4 as u32) < 4294967040
+						loc3-- (((gv3 % ((duo.first & 255) + 1)) - (loc0 / 41)) - 6);
+						gv0++ gv3;
+						hv0 is (turned.first | ((words:(ints:(duo.first & 15) & 7) * 18) % 1000000));
+					;;
+					gv3 is gv4;
+					gv0++ (((gv4 >> 0) % 15) - ((loc3 & ptr1:idx3) + 19));
+				;;
+				gv4 is turned.second;
+			;;
+			is 12
+				gv3 is ((turned.first + 1) as int);
+			;;
+			is 5
+				turned.first is ((turned.first / (((turned.first / ((hv0 & 255) + 1)) & 255) + 1)) & (((counts.Load: gv3) >> 30) ^ (duo.second * 255)));
+			;;
+			is 13
+				gv2 is (loc2 % (((gv0 / 8) & 255) + 1));
+				while int idx4: 0; idx4 < 7; idx4++;
+					loc2 is (ptr0:(bytes:idx4 & 7) as int);
+					hv1-- (((turned.first - words:(gv1 & 7)) % (((hv2 % 48) & 255) + 1)) + ((hv2 >> 27) + 6));
+					duo.first is (((bytes:(loc3 & 31) / 7) % 57) * (gv4 ^ ((numbers.Sum) >> 24)));
+				;;
+			;;
+			is 15
+				hv1 is ((gv2 * (bytes:(gv4 & 31) + 19)) as u32);
+				hv2 is (((turned.first | 5) * 792577299) % 28);
+			;;
+			is 1
+				loc0 is (((words:(duo.first & 7) as int) % 58) ^ 1872397599);
+			;;
+			is 14
+				if ((counts.Load: gv1) as int) is ptr1:(gv1 & 31)
+					duo.first is (ptr1:(ints:(gv1 & 15) & 31) + ((gv2 % ((bytes:(ptr1:(gv1 & 31) & 31) & 255) + 1)) - (ints:(gv2 & 15) / 4)));
+					while int idx5: 0; idx5 < (((loc0 / ((turned.second & 255) + 1)) & 7) + 1); idx5++;
+						loc2 is (turned.second / ((((duo.second / 39) as int) & 255) + 1));
+					;;
+				;;
+				else
+					gv3 is (((gv1 - 4) * 8) % 8);
+				;;
+			;;
+			is 7
+				gv0++ (((bytes:(ints:((numbers.Load: gv4) & 15) & 31) / 2) + (hv0 as int)) * ((turned.second * 3) / (((ptr0:(turned.second & 7) as int) & 255) + 1)));
+				while int idx6: 0; idx6 < 6; idx6++;
+					loc0 is ((idx6 / (((gv0 & 3) & 255) + 1)) ^ (bytes:(gv4 & 31) * 4095));
+					gv0++ (loc2 + ((ints:idx6 / 7) % (((loc2 / (0 - 861073554)) & 255) + 1)));
+					gv3 is (((bytes:idx6 + ints:idx6) * 18) / 2147483646);
+					if ((numbers.Get) ^ (numbers.Load: (ints:(loc0 & 15)))) < 407682096 break;
+					gv1-- (((loc0 & idx6) & 1000000) - (((numbers.Sum) / (((numbers.Sum) & 255) + 1)) & 6));
+				;;
+			;;
+			is 9 3 6
+				while int idx7: 0; idx7 < 8; idx7++;
+					turned.first-- hv1;
+					gv0 is (((ptr0:idx7 as int) / (((gv3 + gv1) & 255) + 1)) - 15);
+					when ((gv0 >> 12) & 15)
+						is 4
+							gv1 is (((idx7 << 5) * 18) ^ ptr1:(loc3 & 31));
+							loc1 is (((turned.first + hv2) / (((turned.first % 6) & 255) + 1)) >> 5);
+						;;
+						is 2
+							hv2 is (((words:(duo.first & 7) + 1791579039) << 19) * ((words:(gv4 & 7) * loc1) + 5));
+						;;
+						is 6
+							hv1 is (turned.first % 54);
+							gv4 is ((gv1 * 0) << 9);
+						;;
+						is 9
+							gv2 is (((gv4 >> 10) % (((hv2 as int) & 255) + 1)) / 19);
+						;;
+						is 3 11
+							gv3 is (((duo.first | 14) >> 31) - 10);
+						;;
+						is 5 1
+							gv4-- (((gv0 - gv1) + (bytes:idx7 + 6)) + 15);
+							loc2++ idx7;
+						;;
+						is 15
+							loc3 is (((words:(gv0 & 7) * words:(ints:idx7 & 7)) + (ints:idx7 as u32)) as int);
+							loc3++ turned.second;
+						;;
+						is 8 10
+							loc1-- loc1;
+						;;
+						is 12
+							turned.second is (((gv2 / 17) + (loc2 - 1731798834)) * 1);
+							loc3 is duo.first;
+						;;
+						else
+							hv0 is (((words:(gv4 & 7) % 37) ^ (hv1 % 19)) & ((hv0 << 1) % 4));
+							turned.first++ (((turned.second + turned.second) as u32) / 4096);
+						;;
+					;;
+					gv2-- (((ints:(bytes:idx7 & 15) - ints:(loc2 & 15)) - ptr1:idx7) / 6);
+				;;
+			;;
+		;;
+		hv0++ ((words:(duo.first & 7) % (((gv1 as u32) & 255) + 1)) * 3745101657);
+	[end: (gv2 >> 28)]
+
+	[Fn1: int par0: 0; int par1: 0;]
+		int loc0: 1;
+		int loc1: 19;
+		int loc2: 12;
+		int loc3: 11;
+		if (words:(gv1 & 7) ^ 16) is not 1358879472 and (hv0 + 15) > (hv0 + hv0)
+			hv0 is (((words:(par0 & 7) << 18) | 6) & ((hv1 % 16) % 57));
+			loc0 is (((loc0 << 0) - duo.first) ^ (0 - 250045532));
+		;;
+		else
+			duo.first++ (((gv3 % 14) / (0 - 839592385)) ^ ((loc2 + bytes:(gv0 & 31)) ^ ((numbers.Sum) % 6)));
+			duo.second++ (hv1 / 20);
+		;;
+		gv3-- loc0;
+		loc0-- (((gv4 + 6) / (0 - 1889580309)) ^ ints:(ints:(gv0 & 15) & 15));
+		duo.second++ (((hv1 % ((hv1 & 255) + 1)) >> 31) - duo.second);
+		par0 is (((gv2 - 9) - (ints:(loc0 & 15) + (0 - 574442225))) % 4);
+		while int idx8: 0; idx8 < (((duo.first + ints:(gv0 & 15)) & 7) + 1); idx8++;
+			loc3 is (((bytes:(gv1 & 31) * 32) & (0 - 1)) % 49);
+			if (turned.first as int) < (gv2 * gv1) and (idx8 as u32) >= (hv0 % 69) break;
+			loc0-- idx8;
+			loc2 is ((Fn0: words bytes) * (par0 * (gv2 / 64)));
+			hv2 is (((words:(par1 & 7) + duo.second) - hv2) / 48);
+		;;
+	[end: ((bytes:(loc0 & 31) + 65536) - (gv1 * gv2))]
+
+	[Fn2: int par0: 0;]
+		int loc0: 12;
+		u32 loc1: 539163539;
+		loc1-- (((hv2 % 13) % ((turned.first & 255) + 1)) | ((turned.second & duo.first) as u32));
+		par0 is ((gv3 ^ 15) % 25);
+		par0-- ((Fn1: (ints:(turned.second & 15) / ((duo.first & 255) + 1)) (gv1 / ((par0 & 255) + 1))) + 6);
+		loc1 is ((((numbers.Sum) / 3) * 255) as u32);
+	[end: ((turned.second * gv4) * (loc0 + gv0))]
+
+	[Fn3]
+		u32 loc0: 4264833220;
+		u32 loc1: 13;
+		int loc2: 1;
+		while int idx9: 0; idx9 < (((duo.first + 65535) & 7) + 1); idx9++;
+			while int idx10: 0; idx10 < 3; idx10++;
+				if duo.first is (gv1 * 302730221) break;
+				duo.second is (gv4 as u32);
+				gv0 is (((bytes:(gv4 & 31) % 1424106068) * (gv3 * bytes:(bytes:(idx9 & 31) & 31))) * 14);
+			;;
+		;;
+		gv3-- (numbers.Sum);
+		while int idx11: 0; idx11 < 5; idx11++;
+			hv2-- (((gv4 as u32) & 10) + ((loc0 >> 6) | (loc1 ^ (counts.Get))));
+			while int idx12: 0; idx12 < 7; idx12++;
+				hv1++ (((words:(gv1 & 7) % 30) as int) as u32);
+				hv2-- ((hv2 ^ 4151701733) & ((loc1 >> 29) + 7));
+				gv2 is gv4;
+			;;
+		;;
+		duo.second++ (((loc0 + 599354744) * 4) % (((gv0 as u32) & 255) + 1));
+		loc1-- (((Fn1: turned.second (ints:(ints:(gv4 & 15) & 15))) / (((gv4 >> 20) & 255) + 1)) as u32);
+	[end: (((numbers.Get) * gv3) % 1515482036)]
+
+	[Do0: u32 par0: 0; int par1: 0; int par2: 0; ptr<int> ptr0: 0;]
+		int loc0: 18;
+		int loc1: 473727945;
+		u32 loc2: 1;
+		when ((gv1 % ((gv4 & 255) + 1)) & 15)
+			is 3
+				while int idx13: 0; idx13 < 2; idx13++;
+					if (Fn3) < (gv4 / 4)
+						hv0-- (((duo.second - 1318233160) ^ (duo.second * hv0)) ^ ((words:(duo.first & 7) - hv1) / 465077482));
+						bytes:((Fn0: words bytes) & 31) is (((duo.first & 2) | 382655309) & 255);
+					;;
+					log 'L0' ' ' gv4 ' ' ((ptr0:idx13 + par2) / 14) ' ' ((words:(gv3 & 7) & 128) ^ (par0 + words:(par2 & 7))) '\n';
+					hv0++ (((hv0 | hv1) - 0) - words:(duo.first & 7));
+					turned.first++ (hv2 - 5);
+				;;
+			;;
+			is 2 14 0
+				hv2++ (((hv1 / 65) - (hv1 % ((words:(gv4 & 7) & 255) + 1))) * ((hv1 as int) as u32));
+			;;
+			is 7
+				turned.second is (((loc2 & words:(par2 & 7)) as int) / ((((hv0 % ((words:(gv0 & 7) & 255) + 1)) as int) & 255) + 1));
+				turned.second is gv0;
+			;;
+			is 12 8
+				loc0 is (((Fn2: par2) % (((ints:(gv4 & 15) << 10) & 255) + 1)) + ((ptr0:((numbers.Get) & 15) * gv1) & (words:(gv0 & 7) as int)));
+				loc0-- (ptr0:(par1 & 15) - 128);
+			;;
+			is 5
+				turned.second++ (duo.second as int);
+				words:((loc0 * 2) & 7) is (words:(gv4 & 7) % 19);
+			;;
+			is 11
+				if (turned.first ^ (counts.Sum)) is 1
+					turned.second is (((loc1 - 12) + 1) - ((loc1 / 14) * 1593433535));
+				;;
+				else
+					par0 is ((hv0 & words:((numbers.Load: gv2) & 7)) << 23);
+				;;
+			;;
+			is 6 4
+				while int idx14: 0; idx14 < 3; idx14++;
+					par1++ (gv1 / (((Fn3) & 255) + 1));
+					if (idx14 - ptr0:(loc0 & 15)) <= 11
+						words:idx14 is ((loc2 << 30) / 100);
+						bytes:(gv3 & 31) is (((ints:(ints:idx14 & 15) & turned.second) - 2) & 255);
+						hv1 is (words:idx14 + ((loc0 as u32) % (((duo.second << 28) & 255) + 1)));
+					;;
+					else
+						gv4 is (ptr0:((numbers.Load: (numbers.Sum)) & 15) - 10);
+					;;
+					duo.second is (((loc2 + 2147483649) + (hv2 / ((words:(par2 & 7) & 255) + 1))) << 24);
+					when (((gv0 - 60) & 15) - 6)
+						is -4 1
+							ints:idx14 is ((gv4 % 42) - gv0);
+						;;
+						is -5
+							words:idx14 is (loc2 % 67);
+							hv2++ (((words:idx14 ^ 4) << 16) - (counts.Get));
+						;;
+						is 5
+							turned.first is (words:((numbers.Load: loc0) & 7) % ((((turned.first >> 25) % (((turned.first & (counts.Sum)) & 255) + 1)) & 255) + 1));
+						;;
+						is -3 7
+							words:((gv3 >> 2) & 7) is ((words:idx14 | 9) + (par0 / 4));
+						;;
+						is -1
+							ints:idx14 is ((par0 / ((hv2 & 255) + 1)) as int);
+							turned.second is ((Fn2: (duo.first - (numbers.Get))) << 5);
+						;;
+						is 6
+							bytes:((loc1 + (numbers.Get)) & 31) is (((idx14 - 7) & 1) & 255);
+							gv0 is (((par2 ^ gv3) + 8) % 5);
+						;;
+						else
+							call counts.Set: ((words:idx14 | 18) << 6);
+						;;
+					;;
+				;;
+				log 'L1' ' ' turned.first ' ' (((numbers.Get) ^ loc1) ^ 128) '\n';
+			;;
+		;;
+		hv2 is (((ints:(gv2 & 15) as u32) ^ 671034779) * words:((numbers.Sum) & 7));
+		turned.second is (ptr0:(par1 & 15) & 1);
+	[end]
+
+	[Do1: int par0: 0; int par1: 0; int par2: 0;]
+		int loc0: 0;
+		int loc1: 571609330;
+		int loc2: 31;
+		int loc3: 0 - 2081957298;
+		if hv0 > ((counts.Get) % 7)
+			while int idx15: 0; idx15 < (((ints:(bytes:(gv3 & 31) & 15) % 11) & 7) + 1); idx15++;
+				call Do0: (turned.first * hv2) (loc0 & 256) gv1 ints;
+				duo.second is duo.second;
+				if (duo.second * 12) <= ((counts.Get) % 52)
+					turned.first++ (((hv0 * duo.second) / 37) << 10);
+					ints:((duo.second as int) & 15) is ((loc2 % 4) % 55);
+					bytes:((Fn2: (ints:(gv3 & 15))) & 31) is (par0 & 255);
+				;;
+			;;
+			gv2-- ((par1 + 10) + gv4);
+			call Do0: (words:(par0 & 7) & 5) (loc0 % ((bytes:(loc0 & 31) & 255) + 1)) (par2 & 8) ints;
+		;;
+		call numbers.Add: ((par0 % ((par2 & 255) + 1)) * ((numbers.Get) + (numbers.Load: gv2)));
+		while int idx16: 0; idx16 < (((Fn3) & 7) + 1); idx16++;
+			ints:((gv3 - 549924960) & 15) is ((turned.first as int) ^ bytes:((numbers.Sum) & 31));
+			while int idx17: 0; idx17 < 4; idx17++;
+				duo.second is (hv1 ^ 1738844959);
+				hv1 is (((turned.first - hv0) - (hv2 - 2436897502)) * 7);
+				while int idx18: 0; idx18 < 8; idx18++;
+					words:(((numbers.Get) % 1655823519) & 7) is ((hv2 % 59) / (((hv0 / ((hv1 & 255) + 1)) & 255) + 1));
+				;;
+				when ((gv4 & 15) - 6)
+					is 5
+						call counts.Set: ((words:(loc1 & 7) - 11) >> 27);
+					;;
+					is -4 3
+						loc2++ (((loc0 * 3) + (loc2 + par2)) << 22);
+						log 'L2' ' ' gv2 '\n';
+					;;
+					is 8 -5 2
+						hv2++ (((loc3 - ints:(loc2 & 15)) as u32) * 2147483649);
+						ints:((words:(ints:(ints:idx17 & 15) & 7) as int) & 15) is (gv3 * 17);
+					;;
+					is 0
+						ints:idx17 is ((loc1 | idx16) | 255);
+					;;
+					is 9 -1
+						bytes:((par2 << 31) & 31) is (((turned.second / (0 - 425530170)) & (numbers.Sum)) & 255);
+						gv4++ loc0;
+					;;
+					is -2
+						bytes:(((numbers.Sum) - par1) & 31) is (((gv0 - turned.second) % 10) & 255);
+						bytes:(((numbers.Get) & gv0) & 31) is ((words:(gv4 & 7) as int) & 255);
+					;;
+					is -3
+						log 'L3' ' ' ((loc1 >> 26) ^ (turned.first as int)) '\n';
+						words:((turned.second & 18) & 7) is ((duo.second - 2) / 14);
+					;;
+					is -6
+						loc0++ (((bytes:(par0 & 31) / ((par1 & 255) + 1)) - (par0 - 4)) & ((gv1 ^ gv4) - (loc1 - 12)));
+						log 'L4' ' ' ((par1 + 1591059850) - (loc0 - gv3)) '\n';
+					;;
+					else
+						gv0 is bytes:idx17;
+					;;
+				;;
+				if duo.second > (words:(bytes:(idx17 & 31) & 7) << 28) and (gv4 << 26) is not (par1 / ((bytes:idx17 & 255) + 1)) break;
+			;;
+			when ((gv1 - gv3) & 15)
+				is 8
+					gv2 is ((ints:(ints:(gv3 & 15) & 15) << 1) | ((par1 << 21) % 8));
+				;;
+				is 4
+					call numbers.Add: ((duo.second as int) + 10);
+					if (hv2 - 4) < 4294967040 and (Fn1: (numbers.Sum) idx16) is 12
+						words:((gv1 >> 26) & 7) is ((hv1 << 16) % 41);
+					;;
+					else
+						loc1++ (gv2 - 65536);
+					;;
+				;;
+				is 3
+					ints:((loc0 % ((gv4 & 255) + 1)) & 15) is ((loc2 / 17) - (numbers.Get));
+				;;
+				is 0
+					call numbers.Set: ((par2 + 13) - (ints:(par1 & 15) ^ (numbers.Load: idx16)));
+					call Do0: (hv0 | (counts.Sum)) (par0 - gv1) (par0 ^ bytes:(loc0 & 31)) ints;
+				;;
+				is 14
+					hv0++ (((turned.first ^ (counts.Load: gv1)) - hv2) % 10);
+				;;
+				is 9
+					while int idx19: 0; idx19 < (((bytes:(idx16 & 31) & loc0) & 7) + 1); idx19++;
+						gv2-- ints:(idx16 & 15);
+						words:(loc3 & 7) is ((turned.first % 2147483646) % 14);
+						turned.second is ((bytes:(duo.first & 31) + 5) + loc1);
+					;;
+				;;
+				is 15
+					when ((gv4 - gv4) & 15)
+						is 8 4
+							words:((bytes:((numbers.Sum) & 31) >> 27) & 7) is ((words:(idx16 & 7) | 10) | 3);
+						;;
+						is 14
+							hv1++ (((hv1 & (counts.Get)) - 12) | ((turned.first % 3) + 4137271137));
+							gv0-- (Fn3);
+						;;
+						is 13
+							bytes:((Fn0: words bytes) & 31) is (((gv0 | ints:(gv3 & 15)) - (par2 & loc1)) & 255);
+							bytes:(loc2 & 31) is (((ints:(gv0 & 15) | 14) + (loc0 * gv2)) & 255);
+						;;
+						is 2 9
+							ints:((gv0 >> 25) & 15) is ((gv1 * 10) % (((par1 >> 27) & 255) + 1));
+							call Do0: (duo.second + words:(ints:(gv2 & 15) & 7)) (loc2 ^ 1516766514) (bytes:(gv3 & 31) & loc3) ints;
+						;;
+						is 3
+							hv2-- (((ints:(bytes:((numbers.Sum) & 31) & 15) as u32) | (words:(gv4 & 7) - 3439116683)) / 14);
+							turned.second++ (((par0 * 65536) ^ (Fn0: words bytes)) ^ ((par2 << 12) >> 21));
+						;;
+						is 11
+							log 'L5' ' ' ((bytes:(duo.first & 31) * bytes:(loc2 & 31)) + (bytes:(loc2 & 31) / 46)) ' ' (ints:(bytes:(ints:(ints:(par2 & 15) & 15) & 31) & 15)) '\n';
+						;;
+						is 15
+							words:((par0 + 255) & 7) is ((loc2 - 17) as u32);
+						;;
+						is 7 12
+							log 'L6' ' ' ((ints:(gv3 & 15) << 24) >> 2) ' ' (duo.second >> 21) ' ' (((counts.Get) & 2597890065) as int) '\n';
+						;;
+						is 6
+							words:(ints:(par0 & 15) & 7) is ((hv2 >> 30) << 20);
+							par0++ ints:(ints:(bytes:(duo.first & 31) & 15) & 15);
+						;;
+						else
+							words:((gv4 - 4) & 7) is ((hv2 & turned.first) >> 15);
+						;;
+					;;
+					par2 is par2;
+				;;
+				else
+					hv0-- ((turned.first / 2) / ((((words:(bytes:(loc2 & 31) & 7) * 60280089) + (turned.first & words:(gv0 & 7))) & 255) + 1));
+				;;
+			;;
+			while int idx20: 0; idx20 < (((loc3 % ((par0 & 255) + 1)) & 7) + 1); idx20++;
+				par1 is ((loc3 / 1) - 420492788);
+				hv1 is hv1;
+			;;
+		;;
+		when ((bytes:(gv1 & 31) % 24) & 15)
+			is 3
+				ints:((ints:(ints:(gv3 & 15) & 15) / 9) & 15) is (duo.first + (loc1 - 5));
+				call numbers.Set: (bytes:(gv0 & 31));
+			;;
+			is 12
+				call counts.Store: (hv1 as int) hv1;
+			;;
+			is 10
+				turned.second is ((((numbers.Load: loc3) >> 10) * 5) / (0 - 2027089195));
+				hv2 is (((hv0 % ((hv2 & 255) + 1)) % 18) | 9);
+			;;
+			is 0
+				call counts.Set: (words:(ints:(gv1 & 15) & 7) & 17);
+			;;
+			else
+				bytes:((Fn1: (bytes:((numbers.Get) & 31)) (numbers.Load: (ints:(loc3 & 15)))) & 31) is (((gv1 + loc1) * 11) & 255);
+				turned.second is ((turned.second % 12) - 2);
+			;;
+		;;
+		call Do0: (turned.first % 15) (turned.first as int) (loc0 % 18) ints;
+		gv3 is (((numbers.Get) >> 14) / (((((numbers.Sum) / 51) / 9) & 255) + 1));
+		gv3 is (((gv3 / (0 - 2147483647)) % 30) << 18);
+		call counts.Store: (loc3 << 17) ((duo.second / ((words:(gv4 & 7) & 255) + 1)) / ((((counts.Get) ^ hv0) & 255) + 1));
+	[end]
+
+	[Do2]
+		int loc0: 0 - 138198250;
+		while int idx21: 0; idx21 < 1; idx21++;
+			gv3 is (((gv3 ^ 12) * (gv2 * gv3)) + ((gv0 % 10) * 0));
+		;;
+		duo.first-- ((bytes:(gv1 & 31) / (((turned.second % 40) & 255) + 1)) % 39);
+		gv2-- (bytes:(gv1 & 31) / 2147483646);
+		call counts.Add: ((words:(gv3 & 7) * 3) - 127);
+		call Do1: (loc0 % ((gv4 & 255) + 1)) (loc0 - 9) (gv2 >> 5);
+		duo.second is (((turned.first + turned.first) - (words:((numbers.Load: gv0) & 7) % 52)) * 1000);
+		duo.second++ ((((counts.Load: (ints:(duo.first & 15))) / ((turned.first & 255) + 1)) << 13) >> 12);
+	[end]
+}

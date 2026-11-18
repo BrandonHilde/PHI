@@ -488,6 +488,26 @@ namespace Phi.Compiler.CodeGen.Ir
             // one that calls an assembly block, which may change any of them
             if (fn.Blocks.Any(b => b.End is TryT) || rawCalls.Count > 0)
                 foreach (string r in calleeSaved.Where(r => !UsedCalleeSaved.Contains(r))) UsedCalleeSaved.Add(r);
+            // (PHI_IR_VERIFY=1: says where a value is made in a register another live value has)
+            if (Environment.GetEnvironmentVariable("PHI_IR_VERIFY") == "1")
+                foreach (Block b in fn.Blocks)
+                {
+                    var liveNow = new HashSet<VReg>(liveOut[b]);
+                    foreach (VReg v in Uses(b.End)) liveNow.Add(v);
+                    for (int k = b.Instrs.Count - 1; k >= 0; k--)
+                    {
+                        Instr i = b.Instrs[k];
+                        if (Def(i) is VReg d)
+                        {
+                            liveNow.Remove(d);
+                            if (Registers.TryGetValue(d, out string? r))
+                                foreach (VReg other in liveNow)
+                                    if (Registers.TryGetValue(other, out string? ro) && ro == r)
+                                        Console.Error.WriteLine($"CLASH {r}: {d} made by {i} while {other} is live ({intervals[d].Start}..{intervals[d].End} / {intervals[other].Start}..{intervals[other].End})");
+                        }
+                        foreach (VReg v in Uses(i)) liveNow.Add(v);
+                    }
+                }
             UsedCalleeSaved.Sort(string.CompareOrdinal);
             SlotCount = slots;
         }

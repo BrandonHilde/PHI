@@ -145,7 +145,9 @@ namespace Phi.Compiler.CodeGen.A64
             {
                 bool w = wide ?? v.Wide;
                 if (Reg(v) is string r) return W(r, w);
-                Mem("ldr", W(temp, w), "x29", -regs.Slots[v], w ? 8 : 4);
+                // (a slot far down the frame has its address made first: in temp itself, as x16
+                // may hold something already, an element's base while its index is read, say)
+                Mem("ldr", W(temp, w), "x29", -regs.Slots[v], w ? 8 : 4, W(temp, true));
                 return W(temp, w);
             }
 
@@ -262,7 +264,7 @@ namespace Phi.Compiler.CodeGen.A64
             /// str, strb, strh, with an x, w, s or d register): the scaled form where it fits, the
             /// unscaled (ldur...) for a small offset that doesn't, or the address worked out in x16.
             /// </summary>
-            void Mem(string op, string reg, string baseReg, long offset, int size)
+            void Mem(string op, string reg, string baseReg, long offset, int size, string via = "x16")
             {
                 if (offset >= 0 && offset % size == 0 && offset / size < 4096)
                 {
@@ -275,8 +277,8 @@ namespace Phi.Compiler.CodeGen.A64
                     E($"{unscaled} {reg}, [{baseReg}, #{offset}]");
                     return;
                 }
-                AddImm("x16", baseReg, offset);
-                E($"{op} {reg}, [x16]");
+                AddImm(via, baseReg, offset);
+                E($"{op} {reg}, [{via}]");
             }
 
             static readonly Regex FramePlace = new(@"^rbp((?:\s*[-+]\s*\d+)*)$");
