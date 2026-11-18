@@ -100,7 +100,7 @@ namespace Phi.Compiler.Libraries
             new("linux64", Host.Linux64, false, "64-bit Linux"),
             new("windows", Host.Windows, false, "32-bit Windows"),
             new("windows64", Host.Windows64, false, "64-bit Windows"),
-            // (not built yet: a library's code is an ELF object of x86 today; see Builder.BuildLibrary)
+            // (an object file of Apple's clang, built on a Mac: A64Generator.Library.cs)
             new("macos", Host.MacOS, false, "macOS (Apple Silicon)"),
         };
 

@@ -811,6 +811,9 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>What the optimiser did with each loop, and why not more, for PHI_IR_TRACE.</summary>
         public List<(Syntax.Node At, string Note)> Notes { get; } = new();
 
+        /// <summary>The structs whose type tables the code names (ARM's: an is Struct test), which the generator writes.</summary>
+        public List<Semantics.StructSymbol> TypeTables { get; } = new();
+
         /// <summary>
         /// The 8-byte places at the top of the frame (rbp - 8, - 16, ...) the method keeps
         /// things in that must be in memory: its own objects, which are freed from there at its

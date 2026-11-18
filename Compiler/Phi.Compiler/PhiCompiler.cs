@@ -301,7 +301,7 @@ namespace Phi.Compiler
                 return new CompileResult { Diagnostics = AtUses(diagnostics.Items, usedBy, syntax, platform.Host, null), Syntax = syntax, Bound = bound, Uses = uses, Files = files };
 
             BoundUnit unit = bound.Units.Single();
-            AsmUnit asm = X86Generator.Generate(bound, unit, diagnostics);
+            AsmUnit asm = platform.Host.IsArm() ? CodeGen.A64.A64Generator.Generate(bound, unit, diagnostics) : X86Generator.Generate(bound, unit, diagnostics);
             var result = new CompileResult { Diagnostics = diagnostics.Items, Syntax = syntax, Bound = bound, Uses = uses, Files = files };
             if (!result.Success || asm.Library == null) return result;
 

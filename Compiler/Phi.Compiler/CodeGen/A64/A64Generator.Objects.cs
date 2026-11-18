@@ -37,6 +37,12 @@ namespace Phi.Compiler.CodeGen.A64
 
         string TypeTable(StructSymbol s)
         {
+            // (a library's code uses the program's: there's one of each in a program)
+            if (program.Library != null)
+            {
+                if (!libraryTypeTables.Contains(s)) libraryTypeTables.Add(s);
+                return $"phi_type_{Struct(s)}";
+            }
             if (!typeTables.Contains(s))
             {
                 typeTables.Add(s);

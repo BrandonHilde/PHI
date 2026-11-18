@@ -20,6 +20,9 @@ namespace Phi.Compiler.CodeGen
 
         /// <summary>What the linker is given besides (a macOS program's outside libraries: -lobjc, -framework AppKit).</summary>
         public List<string> Links { get; init; } = new();
+
+        /// <summary>A macOS program's compiled libraries: each one's name and object file, linked with it.</summary>
+        public List<(string Name, byte[] Object)> Objects { get; init; } = new();
     }
 
     /// <summary>What generating a library leaves besides its assembly (which NASM makes an object file of).</summary>

@@ -800,6 +800,12 @@ namespace Phi.Compiler.CodeGen.Ir
                     return;
                 }
 
+                case VarDecl { Narrows: Expr found, Symbol: VariableSymbol narrowed } nd when arm:
+                    // (for ARM: the object an if or when found to be this struct, borrowed)
+                    Mark(nd);
+                    Assign(narrowed, found);
+                    return;
+
                 case VarDecl { IsNew: true, Symbol: VariableSymbol classNew } cn when arm && !Ours(classNew) && AnyGlobal(classNew) != null
                                                                                  && (!classNew.Type.IsArray || OwnObjectArray(classNew)):
                 {
@@ -1010,7 +1016,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
                 case IfStmt ifs:
                 {
-                    Need(ifs.Condition is not (ThrowsExpr or IsTypeExpr or HasWhenExpr), "an if it doesn't take");
+                    Need(ifs.Condition is not (ThrowsExpr or HasWhenExpr) && (ifs.Condition is not IsTypeExpr || arm), "an if it doesn't take");
                     Mark(ifs);
                     Block then = fn.NewBlock(), after = fn.NewBlock();
                     Block otherwise = ifs.Else != null ? fn.NewBlock() : after;
@@ -1461,7 +1467,8 @@ namespace Phi.Compiler.CodeGen.Ir
                         // a call's new object: the target takes it over (the generator's EmitTakeOver)
                         Emit(new ObjectLineI { At = call });
                         VReg made = Call(callee, call.Arguments, wantResult: true)!;
-                        TakeObject(call.ResultTarget, callee.ReturnType.Struct!, made, move: true);
+                        // (for ARM: the target's struct, which may be an interface the result's struct has)
+                        TakeObject(call.ResultTarget, arm ? call.ResultTarget.Type.Struct ?? callee.ReturnType.Struct! : callee.ReturnType.Struct!, made, move: true);
                         return;
                     }
                     if (GivesText(callee))
@@ -1720,6 +1727,20 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>Jumps to yes when e holds (a number not 0), and to no when it doesn't.</summary>
         void Condition(Expr e, Block yes, Block no)
         {
+            if (arm && e is IsTypeExpr { Struct: StructSymbol tested } test)
+            {
+                // (for ARM: x is Struct: an object, whose type table, the 8 bytes before it, is the struct's)
+                VReg obj = InReg(Value(test.Value), Addr);
+                Block some = fn.NewBlock();
+                current.End = new BranchT { Cond = Cond.Eq, A = obj, B = Opnd.Const(0), Then = no, Else = some };
+                Enter(some);
+                VReg table = fn.NewAddress(), its = fn.NewAddress();
+                Emit(new LoadIdxI { Dst = table, Base = obj, Index = Opnd.Const(-8), Scale = 1, Kind = MemKind.Q64 });
+                Emit(new AddrI { Dst = its, Label = $"phi_type_{Templates.Label(tested.Name)}" });
+                if (!fn.TypeTables.Contains(tested)) fn.TypeTables.Add(tested);
+                current.End = new BranchT { Cond = Cond.Eq, A = table, B = its, Then = yes, Else = no };
+                return;
+            }
             switch (e)
             {
                 case BinaryExpr { Op: BinaryOp.And } and:

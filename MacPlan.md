@@ -423,10 +423,19 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   Found with it: some emitter code used x10-x15 (registers the allocator hands out) as
   temporaries; it uses x0-x9 and x16-x17 now. A str array's element given to a writable str
   parameter (a slot of the call's, put back after). 201 tests.
+- **Compiled libraries**: `phi build --library` builds a macOS target too (on a Mac): the
+  library's code is an object file of Apple's clang, kept whole in the .philib, which the
+  program's link puts beside its own (`A64Generator.Library.cs`). Its classes' start, methods,
+  variables and line marks are global; what it leaves to the program (modules, the runtime,
+  type tables) the program gives, its labels all global when it has libraries. An error in a
+  library's code has its line, from the library's marks put after the program's. `if x is
+  Struct name` for ARM too. The 7 library tests pass. 208 tests.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
-  `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the
-  generator checks them (`IrBuilder.arm`).
+  `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. A method's object result kept in
+  an interface (`call shape is Make: 3`) frees what the interface had with the result's
+  struct's free, not the interface's. ARM's are done as the generator does them
+  (`IrBuilder.arm`).
 
 ## Order, and where to stop
 

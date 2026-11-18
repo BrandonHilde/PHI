@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 using Phi.Compiler.CodeGen.Ir;
+using Phi.Compiler.Libraries;
 using Phi.Compiler.Semantics;
 using Phi.Compiler.Syntax;
 
@@ -65,7 +66,12 @@ namespace Phi.Compiler.CodeGen.A64
         {
             var generator = new A64Generator(program, unit, diagnostics) { debug = debug };
             string text = generator.Build();
-            return new AsmUnit { Kind = unit.Kind, Name = "program", Text = text, Links = generator.Links() };
+            return new AsmUnit
+            {
+                Kind = unit.Kind, Name = program.Library != null ? "library" : "program", Text = text, Links = generator.Links(),
+                Library = generator.libraryUnit,
+                Objects = unit.CompiledLibraries.Select(c => (c.Name, c.Sections.Count > 0 ? c.Sections[0].Bytes : Array.Empty<byte>())).ToList(),
+            };
         }
 
         /// <summary>
@@ -103,17 +109,23 @@ namespace Phi.Compiler.CodeGen.A64
         string Build()
         {
             if (unit.Kind != UnitKind.Program) return NotYet(program.File, default, "a kernel or a boot sector");
-            if (program.Library != null) return NotYet(program.File, default, "a compiled library's build (phi build --library)");
-            if (unit.CompiledLibraries.Count > 0) return NotYet(program.File, default, $"a compiled library ({unit.CompiledLibraries[0].Name}.philib)");
-            if (unit.RawBlocks.FirstOrDefault(r => r.Language != "arm") is RawBlockDecl raw)
+            if (program.Library != null) return BuildLibrary();
+            if (unit.RawBlocks.FirstOrDefault(r => r.Language != "arm" && r.File.Compiled == null) is RawBlockDecl raw)
                 return NotYet(raw.File, raw.Span, $"an x86 assembly block ({raw.Language}.{raw.Name}; ARM's is arm.{raw.Name})");
             if (unit.ForeignEntries.FirstOrDefault() is MethodSymbol foreign)
                 return NotYet(foreign.Decl.File, foreign.Decl.Span, "addr foreign (a method other code calls)");
 
             // each class's own statements, a method of their own, called in order from _main
             var starts = new List<string>();
+            var startedLibraries = new HashSet<CompiledTarget>();
             foreach (ClassDecl cls in unit.Classes)
             {
+                // a compiled library's classes run together, in the order they're in in it
+                if (cls.File.Compiled is CompiledTarget compiled)
+                {
+                    if (startedLibraries.Add(compiled)) starts.Add(compiled.StartLabel);
+                    continue;
+                }
                 if (cls.Body.Count == 0) continue;
                 file = cls.File;
                 string label = $"phi_class_{starts.Count}";
@@ -132,6 +144,9 @@ namespace Phi.Compiler.CodeGen.A64
             // what follows isn't PHI code: a fault in it has no line
             code.AppendLine("phi_line_end:");
             lineMarks.Add(("phi_line_end", 0, "0"));
+            // what the compiled libraries' code uses, which nothing here would ask for
+            foreach (CompiledTarget compiled in unit.CompiledLibraries) needed.UnionWith(compiled.RuntimeSymbols);
+            foreach (StructSymbol s in unit.LibraryTypeTables) TypeTable(s);
             EmitObjectRoutines();
             EmitHeapEntries(code);
             if (failed) return "";
@@ -186,12 +201,19 @@ namespace Phi.Compiler.CodeGen.A64
             output.AppendLine();
             output.Append(data);
             if (debug) DebugUnit(output);
-            return output.ToString();
+            if (unit.CompiledLibraries.Count == 0) return output.ToString();
+            // the compiled libraries' objects are linked with this one: what they leave to the
+            // program (its methods and variables, the runtime's, type tables) is its to give, so
+            // every label here is global (theirs are, but for what they give, their own)
+            string text = output.ToString();
+            var globals = System.Text.RegularExpressions.Regex.Matches(text, @"^([A-Za-z_$][\w$.]*):", System.Text.RegularExpressions.RegexOptions.Multiline)
+                .Select(m => m.Groups[1].Value).Where(l => !l.StartsWith('L') && l != "_main").Distinct();
+            return string.Join("\n", globals.Select(l => $"\t.globl {l}")) + "\n" + text;
         }
 
         /// <summary>A program that catches errors (if call ... throws): what it means is the library's catch records.</summary>
-        bool Catches => catches ??= unit.Classes.SelectMany(c => c.Body).Concat(unit.Methods.SelectMany(m => m.Decl.Body))
-            .SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
+        bool Catches => catches ??= program.Library != null || unit.CompiledLibraries.Count > 0
+            || unit.Classes.SelectMany(c => c.Body).Concat(unit.Methods.SelectMany(m => m.Decl.Body)).SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
         bool? catches;
 
         /// <summary>The heap's Alloc is the program's: a method's str result grows to fit (the generator's GrowResults).</summary>
@@ -207,6 +229,7 @@ namespace Phi.Compiler.CodeGen.A64
                 return false;
             }
             IrPeephole.Run(fn);
+            foreach (StructSymbol tested in fn.TypeTables) TypeTable(tested);
             if (Unsupported(fn) is string not)
             {
                 NotYet(m.Decl.File, m.Decl.Span, not, m);
@@ -420,7 +443,7 @@ namespace Phi.Compiler.CodeGen.A64
 
         internal void MarkLine(Node node)
         {
-            string label = $"phi_line_{lineMarks.Count}";
+            string label = program.Library != null ? $"{libraryPrefix}_line_{lineMarks.Count}" : $"phi_line_{lineMarks.Count}";
             code.AppendLine($"{label}:");
             int line = file.GetLocation(node.Span.Start).Line;
             lineMarks.Add((label, line, StringLabel(Path.GetFileName(file.Path))));
@@ -451,8 +474,15 @@ namespace Phi.Compiler.CodeGen.A64
             output.AppendLine("\t.section __DATA,__const");
             output.AppendLine("\t.p2align 3");
             output.AppendLine("phi_lines:");
-            output.AppendLine($"\t.quad {lineMarks.Count}");
-            foreach (var (label, line, name) in lineMarks) output.AppendLine($"\t.quad {label}, {line}, {name}");
+            // (then each compiled library's, which the linker puts after the program's code, in order)
+            var marks = lineMarks.ToList();
+            foreach (CompiledTarget compiled in unit.CompiledLibraries.Where(c => c.Lines.Count > 0))
+            {
+                foreach (LibraryLine l in compiled.Lines) marks.Add(($"{compiled.Prefix}_line_{l.Offset}", l.Line, StringLabel(l.File)));
+                marks.Add(($"{compiled.Prefix}_line_end", 0, "0"));
+            }
+            output.AppendLine($"\t.quad {marks.Count}");
+            foreach (var (label, line, name) in marks) output.AppendLine($"\t.quad {label}, {line}, {name}");
             // (the texts written in the program are writable, as x86's are: code may write through a ptr<u8> to one)
             output.AppendLine("\t.section __DATA,__data");
             foreach (var (text, label) in strings)

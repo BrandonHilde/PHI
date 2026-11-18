@@ -169,13 +169,7 @@ namespace Phi.Cli
             try
             {
                 var source = SourceFile.Load(phiFile);
-                if (only is Host arm && arm.IsArm())
-                {
-                    result.Errors.Add($"error: compiled libraries for {arm.Name()} programs aren't there yet: build the program from the library's source");
-                    return result;
-                }
-                // (macOS programs' code is ARM, and a library's is an x86 ELF object: not yet)
-                foreach (LibraryPlatform platform in LibraryPlatform.All.Where(p => !p.Host.IsArm() && (only == null || p.Host == only)))
+                foreach (LibraryPlatform platform in LibraryPlatform.All.Where(p => only == null || p.Host == only))
                 {
                     var file = new SourceFile(Path.GetRelativePath(Environment.CurrentDirectory, phiFile), source.Text);
                     CompileResult compiled = PhiCompiler.CompileLibrary(file, platform, name);
@@ -183,7 +177,42 @@ namespace Phi.Cli
                         if (!result.Warnings.Contains(w.ToString())) result.Warnings.Add(w.ToString());
 
                     var errors = compiled.Diagnostics.Where(d => d.Severity == Severity.Error).Select(d => d.ToString()).ToList();
-                    if (errors.Count == 0)
+                    if (errors.Count == 0 && platform.Host.IsArm())
+                    {
+                        // macOS's: the object file Apple's clang makes, kept whole, for the linker
+                        // (CodeGen/A64/A64Generator.Library.cs)
+                        AsmUnit armUnit = compiled.Units.Single();
+                        string armAsm = Path.Combine(work, platform.Key + ".s");
+                        string armObj = Path.Combine(work, platform.Key + ".o");
+                        File.WriteAllText(armAsm, armUnit.Text);
+                        string clang;
+                        if (!OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("PHI_CLANG") == null)
+                        {
+                            errors.Add("its object file is made by Apple's clang, so it's built on a Mac (or with PHI_CLANG set to a clang that makes Mach-O arm64)");
+                            clang = "";
+                        }
+                        else try { clang = Toolchain.Clang; }
+                        catch (Exception e) when (e is FileNotFoundException or InvalidOperationException)
+                        {
+                            errors.Add(e.Message);
+                            clang = "";
+                        }
+                        if (clang != "")
+                        {
+                            var (armCode, armOutput) = Toolchain.Run(clang, new[] { "-arch", "arm64", "-mmacosx-version-min=11.0", "-c", armAsm, "-o", armObj });
+                            if (armCode != 0) errors.Add($"clang failed on {name} for {platform.Description} (this is a bug in phi's ARM code, or in an arm. block):\n{armOutput}");
+                            else
+                            {
+                                CompiledTarget target = armUnit.Library!.Target;
+                                target.Path = result.LibraryPath;
+                                target.Sections.Add(new LibrarySection(File.ReadAllBytes(armObj), 16));
+                                library.Targets[platform.Key] = target;
+                                result.Built.Add(platform.Description);
+                                continue;
+                            }
+                        }
+                    }
+                    else if (errors.Count == 0)
                     {
                         AsmUnit unit = compiled.Units.Single();
                         string asm = Path.Combine(work, platform.Key + ".asm");
@@ -480,7 +509,15 @@ namespace Phi.Cli
                 result.Errors.Add($"clang failed to assemble {asmPath} (this is a bug in phi's ARM code, or in an arm. block):\n{output}");
                 return false;
             }
-            (code, output) = Toolchain.Run(clang, arch.Concat(new[] { objPath, "-o", Path.GetFullPath(executable) }).Concat(unit.Links));
+            // (with the compiled libraries' object files, each written out beside it)
+            var objects = new List<string> { objPath };
+            foreach (var (libraryName, bytes) in unit.Objects)
+            {
+                string libraryObject = Path.Combine(Path.GetDirectoryName(objPath)!, libraryName + ".philib.o");
+                File.WriteAllBytes(libraryObject, bytes);
+                objects.Add(libraryObject);
+            }
+            (code, output) = Toolchain.Run(clang, arch.Concat(objects).Concat(new[] { "-o", Path.GetFullPath(executable) }).Concat(unit.Links));
             if (code != 0)
             {
                 result.Errors.Add($"clang failed to link {objPath}:\n{output}");

@@ -154,3 +154,12 @@ x64.CallsDoubled
 	add eax, eax
 	ret
 }
+
+arm.CallsDoubled
+{
+	adrp x9, {calls}@PAGE
+	add x9, x9, {calls}@PAGEOFF
+	ldr w0, [x9]
+	add w0, w0, w0
+	ret
+}
