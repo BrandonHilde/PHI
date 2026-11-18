@@ -11,9 +11,10 @@ phi.ProfileProgram:Program
 	const int MOST: 16000;
 	u8 samples[MOST];
 
-	# busy for a good many milliseconds
+	# busy for a good many milliseconds: a kernel at 100 Hz (WSL's) samples only every 10 ms,
+	# and in 64-bit code this is about 1 ms a round
 	int total: 0;
-	while int round: 0; round < 40; round++;
+	while int round: 0; round < 200; round++;
 		total++ (Work: 2000000);
 	;;
 	log total '\n';
