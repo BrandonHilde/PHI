@@ -91,6 +91,16 @@ namespace Phi.Cli
 
             if (!compiled.Success) return result;
 
+            if (host.IsMacOS())
+            {
+                // a macOS program: Apple's clang assembles its ARM code and links it with libSystem
+                // (and signs it, which Apple Silicon needs to run it)
+                result.ExecutablePath = Path.Combine(outDir, name);
+                if (!AssembleMacOS(compiled.Units.Single(), outDir, result.ExecutablePath, result)) return result;
+                result.IsProgram = true;
+                return result;
+            }
+
             if (host != Host.PhiOS)
             {
                 // an ordinary program: NASM writes the whole executable, headers and all
@@ -355,6 +365,39 @@ namespace Phi.Cli
         /// the spare its running out becomes an error on (2). See Process.Spawn.
         /// </summary>
         public const int ProgramMost = (1024 - 16 - 2 - 2) * 4096;
+
+        /// <summary>
+        /// A macOS program's assembly (NAME.s) made a Mach-O executable: clang -c, then clang to
+        /// link it (libSystem, and the linker's ad-hoc signature). Two steps, so an assembler's
+        /// complaint (phi's mistake) and a linker's (a function that isn't anywhere) are told apart.
+        /// </summary>
+        static bool AssembleMacOS(AsmUnit unit, string outDir, string executable, BuildResult result)
+        {
+            string asmPath = Path.GetFullPath(Path.Combine(outDir, unit.Name + ".s"));
+            string objPath = Path.ChangeExtension(asmPath, ".o");
+            File.WriteAllText(asmPath, unit.Text);
+            string[] arch = { "-arch", "arm64", "-mmacosx-version-min=11.0" };
+            string clang;
+            try { clang = Toolchain.Clang; }
+            catch (ToolNotFoundException e)
+            {
+                result.Errors.Add($"{e.Message} (Apple's Command Line Tools: xcode-select --install)");
+                return false;
+            }
+            var (code, output) = Toolchain.Run(clang, arch.Concat(new[] { "-c", asmPath, "-o", objPath }));
+            if (code != 0)
+            {
+                result.Errors.Add($"clang failed to assemble {asmPath} (this is a bug in phi's ARM code, or in an arm. block):\n{output}");
+                return false;
+            }
+            (code, output) = Toolchain.Run(clang, arch.Concat(new[] { objPath, "-o", Path.GetFullPath(executable) }));
+            if (code != 0)
+            {
+                result.Errors.Add($"clang failed to link {objPath}:\n{output}");
+                return false;
+            }
+            return true;
+        }
 
         static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)
         {

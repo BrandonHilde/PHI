@@ -37,15 +37,18 @@ namespace Phi.Compiler.Tests
             bool record = Environment.GetEnvironmentVariable("PHI_ASM_SNAPSHOT_MODE") == "record";
 
             string root = RepositoryRoot();
+            // (the files by their paths from the repository, as phi build names them from where it
+            // runs: an absolute path would be in the code, and differ from one checkout to another)
+            Directory.SetCurrentDirectory(root);
             var sources = Directory.GetFiles(Path.Combine(root, "tests"), "*.phi")
                 .Concat(Directory.GetFiles(Path.Combine(root, "samples"), "*.phi", SearchOption.AllDirectories))
                 .Where(f => !f.Contains($"{Path.DirectorySeparatorChar}build{Path.DirectorySeparatorChar}"))
                 .OrderBy(f => f, StringComparer.Ordinal).ToList();
 
             var builds = new List<(string Source, string Name, Host Host, string Wrapper, bool V2)>();
-            foreach (string source in sources)
+            foreach (string full in sources)
             {
-                string rel = Path.GetRelativePath(root, source).Replace('\\', '/');
+                string rel = Path.GetRelativePath(root, full).Replace('\\', '/'), source = rel;
                 builds.Add((source, $"{rel} phios", Host.PhiOS, "", false));
                 builds.Add((source, $"{rel} phios+16", Host.PhiOS, Boot16, false));
                 builds.Add((source, $"{rel} phios+32", Host.PhiOS, Kernel32, false));
@@ -65,7 +68,7 @@ namespace Phi.Compiler.Tests
                 // (the settings a build reads are per thread: set each for this one)
                 X86Generator.X8664V2 = b.V2;
                 X86Generator.MainStack = 0;
-                hashes[b.Name] = Hash(b.Source, b.Wrapper, b.Host);
+                hashes[b.Name] = Hash(b.Source, b.Wrapper, b.Host, root);
             });
 
             var lines = hashes.OrderBy(h => h.Key, StringComparer.Ordinal).Select(h => $"{h.Key}\t{h.Value}").ToList();
@@ -84,7 +87,7 @@ namespace Phi.Compiler.Tests
         }
 
         /// <summary>A build's NASM text, or its errors, hashed.</summary>
-        static string Hash(string source, string wrapper, Host host)
+        static string Hash(string source, string wrapper, Host host, string root)
         {
             string text, kind = "built";
             try
@@ -105,6 +108,9 @@ namespace Phi.Compiler.Tests
                 kind = "threw";
                 text = e.GetType().Name + ": " + e.Message;
             }
+            // (a file reached from another folder is named by its whole path, in a comment: the
+            // checkout's own folder is taken out, so two checkouts' code compares)
+            text = text.Replace(root, "<root>");
             return kind + " " + Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(text)))[..16];
         }
 

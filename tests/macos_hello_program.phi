@@ -1,0 +1,22 @@
+# The smallest test of macOS programs (Apple Silicon, phi build --target macos): text, numbers,
+# a method with arguments and a result, a loop, a choice, standard error, and an exit code.
+# Like every program test it runs on each system it builds for.
+phi.MacosHello:Program
+{
+	log 'hello from PHI\n';
+	int total: 0;
+	while int i: 1; i <= 10; i++;
+		total is total + i;
+	;;
+	log 'the sum of 1 to 10: ' total '\n';
+	log 'times: ' (Times: 6 7) ', ' (Times: -3 5) ', ' (Times: 100000 30000) '\n';
+	if total > 50
+		log 'more than 50\n';
+	;;
+	debug 'to standard error\n';
+	log 'after it\n';
+	exit 3;
+
+	[Times: int a: 0; int b: 0;]
+	[end: a * b]
+}

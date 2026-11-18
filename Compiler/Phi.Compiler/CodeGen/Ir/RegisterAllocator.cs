@@ -50,10 +50,20 @@ namespace Phi.Compiler.CodeGen.Ir
         public static readonly string[] CallerSaved32 = { "rbx" };
         public static readonly string[] CalleeSaved32 = { "rsi", "rdi" };
 
-        string[] callerSaved = CallerSaved, calleeSaved = CalleeSaved;
+        string[] callerSaved = CallerSaved, calleeSaved = CalleeSaved, floatRegisters = FloatRegisters;
         bool x32;
 
-        public static RegisterAllocator Allocate(IrFunction fn, bool x32 = false)
+        /// <summary>What else is a call on a target (an instruction its emitter writes as one), or null.</summary>
+        Func<Instr, bool>? alsoCall;
+
+        /// <summary>
+        /// Another CPU's registers for values, in place of x64's (for ARM: CodeGen/A64): those a
+        /// call may change, those every method keeps, the floats' (none kept across a call), and
+        /// what else its emitter writes as a call. The scan is the same.
+        /// </summary>
+        public sealed record Target(string[] CallerSaved, string[] CalleeSaved, string[] Float, Func<Instr, bool>? AlsoCall = null);
+
+        public static RegisterAllocator Allocate(IrFunction fn, bool x32 = false, Target? target = null)
         {
             var allocator = new RegisterAllocator();
             if (x32)
@@ -61,6 +71,13 @@ namespace Phi.Compiler.CodeGen.Ir
                 allocator.x32 = true;
                 allocator.callerSaved = CallerSaved32;
                 allocator.calleeSaved = CalleeSaved32;
+            }
+            if (target != null)
+            {
+                allocator.callerSaved = target.CallerSaved;
+                allocator.calleeSaved = target.CalleeSaved;
+                allocator.floatRegisters = target.Float;
+                allocator.alsoCall = target.AlsoCall;
             }
             allocator.Run(fn);
             return allocator;
@@ -334,7 +351,7 @@ namespace Phi.Compiler.CodeGen.Ir
                         Touch(def, x32 ? pos + 1 : pos);
                         Weigh(def, k);
                     }
-                    if (IsCall(i)) calls.Add(pos);
+                    if (IsCall(i) || alsoCall?.Invoke(i) == true) calls.Add(pos);
                     // (in 32-bit code a library routine takes its arguments in esi and edi, the
                     // registers values are kept in across calls, and may change them: it's as an
                     // assembly block is, and so is anything else that isn't a method's call)
@@ -368,7 +385,7 @@ namespace Phi.Compiler.CodeGen.Ir
 
             var free = new List<string>(callerSaved.Concat(calleeSaved));
             // (32-bit code has xmm0 to xmm7: the emitter's own are xmm4 to xmm7 there, as its xmm12 to xmm15)
-            var freeFloat = new List<string>(x32 ? FloatRegisters.Take(4) : FloatRegisters);
+            var freeFloat = new List<string>(x32 ? floatRegisters.Take(4) : floatRegisters);
             var active = new List<Interval>();
             var activeFloat = new List<Interval>();
             int slots = slotsForRaw;
