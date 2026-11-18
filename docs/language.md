@@ -3332,6 +3332,51 @@ hello.phi:1:1: error: drivers.ata doesn't work in a Linux program (lib/phi/drive
 
 Most of the standard library (data, text, crypto, math, file formats) works anywhere.
 
+### Programs on macOS
+
+On a Mac with Apple Silicon, the same program builds as a native macOS program, or as an
+app the Finder opens:
+
+```
+phi build hello.phi --target macos        # build/hello/hello, an arm64 Mach-O executable
+phi run hello.phi --target macos -- a b   # build and run it here, with a b as its command line
+phi build sketch.phi --target macos --app # build/sketch/sketch.app, opened with a double click
+phi build hello.phi --target macos --debug # with hello.dSYM: lldb stops on PHI's lines
+phi test --target macos                   # the tests that are programs, run here
+```
+
+It needs Xcode's Command Line Tools (`xcode-select --install`): PHI writes ARM assembly, and
+Apple's clang assembles it and links it with the system's libraries, signing it for this
+Mac as it does (an arm64 program must be signed to run). `PHI_CLANG` names another clang.
+A macOS program is always 64-bit, for macOS 11 or later, and what it does is what the same
+program does on Linux and Windows: the table above holds for it, with the system's own
+calls behind each row (`libSystem`'s files, time, memory, sockets and threads).
+
+What else a macOS program has:
+
+| In a program | On macOS |
+|---|---|
+| windows (`gui.window` and what's built on it) | a real window of AppKit's, drawn from the program's own pixels, with the keyboard and mouse; several windows, dialogs and menus as on Windows and Linux |
+| sound (`audio.sound`) | the system's audio queue |
+| threads, `locked`, `atomic` | the system's threads; a plain variable two threads share needs `locked`, `atomic` or `volatile`, as everywhere |
+| `vec<T>` | NEON, 16 bytes at once, with the same answers lane for lane as SSE2 gives |
+| an assembly block | its `arm.Name { }` version, written beside `asm.Name` and `x64.Name` (a block with no ARM version is an error naming it) |
+| `use 'libSystem.B.dylib' as LibC;` and outside declarations | any of the system's libraries and frameworks, called as C calls them: `...` for a function that takes any number of arguments, and `Name = 'symbol':` to give one C function several PHI names |
+| a compiled library (`--library`) | built on a Mac, a `.philib` holds macOS code beside the other systems' |
+
+`--app` makes `NAME.app` (its `Info.plist`, the program in `Contents/MacOS`, and an id
+`org.phi.NAME`), signed for this Mac; giving it to someone else needs your own Developer ID
+signature and Apple's notarising, which PHI doesn't do. A program that isn't an app runs
+from a terminal as any command does.
+
+With `--debug`, `lldb build/hello/hello` stops at `breakpoint set -f hello.phi -l 8`, steps
+by PHI's lines and shows the methods called (`bt`); variables by name aren't in it yet. It
+needs a current lldb (Command Line Tools 15 or later; version 14's crashes).
+
+What a kernel or a PHI OS program has and a macOS program hasn't is the same as on Linux
+and Windows, an error when it's built. Code for macOS is about as fast as C built with
+`clang -O2` over PHI's benchmarks (`phi compare` on a Mac times them).
+
 ### A system's own modules, and system calls
 
 A module can be one system's own: its classes say which instead of `:Program`. The same

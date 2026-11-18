@@ -145,6 +145,7 @@ phi.Count:Program
                                          crash (press K in the server's window to see it)
        phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
        phi build x.phi --target windows64 --debug   with a .pdb: a debugger steps through its lines
+       phi build x.phi --target macos --app   on a Mac: a native app, x.app, that the Finder opens
        phi build x.phi --library         a compiled library: x.philib, which another program includes
                                          with use x; without any of its source
        phi check file.phi                report errors without building
@@ -193,8 +194,9 @@ on and what it doesn't do yet.
 
 <h4>What's Next:</h4>
 
-PHI compiles boot sectors, 32-bit kernels and their programs, which PHI OS ties together, and
-ordinary programs for Linux and Windows in 32 or 64 bits. Next, roughly in order (the
+PHI compiles boot sectors, 32-bit kernels and their programs, which PHI OS ties together,
+ordinary programs for Linux and Windows in 32 or 64 bits, and native programs and apps for
+macOS on Apple Silicon (`--target macos`). Next, roughly in order (the
 [roadmap](./Plan.md) has the rest):
 
 1. A core language that's solid throughout, before more is added to it: the language is
@@ -202,7 +204,7 @@ ordinary programs for Linux and Windows in 32 or 64 bits. Next, roughly in order
    [roadmap](./Plan.md) says what that covers)
 2. More tools: hover, finding uses and renaming in the language server, debug information on
    Linux, and packages
-3. Later: macOS, 64-bit kernels, an ARM backend, C compatibility, and rewriting the compiler
+3. Later: 64-bit kernels, ARM beyond macOS, C compatibility, and rewriting the compiler
    in PHI (see [Plan.md](./Plan.md#later))
 
 <h4>License:</h4>

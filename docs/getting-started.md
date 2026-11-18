@@ -123,8 +123,9 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi build file.phi --target linux64 --x86-64-v2` | a 64-bit program for x86-64-v2 CPUs (since about 2009 to 2011), whose `vec` code is shorter; an older CPU says so and stops |
 | `phi build file.phi --target windows --stack large` | a Windows program reserving 1 MB for its main stack (`normal`, `large`, `huge`, or bytes; 1 MB unless it says); Linux uses the system's |
 | `phi run file.phi --target linux -- args` | build it and run it here, with `args` as its command line (a Linux program runs under WSL on Windows) |
+| `phi build file.phi --target macos` | on a Mac with Apple Silicon and Xcode's Command Line Tools: a native macOS program; with `--app`, `NAME.app` for the Finder; with `--debug`, a `NAME.dSYM` for lldb; see [Programs on macOS](language.md#programs-on-macos) |
 | `phi test` | boot every test in `tests/` without a window and check what each one prints; the tests that can also run as Linux and Windows programs do |
-| `phi test --target linux` | run only the tests that can, as Linux programs, without QEMU (much faster); `--target windows` likewise |
+| `phi test --target linux` | run only the tests that can, as Linux programs, without QEMU (much faster); `--target windows` and `--target macos` likewise |
 | `phi serve folder` | serve a folder over HTTP (`--https` for HTTPS) on your computer; a kernel in QEMU reaches it at `10.0.2.2` |
 
 The build folder keeps the generated assembly (`boot.asm`, `os.asm` or `kernel.asm`), with

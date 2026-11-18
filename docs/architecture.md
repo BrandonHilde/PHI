@@ -12,7 +12,7 @@ by exception 6") to see where to look first, in order.
 
 | Folder | What's in it |
 |---|---|
-| `Compiler/Phi.Compiler/` | the compiler, a .NET library: PHI source in, NASM assembly out |
+| `Compiler/Phi.Compiler/` | the compiler, a .NET library: PHI source in, NASM assembly out (ARM assembly for clang, for a macOS program: `CodeGen/A64/`) |
 | `Compiler/Phi.Cli/` | the `phi` command: runs the compiler and NASM, builds disk images, runs QEMU and the tests |
 | `Compiler/Phi.Compiler.Tests/` | xUnit tests for the compiler and the image builder (no QEMU needed) |
 | `lib/boot/` | the boot sector and loader PHI adds to 32-bit kernels |
@@ -22,6 +22,7 @@ by exception 6") to see where to look first, in order.
 | `lib/x86_32_linux/` | assembly library for programs built with `--target linux`: Linux system calls |
 | `lib/x86_32_windows/` | assembly library for programs built with `--target windows`: the `kernel32.dll` import table and calls |
 | `lib/x86_64_linux/`, `lib/x86_64_windows/` | the same for 64-bit programs (`--target linux64`, `windows64`) |
+| `lib/arm64_macos/` | assembly library (ARM, for Apple's clang) for programs built with `--target macos`: the console, errors and faults, threads, text and numbers, AppKit and audio |
 | `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, cryptography, sound, text |
 | `tests/` | programs that boot in QEMU, with the output they must produce |
 | `samples/` | example programs, including PHI OS |
@@ -220,6 +221,7 @@ kernel's number formatting without duplicating it.
 | user program | not an image: `NAME.bin`, to put in a kernel's rootfs |
 | program, `--target linux` | an ELF executable, `NAME`: its header and one segment, loaded at `0x08048000` |
 | program, `--target windows` | a PE executable, `NAME.exe`: its headers and one section at `0x400000`, with the import table in it |
+| program, `--target macos` | a Mach-O executable for arm64, `NAME`: PHI writes `program.s`, Apple's clang assembles and links it with libSystem (and libobjc and frameworks, for a window or sound) and signs it; `--app` puts it in `NAME.app` |
 
 The kernel is assembled first, so the boot code can be given its exact size in sectors.
 [FatImage.cs](../Compiler/Phi.Cli/FatImage.cs) formats the partition from the program's
