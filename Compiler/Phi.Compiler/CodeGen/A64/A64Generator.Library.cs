@@ -47,7 +47,7 @@ namespace Phi.Compiler.CodeGen.A64
                 var decl = new MethodDecl { Name = cls.Name, Owner = cls, Span = cls.Span };
                 decl.Body.AddRange(cls.Body);
                 var m = new MethodSymbol { Name = $"{cls.Name} (its own statements)", Label = label, Decl = decl, Unit = unit.Kind };
-                if (EmitMethod(m, $"class {cls.Name}'s own statements ({Path.GetFileName(cls.File.Path)})")) starts.Add(label);
+                if (EmitMethod(m, $"class {cls.Name}'s own statements ({Path.GetFileName(cls.File.Path)})", hold: false)) starts.Add(label);
             }
             foreach (MethodSymbol m in unit.Methods.Where(m => !m.IsOutside))
             {

@@ -2685,9 +2685,11 @@ namespace Phi.Compiler.CodeGen
         /// <summary>The class variables that are reached other than by name somewhere: by address, by an atomic step, a while each, or an asm block.</summary>
         HashSet<VariableSymbol>? reachedByAddress;
 
-        HashSet<VariableSymbol> ReachedByAddress()
+        HashSet<VariableSymbol> ReachedByAddress() => reachedByAddress ??= ReachedByAddress(unit);
+
+        /// <summary>(For any back end: CodeGen/A64 holds a loop's class variables in registers by the same rules.)</summary>
+        internal static HashSet<VariableSymbol> ReachedByAddress(BoundUnit unit)
         {
-            if (reachedByAddress != null) return reachedByAddress;
             var reached = new HashSet<VariableSymbol>();
             void Reach(Symbol? symbol)
             {
@@ -2741,7 +2743,7 @@ namespace Phi.Compiler.CodeGen
                     if (callee is MethodSymbol called) todo.Push(called);
                 }
             }
-            return reachedByAddress = reached;
+            return reached;
         }
 
         /// <summary>

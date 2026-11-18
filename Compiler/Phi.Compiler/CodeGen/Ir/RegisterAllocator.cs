@@ -51,17 +51,22 @@ namespace Phi.Compiler.CodeGen.Ir
         public static readonly string[] CalleeSaved32 = { "rsi", "rdi" };
 
         string[] callerSaved = CallerSaved, calleeSaved = CalleeSaved, floatRegisters = FloatRegisters;
-        bool x32;
+        bool x32, reuseSaved;
 
         /// <summary>What else is a call on a target (an instruction its emitter writes as one), or null.</summary>
-        Func<Instr, bool>? alsoCall;
+        Func<Instr, bool>? alsoCall, sharesResult;
 
         /// <summary>
         /// Another CPU's registers for values, in place of x64's (for ARM: CodeGen/A64): those a
         /// call may change, those every method keeps, the floats' (none kept across a call), and
         /// what else its emitter writes as a call. The scan is the same.
         /// </summary>
-        public sealed record Target(string[] CallerSaved, string[] CalleeSaved, string[] Float, Func<Instr, bool>? AlsoCall = null);
+        /// <param name="SharesResult">
+        /// The instructions whose result may have the register of an operand read there for the
+        /// last time (its emitter reads every operand before it writes the result).
+        /// </param>
+        public sealed record Target(string[] CallerSaved, string[] CalleeSaved, string[] Float, Func<Instr, bool>? AlsoCall = null,
+                                    Func<Instr, bool>? SharesResult = null);
 
         public static RegisterAllocator Allocate(IrFunction fn, bool x32 = false, Target? target = null)
         {
@@ -78,6 +83,8 @@ namespace Phi.Compiler.CodeGen.Ir
                 allocator.calleeSaved = target.CalleeSaved;
                 allocator.floatRegisters = target.Float;
                 allocator.alsoCall = target.AlsoCall;
+                allocator.reuseSaved = true;
+                allocator.sharesResult = target.SharesResult;
             }
             allocator.Run(fn);
             return allocator;
@@ -352,7 +359,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     {
                         // (in 32-bit code, with three registers, an operand read here for the last
                         // time gives its register to what's made here: the result starts after it)
-                        Touch(def, x32 ? pos + 1 : pos);
+                        Touch(def, x32 || sharesResult?.Invoke(i) == true ? pos + 1 : pos);
                         Weigh(def, k);
                     }
                     if (IsCall(i) || alsoCall?.Invoke(i) == true) calls.Add(pos);
@@ -391,6 +398,8 @@ namespace Phi.Compiler.CodeGen.Ir
             // (32-bit code has xmm0 to xmm7: the emitter's own are xmm4 to xmm7 there, as its xmm12 to xmm15)
             var freeFloat = new List<string>(x32 ? floatRegisters.Take(4) : floatRegisters);
             var active = new List<Interval>();
+            var saved = new HashSet<string>();
+            bool reuse = reuseSaved;
             var activeFloat = new List<Interval>();
             int slots = slotsForRaw;
             foreach (Interval iv in intervals.Values.Where(i => i.Weight >= 0).OrderBy(i => i.Start).ThenBy(i => i.Value.Id))
@@ -434,9 +443,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     active.Remove(done);
                     free.Add(done.Register!);
                 }
+                // (reuse: of the registers every method keeps, one this method already saves comes
+                // before one it doesn't yet, so a short method saves few; x86's order is as it was)
                 string? register = iv.CrossesCall
-                    ? free.FirstOrDefault(r => calleeSaved.Contains(r))
-                    : free.FirstOrDefault(r => callerSaved.Contains(r)) ?? free.FirstOrDefault();
+                    ? (reuse ? free.FirstOrDefault(r => saved.Contains(r)) : null) ?? free.FirstOrDefault(r => calleeSaved.Contains(r))
+                    : free.FirstOrDefault(r => callerSaved.Contains(r)) ?? (reuse ? free.FirstOrDefault(r => saved.Contains(r)) : null) ?? free.FirstOrDefault();
                 if (register == null)
                 {
                     // none free: whichever costs least in memory (of those whose register this
@@ -458,6 +469,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     }
                 }
                 else free.Remove(register);
+                if (calleeSaved.Contains(register)) saved.Add(register);
                 iv.Register = register;
                 active.Add(iv);
             }

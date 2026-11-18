@@ -102,7 +102,10 @@ namespace Phi.Compiler.CodeGen.A64
             new[] { "x19", "x20", "x21", "x22", "x23", "x24", "x25", "x26", "x27" },
             Enumerable.Range(16, 12).Select(i => $"v{i}").ToArray(),
             // (libm's sin, cos and fmod: a call, which may change what a call changes)
-            i => i is X87I { Instruction: "fsin" or "fcos" } or X87I { B: not null });
+            i => i is X87I { Instruction: "fsin" or "fcos" } or X87I { B: not null },
+            // (each of these writes its result in its last instruction, every operand read by then)
+            i => i is BinI or UnI or ExtendI or NarrowI or LeaI or CopyI { Dst: { Float: false, Vec: false } } or SetCcI { Float: false }
+                 or LoadIdxI { Kind: not (MemKind.F64 or MemKind.F32 or MemKind.F16 or MemKind.V128) });
 
         // ---------------------------------------------------------------- the program
 
@@ -132,7 +135,7 @@ namespace Phi.Compiler.CodeGen.A64
                 var decl = new MethodDecl { Name = cls.Name, Owner = cls, Span = cls.Span };
                 decl.Body.AddRange(cls.Body);
                 var m = new MethodSymbol { Name = $"{cls.Name} (its own statements)", Label = label, Decl = decl, Unit = unit.Kind };
-                if (EmitMethod(m, $"class {cls.Name}'s own statements ({Path.GetFileName(cls.File.Path)})")) starts.Add(label);
+                if (EmitMethod(m, $"class {cls.Name}'s own statements ({Path.GetFileName(cls.File.Path)})", hold: false)) starts.Add(label);
             }
             foreach (MethodSymbol m in unit.Methods.Where(m => !m.IsOutside))
             {
@@ -221,11 +224,23 @@ namespace Phi.Compiler.CodeGen.A64
         /// <summary>The heap's Alloc is the program's: a method's str result grows to fit (the generator's GrowResults).</summary>
         bool GrowResults => unit.Methods.Any(m => m.Name == "Heap.Alloc");
 
+        HashSet<VariableSymbol>? reachedByAddress;
+
+        /// <summary>
+        /// A class's variable a loop that changes it may keep in a register (as x86's loops do,
+        /// by the same rules: X86Generator's "a method's loops"): reading one where it is takes
+        /// three instructions here, the address in two of them. Only in a method: a class's own
+        /// statements' loops aren't fenced as x86's are (a method may name what they'd hold).
+        /// </summary>
+        bool Holdable(VariableSymbol v) =>
+            !v.IsLocal && !v.IsParameter && !v.IsOutside && v.Unit == unit.Kind && !v.Decl.Volatile
+            && !(reachedByAddress ??= X86Generator.ReachedByAddress(unit)).Contains(v);
+
         /// <summary>One method, from the intermediate form; false (and an error) when it can't be.</summary>
-        bool EmitMethod(MethodSymbol m, string what)
+        bool EmitMethod(MethodSymbol m, string what, bool hold = true)
         {
             // (a method's own str that grows keeps its length beside it, as x86's does: an append starts at its end)
-            IrFunction? fn = IrBuilder.Build(m, _ => false, Catches, GrowResults, true, (lengths ??= new RememberedLengths(unit)).Remembers, out string why, arm: true);
+            IrFunction? fn = IrBuilder.Build(m, v => hold && Holdable(v), Catches, GrowResults, true, (lengths ??= new RememberedLengths(unit)).Remembers, out string why, arm: true);
             if (fn == null)
             {
                 NotYet(m.Decl.File, m.Decl.Span, why, m);
