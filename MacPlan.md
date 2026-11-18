@@ -291,6 +291,14 @@ for up to 3 s in a Linux machine.
   Check: `./run.sh --build-only`, then `./test.sh` (`1/1 passed`), then `./run.sh` and sign
   in.
 
+  **Seen (2026-11-17):** the script changes above are made (uncommitted in PHI-OS, whose
+  repository is set up by hand). Homebrew's QEMU 11 has `cocoa`, `curses` and `dbus` displays,
+  no GTK or SDL, so on a Mac `run.sh` (and `run.sh sdl`) opens the Cocoa window; `hvf` is used
+  when QEMU lists it (an Intel Mac). `./run.sh --build-only` in 68 s, libraries included;
+  `./test.sh` 1/1. Made again in the Linux machine, `ICONS.ICN`, `UI.FNT` and `NEWS.FNT` are
+  the same to the byte as the ones in git (NASM 3.02 here). `./run.sh headless` reaches
+  "desktop ready", network up, in about 14 s, and `tools/mon.py shot` shows the sign-in screen.
+
 **PHI-VSCODE**: `npm install`, and set `phi.compilerPath` to
 `~/prj/PHI/Compiler/Phi.Cli/bin/Debug/net10.0/phi` (`phi.nasmPath` and `phi.qemuPath` too if
 VS Code doesn't have Homebrew's folder on its `PATH`).
@@ -324,11 +332,20 @@ makes the Linux machine optional:
 ## An ARM target, since it's why a Mac is interesting
 
 Not part of moving, but it changes what the Mac is for. Today the Mac emulates everything PHI
-makes. With an ARM64 back end (a translator beside `CodeGen/X86Generator.Ir.cs`, an encoder of
-PHI's own since NASM is x86 only, the runtime's helper routines, the library's 42 assembly
-blocks, and Linux's ARM system calls), stage 2's Linux machine would run PHI's programs **as
+makes. With an ARM64 back end (a translator beside `CodeGen/X86Generator.Ir.cs`, an assembler for
+it since NASM is x86 only, the runtime's helper routines, the library's 42 assembly blocks,
+and Linux's ARM system calls), stage 2's Linux machine would run PHI's programs **as
 themselves, at full speed**, and the Mac would be the real hardware for that target the way
-the Linux machine is for x86. macOS programs are a further step: another file format, a
+the Linux machine is for x86.
+
+**The assembler (decided 2026-11-17): an established one first.** PHI writes ARM64 assembly as
+text for an existing assembler, as it writes NASM's today: LLVM's `llvm-mc -triple
+aarch64-linux-gnu -filetype=obj` and `ld.lld` (`brew install llvm`), or GNU `as` for aarch64
+(`binutils-aarch64-linux-gnu`, in the Linux machine). PHI's own assembler, **PHI-Assembler**,
+waits until ARM64 programs work end to end with those. (macOS's own `as` assembles arm64 too,
+but makes Mach-O objects: for macOS programs, not Linux ones.)
+
+macOS programs are a further step: another file format, a
 signature every program must carry, and Apple's system library in place of system calls.
 
 ## Order, and where to stop
