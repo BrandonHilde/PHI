@@ -130,7 +130,11 @@ namespace Phi.Compiler.CodeGen.Ir
                     break;
                 case FNegI f: yield return f.A; break;
                 case LeaI l: yield return l.A; break;
-                case UnlockI u: yield return u.Saved; break;
+                case UnlockI u:
+                    yield return u.Saved;
+                    if (u.At != null) yield return u.At;
+                    break;
+                case LockI { At: VReg lockAt }: yield return lockAt; break;
                 case ObjCallI oc:
                     if (oc.Arg != null) yield return oc.Arg;
                     if (oc.Second != null) yield return oc.Second;

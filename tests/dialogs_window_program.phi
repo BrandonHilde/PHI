@@ -3,10 +3,10 @@
 # plays the user, with what they do waiting in the queue before the dialog looks.
 use gui.dialogs;
 use support.win_window;
-use support.x11_window;
+use support.x11_window; use support.mac_window;
 use support.big_file_linux32;
 use support.big_file_linux64;
-use support.big_file_windows;
+use support.big_file_windows; use support.big_file_macos;
 
 phi.DialogsWindowProgram:Program
 {

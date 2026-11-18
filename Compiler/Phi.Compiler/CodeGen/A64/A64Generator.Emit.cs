@@ -812,7 +812,8 @@ namespace Phi.Compiler.CodeGen.A64
                     {
                         // an atomic swap until it's had (other threads may be after it too)
                         string spin = g.NewLabel("lock"), wait = g.NewLabel("lockwait"), held = g.NewLabel("locked");
-                        Address("x16", lk.Label);
+                        if (lk.At != null) E($"mov x16, {Get(lk.At, "x16", true)}");
+                        else Address("x16", lk.Label);
                         E("mov w17, #1");
                         Label(spin);
                         E("swpa w17, w9, [x16]");
@@ -837,7 +838,8 @@ namespace Phi.Compiler.CodeGen.A64
 
                     case UnlockI ul:
                         if (g.Catches) E($"str {Get(ul.Saved, "x9", true)}, [x28, #8]");
-                        Address("x16", ul.Label);
+                        if (ul.At != null) E($"mov x16, {Get(ul.At, "x16", true)}");
+                        else Address("x16", ul.Label);
                         E("stlr wzr, [x16]");
                         break;
 

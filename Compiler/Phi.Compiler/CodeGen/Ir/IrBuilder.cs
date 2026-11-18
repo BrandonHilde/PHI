@@ -87,15 +87,19 @@ namespace Phi.Compiler.CodeGen.Ir
                                         Func<VariableSymbol, bool> remembersLength, out string why, bool arm = false)
         {
             why = "";
+            IrBuilder? builder = null;
             try
             {
-                var builder = new IrBuilder(m, holdable, catches, growResults, program) { remembersLength = remembersLength, arm = arm };
+                builder = new IrBuilder(m, holdable, catches, growResults, program) { remembersLength = remembersLength, arm = arm };
                 builder.BuildBody();
                 return builder.fn;
             }
             catch (NotYet e)
             {
                 why = e.Message;
+                // (for ARM, where it's an error: on which line)
+                if (arm && builder?.marked is Node at && m.Decl.File is SourceFile file)
+                    why += $" (line {file.GetLocation(at.Span.Start).Line})";
                 return null;
             }
         }
@@ -538,7 +542,14 @@ namespace Phi.Compiler.CodeGen.Ir
             Forget(i);
         }
 
-        void Mark(Node n) => Emit(new LineMark { Node = n });
+        void Mark(Node n)
+        {
+            marked = n;
+            Emit(new LineMark { Node = n });
+        }
+
+        /// <summary>The statement whose code is being built (an error ARM gives names its line).</summary>
+        Node? marked;
 
         void StartBlock(Block b)
         {
@@ -569,6 +580,9 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>The locked blocks the statement being built is in: each lock, what catches errors outside it, and how many loops there were.</summary>
         readonly List<(string Label, VReg Saved, int Loops)> locks = new();
 
+        /// <summary>The address of each lock that isn't a class's variable (ARM's), by the name it's given in locks.</summary>
+        readonly Dictionary<string, VReg> lockAddresses = new();
+
         /// <summary>
         /// The locks taken since there were this many loops given back, innermost first: before
         /// a break or continue (in the loop it's about), or a return (all of them).
@@ -576,7 +590,7 @@ namespace Phi.Compiler.CodeGen.Ir
         void Unlock(int loopsBefore)
         {
             for (int k = locks.Count - 1; k >= 0 && locks[k].Loops >= loopsBefore; k--)
-                Emit(new UnlockI { Label = locks[k].Label, Saved = locks[k].Saved });
+                Emit(new UnlockI { Label = locks[k].Label, Saved = locks[k].Saved, At = lockAddresses.GetValueOrDefault(locks[k].Label) });
         }
 
         /// <summary>True while a statement that needs the held class variables in memory is built: they're there.</summary>
@@ -791,7 +805,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 {
                     // (for ARM, where a class's own statements are a method: a class's object, as the
                     // generator's EmitNewDecl makes it, by where it's kept)
-                    Need(cn.Narrows == null && cn.AtAddress == null && cn.BufferSize == null && cn.MoreSizes.Count == 0, "a new object it doesn't take");
+                    Need(cn.Narrows == null && cn.AtAddress == null && (cn.BufferSize == null || classNew.Type.IsArray) && cn.MoreSizes.Count == 0, "a new object it doesn't take");
                     if (cn.Source != null)
                     {
                         Statement(cn.Source);
@@ -1224,15 +1238,18 @@ namespace Phi.Compiler.CodeGen.Ir
 
                 case LockedStmt lk:
                 {
-                    Need(lk.Lock is NameExpr { Symbol: VariableSymbol { Type.Kind: TypeKind.Lock } lv } && AnyGlobal(lv) != null, "a lock that isn't a class's variable");
-                    string label = AnyGlobal((VariableSymbol)((NameExpr)lk.Lock).Symbol!)!;
+                    bool global = lk.Lock is NameExpr { Symbol: VariableSymbol { Type.Kind: TypeKind.Lock } lv } && AnyGlobal(lv) != null;
+                    // (for ARM, a lock anywhere: a struct's, an element's, by its address)
+                    Need(global || arm && lk.Lock.Type.Kind == TypeKind.Lock && CanAddress(lk.Lock), "a lock that isn't a class's variable");
                     Mark(lk);
+                    string label = global ? AnyGlobal((VariableSymbol)((NameExpr)lk.Lock).Symbol!)! : $"@lock{lockAddresses.Count}";
+                    if (!global) lockAddresses[label] = AddressOf(lk.Lock);
                     VReg saved = fn.NewAddress("catch");
-                    Emit(new LockI { Label = label, Saved = saved });
+                    Emit(new LockI { Label = label, Saved = saved, At = lockAddresses.GetValueOrDefault(label) });
                     locks.Add((label, saved, loops.Count));
                     Statements(lk.Body);
                     locks.RemoveAt(locks.Count - 1);
-                    Emit(new UnlockI { Label = label, Saved = saved });
+                    Emit(new UnlockI { Label = label, Saved = saved, At = lockAddresses.GetValueOrDefault(label) });
                     return;
                 }
 
@@ -1377,6 +1394,24 @@ namespace Phi.Compiler.CodeGen.Ir
                         read.ArgKinds.Add(Ptr);
                     }
                     Emit(read);
+                    return;
+                }
+
+                case CallStmt { ResultTarget: Expr keptIn } kc when arm && kc.CalleeTarget == null
+                    && !(keptIn is NameExpr { Symbol: VariableSymbol own } && Ours(own))
+                    && (kc.Resolved is MethodSymbol { ReturnType.IsObject: false } or BuiltinFunction { FloatInstruction: null } or PointerCall { Signature.Result.IsObject: false }):
+                {
+                    // (for ARM: call x is F: ...; with x not the method's own, as x is (F: ...); is)
+                    PhiType gives = kc.Resolved switch
+                    {
+                        MethodSymbol cm => cm.ReturnType,
+                        BuiltinFunction bf => bf.ResultType,
+                        PointerCall pc => pc.Signature.Result,
+                        _ => PhiType.Int,
+                    };
+                    var given = new CallExpr { Callee = kc.Callee, CalleeSpan = kc.CalleeSpan, Resolved = kc.Resolved, Type = gives, Span = kc.Span };
+                    given.Arguments.AddRange(kc.Arguments);
+                    Statement(new AssignStmt { Target = keptIn, Op = AssignOp.Set, Value = given, Span = kc.Span });
                     return;
                 }
 
@@ -1816,7 +1851,26 @@ namespace Phi.Compiler.CodeGen.Ir
         /// <summary>e's value made the type it goes into (a variable's, a parameter's, a result's).</summary>
         Opnd Value(Expr e, PhiType into)
         {
-            if (into.IsString && !into.IsArray) return TextValue(e);
+            if (into.IsString && !into.IsArray)
+            {
+                // (for ARM: a ptr<u8>, the text it points at)
+                if (arm && !e.Type.IsString && Real(e).IsTextPointer) return InReg(Value(e), Addr);
+                if (arm && !e.Type.IsString && CanPart(e))
+                {
+                    // a number, written out as text in bytes of its own (48 for an f64 or i64's)
+                    PhiType t = Real(e);
+                    int bytes = t.IsWide || IsF(t) ? 48 : 16;
+                    for (int k = 0; k < bytes / 8; k++) fn.NewHome();
+                    string written = $"rbp - {8 * fn.Homes}";
+                    VReg at = fn.NewAddress();
+                    Emit(new AddrI { Dst = at, Label = written });
+                    PutPart(e, false, (at, bytes - 4), null);
+                    VReg text = fn.NewAddress();
+                    Emit(new AddrI { Dst = text, Label = written });
+                    return text;
+                }
+                return TextValue(e);
+            }
             Need(Supported(into), $"a value going into a {into}");
             return Convert(Value(e), Real(e), into);
         }

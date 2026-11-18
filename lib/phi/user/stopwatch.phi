@@ -150,16 +150,33 @@ x64.ClockHighHalf
 	ret
 }
 
-# ARM (a macOS program): the CPU's virtual counter (24 MHz on Apple's)
+# ARM (a macOS program): the CPU's virtual counter, 24 MHz on Apple's, which two reads one
+# after the other can find the same; so each read gives at least one more than the last (kept
+# here), as a counter of the CPU's cycles would. The low half's read is the new count; the high
+# half is the last count's, so Count's high, low, high reads one count.
 arm.ClockLowHalf
 {
 	mrs x0, cntvct_el0
+	adrp x9, Lphi_clock_last@PAGE
+	add x9, x9, Lphi_clock_last@PAGEOFF
+	ldr x10, [x9]
+	add x10, x10, #1
+	cmp x0, x10
+	csel x0, x10, x0, lo
+	str x0, [x9]
 	ret
+	.section __DATA,__data
+	.p2align 3
+Lphi_clock_last:
+	.quad 0
+	.section __TEXT,__text,regular,pure_instructions
 }
 
 arm.ClockHighHalf
 {
-	mrs x0, cntvct_el0
+	adrp x9, Lphi_clock_last@PAGE
+	add x9, x9, Lphi_clock_last@PAGEOFF
+	ldr x0, [x9]
 	lsr x0, x0, #32
 	ret
 }

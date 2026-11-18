@@ -35,3 +35,12 @@ x64.Scramble
 	mov r15, 104
 	ret
 }
+
+arm.Scramble
+{
+	mov x19, #101
+	mov x20, #102
+	mov x21, #103
+	mov x22, #104
+	ret
+}

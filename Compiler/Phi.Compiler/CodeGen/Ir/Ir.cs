@@ -567,6 +567,9 @@ namespace Phi.Compiler.CodeGen.Ir
     public sealed class LockI : Instr
     {
         public string Label { get; init; } = "";
+
+        /// <summary>Or the lock's address, worked out (a lock in a struct: ARM's), in place of Label.</summary>
+        public VReg? At { get; init; }
         public VReg Saved { get; init; } = null!;
     }
 
@@ -574,6 +577,7 @@ namespace Phi.Compiler.CodeGen.Ir
     public sealed class UnlockI : Instr
     {
         public string Label { get; init; } = "";
+        public VReg? At { get; init; }
         public VReg Saved { get; init; } = null!;
     }
 

@@ -36,12 +36,14 @@ namespace Phi.Compiler.CodeGen.Ir
             Expr list = has.Collection;
             PhiType element = list.Type.Element;
             int size = element.ElementSize;
-            Need(!(has.Kind == HasKind.Numbers && (IsF(element) || element.Kind == TypeKind.F16)), "has on floats");
+            bool floats = arm && has.Kind == HasKind.Numbers && element.Kind is TypeKind.F64 or TypeKind.F32;
+            Need(floats || !(has.Kind == HasKind.Numbers && (IsF(element) || element.Kind == TypeKind.F16)), "has on floats");
             Need(CanCount(list) && CanElements(list), $"has on {Unknown(list)}");
             Opnd value = has.Kind switch
             {
                 HasKind.Texts => TextValue(has.Value),
                 HasKind.Objects or HasKind.Structs => ObjectAddress(has.Value),
+                _ when floats => Convert(Value(has.Value), Real(has.Value), PhiType.F64),     // (as an f64: exact for every kind)
                 _ => size == 8 ? InReg(Value(has.Value, PhiType.I64), true) : InReg(Value(has.Value, PhiType.Int), false),
             };
             VReg d = fn.NewValue(false);
@@ -58,6 +60,13 @@ namespace Phi.Compiler.CodeGen.Ir
             VReg same;
             switch (has.Kind)
             {
+                case HasKind.Numbers when floats:
+                {
+                    VReg e = fn.NewFloat();
+                    Emit(new LoadIdxI { Dst = e, Base = at, Index = Opnd.Const(0), Scale = 1, Kind = element.Kind == TypeKind.F64 ? MemKind.F64 : MemKind.F32 });
+                    current.End = new BranchT { Float = true, Cond = Cond.Eq, A = e, B = value, Then = yes, Else = next };
+                    break;
+                }
                 case HasKind.Numbers:
                 {
                     MemKind kind = size switch { 1 => element.IsSigned ? MemKind.S8 : MemKind.U8, 2 => element.IsSigned ? MemKind.S16 : MemKind.U16, 8 => MemKind.Q64, _ => MemKind.D32 };

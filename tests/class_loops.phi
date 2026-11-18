@@ -119,3 +119,15 @@ x64.Double
 	mov [{doubled}], eax
 	ret
 }
+
+arm.Double
+{
+	adrp x9, {value}@PAGE
+	add x9, x9, {value}@PAGEOFF
+	ldr w10, [x9]
+	add w10, w10, w10
+	adrp x9, {doubled}@PAGE
+	add x9, x9, {doubled}@PAGEOFF
+	str w10, [x9]
+	ret
+}

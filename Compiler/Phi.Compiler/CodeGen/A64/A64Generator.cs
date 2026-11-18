@@ -271,7 +271,9 @@ namespace Phi.Compiler.CodeGen.A64
         /// <summary>
         /// An arm. block, as it's written: called (bl) from a method, with x29 that method's
         /// frame (its arguments at x29 + 16 up, as x64. blocks have them at rbp + 16), it may change
-        /// any register but x19-x29 and sp, and gives back what's in w0. {name} is a class
+        /// any register but x28 (the thread's block), x29, x30 (where it returns to) and sp: the
+        /// method that calls one keeps x19-x27 for its caller, as one that calls an x64. block
+        /// keeps r12-r15. It gives back what's in w0. {name} is a class
         /// variable's label (adrp x0, {name}@PAGE...) or a constant's value.
         /// </summary>
         void EmitRawBlock(RawBlockDecl raw)

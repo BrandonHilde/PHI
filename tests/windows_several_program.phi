@@ -5,7 +5,7 @@
 # kernel32_windows_several does it on PHI OS's desktop.
 use gui.dialogs;
 use support.win_window;
-use support.x11_window;
+use support.x11_window; use support.mac_window;
 
 phi.WindowsSeveralProgram:Program
 {
