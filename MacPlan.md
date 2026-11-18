@@ -438,12 +438,63 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   element; a class's `[atmost N]` array of objects of any size. Every test and sample that is
   a program now builds for macOS but PHI OS's own (the rootfs programs, which make PHI OS's
   system calls). `phi compare` on a Mac times PHI as a macOS program. 215 tests.
+- **Speed** (`phi compare` on this Mac, PHI as a macOS program, beside Apple clang -O2 and
+  -O0 and C#; C built with `-ffp-contract=off`, since clang on ARM fuses a multiply and an add
+  and mandelbrot's last digit came out otherwise): PHI takes 1.2 times clang -O2's time over
+  all the benchmarks (x86 on the Linux machine: 1.17 times gcc's), about C#'s. What it took:
+  a method's own str that grows remembers its length on ARM too (strings went from 23 s to
+  0.6 s: each append had measured the whole text), an element read and written in one
+  instruction (`[base, index, lsl #n]`), and a field's offset folded into its load. (Kept
+  registers saved and read back two at a time, stp and ldp, made fib a quarter slower and
+  nothing faster: they're one at a time.) Furthest behind: maps (3 times clang's), interp (1.7) and
+  pixels (1.6), from values read again from memory each time they're used (as the
+  intermediate form has it for x86 too) and kept registers used where scratch ones would do.
+- **ABI v2 (a method's arguments in registers): not now.** Measured, calls aren't where ARM
+  is slow: fib, nearly all calls, is 1.5 times clang's (x86: 3.2 times gcc's, which turns its
+  recursion into a loop), and the benchmarks furthest behind are slow inside their methods.
+  An argument in a register would save a store and a load a call, which the M1 forwards; and
+  it would change every routine the runtime and the generator make, and every compiled
+  library's ABI. What's worth doing first: values kept in registers across a block (not read
+  again from memory), and x0-x7 for values in a method that calls nothing.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. A method's object result kept in
   an interface (`call shape is Make: 3`) frees what the interface had with the result's
   struct's free, not the interface's. ARM's are done as the generator does them
   (`IrBuilder.arm`).
+
+### PHI-Assembler for ARM: what it would take
+
+Everything works with Apple's clang (assembling) and ld64 (linking and signing), as decided.
+What PHI's own assembler would have to do, measured on the macOS tests' programs:
+
+- **Instructions**: 146 mnemonics, most of them in a few forms: the general ones (mov, add,
+  ldr/str and their byte, half, unscaled and pair forms, adrp, cmp, b.cond, bl, ret, csel,
+  tbz/cbz, mul/div), the atomics (casa, swpa, ldaddal, stlr), the floats (fadd ... fcvt*,
+  scvtf), and NEON's (about 50, each in a lane size or two). An encoder is a table of these:
+  A64's encodings are regular, 32 bits each, the hard parts being bitmask immediates (for
+  and/orr/eor/tst) and which offsets a load takes scaled.
+- **Directives**: .section, .p2align, .globl, .quad/.long/.short/.byte, .double, .space,
+  .asciz, .zerofill, .set; and `.file`/`.loc` for --debug (DWARF line rows, which PHI would
+  then write itself).
+- **Relocations**: PAGE21 and PAGEOFF12 (adrp/add and the loads after it: 66,000 of them in
+  the tests), BRANCH26 (bl to another file's symbol, libSystem's), GOT_LOAD_PAGE21/PAGEOFF12
+  (213: a symbol of a dylib), and UNSIGNED 64-bit (.quad label: the line table, type
+  tables). Within one file most branches and adrp pairs resolve at assembly time.
+- **The object file**: a Mach-O MH_OBJECT with __TEXT,__text, __DATA,__data/__bss, a symbol
+  table and the relocations: about what ElfObject.cs reads today, written instead.
+
+Linking would stay ld64's: a macOS program needs dyld's load commands, chained fixups for
+its pointers, libSystem bound lazily, a code signature (ad hoc, but every arm64 program must
+have one) and, for --debug, what dsymutil reads. Writing a linker is a project of its own
+with nothing to gain on a Mac, where ld64 is always there with clang.
+
+So PHI-Assembler would replace `clang -c`: an encoder and a Mach-O object writer, checked by
+assembling every test's program both ways and comparing the bytes (`otool -t`) section by
+section, until they're the same. On a Mac it wouldn't free PHI from Apple's tools (ld64 comes
+with the same Command Line Tools as clang), so what it's for is elsewhere: an ARM assembler
+PHI OS could carry, or a PHI that assembles its own code everywhere, as it would need to for
+an ARM PHI OS. That's the choice to make before it's started.
 
 ## Order, and where to stop
 

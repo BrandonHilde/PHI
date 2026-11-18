@@ -8,7 +8,8 @@ namespace Phi.Compiler.CodeGen.Ir
     /// </summary>
     public static class IrPeephole
     {
-        public static void Run(IrFunction fn, bool x32 = false)
+        /// <param name="foldOffsets">base + n's n into the load or store that reads it (32-bit code's, and ARM's, whose loads take an offset)</param>
+        public static void Run(IrFunction fn, bool x32 = false, bool foldOffsets = false)
         {
             ThreadJumps(fn);
             Lea(fn);
@@ -16,7 +17,7 @@ namespace Phi.Compiler.CodeGen.Ir
             ZeroWhatsReadFirst(fn);
             Fold(fn);
             TestBits(fn);
-            if (x32) FoldOffsets(fn);
+            if (x32 || foldOffsets) FoldOffsets(fn);
         }
 
         /// <summary>

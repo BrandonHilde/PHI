@@ -127,7 +127,7 @@ namespace Phi.Compiler.CodeGen.A64
 
         void EmitRoutine(string label, string what, IrFunction fn)
         {
-            IrPeephole.Run(fn);
+            IrPeephole.Run(fn, foldOffsets: true);
             RegisterAllocator regs = RegisterAllocator.Allocate(fn, target: Registers);
             code.AppendLine();
             code.AppendLine($"; ---- {what}");

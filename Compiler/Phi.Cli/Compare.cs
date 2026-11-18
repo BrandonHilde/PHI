@@ -281,7 +281,9 @@ namespace Phi.Cli
             string folder = Path.Combine(outDir, "c" + level);
             Directory.CreateDirectory(folder);
             string exe = Path.GetFullPath(Path.Combine(folder, name + (OperatingSystem.IsWindows() ? ".exe" : "")));
-            var (code, output) = Toolchain.Run(cc, new[] { level, "-o", exe, source });
+            // (each multiply and add rounded as PHI rounds them: clang on ARM would fuse them, and
+            // a float's last digit could differ)
+            var (code, output) = Toolchain.Run(cc, new[] { level, "-ffp-contract=off", "-o", exe, source });
             if (code != 0)
             {
                 errors.Add($"error: {name}.c didn't build ({Path.GetFileName(cc)} {level}):\n{output}");

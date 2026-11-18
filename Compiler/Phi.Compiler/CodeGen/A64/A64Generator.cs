@@ -216,19 +216,22 @@ namespace Phi.Compiler.CodeGen.A64
             || unit.Classes.SelectMany(c => c.Body).Concat(unit.Methods.SelectMany(m => m.Decl.Body)).SelectMany(SyntaxWalker.Nodes).Any(n => n is ThrowsExpr);
         bool? catches;
 
+        RememberedLengths? lengths;
+
         /// <summary>The heap's Alloc is the program's: a method's str result grows to fit (the generator's GrowResults).</summary>
         bool GrowResults => unit.Methods.Any(m => m.Name == "Heap.Alloc");
 
         /// <summary>One method, from the intermediate form; false (and an error) when it can't be.</summary>
         bool EmitMethod(MethodSymbol m, string what)
         {
-            IrFunction? fn = IrBuilder.Build(m, _ => false, Catches, GrowResults, true, _ => false, out string why, arm: true);
+            // (a method's own str that grows keeps its length beside it, as x86's does: an append starts at its end)
+            IrFunction? fn = IrBuilder.Build(m, _ => false, Catches, GrowResults, true, (lengths ??= new RememberedLengths(unit)).Remembers, out string why, arm: true);
             if (fn == null)
             {
                 NotYet(m.Decl.File, m.Decl.Span, why, m);
                 return false;
             }
-            IrPeephole.Run(fn);
+            IrPeephole.Run(fn, foldOffsets: true);
             foreach (StructSymbol tested in fn.TypeTables) TypeTable(tested);
             if (Unsupported(fn) is string not)
             {

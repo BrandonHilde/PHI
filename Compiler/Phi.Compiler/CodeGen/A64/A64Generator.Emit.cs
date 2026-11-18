@@ -100,7 +100,7 @@ namespace Phi.Compiler.CodeGen.A64
                     SubImm("sp", "x29", frame);
                 }
                 else if (frame > 0) SubImm("sp", "sp", frame);
-                foreach (string r in regs.UsedCalleeSaved) Mem("str", r, "x29", -SavedAt(r), 8);
+                SaveKept("str");
                 for (int k = 0; k < fn.Blocks.Count; k++)
                 {
                     Block b = fn.Blocks[k];
@@ -114,9 +114,20 @@ namespace Phi.Compiler.CodeGen.A64
                 EmitUnwind();
             }
 
+            /// <summary>
+            /// The kept registers the method uses, saved (or read back) where SavedAt says, one at a
+            /// time: in pairs (stp, ldp) fib took a quarter longer on an M1, which seems to forward a
+            /// single store to the load that reads it back as it doesn't a pair's, and nothing else
+            /// got faster (measured with phi compare).
+            /// </summary>
+            void SaveKept(string op)
+            {
+                foreach (string r in regs.UsedCalleeSaved) Mem(op, r, "x29", -SavedAt(r), 8);
+            }
+
             void Epilogue()
             {
-                foreach (string r in regs.UsedCalleeSaved) Mem("ldr", r, "x29", -SavedAt(r), 8);
+                SaveKept("ldr");
                 E("mov sp, x29");
                 E("ldp x29, x30, [sp], #16");
                 E("ret");
@@ -549,25 +560,20 @@ namespace Phi.Compiler.CodeGen.A64
                     }
 
                     case LoadIdxI l:
-                    {
-                        var (b, off) = Element(l.Base, l.Index, l.Scale);
-                        Load(l.Dst, l.Kind, b, off);
+                        Load(l.Dst, l.Kind, (op, r, size) => Access(op, r, l.Base, l.Index, l.Scale, size));
                         break;
-                    }
 
                     case StoreIdxI st:
                     {
                         if (st.Kind is MemKind.F64 or MemKind.F32 or MemKind.F16)
                         {
                             string d = StoreFloat(st.Src, st.Kind);
-                            var (fb, fo) = Element(st.Base, st.Index, st.Scale);
-                            Mem("str", d, fb, fo, FloatSize(st.Kind));
+                            Access("str", d, st.Base, st.Index, st.Scale, FloatSize(st.Kind));
                             break;
                         }
                         var (_, op, size) = Ops(st.Kind);
                         string s = GetOp(st.Src, "x8", size == 8);
-                        var (b, off) = Element(st.Base, st.Index, st.Scale);
-                        Mem(op, s, b, off, size);
+                        Access(op, s, st.Base, st.Index, st.Scale, size);
                         break;
                     }
 
@@ -872,19 +878,40 @@ namespace Phi.Compiler.CodeGen.A64
             }
 
             /// <summary>A value read from base + offset, as Kind keeps it (an f32 made an f64).</summary>
-            void Load(VReg dst, MemKind kind, string b, long off)
+            void Load(VReg dst, MemKind kind, string b, long off) => Load(dst, kind, (op, r, size) => Mem(op, r, b, off, size));
+
+            /// <summary>
+            /// op reg at base + index * scale, size bytes: [base, index, lsl #n] when the scale is 1
+            /// or the size (an element of an array), else the address made first (Element).
+            /// </summary>
+            void Access(string op, string reg, VReg baseValue, Opnd index, int scale, int size)
+            {
+                if (!index.IsImm && (scale == 1 || scale == size) && size is 1 or 2 or 4 or 8 or 16)
+                {
+                    string b = Get(baseValue, "x16", true);
+                    string ix = Get(index.Reg!, "x17", true);
+                    int shift = scale == 1 ? 0 : size switch { 1 => 0, 2 => 1, 4 => 2, 8 => 3, _ => 4 };
+                    E(shift == 0 ? $"{op} {reg}, [{b}, {ix}]" : $"{op} {reg}, [{b}, {ix}, lsl #{shift}]");
+                    return;
+                }
+                var (eb, eo) = Element(baseValue, index, scale);
+                Mem(op, reg, eb, eo, size);
+            }
+
+            /// <summary>A value read as Kind keeps it (an f32 made an f64), through mem (op, register, size).</summary>
+            void Load(VReg dst, MemKind kind, Action<string, string, int> mem)
             {
                 if (kind == MemKind.F64)
                 {
                     string t = FTarget(dst);
-                    Mem("ldr", t, b, off, 8);
+                    mem("ldr", t, 8);
                     FPut(dst, t);
                     return;
                 }
                 if (kind == MemKind.F32)
                 {
                     string t = FTarget(dst);
-                    Mem("ldr", "s31", b, off, 4);
+                    mem("ldr", "s31", 4);
                     E($"fcvt {t}, s31");
                     FPut(dst, t);
                     return;
@@ -893,7 +920,7 @@ namespace Phi.Compiler.CodeGen.A64
                 {
                     // (any f16 is an f64, exactly)
                     string t = FTarget(dst);
-                    Mem("ldr", "h31", b, off, 2);
+                    mem("ldr", "h31", 2);
                     E($"fcvt {t}, h31");
                     FPut(dst, t);
                     return;
@@ -902,7 +929,7 @@ namespace Phi.Compiler.CodeGen.A64
                 string r = Target(dst, "x9");
                 // (a signed byte or half into 64 bits: its sign fills the whole register)
                 bool wide = size == 8 || dst.Wide && op is "ldrsb" or "ldrsh";
-                Mem(op, W(r, wide), b, off, size);
+                mem(op, W(r, wide), size);
                 Put(dst, r);
             }
 
