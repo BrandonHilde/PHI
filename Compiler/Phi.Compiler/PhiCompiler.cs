@@ -564,7 +564,7 @@ namespace Phi.Compiler
             ("HostWindow", new[] { "host.files_linux", "host.files_windows", "host.environment_linux", "host.window_windows", "host.window_linux",
                                    "host.files_macos", "host.window_macos" }),
             ("HostSound", new[] { "host.time_linux32", "host.time_linux64", "host.time_windows", "host.files_linux", "host.files_windows",
-                                  "host.environment_linux", "host.sound", "host.sound_windows", "host.sound_linux" }),
+                                  "host.environment_linux", "host.sound", "host.sound_windows", "host.sound_linux", "host.sound_macos" }),
         };
 
         /// <summary>Adds everything in from after what into has.</summary>

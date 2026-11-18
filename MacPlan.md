@@ -407,6 +407,10 @@ programs can't do yet", so `phi test --target macos` runs exactly what builds
   `support/mac_window.phi` playing the user with NSEvents. **`phi build --target macos --app`**
   makes NAME.app (Info.plist with the id org.phi.NAME, signed ad hoc), which the Finder
   opens: the desktop samples' clock, notes, form and sketch build as apps. 186 tests.
+- **M11, sound**: `host/sound_macos.phi`, an AudioQueue with a ring of buffers as the
+  Windows module has, the queue's thread marking a played buffer through `audio.s`.
+  `sound_program` passes, and the desktop's paddles game builds as an app. Also: gui.dialogs,
+  several windows, locks in structs, and more of a class's own statements. 197 tests.
 - Found on the way, x86 left as it is: an `[atmost N]` array indexed in a method the
   intermediate form builds is checked against N, not how many it holds; and such a method's
   `Mem.Copy` (Move, Fill, Fill32) doesn't check its count. ARM's are checked as the

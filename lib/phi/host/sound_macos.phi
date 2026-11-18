@@ -1,0 +1,163 @@
+# Sound on macOS (with AudioToolbox's AudioQueue): a ring of buffers, as the AC'97 driver has
+# and sound_windows.phi has, each handed to the queue when it's full or when the program asks
+# what's left. The queue says it has played one by calling lib/arm64_macos/audio.s, which
+# marks it (its mUserData) for the program to fill again; nothing here runs on the queue's
+# thread.
+
+use 'libSystem.B.dylib' as LibC;
+use '/System/Library/Frameworks/AudioToolbox.framework/AudioToolbox' as Audio;
+
+struct.MacSoundFormat foreign             # AudioStreamBasicDescription
+{
+	f64 rate;
+	u32 format;
+	u32 flags;
+	u32 bytes_a_packet;
+	u32 frames_a_packet;
+	u32 bytes_a_frame;
+	u32 channels;
+	u32 bits;
+	u32 reserved;
+}
+
+struct.MacSoundBuffer foreign             # AudioQueueBuffer, as far as this needs
+{
+	u32 room;
+	ptr<u8> data;
+	u32 length;
+	ptr<u8> playing;                      # (mUserData: 1 while it's with the queue)
+}
+
+phi.SoundSystem:MacOS
+{
+	const int BUFFERS: 32;
+	const int BUFFER_SIZE: 4096;          # as the AC'97's
+	const u32 LINEAR_PCM: 0x6C70636D;     # 'lpcm'
+	const u32 SIGNED_PACKED: 12;          # signed integers, packed
+	const u32 VOLUME: 1;                  # kAudioQueueParam_Volume
+
+	ptr<u8> queue: 0;
+	ptr<MacSoundBuffer> buffers[32];
+	int next: 0;                          # the buffer being filled
+	int fill: 0;                          # bytes in it so far
+	bln started: false;
+
+	[Open: int hz: 0;]
+		MacSoundFormat wanted;
+		wanted.rate is hz as f64;
+		wanted.format is LINEAR_PCM;
+		wanted.flags is SIGNED_PACKED;
+		wanted.bytes_a_packet is 4;
+		wanted.frames_a_packet is 1;
+		wanted.bytes_a_frame is 4;
+		wanted.channels is 2;
+		wanted.bits is 16;
+		wanted.reserved is 0;
+		if (Audio.AudioQueueNewOutput: addr wanted (Audio.Played) 0 0 0 0 addr queue) is not 0
+			queue is 0;
+			return false;
+		;;
+		while int i: 0; i < BUFFERS; i++;
+			if (Audio.AudioQueueAllocateBuffer: queue BUFFER_SIZE addr buffers:i) is not 0
+				call Close;
+				return false;
+			;;
+			buffers:i.playing is 0;
+		;;
+		next is 0;
+		fill is 0;
+		started is false;
+	[end: true]
+
+	[Close]
+		if queue is 0 return;
+		call Audio.AudioQueueDispose: queue 1;
+		queue is 0;
+	[end]
+
+	# what fits of length bytes of data: 0 while every buffer is playing
+	[Put: ptr<u8> data: 0; int length: 0;]
+		int taken: 0;
+		while taken < length and (Free: next)
+			int chunk: BUFFER_SIZE - fill;
+			if chunk > length - taken
+				chunk is length - taken;
+			;;
+			ptr<u8> to: buffers:next.data + fill;
+			while int i: 0; i < chunk; i++;
+				to:i is data:(taken + i);
+			;;
+			fill++ chunk;
+			taken++ chunk;
+			if fill is BUFFER_SIZE
+				call Commit;
+			;;
+		;;
+	[end: taken]
+
+	# bytes still to play (by the buffers the queue still has), handing it what has been
+	# held back for a full buffer
+	[Left]
+		call Commit;
+		int left: 0;
+		while int i: 0; i < BUFFERS; i++;
+			if not (Free: i)
+				left++ buffers:i.length;
+			;;
+		;;
+	[end: left]
+
+	[Drop]
+		call Audio.AudioQueueReset: queue;
+		call Audio.AudioQueueStop: queue 1;
+		started is false;
+		while int i: 0; i < BUFFERS; i++;
+			buffers:i.playing is 0;
+		;;
+		next is 0;
+		fill is 0;
+	[end]
+
+	# percent of the way up, as PulseAudio's scale goes: 100 is all of it, 50 an eighth
+	[SetVolume: int percent: 100;]
+		f64 level: (percent * percent * percent) as f64 / 1000000.0;
+		call Audio.AudioQueueSetParameter: queue VOLUME level;
+	[end]
+
+	# whether a buffer isn't with the queue (so it can be filled): read as an atomic step,
+	# after the queue's thread has written it
+	[Free: int i: 0;]
+		ptr<ptr<u8>> flag: addr buffers:i.playing;
+		bln spare: atomic flag:0 is 0 when 0;
+	[end: spare]
+
+	# the buffer being filled goes to the queue, if there's anything in it; the queue starts
+	# playing with the first
+	[Commit]
+		if fill is 0 return;
+		if not (Free: next) return;
+		ptr<MacSoundBuffer> buffer: buffers:next;
+		buffer.length is fill;
+		buffer.playing is 1 as ptr<u8>;
+		if (Audio.AudioQueueEnqueueBuffer: queue buffer 0 0) is not 0
+			buffer.playing is 0;
+			return;
+		;;
+		if not started
+			started is ((Audio.AudioQueueStart: queue 0) is 0);
+		;;
+		fill is 0;
+		next is (next + 1) % BUFFERS;
+	[end]
+}
+
+Audio.AudioQueueNewOutput: ptr<MacSoundFormat> format ptr<u8> callback ptr<u8> user ptr<u8> loop ptr<u8> mode u32 flags ptr<ptr<u8>> queue;
+Audio.AudioQueueAllocateBuffer: ptr<u8> queue u32 size ptr<ptr<MacSoundBuffer>> buffer;
+Audio.AudioQueueEnqueueBuffer: ptr<u8> queue ptr<MacSoundBuffer> buffer u32 descriptions ptr<u8> description;
+Audio.AudioQueueStart: ptr<u8> queue ptr<u8> start;
+Audio.AudioQueueStop: ptr<u8> queue u8 now;
+Audio.AudioQueueReset: ptr<u8> queue;
+Audio.AudioQueueDispose: ptr<u8> queue u8 now;
+Audio.AudioQueueSetParameter: ptr<u8> queue u32 which f32 value;
+# (lib/arm64_macos/audio.s's: the address of its function, which the queue calls)
+Audio.Played = 'phi_audio_played_address': : ptr<u8>;
