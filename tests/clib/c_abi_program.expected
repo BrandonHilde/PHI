@@ -1,0 +1,16 @@
+ints: 385 -1001
+wide: 11999999995 8589934599 89999999996
+narrow: 30100 -56 44 -25536 4464
+doubles: 9
+floats: 3.25 2.5 3 -8
+mixed: 5000000051.375
+text: 4 zero one many
+filled: 100 101 116
+outs: -7 6000000000 2.5 0.25 200
+sum: 15 10 4.75
+called: -13 29 20000000052
+not kept: -1
+kept: 34 -92
+each: 4 86
+record: 1 900.5
+written: 9 -1234 0.125 -5

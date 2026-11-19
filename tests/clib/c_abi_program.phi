@@ -1,0 +1,104 @@
+# Each way C takes and gives a value, against a C library made for the test (phi_abi.c,
+# built by build.sh): whole numbers of every width and sign and more of them than the
+# registers hold, 64-bit ones, f64 and f32 among them, pointers C reads and writes through,
+# C's variadic part, C calling PHI (at once, later, and with more values than the registers
+# hold), and a struct by its address. One source: a macOS program and a Windows one, 32 and
+# 64 bits, give the same.
+use 'phi_abi.dll' 'libphi_abi.dylib' as Abi;
+
+struct.Record foreign
+{
+	u8 tag;
+	int count;
+	f64 weight;
+	i16 small;
+}
+
+phi.CAbiProgram:Program
+{
+	int total: 0;
+
+	log 'ints: ' (Abi.abi_ints10: 1 2 3 4 5 6 7 8 9 10) ' ' (Abi.abi_ints10: -1 0 0 0 0 0 0 0 0 -100) '\n';
+	log 'wide: ' (Abi.abi_wide: 3000000000 4 -5) ' ' (Abi.abi_wide_back: 2 7) ' ' (Abi.abi_wides9: 1 2 3 4 5 6 7 8 90000000000) '\n';
+	log 'narrow: ' (Abi.abi_narrow: -100 200 -30000 60000) ' ' (Abi.abi_s8: 200) ' ' (Abi.abi_u8: 300) ' ' (Abi.abi_s16: 40000) ' ' (Abi.abi_u16: 70000) '\n';
+
+	log 'doubles: ' (Abi.abi_doubles9: 1.0 2.0 4.0 8.0 16.0 32.0 64.0 128.0 256.0) '\n';
+	log 'floats: ' (Abi.abi_floats: 1.5 2.0 0.25) ' ' (Abi.abi_half: 5.0) ' ' (Abi.abi_round: 2.5) ' ' (Abi.abi_round: -7.6) '\n';
+	log 'mixed: ' (Abi.abi_mixed: 1 2.5 3 4.25 5000000000 6.5 7 8.125 9 10.0) '\n';
+
+	log 'text: ' (Abi.abi_length: 'four') ' ' (Abi.abi_word: 0) ' ' (Abi.abi_word: 1) ' ' (Abi.abi_word: 5) '\n';
+	int squares[5];
+	call Abi.abi_fill: addr squares 5 100;
+	log 'filled: ' squares:0 ' ' squares:1 ' ' squares:4 '\n';
+	int whole: 0;
+	i64 wide: 0;
+	f64 real: 0.0;
+	f32 small: 0.0;
+	u8 byte: 0;
+	call Abi.abi_outs: addr whole addr wide addr real addr small addr byte;
+	log 'outs: ' whole ' ' wide ' ' real ' ' small ' ' byte '\n';
+
+	log 'sum: ' (Abi.abi_sum: 5 1 2 3 4 5) ' ' (Abi.Sum2: 2 -40 50) ' ' (Abi.abi_sum_reals: 3 0.5 0.25 4.0) '\n';
+
+	log 'called: ' (Abi.abi_call: addr foreign Less 10 3) ' ' (Abi.abi_call_real: addr foreign Scale 8.0) ' ' (Abi.abi_call_many: addr foreign Many) '\n';
+	log 'not kept: ' (Abi.abi_call_kept: 1 2) '\n';
+	call Abi.abi_keep: addr foreign Less;
+	log 'kept: ' (Abi.abi_call_kept: 50 8) ' ' (Abi.abi_call_kept: 8 50) '\n';
+	int values: 3 4 5 6;
+	int count: (Abi.abi_each: addr values 4 addr foreign Add addr total);
+	log 'each: ' count ' ' total '\n';
+
+	Record record;
+	record.tag is 200;
+	record.count is 1000;
+	record.weight is 0.5;
+	record.small is -300;
+	log 'record: ' ((Abi.abi_record_size) is (sizeof Record)) ' ' (Abi.abi_record_read: addr record) '\n';
+	call Abi.abi_record_write: addr record;
+	log 'written: ' record.tag ' ' record.count ' ' record.weight ' ' record.small '\n';
+	exit 0;
+
+	[Less: int a: 0; int b: 0;]
+	[end: a - b * 2]
+
+	[Scale: f64 x: 0.0; int by: 0; : f64]
+	[end: x * by + 0.5]
+
+	[Many: int a: 0; i64 b: 0; f64 c: 0.0; int d: 0; int e: 0; int f: 0; int g: 0; int h: 0; int i: 0; int j: 0; : i64]
+	[end: b + a + d + e + f + g + h + i + j + ((c * 4) as i64)]
+
+	[Add: ptr<int> sum: 0; int value: 0;]
+		sum:0 is sum:0 + value * value;
+	[end]
+}
+
+Abi.abi_ints10: int a int b int c int d int e int f int g int h int i int j;
+Abi.abi_wide: i64 a int b i64 c: i64;
+Abi.abi_wide_back: u32 high u32 low: u64;
+Abi.abi_wides9: i64 a i64 b i64 c i64 d i64 e i64 f i64 g i64 h i64 i: i64;
+Abi.abi_narrow: i8 a u8 b i16 c u16 d;
+Abi.abi_s8: int x: i8;
+Abi.abi_u8: int x: u8;
+Abi.abi_s16: int x: i16;
+Abi.abi_u16: int x: u16;
+Abi.abi_doubles9: f64 a f64 b f64 c f64 d f64 e f64 f f64 g f64 h f64 i: f64;
+Abi.abi_floats: f32 a f32 b f32 c: f32;
+Abi.abi_mixed: int a f64 b int c f32 d i64 e f64 f int g f32 h int i f64 j: f64;
+Abi.abi_half: f32 x: f32;
+Abi.abi_round: f64 x;
+Abi.abi_length: ptr<u8> text;
+Abi.abi_word: int which: ptr<u8>;
+Abi.abi_fill: ptr<int> target int count int from;
+Abi.abi_outs: ptr<int> whole ptr<i64> wide ptr<f64> real ptr<f32> small ptr<u8> byte;
+Abi.abi_sum: int count ... int a int b int c int d int e;
+Abi.Sum2 = 'abi_sum': int count ... int a int b;
+Abi.abi_sum_reals: int count ... f64 a f64 b f64 c: f64;
+Abi.abi_call: ptr<u8> f int a int b;
+Abi.abi_call_real: ptr<u8> f f64 x: f64;
+Abi.abi_call_many: ptr<u8> f: i64;
+Abi.abi_keep: ptr<u8> f;
+Abi.abi_call_kept: int a int b;
+Abi.abi_each: ptr<int> values int count ptr<u8> f ptr<u8> with;
+Abi.abi_record_size;
+Abi.abi_record_read: ptr<Record> r: f64;
+Abi.abi_record_write: ptr<Record> r;

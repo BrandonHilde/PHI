@@ -2522,6 +2522,17 @@ namespace Phi.Compiler.CodeGen
                 return t.Kind is TypeKind.F32 or TypeKind.F16 && f.VariadicFrom is int from && i >= from ? PhiType.F64 : t;
             }
             PhiType result = f.ResultType ?? PhiType.Int;
+            // what C gives as a byte or a half is its low bits alone: the rest of eax is anything
+            void Narrowed()
+            {
+                switch (result.Kind)
+                {
+                    case TypeKind.I8: Emit("movsx eax, al"); break;
+                    case TypeKind.U8 or TypeKind.Bool or TypeKind.Chr: Emit("movzx eax, al"); break;
+                    case TypeKind.I16: Emit("movsx eax, ax"); break;
+                    case TypeKind.U16: Emit("movzx eax, ax"); break;
+                }
+            }
             if (!bits64)
             {
                 // esi keeps where the stack was, so the call is right whether the function takes
@@ -2548,6 +2559,7 @@ namespace Phi.Compiler.CodeGen
                     Emit("mov esp, esi");
                     Emit("pop esi");
                 }
+                Narrowed();
                 return;
             }
 
@@ -2603,6 +2615,7 @@ namespace Phi.Compiler.CodeGen
                 Emit("shr rdx, 32");
                 Emit("mov eax, eax");
             }
+            else Narrowed();
         }
 
         /// <summary>

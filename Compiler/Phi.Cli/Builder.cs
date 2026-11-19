@@ -94,6 +94,8 @@ namespace Phi.Cli
 
             if (!compiled.Success) return result;
 
+            if (host.IsMacOS() || host.IsWindows()) BringLibraries(compiled, phiFile, outDir, host, result);
+
             if (host.IsMacOS())
             {
                 // a macOS program: Apple's clang assembles its ARM code and links it with libSystem
@@ -488,6 +490,30 @@ namespace Phi.Cli
                 return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// An outside library named without a folder (use 'SDL3.dll' 'libSDL3.dylib' as SDL;)
+        /// whose file is with the source is put beside the program, where the program finds it
+        /// when it runs (and a macOS program's linker when it's built): from a folder named for
+        /// the system beside the file that names it (windows64/SDL3.dll, macos/libSDL3.dylib:
+        /// a .dll is one width's), or beside that file itself, or the same by the program's file.
+        /// </summary>
+        static void BringLibraries(CompileResult compiled, string phiFile, string outDir, Host host, BuildResult result)
+        {
+            if (compiled.Syntax == null) return;
+            foreach (var library in compiled.Syntax.Libraries)
+            {
+                string name = library.Path;
+                if (name.Length == 0 || name.Contains('/') || name.Contains('\\')) continue;
+                var folders = new[] { Path.GetDirectoryName(Path.GetFullPath(library.File.Path)), Path.GetDirectoryName(Path.GetFullPath(phiFile)) }
+                    .Where(f => f != null).Distinct().SelectMany(f => new[] { Path.Combine(f!, host.FlagName()), f! });
+                if (folders.Select(f => Path.Combine(f, name)).FirstOrDefault(File.Exists) is not string found) continue;
+                string beside = Path.Combine(outDir, name);
+                if (Path.GetFullPath(found) == Path.GetFullPath(beside)) continue;
+                try { File.Copy(found, beside, overwrite: true); }
+                catch (IOException e) { result.Warnings.Add($"couldn't put {name} beside the program: {e.Message}"); }
+            }
         }
 
         static bool AssembleMacOS(AsmUnit unit, string outDir, string executable, BuildResult result)

@@ -1,0 +1,77 @@
+# Lua, a C library that calls back all the time, from one module (build.sh makes it from
+# Lua's source for each system): Lua's code run from PHI, PHI methods Lua's code calls
+# (addr foreign, a hundred times over), whole numbers, floats and text both ways, and what
+# Lua says when its code is wrong. One source: a macOS program and a Windows one, 32 and 64
+# bits, give the same.
+use 'lua54.dll' 'liblua54.dylib' as Lua;
+
+phi.CLuaProgram:Program
+{
+	int called: 0;
+	ptr<u8> L: (Lua.luaL_newstate);
+	call Lua.luaL_openlibs: L;
+
+	# PHI methods Lua's code calls
+	call Lua.lua_pushcclosure: L addr foreign Twice 0;
+	call Lua.lua_setglobal: L 'twice';
+	call Lua.lua_pushcclosure: L addr foreign Hypot 0;
+	call Lua.lua_setglobal: L 'hypot';
+
+	call Do: 'total = 0  for i = 1, 100 do total = total + twice(i) end';
+	call Do: 'name = string.rep("ab", 3) .. "!"  h = hypot(3, 4)  big = 2^40 + twice(21)';
+	int kind: (Lua.lua_getglobal: L 'total');
+	log 'total ' (Lua.lua_tointegerx: L (-1) 0) ' after ' called ' calls\n';
+	kind is (Lua.lua_getglobal: L 'name');
+	log 'name ' (Lua.lua_tolstring: L (-1) 0) '\n';
+	kind is (Lua.lua_getglobal: L 'h');
+	log 'h ' (Lua.lua_tonumberx: L (-1) 0) '\n';
+	kind is (Lua.lua_getglobal: L 'big');
+	log 'big ' (Lua.lua_tointegerx: L (-1) 0) ' ' (Lua.lua_tonumberx: L (-1) 0) '\n';
+	call Do: 'words = {}  for w in string.gmatch("one two three", "%a+") do words[#words + 1] = w:upper() end  joined = table.concat(words, "-")';
+	kind is (Lua.lua_getglobal: L 'joined');
+	log 'joined ' (Lua.lua_tolstring: L (-1) 0) '\n';
+	call Do: 'this is not lua';
+	call Do: 'error("said in lua")';
+	log 'stack ' (Lua.lua_gettop: L) '\n';
+	call Lua.lua_close: L;
+	exit 0;
+
+	[Do: ptr<u8> code: 0;]
+		int bad: (Lua.luaL_loadstring: L code);
+		if bad is 0
+			bad is (Lua.lua_pcallk: L 0 0 0 0 0);
+		;;
+		if bad is not 0
+			log 'lua says: ' (Lua.lua_tolstring: L (-1) 0) '\n';
+			call Lua.lua_settop: L (-2);
+		;;
+	[end]
+
+	[Twice: ptr<u8> state: 0;]
+		called++;
+		i64 n: (Lua.lua_tointegerx: state 1 0);
+		call Lua.lua_pushinteger: state n * 2;
+	[end: 1]
+
+	[Hypot: ptr<u8> state: 0;]
+		f64 a: (Lua.lua_tonumberx: state 1 0);
+		f64 b: (Lua.lua_tonumberx: state 2 0);
+		call Lua.lua_pushnumber: state (Float.Sqrt: a * a + b * b);
+	[end: 1]
+}
+
+Lua.luaL_newstate: : ptr<u8>;
+Lua.luaL_openlibs: ptr<u8> state;
+Lua.luaL_loadstring: ptr<u8> state ptr<u8> code;
+Lua.lua_pcallk: ptr<u8> state int given int wanted int handler ptr<u8> context ptr<u8> k;
+Lua.lua_pushcclosure: ptr<u8> state ptr<u8> function int kept;
+Lua.lua_setglobal: ptr<u8> state ptr<u8> name;
+Lua.lua_getglobal: ptr<u8> state ptr<u8> name;
+Lua.lua_tointegerx: ptr<u8> state int index ptr<u8> isNumber: i64;
+Lua.lua_tonumberx: ptr<u8> state int index ptr<u8> isNumber: f64;
+Lua.lua_tolstring: ptr<u8> state int index ptr<u8> length: ptr<u8>;
+Lua.lua_pushinteger: ptr<u8> state i64 n;
+Lua.lua_pushnumber: ptr<u8> state f64 n;
+Lua.lua_settop: ptr<u8> state int index;
+Lua.lua_gettop: ptr<u8> state;
+Lua.lua_close: ptr<u8> state;

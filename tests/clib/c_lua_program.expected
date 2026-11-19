@@ -1,0 +1,8 @@
+total 10100 after 101 calls
+name ababab!
+h 5
+big 1099511627818 1.099512e12
+joined ONE-TWO-THREE
+lua says: [string "this is not lua"]:1: syntax error near 'is'
+lua says: [string "error("said in lua")"]:1: said in lua
+stack 5

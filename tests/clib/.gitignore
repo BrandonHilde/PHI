@@ -1,0 +1,5 @@
+src/
+macos/
+windows/
+windows64/
+*.actual

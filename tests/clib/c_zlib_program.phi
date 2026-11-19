@@ -1,0 +1,54 @@
+# zlib from one module (macOS's own, and one build.sh makes for Windows): bytes packed and
+# unpacked through buffers C fills, with the lengths it writes back, its checksums against
+# their known values, and what it says of bytes that aren't its own. C's long is 32 bits on
+# Windows and 64 on macOS: a length C writes through a pointer is a u64 here, which holds
+# either. One source: a macOS program and a Windows one, 32 and 64 bits, give the same.
+use 'zlib1.dll' '/usr/lib/libz.1.dylib' as Z;
+
+phi.CZlibProgram:Program
+{
+	u8 source[6000];
+	u8 packed[6100];
+	u8 back[6000];
+
+	ptr<u8> version: (Z.zlibVersion);
+	log 'zlib 1: ' (version:0 is 49) '\n';
+	while int i: 0; i < 6000; i++;
+		source:i is ((i * 7) % 13 + (i / 100) % 5 + 65) as u8;
+	;;
+
+	# packed at each strength, and back
+	while int level: 1; level < 10; level++ 4;
+		u64 packedSize: 6100;
+		int r: (Z.compress2: addr packed addr packedSize addr source 6000 level);
+		u64 backSize: 6000;
+		int u: (Z.uncompress: addr back addr backSize addr packed (packedSize as ptr<u8>));
+		int same: 1;
+		while int i: 0; i < 6000; i++;
+			if back:i is not source:i
+				same is 0;
+			;;
+		;;
+		log 'level ' level ': ' r ' ' (packedSize < 1500) ' ' u ' ' backSize ' ' same '\n';
+	;;
+
+	# checksums
+	log 'crc ' (Z.crc32: 0 '123456789' 9) ' adler ' (Z.adler32: 1 'Wikipedia' 9) '\n';
+	log 'bound ' ((Z.compressBound: 6000) > 6000) '\n';
+
+	# not zlib's bytes, and too little room
+	u64 size: 6000;
+	log 'not packed: ' (Z.uncompress: addr back addr size addr source 100) '\n';
+	u64 packedSize: 6100;
+	int r: (Z.compress2: addr packed addr packedSize addr source 6000 6);
+	size is 10;
+	log 'no room: ' (Z.uncompress: addr back addr size addr packed (packedSize as ptr<u8>)) '\n';
+	exit 0;
+}
+
+Z.zlibVersion: : ptr<u8>;
+Z.compress2: ptr<u8> target ptr<u64> targetSize ptr<u8> source ptr<u8> sourceSize int level;
+Z.uncompress: ptr<u8> target ptr<u64> targetSize ptr<u8> source ptr<u8> sourceSize;
+Z.crc32: ptr<u8> crc ptr<u8> data u32 size: u32;
+Z.adler32: ptr<u8> adler ptr<u8> data u32 size: u32;
+Z.compressBound: ptr<u8> size: u32;
