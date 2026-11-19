@@ -210,7 +210,7 @@ To find which path is at fault, and where:
 | `PHI_IR_REGS=1` | each value's live range, and whether it got a register or a frame slot |
 | `PHI_IR_VERIFY=1` | where a value is made in a register another live value has (the allocator checking itself) |
 | `PHI_INLINE_TRACE=1` | macOS programs: each method put in where it's called, with its form |
-| `PHI_OPT_OFF=same,hoist` | leaves out steps of the optimiser, to find the one a wrong program comes from: `consts`, `same` (its parts `copies`, `before`, `gives`), `hoist`, `share` (a result in an operand's register), `entry` (x64's late saving of kept registers), `rax`, `tidy` (ARM's `cbz`), `spare` (ARM's `x4` and `x5`), or `all` |
+| `PHI_OPT_OFF=same,hoist` | leaves out steps of the optimiser, to find the one a wrong program comes from: `consts`, `same` (its parts `copies`, `before`, `gives`), `hoist`, `share` (a result in an operand's register), `entry` (x64's late saving of kept registers), `rax`, `tidy` (ARM's `cbz`, and x64 widening a register into itself after an instruction that already cleared its top half), `spare` (ARM's `x4` and `x5`), or `all` |
 | `PHI_OPT_FN=Heap.Free,Map` | `same` and `hoist` only in the methods whose names have one of these in them |
 
 A wrong form is the builder's; a right form with wrong registers the allocator's; right

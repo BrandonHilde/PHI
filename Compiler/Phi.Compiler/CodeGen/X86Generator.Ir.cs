@@ -304,6 +304,25 @@ namespace Phi.Compiler.CodeGen
                 }
                 if (x32) instruction = To32(instruction);
                 g.code.Append("    ").AppendLine(instruction);
+                last = instruction;
+                lastEnd = g.code.Length;
+            }
+
+            /// <summary>The last instruction written, and where the code ended after it: a label or anything else written since moves the end on.</summary>
+            string? last;
+            int lastEnd = -1;
+            static readonly System.Text.RegularExpressions.Regex Writes32 = new(@"^(?:(?:mov|movzx|movsx|and|or|xor|add|sub|imul|lea) (\w+), |(?:neg|not) (\w+)$)");
+
+            /// <summary>
+            /// Whether the instruction just before here wrote r's 32-bit half, which clears the top
+            /// half: widening r into itself is then nothing. (A mov of a register into itself is
+            /// one the CPU can't skip, and in a loop each time round waits on it.)
+            /// </summary>
+            bool JustWrote32(string r64)
+            {
+                if (!IrOptions.On("tidy") || last == null || lastEnd != g.code.Length) return false;
+                var m = Writes32.Match(last);
+                return m.Success && (m.Groups[1].Success ? m.Groups[1].Value : m.Groups[2].Value) == Sub(r64, 32);
             }
 
             static readonly System.Text.RegularExpressions.Regex Names64 = new(@"\b(rax|rbx|rcx|rdx|rsi|rdi|rbp|rsp|r11d|r11|qword)\b");
@@ -1482,7 +1501,7 @@ namespace Phi.Compiler.CodeGen
                         string t = InRegister(x.Dst) ? Reg(x.Dst)! : "rax";
                         if (x.Signed) E($"movsxd {t}, {At(x.Src, 32)}");
                         else if (!(Reg(x.Src) == t)) E($"mov {Sub(t, 32)}, {At(x.Src, 32)}");
-                        else E($"mov {Sub(t, 32)}, {Sub(t, 32)}");     // (clears the top half)
+                        else if (!JustWrote32(t)) E($"mov {Sub(t, 32)}, {Sub(t, 32)}");     // (clears the top half)
                         Store(x.Dst, t);
                         break;
                     }
