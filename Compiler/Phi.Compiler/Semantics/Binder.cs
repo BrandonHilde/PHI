@@ -136,6 +136,10 @@ namespace Phi.Compiler.Semantics
         /// <summary>The outside libraries by the names they're given, and their functions (Kernel32.CreateThread).</summary>
         readonly Dictionary<string, LibraryUseDecl> libraries = new();
 
+        /// <summary>The outside functions that take or give a struct by value, lowered (LowerOutside) once the structs are laid out.</summary>
+        readonly List<OutsideFunctionDecl> outsideStructs = new();
+        readonly HashSet<OutsideFunctionDecl> outsideLowered = new();
+
         /// <summary>The outside libraries named in a module that isn't one system's own: any program's classes call them, on a system they name a file for.</summary>
         readonly HashSet<LibraryUseDecl> portableLibraries = new();
         readonly Dictionary<string, OutsideFunctionDecl> outsideFunctions = new();
@@ -417,8 +421,9 @@ namespace Phi.Compiler.Semantics
                 f.ParameterTypes = types;
                 f.ResultType = f.Result != null ? ResolveType(f.Result, null, allowStr: false) : PhiType.Int;
                 for (int i = 0; i < types.Count; i++)
-                    if (OutsideTypeProblem(types[i]) is string problem) Error(f.Parameters[i].Span, $"{full}'s '{f.Parameters[i].Name}' is {problem}");
-                if (f.Result != null && OutsideTypeProblem(f.ResultType) is string given) Error(f.Result.Span, $"what {full} gives is {given}");
+                    if (!types[i].IsStruct && OutsideTypeProblem(types[i]) is string problem) Error(f.Parameters[i].Span, $"{full}'s '{f.Parameters[i].Name}' is {problem}");
+                if (f.Result != null && !f.ResultType.IsStruct && OutsideTypeProblem(f.ResultType) is string given) Error(f.Result.Span, $"what {full} gives is {given}");
+                if (types.Any(t => t.IsStruct) || f.ResultType.IsStruct) outsideStructs.Add(f);
             }
 
             foreach (var (cls, scope) in classScopes)
@@ -4779,6 +4784,25 @@ namespace Phi.Compiler.Semantics
             if (call.ResultTarget != null) BindExpr(call.ResultTarget, scope);
             object? callee = BindCallee(call.Callee, call.CalleeSpan, call.Arguments, call.Span, scope, call.CalleeTarget);
             call.Resolved = callee;
+            if (callee is OutsideFunctionDecl { StructResult: PhiType gives } f)
+            {
+                // a struct C gives back by value is written into the variable named: where it's
+                // to go is passed first, or what comes back in a register is stored there
+                Expr? target = call.ResultTarget;
+                if (target == null || target.Type.IsError || !target.Type.IsStruct || target.Type.Struct != gives.Struct || !IsAssignable(target))
+                {
+                    if (target?.Type.IsError != true)
+                        Error(target?.Span ?? call.CalleeSpan, $"{call.Callee} gives a {gives} by value, which goes into a {gives} variable, field or element: call place is {call.Callee}: ...;");
+                    call.ResultTarget = null;
+                    return;
+                }
+                if (f.ResultAddressFirst)
+                {
+                    call.Arguments.Insert(0, AddressOf(target, scope));
+                    call.ResultTarget = null;
+                }
+                else call.ResultTarget = PieceOf(target, 0, f.ResultType!, scope);
+            }
             CheckCallResult(call, callee);
         }
 
@@ -4871,6 +4895,8 @@ namespace Phi.Compiler.Semantics
 
                 case OutsideFunctionDecl f:
                     call.Type = f.ResultType ?? PhiType.Int;
+                    if (f.StructResult is PhiType whole)
+                        Error(call.CalleeSpan, $"{call.Callee} gives a {whole} by value, which goes into a variable first: call place is {call.Callee}: ...;");
                     break;
             }
         }
@@ -5194,10 +5220,36 @@ namespace Phi.Compiler.Semantics
                         return null;
                     }
                     List<PhiType> types = outsideTypes[f];
+                    LowerOutside(f);
                     if (arguments.Count != types.Count)
                         Error(span, $"{full} takes {Plural(types.Count, "value")}" + (types.Count > 0 ? $" ({string.Join(", ", f.Parameters.Select(p => p.Name))})" : "") + $", but was given {arguments.Count}");
+                    var passed = new List<Expr>();
                     for (int i = 0; i < Math.Min(arguments.Count, types.Count); i++)
-                        arguments[i] = ConvertChecked(arguments[i], types[i], $"'{f.Parameters[i].Name}' of {full}");
+                    {
+                        if (!types[i].IsStruct)
+                        {
+                            passed.Add(ConvertChecked(arguments[i], types[i], $"'{f.Parameters[i].Name}' of {full}"));
+                            continue;
+                        }
+                        // a struct by value: its pieces, or its address, as this system's C takes one
+                        Expr given = arguments[i];
+                        if (given.Type.IsError) continue;
+                        if (!given.Type.IsStruct || given.Type.Struct != types[i].Struct || !IsAssignable(given))
+                        {
+                            Error(given.Span, $"'{f.Parameters[i].Name}' of {full} is a {types[i]} by value, so it's given one that's a variable, a field or an element" +
+                                              (given.Type.IsStruct && given.Type.Struct == types[i].Struct ? "" : $", and this is {(given.Type.IsStruct ? "a " : "")}{given.Type}"));
+                            continue;
+                        }
+                        var pieces = i < f.Pieces.Count ? f.Pieces[i] : null;
+                        if (pieces == null || pieces.Count == 0) passed.Add(AddressOf(given, scope));
+                        else passed.AddRange(pieces.Select(piece => PieceOf(given, piece.Offset, piece.Type, scope)));
+                    }
+                    if (outsideStructs.Contains(f) && arguments.Count == types.Count)
+                    {
+                        arguments.Clear();
+                        arguments.AddRange(passed);
+                    }
+                    else for (int i = 0; i < passed.Count && i < arguments.Count; i++) arguments[i] = passed[i];
                     if (!unit.OutsideFunctions.Contains(f)) unit.OutsideFunctions.Add(f);
                     return f;
                 }
@@ -5331,6 +5383,139 @@ namespace Phi.Compiler.Semantics
         /// <summary>What a system call or outside function takes and gives, by type alone: 'int ptr<u8> u32: ptr<u8>'.</summary>
         static string Shape(List<SysCallParameter> parameters, TypeRef? result) =>
             string.Join(" ", parameters.Select(p => TypeText(p.Type))) + (result != null ? ": " + TypeText(result) : "");
+
+        /// <summary>The plain values a struct is made of, with where each is; null when it has an array or anything else in it.</summary>
+        static List<(int Offset, PhiType Type)>? Leaves(PhiType t, int at = 0)
+        {
+            var leaves = new List<(int, PhiType)>();
+            foreach (FieldSymbol field in t.Struct!.Fields)
+            {
+                if (field.Type.IsStruct)
+                {
+                    if (Leaves(field.Type, at + field.Offset) is not { } inner) return null;
+                    leaves.AddRange(inner);
+                }
+                else if (field.Type.IsArray || !(field.Type.IsNumeric || field.Type.IsWide || field.Type.IsFloat)) return null;
+                else leaves.Add((at + field.Offset, field.Type));
+            }
+            return leaves;
+        }
+
+        static PhiType? WholeOf(int bytes) => bytes switch { 1 => PhiType.U8, 2 => PhiType.U16, 4 => PhiType.U32, 8 => PhiType.U64, _ => null };
+
+        /// <summary>
+        /// A struct by value as this system's C passes it: its pieces, each in the place of one
+        /// plain value (none: its address is passed), or why it can't be yet. On ARM, up to
+        /// four floats of one size go as floats, up to 16 bytes as one or two whole registers,
+        /// and more by address; 64-bit Windows passes 1, 2, 4 or 8 bytes whole and anything else
+        /// by address; 32-bit Windows puts the struct itself on the stack.
+        /// </summary>
+        List<(int Offset, PhiType Type)>? StructPieces(PhiType t, out string? problem)
+        {
+            problem = null;
+            int size = t.Struct!.Size;
+            var pieces = new List<(int, PhiType)>();
+            if (!t.Struct.Decl.IsForeign) problem = $"a {t}, and a struct C takes by value is one laid out as C's (struct.{t.Struct.Name} foreign)";
+            else if (host.IsArm())
+            {
+                if (Leaves(t) is { Count: >= 1 and <= 4 } leaves && leaves.All(l => l.Type.Kind == leaves[0].Type.Kind) && leaves[0].Type.Kind is TypeKind.F32 or TypeKind.F64)
+                    return leaves;
+                if (size > 16) return pieces;
+                for (int at = 0; at < size; at += 8)
+                {
+                    if (WholeOf(Math.Min(8, size - at)) is not PhiType whole) { problem = $"a {t} of {size} bytes, which can't go by value yet (8, 12 and 16 can, and 1, 2 and 4)"; break; }
+                    pieces.Add((at, whole));
+                }
+            }
+            else if (host.Is64())
+            {
+                if (WholeOf(size) is PhiType whole) pieces.Add((0, whole));
+            }
+            else if (size % 4 == 0)
+                for (int at = 0; at < size; at += 4) pieces.Add((at, PhiType.U32));
+            else if (WholeOf(size) is PhiType small) pieces.Add((0, small));
+            else problem = $"a {t} of {size} bytes, which can't go by value yet (1, 2 or a multiple of 4 can)";
+            return pieces;
+        }
+
+        /// <summary>
+        /// An outside function that takes or gives a struct by value, made what the generators
+        /// call: ParameterTypes becomes what's really passed, and the rest says how (see
+        /// OutsideFunctionDecl.Pieces). Done at its first call, when every struct is laid out.
+        /// </summary>
+        void LowerOutside(OutsideFunctionDecl f)
+        {
+            if (!outsideStructs.Contains(f) || !outsideLowered.Add(f)) return;
+            string full = $"{f.Library}.{f.Name}";
+            List<PhiType> declared = outsideTypes[f];
+            var lowered = new List<PhiType>();
+            int? variadic = f.VariadicFrom;
+            PhiType result = f.ResultType ?? PhiType.Int;
+            if (result.IsStruct)
+            {
+                f.StructResult = result;
+                int size = result.Struct!.Size;
+                f.ResultType = PhiType.Int;
+                if (!result.Struct.Decl.IsForeign)
+                    Error(f.Result!.Span, $"what {full} gives is a {result}, and a struct C gives by value is one laid out as C's (struct.{result.Struct.Name} foreign)");
+                else if (host.IsArm())
+                {
+                    f.ResultAddressFirst = true;
+                    if (Leaves(result) is { Count: >= 1 and <= 4 } leaves && leaves.All(l => l.Type.Kind == leaves[0].Type.Kind) && leaves[0].Type.Kind is TypeKind.F32 or TypeKind.F64)
+                        (f.ArmStructKind, f.ArmStructSize) = (leaves[0].Type.Kind == TypeKind.F32 ? 2 : 3, leaves.Count);
+                    else if (size > 16) f.ArmStructKind = 4;
+                    else if (WholeOf(size > 8 ? size - 8 : size) != null) (f.ArmStructKind, f.ArmStructSize) = (1, size);
+                    else Error(f.Result!.Span, $"what {full} gives is a {result} of {size} bytes, which can't come back by value yet");
+                }
+                else if (WholeOf(size) is PhiType whole && (size < 8 || true)) f.ResultType = whole;
+                else f.ResultAddressFirst = true;
+                if (f.ResultAddressFirst)
+                {
+                    lowered.Add(PhiType.PointerTo(PhiType.U8));
+                    if (variadic != null && !host.IsArm()) variadic++;   // (ARM's isn't among C's values: CallI.StructInto)
+                }
+            }
+            for (int i = 0; i < declared.Count; i++)
+            {
+                if (!declared[i].IsStruct)
+                {
+                    f.Pieces.Add(null);
+                    lowered.Add(declared[i]);
+                    continue;
+                }
+                var pieces = StructPieces(declared[i], out string? problem) ?? new();
+                if (problem != null) Error(f.Parameters[i].Span, $"{full}'s '{f.Parameters[i].Name}' is {problem}");
+                f.Pieces.Add(pieces);
+                int takes = Math.Max(1, pieces.Count);
+                if (pieces.Count == 0) lowered.Add(PhiType.PointerTo(PhiType.U8));
+                else lowered.AddRange(pieces.Select(piece => piece.Type));
+                if (variadic is int from && i < f.VariadicFrom) variadic = from + takes - 1;
+            }
+            f.ParameterTypes = lowered;
+            f.VariadicFrom = variadic;
+        }
+
+        static TypeRef PointerRef(PhiType to, Span span) =>
+            new() { Name = "ptr", Pointee = new TypeRef { Name = to.Kind switch { TypeKind.U8 => "u8", TypeKind.U16 => "u16", TypeKind.U32 => "u32", TypeKind.U64 => "u64", TypeKind.F32 => "f32", _ => "f64" }, Span = span }, Span = span };
+
+        /// <summary>A struct's address as a ptr&lt;u8&gt;, for C to read or fill.</summary>
+        Expr AddressOf(Expr place, Scope scope)
+        {
+            Expr e = new CastExpr { Operand = new AddrExpr { Operand = place, Span = place.Span }, TargetType = PointerRef(PhiType.U8, place.Span), Span = place.Span };
+            BindExpr(e, scope);
+            return e;
+        }
+
+        /// <summary>One piece of a struct in memory, as a value (or a place to store one): what's at its address + offset, read as the piece's type.</summary>
+        Expr PieceOf(Expr place, int offset, PhiType type, Scope scope)
+        {
+            Expr p = new CastExpr { Operand = new AddrExpr { Operand = place, Span = place.Span }, TargetType = PointerRef(PhiType.U8, place.Span), Span = place.Span };
+            if (offset != 0) p = new BinaryExpr { Op = BinaryOp.Add, Left = p, Right = new NumberExpr { Value = offset, Span = place.Span }, Span = place.Span };
+            p = new CastExpr { Operand = p, TargetType = PointerRef(type, place.Span), Span = place.Span };
+            Expr e = new IndexExpr { Target = p, Index = new NumberExpr { Value = 0, Span = place.Span }, Span = place.Span };
+            BindExpr(e, scope);
+            return e;
+        }
 
         /// <summary>
         /// Why a type can't go to or come from an outside function yet, or null: a number, bln,

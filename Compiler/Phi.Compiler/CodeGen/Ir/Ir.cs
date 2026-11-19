@@ -691,6 +691,15 @@ namespace Phi.Compiler.CodeGen.Ir
         public List<MemKind> ArgKinds { get; } = new();
         public VReg? Dst { get; init; }
         public CallResult Result { get; init; }
+
+        /// <summary>
+        /// An outside function that gives a struct back by value (ARM): where it's to go, and
+        /// how it comes (OutsideFunctionDecl.ArmStructKind: 1 in x0 and x1, StructSize bytes;
+        /// 2 StructSize f32s from s0; 3 f64s from d0; 4 the function writes it where x8 says).
+        /// </summary>
+        public VReg? StructInto { get; set; }
+        public int StructKind { get; init; }
+        public int StructSize { get; init; }
     }
 
     /// <summary>

@@ -157,6 +157,22 @@ namespace Phi.Compiler.Syntax
         /// <summary>The function's name in its library.</summary>
         public string CName => Symbol ?? Name;
 
+        /// <summary>
+        /// A struct C takes or gives by value goes as the system's convention has it, which the
+        /// binder works out (Binder.LowerOutside): ParameterTypes is then what's really passed
+        /// (a struct's pieces, or its address; first of all, where a struct that's given back
+        /// is to go, when the convention hands that over), and these say the rest.
+        /// </summary>
+        /// <remarks>For each parameter as declared: null for a plain value; else the pieces of the struct that go in its place (at Offset, as Type), none meaning its address.</remarks>
+        public List<List<(int Offset, Semantics.PhiType Type)>?> Pieces { get; set; } = new();
+        /// <summary>The struct it gives back by value, or null.</summary>
+        public Semantics.PhiType? StructResult { get; set; }
+        /// <summary>The first value passed is where the struct given back goes (Windows: a hidden first parameter; ARM: see ArmStructKind).</summary>
+        public bool ResultAddressFirst { get; set; }
+        /// <summary>On ARM, how the struct comes back: 1 in x0 (and x1), ArmStructSize bytes; 2 ArmStructSize f32s in s0 on; 3 f64s in d0 on; 4 written where x8 says.</summary>
+        public int ArmStructKind { get; set; }
+        public int ArmStructSize { get; set; }
+
         /// <summary>What each value is, as the binder resolved them.</summary>
         public List<Semantics.PhiType> ParameterTypes { get; set; } = new();
 

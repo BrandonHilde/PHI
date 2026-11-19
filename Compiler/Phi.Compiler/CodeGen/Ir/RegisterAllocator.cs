@@ -118,6 +118,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 case CallI call:
                     foreach (Opnd a in call.Args) if (a.Reg != null) yield return a.Reg;
                     if (call.Target != null) yield return call.Target;
+                    if (call.StructInto != null) yield return call.StructInto;
                     break;
                 case LoadIdxI l:
                     yield return l.Base;

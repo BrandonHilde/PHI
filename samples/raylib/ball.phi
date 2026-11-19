@@ -1,0 +1,83 @@
+# A window through raylib: a ball that follows the mouse and leaves a trail, until the
+# window is closed or Escape is pressed. raylib's functions take structs by value (a
+# Vector2, a Color), which PHI passes as each system's C does. The same source is a Windows
+# program and a macOS one.
+#
+#   macOS:    brew install raylib;  phi run --target macos samples/raylib/ball.phi
+#   Windows:  put raylib.dll (from raylib's releases) beside this file, or in windows64/
+#             beside it;  phi run --target windows64 samples/raylib/ball.phi
+use 'raylib.dll' 'libraylib.dylib' as Ray;
+
+struct.Vector2 foreign
+{
+	f32 x;
+	f32 y;
+}
+
+struct.Color foreign
+{
+	u8 r;
+	u8 g;
+	u8 b;
+	u8 a;
+}
+
+phi.Ball:Program
+{
+	Vector2 trail[24];
+	Vector2 mouse;
+	Color back;
+	Color ink;
+	Color tint;
+	int frames: 0;
+
+	back.r is 24;
+	back.g is 28;
+	back.b is 48;
+	back.a is 255;
+	ink.r is 255;
+	ink.g is 170;
+	ink.b is 40;
+	ink.a is 255;
+
+	call Ray.SetTraceLogLevel: 7;
+	call Ray.InitWindow: 640 400 'PHI and raylib';
+	call Ray.SetTargetFPS: 60;
+	while not (Ray.WindowShouldClose)
+		call mouse is Ray.GetMousePosition;
+		while int i: 23; i > 0; i--;
+			trail:i.x is trail:(i - 1).x;
+			trail:i.y is trail:(i - 1).y;
+		;;
+		trail:0.x is mouse.x;
+		trail:0.y is mouse.y;
+
+		call Ray.BeginDrawing;
+		call Ray.ClearBackground: back;
+		while int i: 23; i >= 0; i--;
+			call tint is Ray.Fade: ink 1.0 - (i as f32) / 24.0;
+			call Ray.DrawCircleV: trail:i 22.0 - (i as f32) * 0.75 tint;
+		;;
+		call Ray.DrawText: 'move the mouse; Escape ends' 12 12 20 ink;
+		call Ray.DrawFPS: 12 370;
+		call Ray.EndDrawing;
+		frames++;
+	;;
+	call Ray.CloseWindow;
+	log frames ' frames\n';
+	exit 0;
+}
+
+Ray.SetTraceLogLevel: int level;
+Ray.InitWindow: int width int height ptr<u8> title;
+Ray.CloseWindow;
+Ray.WindowShouldClose: : bln;
+Ray.SetTargetFPS: int fps;
+Ray.GetMousePosition: : Vector2;
+Ray.BeginDrawing;
+Ray.EndDrawing;
+Ray.ClearBackground: Color color;
+Ray.Fade: Color color f32 alpha: Color;
+Ray.DrawCircleV: Vector2 centre f32 radius Color color;
+Ray.DrawText: ptr<u8> text int x int y int size Color color;
+Ray.DrawFPS: int x int y;

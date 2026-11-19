@@ -360,7 +360,8 @@ namespace Phi.Compiler.CodeGen.A64
                 List<int> places = OutsidePlaces(call);
                 for (int k = 0; k < places.Count; k++)
                     if (places[k] < 0) most = Math.Max(most, -1 - places[k] + 8);
-                return (most + 7) / 8;
+                // (and one more for where a struct that comes back in registers is to go, kept over the call)
+                return (most + 7) / 8 + (call.StructKind is 1 or 2 or 3 ? 1 : 0);
             }
 
             void OutsideCall(CallI call)
@@ -404,9 +405,27 @@ namespace Phi.Compiler.CodeGen.A64
                     if (kind == MemKind.S8) E($"sxtb w{places[k]}, w{places[k]}");
                     else if (kind == MemKind.S16) E($"sxth w{places[k]}, w{places[k]}");
                 }
+                // a struct given back: where x8 says, or in registers, stored where it's to go
+                // (which is kept above the call's stack values meanwhile)
+                int keptAt = 8 * (OutsideStack(call) - 1);
+                if (call.StructKind == 4) Into("x8", Opnd.Of(call.StructInto!), true);
+                else if (call.StructKind != 0) Mem("str", Get(call.StructInto!, "x9", true), "sp", keptAt, 8);
                 // (one of the runtime's own, called as C calls it: the program needs its file)
                 if (Library.Provides(A64Generator.Target, call.Label)) g.Need(call.Label);
                 E($"bl {call.Label}");
+                if (call.StructKind is 1 or 2 or 3)
+                {
+                    Mem("ldr", "x9", "sp", keptAt, 8);
+                    if (call.StructKind == 1)
+                    {
+                        int first = Math.Min(8, call.StructSize), rest = call.StructSize - first;
+                        E(first switch { 8 => "str x0, [x9]", 4 => "str w0, [x9]", 2 => "strh w0, [x9]", _ => "strb w0, [x9]" });
+                        if (rest > 0) E(rest switch { 8 => "str x1, [x9, #8]", 4 => "str w1, [x9, #8]", 2 => "strh w1, [x9, #8]", _ => "strb w1, [x9, #8]" });
+                    }
+                    else
+                        for (int k = 0; k < call.StructSize; k++)
+                            E(call.StructKind == 2 ? $"str s{k}, [x9, #{4 * k}]" : $"str d{k}, [x9, #{8 * k}]");
+                }
                 if (call.Dst == null) return;
                 if (call.Result == CallResult.St0)
                 {

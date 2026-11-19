@@ -1,0 +1,12 @@
+add: 3.5 2.5, length: 5
+cross: 0 0 1
+overlap: 1 6 8 4 2
+apart: 0, point in: 1 0
+circles: 0 0
+red: 255 0 0 255, as a number: 65535
+faded: 255 127
+between: 127 0 127 255
+image: 32 x 16, format 7, 1
+ (0 0 255) (255 0 0) (255 0 0) (0 0 255) (0 255 0) (255 0 0)
+red pixels: 49
+cropped: 8 x 8 (0 0 255) (255 0 0)

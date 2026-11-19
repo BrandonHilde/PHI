@@ -3556,6 +3556,32 @@ be 64-bit numbers and floats too.
 int done: (User32.EnumWindows: addr foreign OnWindow 0);
 ```
 
+**Structs by value.** A C function that takes a struct itself, not its address, is
+declared with the struct's name, and given a variable, a field or an element; one that
+gives a struct back is called into the place it's to go:
+
+```phi
+struct.Vector2 foreign
+{
+    f32 x;
+    f32 y;
+}
+
+Ray.GetMousePosition: : Vector2;
+Ray.DrawCircleV: Vector2 centre f32 radius Color color;
+
+call mouse is Ray.GetMousePosition;         # mouse is a Vector2
+call Ray.DrawCircleV: mouse 20.0 ink;
+```
+
+The struct is a `foreign` one. How it travels is each system's own, and the compiler's
+business: on macOS up to four floats of one size go in float registers, up to 16 bytes in
+one or two whole ones, and anything larger by address; 64-bit Windows passes 1, 2, 4 or 8
+bytes in a register and anything else by address; 32-bit Windows puts the struct on the
+stack. A larger struct is passed by its own address, not a copy's, so a function that
+changes what it was given (C lets it) changes the variable. A struct given back is used
+from the variable (`call place is ...;`), not inside an expression.
+
 **Structs as C lays them out.** Every PHI struct is laid out as C lays one out (each field
 on a multiple of its own size, and the whole a multiple of its largest field: see
 [structs](#structs)), so outside code can be given one as it is, in 32 and 64 bits.

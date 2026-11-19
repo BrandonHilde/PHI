@@ -2946,11 +2946,21 @@ namespace Phi.Compiler.CodeGen.Ir
                 Dst = wantResult ? New(result) : null,
                 Result = IsF(result) ? CallResult.St0 : Is64(result) ? CallResult.Rax : CallResult.Eax,
                 ResultKind = KindOf(result),
+                StructKind = f.ArmStructKind,
+                StructSize = f.ArmStructSize,
             };
             for (int i = 0; i < arguments.Count; i++)
             {
                 Expr a = arguments[i];
                 PhiType t = Real(a);
+                if (i == 0 && f.ArmStructKind != 0)
+                {
+                    // (where the struct it gives back goes: not one of C's values, see CallI.StructInto)
+                    Opnd where = Value(a, PhiType.PointerTo(PhiType.U8));
+                    Need(!where.IsImm, $"{f.Library}.{f.Name}'s struct given back to a fixed address");
+                    call.StructInto = where.Reg;
+                    continue;
+                }
                 Need(Supported(t) && !t.IsVec && !t.IsObject || a.Type.IsString, $"{f.Library}.{f.Name} given {A(t)}");
                 // (as the declaration says: an f32's value goes as an f32, a number to an i64 whole)
                 PhiType to = a.Type.IsString ? PhiType.PointerTo(PhiType.U8) : i < f.ParameterTypes.Count ? f.ParameterTypes[i] : a.Type;

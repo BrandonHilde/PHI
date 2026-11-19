@@ -1,0 +1,171 @@
+# raylib from one module, with no window: its maths, colours, collisions and the images it
+# draws into in memory. raylib takes and gives structs by value everywhere (Vector2, Color,
+# Rectangle, Image), which each system's C passes its own way. One source: a macOS program
+# (Homebrew's raylib) and a Windows one, 32 and 64 bits (raylib's own raylib.dll, which
+# build.sh fetches), give the same.
+use 'raylib.dll' 'libraylib.dylib' as Ray;
+
+struct.Vector2 foreign
+{
+	f32 x;
+	f32 y;
+}
+
+struct.Vector3 foreign
+{
+	f32 x;
+	f32 y;
+	f32 z;
+}
+
+struct.Rectangle foreign
+{
+	f32 x;
+	f32 y;
+	f32 width;
+	f32 height;
+}
+
+struct.Color foreign
+{
+	u8 r;
+	u8 g;
+	u8 b;
+	u8 a;
+}
+
+struct.Image foreign
+{
+	ptr<u8> data;
+	int width;
+	int height;
+	int mipmaps;
+	int format;
+}
+
+phi.CRaylibProgram:Program
+{
+	Vector2 a;
+	Vector2 b;
+	Vector2 sum;
+	Vector3 right;
+	Vector3 up;
+	Vector3 forward;
+	Rectangle first;
+	Rectangle second;
+	Rectangle both;
+	Color red;
+	Color blue;
+	Color made;
+	Image image;
+
+	call Ray.SetTraceLogLevel: 7;       # (nothing logged)
+
+	# maths
+	a.x is 3.0;
+	a.y is 4.0;
+	b.x is 0.5;
+	b.y is -1.5;
+	call sum is Ray.Vector2Add: a b;
+	log 'add: ' sum.x ' ' sum.y ', length: ' (Ray.Vector2Length: a) '\n';
+	right.x is 1.0;
+	up.y is 1.0;
+	call forward is Ray.Vector3CrossProduct: right up;
+	log 'cross: ' forward.x ' ' forward.y ' ' forward.z '\n';
+
+	# collisions
+	first.x is 0.0;
+	first.y is 0.0;
+	first.width is 10.0;
+	first.height is 10.0;
+	second.x is 6.0;
+	second.y is 8.0;
+	second.width is 10.0;
+	second.height is 10.0;
+	call both is Ray.GetCollisionRec: first second;
+	log 'overlap: ' (Ray.CheckCollisionRecs: first second) ' ' both.x ' ' both.y ' ' both.width ' ' both.height '\n';
+	second.x is 11.0;
+	log 'apart: ' (Ray.CheckCollisionRecs: first second) ', point in: ' (Ray.CheckCollisionPointRec: a first) ' ' (Ray.CheckCollisionPointRec: b first) '\n';
+	log 'circles: ' (Ray.CheckCollisionCircles: a 2.0 b 2.0) ' ' (Ray.CheckCollisionCircles: a 4.0 b 2.0) '\n';
+
+	# colours
+	call red is Ray.ColorFromHSV: 0.0 1.0 1.0;
+	call blue is Ray.GetColor: 0x0000FFFF;
+	log 'red: ' red.r ' ' red.g ' ' red.b ' ' red.a ', as a number: ' (Ray.ColorToInt: blue) '\n';
+	call made is Ray.Fade: red 0.5;
+	log 'faded: ' made.r ' ' made.a '\n';
+	call made is Ray.ColorLerp: red blue 0.5;
+	log 'between: ' made.r ' ' made.g ' ' made.b ' ' made.a '\n';
+
+	# an image in memory, drawn into and read back
+	call image is Ray.GenImageColor: 32 16 blue;
+	log 'image: ' image.width ' x ' image.height ', format ' image.format ', ' (image.data is not 0) '\n';
+	call Ray.ImageDrawRectangle: addr image 4 2 8 6 red;
+	a.x is 24.0;
+	a.y is 8.0;
+	made.r is 0;
+	made.g is 255;
+	made.b is 0;
+	made.a is 255;
+	call Ray.ImageDrawCircleV: addr image a 3 made;
+	call Ray.ImageDrawPixel: addr image 31 15 red;
+	call Show: 0 0;
+	call Show: 4 2;
+	call Show: 11 7;
+	call Show: 12 8;
+	call Show: 24 8;
+	call Show: 31 15;
+	log '\n';
+	int reds: 0;
+	while int y: 0; y < 16; y++;
+		while int x: 0; x < 32; x++;
+			call made is Ray.GetImageColor: image x y;
+			if made.r is 255 and made.b is 0
+				reds++;
+			;;
+		;;
+	;;
+	log 'red pixels: ' reds '\n';
+
+	# cut down to the rectangle, and turned over
+	first.x is 4.0;
+	first.y is 2.0;
+	first.width is 8.0;
+	first.height is 8.0;
+	call Ray.ImageCrop: addr image first;
+	call Ray.ImageFlipVertical: addr image;
+	log 'cropped: ' image.width ' x ' image.height;
+	call Show: 0 0;
+	call Show: 0 7;
+	log '\n';
+	call Ray.UnloadImage: image;
+	exit 0;
+
+	[Show: int x: 0; int y: 0;]
+		Color c;
+		call c is Ray.GetImageColor: image x y;
+		log ' (' c.r ' ' c.g ' ' c.b ')';
+	[end]
+}
+
+Ray.SetTraceLogLevel: int level;
+Ray.Vector2Add: Vector2 a Vector2 b: Vector2;
+Ray.Vector2Length: Vector2 v: f32;
+Ray.Vector3CrossProduct: Vector3 a Vector3 b: Vector3;
+Ray.CheckCollisionRecs: Rectangle a Rectangle b: bln;
+Ray.GetCollisionRec: Rectangle a Rectangle b: Rectangle;
+Ray.CheckCollisionPointRec: Vector2 point Rectangle rec: bln;
+Ray.CheckCollisionCircles: Vector2 a f32 radiusA Vector2 b f32 radiusB: bln;
+Ray.ColorFromHSV: f32 hue f32 saturation f32 value: Color;
+Ray.GetColor: u32 hex: Color;
+Ray.ColorToInt: Color color;
+Ray.Fade: Color color f32 alpha: Color;
+Ray.ColorLerp: Color a Color b f32 factor: Color;
+Ray.GenImageColor: int width int height Color color: Image;
+Ray.GetImageColor: Image image int x int y: Color;
+Ray.ImageDrawRectangle: ptr<Image> image int x int y int width int height Color color;
+Ray.ImageDrawCircleV: ptr<Image> image Vector2 centre int radius Color color;
+Ray.ImageDrawPixel: ptr<Image> image int x int y Color color;
+Ray.ImageCrop: ptr<Image> image Rectangle crop;
+Ray.ImageFlipVertical: ptr<Image> image;
+Ray.UnloadImage: Image image;

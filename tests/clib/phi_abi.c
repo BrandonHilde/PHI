@@ -76,3 +76,47 @@ typedef struct { unsigned char tag; int count; double weight; short small; } abi
 API int abi_record_size(void) { return (int)sizeof(abi_record); }
 API double abi_record_read(const abi_record *r) { return r->tag + r->count + r->weight + r->small; }
 API void abi_record_write(abi_record *r) { r->tag = 9; r->count = -1234; r->weight = 0.125; r->small = -5; }
+
+/* structs by value: each size and make-up C's conventions treat their own way */
+typedef struct { float x, y; } abi_vec2;                       /* two floats */
+typedef struct { float x, y, z; } abi_vec3;                    /* three */
+typedef struct { float x, y, w, h; } abi_rect;                 /* four */
+typedef struct { double x, y; } abi_dvec2;                     /* two doubles */
+typedef struct { unsigned char r, g, b, a; } abi_color;        /* 4 bytes */
+typedef struct { int x, y; } abi_point;                        /* 8 bytes */
+typedef struct { int id; float weight; int count; } abi_mixed3; /* 12 bytes, floats and not */
+typedef struct { int64_t a, b; } abi_pair;                     /* 16 bytes */
+typedef struct { unsigned id; int width, height, mips, format; } abi_texture;  /* 20 bytes */
+typedef struct { abi_vec2 offset, target; float turn, zoom; } abi_camera;       /* 24 bytes, structs inside */
+
+API float abi_vec2_sum(abi_vec2 v) { return v.x + 2 * v.y; }
+API float abi_vec3_sum(abi_vec3 v) { return v.x + 2 * v.y + 4 * v.z; }
+API float abi_rect_area(abi_rect r) { return r.w * r.h + r.x - r.y; }
+API double abi_dvec2_sum(abi_dvec2 v) { return v.x + 2 * v.y; }
+API int abi_color_sum(abi_color c) { return c.r + 2 * c.g + 4 * c.b + 8 * c.a; }
+API int abi_point_sum(abi_point p) { return p.x - 2 * p.y; }
+API double abi_mixed3_sum(abi_mixed3 m) { return m.id + m.weight + m.count; }
+API int64_t abi_pair_sum(abi_pair p) { return p.a - p.b; }
+API int abi_texture_sum(abi_texture t) { return (int)t.id + t.width + t.height + t.mips + t.format; }
+API float abi_camera_sum(abi_camera c) { return c.offset.x + c.offset.y + c.target.x + c.target.y + c.turn + c.zoom; }
+
+/* among other values, and several at once */
+API float abi_draw(int id, abi_vec2 at, float radius, abi_color color, abi_rect in, const char *name)
+{ return id + at.x + at.y + radius + color.g + in.w + (float)strlen(name); }
+API double abi_many_structs(abi_vec2 a, abi_vec2 b, abi_vec2 c, abi_vec2 d, abi_vec2 e, abi_point p, abi_pair q, abi_texture t, abi_color k, double last)
+{ return a.x + b.y + c.x + d.y + e.x + e.y + p.x + p.y + (double)q.a + (double)q.b + t.format + k.a + last; }
+
+/* given back */
+API abi_vec2 abi_make_vec2(float x, float y) { abi_vec2 v = { x, y }; return v; }
+API abi_vec3 abi_make_vec3(float x) { abi_vec3 v = { x, x * 2, x * 3 }; return v; }
+API abi_rect abi_make_rect(float x, float size) { abi_rect r = { x, x + 1, size, size * 2 }; return r; }
+API abi_dvec2 abi_make_dvec2(double x) { abi_dvec2 v = { x, -x }; return v; }
+API abi_color abi_make_color(int grey) { abi_color c = { (unsigned char)grey, (unsigned char)(grey + 1), (unsigned char)(grey + 2), 255 }; return c; }
+API abi_point abi_make_point(int x, int y) { abi_point p = { x, y }; return p; }
+API abi_mixed3 abi_make_mixed3(int id) { abi_mixed3 m = { id, id / 2.0f, -id }; return m; }
+API abi_pair abi_make_pair(int64_t a) { abi_pair p = { a, a * 3 }; return p; }
+API abi_texture abi_make_texture(int id) { abi_texture t = { (unsigned)id, 640, 480, 1, 7 }; return t; }
+API abi_camera abi_make_camera(float zoom) { abi_camera c = { { 1, 2 }, { 3, 4 }, 0.5f, zoom }; return c; }
+/* taken and given back */
+API abi_vec2 abi_vec2_add(abi_vec2 a, abi_vec2 b) { abi_vec2 v = { a.x + b.x, a.y + b.y }; return v; }
+API abi_texture abi_texture_half(abi_texture t) { t.width /= 2; t.height /= 2; t.mips++; return t; }

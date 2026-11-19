@@ -39,4 +39,12 @@ for a in x64 x86; do
 done
 cp src/sdl3-x64/SDL3.dll windows64/
 cp src/sdl3-x86/SDL3.dll windows/
+
+# raylib: Homebrew's on a Mac (brew install raylib), raylib's own DLLs on Windows
+for a in win64 win32; do
+    fetch raylib-$a.zip https://github.com/raysan5/raylib/releases/download/5.5/raylib-5.5_${a}_msvc16.zip
+    [ -d src/raylib-5.5_${a}_msvc16 ] || unzip -o -q src/raylib-$a.zip -d src
+done
+cp src/raylib-5.5_win64_msvc16/lib/raylib.dll windows64/
+cp src/raylib-5.5_win32_msvc16/lib/raylib.dll windows/
 ls -l macos windows64 windows

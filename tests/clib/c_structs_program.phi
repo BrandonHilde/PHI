@@ -1,0 +1,195 @@
+# Structs C takes and gives by value, against phi_abi.c: each size and make-up that C's
+# conventions treat their own way (floats alone, whole numbers, both; 4, 8, 12, 16, 20 and
+# 24 bytes; one struct inside another), alone, among other values, and ten at once; given
+# back into a variable, a field and an element. Each system passes them differently (ARM in
+# float or whole registers or by address; 64-bit Windows whole or by address; 32-bit
+# Windows on the stack), and one source gives the same on all three.
+use 'phi_abi.dll' 'libphi_abi.dylib' as Abi;
+
+struct.Vec2 foreign
+{
+	f32 x;
+	f32 y;
+}
+
+struct.Vec3 foreign
+{
+	f32 x;
+	f32 y;
+	f32 z;
+}
+
+struct.Rect foreign
+{
+	f32 x;
+	f32 y;
+	f32 w;
+	f32 h;
+}
+
+struct.DVec2 foreign
+{
+	f64 x;
+	f64 y;
+}
+
+struct.Color foreign
+{
+	u8 r;
+	u8 g;
+	u8 b;
+	u8 a;
+}
+
+struct.Point foreign
+{
+	int x;
+	int y;
+}
+
+struct.Mixed3 foreign
+{
+	int id;
+	f32 weight;
+	int count;
+}
+
+struct.Pair foreign
+{
+	i64 a;
+	i64 b;
+}
+
+struct.Texture foreign
+{
+	u32 id;
+	int width;
+	int height;
+	int mips;
+	int format;
+}
+
+struct.Camera foreign
+{
+	Vec2 offset;
+	Vec2 target;
+	f32 turn;
+	f32 zoom;
+}
+
+struct.Scene foreign
+{
+	int id;
+	Vec2 centre;
+	Texture skin;
+}
+
+phi.CStructsProgram:Program
+{
+	Vec2 v2;
+	Vec3 v3;
+	Rect rect;
+	DVec2 d2;
+	Color color;
+	Point point;
+	Mixed3 mixed;
+	Pair pair;
+	Texture texture;
+	Camera camera;
+	Scene scene;
+	Vec2 path[3];
+
+	v2.x is 1.5;
+	v2.y is 2.25;
+	v3.x is 1.0;
+	v3.y is 2.0;
+	v3.z is 3.0;
+	rect.x is 10.0;
+	rect.y is 4.0;
+	rect.w is 3.0;
+	rect.h is 5.0;
+	d2.x is 0.125;
+	d2.y is 1000000.5;
+	color.r is 1;
+	color.g is 2;
+	color.b is 3;
+	color.a is 200;
+	point.x is 100;
+	point.y is -7;
+	mixed.id is 40;
+	mixed.weight is 1.5;
+	mixed.count is -3;
+	pair.a is 5000000000;
+	pair.b is -1;
+	texture.id is 9;
+	texture.width is 320;
+	texture.height is 200;
+	texture.mips is 1;
+	texture.format is 7;
+	camera.offset.x is 1.0;
+	camera.offset.y is 2.0;
+	camera.target.x is 3.0;
+	camera.target.y is 4.0;
+	camera.turn is 0.5;
+	camera.zoom is 2.0;
+
+	# taken
+	log 'floats: ' (Abi.abi_vec2_sum: v2) ' ' (Abi.abi_vec3_sum: v3) ' ' (Abi.abi_rect_area: rect) ' ' (Abi.abi_dvec2_sum: d2) '\n';
+	log 'whole: ' (Abi.abi_color_sum: color) ' ' (Abi.abi_point_sum: point) ' ' (Abi.abi_pair_sum: pair) ' ' (Abi.abi_texture_sum: texture) '\n';
+	log 'both: ' (Abi.abi_mixed3_sum: mixed) ' ' (Abi.abi_camera_sum: camera) '\n';
+	log 'among others: ' (Abi.abi_draw: 7 v2 0.75 color rect 'name') '\n';
+	log 'ten: ' (Abi.abi_many_structs: v2 v2 v2 v2 v2 point pair texture color 0.5) '\n';
+
+	# given back
+	call v2 is Abi.abi_make_vec2: 7.5 -2.0;
+	call v3 is Abi.abi_make_vec3: 1.25;
+	call rect is Abi.abi_make_rect: 3.0 4.0;
+	call d2 is Abi.abi_make_dvec2: 2.5;
+	log 'floats back: ' v2.x ' ' v2.y ', ' v3.x ' ' v3.y ' ' v3.z ', ' rect.x ' ' rect.y ' ' rect.w ' ' rect.h ', ' d2.x ' ' d2.y '\n';
+	call color is Abi.abi_make_color: 100;
+	call point is Abi.abi_make_point: -5 123456;
+	call pair is Abi.abi_make_pair: 20000000000;
+	call texture is Abi.abi_make_texture: 33;
+	log 'whole back: ' color.r ' ' color.g ' ' color.b ' ' color.a ', ' point.x ' ' point.y ', ' pair.a ' ' pair.b ', '
+	    texture.id ' ' texture.width ' ' texture.height ' ' texture.mips ' ' texture.format '\n';
+	call mixed is Abi.abi_make_mixed3: 9;
+	call camera is Abi.abi_make_camera: 8.0;
+	log 'both back: ' mixed.id ' ' mixed.weight ' ' mixed.count ', ' camera.offset.x ' ' camera.offset.y ' ' camera.target.x ' ' camera.target.y ' ' camera.turn ' ' camera.zoom '\n';
+
+	# into a field and an element, from a field and an element
+	scene.id is 77;
+	call scene.centre is Abi.abi_make_vec2: 0.5 0.25;
+	call scene.skin is Abi.abi_make_texture: 4;
+	call path:1 is Abi.abi_vec2_add: scene.centre v2;
+	call path:2 is Abi.abi_vec2_add: path:1 path:1;
+	call scene.skin is Abi.abi_texture_half: scene.skin;
+	log 'places: ' scene.id ' ' scene.centre.x ' ' scene.centre.y ' ' scene.skin.width ' ' scene.skin.height ' ' scene.skin.mips ', '
+	    path:0.x ' ' path:1.x ' ' path:1.y ' ' path:2.x ' ' path:2.y '\n';
+	log 'still: ' (Abi.abi_vec2_sum: path:2) ' ' (Abi.abi_texture_sum: scene.skin) '\n';
+	exit 0;
+}
+
+Abi.abi_vec2_sum: Vec2 v: f32;
+Abi.abi_vec3_sum: Vec3 v: f32;
+Abi.abi_rect_area: Rect r: f32;
+Abi.abi_dvec2_sum: DVec2 v: f64;
+Abi.abi_color_sum: Color c;
+Abi.abi_point_sum: Point p;
+Abi.abi_mixed3_sum: Mixed3 m: f64;
+Abi.abi_pair_sum: Pair p: i64;
+Abi.abi_texture_sum: Texture t;
+Abi.abi_camera_sum: Camera c: f32;
+Abi.abi_draw: int id Vec2 position f32 radius Color color Rect inside ptr<u8> name: f32;
+Abi.abi_many_structs: Vec2 a Vec2 b Vec2 c Vec2 d Vec2 e Point p Pair q Texture t Color k f64 last: f64;
+Abi.abi_make_vec2: f32 x f32 y: Vec2;
+Abi.abi_make_vec3: f32 x: Vec3;
+Abi.abi_make_rect: f32 x f32 size: Rect;
+Abi.abi_make_dvec2: f64 x: DVec2;
+Abi.abi_make_color: int grey: Color;
+Abi.abi_make_point: int x int y: Point;
+Abi.abi_make_mixed3: int id: Mixed3;
+Abi.abi_make_pair: i64 a: Pair;
+Abi.abi_make_texture: int id: Texture;
+Abi.abi_make_camera: f32 zoom: Camera;
+Abi.abi_vec2_add: Vec2 a Vec2 b: Vec2;
+Abi.abi_texture_half: Texture t: Texture;
