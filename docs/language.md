@@ -3573,8 +3573,9 @@ int done: (User32.EnumWindows: addr foreign OnWindow 0);
 ```
 
 **Structs by value.** A C function that takes a struct itself, not its address, is
-declared with the struct's name, and given a variable, a field or an element; one that
-gives a struct back is called into the place it's to go:
+declared with the struct's name, and given a variable, a field or an element (or a method's
+struct parameter, which is the caller's, or one made with `new`); one that gives a struct
+back is called into the place it's to go, any of the same:
 
 ```phi
 struct.Vector2 foreign

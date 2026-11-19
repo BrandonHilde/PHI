@@ -97,11 +97,22 @@ namespace Phi.Cli
 
             int passed = 0;
             var secondRun = new List<string>();
+            var setAside = new List<string>();
             foreach (var (test, mode) in runs)
             {
                 string name = TestName(test) + (mode == null ? "" : $" ({mode.Name})");
                 var report = new List<string>();
                 string? failure = RunGuarded(test, TimeFor(test, timeout), mode, input, keepOutput, contains, bench, report);
+
+                // a test of a C library this computer hasn't got says nothing about PHI: set aside, and named
+                if (failure != null && failure.StartsWith(NoLibrary, StringComparison.Ordinal))
+                {
+                    setAside.Add(name);
+                    Write(ConsoleColor.Yellow, "SKIP ");
+                    Console.WriteLine(name);
+                    Console.WriteLine("     " + failure[NoLibrary.Length..]);
+                    continue;
+                }
 
                 // a test that failed runs once more, unless what failed was its build (that won't change)
                 string? first = null;
@@ -145,8 +156,14 @@ namespace Phi.Cli
             }
 
             Console.WriteLine();
-            Write(passed == runs.Count ? ConsoleColor.Green : ConsoleColor.Red, $"{passed}/{runs.Count} passed");
+            int ran = runs.Count - setAside.Count;
+            Write(passed == ran ? ConsoleColor.Green : ConsoleColor.Red, $"{passed}/{ran} passed");
             Console.WriteLine();
+            if (setAside.Count > 0)
+            {
+                Write(ConsoleColor.Yellow, $"{setAside.Count} set aside, calling a C library this computer hasn't got: {string.Join(", ", setAside)}");
+                Console.WriteLine();
+            }
             if (secondRun.Count > 0)
             {
                 // a busy computer slows a test past its time; but a test that fails only some of the
@@ -156,7 +173,31 @@ namespace Phi.Cli
                 Console.WriteLine("(the computer was busy, or the test has a race worth a look: phi test --no-retry -f NAME)");
             }
 
-            return passed == runs.Count ? 0 : 1;
+            return passed == ran ? 0 : 1;
+        }
+
+        /// <summary>How a run's result starts when the test calls a C library that isn't on this computer: it's set aside, not failed.</summary>
+        const string NoLibrary = "no library: ";
+
+        /// <summary>
+        /// The C library a program couldn't be built or started without, when that's why it
+        /// didn't run: what a Mac's linker says of one it can't find, and what each system's
+        /// loader says when the program starts. Null when it's anything else.
+        /// </summary>
+        static string? MissingLibrary(string text, int exitCode, Host host)
+        {
+            foreach (string pattern in new[]
+                     {
+                         @"library not found for -l(\S+)", @"library '([^']+)' not found",             // ld, on a Mac
+                         @"Library not loaded: (\S+)",                                                  // dyld
+                         @"error while loading shared libraries: ([^:]+): cannot open shared object",   // ld.so
+                     })
+                if (System.Text.RegularExpressions.Regex.Match(text, pattern) is { Success: true } found) return found.Groups[1].Value;
+            // (Windows says it in a box, not in what the program writes: its exit code is STATUS_DLL_NOT_FOUND)
+            // (from a Windows machine reached by ssh only the code's low byte comes back, and nothing written)
+            if (host.IsWindows() && (exitCode == unchecked((int)0xC0000135) || !OperatingSystem.IsWindows() && exitCode == 0x35 && text.Trim().Length == 0))
+                return "a DLL it names";
+            return null;
         }
 
         /// <summary>
@@ -543,9 +584,13 @@ namespace Phi.Cli
             var options = File.Exists(optionsFile) ? File.ReadAllLines(optionsFile).Select(l => l.Trim()).Where(l => l.Length > 0).ToList() : new List<string>();
             if (options.FirstOrDefault(o => o != "--x86-64-v2") is string unknown) return $"{name}.build has {unknown}, which isn't an option it knows (--x86-64-v2)";
             BuildResult build = Builder.Build(phiFile, outDir, mode.Wrapper, listing: true, host: mode.Host, debug: DebugBuilds, v2: options.Contains("--x86-64-v2"));
+            if (!build.Success && MissingLibrary(string.Join("\n", build.Errors), 0, mode.Host) is string unlinked)
+                return $"{NoLibrary}{unlinked} isn't on this computer, so the program couldn't be linked";
             if (!build.Success) return "build failed:\n" + string.Join("\n", build.Errors);
 
             HostRunner.Result run = HostRunner.Run(build.ExecutablePath!, mode.Host, timeout);
+            if (!run.TimedOut && MissingLibrary(run.Output, run.ExitCode, mode.Host) is string unloaded)
+                return $"{NoLibrary}{unloaded} isn't on this computer (or beside the program), so the program couldn't start";
             string actual = Normalize(run.Output);
             if (keepOutput) File.WriteAllText(actualFile, actual);
             string stopped = run.TimedOut ? $"timed out after {timeout.TotalSeconds:0.#}s" : $"the program ended with {run.ExitCode}";

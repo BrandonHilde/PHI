@@ -1,9 +1,11 @@
 # Structs C takes and gives by value, against phi_abi.c: each size and make-up that C's
 # conventions treat their own way (floats alone, whole numbers, both; 4, 8, 12, 16, 20 and
 # 24 bytes; one struct inside another), alone, among other values, and ten at once; given
-# back into a variable, a field and an element. Each system passes them differently (ARM in
+# back into a variable, a field and an element; and the same through a method's parameter
+# (the caller's struct, borrowed) and a new one on the heap. Each system passes them differently (ARM in
 # float or whole registers or by address; 64-bit Windows whole or by address; 32-bit
 # Windows on the stack), and one source gives the same on all three.
+use memory.program_heap;
 use 'phi_abi.dll' 'libphi_abi.dylib' 'libphi_abi.so' as Abi;
 
 struct.Vec2 foreign
@@ -166,7 +168,44 @@ phi.CStructsProgram:Program
 	log 'places: ' scene.id ' ' scene.centre.x ' ' scene.centre.y ' ' scene.skin.width ' ' scene.skin.height ' ' scene.skin.mips ', '
 	    path:0.x ' ' path:1.x ' ' path:1.y ' ' path:2.x ' ' path:2.y '\n';
 	log 'still: ' (Abi.abi_vec2_sum: path:2) ' ' (Abi.abi_texture_sum: scene.skin) '\n';
+
+	# a method's parameter is the caller's struct: given on to C, and filled by C
+	log 'parameters: ' (Sums: v2 color texture camera) ' ' (Sums: path:2 color scene.skin camera) '\n';
+	call Make: v2 color texture camera;
+	log 'filled: ' v2.x ' ' v2.y ', ' color.r ' ' color.a ', ' texture.id ' ' texture.width ', ' camera.zoom ' ' camera.target.y '\n';
+	call Make: scene.centre color scene.skin camera;
+	log 'a field filled: ' scene.centre.x ' ' scene.skin.id ' ' scene.id '\n';
+	call Twice: path:1;
+	log 'through two: ' path:1.x ' ' path:1.y '\n';
+
+	# one on the heap
+	new Texture far;
+	call far is Abi.abi_make_texture: 12;
+	call far is Abi.abi_texture_half: far;
+	new Vec2 spot;
+	spot.x is 3.0;
+	spot.y is 0.5;
+	call spot is Abi.abi_vec2_add: spot v2;
+	log 'heap: ' far.id ' ' far.width ' ' (Abi.abi_texture_sum: far) ', ' spot.x ' ' spot.y ' ' (Abi.abi_vec2_sum: spot) ' ' (Sums: spot color far camera) '\n';
 	exit 0;
+
+	[Sums: Vec2 v; Color c; Texture t; Camera cam; : f64]
+	[end: (Abi.abi_vec2_sum: v) + (Abi.abi_color_sum: c) + (Abi.abi_texture_sum: t) + (Abi.abi_camera_sum: cam) + (Abi.abi_draw: 1 v 0.5 c rect 'x')]
+
+	[Make: Vec2 v; Color c; Texture t; Camera cam;]
+		call v is Abi.abi_make_vec2: 40.0 41.0;
+		call c is Abi.abi_make_color: 50;
+		call t is Abi.abi_make_texture: 60;
+		call cam is Abi.abi_make_camera: 70.0;
+	[end]
+
+	[Twice: Vec2 v;]
+		call Doubled: v;
+	[end]
+
+	[Doubled: Vec2 v;]
+		call v is Abi.abi_vec2_add: v v;
+	[end]
 }
 
 Abi.abi_vec2_sum: Vec2 v: f32;

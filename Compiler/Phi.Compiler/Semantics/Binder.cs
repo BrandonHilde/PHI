@@ -4789,10 +4789,11 @@ namespace Phi.Compiler.Semantics
                 // a struct C gives back by value is written into the variable named: where it's
                 // to go is passed first, or what comes back in a register is stored there
                 Expr? target = call.ResultTarget;
-                if (target == null || target.Type.IsError || !target.Type.IsStruct || target.Type.Struct != gives.Struct || !IsAssignable(target))
+                if (target == null || target.Type.IsError || !(target.Type.IsStruct || target.Type.IsObject) || target.Type.Struct != gives.Struct || !IsAssignable(target))
                 {
                     if (target?.Type.IsError != true)
-                        Error(target?.Span ?? call.CalleeSpan, $"{call.Callee} gives a {gives} by value, which goes into a {gives} variable, field or element: call place is {call.Callee}: ...;");
+                        Error(target?.Span ?? call.CalleeSpan, $"{call.Callee} gives a {gives} by value, which goes into a {gives} variable, parameter, field or element: call place is {call.Callee}: ...;" +
+                                                               (target != null && !target.Type.IsError ? $" (this is {A(target.Type)})" : ""));
                     call.ResultTarget = null;
                     return;
                 }
@@ -5234,10 +5235,12 @@ namespace Phi.Compiler.Semantics
                         // a struct by value: its pieces, or its address, as this system's C takes one
                         Expr given = arguments[i];
                         if (given.Type.IsError) continue;
-                        if (!given.Type.IsStruct || given.Type.Struct != types[i].Struct || !IsAssignable(given))
+                        // (a struct, or one that's borrowed or on the heap: a method's parameter, a new one)
+                        bool one = (given.Type.IsStruct || given.Type.IsObject) && given.Type.Struct == types[i].Struct;
+                        if (!one || !IsAssignable(given))
                         {
-                            Error(given.Span, $"'{f.Parameters[i].Name}' of {full} is a {types[i]} by value, so it's given one that's a variable, a field or an element" +
-                                              (given.Type.IsStruct && given.Type.Struct == types[i].Struct ? "" : $", and this is {(given.Type.IsStruct ? "a " : "")}{given.Type}"));
+                            Error(given.Span, $"'{f.Parameters[i].Name}' of {full} is a {types[i]} by value, so it's given one that's a variable, a parameter, a field or an element" +
+                                              (one ? ", not a value worked out here: put it in a variable first" : $", and this is {A(given.Type)}"));
                             continue;
                         }
                         var pieces = i < f.Pieces.Count ? f.Pieces[i] : null;
