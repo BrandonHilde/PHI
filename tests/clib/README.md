@@ -1,7 +1,7 @@
 # Tests of C libraries
 
-Each test here is one PHI source that calls a C library, run as a macOS program and as a
-Windows one (32 and 64 bits); the three give the same output. They aren't part of plain
+Each test here is one PHI source that calls a C library, run as a macOS program, a Windows
+one (32 and 64 bits) and a 64-bit Linux one; all give the same output. They aren't part of plain
 `phi test`, because the libraries have to be built first:
 
 ```
@@ -9,9 +9,10 @@ tests/clib/build.sh                          # once: needs clang, and MinGW for 
 phi test tests/clib --target macos
 phi test tests/clib --target windows64       # on Windows, or with PHI_WINDOWS_RUN set
 phi test tests/clib --target windows
+phi test tests/clib --target linux64         # needs zlib and SDL3 on the Linux machine (libz.so.1, libSDL3.so.0)
 ```
 
-`build.sh` puts each library in `macos/`, `windows64/` and `windows/` beside the tests. A
+`build.sh` puts each library in `macos/`, `windows64/`, `windows/` and `linux64/` beside the tests. A
 build puts a library it finds there beside the program (see "A library several systems
 have" in docs/language.md), which is how a program of your own carries its libraries too.
 
@@ -22,7 +23,7 @@ have" in docs/language.md), which is how a program of your own carries its libra
 | `c_zlib_program` | zlib | buffers and lengths C writes back; C's `long` |
 | `c_lua_program` | Lua 5.4 | C calling PHI methods, over and over |
 | `c_sdl3_program` | SDL3 (on a Mac, `brew install sdl3`) | floats as arguments, C's structs read and given by address, events; with no screen, drawing into memory |
-| `c_raylib_program` | raylib (on a Mac, `brew install raylib`) | structs by value in a real library: maths, colours, collisions, images in memory; with no window |
+| `c_raylib_program` | raylib (on a Mac, `brew install raylib`; not on Linux, where no file of it is named) | structs by value in a real library: maths, colours, collisions, images in memory; with no window |
 
 `samples/sdl3/bounce.phi` is SDL3 with a window, and `samples/raylib/ball.phi` raylib.
 

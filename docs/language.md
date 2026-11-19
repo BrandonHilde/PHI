@@ -3484,15 +3484,15 @@ are pushed last first and the function takes them off; in 64-bit code the first 
 gives numbers, `bln`, `chr`, enums, pointers, 64-bit numbers and floats (`f64`, `f32`). In
 32-bit code the call is right whether the function takes its values off the stack
 (stdcall, as Windows' own do) or leaves them (cdecl, as C libraries do): the compiler
-puts the stack back itself. Linux's libraries (loaded with the program) come with H7.
+puts the stack back itself.
 
 **A library several systems have** is named by its file on each, in one `use`, and each
 system builds with its own (a `.dll` is Windows', a `.dylib` or a framework's path
-macOS's). In a module that's no one system's, any program's classes call it, so code that
-uses a C library is written once:
+macOS's, a `.so` Linux's). In a module that's no one system's, any program's classes call
+it, so code that uses a C library is written once:
 
 ```phi
-use 'winsqlite3.dll' '/usr/lib/libsqlite3.dylib' as Sql;
+use 'winsqlite3.dll' '/usr/lib/libsqlite3.dylib' 'libsqlite3.so.0' as Sql;
 
 phi.Ask:Program
 {
@@ -3505,12 +3505,28 @@ Sql.sqlite3_open: ptr<u8> name ptr<ptr<u8>> db;
 ```
 
 Building it for a system the library names no file for is an error where a function is
-called (`Sql has no file named for ...`), as is building it for Linux or PHI OS. A library
-in a `:Windows` or `:MacOS` module is that system's alone, called only from that module's
-classes, as before. A macOS program's linker looks for a library named without its folder
-(`'libSDL3.dylib'`) where the system's are, beside the program, and where Homebrew puts
-them (`/opt/homebrew/lib`); a Windows program's is found as Windows finds any DLL (beside
-the `.exe` first). `...` and `Name = 'symbol':` (below) are for every system.
+called (`Sql has no file named for ...`), as is building it for 32-bit Linux or PHI OS. A
+library in a `:Windows` or `:MacOS` module is that system's alone, called only from that
+module's classes, as before. A macOS program's linker looks for a library named without
+its folder (`'libSDL3.dylib'`) where the system's are, beside the program, and where
+Homebrew puts them (`/opt/homebrew/lib`); a Windows program's is found as Windows finds
+any DLL (beside the `.exe` first), and a Linux program's as Linux finds any `.so` (beside
+the program first). A library whose file is with the source (beside it, or in a folder
+beside it named for the system: `windows64/`, `windows/`, `macos/`, `linux64/`) is put
+beside the program when it's built. `...` and `Name = 'symbol':` (below) are for every
+system.
+
+**On 64-bit Linux** a program that calls a library is still one file the compiler writes
+whole, with no linker; it names Linux's loader (`/lib64/ld-linux-x86-64.so.2`), which
+brings in the libraries and the C library before the program starts. Functions are called
+as C calls them there (System V: `rdi`, `rsi`, `rdx`, `rcx`, `r8`, `r9`, floats in `xmm0`
+to `xmm7`). Such a program shares its process with the C library, so three things differ
+from a Linux program that calls none (which is as it was, and needs nothing on the
+machine): its heap is memory of its own, not the program's break (C's `malloc` moves
+that); a thread's own data is reached through `gs`, `fs` being C's; and it ends through
+C's `exit`, so what C still holds is written. C's functions are to be called from the
+program's first thread: a thread PHI starts (`Threads`) has no C thread data of its own
+yet.
 
 On macOS a module's classes are `:MacOS`, and the functions are called as C calls them on
 Apple's ARM (the first eight whole values in `x0` to `x7`, floats in `d0` to `d7`), with
@@ -3542,7 +3558,7 @@ as a pointer (`[end: p]`, with `p` a `ptr<u8>`), since an `int` is only 32 bits 
 It runs on the thread that called it, so that has to be one PHI started (the program's own
 or a `Threads` one), and an error thrown out of it would have to cross the system's frames:
 catch what can go wrong inside it.
-It's for Windows and macOS programs. In a `:Windows` module the entry is as Windows calls
+It's for Windows, macOS and 64-bit Linux programs. In a `:Windows` module the entry is as Windows calls
 its own (in 32-bit code stdcall, taking its values off the stack: a window procedure);
 anywhere else it's as C calls a function (cdecl there: `qsort`'s order, a C library's
 callbacks). In 64-bit code and on macOS the two are the same. What it takes and gives may
@@ -3578,7 +3594,8 @@ The struct is a `foreign` one. How it travels is each system's own, and the comp
 business: on macOS up to four floats of one size go in float registers, up to 16 bytes in
 one or two whole ones, and anything larger by address; 64-bit Windows passes 1, 2, 4 or 8
 bytes in a register and anything else by address; 32-bit Windows puts the struct on the
-stack. A larger struct is passed by its own address, not a copy's, so a function that
+stack; 64-bit Linux passes up to 16 bytes 8 at a time (in a float register when those 8
+are all floats) and puts anything larger on the stack. A larger struct is passed by its own address, not a copy's, so a function that
 changes what it was given (C lets it) changes the variable. A struct given back is used
 from the variable (`call place is ...;`), not inside an expression.
 

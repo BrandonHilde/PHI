@@ -5201,16 +5201,16 @@ namespace Phi.Compiler.Semantics
                 {
                     string full = $"{f.Library}.{f.Name}";
                     bool portable = libraries.TryGetValue(f.Library, out LibraryUseDecl? lib) && portableLibraries.Contains(lib);
-                    if (portable && !(host.IsWindows() || host.IsMacOS()))
+                    if (portable && !CallsC(host))
                     {
                         Error(calleeSpan, $"{full} is a function of an outside library ({string.Join(", ", lib!.Paths.Select(p => $"'{p}'"))}), " +
-                                          $"which Windows and macOS programs call (for now), not {host.Name()}'s");
+                                          $"which Windows, macOS and 64-bit Linux programs call (for now), not {host.Name()}'s");
                         return null;
                     }
                     if (portable && f.LibraryPath.Length == 0)
                     {
                         Error(calleeSpan, $"{f.Library} has no file named for {host.Name()}: use {string.Join(" ", lib!.Paths.Select(p => $"'{p}'"))} as {f.Library}; " +
-                                          "names a .dll for Windows and a .dylib (or a framework) for macOS");
+                                          "names a .dll for Windows, a .dylib (or a framework) for macOS and a .so for Linux");
                         return null;
                     }
                     if (!portable && !OutsideSystems.Contains(scope.Class.Base))
@@ -5377,6 +5377,9 @@ namespace Phi.Compiler.Semantics
             program.SysCalls.RemoveAll(s => !Kept(s.File) || !systemOf.TryGetValue(s.File, out string? system) || !CallingSystems.Contains(system));
         }
 
+        /// <summary>The systems whose programs call C libraries from any module: Windows, macOS, and 64-bit Linux (whose programs then load with Linux's loader).</summary>
+        static bool CallsC(Host host) => host.IsWindows() || host.IsMacOS() || host == Host.Linux64;
+
         /// <summary>The systems whose modules call outside libraries' functions (use '...' as Name;).</summary>
         static readonly string[] OutsideSystems = { "Windows", "MacOS" };
 
@@ -5401,6 +5404,25 @@ namespace Phi.Compiler.Semantics
             return leaves;
         }
 
+        /// <summary>A struct of 16 bytes or fewer, 8 bytes at a time as System V sorts them: where each starts, the bytes of it the struct uses, and whether they're all floats.</summary>
+        static List<(int Offset, int Size, bool Sse)> EightBytes(PhiType t)
+        {
+            var parts = new List<(int, int, bool)>();
+            var leaves = Leaves(t);
+            int size = t.Struct!.Size;
+            for (int at = 0; at < size; at += 8)
+            {
+                var inside = leaves?.Where(l => l.Offset >= at && l.Offset < at + 8).ToList();
+                bool sse = inside is { Count: > 0 } && inside.All(l => l.Type.IsFloat);
+                int used = inside is { Count: > 0 } ? inside.Max(l => l.Offset + l.Type.ElementSize) - at : Math.Min(8, size - at);
+                // (whole bytes go as the register's width that holds them: 1, 2, 4 or 8)
+                if (!sse) used = used <= 1 ? 1 : used <= 2 ? 2 : used <= 4 ? 4 : 8;
+                if (!sse && at + used > size) used = Math.Min(8, size - at);
+                parts.Add((at, sse && used > 4 ? 8 : used, sse));
+            }
+            return parts;
+        }
+
         static PhiType? WholeOf(int bytes) => bytes switch { 1 => PhiType.U8, 2 => PhiType.U16, 4 => PhiType.U32, 8 => PhiType.U64, _ => null };
 
         /// <summary>
@@ -5410,12 +5432,35 @@ namespace Phi.Compiler.Semantics
         /// and more by address; 64-bit Windows passes 1, 2, 4 or 8 bytes whole and anything else
         /// by address; 32-bit Windows puts the struct itself on the stack.
         /// </summary>
-        List<(int Offset, PhiType Type)>? StructPieces(PhiType t, out string? problem)
+        List<(int Offset, PhiType Type)>? StructPieces(PhiType t, out string? problem, List<int> where)
         {
             problem = null;
             int size = t.Struct!.Size;
             var pieces = new List<(int, PhiType)>();
             if (!t.Struct.Decl.IsForeign) problem = $"a {t}, and a struct C takes by value is one laid out as C's (struct.{t.Struct.Name} foreign)";
+            else if (host == Host.Linux64)
+            {
+                // System V: 16 bytes or fewer go 8 at a time, in a float register when those 8
+                // are all floats and a whole one otherwise; more go on the stack, the struct itself
+                if (size > 16)
+                {
+                    for (int at = 0; at < size; at += 8)
+                    {
+                        if (WholeOf(Math.Min(8, size - at)) is not PhiType part) { problem = $"a {t} of {size} bytes, which can't go by value yet (a multiple of 4 can)"; break; }
+                        pieces.Add((at, part));
+                        where.Add(2);
+                    }
+                    return pieces;
+                }
+                foreach (var (at, bytes, sse) in EightBytes(t))
+                {
+                    var inside = Leaves(t)?.Where(l => l.Offset >= at && l.Offset < at + 8).ToList();
+                    if (sse && inside!.Count == 1) { pieces.Add((at, inside[0].Type)); where.Add(0); }
+                    else if (sse) { pieces.Add((at, PhiType.U64)); where.Add(1); }
+                    else if (WholeOf(bytes) is PhiType part) { pieces.Add((at, part)); where.Add(0); }
+                    else { problem = $"a {t} of {size} bytes, which can't go by value yet"; break; }
+                }
+            }
             else if (host.IsArm())
             {
                 if (Leaves(t) is { Count: >= 1 and <= 4 } leaves && leaves.All(l => l.Type.Kind == leaves[0].Type.Kind) && leaves[0].Type.Kind is TypeKind.F32 or TypeKind.F64)
@@ -5467,10 +5512,17 @@ namespace Phi.Compiler.Semantics
                     else if (WholeOf(size > 8 ? size - 8 : size) != null) (f.ArmStructKind, f.ArmStructSize) = (1, size);
                     else Error(f.Result!.Span, $"what {full} gives is a {result} of {size} bytes, which can't come back by value yet");
                 }
-                else if (WholeOf(size) is PhiType whole && (size < 8 || true)) f.ResultType = whole;
+                else if (host == Host.Linux64)
+                {
+                    // (16 bytes or fewer come back in registers, which the generator stores; more, where the first value says)
+                    f.ResultAddressFirst = true;
+                    if (size <= 16) f.SysVResult = EightBytes(result);
+                }
+                else if (WholeOf(size) is PhiType whole) f.ResultType = whole;
                 else f.ResultAddressFirst = true;
                 if (f.ResultAddressFirst)
                 {
+                    f.PieceWhere.Add(0);
                     lowered.Add(PhiType.PointerTo(PhiType.U8));
                     if (variadic != null && !host.IsArm()) variadic++;   // (ARM's isn't among C's values: CallI.StructInto)
                 }
@@ -5480,15 +5532,18 @@ namespace Phi.Compiler.Semantics
                 if (!declared[i].IsStruct)
                 {
                     f.Pieces.Add(null);
+                    f.PieceWhere.Add(0);
                     lowered.Add(declared[i]);
                     continue;
                 }
-                var pieces = StructPieces(declared[i], out string? problem) ?? new();
+                var where = new List<int>();
+                var pieces = StructPieces(declared[i], out string? problem, where) ?? new();
                 if (problem != null) Error(f.Parameters[i].Span, $"{full}'s '{f.Parameters[i].Name}' is {problem}");
                 f.Pieces.Add(pieces);
                 int takes = Math.Max(1, pieces.Count);
                 if (pieces.Count == 0) lowered.Add(PhiType.PointerTo(PhiType.U8));
                 else lowered.AddRange(pieces.Select(piece => piece.Type));
+                for (int k = 0; k < takes; k++) f.PieceWhere.Add(k < where.Count ? where[k] : 0);
                 if (variadic is int from && i < f.VariadicFrom) variadic = from + takes - 1;
             }
             f.ParameterTypes = lowered;
@@ -6275,8 +6330,8 @@ namespace Phi.Compiler.Semantics
                 return;
             }
             name.Type = PhiType.Void;
-            if (scope.Class.Base is not ("Windows" or "MacOS") && !(host.IsWindows() || host.IsMacOS()))
-                Error(addr.Span, $"addr foreign {m.Decl.Name} is for outside code to call, which it does in Windows and macOS programs (for now), not {host.Name()}'s");
+            if (scope.Class.Base is not ("Windows" or "MacOS") && !CallsC(host))
+                Error(addr.Span, $"addr foreign {m.Decl.Name} is for outside code to call, which it does in Windows, macOS and 64-bit Linux programs (for now), not {host.Name()}'s");
             for (int i = 0; i < m.Parameters.Count; i++)
                 if (OutsideTypeProblem(m.Parameters[i].Type) is string problem)
                     Error(addr.Span, $"{m.Decl.Name}'s '{m.Parameters[i].Name}' is {problem}");

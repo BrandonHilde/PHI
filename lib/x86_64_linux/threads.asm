@@ -12,6 +12,7 @@
 ; (arch_prctl), as a C library does for its own thread data.
 SYS_ARCH_PRCTL      equ 158
 ARCH_SET_FS         equ 0x1002
+ARCH_SET_GS         equ 0x1001
 SYS_CLONE           equ 56
 SYS_THREAD_EXIT     equ 60              ; exit: this thread only
 CLONE_THREAD_FLAGS  equ 0x350F00        ; VM, FS, FILES, SIGHAND, THREAD, SYSVSEM, PARENT_SETTID, CHILD_CLEARTID
@@ -30,7 +31,11 @@ phi_thread_setup:
     push rdi
     push r11
     mov rsi, rax
+%ifdef PHI_DYNAMIC
+    mov edi, ARCH_SET_GS                ; (fs is the C library's, in a program that loads one)
+%else
     mov edi, ARCH_SET_FS
+%endif
     mov eax, SYS_ARCH_PRCTL
     syscall
     pop r11
@@ -43,7 +48,11 @@ phi_thread_setup:
 
 ; -> rax = the running thread's block; keeps the other registers
 phi_thread_block:
+%ifdef PHI_DYNAMIC
+    mov rax, [gs:0]
+%else
     mov rax, [fs:0]
+%endif
     ret
 
 ; the program's first thread gets its block before any of its code runs

@@ -2,8 +2,8 @@
 # names a library's file on Windows and on macOS, and each builds with its own): numbers,
 # text and pointers to C and back, f64 and f32, C's variadic part (...), a 64-bit number,
 # and C calling a PHI method back (addr foreign: qsort's order, bsearch's). A program for
-# Windows, 32 and 64 bits, and macOS: Linux's libraries aren't there yet.
-use 'msvcrt.dll' '/usr/lib/libSystem.B.dylib' as C;
+# Windows, 32 and 64 bits, macOS, and 64-bit Linux (where its maths are libm's).
+use 'msvcrt.dll' '/usr/lib/libSystem.B.dylib' 'libm.so.6' as C;
 
 struct.Pair foreign
 {

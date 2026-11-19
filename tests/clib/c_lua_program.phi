@@ -3,7 +3,7 @@
 # (addr foreign, a hundred times over), whole numbers, floats and text both ways, and what
 # Lua says when its code is wrong. One source: a macOS program and a Windows one, 32 and 64
 # bits, give the same.
-use 'lua54.dll' 'liblua54.dylib' as Lua;
+use 'lua54.dll' 'liblua54.dylib' 'liblua54.so' as Lua;
 
 phi.CLuaProgram:Program
 {

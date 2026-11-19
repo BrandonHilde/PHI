@@ -4,7 +4,7 @@
 # C's variadic part, C calling PHI (at once, later, and with more values than the registers
 # hold), and a struct by its address. One source: a macOS program and a Windows one, 32 and
 # 64 bits, give the same.
-use 'phi_abi.dll' 'libphi_abi.dylib' as Abi;
+use 'phi_abi.dll' 'libphi_abi.dylib' 'libphi_abi.so' as Abi;
 
 struct.Record foreign
 {

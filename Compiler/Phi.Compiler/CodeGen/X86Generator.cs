@@ -800,7 +800,8 @@ namespace Phi.Compiler.CodeGen
                     output.AppendLine("bits 64");
                     output.AppendLine($"org 0x{Linux64Address:X}");
                     output.AppendLine();
-                    EmitElf64Header(output);
+                    if (unit.OutsideFunctions.Count > 0) EmitElf64Dynamic(output);
+                    else EmitElf64Header(output);
                     output.AppendLine("phi_start:");
                     output.AppendLine("    cld");
                     break;
@@ -1163,6 +1164,102 @@ namespace Phi.Compiler.CodeGen
             output.AppendLine("    dd 0x6474E551, 6                     ; the stack: read and write, not run");
             output.AppendLine("    dq 0, 0, 0, 0, 0, 16");
             output.AppendLine();
+        }
+
+        /// <summary>
+        /// The ELF header of a 64-bit Linux program that calls outside libraries (.so files):
+        /// still one file NASM writes whole, with what Linux's loader (ld.so) needs to bring
+        /// the libraries in before the program starts: its own path (PT_INTERP), and a dynamic
+        /// part naming each library and each function, with a slot the loader writes the
+        /// function's address in (phi_outside_..., as on Windows). libc is always among them,
+        /// for its exit (phi_exit lets C's own buffers be written). PHI_DYNAMIC tells the
+        /// library's files: the thread's block is reached through gs, fs being C's, and the
+        /// heap is memory of its own, the program's break being C's too.
+        /// </summary>
+        void EmitElf64Dynamic(StringBuilder output)
+        {
+            var libraries = OutsideLibraries();
+            var symbols = new List<(string Slot, string Symbol)> { ("phi_libc_exit", "exit") };
+            foreach (var (path, functions) in libraries)
+                foreach (string name in functions)
+                    symbols.Add(($"phi_outside_{ImportName(path)}_{name}",
+                                 unit.OutsideFunctions.First(f => f.Name == name && f.LibraryPath.Equals(path, StringComparison.OrdinalIgnoreCase)).CName));
+            var needed = new List<string> { "libc.so.6" };
+            foreach (var (path, _) in libraries) if (!needed.Contains(path)) needed.Add(path);
+            var names = symbols.Select(x => x.Symbol).Distinct().ToList();
+
+            void L(string line) => output.AppendLine(line);
+            L("%define PHI_DYNAMIC");
+            L("phi_elf_header:");
+            L("    db 0x7F, 'ELF', 2, 1, 1, 0          ; 64-bit, little-endian, version 1, System V");
+            L("    times 8 db 0");
+            L("    dw 2                                 ; an executable");
+            L("    dw 0x3E                              ; for x86-64");
+            L("    dd 1");
+            L("    dq phi_start                         ; where it starts");
+            L("    dq phi_elf_segments - $$");
+            L("    dq 0                                 ; no sections");
+            L("    dd 0");
+            L("    dw phi_elf_segments - phi_elf_header");
+            L("    dw 56                                ; the size of a segment entry");
+            L("    dw 4                                 ; segments");
+            L("    dw 64, 0, 0");
+            L("phi_elf_segments:");
+            L("    dd 3, 4                              ; the loader that brings the libraries in");
+            L("    dq phi_elf_loader - $$, phi_elf_loader, phi_elf_loader");
+            L("    dq phi_elf_loader_end - phi_elf_loader, phi_elf_loader_end - phi_elf_loader");
+            L("    dq 1");
+            L("    dd 1, 7                              ; loaded: read, write, run");
+            L("    dq 0, $$, $$                         ; the whole file, at the start");
+            L("    dq phi_image_end - $$, phi_image_end - $$");
+            L("    dq 0x1000                            ; page aligned");
+            L("    dd 2, 6                              ; what the loader reads");
+            L("    dq phi_elf_dynamic - $$, phi_elf_dynamic, phi_elf_dynamic");
+            L("    dq phi_elf_dynamic_end - phi_elf_dynamic, phi_elf_dynamic_end - phi_elf_dynamic");
+            L("    dq 8");
+            L("    dd 0x6474E551, 6                     ; the stack: read and write, not run");
+            L("    dq 0, 0, 0, 0, 0, 16");
+            L("phi_elf_loader: db '/lib64/ld-linux-x86-64.so.2', 0");
+            L("phi_elf_loader_end:");
+            L("    align 8, db 0");
+            L("phi_elf_dynamic:");
+            for (int i = 0; i < needed.Count; i++) L($"    dq 1, phi_elf_needed_{i} - phi_elf_strings   ; a library it needs");
+            L("    dq 4, phi_elf_hash");
+            L("    dq 5, phi_elf_strings");
+            L("    dq 6, phi_elf_symbols");
+            L("    dq 10, phi_elf_strings_end - phi_elf_strings");
+            L("    dq 11, 24");
+            L("    dq 7, phi_elf_fixes                  ; each slot, and whose address goes in it");
+            L("    dq 8, phi_elf_fixes_end - phi_elf_fixes");
+            L("    dq 9, 24");
+            L("    dq 30, 8                             ; all of them before the program starts");
+            L("    dq 29, phi_elf_beside - phi_elf_strings ; and libraries beside the program are found");
+            L("    dq 0, 0");
+            L("phi_elf_dynamic_end:");
+            L("phi_elf_symbols:");
+            L("    dq 0, 0, 0");
+            for (int i = 0; i < names.Count; i++)
+            {
+                L($"    dd phi_elf_name_{i} - phi_elf_strings");
+                L("    db 0x12, 0                           ; a function, from another file");
+                L("    dw 0");
+                L("    dq 0, 0");
+            }
+            L("phi_elf_hash:");
+            L($"    dd 1, {names.Count + 1}                 ; (the program gives no names of its own to look up)");
+            L("    dd 0");
+            L($"    times {names.Count + 1} dd 0");
+            L("phi_elf_fixes:");
+            foreach (var (slot, symbol) in symbols) L($"    dq {slot}, ({names.IndexOf(symbol) + 1} << 32) | 6, 0");
+            L("phi_elf_fixes_end:");
+            L("phi_elf_strings: db 0");
+            for (int i = 0; i < needed.Count; i++) L($"phi_elf_needed_{i}: db '{needed[i]}', 0");
+            for (int i = 0; i < names.Count; i++) L($"phi_elf_name_{i}: db '{names[i]}', 0");
+            L("phi_elf_beside: db '$ORIGIN', 0");
+            L("phi_elf_strings_end:");
+            L("    align 8, db 0");
+            foreach (var (slot, _) in symbols) L($"{slot}: dq 0");
+            L("");
         }
 
         /// <summary>
@@ -2415,6 +2512,47 @@ namespace Phi.Compiler.CodeGen
             Emit("mov ebp, esp");
             foreach (string r in kept) Emit($"push {r}");
             Emit("cld");
+            if (Host == Host.Linux64)
+            {
+                // as C calls on 64-bit Linux: whole values in rdi, rsi, rdx, rcx, r8 and r9, floats
+                // in xmm0 to xmm7, the rest above the return address in order
+                string[] whole = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
+                int ints = 0, floats = 0, above = 16;
+                for (int i = 0; i < n; i++)
+                {
+                    PhiType t = m.Parameters[i].Type;
+                    if (t.IsFloat && floats < 8)
+                    {
+                        Emit("sub rsp, 8");
+                        Emit(t.Kind == TypeKind.F64 ? $"movsd [rsp], xmm{floats++}" : $"movss [rsp], xmm{floats++}");
+                    }
+                    else if (!t.IsFloat && ints < 6) Emit($"push {whole[ints++]}");
+                    else
+                    {
+                        Emit($"push qword [rbp + {above}]");
+                        above += 8;
+                    }
+                }
+                Emit($"call {m.Label}");
+                if (n > 0) Emit($"add rsp, {8 * n}");
+                if (m.ReturnType.IsFloat)
+                {
+                    Emit("sub rsp, 8");
+                    Emit(m.ReturnType.Kind == TypeKind.F64 ? "fstp qword [rsp]" : "fstp dword [rsp]");
+                    Emit(m.ReturnType.Kind == TypeKind.F64 ? "movsd xmm0, [rsp]" : "movss xmm0, [rsp]");
+                    Emit("add rsp, 8");
+                }
+                else if (m.ReturnType.IsWide)
+                {
+                    Emit("shl rdx, 32");
+                    Emit("mov eax, eax");
+                    Emit("or rax, rdx");
+                }
+                foreach (string r in kept.Reverse()) Emit($"pop {r}");
+                Emit("pop ebp");
+                Emit("ret");
+                return;
+            }
             string[] registers = { "rcx", "rdx", "r8", "r9" };
             // (in 32-bit code a 64-bit number or an f64 is two of the stack's slots, as PHI has it too)
             int from = 8, pushed = 0;
@@ -2532,6 +2670,92 @@ namespace Phi.Compiler.CodeGen
                     case TypeKind.I16: Emit("movsx eax, ax"); break;
                     case TypeKind.U16: Emit("movzx eax, ax"); break;
                 }
+            }
+            if (Host == Host.Linux64)
+            {
+                // as C calls a function on 64-bit Linux (System V): whole values in rdi, rsi, rdx,
+                // rcx, r8 and r9, floats in xmm0 to xmm7, the rest on the stack in order, the
+                // stack 16 bytes aligned, and al how many xmm registers hold values (a variadic
+                // function reads it). rsi and rdi, which PHI's code expects kept, aren't C's to keep.
+                Emit("push r12");
+                Emit("push rsi");
+                Emit("push rdi");
+                for (int i = 0; i < n; i++)
+                {
+                    PhiType t = TypeAt(i);
+                    if (t.IsFloat || t.IsWide) PushWideOrFloat(t, arguments[i]);
+                    else
+                    {
+                        EmitExpr(arguments[i]);
+                        Emit("push eax");
+                    }
+                }
+                Emit("mov r12, rsp");                  // the values: the first at [r12 + 8 * (n - 1)]
+                string[] whole = { "rdi", "rsi", "rdx", "rcx", "r8", "r9" };
+                bool intoPlace = f.SysVResult.Count > 0;    // (the first value is where a struct given back in registers goes)
+                var onStack = new List<int>();
+                var inRegister = new List<(int Value, string Move)>();
+                int ints = 0, floats = 0;
+                for (int i = intoPlace ? 1 : 0; i < n; i++)
+                {
+                    PhiType t = TypeAt(i);
+                    int where = i < f.PieceWhere.Count ? f.PieceWhere[i] : 0;
+                    string value = $"[r12 + {8 * (n - 1 - i)}]";
+                    if (where == 2) onStack.Add(i);
+                    else if (t.IsFloat || where == 1)
+                    {
+                        if (floats == 8) onStack.Add(i);
+                        else inRegister.Add((i, $"{(where == 1 ? "movq" : t.Kind == TypeKind.F64 ? "movsd" : "movss")} xmm{floats++}, {(where == 1 ? "qword " : "")}{value}"));
+                    }
+                    else if (ints == 6) onStack.Add(i);
+                    else inRegister.Add((i, $"mov {whole[ints++]}, {value}"));
+                }
+                if (onStack.Count > 0) Emit($"sub rsp, {8 * onStack.Count}");
+                Emit("and rsp, -16");
+                for (int k = 0; k < onStack.Count; k++)
+                {
+                    Emit($"mov rax, [r12 + {8 * (n - 1 - onStack[k])}]");
+                    Emit($"mov [rsp + {8 * k}], rax");
+                }
+                foreach (var (_, move) in inRegister) Emit(move);
+                Emit($"mov eax, {floats}");
+                Emit($"call [rel {label}]");
+                Emit("mov rsp, r12");
+                if (intoPlace)
+                {
+                    // a struct given back in registers: its whole parts in rax then rdx, its float
+                    // parts in xmm0 then xmm1, stored where it's to go
+                    Emit($"mov r11, [r12 + {8 * (n - 1)}]");
+                    int wholes = 0, reals = 0;
+                    foreach (var (offset, size, sse) in f.SysVResult)
+                    {
+                        if (sse) Emit($"{(size == 8 ? "movsd" : "movss")} [r11 + {offset}], xmm{reals++}");
+                        else
+                        {
+                            string r = (wholes++ == 0 ? "a" : "d");
+                            Emit($"mov [r11 + {offset}], {(size == 8 ? $"r{r}x" : size == 4 ? $"e{r}x" : size == 2 ? $"{r}x" : $"{r}l")}");
+                        }
+                    }
+                }
+                if (n > 0) Emit($"add rsp, {8 * n}");
+                Emit("pop rdi");
+                Emit("pop rsi");
+                Emit("pop r12");
+                if (result.IsFloat)
+                {
+                    Emit("sub rsp, 8");
+                    Emit(result.Kind == TypeKind.F64 ? "movsd [rsp], xmm0" : "movss [rsp], xmm0");
+                    Emit(result.Kind == TypeKind.F64 ? "fld qword [rsp]" : "fld dword [rsp]");
+                    Emit("add rsp, 8");
+                }
+                else if (result.IsWide)
+                {
+                    Emit("mov rdx, rax");
+                    Emit("shr rdx, 32");
+                    Emit("mov eax, eax");
+                }
+                else Narrowed();
+                return;
             }
             if (!bits64)
             {

@@ -3,3 +3,4 @@ macos/
 windows/
 windows64/
 *.actual
+linux64/

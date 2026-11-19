@@ -1,8 +1,8 @@
 # SQLite, a C library both Windows and macOS come with, from one module: a database in
 # memory made, filled and asked, with text both ways, a pointer C fills in (ptr<ptr<u8>>),
 # 64-bit numbers and f64s given and got, and what C says went wrong. A program for Windows,
-# 32 and 64 bits, and macOS: Linux's libraries aren't there yet.
-use 'winsqlite3.dll' '/usr/lib/libsqlite3.dylib' as Sql;
+# 32 and 64 bits, macOS, and 64-bit Linux (which needs libsqlite3.so.0 there).
+use 'winsqlite3.dll' '/usr/lib/libsqlite3.dylib' 'libsqlite3.so.0' as Sql;
 
 phi.CSqliteProgram:Program
 {

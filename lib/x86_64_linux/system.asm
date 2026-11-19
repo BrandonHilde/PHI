@@ -56,6 +56,10 @@ phi_linux_start:
 phi_exit:
     call phi_flush
     mov edi, ebx
+%ifdef PHI_DYNAMIC
+    and rsp, -16                        ; the C library's exit, which writes what it still holds
+    call [rel phi_libc_exit]
+%endif
     mov eax, SYS_EXIT_GROUP
     syscall
 
@@ -134,6 +138,63 @@ OS_Arguments:
 ; arg: bytes -> rax = where the new memory starts (right after what the heap has), or 0.
 ; The heap grows by moving the program's break, a page at a time.
 OS_Grow:
+%ifdef PHI_DYNAMIC
+    ; In a program that loads C libraries the break is the C library's (its malloc moves
+    ; it), so the heap is memory of its own: 64 GB of addresses kept at the first call,
+    ; and pages of them made usable as it grows.
+    push rdi
+    push rsi
+    push rdx
+    push r10
+    push r8
+    push r9
+    push rcx
+    push r11
+    mov rax, [rel phi_heap_end]
+    test rax, rax
+    jnz .have
+    mov eax, SYS_MMAP
+    xor edi, edi
+    mov rsi, 0x1000000000
+    xor edx, edx                        ; no access yet
+    mov r10d, 0x4022                    ; private, anonymous, not counted until used
+    mov r8, -1
+    xor r9d, r9d
+    syscall
+    cmp rax, -4096
+    ja .none
+    mov [rel phi_heap_end], rax
+.have:
+    mov esi, [rsp + 72]                 ; the bytes asked for (after eight pushes and the return address)
+    add rsi, 4095
+    and rsi, ~4095
+    mov rdi, rax
+    push rax
+    push rsi
+    mov eax, 10                         ; mprotect: read and write
+    mov edx, 3
+    syscall
+    pop rsi
+    pop rcx
+    test rax, rax
+    jnz .none
+    lea rax, [rcx + rsi]
+    mov [rel phi_heap_end], rax
+    mov rax, rcx
+    jmp .back
+.none:
+    xor eax, eax
+.back:
+    pop r11
+    pop rcx
+    pop r9
+    pop r8
+    pop r10
+    pop rdx
+    pop rsi
+    pop rdi
+    ret
+%else
     push rdi
     push rsi
     mov rax, [rel phi_heap_end]
@@ -169,6 +230,7 @@ OS_Grow:
     pop rsi
     pop rdi
     ret
+%endif
 
 ; -> all memory, in KB
 OS_TotalMemory:

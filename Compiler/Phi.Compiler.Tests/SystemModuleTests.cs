@@ -268,7 +268,7 @@ namespace Phi.Compiler.Tests
         [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [On: f16 x: 0;]\n [end: 1]\n [Go]\n [end: (User32.EnumWindows: addr foreign On 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n",
                     Host.Windows, "On's 'x' is a f16, and an outside function's floats are f64 and f32")]
         [InlineData("phi.Raw:Linux\n{\n [On]\n [end: 1]\n [Go]\n  ptr<u8> p: addr foreign On;\n [end: 0]\n}\n",
-                    Host.Linux, "addr foreign On is for outside code to call, which it does in Windows and macOS programs (for now)")]
+                    Host.Linux, "addr foreign On is for outside code to call, which it does in Windows, macOS and 64-bit Linux programs (for now)")]
         public void AForeignEntryIsForAMethodThatTakesWhatARegisterHolds(string module, Host host, string error)
         {
             CompileResult result = Build(host, ("main.phi", "use win;\nphi.Test:Program\n{\n}\n"), ("win.phi", module));

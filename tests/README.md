@@ -120,8 +120,9 @@ there), with `phi test --target windows64` or `windows`. What's meant to differ 
 `NAME.macos.expected`. Tests of what only macOS has start with `macos_` (see
 `macos_outside_program.phi`: its own libraries' functions called as C calls them). Tests of C
 libraries called from one module on every system that has them start with `c_`
-(`c_runtime_program.phi`, `c_sqlite_program.phi`: libraries Windows and macOS come with);
-they run as Windows and macOS programs.
+(`c_runtime_program.phi`, `c_sqlite_program.phi`: libraries the systems come with; a Linux
+machine needs `libsqlite3.so.0`, which most have); they run as Windows, macOS and 64-bit
+Linux programs. `tests/clib/` has more, of libraries that have to be built or fetched first.
 
 A test with `NAME.cdb` is about a `--debug` build's `.pdb`: it runs in Microsoft's debugger, as
 a 32-bit and a 64-bit Windows program, where `cdb` is installed. `NAME.cdb` is the commands, and

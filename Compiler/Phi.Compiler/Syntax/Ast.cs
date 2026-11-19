@@ -172,6 +172,14 @@ namespace Phi.Compiler.Syntax
         /// <summary>On ARM, how the struct comes back: 1 in x0 (and x1), ArmStructSize bytes; 2 ArmStructSize f32s in s0 on; 3 f64s in d0 on; 4 written where x8 says.</summary>
         public int ArmStructKind { get; set; }
         public int ArmStructSize { get; set; }
+        /// <summary>
+        /// 64-bit Linux's own (System V): for each value passed, 0 as its type has it, 1 a
+        /// whole 8 bytes that goes in a float register (two f32s of a struct), 2 on the stack
+        /// whatever registers are free (a struct of more than 16 bytes, by value).
+        /// </summary>
+        public List<int> PieceWhere { get; set; } = new();
+        /// <summary>A struct given back in registers there: each part's place in it, its bytes, and whether it's in a float register (xmm0, xmm1) or a whole one (rax, rdx).</summary>
+        public List<(int Offset, int Size, bool Sse)> SysVResult { get; set; } = new();
 
         /// <summary>What each value is, as the binder resolved them.</summary>
         public List<Semantics.PhiType> ParameterTypes { get; set; } = new();

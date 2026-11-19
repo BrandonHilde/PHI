@@ -32,6 +32,17 @@ if command -v x86_64-w64-mingw32-gcc >/dev/null; then
     i686-w64-mingw32-gcc -O2 -w -DZLIB_DLL -shared -static-libgcc -o windows/zlib1.dll $zlib
 fi
 
+# for 64-bit Linux: its own gcc there, or one in the Linux machine a Mac runs Linux programs in
+linux=""
+if [ "$(uname)" = Linux ] && [ "$(uname -m)" = x86_64 ]; then linux="gcc"
+elif command -v lima >/dev/null && lima which x86_64-linux-gnu-gcc >/dev/null 2>&1; then linux="lima x86_64-linux-gnu-gcc"
+fi
+if [ -n "$linux" ]; then
+    mkdir -p linux64
+    $linux -O1 -shared -fPIC -o linux64/libphi_abi.so phi_abi.c
+    $linux -O2 -w -DLUA_USE_POSIX -shared -fPIC -o linux64/liblua54.so $lua -lm
+fi
+
 # SDL3: Homebrew's on a Mac (brew install sdl3), SDL's own DLLs on Windows
 for a in x64 x86; do
     fetch SDL3-win32-$a.zip https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20-win32-$a.zip
@@ -47,4 +58,4 @@ for a in win64 win32; do
 done
 cp src/raylib-5.5_win64_msvc16/lib/raylib.dll windows64/
 cp src/raylib-5.5_win32_msvc16/lib/raylib.dll windows/
-ls -l macos windows64 windows
+ls -l macos windows64 windows linux64 2>/dev/null

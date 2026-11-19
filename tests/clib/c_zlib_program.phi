@@ -3,7 +3,7 @@
 # their known values, and what it says of bytes that aren't its own. C's long is 32 bits on
 # Windows and 64 on macOS: a length C writes through a pointer is a u64 here, which holds
 # either. One source: a macOS program and a Windows one, 32 and 64 bits, give the same.
-use 'zlib1.dll' '/usr/lib/libz.1.dylib' as Z;
+use 'zlib1.dll' '/usr/lib/libz.1.dylib' 'libz.so.1' as Z;
 
 phi.CZlibProgram:Program
 {

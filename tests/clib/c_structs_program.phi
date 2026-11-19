@@ -4,7 +4,7 @@
 # back into a variable, a field and an element. Each system passes them differently (ARM in
 # float or whole registers or by address; 64-bit Windows whole or by address; 32-bit
 # Windows on the stack), and one source gives the same on all three.
-use 'phi_abi.dll' 'libphi_abi.dylib' as Abi;
+use 'phi_abi.dll' 'libphi_abi.dylib' 'libphi_abi.so' as Abi;
 
 struct.Vec2 foreign
 {

@@ -94,7 +94,7 @@ namespace Phi.Cli
 
             if (!compiled.Success) return result;
 
-            if (host.IsMacOS() || host.IsWindows()) BringLibraries(compiled, phiFile, outDir, host, result);
+            if (host.IsMacOS() || host.IsWindows() || host == Host.Linux64) BringLibraries(compiled, phiFile, outDir, host, result);
 
             if (host.IsMacOS())
             {
