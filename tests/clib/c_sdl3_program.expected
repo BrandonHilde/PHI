@@ -1,0 +1,10 @@
+init: 1, driver: dummy, version 3: 3
+surface: 64 x 48, a row is 256 bytes
+renderer: 1
+drawn: 1
+background 660510, box 13132850 13132850, past it 660510, line 65280, point 16777215
+box pixels: 160
+ticks: 1 1
+event: 1234 carried
+seen: 1, and no more: 0
+refused: 1 1

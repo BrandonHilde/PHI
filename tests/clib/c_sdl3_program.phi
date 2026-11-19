@@ -1,0 +1,137 @@
+# SDL3 from one module, with no screen (its "dummy" video driver, and its renderer drawing
+# into a surface in memory): floats as arguments (lines and points), a struct by its
+# address (a rectangle), a struct of C's read through the pointer SDL gives (the surface
+# and its pixels), 64-bit results, and an event put on SDL's queue and taken off again.
+# One source: a macOS program (Homebrew's SDL3) and a Windows one, 32 and 64 bits (SDL's
+# own SDL3.dll, which build.sh fetches), give the same.
+use 'SDL3.dll' 'libSDL3.dylib' as SDL;
+
+struct.Rect foreign             # SDL_FRect
+{
+	f32 x;
+	f32 y;
+	f32 w;
+	f32 h;
+}
+
+struct.Surface foreign          # SDL_Surface, as far as this reads
+{
+	u32 flags;
+	u32 format;
+	int w;
+	int h;
+	int pitch;
+	ptr<u32> pixels;
+}
+
+struct.UserEvent foreign        # SDL_UserEvent, in the 128 bytes every event has
+{
+	u32 type;
+	u32 reserved;
+	u64 timestamp;
+	u32 window;
+	int code;
+	ptr<u8> first;
+	ptr<u8> second;
+	u8 rest[96];              # (128 bytes or more, with pointers of either size)
+}
+
+phi.CSdl3Program:Program
+{
+	call SDL.SDL_SetMainReady;
+	bln set: (SDL.SDL_SetHint: 'SDL_VIDEO_DRIVER' 'dummy');
+	bln up: (SDL.SDL_Init: 0x20);
+	log 'init: ' up ', driver: ' (SDL.SDL_GetCurrentVideoDriver) ', version 3: ' ((SDL.SDL_GetVersion) / 1000000) '\n';
+
+	ptr<Surface> surface: (SDL.SDL_CreateSurface: 64 48 0x16161804);
+	log 'surface: ' surface.w ' x ' surface.h ', a row is ' surface.pitch ' bytes\n';
+	ptr<u8> renderer: (SDL.SDL_CreateSoftwareRenderer: surface);
+	log 'renderer: ' (renderer is not 0) '\n';
+
+	# cleared to one colour, a rectangle of another, a line and a point
+	bln ok: (SDL.SDL_SetRenderDrawColor: renderer 10 20 30 255);
+	ok is (SDL.SDL_RenderClear: renderer);
+	Rect box;
+	box.x is 8.0;
+	box.y is 4.0;
+	box.w is 16.0;
+	box.h is 10.0;
+	ok is (SDL.SDL_SetRenderDrawColor: renderer 200 100 50 255);
+	ok is (SDL.SDL_RenderFillRect: renderer addr box);
+	ok is (SDL.SDL_SetRenderDrawColor: renderer 0 255 0 255);
+	ok is (SDL.SDL_RenderLine: renderer 0.0 40.0 63.0 40.0);
+	ok is (SDL.SDL_SetRenderDrawColor: renderer 255 255 255 255);
+	ok is (SDL.SDL_RenderPoint: renderer 60.0 2.0);
+	ok is (SDL.SDL_RenderPresent: renderer);
+	log 'drawn: ' ok '\n';
+	log 'background ' (Pixel: 0 0) ', box ' (Pixel: 8 4) ' ' (Pixel: 23 13) ', past it ' (Pixel: 24 14)
+	    ', line ' (Pixel: 30 40) ', point ' (Pixel: 60 2) '\n';
+
+	# how many pixels the box covers
+	int covered: 0;
+	while int y: 0; y < 48; y++;
+		while int x: 0; x < 64; x++;
+			if (Pixel: x y) is 0xC86432
+				covered++;
+			;;
+		;;
+	;;
+	log 'box pixels: ' covered '\n';
+
+	# time, as a 64-bit number
+	u64 before: (SDL.SDL_GetTicks);
+	call SDL.SDL_Delay: 30;
+	u64 after: (SDL.SDL_GetTicks);
+	log 'ticks: ' (after - before >= 25) ' ' (after - before < 2000) '\n';
+
+	# an event of the program's own, through SDL's queue
+	UserEvent event;
+	event.type is 0x8000;
+	event.code is 1234;
+	event.first is 'carried';
+	ok is (SDL.SDL_PushEvent: addr event);
+	UserEvent got;
+	int seen: 0;
+	while (SDL.SDL_PollEvent: addr got)
+		if got.type is 0x8000
+			seen++;
+			log 'event: ' got.code ' ' got.first '\n';
+		;;
+	;;
+	log 'seen: ' seen ', and no more: ' (SDL.SDL_PollEvent: addr got) '\n';
+
+	# what went wrong, as SDL says it
+	ptr<u8> none: (SDL.SDL_CreateSurface: -1 -1 0);
+	log 'refused: ' (none is 0) ' ' ((SDL.SDL_GetError):0 is not 0) '\n';
+
+	call SDL.SDL_DestroyRenderer: renderer;
+	call SDL.SDL_DestroySurface: surface;
+	call SDL.SDL_Quit;
+	exit 0;
+
+	[Pixel: int x: 0; int y: 0;]
+		ptr<u32> pixels: surface.pixels;
+	[end: (pixels:(y * (surface.pitch / 4) + x) & 0xFFFFFF) as int]
+}
+
+SDL.SDL_SetMainReady;
+SDL.SDL_SetHint: ptr<u8> name ptr<u8> value: bln;
+SDL.SDL_Init: u32 flags: bln;
+SDL.SDL_Quit;
+SDL.SDL_GetVersion;
+SDL.SDL_GetCurrentVideoDriver: : ptr<u8>;
+SDL.SDL_GetError: : ptr<u8>;
+SDL.SDL_CreateSurface: int width int height u32 format: ptr<Surface>;
+SDL.SDL_DestroySurface: ptr<Surface> surface;
+SDL.SDL_CreateSoftwareRenderer: ptr<Surface> surface: ptr<u8>;
+SDL.SDL_DestroyRenderer: ptr<u8> renderer;
+SDL.SDL_SetRenderDrawColor: ptr<u8> renderer u8 r u8 g u8 b u8 a: bln;
+SDL.SDL_RenderClear: ptr<u8> renderer: bln;
+SDL.SDL_RenderFillRect: ptr<u8> renderer ptr<Rect> rect: bln;
+SDL.SDL_RenderLine: ptr<u8> renderer f32 x1 f32 y1 f32 x2 f32 y2: bln;
+SDL.SDL_RenderPoint: ptr<u8> renderer f32 x f32 y: bln;
+SDL.SDL_RenderPresent: ptr<u8> renderer: bln;
+SDL.SDL_GetTicks: : u64;
+SDL.SDL_Delay: u32 ms;
+SDL.SDL_PushEvent: ptr<UserEvent> event: bln;
+SDL.SDL_PollEvent: ptr<UserEvent> event: bln;

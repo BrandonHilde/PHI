@@ -31,4 +31,12 @@ if command -v x86_64-w64-mingw32-gcc >/dev/null; then
     x86_64-w64-mingw32-gcc -O2 -w -DZLIB_DLL -shared -o windows64/zlib1.dll $zlib
     i686-w64-mingw32-gcc -O2 -w -DZLIB_DLL -shared -static-libgcc -o windows/zlib1.dll $zlib
 fi
+
+# SDL3: Homebrew's on a Mac (brew install sdl3), SDL's own DLLs on Windows
+for a in x64 x86; do
+    fetch SDL3-win32-$a.zip https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20-win32-$a.zip
+    [ -d src/sdl3-$a ] || unzip -o -q src/SDL3-win32-$a.zip -d src/sdl3-$a
+done
+cp src/sdl3-x64/SDL3.dll windows64/
+cp src/sdl3-x86/SDL3.dll windows/
 ls -l macos windows64 windows

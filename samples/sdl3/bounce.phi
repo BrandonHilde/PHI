@@ -1,0 +1,129 @@
+# A window through SDL3: a square bouncing round it until the window is closed or Escape is
+# pressed; the arrow keys push it. The same source is a Windows program and a macOS one.
+#
+#   macOS:    brew install sdl3;  phi run --target macos samples/sdl3/bounce.phi
+#   Windows:  put SDL3.dll (from SDL's releases) beside this file, or in windows64/ beside it;
+#             phi run --target windows64 samples/sdl3/bounce.phi
+use 'SDL3.dll' 'libSDL3.dylib' as SDL;
+
+struct.Rect foreign             # SDL_FRect
+{
+	f32 x;
+	f32 y;
+	f32 w;
+	f32 h;
+}
+
+struct.Event foreign            # SDL_Event: what kind it is, and a key's own part
+{
+	u32 type;
+	u32 reserved;
+	u64 timestamp;
+	u32 window;
+	u32 which;
+	u32 scancode;
+	u32 key;
+	u8 rest[128];
+}
+
+phi.Bounce:Program
+{
+	ptr<u8> window: 0;
+	ptr<u8> renderer: 0;
+	Rect square;
+	Event event;
+	f32 dx: 3.0;
+	f32 dy: 2.0;
+	bln running: true;
+	int frames: 0;
+
+	call SDL.SDL_SetMainReady;
+	if not (SDL.SDL_Init: 0x20)
+		log 'SDL: ' (SDL.SDL_GetError) '\n';
+		exit 1;
+	;;
+	if not (SDL.SDL_CreateWindowAndRenderer: 'PHI and SDL3' 640 400 0 addr window addr renderer)
+		log 'SDL: ' (SDL.SDL_GetError) '\n';
+		exit 1;
+	;;
+	bln ok: (SDL.SDL_SetRenderVSync: renderer 1);
+	square.x is 100.0;
+	square.y is 80.0;
+	square.w is 48.0;
+	square.h is 48.0;
+
+	while running
+		while (SDL.SDL_PollEvent: addr event)
+			when event.type
+				is 0x100            # the window's close button
+					running is false;
+				;;
+				is 0x300            # a key down
+					call Key: event.scancode;
+				;;
+			;;
+		;;
+		call Step;
+		ok is (SDL.SDL_SetRenderDrawColor: renderer 24 28 48 255);
+		ok is (SDL.SDL_RenderClear: renderer);
+		ok is (SDL.SDL_SetRenderDrawColor: renderer 255 170 40 255);
+		ok is (SDL.SDL_RenderFillRect: renderer addr square);
+		ok is (SDL.SDL_SetRenderDrawColor: renderer 255 255 255 255);
+		ok is (SDL.SDL_RenderDebugText: renderer 12.0 12.0 'arrows push it, Escape ends');
+		ok is (SDL.SDL_RenderPresent: renderer);
+		frames++;
+	;;
+	log frames ' frames\n';
+	call SDL.SDL_DestroyRenderer: renderer;
+	call SDL.SDL_DestroyWindow: window;
+	call SDL.SDL_Quit;
+	exit 0;
+
+	[Key: u32 scancode: 0;]
+		when scancode
+			is 41
+				running is false;
+			;;
+			is 79
+				dx is dx + 1.0;
+			;;
+			is 80
+				dx is dx - 1.0;
+			;;
+			is 81
+				dy is dy + 1.0;
+			;;
+			is 82
+				dy is dy - 1.0;
+			;;
+		;;
+	[end]
+
+	[Step]
+		square.x is square.x + dx;
+		square.y is square.y + dy;
+		if square.x < 0.0 or square.x > 592.0
+			dx is 0.0 - dx;
+			square.x is square.x + dx;
+		;;
+		if square.y < 0.0 or square.y > 352.0
+			dy is 0.0 - dy;
+			square.y is square.y + dy;
+		;;
+	[end]
+}
+
+SDL.SDL_SetMainReady;
+SDL.SDL_Init: u32 flags: bln;
+SDL.SDL_Quit;
+SDL.SDL_GetError: : ptr<u8>;
+SDL.SDL_CreateWindowAndRenderer: ptr<u8> title int width int height u64 flags ptr<ptr<u8>> window ptr<ptr<u8>> renderer: bln;
+SDL.SDL_DestroyWindow: ptr<u8> window;
+SDL.SDL_DestroyRenderer: ptr<u8> renderer;
+SDL.SDL_SetRenderVSync: ptr<u8> renderer int vsync: bln;
+SDL.SDL_PollEvent: ptr<Event> event: bln;
+SDL.SDL_SetRenderDrawColor: ptr<u8> renderer u8 r u8 g u8 b u8 a: bln;
+SDL.SDL_RenderClear: ptr<u8> renderer: bln;
+SDL.SDL_RenderFillRect: ptr<u8> renderer ptr<Rect> rect: bln;
+SDL.SDL_RenderDebugText: ptr<u8> renderer f32 x f32 y ptr<u8> text: bln;
+SDL.SDL_RenderPresent: ptr<u8> renderer: bln;
