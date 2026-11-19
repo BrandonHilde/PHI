@@ -9,9 +9,14 @@ namespace Phi.Compiler.CodeGen.Ir
     public static class IrPeephole
     {
         /// <param name="foldOffsets">base + n's n into the load or store that reads it (32-bit code's, and ARM's, whose loads take an offset)</param>
-        public static void Run(IrFunction fn, bool x32 = false, bool foldOffsets = false)
+        /// <param name="optimise">IrOptimiser's steps too (not 32-bit code's, which has three registers: a value kept to use again takes one)</param>
+        /// <param name="reuseLoads">and its reads of memory used again</param>
+        /// <param name="hoistMost">how many values a loop may have worked out before it</param>
+        public static void Run(IrFunction fn, bool x32 = false, bool foldOffsets = false, bool optimise = false, bool reuseLoads = false, int hoistMost = 0)
         {
+            IrOptimiser.Consts(fn);
             ThreadJumps(fn);
+            if (optimise) IrOptimiser.Run(fn, reuseLoads, hoistMost, arm: foldOffsets && !x32);
             Lea(fn);
             RemoveDead(fn);
             ZeroWhatsReadFirst(fn);

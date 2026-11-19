@@ -36,6 +36,9 @@ namespace Phi.Compiler.CodeGen.Ir
             public VReg Value = null!;
             public int Start = int.MaxValue, End = -1;
             public bool CrossesCall;
+
+            /// <summary>A call (or an assembly block) is made in its life, or where it starts or ends: no spare register.</summary>
+            public bool NearCall;
             public string? Register;
 
             /// <summary>How much keeping it in memory would cost: its uses, ten times as many for each loop they're in.</summary>
@@ -50,8 +53,8 @@ namespace Phi.Compiler.CodeGen.Ir
         public static readonly string[] CallerSaved32 = { "rbx" };
         public static readonly string[] CalleeSaved32 = { "rsi", "rdi" };
 
-        string[] callerSaved = CallerSaved, calleeSaved = CalleeSaved, floatRegisters = FloatRegisters;
-        bool x32, reuseSaved;
+        string[] callerSaved = CallerSaved, calleeSaved = CalleeSaved, floatRegisters = FloatRegisters, spare = Array.Empty<string>();
+        bool x32, reuseSaved, threeAddress;
 
         /// <summary>What else is a call on a target (an instruction its emitter writes as one), or null.</summary>
         Func<Instr, bool>? alsoCall, sharesResult;
@@ -65,12 +68,24 @@ namespace Phi.Compiler.CodeGen.Ir
         /// The instructions whose result may have the register of an operand read there for the
         /// last time (its emitter reads every operand before it writes the result).
         /// </param>
+        /// <param name="Spare">
+        /// More registers a call may change, which the emitter loads a call's own values into
+        /// (ARM's x4 and x5): only for a value no call is made in the life of, or at either end of it.
+        /// </param>
         public sealed record Target(string[] CallerSaved, string[] CalleeSaved, string[] Float, Func<Instr, bool>? AlsoCall = null,
-                                    Func<Instr, bool>? SharesResult = null);
+                                    Func<Instr, bool>? SharesResult = null, string[]? Spare = null);
+
+        static bool SharesResult64(Instr i) => i is BinI or UnI or ExtendI or NarrowI or LeaI or FBinI or FNegI
+            or SetCcI { Float: false }
+            || i is CopyI { Dst.Vec: false } c && (c.Src.Reg == null || c.Src.Reg.Wide == c.Dst.Wide)
+            || i is LoadIdxI { Kind: not (MemKind.F64 or MemKind.F32 or MemKind.F16 or MemKind.V128) };
 
         public static RegisterAllocator Allocate(IrFunction fn, bool x32 = false, Target? target = null)
         {
             var allocator = new RegisterAllocator();
+            // (x64's emitter reads these instructions' operands before it writes their result,
+            // or works the result out in a register of its own when an operand is where it goes)
+            if (!x32 && target == null && Hinted) allocator.sharesResult = SharesResult64;
             if (x32)
             {
                 allocator.x32 = true;
@@ -84,7 +99,9 @@ namespace Phi.Compiler.CodeGen.Ir
                 allocator.floatRegisters = target.Float;
                 allocator.alsoCall = target.AlsoCall;
                 allocator.reuseSaved = true;
+                allocator.threeAddress = true;
                 allocator.sharesResult = target.SharesResult;
+                if (target.Spare != null && IrOptions.On("spare")) allocator.spare = target.Spare;
             }
             allocator.Run(fn);
             return allocator;
@@ -313,6 +330,38 @@ namespace Phi.Compiler.CodeGen.Ir
             }
         }
 
+        /// <summary>PHI_OPT_OFF=share: a value made from one read for the last time takes any free register, as before.</summary>
+        static readonly bool Hinted = IrOptions.On("share");
+
+        /// <summary>
+        /// The operands whose register an instruction's result is best made in, the best first:
+        /// x86 works a + b out where a is (and where b is, when b + a is the same), so with a's
+        /// register there's no copy first; ARM's instructions name all three, so either does.
+        /// </summary>
+        IEnumerable<VReg> Hints(Instr i)
+        {
+            switch (i)
+            {
+                case CopyI { Src.Reg: VReg src } c when src.Wide == c.Dst.Wide: yield return src; break;
+                case BinI b:
+                    if (b.A.Reg != null) yield return b.A.Reg;
+                    if (b.B.Reg != null && (threeAddress || b.Op is BinOp.Add or BinOp.Mul or BinOp.And or BinOp.Or or BinOp.Xor)) yield return b.B.Reg;
+                    break;
+                case UnI u: yield return u.A; break;
+                case ExtendI e: yield return e.Src; break;
+                case NarrowI n: yield return n.Src; break;
+                case LeaI l: yield return l.A; break;
+                case FBinI f:
+                    yield return f.A;
+                    if (threeAddress || f.Op is FOp.Add or FOp.Mul) yield return f.B;
+                    break;
+                case FNegI f: yield return f.A; break;
+                case LoadIdxI l when threeAddress:
+                    if (l.Index.Reg != null) yield return l.Index.Reg;
+                    break;
+            }
+        }
+
         // ---------------------------------------------------------------- the scan
 
         void Run(IrFunction fn)
@@ -345,6 +394,8 @@ namespace Phi.Compiler.CodeGen.Ir
                     if (index[next] <= k)
                         for (int d = index[next]; d <= k; d++) depth[d]++;
             void Weigh(VReg v, int k) => Of(v).Weight += Math.Pow(10, Math.Min(depth[k], 6));
+            // (the instruction a value's life starts at, when its result may share an operand's register)
+            var madeBy = new Dictionary<VReg, Instr>();
 
             var calls = new List<int>();
             // (an assembly block may change any register, r12 to r15 and the xmms too)
@@ -367,7 +418,9 @@ namespace Phi.Compiler.CodeGen.Ir
                     {
                         // (in 32-bit code, with three registers, an operand read here for the last
                         // time gives its register to what's made here: the result starts after it)
-                        Touch(def, x32 || sharesResult?.Invoke(i) == true ? pos + 1 : pos);
+                        bool shares = x32 || sharesResult?.Invoke(i) == true;
+                        if (shares && Hinted && Of(def).Start == int.MaxValue) madeBy[def] = i;
+                        Touch(def, shares ? pos + 1 : pos);
                         Weigh(def, k);
                     }
                     if (IsCall(i) || alsoCall?.Invoke(i) == true) calls.Add(pos);
@@ -388,7 +441,10 @@ namespace Phi.Compiler.CodeGen.Ir
                 pos += 2;
             }
             foreach (Interval iv in intervals.Values)
+            {
                 iv.CrossesCall = calls.Any(c => c > iv.Start && c < iv.End);
+                iv.NearCall = spare.Length == 0 || calls.Concat(rawCalls).Any(c => c >= iv.Start - 1 && c <= iv.End + 1);
+            }
             // (the method's homes are first, at the top of the frame)
             int slotsForRaw = fn.Homes;
             // where a throw comes back to, nothing is in a register: what's needed there is in the frame
@@ -402,7 +458,7 @@ namespace Phi.Compiler.CodeGen.Ir
                     iv.Weight = -1;   // (taken out of the scan below)
                 }
 
-            var free = new List<string>(callerSaved.Concat(calleeSaved));
+            var free = new List<string>(callerSaved.Concat(spare).Concat(calleeSaved));
             // (32-bit code has xmm0 to xmm7: the emitter's own are xmm4 to xmm7 there, as its xmm12 to xmm15)
             var freeFloat = new List<string>(x32 ? floatRegisters.Take(4) : floatRegisters);
             var active = new List<Interval>();
@@ -440,8 +496,16 @@ namespace Phi.Compiler.CodeGen.Ir
                         }
                         continue;
                     }
-                    iv.Register = freeFloat[0];
-                    freeFloat.RemoveAt(0);
+                    string? takes = null;
+                    if (madeBy.TryGetValue(iv.Value, out Instr? fmaker))
+                        foreach (VReg from in Hints(fmaker))
+                            if (intervals.TryGetValue(from, out Interval? was) && was.End == iv.Start - 1 && was.Register is string its && freeFloat.Contains(its))
+                            {
+                                takes = its;
+                                break;
+                            }
+                    iv.Register = takes ?? freeFloat[0];
+                    freeFloat.Remove(iv.Register);
                     activeFloat.Add(iv);
                     continue;
                 }
@@ -453,15 +517,27 @@ namespace Phi.Compiler.CodeGen.Ir
                 }
                 // (reuse: of the registers every method keeps, one this method already saves comes
                 // before one it doesn't yet, so a short method saves few; x86's order is as it was)
-                string? register = iv.CrossesCall
+                // (an operand read for the last time where this value is made gives it its register:
+                // i + 1 worked out where i was, a copy that's no instruction at all)
+                string? register = null;
+                if (madeBy.TryGetValue(iv.Value, out Instr? maker))
+                    foreach (VReg from in Hints(maker))
+                        if (intervals.TryGetValue(from, out Interval? was) && was.End == iv.Start - 1 && was.Register is string its && free.Contains(its)
+                            && (!iv.CrossesCall || calleeSaved.Contains(its)) && (!iv.NearCall || !spare.Contains(its)))
+                        {
+                            register = its;
+                            break;
+                        }
+                register ??= iv.CrossesCall
                     ? (reuse ? free.FirstOrDefault(r => saved.Contains(r)) : null) ?? free.FirstOrDefault(r => calleeSaved.Contains(r))
-                    : free.FirstOrDefault(r => callerSaved.Contains(r)) ?? (reuse ? free.FirstOrDefault(r => saved.Contains(r)) : null) ?? free.FirstOrDefault();
+                    : free.FirstOrDefault(r => callerSaved.Contains(r)) ?? (iv.NearCall ? null : free.FirstOrDefault(r => spare.Contains(r)))
+                      ?? (reuse ? free.FirstOrDefault(r => saved.Contains(r)) : null) ?? free.FirstOrDefault(r => !spare.Contains(r));
                 if (register == null)
                 {
                     // none free: whichever costs least in memory (of those whose register this
                     // one can have, and this one) goes to the frame
                     Interval? furthest = active
-                        .Where(a => !iv.CrossesCall || calleeSaved.Contains(a.Register!))
+                        .Where(a => (!iv.CrossesCall || calleeSaved.Contains(a.Register!)) && (!iv.NearCall || !spare.Contains(a.Register!)))
                         .OrderBy(a => a.Weight).ThenByDescending(a => a.End).FirstOrDefault();
                     if (furthest != null && furthest.Weight < iv.Weight)
                     {

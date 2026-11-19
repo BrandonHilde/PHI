@@ -1,0 +1,16 @@
+reads: 5 6 24 12
+own: 10 20 30
+called: 12 112 112
+elements: 40 41 82
+fields: 7 14 14 28
+checks: 6
+both: 5
+index out of range on line 101 in optimiser_program.phi
+index out of range on line 107 in optimiser_program.phi
+loops: 1131 0 -69
+under an if: 4515 -1
+copies: 50106 59 0
+calls: 14 86 80 10000000000 34 8
+floats: 6.25 -1.75 10.25 10 3.5
+forever: 10 5
+early: 1 256 592

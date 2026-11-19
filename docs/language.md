@@ -628,8 +628,8 @@ int waiting: 0;                # another thread adds to it: this needs volatile
 [end]
 ```
 
-A variable the loop only reads is always read from memory (a flag it waits on something
-else to set works without `volatile`), and so is one whose address is taken, one an `asm`
+A variable the loop only reads is read from memory every time round (a flag it waits on
+something else to set works without `volatile`), and so is one whose address is taken, one an `asm`
 block names, and one an `[isr]` method names, itself or in the methods it calls: the
 handler above, written as an `[isr]`, needs nothing. What's left to mark is what another
 thread or another core changes, and a handler that isn't an `[isr]` method.
@@ -639,6 +639,13 @@ memory that isn't the program's) isn't a call, so if it's caught, the class vari
 loop was changing hold what they held at its last call, or when it began. A division is
 treated as a call, so dividing by zero isn't one of these. Mark the variable `volatile`
 where what it holds after such an error matters.
+
+Outside loops too, a 64-bit or macOS program doesn't read the same memory twice in a row
+when nothing it did between could have changed it: `if list.count > 0` and `list.count - 1`
+on the next line are one read. A call or a write to any memory makes the next read a real
+one, and so does every time round a loop. What only another thread could have changed
+between two reads that close is seen one read later. In a program with a `volatile`
+anywhere in it, or a variable placed at an address, every read is a real one, as before.
 
 ### sizeof
 

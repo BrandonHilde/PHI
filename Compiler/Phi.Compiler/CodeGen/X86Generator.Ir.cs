@@ -49,13 +49,21 @@ namespace Phi.Compiler.CodeGen
                 Emit("ud2");
                 return true;
             }
-            IrPeephole.Run(fn, x32);
+            IrPeephole.Run(fn, x32, optimise: !x32, reuseLoads: !program.Volatiles, hoistMost: 2);
             if (x32 && Fits32(fn, sse: Host.IsLinux() || Host.IsWindows()) is string not32)
             {
                 if (IrTrace > 0) Console.Error.WriteLine($"ir: not {m.Name}: in 32-bit code, {not32}");
                 return false;
             }
             RegisterAllocator regs = RegisterAllocator.Allocate(fn, x32);
+            if (!x32 && IrOptions.On("entry") && regs.UsedCalleeSaved.Count > 0 && A64.A64Generator.EarlyReturn(fn) != null)
+            {
+                // (kept registers to save, and a way that returns at once: that way on values of
+                // its own, as ARM's, so it saves none; the emitter saves them where the rest begins)
+                A64.A64Generator.SplitEntry(fn);
+                regs = RegisterAllocator.Allocate(fn, x32);
+            }
+            if (!x32 && IrOptions.On("rax")) ThroughRax(fn, regs);
             if (IrTrace > 0) Console.Error.WriteLine($"ir: {m.Name} ({fn.Values.Count} values, {regs.SlotCount} in the frame)");
             // (as the generator's frames: no more than the stack it runs on takes)
             int frameBytes = 8 * (regs.SlotCount + regs.UsedCalleeSaved.Count);
@@ -68,6 +76,59 @@ namespace Phi.Compiler.CodeGen
             foreach (var (at, note) in fn.Notes) Comment($"the loop on line {LineOf(at)} {note}");
             new IrEmitter(this, fn, regs, m.Label, x32).Emit();
             return true;
+        }
+
+        /// <summary>
+        /// A value a call gives, or a + b and the like, that only the next instruction reads (or
+        /// the return after it) stays in rax: a call's result is there already and a method's
+        /// result goes there, so (F: n - 1) + (F: n - 2) given back is one add with no copies
+        /// round it (as ARM's ThroughX0). Only where the emitter writes that next instruction
+        /// without using rax for anything else first: see Binary.
+        /// </summary>
+        static void ThroughRax(IrFunction fn, RegisterAllocator regs)
+        {
+            var uses = new Dictionary<VReg, int>();
+            var defs = new Dictionary<VReg, int>();
+            foreach (Block b in fn.Blocks)
+            {
+                foreach (Instr i in b.Instrs)
+                {
+                    foreach (VReg v in RegisterAllocator.Uses(i)) uses[v] = uses.GetValueOrDefault(v) + 1;
+                    if (RegisterAllocator.Def(i) is VReg d) defs[d] = defs.GetValueOrDefault(d) + 1;
+                }
+                foreach (VReg v in RegisterAllocator.Uses(b.End)) uses[v] = uses.GetValueOrDefault(v) + 1;
+            }
+            bool InRax(VReg? v) => v != null && regs.Registers.GetValueOrDefault(v) == "rax";
+            static bool Plain(Instr i) => i is BinI { Op: BinOp.Add or BinOp.Sub or BinOp.And or BinOp.Or or BinOp.Xor or BinOp.Mul };
+            static bool Either(BinI b) => b.Op is not BinOp.Sub;
+            foreach (Block b in fn.Blocks)
+            {
+                var code = b.Instrs.Where(i => i is not LineMark).ToList();
+                for (int k = 0; k < code.Count; k++)
+                {
+                    Instr made = code[k];
+                    if (RegisterAllocator.Def(made) is not VReg d || d.Float || d.Vec || d.Pinned) continue;
+                    if (uses.GetValueOrDefault(d) != 1 || defs.GetValueOrDefault(d) != 1) continue;
+                    if (made is BinI mb && Plain(made))
+                    {
+                        // (worked out in rax: with b there already, only b + a, which starts from b)
+                        if (InRax(mb.B.Reg) && !(Either(mb) && mb.A.Reg != null && mb.A.Reg != mb.B.Reg)) continue;
+                    }
+                    else if (made is not CallI { Outside: false, Result: CallResult.Eax or CallResult.Rax or CallResult.EdxEax }) continue;
+                    bool read;
+                    if (k + 1 < code.Count)
+                    {
+                        // a op d with a's result in a register of its own, or d op b
+                        read = code[k + 1] is BinI nb && Plain(nb)
+                               && (nb.A.Reg == d && nb.B.Reg != d
+                                   || nb.B.Reg == d && nb.A.Reg != d && regs.Registers.ContainsKey(nb.Dst));
+                    }
+                    else read = b.End is RetT { Float: false, Vec: false, Value: Opnd given } && given.Reg == d;
+                    if (!read) continue;
+                    regs.Registers[d] = "rax";
+                    regs.Slots.Remove(d);
+                }
+            }
         }
 
         static bool Lane64(TypeKind k) => k is TypeKind.I64 or TypeKind.U64;
@@ -270,6 +331,9 @@ namespace Phi.Compiler.CodeGen
                 return made;
             }
 
+            /// <summary>In the block of a method that returns at once: the kept registers were never saved, and aren't put back.</summary>
+            bool unsaved;
+
             int SavedAt(string register) => 8 * (regs.SlotCount + 1 + regs.UsedCalleeSaved.IndexOf(register));
 
             public void Emit()
@@ -291,12 +355,25 @@ namespace Phi.Compiler.CodeGen
                     E($"lea rsp, [rbp - {frame}]");
                 }
                 else if (frame > 0) E($"sub rsp, {frame}");
-                foreach (string r in regs.UsedCalleeSaved) E($"mov [rbp - {SavedAt(r)}], {r}");
+                // a method that may return at once, with neither its first block nor the one that
+                // returns touching a kept register: they're saved where the rest begins, and the
+                // block that returns has none to put back (as ARM's emitter)
+                var early = !x32 && IrOptions.On("entry") && regs.UsedCalleeSaved.Count > 0 ? A64.A64Generator.EarlyReturn(fn) : null;
+                bool Kept(Block b) => b.Instrs.SelectMany(i => RegisterAllocator.Uses(i).Concat(RegisterAllocator.Def(i) is VReg d ? new[] { d } : Array.Empty<VReg>()))
+                    .Concat(RegisterAllocator.Uses(b.End)).Any(v => Reg(v) is string r && regs.UsedCalleeSaved.Contains(r));
+                if (early is var (first, back, _) && (Kept(first) || Kept(back))) early = null;
+                void SaveKept()
+                {
+                    foreach (string r in regs.UsedCalleeSaved) E($"mov [rbp - {SavedAt(r)}], {r}");
+                }
+                if (early == null) SaveKept();
                 for (int k = 0; k < fn.Blocks.Count; k++)
                 {
                     Block b = fn.Blocks[k];
                     Block? next = k + 1 < fn.Blocks.Count ? fn.Blocks[k + 1] : null;
                     g.Label(labels[b]);
+                    if (b == early?.Later) SaveKept();
+                    unsaved = b == early?.Return;
                     foreach (Instr i in b.Instrs)
                     {
                         // (32-bit code's mistakes name the method and the instruction)
@@ -1715,6 +1792,13 @@ namespace Phi.Compiler.CodeGen
                 }
                 // the rest: t = A, then t op= B, with t the destination's own register unless B is in it
                 bool bInDst = b.B.Reg != null && InRegister(b.Dst) && Reg(b.B.Reg) == Reg(b.Dst);
+                if (bInDst && b.A.Reg != null && b.Op is BinOp.Add or BinOp.Mul or BinOp.And or BinOp.Or or BinOp.Xor && !(b.A.Reg == b.B.Reg))
+                {
+                    // (b + a is a + b: worked out where b is, when that's where it goes)
+                    string same = b.Op switch { BinOp.Add => "add", BinOp.Mul => "imul", BinOp.And => "and", BinOp.Or => "or", _ => "xor" };
+                    E($"{same} {Sub(Reg(b.Dst)!, bits)}, {At(b.A.Reg, bits)}");
+                    return;
+                }
                 string target = InRegister(b.Dst) && !bInDst ? Reg(b.Dst)! : "rax";
                 string tb = Sub(target, bits);
                 if (b.Op == BinOp.Mul && b.B.IsImm)
@@ -2113,7 +2197,7 @@ namespace Phi.Compiler.CodeGen
                             }
                             else Load("rax", v, 32);
                         }
-                        foreach (string r in regs.UsedCalleeSaved) E($"mov {r}, [rbp - {SavedAt(r)}]");
+                        if (!unsaved) foreach (string r in regs.UsedCalleeSaved) E($"mov {r}, [rbp - {SavedAt(r)}]");
                         E("mov rsp, rbp");
                         E("pop rbp");
                         E("ret");

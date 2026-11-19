@@ -65,6 +65,13 @@ namespace Phi.Compiler.Semantics
         public bool IsOutside(SourceFile file) => file.Compiled != null || Library != null && !Library.Own.Contains(file);
 
         public IEnumerable<BoundUnit> Units => new[] { Boot, Os, Kernel, Program }.Where(u => u != null)!;
+
+        /// <summary>
+        /// Something in it is volatile (a variable, a field, a pointer) or is at an address of
+        /// its own: memory that changes by itself, whose every read goes to it. The optimiser
+        /// uses no read of memory twice in such a program.
+        /// </summary>
+        public bool Volatiles { get; init; }
     }
 
     /// <summary>
@@ -73,6 +80,9 @@ namespace Phi.Compiler.Semantics
     /// </summary>
     public sealed partial class Binder
     {
+        /// <summary>A volatile declaration (or one at an address) was bound: BoundProgram.Volatiles.</summary>
+        bool volatiles;
+
         public const string BootBase = "Bootloader";
         public const string KernelBase = "OS";
         public const string Kernel32Base = "Kernel";
@@ -511,7 +521,7 @@ namespace Phi.Compiler.Semantics
                 Error(boot.Classes[0].BaseSpan, $"Bootloader.JumpToSectorTwo needs a class that inherits {KernelBase} to jump to");
             }
 
-            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user, Host = host, Library = library };
+            return new BoundProgram { File = mainFile, Boot = boot, Os = os, Kernel = kernel, Program = user, Host = host, Library = library, Volatiles = volatiles };
         }
 
         /// <summary>What the code of the compiled libraries needs from the rest of the program, which only their lists say.</summary>
@@ -1758,6 +1768,7 @@ namespace Phi.Compiler.Semantics
 
             foreach (FieldDecl f in s.Decl.Fields)
             {
+                volatiles |= f.Volatile;
                 file = s.Decl.File;
                 if (s.Find(f.Name) != null)
                 {
@@ -2341,6 +2352,7 @@ namespace Phi.Compiler.Semantics
                     scope.Names[$"{decl.Name}#0"] = earlier[0].Symbol;
                 }
                 var symbol = new VariableSymbol { Name = decl.Name, Decl = decl, Unit = scope.Unit };
+                volatiles |= decl.Volatile || decl.AtAddress != null;
                 symbol.IsOutside = IsOutside(scope.Class.File);
                 decl.Symbol = symbol;
                 scope.Names[$"{decl.Name}#{earlier.Count}"] = symbol;
@@ -2390,6 +2402,7 @@ namespace Phi.Compiler.Semantics
                 }
 
                 var symbol = new VariableSymbol { Name = decl.Name, Decl = decl, Unit = scope.Unit, IsParameter = isParameter };
+                volatiles |= decl.Volatile || decl.AtAddress != null;
                 symbol.IsOutside = IsOutside(scope.Class.File);
                 decl.Symbol = symbol;
                 scope.Names[decl.Name] = symbol;

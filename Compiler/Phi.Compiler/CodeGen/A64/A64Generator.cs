@@ -106,8 +106,12 @@ namespace Phi.Compiler.CodeGen.A64
             // (libm's sin, cos and fmod: a call, which may change what a call changes)
             i => i is X87I { Instruction: "fsin" or "fcos" } or X87I { B: not null },
             // (each of these writes its result in its last instruction, every operand read by then)
-            i => i is BinI or UnI or ExtendI or NarrowI or LeaI or CopyI { Dst: { Float: false, Vec: false } } or SetCcI { Float: false }
-                 or LoadIdxI { Kind: not (MemKind.F64 or MemKind.F32 or MemKind.F16 or MemKind.V128) });
+            i => i is BinI or UnI or ExtendI or NarrowI or LeaI or SetCcI { Float: false } or FBinI or FNegI
+                 or LoadIdxI { Kind: not (MemKind.F64 or MemKind.F32 or MemKind.F16 or MemKind.V128) }
+                 || i is CopyI { Dst.Vec: false } c && (c.Src.Reg == null || c.Src.Reg.Wide == c.Dst.Wide),
+            // (the emitter writes x4 and x5 only as it sets up a call of the library's; x0 to x3
+            // are also the f16 routine's, and x6 to x9 its own in other places)
+            new[] { "x4", "x5" });
 
         // ---------------------------------------------------------------- the program
 
@@ -338,7 +342,7 @@ namespace Phi.Compiler.CodeGen.A64
                 return false;
             }
             Inline(fn, m);
-            IrPeephole.Run(fn, foldOffsets: true);
+            IrPeephole.Run(fn, foldOffsets: true, optimise: true, reuseLoads: !program.Volatiles, hoistMost: 6);
             // (after the peephole, which makes a test of x & mask one instruction)
             Selects(fn);
             FoldIndexExtends(fn);

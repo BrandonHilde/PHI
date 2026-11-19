@@ -1,0 +1,206 @@
+# What the optimiser's steps (CodeGen/Ir/IrOptimiser.cs, and the allocator's) must leave as
+# it was. A read used again only while nothing wrote between: through two pointers to one
+# variable, a variable of the method's own through its address, across a call, one element
+# by two indexes, a field by name and through a pointer. An index check made once, and again
+# when the index or the array's size has changed. Arithmetic moved out of a loop, when the
+# loop never runs, runs inside another, or works it out under an if. A copy of a variable
+# that then changes. A call's result worked on at once, on either side of - and +. A float
+# worked out twice with its parts changed between. A loop with no test, left by a break.
+# A method that returns at once one way, and uses values across calls the other.
+struct.Cell
+{
+	int value;
+	int count;
+}
+
+phi.OptimiserProgram:Program
+{
+	int shared: 5;
+	int table[8];
+	Cell cells[4];
+	int grown[atmost 8];
+
+	call Reads;
+	call Checks;
+	log 'loops: ' (Loops: 6 7) ' ' (Loops: 0 7) ' ' (Loops: 3 -2) '\n';
+	log 'under an if: ' (Under: 5 3) ' ' (Under: 4 0) '\n';
+	call Copies: 3;
+	call Calls;
+	call Floats: 1.5 2.0;
+	call Forever;
+	log 'early: ' (Early: 1) ' ' (Early: 9) ' ' (Early: 30) '\n';
+	exit 0;
+
+	[Reads]
+		ptr<int> p: addr shared;
+		ptr<int> q: addr shared;
+		int a: p:0;
+		q:0 is a + 1;
+		int b: p:0;
+		shared is b * 2;
+		int c: p:0 + q:0;
+		log 'reads: ' a ' ' b ' ' c ' ' shared '\n';
+
+		int own: 10;
+		ptr<int> o: addr own;
+		int d: o:0;
+		own is 20;
+		int e: o:0;
+		o:0 is 30;
+		int f: own;
+		log 'own: ' d ' ' e ' ' f '\n';
+
+		int g: p:0;
+		call Bump;
+		int h: p:0;
+		log 'called: ' g ' ' h ' ' shared '\n';
+
+		int i: 2;
+		int j: 2;
+		table:i is 40;
+		int k: table:i;
+		table:j is 41;
+		int l: table:i;
+		log 'elements: ' k ' ' l ' ' (table:i + table:j) '\n';
+
+		ptr<Cell> cell: addr cells:1;
+		cells:1.value is 7;
+		int m: cell:0.value;
+		cell:0.value is m + cell:0.value;
+		int n: cells:1.value;
+		cells:1.count is n + cells:1.value;
+		log 'fields: ' m ' ' n ' ' cell:0.value ' ' cell:0.count '\n';
+	[end]
+
+	[Bump]
+		shared++ 100;
+	[end]
+
+	[Checks]
+		grown++ 1 2 3;
+		int i: 2;
+		int twice: grown:i + grown:i;
+		log 'checks: ' twice '\n';
+		int got: 0;
+		if call got is Both: 1 1 throws err
+			log err '\n';
+		;;
+		log 'both: ' got '\n';
+		if call got is Both: 2 5 throws err
+			log err '\n';
+		;;
+		if call got is Shorter: 2 throws err
+			log err '\n';
+		;;
+	[end]
+
+	# grown:i twice, with i moved on between: the second has its own check
+	[Both: int i; int more;]
+		int first: grown:i;
+		i++ more;
+	[end: first + grown:i]
+
+	# the same index, with the array shorter the second time
+	[Shorter: int i;]
+		int first: grown:i;
+		call Cut;
+	[end: first + grown:i]
+
+	[Cut]
+		grown.len is 1;
+	[end]
+
+	# rows * wide is the same every time round the inner loop, and the outer
+	[Loops: int rows; int wide;]
+		int sum: 0;
+		while int r: 0; r < rows; r++;
+			while int c: 0; c < 3; c++;
+				sum++ rows * wide + r * wide + c;
+			;;
+		;;
+		int after: rows * wide;
+	[end: sum + after]
+
+	# worked out only some times round, and not at all when by is 0
+	[Under: int n; int by;]
+		int sum: 0;
+		int last: -1;
+		while int i: 0; i < n; i++;
+			if by > 0 and i > 1
+				last is n * by;
+				sum++ last;
+			;;
+		;;
+	[end: sum * 100 + last]
+
+	[Copies: int start;]
+		int y: start;
+		int total: 0;
+		while int i: 0; i < 4; i++;
+			int x: y;
+			y is y * 2 + i;
+			total++ x * 1000 + y;
+		;;
+		int kept: y;
+		y is 0;
+		log 'copies: ' total ' ' kept ' ' y '\n';
+	[end]
+
+	[Calls]
+		int a: (Twice: 10) - (Twice: 3);
+		int b: 100 - (Twice: 7);
+		int c: (Twice: 4) * (Twice: 5);
+		i64 wide: (Wide: 3) - (Wide: 1);
+		log 'calls: ' a ' ' b ' ' c ' ' wide ' ' (Less: 50 8) ' ' (Sum: 6) '\n';
+	[end]
+
+	[Twice: int n;]
+	[end: n + n]
+
+	[Wide: i64 n; : i64]
+	[end: n * 5000000000]
+
+	[Less: int a; int b;]
+	[end: a - (Twice: b)]
+
+	[Sum: int n;]
+		if n < 2 return n;
+	[end: (Sum: n - 1) + (Sum: n - 2)]
+
+	[Floats: f64 x; f64 y;]
+		f64 a: x * x + y * y;
+		f64 b: x * x - y * y;
+		x is x + 1.0;
+		f64 c: x * x + y * y;
+		f64 worst: 0.0;
+		while int i: 0; i < 3; i++;
+			f64 d: x * y;
+			if d > worst
+				worst is d + x * y;
+			;;
+			y is y + 0.5;
+		;;
+		log 'floats: ' a ' ' b ' ' c ' ' worst ' ' y '\n';
+	[end]
+
+	[Forever]
+		int n: 0;
+		int ones: 0;
+		while true
+			n++;
+			if (n & 1) is 1
+				ones++;
+				continue;
+			;;
+			if n >= 10 break;
+		;;
+		log 'forever: ' n ' ' ones '\n';
+	[end]
+
+	[Early: int n;]
+		if n < 2 return n;
+		int a: (Twice: n);
+		int b: (Twice: a);
+		int c: (Twice: b) + a;
+	[end: a + b + c + shared]
+}

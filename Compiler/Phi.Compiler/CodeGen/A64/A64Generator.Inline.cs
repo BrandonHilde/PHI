@@ -292,7 +292,7 @@ namespace Phi.Compiler.CodeGen.A64
         /// don't live that long, so the way that returns at once touches none, and saves none
         /// (the emitter saves them where the rest begins). fib returns at once half the time.
         /// </summary>
-        static void SplitEntry(IrFunction fn)
+        internal static void SplitEntry(IrFunction fn)
         {
             if (EarlyReturn(fn) is not var (entry, back, rest)) return;
             IEnumerable<VReg> Named(Block b) => b.Instrs.SelectMany(i => RegisterAllocator.Uses(i).Concat(RegisterAllocator.Def(i) is VReg d ? new[] { d } : Array.Empty<VReg>()))

@@ -369,6 +369,7 @@ PHI_IR32=0 phi test --target linux     # 32-bit, the generator only
 PHI_IR_TRACE=1 phi build x.phi --target linux64   # which methods went through it, and why not the others
 PHI_IR_SKIP=Class.Method phi run x.phi --target linux64   # one method left to the generator
 PHI_IR_VERIFY=1 phi build x.phi --target macos    # says if two live values were given one register
+PHI_OPT_OFF=same,hoist phi run x.phi --target linux64     # the optimiser's steps left out (docs/architecture.md lists them)
 PHI_INLINE_TRACE=1 phi build x.phi --target macos # each method put in where it's called
 ```
 

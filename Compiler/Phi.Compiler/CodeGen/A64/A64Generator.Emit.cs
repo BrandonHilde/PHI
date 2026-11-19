@@ -1503,6 +1503,18 @@ namespace Phi.Compiler.CodeGen.A64
                     case BranchT br:
                     {
                         string a = Get(br.A, "x9");
+                        if (br.TestMask == null && br.B.IsImm && br.B.Imm == 0 && br.Cond is Cond.Eq or Cond.Ne && IrOptions.On("tidy"))
+                        {
+                            // (against 0: one instruction that tests and jumps, as far as b.cond reaches)
+                            bool zero = br.Cond == Cond.Eq;
+                            if (br.Then == next) E($"{(zero ? "cbnz" : "cbz")} {a}, {blockLabels[br.Else]}");
+                            else
+                            {
+                                E($"{(zero ? "cbz" : "cbnz")} {a}, {blockLabels[br.Then]}");
+                                if (br.Else != next) E($"b {blockLabels[br.Else]}");
+                            }
+                            break;
+                        }
                         if (br.TestMask is long bits && LogicalImm(bits, br.A.Wide)) E($"tst {a}, #{LogicalText(bits, br.A.Wide)}");
                         else if (br.TestMask is long mask)
                         {
