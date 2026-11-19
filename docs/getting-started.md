@@ -44,7 +44,10 @@ On a Mac, everything for PHI OS runs as it does elsewhere (QEMU emulates the PC)
 program built with `--target macos` runs natively. A Linux program (`--target linux` or
 `linux64`) is x86 code, which a Mac runs in a Linux machine: set `PHI_LINUX_RUN` to the
 command that runs one there (`lima`, say, with [Lima](https://lima-vm.io/) installed), and
-`phi run` and `phi test` use it. Without it those runs are set aside and named.
+`phi run` and `phi test` use it. Without it those runs are set aside and named. A Windows
+program runs in a Windows machine the same way, by `PHI_WINDOWS_RUN`: a command given the
+program's path and then its arguments, which takes it to the machine and runs it there (a
+script that copies it over ssh, say; `HostRunner.cs` says what it's asked).
 
 ## Build PHI
 

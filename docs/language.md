@@ -3479,11 +3479,38 @@ The compiler puts each function that's called in the program's import table (a l
 the runtime already uses, such as kernel32.dll, gets a second entry; Windows reads them one
 by one) and calls it as Windows' functions are called: in 32-bit code (stdcall) the values
 are pushed last first and the function takes them off; in 64-bit code the first four go in
-`rcx`, `rdx`, `r8` and `r9` and the rest on the stack, above 32 bytes the function may
-write, with the stack 16 bytes aligned. A function takes and gives numbers, `bln`, `chr`,
-enums and pointers; floats, and 64-bit numbers in a 32-bit program, aren't there yet on
-Windows. Outside libraries are in `:Windows` and `:MacOS` modules, whose classes alone may
-call them; Linux's (a library loaded with the program) come with H7.
+`rcx`, `rdx`, `r8` and `r9` (a float in `xmm0` to `xmm3`) and the rest on the stack, above
+32 bytes the function may write, with the stack 16 bytes aligned. A function takes and
+gives numbers, `bln`, `chr`, enums, pointers, 64-bit numbers and floats (`f64`, `f32`). In
+32-bit code the call is right whether the function takes its values off the stack
+(stdcall, as Windows' own do) or leaves them (cdecl, as C libraries do): the compiler
+puts the stack back itself. Linux's libraries (loaded with the program) come with H7.
+
+**A library several systems have** is named by its file on each, in one `use`, and each
+system builds with its own (a `.dll` is Windows', a `.dylib` or a framework's path
+macOS's). In a module that's no one system's, any program's classes call it, so code that
+uses a C library is written once:
+
+```phi
+use 'winsqlite3.dll' '/usr/lib/libsqlite3.dylib' as Sql;
+
+phi.Ask:Program
+{
+    ptr<u8> db: 0;
+    int r: (Sql.sqlite3_open: ':memory:' addr db);
+    log 'opened: ' r '\n';
+}
+
+Sql.sqlite3_open: ptr<u8> name ptr<ptr<u8>> db;
+```
+
+Building it for a system the library names no file for is an error where a function is
+called (`Sql has no file named for ...`), as is building it for Linux or PHI OS. A library
+in a `:Windows` or `:MacOS` module is that system's alone, called only from that module's
+classes, as before. A macOS program's linker looks for a library named without its folder
+(`'libSDL3.dylib'`) where the system's are, beside the program, and where Homebrew puts
+them (`/opt/homebrew/lib`); a Windows program's is found as Windows finds any DLL (beside
+the `.exe` first). `...` and `Name = 'symbol':` (below) are for every system.
 
 On macOS a module's classes are `:MacOS`, and the functions are called as C calls them on
 Apple's ARM (the first eight whole values in `x0` to `x7`, floats in `d0` to `d7`), with
@@ -3515,6 +3542,11 @@ as a pointer (`[end: p]`, with `p` a `ptr<u8>`), since an `int` is only 32 bits 
 It runs on the thread that called it, so that has to be one PHI started (the program's own
 or a `Threads` one), and an error thrown out of it would have to cross the system's frames:
 catch what can go wrong inside it.
+It's for Windows and macOS programs. In a `:Windows` module the entry is as Windows calls
+its own (in 32-bit code stdcall, taking its values off the stack: a window procedure);
+anywhere else it's as C calls a function (cdecl there: `qsort`'s order, a C library's
+callbacks). In 64-bit code and on macOS the two are the same. What it takes and gives may
+be 64-bit numbers and floats too.
 
 ```phi
 [OnWindow: ptr<u8> window: 0; ptr<u8> value: 0;]

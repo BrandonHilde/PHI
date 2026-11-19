@@ -517,7 +517,16 @@ namespace Phi.Cli
                 File.WriteAllBytes(libraryObject, bytes);
                 objects.Add(libraryObject);
             }
-            (code, output) = Toolchain.Run(clang, arch.Concat(objects).Concat(new[] { "-o", Path.GetFullPath(executable) }).Concat(unit.Links));
+            // a library that isn't the system's is looked for where they're put (beside the
+            // program, and Homebrew's), and found when the program runs beside it or in a bundle
+            var links = unit.Links.ToList();
+            if (links.Any(l => l.StartsWith("-l", StringComparison.Ordinal) || l.EndsWith(".dylib", StringComparison.Ordinal)))
+            {
+                foreach (string folder in new[] { Path.GetDirectoryName(Path.GetFullPath(executable))!, "/opt/homebrew/lib", "/usr/local/lib" }.Where(Directory.Exists))
+                    links.Add("-L" + folder);
+                links.AddRange(new[] { "-Wl,-rpath,@executable_path", "-Wl,-rpath,@executable_path/../Frameworks" });
+            }
+            (code, output) = Toolchain.Run(clang, arch.Concat(objects).Concat(new[] { "-o", Path.GetFullPath(executable) }).Concat(links));
             if (code != 0)
             {
                 result.Errors.Add($"clang failed to link {objPath}:\n{output}");

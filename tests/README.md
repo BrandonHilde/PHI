@@ -114,9 +114,14 @@ intermediate form, and a test that uses what the form doesn't take yet is left t
 systems, so `phi test --target macos` says how many it ran (`222 of 448 tests run as macOS
 programs`). Linux programs are x86, which a Mac runs in a Linux machine: with
 `PHI_LINUX_RUN=lima` (or another command that runs a program there) they're run too, and
-without it they're set aside and named. What's meant to differ on macOS goes in
+without it they're set aside and named. Windows programs run in a Windows machine by
+`PHI_WINDOWS_RUN` (a command given the program's path and its arguments, which runs it
+there), with `phi test --target windows64` or `windows`. What's meant to differ on macOS goes in
 `NAME.macos.expected`. Tests of what only macOS has start with `macos_` (see
-`macos_outside_program.phi`: its own libraries' functions called as C calls them).
+`macos_outside_program.phi`: its own libraries' functions called as C calls them). Tests of C
+libraries called from one module on every system that has them start with `c_`
+(`c_runtime_program.phi`, `c_sqlite_program.phi`: libraries Windows and macOS come with);
+they run as Windows and macOS programs.
 
 A test with `NAME.cdb` is about a `--debug` build's `.pdb`: it runs in Microsoft's debugger, as
 a 32-bit and a 64-bit Windows program, where `cdb` is installed. `NAME.cdb` is the commands, and

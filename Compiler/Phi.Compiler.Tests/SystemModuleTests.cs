@@ -173,14 +173,14 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         // in a module for another system, or none
-        [InlineData("use 'user32.dll' as User32;\nphi.Raw:Linux\n{\n}\n", Host.Linux, "'user32.dll' is an outside library, used only in a :Windows or :MacOS module for now")]
+        [InlineData("use 'user32.dll' as User32;\nphi.Raw:Linux\n{\n}\n", Host.Linux, "'user32.dll' is an outside library, used in a :Windows or :MacOS module, or one that's no system's own")]
         [InlineData("phi.Win:Windows\n{\n [Beep]\n [end: (User32.MessageBeep: 0)]\n}\n", Host.Windows, "unknown method 'User32.MessageBeep'")]
         // a name that reads as a class's
         [InlineData("use 'user32.dll' as user32;\nphi.Win:Windows\n{\n}\n", Host.Windows, "a library's name reads as a class's does, so it starts with a capital: as User32")]
         // what it takes is checked, and only what goes in a register
         [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [Beep]\n [end: (User32.MessageBeep)]\n}\nUser32.MessageBeep: u32 kind;\n", Host.Windows,
                     "User32.MessageBeep takes 1 value (kind), but was given 0")]
-        [InlineData("use 'msvcrt.dll' as C;\nphi.Win:Windows\n{\n}\nC.sqrt: f64 x: f64;\n", Host.Windows, "C.sqrt's 'x' is a f64, and floats to and from outside functions aren't there yet")]
+        [InlineData("use 'msvcrt.dll' as C;\nphi.Win:Windows\n{\n}\nC.half: f16 x;\n", Host.Windows, "C.half's 'x' is a f16, and an outside function's floats are f64 and f32")]
         public void AnOutsideFunctionGoesWhereItsLibraryIs(string module, Host host, string error)
         {
             CompileResult result = Build(host, ("main.phi", "use win;\nphi.Test:Program\n{\n}\n"), ("win.phi", module));
@@ -265,10 +265,10 @@ namespace Phi.Compiler.Tests
         [Theory]
         [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [Go]\n  int n: 1;\n [end: (User32.EnumWindows: addr foreign n 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n",
                     Host.Windows, "addr foreign takes a method")]
-        [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [On: f64 x: 0;]\n [end: 1]\n [Go]\n [end: (User32.EnumWindows: addr foreign On 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n",
-                    Host.Windows, "On's 'x' is a f64, and floats to and from outside functions aren't there yet")]
+        [InlineData("use 'user32.dll' as User32;\nphi.Win:Windows\n{\n [On: f16 x: 0;]\n [end: 1]\n [Go]\n [end: (User32.EnumWindows: addr foreign On 0)]\n}\nUser32.EnumWindows: ptr<u8> callback  ptr<u8> value;\n",
+                    Host.Windows, "On's 'x' is a f16, and an outside function's floats are f64 and f32")]
         [InlineData("phi.Raw:Linux\n{\n [On]\n [end: 1]\n [Go]\n  ptr<u8> p: addr foreign On;\n [end: 0]\n}\n",
-                    Host.Linux, "addr foreign On is for outside code to call, used only in a :Windows module (for now)")]
+                    Host.Linux, "addr foreign On is for outside code to call, which it does in Windows and macOS programs (for now)")]
         public void AForeignEntryIsForAMethodThatTakesWhatARegisterHolds(string module, Host host, string error)
         {
             CompileResult result = Build(host, ("main.phi", "use win;\nphi.Test:Program\n{\n}\n"), ("win.phi", module));

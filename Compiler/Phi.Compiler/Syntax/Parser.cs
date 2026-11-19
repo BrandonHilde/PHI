@@ -402,6 +402,8 @@ namespace Phi.Compiler.Syntax
         {
             Advance(); // use
             Token path = Advance();
+            var paths = new List<string> { (string)path.Value! };
+            while (At(TokenKind.String)) paths.Add((string)Advance().Value!);
             if (!AcceptWord("as"))
                 throw Error(Current.Span, $"expected 'as' and a name for the library, like use '{path.Value}' as Kernel32;");
             Token name = ExpectIdentifier("a name for the library, like Kernel32");
@@ -410,7 +412,7 @@ namespace Phi.Compiler.Syntax
                 Error(name.Span, $"a library's name reads as a class's does, so it starts with a capital: as {char.ToUpper(name.Text[0])}{name.Text[1..]}");
             ExpectSemicolon();
             libraryNames.Add(name.Text);
-            return new LibraryUseDecl { File = file, Path = (string)path.Value!, Name = name.Text, Span = start.Span.To(name.Span) };
+            return new LibraryUseDecl { File = file, Path = paths[0], Paths = paths, Name = name.Text, Span = start.Span.To(name.Span) };
         }
 
         /// <summary>Kernel32.CreateThread: type name ...: result;  or  Kernel32.GetCurrentProcessId;</summary>

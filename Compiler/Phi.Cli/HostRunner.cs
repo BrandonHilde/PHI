@@ -25,8 +25,26 @@ namespace Phi.Cli
                 ? run.Split(' ', StringSplitOptions.RemoveEmptyEntries)
                 : null;
 
-        /// <summary>Whether a Linux program runs here in another machine (PHI_LINUX_RUN), where its time isn't one to compare.</summary>
-        public static bool InAnotherMachine => LinuxMachine != null;
+        /// <summary>
+        /// Off Windows, the command that runs a Windows program in a Windows machine, from
+        /// PHI_WINDOWS_RUN split at its spaces. It's given the program's path here and then the
+        /// program's arguments; what the program writes is what it writes, and the program's exit
+        /// code its own. The machine needn't see this computer's files: the command takes the
+        /// program there (and, when PHI_RUN_FOLDER is set, the files in that folder, to run among
+        /// them). With PHI_RUN_MERGE set, the program's standard error goes where its standard
+        /// output does, in order. "--check" as the one argument asks whether the machine answers
+        /// (exit code 0), and "--end" before the program's path ends what still runs of it. Null
+        /// when unset. (MacPlan.md has one for a machine reached by ssh.)
+        /// </summary>
+        static readonly string[]? WindowsMachine =
+            !OperatingSystem.IsWindows() && Environment.GetEnvironmentVariable("PHI_WINDOWS_RUN") is string windowsRun && windowsRun.Trim().Length > 0
+                ? windowsRun.Split(' ', StringSplitOptions.RemoveEmptyEntries)
+                : null;
+
+        static bool? windowsAnswers;
+
+        /// <summary>Whether a Linux or Windows program runs here in another machine (PHI_LINUX_RUN, PHI_WINDOWS_RUN), where its time isn't one to compare.</summary>
+        public static bool InAnotherMachine => LinuxMachine != null || WindowsMachine != null;
 
         /// <summary>The Linux machine's processor (uname -m) once it has answered, "" when it didn't.</summary>
         static string? machineCpu;
@@ -40,6 +58,11 @@ namespace Phi.Cli
                 case Host.Windows or Host.Windows64 when OperatingSystem.IsWindows():
                 case Host.Linux or Host.Linux64 when OperatingSystem.IsLinux():
                     return true;
+                case Host.Windows or Host.Windows64 when WindowsMachine != null:
+                    windowsAnswers ??= WindowsMachineRuns("--check", 60000) == 0;
+                    if (windowsAnswers == true) return true;
+                    why = $"PHI_WINDOWS_RUN is '{string.Join(" ", WindowsMachine)}', but it didn't answer '--check': is the Windows machine started?";
+                    return false;
                 case Host.Linux or Host.Linux64 when OperatingSystem.IsWindows():
                     wsl ??= HasWsl();
                     if (wsl == true) return true;
@@ -64,6 +87,31 @@ namespace Phi.Cli
                 default:
                     why = $"{host.Name()} programs can't run on this computer";
                     return false;
+            }
+        }
+
+        /// <summary>PHI_WINDOWS_RUN's command with these arguments, nothing read from it: its exit code, or -1.</summary>
+        static int WindowsMachineRuns(string first, int milliseconds, string? second = null)
+        {
+            var psi = new ProcessStartInfo(WindowsMachine![0])
+            {
+                RedirectStandardOutput = true, RedirectStandardError = true, RedirectStandardInput = true, UseShellExecute = false,
+            };
+            foreach (string a in WindowsMachine[1..].Append(first)) psi.ArgumentList.Add(a);
+            if (second != null) psi.ArgumentList.Add(second);
+            try
+            {
+                using Process p = Process.Start(psi)!;
+                p.StandardInput.Close();
+                _ = p.StandardOutput.ReadToEndAsync();
+                _ = p.StandardError.ReadToEndAsync();
+                if (p.WaitForExit(milliseconds)) return p.ExitCode;
+                try { p.Kill(entireProcessTree: true); } catch (InvalidOperationException) { }
+                return -1;
+            }
+            catch (System.ComponentModel.Win32Exception)
+            {
+                return -1;
             }
         }
 
@@ -154,6 +202,14 @@ namespace Phi.Cli
                                       string? folder = null)
         {
             var args = arguments.ToList();
+            if (host.IsWindows() && WindowsMachine != null)
+            {
+                var there = new ProcessStartInfo(WindowsMachine[0]);
+                foreach (string a in WindowsMachine[1..].Append(Path.GetFullPath(program)).Concat(args)) there.ArgumentList.Add(a);
+                if (merge) there.Environment["PHI_RUN_MERGE"] = "1";
+                if (folder != null) there.Environment["PHI_RUN_FOLDER"] = Path.GetFullPath(folder);
+                return there;
+            }
             if (host.IsWindows())
             {
                 ProcessStartInfo windows;
@@ -307,6 +363,11 @@ namespace Phi.Cli
         static void EndLeftOver(string program)
         {
             string full = Path.GetFullPath(program);
+            if (WindowsMachine != null)
+            {
+                WindowsMachineRuns("--end", 20000, full);
+                return;
+            }
             foreach (Process left in Process.GetProcessesByName(Path.GetFileNameWithoutExtension(program)))
             {
                 try

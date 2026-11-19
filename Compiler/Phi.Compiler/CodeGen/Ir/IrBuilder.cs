@@ -2131,6 +2131,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new AddrI { Dst = d, Label = code });
                     return d;
                 }
+                case AddrExpr { CodeLabel: string entry, Foreign: true } when arm:
+                {
+                    // addr foreign Method: where the entry outside code calls it through is
+                    VReg d = fn.NewAddress();
+                    Emit(new AddrI { Dst = d, Label = entry });
+                    return d;
+                }
                 case AddrExpr { OfObject: true, CodeLabel: null, Operand: var obj } when IsAddress(Real(obj)) && Supported(Real(obj)):
                     // (an object is at the address it holds: a struct method's self, called on one)
                     return Value(obj);

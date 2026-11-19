@@ -246,6 +246,7 @@ footer { color: var(--muted); font-size: 0.82rem; }
         <tr><td><code>--target linux64</code> beside <code>--target macos</code></td><td>The same program on the other CPU. Right on one and wrong on the other points at that back end, not at the form.</td></tr>
         <tr><td><code>PHI_NASM</code>, <code>PHI_QEMU</code>, <code>PHI_CLANG</code></td><td>Paths to the assemblers and the emulator, when they aren't on the <code>PATH</code>.</td></tr>
         <tr><td><code>PHI_LINUX_RUN</code></td><td>On a Mac: the command that runs a Linux program in a Linux machine (<code>lima</code>, say), so <code>phi test</code> and <code>phi fuzz</code> run the x86 Linux builds too.</td></tr>
+        <tr><td><code>PHI_WINDOWS_RUN</code></td><td>Off Windows: the command that runs a Windows program in a Windows machine (given the program's path and its arguments), so <code>phi test --target windows64</code> runs there.</td></tr>
       </tbody>
     </table></div>
   </div>

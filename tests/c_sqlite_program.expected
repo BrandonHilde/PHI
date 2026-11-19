@@ -1,0 +1,10 @@
+version 3: 1
+open: 0 1
+rows: 4, changed: 1
+columns: 5, the third: mass
+Neptune: 16 moons, 17.15 Earths, 4495100000 km, 7 letters
+Jupiter: 95 moons, 317.8 Earths, 778500000 km, 7 letters
+Earth: 1 moons, 1 Earths, 149600000 km, 5 letters
+sum 5481100000, mean 84.001325, of 4, in m 4495100000000
+wrong: 1 no such table: nowhere
+close: 0

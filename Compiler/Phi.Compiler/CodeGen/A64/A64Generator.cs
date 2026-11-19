@@ -76,8 +76,9 @@ namespace Phi.Compiler.CodeGen.A64
 
         /// <summary>
         /// The linker's arguments for the outside libraries the program calls: a framework
-        /// ('AppKit.framework', or its path) is -framework, a library ('libobjc.A.dylib') -l;
-        /// libSystem is every program's already.
+        /// ('AppKit.framework', or its path) is -framework, a library ('libobjc.A.dylib') -l
+        /// (the linker looks where the system's are, and Builder adds where others are put),
+        /// one named with its folder that file; libSystem is every program's already.
         /// </summary>
         List<string> Links()
         {
@@ -87,6 +88,7 @@ namespace Phi.Compiler.CodeGen.A64
                 string name = Path.GetFileName(path);
                 var framework = Regex.Match(path, @"([^/]+)\.framework");
                 if (framework.Success) links.AddRange(new[] { "-framework", framework.Groups[1].Value });
+                else if (path.Contains('/') && !path.StartsWith("/usr/lib/", StringComparison.Ordinal)) links.Add(path);   // (a file somewhere said: that file)
                 else if (Regex.Match(name, @"^lib([^.]+)") is { Success: true } lib)
                 {
                     if (lib.Groups[1].Value != "System") links.Add("-l" + lib.Groups[1].Value);
@@ -115,9 +117,6 @@ namespace Phi.Compiler.CodeGen.A64
             if (program.Library != null) return BuildLibrary();
             if (unit.RawBlocks.FirstOrDefault(r => r.Language != "arm" && r.File.Compiled == null) is RawBlockDecl raw)
                 return NotYet(raw.File, raw.Span, $"an x86 assembly block ({raw.Language}.{raw.Name}; ARM's is arm.{raw.Name})");
-            if (unit.ForeignEntries.FirstOrDefault() is MethodSymbol foreign)
-                return NotYet(foreign.Decl.File, foreign.Decl.Span, "addr foreign (a method other code calls)");
-
             // each class's own statements, a method of their own, called in order from _main
             var starts = new List<string>();
             var startedLibraries = new HashSet<CompiledTarget>();
@@ -142,6 +141,7 @@ namespace Phi.Compiler.CodeGen.A64
                 file = m.Decl.File;
                 EmitMethod(m, $"{m.Name} ({Path.GetFileName(m.Decl.File.Path)})");
             }
+            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
             foreach (RawBlockDecl block in unit.RawBlocks) EmitRawBlock(block);
             if (failed) return "";
             // what follows isn't PHI code: a fault in it has no line
@@ -539,6 +539,70 @@ namespace Phi.Compiler.CodeGen.A64
         static readonly Regex NotLabel = new(@"[^A-Za-z0-9_$.]");
 
         /// <summary>A label as the assembler takes it (a template's, say, has characters NASM takes and it doesn't).</summary>
+        /// <summary>
+        /// Where outside code calls a method (addr foreign): its values come as C gives them
+        /// (the first eight whole ones in x0 to x7, floats in d0 to d7, the rest on the stack,
+        /// each at a multiple of its own size as Apple packs them) and go where a PHI method
+        /// reads them, 8 bytes each with the first highest. What it gives is in x0 or d0 either
+        /// way (an f32, which PHI keeps as an f64, made one). The registers C expects kept are
+        /// the ones PHI's methods keep, and x28 (the thread's block) is still this thread's:
+        /// C keeps it too, and calls back on the thread that called it.
+        /// </summary>
+        void EmitForeignEntry(MethodSymbol m)
+        {
+            int n = m.Parameters.Count;
+            int room = (n * 8 + 15) / 16 * 16;
+            code.AppendLine();
+            code.AppendLine($"; where outside code calls {m.Name}");
+            code.AppendLine("\t.p2align 2");
+            if (unit.ForeignSystem.Contains(m)) code.AppendLine($"{Sym(Binder.ForeignEntry(m))}:");
+            if (unit.ForeignC.Contains(m)) code.AppendLine($"{Sym(Binder.ForeignEntry(m, c: true))}:");
+            void E(string line) => code.AppendLine("\t" + line);
+            E("stp x29, x30, [sp, #-16]!");
+            E("mov x29, sp");
+            if (room > 0) E($"sub sp, sp, #{room}");
+            int whole = 0, floats = 0, stack = 0;
+            for (int i = 0; i < n; i++)
+            {
+                MemKind kind = IrBuilder.KindOf(m.Parameters[i].Type);
+                int to = 8 * (n - 1 - i);
+                bool isFloat = kind is MemKind.F64 or MemKind.F32;
+                int size = kind switch { MemKind.U8 or MemKind.S8 => 1, MemKind.U16 or MemKind.S16 => 2, MemKind.D32 or MemKind.F32 => 4, _ => 8 };
+                if (isFloat && floats < 8)
+                {
+                    E($"str {(kind == MemKind.F32 ? "s" : "d")}{floats++}, [sp, #{to}]");
+                    continue;
+                }
+                if (!isFloat && whole < 8)
+                {
+                    E($"str x{whole++}, [sp, #{to}]");
+                    continue;
+                }
+                stack = (stack + size - 1) / size * size;
+                int from = 16 + stack;
+                stack += size;
+                if (isFloat)
+                {
+                    string r = kind == MemKind.F32 ? "s31" : "d31";
+                    E($"ldr {r}, [x29, #{from}]");
+                    E($"str {r}, [sp, #{to}]");
+                    continue;
+                }
+                E(kind switch
+                {
+                    MemKind.U8 => $"ldrb w9, [x29, #{from}]", MemKind.S8 => $"ldrsb x9, [x29, #{from}]",
+                    MemKind.U16 => $"ldrh w9, [x29, #{from}]", MemKind.S16 => $"ldrsh x9, [x29, #{from}]",
+                    MemKind.D32 => $"ldr w9, [x29, #{from}]", _ => $"ldr x9, [x29, #{from}]",
+                });
+                E($"str x9, [sp, #{to}]");
+            }
+            E($"bl {Sym(m.Label)}");
+            if (m.ReturnType.Kind == TypeKind.F32) E("fcvt s0, d0");
+            E("mov sp, x29");
+            E("ldp x29, x30, [sp], #16");
+            E("ret");
+        }
+
         internal static string Sym(string label) => NotLabel.Replace(label, "_");
 
         internal string NewLabel(string what) => $"Lphi_{what}_{labels++}";

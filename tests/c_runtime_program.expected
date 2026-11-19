@@ -1,0 +1,17 @@
+abs: 42 7
+strlen: 12
+atoi: -1234
+strcmp: 1 1
+strchr: x in here
+sqrt: 1.414214 12
+pow: 1024 3
+atan2: 0.785398
+floor: 2 -3 ceil: 3
+strtod: 325
+ldexp: 12
+sprintf: 25 2 + 3 = 5, four, 2.500, !
+sprintf: 21   3.1|42    |00ff|end
+-300 -9 2 3 4 50 77 1000 (asked: 1)
+bsearch: 77 1
+0:1 2:2 3:0 4:3 
+malloc: AAAAA 0

@@ -1,0 +1,89 @@
+# SQLite, a C library both Windows and macOS come with, from one module: a database in
+# memory made, filled and asked, with text both ways, a pointer C fills in (ptr<ptr<u8>>),
+# 64-bit numbers and f64s given and got, and what C says went wrong. A program for Windows,
+# 32 and 64 bits, and macOS: Linux's libraries aren't there yet.
+use 'winsqlite3.dll' '/usr/lib/libsqlite3.dylib' as Sql;
+
+phi.CSqliteProgram:Program
+{
+	ptr<u8> db: 0;
+	ptr<u8> st: 0;
+	int r: 0;
+
+	log 'version 3: ' ((Sql.sqlite3_libversion_number) >= 3000000) '\n';
+	r is (Sql.sqlite3_open: ':memory:' addr db);
+	log 'open: ' r ' ' (db is not 0) '\n';
+	call Run: 'create table planets(name text, moons integer, mass real, far integer)';
+
+	# filled through one statement, its values bound each time
+	r is (Sql.sqlite3_prepare_v2: db 'insert into planets values (?, ?, ?, ?)' (-1) addr st 0);
+	call Add: 'Mercury' 0 0.0553 57900000;
+	call Add: 'Earth' 1 1.0 149600000;
+	call Add: 'Jupiter' 95 317.8 778500000;
+	call Add: 'Neptune' 16 17.15 4495100000;
+	r is (Sql.sqlite3_finalize: st);
+	log 'rows: ' ((Sql.sqlite3_last_insert_rowid: db) as int) ', changed: ' (Sql.sqlite3_changes: db) '\n';
+
+	# asked, a row at a time
+	r is (Sql.sqlite3_prepare_v2: db 'select name, moons, mass, far, length(name) from planets where moons > ? order by far desc' (-1) addr st 0);
+	r is (Sql.sqlite3_bind_int: st 1 0);
+	log 'columns: ' (Sql.sqlite3_column_count: st) ', the third: ' (Sql.sqlite3_column_name: st 2) '\n';
+	while (Sql.sqlite3_step: st) is 100
+		i64 far: (Sql.sqlite3_column_int64: st 3);
+		log (Sql.sqlite3_column_text: st 0) ': ' (Sql.sqlite3_column_int: st 1) ' moons, ' (Sql.sqlite3_column_double: st 2) ' Earths, '
+		    far ' km, ' (Sql.sqlite3_column_bytes: st 0) ' letters\n';
+	;;
+	r is (Sql.sqlite3_finalize: st);
+
+	# sums: a 64-bit one and a float
+	r is (Sql.sqlite3_prepare_v2: db 'select sum(far), avg(mass), count(*), max(far) * 1000 from planets' (-1) addr st 0);
+	r is (Sql.sqlite3_step: st);
+	log 'sum ' (Sql.sqlite3_column_int64: st 0) ', mean ' (Sql.sqlite3_column_double: st 1) ', of ' (Sql.sqlite3_column_int: st 2)
+	    ', in m ' (Sql.sqlite3_column_int64: st 3) '\n';
+	r is (Sql.sqlite3_finalize: st);
+
+	# what's wrong is said
+	r is (Sql.sqlite3_prepare_v2: db 'select name from nowhere' (-1) addr st 0);
+	log 'wrong: ' r ' ' (Sql.sqlite3_errmsg: db) '\n';
+	log 'close: ' (Sql.sqlite3_close: db) '\n';
+	exit 0;
+
+	[Run: ptr<u8> sql: 0;]
+		int done: (Sql.sqlite3_exec: db sql 0 0 0);
+		if done is not 0
+			log 'failed: ' (Sql.sqlite3_errmsg: db) '\n';
+		;;
+	[end]
+
+	[Add: ptr<u8> name: 0; int moons: 0; f64 mass: 0.0; i64 far: 0;]
+		int done: (Sql.sqlite3_bind_text: st 1 name (-1) 0);
+		done is (Sql.sqlite3_bind_int: st 2 moons);
+		done is (Sql.sqlite3_bind_double: st 3 mass);
+		done is (Sql.sqlite3_bind_int64: st 4 far);
+		done is (Sql.sqlite3_step: st);
+		done is (Sql.sqlite3_reset: st);
+	[end]
+}
+
+Sql.sqlite3_libversion_number;
+Sql.sqlite3_open: ptr<u8> name ptr<ptr<u8>> db;
+Sql.sqlite3_close: ptr<u8> db;
+Sql.sqlite3_exec: ptr<u8> db ptr<u8> sql ptr<u8> row ptr<u8> value ptr<u8> error;
+Sql.sqlite3_errmsg: ptr<u8> db: ptr<u8>;
+Sql.sqlite3_prepare_v2: ptr<u8> db ptr<u8> sql int length ptr<ptr<u8>> statement ptr<u8> rest;
+Sql.sqlite3_bind_int: ptr<u8> statement int index int value;
+Sql.sqlite3_bind_int64: ptr<u8> statement int index i64 value;
+Sql.sqlite3_bind_double: ptr<u8> statement int index f64 value;
+Sql.sqlite3_bind_text: ptr<u8> statement int index ptr<u8> text int length ptr<u8> release;
+Sql.sqlite3_step: ptr<u8> statement;
+Sql.sqlite3_reset: ptr<u8> statement;
+Sql.sqlite3_finalize: ptr<u8> statement;
+Sql.sqlite3_column_count: ptr<u8> statement;
+Sql.sqlite3_column_name: ptr<u8> statement int column: ptr<u8>;
+Sql.sqlite3_column_text: ptr<u8> statement int column: ptr<u8>;
+Sql.sqlite3_column_bytes: ptr<u8> statement int column;
+Sql.sqlite3_column_int: ptr<u8> statement int column;
+Sql.sqlite3_column_int64: ptr<u8> statement int column: i64;
+Sql.sqlite3_column_double: ptr<u8> statement int column: f64;
+Sql.sqlite3_last_insert_rowid: ptr<u8> db: i64;
+Sql.sqlite3_changes: ptr<u8> db;

@@ -24,6 +24,14 @@ namespace Phi.Compiler.Semantics
         /// <summary>The methods outside code calls (addr foreign Name), each needing an entry.</summary>
         public List<MethodSymbol> ForeignEntries { get; } = new();
 
+        /// <summary>
+        /// Of ForeignEntries, the methods whose entry is taken the system's way (in a :Windows
+        /// or :MacOS module: Windows' own callbacks are stdcall in 32-bit code) and C's (anywhere
+        /// else: a C library's are cdecl there). The two differ only in 32-bit Windows code.
+        /// </summary>
+        public HashSet<MethodSymbol> ForeignSystem { get; } = new();
+        public HashSet<MethodSymbol> ForeignC { get; } = new();
+
         /// <summary>Class-level names, for {name} in asm blocks: variables and constants.</summary>
         public Dictionary<string, Symbol> ClassNames { get; } = new();
     }
@@ -127,6 +135,9 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>The outside libraries by the names they're given, and their functions (Kernel32.CreateThread).</summary>
         readonly Dictionary<string, LibraryUseDecl> libraries = new();
+
+        /// <summary>The outside libraries named in a module that isn't one system's own: any program's classes call them, on a system they name a file for.</summary>
+        readonly HashSet<LibraryUseDecl> portableLibraries = new();
         readonly Dictionary<string, OutsideFunctionDecl> outsideFunctions = new();
         readonly Dictionary<OutsideFunctionDecl, List<PhiType>> outsideTypes = new();
 
@@ -372,6 +383,17 @@ namespace Phi.Compiler.Semantics
             foreach (LibraryUseDecl library in program.Libraries)
             {
                 file = library.File;
+                if (library.Paths.Count > 1 || portableLibraries.Contains(library))
+                {
+                    // a library several systems have: this system's file of it, if one is named
+                    string system = host.IsWindows() ? "Windows" : host.IsMacOS() ? "MacOS" : host.IsLinux() ? "Linux" : "";
+                    var mine = library.Paths.Where(p => LibraryUseDecl.SystemOf(p) == system).ToList();
+                    if (library.Paths.FirstOrDefault(p => LibraryUseDecl.SystemOf(p) == null) is string unknown)
+                        Error(library.Span, $"'{unknown}' doesn't say which system it's on: a library's file ends in .dll (Windows) or .dylib (macOS), or is a framework's path");
+                    else if (mine.Count > 1)
+                        Error(library.Span, $"'{mine[0]}' and '{mine[1]}' are both {system}'s; name one file for each system");
+                    library.Path = mine.Count == 1 ? mine[0] : "";
+                }
                 if (libraries.TryGetValue(library.Name, out LibraryUseDecl? named) && !named.Path.Equals(library.Path, StringComparison.OrdinalIgnoreCase))
                     Error(library.Span, $"{library.Name} is already the name of '{named.Path}' ({named.File.Path}); give '{library.Path}' another");
                 else libraries.TryAdd(library.Name, library);
@@ -5152,7 +5174,20 @@ namespace Phi.Compiler.Semantics
                 case OutsideFunctionDecl f:
                 {
                     string full = $"{f.Library}.{f.Name}";
-                    if (!OutsideSystems.Contains(scope.Class.Base))
+                    bool portable = libraries.TryGetValue(f.Library, out LibraryUseDecl? lib) && portableLibraries.Contains(lib);
+                    if (portable && !(host.IsWindows() || host.IsMacOS()))
+                    {
+                        Error(calleeSpan, $"{full} is a function of an outside library ({string.Join(", ", lib!.Paths.Select(p => $"'{p}'"))}), " +
+                                          $"which Windows and macOS programs call (for now), not {host.Name()}'s");
+                        return null;
+                    }
+                    if (portable && f.LibraryPath.Length == 0)
+                    {
+                        Error(calleeSpan, $"{f.Library} has no file named for {host.Name()}: use {string.Join(" ", lib!.Paths.Select(p => $"'{p}'"))} as {f.Library}; " +
+                                          "names a .dll for Windows and a .dylib (or a framework) for macOS");
+                        return null;
+                    }
+                    if (!portable && !OutsideSystems.Contains(scope.Class.Base))
                     {
                         Error(calleeSpan, $"{full} is a function of '{f.LibraryPath}', used only from a :Windows or :MacOS module (for now), " +
                                           $"not from {scope.Class.Name} (:{scope.Class.Base})");
@@ -5272,18 +5307,20 @@ namespace Phi.Compiler.Semantics
                     Error(sys.Span, $"{system} has no system calls a program makes itself, so sys.{sys.Name} can't be in a :{system} module");
             }
 
-            foreach (LibraryUseDecl library in program.Libraries.Where(l => !systemOf.TryGetValue(l.File, out string? s) || !OutsideSystems.Contains(s)))
+            // (a library named in a module that's no one system's is each system's it names a file for)
+            foreach (LibraryUseDecl library in program.Libraries.Where(l => !systemOf.ContainsKey(l.File))) portableLibraries.Add(library);
+            foreach (LibraryUseDecl library in program.Libraries.Where(l => systemOf.TryGetValue(l.File, out string? s) && !OutsideSystems.Contains(s)))
             {
                 file = library.File;
-                Error(library.Span, $"'{library.Path}' is an outside library, used only in a :Windows or :MacOS module for now " +
-                                    "(phi.Name:Windows, phi.Name:MacOS; Linux's libraries come with H7)");
+                Error(library.Span, $"'{library.Path}' is an outside library, used in a :Windows or :MacOS module, or one that's no system's own, for now " +
+                                    "(Linux's libraries come with H7)");
             }
 
             program.Classes.RemoveAll(c => !Kept(c.File));
             program.Structs.RemoveAll(s => !Kept(s.File));
             program.Enums.RemoveAll(e => !Kept(e.File));
-            program.Libraries.RemoveAll(l => !Kept(l.File) || !systemOf.TryGetValue(l.File, out string? s) || !OutsideSystems.Contains(s));
-            program.OutsideFunctions.RemoveAll(f => !Kept(f.File) || !systemOf.TryGetValue(f.File, out string? s) || !OutsideSystems.Contains(s));
+            program.Libraries.RemoveAll(l => !Kept(l.File) || systemOf.TryGetValue(l.File, out string? s) && !OutsideSystems.Contains(s));
+            program.OutsideFunctions.RemoveAll(f => !Kept(f.File) || systemOf.TryGetValue(f.File, out string? s) && !OutsideSystems.Contains(s));
             program.RawBlocks.RemoveAll(r => !Kept(r.File));
             program.SysCalls.RemoveAll(s => !Kept(s.File) || !systemOf.TryGetValue(s.File, out string? system) || !CallingSystems.Contains(system));
         }
@@ -5301,9 +5338,8 @@ namespace Phi.Compiler.Semantics
         /// </summary>
         string? OutsideTypeProblem(PhiType t)
         {
-            if (t.IsFloat && !(host.IsArm() && t.Kind is TypeKind.F64 or TypeKind.F32)) return $"a {t}, and floats to and from outside functions aren't there yet";
-            if (!(t.IsNumeric || host.IsArm() && (t.IsWide || t.IsFloat)) || t.IsArray) return $"a {t}, but an outside function takes and gives only numbers, bln, chr, enums and pointers";
-            if (!host.Is64() && !t.IsPointer && t.ElementSize == 8) return $"a {t}, and 64-bit numbers to and from a 32-bit program's outside functions aren't there yet";
+            if (t.IsFloat && t.Kind is not (TypeKind.F64 or TypeKind.F32)) return $"a {t}, and an outside function's floats are f64 and f32";
+            if (!(t.IsNumeric || t.IsWide || t.IsFloat) || t.IsArray) return $"a {t}, but an outside function takes and gives only numbers, bln, chr, enums and pointers";
             return null;
         }
 
@@ -6042,7 +6078,7 @@ namespace Phi.Compiler.Semantics
         /// <summary>
         /// addr foreign Name: where outside code (a window system, say) can call a method, the
         /// way it calls things. The generator makes that entry; each value and what it gives go
-        /// in a register, as with an outside function. In a :Windows module, for now.
+        /// in a register, as with an outside function. In a :Windows or :MacOS module, for now.
         /// </summary>
         void BindForeignAddr(AddrExpr addr, Scope scope)
         {
@@ -6054,20 +6090,22 @@ namespace Phi.Compiler.Semantics
                 return;
             }
             name.Type = PhiType.Void;
-            if (scope.Class.Base != "Windows")
-                Error(addr.Span, $"addr foreign {m.Decl.Name} is for outside code to call, used only in a :Windows module (for now), not in {scope.Class.Name} (:{scope.Class.Base})");
+            if (scope.Class.Base is not ("Windows" or "MacOS") && !(host.IsWindows() || host.IsMacOS()))
+                Error(addr.Span, $"addr foreign {m.Decl.Name} is for outside code to call, which it does in Windows and macOS programs (for now), not {host.Name()}'s");
             for (int i = 0; i < m.Parameters.Count; i++)
                 if (OutsideTypeProblem(m.Parameters[i].Type) is string problem)
                     Error(addr.Span, $"{m.Decl.Name}'s '{m.Parameters[i].Name}' is {problem}");
             PhiType result = ReturnTypeOf(m);
             if (result.Kind != TypeKind.Void && OutsideTypeProblem(result) is string gives)
                 Error(addr.Span, $"what {m.Decl.Name} gives is {gives}");
-            addr.CodeLabel = ForeignEntry(m);
+            bool c = scope.Class.Base is not ("Windows" or "MacOS");
+            addr.CodeLabel = ForeignEntry(m, c);
             if (!units[scope.Unit].ForeignEntries.Contains(m)) units[scope.Unit].ForeignEntries.Add(m);
+            (c ? units[scope.Unit].ForeignC : units[scope.Unit].ForeignSystem).Add(m);
         }
 
         /// <summary>The label of the entry outside code calls a method through.</summary>
-        public static string ForeignEntry(MethodSymbol m) => "phi_foreign_" + m.Label;
+        public static string ForeignEntry(MethodSymbol m, bool c = false) => (c ? "phi_foreign_c_" : "phi_foreign_") + m.Label;
 
         void BindAddr(AddrExpr addr, Scope scope)
         {

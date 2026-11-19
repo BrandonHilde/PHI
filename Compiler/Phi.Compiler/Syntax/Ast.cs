@@ -105,12 +105,30 @@ namespace Phi.Compiler.Syntax
 
     public sealed record SysCallParameter(TypeRef Type, string Name, Span Span);
 
-    /// <summary>use 'kernel32.dll' as Kernel32;  a library outside PHI, known by a name that reads as a class's</summary>
+    /// <summary>
+    /// use 'kernel32.dll' as Kernel32;  a library outside PHI, known by a name that reads as a
+    /// class's. One that several systems have is named by its file on each, and each system
+    /// builds with its own: use 'SDL3.dll' 'libSDL3.dylib' as SDL; (a .dll is Windows', a
+    /// .dylib or a framework macOS's).
+    /// </summary>
     public sealed class LibraryUseDecl : Node
     {
         public SourceFile File { get; init; } = null!;
-        public string Path { get; init; } = "";
+        /// <summary>The file for the system being built ("" when none of Paths is its).</summary>
+        public string Path { get; set; } = "";
+        /// <summary>Each file named, as written.</summary>
+        public List<string> Paths { get; init; } = new();
         public string Name { get; init; } = "";
+
+        /// <summary>The system a library's file is on, by how it's named: "Windows", "MacOS", "Linux", or null.</summary>
+        public static string? SystemOf(string path)
+        {
+            string lower = path.ToLowerInvariant();
+            if (lower.EndsWith(".dll")) return "Windows";
+            if (lower.EndsWith(".dylib") || lower.Contains(".framework/")) return "MacOS";
+            if (lower.EndsWith(".so") || lower.Contains(".so.")) return "Linux";
+            return null;
+        }
     }
 
     /// <summary>

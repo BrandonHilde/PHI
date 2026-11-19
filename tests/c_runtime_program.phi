@@ -1,0 +1,102 @@
+# The C runtime, called from one module on each system that has it (use '...' '...' as Name;
+# names a library's file on Windows and on macOS, and each builds with its own): numbers,
+# text and pointers to C and back, f64 and f32, C's variadic part (...), a 64-bit number,
+# and C calling a PHI method back (addr foreign: qsort's order, bsearch's). A program for
+# Windows, 32 and 64 bits, and macOS: Linux's libraries aren't there yet.
+use 'msvcrt.dll' '/usr/lib/libSystem.B.dylib' as C;
+
+struct.Pair foreign
+{
+	int key;
+	int value;
+}
+
+phi.CRuntimeProgram:Program
+{
+	int calls: 0;
+
+	# numbers and text
+	log 'abs: ' (C.abs: -42) ' ' (C.abs: 7) '\n';
+	log 'strlen: ' ((C.strlen: 'hello, world') as int) '\n';
+	log 'atoi: ' (C.atoi: '  -1234xyz') '\n';
+	log 'strcmp: ' ((C.strcmp: 'apple' 'apple') is 0) ' ' ((C.strcmp: 'apple' 'banana') < 0) '\n';
+	ptr<u8> found: (C.strchr: 'find the x in here' 120);
+	log 'strchr: ' found '\n';
+
+	# floats, to and from
+	log 'sqrt: ' (C.sqrt: 2.0) ' ' (C.sqrt: 144.0) '\n';
+	log 'pow: ' (C.pow: 2.0 10.0) ' ' (C.pow: 9.0 0.5) '\n';
+	log 'atan2: ' (C.atan2: 1.0 1.0) '\n';
+	log 'floor: ' (C.floor: 2.75) ' ' (C.floor: -2.25) ' ceil: ' (C.ceil: 2.25) '\n';
+	log 'strtod: ' (C.strtod: '3.25e2 and more' 0) '\n';
+	f64 mixed: (C.ldexp: 0.75 4);
+	log 'ldexp: ' mixed '\n';
+
+	# C's variadic part
+	u8 text[96];
+	int n: (C.sprintf: addr text '%d + %d = %d, %s, %.3f, %c' 2 3 5 'four' 2.5 33);
+	log 'sprintf: ' n ' ' (addr text as ptr<u8>) '\n';
+	n is (C.Columns: addr text '%5.1f|%-6d|%04x|%s' 3.14159 42 255 'end');
+	log 'sprintf: ' n ' ' (addr text as ptr<u8>) '\n';
+
+	# C calling PHI
+	int numbers: 50 3 -9 1000 4 2 77 -300;
+	call C.qsort: addr numbers 8 4 addr foreign Order;
+	while int i: 0; i < 8; i++;
+		log numbers:i ' ';
+	;;
+	log '(asked: ' (calls > 7) ')\n';
+	int want: 77;
+	ptr<int> hit: (C.bsearch: addr want addr numbers 8 4 addr foreign Order);
+	log 'bsearch: ' hit:0 ' ' ((C.bsearch: addr calls addr numbers 8 4 addr foreign Order) is 0) '\n';
+
+	# structs as C lays them out, sorted by a field
+	Pair pairs[4];
+	while int i: 0; i < 4; i++;
+		pairs:i.key is (i * 7 + 3) % 5;
+		pairs:i.value is i;
+	;;
+	call C.qsort: addr pairs 4 (sizeof Pair) addr foreign ByKey;
+	while int i: 0; i < 4; i++;
+		log pairs:i.key ':' pairs:i.value ' ';
+	;;
+	log '\n';
+
+	# memory of C's
+	ptr<u8> room: (C.malloc: 64);
+	call C.memset: room 65 5;
+	room:5 is 0;
+	log 'malloc: ' room ' ' (C.memcmp: room 'AAAAA' 5) '\n';
+	call C.free: room;
+	exit 0;
+
+	[Order: ptr<int> a: 0; ptr<int> b: 0;]
+		calls++;
+		if a:0 < b:0 return -1;
+		if a:0 > b:0 return 1;
+	[end: 0]
+
+	[ByKey: ptr<Pair> a: 0; ptr<Pair> b: 0;]
+	[end: a.key - b.key]
+}
+
+C.abs: int n;
+C.strlen: ptr<u8> text: ptr<u8>;
+C.atoi: ptr<u8> text;
+C.strcmp: ptr<u8> a ptr<u8> b;
+C.strchr: ptr<u8> text int c: ptr<u8>;
+C.sqrt: f64 x: f64;
+C.pow: f64 x f64 y: f64;
+C.atan2: f64 y f64 x: f64;
+C.floor: f64 x: f64;
+C.ceil: f64 x: f64;
+C.strtod: ptr<u8> text ptr<u8> rest: f64;
+C.ldexp: f64 x int power: f64;
+C.sprintf: ptr<u8> target ptr<u8> format ... int a int b int c ptr<u8> d f64 e int f;
+C.Columns = 'sprintf': ptr<u8> target ptr<u8> format ... f64 a int b int c ptr<u8> d;
+C.qsort: ptr<u8> base ptr<u8> count ptr<u8> size ptr<u8> order;
+C.bsearch: ptr<u8> key ptr<u8> base ptr<u8> count ptr<u8> size ptr<u8> order: ptr<int>;
+C.malloc: ptr<u8> size: ptr<u8>;
+C.memset: ptr<u8> target int value ptr<u8> count: ptr<u8>;
+C.memcmp: ptr<u8> a ptr<u8> b ptr<u8> count;
+C.free: ptr<u8> room;

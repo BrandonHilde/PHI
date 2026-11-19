@@ -707,7 +707,11 @@ namespace Phi.Compiler.CodeGen
 
             foreach (MethodSymbol m in unit.Methods.Where(m => !m.IsOutside)) EmitMethod(m);
             EmitVecStatements();
-            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
+            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside))
+            {
+                if (unit.ForeignSystem.Contains(m)) EmitForeignEntry(m, c: false);
+                if (unit.ForeignC.Contains(m)) EmitForeignEntry(m, c: true);
+            }
             // the compiled libraries' code goes here, once it's known what of it the rest reaches
             int librariesAt = code.Length;
             // what follows isn't PHI code: an exception in it has no line
@@ -926,7 +930,11 @@ namespace Phi.Compiler.CodeGen
             }
             Line("section .text");
             EmitVecStatements();
-            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside)) EmitForeignEntry(m);
+            foreach (MethodSymbol m in unit.ForeignEntries.Where(m => !m.IsOutside))
+            {
+                if (unit.ForeignSystem.Contains(m)) EmitForeignEntry(m, c: false);
+                if (unit.ForeignC.Contains(m)) EmitForeignEntry(m, c: true);
+            }
             foreach (RawBlockDecl raw in unit.RawBlocks.Where(r => !program.IsOutside(r.File))) EmitRawBlock(raw);
             EmitObjectRoutines();
             EmitStrRoomRoutine();
@@ -2396,29 +2404,61 @@ namespace Phi.Compiler.CodeGen
         /// four in rcx, rdx, r8 and r9 and the rest above 32 bytes of room (64-bit code). Outside
         /// code also expects to find the registers it keeps as it left them.
         /// </summary>
-        void EmitForeignEntry(MethodSymbol m)
+        void EmitForeignEntry(MethodSymbol m, bool c)
         {
             int n = m.Parameters.Count;
             Line("");
-            Comment($"where outside code calls {m.Name}");
-            Label(Binder.ForeignEntry(m));
+            Comment(c ? $"where a C library calls {m.Name}" : $"where outside code calls {m.Name}");
+            Label(Binder.ForeignEntry(m, c));
             string[] kept = bits64 ? new[] { "rbx", "rsi", "rdi", "r12", "r13", "r14", "r15" } : new[] { "ebx", "esi", "edi" };
             Emit("push ebp");
             Emit("mov ebp, esp");
             foreach (string r in kept) Emit($"push {r}");
             Emit("cld");
             string[] registers = { "rcx", "rdx", "r8", "r9" };
+            // (in 32-bit code a 64-bit number or an f64 is two of the stack's slots, as PHI has it too)
+            int from = 8, pushed = 0;
             for (int i = 0; i < n; i++)
             {
-                if (!bits64) Emit($"push dword [ebp + {8 + 4 * i}]");
-                else if (i < 4) Emit($"push {registers[i]}");
-                else Emit($"push qword [rbp + {48 + 8 * (i - 4)}]");
+                PhiType t = m.Parameters[i].Type;
+                bool two = !bits64 && (t.IsWide || t.Kind == TypeKind.F64);
+                if (!bits64)
+                {
+                    if (two) Emit($"push dword [ebp + {from + 4}]");
+                    Emit($"push dword [ebp + {from}]");
+                    from += two ? 8 : 4;
+                    pushed += two ? 8 : 4;
+                    continue;
+                }
+                pushed += 8;
+                if (i >= 4) Emit($"push qword [rbp + {48 + 8 * (i - 4)}]");
+                else if (t.IsFloat)
+                {
+                    Emit("sub rsp, 8");
+                    Emit(t.Kind == TypeKind.F64 ? $"movsd [rsp], xmm{i}" : $"movss [rsp], xmm{i}");
+                }
+                else Emit($"push {registers[i]}");
             }
             Emit($"call {m.Label}");
-            if (n > 0) Emit($"add esp, {n * Slot}");
+            if (n > 0) Emit($"add esp, {pushed}");
+            if (bits64 && m.ReturnType.IsFloat)
+            {
+                // the float stack's, in xmm0 where C has a float
+                Emit("sub rsp, 8");
+                Emit(m.ReturnType.Kind == TypeKind.F64 ? "fstp qword [rsp]" : "fstp dword [rsp]");
+                Emit(m.ReturnType.Kind == TypeKind.F64 ? "movsd xmm0, [rsp]" : "movss xmm0, [rsp]");
+                Emit("add rsp, 8");
+            }
+            else if (bits64 && m.ReturnType.IsWide)
+            {
+                Emit("shl rdx, 32");
+                Emit("mov eax, eax");
+                Emit("or rax, rdx");
+            }
             foreach (string r in kept.Reverse()) Emit($"pop {r}");
             Emit("pop ebp");
-            Emit(!bits64 && n > 0 ? $"ret {4 * n}" : "ret");
+            // (in 32-bit code Windows' own callbacks take their values off, stdcall; C's leave them, cdecl)
+            Emit(!bits64 && n > 0 && !c ? $"ret {pushed}" : "ret");
         }
 
         void EmitAddIndex()
@@ -2473,22 +2513,54 @@ namespace Phi.Compiler.CodeGen
         {
             string label = OutsideLabel(f);
             Comment($"{f.Library}.{f.Name}, from {f.LibraryPath}");
+            int n = arguments.Count;
+            // what each value goes as: its parameter's type (one of C's variadic part as C
+            // promotes it: an f32 is an f64 there)
+            PhiType TypeAt(int i)
+            {
+                PhiType t = i < f.ParameterTypes.Count ? f.ParameterTypes[i] : arguments[i].Type;
+                return t.Kind is TypeKind.F32 or TypeKind.F16 && f.VariadicFrom is int from && i >= from ? PhiType.F64 : t;
+            }
+            PhiType result = f.ResultType ?? PhiType.Int;
             if (!bits64)
             {
-                for (int i = arguments.Count - 1; i >= 0; i--)
+                // esi keeps where the stack was, so the call is right whether the function takes
+                // its values off (stdcall: Windows' own) or leaves them (cdecl: C libraries');
+                // a float comes back in st0 and a 64-bit number in edx:eax, as PHI has them
+                if (n > 0) Emit("push esi");
+                int bytes = 0;
+                for (int i = n - 1; i >= 0; i--)
                 {
+                    PhiType t = TypeAt(i);
+                    if (t.IsFloat || t.IsWide)
+                    {
+                        bytes += PushWideOrFloat(t, arguments[i]);
+                        continue;
+                    }
                     EmitExpr(arguments[i]);
                     Emit("push eax");
+                    bytes += 4;
                 }
+                if (n > 0) Emit($"lea esi, [esp + {bytes}]");
                 Emit($"call [{label}]");
+                if (n > 0)
+                {
+                    Emit("mov esp, esi");
+                    Emit("pop esi");
+                }
                 return;
             }
 
-            int n = arguments.Count;
             Emit("push r12");
-            foreach (Expr value in arguments)
+            for (int i = 0; i < n; i++)
             {
-                EmitExpr(value);
+                PhiType t = TypeAt(i);
+                if (t.IsFloat || t.IsWide)
+                {
+                    PushWideOrFloat(t, arguments[i]);
+                    continue;
+                }
+                EmitExpr(arguments[i]);
                 Emit("push eax");
             }
             Emit("mov r12, rsp");                      // the values: the first at [r12 + 8 * (n - 1)]
@@ -2498,7 +2570,14 @@ namespace Phi.Compiler.CodeGen
             for (int i = 0; i < n; i++)
             {
                 string value = $"[r12 + {8 * (n - 1 - i)}]";
-                if (i < 4) Emit($"mov {registers[i]}, {value}");
+                if (i < 4)
+                {
+                    Emit($"mov {registers[i]}, {value}");
+                    // (a float goes in its xmm register, and in the whole one too: a variadic function reads that)
+                    PhiType t = TypeAt(i);
+                    if (t.Kind == TypeKind.F64) Emit($"movsd xmm{i}, {value}");
+                    else if (t.IsFloat) Emit($"movss xmm{i}, {value}");
+                }
                 else
                 {
                     Emit($"mov rax, {value}");
@@ -2509,6 +2588,21 @@ namespace Phi.Compiler.CodeGen
             Emit("mov rsp, r12");
             if (n > 0) Emit($"add rsp, {8 * n}");
             Emit("pop r12");
+            if (result.IsFloat)
+            {
+                // xmm0's, onto the float stack where PHI has a float
+                Emit("sub rsp, 8");
+                Emit(result.Kind == TypeKind.F64 ? "movsd [rsp], xmm0" : "movss [rsp], xmm0");
+                Emit(result.Kind == TypeKind.F64 ? "fld qword [rsp]" : "fld dword [rsp]");
+                Emit("add rsp, 8");
+            }
+            else if (result.IsWide)
+            {
+                // rax's halves, in edx:eax
+                Emit("mov rdx, rax");
+                Emit("shr rdx, 32");
+                Emit("mov eax, eax");
+            }
         }
 
         /// <summary>
@@ -2574,7 +2668,9 @@ namespace Phi.Compiler.CodeGen
                 {
                     output.AppendLine($"phi_outside_{i}_{name}_name:");
                     output.AppendLine("    dw 0");
-                    output.AppendLine($"    db '{name}', 0");
+                    // (its name in the library, when Name = 'symbol': gave it another here)
+                    string symbol = unit.OutsideFunctions.First(f => f.Name == name && f.LibraryPath.Equals(path, StringComparison.OrdinalIgnoreCase)).CName;
+                    output.AppendLine($"    db '{symbol}', 0");
                     output.AppendLine("    align 2, db 0");
                 }
                 output.AppendLine($"phi_outside_{i}_name: db '{path}', 0");
