@@ -1,0 +1,87 @@
+# A struct declared from another (Point b: a;): it starts as a copy of that one's values.
+# From a class variable, a parameter, an element, a field, what a pointer points at and a
+# new object; in a loop, where it's taken again each round; and in a generic method.
+struct.Point
+{
+	int x;
+	int y;
+	str tag: [6];
+}
+
+struct.Line
+{
+	Point from;
+	Point to;
+}
+
+phi.StructDeclaredFrom:Program
+{
+	Point a;
+	a.x is 3;
+	a.y is -4;
+	a.tag is 'first';
+	Point b: a;
+	log b.x ' ' b.y ' ' b.tag ' ' (b is a) '\n';
+	b.y is 9;
+	log a.y ' ' b.y '\n';
+
+	Point many[3];
+	many:1 is b;
+	many:1.tag is 'mid';
+	Point c: many:1;
+	log c.x ' ' c.y ' ' c.tag '\n';
+
+	Line line;
+	line.to is a;
+	line.to.x is 40;
+	Point d: line.to;
+	log d.x ' ' d.tag '\n';
+
+	ptr<Point> p: addr many:1;
+	Point e: p:0;
+	log e.y ' ' e.tag '\n';
+
+	new Point far;
+	far.x is 77;
+	far.tag is 'heap';
+	Point f: far;
+	log f.x ' ' f.tag '\n';
+
+	Line whole: line;
+	log whole.to.x ' ' whole.from.x '\n';
+
+	call Show: a;
+	call Rounds;
+	Point most: (Largest<Point>: many);
+	log 'largest ' most.y '\n';
+
+	[Show: Point given;]
+		Point own: given;
+		own.x++ 100;
+		log own.x ' ' given.x ' ' own.tag '\n';
+		Point again: own;
+		log again.x '\n';
+	[end]
+
+	[Rounds]
+		int i;
+		while i < 3
+			Point one: many:i;
+			one.x++ i;
+			log one.x ' ';
+			i++;
+		;;
+		log '\n';
+	[end]
+
+	[Largest<Item>: Item items[]; : Item]
+		Item best: items:0;
+		int i: 1;
+		while i < items.len
+			if items:i.y > best.y
+				best is items:i;
+			;;
+			i++;
+		;;
+	[end: best]
+}

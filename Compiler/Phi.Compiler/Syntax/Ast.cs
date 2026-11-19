@@ -472,6 +472,12 @@ namespace Phi.Compiler.Syntax
         /// <summary>Set by the binder for new T name: other;  the object is filled from one value.</summary>
         public ObjectAssignStmt? Source { get; set; }
 
+        /// <summary>
+        /// Set by the binder for Sound own: other; (a struct from another): own is other; which
+        /// goes after the declaration, in the statements it's in.
+        /// </summary>
+        public Stmt? Then { get; set; }
+
         public VariableSymbol? Symbol { get; set; }
 
         /// <summary>A class variable or parameter's whole declaration as it's written, for a library's interface.</summary>

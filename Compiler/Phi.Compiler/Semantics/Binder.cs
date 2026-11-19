@@ -2725,9 +2725,10 @@ namespace Phi.Compiler.Semantics
                 return;
             }
 
-            if (type.IsStruct && d.Values.Count > 0)
+            // Sound own: other;  is the struct zeroed and then given the other's values (see BindVarDecl)
+            if (type.IsStruct && d.Values.Count > 1)
             {
-                Error(d.Values[0].Span, $"a {type} starts as all zeros; set its fields one at a time, like {d.Name}.field is 5;");
+                Error(d.Values[0].Span, $"a {type} starts as all zeros, or as another {type}'s values ({type} {d.Name}: other;); set its fields one at a time, like {d.Name}.field is 5;");
                 v.Type = PhiType.Error;
                 return;
             }
@@ -3271,6 +3272,11 @@ namespace Phi.Compiler.Semantics
             for (int i = 0; i < body.Count; i++)
             {
                 body[i] = BindStatement(body[i], scope, classLevel);
+                if (body[i] is VarDecl { Then: Stmt then } decl)
+                {
+                    decl.Then = null;
+                    body.Insert(i + 1, then);   // bound on the next round
+                }
             }
         }
 
@@ -3537,6 +3543,20 @@ namespace Phi.Compiler.Semantics
             {
                 BindVecDecl(decl, v, scope, classLevel);
                 return;
+            }
+
+            // Sound own: other;  the struct as it always starts, then own is other; (which
+            // BindStatements puts after it, so it's bound and built as if it were written)
+            if (v.Type.IsStruct && !v.Type.IsArray && decl.Values.Count == 1)
+            {
+                decl.Then = new AssignStmt
+                {
+                    Target = new NameExpr { Name = decl.Name, Span = decl.NameSpan },
+                    Op = AssignOp.Set,
+                    Value = decl.Values[0],
+                    Span = decl.Span,
+                };
+                decl.Values.Clear();
             }
 
             for (int i = 0; i < decl.Values.Count; i++)

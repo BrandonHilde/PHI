@@ -58,6 +58,7 @@ struct describes something like a disk's partition table. Fields can be numbers,
 fixed arrays (`u8 name[16];`), other structs, or objects (`new Task next;`).
 
 A struct variable (`Task current;`) starts as all zeros, and its fields are `current.id`.
+`Task kept: current;` starts as a copy of another one's values instead.
 An array of structs (`Task tasks[8];`) has `tasks:i.id`.
 
 ## Objects

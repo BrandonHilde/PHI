@@ -1464,7 +1464,13 @@ current.position.x is -5;
 current.name is 'Idle';
 tasks:i.id is i;
 tasks:i.position.y is 10;
+
+Task kept: current;        # or as a copy of another Task's values, however it's stored
+Task third: tasks:2;
 ```
+
+`Task kept: current;` is `Task kept; kept is current;` on one line: the two stay separate
+after it. In a loop or a method it copies again each time it's reached.
 
 **How a struct is laid out: one rule for every struct.** Fields are in the order they're
 written, each on a multiple of its alignment, with padding before it if it needs some; and

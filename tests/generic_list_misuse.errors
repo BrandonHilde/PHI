@@ -1,3 +1,2 @@
 lib/phi/data/list.phi
-a Player starts as all zeros; set its fields one at a time, like kept.field is 5; (in List<Player>, which line 13 of generic_list_misuse.phi uses)
 objects can only be compared with is / == and is not / != (in List<Player>, which line 13 of generic_list_misuse.phi uses)

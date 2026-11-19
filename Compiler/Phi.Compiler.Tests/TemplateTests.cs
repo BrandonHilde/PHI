@@ -110,7 +110,8 @@ namespace Phi.Compiler.Tests
             	[end: items.len]
 
             	[Top]
-            		Item top: items:(items.len - 1);
+            		Item top: 0;
+            		top is items:(items.len - 1);
             	[end: top]
 
             	[TopTwice]
@@ -122,7 +123,7 @@ namespace Phi.Compiler.Tests
         [Fact]
         public void AMethodThatDoesntSuitATypeIsLeftOutWhileNothingUsesIt()
         {
-            // (Top starts an Item with a value, which a struct variable can't be)
+            // (Top starts an Item as 0, which a struct variable can't be)
             CompileResult unused = Compile(Spots + "phi.T:Program\n{\n\tnew Pile<Spot> p;\n\tSpot s;\n\tlog (p.Push: s);\n}\n");
             Assert.True(unused.Success, Errors(unused));
             var methods = unused.Bound!.Program!.Methods.Select(m => m.Name).Where(n => n.StartsWith("Pile<Spot>")).ToList();
@@ -139,7 +140,7 @@ namespace Phi.Compiler.Tests
         public void OneThatIsUsedSaysWhatsWrong(string use)
         {
             CompileResult result = Compile(Spots + "phi.T:Program\n{\n\tnew Pile<Spot> p;\n\t" + use + "\n}\n");
-            Assert.Contains(result.Diagnostics, d => d.Message.Contains("a Spot starts as all zeros") && d.Message.Contains("(in Pile<Spot>, which line"));
+            Assert.Contains(result.Diagnostics, d => d.Message.Contains("'top' is a Spot, so it can only be given another Spot") && d.Message.Contains("(in Pile<Spot>, which line"));
         }
 
         [Fact]

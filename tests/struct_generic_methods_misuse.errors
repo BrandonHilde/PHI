@@ -2,4 +2,4 @@
 Shift takes a type, which each call gives it: here.Shift<Item>, with the type in Item's place, like here.Shift<int>
 34:7: error: Near takes a type that has Ranked, and int isn't a struct, so it has no interfaces
 35:7: error: Near takes a type that has Ranked, and Dot doesn't: it's declared struct.Dot
-a Dot starts as all zeros; set its fields one at a time, like first.field is 5; (in Start<Dot>, which line 38 of struct_generic_methods_misuse.phi calls)
+'first' is a Dot, so it can only be given another Dot, not a int (in Start<Dot>, which line 38 of struct_generic_methods_misuse.phi calls)
