@@ -93,7 +93,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `vec` `method` `lock` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `lng` `ulng` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `vec` `method` `lock` |
 | Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `foreign` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `exists` `below` `above` `atmost` `atleast` `true` `false` |
@@ -127,6 +127,7 @@ several lines. A number too big for `int` (like `0x80000000`) is a `u32`.
 |---|---|---|
 | `f64` / `f32` / `f16` | 8 / 4 / 2 bytes | floating point numbers: about 15, 7 and 3 digits (32-bit kernels and programs; see below) |
 | `i64` / `u64` | 8 bytes | about ±9.2 × 10^18 / 0 to about 1.8 × 10^19 (32-bit kernels and programs; see below) |
+| `lng` / `ulng` | 8 or 4 bytes | C's `long` and `unsigned long`, for [calling C](#outside-libraries): an `i64` / `u64` on macOS and 64-bit Linux, an `int` / `u32` elsewhere |
 | `int` (also `i32`) | 4 bytes | -2147483648 to 2147483647 |
 | `u32` | 4 bytes | 0 to 4294967295 |
 | `i16` / `u16` | 2 bytes | -32768 to 32767 / 0 to 65535 |
@@ -3530,9 +3531,28 @@ to `xmm7`). Such a program shares its process with the C library, so three thing
 from a Linux program that calls none (which is as it was, and needs nothing on the
 machine): its heap is memory of its own, not the program's break (C's `malloc` moves
 that); a thread's own data is reached through `gs`, `fs` being C's; and it ends through
-C's `exit`, so what C still holds is written. C's functions are to be called from the
-program's first thread: a thread PHI starts (`Threads`) has no C thread data of its own
-yet.
+C's `exit`, so what C still holds is written. A thread it starts (`Threads`) is one the C
+library makes (`pthread_create`), so that C has its own data for it, and C's functions can
+be called from any of them; it needs a C library that has those in `libc.so.6` itself
+(glibc 2.34, of 2021, or later).
+
+**C's `long`.** `lng` and `ulng` are C's `long` and `unsigned long` as the system the
+program is for has them: 64 bits on macOS and 64-bit Linux (an `i64`, a `u64`), 32 on
+Windows, 64-bit Windows too (an `int`, a `u32`). They're for declaring a C function, a
+foreign struct's field or a variable C fills through a pointer, so that one source is right
+on each system:
+
+```phi
+use 'zlib1.dll' '/usr/lib/libz.1.dylib' 'libz.so.1' as Z;
+
+Z.compress2: ptr<u8> target ptr<ulng> targetSize ptr<u8> source ulng sourceSize int level;
+
+ulng size: 6100;
+int r: (Z.compress2: addr packed addr size addr source 6000 6);
+```
+
+Elsewhere they are the type they stand for, so what a program does with one has to be
+right for both sizes.
 
 On macOS a module's classes are `:MacOS`, and the functions are called as C calls them on
 Apple's ARM (the first eight whole values in `x0` to `x7`, floats in `d0` to `d7`), with
@@ -3561,9 +3581,13 @@ compiler makes an entry for it that takes the values the system's way, keeps the
 the system expects to find as it left them, calls the method, and returns the system's way.
 What it takes and gives go in a register, as with an outside function. Give a pointer back
 as a pointer (`[end: p]`, with `p` a `ptr<u8>`), since an `int` is only 32 bits in 64-bit code.
-It runs on the thread that called it, so that has to be one PHI started (the program's own
-or a `Threads` one), and an error thrown out of it would have to cross the system's frames:
-catch what can go wrong inside it.
+It runs on the thread that called it. That may be a thread of the library's own (one that
+plays sound calls back on its own thread): the first time such a thread comes in it's
+given what a thread of the program's has (its own catches, a spare stack for its faults),
+which it keeps for as long as it lives, and from then on the method runs there as on any
+thread, with the heap, `log`, `atomic` and `locked`. What it shares with the rest of the
+program is to be guarded as between any two threads. An error thrown out of it would have
+to cross the system's frames: catch what can go wrong inside it.
 It's for Windows, macOS and 64-bit Linux programs. In a `:Windows` module the entry is as Windows calls
 its own (in 32-bit code stdcall, taking its values off the stack: a window procedure);
 anywhere else it's as C calls a function (cdecl there: `qsort`'s order, a C library's
@@ -3602,9 +3626,10 @@ business: on macOS up to four floats of one size go in float registers, up to 16
 one or two whole ones, and anything larger by address; 64-bit Windows passes 1, 2, 4 or 8
 bytes in a register and anything else by address; 32-bit Windows puts the struct on the
 stack; 64-bit Linux passes up to 16 bytes 8 at a time (in a float register when those 8
-are all floats) and puts anything larger on the stack. A larger struct is passed by its own address, not a copy's, so a function that
-changes what it was given (C lets it) changes the variable. A struct given back is used
-from the variable (`call place is ...;`), not inside an expression.
+are all floats) and puts anything larger on the stack. Where a struct goes by address the
+function gets a copy's, made for the call, so one that changes what it was given (C lets
+it) never changes the variable. A struct given back is used from the variable
+(`call place is ...;`), not inside an expression.
 
 **Structs as C lays them out.** Every PHI struct is laid out as C lays one out (each field
 on a multiple of its own size, and the whole a multiple of its largest field: see

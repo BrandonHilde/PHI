@@ -178,6 +178,12 @@ namespace Phi.Compiler.Syntax
         /// whatever registers are free (a struct of more than 16 bytes, by value).
         /// </summary>
         public List<int> PieceWhere { get; set; } = new();
+        /// <summary>
+        /// For each value passed: the bytes of a struct whose address goes in its place (ARM,
+        /// 64-bit Windows: one too big for registers), else 0. C's function is given a copy
+        /// of those bytes, which the call makes: the struct it's by value of is the caller's.
+        /// </summary>
+        public List<int> Copied { get; set; } = new();
         /// <summary>A struct given back in registers there: each part's place in it, its bytes, and whether it's in a float register (xmm0, xmm1) or a whole one (rax, rdx).</summary>
         public List<(int Offset, int Size, bool Sse)> SysVResult { get; set; } = new();
 

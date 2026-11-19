@@ -2966,6 +2966,7 @@ namespace Phi.Compiler.CodeGen.Ir
                 PhiType to = a.Type.IsString ? PhiType.PointerTo(PhiType.U8) : i < f.ParameterTypes.Count ? f.ParameterTypes[i] : a.Type;
                 call.Args.Add(a.Type.IsString ? TextValue(a) : Small(Value(a, to), Is64(to)));
                 call.ArgKinds.Add(a.Type.IsString ? Ptr : KindOf(to));
+                call.ArgCopies.Add(i < f.Copied.Count ? f.Copied[i] : 0);
             }
             Emit(call);
             return call.Dst;

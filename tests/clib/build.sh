@@ -9,8 +9,8 @@ if [ "$(uname)" = Darwin ]; then
     clang -arch arm64 -O1 -dynamiclib -install_name @rpath/libphi_abi.dylib -o macos/libphi_abi.dylib phi_abi.c
 fi
 if command -v x86_64-w64-mingw32-gcc >/dev/null; then
-    x86_64-w64-mingw32-gcc -O1 -shared -o windows64/phi_abi.dll phi_abi.c
-    i686-w64-mingw32-gcc -O1 -shared -static-libgcc -o windows/phi_abi.dll phi_abi.c
+    x86_64-w64-mingw32-gcc -O1 -shared -static -o windows64/phi_abi.dll phi_abi.c
+    i686-w64-mingw32-gcc -O1 -shared -static -o windows/phi_abi.dll phi_abi.c
 fi
 
 # Lua and zlib, from their own sources (kept in src/): the same version on each system

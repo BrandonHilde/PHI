@@ -545,8 +545,8 @@ namespace Phi.Compiler.CodeGen.A64
         /// each at a multiple of its own size as Apple packs them) and go where a PHI method
         /// reads them, 8 bytes each with the first highest. What it gives is in x0 or d0 either
         /// way (an f32, which PHI keeps as an f64, made one). The registers C expects kept are
-        /// the ones PHI's methods keep, and x28 (the thread's block) is still this thread's:
-        /// C keeps it too, and calls back on the thread that called it.
+        /// the ones PHI's methods keep. x28 (the thread's block) is found for the thread it's
+        /// called on, which may be the library's own (foreign.s), and put back after.
         /// </summary>
         void EmitForeignEntry(MethodSymbol m)
         {
@@ -558,8 +558,10 @@ namespace Phi.Compiler.CodeGen.A64
             if (unit.ForeignSystem.Contains(m)) code.AppendLine($"{Sym(Binder.ForeignEntry(m))}:");
             if (unit.ForeignC.Contains(m)) code.AppendLine($"{Sym(Binder.ForeignEntry(m, c: true))}:");
             void E(string line) => code.AppendLine("\t" + line);
-            E("stp x29, x30, [sp, #-16]!");
+            // (x28 is C's to have kept: the thread's block goes in it for the call, and it's put back)
+            E("stp x29, x30, [sp, #-32]!");
             E("mov x29, sp");
+            E("str x28, [sp, #16]");
             if (room > 0) E($"sub sp, sp, #{room}");
             int whole = 0, floats = 0, stack = 0;
             for (int i = 0; i < n; i++)
@@ -579,7 +581,7 @@ namespace Phi.Compiler.CodeGen.A64
                     continue;
                 }
                 stack = (stack + size - 1) / size * size;
-                int from = 16 + stack;
+                int from = 32 + stack;
                 stack += size;
                 if (isFloat)
                 {
@@ -596,10 +598,15 @@ namespace Phi.Compiler.CodeGen.A64
                 });
                 E($"str x9, [sp, #{to}]");
             }
+            // the thread's block: its own if it's one of the program's, and one made for it the
+            // first time if it's the library's (foreign.s)
+            Need("phi_foreign_block");
+            E("bl phi_foreign_block");
             E($"bl {Sym(m.Label)}");
             if (m.ReturnType.Kind == TypeKind.F32) E("fcvt s0, d0");
             E("mov sp, x29");
-            E("ldp x29, x30, [sp], #16");
+            E("ldr x28, [sp, #16]");
+            E("ldp x29, x30, [sp], #32");
             E("ret");
         }
 

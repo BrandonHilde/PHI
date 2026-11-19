@@ -848,6 +848,10 @@ namespace Phi.Compiler.CodeGen
 
             foreach (string init in library.SelectMany(f => f.Init))
                 output.AppendLine($"    call {init}");
+            // a program C calls back into may be called on a thread of the library's own, at
+            // any time: its locks are taken as ones another thread may want from the start
+            if (unit.ForeignC.Count > 0 && ForeignThreads)
+                output.AppendLine($"    mov dword [{(bits64 ? "rel " : "")}phi_threads_many], 1");
 
             output.Append(code);
 
@@ -1179,7 +1183,15 @@ namespace Phi.Compiler.CodeGen
         void EmitElf64Dynamic(StringBuilder output)
         {
             var libraries = OutsideLibraries();
-            var symbols = new List<(string Slot, string Symbol)> { ("phi_libc_exit", "exit") };
+            // (the C library's own that the runtime calls: its exit, and its threads, which
+            // PHI's are in a program like this: threads.asm)
+            var symbols = new List<(string Slot, string Symbol)>
+            {
+                ("phi_libc_exit", "exit"),
+                ("phi_libc_pthread_create", "pthread_create"), ("phi_libc_pthread_detach", "pthread_detach"),
+                ("phi_libc_pthread_key_create", "pthread_key_create"),
+                ("phi_libc_pthread_getspecific", "pthread_getspecific"), ("phi_libc_pthread_setspecific", "pthread_setspecific"),
+            };
             foreach (var (path, functions) in libraries)
                 foreach (string name in functions)
                     symbols.Add(($"phi_outside_{ImportName(path)}_{name}",
@@ -2501,6 +2513,9 @@ namespace Phi.Compiler.CodeGen
         /// four in rcx, rdx, r8 and r9 and the rest above 32 bytes of room (64-bit code). Outside
         /// code also expects to find the registers it keeps as it left them.
         /// </summary>
+        /// <summary>A C library may call the program's methods on threads of its own: a Windows program, and a 64-bit Linux one that loads libraries.</summary>
+        bool ForeignThreads => unit.Kind == UnitKind.Program && (Host.IsWindows() || Host == Host.Linux64 && unit.OutsideFunctions.Count > 0);
+
         void EmitForeignEntry(MethodSymbol m, bool c)
         {
             int n = m.Parameters.Count;
@@ -2512,6 +2527,15 @@ namespace Phi.Compiler.CodeGen
             Emit("mov ebp, esp");
             foreach (string r in kept) Emit($"push {r}");
             Emit("cld");
+            if (c && ForeignThreads)
+            {
+                // C may be calling on a thread of its library's own, which has no block (for
+                // catches, and what's thrown) until it's given one here; and from the program's
+                // start a lock is taken as one other threads may want (see the start's code)
+                Need("phi_foreign_thread");
+                Need("phi_threads_many");
+                Emit("call phi_foreign_thread");
+            }
             if (Host == Host.Linux64)
             {
                 // as C calls on 64-bit Linux: whole values in rdi, rsi, rdx, rcx, r8 and r9, floats
@@ -2800,6 +2824,35 @@ namespace Phi.Compiler.CodeGen
                 Emit("push eax");
             }
             Emit("mov r12, rsp");                      // the values: the first at [r12 + 8 * (n - 1)]
+            // C's by value for a struct that isn't 1, 2, 4 or 8 bytes: a copy of it, whose
+            // address the function gets (what it does to its own doesn't reach the caller's)
+            for (int i = 0; i < n; i++)
+            {
+                int bytes = i < f.Copied.Count ? f.Copied[i] : 0;
+                if (bytes == 0) continue;
+                string value = $"[r12 + {8 * (n - 1 - i)}]";
+                Emit($"sub rsp, {(bytes + 15) / 16 * 16}");
+                Emit($"mov r10, {value}");
+                int at = 0;
+                if (bytes >= 64)
+                {
+                    string next = NewLabel("copy");
+                    Emit($"mov ecx, {bytes / 8}");
+                    Emit("xor r11d, r11d");
+                    Label(next);
+                    Emit("mov rax, [r10 + r11 * 8]");
+                    Emit("mov [rsp + r11 * 8], rax");
+                    Emit("inc r11d");
+                    Emit("dec ecx");
+                    Emit($"jnz {next}");
+                    at = bytes / 8 * 8;
+                }
+                for (; at + 8 <= bytes; at += 8) { Emit($"mov rax, [r10 + {at}]"); Emit($"mov [rsp + {at}], rax"); }
+                if (at + 4 <= bytes) { Emit($"mov eax, [r10 + {at}]"); Emit($"mov [rsp + {at}], eax"); at += 4; }
+                if (at + 2 <= bytes) { Emit($"mov ax, [r10 + {at}]"); Emit($"mov [rsp + {at}], ax"); at += 2; }
+                if (at < bytes) { Emit($"mov al, [r10 + {at}]"); Emit($"mov [rsp + {at}], al"); }
+                Emit($"mov {value}, rsp");
+            }
             Emit($"sub rsp, {32 + 8 * Math.Max(0, n - 4)}");
             Emit("and rsp, -16");
             string[] registers = { "rcx", "rdx", "r8", "r9" };
@@ -4110,10 +4163,11 @@ namespace Phi.Compiler.CodeGen
         /// being thrown are kept: in a kernel, in this core's block (fs, interrupts.asm), so
         /// threads on several cores catch errors of their own and the scheduler keeps each task's;
         /// in a program, in each thread's block (throw.asm), through gs (PHI OS, 32-bit Linux) or
-        /// fs (64-bit Linux). Windows keeps fs and gs for itself, so there the block's address is
+        /// fs (64-bit Linux; gs in one that loads C libraries, where fs is the C library's own:
+        /// threads.asm). Windows keeps fs and gs for itself, so there the block's address is
         /// in a TLS slot (null here).
         /// </summary>
-        string? BlockSegment => unit.Kind == UnitKind.Kernel || Host == Host.Linux64 ? "fs"
+        string? BlockSegment => unit.Kind == UnitKind.Kernel || Host == Host.Linux64 && unit.OutsideFunctions.Count == 0 ? "fs"
             : Host.IsWindows() ? null : "gs";
         string BlockField(string field) => unit.Kind == UnitKind.Kernel ? $"PHI_CORE_{field}" : $"PHI_THREAD_{field}";
 

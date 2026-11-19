@@ -1,5 +1,5 @@
 ; provides: OS_ThreadEntry OS_ThreadCreate phi_thread_main
-; requires: phi_throw
+; requires: phi_throw phi_thread_key
 ;
 ; A macOS program's threads (host/threads_macos.phi starts them with pthread_create): each
 ; runs on a stack pthread makes it of the size it was started with; the top of the memory
@@ -68,6 +68,10 @@ phi_thread_main:
 	str xzr, [x28, #8]          ; no catch yet
 	str xzr, [x28, #16]         ; nothing to give back yet
 	str xzr, [x28, #1016]
+	adrp x9, phi_thread_key@PAGE    ; (where a foreign entry finds it: foreign.s)
+	ldr x0, [x9, phi_thread_key@PAGEOFF]
+	mov x1, x28
+	bl _pthread_setspecific
 	; its spare stack: mmap(0, 64 KB, read and write, private and not a file's)
 	mov x0, #0
 	mov x1, #65536

@@ -120,3 +120,100 @@ API abi_camera abi_make_camera(float zoom) { abi_camera c = { { 1, 2 }, { 3, 4 }
 /* taken and given back */
 API abi_vec2 abi_vec2_add(abi_vec2 a, abi_vec2 b) { abi_vec2 v = { a.x + b.x, a.y + b.y }; return v; }
 API abi_texture abi_texture_half(abi_texture t) { t.width /= 2; t.height /= 2; t.mips++; return t; }
+
+/* by value is a copy: these write over all of what they're given (through a volatile
+   pointer, so the writes are really made), which the caller's struct mustn't show */
+typedef struct { unsigned char c[152]; } abi_long;             /* 152 bytes */
+API int abi_texture_spoil(abi_texture t)
+{
+    volatile abi_texture *p = &t;
+    int sum = (int)p->id + p->width + p->height + p->mips + p->format;
+    p->id = 0; p->width = -1; p->height = -1; p->mips = -1; p->format = -1;
+    return sum + p->width;
+}
+API int abi_long_spoil(int a, int b, int c, int d, int e, int f, int g, int h, abi_long l, abi_texture t)
+{
+    volatile abi_long *p = &l;
+    volatile abi_texture *q = &t;
+    int sum = a + b + c + d + e + f + g + h + q->height, i;
+    for (i = 0; i < 152; i++) { sum += p->c[i] * (i + 1); p->c[i] = 0xEE; }
+    q->height = 0; q->id = 0;
+    return sum;
+}
+
+/* C's long and unsigned long: 32 bits on Windows, 64 on macOS and Linux (PHI's lng and ulng) */
+typedef struct { int id; long size; unsigned long mask; } abi_longs;
+API long abi_long_neg(long v) { return -v; }
+API unsigned long abi_ulong_top(void) { return (unsigned long)-1; }
+API int abi_long_bytes(void) { return (int)sizeof(long); }
+API long abi_longs_sum(const abi_longs *l) { return l->id + l->size + (long)(l->mask & 0xFF) + (long)sizeof(abi_longs); }
+API void abi_long_out(long *out, unsigned long *top) { *out = -77; *top = (unsigned long)-1; }
+
+/* C calling PHI on threads of the library's own (as a library that plays sound does):
+   f(a, b) once on one thread, and f(thread, i) `times` times on each of `threads` threads
+   at once, the results added up */
+#if defined(_WIN32)
+#include <windows.h>
+typedef HANDLE abi_thread;
+#define ABI_THREAD_RESULT DWORD WINAPI
+static abi_thread abi_start(LPTHREAD_START_ROUTINE run, void *with) { return CreateThread(0, 0, run, with, 0, 0); }
+static void abi_wait(abi_thread t) { WaitForSingleObject(t, INFINITE); CloseHandle(t); }
+#else
+#include <pthread.h>
+typedef pthread_t abi_thread;
+#define ABI_THREAD_RESULT void *
+static abi_thread abi_start(void *(*run)(void *), void *with) { pthread_t t; pthread_create(&t, 0, run, with); return t; }
+static void abi_wait(abi_thread t) { pthread_join(t, 0); }
+#endif
+typedef struct { abi_two f; int a, times; int64_t result; } abi_job;
+static ABI_THREAD_RESULT abi_run(void *with)
+{
+    abi_job *job = with;
+    int i;
+    for (i = 0; i < job->times; i++) job->result += job->f(job->a, i);
+    return 0;
+}
+API int abi_call_on_thread(abi_two f, int a, int b)
+{
+    abi_job job = { f, a, 1, 0 };
+    (void)b;
+    abi_wait(abi_start(abi_run, &job));
+    return (int)job.result;
+}
+API int64_t abi_call_on_threads(abi_two f, int threads, int times)
+{
+    abi_job jobs[16];
+    abi_thread started[16];
+    int64_t sum = 0;
+    int i;
+    if (threads > 16) threads = 16;
+    for (i = 0; i < threads; i++) { abi_job job = { f, i + 1, times, 0 }; jobs[i] = job; }
+    for (i = 0; i < threads; i++) started[i] = abi_start(abi_run, &jobs[i]);
+    for (i = 0; i < threads; i++) { abi_wait(started[i]); sum += jobs[i].result; }
+    return (int)sum;
+}
+
+/* what C keeps for each thread (its own variables, its malloc's): called from threads the
+   program started, each must have its own */
+#include <stdlib.h>
+#if defined(_MSC_VER)
+#define ABI_OWN __declspec(thread)
+#else
+#define ABI_OWN __thread
+#endif
+static ABI_OWN int abi_mine;
+API int abi_thread_work(int id, int rounds)
+{
+    int i, sum = 0;
+    abi_mine = id;
+    for (i = 0; i < rounds; i++)
+    {
+        char *p = malloc(64 + i % 100);
+        if (!p) return -1;
+        memset(p, id, 64);
+        sum += p[10];
+        free(p);
+        if (abi_mine != id) return -2;
+    }
+    return sum;
+}

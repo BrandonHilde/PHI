@@ -7,10 +7,13 @@ mixed: 5000000051.375
 text: 4 zero one many
 filled: 100 101 116
 outs: -7 6000000000 2.5 0.25 200
+long: -41 1 1 -77 1 -742
 sum: 15 10 4.75
 called: -13 29 20000000052
 not kept: -1
 kept: 34 -92
 each: 4 86
+its thread: 10 28
+its threads: 4574920 4001 4001
 record: 1 900.5
 written: 9 -1234 0.125 -5

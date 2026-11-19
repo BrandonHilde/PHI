@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "chr", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "f16", "f32", "f64", "ptr", "method", "lock", "vec",
+            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "lng", "ulng", "f16", "f32", "f64", "ptr", "method", "lock", "vec",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>

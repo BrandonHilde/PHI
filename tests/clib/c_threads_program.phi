@@ -1,0 +1,46 @@
+# C called from threads the program starts (user.threads), four at once: C's own for each
+# thread (a variable of its own, its malloc) must be each thread's, and C calls PHI back on
+# them. On 64-bit Linux a thread of a program that loads C libraries is one the C library
+# makes, so that it has those. One source: macOS, Windows (32 and 64 bits) and 64-bit Linux
+# give the same.
+use user.threads;
+use 'phi_abi.dll' 'libphi_abi.dylib' 'libphi_abi.so' as Abi;
+
+phi.CThreadsProgram:Program
+{
+	const int PARTS: 4;
+	int worked[4];
+	int called[4];
+	int threads[4];
+	u32 all: 0;
+
+	while int round: 0; round < 3; round++;
+		while int p: 0; p < PARTS; p++;
+			threads:p is (Threads.Start: addr Work p);
+		;;
+		while int p: 0; p < PARTS; p++;
+			call Threads.Wait: threads:p;
+		;;
+		log 'worked: ' worked:0 ' ' worked:1 ' ' worked:2 ' ' worked:3 ', called: ' called:0 ' ' called:1 ' ' called:2 ' ' called:3 ', ' all '\n';
+	;;
+	# and still from the first thread
+	log 'first: ' (Abi.abi_thread_work: 9 100) ' ' (Abi.abi_call: addr foreign Less 10 3) '\n';
+	exit 0;
+
+	[Work: int part: 0;]
+		int sum: (Abi.abi_thread_work: part + 1 2000);
+		int back: 0;
+		while int i: 0; i < 500; i++;
+			back++ (Abi.abi_call: addr foreign Less i part);
+		;;
+		atomic all++ sum;
+		worked:part is sum;
+		called:part is back;
+	[end]
+
+	[Less: int a: 0; int b: 0;]
+	[end: a - b * 2]
+}
+
+Abi.abi_thread_work: int id int rounds;
+Abi.abi_call: ptr<u8> f int a int b;

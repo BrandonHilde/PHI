@@ -71,6 +71,11 @@ struct.Texture foreign
 	int format;
 }
 
+struct.Long foreign
+{
+	u8 c[152];
+}
+
 struct.Camera foreign
 {
 	Vec2 offset;
@@ -186,6 +191,23 @@ phi.CStructsProgram:Program
 	spot.x is 3.0;
 	spot.y is 0.5;
 	call spot is Abi.abi_vec2_add: spot v2;
+	# by value is a copy: what C does to its own doesn't reach the struct it was given
+	Long row;
+	int i;
+	while i < 152
+		row.c:i is (i * 7) as u8;
+		i++;
+	;;
+	log 'copies: ' (Abi.abi_texture_spoil: texture) ' ' (Abi.abi_texture_spoil: far) ' ' (Abi.abi_long_spoil: 1 2 3 4 5 6 7 8 row scene.skin) ' ' (Spoils: row texture);
+	int wrong;
+	i is 0;
+	while i < 152
+		if row.c:i is not ((i * 7) as u8)
+			wrong++;
+		;;
+		i++;
+	;;
+	log ', ' texture.id ' ' texture.width ' ' texture.format ', ' far.width ' ' far.height ', ' scene.skin.id ' ' scene.skin.height ', ' wrong '\n';
 	log 'heap: ' far.id ' ' far.width ' ' (Abi.abi_texture_sum: far) ', ' spot.x ' ' spot.y ' ' (Abi.abi_vec2_sum: spot) ' ' (Sums: spot color far camera) '\n';
 	exit 0;
 
@@ -198,6 +220,9 @@ phi.CStructsProgram:Program
 		call t is Abi.abi_make_texture: 60;
 		call cam is Abi.abi_make_camera: 70.0;
 	[end]
+
+	[Spoils: Long l; Texture t;]
+	[end: (Abi.abi_long_spoil: 0 0 0 0 0 0 0 0 l t) + (Abi.abi_texture_spoil: t)]
 
 	[Twice: Vec2 v;]
 		call Doubled: v;
@@ -232,3 +257,5 @@ Abi.abi_make_texture: int id: Texture;
 Abi.abi_make_camera: f32 zoom: Camera;
 Abi.abi_vec2_add: Vec2 a Vec2 b: Vec2;
 Abi.abi_texture_half: Texture t: Texture;
+Abi.abi_texture_spoil: Texture t;
+Abi.abi_long_spoil: int a int b int c int d int e int f int g int h Long l Texture t;

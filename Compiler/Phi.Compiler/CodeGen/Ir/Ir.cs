@@ -698,6 +698,12 @@ namespace Phi.Compiler.CodeGen.Ir
         /// 2 StructSize f32s from s0; 3 f64s from d0; 4 the function writes it where x8 says).
         /// </summary>
         public VReg? StructInto { get; set; }
+
+        /// <summary>
+        /// For each of an outside call's values: the bytes of the struct it's the address of,
+        /// which the call copies and passes the copy's address (C's by value), else 0.
+        /// </summary>
+        public List<int> ArgCopies { get; } = new();
         public int StructKind { get; init; }
         public int StructSize { get; init; }
     }

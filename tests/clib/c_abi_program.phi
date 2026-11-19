@@ -14,9 +14,19 @@ struct.Record foreign
 	i16 small;
 }
 
+struct.Longs foreign
+{
+	int id;
+	lng size;
+	ulng mask;
+}
+
 phi.CAbiProgram:Program
 {
 	int total: 0;
+	u32 calls: 0;
+	lock counting;
+	int counted: 0;
 
 	log 'ints: ' (Abi.abi_ints10: 1 2 3 4 5 6 7 8 9 10) ' ' (Abi.abi_ints10: -1 0 0 0 0 0 0 0 0 -100) '\n';
 	log 'wide: ' (Abi.abi_wide: 3000000000 4 -5) ' ' (Abi.abi_wide_back: 2 7) ' ' (Abi.abi_wides9: 1 2 3 4 5 6 7 8 90000000000) '\n';
@@ -38,6 +48,17 @@ phi.CAbiProgram:Program
 	call Abi.abi_outs: addr whole addr wide addr real addr small addr byte;
 	log 'outs: ' whole ' ' wide ' ' real ' ' small ' ' byte '\n';
 
+	# C's long, whichever size this system's is
+	lng got: 0;
+	ulng top: 0;
+	call Abi.abi_long_out: addr got addr top;
+	Longs longs;
+	longs.id is 3;
+	longs.size is -1000;
+	longs.mask is 0x1FF;
+	log 'long: ' (Abi.abi_long_neg: 41) ' ' (((Abi.abi_ulong_top) + 1) is 0) ' ' ((Abi.abi_long_bytes) is (sizeof lng)) ' ' got ' ' ((top + 1) is 0) ' '
+	    ((Abi.abi_longs_sum: addr longs) - (sizeof Longs)) '\n';
+
 	log 'sum: ' (Abi.abi_sum: 5 1 2 3 4 5) ' ' (Abi.Sum2: 2 -40 50) ' ' (Abi.abi_sum_reals: 3 0.5 0.25 4.0) '\n';
 
 	log 'called: ' (Abi.abi_call: addr foreign Less 10 3) ' ' (Abi.abi_call_real: addr foreign Scale 8.0) ' ' (Abi.abi_call_many: addr foreign Many) '\n';
@@ -47,6 +68,12 @@ phi.CAbiProgram:Program
 	int values: 3 4 5 6;
 	int count: (Abi.abi_each: addr values 4 addr foreign Add addr total);
 	log 'each: ' count ' ' total '\n';
+
+	# C calling on threads of its library's own: once, then 8 at once, 500 times each, with
+	# the heap, a lock, an atomic step and an error caught on each
+	log 'its thread: ' (Abi.abi_call_on_thread: addr foreign Less 10 0) ' ' (Abi.abi_call_on_thread: addr foreign Worked 3 0) '\n';
+	i64 summed: (Abi.abi_call_on_threads: addr foreign Worked 8 500);
+	log 'its threads: ' summed ' ' calls ' ' counted '\n';
 
 	Record record;
 	record.tag is 200;
@@ -66,6 +93,26 @@ phi.CAbiProgram:Program
 
 	[Many: int a: 0; i64 b: 0; f64 c: 0.0; int d: 0; int e: 0; int f: 0; int g: 0; int h: 0; int i: 0; int j: 0; : i64]
 	[end: b + a + d + e + f + g + h + i + j + ((c * 4) as i64)]
+
+	[Worked: int thread: 0; int round: 0;]
+		atomic calls++;
+		locked counting
+			counted++;
+		;;
+		str text: ('thread ' thread ', round ' round);
+		new Record made;
+		made.count is thread * round + text.len;
+		int answer: made.count;
+		if call Fails: round throws err
+			answer++ err.text.len;
+		;;
+	[end: answer]
+
+	[Fails: int round: 0;]
+		if round % 5 is 0
+			throw 'every fifth';
+		;;
+	[end]
 
 	[Add: ptr<int> sum: 0; int value: 0;]
 		sum:0 is sum:0 + value * value;
@@ -90,6 +137,11 @@ Abi.abi_length: ptr<u8> text;
 Abi.abi_word: int which: ptr<u8>;
 Abi.abi_fill: ptr<int> target int count int from;
 Abi.abi_outs: ptr<int> whole ptr<i64> wide ptr<f64> real ptr<f32> small ptr<u8> byte;
+Abi.abi_long_neg: lng v: lng;
+Abi.abi_ulong_top: : ulng;
+Abi.abi_long_bytes;
+Abi.abi_longs_sum: ptr<Longs> l: lng;
+Abi.abi_long_out: ptr<lng> got ptr<ulng> top;
 Abi.abi_sum: int count ... int a int b int c int d int e;
 Abi.Sum2 = 'abi_sum': int count ... int a int b;
 Abi.abi_sum_reals: int count ... f64 a f64 b f64 c: f64;
@@ -97,6 +149,8 @@ Abi.abi_call: ptr<u8> f int a int b;
 Abi.abi_call_real: ptr<u8> f f64 x: f64;
 Abi.abi_call_many: ptr<u8> f: i64;
 Abi.abi_keep: ptr<u8> f;
+Abi.abi_call_on_thread: ptr<u8> f int a int b;
+Abi.abi_call_on_threads: ptr<u8> f int threads int times: i64;
 Abi.abi_call_kept: int a int b;
 Abi.abi_each: ptr<int> values int count ptr<u8> f ptr<u8> with;
 Abi.abi_record_size;

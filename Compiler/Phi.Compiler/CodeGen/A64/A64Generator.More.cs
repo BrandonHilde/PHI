@@ -353,26 +353,81 @@ namespace Phi.Compiler.CodeGen.A64
                 _ => 8,
             };
 
-            /// <summary>The 8-byte slots an outside call's stack values take.</summary>
-            static int OutsideStack(CallI call)
+            /// <summary>The 8-byte slots an outside call's stack values take, and (above them) where a struct that comes back in registers is to go, kept over the call.</summary>
+            static int OutsideValues(CallI call)
             {
                 int most = 0;
                 List<int> places = OutsidePlaces(call);
                 for (int k = 0; k < places.Count; k++)
                     if (places[k] < 0) most = Math.Max(most, -1 - places[k] + 8);
-                // (and one more for where a struct that comes back in registers is to go, kept over the call)
                 return (most + 7) / 8 + (call.StructKind is 1 or 2 or 3 ? 1 : 0);
+            }
+
+            /// <summary>Where the copy of each struct passed by address is, from sp (above the call's values, 16 bytes aligned), and where they end.</summary>
+            static (List<int> At, int End) OutsideCopies(CallI call)
+            {
+                int at = Align16(8 * OutsideValues(call));
+                var places = new List<int>();
+                for (int k = 0; k < call.Args.Count; k++)
+                {
+                    int bytes = k < call.ArgCopies.Count ? call.ArgCopies[k] : 0;
+                    places.Add(bytes > 0 ? at : -1);
+                    at += Align16(bytes);
+                }
+                return (places, at);
+            }
+
+            /// <summary>The 8-byte slots an outside call needs of the stack: its values, and the copies of the structs it passes by address.</summary>
+            static int OutsideStack(CallI call) => OutsideCopies(call).End / 8;
+
+            /// <summary>
+            /// C's by value for a struct too big for registers: bytes of it copied to sp + at,
+            /// whose address C's function gets (what it does to its own doesn't reach the
+            /// caller's). Uses x9, x16, x17 and v31; x16 is left the copy's address.
+            /// </summary>
+            void CopyStruct(Opnd from, int bytes, int at)
+            {
+                Into("x9", from, true);
+                AddImm("x17", "sp", at);
+                int sixteens = bytes / 16;
+                if (sixteens > 4)
+                {
+                    string next = g.NewLabel("copy");
+                    E($"mov x16, #{sixteens}");
+                    Label(next);
+                    E("ldr q31, [x9], #16");
+                    E("str q31, [x17], #16");
+                    E("subs x16, x16, #1");
+                    E($"b.ne {next}");
+                }
+                else for (int k = 0; k < sixteens; k++)
+                {
+                    E("ldr q31, [x9], #16");
+                    E("str q31, [x17], #16");
+                }
+                if ((bytes & 8) != 0) { E("ldr x16, [x9], #8"); E("str x16, [x17], #8"); }
+                if ((bytes & 4) != 0) { E("ldr w16, [x9], #4"); E("str w16, [x17], #4"); }
+                if ((bytes & 2) != 0) { E("ldrh w16, [x9], #2"); E("strh w16, [x17], #2"); }
+                if ((bytes & 1) != 0) { E("ldrb w16, [x9]"); E("strb w16, [x17]"); }
+                AddImm("x16", "sp", at);
             }
 
             void OutsideCall(CallI call)
             {
                 List<int> places = OutsidePlaces(call);
+                List<int> copies = OutsideCopies(call).At;
                 // the stack's first (the registers' values may be in x9-x17, which those use)
                 for (int k = 0; k < call.Args.Count; k++)
                 {
                     if (places[k] >= 0) continue;
                     int at = -1 - places[k];
                     bool variadic = call.VariadicFrom is int from && k >= from;
+                    if (copies[k] >= 0)
+                    {
+                        CopyStruct(call.Args[k], call.ArgCopies[k], copies[k]);
+                        Mem("str", "x16", "sp", at, 8, "x17");
+                        continue;
+                    }
                     if (IsFloatArg(call, k))
                     {
                         string d = FGet(call.Args[k].Reg!, "d31");
@@ -391,6 +446,12 @@ namespace Phi.Compiler.CodeGen.A64
                 for (int k = 0; k < call.Args.Count; k++)
                 {
                     if (places[k] < 0) continue;
+                    if (copies[k] >= 0)
+                    {
+                        CopyStruct(call.Args[k], call.ArgCopies[k], copies[k]);
+                        E($"mov x{places[k]}, x16");
+                        continue;
+                    }
                     if (IsFloatArg(call, k))
                     {
                         string d = FGet(call.Args[k].Reg!, "d31");
@@ -407,7 +468,7 @@ namespace Phi.Compiler.CodeGen.A64
                 }
                 // a struct given back: where x8 says, or in registers, stored where it's to go
                 // (which is kept above the call's stack values meanwhile)
-                int keptAt = 8 * (OutsideStack(call) - 1);
+                int keptAt = 8 * (OutsideValues(call) - 1);
                 if (call.StructKind == 4) Into("x8", Opnd.Of(call.StructInto!), true);
                 else if (call.StructKind != 0) Mem("str", Get(call.StructInto!, "x9", true), "sp", keptAt, 8);
                 // (one of the runtime's own, called as C calls it: the program needs its file)

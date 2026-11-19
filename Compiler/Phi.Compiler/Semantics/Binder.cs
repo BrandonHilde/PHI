@@ -1970,6 +1970,17 @@ namespace Phi.Compiler.Semantics
                         return PhiType.Error;
                     }
                     return t.Name == "i64" ? PhiType.I64 : PhiType.U64;
+                case "lng":
+                case "ulng":
+                    // C's long and unsigned long, as the system the program is for has them:
+                    // 64 bits on macOS and 64-bit Linux, 32 on Windows (64-bit too) and the rest
+                    if (!(host.IsMacOS() || host == Host.Linux64)) return t.Name == "lng" ? PhiType.I32 : PhiType.U32;
+                    if (scope?.Unit is UnitKind.Boot or UnitKind.Os)
+                    {
+                        Error(t.Span, $"{t.Name} needs 32-bit code (a Kernel or a Program)");
+                        return PhiType.Error;
+                    }
+                    return t.Name == "lng" ? PhiType.I64 : PhiType.U64;
                 case "i8": return PhiType.I8;
                 case "i16": return PhiType.I16;
                 case "str":
@@ -5546,6 +5557,7 @@ namespace Phi.Compiler.Semantics
                 if (f.ResultAddressFirst)
                 {
                     f.PieceWhere.Add(0);
+                    f.Copied.Add(0);
                     lowered.Add(PhiType.PointerTo(PhiType.U8));
                     if (variadic != null && !host.IsArm()) variadic++;   // (ARM's isn't among C's values: CallI.StructInto)
                 }
@@ -5556,6 +5568,7 @@ namespace Phi.Compiler.Semantics
                 {
                     f.Pieces.Add(null);
                     f.PieceWhere.Add(0);
+                    f.Copied.Add(0);
                     lowered.Add(declared[i]);
                     continue;
                 }
@@ -5567,6 +5580,7 @@ namespace Phi.Compiler.Semantics
                 if (pieces.Count == 0) lowered.Add(PhiType.PointerTo(PhiType.U8));
                 else lowered.AddRange(pieces.Select(piece => piece.Type));
                 for (int k = 0; k < takes; k++) f.PieceWhere.Add(k < where.Count ? where[k] : 0);
+                for (int k = 0; k < takes; k++) f.Copied.Add(pieces.Count == 0 && problem == null ? declared[i].Struct!.Size : 0);
                 if (variadic is int from && i < f.VariadicFrom) variadic = from + takes - 1;
             }
             f.ParameterTypes = lowered;
