@@ -12,6 +12,7 @@ standard library's source to read (it's inside phi already); the samples; the li
 It needs the .NET SDK. Nothing here uploads anything.
 """
 import html
+import json
 import os
 import re
 import shutil
@@ -227,7 +228,9 @@ def pack(version, system):
         if not os.path.isdir(source) or library.startswith("."):
             continue
         with open(os.path.join(source, "package.json")) as f:
-            fetched = "downloads" in f.read() or "build" in open(os.path.join(source, "package.json")).read()
+            package = json.load(f)
+        # (one that's the system's own, as Vulkan is, has no library of its own to bring)
+        fetched = ("downloads" in package or "build" in package) and not package.get("system")
         if fetched and not all(os.path.isdir(os.path.join(source, s)) for s in ("windows64", "windows", "macos")):
             missing.append(library)
     if missing:

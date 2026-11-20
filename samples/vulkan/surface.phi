@@ -1,0 +1,100 @@
+# SDL3 and Vulkan together: a window of SDL's that Vulkan can draw into. SDL says which
+# extensions its window needs, Vulkan makes an instance with them, SDL makes the window's
+# surface, and each graphics card is asked whether it can show pictures on it. It draws
+# nothing: it's the start every Vulkan program has, before its first triangle. Both
+# libraries are whole in the vendor folder, so nothing is declared here.
+#
+#   phi run samples/vulkan/surface.phi --target windows64        (or linux64, macos)
+#
+# Vulkan is the system's: it comes with the graphics driver on Windows and Linux, and on a
+# Mac with MoltenVK. On Linux, SDL3 is the system's too.
+use vendor.sdl3;
+use vendor.vulkan;
+
+phi.Surface:Program
+{
+	if not (SDL.Init: SDL.INIT_VIDEO)
+		log 'SDL: ' (SDL.GetError) '\n';
+		exit 1;
+	;;
+	ptr<SDL_Window> window: (SDL.CreateWindow: 'PHI, SDL3 and Vulkan' 640 400 SDL.WINDOW_VULKAN);
+	if window is 0
+		log 'no window for Vulkan: ' (SDL.GetError) '\n';
+		exit 1;
+	;;
+
+	# an instance with the extensions SDL's window needs
+	u32 wanted: 0;
+	ptr<ptr<u8>> names: (SDL.Vulkan_GetInstanceExtensions: addr wanted);
+	log 'SDL asks for ' wanted ' extensions:';
+	while int i: 0; i < wanted as int; i++;
+		log ' ' names:i;
+	;;
+	log '\n';
+	VkApplicationInfo app;
+	app.sType is Vk.STRUCTURE_TYPE_APPLICATION_INFO;
+	app.pApplicationName is 'surface';
+	app.apiVersion is Vk.API_VERSION_1_0;
+	VkInstanceCreateInfo make;
+	make.sType is Vk.STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	make.pApplicationInfo is addr app;
+	make.enabledExtensionCount is wanted;
+	make.ppEnabledExtensionNames is names;
+	ptr<VkInstance_T> instance: 0;
+	int r: (Vk.CreateInstance: addr make 0 addr instance);
+	if r is not Vk.SUCCESS
+		log 'no Vulkan instance: ' r '\n';
+		exit 1;
+	;;
+
+	# the window's surface, which is SDL's to make and Vulkan's to draw on
+	u64 surface: 0;
+	if not (SDL.Vulkan_CreateSurface: window instance 0 addr surface)
+		log 'no surface: ' (SDL.GetError) '\n';
+		exit 1;
+	;;
+	log 'surface made\n';
+
+	# each graphics card, and whether one of its queues can show pictures on the surface
+	ptr<VkPhysicalDevice_T> cards[8];
+	u32 count: 8;
+	r is (Vk.EnumeratePhysicalDevices: instance addr count addr cards);
+	while int i: 0; i < count as int; i++;
+		VkPhysicalDeviceProperties about;
+		call Vk.GetPhysicalDeviceProperties: cards:i addr about;
+		VkQueueFamilyProperties families[16];
+		u32 queues: 16;
+		call Vk.GetPhysicalDeviceQueueFamilyProperties: cards:i addr queues addr families;
+		bln draws: false;
+		bln shows: false;
+		while int q: 0; q < queues as int; q++;
+			u32 can: 0;
+			r is (Vk.GetPhysicalDeviceSurfaceSupportKHR: cards:i q surface addr can);
+			if (families:q.queueFlags & Vk.QUEUE_GRAPHICS_BIT) is not 0
+				draws is true;
+			;;
+			if can is not 0
+				shows is true;
+			;;
+		;;
+		log (addr about.deviceName) ': Vulkan ' ((about.apiVersion >> 22) & 0x7F) '.' ((about.apiVersion >> 12) & 0x3FF)
+		    ', draws ' draws ', shows on this window ' shows '\n';
+	;;
+
+	# the window stays until it's closed or a key is pressed
+	SDL_Event event;
+	bln open: true;
+	while open
+		while (SDL.PollEvent: addr event)
+			if event.type is SDL.EVENT_QUIT or event.type is SDL.EVENT_KEY_DOWN
+				open is false;
+			;;
+		;;
+		call SDL.Delay: 16;
+	;;
+	call SDL.Vulkan_DestroySurface: instance surface 0;
+	call Vk.DestroyInstance: instance 0;
+	call SDL.DestroyWindow: window;
+	call SDL.Quit;
+	exit 0;
+}

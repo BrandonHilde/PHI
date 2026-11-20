@@ -1,0 +1,12 @@
+What vendor/bindgen.py couldn't declare in PHI, and why:
+
+struct VkAccelerationStructureInstanceKHR: a bitfield
+struct VkAccelerationStructureMatrixMotionInstanceNV: a bitfield
+struct VkAccelerationStructureSRTMotionInstanceNV: a bitfield
+struct VkClusterAccelerationStructureGeometryIndexAndGeometryFlagsNV: a bitfield
+struct VkClusterAccelerationStructureBuildTriangleClusterInfoNV: a bitfield
+struct VkClusterAccelerationStructureBuildTriangleClusterTemplateInfoNV: a bitfield
+struct VkClusterAccelerationStructureInstantiateClusterInfoNV: a bitfield
+struct VkAccelerationStructureGeometryDataKHR: a union whose size differs between systems in a way PHI's types don't follow ([(64, 8), (64, 8), (56, 8)])
+struct VkAccelerationStructureGeometryKHR: it has a VkAccelerationStructureGeometryDataKHR in it, which is held by its address only
+#define VK_WHOLE_SIZE: 18446744073709551615 is past 32 bits, which a PHI constant isn't yet

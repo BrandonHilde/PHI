@@ -433,7 +433,7 @@ static int Execute(string[] args)
                     var uses = modules.Select(m => (Use: "use vendor." + name + (m.TryGetProperty("output", out var o) ? "." + Path.GetFileNameWithoutExtension(o.GetString()) : "") + ";",
                                                     Alias: m.GetProperty("alias").GetString() + ".")).ToList();
                     // (a library whose own files weren't fetched is there to read, not yet to build with)
-                    bool fetched = !root.TryGetProperty("downloads", out _) && !root.TryGetProperty("build", out _)
+                    bool fetched = root.TryGetProperty("system", out _) || !root.TryGetProperty("downloads", out _) && !root.TryGetProperty("build", out _)
                                    || new[] { "windows64", "windows", "macos", "linux64" }.Any(s => Directory.Exists(Path.Combine(package, s)));
                     Console.WriteLine($"  {name} {root.GetProperty("version").GetString()}" + (fetched ? "" : "   (its files aren't here: python3 vendor/fetch.py)"));
                     Console.WriteLine($"      {root.GetProperty("about").GetString()}");

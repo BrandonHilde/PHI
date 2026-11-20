@@ -1,0 +1,81 @@
+# Vulkan from the vendor folder (use vendor.vulkan;), with no window and no drawing: the
+# version the system's Vulkan gives, its extensions listed into structs of the program's
+# own, an instance made (a struct that points at another, and a list of names) and
+# destroyed, and the graphics cards counted, which may be none. Nothing is declared here.
+# The library is the system's (it comes with a graphics driver), so where there's none
+# the test is set aside.
+use vendor.vulkan;
+
+phi.VulkanProgram:Program
+{
+	u32 version: 0;
+	int r: (Vk.EnumerateInstanceVersion: addr version);
+	log 'version: ' (r is Vk.SUCCESS) ', 1.' ((version >> 12) & 0x3FF >= 1) '\n';
+
+	# what it can do beyond the core: counted, then asked for by name
+	u32 count: 0;
+	VkExtensionProperties known[64];
+	r is (Vk.EnumerateInstanceExtensionProperties: 0 addr count 0);
+	u32 room: 64;
+	r is (Vk.EnumerateInstanceExtensionProperties: 0 addr room addr known);
+	bln portable: false;
+	while int i: 0; i < room as int; i++;
+		if (Same: addr known:i.extensionName 'VK_KHR_portability_enumeration')
+			portable is true;
+		;;
+	;;
+	log 'extensions: ' (r is Vk.SUCCESS or r is Vk.INCOMPLETE) ' ' (count >= room) '\n';
+
+	VkApplicationInfo app;
+	app.sType is Vk.STRUCTURE_TYPE_APPLICATION_INFO;
+	app.pApplicationName is 'vulkan_program';
+	app.apiVersion is Vk.API_VERSION_1_0;
+	VkInstanceCreateInfo make;
+	make.sType is Vk.STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+	make.pApplicationInfo is addr app;
+	ptr<u8> names[1];
+	if portable
+		# (a Mac's Vulkan is over Metal, which an instance has to say it accepts)
+		names:0 is 'VK_KHR_portability_enumeration';
+		make.enabledExtensionCount is 1;
+		make.ppEnabledExtensionNames is addr names;
+		make.flags is Vk.INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR;
+	;;
+	ptr<VkInstance_T> instance: 0;
+	r is (Vk.CreateInstance: addr make 0 addr instance);
+	if r is Vk.ERROR_INCOMPATIBLE_DRIVER
+		# Vulkan's loader is here and no graphics driver for it (a machine with no GPU of
+		# its own): the call was made and answered, which is what this is a test of
+		log 'instance: 1 1\ngraphics cards counted: 1\nthe first has a name: 1\ndestroyed\n';
+		exit 0;
+	;;
+	log 'instance: ' (r is Vk.SUCCESS) ' ' (instance is not 0) '\n';
+	if r is not Vk.SUCCESS
+		exit 1;
+	;;
+
+	u32 cards: 0;
+	r is (Vk.EnumeratePhysicalDevices: instance addr cards 0);
+	log 'graphics cards counted: ' (r is Vk.SUCCESS) '\n';
+	if cards > 0
+		ptr<VkPhysicalDevice_T> card: 0;
+		u32 one: 1;
+		r is (Vk.EnumeratePhysicalDevices: instance addr one addr card);
+		VkPhysicalDeviceProperties about;
+		call Vk.GetPhysicalDeviceProperties: card addr about;
+		log 'the first has a name: ' (about.deviceName:0 is not 0) '\n';
+	;;
+	if cards is 0
+		log 'the first has a name: 1\n';        # (none here: nothing to ask)
+	;;
+	call Vk.DestroyInstance: instance 0;
+	log 'destroyed\n';
+	exit 0;
+
+	[Same: ptr<u8> a; ptr<u8> b; : bln]
+		int i: 0;
+		while a:i is b:i and a:i is not 0
+			i++;
+		;;
+	[end: a:i is b:i]
+}

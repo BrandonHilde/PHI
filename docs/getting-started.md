@@ -186,7 +186,7 @@ kernel your computer's time zone, so `Rtc.ReadLocal` gives your local time.
 
 ## Use a C library
 
-A program for Windows, macOS or Linux can call C libraries, and eight come with PHI in the
+A program for Windows, macOS or Linux can call C libraries, and nine come with PHI in the
 [vendor folder](../vendor/README.md). Save this as `window.phi`:
 
 ```phi

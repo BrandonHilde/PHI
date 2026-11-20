@@ -35,11 +35,12 @@ else (without `obj`, where the build keeps its own working files). Nothing is in
 | [zlib](zlib) | 1.4 | `vendor.zlib` | `Z.` | zlib | compression: deflate, zlib and gzip streams, checksums |
 | [stb](stb) | 2026-11 | `vendor.stb` | `Stb.` | public domain or MIT | pictures read and written (PNG, JPEG and more), TrueType fonts, rectangle packing, Ogg Vorbis |
 | [miniaudio](miniaudio) | 0.11.26 | `vendor.miniaudio` | `Ma.` | public domain or MIT-0 | sound played and recorded, files decoded, mixing and effects |
+| [Vulkan](vulkan) | 1.4.363 | `vendor.vulkan` | `Vk.` | the system's own | the GPU through Vulkan, with SDL3 for its window |
 | [libc](libc) | C89 | `vendor.libc`, `vendor.libc.math` | `C.`, `CMath.` | the system's own | C's own library: memory, text, files, sorting, maths |
 
 `phi vendor` lists them. Each folder's README has an example and what to know about it. raylib and SDL3 are their
 makers' own builds; SQLite, Lua, zlib, stb and miniaudio are built from their makers'
-source, unchanged; libc is every system's own, so nothing is shipped
+source, unchanged; Vulkan and libc are every system's own, so nothing is shipped
 for it. On Linux, SDL3 is the system's
 (`libSDL3.so.0`, from the distribution's packages), and raylib's own build needs glibc 2.38
 or later and X11.

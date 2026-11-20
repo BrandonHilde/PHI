@@ -1,0 +1,57 @@
+{
+  "name": "vulkan",
+  "version": "1.4.363",
+  "about": "the GPU, as its drivers give it: drawing and computing with Vulkan",
+  "homepage": "https://www.vulkan.org",
+  "license": "Apache-2.0 or MIT (the headers these declarations are written from)",
+  "system": true,
+  "libraries": {
+    "windows": "vulkan-1.dll",
+    "macos": "libvulkan.1.dylib",
+    "linux": "libvulkan.so.1"
+  },
+  "downloads": [
+    {
+      "url": "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/vulkan-sdk-1.4.363.0.tar.gz",
+      "sha256": "4a078be12bef21cfebc09d878b77a63cff9d68f899254a0b00d0e37ef73e7f7e",
+      "files": {
+        "Vulkan-Headers-vulkan-sdk-1.4.363.0/include/vulkan/": "include/vulkan/",
+        "Vulkan-Headers-vulkan-sdk-1.4.363.0/include/vk_video/": "include/vk_video/",
+        "Vulkan-Headers-vulkan-sdk-1.4.363.0/LICENSE.md": "LICENSE"
+      }
+    }
+  ],
+  "bindings": {
+    "alias": "Vk",
+    "headers": [
+      "include/vulkan/vk_platform.h",
+      "include/vulkan/vulkan_core.h"
+    ],
+    "clang": [
+      "-DVK_USE_64_BIT_PTR_DEFINES=0"
+    ],
+    "strip": "vk",
+    "strip_constants": [
+      "VK_"
+    ],
+    "skip_like": [
+      "^VULKAN_",
+      "^VK_PLATFORM_H_$",
+      "^VKAPI_",
+      "^VK_NO_",
+      "^VK_DEFINE_",
+      "^VK_USE_",
+      "^VK_NULL_HANDLE$",
+      "^VK_ENABLE_BETA",
+      "^VK_.*_SPEC_VERSION$"
+    ],
+    "notes": [
+      "A function is Vk.Name for C's vkName (Vk.CreateInstance), and a constant Vk.NAME for VK_NAME",
+      "(Vk.SUCCESS, Vk.STRUCTURE_TYPE_APPLICATION_INFO); a struct keeps C's whole name (VkInstanceCreateInfo).",
+      "A handle Vulkan hands out is either an address (a VkInstance, a VkDevice, a VkQueue, a VkCommandBuffer:",
+      "ptr<VkInstance_T> and so on) or a u64 (every other: a VkBuffer, a VkImage, a VkSurfaceKHR), on every system.",
+      "The library is the system's: it comes with the graphics driver on Windows and Linux, and on a Mac",
+      "with MoltenVK (the Vulkan SDK, or brew install molten-vk vulkan-loader)."
+    ]
+  }
+}

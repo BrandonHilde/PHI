@@ -1,18 +1,20 @@
 # sdl3 3.4.20: windows, input (keyboard, mouse, gamepads, touch), sound, drawing in 2D, and the GPU
 # https://libsdl.org  (zlib licence: see LICENSE beside this file)
 #
-# Written by vendor/bindgen.py from SDL.h, SDL_main.h: change package.json
+# Written by vendor/bindgen.py from SDL.h, SDL_main.h, SDL_vulkan.h: change package.json
 # and run it again, rather than this file. Functions, structs and constants have C's names.
 # A function is SDL.Name for C's SDL_Name (SDL.Init, SDL.CreateWindow), and a constant the same
 # (SDL.INIT_VIDEO, SDL.EVENT_QUIT); a struct keeps C's whole name (SDL_Event, SDL_FRect).
 # An SDL_Event has its type, and the rest is read through a pointer to the kind of event it is:
 #     ptr<SDL_KeyboardEvent> key: addr event as ptr<SDL_KeyboardEvent>;
+# SDL's Vulkan functions (SDL.Vulkan_CreateSurface and the rest) take Vulkan's handles as plain
+# addresses, so a program gives them what vendor.vulkan's functions gave it.
 use 'SDL3.dll' 'libSDL3.0.dylib' 'libSDL3.so.0' as SDL;
 
 phi.SDL:Library
 {
 	const int ASSERT_LEVEL: 2;
-	const int LINE: 12;
+	const int LINE: 13;
 	const int NULL_WHILE_LOOP_CONDITION: 0;
 	const u32 AUDIO_MASK_BITSIZE: 255;
 	const u32 AUDIO_MASK_FLOAT: 256;
@@ -4597,3 +4599,10 @@ SDL.SetMainReady = 'SDL_SetMainReady';    # Circumvent failure of SDL_Init() whe
 SDL.RunApp = 'SDL_RunApp': int argc ptr<ptr<u8>> argv ptr<u8> mainFunction ptr<u8> reserved: int;
 SDL.EnterAppMainCallbacks = 'SDL_EnterAppMainCallbacks': int argc ptr<ptr<u8>> argv ptr<u8> appinit ptr<u8> appiter ptr<u8> appevent ptr<u8> appquit: int;
 SDL.GDKSuspendComplete = 'SDL_GDKSuspendComplete';    # Callback from the application to let the suspend continue.
+SDL.Vulkan_LoadLibrary = 'SDL_Vulkan_LoadLibrary': ptr<u8> path: bln;    # Dynamically load the Vulkan loader library.
+SDL.Vulkan_GetVkGetInstanceProcAddr = 'SDL_Vulkan_GetVkGetInstanceProcAddr': : ptr<u8>;    # Get the address of the `vkGetInstanceProcAddr` function.
+SDL.Vulkan_UnloadLibrary = 'SDL_Vulkan_UnloadLibrary';    # Unload the Vulkan library previously loaded by SDL_Vulkan_LoadLibrary().
+SDL.Vulkan_GetInstanceExtensions = 'SDL_Vulkan_GetInstanceExtensions': ptr<u32> count: ptr<ptr<u8>>;    # Get the Vulkan instance extensions needed for vkCreateInstance.
+SDL.Vulkan_CreateSurface = 'SDL_Vulkan_CreateSurface': ptr<SDL_Window> window ptr<u8> instance ptr<u8> allocator ptr<u64> surface: bln;    # Create a Vulkan rendering surface for a window.
+SDL.Vulkan_DestroySurface = 'SDL_Vulkan_DestroySurface': ptr<u8> instance u64 surface ptr<u8> allocator;    # Destroy the Vulkan rendering surface of a window.
+SDL.Vulkan_GetPresentationSupport = 'SDL_Vulkan_GetPresentationSupport': ptr<u8> instance ptr<u8> physicalDevice u32 queueFamilyIndex: bln;    # Query support for presentation via a given physical device and queue family.

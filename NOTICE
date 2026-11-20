@@ -11,6 +11,7 @@ its folder (vendor/NAME/LICENSE) and goes with the library wherever it's passed 
   zlib        Copyright (C) 1995-2026 Jean-loup Gailly and Mark Adler      zlib licence
   stb         Sean Barrett and contributors                               public domain or MIT
   miniaudio   David Reid                                                  public domain or MIT-0
+  Vulkan      The Khronos Group Inc. (its headers; no library is passed on)  Apache-2.0 or MIT
 
 PHI's repository has what PHI needs to call each (written from its headers) and its
 licence; the libraries themselves are fetched from their makers by vendor/fetch.py, and a

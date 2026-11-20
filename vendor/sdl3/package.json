@@ -32,7 +32,8 @@
     "alias": "SDL",
     "headers": [
       "include/SDL3/SDL.h",
-      "include/SDL3/SDL_main.h"
+      "include/SDL3/SDL_main.h",
+      "include/SDL3/SDL_vulkan.h"
     ],
     "own": "include/SDL3/",
     "strip": "SDL_",
@@ -61,7 +62,15 @@
       "A function is SDL.Name for C's SDL_Name (SDL.Init, SDL.CreateWindow), and a constant the same",
       "(SDL.INIT_VIDEO, SDL.EVENT_QUIT); a struct keeps C's whole name (SDL_Event, SDL_FRect).",
       "An SDL_Event has its type, and the rest is read through a pointer to the kind of event it is:",
-      "    ptr<SDL_KeyboardEvent> key: addr event as ptr<SDL_KeyboardEvent>;"
-    ]
+      "    ptr<SDL_KeyboardEvent> key: addr event as ptr<SDL_KeyboardEvent>;",
+      "SDL's Vulkan functions (SDL.Vulkan_CreateSurface and the rest) take Vulkan's handles as plain",
+      "addresses, so a program gives them what vendor.vulkan's functions gave it."
+    ],
+    "types": {
+      "VkInstance": "ptr<u8>",
+      "VkPhysicalDevice": "ptr<u8>",
+      "VkSurfaceKHR": "u64",
+      "VkAllocationCallbacks": "u8"
+    }
   }
 }

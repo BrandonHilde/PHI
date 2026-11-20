@@ -4496,8 +4496,8 @@ to its last item, the [Later](#later) list.
   callbacks on any thread, `lng`/`ulng`, `isz`/`usz`), with no linker still: a 64-bit Linux
   program that calls one names Linux's loader. Tests `tests/clib`.
 - **The vendor folder** (the user's choice, after Odin's: "the full set of useful tools to be
-  shipped with it and for them to be fully functional"): raylib, SDL3, SQLite, Lua, zlib,
-  stb, miniaudio and C's own library, each whole from `use vendor.NAME;`. The modules are
+  shipped with it and for them to be fully functional"): raylib, SDL3, Vulkan, SQLite, Lua,
+  zlib, stb, miniaudio and C's own library, each whole from `use vendor.NAME;`. The modules are
   written from the libraries' headers (`vendor/bindgen.py`), the libraries fetched or built
   from their makers' source (`vendor/fetch.py`), and neither script is in a release. For it,
   the language took a struct-giving C call as a value, `struct.A is B;`, and a negative

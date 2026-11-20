@@ -117,8 +117,8 @@ phi.Count:Program
 <h3>C libraries</h3>
 
 A program for Windows, macOS or Linux calls C libraries, and the ones most programs reach
-for come with PHI, in the [vendor folder](vendor/README.md): raylib, SDL3, SQLite, Lua,
-zlib, stb, miniaudio and C's own library. One `use` brings a whole library in, with nothing
+for come with PHI, in the [vendor folder](vendor/README.md): raylib, SDL3, Vulkan, SQLite,
+Lua, zlib, stb, miniaudio and C's own library. One `use` brings a whole library in, with nothing
 to declare and nothing to install, and the build puts its file beside the program:
 
 ```phi
