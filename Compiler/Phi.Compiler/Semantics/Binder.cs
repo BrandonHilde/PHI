@@ -5417,6 +5417,7 @@ namespace Phi.Compiler.Semantics
                         if (given.Type.IsError) continue;
                         // (a struct, or one that's borrowed or on the heap: a method's parameter, a new one)
                         bool one = (given.Type.IsStruct || given.Type.IsObject) && given.Type.Struct == types[i].Struct;
+                        if (saidStoreFirst.Contains(given)) continue;      // (said already: it goes in a variable first)
                         if (!one || !IsAssignable(given))
                         {
                             Error(given.Span, $"'{f.Parameters[i].Name}' of {full} is a {types[i]} by value, so it's given one that's a variable, a parameter, a field or an element" +
@@ -5992,7 +5993,10 @@ namespace Phi.Compiler.Semantics
             // a call's new object has to go somewhere that takes it over, or nothing would free it
             // (said once for a call, however many times what it's part of is looked at)
             if (!allowObject && IsObjectCall(expr) && saidStoreFirst.Add(expr))
-                Error(expr.Span, $"this call returns a new {expr.Type}; store it first, like call x is ...; or new {expr.Type} x: (...);");
+                Error(expr.Span, expr.Type.Struct?.Decl.IsForeign == true
+                    // (a struct of C's, made by a method of the program's own: a plain variable is where it goes)
+                    ? $"this call gives a {expr.Type}, which goes in a variable before it's used: {expr.Type} made: (...); and then made where this is"
+                    : $"this call returns a new {expr.Type}; store it first, like call x is ...; or new {expr.Type} x: (...);");
         }
 
         /// <summary>The calls already said to return a new object that has to be stored first.</summary>

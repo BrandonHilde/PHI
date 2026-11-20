@@ -54,8 +54,21 @@ or later and X11.
 - **Structs** have C's names (`Vector2`, `Color`, `Rectangle`) and C's fields. A function of
   the library's that gives one back can be used wherever a value goes:
   `Color half: (Ray.Fade: Ray.RED 0.5);`, or straight into another call, or
-  `(Ray.GetMousePosition).x`. A method of your own that gives a struct back is declared from
-  first (`Rectangle area: (BasketArea);`) and the variable given to the call.
+  `(Ray.GetMousePosition).x`.
+- **A struct of your own making** comes from a helper, declared from and then given to the
+  call. It's a method like any other; one that gives a struct back needs
+  `use memory.program_heap;` in the program.
+
+  ```phi
+  [Vec: f32 x; f32 y; : Vector2]
+      Vector2 made;
+      made.x is x;
+      made.y is y;
+  [end: made]
+
+  Vector2 centre: (Vec: 400 225);
+  call Ray.DrawCircleV: centre 30 Ray.MAROON;
+  ```
 - **What a function gives** is after its second `:` in the module (`Ray.GetScreenWidth: : int;`),
   and one that gives nothing has none (`Ray.CloseWindow;`). What it gives needn't be taken:
   `call Sql.finalize: st;` is as good as `r is (Sql.finalize: st);`.
