@@ -20,6 +20,10 @@ with a list of anything it couldn't declare (`left-out.txt`; none so far), and
 system. A module is never edited by hand: what C can't say for itself goes in
 `package.json` (`"bindings"`), or in `extra.phi` beside it, which is added at the end.
 
+The Linux libraries `fetch.py` builds are for glibc 2.34 (2021) and later, whatever Linux
+they're built on: a C function a new glibc has a newer version of is asked for by its first
+one, and the build stops if a library still needs more. raylib's own Linux build needs 2.38.
+
 The Windows libraries `fetch.py` builds have parts of MinGW-w64's runtime in them, whose
 licence goes with them: `vendor/LICENSE-mingw-w64-runtime`, which a release has. (stb is
 built there without thread-local storage, which would bring in MinGW's threads library and

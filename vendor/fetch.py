@@ -17,6 +17,7 @@ import io
 import json
 import os
 import posixpath
+import re
 import shutil
 import subprocess
 import sys
@@ -148,6 +149,23 @@ def linux_compiler():
     return None
 
 
+# The oldest C library a Linux library built here is to run on: 2.34 (August 2021), which
+# a PHI program that calls C needs anyway.
+GLIBC_FLOOR = (2, 34)
+
+
+def glibc_past_floor(compiler, library):
+    """The C functions a built Linux library asks for in a version past GLIBC_FLOOR."""
+    objdump = compiler[:-1] + ["objdump"] if compiler[0] == "lima" else ["objdump"]
+    listing = subprocess.run(objdump + ["-T", library], capture_output=True, text=True).stdout
+    newer = set()
+    for line in listing.split("\n"):
+        m = re.search(r"\(?GLIBC_(\d+)\.(\d+)(?:\.\d+)?\)?\s+(\w+)$", line)
+        if m and "*UND*" in line and (int(m.group(1)), int(m.group(2))) > GLIBC_FLOOR:
+            newer.add(m.group(3))
+    return newer
+
+
 def build(name, info, folder):
     """A library that comes as C source: compiled here into one shared library for each system
     this computer has a compiler for (clang on a Mac, MinGW for Windows, gcc for Linux)."""
@@ -186,10 +204,33 @@ def build(name, info, folder):
         if system == "macos":
             args += ["-install_name", "@rpath/" + library]
         args += ["-I" + os.path.join(folder, i) for i in recipe.get("include", [])]
-        done = subprocess.run(args + ["-o", out] + sources + recipe.get("link", []) + recipe.get(system + "_link", []), capture_output=True, text=True)
+        tail = ["-o", out] + sources + recipe.get("link", []) + recipe.get(system + "_link", [])
+        if system == "linux64":
+            args += ["-std=gnu17"]      # (not C23, whose strtol and the like are names only a new glibc has)
+        done = subprocess.run(args + tail, capture_output=True, text=True)
         if done.returncode != 0:
             sys.exit(f"{name} didn't build for {system}:\n{done.stderr[-3000:]}")
-        print(f"  built {system}/{library}")
+        note = ""
+        if system == "linux64":
+            # A library built on a new Linux asks for the newest version of each C function it
+            # calls, which an older Linux hasn't got, though it has the function. Each one that's
+            # past GLIBC_FLOOR is asked for by its first version instead, and it's built again.
+            newer = glibc_past_floor(compiler, out)
+            if newer:
+                header = os.path.join(folder, "src", "glibc-floor.h") if os.path.isdir(os.path.join(folder, "src")) else os.path.join(folder, "glibc-floor.h")
+                with open(header, "w") as f:
+                    f.write("/* written by vendor/fetch.py: C functions asked for by their first version */\n"
+                            + "".join(f'__asm__(".symver {n},{n}@GLIBC_2.2.5");\n' for n in sorted(newer)))
+                done = subprocess.run(args + ["-include", header] + tail, capture_output=True, text=True)
+                if done.returncode != 0:
+                    sys.exit(f"{name} didn't build for {system} on older C libraries:\n{done.stderr[-3000:]}")
+                if not header.startswith(os.path.join(folder, "src")):
+                    os.remove(header)
+                still = glibc_past_floor(compiler, out)
+                if still:
+                    sys.exit(f"{name}'s {library} needs a C library newer than glibc {GLIBC_FLOOR[0]}.{GLIBC_FLOOR[1]} for: {', '.join(sorted(still))}")
+            note = f" (for glibc {GLIBC_FLOOR[0]}.{GLIBC_FLOOR[1]} and later)"
+        print(f"  built {system}/{library}{note}")
 
 
 def main():

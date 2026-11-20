@@ -22,6 +22,7 @@ phi.Hello:Program
 }
 ```
 
+A program that uses one is built for a system that calls C, so it's given its target:
 `phi build hello.phi --target windows64` (or `windows`, `macos`, `linux64`) puts the
 library's file beside the program, so the folder it builds into is what you give to someone
 else (without `obj`, where the build keeps its own working files). Nothing is installed, and nothing is declared in the program.

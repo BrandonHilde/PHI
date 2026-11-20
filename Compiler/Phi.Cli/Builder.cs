@@ -517,7 +517,16 @@ namespace Phi.Cli
                 if (name.Length == 0 || name.Contains('/') || name.Contains('\\')) continue;
                 var folders = new[] { Path.GetDirectoryName(Path.GetFullPath(library.File.Path)), Path.GetDirectoryName(Path.GetFullPath(phiFile)) }
                     .Where(f => f != null).Distinct().SelectMany(f => new[] { Path.Combine(f!, host.FlagName()), f! });
-                if (folders.Select(f => Path.Combine(f, name)).FirstOrDefault(File.Exists) is not string found) continue;
+                if (folders.Select(f => Path.Combine(f, name)).FirstOrDefault(File.Exists) is not string found)
+                {
+                    // a vendor library that's built from its source has a file for every system: one
+                    // that isn't there wasn't built here, and the program won't start without it
+                    string? package = Path.GetDirectoryName(Path.GetFullPath(library.File.Path));
+                    if (package != null && File.Exists(Path.Combine(package, "package.json")) && File.ReadAllText(Path.Combine(package, "package.json")).Contains("\"build\""))
+                        result.Warnings.Add($"{name} isn't in the vendor folder ({Path.Combine(package, host.FlagName())}), so it isn't beside the program, which needs it to start: " +
+                                            "a release has it; from the source, vendor/fetch.py builds it where there's a compiler for that system");
+                    continue;
+                }
                 string beside = Path.Combine(outDir, name);
                 if (Path.GetFullPath(found) == Path.GetFullPath(beside)) continue;
                 try { File.Copy(found, beside, overwrite: true); }

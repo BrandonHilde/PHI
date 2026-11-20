@@ -154,6 +154,7 @@ namespace Phi.Compiler.Semantics
         readonly HashSet<LibraryUseDecl> portableLibraries = new();
         /// <summary>struct.Name is Other: each other name a struct has.</summary>
         readonly Dictionary<string, StructSymbol> structAliases = new();
+        bool saidNoOutside;
         readonly Dictionary<string, OutsideFunctionDecl> outsideFunctions = new();
         readonly Dictionary<OutsideFunctionDecl, List<PhiType>> outsideTypes = new();
 
@@ -206,7 +207,12 @@ namespace Phi.Compiler.Semantics
         /// <summary>Whether a file's code is elsewhere: a compiled library's, or one a library being built only uses.</summary>
         bool IsOutside(SourceFile f) => f.Compiled != null || library != null && !library.Own.Contains(f);
 
-        void Error(Span span, string message) => diagnostics.Error(file, span, message);
+        void Error(Span span, string message)
+        {
+            // (a program that calls a C library, built for a system that can't: that's been said,
+            // and everything after it would be what follows from it)
+            if (!saidNoOutside) diagnostics.Error(file, span, message);
+        }
 
         // ================================================================ declarations
 
@@ -5383,8 +5389,14 @@ namespace Phi.Compiler.Semantics
                     bool portable = libraries.TryGetValue(f.Library, out LibraryUseDecl? lib) && portableLibraries.Contains(lib);
                     if (portable && !CallsC(host))
                     {
-                        Error(calleeSpan, $"{full} is a function of an outside library ({string.Join(", ", lib!.Paths.Select(p => $"'{p}'"))}), " +
-                                          $"which Windows, macOS and 64-bit Linux programs call (for now), not {host.Name()}'s");
+                        // (said once: a library of the vendor folder is hundreds of functions, and its own
+                        // methods call some, so one for each would be pages)
+                        if (!saidNoOutside)
+                        {
+                            Error(calleeSpan, $"{full} is a function of a C library ({string.Join(", ", lib!.Paths.Select(p => $"'{p}'"))}), which a Windows, macOS or 64-bit Linux " +
+                                              $"program calls, and this is being built as {host.Name()}'s: build it with --target windows64, windows, macos or linux64");
+                            saidNoOutside = true;
+                        }
                         return null;
                     }
                     if (portable && f.LibraryPath.Length == 0)

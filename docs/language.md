@@ -3525,7 +3525,8 @@ Sql.sqlite3_open: ptr<u8> name ptr<ptr<u8>> db;
 ```
 
 Building it for a system the library names no file for is an error where a function is
-called (`Sql has no file named for ...`), as is building it for 32-bit Linux or PHI OS. A
+called (`Sql has no file named for ...`). Building it with no `--target`, which is for PHI
+OS, or for 32-bit Linux, is one error that says which targets a program that calls C has. A
 library in a `:Windows` or `:MacOS` module is that system's alone, called only from that
 module's classes, as before. A macOS program's linker looks for a library named without
 its folder (`'libSDL3.dylib'`) where the system's are, beside the program, and where
