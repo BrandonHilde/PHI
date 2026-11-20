@@ -3473,7 +3473,7 @@ outside function if they declare it the same way (a program's own module and the
 declaring it differently is an error.
 
 **Outside functions.** A library outside PHI (on Windows, a DLL; on macOS, a `.dylib` or a
-framework) is brought in with `use`
+framework; on 64-bit Linux, a `.so`) is brought in with `use`
 and its file's name, quoted, under a name that reads as a class's; each of its functions
 the module calls is declared once, as a system call is but without a number, and called by
 that name:

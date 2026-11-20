@@ -5548,8 +5548,8 @@ namespace Phi.Compiler.Semantics
             foreach (LibraryUseDecl library in program.Libraries.Where(l => systemOf.TryGetValue(l.File, out string? s) && !OutsideSystems.Contains(s)))
             {
                 file = library.File;
-                Error(library.Span, $"'{library.Path}' is an outside library, used in a :Windows or :MacOS module, or one that's no system's own, for now " +
-                                    "(Linux's libraries come with H7)");
+                Error(library.Span, $"'{library.Path}' is an outside library, named in a :Windows or :MacOS module, or in one that's no system's own " +
+                                    "(which Windows, macOS and 64-bit Linux programs all call)");
             }
 
             program.Classes.RemoveAll(c => !Kept(c.File));

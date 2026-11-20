@@ -2,8 +2,8 @@
 """Packs PHI for a release: one .zip for each system, with nothing else to install but the
 assembler and emulator PHI drives (NASM, QEMU; on a Mac, Apple's Command Line Tools).
 
-    python3 release/pack.py 0.1.0                 # dist/phi-0.1.0-windows-x64.zip, -linux-x64, -macos-arm64
-    python3 release/pack.py 0.1.0 macos-arm64     # one of them
+    python3 release/pack.py 1.0.0                 # dist/phi-1.0.0-windows-x64.zip, -linux-x64, -macos-arm64
+    python3 release/pack.py 1.0.0 macos-arm64     # one of them
 
 Each has: phi, as one file that needs no .NET; the vendor folder with its libraries for
 every system PHI builds for (run vendor/fetch.py first); the documentation as HTML;

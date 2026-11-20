@@ -24,12 +24,16 @@ by exception 6") to see where to look first, in order.
 | `lib/x86_64_linux/`, `lib/x86_64_windows/` | the same for 64-bit programs (`--target linux64`, `windows64`) |
 | `lib/arm64_macos/` | assembly library (ARM, for Apple's clang) for programs built with `--target macos`: the console, errors and faults, threads, text and numbers, AppKit and audio |
 | `lib/phi/` | the standard library written in PHI: drivers, memory, file system, processes, the network, cryptography, sound, text |
+| `vendor/` | other people's C libraries, each with a PHI module that declares it whole (`use vendor.raylib;`): [vendor/README.md](../vendor/README.md). The modules are written from the libraries' headers by `vendor/bindgen.py`, and the libraries themselves fetched or built by `vendor/fetch.py` ([vendor/MAINTAINING.md](../vendor/MAINTAINING.md)) |
+| `release/` | `pack.py`, which packs a release: one zip for each system, with `phi` as one file, the vendor folder and these documents as HTML |
 | `tests/` | programs that boot in QEMU, with the output they must produce |
 | `samples/` | example programs, including PHI OS |
 | `docs/` | this documentation, and the tutorial's tested examples |
 
 Everything in `lib/` is embedded in the compiler when it's built, so `phi` needs no files
-next to it at run time.
+next to it at run time, but for the vendor folder: its libraries are files (a `.dll`, a
+`.dylib`, a `.so`), so it's a folder beside `phi` (`PhiCompiler.VendorFolder`: the one
+`PHI_VENDOR` names, or the first named `vendor` beside the compiler or above it).
 
 ## From source to disk image
 
@@ -302,6 +306,14 @@ in front of the code ([X86Generator.cs](../Compiler/Phi.Compiler/CodeGen/X86Gene
 `EmitElfHeader` and `EmitPeHeader`), and NASM's flat output is the whole file. The program's
 library is `lib/x86_32_linux/` or `lib/x86_32_windows/` instead of `lib/x86_32_user/`: the
 same labels (`OS_ReadFile`, `phi_exit` ...), answered by that system.
+
+A program that calls a C library is still one file with no linker. On Windows each function
+it calls is an entry in the import table the generator writes; on 64-bit Linux the file
+names Linux's own loader, which brings the libraries in before the program starts
+(`EmitElfHeader`'s dynamic section); on macOS clang links them. A library whose file is with
+the source, or in the vendor folder, is put beside the program (`Builder.BringLibraries`).
+The program's assembly and what the assembler makes of it go in `obj` in the folder it's
+built into, so that folder holds the program and its libraries and nothing else.
 
 A macOS program is the one that is linked: Apple requires its programs to be signed and to
 reach the system through its libraries, so the builder hands `program.s` to clang

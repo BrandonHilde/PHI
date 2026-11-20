@@ -41,6 +41,28 @@ wrong thing, or that give an error you might not expect. The full rules are in t
 | `p[i]`, `s.f` | `p:i`, `p:i.f` | The index after `:` is a number, a name, or `( )`. |
 | `p->f` | `p.f` | `.` reaches a field through a pointer to a struct too (one pointer per `.`). |
 
+## Calling C
+
+A PHI program for Windows, macOS or 64-bit Linux calls C libraries, and is called back by
+them. Eight come with PHI, each whole from one line
+([the vendor folder](../vendor/README.md)): `use vendor.raylib;` and the program calls
+`Ray.InitWindow`. Any other is a `use` that names its file and a line for each function
+([Outside libraries](language.md#a-systems-own-modules-and-system-calls)).
+
+| C | PHI | Notes |
+|---|---|---|
+| `#include <raylib.h>` and linking with it | `use vendor.raylib;` | The build puts the library's file beside the program. |
+| `InitWindow(800, 450, "Hi");` | `call Ray.InitWindow: 800 450 'Hi';` | The library's name, then C's own name for the function. |
+| `long`, `unsigned long` | `lng`, `ulng` | 4 bytes on Windows, 8 on macOS and 64-bit Linux, as C's are. |
+| `size_t`, `ptrdiff_t`, `intptr_t` | `usz`, `isz` | As wide as an address. |
+| `const char *` | text | `'Hi'`, a `str`, or a `ptr<u8>`. |
+| `struct Vector2 v = GetMousePosition();` | `Vector2 v: (Ray.GetMousePosition);` | A struct C gives by value goes wherever a value does. |
+| `typedef Texture Texture2D;` | `struct.Texture2D is Texture;` | Another name for the same struct. |
+| `&x` given to a function | `addr x` | |
+| a function pointer for a callback | `addr foreign Name` | `Name` is a PHI method; C calls it on any thread. |
+| `(void *)-1` | `-1` where an address goes | All 64 bits of it. |
+| `printf("%d", n)` | `C.printf_int: '%d' n` | A function that takes any number of values is declared once for each set it's given. |
+
 ## Traps
 
 **Spacing around `-` matters in lists.** Declarations, call arguments, `log` and `out` take

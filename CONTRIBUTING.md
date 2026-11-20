@@ -20,6 +20,11 @@ contains `NAME`, and `phi test --target linux` (or `windows`, or `macos` on a Ma
 tests that run as that system's programs, without QEMU. On a Mac, Linux programs are x86 and
 run in a Linux machine: see [getting started](docs/getting-started.md) for `PHI_LINUX_RUN`.
 
+The tests of the vendor folder's C libraries need the libraries themselves, which aren't in
+the repository: `python3 vendor/fetch.py` once, then `phi test tests/vendor --target macos`
+(or `linux64`, `windows64`, `windows`). [vendor/MAINTAINING.md](vendor/MAINTAINING.md) says how
+a library is added or moved to a new version.
+
 ## Find your way around
 
 [docs/architecture.md](docs/architecture.md) explains how the compiler, library and build fit

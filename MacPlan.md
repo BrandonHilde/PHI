@@ -322,7 +322,7 @@ makes the Linux machine optional:
   | Runner | What it runs |
   |---|---|
   | Linux, x86-64 | `dotnet test`, `phi test`, `PHI_IR=0 phi test`: all 830, as on the Linux machine today |
-  | Windows, x86-64 | `dotnet test`, `phi test --target windows`: **the run 0.1.0 is waiting for** |
+  | Windows, x86-64 | `dotnet test`, `phi test --target windows`: done before 1.0 (2026-11-19: 1304 of 1305 runs, the one a timing test with the PC busy) |
   | macOS, Apple Silicon | `dotnet test`, `phi test`: what stage 1 does, kept working |
 
   Each installs the .NET 10 SDK, NASM and QEMU. The runners have about 4 cores against this

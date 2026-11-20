@@ -1,13 +1,19 @@
 # Getting started
 
-This guide installs the tools, builds the PHI compiler, and boots a PHI operating system
+This guide installs the tools, gets the PHI compiler, and boots a PHI operating system
 in an emulator. It takes about ten minutes.
+
+There are two ways to get `phi`. **A release** is a zip for Windows, Linux or macOS: unzip
+it anywhere and `phi` is in it, as one file that needs no .NET, with the vendor folder of C
+libraries beside it. NASM and QEMU are still to be installed (below), and then
+[Boot PHI OS](#boot-phi-os) is the next step. **From the source**, it's built with the .NET
+SDK, as [Build PHI](#build-phi) describes.
 
 ## What you need
 
 | Tool | What it's for | Get it |
 |---|---|---|
-| .NET 10 SDK | builds and runs the PHI compiler | [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download/dotnet/10.0) |
+| .NET 10 SDK | builds the PHI compiler from its source (a release doesn't need it) | [dotnet.microsoft.com/download](https://dotnet.microsoft.com/download/dotnet/10.0) |
 | NASM | turns the assembly PHI generates into machine code | [nasm.us](https://www.nasm.us/) |
 | QEMU | an emulated PC to boot PHI programs on | [qemu.org/download](https://www.qemu.org/download/) |
 | git | to get the code | [git-scm.com](https://git-scm.com/) |

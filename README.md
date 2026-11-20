@@ -210,9 +210,9 @@ PHI source line shown above the code it produced.
 
 <h4>Releases:</h4>
 
-PHI is at version 0.1.0, a preview: the language and its library can still change between
-versions. [docs/releases/0.1.0.md](./docs/releases/0.1.0.md) says what it has, what it runs
-on and what it doesn't do yet.
+PHI is at version 1.0. [docs/releases/1.0.0.md](./docs/releases/1.0.0.md) says what it has,
+what it runs on, how it was checked and what it doesn't do yet. Each release has a download
+for Windows, Linux and macOS that needs nothing else but NASM and QEMU.
 
 <h4>Goals:</h4>
 

@@ -173,7 +173,7 @@ namespace Phi.Compiler.Tests
 
         [Theory]
         // in a module for another system, or none
-        [InlineData("use 'user32.dll' as User32;\nphi.Raw:Linux\n{\n}\n", Host.Linux, "'user32.dll' is an outside library, used in a :Windows or :MacOS module, or one that's no system's own")]
+        [InlineData("use 'user32.dll' as User32;\nphi.Raw:Linux\n{\n}\n", Host.Linux, "'user32.dll' is an outside library, named in a :Windows or :MacOS module, or in one that's no system's own")]
         [InlineData("phi.Win:Windows\n{\n [Beep]\n [end: (User32.MessageBeep: 0)]\n}\n", Host.Windows, "unknown method 'User32.MessageBeep'")]
         // a name that reads as a class's
         [InlineData("use 'user32.dll' as user32;\nphi.Win:Windows\n{\n}\n", Host.Windows, "a library's name reads as a class's does, so it starts with a capital: as User32")]

@@ -4488,6 +4488,31 @@ and compares the code; `PHI_FMT_ALL=1 dotnet test` does it for every test, after
 Left in H8: hover, finding uses and renaming in `phi lsp` itself, DWARF for Linux, and packages. Everything in the list above called "The parts most worth doing next" is done up
 to its last item, the [Later](#later) list.
 
+**Version 1.0 (2026-11-19, the user's choice: "we are far enough along to label it as 1.0").**
+- The number is 1.0.0 in `Compiler/Directory.Build.props`, and the notes are
+  `docs/releases/1.0.0.md` (0.1.0 was never released: its notes became these).
+- **C libraries** came between the two, which the release waited for: any C library called
+  from a Windows, macOS or 64-bit Linux program (floats, 64-bit numbers, structs by value,
+  callbacks on any thread, `lng`/`ulng`, `isz`/`usz`), with no linker still: a 64-bit Linux
+  program that calls one names Linux's loader. Tests `tests/clib`.
+- **The vendor folder** (the user's choice, after Odin's: "the full set of useful tools to be
+  shipped with it and for them to be fully functional"): raylib, SDL3, SQLite, Lua, zlib,
+  stb, miniaudio and C's own library, each whole from `use vendor.NAME;`. The modules are
+  written from the libraries' headers (`vendor/bindgen.py`), the libraries fetched or built
+  from their makers' source (`vendor/fetch.py`), and neither script is in a release. For it,
+  the language took a struct-giving C call as a value, `struct.A is B;`, and a negative
+  number as an address whole. A struct value written in place was left out (the user's
+  choice: a helper method is the way, and values written into calls are poor code anyway).
+- **Another pass of the optimiser** (values share registers, nothing worked out or read twice
+  in a row, arithmetic out of loops): 0.92 of the time before it over the benchmarks on the
+  user's Windows PC, with each step behind `PHI_OPT_OFF`.
+- **A release is three zips** (`release/pack.py`: Windows x64, Linux x64, macOS on Apple
+  Silicon), each `phi` as one file that needs no .NET, the vendor folder, the documents as
+  HTML, the library's source and the samples. A program's build folder holds the program and
+  its libraries, with the assembler's files in `obj`.
+- Checked on three computers before it: the user's Windows PC and Linux PC, and the Mac
+  the work is done on (`docs/releases/1.0.0.md`, "How it was checked").
+
 ## References
 
 - OSDev Wiki: https://wiki.osdev.org (Bare Bones, GDT, IDT, 8259 PIC, PS/2, ATA PIO, Paging)
