@@ -101,7 +101,7 @@ namespace Phi.Cli
                 // a macOS program: Apple's clang assembles its ARM code and links it with libSystem
                 // (and signs it, which Apple Silicon needs to run it)
                 result.ExecutablePath = Path.Combine(outDir, name);
-                if (!AssembleMacOS(compiled.Units.Single(), outDir, result.ExecutablePath, result)) return result;
+                if (!AssembleMacOS(compiled.Units.Single(), WorkFolder(outDir), result.ExecutablePath, result)) return result;
                 if (debug && !DebugSymbols(result.ExecutablePath, result)) return result;
                 if (app && !MakeApp(name, outDir, result)) return result;
                 result.IsProgram = true;
@@ -112,10 +112,11 @@ namespace Phi.Cli
             {
                 // an ordinary program: NASM writes the whole executable, headers and all
                 AsmUnit unit = compiled.Units.Single();
-                byte[]? executable = Assemble(unit, outDir, Array.Empty<string>(), result);
+                string work = WorkFolder(outDir);
+                byte[]? executable = Assemble(unit, work, Array.Empty<string>(), result);
                 if (executable == null) return result;
                 result.ExecutablePath = Path.Combine(outDir, name + (host.IsWindows() ? ".exe" : ""));
-                if (unit.Debug != null) Pdb.Write(unit.Debug, outDir, name, host, executable);
+                if (unit.Debug != null) Pdb.Write(unit.Debug, outDir, name, host, executable, work);
                 WriteWhenFree(result.ExecutablePath, executable);
                 if (!OperatingSystem.IsWindows())
                     File.SetUnixFileMode(result.ExecutablePath, File.GetUnixFileMode(result.ExecutablePath)
@@ -570,6 +571,23 @@ namespace Phi.Cli
                 return false;
             }
             return true;
+        }
+
+        /// <summary>
+        /// Where a Windows, Linux or macOS program's assembly and what the assembler makes of it
+        /// go: a folder obj in the one it's built into, so that folder itself holds the program
+        /// and the libraries it needs beside it, and is what's given to someone else.
+        /// </summary>
+        public const string WorkFolderName = "obj";
+
+        static string WorkFolder(string outDir)
+        {
+            string work = Path.Combine(outDir, WorkFolderName);
+            Directory.CreateDirectory(work);
+            // (what a build before this change left beside the program)
+            foreach (string old in new[] { "program.asm", "program.bin", "program.lst", "program.map", "program.s", "program.o" })
+                try { File.Delete(Path.Combine(outDir, old)); } catch (IOException) { } catch (UnauthorizedAccessException) { }
+            return work;
         }
 
         static byte[]? Assemble(AsmUnit unit, string outDir, string[] defines, BuildResult result)

@@ -98,7 +98,7 @@ namespace Phi.Cli
         /// </summary>
         public static List<NamedMap> MapsIn(string outDir)
         {
-            var maps = new[] { "kernel.lst", "os.lst", "boot.lst", "program.lst" }
+            var maps = new[] { "kernel.lst", "os.lst", "boot.lst", "program.lst", Path.Combine(Builder.WorkFolderName, "program.lst") }
                 .Select(n => Path.Combine(outDir, n)).Where(File.Exists)
                 .Select(f => new NamedMap("", AddressMap.Load(f))).ToList();
             string programs = Path.Combine(outDir, "programs");

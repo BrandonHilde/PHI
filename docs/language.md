@@ -3533,7 +3533,9 @@ Homebrew puts them (`/opt/homebrew/lib`); a Windows program's is found as Window
 any DLL (beside the `.exe` first), and a Linux program's as Linux finds any `.so` (beside
 the program first). A library whose file is with the source (beside it, or in a folder
 beside it named for the system: `windows64/`, `windows/`, `macos/`, `linux64/`) is put
-beside the program when it's built. `...` and `Name = 'symbol':` (below) are for every
+beside the program when it's built. The program's assembly and what the assembler makes of
+it go in a folder `obj` there, so the folder a program is built into holds the program and
+its libraries and nothing else. `...` and `Name = 'symbol':` (below) are for every
 system.
 
 **On 64-bit Linux** a program that calls a library is still one file the compiler writes

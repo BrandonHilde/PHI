@@ -23,9 +23,9 @@ namespace Phi.Cli
         const ushort NoStream = 0xFFFF;
         internal const uint SectionFlags = 0xE0000060; // code and data, run, read, write
 
-        public static void Write(DebugInfo info, string outDir, string name, Host host, byte[] executable)
+        public static void Write(DebugInfo info, string outDir, string name, Host host, byte[] executable, string? mapFolder = null)
         {
-            string mapPath = Path.Combine(outDir, "program.map");
+            string mapPath = Path.Combine(mapFolder ?? outDir, "program.map");
             Dictionary<string, uint> labels = ReadMap(mapPath);
             string pdbPath = Path.GetFullPath(Path.Combine(outDir, name + ".pdb"));
 

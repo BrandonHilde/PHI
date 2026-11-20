@@ -240,7 +240,7 @@ namespace Phi.Compiler.Tests
                 "\t\tint sum: 0;\n\t\twhile int i: 0; i < n; i++;\n\t\t\tsum++ i / 7;\n\t\t;;\n\t[end: sum]\n}\n");
             BuildResult result = Builder.Build(Path.Combine(root, "hot.phi"), Path.Combine(root, "build"), listing: true, host: Phi.Compiler.Host.Linux64);
             Assert.True(result.Success, string.Join("\n", result.Errors));
-            string[] lines = File.ReadAllLines(Path.Combine(root, "build", "program.lst"));
+            string[] lines = File.ReadAllLines(Path.Combine(root, "build", "obj", "program.lst"));
             var maps = new[] { AddressMap.Parse(lines) };
 
             // three samples in the loop's line, one in the class's own code, one outside the program

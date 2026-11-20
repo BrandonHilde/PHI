@@ -6,7 +6,8 @@ assembler and emulator PHI drives (NASM, QEMU; on a Mac, Apple's Command Line To
     python3 release/pack.py 0.1.0 macos-arm64     # one of them
 
 Each has: phi, as one file that needs no .NET; the vendor folder with its libraries for
-every system PHI builds for (run vendor/fetch.py first); the documentation as HTML; the
+every system PHI builds for (run vendor/fetch.py first); the documentation as HTML;
+no scripts (nothing in a release needs Python); the
 standard library's source to read (it's inside phi already); the samples; the licences.
 It needs the .NET SDK. Nothing here uploads anything.
 """
@@ -184,7 +185,8 @@ def copy_documents(source, target, skip=()):
     for folder, folders, files in os.walk(source):
         folders[:] = [f for f in folders if f not in ("build", "bin", "obj", ".cache", "src", "include") + tuple(skip) and not f.startswith(".")]
         for name in files:
-            if name.startswith(".") or name.endswith((".actual", ".img")):
+            # (a release is what's used, not what makes it: no scripts, and no notes for whoever maintains PHI)
+            if name.startswith(".") or name.endswith((".actual", ".img", ".py", ".pyc")) or name in ("MAINTAINING.md", "package.json", "left-out.txt"):
                 continue
             path = os.path.join(folder, name)
             to = os.path.join(target, os.path.relpath(path, source))
@@ -192,6 +194,7 @@ def copy_documents(source, target, skip=()):
             if name.endswith(".md"):
                 with open(path, encoding="utf-8") as f:
                     text = f.read()
+                text = re.sub(r"\n[^\n]*MAINTAINING\.md[^\n]*\n", "\n", text)      # (a file a release hasn't got)
                 with open(to[:-3] + ".html", "w", encoding="utf-8", newline="\n") as f:
                     f.write(to_html(text, title_of(text, name[:-3])))
             else:
@@ -242,6 +245,7 @@ def pack(version, system):
             text = f.read()
         # (pictures the README names from the repository's root)
         text = text.replace('src="/resources/', 'src="resources/')
+        text = re.sub(r"\n[^\n]*MAINTAINING\.md[^\n]*\n", "\n", text)
         with open(os.path.join(folder, document[:-3] + ".html"), "w", encoding="utf-8", newline="\n") as f:
             f.write(to_html(text, title_of(text, "PHI")))
     for plain in ("LICENSE", "NOTICE"):
@@ -258,7 +262,7 @@ def pack(version, system):
                 info = zipfile.ZipInfo.from_file(path, inside)
                 info.compress_type = zipfile.ZIP_DEFLATED
                 # (what a Mac or Linux runs keeps its permission to be run)
-                runs = f == "phi" or f.endswith((".dylib", ".py")) or ".so" in f
+                runs = f == "phi" or f.endswith(".dylib") or ".so" in f
                 info.external_attr = (0o755 if runs else 0o644) << 16
                 with open(path, "rb") as data:
                     z.writestr(info, data.read(), compresslevel=9)
