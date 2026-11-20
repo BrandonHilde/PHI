@@ -5394,7 +5394,8 @@ namespace Phi.Compiler.Semantics
                         if (!saidNoOutside)
                         {
                             Error(calleeSpan, $"{full} is a function of a C library ({string.Join(", ", lib!.Paths.Select(p => $"'{p}'"))}), which a Windows, macOS or 64-bit Linux " +
-                                              $"program calls, and this is being built as {host.Name()}'s: build it with --target windows64, windows, macos or linux64");
+                                              $"program calls, and this is being built as {host.Name()}'s" + (host == Host.PhiOS ? " (which a build with no --target is)" : "") +
+                                              ": build it with --target windows64, windows, macos or linux64");
                             saidNoOutside = true;
                         }
                         return null;
