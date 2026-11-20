@@ -27,7 +27,7 @@ prints a different last digit than PHI's.
 machine or beside another C compiler aren't comparable with it (`gcc` and `clang` optimise
 some of these differently, `fib` most of all): to see whether a change made PHI slower,
 compare two runs on the same machine, and save a new file there only on purpose. On an M1
-Mac beside clang 21 `-O2`, PHI took 1.13 times its time over these (November 2026).
+Mac, clang 21 `-O2` was 1.13 times faster than PHI over these (November 2026).
 
 ## A real program
 

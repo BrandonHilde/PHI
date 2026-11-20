@@ -4504,7 +4504,7 @@ to its last item, the [Later](#later) list.
   number as an address whole. A struct value written in place was left out (the user's
   choice: a helper method is the way, and values written into calls are poor code anyway).
 - **Another pass of the optimiser** (values share registers, nothing worked out or read twice
-  in a row, arithmetic out of loops): 0.92 of the time before it over the benchmarks on the
+  in a row, arithmetic out of loops): 1.09 times faster than before it over the benchmarks on the
   user's Windows PC, with each step behind `PHI_OPT_OFF`.
 - **A release is three zips** (`release/pack.py`: Windows x64, Linux x64, macOS on Apple
   Silicon), each `phi` as one file that needs no .NET, the vendor folder, the documents as

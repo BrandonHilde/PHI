@@ -129,9 +129,10 @@ and the [codebase map](docs/codebase-map.html) says where to look for each kind 
 Programs are built through PHI's own optimiser: values kept in registers, short methods put
 in place, nothing worked out twice, and simple loops over arrays made into vector code.
 
-Over the twelve benchmarks in `bench/`, on x86 Linux, a 64-bit PHI program takes 1.14 times
-`gcc -O2`'s time and 0.74 times C#'s ([bench/RESULTS.md](bench/RESULTS.md); the
-[release notes](docs/releases/1.0.0.md) say where it's ahead and behind).
+Over the twelve benchmarks in `bench/`, on x86 Linux, a 64-bit PHI program is 1.35 times
+faster than C# and 2 times faster than C built without optimisation; C built with `gcc -O2`
+is 1.14 times faster than PHI ([bench/RESULTS.md](bench/RESULTS.md) has every time; the
+[release notes](docs/releases/1.0.0.md) say where PHI is ahead and behind).
 
 - `phi compare` times each benchmark as PHI, C and C# on your own computer.
 - `phi test --bench` counts instructions for a set of larger workloads and fails if one got

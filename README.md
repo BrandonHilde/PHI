@@ -29,7 +29,7 @@ phi.Hello:Program
   file, and the libraries most programs reach for are already in it.
 - **Small, fast programs.** A PHI program is an ordinary executable with no runtime to
   install: the raylib example below is a 25 KB program beside raylib's own library. Over our
-  benchmarks it takes about three-quarters of C#'s time and 1.14 times optimised C's
+  benchmarks PHI is 1.35 times faster than C#, and optimised C is 1.14 times faster than PHI
   ([the numbers](bench/RESULTS.md)).
 - **C libraries from one line.** `use vendor.raylib;` and every function of raylib is there.
   Nothing to declare, nothing to link, nothing to install.
