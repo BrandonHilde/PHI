@@ -40,6 +40,21 @@ phi.Cards:Program
   `ptr<VkPhysicalDevice_T>`, `ptr<VkDevice_T>`, `ptr<VkQueue_T>`, `ptr<VkCommandBuffer_T>`.
   Every other (a `VkBuffer`, a `VkImage`, a `VkSurfaceKHR`, a `VkSwapchainKHR`) is a `u64`,
   on every system.
+  `Vk.NULL_HANDLE` (0) is no handle, of either kind.
+- **A union** is a block of its size, read and written through a pointer to the form it is.
+  The first one every program meets is the colour a frame is cleared to
+  (`clearColor.color.float32` in C):
+
+  ```phi
+  VkClearValue colour;
+  ptr<f32> rgba: addr colour as ptr<f32>;
+  rgba:0 is 0.25;
+  rgba:1 is 0.5;
+  rgba:2 is 0.75;
+  rgba:3 is 1.0;
+  ```
+- **A struct starts as zeros,** which Vulkan relies on: `pNext` and every field a program
+  doesn't set are 0 without being told.
 - **A window** comes from SDL3, which is in the vendor folder too:
   `SDL.Vulkan_GetInstanceExtensions` says which extensions its window needs, and
   `SDL.Vulkan_CreateSurface` makes the surface.
@@ -51,7 +66,8 @@ phi.Cards:Program
   `Vk.INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR`
   ([tests/vendor/vulkan_program.phi](../../tests/vendor/vulkan_program.phi) shows how).
 - Left out ([left-out.txt](left-out.txt)): a few ray-tracing structs C packs into bits, the
-  constants past 32 bits (`VK_WHOLE_SIZE`: put its value in a `u64` of your own), and the 64-bit flags of
+  constants past 32 bits (`VK_WHOLE_SIZE`, and `UINT64_MAX` for a wait with no end: put
+  the value in a `u64` of your own, `u64 forever: 0xFFFFFFFFFFFFFFFF;`), and the 64-bit flags of
   the newer calls whose names end in `2` (`VK_PIPELINE_STAGE_2_...`), which C has as
   variables: give their numbers. The headers for one window system alone
   (`vulkan_win32.h` and the like) aren't read; SDL3 does that part.

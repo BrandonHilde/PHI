@@ -5637,6 +5637,10 @@ phi.Vk:Library
 	const int SHADER_GROUP_SHADER_ANY_HIT_KHR: 2;
 	const int SHADER_GROUP_SHADER_INTERSECTION_KHR: 3;
 	const int SHADER_GROUP_SHADER_MAX_ENUM_KHR: 2147483647;
+
+
+	# no handle: what C writes as VK_NULL_HANDLE, for either kind (an address, or a u64)
+	const int NULL_HANDLE: 0;
 }
 
 struct.VkCommandBuffer_T foreign    # only ever held by its address: what's in it is vulkan's own

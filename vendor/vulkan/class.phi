@@ -1,0 +1,2 @@
+	# no handle: what C writes as VK_NULL_HANDLE, for either kind (an address, or a u64)
+	const int NULL_HANDLE: 0;

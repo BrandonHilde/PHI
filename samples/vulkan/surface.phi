@@ -1,8 +1,10 @@
 # SDL3 and Vulkan together: a window of SDL's that Vulkan can draw into. SDL says which
 # extensions its window needs, Vulkan makes an instance with them, SDL makes the window's
 # surface, and each graphics card is asked whether it can show pictures on it. It draws
-# nothing: it's the start every Vulkan program has, before its first triangle. Both
-# libraries are whole in the vendor folder, so nothing is declared here.
+# nothing, says what it found and ends: it's the start every Vulkan program has, before
+# its first triangle. (A window nothing has been drawn in isn't shown at all on Wayland,
+# so there'd be nothing to look at or close.) Both libraries are whole in the vendor
+# folder, so nothing is declared here.
 #
 #   phi run samples/vulkan/surface.phi --target windows64        (or linux64, macos)
 #
@@ -78,23 +80,16 @@ phi.Surface:Program
 			;;
 		;;
 		log (addr about.deviceName) ': Vulkan ' ((about.apiVersion >> 22) & 0x7F) '.' ((about.apiVersion >> 12) & 0x3FF)
-		    ', draws ' draws ', shows on this window ' shows '\n';
+		    ', draws: ' (YesNo: draws) ', shows on this window: ' (YesNo: shows) '\n';
 	;;
 
-	# the window stays until it's closed or a key is pressed
-	SDL_Event event;
-	bln open: true;
-	while open
-		while (SDL.PollEvent: addr event)
-			if event.type is SDL.EVENT_QUIT or event.type is SDL.EVENT_KEY_DOWN
-				open is false;
-			;;
-		;;
-		call SDL.Delay: 16;
-	;;
 	call SDL.Vulkan_DestroySurface: instance surface 0;
 	call Vk.DestroyInstance: instance 0;
 	call SDL.DestroyWindow: window;
 	call SDL.Quit;
 	exit 0;
+
+	[YesNo: bln so; : ptr<u8>]
+		if so return 'yes';
+	[end: 'no']
 }
