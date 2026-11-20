@@ -8,7 +8,8 @@ assembler and emulator PHI drives (NASM, QEMU; on a Mac, Apple's Command Line To
 Each has: phi, as one file that needs no .NET; the vendor folder with its libraries for
 every system PHI builds for (run vendor/fetch.py first); the documentation as HTML;
 no scripts (nothing in a release needs Python); the
-standard library's source to read (it's inside phi already); the samples; the licences.
+standard library's source to read (it's inside phi already); the samples; the licences,
+the .NET runtime's among them, since phi has it inside.
 It needs the .NET SDK. Nothing here uploads anything.
 """
 import html
@@ -256,6 +257,13 @@ def pack(version, system):
             f.write(to_html(text, title_of(text, "PHI")))
     for plain in ("LICENSE", "NOTICE"):
         shutil.copy2(os.path.join(ROOT, plain), os.path.join(folder, plain))
+    # phi has the .NET runtime in it, which is passed on with its licence and notices
+    dotnet = os.path.dirname(os.path.realpath(shutil.which("dotnet") or ""))
+    os.makedirs(os.path.join(folder, "licenses"))
+    for theirs in ("LICENSE.txt", "ThirdPartyNotices.txt"):
+        if not os.path.isfile(os.path.join(dotnet, theirs)):
+            sys.exit(f"{theirs} isn't beside dotnet ({dotnet}): a release needs the .NET runtime's licence and notices")
+        shutil.copy2(os.path.join(dotnet, theirs), os.path.join(folder, "licenses", "dotnet-" + theirs))
 
     archive = os.path.join(DIST, name + ".zip")
     if os.path.exists(archive):

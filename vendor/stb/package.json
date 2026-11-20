@@ -68,6 +68,12 @@
       "windows64",
       "windows",
       "linux64"
+    ],
+    "windows64": [
+      "-DSTBI_NO_THREAD_LOCALS"
+    ],
+    "windows": [
+      "-DSTBI_NO_THREAD_LOCALS"
     ]
   },
   "bindings": {
