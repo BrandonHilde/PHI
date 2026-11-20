@@ -186,7 +186,7 @@ def copy_documents(source, target, skip=()):
         folders[:] = [f for f in folders if f not in ("build", "bin", "obj", ".cache", "src", "include") + tuple(skip) and not f.startswith(".")]
         for name in files:
             # (a release is what's used, not what makes it: no scripts, and no notes for whoever maintains PHI)
-            if name.startswith(".") or name.endswith((".actual", ".img", ".py", ".pyc")) or name in ("MAINTAINING.md", "package.json", "left-out.txt"):
+            if name.startswith(".") or name.endswith((".actual", ".img", ".py", ".pyc")) or name == "MAINTAINING.md":    # (package.json stays: phi vendor reads it)
                 continue
             path = os.path.join(folder, name)
             to = os.path.join(target, os.path.relpath(path, source))
@@ -234,7 +234,10 @@ def pack(version, system):
         sys.exit(f"the vendor folder hasn't got {', '.join(missing)}'s own files: run python3 vendor/fetch.py first")
     copy_documents(os.path.join(ROOT, "vendor"), os.path.join(folder, "vendor"))
     # (the compiler knows the vendor folder by its README.md: kept beside the HTML)
-    shutil.copy2(os.path.join(ROOT, "vendor", "README.md"), os.path.join(folder, "vendor", "README.md"))
+    with open(os.path.join(ROOT, "vendor", "README.md"), encoding="utf-8") as f:
+        marker = re.sub(r"\n[^\n]*MAINTAINING\.md[^\n]*\n", "\n", f.read())
+    with open(os.path.join(folder, "vendor", "README.md"), "w", encoding="utf-8", newline="\n") as f:
+        f.write(marker)
 
     copy_documents(os.path.join(ROOT, "docs"), os.path.join(folder, "docs"))
     copy_documents(os.path.join(ROOT, "samples"), os.path.join(folder, "samples"))
