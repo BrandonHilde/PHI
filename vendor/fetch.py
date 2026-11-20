@@ -100,6 +100,10 @@ def fetch(name):
         info = json.load(f)
     print(f"{name} {info['version']}")
     for download in info.get("downloads", []):
+        if download["url"].endswith(".dmg") and sys.platform != "darwin":
+            # (a macOS disk image is opened on a Mac: the library's other files are fetched all the same)
+            print(f"  its macOS files come in a .dmg, which a Mac opens: left out here ({', '.join(download['files'].values())})")
+            continue
         files = members(download["url"], archive(download["url"], download["sha256"]))
         for inside, target in download["files"].items():
             # (a name that ends in / is a folder: every file in it, to the folder named)
