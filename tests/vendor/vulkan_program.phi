@@ -2,8 +2,8 @@
 # version the system's Vulkan gives, its extensions listed into structs of the program's
 # own, an instance made (a struct that points at another, and a list of names) and
 # destroyed, and the graphics cards counted, which may be none. Nothing is declared here.
-# The library is the system's (it comes with a graphics driver), so where there's none
-# the test is set aside.
+# The library is the system's on Windows and Linux (it comes with a graphics driver), so
+# where there's none the test is set aside; on a Mac it's MoltenVK, from the vendor folder.
 use vendor.vulkan;
 
 phi.VulkanProgram:Program

@@ -1,5 +1,5 @@
-# vulkan 1.4.363: the GPU, as its drivers give it: drawing and computing with Vulkan
-# https://www.vulkan.org  (Apache-2.0 or MIT (the headers these declarations are written from) licence: see LICENSE beside this file)
+# vulkan 1.4.363: the GPU, as its drivers give it: drawing and computing with Vulkan (on a Mac, through MoltenVK)
+# https://www.vulkan.org  (Apache-2.0 (MoltenVK, and the headers these declarations are written from) licence: see LICENSE beside this file)
 #
 # Written by vendor/bindgen.py from vk_platform.h, vulkan_core.h: change package.json
 # and run it again, rather than this file. Functions, structs and constants have C's names.
@@ -7,9 +7,12 @@
 # (Vk.SUCCESS, Vk.STRUCTURE_TYPE_APPLICATION_INFO); a struct keeps C's whole name (VkInstanceCreateInfo).
 # A handle Vulkan hands out is either an address (a VkInstance, a VkDevice, a VkQueue, a VkCommandBuffer:
 # ptr<VkInstance_T> and so on) or a u64 (every other: a VkBuffer, a VkImage, a VkSurfaceKHR), on every system.
-# The library is the system's: it comes with the graphics driver on Windows and Linux, and on a Mac
-# with MoltenVK (the Vulkan SDK, or brew install molten-vk vulkan-loader).
-use 'vulkan-1.dll' 'libvulkan.1.dylib' 'libvulkan.so.1' as Vk;
+# The library is the system's on Windows and Linux, where it comes with the graphics driver. A Mac has
+# none of its own: MoltenVK 1.4.2, which is Vulkan over Apple's Metal, is put beside the program.
+use vendor.vulkan.start_macos;
+use vendor.vulkan.start_windows;
+use vendor.vulkan.start_linux;
+use 'vulkan-1.dll' 'libMoltenVK.dylib' 'libvulkan.so.1' as Vk;
 
 phi.Vk:Library
 {
@@ -5638,6 +5641,7 @@ phi.Vk:Library
 	const int SHADER_GROUP_SHADER_INTERSECTION_KHR: 3;
 	const int SHADER_GROUP_SHADER_MAX_ENUM_KHR: 2147483647;
 
+	call VkStart.Quiet;    # (on a Mac, MoltenVK is told to write errors only: see start_macos.phi)
 
 	# no handle: what C writes as VK_NULL_HANDLE, for either kind (an address, or a u64)
 	const int NULL_HANDLE: 0;

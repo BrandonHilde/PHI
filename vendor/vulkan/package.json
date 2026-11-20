@@ -1,13 +1,13 @@
 {
   "name": "vulkan",
   "version": "1.4.363",
-  "about": "the GPU, as its drivers give it: drawing and computing with Vulkan",
+  "about": "the GPU, as its drivers give it: drawing and computing with Vulkan (on a Mac, through MoltenVK)",
   "homepage": "https://www.vulkan.org",
-  "license": "Apache-2.0 or MIT (the headers these declarations are written from)",
+  "license": "Apache-2.0 (MoltenVK, and the headers these declarations are written from)",
   "system": true,
   "libraries": {
     "windows": "vulkan-1.dll",
-    "macos": "libvulkan.1.dylib",
+    "macos": "libMoltenVK.dylib",
     "linux": "libvulkan.so.1"
   },
   "downloads": [
@@ -18,6 +18,14 @@
         "Vulkan-Headers-vulkan-sdk-1.4.363.0/include/vulkan/": "include/vulkan/",
         "Vulkan-Headers-vulkan-sdk-1.4.363.0/include/vk_video/": "include/vk_video/",
         "Vulkan-Headers-vulkan-sdk-1.4.363.0/LICENSE.md": "LICENSE"
+      }
+    },
+    {
+      "url": "https://github.com/KhronosGroup/MoltenVK/releases/download/v1.4.2/MoltenVK-macos.tar",
+      "sha256": "f95765a6229cb7b915990a2890ce12ebe36a730b021545d3d52ae69ce4c4024e",
+      "files": {
+        "MoltenVK/MoltenVK/dynamic/dylib/macOS/libMoltenVK.dylib": "macos/libMoltenVK.dylib",
+        "MoltenVK/LICENSE": "LICENSE-MoltenVK"
       }
     }
   ],
@@ -50,8 +58,16 @@
       "(Vk.SUCCESS, Vk.STRUCTURE_TYPE_APPLICATION_INFO); a struct keeps C's whole name (VkInstanceCreateInfo).",
       "A handle Vulkan hands out is either an address (a VkInstance, a VkDevice, a VkQueue, a VkCommandBuffer:",
       "ptr<VkInstance_T> and so on) or a u64 (every other: a VkBuffer, a VkImage, a VkSurfaceKHR), on every system.",
-      "The library is the system's: it comes with the graphics driver on Windows and Linux, and on a Mac",
-      "with MoltenVK (the Vulkan SDK, or brew install molten-vk vulkan-loader)."
+      "The library is the system's on Windows and Linux, where it comes with the graphics driver. A Mac has",
+      "none of its own: MoltenVK 1.4.2, which is Vulkan over Apple's Metal, is put beside the program."
+    ],
+    "uses": [
+      "vendor.vulkan.start_macos",
+      "vendor.vulkan.start_windows",
+      "vendor.vulkan.start_linux"
+    ],
+    "startup": [
+      "call VkStart.Quiet;    # (on a Mac, MoltenVK is told to write errors only: see start_macos.phi)"
     ]
   }
 }

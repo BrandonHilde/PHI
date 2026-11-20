@@ -919,6 +919,14 @@ namespace Phi.Compiler.CodeGen.Ir
                     Emit(new ZeroI { Place = whole, Size = again.Type.Struct!.Size });
                     return;
 
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true, Type.IsArray: true } table, Values.Count: 0, FieldValues.Count: 0, Source: null, IsNew: false, AtAddress: null, EachOf: null } ad
+                    when arm && !Ours(table) && AnyGlobal(table) is string all && FixedArray(table.Type) && !table.Type.Filled
+                         && !table.Type.Element.IsObject && !table.Type.Element.IsInlineText && !table.GrowingArray && !table.Grows:
+                    // (and a class's array of a size, of numbers or plain structs, declared there: the same)
+                    Mark(ad);
+                    Emit(new ZeroI { Place = all, Size = table.Type.ByteSize });
+                    return;
+
                 case VarDecl { Symbol: VariableSymbol classVar } cd when !Ours(classVar) && Global(classVar) is string kept:
                 {
                     // (a class's own statement, made a method: its variable is the class's, set where it's kept)

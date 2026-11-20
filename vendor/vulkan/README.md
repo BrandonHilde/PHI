@@ -61,10 +61,11 @@ phi.Cards:Program
   [samples/vulkan/surface.phi](../../samples/vulkan/surface.phi) does both.
 - A name Vulkan has as text (`VK_KHR_SWAPCHAIN_EXTENSION_NAME`) is written as its text:
   `'VK_KHR_swapchain'`.
-- **On a Mac,** Vulkan is MoltenVK over Metal: an instance asks for
-  `'VK_KHR_portability_enumeration'` and sets
-  `Vk.INSTANCE_CREATE_ENUMERATE_PORTABILITY_BIT_KHR`
-  ([tests/vendor/vulkan_program.phi](../../tests/vendor/vulkan_program.phi) shows how).
+- **On a Mac,** Vulkan is MoltenVK 1.4.2, which is Vulkan over Apple's Metal. It comes with
+  PHI and a build puts `libMoltenVK.dylib` beside the program, so a Mac needs nothing
+  installed. MoltenVK writes a page about itself whenever an instance is made unless it's
+  told how much to say: the module tells it errors only, and `MVK_CONFIG_LOG_LEVEL=3` in the
+  environment has it say everything.
 - Left out ([left-out.txt](left-out.txt)): a few ray-tracing structs C packs into bits, the
   constants past 32 bits (`VK_WHOLE_SIZE`, and `UINT64_MAX` for a wait with no end: put
   the value in a `u64` of your own, `u64 forever: 0xFFFFFFFFFFFFFFFF;`), and the 64-bit flags of
@@ -72,7 +73,7 @@ phi.Cards:Program
   variables: give their numbers. The headers for one window system alone
   (`vulkan_win32.h` and the like) aren't read; SDL3 does that part.
 
-Nothing is shipped for it: the library is the system's. It comes with the graphics driver
-on Windows (`vulkan-1.dll`) and Linux (`libvulkan.so.1`), and on a Mac with MoltenVK
-(`libvulkan.1.dylib`: the Vulkan SDK, or `brew install molten-vk vulkan-loader`). The
-declarations are written from Khronos's headers (Apache-2.0 or MIT: [LICENSE](LICENSE)).
+On Windows and Linux the library is the system's, and nothing is shipped for it: it comes
+with the graphics driver (`vulkan-1.dll`, `libvulkan.so.1`). On a Mac it's MoltenVK's own
+build, unchanged (Apache-2.0: [LICENSE-MoltenVK](LICENSE-MoltenVK)). The declarations are
+written from Khronos's headers (Apache-2.0 or MIT: [LICENSE](LICENSE)).

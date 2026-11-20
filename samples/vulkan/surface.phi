@@ -8,8 +8,8 @@
 #
 #   phi run samples/vulkan/surface.phi --target windows64        (or linux64, macos)
 #
-# Vulkan is the system's: it comes with the graphics driver on Windows and Linux, and on a
-# Mac with MoltenVK. On Linux, SDL3 is the system's too.
+# Vulkan is the system's on Windows and Linux, where it comes with the graphics driver; on a
+# Mac it's MoltenVK, which comes with PHI. On Linux, SDL3 is the system's too.
 use vendor.sdl3;
 use vendor.vulkan;
 

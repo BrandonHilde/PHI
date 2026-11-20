@@ -614,6 +614,8 @@ class Package:
         for line in bind.get("notes", []):
             say(f"# {line}")
         files = info["libraries"]
+        for module in bind.get("uses", []):
+            say(f"use {module};")
         say("use " + " ".join(f"'{files[s]}'" for s in ("windows", "macos", "linux") if s in files) + f" as {self.alias};")
         say("")
 

@@ -1,0 +1,14 @@
+# For vendor.vulkan on a Mac, where Vulkan is MoltenVK: it writes a page about itself and
+# the graphics card whenever an instance is made, unless it's told how much to say. This
+# tells it errors only, when the program's user hasn't said otherwise
+# (MVK_CONFIG_LOG_LEVEL: 0 nothing, 1 errors, 2 warnings too, 3 all of it).
+use 'libSystem.B.dylib' as VkMac;
+
+phi.VkStart:MacOS
+{
+	[Quiet]
+		int set: (VkMac.setenv: 'MVK_CONFIG_LOG_LEVEL' '1' 0);
+	[end]
+}
+
+VkMac.setenv: ptr<u8> name ptr<u8> value int overwrite: int;

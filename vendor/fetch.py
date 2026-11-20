@@ -58,11 +58,15 @@ def members(name, data):
         with tarfile.open(fileobj=io.BytesIO(data)) as t:
             for m in t.getmembers():
                 target = m
-                # (a library's short name is often a link to the full one)
-                while target.issym() or target.islnk():
-                    # (a tar's names have / in them on every system: not os.path, which makes \ of it on Windows)
-                    link = target.linkname if target.islnk() else posixpath.normpath(posixpath.join(posixpath.dirname(target.name), target.linkname))
-                    target = t.getmember(link)
+                # (a library's short name is often a link to the full one; a link to a folder, or
+                # to nothing in the archive, is no file)
+                try:
+                    while target.issym() or target.islnk():
+                        # (a tar's names have / in them on every system: not os.path, which makes \ of it on Windows)
+                        link = target.linkname if target.islnk() else posixpath.normpath(posixpath.join(posixpath.dirname(target.name), target.linkname))
+                        target = t.getmember(link)
+                except KeyError:
+                    continue
                 if target.isfile():
                     files[m.name] = t.extractfile(target).read()
         return files

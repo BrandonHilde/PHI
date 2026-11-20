@@ -1,0 +1,7 @@
+# For vendor.vulkan on Linux, where Vulkan is the graphics driver's: nothing to set up (a Mac's
+# version of this quietens MoltenVK).
+phi.VkStart:Linux
+{
+	[Quiet]
+	[end]
+}
