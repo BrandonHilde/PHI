@@ -1,0 +1,6 @@
+	# what a bind_text or bind_blob is told about the bytes it's given: STATIC, that they stay
+	# as they are until the statement is done with; TRANSIENT, that SQLite is to copy them now
+	# (in C an address of 0 and one of -1, which is what these hold)
+	ptr<u8> STATIC: 0;
+	ptr<u8> TRANSIENT: 0;
+	TRANSIENT is TRANSIENT - 1;

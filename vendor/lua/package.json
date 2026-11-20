@@ -1,0 +1,39 @@
+{
+  "name": "lua",
+  "version": "5.5.1",
+  "about": "the Lua language, to script a program with: its interpreter, and its standard libraries",
+  "homepage": "https://www.lua.org",
+  "license": "MIT",
+  "libraries": { "windows": "lua55.dll", "macos": "liblua.5.5.dylib", "linux": "liblua.so.5.5" },
+  "build": {
+    "sources": [
+      {
+        "url": "https://www.lua.org/ftp/lua-5.5.1.tar.gz",
+        "sha256": "1c4b4068d67061f2a2231ad2b5422e77acea1487ea9890f6320af614f4373dce",
+        "files": {
+          "lua-5.5.1/src/": "src/",
+          "lua-5.5.1/src/lua.h": "include/lua.h", "lua-5.5.1/src/luaconf.h": "include/luaconf.h",
+          "lua-5.5.1/src/lualib.h": "include/lualib.h", "lua-5.5.1/src/lauxlib.h": "include/lauxlib.h"
+        }
+      }
+    ],
+    "compile": ["src/*.c"],
+    "without": ["lua.c", "luac.c"],
+    "macos": ["-DLUA_USE_MACOSX"],
+    "linux64": ["-DLUA_USE_POSIX"],
+    "linux64_link": ["-lm"],
+    "windows64": ["-DLUA_BUILD_AS_DLL"],
+    "windows": ["-DLUA_BUILD_AS_DLL"]
+  },
+  "bindings": {
+    "alias": "Lua",
+    "headers": ["include/lua.h", "include/lualib.h", "include/lauxlib.h"],
+    "own": "include/",
+    "skip_like": ["^lua_h$", "^lualib_h$", "^lauxlib_h$", "^luaconf_h$", "^LUA_API$", "^LUALIB_API$", "^LUAMOD_API$", "^LUAI_", "^LUA_USE_", "^LUA_.*DIR$", "^LUA_PATH", "^LUA_CPATH", "^LUA_INT_", "^LUA_FLOAT_", "^LUA_32BITS$", "^LUA_C89", "^l_", "^LUA_KCONTEXT$", "^LUA_NUMBER", "^LUA_INTEGER", "^LUA_UNSIGNED", "^LUA_MAXINTEGER$", "^LUA_MININTEGER$", "^LUA_MAXUNSIGNED$", "^LUAL_NUMSIZES$", "^LUA_EXTRASPACE$", "^LUA_IDSIZE$", "^LUAL_BUFFERSIZE$"],
+    "notes": [
+      "Functions have C's whole names (Lua.lua_pushinteger, Lua.luaL_newstate), as Lua's manual has them.",
+      "What C has as macros (lua_pop, lua_tostring, lua_pcall, luaL_dostring and the rest) are methods here,",
+      "called the same way. A function Lua calls is a PHI method given as addr foreign Name."
+    ]
+  }
+}

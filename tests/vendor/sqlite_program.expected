@@ -1,0 +1,12 @@
+SQLite 3: 3, safe with threads: 1
+open: 1 1
+rows: 4, changed: 1
+columns: 5, the third: mass
+Neptune: 16 moons, 17.15 Earths, 4495100000 km, 7 letters
+Jupiter: 95 moons, 317.8 Earths, 778500000 km, 7 letters
+Earth: 1 moons, 1 Earths, 149600000 km, 5 letters
+doubled: 224, in m 4495100000000
+first: name Earth, moons 1
+given 4 rows
+wrong: 1 no such table: nowhere
+close: 0

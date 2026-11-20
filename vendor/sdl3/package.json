@@ -1,0 +1,67 @@
+{
+  "name": "sdl3",
+  "version": "3.4.20",
+  "about": "windows, input (keyboard, mouse, gamepads, touch), sound, drawing in 2D, and the GPU",
+  "homepage": "https://libsdl.org",
+  "license": "zlib",
+  "libraries": {
+    "windows": "SDL3.dll",
+    "macos": "libSDL3.0.dylib",
+    "linux": "libSDL3.so.0"
+  },
+  "downloads": [
+    {
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-devel-3.4.20-VC.zip",
+      "sha256": "1ec3009655ee37b1f73e52b3b120acc5afd8abaf9532f3303b1bf1dfe91b5969",
+      "files": {
+        "SDL3-3.4.20/lib/x64/SDL3.dll": "windows64/SDL3.dll",
+        "SDL3-3.4.20/lib/x86/SDL3.dll": "windows/SDL3.dll",
+        "SDL3-3.4.20/include/SDL3/": "include/SDL3/",
+        "SDL3-3.4.20/LICENSE.txt": "LICENSE"
+      }
+    },
+    {
+      "url": "https://github.com/libsdl-org/SDL/releases/download/release-3.4.20/SDL3-3.4.20.dmg",
+      "sha256": "36b7e4cefcf7d55d227b3df5e686f8f33ab34193173a976445d1b57c80009e44",
+      "files": {
+        "SDL3.xcframework/macos-arm64_x86_64/SDL3.framework/Versions/A/SDL3": "macos/libSDL3.0.dylib"
+      }
+    }
+  ],
+  "bindings": {
+    "alias": "SDL",
+    "headers": [
+      "include/SDL3/SDL.h",
+      "include/SDL3/SDL_main.h"
+    ],
+    "own": "include/SDL3/",
+    "strip": "SDL_",
+    "strip_constants": "SDL_",
+    "skip": [],
+    "clang": [
+      "-DSDL_MAIN_HANDLED"
+    ],
+    "startup": [
+      "call SDL.SetMainReady;    # (the program has a start of its own, which SDL is told before anything else of it is called)"
+    ],
+    "skip_like": [
+      "^SDL_PLATFORM_",
+      "_h_$",
+      "^SDL_COMPILEDVERSION$",
+      "^SDL_MAIN_",
+      "^SDL_HAS_",
+      "^SDL_.*_INTRINSICS$",
+      "^SDL_BYTEORDER$",
+      "^SDL_FLOATWORDORDER$",
+      "^SDL_PRI",
+      "^SDL_SIZE_MAX$",
+      "^SDL_WINAPI_FAMILY_PHONE$"
+    ],
+    "notes": [
+      "A function is SDL.Name for C's SDL_Name (SDL.Init, SDL.CreateWindow), and a constant the same",
+      "(SDL.INIT_VIDEO, SDL.EVENT_QUIT); a struct keeps C's whole name (SDL_Event, SDL_FRect).",
+      "An SDL_Event has its type, and the rest is read through a pointer to the kind of event it is:",
+      "    ptr<SDL_KeyboardEvent> key: addr event as ptr<SDL_KeyboardEvent>;"
+    ]
+  }
+}

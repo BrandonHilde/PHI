@@ -1,0 +1,110 @@
+	# what Lua's headers have as macros, as methods called the same way
+	[lua_call: ptr<lua_State> L; int nargs; int nresults;]
+		call Lua.lua_callk: L nargs nresults 0 0;
+	[end]
+
+	[lua_pcall: ptr<lua_State> L; int nargs; int nresults; int errfunc;]
+	[end: (Lua.lua_pcallk: L nargs nresults errfunc 0 0)]
+
+	[lua_pop: ptr<lua_State> L; int n;]
+		call Lua.lua_settop: L 0 - n - 1;
+	[end]
+
+	[lua_newtable: ptr<lua_State> L;]
+		call Lua.lua_createtable: L 0 0;
+	[end]
+
+	[lua_pushcfunction: ptr<lua_State> L; ptr<u8> function;]
+		call Lua.lua_pushcclosure: L function 0;
+	[end]
+
+	[lua_register: ptr<lua_State> L; ptr<u8> name; ptr<u8> function;]
+		call Lua.lua_pushcclosure: L function 0;
+		call Lua.lua_setglobal: L name;
+	[end]
+
+	[lua_tonumber: ptr<lua_State> L; int index; : f64]
+	[end: (Lua.lua_tonumberx: L index 0)]
+
+	[lua_tointeger: ptr<lua_State> L; int index; : i64]
+	[end: (Lua.lua_tointegerx: L index 0)]
+
+	[lua_tostring: ptr<lua_State> L; int index; : ptr<u8>]
+	[end: (Lua.lua_tolstring: L index 0)]
+
+	[lua_isfunction: ptr<lua_State> L; int index; : bln]
+	[end: (Lua.lua_type: L index) is LUA_TFUNCTION]
+
+	[lua_istable: ptr<lua_State> L; int index; : bln]
+	[end: (Lua.lua_type: L index) is LUA_TTABLE]
+
+	[lua_isnil: ptr<lua_State> L; int index; : bln]
+	[end: (Lua.lua_type: L index) is LUA_TNIL]
+
+	[lua_isboolean: ptr<lua_State> L; int index; : bln]
+	[end: (Lua.lua_type: L index) is LUA_TBOOLEAN]
+
+	[lua_isnone: ptr<lua_State> L; int index; : bln]
+	[end: (Lua.lua_type: L index) is LUA_TNONE]
+
+	[lua_isnoneornil: ptr<lua_State> L; int index; : bln]
+	[end: (Lua.lua_type: L index) <= 0]
+
+	[lua_pushglobaltable: ptr<lua_State> L;]
+		int kind: (Lua.lua_rawgeti: L LUA_REGISTRYINDEX LUA_RIDX_GLOBALS);
+	[end]
+
+	[lua_insert: ptr<lua_State> L; int index;]
+		call Lua.lua_rotate: L index 1;
+	[end]
+
+	[lua_remove: ptr<lua_State> L; int index;]
+		call Lua.lua_rotate: L index (-1);
+		call Lua.lua_settop: L (-2);
+	[end]
+
+	[lua_replace: ptr<lua_State> L; int index;]
+		call Lua.lua_copy: L (-1) index;
+		call Lua.lua_settop: L (-2);
+	[end]
+
+	[lua_upvalueindex: int i;]
+	[end: LUA_REGISTRYINDEX - i]
+
+	# every one of Lua's standard libraries, opened in a state
+	[luaL_openlibs: ptr<lua_State> L;]
+		call Lua.luaL_openselectedlibs: L (-1) 0;
+	[end]
+
+	[luaL_loadfile: ptr<lua_State> L; ptr<u8> filename;]
+	[end: (Lua.luaL_loadfilex: L filename 0)]
+
+	[luaL_loadbuffer: ptr<lua_State> L; ptr<u8> buffer; usz size; ptr<u8> name;]
+	[end: (Lua.luaL_loadbufferx: L buffer size name 0)]
+
+	# runs Lua code given as text: 0 when it ran, and otherwise what went wrong is on the stack
+	[luaL_dostring: ptr<lua_State> L; ptr<u8> code;]
+		int bad: (Lua.luaL_loadstring: L code);
+		if bad is 0
+			bad is (Lua.lua_pcallk: L 0 LUA_MULTRET 0 0 0);
+		;;
+	[end: bad]
+
+	[luaL_dofile: ptr<lua_State> L; ptr<u8> filename;]
+		int bad: (Lua.luaL_loadfilex: L filename 0);
+		if bad is 0
+			bad is (Lua.lua_pcallk: L 0 LUA_MULTRET 0 0 0);
+		;;
+	[end: bad]
+
+	[luaL_checkstring: ptr<lua_State> L; int argument; : ptr<u8>]
+	[end: (Lua.luaL_checklstring: L argument 0)]
+
+	[luaL_optstring: ptr<lua_State> L; int argument; ptr<u8> otherwise; : ptr<u8>]
+	[end: (Lua.luaL_optlstring: L argument otherwise 0)]
+
+	[luaL_typename: ptr<lua_State> L; int index; : ptr<u8>]
+	[end: (Lua.lua_typename: L (Lua.lua_type: L index))]
+
+	[luaL_getmetatable: ptr<lua_State> L; ptr<u8> name;]
+	[end: (Lua.lua_getfield: L LUA_REGISTRYINDEX name)]

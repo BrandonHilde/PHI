@@ -1,0 +1,79 @@
+# SQLite from the vendor folder (use vendor.sqlite;): a database in memory made, filled
+# through one statement with its values bound each time (text SQLite copies:
+# Sql.TRANSIENT), and asked a row at a time; 64-bit numbers and f64s given and got; a
+# function of the program's own that SQL calls (addr foreign); each row of a query given to
+# a method (exec's callback); and what SQLite says went wrong. Functions are Sql.name for
+# C's sqlite3_name. One source, the same on each system.
+use vendor.sqlite;
+
+phi.SqliteProgram:Program
+{
+	ptr<sqlite3> db: 0;
+	ptr<sqlite3_stmt> st: 0;
+	int rows: 0;
+
+	log 'SQLite 3: ' ((Sql.libversion_number) / 1000000) ', safe with threads: ' ((Sql.threadsafe) is not 0) '\n';
+	int r: (Sql.open: ':memory:' addr db);
+	log 'open: ' (r is Sql.OK) ' ' (db is not 0) '\n';
+	call Run: 'create table planets(name text, moons integer, mass real, far integer)';
+
+	r is (Sql.prepare_v2: db 'insert into planets values (?, ?, ?, ?)' (-1) addr st 0);
+	call Add: 'Mercury' 0 0.0553 57900000;
+	call Add: 'Earth' 1 1.0 149600000;
+	call Add: 'Jupiter' 95 317.8 778500000;
+	call Add: 'Neptune' 16 17.15 4495100000;
+	r is (Sql.finalize: st);
+	log 'rows: ' ((Sql.last_insert_rowid: db) as int) ', changed: ' (Sql.changes: db) '\n';
+
+	r is (Sql.prepare_v2: db 'select name, moons, mass, far, length(name) from planets where moons > ? order by far desc' (-1) addr st 0);
+	r is (Sql.bind_int: st 1 0);
+	log 'columns: ' (Sql.column_count: st) ', the third: ' (Sql.column_name: st 2) '\n';
+	while (Sql.step: st) is Sql.ROW
+		i64 far: (Sql.column_int64: st 3);
+		log (Sql.column_text: st 0) ': ' (Sql.column_int: st 1) ' moons, ' (Sql.column_double: st 2) ' Earths, '
+		    far ' km, ' (Sql.column_bytes: st 0) ' letters\n';
+	;;
+	r is (Sql.finalize: st);
+
+	# a function of the program's own, which SQL calls for each row
+	r is (Sql.create_function: db 'doubled' 1 Sql.UTF8 0 addr foreign Doubled 0 0);
+	r is (Sql.prepare_v2: db 'select sum(doubled(moons)), max(far) * 1000 from planets' (-1) addr st 0);
+	r is (Sql.step: st);
+	log 'doubled: ' (Sql.column_int: st 0) ', in m ' (Sql.column_int64: st 1) '\n';
+	r is (Sql.finalize: st);
+
+	# each row given to a method
+	r is (Sql.exec: db 'select name, moons from planets order by name' addr foreign Row 0 0);
+	log 'given ' rows ' rows\n';
+
+	r is (Sql.prepare_v2: db 'select name from nowhere' (-1) addr st 0);
+	log 'wrong: ' (r is Sql.ERROR) ' ' (Sql.errmsg: db) '\n';
+	log 'close: ' (Sql.close: db) '\n';
+	exit 0;
+
+	[Run: ptr<u8> sql;]
+		if (Sql.exec: db sql 0 0 0) is not Sql.OK
+			log 'failed: ' (Sql.errmsg: db) '\n';
+		;;
+	[end]
+
+	[Add: ptr<u8> name; int moons; f64 mass; i64 far;]
+		int done: (Sql.bind_text: st 1 name (-1) Sql.TRANSIENT);
+		done is (Sql.bind_int: st 2 moons);
+		done is (Sql.bind_double: st 3 mass);
+		done is (Sql.bind_int64: st 4 far);
+		done is (Sql.step: st);
+		done is (Sql.reset: st);
+	[end]
+
+	[Doubled: ptr<sqlite3_context> context: 0; int count: 0; ptr<ptr<sqlite3_value>> values: 0;]
+		call Sql.result_int: context (Sql.value_int: values:0) * 2;
+	[end]
+
+	[Row: ptr<u8> mine: 0; int count: 0; ptr<ptr<u8>> values: 0; ptr<ptr<u8>> names: 0;]
+		rows++;
+		if rows is 1
+			log 'first: ' names:0 ' ' values:0 ', ' names:1 ' ' values:1 '\n';
+		;;
+	[end: 0]
+}

@@ -1,0 +1,34 @@
+# Every struct of vendor/zlib is as large as C has it, on the system this is built for:
+# written by vendor/bindgen.py, with C's sizes as clang gives them for macOS and 64-bit Linux, 64-bit Windows, 32-bit Windows.
+use vendor.zlib;
+
+phi.ZlibLayoutProgram:Program
+{
+	int wrong: 0;
+	int which: 2;
+	if (sizeof ptr<u8>) is 8
+		which is 1;
+		if (sizeof lng) is 8
+			which is 0;
+		;;
+	;;
+	call Same: 'z_stream' (sizeof z_stream) 112 88 56;
+	call Same: 'gz_header' (sizeof gz_header) 80 72 52;
+	call Same: 'gzFile_s' (sizeof gzFile_s) 24 24 16;
+	log '3 structs, ' wrong ' wrong\n';
+	exit wrong;
+
+	[Same: ptr<u8> name; int here; int unix; int windows64; int windows32;]
+		int c: unix;
+		if which is 1
+			c is windows64;
+		;;
+		if which is 2
+			c is windows32;
+		;;
+		if here is not c
+			wrong++;
+			log name ' is ' here ' bytes here and ' c ' in C\n';
+		;;
+	[end]
+}

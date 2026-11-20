@@ -1,0 +1,66 @@
+{
+  "name": "zlib",
+  "version": "1.4",
+  "about": "compression: deflate, zlib and gzip streams, and their checksums",
+  "homepage": "https://zlib.net",
+  "license": "zlib",
+  "libraries": {
+    "windows": "zlib1.dll",
+    "macos": "libz.1.4.dylib",
+    "linux": "libz.so.1.4"
+  },
+  "build": {
+    "sources": [
+      {
+        "url": "https://github.com/madler/zlib/releases/download/v1.4/zlib-1.4.tar.gz",
+        "sha256": "02dd159783677a749c04adbdd02b55b8a2bcc7e054f51b76b549199a916ad584",
+        "files": {
+          "zlib-1.4/": "src/",
+          "zlib-1.4/zlib.h": "include/zlib.h",
+          "zlib-1.4/zconf.h": "include/zconf.h",
+          "zlib-1.4/LICENSE": "LICENSE"
+        }
+      }
+    ],
+    "compile": [
+      "src/*.c"
+    ],
+    "macos": [
+      "-DZ_HAVE_UNISTD_H"
+    ],
+    "linux64": [
+      "-DZ_HAVE_UNISTD_H"
+    ]
+  },
+  "bindings": {
+    "alias": "Z",
+    "headers": [
+      "include/zlib.h"
+    ],
+    "own": "include/",
+    "skip_like": [
+      "^Z_HAVE_",
+      "^ZLIB_H$",
+      "^ZCONF_H$",
+      "^STDC",
+      "^ZEXTERN$",
+      "^ZEXPORT",
+      "^FAR$",
+      "^OF$",
+      "^z_const$",
+      "^SEEK_",
+      "^Z_U[48]$",
+      "^Z_ARG$",
+      "^z_longlong$",
+      "^Z_WANT64$",
+      "^MAX_"
+    ],
+    "notes": [
+      "deflateInit, inflateInit and the others C has as macros are methods here (Z.deflateInit),",
+      "which hand zlib its version and the size of a z_stream as the macros do."
+    ],
+    "fields": {
+      "gzFile_s.pos": "i64"
+    }
+  }
+}

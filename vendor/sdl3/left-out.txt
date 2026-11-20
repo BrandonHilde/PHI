@@ -1,0 +1,20 @@
+What vendor/bindgen.py couldn't declare in PHI, and why:
+
+SDL_vsscanf: va_list
+SDL_vsnprintf: va_list
+SDL_vswprintf: va_list
+SDL_vasprintf: va_list
+SDL_SetErrorV: va_list
+SDL_IOvprintf: va_list
+SDL_LogMessageV: va_list
+#define SDL_PEN_TOUCHID: 18446744073709551614 is past 32 bits, which a PHI constant isn't yet
+#define SDL_MAX_SINT64: 9223372036854775807 is past 32 bits, which a PHI constant isn't yet
+#define SDL_MIN_SINT64: -9223372036854775808 is past 32 bits, which a PHI constant isn't yet
+#define SDL_MAX_UINT64: 18446744073709551615 is past 32 bits, which a PHI constant isn't yet
+#define SDL_MAX_TIME: 9223372036854775807 is past 32 bits, which a PHI constant isn't yet
+#define SDL_MIN_TIME: -9223372036854775808 is past 32 bits, which a PHI constant isn't yet
+#define SDL_ICONV_ERROR: 18446744073709551615 is past 32 bits, which a PHI constant isn't yet
+#define SDL_ICONV_E2BIG: 18446744073709551614 is past 32 bits, which a PHI constant isn't yet
+#define SDL_ICONV_EILSEQ: 18446744073709551613 is past 32 bits, which a PHI constant isn't yet
+#define SDL_ICONV_EINVAL: 18446744073709551612 is past 32 bits, which a PHI constant isn't yet
+#define SDL_MOUSE_TOUCHID: 18446744073709551615 is past 32 bits, which a PHI constant isn't yet

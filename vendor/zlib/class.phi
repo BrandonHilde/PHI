@@ -1,0 +1,16 @@
+	# what C's header has as macros: each hands zlib the version it was written for and the
+	# size of a z_stream, which zlib checks
+	[deflateInit: ptr<z_stream> strm; int level;]
+	[end: (Z.deflateInit_: strm level '1.4' (sizeof z_stream))]
+
+	[inflateInit: ptr<z_stream> strm;]
+	[end: (Z.inflateInit_: strm '1.4' (sizeof z_stream))]
+
+	[deflateInit2: ptr<z_stream> strm; int level; int how; int windowBits; int memLevel; int strategy;]
+	[end: (Z.deflateInit2_: strm level how windowBits memLevel strategy '1.4' (sizeof z_stream))]
+
+	[inflateInit2: ptr<z_stream> strm; int windowBits;]
+	[end: (Z.inflateInit2_: strm windowBits '1.4' (sizeof z_stream))]
+
+	[inflateBackInit: ptr<z_stream> strm; int windowBits; ptr<u8> window;]
+	[end: (Z.inflateBackInit_: strm windowBits window '1.4' (sizeof z_stream))]

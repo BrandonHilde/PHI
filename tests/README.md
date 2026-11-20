@@ -122,7 +122,7 @@ there), with `phi test --target windows64` or `windows`. What's meant to differ 
 libraries called from one module on every system that has them start with `c_`
 (`c_runtime_program.phi`, `c_sqlite_program.phi`: libraries the systems come with; a Linux
 machine needs `libsqlite3.so.0`, which most have); they run as Windows, macOS and 64-bit
-Linux programs. `tests/clib/` has more, of libraries that have to be built or fetched first. A test whose
+Linux programs. `tests/clib/` has more, of libraries that have to be built or fetched first, and `tests/vendor/` one for each library of the [vendor folder](../vendor/README.md) (`python3 vendor/fetch.py` once, then `phi test tests/vendor --target macos`, or another system): the library called from `use vendor.NAME;` alone, and every struct's size beside C's. A test whose
 library isn't on the computer is set aside and named (`SKIP`), not failed.
 
 A test with `NAME.cdb` is about a `--debug` build's `.pdb`: it runs in Microsoft's debugger, as

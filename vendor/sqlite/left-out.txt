@@ -1,0 +1,5 @@
+What vendor/bindgen.py couldn't declare in PHI, and why:
+
+sqlite3_vmprintf: va_list
+sqlite3_vsnprintf: va_list
+sqlite3_str_vappendf: va_list

@@ -93,7 +93,7 @@ variable, field, parameter, constant, method or struct:
 
 | Kind | Words |
 |---|---|
-| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `lng` `ulng` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `vec` `method` `lock` |
+| Types | `int` `i32` `u32` `i16` `u16` `i8` `u8` `i64` `u64` `lng` `ulng` `isz` `usz` `f16` `f32` `f64` `byt` `bln` `chr` `str` `var` `ptr` `vec` `method` `lock` |
 | Structure | `phi` `struct` `enum` `interface` `asm` `x64` `arm` `sys` `foreign` `use` `const` `volatile` `isr` `end` `into` |
 | Control | `if` `elif` `else` `while` `each` `when` `unsafe` `break` `continue` `return` `call` `exit` `atomic` `locked` `throw` `throws` |
 | Comparing and logic | `is` `not` `and` `or` `has` `exists` `below` `above` `atmost` `atleast` `true` `false` |
@@ -128,6 +128,7 @@ several lines. A number too big for `int` (like `0x80000000`) is a `u32`.
 | `f64` / `f32` / `f16` | 8 / 4 / 2 bytes | floating point numbers: about 15, 7 and 3 digits (32-bit kernels and programs; see below) |
 | `i64` / `u64` | 8 bytes | about ±9.2 × 10^18 / 0 to about 1.8 × 10^19 (32-bit kernels and programs; see below) |
 | `lng` / `ulng` | 8 or 4 bytes | C's `long` and `unsigned long`, for [calling C](#outside-libraries): an `i64` / `u64` on macOS and 64-bit Linux, an `int` / `u32` elsewhere |
+| `isz` / `usz` | 8 or 4 bytes | C's `ptrdiff_t` and `size_t`, for calling C: as wide as an address, so an `i64` / `u64` in 64-bit code and an `int` / `u32` in 32-bit |
 | `int` (also `i32`) | 4 bytes | -2147483648 to 2147483647 |
 | `u32` | 4 bytes | 0 to 4294967295 |
 | `i16` / `u16` | 2 bytes | -32768 to 32767 / 0 to 65535 |
@@ -1479,6 +1480,11 @@ Task third: tasks:2;
 
 `Task kept: current;` is `Task kept; kept is current;` on one line: the two stay separate
 after it. In a loop or a method it copies again each time it's reached.
+
+**Another name for a struct.** `struct.Texture2D is Texture;` makes `Texture2D` the struct
+`Texture` under a second name: a variable of one is a variable of the other, wherever a type
+is named. It's for a C library's own names (`typedef Texture Texture2D;`); the struct named
+is declared in the same file or one that's used.
 
 **How a struct is laid out: one rule for every struct.** Fields are in the order they're
 written, each on a multiple of its alignment, with padding before it if it needs some; and
@@ -3559,7 +3565,9 @@ int r: (Z.compress2: addr packed addr size addr source 6000 6);
 ```
 
 Elsewhere they are the type they stand for, so what a program does with one has to be
-right for both sizes.
+right for both sizes. `isz` and `usz` are the same for C's `ptrdiff_t` and `size_t` (and
+`intptr_t`, `uintptr_t`): 64 bits wherever an address is, 64-bit Windows too, and 32 in
+32-bit code.
 
 On macOS a module's classes are `:MacOS`, and the functions are called as C calls them on
 Apple's ARM (the first eight whole values in `x0` to `x7`, floats in `d0` to `d7`), with
@@ -3635,8 +3643,26 @@ bytes in a register and anything else by address; 32-bit Windows puts the struct
 stack; 64-bit Linux passes up to 16 bytes 8 at a time (in a float register when those 8
 are all floats) and puts anything larger on the stack. Where a struct goes by address the
 function gets a copy's, made for the call, so one that changes what it was given (C lets
-it) never changes the variable. A struct given back is used from the variable
-(`call place is ...;`), not inside an expression.
+it) never changes the variable.
+
+A call that gives a struct back is also a value, wherever a statement uses one: a variable
+declared from it, one given it, another call it's handed straight to, a field of it.
+
+```phi
+Color half: (Ray.Fade: Ray.RED 0.5);                    # declared from it
+mouse is (Ray.GetMousePosition);                        # given it
+call Ray.DrawCircleV: (Ray.GetMousePosition) 20.0 (Ray.Fade: ink 0.5);
+if (Ray.GetMousePosition).x > 100.0                     # a field of it
+```
+
+The call is made first, into a variable of the compiler's own, each time the statement
+runs. On the right of `and` or `or`, where it might not be made at all, and in a `while`'s
+condition, put it in a variable yourself.
+
+**A library that comes with PHI** is in the [vendor folder](../vendor/README.md), with all of
+its functions, structs and constants declared already: `use vendor.raylib;` and the program
+calls `Ray.InitWindow`, with nothing declared in it and the library's file put beside it by
+the build.
 
 **Structs as C lays them out.** Every PHI struct is laid out as C lays one out (each field
 on a multiple of its own size, and the whole a multiple of its largest field: see
@@ -4031,6 +4057,10 @@ library ([lib/phi](../lib/phi)). So the programs of a rootfs can share code kept
 next to the kernel, like `lib/widgets.phi` used as `use lib.widgets;`. Each file is loaded once,
 and the classes of used files run before the classes that use them. At each of those places, a
 `.phi` file comes before a compiled library of the same name, `a/b.philib` (below).
+
+`use vendor.NAME;` is a library of the [vendor folder](../vendor/README.md), which is beside
+`phi`: other people's C libraries (raylib, to begin with) with a module that declares each
+whole. Looked for last, so `vendor/NAME.phi` beside the program comes first.
 
 ### Compiled libraries
 

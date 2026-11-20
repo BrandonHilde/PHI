@@ -1,0 +1,8 @@
+zlib 1.4
+level 1: 0 1 0 6000 1
+level 5: 0 1 0 6000 1
+level 9: 0 1 0 6000 1
+crc 3421780262 adler 300286872, bound 1
+not zlib: 1, no room: 1
+stream: 1 6000 in, 1
+and back: 1 6000 1

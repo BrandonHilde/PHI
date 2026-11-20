@@ -1,0 +1,3 @@
+What vendor/bindgen.py couldn't declare in PHI, and why:
+
+gzvprintf: va_list

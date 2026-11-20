@@ -1,0 +1,1148 @@
+# sqlite 3.54.1: a database in one file (or in memory), asked in SQL
+# https://www.sqlite.org  (public domain licence: see LICENSE beside this file)
+#
+# Written by vendor/bindgen.py from sqlite3.h: change package.json
+# and run it again, rather than this file. Functions, structs and constants have C's names.
+# A function is Sql.name for C's sqlite3_name (Sql.open, Sql.prepare_v2, Sql.step), and a constant
+# Sql.NAME for SQLITE_NAME (Sql.OK, Sql.ROW, Sql.DONE). Sql.TRANSIENT and Sql.STATIC are what a
+# bind_text or bind_blob is told about the text it's given: TRANSIENT has SQLite copy it.
+use 'sqlite3.dll' 'libsqlite3.54.dylib' 'libsqlite3.so.54' as Sql;
+
+phi.Sql:Library
+{
+	const int OK: 0;    # Successful result
+	const int ERROR: 1;    # Generic error
+	const int INTERNAL: 2;    # Internal logic error in SQLite
+	const int PERM: 3;    # Access permission denied
+	const int ABORT: 4;    # Callback routine requested an abort
+	const int BUSY: 5;    # The database file is locked
+	const int LOCKED: 6;    # A table in the database is locked
+	const int NOMEM: 7;    # A malloc() failed
+	const int READONLY: 8;    # Attempt to write a readonly database
+	const int INTERRUPT: 9;    # Operation terminated by sqlite3_interrupt()
+	const int IOERR: 10;    # Some kind of disk I/O error occurred
+	const int CORRUPT: 11;    # The database disk image is malformed
+	const int NOTFOUND: 12;    # Unknown opcode in sqlite3_file_control()
+	const int FULL: 13;    # Insertion failed because database is full
+	const int CANTOPEN: 14;    # Unable to open the database file
+	const int PROTOCOL: 15;    # Database lock protocol error
+	const int EMPTY: 16;    # No content
+	const int SCHEMA: 17;    # The database schema changed
+	const int TOOBIG: 18;    # String or BLOB exceeds size limit
+	const int CONSTRAINT: 19;    # Abort due to constraint violation
+	const int MISMATCH: 20;    # Data type mismatch
+	const int MISUSE: 21;    # Library used incorrectly
+	const int NOLFS: 22;    # Uses OS features not supported on host
+	const int AUTH: 23;    # Authorization denied
+	const int FORMAT: 24;    # Not used
+	const int RANGE: 25;    # 2nd parameter to sqlite3_bind out of range
+	const int NOTADB: 26;    # File opened that is not a database file
+	const int NOTICE: 27;    # Notifications from sqlite3_log()
+	const int WARNING: 28;    # Warnings from sqlite3_log()
+	const int ROW: 100;    # sqlite3_step() has another row ready
+	const int DONE: 101;    # sqlite3_step() has finished executing
+	const int ERROR_MISSING_COLLSEQ: 257;
+	const int ERROR_RETRY: 513;
+	const int ERROR_SNAPSHOT: 769;
+	const int ERROR_RESERVESIZE: 1025;
+	const int ERROR_KEY: 1281;
+	const int ERROR_UNABLE: 1537;
+	const int IOERR_READ: 266;
+	const int IOERR_SHORT_READ: 522;
+	const int IOERR_WRITE: 778;
+	const int IOERR_FSYNC: 1034;
+	const int IOERR_DIR_FSYNC: 1290;
+	const int IOERR_TRUNCATE: 1546;
+	const int IOERR_FSTAT: 1802;
+	const int IOERR_UNLOCK: 2058;
+	const int IOERR_RDLOCK: 2314;
+	const int IOERR_DELETE: 2570;
+	const int IOERR_BLOCKED: 2826;
+	const int IOERR_NOMEM: 3082;
+	const int IOERR_ACCESS: 3338;
+	const int IOERR_CHECKRESERVEDLOCK: 3594;
+	const int IOERR_LOCK: 3850;
+	const int IOERR_CLOSE: 4106;
+	const int IOERR_DIR_CLOSE: 4362;
+	const int IOERR_SHMOPEN: 4618;
+	const int IOERR_SHMSIZE: 4874;
+	const int IOERR_SHMLOCK: 5130;
+	const int IOERR_SHMMAP: 5386;
+	const int IOERR_SEEK: 5642;
+	const int IOERR_DELETE_NOENT: 5898;
+	const int IOERR_MMAP: 6154;
+	const int IOERR_GETTEMPPATH: 6410;
+	const int IOERR_CONVPATH: 6666;
+	const int IOERR_VNODE: 6922;
+	const int IOERR_AUTH: 7178;
+	const int IOERR_BEGIN_ATOMIC: 7434;
+	const int IOERR_COMMIT_ATOMIC: 7690;
+	const int IOERR_ROLLBACK_ATOMIC: 7946;
+	const int IOERR_DATA: 8202;
+	const int IOERR_CORRUPTFS: 8458;
+	const int IOERR_IN_PAGE: 8714;
+	const int IOERR_BADKEY: 8970;
+	const int IOERR_CODEC: 9226;
+	const int LOCKED_SHAREDCACHE: 262;
+	const int LOCKED_VTAB: 518;
+	const int BUSY_RECOVERY: 261;
+	const int BUSY_SNAPSHOT: 517;
+	const int BUSY_TIMEOUT: 773;
+	const int CANTOPEN_NOTEMPDIR: 270;
+	const int CANTOPEN_ISDIR: 526;
+	const int CANTOPEN_FULLPATH: 782;
+	const int CANTOPEN_CONVPATH: 1038;
+	const int CANTOPEN_DIRTYWAL: 1294;    # Not Used
+	const int CANTOPEN_SYMLINK: 1550;
+	const int CORRUPT_VTAB: 267;
+	const int CORRUPT_SEQUENCE: 523;
+	const int CORRUPT_INDEX: 779;
+	const int READONLY_RECOVERY: 264;
+	const int READONLY_CANTLOCK: 520;
+	const int READONLY_ROLLBACK: 776;
+	const int READONLY_DBMOVED: 1032;
+	const int READONLY_CANTINIT: 1288;
+	const int READONLY_DIRECTORY: 1544;
+	const int ABORT_ROLLBACK: 516;
+	const int CONSTRAINT_CHECK: 275;
+	const int CONSTRAINT_COMMITHOOK: 531;
+	const int CONSTRAINT_FOREIGNKEY: 787;
+	const int CONSTRAINT_FUNCTION: 1043;
+	const int CONSTRAINT_NOTNULL: 1299;
+	const int CONSTRAINT_PRIMARYKEY: 1555;
+	const int CONSTRAINT_TRIGGER: 1811;
+	const int CONSTRAINT_UNIQUE: 2067;
+	const int CONSTRAINT_VTAB: 2323;
+	const int CONSTRAINT_ROWID: 2579;
+	const int CONSTRAINT_PINNED: 2835;
+	const int CONSTRAINT_DATATYPE: 3091;
+	const int NOTICE_RECOVER_WAL: 283;
+	const int NOTICE_RECOVER_ROLLBACK: 539;
+	const int NOTICE_RBU: 795;
+	const int WARNING_AUTOINDEX: 284;
+	const int AUTH_USER: 279;
+	const int OK_LOAD_PERMANENTLY: 256;
+	const int OK_SYMLINK: 512;    # internal only
+	const int OPEN_READONLY: 1;    # Ok for sqlite3_open_v2()
+	const int OPEN_READWRITE: 2;    # Ok for sqlite3_open_v2()
+	const int OPEN_CREATE: 4;    # Ok for sqlite3_open_v2()
+	const int OPEN_DELETEONCLOSE: 8;    # VFS only
+	const int OPEN_EXCLUSIVE: 16;    # VFS only
+	const int OPEN_AUTOPROXY: 32;    # VFS only
+	const int OPEN_URI: 64;    # Ok for sqlite3_open_v2()
+	const int OPEN_MEMORY: 128;    # Ok for sqlite3_open_v2()
+	const int OPEN_MAIN_DB: 256;    # VFS only
+	const int OPEN_TEMP_DB: 512;    # VFS only
+	const int OPEN_TRANSIENT_DB: 1024;    # VFS only
+	const int OPEN_MAIN_JOURNAL: 2048;    # VFS only
+	const int OPEN_TEMP_JOURNAL: 4096;    # VFS only
+	const int OPEN_SUBJOURNAL: 8192;    # VFS only
+	const int OPEN_SUPER_JOURNAL: 16384;    # VFS only
+	const int OPEN_NOMUTEX: 32768;    # Ok for sqlite3_open_v2()
+	const int OPEN_FULLMUTEX: 65536;    # Ok for sqlite3_open_v2()
+	const int OPEN_SHAREDCACHE: 131072;    # Ok for sqlite3_open_v2()
+	const int OPEN_PRIVATECACHE: 262144;    # Ok for sqlite3_open_v2()
+	const int OPEN_WAL: 524288;    # VFS only
+	const int OPEN_NOFOLLOW: 16777216;    # Ok for sqlite3_open_v2()
+	const int OPEN_EXRESCODE: 33554432;    # Extended result codes
+	const int OPEN_MASTER_JOURNAL: 16384;    # VFS only
+	const int IOCAP_ATOMIC: 1;
+	const int IOCAP_ATOMIC512: 2;
+	const int IOCAP_ATOMIC1K: 4;
+	const int IOCAP_ATOMIC2K: 8;
+	const int IOCAP_ATOMIC4K: 16;
+	const int IOCAP_ATOMIC8K: 32;
+	const int IOCAP_ATOMIC16K: 64;
+	const int IOCAP_ATOMIC32K: 128;
+	const int IOCAP_ATOMIC64K: 256;
+	const int IOCAP_SAFE_APPEND: 512;
+	const int IOCAP_SEQUENTIAL: 1024;
+	const int IOCAP_UNDELETABLE_WHEN_OPEN: 2048;
+	const int IOCAP_POWERSAFE_OVERWRITE: 4096;
+	const int IOCAP_IMMUTABLE: 8192;
+	const int IOCAP_BATCH_ATOMIC: 16384;
+	const int IOCAP_SUBPAGE_READ: 32768;
+	const int LOCK_NONE: 0;    # xUnlock() only
+	const int LOCK_SHARED: 1;    # xLock() or xUnlock()
+	const int LOCK_RESERVED: 2;    # xLock() only
+	const int LOCK_PENDING: 3;    # xLock() only
+	const int LOCK_EXCLUSIVE: 4;    # xLock() only
+	const int SYNC_NORMAL: 2;
+	const int SYNC_FULL: 3;
+	const int SYNC_DATAONLY: 16;
+	const int FCNTL_LOCKSTATE: 1;
+	const int FCNTL_GET_LOCKPROXYFILE: 2;
+	const int FCNTL_SET_LOCKPROXYFILE: 3;
+	const int FCNTL_LAST_ERRNO: 4;
+	const int FCNTL_SIZE_HINT: 5;
+	const int FCNTL_CHUNK_SIZE: 6;
+	const int FCNTL_FILE_POINTER: 7;
+	const int FCNTL_SYNC_OMITTED: 8;
+	const int FCNTL_WIN32_AV_RETRY: 9;
+	const int FCNTL_PERSIST_WAL: 10;
+	const int FCNTL_OVERWRITE: 11;
+	const int FCNTL_VFSNAME: 12;
+	const int FCNTL_POWERSAFE_OVERWRITE: 13;
+	const int FCNTL_PRAGMA: 14;
+	const int FCNTL_BUSYHANDLER: 15;
+	const int FCNTL_TEMPFILENAME: 16;
+	const int FCNTL_MMAP_SIZE: 18;
+	const int FCNTL_TRACE: 19;
+	const int FCNTL_HAS_MOVED: 20;
+	const int FCNTL_SYNC: 21;
+	const int FCNTL_COMMIT_PHASETWO: 22;
+	const int FCNTL_WIN32_SET_HANDLE: 23;
+	const int FCNTL_WAL_BLOCK: 24;
+	const int FCNTL_ZIPVFS: 25;
+	const int FCNTL_RBU: 26;
+	const int FCNTL_VFS_POINTER: 27;
+	const int FCNTL_JOURNAL_POINTER: 28;
+	const int FCNTL_WIN32_GET_HANDLE: 29;
+	const int FCNTL_PDB: 30;
+	const int FCNTL_BEGIN_ATOMIC_WRITE: 31;
+	const int FCNTL_COMMIT_ATOMIC_WRITE: 32;
+	const int FCNTL_ROLLBACK_ATOMIC_WRITE: 33;
+	const int FCNTL_LOCK_TIMEOUT: 34;
+	const int FCNTL_DATA_VERSION: 35;
+	const int FCNTL_SIZE_LIMIT: 36;
+	const int FCNTL_CKPT_DONE: 37;
+	const int FCNTL_RESERVE_BYTES: 38;
+	const int FCNTL_CKPT_START: 39;
+	const int FCNTL_EXTERNAL_READER: 40;
+	const int FCNTL_CKSM_FILE: 41;
+	const int FCNTL_RESET_CACHE: 42;
+	const int FCNTL_NULL_IO: 43;
+	const int FCNTL_BLOCK_ON_CONNECT: 44;
+	const int FCNTL_FILESTAT: 45;
+	const int GET_LOCKPROXYFILE: 2;
+	const int SET_LOCKPROXYFILE: 3;
+	const int LAST_ERRNO: 4;
+	const int ACCESS_EXISTS: 0;
+	const int ACCESS_READWRITE: 1;    # Used by PRAGMA temp_store_directory
+	const int ACCESS_READ: 2;    # Unused
+	const int SHM_UNLOCK: 1;
+	const int SHM_LOCK: 2;
+	const int SHM_SHARED: 4;
+	const int SHM_EXCLUSIVE: 8;
+	const int SHM_NLOCK: 8;
+	const int CONFIG_SINGLETHREAD: 1;    # nil
+	const int CONFIG_MULTITHREAD: 2;    # nil
+	const int CONFIG_SERIALIZED: 3;    # nil
+	const int CONFIG_MALLOC: 4;    # sqlite3_mem_methods*
+	const int CONFIG_GETMALLOC: 5;    # sqlite3_mem_methods*
+	const int CONFIG_SCRATCH: 6;    # No longer used
+	const int CONFIG_PAGECACHE: 7;    # void*, int sz, int N
+	const int CONFIG_HEAP: 8;    # void*, int nByte, int min
+	const int CONFIG_MEMSTATUS: 9;    # boolean
+	const int CONFIG_MUTEX: 10;    # sqlite3_mutex_methods*
+	const int CONFIG_GETMUTEX: 11;    # sqlite3_mutex_methods*
+	const int CONFIG_LOOKASIDE: 13;    # int int
+	const int CONFIG_PCACHE: 14;    # no-op
+	const int CONFIG_GETPCACHE: 15;    # no-op
+	const int CONFIG_LOG: 16;    # xFunc, void*
+	const int CONFIG_URI: 17;    # int
+	const int CONFIG_PCACHE2: 18;    # sqlite3_pcache_methods2*
+	const int CONFIG_GETPCACHE2: 19;    # sqlite3_pcache_methods2*
+	const int CONFIG_COVERING_INDEX_SCAN: 20;    # int
+	const int CONFIG_SQLLOG: 21;    # xSqllog, void*
+	const int CONFIG_MMAP_SIZE: 22;    # sqlite3_int64, sqlite3_int64
+	const int CONFIG_WIN32_HEAPSIZE: 23;    # int nByte
+	const int CONFIG_PCACHE_HDRSZ: 24;    # int *psz
+	const int CONFIG_PMASZ: 25;    # unsigned int szPma
+	const int CONFIG_STMTJRNL_SPILL: 26;    # int nByte
+	const int CONFIG_SMALL_MALLOC: 27;    # boolean
+	const int CONFIG_SORTERREF_SIZE: 28;    # int nByte
+	const int CONFIG_MEMDB_MAXSIZE: 29;    # sqlite3_int64
+	const int CONFIG_ROWID_IN_VIEW: 30;    # int*
+	const int DBCONFIG_MAINDBNAME: 1000;    # const char*
+	const int DBCONFIG_LOOKASIDE: 1001;    # void* int int
+	const int DBCONFIG_ENABLE_FKEY: 1002;    # int int*
+	const int DBCONFIG_ENABLE_TRIGGER: 1003;    # int int*
+	const int DBCONFIG_ENABLE_FTS3_TOKENIZER: 1004;    # int int*
+	const int DBCONFIG_ENABLE_LOAD_EXTENSION: 1005;    # int int*
+	const int DBCONFIG_NO_CKPT_ON_CLOSE: 1006;    # int int*
+	const int DBCONFIG_ENABLE_QPSG: 1007;    # int int*
+	const int DBCONFIG_TRIGGER_EQP: 1008;    # int int*
+	const int DBCONFIG_RESET_DATABASE: 1009;    # int int*
+	const int DBCONFIG_DEFENSIVE: 1010;    # int int*
+	const int DBCONFIG_WRITABLE_SCHEMA: 1011;    # int int*
+	const int DBCONFIG_LEGACY_ALTER_TABLE: 1012;    # int int*
+	const int DBCONFIG_DQS_DML: 1013;    # int int*
+	const int DBCONFIG_DQS_DDL: 1014;    # int int*
+	const int DBCONFIG_ENABLE_VIEW: 1015;    # int int*
+	const int DBCONFIG_LEGACY_FILE_FORMAT: 1016;    # int int*
+	const int DBCONFIG_TRUSTED_SCHEMA: 1017;    # int int*
+	const int DBCONFIG_STMT_SCANSTATUS: 1018;    # int int*
+	const int DBCONFIG_REVERSE_SCANORDER: 1019;    # int int*
+	const int DBCONFIG_ENABLE_ATTACH_CREATE: 1020;    # int int*
+	const int DBCONFIG_ENABLE_ATTACH_WRITE: 1021;    # int int*
+	const int DBCONFIG_ENABLE_COMMENTS: 1022;    # int int*
+	const int DBCONFIG_FP_DIGITS: 1023;    # int int*
+	const int DBCONFIG_MAX: 1023;    # Largest DBCONFIG
+	const int SETLK_BLOCK_ON_CONNECT: 1;
+	const int DENY: 1;    # Abort the SQL statement with an error
+	const int IGNORE: 2;    # Don't allow access, but don't generate an error
+	const int CREATE_INDEX: 1;    # Index Name      Table Name
+	const int CREATE_TABLE: 2;    # Table Name      NULL
+	const int CREATE_TEMP_INDEX: 3;    # Index Name      Table Name
+	const int CREATE_TEMP_TABLE: 4;    # Table Name      NULL
+	const int CREATE_TEMP_TRIGGER: 5;    # Trigger Name    Table Name
+	const int CREATE_TEMP_VIEW: 6;    # View Name       NULL
+	const int CREATE_TRIGGER: 7;    # Trigger Name    Table Name
+	const int CREATE_VIEW: 8;    # View Name       NULL
+	const int DELETE: 9;    # Table Name      NULL
+	const int DROP_INDEX: 10;    # Index Name      Table Name
+	const int DROP_TABLE: 11;    # Table Name      NULL
+	const int DROP_TEMP_INDEX: 12;    # Index Name      Table Name
+	const int DROP_TEMP_TABLE: 13;    # Table Name      NULL
+	const int DROP_TEMP_TRIGGER: 14;    # Trigger Name    Table Name
+	const int DROP_TEMP_VIEW: 15;    # View Name       NULL
+	const int DROP_TRIGGER: 16;    # Trigger Name    Table Name
+	const int DROP_VIEW: 17;    # View Name       NULL
+	const int INSERT: 18;    # Table Name      NULL
+	const int PRAGMA: 19;    # Pragma Name     1st arg or NULL
+	const int READ: 20;    # Table Name      Column Name
+	const int SELECT: 21;    # NULL            NULL
+	const int TRANSACTION: 22;    # Operation       NULL
+	const int UPDATE: 23;    # Table Name      Column Name
+	const int ATTACH: 24;    # Filename        NULL
+	const int DETACH: 25;    # Database Name   NULL
+	const int ALTER_TABLE: 26;    # Database Name   Table Name
+	const int REINDEX: 27;    # Index Name      NULL
+	const int ANALYZE: 28;    # Table Name      NULL
+	const int CREATE_VTABLE: 29;    # Table Name      Module Name
+	const int DROP_VTABLE: 30;    # Table Name      Module Name
+	const int FUNCTION: 31;    # NULL            Function Name
+	const int SAVEPOINT: 32;    # Operation       Savepoint Name
+	const int RECURSIVE: 33;    # NULL            NULL
+	const int TRACE_STMT: 1;
+	const int TRACE_PROFILE: 2;
+	const int TRACE_ROW: 4;
+	const int TRACE_CLOSE: 8;
+	const int LIMIT_LENGTH: 0;
+	const int LIMIT_SQL_LENGTH: 1;
+	const int LIMIT_COLUMN: 2;
+	const int LIMIT_EXPR_DEPTH: 3;
+	const int LIMIT_COMPOUND_SELECT: 4;
+	const int LIMIT_VDBE_OP: 5;
+	const int LIMIT_FUNCTION_ARG: 6;
+	const int LIMIT_ATTACHED: 7;
+	const int LIMIT_LIKE_PATTERN_LENGTH: 8;
+	const int LIMIT_VARIABLE_NUMBER: 9;
+	const int LIMIT_TRIGGER_DEPTH: 10;
+	const int LIMIT_WORKER_THREADS: 11;
+	const int LIMIT_PARSER_DEPTH: 12;
+	const int LIMIT_SCHEMA: 13;
+	const int LIMIT_TRIGGER_STEPS: 14;
+	const int PREPARE_PERSISTENT: 1;
+	const int PREPARE_NORMALIZE: 2;
+	const int PREPARE_NO_VTAB: 4;
+	const int PREPARE_DONT_LOG: 16;
+	const int PREPARE_FROM_DDL: 32;
+	const int INTEGER: 1;
+	const int FLOAT: 2;
+	const int BLOB: 4;
+	const int NULL: 5;
+	const int TEXT: 3;
+	const int UTF8: 1;    # IMP: R-37514-35566
+	const int UTF16LE: 2;    # IMP: R-03371-37637
+	const int UTF16BE: 3;    # IMP: R-51971-34154
+	const int UTF16: 4;    # Use native byte order
+	const int ANY: 5;    # Deprecated
+	const int UTF16_ALIGNED: 8;    # sqlite3_create_collation only
+	const int UTF8_ZT: 16;    # Zero-terminated UTF8
+	const int DETERMINISTIC: 2048;
+	const int DIRECTONLY: 524288;
+	const int SUBTYPE: 1048576;
+	const int INNOCUOUS: 2097152;
+	const int RESULT_SUBTYPE: 16777216;
+	const int SELFORDER1: 33554432;
+	const int WIN32_DATA_DIRECTORY_TYPE: 1;
+	const int WIN32_TEMP_DIRECTORY_TYPE: 2;
+	const int TXN_NONE: 0;
+	const int TXN_READ: 1;
+	const int TXN_WRITE: 2;
+	const int INDEX_SCAN_UNIQUE: 1;    # Scan visits at most 1 row
+	const int INDEX_SCAN_HEX: 2;    # Display idxNum as hex
+	const int INDEX_CONSTRAINT_EQ: 2;
+	const int INDEX_CONSTRAINT_GT: 4;
+	const int INDEX_CONSTRAINT_LE: 8;
+	const int INDEX_CONSTRAINT_LT: 16;
+	const int INDEX_CONSTRAINT_GE: 32;
+	const int INDEX_CONSTRAINT_MATCH: 64;
+	const int INDEX_CONSTRAINT_LIKE: 65;
+	const int INDEX_CONSTRAINT_GLOB: 66;
+	const int INDEX_CONSTRAINT_REGEXP: 67;
+	const int INDEX_CONSTRAINT_NE: 68;
+	const int INDEX_CONSTRAINT_ISNOT: 69;
+	const int INDEX_CONSTRAINT_ISNOTNULL: 70;
+	const int INDEX_CONSTRAINT_ISNULL: 71;
+	const int INDEX_CONSTRAINT_IS: 72;
+	const int INDEX_CONSTRAINT_LIMIT: 73;
+	const int INDEX_CONSTRAINT_OFFSET: 74;
+	const int INDEX_CONSTRAINT_FUNCTION: 150;
+	const int MUTEX_FAST: 0;
+	const int MUTEX_RECURSIVE: 1;
+	const int MUTEX_STATIC_MAIN: 2;
+	const int MUTEX_STATIC_MEM: 3;    # sqlite3_malloc()
+	const int MUTEX_STATIC_MEM2: 4;    # NOT USED
+	const int MUTEX_STATIC_OPEN: 4;    # sqlite3BtreeOpen()
+	const int MUTEX_STATIC_PRNG: 5;    # sqlite3_randomness()
+	const int MUTEX_STATIC_LRU: 6;    # lru page list
+	const int MUTEX_STATIC_LRU2: 7;    # NOT USED
+	const int MUTEX_STATIC_PMEM: 7;    # sqlite3PageMalloc()
+	const int MUTEX_STATIC_APP1: 8;    # For use by application
+	const int MUTEX_STATIC_APP2: 9;    # For use by application
+	const int MUTEX_STATIC_APP3: 10;    # For use by application
+	const int MUTEX_STATIC_VFS1: 11;    # For use by built-in VFS
+	const int MUTEX_STATIC_VFS2: 12;    # For use by extension VFS
+	const int MUTEX_STATIC_VFS3: 13;    # For use by application VFS
+	const int MUTEX_STATIC_MASTER: 2;
+	const int TESTCTRL_FIRST: 5;
+	const int TESTCTRL_PRNG_SAVE: 5;
+	const int TESTCTRL_PRNG_RESTORE: 6;
+	const int TESTCTRL_PRNG_RESET: 7;    # NOT USED
+	const int TESTCTRL_FK_NO_ACTION: 7;
+	const int TESTCTRL_BITVEC_TEST: 8;
+	const int TESTCTRL_FAULT_INSTALL: 9;
+	const int TESTCTRL_BENIGN_MALLOC_HOOKS: 10;
+	const int TESTCTRL_PENDING_BYTE: 11;
+	const int TESTCTRL_ASSERT: 12;
+	const int TESTCTRL_ALWAYS: 13;
+	const int TESTCTRL_RESERVE: 14;    # NOT USED
+	const int TESTCTRL_JSON_SELFCHECK: 14;
+	const int TESTCTRL_OPTIMIZATIONS: 15;
+	const int TESTCTRL_ISKEYWORD: 16;    # NOT USED
+	const int TESTCTRL_GETOPT: 16;
+	const int TESTCTRL_SCRATCHMALLOC: 17;    # NOT USED
+	const int TESTCTRL_INTERNAL_FUNCTIONS: 17;
+	const int TESTCTRL_LOCALTIME_FAULT: 18;
+	const int TESTCTRL_EXPLAIN_STMT: 19;    # NOT USED
+	const int TESTCTRL_ONCE_RESET_THRESHOLD: 19;
+	const int TESTCTRL_NEVER_CORRUPT: 20;
+	const int TESTCTRL_VDBE_COVERAGE: 21;
+	const int TESTCTRL_BYTEORDER: 22;
+	const int TESTCTRL_ISINIT: 23;
+	const int TESTCTRL_SORTER_MMAP: 24;
+	const int TESTCTRL_IMPOSTER: 25;
+	const int TESTCTRL_PARSER_COVERAGE: 26;
+	const int TESTCTRL_RESULT_INTREAL: 27;
+	const int TESTCTRL_PRNG_SEED: 28;
+	const int TESTCTRL_EXTRA_SCHEMA_CHECKS: 29;
+	const int TESTCTRL_SEEK_COUNT: 30;
+	const int TESTCTRL_TRACEFLAGS: 31;
+	const int TESTCTRL_TUNE: 32;
+	const int TESTCTRL_LOGEST: 33;
+	const int TESTCTRL_USELONGDOUBLE: 34;    # NOT USED
+	const int TESTCTRL_ATOF: 34;
+	const int TESTCTRL_LAST: 34;    # Largest TESTCTRL
+	const int COPY: 0;    # Results copied.  Dynamic string unchanged
+	const int XFER: 1;    # Results transfered.  Dynamic string reset
+	const int FINISH: 2;    # Like SQLITE_XFER, plus dynamic string freed
+	const int STATUS_MEMORY_USED: 0;
+	const int STATUS_PAGECACHE_USED: 1;
+	const int STATUS_PAGECACHE_OVERFLOW: 2;
+	const int STATUS_SCRATCH_USED: 3;    # NOT USED
+	const int STATUS_SCRATCH_OVERFLOW: 4;    # NOT USED
+	const int STATUS_MALLOC_SIZE: 5;
+	const int STATUS_PARSER_STACK: 6;
+	const int STATUS_PAGECACHE_SIZE: 7;
+	const int STATUS_SCRATCH_SIZE: 8;    # NOT USED
+	const int STATUS_MALLOC_COUNT: 9;
+	const int DBSTATUS_LOOKASIDE_USED: 0;
+	const int DBSTATUS_CACHE_USED: 1;
+	const int DBSTATUS_SCHEMA_USED: 2;
+	const int DBSTATUS_STMT_USED: 3;
+	const int DBSTATUS_LOOKASIDE_HIT: 4;
+	const int DBSTATUS_LOOKASIDE_MISS_SIZE: 5;
+	const int DBSTATUS_LOOKASIDE_MISS_FULL: 6;
+	const int DBSTATUS_CACHE_HIT: 7;
+	const int DBSTATUS_CACHE_MISS: 8;
+	const int DBSTATUS_CACHE_WRITE: 9;
+	const int DBSTATUS_DEFERRED_FKS: 10;
+	const int DBSTATUS_CACHE_USED_SHARED: 11;
+	const int DBSTATUS_CACHE_SPILL: 12;
+	const int DBSTATUS_TEMPBUF_SPILL: 13;
+	const int DBSTATUS_MAX: 13;    # Largest defined DBSTATUS
+	const int STMTSTATUS_FULLSCAN_STEP: 1;
+	const int STMTSTATUS_SORT: 2;
+	const int STMTSTATUS_AUTOINDEX: 3;
+	const int STMTSTATUS_VM_STEP: 4;
+	const int STMTSTATUS_REPREPARE: 5;
+	const int STMTSTATUS_RUN: 6;
+	const int STMTSTATUS_FILTER_MISS: 7;
+	const int STMTSTATUS_FILTER_HIT: 8;
+	const int STMTSTATUS_MEMUSED: 99;
+	const int CHECKPOINT_NOOP: -1;    # Do no work at all
+	const int CHECKPOINT_PASSIVE: 0;    # Do as much as possible w/o blocking
+	const int CHECKPOINT_FULL: 1;    # Wait for writers, then checkpoint
+	const int CHECKPOINT_RESTART: 2;    # Like FULL but wait for readers
+	const int CHECKPOINT_TRUNCATE: 3;    # Like RESTART but also truncate WAL
+	const int VTAB_CONSTRAINT_SUPPORT: 1;
+	const int VTAB_INNOCUOUS: 2;
+	const int VTAB_DIRECTONLY: 3;
+	const int VTAB_USES_ALL_SCHEMAS: 4;
+	const int ROLLBACK: 1;
+	const int FAIL: 3;
+	const int REPLACE: 5;
+	const int SCANSTAT_NLOOP: 0;
+	const int SCANSTAT_NVISIT: 1;
+	const int SCANSTAT_EST: 2;
+	const int SCANSTAT_NAME: 3;
+	const int SCANSTAT_EXPLAIN: 4;
+	const int SCANSTAT_SELECTID: 5;
+	const int SCANSTAT_PARENTID: 6;
+	const int SCANSTAT_NCYCLE: 7;
+	const int SCANSTAT_COMPLEX: 1;
+	const int SERIALIZE_NOCOPY: 1;    # Do no memory allocations
+	const int DESERIALIZE_FREEONCLOSE: 1;    # Call sqlite3_free() on close
+	const int DESERIALIZE_RESIZEABLE: 2;    # Resize using sqlite3_realloc64()
+	const int DESERIALIZE_READONLY: 4;    # Database is read-only
+	const int CARRAY_INT32: 0;    # Data is 32-bit signed integers
+	const int CARRAY_INT64: 1;    # Data is 64-bit signed integers
+	const int CARRAY_DOUBLE: 2;    # Data is doubles
+	const int CARRAY_TEXT: 3;    # Data is char*
+	const int CARRAY_BLOB: 4;    # Data is struct iovec
+	const int CARRAY_INT32_: 0;    # Data is 32-bit signed integers
+	const int CARRAY_INT64_: 1;    # Data is 64-bit signed integers
+	const int CARRAY_DOUBLE_: 2;    # Data is doubles
+	const int CARRAY_TEXT_: 3;    # Data is char*
+	const int CARRAY_BLOB_: 4;    # Data is struct iovec
+	const int NOT_WITHIN: 0;    # Object completely outside of query region
+	const int PARTLY_WITHIN: 1;    # Object partially overlaps query region
+	const int FULLY_WITHIN: 2;    # Object fully contained within query region
+	const int FTS5_TOKENIZE_QUERY: 1;
+	const int FTS5_TOKENIZE_PREFIX: 2;
+	const int FTS5_TOKENIZE_DOCUMENT: 4;
+	const int FTS5_TOKENIZE_AUX: 8;
+	const int FTS5_TOKEN_COLOCATED: 1;    # Same position as prev. token
+
+
+	# what a bind_text or bind_blob is told about the bytes it's given: STATIC, that they stay
+	# as they are until the statement is done with; TRANSIENT, that SQLite is to copy them now
+	# (in C an address of 0 and one of -1, which is what these hold)
+	ptr<u8> STATIC: 0;
+	ptr<u8> TRANSIENT: 0;
+	TRANSIENT is TRANSIENT - 1;
+}
+
+struct.sqlite3_index_constraint foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_index_orderby foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_index_constraint_usage foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_value foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3 foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_stmt foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_context foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_blob foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_mutex foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_str foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_backup foreign    # only ever held by its address: what's in it is sqlite's own
+{
+	int opaque;
+}
+
+struct.sqlite3_file foreign
+{
+	ptr<sqlite3_io_methods> pMethods;
+}
+
+struct.sqlite3_io_methods foreign
+{
+	int iVersion;
+	ptr<u8> xClose;
+	ptr<u8> xRead;
+	ptr<u8> xWrite;
+	ptr<u8> xTruncate;
+	ptr<u8> xSync;
+	ptr<u8> xFileSize;
+	ptr<u8> xLock;
+	ptr<u8> xUnlock;
+	ptr<u8> xCheckReservedLock;
+	ptr<u8> xFileControl;
+	ptr<u8> xSectorSize;
+	ptr<u8> xDeviceCharacteristics;
+	ptr<u8> xShmMap;
+	ptr<u8> xShmLock;
+	ptr<u8> xShmBarrier;
+	ptr<u8> xShmUnmap;
+	ptr<u8> xFetch;
+	ptr<u8> xUnfetch;
+}
+
+struct.sqlite3_vfs foreign
+{
+	int iVersion;
+	int szOsFile;
+	int mxPathname;
+	ptr<sqlite3_vfs> pNext;
+	ptr<u8> zName;
+	ptr<u8> pAppData;
+	ptr<u8> xOpen;
+	ptr<u8> xDelete;
+	ptr<u8> xAccess;
+	ptr<u8> xFullPathname;
+	ptr<u8> xDlOpen;
+	ptr<u8> xDlError;
+	ptr<u8> xDlSym;
+	ptr<u8> xDlClose;
+	ptr<u8> xRandomness;
+	ptr<u8> xSleep;
+	ptr<u8> xCurrentTime;
+	ptr<u8> xGetLastError;
+	ptr<u8> xCurrentTimeInt64;
+	ptr<u8> xSetSystemCall;
+	ptr<u8> xGetSystemCall;
+	ptr<u8> xNextSystemCall;
+}
+
+struct.sqlite3_mem_methods foreign
+{
+	ptr<u8> xMalloc;
+	ptr<u8> xFree;
+	ptr<u8> xRealloc;
+	ptr<u8> xSize;
+	ptr<u8> xRoundup;
+	ptr<u8> xInit;
+	ptr<u8> xShutdown;
+	ptr<u8> pAppData;
+}
+
+struct.sqlite3_module foreign
+{
+	int iVersion;
+	ptr<u8> xCreate;
+	ptr<u8> xConnect;
+	ptr<u8> xBestIndex;
+	ptr<u8> xDisconnect;
+	ptr<u8> xDestroy;
+	ptr<u8> xOpen;
+	ptr<u8> xClose;
+	ptr<u8> xFilter;
+	ptr<u8> xNext;
+	ptr<u8> xEof;
+	ptr<u8> xColumn;
+	ptr<u8> xRowid;
+	ptr<u8> xUpdate;
+	ptr<u8> xBegin;
+	ptr<u8> xSync;
+	ptr<u8> xCommit;
+	ptr<u8> xRollback;
+	ptr<u8> xFindFunction;
+	ptr<u8> xRename;
+	ptr<u8> xSavepoint;
+	ptr<u8> xRelease;
+	ptr<u8> xRollbackTo;
+	ptr<u8> xShadowName;
+	ptr<u8> xIntegrity;
+}
+
+struct.sqlite3_index_info foreign
+{
+	int nConstraint;
+	ptr<sqlite3_index_constraint> aConstraint;
+	int nOrderBy;
+	ptr<sqlite3_index_orderby> aOrderBy;
+	ptr<sqlite3_index_constraint_usage> aConstraintUsage;
+	int idxNum;
+	ptr<u8> idxStr;
+	int needToFreeIdxStr;
+	int orderByConsumed;
+	f64 estimatedCost;
+	i64 estimatedRows;
+	int idxFlags;
+	u64 colUsed;
+}
+
+struct.sqlite3_vtab foreign
+{
+	ptr<sqlite3_module> pModule;
+	int nRef;
+	ptr<u8> zErrMsg;
+}
+
+struct.sqlite3_vtab_cursor foreign
+{
+	ptr<sqlite3_vtab> pVtab;
+}
+
+struct.sqlite3_mutex_methods foreign
+{
+	ptr<u8> xMutexInit;
+	ptr<u8> xMutexEnd;
+	ptr<u8> xMutexAlloc;
+	ptr<u8> xMutexFree;
+	ptr<u8> xMutexEnter;
+	ptr<u8> xMutexTry;
+	ptr<u8> xMutexLeave;
+	ptr<u8> xMutexHeld;
+	ptr<u8> xMutexNotheld;
+}
+
+struct.sqlite3_pcache_page foreign
+{
+	ptr<u8> pBuf;
+	ptr<u8> pExtra;
+}
+
+struct.sqlite3_pcache_methods2 foreign
+{
+	int iVersion;
+	ptr<u8> pArg;
+	ptr<u8> xInit;
+	ptr<u8> xShutdown;
+	ptr<u8> xCreate;
+	ptr<u8> xCachesize;
+	ptr<u8> xPagecount;
+	ptr<u8> xFetch;
+	ptr<u8> xUnpin;
+	ptr<u8> xRekey;
+	ptr<u8> xTruncate;
+	ptr<u8> xDestroy;
+	ptr<u8> xShrink;
+}
+
+struct.sqlite3_pcache_methods foreign
+{
+	ptr<u8> pArg;
+	ptr<u8> xInit;
+	ptr<u8> xShutdown;
+	ptr<u8> xCreate;
+	ptr<u8> xCachesize;
+	ptr<u8> xPagecount;
+	ptr<u8> xFetch;
+	ptr<u8> xUnpin;
+	ptr<u8> xRekey;
+	ptr<u8> xTruncate;
+	ptr<u8> xDestroy;
+}
+
+struct.sqlite3_snapshot foreign
+{
+	u8 hidden[48];
+}
+
+struct.sqlite3_rtree_geometry foreign
+{
+	ptr<u8> pContext;
+	int nParam;
+	ptr<f64> aParam;
+	ptr<u8> pUser;
+	ptr<u8> xDelUser;
+}
+
+struct.sqlite3_rtree_query_info foreign
+{
+	ptr<u8> pContext;
+	int nParam;
+	ptr<f64> aParam;
+	ptr<u8> pUser;
+	ptr<u8> xDelUser;
+	ptr<f64> aCoord;
+	ptr<u32> anQueue;
+	int nCoord;
+	int iLevel;
+	int mxLevel;
+	i64 iRowid;
+	f64 rParentScore;
+	int eParentWithin;
+	int eWithin;
+	f64 rScore;
+	ptr<ptr<sqlite3_value>> apSqlParam;
+}
+
+struct.Fts5PhraseIter foreign
+{
+	ptr<u8> a;
+	ptr<u8> b;
+}
+
+struct.Fts5ExtensionApi foreign
+{
+	int iVersion;
+	ptr<u8> xUserData;
+	ptr<u8> xColumnCount;
+	ptr<u8> xRowCount;
+	ptr<u8> xColumnTotalSize;
+	ptr<u8> xTokenize;
+	ptr<u8> xPhraseCount;
+	ptr<u8> xPhraseSize;
+	ptr<u8> xInstCount;
+	ptr<u8> xInst;
+	ptr<u8> xRowid;
+	ptr<u8> xColumnText;
+	ptr<u8> xColumnSize;
+	ptr<u8> xQueryPhrase;
+	ptr<u8> xSetAuxdata;
+	ptr<u8> xGetAuxdata;
+	ptr<u8> xPhraseFirst;
+	ptr<u8> xPhraseNext;
+	ptr<u8> xPhraseFirstColumn;
+	ptr<u8> xPhraseNextColumn;
+	ptr<u8> xQueryToken;
+	ptr<u8> xInstToken;
+	ptr<u8> xColumnLocale;
+	ptr<u8> xTokenize_v2;
+}
+
+struct.fts5_tokenizer_v2 foreign
+{
+	int iVersion;
+	ptr<u8> xCreate;
+	ptr<u8> xDelete;
+	ptr<u8> xTokenize;
+}
+
+struct.fts5_tokenizer foreign
+{
+	ptr<u8> xCreate;
+	ptr<u8> xDelete;
+	ptr<u8> xTokenize;
+}
+
+struct.fts5_api foreign
+{
+	int iVersion;
+	ptr<u8> xCreateTokenizer;
+	ptr<u8> xFindTokenizer;
+	ptr<u8> xCreateFunction;
+	ptr<u8> xCreateTokenizer_v2;
+	ptr<u8> xFindTokenizer_v2;
+}
+
+Sql.libversion = 'sqlite3_libversion': : ptr<u8>;    # Run-Time Library Version Numbers
+Sql.sourceid = 'sqlite3_sourceid': : ptr<u8>;    # Run-Time Library Version Numbers
+Sql.libversion_number = 'sqlite3_libversion_number';    # Run-Time Library Version Numbers
+Sql.compileoption_used = 'sqlite3_compileoption_used': ptr<u8> zOptName;    # Run-Time Library Compilation Options Diagnostics
+Sql.compileoption_get = 'sqlite3_compileoption_get': int N: ptr<u8>;    # Run-Time Library Compilation Options Diagnostics
+Sql.threadsafe = 'sqlite3_threadsafe';    # Test To See If The Library Is Threadsafe
+Sql.close = 'sqlite3_close': ptr<sqlite3> p1;    # Closing A Database Connection
+Sql.close_v2 = 'sqlite3_close_v2': ptr<sqlite3> p1;    # Closing A Database Connection
+Sql.exec = 'sqlite3_exec': ptr<sqlite3> p1 ptr<u8> sql ptr<u8> callback ptr<u8> p4 ptr<ptr<u8>> errmsg;    # One-Step Query Execution Interface
+Sql.initialize = 'sqlite3_initialize';    # Initialize The SQLite Library
+Sql.shutdown = 'sqlite3_shutdown';    # Initialize The SQLite Library
+Sql.os_init = 'sqlite3_os_init';    # Initialize The SQLite Library
+Sql.os_end = 'sqlite3_os_end';    # Initialize The SQLite Library
+Sql.config = 'sqlite3_config': int p1 ...;    # Configuring The SQLite Library
+Sql.db_config = 'sqlite3_db_config': ptr<sqlite3> p1 int op ...;    # Configure database connections
+Sql.extended_result_codes = 'sqlite3_extended_result_codes': ptr<sqlite3> p1 int onoff;    # Enable Or Disable Extended Result Codes
+Sql.last_insert_rowid = 'sqlite3_last_insert_rowid': ptr<sqlite3> p1: i64;    # Last Insert Rowid
+Sql.set_last_insert_rowid = 'sqlite3_set_last_insert_rowid': ptr<sqlite3> p1 i64 p2;    # Set the Last Insert Rowid value.
+Sql.changes = 'sqlite3_changes': ptr<sqlite3> p1;    # Count The Number Of Rows Modified
+Sql.changes64 = 'sqlite3_changes64': ptr<sqlite3> p1: i64;    # Count The Number Of Rows Modified
+Sql.total_changes = 'sqlite3_total_changes': ptr<sqlite3> p1;    # Total Number Of Rows Modified
+Sql.total_changes64 = 'sqlite3_total_changes64': ptr<sqlite3> p1: i64;    # Total Number Of Rows Modified
+Sql.interrupt = 'sqlite3_interrupt': ptr<sqlite3> p1;    # Interrupt A Long-Running Query
+Sql.is_interrupted = 'sqlite3_is_interrupted': ptr<sqlite3> p1;    # Interrupt A Long-Running Query
+Sql.complete = 'sqlite3_complete': ptr<u8> sql;    # Determine If An SQL Statement Is Complete
+Sql.complete16 = 'sqlite3_complete16': ptr<u8> sql;    # Determine If An SQL Statement Is Complete
+Sql.incomplete = 'sqlite3_incomplete': ptr<u8> sql: i64;    # Determine If An SQL Statement Is Complete
+Sql.busy_handler = 'sqlite3_busy_handler': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3;    # Register A Callback To Handle SQLITE_BUSY Errors
+Sql.busy_timeout = 'sqlite3_busy_timeout': ptr<sqlite3> p1 int ms;    # Set A Busy Timeout
+Sql.setlk_timeout = 'sqlite3_setlk_timeout': ptr<sqlite3> p1 int ms int flags;    # Set the Setlk Timeout
+Sql.get_table = 'sqlite3_get_table': ptr<sqlite3> db ptr<u8> zSql ptr<ptr<ptr<u8>>> pazResult ptr<int> pnRow ptr<int> pnColumn ptr<ptr<u8>> pzErrmsg;    # Convenience Routines For Running Queries
+Sql.free_table = 'sqlite3_free_table': ptr<ptr<u8>> result;
+Sql.mprintf = 'sqlite3_mprintf': ptr<u8> p1 ...: ptr<u8>;    # Formatted String Printing Functions
+Sql.snprintf = 'sqlite3_snprintf': int p1 ptr<u8> p2 ptr<u8> p3 ...: ptr<u8>;    # Formatted String Printing Functions
+Sql.malloc = 'sqlite3_malloc': int p1: ptr<u8>;    # Memory Allocation Subsystem
+Sql.malloc64 = 'sqlite3_malloc64': u64 p1: ptr<u8>;    # Memory Allocation Subsystem
+Sql.realloc = 'sqlite3_realloc': ptr<u8> p1 int p2: ptr<u8>;    # Memory Allocation Subsystem
+Sql.realloc64 = 'sqlite3_realloc64': ptr<u8> p1 u64 p2: ptr<u8>;    # Memory Allocation Subsystem
+Sql.free = 'sqlite3_free': ptr<u8> p1;    # Memory Allocation Subsystem
+Sql.msize = 'sqlite3_msize': ptr<u8> p1: u64;    # Memory Allocation Subsystem
+Sql.memory_used = 'sqlite3_memory_used': : i64;    # Memory Allocator Statistics
+Sql.memory_highwater = 'sqlite3_memory_highwater': int resetFlag: i64;    # Memory Allocator Statistics
+Sql.randomness = 'sqlite3_randomness': int N ptr<u8> P;    # Pseudo-Random Number Generator
+Sql.set_authorizer = 'sqlite3_set_authorizer': ptr<sqlite3> p1 ptr<u8> xAuth ptr<u8> pUserData;    # Compile-Time Authorization Callbacks
+Sql.trace = 'sqlite3_trace': ptr<sqlite3> p1 ptr<u8> xTrace ptr<u8> p3: ptr<u8>;    # Deprecated Tracing And Profiling Functions DEPRECATED
+Sql.profile = 'sqlite3_profile': ptr<sqlite3> p1 ptr<u8> xProfile ptr<u8> p3: ptr<u8>;    # Deprecated Tracing And Profiling Functions DEPRECATED
+Sql.trace_v2 = 'sqlite3_trace_v2': ptr<sqlite3> p1 u32 uMask ptr<u8> xCallback ptr<u8> pCtx;    # SQL Trace Hook
+Sql.progress_handler = 'sqlite3_progress_handler': ptr<sqlite3> p1 int p2 ptr<u8> p3 ptr<u8> p4;    # Query Progress Callbacks
+Sql.open = 'sqlite3_open': ptr<u8> filename ptr<ptr<sqlite3>> ppDb;    # Opening A New Database Connection
+Sql.open16 = 'sqlite3_open16': ptr<u8> filename ptr<ptr<sqlite3>> ppDb;
+Sql.open_v2 = 'sqlite3_open_v2': ptr<u8> filename ptr<ptr<sqlite3>> ppDb int flags ptr<u8> zVfs;
+Sql.uri_parameter = 'sqlite3_uri_parameter': ptr<u8> z ptr<u8> zParam: ptr<u8>;    # Obtain Values For URI Parameters
+Sql.uri_boolean = 'sqlite3_uri_boolean': ptr<u8> z ptr<u8> zParam int bDefault;    # Obtain Values For URI Parameters
+Sql.uri_int64 = 'sqlite3_uri_int64': ptr<u8> p1 ptr<u8> p2 i64 p3: i64;    # Obtain Values For URI Parameters
+Sql.uri_key = 'sqlite3_uri_key': ptr<u8> z int N: ptr<u8>;    # Obtain Values For URI Parameters
+Sql.filename_database = 'sqlite3_filename_database': ptr<u8> p1: ptr<u8>;    # Translate filenames
+Sql.filename_journal = 'sqlite3_filename_journal': ptr<u8> p1: ptr<u8>;    # Translate filenames
+Sql.filename_wal = 'sqlite3_filename_wal': ptr<u8> p1: ptr<u8>;    # Translate filenames
+Sql.database_file_object = 'sqlite3_database_file_object': ptr<u8> p1: ptr<sqlite3_file>;    # Database File Corresponding To A Journal
+Sql.create_filename = 'sqlite3_create_filename': ptr<u8> zDatabase ptr<u8> zJournal ptr<u8> zWal int nParam ptr<ptr<u8>> azParam: ptr<u8>;    # Create and Destroy VFS Filenames
+Sql.free_filename = 'sqlite3_free_filename': ptr<u8> p1;
+Sql.errcode = 'sqlite3_errcode': ptr<sqlite3> db;    # Error Codes And Messages
+Sql.extended_errcode = 'sqlite3_extended_errcode': ptr<sqlite3> db;    # Error Codes And Messages
+Sql.errmsg = 'sqlite3_errmsg': ptr<sqlite3> p1: ptr<u8>;    # Error Codes And Messages
+Sql.errmsg16 = 'sqlite3_errmsg16': ptr<sqlite3> p1: ptr<u8>;    # Error Codes And Messages
+Sql.errstr = 'sqlite3_errstr': int p1: ptr<u8>;    # Error Codes And Messages
+Sql.error_offset = 'sqlite3_error_offset': ptr<sqlite3> db;    # Error Codes And Messages
+Sql.set_errmsg = 'sqlite3_set_errmsg': ptr<sqlite3> db int errcode ptr<u8> zErrMsg;    # Set Error Code And Message
+Sql.limit = 'sqlite3_limit': ptr<sqlite3> p1 int id int newVal;    # Run-time Limits
+Sql.prepare = 'sqlite3_prepare': ptr<sqlite3> db ptr<u8> zSql int nByte ptr<ptr<sqlite3_stmt>> ppStmt ptr<ptr<u8>> pzTail;    # Compiling An SQL Statement
+Sql.prepare_v2 = 'sqlite3_prepare_v2': ptr<sqlite3> db ptr<u8> zSql int nByte ptr<ptr<sqlite3_stmt>> ppStmt ptr<ptr<u8>> pzTail;
+Sql.prepare_v3 = 'sqlite3_prepare_v3': ptr<sqlite3> db ptr<u8> zSql int nByte u32 prepFlags ptr<ptr<sqlite3_stmt>> ppStmt ptr<ptr<u8>> pzTail;
+Sql.prepare16 = 'sqlite3_prepare16': ptr<sqlite3> db ptr<u8> zSql int nByte ptr<ptr<sqlite3_stmt>> ppStmt ptr<ptr<u8>> pzTail;
+Sql.prepare16_v2 = 'sqlite3_prepare16_v2': ptr<sqlite3> db ptr<u8> zSql int nByte ptr<ptr<sqlite3_stmt>> ppStmt ptr<ptr<u8>> pzTail;
+Sql.prepare16_v3 = 'sqlite3_prepare16_v3': ptr<sqlite3> db ptr<u8> zSql int nByte u32 prepFlags ptr<ptr<sqlite3_stmt>> ppStmt ptr<ptr<u8>> pzTail;
+Sql.sql = 'sqlite3_sql': ptr<sqlite3_stmt> pStmt: ptr<u8>;    # Retrieving Statement SQL
+Sql.expanded_sql = 'sqlite3_expanded_sql': ptr<sqlite3_stmt> pStmt: ptr<u8>;    # Retrieving Statement SQL
+Sql.stmt_readonly = 'sqlite3_stmt_readonly': ptr<sqlite3_stmt> pStmt;    # Determine If An SQL Statement Writes The Database
+Sql.stmt_isexplain = 'sqlite3_stmt_isexplain': ptr<sqlite3_stmt> pStmt;    # Query The EXPLAIN Setting For A Prepared Statement
+Sql.stmt_explain = 'sqlite3_stmt_explain': ptr<sqlite3_stmt> pStmt int eMode;    # Change The EXPLAIN Setting For A Prepared Statement
+Sql.stmt_busy = 'sqlite3_stmt_busy': ptr<sqlite3_stmt> p1;    # Determine If A Prepared Statement Has Been Reset
+Sql.bind_blob = 'sqlite3_bind_blob': ptr<sqlite3_stmt> p1 int p2 ptr<u8> p3 int n ptr<u8> p5;    # Binding Values To Prepared Statements
+Sql.bind_blob64 = 'sqlite3_bind_blob64': ptr<sqlite3_stmt> p1 int p2 ptr<u8> p3 u64 p4 ptr<u8> p5;    # Binding Values To Prepared Statements
+Sql.bind_double = 'sqlite3_bind_double': ptr<sqlite3_stmt> p1 int p2 f64 p3;    # Binding Values To Prepared Statements
+Sql.bind_int = 'sqlite3_bind_int': ptr<sqlite3_stmt> p1 int p2 int p3;    # Binding Values To Prepared Statements
+Sql.bind_int64 = 'sqlite3_bind_int64': ptr<sqlite3_stmt> p1 int p2 i64 p3;    # Binding Values To Prepared Statements
+Sql.bind_null = 'sqlite3_bind_null': ptr<sqlite3_stmt> p1 int p2;
+Sql.bind_text = 'sqlite3_bind_text': ptr<sqlite3_stmt> p1 int p2 ptr<u8> p3 int p4 ptr<u8> p5;
+Sql.bind_text16 = 'sqlite3_bind_text16': ptr<sqlite3_stmt> p1 int p2 ptr<u8> p3 int p4 ptr<u8> p5;
+Sql.bind_text64 = 'sqlite3_bind_text64': ptr<sqlite3_stmt> p1 int p2 ptr<u8> p3 u64 p4 ptr<u8> p5 u8 encoding;
+Sql.bind_value = 'sqlite3_bind_value': ptr<sqlite3_stmt> p1 int p2 ptr<sqlite3_value> p3;
+Sql.bind_pointer = 'sqlite3_bind_pointer': ptr<sqlite3_stmt> p1 int p2 ptr<u8> p3 ptr<u8> p4 ptr<u8> p5;
+Sql.bind_zeroblob = 'sqlite3_bind_zeroblob': ptr<sqlite3_stmt> p1 int p2 int n;
+Sql.bind_zeroblob64 = 'sqlite3_bind_zeroblob64': ptr<sqlite3_stmt> p1 int p2 u64 p3;
+Sql.bind_parameter_count = 'sqlite3_bind_parameter_count': ptr<sqlite3_stmt> p1;    # Number Of SQL Parameters
+Sql.bind_parameter_name = 'sqlite3_bind_parameter_name': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Name Of A Host Parameter
+Sql.bind_parameter_index = 'sqlite3_bind_parameter_index': ptr<sqlite3_stmt> p1 ptr<u8> zName;    # Index Of A Parameter With A Given Name
+Sql.clear_bindings = 'sqlite3_clear_bindings': ptr<sqlite3_stmt> p1;    # Reset All Bindings On A Prepared Statement
+Sql.column_count = 'sqlite3_column_count': ptr<sqlite3_stmt> pStmt;    # Number Of Columns In A Result Set
+Sql.column_name = 'sqlite3_column_name': ptr<sqlite3_stmt> p1 int N: ptr<u8>;    # Column Names In A Result Set
+Sql.column_name16 = 'sqlite3_column_name16': ptr<sqlite3_stmt> p1 int N: ptr<u8>;    # Column Names In A Result Set
+Sql.column_database_name = 'sqlite3_column_database_name': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Source Of Data In A Query Result
+Sql.column_database_name16 = 'sqlite3_column_database_name16': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Source Of Data In A Query Result
+Sql.column_table_name = 'sqlite3_column_table_name': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Source Of Data In A Query Result
+Sql.column_table_name16 = 'sqlite3_column_table_name16': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Source Of Data In A Query Result
+Sql.column_origin_name = 'sqlite3_column_origin_name': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Source Of Data In A Query Result
+Sql.column_origin_name16 = 'sqlite3_column_origin_name16': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Source Of Data In A Query Result
+Sql.column_decltype = 'sqlite3_column_decltype': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Declared Datatype Of A Query Result
+Sql.column_decltype16 = 'sqlite3_column_decltype16': ptr<sqlite3_stmt> p1 int p2: ptr<u8>;    # Declared Datatype Of A Query Result
+Sql.step = 'sqlite3_step': ptr<sqlite3_stmt> p1;    # Evaluate An SQL Statement
+Sql.data_count = 'sqlite3_data_count': ptr<sqlite3_stmt> pStmt;    # Number of columns in a result set
+Sql.column_blob = 'sqlite3_column_blob': ptr<sqlite3_stmt> p1 int iCol: ptr<u8>;    # Result Values From A Query
+Sql.column_double = 'sqlite3_column_double': ptr<sqlite3_stmt> p1 int iCol: f64;    # Result Values From A Query
+Sql.column_int = 'sqlite3_column_int': ptr<sqlite3_stmt> p1 int iCol;    # Result Values From A Query
+Sql.column_int64 = 'sqlite3_column_int64': ptr<sqlite3_stmt> p1 int iCol: i64;    # Result Values From A Query
+Sql.column_text = 'sqlite3_column_text': ptr<sqlite3_stmt> p1 int iCol: ptr<u8>;    # Result Values From A Query
+Sql.column_text16 = 'sqlite3_column_text16': ptr<sqlite3_stmt> p1 int iCol: ptr<u8>;    # Result Values From A Query
+Sql.column_value = 'sqlite3_column_value': ptr<sqlite3_stmt> p1 int iCol: ptr<sqlite3_value>;
+Sql.column_bytes = 'sqlite3_column_bytes': ptr<sqlite3_stmt> p1 int iCol;
+Sql.column_bytes16 = 'sqlite3_column_bytes16': ptr<sqlite3_stmt> p1 int iCol;
+Sql.column_type = 'sqlite3_column_type': ptr<sqlite3_stmt> p1 int iCol;
+Sql.finalize = 'sqlite3_finalize': ptr<sqlite3_stmt> pStmt;    # Destroy A Prepared Statement Object
+Sql.reset = 'sqlite3_reset': ptr<sqlite3_stmt> pStmt;    # Reset A Prepared Statement Object
+Sql.create_function = 'sqlite3_create_function': ptr<sqlite3> db ptr<u8> zFunctionName int nArg int eTextRep ptr<u8> pApp ptr<u8> xFunc ptr<u8> xStep ptr<u8> xFinal;    # Create Or Redefine SQL Functions
+Sql.create_function16 = 'sqlite3_create_function16': ptr<sqlite3> db ptr<u8> zFunctionName int nArg int eTextRep ptr<u8> pApp ptr<u8> xFunc ptr<u8> xStep ptr<u8> xFinal;
+Sql.create_function_v2 = 'sqlite3_create_function_v2': ptr<sqlite3> db ptr<u8> zFunctionName int nArg int eTextRep ptr<u8> pApp ptr<u8> xFunc ptr<u8> xStep ptr<u8> xFinal ptr<u8> xDestroy;
+Sql.create_window_function = 'sqlite3_create_window_function': ptr<sqlite3> db ptr<u8> zFunctionName int nArg int eTextRep ptr<u8> pApp ptr<u8> xStep ptr<u8> xFinal ptr<u8> xValue ptr<u8> xInverse ptr<u8> xDestroy;
+Sql.aggregate_count = 'sqlite3_aggregate_count': ptr<sqlite3_context> p1;    # Deprecated Functions DEPRECATED
+Sql.expired = 'sqlite3_expired': ptr<sqlite3_stmt> p1;    # Deprecated Functions DEPRECATED
+Sql.transfer_bindings = 'sqlite3_transfer_bindings': ptr<sqlite3_stmt> p1 ptr<sqlite3_stmt> p2;    # Deprecated Functions DEPRECATED
+Sql.global_recover = 'sqlite3_global_recover';    # Deprecated Functions DEPRECATED
+Sql.thread_cleanup = 'sqlite3_thread_cleanup';    # Deprecated Functions DEPRECATED
+Sql.memory_alarm = 'sqlite3_memory_alarm': ptr<u8> p1 ptr<u8> p2 i64 p3;
+Sql.value_blob = 'sqlite3_value_blob': ptr<sqlite3_value> p1: ptr<u8>;    # Obtaining SQL Values
+Sql.value_double = 'sqlite3_value_double': ptr<sqlite3_value> p1: f64;    # Obtaining SQL Values
+Sql.value_int = 'sqlite3_value_int': ptr<sqlite3_value> p1;    # Obtaining SQL Values
+Sql.value_int64 = 'sqlite3_value_int64': ptr<sqlite3_value> p1: i64;    # Obtaining SQL Values
+Sql.value_pointer = 'sqlite3_value_pointer': ptr<sqlite3_value> p1 ptr<u8> p2: ptr<u8>;    # Obtaining SQL Values
+Sql.value_text = 'sqlite3_value_text': ptr<sqlite3_value> p1: ptr<u8>;    # Obtaining SQL Values
+Sql.value_text16 = 'sqlite3_value_text16': ptr<sqlite3_value> p1: ptr<u8>;
+Sql.value_text16le = 'sqlite3_value_text16le': ptr<sqlite3_value> p1: ptr<u8>;
+Sql.value_text16be = 'sqlite3_value_text16be': ptr<sqlite3_value> p1: ptr<u8>;
+Sql.value_bytes = 'sqlite3_value_bytes': ptr<sqlite3_value> p1;
+Sql.value_bytes16 = 'sqlite3_value_bytes16': ptr<sqlite3_value> p1;
+Sql.value_type = 'sqlite3_value_type': ptr<sqlite3_value> p1;
+Sql.value_numeric_type = 'sqlite3_value_numeric_type': ptr<sqlite3_value> p1;
+Sql.value_nochange = 'sqlite3_value_nochange': ptr<sqlite3_value> p1;
+Sql.value_frombind = 'sqlite3_value_frombind': ptr<sqlite3_value> p1;
+Sql.value_encoding = 'sqlite3_value_encoding': ptr<sqlite3_value> p1;    # Report the internal text encoding state of an sqlite3_value object
+Sql.value_subtype = 'sqlite3_value_subtype': ptr<sqlite3_value> p1: u32;    # Finding The Subtype Of SQL Values
+Sql.value_dup = 'sqlite3_value_dup': ptr<sqlite3_value> p1: ptr<sqlite3_value>;    # Copy And Free SQL Values
+Sql.value_free = 'sqlite3_value_free': ptr<sqlite3_value> p1;    # Copy And Free SQL Values
+Sql.aggregate_context = 'sqlite3_aggregate_context': ptr<sqlite3_context> p1 int nBytes: ptr<u8>;    # Obtain Aggregate Function Context
+Sql.user_data = 'sqlite3_user_data': ptr<sqlite3_context> p1: ptr<u8>;    # User Data For Functions
+Sql.context_db_handle = 'sqlite3_context_db_handle': ptr<sqlite3_context> p1: ptr<sqlite3>;    # Database Connection For Functions
+Sql.get_auxdata = 'sqlite3_get_auxdata': ptr<sqlite3_context> p1 int N: ptr<u8>;    # Function Auxiliary Data
+Sql.set_auxdata = 'sqlite3_set_auxdata': ptr<sqlite3_context> p1 int N ptr<u8> p3 ptr<u8> p4;    # Function Auxiliary Data
+Sql.get_clientdata = 'sqlite3_get_clientdata': ptr<sqlite3> p1 ptr<u8> p2: ptr<u8>;    # Database Connection Client Data
+Sql.set_clientdata = 'sqlite3_set_clientdata': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3 ptr<u8> p4;    # Database Connection Client Data
+Sql.result_blob = 'sqlite3_result_blob': ptr<sqlite3_context> p1 ptr<u8> p2 int p3 ptr<u8> p4;    # Setting The Result Of An SQL Function
+Sql.result_blob64 = 'sqlite3_result_blob64': ptr<sqlite3_context> p1 ptr<u8> p2 u64 p3 ptr<u8> p4;    # Setting The Result Of An SQL Function
+Sql.result_double = 'sqlite3_result_double': ptr<sqlite3_context> p1 f64 p2;    # Setting The Result Of An SQL Function
+Sql.result_error = 'sqlite3_result_error': ptr<sqlite3_context> p1 ptr<u8> p2 int p3;    # Setting The Result Of An SQL Function
+Sql.result_error16 = 'sqlite3_result_error16': ptr<sqlite3_context> p1 ptr<u8> p2 int p3;    # Setting The Result Of An SQL Function
+Sql.result_error_toobig = 'sqlite3_result_error_toobig': ptr<sqlite3_context> p1;
+Sql.result_error_nomem = 'sqlite3_result_error_nomem': ptr<sqlite3_context> p1;
+Sql.result_error_code = 'sqlite3_result_error_code': ptr<sqlite3_context> p1 int p2;
+Sql.result_int = 'sqlite3_result_int': ptr<sqlite3_context> p1 int p2;
+Sql.result_int64 = 'sqlite3_result_int64': ptr<sqlite3_context> p1 i64 p2;
+Sql.result_null = 'sqlite3_result_null': ptr<sqlite3_context> p1;
+Sql.result_text = 'sqlite3_result_text': ptr<sqlite3_context> p1 ptr<u8> p2 int p3 ptr<u8> p4;
+Sql.result_text64 = 'sqlite3_result_text64': ptr<sqlite3_context> p1 ptr<u8> z u64 n ptr<u8> p4 u8 encoding;
+Sql.result_text16 = 'sqlite3_result_text16': ptr<sqlite3_context> p1 ptr<u8> p2 int p3 ptr<u8> p4;
+Sql.result_text16le = 'sqlite3_result_text16le': ptr<sqlite3_context> p1 ptr<u8> p2 int p3 ptr<u8> p4;
+Sql.result_text16be = 'sqlite3_result_text16be': ptr<sqlite3_context> p1 ptr<u8> p2 int p3 ptr<u8> p4;
+Sql.result_value = 'sqlite3_result_value': ptr<sqlite3_context> p1 ptr<sqlite3_value> p2;
+Sql.result_pointer = 'sqlite3_result_pointer': ptr<sqlite3_context> p1 ptr<u8> p2 ptr<u8> p3 ptr<u8> p4;
+Sql.result_zeroblob = 'sqlite3_result_zeroblob': ptr<sqlite3_context> p1 int n;
+Sql.result_zeroblob64 = 'sqlite3_result_zeroblob64': ptr<sqlite3_context> p1 u64 n;
+Sql.result_subtype = 'sqlite3_result_subtype': ptr<sqlite3_context> p1 u32 p2;    # Setting The Subtype Of An SQL Function
+Sql.create_collation = 'sqlite3_create_collation': ptr<sqlite3> p1 ptr<u8> zName int eTextRep ptr<u8> pArg ptr<u8> xCompare;    # Define New Collating Sequences
+Sql.create_collation_v2 = 'sqlite3_create_collation_v2': ptr<sqlite3> p1 ptr<u8> zName int eTextRep ptr<u8> pArg ptr<u8> xCompare ptr<u8> xDestroy;
+Sql.create_collation16 = 'sqlite3_create_collation16': ptr<sqlite3> p1 ptr<u8> zName int eTextRep ptr<u8> pArg ptr<u8> xCompare;
+Sql.collation_needed = 'sqlite3_collation_needed': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3;    # Collation Needed Callbacks
+Sql.collation_needed16 = 'sqlite3_collation_needed16': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3;    # Collation Needed Callbacks
+Sql.sleep = 'sqlite3_sleep': int p1;    # Suspend Execution For A Short Time
+Sql.win32_set_directory = 'sqlite3_win32_set_directory': ulng type ptr<u8> zValue;    # Win32 Specific Interface
+Sql.win32_set_directory8 = 'sqlite3_win32_set_directory8': ulng type ptr<u8> zValue;
+Sql.win32_set_directory16 = 'sqlite3_win32_set_directory16': ulng type ptr<u8> zValue;
+Sql.get_autocommit = 'sqlite3_get_autocommit': ptr<sqlite3> p1;    # Test For Auto-Commit Mode
+Sql.db_handle = 'sqlite3_db_handle': ptr<sqlite3_stmt> p1: ptr<sqlite3>;    # Find The Database Handle Of A Prepared Statement
+Sql.db_name = 'sqlite3_db_name': ptr<sqlite3> db int N: ptr<u8>;    # Return The Schema Name For A Database Connection
+Sql.db_filename = 'sqlite3_db_filename': ptr<sqlite3> db ptr<u8> zDbName: ptr<u8>;    # Return The Filename For A Database Connection
+Sql.db_readonly = 'sqlite3_db_readonly': ptr<sqlite3> db ptr<u8> zDbName;    # Determine if a database is read-only
+Sql.txn_state = 'sqlite3_txn_state': ptr<sqlite3> p1 ptr<u8> zSchema;    # Determine the transaction state of a database
+Sql.next_stmt = 'sqlite3_next_stmt': ptr<sqlite3> pDb ptr<sqlite3_stmt> pStmt: ptr<sqlite3_stmt>;    # Find the next prepared statement
+Sql.commit_hook = 'sqlite3_commit_hook': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3: ptr<u8>;    # Commit And Rollback Notification Callbacks
+Sql.rollback_hook = 'sqlite3_rollback_hook': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3: ptr<u8>;    # Commit And Rollback Notification Callbacks
+Sql.autovacuum_pages = 'sqlite3_autovacuum_pages': ptr<sqlite3> db ptr<u8> p2 ptr<u8> p3 ptr<u8> p4;    # Autovacuum Compaction Amount Callback
+Sql.update_hook = 'sqlite3_update_hook': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3: ptr<u8>;    # Data Change Notification Callbacks
+Sql.enable_shared_cache = 'sqlite3_enable_shared_cache': int p1;    # Enable Or Disable Shared Pager Cache
+Sql.release_memory = 'sqlite3_release_memory': int p1;    # Attempt To Free Heap Memory
+Sql.db_release_memory = 'sqlite3_db_release_memory': ptr<sqlite3> p1;    # Free Memory Used By A Database Connection
+Sql.soft_heap_limit64 = 'sqlite3_soft_heap_limit64': i64 N: i64;    # Impose A Limit On Heap Size
+Sql.hard_heap_limit64 = 'sqlite3_hard_heap_limit64': i64 N: i64;    # Impose A Limit On Heap Size
+Sql.soft_heap_limit = 'sqlite3_soft_heap_limit': int N;    # Deprecated Soft Heap Limit Interface DEPRECATED
+Sql.table_column_metadata = 'sqlite3_table_column_metadata': ptr<sqlite3> db ptr<u8> zDbName ptr<u8> zTableName ptr<u8> zColumnName ptr<ptr<u8>> pzDataType ptr<ptr<u8>> pzCollSeq ptr<int> pNotNull ptr<int> pPrimaryKey ptr<int> pAutoinc;    # Extract Metadata About A Column Of A Table
+Sql.load_extension = 'sqlite3_load_extension': ptr<sqlite3> db ptr<u8> zFile ptr<u8> zProc ptr<ptr<u8>> pzErrMsg;    # Load An Extension
+Sql.enable_load_extension = 'sqlite3_enable_load_extension': ptr<sqlite3> db int onoff;    # Enable Or Disable Extension Loading
+Sql.auto_extension = 'sqlite3_auto_extension': ptr<u8> xEntryPoint;    # Automatically Load Statically Linked Extensions
+Sql.cancel_auto_extension = 'sqlite3_cancel_auto_extension': ptr<u8> xEntryPoint;    # Cancel Automatic Extension Loading
+Sql.reset_auto_extension = 'sqlite3_reset_auto_extension';    # Reset Automatic Extension Loading
+Sql.create_module = 'sqlite3_create_module': ptr<sqlite3> db ptr<u8> zName ptr<sqlite3_module> p ptr<u8> pClientData;    # Register A Virtual Table Implementation
+Sql.create_module_v2 = 'sqlite3_create_module_v2': ptr<sqlite3> db ptr<u8> zName ptr<sqlite3_module> p ptr<u8> pClientData ptr<u8> xDestroy;
+Sql.drop_modules = 'sqlite3_drop_modules': ptr<sqlite3> db ptr<ptr<u8>> azKeep;    # Remove Unnecessary Virtual Table Implementations
+Sql.declare_vtab = 'sqlite3_declare_vtab': ptr<sqlite3> p1 ptr<u8> zSQL;    # Declare The Schema Of A Virtual Table
+Sql.overload_function = 'sqlite3_overload_function': ptr<sqlite3> p1 ptr<u8> zFuncName int nArg;    # Overload A Function For A Virtual Table
+Sql.blob_open = 'sqlite3_blob_open': ptr<sqlite3> p1 ptr<u8> zDb ptr<u8> zTable ptr<u8> zColumn i64 iRow int flags ptr<ptr<sqlite3_blob>> ppBlob;    # Open A BLOB For Incremental I/O
+Sql.blob_reopen = 'sqlite3_blob_reopen': ptr<sqlite3_blob> p1 i64 p2;    # Move a BLOB Handle to a New Row
+Sql.blob_close = 'sqlite3_blob_close': ptr<sqlite3_blob> p1;    # Close A BLOB Handle
+Sql.blob_bytes = 'sqlite3_blob_bytes': ptr<sqlite3_blob> p1;    # Return The Size Of An Open BLOB
+Sql.blob_read = 'sqlite3_blob_read': ptr<sqlite3_blob> p1 ptr<u8> Z int N int iOffset;    # Read Data From A BLOB Incrementally
+Sql.blob_write = 'sqlite3_blob_write': ptr<sqlite3_blob> p1 ptr<u8> z int n int iOffset;    # Write Data Into A BLOB Incrementally
+Sql.vfs_find = 'sqlite3_vfs_find': ptr<u8> zVfsName: ptr<sqlite3_vfs>;    # Virtual File System Objects
+Sql.vfs_register = 'sqlite3_vfs_register': ptr<sqlite3_vfs> p1 int makeDflt;    # Virtual File System Objects
+Sql.vfs_unregister = 'sqlite3_vfs_unregister': ptr<sqlite3_vfs> p1;    # Virtual File System Objects
+Sql.mutex_alloc = 'sqlite3_mutex_alloc': int p1: ptr<sqlite3_mutex>;    # Mutexes
+Sql.mutex_free = 'sqlite3_mutex_free': ptr<sqlite3_mutex> p1;    # Mutexes
+Sql.mutex_enter = 'sqlite3_mutex_enter': ptr<sqlite3_mutex> p1;    # Mutexes
+Sql.mutex_try = 'sqlite3_mutex_try': ptr<sqlite3_mutex> p1;    # Mutexes
+Sql.mutex_leave = 'sqlite3_mutex_leave': ptr<sqlite3_mutex> p1;    # Mutexes
+Sql.mutex_held = 'sqlite3_mutex_held': ptr<sqlite3_mutex> p1;    # Mutex Verification Routines
+Sql.mutex_notheld = 'sqlite3_mutex_notheld': ptr<sqlite3_mutex> p1;    # Mutex Verification Routines
+Sql.db_mutex = 'sqlite3_db_mutex': ptr<sqlite3> p1: ptr<sqlite3_mutex>;    # Retrieve the mutex for a database connection
+Sql.file_control = 'sqlite3_file_control': ptr<sqlite3> p1 ptr<u8> zDbName int op ptr<u8> p4;    # Low-Level Control Of Database Files
+Sql.test_control = 'sqlite3_test_control': int op ...;    # Testing Interface
+Sql.keyword_count = 'sqlite3_keyword_count';    # SQL Keyword Checking
+Sql.keyword_name = 'sqlite3_keyword_name': int p1 ptr<ptr<u8>> p2 ptr<int> p3;    # SQL Keyword Checking
+Sql.keyword_check = 'sqlite3_keyword_check': ptr<u8> p1 int p2;    # SQL Keyword Checking
+Sql.str_new = 'sqlite3_str_new': ptr<sqlite3> p1: ptr<sqlite3_str>;    # Create A New Dynamic String Object
+Sql.str_finish = 'sqlite3_str_finish': ptr<sqlite3_str> p1: ptr<u8>;    # Finalize A Dynamic String
+Sql.str_free = 'sqlite3_str_free': ptr<sqlite3_str> p1;    # Finalize A Dynamic String
+Sql.result_str = 'sqlite3_result_str': ptr<sqlite3_context> p1 ptr<sqlite3_str> p2 int p3;    # Return A Dynamic String From an SQL Function
+Sql.str_appendf = 'sqlite3_str_appendf': ptr<sqlite3_str> p1 ptr<u8> zFormat ...;    # Add Content To A Dynamic String
+Sql.str_append = 'sqlite3_str_append': ptr<sqlite3_str> p1 ptr<u8> zIn int N;    # Add Content To A Dynamic String
+Sql.str_appendall = 'sqlite3_str_appendall': ptr<sqlite3_str> p1 ptr<u8> zIn;    # Add Content To A Dynamic String
+Sql.str_appendchar = 'sqlite3_str_appendchar': ptr<sqlite3_str> p1 int N u8 C;    # Add Content To A Dynamic String
+Sql.str_reset = 'sqlite3_str_reset': ptr<sqlite3_str> p1;    # Add Content To A Dynamic String
+Sql.str_truncate = 'sqlite3_str_truncate': ptr<sqlite3_str> p1 int N;
+Sql.str_errcode = 'sqlite3_str_errcode': ptr<sqlite3_str> p1;    # Status Of A Dynamic String
+Sql.str_length = 'sqlite3_str_length': ptr<sqlite3_str> p1;    # Status Of A Dynamic String
+Sql.str_value = 'sqlite3_str_value': ptr<sqlite3_str> p1: ptr<u8>;    # Status Of A Dynamic String
+Sql.status = 'sqlite3_status': int op ptr<int> pCurrent ptr<int> pHighwater int resetFlag;    # SQLite Runtime Status
+Sql.status64 = 'sqlite3_status64': int op ptr<i64> pCurrent ptr<i64> pHighwater int resetFlag;    # SQLite Runtime Status
+Sql.db_status = 'sqlite3_db_status': ptr<sqlite3> p1 int op ptr<int> pCur ptr<int> pHiwtr int resetFlg;    # Database Connection Status
+Sql.db_status64 = 'sqlite3_db_status64': ptr<sqlite3> p1 int p2 ptr<i64> p3 ptr<i64> p4 int p5;    # Database Connection Status
+Sql.stmt_status = 'sqlite3_stmt_status': ptr<sqlite3_stmt> p1 int op int resetFlg;    # Prepared Statement Status
+Sql.backup_init = 'sqlite3_backup_init': ptr<sqlite3> pDest ptr<u8> zDestName ptr<sqlite3> pSource ptr<u8> zSourceName: ptr<sqlite3_backup>;    # Online Backup API.
+Sql.backup_step = 'sqlite3_backup_step': ptr<sqlite3_backup> p int nPage;
+Sql.backup_finish = 'sqlite3_backup_finish': ptr<sqlite3_backup> p;
+Sql.backup_remaining = 'sqlite3_backup_remaining': ptr<sqlite3_backup> p;
+Sql.backup_pagecount = 'sqlite3_backup_pagecount': ptr<sqlite3_backup> p;
+Sql.unlock_notify = 'sqlite3_unlock_notify': ptr<sqlite3> pBlocked ptr<u8> xNotify ptr<u8> pNotifyArg;    # Unlock Notification
+Sql.stricmp = 'sqlite3_stricmp': ptr<u8> p1 ptr<u8> p2;    # String Comparison
+Sql.strnicmp = 'sqlite3_strnicmp': ptr<u8> p1 ptr<u8> p2 int p3;    # String Comparison
+Sql.strglob = 'sqlite3_strglob': ptr<u8> zGlob ptr<u8> zStr;    # String Globbing
+Sql.strlike = 'sqlite3_strlike': ptr<u8> zGlob ptr<u8> zStr u32 cEsc;    # String LIKE Matching
+Sql.log = 'sqlite3_log': int iErrCode ptr<u8> zFormat ...;    # Error Logging Interface
+Sql.wal_hook = 'sqlite3_wal_hook': ptr<sqlite3> p1 ptr<u8> p2 ptr<u8> p3: ptr<u8>;    # Write-Ahead Log Commit Hook
+Sql.wal_autocheckpoint = 'sqlite3_wal_autocheckpoint': ptr<sqlite3> db int N;    # Configure an auto-checkpoint
+Sql.wal_checkpoint = 'sqlite3_wal_checkpoint': ptr<sqlite3> db ptr<u8> zDb;    # Checkpoint a database
+Sql.wal_checkpoint_v2 = 'sqlite3_wal_checkpoint_v2': ptr<sqlite3> db ptr<u8> zDb int eMode ptr<int> pnLog ptr<int> pnCkpt;    # Checkpoint a database
+Sql.vtab_config = 'sqlite3_vtab_config': ptr<sqlite3> p1 int op ...;    # Virtual Table Interface Configuration
+Sql.vtab_on_conflict = 'sqlite3_vtab_on_conflict': ptr<sqlite3> p1;    # Determine The Virtual Table Conflict Policy
+Sql.vtab_nochange = 'sqlite3_vtab_nochange': ptr<sqlite3_context> p1;    # Determine If Virtual Table Column Access Is For UPDATE
+Sql.vtab_collation = 'sqlite3_vtab_collation': ptr<sqlite3_index_info> p1 int p2: ptr<u8>;    # Determine The Collation For a Virtual Table Constraint
+Sql.vtab_distinct = 'sqlite3_vtab_distinct': ptr<sqlite3_index_info> p1;    # Determine if a virtual table query is DISTINCT
+Sql.vtab_in = 'sqlite3_vtab_in': ptr<sqlite3_index_info> p1 int iCons int bHandle;    # Identify and handle IN constraints in xBestIndex
+Sql.vtab_in_first = 'sqlite3_vtab_in_first': ptr<sqlite3_value> pVal ptr<ptr<sqlite3_value>> ppOut;    # Find all elements on the right-hand side of an IN constraint.
+Sql.vtab_in_next = 'sqlite3_vtab_in_next': ptr<sqlite3_value> pVal ptr<ptr<sqlite3_value>> ppOut;    # Find all elements on the right-hand side of an IN constraint.
+Sql.vtab_rhs_value = 'sqlite3_vtab_rhs_value': ptr<sqlite3_index_info> p1 int p2 ptr<ptr<sqlite3_value>> ppVal;    # Constraint values in xBestIndex()
+Sql.stmt_scanstatus = 'sqlite3_stmt_scanstatus': ptr<sqlite3_stmt> pStmt int idx int iScanStatusOp ptr<u8> pOut;    # Prepared Statement Scan Status
+Sql.stmt_scanstatus_v2 = 'sqlite3_stmt_scanstatus_v2': ptr<sqlite3_stmt> pStmt int idx int iScanStatusOp int flags ptr<u8> pOut;
+Sql.stmt_scanstatus_reset = 'sqlite3_stmt_scanstatus_reset': ptr<sqlite3_stmt> p1;    # Zero Scan-Status Counters
+Sql.db_cacheflush = 'sqlite3_db_cacheflush': ptr<sqlite3> p1;    # Flush caches to disk mid-transaction
+Sql.system_errno = 'sqlite3_system_errno': ptr<sqlite3> p1;    # Low-level system error code
+Sql.snapshot_get = 'sqlite3_snapshot_get': ptr<sqlite3> db ptr<u8> zSchema ptr<ptr<sqlite3_snapshot>> ppSnapshot;    # Record A Database Snapshot
+Sql.snapshot_open = 'sqlite3_snapshot_open': ptr<sqlite3> db ptr<u8> zSchema ptr<sqlite3_snapshot> pSnapshot;    # Start a read transaction on an historical snapshot
+Sql.snapshot_free = 'sqlite3_snapshot_free': ptr<sqlite3_snapshot> p1;    # Destroy a snapshot
+Sql.snapshot_cmp = 'sqlite3_snapshot_cmp': ptr<sqlite3_snapshot> p1 ptr<sqlite3_snapshot> p2;    # Compare the ages of two snapshot handles.
+Sql.snapshot_recover = 'sqlite3_snapshot_recover': ptr<sqlite3> db ptr<u8> zDb;    # Recover snapshots from a wal file
+Sql.serialize = 'sqlite3_serialize': ptr<sqlite3> db ptr<u8> zSchema ptr<i64> piSize u32 mFlags: ptr<u8>;    # Serialize a database
+Sql.deserialize = 'sqlite3_deserialize': ptr<sqlite3> db ptr<u8> zSchema ptr<u8> pData i64 szDb i64 szBuf u32 mFlags;    # Deserialize a database
+Sql.carray_bind_v2 = 'sqlite3_carray_bind_v2': ptr<sqlite3_stmt> pStmt int i ptr<u8> aData int nData int mFlags ptr<u8> xDel ptr<u8> pDel;    # Bind array values to the CARRAY table-valued function
+Sql.carray_bind = 'sqlite3_carray_bind': ptr<sqlite3_stmt> pStmt int i ptr<u8> aData int nData int mFlags ptr<u8> xDel;
+Sql.rtree_geometry_callback = 'sqlite3_rtree_geometry_callback': ptr<sqlite3> db ptr<u8> zGeom ptr<u8> xGeom ptr<u8> pContext;    # Register a geometry callback named zGeom that can be used as part of an R-Tree geometry query as follows:
+Sql.rtree_query_callback = 'sqlite3_rtree_query_callback': ptr<sqlite3> db ptr<u8> zQueryFunc ptr<u8> xQueryFunc ptr<u8> pContext ptr<u8> xDestructor;    # Register a 2nd-generation geometry callback named zScore that can be used as part of an R-Tree geometry query as follows:

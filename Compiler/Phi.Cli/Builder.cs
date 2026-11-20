@@ -546,6 +546,17 @@ namespace Phi.Cli
             // a library that isn't the system's is looked for where they're put (beside the
             // program, and Homebrew's), and found when the program runs beside it or in a bundle
             var links = unit.Links.ToList();
+            // (a library that was put beside the program is that file, whatever its name says after
+            // lib: -lraylib would look for libraylib.dylib, and take another one found elsewhere)
+            string beside = Path.GetDirectoryName(Path.GetFullPath(executable))!;
+            for (int i = 0; i < links.Count; i++)
+            {
+                if (!links[i].StartsWith("-l", StringComparison.Ordinal)) continue;
+                string stem = "lib" + links[i][2..];
+                string? here = Directory.GetFiles(beside, stem + "*.dylib").OrderBy(f => f.Length)
+                    .FirstOrDefault(f => Path.GetFileName(f) == stem + ".dylib" || Path.GetFileName(f).StartsWith(stem + ".", StringComparison.Ordinal));
+                if (here != null) links[i] = here;
+            }
             if (links.Any(l => l.StartsWith("-l", StringComparison.Ordinal) || l.EndsWith(".dylib", StringComparison.Ordinal)))
             {
                 foreach (string folder in new[] { Path.GetDirectoryName(Path.GetFullPath(executable))!, "/opt/homebrew/lib", "/usr/local/lib" }.Where(Directory.Exists))

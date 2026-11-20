@@ -1,0 +1,51 @@
+# Every struct of vendor/sqlite is as large as C has it, on the system this is built for:
+# written by vendor/bindgen.py, with C's sizes as clang gives them for macOS and 64-bit Linux, 64-bit Windows, 32-bit Windows.
+use vendor.sqlite;
+
+phi.SqliteLayoutProgram:Program
+{
+	int wrong: 0;
+	int which: 2;
+	if (sizeof ptr<u8>) is 8
+		which is 1;
+		if (sizeof lng) is 8
+			which is 0;
+		;;
+	;;
+	call Same: 'sqlite3_file' (sizeof sqlite3_file) 8 8 4;
+	call Same: 'sqlite3_io_methods' (sizeof sqlite3_io_methods) 152 152 76;
+	call Same: 'sqlite3_vfs' (sizeof sqlite3_vfs) 168 168 88;
+	call Same: 'sqlite3_mem_methods' (sizeof sqlite3_mem_methods) 64 64 32;
+	call Same: 'sqlite3_module' (sizeof sqlite3_module) 200 200 100;
+	call Same: 'sqlite3_index_info' (sizeof sqlite3_index_info) 96 96 72;
+	call Same: 'sqlite3_vtab' (sizeof sqlite3_vtab) 24 24 12;
+	call Same: 'sqlite3_vtab_cursor' (sizeof sqlite3_vtab_cursor) 8 8 4;
+	call Same: 'sqlite3_mutex_methods' (sizeof sqlite3_mutex_methods) 72 72 36;
+	call Same: 'sqlite3_pcache_page' (sizeof sqlite3_pcache_page) 16 16 8;
+	call Same: 'sqlite3_pcache_methods2' (sizeof sqlite3_pcache_methods2) 104 104 52;
+	call Same: 'sqlite3_pcache_methods' (sizeof sqlite3_pcache_methods) 88 88 44;
+	call Same: 'sqlite3_snapshot' (sizeof sqlite3_snapshot) 48 48 48;
+	call Same: 'sqlite3_rtree_geometry' (sizeof sqlite3_rtree_geometry) 40 40 20;
+	call Same: 'sqlite3_rtree_query_info' (sizeof sqlite3_rtree_query_info) 112 112 80;
+	call Same: 'Fts5PhraseIter' (sizeof Fts5PhraseIter) 16 16 8;
+	call Same: 'Fts5ExtensionApi' (sizeof Fts5ExtensionApi) 192 192 96;
+	call Same: 'fts5_tokenizer_v2' (sizeof fts5_tokenizer_v2) 32 32 16;
+	call Same: 'fts5_tokenizer' (sizeof fts5_tokenizer) 24 24 12;
+	call Same: 'fts5_api' (sizeof fts5_api) 48 48 24;
+	log '20 structs, ' wrong ' wrong\n';
+	exit wrong;
+
+	[Same: ptr<u8> name; int here; int unix; int windows64; int windows32;]
+		int c: unix;
+		if which is 1
+			c is windows64;
+		;;
+		if which is 2
+			c is windows32;
+		;;
+		if here is not c
+			wrong++;
+			log name ' is ' here ' bytes here and ' c ' in C\n';
+		;;
+	[end]
+}

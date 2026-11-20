@@ -1,0 +1,68 @@
+# zlib from the vendor folder (use vendor.zlib;): bytes packed and unpacked in one call at
+# several strengths, with the lengths C writes back (ulng: C's unsigned long); checksums;
+# what it says of bytes that aren't zlib's and of too little room; and a stream of its own
+# (a z_stream, which the program holds and zlib fills in) packed a piece at a time through
+# Z.deflateInit, which C has as a macro. One source, the same on each system.
+use vendor.zlib;
+
+phi.ZlibProgram:Program
+{
+	u8 source[6000];
+	u8 packed[6100];
+	u8 back[6000];
+
+	ptr<u8> version: (Z.zlibVersion);
+	log 'zlib ' version '\n';
+	while int i: 0; i < 6000; i++;
+		source:i is ((i * 7) % 13 + (i / 100) % 5 + 65) as u8;
+	;;
+
+	while int level: 1; level < 10; level++ 4;
+		ulng packedSize: 6100;
+		int r: (Z.compress2: addr packed addr packedSize addr source 6000 level);
+		ulng backSize: 6000;
+		int u: (Z.uncompress: addr back addr backSize addr packed packedSize);
+		log 'level ' level ': ' r ' ' (packedSize < 1500) ' ' u ' ' backSize ' ' (Same) '\n';
+	;;
+	log 'crc ' (Z.crc32: 0 '123456789' 9) ' adler ' (Z.adler32: 1 'Wikipedia' 9) ', bound ' ((Z.compressBound: 6000) > 6000) '\n';
+
+	ulng size: 6000;
+	log 'not zlib: ' ((Z.uncompress: addr back addr size addr source 100) is Z.Z_DATA_ERROR);
+	size is 10;
+	log ', no room: ' ((Z.compress2: addr packed addr size addr source 6000 6) is Z.Z_BUF_ERROR) '\n';
+
+	# a stream, a thousand bytes in at a time
+	z_stream stream;
+	int r: (Z.deflateInit: addr stream Z.Z_BEST_COMPRESSION);
+	stream.next_out is addr packed;
+	stream.avail_out is 6100;
+	while int start: 0; start < 6000; start++ 1000;
+		stream.next_in is addr source:start;
+		stream.avail_in is 1000;
+		int flush: Z.Z_NO_FLUSH;
+		if start is 5000
+			flush is Z.Z_FINISH;
+		;;
+		r is (Z.deflate: addr stream flush);
+	;;
+	log 'stream: ' (r is Z.Z_STREAM_END) ' ' stream.total_in ' in, ' (stream.total_out < 1500) '\n';
+	ulng streamed: stream.total_out;
+	r is (Z.deflateEnd: addr stream);
+
+	z_stream reader;
+	r is (Z.inflateInit: addr reader);
+	reader.next_in is addr packed;
+	reader.avail_in is streamed as u32;
+	reader.next_out is addr back;
+	reader.avail_out is 6000;
+	r is (Z.inflate: addr reader Z.Z_FINISH);
+	log 'and back: ' (r is Z.Z_STREAM_END) ' ' reader.total_out ' ' (Same) '\n';
+	r is (Z.inflateEnd: addr reader);
+	exit 0;
+
+	[Same]
+		while int i: 0; i < 6000; i++;
+			if back:i is not source:i return 0;
+		;;
+	[end: 1]
+}

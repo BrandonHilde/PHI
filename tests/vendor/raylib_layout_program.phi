@@ -1,0 +1,68 @@
+# Every struct of vendor/raylib is as large as C has it, on the system this is built for:
+# written by vendor/bindgen.py, with C's sizes as clang gives them for macOS and 64-bit Linux, 64-bit Windows, 32-bit Windows.
+use vendor.raylib;
+
+phi.RaylibLayoutProgram:Program
+{
+	int wrong: 0;
+	int which: 2;
+	if (sizeof ptr<u8>) is 8
+		which is 1;
+		if (sizeof lng) is 8
+			which is 0;
+		;;
+	;;
+	call Same: 'Vector2' (sizeof Vector2) 8 8 8;
+	call Same: 'Vector3' (sizeof Vector3) 12 12 12;
+	call Same: 'Vector4' (sizeof Vector4) 16 16 16;
+	call Same: 'Matrix' (sizeof Matrix) 64 64 64;
+	call Same: 'Color' (sizeof Color) 4 4 4;
+	call Same: 'Rectangle' (sizeof Rectangle) 16 16 16;
+	call Same: 'Image' (sizeof Image) 24 24 20;
+	call Same: 'Texture' (sizeof Texture) 20 20 20;
+	call Same: 'RenderTexture' (sizeof RenderTexture) 44 44 44;
+	call Same: 'NPatchInfo' (sizeof NPatchInfo) 36 36 36;
+	call Same: 'GlyphInfo' (sizeof GlyphInfo) 40 40 36;
+	call Same: 'Font' (sizeof Font) 48 48 40;
+	call Same: 'Camera3D' (sizeof Camera3D) 44 44 44;
+	call Same: 'Camera2D' (sizeof Camera2D) 24 24 24;
+	call Same: 'Mesh' (sizeof Mesh) 120 120 64;
+	call Same: 'Shader' (sizeof Shader) 16 16 8;
+	call Same: 'MaterialMap' (sizeof MaterialMap) 28 28 28;
+	call Same: 'Material' (sizeof Material) 40 40 28;
+	call Same: 'Transform' (sizeof Transform) 40 40 40;
+	call Same: 'BoneInfo' (sizeof BoneInfo) 36 36 36;
+	call Same: 'ModelSkeleton' (sizeof ModelSkeleton) 24 24 12;
+	call Same: 'Model' (sizeof Model) 136 136 104;
+	call Same: 'ModelAnimation' (sizeof ModelAnimation) 48 48 44;
+	call Same: 'Ray' (sizeof Ray) 24 24 24;
+	call Same: 'RayCollision' (sizeof RayCollision) 32 32 32;
+	call Same: 'BoundingBox' (sizeof BoundingBox) 24 24 24;
+	call Same: 'Wave' (sizeof Wave) 24 24 20;
+	call Same: 'AudioStream' (sizeof AudioStream) 32 32 20;
+	call Same: 'Sound' (sizeof Sound) 40 40 24;
+	call Same: 'Music' (sizeof Music) 56 56 36;
+	call Same: 'VrDeviceInfo' (sizeof VrDeviceInfo) 60 60 60;
+	call Same: 'VrStereoConfig' (sizeof VrStereoConfig) 304 304 304;
+	call Same: 'FilePathList' (sizeof FilePathList) 16 16 8;
+	call Same: 'AutomationEvent' (sizeof AutomationEvent) 24 24 24;
+	call Same: 'AutomationEventList' (sizeof AutomationEventList) 16 16 12;
+	call Same: 'float3' (sizeof float3) 12 12 12;
+	call Same: 'float16' (sizeof float16) 64 64 64;
+	log '37 structs, ' wrong ' wrong\n';
+	exit wrong;
+
+	[Same: ptr<u8> name; int here; int unix; int windows64; int windows32;]
+		int c: unix;
+		if which is 1
+			c is windows64;
+		;;
+		if which is 2
+			c is windows32;
+		;;
+		if here is not c
+			wrong++;
+			log name ' is ' here ' bytes here and ' c ' in C\n';
+		;;
+	[end]
+}

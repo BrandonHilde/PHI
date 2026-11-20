@@ -18,6 +18,9 @@ namespace Phi.Compiler.Syntax
         public List<LibraryUseDecl> Libraries { get; } = new();
         public List<OutsideFunctionDecl> OutsideFunctions { get; } = new();
         public List<StructDecl> Structs { get; } = new();
+
+        /// <summary>struct.Texture2D is Texture;  another name for a struct (a C library's typedef of one).</summary>
+        public List<StructAlias> StructAliases { get; } = new();
         public List<EnumDecl> Enums { get; } = new();
         public List<UseDecl> Uses { get; } = new();
 
@@ -222,6 +225,14 @@ namespace Phi.Compiler.Syntax
         /// <summary>An interface: no fields, only the headers of the methods it asks for.</summary>
         public bool IsInterface { get; init; }
         public List<MethodDecl> Methods { get; } = new();
+    }
+
+    /// <summary>struct.Name is Other;  Name is the struct Other, under another name.</summary>
+    public sealed class StructAlias : Node
+    {
+        public SourceFile File { get; init; } = null!;
+        public string Name { get; init; } = "";
+        public string Target { get; init; } = "";
     }
 
     /// <summary>enum.Name { A  B  C: 10 }: names for numbers, as a type of their own.</summary>

@@ -1,0 +1,79 @@
+{
+  "name": "sqlite",
+  "version": "3.54.1",
+  "about": "a database in one file (or in memory), asked in SQL",
+  "homepage": "https://www.sqlite.org",
+  "license": "public domain",
+  "libraries": {
+    "windows": "sqlite3.dll",
+    "macos": "libsqlite3.54.dylib",
+    "linux": "libsqlite3.so.54"
+  },
+  "build": {
+    "sources": [
+      {
+        "url": "https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip",
+        "sha256": "0a9c8e34352dad46006aa82836d5383bff9dc6bc9ce5a60553c05aa30e6ad1f9",
+        "files": {
+          "sqlite-amalgamation-3540100/sqlite3.c": "src/sqlite3.c",
+          "sqlite-amalgamation-3540100/sqlite3.h": "include/sqlite3.h"
+        }
+      }
+    ],
+    "compile": [
+      "src/sqlite3.c"
+    ],
+    "flags": [
+      "-DSQLITE_THREADSAFE=1",
+      "-DSQLITE_ENABLE_FTS5",
+      "-DSQLITE_ENABLE_RTREE",
+      "-DSQLITE_ENABLE_MATH_FUNCTIONS",
+      "-DSQLITE_DQS=0",
+      "-DSQLITE_OMIT_LOAD_EXTENSION"
+    ],
+    "linux64_link": [
+      "-lm",
+      "-lpthread"
+    ],
+    "windows64": [
+      "-DSQLITE_API=__declspec(dllexport)"
+    ],
+    "windows": [
+      "-DSQLITE_API=__declspec(dllexport)"
+    ]
+  },
+  "bindings": {
+    "alias": "Sql",
+    "headers": [
+      "include/sqlite3.h"
+    ],
+    "strip": "sqlite3_",
+    "strip_constants": "SQLITE_",
+    "skip_like": [
+      "^SQLITE3_H$",
+      "^SQLITE_EXTERN$",
+      "^SQLITE_API$",
+      "^SQLITE_CDECL$",
+      "^SQLITE_APICALL$",
+      "^SQLITE_STDCALL$",
+      "^SQLITE_CALLBACK$",
+      "^SQLITE_SYSAPI$",
+      "^SQLITE_DEPRECATED$",
+      "^SQLITE_EXPERIMENTAL$",
+      "^SQLITE3_TEXT$",
+      "^SQLITE_VERSION",
+      "^SQLITE_SOURCE_ID$",
+      "^SQLITE_SCM_"
+    ],
+    "notes": [
+      "A function is Sql.name for C's sqlite3_name (Sql.open, Sql.prepare_v2, Sql.step), and a constant",
+      "Sql.NAME for SQLITE_NAME (Sql.OK, Sql.ROW, Sql.DONE). Sql.TRANSIENT and Sql.STATIC are what a",
+      "bind_text or bind_blob is told about the text it's given: TRANSIENT has SQLite copy it."
+    ],
+    "comment_drop": [
+      "^CAPI3REF:\\s*",
+      "\\s*(METHOD|KEYWORDS|CONSTRUCTOR|DESTRUCTOR|EXPERIMENTAL):.*$",
+      "\\s*\\{[^}]*\\}"
+    ]
+  }
+}

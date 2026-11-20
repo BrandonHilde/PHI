@@ -1,0 +1,42 @@
+{
+  "name": "raylib",
+  "version": "6.2",
+  "about": "a simple library for making games: a window, drawing in 2D and 3D, input, sound",
+  "homepage": "https://www.raylib.com",
+  "license": "zlib",
+  "libraries": { "windows": "raylib.dll", "macos": "libraylib.620.dylib", "linux": "libraylib.so.620" },
+  "downloads": [
+    {
+      "url": "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_win64_msvc16.zip",
+      "sha256": "8467b5dd6db4d7ab942f3148a3d30d93be6ed9b2fab88069d177e59604268ebd",
+      "files": { "raylib-6.2_win64_msvc16/lib/raylib.dll": "windows64/raylib.dll" }
+    },
+    {
+      "url": "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_win32_msvc16.zip",
+      "sha256": "d5f1084ab81da3a9baa91eb3bf8f772faf96f8b0446a6ba994e297a3939cf485",
+      "files": { "raylib-6.2_win32_msvc16/lib/raylib.dll": "windows/raylib.dll" }
+    },
+    {
+      "url": "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_macos.tar.gz",
+      "sha256": "100437734a44d56ed9d2a1c4b249dbfc6d6cc3477a45e306f9f56fe5f1e2b4ef",
+      "files": {
+        "raylib-6.2_macos/lib/libraylib.6.2.0.dylib": "macos/libraylib.620.dylib",
+        "raylib-6.2_macos/include/raylib.h": "include/raylib.h",
+        "raylib-6.2_macos/include/raymath.h": "include/raymath.h",
+        "raylib-6.2_macos/include/rlgl.h": "include/rlgl.h",
+        "raylib-6.2_macos/LICENSE": "LICENSE"
+      }
+    },
+    {
+      "url": "https://github.com/raysan5/raylib/releases/download/6.2/raylib-6.2_linux_amd64.tar.gz",
+      "sha256": "586bbc32f3596d439382b1c5dbc6c1c573eb7e1d00fe92be7d4deb116883720d",
+      "files": { "raylib-6.2_linux_amd64/lib/libraylib.so.6.2.0": "linux64/libraylib.so.620" }
+    }
+  ],
+  "bindings": {
+    "alias": "Ray",
+    "headers": ["include/raylib.h", "include/raymath.h"],
+    "static_inline": true,
+    "skip": ["RAYLIB_H", "RAYMATH_H", "RLAPI", "RMAPI", "RL_MALLOC", "RL_CALLOC", "RL_REALLOC", "RL_FREE", "RL_BOOL_TYPE", "EPSILON"]
+  }
+}

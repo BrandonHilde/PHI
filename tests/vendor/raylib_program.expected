@@ -1,0 +1,16 @@
+raylib 6.2, keys: 256 32, flags: 68
+colours: 245 203 0 -1105119233
+add: 4.5 6, length: 5, far: 5
+cross: 0 0 1, dot: 0
+moved: 5 6 8, determinant: 24
+turned: 1 1, clamp: 5 5
+sphere: 1 at 8, its normal -1
+box: 0
+overlap: 1 6 8 4 2
+point in: 1 0, circles: 1 0
+red: 255 0 0 255, faded: 127, between: 127, the same: 0 1
+text: 6 1 RAYLIB 1234 there 6
+image: 32 x 16, format 1, 1
+ (0 0 255) (255 0 0) (0 0 255) (0 228 48) (255 0 0)
+red pixels: 49
+cropped: 8 x 8 (0 0 255) (255 0 0)

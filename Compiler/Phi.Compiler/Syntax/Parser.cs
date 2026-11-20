@@ -9,7 +9,7 @@ namespace Phi.Compiler.Syntax
         public static readonly HashSet<string> TypeKeywords = new()
         {
             "str", "int", "byt", "bln", "chr", "var",
-            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "lng", "ulng", "f16", "f32", "f64", "ptr", "method", "lock", "vec",
+            "u8", "u16", "u32", "i8", "i16", "i32", "i64", "u64", "lng", "ulng", "isz", "usz", "f16", "f32", "f64", "ptr", "method", "lock", "vec",
         };
 
         /// <summary>Words that can't be used as variable, method or type names.</summary>
@@ -317,6 +317,14 @@ namespace Phi.Compiler.Syntax
                         return;
                     case "struct":
                         if (At(TokenKind.Less)) ParseStructTemplate(start, name, program);
+                        else if (AtWord("is"))
+                        {
+                            // struct.Texture2D is Texture;  another name for the same struct
+                            Advance();
+                            Token other = ExpectIdentifier("the struct this is another name for");
+                            Expect(TokenKind.Semicolon, "';'");
+                            program.StructAliases.Add(new StructAlias { File = file, Name = name.Text, Target = other.Text, Span = start.Span.To(other.Span) });
+                        }
                         else program.Structs.Add(ParseStruct(start, name, program));
                         return;
                     case "enum":

@@ -912,6 +912,13 @@ namespace Phi.Compiler.CodeGen.Ir
                     // (a class's variable with constant values: they're in the program's data already, as x86's generator has it)
                     return;
 
+                case VarDecl { Symbol: VariableSymbol { NeedsInitCode: true } again, Values.Count: 0, FieldValues.Count: 0, Source: null, IsNew: false, AtAddress: null } sd
+                    when arm && !Ours(again) && GlobalStruct(again) is string whole:
+                    // (a class's struct declared in a loop or a branch: zeros again each time it's reached)
+                    Mark(sd);
+                    Emit(new ZeroI { Place = whole, Size = again.Type.Struct!.Size });
+                    return;
+
                 case VarDecl { Symbol: VariableSymbol classVar } cd when !Ours(classVar) && Global(classVar) is string kept:
                 {
                     // (a class's own statement, made a method: its variable is the class's, set where it's kept)

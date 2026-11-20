@@ -1,0 +1,153 @@
+# Every struct of vendor/sdl3 is as large as C has it, on the system this is built for:
+# written by vendor/bindgen.py, with C's sizes as clang gives them for macOS and 64-bit Linux, 64-bit Windows, 32-bit Windows.
+use vendor.sdl3;
+
+phi.Sdl3LayoutProgram:Program
+{
+	int wrong: 0;
+	int which: 2;
+	if (sizeof ptr<u8>) is 8
+		which is 1;
+		if (sizeof lng) is 8
+			which is 0;
+		;;
+	;;
+	call Same: 'SDL_alignment_test' (sizeof SDL_alignment_test) 16 16 8;
+	call Same: 'SDL_AssertData' (sizeof SDL_AssertData) 48 48 28;
+	call Same: 'SDL_AsyncIOOutcome' (sizeof SDL_AsyncIOOutcome) 56 56 48;
+	call Same: 'SDL_AtomicInt' (sizeof SDL_AtomicInt) 4 4 4;
+	call Same: 'SDL_AtomicU32' (sizeof SDL_AtomicU32) 4 4 4;
+	call Same: 'SDL_InitState' (sizeof SDL_InitState) 24 24 24;
+	call Same: 'SDL_IOStreamInterface' (sizeof SDL_IOStreamInterface) 56 56 28;
+	call Same: 'SDL_AudioSpec' (sizeof SDL_AudioSpec) 12 12 12;
+	call Same: 'SDL_Color' (sizeof SDL_Color) 4 4 4;
+	call Same: 'SDL_FColor' (sizeof SDL_FColor) 16 16 16;
+	call Same: 'SDL_Palette' (sizeof SDL_Palette) 24 24 16;
+	call Same: 'SDL_PixelFormatDetails' (sizeof SDL_PixelFormatDetails) 32 32 32;
+	call Same: 'SDL_Point' (sizeof SDL_Point) 8 8 8;
+	call Same: 'SDL_FPoint' (sizeof SDL_FPoint) 8 8 8;
+	call Same: 'SDL_Rect' (sizeof SDL_Rect) 16 16 16;
+	call Same: 'SDL_FRect' (sizeof SDL_FRect) 16 16 16;
+	call Same: 'SDL_Surface' (sizeof SDL_Surface) 48 48 32;
+	call Same: 'SDL_CameraSpec' (sizeof SDL_CameraSpec) 24 24 24;
+	call Same: 'SDL_DisplayMode' (sizeof SDL_DisplayMode) 40 40 36;
+	call Same: 'SDL_DialogFileFilter' (sizeof SDL_DialogFileFilter) 16 16 8;
+	call Same: 'SDL_GUID' (sizeof SDL_GUID) 16 16 16;
+	call Same: 'SDL_VirtualJoystickTouchpadDesc' (sizeof SDL_VirtualJoystickTouchpadDesc) 8 8 8;
+	call Same: 'SDL_VirtualJoystickSensorDesc' (sizeof SDL_VirtualJoystickSensorDesc) 8 8 8;
+	call Same: 'SDL_VirtualJoystickDesc' (sizeof SDL_VirtualJoystickDesc) 136 136 84;
+	call Same: 'SDL_GamepadBinding' (sizeof SDL_GamepadBinding) 32 32 32;
+	call Same: 'SDL_CursorFrameInfo' (sizeof SDL_CursorFrameInfo) 16 16 8;
+	call Same: 'SDL_Finger' (sizeof SDL_Finger) 24 24 24;
+	call Same: 'SDL_CommonEvent' (sizeof SDL_CommonEvent) 16 16 16;
+	call Same: 'SDL_DisplayEvent' (sizeof SDL_DisplayEvent) 32 32 32;
+	call Same: 'SDL_WindowEvent' (sizeof SDL_WindowEvent) 32 32 32;
+	call Same: 'SDL_KeyboardDeviceEvent' (sizeof SDL_KeyboardDeviceEvent) 24 24 24;
+	call Same: 'SDL_KeyboardEvent' (sizeof SDL_KeyboardEvent) 40 40 40;
+	call Same: 'SDL_TextEditingEvent' (sizeof SDL_TextEditingEvent) 40 40 32;
+	call Same: 'SDL_TextEditingCandidatesEvent' (sizeof SDL_TextEditingCandidatesEvent) 48 48 40;
+	call Same: 'SDL_TextInputEvent' (sizeof SDL_TextInputEvent) 32 32 24;
+	call Same: 'SDL_MouseDeviceEvent' (sizeof SDL_MouseDeviceEvent) 24 24 24;
+	call Same: 'SDL_MouseMotionEvent' (sizeof SDL_MouseMotionEvent) 48 48 48;
+	call Same: 'SDL_MouseButtonEvent' (sizeof SDL_MouseButtonEvent) 40 40 40;
+	call Same: 'SDL_MouseWheelEvent' (sizeof SDL_MouseWheelEvent) 56 56 56;
+	call Same: 'SDL_JoyAxisEvent' (sizeof SDL_JoyAxisEvent) 32 32 32;
+	call Same: 'SDL_JoyBallEvent' (sizeof SDL_JoyBallEvent) 32 32 32;
+	call Same: 'SDL_JoyHatEvent' (sizeof SDL_JoyHatEvent) 24 24 24;
+	call Same: 'SDL_JoyButtonEvent' (sizeof SDL_JoyButtonEvent) 24 24 24;
+	call Same: 'SDL_JoyDeviceEvent' (sizeof SDL_JoyDeviceEvent) 24 24 24;
+	call Same: 'SDL_JoyBatteryEvent' (sizeof SDL_JoyBatteryEvent) 32 32 32;
+	call Same: 'SDL_GamepadAxisEvent' (sizeof SDL_GamepadAxisEvent) 32 32 32;
+	call Same: 'SDL_GamepadButtonEvent' (sizeof SDL_GamepadButtonEvent) 24 24 24;
+	call Same: 'SDL_GamepadDeviceEvent' (sizeof SDL_GamepadDeviceEvent) 24 24 24;
+	call Same: 'SDL_GamepadTouchpadEvent' (sizeof SDL_GamepadTouchpadEvent) 40 40 40;
+	call Same: 'SDL_GamepadSensorEvent' (sizeof SDL_GamepadSensorEvent) 48 48 48;
+	call Same: 'SDL_AudioDeviceEvent' (sizeof SDL_AudioDeviceEvent) 24 24 24;
+	call Same: 'SDL_CameraDeviceEvent' (sizeof SDL_CameraDeviceEvent) 24 24 24;
+	call Same: 'SDL_RenderEvent' (sizeof SDL_RenderEvent) 24 24 24;
+	call Same: 'SDL_TouchFingerEvent' (sizeof SDL_TouchFingerEvent) 56 56 56;
+	call Same: 'SDL_PinchFingerEvent' (sizeof SDL_PinchFingerEvent) 24 24 24;
+	call Same: 'SDL_PenProximityEvent' (sizeof SDL_PenProximityEvent) 32 32 32;
+	call Same: 'SDL_PenMotionEvent' (sizeof SDL_PenMotionEvent) 40 40 40;
+	call Same: 'SDL_PenTouchEvent' (sizeof SDL_PenTouchEvent) 48 48 48;
+	call Same: 'SDL_PenButtonEvent' (sizeof SDL_PenButtonEvent) 48 48 48;
+	call Same: 'SDL_PenAxisEvent' (sizeof SDL_PenAxisEvent) 48 48 48;
+	call Same: 'SDL_DropEvent' (sizeof SDL_DropEvent) 48 48 40;
+	call Same: 'SDL_ClipboardEvent' (sizeof SDL_ClipboardEvent) 32 32 32;
+	call Same: 'SDL_SensorEvent' (sizeof SDL_SensorEvent) 56 56 56;
+	call Same: 'SDL_QuitEvent' (sizeof SDL_QuitEvent) 16 16 16;
+	call Same: 'SDL_UserEvent' (sizeof SDL_UserEvent) 40 40 32;
+	call Same: 'SDL_Event' (sizeof SDL_Event) 128 128 128;
+	call Same: 'SDL_PathInfo' (sizeof SDL_PathInfo) 40 40 40;
+	call Same: 'SDL_GPUViewport' (sizeof SDL_GPUViewport) 24 24 24;
+	call Same: 'SDL_GPUTextureTransferInfo' (sizeof SDL_GPUTextureTransferInfo) 24 24 16;
+	call Same: 'SDL_GPUTransferBufferLocation' (sizeof SDL_GPUTransferBufferLocation) 16 16 8;
+	call Same: 'SDL_GPUTextureLocation' (sizeof SDL_GPUTextureLocation) 32 32 24;
+	call Same: 'SDL_GPUTextureRegion' (sizeof SDL_GPUTextureRegion) 40 40 36;
+	call Same: 'SDL_GPUBlitRegion' (sizeof SDL_GPUBlitRegion) 32 32 28;
+	call Same: 'SDL_GPUBufferLocation' (sizeof SDL_GPUBufferLocation) 16 16 8;
+	call Same: 'SDL_GPUBufferRegion' (sizeof SDL_GPUBufferRegion) 16 16 12;
+	call Same: 'SDL_GPUIndirectDrawCommand' (sizeof SDL_GPUIndirectDrawCommand) 16 16 16;
+	call Same: 'SDL_GPUIndexedIndirectDrawCommand' (sizeof SDL_GPUIndexedIndirectDrawCommand) 20 20 20;
+	call Same: 'SDL_GPUIndirectDispatchCommand' (sizeof SDL_GPUIndirectDispatchCommand) 12 12 12;
+	call Same: 'SDL_GPUSamplerCreateInfo' (sizeof SDL_GPUSamplerCreateInfo) 52 52 52;
+	call Same: 'SDL_GPUVertexBufferDescription' (sizeof SDL_GPUVertexBufferDescription) 16 16 16;
+	call Same: 'SDL_GPUVertexAttribute' (sizeof SDL_GPUVertexAttribute) 16 16 16;
+	call Same: 'SDL_GPUVertexInputState' (sizeof SDL_GPUVertexInputState) 32 32 16;
+	call Same: 'SDL_GPUStencilOpState' (sizeof SDL_GPUStencilOpState) 16 16 16;
+	call Same: 'SDL_GPUColorTargetBlendState' (sizeof SDL_GPUColorTargetBlendState) 32 32 32;
+	call Same: 'SDL_GPUShaderCreateInfo' (sizeof SDL_GPUShaderCreateInfo) 56 56 40;
+	call Same: 'SDL_GPUTextureCreateInfo' (sizeof SDL_GPUTextureCreateInfo) 36 36 36;
+	call Same: 'SDL_GPUBufferCreateInfo' (sizeof SDL_GPUBufferCreateInfo) 12 12 12;
+	call Same: 'SDL_GPUTransferBufferCreateInfo' (sizeof SDL_GPUTransferBufferCreateInfo) 12 12 12;
+	call Same: 'SDL_GPURasterizerState' (sizeof SDL_GPURasterizerState) 28 28 28;
+	call Same: 'SDL_GPUMultisampleState' (sizeof SDL_GPUMultisampleState) 12 12 12;
+	call Same: 'SDL_GPUDepthStencilState' (sizeof SDL_GPUDepthStencilState) 44 44 44;
+	call Same: 'SDL_GPUColorTargetDescription' (sizeof SDL_GPUColorTargetDescription) 36 36 36;
+	call Same: 'SDL_GPUGraphicsPipelineTargetInfo' (sizeof SDL_GPUGraphicsPipelineTargetInfo) 24 24 16;
+	call Same: 'SDL_GPUGraphicsPipelineCreateInfo' (sizeof SDL_GPUGraphicsPipelineCreateInfo) 168 168 132;
+	call Same: 'SDL_GPUComputePipelineCreateInfo' (sizeof SDL_GPUComputePipelineCreateInfo) 72 72 56;
+	call Same: 'SDL_GPUColorTargetInfo' (sizeof SDL_GPUColorTargetInfo) 64 64 52;
+	call Same: 'SDL_GPUDepthStencilTargetInfo' (sizeof SDL_GPUDepthStencilTargetInfo) 32 32 28;
+	call Same: 'SDL_GPUBlitInfo' (sizeof SDL_GPUBlitInfo) 96 96 88;
+	call Same: 'SDL_GPUBufferBinding' (sizeof SDL_GPUBufferBinding) 16 16 8;
+	call Same: 'SDL_GPUTextureSamplerBinding' (sizeof SDL_GPUTextureSamplerBinding) 16 16 8;
+	call Same: 'SDL_GPUStorageBufferReadWriteBinding' (sizeof SDL_GPUStorageBufferReadWriteBinding) 16 16 8;
+	call Same: 'SDL_GPUStorageTextureReadWriteBinding' (sizeof SDL_GPUStorageTextureReadWriteBinding) 24 24 16;
+	call Same: 'SDL_GPUVulkanOptions' (sizeof SDL_GPUVulkanOptions) 56 56 28;
+	call Same: 'SDL_HapticDirection' (sizeof SDL_HapticDirection) 16 16 16;
+	call Same: 'SDL_HapticConstant' (sizeof SDL_HapticConstant) 40 40 40;
+	call Same: 'SDL_HapticPeriodic' (sizeof SDL_HapticPeriodic) 48 48 48;
+	call Same: 'SDL_HapticCondition' (sizeof SDL_HapticCondition) 68 68 68;
+	call Same: 'SDL_HapticRamp' (sizeof SDL_HapticRamp) 44 44 44;
+	call Same: 'SDL_HapticLeftRight' (sizeof SDL_HapticLeftRight) 12 12 12;
+	call Same: 'SDL_HapticCustom' (sizeof SDL_HapticCustom) 56 56 48;
+	call Same: 'SDL_HapticEffect' (sizeof SDL_HapticEffect) 72 72 68;
+	call Same: 'SDL_hid_device_info' (sizeof SDL_hid_device_info) 80 80 52;
+	call Same: 'SDL_Locale' (sizeof SDL_Locale) 16 16 8;
+	call Same: 'SDL_MessageBoxButtonData' (sizeof SDL_MessageBoxButtonData) 16 16 12;
+	call Same: 'SDL_MessageBoxColor' (sizeof SDL_MessageBoxColor) 3 3 3;
+	call Same: 'SDL_MessageBoxColorScheme' (sizeof SDL_MessageBoxColorScheme) 15 15 15;
+	call Same: 'SDL_MessageBoxData' (sizeof SDL_MessageBoxData) 56 56 28;
+	call Same: 'SDL_Vertex' (sizeof SDL_Vertex) 32 32 32;
+	call Same: 'SDL_Texture' (sizeof SDL_Texture) 16 16 16;
+	call Same: 'SDL_GPURenderStateCreateInfo' (sizeof SDL_GPURenderStateCreateInfo) 64 64 32;
+	call Same: 'SDL_StorageInterface' (sizeof SDL_StorageInterface) 96 96 48;
+	call Same: 'SDL_DateTime' (sizeof SDL_DateTime) 36 36 36;
+	log '122 structs, ' wrong ' wrong\n';
+	exit wrong;
+
+	[Same: ptr<u8> name; int here; int unix; int windows64; int windows32;]
+		int c: unix;
+		if which is 1
+			c is windows64;
+		;;
+		if which is 2
+			c is windows32;
+		;;
+		if here is not c
+			wrong++;
+			log name ' is ' here ' bytes here and ' c ' in C\n';
+		;;
+	[end]
+}

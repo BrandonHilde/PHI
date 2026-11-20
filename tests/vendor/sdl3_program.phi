@@ -1,0 +1,97 @@
+# SDL3 from the vendor folder (use vendor.sdl3;), with no screen: its "dummy" video driver,
+# and its renderer drawing into a surface in memory. Nothing is declared here. Floats as
+# arguments, a rectangle by its address, the surface's own fields through the pointer SDL
+# gives, its constants by name, 64-bit results, and an event of the program's own put on
+# SDL's queue and taken off again, read as the kind of event it is. One source: a macOS
+# program and a Windows one in 32 and 64 bits give the same (a Linux one needs the system's
+# SDL3, libSDL3.so.0).
+use vendor.sdl3;
+
+phi.Sdl3Program:Program
+{
+	bln set: (SDL.SetHint: 'SDL_VIDEO_DRIVER' 'dummy');
+	bln up: (SDL.Init: SDL.INIT_VIDEO | SDL.INIT_EVENTS);
+	log 'init: ' up ', driver: ' (SDL.GetCurrentVideoDriver) ', version ' SDL.MAJOR_VERSION ': ' ((SDL.GetVersion) / 1000000) '\n';
+
+	ptr<SDL_Surface> surface: (SDL.CreateSurface: 64 48 SDL.PIXELFORMAT_XRGB8888);
+	log 'surface: ' surface.w ' x ' surface.h ', a row is ' surface.pitch ' bytes\n';
+	ptr<SDL_Renderer> renderer: (SDL.CreateSoftwareRenderer: surface);
+	log 'renderer: ' (renderer is not 0) '\n';
+
+	# cleared to one colour, a rectangle of another, a line and a point
+	bln ok: (SDL.SetRenderDrawColor: renderer 10 20 30 255);
+	ok is (SDL.RenderClear: renderer);
+	SDL_FRect box;
+	box.x is 8;
+	box.y is 4;
+	box.w is 16;
+	box.h is 10;
+	ok is (SDL.SetRenderDrawColor: renderer 200 100 50 SDL.ALPHA_OPAQUE);
+	ok is (SDL.RenderFillRect: renderer addr box);
+	ok is (SDL.SetRenderDrawColor: renderer 0 255 0 255);
+	ok is (SDL.RenderLine: renderer 0 40 63 40);
+	ok is (SDL.SetRenderDrawColor: renderer 255 255 255 255);
+	ok is (SDL.RenderPoint: renderer 60 2);
+	ok is (SDL.RenderPresent: renderer);
+	log 'drawn: ' ok '\n';
+	log 'background ' (Pixel: 0 0) ', box ' (Pixel: 8 4) ' ' (Pixel: 23 13) ', past it ' (Pixel: 24 14)
+	    ', line ' (Pixel: 30 40) ', point ' (Pixel: 60 2) '\n';
+	int covered: 0;
+	while int y: 0; y < 48; y++;
+		while int x: 0; x < 64; x++;
+			if (Pixel: x y) is 0xC86432
+				covered++;
+			;;
+		;;
+	;;
+	log 'box pixels: ' covered '\n';
+
+	# rectangles, which SDL works out itself
+	SDL_Rect a;
+	a.w is 10;
+	a.h is 10;
+	SDL_Rect b;
+	b.x is 6;
+	b.y is 8;
+	b.w is 10;
+	b.h is 10;
+	SDL_Rect both;
+	log 'overlap: ' (SDL.GetRectIntersection: addr a addr b addr both) ' ' both.x ' ' both.y ' ' both.w ' ' both.h '\n';
+
+	# time, as a 64-bit number
+	u64 before: (SDL.GetTicks);
+	call SDL.Delay: 30;
+	u64 after: (SDL.GetTicks);
+	log 'ticks: ' (after - before >= 25) ' ' (after - before < 2000) '\n';
+
+	# an event of the program's own, through SDL's queue
+	SDL_Event event;
+	ptr<SDL_UserEvent> mine: addr event as ptr<SDL_UserEvent>;
+	mine.type is SDL.EVENT_USER;
+	mine.code is 1234;
+	mine.data1 is 'carried';
+	ok is (SDL.PushEvent: addr event);
+	SDL_Event got;
+	int seen: 0;
+	while (SDL.PollEvent: addr got)
+		if got.type is SDL.EVENT_USER
+			ptr<SDL_UserEvent> user: addr got as ptr<SDL_UserEvent>;
+			seen++;
+			log 'event: ' user.code ' ' user.data1 '\n';
+		;;
+	;;
+	log 'seen: ' seen ', and no more: ' (SDL.PollEvent: addr got) ', keys: ' SDL.SCANCODE_ESCAPE ' ' SDL.EVENT_QUIT '\n';
+
+	# what went wrong, as SDL says it
+	ptr<SDL_Surface> none: (SDL.CreateSurface: -1 -1 SDL.PIXELFORMAT_UNKNOWN);
+	log 'refused: ' (none is 0) ' ' ((SDL.GetError):0 is not 0) '\n';
+
+	call SDL.DestroyRenderer: renderer;
+	call SDL.DestroySurface: surface;
+	call SDL.Quit;
+	exit 0;
+
+	[Pixel: int x; int y;]
+		ptr<u32> pixels: surface.pixels as ptr<u32>;
+	[end: (pixels:(y * (surface.pitch / 4) + x) & 0xFFFFFF) as int]
+}

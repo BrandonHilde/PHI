@@ -1,0 +1,80 @@
+# A call that gives a struct back by value, used as a value: declared from, assigned,
+# given straight to another call (and to that one's), read a field of, in a condition, a
+# loop and a method; and a struct under another name (struct.Size is Vec2;), as a C
+# library's typedef of one. The call is made first, into a variable of the compiler's own,
+# once each time the statement runs. Also a struct declared in a loop of the program's own
+# code, which starts as zeros each time round.
+use 'phi_abi.dll' 'libphi_abi.dylib' 'libphi_abi.so' as Abi;
+
+struct.Vec2 foreign
+{
+	f32 x;
+	f32 y;
+}
+
+struct.Rect foreign
+{
+	f32 x;
+	f32 y;
+	f32 w;
+	f32 h;
+}
+
+struct.Texture foreign
+{
+	u32 id;
+	int width;
+	int height;
+	int mips;
+	int format;
+}
+
+struct.Size is Vec2;
+struct.Texture2D is Texture;
+
+phi.CStructValuesProgram:Program
+{
+	Vec2 a: (Abi.abi_make_vec2: 1.5 2.5);
+	log 'declared: ' a.x ' ' a.y '\n';
+	Vec2 b;
+	b is (Abi.abi_make_vec2: 10 20);
+	log 'assigned: ' b.x ' ' b.y '\n';
+	log 'into a call: ' (Abi.abi_vec2_sum: (Abi.abi_vec2_add: a b)) ', and that one's: '
+	    (Abi.abi_vec2_sum: (Abi.abi_vec2_add: (Abi.abi_make_vec2: 1 1) (Abi.abi_vec2_add: a (Abi.abi_make_vec2: 2 2)))) '\n';
+	log 'a field: ' (Abi.abi_make_rect: 3 4).h ' ' (Abi.abi_texture_half: (Abi.abi_make_texture: 9)).width '\n';
+	if (Abi.abi_rect_area: (Abi.abi_make_rect: 1 2)) > 7
+		log 'in a condition\n';
+	;;
+
+	# another name for the same struct
+	Size size: (Abi.abi_vec2_add: a b);
+	Texture2D picture: (Abi.abi_make_texture: 3);
+	Texture plain: picture;
+	log 'other names: ' size.x ' ' (Abi.abi_vec2_sum: size) ' ' (Abi.abi_texture_sum: picture) ' ' plain.width ' ' (sizeof Texture2D) '\n';
+
+	# each time round, and a struct declared in the loop
+	f32 total: 0;
+	while int i: 0; i < 4; i++;
+		Vec2 step;
+		total++ step.x;
+		step is (Abi.abi_vec2_add: step (Abi.abi_make_vec2: i 1));
+		total++ step.x + (Abi.abi_make_vec2: i * 10 0).x;
+	;;
+	log 'in a loop: ' total '\n';
+	log 'in a method: ' (Area: 2) ' ' (Area: 5) '\n';
+	exit 0;
+
+	[Area: f32 size; : f32]
+		Rect r: (Abi.abi_make_rect: 0 size);
+		if size > 4 return (Abi.abi_rect_area: (Abi.abi_make_rect: 1 size));
+	[end: (Abi.abi_rect_area: r)]
+}
+
+Abi.abi_vec2_sum: Vec2 v: f32;
+Abi.abi_rect_area: Rect r: f32;
+Abi.abi_texture_sum: Texture t;
+Abi.abi_make_vec2: f32 x f32 y: Vec2;
+Abi.abi_make_rect: f32 x f32 size: Rect;
+Abi.abi_make_texture: int id: Texture;
+Abi.abi_vec2_add: Vec2 a Vec2 b: Vec2;
+Abi.abi_texture_half: Texture t: Texture;

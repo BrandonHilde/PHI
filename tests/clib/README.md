@@ -20,6 +20,7 @@ have" in docs/language.md), which is how a program of your own carries its libra
 |---|---|---|
 | `c_abi_program` | `phi_abi.c`, made for the test | every way C takes and gives a value, one function each; C's `long` (`lng`, `ulng`); C calling PHI on threads of the library's own |
 | `c_structs_program` | `phi_abi.c` | structs taken and given by value, each size and make-up the conventions treat their own way; C writing over its copy, which the caller's mustn't show |
+| `c_struct_values_program` | `phi_abi.c` | a call that gives a struct, used as a value (declared from, handed to another call, a field read); `struct.Name is Other;` |
 | `c_threads_program` | `phi_abi.c` | C called from threads the program starts, with what C keeps for each thread |
 | `c_zlib_program` | zlib | buffers and lengths C writes back, as `ulng` |
 | `c_lua_program` | Lua 5.4 | C calling PHI methods, over and over |

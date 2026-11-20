@@ -1,0 +1,201 @@
+# zlib 1.4: compression: deflate, zlib and gzip streams, and their checksums
+# https://zlib.net  (zlib licence: see LICENSE beside this file)
+#
+# Written by vendor/bindgen.py from zlib.h: change package.json
+# and run it again, rather than this file. Functions, structs and constants have C's names.
+# deflateInit, inflateInit and the others C has as macros are methods here (Z.deflateInit),
+# which hand zlib its version and the size of a z_stream as the macros do.
+use 'zlib1.dll' 'libz.1.4.dylib' 'libz.so.1.4' as Z;
+
+phi.Z:Library
+{
+	const int ZLIB_VERNUM: 5120;
+	const int ZLIB_VER_MAJOR: 1;
+	const int ZLIB_VER_MINOR: 4;
+	const int ZLIB_VER_REVISION: 0;
+	const int ZLIB_VER_SUBREVISION: 0;
+	const int Z_NO_FLUSH: 0;
+	const int Z_PARTIAL_FLUSH: 1;
+	const int Z_SYNC_FLUSH: 2;
+	const int Z_FULL_FLUSH: 3;
+	const int Z_FINISH: 4;
+	const int Z_BLOCK: 5;
+	const int Z_TREES: 6;
+	const int Z_OK: 0;
+	const int Z_STREAM_END: 1;
+	const int Z_NEED_DICT: 2;
+	const int Z_ERRNO: -1;
+	const int Z_STREAM_ERROR: -2;
+	const int Z_DATA_ERROR: -3;
+	const int Z_MEM_ERROR: -4;
+	const int Z_BUF_ERROR: -5;
+	const int Z_VERSION_ERROR: -6;
+	const int Z_NO_COMPRESSION: 0;
+	const int Z_BEST_SPEED: 1;
+	const int Z_BEST_COMPRESSION: 9;
+	const int Z_DEFAULT_COMPRESSION: -1;
+	const int Z_FILTERED: 1;
+	const int Z_HUFFMAN_ONLY: 2;
+	const int Z_RLE: 3;
+	const int Z_FIXED: 4;
+	const int Z_DEFAULT_STRATEGY: 0;
+	const int Z_BINARY: 0;
+	const int Z_TEXT: 1;
+	const int Z_ASCII: 1;    # for compatibility with 1.2.2 and earlier
+	const int Z_UNKNOWN: 2;
+	const int Z_DEFLATED: 8;
+	const int Z_NULL: 0;    # for initializing zalloc, zfree, opaque
+
+
+	# what C's header has as macros: each hands zlib the version it was written for and the
+	# size of a z_stream, which zlib checks
+	[deflateInit: ptr<z_stream> strm; int level;]
+	[end: (Z.deflateInit_: strm level '1.4' (sizeof z_stream))]
+
+	[inflateInit: ptr<z_stream> strm;]
+	[end: (Z.inflateInit_: strm '1.4' (sizeof z_stream))]
+
+	[deflateInit2: ptr<z_stream> strm; int level; int how; int windowBits; int memLevel; int strategy;]
+	[end: (Z.deflateInit2_: strm level how windowBits memLevel strategy '1.4' (sizeof z_stream))]
+
+	[inflateInit2: ptr<z_stream> strm; int windowBits;]
+	[end: (Z.inflateInit2_: strm windowBits '1.4' (sizeof z_stream))]
+
+	[inflateBackInit: ptr<z_stream> strm; int windowBits; ptr<u8> window;]
+	[end: (Z.inflateBackInit_: strm windowBits window '1.4' (sizeof z_stream))]
+}
+
+struct.internal_state foreign    # only ever held by its address: what's in it is zlib's own
+{
+	int opaque;
+}
+
+struct.z_stream foreign
+{
+	ptr<u8> next_in;
+	u32 avail_in;
+	ulng total_in;
+	ptr<u8> next_out;
+	u32 avail_out;
+	ulng total_out;
+	ptr<u8> msg;
+	ptr<internal_state> state;
+	ptr<u8> zalloc;
+	ptr<u8> zfree;
+	ptr<u8> opaque;
+	int data_type;
+	ulng adler;
+	ulng reserved;
+}
+
+struct.gz_header foreign
+{
+	int text;
+	ulng time;
+	int xflags;
+	int os;
+	ptr<u8> extra;
+	u32 extra_len;
+	u32 extra_max;
+	ptr<u8> name;
+	u32 name_max;
+	ptr<u8> comment;
+	u32 comm_max;
+	int hcrc;
+	int done;
+}
+
+struct.gzFile_s foreign
+{
+	u32 have;
+	ptr<u8> next;
+	i64 pos;
+}
+
+Z.zlibVersion: : ptr<u8>;
+Z.deflate: ptr<z_stream> strm int flush;
+Z.deflateEnd: ptr<z_stream> strm;
+Z.inflate: ptr<z_stream> strm int flush;
+Z.inflateEnd: ptr<z_stream> strm;
+Z.deflateSetDictionary: ptr<z_stream> strm ptr<u8> dictionary u32 dictLength;
+Z.deflateGetDictionary: ptr<z_stream> strm ptr<u8> dictionary ptr<u32> dictLength;
+Z.deflateCopy: ptr<z_stream> dest ptr<z_stream> source;
+Z.deflateReset: ptr<z_stream> strm;
+Z.deflateParams: ptr<z_stream> strm int level int strategy;
+Z.deflateTune: ptr<z_stream> strm int good_length int max_lazy int nice_length int max_chain;
+Z.deflateBound: ptr<z_stream> strm ulng sourceLen: ulng;
+Z.deflateBound_z: ptr<z_stream> strm usz sourceLen: usz;
+Z.deflatePending: ptr<z_stream> strm ptr<u32> pending ptr<int> bits;
+Z.deflateUsed: ptr<z_stream> strm ptr<int> bits;
+Z.deflatePrime: ptr<z_stream> strm int bits int value;
+Z.deflateSetHeader: ptr<z_stream> strm ptr<gz_header> head;
+Z.inflateSetDictionary: ptr<z_stream> strm ptr<u8> dictionary u32 dictLength;
+Z.inflateGetDictionary: ptr<z_stream> strm ptr<u8> dictionary ptr<u32> dictLength;
+Z.inflateSync: ptr<z_stream> strm;
+Z.inflateCopy: ptr<z_stream> dest ptr<z_stream> source;
+Z.inflateReset: ptr<z_stream> strm;
+Z.inflateReset2: ptr<z_stream> strm int windowBits;
+Z.inflatePrime: ptr<z_stream> strm int bits int value;
+Z.inflateMark: ptr<z_stream> strm: lng;
+Z.inflateGetHeader: ptr<z_stream> strm ptr<gz_header> head;
+Z.inflateBack: ptr<z_stream> strm ptr<u8> in_ ptr<u8> in_desc ptr<u8> out_ ptr<u8> out_desc;
+Z.inflateBackEnd: ptr<z_stream> strm;
+Z.zlibCompileFlags: : ulng;
+Z.compress: ptr<u8> dest ptr<ulng> destLen ptr<u8> source ulng sourceLen;
+Z.compress_z: ptr<u8> dest ptr<usz> destLen ptr<u8> source usz sourceLen;
+Z.compress2: ptr<u8> dest ptr<ulng> destLen ptr<u8> source ulng sourceLen int level;
+Z.compress2_z: ptr<u8> dest ptr<usz> destLen ptr<u8> source usz sourceLen int level;
+Z.compressBound: ulng sourceLen: ulng;
+Z.compressBound_z: usz sourceLen: usz;
+Z.uncompress: ptr<u8> dest ptr<ulng> destLen ptr<u8> source ulng sourceLen;
+Z.uncompress_z: ptr<u8> dest ptr<usz> destLen ptr<u8> source usz sourceLen;
+Z.uncompress2: ptr<u8> dest ptr<ulng> destLen ptr<u8> source ptr<ulng> sourceLen;
+Z.uncompress2_z: ptr<u8> dest ptr<usz> destLen ptr<u8> source ptr<usz> sourceLen;
+Z.gzdopen: int fd ptr<u8> mode: ptr<gzFile_s>;
+Z.gzbuffer: ptr<gzFile_s> file u32 size;
+Z.gzsetparams: ptr<gzFile_s> file int level int strategy;
+Z.gzread: ptr<gzFile_s> file ptr<u8> buf u32 len_;
+Z.gzfread: ptr<u8> buf usz size usz nitems ptr<gzFile_s> file: usz;
+Z.gzwrite: ptr<gzFile_s> file ptr<u8> buf u32 len_;
+Z.gzfwrite: ptr<u8> buf usz size usz nitems ptr<gzFile_s> file: usz;
+Z.gzprintf: ptr<gzFile_s> file ptr<u8> format ...;
+Z.gzputs: ptr<gzFile_s> file ptr<u8> s;
+Z.gzgets: ptr<gzFile_s> file ptr<u8> buf int len_: ptr<u8>;
+Z.gzputc: ptr<gzFile_s> file int c;
+Z.gzgetc: ptr<gzFile_s> file;
+Z.gzungetc: int c ptr<gzFile_s> file;
+Z.gzflush: ptr<gzFile_s> file int flush;
+Z.gzrewind: ptr<gzFile_s> file;
+Z.gzeof: ptr<gzFile_s> file;
+Z.gzdirect: ptr<gzFile_s> file;
+Z.gzclose: ptr<gzFile_s> file;
+Z.gzclose_r: ptr<gzFile_s> file;
+Z.gzclose_w: ptr<gzFile_s> file;
+Z.gzerror: ptr<gzFile_s> file ptr<int> errnum: ptr<u8>;
+Z.gzclearerr: ptr<gzFile_s> file;
+Z.adler32: ulng adler ptr<u8> buf u32 len_: ulng;
+Z.adler32_z: ulng adler ptr<u8> buf usz len_: ulng;
+Z.crc32: ulng crc ptr<u8> buf u32 len_: ulng;
+Z.crc32_z: ulng crc ptr<u8> buf usz len_: ulng;
+Z.crc32_combine_op: ulng crc1 ulng crc2 ulng op: ulng;
+Z.deflateInit_: ptr<z_stream> strm int level ptr<u8> version int stream_size;    # deflateInit and inflateInit are macros to allow checking the zlib version and the compiler's view of z_stream:
+Z.inflateInit_: ptr<z_stream> strm ptr<u8> version int stream_size;    # deflateInit and inflateInit are macros to allow checking the zlib version and the compiler's view of z_stream:
+Z.deflateInit2_: ptr<z_stream> strm int level int method_ int windowBits int memLevel int strategy ptr<u8> version int stream_size;    # deflateInit and inflateInit are macros to allow checking the zlib version and the compiler's view of z_stream:
+Z.inflateInit2_: ptr<z_stream> strm int windowBits ptr<u8> version int stream_size;
+Z.inflateBackInit_: ptr<z_stream> strm int windowBits ptr<u8> window ptr<u8> version int stream_size;
+Z.gzgetc_: ptr<gzFile_s> file;    # gzgetc() macro and its supporting function and exposed data structure.
+Z.gzopen: ptr<u8> p1 ptr<u8> p2: ptr<gzFile_s>;
+Z.gzseek: ptr<gzFile_s> p1 lng p2 int p3: lng;
+Z.gztell: ptr<gzFile_s> p1: lng;
+Z.gzoffset: ptr<gzFile_s> p1: lng;
+Z.adler32_combine: ulng p1 ulng p2 lng p3: ulng;
+Z.crc32_combine: ulng p1 ulng p2 lng p3: ulng;
+Z.crc32_combine_gen: lng p1: ulng;
+Z.zError: int p1: ptr<u8>;    # undocumented functions (not part of the zlib API)
+Z.inflateSyncPoint: ptr<z_stream> p1;    # undocumented functions (not part of the zlib API) ZEXTERN const char   * ZEXPORT zError(int);
+Z.get_crc_table: : ptr<u32>;    # undocumented functions (not part of the zlib API) ZEXTERN const char   * ZEXPORT zError(int); ZEXTERN int            ZEXPORT inflateSyncPoint(z_streamp);
+Z.inflateUndermine: ptr<z_stream> p1 int p2;    # undocumented functions (not part of the zlib API) ZEXTERN const char   * ZEXPORT zError(int); ZEXTERN int            ZEXPORT inflateSyncPoint(z_streamp); ZEXTER
+Z.inflateValidate: ptr<z_stream> p1 int p2;    # undocumented functions (not part of the zlib API) ZEXTERN const char   * ZEXPORT zError(int); ZEXTERN int            ZEXPORT inflateSyncPoint(z_streamp); ZEXTER
+Z.inflateCodesUsed: ptr<z_stream> p1: ulng;    # undocumented functions (not part of the zlib API) ZEXTERN const char   * ZEXPORT zError(int); ZEXTERN int            ZEXPORT inflateSyncPoint(z_streamp); ZEXTER
+Z.inflateResetKeep: ptr<z_stream> p1;
+Z.deflateResetKeep: ptr<z_stream> p1;

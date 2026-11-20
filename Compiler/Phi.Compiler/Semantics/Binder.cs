@@ -152,6 +152,8 @@ namespace Phi.Compiler.Semantics
 
         /// <summary>The outside libraries named in a module that isn't one system's own: any program's classes call them, on a system they name a file for.</summary>
         readonly HashSet<LibraryUseDecl> portableLibraries = new();
+        /// <summary>struct.Name is Other: each other name a struct has.</summary>
+        readonly Dictionary<string, StructSymbol> structAliases = new();
         readonly Dictionary<string, OutsideFunctionDecl> outsideFunctions = new();
         readonly Dictionary<OutsideFunctionDecl, List<PhiType>> outsideTypes = new();
 
@@ -258,7 +260,7 @@ namespace Phi.Compiler.Semantics
                 }
 
             DeclareEnums(program.Enums);
-            DeclareStructs(program.Structs);
+            DeclareStructs(program.Structs, program.StructAliases);
             FindTypeBranches(program);
 
             bool protectedMode = !userProgram && (library?.Kind == UnitKind.Kernel || program.Classes.Any(c => c.Base == Kernel32Base));
@@ -1273,7 +1275,7 @@ namespace Phi.Compiler.Semantics
             }
         }
 
-        void DeclareStructs(List<StructDecl> decls)
+        void DeclareStructs(List<StructDecl> decls, List<StructAlias> aliases)
         {
             foreach (StructDecl d in decls)
             {
@@ -1290,6 +1292,21 @@ namespace Phi.Compiler.Semantics
                     continue;
                 }
                 d.Symbol = symbol;
+            }
+
+            // struct.Texture2D is Texture: another name for a struct, wherever a type is named
+            foreach (StructAlias alias in aliases)
+            {
+                file = alias.File;
+                if (Parser.ReservedWords.Contains(alias.Name)) Error(alias.Span, Parser.KeywordNameMessage(alias.Name, "struct"));
+                else if (!structs.TryGetValue(alias.Target, out StructSymbol? named) && !structAliases.TryGetValue(alias.Target, out named))
+                    Error(alias.Span, $"{alias.Name} is to be another name for {alias.Target}, and there's no struct named that (above this line or in a file used)");
+                else if (named.IsInterface) Error(alias.Span, $"{alias.Target} is an interface: another name is for a struct");
+                else if (enums.ContainsKey(alias.Name) || structs.ContainsKey(alias.Name) || !structAliases.TryAdd(alias.Name, named))
+                {
+                    if (!(structAliases.TryGetValue(alias.Name, out StructSymbol? already) && already == named))
+                        Error(alias.Span, $"a struct, interface or enum named {alias.Name} already exists");
+                }
             }
 
             // struct.Circle has Shape: which interfaces each struct has
@@ -1981,6 +1998,12 @@ namespace Phi.Compiler.Semantics
                         return PhiType.Error;
                     }
                     return t.Name == "i64" ? PhiType.I64 : PhiType.U64;
+                case "isz":
+                case "usz":
+                    // C's ptrdiff_t and size_t: as wide as an address is in the program
+                    // (64 bits in 64-bit code and on macOS, 32 elsewhere)
+                    if (host.Is64()) return t.Name == "isz" ? PhiType.I64 : PhiType.U64;
+                    return t.Name == "isz" ? PhiType.I32 : PhiType.U32;
                 case "lng":
                 case "ulng":
                     // C's long and unsigned long, as the system the program is for has them:
@@ -2061,7 +2084,7 @@ namespace Phi.Compiler.Semantics
                 }
             }
 
-            if (structs.TryGetValue(t.Name, out StructSymbol? s)) return PhiType.Of(s);
+            if (structs.TryGetValue(t.Name, out StructSymbol? s) || structAliases.TryGetValue(t.Name, out s)) return PhiType.Of(s);
             if (enums.TryGetValue(t.Name, out EnumSymbol? e)) return PhiType.EnumOf(e);
 
             if (templates.TryGetValue(t.Name, out StructTemplate? template))
@@ -3295,6 +3318,11 @@ namespace Phi.Compiler.Semantics
         {
             for (int i = 0; i < body.Count; i++)
             {
+                if (outsideStructs.Count > 0 && StructCallsFirst(body[i], scope) is var (first, now))
+                {
+                    body[i] = now;
+                    body.InsertRange(i, first);     // (each bound in its turn, then the statement)
+                }
                 body[i] = BindStatement(body[i], scope, classLevel);
                 if (body[i] is VarDecl { Then: Stmt then } decl)
                 {
@@ -3303,6 +3331,109 @@ namespace Phi.Compiler.Semantics
                 }
             }
         }
+
+        /// <summary>
+        /// A struct C gives back by value is written into a variable (call place is Lib.F: ...;).
+        /// Where a statement uses such a call as a value ((Ray.Fade: red 0.5) given to another
+        /// function, a field of what one gives, a variable declared from one) the call is made
+        /// first, into a variable of the binder's own, which the statement then names. Gives the
+        /// statements that go first and the statement as it is then; null when it has none.
+        /// A value that may not be worked out at all (the right of and / or) is left as it is.
+        /// </summary>
+        (List<Stmt> First, Stmt Now)? StructCallsFirst(Stmt stmt, Scope scope)
+        {
+            var first = new List<Stmt>();
+            OutsideFunctionDecl? GivesStruct(Expr e) =>
+                e is CallExpr { CalleeTarget: null } c && outsideFunctions.TryGetValue(c.Callee, out OutsideFunctionDecl? f)
+                && (f.StructResult != null || f.ResultType is { IsStruct: true }) && f.Result != null ? f : null;    // (StructResult once it's lowered)
+            CallStmt Into(Expr place, CallExpr call)
+            {
+                var made = new CallStmt { ResultTarget = place, Callee = call.Callee, CalleeSpan = call.CalleeSpan, Span = call.Span };
+                made.Arguments.AddRange(call.Arguments);
+                return made;
+            }
+            Expr Lift(Expr e)
+            {
+                switch (e)
+                {
+                    case BinaryExpr { Op: BinaryOp.And or BinaryOp.Or } or ThrowsExpr:
+                        return e;
+                    case NameExpr named when outsideFunctions.TryGetValue(named.Name, out OutsideFunctionDecl? plain) && plain.Parameters.Count == 0
+                                             && Lookup(named.Name, scope) == null:
+                        // ((Ray.Vector2Zero) is the call, of a function that takes nothing)
+                        return Lift(new CallExpr { Callee = named.Name, CalleeSpan = named.Span, Span = named.Span });
+                    case CallExpr call:
+                        for (int k = 0; k < call.Arguments.Count; k++) call.Arguments[k] = Lift(call.Arguments[k]);
+                        if (call.CalleeTarget != null) call.CalleeTarget = Lift(call.CalleeTarget);
+                        if (GivesStruct(call) is not OutsideFunctionDecl f) return e;
+                        string name = $"given#{call.Span.Start}#{structCalls++}";
+                        var decl = new VarDecl { Type = new TypeRef { Name = f.Result!.Name, Span = call.Span }, Name = name, NameSpan = call.Span, Span = call.Span };
+                        DeclareHidden(decl, scope);
+                        first.Add(decl);
+                        first.Add(Into(new NameExpr { Name = name, Span = call.Span }, call));
+                        return new NameExpr { Name = name, Span = call.Span };
+                }
+                foreach (var property in e.GetType().GetProperties())
+                {
+                    if (!property.CanWrite || property.GetIndexParameters().Length > 0) continue;
+                    if (typeof(Expr).IsAssignableFrom(property.PropertyType) && property.GetValue(e) is Expr inner)
+                    {
+                        Expr lifted = Lift(inner);
+                        if (!ReferenceEquals(lifted, inner)) property.SetValue(e, lifted);
+                    }
+                }
+                foreach (var property in e.GetType().GetProperties())
+                    if (property.GetIndexParameters().Length == 0 && property.GetValue(e) is List<Expr> list)
+                        for (int k = 0; k < list.Count; k++) list[k] = Lift(list[k]);
+                return e;
+            }
+
+            Stmt now = stmt;
+            switch (stmt)
+            {
+                case CallStmt call:
+                    for (int k = 0; k < call.Arguments.Count; k++) call.Arguments[k] = Lift(call.Arguments[k]);
+                    break;
+                case VarDecl { Values.Count: 1, Then: null } decl when GivesStruct(decl.Values[0]) != null && decl.Type.Name == GivesStruct(decl.Values[0])!.Result!.Name:
+                {
+                    // Color half: (Ray.Fade: red 0.5);  is the variable, then the call into it
+                    var call = (CallExpr)decl.Values[0];
+                    for (int k = 0; k < call.Arguments.Count; k++) call.Arguments[k] = Lift(call.Arguments[k]);
+                    decl.Values.Clear();
+                    decl.Then = Into(new NameExpr { Name = decl.Name, Span = decl.NameSpan }, call);
+                    break;
+                }
+                case VarDecl decl:
+                    for (int k = 0; k < decl.Values.Count; k++) decl.Values[k] = Lift(decl.Values[k]);
+                    break;
+                case AssignStmt { Op: AssignOp.Set, Values: null } assign when GivesStruct(assign.Value) != null:
+                {
+                    var call = (CallExpr)assign.Value;
+                    for (int k = 0; k < call.Arguments.Count; k++) call.Arguments[k] = Lift(call.Arguments[k]);
+                    now = Into(assign.Target, call);
+                    break;
+                }
+                case AssignStmt assign:
+                    assign.Value = Lift(assign.Value);
+                    if (assign.Values != null)
+                        for (int k = 0; k < assign.Values.Count; k++) assign.Values[k] = Lift(assign.Values[k]);
+                    break;
+                case LogStmt log:
+                    for (int k = 0; k < log.Values.Count; k++) log.Values[k] = Lift(log.Values[k]);
+                    break;
+                case ReturnStmt { Value: Expr value } back:
+                    back.Value = Lift(value);
+                    break;
+                case IfStmt { Condition: not ThrowsExpr } test:
+                {
+                    Expr lifted = Lift(test.Condition);
+                    if (!ReferenceEquals(lifted, test.Condition)) typeof(IfStmt).GetProperty(nameof(IfStmt.Condition))!.SetValue(test, lifted);
+                    break;
+                }
+            }
+            return first.Count > 0 || !ReferenceEquals(now, stmt) ? (first, now) : null;
+        }
+        int structCalls;
 
         Stmt BindStatement(Stmt stmt, Scope scope, bool classLevel)
         {
@@ -6478,7 +6609,7 @@ namespace Phi.Compiler.Semantics
                 }
             }
             else if (size.Operand is NameExpr name && Lookup(name.Name, scope) == null
-                     && structs.TryGetValue(name.Name, out StructSymbol? s))
+                     && (structs.TryGetValue(name.Name, out StructSymbol? s) || structAliases.TryGetValue(name.Name, out s)))
             {
                 t = PhiType.Of(s);
             }

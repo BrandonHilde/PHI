@@ -433,6 +433,11 @@ namespace Phi.Compiler
                         if (file != main) near.Add(Path.GetFileName(main.Path));
                         if (kernelFile != null) near.Add($"the kernel {Path.GetFileName(kernelFile)}");
                         string places = string.Join(", ", near.Select(n => "next to " + n)) + (near.Count > 1 ? "," : "");
+                        if (use.Path.StartsWith(VendorPrefix, StringComparison.Ordinal))
+                            diagnostics.Error(file, use.Span, VendorFolder is string vendor
+                                ? $"can't find {use.Path[VendorPrefix.Length..].Split('.')[0]} in the vendor folder ({vendor}), or {relative} {places.TrimEnd(',')}"
+                                : $"can't find the vendor folder, which is beside phi in a release (or where PHI_VENDOR says), or {relative} {places.TrimEnd(',')}");
+                        else
                         diagnostics.Error(file, use.Span, $"can't find {relative} {places} or in the standard library ({StandardLibrary})");
                         continue;
                     }
@@ -458,6 +463,7 @@ namespace Phi.Compiler
                 into.Libraries.AddRange(node.Libraries);
                 into.OutsideFunctions.AddRange(node.OutsideFunctions);
                 into.Structs.AddRange(node.Structs);
+                into.StructAliases.AddRange(node.StructAliases);
                 into.Templates.AddRange(node.Templates);
                 into.TemplateUses.AddRange(node.TemplateUses);
                 into.MethodTemplates.AddRange(node.MethodTemplates);
@@ -576,6 +582,7 @@ namespace Phi.Compiler
             into.Libraries.AddRange(from.Libraries);
             into.OutsideFunctions.AddRange(from.OutsideFunctions);
             into.Structs.AddRange(from.Structs);
+            into.StructAliases.AddRange(from.StructAliases);
             into.Templates.AddRange(from.Templates);
             into.TemplateUses.AddRange(from.TemplateUses);
             into.MethodTemplates.AddRange(from.MethodTemplates);
@@ -641,10 +648,58 @@ namespace Phi.Compiler
             if (open != null && open.TryGetValue(resource, out string? unsavedLibrary)) return new SourceFile(resource, unsavedLibrary);
             using Stream? stream = typeof(PhiCompiler).Assembly.GetManifestResourceStream(resource)
                                    ?? FindResource(resource);
-            if (stream == null) return null;
+            if (stream == null)
+            {
+                if (VendorFile(dotted) is string vendored)
+                    return open != null && open.TryGetValue(FileKey(vendored), out string? unsavedVendor) ? new SourceFile(vendored, unsavedVendor) : SourceFile.Load(vendored);
+                return null;
+            }
 
             using var reader = new StreamReader(stream);
             return new SourceFile(resource, reader.ReadToEnd());
+        }
+
+        /// <summary>The first part of a use that names a library of the vendor folder: use vendor.raylib;</summary>
+        public const string VendorPrefix = "vendor.";
+
+        /// <summary>
+        /// The vendor folder: other people's libraries (C ones) with what PHI needs to call each,
+        /// kept in files beside the compiler, since each comes with the library itself (a .dll,
+        /// a .dylib, a .so) and its licence. It's the folder PHI_VENDOR names, or the first one
+        /// named vendor beside the compiler or in a folder above it (a release has it beside
+        /// phi; the compiler built from its source finds the source's). Null when there's none.
+        /// </summary>
+        public static string? VendorFolder
+        {
+            get
+            {
+                if (Environment.GetEnvironmentVariable("PHI_VENDOR") is { Length: > 0 } named) return Directory.Exists(named) ? Path.GetFullPath(named) : null;
+                if (vendorFolder != null) return vendorFolder.Length > 0 ? vendorFolder : null;
+                string found = "";
+                for (DirectoryInfo? at = new DirectoryInfo(AppContext.BaseDirectory); at != null; at = at.Parent)
+                {
+                    string here = Path.Combine(at.FullName, "vendor");
+                    if (!File.Exists(Path.Combine(here, "README.md"))) continue;
+                    found = here;
+                    break;
+                }
+                vendorFolder = found;
+                return found.Length > 0 ? found : null;
+            }
+        }
+        static string? vendorFolder;
+
+        /// <summary>
+        /// The file of use vendor.NAME; (vendor/NAME/NAME.phi: a library has a folder of its
+        /// own) or of use vendor.NAME.PART; (vendor/NAME/PART.phi), when the vendor folder has it.
+        /// </summary>
+        static string? VendorFile(string dotted)
+        {
+            if (!dotted.StartsWith(VendorPrefix, StringComparison.Ordinal) || VendorFolder is not string folder) return null;
+            string[] parts = dotted[VendorPrefix.Length..].Split('.');
+            if (parts.Length == 1) parts = new[] { parts[0], parts[0] };
+            string path = Path.Combine(folder, Path.Combine(parts) + ".phi");
+            return File.Exists(path) ? path : null;
         }
 
         /// <summary>A compiled library's main file, as declarations; its version for this system is the one that's kept.</summary>
@@ -674,7 +729,7 @@ namespace Phi.Compiler
         {
             string resource = StandardLibrary + dotted.Replace('.', '/') + ".phi";
             using Stream? stream = typeof(PhiCompiler).Assembly.GetManifestResourceStream(resource) ?? FindResource(resource);
-            return stream != null;
+            return stream != null || VendorFile(dotted) != null;
         }
 
         static Stream? FindResource(string name)

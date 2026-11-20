@@ -10,3 +10,12 @@ build/
 *.actual
 *.philib
 fuzz-failures/
+
+# vendor: each library's own files, fetched by vendor/fetch.py (see vendor/README.md)
+vendor/.cache/
+vendor/*/windows64/
+vendor/*/windows/
+vendor/*/macos/
+vendor/*/linux64/
+vendor/*/include/
+vendor/*/src/
