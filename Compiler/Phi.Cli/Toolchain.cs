@@ -12,6 +12,8 @@ namespace Phi.Cli
         {
             @"C:\Program Files\NASM\nasm.exe",
             @"C:\Program Files (x86)\NASM\nasm.exe",
+            // (where NASM's installer puts it for one user, with no administrator: not on the PATH)
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "bin", "NASM", "nasm.exe"),
         };
 
         static readonly string[] QemuFallbacks =

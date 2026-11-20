@@ -141,7 +141,7 @@ phi.Hello:Program
 
 `phi run hello.phi --target macos` (or `windows64`, `windows`, `linux64`) opens the window.
 Any other C library is called the same way, from a `use` that names its file and one line
-for each function ([Outside libraries](docs/language.md#a-systems-own-modules-and-system-calls)).
+for each function ([Outside libraries](docs/language.md#outside-libraries)).
 
 <h3>Learn PHI</h3>
 

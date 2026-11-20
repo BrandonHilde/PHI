@@ -68,11 +68,24 @@ def inline(text):
     return re.sub(r"\x00(\d+)\x00", lambda m: kept[int(m.group(1))], text)
 
 
+# what a release has: a link to anything else of the repository's goes to GitHub, at the release's tag
+SHIPPED = ("docs/", "samples/", "lib/phi/", "vendor/", "resources/", "licenses/")
+SHIPPED_FILES = ("README.md", "CONTRIBUTING.md", "LICENSE", "NOTICE")
+NOT_SHIPPED = re.compile(r"(^|/)(MAINTAINING\.md|[^/]+\.py)$|^vendor/[^/]+/(include|src)/")
+REPOSITORY = "https://github.com/BrandonHilde/PHI"
+context = {"file": "", "version": ""}        # the document being made, by its path in the repository
+
+
 def link(target):
-    """A link to another document is to its HTML."""
+    """A link to another document is to its HTML, or to the repository for what a release leaves out."""
     if re.match(r"[a-z]+:", target) or target.startswith("#"):
         return target
     path, _, anchor = target.partition("#")
+    there = os.path.normpath(os.path.join(os.path.dirname(context["file"]), path)).replace(os.sep, "/") if not path.startswith("/") else path.lstrip("/")
+    shipped = (there.startswith(SHIPPED) or there in SHIPPED_FILES or there + "/" in SHIPPED) and not NOT_SHIPPED.search(there)
+    if not shipped and not there.startswith(".."):
+        kind = "tree" if os.path.isdir(os.path.join(ROOT, there)) else "blob"
+        return f"{REPOSITORY}/{kind}/v{context['version']}/{there}" + ("#" + anchor if anchor else "")
     if path.endswith(".md"):
         path = path[:-3] + ".html"
     return path + ("#" + anchor if anchor else "")
@@ -196,6 +209,7 @@ def copy_documents(source, target, skip=()):
             if name.endswith(".md"):
                 with open(path, encoding="utf-8") as f:
                     text = f.read()
+                context["file"] = os.path.relpath(path, ROOT).replace(os.sep, "/")
                 text = re.sub(r"\n[^\n]*MAINTAINING\.md[^\n]*\n", "\n", text)      # (a file a release hasn't got)
                 with open(to[:-3] + ".html", "w", encoding="utf-8", newline="\n") as f:
                     f.write(to_html(text, title_of(text, name[:-3])))
@@ -215,6 +229,7 @@ def publish(rid):
 
 def pack(version, system):
     rid = SYSTEMS[system]
+    context["version"] = version
     name = f"phi-{version}-{system}"
     folder = os.path.join(DIST, name)
     shutil.rmtree(folder, ignore_errors=True)
@@ -250,6 +265,7 @@ def pack(version, system):
     for document in ("README.md", "CONTRIBUTING.md"):
         with open(os.path.join(ROOT, document), encoding="utf-8") as f:
             text = f.read()
+        context["file"] = document
         # (pictures the README names from the repository's root)
         text = text.replace('src="/resources/', 'src="resources/')
         text = re.sub(r"\n[^\n]*MAINTAINING\.md[^\n]*\n", "\n", text)

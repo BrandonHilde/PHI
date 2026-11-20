@@ -47,7 +47,7 @@ A PHI program for Windows, macOS or 64-bit Linux calls C libraries, and is calle
 them. Nine come with PHI, each whole from one line
 ([the vendor folder](../vendor/README.md)): `use vendor.raylib;` and the program calls
 `Ray.InitWindow`. Any other is a `use` that names its file and a line for each function
-([Outside libraries](language.md#a-systems-own-modules-and-system-calls)).
+([Outside libraries](language.md#outside-libraries)).
 
 | C | PHI | Notes |
 |---|---|---|

@@ -6,7 +6,9 @@ in an emulator. It takes about ten minutes.
 There are two ways to get `phi`. **A release** is a zip for Windows, Linux or macOS: unzip
 it anywhere and `phi` is in it, as one file that needs no .NET, with the vendor folder of C
 libraries beside it. NASM and QEMU are still to be installed (below), and then
-[Boot PHI OS](#boot-phi-os) is the next step. **From the source**, it's built with the .NET
+[Boot PHI OS](#boot-phi-os) is the next step. Run `phi` from that folder, or add the folder to
+your `PATH` to run it from anywhere; in PowerShell a program in the current folder is run as
+`.\phi`. **From the source**, it's built with the .NET
 SDK, as [Build PHI](#build-phi) describes.
 
 ## What you need
@@ -119,7 +121,7 @@ Escape stops it), and `volume 50` turns it down. The sound comes out of your spe
 through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your system
 (DirectSound on Windows), and the environment variable `PHI_AUDIO` chooses another (such as
 `sdl`, or `none` for silence). Songs are text files, one voice a line: see
-`samples/os.rootfs/MUSIC/` and [the language reference](language.md#sound-32-bit-kernels).
+`samples/os.rootfs/MUSIC/` and [the language reference](language.md#sound).
 
 ## The phi command
 

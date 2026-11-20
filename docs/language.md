@@ -3472,7 +3472,9 @@ the parts it uses, as it gets the heap only if it uses `new`. Two modules may de
 outside function if they declare it the same way (a program's own module and these);
 declaring it differently is an error.
 
-**Outside functions.** A library outside PHI (on Windows, a DLL; on macOS, a `.dylib` or a
+### Outside libraries
+
+A library outside PHI (on Windows, a DLL; on macOS, a `.dylib` or a
 framework; on 64-bit Linux, a `.so`) is brought in with `use`
 and its file's name, quoted, under a name that reads as a class's; each of its functions
 the module calls is declared once, as a system call is but without a number, and called by
