@@ -9,6 +9,7 @@ use vendor.raylib;
 
 phi.Hello:Program
 {
+	call Ray.SetTraceLogLevel: Ray.LOG_WARNING;       # (raylib says less on the console)
 	call Ray.InitWindow: 800 450 'Hello from PHI';
 	while not (Ray.WindowShouldClose)
 		call Ray.BeginDrawing;

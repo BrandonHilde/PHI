@@ -16,6 +16,7 @@ import hashlib
 import io
 import json
 import os
+import posixpath
 import shutil
 import subprocess
 import sys
@@ -59,7 +60,8 @@ def members(name, data):
                 target = m
                 # (a library's short name is often a link to the full one)
                 while target.issym() or target.islnk():
-                    link = target.linkname if target.islnk() else os.path.normpath(os.path.join(os.path.dirname(target.name), target.linkname))
+                    # (a tar's names have / in them on every system: not os.path, which makes \ of it on Windows)
+                    link = target.linkname if target.islnk() else posixpath.normpath(posixpath.join(posixpath.dirname(target.name), target.linkname))
                     target = t.getmember(link)
                 if target.isfile():
                     files[m.name] = t.extractfile(target).read()
