@@ -6,6 +6,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AssemblyName>phi</AssemblyName>
+    <!-- no system's own tables for languages and regions: phi writes numbers and compares text one
+         way everywhere, and a release's phi runs on a Linux that has no libicu installed -->
+    <InvariantGlobalization>true</InvariantGlobalization>
     <RootNamespace>Phi.Cli</RootNamespace>
   </PropertyGroup>
 
