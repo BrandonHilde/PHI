@@ -2,136 +2,62 @@
 <h1>PHI Language</h1>
 <h3>Soon operating systems will be as easy to code as desktop apps</h3>
 
-<h3>PHI OS</h3>
-
-`phi run samples/os.phi` boots a small operating system written in PHI: a 32-bit kernel
-with interrupt handling, drivers, paging, a heap, a FAT16 file system and processes, and a
-shell with commands and a game, all running as user programs. Only the lowest layer (the
-interrupt stubs, task switching and the console) is assembly; the memory manager, file
-system, process loader, drivers like the disk and clock, and the whole userland are PHI.
-
-<h3>The network</h3>
-
-`phi run samples/web.phi` boots a kernel that fetches web pages, `https://` ones too. The
-network card driver (RTL8139), ARP, IP, UDP, DHCP, DNS, TCP, HTTP, and TLS 1.3 with its
-cryptography (X25519, AES-GCM, ChaCha20-Poly1305, SHA-256) are all written in PHI:
+PHI is a programming language that reads like plain words and compiles straight to machine
+code. The same language writes a game with a window, a program that talks to a database,
+and a whole operating system that boots on a bare PC.
 
 ```phi
-use net.http;
-
-phi.Fetch:Kernel
-{
-	ptr<u8> page: new u8[65536];
-	bln ok: false;
-	call ok is Net.Start;
-
-	int size: 0;
-	call size is Http.Get: 'https://example.com/' page 65536;
-	log page;     # HTTP/1.1 200 OK ... <!doctype html><html> ...
-}
-```
-
-<h3>A desktop</h3>
-
-`phi run samples/desktop.phi` boots a desktop with three apps in windows: a sketch pad, a
-notepad and a clock. Each app is a user program of its own, drawing on its own pixels with
-the same graphics library the kernel uses, so a crash in one closes only its window:
-
-```phi
-use gui.app;
-
 phi.Hello:Program
-{
-    if (App.Open: 200 100)
-        call Draw.Text: 10 10 'Hello' Draw.BLACK;
-        call App.Present;
-        call App.WaitEvent;         # a key, the mouse, or being asked to close
-    ;;
-}
-```
-
-<h3>Music</h3>
-
-`phi run samples/music.phi` boots a jukebox kernel, and `play music/ode.sng` plays a song
-in PHI OS. The sound card driver (AC'97), a synthesizer that plays songs written as text
-(up to 4 voices, six sounds including noise drums) and the WAV file reader are all written
-in PHI:
-
-```phi
-use audio.sound;
-
-phi.Tune:Kernel
-{
-	bln ok: false;
-	call ok is Sound.PlaySong: 't140 @1 o4 l8 c e g >c4 <g4 c2';
-	call ok is Sound.PlayFile: 'MUSIC/HARP.WAV';
-}
-```
-
-![The PHI OS shell](docs/images/phi-os-shell.png)
-
-```
-phi> ls
-  CAT.BIN  17461
-  ...
-phi> echo hello
-hello
-phi> count &
-[started program 2]
-phi> ps
-  PID  STATE         NAME
-  1    ready         SHELL.BIN
-  2    sleeping      COUNT.BIN
-  3    running       PS.BIN
-phi> pong
-```
-
-<h3>Example Programs:</h3>
-
-A 32-bit kernel (save it as `hello.phi` anywhere, then `phi run hello.phi`):
-
-```phi
-phi.Hello:Kernel
 {
 	str name: [40];
 
-	log 'What is your name: ';
+	log 'What is your name? ';
 	ask name;
-	log '\nhello ' name '\n';
+	log 'Hello, ' name '!\n';
+	exit 0;
 }
 ```
 
-A user program, which a kernel runs from its disk (put `count.phi` in the kernel's
-`rootfs` folder and `phi build` compiles it into `COUNT.BIN`):
+`phi run hello.phi --target windows64` builds it and runs it. So does `--target macos` or
+`--target linux64`: one source, three systems.
 
-```phi
-phi.Count:Program
-{
-	while int i: 1; i <= 5; i++;
-		log 'count ' i '\n';
-		call OS.Sleep: 300;
-	;;
-}
-```
+## Why PHI
 
-<h3>C libraries</h3>
+- **Easy to read.** `x is 5`, `if lives atmost 0`, `while each star in stars`. No header
+  files, no build scripts, no project files: a program is a `.phi` file.
+- **One download, nothing else to set up.** PHI comes as a single zip. The compiler is one
+  file, and the libraries most programs reach for are already in it.
+- **Small, fast programs.** A PHI program is an ordinary executable with no runtime to
+  install: the raylib example below is a 25 KB program beside raylib's own library. Over our
+  benchmarks it takes about three-quarters of C#'s time and 1.14 times optimised C's
+  ([the numbers](bench/RESULTS.md)).
+- **C libraries from one line.** `use vendor.raylib;` and every function of raylib is there.
+  Nothing to declare, nothing to link, nothing to install.
+- **Safe by default, close to the machine when you ask.** Array indexes are checked, objects
+  are freed for you with no garbage collector, and errors say which line. Pointers, ports,
+  interrupts and assembly are there when you need them.
+- **All the way down.** The same language writes the boot sector, the kernel, the drivers,
+  the network stack and the programs that run on them.
 
-A program for Windows, macOS or Linux calls C libraries, and the ones most programs reach
-for come with PHI, in the [vendor folder](vendor/README.md): raylib, SDL3, Vulkan, SQLite,
-Lua, zlib, stb, miniaudio and C's own library. One `use` brings a whole library in, with nothing
-to declare and nothing to install, and the build puts its file beside the program:
+## What you can make
+
+### Games and apps, with the libraries you know
+
+Nine libraries come with PHI, each complete: **raylib**, **SDL3**, **Vulkan**, **SQLite**,
+**Lua**, **zlib**, **stb**, **miniaudio** and C's own library.
 
 ```phi
 use vendor.raylib;
 
 phi.Hello:Program
 {
-	call Ray.SetTraceLogLevel: Ray.LOG_WARNING;       # (raylib says less on the console)
+	call Ray.SetTraceLogLevel: Ray.LOG_WARNING;
 	call Ray.InitWindow: 800 450 'Hello from PHI';
 	while not (Ray.WindowShouldClose)
 		call Ray.BeginDrawing;
 		call Ray.ClearBackground: Ray.RAYWHITE;
 		call Ray.DrawCircleV: (Ray.GetMousePosition) 30 Ray.MAROON;
+		call Ray.DrawText: 'It works' 20 20 30 Ray.DARKGRAY;
 		call Ray.EndDrawing;
 	;;
 	call Ray.CloseWindow;
@@ -140,104 +66,113 @@ phi.Hello:Program
 ```
 
 `phi run hello.phi --target macos` (or `windows64`, `windows`, `linux64`) opens the window.
-Any other C library is called the same way, from a `use` that names its file and one line
-for each function ([Outside libraries](docs/language.md#outside-libraries)).
+The build puts the library beside your program, so the folder it makes is what you give to
+someone else. [The vendor folder](vendor/README.md) has an example for each library.
 
-<h3>Learn PHI</h3>
+### An operating system
 
-- **[Getting started](docs/getting-started.md):** install the tools and boot PHI OS in ten minutes
+`phi run samples/os.phi` boots PHI OS: a kernel with drivers, memory management, a file
+system and processes, and a shell with commands and a game, all running as separate
+programs. Almost all of it is written in PHI.
+
+![The PHI OS shell](docs/images/phi-os-shell.png)
+
+A complete kernel is this short. PHI adds the boot sector and switches the CPU into 32-bit
+mode for you:
+
+```phi
+phi.Hello:Kernel
+{
+	log 'Hello from my own kernel!\n';
+}
+```
+
+### A network stack, a desktop, a synthesizer
+
+Everything in these is written in PHI, down to the hardware:
+
+- **The network.** `phi run samples/web.phi` boots a kernel that fetches `https://` pages.
+  The network card driver, TCP/IP, DNS, HTTP and TLS 1.3 with its cryptography are all PHI.
+
+  ```phi
+  use net.http;
+
+  phi.Fetch:Kernel
+  {
+  	ptr<u8> page: new u8[65536];
+  	bln ok: false;
+  	call ok is Net.Start;
+
+  	int size: 0;
+  	call size is Http.Get: 'https://example.com/' page 65536;
+  	log page;
+  }
+  ```
+
+- **A desktop.** `phi run samples/desktop.phi` boots a desktop with a sketch pad, a notepad
+  and a clock, each its own program in its own window. A crash in one closes only that
+  window.
+- **Music.** `phi run samples/music.phi` plays songs through a sound card driver and a
+  four-voice synthesizer.
+- **A multiplayer game server.** `phi run samples/mmo/server.phi` starts a server and three
+  clients on one network.
+
+## Get PHI
+
+1. **Download** the zip for your system from the
+   [releases page](https://github.com/BrandonHilde/PHI/releases): Windows (x64), Linux (x64)
+   or macOS (Apple Silicon).
+2. **Unzip it** anywhere. `phi` is inside, with the libraries and this documentation.
+3. **Install NASM** (the assembler PHI drives), and **QEMU** if you want to boot kernels and
+   PHI OS. On a Mac, also Apple's Command Line Tools (`xcode-select --install`).
+
+Then, from the unzipped folder:
+
+```
+phi run samples/os.phi                                  boot PHI OS
+phi run samples/raylib/ball.phi --target windows64      a window (or macos, linux64)
+phi vendor                                              the libraries that come with PHI
+```
+
+In PowerShell, type `.\phi` for a program in the current folder, or add the folder to your
+`PATH`. [Getting started](docs/getting-started.md) walks through all of it in ten minutes.
+
+## Learn PHI
+
+- **[Getting started](docs/getting-started.md):** install the tools and boot PHI OS
 - **[The tutorial](docs/README.md#learn-phi):** eight parts, from a boot sector to adding a
   command to PHI OS, each with a tested example
-- **[Language reference](docs/language.md)**, **[memory map](docs/memory-map.md)**,
-  **[architecture](docs/architecture.md)** and the **[codebase map](docs/codebase-map.html)**
-  (a clickable diagram of the code, with where to look for each kind of error)
-- **[Contributing](CONTRIBUTING.md)**
+- **[PHI for C programmers](docs/phi-for-c-programmers.md):** the differences that catch
+  people out, and how to call C
+- **[Language reference](docs/language.md):** every statement, type and built-in function
+- **[The vendor folder](vendor/README.md):** the C libraries that come with PHI
+- **[Samples](samples):** programs to read and run
 
-<h4>To Build:</h4>
+## Where PHI is
 
-    1. Install the .NET 10 SDK, NASM and QEMU, and put nasm and qemu-system-i386 on PATH
-       (or set PHI_NASM / PHI_QEMU to their full paths); on a Mac, Xcode's Command Line
-       Tools as well, for native macOS programs
-    2. dotnet build PHI.sln
-    3. Use the phi command (Compiler/Phi.Cli/bin/Debug/net10.0/phi, phi.exe on Windows):
+PHI is at version 1.0. It builds:
 
-       phi build samples/arcade.phi      compile to samples/build/arcade/arcade.img (a bootable disk image)
-       phi run samples/arcade.phi        build and boot it in QEMU (Pong: w/s and o/l move the paddles)
-       phi run samples/kernel.phi        a 32-bit protected-mode kernel
-       phi run samples/os.phi            PHI OS: boots into a shell (help lists the commands)
-       phi run samples/terminal.phi      a simpler kernel with built-in commands (ls, cat, run hello.bin ...)
-       phi run samples/web.phi           fetch web pages: type a URL, see the raw HTML
-       phi run samples/music.phi         a jukebox: songs and a WAV file, on the sound card
-       phi run samples/desktop.phi       a desktop: apps as programs, each in a window
-       phi run samples/mmo/server.phi    a game server and three clients on one network, each in a
-                                         window: move with the arrow keys, see everyone move; the
-                                         world and the lobby are programs the kernel restarts if they
-                                         crash (press K in the server's window to see it)
-       phi run tests/hello.phi --debug   start paused, waiting for gdb on localhost:1234
-       phi build x.phi --target windows64 --debug   with a .pdb: a debugger steps through its lines
-       phi build x.phi --target macos --app   on a Mac: a native app, x.app, that the Finder opens
-       phi build x.phi --library         a compiled library: x.philib, which another program includes
-                                         with use x; without any of its source
-       phi check file.phi                report errors without building
-       phi fmt file.phi                  lay out a file, or a folder of them
-       phi lsp                           the language server, for an editor (PHI-VSCODE is the extension for VS Code)
-       phi test                          boot every test in tests/ headless and check its output
-       phi test --bench                  run the benchmarks and compare their counts with the saved ones
-       phi compare                       time the programs in bench/ beside the same ones in C and C#
-       phi profile samples/web.phi       boot it, then list the PHI lines that took the most time
-       phi profile x.phi --target linux64   the same for a Linux program, run here to its end
-       phi load samples/mmo/server.phi --connections 500 --seconds 60 --root samples/mmo/certs/root.der --host lobby.mmo.phi.test
-                                         boot the game server with load-client kernels that log 500
-                                         TLS connections in and keep them talking, checking every answer
-       phi load samples/mmo/server.phi --client samples/mmo/load_players.phi --connections 300 --seconds 60
-                                         300 players in the game world at once, checking that it keeps
-                                         its 20 ticks a second
-       phi fuzz code --count 1000        write random programs, each with what it must print, and check
-                                         the compiler's code for them on the systems this computer runs
-       phi fuzz numbers --count 1000     the same, with programs of 64-bit and floating point numbers
-       phi fuzz objects --count 1000     the same, with programs of objects, text and arrays that grow:
-                                         copied, handed over and freed, on a heap that checks every use
-       phi serve folder [--https]        serve a folder to kernels in QEMU (at 10.0.2.2)
-       phi --version                     which PHI this is
+| What | Where it runs |
+|---|---|
+| Programs for **Windows** and **Linux**, 32 and 64 bits | on that system |
+| Programs and apps for **macOS** on Apple Silicon | on a Mac |
+| **32-bit kernels** and the programs on them, and **PHI OS** | in QEMU |
+| **16-bit** boot sectors and real-mode programs | in QEMU |
 
-The generated assembly is saved next to the image (`boot.asm`, `os.asm` or `kernel.asm`), with each
-PHI source line shown above the code it produced.
+It has been tested on a Windows 11 PC, a Linux PC and a Mac. Kernels and PHI OS run in the
+QEMU emulator; they haven't been run on real PC hardware yet. The
+[release notes](docs/releases/1.0.0.md) say exactly what it has, how it was checked and what
+it doesn't do yet.
 
-- [docs/](./docs/README.md): all the documentation
-- [samples/](./samples): example programs
-- [tests/README.md](./tests/README.md): how the tests work
-- [Plan.md](./Plan.md): the roadmap
+## Going further
 
-<h4>Releases:</h4>
+[ADVANCED.md](ADVANCED.md) is for when you want more: building PHI from its source, every
+`phi` command, debugging and profiling, how the compiler works, the tests and benchmarks,
+and the roadmap. [CONTRIBUTING.md](CONTRIBUTING.md) is for changing PHI itself.
 
-PHI is at version 1.0. [docs/releases/1.0.0.md](./docs/releases/1.0.0.md) says what it has,
-what it runs on, how it was checked and what it doesn't do yet. Each release has a download
-for Windows, Linux and macOS that needs nothing else but NASM and QEMU.
+## License
 
-<h4>Goals:</h4>
-
-1. Direct access to ASM
-2. Optional memory safety
-3. Syntax efficiency
-4. Compile to ASM and then to binary
-5. Compatibility with C (planned)
-
-<h4>What's Next:</h4>
-
-PHI compiles boot sectors, 32-bit kernels and their programs, which PHI OS ties together,
-ordinary programs for Linux and Windows in 32 or 64 bits, and native programs and apps for
-macOS on Apple Silicon (`--target macos`). Next, roughly in order (the
-[roadmap](./Plan.md) has the rest):
-
-1. A first release: one download with the `phi` command and these docs in it, needing only
-   the outside tools (NASM, QEMU, and clang on a Mac)
-2. More tools: hover, finding uses and renaming in the language server, debug information on
-   Linux, and packages
-3. Later: 64-bit kernels, ARM beyond macOS, C compatibility, and rewriting the compiler
-   in PHI (see [Plan.md](./Plan.md#later))
-
-<h4>License:</h4>
-
-PHI is licensed under the [Apache License 2.0](./LICENSE). Programs built with PHI contain code from
-its standard library, so if you distribute one, include [LICENSE](./LICENSE) and [NOTICE](./NOTICE)
-with it.
+PHI is licensed under the [Apache License 2.0](./LICENSE). Programs built with PHI contain
+code from its standard library, so if you distribute one, include [LICENSE](./LICENSE) and
+[NOTICE](./NOTICE) with it. The libraries in the vendor folder are each under their own
+licence, which is in their folder.

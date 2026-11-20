@@ -70,7 +70,7 @@ def inline(text):
 
 # what a release has: a link to anything else of the repository's goes to GitHub, at the release's tag
 SHIPPED = ("docs/", "samples/", "lib/phi/", "vendor/", "resources/", "licenses/")
-SHIPPED_FILES = ("README.md", "CONTRIBUTING.md", "LICENSE", "NOTICE")
+SHIPPED_FILES = ("README.md", "ADVANCED.md", "CONTRIBUTING.md", "LICENSE", "NOTICE")
 NOT_SHIPPED = re.compile(r"(^|/)(MAINTAINING\.md|[^/]+\.py)$|^vendor/[^/]+/(include|src)/")
 REPOSITORY = "https://github.com/BrandonHilde/PHI"
 context = {"file": "", "version": ""}        # the document being made, by its path in the repository
@@ -262,7 +262,7 @@ def pack(version, system):
     copy_documents(os.path.join(ROOT, "samples"), os.path.join(folder, "samples"))
     copy_documents(os.path.join(ROOT, "lib", "phi"), os.path.join(folder, "lib", "phi"))
     shutil.copytree(os.path.join(ROOT, "resources"), os.path.join(folder, "resources"), ignore=shutil.ignore_patterns(".*"))
-    for document in ("README.md", "CONTRIBUTING.md"):
+    for document in ("README.md", "ADVANCED.md", "CONTRIBUTING.md"):
         with open(os.path.join(ROOT, document), encoding="utf-8") as f:
             text = f.read()
         context["file"] = document

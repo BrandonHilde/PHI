@@ -47,6 +47,8 @@ docs/examples` boots each one and checks its output.
   together, for anyone changing PHI itself
 - **[Codebase map](codebase-map.html):** the same as a clickable diagram (open it in a browser),
   with where to look first for each kind of error
+- **[The advanced guide](../ADVANCED.md):** building PHI from source, every `phi` command,
+  targets, debugging, measuring speed, settings
 - **[Plan](../Plan.md):** the roadmap, what each phase added, and what comes next
 
 ## Programs to read
