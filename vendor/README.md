@@ -51,9 +51,14 @@ or later and X11.
   that start is the library's name instead: `SDL_Init` is `SDL.Init`, `sqlite3_open` is
   `Sql.open`, `SQLITE_OK` is `Sql.OK`. The top of each module says which it does. A library's own documentation and examples apply as
   they are. The comment C's header has for a function is beside it in the module.
-- **Structs** have C's names (`Vector2`, `Color`, `Rectangle`) and C's fields. A function that
-  gives one back can be used wherever a value goes: `Color half: (Ray.Fade: Ray.RED 0.5);`,
-  or straight into another call, or `(Ray.GetMousePosition).x`.
+- **Structs** have C's names (`Vector2`, `Color`, `Rectangle`) and C's fields. A function of
+  the library's that gives one back can be used wherever a value goes:
+  `Color half: (Ray.Fade: Ray.RED 0.5);`, or straight into another call, or
+  `(Ray.GetMousePosition).x`. A method of your own that gives a struct back is declared from
+  first (`Rectangle area: (BasketArea);`) and the variable given to the call.
+- **What a function gives** is after its second `:` in the module (`Ray.GetScreenWidth: : int;`),
+  and one that gives nothing has none (`Ray.CloseWindow;`). What it gives needn't be taken:
+  `call Sql.finalize: st;` is as good as `r is (Sql.finalize: st);`.
 - **Constants** (C's enums and `#define`s) are the library's: `Ray.KEY_SPACE`,
   `Ray.FLAG_VSYNC_HINT | Ray.FLAG_WINDOW_RESIZABLE`. They're numbers, so they combine as in C.
 - **Values C has as constants of a struct** (raylib's colours) are variables of the
@@ -69,6 +74,12 @@ or later and X11.
 - What C takes by address is given with `addr` (`call Ray.ImageCrop: addr image area;`), and a
   function C calls back is `addr foreign Name` (see "Outside libraries" in
   [docs/language.md](../docs/language.md)).
+
+**A program's own files.** A program is started from anywhere, so one that reads files kept
+beside it (a script, a database, pictures) goes to its own folder first. With raylib that's
+`int moved: (Ray.ChangeDirectory: (Ray.GetApplicationDirectory));`, and SDL has
+`SDL.GetBasePath`. A build puts libraries beside the program, not your data files: copy
+those into the folder it builds into.
 
 A function that takes any number of values (`TextFormat`, `TraceLog`) is declared with the
 values it always takes: give it the text already made (PHI's own `str` does what

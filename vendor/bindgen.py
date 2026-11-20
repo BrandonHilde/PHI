@@ -507,7 +507,7 @@ class Package:
         head = f"{self.alias}.{short}" + (f" = '{name}'" if short != name else "")
         variadic = node.get("variadic") or fn_type.rstrip(")").endswith("...")
         body = " ".join(params) + (" ..." if variadic else "")
-        if result in ("", "int"):
+        if result == "":                             # (gives nothing; an int is said, as every other result is)
             return head + (f": {body};" if body else ";")
         return f"{head}: {body}: {result};" if body else f"{head}: : {result};"
 

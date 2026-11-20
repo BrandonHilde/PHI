@@ -847,18 +847,18 @@ Ray.SetWindowSize: int width int height;    # Set window dimensions
 Ray.SetWindowOpacity: f32 opacity;    # Set window opacity [0.0f..1.0f]
 Ray.SetWindowFocused;    # Set window focused
 Ray.GetWindowHandle: : ptr<u8>;    # Get native window handle
-Ray.GetScreenWidth;    # Get current screen width
-Ray.GetScreenHeight;    # Get current screen height
-Ray.GetRenderWidth;    # Get current render width (it considers HiDPI)
-Ray.GetRenderHeight;    # Get current render height (it considers HiDPI)
-Ray.GetMonitorCount;    # Get number of connected monitors
-Ray.GetCurrentMonitor;    # Get current monitor where window is placed
+Ray.GetScreenWidth: : int;    # Get current screen width
+Ray.GetScreenHeight: : int;    # Get current screen height
+Ray.GetRenderWidth: : int;    # Get current render width (it considers HiDPI)
+Ray.GetRenderHeight: : int;    # Get current render height (it considers HiDPI)
+Ray.GetMonitorCount: : int;    # Get number of connected monitors
+Ray.GetCurrentMonitor: : int;    # Get current monitor where window is placed
 Ray.GetMonitorPosition: int monitor: Vector2;    # Get specified monitor position
-Ray.GetMonitorWidth: int monitor;    # Get specified monitor width (current video mode used by monitor)
-Ray.GetMonitorHeight: int monitor;    # Get specified monitor height (current video mode used by monitor)
-Ray.GetMonitorPhysicalWidth: int monitor;    # Get specified monitor physical width in millimetres
-Ray.GetMonitorPhysicalHeight: int monitor;    # Get specified monitor physical height in millimetres
-Ray.GetMonitorRefreshRate: int monitor;    # Get specified monitor refresh rate
+Ray.GetMonitorWidth: int monitor: int;    # Get specified monitor width (current video mode used by monitor)
+Ray.GetMonitorHeight: int monitor: int;    # Get specified monitor height (current video mode used by monitor)
+Ray.GetMonitorPhysicalWidth: int monitor: int;    # Get specified monitor physical width in millimetres
+Ray.GetMonitorPhysicalHeight: int monitor: int;    # Get specified monitor physical height in millimetres
+Ray.GetMonitorRefreshRate: int monitor: int;    # Get specified monitor refresh rate
 Ray.GetWindowPosition: : Vector2;    # Get window position XY on monitor
 Ray.GetWindowScaleDPI: : Vector2;    # Get window scale DPI factor
 Ray.GetMonitorName: int monitor: ptr<u8>;    # Get the human-readable, UTF-8 encoded name of the specified monitor
@@ -895,8 +895,8 @@ Ray.UnloadVrStereoConfig: VrStereoConfig config;    # Unload VR stereo config
 Ray.LoadShader: ptr<u8> vsFileName ptr<u8> fsFileName: Shader;    # Load shader from files and bind default locations
 Ray.LoadShaderFromMemory: ptr<u8> vsCode ptr<u8> fsCode: Shader;    # Load shader from code strings and bind default locations
 Ray.IsShaderValid: Shader shader: bln;    # Check if shader is valid (loaded on GPU)
-Ray.GetShaderLocation: Shader shader ptr<u8> uniformName;    # Get shader uniform location
-Ray.GetShaderLocationAttrib: Shader shader ptr<u8> attribName;    # Get shader attribute location
+Ray.GetShaderLocation: Shader shader ptr<u8> uniformName: int;    # Get shader uniform location
+Ray.GetShaderLocationAttrib: Shader shader ptr<u8> attribName: int;    # Get shader attribute location
 Ray.SetShaderValue: Shader shader int locIndex ptr<u8> value int uniformType;    # Set shader uniform value
 Ray.SetShaderValueV: Shader shader int locIndex ptr<u8> value int uniformType int count;    # Set shader uniform value vector
 Ray.SetShaderValueMatrix: Shader shader int locIndex Matrix mat;    # Set shader uniform value (matrix 4x4)
@@ -913,12 +913,12 @@ Ray.GetCameraMatrix2D: Camera2D camera: Matrix;    # Get camera 2d transform mat
 Ray.SetTargetFPS: int fps;    # Set target FPS (maximum)
 Ray.GetFrameTime: : f32;    # Get time in seconds for last frame drawn (delta time)
 Ray.GetTime: : f64;    # Get elapsed time in seconds since InitWindow()
-Ray.GetFPS;    # Get current FPS
+Ray.GetFPS: : int;    # Get current FPS
 Ray.SwapScreenBuffer;    # Swap back buffer with front buffer (screen drawing)
 Ray.PollInputEvents;    # Register all input events
 Ray.WaitTime: f64 seconds;    # Wait for some time (halt program execution)
 Ray.SetRandomSeed: u32 seed;    # Set the seed for the random number generator
-Ray.GetRandomValue: int min int max;    # Get a random value between min and max (both included)
+Ray.GetRandomValue: int min int max: int;    # Get a random value between min and max (both included)
 Ray.LoadRandomSequence: u32 count int min int max: ptr<int>;    # Load random values sequence, no values repeated
 Ray.UnloadRandomSequence: ptr<int> sequence;    # Unload random values sequence
 Ray.TakeScreenshot: ptr<u8> fileName;    # Takes a screenshot of current screen (filename extension defines format)
@@ -941,17 +941,17 @@ Ray.SetLoadFileDataCallback: ptr<u8> callback;    # Set custom file binary data 
 Ray.SetSaveFileDataCallback: ptr<u8> callback;    # Set custom file binary data saver
 Ray.SetLoadFileTextCallback: ptr<u8> callback;    # Set custom file text data loader
 Ray.SetSaveFileTextCallback: ptr<u8> callback;    # Set custom file text data saver
-Ray.FileRename: ptr<u8> fileName ptr<u8> fileRename;    # Rename file (if exists), returns 0 on success
-Ray.FileRemove: ptr<u8> fileName;    # Remove file (if exists), returns 0 on success
-Ray.FileCopy: ptr<u8> srcPath ptr<u8> dstPath;    # Copy file from one path to another, dstPath created if it doesn't exist, returns 0 on success
-Ray.FileMove: ptr<u8> srcPath ptr<u8> dstPath;    # Move file from one directory to another, dstPath created if it doesn't exist, returns 0 on success
-Ray.FileTextReplace: ptr<u8> fileName ptr<u8> search ptr<u8> replacement;    # Replace text in an existing file, returns 0 on success
-Ray.FileTextFindIndex: ptr<u8> fileName ptr<u8> search;    # Find text in existing file, returns -1 if index not found or index otherwise
+Ray.FileRename: ptr<u8> fileName ptr<u8> fileRename: int;    # Rename file (if exists), returns 0 on success
+Ray.FileRemove: ptr<u8> fileName: int;    # Remove file (if exists), returns 0 on success
+Ray.FileCopy: ptr<u8> srcPath ptr<u8> dstPath: int;    # Copy file from one path to another, dstPath created if it doesn't exist, returns 0 on success
+Ray.FileMove: ptr<u8> srcPath ptr<u8> dstPath: int;    # Move file from one directory to another, dstPath created if it doesn't exist, returns 0 on success
+Ray.FileTextReplace: ptr<u8> fileName ptr<u8> search ptr<u8> replacement: int;    # Replace text in an existing file, returns 0 on success
+Ray.FileTextFindIndex: ptr<u8> fileName ptr<u8> search: int;    # Find text in existing file, returns -1 if index not found or index otherwise
 Ray.FileExists: ptr<u8> fileName: bln;    # Check if file exists
 Ray.DirectoryExists: ptr<u8> dirPath: bln;    # Check if directory path exists
 Ray.IsFileExtension: ptr<u8> fileName ptr<u8> ext: bln;    # Check file extension (recommended include point: .png, .wav)
 Ray.IsFileHidden: ptr<u8> filePath: bln;    # Check if file path (file or directory) is hidden by OS
-Ray.GetFileLength: ptr<u8> fileName;    # Get file length in bytes (NOTE: GetFileSize() conflicts with windows.h)
+Ray.GetFileLength: ptr<u8> fileName: int;    # Get file length in bytes (NOTE: GetFileSize() conflicts with windows.h)
 Ray.GetFileModTime: ptr<u8> fileName: lng;    # Get file modification time (last write time)
 Ray.GetFileExtension: ptr<u8> fileName: ptr<u8>;    # Get pointer to extension for a filename string (includes dot: '.png')
 Ray.GetFileName: ptr<u8> filePath: ptr<u8>;    # Get pointer to filename for a path string
@@ -960,8 +960,8 @@ Ray.GetDirectoryPath: ptr<u8> filePath: ptr<u8>;    # Get full path for a provid
 Ray.GetPrevDirectoryPath: ptr<u8> dirPath: ptr<u8>;    # Get previous directory path for a provided path (uses static string)
 Ray.GetWorkingDirectory: : ptr<u8>;    # Get current working directory (uses static string)
 Ray.GetApplicationDirectory: : ptr<u8>;    # Get the directory of the running application (uses static string)
-Ray.MakeDirectory: ptr<u8> dirPath;    # Create directories (including full path requested), returns 0 on success
-Ray.ChangeDirectory: ptr<u8> dirPath;    # Change working directory, returns 0 on success
+Ray.MakeDirectory: ptr<u8> dirPath: int;    # Create directories (including full path requested), returns 0 on success
+Ray.ChangeDirectory: ptr<u8> dirPath: int;    # Change working directory, returns 0 on success
 Ray.IsPathFile: ptr<u8> path: bln;    # Check if provided path points to a file
 Ray.IsPathDirectory: ptr<u8> path: bln;    # Check if provided path points to a directory
 Ray.IsPathAbsolute: ptr<u8> path: bln;    # Check if provided path is an absolute path
@@ -995,8 +995,8 @@ Ray.IsKeyPressedRepeat: int key: bln;    # Check if key has been pressed again
 Ray.IsKeyDown: int key: bln;    # Check if key is being pressed
 Ray.IsKeyReleased: int key: bln;    # Check if key has been released once
 Ray.IsKeyUp: int key: bln;    # Check if key is NOT being pressed
-Ray.GetKeyPressed;    # Get key pressed (keycode), call it multiple times for keys queued, returns 0 when the queue is empty
-Ray.GetCharPressed;    # Get char pressed (unicode), call it multiple times for chars queued, returns 0 when the queue is empty
+Ray.GetKeyPressed: : int;    # Get key pressed (keycode), call it multiple times for keys queued, returns 0 when the queue is empty
+Ray.GetCharPressed: : int;    # Get char pressed (unicode), call it multiple times for chars queued, returns 0 when the queue is empty
 Ray.GetKeyName: int key: ptr<u8>;    # Get name of a QWERTY key on the current keyboard layout (eg returns string 'q' for KEY_A on an AZERTY keyboard)
 Ray.SetExitKey: int key;    # Set a custom key to exit program (default is ESC)
 Ray.IsGamepadAvailable: int gamepad: bln;    # Check if gamepad is available
@@ -1005,17 +1005,17 @@ Ray.IsGamepadButtonPressed: int gamepad int button: bln;    # Check if gamepad b
 Ray.IsGamepadButtonDown: int gamepad int button: bln;    # Check if gamepad button is being pressed
 Ray.IsGamepadButtonReleased: int gamepad int button: bln;    # Check if gamepad button has been released once
 Ray.IsGamepadButtonUp: int gamepad int button: bln;    # Check if gamepad button is NOT being pressed
-Ray.GetGamepadButtonPressed;    # Get the last gamepad button pressed
-Ray.GetGamepadAxisCount: int gamepad;    # Get axis count for a gamepad
+Ray.GetGamepadButtonPressed: : int;    # Get the last gamepad button pressed
+Ray.GetGamepadAxisCount: int gamepad: int;    # Get axis count for a gamepad
 Ray.GetGamepadAxisMovement: int gamepad int axis: f32;    # Get movement value for a gamepad axis
-Ray.SetGamepadMappings: ptr<u8> mappings;    # Set internal gamepad mappings (SDL_GameControllerDB)
+Ray.SetGamepadMappings: ptr<u8> mappings: int;    # Set internal gamepad mappings (SDL_GameControllerDB)
 Ray.SetGamepadVibration: int gamepad f32 leftMotor f32 rightMotor f32 duration;    # Set gamepad vibration for both motors (duration in seconds)
 Ray.IsMouseButtonPressed: int button: bln;    # Check if mouse button has been pressed once
 Ray.IsMouseButtonDown: int button: bln;    # Check if mouse button is being pressed
 Ray.IsMouseButtonReleased: int button: bln;    # Check if mouse button has been released once
 Ray.IsMouseButtonUp: int button: bln;    # Check if mouse button is NOT being pressed
-Ray.GetMouseX;    # Get mouse position X
-Ray.GetMouseY;    # Get mouse position Y
+Ray.GetMouseX: : int;    # Get mouse position X
+Ray.GetMouseY: : int;    # Get mouse position Y
 Ray.GetMousePosition: : Vector2;    # Get mouse position XY
 Ray.GetMouseDelta: : Vector2;    # Get mouse delta between frames
 Ray.SetMousePosition: int x int y;    # Set mouse position XY
@@ -1024,14 +1024,14 @@ Ray.SetMouseScale: f32 scaleX f32 scaleY;    # Set mouse scaling
 Ray.GetMouseWheelMove: : f32;    # Get mouse wheel movement for X or Y, whichever is larger
 Ray.GetMouseWheelMoveV: : Vector2;    # Get mouse wheel movement for both X and Y
 Ray.SetMouseCursor: int cursor;    # Set mouse cursor
-Ray.GetTouchX;    # Get touch position X for touch point 0 (relative to screen size)
-Ray.GetTouchY;    # Get touch position Y for touch point 0 (relative to screen size)
+Ray.GetTouchX: : int;    # Get touch position X for touch point 0 (relative to screen size)
+Ray.GetTouchY: : int;    # Get touch position Y for touch point 0 (relative to screen size)
 Ray.GetTouchPosition: int index: Vector2;    # Get touch position XY for a touch point index (relative to screen size)
-Ray.GetTouchPointId: int index;    # Get touch point identifier for provided index
-Ray.GetTouchPointCount;    # Get number of touch points
+Ray.GetTouchPointId: int index: int;    # Get touch point identifier for provided index
+Ray.GetTouchPointCount: : int;    # Get number of touch points
 Ray.SetGesturesEnabled: u32 flags;    # Enable a set of gestures using flags
 Ray.IsGestureDetected: u32 gesture: bln;    # Check if gesture has been detected
-Ray.GetGestureDetected;    # Get latest detected gesture
+Ray.GetGestureDetected: : int;    # Get latest detected gesture
 Ray.GetGestureHoldDuration: : f32;    # Get gesture hold time in seconds
 Ray.GetGestureDragVector: : Vector2;    # Get gesture drag vector
 Ray.GetGestureDragAngle: : f32;    # Get gesture drag angle
@@ -1224,7 +1224,7 @@ Ray.DrawTexturePro: Texture texture Rectangle srcrec Rectangle dstrec Vector2 or
 Ray.DrawTextureNPatch: Texture texture NPatchInfo nPatchInfo Rectangle dstrec Vector2 origin f32 rotation Color tint;    # Draw a texture (or part of it) that stretches or shrinks nicely
 Ray.ColorIsEqual: Color col1 Color col2: bln;    # Check if two colors are equal
 Ray.Fade: Color color f32 alpha: Color;    # Get color with alpha applied, alpha goes from 0.0f to 1.0f
-Ray.ColorToInt: Color color;    # Get hexadecimal value for a Color (0xRRGGBBAA)
+Ray.ColorToInt: Color color: int;    # Get hexadecimal value for a Color (0xRRGGBBAA)
 Ray.ColorNormalize: Color color: Vector4;    # Get Color normalized as float [0..1]
 Ray.ColorFromNormalized: Vector4 normalized: Color;    # Get Color from normalized values [0..1]
 Ray.ColorToHSV: Color color: Vector3;    # Get HSV values for a Color, hue [0..360], saturation/value [0..1]
@@ -1238,7 +1238,7 @@ Ray.ColorLerp: Color color1 Color color2 f32 factor: Color;    # Get color lerp 
 Ray.GetColor: u32 hexValue: Color;    # Get Color structure from hexadecimal value
 Ray.GetPixelColor: ptr<u8> srcPtr int format: Color;    # Get Color from a source pixel pointer of certain format
 Ray.SetPixelColor: ptr<u8> dstPtr Color color int format;    # Set color formatted into destination pixel pointer
-Ray.GetPixelDataSize: int width int height int format;    # Get pixel data size in bytes for certain format
+Ray.GetPixelDataSize: int width int height int format: int;    # Get pixel data size in bytes for certain format
 Ray.GetFontDefault: : Font;    # Get the default Font
 Ray.LoadFont: ptr<u8> fileName: Font;    # Load font from file into GPU memory (VRAM)
 Ray.LoadFontEx: ptr<u8> fileName int fontSize ptr<int> codepoints int codepointCount: Font;    # Load font from file with defined codepoints and generation size, use NULL for codepoints and 0 for codepointCount to load the default character set, font size is provided in pixels height
@@ -1257,24 +1257,24 @@ Ray.DrawTextPro: Font font ptr<u8> text Vector2 position Vector2 origin f32 rota
 Ray.DrawTextCodepoint: Font font int codepoint Vector2 position f32 fontSize Color tint;    # Draw one character (codepoint)
 Ray.DrawTextCodepoints: Font font ptr<int> codepoints int codepointCount Vector2 position f32 fontSize f32 spacing Color tint;    # Draw multiple characters (codepoint)
 Ray.SetTextLineSpacing: int spacing;    # Set vertical line spacing when drawing with line-breaks
-Ray.MeasureText: ptr<u8> text int fontSize;    # Measure string width for default font
+Ray.MeasureText: ptr<u8> text int fontSize: int;    # Measure string width for default font
 Ray.MeasureTextEx: Font font ptr<u8> text f32 fontSize f32 spacing: Vector2;    # Measure string size for Font
 Ray.MeasureTextCodepoints: Font font ptr<int> codepoints int length f32 fontSize f32 spacing: Vector2;    # Measure string size for an existing array of codepoints for Font
-Ray.GetGlyphIndex: Font font int codepoint;    # Get glyph index position in font for a codepoint (unicode character), fallback to '?' if not found
+Ray.GetGlyphIndex: Font font int codepoint: int;    # Get glyph index position in font for a codepoint (unicode character), fallback to '?' if not found
 Ray.GetGlyphInfo: Font font int codepoint: GlyphInfo;    # Get glyph font info data for a codepoint (unicode character), fallback to '?' if not found
 Ray.GetGlyphAtlasRec: Font font int codepoint: Rectangle;    # Get glyph rectangle in font atlas for a codepoint (unicode character), fallback to '?' if not found
 Ray.LoadUTF8: ptr<int> codepoints int length: ptr<u8>;    # Load UTF-8 text encoded from codepoints array
 Ray.UnloadUTF8: ptr<u8> text;    # Unload UTF-8 text encoded from codepoints array
 Ray.LoadCodepoints: ptr<u8> text ptr<int> count: ptr<int>;    # Load all codepoints from a UTF-8 text string, codepoints count returned by parameter
 Ray.UnloadCodepoints: ptr<int> codepoints;    # Unload codepoints data from memory
-Ray.GetCodepointCount: ptr<u8> text;    # Get total number of codepoints in a UTF-8 encoded string
-Ray.GetCodepoint: ptr<u8> text ptr<int> codepointSize;    # Get next codepoint in a UTF-8 encoded string, 0x3f('?') is returned on failure
-Ray.GetCodepointNext: ptr<u8> text ptr<int> codepointSize;    # Get next codepoint in a UTF-8 encoded string, 0x3f('?') is returned on failure
-Ray.GetCodepointPrevious: ptr<u8> text ptr<int> codepointSize;    # Get previous codepoint in a UTF-8 encoded string, 0x3f('?') is returned on failure
+Ray.GetCodepointCount: ptr<u8> text: int;    # Get total number of codepoints in a UTF-8 encoded string
+Ray.GetCodepoint: ptr<u8> text ptr<int> codepointSize: int;    # Get next codepoint in a UTF-8 encoded string, 0x3f('?') is returned on failure
+Ray.GetCodepointNext: ptr<u8> text ptr<int> codepointSize: int;    # Get next codepoint in a UTF-8 encoded string, 0x3f('?') is returned on failure
+Ray.GetCodepointPrevious: ptr<u8> text ptr<int> codepointSize: int;    # Get previous codepoint in a UTF-8 encoded string, 0x3f('?') is returned on failure
 Ray.CodepointToUTF8: int codepoint ptr<int> utf8Size: ptr<u8>;    # Encode one codepoint into UTF-8 byte array (array length returned as parameter)
 Ray.LoadTextLines: ptr<u8> text ptr<int> count: ptr<ptr<u8>>;    # Load text as separate lines ('\n')
 Ray.UnloadTextLines: ptr<ptr<u8>> text int lineCount;    # Unload text lines
-Ray.TextCopy: ptr<u8> dst ptr<u8> src;    # Copy one string to another, returns bytes copied
+Ray.TextCopy: ptr<u8> dst ptr<u8> src: int;    # Copy one string to another, returns bytes copied
 Ray.TextIsEqual: ptr<u8> text1 ptr<u8> text2: bln;    # Check if two text strings are equal
 Ray.TextLength: ptr<u8> text: u32;    # Get text length, checks for '\0' ending
 Ray.TextFormat: ptr<u8> text ...: ptr<u8>;    # Text formatting with variables (sprintf() style)
@@ -1290,13 +1290,13 @@ Ray.TextInsertAlloc: ptr<u8> text ptr<u8> insert int position: ptr<u8>;    # Ins
 Ray.TextJoin: ptr<ptr<u8>> textList int count ptr<u8> delimiter: ptr<u8>;    # Join text strings with delimiter
 Ray.TextSplit: ptr<u8> text u8 delimiter ptr<int> count: ptr<ptr<u8>>;    # Split text into multiple strings, using MAX_TEXTSPLIT_COUNT static strings
 Ray.TextAppend: ptr<u8> text ptr<u8> append ptr<int> position;    # Append text at specific position and move cursor
-Ray.TextFindIndex: ptr<u8> text ptr<u8> search;    # Find first text occurrence within a string, -1 if not found
+Ray.TextFindIndex: ptr<u8> text ptr<u8> search: int;    # Find first text occurrence within a string, -1 if not found
 Ray.TextToUpper: ptr<u8> text: ptr<u8>;    # Get upper case version of provided string
 Ray.TextToLower: ptr<u8> text: ptr<u8>;    # Get lower case version of provided string
 Ray.TextToPascal: ptr<u8> text: ptr<u8>;    # Get Pascal case notation version of provided string
 Ray.TextToSnake: ptr<u8> text: ptr<u8>;    # Get Snake case notation version of provided string
 Ray.TextToCamel: ptr<u8> text: ptr<u8>;    # Get Camel case notation version of provided string
-Ray.TextToInteger: ptr<u8> text;    # Get integer value from text
+Ray.TextToInteger: ptr<u8> text: int;    # Get integer value from text
 Ray.TextToFloat: ptr<u8> text: f32;    # Get float value from text
 Ray.DrawLine3D: Vector3 startPos Vector3 endPos Color color;    # Draw a line in 3D world space
 Ray.DrawPoint3D: Vector3 position Color color;    # Draw a point in 3D space, actually a small line
@@ -1442,7 +1442,7 @@ Ray.Lerp: f32 start f32 end_ f32 amount: f32;
 Ray.Normalize: f32 value f32 start f32 end_: f32;
 Ray.Remap: f32 value f32 inputStart f32 inputEnd f32 outputStart f32 outputEnd: f32;
 Ray.Wrap: f32 value f32 min f32 max: f32;
-Ray.FloatEquals: f32 x f32 y;
+Ray.FloatEquals: f32 x f32 y: int;
 Ray.Vector2Zero: : Vector2;
 Ray.Vector2One: : Vector2;
 Ray.Vector2Add: Vector2 v1 Vector2 v2: Vector2;
@@ -1472,7 +1472,7 @@ Ray.Vector2MoveTowards: Vector2 v Vector2 target f32 maxDistance: Vector2;
 Ray.Vector2Invert: Vector2 v: Vector2;
 Ray.Vector2Clamp: Vector2 v Vector2 min Vector2 max: Vector2;
 Ray.Vector2ClampValue: Vector2 v f32 min f32 max: Vector2;
-Ray.Vector2Equals: Vector2 p Vector2 q;
+Ray.Vector2Equals: Vector2 p Vector2 q: int;
 Ray.Vector2Refract: Vector2 v Vector2 n f32 r: Vector2;
 Ray.Vector3Zero: : Vector3;
 Ray.Vector3One: : Vector3;
@@ -1511,7 +1511,7 @@ Ray.Vector3ToFloatV: Vector3 v: float3;
 Ray.Vector3Invert: Vector3 v: Vector3;
 Ray.Vector3Clamp: Vector3 v Vector3 min Vector3 max: Vector3;
 Ray.Vector3ClampValue: Vector3 v f32 min f32 max: Vector3;
-Ray.Vector3Equals: Vector3 p Vector3 q;
+Ray.Vector3Equals: Vector3 p Vector3 q: int;
 Ray.Vector3Refract: Vector3 v Vector3 n f32 r: Vector3;
 Ray.Vector4Zero: : Vector4;
 Ray.Vector4One: : Vector4;
@@ -1534,7 +1534,7 @@ Ray.Vector4Max: Vector4 v1 Vector4 v2: Vector4;
 Ray.Vector4Lerp: Vector4 v1 Vector4 v2 f32 amount: Vector4;
 Ray.Vector4MoveTowards: Vector4 v Vector4 target f32 maxDistance: Vector4;
 Ray.Vector4Invert: Vector4 v: Vector4;
-Ray.Vector4Equals: Vector4 p Vector4 q;
+Ray.Vector4Equals: Vector4 p Vector4 q: int;
 Ray.MatrixDeterminant: Matrix mat: f32;
 Ray.MatrixTrace: Matrix mat: f32;
 Ray.MatrixTranspose: Matrix mat: Matrix;
@@ -1580,6 +1580,6 @@ Ray.QuaternionToAxisAngle: Vector4 q ptr<Vector3> outAxis ptr<f32> outAngle;
 Ray.QuaternionFromEuler: f32 pitch f32 yaw f32 roll: Vector4;
 Ray.QuaternionToEuler: Vector4 q: Vector3;
 Ray.QuaternionTransform: Vector4 q Matrix mat: Vector4;
-Ray.QuaternionEquals: Vector4 p Vector4 q;
+Ray.QuaternionEquals: Vector4 p Vector4 q: int;
 Ray.MatrixCompose: Vector3 translation Vector4 rotation Vector3 scale: Matrix;
 Ray.MatrixDecompose: Matrix mat ptr<Vector3> translation ptr<Vector4> rotation ptr<Vector3> scale;
