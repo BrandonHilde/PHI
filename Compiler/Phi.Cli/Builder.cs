@@ -94,6 +94,14 @@ namespace Phi.Cli
 
             if (!compiled.Success) return result;
 
+            // (a macOS program is assembled and linked by Apple's clang: said before anything is
+            // written, where another system's clang would only fail on the ARM code)
+            if (host.IsMacOS() && !OperatingSystem.IsMacOS() && Environment.GetEnvironmentVariable("PHI_CLANG") == null)
+            {
+                result.Errors.Add("a macOS program is assembled and linked by Apple's clang, so it's built on a Mac (or with PHI_CLANG set to a clang that makes Mach-O arm64 programs)");
+                return result;
+            }
+
             if (host.IsMacOS() || host.IsWindows() || host == Host.Linux64) BringLibraries(compiled, phiFile, outDir, host, result);
 
             if (host.IsMacOS())

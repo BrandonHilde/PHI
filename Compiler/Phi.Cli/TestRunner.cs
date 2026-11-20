@@ -91,7 +91,7 @@ namespace Phi.Cli
             {
                 int left = tests.Count - runs.Select(r => r.File).Distinct().Count();
                 Console.WriteLine($"{runs.Count} of {tests.Count} tests run as {only.Name()} programs" +
-                                  (left > 0 ? $" ({left} only run on PHI OS)" : ""));
+                                  (left > 0 ? $" ({left} {(left == 1 ? "isn't" : "aren't")} a program for it: PHI OS's own, or of a library that names no file there)" : ""));
                 if (runs.Count == 0) return 1;
             }
 

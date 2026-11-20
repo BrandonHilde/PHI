@@ -170,6 +170,8 @@ def build(name, info, folder):
         if system not in recipe.get("systems", COMPILERS):
             continue
         compiler = compiler if system != "linux64" else linux_compiler()
+        if system == "macos" and sys.platform != "darwin":
+            compiler = None     # (clang on another system doesn't make a Mac's library)
         library = info["libraries"][{"windows64": "windows", "windows": "windows", "macos": "macos", "linux64": "linux"}[system]]
         if compiler is None or not shutil.which(compiler[0]):
             print(f"  {system}: no compiler here for it, so {library} isn't built")
