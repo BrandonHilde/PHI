@@ -1,0 +1,2853 @@
+# miniaudio 0.11.26: sound played and recorded: files decoded (WAV, FLAC, MP3), mixed, with effects and a place in space
+# https://miniaud.io  (public domain or MIT-0 licence: see LICENSE beside this file)
+#
+# Written by vendor/bindgen.py from miniaudio.h: change package.json
+# and run it again, rather than this file. Functions, structs and constants have C's names.
+# A function is Ma.name for C's ma_name (Ma.engine_init, Ma.engine_play_sound), and a constant
+# Ma.NAME for MA_NAME or ma_name (Ma.SUCCESS, Ma.format_f32); a struct keeps C's whole name (ma_engine).
+# Some of its structs differ from one system to the next (a ma_sound, a ma_decoder, a ma_device):
+# those are held by their address, made with Ma.new_sound and the like, and freed with Ma.delete.
+use 'miniaudio.dll' 'libminiaudio.dylib' 'libminiaudio.so' as Ma;
+
+phi.Ma:Library
+{
+	const int VERSION_MAJOR: 0;
+	const int VERSION_MINOR: 11;
+	const int VERSION_REVISION: 26;
+	const int TRUE: 1;
+	const int FALSE: 0;
+	const int SIMD_ALIGNMENT: 32;
+	const int MIN_CHANNELS: 1;
+	const int MAX_CHANNELS: 254;
+	const int MAX_FILTER_ORDER: 8;
+	const int MAX_LOG_CALLBACKS: 4;
+	const int CHANNEL_INDEX_NULL: 255;
+	const int DATA_SOURCE_SELF_MANAGED_RANGE_AND_LOOP_POINT: 1;
+	const int BACKEND_COUNT: 15;
+	const u32 DATA_FORMAT_FLAG_EXCLUSIVE_MODE: 2;    # If set, this is supported in exclusive mode. Otherwise not natively supported by exclusive mode.
+	const int MAX_DEVICE_NAME_LENGTH: 255;
+	const int JOB_TYPE_RESOURCE_MANAGER_QUEUE_FLAG_NON_BLOCKING: 1;
+	const int RESOURCE_MANAGER_MAX_JOB_THREAD_COUNT: 64;
+	const int MAX_NODE_BUS_COUNT: 254;
+	const int MAX_NODE_LOCAL_BUS_COUNT: 2;
+	const int NODE_BUS_COUNT_UNKNOWN: 255;
+	const int ENGINE_MAX_LISTENERS: 4;
+	const int LISTENER_INDEX_CLOSEST: 255;
+	const u32 SOUND_SOURCE_CHANNEL_COUNT: 4294967295;
+
+	# ma_log_level
+	const int LOG_LEVEL_DEBUG: 4;
+	const int LOG_LEVEL_INFO: 3;
+	const int LOG_LEVEL_WARNING: 2;
+	const int LOG_LEVEL_ERROR: 1;
+
+	# _ma_channel_position
+	const int CHANNEL_NONE: 0;
+	const int CHANNEL_MONO: 1;
+	const int CHANNEL_FRONT_LEFT: 2;
+	const int CHANNEL_FRONT_RIGHT: 3;
+	const int CHANNEL_FRONT_CENTER: 4;
+	const int CHANNEL_LFE: 5;
+	const int CHANNEL_BACK_LEFT: 6;
+	const int CHANNEL_BACK_RIGHT: 7;
+	const int CHANNEL_FRONT_LEFT_CENTER: 8;
+	const int CHANNEL_FRONT_RIGHT_CENTER: 9;
+	const int CHANNEL_BACK_CENTER: 10;
+	const int CHANNEL_SIDE_LEFT: 11;
+	const int CHANNEL_SIDE_RIGHT: 12;
+	const int CHANNEL_TOP_CENTER: 13;
+	const int CHANNEL_TOP_FRONT_LEFT: 14;
+	const int CHANNEL_TOP_FRONT_CENTER: 15;
+	const int CHANNEL_TOP_FRONT_RIGHT: 16;
+	const int CHANNEL_TOP_BACK_LEFT: 17;
+	const int CHANNEL_TOP_BACK_CENTER: 18;
+	const int CHANNEL_TOP_BACK_RIGHT: 19;
+	const int CHANNEL_AUX_0: 20;
+	const int CHANNEL_AUX_1: 21;
+	const int CHANNEL_AUX_2: 22;
+	const int CHANNEL_AUX_3: 23;
+	const int CHANNEL_AUX_4: 24;
+	const int CHANNEL_AUX_5: 25;
+	const int CHANNEL_AUX_6: 26;
+	const int CHANNEL_AUX_7: 27;
+	const int CHANNEL_AUX_8: 28;
+	const int CHANNEL_AUX_9: 29;
+	const int CHANNEL_AUX_10: 30;
+	const int CHANNEL_AUX_11: 31;
+	const int CHANNEL_AUX_12: 32;
+	const int CHANNEL_AUX_13: 33;
+	const int CHANNEL_AUX_14: 34;
+	const int CHANNEL_AUX_15: 35;
+	const int CHANNEL_AUX_16: 36;
+	const int CHANNEL_AUX_17: 37;
+	const int CHANNEL_AUX_18: 38;
+	const int CHANNEL_AUX_19: 39;
+	const int CHANNEL_AUX_20: 40;
+	const int CHANNEL_AUX_21: 41;
+	const int CHANNEL_AUX_22: 42;
+	const int CHANNEL_AUX_23: 43;
+	const int CHANNEL_AUX_24: 44;
+	const int CHANNEL_AUX_25: 45;
+	const int CHANNEL_AUX_26: 46;
+	const int CHANNEL_AUX_27: 47;
+	const int CHANNEL_AUX_28: 48;
+	const int CHANNEL_AUX_29: 49;
+	const int CHANNEL_AUX_30: 50;
+	const int CHANNEL_AUX_31: 51;
+	const int CHANNEL_POSITION_COUNT: 52;
+	const int CHANNEL_LEFT: 2;
+	const int CHANNEL_RIGHT: 3;
+
+	# ma_result
+	const int SUCCESS: 0;
+	const int ERROR: -1;
+	const int INVALID_ARGS: -2;
+	const int INVALID_OPERATION: -3;
+	const int OUT_OF_MEMORY: -4;
+	const int OUT_OF_RANGE: -5;
+	const int ACCESS_DENIED: -6;
+	const int DOES_NOT_EXIST: -7;
+	const int ALREADY_EXISTS: -8;
+	const int TOO_MANY_OPEN_FILES: -9;
+	const int INVALID_FILE: -10;
+	const int TOO_BIG: -11;
+	const int PATH_TOO_LONG: -12;
+	const int NAME_TOO_LONG: -13;
+	const int NOT_DIRECTORY: -14;
+	const int IS_DIRECTORY: -15;
+	const int DIRECTORY_NOT_EMPTY: -16;
+	const int AT_END: -17;
+	const int NO_SPACE: -18;
+	const int BUSY: -19;
+	const int IO_ERROR: -20;
+	const int INTERRUPT: -21;
+	const int UNAVAILABLE: -22;
+	const int ALREADY_IN_USE: -23;
+	const int BAD_ADDRESS: -24;
+	const int BAD_SEEK: -25;
+	const int BAD_PIPE: -26;
+	const int DEADLOCK: -27;
+	const int TOO_MANY_LINKS: -28;
+	const int NOT_IMPLEMENTED: -29;
+	const int NO_MESSAGE: -30;
+	const int BAD_MESSAGE: -31;
+	const int NO_DATA_AVAILABLE: -32;
+	const int INVALID_DATA: -33;
+	const int TIMEOUT: -34;
+	const int NO_NETWORK: -35;
+	const int NOT_UNIQUE: -36;
+	const int NOT_SOCKET: -37;
+	const int NO_ADDRESS: -38;
+	const int BAD_PROTOCOL: -39;
+	const int PROTOCOL_UNAVAILABLE: -40;
+	const int PROTOCOL_NOT_SUPPORTED: -41;
+	const int PROTOCOL_FAMILY_NOT_SUPPORTED: -42;
+	const int ADDRESS_FAMILY_NOT_SUPPORTED: -43;
+	const int SOCKET_NOT_SUPPORTED: -44;
+	const int CONNECTION_RESET: -45;
+	const int ALREADY_CONNECTED: -46;
+	const int NOT_CONNECTED: -47;
+	const int CONNECTION_REFUSED: -48;
+	const int NO_HOST: -49;
+	const int IN_PROGRESS: -50;
+	const int CANCELLED: -51;
+	const int MEMORY_ALREADY_MAPPED: -52;
+	const int CRC_MISMATCH: -100;
+	const int FORMAT_NOT_SUPPORTED: -200;
+	const int DEVICE_TYPE_NOT_SUPPORTED: -201;
+	const int SHARE_MODE_NOT_SUPPORTED: -202;
+	const int NO_BACKEND: -203;
+	const int NO_DEVICE: -204;
+	const int API_NOT_FOUND: -205;
+	const int INVALID_DEVICE_CONFIG: -206;
+	const int LOOP: -207;
+	const int BACKEND_NOT_ENABLED: -208;
+	const int DEVICE_NOT_INITIALIZED: -300;
+	const int DEVICE_ALREADY_INITIALIZED: -301;
+	const int DEVICE_NOT_STARTED: -302;
+	const int DEVICE_NOT_STOPPED: -303;
+	const int FAILED_TO_INIT_BACKEND: -400;
+	const int FAILED_TO_OPEN_BACKEND_DEVICE: -401;
+	const int FAILED_TO_START_BACKEND_DEVICE: -402;
+	const int FAILED_TO_STOP_BACKEND_DEVICE: -403;
+
+	# ma_stream_format
+	const int stream_format_pcm: 0;
+
+	# ma_stream_layout
+	const int stream_layout_interleaved: 0;
+	const int stream_layout_deinterleaved: 1;
+
+	# ma_dither_mode
+	const int dither_mode_none: 0;
+	const int dither_mode_rectangle: 1;
+	const int dither_mode_triangle: 2;
+
+	# ma_format
+	const int format_unknown: 0;
+	const int format_u8: 1;
+	const int format_s16: 2;
+	const int format_s24: 3;
+	const int format_s32: 4;
+	const int format_f32: 5;
+	const int format_count: 6;
+
+	# ma_standard_sample_rate
+	const int standard_sample_rate_48000: 48000;
+	const int standard_sample_rate_44100: 44100;
+	const int standard_sample_rate_32000: 32000;
+	const int standard_sample_rate_24000: 24000;
+	const int standard_sample_rate_22050: 22050;
+	const int standard_sample_rate_88200: 88200;
+	const int standard_sample_rate_96000: 96000;
+	const int standard_sample_rate_176400: 176400;
+	const int standard_sample_rate_192000: 192000;
+	const int standard_sample_rate_16000: 16000;
+	const int standard_sample_rate_11025: 11025;
+	const int standard_sample_rate_8000: 8000;
+	const int standard_sample_rate_352800: 352800;
+	const int standard_sample_rate_384000: 384000;
+	const int standard_sample_rate_min: 8000;
+	const int standard_sample_rate_max: 384000;
+	const int standard_sample_rate_count: 14;
+
+	# ma_channel_mix_mode
+	const int channel_mix_mode_rectangular: 0;
+	const int channel_mix_mode_simple: 1;
+	const int channel_mix_mode_custom_weights: 2;
+	const int channel_mix_mode_default: 0;    # The mixing algorithm to use when combining channels.
+
+	# ma_standard_channel_map
+	const int standard_channel_map_microsoft: 0;
+	const int standard_channel_map_alsa: 1;
+	const int standard_channel_map_rfc3551: 2;
+	const int standard_channel_map_flac: 3;
+	const int standard_channel_map_vorbis: 4;
+	const int standard_channel_map_sound4: 5;
+	const int standard_channel_map_sndio: 6;
+	const int standard_channel_map_webaudio: 3;    # webaudio.github.io/web-audio-api/#ChannelOrdering. Only 1, 2, 4 and 6 channels are defined, but can fill in the gaps with logical assumptions.
+	const int standard_channel_map_default: 0;
+
+	# ma_performance_profile
+	const int performance_profile_low_latency: 0;
+	const int performance_profile_conservative: 1;
+
+	# ma_thread_priority
+	const int thread_priority_idle: -5;
+	const int thread_priority_lowest: -4;
+	const int thread_priority_low: -3;
+	const int thread_priority_normal: -2;
+	const int thread_priority_high: -1;
+	const int thread_priority_highest: 0;
+	const int thread_priority_realtime: 1;
+	const int thread_priority_default: 0;
+
+	# ma_pan_mode
+	const int pan_mode_balance: 0;
+	const int pan_mode_pan: 1;
+
+	# ma_attenuation_model
+	const int attenuation_model_none: 0;
+	const int attenuation_model_inverse: 1;
+	const int attenuation_model_linear: 2;
+	const int attenuation_model_exponential: 3;
+
+	# ma_positioning
+	const int positioning_absolute: 0;
+	const int positioning_relative: 1;
+
+	# ma_handedness
+	const int handedness_right: 0;
+	const int handedness_left: 1;
+
+	# ma_resample_algorithm
+	const int resample_algorithm_linear: 0;
+	const int resample_algorithm_custom: 1;
+
+	# ma_channel_conversion_path
+	const int channel_conversion_path_unknown: 0;
+	const int channel_conversion_path_passthrough: 1;
+	const int channel_conversion_path_mono_out: 2;
+	const int channel_conversion_path_mono_in: 3;
+	const int channel_conversion_path_shuffle: 4;
+	const int channel_conversion_path_weights: 5;
+
+	# ma_mono_expansion_mode
+	const int mono_expansion_mode_duplicate: 0;
+	const int mono_expansion_mode_average: 1;
+	const int mono_expansion_mode_stereo_only: 2;
+	const int mono_expansion_mode_default: 0;
+
+	# ma_data_converter_execution_path
+	const int data_converter_execution_path_passthrough: 0;
+	const int data_converter_execution_path_format_only: 1;
+	const int data_converter_execution_path_channels_only: 2;
+	const int data_converter_execution_path_resample_only: 3;
+	const int data_converter_execution_path_resample_first: 4;
+	const int data_converter_execution_path_channels_first: 5;
+
+	# ma_job_type
+	const int JOB_TYPE_QUIT: 0;
+	const int JOB_TYPE_CUSTOM: 1;
+	const int JOB_TYPE_RESOURCE_MANAGER_LOAD_DATA_BUFFER_NODE: 2;
+	const int JOB_TYPE_RESOURCE_MANAGER_FREE_DATA_BUFFER_NODE: 3;
+	const int JOB_TYPE_RESOURCE_MANAGER_PAGE_DATA_BUFFER_NODE: 4;
+	const int JOB_TYPE_RESOURCE_MANAGER_LOAD_DATA_BUFFER: 5;
+	const int JOB_TYPE_RESOURCE_MANAGER_FREE_DATA_BUFFER: 6;
+	const int JOB_TYPE_RESOURCE_MANAGER_LOAD_DATA_STREAM: 7;
+	const int JOB_TYPE_RESOURCE_MANAGER_FREE_DATA_STREAM: 8;
+	const int JOB_TYPE_RESOURCE_MANAGER_PAGE_DATA_STREAM: 9;
+	const int JOB_TYPE_RESOURCE_MANAGER_SEEK_DATA_STREAM: 10;
+	const int JOB_TYPE_DEVICE_AAUDIO_REROUTE: 11;
+	const int JOB_TYPE_COUNT: 12;
+
+	# ma_job_queue_flags
+	const int JOB_QUEUE_FLAG_NON_BLOCKING: 1;
+
+	# ma_device_state
+	const int device_state_uninitialized: 0;
+	const int device_state_stopped: 1;
+	const int device_state_started: 2;
+	const int device_state_starting: 3;
+	const int device_state_stopping: 4;
+
+	# ma_backend
+	const int backend_wasapi: 0;
+	const int backend_dsound: 1;
+	const int backend_winmm: 2;
+	const int backend_coreaudio: 3;
+	const int backend_sndio: 4;
+	const int backend_audio4: 5;
+	const int backend_oss: 6;
+	const int backend_pulseaudio: 7;
+	const int backend_alsa: 8;
+	const int backend_jack: 9;
+	const int backend_aaudio: 10;
+	const int backend_opensl: 11;
+	const int backend_webaudio: 12;
+	const int backend_custom: 13;
+	const int backend_null: 14;
+
+	# ma_device_notification_type
+	const int device_notification_type_started: 0;
+	const int device_notification_type_stopped: 1;
+	const int device_notification_type_rerouted: 2;
+	const int device_notification_type_interruption_began: 3;
+	const int device_notification_type_interruption_ended: 4;
+	const int device_notification_type_unlocked: 5;
+
+	# ma_device_type
+	const int device_type_playback: 1;
+	const int device_type_capture: 2;
+	const int device_type_duplex: 3;
+	const int device_type_loopback: 4;
+
+	# ma_share_mode
+	const int share_mode_shared: 0;
+	const int share_mode_exclusive: 1;
+
+	# ma_ios_session_category
+	const int ios_session_category_default: 0;
+	const int ios_session_category_none: 1;
+	const int ios_session_category_ambient: 2;
+	const int ios_session_category_solo_ambient: 3;
+	const int ios_session_category_playback: 4;
+	const int ios_session_category_record: 5;
+	const int ios_session_category_play_and_record: 6;
+	const int ios_session_category_multi_route: 7;
+
+	# ma_ios_session_category_option
+	const int ios_session_category_option_mix_with_others: 1;
+	const int ios_session_category_option_duck_others: 2;
+	const int ios_session_category_option_allow_bluetooth: 4;
+	const int ios_session_category_option_default_to_speaker: 8;
+	const int ios_session_category_option_interrupt_spoken_audio_and_mix_with_others: 17;
+	const int ios_session_category_option_allow_bluetooth_a2dp: 32;
+	const int ios_session_category_option_allow_air_play: 64;
+
+	# ma_opensl_stream_type
+	const int opensl_stream_type_default: 0;
+	const int opensl_stream_type_voice: 1;
+	const int opensl_stream_type_system: 2;
+	const int opensl_stream_type_ring: 3;
+	const int opensl_stream_type_media: 4;
+	const int opensl_stream_type_alarm: 5;
+	const int opensl_stream_type_notification: 6;
+
+	# ma_opensl_recording_preset
+	const int opensl_recording_preset_default: 0;
+	const int opensl_recording_preset_generic: 1;
+	const int opensl_recording_preset_camcorder: 2;
+	const int opensl_recording_preset_voice_recognition: 3;
+	const int opensl_recording_preset_voice_communication: 4;
+	const int opensl_recording_preset_voice_unprocessed: 5;
+
+	# ma_wasapi_usage
+	const int wasapi_usage_default: 0;
+	const int wasapi_usage_games: 1;
+	const int wasapi_usage_pro_audio: 2;
+
+	# ma_aaudio_usage
+	const int aaudio_usage_default: 0;
+	const int aaudio_usage_media: 1;
+	const int aaudio_usage_voice_communication: 2;
+	const int aaudio_usage_voice_communication_signalling: 3;
+	const int aaudio_usage_alarm: 4;
+	const int aaudio_usage_notification: 5;
+	const int aaudio_usage_notification_ringtone: 6;
+	const int aaudio_usage_notification_event: 7;
+	const int aaudio_usage_assistance_accessibility: 8;
+	const int aaudio_usage_assistance_navigation_guidance: 9;
+	const int aaudio_usage_assistance_sonification: 10;
+	const int aaudio_usage_game: 11;
+	const int aaudio_usage_assitant: 12;
+	const int aaudio_usage_emergency: 13;
+	const int aaudio_usage_safety: 14;
+	const int aaudio_usage_vehicle_status: 15;
+	const int aaudio_usage_announcement: 16;
+
+	# ma_aaudio_content_type
+	const int aaudio_content_type_default: 0;
+	const int aaudio_content_type_speech: 1;
+	const int aaudio_content_type_music: 2;
+	const int aaudio_content_type_movie: 3;
+	const int aaudio_content_type_sonification: 4;
+
+	# ma_aaudio_input_preset
+	const int aaudio_input_preset_default: 0;
+	const int aaudio_input_preset_generic: 1;
+	const int aaudio_input_preset_camcorder: 2;
+	const int aaudio_input_preset_voice_recognition: 3;
+	const int aaudio_input_preset_voice_communication: 4;
+	const int aaudio_input_preset_unprocessed: 5;
+	const int aaudio_input_preset_voice_performance: 6;
+
+	# ma_aaudio_allowed_capture_policy
+	const int aaudio_allow_capture_default: 0;
+	const int aaudio_allow_capture_by_all: 1;
+	const int aaudio_allow_capture_by_system: 2;
+	const int aaudio_allow_capture_by_none: 3;
+
+	# ma_open_mode_flags
+	const int OPEN_MODE_READ: 1;
+	const int OPEN_MODE_WRITE: 2;
+
+	# ma_seek_origin
+	const int seek_origin_start: 0;
+	const int seek_origin_current: 1;
+	const int seek_origin_end: 2;
+
+	# ma_encoding_format
+	const int encoding_format_unknown: 0;
+	const int encoding_format_wav: 1;
+	const int encoding_format_flac: 2;
+	const int encoding_format_mp3: 3;
+	const int encoding_format_vorbis: 4;
+
+	# ma_waveform_type
+	const int waveform_type_sine: 0;
+	const int waveform_type_square: 1;
+	const int waveform_type_triangle: 2;
+	const int waveform_type_sawtooth: 3;
+
+	# ma_noise_type
+	const int noise_type_white: 0;
+	const int noise_type_pink: 1;
+	const int noise_type_brownian: 2;
+
+	# ma_resource_manager_data_source_flags
+	const int RESOURCE_MANAGER_DATA_SOURCE_FLAG_STREAM: 1;
+	const int RESOURCE_MANAGER_DATA_SOURCE_FLAG_DECODE: 2;
+	const int RESOURCE_MANAGER_DATA_SOURCE_FLAG_ASYNC: 4;
+	const int RESOURCE_MANAGER_DATA_SOURCE_FLAG_WAIT_INIT: 8;
+	const int RESOURCE_MANAGER_DATA_SOURCE_FLAG_UNKNOWN_LENGTH: 16;
+	const int RESOURCE_MANAGER_DATA_SOURCE_FLAG_LOOPING: 32;
+
+	# ma_resource_manager_flags
+	const int RESOURCE_MANAGER_FLAG_NON_BLOCKING: 1;
+	const int RESOURCE_MANAGER_FLAG_NO_THREADING: 2;
+
+	# ma_resource_manager_data_supply_type
+	const int resource_manager_data_supply_type_unknown: 0;
+	const int resource_manager_data_supply_type_encoded: 1;
+	const int resource_manager_data_supply_type_decoded: 2;
+	const int resource_manager_data_supply_type_decoded_paged: 3;
+
+	# ma_node_flags
+	const int NODE_FLAG_PASSTHROUGH: 1;
+	const int NODE_FLAG_CONTINUOUS_PROCESSING: 2;
+	const int NODE_FLAG_ALLOW_NULL_INPUT: 4;
+	const int NODE_FLAG_DIFFERENT_PROCESSING_RATES: 8;
+	const int NODE_FLAG_SILENT_OUTPUT: 16;
+
+	# ma_node_state
+	const int node_state_started: 0;
+	const int node_state_stopped: 1;
+
+	# ma_sound_flags
+	const int SOUND_FLAG_STREAM: 1;
+	const int SOUND_FLAG_DECODE: 2;
+	const int SOUND_FLAG_ASYNC: 4;
+	const int SOUND_FLAG_WAIT_INIT: 8;
+	const int SOUND_FLAG_UNKNOWN_LENGTH: 16;
+	const int SOUND_FLAG_LOOPING: 32;
+	const int SOUND_FLAG_NO_DEFAULT_ATTACHMENT: 4096;
+	const int SOUND_FLAG_NO_PITCH: 8192;
+	const int SOUND_FLAG_NO_SPATIALIZATION: 16384;
+
+	# ma_engine_node_type
+	const int engine_node_type_sound: 0;
+	const int engine_node_type_group: 1;
+}
+
+struct.wchar_t foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_log foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_resampler foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_data_converter foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_event foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_semaphore foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_fence foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_async_notification_event foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_job foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_job_queue foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_device_job_thread foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_device_id foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_context foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_device_info foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_device foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_decoder foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_resource_manager foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_resource_manager_data_buffer foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_resource_manager_data_stream foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_resource_manager_data_source foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_engine_node foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_sound foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_sound_inlined foreign    # only ever held by its address: what's in it is miniaudio's own
+{
+	int opaque;
+}
+
+struct.ma_allocation_callbacks foreign
+{
+	ptr<u8> pUserData;
+	ptr<u8> onMalloc;
+	ptr<u8> onRealloc;
+	ptr<u8> onFree;
+}
+
+struct.ma_lcg foreign
+{
+	u32 state;
+}
+
+struct.ma_atomic_uint32 foreign
+{
+	u32 value;
+}
+
+struct.ma_atomic_int32 foreign
+{
+	int value;
+}
+
+struct.ma_atomic_uint64 foreign
+{
+	u64 value;
+}
+
+struct.ma_atomic_float foreign
+{
+	f32 value;
+}
+
+struct.ma_atomic_bool32 foreign
+{
+	u32 value;
+}
+
+struct.ma_log_callback foreign
+{
+	ptr<u8> onLog;
+	ptr<u8> pUserData;
+}
+
+struct.ma_biquad_coefficient foreign    # a union in C: each of its forms is read through a pointer to that form
+{
+	u32 data[1];
+}
+
+struct.ma_biquad_config foreign
+{
+	int format;
+	u32 channels;
+	f64 b0;
+	f64 b1;
+	f64 b2;
+	f64 a0;
+	f64 a1;
+	f64 a2;
+}
+
+struct.ma_biquad foreign
+{
+	int format;
+	u32 channels;
+	ma_biquad_coefficient b0;
+	ma_biquad_coefficient b1;
+	ma_biquad_coefficient b2;
+	ma_biquad_coefficient a1;
+	ma_biquad_coefficient a2;
+	ptr<ma_biquad_coefficient> pR1;
+	ptr<ma_biquad_coefficient> pR2;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_lpf1_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 cutoffFrequency;
+	f64 q;
+}
+
+struct.ma_lpf1 foreign
+{
+	int format;
+	u32 channels;
+	ma_biquad_coefficient a;
+	ptr<ma_biquad_coefficient> pR1;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_lpf2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_lpf_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 cutoffFrequency;
+	u32 order;
+}
+
+struct.ma_lpf foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	u32 lpf1Count;
+	u32 lpf2Count;
+	ptr<ma_lpf1> pLPF1;
+	ptr<ma_lpf2> pLPF2;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_hpf1_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 cutoffFrequency;
+	f64 q;
+}
+
+struct.ma_hpf1 foreign
+{
+	int format;
+	u32 channels;
+	ma_biquad_coefficient a;
+	ptr<ma_biquad_coefficient> pR1;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_hpf2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_hpf_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 cutoffFrequency;
+	u32 order;
+}
+
+struct.ma_hpf foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	u32 hpf1Count;
+	u32 hpf2Count;
+	ptr<ma_hpf1> pHPF1;
+	ptr<ma_hpf2> pHPF2;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_bpf2_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 cutoffFrequency;
+	f64 q;
+}
+
+struct.ma_bpf2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_bpf_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 cutoffFrequency;
+	u32 order;
+}
+
+struct.ma_bpf foreign
+{
+	int format;
+	u32 channels;
+	u32 bpf2Count;
+	ptr<ma_bpf2> pBPF2;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_notch2_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 q;
+	f64 frequency;
+}
+
+struct.ma_notch2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_peak2_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 gainDB;
+	f64 q;
+	f64 frequency;
+}
+
+struct.ma_peak2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_loshelf2_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 gainDB;
+	f64 shelfSlope;
+	f64 frequency;
+}
+
+struct.ma_loshelf2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_hishelf2_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 gainDB;
+	f64 shelfSlope;
+	f64 frequency;
+}
+
+struct.ma_hishelf2 foreign
+{
+	ma_biquad bq;
+}
+
+struct.ma_delay_config foreign
+{
+	u32 channels;
+	u32 sampleRate;
+	u32 delayInFrames;
+	u32 delayStart;
+	f32 wet;
+	f32 dry;
+	f32 decay;
+}
+
+struct.ma_delay foreign
+{
+	ma_delay_config config;
+	u32 cursor;
+	u32 bufferSizeInFrames;
+	ptr<f32> pBuffer;
+}
+
+struct.ma_gainer_config foreign
+{
+	u32 channels;
+	u32 smoothTimeInFrames;
+}
+
+struct.ma_gainer foreign
+{
+	ma_gainer_config config;
+	u32 t;
+	f32 masterVolume;
+	ptr<f32> pOldGains;
+	ptr<f32> pNewGains;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_panner_config foreign
+{
+	int format;
+	u32 channels;
+	int mode;
+	f32 pan;
+}
+
+struct.ma_panner foreign
+{
+	int format;
+	u32 channels;
+	int mode;
+	f32 pan;
+}
+
+struct.ma_fader_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+}
+
+struct.ma_fader foreign
+{
+	ma_fader_config config;
+	f32 volumeBeg;
+	f32 volumeEnd;
+	u64 lengthInFrames;
+	i64 cursorInFrames;
+}
+
+struct.ma_vec3f foreign
+{
+	f32 x;
+	f32 y;
+	f32 z;
+}
+
+struct.ma_atomic_vec3f foreign
+{
+	ma_vec3f v;
+	u32 lock_;
+}
+
+struct.ma_spatializer_listener_config foreign
+{
+	u32 channelsOut;
+	ptr<u8> pChannelMapOut;
+	int handedness;
+	f32 coneInnerAngleInRadians;
+	f32 coneOuterAngleInRadians;
+	f32 coneOuterGain;
+	f32 speedOfSound;
+	ma_vec3f worldUp;
+}
+
+struct.ma_spatializer_listener foreign
+{
+	ma_spatializer_listener_config config;
+	ma_atomic_vec3f position;
+	ma_atomic_vec3f direction;
+	ma_atomic_vec3f velocity;
+	u32 isEnabled;
+	u32 _ownsHeap;
+	ptr<u8> _pHeap;
+}
+
+struct.ma_spatializer_config foreign
+{
+	u32 channelsIn;
+	u32 channelsOut;
+	ptr<u8> pChannelMapIn;
+	int attenuationModel;
+	int positioning;
+	int handedness;
+	f32 minGain;
+	f32 maxGain;
+	f32 minDistance;
+	f32 maxDistance;
+	f32 rolloff;
+	f32 coneInnerAngleInRadians;
+	f32 coneOuterAngleInRadians;
+	f32 coneOuterGain;
+	f32 dopplerFactor;
+	f32 directionalAttenuationFactor;
+	f32 minSpatializationChannelGain;
+	u32 gainSmoothTimeInFrames;
+}
+
+struct.ma_spatializer foreign
+{
+	u32 channelsIn;
+	u32 channelsOut;
+	ptr<u8> pChannelMapIn;
+	int attenuationModel;
+	int positioning;
+	int handedness;
+	f32 minGain;
+	f32 maxGain;
+	f32 minDistance;
+	f32 maxDistance;
+	f32 rolloff;
+	f32 coneInnerAngleInRadians;
+	f32 coneOuterAngleInRadians;
+	f32 coneOuterGain;
+	f32 dopplerFactor;
+	f32 directionalAttenuationFactor;
+	u32 gainSmoothTimeInFrames;
+	ma_atomic_vec3f position;
+	ma_atomic_vec3f direction;
+	ma_atomic_vec3f velocity;
+	f32 dopplerPitch;
+	f32 minSpatializationChannelGain;
+	ma_gainer gainer;
+	ptr<f32> pNewChannelGainsOut;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_linear_resampler_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRateIn;
+	u32 sampleRateOut;
+	u32 lpfOrder;
+	f64 lpfNyquistFactor;
+}
+
+struct.ma_linear_resampler foreign
+{
+	ma_linear_resampler_config config;
+	u32 inAdvanceInt;
+	u32 inAdvanceFrac;
+	u32 inTimeInt;
+	u32 inTimeFrac;
+	usz x0[1];    # (a union in C: read through a pointer)
+	usz x1[1];    # (a union in C: read through a pointer)
+	ma_lpf lpf;
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_resampling_backend_vtable foreign
+{
+	ptr<u8> onGetHeapSize;
+	ptr<u8> onInit;
+	ptr<u8> onUninit;
+	ptr<u8> onProcess;
+	ptr<u8> onSetRate;
+	ptr<u8> onGetInputLatency;
+	ptr<u8> onGetOutputLatency;
+	ptr<u8> onGetRequiredInputFrameCount;
+	ptr<u8> onGetExpectedOutputFrameCount;
+	ptr<u8> onReset;
+}
+
+struct.ma_resampler_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRateIn;
+	u32 sampleRateOut;
+	int algorithm;
+	ptr<ma_resampling_backend_vtable> pBackendVTable;
+	ptr<u8> pBackendUserData;
+	u32 linear[1];    # (a union in C: read through a pointer)
+}
+
+struct.ma_channel_converter_config foreign
+{
+	int format;
+	u32 channelsIn;
+	u32 channelsOut;
+	ptr<u8> pChannelMapIn;
+	ptr<u8> pChannelMapOut;
+	int mixingMode;
+	u32 calculateLFEFromSpatialChannels;
+	ptr<ptr<f32>> ppWeights;
+}
+
+struct.ma_channel_converter foreign
+{
+	int format;
+	u32 channelsIn;
+	u32 channelsOut;
+	int mixingMode;
+	int conversionPath;
+	ptr<u8> pChannelMapIn;
+	ptr<u8> pChannelMapOut;
+	ptr<u8> pShuffleTable;
+	usz weights[1];    # (a union in C: read through a pointer)
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_data_converter_config foreign
+{
+	int formatIn;
+	int formatOut;
+	u32 channelsIn;
+	u32 channelsOut;
+	u32 sampleRateIn;
+	u32 sampleRateOut;
+	ptr<u8> pChannelMapIn;
+	ptr<u8> pChannelMapOut;
+	int ditherMode;
+	int channelMixMode;
+	u32 calculateLFEFromSpatialChannels;
+	ptr<ptr<f32>> ppChannelWeights;
+	u32 allowDynamicSampleRate;
+	ma_resampler_config resampling;
+}
+
+struct.ma_data_source_vtable foreign
+{
+	ptr<u8> onRead;
+	ptr<u8> onSeek;
+	ptr<u8> onGetDataFormat;
+	ptr<u8> onGetCursor;
+	ptr<u8> onGetLength;
+	ptr<u8> onSetLooping;
+	u32 flags;
+}
+
+struct.ma_data_source_config foreign
+{
+	ptr<ma_data_source_vtable> vtable;
+}
+
+struct.ma_data_source_base foreign
+{
+	ptr<ma_data_source_vtable> vtable;
+	u64 rangeBegInFrames;
+	u64 rangeEndInFrames;
+	u64 loopBegInFrames;
+	u64 loopEndInFrames;
+	ptr<u8> pCurrent;
+	ptr<u8> pNext;
+	ptr<u8> onGetNext;
+	u32 isLooping;
+}
+
+struct.ma_audio_buffer_ref foreign
+{
+	ma_data_source_base ds;
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	u64 cursor;
+	u64 sizeInFrames;
+	ptr<u8> pData;
+}
+
+struct.ma_audio_buffer_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	u64 sizeInFrames;
+	ptr<u8> pData;
+	ma_allocation_callbacks allocationCallbacks;
+}
+
+struct.ma_audio_buffer foreign
+{
+	ma_audio_buffer_ref ref;
+	ma_allocation_callbacks allocationCallbacks;
+	u32 ownsData;
+	u8 _pExtraData[1];
+}
+
+struct.ma_paged_audio_buffer_page foreign
+{
+	ptr<ma_paged_audio_buffer_page> pNext;
+	u64 sizeInFrames;
+	u8 pAudioData[1];
+}
+
+struct.ma_paged_audio_buffer_data foreign
+{
+	int format;
+	u32 channels;
+	ma_paged_audio_buffer_page head;
+	ptr<ma_paged_audio_buffer_page> pTail;
+}
+
+struct.ma_paged_audio_buffer_config foreign
+{
+	ptr<ma_paged_audio_buffer_data> pData;
+}
+
+struct.ma_paged_audio_buffer foreign
+{
+	ma_data_source_base ds;
+	ptr<ma_paged_audio_buffer_data> pData;
+	ptr<ma_paged_audio_buffer_page> pCurrent;
+	u64 relativeCursor;
+	u64 absoluteCursor;
+}
+
+struct.ma_rb foreign
+{
+	ptr<u8> pBuffer;
+	u32 subbufferSizeInBytes;
+	u32 subbufferCount;
+	u32 subbufferStrideInBytes;
+	u32 encodedReadOffset;
+	u32 encodedWriteOffset;
+	u8 ownsBuffer;
+	u8 clearOnWriteAcquire;
+	ma_allocation_callbacks allocationCallbacks;
+}
+
+struct.ma_pcm_rb foreign
+{
+	ma_data_source_base ds;
+	ma_rb rb;
+	int format;
+	u32 channels;
+	u32 sampleRate;
+}
+
+struct.ma_duplex_rb foreign
+{
+	ma_pcm_rb rb;
+}
+
+struct.ma_async_notification_callbacks foreign
+{
+	ptr<u8> onSignal;
+}
+
+struct.ma_async_notification_poll foreign
+{
+	ma_async_notification_callbacks cb;
+	u32 signalled;
+}
+
+struct.ma_slot_allocator_config foreign
+{
+	u32 capacity;
+}
+
+struct.ma_slot_allocator_group foreign
+{
+	u32 bitfield;
+}
+
+struct.ma_slot_allocator foreign
+{
+	ptr<ma_slot_allocator_group> pGroups;
+	ptr<u32> pSlots;
+	u32 count;
+	u32 capacity;
+	u32 _ownsHeap;
+	ptr<u8> _pHeap;
+}
+
+struct.ma_job_queue_config foreign
+{
+	u32 flags;
+	u32 capacity;
+}
+
+struct.ma_atomic_device_state foreign
+{
+	int value;
+}
+
+struct.ma_device_job_thread_config foreign
+{
+	u32 noThread;
+	u32 jobQueueCapacity;
+	u32 jobQueueFlags;
+}
+
+struct.ma_device_notification foreign
+{
+	ptr<ma_device> pDevice;
+	int type;
+	u32 data[1];    # (a union in C: read through a pointer)
+}
+
+struct.ma_timer foreign    # a union in C: each of its forms is read through a pointer to that form
+{
+	u64 data[1];
+}
+
+struct.ma_device_config foreign
+{
+	int deviceType;
+	u32 sampleRate;
+	u32 periodSizeInFrames;
+	u32 periodSizeInMilliseconds;
+	u32 periods;
+	int performanceProfile;
+	u8 noPreSilencedOutputBuffer;
+	u8 noClip;
+	u8 noDisableDenormals;
+	u8 noFixedSizedCallback;
+	ptr<u8> dataCallback;
+	ptr<u8> notificationCallback;
+	ptr<u8> stopCallback;
+	ptr<u8> pUserData;
+	ma_resampler_config resampling;
+	usz playback[3];
+	u32 playback_more[4];    # (a union in C: read through a pointer)
+	usz capture[3];
+	u32 capture_more[4];    # (a union in C: read through a pointer)
+	u32 wasapi[4];    # (a union in C: read through a pointer)
+	u32 alsa[4];    # (a union in C: read through a pointer)
+	usz pulse[3];    # (a union in C: read through a pointer)
+	u32 coreaudio[1];    # (a union in C: read through a pointer)
+	u32 opensl[3];    # (a union in C: read through a pointer)
+	u32 aaudio[7];    # (a union in C: read through a pointer)
+}
+
+struct.ma_device_descriptor foreign
+{
+	ptr<ma_device_id> pDeviceID;
+	int shareMode;
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	u8 channelMap[254];
+	u32 periodSizeInFrames;
+	u32 periodSizeInMilliseconds;
+	u32 periodCount;
+}
+
+struct.ma_backend_callbacks foreign
+{
+	ptr<u8> onContextInit;
+	ptr<u8> onContextUninit;
+	ptr<u8> onContextEnumerateDevices;
+	ptr<u8> onContextGetDeviceInfo;
+	ptr<u8> onDeviceInit;
+	ptr<u8> onDeviceUninit;
+	ptr<u8> onDeviceStart;
+	ptr<u8> onDeviceStop;
+	ptr<u8> onDeviceRead;
+	ptr<u8> onDeviceWrite;
+	ptr<u8> onDeviceDataLoop;
+	ptr<u8> onDeviceDataLoopWakeup;
+	ptr<u8> onDeviceGetInfo;
+}
+
+struct.ma_context_config foreign
+{
+	ptr<ma_log> pLog;
+	int threadPriority;
+	usz threadStackSize;
+	ptr<u8> pUserData;
+	ma_allocation_callbacks allocationCallbacks;
+	usz dsound[1];    # (a union in C: read through a pointer)
+	u32 alsa[1];    # (a union in C: read through a pointer)
+	usz pulse[3];    # (a union in C: read through a pointer)
+	u32 coreaudio[4];    # (a union in C: read through a pointer)
+	usz jack[2];    # (a union in C: read through a pointer)
+	ma_backend_callbacks custom;
+}
+
+struct.ma_context_command__wasapi foreign
+{
+	int code;
+	ptr<ma_event> pEvent;
+	usz data[4];    # (a union in C: read through a pointer)
+}
+
+struct.ma_file_info foreign
+{
+	u64 sizeInBytes;
+}
+
+struct.ma_vfs_callbacks foreign
+{
+	ptr<u8> onOpen;
+	ptr<u8> onOpenW;
+	ptr<u8> onClose;
+	ptr<u8> onRead;
+	ptr<u8> onWrite;
+	ptr<u8> onSeek;
+	ptr<u8> onTell;
+	ptr<u8> onInfo;
+}
+
+struct.ma_default_vfs foreign
+{
+	ma_vfs_callbacks cb;
+	ma_allocation_callbacks allocationCallbacks;
+}
+
+struct.ma_decoding_backend_config foreign
+{
+	int preferredFormat;
+	u32 seekPointCount;
+}
+
+struct.ma_decoding_backend_vtable foreign
+{
+	ptr<u8> onInit;
+	ptr<u8> onInitFile;
+	ptr<u8> onInitFileW;
+	ptr<u8> onInitMemory;
+	ptr<u8> onUninit;
+}
+
+struct.ma_decoder_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	ptr<u8> pChannelMap;
+	int channelMixMode;
+	int ditherMode;
+	ma_resampler_config resampling;
+	ma_allocation_callbacks allocationCallbacks;
+	int encodingFormat;
+	u32 seekPointCount;
+	ptr<ptr<ma_decoding_backend_vtable>> ppCustomBackendVTables;
+	u32 customBackendCount;
+	ptr<u8> pCustomBackendUserData;
+}
+
+struct.ma_encoder_config foreign
+{
+	int encodingFormat;
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	ma_allocation_callbacks allocationCallbacks;
+}
+
+struct.ma_encoder foreign
+{
+	ma_encoder_config config;
+	ptr<u8> onWrite;
+	ptr<u8> onSeek;
+	ptr<u8> onInit;
+	ptr<u8> onUninit;
+	ptr<u8> onWritePCMFrames;
+	ptr<u8> pUserData;
+	ptr<u8> pInternalEncoder;
+	usz data[2];    # (a union in C: read through a pointer)
+}
+
+struct.ma_waveform_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	int type;
+	f64 amplitude;
+	f64 frequency;
+}
+
+struct.ma_waveform foreign
+{
+	ma_data_source_base ds;
+	ma_waveform_config config;
+	f64 advance;
+	f64 time;
+}
+
+struct.ma_pulsewave_config foreign
+{
+	int format;
+	u32 channels;
+	u32 sampleRate;
+	f64 dutyCycle;
+	f64 amplitude;
+	f64 frequency;
+}
+
+struct.ma_pulsewave foreign
+{
+	ma_waveform waveform;
+	ma_pulsewave_config config;
+}
+
+struct.ma_noise_config foreign
+{
+	int format;
+	u32 channels;
+	int type;
+	int seed;
+	f64 amplitude;
+	u32 duplicateChannels;
+}
+
+struct.ma_noise foreign
+{
+	ma_data_source_base ds;
+	ma_noise_config config;
+	ma_lcg lcg;
+	usz state[3];    # (a union in C: read through a pointer)
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_resource_manager_pipeline_stage_notification foreign
+{
+	ptr<u8> pNotification;
+	ptr<ma_fence> pFence;
+}
+
+struct.ma_resource_manager_pipeline_notifications foreign
+{
+	ma_resource_manager_pipeline_stage_notification init;
+	ma_resource_manager_pipeline_stage_notification done;
+}
+
+struct.ma_resource_manager_data_source_config foreign
+{
+	ptr<u8> pFilePath;
+	ptr<wchar_t> pFilePathW;
+	ptr<ma_resource_manager_pipeline_notifications> pNotifications;
+	u64 initialSeekPointInPCMFrames;
+	u64 rangeBegInPCMFrames;
+	u64 rangeEndInPCMFrames;
+	u64 loopPointBegInPCMFrames;
+	u64 loopPointEndInPCMFrames;
+	u32 flags;
+	u32 isLooping;
+}
+
+struct.ma_resource_manager_data_supply foreign
+{
+	int type;
+	u64 backend[7];    # (a union in C: read through a pointer)
+}
+
+struct.ma_resource_manager_data_buffer_node foreign
+{
+	u32 hashedName32;
+	u32 refCount;
+	int result;
+	u32 executionCounter;
+	u32 executionPointer;
+	u32 isDataOwnedByResourceManager;
+	ma_resource_manager_data_supply data;
+	ptr<ma_resource_manager_data_buffer_node> pParent;
+	ptr<ma_resource_manager_data_buffer_node> pChildLo;
+	ptr<ma_resource_manager_data_buffer_node> pChildHi;
+}
+
+struct.ma_resource_manager_config foreign
+{
+	ma_allocation_callbacks allocationCallbacks;
+	ptr<ma_log> pLog;
+	int decodedFormat;
+	u32 decodedChannels;
+	u32 decodedSampleRate;
+	u32 jobThreadCount;
+	usz jobThreadStackSize;
+	u32 jobQueueCapacity;
+	u32 flags;
+	ptr<u8> pVFS;
+	ptr<ptr<ma_decoding_backend_vtable>> ppCustomDecodingBackendVTables;
+	u32 customDecodingBackendCount;
+	ptr<u8> pCustomDecodingBackendUserData;
+	ma_resampler_config resampling;
+}
+
+struct.ma_stack foreign
+{
+	usz offset;
+	usz sizeInBytes;
+	u8 _data[1];
+}
+
+struct.ma_node_vtable foreign
+{
+	ptr<u8> onProcess;
+	ptr<u8> onGetRequiredInputFrameCount;
+	u8 inputBusCount;
+	u8 outputBusCount;
+	u32 flags;
+}
+
+struct.ma_node_config foreign
+{
+	ptr<ma_node_vtable> vtable;
+	int initialState;
+	u32 inputBusCount;
+	u32 outputBusCount;
+	ptr<u32> pInputChannels;
+	ptr<u32> pOutputChannels;
+}
+
+struct.ma_node_output_bus foreign
+{
+	ptr<u8> pNode;
+	u8 outputBusIndex;
+	u8 channels;
+	u8 inputNodeInputBusIndex;
+	u32 flags;
+	u32 refCount;
+	u32 isAttached;
+	u32 lock_;
+	f32 volume;
+	ptr<ma_node_output_bus> pNext;
+	ptr<ma_node_output_bus> pPrev;
+	ptr<u8> pInputNode;
+}
+
+struct.ma_node_input_bus foreign
+{
+	ma_node_output_bus head;
+	u32 nextCounter;
+	u32 lock_;
+	u8 channels;
+}
+
+struct.ma_node_base foreign
+{
+	ptr<ma_node_graph> pNodeGraph;
+	ptr<ma_node_vtable> vtable;
+	u32 inputBusCount;
+	u32 outputBusCount;
+	ptr<ma_node_input_bus> pInputBuses;
+	ptr<ma_node_output_bus> pOutputBuses;
+	ptr<f32> pCachedData;
+	u16 cachedDataCapInFramesPerBus;
+	u16 cachedFrameCountOut;
+	u16 cachedFrameCountIn;
+	u16 consumedFrameCountIn;
+	int state;
+	u64 stateTimes[2];
+	u64 localTime;
+	ma_node_input_bus _inputBuses[2];
+	ma_node_output_bus _outputBuses[2];
+	ptr<u8> _pHeap;
+	u32 _ownsHeap;
+}
+
+struct.ma_node_graph_config foreign
+{
+	u32 channels;
+	u32 processingSizeInFrames;
+	usz preMixStackSizeInBytes;
+}
+
+struct.ma_node_graph foreign
+{
+	ma_node_base base;
+	ma_node_base endpoint;
+	ptr<f32> pProcessingCache;
+	u32 processingCacheFramesRemaining;
+	u32 processingSizeInFrames;
+	u32 isReading;
+	ptr<ma_stack> pPreMixStack;
+}
+
+struct.ma_data_source_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ptr<u8> pDataSource;
+}
+
+struct.ma_data_source_node foreign
+{
+	ma_node_base base;
+	ptr<u8> pDataSource;
+}
+
+struct.ma_splitter_node_config foreign
+{
+	ma_node_config nodeConfig;
+	u32 channels;
+	u32 outputBusCount;
+}
+
+struct.ma_splitter_node foreign
+{
+	ma_node_base base;
+}
+
+struct.ma_biquad_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_biquad_config biquad;
+}
+
+struct.ma_biquad_node foreign
+{
+	ma_node_base baseNode;
+	ma_biquad biquad;
+}
+
+struct.ma_lpf_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_lpf_config lpf;
+}
+
+struct.ma_lpf_node foreign
+{
+	ma_node_base baseNode;
+	ma_lpf lpf;
+}
+
+struct.ma_hpf_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_hpf_config hpf;
+}
+
+struct.ma_hpf_node foreign
+{
+	ma_node_base baseNode;
+	ma_hpf hpf;
+}
+
+struct.ma_bpf_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_bpf_config bpf;
+}
+
+struct.ma_bpf_node foreign
+{
+	ma_node_base baseNode;
+	ma_bpf bpf;
+}
+
+struct.ma_notch_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_notch2_config notch;
+}
+
+struct.ma_notch_node foreign
+{
+	ma_node_base baseNode;
+	ma_notch2 notch;
+}
+
+struct.ma_peak_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_peak2_config peak;
+}
+
+struct.ma_peak_node foreign
+{
+	ma_node_base baseNode;
+	ma_peak2 peak;
+}
+
+struct.ma_loshelf_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_loshelf2_config loshelf;
+}
+
+struct.ma_loshelf_node foreign
+{
+	ma_node_base baseNode;
+	ma_loshelf2 loshelf;
+}
+
+struct.ma_hishelf_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_hishelf2_config hishelf;
+}
+
+struct.ma_hishelf_node foreign
+{
+	ma_node_base baseNode;
+	ma_hishelf2 hishelf;
+}
+
+struct.ma_delay_node_config foreign
+{
+	ma_node_config nodeConfig;
+	ma_delay_config delay;
+}
+
+struct.ma_delay_node foreign
+{
+	ma_node_base baseNode;
+	ma_delay delay;
+}
+
+struct.ma_engine_node_config foreign
+{
+	ptr<ma_engine> pEngine;
+	int type;
+	u32 channelsIn;
+	u32 channelsOut;
+	u32 sampleRate;
+	u32 volumeSmoothTimeInPCMFrames;
+	int monoExpansionMode;
+	u8 isPitchDisabled;
+	u8 isSpatializationDisabled;
+	u8 pinnedListenerIndex;
+	ma_resampler_config resampling;
+}
+
+struct.ma_sound_config foreign
+{
+	ptr<u8> pFilePath;
+	ptr<wchar_t> pFilePathW;
+	ptr<u8> pDataSource;
+	ptr<u8> pInitialAttachment;
+	u32 initialAttachmentInputBusIndex;
+	u32 channelsIn;
+	u32 channelsOut;
+	int monoExpansionMode;
+	u32 flags;
+	u32 volumeSmoothTimeInPCMFrames;
+	u64 initialSeekPointInPCMFrames;
+	u64 rangeBegInPCMFrames;
+	u64 rangeEndInPCMFrames;
+	u64 loopPointBegInPCMFrames;
+	u64 loopPointEndInPCMFrames;
+	ptr<u8> endCallback;
+	ptr<u8> pEndCallbackUserData;
+	ma_resampler_config pitchResampling;
+	ma_resource_manager_pipeline_notifications initNotifications;
+	ptr<ma_fence> pDoneFence;
+	u32 isLooping;
+}
+
+struct.ma_engine_config foreign
+{
+	ptr<ma_resource_manager> pResourceManager;
+	ptr<ma_context> pContext;
+	ptr<ma_device> pDevice;
+	ptr<ma_device_id> pPlaybackDeviceID;
+	ptr<u8> dataCallback;
+	ptr<u8> notificationCallback;
+	ptr<ma_log> pLog;
+	u32 listenerCount;
+	u32 channels;
+	u32 sampleRate;
+	u32 periodSizeInFrames;
+	u32 periodSizeInMilliseconds;
+	u32 gainSmoothTimeInFrames;
+	u32 gainSmoothTimeInMilliseconds;
+	u32 defaultVolumeSmoothTimeInPCMFrames;
+	u32 preMixStackSizeInBytes;
+	ma_allocation_callbacks allocationCallbacks;
+	u32 noAutoStart;
+	u32 noDevice;
+	int monoExpansionMode;
+	ptr<u8> pResourceManagerVFS;
+	ptr<u8> onProcess;
+	ptr<u8> pProcessUserData;
+	ma_resampler_config resourceManagerResampling;
+	ma_resampler_config pitchResampling;
+}
+
+struct.ma_engine foreign
+{
+	ma_node_graph nodeGraph;
+	ptr<ma_resource_manager> pResourceManager;
+	ptr<ma_device> pDevice;
+	ptr<ma_log> pLog;
+	u32 sampleRate;
+	u32 listenerCount;
+	ma_spatializer_listener listeners[4];
+	ma_allocation_callbacks allocationCallbacks;
+	u8 ownsResourceManager;
+	u8 ownsDevice;
+	u32 inlinedSoundLock;
+	ptr<ma_sound_inlined> pInlinedSoundHead;
+	u32 inlinedSoundCount;
+	u32 gainSmoothTimeInFrames;
+	u32 defaultVolumeSmoothTimeInPCMFrames;
+	int monoExpansionMode;
+	ptr<u8> onProcess;
+	ptr<u8> pProcessUserData;
+	ma_resampler_config pitchResamplingConfig;
+}
+
+struct.ma_lpf2_config is ma_lpf1_config;
+struct.ma_hpf2_config is ma_hpf1_config;
+struct.ma_notch_config is ma_notch2_config;
+struct.ma_peak_config is ma_peak2_config;
+struct.ma_loshelf_config is ma_loshelf2_config;
+struct.ma_hishelf_config is ma_hishelf2_config;
+struct.ma_sound_group_config is ma_sound_config;
+
+Ma.version = 'ma_version': ptr<u32> pMajor ptr<u32> pMinor ptr<u32> pRevision;    # Retrieves the version of miniaudio as separated integers.
+Ma.version_string = 'ma_version_string': : ptr<u8>;    # Retrieves the version of miniaudio as a string which can be useful for logging purposes.
+Ma.log_callback_init = 'ma_log_callback_init': ptr<u8> onLog ptr<u8> pUserData: ma_log_callback;
+Ma.log_init = 'ma_log_init': ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_log> pLog;
+Ma.log_uninit = 'ma_log_uninit': ptr<ma_log> pLog;
+Ma.log_register_callback = 'ma_log_register_callback': ptr<ma_log> pLog ma_log_callback callback;
+Ma.log_unregister_callback = 'ma_log_unregister_callback': ptr<ma_log> pLog ma_log_callback callback;
+Ma.log_post = 'ma_log_post': ptr<ma_log> pLog u32 level ptr<u8> pMessage;
+Ma.log_postf = 'ma_log_postf': ptr<ma_log> pLog u32 level ptr<u8> pFormat ...;
+Ma.biquad_config_init = 'ma_biquad_config_init': int format u32 channels f64 b0 f64 b1 f64 b2 f64 a0 f64 a1 f64 a2: ma_biquad_config;
+Ma.biquad_get_heap_size = 'ma_biquad_get_heap_size': ptr<ma_biquad_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.biquad_init_preallocated = 'ma_biquad_init_preallocated': ptr<ma_biquad_config> pConfig ptr<u8> pHeap ptr<ma_biquad> pBQ;
+Ma.biquad_init = 'ma_biquad_init': ptr<ma_biquad_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_biquad> pBQ;
+Ma.biquad_uninit = 'ma_biquad_uninit': ptr<ma_biquad> pBQ ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.biquad_reinit = 'ma_biquad_reinit': ptr<ma_biquad_config> pConfig ptr<ma_biquad> pBQ;
+Ma.biquad_clear_cache = 'ma_biquad_clear_cache': ptr<ma_biquad> pBQ;
+Ma.biquad_process_pcm_frames = 'ma_biquad_process_pcm_frames': ptr<ma_biquad> pBQ ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.biquad_get_latency = 'ma_biquad_get_latency': ptr<ma_biquad> pBQ: u32;
+Ma.lpf1_config_init = 'ma_lpf1_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency: ma_lpf1_config;
+Ma.lpf2_config_init = 'ma_lpf2_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency f64 q: ma_lpf1_config;
+Ma.lpf1_get_heap_size = 'ma_lpf1_get_heap_size': ptr<ma_lpf1_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.lpf1_init_preallocated = 'ma_lpf1_init_preallocated': ptr<ma_lpf1_config> pConfig ptr<u8> pHeap ptr<ma_lpf1> pLPF;
+Ma.lpf1_init = 'ma_lpf1_init': ptr<ma_lpf1_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_lpf1> pLPF;
+Ma.lpf1_uninit = 'ma_lpf1_uninit': ptr<ma_lpf1> pLPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.lpf1_reinit = 'ma_lpf1_reinit': ptr<ma_lpf1_config> pConfig ptr<ma_lpf1> pLPF;
+Ma.lpf1_clear_cache = 'ma_lpf1_clear_cache': ptr<ma_lpf1> pLPF;
+Ma.lpf1_process_pcm_frames = 'ma_lpf1_process_pcm_frames': ptr<ma_lpf1> pLPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.lpf1_get_latency = 'ma_lpf1_get_latency': ptr<ma_lpf1> pLPF: u32;
+Ma.lpf2_get_heap_size = 'ma_lpf2_get_heap_size': ptr<ma_lpf1_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.lpf2_init_preallocated = 'ma_lpf2_init_preallocated': ptr<ma_lpf1_config> pConfig ptr<u8> pHeap ptr<ma_lpf2> pHPF;
+Ma.lpf2_init = 'ma_lpf2_init': ptr<ma_lpf1_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_lpf2> pLPF;
+Ma.lpf2_uninit = 'ma_lpf2_uninit': ptr<ma_lpf2> pLPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.lpf2_reinit = 'ma_lpf2_reinit': ptr<ma_lpf1_config> pConfig ptr<ma_lpf2> pLPF;
+Ma.lpf2_clear_cache = 'ma_lpf2_clear_cache': ptr<ma_lpf2> pLPF;
+Ma.lpf2_process_pcm_frames = 'ma_lpf2_process_pcm_frames': ptr<ma_lpf2> pLPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.lpf2_get_latency = 'ma_lpf2_get_latency': ptr<ma_lpf2> pLPF: u32;
+Ma.lpf_config_init = 'ma_lpf_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency u32 order: ma_lpf_config;
+Ma.lpf_get_heap_size = 'ma_lpf_get_heap_size': ptr<ma_lpf_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.lpf_init_preallocated = 'ma_lpf_init_preallocated': ptr<ma_lpf_config> pConfig ptr<u8> pHeap ptr<ma_lpf> pLPF;
+Ma.lpf_init = 'ma_lpf_init': ptr<ma_lpf_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_lpf> pLPF;
+Ma.lpf_uninit = 'ma_lpf_uninit': ptr<ma_lpf> pLPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.lpf_reinit = 'ma_lpf_reinit': ptr<ma_lpf_config> pConfig ptr<ma_lpf> pLPF;
+Ma.lpf_clear_cache = 'ma_lpf_clear_cache': ptr<ma_lpf> pLPF;
+Ma.lpf_process_pcm_frames = 'ma_lpf_process_pcm_frames': ptr<ma_lpf> pLPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.lpf_get_latency = 'ma_lpf_get_latency': ptr<ma_lpf> pLPF: u32;
+Ma.hpf1_config_init = 'ma_hpf1_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency: ma_hpf1_config;
+Ma.hpf2_config_init = 'ma_hpf2_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency f64 q: ma_hpf1_config;
+Ma.hpf1_get_heap_size = 'ma_hpf1_get_heap_size': ptr<ma_hpf1_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.hpf1_init_preallocated = 'ma_hpf1_init_preallocated': ptr<ma_hpf1_config> pConfig ptr<u8> pHeap ptr<ma_hpf1> pLPF;
+Ma.hpf1_init = 'ma_hpf1_init': ptr<ma_hpf1_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_hpf1> pHPF;
+Ma.hpf1_uninit = 'ma_hpf1_uninit': ptr<ma_hpf1> pHPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.hpf1_reinit = 'ma_hpf1_reinit': ptr<ma_hpf1_config> pConfig ptr<ma_hpf1> pHPF;
+Ma.hpf1_process_pcm_frames = 'ma_hpf1_process_pcm_frames': ptr<ma_hpf1> pHPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.hpf1_get_latency = 'ma_hpf1_get_latency': ptr<ma_hpf1> pHPF: u32;
+Ma.hpf2_get_heap_size = 'ma_hpf2_get_heap_size': ptr<ma_hpf1_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.hpf2_init_preallocated = 'ma_hpf2_init_preallocated': ptr<ma_hpf1_config> pConfig ptr<u8> pHeap ptr<ma_hpf2> pHPF;
+Ma.hpf2_init = 'ma_hpf2_init': ptr<ma_hpf1_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_hpf2> pHPF;
+Ma.hpf2_uninit = 'ma_hpf2_uninit': ptr<ma_hpf2> pHPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.hpf2_reinit = 'ma_hpf2_reinit': ptr<ma_hpf1_config> pConfig ptr<ma_hpf2> pHPF;
+Ma.hpf2_process_pcm_frames = 'ma_hpf2_process_pcm_frames': ptr<ma_hpf2> pHPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.hpf2_get_latency = 'ma_hpf2_get_latency': ptr<ma_hpf2> pHPF: u32;
+Ma.hpf_config_init = 'ma_hpf_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency u32 order: ma_hpf_config;
+Ma.hpf_get_heap_size = 'ma_hpf_get_heap_size': ptr<ma_hpf_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.hpf_init_preallocated = 'ma_hpf_init_preallocated': ptr<ma_hpf_config> pConfig ptr<u8> pHeap ptr<ma_hpf> pLPF;
+Ma.hpf_init = 'ma_hpf_init': ptr<ma_hpf_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_hpf> pHPF;
+Ma.hpf_uninit = 'ma_hpf_uninit': ptr<ma_hpf> pHPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.hpf_reinit = 'ma_hpf_reinit': ptr<ma_hpf_config> pConfig ptr<ma_hpf> pHPF;
+Ma.hpf_process_pcm_frames = 'ma_hpf_process_pcm_frames': ptr<ma_hpf> pHPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.hpf_get_latency = 'ma_hpf_get_latency': ptr<ma_hpf> pHPF: u32;
+Ma.bpf2_config_init = 'ma_bpf2_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency f64 q: ma_bpf2_config;
+Ma.bpf2_get_heap_size = 'ma_bpf2_get_heap_size': ptr<ma_bpf2_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.bpf2_init_preallocated = 'ma_bpf2_init_preallocated': ptr<ma_bpf2_config> pConfig ptr<u8> pHeap ptr<ma_bpf2> pBPF;
+Ma.bpf2_init = 'ma_bpf2_init': ptr<ma_bpf2_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_bpf2> pBPF;
+Ma.bpf2_uninit = 'ma_bpf2_uninit': ptr<ma_bpf2> pBPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.bpf2_reinit = 'ma_bpf2_reinit': ptr<ma_bpf2_config> pConfig ptr<ma_bpf2> pBPF;
+Ma.bpf2_process_pcm_frames = 'ma_bpf2_process_pcm_frames': ptr<ma_bpf2> pBPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.bpf2_get_latency = 'ma_bpf2_get_latency': ptr<ma_bpf2> pBPF: u32;
+Ma.bpf_config_init = 'ma_bpf_config_init': int format u32 channels u32 sampleRate f64 cutoffFrequency u32 order: ma_bpf_config;
+Ma.bpf_get_heap_size = 'ma_bpf_get_heap_size': ptr<ma_bpf_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.bpf_init_preallocated = 'ma_bpf_init_preallocated': ptr<ma_bpf_config> pConfig ptr<u8> pHeap ptr<ma_bpf> pBPF;
+Ma.bpf_init = 'ma_bpf_init': ptr<ma_bpf_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_bpf> pBPF;
+Ma.bpf_uninit = 'ma_bpf_uninit': ptr<ma_bpf> pBPF ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.bpf_reinit = 'ma_bpf_reinit': ptr<ma_bpf_config> pConfig ptr<ma_bpf> pBPF;
+Ma.bpf_process_pcm_frames = 'ma_bpf_process_pcm_frames': ptr<ma_bpf> pBPF ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.bpf_get_latency = 'ma_bpf_get_latency': ptr<ma_bpf> pBPF: u32;
+Ma.notch2_config_init = 'ma_notch2_config_init': int format u32 channels u32 sampleRate f64 q f64 frequency: ma_notch2_config;
+Ma.notch2_get_heap_size = 'ma_notch2_get_heap_size': ptr<ma_notch2_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.notch2_init_preallocated = 'ma_notch2_init_preallocated': ptr<ma_notch2_config> pConfig ptr<u8> pHeap ptr<ma_notch2> pFilter;
+Ma.notch2_init = 'ma_notch2_init': ptr<ma_notch2_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_notch2> pFilter;
+Ma.notch2_uninit = 'ma_notch2_uninit': ptr<ma_notch2> pFilter ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.notch2_reinit = 'ma_notch2_reinit': ptr<ma_notch2_config> pConfig ptr<ma_notch2> pFilter;
+Ma.notch2_process_pcm_frames = 'ma_notch2_process_pcm_frames': ptr<ma_notch2> pFilter ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.notch2_get_latency = 'ma_notch2_get_latency': ptr<ma_notch2> pFilter: u32;
+Ma.peak2_config_init = 'ma_peak2_config_init': int format u32 channels u32 sampleRate f64 gainDB f64 q f64 frequency: ma_peak2_config;
+Ma.peak2_get_heap_size = 'ma_peak2_get_heap_size': ptr<ma_peak2_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.peak2_init_preallocated = 'ma_peak2_init_preallocated': ptr<ma_peak2_config> pConfig ptr<u8> pHeap ptr<ma_peak2> pFilter;
+Ma.peak2_init = 'ma_peak2_init': ptr<ma_peak2_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_peak2> pFilter;
+Ma.peak2_uninit = 'ma_peak2_uninit': ptr<ma_peak2> pFilter ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.peak2_reinit = 'ma_peak2_reinit': ptr<ma_peak2_config> pConfig ptr<ma_peak2> pFilter;
+Ma.peak2_process_pcm_frames = 'ma_peak2_process_pcm_frames': ptr<ma_peak2> pFilter ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.peak2_get_latency = 'ma_peak2_get_latency': ptr<ma_peak2> pFilter: u32;
+Ma.loshelf2_config_init = 'ma_loshelf2_config_init': int format u32 channels u32 sampleRate f64 gainDB f64 shelfSlope f64 frequency: ma_loshelf2_config;
+Ma.loshelf2_get_heap_size = 'ma_loshelf2_get_heap_size': ptr<ma_loshelf2_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.loshelf2_init_preallocated = 'ma_loshelf2_init_preallocated': ptr<ma_loshelf2_config> pConfig ptr<u8> pHeap ptr<ma_loshelf2> pFilter;
+Ma.loshelf2_init = 'ma_loshelf2_init': ptr<ma_loshelf2_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_loshelf2> pFilter;
+Ma.loshelf2_uninit = 'ma_loshelf2_uninit': ptr<ma_loshelf2> pFilter ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.loshelf2_reinit = 'ma_loshelf2_reinit': ptr<ma_loshelf2_config> pConfig ptr<ma_loshelf2> pFilter;
+Ma.loshelf2_process_pcm_frames = 'ma_loshelf2_process_pcm_frames': ptr<ma_loshelf2> pFilter ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.loshelf2_get_latency = 'ma_loshelf2_get_latency': ptr<ma_loshelf2> pFilter: u32;
+Ma.hishelf2_config_init = 'ma_hishelf2_config_init': int format u32 channels u32 sampleRate f64 gainDB f64 shelfSlope f64 frequency: ma_hishelf2_config;
+Ma.hishelf2_get_heap_size = 'ma_hishelf2_get_heap_size': ptr<ma_hishelf2_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.hishelf2_init_preallocated = 'ma_hishelf2_init_preallocated': ptr<ma_hishelf2_config> pConfig ptr<u8> pHeap ptr<ma_hishelf2> pFilter;
+Ma.hishelf2_init = 'ma_hishelf2_init': ptr<ma_hishelf2_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_hishelf2> pFilter;
+Ma.hishelf2_uninit = 'ma_hishelf2_uninit': ptr<ma_hishelf2> pFilter ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.hishelf2_reinit = 'ma_hishelf2_reinit': ptr<ma_hishelf2_config> pConfig ptr<ma_hishelf2> pFilter;
+Ma.hishelf2_process_pcm_frames = 'ma_hishelf2_process_pcm_frames': ptr<ma_hishelf2> pFilter ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.hishelf2_get_latency = 'ma_hishelf2_get_latency': ptr<ma_hishelf2> pFilter: u32;
+Ma.delay_config_init = 'ma_delay_config_init': u32 channels u32 sampleRate u32 delayInFrames f32 decay: ma_delay_config;
+Ma.delay_init = 'ma_delay_init': ptr<ma_delay_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_delay> pDelay;
+Ma.delay_uninit = 'ma_delay_uninit': ptr<ma_delay> pDelay ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.delay_process_pcm_frames = 'ma_delay_process_pcm_frames': ptr<ma_delay> pDelay ptr<u8> pFramesOut ptr<u8> pFramesIn u32 frameCount;
+Ma.delay_set_wet = 'ma_delay_set_wet': ptr<ma_delay> pDelay f32 value;
+Ma.delay_get_wet = 'ma_delay_get_wet': ptr<ma_delay> pDelay: f32;
+Ma.delay_set_dry = 'ma_delay_set_dry': ptr<ma_delay> pDelay f32 value;
+Ma.delay_get_dry = 'ma_delay_get_dry': ptr<ma_delay> pDelay: f32;
+Ma.delay_set_decay = 'ma_delay_set_decay': ptr<ma_delay> pDelay f32 value;
+Ma.delay_get_decay = 'ma_delay_get_decay': ptr<ma_delay> pDelay: f32;
+Ma.gainer_config_init = 'ma_gainer_config_init': u32 channels u32 smoothTimeInFrames: ma_gainer_config;
+Ma.gainer_get_heap_size = 'ma_gainer_get_heap_size': ptr<ma_gainer_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.gainer_init_preallocated = 'ma_gainer_init_preallocated': ptr<ma_gainer_config> pConfig ptr<u8> pHeap ptr<ma_gainer> pGainer;
+Ma.gainer_init = 'ma_gainer_init': ptr<ma_gainer_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_gainer> pGainer;
+Ma.gainer_uninit = 'ma_gainer_uninit': ptr<ma_gainer> pGainer ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.gainer_process_pcm_frames = 'ma_gainer_process_pcm_frames': ptr<ma_gainer> pGainer ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.gainer_set_gain = 'ma_gainer_set_gain': ptr<ma_gainer> pGainer f32 newGain;
+Ma.gainer_set_gains = 'ma_gainer_set_gains': ptr<ma_gainer> pGainer ptr<f32> pNewGains;
+Ma.gainer_set_master_volume = 'ma_gainer_set_master_volume': ptr<ma_gainer> pGainer f32 volume;
+Ma.gainer_get_master_volume = 'ma_gainer_get_master_volume': ptr<ma_gainer> pGainer ptr<f32> pVolume;
+Ma.panner_config_init = 'ma_panner_config_init': int format u32 channels: ma_panner_config;
+Ma.panner_init = 'ma_panner_init': ptr<ma_panner_config> pConfig ptr<ma_panner> pPanner;
+Ma.panner_process_pcm_frames = 'ma_panner_process_pcm_frames': ptr<ma_panner> pPanner ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.panner_set_mode = 'ma_panner_set_mode': ptr<ma_panner> pPanner int mode;
+Ma.panner_get_mode = 'ma_panner_get_mode': ptr<ma_panner> pPanner;
+Ma.panner_set_pan = 'ma_panner_set_pan': ptr<ma_panner> pPanner f32 pan;
+Ma.panner_get_pan = 'ma_panner_get_pan': ptr<ma_panner> pPanner: f32;
+Ma.fader_config_init = 'ma_fader_config_init': int format u32 channels u32 sampleRate: ma_fader_config;
+Ma.fader_init = 'ma_fader_init': ptr<ma_fader_config> pConfig ptr<ma_fader> pFader;
+Ma.fader_process_pcm_frames = 'ma_fader_process_pcm_frames': ptr<ma_fader> pFader ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.fader_get_data_format = 'ma_fader_get_data_format': ptr<ma_fader> pFader ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate;
+Ma.fader_set_fade = 'ma_fader_set_fade': ptr<ma_fader> pFader f32 volumeBeg f32 volumeEnd u64 lengthInFrames;
+Ma.fader_set_fade_ex = 'ma_fader_set_fade_ex': ptr<ma_fader> pFader f32 volumeBeg f32 volumeEnd u64 lengthInFrames i64 startOffsetInFrames;
+Ma.fader_get_current_volume = 'ma_fader_get_current_volume': ptr<ma_fader> pFader: f32;
+Ma.spatializer_listener_config_init = 'ma_spatializer_listener_config_init': u32 channelsOut: ma_spatializer_listener_config;
+Ma.spatializer_listener_get_heap_size = 'ma_spatializer_listener_get_heap_size': ptr<ma_spatializer_listener_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.spatializer_listener_init_preallocated = 'ma_spatializer_listener_init_preallocated': ptr<ma_spatializer_listener_config> pConfig ptr<u8> pHeap ptr<ma_spatializer_listener> pListener;
+Ma.spatializer_listener_init = 'ma_spatializer_listener_init': ptr<ma_spatializer_listener_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_spatializer_listener> pListener;
+Ma.spatializer_listener_uninit = 'ma_spatializer_listener_uninit': ptr<ma_spatializer_listener> pListener ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.spatializer_listener_get_channel_map = 'ma_spatializer_listener_get_channel_map': ptr<ma_spatializer_listener> pListener: ptr<u8>;
+Ma.spatializer_listener_set_cone = 'ma_spatializer_listener_set_cone': ptr<ma_spatializer_listener> pListener f32 innerAngleInRadians f32 outerAngleInRadians f32 outerGain;
+Ma.spatializer_listener_get_cone = 'ma_spatializer_listener_get_cone': ptr<ma_spatializer_listener> pListener ptr<f32> pInnerAngleInRadians ptr<f32> pOuterAngleInRadians ptr<f32> pOuterGain;
+Ma.spatializer_listener_set_position = 'ma_spatializer_listener_set_position': ptr<ma_spatializer_listener> pListener f32 x f32 y f32 z;
+Ma.spatializer_listener_get_position = 'ma_spatializer_listener_get_position': ptr<ma_spatializer_listener> pListener: ma_vec3f;
+Ma.spatializer_listener_set_direction = 'ma_spatializer_listener_set_direction': ptr<ma_spatializer_listener> pListener f32 x f32 y f32 z;
+Ma.spatializer_listener_get_direction = 'ma_spatializer_listener_get_direction': ptr<ma_spatializer_listener> pListener: ma_vec3f;
+Ma.spatializer_listener_set_velocity = 'ma_spatializer_listener_set_velocity': ptr<ma_spatializer_listener> pListener f32 x f32 y f32 z;
+Ma.spatializer_listener_get_velocity = 'ma_spatializer_listener_get_velocity': ptr<ma_spatializer_listener> pListener: ma_vec3f;
+Ma.spatializer_listener_set_speed_of_sound = 'ma_spatializer_listener_set_speed_of_sound': ptr<ma_spatializer_listener> pListener f32 speedOfSound;
+Ma.spatializer_listener_get_speed_of_sound = 'ma_spatializer_listener_get_speed_of_sound': ptr<ma_spatializer_listener> pListener: f32;
+Ma.spatializer_listener_set_world_up = 'ma_spatializer_listener_set_world_up': ptr<ma_spatializer_listener> pListener f32 x f32 y f32 z;
+Ma.spatializer_listener_get_world_up = 'ma_spatializer_listener_get_world_up': ptr<ma_spatializer_listener> pListener: ma_vec3f;
+Ma.spatializer_listener_set_enabled = 'ma_spatializer_listener_set_enabled': ptr<ma_spatializer_listener> pListener u32 isEnabled;
+Ma.spatializer_listener_is_enabled = 'ma_spatializer_listener_is_enabled': ptr<ma_spatializer_listener> pListener: u32;
+Ma.spatializer_config_init = 'ma_spatializer_config_init': u32 channelsIn u32 channelsOut: ma_spatializer_config;
+Ma.spatializer_get_heap_size = 'ma_spatializer_get_heap_size': ptr<ma_spatializer_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.spatializer_init_preallocated = 'ma_spatializer_init_preallocated': ptr<ma_spatializer_config> pConfig ptr<u8> pHeap ptr<ma_spatializer> pSpatializer;
+Ma.spatializer_init = 'ma_spatializer_init': ptr<ma_spatializer_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_spatializer> pSpatializer;
+Ma.spatializer_uninit = 'ma_spatializer_uninit': ptr<ma_spatializer> pSpatializer ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.spatializer_process_pcm_frames = 'ma_spatializer_process_pcm_frames': ptr<ma_spatializer> pSpatializer ptr<ma_spatializer_listener> pListener ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.spatializer_set_master_volume = 'ma_spatializer_set_master_volume': ptr<ma_spatializer> pSpatializer f32 volume;
+Ma.spatializer_get_master_volume = 'ma_spatializer_get_master_volume': ptr<ma_spatializer> pSpatializer ptr<f32> pVolume;
+Ma.spatializer_get_input_channels = 'ma_spatializer_get_input_channels': ptr<ma_spatializer> pSpatializer: u32;
+Ma.spatializer_get_output_channels = 'ma_spatializer_get_output_channels': ptr<ma_spatializer> pSpatializer: u32;
+Ma.spatializer_set_attenuation_model = 'ma_spatializer_set_attenuation_model': ptr<ma_spatializer> pSpatializer int attenuationModel;
+Ma.spatializer_get_attenuation_model = 'ma_spatializer_get_attenuation_model': ptr<ma_spatializer> pSpatializer;
+Ma.spatializer_set_positioning = 'ma_spatializer_set_positioning': ptr<ma_spatializer> pSpatializer int positioning;
+Ma.spatializer_get_positioning = 'ma_spatializer_get_positioning': ptr<ma_spatializer> pSpatializer;
+Ma.spatializer_set_rolloff = 'ma_spatializer_set_rolloff': ptr<ma_spatializer> pSpatializer f32 rolloff;
+Ma.spatializer_get_rolloff = 'ma_spatializer_get_rolloff': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_min_gain = 'ma_spatializer_set_min_gain': ptr<ma_spatializer> pSpatializer f32 minGain;
+Ma.spatializer_get_min_gain = 'ma_spatializer_get_min_gain': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_max_gain = 'ma_spatializer_set_max_gain': ptr<ma_spatializer> pSpatializer f32 maxGain;
+Ma.spatializer_get_max_gain = 'ma_spatializer_get_max_gain': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_min_distance = 'ma_spatializer_set_min_distance': ptr<ma_spatializer> pSpatializer f32 minDistance;
+Ma.spatializer_get_min_distance = 'ma_spatializer_get_min_distance': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_max_distance = 'ma_spatializer_set_max_distance': ptr<ma_spatializer> pSpatializer f32 maxDistance;
+Ma.spatializer_get_max_distance = 'ma_spatializer_get_max_distance': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_cone = 'ma_spatializer_set_cone': ptr<ma_spatializer> pSpatializer f32 innerAngleInRadians f32 outerAngleInRadians f32 outerGain;
+Ma.spatializer_get_cone = 'ma_spatializer_get_cone': ptr<ma_spatializer> pSpatializer ptr<f32> pInnerAngleInRadians ptr<f32> pOuterAngleInRadians ptr<f32> pOuterGain;
+Ma.spatializer_set_doppler_factor = 'ma_spatializer_set_doppler_factor': ptr<ma_spatializer> pSpatializer f32 dopplerFactor;
+Ma.spatializer_get_doppler_factor = 'ma_spatializer_get_doppler_factor': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_directional_attenuation_factor = 'ma_spatializer_set_directional_attenuation_factor': ptr<ma_spatializer> pSpatializer f32 directionalAttenuationFactor;
+Ma.spatializer_get_directional_attenuation_factor = 'ma_spatializer_get_directional_attenuation_factor': ptr<ma_spatializer> pSpatializer: f32;
+Ma.spatializer_set_position = 'ma_spatializer_set_position': ptr<ma_spatializer> pSpatializer f32 x f32 y f32 z;
+Ma.spatializer_get_position = 'ma_spatializer_get_position': ptr<ma_spatializer> pSpatializer: ma_vec3f;
+Ma.spatializer_set_direction = 'ma_spatializer_set_direction': ptr<ma_spatializer> pSpatializer f32 x f32 y f32 z;
+Ma.spatializer_get_direction = 'ma_spatializer_get_direction': ptr<ma_spatializer> pSpatializer: ma_vec3f;
+Ma.spatializer_set_velocity = 'ma_spatializer_set_velocity': ptr<ma_spatializer> pSpatializer f32 x f32 y f32 z;
+Ma.spatializer_get_velocity = 'ma_spatializer_get_velocity': ptr<ma_spatializer> pSpatializer: ma_vec3f;
+Ma.spatializer_get_relative_position_and_direction = 'ma_spatializer_get_relative_position_and_direction': ptr<ma_spatializer> pSpatializer ptr<ma_spatializer_listener> pListener ptr<ma_vec3f> pRelativePos ptr<ma_vec3f> pRelativeDir;
+Ma.linear_resampler_config_init = 'ma_linear_resampler_config_init': int format u32 channels u32 sampleRateIn u32 sampleRateOut: ma_linear_resampler_config;
+Ma.linear_resampler_get_heap_size = 'ma_linear_resampler_get_heap_size': ptr<ma_linear_resampler_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.linear_resampler_init_preallocated = 'ma_linear_resampler_init_preallocated': ptr<ma_linear_resampler_config> pConfig ptr<u8> pHeap ptr<ma_linear_resampler> pResampler;
+Ma.linear_resampler_init = 'ma_linear_resampler_init': ptr<ma_linear_resampler_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_linear_resampler> pResampler;
+Ma.linear_resampler_uninit = 'ma_linear_resampler_uninit': ptr<ma_linear_resampler> pResampler ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.linear_resampler_process_pcm_frames = 'ma_linear_resampler_process_pcm_frames': ptr<ma_linear_resampler> pResampler ptr<u8> pFramesIn ptr<u64> pFrameCountIn ptr<u8> pFramesOut ptr<u64> pFrameCountOut;
+Ma.linear_resampler_set_rate = 'ma_linear_resampler_set_rate': ptr<ma_linear_resampler> pResampler u32 sampleRateIn u32 sampleRateOut;
+Ma.linear_resampler_set_rate_ratio = 'ma_linear_resampler_set_rate_ratio': ptr<ma_linear_resampler> pResampler f32 ratioInOut;
+Ma.linear_resampler_get_input_latency = 'ma_linear_resampler_get_input_latency': ptr<ma_linear_resampler> pResampler: u64;
+Ma.linear_resampler_get_output_latency = 'ma_linear_resampler_get_output_latency': ptr<ma_linear_resampler> pResampler: u64;
+Ma.linear_resampler_get_required_input_frame_count = 'ma_linear_resampler_get_required_input_frame_count': ptr<ma_linear_resampler> pResampler u64 outputFrameCount ptr<u64> pInputFrameCount;
+Ma.linear_resampler_get_expected_output_frame_count = 'ma_linear_resampler_get_expected_output_frame_count': ptr<ma_linear_resampler> pResampler u64 inputFrameCount ptr<u64> pOutputFrameCount;
+Ma.linear_resampler_reset = 'ma_linear_resampler_reset': ptr<ma_linear_resampler> pResampler;
+Ma.resampler_config_init = 'ma_resampler_config_init': int format u32 channels u32 sampleRateIn u32 sampleRateOut int algorithm: ma_resampler_config;
+Ma.resampler_get_heap_size = 'ma_resampler_get_heap_size': ptr<ma_resampler_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.resampler_init_preallocated = 'ma_resampler_init_preallocated': ptr<ma_resampler_config> pConfig ptr<u8> pHeap ptr<ma_resampler> pResampler;
+Ma.resampler_init = 'ma_resampler_init': ptr<ma_resampler_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_resampler> pResampler;
+Ma.resampler_uninit = 'ma_resampler_uninit': ptr<ma_resampler> pResampler ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.resampler_process_pcm_frames = 'ma_resampler_process_pcm_frames': ptr<ma_resampler> pResampler ptr<u8> pFramesIn ptr<u64> pFrameCountIn ptr<u8> pFramesOut ptr<u64> pFrameCountOut;
+Ma.resampler_set_rate = 'ma_resampler_set_rate': ptr<ma_resampler> pResampler u32 sampleRateIn u32 sampleRateOut;
+Ma.resampler_set_rate_ratio = 'ma_resampler_set_rate_ratio': ptr<ma_resampler> pResampler f32 ratio;
+Ma.resampler_get_input_latency = 'ma_resampler_get_input_latency': ptr<ma_resampler> pResampler: u64;
+Ma.resampler_get_output_latency = 'ma_resampler_get_output_latency': ptr<ma_resampler> pResampler: u64;
+Ma.resampler_get_required_input_frame_count = 'ma_resampler_get_required_input_frame_count': ptr<ma_resampler> pResampler u64 outputFrameCount ptr<u64> pInputFrameCount;
+Ma.resampler_get_expected_output_frame_count = 'ma_resampler_get_expected_output_frame_count': ptr<ma_resampler> pResampler u64 inputFrameCount ptr<u64> pOutputFrameCount;
+Ma.resampler_reset = 'ma_resampler_reset': ptr<ma_resampler> pResampler;    # Resets the resampler's timer and clears its internal cache.
+Ma.channel_converter_config_init = 'ma_channel_converter_config_init': int format u32 channelsIn ptr<u8> pChannelMapIn u32 channelsOut ptr<u8> pChannelMapOut int mixingMode: ma_channel_converter_config;
+Ma.channel_converter_get_heap_size = 'ma_channel_converter_get_heap_size': ptr<ma_channel_converter_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.channel_converter_init_preallocated = 'ma_channel_converter_init_preallocated': ptr<ma_channel_converter_config> pConfig ptr<u8> pHeap ptr<ma_channel_converter> pConverter;
+Ma.channel_converter_init = 'ma_channel_converter_init': ptr<ma_channel_converter_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_channel_converter> pConverter;
+Ma.channel_converter_uninit = 'ma_channel_converter_uninit': ptr<ma_channel_converter> pConverter ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.channel_converter_process_pcm_frames = 'ma_channel_converter_process_pcm_frames': ptr<ma_channel_converter> pConverter ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount;
+Ma.channel_converter_get_input_channel_map = 'ma_channel_converter_get_input_channel_map': ptr<ma_channel_converter> pConverter ptr<u8> pChannelMap usz channelMapCap;
+Ma.channel_converter_get_output_channel_map = 'ma_channel_converter_get_output_channel_map': ptr<ma_channel_converter> pConverter ptr<u8> pChannelMap usz channelMapCap;
+Ma.data_converter_config_init_default = 'ma_data_converter_config_init_default': : ma_data_converter_config;
+Ma.data_converter_config_init = 'ma_data_converter_config_init': int formatIn int formatOut u32 channelsIn u32 channelsOut u32 sampleRateIn u32 sampleRateOut: ma_data_converter_config;
+Ma.data_converter_get_heap_size = 'ma_data_converter_get_heap_size': ptr<ma_data_converter_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.data_converter_init_preallocated = 'ma_data_converter_init_preallocated': ptr<ma_data_converter_config> pConfig ptr<u8> pHeap ptr<ma_data_converter> pConverter;
+Ma.data_converter_init = 'ma_data_converter_init': ptr<ma_data_converter_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_data_converter> pConverter;
+Ma.data_converter_uninit = 'ma_data_converter_uninit': ptr<ma_data_converter> pConverter ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.data_converter_process_pcm_frames = 'ma_data_converter_process_pcm_frames': ptr<ma_data_converter> pConverter ptr<u8> pFramesIn ptr<u64> pFrameCountIn ptr<u8> pFramesOut ptr<u64> pFrameCountOut;
+Ma.data_converter_set_rate = 'ma_data_converter_set_rate': ptr<ma_data_converter> pConverter u32 sampleRateIn u32 sampleRateOut;
+Ma.data_converter_set_rate_ratio = 'ma_data_converter_set_rate_ratio': ptr<ma_data_converter> pConverter f32 ratioInOut;
+Ma.data_converter_get_input_latency = 'ma_data_converter_get_input_latency': ptr<ma_data_converter> pConverter: u64;
+Ma.data_converter_get_output_latency = 'ma_data_converter_get_output_latency': ptr<ma_data_converter> pConverter: u64;
+Ma.data_converter_get_required_input_frame_count = 'ma_data_converter_get_required_input_frame_count': ptr<ma_data_converter> pConverter u64 outputFrameCount ptr<u64> pInputFrameCount;
+Ma.data_converter_get_expected_output_frame_count = 'ma_data_converter_get_expected_output_frame_count': ptr<ma_data_converter> pConverter u64 inputFrameCount ptr<u64> pOutputFrameCount;
+Ma.data_converter_get_input_channel_map = 'ma_data_converter_get_input_channel_map': ptr<ma_data_converter> pConverter ptr<u8> pChannelMap usz channelMapCap;
+Ma.data_converter_get_output_channel_map = 'ma_data_converter_get_output_channel_map': ptr<ma_data_converter> pConverter ptr<u8> pChannelMap usz channelMapCap;
+Ma.data_converter_reset = 'ma_data_converter_reset': ptr<ma_data_converter> pConverter;
+Ma.pcm_u8_to_s16 = 'ma_pcm_u8_to_s16': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;    # Format Conversion
+Ma.pcm_u8_to_s24 = 'ma_pcm_u8_to_s24': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;    # Format Conversion
+Ma.pcm_u8_to_s32 = 'ma_pcm_u8_to_s32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;    # Format Conversion
+Ma.pcm_u8_to_f32 = 'ma_pcm_u8_to_f32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;    # Format Conversion
+Ma.pcm_s16_to_u8 = 'ma_pcm_s16_to_u8': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;    # Format Conversion
+Ma.pcm_s16_to_s24 = 'ma_pcm_s16_to_s24': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;    # Format Conversion
+Ma.pcm_s16_to_s32 = 'ma_pcm_s16_to_s32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s16_to_f32 = 'ma_pcm_s16_to_f32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s24_to_u8 = 'ma_pcm_s24_to_u8': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s24_to_s16 = 'ma_pcm_s24_to_s16': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s24_to_s32 = 'ma_pcm_s24_to_s32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s24_to_f32 = 'ma_pcm_s24_to_f32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s32_to_u8 = 'ma_pcm_s32_to_u8': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s32_to_s16 = 'ma_pcm_s32_to_s16': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s32_to_s24 = 'ma_pcm_s32_to_s24': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_s32_to_f32 = 'ma_pcm_s32_to_f32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_f32_to_u8 = 'ma_pcm_f32_to_u8': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_f32_to_s16 = 'ma_pcm_f32_to_s16': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_f32_to_s24 = 'ma_pcm_f32_to_s24': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_f32_to_s32 = 'ma_pcm_f32_to_s32': ptr<u8> pOut ptr<u8> pIn u64 count int ditherMode;
+Ma.pcm_convert = 'ma_pcm_convert': ptr<u8> pOut int formatOut ptr<u8> pIn int formatIn u64 sampleCount int ditherMode;
+Ma.convert_pcm_frames_format = 'ma_convert_pcm_frames_format': ptr<u8> pOut int formatOut ptr<u8> pIn int formatIn u64 frameCount u32 channels int ditherMode;
+Ma.deinterleave_pcm_frames = 'ma_deinterleave_pcm_frames': int format u32 channels u64 frameCount ptr<u8> pInterleavedPCMFrames ptr<ptr<u8>> ppDeinterleavedPCMFrames;    # Deinterleaves an interleaved buffer.
+Ma.interleave_pcm_frames = 'ma_interleave_pcm_frames': int format u32 channels u64 frameCount ptr<ptr<u8>> ppDeinterleavedPCMFrames ptr<u8> pInterleavedPCMFrames;    # Interleaves a group of deinterleaved buffers.
+Ma.channel_map_get_channel = 'ma_channel_map_get_channel': ptr<u8> pChannelMap u32 channelCount u32 channelIndex: u8;    # Retrieves the channel position of the specified channel in the given channel map.
+Ma.channel_map_init_blank = 'ma_channel_map_init_blank': ptr<u8> pChannelMap u32 channels;    # Initializes a blank channel map.
+Ma.channel_map_init_standard = 'ma_channel_map_init_standard': int standardChannelMap ptr<u8> pChannelMap usz channelMapCap u32 channels;
+Ma.channel_map_copy = 'ma_channel_map_copy': ptr<u8> pOut ptr<u8> pIn u32 channels;    # Copies a channel map.
+Ma.channel_map_copy_or_default = 'ma_channel_map_copy_or_default': ptr<u8> pOut usz channelMapCapOut ptr<u8> pIn u32 channels;    # Copies a channel map if one is specified, otherwise copies the default channel map.
+Ma.channel_map_is_valid = 'ma_channel_map_is_valid': ptr<u8> pChannelMap u32 channels: u32;    # Determines whether or not a channel map is valid.
+Ma.channel_map_is_equal = 'ma_channel_map_is_equal': ptr<u8> pChannelMapA ptr<u8> pChannelMapB u32 channels: u32;    # Helper for comparing two channel maps for equality.
+Ma.channel_map_is_blank = 'ma_channel_map_is_blank': ptr<u8> pChannelMap u32 channels: u32;    # Helper for determining if a channel map is blank (all channels set to MA_CHANNEL_NONE).
+Ma.channel_map_contains_channel_position = 'ma_channel_map_contains_channel_position': u32 channels ptr<u8> pChannelMap u8 channelPosition: u32;    # Helper for determining whether or not a channel is present in the given channel map.
+Ma.channel_map_find_channel_position = 'ma_channel_map_find_channel_position': u32 channels ptr<u8> pChannelMap u8 channelPosition ptr<u32> pChannelIndex: u32;    # Find a channel position in the given channel map.
+Ma.channel_map_to_string = 'ma_channel_map_to_string': ptr<u8> pChannelMap u32 channels ptr<u8> pBufferOut usz bufferCap: usz;    # Generates a string representing the given channel map.
+Ma.channel_position_to_string = 'ma_channel_position_to_string': u8 channel: ptr<u8>;    # Retrieves a human readable version of a channel position.
+Ma.convert_frames = 'ma_convert_frames': ptr<u8> pOut u64 frameCountOut int formatOut u32 channelsOut u32 sampleRateOut ptr<u8> pIn u64 frameCountIn int formatIn u32 channelsIn u32 sampleRateIn: u64;    # High-level helper for doing a full format conversion in one go.
+Ma.convert_frames_ex = 'ma_convert_frames_ex': ptr<u8> pOut u64 frameCountOut ptr<u8> pIn u64 frameCountIn ptr<ma_data_converter_config> pConfig: u64;    # High-level helper for doing a full format conversion in one go.
+Ma.data_source_config_init = 'ma_data_source_config_init': : ma_data_source_config;
+Ma.data_source_init = 'ma_data_source_init': ptr<ma_data_source_config> pConfig ptr<u8> pDataSource;
+Ma.data_source_uninit = 'ma_data_source_uninit': ptr<u8> pDataSource;
+Ma.data_source_read_pcm_frames = 'ma_data_source_read_pcm_frames': ptr<u8> pDataSource ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.data_source_seek_pcm_frames = 'ma_data_source_seek_pcm_frames': ptr<u8> pDataSource u64 frameCount ptr<u64> pFramesSeeked;
+Ma.data_source_seek_to_pcm_frame = 'ma_data_source_seek_to_pcm_frame': ptr<u8> pDataSource u64 frameIndex;
+Ma.data_source_seek_seconds = 'ma_data_source_seek_seconds': ptr<u8> pDataSource f32 secondCount ptr<f32> pSecondsSeeked;
+Ma.data_source_seek_to_second = 'ma_data_source_seek_to_second': ptr<u8> pDataSource f32 seekPointInSeconds;
+Ma.data_source_get_data_format = 'ma_data_source_get_data_format': ptr<u8> pDataSource ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate ptr<u8> pChannelMap usz channelMapCap;
+Ma.data_source_get_cursor_in_pcm_frames = 'ma_data_source_get_cursor_in_pcm_frames': ptr<u8> pDataSource ptr<u64> pCursor;
+Ma.data_source_get_length_in_pcm_frames = 'ma_data_source_get_length_in_pcm_frames': ptr<u8> pDataSource ptr<u64> pLength;
+Ma.data_source_get_cursor_in_seconds = 'ma_data_source_get_cursor_in_seconds': ptr<u8> pDataSource ptr<f32> pCursor;
+Ma.data_source_get_length_in_seconds = 'ma_data_source_get_length_in_seconds': ptr<u8> pDataSource ptr<f32> pLength;
+Ma.data_source_set_looping = 'ma_data_source_set_looping': ptr<u8> pDataSource u32 isLooping;
+Ma.data_source_is_looping = 'ma_data_source_is_looping': ptr<u8> pDataSource: u32;
+Ma.data_source_set_range_in_pcm_frames = 'ma_data_source_set_range_in_pcm_frames': ptr<u8> pDataSource u64 rangeBegInFrames u64 rangeEndInFrames;
+Ma.data_source_get_range_in_pcm_frames = 'ma_data_source_get_range_in_pcm_frames': ptr<u8> pDataSource ptr<u64> pRangeBegInFrames ptr<u64> pRangeEndInFrames;
+Ma.data_source_set_loop_point_in_pcm_frames = 'ma_data_source_set_loop_point_in_pcm_frames': ptr<u8> pDataSource u64 loopBegInFrames u64 loopEndInFrames;
+Ma.data_source_get_loop_point_in_pcm_frames = 'ma_data_source_get_loop_point_in_pcm_frames': ptr<u8> pDataSource ptr<u64> pLoopBegInFrames ptr<u64> pLoopEndInFrames;
+Ma.data_source_set_current = 'ma_data_source_set_current': ptr<u8> pDataSource ptr<u8> pCurrentDataSource;
+Ma.data_source_get_current = 'ma_data_source_get_current': ptr<u8> pDataSource: ptr<u8>;
+Ma.data_source_set_next = 'ma_data_source_set_next': ptr<u8> pDataSource ptr<u8> pNextDataSource;    # decoder1 -> decoder2
+Ma.data_source_get_next = 'ma_data_source_get_next': ptr<u8> pDataSource: ptr<u8>;
+Ma.data_source_set_next_callback = 'ma_data_source_set_next_callback': ptr<u8> pDataSource ptr<u8> onGetNext;
+Ma.data_source_get_next_callback = 'ma_data_source_get_next_callback': ptr<u8> pDataSource: ptr<u8>;
+Ma.audio_buffer_ref_init = 'ma_audio_buffer_ref_init': int format u32 channels ptr<u8> pData u64 sizeInFrames ptr<ma_audio_buffer_ref> pAudioBufferRef;
+Ma.audio_buffer_ref_uninit = 'ma_audio_buffer_ref_uninit': ptr<ma_audio_buffer_ref> pAudioBufferRef;
+Ma.audio_buffer_ref_set_data = 'ma_audio_buffer_ref_set_data': ptr<ma_audio_buffer_ref> pAudioBufferRef ptr<u8> pData u64 sizeInFrames;
+Ma.audio_buffer_ref_read_pcm_frames = 'ma_audio_buffer_ref_read_pcm_frames': ptr<ma_audio_buffer_ref> pAudioBufferRef ptr<u8> pFramesOut u64 frameCount u32 loop: u64;
+Ma.audio_buffer_ref_seek_to_pcm_frame = 'ma_audio_buffer_ref_seek_to_pcm_frame': ptr<ma_audio_buffer_ref> pAudioBufferRef u64 frameIndex;
+Ma.audio_buffer_ref_map = 'ma_audio_buffer_ref_map': ptr<ma_audio_buffer_ref> pAudioBufferRef ptr<ptr<u8>> ppFramesOut ptr<u64> pFrameCount;
+Ma.audio_buffer_ref_unmap = 'ma_audio_buffer_ref_unmap': ptr<ma_audio_buffer_ref> pAudioBufferRef u64 frameCount;
+Ma.audio_buffer_ref_at_end = 'ma_audio_buffer_ref_at_end': ptr<ma_audio_buffer_ref> pAudioBufferRef: u32;
+Ma.audio_buffer_ref_get_cursor_in_pcm_frames = 'ma_audio_buffer_ref_get_cursor_in_pcm_frames': ptr<ma_audio_buffer_ref> pAudioBufferRef ptr<u64> pCursor;
+Ma.audio_buffer_ref_get_length_in_pcm_frames = 'ma_audio_buffer_ref_get_length_in_pcm_frames': ptr<ma_audio_buffer_ref> pAudioBufferRef ptr<u64> pLength;
+Ma.audio_buffer_ref_get_available_frames = 'ma_audio_buffer_ref_get_available_frames': ptr<ma_audio_buffer_ref> pAudioBufferRef ptr<u64> pAvailableFrames;
+Ma.audio_buffer_config_init = 'ma_audio_buffer_config_init': int format u32 channels u64 sizeInFrames ptr<u8> pData ptr<ma_allocation_callbacks> pAllocationCallbacks: ma_audio_buffer_config;
+Ma.audio_buffer_init = 'ma_audio_buffer_init': ptr<ma_audio_buffer_config> pConfig ptr<ma_audio_buffer> pAudioBuffer;
+Ma.audio_buffer_init_copy = 'ma_audio_buffer_init_copy': ptr<ma_audio_buffer_config> pConfig ptr<ma_audio_buffer> pAudioBuffer;
+Ma.audio_buffer_alloc_and_init = 'ma_audio_buffer_alloc_and_init': ptr<ma_audio_buffer_config> pConfig ptr<ptr<ma_audio_buffer>> ppAudioBuffer;
+Ma.audio_buffer_uninit = 'ma_audio_buffer_uninit': ptr<ma_audio_buffer> pAudioBuffer;
+Ma.audio_buffer_uninit_and_free = 'ma_audio_buffer_uninit_and_free': ptr<ma_audio_buffer> pAudioBuffer;
+Ma.audio_buffer_read_pcm_frames = 'ma_audio_buffer_read_pcm_frames': ptr<ma_audio_buffer> pAudioBuffer ptr<u8> pFramesOut u64 frameCount u32 loop: u64;
+Ma.audio_buffer_seek_to_pcm_frame = 'ma_audio_buffer_seek_to_pcm_frame': ptr<ma_audio_buffer> pAudioBuffer u64 frameIndex;
+Ma.audio_buffer_map = 'ma_audio_buffer_map': ptr<ma_audio_buffer> pAudioBuffer ptr<ptr<u8>> ppFramesOut ptr<u64> pFrameCount;
+Ma.audio_buffer_unmap = 'ma_audio_buffer_unmap': ptr<ma_audio_buffer> pAudioBuffer u64 frameCount;
+Ma.audio_buffer_at_end = 'ma_audio_buffer_at_end': ptr<ma_audio_buffer> pAudioBuffer: u32;
+Ma.audio_buffer_get_cursor_in_pcm_frames = 'ma_audio_buffer_get_cursor_in_pcm_frames': ptr<ma_audio_buffer> pAudioBuffer ptr<u64> pCursor;
+Ma.audio_buffer_get_length_in_pcm_frames = 'ma_audio_buffer_get_length_in_pcm_frames': ptr<ma_audio_buffer> pAudioBuffer ptr<u64> pLength;
+Ma.audio_buffer_get_available_frames = 'ma_audio_buffer_get_available_frames': ptr<ma_audio_buffer> pAudioBuffer ptr<u64> pAvailableFrames;
+Ma.paged_audio_buffer_data_init = 'ma_paged_audio_buffer_data_init': int format u32 channels ptr<ma_paged_audio_buffer_data> pData;
+Ma.paged_audio_buffer_data_uninit = 'ma_paged_audio_buffer_data_uninit': ptr<ma_paged_audio_buffer_data> pData ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.paged_audio_buffer_data_get_head = 'ma_paged_audio_buffer_data_get_head': ptr<ma_paged_audio_buffer_data> pData: ptr<ma_paged_audio_buffer_page>;
+Ma.paged_audio_buffer_data_get_tail = 'ma_paged_audio_buffer_data_get_tail': ptr<ma_paged_audio_buffer_data> pData: ptr<ma_paged_audio_buffer_page>;
+Ma.paged_audio_buffer_data_get_length_in_pcm_frames = 'ma_paged_audio_buffer_data_get_length_in_pcm_frames': ptr<ma_paged_audio_buffer_data> pData ptr<u64> pLength;
+Ma.paged_audio_buffer_data_allocate_page = 'ma_paged_audio_buffer_data_allocate_page': ptr<ma_paged_audio_buffer_data> pData u64 pageSizeInFrames ptr<u8> pInitialData ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ptr<ma_paged_audio_buffer_page>> ppPage;
+Ma.paged_audio_buffer_data_free_page = 'ma_paged_audio_buffer_data_free_page': ptr<ma_paged_audio_buffer_data> pData ptr<ma_paged_audio_buffer_page> pPage ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.paged_audio_buffer_data_append_page = 'ma_paged_audio_buffer_data_append_page': ptr<ma_paged_audio_buffer_data> pData ptr<ma_paged_audio_buffer_page> pPage;
+Ma.paged_audio_buffer_data_allocate_and_append_page = 'ma_paged_audio_buffer_data_allocate_and_append_page': ptr<ma_paged_audio_buffer_data> pData u32 pageSizeInFrames ptr<u8> pInitialData ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.paged_audio_buffer_config_init = 'ma_paged_audio_buffer_config_init': ptr<ma_paged_audio_buffer_data> pData: ma_paged_audio_buffer_config;
+Ma.paged_audio_buffer_init = 'ma_paged_audio_buffer_init': ptr<ma_paged_audio_buffer_config> pConfig ptr<ma_paged_audio_buffer> pPagedAudioBuffer;
+Ma.paged_audio_buffer_uninit = 'ma_paged_audio_buffer_uninit': ptr<ma_paged_audio_buffer> pPagedAudioBuffer;
+Ma.paged_audio_buffer_read_pcm_frames = 'ma_paged_audio_buffer_read_pcm_frames': ptr<ma_paged_audio_buffer> pPagedAudioBuffer ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.paged_audio_buffer_seek_to_pcm_frame = 'ma_paged_audio_buffer_seek_to_pcm_frame': ptr<ma_paged_audio_buffer> pPagedAudioBuffer u64 frameIndex;
+Ma.paged_audio_buffer_get_cursor_in_pcm_frames = 'ma_paged_audio_buffer_get_cursor_in_pcm_frames': ptr<ma_paged_audio_buffer> pPagedAudioBuffer ptr<u64> pCursor;
+Ma.paged_audio_buffer_get_length_in_pcm_frames = 'ma_paged_audio_buffer_get_length_in_pcm_frames': ptr<ma_paged_audio_buffer> pPagedAudioBuffer ptr<u64> pLength;
+Ma.rb_init_ex = 'ma_rb_init_ex': usz subbufferSizeInBytes usz subbufferCount usz subbufferStrideInBytes ptr<u8> pOptionalPreallocatedBuffer ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_rb> pRB;
+Ma.rb_init = 'ma_rb_init': usz bufferSizeInBytes ptr<u8> pOptionalPreallocatedBuffer ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_rb> pRB;
+Ma.rb_uninit = 'ma_rb_uninit': ptr<ma_rb> pRB;
+Ma.rb_reset = 'ma_rb_reset': ptr<ma_rb> pRB;
+Ma.rb_acquire_read = 'ma_rb_acquire_read': ptr<ma_rb> pRB ptr<usz> pSizeInBytes ptr<ptr<u8>> ppBufferOut;
+Ma.rb_commit_read = 'ma_rb_commit_read': ptr<ma_rb> pRB usz sizeInBytes;
+Ma.rb_acquire_write = 'ma_rb_acquire_write': ptr<ma_rb> pRB ptr<usz> pSizeInBytes ptr<ptr<u8>> ppBufferOut;
+Ma.rb_commit_write = 'ma_rb_commit_write': ptr<ma_rb> pRB usz sizeInBytes;
+Ma.rb_seek_read = 'ma_rb_seek_read': ptr<ma_rb> pRB usz offsetInBytes;
+Ma.rb_seek_write = 'ma_rb_seek_write': ptr<ma_rb> pRB usz offsetInBytes;
+Ma.rb_pointer_distance = 'ma_rb_pointer_distance': ptr<ma_rb> pRB;
+Ma.rb_available_read = 'ma_rb_available_read': ptr<ma_rb> pRB: u32;
+Ma.rb_available_write = 'ma_rb_available_write': ptr<ma_rb> pRB: u32;
+Ma.rb_get_subbuffer_size = 'ma_rb_get_subbuffer_size': ptr<ma_rb> pRB: usz;
+Ma.rb_get_subbuffer_stride = 'ma_rb_get_subbuffer_stride': ptr<ma_rb> pRB: usz;
+Ma.rb_get_subbuffer_offset = 'ma_rb_get_subbuffer_offset': ptr<ma_rb> pRB usz subbufferIndex: usz;
+Ma.rb_get_subbuffer_ptr = 'ma_rb_get_subbuffer_ptr': ptr<ma_rb> pRB usz subbufferIndex ptr<u8> pBuffer: ptr<u8>;
+Ma.pcm_rb_init_ex = 'ma_pcm_rb_init_ex': int format u32 channels u32 subbufferSizeInFrames u32 subbufferCount u32 subbufferStrideInFrames ptr<u8> pOptionalPreallocatedBuffer ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_pcm_rb> pRB;
+Ma.pcm_rb_init = 'ma_pcm_rb_init': int format u32 channels u32 bufferSizeInFrames ptr<u8> pOptionalPreallocatedBuffer ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_pcm_rb> pRB;
+Ma.pcm_rb_uninit = 'ma_pcm_rb_uninit': ptr<ma_pcm_rb> pRB;
+Ma.pcm_rb_reset = 'ma_pcm_rb_reset': ptr<ma_pcm_rb> pRB;
+Ma.pcm_rb_acquire_read = 'ma_pcm_rb_acquire_read': ptr<ma_pcm_rb> pRB ptr<u32> pSizeInFrames ptr<ptr<u8>> ppBufferOut;
+Ma.pcm_rb_commit_read = 'ma_pcm_rb_commit_read': ptr<ma_pcm_rb> pRB u32 sizeInFrames;
+Ma.pcm_rb_acquire_write = 'ma_pcm_rb_acquire_write': ptr<ma_pcm_rb> pRB ptr<u32> pSizeInFrames ptr<ptr<u8>> ppBufferOut;
+Ma.pcm_rb_commit_write = 'ma_pcm_rb_commit_write': ptr<ma_pcm_rb> pRB u32 sizeInFrames;
+Ma.pcm_rb_seek_read = 'ma_pcm_rb_seek_read': ptr<ma_pcm_rb> pRB u32 offsetInFrames;
+Ma.pcm_rb_seek_write = 'ma_pcm_rb_seek_write': ptr<ma_pcm_rb> pRB u32 offsetInFrames;
+Ma.pcm_rb_pointer_distance = 'ma_pcm_rb_pointer_distance': ptr<ma_pcm_rb> pRB;
+Ma.pcm_rb_available_read = 'ma_pcm_rb_available_read': ptr<ma_pcm_rb> pRB: u32;
+Ma.pcm_rb_available_write = 'ma_pcm_rb_available_write': ptr<ma_pcm_rb> pRB: u32;
+Ma.pcm_rb_get_subbuffer_size = 'ma_pcm_rb_get_subbuffer_size': ptr<ma_pcm_rb> pRB: u32;
+Ma.pcm_rb_get_subbuffer_stride = 'ma_pcm_rb_get_subbuffer_stride': ptr<ma_pcm_rb> pRB: u32;
+Ma.pcm_rb_get_subbuffer_offset = 'ma_pcm_rb_get_subbuffer_offset': ptr<ma_pcm_rb> pRB u32 subbufferIndex: u32;
+Ma.pcm_rb_get_subbuffer_ptr = 'ma_pcm_rb_get_subbuffer_ptr': ptr<ma_pcm_rb> pRB u32 subbufferIndex ptr<u8> pBuffer: ptr<u8>;
+Ma.pcm_rb_get_format = 'ma_pcm_rb_get_format': ptr<ma_pcm_rb> pRB;
+Ma.pcm_rb_get_channels = 'ma_pcm_rb_get_channels': ptr<ma_pcm_rb> pRB: u32;
+Ma.pcm_rb_get_sample_rate = 'ma_pcm_rb_get_sample_rate': ptr<ma_pcm_rb> pRB: u32;
+Ma.pcm_rb_set_sample_rate = 'ma_pcm_rb_set_sample_rate': ptr<ma_pcm_rb> pRB u32 sampleRate;
+Ma.duplex_rb_init = 'ma_duplex_rb_init': int captureFormat u32 captureChannels u32 sampleRate u32 captureInternalSampleRate u32 captureInternalPeriodSizeInFrames ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_duplex_rb> pRB;
+Ma.duplex_rb_uninit = 'ma_duplex_rb_uninit': ptr<ma_duplex_rb> pRB;
+Ma.result_description = 'ma_result_description': int result: ptr<u8>;    # Retrieves a human readable description of the given result code.
+Ma.malloc = 'ma_malloc': usz sz ptr<ma_allocation_callbacks> pAllocationCallbacks: ptr<u8>;    # malloc()
+Ma.calloc = 'ma_calloc': usz sz ptr<ma_allocation_callbacks> pAllocationCallbacks: ptr<u8>;    # calloc()
+Ma.realloc = 'ma_realloc': ptr<u8> p usz sz ptr<ma_allocation_callbacks> pAllocationCallbacks: ptr<u8>;    # realloc()
+Ma.free = 'ma_free': ptr<u8> p ptr<ma_allocation_callbacks> pAllocationCallbacks;    # free()
+Ma.aligned_malloc = 'ma_aligned_malloc': usz sz usz alignment ptr<ma_allocation_callbacks> pAllocationCallbacks: ptr<u8>;    # Performs an aligned malloc, with the assumption that the alignment is a power of 2.
+Ma.aligned_free = 'ma_aligned_free': ptr<u8> p ptr<ma_allocation_callbacks> pAllocationCallbacks;    # Free's an aligned malloc'd buffer.
+Ma.get_format_name = 'ma_get_format_name': int format: ptr<u8>;    # Retrieves a friendly name for a format.
+Ma.blend_f32 = 'ma_blend_f32': ptr<f32> pOut ptr<f32> pInA ptr<f32> pInB f32 factor u32 channels;    # Blends two frames in floating point format.
+Ma.get_bytes_per_sample = 'ma_get_bytes_per_sample': int format: u32;
+Ma.log_level_to_string = 'ma_log_level_to_string': u32 logLevel: ptr<u8>;    # Converts a log level to a string.
+Ma.spinlock_lock = 'ma_spinlock_lock': ptr<u32> pSpinlock;    # Locks a spinlock.
+Ma.spinlock_lock_noyield = 'ma_spinlock_lock_noyield': ptr<u32> pSpinlock;    # Locks a spinlock, but does not yield() when looping.
+Ma.spinlock_unlock = 'ma_spinlock_unlock': ptr<u32> pSpinlock;    # Unlocks a spinlock.
+Ma.mutex_init = 'ma_mutex_init': ptr<u8> pMutex;    # Creates a mutex.
+Ma.mutex_uninit = 'ma_mutex_uninit': ptr<u8> pMutex;    # Deletes a mutex.
+Ma.mutex_lock = 'ma_mutex_lock': ptr<u8> pMutex;    # Locks a mutex with an infinite timeout.
+Ma.mutex_unlock = 'ma_mutex_unlock': ptr<u8> pMutex;    # Unlocks a mutex.
+Ma.event_init = 'ma_event_init': ptr<ma_event> pEvent;    # Initializes an auto-reset event.
+Ma.event_uninit = 'ma_event_uninit': ptr<ma_event> pEvent;    # Uninitializes an auto-reset event.
+Ma.event_wait = 'ma_event_wait': ptr<ma_event> pEvent;    # Waits for the specified auto-reset event to become signalled.
+Ma.event_signal = 'ma_event_signal': ptr<ma_event> pEvent;    # Signals the specified auto-reset event.
+Ma.semaphore_init = 'ma_semaphore_init': int initialValue ptr<ma_semaphore> pSemaphore;
+Ma.semaphore_uninit = 'ma_semaphore_uninit': ptr<ma_semaphore> pSemaphore;
+Ma.semaphore_wait = 'ma_semaphore_wait': ptr<ma_semaphore> pSemaphore;
+Ma.semaphore_release = 'ma_semaphore_release': ptr<ma_semaphore> pSemaphore;
+Ma.fence_init = 'ma_fence_init': ptr<ma_fence> pFence;
+Ma.fence_uninit = 'ma_fence_uninit': ptr<ma_fence> pFence;
+Ma.fence_acquire = 'ma_fence_acquire': ptr<ma_fence> pFence;
+Ma.fence_release = 'ma_fence_release': ptr<ma_fence> pFence;
+Ma.fence_wait = 'ma_fence_wait': ptr<ma_fence> pFence;
+Ma.async_notification_signal = 'ma_async_notification_signal': ptr<u8> pNotification;
+Ma.async_notification_poll_init = 'ma_async_notification_poll_init': ptr<ma_async_notification_poll> pNotificationPoll;
+Ma.async_notification_poll_is_signalled = 'ma_async_notification_poll_is_signalled': ptr<ma_async_notification_poll> pNotificationPoll: u32;
+Ma.async_notification_event_init = 'ma_async_notification_event_init': ptr<ma_async_notification_event> pNotificationEvent;
+Ma.async_notification_event_uninit = 'ma_async_notification_event_uninit': ptr<ma_async_notification_event> pNotificationEvent;
+Ma.async_notification_event_wait = 'ma_async_notification_event_wait': ptr<ma_async_notification_event> pNotificationEvent;
+Ma.async_notification_event_signal = 'ma_async_notification_event_signal': ptr<ma_async_notification_event> pNotificationEvent;
+Ma.slot_allocator_config_init = 'ma_slot_allocator_config_init': u32 capacity: ma_slot_allocator_config;
+Ma.slot_allocator_get_heap_size = 'ma_slot_allocator_get_heap_size': ptr<ma_slot_allocator_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.slot_allocator_init_preallocated = 'ma_slot_allocator_init_preallocated': ptr<ma_slot_allocator_config> pConfig ptr<u8> pHeap ptr<ma_slot_allocator> pAllocator;
+Ma.slot_allocator_init = 'ma_slot_allocator_init': ptr<ma_slot_allocator_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_slot_allocator> pAllocator;
+Ma.slot_allocator_uninit = 'ma_slot_allocator_uninit': ptr<ma_slot_allocator> pAllocator ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.slot_allocator_alloc = 'ma_slot_allocator_alloc': ptr<ma_slot_allocator> pAllocator ptr<u64> pSlot;
+Ma.slot_allocator_free = 'ma_slot_allocator_free': ptr<ma_slot_allocator> pAllocator u64 slot;
+Ma.job_process = 'ma_job_process': ptr<ma_job> pJob;
+Ma.job_queue_config_init = 'ma_job_queue_config_init': u32 flags u32 capacity: ma_job_queue_config;
+Ma.job_queue_get_heap_size = 'ma_job_queue_get_heap_size': ptr<ma_job_queue_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.job_queue_init_preallocated = 'ma_job_queue_init_preallocated': ptr<ma_job_queue_config> pConfig ptr<u8> pHeap ptr<ma_job_queue> pQueue;
+Ma.job_queue_init = 'ma_job_queue_init': ptr<ma_job_queue_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_job_queue> pQueue;
+Ma.job_queue_uninit = 'ma_job_queue_uninit': ptr<ma_job_queue> pQueue ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.job_queue_post = 'ma_job_queue_post': ptr<ma_job_queue> pQueue ptr<ma_job> pJob;
+Ma.job_queue_next = 'ma_job_queue_next': ptr<ma_job_queue> pQueue ptr<ma_job> pJob;
+Ma.device_job_thread_config_init = 'ma_device_job_thread_config_init': : ma_device_job_thread_config;
+Ma.device_job_thread_init = 'ma_device_job_thread_init': ptr<ma_device_job_thread_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_device_job_thread> pJobThread;
+Ma.device_job_thread_uninit = 'ma_device_job_thread_uninit': ptr<ma_device_job_thread> pJobThread ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.device_job_thread_post = 'ma_device_job_thread_post': ptr<ma_device_job_thread> pJobThread ptr<ma_job> pJob;
+Ma.device_job_thread_next = 'ma_device_job_thread_next': ptr<ma_device_job_thread> pJobThread ptr<ma_job> pJob;
+Ma.device_id_equal = 'ma_device_id_equal': ptr<ma_device_id> pA ptr<ma_device_id> pB: u32;
+Ma.context_config_init = 'ma_context_config_init': : ma_context_config;    # Initializes a `ma_context_config` object.
+Ma.context_init = 'ma_context_init': ptr<int> backends u32 backendCount ptr<ma_context_config> pConfig ptr<ma_context> pContext;
+Ma.context_uninit = 'ma_context_uninit': ptr<ma_context> pContext;
+Ma.context_sizeof = 'ma_context_sizeof': : usz;    # Retrieves the size of the ma_context object.
+Ma.context_get_log = 'ma_context_get_log': ptr<ma_context> pContext: ptr<ma_log>;
+Ma.context_enumerate_devices = 'ma_context_enumerate_devices': ptr<ma_context> pContext ptr<u8> callback ptr<u8> pUserData;
+Ma.context_get_devices = 'ma_context_get_devices': ptr<ma_context> pContext ptr<ptr<ma_device_info>> ppPlaybackDeviceInfos ptr<u32> pPlaybackDeviceCount ptr<ptr<ma_device_info>> ppCaptureDeviceInfos ptr<u32> pCaptureDeviceCount;
+Ma.context_get_device_info = 'ma_context_get_device_info': ptr<ma_context> pContext int deviceType ptr<ma_device_id> pDeviceID ptr<ma_device_info> pDeviceInfo;
+Ma.context_is_loopback_supported = 'ma_context_is_loopback_supported': ptr<ma_context> pContext: u32;    # Determines if the given context supports loopback mode.
+Ma.device_config_init = 'ma_device_config_init': int deviceType: ma_device_config;
+Ma.device_init = 'ma_device_init': ptr<ma_context> pContext ptr<ma_device_config> pConfig ptr<ma_device> pDevice;
+Ma.device_init_ex = 'ma_device_init_ex': ptr<int> backends u32 backendCount ptr<ma_context_config> pContextConfig ptr<ma_device_config> pConfig ptr<ma_device> pDevice;
+Ma.device_uninit = 'ma_device_uninit': ptr<ma_device> pDevice;
+Ma.device_get_context = 'ma_device_get_context': ptr<ma_device> pDevice: ptr<ma_context>;    # Retrieves a pointer to the context that owns the given device.
+Ma.device_get_log = 'ma_device_get_log': ptr<ma_device> pDevice: ptr<ma_log>;    # Helper function for retrieving the log object associated with the context that owns this device.
+Ma.device_get_info = 'ma_device_get_info': ptr<ma_device> pDevice int type ptr<ma_device_info> pDeviceInfo;    # Retrieves information about the device.
+Ma.device_get_name = 'ma_device_get_name': ptr<ma_device> pDevice int type ptr<u8> pName usz nameCap ptr<usz> pLengthNotIncludingNullTerminator;    # Retrieves the name of the device.
+Ma.device_start = 'ma_device_start': ptr<ma_device> pDevice;    # The device is sleeping by default so you'll need to start it manually.
+Ma.device_stop = 'ma_device_stop': ptr<ma_device> pDevice;
+Ma.device_is_started = 'ma_device_is_started': ptr<ma_device> pDevice: u32;    # Determines whether or not the device is started.
+Ma.device_get_state = 'ma_device_get_state': ptr<ma_device> pDevice;
+Ma.device_post_init = 'ma_device_post_init': ptr<ma_device> pDevice int deviceType ptr<ma_device_descriptor> pPlaybackDescriptor ptr<ma_device_descriptor> pCaptureDescriptor;    # Performs post backend initialization routines for setting up internal data conversion.
+Ma.device_set_master_volume = 'ma_device_set_master_volume': ptr<ma_device> pDevice f32 volume;    # Sets the master volume factor for the device.
+Ma.device_get_master_volume = 'ma_device_get_master_volume': ptr<ma_device> pDevice ptr<f32> pVolume;
+Ma.device_set_master_volume_db = 'ma_device_set_master_volume_db': ptr<ma_device> pDevice f32 gainDB;
+Ma.device_get_master_volume_db = 'ma_device_get_master_volume_db': ptr<ma_device> pDevice ptr<f32> pGainDB;
+Ma.device_handle_backend_data_callback = 'ma_device_handle_backend_data_callback': ptr<ma_device> pDevice ptr<u8> pOutput ptr<u8> pInput u32 frameCount;
+Ma.calculate_buffer_size_in_frames_from_descriptor = 'ma_calculate_buffer_size_in_frames_from_descriptor': ptr<ma_device_descriptor> pDescriptor u32 nativeSampleRate int performanceProfile: u32;    # Calculates an appropriate buffer size from a descriptor, native sample rate and performance profile.
+Ma.get_backend_name = 'ma_get_backend_name': int backend: ptr<u8>;    # Retrieves a friendly name for a backend.
+Ma.get_backend_from_name = 'ma_get_backend_from_name': ptr<u8> pBackendName ptr<int> pBackend;    # Retrieves the backend enum from the given name.
+Ma.is_backend_enabled = 'ma_is_backend_enabled': int backend: u32;    # Determines whether or not the given backend is available by the compilation environment.
+Ma.get_enabled_backends = 'ma_get_enabled_backends': ptr<int> pBackends usz backendCap ptr<usz> pBackendCount;
+Ma.is_loopback_supported = 'ma_is_loopback_supported': int backend: u32;    # Determines whether or not loopback mode is support by a backend.
+Ma.calculate_buffer_size_in_milliseconds_from_frames = 'ma_calculate_buffer_size_in_milliseconds_from_frames': u32 bufferSizeInFrames u32 sampleRate: u32;    # Calculates a buffer size in milliseconds (rounded up) from the specified number of frames and sample rate.
+Ma.calculate_buffer_size_in_frames_from_milliseconds = 'ma_calculate_buffer_size_in_frames_from_milliseconds': u32 bufferSizeInMilliseconds u32 sampleRate: u32;    # Calculates a buffer size in frames from the specified number of milliseconds and sample rate.
+Ma.copy_pcm_frames = 'ma_copy_pcm_frames': ptr<u8> dst ptr<u8> src u64 frameCount int format u32 channels;
+Ma.silence_pcm_frames = 'ma_silence_pcm_frames': ptr<u8> p u64 frameCount int format u32 channels;    # Copies silent frames into the given buffer.
+Ma.offset_pcm_frames_ptr = 'ma_offset_pcm_frames_ptr': ptr<u8> p u64 offsetInFrames int format u32 channels: ptr<u8>;    # Offsets a pointer by the specified number of PCM frames.
+Ma.offset_pcm_frames_const_ptr = 'ma_offset_pcm_frames_const_ptr': ptr<u8> p u64 offsetInFrames int format u32 channels: ptr<u8>;    # Offsets a pointer by the specified number of PCM frames.
+Ma.clip_samples_u8 = 'ma_clip_samples_u8': ptr<u8> pDst ptr<i16> pSrc u64 count;    # Clips samples.
+Ma.clip_samples_s16 = 'ma_clip_samples_s16': ptr<i16> pDst ptr<int> pSrc u64 count;    # Clips samples.
+Ma.clip_samples_s24 = 'ma_clip_samples_s24': ptr<u8> pDst ptr<i64> pSrc u64 count;    # Clips samples.
+Ma.clip_samples_s32 = 'ma_clip_samples_s32': ptr<int> pDst ptr<i64> pSrc u64 count;    # Clips samples.
+Ma.clip_samples_f32 = 'ma_clip_samples_f32': ptr<f32> pDst ptr<f32> pSrc u64 count;    # Clips samples.
+Ma.clip_pcm_frames = 'ma_clip_pcm_frames': ptr<u8> pDst ptr<u8> pSrc u64 frameCount int format u32 channels;    # Clips samples.
+Ma.copy_and_apply_volume_factor_u8 = 'ma_copy_and_apply_volume_factor_u8': ptr<u8> pSamplesOut ptr<u8> pSamplesIn u64 sampleCount f32 factor;    # Helper for applying a volume factor to samples.
+Ma.copy_and_apply_volume_factor_s16 = 'ma_copy_and_apply_volume_factor_s16': ptr<i16> pSamplesOut ptr<i16> pSamplesIn u64 sampleCount f32 factor;    # Helper for applying a volume factor to samples.
+Ma.copy_and_apply_volume_factor_s24 = 'ma_copy_and_apply_volume_factor_s24': ptr<u8> pSamplesOut ptr<u8> pSamplesIn u64 sampleCount f32 factor;    # Helper for applying a volume factor to samples.
+Ma.copy_and_apply_volume_factor_s32 = 'ma_copy_and_apply_volume_factor_s32': ptr<int> pSamplesOut ptr<int> pSamplesIn u64 sampleCount f32 factor;    # Helper for applying a volume factor to samples.
+Ma.copy_and_apply_volume_factor_f32 = 'ma_copy_and_apply_volume_factor_f32': ptr<f32> pSamplesOut ptr<f32> pSamplesIn u64 sampleCount f32 factor;    # Helper for applying a volume factor to samples.
+Ma.apply_volume_factor_u8 = 'ma_apply_volume_factor_u8': ptr<u8> pSamples u64 sampleCount f32 factor;
+Ma.apply_volume_factor_s16 = 'ma_apply_volume_factor_s16': ptr<i16> pSamples u64 sampleCount f32 factor;
+Ma.apply_volume_factor_s24 = 'ma_apply_volume_factor_s24': ptr<u8> pSamples u64 sampleCount f32 factor;
+Ma.apply_volume_factor_s32 = 'ma_apply_volume_factor_s32': ptr<int> pSamples u64 sampleCount f32 factor;
+Ma.apply_volume_factor_f32 = 'ma_apply_volume_factor_f32': ptr<f32> pSamples u64 sampleCount f32 factor;
+Ma.copy_and_apply_volume_factor_pcm_frames_u8 = 'ma_copy_and_apply_volume_factor_pcm_frames_u8': ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount u32 channels f32 factor;
+Ma.copy_and_apply_volume_factor_pcm_frames_s16 = 'ma_copy_and_apply_volume_factor_pcm_frames_s16': ptr<i16> pFramesOut ptr<i16> pFramesIn u64 frameCount u32 channels f32 factor;
+Ma.copy_and_apply_volume_factor_pcm_frames_s24 = 'ma_copy_and_apply_volume_factor_pcm_frames_s24': ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount u32 channels f32 factor;
+Ma.copy_and_apply_volume_factor_pcm_frames_s32 = 'ma_copy_and_apply_volume_factor_pcm_frames_s32': ptr<int> pFramesOut ptr<int> pFramesIn u64 frameCount u32 channels f32 factor;
+Ma.copy_and_apply_volume_factor_pcm_frames_f32 = 'ma_copy_and_apply_volume_factor_pcm_frames_f32': ptr<f32> pFramesOut ptr<f32> pFramesIn u64 frameCount u32 channels f32 factor;
+Ma.copy_and_apply_volume_factor_pcm_frames = 'ma_copy_and_apply_volume_factor_pcm_frames': ptr<u8> pFramesOut ptr<u8> pFramesIn u64 frameCount int format u32 channels f32 factor;
+Ma.apply_volume_factor_pcm_frames_u8 = 'ma_apply_volume_factor_pcm_frames_u8': ptr<u8> pFrames u64 frameCount u32 channels f32 factor;
+Ma.apply_volume_factor_pcm_frames_s16 = 'ma_apply_volume_factor_pcm_frames_s16': ptr<i16> pFrames u64 frameCount u32 channels f32 factor;
+Ma.apply_volume_factor_pcm_frames_s24 = 'ma_apply_volume_factor_pcm_frames_s24': ptr<u8> pFrames u64 frameCount u32 channels f32 factor;
+Ma.apply_volume_factor_pcm_frames_s32 = 'ma_apply_volume_factor_pcm_frames_s32': ptr<int> pFrames u64 frameCount u32 channels f32 factor;
+Ma.apply_volume_factor_pcm_frames_f32 = 'ma_apply_volume_factor_pcm_frames_f32': ptr<f32> pFrames u64 frameCount u32 channels f32 factor;
+Ma.apply_volume_factor_pcm_frames = 'ma_apply_volume_factor_pcm_frames': ptr<u8> pFrames u64 frameCount int format u32 channels f32 factor;
+Ma.copy_and_apply_volume_factor_per_channel_f32 = 'ma_copy_and_apply_volume_factor_per_channel_f32': ptr<f32> pFramesOut ptr<f32> pFramesIn u64 frameCount u32 channels ptr<f32> pChannelGains;
+Ma.copy_and_apply_volume_and_clip_samples_u8 = 'ma_copy_and_apply_volume_and_clip_samples_u8': ptr<u8> pDst ptr<i16> pSrc u64 count f32 volume;
+Ma.copy_and_apply_volume_and_clip_samples_s16 = 'ma_copy_and_apply_volume_and_clip_samples_s16': ptr<i16> pDst ptr<int> pSrc u64 count f32 volume;
+Ma.copy_and_apply_volume_and_clip_samples_s24 = 'ma_copy_and_apply_volume_and_clip_samples_s24': ptr<u8> pDst ptr<i64> pSrc u64 count f32 volume;
+Ma.copy_and_apply_volume_and_clip_samples_s32 = 'ma_copy_and_apply_volume_and_clip_samples_s32': ptr<int> pDst ptr<i64> pSrc u64 count f32 volume;
+Ma.copy_and_apply_volume_and_clip_samples_f32 = 'ma_copy_and_apply_volume_and_clip_samples_f32': ptr<f32> pDst ptr<f32> pSrc u64 count f32 volume;
+Ma.copy_and_apply_volume_and_clip_pcm_frames = 'ma_copy_and_apply_volume_and_clip_pcm_frames': ptr<u8> pDst ptr<u8> pSrc u64 frameCount int format u32 channels f32 volume;
+Ma.volume_linear_to_db = 'ma_volume_linear_to_db': f32 factor: f32;    # Helper for converting a linear factor to gain in decibels.
+Ma.volume_db_to_linear = 'ma_volume_db_to_linear': f32 gain: f32;
+Ma.mix_pcm_frames_f32 = 'ma_mix_pcm_frames_f32': ptr<f32> pDst ptr<f32> pSrc u64 frameCount u32 channels f32 volume;    # Mixes the specified number of frames in floating point format with a volume factor.
+Ma.vfs_open = 'ma_vfs_open': ptr<u8> pVFS ptr<u8> pFilePath u32 openMode ptr<ptr<u8>> pFile;
+Ma.vfs_open_w = 'ma_vfs_open_w': ptr<u8> pVFS ptr<wchar_t> pFilePath u32 openMode ptr<ptr<u8>> pFile;
+Ma.vfs_close = 'ma_vfs_close': ptr<u8> pVFS ptr<u8> file;
+Ma.vfs_read = 'ma_vfs_read': ptr<u8> pVFS ptr<u8> file ptr<u8> pDst usz sizeInBytes ptr<usz> pBytesRead;
+Ma.vfs_write = 'ma_vfs_write': ptr<u8> pVFS ptr<u8> file ptr<u8> pSrc usz sizeInBytes ptr<usz> pBytesWritten;
+Ma.vfs_seek = 'ma_vfs_seek': ptr<u8> pVFS ptr<u8> file i64 offset int origin;
+Ma.vfs_tell = 'ma_vfs_tell': ptr<u8> pVFS ptr<u8> file ptr<i64> pCursor;
+Ma.vfs_info = 'ma_vfs_info': ptr<u8> pVFS ptr<u8> file ptr<ma_file_info> pInfo;
+Ma.vfs_open_and_read_file = 'ma_vfs_open_and_read_file': ptr<u8> pVFS ptr<u8> pFilePath ptr<ptr<u8>> ppData ptr<usz> pSize ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.default_vfs_init = 'ma_default_vfs_init': ptr<ma_default_vfs> pVFS ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.decoding_backend_config_init = 'ma_decoding_backend_config_init': int preferredFormat u32 seekPointCount: ma_decoding_backend_config;
+Ma.decoder_config_init = 'ma_decoder_config_init': int outputFormat u32 outputChannels u32 outputSampleRate: ma_decoder_config;
+Ma.decoder_config_init_default = 'ma_decoder_config_init_default': : ma_decoder_config;
+Ma.decoder_init = 'ma_decoder_init': ptr<u8> onRead ptr<u8> onSeek ptr<u8> pUserData ptr<ma_decoder_config> pConfig ptr<ma_decoder> pDecoder;
+Ma.decoder_init_memory = 'ma_decoder_init_memory': ptr<u8> pData usz dataSize ptr<ma_decoder_config> pConfig ptr<ma_decoder> pDecoder;
+Ma.decoder_init_vfs = 'ma_decoder_init_vfs': ptr<u8> pVFS ptr<u8> pFilePath ptr<ma_decoder_config> pConfig ptr<ma_decoder> pDecoder;
+Ma.decoder_init_vfs_w = 'ma_decoder_init_vfs_w': ptr<u8> pVFS ptr<wchar_t> pFilePath ptr<ma_decoder_config> pConfig ptr<ma_decoder> pDecoder;
+Ma.decoder_init_file = 'ma_decoder_init_file': ptr<u8> pFilePath ptr<ma_decoder_config> pConfig ptr<ma_decoder> pDecoder;
+Ma.decoder_init_file_w = 'ma_decoder_init_file_w': ptr<wchar_t> pFilePath ptr<ma_decoder_config> pConfig ptr<ma_decoder> pDecoder;
+Ma.decoder_uninit = 'ma_decoder_uninit': ptr<ma_decoder> pDecoder;
+Ma.decoder_read_pcm_frames = 'ma_decoder_read_pcm_frames': ptr<ma_decoder> pDecoder ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.decoder_seek_to_pcm_frame = 'ma_decoder_seek_to_pcm_frame': ptr<ma_decoder> pDecoder u64 frameIndex;
+Ma.decoder_get_data_format = 'ma_decoder_get_data_format': ptr<ma_decoder> pDecoder ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate ptr<u8> pChannelMap usz channelMapCap;    # Retrieves the decoder's output data format.
+Ma.decoder_get_cursor_in_pcm_frames = 'ma_decoder_get_cursor_in_pcm_frames': ptr<ma_decoder> pDecoder ptr<u64> pCursor;    # Retrieves the current position of the read cursor in PCM frames.
+Ma.decoder_get_length_in_pcm_frames = 'ma_decoder_get_length_in_pcm_frames': ptr<ma_decoder> pDecoder ptr<u64> pLength;    # Retrieves the length of the decoder in PCM frames.
+Ma.decoder_get_available_frames = 'ma_decoder_get_available_frames': ptr<ma_decoder> pDecoder ptr<u64> pAvailableFrames;    # Retrieves the number of frames that can be read before reaching the end.
+Ma.decode_from_vfs = 'ma_decode_from_vfs': ptr<u8> pVFS ptr<u8> pFilePath ptr<ma_decoder_config> pConfig ptr<u64> pFrameCountOut ptr<ptr<u8>> ppPCMFramesOut;    # Helper for opening and decoding a file into a heap allocated block of memory.
+Ma.decode_file = 'ma_decode_file': ptr<u8> pFilePath ptr<ma_decoder_config> pConfig ptr<u64> pFrameCountOut ptr<ptr<u8>> ppPCMFramesOut;    # Helper for opening and decoding a file into a heap allocated block of memory.
+Ma.decode_memory = 'ma_decode_memory': ptr<u8> pData usz dataSize ptr<ma_decoder_config> pConfig ptr<u64> pFrameCountOut ptr<ptr<u8>> ppPCMFramesOut;    # Helper for opening and decoding a file into a heap allocated block of memory.
+Ma.encoder_config_init = 'ma_encoder_config_init': int encodingFormat int format u32 channels u32 sampleRate: ma_encoder_config;
+Ma.encoder_init = 'ma_encoder_init': ptr<u8> onWrite ptr<u8> onSeek ptr<u8> pUserData ptr<ma_encoder_config> pConfig ptr<ma_encoder> pEncoder;
+Ma.encoder_init_vfs = 'ma_encoder_init_vfs': ptr<u8> pVFS ptr<u8> pFilePath ptr<ma_encoder_config> pConfig ptr<ma_encoder> pEncoder;
+Ma.encoder_init_vfs_w = 'ma_encoder_init_vfs_w': ptr<u8> pVFS ptr<wchar_t> pFilePath ptr<ma_encoder_config> pConfig ptr<ma_encoder> pEncoder;
+Ma.encoder_init_file = 'ma_encoder_init_file': ptr<u8> pFilePath ptr<ma_encoder_config> pConfig ptr<ma_encoder> pEncoder;
+Ma.encoder_init_file_w = 'ma_encoder_init_file_w': ptr<wchar_t> pFilePath ptr<ma_encoder_config> pConfig ptr<ma_encoder> pEncoder;
+Ma.encoder_uninit = 'ma_encoder_uninit': ptr<ma_encoder> pEncoder;
+Ma.encoder_write_pcm_frames = 'ma_encoder_write_pcm_frames': ptr<ma_encoder> pEncoder ptr<u8> pFramesIn u64 frameCount ptr<u64> pFramesWritten;
+Ma.waveform_config_init = 'ma_waveform_config_init': int format u32 channels u32 sampleRate int type f64 amplitude f64 frequency: ma_waveform_config;
+Ma.waveform_init = 'ma_waveform_init': ptr<ma_waveform_config> pConfig ptr<ma_waveform> pWaveform;
+Ma.waveform_uninit = 'ma_waveform_uninit': ptr<ma_waveform> pWaveform;
+Ma.waveform_read_pcm_frames = 'ma_waveform_read_pcm_frames': ptr<ma_waveform> pWaveform ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.waveform_seek_to_pcm_frame = 'ma_waveform_seek_to_pcm_frame': ptr<ma_waveform> pWaveform u64 frameIndex;
+Ma.waveform_set_amplitude = 'ma_waveform_set_amplitude': ptr<ma_waveform> pWaveform f64 amplitude;
+Ma.waveform_set_frequency = 'ma_waveform_set_frequency': ptr<ma_waveform> pWaveform f64 frequency;
+Ma.waveform_set_type = 'ma_waveform_set_type': ptr<ma_waveform> pWaveform int type;
+Ma.waveform_set_sample_rate = 'ma_waveform_set_sample_rate': ptr<ma_waveform> pWaveform u32 sampleRate;
+Ma.pulsewave_config_init = 'ma_pulsewave_config_init': int format u32 channels u32 sampleRate f64 dutyCycle f64 amplitude f64 frequency: ma_pulsewave_config;
+Ma.pulsewave_init = 'ma_pulsewave_init': ptr<ma_pulsewave_config> pConfig ptr<ma_pulsewave> pWaveform;
+Ma.pulsewave_uninit = 'ma_pulsewave_uninit': ptr<ma_pulsewave> pWaveform;
+Ma.pulsewave_read_pcm_frames = 'ma_pulsewave_read_pcm_frames': ptr<ma_pulsewave> pWaveform ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.pulsewave_seek_to_pcm_frame = 'ma_pulsewave_seek_to_pcm_frame': ptr<ma_pulsewave> pWaveform u64 frameIndex;
+Ma.pulsewave_set_amplitude = 'ma_pulsewave_set_amplitude': ptr<ma_pulsewave> pWaveform f64 amplitude;
+Ma.pulsewave_set_frequency = 'ma_pulsewave_set_frequency': ptr<ma_pulsewave> pWaveform f64 frequency;
+Ma.pulsewave_set_sample_rate = 'ma_pulsewave_set_sample_rate': ptr<ma_pulsewave> pWaveform u32 sampleRate;
+Ma.pulsewave_set_duty_cycle = 'ma_pulsewave_set_duty_cycle': ptr<ma_pulsewave> pWaveform f64 dutyCycle;
+Ma.noise_config_init = 'ma_noise_config_init': int format u32 channels int type int seed f64 amplitude: ma_noise_config;
+Ma.noise_get_heap_size = 'ma_noise_get_heap_size': ptr<ma_noise_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.noise_init_preallocated = 'ma_noise_init_preallocated': ptr<ma_noise_config> pConfig ptr<u8> pHeap ptr<ma_noise> pNoise;
+Ma.noise_init = 'ma_noise_init': ptr<ma_noise_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_noise> pNoise;
+Ma.noise_uninit = 'ma_noise_uninit': ptr<ma_noise> pNoise ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.noise_read_pcm_frames = 'ma_noise_read_pcm_frames': ptr<ma_noise> pNoise ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.noise_set_amplitude = 'ma_noise_set_amplitude': ptr<ma_noise> pNoise f64 amplitude;
+Ma.noise_set_seed = 'ma_noise_set_seed': ptr<ma_noise> pNoise int seed;
+Ma.noise_set_type = 'ma_noise_set_type': ptr<ma_noise> pNoise int type;
+Ma.resource_manager_pipeline_notifications_init = 'ma_resource_manager_pipeline_notifications_init': : ma_resource_manager_pipeline_notifications;
+Ma.resource_manager_data_source_config_init = 'ma_resource_manager_data_source_config_init': : ma_resource_manager_data_source_config;
+Ma.resource_manager_config_init = 'ma_resource_manager_config_init': : ma_resource_manager_config;
+Ma.resource_manager_init = 'ma_resource_manager_init': ptr<ma_resource_manager_config> pConfig ptr<ma_resource_manager> pResourceManager;
+Ma.resource_manager_uninit = 'ma_resource_manager_uninit': ptr<ma_resource_manager> pResourceManager;    # Init.
+Ma.resource_manager_get_log = 'ma_resource_manager_get_log': ptr<ma_resource_manager> pResourceManager: ptr<ma_log>;    # Init.
+Ma.resource_manager_register_file = 'ma_resource_manager_register_file': ptr<ma_resource_manager> pResourceManager ptr<u8> pFilePath u32 flags;
+Ma.resource_manager_register_file_w = 'ma_resource_manager_register_file_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pFilePath u32 flags;    # Registration.
+Ma.resource_manager_register_decoded_data = 'ma_resource_manager_register_decoded_data': ptr<ma_resource_manager> pResourceManager ptr<u8> pName ptr<u8> pData u64 frameCount int format u32 channels u32 sampleRate;
+Ma.resource_manager_register_decoded_data_w = 'ma_resource_manager_register_decoded_data_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pName ptr<u8> pData u64 frameCount int format u32 channels u32 sampleRate;
+Ma.resource_manager_register_encoded_data = 'ma_resource_manager_register_encoded_data': ptr<ma_resource_manager> pResourceManager ptr<u8> pName ptr<u8> pData usz sizeInBytes;
+Ma.resource_manager_register_encoded_data_w = 'ma_resource_manager_register_encoded_data_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pName ptr<u8> pData usz sizeInBytes;
+Ma.resource_manager_unregister_file = 'ma_resource_manager_unregister_file': ptr<ma_resource_manager> pResourceManager ptr<u8> pFilePath;
+Ma.resource_manager_unregister_file_w = 'ma_resource_manager_unregister_file_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pFilePath;
+Ma.resource_manager_unregister_data = 'ma_resource_manager_unregister_data': ptr<ma_resource_manager> pResourceManager ptr<u8> pName;
+Ma.resource_manager_unregister_data_w = 'ma_resource_manager_unregister_data_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pName;
+Ma.resource_manager_data_buffer_init_ex = 'ma_resource_manager_data_buffer_init_ex': ptr<ma_resource_manager> pResourceManager ptr<ma_resource_manager_data_source_config> pConfig ptr<ma_resource_manager_data_buffer> pDataBuffer;    # Data Buffers.
+Ma.resource_manager_data_buffer_init = 'ma_resource_manager_data_buffer_init': ptr<ma_resource_manager> pResourceManager ptr<u8> pFilePath u32 flags ptr<ma_resource_manager_pipeline_notifications> pNotifications ptr<ma_resource_manager_data_buffer> pDataBuffer;    # Data Buffers.
+Ma.resource_manager_data_buffer_init_w = 'ma_resource_manager_data_buffer_init_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pFilePath u32 flags ptr<ma_resource_manager_pipeline_notifications> pNotifications ptr<ma_resource_manager_data_buffer> pDataBuffer;    # Data Buffers.
+Ma.resource_manager_data_buffer_init_copy = 'ma_resource_manager_data_buffer_init_copy': ptr<ma_resource_manager> pResourceManager ptr<ma_resource_manager_data_buffer> pExistingDataBuffer ptr<ma_resource_manager_data_buffer> pDataBuffer;    # Data Buffers.
+Ma.resource_manager_data_buffer_uninit = 'ma_resource_manager_data_buffer_uninit': ptr<ma_resource_manager_data_buffer> pDataBuffer;    # Data Buffers.
+Ma.resource_manager_data_buffer_read_pcm_frames = 'ma_resource_manager_data_buffer_read_pcm_frames': ptr<ma_resource_manager_data_buffer> pDataBuffer ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;    # Data Buffers.
+Ma.resource_manager_data_buffer_seek_to_pcm_frame = 'ma_resource_manager_data_buffer_seek_to_pcm_frame': ptr<ma_resource_manager_data_buffer> pDataBuffer u64 frameIndex;
+Ma.resource_manager_data_buffer_get_data_format = 'ma_resource_manager_data_buffer_get_data_format': ptr<ma_resource_manager_data_buffer> pDataBuffer ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate ptr<u8> pChannelMap usz channelMapCap;
+Ma.resource_manager_data_buffer_get_cursor_in_pcm_frames = 'ma_resource_manager_data_buffer_get_cursor_in_pcm_frames': ptr<ma_resource_manager_data_buffer> pDataBuffer ptr<u64> pCursor;
+Ma.resource_manager_data_buffer_get_length_in_pcm_frames = 'ma_resource_manager_data_buffer_get_length_in_pcm_frames': ptr<ma_resource_manager_data_buffer> pDataBuffer ptr<u64> pLength;
+Ma.resource_manager_data_buffer_result = 'ma_resource_manager_data_buffer_result': ptr<ma_resource_manager_data_buffer> pDataBuffer;
+Ma.resource_manager_data_buffer_set_looping = 'ma_resource_manager_data_buffer_set_looping': ptr<ma_resource_manager_data_buffer> pDataBuffer u32 isLooping;
+Ma.resource_manager_data_buffer_is_looping = 'ma_resource_manager_data_buffer_is_looping': ptr<ma_resource_manager_data_buffer> pDataBuffer: u32;
+Ma.resource_manager_data_buffer_get_available_frames = 'ma_resource_manager_data_buffer_get_available_frames': ptr<ma_resource_manager_data_buffer> pDataBuffer ptr<u64> pAvailableFrames;
+Ma.resource_manager_data_stream_init_ex = 'ma_resource_manager_data_stream_init_ex': ptr<ma_resource_manager> pResourceManager ptr<ma_resource_manager_data_source_config> pConfig ptr<ma_resource_manager_data_stream> pDataStream;    # Data Streams.
+Ma.resource_manager_data_stream_init = 'ma_resource_manager_data_stream_init': ptr<ma_resource_manager> pResourceManager ptr<u8> pFilePath u32 flags ptr<ma_resource_manager_pipeline_notifications> pNotifications ptr<ma_resource_manager_data_stream> pDataStream;    # Data Streams.
+Ma.resource_manager_data_stream_init_w = 'ma_resource_manager_data_stream_init_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pFilePath u32 flags ptr<ma_resource_manager_pipeline_notifications> pNotifications ptr<ma_resource_manager_data_stream> pDataStream;    # Data Streams.
+Ma.resource_manager_data_stream_uninit = 'ma_resource_manager_data_stream_uninit': ptr<ma_resource_manager_data_stream> pDataStream;    # Data Streams.
+Ma.resource_manager_data_stream_read_pcm_frames = 'ma_resource_manager_data_stream_read_pcm_frames': ptr<ma_resource_manager_data_stream> pDataStream ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;    # Data Streams.
+Ma.resource_manager_data_stream_seek_to_pcm_frame = 'ma_resource_manager_data_stream_seek_to_pcm_frame': ptr<ma_resource_manager_data_stream> pDataStream u64 frameIndex;    # Data Streams.
+Ma.resource_manager_data_stream_get_data_format = 'ma_resource_manager_data_stream_get_data_format': ptr<ma_resource_manager_data_stream> pDataStream ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate ptr<u8> pChannelMap usz channelMapCap;
+Ma.resource_manager_data_stream_get_cursor_in_pcm_frames = 'ma_resource_manager_data_stream_get_cursor_in_pcm_frames': ptr<ma_resource_manager_data_stream> pDataStream ptr<u64> pCursor;
+Ma.resource_manager_data_stream_get_length_in_pcm_frames = 'ma_resource_manager_data_stream_get_length_in_pcm_frames': ptr<ma_resource_manager_data_stream> pDataStream ptr<u64> pLength;
+Ma.resource_manager_data_stream_result = 'ma_resource_manager_data_stream_result': ptr<ma_resource_manager_data_stream> pDataStream;
+Ma.resource_manager_data_stream_set_looping = 'ma_resource_manager_data_stream_set_looping': ptr<ma_resource_manager_data_stream> pDataStream u32 isLooping;
+Ma.resource_manager_data_stream_is_looping = 'ma_resource_manager_data_stream_is_looping': ptr<ma_resource_manager_data_stream> pDataStream: u32;
+Ma.resource_manager_data_stream_get_available_frames = 'ma_resource_manager_data_stream_get_available_frames': ptr<ma_resource_manager_data_stream> pDataStream ptr<u64> pAvailableFrames;
+Ma.resource_manager_data_source_init_ex = 'ma_resource_manager_data_source_init_ex': ptr<ma_resource_manager> pResourceManager ptr<ma_resource_manager_data_source_config> pConfig ptr<ma_resource_manager_data_source> pDataSource;    # Data Sources.
+Ma.resource_manager_data_source_init = 'ma_resource_manager_data_source_init': ptr<ma_resource_manager> pResourceManager ptr<u8> pName u32 flags ptr<ma_resource_manager_pipeline_notifications> pNotifications ptr<ma_resource_manager_data_source> pDataSource;    # Refcount = 1. Initial load.
+Ma.resource_manager_data_source_init_w = 'ma_resource_manager_data_source_init_w': ptr<ma_resource_manager> pResourceManager ptr<wchar_t> pName u32 flags ptr<ma_resource_manager_pipeline_notifications> pNotifications ptr<ma_resource_manager_data_source> pDataSource;    # Data Sources.
+Ma.resource_manager_data_source_init_copy = 'ma_resource_manager_data_source_init_copy': ptr<ma_resource_manager> pResourceManager ptr<ma_resource_manager_data_source> pExistingDataSource ptr<ma_resource_manager_data_source> pDataSource;    # Data Sources.
+Ma.resource_manager_data_source_uninit = 'ma_resource_manager_data_source_uninit': ptr<ma_resource_manager_data_source> pDataSource;    # Refcount = 0. Unloaded.
+Ma.resource_manager_data_source_read_pcm_frames = 'ma_resource_manager_data_source_read_pcm_frames': ptr<ma_resource_manager_data_source> pDataSource ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.resource_manager_data_source_seek_to_pcm_frame = 'ma_resource_manager_data_source_seek_to_pcm_frame': ptr<ma_resource_manager_data_source> pDataSource u64 frameIndex;
+Ma.resource_manager_data_source_get_data_format = 'ma_resource_manager_data_source_get_data_format': ptr<ma_resource_manager_data_source> pDataSource ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate ptr<u8> pChannelMap usz channelMapCap;
+Ma.resource_manager_data_source_get_cursor_in_pcm_frames = 'ma_resource_manager_data_source_get_cursor_in_pcm_frames': ptr<ma_resource_manager_data_source> pDataSource ptr<u64> pCursor;
+Ma.resource_manager_data_source_get_length_in_pcm_frames = 'ma_resource_manager_data_source_get_length_in_pcm_frames': ptr<ma_resource_manager_data_source> pDataSource ptr<u64> pLength;
+Ma.resource_manager_data_source_result = 'ma_resource_manager_data_source_result': ptr<ma_resource_manager_data_source> pDataSource;
+Ma.resource_manager_data_source_set_looping = 'ma_resource_manager_data_source_set_looping': ptr<ma_resource_manager_data_source> pDataSource u32 isLooping;
+Ma.resource_manager_data_source_is_looping = 'ma_resource_manager_data_source_is_looping': ptr<ma_resource_manager_data_source> pDataSource: u32;
+Ma.resource_manager_data_source_get_available_frames = 'ma_resource_manager_data_source_get_available_frames': ptr<ma_resource_manager_data_source> pDataSource ptr<u64> pAvailableFrames;
+Ma.resource_manager_post_job = 'ma_resource_manager_post_job': ptr<ma_resource_manager> pResourceManager ptr<ma_job> pJob;    # Job management.
+Ma.resource_manager_post_job_quit = 'ma_resource_manager_post_job_quit': ptr<ma_resource_manager> pResourceManager;    # Job management.
+Ma.resource_manager_next_job = 'ma_resource_manager_next_job': ptr<ma_resource_manager> pResourceManager ptr<ma_job> pJob;
+Ma.resource_manager_process_job = 'ma_resource_manager_process_job': ptr<ma_resource_manager> pResourceManager ptr<ma_job> pJob;
+Ma.resource_manager_process_next_job = 'ma_resource_manager_process_next_job': ptr<ma_resource_manager> pResourceManager;
+Ma.node_config_init = 'ma_node_config_init': : ma_node_config;
+Ma.node_get_heap_size = 'ma_node_get_heap_size': ptr<ma_node_graph> pNodeGraph ptr<ma_node_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.node_init_preallocated = 'ma_node_init_preallocated': ptr<ma_node_graph> pNodeGraph ptr<ma_node_config> pConfig ptr<u8> pHeap ptr<u8> pNode;
+Ma.node_init = 'ma_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<u8> pNode;
+Ma.node_uninit = 'ma_node_uninit': ptr<u8> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.node_get_node_graph = 'ma_node_get_node_graph': ptr<u8> pNode: ptr<ma_node_graph>;
+Ma.node_get_input_bus_count = 'ma_node_get_input_bus_count': ptr<u8> pNode: u32;
+Ma.node_get_output_bus_count = 'ma_node_get_output_bus_count': ptr<u8> pNode: u32;
+Ma.node_get_input_channels = 'ma_node_get_input_channels': ptr<u8> pNode u32 inputBusIndex: u32;
+Ma.node_get_output_channels = 'ma_node_get_output_channels': ptr<u8> pNode u32 outputBusIndex: u32;
+Ma.node_attach_output_bus = 'ma_node_attach_output_bus': ptr<u8> pNode u32 outputBusIndex ptr<u8> pOtherNode u32 otherNodeInputBusIndex;    # Attach directly to the endpoint.
+Ma.node_detach_output_bus = 'ma_node_detach_output_bus': ptr<u8> pNode u32 outputBusIndex;
+Ma.node_detach_all_output_buses = 'ma_node_detach_all_output_buses': ptr<u8> pNode;
+Ma.node_set_output_bus_volume = 'ma_node_set_output_bus_volume': ptr<u8> pNode u32 outputBusIndex f32 volume;
+Ma.node_get_output_bus_volume = 'ma_node_get_output_bus_volume': ptr<u8> pNode u32 outputBusIndex: f32;
+Ma.node_set_state = 'ma_node_set_state': ptr<u8> pNode int state;    # The default state.
+Ma.node_get_state = 'ma_node_get_state': ptr<u8> pNode;
+Ma.node_set_state_time = 'ma_node_set_state_time': ptr<u8> pNode int state u64 globalTime;    # Delay starting to 1 second.
+Ma.node_get_state_time = 'ma_node_get_state_time': ptr<u8> pNode int state: u64;
+Ma.node_get_state_by_time = 'ma_node_get_state_by_time': ptr<u8> pNode u64 globalTime;
+Ma.node_get_state_by_time_range = 'ma_node_get_state_by_time_range': ptr<u8> pNode u64 globalTimeBeg u64 globalTimeEnd;
+Ma.node_get_time = 'ma_node_get_time': ptr<u8> pNode: u64;
+Ma.node_set_time = 'ma_node_set_time': ptr<u8> pNode u64 localTime;
+Ma.node_graph_config_init = 'ma_node_graph_config_init': u32 channels: ma_node_graph_config;
+Ma.node_graph_init = 'ma_node_graph_init': ptr<ma_node_graph_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_node_graph> pNodeGraph;    # Second parameter is a pointer to allocation callbacks.
+Ma.node_graph_uninit = 'ma_node_graph_uninit': ptr<ma_node_graph> pNodeGraph ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.node_graph_get_endpoint = 'ma_node_graph_get_endpoint': ptr<ma_node_graph> pNodeGraph: ptr<u8>;    # Attach directly to the endpoint.
+Ma.node_graph_read_pcm_frames = 'ma_node_graph_read_pcm_frames': ptr<ma_node_graph> pNodeGraph ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.node_graph_get_channels = 'ma_node_graph_get_channels': ptr<ma_node_graph> pNodeGraph: u32;
+Ma.node_graph_get_time = 'ma_node_graph_get_time': ptr<ma_node_graph> pNodeGraph: u64;
+Ma.node_graph_set_time = 'ma_node_graph_set_time': ptr<ma_node_graph> pNodeGraph u64 globalTime;
+Ma.node_graph_get_processing_size_in_frames = 'ma_node_graph_get_processing_size_in_frames': ptr<ma_node_graph> pNodeGraph: u32;
+Ma.data_source_node_config_init = 'ma_data_source_node_config_init': ptr<u8> pDataSource: ma_data_source_node_config;
+Ma.data_source_node_init = 'ma_data_source_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_data_source_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_data_source_node> pDataSourceNode;
+Ma.data_source_node_uninit = 'ma_data_source_node_uninit': ptr<ma_data_source_node> pDataSourceNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.data_source_node_set_looping = 'ma_data_source_node_set_looping': ptr<ma_data_source_node> pDataSourceNode u32 isLooping;
+Ma.data_source_node_is_looping = 'ma_data_source_node_is_looping': ptr<ma_data_source_node> pDataSourceNode: u32;
+Ma.splitter_node_config_init = 'ma_splitter_node_config_init': u32 channels: ma_splitter_node_config;
+Ma.splitter_node_init = 'ma_splitter_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_splitter_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_splitter_node> pSplitterNode;
+Ma.splitter_node_uninit = 'ma_splitter_node_uninit': ptr<ma_splitter_node> pSplitterNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.biquad_node_config_init = 'ma_biquad_node_config_init': u32 channels f32 b0 f32 b1 f32 b2 f32 a0 f32 a1 f32 a2: ma_biquad_node_config;
+Ma.biquad_node_init = 'ma_biquad_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_biquad_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_biquad_node> pNode;
+Ma.biquad_node_reinit = 'ma_biquad_node_reinit': ptr<ma_biquad_config> pConfig ptr<ma_biquad_node> pNode;
+Ma.biquad_node_uninit = 'ma_biquad_node_uninit': ptr<ma_biquad_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.lpf_node_config_init = 'ma_lpf_node_config_init': u32 channels u32 sampleRate f64 cutoffFrequency u32 order: ma_lpf_node_config;
+Ma.lpf_node_init = 'ma_lpf_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_lpf_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_lpf_node> pNode;
+Ma.lpf_node_reinit = 'ma_lpf_node_reinit': ptr<ma_lpf_config> pConfig ptr<ma_lpf_node> pNode;
+Ma.lpf_node_uninit = 'ma_lpf_node_uninit': ptr<ma_lpf_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.hpf_node_config_init = 'ma_hpf_node_config_init': u32 channels u32 sampleRate f64 cutoffFrequency u32 order: ma_hpf_node_config;
+Ma.hpf_node_init = 'ma_hpf_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_hpf_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_hpf_node> pNode;
+Ma.hpf_node_reinit = 'ma_hpf_node_reinit': ptr<ma_hpf_config> pConfig ptr<ma_hpf_node> pNode;
+Ma.hpf_node_uninit = 'ma_hpf_node_uninit': ptr<ma_hpf_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.bpf_node_config_init = 'ma_bpf_node_config_init': u32 channels u32 sampleRate f64 cutoffFrequency u32 order: ma_bpf_node_config;
+Ma.bpf_node_init = 'ma_bpf_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_bpf_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_bpf_node> pNode;
+Ma.bpf_node_reinit = 'ma_bpf_node_reinit': ptr<ma_bpf_config> pConfig ptr<ma_bpf_node> pNode;
+Ma.bpf_node_uninit = 'ma_bpf_node_uninit': ptr<ma_bpf_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.notch_node_config_init = 'ma_notch_node_config_init': u32 channels u32 sampleRate f64 q f64 frequency: ma_notch_node_config;
+Ma.notch_node_init = 'ma_notch_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_notch_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_notch_node> pNode;
+Ma.notch_node_reinit = 'ma_notch_node_reinit': ptr<ma_notch2_config> pConfig ptr<ma_notch_node> pNode;
+Ma.notch_node_uninit = 'ma_notch_node_uninit': ptr<ma_notch_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.peak_node_config_init = 'ma_peak_node_config_init': u32 channels u32 sampleRate f64 gainDB f64 q f64 frequency: ma_peak_node_config;
+Ma.peak_node_init = 'ma_peak_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_peak_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_peak_node> pNode;
+Ma.peak_node_reinit = 'ma_peak_node_reinit': ptr<ma_peak2_config> pConfig ptr<ma_peak_node> pNode;
+Ma.peak_node_uninit = 'ma_peak_node_uninit': ptr<ma_peak_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.loshelf_node_config_init = 'ma_loshelf_node_config_init': u32 channels u32 sampleRate f64 gainDB f64 q f64 frequency: ma_loshelf_node_config;
+Ma.loshelf_node_init = 'ma_loshelf_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_loshelf_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_loshelf_node> pNode;
+Ma.loshelf_node_reinit = 'ma_loshelf_node_reinit': ptr<ma_loshelf2_config> pConfig ptr<ma_loshelf_node> pNode;
+Ma.loshelf_node_uninit = 'ma_loshelf_node_uninit': ptr<ma_loshelf_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.hishelf_node_config_init = 'ma_hishelf_node_config_init': u32 channels u32 sampleRate f64 gainDB f64 q f64 frequency: ma_hishelf_node_config;
+Ma.hishelf_node_init = 'ma_hishelf_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_hishelf_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_hishelf_node> pNode;
+Ma.hishelf_node_reinit = 'ma_hishelf_node_reinit': ptr<ma_hishelf2_config> pConfig ptr<ma_hishelf_node> pNode;
+Ma.hishelf_node_uninit = 'ma_hishelf_node_uninit': ptr<ma_hishelf_node> pNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.delay_node_config_init = 'ma_delay_node_config_init': u32 channels u32 sampleRate u32 delayInFrames f32 decay: ma_delay_node_config;
+Ma.delay_node_init = 'ma_delay_node_init': ptr<ma_node_graph> pNodeGraph ptr<ma_delay_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_delay_node> pDelayNode;
+Ma.delay_node_uninit = 'ma_delay_node_uninit': ptr<ma_delay_node> pDelayNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.delay_node_set_wet = 'ma_delay_node_set_wet': ptr<ma_delay_node> pDelayNode f32 value;
+Ma.delay_node_get_wet = 'ma_delay_node_get_wet': ptr<ma_delay_node> pDelayNode: f32;
+Ma.delay_node_set_dry = 'ma_delay_node_set_dry': ptr<ma_delay_node> pDelayNode f32 value;
+Ma.delay_node_get_dry = 'ma_delay_node_get_dry': ptr<ma_delay_node> pDelayNode: f32;
+Ma.delay_node_set_decay = 'ma_delay_node_set_decay': ptr<ma_delay_node> pDelayNode f32 value;
+Ma.delay_node_get_decay = 'ma_delay_node_get_decay': ptr<ma_delay_node> pDelayNode: f32;
+Ma.engine_node_config_init = 'ma_engine_node_config_init': ptr<ma_engine> pEngine int type u32 flags: ma_engine_node_config;
+Ma.engine_node_get_heap_size = 'ma_engine_node_get_heap_size': ptr<ma_engine_node_config> pConfig ptr<usz> pHeapSizeInBytes;
+Ma.engine_node_init_preallocated = 'ma_engine_node_init_preallocated': ptr<ma_engine_node_config> pConfig ptr<u8> pHeap ptr<ma_engine_node> pEngineNode;
+Ma.engine_node_init = 'ma_engine_node_init': ptr<ma_engine_node_config> pConfig ptr<ma_allocation_callbacks> pAllocationCallbacks ptr<ma_engine_node> pEngineNode;
+Ma.engine_node_uninit = 'ma_engine_node_uninit': ptr<ma_engine_node> pEngineNode ptr<ma_allocation_callbacks> pAllocationCallbacks;
+Ma.sound_config_init = 'ma_sound_config_init': : ma_sound_config;
+Ma.sound_config_init_2 = 'ma_sound_config_init_2': ptr<ma_engine> pEngine: ma_sound_config;
+Ma.sound_group_config_init = 'ma_sound_group_config_init': : ma_sound_config;
+Ma.sound_group_config_init_2 = 'ma_sound_group_config_init_2': ptr<ma_engine> pEngine: ma_sound_config;
+Ma.engine_config_init = 'ma_engine_config_init': : ma_engine_config;
+Ma.engine_init = 'ma_engine_init': ptr<ma_engine_config> pConfig ptr<ma_engine> pEngine;
+Ma.engine_uninit = 'ma_engine_uninit': ptr<ma_engine> pEngine;
+Ma.engine_read_pcm_frames = 'ma_engine_read_pcm_frames': ptr<ma_engine> pEngine ptr<u8> pFramesOut u64 frameCount ptr<u64> pFramesRead;
+Ma.engine_get_node_graph = 'ma_engine_get_node_graph': ptr<ma_engine> pEngine: ptr<ma_node_graph>;
+Ma.engine_get_resource_manager = 'ma_engine_get_resource_manager': ptr<ma_engine> pEngine: ptr<ma_resource_manager>;
+Ma.engine_get_device = 'ma_engine_get_device': ptr<ma_engine> pEngine: ptr<ma_device>;
+Ma.engine_get_log = 'ma_engine_get_log': ptr<ma_engine> pEngine: ptr<ma_log>;
+Ma.engine_get_endpoint = 'ma_engine_get_endpoint': ptr<ma_engine> pEngine: ptr<u8>;
+Ma.engine_get_time_in_pcm_frames = 'ma_engine_get_time_in_pcm_frames': ptr<ma_engine> pEngine: u64;
+Ma.engine_get_time_in_milliseconds = 'ma_engine_get_time_in_milliseconds': ptr<ma_engine> pEngine: u64;
+Ma.engine_set_time_in_pcm_frames = 'ma_engine_set_time_in_pcm_frames': ptr<ma_engine> pEngine u64 globalTime;
+Ma.engine_set_time_in_milliseconds = 'ma_engine_set_time_in_milliseconds': ptr<ma_engine> pEngine u64 globalTime;
+Ma.engine_get_time = 'ma_engine_get_time': ptr<ma_engine> pEngine: u64;
+Ma.engine_set_time = 'ma_engine_set_time': ptr<ma_engine> pEngine u64 globalTime;
+Ma.engine_get_channels = 'ma_engine_get_channels': ptr<ma_engine> pEngine: u32;
+Ma.engine_get_sample_rate = 'ma_engine_get_sample_rate': ptr<ma_engine> pEngine: u32;
+Ma.engine_start = 'ma_engine_start': ptr<ma_engine> pEngine;
+Ma.engine_stop = 'ma_engine_stop': ptr<ma_engine> pEngine;
+Ma.engine_set_volume = 'ma_engine_set_volume': ptr<ma_engine> pEngine f32 volume;
+Ma.engine_get_volume = 'ma_engine_get_volume': ptr<ma_engine> pEngine: f32;
+Ma.engine_set_gain_db = 'ma_engine_set_gain_db': ptr<ma_engine> pEngine f32 gainDB;
+Ma.engine_get_gain_db = 'ma_engine_get_gain_db': ptr<ma_engine> pEngine: f32;
+Ma.engine_get_listener_count = 'ma_engine_get_listener_count': ptr<ma_engine> pEngine: u32;
+Ma.engine_find_closest_listener = 'ma_engine_find_closest_listener': ptr<ma_engine> pEngine f32 absolutePosX f32 absolutePosY f32 absolutePosZ: u32;
+Ma.engine_listener_set_position = 'ma_engine_listener_set_position': ptr<ma_engine> pEngine u32 listenerIndex f32 x f32 y f32 z;
+Ma.engine_listener_get_position = 'ma_engine_listener_get_position': ptr<ma_engine> pEngine u32 listenerIndex: ma_vec3f;
+Ma.engine_listener_set_direction = 'ma_engine_listener_set_direction': ptr<ma_engine> pEngine u32 listenerIndex f32 x f32 y f32 z;
+Ma.engine_listener_get_direction = 'ma_engine_listener_get_direction': ptr<ma_engine> pEngine u32 listenerIndex: ma_vec3f;
+Ma.engine_listener_set_velocity = 'ma_engine_listener_set_velocity': ptr<ma_engine> pEngine u32 listenerIndex f32 x f32 y f32 z;
+Ma.engine_listener_get_velocity = 'ma_engine_listener_get_velocity': ptr<ma_engine> pEngine u32 listenerIndex: ma_vec3f;
+Ma.engine_listener_set_cone = 'ma_engine_listener_set_cone': ptr<ma_engine> pEngine u32 listenerIndex f32 innerAngleInRadians f32 outerAngleInRadians f32 outerGain;
+Ma.engine_listener_get_cone = 'ma_engine_listener_get_cone': ptr<ma_engine> pEngine u32 listenerIndex ptr<f32> pInnerAngleInRadians ptr<f32> pOuterAngleInRadians ptr<f32> pOuterGain;
+Ma.engine_listener_set_world_up = 'ma_engine_listener_set_world_up': ptr<ma_engine> pEngine u32 listenerIndex f32 x f32 y f32 z;
+Ma.engine_listener_get_world_up = 'ma_engine_listener_get_world_up': ptr<ma_engine> pEngine u32 listenerIndex: ma_vec3f;
+Ma.engine_listener_set_enabled = 'ma_engine_listener_set_enabled': ptr<ma_engine> pEngine u32 listenerIndex u32 isEnabled;
+Ma.engine_listener_is_enabled = 'ma_engine_listener_is_enabled': ptr<ma_engine> pEngine u32 listenerIndex: u32;
+Ma.engine_play_sound_ex = 'ma_engine_play_sound_ex': ptr<ma_engine> pEngine ptr<u8> pFilePath ptr<u8> pNode u32 nodeInputBusIndex;
+Ma.engine_play_sound = 'ma_engine_play_sound': ptr<ma_engine> pEngine ptr<u8> pFilePath ptr<ma_sound> pGroup;
+Ma.sound_init_from_file = 'ma_sound_init_from_file': ptr<ma_engine> pEngine ptr<u8> pFilePath u32 flags ptr<ma_sound> pGroup ptr<ma_fence> pDoneFence ptr<ma_sound> pSound;
+Ma.sound_init_from_file_w = 'ma_sound_init_from_file_w': ptr<ma_engine> pEngine ptr<wchar_t> pFilePath u32 flags ptr<ma_sound> pGroup ptr<ma_fence> pDoneFence ptr<ma_sound> pSound;
+Ma.sound_init_copy = 'ma_sound_init_copy': ptr<ma_engine> pEngine ptr<ma_sound> pExistingSound u32 flags ptr<ma_sound> pGroup ptr<ma_sound> pSound;
+Ma.sound_init_from_data_source = 'ma_sound_init_from_data_source': ptr<ma_engine> pEngine ptr<u8> pDataSource u32 flags ptr<ma_sound> pGroup ptr<ma_sound> pSound;
+Ma.sound_init_ex = 'ma_sound_init_ex': ptr<ma_engine> pEngine ptr<ma_sound_config> pConfig ptr<ma_sound> pSound;
+Ma.sound_uninit = 'ma_sound_uninit': ptr<ma_sound> pSound;
+Ma.sound_get_engine = 'ma_sound_get_engine': ptr<ma_sound> pSound: ptr<ma_engine>;
+Ma.sound_get_data_source = 'ma_sound_get_data_source': ptr<ma_sound> pSound: ptr<u8>;
+Ma.sound_start = 'ma_sound_start': ptr<ma_sound> pSound;
+Ma.sound_stop = 'ma_sound_stop': ptr<ma_sound> pSound;
+Ma.sound_stop_with_fade_in_pcm_frames = 'ma_sound_stop_with_fade_in_pcm_frames': ptr<ma_sound> pSound u64 fadeLengthInFrames;
+Ma.sound_stop_with_fade_in_milliseconds = 'ma_sound_stop_with_fade_in_milliseconds': ptr<ma_sound> pSound u64 fadeLengthInFrames;
+Ma.sound_reset_start_time = 'ma_sound_reset_start_time': ptr<ma_sound> pSound;
+Ma.sound_reset_stop_time = 'ma_sound_reset_stop_time': ptr<ma_sound> pSound;
+Ma.sound_reset_fade = 'ma_sound_reset_fade': ptr<ma_sound> pSound;
+Ma.sound_reset_stop_time_and_fade = 'ma_sound_reset_stop_time_and_fade': ptr<ma_sound> pSound;
+Ma.sound_set_volume = 'ma_sound_set_volume': ptr<ma_sound> pSound f32 volume;
+Ma.sound_get_volume = 'ma_sound_get_volume': ptr<ma_sound> pSound: f32;
+Ma.sound_set_pan = 'ma_sound_set_pan': ptr<ma_sound> pSound f32 pan;
+Ma.sound_get_pan = 'ma_sound_get_pan': ptr<ma_sound> pSound: f32;
+Ma.sound_set_pan_mode = 'ma_sound_set_pan_mode': ptr<ma_sound> pSound int panMode;
+Ma.sound_get_pan_mode = 'ma_sound_get_pan_mode': ptr<ma_sound> pSound;
+Ma.sound_set_pitch = 'ma_sound_set_pitch': ptr<ma_sound> pSound f32 pitch;
+Ma.sound_get_pitch = 'ma_sound_get_pitch': ptr<ma_sound> pSound: f32;
+Ma.sound_set_spatialization_enabled = 'ma_sound_set_spatialization_enabled': ptr<ma_sound> pSound u32 enabled;
+Ma.sound_is_spatialization_enabled = 'ma_sound_is_spatialization_enabled': ptr<ma_sound> pSound: u32;
+Ma.sound_set_pinned_listener_index = 'ma_sound_set_pinned_listener_index': ptr<ma_sound> pSound u32 listenerIndex;
+Ma.sound_get_pinned_listener_index = 'ma_sound_get_pinned_listener_index': ptr<ma_sound> pSound: u32;
+Ma.sound_get_listener_index = 'ma_sound_get_listener_index': ptr<ma_sound> pSound: u32;
+Ma.sound_get_direction_to_listener = 'ma_sound_get_direction_to_listener': ptr<ma_sound> pSound: ma_vec3f;
+Ma.sound_set_position = 'ma_sound_set_position': ptr<ma_sound> pSound f32 x f32 y f32 z;
+Ma.sound_get_position = 'ma_sound_get_position': ptr<ma_sound> pSound: ma_vec3f;
+Ma.sound_set_direction = 'ma_sound_set_direction': ptr<ma_sound> pSound f32 x f32 y f32 z;
+Ma.sound_get_direction = 'ma_sound_get_direction': ptr<ma_sound> pSound: ma_vec3f;
+Ma.sound_set_velocity = 'ma_sound_set_velocity': ptr<ma_sound> pSound f32 x f32 y f32 z;
+Ma.sound_get_velocity = 'ma_sound_get_velocity': ptr<ma_sound> pSound: ma_vec3f;
+Ma.sound_set_attenuation_model = 'ma_sound_set_attenuation_model': ptr<ma_sound> pSound int attenuationModel;
+Ma.sound_get_attenuation_model = 'ma_sound_get_attenuation_model': ptr<ma_sound> pSound;
+Ma.sound_set_positioning = 'ma_sound_set_positioning': ptr<ma_sound> pSound int positioning;
+Ma.sound_get_positioning = 'ma_sound_get_positioning': ptr<ma_sound> pSound;
+Ma.sound_set_rolloff = 'ma_sound_set_rolloff': ptr<ma_sound> pSound f32 rolloff;
+Ma.sound_get_rolloff = 'ma_sound_get_rolloff': ptr<ma_sound> pSound: f32;
+Ma.sound_set_min_gain = 'ma_sound_set_min_gain': ptr<ma_sound> pSound f32 minGain;
+Ma.sound_get_min_gain = 'ma_sound_get_min_gain': ptr<ma_sound> pSound: f32;
+Ma.sound_set_max_gain = 'ma_sound_set_max_gain': ptr<ma_sound> pSound f32 maxGain;
+Ma.sound_get_max_gain = 'ma_sound_get_max_gain': ptr<ma_sound> pSound: f32;
+Ma.sound_set_min_distance = 'ma_sound_set_min_distance': ptr<ma_sound> pSound f32 minDistance;
+Ma.sound_get_min_distance = 'ma_sound_get_min_distance': ptr<ma_sound> pSound: f32;
+Ma.sound_set_max_distance = 'ma_sound_set_max_distance': ptr<ma_sound> pSound f32 maxDistance;
+Ma.sound_get_max_distance = 'ma_sound_get_max_distance': ptr<ma_sound> pSound: f32;
+Ma.sound_set_cone = 'ma_sound_set_cone': ptr<ma_sound> pSound f32 innerAngleInRadians f32 outerAngleInRadians f32 outerGain;
+Ma.sound_get_cone = 'ma_sound_get_cone': ptr<ma_sound> pSound ptr<f32> pInnerAngleInRadians ptr<f32> pOuterAngleInRadians ptr<f32> pOuterGain;
+Ma.sound_set_doppler_factor = 'ma_sound_set_doppler_factor': ptr<ma_sound> pSound f32 dopplerFactor;
+Ma.sound_get_doppler_factor = 'ma_sound_get_doppler_factor': ptr<ma_sound> pSound: f32;
+Ma.sound_set_directional_attenuation_factor = 'ma_sound_set_directional_attenuation_factor': ptr<ma_sound> pSound f32 directionalAttenuationFactor;
+Ma.sound_get_directional_attenuation_factor = 'ma_sound_get_directional_attenuation_factor': ptr<ma_sound> pSound: f32;
+Ma.sound_set_fade_in_pcm_frames = 'ma_sound_set_fade_in_pcm_frames': ptr<ma_sound> pSound f32 volumeBeg f32 volumeEnd u64 fadeLengthInFrames;
+Ma.sound_set_fade_in_milliseconds = 'ma_sound_set_fade_in_milliseconds': ptr<ma_sound> pSound f32 volumeBeg f32 volumeEnd u64 fadeLengthInMilliseconds;
+Ma.sound_set_fade_start_in_pcm_frames = 'ma_sound_set_fade_start_in_pcm_frames': ptr<ma_sound> pSound f32 volumeBeg f32 volumeEnd u64 fadeLengthInFrames u64 absoluteGlobalTimeInFrames;
+Ma.sound_set_fade_start_in_milliseconds = 'ma_sound_set_fade_start_in_milliseconds': ptr<ma_sound> pSound f32 volumeBeg f32 volumeEnd u64 fadeLengthInMilliseconds u64 absoluteGlobalTimeInMilliseconds;
+Ma.sound_get_current_fade_volume = 'ma_sound_get_current_fade_volume': ptr<ma_sound> pSound: f32;
+Ma.sound_set_start_time_in_pcm_frames = 'ma_sound_set_start_time_in_pcm_frames': ptr<ma_sound> pSound u64 absoluteGlobalTimeInFrames;
+Ma.sound_set_start_time_in_milliseconds = 'ma_sound_set_start_time_in_milliseconds': ptr<ma_sound> pSound u64 absoluteGlobalTimeInMilliseconds;
+Ma.sound_set_stop_time_in_pcm_frames = 'ma_sound_set_stop_time_in_pcm_frames': ptr<ma_sound> pSound u64 absoluteGlobalTimeInFrames;
+Ma.sound_set_stop_time_in_milliseconds = 'ma_sound_set_stop_time_in_milliseconds': ptr<ma_sound> pSound u64 absoluteGlobalTimeInMilliseconds;
+Ma.sound_set_stop_time_with_fade_in_pcm_frames = 'ma_sound_set_stop_time_with_fade_in_pcm_frames': ptr<ma_sound> pSound u64 stopAbsoluteGlobalTimeInFrames u64 fadeLengthInFrames;
+Ma.sound_set_stop_time_with_fade_in_milliseconds = 'ma_sound_set_stop_time_with_fade_in_milliseconds': ptr<ma_sound> pSound u64 stopAbsoluteGlobalTimeInMilliseconds u64 fadeLengthInMilliseconds;
+Ma.sound_is_playing = 'ma_sound_is_playing': ptr<ma_sound> pSound: u32;
+Ma.sound_get_time_in_pcm_frames = 'ma_sound_get_time_in_pcm_frames': ptr<ma_sound> pSound: u64;
+Ma.sound_get_time_in_milliseconds = 'ma_sound_get_time_in_milliseconds': ptr<ma_sound> pSound: u64;
+Ma.sound_set_looping = 'ma_sound_set_looping': ptr<ma_sound> pSound u32 isLooping;
+Ma.sound_is_looping = 'ma_sound_is_looping': ptr<ma_sound> pSound: u32;
+Ma.sound_at_end = 'ma_sound_at_end': ptr<ma_sound> pSound: u32;
+Ma.sound_seek_to_pcm_frame = 'ma_sound_seek_to_pcm_frame': ptr<ma_sound> pSound u64 frameIndex;
+Ma.sound_seek_to_second = 'ma_sound_seek_to_second': ptr<ma_sound> pSound f32 seekPointInSeconds;
+Ma.sound_get_data_format = 'ma_sound_get_data_format': ptr<ma_sound> pSound ptr<int> pFormat ptr<u32> pChannels ptr<u32> pSampleRate ptr<u8> pChannelMap usz channelMapCap;
+Ma.sound_get_cursor_in_pcm_frames = 'ma_sound_get_cursor_in_pcm_frames': ptr<ma_sound> pSound ptr<u64> pCursor;
+Ma.sound_get_length_in_pcm_frames = 'ma_sound_get_length_in_pcm_frames': ptr<ma_sound> pSound ptr<u64> pLength;
+Ma.sound_get_cursor_in_seconds = 'ma_sound_get_cursor_in_seconds': ptr<ma_sound> pSound ptr<f32> pCursor;
+Ma.sound_get_length_in_seconds = 'ma_sound_get_length_in_seconds': ptr<ma_sound> pSound ptr<f32> pLength;
+Ma.sound_set_end_callback = 'ma_sound_set_end_callback': ptr<ma_sound> pSound ptr<u8> callback ptr<u8> pUserData;
+Ma.sound_group_init = 'ma_sound_group_init': ptr<ma_engine> pEngine u32 flags ptr<ma_sound> pParentGroup ptr<ma_sound> pGroup;
+Ma.sound_group_init_ex = 'ma_sound_group_init_ex': ptr<ma_engine> pEngine ptr<ma_sound_config> pConfig ptr<ma_sound> pGroup;
+Ma.sound_group_uninit = 'ma_sound_group_uninit': ptr<ma_sound> pGroup;
+Ma.sound_group_get_engine = 'ma_sound_group_get_engine': ptr<ma_sound> pGroup: ptr<ma_engine>;
+Ma.sound_group_start = 'ma_sound_group_start': ptr<ma_sound> pGroup;
+Ma.sound_group_stop = 'ma_sound_group_stop': ptr<ma_sound> pGroup;
+Ma.sound_group_set_volume = 'ma_sound_group_set_volume': ptr<ma_sound> pGroup f32 volume;
+Ma.sound_group_get_volume = 'ma_sound_group_get_volume': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_pan = 'ma_sound_group_set_pan': ptr<ma_sound> pGroup f32 pan;
+Ma.sound_group_get_pan = 'ma_sound_group_get_pan': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_pan_mode = 'ma_sound_group_set_pan_mode': ptr<ma_sound> pGroup int panMode;
+Ma.sound_group_get_pan_mode = 'ma_sound_group_get_pan_mode': ptr<ma_sound> pGroup;
+Ma.sound_group_set_pitch = 'ma_sound_group_set_pitch': ptr<ma_sound> pGroup f32 pitch;
+Ma.sound_group_get_pitch = 'ma_sound_group_get_pitch': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_spatialization_enabled = 'ma_sound_group_set_spatialization_enabled': ptr<ma_sound> pGroup u32 enabled;
+Ma.sound_group_is_spatialization_enabled = 'ma_sound_group_is_spatialization_enabled': ptr<ma_sound> pGroup: u32;
+Ma.sound_group_set_pinned_listener_index = 'ma_sound_group_set_pinned_listener_index': ptr<ma_sound> pGroup u32 listenerIndex;
+Ma.sound_group_get_pinned_listener_index = 'ma_sound_group_get_pinned_listener_index': ptr<ma_sound> pGroup: u32;
+Ma.sound_group_get_listener_index = 'ma_sound_group_get_listener_index': ptr<ma_sound> pGroup: u32;
+Ma.sound_group_get_direction_to_listener = 'ma_sound_group_get_direction_to_listener': ptr<ma_sound> pGroup: ma_vec3f;
+Ma.sound_group_set_position = 'ma_sound_group_set_position': ptr<ma_sound> pGroup f32 x f32 y f32 z;
+Ma.sound_group_get_position = 'ma_sound_group_get_position': ptr<ma_sound> pGroup: ma_vec3f;
+Ma.sound_group_set_direction = 'ma_sound_group_set_direction': ptr<ma_sound> pGroup f32 x f32 y f32 z;
+Ma.sound_group_get_direction = 'ma_sound_group_get_direction': ptr<ma_sound> pGroup: ma_vec3f;
+Ma.sound_group_set_velocity = 'ma_sound_group_set_velocity': ptr<ma_sound> pGroup f32 x f32 y f32 z;
+Ma.sound_group_get_velocity = 'ma_sound_group_get_velocity': ptr<ma_sound> pGroup: ma_vec3f;
+Ma.sound_group_set_attenuation_model = 'ma_sound_group_set_attenuation_model': ptr<ma_sound> pGroup int attenuationModel;
+Ma.sound_group_get_attenuation_model = 'ma_sound_group_get_attenuation_model': ptr<ma_sound> pGroup;
+Ma.sound_group_set_positioning = 'ma_sound_group_set_positioning': ptr<ma_sound> pGroup int positioning;
+Ma.sound_group_get_positioning = 'ma_sound_group_get_positioning': ptr<ma_sound> pGroup;
+Ma.sound_group_set_rolloff = 'ma_sound_group_set_rolloff': ptr<ma_sound> pGroup f32 rolloff;
+Ma.sound_group_get_rolloff = 'ma_sound_group_get_rolloff': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_min_gain = 'ma_sound_group_set_min_gain': ptr<ma_sound> pGroup f32 minGain;
+Ma.sound_group_get_min_gain = 'ma_sound_group_get_min_gain': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_max_gain = 'ma_sound_group_set_max_gain': ptr<ma_sound> pGroup f32 maxGain;
+Ma.sound_group_get_max_gain = 'ma_sound_group_get_max_gain': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_min_distance = 'ma_sound_group_set_min_distance': ptr<ma_sound> pGroup f32 minDistance;
+Ma.sound_group_get_min_distance = 'ma_sound_group_get_min_distance': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_max_distance = 'ma_sound_group_set_max_distance': ptr<ma_sound> pGroup f32 maxDistance;
+Ma.sound_group_get_max_distance = 'ma_sound_group_get_max_distance': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_cone = 'ma_sound_group_set_cone': ptr<ma_sound> pGroup f32 innerAngleInRadians f32 outerAngleInRadians f32 outerGain;
+Ma.sound_group_get_cone = 'ma_sound_group_get_cone': ptr<ma_sound> pGroup ptr<f32> pInnerAngleInRadians ptr<f32> pOuterAngleInRadians ptr<f32> pOuterGain;
+Ma.sound_group_set_doppler_factor = 'ma_sound_group_set_doppler_factor': ptr<ma_sound> pGroup f32 dopplerFactor;
+Ma.sound_group_get_doppler_factor = 'ma_sound_group_get_doppler_factor': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_directional_attenuation_factor = 'ma_sound_group_set_directional_attenuation_factor': ptr<ma_sound> pGroup f32 directionalAttenuationFactor;
+Ma.sound_group_get_directional_attenuation_factor = 'ma_sound_group_get_directional_attenuation_factor': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_fade_in_pcm_frames = 'ma_sound_group_set_fade_in_pcm_frames': ptr<ma_sound> pGroup f32 volumeBeg f32 volumeEnd u64 fadeLengthInFrames;
+Ma.sound_group_set_fade_in_milliseconds = 'ma_sound_group_set_fade_in_milliseconds': ptr<ma_sound> pGroup f32 volumeBeg f32 volumeEnd u64 fadeLengthInMilliseconds;
+Ma.sound_group_get_current_fade_volume = 'ma_sound_group_get_current_fade_volume': ptr<ma_sound> pGroup: f32;
+Ma.sound_group_set_start_time_in_pcm_frames = 'ma_sound_group_set_start_time_in_pcm_frames': ptr<ma_sound> pGroup u64 absoluteGlobalTimeInFrames;
+Ma.sound_group_set_start_time_in_milliseconds = 'ma_sound_group_set_start_time_in_milliseconds': ptr<ma_sound> pGroup u64 absoluteGlobalTimeInMilliseconds;
+Ma.sound_group_set_stop_time_in_pcm_frames = 'ma_sound_group_set_stop_time_in_pcm_frames': ptr<ma_sound> pGroup u64 absoluteGlobalTimeInFrames;
+Ma.sound_group_set_stop_time_in_milliseconds = 'ma_sound_group_set_stop_time_in_milliseconds': ptr<ma_sound> pGroup u64 absoluteGlobalTimeInMilliseconds;
+Ma.sound_group_is_playing = 'ma_sound_group_is_playing': ptr<ma_sound> pGroup: u32;
+Ma.sound_group_get_time_in_pcm_frames = 'ma_sound_group_get_time_in_pcm_frames': ptr<ma_sound> pGroup: u64;
+Ma.new_event = 'phi_new_ma_event': : ptr<ma_event>;    # a new ma_event, all zeros, for miniaudio to fill in
+Ma.new_semaphore = 'phi_new_ma_semaphore': : ptr<ma_semaphore>;    # a new ma_semaphore, all zeros, for miniaudio to fill in
+Ma.new_log = 'phi_new_ma_log': : ptr<ma_log>;    # a new ma_log, all zeros, for miniaudio to fill in
+Ma.new_resampler = 'phi_new_ma_resampler': : ptr<ma_resampler>;    # a new ma_resampler, all zeros, for miniaudio to fill in
+Ma.new_data_converter = 'phi_new_ma_data_converter': : ptr<ma_data_converter>;    # a new ma_data_converter, all zeros, for miniaudio to fill in
+Ma.new_fence = 'phi_new_ma_fence': : ptr<ma_fence>;    # a new ma_fence, all zeros, for miniaudio to fill in
+Ma.new_async_notification_event = 'phi_new_ma_async_notification_event': : ptr<ma_async_notification_event>;    # a new ma_async_notification_event, all zeros, for miniaudio to fill in
+Ma.new_job = 'phi_new_ma_job': : ptr<ma_job>;    # a new ma_job, all zeros, for miniaudio to fill in
+Ma.new_job_queue = 'phi_new_ma_job_queue': : ptr<ma_job_queue>;    # a new ma_job_queue, all zeros, for miniaudio to fill in
+Ma.new_device_job_thread = 'phi_new_ma_device_job_thread': : ptr<ma_device_job_thread>;    # a new ma_device_job_thread, all zeros, for miniaudio to fill in
+Ma.new_device_id = 'phi_new_ma_device_id': : ptr<ma_device_id>;    # a new ma_device_id, all zeros, for miniaudio to fill in
+Ma.new_device_info = 'phi_new_ma_device_info': : ptr<ma_device_info>;    # a new ma_device_info, all zeros, for miniaudio to fill in
+Ma.new_context = 'phi_new_ma_context': : ptr<ma_context>;    # a new ma_context, all zeros, for miniaudio to fill in
+Ma.new_device = 'phi_new_ma_device': : ptr<ma_device>;    # a new ma_device, all zeros, for miniaudio to fill in
+Ma.new_decoder = 'phi_new_ma_decoder': : ptr<ma_decoder>;    # a new ma_decoder, all zeros, for miniaudio to fill in
+Ma.new_resource_manager_data_buffer = 'phi_new_ma_resource_manager_data_buffer': : ptr<ma_resource_manager_data_buffer>;    # a new ma_resource_manager_data_buffer, all zeros, for miniaudio to fill in
+Ma.new_resource_manager_data_stream = 'phi_new_ma_resource_manager_data_stream': : ptr<ma_resource_manager_data_stream>;    # a new ma_resource_manager_data_stream, all zeros, for miniaudio to fill in
+Ma.new_resource_manager_data_source = 'phi_new_ma_resource_manager_data_source': : ptr<ma_resource_manager_data_source>;    # a new ma_resource_manager_data_source, all zeros, for miniaudio to fill in
+Ma.new_resource_manager = 'phi_new_ma_resource_manager': : ptr<ma_resource_manager>;    # a new ma_resource_manager, all zeros, for miniaudio to fill in
+Ma.new_engine_node = 'phi_new_ma_engine_node': : ptr<ma_engine_node>;    # a new ma_engine_node, all zeros, for miniaudio to fill in
+Ma.new_sound = 'phi_new_ma_sound': : ptr<ma_sound>;    # a new ma_sound, all zeros, for miniaudio to fill in
+Ma.new_sound_inlined = 'phi_new_ma_sound_inlined': : ptr<ma_sound_inlined>;    # a new ma_sound_inlined, all zeros, for miniaudio to fill in
+Ma.delete = 'phi_delete': ptr<u8> made;    # frees what one of the new_ functions made

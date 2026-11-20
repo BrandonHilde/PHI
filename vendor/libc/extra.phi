@@ -1,0 +1,10 @@
+# printf, sprintf and sscanf take any number of values in C. Each form here is one of them
+# under a name of its own, with the values it takes: declare others the same way.
+C.printf_int = 'printf': ptr<u8> format ... int value;
+C.printf_text = 'printf': ptr<u8> format ... ptr<u8> text;
+C.printf_f64 = 'printf': ptr<u8> format ... f64 value;
+C.sprintf_int = 'sprintf': ptr<u8> to ptr<u8> format ... int value;
+C.sprintf_text = 'sprintf': ptr<u8> to ptr<u8> format ... ptr<u8> text;
+C.sprintf_f64 = 'sprintf': ptr<u8> to ptr<u8> format ... f64 value;
+C.sscanf_int = 'sscanf': ptr<u8> text ptr<u8> format ... ptr<int> value;
+C.sscanf_f64 = 'sscanf': ptr<u8> text ptr<u8> format ... ptr<f64> value;

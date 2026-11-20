@@ -286,7 +286,11 @@ namespace Phi.Compiler.Syntax
                 return;
             }
 
-            if (At(TokenKind.Identifier) && libraryNames.Contains(Current.Text) && PeekToken(1).Kind == TokenKind.Dot)
+            // Kernel32.Sleep: u32 ms;  a function of an outside library: one this file names, or
+            // (Ray.TraceInt = 'TraceLog': ...;) one a file it uses does, a vendor library's say
+            if (At(TokenKind.Identifier) && PeekToken(1).Kind == TokenKind.Dot
+                && (libraryNames.Contains(Current.Text) || Current.Text is not ("phi" or "asm" or "x64" or "arm" or "struct" or "enum" or "interface" or "sys")
+                    && PeekToken(2).Kind == TokenKind.Identifier && PeekToken(3).Kind is TokenKind.Colon or TokenKind.Semicolon or TokenKind.Equals))
             {
                 program.OutsideFunctions.Add(ParseOutsideFunction(start));
                 return;

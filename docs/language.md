@@ -4059,7 +4059,7 @@ and the classes of used files run before the classes that use them. At each of t
 `.phi` file comes before a compiled library of the same name, `a/b.philib` (below).
 
 `use vendor.NAME;` is a library of the [vendor folder](../vendor/README.md), which is beside
-`phi`: other people's C libraries (raylib, to begin with) with a module that declares each
+`phi`: other people's C libraries (raylib, SDL3, SQLite, Lua, zlib, stb, miniaudio, C's own) with a module that declares each
 whole. Looked for last, so `vendor/NAME.phi` beside the program comes first.
 
 ### Compiled libraries

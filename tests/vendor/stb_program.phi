@@ -1,0 +1,96 @@
+# stb from the vendor folder (use vendor.stb;): a picture made here, written as a PNG
+# through a method stb calls with each piece (addr foreign), read back from those bytes and
+# compared; a BMP written out byte by byte and read; what stb says of bytes that are no
+# picture; and rectangles packed into a square. One source, the same on each system.
+use vendor.stb;
+
+phi.StbProgram:Program
+{
+	u8 picture[4096];           # 32 x 32, four bytes each
+	u8 written[8192];
+	int size: 0;
+
+	while int y: 0; y < 32; y++;
+		while int x: 0; x < 32; x++;
+			int at4: (y * 32 + x) * 4;
+			picture:at4 is (x * 8) as u8;
+			picture:(at4 + 1) is (y * 8) as u8;
+			picture:(at4 + 2) is ((x ^ y) * 8) as u8;
+			picture:(at4 + 3) is 255;
+		;;
+	;;
+	int ok: (Stb.stbi_write_png_to_func: addr foreign Piece 0 32 32 4 addr picture 128);
+	log 'written: ' ok ', a PNG: ' (written:1 is 'P' and written:2 is 'N' and written:3 is 'G') ', smaller: ' (size < 4096) '\n';
+
+	int w: 0;
+	int h: 0;
+	int channels: 0;
+	log 'asked: ' (Stb.stbi_info_from_memory: addr written size addr w addr h addr channels) ' ' w ' x ' h ', ' channels ' channels\n';
+	ptr<u8> back: (Stb.stbi_load_from_memory: addr written size addr w addr h addr channels 4);
+	int same: 1;
+	while int i: 0; i < 4096; i++;
+		if back:i is not picture:i
+			same is 0;
+		;;
+	;;
+	log 'read back: ' (back is not 0) ' ' same '\n';
+	call Stb.stbi_image_free: back;
+
+	# a BMP, two by two: blue and white above red and green
+	u8 bmp[70];
+	bmp:0 is 'B';
+	bmp:1 is 'M';
+	bmp:2 is 70;
+	bmp:10 is 54;
+	bmp:14 is 40;
+	bmp:18 is 2;
+	bmp:22 is 2;
+	bmp:26 is 1;
+	bmp:28 is 24;
+	bmp:34 is 16;
+	bmp:56 is 255;              # red (kept as blue, green, red), then green
+	bmp:58 is 255;
+	bmp:62 is 255;              # blue, then white
+	bmp:65 is 255;
+	bmp:66 is 255;
+	bmp:67 is 255;
+	ptr<u8> small: (Stb.stbi_load_from_memory: addr bmp 70 addr w addr h addr channels 3);
+	log 'bmp: ' w ' x ' h ', ' channels ' channels:';
+	while int i: 0; i < 12; i++;
+		log ' ' small:i;
+	;;
+	log '\n';
+	call Stb.stbi_image_free: small;
+
+	bmp:0 is 'X';
+	ptr<u8> none: (Stb.stbi_load_from_memory: addr bmp 70 addr w addr h addr channels 0);
+	log 'no picture: ' (none is 0) ', ' (Stb.stbi_failure_reason) '\n';
+
+	# rectangles into a 64 by 64 square
+	stbrp_context packer;
+	stbrp_node nodes[64];
+	stbrp_rect rects[4];
+	call Stb.stbrp_init_target: addr packer 64 64 addr nodes 64;
+	while int i: 0; i < 4; i++;
+		rects:i.id is i;
+		rects:i.w is 30 - i * 4;
+		rects:i.h is 16 + i * 4;
+	;;
+	int all: (Stb.stbrp_pack_rects: addr packer addr rects 4);
+	log 'packed: ' all;
+	while int i: 0; i < 4; i++;
+		log ' (' rects:i.x ' ' rects:i.y ' ' (rects:i.x + rects:i.w <= 64 and rects:i.y + rects:i.h <= 64) ')';
+	;;
+	log '\n';
+	exit 0;
+
+	# stb gives the PNG a piece at a time
+	[Piece: ptr<u8> mine: 0; ptr<u8> data: 0; int count: 0;]
+		while int i: 0; i < count; i++;
+			if size < 8192
+				written:size is data:i;
+				size++;
+			;;
+		;;
+	[end]
+}

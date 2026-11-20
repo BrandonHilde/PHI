@@ -1,0 +1,49 @@
+# Every struct of vendor/stb is as large as C has it, on the system this is built for:
+# written by vendor/bindgen.py, with C's sizes as clang gives them for macOS and 64-bit Linux, 64-bit Windows, 32-bit Windows.
+use vendor.stb;
+
+phi.StbLayoutProgram:Program
+{
+	int wrong: 0;
+	int which: 2;
+	if (sizeof ptr<u8>) is 8
+		which is 1;
+		if (sizeof lng) is 8
+			which is 0;
+		;;
+	;;
+	call Same: 'stbi_io_callbacks' (sizeof stbi_io_callbacks) 24 24 12;
+	call Same: 'stbi_info_res' (sizeof stbi_info_res) 28 28 28;
+	call Same: 'stbrp_rect' (sizeof stbrp_rect) 24 24 24;
+	call Same: 'stbrp_node' (sizeof stbrp_node) 16 16 12;
+	call Same: 'stbrp_context' (sizeof stbrp_context) 72 72 56;
+	call Same: 'stbtt__buf' (sizeof stbtt__buf) 16 16 12;
+	call Same: 'stbtt_bakedchar' (sizeof stbtt_bakedchar) 20 20 20;
+	call Same: 'stbtt_aligned_quad' (sizeof stbtt_aligned_quad) 32 32 32;
+	call Same: 'stbtt_packedchar' (sizeof stbtt_packedchar) 28 28 28;
+	call Same: 'stbtt_pack_range' (sizeof stbtt_pack_range) 40 40 24;
+	call Same: 'stbtt_pack_context' (sizeof stbtt_pack_context) 64 64 44;
+	call Same: 'stbtt_fontinfo' (sizeof stbtt_fontinfo) 168 168 136;
+	call Same: 'stbtt_kerningentry' (sizeof stbtt_kerningentry) 12 12 12;
+	call Same: 'stbtt_vertex' (sizeof stbtt_vertex) 14 14 14;
+	call Same: 'stbtt__bitmap' (sizeof stbtt__bitmap) 24 24 16;
+	call Same: 'stb_vorbis_alloc' (sizeof stb_vorbis_alloc) 16 16 8;
+	call Same: 'stb_vorbis_info' (sizeof stb_vorbis_info) 24 24 24;
+	call Same: 'stb_vorbis_comment' (sizeof stb_vorbis_comment) 24 24 12;
+	log '18 structs, ' wrong ' wrong\n';
+	exit wrong;
+
+	[Same: ptr<u8> name; int here; int unix; int windows64; int windows32;]
+		int c: unix;
+		if which is 1
+			c is windows64;
+		;;
+		if which is 2
+			c is windows32;
+		;;
+		if here is not c
+			wrong++;
+			log name ' is ' here ' bytes here and ' c ' in C\n';
+		;;
+	[end]
+}

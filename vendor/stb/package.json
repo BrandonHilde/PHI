@@ -1,0 +1,106 @@
+{
+  "name": "stb",
+  "version": "2026-11",
+  "about": "pictures read (PNG, JPEG, BMP, GIF, TGA and more) and written, fonts drawn from TrueType files, rectangles packed, Ogg Vorbis sound decoded",
+  "homepage": "https://github.com/nothings/stb",
+  "license": "public domain or MIT",
+  "libraries": {
+    "windows": "stb.dll",
+    "macos": "libstb.dylib",
+    "linux": "libstb.so"
+  },
+  "downloads": [
+    {
+      "url": "https://raw.githubusercontent.com/nothings/stb/6b5799bae8a1fe3792691ef4b72ae26434c3e799/stb_image.h",
+      "sha256": "dfc2aadda6295f67f677587773f25e5bf8c8ad427ed0db7c518525c91e72e020",
+      "files": {
+        "stb_image.h": "include/stb_image.h"
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nothings/stb/6b5799bae8a1fe3792691ef4b72ae26434c3e799/stb_image_write.h",
+      "sha256": "5d89edc8bffd848f3e138b2a1dbec67aadbed591894bde16ade7c83dc233af9b",
+      "files": {
+        "stb_image_write.h": "include/stb_image_write.h"
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nothings/stb/6b5799bae8a1fe3792691ef4b72ae26434c3e799/stb_truetype.h",
+      "sha256": "428cfe93520f2aed5e413a220b0db5bba5b17e2ebe5a64e4a8efa9eeeb67ec5f",
+      "files": {
+        "stb_truetype.h": "include/stb_truetype.h"
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nothings/stb/6b5799bae8a1fe3792691ef4b72ae26434c3e799/stb_rect_pack.h",
+      "sha256": "cc13ffb3eee8b07b82274a16481007ee1f8c852203a89ab41a3ab8a4a9e32db9",
+      "files": {
+        "stb_rect_pack.h": "include/stb_rect_pack.h"
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nothings/stb/6b5799bae8a1fe3792691ef4b72ae26434c3e799/stb_vorbis.c",
+      "sha256": "97a8febc738e6a29fafc8d8bc557c7f17ad3db7ba6544485f59395cc6008b764",
+      "files": {
+        "stb_vorbis.c": "include/stb_vorbis.c"
+      }
+    },
+    {
+      "url": "https://raw.githubusercontent.com/nothings/stb/6b5799bae8a1fe3792691ef4b72ae26434c3e799/LICENSE",
+      "sha256": "eb36e45c704dd0b59730115523e089b051852625b4db0a6fe76c991900af20e7",
+      "files": {
+        "LICENSE": "LICENSE"
+      }
+    }
+  ],
+  "build": {
+    "compile": [
+      "stb.c"
+    ],
+    "include": [
+      "include"
+    ],
+    "linux64_link": [
+      "-lm"
+    ],
+    "systems": [
+      "macos",
+      "windows64",
+      "windows",
+      "linux64"
+    ]
+  },
+  "bindings": {
+    "alias": "Stb",
+    "headers": [
+      "include/stb_image.h",
+      "include/stb_image_write.h",
+      "include/stb_rect_pack.h",
+      "include/stb_truetype.h",
+      "include/stb_vorbis.c"
+    ],
+    "clang": [
+      "-DSTB_VORBIS_HEADER_ONLY"
+    ],
+    "skip_like": [
+      "^STBI_INCLUDE",
+      "^STB_.*_H$",
+      "^__STB_",
+      "^INCLUDE_STB",
+      "^STB.*DEF$",
+      "^STBI_VERSION$",
+      "^STB_VORBIS_INCLUDE",
+      "^STBTT_DEF$",
+      "^stbtt_vertex_type$",
+      "^STBRP_",
+      "^STBTT_s?16$",
+      "^STBTT_s?32$",
+      "^STBTT_s?8$",
+      "^STBTT_POINT_SIZE$"
+    ],
+    "notes": [
+      "stb_image 2.30, stb_image_write 1.19, stb_truetype 1.28, stb_rect_pack 1.02 and stb_vorbis 1.25, in one library.",
+      "Functions have C's whole names: Stb.stbi_load, Stb.stbi_write_png, Stb.stbtt_InitFont, Stb.stb_vorbis_decode_filename."
+    ]
+  }
+}

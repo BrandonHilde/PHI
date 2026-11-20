@@ -52,11 +52,15 @@ class Unsupported(Exception):
 
 
 class Package:
-    def __init__(self, folder):
+    def __init__(self, folder, which=0):
         self.folder = folder
         with open(os.path.join(folder, "package.json")) as f:
             self.info = json.load(f)
-        self.bind = self.info["bindings"]
+        # (one module, or several: each with its own name, headers and library files)
+        several = self.info["bindings"] if isinstance(self.info["bindings"], list) else [self.info["bindings"]]
+        self.bind = several[which]
+        if "libraries" in self.bind:
+            self.info = dict(self.info, libraries=self.bind["libraries"])
         self.alias = self.bind["alias"]
         self.typedefs = {}       # name -> C type it stands for
         self.records = {}        # name -> the RecordDecl with its fields (the complete one)
@@ -70,6 +74,7 @@ class Package:
         self.left_out = []
         self.written = []
         self.own_typedefs = []
+        self.left_structs = set()
         self.typedef_names = {}  # a struct's tag -> the typedef C code names it by (z_stream_s -> z_stream)
         self.lines = {}          # header -> its lines, for the comment at the end of one
 
@@ -118,12 +123,18 @@ class Package:
                     walk(child)
 
         named = {}               # a struct or enum with no name of its own: its typedef's
+        also = {}                # typedef struct { } a, b;  : b is the struct a names
         for node in tree["inner"]:
             if node["kind"] == "TypedefDecl":
                 for inner in node.get("inner", []):
                     owned = inner.get("ownedTagDecl")
                     if owned and not owned.get("name"):
-                        named[owned["id"]] = node["name"]
+                        if owned["id"] in named:
+                            also[node["name"]] = named[owned["id"]]
+                        named.setdefault(owned["id"], node["name"])
+                    record = inner.get("decl") or (inner.get("inner") or [{}])[0].get("decl")
+                    if not owned and record and record.get("id") in named and not record.get("name"):
+                        also[node["name"]] = named[record["id"]]
         for node in tree["inner"]:
             if "loc" in node:
                 place(node["loc"])
@@ -131,7 +142,7 @@ class Package:
             node["_file"] = current[0]
             kind = node["kind"]
             if kind == "TypedefDecl":
-                self.typedefs[node["name"]] = node["type"]["qualType"]
+                self.typedefs[node["name"]] = also.get(node["name"], node["type"]["qualType"])
                 if mine:
                     self.own_typedefs.append(node["name"])
             elif kind == "RecordDecl":
@@ -158,15 +169,20 @@ class Package:
                     self.unsigned_enums.add(name)
                 if mine:
                     self.enums.append((name, values))
+            elif kind == "FunctionDecl" and node.get("isImplicit"):
+                pass                                 # (clang's own idea of a C function, not the header's)
             elif kind == "FunctionDecl" and mine and node.get("storageClass") != "static" or \
                     kind == "FunctionDecl" and mine and self.bind.get("static_inline"):
                 self.functions.append(node)
             walk(node)
+        self.c_of = {}
         for name, target in self.typedefs.items():
             tag = re.sub(r"\s+", " ", QUALIFIERS.sub("", target)).strip()
             if tag != name and tag in self.records and name not in self.records and "*" not in target and "[" not in target \
+                    and target.strip().startswith(("struct ", "union ")) \
                     and self.records[tag].get("name") and tag not in self.typedef_names:
                 self.typedef_names[tag] = name
+                self.c_of[name] = tag
 
     @staticmethod
     def find_value(node):
@@ -253,6 +269,8 @@ class Package:
         if base in self.records:
             if base not in self.order:
                 raise Unsupported(f"a struct of the system's own ({base})")
+            if base in self.left_structs:
+                raise Unsupported(f"{base} by value, which PHI holds only by its address")
             return self.struct_name(base)
         if base in self.enum_names:
             return "u32" if base in self.unsigned_enums else "int"
@@ -554,13 +572,42 @@ class Package:
                 return text
         return text + whole + "\n}\n"
 
+    SIZES = {"u8": 1, "i8": 1, "bln": 1, "chr": 1, "byt": 1, "u16": 2, "i16": 2, "int": 4, "i32": 4, "u32": 4, "f32": 4, "i64": 8, "u64": 8, "f64": 8}
+
+    def laid_out(self, texts, name, model, seen=()):
+        """A struct's size as PHI lays its fields out (C's rule) on one of the systems, or None when a field isn't known."""
+        shape = self.shape_of(texts, name, model, seen)
+        return shape[0] if shape else None
+
+    def shape_of(self, texts, name, model, seen=()):
+        _, _, pointer, long_size = self.MODELS[model]
+        if name in seen or name not in texts:
+            return None
+        at, most = 0, 1
+        for kind, count in re.findall(r"^\t(\S+) \w+(?:\[(\d+)\])?;", texts[name], re.M):
+            if kind.startswith("ptr<") or kind in ("isz", "usz"):
+                size = align = pointer
+            elif kind in ("lng", "ulng"):
+                size = align = long_size
+            elif kind in self.SIZES:
+                size = align = self.SIZES[kind]
+            else:
+                inner = self.shape_of(texts, self.c_of.get(kind, kind), model, seen + (name,))
+                if inner is None:
+                    return None
+                size, align = inner
+            at = (at + align - 1) // align * align + size * int(count or 1)
+            most = max(most, align)
+        return ((at + most - 1) // most * most, most)
+
     def write(self):
         info, bind = self.info, self.bind
         out = []
         say = out.append
         title = f"{info['name']} {info['version']}"
         say(f"# {title}: {info.get('about', '')}".rstrip(": ").rstrip())
-        say(f"# {info.get('homepage', '')}  ({info.get('license', '')} licence: see LICENSE beside this file)")
+        say(f"# {info.get('homepage', '')}  (" + (f"{info.get('license', '')} licence: see LICENSE beside this file)"
+            if os.path.exists(os.path.join(self.folder, "LICENSE")) else f"{info.get('license', '')})"))
         say("#")
         say(f"# Written by vendor/bindgen.py from {', '.join(os.path.basename(h) for h in bind['headers'])}: change package.json")
         say("# and run it again, rather than this file. Functions, structs and constants have C's names.")
@@ -571,14 +618,36 @@ class Package:
         say("")
 
         defines = self.defines()
-        structs, skipped_structs = [], set()
+        texts, skipped_structs = {}, set()
         for name in self.order:
             try:
-                structs.append(self.struct_text(name))
-                self.written.append(name)
+                texts[name] = self.struct_text(name)
             except Unsupported as why:
                 skipped_structs.add(name)
                 self.left_out.append(f"struct {name}: {why}")
+        # each struct as PHI will lay it out, beside C's size for it on each system: one that
+        # differs (C has other fields in it there) is held by its address only, and so is any
+        # struct with one of those inside it
+        per = [self.sizes(triple, list(texts)) for _, triple, _, _ in self.MODELS] if texts else []
+        again = True
+        while again:
+            again = False
+            for name in list(texts):
+                inside = [t for t in re.findall(r"^\t([A-Za-z_]\w*) ", texts[name], re.M) if t in skipped_structs or self.c_of.get(t) in skipped_structs]
+                why = f"it has a {inside[0]} in it, which is" if inside else None
+                if not why:
+                    mine = [self.laid_out(texts, name, model) for model in range(len(self.MODELS))]
+                    if any(m is not None and m != per[k][name] for k, m in enumerate(mine)):
+                        k = next(k for k, m in enumerate(mine) if m is not None and m != per[k][name])
+                        why = f"C has it {per[k][name]} bytes on {self.MODELS[k][0]}, and these fields make {mine[k]}: it's"
+                if why:
+                    del texts[name]
+                    skipped_structs.add(name)
+                    self.left_out.append(f"struct {name}: {why} held by its address only")
+                    again = True
+        self.left_structs = set(skipped_structs)
+        structs = [texts[name] for name in self.order if name in texts]
+        self.written = [name for name in self.order if name in texts]
         functions = []
         for node in self.functions:
             if node["name"] in bind.get("skip", []):
@@ -591,12 +660,14 @@ class Package:
 
         say(f"phi.{self.alias}:Library")
         say("{")
-        strip = bind.get("strip_constants", "")
+        strips = bind.get("strip_constants", [])
+        strips = [strips] if isinstance(strips, str) else strips
         emitted = set()
 
         def constant(name, kind, value, note=""):
             note = f"    # {note}" if note else ""
-            short = name[len(strip):] if strip and name.startswith(strip) and len(name) > len(strip) else name
+            strip = next((p for p in strips if name.startswith(p) and len(name) > len(p)), "")
+            short = name[len(strip):]
             short = self.safe(short, emitted)
             emitted.add(short)
             if kind in ("f32", "f64"):
@@ -638,7 +709,7 @@ class Package:
                         say(f"\t{self.safe(name, emitted)}.{f['name']} is {number[1]};")
         for line in bind.get("startup", []):
             say("\t" + line)
-        inside = os.path.join(self.folder, "class.phi")
+        inside = os.path.join(self.folder, bind.get("class", "class.phi"))
         if os.path.exists(inside):
             # (written by hand: what C has as macros, as methods of the library's)
             say("")
@@ -648,13 +719,31 @@ class Package:
             out.pop()
         say("}")
         say("")
-        for name in self.used_opaque + sorted(skipped_structs):
+        for name in dict.fromkeys(self.used_opaque + sorted(skipped_structs)):
             if name in self.records and name not in skipped_structs:
                 continue
             say(f"struct.{self.struct_name(name)} foreign    # only ever held by its address: what's in it is {info['name']}'s own")
             say("{\n\tint opaque;\n}\n")
         for text in structs:
             say(text)
+        # a struct held only by its address is made by the library itself: a function for each
+        # (in alloc.c, which is built into the library) gives a new one, all zeros
+        if bind.get("handles") and self.left_structs:
+            made = [n for n in self.order if n in self.left_structs]
+            with open(os.path.join(self.folder, "alloc.c"), "w", newline="\n") as f:
+                f.write(f"/* Written by vendor/bindgen.py, and built into the library by vendor/fetch.py: a new one of\n"
+                        f"   each struct PHI holds only by its address (its size is {info['name']}'s own business, and\n"
+                        f"   differs between systems), all zeros, and what frees one. */\n#include <stdlib.h>\n")
+                f.write("".join(f'#include "{os.path.basename(h)}"\n' for h in bind["headers"]))
+                for n in made:
+                    f.write(f"void *phi_new_{n}(void) {{ return calloc(1, sizeof({self.c_name(n)})); }}\n")
+                f.write("void phi_delete(void *made) { free(made); }\n")
+            strip = bind.get("strip", "")
+            for n in made:
+                short = n[len(strip):] if strip and n.startswith(strip) else n
+                functions.append(f"{self.alias}.new_{short} = 'phi_new_{n}': : ptr<{self.struct_name(n)}>;    # a new {n}, all zeros, for {info['name']} to fill in")
+            functions.append(f"{self.alias}.delete = 'phi_delete': ptr<u8> made;    # frees what one of the new_ functions made")
+
         # a typedef of a struct is the same struct under another name
         others = []
         for name in self.own_typedefs:
@@ -682,7 +771,8 @@ class Package:
               f"{len(numbers) + sum(len(v) for _, v in self.enums)} constants, {len(literals)} struct values")
         for line in self.left_out:
             print(f"  left out: {line}")
-        self.write_layout_test(set(self.written))
+        if bind.get("layout_test", True):
+            self.write_layout_test(set(self.written), per)
         report = os.path.join(self.folder, "left-out.txt")
         if self.left_out:
             with open(report, "w", newline="\n") as f:
@@ -749,12 +839,11 @@ class Package:
             return f"\tusz {name}[{addresses}];" + (f"\n\tu32 {self.safe(name + '_more', taken)}[{fours}];" if fours else "")
         raise Unsupported(f"a union whose size differs between systems in a way PHI's types don't follow ({shapes})")
 
-    def write_layout_test(self, written):
+    def write_layout_test(self, written, per):
         """tests/vendor/NAME_layout_program.phi: each struct's size beside C's, on the system it's built for."""
         names = [n for n in self.order if n in written]
         if not names:
             return
-        per = [self.sizes(triple, names) for _, triple, _, _ in self.MODELS]
         program = "".join(w.capitalize() for w in re.split(r"\W+", self.info["name"])) + "LayoutProgram"
         out = [f"# Every struct of vendor/{self.info['name']} is as large as C has it, on the system this is built for:",
                "# written by vendor/bindgen.py, with C's sizes as clang gives them for " + ", ".join(m[0] for m in self.MODELS) + ".",
@@ -785,11 +874,12 @@ def main():
     if not names:
         sys.exit(__doc__)
     for name in names:
-        package = Package(os.path.join(HERE, name))
-        if "bindings" not in package.info:
-            continue
-        package.parse()
-        package.write()
+        with open(os.path.join(HERE, name, "package.json")) as f:
+            bindings = json.load(f).get("bindings")
+        for which in range(len(bindings) if isinstance(bindings, list) else 1 if bindings else 0):
+            package = Package(os.path.join(HERE, name), which)
+            package.parse()
+            package.write()
 
 
 if __name__ == "__main__":

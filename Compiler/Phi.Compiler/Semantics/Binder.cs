@@ -418,7 +418,11 @@ namespace Phi.Compiler.Semantics
             {
                 file = f.File;
                 string full = $"{f.Library}.{f.Name}";
-                if (!libraries.TryGetValue(f.Library, out LibraryUseDecl? library)) continue;
+                if (!libraries.TryGetValue(f.Library, out LibraryUseDecl? library))
+                {
+                    Error(f.Span, $"{f.Library} isn't an outside library's name here: one is named with use 'its file' as {f.Library}; in this file or one it uses");
+                    continue;
+                }
                 if (outsideFunctions.TryGetValue(full, out OutsideFunctionDecl? declared))
                 {
                     if (Shape(declared.Parameters, declared.Result) != Shape(f.Parameters, f.Result))
@@ -5404,7 +5408,8 @@ namespace Phi.Compiler.Semantics
                     {
                         if (!types[i].IsStruct)
                         {
-                            passed.Add(ConvertChecked(arguments[i], types[i], $"'{f.Parameters[i].Name}' of {full}"));
+                            string what = $"'{f.Parameters[i].Name}' of {full}";
+                            passed.Add(ConvertChecked(arguments[i], types[i], what));
                             continue;
                         }
                         // a struct by value: its pieces, or its address, as this system's C takes one

@@ -2671,6 +2671,17 @@ namespace Phi.Compiler.CodeGen
         /// 32 bytes the function may write (its shadow space), the stack 16-byte aligned. Its
         /// answer is in eax (all of rax for a pointer). r12 keeps where the stack was.
         /// </summary>
+        /// <summary>
+        /// A value for an outside function, in eax (rax). C's (void *)-1, a negative number given
+        /// where an address goes, is all 64 bits of it in 64-bit code, where an int would be the low 32.
+        /// </summary>
+        void EmitAddressOrValue(Expr value, PhiType goesAs)
+        {
+            if (Host.Is64() && goesAs.IsPointer && !value.Type.IsPointer && ConstantFolder.Evaluate(value) is long below && below < 0 && below >= int.MinValue)
+                Emit($"mov rax, {below}");
+            else EmitExpr(value);
+        }
+
         void EmitOutsideCall(OutsideFunctionDecl f, List<Expr> arguments)
         {
             string label = OutsideLabel(f);
@@ -2710,7 +2721,7 @@ namespace Phi.Compiler.CodeGen
                     if (t.IsFloat || t.IsWide) PushWideOrFloat(t, arguments[i]);
                     else
                     {
-                        EmitExpr(arguments[i]);
+                        EmitAddressOrValue(arguments[i], TypeAt(i));
                         Emit("push eax");
                     }
                 }
@@ -2796,7 +2807,7 @@ namespace Phi.Compiler.CodeGen
                         bytes += PushWideOrFloat(t, arguments[i]);
                         continue;
                     }
-                    EmitExpr(arguments[i]);
+                    EmitAddressOrValue(arguments[i], TypeAt(i));
                     Emit("push eax");
                     bytes += 4;
                 }
@@ -2820,7 +2831,7 @@ namespace Phi.Compiler.CodeGen
                     PushWideOrFloat(t, arguments[i]);
                     continue;
                 }
-                EmitExpr(arguments[i]);
+                EmitAddressOrValue(arguments[i], TypeAt(i));
                 Emit("push eax");
             }
             Emit("mov r12, rsp");                      // the values: the first at [r12 + 8 * (n - 1)]

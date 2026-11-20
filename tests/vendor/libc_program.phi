@@ -1,0 +1,83 @@
+# C's own library from the vendor folder (use vendor.libc; and use vendor.libc.math;): memory
+# from malloc, C's text functions, numbers out of text, a sort with a method C calls to
+# compare (addr foreign), a file written and read back through a FILE, printf's forms, and
+# the maths. One source, the same on each system (Windows' msvcrt.dll, macOS's libSystem,
+# Linux's libc.so.6 and libm.so.6).
+use vendor.libc;
+use vendor.libc.math;
+
+phi.LibcProgram:Program
+{
+	# memory and text
+	ptr<u8> room: (C.malloc: 64);
+	ptr<u8> same: (C.strcpy: room 'hello');
+	same is (C.strcat: room ', C');
+	log 'text: ' room ' ' (C.strlen: room) ' ' (C.strcmp: room 'hello, C') ' ' ((C.strcmp: 'a' 'b') < 0) ' ' (C.strstr: room 'lo') ' ' ((C.strchr: room 'z') is 0) '\n';
+	same is (C.memset: room 'x' 3);
+	log 'bytes: ' room ' ' (C.memcmp: room 'xxxlo' 5) ' ' (C.toupper: 'q') ' ' ((C.isdigit: '7') is not 0) ' ' ((C.isalpha: '7') is not 0) '\n';
+	room is (C.realloc: room 256);
+	log 'kept: ' room '\n';
+
+	# numbers out of text
+	ptr<u8> rest: 0;
+	lng number: (C.strtol: '0x1F and more' addr rest 16);
+	log 'numbers: ' (C.atoi: '  42 apples') ' ' (number as int) ' "' rest '" ' (C.atof: '2.5') ' ' (C.abs: -9) '\n';
+
+	# sorted, with a method C calls for each pair
+	int values[8];
+	values:0 is 42;
+	values:1 is -7;
+	values:2 is 1000;
+	values:3 is 3;
+	values:4 is 0;
+	values:5 is 256;
+	values:6 is -300;
+	values:7 is 17;
+	call C.qsort: addr values 8 4 addr foreign Order;
+	log 'sorted:';
+	while int i: 0; i < 8; i++;
+		log ' ' values:i;
+	;;
+	int wanted: 256;
+	ptr<int> found: (C.bsearch: addr wanted addr values 8 4 addr foreign Order) as ptr<int>;
+	log ', found ' found:0 '\n';
+
+	# a file through C
+	ptr<FILE> file: (C.fopen: 'libc_program.tmp' 'wb');
+	int wrote: (C.fputs: 'first line\nsecond\n' file);
+	usz count: (C.fwrite: addr values 4 8 file);
+	int closed: (C.fclose: file);
+	file is (C.fopen: 'libc_program.tmp' 'rb');
+	u8 line[40];
+	ptr<u8> got: (C.fgets: addr line 40 file);
+	log 'file: ' (count as int) ' written, read "' (C.strtok: addr line '\n') '"';
+	got is (C.fgets: addr line 40 file);
+	int back[8];
+	count is (C.fread: addr back 4 8 file);
+	int seek: (C.fseek: file 0 C.SEEK_END);
+	log ', then ' (count as int) ' numbers, the last ' back:7 ', ' ((C.ftell: file) as int) ' bytes\n';
+	closed is (C.fclose: file);
+	log 'removed: ' (C.remove: 'libc_program.tmp') ' ' ((C.fopen: 'libc_program.tmp' 'rb') is 0) '\n';
+
+	# printf's forms, into bytes here
+	u8 made[64];
+	int n: (C.sprintf_int: addr made 'n=%05d' 42);
+	log 'made: ' (addr made) ' ' n;
+	n is (C.sprintf_f64: addr made '%.3f' 3.14159);
+	log ' ' (addr made);
+	n is (C.sprintf_text: addr made '<%s>' 'text');
+	int read: 0;
+	n is (C.sscanf_int: 'width 640' 'width %d' addr read);
+	log ' ' (addr made) ' ' read '\n';
+
+	# the maths
+	log 'maths: ' (CMath.sqrt: 144) ' ' (CMath.pow: 2 10) ' ' (CMath.floor: 2.75) ' ' (CMath.ceil: 2.25) ' ' (CMath.fabs: -1.5) ' ' (CMath.fmod: 10 3)
+	    ' ' ((CMath.atan2: 1 1) > 0.785 and (CMath.atan2: 1 1) < 0.786) ' ' ((CMath.sin: 0) is 0) ' ' ((C.time: 0) > 1700000000) '\n';
+	call C.free: room;
+	exit 0;
+
+	[Order: ptr<int> a: 0; ptr<int> b: 0;]
+		if a:0 < b:0 return -1;
+		if a:0 > b:0 return 1;
+	[end: 0]
+}

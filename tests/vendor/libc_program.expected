@@ -1,0 +1,9 @@
+text: hello, C 8 0 1 lo, C 1
+bytes: xxxlo, C 0 81 1 0
+kept: xxxlo, C
+numbers: 42 31 " and more" 2.5 9
+sorted: -300 -7 0 3 17 42 256 1000, found 256
+file: 8 written, read "first line", then 8 numbers, the last 1000, 50 bytes
+removed: 0 1
+made: n=00042 7 3.142 <text> 640
+maths: 12 1024 2 3 1.5 1 1 1 1

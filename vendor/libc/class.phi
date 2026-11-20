@@ -1,0 +1,5 @@
+	# where a file is moved from, for fseek
+	const int SEEK_SET: 0;
+	const int SEEK_CUR: 1;
+	const int SEEK_END: 2;
+	const int EOF: -1;

@@ -123,8 +123,8 @@ def fetch(name):
 COMPILERS = {
     # system: (the compiler, when this computer has it), how a shared library is made, its file
     "macos": (["clang", "-arch", "arm64", "-arch", "x86_64", "-mmacosx-version-min=11.0"], ["-dynamiclib"]),
-    "windows64": (["x86_64-w64-mingw32-gcc"], ["-shared", "-static-libgcc"]),
-    "windows": (["i686-w64-mingw32-gcc"], ["-shared", "-static-libgcc"]),
+    "windows64": (["x86_64-w64-mingw32-gcc"], ["-shared", "-static", "-static-libgcc"]),
+    "windows": (["i686-w64-mingw32-gcc"], ["-shared", "-static", "-static-libgcc"]),
     "linux64": (None, ["-shared", "-fPIC"]),
 }
 

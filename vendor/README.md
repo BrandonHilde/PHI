@@ -32,9 +32,14 @@ else. Nothing is installed, and nothing is declared in the program.
 | [SQLite](sqlite) | 3.54.1 | `vendor.sqlite` | `Sql.` | public domain | a database in one file or in memory, asked in SQL |
 | [Lua](lua) | 5.5.1 | `vendor.lua` | `Lua.` | MIT | the Lua language, to script a program with |
 | [zlib](zlib) | 1.4 | `vendor.zlib` | `Z.` | zlib | compression: deflate, zlib and gzip streams, checksums |
+| [stb](stb) | 2026-11 | `vendor.stb` | `Stb.` | public domain or MIT | pictures read and written (PNG, JPEG and more), TrueType fonts, rectangle packing, Ogg Vorbis |
+| [miniaudio](miniaudio) | 0.11.26 | `vendor.miniaudio` | `Ma.` | public domain or MIT-0 | sound played and recorded, files decoded, mixing and effects |
+| [libc](libc) | C89 | `vendor.libc`, `vendor.libc.math` | `C.`, `CMath.` | the system's own | C's own library: memory, text, files, sorting, maths |
 
-raylib and SDL3 are their makers' own builds; SQLite, Lua and zlib are built from their
-makers' source, unchanged, by `vendor/fetch.py`. On Linux, SDL3 is the system's
+`phi vendor` lists them. Each folder's README has an example and what to know about it. raylib and SDL3 are their
+makers' own builds; SQLite, Lua, zlib, stb and miniaudio are built from their makers'
+source, unchanged, by `vendor/fetch.py`; libc is every system's own, so nothing is shipped
+for it. On Linux, SDL3 is the system's
 (`libSDL3.so.0`, from the distribution's packages), and raylib's own build needs glibc 2.38
 or later and X11.
 
@@ -111,6 +116,18 @@ system. A module is never edited by hand: what C can't say for itself goes in
 | `skip_like` | names to leave out, as regular expressions |
 | `startup` | statements the library's class runs when the program starts |
 | `comment_drop` | text to take out of the header's comments, as regular expressions |
+| `handles` | `true` to give each struct PHI can't lay out a `new_` function (in `alloc.c`, built into the library) |
+
+`"bindings"` may be a list, for a library with several modules (`vendor.libc` and
+`vendor.libc.math`): each with its own `output` file, and its own `libraries` if they differ.
+`class.phi` beside it is added inside the library's class (methods for what C has as
+macros), and `extra.phi` after everything else.
+
+A library that has no builds of its own to fetch has a `"build"` in `package.json`: where
+its source comes from, which files are compiled, and what each system's compiler is told.
+`fetch.py` makes one shared library for each system this computer has a compiler for: clang
+for macOS, MinGW for the two Windows, and gcc for 64-bit Linux (its own there, or the one in
+the Linux machine a Mac keeps).
 | `rename`, `functions` | a struct's, or a function's, PHI name where C's can't be used |
 | `clang`, `include` | more arguments for clang, and folders its includes are found in |
 

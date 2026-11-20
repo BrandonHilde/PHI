@@ -39,6 +39,8 @@ docs/examples` boots each one and checks its output.
 - **[PHI for C programmers](phi-for-c-programmers.md):** the differences from C that catch people out
 - **[Common patterns](patterns.md):** tables of handlers, callbacks, building text, sets of
   states: what classes, `switch` and enums do elsewhere
+- **[The vendor folder](../vendor/README.md):** the C libraries that come with PHI (raylib, SDL3,
+  SQLite, Lua, zlib, stb, miniaudio, C's own), each used from one `use` line
 - **[Memory map and boot process](memory-map.md):** where everything lives in memory, and what
   happens between power-on and your code
 - **[Architecture](architecture.md):** how the compiler, the standard library and the build fit
@@ -56,6 +58,8 @@ docs/examples` boots each one and checks its output.
 | [samples/kernel.phi](../samples/kernel.phi) | a small 32-bit kernel that prints the memory map |
 | [samples/arcade.phi](../samples/arcade.phi) | Pong as a 16-bit program in graphics mode |
 | [samples/sketch.phi](../samples/sketch.phi) | a drawing program: 640x480 graphics, the mouse and keyboard, in a 32-bit kernel |
+| [samples/raylib/ball.phi](../samples/raylib/ball.phi) and [samples/sdl3/bounce.phi](../samples/sdl3/bounce.phi) | a window through a C library of the vendor folder, as a Windows, macOS or Linux program |
+| [tests/vendor](../tests/vendor) | each vendor library used with no window: a database, a script, pictures, sound, compression |
 | [lib/phi](../lib/phi) | the standard library, in PHI: drivers, memory, the file system, processes |
 
 ## Contributing

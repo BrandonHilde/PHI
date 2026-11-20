@@ -124,6 +124,7 @@ through QEMU's emulated AC'97 card; `phi run` picks QEMU's sound output for your
 | `phi check file.phi` | report errors without building: a program as it is, a module (or a program's class that's part of another program) in a program around it |
 | `phi fmt file.phi` | lay out a file, or every `.phi` file in a folder, in place: tabs for what each line is inside, no trailing spaces, and parentheses around an expression in a call with several arguments (`call Add: x (y + h) w;`). It only changes the layout: what the file compiles to stays the same, and a file with errors is left alone. `--check` changes nothing, and fails if a file would change |
 | `phi lsp` | the language server, for an editor: errors as you type, going to a definition, completing names. In VS Code, the [PHI extension](https://github.com/BrandonHilde/PHI-VSCODE) runs it |
+| `phi vendor` | the C libraries that come with PHI, each used from one line (`use vendor.raylib;`): see [Use a C library](#use-a-c-library) |
 | `phi run file.phi` | build, then boot it in QEMU; serial output (`log` and `debug`) also prints in your terminal |
 | `phi run file.phi --debug` | start paused, waiting for a debugger (see below) |
 | `phi run file.phi --keep-disk` | boot a disk that keeps what the kernel saved (`build/NAME/NAME.kept.img`): each run puts the new kernel and any changed or new programs (`NAME.BIN`) on it but leaves its other files alone; delete it to start again |
@@ -176,6 +177,34 @@ A kernel that saves files (accounts, settings, documents) gets a fresh disk from
 
 The clock (`drivers.rtc`) is in UTC, as QEMU keeps it, but `phi run` and `phi test` tell the
 kernel your computer's time zone, so `Rtc.ReadLocal` gives your local time.
+
+## Use a C library
+
+A program for Windows, macOS or Linux can call C libraries, and eight come with PHI in the
+[vendor folder](../vendor/README.md). Save this as `window.phi`:
+
+```phi
+use vendor.raylib;
+
+phi.Window:Program
+{
+	call Ray.InitWindow: 800 450 'Hello from PHI';
+	while not (Ray.WindowShouldClose)
+		call Ray.BeginDrawing;
+		call Ray.ClearBackground: Ray.RAYWHITE;
+		call Ray.DrawText: 'It works' 320 200 30 Ray.DARKGRAY;
+		call Ray.EndDrawing;
+	;;
+	call Ray.CloseWindow;
+	exit 0;
+}
+```
+
+and run it for the system you're on: `phi run window.phi --target windows64` (or `macos`,
+`linux64`). `phi build` puts `raylib.dll` (or its macOS or Linux file) beside the program,
+so the folder it builds into is what you'd give someone else. With PHI built from its
+source, fetch the libraries once first: `python3 vendor/fetch.py`. `phi vendor` lists the
+libraries there are.
 
 ## When something goes wrong
 

@@ -19,3 +19,6 @@ vendor/*/macos/
 vendor/*/linux64/
 vendor/*/include/
 vendor/*/src/
+
+# release/pack.py's output
+dist/

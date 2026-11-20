@@ -47,6 +47,13 @@ phi.LuaProgram:Program
 	log 'area ' (Lua.lua_tointeger: L (-2)) ' ' (Lua.lua_tointeger: L (-1)) ' ' bad '\n';
 	call Lua.lua_pop: L 2;
 
+	# an address of -1, as C writes (void *)-1, is all of its bits; and a form of one of
+	# Lua's functions declared here, under a name of this file's own
+	call Lua.lua_pushlightuserdata: L (-1);
+	ptr<u8> all: (Lua.lua_touserdata: L (-1));
+	log 'an address of -1: ' ((all + 1) is 0) ' ' (AllOnes) ', version ' (Lua.version_as_number: L) '\n';
+	call Lua.lua_pop: L 1;
+
 	call Do: 'this is not lua';
 	call Do: 'error("said in lua")';
 	log 'stack ' (Lua.lua_gettop: L) '\n';
@@ -60,6 +67,13 @@ phi.LuaProgram:Program
 		;;
 	[end]
 
+	# the same from a method
+	[AllOnes]
+		call Lua.lua_pushlightuserdata: L (-1);
+		ptr<u8> given: (Lua.lua_touserdata: L (-1));
+		call Lua.lua_pop: L 1;
+	[end: (given + 1) is 0]
+
 	[Twice: ptr<lua_State> state: 0;]
 		called++;
 		call Lua.lua_pushinteger: state (Lua.lua_tointeger: state 1) * 2;
@@ -71,3 +85,5 @@ phi.LuaProgram:Program
 		call Lua.lua_pushnumber: state (Float.Sqrt: a * a + b * b);
 	[end: 1]
 }
+
+Lua.version_as_number = 'lua_version': ptr<lua_State> L: f64;

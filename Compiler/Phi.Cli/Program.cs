@@ -120,6 +120,8 @@ const string Usage = """
       phi lsp                              the language server, for an editor: errors as you type, going
                                            to a definition and completing names, over standard input and
                                            output (PHI-VSCODE is the extension for VS Code)
+      phi vendor                           the C libraries that come with PHI (the vendor folder), each
+                                           used whole from one line: use vendor.raylib;
       phi --version                        which PHI this is, and which compiled libraries it loads
     """;
 
@@ -408,6 +410,38 @@ static int Execute(string[] args)
                 foreach (var d in compiled.Diagnostics) Console.Error.WriteLine(d);
                 if (compiled.Success) Console.WriteLine($"{rest[0]}: no errors");
                 return compiled.Success ? 0 : 1;
+            }
+
+            case "vendor":
+            {
+                if (Phi.Compiler.PhiCompiler.VendorFolder is not string folder)
+                {
+                    Console.Error.WriteLine("error: there's no vendor folder beside phi (a release has one; PHI_VENDOR names another)");
+                    return 1;
+                }
+                Console.WriteLine($"the C libraries in {folder}:");
+                Console.WriteLine();
+                foreach (string package in Directory.GetDirectories(folder).OrderBy(d => d, StringComparer.Ordinal))
+                {
+                    string file = Path.Combine(package, "package.json");
+                    if (!File.Exists(file)) continue;
+                    using var json = System.Text.Json.JsonDocument.Parse(File.ReadAllText(file));
+                    var root = json.RootElement;
+                    string name = root.GetProperty("name").GetString() ?? "";
+                    var bindings = root.GetProperty("bindings");
+                    var modules = bindings.ValueKind == System.Text.Json.JsonValueKind.Array ? bindings.EnumerateArray().ToList() : new() { bindings };
+                    var uses = modules.Select(m => (Use: "use vendor." + name + (m.TryGetProperty("output", out var o) ? "." + Path.GetFileNameWithoutExtension(o.GetString()) : "") + ";",
+                                                    Alias: m.GetProperty("alias").GetString() + ".")).ToList();
+                    // (a library whose own files weren't fetched is there to read, not yet to build with)
+                    bool fetched = !root.TryGetProperty("downloads", out _) && !root.TryGetProperty("build", out _)
+                                   || new[] { "windows64", "windows", "macos", "linux64" }.Any(s => Directory.Exists(Path.Combine(package, s)));
+                    Console.WriteLine($"  {name} {root.GetProperty("version").GetString()}" + (fetched ? "" : "   (its files aren't here: python3 vendor/fetch.py)"));
+                    Console.WriteLine($"      {root.GetProperty("about").GetString()}");
+                    foreach (var (use, alias) in uses) Console.WriteLine($"      {use,-28} called as {alias}");
+                }
+                Console.WriteLine();
+                Console.WriteLine("Each folder's README has an example; vendor/README says how a C library reads in PHI.");
+                return 0;
             }
 
             case "fmt":

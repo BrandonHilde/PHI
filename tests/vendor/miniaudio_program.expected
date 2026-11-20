@@ -1,0 +1,5 @@
+miniaudio 0.11
+wave: 1 480 frames, starts at 0, a quarter in 1, above zero 1, loudest 1
+decoded: 1 8 frames: -3000 -2000 -1000 0 1000 2000 3000 4000
+engine: 1 at 48000 Hz
+mixed: 1 1 480 frames, sound in 1, at half 1

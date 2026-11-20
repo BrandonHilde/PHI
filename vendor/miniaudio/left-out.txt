@@ -1,0 +1,27 @@
+What vendor/bindgen.py couldn't declare in PHI, and why:
+
+struct ma_event: a struct of the system's own (_opaque_pthread_mutex_t)
+struct ma_semaphore: a struct of the system's own (_opaque_pthread_mutex_t)
+struct ma_log: a struct of the system's own (_opaque_pthread_mutex_t)
+struct ma_resampler: a union whose size differs between systems in a way PHI's types don't follow ([(136, 8), (136, 8), (104, 8)])
+struct ma_job: a union whose size differs between systems in a way PHI's types don't follow ([(80, 8), (80, 8), (64, 8)])
+struct ma_device_id: a union whose size differs between systems in a way PHI's types don't follow ([(256, 8), (256, 8), (256, 4)])
+struct ma_context: a struct of the system's own (_opaque_pthread_mutex_t)
+struct ma_device: a struct of the system's own (_opaque_pthread_mutex_t)
+struct ma_resource_manager_data_buffer: a union whose size differs between systems in a way PHI's types don't follow ([(552, 8), (552, 8), (416, 8)])
+struct ma_resource_manager_data_source: a union whose size differs between systems in a way PHI's types don't follow ([(728, 8), (728, 8), (560, 8)])
+struct ma_resource_manager: a struct of the system's own (_opaque_pthread_mutex_t)
+struct ma_data_converter: it has a ma_resampler in it, which is held by its address only
+struct ma_fence: it has a ma_event in it, which is held by its address only
+struct ma_async_notification_event: it has a ma_event in it, which is held by its address only
+struct ma_job_queue: it has a ma_semaphore in it, which is held by its address only
+struct ma_device_job_thread: it has a ma_job_queue in it, which is held by its address only
+struct ma_device_info: it has a ma_device_id in it, which is held by its address only
+struct ma_decoder: it has a ma_data_converter in it, which is held by its address only
+struct ma_resource_manager_data_stream: it has a ma_decoder in it, which is held by its address only
+struct ma_engine_node: it has a ma_resampler in it, which is held by its address only
+struct ma_sound: it has a ma_engine_node in it, which is held by its address only
+struct ma_sound_inlined: it has a ma_sound in it, which is held by its address only
+ma_log_postv: va_list
+ma_job_init: ma_job by value, which PHI holds only by its address
+#define MA_UINT64_MAX: 18446744073709551615 is past 32 bits, which a PHI constant isn't yet

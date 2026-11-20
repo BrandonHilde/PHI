@@ -5,6 +5,7 @@ h 5
 big 1099511627818 0
 said PHI 1280 1
 area 42 13 0
+an address of -1: 1 1, version 505
 lua says: [string "this is not lua"]:1: syntax error near 'is'
 lua says: [string "error("said in lua")"]:1: said in lua
 stack 0

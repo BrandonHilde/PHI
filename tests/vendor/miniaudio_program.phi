@@ -1,0 +1,107 @@
+# miniaudio from the vendor folder (use vendor.miniaudio;), with no sound card: a sine wave
+# made and read as numbers; a WAV file built here in memory and decoded (a ma_decoder is one
+# of the structs held by its address: Ma.new_decoder); and its engine with no device, a
+# sound started in it and the mix read back. A struct given back by value (a config) is
+# declared from the call. One source, the same on each system.
+use vendor.miniaudio;
+
+phi.MiniaudioProgram:Program
+{
+	u32 major: 0;
+	u32 minor: 0;
+	u32 revision: 0;
+	call Ma.version: addr major addr minor addr revision;
+	log 'miniaudio ' major '.' minor '\n';
+
+	# a sine wave: 440 Hz, one channel, as f32s
+	f32 samples[960];
+	u64 got: 0;
+	ma_waveform_config shape: (Ma.waveform_config_init: Ma.format_f32 1 48000 Ma.waveform_type_sine 0.5 440);
+	ma_waveform wave;
+	int r: (Ma.waveform_init: addr shape addr wave);
+	r is (Ma.waveform_read_pcm_frames: addr wave addr samples 480 addr got);
+	int over: 0;
+	f32 most: 0;
+	while int i: 0; i < 109; i++;
+		if samples:i > 0
+			over++;
+		;;
+		if samples:i > most
+			most is samples:i;
+		;;
+	;;
+	log 'wave: ' (r is Ma.SUCCESS) ' ' (got as int) ' frames, starts at ' samples:0 ', a quarter in ' (samples:27 > 0.49) ', above zero '
+	    (over > 50 and over < 58) ', loudest ' (most > 0.49 and most <= 0.5) '\n';
+
+	# a WAV in memory: 8000 Hz, one channel, eight 16-bit samples
+	u8 wav[60];
+	i16 heard[8];
+	call Text: 0 'RIFF';
+	wav:4 is 52;
+	call Text: 8 'WAVEfmt ';
+	wav:16 is 16;
+	wav:20 is 1;                # PCM
+	wav:22 is 1;                # one channel
+	wav:24 is 0x40;             # 8000 Hz
+	wav:25 is 0x1F;
+	wav:28 is 0x80;             # 16000 bytes a second
+	wav:29 is 0x3E;
+	wav:32 is 2;
+	wav:34 is 16;
+	call Text: 36 'data';
+	wav:40 is 16;
+	while int i: 0; i < 8; i++;
+		int value: i * 1000 - 3000;
+		wav:(44 + i * 2) is (value & 0xFF) as u8;
+		wav:(45 + i * 2) is ((value >> 8) & 0xFF) as u8;
+	;;
+	ptr<ma_decoder> decoder: (Ma.new_decoder);
+	ma_decoder_config wanted: (Ma.decoder_config_init: Ma.format_s16 1 8000);
+	r is (Ma.decoder_init_memory: addr wav 60 addr wanted decoder);
+	u64 frames: 0;
+	int asked: (Ma.decoder_get_length_in_pcm_frames: decoder addr frames);
+	int read: (Ma.decoder_read_pcm_frames: decoder addr heard 8 addr got);
+	log 'decoded: ' (r is Ma.SUCCESS) ' ' (frames as int) ' frames:';
+	while int i: 0; i < 8; i++;
+		log ' ' heard:i;
+	;;
+	log '\n';
+	r is (Ma.decoder_uninit: decoder);
+	call Ma.delete: decoder;
+
+	# the engine with no device: what it would play is read from it
+	ma_engine_config plan: (Ma.engine_config_init);
+	plan.noDevice is Ma.TRUE;
+	plan.channels is 2;
+	plan.sampleRate is 48000;
+	ma_engine engine;
+	r is (Ma.engine_init: addr plan addr engine);
+	log 'engine: ' (r is Ma.SUCCESS) ' at ' (Ma.engine_get_sample_rate: addr engine) ' Hz\n';
+	ptr<ma_sound> sound: (Ma.new_sound);
+	r is (Ma.sound_init_from_data_source: addr engine addr wave 0 0 sound);
+	call Ma.sound_set_volume: sound 0.5;
+	int started: (Ma.sound_start: sound);
+	int mixed: (Ma.engine_read_pcm_frames: addr engine addr samples 480 addr got);
+	int heardSomething: 0;
+	f32 peak: 0;
+	while int i: 0; i < 960; i++;
+		if samples:i is not 0
+			heardSomething++;
+		;;
+		if samples:i > peak
+			peak is samples:i;
+		;;
+	;;
+	log 'mixed: ' (r is Ma.SUCCESS) ' ' (started is Ma.SUCCESS) ' ' (got as int) ' frames, sound in ' (heardSomething > 800) ', at half ' (peak > 0.2 and peak < 0.26) '\n';
+	call Ma.sound_uninit: sound;
+	call Ma.delete: sound;
+	call Ma.engine_uninit: addr engine;
+	call Ma.waveform_uninit: addr wave;
+	exit 0;
+
+	[Text: int from; ptr<u8> text;]
+		while int i: 0; text:i is not 0; i++;
+			wav:(from + i) is text:i;
+		;;
+	[end]
+}

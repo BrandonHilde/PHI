@@ -1,0 +1,6 @@
+written: 1, a PNG: 1, smaller: 1
+asked: 1 32 x 32, 4 channels
+read back: 1 1
+bmp: 2 x 2, 3 channels: 0 0 255 255 255 255 255 0 0 0 255 0
+no picture: 1, unknown image type
+packed: 1 (0 44 1) (18 24 1) (18 0 1) (0 0 1)

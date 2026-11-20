@@ -1,2 +1,17 @@
 PHI
 Copyright 2024-2026 Brandon Hilde
+
+The vendor folder holds other people's libraries, each under its own licence, which is in
+its folder (vendor/NAME/LICENSE) and goes with the library wherever it's passed on:
+
+  raylib      Copyright (c) 2013-2026 Ramon Santamaria (@raysan5)          zlib licence
+  SDL3        Copyright (C) 1997-2026 Sam Lantinga                         zlib licence
+  SQLite      public domain
+  Lua         Copyright (C) 1994-2026 Lua.org, PUC-Rio                     MIT licence
+  zlib        Copyright (C) 1995-2026 Jean-loup Gailly and Mark Adler      zlib licence
+  stb         Sean Barrett and contributors                               public domain or MIT
+  miniaudio   David Reid                                                  public domain or MIT-0
+
+PHI's repository has what PHI needs to call each (written from its headers) and its
+licence; the libraries themselves are fetched from their makers by vendor/fetch.py, and a
+release has them in place.

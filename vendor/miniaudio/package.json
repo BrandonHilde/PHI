@@ -1,0 +1,80 @@
+{
+  "name": "miniaudio",
+  "version": "0.11.26",
+  "about": "sound played and recorded: files decoded (WAV, FLAC, MP3), mixed, with effects and a place in space",
+  "homepage": "https://miniaud.io",
+  "license": "public domain or MIT-0",
+  "libraries": {
+    "windows": "miniaudio.dll",
+    "macos": "libminiaudio.dylib",
+    "linux": "libminiaudio.so"
+  },
+  "build": {
+    "sources": [
+      {
+        "url": "https://github.com/mackron/miniaudio/archive/refs/tags/0.11.26.tar.gz",
+        "sha256": "838ba55a21c9142adf7b76bdc4351e5cd8b7ae128f46b25ec25f94ae9969c600",
+        "files": {
+          "miniaudio-0.11.26/miniaudio.c": "src/miniaudio.c",
+          "miniaudio-0.11.26/miniaudio.h": "include/miniaudio.h",
+          "miniaudio-0.11.26/LICENSE": "LICENSE"
+        }
+      }
+    ],
+    "compile": [
+      "src/miniaudio.c",
+      "alloc.c"
+    ],
+    "include": [
+      "include"
+    ],
+    "macos_link": [
+      "-framework",
+      "CoreFoundation",
+      "-framework",
+      "CoreAudio",
+      "-framework",
+      "AudioToolbox"
+    ],
+    "linux64_link": [
+      "-ldl",
+      "-lpthread",
+      "-lm"
+    ]
+  },
+  "bindings": {
+    "alias": "Ma",
+    "headers": [
+      "include/miniaudio.h"
+    ],
+    "strip": "ma_",
+    "strip_constants": [
+      "MA_",
+      "ma_"
+    ],
+    "skip_like": [
+      "^miniaudio_h$",
+      "^MA_API$",
+      "^MA_PRIVATE$",
+      "^MA_INLINE$",
+      "^MA_HAS_",
+      "^MA_SUPPORT_",
+      "^MA_ENABLE_",
+      "^MA_SIZEOF_PTR$",
+      "^MA_(WIN32|APPLE|LINUX|UNIX|POSIX|DESKTOP|X64|X86|ARM|ARM64|64BIT|32BIT)",
+      "^MA_VERSION_STRING$",
+      "^MA_SIZE_MAX$",
+      "^MA_ATOMIC",
+      "^MA_CC",
+      "^MA_NO_",
+      "^MA_USE_"
+    ],
+    "notes": [
+      "A function is Ma.name for C's ma_name (Ma.engine_init, Ma.engine_play_sound), and a constant",
+      "Ma.NAME for MA_NAME or ma_name (Ma.SUCCESS, Ma.format_f32); a struct keeps C's whole name (ma_engine).",
+      "Some of its structs differ from one system to the next (a ma_sound, a ma_decoder, a ma_device):",
+      "those are held by their address, made with Ma.new_sound and the like, and freed with Ma.delete."
+    ],
+    "handles": true
+  }
+}

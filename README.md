@@ -114,6 +114,34 @@ phi.Count:Program
 }
 ```
 
+<h3>C libraries</h3>
+
+A program for Windows, macOS or Linux calls C libraries, and the ones most programs reach
+for come with PHI, in the [vendor folder](vendor/README.md): raylib, SDL3, SQLite, Lua,
+zlib, stb, miniaudio and C's own library. One `use` brings a whole library in, with nothing
+to declare and nothing to install, and the build puts its file beside the program:
+
+```phi
+use vendor.raylib;
+
+phi.Hello:Program
+{
+	call Ray.InitWindow: 800 450 'Hello from PHI';
+	while not (Ray.WindowShouldClose)
+		call Ray.BeginDrawing;
+		call Ray.ClearBackground: Ray.RAYWHITE;
+		call Ray.DrawCircleV: (Ray.GetMousePosition) 30 Ray.MAROON;
+		call Ray.EndDrawing;
+	;;
+	call Ray.CloseWindow;
+	exit 0;
+}
+```
+
+`phi run hello.phi --target macos` (or `windows64`, `windows`, `linux64`) opens the window.
+Any other C library is called the same way, from a `use` that names its file and one line
+for each function ([Outside libraries](docs/language.md#a-systems-own-modules-and-system-calls)).
+
 <h3>Learn PHI</h3>
 
 - **[Getting started](docs/getting-started.md):** install the tools and boot PHI OS in ten minutes

@@ -1,0 +1,105 @@
+# libc C89: C's own library, which every system has: memory, text, bytes, files, sorting
+# https://en.cppreference.com/w/c  (the system's own library; these declarations are PHI's)
+#
+# Written by vendor/bindgen.py from libc.h: change package.json
+# and run it again, rather than this file. Functions, structs and constants have C's names.
+# The part of C's library that Windows (msvcrt.dll), macOS and Linux all have under the same names.
+# C's long is lng here, its size_t usz, and a FILE is held by its address.
+# PHI has its own text, files and memory: this is for code written against C's, and for what
+# another C library expects to be given (memory from malloc, a FILE).
+use 'msvcrt.dll' 'libSystem.B.dylib' 'libc.so.6' as C;
+
+phi.C:Library
+{
+
+	# where a file is moved from, for fseek
+	const int SEEK_SET: 0;
+	const int SEEK_CUR: 1;
+	const int SEEK_END: 2;
+	const int EOF: -1;
+}
+
+struct.FILE foreign    # only ever held by its address: what's in it is libc's own
+{
+	int opaque;
+}
+
+C.malloc: usz size: ptr<u8>;    # Room for size bytes, or 0
+C.calloc: usz count usz size: ptr<u8>;    # Room for count things of size bytes each, all zeros
+C.realloc: ptr<u8> memory usz size: ptr<u8>;    # The same bytes in room of another size (it may move)
+C.free: ptr<u8> memory;    # Gives back what malloc, calloc or realloc gave
+C.strlen: ptr<u8> text: ulng;    # How many bytes before the 0
+C.strcpy: ptr<u8> to ptr<u8> from: ptr<u8>;    # Copies text, with its 0
+C.strncpy: ptr<u8> to ptr<u8> from usz count: ptr<u8>;    # Copies at most count bytes of text
+C.strcat: ptr<u8> to ptr<u8> from: ptr<u8>;    # Adds text to the end of other text
+C.strncat: ptr<u8> to ptr<u8> from usz count: ptr<u8>;    # Adds at most count bytes of text
+C.strcmp: ptr<u8> a ptr<u8> b;    # 0 when the same, below or above 0 by the first byte that differs
+C.strncmp: ptr<u8> a ptr<u8> b usz count;    # The same, over at most count bytes
+C.strchr: ptr<u8> text int byte: ptr<u8>;    # Where a byte first is in text, or 0
+C.strrchr: ptr<u8> text int byte: ptr<u8>;    # Where a byte last is in text, or 0
+C.strstr: ptr<u8> text ptr<u8> part: ptr<u8>;    # Where some text first is in other text, or 0
+C.strspn: ptr<u8> text ptr<u8> among: ulng;    # How many bytes at the start are all among some
+C.strcspn: ptr<u8> text ptr<u8> among: ulng;    # How many bytes at the start are none of some
+C.strtok: ptr<u8> text ptr<u8> between: ptr<u8>;    # The next piece of text between any of some bytes
+C.strerror: int error: ptr<u8>;    # What an error's number means, as text
+C.memcpy: ptr<u8> to ptr<u8> from usz count: ptr<u8>;    # Copies count bytes (that don't overlap)
+C.memmove: ptr<u8> to ptr<u8> from usz count: ptr<u8>;    # Copies count bytes, right when they overlap
+C.memset: ptr<u8> to int byte usz count: ptr<u8>;    # Sets count bytes to one value
+C.memcmp: ptr<u8> a ptr<u8> b usz count;    # Compares count bytes, as strcmp does text
+C.memchr: ptr<u8> bytes int byte usz count: ptr<u8>;    # Where a byte first is in count bytes, or 0
+C.atoi: ptr<u8> text;    # The whole number text starts with
+C.atof: ptr<u8> text: f64;    # The number text starts with
+C.strtol: ptr<u8> text ptr<ptr<u8>> end_ int base: lng;    # A whole number in a base, and where it ended
+C.strtoul: ptr<u8> text ptr<ptr<u8>> end_ int base: ulng;    # The same, never below 0
+C.strtod: ptr<u8> text ptr<ptr<u8>> end_: f64;    # A number, and where it ended
+C.abs: int number;    # A number without its sign
+C.qsort: ptr<u8> first usz count usz size ptr<u8> compare;    # Sorts count elements of size bytes each
+C.bsearch: ptr<u8> key ptr<u8> first usz count usz size ptr<u8> compare: ptr<u8>;    # Finds a key among sorted elements, or 0
+C.rand;    # The next of a run of numbers that look random
+C.srand: u32 seed;    # Starts that run somewhere else
+C.getenv: ptr<u8> name: ptr<u8>;    # An environment variable's text, or 0
+C.system: ptr<u8> command;    # Runs a command as the system's shell does
+C.exit: int code;    # Ends the program, with what C still holds written
+C.time: ptr<isz> now: isz;    # Seconds since the start of 1970
+C.fopen: ptr<u8> path ptr<u8> mode: ptr<FILE>;    # Opens a file ("r", "w", "a", with "b" for bytes as they are), or 0
+C.fclose: ptr<FILE> file;    # Closes it, with what's waiting written
+C.fread: ptr<u8> to usz size usz count ptr<FILE> file: ulng;    # Reads count things of size bytes; how many it read
+C.fwrite: ptr<u8> from usz size usz count ptr<FILE> file: ulng;    # Writes count things of size bytes; how many it wrote
+C.fgets: ptr<u8> to int room ptr<FILE> file: ptr<u8>;    # Reads a line (at most room - 1 bytes), or 0 at the end
+C.fputs: ptr<u8> text ptr<FILE> file;    # Writes text
+C.fgetc: ptr<FILE> file;    # Reads one byte, or -1 at the end
+C.fputc: int byte ptr<FILE> file;    # Writes one byte
+C.fseek: ptr<FILE> file lng offset int from;    # Moves to an offset from the start (0), here (1) or the end (2)
+C.ftell: ptr<FILE> file: lng;    # Where in the file it is
+C.rewind: ptr<FILE> file;    # Back to the start
+C.fflush: ptr<FILE> file;    # Writes what's waiting (every file, given 0)
+C.feof: ptr<FILE> file;    # Whether the end has been read past
+C.ferror: ptr<FILE> file;    # Whether something went wrong with it
+C.remove: ptr<u8> path;    # Deletes a file
+C.rename: ptr<u8> from ptr<u8> to;    # Gives a file another name
+C.puts: ptr<u8> text;    # Writes text and a new line to the program's output
+C.putchar: int byte;    # Writes one byte to the program's output
+C.printf: ptr<u8> format ...;    # Writes text made as format says (see C.printf_int and the others)
+C.sprintf: ptr<u8> to ptr<u8> format ...;    # The same, into bytes of the program's own
+C.sscanf: ptr<u8> text ptr<u8> format ...;    # Reads values out of text as format says
+C.isalpha: int byte;    # A letter
+C.isdigit: int byte;    # A digit
+C.isalnum: int byte;    # A letter or a digit
+C.isspace: int byte;    # A space, a tab or a new line
+C.isupper: int byte;    # A capital letter
+C.islower: int byte;    # A small letter
+C.ispunct: int byte;    # Punctuation
+C.isxdigit: int byte;    # A hexadecimal digit
+C.toupper: int byte;    # A letter as a capital
+C.tolower: int byte;    # A letter as a small one
+
+# printf, sprintf and sscanf take any number of values in C. Each form here is one of them
+# under a name of its own, with the values it takes: declare others the same way.
+C.printf_int = 'printf': ptr<u8> format ... int value;
+C.printf_text = 'printf': ptr<u8> format ... ptr<u8> text;
+C.printf_f64 = 'printf': ptr<u8> format ... f64 value;
+C.sprintf_int = 'sprintf': ptr<u8> to ptr<u8> format ... int value;
+C.sprintf_text = 'sprintf': ptr<u8> to ptr<u8> format ... ptr<u8> text;
+C.sprintf_f64 = 'sprintf': ptr<u8> to ptr<u8> format ... f64 value;
+C.sscanf_int = 'sscanf': ptr<u8> text ptr<u8> format ... ptr<int> value;
+C.sscanf_f64 = 'sscanf': ptr<u8> text ptr<u8> format ... ptr<f64> value;

@@ -1,0 +1,31 @@
+{
+  "name": "libc",
+  "version": "C89",
+  "about": "C's own library, which every system has: memory, text, bytes, files, sorting",
+  "homepage": "https://en.cppreference.com/w/c",
+  "license": "the system's own library; these declarations are PHI's",
+  "libraries": { "windows": "msvcrt.dll", "macos": "libSystem.B.dylib", "linux": "libc.so.6" },
+  "bindings": [
+    {
+      "alias": "C",
+      "headers": ["libc.h"],
+      "types": { "phi_time": "isz" },
+      "notes": [
+        "The part of C's library that Windows (msvcrt.dll), macOS and Linux all have under the same names.",
+        "C's long is lng here, its size_t usz, and a FILE is held by its address.",
+        "PHI has its own text, files and memory: this is for code written against C's, and for what",
+        "another C library expects to be given (memory from malloc, a FILE)."
+      ]
+    },
+    {
+      "alias": "CMath",
+      "output": "math.phi",
+      "headers": ["cmath.h"],
+      "libraries": { "windows": "msvcrt.dll", "macos": "libSystem.B.dylib", "linux": "libm.so.6" },
+      "class": "none",
+      "extra": "none",
+      "layout_test": false,
+      "notes": ["C's maths (math.h): use vendor.libc.math; and CMath.sin, CMath.pow. On f64s."]
+    }
+  ]
+}

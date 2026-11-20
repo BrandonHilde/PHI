@@ -1,0 +1,34 @@
+# libc C89: C's own library, which every system has: memory, text, bytes, files, sorting
+# https://en.cppreference.com/w/c  (the system's own library; these declarations are PHI's)
+#
+# Written by vendor/bindgen.py from cmath.h: change package.json
+# and run it again, rather than this file. Functions, structs and constants have C's names.
+# C's maths (math.h): use vendor.libc.math; and CMath.sin, CMath.pow. On f64s.
+use 'msvcrt.dll' 'libSystem.B.dylib' 'libm.so.6' as CMath;
+
+phi.CMath:Library
+{
+}
+
+CMath.sin: f64 x: f64;    # Sine of an angle in radians
+CMath.cos: f64 x: f64;    # Cosine of an angle in radians
+CMath.tan: f64 x: f64;    # Tangent of an angle in radians
+CMath.asin: f64 x: f64;    # The angle whose sine is x
+CMath.acos: f64 x: f64;    # The angle whose cosine is x
+CMath.atan: f64 x: f64;    # The angle whose tangent is x
+CMath.atan2: f64 y f64 x: f64;    # The angle of the point (x, y), all the way round
+CMath.sinh: f64 x: f64;    # Hyperbolic sine
+CMath.cosh: f64 x: f64;    # Hyperbolic cosine
+CMath.tanh: f64 x: f64;    # Hyperbolic tangent
+CMath.exp: f64 x: f64;    # e to the power x
+CMath.log: f64 x: f64;    # The natural logarithm
+CMath.log10: f64 x: f64;    # The logarithm to base 10
+CMath.pow: f64 x f64 y: f64;    # x to the power y
+CMath.sqrt: f64 x: f64;    # The square root
+CMath.ceil: f64 x: f64;    # The next whole number up
+CMath.floor: f64 x: f64;    # The next whole number down
+CMath.fabs: f64 x: f64;    # A number without its sign
+CMath.fmod: f64 x f64 y: f64;    # What's left of x divided by y
+CMath.ldexp: f64 x int power: f64;    # x times 2 to a power
+CMath.frexp: f64 x ptr<int> power: f64;    # x as a fraction and a power of 2
+CMath.modf: f64 x ptr<f64> whole: f64;    # x's part after the point, and its whole part
