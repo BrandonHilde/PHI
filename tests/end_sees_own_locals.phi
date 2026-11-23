@@ -1,0 +1,47 @@
+# A method's [end: ...] sees its own variables as they are at its end, whenever it's worked out.
+# A name declared in a block and again at the method's level is two variables; until 2026-11-22
+# the [end: ...] of such a method, met first as a call from another class (so worked out before
+# the method's own statements), didn't see the second one: it took another class's variable of
+# that name (17 here, not 13), or, where there was none, didn't build ("'v' is declared only
+# inside blocks ..."). Found in PHI-Code-Library's VP8 decoder (phi-notes.md, "PHI 1.0").
+phi.EndSeesOwnLocals:Library
+{
+	int v: 7;
+	debug (Sees.Again: 1) ' ' (Sees.Again: 9) '\n';
+	debug (Sees.Loop: 3) '\n';
+	debug (Sees.Branches: 0) ' ' (Sees.Branches: 1) '\n';
+}
+
+phi.Sees:Library
+{
+	# in a block, then at the method's level: the result reads the second (3 + 10)
+	[Again: int a: 0;]
+		if a > 5
+			int v: 1;
+			return v + 100;
+		;;
+		int v: 3;
+		int w: v + 10;
+	[end: v + w - 13 + 10]
+
+	# a loop's own, then the method's
+	[Loop: int n: 0;]
+		while int k: 0; k < n; k++;
+			int v: k;
+		;;
+		int v: 40;
+	[end: v + n]
+
+	# two branches each have one, and the method's own after them
+	[Branches: int a: 0;]
+		if a is 0
+			int v: 5;
+			v++;
+		;;
+		else
+			int v: 6;
+			v++;
+		;;
+		int v: 70 + a;
+	[end: v]
+}

@@ -182,6 +182,12 @@ namespace Phi.Compiler.Semantics
         /// one table per open block.
         /// </summary>
         readonly List<Dictionary<string, VariableSymbol>> blockNames = new();
+
+        /// <summary>
+        /// The variables declared again at a method's own level (not in a block), as they are in
+        /// sight at its end: what its [end: ...] sees, whenever that is bound.
+        /// </summary>
+        readonly Dictionary<MethodDecl, Dictionary<string, VariableSymbol>> endNames = new();
         MethodSymbol? blockMethod;
         ClassDecl? blockClass;
         readonly HashSet<StructSymbol> slotsDone = new();
@@ -580,6 +586,19 @@ namespace Phi.Compiler.Semantics
             file = m.Decl.File;
             unsafeDepth = 0;
 
+            // [end: ...] sees the method's variables as they are at its end. When it's bound from
+            // elsewhere (a call met before the method's own statements), the block names in sight
+            // are another method's or none, so it gets this method's own.
+            MethodSymbol? outerBlockMethod = blockMethod;
+            List<Dictionary<string, VariableSymbol>>? outerBlockNames = null;
+            if (blockMethod != m)
+            {
+                outerBlockNames = blockNames.ToList();
+                blockNames.Clear();
+                blockNames.Add(endNames.TryGetValue(m.Decl, out var atEnd) ? new(atEnd) : new());
+                blockMethod = m;
+            }
+
             allowObjectTemp = true;
             BindExpr(result, methodScopes[m.Decl]);
             if (m.Decl.DeclaredResult != null)
@@ -624,6 +643,12 @@ namespace Phi.Compiler.Semantics
 
             file = outerFile;
             unsafeDepth = outerUnsafe;
+            if (outerBlockNames != null)
+            {
+                blockNames.Clear();
+                blockNames.AddRange(outerBlockNames);
+                blockMethod = outerBlockMethod;
+            }
             m.ResultBinding = false;
             m.ResultBound = true;
             BindFails(m);
@@ -2352,8 +2377,9 @@ namespace Phi.Compiler.Semantics
         void DeclareLocals(Scope scope, List<Stmt> body)
         {
             var declaredIn = new Dictionary<string, List<(VariableSymbol Symbol, Block Block)>>();
+            var methodLevel = new Block();
 
-            foreach (var (stmt, block) in CollectBlockDeclarations(body, new Block()).ToList())
+            foreach (var (stmt, block) in CollectBlockDeclarations(body, methodLevel).ToList())
             {
                 if (stmt is not VarDecl decl || !declaredIn.TryGetValue(decl.Name, out var earlier))
                 {
@@ -2393,6 +2419,18 @@ namespace Phi.Compiler.Semantics
                 earlier.Add((symbol, block));
                 units[scope.Unit].Variables.Add(symbol);
                 DetermineStorage(symbol, scope);
+            }
+
+            // what's in sight at the method's end: the one declared at its own level, for each name
+            // that's declared again (one declared once is in the method's scope by name)
+            if (scope.Method != null)
+            {
+                var atEnd = new Dictionary<string, VariableSymbol>();
+                foreach (var (name, list) in declaredIn)
+                    foreach (var (symbol, block) in list)
+                        if (block == methodLevel && blockScoped.Contains(symbol))
+                            atEnd[name] = symbol;
+                endNames[scope.Method.Decl] = atEnd;
             }
         }
 
