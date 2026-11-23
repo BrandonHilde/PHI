@@ -225,6 +225,8 @@ namespace Phi.Cli
         static readonly Regex ProgramClass = new(@"^\s*phi\.\w+\s*:\s*(Bootloader|OS|Kernel)\b", RegexOptions.Multiline);
         /// <summary>A test that builds as a program but needs a PHI OS machine (its memory, say) says so with this comment.</summary>
         static readonly Regex PhiOsOnly = new(@"^#\s*runs only on PHI OS\b", RegexOptions.Multiline);
+        /// <summary>A program test of what only macOS does (AppKit's rules, say) says so with this comment.</summary>
+        static readonly Regex MacOsOnly = new(@"^#\s*runs only on macOS\b", RegexOptions.Multiline);
         /// <summary>
         /// A library test too big for a 16-bit program (its code and variables in one 64 KB
         /// segment, at most 32 KB of OS classes) says so with this comment: it runs as a 32-bit
@@ -332,7 +334,8 @@ namespace Phi.Cli
 
             Host? firstHere = null;
             int built = 0;
-            foreach (Host host in OtherSystems.Where(h => Only == null || Only == h))
+            bool macOnly = MacOsOnly.IsMatch(text);
+            foreach (Host host in OtherSystems.Where(h => (Only == null || Only == h) && (!macOnly || h == Host.MacOS)))
             {
                 if (!HostRunner.CanRun(host, out _)) continue;
                 // (not a macOS program: while its generator is being written, most programs don't
@@ -346,7 +349,7 @@ namespace Phi.Cli
             // nothing: it runs on the first, where its build fails and says why. One that builds
             // only for systems this computer can't run (a Windows program, on Linux) is a test for
             // those computers instead
-            if (program && built == 0 && Only == null && firstHere is Host first
+            if (program && built == 0 && Only == null && !macOnly && firstHere is Host first
                 && !OtherSystems.Any(h => !HostRunner.CanRun(h, out _) && BuildsFor(phiFile, text + wrapper, h)))
                 yield return new Mode(first.FlagName(), wrapper, Host: first);
         }

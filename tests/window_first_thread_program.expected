@@ -1,0 +1,2 @@
+a window on macOS is made on the program's first thread (AppKit allows no other): open it before starting threads, or from the first one
+the first thread goes on

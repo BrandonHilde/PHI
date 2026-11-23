@@ -1,0 +1,23 @@
+# runs only on macOS
+# On macOS a window is made on a program's first thread: AppKit stops a program that makes one on
+# another with an exception that says nothing about PHI. Until 2026-11-22 that was all there was
+# (PHI OS's browser met it); now opening one there is a PHI error that says what to do, and can be
+# caught. On PHI OS, Linux and Windows a window can be opened on any thread.
+use gui.app;
+use user.threads;
+
+phi.WindowFirstThreadProgram:Program
+{
+	int t: (Threads.Start: addr Opens 0);
+	while (OS.ThreadDone: t) is 0
+		call OS.Sleep: 20;
+	;;
+	log 'the first thread goes on\n';
+	exit 0;
+
+	[Opens: int unused: 0;]
+		if call App.Open: 200 100 throws err
+			log err.text '\n';
+		;;
+	[end]
+}

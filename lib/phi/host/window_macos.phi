@@ -286,9 +286,14 @@ phi.HostWindow:MacOS
 		;;
 	[end: style]
 
-	# NSApp, made and launched the first time
+	# NSApp, made and launched the first time. AppKit makes windows only on a program's first
+	# thread (the main thread): on another it stops the program with an exception that says
+	# nothing about PHI, so this says what to do instead.
 	[Start]
 		if started return;
+		if (ObjC.SendBool: (ObjC.objc_getClass: 'NSThread') (Sel: 'isMainThread')) is 0
+			throw 'a window on macOS is made on the program\'s first thread (AppKit allows no other): open it before starting threads, or from the first one';
+		;;
 		started is true;
 		int loaded: (AppKit.NSApplicationLoad);
 		call ObjC.Send: (App) (Sel: 'finishLaunching');
