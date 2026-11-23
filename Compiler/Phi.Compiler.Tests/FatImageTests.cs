@@ -192,6 +192,22 @@ namespace Phi.Compiler.Tests
         }
 
         [Fact]
+        public void AProgramCompiledFromItsSourceIsDatedWhenItWasBuilt()
+        {
+            // its NAME.BIN isn't a file in the rootfs: it used to be dated as a missing file is
+            // (1601), which FAT showed as 1980-12-31
+            File.WriteAllText(Path.Combine(root, "hello.phi"), "phi.Hello:Program\n{\n\texit 0;\n}\n");
+            var errors = new List<string>();
+            byte[] p = FatImage.Build(root, errors, _ => new byte[] { 1, 2, 3 });
+            Assert.Empty(errors);
+            int at = RootOffset;
+            while (System.Text.Encoding.ASCII.GetString(p, at, 11) != "HELLO   BIN") at += 32;
+            int date = BitConverter.ToUInt16(p, at + 24);
+            Assert.Equal(DateTime.Now.Year, 1980 + (date >> 9));
+            Assert.Equal(DateTime.Now.Month, (date >> 5) & 15);
+        }
+
+        [Fact]
         public void AMistakeInCodeSeveralProgramsUseIsReportedOnce()
         {
             File.WriteAllText(Path.Combine(root, "broken.phi"), "phi.Broken:Library\n{\n\tint x: nothing;\n}\n");
