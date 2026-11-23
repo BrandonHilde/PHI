@@ -20,7 +20,8 @@
 # Paths use / between folders and 8.3 names (README.TXT, DOCS/NOTES.TXT); case
 # doesn't matter. Long file names aren't read. New files can go in any existing
 # folder that has a free entry (folders don't grow yet). Files and folders get the
-# date and time from the clock (OS.Now) when they're written. `phi build` fills the
+# date and time from the clock (OS.Now, in the machine's time zone: Rtc.zone) when
+# they're written. `phi build` fills the
 # disk from the program's NAME.rootfs/ (or rootfs/) folder.
 #
 # The whole FAT is kept in memory and written back after every change.
@@ -34,6 +35,7 @@ use memory.heap;
 use proc.corelock;
 use fs.fileinfo;                # FileInfo, which programs use too (OS.ListFolder)
 use data.bytes;                 # the boot sector's numbers at odd offsets
+use drivers.rtc;                # the time zone, for files' dates (FAT keeps local time)
 
 # the start of the partition's first sector: the BIOS Parameter Block, byte for byte as FAT
 # has it. FAT puts three u16s at odd offsets (11, 17 and 19), where a struct's field of that
@@ -864,7 +866,8 @@ phi.Fat:Kernel
 	[Stamp: ptr<DirEntry> e: 0; bln created: false;]
 		# OS.Now (seconds since 1970) as a date, by the days since 0000-03-01 in 400-year
 		# eras (Howard Hinnant's civil_from_days), so March starts each year
-		u32 now: (OS.Now);
+		# (in the machine's time zone, as FAT's dates are local: the clock's is UTC)
+		u32 now: ((OS.Now) as i64 + Rtc.zone * 60) as u32;
 		u32 seconds: now % 86400;
 		u32 days: now / 86400 + 719468;
 		u32 era: days / 146097;

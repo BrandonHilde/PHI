@@ -313,7 +313,9 @@ namespace Phi.Cli
                         if (first == 0) continue;
                         WriteChain(state, first, data);
                     }
-                    entries.Add(Entry(name, AttrArchive, first, (uint)data.Length, File.GetLastWriteTime(path)));
+                    // (a program compiled from its source is dated when it was built: its NAME.BIN isn't a
+                    // file here, and a missing file's time is 1601, which FAT shows as 1980-12-31)
+                    entries.Add(Entry(name, AttrArchive, first, (uint)data.Length, program ? DateTime.Now : File.GetLastWriteTime(path)));
                 }
             }
 

@@ -27,9 +27,20 @@ phi.Folders:Kernel
 	debug 'folder move: ' (Fat.MakeFolder: 'TMP') (Fat.MakeFolder: 'TMP/SUB') (Fat.WriteFile: 'TMP/SUB/X.TXT' 'xyz' 3);
 	debug (Fat.Rename: 'TMP/SUB' 'DOCS/SUB') (Fat.FileSize: 'DOCS/SUB/X.TXT') (Fat.Exists: 'TMP/SUB') '\n';
 
-	# when it was written comes from the clock
+	# when it was written comes from the clock, in the machine's time zone (FAT keeps local
+	# time; until 2026-11-22 it was UTC, so a file saved in the evening west of Greenwich had
+	# tomorrow's date)
 	int count: (Fat.Entries: '' addr entries:0 entries.len);
 	debug 'dated: ' (entries:(count - 1).year atleast 2024) '\n';
+	call Rtc.ReadLocal;
+	bln here: false;
+	while int i: 0; i < count; i++;
+		# (TMP, which this made, not a file phi build put on the disk)
+		if entries:i.name is 'TMP'
+			here is entries:i.year is Rtc.year and entries:i.month is Rtc.month and entries:i.day is Rtc.day and entries:i.hour is Rtc.hour;
+		;;
+	;;
+	debug 'today, here: ' here '\n';
 
 	# everything made is gone again: the same free space
 	bln kept: (Fat.Delete: 'DOCS/SUB/X.TXT');
