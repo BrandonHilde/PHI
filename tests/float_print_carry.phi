@@ -1,0 +1,18 @@
+# runs only in 32 and 64 bits: f64 is a 32-bit kernel's and a program's
+# A number written with an exponent keeps six places, and rounding them can carry into a new
+# digit: 9.9999999e-5 is 1e-4. Until 2026-11-22 it came out as 10e-5 (and 9.99999999e20 as
+# 10e20), on every system. Written without an exponent the carry was always right (0.99999999
+# is 1).
+phi.FloatPrintCarry:Library
+{
+	f64 a: 9.9999999e-5;
+	f64 b: 9.9999999e-301;
+	f64 c: 9.99999999e20;
+	f64 d: 0.99999999;
+	f64 e: 9.9999996e-5;
+	f64 f: 9.999994e-5;
+	log a ' ' b ' ' c ' ' d ' ' e ' ' f ' ' (-a) '\n';
+	str s: '';
+	s++ c;
+	log s '\n';
+}

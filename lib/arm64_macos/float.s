@@ -61,6 +61,17 @@ Lfloat_fixed:
 	; the whole number of millionths, rounded (to even, as fistp rounds)
 	fmul d0, d0, d5
 	fcvtns x9, d0
+	; with an exponent, six places can round 9.9999996 up to 10: that's 1 and the next power
+	; of ten (1e-4, not 10e-5)
+	cbz w22, Lfloat_rounded
+	mov x10, #38528
+	movk x10, #152, lsl #16     ; 10000000
+	cmp x9, x10
+	b.lo Lfloat_rounded
+	mov x9, #16960
+	movk x9, #15, lsl #16       ; 1000000
+	add w22, w22, #1
+Lfloat_rounded:
 	mov x10, #16960
 	movk x10, #15, lsl #16      ; 1000000
 	udiv x11, x9, x10           ; the whole part

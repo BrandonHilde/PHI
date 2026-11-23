@@ -69,6 +69,15 @@ phi_float_to_str:
     ; the whole number of millionths, rounded
     fmul qword [rel phi_float_million]
     fistp qword [rbp - 8]
+    ; with an exponent, six places can round 9.9999996 up to 10: that's 1 and the next power
+    ; of ten (1e-4, not 10e-5)
+    cmp dword [rbp - 12], 0
+    je .rounded
+    cmp dword [rbp - 8], 10000000
+    jb .rounded
+    mov dword [rbp - 8], 1000000
+    inc dword [rbp - 12]
+.rounded:
     mov eax, [rbp - 8]
     mov edx, [rbp - 4]
     xor ebx, ebx
