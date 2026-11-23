@@ -236,6 +236,33 @@ namespace Phi.Compiler.Tests
             Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
         }
 
+        [Theory]
+        [InlineData("int n: 42;\nu64 a: 1 << n;", "this shift is done in 32 bits and its answer then made a u64")]
+        [InlineData("int n: 3;\ni64 a: n << 31;", "(n as i64) << 31")]
+        public void AShiftWidenedAfterItsDoneWarns(string body, string message)
+        {
+            CompileResult result = Compile(Kernel(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.Contains(result.Diagnostics, d => d.Severity == Severity.Warning && d.Message.Contains(message));
+        }
+
+        [Theory]
+        [InlineData("u64 a: 1 << 4;\nint n: 3;\nu64 b: (1 as u64) << n;\nu64 c: (n << 2) as u64;\nint d: 1 << 31;")]
+        public void AShiftThatFitsDoesNotWarn(string body)
+        {
+            CompileResult result = Compile(Kernel(body));
+            Assert.True(result.Success, string.Join("\n", result.Diagnostics));
+            Assert.DoesNotContain(result.Diagnostics, d => d.Severity == Severity.Warning);
+        }
+
+        [Theory]
+        [InlineData("u64 a: 1 << 42;", "a shift by 42 of an int, 32 bits: a count must be 0 to 31; to shift in 64 bits, make the value one first: (1 as u64) << 42")]
+        [InlineData("int n: 1;\nint a: n >> 32;", "a shift by 32 of an int, 32 bits")]
+        [InlineData("u64 one: 1;\nu64 a: one << 64;", "a shift by 64 of a u64, 64 bits: a count must be 0 to 63")]
+        [InlineData("int n: 1;\nint a: n << -1;", "a shift by -1 of an int")]
+        public void AShiftByMoreThanItsWidthIsAnError(string body, string message) =>
+            AssertError(Kernel(body), message);
+
         [Fact]
         public void AnAsmBlockInsideAClassSaysWhereItGoes() =>
             AssertError(Boot("asm.Beep\n{\n\tret\n}"), "asm. blocks go at the top level of the file, outside any class");

@@ -689,6 +689,10 @@ Unlike C, the bitwise operators come before the comparisons, so `flags & 4 is 4`
 
 - Math is done in 32 bits and wraps around on overflow. It is **unsigned** if either side
   is a `u32` or a pointer (this affects `/`, `%`, `>>` and comparisons), and signed otherwise.
+- A shift is as wide as what's shifted: 32 bits, or 64 for a `u64` or `i64`, whatever its
+  answer is stored into. A written count must be less than that (`1 << 42` is an error), and a
+  32-bit left shift whose answer is made 64 bits (`u64 big: 1 << n;`) is warned about: shift
+  a 64-bit value instead, `(1 as u64) << n`.
 - `below`, `above`, `atmost` and `atleast` are word forms of `<`, `>`, `<=` and `>=`, the
   way `is` is a word form of `==`: `if lives above 0 and score atleast best`.
 - Two strings compare as text: `is` and `is not` ask whether they're the same, and `<`, `>`,

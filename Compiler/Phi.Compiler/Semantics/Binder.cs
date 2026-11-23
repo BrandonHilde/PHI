@@ -3333,6 +3333,17 @@ namespace Phi.Compiler.Semantics
 
         string SourceText(Expr e) => file.Text[e.Span.Start..e.Span.End];
 
+        /// <summary>An expression as it's written, if that's short enough to quote; else what it is.</summary>
+        string Written(Expr e)
+        {
+            if (e.Span.End > e.Span.Start && e.Span.End <= file.Text.Length)
+            {
+                string text = SourceText(e).Trim();
+                if (text.Length is > 0 and <= 30 && !text.Contains('\n')) return text;
+            }
+            return Describe(e);
+        }
+
         string DescribeMissing(string name, Scope scope)
         {
             UnitKind other = scope.Unit == UnitKind.Boot ? UnitKind.Os : UnitKind.Boot;
@@ -6820,6 +6831,7 @@ namespace Phi.Compiler.Semantics
                 PhiType wide = ArithmeticType(b.Left.Type, b.Right.Type);
                 if (shift && b.Right.Type.IsWide)
                     Error(b.Right.Span, $"a shift's count is a number of bits; write ({Describe(b.Right)} as int)");
+                if (shift) ShiftCountFits(b, 64);
                 b.Left = Convert(b.Left, shift ? b.Left.Type : wide, "the left side");
                 if (!shift) b.Right = Convert(b.Right, wide, "the right side");
                 b.Type = b.IsComparison ? PhiType.Bool : shift ? b.Left.Type : wide;
@@ -6836,6 +6848,20 @@ namespace Phi.Compiler.Semantics
             if (!b.Left.Type.IsPointer && !PointerMath(b.Left)) b.Left = Convert(b.Left, PhiType.Int, "the left side");
             if (!b.Right.Type.IsPointer && !PointerMath(b.Right)) b.Right = Convert(b.Right, PhiType.Int, "the right side");
             b.Type = b.IsComparison || b.IsLogical ? PhiType.Bool : ArithmeticType(b.Left.Type, b.Right.Type);
+            if (b.Op is BinaryOp.ShiftLeft or BinaryOp.ShiftRight && !b.Type.IsPointer) ShiftCountFits(b, 32);
+        }
+
+        /// <summary>
+        /// A shift by a written count as wide as what's shifted, or wider (1 &lt;&lt; 42 in an int), or
+        /// below 0: the machine takes the count's low bits, so it isn't what was written.
+        /// </summary>
+        void ShiftCountFits(BinaryExpr b, int bits)
+        {
+            if (ConstantFolder.Evaluate(b.Right) is not long count) return;
+            if (count >= 0 && count < bits) return;
+            string what = bits == 64 ? $"{A(b.Left.Type)}, 64 bits" : $"{A(b.Type)}, 32 bits";
+            string hint = bits == 32 && count < 64 ? $"; to shift in 64 bits, make the value one first: ({Written(b.Left)} as u64) << {count}" : "";
+            Error(b.Right.Span, $"a shift by {count} of {what}: a count must be 0 to {bits - 1}{hint}");
         }
 
         /// <summary>a is b on objects: equal when their values are (following new fields); x is empty: no object.</summary>
@@ -6959,6 +6985,16 @@ namespace Phi.Compiler.Semantics
         {
             if (e.Type.IsError || target.IsError) return e;
             if (target.IsVec || e.Type.IsVec) return ConvertVec(e, target, what);
+
+            // a left shift done in 32 bits, its answer made 64 (u64 big: 1 << n): bits shifted past
+            // the 32nd are gone before it's widened, and a 1 shifted into the top bit makes it
+            // negative. Fine when the shift is all written and fits (1 << 4).
+            if (target.IsWide && e is BinaryExpr { Op: BinaryOp.ShiftLeft } shifted && !shifted.Type.IsWide && shifted.Type.IsNumeric
+                && !(ConstantFolder.Evaluate(shifted.Right) is long n && (n < 0 || n > 31))     // (that's an error of its own)
+                && !(ConstantFolder.Evaluate(shifted) is long folded && folded >= 0 && folded <= int.MaxValue
+                     && ConstantFolder.Evaluate(shifted.Right) is long m && m < 31))
+                diagnostics.Warning(file, e.Span, $"this shift is done in 32 bits and its answer then made {A(target)}, so what goes past bit 31 is lost; " +
+                                                  $"to shift in 64 bits, make the value 64 bits first: ({Written(shifted.Left)} as {target}) << {Written(shifted.Right)}");
 
             // a number written there that the type can't hold (u8 small: 300;) is a mistake, not
             // a wrap: what fits its bits either way goes in (-1 and 0xFF are both a u8's), and
